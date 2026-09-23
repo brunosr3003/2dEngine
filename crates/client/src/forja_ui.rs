@@ -59,6 +59,34 @@ pub fn info(inst: &ItemInstance) -> Info {
     }
 }
 
+/// A JANELA da confirmação, medida a partir da tela.
+///
+/// Fora do desenho pra ser testada: foi uma conta de janela escrita à mão que
+/// pôs o botão de entrar da Ilha Mágica fora da tela e prendeu o jogador lá.
+fn janela_da_confirmacao(seguro: Rect, f: f32) -> Rect {
+    let w = (540.0 * f).min(seguro.w - 24.0);
+    let h = (270.0 * f).min(seguro.h - 24.0);
+    Rect::new(
+        seguro.center().x - w * 0.5,
+        seguro.center().y - h * 0.5,
+        w,
+        h,
+    )
+}
+
+/// (Cancelar, Sim), ancorados no fundo da janela.
+fn botoes_da_confirmacao(r: Rect, f: f32) -> (Rect, Rect) {
+    let x = r.x + 24.0 * f;
+    // A altura do botão cede antes de vazar: numa janela baixa, 46 px fixos
+    // punham o par pra fora do fundo.
+    let bh = (46.0 * f).min(r.h * 0.22);
+    let bw = (r.w - 60.0 * f).max(40.0) * 0.5;
+    let by = r.y + r.h - 24.0 * f - bh;
+    let cancelar = Rect::new(x, by, bw, bh);
+    let sim = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
+    (cancelar, sim)
+}
+
 /// "Refinar mesmo assim?" — a pergunta antes de arriscar a peça.
 ///
 /// `None` = ainda esperando; `Some(true)` = manda ver; `Some(false)` = não.
@@ -74,16 +102,7 @@ pub fn info(inst: &ItemInstance) -> Info {
 fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     let f = estilo::fator_texto();
     let seguro = crate::hud_layout::tela_segura();
-    let (w, h) = (
-        (540.0 * f).min(seguro.w - 24.0),
-        (270.0 * f).min(seguro.h - 24.0),
-    );
-    let r = Rect::new(
-        seguro.center().x - w * 0.5,
-        seguro.center().y - h * 0.5,
-        w,
-        h,
-    );
+    let r = janela_da_confirmacao(seguro, f);
     crate::hud_layout::escurece(0.55);
     estilo::painel_destaque(r, VERMELHO);
     let x = r.x + 24.0 * f;
@@ -92,7 +111,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
         &format!("{nome} +{} → +{}", i.nivel, i.nivel + 1),
         x,
         r.y + 80.0 * f,
-        w - 48.0 * f,
+        r.w - 48.0 * f,
         17,
         estilo::TEXTO,
     );
@@ -104,7 +123,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
         ),
         x,
         r.y + 110.0 * f,
-        w - 48.0 * f,
+        r.w - 48.0 * f,
         16,
         VERMELHO,
     );
@@ -112,15 +131,11 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
         "Destruída, ela não volta: o refino e os materiais dela vão junto.",
         x,
         r.y + 140.0 * f,
-        w - 48.0 * f,
+        r.w - 48.0 * f,
         14,
         estilo::SUAVE,
     );
-    let bw = (w - 60.0 * f) * 0.5;
-    let bh = 46.0 * f;
-    let by = r.y + r.h - 24.0 * f - bh;
-    let cancelar = Rect::new(x, by, bw, bh);
-    let sim = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
+    let (cancelar, sim) = botoes_da_confirmacao(r, f);
     let m = Vec2::from(mouse_position());
     // CANCELAR é o botão de destaque, e o "sim" é o apagado: aqui o caminho
     // seguro é o que deve estar debaixo do polegar.
@@ -549,6 +564,55 @@ mod tests {
         assert_eq!((i.chance, i.risco), (30, true), "o +6 arrisca a peca");
         let i = info(&peca(forja::REFINO_MAX));
         assert!(i.no_topo && !i.risco);
+    }
+
+    /// OS BOTÕES da confirmação ficam dentro da janela, e ela dentro da tela.
+    ///
+    /// Mesmo guarda que o painel da Ilha Mágica ganhou depois de prender o
+    /// jogador: lá a janela era montada em pixels crus com o conteúdo em
+    /// escala, o "Entrar" caía fora e não havia como fechar. Uma janela de
+    /// confirmação com o "Cancelar" fora da tela seria o mesmo — e pior,
+    /// porque o único jeito de sair dela seria dizendo sim.
+    #[test]
+    fn os_botoes_da_confirmacao_nunca_saem_da_janela() {
+        for (w, h) in [
+            (734.0f32, 320.0f32),
+            (812.0, 375.0),
+            (1024.0, 768.0),
+            (1920.0, 1080.0),
+        ] {
+            let seguro = Rect::new(0.0, 0.0, w, h);
+            for f in [0.8f32, 1.0, 1.5, 2.2] {
+                let r = janela_da_confirmacao(seguro, f);
+                assert!(
+                    r.w <= seguro.w && r.h <= seguro.h,
+                    "{w}x{h} f={f}: a janela passa da tela"
+                );
+                let (cancelar, sim) = botoes_da_confirmacao(r, f);
+                for (nome, b) in [("Cancelar", cancelar), ("Sim", sim)] {
+                    assert!(
+                        b.y >= r.y && b.y + b.h <= r.y + r.h + 0.01,
+                        "{w}x{h} f={f}: {nome} vai de {:.0} a {:.0} numa janela de \
+                         {:.0} a {:.0}",
+                        b.y,
+                        b.y + b.h,
+                        r.y,
+                        r.y + r.h
+                    );
+                    assert!(
+                        b.x >= r.x - 0.01 && b.x + b.w <= r.x + r.w + 0.01,
+                        "{w}x{h} f={f}: {nome} vaza de lado"
+                    );
+                    assert!(b.w > 0.0 && b.h > 0.0, "{w}x{h} f={f}: {nome} sem tamanho");
+                }
+                // Eles não se sobrepõem: tocar num não pode acertar o outro,
+                // e aqui um deles destrói a peça.
+                assert!(
+                    cancelar.x + cancelar.w <= sim.x + 0.01,
+                    "{w}x{h} f={f}: Cancelar e Sim se sobrepõem"
+                );
+            }
+        }
     }
 
     /// A PERGUNTA aparece exatamente onde há destruição, e em lugar nenhum

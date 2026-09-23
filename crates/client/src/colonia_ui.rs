@@ -163,14 +163,7 @@ impl ColoniaUi {
         // Ilha está muito feio, pra começar que está pequeno; a minha ideia
         // era a colônia 3D ficar literalmente um 3D na lateral esquerda que
         // você consegue movimentar, e os upgrades na direita".
-        let w = (1040.0 * f).min(seguro.w - 16.0);
-        let h = (720.0 * f).min(seguro.h - 16.0);
-        let p = Rect::new(
-            seguro.center().x - w * 0.5,
-            seguro.center().y - h * 0.5,
-            w,
-            h,
-        );
+        let p = janela(seguro, f);
         crate::hud_layout::escurece(0.45);
         estilo::painel_destaque(p, estilo::ACENTO);
         let m = Vec2::from(mouse_position());
@@ -194,9 +187,9 @@ impl ColoniaUi {
         // Ela vem antes de tudo porque é ela que diz ao jogador que aquilo é
         // um LUGAR, e não uma planilha com tema. Numa faixa de 200 px no topo
         // isso não acontecia.
-        let topo = p.y + 76.0 * f;
-        let alturac = p.h - 92.0 * f;
-        let mr = Rect::new(x0, topo, (p.w - 56.0 * f) * 0.46, alturac);
+        let (mr, dir) = colunas(p, f);
+        let topo = mr.y;
+        let alturac = mr.h;
         estilo::cartao(mr, false, false);
         let desenhou = match &self.maquete {
             Some(mq) => crate::render3d::maquete_da_ilha(
@@ -242,7 +235,7 @@ impl ColoniaUi {
         );
 
         // ── DIREITA: o que se faz com a ilha ──
-        let dir = Rect::new(mr.x + mr.w + 16.0 * f, topo, p.w - 56.0 * f - mr.w, alturac);
+
         let vagas_h = if e.vagas > 0 {
             32.0 * f + 78.0 * f * e.vagas as f32
         } else {
@@ -507,6 +500,36 @@ impl ColoniaUi {
     }
 }
 
+/// A JANELA do painel, medida a partir da tela.
+///
+/// Fora do desenho pra ser testada: foi uma conta de janela escrita à mão que
+/// pôs o botão de entrar da Ilha Mágica fora da tela e prendeu o jogador lá.
+fn janela(seguro: Rect, f: f32) -> Rect {
+    let w = (1040.0 * f).min(seguro.w - 16.0);
+    let h = (720.0 * f).min(seguro.h - 16.0);
+    Rect::new(
+        seguro.center().x - w * 0.5,
+        seguro.center().y - h * 0.5,
+        w,
+        h,
+    )
+}
+
+/// As duas colunas: (maquete à esquerda, controles à direita).
+///
+/// A da esquerda tem 46% do que sobra depois das margens; a da direita, o
+/// resto. Numa janela estreita a maquete cede primeiro — ela é pra olhar, e
+/// a da direita é onde se toca.
+fn colunas(p: Rect, f: f32) -> (Rect, Rect) {
+    let topo = p.y + 76.0 * f;
+    let alt = (p.h - 92.0 * f).max(40.0);
+    let util = (p.w - 56.0 * f).max(80.0);
+    let esq = util * 0.46;
+    let maquete = Rect::new(p.x + 20.0 * f, topo, esq, alt);
+    let dir = Rect::new(maquete.x + esq + 16.0 * f, topo, util - esq, alt);
+    (maquete, dir)
+}
+
 /// Onde cada morador fica em pé: na FRENTE do prédio do ofício dele.
 ///
 /// Percorre os prédios na MESMA ordem e com a mesma contagem por papel que
@@ -715,6 +738,56 @@ mod testes {
     /// primeiras dissessem a mesma coisa, o jogador nao teria como aprender
     /// que voltar antes das 12h rende mais — que e' a unica decisao que a
     /// colonia pede dele.
+    /// AS DUAS COLUNAS cabem na janela, e a janela na tela.
+    ///
+    /// Mesmo guarda que o painel da Ilha Mágica ganhou depois de prender o
+    /// jogador. Este é o painel mais largo do jogo (1040x720) e o que tem
+    /// mais chance de estourar num celular deitado.
+    #[test]
+    #[test]
+    fn as_colunas_cabem_na_janela() {
+        for (w, h) in [
+            (734.0f32, 320.0f32),
+            (812.0, 375.0),
+            (1024.0, 768.0),
+            (1920.0, 1080.0),
+        ] {
+            let seguro = Rect::new(0.0, 0.0, w, h);
+            for f in [0.8f32, 1.0, 1.5, 2.2] {
+                let p = janela(seguro, f);
+                assert!(
+                    p.w <= seguro.w && p.h <= seguro.h,
+                    "{w}x{h} f={f}: a janela ({:.0}x{:.0}) passa da tela",
+                    p.w,
+                    p.h
+                );
+                let (esq, dir) = colunas(p, f);
+                for (nome, c) in [("maquete", esq), ("controles", dir)] {
+                    assert!(
+                        c.w > 0.0 && c.h > 0.0,
+                        "{w}x{h} f={f}: a coluna {nome} ficou sem tamanho ({:.0}x{:.0})",
+                        c.w,
+                        c.h
+                    );
+                    assert!(
+                        c.x >= p.x - 0.01 && c.x + c.w <= p.x + p.w + 0.01,
+                        "{w}x{h} f={f}: a coluna {nome} vaza de lado"
+                    );
+                    assert!(
+                        c.y >= p.y && c.y + c.h <= p.y + p.h + 0.01,
+                        "{w}x{h} f={f}: a coluna {nome} passa da altura da janela"
+                    );
+                }
+                // Elas não se encavalam: a maquete desenha em 3D por cima de
+                // tudo, e sobrepor comeria os botões da direita.
+                assert!(
+                    esq.x + esq.w <= dir.x + 0.01,
+                    "{w}x{h} f={f}: as colunas se sobrepõem"
+                );
+            }
+        }
+    }
+
     #[test]
     fn o_relogio_conta_as_tres_fases() {
         let cheio = aviso_do_relogio(6.0);

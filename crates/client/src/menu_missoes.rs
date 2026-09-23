@@ -511,6 +511,38 @@ fn icone(c: Vec2, e: &Estado, s: f32) {
 
 // O cartao cresceu pra caber a linha da RECOMPENSA.
 const CARTAO: f32 = 96.0;
+
+/// As caixas de um cartão de missão: (Ir, caixa da fila, largura do texto).
+///
+/// Fora do desenho pra poder ser MEDIDA. Foi exatamente este tipo de conta —
+/// escrita à mão e conferida no olho — que pôs o botão de entrar da Ilha
+/// Mágica fora da janela e prendeu o jogador lá.
+/// `esquerda` é onde o texto começa; `texto` é quanto ele tem de largura.
+///
+/// A coluna dos botões ENCOLHE num cartão estreito. Em medidas fixas ela
+/// comia o cartão inteiro: com painel de 280 px e escala 2,2 sobravam **−24
+/// px** pro nome da missão. Achado por este teste, não pelo dono — que foi o
+/// ponto de escrevê-lo.
+pub(crate) fn caixas_do_cartao(card: Rect, f: f32) -> (Rect, Rect, f32, f32) {
+    // Os botões ficam com um terço do cartão, no máximo o tamanho de sempre.
+    let k = (card.w * 0.34 / (82.0 * f)).clamp(0.35, 1.0);
+    let ir = Rect::new(
+        card.x + card.w - 82.0 * f * k,
+        card.y + 12.0 * f,
+        72.0 * f * k,
+        30.0 * f,
+    );
+    let fila = Rect::new(
+        card.x + card.w - 46.0 * f * k,
+        card.y + 48.0 * f,
+        34.0 * f * k,
+        30.0 * f,
+    );
+    // A margem do ícone também cede, e o texto nunca fica sem nada.
+    let esquerda = (48.0 * f).min(card.w * 0.18);
+    let texto = (card.w - esquerda - 90.0 * f * k).max(24.0);
+    (ir, fila, esquerda, texto)
+}
 const PASSO: f32 = 26.0;
 
 #[derive(Default)]
@@ -684,8 +716,10 @@ impl MenuMissoes {
             let sobre = !arrastando && topo.contains(mouse) && area.contains(mouse);
             estilo::ret_arredondado(card, 8.0, Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.04 }));
             icone(vec2(card.x + 24.0 * f, card.y + 28.0 * f), &r.estado, f);
-            let tx = card.x + 48.0 * f;
-            let largura = card.w - 48.0 * f - 90.0 * f;
+            // As MESMAS medidas que o teste confere. Duas contas pro mesmo
+            // lugar é como o desenho e a conta se separam sem ninguém ver.
+            let (ir, cx, esquerda, largura) = caixas_do_cartao(card, f);
+            let tx = card.x + esquerda;
             estilo::texto_ajustado(&l.nome, tx, card.y + 22.0 * f, largura, 17, estilo::TEXTO);
             let passo = match r.atual {
                 Some(d) if l.historia => format!(
@@ -698,7 +732,7 @@ impl MenuMissoes {
             };
             estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
             if let Some(d) = r.atual {
-                estilo::texto_ajustado(&frase(d, &r.estado), tx, card.y + 63.0 * f, card.w - 60.0 * f, 13, cor_do_estado(&r.estado));
+                estilo::texto_ajustado(&frase(d, &r.estado), tx, card.y + 63.0 * f, largura, 13, cor_do_estado(&r.estado));
                 // O QUE ELA PAGA. Em verde e por último: é o motivo de fazer,
                 // e vem depois do que ela pede, que é o custo.
                 let premio = recompensa_de(d, c.nomes);
@@ -707,21 +741,21 @@ impl MenuMissoes {
                         &format!("Dá: {premio}"),
                         tx,
                         card.y + 83.0 * f,
-                        card.w - 60.0 * f,
+                        largura,
                         13,
                         estilo::AUTO,
                     );
                 }
             }
             // "Ir" no passo atual, quando da' pra fazer algo com ele.
-            let ir = Rect::new(card.x + card.w - 82.0 * f, card.y + 12.0 * f, 72.0 * f, 30.0 * f);
+
             let clicavel = matches!(r.estado, Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta);
             // A CAIXA DA FILA, logo abaixo do "Ir".
             //
             // Marcar é dizer "esta, e nesta ordem" — por isso ela mostra o
             // NÚMERO da posição e não um tique: numa fila de dez, saber que
             // algo está marcado sem saber onde não ajuda a montar nada.
-            let cx = Rect::new(card.x + card.w - 46.0 * f, card.y + 48.0 * f, 34.0 * f, 30.0 * f);
+
             let mut marcou = None;
             if let (true, Some(d)) = (clicavel, r.atual) {
                 let pos = self.posicao_na_fila(d.id);
@@ -773,7 +807,7 @@ impl MenuMissoes {
                     let cor = if atual { estilo::OURO } else { cor_do_estado(e) };
                     icone(vec2(tx + 6.0 * f, py + PASSO * f * 0.5), e, f * 0.7);
                     let t = if atual { format!("› {}", d.title) } else { d.title.to_string() };
-                    estilo::texto_ajustado(&t, tx + 22.0 * f, py + PASSO * f * 0.68, card.w - 90.0 * f, 13, cor);
+                    estilo::texto_ajustado(&t, tx + 22.0 * f, py + PASSO * f * 0.68, (largura - 22.0 * f).max(24.0), 13, cor);
                     py += PASSO * f;
                 }
             }
@@ -1099,6 +1133,62 @@ mod tests {
 #[cfg(test)]
 mod testes_da_trava {
     use super::*;
+
+    /// O CARTÃO DE MISSÃO cabe em si mesmo, em toda tela.
+    ///
+    /// O cartão cresceu de 76 pra 96 px pra caber a linha da recompensa, e a
+    /// caixa da fila entrou embaixo do "Ir". Os dois números foram escritos à
+    /// mão — e foi exatamente esse tipo de conta que pôs o botão de entrar da
+    /// Ilha Mágica fora da janela e prendeu o jogador lá dentro.
+    ///
+    /// Aqui a conta é medida: botões dentro do cartão, texto com largura
+    /// positiva, e a última linha (a recompensa, em `+83f`) dentro da altura.
+    #[test]
+    fn o_cartao_de_missao_cabe_em_si_mesmo() {
+        // Larguras de painel plausíveis, da mais apertada à mais folgada.
+        for largura in [280.0f32, 420.0, 540.0, 720.0] {
+            for f in [0.8f32, 1.0, 1.5, 2.2] {
+                let card = Rect::new(0.0, 0.0, largura, CARTAO * f);
+                let (ir, fila, esquerda, texto) = caixas_do_cartao(card, f);
+                for (nome, b) in [("Ir", ir), ("fila", fila)] {
+                    assert!(
+                        b.x >= card.x && b.x + b.w <= card.x + card.w + 0.01,
+                        "largura {largura} f={f}: o botão {nome} vaza de lado \
+                         ({:.0}..{:.0} num cartão de {:.0})",
+                        b.x,
+                        b.x + b.w,
+                        card.w
+                    );
+                    assert!(
+                        b.y + b.h <= card.y + card.h + 0.01,
+                        "largura {largura} f={f}: o botão {nome} passa da altura \
+                         do cartão ({:.0} > {:.0})",
+                        b.y + b.h,
+                        card.h
+                    );
+                }
+                assert!(
+                    texto > 0.0,
+                    "largura {largura} f={f}: sobra {texto:.0} px pro nome da missão"
+                );
+                assert!(
+                    esquerda + texto <= ir.x - card.x + 0.01,
+                    "largura {largura} f={f}: o nome da missão ({:.0}..{:.0}) passa \
+                     por baixo do botão, que começa em {:.0}",
+                    esquerda,
+                    esquerda + texto,
+                    ir.x - card.x
+                );
+                // A ÚLTIMA LINHA do cartão é a recompensa, na base +83f.
+                assert!(
+                    83.0 * f <= card.h,
+                    "f={f}: a linha da recompensa (+{:.0}) cai fora do cartão ({:.0})",
+                    83.0 * f,
+                    card.h
+                );
+            }
+        }
+    }
 
     /// A FILA tem teto, guarda a ORDEM e desmarca.
     ///
