@@ -817,6 +817,24 @@ fn quebra_em_linhas(t: &str, n: usize) -> Vec<String> {
     linhas
 }
 
+/// Onde o destaque da trava de nível aponta, pelo estado do painel.
+///
+/// O DESTAQUE SEGUE O PAINEL. Antes ele apontava o MENU pelo tempo todo,
+/// aberto ou não: o jogador abria a Ilha Mágica e o jogo continuava pedindo
+/// pra abrir o que já estava aberto, sem dizer o que fazer dentro. O dono:
+/// "eu abro a ilha mágica e continua pedindo pra eu abrir o menu e não pra
+/// entrar na ilha mágica".
+///
+/// Fora do método pra poder ser testado: `foco_da_trava` depende do `Jogo`
+/// inteiro, e a escolha em si é uma linha.
+fn alvo_da_trava(painel_aberto: bool) -> &'static [u16] {
+    if painel_aberto {
+        &[foco::chave::MAGICA_ENTRAR]
+    } else {
+        &[foco::chave::MENU_ILHA_MAGICA, foco::chave::MENU]
+    }
+}
+
 /// Onde cada peça da tela de "esqueci minha senha" fica.
 ///
 /// Ordem: e-mail, enviar, voltar.
@@ -893,6 +911,26 @@ mod testes_do_login {
                 );
             }
         }
+    }
+
+    /// O destaque da trava sai do menu quando o painel abre.
+    #[test]
+    fn o_destaque_da_trava_segue_o_painel() {
+        let fechado = alvo_da_trava(false);
+        assert!(
+            fechado.contains(&foco::chave::MENU_ILHA_MAGICA),
+            "com o painel fechado, o caminho é pelo menu"
+        );
+        let aberto = alvo_da_trava(true);
+        assert_eq!(
+            aberto,
+            &[foco::chave::MAGICA_ENTRAR],
+            "com o painel aberto o alvo é o Entrar"
+        );
+        assert!(
+            !aberto.contains(&foco::chave::MENU),
+            "pedir pra abrir o menu que já está aberto é o defeito que se conserta aqui"
+        );
     }
 
     /// A tela de "esqueci minha senha" também não se sobrepõe.
@@ -2458,7 +2496,7 @@ impl Jogo {
             self.dica_da_trava = None;
             return;
         }
-        foco::pede(&[foco::chave::MENU_ILHA_MAGICA, foco::chave::MENU]);
+        foco::pede(alvo_da_trava(self.magica.aberto()));
     }
 
     /// na tela, e e' assim que o buraco anda sozinho MENU -> Ficha -> "+".

@@ -69,6 +69,13 @@ pub mod chave {
     /// Ilha Mágica é a resposta — XP em dobro, três entradas de graça por
     /// dia —, mas só serve se ele souber onde ela fica.
     pub const MENU_ILHA_MAGICA: u16 = 111;
+    /// O botão "Entrar" DENTRO do painel da Ilha Mágica.
+    ///
+    /// A trava de nível acendia o caminho até o menu e parava ali. Aberto o
+    /// painel, o destaque continuava no MENU — o jogador via o jogo pedindo
+    /// pra abrir o que já estava aberto. O dono: "eu abro a ilha mágica e
+    /// continua pedindo pra eu abrir o menu e não pra entrar na ilha mágica".
+    pub const MAGICA_ENTRAR: u16 = 112;
     /// A linha "Minha Ilha" dentro do Menu.
     ///
     /// O primeiro passo da linha da ilha ("A escritura da ilha") manda

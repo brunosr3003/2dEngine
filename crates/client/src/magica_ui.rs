@@ -317,6 +317,8 @@ impl MagicaUi {
             };
             let pode = total >= n as u32;
             let b = Rect::new(rod.x, rod.y + 40.0 * f, rod.w, 40.0 * f);
+            // O destaque da trava de nível mira AQUI depois que o painel abre.
+            crate::foco::marca(crate::foco::chave::MAGICA_ENTRAR, b);
             if ui::botao(b, &rot, pode) && pode {
                 pedido = Some(PedidoMagica::Entrar { entradas: n });
             }
