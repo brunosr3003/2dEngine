@@ -3013,6 +3013,109 @@ pub const ELEV_PADRAO: f32 = 0.55;
 
 pub const COR_DO_FUNDO_DA_MAQUETE: Color = Color::new(0.09, 0.12, 0.17, 1.0);
 
+/// Um morador da maquete: quem ele é, onde mora e onde trabalha.
+pub struct Morador {
+    pub oficio: shared::colonia::Profissao,
+    /// Em frente à porta do prédio do ofício dele.
+    pub casa: Vec2,
+    /// O ponto lá fora, na mata, onde ele colhe / minera / caça.
+    pub trabalho: Vec2,
+}
+
+/// Onde o morador está AGORA e o que ele está fazendo.
+pub struct PassoDoMorador {
+    pub onde: Vec2,
+    pub yaw: f32,
+    /// 0 parado .. 1 andando.
+    pub andar: f32,
+    /// Distância já caminhada no ciclo, pra fase do passo. A perna anda com
+    /// a DISTÂNCIA e não com o relógio — parado, ela para junto.
+    pub avanco: f32,
+    /// Hora de bater o machado / a picareta.
+    pub trabalhando: bool,
+}
+
+/// Adianta o relógio da maquete, em segundos. SÓ a prévia mexe nisto.
+///
+/// A rotina dura 26 s e a prévia grava dois quadros por vista: sem adiantar,
+/// todo PNG pega os moradores no mesmo instante do ciclo e eu não teria como
+/// ver se eles andam. Fora da prévia vale zero e some na otimização.
+static ADIANTA_O_RELOGIO: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+pub fn adianta_o_relogio_da_maquete(s: f32) {
+    ADIANTA_O_RELOGIO.store(s.to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn relogio_da_maquete() -> f32 {
+    get_time() as f32 + f32::from_bits(ADIANTA_O_RELOGIO.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Quanto dura a ida-trabalho-volta de um morador, em segundos.
+const CICLO_DO_MORADOR: f32 = 26.0;
+
+/// A ROTINA: sai da casa, vai até o ponto de trabalho, trabalha, volta.
+///
+/// O dono: "eles tão parados no centro da ilha e não andando entre as
+/// árvores e voltando pro centro como se tivesse coletando e voltando, ou
+/// minerando e voltando, ou caçando e voltando". Antes o morador era um
+/// boneco fixo na porta, girando devagar em torno do próprio eixo.
+///
+/// Pura de propósito: é geometria e relógio, e é isso que deixa testar sem
+/// abrir o jogo.
+pub fn rotina_do_morador(m: &Morador, i: usize, agora: f32) -> PassoDoMorador {
+    // As quatro partes do ciclo, em fração dele.
+    const IDA: f32 = 0.26;
+    const TRABALHO: f32 = 0.60;
+    const VOLTA: f32 = 0.86;
+    // A fase de cada um é diferente: com todos no mesmo compasso a ilha vira
+    // um desfile, que é outro jeito de parecer maquete parada.
+    let fase = (agora / CICLO_DO_MORADOR + i as f32 * 0.37).rem_euclid(1.0);
+    let caminho = m.trabalho - m.casa;
+    let dist = caminho.length();
+    // Suaviza a partida e a chegada: em linear o boneco arranca e trava num
+    // estalo, e a perna do rig pede aceleração pra ler direito.
+    let suave = |u: f32| {
+        let u = u.clamp(0.0, 1.0);
+        u * u * (3.0 - 2.0 * u)
+    };
+    let (onde, andar, avanco, trabalhando, rumo) = if fase < IDA {
+        let u = suave(fase / IDA);
+        (
+            m.casa + caminho * u,
+            (u * 4.0).min(1.0).min((1.0 - u) * 4.0).max(0.0),
+            dist * u,
+            false,
+            caminho,
+        )
+    } else if fase < TRABALHO {
+        (m.trabalho, 0.0, dist, true, caminho)
+    } else if fase < VOLTA {
+        let u = suave((fase - TRABALHO) / (VOLTA - TRABALHO));
+        (
+            m.trabalho - caminho * u,
+            (u * 4.0).min(1.0).min((1.0 - u) * 4.0).max(0.0),
+            dist * (1.0 + u),
+            false,
+            -caminho,
+        )
+    } else {
+        (m.casa, 0.0, dist * 2.0, false, -caminho)
+    };
+    PassoDoMorador {
+        onde,
+        // `dir.x.atan2(dir.y)` é a mesma conversão que o mundo usa pra virar
+        // velocidade em yaw (`world.rs`).
+        yaw: if rumo.length_squared() > 1e-6 {
+            rumo.x.atan2(rumo.y)
+        } else {
+            0.0
+        },
+        andar,
+        avanco,
+        trabalhando,
+    }
+}
+
 /// A distância de câmera que põe a ilhota INTEIRA dentro do quadro.
 ///
 /// Sai de MEDIR, não de uma fórmula fechada. A fórmula anterior (raio ×
@@ -3132,7 +3235,7 @@ pub fn maquete_da_ilha(
     elevacao: f32,
     zoom: f32,
     solido: &Material,
-    moradores: &[(shared::colonia::Profissao, Vec2)],
+    moradores: &[Morador],
     vox: &VoxCache,
 ) -> bool {
     if r.w < 40.0 || r.h < 40.0 {
@@ -3295,11 +3398,14 @@ pub fn maquete_da_ilha(
     // Vão aqui, e não no `assar_colonia`: aquilo roda numa thread de fundo e
     // devolve malha estática, e o rig precisa do `VoxCache`, que é da thread
     // do quadro.
-    for (i, (oficio, onde)) in moradores.iter().enumerate() {
+    for (i, mor) in moradores.iter().enumerate() {
+        let oficio = &mor.oficio;
         let nome = rig_do_npc(oficio.papel() as u8, i as u64);
         let Some(corpo) = vox.rig_ou_pede(nome) else {
             continue;
         };
+        let passo = rotina_do_morador(mor, i, relogio_da_maquete());
+        let onde = &passo.onde;
         let y = terreno.altura(onde.x, onde.y);
         // Uma balançada lenta, com fase por morador: parados e idênticos eles
         // leriam como estátua.
@@ -3315,17 +3421,22 @@ pub fn maquete_da_ilha(
         //
         // A fase por morador tira o efeito de fileira de bonecos batendo no
         // mesmo compasso.
+        //
+        // E SÓ NO PONTO DE TRABALHO: batendo machado enquanto caminha, o
+        // boneco lê como quebrado. A caminho e na volta ele só anda.
         use shared::colonia::Profissao as P;
-        let combate = match oficio {
-            P::Lenhador => crate::rig::Combate {
+        let combate = match (oficio, passo.trabalhando) {
+            (P::Lenhador, true) => crate::rig::Combate {
                 coleta: Some((0, t)),
                 ..Default::default()
             },
-            P::Minerador => crate::rig::Combate {
+            (P::Minerador, true) => crate::rig::Combate {
                 coleta: Some((1, t)),
                 ..Default::default()
             },
-            P::Mercenario => crate::rig::Combate {
+            // O mercenário anda de arma sacada o tempo todo: é o ofício dele,
+            // e é o que diz que aquele ali é a guarda e não mais um colhedor.
+            (P::Mercenario, _) => crate::rig::Combate {
                 conjunto: 0,
                 sacada: 1.0,
                 ..Default::default()
@@ -3333,8 +3444,11 @@ pub fn maquete_da_ilha(
             _ => Default::default(),
         };
         let entrada = crate::rig::Entrada {
-            fase: 0.0,
-            andar: 0.0,
+            // A fase do passo anda com a DISTÂNCIA percorrida, que é o que o
+            // rig pede: com o relógio no lugar dela, a perna continua
+            // pedalando com o boneco parado.
+            fase: passo.avanco * 0.55,
+            andar: passo.andar,
             correr: 0.0,
             tempo: t,
             ar: 0.0,
@@ -3353,16 +3467,19 @@ pub fn maquete_da_ilha(
         // Sete é onde ele vira gente sem virar gigante. Uma maquete é um
         // modelo, e num modelo as figuras são exageradas justamente para
         // serem lidas.
-        // Dois e meio, e não sete.
+        // Um e meio, e não dois e meio.
         //
-        // Sete foi calibrado com a câmera longe, enquadrando a ilhota inteira
-        // com folga. Ela chegou perto (o dono: "tá mostrando muito longe"), e
-        // na prévia os moradores viraram gigantes de pé sobre as casas. A
-        // escala do boneco anda junto com a distância da câmera — mudar uma
-        // sem a outra é trocar um defeito por outro.
-        const ESCALA_DO_MORADOR: f32 = 2.5;
+        // A escala do boneco anda junto com o resto: sete foi calibrado com a
+        // câmera longe, dois e meio quando ela chegou perto, e agora a ilha
+        // ficou maior no quadro (o aspecto do viewport foi corrigido) e mais
+        // limpa (metade das árvores). O dono: "eles tão gigantes comparados
+        // com a ilha que hoje tá simplificada". A 2,5 um morador tinha metade
+        // da altura da casa ao lado dele.
+        const ESCALA_DO_MORADOR: f32 = 1.5;
+        // E ele OLHA PRA ONDE ANDA. Antes girava devagar em torno do próprio
+        // eixo (`t * 0,25`), que é o truque de quem não tem rumo nenhum.
         let base = Mat4::from_translation(vec3(onde.x, y, onde.y))
-            * Mat4::from_rotation_y(t * 0.25)
+            * Mat4::from_rotation_y(passo.yaw)
             * Mat4::from_scale(Vec3::splat(ESCALA_DO_MORADOR));
         // PELE E CABELO PRECISAM DE COR.
         //
@@ -3465,6 +3582,93 @@ mod testes_da_maquete {
                 );
             }
         }
+    }
+
+    fn zé() -> Morador {
+        Morador {
+            oficio: shared::colonia::Profissao::Lenhador,
+            casa: vec2(4.0, -3.0),
+            trabalho: vec2(50.0, 35.0),
+        }
+    }
+
+    /// Ele SAI, TRABALHA e VOLTA — e o ciclo fecha em casa.
+    ///
+    /// O dono: "eles tão parados no centro da ilha e não andando entre as
+    /// árvores e voltando". O teste varre o ciclo inteiro e exige as quatro
+    /// coisas que faltavam.
+    #[test]
+    fn o_morador_sai_trabalha_e_volta() {
+        let m = zé();
+        let dist = (m.trabalho - m.casa).length();
+        let (mut longe, mut perto, mut andou, mut trabalhou) = (0.0f32, f32::MAX, false, false);
+        for k in 0..=260 {
+            let t = k as f32 / 260.0 * CICLO_DO_MORADOR;
+            let p = rotina_do_morador(&m, 0, t);
+            let d = (p.onde - m.casa).length();
+            longe = longe.max(d);
+            perto = perto.min(d);
+            andou |= p.andar > 0.9;
+            trabalhou |= p.trabalhando;
+            // Nunca sai da linha entre a casa e o ponto de trabalho.
+            let na_linha = (p.onde - m.casa).length() + (p.onde - m.trabalho).length();
+            assert!(na_linha <= dist + 0.01, "saiu do caminho em t={t:.1}");
+            // Batendo machado só parado, e parado só no fim de um trecho.
+            if p.trabalhando {
+                assert!(p.andar < 0.01, "trabalhando em movimento em t={t:.1}");
+                assert!((p.onde - m.trabalho).length() < 0.01, "trabalhando longe do ponto");
+            }
+        }
+        assert!(longe > dist - 0.01, "nunca chegou ao trabalho (só {longe:.1} de {dist:.1})");
+        assert!(perto < 0.01, "nunca voltou pra casa (o mais perto foi {perto:.1})");
+        assert!(andou, "nunca andou de verdade");
+        assert!(trabalhou, "nunca trabalhou");
+    }
+
+    /// O ciclo é FECHADO: onde ele está em t e em t+26 s é o mesmo lugar.
+    #[test]
+    fn o_ciclo_do_morador_fecha() {
+        let m = zé();
+        for k in 0..40 {
+            let t = k as f32 / 40.0 * CICLO_DO_MORADOR;
+            let a = rotina_do_morador(&m, 2, t).onde;
+            let b = rotina_do_morador(&m, 2, t + CICLO_DO_MORADOR).onde;
+            assert!((a - b).length() < 0.01, "o ciclo não fecha em t={t:.1}");
+        }
+    }
+
+    /// Ele OLHA PRA ONDE ANDA: indo, pro trabalho; voltando, pra casa.
+    ///
+    /// Antes o boneco girava em torno do próprio eixo (`t * 0,25`) — o que
+    /// nenhuma pessoa faz enquanto caminha.
+    #[test]
+    fn o_morador_olha_pra_onde_anda() {
+        let m = zé();
+        let ida = (m.trabalho - m.casa).normalize();
+        for k in 0..=260 {
+            let t = k as f32 / 260.0 * CICLO_DO_MORADOR;
+            let p = rotina_do_morador(&m, 0, t);
+            if p.andar < 0.2 {
+                continue;
+            }
+            let olha = vec2(p.yaw.sin(), p.yaw.cos());
+            // Indo, ele se afasta de casa; voltando, se aproxima.
+            let indo = (p.onde - m.casa).length() < (rotina_do_morador(&m, 0, t + 0.2).onde - m.casa).length();
+            let esperado = if indo { ida } else { -ida };
+            assert!(
+                olha.dot(esperado) > 0.99,
+                "olhando torto em t={t:.1}: {olha:?} contra {esperado:?}"
+            );
+        }
+    }
+
+    /// Dois moradores não andam no mesmo compasso.
+    #[test]
+    fn os_moradores_nao_marcham_juntos() {
+        let m = zé();
+        let a = rotina_do_morador(&m, 0, 3.0).onde;
+        let b = rotina_do_morador(&m, 1, 3.0).onde;
+        assert!((a - b).length() > 1.0, "moradores 0 e 1 no mesmo ponto");
     }
 
     /// A faixa nunca estoura o retângulo que o painel deu, e fica centrada.

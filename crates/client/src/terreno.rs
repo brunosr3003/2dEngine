@@ -1517,19 +1517,20 @@ pub async fn previa_da_colonia(
     // úteis pro relevo, mas não é mais isso que a tela mostra. Este é o
     // enquadramento do painel, com os moradores em pé, na proporção da
     // coluna da esquerda.
-    let onde: Vec<(shared::colonia::Profissao, Vec2)> = moradores
-        .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            let a = i as f32 / moradores.len().max(1) as f32 * std::f32::consts::TAU;
-            (*m, eu + vec2(a.cos(), a.sin()) * (plato * 0.55))
-        })
-        .collect();
+    // A MESMA função que o painel usa, e não uma cópia com outra conta.
+    //
+    // Aqui havia um anel improvisado (`plato * 0,55` em volta do centro) — e
+    // a prévia mostrava moradores num lugar em que o jogo nunca os pôs. Já
+    // me queimei exatamente assim com o raio do terreno.
+    let onde = crate::colonia_ui::onde_ficam(&shared::terreno::Gerador::da_colonia(plato), &moradores);
     // REPRODUZ O PAINEL, com os parâmetros dele: terreno recém-criado e
     // `atualiza(centro, 3, 8)` por quadro, que é o que `ColoniaUi::desenha`
     // faz. A prévia antes usava raio 5 e orçamento 400 — e por isso mostrava
     // uma ilha inteira que o jogo nunca chegava a ter.
-    {
+    // O `tp` VIVE ATÉ O FIM da prévia de propósito: as capturas seguintes têm
+    // que sair do MESMO terreno que o painel monta, e não do `t` da câmera do
+    // mundo. Já entreguei prévia validando terreno diferente do que o jogo usa.
+    let tp = {
         let t0 = std::time::Instant::now();
         let mut tp = Terreno::da_colonia(plato);
         println!("[previa colonia] painel: montar Terreno levou {:?}", t0.elapsed());
@@ -1547,13 +1548,19 @@ pub async fn previa_da_colonia(
             }
             next_frame().await;
         }
-    }
+        tp
+    };
     // 52% da largura útil do painel sobre a altura útil dele.
     const PROP_COLUNA: f32 = 0.815;
-    for (m, _) in &onde {
-        let nome = crate::render3d::rig_do_npc(m.papel() as u8, 0);
+    for m in &onde {
+        let nome = crate::render3d::rig_do_npc(m.oficio.papel() as u8, 0);
         let pecas = vox.rig(nome).map(|h| h.len());
-        println!("[previa colonia] {} -> rig '{nome}' pecas={pecas:?}", m.nome());
+        println!(
+            "[previa colonia] {} -> rig '{nome}' pecas={pecas:?} casa ({:.0},{:.0}) trabalho ({:.0},{:.0}) dist {:.0}u",
+            m.oficio.nome(),
+            m.casa.x, m.casa.y, m.trabalho.x, m.trabalho.y,
+            (m.trabalho - m.casa).length(),
+        );
     }
     // GIRO, ELEVAÇÃO E ZOOM, pro dono julgar. A elevação entrou na lista
     // quando a câmera deixou de ser presa no horizontal: as duas últimas
@@ -1587,6 +1594,37 @@ pub async fn previa_da_colonia(
         }
         println!("[previa colonia] vista {k}: giro {giro:.2} elev {elev:.2} zoom {zoom:.1}");
     }
+    // QUATRO MOMENTOS DO CICLO, e não quatro quadros seguidos.
+    //
+    // A rotina do morador dura 26 s; dois quadros a 60 Hz cobrem 33 ms dela.
+    // Sem adiantar o relógio, todo PNG mostraria os quatro bonecos exatamente
+    // no mesmo ponto do caminho — e "eles não andam" é justamente o defeito
+    // que eu vim consertar.
+    for (k, adianta) in [0.0f32, 5.0, 11.0, 18.0].into_iter().enumerate() {
+        crate::render3d::adianta_o_relogio_da_maquete(adianta);
+        for _ in 0..2 {
+            crate::render3d::camera_padrao();
+            clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
+            let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
+            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
+            crate::render3d::maquete_da_ilha(
+                &tp, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 2.2, solido, &onde, vox,
+            );
+            unsafe { macroquad::window::get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/rotina-{k}.png"));
+            next_frame().await;
+        }
+        for m in &onde {
+            let p = crate::render3d::rotina_do_morador(m, 0, adianta);
+            println!(
+                "[previa colonia] t={adianta:.0}s {} em ({:.0},{:.0}) andar={:.2} trabalhando={}",
+                m.oficio.nome(), p.onde.x, p.onde.y, p.andar, p.trabalhando
+            );
+        }
+    }
+    crate::render3d::adianta_o_relogio_da_maquete(0.0);
     for _ in 0..2 {
         crate::render3d::camera_padrao();
         // A MESMA COR de fundo que o painel pinta atrás da maquete: o

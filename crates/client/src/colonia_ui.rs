@@ -102,7 +102,7 @@ struct Maquete {
     /// Calculado aqui e nao no desenho porque sai da VILA, e a vila e' uma
     /// varredura: refazer por quadro seria pagar a mesma conta trinta vezes
     /// por segundo pra um resultado que so' muda quando alguem e' contratado.
-    moradores: Vec<(shared::colonia::Profissao, Vec2)>,
+    moradores: Vec<crate::render3d::Morador>,
 }
 
 impl ColoniaUi {
@@ -258,7 +258,27 @@ impl ColoniaUi {
         // ANTERIOR (a mesma armadilha que já mordeu o botão de criar
         // personagem e o do minimapa). Quem abria o painel tocava no menu, à
         // direita, e o arrasto na maquete nunca começava: "nem dá pra mover".
-        if let Some(q) = apertou_em() {
+        // OS DEDOS SÃO CONTADOS ANTES DO ARRASTO, e a ordem é o conserto.
+        //
+        // O dono: "tá dando uma leve bugada na câmera da ilha quando eu dou
+        // zoom, ela fica reta como se olhando de cima". Numa pinça o
+        // `mouse_position` simulado acompanha UM dos dedos, então abrir os
+        // dedos é um Δy enorme — e desde que o arrasto vertical virou
+        // ELEVAÇÃO, esse Δy jogava a câmera direto no zênite.
+        //
+        // Antes o `arrasto = None` da pinça vinha DEPOIS de o arrasto já ter
+        // sido aplicado naquele quadro: matava o giro do quadro seguinte e
+        // deixava o estrago do atual passar. Com a contagem antes, dois dedos
+        // não chegam a virar arrasto nenhum.
+        let dedos: Vec<Vec2> = touches()
+            .iter()
+            .filter(|t| t.phase != TouchPhase::Ended)
+            .map(|t| t.position)
+            .collect();
+        let pincando = dedos.len() >= 2;
+        if pincando {
+            self.arrasto = None;
+        } else if let Some(q) = apertou_em() {
             self.arrasto = mr.contains(q).then_some(q);
         }
         if !is_mouse_button_down(MouseButton::Left) && touches().is_empty() {
@@ -273,13 +293,7 @@ impl ColoniaUi {
             self.arrasto = Some(m);
         }
         // PINÇA e RODA dão zoom. A maquete não tinha zoom nenhum.
-        let dedos: Vec<Vec2> = touches()
-            .iter()
-            .filter(|t| t.phase != TouchPhase::Ended)
-            .map(|t| t.position)
-            .collect();
-        if dedos.len() >= 2 {
-            self.arrasto = None; // dois dedos não giram
+        if pincando {
             let d = dedos[0].distance(dedos[1]);
             if let Some(antes) = self.pinca.replace(d) {
                 if antes > 1.0 {
@@ -570,8 +584,16 @@ impl ColoniaUi {
 
 /// Limites do zoom da maquete. O mínimo ainda mostra a ilhota inteira; o
 /// máximo chega perto o bastante pra ver um morador trabalhando.
-const ZOOM_MIN: f32 = 0.8;
-const ZOOM_MAX: f32 = 3.5;
+/// Até onde dá pra AFASTAR e CHEGAR PERTO.
+///
+/// O teto era 3,5 e o dono: "o max zoom também tá muito pouco". A distância
+/// de enquadramento fica perto de 200 u, então 6,0 põe a câmera a ~33 u do
+/// alvo — em cima da vila, que é onde ele quer chegar pra ver os moradores.
+///
+/// Seis, e não mais: a câmera fica `dist × sen(elevação)` ACIMA do platô, e
+/// passar disso a enfia dentro do relevo no rasante.
+const ZOOM_MIN: f32 = 0.6;
+const ZOOM_MAX: f32 = 6.0;
 
 /// O ponto onde o dedo ENCOSTOU neste quadro.
 ///
@@ -627,10 +649,10 @@ fn colunas(p: Rect, f: f32) -> (Rect, Rect) {
 ///
 /// Sem prédio do ofício, ele fica na praça: melhor um morador no centro que
 /// um morador invisível.
-fn onde_ficam(
+pub(crate) fn onde_ficam(
     ger: &shared::terreno::Gerador,
     trabalhadores: &[shared::colonia::Profissao],
-) -> Vec<(shared::colonia::Profissao, Vec2)> {
+) -> Vec<crate::render3d::Morador> {
     use std::collections::HashMap;
     let vila = ger.vila();
     let praca = ger.cidade().map(|c| c.centro()).unwrap_or_default();
@@ -651,9 +673,55 @@ fn onde_ficam(
                 vec2(p.pos.x, p.pos.z) + vec2(frente.x, frente.y) * 2.2
             });
         *n += 1;
-        saida.push((*t, predio.unwrap_or(vec2(praca.x, praca.y))));
+        let casa = predio.unwrap_or(vec2(praca.x, praca.y));
+        let i = saida.len();
+        saida.push(crate::render3d::Morador {
+            oficio: *t,
+            casa,
+            trabalho: onde_trabalha(ger, casa, i),
+        });
     }
     saida
+}
+
+/// O ponto LÁ FORA onde o morador colhe, minera ou caça.
+///
+/// Espalhado pelo ÂNGULO ÁUREO: incrementos de 2,4 rad nunca voltam a cair no
+/// mesmo lugar, então com dez moradores nenhum trabalha em cima do outro. Um
+/// passo redondo (meia volta, um quarto) fecharia em dois ou quatro.
+///
+/// O raio fica FORA do platô e DENTRO da costa: o platô é o chão aplainado da
+/// vila (`plato_do_assentamento`, no máximo 36 u) e é onde não há árvore
+/// nenhuma, e a costa é areia. Entre os dois é onde está a mata, que é onde o
+/// dono quer ver o boneco — "andando entre as árvores".
+///
+/// Se o ponto cair na água (a costa ondula até 1,15 do raio, e o sorteio não
+/// sabe disso), ele é puxado pra dentro até achar terra. Melhor um lenhador
+/// perto demais que um lenhador em pé no mar.
+fn onde_trabalha(ger: &shared::terreno::Gerador, casa: Vec2, i: usize) -> Vec2 {
+    const AUREO: f32 = 2.399_963_2;
+    let ang = i as f32 * AUREO + 0.6;
+    let dir = vec2(ang.cos(), ang.sin());
+    let borda = shared::colonia::raio_na_direcao(ang);
+    let plato = ger.cidade().map_or(0.0f32, |c| c.raio_plato);
+    // Entre a beira do platô e 82% da costa, variando por morador pra não
+    // ficarem todos no mesmo anel.
+    let dentro = plato.max(24.0f32) + 6.0;
+    let fora = borda * 0.82;
+    let k = 0.35 + 0.5 * ((i as f32 * 1.7).sin() * 0.5 + 0.5);
+    let mut raio = dentro + (fora - dentro).max(0.0) * k;
+    for _ in 0..8 {
+        let p = dir * raio;
+        if ger.bloco_em(
+            (p.x / shared::terreno::BLOCO).round() as i32,
+            (p.y / shared::terreno::BLOCO).round() as i32,
+        ) > 0
+        {
+            return p;
+        }
+        raio *= 0.88;
+    }
+    casa
 }
 
 fn resumo(e: &Estado) -> String {
@@ -809,6 +877,59 @@ fn cor_do_relogio(horas: f32) -> Color {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// O ponto de trabalho fica NA MATA: em terra firme, fora do platô da
+    /// vila e dentro da costa.
+    ///
+    /// "Andando entre as árvores" pede as três coisas ao mesmo tempo. Dentro
+    /// do platô não há árvore nenhuma (é o chão aplainado da vila), e passar
+    /// da costa põe o lenhador em pé no mar.
+    #[test]
+    fn o_ponto_de_trabalho_fica_na_mata() {
+        use shared::colonia::Profissao as P;
+        for nivel in 1..=shared::colonia::NIVEL_MAX {
+            let plato = shared::colonia::plato_do_assentamento(nivel);
+            let ger = shared::terreno::Gerador::da_colonia(plato);
+            let equipe = [P::Lenhador, P::Minerador, P::Mercenario, P::Curtidor, P::Lenhador, P::Minerador];
+            for m in onde_ficam(&ger, &equipe) {
+                let p = m.trabalho;
+                let bx = (p.x / shared::terreno::BLOCO).round() as i32;
+                let bz = (p.y / shared::terreno::BLOCO).round() as i32;
+                assert!(
+                    ger.bloco_em(bx, bz) > 0,
+                    "{:?} trabalha na água em ({:.0},{:.0}), nivel {nivel}",
+                    m.oficio, p.x, p.y
+                );
+                let r = p.length();
+                assert!(
+                    r > plato,
+                    "{:?} trabalha DENTRO do platô ({r:.0} contra {plato:.0}), nivel {nivel}",
+                    m.oficio
+                );
+                assert!(
+                    r < shared::colonia::raio_na_direcao(p.y.atan2(p.x)),
+                    "{:?} trabalha fora da costa ({r:.0}), nivel {nivel}",
+                    m.oficio
+                );
+            }
+        }
+    }
+
+    /// Dois moradores não trabalham no mesmo lugar.
+    #[test]
+    fn cada_morador_tem_o_proprio_ponto() {
+        use shared::colonia::Profissao as P;
+        let ger = shared::terreno::Gerador::da_colonia(shared::colonia::plato_do_assentamento(3));
+        let equipe = [P::Lenhador; 8];
+        let pontos: Vec<Vec2> = onde_ficam(&ger, &equipe).iter().map(|m| m.trabalho).collect();
+        for i in 0..pontos.len() {
+            for j in i + 1..pontos.len() {
+                let d = (pontos[i] - pontos[j]).length();
+                assert!(d > 6.0, "moradores {i} e {j} a {d:.1} u um do outro");
+            }
+        }
+    }
+
 
     fn e(horas: f32) -> Estado {
         Estado {
