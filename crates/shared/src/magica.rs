@@ -374,6 +374,18 @@ pub const NIVEL_CHAO: i32 = (ALTURA / crate::terreno::BLOCO) as i32 - 1;
 /// arquipélago deixaria de ser arquipélago.
 pub const NIVEL_FUNDO: i32 = -8;
 
+/// Fração do raio que é PRAIA: faixa plana, no nível da orla, antes de o
+/// terreno subir.
+///
+/// Sem ela a areia era um CONTORNO. `altura_do_domo` sobe em quadrática logo
+/// da beira, então o chão passava do nível da orla em duas ou três colunas e
+/// a praia virava uma linha de um pixel — visto no mapa de altura, não
+/// deduzido. O dono pediu "uma ilha com praia e tudo mais".
+///
+/// Ela também ajuda a caminhada: é a parte mais rasa da ilhota, e agora é
+/// plana de verdade em vez de ser a mais íngreme.
+pub const PRAIA: f32 = 0.16;
+
 /// Fração do raio que é TOPO PLANO.
 ///
 /// O platô não é enfeite: é onde a pedra e a Energia conseguem nascer. Os
@@ -398,7 +410,16 @@ fn altura_do_domo(d: f32, raio: f32) -> f32 {
     if t <= TOPO_PLANO {
         return ALTURA_TOPO;
     }
-    let k = (t - TOPO_PLANO) / (1.0 - TOPO_PLANO);
+    // A PRAIA, plana, na beira.
+    let beira = 1.0 - PRAIA;
+    if t >= beira {
+        return ALTURA;
+    }
+    // A ladeira agora vai do platô até o começo da praia — trecho mais curto
+    // que antes, então ela ficou um pouco mais íngreme. Continua abaixo do
+    // 1,0 u/u que o passo vence, e `da_chegada_se_anda_ate_toda_ilhota` é
+    // quem confere.
+    let k = (t - TOPO_PLANO) / (beira - TOPO_PLANO);
     ALTURA_TOPO + (ALTURA - ALTURA_TOPO) * k * k
 }
 
@@ -418,7 +439,13 @@ fn altura_do_domo(d: f32, raio: f32) -> f32 {
 /// silhueta girada, que é outro jeito de parecer padrão.
 fn raio_da_ilhota(i: &Ilhota, ang: f32) -> f32 {
     let fase = i.centro.x * 0.031 + i.centro.y * 0.017;
-    i.raio * (1.0 + 0.11 * (ang * 3.0 + fase).sin() + 0.05 * (ang * 5.0 - fase * 1.7).sin())
+    // TRÊS harmônicas, e não duas. Com duas a silhueta saía em trevo — três
+    // lóbulos gordos e iguais, que de longe lê como folha e não como ilha.
+    // A terceira, mais rápida e fraca, quebra a repetição sem virar serrilha.
+    i.raio
+        * (1.0 + 0.10 * (ang * 3.0 + fase).sin()
+            + 0.06 * (ang * 5.0 - fase * 1.7).sin()
+            + 0.035 * (ang * 8.0 + fase * 0.6).sin())
 }
 
 /// A ondulação do chão da ilhota, em unidades.
