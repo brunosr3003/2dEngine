@@ -1275,12 +1275,17 @@ pub struct FiltrosDoMapa {
 }
 
 impl Default for FiltrosDoMapa {
+    /// O ESPELHO do `mapa::Filtros::default` do cliente, e quem manda de
+    /// verdade: `From<&FiltrosDoMapa>` sobrescreve o padrao do cliente com o
+    /// que vem pelo fio. Mudar um sem o outro ja' fez o mapa nascer errado
+    /// duas vezes — `o_padrao_do_fio_e_o_padrao_do_cliente` e' quem impede a
+    /// terceira.
     fn default() -> Self {
         Self {
             mobs: false,
             bichos_ocultos: Vec::new(),
-            recursos: [true; 5],
-            energia: true,
+            recursos: [false; 5],
+            energia: false,
             vila: true,
         }
     }

@@ -233,23 +233,34 @@ pub struct Filtros {
 }
 
 impl Default for Filtros {
-    /// O mapa nasce MOSTRANDO o que serve pra se orientar.
+    /// O mapa nasce com a VILA e mais nada marcado.
     ///
-    /// Nascia com tudo desligado: o jogador abria e via a ilha, o contorno e
-    /// nada mais. O dono: "mapa ta mt simples, n mostra recursos visualmente,
-    /// n mostra casa porto, apenas a ilha em si". Estava tudo la' — atras de
-    /// filtros que ninguem sabia que existiam.
+    /// Tres versoes ate' aqui, e vale guardar a sequencia porque ela e' a
+    /// razao do padrao de hoje:
     ///
-    /// Recurso, Energia e VILA (cidade, porto, predios, NPCs) entram ligados:
-    /// sao pontos de referencia, e mapa sem referencia e' desenho. MOB fica
-    /// desligado, e so' a alta densidade aparece (`zona_visivel`) — foi ele
-    /// que poluia a tela.
+    /// 1. tudo DESLIGADO — o jogador abria e via so' o contorno da ilha
+    ///    ("mapa ta mt simples, n mostra recursos, n mostra casa porto");
+    /// 2. recurso, energia e vila LIGADOS — virou o oposto, e o dono: "o
+    ///    filtro padrao do mapa ta vindo com tudo clicado como ativo";
+    /// 3. so' a VILA.
+    ///
+    /// A vila fica porque e' REFERENCIA: e' por ela que o jogador se situa, e
+    /// mapa sem referencia e' desenho. Recurso e energia saem porque sao
+    /// BUSCA — quem quer madeira liga madeira, e ate' entao aquilo e' ruido
+    /// por cima do relevo.
+    ///
+    /// `mobs` desligado e `bichos_ocultos` vazio nao e' contradicao: o filtro
+    /// agregado controla o que APARECE, e a lista controla o que fica
+    /// ESCONDIDO quando ele e' ligado. Vazia, ligar "mobs" mostra todos de
+    /// uma vez, que e' o que o dono pediu ("apenas os mobs, todos eles no
+    /// caso, mas com o filtro mobs desativado"). Desligado, so' a zona de
+    /// ALTA DENSIDADE aparece (`zona_visivel`) — foi o mob solto que poluia.
     fn default() -> Self {
         Self {
             mobs: false,
             bichos_ocultos: HashSet::new(),
-            recursos: [true; 5],
-            energia: true,
+            recursos: [false; 5],
+            energia: false,
             vila: true,
         }
     }
@@ -294,10 +305,27 @@ mod testes_dos_filtros {
             "vila desligada no fio: porto e NPCs somem do mapa"
         );
         assert_eq!(do_fio.mobs, do_cliente.mobs);
-        // E o que o padrão PROMETE: referência ligada, mob desligado (foi ele
-        // que poluiu a tela; a alta densidade aparece por `zona_visivel`).
-        assert!(do_fio.vila && do_fio.energia && do_fio.recursos.iter().all(|r| *r));
-        assert!(!do_fio.mobs);
+        // E o que o padrão PROMETE hoje: SÓ a vila marcada.
+        //
+        // Recurso e energia já nasceram ligados e o dono reclamou ("o filtro
+        // padrão do mapa tá vindo com tudo clicado como ativo"); antes disso
+        // nasciam desligados junto com a vila, e ele reclamou do contrário.
+        // O meio-termo é: referência sim, busca não.
+        assert!(do_fio.vila, "vila é a referência: sem ela o mapa é desenho");
+        assert!(!do_fio.energia, "energia é busca, não referência");
+        assert!(
+            do_fio.recursos.iter().all(|r| !*r),
+            "recurso é busca: nasce desmarcado"
+        );
+        assert!(!do_fio.mobs, "mob solto é o que poluía a tela");
+        // A lista de ocultos VAZIA é o par do `mobs: false`: o agregado
+        // controla o que aparece, a lista o que fica escondido quando ele é
+        // ligado. Vazia, ligar "mobs" mostra todos de uma vez — "apenas os
+        // mobs, todos eles no caso, mas com o filtro mobs desativado".
+        assert!(
+            do_fio.bichos_ocultos.is_empty(),
+            "nenhum bicho nasce escondido"
+        );
     }
 }
 
@@ -3025,16 +3053,17 @@ mod tests {
     #[test]
     fn filtros_escondem_zona_pelo_dominante_e_regiao_pelo_tipo() {
         let lobos = zona(0.0, (1, 3), vec![(0, 83), (1, 17)]);
-        // O mapa abre MOSTRANDO o que serve pra se orientar (22/09/2026).
+        // O mapa abre com a VILA, e so' ela (23/09/2026).
         //
-        // Abria com tudo desligado — o jogador via a ilha e nada mais, e o
-        // dono achou que o mapa simplesmente nao tinha aquilo. Recurso,
-        // Energia e vila entram ligados; MOB nao, porque e' o que poluia.
+        // Ja' abriu com tudo desligado (o jogador via a ilha e nada mais) e
+        // depois com recurso, energia e vila ligados — e ai' o dono: "o
+        // filtro padrao ta vindo com tudo clicado como ativo". A vila fica
+        // porque e' REFERENCIA; recurso e energia saem porque sao BUSCA.
         let padrao = Filtros::default();
-        assert!(!padrao.zona_visivel(&lobos), "mob comum continua desligado");
+        assert!(!padrao.zona_visivel(&lobos), "mob comum nasce desligado");
         assert!(
-            (0..=5).all(|t| padrao.regiao_visivel(&regiao(0.0, t))),
-            "recurso tem que nascer visivel"
+            (0..=5).all(|t| !padrao.regiao_visivel(&regiao(0.0, t))),
+            "recurso nasce DESLIGADO: quem procura madeira liga madeira"
         );
         assert!(padrao.vila, "cidade e porto sao referencia, nao enfeite");
         let mut f = Filtros {
