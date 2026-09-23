@@ -135,6 +135,8 @@ enum Tela {
     /// mapa dentro dele. Ver docs/SERVIDORES_E_CANAIS.md.
     Servidores,
     Login,
+    /// Criar conta por usuário e senha (o Google cria a dele sozinho).
+    Cadastro,
     Conectando,
     Personagens,
     /// Canal de instancia unica lotado. Nao e' recusa: e' vez na fila.
@@ -167,6 +169,14 @@ struct Jogo {
     ja_entrou: bool,
     /// Recado a mostrar na tela de login (sessão vencida, por exemplo).
     erro_login: Option<String>,
+    /// Os três campos do cadastro e qual deles tem o teclado.
+    cad_usuario: String,
+    cad_email: String,
+    cad_senha: String,
+    cad_foco: usize,
+    /// Pedido de cadastro em voo, e o que ele respondeu.
+    cad_pedido: Option<std::sync::mpsc::Receiver<api::RespostaCadastro>>,
+    cad_recado: Option<(String, bool)>,
     /// Algum campo de login foi tocado: o teclado da tela fica aberto.
     campo_login_ativo: bool,
     teclado_virtual: teclado_virtual::TecladoVirtual,
@@ -574,6 +584,12 @@ async fn main() {
         lembrar: lembranca.lembrar,
         ja_entrou: false,
         erro_login: None,
+        cad_usuario: String::new(),
+        cad_email: String::new(),
+        cad_senha: String::new(),
+        cad_foco: 0,
+        cad_pedido: None,
+        cad_recado: None,
         campo_login_ativo: false,
         teclado_virtual: teclado_virtual::TecladoVirtual::default(),
         google: login_google::LoginGoogle::consultando(),
@@ -769,6 +785,19 @@ fn tamanho_janela() -> (i32, i32) {
         .unwrap_or((940, 980))
 }
 
+/// Onde cada peça da tela de CADASTRO fica.
+///
+/// Ordem: usuário, e-mail, senha, criar, voltar.
+fn layout_do_cadastro(r: Rect) -> [Rect; 5] {
+    [
+        Rect::new(r.x, r.y + 52.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 128.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 204.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 266.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 320.0, r.w, 44.0),
+    ]
+}
+
 /// Onde cada peça da tela de login fica, dado o retângulo do painel.
 ///
 /// Ordem: usuário, senha, lembrar, entrar, "ou", google.
@@ -778,7 +807,7 @@ fn tamanho_janela() -> (i32, i32) {
 /// não há como conferir que nada encosta em nada a não ser abrindo o jogo — e
 /// deixar de abrir é o que já me fez entregar tela quebrada mais de uma vez
 /// neste projeto.
-fn layout_do_login(r: Rect) -> [Rect; 6] {
+fn layout_do_login(r: Rect) -> [Rect; 7] {
     [
         Rect::new(r.x, r.y + 46.0, r.w, 42.0),
         Rect::new(r.x, r.y + 122.0, r.w, 42.0),
@@ -786,6 +815,7 @@ fn layout_do_login(r: Rect) -> [Rect; 6] {
         Rect::new(r.x, r.y + 236.0, r.w, 44.0),
         Rect::new(r.x, r.y + 282.0, r.w, 14.0),
         Rect::new(r.x, r.y + 300.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 356.0, r.w, 44.0),
     ]
 }
 
@@ -799,10 +829,10 @@ mod testes_do_login {
     /// mudar junto, este teste é quem avisa.
     #[test]
     fn a_tela_de_login_nao_se_sobrepoe() {
-        const ALTURA: f32 = 480.0;
+        const ALTURA: f32 = 540.0;
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_login(r);
-        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google"];
+        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google", "criar"];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
                 a.y >= r.y && a.y + a.h <= r.y + ALTURA,
@@ -820,6 +850,34 @@ mod testes_do_login {
         }
     }
 
+    /// A tela de cadastro também não se sobrepõe nem vaza.
+    #[test]
+    fn a_tela_de_cadastro_nao_se_sobrepoe() {
+        const ALTURA: f32 = 420.0;
+        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
+        let pecas = layout_do_cadastro(r);
+        let nomes = ["usuário", "e-mail", "senha", "criar", "voltar"];
+        for (i, a) in pecas.iter().enumerate() {
+            assert!(
+                a.y >= r.y && a.y + a.h <= r.y + ALTURA,
+                "{} vaza o painel: {a:?}",
+                nomes[i]
+            );
+            for (j, b) in pecas.iter().enumerate().skip(i + 1) {
+                assert!(
+                    a.y + a.h <= b.y || b.y + b.h <= a.y,
+                    "{} encosta em {}",
+                    nomes[i],
+                    nomes[j]
+                );
+            }
+        }
+        // Os dois botões cabem num dedo.
+        for (r, nome) in [(pecas[3], "criar"), (pecas[4], "voltar")] {
+            assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
+        }
+    }
+
     /// O que se toca tem o tamanho de um dedo (44 pt da Apple).
     ///
     /// O dono já reclamou disso uma vez — "os botões de ação estão muito
@@ -828,7 +886,7 @@ mod testes_do_login {
     #[test]
     fn o_que_se_toca_cabe_num_dedo() {
         let p = layout_do_login(Rect::new(0.0, 0.0, 460.0, 480.0));
-        for (r, nome) in [(p[2], "lembrar"), (p[3], "entrar"), (p[5], "google")] {
+        for (r, nome) in [(p[2], "lembrar"), (p[3], "entrar"), (p[5], "google"), (p[6], "criar")] {
             let toque = ui::area_de_toque(r);
             assert!(toque.h >= 44.0, "{nome} tem só {:.0} pt de altura", toque.h);
         }
@@ -4586,6 +4644,7 @@ impl Jogo {
             }
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
+            Tela::Cadastro => self.tela_cadastro(),
             Tela::Personagens => self.tela_personagens(),
             Tela::Conectando => {
                 ui::fundo();
@@ -5764,6 +5823,130 @@ impl Jogo {
         }
     }
 
+    /// Criar conta por usuário e senha.
+    ///
+    /// O `/api/register` do `web` sempre existiu e nunca teve tela: quem não
+    /// tinha conta dependia de alguém criar uma no banco. Com o login do
+    /// Google no ar ficou pior, porque passou a haver UM jeito de entrar
+    /// sozinho e ele exigia conta Google.
+    fn tela_cadastro(&mut self) {
+        ui::fundo();
+        const ALTURA: f32 = 420.0;
+        let topo = (screen_height() - ALTURA) * 0.5;
+        let p = layout_do_cadastro(Rect::new(0.0, 0.0, 1.0, 1.0));
+        let _ = p;
+        // O campo com foco pode ser o terceiro, e é ele que o teclado da tela
+        // não pode cobrir.
+        let fundo_campo = topo + 60.0 + 52.0 + self.cad_foco as f32 * 76.0 + 42.0;
+        let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
+        ui::subir_paineis(teclado_virtual::deslocamento(
+            aberto,
+            screen_height(),
+            topo,
+            fundo_campo,
+        ));
+        let r = ui::painel(460.0, ALTURA, "criar conta");
+        ui::subir_paineis(0.0);
+        let cx = r.x + r.w * 0.5;
+        let [cu, ce, cs, ccriar, cvoltar] = layout_do_cadastro(r);
+
+        // A RESPOSTA do pedido em voo. Lida antes de desenhar pra o recado já
+        // aparecer no mesmo quadro em que chega.
+        if let Some(rx) = &self.cad_pedido {
+            if let Ok(resp) = rx.try_recv() {
+                self.cad_pedido = None;
+                use api::RespostaCadastro as R;
+                match resp {
+                    R::Criada => {
+                        // Entra direto: o jogador acabou de digitar usuário e
+                        // senha, pedir de novo na tela ao lado seria só
+                        // desconfiança do nosso próprio cadastro.
+                        self.usuario = self.cad_usuario.clone();
+                        self.senha = self.cad_senha.clone();
+                        self.cad_senha.clear();
+                        self.erro_login = None;
+                        self.token_login = None;
+                        self.tela = Tela::Login;
+                        self.conectar();
+                        return;
+                    }
+                    R::JaExiste(m) => self.cad_recado = Some((m, true)),
+                    R::Recusado(m) => self.cad_recado = Some((m, true)),
+                    R::Erro(m) => self.cad_recado = Some((format!("falhou: {m}"), true)),
+                }
+            }
+        }
+
+        let esperando = self.cad_pedido.is_some();
+        let digitado = self.teclado.digitado().to_vec();
+        let mut campos = [
+            (cu, "usuário", std::mem::take(&mut self.cad_usuario), false),
+            (ce, "e-mail", std::mem::take(&mut self.cad_email), false),
+            (cs, "senha", std::mem::take(&mut self.cad_senha), true),
+        ];
+        for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
+            if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
+                self.cad_foco = i;
+                self.campo_login_ativo = true;
+            }
+        }
+        self.cad_usuario = std::mem::take(&mut campos[0].2);
+        self.cad_email = std::mem::take(&mut campos[1].2);
+        self.cad_senha = std::mem::take(&mut campos[2].2);
+
+        // Tab e Enter andam pelos campos, como no login.
+        if is_key_pressed(KeyCode::Tab) {
+            self.cad_foco = (self.cad_foco + 1) % 3;
+        }
+        let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
+        if enter && self.cad_foco < 2 {
+            self.cad_foco += 1;
+        }
+
+        // AS MESMAS REGRAS DO SERVIDOR, conferidas aqui.
+        //
+        // Não é desconfiança dele: é que uma viagem de rede para ouvir "senha
+        // deve ter 6-128 chars" é uma espera que o jogador não precisa pagar.
+        // O servidor continua sendo quem decide — isto aqui só adianta.
+        let motivo = if self.cad_usuario.trim().is_empty() || self.cad_usuario.trim().len() > 32 {
+            Some("usuário: de 1 a 32 caracteres")
+        } else if !self.cad_email.contains('@') || self.cad_email.trim().len() > 254 {
+            Some("e-mail inválido")
+        } else if self.cad_senha.len() < 6 {
+            Some("senha: no mínimo 6 caracteres")
+        } else if self.cad_senha.len() > 128 {
+            Some("senha: no máximo 128 caracteres")
+        } else {
+            None
+        };
+        if let Some(m) = motivo {
+            ui::texto_centro(cx, ccriar.y - 10.0, m, 13, ui::APOIO);
+        }
+        let pode = motivo.is_none() && !esperando;
+        let rotulo = if esperando { "criando…" } else { "criar conta" };
+        if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 2 && enter)) && pode {
+            self.campo_login_ativo = false;
+            self.cad_recado = None;
+            self.cad_pedido = Some(api::criar_conta(
+                self.cad_usuario.trim(),
+                self.cad_email.trim(),
+                &self.cad_senha,
+            ));
+        }
+        if ui::botao(cvoltar, "voltar", !esperando) {
+            self.campo_login_ativo = false;
+            self.cad_recado = None;
+            self.tela = Tela::Login;
+        }
+        if let Some((m, ruim)) = self.cad_recado.clone() {
+            if ruim {
+                ui::erro(cx, r.y + 30.0, &m);
+            } else {
+                ui::texto_centro(cx, r.y + 30.0, &m, 14, ui::OURO);
+            }
+        }
+    }
+
     fn tela_login(&mut self) {
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
         // o "lembrar de mim" valer a pena — lembrar só o nome de usuário
@@ -5781,10 +5964,10 @@ impl Jogo {
             return;
         }
         ui::fundo();
-        // 480 e não 440: entrou a linha do "lembrar de mim" entre a senha e o
-        // botão. Sem crescer, ela ficaria a 32 px do botão — abaixo do alvo de
-        // dedo e encostando nele.
-        const ALTURA: f32 = 480.0;
+        // Cresceu duas vezes: 440 -> 480 pelo "lembrar de mim", 480 -> 540
+        // pelo "criar conta". Cada linha nova empurra o resto, e é por isso
+        // que as posições viraram `layout_do_login` com teste.
+        const ALTURA: f32 = 540.0;
         // Teclado da tela aberto: o painel sobe o bastante pro campo com foco
         // (a senha, no pior caso) ficar acima dele.
         let topo = (screen_height() - ALTURA) * 0.5;
@@ -5806,7 +5989,7 @@ impl Jogo {
         if let Some(e) = self.erro_login.clone() {
             ui::erro(cx, r.y + 30.0, &e);
         }
-        let [cu, cs, clembrar, centrar, cou, cgoogle] = layout_do_login(r);
+        let [cu, cs, clembrar, centrar, cou, cgoogle, ccriar] = layout_do_login(r);
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
@@ -5858,6 +6041,17 @@ impl Jogo {
         if ui::caixa(clembrar, "lembrar de mim", &mut self.lembrar) && !self.lembrar {
             self.token_login = None;
             crate::lembranca::esquece_a_sessao();
+        }
+        // CRIAR CONTA: o caminho de quem não quer usar o Google.
+        //
+        // Fica ABAIXO do Google de propósito. O `/api/register` sempre
+        // existiu no servidor e nunca teve tela — quem não tinha conta não
+        // tinha como entrar no jogo por conta própria.
+        if ui::botao(ccriar, "criar conta", true) {
+            self.campo_login_ativo = false;
+            self.erro_login = None;
+            self.cad_recado = None;
+            self.tela = Tela::Cadastro;
         }
 
         // Entrar com Google: so' aparece com o servidor configurado.

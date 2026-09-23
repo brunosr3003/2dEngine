@@ -14,6 +14,10 @@ use crate::hud_estilo as estilo;
 
 pub const OURO: Color = estilo::OURO;
 pub const OURO_CLARO: Color = Color::new(1.0, 0.86, 0.56, 1.0);
+/// Texto de apoio: dica, motivo, legenda. Ja' existia como `APAGADO`
+/// privado; virou publico quando a tela de cadastro precisou dizer POR QUE o
+/// botao esta' desligado.
+pub const APOIO: Color = APAGADO;
 const FUNDO_TOPO: Color = Color::new(0.055, 0.075, 0.115, 1.0);
 const FUNDO_BASE: Color = Color::new(0.020, 0.028, 0.045, 1.0);
 const TEXTO: Color = estilo::TEXTO;

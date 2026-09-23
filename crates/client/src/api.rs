@@ -101,6 +101,102 @@ fn get(caminho: &str) -> Result<(u16, String), String> {
     Ok((codigo, corpo.to_string()))
 }
 
+/// POST cru no `web`: (codigo HTTP, corpo).
+///
+/// Gemeo do `get`, e nao uma generalizacao dele: o pedido com corpo precisa de
+/// `Content-Length` e de `Content-Type`, e enfiar isso no `get` com `Option`
+/// deixaria as duas chamadas piores pra nao repetir dez linhas.
+fn post(caminho: &str, corpo_json: &str) -> Result<(u16, String), String> {
+    let endereco = endereco();
+    let mut fluxo = TcpStream::connect(&endereco).map_err(|e| format!("{endereco}: {e}"))?;
+    fluxo
+        .set_read_timeout(Some(Duration::from_secs(8)))
+        .map_err(|e| e.to_string())?;
+    let pedido = format!(
+        "POST {caminho} HTTP/1.1\r\nHost: {endereco}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n{corpo_json}",
+        corpo_json.len()
+    );
+    fluxo
+        .write_all(pedido.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut resposta = String::new();
+    fluxo
+        .read_to_string(&mut resposta)
+        .map_err(|e| e.to_string())?;
+    let (cabecalho, corpo) = resposta
+        .split_once("\r\n\r\n")
+        .ok_or("resposta sem corpo")?;
+    let codigo = cabecalho
+        .split_whitespace()
+        .nth(1)
+        .and_then(|c| c.parse().ok())
+        .ok_or("resposta sem codigo HTTP")?;
+    Ok((codigo, corpo.to_string()))
+}
+
+/// Escapa o que vai DENTRO de uma string JSON.
+///
+/// Sem isto, uma senha com aspas ou barra invertida quebraria o JSON e o
+/// servidor responderia 400 com uma mensagem que nao explica nada — e senha
+/// e' justamente onde esses caracteres aparecem.
+fn escapa(v: &str) -> String {
+    let mut s = String::with_capacity(v.len() + 2);
+    for c in v.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            '\n' => s.push_str("\\n"),
+            '\r' => s.push_str("\\r"),
+            '\t' => s.push_str("\\t"),
+            c if (c as u32) < 0x20 => s.push_str(&format!("\\u{:04x}", c as u32)),
+            c => s.push(c),
+        }
+    }
+    s
+}
+
+/// O que o cadastro respondeu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RespostaCadastro {
+    Criada,
+    /// Usuario ou e-mail ja' existe (409), com o campo que bateu.
+    JaExiste(String),
+    /// O servidor recusou (400) — a mensagem dele ja' e' em portugues.
+    Recusado(String),
+    Erro(String),
+}
+
+/// Le' a resposta de `/api/register`.
+pub fn interpreta_cadastro(codigo: u16, corpo: &str) -> RespostaCadastro {
+    match codigo {
+        201 => RespostaCadastro::Criada,
+        409 => RespostaCadastro::JaExiste(
+            campo_json(corpo, "error").unwrap_or_else(|| "já existe".into()),
+        ),
+        400 => RespostaCadastro::Recusado(
+            campo_json(corpo, "error").unwrap_or_else(|| "dados inválidos".into()),
+        ),
+        c => RespostaCadastro::Erro(
+            campo_json(corpo, "error").unwrap_or_else(|| format!("erro do servidor ({c})")),
+        ),
+    }
+}
+
+/// Cria a conta por usuario, e-mail e senha.
+pub fn criar_conta(usuario: &str, email: &str, senha: &str) -> Receiver<RespostaCadastro> {
+    let corpo = format!(
+        r#"{{"username":"{}","email":"{}","password":"{}"}}"#,
+        escapa(usuario),
+        escapa(email),
+        escapa(senha)
+    );
+    em_thread(move || match post("/api/register", &corpo) {
+        Ok((c, corpo)) => interpreta_cadastro(c, &corpo),
+        Err(e) => RespostaCadastro::Erro(e),
+    })
+}
+
 /// Campo de texto de um JSON pequeno do nosso servidor (sem parser completo).
 pub fn campo_json(corpo: &str, chave: &str) -> Option<String> {
     let i = corpo.find(&format!("\"{chave}\""))? + chave.len() + 2;
@@ -207,6 +303,40 @@ mod testes {
         assert_eq!(porta_de_entrada(&lotado, "SA01").as_deref(), Some("h:9001"));
         // Sem ilha inicial no ar: entra pelo que houver.
         assert_eq!(porta_de_entrada(&canais[..1], "SA01").as_deref(), Some("h:9100"));
+    }
+
+    #[test]
+    fn le_a_resposta_do_cadastro() {
+        assert_eq!(interpreta_cadastro(201, ""), RespostaCadastro::Criada);
+        assert_eq!(
+            interpreta_cadastro(409, r#"{"error":"username ja existe"}"#),
+            RespostaCadastro::JaExiste("username ja existe".into())
+        );
+        assert_eq!(
+            interpreta_cadastro(400, r#"{"error":"senha deve ter 6-128 chars"}"#),
+            RespostaCadastro::Recusado("senha deve ter 6-128 chars".into())
+        );
+        // Sem corpo util, ainda assim diz o que houve.
+        assert!(matches!(interpreta_cadastro(502, ""), RespostaCadastro::Erro(_)));
+    }
+
+    /// Senha com aspas não quebra o JSON.
+    ///
+    /// É o caractere que mais aparece em senha gerada por gerenciador, e sem
+    /// escape o servidor responderia 400 com uma mensagem que não explica
+    /// nada — o jogador veria "dados inválidos" com dados válidos.
+    #[test]
+    fn senha_com_aspas_e_barra_sobrevive() {
+        assert_eq!(escapa(r#"a"b\c"#), r#"a\"b\\c"#);
+        assert_eq!(escapa("linha\nnova"), "linha\\nnova");
+        // E o corpo montado continua sendo JSON legível pelo nosso próprio
+        // leitor de campo.
+        let corpo = format!(
+            r#"{{"username":"{}","email":"{}","password":"{}"}}"#,
+            escapa("zé"), escapa("a@b.c"), escapa(r#"se"nha"#)
+        );
+        assert_eq!(campo_json(&corpo, "password").as_deref(), Some(r#"se"nha"#));
+        assert_eq!(campo_json(&corpo, "username").as_deref(), Some("zé"));
     }
 
     #[test]
