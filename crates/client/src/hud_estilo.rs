@@ -78,6 +78,18 @@ pub fn no_painel<T>(k: f32, corpo: impl FnOnce() -> T) -> T {
 }
 
 /// Uma medida "de 100%" na escala atual (a do painel, dentro de `no_painel`).
+/// O ALVO MÍNIMO DE UM DEDO, em pontos.
+///
+/// Quarenta e quatro é o piso que a Apple publica na HIG, e o número bate com
+/// a queixa: os botões do diálogo ("Próximo", "Receber") tinham 28 px de
+/// altura, e o dono "clicava errado toda hora".
+///
+/// Varrendo o cliente com este piso saíram **55** botões abaixo dele, de 28 a
+/// 42. Consertar 55 chamadas à mão é o jeito certo de esquecer três, então
+/// quem cresce é a ÁREA DE TOQUE em `ui::botao` — o desenho fica onde o
+/// layout pôs.
+pub const ALVO_DO_DEDO: f32 = 44.0;
+
 pub fn u(v: f32) -> f32 {
     v * fator_texto()
 }

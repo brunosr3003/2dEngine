@@ -68,10 +68,35 @@ fn dentro(r: Rect, p: Vec2) -> bool {
     p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }
 
+/// A ÁREA DE TOQUE de um botão: a caixa dele, crescida até o dedo caber.
+///
+/// O desenho fica onde o layout pôs; só o alvo cresce. É o conserto de origem
+/// pros 55 botões do cliente que estavam abaixo de `ALVO_DO_DEDO` — o dono:
+/// "os botões de ação estão muito pequenos, eu clico errado toda hora".
+///
+/// **O crescimento é limitado**, e isso importa: há fileiras de botões
+/// pequenos colados (os cinco ofícios da colônia, o `‹ ›` do rastreador). Um
+/// alvo que crescesse até 44 sem teto invadiria o vizinho, e aí o toque
+/// acertaria o botão errado — trocando um defeito por outro pior, porque o
+/// errado seria invisível. Sete pontos por lado na vertical e quatro na
+/// horizontal levam 28 a 42 e 38 a 44, sem alcançar vizinho que já esteja
+/// visualmente separado.
+pub fn area_de_toque(r: Rect) -> Rect {
+    let alvo = estilo::ALVO_DO_DEDO;
+    let h = r.h.max(alvo).min(r.h + 14.0);
+    let w = r.w.max(alvo).min(r.w + 8.0);
+    Rect::new(
+        r.x - (w - r.w) * 0.5,
+        r.y - (h - r.h) * 0.5,
+        w,
+        h,
+    )
+}
+
 /// Botao. `true` no quadro em que foi clicado.
 pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     let (mx, my) = mouse_position();
-    let sobre = ativo && dentro(r, vec2(mx, my));
+    let sobre = ativo && dentro(area_de_toque(r), vec2(mx, my));
     let e = estilo::estado(
         sobre,
         is_mouse_button_down(MouseButton::Left),
@@ -205,3 +230,58 @@ pub fn barra(r: Rect, fracao: f32) {
 pub fn erro(cx: f32, y: f32, msg: &str) {
     estilo::texto_centro_forte(cx, y, msg, 16, estilo::VERMELHO);
 }
+#[cfg(test)]
+mod testes_do_alvo {
+    use super::*;
+
+    /// O ALVO CRESCE até o dedo caber, e PARA antes de invadir o vizinho.
+    ///
+    /// Os dois lados importam. Sem crescer, os 55 botões abaixo de 44 pontos
+    /// continuam errando o toque — foi a queixa do dono. Crescendo sem teto,
+    /// uma fileira de botões colados (os cinco ofícios da colônia) passa a
+    /// acertar o vizinho, que é pior: o erro fica invisível.
+    #[test]
+    fn o_alvo_cresce_ate_o_dedo_e_para_antes_do_vizinho() {
+        let alvo = estilo::ALVO_DO_DEDO;
+
+        // Pequeno demais: cresce, e fica CENTRADO no original.
+        let r = Rect::new(100.0, 100.0, 108.0, 28.0);
+        let a = area_de_toque(r);
+        assert!(a.h > r.h, "não cresceu");
+        assert!(a.h <= r.h + 14.0, "cresceu além do teto: {:.0}", a.h);
+        assert!(
+            (a.center().x - r.center().x).abs() < 0.01
+                && (a.center().y - r.center().y).abs() < 0.01,
+            "o alvo saiu do centro do botão"
+        );
+
+        // Já grande: não muda nada.
+        let g = Rect::new(0.0, 0.0, 120.0, 50.0);
+        let ag = area_de_toque(g);
+        assert_eq!((ag.w, ag.h), (g.w, g.h), "botão grande não devia crescer");
+
+        // FILEIRA COLADA: cinco botões de 62x32 lado a lado, como os ofícios
+        // da colônia. Nenhum alvo pode alcançar o CENTRO do vizinho — se
+        // alcançasse, tocar no meio de um acertaria o outro.
+        let bw = 62.0;
+        let caixas: Vec<Rect> = (0..5)
+            .map(|i| Rect::new(i as f32 * bw, 0.0, bw - 4.0, 32.0))
+            .collect();
+        for (i, c) in caixas.iter().enumerate() {
+            let a = area_de_toque(*c);
+            for (j, o) in caixas.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                assert!(
+                    !dentro(a, o.center()),
+                    "o alvo do botão {i} alcança o centro do {j}"
+                );
+            }
+        }
+
+        // E o piso é respeitado onde há espaço: um botão de 38 chega a 44.
+        assert_eq!(area_de_toque(Rect::new(0.0, 0.0, 150.0, 38.0)).h, alvo);
+    }
+}
+

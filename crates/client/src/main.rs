@@ -3671,6 +3671,13 @@ impl Jogo {
         }
     }
 
+        /// Quanto o auto missão espera entre uma fala e a próxima.
+    ///
+    /// Um segundo e meio: a conversa é onde a história acontece, e passar
+    /// tudo num quadro faria o texto piscar e sumir sem ninguém ler. Longo o
+    /// bastante pra ler uma linha, curto o bastante pra não virar espera.
+    const AUTO_FALA_S: f64 = 1.5;
+
     /// Clique no menu de todas as missoes.
     fn clique_menu_missoes(&mut self, c: menu_missoes::Clique) {
         match c {
@@ -5179,7 +5186,28 @@ impl Jogo {
             }
         }
         let agora = get_time();
-        match self.dialogo.desenha() {
+        // A AUTO MISSÃO CONDUZ A CONVERSA.
+        //
+        // O dono: "no auto missão tem que aceitar e entregar missões no NPC
+        // de maneira automática também, clicar em próximo na conversa etc".
+        // O auto já anda até o NPC e abre a fala; parar ali e pedir quatro
+        // toques interrompe justamente o que ele automatizou.
+        //
+        // O desenho vem DEPOIS, e o resultado dos dois cai no mesmo `match`:
+        // o que o dedo faz e o que o auto faz têm que ser a mesma coisa, ou
+        // viram dois caminhos pro mesmo botão.
+        let pelo_auto = if self.auto_missao.ativo() {
+            self.dialogo.conduzir(agora, Self::AUTO_FALA_S)
+        } else {
+            dialogo::Resultado::Nada
+        };
+        let desenhado = self.dialogo.desenha();
+        let resultado = if matches!(desenhado, dialogo::Resultado::Nada) {
+            pelo_auto
+        } else {
+            desenhado
+        };
+        match resultado {
             dialogo::Resultado::Conversou { npc, .. } => {
                 self.envia(ClientMessage::ConcluirConversa {
                     npc_eid: npc.0 as u64,

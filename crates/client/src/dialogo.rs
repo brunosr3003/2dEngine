@@ -34,6 +34,8 @@ pub struct Dialogo {
     falas: Vec<String>,
     i: usize,
     fim: Option<Fim>,
+    /// Quando o auto passa a próxima fala. 0 = ainda não começou a contar.
+    proximo_passo: f64,
     recompensa: String,
 }
 
@@ -54,6 +56,9 @@ impl Dialogo {
             i: 0,
             fim: Some(fim),
             recompensa,
+            // Zera a contagem do auto: cada conversa recomeça o relógio, e
+            // sem isso a primeira fala da segunda passaria num quadro.
+            proximo_passo: 0.0,
         };
         if self.falas.is_empty() {
             self.falas.push("…".into());
@@ -110,17 +115,63 @@ impl Dialogo {
     }
 
     fn painel() -> Rect {
-        let w = (screen_width() - 40.0).min(600.0);
+        let f = estilo::fator_texto();
+        let w = (screen_width() - 40.0).min(620.0 * f);
+        // A CAIXA CRESCEU pra caber botão de dedo. Ela tinha 176 px fixos e o
+        // botão dentro dela, 28 — e 28 px é metade do alvo mínimo que um dedo
+        // acerta. O dono: "os botões de ação, tipo da conversa receber,
+        // próximo etc, estão muito pequenos, eu clico errado toda hora".
+        let h = 176.0 * f;
         Rect::new(
             (screen_width() - w) * 0.5,
-            screen_height() - 430.0,
+            screen_height() - 430.0 * f.max(1.0),
             w,
-            176.0,
+            h,
         )
+    }
+
+    /// Os botões do rodapé: (principal, "Agora não").
+    ///
+    /// Fora do desenho pra ser medido. `ALVO_DO_DEDO` é o piso: abaixo dele o
+    /// toque erra, e errar aqui custa recusar uma missão sem querer.
+    fn botoes(p: Rect, f: f32) -> (Rect, Rect) {
+        let alt = (34.0 * f).max(crate::hud_estilo::ALVO_DO_DEDO);
+        let larg = (130.0 * f).max(110.0).min((p.w - 36.0) * 0.5);
+        let y = p.y + p.h - alt - 10.0 * f;
+        let principal = Rect::new(p.x + p.w - larg - 14.0, y, larg, alt);
+        let recusar = Rect::new(principal.x - larg - 10.0, y, larg, alt);
+        (principal, recusar)
     }
 
     pub fn pega_mouse(&self) -> bool {
         self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+    }
+
+    /// A AUTO MISSÃO conduz a conversa sozinha.
+    ///
+    /// O dono: "no auto missão tem que aceitar e entregar missões no NPC de
+    /// maneira automática também, clicar em próximo na conversa etc". Faz
+    /// sentido: o auto já anda até o NPC e abre a fala — parar ali e pedir
+    /// quatro toques é interromper justamente o que ele automatizou.
+    ///
+    /// `cada` é a pausa entre falas. Ela existe porque a conversa é onde a
+    /// história acontece: passar tudo num quadro faria o texto piscar e
+    /// sumir. Recusar NUNCA é automático — dizer "agora não" é decisão, e o
+    /// auto só faz o que o jogador já pediu ao ligar a missão.
+    pub fn conduzir(&mut self, agora: f64, cada: f64) -> Resultado {
+        if !self.aberto {
+            self.proximo_passo = 0.0;
+            return Resultado::Nada;
+        }
+        if self.proximo_passo == 0.0 {
+            self.proximo_passo = agora + cada;
+            return Resultado::Nada;
+        }
+        if agora < self.proximo_passo {
+            return Resultado::Nada;
+        }
+        self.proximo_passo = agora + cada;
+        self.avancar()
     }
 
     pub fn desenha(&mut self) -> Resultado {
@@ -146,8 +197,10 @@ impl Dialogo {
             14,
             estilo::SUAVE,
         );
+        let f = estilo::fator_texto();
+        let xis = crate::hud_estilo::ALVO_DO_DEDO.max(34.0 * f);
         if crate::ui::botao(
-            Rect::new(p.x + p.w - 44.0, p.y + 8.0, 32.0, 28.0),
+            Rect::new(p.x + p.w - xis - 8.0, p.y + 6.0, xis, xis),
             "x",
             true,
         ) {
@@ -206,13 +259,13 @@ impl Dialogo {
                 None => "Fechar",
             }
         };
-        let b = Rect::new(p.x + p.w - 124.0, p.y + p.h - 40.0, 108.0, 28.0);
+        let (b, nao) = Self::botoes(p, f);
         if crate::ui::botao(b, rotulo, true) {
             return self.avancar();
         }
         if ultima
             && matches!(self.fim, Some(Fim::Oferta { .. }))
-            && crate::ui::botao(Rect::new(b.x - 118.0, b.y, 108.0, 28.0), "Agora não", true)
+            && crate::ui::botao(nao, "Agora não", true)
         {
             return self.recusar();
         }
@@ -222,6 +275,66 @@ impl Dialogo {
 
 #[cfg(test)]
 mod tests {
+    /// O AUTO passa as falas sozinho, no ritmo, e fecha com a ação do fim.
+    ///
+    /// E ele NÃO recusa: dizer "agora não" é decisão, e o auto só faz o que o
+    /// jogador já pediu ao ligar a missão.
+    #[test]
+    fn o_auto_conduz_a_conversa_e_nunca_recusa() {
+        let mut d = Dialogo::default();
+        d.abrir(
+            "Mestre",
+            "Uma caçada",
+            &["Olá.", "Há ursos no bosque.", "Traga dez peles."],
+            Fim::Oferta { quest_id: 42 },
+            String::new(),
+        );
+        let cada = 1.5;
+        let mut t = 100.0;
+
+        // O primeiro quadro só ARMA o relógio: sem isso a primeira fala
+        // passaria antes de aparecer.
+        assert_eq!(d.conduzir(t, cada), Resultado::Nada);
+        assert_eq!(d.i, 0, "a primeira fala tem que ficar na tela");
+
+        // Antes da hora, nada anda.
+        assert_eq!(d.conduzir(t + cada * 0.5, cada), Resultado::Nada);
+        assert_eq!(d.i, 0);
+
+        // No tempo, anda uma fala por vez.
+        t += cada;
+        assert_eq!(d.conduzir(t, cada), Resultado::Nada);
+        assert_eq!(d.i, 1);
+        t += cada;
+        assert_eq!(d.conduzir(t, cada), Resultado::Nada);
+        assert_eq!(d.i, 2, "na última fala");
+
+        // E na última, a ação do fim — ACEITAR, nunca recusar.
+        t += cada;
+        assert_eq!(d.conduzir(t, cada), Resultado::Aceitar(42));
+        assert!(!d.aberto, "a conversa fecha ao aceitar");
+
+        // Fechada, conduzir não faz nada.
+        assert_eq!(d.conduzir(t + 99.0, cada), Resultado::Nada);
+    }
+
+    /// Entrega fecha com RECEBER, que é a outra ponta do mesmo gesto.
+    #[test]
+    fn o_auto_entrega_a_missao_pronta() {
+        let mut d = Dialogo::default();
+        d.abrir(
+            "Mestre",
+            "Feito",
+            &["Bom trabalho."],
+            Fim::Entrega { quest_id: 7 },
+            "120 cobre".into(),
+        );
+        let (cada, mut t) = (1.0, 0.0);
+        assert_eq!(d.conduzir(t, cada), Resultado::Nada);
+        t += cada;
+        assert_eq!(d.conduzir(t, cada), Resultado::Receber(7));
+    }
+
     use super::*;
 
     #[test]
