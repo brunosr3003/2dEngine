@@ -59,5 +59,9 @@ for d in b["data"]:
     bd = incl.get((d["relationships"].get("buildBetaDetail", {}).get("data") or {}).get("id"))
     ba = bd["attributes"] if bd else {}
     grupos = [g["attributes"]["name"] for g in get(f"builds/{d['id']}/betaGroups").get("data", [])]
-    print(f"  {ver}: interno={ba.get('internalBuildState')} externo={ba.get('externalBuildState')}")
+    # `processingState` e' o que distingue "a Apple ainda esta' mastigando"
+    # de "ja' esta' no TestFlight". Sem ele a build some da lista e parece
+    # que o upload falhou, quando so' nao foi registrada ainda.
+    proc = d["attributes"].get("processingState")
+    print(f"  {ver}: processando={proc} interno={ba.get('internalBuildState')} externo={ba.get('externalBuildState')}")
     print(f"      grupos ligados: {grupos or 'NENHUM'}")
