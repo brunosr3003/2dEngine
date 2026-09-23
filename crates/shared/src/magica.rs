@@ -303,6 +303,17 @@ fn dist_da_ponte(p: Vec2) -> f32 {
         .fold(f32::INFINITY, f32::min)
 }
 
+/// Este ponto está NA PONTE (e não numa ilhota)?
+///
+/// Existe pra a vegetação saber onde não nascer. A ponte é estreita de
+/// propósito — ela é o gargalo que dá sentido ao PvP —, e uma árvore ou uma
+/// pedra no meio dela a fecha: o A* não acha passagem e só dá pra atravessar
+/// andando na mão. O dono: "algumas pontes estão com árvores e pedras no
+/// meio, aí não dá pra passar usando A*, só andando".
+pub fn na_ponte(p: Vec2) -> bool {
+    ilhota_em(p).is_none() && dist_da_ponte(p) <= MEIA_PONTE
+}
+
 /// Este ponto é CHÃO (ilhota ou ponte)?
 ///
 /// É a mesma pergunta que o gerador responde em `bloco_em` — e a única, pra
@@ -491,6 +502,80 @@ pub fn indice_do_bonus_em(p: Vec2) -> u8 {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// NADA nasce na ponte: nem árvore, nem pedra.
+    ///
+    /// A ponte é estreita de propósito — é o gargalo que dá sentido ao PvP —
+    /// e um tronco no meio dela a fecha: o A* deixa de achar passagem e só dá
+    /// pra atravessar andando na mão. O dono: "algumas pontes estão com
+    /// árvores e pedras no meio, aí não dá pra passar usando A*".
+    #[test]
+    fn nada_nasce_na_ponte() {
+        let ger = crate::terreno::Gerador::da_ilha_magica();
+        let mut pontos_de_ponte = 0;
+        let mut com_estorvo = 0;
+        // Varre cada ponte ponto a ponto, no MEIO dela.
+        for (a, b) in pontes() {
+            let n = 60;
+            let eixo = (b - a).normalize_or_zero();
+            let lado = Vec2::new(-eixo.y, eixo.x);
+            for k in 0..=n {
+                let t = k as f32 / n as f32;
+                // A LARGURA INTEIRA, e não só o eixo: um tronco na beira
+                // fecha a ponte igual — ela tem MEIA_PONTE de cada lado, e o
+                // corpo do jogador ocupa quase isso.
+                for w in [-0.8f32, -0.4, 0.0, 0.4, 0.8] {
+                    let p = a + (b - a) * t + lado * (w * MEIA_PONTE);
+                    if !na_ponte(p) {
+                        continue;
+                    }
+                pontos_de_ponte += 1;
+                let bx = (p.x / crate::terreno::BLOCO).round() as i32;
+                let bz = (p.y / crate::terreno::BLOCO).round() as i32;
+                assert!(
+                    ger.na_ponte_magica(bx, bz),
+                    "a coluna {bx},{bz} está na ponte mas o gerador não sabe"
+                );
+                let topo = ger.bloco_em(bx, bz);
+                let arv = crate::terreno::arvore_da_coluna(
+                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                );
+                let pl = crate::terreno::planta_da_coluna(
+                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                );
+                if arv.is_some() || pl.is_some() {
+                    com_estorvo += 1;
+                }
+                }
+            }
+        }
+        assert!(pontos_de_ponte > 50, "varreu pouca ponte: {pontos_de_ponte} pontos");
+        assert_eq!(com_estorvo, 0, "{com_estorvo} pontos de ponte com estorvo");
+    }
+
+    /// E a ilhota continua tendo vegetação — o corte é só na ponte.
+    #[test]
+    fn a_ilhota_continua_com_mato() {
+        let ger = crate::terreno::Gerador::da_ilha_magica();
+        let mut achou = 0;
+        for i in ilhotas() {
+            for k in 0..400 {
+                let a = k as f32 * 0.7;
+                let p = i.centro + Vec2::new(a.cos(), a.sin()) * (RAIO_ILHOTA * 0.5);
+                let bx = (p.x / crate::terreno::BLOCO).round() as i32;
+                let bz = (p.y / crate::terreno::BLOCO).round() as i32;
+                let topo = ger.bloco_em(bx, bz);
+                if crate::terreno::arvore_da_coluna(
+                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                )
+                .is_some()
+                {
+                    achou += 1;
+                }
+            }
+        }
+        assert!(achou > 0, "a ilhota ficou pelada: o corte pegou mais que a ponte");
+    }
 
     #[test]
     fn o_relogio_acumula_ate_uma_hora_e_meia() {

@@ -1136,6 +1136,10 @@ pub fn arvore_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<ArvorePlantada> {
+    // NADA NA PONTE da Ilha Magica: ela e' estreita e um tronco a fecha.
+    if ger.na_ponte_magica(bx, bz) {
+        return None;
+    }
     // Na maquete, METADE das arvores. Elas voltam em porte logo abaixo.
     let rala = if ger.e_maquete() { 0.5 } else { 1.0 };
     let prob = densidade_de_arvore(bioma) * 0.0025 * rala; // coluna = 0,25 m²
@@ -1192,6 +1196,10 @@ pub fn planta_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<PlantaPlantada> {
+    // NADA NA PONTE: pedra de forracao tambem barra passagem.
+    if ger.na_ponte_magica(bx, bz) {
+        return None;
+    }
     // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
     // centenas de pontinhos de flor que, de longe, leem como chiado na grama.
     let rala = if ger.e_maquete() { 0.25 } else { 1.0 };
@@ -1975,6 +1983,18 @@ impl Gerador {
     /// que isso". Numa maquete valem poucas pecas e grandes.
     pub fn e_maquete(&self) -> bool {
         matches!(self.desenhado, Some(RelevoDesenhado::Colonia))
+    }
+
+    /// Esta coluna cai numa PONTE da Ilha Mágica?
+    ///
+    /// Nada nasce ali: a ponte é estreita de propósito (é o gargalo do PvP) e
+    /// qualquer estorvo no meio dela a fecha — o A* deixa de achar passagem e
+    /// só dá pra atravessar andando na mão.
+    pub fn na_ponte_magica(&self, bx: i32, bz: i32) -> bool {
+        if !matches!(self.desenhado, Some(RelevoDesenhado::Magica)) {
+            return false;
+        }
+        crate::magica::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
     }
 
     pub fn da_colonia(plato: f32) -> Self {
