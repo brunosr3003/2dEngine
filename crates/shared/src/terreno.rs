@@ -1136,7 +1136,9 @@ pub fn arvore_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<ArvorePlantada> {
-    let prob = densidade_de_arvore(bioma) * 0.0025; // coluna = 0,25 m²
+    // Na maquete, METADE das arvores. Elas voltam em porte logo abaixo.
+    let rala = if ger.e_maquete() { 0.5 } else { 1.0 };
+    let prob = densidade_de_arvore(bioma) * 0.0025 * rala; // coluna = 0,25 m²
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
     if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua || ger.na_cidade(bx, bz) {
@@ -1172,7 +1174,10 @@ pub fn arvore_da_coluna(
         ),
         // Porte menor do que parece certo em pe': a camera olha de cima, e
         // arvore de tres vezes o jogador esconde o mob que ele veio cacar.
-        porte: 0.62 + ((h0 >> 12) & 0xff) as f32 / 255.0 * 0.34,
+        // Na maquete elas crescem um terco: metade das arvores, cada uma
+        // maior, da a mesma mata com metade das pecas na tela.
+        porte: (0.62 + ((h0 >> 12) & 0xff) as f32 / 255.0 * 0.34)
+            * if ger.e_maquete() { 1.34 } else { 1.0 },
         variante: h0 >> 26,
     })
 }
@@ -1187,7 +1192,10 @@ pub fn planta_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<PlantaPlantada> {
-    let prob = densidade_de_planta(bioma) * 0.0025;
+    // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
+    // centenas de pontinhos de flor que, de longe, leem como chiado na grama.
+    let rala = if ger.e_maquete() { 0.25 } else { 1.0 };
+    let prob = densidade_de_planta(bioma) * 0.0025 * rala;
     let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
     let g1 = g0.wrapping_mul(2_654_435_761);
     if (g1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua || ger.na_cidade(bx, bz) {
@@ -1958,6 +1966,17 @@ impl Gerador {
     /// na thread que desenha. Numa ilhota desenhada a pergunta nao existe: o
     /// meio E' o lugar mais plano, e o dono pediu exatamente isso ("o centro
     /// sendo a cidade"). A varredura e o cache dela sairam junto.
+    /// Este relevo e' a MAQUETE da colonia — um diorama, nao um lugar onde
+    /// se anda.
+    ///
+    /// Vegetacao de mundo e' calibrada pra quem caminha DENTRO dela: muita
+    /// planta pequena, muita arvore media. Vista de fora e inteira, a mesma
+    /// densidade vira ruido — o dono: "a ilha poder ser mais simples ainda
+    /// que isso". Numa maquete valem poucas pecas e grandes.
+    pub fn e_maquete(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Colonia))
+    }
+
     pub fn da_colonia(plato: f32) -> Self {
         let mut g = Self::novo(
             crate::colonia::SEMENTE,

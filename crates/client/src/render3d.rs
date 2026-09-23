@@ -3002,7 +3002,123 @@ mod testes_da_vestimenta {
 /// pro alvo corrente, que na prévia é a tela — não o render target que vira
 /// PNG. Medi a cor "de fundo" da prévia uma vez achando que era esta, e era o
 /// `clear_background` dela.
+/// O quanto a câmera da maquete pode subir e descer, em radianos.
+///
+/// Presa em cima porque de cima a ilhota lê como mapa, e presa em baixo
+/// porque ela não tem fundo: passar do horizonte mostra o vazio das colunas.
+pub const ELEV_MIN: f32 = 0.12;
+pub const ELEV_MAX: f32 = 1.45;
+/// A elevação de abertura: rasante, que é onde o relevo se lê pelo perfil.
+pub const ELEV_PADRAO: f32 = 0.55;
+
 pub const COR_DO_FUNDO_DA_MAQUETE: Color = Color::new(0.09, 0.12, 0.17, 1.0);
+
+/// A distância de câmera que põe a ilhota INTEIRA dentro do quadro.
+///
+/// Sai de MEDIR, não de uma fórmula fechada. A fórmula anterior (raio ×
+/// margem contra a meia-tangente do campo) errou três vezes seguidas na
+/// prévia — ilha cortada em cima, embaixo e nos dois lados — e sempre pelo
+/// mesmo motivo: ela é simétrica e a perspectiva não é. Com `fovy` 0,85 e a
+/// câmera a ~140 u de um objeto de 97 de raio, a borda de perto fica a ~60 u
+/// da lente e a de longe a ~220, então a metade de baixo projeta três vezes
+/// maior que a de cima. Nenhum seno conta isso.
+///
+/// Então projeta a silhueta (a costa, no nível do mar e no do platô), olha o
+/// ponto que mais escapa, e aproxima. A escala da projeção anda com 1/d, o
+/// que faz multiplicar a distância pelo excesso convergir em três passos.
+///
+/// A matriz é montada aqui, e não por `Camera3D::matrix`, por duas razões:
+/// aquela lê `render_target`/`screen_*` e não roda fora de um quadro (o teste
+/// não teria como existir), e este é o mesmo par perspectiva × look-at que
+/// ela monta — conferido na fonte da macroquad 0.4.16.
+fn dist_que_enquadra(centro: Vec2, alto: f32, elevacao: f32, ang: f32, aspecto: f32) -> f32 {
+    /// O quanto do quadro a peça ocupa no maior eixo. 1,0 seria encostar.
+    const OCUPA: f32 = 0.96;
+    let mira = vec3(
+        centro.x,
+        alto - shared::colonia::ALTURA_TOPO * 0.45,
+        centro.y,
+    );
+    let borda: Vec<Vec3> = (0..48)
+        .flat_map(|i| {
+            let a = i as f32 / 48.0 * std::f32::consts::TAU;
+            let rr = shared::colonia::raio_na_direcao(a);
+            [0.0f32, shared::colonia::ALTURA_TOPO]
+                .map(|h| vec3(centro.x + a.cos() * rr, h, centro.y + a.sin() * rr))
+        })
+        .collect();
+    let mut dist = shared::colonia::RAIO * 3.0;
+    for _ in 0..4 {
+        let m = matriz_da_maquete(centro, alto, elevacao, ang, aspecto, dist);
+        let mut pior: f32 = 0.0;
+        for p in &borda {
+            let clip = m * p.extend(1.0);
+            if clip.w <= 0.001 {
+                pior = pior.max(4.0);
+                continue;
+            }
+            pior = pior.max((clip.x / clip.w).abs()).max((clip.y / clip.w).abs());
+        }
+        if pior <= 0.0001 {
+            break;
+        }
+        dist *= pior / OCUPA;
+    }
+    dist
+}
+
+/// Onde a câmera da maquete fica, a essa distância.
+fn olho_da_maquete(centro: Vec2, alto: f32, elevacao: f32, ang: f32, dist: f32) -> Vec3 {
+    vec3(
+        centro.x + ang.cos() * dist * elevacao.cos(),
+        alto + dist * elevacao.sin(),
+        centro.y + ang.sin() * dist * elevacao.cos(),
+    )
+}
+
+/// A MESMA matriz que `Camera3D::matrix` monta pra maquete, sem precisar de
+/// janela. Os valores de `z_near`/`z_far` são os do `Camera3D::default`.
+fn matriz_da_maquete(
+    centro: Vec2,
+    alto: f32,
+    elevacao: f32,
+    ang: f32,
+    aspecto: f32,
+    dist: f32,
+) -> Mat4 {
+    const FOVY: f32 = 0.85;
+    Mat4::perspective_rh_gl(FOVY, aspecto, 0.01, 10000.0)
+        * Mat4::look_at_rh(
+            olho_da_maquete(centro, alto, elevacao, ang, dist),
+            vec3(
+                centro.x,
+                alto - shared::colonia::ALTURA_TOPO * 0.45,
+                centro.y,
+            ),
+            Vec3::Y,
+        )
+}
+
+/// A faixa, dentro do retângulo dado, com a proporção da ilhota deitada.
+///
+/// Só encolhe: se o retângulo já for mais largo que a peça, ele passa
+/// inteiro e quem limita volta a ser a altura.
+fn faixa_da_peca(r: Rect) -> Rect {
+    // Largura ÷ altura da ilhota como a câmera a vê.
+    //
+    // Cheguei a 1,5 por conta (o diâmetro contra o diâmetro achatado pelo
+    // seno da elevação) e a prévia mostrou a ilha CORTADA em cima e embaixo.
+    // A conta simétrica está errada: com `fovy` 0,85 e a câmera a 139 u de
+    // um objeto de 97 de raio, a borda de perto fica a ~60 u da lente e a de
+    // longe a ~220 — a metade de baixo projeta três vezes maior que a de
+    // cima. Perspectiva não se estima por seno.
+    //
+    // 1,25 é o número que a prévia aprova, e a folga extra é justamente a
+    // assimetria que a conta não vê.
+    const PROPORCAO: f32 = 1.25;
+    let alt = (r.w / PROPORCAO).min(r.h);
+    Rect::new(r.x, r.y + (r.h - alt) * 0.5, r.w, alt)
+}
 
 pub fn maquete_da_ilha(
     terreno: &crate::terreno::Terreno,
@@ -3010,6 +3126,10 @@ pub fn maquete_da_ilha(
     r: Rect,
     centro: Vec2,
     yaw: f32,
+    // Quanto a câmera sobe, em radianos acima do horizonte. Era uma
+    // constante (0,55); o dono pediu "que a câmera não ficasse presa só
+    // direita e esquerda e fosse 360 em torno do centro".
+    elevacao: f32,
     zoom: f32,
     solido: &Material,
     moradores: &[(shared::colonia::Profissao, Vec2)],
@@ -3018,6 +3138,20 @@ pub fn maquete_da_ilha(
     if r.w < 40.0 || r.h < 40.0 {
         return false;
     }
+    // A FAIXA DE VISÃO, e não o retângulo inteiro que me deram.
+    //
+    // A coluna da esquerda é ALTA E ESTREITA (~0,72 de proporção) e a ilhota
+    // é o contrário: 190 u de largura por uns 110 de altura na tela, deitada
+    // pela câmera rasante. Enquadrar as duas coisas na mesma caixa significa
+    // encostar na largura e sobrar metade da altura vazia — e foi isso que o
+    // dono viu: "a ilhota fica num quadrado que achata ela".
+    //
+    // A conta não tem escolha: `dist` é o MAIOR entre a restrição horizontal
+    // e a vertical, então numa caixa mais alta que o objeto quem manda é
+    // sempre a largura, e a altura sobra. Em vez de brigar com isso, a peça
+    // ganha uma faixa da proporção DELA, centrada na vertical. Sem moldura
+    // desenhada, o que sobra em cima e embaixo é só o painel.
+    let r = faixa_da_peca(r);
     let Some(vp) = viewport_na_tela(r) else {
         return false;
     };
@@ -3041,27 +3175,13 @@ pub fn maquete_da_ilha(
     // `colonia::RAIO` e do retângulo, para mexer em qualquer um dos dois
     // continuar enquadrando certo.
     const FOVY: f32 = 0.85;
-    // ~34°, e não 54°: mais rasante.
+    // A elevação vem de fora agora, mas presa entre o rasante e o quase-zênite.
     //
-    // De cima a ilhota vira um disco chapado — o dono: "a ilha tá muito feia,
-    // tá chapada plana". O relevo de uma ilha se lê pelo PERFIL, não pela
-    // planta: é a silhueta contra o mar que diz que há morro. A 54° o olho
-    // via um mapa; a 34° vê uma ilha.
-    const ELEVACAO: f32 = 0.55;
-    // ENQUADRA APERTADO: a ilhota enche o quadro e a costa sai pelas bordas.
-    // Antes era 1,05 do raio, com as duas restrições valendo — sobrava mar em
-    // volta e a ilha ficava pequena no meio. "Não precisa mostrar o oceano."
-    // A PEÇA INTEIRA, com margem. Ela é um objeto agora, e objeto cortado
-    // pelas bordas não lê como objeto — lê como recorte. Antes eu enquadrava
-    // a 0,72 do raio e só pela horizontal, e a ilha saía cortada dos quatro
-    // lados com a saia de terra fora da tela.
-    let meia_larg = shared::colonia::RAIO * 1.12 / zoom.max(0.05);
-    // De cima a baixo: só o relevo. A peça vai da praia (~0) ao topo do
-    // platô, e nada mais — a saia de terra foi embora a pedido do dono.
-    let meia_alt = shared::colonia::ALTURA_TOPO * 0.75 / zoom.max(0.05);
-    let meio_v = (FOVY * 0.5).tan();
-    let meio_h = meio_v * (r.w / r.h).max(0.05);
-    let dist = (meia_larg / meio_h).max(meia_alt / meio_v);
+    // O limite de baixo NÃO é gosto: a ilhota não tem face embaixo (a saia de
+    // terra saiu a pedido do dono), então a câmera abaixo do horizonte vê o
+    // interior vazio das colunas — tela preta. E de cima demais ela vira um
+    // disco chapado, que é o defeito que o rasante veio consertar.
+    let elevacao = elevacao.clamp(ELEV_MIN, ELEV_MAX);
     let alto = terreno.altura(centro.x, centro.y);
     // O QUARTO DE VOLTA que faltava.
     //
@@ -3069,25 +3189,42 @@ pub fn maquete_da_ilha(
     // é montada olhando pro -Z (`construcao::frente_de`): a maquete abria de
     // perfil pras casas. O dono: "tá 90 graus pro lado errado".
     let ang = yaw + std::f32::consts::FRAC_PI_2;
-    let olho = vec3(
-        centro.x + ang.cos() * dist * ELEVACAO.cos(),
-        alto + dist * ELEVACAO.sin(),
-        centro.y + ang.sin() * dist * ELEVACAO.cos(),
+    let mira = vec3(
+        centro.x,
+        alto - shared::colonia::ALTURA_TOPO * 0.45,
+        centro.y,
     );
-    let cam = Camera3D {
-        position: olho,
-        // Mira UM POUCO ACIMA do chão da praça: com a câmera rasante, mirar
-        // no chão joga a vila pro terço de cima e enche a metade de baixo com
-        // a encosta perto. Visto na prévia.
-        // Mira no MEIO DA PEÇA, e não na praça: mirar no chão da vila
-        // jogava tudo pro terço de cima.
-        target: vec3(centro.x, alto - shared::colonia::ALTURA_TOPO * 0.45, centro.y),
+    let monta = |d: f32| Camera3D {
+        position: olho_da_maquete(centro, alto, elevacao, ang, d),
+        target: mira,
         up: Vec3::Y,
         fovy: FOVY,
+        // O ASPECTO É O DO VIEWPORT, e dizer isso é obrigatório.
+        //
+        // `Camera3D::matrix` da macroquad 0.4.16 tira o aspecto do ALVO
+        // INTEIRO (`render_target` ou a tela), nunca do viewport:
+        //
+        //     let (width, height) = if let Some(rt) = &self.render_target {
+        //         (rt.texture.width(), rt.texture.height())
+        //     } else { (screen_width(), screen_height()) };
+        //     let aspect = self.aspect.unwrap_or(width / height);
+        //
+        // O viewport só recorta e ESTICA: ele mapeia o NDC [-1,1] no
+        // retângulo dado. Com a tela em 1,6 e a faixa em 1,25, a peça era
+        // projetada larga e espremida num quadro estreito — é esse, e não a
+        // moldura, o "quadrado que achata ela" que o dono viu. Estava assim
+        // desde que a maquete nasceu.
+        aspect: Some(r.w / r.h.max(1.0)),
         viewport: Some(vp),
         render_target: alvo(),
         ..Default::default()
     };
+    // A DISTÂNCIA SAI DE MEDIR A SILHUETA, e não de uma fórmula. Ver
+    // `dist_que_enquadra`.
+    let mut dist = dist_que_enquadra(centro, alto, elevacao, ang, r.w / r.h.max(1.0));
+    // O zoom do jogador entra DEPOIS: acima de 1 ele corta de propósito.
+    let dist = dist / zoom.max(0.05);
+    let cam = monta(dist);
     // O MAR DE FUNDO, em 2D, antes de tudo.
     //
     // `agua::desenha` cobre só os pedaços de terreno carregados, então o mar
@@ -3097,16 +3234,43 @@ pub fn maquete_da_ilha(
     // O FUNDO da peça: escuro e liso. Não é mar — o diorama flutua, e água
     // em volta contaria outra história (a de uma ilha no mundo, que é
     // justamente o que ela deixou de ser).
-    draw_rectangle(r.x, r.y, r.w, r.h, COR_DO_FUNDO_DA_MAQUETE);
+    // SEM FUNDO PRÓPRIO: a peça fica solta no painel.
+    //
+    // Havia um retângulo escuro aqui e um cartão atrás dele, e o dono: "a
+    // ilhota fica num quadrado que achata ela; ela nem precisava ficar dentro
+    // de um quadrante assim, poderia ser livre". O quadrado é que dava a
+    // impressão de achatamento — a ilha não mudou de forma, mudou de moldura.
+    //
+    // O `set_camera` daqui só limpa PROFUNDIDADE, então o painel que já foi
+    // desenhado continua aparecendo por baixo. Por isso dá pra simplesmente
+    // não pintar nada.
     // A SOMBRA vem ANTES do 3D, e é isso que a põe ATRÁS da peça.
     //
     // Desenhada depois, ela ficava POR CIMA da ilha — invisível de longe e
     // uma mancha cinza no meio da grama quando o jogador dava zoom. Visto na
     // prévia, nas vistas de zoom. Ela é o que assenta o diorama: sem sombra,
     // objeto flutuando lê como recorte colado no fundo.
-    let c = vec2(r.x + r.w * 0.5, r.y + r.h * 0.78);
+    //
+    // E ela ACOMPANHA A ELEVAÇÃO. Uma elipse fixa é convincente com a câmera
+    // rasante e denuncia o truque quando o jogador sobe: vista de cima a
+    // sombra de um disco é quase um círculo, e ela fica sob a peça, não
+    // abaixo dela. Então a altura da elipse cresce com o seno da elevação e
+    // o centro sobe junto.
+    let sub = elevacao.sin();
+    let c = vec2(r.x + r.w * 0.5, r.y + r.h * (0.78 - 0.26 * sub));
+    // E ela SOME no rasante: com a câmera quase no horizonte o chão não
+    // aparece, e uma elipse escura solta embaixo da peça lê como mancha.
+    let forca = (sub * 1.9).min(1.0);
     for (k, a) in [(1.00f32, 0.22f32), (0.72, 0.16), (0.46, 0.12)] {
-        draw_ellipse(c.x, c.y, r.w * 0.32 * k, r.w * 0.075 * k, 0.0, Color::new(0.0, 0.0, 0.0, a));
+        let a = a * forca;
+        draw_ellipse(
+            c.x,
+            c.y,
+            r.w * 0.32 * k,
+            r.w * 0.075 * k * (0.35 + 1.75 * sub),
+            0.0,
+            Color::new(0.0, 0.0, 0.0, a),
+        );
     }
     set_camera(&cam);
     limpa_so_profundidade();
@@ -3231,4 +3395,86 @@ pub fn maquete_da_ilha(
     macroquad::material::gl_use_default_material();
     camera_padrao();
     n > 0
+}
+
+#[cfg(test)]
+mod testes_da_maquete {
+    use super::*;
+
+    /// Os pontos da costa, nos dois níveis, como `dist_que_enquadra` os vê.
+    fn silhueta(centro: Vec2) -> Vec<Vec3> {
+        (0..96)
+            .flat_map(|i| {
+                let a = i as f32 / 96.0 * std::f32::consts::TAU;
+                let rr = shared::colonia::raio_na_direcao(a);
+                [0.0f32, shared::colonia::ALTURA_TOPO]
+                    .map(|h| vec3(centro.x + a.cos() * rr, h, centro.y + a.sin() * rr))
+            })
+            .collect()
+    }
+
+    /// O pior ponto da ilhota, em NDC. Acima de 1 ela está CORTADA.
+    fn pior_ndc(elevacao: f32, ang: f32, aspecto: f32) -> f32 {
+        let centro = Vec2::ZERO;
+        let alto = shared::colonia::ALTURA_TOPO;
+        let d = dist_que_enquadra(centro, alto, elevacao, ang, aspecto);
+        let m = matriz_da_maquete(centro, alto, elevacao, ang, aspecto, d);
+        silhueta(centro).iter().fold(0.0f32, |pior, p| {
+            let c = m * p.extend(1.0);
+            if c.w <= 0.001 {
+                return 9.0;
+            }
+            pior.max((c.x / c.w).abs()).max((c.y / c.w).abs())
+        })
+    }
+
+    /// A ilhota CABE no quadro, em toda a órbita e em toda proporção de
+    /// painel.
+    ///
+    /// Este teste existe porque eu entreguei três enquadramentos seguidos com
+    /// a ilha cortada — em cima, embaixo e nos dois lados — e só descobri
+    /// abrindo o PNG. A conta fechada que eu usava era simétrica e a
+    /// perspectiva não é.
+    #[test]
+    fn a_ilhota_nunca_sai_do_quadro() {
+        for &elev in &[ELEV_MIN, 0.3, ELEV_PADRAO, 0.9, 1.2, ELEV_MAX] {
+            for giro in 0..8 {
+                let ang = giro as f32 / 8.0 * std::f32::consts::TAU;
+                // Do celular em pé ao painel largo do desktop.
+                for &asp in &[0.62f32, 0.815, 1.25, 1.6, 2.2] {
+                    let pior = pior_ndc(elev, ang, asp);
+                    assert!(
+                        pior <= 1.0,
+                        "cortada: elev {elev:.2} ang {ang:.2} aspecto {asp:.2} -> pior NDC {pior:.3}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// E ela OCUPA o quadro: enquadrar de longe demais é o outro jeito de
+    /// errar, e foi o defeito que o dono viu como "a ilha fica pequena".
+    #[test]
+    fn a_ilhota_enche_o_quadro() {
+        for &elev in &[ELEV_MIN, ELEV_PADRAO, ELEV_MAX] {
+            for &asp in &[0.62f32, 0.815, 1.25, 1.6] {
+                let pior = pior_ndc(elev, 0.9, asp);
+                assert!(
+                    pior >= 0.80,
+                    "sobrou quadro demais: elev {elev:.2} aspecto {asp:.2} -> pior NDC {pior:.3}"
+                );
+            }
+        }
+    }
+
+    /// A faixa nunca estoura o retângulo que o painel deu, e fica centrada.
+    #[test]
+    fn a_faixa_cabe_no_retangulo_dado() {
+        for (w, h) in [(512.0, 628.0), (300.0, 200.0), (900.0, 300.0), (120.0, 900.0)] {
+            let r = Rect::new(40.0, 70.0, w, h);
+            let f = faixa_da_peca(r);
+            assert!(f.h <= r.h + 0.01 && f.w <= r.w + 0.01, "{f:?} nao cabe em {r:?}");
+            assert!((f.center().y - r.center().y).abs() < 0.01, "fora do centro: {f:?}");
+        }
+    }
 }

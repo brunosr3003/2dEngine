@@ -171,9 +171,19 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     // u de degrau por coluna, e somada à ladeira do domo (0,34) fica em 0,98
     // bloco — abaixo do 1 que o passo vence, por pouco.
     // `a_ladeira_da_ilhota_nunca_vira_paredao` é quem confere.
+    // DUAS ondas de forma, e nao quatro.
+    //
+    // Havia mais duas no meio (periodos de ~77 e ~43 u) e o dono: "a ilha
+    // poder ser mais simples ainda que isso". Elas nao faziam morro nenhum —
+    // no porte de 1,15 e 0,45 u contra os 16 de altura da ilhota, davam
+    // caroco, nao relevo. De longe (e a maquete SO' e' vista de longe) isso
+    // le como grama suja.
+    //
+    // Fica a longa, que e' quem da a silhueta, e fica a CURTA — que nao e'
+    // forma, e' anti-anel: sem ela a altura cruza a fronteira de bloco ao
+    // longo de um circulo e a ilha ganha curvas de nivel desenhadas.
     let ondula = ((x * 0.035 + 1.7).sin() * (z * 0.031 - 0.9).cos() * 2.9
-        + (x * 0.082 - z * 0.061).sin() * 1.15
-        + ((x + z) * 0.145).sin() * 0.45
+        + (x * 0.082 - z * 0.061).sin() * 0.55
         + (x * 0.42 + 0.4).sin() * (z * 0.39 - 1.1).sin() * 0.70)
         * (0.30 + 0.70 * t);
     ((h + ondula) / crate::terreno::BLOCO).round() as i32 - 1

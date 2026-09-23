@@ -1537,7 +1537,7 @@ pub async fn previa_da_colonia(
         for q in 0..40 {
             tp.atualiza(eu, 6, 24);
             let ok = crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], vox,
+                &tp, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 1.0, solido, &[], vox,
             );
             if q % 8 == 0 || q == 39 {
                 println!(
@@ -1548,20 +1548,25 @@ pub async fn previa_da_colonia(
             next_frame().await;
         }
     }
+    // 52% da largura útil do painel sobre a altura útil dele.
+    const PROP_COLUNA: f32 = 0.815;
     for (m, _) in &onde {
         let nome = crate::render3d::rig_do_npc(m.papel() as u8, 0);
         let pecas = vox.rig(nome).map(|h| h.len());
         println!("[previa colonia] {} -> rig '{nome}' pecas={pecas:?}", m.nome());
     }
-    // O GIRO E O ZOOM, pro dono julgar: quatro ângulos e três distâncias.
-    for (k, (giro, zoom)) in [
-        (0.0f32, 1.0f32),
-        (1.57, 1.0),
-        (3.14, 1.0),
-        (4.71, 1.0),
-        (0.9, 0.8),
-        (0.9, 1.8),
-        (0.9, 3.0),
+    // GIRO, ELEVAÇÃO E ZOOM, pro dono julgar. A elevação entrou na lista
+    // quando a câmera deixou de ser presa no horizontal: as duas últimas
+    // vistas são os extremos que o arrasto vertical alcança.
+    const EP: f32 = crate::render3d::ELEV_PADRAO;
+    for (k, (giro, elev, zoom)) in [
+        (0.0f32, EP, 1.0f32),
+        (1.57, EP, 1.0),
+        (3.14, EP, 1.0),
+        (4.71, EP, 1.0),
+        (0.9, EP, 1.8),
+        (0.9, crate::render3d::ELEV_MIN, 1.0),
+        (0.9, crate::render3d::ELEV_MAX, 1.0),
     ]
     .into_iter()
     .enumerate()
@@ -1570,9 +1575,9 @@ pub async fn previa_da_colonia(
             crate::render3d::camera_padrao();
             clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
             let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
-            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
+            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
             crate::render3d::maquete_da_ilha(
-                &t, &construcoes, r, eu, giro, zoom, solido, &onde, vox,
+                &t, &construcoes, r, eu, giro, elev, zoom, solido, &onde, vox,
             );
             unsafe { macroquad::window::get_internal_gl().flush() };
             rt.texture
@@ -1580,7 +1585,7 @@ pub async fn previa_da_colonia(
                 .export_png(&format!("{saida}/vista-{k}.png"));
             next_frame().await;
         }
-        println!("[previa colonia] vista {k}: giro {giro:.2} zoom {zoom:.1}");
+        println!("[previa colonia] vista {k}: giro {giro:.2} elev {elev:.2} zoom {zoom:.1}");
     }
     for _ in 0..2 {
         crate::render3d::camera_padrao();
@@ -1588,14 +1593,15 @@ pub async fn previa_da_colonia(
         // retângulo dele é 2D e vai pra tela, não pro render target que vira
         // PNG, então sem isto a prévia mostra um mar que o jogo não tem.
         clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
-        // A MESMA PROPORÇÃO da coluna esquerda do painel (46% de 1040 por
-        // 628 de altura = 0,72). Na primeira prévia este retângulo era mais
-        // estreito que o de verdade, e o enquadramento que ele mostrou não
-        // era o que o jogador veria.
+        // A MESMA PROPORÇÃO da coluna esquerda do painel: 52% de (1040−56)
+        // por 628 de altura = 0,815. Na primeira prévia este retângulo era
+        // mais estreito que o de verdade, e o enquadramento que ele mostrou
+        // não era o que o jogador veria — o mesmo erro de validar com número
+        // diferente do que o jogo usa.
         let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
-        let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
+        let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
         let ok = crate::render3d::maquete_da_ilha(
-            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, vox,
+            &t, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 1.0, solido, &onde, vox,
         );
         unsafe { macroquad::window::get_internal_gl().flush() };
         rt.texture

@@ -48,7 +48,11 @@ pub struct ColoniaUi {
     /// você consegue movimentar para direita e esquerda para mudar a câmera
     /// de lugar". Enquanto o dedo está nela o giro automático para — senão a
     /// ilha escorregaria por baixo do dedo.
-    arrasto: Option<f32>,
+    arrasto: Option<Vec2>,
+    /// A elevação da câmera, em radianos acima do horizonte. O arrasto
+    /// VERTICAL manda nela — o dono queria dar a volta na ilha, e não só
+    /// rodar em torno do eixo.
+    elevacao: f32,
     /// A coluna da direita rola: ela tem colheita, baú, três eixos e até seis
     /// moradores, e isso não cabe em tela de celular.
     rolagem: crate::rolagem::Rolagem,
@@ -69,12 +73,21 @@ impl Default for ColoniaUi {
             maquete: None,
             giro: 0.0,
             arrasto: None,
+            elevacao: crate::render3d::ELEV_PADRAO,
             rolagem: Default::default(),
             pinca: None,
             // Começa APERTADO: a ilhota enche o quadro e a costa sai pelas
             // bordas. O dono: "tá mostrando muito longe, não precisa mostrar
             // o oceano".
-            zoom: 1.35,
+            // 1,0 e não 1,35.
+            //
+            // O 1,35 foi calibrado quando a maquete morava numa caixa ALTA:
+            // ali a proporção forçava a câmera pra longe e sobrava folga pra
+            // gastar em zoom. Com a faixa na proporção da peça essa folga
+            // acabou, e 1,35 passou a CORTAR a costa de perto — visto na
+            // prévia, duas vezes, antes de eu entender que a culpa era do
+            // zoom e não do enquadramento.
+            zoom: 1.0,
         }
     }
 }
@@ -214,7 +227,6 @@ impl ColoniaUi {
         let (mr, dir) = colunas(p, f);
         let topo = mr.y;
         let alturac = mr.h;
-        estilo::cartao(mr, false, false);
         let desenhou = match &self.maquete {
             Some(mq) => crate::render3d::maquete_da_ilha(
                 &mq.terreno,
@@ -222,6 +234,7 @@ impl ColoniaUi {
                 mr,
                 mq.centro,
                 self.giro,
+                self.elevacao,
                 self.zoom,
                 solido,
                 &mq.moradores,
@@ -246,14 +259,18 @@ impl ColoniaUi {
         // personagem e o do minimapa). Quem abria o painel tocava no menu, à
         // direita, e o arrasto na maquete nunca começava: "nem dá pra mover".
         if let Some(q) = apertou_em() {
-            self.arrasto = mr.contains(q).then_some(q.x);
+            self.arrasto = mr.contains(q).then_some(q);
         }
         if !is_mouse_button_down(MouseButton::Left) && touches().is_empty() {
             self.arrasto = None;
         }
         if let Some(antes) = self.arrasto {
-            self.giro -= (m.x - antes) * 0.008;
-            self.arrasto = Some(m.x);
+            self.giro -= (m.x - antes.x) * 0.008;
+            // Arrastar PRA CIMA sobe a câmera, que é o sentido que todo
+            // orbitador de 3D usa: o dedo empurra o objeto, não a lente.
+            self.elevacao = (self.elevacao + (m.y - antes.y) * 0.006)
+                .clamp(crate::render3d::ELEV_MIN, crate::render3d::ELEV_MAX);
+            self.arrasto = Some(m);
         }
         // PINÇA e RODA dão zoom. A maquete não tinha zoom nenhum.
         let dedos: Vec<Vec2> = touches()
@@ -594,7 +611,9 @@ fn colunas(p: Rect, f: f32) -> (Rect, Rect) {
     let topo = p.y + 76.0 * f;
     let alt = (p.h - 92.0 * f).max(40.0);
     let util = (p.w - 56.0 * f).max(80.0);
-    let esq = util * 0.46;
+    // 0,52 e nao 0,46: a esquerda e' onde a ilha mora, e a direita e' uma
+    // lista de cartoes que aguenta ser mais estreita.
+    let esq = util * 0.52;
     let maquete = Rect::new(p.x + 20.0 * f, topo, esq, alt);
     let dir = Rect::new(maquete.x + esq + 16.0 * f, topo, util - esq, alt);
     (maquete, dir)
