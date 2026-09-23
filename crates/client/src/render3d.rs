@@ -3012,6 +3012,7 @@ pub fn maquete_da_ilha(
     r: Rect,
     centro: Vec2,
     yaw: f32,
+    zoom: f32,
     solido: &Material,
     moradores: &[(shared::colonia::Profissao, Vec2)],
     vox: &VoxCache,
@@ -3042,20 +3043,40 @@ pub fn maquete_da_ilha(
     // `colonia::RAIO` e do retângulo, para mexer em qualquer um dos dois
     // continuar enquadrando certo.
     const FOVY: f32 = 0.85;
-    const ELEVACAO: f32 = 0.95; // ~54°: mais de cima, para o disco caber
-    let raio = shared::colonia::RAIO * 1.05;
+    // ~34°, e não 54°: mais rasante.
+    //
+    // De cima a ilhota vira um disco chapado — o dono: "a ilha tá muito feia,
+    // tá chapada plana". O relevo de uma ilha se lê pelo PERFIL, não pela
+    // planta: é a silhueta contra o mar que diz que há morro. A 54° o olho
+    // via um mapa; a 34° vê uma ilha.
+    const ELEVACAO: f32 = 0.78;
+    // ENQUADRA APERTADO: a ilhota enche o quadro e a costa sai pelas bordas.
+    // Antes era 1,05 do raio, com as duas restrições valendo — sobrava mar em
+    // volta e a ilha ficava pequena no meio. "Não precisa mostrar o oceano."
+    let raio = shared::colonia::RAIO * 0.72 / zoom.max(0.05);
     let meio_v = (FOVY * 0.5).tan();
     let meio_h = meio_v * (r.w / r.h).max(0.05);
-    let dist = (raio / meio_h).max(raio * ELEVACAO.sin() / meio_v);
+    // A HORIZONTAL manda, e só ela: exigir a vertical também afastava a
+    // câmera até caber o disco inteiro, que é o que punha o oceano na tela.
+    let dist = raio / meio_h;
     let alto = terreno.altura(centro.x, centro.y);
+    // O QUARTO DE VOLTA que faltava.
+    //
+    // Com `yaw = 0` a câmera nascia em +X olhando pra -X, e a praça da colônia
+    // é montada olhando pro -Z (`construcao::frente_de`): a maquete abria de
+    // perfil pras casas. O dono: "tá 90 graus pro lado errado".
+    let ang = yaw + std::f32::consts::FRAC_PI_2;
     let olho = vec3(
-        centro.x + yaw.cos() * dist * ELEVACAO.cos(),
+        centro.x + ang.cos() * dist * ELEVACAO.cos(),
         alto + dist * ELEVACAO.sin(),
-        centro.y + yaw.sin() * dist * ELEVACAO.cos(),
+        centro.y + ang.sin() * dist * ELEVACAO.cos(),
     );
     let cam = Camera3D {
         position: olho,
-        target: vec3(centro.x, alto + 2.0, centro.y),
+        // Mira UM POUCO ACIMA do chão da praça: com a câmera rasante, mirar
+        // no chão joga a vila pro terço de cima e enche a metade de baixo com
+        // a encosta perto. Visto na prévia.
+        target: vec3(centro.x, alto + 9.0, centro.y),
         up: Vec3::Y,
         fovy: FOVY,
         viewport: Some(vp),
@@ -3150,7 +3171,14 @@ pub fn maquete_da_ilha(
         // Sete é onde ele vira gente sem virar gigante. Uma maquete é um
         // modelo, e num modelo as figuras são exageradas justamente para
         // serem lidas.
-        const ESCALA_DO_MORADOR: f32 = 7.0;
+        // Dois e meio, e não sete.
+        //
+        // Sete foi calibrado com a câmera longe, enquadrando a ilhota inteira
+        // com folga. Ela chegou perto (o dono: "tá mostrando muito longe"), e
+        // na prévia os moradores viraram gigantes de pé sobre as casas. A
+        // escala do boneco anda junto com a distância da câmera — mudar uma
+        // sem a outra é trocar um defeito por outro.
+        const ESCALA_DO_MORADOR: f32 = 2.5;
         let base = Mat4::from_translation(vec3(onde.x, y, onde.y))
             * Mat4::from_rotation_y(t * 0.25)
             * Mat4::from_scale(Vec3::splat(ESCALA_DO_MORADOR));

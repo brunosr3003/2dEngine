@@ -512,6 +512,14 @@ fn icone(c: Vec2, e: &Estado, s: f32) {
 // O cartao cresceu pra caber a linha da RECOMPENSA.
 const CARTAO: f32 = 96.0;
 
+/// O RODAPÉ da fila, ou `None` quando não há nada marcado.
+///
+/// Fora do desenho pra ser medido contra a lista: foi desenhando um por cima
+/// do outro que o rodapé cobriu o último cartão e comeu o toque dele.
+pub(crate) fn rodape_da_fila(p: Rect, f: f32, tem_marca: bool) -> Option<Rect> {
+    tem_marca.then(|| Rect::new(p.x + 18.0, p.y + p.h - 52.0 * f, p.w - 36.0, 40.0 * f))
+}
+
 /// As caixas de um cartão de missão: (Ir, caixa da fila, largura do texto).
 ///
 /// Fora do desenho pra poder ser MEDIDA. Foi exatamente este tipo de conta —
@@ -674,7 +682,21 @@ impl MenuMissoes {
         }
 
         // ── a lista da aba ──
-        let area = Rect::new(p.x + 10.0, ya + 42.0 * f, p.w - 20.0, p.y + p.h - (ya + 42.0 * f) - 10.0);
+        //
+        // A ALTURA DELA CEDE pro rodapé da fila.
+        //
+        // Antes a lista ia até o fim do painel e o rodapé era desenhado por
+        // cima dela: ele cobria o último cartão, e o toque acertava a missão
+        // em vez do botão. O dono: "fazer as 1 e limpar está em cima da
+        // última missão, aí não consigo clicar".
+        //
+        // Reservar o espaço ANTES de medir a lista é o que faz os dois
+        // ocuparem lugares diferentes — desenhar um por cima do outro é
+        // combinar no desenho o que não foi combinado na conta.
+        let rodape = rodape_da_fila(p, f, !self.marcadas.is_empty());
+        let topo_lista = ya + 42.0 * f;
+        let fim_lista = rodape.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
+        let area = Rect::new(p.x + 10.0, topo_lista, p.w - 20.0, (fim_lista - topo_lista).max(40.0));
         let da_aba: Vec<&(Linha, Resumo)> = todas.iter().filter(|(_, r)| aba_de(r) == aba).collect();
         let altura = |l: &Linha| {
             CARTAO * f
@@ -831,13 +853,7 @@ impl MenuMissoes {
         // Ele só aparece com marca porque um botão morto no rodapé de toda
         // abertura seria mais uma coisa a ignorar — e porque a fila é um modo
         // em que se entra de propósito, não o jeito normal de usar o menu.
-        if !self.marcadas.is_empty() {
-            let rod = Rect::new(
-                p.x + 18.0,
-                p.y + p.h - 52.0 * f,
-                p.w - 36.0,
-                40.0 * f,
-            );
+        if let Some(rod) = rodape {
             let n = self.marcadas.len();
             let b = Rect::new(rod.x + rod.w - 190.0 * f, rod.y, 120.0 * f, rod.h);
             let limpar = Rect::new(rod.x + rod.w - 64.0 * f, rod.y, 64.0 * f, rod.h);
@@ -1186,6 +1202,46 @@ mod testes_da_trava {
                     83.0 * f,
                     card.h
                 );
+            }
+        }
+    }
+
+    /// O RODAPÉ DA FILA NÃO COBRE A LISTA.
+    ///
+    /// Ele era desenhado por cima dela: cobria o último cartão e o toque
+    /// acertava a missão em vez do botão — o dono não conseguia clicar em
+    /// "Fazer as N". O teste que eu tinha media o CARTÃO, e o defeito estava
+    /// entre o rodapé e a ÁREA, que ninguém media.
+    #[test]
+    fn o_rodape_da_fila_nao_cobre_a_lista() {
+        for (w, h) in [(300.0f32, 260.0f32), (540.0, 480.0), (900.0, 1000.0)] {
+            for f in [0.8f32, 1.0, 1.5, 2.2] {
+                let p = Rect::new(0.0, 0.0, w, h);
+                let topo = p.y + 90.0 * f; // onde a lista começa, com abas
+                for tem_marca in [false, true] {
+                    let rod = rodape_da_fila(p, f, tem_marca);
+                    assert_eq!(
+                        rod.is_some(),
+                        tem_marca,
+                        "o rodapé só existe com missão marcada"
+                    );
+                    let fim = rod.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
+                    let area = Rect::new(p.x + 10.0, topo, p.w - 20.0, (fim - topo).max(40.0));
+                    if let Some(r) = rod {
+                        assert!(
+                            area.y + area.h <= r.y + 0.01 || area.h <= 40.0,
+                            "{w}x{h} f={f}: a lista acaba em {:.0} e o rodapé começa em \
+                             {:.0} — eles se cobrem",
+                            area.y + area.h,
+                            r.y
+                        );
+                        assert!(
+                            r.y + r.h <= p.y + p.h + 0.01,
+                            "{w}x{h} f={f}: o rodapé passa do fim do painel"
+                        );
+                    }
+                    assert!(area.h > 0.0, "{w}x{h} f={f}: a lista ficou sem altura");
+                }
             }
         }
     }

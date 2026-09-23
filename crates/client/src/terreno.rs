@@ -1513,7 +1513,7 @@ pub async fn previa_da_colonia(
         for q in 0..40 {
             tp.atualiza(eu, 6, 24);
             let ok = crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, solido, &[], vox,
+                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], vox,
             );
             if q % 8 == 0 || q == 39 {
                 println!(
@@ -1542,7 +1542,7 @@ pub async fn previa_da_colonia(
         let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
         let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
         let ok = crate::render3d::maquete_da_ilha(
-            &t, &construcoes, r, eu, 0.9, solido, &onde, vox,
+            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, vox,
         );
         unsafe { macroquad::window::get_internal_gl().flush() };
         rt.texture

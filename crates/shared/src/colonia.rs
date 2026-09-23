@@ -93,7 +93,19 @@ pub const RAIO_BLOCOS: i32 = 180;
 /// O raio médio da ilhota, em unidades de mundo.
 pub const RAIO: f32 = RAIO_BLOCOS as f32 * crate::terreno::BLOCO * 0.94;
 /// Altura do meio da ilhota, antes de a praça aplainar.
-pub const ALTURA_TOPO: f32 = 9.0;
+///
+/// Eram 9,0 — oito unidades de desnível num raio de 85: uma moeda, não uma
+/// ilha, e o dono disse "tá chapada plana e horrível".
+///
+/// Trinta foi longe DEMAIS, e a prévia mostrou por quê: a praça é aplainada
+/// num disco (`Cidade::aplainar`) com rampa de 14 u, e com o meio a 30 u o
+/// terreno em volta despencava — a cidade virava uma MESA DE PEDRA terraçada
+/// no meio da ilha, que lê como pedreira.
+///
+/// Dezesseis dá silhueta sem fazer barranco: quem carrega o relevo é a
+/// ondulação, que cresce PRA FORA (`0,30 + 0,70·t`) e deixa o meio calmo
+/// justamente onde a cidade assenta.
+pub const ALTURA_TOPO: f32 = 16.0;
 /// Altura da ORLA: logo acima do mar, que é o que faz ela ler como praia.
 pub const ALTURA_ORLA: f32 = 0.8;
 /// O fundo do mar em volta.
@@ -128,19 +140,23 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     let h = ALTURA_TOPO + (ALTURA_ORLA - ALTURA_TOPO) * t * t;
     // RELEVO POR CIMA, senão a ilha vira um alvo de tiro.
     //
-    // Um domo liso quantizado em blocos de 0,5 u vira ANÉIS: a queda de 12 u
-    // do meio até a orla dá 24 degraus concêntricos, e o olho lê aquilo como
-    // curva de nível de mapa topográfico. O dono viu e disse que "o 3D tá
-    // MUITO feio" — e estava mesmo.
+    // Um domo liso quantizado em blocos de 0,5 u vira ANÉIS concêntricos, e o
+    // olho lê aquilo como curva de nível de mapa topográfico.
     //
-    // Três senos cruzados quebram os anéis sem inventar penhasco: a amplitude
-    // total é ±1,1 u (dois blocos), e o degrau que isso acrescenta por coluna
-    // fica em 0,1 u no pior ponto, longe do bloco que o passo vence. A
-    // amplitude cai perto da orla (`t`), pra praia continuar sendo praia.
-    let ondula = ((x * 0.11).sin() * (z * 0.09).cos() * 0.62
-        + (x * 0.05 - z * 0.07).sin() * 0.34
-        + ((x + z) * 0.19).sin() * 0.14)
-        * (0.35 + 0.65 * t);
+    // O RELEVO PESA. Ele era ±1,1 u num desnível de 12 — ruído, não
+    // terreno. O dono: "a ilha tá muito feia, tá chapada plana e horrível".
+    //
+    // Agora ±4,5 u, com uma onda longa que faz morro e vale de verdade e duas
+    // curtas que quebram o contorno. O degrau por coluna no pior ponto fica
+    // em 0,30 u — abaixo do bloco (0,5) que o passo vence, então a ilhota
+    // continua caminhável por construção.
+    //
+    // A amplitude ainda cai perto da orla (`t`), pra praia continuar praia e
+    // a costa não virar penhasco.
+    let ondula = ((x * 0.035 + 1.7).sin() * (z * 0.031 - 0.9).cos() * 2.9
+        + (x * 0.082 - z * 0.061).sin() * 1.15
+        + ((x + z) * 0.145).sin() * 0.45)
+        * (0.30 + 0.70 * t);
     ((h + ondula) / crate::terreno::BLOCO).round() as i32 - 1
 }
 
@@ -732,6 +748,48 @@ mod testes_do_chao {
     ///
     /// Roda sobre as ilhas de VERDADE (`Ilha::da_colonia`), e nao sobre os
     /// numeros: o que precisa ser igual e' o chao, nao a formula.
+    /// A LADEIRA NUNCA VIRA PAREDÃO, em nenhuma coluna da ilhota.
+    ///
+    /// O relevo subiu de 8 para 29 u de desnível porque a ilha estava
+    /// "chapada plana e horrível", e ondulação forte é exatamente o que cria
+    /// degrau sem ninguém ver. Um bloco (0,5 u) é o que o passo vence; acima
+    /// disso é penhasco, e num painel de maquete penhasco lê como buraco.
+    ///
+    /// Varre a ilhota inteira comparando cada coluna com a vizinha — é o
+    /// chão de verdade, não a fórmula.
+    #[test]
+    fn a_ladeira_da_ilhota_nunca_vira_paredao() {
+        let r = RAIO_BLOCOS;
+        let mut pior = 0i32;
+        let mut onde = (0, 0);
+        for bz in -r..r {
+            for bx in -r..r {
+                let h = bloco_da_coluna(bx, bz);
+                // Só compara TERRA com TERRA: a queda pra água é a costa, e
+                // costa é para ser íngreme.
+                if h <= NIVEL_FUNDO {
+                    continue;
+                }
+                for (dx, dz) in [(1, 0), (0, 1)] {
+                    let v = bloco_da_coluna(bx + dx, bz + dz);
+                    if v <= NIVEL_FUNDO {
+                        continue;
+                    }
+                    let d = (h - v).abs();
+                    if d > pior {
+                        pior = d;
+                        onde = (bx, bz);
+                    }
+                }
+            }
+        }
+        println!("pior degrau: {pior} bloco(s), em {onde:?}");
+        assert!(
+            pior <= 1,
+            "degrau de {pior} blocos em {onde:?}: a ilhota ganhou penhasco"
+        );
+    }
+
     /// A ILHOTA CABE NUMA OLHADA, e a cidade fica no meio dela.
     ///
     /// Substitui `a_colonia_tem_cais_e_ele_fica_no_lugar`, que morreu com o

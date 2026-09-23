@@ -34,7 +34,6 @@ pub struct Estado {
     pub vagas: u8,
 }
 
-#[derive(Default)]
 pub struct ColoniaUi {
     estado: Option<Estado>,
     /// O relevo e o assentamento da ilha, pra maquete. Montados quando o
@@ -53,6 +52,31 @@ pub struct ColoniaUi {
     /// A coluna da direita rola: ela tem colheita, baú, três eixos e até seis
     /// moradores, e isso não cabe em tela de celular.
     rolagem: crate::rolagem::Rolagem,
+    /// Distância entre os dois dedos no quadro passado (pinça).
+    pinca: Option<f32>,
+    /// ZOOM da maquete. 1 = a ilhota enquadrada; acima, mais perto.
+    ///
+    /// Nasce em 1,35 porque o dono: "tá mostrando muito longe, não precisa
+    /// mostrar o oceano". A ilhota passa a encher o quadro e a costa sai
+    /// pelas bordas, que é o que se quer numa maquete — ela É o assunto.
+    zoom: f32,
+}
+
+impl Default for ColoniaUi {
+    fn default() -> Self {
+        Self {
+            estado: None,
+            maquete: None,
+            giro: 0.0,
+            arrasto: None,
+            rolagem: Default::default(),
+            pinca: None,
+            // Começa APERTADO: a ilhota enche o quadro e a costa sai pelas
+            // bordas. O dono: "tá mostrando muito longe, não precisa mostrar
+            // o oceano".
+            zoom: 1.35,
+        }
+    }
 }
 
 struct Maquete {
@@ -198,6 +222,7 @@ impl ColoniaUi {
                 mr,
                 mq.centro,
                 self.giro,
+                self.zoom,
                 solido,
                 &mq.moradores,
                 vox,
@@ -213,23 +238,49 @@ impl ColoniaUi {
                 estilo::SUAVE,
             );
         }
-        // ARRASTAR GIRA. Só o eixo X: a câmera anda em volta da ilha, ela não
-        // tomba. Subir e descer a câmera daria vistas em que a ilhota some
-        // atrás da própria borda.
-        if is_mouse_button_pressed(MouseButton::Left) && mr.contains(m) {
-            self.arrasto = Some(m.x);
+        // ARRASTAR GIRA, e o toque tem que ser pego NO PONTO DO DEDO.
+        //
+        // Antes o teste era `mr.contains(mouse_position())` no quadro do
+        // aperto — e nesse quadro o mouse simulado ainda aponta pro TOQUE
+        // ANTERIOR (a mesma armadilha que já mordeu o botão de criar
+        // personagem e o do minimapa). Quem abria o painel tocava no menu, à
+        // direita, e o arrasto na maquete nunca começava: "nem dá pra mover".
+        if let Some(q) = apertou_em() {
+            self.arrasto = mr.contains(q).then_some(q.x);
         }
-        if !is_mouse_button_down(MouseButton::Left) {
+        if !is_mouse_button_down(MouseButton::Left) && touches().is_empty() {
             self.arrasto = None;
         }
         if let Some(antes) = self.arrasto {
             self.giro -= (m.x - antes) * 0.008;
             self.arrasto = Some(m.x);
         }
+        // PINÇA e RODA dão zoom. A maquete não tinha zoom nenhum.
+        let dedos: Vec<Vec2> = touches()
+            .iter()
+            .filter(|t| t.phase != TouchPhase::Ended)
+            .map(|t| t.position)
+            .collect();
+        if dedos.len() >= 2 {
+            self.arrasto = None; // dois dedos não giram
+            let d = dedos[0].distance(dedos[1]);
+            if let Some(antes) = self.pinca.replace(d) {
+                if antes > 1.0 {
+                    self.zoom = (self.zoom * (d / antes)).clamp(ZOOM_MIN, ZOOM_MAX);
+                }
+            }
+        } else {
+            self.pinca = None;
+        }
+        let roda = mouse_wheel().1;
+        if roda != 0.0 && mr.contains(m) {
+            self.zoom = (self.zoom * if roda > 0.0 { 1.12 } else { 1.0 / 1.12 })
+                .clamp(ZOOM_MIN, ZOOM_MAX);
+        }
         estilo::texto_centro(
             mr.center().x,
             mr.y + mr.h - 10.0 * f,
-            "arraste para girar",
+            "arraste para girar · pinça dá zoom",
             12,
             estilo::SUAVE,
         );
@@ -498,6 +549,25 @@ impl ColoniaUi {
         }
         pedido
     }
+}
+
+/// Limites do zoom da maquete. O mínimo ainda mostra a ilhota inteira; o
+/// máximo chega perto o bastante pra ver um morador trabalhando.
+const ZOOM_MIN: f32 = 0.8;
+const ZOOM_MAX: f32 = 3.5;
+
+/// O ponto onde o dedo ENCOSTOU neste quadro.
+///
+/// No quadro do aperto o mouse simulado ainda aponta pro toque anterior, e
+/// testar retângulo com ele erra. Igual ao de `mapa`.
+fn apertou_em() -> Option<Vec2> {
+    if let Some(t) = touches()
+        .into_iter()
+        .find(|t| t.phase == TouchPhase::Started)
+    {
+        return Some(t.position);
+    }
+    is_mouse_button_pressed(MouseButton::Left).then(|| Vec2::from(mouse_position()))
 }
 
 /// A JANELA do painel, medida a partir da tela.
