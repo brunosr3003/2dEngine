@@ -437,6 +437,72 @@ impl Aba {
     }
 }
 
+/// O SEGUNDO eixo do menu: de que tipo é a linha.
+///
+/// As abas de cima dizem em que PÉ a missão está (em andamento, disponível,
+/// travada, feita). Este diz o que ela É. São perguntas independentes — "o
+/// que da história está disponível" precisa das duas —, e por isso são duas
+/// faixas e não uma lista de oito botões.
+///
+/// O dono: "no menu de todas as missões tem que ter subabas de missão de
+/// história, missão secundária etc".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tipo {
+    Todos,
+    Historia,
+    Secundarias,
+    Moradores,
+    Faccao,
+}
+
+impl Default for Tipo {
+    fn default() -> Self {
+        Tipo::Todos
+    }
+}
+
+impl Tipo {
+    pub const TODOS: [Tipo; 5] = [
+        Tipo::Todos,
+        Tipo::Historia,
+        Tipo::Secundarias,
+        Tipo::Moradores,
+        Tipo::Faccao,
+    ];
+
+    pub fn nome(self) -> &'static str {
+        match self {
+            Tipo::Todos => "Todas",
+            Tipo::Historia => "História",
+            Tipo::Secundarias => "Secundárias",
+            Tipo::Moradores => "Moradores",
+            Tipo::Faccao => "Facção",
+        }
+    }
+}
+
+/// De que tipo é uma linha.
+///
+/// Pelo PRIMEIRO passo, e não por votação entre os passos: uma cadeia nasce
+/// de uma fonte e é ela que dá o nome. Uma cadeia que começa no quadro e
+/// segue com um NPC continua sendo secundária.
+pub fn tipo_de(l: &Linha) -> Tipo {
+    use shared::quests::quest_source as src;
+    if l.historia {
+        return Tipo::Historia;
+    }
+    match l.passos.first().map(|d| d.source) {
+        Some(src::NPC) => Tipo::Moradores,
+        Some(src::FACTION) => Tipo::Faccao,
+        _ => Tipo::Secundarias,
+    }
+}
+
+/// A linha passa pelo filtro de tipo?
+pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
+    t == Tipo::Todos || tipo_de(l) == t
+}
+
 /// Em que aba a linha vai, pelo estado do passo atual.
 pub fn aba_de(r: &Resumo) -> Aba {
     match r.estado {
@@ -516,8 +582,34 @@ const CARTAO: f32 = 96.0;
 ///
 /// Fora do desenho pra ser medido contra a lista: foi desenhando um por cima
 /// do outro que o rodapé cobriu o último cartão e comeu o toque dele.
-pub(crate) fn rodape_da_fila(p: Rect, f: f32, tem_marca: bool) -> Option<Rect> {
-    tem_marca.then(|| Rect::new(p.x + 18.0, p.y + p.h - 52.0 * f, p.w - 36.0, 40.0 * f))
+pub(crate) fn rodape_da_fila(p: Rect, f: f32, _tem_marca: bool) -> Option<Rect> {
+    // SEMPRE presente, e isso mudou com o "fazer todas".
+    //
+    // Antes ele só aparecia com alguma marca, porque só servia pra "Fazer as
+    // n" e "Limpar". Agora ele carrega o "Marcar todas", que é justamente o
+    // botão de quem NÃO marcou nada — se o rodapé só nascesse com marca, o
+    // atalho pra marcar estaria escondido atrás do trabalho que ele evita.
+    Some(Rect::new(p.x + 18.0, p.y + p.h - 52.0 * f, p.w - 36.0, 40.0 * f))
+}
+
+/// Os três botões do rodapé: (marcar todas, fazer, limpar).
+///
+/// Fora do desenho pra poder ser medido. Eles dividem a MESMA faixa, e num
+/// painel estreito medidas fixas se sobrepõem — que foi o defeito de um
+/// cartão deste mesmo menu, achado por teste e não pelo dono.
+pub(crate) fn botoes_do_rodape(rod: Rect, f: f32) -> [Rect; 3] {
+    // Cada um pede um tamanho; se não couberem, todos encolhem junto.
+    let (a, b, c) = (128.0 * f, 112.0 * f, 68.0 * f);
+    let folga = 8.0 * f;
+    let pedido = a + b + c + folga * 2.0;
+    let k = (rod.w / pedido).min(1.0);
+    let (a, b, c, folga) = (a * k, b * k, c * k, folga * k);
+    let x0 = rod.x + rod.w - (a + b + c + folga * 2.0);
+    [
+        Rect::new(x0, rod.y, a, rod.h),
+        Rect::new(x0 + a + folga, rod.y, b, rod.h),
+        Rect::new(x0 + a + folga + b + folga, rod.y, c, rod.h),
+    ]
 }
 
 /// As caixas de um cartão de missão: (Ir, caixa da fila, largura do texto).
@@ -559,6 +651,9 @@ pub struct MenuMissoes {
     rolagem: crate::rolagem::Rolagem,
     /// `None` = escolher na abertura (em andamento, ou disponiveis).
     aba: Option<Aba>,
+    /// O filtro de tipo. Nasce em `Todos`: quem abre o menu quer ver o que
+    /// tem, nao escolher uma gaveta antes de saber o que ha' dentro.
+    tipo: Tipo,
     /// Linha aberta (mostra os passos), pelo nome.
     expandida: Option<String>,
     /// As missoes MARCADAS pra fila, na ordem em que foram marcadas.
@@ -586,6 +681,7 @@ impl MenuMissoes {
     pub fn abrir(&mut self) {
         self.aberto = true;
         self.aba = None;
+        self.tipo = Tipo::Todos;
         self.expandida = None;
         self.rolagem.zera();
         // As marcas NAO sobrevivem ao fechar: uma fila montada ontem e
@@ -682,7 +778,18 @@ impl MenuMissoes {
                 (l, r)
             })
             .collect();
-        let conta = |a: Aba| todas.iter().filter(|(_, r)| aba_de(r) == a).count();
+        // A CONTAGEM DAS ABAS RESPEITA O TIPO.
+        //
+        // Senão "Disponíveis (7)" com o filtro em História abriria uma lista
+        // vazia — o número prometeria sete e a tela mostraria zero, que é o
+        // jeito mais rápido de o jogador achar que a tela quebrou.
+        let tipo = self.tipo;
+        let conta = |a: Aba| {
+            todas
+                .iter()
+                .filter(|(l, r)| aba_de(r) == a && cabe_no_tipo(l, tipo))
+                .count()
+        };
         let aba = *self.aba.get_or_insert(if conta(Aba::EmAndamento) > 0 {
             Aba::EmAndamento
         } else {
@@ -703,6 +810,28 @@ impl MenuMissoes {
             }
         }
 
+        // ── a faixa de TIPO, o segundo eixo ──
+        let yt = ya + 38.0 * f;
+        let wt = (p.w - 20.0 - 4.0 * 5.0) / 5.0;
+        for (k, tp) in Tipo::TODOS.iter().enumerate() {
+            let r = Rect::new(p.x + 10.0 + k as f32 * (wt + 5.0), yt, wt, 30.0 * f);
+            if *tp == self.tipo {
+                estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::ACENTO, 0.28));
+            }
+            let n = todas
+                .iter()
+                .filter(|(l, _)| cabe_no_tipo(l, *tp))
+                .count();
+            // Tipo sem nenhuma linha fica APAGADO em vez de sumir: a faixa
+            // mudar de tamanho conforme o progresso faria o botão trocar de
+            // lugar debaixo do dedo.
+            if crate::ui::botao(r, &format!("{} ({n})", tp.nome()), n > 0) && *tp != self.tipo {
+                self.tipo = *tp;
+                self.expandida = None;
+                self.rolagem.zera();
+            }
+        }
+
         // ── a lista da aba ──
         //
         // A ALTURA DELA CEDE pro rodapé da fila.
@@ -716,10 +845,30 @@ impl MenuMissoes {
         // ocuparem lugares diferentes — desenhar um por cima do outro é
         // combinar no desenho o que não foi combinado na conta.
         let rodape = rodape_da_fila(p, f, !self.marcadas.is_empty());
-        let topo_lista = ya + 42.0 * f;
+        let topo_lista = yt + 38.0 * f;
         let fim_lista = rodape.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
         let area = Rect::new(p.x + 10.0, topo_lista, p.w - 20.0, (fim_lista - topo_lista).max(40.0));
-        let da_aba: Vec<&(Linha, Resumo)> = todas.iter().filter(|(_, r)| aba_de(r) == aba).collect();
+        let da_aba: Vec<&(Linha, Resumo)> = todas
+            .iter()
+            .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo))
+            .collect();
+        // O QUE O "MARCAR TODAS" ALCANÇA: o que está na tela e dá pra marcar.
+        //
+        // Mesma condição da caixinha de cada cartão (`clicavel` + ter passo
+        // atual). Sai daqui, e não de dentro do laço de desenho, porque o
+        // rodapé é desenhado DEPOIS da lista — e porque uma segunda regra de
+        // "pode marcar" escrita noutro lugar sairia do lugar da primeira na
+        // primeira mudança.
+        let marcaveis: Vec<u16> = da_aba
+            .iter()
+            .filter(|(_, r)| {
+                matches!(
+                    r.estado,
+                    Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
+                )
+            })
+            .filter_map(|(_, r)| r.atual.map(|d| d.id))
+            .collect();
         let altura = |l: &Linha| {
             CARTAO * f
                 + if self.expandida.as_deref() == Some(l.nome.as_str()) {
@@ -739,13 +888,21 @@ impl MenuMissoes {
         // `self` está emprestado pela closure que mede a altura das linhas.
         let mut marca_pedida: Option<u16> = None;
         if da_aba.is_empty() {
-            let vazio = match aba {
-                Aba::EmAndamento => "Nada em andamento. Veja as Disponíveis.",
-                Aba::Disponiveis => "Nada pra pegar agora.",
-                Aba::Bloqueadas => "Nenhuma linha travada.",
-                Aba::Concluidas => "Nenhuma linha concluída ainda.",
+            // Com filtro de tipo ligado, o vazio tem DUAS causas possíveis, e
+            // dizer só "nada em andamento" mandaria o jogador procurar o que
+            // ele mesmo escondeu um botão acima.
+            let vazio: String = if self.tipo != Tipo::Todos {
+                format!("Nada de {} nesta aba.", self.tipo.nome().to_lowercase())
+            } else {
+                match aba {
+                    Aba::EmAndamento => "Nada em andamento. Veja as Disponíveis.",
+                    Aba::Disponiveis => "Nada pra pegar agora.",
+                    Aba::Bloqueadas => "Nenhuma linha travada.",
+                    Aba::Concluidas => "Nenhuma linha concluída ainda.",
+                }
+                .to_string()
             };
-            estilo::texto(area.x + 8.0, area.y + 26.0 * f, vazio, 15, estilo::SUAVE);
+            estilo::texto(area.x + 8.0, area.y + 26.0 * f, &vazio, 15, estilo::SUAVE);
         }
         crate::rolagem::recortar(Some(area));
         let mut y = area.y - self.rolagem.pos;
@@ -877,8 +1034,7 @@ impl MenuMissoes {
         // em que se entra de propósito, não o jeito normal de usar o menu.
         if let Some(rod) = rodape {
             let n = self.marcadas.len();
-            let b = Rect::new(rod.x + rod.w - 190.0 * f, rod.y, 120.0 * f, rod.h);
-            let limpar = Rect::new(rod.x + rod.w - 64.0 * f, rod.y, 64.0 * f, rod.h);
+            let [todas_b, b, limpar] = botoes_do_rodape(rod, f);
             estilo::texto(
                 rod.x,
                 rod.y + 26.0 * f,
@@ -886,10 +1042,32 @@ impl MenuMissoes {
                 14,
                 estilo::SUAVE,
             );
-            if crate::ui::botao(b, &format!("Fazer as {n}"), true) {
+            // MARCAR TODAS: o que está na tela AGORA, na ordem em que está.
+            //
+            // O que está na tela, e não "todas as do jogo": os dois filtros
+            // acima são a escolha do jogador, e um botão que os ignorasse
+            // encheria a fila com o que ele acabou de filtrar fora.
+            //
+            // Para no teto da fila em vez de recusar tudo: encher dez de doze
+            // é o que a pessoa quis, e recusar por causa das duas que sobram
+            // seria obedecer ao número em vez de à intenção.
+            if crate::ui::botao(todas_b, "Marcar todas", !marcaveis.is_empty()) {
+                let cabem = FILA_MAX.saturating_sub(self.marcadas.len());
+                let novas: Vec<u16> = marcaveis
+                    .iter()
+                    .copied()
+                    .filter(|id| !self.marcadas.contains(id))
+                    .take(cabem)
+                    .collect();
+                for id in novas {
+                    self.marcadas.push(id);
+                    self.marca_mudou = Some((id, true));
+                }
+            }
+            if crate::ui::botao(b, &format!("Fazer as {n}"), n > 0) {
                 saida = Some(Clique::Fila(std::mem::take(&mut self.marcadas)));
             }
-            if crate::ui::botao(limpar, "Limpar", true) {
+            if crate::ui::botao(limpar, "Limpar", n > 0) {
                 // Desfixa uma por uma, pra quem escuta receber cada baixa: o
                 // `Limpar` tem que soltar as do rastreador junto, senão a
                 // lista da esquerda fica com missões que ninguém mais vai
@@ -1188,6 +1366,98 @@ mod testes_da_trava {
     ///
     /// Aqui a conta é medida: botões dentro do cartão, texto com largura
     /// positiva, e a última linha (a recompensa, em `+83f`) dentro da altura.
+    /// Os três botões do rodapé não se encavalam, em tela nenhuma.
+    ///
+    /// Eles dividem a mesma faixa, e foi exatamente esse tipo de conta — feita
+    /// à mão e conferida no olho — que pôs o botão de entrar da Ilha Mágica
+    /// fora da janela e prendeu o jogador lá.
+    #[test]
+    fn os_botoes_do_rodape_nao_se_encavalam() {
+        for (w, f) in [
+            (1040.0, 1.0),
+            (760.0, 1.4),
+            (420.0, 1.0),
+            (320.0, 2.2),
+            (280.0, 2.2),
+        ] {
+            let rod = Rect::new(10.0, 500.0, w - 36.0, 40.0 * f);
+            let b = botoes_do_rodape(rod, f);
+            let nomes = ["marcar todas", "fazer", "limpar"];
+            for i in 0..3 {
+                assert!(
+                    b[i].x >= rod.x - 0.01 && b[i].x + b[i].w <= rod.x + rod.w + 0.01,
+                    "{w}x{f}: {} vaza o rodapé: {:?} em {rod:?}",
+                    nomes[i],
+                    b[i]
+                );
+                assert!(b[i].w > 8.0, "{w}x{f}: {} ficou sem largura", nomes[i]);
+                for j in i + 1..3 {
+                    assert!(
+                        b[i].x + b[i].w <= b[j].x + 0.01,
+                        "{w}x{f}: {} encosta em {}",
+                        nomes[i],
+                        nomes[j]
+                    );
+                }
+            }
+        }
+    }
+
+    /// O rodapé existe mesmo sem marca nenhuma.
+    ///
+    /// É onde mora o "Marcar todas", que é justamente o botão de quem não
+    /// marcou nada: escondê-lo atrás de uma marca seria trancar o atalho
+    /// atrás do trabalho que ele evita.
+    #[test]
+    fn o_rodape_aparece_sem_marca() {
+        let p = Rect::new(0.0, 0.0, 800.0, 600.0);
+        assert!(rodape_da_fila(p, 1.0, false).is_some());
+        assert!(rodape_da_fila(p, 1.0, true).is_some());
+    }
+
+    /// Cada linha cai num tipo só, e "Todas" aceita qualquer uma.
+    #[test]
+    fn o_tipo_separa_as_linhas() {
+        let hist = Linha {
+            nome: "História".into(),
+            // Qualquer passo serve: `tipo_de` olha a bandeira `historia`
+            // antes da fonte, e é isso que o teste quer travar.
+            passos: vec![todas().into_iter().next().unwrap()],
+            historia: true,
+        };
+        assert_eq!(tipo_de(&hist), Tipo::Historia);
+        assert!(cabe_no_tipo(&hist, Tipo::Todos));
+        assert!(cabe_no_tipo(&hist, Tipo::Historia));
+        assert!(!cabe_no_tipo(&hist, Tipo::Secundarias));
+
+        // Uma cadeia de NPC é "Moradores"; uma de quadro é "Secundárias".
+        let de_npc = todas().into_iter().find(|d| {
+            d.source == shared::quests::quest_source::NPC && !historia::e_da_historia(d.id)
+        });
+        if let Some(d) = de_npc {
+            let l = Linha { nome: d.title.into(), passos: vec![d], historia: false };
+            assert_eq!(tipo_de(&l), Tipo::Moradores, "quest {} é de NPC", d.id);
+        }
+        let de_quadro = todas().into_iter().find(|d| {
+            d.source == shared::quests::quest_source::BOARD && !historia::e_da_historia(d.id)
+        });
+        if let Some(d) = de_quadro {
+            let l = Linha { nome: d.title.into(), passos: vec![d], historia: false };
+            assert_eq!(tipo_de(&l), Tipo::Secundarias, "quest {} é do quadro", d.id);
+        }
+    }
+
+    /// Todo tipo tem nome, e nenhum repete — eles são rótulo de botão.
+    #[test]
+    fn os_tipos_tem_nomes_distintos() {
+        let mut vistos = std::collections::HashSet::new();
+        for t in Tipo::TODOS {
+            assert!(!t.nome().is_empty());
+            assert!(vistos.insert(t.nome()), "nome repetido: {}", t.nome());
+        }
+        assert_eq!(Tipo::default(), Tipo::Todos, "o menu abre mostrando tudo");
+    }
+
     #[test]
     fn o_cartao_de_missao_cabe_em_si_mesmo() {
         // Larguras de painel plausíveis, da mais apertada à mais folgada.
@@ -1288,11 +1558,12 @@ mod testes_da_trava {
                 let topo = p.y + 90.0 * f; // onde a lista começa, com abas
                 for tem_marca in [false, true] {
                     let rod = rodape_da_fila(p, f, tem_marca);
-                    assert_eq!(
-                        rod.is_some(),
-                        tem_marca,
-                        "o rodapé só existe com missão marcada"
-                    );
+                    // O rodapé passou a existir SEMPRE (23/09/2026): ele
+                    // carrega o "Marcar todas", que é o botão de quem ainda
+                    // não marcou nada. O que este teste guarda continua
+                    // valendo, e é o que importa — ele não pode cobrir a
+                    // lista.
+                    assert!(rod.is_some(), "o rodapé é sempre desenhado");
                     let fim = rod.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
                     let area = Rect::new(p.x + 10.0, topo, p.w - 20.0, (fim - topo).max(40.0));
                     if let Some(r) = rod {
