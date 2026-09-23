@@ -3581,6 +3581,36 @@ impl Ilha {
             para
         };
 
+        // ── REDE DE SEGURANÇA: começar de dentro de uma casa ──
+        //
+        // O dono relatou ficar preso dentro da casa de NPC depois de alguns
+        // teleportes: "o A* não sabe sair disso". A célula da grade tem 4
+        // unidades (`BLOCO` × `PASSO_CAMINHO`) e uma porta é mais estreita,
+        // então a grade não representa a porta — o que torna a queixa
+        // plausível.
+        //
+        // HONESTIDADE SOBRE O QUE ESTÁ PROVADO: eu NÃO consegui reproduzir o
+        // travamento em teste. Pondo o personagem no miolo da caixa de
+        // colisão de seis prédios da ilha inicial, o A* acha caminho COM ou
+        // SEM esta guarda (conferido removendo-a e rodando). Ou o caso real é
+        // outro — teleporte para um ponto específico, prédio de outra ilha —,
+        // ou depende de estado que o teste não monta.
+        //
+        // A guarda fica porque só dispara quando a origem está literalmente
+        // dentro de uma caixa de prédio, e nesse caso sair pela porta é o que
+        // a pessoa faria. Mas ela é rede, não conserto demonstrado: se o
+        // travamento voltar, é aqui que se começa E é preciso um caso
+        // concreto (qual casa, qual teleporte) antes de mexer na grade.
+        if let Some(saida) = crate::vila::saida_do_predio(self.vila(), de) {
+            if saida.distance(de) > 0.01 {
+                let resto = self.caminho(saida, para, orcamento)?;
+                let mut rota = Vec::with_capacity(resto.len() + 1);
+                rota.push(saida);
+                rota.extend(resto);
+                return Some(rota);
+            }
+        }
+
         let cel = |p: glam::Vec2| -> (i32, i32) {
             (
                 (p.x / (BLOCO * PASSO_CAMINHO as f32)).round() as i32,
@@ -5837,6 +5867,62 @@ mod testes_do_cais {
     /// Este teste mede a maior travessia que o jogo pede. Se uma ilha nova
     /// nascer mais larga que o limite, ele reprova aqui — e nao no cais, com
     /// o jogador tocando na tela e nada acontecendo.
+    /// De DENTRO de uma casa, existe caminho pra fora.
+    ///
+    /// Guarda de REGRESSÃO, não prova de conserto: hoje ele passa com e sem a
+    /// rede de `saida_do_predio` (conferido removendo-a). O travamento que o
+    /// dono relatou — "o A* não sabe sair disso nem contornar as casas" — não
+    /// se reproduz assim, e enquanto não houver um caso concreto o que este
+    /// teste garante é só que sair de dentro de um prédio continua possível.
+    #[test]
+    fn de_dentro_da_casa_da_pra_sair() {
+        // Uma ilha só: montá-la é caro, e o defeito não é de uma em especial.
+        for def in ARQUIPELAGO.iter().take(1) {
+            let ilha = Ilha::da_ilha(def);
+            let vila = ilha.vila();
+            let centro = ilha.cidade().map(|c| c.centro()).unwrap_or_default();
+            let mut testadas = 0;
+            for pd in vila.predios.iter().take(6) {
+                // O MIOLO DA CAIXA DE COLISÃO, e não `pd.pos` — aquilo é a
+                // âncora do prédio e cai fora da parede.
+                //
+                // E sem filtrar por `ocupado`: a caixa sólida é a PAREDE, não
+                // o miolo, então de pé dentro da casa o jogador não está
+                // dentro de nada sólido. Uma versão anterior filtrava por
+                // `ocupado`, não achava prédio nenhum, e passava sem testar
+                // coisa alguma.
+                let Some((mn, mx)) = pd
+                    .construcao()
+                    .caixas_mundo(pd.pos, pd.yaw_q)
+                    .into_iter()
+                    .max_by(|a, b| {
+                        ((a.1.x - a.0.x) * (a.1.z - a.0.z))
+                            .total_cmp(&((b.1.x - b.0.x) * (b.1.z - b.0.z)))
+                    })
+                else {
+                    continue;
+                };
+                let dentro = glam::Vec2::new((mn.x + mx.x) * 0.5, (mn.z + mx.z) * 0.5);
+                testadas += 1;
+                let rota = ilha.caminho(dentro, centro, 6_000);
+                assert!(
+                    rota.is_some(),
+                    "{}: preso dentro de {:?} em {:.0},{:.0}",
+                    def.zona,
+                    pd.papel,
+                    dentro.x,
+                    dentro.y
+                );
+                assert!(
+                    !rota.unwrap().is_empty(),
+                    "rota vazia saindo de {:?}",
+                    pd.papel
+                );
+            }
+            assert!(testadas > 0, "{}: nenhum prédio pra testar", def.zona);
+        }
+    }
+
     #[test]
     fn a_rota_alcanca_o_porto_de_toda_ilha() {
         /// Tem que bater com `world::handle_mover_para: ROTA_ALCANCE`.

@@ -141,8 +141,24 @@ struct Eu {
     quests: HashMap<u16, (u32, u8)>,
     /// Quem tem missão pra oferecer agora.
     ofertas: Vec<u16>,
-    /// Inventário: item -> quantidade.
+    /// Inventário: item -> quantidade. Pro que só precisa saber "tenho?".
     bolsa: HashMap<u16, u32>,
+    /// A bolsa por SLOT, que é o que o mercado pede pra anunciar. Guardar os
+    /// dois não é redundância: `MercadoAnunciar` fala em posição, e quase
+    /// todo o resto fala em item.
+    slots: Vec<(u16, shared::InventorySlot)>,
+    /// O nó de coleta que o servidor apontou.
+    no_de_coleta: Option<u32>,
+    /// Está colhendo agora? Enquanto estiver, não se decide outra coisa.
+    colhendo: bool,
+    /// Pra onde o auto-path já foi mandado, e onde o bot estava quando
+    /// mandou. As duas coisas juntas são o que detecta "pedi e não saí do
+    /// lugar" sem reenviar o pedido a cada decisão.
+    andando_para: Option<(glam::Vec2, glam::Vec2, u32)>,
+    /// Últimos anúncios que o mercado devolveu.
+    anuncios: Vec<shared::mercado::AnuncioNet>,
+    /// Quando o bot olhou o mercado pela última vez (em decisões).
+    olhou_mercado: u32,
     /// Destino do passo atual: (missão, tipo, ponto, raio, npc).
     destino: Option<Destino>,
     /// Há quantas decisões o bot está pedindo destino sem receber. Sem este
@@ -359,8 +375,13 @@ async fn recebe(
         }
         ServerMessage::InventoryUpdate { slots } => {
             eu.bolsa.clear();
-            for s in slots {
+            eu.slots.clear();
+            for (i, s) in slots.into_iter().enumerate() {
+                if s.item_id == 0 || s.qty == 0 {
+                    continue;
+                }
                 *eu.bolsa.entry(s.item_id).or_default() += s.qty;
+                eu.slots.push((i as u16, s));
             }
         }
         ServerMessage::QuestLog { quests } => {
@@ -395,6 +416,24 @@ async fn recebe(
             eu.morto = true;
             t.registra(ev(nome, eu, "morreu", true, format!("-{xp_perdido} xp")));
             ws.send(envia(&ClientMessage::RespawnAtCity)?).await?;
+        }
+        ServerMessage::NoDeColeta { no } => {
+            eu.no_de_coleta = no.map(|(coluna, _, _, _)| coluna);
+        }
+        ServerMessage::ColetaEstado { pausado, centro, .. } => {
+            // Colhendo enquanto houver centro e não estiver pausado. É o que
+            // impede o bot de mandar `ColetarNo` por cima de uma coleta que
+            // já está correndo.
+            eu.colhendo = centro.is_some() && !pausado;
+        }
+        ServerMessage::MercadoLista { anuncios, .. } => {
+            eu.anuncios = anuncios;
+        }
+        ServerMessage::MercadoResultado { ok, texto } => {
+            t.registra(ev(nome, eu, "mercado_resultado", ok, texto));
+        }
+        ServerMessage::CraftResultado { recipe_id, ok, motivo, .. } => {
+            t.registra(ev(nome, eu, "craft", ok, format!("receita {recipe_id}: {motivo}")));
         }
         ServerMessage::Kick { reason } => return Err(anyhow!("kick: {reason}")),
         ServerMessage::TrocarZona { .. } => {
@@ -479,26 +518,92 @@ async fn decide(
     }
     // 5. Com destino: anda até lá e faz o que o tipo pede.
     if let Some(d) = eu.destino {
-        let perto = eu.pos.distance(d.pos) <= d.raio.max(3.0);
-        if !perto {
-            // ANDA PELO DIRECIONAL, e não pelo `MoverPara`.
-            //
-            // `MoverPara` é clique-para-andar: o servidor traça o caminho. Eu
-            // o reenviava a cada 700 ms e cada envio REINICIAVA o trajeto —
-            // 511 comandos de movimento em 3 minutos e o personagem sem sair
-            // do nascedouro, medido no banco.
-            //
-            // O direcional é o que a mão do jogador faz, não depende do
-            // servidor lembrar de um destino, e não tem nada pra reiniciar.
+        // CHEGOU O BASTANTE conta como chegou.
+        //
+        // A trilha mostrou o auto-path parando a 5 unidades do NPC e ficando
+        // lá: 102 "travou_no_caminho", todos na mesma distância. O
+        // pathfinder leva até a borda do que ele considera alcançável, e os
+        // últimos metros não fecham — provavelmente o NPC está sobre algo que
+        // a rota não pisa.
+        //
+        // Insistir seria trocar um laço infinito por outro. A distância de
+        // conversa do jogo é maior que isso, então a resposta certa é agir
+        // dali: é o que a pessoa faz quando o personagem para perto e ela
+        // clica no NPC assim mesmo.
+        const PERTO_O_BASTANTE: f32 = 12.0;
+        /// Daqui pra dentro, o direcional termina o serviço.
+        const ULTIMOS_METROS: f32 = 16.0;
+        let travado = eu.andando_para.is_none_or(|(_, _, paradas)| paradas >= 8);
+        let dist = eu.pos.distance(d.pos);
+        let perto = dist <= d.raio.max(3.0) || (travado && dist <= PERTO_O_BASTANTE);
+        // OS ÚLTIMOS METROS NO DIRECIONAL.
+        //
+        // Auto-path pro trecho longo, direcional pro fim — que é exatamente o
+        // que a pessoa faz: toca a missão, o personagem vai, e nos últimos
+        // passos ela ajeita na mão.
+        //
+        // Sem isto o bot conversava 512 vezes sem concluir nada: o auto-path
+        // parava a 5 unidades do NPC, o `Interact` não alcançava de lá, o
+        // destino voltava e tudo recomeçava. "Conversou 512" era o sintoma de
+        // não ter conversado nenhuma vez.
+        if !perto && dist <= ULTIMOS_METROS {
             *seq = seq.wrapping_add(1);
             let dir = (d.pos - eu.pos).normalize_or_zero();
             ws.send(envia(&ClientMessage::Input {
                 input: InputFrame { seq: *seq, tick, move_dir: dir, aim: dir, buttons: 0 },
             })?)
             .await?;
-            t.registra(ev(nome, eu, "andou", true, format!("#{} -> {:.0},{:.0} (faltam {:.0})", d.quest, d.pos.x, d.pos.y, eu.pos.distance(d.pos))));
             return Ok(());
         }
+        if !perto {
+            // AUTO-PATH, e UMA VEZ SÓ.
+            //
+            // `MoverPara` é o mesmo clique-para-andar que o jogador usa ao
+            // tocar a missão ou o mapa: o servidor traça a rota e conduz. O
+            // caminho do jogador é este, não segurar o direcional.
+            //
+            // O "uma vez só" é o conserto de verdade. Eu reenviava o comando a
+            // cada 700 ms e cada envio REINICIAVA o trajeto — 511 comandos de
+            // movimento em 3 minutos com o personagem parado no mesmo pixel,
+            // medido no banco. Eu tinha lido isso como "MoverPara não
+            // funciona" e trocado pelo direcional; o defeito era o reenvio.
+            let ja_mandado = eu
+                .andando_para
+                .is_some_and(|(alvo, _, _)| alvo.distance(d.pos) < 1.0);
+            if !ja_mandado {
+                ws.send(envia(&ClientMessage::MoverPara { x: d.pos.x, z: d.pos.y })?).await?;
+                eu.andando_para = Some((d.pos, eu.pos, 0));
+                t.registra(ev(nome, eu, "andou", true, format!(
+                    "#{} -> {:.0},{:.0} (faltam {:.0})", d.quest, d.pos.x, d.pos.y, eu.pos.distance(d.pos)
+                )));
+                return Ok(());
+            }
+            // TRAVOU? Só então se insiste.
+            //
+            // Sem esta conferência, um trajeto que o servidor não consegue
+            // traçar (porta, parede, alvo do outro lado da água) deixaria o
+            // bot esperando pra sempre — e "esperando" não aparece em
+            // contador nenhum, que é o pior tipo de travamento.
+            if let Some((alvo, onde, paradas)) = eu.andando_para {
+                let andou = eu.pos.distance(onde) > 1.0;
+                if andou {
+                    eu.andando_para = Some((alvo, eu.pos, 0));
+                } else if paradas >= 8 {
+                    // Longe E travado: desiste do destino e deixa a decisão
+                    // seguir pro resto (caçar, mercado). Perto e travado já
+                    // foi tratado acima como chegada.
+                    eu.andando_para = None;
+                    eu.destino = None;
+                    t.registra(ev(nome, eu, "travou_no_caminho", false, format!(
+                        "#{} parado a {:.0} do destino", d.quest, eu.pos.distance(d.pos)
+                    )));
+                } else {
+                    eu.andando_para = Some((alvo, onde, paradas + 1));
+                }
+            }
+            return Ok(());
+        }
+        eu.andando_para = None;
         use shared::quests::destino_tipo;
         match d.tipo {
             // FALAR: a primeira missão da história é esta, e era ela que
@@ -515,20 +620,94 @@ async fn decide(
                 }
             }
             destino_tipo::COLETA => {
-                ws.send(envia(&ClientMessage::PedirNoDeColeta {
-                    tipos: [true; 5],
-                    energia: true,
-                    raio: 40.0,
-                    centro: [eu.pos.x, eu.pos.y],
-                })?)
-                .await?;
-                t.registra(ev(nome, eu, "pediu_no_de_coleta", true, format!("#{}", d.quest)));
+                // Já colhendo: não se manda nada. `ColetarNo` por cima de uma
+                // coleta em curso a reinicia — o mesmo erro do `MoverPara`,
+                // que custou 511 comandos e nenhum passo.
+                if eu.colhendo {
+                    return Ok(());
+                }
+                match eu.no_de_coleta.take() {
+                    Some(coluna) => {
+                        ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
+                        t.registra(ev(nome, eu, "coletou", true, format!("#{} coluna {coluna}", d.quest)));
+                    }
+                    None => {
+                        ws.send(envia(&ClientMessage::PedirNoDeColeta {
+                            tipos: [true; 5],
+                            energia: true,
+                            raio: 40.0,
+                            centro: [eu.pos.x, eu.pos.y],
+                        })?)
+                        .await?;
+                    }
+                }
                 return Ok(());
             }
             _ => {}
         }
     }
-    // 6. Sem mais nada a fazer: bate no inimigo mais perto.
+    // 6. O MERCADO, de vez em quando.
+    //
+    // A cada ~40 decisões (uns 30 s), e não toda vez: o bot não é um robô de
+    // arbitragem, é um jogador. Olhar o mercado a cada 700 ms seria uma carga
+    // que nenhum jogador faz e que sujaria a telemetria que a gente quer ler.
+    eu.olhou_mercado = eu.olhou_mercado.saturating_add(1);
+    if eu.olhou_mercado >= 40 {
+        eu.olhou_mercado = 0;
+        // VENDE a maior pilha que não seja equipamento nem consumível de vida:
+        // é o que um jogador larga no mercado. Sem instância, porque item com
+        // instância é peça única e vender a peça equipada seria sabotagem.
+        let vender = eu
+            .slots
+            .iter()
+            .filter(|(_, s)| s.instance.is_none() && s.qty >= 5)
+            .max_by_key(|(_, s)| s.qty)
+            .map(|(i, s)| (*i, s.item_id, s.qty));
+        if let Some((slot, item, qtd)) = vender {
+            // Metade da pilha, nunca tudo: esvaziar a pilha que uma missão
+            // pede seria o bot competindo com ele mesmo.
+            let q = (qtd / 2).max(1);
+            ws.send(envia(&ClientMessage::MercadoAnunciar {
+                inv_slot: slot,
+                qtd: q,
+                preco_unit: 10,
+            })?)
+            .await?;
+            t.registra(ev(nome, eu, "anunciou", true, format!("item {item} x{q}")));
+            return Ok(());
+        }
+        ws.send(envia(&ClientMessage::MercadoBuscar {
+            filtro: shared::mercado::FiltroNet {
+                categoria: 0,
+                texto: String::new(),
+                pagina: 0,
+            },
+        })?)
+        .await?;
+        t.registra(ev(nome, eu, "olhou_mercado", true, String::new()));
+        return Ok(());
+    }
+    // 7. COMPRA o mais barato que caiba no bolso, quando há o que comprar.
+    if eu.ouro > 200 {
+        if let Some(a) = eu
+            .anuncios
+            .iter()
+            .filter(|a| a.preco_unit > 0 && (a.preco_unit as i64) < eu.ouro / 4)
+            .min_by_key(|a| a.preco_unit)
+        {
+            let (id, preco, item) = (a.id.clone(), a.preco_unit, a.item_id);
+            eu.anuncios.clear();
+            ws.send(envia(&ClientMessage::MercadoComprar {
+                anuncio: id,
+                qtd: 1,
+                preco_unit: preco,
+            })?)
+            .await?;
+            t.registra(ev(nome, eu, "comprou", true, format!("item {item} por {preco}")));
+            return Ok(());
+        }
+    }
+    // 8. Sem mais nada a fazer: bate no inimigo mais perto.
     if let Some((id, p)) = eu.alvo {
         ws.send(envia(&ClientMessage::SetTarget { target: Some(id) })?).await?;
         *seq = seq.wrapping_add(1);

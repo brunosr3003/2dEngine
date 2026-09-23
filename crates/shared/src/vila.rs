@@ -705,6 +705,63 @@ fn eixo_x_para(dir: Vec2) -> u8 {
 
 /// Vaso, lenha e barril na porta de uma casa (`lote` = o dela).
 #[allow(clippy::too_many_arguments)]
+/// De dentro de qual prédio este ponto está — e por onde se sai dele.
+///
+/// Devolve o ponto da rua em frente à porta.
+///
+/// Existe porque a grade do A* tem 4 unidades de lado (`BLOCO` × `PASSO_CAMINHO`)
+/// e uma porta é mais estreita que isso: a grade **não consegue representar
+/// uma porta**. Casa é obstáculo sólido, então quem está dentro não tem
+/// vizinho livre e nenhuma rota existe — o personagem fica preso.
+///
+/// Isso não é hipótese: alguns teleportes largam o jogador dentro da casa do
+/// NPC. O dono: "o A* não sabe sair disso nem contornar as casas".
+///
+/// A saída não é refinar a grade (multiplicaria por 64 o custo de toda rota
+/// da ilha, por causa de uma dúzia de portas): é dar ao A* o ponto de saída
+/// já pronto, e deixá-lo começar dali.
+pub fn saida_do_predio(vila: &Vila, p: Vec2) -> Option<Vec2> {
+    for pd in &vila.predios {
+        let dentro = pd
+            .construcao()
+            .caixas_mundo(pd.pos, pd.yaw_q)
+            .iter()
+            .any(|(mn, mx)| p.x >= mn.x && p.x <= mx.x && p.y >= mn.z && p.y <= mx.z);
+        if dentro {
+            return frente_da_porta(pd);
+        }
+    }
+    None
+}
+
+/// O ponto logo À FRENTE da porta de um prédio — por onde se entra.
+///
+/// `None` para prédio sem porta.
+pub fn frente_da_porta(p: &Predio) -> Option<Vec2> {
+    let pc = p.construcao();
+    let lx = pc.porta_local()?;
+    // Dois metros e meio pra fora da soleira: é a faixa por onde o caminho
+    // passa, não a soleira em si.
+    let w = pc.local_para_mundo(p.pos, p.yaw_q, Vec3::new(lx, 0.0, -2.5));
+    Some(Vec2::new(w.x, w.z))
+}
+
+/// Este ponto atrapalha a entrada de alguma casa?
+///
+/// O `Ocupacao` sabe se um lugar está VAZIO, e não se ele está no CAMINHO —
+/// são coisas diferentes, e a diferença apareceu num bot: a carroça caiu na
+/// frente da loja de poções, o A* não contornava, e ninguém chegava no
+/// alquimista. O dono: "o carrinho tá bonito, então quero manter ele, só
+/// troca de lugar".
+///
+/// O raio é generoso de propósito. Prop encostado na porta é enfeite; prop a
+/// dois metros dela é obstáculo, e quem paga a conta é o pathfinding.
+pub fn atrapalha_porta(vila: &Vila, ponto: Vec2, raio: f32) -> bool {
+    vila.predios.iter().any(|p| {
+        frente_da_porta(p).is_some_and(|f| f.distance(ponto) < raio)
+    })
+}
+
 fn enfeitar_porta(
     oc: &mut Ocupacao,
     vila: &mut Vila,
@@ -1010,11 +1067,20 @@ fn decorar_cidade(
         enfeitar_porta(&mut oc, vila, &mut r, &mut prox, p, i, y);
     }
 
-    // CARROCA num canto da praca.
+    // CARROCA num canto da praca, LONGE DAS PORTAS.
+    //
+    // Ela testava só se o ponto estava livre — e livre não é o mesmo que fora
+    // do caminho. Caiu na frente da loja de poções, o A* não contornou, e o
+    // primeiro NPC que vende poção ficou inalcançável. Achado por bot, que é
+    // o tipo de coisa que teste de unidade não pega: cada peça estava certa.
+    const LONGE_DA_PORTA: f32 = 5.0;
     'carroca: for rr in [9.5f32, 11.5, 14.0] {
         for k in 0..16 {
             let a = ang0 + PI * 0.5 + k as f32 * TAU / 16.0;
             let p = centro + Vec2::new(a.cos(), a.sin()) * rr;
+            if atrapalha_porta(vila, p, LONGE_DA_PORTA) {
+                continue;
+            }
             if oc.livre(p, 2.1, None, true) {
                 let t = p - centro;
                 poe(
@@ -1178,6 +1244,47 @@ mod testes {
     /// quest virou impossivel. Sem erro, sem log: so' um NPC que nao existe.
     ///
     /// Este teste e' o que impede isso de voltar em silencio.
+    /// Nenhum prop grande nasce na frente de uma porta.
+    ///
+    /// A carroça caiu na entrada da loja de poções e o A* não contornava: o
+    /// alquimista, que é o primeiro NPC que vende poção, ficou inalcançável.
+    /// Achado por bot jogando, não por teste — cada peça estava certa
+    /// sozinha, e o defeito só existia na soma.
+    ///
+    /// O teste varre as vilas de várias sementes porque a posição é sorteada:
+    /// conferir uma só provaria pouco.
+    #[test]
+    fn prop_grande_nao_nasce_na_frente_da_porta() {
+        // AS ILHAS DE VERDADE, e não sementes inventadas.
+        //
+        // A primeira versão deste teste varria sementes aleatórias e passava
+        // ATÉ SEM O CONSERTO — conferido tirando a guarda e rodando. Não
+        // provava nada: o defeito é das ilhas que o jogo realmente usa, e uma
+        // semente qualquer quase nunca põe a carroça na porta.
+        for def in crate::terreno::ARQUIPELAGO.iter() {
+            let ger = crate::terreno::Gerador::da_ilha(def);
+            let vila = ger.vila();
+            for pr in &vila.props {
+                if !matches!(pr.tipo, TipoProp::Carroca) {
+                    continue;
+                }
+                let ponto = Vec2::new(pr.pos.x, pr.pos.z);
+                for pd in &vila.predios {
+                    if let Some(f) = frente_da_porta(pd) {
+                        let d = f.distance(ponto);
+                        assert!(
+                            d >= 5.0,
+                            "{}: carroça a {d:.1} da porta de {:?} — \
+                             é aí que o caminho passa",
+                            def.zona,
+                            pd.papel
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn todo_porto_tem_os_npcs_dele() {
         for d in crate::terreno::ARQUIPELAGO.iter() {
