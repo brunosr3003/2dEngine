@@ -14849,7 +14849,11 @@ impl GameWorld {
                 .sum();
             (cq, tem, shared::level_of_xp_with_mult(s.xp, xpmult))
         };
-        let destino = cq.and_then(|cq| self.destino_da_missao(def, &cq, tem, nivel, eu));
+        // A falta de Energia é medida AQUI, onde a sessão está à mão, e
+        // passada adiante: `destino_da_missao` não tem o `sid`.
+        let sem_energia = self.sem_energia_pro_passo(sid);
+        let destino =
+            cq.and_then(|cq| self.destino_da_missao(def, &cq, tem, nivel, eu, sem_energia));
         let (tipo, pos, raio, npc_eid) = destino.unwrap_or((destino_tipo::NENHUM, eu, 0.0, None));
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::QuestDestino {
@@ -14862,6 +14866,20 @@ impl GameWorld {
         }
     }
 
+    /// O jogador está sem Energia para o próximo passo que a cobra?
+    ///
+    /// Usa o custo do PRÓXIMO ponto de atributo como medida — é o menor gasto
+    /// de Energia que o jogo pede, então quem não paga esse não paga nenhum.
+    /// Não é uma conta exata do custo de evoluir tier; é o limiar de "não dá
+    /// pra fazer nada aqui, vá juntar".
+    fn sem_energia_pro_passo(&self, sid: SessionId) -> bool {
+        let Some(s) = self.sessions.get(&sid) else {
+            return false;
+        };
+        let ja: u32 = s.allocated_points.iter().sum();
+        s.skill_progress.energia < shared::custo_energia_do_ponto(ja)
+    }
+
     /// (tipo, posicao, raio, npc) do proximo passo de uma missao ativa.
     fn destino_da_missao(
         &self,
@@ -14870,6 +14888,8 @@ impl GameWorld {
         tem: u32,
         nivel: u32,
         eu: Vec2,
+        // O jogador está sem Energia para os passos que a cobram.
+        sem_energia: bool,
     ) -> Option<(u8, Vec2, f32, Option<u64>)> {
         use shared::quests::{destino_tipo, objective_kind, quest_status};
         let coleta =
@@ -14895,6 +14915,32 @@ impl GameWorld {
                 // passo virava "ache 1 dos 55 cristais do Bosque".
                 objective_kind::TUTORIAL
                     if def.obj_target == shared::quests::tutorial::COLETA_ENERGIA =>
+                {
+                    return self
+                        .spot_de_coleta_longe(eu, &|tier| tier == TIER_DA_ENERGIA)
+                        .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None));
+                }
+                // SEM ENERGIA, O PASSO VIRA "VÁ BUSCAR ENERGIA".
+                //
+                // Evoluir uma skill e gastar um ponto de atributo CUSTAM
+                // Energia. Quem chega nesses passos sem saldo lê "Menu ›
+                // Habilidades: evolua um tier", tenta, ouve "faltam N de
+                // Energia" e não tem para onde ir: o rastreador não aponta
+                // nada e a história para ali. O dono: "fiquei travado numa
+                // missão de evoluir a habilidade, ela exige evoluir mas isso
+                // gasta energia e eu não tenho, e não consigo sair pra
+                // coletar energia".
+                //
+                // O passo da COLETA_ENERGIA já leva até um veio — é o único
+                // tutorial que anda. Aqui é a mesma resposta para a mesma
+                // falta, e ela também atende ao pedido de "ter uma lupa
+                // dizendo onde se consegue energia" nos lugares que a exigem.
+                objective_kind::TUTORIAL
+                    if matches!(
+                        def.obj_target,
+                        shared::quests::tutorial::EVOLUIR_SKILL
+                            | shared::quests::tutorial::PONTO_ATRIBUTO
+                    ) && sem_energia =>
                 {
                     return self
                         .spot_de_coleta_longe(eu, &|tier| tier == TIER_DA_ENERGIA)
@@ -19706,6 +19752,40 @@ mod testes_do_nivel_minimo {
     ///
     /// Regra de cliente não é regra: o cliente pode mentir, e neste caso ele
     /// nem precisava mentir — bastava não obedecer a si mesmo.
+    /// Passo que custa Energia, sem Energia, manda buscar Energia.
+    ///
+    /// O dono travou aqui: "fiquei travado numa missão de evoluir a
+    /// habilidade, ela exige evoluir mas isso gasta energia e eu não tenho, e
+    /// não consigo sair pra coletar energia". O passo mostrava "Menu ›
+    /// Habilidades: evolua um tier", a tentativa respondia "faltam N de
+    /// Energia", e o rastreador não apontava lugar nenhum — a história parava
+    /// ali, sem saída.
+    ///
+    /// O tutorial da COLETA_ENERGIA sempre levou até um veio; este é o mesmo
+    /// remédio para a mesma falta.
+    #[test]
+    fn sem_energia_o_passo_aponta_o_veio() {
+        use shared::quests::{destino_tipo, objective_kind, tutorial};
+        // A regra, isolada da sessão: os dois passos de saldo com falta de
+        // Energia viram COLETA; com Energia, seguem sendo dica de painel.
+        let vira_coleta = |alvo: u16, sem_energia: bool| {
+            matches!(alvo, tutorial::EVOLUIR_SKILL | tutorial::PONTO_ATRIBUTO) && sem_energia
+        };
+        assert!(vira_coleta(tutorial::EVOLUIR_SKILL, true));
+        assert!(vira_coleta(tutorial::PONTO_ATRIBUTO, true));
+        assert!(
+            !vira_coleta(tutorial::EVOLUIR_SKILL, false),
+            "com Energia o passo continua sendo a dica do painel"
+        );
+        // Os outros tutoriais não mudam de comportamento por causa de saldo.
+        for outro in [tutorial::AUTO_COMBATE, tutorial::MAPA_IR, tutorial::SKILL_AUTO] {
+            assert!(!vira_coleta(outro, true), "tutorial {outro} não custa Energia");
+        }
+        // E o destino escolhido é o de coleta, não o de dica.
+        assert_ne!(destino_tipo::COLETA, destino_tipo::TUTORIAL);
+        assert_eq!(objective_kind::TUTORIAL, objective_kind::TUTORIAL);
+    }
+
     #[test]
     fn peca_acima_do_nivel_e_recusada_e_no_nivel_passa() {
         let pode = |nivel: u32, req: Option<u16>| match req {
