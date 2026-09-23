@@ -566,6 +566,16 @@ pub struct MenuMissoes {
     /// Um `Vec` e nao um conjunto porque a ORDEM e' a escolha: marcar e'
     /// dizer "esta depois daquela". Teto de `FILA_MAX`.
     marcadas: Vec<u16>,
+    /// A ultima marca que mudou, pra quem quiser reagir: `(id, marcada)`.
+    ///
+    /// Existe porque marcar pra fila tambem FIXA a missao no rastreador — o
+    /// dono: "as quests marcadas tem q ficar fixadas na esquerda, no atalho".
+    /// Um evento e nao um espelho do conjunto: espelhar apagaria as fixadas
+    /// na mao toda vez que alguem marcasse qualquer coisa.
+    marca_mudou: Option<(u16, bool)>,
+    /// Marcas soltas de uma vez pelo "Limpar". Uma so' variavel de evento nao
+    /// daria conta de dez baixas no mesmo quadro.
+    desfixar: Vec<u16>,
 }
 
 /// Quantas missoes cabem numa fila. O numero e' do dono.
@@ -588,13 +598,25 @@ impl MenuMissoes {
     fn alterna_marca(&mut self, id: u16) -> bool {
         if let Some(i) = self.marcadas.iter().position(|x| *x == id) {
             self.marcadas.remove(i);
+            self.marca_mudou = Some((id, false));
             return true;
         }
         if self.marcadas.len() >= FILA_MAX {
             return false;
         }
         self.marcadas.push(id);
+        self.marca_mudou = Some((id, true));
         true
+    }
+
+    /// As marcas soltas em bloco pelo "Limpar". Consome.
+    pub fn desfixar(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.desfixar)
+    }
+
+    /// A marca que mudou desde a ultima pergunta. Consome.
+    pub fn marca_mudou(&mut self) -> Option<(u16, bool)> {
+        self.marca_mudou.take()
     }
 
     /// A posicao dela na fila (1-based), se estiver marcada.
@@ -868,7 +890,14 @@ impl MenuMissoes {
                 saida = Some(Clique::Fila(std::mem::take(&mut self.marcadas)));
             }
             if crate::ui::botao(limpar, "Limpar", true) {
-                self.marcadas.clear();
+                // Desfixa uma por uma, pra quem escuta receber cada baixa: o
+                // `Limpar` tem que soltar as do rastreador junto, senão a
+                // lista da esquerda fica com missões que ninguém mais vai
+                // fazer.
+                for id in std::mem::take(&mut self.marcadas) {
+                    self.marca_mudou = Some((id, false));
+                    self.desfixar.push(id);
+                }
             }
         }
         saida
@@ -1204,6 +1233,45 @@ mod testes_da_trava {
                 );
             }
         }
+    }
+
+    /// MARCAR PRA FILA AVISA quem fixa no rastreador — e desmarcar também.
+    ///
+    /// O dono: "as quests marcadas têm que ficar fixadas na esquerda, no
+    /// atalho". O evento existe em vez de espelhar o conjunto porque
+    /// espelhar apagaria as que ele fixou na mão toda vez que marcasse
+    /// qualquer coisa aqui.
+    #[test]
+    fn marcar_avisa_pra_fixar_e_limpar_solta_todas() {
+        let mut m = MenuMissoes::default();
+        assert_eq!(m.marca_mudou(), None, "sem marca, sem aviso");
+
+        assert!(m.alterna_marca(7));
+        assert_eq!(m.marca_mudou(), Some((7, true)), "marcou: fixa");
+        assert_eq!(m.marca_mudou(), None, "o aviso é consumido uma vez");
+
+        assert!(m.alterna_marca(7));
+        assert_eq!(m.marca_mudou(), Some((7, false)), "desmarcou: solta");
+
+        // A fila cheia NÃO avisa: nada foi marcado.
+        for id in 1..=FILA_MAX as u16 {
+            assert!(m.alterna_marca(id));
+        }
+        let _ = m.marca_mudou();
+        assert!(!m.alterna_marca(99), "passou do teto");
+        assert_eq!(m.marca_mudou(), None, "recusada não fixa nada");
+
+        // LIMPAR solta TODAS, uma por uma: uma variável de evento só não dá
+        // conta de dez baixas no mesmo quadro, e o rastreador ficaria com
+        // missões que ninguém mais vai fazer.
+        let antes: Vec<u16> = m.marcadas.clone();
+        m.marcadas.clear();
+        for id in &antes {
+            m.desfixar.push(*id);
+        }
+        let soltas = m.desfixar();
+        assert_eq!(soltas, antes, "o Limpar tem que soltar todas");
+        assert!(m.desfixar().is_empty(), "consome uma vez");
     }
 
     /// O RODAPÉ DA FILA NÃO COBRE A LISTA.

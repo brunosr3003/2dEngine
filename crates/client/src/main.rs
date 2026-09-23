@@ -5125,6 +5125,26 @@ impl Jogo {
                 };
                 self.menu_missoes.desenha(&c)
             };
+            // MARCAR PRA FILA TAMBÉM FIXA NO RASTREADOR.
+            //
+            // O dono: "as quests marcadas têm que ficar fixadas na esquerda,
+            // no atalho lá". Faz sentido: marcar é dizer "vou fazer estas", e
+            // o rastreador é onde se acompanha o que se está fazendo. As
+            // fixadas sobem na lista (`ordem_com_fixadas`).
+            //
+            // Por EVENTO, e não espelhando o conjunto: espelhar apagaria as
+            // que o jogador fixou na mão toda vez que ele marcasse qualquer
+            // coisa no menu.
+            if let Some((id, marcada)) = self.menu_missoes.marca_mudou() {
+                if marcada {
+                    self.missoes.fixadas.insert(id);
+                } else {
+                    self.missoes.fixadas.remove(&id);
+                }
+            }
+            for id in self.menu_missoes.desfixar() {
+                self.missoes.fixadas.remove(&id);
+            }
             if let Some(c) = clique {
                 self.clique_menu_missoes(c);
             }
