@@ -196,7 +196,32 @@ async fn register(
             // jogador tentar de novo e bater em "username ja existe", sem
             // conta nenhuma na mao dele. Quem nao recebeu pede de novo pela
             // tela de login.
-            if let Some(mail) = s.email.as_ref() {
+            // DOMÍNIO DE TESTE: conta de bot nasce confirmada.
+            //
+            // O `jogadorbot` é um cliente de verdade — ele não mexe no banco,
+            // passa por `/api/register` como o jogo. Mas confirmar e-mail
+            // exige ler uma CAIXA DE ENTRADA, que é fora de banda por
+            // natureza, e um bot não tem uma.
+            //
+            // A saída é o servidor conhecer um domínio cujas contas já nascem
+            // confirmadas, declarado em `EMAIL_DOMINIOS_AUTOCONFIRMA`. Fica
+            // explícito, fica no ambiente (não no código), e não abre atalho
+            // nenhum pro bot: o caminho dele continua idêntico ao do jogador.
+            //
+            // Sem a variável, nada é autoconfirmado — produção de verdade não
+            // pode herdar isto por esquecimento.
+            let autoconfirma = std::env::var("EMAIL_DOMINIOS_AUTOCONFIRMA")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .map(|d| d.trim().to_lowercase())
+                        .filter(|d| !d.is_empty())
+                        .any(|d| email.ends_with(&format!("@{d}")))
+                })
+                .unwrap_or(false);
+            if autoconfirma {
+                tracing::info!("conta {id} ({email}) autoconfirmada: domínio de teste");
+            } else if let Some(mail) = s.email.as_ref() {
                 match contas::emite(&s.pool, id, contas::TIPO_CONFIRMACAO).await {
                     Ok(t) => {
                         if let Err(e) = mail.confirmacao(&email, username, &t).await {

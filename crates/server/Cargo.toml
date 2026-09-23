@@ -21,6 +21,8 @@ serde.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
+# Só o `jogadorbot` usa: ele cria a conta pelo `/api/register`, igual ao jogo.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 thiserror.workspace = true
 sqlx.workspace = true
 axum.workspace = true
