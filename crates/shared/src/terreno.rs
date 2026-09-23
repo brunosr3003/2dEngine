@@ -4648,7 +4648,18 @@ pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
     // cliente, o minimapa, as construcoes e o `tick` do servidor. Devolvendo a
     // def aqui, os quatro passam a funcionar sem uma linha nova.
     if crate::magica::e_magica(zona) {
-        return Some(&crate::magica::DEF);
+        // UM DEF POR DEGRAU. A `DefIlha` é `'static` no resto do jogo, então
+        // os degraus moram numa tabela feita uma vez — construir na hora
+        // devolveria referência pra temporário.
+        static DEFS: std::sync::OnceLock<Vec<crate::terreno::DefIlha>> =
+            std::sync::OnceLock::new();
+        let defs = DEFS.get_or_init(|| {
+            crate::magica::NIVEIS
+                .iter()
+                .map(crate::magica::def_do_nivel)
+                .collect()
+        });
+        return defs.iter().find(|d| d.zona == zona);
     }
     ARQUIPELAGO.iter().find(|d| d.zona == zona)
 }

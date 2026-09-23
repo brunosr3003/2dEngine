@@ -35,12 +35,98 @@
 
 use glam::Vec2;
 
-/// O nome da zona.
+/// O nome da zona do PRIMEIRO nível. Os outros são `ilha_magica_2`, `_3`…
+///
+/// Ver `NIVEIS`: cada nível é uma ZONA própria, e não uma instância.
 pub const ZONA: &str = "ilha_magica";
 
-/// Esta zona é a Ilha Mágica?
+/// Esta zona é alguma Ilha Mágica?
 pub fn e_magica(z: &str) -> bool {
-    z == ZONA
+    NIVEIS.iter().any(|n| n.zona == z)
+}
+
+// ─────────────────────────── os níveis ───────────────────────────
+
+/// Um degrau da Ilha Mágica.
+///
+/// O dono: "a ilha mágica precisa ter níveis; exemplo: você é nv 15, aí pode
+/// entrar na ilha que é desbloqueada no nv 15 com poder recomendado 1500, aí
+/// os mobs de todas as ilhotas vão estar mais ou menos nesse ramo; aí a
+/// próxima nv 30 com poder recomendado x, etc — dessa forma fica melhor,
+/// todos os mobs padronizados".
+///
+/// O problema que isso resolve tem número: a `DefIlha` antiga dizia
+/// `nivel: (1, 60)`, e `zonas_comuns_da_ilha` espalha esse intervalo pela
+/// distância do desembarque. Ou seja, numa ilha de 280 u o jogador
+/// atravessava uma ponte e saía do nível 3 pro 40. Não havia "poder
+/// recomendado" possível.
+///
+/// ## Por que ZONA por nível, e não instância
+///
+/// `ServerSpawnZone` não conhece instância — o campo não existe, e mob por
+/// instância seria mexer no coração do spawn. Zona, por outro lado, é como o
+/// jogo já separa mundos: um processo por zona, cada um com seu relevo e sua
+/// faixa de mob. Cada nível é uma zona, e o resto do jogo (diretório,
+/// handoff, `def_da_zona`) já sabe lidar com isso sem uma linha nova.
+///
+/// O relevo é O MESMO nos três — muda a faixa de mob e o portão de entrada.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NivelMagico {
+    /// 1, 2, 3… — é o que aparece pro jogador ("Ilha Mágica I").
+    pub grau: u8,
+    pub zona: &'static str,
+    pub nome: &'static str,
+    /// Nível do personagem pra liberar a entrada.
+    pub exige_nivel: u32,
+    /// "Poder recomendado": o número que o jogador compara com o dele.
+    pub poder: u32,
+    /// A faixa de nível dos mobs — ESTREITA, que é o pedido.
+    pub mob: (u32, u32),
+    /// O nome do Colosso deste degrau (`bosses`).
+    pub nome_do_chefe: &'static str,
+}
+
+/// Os degraus. Acrescentar um aqui é o bastante: `def_da_zona`, o painel e a
+/// checagem de entrada saem todos desta tabela.
+pub const NIVEIS: &[NivelMagico] = &[
+    NivelMagico {
+        grau: 1,
+        zona: "ilha_magica",
+        nome: "Ilha Mágica I",
+        exige_nivel: 20,
+        poder: 1_500,
+        mob: (20, 23),
+        nome_do_chefe: "Colosso da Ilha Mágica",
+    },
+    NivelMagico {
+        grau: 2,
+        zona: "ilha_magica_2",
+        nome: "Ilha Mágica II",
+        exige_nivel: 30,
+        poder: 6_000,
+        mob: (30, 33),
+        nome_do_chefe: "Colosso Maior da Ilha Mágica",
+    },
+    NivelMagico {
+        grau: 3,
+        zona: "ilha_magica_3",
+        nome: "Ilha Mágica III",
+        exige_nivel: 45,
+        poder: 18_000,
+        mob: (45, 48),
+        nome_do_chefe: "Colosso Ancião da Ilha Mágica",
+    },
+];
+
+/// O degrau desta zona.
+pub fn nivel_da_zona(z: &str) -> Option<&'static NivelMagico> {
+    NIVEIS.iter().find(|n| n.zona == z)
+}
+
+/// O maior degrau que um personagem de `nivel` pode entrar — `None` se ele
+/// ainda não alcançou o primeiro.
+pub fn maior_liberado(nivel: u32) -> Option<&'static NivelMagico> {
+    NIVEIS.iter().rev().find(|n| nivel >= n.exige_nivel)
 }
 
 // ─────────────────────────── o passe e o relógio ───────────────────────────
@@ -344,6 +430,22 @@ pub fn raio_do_mundo() -> f32 {
 /// progressao. Mas `def_da_zona` a devolve, e e' isso que faz o cliente
 /// montar o terreno, o mapa e as construcoes dela sem uma linha de codigo
 /// nova: todos esses caminhos ja' perguntam `def_da_zona`.
+/// A `DefIlha` de um degrau.
+///
+/// Só três campos mudam entre eles: o nome da zona, o nome de tela e a FAIXA
+/// DE NÍVEL dos mobs. O relevo é o mesmo — mesma semente, mesmo raio —, e é
+/// isso que faz "os mobs de todas as ilhotas mais ou menos no mesmo ramo"
+/// sair de graça: `zonas_comuns_da_ilha` espalha `def.nivel` pela distância
+/// do desembarque, e com a faixa estreita não há o que espalhar.
+pub fn def_do_nivel(n: &NivelMagico) -> crate::terreno::DefIlha {
+    crate::terreno::DefIlha {
+        zona: n.zona,
+        nome: n.nome,
+        nivel: (n.mob.0, n.mob.1),
+        ..DEF
+    }
+}
+
 pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     zona: ZONA,
     nome: "Ilha Mágica",
@@ -353,8 +455,12 @@ pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     // No mapa-mundi, ao norte do arquipelago: longe o bastante pra nao se
     // confundir com ilha de progressao.
     centro: [-1800.0, -2600.0],
-    // Aberta a todo nivel: o passe e' o requisito, nao o nivel.
-    nivel: (1, 60),
+    // A FAIXA DO PRIMEIRO DEGRAU. Era `(1, 60)`, e esse era o defeito que o
+    // dono descreveu: `zonas_comuns_da_ilha` espalha o intervalo pela
+    // distância do desembarque, então numa ilha de 280 u o jogador
+    // atravessava uma ponte e saía do nível 3 pro 40. Não havia "poder
+    // recomendado" possível.
+    nivel: (20, 23),
 };
 
 // ─────────────────────────── o relevo ───────────────────────────
@@ -574,8 +680,11 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
 pub enum PedidoMagica {
     /// Abrir o painel: quantos passes tenho, quanto tempo resta.
     Painel,
-    /// Gastar `entradas` passes e ir. Recusa não gasta nada.
-    Entrar { entradas: u8 },
+    /// Gastar `entradas` passes e ir ao degrau `grau`. Recusa não gasta nada.
+    ///
+    /// `grau` é `NivelMagico::grau`; 0 significa "o maior que eu posso", que é
+    /// o que o botão da tarja manda ao estender — lá não há onde escolher.
+    Entrar { entradas: u8, grau: u8 },
     /// Sair antes da hora. O tempo CONTINUA correndo — senão o jogador sairia
     /// no primeiro susto e voltaria com o relógio intacto, e a ilha deixaria
     /// de ter hora.
@@ -586,6 +695,16 @@ pub enum PedidoMagica {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AvisoMagica {
     Estado {
+        /// O maior degrau liberado pro nível deste personagem — 0 se nenhum.
+        ///
+        /// Vem do servidor, e não do nível que o cliente conhece: a trava é do
+        /// servidor, e a tela que decidisse sozinha mostraria botão que o
+        /// servidor recusa.
+        #[serde(default)]
+        grau_maximo: u8,
+        /// Em que degrau ele está agora (0 = fora da ilha).
+        #[serde(default)]
+        grau_atual: u8,
         /// Passes na bolsa.
         passes: u32,
         /// Entradas de graça que ainda há hoje (`GRATIS_POR_DIA`).
@@ -655,6 +774,60 @@ mod testes {
     /// O tier do minério sai da altura no mundo, e a Ilha Mágica é baixa por
     /// desenho: tudo caía na primeira faixa. O dono: "só tem recurso cinza
     /// lá".
+    /// Os degraus são coerentes entre si e com o resto do jogo.
+    #[test]
+    fn os_degraus_sobem_juntos() {
+        let mut antes: Option<&NivelMagico> = None;
+        for n in NIVEIS {
+            assert!(n.mob.0 <= n.mob.1, "{}: faixa invertida", n.nome);
+            // ESTREITA é o pedido: "todos os mobs padronizados". Larga demais
+            // e o jogador atravessa uma ponte e muda de mundo, que é o que
+            // acontecia com a faixa antiga de (1, 60).
+            assert!(
+                n.mob.1 - n.mob.0 <= 5,
+                "{}: faixa de {} níveis é larga demais pra 'padronizado'",
+                n.nome,
+                n.mob.1 - n.mob.0
+            );
+            // O mob não pode ser mais fraco que o portão: entrar num degrau
+            // pra achar bicho do nível do degrau anterior é não ter degrau.
+            assert!(
+                n.mob.0 >= n.exige_nivel,
+                "{}: entra no {} e o mob é {}",
+                n.nome,
+                n.exige_nivel,
+                n.mob.0
+            );
+            assert!(crate::terreno::def_da_zona(n.zona).is_some(), "{}: zona sem def", n.nome);
+            if let Some(a) = antes {
+                assert!(n.grau == a.grau + 1, "graus fora de ordem");
+                assert!(n.exige_nivel > a.exige_nivel, "{}: não sobe o portão", n.nome);
+                assert!(n.poder > a.poder, "{}: não sobe o poder", n.nome);
+                assert!(n.mob.0 > a.mob.1, "{}: faixa encavalada com a anterior", n.nome);
+            }
+            antes = Some(n);
+        }
+    }
+
+    /// O portão de nível libera na ordem certa.
+    #[test]
+    fn o_portao_libera_por_nivel() {
+        let primeiro = NIVEIS[0].exige_nivel;
+        assert_eq!(maior_liberado(primeiro - 1), None, "abaixo do primeiro, nada");
+        assert_eq!(maior_liberado(primeiro).map(|n| n.grau), Some(1));
+        let ultimo = NIVEIS.last().unwrap();
+        assert_eq!(
+            maior_liberado(ultimo.exige_nivel + 50).map(|n| n.grau),
+            Some(ultimo.grau),
+            "acima de tudo, o último degrau"
+        );
+        // E cada degrau tem um chefe seu, na zona dele.
+        for n in NIVEIS {
+            let chefes = crate::bosses::da_zona(n.zona);
+            assert!(!chefes.is_empty(), "{}: sem chefe", n.nome);
+        }
+    }
+
     #[test]
     fn a_pedra_da_ilha_magica_nao_e_so_cinza() {
         let ger = crate::terreno::Gerador::da_ilha_magica();

@@ -37,7 +37,7 @@ impl GameWorld {
         use shared::magica::PedidoMagica as P;
         match pedido {
             P::Painel => self.abrir_magica(sid),
-            P::Entrar { entradas } => self.entrar_na_magica(sid, entradas),
+            P::Entrar { entradas, grau } => self.entrar_na_magica(sid, entradas, grau),
             P::Sair => self.sair_da_magica(sid, "Você deixa a Ilha Mágica."),
         }
     }
@@ -103,8 +103,15 @@ impl GameWorld {
             .bonus_magico_de(sid)
             .map_or(255, |b| shared::magica::Bonus::indice(b));
         let agora = (now_ms() / 1000) as i64;
+        // O DEGRAU SAI DAQUI, e não do cliente. A trava é do servidor; uma
+        // tela que decidisse sozinha mostraria botão que o servidor recusa.
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let grau_maximo = shared::magica::maior_liberado(nivel).map_or(0, |n| n.grau);
+        let grau_atual = shared::magica::nivel_da_zona(&self.zona).map_or(0, |n| n.grau);
         let _ = s.handle.to_client.send(ServerMessage::Magica {
             aviso: shared::magica::AvisoMagica::Estado {
+                grau_maximo,
+                grau_atual,
                 passes: self.passes_de(sid),
                 gratis: shared::magica::gratis_restantes(s.magica_gratis, agora),
                 fim_unix: s.magica_ate,
@@ -115,7 +122,7 @@ impl GameWorld {
     }
 
     /// Gasta `entradas` passes e vai. Qualquer recusa não gasta nada.
-    fn entrar_na_magica(&mut self, sid: SessionId, entradas: u8) {
+    fn entrar_na_magica(&mut self, sid: SessionId, entradas: u8, grau: u8) {
         if self.tutorial_mode || self.dungeon_mode {
             self.avisa_magica(sid, "A Ilha Mágica não abre daqui.");
             return;
@@ -129,6 +136,35 @@ impl GameWorld {
             return;
         };
         if !s.logged_in || s.instancia != 0 || s.downed {
+            return;
+        }
+        // O DEGRAU, e o PORTÃO DE NÍVEL dele.
+        //
+        // Conferido aqui, antes de gastar qualquer passe: recusar depois
+        // deixaria o jogador sem passe e sem ilha. `grau == 0` significa "o
+        // maior que eu posso" — é o que o "+" da tarja manda, onde não há
+        // onde escolher.
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let Some(alvo) = (if grau == 0 {
+            shared::magica::maior_liberado(nivel)
+        } else {
+            shared::magica::NIVEIS.iter().find(|n| n.grau == grau)
+        }) else {
+            self.avisa_magica(
+                sid,
+                &format!(
+                    "A Ilha Mágica abre no nível {}.",
+                    shared::magica::NIVEIS[0].exige_nivel
+                ),
+            );
+            return;
+        };
+        if nivel < alvo.exige_nivel {
+            let msg = format!(
+                "{} abre no nível {} (você: {nivel}).",
+                alvo.nome, alvo.exige_nivel
+            );
+            self.avisa_magica(sid, &msg);
             return;
         }
         // A COTA DIÁRIA ENTRA NA CONTA, e é gasta PRIMEIRO.
@@ -152,10 +188,11 @@ impl GameWorld {
         if self
             .diretorio
             .as_ref()
-            .and_then(|d| d.melhor(shared::magica::ZONA))
+            .and_then(|d| d.melhor(alvo.zona))
             .is_none()
         {
-            self.avisa_magica(sid, "A Ilha Mágica está fechada no momento.");
+            let msg = format!("{} está fechada no momento.", alvo.nome);
+            self.avisa_magica(sid, &msg);
             return;
         }
         let volta = self.zona.clone();
@@ -181,17 +218,17 @@ impl GameWorld {
         let minutos = shared::magica::resta(s.magica_ate, agora) / 60;
         let nome = s.name.clone();
         self.save_pending = true;
-        let aviso = format!("Você entra na Ilha Mágica — {minutos} minutos.");
+        let aviso = format!("Você entra na {} — {minutos} minutos.", alvo.nome);
         crate::telemetria::conta("magica_entrada", self.zona.clone(), entradas as i64);
         tracing::info!(
             "{nome}: entra na Ilha Mágica por {minutos} min ({de_graca} de graça, {do_item} passe(s))"
         );
         self.mandar_para_zona(
             sid,
-            shared::magica::ZONA,
+            alvo.zona,
             shared::magica::CHEGADA,
             Some(&aviso),
-            Some("Ilha Mágica"),
+            Some(alvo.nome),
         );
     }
 
@@ -369,15 +406,15 @@ mod testes {
         dar_passes(&mut w, sid, 2);
         // Sem canal da Ilha Mágica no ar (não há diretório neste mundo de
         // teste), a entrada tem que ser recusada ANTES de gastar.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 1 });
+        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 1, grau: 1 });
         assert_eq!(w.passes_de(sid), 2, "o passe sumiu sem entregar a ilha");
         assert_eq!(w.sessions[&sid].magica_ate, 0, "o relógio começou sem ida");
 
         // Pedir mais passes do que tem também não gasta nada.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 3 });
+        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 3, grau: 1 });
         assert_eq!(w.passes_de(sid), 2);
         // Nem um número que não existe.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 9 });
+        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 9, grau: 1 });
         assert_eq!(w.passes_de(sid), 2);
     }
 

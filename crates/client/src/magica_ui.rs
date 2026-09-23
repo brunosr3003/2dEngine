@@ -72,6 +72,9 @@ const SUAVE: Color = Color::new(0.72, 0.74, 0.80, 1.0);
 
 #[derive(Debug, Clone, Default)]
 pub struct Estado {
+    /// Maior degrau liberado (0 = nenhum) e em qual ele está.
+    grau_maximo: u8,
+    grau_atual: u8,
     pub passes: u32,
     /// Entradas de graça que ainda há hoje (`magica::GRATIS_POR_DIA`).
     pub gratis: u8,
@@ -95,6 +98,9 @@ pub struct MagicaUi {
     pedida: bool,
     /// Quantas entradas o jogador escolheu gastar (1..3).
     entradas: u8,
+    /// O degrau escolhido (`NivelMagico::grau`). 0 = ainda não escolheu, e aí
+    /// vale o maior liberado — que é o que quase todo mundo quer.
+    grau: u8,
     aviso: Option<(String, f64)>,
 }
 
@@ -114,6 +120,8 @@ impl MagicaUi {
     pub fn recebe(&mut self, aviso: AvisoMagica, agora: f64) {
         match aviso {
             AvisoMagica::Estado {
+                grau_maximo,
+                grau_atual,
                 passes,
                 gratis,
                 fim_unix,
@@ -121,6 +129,8 @@ impl MagicaUi {
                 bonus,
             } => {
                 let e = Estado {
+                    grau_maximo,
+                    grau_atual,
                     passes,
                     gratis,
                     fim_unix,
@@ -265,7 +275,7 @@ impl MagicaUi {
         if shared::magica::pode_entrar(e.fim_unix, agora_unix, total, 1).is_ok()
             && crate::ui::botao(mais, "+", true)
         {
-            pedido = Some(PedidoMagica::Entrar { entradas: 1 });
+            pedido = Some(PedidoMagica::Entrar { entradas: 1, grau: e.grau_atual });
         }
         // SAIR DA ILHA, daqui mesmo.
         //
@@ -365,6 +375,34 @@ impl MagicaUi {
                     self.entradas = n;
                 }
             }
+            // ── OS DEGRAUS ──
+            //
+            // O dono: "a ilha mágica precisa ter níveis; você é nv 20, aí pode
+            // entrar na ilha desbloqueada no nv 20 com poder recomendado
+            // 1500; a próxima nv 30 etc — dessa forma todos os mobs ficam
+            // padronizados".
+            //
+            // Cada degrau é uma ZONA com faixa de mob estreita. O que está
+            // TRAVADO aparece assim mesmo, com o nível que falta: saber que
+            // existe um degrau adiante é metade do motivo de subir de nível.
+            let grau = if self.grau == 0 { e.grau_maximo } else { self.grau };
+            let linha = rod.y - 96.0 * f;
+            let larg = (rod.w - 8.0 * f * 2.0) / 3.0;
+            for (k, nv) in shared::magica::NIVEIS.iter().enumerate() {
+                let r = Rect::new(rod.x + k as f32 * (larg + 8.0 * f), linha, larg, 46.0 * f);
+                let liberado = e.grau_maximo >= nv.grau;
+                if nv.grau == grau {
+                    estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
+                }
+                let rot = if liberado {
+                    format!("{}\npoder {}", nv.nome, crate::bolsa::milhar(nv.poder as u64))
+                } else {
+                    format!("{}\nnível {}", nv.nome, nv.exige_nivel)
+                };
+                if ui::botao(r, &rot, liberado) && liberado {
+                    self.grau = nv.grau;
+                }
+            }
             let n = self.entradas.max(1);
             let de_graca = (e.gratis as u32).min(n as u32);
             let rot = if de_graca == n as u32 {
@@ -374,12 +412,13 @@ impl MagicaUi {
             } else {
                 format!("Entrar — {n} passe(s)")
             };
-            let pode = total >= n as u32;
+            // Sem degrau liberado não há entrada: o portão é o nível.
+            let pode = total >= n as u32 && grau > 0;
             let b = Rect::new(rod.x, rod.y + 40.0 * f, rod.w, 40.0 * f);
             // O destaque da trava de nível mira AQUI depois que o painel abre.
             crate::foco::marca(crate::foco::chave::MAGICA_ENTRAR, b);
             if ui::botao(b, &rot, pode) && pode {
-                pedido = Some(PedidoMagica::Entrar { entradas: n });
+                pedido = Some(PedidoMagica::Entrar { entradas: n, grau });
             }
             estilo::texto(
                 rod.x,
@@ -503,6 +542,8 @@ mod testes {
     #[test]
     fn o_painel_abre_toda_vez_que_e_pedido() {
         let estado = |dentro: bool| AvisoMagica::Estado {
+            grau_maximo: 1,
+            grau_atual: 0,
             passes: 0,
             gratis: 3,
             fim_unix: 0,
@@ -538,7 +579,15 @@ mod testes {
         let mut ui = MagicaUi::default();
         ui.pedir_abertura();
         ui.recebe(
-            AvisoMagica::Estado { passes: 0, gratis: 0, fim_unix: 0, dentro: true, bonus: 0 },
+            AvisoMagica::Estado {
+                grau_maximo: 1,
+                grau_atual: 1,
+                passes: 0,
+                gratis: 0,
+                fim_unix: 0,
+                dentro: true,
+                bonus: 0,
+            },
             0.0,
         );
         assert!(!ui.aberto(), "dentro da ilha o estado chega a cada ilhota");
@@ -549,6 +598,8 @@ mod testes {
         let mut ui = MagicaUi::default();
         ui.recebe(
             AvisoMagica::Estado {
+                grau_maximo: 1,
+                grau_atual: 1,
                 passes: 0,
                 gratis: 0,
                 fim_unix: 1_000,
@@ -623,6 +674,8 @@ mod testes {
         let mut ui = MagicaUi::default();
         ui.recebe(
             AvisoMagica::Estado {
+                grau_maximo: 1,
+                grau_atual: 0,
                 passes: 2,
                 gratis: shared::magica::GRATIS_POR_DIA,
                 fim_unix: 0,

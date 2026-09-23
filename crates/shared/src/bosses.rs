@@ -179,7 +179,73 @@ use Mira::{AFrente, EmSi, NoAlvo};
 /// Os chefes de campo: um por mob preset de corpo inteiro. Os mais fracos no
 /// Bosque (a ilha que roda localmente tem tres, pra testar), os fortes
 /// subindo pelas ilhas.
-pub const CHEFES: [Chefe; 10] = [
+/// O Colosso de um degrau da Ilha Mágica.
+const fn colosso(kind: u16, degrau: usize, nivel: u32) -> Chefe {
+    Chefe {
+        kind,
+        nome: crate::magica::NIVEIS[degrau].nome_do_chefe,
+        corpo: Corpo::Gente(4),
+        escala: 1.9,
+        zona: crate::magica::NIVEIS[degrau].zona,
+        nivel,
+        habilidades: HABILIDADES_DO_COLOSSO,
+    }
+}
+
+/// As habilidades do Colosso: uma lista só para os três degraus da Ilha
+/// Mágica. O que muda entre eles é o NÍVEL (e por ele vida e dano); três
+/// listas escritas à mão seriam três lugares pra manter em sincronia, e a
+/// segunda já nasceria diferente da primeira.
+const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
+            // As CARGAS saem da simulação, não do gosto.
+            //
+            // `todo_telegrafico_e_esquivavel` mede quanto tempo o jogador
+            // precisa pra sair da forma e reprova carga menor que isso — na
+            // fase 2 ela ainda encurta, então a fase 1 tem de ter folga. A
+            // Pancada Sísmica começou com 1,6 s e foi reprovada por 1,36 s
+            // efetivos contra 1,53 s necessários.
+            h(
+                "Pancada Sísmica",
+                Circulo { raio: 5.5 },
+                EmSi,
+                1.9,
+                3.0,
+                8.0,
+                5.5,
+                0,
+                1.0,
+            ),
+            h(
+                "Investida do Colosso",
+                Linha {
+                    comprimento: 16.0,
+                    largura: 2.6,
+                },
+                AFrente,
+                1.5,
+                3.0,
+                7.0,
+                16.0,
+                0,
+                0.9,
+            ),
+            h(
+                "Onda de Pedra",
+                Anel {
+                    interno: 4.0,
+                    externo: 9.5,
+                },
+                EmSi,
+                2.0,
+                3.0,
+                12.0,
+                9.5,
+                1,
+                0.9,
+            ),
+];
+
+pub const CHEFES: [Chefe; 12] = [
     Chefe {
         kind: 10,
         nome: "Lobo Alfa da Clareira",
@@ -644,56 +710,24 @@ pub const CHEFES: [Chefe; 10] = [
         corpo: Corpo::Gente(4),
         escala: 1.9,
         zona: crate::magica::ZONA,
-        nivel: 45,
-        habilidades: &[
-            // As CARGAS saem da simulação, não do gosto.
-            //
-            // `todo_telegrafico_e_esquivavel` mede quanto tempo o jogador
-            // precisa pra sair da forma e reprova carga menor que isso — na
-            // fase 2 ela ainda encurta, então a fase 1 tem de ter folga. A
-            // Pancada Sísmica começou com 1,6 s e foi reprovada por 1,36 s
-            // efetivos contra 1,53 s necessários.
-            h(
-                "Pancada Sísmica",
-                Circulo { raio: 5.5 },
-                EmSi,
-                1.9,
-                3.0,
-                8.0,
-                5.5,
-                0,
-                1.0,
-            ),
-            h(
-                "Investida do Colosso",
-                Linha {
-                    comprimento: 16.0,
-                    largura: 2.6,
-                },
-                AFrente,
-                1.5,
-                3.0,
-                7.0,
-                16.0,
-                0,
-                0.9,
-            ),
-            h(
-                "Onda de Pedra",
-                Anel {
-                    interno: 4.0,
-                    externo: 9.5,
-                },
-                EmSi,
-                2.0,
-                3.0,
-                12.0,
-                9.5,
-                1,
-                0.9,
-            ),
-        ],
+        nivel: 28,
+        habilidades: HABILIDADES_DO_COLOSSO,
     },
+    // Os degraus II e III da Ilha Mágica (`magica::NIVEIS`).
+    //
+    // Antes havia UM Colosso, de nível 45, justificado por "a ilha é aberta a
+    // todo nível". Ela deixou de ser: cada degrau tem faixa de mob estreita e
+    // portão de entrada, e um chefe de 45 no degrau I (mobs 15-18) seria um
+    // muro que ninguém passa.
+    //
+    // Cada um fica pouco acima do topo da faixa do seu degrau — chefe é
+    // chefe — e `catalogo_coerente` confere que nenhum saiu da ilha dele.
+    // O nível do chefe acompanha o DEGRAU, não a faixa de mob: quem entra no
+    // degrau II tem nível 30, e um chefe de 21 é um boneco — a simulação
+    // reprovou com "parado com poção venceu com HP mínimo 27%". Alguns
+    // níveis ACIMA do topo da faixa, que é o que separa chefe de mob.
+    colosso(20, 1, 36),
+    colosso(21, 2, 51),
 ];
 
 /// Maximo de habilidades por chefe (o estado de recarga e' um array).
