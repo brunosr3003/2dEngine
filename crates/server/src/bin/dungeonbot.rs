@@ -268,9 +268,9 @@ async fn bot(
                 let Ok(msg) = shared::protocol::decode::<ServerMessage>(&bytes) else { continue };
                 match msg {
                     ServerMessage::HandshakeAck { .. } => {
-                        ws.send(envia(ClientMessage::Login { username: user.into(), password: senha.into() })?).await?;
+                        ws.send(envia(ClientMessage::Login { username: user.into(), password: senha.into(), lembrar: false })?).await?;
                     }
-                    ServerMessage::CharacterList { chars, available_weapons } => {
+                    ServerMessage::CharacterList { chars, available_weapons, .. } => {
                         let m = match chars.first() {
                             Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },
                             None => ClientMessage::CreateCharacter {

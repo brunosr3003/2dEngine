@@ -1360,6 +1360,9 @@ fn point_in_polygon(p: Vec2, verts: &[Vec2]) -> bool {
 
 pub struct Session {
     pub handle: SessionHandle,
+    /// Sessao recem-emitida ("lembrar de mim"), esperando ir na primeira
+    /// `CharacterList`. Ver `send_character_list`.
+    pub sessao_nova: Option<String>,
     /// Dados guardados enquanto o jogador espera na fila de entrada.
     pub entrada_pendente: Option<(crate::auth::AuthSuccess, crate::persistence::CharacterRow)>,
     /// Alvo atual do combate por target. O auto-ataque dispara sozinho
@@ -4517,6 +4520,11 @@ impl GameWorld {
             }
         };
 
+        // A SESSAO DE "LEMBRAR DE MIM" fica guardada ate' a lista sair.
+        if let (Some(t), Some(s)) = (success.sessao.clone(), self.sessions.get_mut(&sid)) {
+            s.sessao_nova = Some(t);
+        }
+
         // Se a mesma conta ja esta logada em outra sessao, expulsa a antiga
         // (padrao MMO: novo login vence, evita travar após disconnect zumbi).
         let stale_sids: Vec<SessionId> = self
@@ -4612,7 +4620,17 @@ impl GameWorld {
     /// por account_id e converte em CharacterListEntry. Sempre disparado apos
     /// auth success ou apos CreateCharacter. Inclui tambem available_weapons
     /// (filtrado por items.active=TRUE) pra cliente exibir so armas validas.
-    fn send_character_list(&self, sid: SessionId, account_id: i64) {
+    /// A SESSAO vai junto, uma vez so'.
+    ///
+    /// Ela e' emitida no `authenticate` e guardada em `Session.sessao_nova`
+    /// porque o caminho ate' aqui passa por uma consulta ASSINCRONA
+    /// (`pedir_lista_da_conta` -> `IncomingMessage::CharsDaConta`). Carregar o
+    /// token por dentro daquela mensagem obrigaria a mexer no enum e em todo
+    /// mundo que o produz; a sessao ja' e' o lugar do que e' por-conexao.
+    ///
+    /// `take` e nao `clone`: `CreateCharacter` tambem reenvia a lista, e o
+    /// token e' de uso unico do lado do cliente.
+    fn send_character_list(&mut self, sid: SessionId, account_id: i64) {
         let chars: Vec<shared::protocol::CharacterListEntry> = self
             .characters
             .values()
@@ -4637,10 +4655,12 @@ impl GameWorld {
             .filter(|id| crate::economy::is_item_active(**id))
             .copied()
             .collect();
-        if let Some(s) = self.sessions.get(&sid) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            let sessao = s.sessao_nova.take();
             let _ = s.handle.to_client.send(ServerMessage::CharacterList {
                 chars,
                 available_weapons,
+                sessao,
             });
         }
     }
@@ -6612,6 +6632,7 @@ impl GameWorld {
         self.sessions.insert(
             handle.id,
             Session {
+                sessao_nova: None,
                 handle,
                 entrada_pendente: None,
                 target: None,
@@ -6945,7 +6966,11 @@ impl GameWorld {
                     _ => None,
                 };
             }
-            ClientMessage::Login { username, password } => {
+            ClientMessage::Login {
+                username,
+                password,
+                lembrar,
+            } => {
                 // Nao autentica sincronamente — dispara task e marca sessao
                 // como auth_in_flight. O resultado volta via AuthResult.
                 let handle = {
@@ -6972,7 +6997,8 @@ impl GameWorld {
 
                 tokio::spawn(async move {
                     let result =
-                        crate::auth::authenticate(&auth_ctx.pool, &username, &password).await;
+                        crate::auth::authenticate(&auth_ctx.pool, &username, &password, lembrar)
+                            .await;
                     let _ = auth_ctx.tx.send(IncomingMessage::AuthResult(id, result));
                 });
             }
@@ -7788,6 +7814,7 @@ impl GameWorld {
                     let to_client = self.sessions.get(&sid).map(|s| s.handle.to_client.clone());
                     let name2 = name.clone();
                     let succ = crate::auth::AuthSuccess {
+                        sessao: None,
                         account_id,
                         username,
                         class,
@@ -7857,6 +7884,7 @@ impl GameWorld {
             return;
         }
         let success = crate::auth::AuthSuccess {
+            sessao: None,
             account_id,
             username,
             class,
@@ -8014,6 +8042,7 @@ impl GameWorld {
                         Ok(map) => {
                             if let Some(row) = map.get(&name_for_db).cloned() {
                                 let success = crate::auth::AuthSuccess {
+                                    sessao: None,
                                     account_id,
                                     username,
                                     class,

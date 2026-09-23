@@ -32,6 +32,14 @@ pub enum ClientMessage {
     Login {
         username: String,
         password: String,
+        /// "Lembrar de mim": o servidor emite uma sessao e devolve em
+        /// `CharacterList.sessao`, pro cliente entrar sem senha da proxima
+        /// vez. Ver docs/LOGIN_LEMBRAR.md.
+        ///
+        /// `default` porque o postcard e' POSICIONAL e cliente velho nao
+        /// manda o campo — sem isto, toda build antiga quebraria no login.
+        #[serde(default)]
+        lembrar: bool,
     },
     /// Envio periodico de intent do jogador.
     Input {
@@ -583,6 +591,10 @@ pub enum ServerMessage {
     CharacterList {
         chars: Vec<CharacterListEntry>,
         available_weapons: Vec<u16>,
+        /// A sessao recem-emitida, quando o login veio com `lembrar`. O
+        /// cliente guarda e reusa em `LoginToken`; nunca guarda a senha.
+        #[serde(default)]
+        sessao: Option<String>,
     },
     /// Resposta a `CreateCharacter` quando criacao falha (nome duplicado,
     /// invalido, etc). Cliente mostra erro e reabre dialog.

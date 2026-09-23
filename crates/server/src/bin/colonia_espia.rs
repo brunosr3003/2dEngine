@@ -191,9 +191,10 @@ async fn main() -> anyhow::Result<()> {
                         println!("{n:3} HandshakeAck");
                         ws.send(envia(&ClientMessage::Login {
                             username: user.clone(), password: pass.clone(),
+                            lembrar: false,
                         })?).await?;
                     }
-                    ServerMessage::CharacterList { chars, available_weapons } => {
+                    ServerMessage::CharacterList { chars, available_weapons, .. } => {
                         println!("{n:3} CharacterList: {} personagem(ns)", chars.len());
                         let m = match chars.first() {
                             Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },

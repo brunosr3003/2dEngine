@@ -83,9 +83,9 @@ async fn main() -> anyhow::Result<()> {
                 let Ok(msg) = shared::protocol::decode::<ServerMessage>(&bytes) else { continue };
                 match msg {
                     ServerMessage::HandshakeAck { .. } => {
-                        ws.send(envia(ClientMessage::Login { username: user.clone(), password: senha.clone() })?).await?;
+                        ws.send(envia(ClientMessage::Login { username: user.clone(), password: senha.clone(), lembrar: false })?).await?;
                     }
-                    ServerMessage::CharacterList { chars, available_weapons } => {
+                    ServerMessage::CharacterList { chars, available_weapons, .. } => {
                         let m = if chars.iter().any(|c| c.name == personagem) {
                             ClientMessage::SelectCharacter { name: personagem.clone() }
                         } else {

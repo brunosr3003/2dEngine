@@ -108,6 +108,52 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     sobre && crate::foco::clique()
 }
 
+/// Caixinha de marcar, com o rotulo ao lado.
+///
+/// A area de toque e' a LINHA INTEIRA, e nao o quadradinho de 20 px: um
+/// quadrado de 20 esta' muito abaixo dos 44 pt do dedo (a mesma medida que ja'
+/// obrigou a crescer 55 botoes deste jogo). Clicar no rotulo tambem marca,
+/// que e' o que todo mundo tenta fazer.
+///
+/// Devolve `true` no quadro em que mudou.
+pub fn caixa(r: Rect, rotulo: &str, marcado: &mut bool) -> bool {
+    let (mx, my) = mouse_position();
+    let sobre = dentro(area_de_toque(r), vec2(mx, my));
+    let lado = 20.0_f32.min(r.h);
+    let q = Rect::new(r.x, r.y + (r.h - lado) * 0.5, lado, lado);
+    estilo::ret_gradiente(
+        q,
+        estilo::RAIO_PEQUENO,
+        estilo::FUNDO_BAIXO,
+        estilo::FUNDO_ALTO,
+    );
+    estilo::borda_arredondada(
+        q,
+        estilo::RAIO_PEQUENO,
+        1.5,
+        if sobre { OURO } else { APAGADO },
+    );
+    if *marcado {
+        // Um "v" de dois riscos, e nao um caractere: fonte de jogo nem sempre
+        // tem o glifo, e um tofu no lugar da marca e' pior que nada.
+        let (x, y, k) = (q.x + lado * 0.22, q.y + lado * 0.52, lado);
+        draw_line(x, y, x + k * 0.22, y + k * 0.22, 2.5, OURO);
+        draw_line(x + k * 0.22, y + k * 0.22, x + k * 0.58, y - k * 0.26, 2.5, OURO);
+    }
+    estilo::texto(
+        q.x + lado + 10.0,
+        r.y + r.h * 0.5 + 5.0,
+        rotulo,
+        estilo::tam::CORPO,
+        if sobre { OURO_CLARO } else { estilo::TEXTO },
+    );
+    if sobre && crate::foco::clique() {
+        *marcado = !*marcado;
+        return true;
+    }
+    false
+}
+
 /// Campo de texto.
 ///
 /// `digitado` vem do `entrada::Teclado` e nao da fila crua da macroquad: la' a

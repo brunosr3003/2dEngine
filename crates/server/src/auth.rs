@@ -48,6 +48,12 @@ pub struct AuthSuccess {
     /// Classe persistida (warrior/wizard/archer). Usada pra defaultar
     /// `Session.visual` quando o player loga.
     pub class: String,
+    /// Sessao recem-emitida, pro cliente guardar e nao pedir senha de novo.
+    ///
+    /// So' vem preenchida no login por SENHA e so' quando o cliente pediu
+    /// (`lembrar`). Quem entrou por token ja' tem a sua e nao ganha outra —
+    /// renovar a cada troca de zona encheria a tabela de linha morta.
+    pub sessao: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,10 +62,14 @@ pub enum AuthError {
     Internal(String),
 }
 
+/// `lembrar`: o cliente marcou "lembrar de mim". So' nesse caso uma sessao e'
+/// emitida — emitir sempre gastaria uma linha de tabela por login de quem nao
+/// pediu nada.
 pub async fn authenticate(
     pool: &PgPool,
     username: &str,
     password: &str,
+    lembrar: bool,
 ) -> Result<AuthSuccess, AuthError> {
     let row = sqlx::query_as::<_, (i64, String, String, String)>(
         "SELECT id, username, password_hash, class FROM accounts WHERE username = $1",
@@ -94,13 +104,69 @@ pub async fn authenticate(
     .map_err(|e| AuthError::Internal(format!("join: {e}")))?;
 
     if ok {
+        // A sessao sai DEPOIS de a senha conferir, nunca antes.
+        let sessao = if lembrar {
+            emite_sessao(pool, id).await
+        } else {
+            None
+        };
         Ok(AuthSuccess {
             account_id: id,
             username: uname,
             class,
+            sessao,
         })
     } else {
         Err(AuthError::InvalidCredentials)
+    }
+}
+
+/// Quanto tempo a sessao de "lembrar de mim" vale.
+///
+/// Trinta dias, e nao as 12 h do login com Google: aquela e' a janela de uma
+/// sessao de jogo, esta e' a promessa de nao pedir senha de novo. E' o mesmo
+/// prazo que um app de banco usa pro "manter conectado", e o token vence
+/// sozinho — que e' justamente a vantagem dele sobre guardar a senha.
+const VALIDADE_DA_SESSAO_HORAS: i32 = 24 * 30;
+
+/// Emite uma sessao nova pra essa conta e devolve o token EM CLARO.
+///
+/// O banco guarda so' o SHA-256, igual ao que o `web` faz no login com Google
+/// (`crates/web/src/google.rs`): quem ler a tabela nao consegue entrar com o
+/// que leu.
+///
+/// Os 256 bits vem do `OsRng`, e NAO do `fastrand` que o resto do servidor
+/// usa. `fastrand` e' um PRNG de jogo: rapido, semeado de forma previsivel e
+/// bom pra sortear dano. Quem adivinha a semente dele adivinha a sequencia
+/// inteira — e aqui a sequencia E' a credencial. Mesma fonte que o `web` usa
+/// no login com Google.
+pub async fn emite_sessao(pool: &PgPool, account_id: i64) -> Option<String> {
+    use argon2::password_hash::rand_core::{OsRng, RngCore};
+    let mut bruto = [0u8; 32];
+    OsRng.fill_bytes(&mut bruto);
+    let token: String = bruto.iter().map(|b| format!("{b:02x}")).collect();
+    // Faxina antes de inserir: sem isto a tabela so' cresce, e com 30 dias de
+    // validade ela cresce por 30 dias.
+    let _ = sqlx::query("DELETE FROM login_tokens WHERE expires_at < NOW()")
+        .execute(pool)
+        .await;
+    let r = sqlx::query(
+        "INSERT INTO login_tokens (token_hash, account_id, expires_at)
+         VALUES ($1, $2, NOW() + make_interval(hours => $3))",
+    )
+    .bind(hash_do_token(&token))
+    .bind(account_id)
+    .bind(VALIDADE_DA_SESSAO_HORAS)
+    .execute(pool)
+    .await;
+    match r {
+        Ok(_) => Some(token),
+        // A tabela e' criada pelo `web`. Sem ela, nao ha' o que lembrar — e
+        // isso nao pode derrubar um login que ja' deu certo.
+        Err(e) => {
+            tracing::warn!("nao consegui emitir sessao: {e:?}");
+            None
+        }
     }
 }
 
@@ -132,10 +198,13 @@ pub async fn authenticate_token(pool: &PgPool, token: &str) -> Result<AuthSucces
     .fetch_optional(pool)
     .await;
     match row {
+        // Quem entrou POR token nao ganha outro: ele ja' tem o seu, e
+        // renovar a cada troca de zona encheria a tabela de linha morta.
         Ok(Some((id, username, class))) => Ok(AuthSuccess {
             account_id: id,
             username,
             class,
+            sessao: None,
         }),
         Ok(None) => Err(AuthError::InvalidCredentials),
         // Tabela ainda nao criada (o `web` e' quem cria): nao ha' sessao valida.

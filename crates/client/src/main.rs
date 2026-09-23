@@ -73,6 +73,7 @@ mod gesto_camera;
 mod habilidades_vfx;
 mod ir_para;
 mod joystick;
+mod lembranca;
 mod lascas;
 mod loja_tp;
 mod map;
@@ -159,6 +160,13 @@ struct Jogo {
     usuario: String,
     senha: String,
     foco_senha: bool,
+    /// A caixinha "lembrar de mim" da tela de login.
+    lembrar: bool,
+    /// Já houve um login bem-sucedido nesta execução. É o que separa o
+    /// primeiro login da reconexão por troca de zona.
+    ja_entrou: bool,
+    /// Recado a mostrar na tela de login (sessão vencida, por exemplo).
+    erro_login: Option<String>,
     /// Algum campo de login foi tocado: o teclado da tela fica aberto.
     campo_login_ativo: bool,
     teclado_virtual: teclado_virtual::TecladoVirtual,
@@ -546,19 +554,32 @@ async fn main() {
         personagens::previa(&vox).await;
         return;
     }
+    // O QUE O APARELHO LEMBRA da última vez: usuário e, se o jogador pediu,
+    // a sessão. Lido UMA vez, aqui, antes de a tela existir.
+    let lembranca = lembranca::carrega();
     let mut jogo = Jogo {
         tela: Tela::Servidores,
         canais: Vec::new(),
         busca: Some(api::buscar_canais()),
         realm: None,
         host: std::env::var("MMO_HOST").ok(),
-        usuario: std::env::var("MMO_USER").unwrap_or_default(),
+        // O ÚLTIMO USUÁRIO vem do disco, e `MMO_USER` ainda ganha dele: o
+        // teste automatizado precisa mandar em quem entra.
+        usuario: std::env::var("MMO_USER")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| lembranca.usuario.clone()),
         senha: std::env::var("MMO_PASS").unwrap_or_default(),
         foco_senha: false,
+        lembrar: lembranca.lembrar,
+        ja_entrou: false,
+        erro_login: None,
         campo_login_ativo: false,
         teclado_virtual: teclado_virtual::TecladoVirtual::default(),
         google: login_google::LoginGoogle::consultando(),
-        token_login: None,
+        // A SESSÃO GUARDADA entra como token de login: com ela a tela de
+        // login nem chega a aparecer.
+        token_login: lembranca.sessao.clone(),
         personagens: Vec::new(),
         armas: Vec::new(),
         selecao_personagem: personagens::Personagens::default(),
@@ -746,6 +767,72 @@ fn tamanho_janela() -> (i32, i32) {
             Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
         })
         .unwrap_or((940, 980))
+}
+
+/// Onde cada peça da tela de login fica, dado o retângulo do painel.
+///
+/// Ordem: usuário, senha, lembrar, entrar, "ou", google.
+///
+/// Extraída porque as posições eram números soltos no meio do desenho, e
+/// acrescentar UMA linha ("lembrar de mim") empurrou três delas. Sem função
+/// não há como conferir que nada encosta em nada a não ser abrindo o jogo — e
+/// deixar de abrir é o que já me fez entregar tela quebrada mais de uma vez
+/// neste projeto.
+fn layout_do_login(r: Rect) -> [Rect; 6] {
+    [
+        Rect::new(r.x, r.y + 46.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 122.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 180.0, r.w, 40.0),
+        Rect::new(r.x, r.y + 236.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 282.0, r.w, 14.0),
+        Rect::new(r.x, r.y + 300.0, r.w, 44.0),
+    ]
+}
+
+#[cfg(test)]
+mod testes_do_login {
+    use super::*;
+
+    /// Nada encosta em nada, e tudo cabe no painel.
+    ///
+    /// A altura é a constante de `tela_login`; se ela mudar sem o layout
+    /// mudar junto, este teste é quem avisa.
+    #[test]
+    fn a_tela_de_login_nao_se_sobrepoe() {
+        const ALTURA: f32 = 480.0;
+        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
+        let pecas = layout_do_login(r);
+        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google"];
+        for (i, a) in pecas.iter().enumerate() {
+            assert!(
+                a.y >= r.y && a.y + a.h <= r.y + ALTURA,
+                "{} vaza o painel: {a:?}",
+                nomes[i]
+            );
+            for (j, b) in pecas.iter().enumerate().skip(i + 1) {
+                assert!(
+                    a.y + a.h <= b.y || b.y + b.h <= a.y,
+                    "{} encosta em {}: {a:?} e {b:?}",
+                    nomes[i],
+                    nomes[j]
+                );
+            }
+        }
+    }
+
+    /// O que se toca tem o tamanho de um dedo (44 pt da Apple).
+    ///
+    /// O dono já reclamou disso uma vez — "os botões de ação estão muito
+    /// pequenos, eu clico errado toda hora" — e aquilo rendeu 55 botões
+    /// corrigidos. Uma caixinha de marcar de 20 px seria o 56º.
+    #[test]
+    fn o_que_se_toca_cabe_num_dedo() {
+        let p = layout_do_login(Rect::new(0.0, 0.0, 460.0, 480.0));
+        for (r, nome) in [(p[2], "lembrar"), (p[3], "entrar"), (p[5], "google")] {
+            let toque = ui::area_de_toque(r);
+            assert!(toque.h >= 44.0, "{nome} tem só {:.0} pt de altura", toque.h);
+        }
+    }
 }
 
 impl Jogo {
@@ -1017,13 +1104,30 @@ impl Jogo {
                     None => self.envia(ClientMessage::Login {
                         username: self.usuario.clone(),
                         password: self.senha.clone(),
+                        // Só pede sessão no PRIMEIRO login. Na troca de zona o
+                        // cliente reconecta e reenvia usuário e senha — pedir
+                        // ali emitiria um token por zona visitada.
+                        lembrar: self.lembrar && !self.ja_entrou,
                     }),
                 }
             }
             ServerMessage::CharacterList {
                 chars,
                 available_weapons,
+                sessao,
             } => {
+                self.ja_entrou = true;
+                // GUARDA O QUE LEMBRAR, e só o que o jogador permitiu: o
+                // usuário sempre (é ele que preenche o campo, e não é
+                // segredo), a sessão só com `lembrar`, a senha nunca.
+                if let Some(t) = sessao {
+                    self.token_login = Some(t);
+                }
+                crate::lembranca::salva(&crate::lembranca::Prefs {
+                    usuario: self.usuario.clone(),
+                    sessao: self.token_login.clone(),
+                    lembrar: self.lembrar,
+                });
                 self.personagens = chars;
                 self.personagens
                     .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -1057,9 +1161,15 @@ impl Jogo {
                 self.tela = Tela::Personagens;
             }
             ServerMessage::LoginDenied { reason } => {
-                // Sessao do Google vencida: some, e o jogador entra de novo.
+                // Sessão vencida (Google ou "lembrar de mim"): some do disco e
+                // do jogo, e o jogador entra de novo. Sem apagar do disco, a
+                // próxima abertura tentaria o MESMO token morto e cairia no
+                // mesmo erro pra sempre.
                 if self.token_login.take().is_some() {
-                    self.tela = Tela::Erro("sua sessão do Google expirou — entre de novo".into());
+                    crate::lembranca::esquece_a_sessao();
+                    self.lembrar = false;
+                    self.erro_login = Some("sua sessão expirou — entre de novo".into());
+                    self.tela = Tela::Login;
                 } else {
                     self.tela = Tela::Erro(format!("login negado: {reason}"));
                 }
@@ -5655,8 +5765,26 @@ impl Jogo {
     }
 
     fn tela_login(&mut self) {
+        // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
+        // o "lembrar de mim" valer a pena — lembrar só o nome de usuário
+        // ainda deixaria a senha pra digitar no celular.
+        //
+        // O `host.is_some()` NÃO é zelo: `conectar` sai calado sem host, sem
+        // mexer na tela, e esta função roda POR QUADRO. Sem a guarda, um
+        // token guardado com o host ainda indefinido vira laço infinito com a
+        // tela de login nunca aparecendo.
+        //
+        // Token vencido: o `LoginDenied` o apaga e devolve pra cá sem token,
+        // e a tela aparece normalmente com o recado.
+        if self.token_login.is_some() && self.host.is_some() && !self.google.aguardando() {
+            self.conectar();
+            return;
+        }
         ui::fundo();
-        const ALTURA: f32 = 440.0;
+        // 480 e não 440: entrou a linha do "lembrar de mim" entre a senha e o
+        // botão. Sem crescer, ela ficaria a 32 px do botão — abaixo do alvo de
+        // dedo e encostando nele.
+        const ALTURA: f32 = 480.0;
         // Teclado da tela aberto: o painel sobe o bastante pro campo com foco
         // (a senha, no pior caso) ficar acima dele.
         let topo = (screen_height() - ALTURA) * 0.5;
@@ -5675,8 +5803,10 @@ impl Jogo {
             ui::texto_centro(cx, r.y + 6.0, &format!("servidor {realm}"), 15, ui::OURO);
         }
 
-        let cu = Rect::new(r.x, r.y + 46.0, r.w, 42.0);
-        let cs = Rect::new(r.x, r.y + 122.0, r.w, 42.0);
+        if let Some(e) = self.erro_login.clone() {
+            ui::erro(cx, r.y + 30.0, &e);
+        }
+        let [cu, cs, clembrar, centrar, cou, cgoogle] = layout_do_login(r);
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
@@ -5714,18 +5844,25 @@ impl Jogo {
         } else {
             let pode =
                 !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
-            let entrar = ui::botao(Rect::new(r.x, r.y + 196.0, r.w, 44.0), "entrar", pode)
-                || (pode && self.foco_senha && enter);
+            let entrar =
+                ui::botao(centrar, "entrar", pode) || (pode && self.foco_senha && enter);
             if entrar {
                 self.campo_login_ativo = false;
+                self.erro_login = None;
                 self.token_login = None;
                 self.conectar();
             }
         }
+        // LEMBRAR DE MIM. Desmarcar apaga a sessão guardada NA HORA, e não só
+        // no próximo login: quem desmarca está pedindo pra esquecer agora.
+        if ui::caixa(clembrar, "lembrar de mim", &mut self.lembrar) && !self.lembrar {
+            self.token_login = None;
+            crate::lembranca::esquece_a_sessao();
+        }
 
         // Entrar com Google: so' aparece com o servidor configurado.
         if self.google.disponivel() {
-            let rg = Rect::new(r.x, r.y + 252.0, r.w, 44.0);
+            let rg = cgoogle;
             if self.google.aguardando() {
                 ui::texto_centro(
                     cx,
@@ -5742,7 +5879,7 @@ impl Jogo {
                     self.google.cancelar();
                 }
             } else {
-                ui::texto_centro(cx, r.y + 246.0, "ou", 13, ui::OURO);
+                ui::texto_centro(cx, cou.y + 6.0, "ou", 13, ui::OURO);
                 if ui::botao(rg, "Entrar com Google", true) {
                     self.campo_login_ativo = false;
                     self.google.iniciar();
