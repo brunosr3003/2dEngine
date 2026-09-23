@@ -173,6 +173,9 @@ struct Jogo {
     cad_usuario: String,
     cad_email: String,
     cad_senha: String,
+    /// A repetição da senha. Sem ela, um dedo errado no celular vira uma
+    /// conta cuja senha ninguém sabe — e não há como recuperar.
+    cad_senha2: String,
     cad_foco: usize,
     /// Pedido de cadastro em voo, e o que ele respondeu.
     cad_pedido: Option<std::sync::mpsc::Receiver<api::RespostaCadastro>>,
@@ -587,6 +590,7 @@ async fn main() {
         cad_usuario: String::new(),
         cad_email: String::new(),
         cad_senha: String::new(),
+        cad_senha2: String::new(),
         cad_foco: 0,
         cad_pedido: None,
         cad_recado: None,
@@ -788,13 +792,14 @@ fn tamanho_janela() -> (i32, i32) {
 /// Onde cada peça da tela de CADASTRO fica.
 ///
 /// Ordem: usuário, e-mail, senha, criar, voltar.
-fn layout_do_cadastro(r: Rect) -> [Rect; 5] {
+fn layout_do_cadastro(r: Rect) -> [Rect; 6] {
     [
         Rect::new(r.x, r.y + 52.0, r.w, 42.0),
         Rect::new(r.x, r.y + 128.0, r.w, 42.0),
         Rect::new(r.x, r.y + 204.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 266.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 320.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 280.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 342.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 396.0, r.w, 44.0),
     ]
 }
 
@@ -853,10 +858,10 @@ mod testes_do_login {
     /// A tela de cadastro também não se sobrepõe nem vaza.
     #[test]
     fn a_tela_de_cadastro_nao_se_sobrepoe() {
-        const ALTURA: f32 = 420.0;
+        const ALTURA: f32 = 496.0;
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_cadastro(r);
-        let nomes = ["usuário", "e-mail", "senha", "criar", "voltar"];
+        let nomes = ["usuário", "e-mail", "senha", "repetir", "criar", "voltar"];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
                 a.y >= r.y && a.y + a.h <= r.y + ALTURA,
@@ -873,7 +878,7 @@ mod testes_do_login {
             }
         }
         // Os dois botões cabem num dedo.
-        for (r, nome) in [(pecas[3], "criar"), (pecas[4], "voltar")] {
+        for (r, nome) in [(pecas[4], "criar"), (pecas[5], "voltar")] {
             assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
         }
     }
@@ -5831,7 +5836,7 @@ impl Jogo {
     /// sozinho e ele exigia conta Google.
     fn tela_cadastro(&mut self) {
         ui::fundo();
-        const ALTURA: f32 = 420.0;
+        const ALTURA: f32 = 496.0;
         let topo = (screen_height() - ALTURA) * 0.5;
         let p = layout_do_cadastro(Rect::new(0.0, 0.0, 1.0, 1.0));
         let _ = p;
@@ -5848,7 +5853,7 @@ impl Jogo {
         let r = ui::painel(460.0, ALTURA, "criar conta");
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
-        let [cu, ce, cs, ccriar, cvoltar] = layout_do_cadastro(r);
+        let [cu, ce, cs, cs2, ccriar, cvoltar] = layout_do_cadastro(r);
 
         // A RESPOSTA do pedido em voo. Lida antes de desenhar pra o recado já
         // aparecer no mesmo quadro em que chega.
@@ -5864,6 +5869,7 @@ impl Jogo {
                         self.usuario = self.cad_usuario.clone();
                         self.senha = self.cad_senha.clone();
                         self.cad_senha.clear();
+                        self.cad_senha2.clear();
                         self.erro_login = None;
                         self.token_login = None;
                         self.tela = Tela::Login;
@@ -5883,6 +5889,7 @@ impl Jogo {
             (cu, "usuário", std::mem::take(&mut self.cad_usuario), false),
             (ce, "e-mail", std::mem::take(&mut self.cad_email), false),
             (cs, "senha", std::mem::take(&mut self.cad_senha), true),
+            (cs2, "repetir a senha", std::mem::take(&mut self.cad_senha2), true),
         ];
         for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
             if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
@@ -5893,13 +5900,14 @@ impl Jogo {
         self.cad_usuario = std::mem::take(&mut campos[0].2);
         self.cad_email = std::mem::take(&mut campos[1].2);
         self.cad_senha = std::mem::take(&mut campos[2].2);
+        self.cad_senha2 = std::mem::take(&mut campos[3].2);
 
         // Tab e Enter andam pelos campos, como no login.
         if is_key_pressed(KeyCode::Tab) {
-            self.cad_foco = (self.cad_foco + 1) % 3;
+            self.cad_foco = (self.cad_foco + 1) % 4;
         }
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
-        if enter && self.cad_foco < 2 {
+        if enter && self.cad_foco < 3 {
             self.cad_foco += 1;
         }
 
@@ -5916,6 +5924,8 @@ impl Jogo {
             Some("senha: no mínimo 6 caracteres")
         } else if self.cad_senha.len() > 128 {
             Some("senha: no máximo 128 caracteres")
+        } else if self.cad_senha != self.cad_senha2 {
+            Some("as duas senhas não são iguais")
         } else {
             None
         };
@@ -5924,7 +5934,7 @@ impl Jogo {
         }
         let pode = motivo.is_none() && !esperando;
         let rotulo = if esperando { "criando…" } else { "criar conta" };
-        if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 2 && enter)) && pode {
+        if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
             self.cad_recado = None;
             self.cad_pedido = Some(api::criar_conta(
@@ -6118,10 +6128,20 @@ impl Jogo {
     /// Teclado da tela: aberto enquanto um campo de texto tem foco.
     fn passo_teclado_virtual(&mut self) {
         let precisa = match self.tela {
-            Tela::Login => self.campo_login_ativo,
+            Tela::Login | Tela::Cadastro => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
             Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco(),
-            _ => false,
+            // SEM `_`, e isso é o conserto de verdade.
+            //
+            // A tela de cadastro nasceu com três campos de texto e caiu no
+            // `_ => false` que estava aqui: no iPhone o teclado simplesmente
+            // não abria, e não havia como digitar. O dono: "não estou
+            // conseguindo digitar no menu de criar conta".
+            //
+            // Listando as telas uma a uma, quem criar a próxima com campo de
+            // texto não consegue compilar sem decidir isto aqui — o
+            // compilador passa a cobrar o que o `_` engolia em silêncio.
+            Tela::Servidores | Tela::Conectando | Tela::Fila { .. } | Tela::Erro(_) => false,
         };
         if let Some(mostrar) = self.teclado_virtual.quer(precisa) {
             nativo::teclado_virtual(mostrar);
