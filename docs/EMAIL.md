@@ -82,6 +82,32 @@ quase simultâneos passarem os dois.
   página faz melhor. Por isso `/api/auth/reset` é formulário no GET e API no
   POST.
 
+## O que existe em produção (23/09/2026)
+
+- Conta no **Resend**, chave de envio em `~/tempest-prod/tempest.env` (modo
+  `600`). A chave é do tipo **somente envio**: não lista nem cria domínios —
+  o escopo certo para um servidor de jogo.
+- Domínio de envio **`mail.brunji.com.br`**, região São Paulo (sa-east-1).
+- Quatro registros no Cloudflare, criados pela API com um token de escopo
+  mínimo (só esta zona, só `DNS:Edit`), **revogado depois de usar**:
+
+  | Tipo | Nome | Conteúdo |
+  |---|---|---|
+  | TXT | `resend._domainkey.mail` | chave DKIM (218 caracteres) |
+  | CNAME | `rsend.mail` | `rsend-sae1.forge.rmta.net` |
+  | CNAME | `send.mail` | `send.forge.rmta.net` |
+  | TXT | `_dmarc` | `v=DMARC1; p=none;` |
+
+  Os CNAME são **`proxied: false`**. Com o proxy da Cloudflare ligado, ela
+  responde o CNAME com IP próprio e o Resend não verifica nem entrega.
+
+- Foi usado **"Manual setup"**, e não "Auto configure": o automático pede
+  autorização para o Resend **escrever** no DNS da conta. Na mão, ninguém
+  ganha esse acesso.
+
+Se um dia a entrega parar, o primeiro lugar a olhar é `resend.com/logs` e
+depois estes quatro registros — o DNS é o que costuma mudar sem aviso.
+
 ## Variáveis de ambiente (`web`)
 
 | Variável | Obrigatória | O quê |
