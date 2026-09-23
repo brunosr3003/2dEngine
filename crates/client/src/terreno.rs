@@ -1525,7 +1525,6 @@ pub async fn previa_da_colonia(
             (*m, eu + vec2(a.cos(), a.sin()) * (plato * 0.55))
         })
         .collect();
-    let saia = crate::render3d::saia_da_ilhota();
     // REPRODUZ O PAINEL, com os parâmetros dele: terreno recém-criado e
     // `atualiza(centro, 3, 8)` por quadro, que é o que `ColoniaUi::desenha`
     // faz. A prévia antes usava raio 5 e orçamento 400 — e por isso mostrava
@@ -1538,7 +1537,7 @@ pub async fn previa_da_colonia(
         for q in 0..40 {
             tp.atualiza(eu, 6, 24);
             let ok = crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], &saia, vox,
+                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], vox,
             );
             if q % 8 == 0 || q == 39 {
                 println!(
@@ -1554,6 +1553,35 @@ pub async fn previa_da_colonia(
         let pecas = vox.rig(nome).map(|h| h.len());
         println!("[previa colonia] {} -> rig '{nome}' pecas={pecas:?}", m.nome());
     }
+    // O GIRO E O ZOOM, pro dono julgar: quatro ângulos e três distâncias.
+    for (k, (giro, zoom)) in [
+        (0.0f32, 1.0f32),
+        (1.57, 1.0),
+        (3.14, 1.0),
+        (4.71, 1.0),
+        (0.9, 0.8),
+        (0.9, 1.8),
+        (0.9, 3.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for _ in 0..2 {
+            crate::render3d::camera_padrao();
+            clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
+            let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
+            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
+            crate::render3d::maquete_da_ilha(
+                &t, &construcoes, r, eu, giro, zoom, solido, &onde, vox,
+            );
+            unsafe { macroquad::window::get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/vista-{k}.png"));
+            next_frame().await;
+        }
+        println!("[previa colonia] vista {k}: giro {giro:.2} zoom {zoom:.1}");
+    }
     for _ in 0..2 {
         crate::render3d::camera_padrao();
         // A MESMA COR de fundo que o painel pinta atrás da maquete: o
@@ -1567,7 +1595,7 @@ pub async fn previa_da_colonia(
         let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
         let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
         let ok = crate::render3d::maquete_da_ilha(
-            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, &saia, vox,
+            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, vox,
         );
         unsafe { macroquad::window::get_internal_gl().flush() };
         rt.texture

@@ -90,9 +90,6 @@ struct Maquete {
     /// varredura: refazer por quadro seria pagar a mesma conta trinta vezes
     /// por segundo pra um resultado que so' muda quando alguem e' contratado.
     moradores: Vec<(shared::colonia::Profissao, Vec2)>,
-    /// A saia de terra do diorama. Assada UMA vez: a malha vai pra GPU por
-    /// ponteiro e o cache não expira — refazer por quadro vazaria buffer.
-    saia: macroquad::models::Mesh,
 }
 
 impl ColoniaUi {
@@ -111,7 +108,6 @@ impl ColoniaUi {
             construcoes: crate::construcoes::Construcoes::da_colonia(plato, trabalhadores),
             centro: vec2(centro.x, centro.y),
             moradores,
-            saia: crate::render3d::saia_da_ilhota(),
         });
     }
 
@@ -229,7 +225,6 @@ impl ColoniaUi {
                 self.zoom,
                 solido,
                 &mq.moradores,
-                &mq.saia,
                 vox,
             ),
             None => false,
