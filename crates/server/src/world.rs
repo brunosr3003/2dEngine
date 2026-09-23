@@ -14587,10 +14587,19 @@ impl GameWorld {
         else {
             return false;
         };
-        let alcance = shared::INTERACT_RADIUS + 1.0;
-        self.npcs_do_giver(def.giver)
-            .iter()
-            .any(|(p, _)| p.distance(pos) <= alcance)
+        let _ = pos;
+        // BASTA QUE ELE EXISTA NESTA ILHA — não é mais preciso estar ao lado.
+        //
+        // O dono pediu pra "pegar direto no menu de missões igual no MIR4", e
+        // a caminhada até o NPC era o que impedia. Ela não guardava regra
+        // nenhuma: quem quisesse fazer a missão ia andar até o objetivo de
+        // qualquer jeito, e o trecho até o balcão era pedágio.
+        //
+        // O que a checagem AINDA guarda é a ilha: `npcs_do_giver` só enxerga
+        // os desta zona, então uma missão da Geleira continua não sendo
+        // aceitável do Bosque. Isso importa — o objetivo dela é resolvido com
+        // o relevo e a vila da ilha em que se está.
+        !self.npcs_do_giver(def.giver).is_empty()
     }
 
     /// O NPC `giver` tem o que tratar com o jogador: missao pra oferecer, ou

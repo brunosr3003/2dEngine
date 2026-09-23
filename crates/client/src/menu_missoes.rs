@@ -30,12 +30,26 @@ pub enum Estado {
 /// O que o clique numa missao pede ao `main`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Clique {
-    /// Disponivel aqui: ir ate' quem da' e abrir a oferta.
-    IrAoGiver(u16),
+    /// Disponivel aqui: ACEITAR na hora, sem andar ate' o NPC.
+    ///
+    /// Era `IrAoGiver`, que mandava o jogador caminhar ate' o balcao e abrir
+    /// a oferta. O dono: "e de[ixa] pra pegar direto no menu de missoes igual
+    /// no MIR4". A caminhada nao guardava regra nenhuma — quem vai fazer a
+    /// missao anda ate' o OBJETIVO de qualquer jeito, e o trecho ate' o
+    /// balcao era pedagio. O servidor continua exigindo que o NPC exista
+    /// nesta ilha.
+    Aceitar(u16),
     /// Em andamento ou pronta: a auto missao que ja' existe.
     AutoMissao(u16),
     /// Nao anda: so' avisa.
     Aviso(String),
+    /// A FILA: fazer estas, nesta ordem.
+    ///
+    /// Pedido pelo dono: "ter como colocar para fazer as missoes em
+    /// sequencia, no maximo 10, escolher quais". A ordem e' a de marcacao —
+    /// quem marcou por ultimo vai por ultimo —, e missao que nao da' pra
+    /// fazer na hora e' PULADA, nao trava a fila.
+    Fila(Vec<u16>),
     /// Trava de NIVEL: abre a Ilha Magica, que e' onde se arruma XP.
     ///
     /// A historia para esperando nivel e o jogador chega uns tres abaixo —
@@ -57,6 +71,45 @@ pub struct Contexto<'a> {
     pub zona: Option<&'a str>,
     pub agora_unix: i64,
     pub tem: Tem<'a>,
+    /// Nomes de item, pra escrever a RECOMPENSA por extenso.
+    pub nomes: &'a HashMap<u16, String>,
+}
+
+/// A recompensa de uma missão, por extenso.
+///
+/// O menu mostrava o que a missão PEDE e nunca o que ela PAGA — o dono:
+/// "quero que no menu de missões esteja mais relatado o que a missão dá de
+/// recompensa". Decidir qual fazer primeiro sem saber o que cada uma paga é
+/// escolher no escuro.
+///
+/// Irmã de `missoes::recompensa`, que faz o mesmo a partir do `QuestNet` (a
+/// missão ATIVA). Aqui a fonte é o `QuestDef`, que é o que o menu tem em mão
+/// pra missão que ainda não foi aceita — e é justamente nessa que saber o
+/// prêmio muda a decisão.
+pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
+    let nome = |id: u16| {
+        nomes
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("item {id}"))
+    };
+    let mut partes = Vec::new();
+    if d.reward_xp > 0 {
+        partes.push(format!("{} XP", d.reward_xp));
+    }
+    if d.reward_cobre > 0 {
+        partes.push(format!("{} cobre", d.reward_cobre));
+    }
+    if d.reward_item != 0 && d.reward_item_qty > 0 {
+        partes.push(format!("{}x {}", d.reward_item_qty, nome(d.reward_item)));
+    }
+    if d.reward_item2 != 0 && d.reward_item2_qty > 0 {
+        partes.push(format!("{}x {}", d.reward_item2_qty, nome(d.reward_item2)));
+    }
+    if d.reward_faction_points > 0 {
+        partes.push(format!("{} pts de facção", d.reward_faction_points));
+    }
+    partes.join("  ·  ")
 }
 
 fn nome_da_zona(z: &str) -> String {
@@ -118,7 +171,7 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
 /// O que clicar numa missao nesse estado faz.
 pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
     match e {
-        Estado::Disponivel => Clique::IrAoGiver(d.id),
+        Estado::Disponivel => Clique::Aceitar(d.id),
         // TRAVA DE NIVEL: o "Ir" leva pra Ilha Magica em vez de dizer que
         // nao ha' pra onde ir.
         Estado::EmAndamento { .. }
@@ -456,7 +509,8 @@ fn icone(c: Vec2, e: &Estado, s: f32) {
     }
 }
 
-const CARTAO: f32 = 76.0;
+// O cartao cresceu pra caber a linha da RECOMPENSA.
+const CARTAO: f32 = 96.0;
 const PASSO: f32 = 26.0;
 
 #[derive(Default)]
@@ -467,7 +521,15 @@ pub struct MenuMissoes {
     aba: Option<Aba>,
     /// Linha aberta (mostra os passos), pelo nome.
     expandida: Option<String>,
+    /// As missoes MARCADAS pra fila, na ordem em que foram marcadas.
+    ///
+    /// Um `Vec` e nao um conjunto porque a ORDEM e' a escolha: marcar e'
+    /// dizer "esta depois daquela". Teto de `FILA_MAX`.
+    marcadas: Vec<u16>,
 }
+
+/// Quantas missoes cabem numa fila. O numero e' do dono.
+pub const FILA_MAX: usize = 10;
 
 impl MenuMissoes {
     /// Abre pelo rodape do rastreador ou pelo Menu — nunca por tecla.
@@ -476,6 +538,28 @@ impl MenuMissoes {
         self.aba = None;
         self.expandida = None;
         self.rolagem.zera();
+        // As marcas NAO sobrevivem ao fechar: uma fila montada ontem e
+        // iniciada sem querer hoje e' pior que remontar.
+        self.marcadas.clear();
+    }
+
+    /// Marca ou desmarca uma missao pra fila. Devolve `false` quando a fila
+    /// esta' cheia e a marca foi recusada.
+    fn alterna_marca(&mut self, id: u16) -> bool {
+        if let Some(i) = self.marcadas.iter().position(|x| *x == id) {
+            self.marcadas.remove(i);
+            return true;
+        }
+        if self.marcadas.len() >= FILA_MAX {
+            return false;
+        }
+        self.marcadas.push(id);
+        true
+    }
+
+    /// A posicao dela na fila (1-based), se estiver marcada.
+    fn posicao_na_fila(&self, id: u16) -> Option<usize> {
+        self.marcadas.iter().position(|x| *x == id).map(|i| i + 1)
     }
 
     pub fn alterna(&mut self) {
@@ -575,6 +659,9 @@ impl MenuMissoes {
         let mouse = Vec2::from(mouse_position());
         let mut saida = None;
         let mut alternar: Option<String> = None;
+        // A marca da fila sai do laço junto com a expansão: dentro dele o
+        // `self` está emprestado pela closure que mede a altura das linhas.
+        let mut marca_pedida: Option<u16> = None;
         if da_aba.is_empty() {
             let vazio = match aba {
                 Aba::EmAndamento => "Nada em andamento. Veja as Disponíveis.",
@@ -612,17 +699,70 @@ impl MenuMissoes {
             estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
             if let Some(d) = r.atual {
                 estilo::texto_ajustado(&frase(d, &r.estado), tx, card.y + 63.0 * f, card.w - 60.0 * f, 13, cor_do_estado(&r.estado));
+                // O QUE ELA PAGA. Em verde e por último: é o motivo de fazer,
+                // e vem depois do que ela pede, que é o custo.
+                let premio = recompensa_de(d, c.nomes);
+                if !premio.is_empty() {
+                    estilo::texto_ajustado(
+                        &format!("Dá: {premio}"),
+                        tx,
+                        card.y + 83.0 * f,
+                        card.w - 60.0 * f,
+                        13,
+                        estilo::AUTO,
+                    );
+                }
             }
             // "Ir" no passo atual, quando da' pra fazer algo com ele.
             let ir = Rect::new(card.x + card.w - 82.0 * f, card.y + 12.0 * f, 72.0 * f, 30.0 * f);
             let clicavel = matches!(r.estado, Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta);
+            // A CAIXA DA FILA, logo abaixo do "Ir".
+            //
+            // Marcar é dizer "esta, e nesta ordem" — por isso ela mostra o
+            // NÚMERO da posição e não um tique: numa fila de dez, saber que
+            // algo está marcado sem saber onde não ajuda a montar nada.
+            let cx = Rect::new(card.x + card.w - 46.0 * f, card.y + 48.0 * f, 34.0 * f, 30.0 * f);
+            let mut marcou = None;
             if let (true, Some(d)) = (clicavel, r.atual) {
-                let _ = crate::ui::botao(ir, "Ir", true);
+                let pos = self.posicao_na_fila(d.id);
+                estilo::cartao(cx, cx.contains(mouse), pos.is_some());
+                match pos {
+                    Some(n) => estilo::texto_centro_forte(
+                        cx.center().x,
+                        cx.center().y + 5.0 * f,
+                        &n.to_string(),
+                        15,
+                        estilo::OURO,
+                    ),
+                    None => estilo::texto_centro(
+                        cx.center().x,
+                        cx.center().y + 5.0 * f,
+                        "+",
+                        16,
+                        estilo::SUAVE,
+                    ),
+                }
+                if tocou(cx) {
+                    marcou = Some(d.id);
+                }
+            }
+            if let Some(id) = marcou {
+                marca_pedida = Some(id);
+            }
+            if let (true, Some(d), None) = (clicavel, r.atual, marcou) {
+                // "Pegar" quando ela ainda não foi aceita: o botão diz o que
+                // vai acontecer, e o que acontece agora é aceitar na hora.
+                let rotulo = if matches!(r.estado, Estado::Disponivel) {
+                    "Pegar"
+                } else {
+                    "Ir"
+                };
+                let _ = crate::ui::botao(ir, rotulo, true);
                 if tocou(ir) {
                     saida = Some(clique_de(d, &r.estado));
                 }
             }
-            if tocou(topo) && !(clicavel && tocou(ir)) {
+            if tocou(topo) && !(clicavel && (tocou(ir) || tocou(cx))) {
                 alternar = Some(l.nome.clone());
             }
             // Aberta: os passos, com o que ja' foi, o atual e o que falta.
@@ -640,12 +780,46 @@ impl MenuMissoes {
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
+        if let Some(id) = marca_pedida {
+            if !self.alterna_marca(id) {
+                saida = Some(Clique::Aviso(format!("A fila já tem {FILA_MAX} missões.")));
+            }
+        }
         if let Some(nome) = alternar {
             self.expandida = if self.expandida.as_deref() == Some(nome.as_str()) {
                 None
             } else {
                 Some(nome)
             };
+        }
+        // O RODAPÉ DA FILA, só quando há algo marcado.
+        //
+        // Ele só aparece com marca porque um botão morto no rodapé de toda
+        // abertura seria mais uma coisa a ignorar — e porque a fila é um modo
+        // em que se entra de propósito, não o jeito normal de usar o menu.
+        if !self.marcadas.is_empty() {
+            let rod = Rect::new(
+                p.x + 18.0,
+                p.y + p.h - 52.0 * f,
+                p.w - 36.0,
+                40.0 * f,
+            );
+            let n = self.marcadas.len();
+            let b = Rect::new(rod.x + rod.w - 190.0 * f, rod.y, 120.0 * f, rod.h);
+            let limpar = Rect::new(rod.x + rod.w - 64.0 * f, rod.y, 64.0 * f, rod.h);
+            estilo::texto(
+                rod.x,
+                rod.y + 26.0 * f,
+                &format!("Fila: {n} de {FILA_MAX} · bloqueada é pulada"),
+                14,
+                estilo::SUAVE,
+            );
+            if crate::ui::botao(b, &format!("Fazer as {n}"), true) {
+                saida = Some(Clique::Fila(std::mem::take(&mut self.marcadas)));
+            }
+            if crate::ui::botao(limpar, "Limpar", true) {
+                self.marcadas.clear();
+            }
         }
         saida
     }
@@ -660,6 +834,12 @@ pub(crate) fn cadeado(c: Vec2, s: f32, cor: Color) {
     draw_rectangle(c.x - s * 0.8, c.y - s * 0.2, s * 1.6, s * 1.2, cor);
     draw_circle(c.x, c.y + s * 0.3, s * 0.18, Color::new(0.0, 0.0, 0.0, 0.7));
 }
+
+/// Um mapa de nomes vazio pros testes: eles medem estado e clique, não texto
+/// de recompensa.
+#[cfg(test)]
+pub(crate) static NOMES_DE_TESTE: std::sync::LazyLock<HashMap<u16, String>> =
+    std::sync::LazyLock::new(HashMap::new);
 
 #[cfg(test)]
 mod tests {
@@ -677,6 +857,7 @@ mod tests {
         zona: Option<&'a str>,
     ) -> Contexto<'a> {
         Contexto {
+            nomes: &NOMES_DE_TESTE,
             log,
             entregues,
             nivel,
@@ -737,7 +918,7 @@ mod tests {
     #[test]
     fn liberada_anda_e_bloqueada_so_avisa() {
         let d501 = quest_by_id(501).unwrap();
-        assert_eq!(clique_de(d501, &Estado::Disponivel), Clique::IrAoGiver(501));
+        assert_eq!(clique_de(d501, &Estado::Disponivel), Clique::Aceitar(501));
         assert_eq!(clique_de(d501, &Estado::Pronta), Clique::AutoMissao(501));
         assert_eq!(
             clique_de(d501, &Estado::EmAndamento { feito: 0, total: 1 }),
@@ -918,6 +1099,36 @@ mod tests {
 #[cfg(test)]
 mod testes_da_trava {
     use super::*;
+
+    /// A FILA tem teto, guarda a ORDEM e desmarca.
+    ///
+    /// A ordem é a escolha: marcar é dizer "esta depois daquela". Um conjunto
+    /// perderia isso e a fila sairia em ordem qualquer, que é o contrário do
+    /// que "fazer em sequência" quer dizer.
+    #[test]
+    fn a_fila_guarda_a_ordem_e_para_no_teto() {
+        let mut m = MenuMissoes::default();
+        for id in 1..=FILA_MAX as u16 {
+            assert!(m.alterna_marca(id), "{id} cabia e foi recusada");
+            assert_eq!(m.posicao_na_fila(id), Some(id as usize));
+        }
+        // A décima primeira é RECUSADA, e não troca nenhuma.
+        assert!(!m.alterna_marca(99), "passou do teto");
+        assert_eq!(m.posicao_na_fila(99), None);
+        assert_eq!(m.marcadas.len(), FILA_MAX);
+
+        // Desmarcar abre vaga e as de trás sobem.
+        assert!(m.alterna_marca(1));
+        assert_eq!(m.posicao_na_fila(1), None);
+        assert_eq!(m.posicao_na_fila(2), Some(1), "as de trás sobem");
+        assert!(m.alterna_marca(99), "com vaga, entra");
+        assert_eq!(m.posicao_na_fila(99), Some(FILA_MAX), "e entra no FIM");
+
+        // Abrir o menu limpa: uma fila montada ontem e iniciada sem querer
+        // hoje é pior que remontar.
+        m.abrir();
+        assert!(m.marcadas.is_empty());
+    }
 
     /// A TRAVA DE NÍVEL manda pra Ilha Mágica, e diz por quê.
     ///

@@ -417,6 +417,15 @@ struct Jogo {
     /// tocar no passo no rastreador; o prazo existe pra que um alvo que
     /// sumiu da tela nunca deixe o jogador preso atras do escuro.
     foco_tutorial: Option<(u16, f64)>,
+    /// A FILA de missões: o que ainda falta fazer, na ordem escolhida.
+    ///
+    /// Vazia = sem fila. Quem a esvazia é o laço `tocar_fila`, que puxa a
+    /// próxima assim que a auto missão para — por ter entregado, ou por ter
+    /// sido recusada.
+    fila_de_missoes: Vec<u16>,
+    /// Quantas a fila já entregou e quantas pulou, pra contar no fim.
+    fila_feitas: usize,
+    fila_puladas: usize,
     /// A DICA da trava de nível: acende o caminho até a Ilha Mágica.
     ///
     /// A história para esperando nível e o jogador chega uns três abaixo. A
@@ -676,6 +685,9 @@ async fn main() {
         dash_recarga: (0.0, 0.0),
         confirmar: None,
         foco_tutorial: None,
+        fila_de_missoes: Vec::new(),
+        fila_feitas: 0,
+        fila_puladas: 0,
         dica_da_trava: None,
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
@@ -2144,6 +2156,50 @@ impl Jogo {
 
     /// O passo TUTORIAL armado pede o foco. A lista vai do botao mais FUNDO
     /// (dentro do painel) ao mais raso (o MENU): ganha o primeiro que estiver
+    /// Esvazia a fila sem contar nada: o jogador mandou outra coisa.
+    fn parar_fila(&mut self) {
+        self.fila_de_missoes.clear();
+        self.fila_feitas = 0;
+        self.fila_puladas = 0;
+    }
+
+    /// Puxa a próxima da fila quando a auto missão para.
+    ///
+    /// Por SONDAGEM, e não por gancho nos lugares que param a auto missão:
+    /// são mais de dez, entre entregar, recusar, trocar de zona, morrer e
+    /// abrir outra coisa. Um gancho esquecido num deles deixaria a fila
+    /// pendurada pra sempre, e é o tipo de esquecimento que ninguém vê.
+    ///
+    /// Missão que não está no log (não foi aceita, ou já foi entregue) é
+    /// PULADA: a fila nunca trava, que foi a escolha do dono.
+    fn tocar_fila(&mut self) {
+        if self.fila_de_missoes.is_empty() || self.auto_missao.ativo() {
+            return;
+        }
+        while let Some(id) = self.fila_de_missoes.first().copied() {
+            self.fila_de_missoes.remove(0);
+            let tem = self.missoes.log.iter().any(|q| {
+                q.id == id && q.status == shared::quests::quest_status::ACTIVE
+            });
+            if tem {
+                self.fila_feitas += 1;
+                self.iniciar_auto_missao(id);
+                return;
+            }
+            self.fila_puladas += 1;
+        }
+        let (f, pl) = (self.fila_feitas, self.fila_puladas);
+        if f + pl > 0 {
+            self.chat.push(if pl > 0 {
+                format!("Fila terminada: {f} feita(s), {pl} pulada(s).")
+            } else {
+                format!("Fila terminada: {f} missão(ões).")
+            });
+        }
+        self.fila_feitas = 0;
+        self.fila_puladas = 0;
+    }
+
     /// O caminho até a Ilha Mágica, aceso enquanto a dica da trava vale.
     fn foco_da_trava(&mut self) {
         let Some(armado) = self.dica_da_trava else {
@@ -2935,6 +2991,7 @@ impl Jogo {
             zona: self.mapa.zona(),
             agora_unix,
             tem: &tem,
+            nomes: &self.bolsa.nomes,
         };
         diarias::tem_pendente(&c)
     }
@@ -3620,7 +3677,24 @@ impl Jogo {
             menu_missoes::Clique::AutoMissao(id) => {
                 self.menu_missoes.aberto = false;
                 self.diarias.fechar();
+                // Escolher UMA cancela a fila: é a decisão mais recente, e
+                // uma fila que sobrevivesse a ela voltaria a mandar sozinha
+                // no quadro seguinte.
+                self.parar_fila();
                 self.iniciar_auto_missao(id);
+            }
+            // A FILA: até 10, na ordem marcada. Bloqueada é pulada.
+            menu_missoes::Clique::Fila(ids) => {
+                self.menu_missoes.aberto = false;
+                self.diarias.fechar();
+                self.fila_de_missoes = ids;
+                self.fila_feitas = 0;
+                self.fila_puladas = 0;
+                self.chat.push(format!(
+                    "Fila: {} missões. O que não der pra fazer agora é pulado.",
+                    self.fila_de_missoes.len()
+                ));
+                self.tocar_fila();
             }
             // TRAVA DE NÍVEL: o "Ir" abre a Ilha Mágica, que é onde se
             // arruma XP, e ACENDE o caminho até ela no menu — o jogador vê
@@ -3634,42 +3708,16 @@ impl Jogo {
                     pedido: shared::magica::PedidoMagica::Painel,
                 });
             }
-            menu_missoes::Clique::IrAoGiver(id) => {
-                // Missao ainda nao aceita: vai ate' QUEM DA' (o Mestre ou o
-                // NPC da vila da cadeia) e fala com ele ao chegar.
-                self.diarias.fechar();
-                let giver = shared::quests::quest_by_id(id)
-                    .map_or(shared::quests::GIVER_MESTRE_DA_ILHA, |d| d.giver);
-                let npc = self
-                    .world
-                    .ents
-                    .iter()
-                    .find(|(_, e)| {
-                        e.meta.tag == shared::EntityTag::Npc
-                            && shared::quests::giver_do_npc(
-                                shared::npc_papel_de_kind(e.meta.kind) as u16
-                            ) == Some(giver)
-                    })
-                    .map(|(id, e)| (*id, e.render_pos));
-                match (npc, self.mapa.npc_do_giver(giver)) {
-                    // Ja' a' vista: anda e fala.
-                    (Some((eid, pos)), _) => {
-                        self.menu_missoes.aberto = false;
-                        self.falar_com(eid, pos);
-                    }
-                    // Longe (fora da area carregada): vai ate' a posicao dele.
-                    (None, Some((nome, pos))) => {
-                        self.menu_missoes.aberto = false;
-                        self.iniciar_ir_para(ir_para::Alvo {
-                            objetivo: ir_para::Objetivo::Npc,
-                            pos,
-                            raio: 0.0,
-                            rotulo: nome,
-                        });
-                    }
-                    (None, None) => self
-                        .chat
-                        .push("Não sei onde fica quem dá essa missão.".into()),
+            // PEGAR NA HORA, sem andar até o balcão.
+            //
+            // O servidor confere o resto (nível, facção, cooldown, slot) e
+            // exige que o NPC exista nesta ilha; o que ele deixou de exigir é
+            // proximidade. Quem vai fazer a missão anda até o OBJETIVO de
+            // qualquer jeito — o trecho até o balcão era pedágio.
+            menu_missoes::Clique::Aceitar(id) => {
+                self.envia(ClientMessage::AcceptQuest { quest_id: id });
+                if let Some(d) = shared::quests::quest_by_id(id) {
+                    self.chat.push(format!("Missão aceita: {}.", d.title));
                 }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
@@ -4410,6 +4458,7 @@ impl Jogo {
     fn desenhar(&mut self) {
         self.foco_do_tutorial();
         self.foco_da_trava();
+        self.tocar_fila();
         match &self.tela {
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => {
@@ -5072,6 +5121,7 @@ impl Jogo {
                     zona: self.mapa.zona(),
                     agora_unix,
                     tem: &tem,
+                    nomes: &self.bolsa.nomes,
                 };
                 self.menu_missoes.desenha(&c)
             };
@@ -5095,6 +5145,7 @@ impl Jogo {
                     zona: self.mapa.zona(),
                     agora_unix,
                     tem: &tem,
+                    nomes: &self.bolsa.nomes,
                 };
                 self.diarias.desenha(&c, &self.bolsa.nomes)
             };

@@ -3,7 +3,8 @@
 //! e pelo Menu — nunca por tecla (docs/HUD.md 2.5).
 //!
 //! Aceitar e entregar sao com o Mestre de Missoes: o servidor recusa longe
-//! dele. Por isso nenhum botao manda `AcceptQuest` direto: "Ir aceitar" leva
+//! dele. O botao "Pegar" manda `AcceptQuest` direto desde 22/09/2026 — o
+//! antigo "Ir aceitar" levava
 //! ate' o Mestre (a oferta abre ao chegar), "Ir" liga a auto missao e "Ir
 //! entregar" tambem — ela ja' volta ao Mestre com o objetivo cumprido.
 use macroquad::prelude::*;
@@ -40,7 +41,7 @@ pub fn estado_da_diaria(d: &QuestDef, c: &Contexto) -> Estado {
 /// O rotulo do botao pra cada estado; `None` = sem botao.
 pub fn botao_de(e: &Estado) -> Option<&'static str> {
     match e {
-        Estado::Disponivel => Some("Ir aceitar"),
+        Estado::Disponivel => Some("Pegar"),
         Estado::EmAndamento { .. } => Some("Ir"),
         Estado::Pronta => Some("Ir entregar"),
         Estado::Concluida | Estado::Bloqueada(_) => None,
@@ -334,6 +335,7 @@ mod tests {
         zona: Option<&'a str>,
     ) -> Contexto<'a> {
         Contexto {
+            nomes: &crate::menu_missoes::NOMES_DE_TESTE,
             log,
             entregues,
             nivel: 50,
@@ -365,11 +367,11 @@ mod tests {
         let c = ctx(&[], &vazio, Some("ilha_inicial"));
         let e = estado_da_diaria(d601, &c);
         assert_eq!(e, Estado::Disponivel);
-        assert_eq!(botao_de(&e), Some("Ir aceitar"));
+        assert_eq!(botao_de(&e), Some("Pegar"));
         assert_eq!(
             clique_da_diaria(d601, &e, 1_000),
-            Clique::IrAoGiver(601),
-            "aceitar e' com o Mestre"
+            Clique::Aceitar(601),
+            "pega na hora, sem andar ate' o Mestre"
         );
 
         // A Cacada (raid) ainda nao existe; a dungeon (606) ja' conta.
