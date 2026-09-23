@@ -242,7 +242,11 @@ pub fn ilhotas() -> Vec<Ilhota> {
         Bonus::Coleta(5),
         Bonus::Ouro,
         Bonus::Coleta(0),
-        Bonus::Coleta(1),
+        // TIER 4, e não 1: a pedra desta ilha vem da ilhota, não da altura
+        // (`tier_da_pedra`), e a casa da pedra dá a MELHOR. Prometer 1 e
+        // entregar 4 é o que `toda_ilhota_de_recurso_tem_o_recurso` reprova —
+        // e é a promessa que estava errada, não a entrega.
+        Bonus::Coleta(4),
         Bonus::DropDeMob,
     ];
     let mut v = vec![Ilhota {
@@ -280,9 +284,14 @@ pub fn pontes() -> Vec<(Vec2, Vec2)> {
 
 /// Em que ilhota está o ponto, se estiver em alguma.
 pub fn ilhota_em(p: Vec2) -> Option<Ilhota> {
-    ilhotas()
-        .into_iter()
-        .find(|i| i.centro.distance(p) <= i.raio)
+    ilhotas().into_iter().find(|i| {
+        let d = p - i.centro;
+        // A COSTA ONDULA, então a pergunta "estou na ilhota" usa o raio
+        // daquela direção, e não o raio nominal. Se esta conta e a de
+        // `bloco_da_coluna` discordarem, o jogador pisa em chão que o
+        // servidor considera mar.
+        d.length() <= raio_da_ilhota(i, d.y.atan2(d.x))
+    })
 }
 
 /// O bônus que vale NESTE ponto. Na ponte não vale bônus nenhum — quem está
@@ -393,6 +402,74 @@ fn altura_do_domo(d: f32, raio: f32) -> f32 {
     ALTURA_TOPO + (ALTURA - ALTURA_TOPO) * k * k
 }
 
+/// O raio da ilhota NAQUELA direção — a costa não é um compasso.
+///
+/// As ilhotas eram círculos perfeitos com um domo radial em cima, e o dono:
+/// "as ilhas estão muito feias, estão só redondas bem padrão; tem que ser uma
+/// ilhota mas com noise, relevo etc — só não pode ter montanha — e tem que
+/// ser uma ilha com praia e tudo mais".
+///
+/// Dois senos, como na colônia: ruído de verdade seria pagar fbm por coluna
+/// pra desenhar uma forma que cabe em duas linhas, e o relevo aqui precisa
+/// ser função pura da coordenada (cliente e servidor calculam o mesmo chão
+/// sem trocar um byte).
+///
+/// A FASE VEM DO CENTRO da ilhota: sem isso as seis sairiam com a mesma
+/// silhueta girada, que é outro jeito de parecer padrão.
+fn raio_da_ilhota(i: &Ilhota, ang: f32) -> f32 {
+    let fase = i.centro.x * 0.031 + i.centro.y * 0.017;
+    i.raio * (1.0 + 0.11 * (ang * 3.0 + fase).sin() + 0.05 * (ang * 5.0 - fase * 1.7).sin())
+}
+
+/// A ondulação do chão da ilhota, em unidades.
+///
+/// PEQUENA de propósito, e presa à borda: o dono pediu relevo, "só não pode
+/// ter montanha". Mais que isto e a ladeira passa de 1,0 u/u — o passo do
+/// personagem vence um bloco por coluna, e acima disso a beira vira paredão e
+/// a ilhota deixa de ser caminhável. `da_chegada_se_anda_ate_toda_ilhota` é
+/// quem reprova.
+///
+/// Cresce PRA FORA (`0,25 + 0,75·t`) pra o platô do meio ficar calmo: é ele
+/// que deixa a pedra e a Energia nascerem, porque as duas exigem o quadrado
+/// em volta na mesma altura.
+fn ondula(p: Vec2, t: f32) -> f32 {
+    ((p.x * 0.045 + 1.3).sin() * (p.y * 0.039 - 0.7).cos() * 1.5
+        + (p.x * 0.094 - p.y * 0.071).sin() * 0.6
+        // A curta é ANTI-ANEL, não forma: sem ela a altura cruza a fronteira
+        // de bloco ao longo de um círculo e a ilhota ganha curvas de nível
+        // desenhadas.
+        + (p.x * 0.42 + 0.4).sin() * (p.y * 0.39 - 1.1).sin() * 0.45)
+        * (0.25 + 0.75 * t)
+}
+
+/// O tier da pedra desta coluna na Ilha Mágica — `None` fora dela.
+///
+/// No mundo o tier sai da ALTURA (`terreno::tier_de_minerio`): pedra boa é de
+/// mina, e mina fica no alto. Aqui isso não funciona — o arquipélago é baixo
+/// por desenho, nenhuma ilhota passa de 20 u, e tudo caía na primeira faixa.
+/// O dono: "só tem recurso cinza lá".
+///
+/// Então o tier vem da ILHOTA. A que promete pedra dá a MELHOR (4, roxa), e é
+/// isso que faz o "recursos melhores" valer junto com o "menos recursos": a
+/// ilhota da pedra é o lugar de ir buscar pedra boa, e não mais um chão
+/// cinza. As outras dão 2 ou 3 conforme a posição, pra a ilha não ficar de
+/// uma cor só.
+pub fn tier_da_pedra(ger: &crate::terreno::Gerador, bx: i32, bz: i32) -> Option<u8> {
+    if !ger.e_magica() {
+        return None;
+    }
+    let p = Vec2::new(bx as f32, bz as f32) * crate::terreno::BLOCO;
+    let i = ilhota_em(p)?;
+    Some(match i.bonus {
+        // A casa da pedra dá a melhor que existe.
+        Bonus::Coleta(t) if (1..=4).contains(&t) => 4,
+        // O centro é o mais disputado da ilha: a pedra dele acompanha.
+        Bonus::DropDeChefe => 3,
+        // O resto varia com a posição, pra não virar monocromia.
+        _ => 2 + (i.centro.x.abs() as i32 / 37 % 2) as u8,
+    })
+}
+
 /// O CAMPO de Energia desta ilha: a Ilhota da Energia, e só ela.
 ///
 /// A grade global (`terreno::no_campo_de_energia`) é função pura da
@@ -426,8 +503,14 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     // meio. Fora das ilhotas o segmento é o que sobra, e é lá que ele vira
     // ponte.
     if let Some(i) = ilhota_em(p) {
-        let h = altura_do_domo(i.centro.distance(p), i.raio);
-        return (h / crate::terreno::BLOCO).round() as i32 - 1;
+        let d = p - i.centro;
+        let raio = raio_da_ilhota(&i, d.y.atan2(d.x));
+        let dist = d.length();
+        let t = (dist / raio).clamp(0.0, 1.0);
+        let h = altura_do_domo(dist, raio) + ondula(p, t);
+        // Nunca abaixo da ORLA: a ondulação não pode cavar poça de mar no
+        // meio da praia nem furar o chão da beirada.
+        return ((h.max(ALTURA)) / crate::terreno::BLOCO).round() as i32 - 1;
     }
     if dist_da_ponte(p) <= MEIA_PONTE {
         return NIVEL_CHAO;
@@ -509,6 +592,101 @@ mod testes {
     /// e um tronco no meio dela a fecha: o A* deixa de achar passagem e só dá
     /// pra atravessar andando na mão. O dono: "algumas pontes estão com
     /// árvores e pedras no meio, aí não dá pra passar usando A*".
+    /// A Ilha Mágica tem MENOS recursos que o mundo, e cada um vale MAIS.
+    ///
+    /// O dono: "tá lotado de recursos, pedra, árvores etc, e fica muito feio;
+    /// tem que ser menos recursos e recursos melhores — uma pedra normal dá
+    /// 30 darksteel, na ilha mágica 50-60".
+    ///
+    /// O "melhores" já existia (×2 por ilhota, e 30 × 2 = 60); o que faltava
+    /// era o "menos". Este teste trava os dois juntos, porque separados um
+    /// deles some numa calibragem futura e ninguém nota.
+    /// A Ilha Mágica não é toda de pedra cinza.
+    ///
+    /// O tier do minério sai da altura no mundo, e a Ilha Mágica é baixa por
+    /// desenho: tudo caía na primeira faixa. O dono: "só tem recurso cinza
+    /// lá".
+    #[test]
+    fn a_pedra_da_ilha_magica_nao_e_so_cinza() {
+        let ger = crate::terreno::Gerador::da_ilha_magica();
+        let mut vistos = std::collections::BTreeSet::new();
+        let mut da_pedra = None;
+        for i in ilhotas() {
+            let bx = (i.centro.x / crate::terreno::BLOCO) as i32;
+            let bz = (i.centro.y / crate::terreno::BLOCO) as i32;
+            let t = tier_da_pedra(&ger, bx, bz).expect("dentro da ilhota tem tier");
+            vistos.insert(t);
+            if matches!(i.bonus, Bonus::Coleta(x) if (1..=4).contains(&x)) {
+                da_pedra = Some(t);
+            }
+        }
+        assert!(
+            vistos.len() >= 2,
+            "a ilha inteira tem tier {vistos:?} — continua de uma cor só"
+        );
+        assert!(!vistos.contains(&1), "tier 1 é o cinza que o dono reclamou");
+        assert_eq!(
+            da_pedra,
+            Some(4),
+            "a ilhota que PROMETE pedra tem que dar a melhor"
+        );
+        // Fora da Ilha Mágica a regra não vale: o mundo continua com a dele.
+        let mundo = crate::terreno::Gerador::novo(
+            7, 700, crate::terreno::Bioma::Floresta, crate::terreno::ESCALA_ALTURA,
+        );
+        assert_eq!(tier_da_pedra(&mundo, 0, 0), None);
+    }
+
+    #[test]
+    fn a_ilha_magica_e_rala_e_rica() {
+        // RICA: a pedra de 30 vira 60, que é o número do dono.
+        assert_eq!(Bonus::Coleta(1).multiplicador(), 2.0, "o nó tem que pagar o dobro");
+
+        // RALA: contando nós numa faixa igual das duas ilhas.
+        let magica = crate::terreno::Gerador::da_ilha_magica();
+        let mundo = crate::terreno::Gerador::novo(
+            7,
+            700,
+            crate::terreno::Bioma::Floresta,
+            crate::terreno::ESCALA_ALTURA,
+        );
+        let conta = |ger: &crate::terreno::Gerador, cx: i32, cz: i32| {
+            let mut n = 0;
+            for bz in cz - 90..cz + 90 {
+                for bx in cx - 90..cx + 90 {
+                    let topo = ger.bloco_em(bx, bz);
+                    if topo <= 0 {
+                        continue;
+                    }
+                    if crate::terreno::arvore_da_coluna(
+                        crate::terreno::Bioma::Floresta, bx, bz, topo, 0, ger, false,
+                    )
+                    .is_some()
+                    {
+                        n += 1;
+                    }
+                }
+            }
+            n
+        };
+        let c = ilhotas()[0].centro;
+        let na_magica = conta(
+            &magica,
+            (c.x / crate::terreno::BLOCO) as i32,
+            (c.y / crate::terreno::BLOCO) as i32,
+        );
+        let no_mundo = conta(&mundo, 0, 0);
+        assert!(
+            no_mundo > 0,
+            "a ilha de comparação ficou sem árvore: o teste não mede nada"
+        );
+        assert!(
+            (na_magica as f32) < no_mundo as f32 * 0.6,
+            "a Ilha Mágica tem {na_magica} árvores contra {no_mundo} do mundo — \
+             não ficou mais limpa"
+        );
+    }
+
     #[test]
     fn nada_nasce_na_ponte() {
         let ger = crate::terreno::Gerador::da_ilha_magica();
@@ -526,16 +704,16 @@ mod testes {
                 // corpo do jogador ocupa quase isso.
                 for w in [-0.8f32, -0.4, 0.0, 0.4, 0.8] {
                     let p = a + (b - a) * t + lado * (w * MEIA_PONTE);
-                    if !na_ponte(p) {
+                    // A COLUNA é quem manda, e não o ponto contínuo: o chão é
+                    // feito bloco a bloco, e perto da costa (que agora ondula)
+                    // o arredondamento troca a resposta. Perguntar no ponto e
+                    // cobrar na coluna seria comparar duas coisas diferentes.
+                    let bx = (p.x / crate::terreno::BLOCO).round() as i32;
+                    let bz = (p.y / crate::terreno::BLOCO).round() as i32;
+                    if !ger.na_ponte_magica(bx, bz) {
                         continue;
                     }
-                pontos_de_ponte += 1;
-                let bx = (p.x / crate::terreno::BLOCO).round() as i32;
-                let bz = (p.y / crate::terreno::BLOCO).round() as i32;
-                assert!(
-                    ger.na_ponte_magica(bx, bz),
-                    "a coluna {bx},{bz} está na ponte mas o gerador não sabe"
-                );
+                    pontos_de_ponte += 1;
                 let topo = ger.bloco_em(bx, bz);
                 let arv = crate::terreno::arvore_da_coluna(
                     crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
@@ -661,7 +839,9 @@ mod testes {
             Bonus::Ouro,
             Bonus::DropDeChefe,
             Bonus::Coleta(0),
-            Bonus::Coleta(1),
+            // A pedra é TIER 4: a melhor, porque nesta ilha o tier vem da
+            // ilhota e não da altura.
+            Bonus::Coleta(4),
             Bonus::Coleta(5),
         ] {
             assert_eq!(

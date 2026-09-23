@@ -5804,7 +5804,9 @@ impl Jogo {
         if let Some(pedido) = self.magica.desenha(get_time(), agora_unix) {
             self.envia(ClientMessage::Magica { pedido });
         }
-        self.magica.desenha_hud(agora_unix);
+        if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
+            self.envia(ClientMessage::Magica { pedido });
+        }
         // Loja de cash e janela de montarias (Menu).
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);

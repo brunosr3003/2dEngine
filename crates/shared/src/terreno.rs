@@ -1141,7 +1141,15 @@ pub fn arvore_da_coluna(
         return None;
     }
     // Na maquete, METADE das arvores. Elas voltam em porte logo abaixo.
-    let rala = if ger.e_maquete() { 0.5 } else { 1.0 };
+    // Na Ilha Magica, um TERCO: ela e' de passagem, e o que ela da' por no'
+    // ja' vale o dobro.
+    let rala = if ger.e_maquete() {
+        0.5
+    } else if ger.e_magica() {
+        0.33
+    } else {
+        1.0
+    };
     let prob = densidade_de_arvore(bioma) * 0.0025 * rala; // coluna = 0,25 m²
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
@@ -1202,7 +1210,15 @@ pub fn planta_da_coluna(
     }
     // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
     // centenas de pontinhos de flor que, de longe, leem como chiado na grama.
-    let rala = if ger.e_maquete() { 0.25 } else { 1.0 };
+    // A forracao e' o que mais suja de longe, e na Ilha Magica ela nao serve
+    // pra nada: ninguem vai la' catar florzinha em noventa minutos.
+    let rala = if ger.e_maquete() {
+        0.25
+    } else if ger.e_magica() {
+        0.25
+    } else {
+        1.0
+    };
     let prob = densidade_de_planta(bioma) * 0.0025 * rala;
     let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
     let g1 = g0.wrapping_mul(2_654_435_761);
@@ -1504,7 +1520,18 @@ fn recurso_montanha_da_coluna(
     }
     Some(Minerio {
         centro,
-        tier: tier_de_minerio(y, pico),
+        // NA ILHA MÁGICA o tier vem da ILHOTA, não da altura.
+        //
+        // `tier_de_minerio` mede a fração do pico, e faz sentido no mundo: a
+        // pedra boa é de mina, e mina fica no alto. Só que a Ilha Mágica é um
+        // arquipélago BAIXO por desenho — nenhuma ilhota passa de 20 u — e
+        // todas as colunas caíam na primeira faixa. O dono: "só tem recurso
+        // cinza lá".
+        //
+        // Lá o tier sai de `magica::tier_da_pedra`, que é o que também faz
+        // "recursos melhores" valer: a ilhota da pedra dá a boa.
+        tier: crate::magica::tier_da_pedra(ger, bx, bz)
+            .unwrap_or_else(|| tier_de_minerio(y, pico)),
         porte,
         variante: (g1 >> 22) & 0x3f,
         energia,
@@ -1983,6 +2010,21 @@ impl Gerador {
     /// que isso". Numa maquete valem poucas pecas e grandes.
     pub fn e_maquete(&self) -> bool {
         matches!(self.desenhado, Some(RelevoDesenhado::Colonia))
+    }
+
+    /// Este relevo é a ILHA MÁGICA?
+    ///
+    /// Ela é uma zona de EVENTO, curta e com bônus — não um lugar de morar.
+    /// A densidade de mundo (calibrada pra quem passa horas farmando) enche
+    /// as ilhotas de tronco e pedra, e o dono: "tá lotado de recursos, pedra,
+    /// árvores etc, e fica muito feio; tem que ser menos recursos e recursos
+    /// melhores".
+    ///
+    /// O "melhores" já existe: cada ilhota paga ×2 no que ela promete
+    /// (`Bonus::multiplicador`), então a pedra de 30 dá 60 lá. O que faltava
+    /// era o "menos".
+    pub fn e_magica(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Magica))
     }
 
     /// Esta coluna cai numa PONTE da Ilha Mágica?

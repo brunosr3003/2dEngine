@@ -175,9 +175,29 @@ impl MagicaUi {
     /// Fica no HUD e não no painel porque é informação que muda a decisão
     /// enquanto se joga — "faltam 4 minutos e eu estou na ilhota errada" é
     /// exatamente o que o jogador precisa saber sem abrir nada.
-    pub fn desenha_hud(&self, agora_unix: i64) {
+    /// Onde fica o botão "+" de estender, dada a tarja.
+    ///
+    /// Fora do desenho pra poder ser medido: ele divide a tarja com o relógio
+    /// e a ilhota, e medida escrita à mão nesta tela já pôs o "Entrar" fora
+    /// da janela uma vez.
+    pub(crate) fn botoes_da_tarja(tarja: Rect, f: f32) -> (Rect, Rect) {
+        // 32 no MÍNIMO, em pixels crus: `area_de_toque` cresce o alvo até o
+        // dedo, mas com teto (+14). Num `f` pequeno, 30 × 0,8 = 24 e nem com
+        // o crescimento chega aos 44 pt da Apple — foi o que o teste pegou.
+        let lado = (30.0 * f).max(32.0);
+        let y = tarja.y + tarja.h - lado - 4.0 * f;
+        let meio = tarja.x + tarja.w * 0.5;
+        // O "+" à esquerda do meio e o sair à direita: os dois moram na faixa
+        // livre entre o relógio e a ilhota.
+        (
+            Rect::new(meio - lado - 3.0 * f, y, lado, lado),
+            Rect::new(meio + 3.0 * f, y, lado, lado),
+        )
+    }
+
+    pub fn desenha_hud(&mut self, agora_unix: i64) -> Option<PedidoMagica> {
         if !self.dentro(agora_unix) {
-            return;
+            return None;
         }
         let resta = self.resta(agora_unix);
         let s = crate::hud_layout::tela_segura();
@@ -222,6 +242,45 @@ impl MagicaUi {
         // O ponto da cor, colado no nome: um rótulo colorido some no fundo
         // escuro; um disco cheio não.
         draw_circle(x - tn - 9.0 * f, r.y + 19.0 * f, 4.0 * f, c);
+
+        // ESTENDER SEM SAIR DO JOGO.
+        //
+        // O dono: "countdown de tempo que você ainda tem na ilha, com a
+        // possibilidade de aumentar caso tenha tickets".
+        //
+        // Aqui e não só no painel porque é aqui que a decisão acontece: o
+        // relógio virando vermelho é o que faz a pessoa querer mais tempo, e
+        // mandá-la abrir menu no meio de uma briga pra isso é perder a ilha
+        // enquanto se procura o botão.
+        //
+        // Só aparece com passe na mão e com espaço no teto — botão que não
+        // faz nada é pior que botão nenhum.
+        let e = self.estado.clone().unwrap_or_default();
+        // `pode_entrar` já cobre as duas condições (passe na mão e espaço no
+        // teto de 1h30): reimplementá-las aqui daria duas regras pro mesmo
+        // assunto, e a da tela ficaria velha.
+        let total = e.passes + e.gratis as u32;
+        let (mais, sair) = Self::botoes_da_tarja(r, f);
+        let mut pedido = None;
+        if shared::magica::pode_entrar(e.fim_unix, agora_unix, total, 1).is_ok()
+            && crate::ui::botao(mais, "+", true)
+        {
+            pedido = Some(PedidoMagica::Entrar { entradas: 1 });
+        }
+        // SAIR DA ILHA, daqui mesmo.
+        //
+        // O dono: "tem que ter botão de sair da ilha". Antes só dava pelo
+        // painel — e o painel NÃO abre de dentro (o estado chega a cada
+        // travessia de ponte, e abri-lo sozinho atrapalharia quem está
+        // lutando). Ou seja: de dentro não havia saída nenhuma na interface.
+        //
+        // O relógio CONTINUA correndo depois de sair, e isso é regra de
+        // `PedidoMagica::Sair`: senão o jogador sairia no primeiro susto e
+        // voltaria com o tempo intacto, e a ilha deixaria de ter hora.
+        if crate::ui::botao(sair, "Sair", true) {
+            pedido = Some(PedidoMagica::Sair);
+        }
+        pedido
     }
 
     pub fn desenha(&mut self, agora: f64, agora_unix: i64) -> Option<PedidoMagica> {
@@ -417,6 +476,30 @@ mod testes {
     /// nada acontecia — e a missão que manda abrir o painel ficava
     /// impossível. O dono: "clico em ilha mágica mas não abre nada e me deixa
     /// travado na quest".
+    /// Os botões da tarja cabem, não se encavalam e o dedo alcança.
+    #[test]
+    fn os_botoes_da_tarja_cabem_e_nao_se_encavalam() {
+        for f in [0.8f32, 1.0, 1.5, 2.2] {
+            let tarja = Rect::new(100.0, 10.0, 268.0 * f, 62.0 * f);
+            let (mais, sair) = MagicaUi::botoes_da_tarja(tarja, f);
+            assert!(mais.x + mais.w <= sair.x, "f={f}: o + e o sair se encavalam");
+            for (b, nome) in [(mais, "+"), (sair, "sair")] {
+            assert!(
+                b.x >= tarja.x && b.x + b.w <= tarja.x + tarja.w,
+                "f={f}: o {nome} vaza a tarja na horizontal"
+            );
+            assert!(
+                b.y >= tarja.y && b.y + b.h <= tarja.y + tarja.h,
+                "f={f}: o {nome} vaza a tarja na vertical"
+            );
+            assert!(
+                crate::ui::area_de_toque(b).h >= 44.0,
+                "f={f}: o {nome} é menor que um dedo"
+            );
+            }
+        }
+    }
+
     #[test]
     fn o_painel_abre_toda_vez_que_e_pedido() {
         let estado = |dentro: bool| AvisoMagica::Estado {
