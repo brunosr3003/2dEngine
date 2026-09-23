@@ -59,6 +59,8 @@ pub struct AuthSuccess {
 #[derive(Debug, Clone)]
 pub enum AuthError {
     InvalidCredentials,
+    /// Senha certa, e-mail ainda nao confirmado.
+    NaoConfirmado,
     Internal(String),
 }
 
@@ -71,15 +73,35 @@ pub async fn authenticate(
     password: &str,
     lembrar: bool,
 ) -> Result<AuthSuccess, AuthError> {
-    let row = sqlx::query_as::<_, (i64, String, String, String)>(
-        "SELECT id, username, password_hash, class FROM accounts WHERE username = $1",
+    // `COALESCE` na coluna nova: o servidor pode subir contra um banco que
+    // ainda nao rodou a migracao do `web` (e' ele quem cria o schema). Sem
+    // isto, a consulta falharia e NINGUEM entraria.
+    let row = sqlx::query_as::<_, (i64, String, String, String, bool)>(
+        "SELECT id, username, password_hash, class,
+                COALESCE(email_confirmado, TRUE)
+           FROM accounts WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
-    .await
-    .map_err(|e| AuthError::Internal(format!("{e:?}")))?;
+    .await;
+    let row = match row {
+        Ok(r) => r,
+        // Coluna ainda nao existe (42703): cai pra consulta antiga em vez de
+        // trancar o jogo inteiro por causa de uma migracao atrasada.
+        Err(sqlx::Error::Database(e)) if e.code().as_deref() == Some("42703") => {
+            sqlx::query_as::<_, (i64, String, String, String)>(
+                "SELECT id, username, password_hash, class FROM accounts WHERE username = $1",
+            )
+            .bind(username)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| AuthError::Internal(format!("{e:?}")))?
+            .map(|(a, b, c, d)| (a, b, c, d, true))
+        }
+        Err(e) => return Err(AuthError::Internal(format!("{e:?}"))),
+    };
 
-    let Some((id, uname, hash, class)) = row else {
+    let Some((id, uname, hash, class, confirmado)) = row else {
         return Err(AuthError::InvalidCredentials);
     };
 
@@ -104,6 +126,14 @@ pub async fn authenticate(
     .map_err(|e| AuthError::Internal(format!("join: {e}")))?;
 
     if ok {
+        // A CONFIRMACAO e' conferida DEPOIS da senha, nunca antes.
+        //
+        // Dizer "confirme seu e-mail" pra quem errou a senha entregaria que
+        // aquele usuario existe — e a conferencia de senha e' justamente o
+        // que separa quem tem direito a essa informacao de quem nao tem.
+        if !confirmado {
+            return Err(AuthError::NaoConfirmado);
+        }
         // A sessao sai DEPOIS de a senha conferir, nunca antes.
         let sessao = if lembrar {
             emite_sessao(pool, id).await

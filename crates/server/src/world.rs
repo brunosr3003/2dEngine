@@ -4512,6 +4512,11 @@ impl GameWorld {
             Err(e) => {
                 let reason = match e {
                     crate::auth::AuthError::InvalidCredentials => "invalid credentials".to_string(),
+                    // Texto que o cliente mostra direto. Nao e' "erro": e' o
+                    // que falta fazer, e dizer isso e' o conserto.
+                    crate::auth::AuthError::NaoConfirmado => {
+                        "confirme seu e-mail para entrar".to_string()
+                    }
                     crate::auth::AuthError::Internal(msg) => format!("internal error: {msg}"),
                 };
                 tracing::info!("auth fail: {reason}");

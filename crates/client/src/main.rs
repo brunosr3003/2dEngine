@@ -137,6 +137,8 @@ enum Tela {
     Login,
     /// Criar conta por usuário e senha (o Google cria a dele sozinho).
     Cadastro,
+    /// Pedir o e-mail de redefinição de senha.
+    EsqueciSenha,
     Conectando,
     Personagens,
     /// Canal de instancia unica lotado. Nao e' recusa: e' vez na fila.
@@ -180,6 +182,10 @@ struct Jogo {
     /// Pedido de cadastro em voo, e o que ele respondeu.
     cad_pedido: Option<std::sync::mpsc::Receiver<api::RespostaCadastro>>,
     cad_recado: Option<(String, bool)>,
+    /// "Esqueci minha senha": o e-mail digitado, o pedido em voo e o recado.
+    esq_email: String,
+    esq_pedido: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    esq_recado: Option<(String, bool)>,
     /// Algum campo de login foi tocado: o teclado da tela fica aberto.
     campo_login_ativo: bool,
     teclado_virtual: teclado_virtual::TecladoVirtual,
@@ -594,6 +600,9 @@ async fn main() {
         cad_foco: 0,
         cad_pedido: None,
         cad_recado: None,
+        esq_email: String::new(),
+        esq_pedido: None,
+        esq_recado: None,
         campo_login_ativo: false,
         teclado_virtual: teclado_virtual::TecladoVirtual::default(),
         google: login_google::LoginGoogle::consultando(),
@@ -789,6 +798,36 @@ fn tamanho_janela() -> (i32, i32) {
         .unwrap_or((940, 980))
 }
 
+/// Quebra um texto em linhas de no máximo `n` caracteres, sem cortar palavra.
+fn quebra_em_linhas(t: &str, n: usize) -> Vec<String> {
+    let mut linhas = Vec::new();
+    let mut atual = String::new();
+    for p in t.split_whitespace() {
+        if !atual.is_empty() && atual.chars().count() + 1 + p.chars().count() > n {
+            linhas.push(std::mem::take(&mut atual));
+        }
+        if !atual.is_empty() {
+            atual.push(' ');
+        }
+        atual.push_str(p);
+    }
+    if !atual.is_empty() {
+        linhas.push(atual);
+    }
+    linhas
+}
+
+/// Onde cada peça da tela de "esqueci minha senha" fica.
+///
+/// Ordem: e-mail, enviar, voltar.
+fn layout_do_esqueci(r: Rect) -> [Rect; 3] {
+    [
+        Rect::new(r.x, r.y + 92.0, r.w, 42.0),
+        Rect::new(r.x, r.y + 154.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 208.0, r.w, 44.0),
+    ]
+}
+
 /// Onde cada peça da tela de CADASTRO fica.
 ///
 /// Ordem: usuário, e-mail, senha, criar, voltar.
@@ -812,15 +851,16 @@ fn layout_do_cadastro(r: Rect) -> [Rect; 6] {
 /// não há como conferir que nada encosta em nada a não ser abrindo o jogo — e
 /// deixar de abrir é o que já me fez entregar tela quebrada mais de uma vez
 /// neste projeto.
-fn layout_do_login(r: Rect) -> [Rect; 7] {
+fn layout_do_login(r: Rect) -> [Rect; 8] {
     [
         Rect::new(r.x, r.y + 46.0, r.w, 42.0),
         Rect::new(r.x, r.y + 122.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 180.0, r.w, 40.0),
-        Rect::new(r.x, r.y + 236.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 282.0, r.w, 14.0),
-        Rect::new(r.x, r.y + 300.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 356.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 178.0, r.w, 38.0),
+        Rect::new(r.x, r.y + 224.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 270.0, r.w, 14.0),
+        Rect::new(r.x, r.y + 288.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 338.0, r.w, 44.0),
+        Rect::new(r.x, r.y + 388.0, r.w, 36.0),
     ]
 }
 
@@ -834,10 +874,10 @@ mod testes_do_login {
     /// mudar junto, este teste é quem avisa.
     #[test]
     fn a_tela_de_login_nao_se_sobrepoe() {
-        const ALTURA: f32 = 540.0;
+        const ALTURA: f32 = 560.0;
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_login(r);
-        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google", "criar"];
+        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci"];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
                 a.y >= r.y && a.y + a.h <= r.y + ALTURA,
@@ -853,6 +893,42 @@ mod testes_do_login {
                 );
             }
         }
+    }
+
+    /// A tela de "esqueci minha senha" também não se sobrepõe.
+    #[test]
+    fn a_tela_de_esqueci_nao_se_sobrepoe() {
+        const ALTURA: f32 = 300.0;
+        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
+        let p = layout_do_esqueci(r);
+        let nomes = ["e-mail", "enviar", "voltar"];
+        for (i, a) in p.iter().enumerate() {
+            assert!(a.y >= r.y && a.y + a.h <= r.y + ALTURA, "{} vaza", nomes[i]);
+            for (j, b) in p.iter().enumerate().skip(i + 1) {
+                assert!(
+                    a.y + a.h <= b.y || b.y + b.h <= a.y,
+                    "{} encosta em {}",
+                    nomes[i],
+                    nomes[j]
+                );
+            }
+        }
+        for (r, nome) in [(p[1], "enviar"), (p[2], "voltar")] {
+            assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
+        }
+    }
+
+    /// A quebra de linha não corta palavra e respeita o limite.
+    #[test]
+    fn o_recado_quebra_sem_cortar_palavra() {
+        let t = "Se houver uma conta com esse e-mail, o link já saiu. Confira a caixa de entrada e o spam.";
+        let l = quebra_em_linhas(t, 52);
+        assert!(l.len() >= 2, "texto longo tem que virar mais de uma linha");
+        for linha in &l {
+            assert!(linha.chars().count() <= 52, "linha longa demais: {linha:?}");
+        }
+        // Nada some na quebra.
+        assert_eq!(l.join(" "), t);
     }
 
     /// A tela de cadastro também não se sobrepõe nem vaza.
@@ -4650,6 +4726,7 @@ impl Jogo {
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
             Tela::Cadastro => self.tela_cadastro(),
+            Tela::EsqueciSenha => self.tela_esqueci(),
             Tela::Personagens => self.tela_personagens(),
             Tela::Conectando => {
                 ui::fundo();
@@ -5828,6 +5905,81 @@ impl Jogo {
         }
     }
 
+    /// "Esqueci minha senha": pede o e-mail e manda o link.
+    ///
+    /// O recado é o MESMO exista ou não a conta ("se houver uma conta com
+    /// esse e-mail, o link já saiu"). Dizer "e-mail não encontrado" seria
+    /// transformar esta tela num verificador de quem joga aqui — e o
+    /// servidor responde 200 nos dois casos justamente por isso.
+    fn tela_esqueci(&mut self) {
+        ui::fundo();
+        const ALTURA: f32 = 300.0;
+        let topo = (screen_height() - ALTURA) * 0.5;
+        let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
+        ui::subir_paineis(teclado_virtual::deslocamento(
+            aberto,
+            screen_height(),
+            topo,
+            topo + 134.0,
+        ));
+        let r = ui::painel(460.0, ALTURA, "esqueci minha senha");
+        ui::subir_paineis(0.0);
+        let cx = r.x + r.w * 0.5;
+        let [ce, cenviar, cvoltar] = layout_do_esqueci(r);
+
+        if let Some(rx) = &self.esq_pedido {
+            if let Ok(resp) = rx.try_recv() {
+                self.esq_pedido = None;
+                self.esq_recado = Some(match resp {
+                    Ok(()) => (
+                        "Se houver uma conta com esse e-mail, o link já saiu.                          Confira a caixa de entrada e o spam."
+                            .into(),
+                        false,
+                    ),
+                    Err(e) => (format!("falhou: {e}"), true),
+                });
+            }
+        }
+        let esperando = self.esq_pedido.is_some();
+
+        ui::texto_centro(
+            cx,
+            r.y + 62.0,
+            "Digite o e-mail da conta.",
+            14,
+            ui::APOIO,
+        );
+        let digitado = self.teclado.digitado().to_vec();
+        let mut email = std::mem::take(&mut self.esq_email);
+        if ui::campo(ce, "e-mail", &mut email, true, false, &digitado) {
+            self.campo_login_ativo = true;
+        }
+        self.esq_email = email;
+
+        let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
+        let pode = self.esq_email.contains('@') && !esperando;
+        let rotulo = if esperando { "enviando…" } else { "enviar o link" };
+        if (ui::botao(cenviar, rotulo, pode) || (pode && enter)) && pode {
+            self.campo_login_ativo = false;
+            self.esq_recado = None;
+            self.esq_pedido = Some(api::esqueci_a_senha(self.esq_email.trim()));
+        }
+        if ui::botao(cvoltar, "voltar", !esperando) {
+            self.campo_login_ativo = false;
+            self.tela = Tela::Login;
+        }
+        if let Some((m, ruim)) = self.esq_recado.clone() {
+            if ruim {
+                ui::erro(cx, r.y + 30.0, &m);
+            } else {
+                // Recado longo e de duas linhas: centrado, na cor de apoio.
+                for (i, linha) in quebra_em_linhas(&m, 52).iter().take(2).enumerate() {
+                    ui::texto_centro(cx, r.y + 266.0 + i as f32 * 17.0, linha, 13, ui::OURO);
+                }
+            }
+        }
+    }
+
     /// Criar conta por usuário e senha.
     ///
     /// O `/api/register` do `web` sempre existiu e nunca teve tela: quem não
@@ -5999,7 +6151,7 @@ impl Jogo {
         if let Some(e) = self.erro_login.clone() {
             ui::erro(cx, r.y + 30.0, &e);
         }
-        let [cu, cs, clembrar, centrar, cou, cgoogle, ccriar] = layout_do_login(r);
+        let [cu, cs, clembrar, centrar, cou, cgoogle, ccriar, cesq] = layout_do_login(r);
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
@@ -6062,6 +6214,16 @@ impl Jogo {
             self.erro_login = None;
             self.cad_recado = None;
             self.tela = Tela::Cadastro;
+        }
+        // ESQUECI MINHA SENHA. Discreto (texto, não botão cheio): é o caminho
+        // raro, e competir com "entrar" pelo olho só atrapalharia quem lembra.
+        if ui::botao(cesq, "esqueci minha senha", true) {
+            self.campo_login_ativo = false;
+            self.erro_login = None;
+            self.esq_recado = None;
+            self.esq_email = self.usuario.clone();
+            self.esq_email.clear();
+            self.tela = Tela::EsqueciSenha;
         }
 
         // Entrar com Google: so' aparece com o servidor configurado.
@@ -6128,7 +6290,7 @@ impl Jogo {
     /// Teclado da tela: aberto enquanto um campo de texto tem foco.
     fn passo_teclado_virtual(&mut self) {
         let precisa = match self.tela {
-            Tela::Login | Tela::Cadastro => self.campo_login_ativo,
+            Tela::Login | Tela::Cadastro | Tela::EsqueciSenha => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
             Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco(),
             // SEM `_`, e isso é o conserto de verdade.

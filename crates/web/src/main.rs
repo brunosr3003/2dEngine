@@ -10,7 +10,9 @@
 
 mod auth;
 mod db;
+mod contas;
 mod econ_admin;
+mod email;
 mod google;
 mod pixel;
 
@@ -32,6 +34,9 @@ use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 #[derive(Clone)]
 struct AppState {
     pool: Arc<PgPool>,
+    /// `None` = envio desligado. O cadastro continua criando conta; só não
+    /// manda o link de confirmação.
+    email: Option<email::Email>,
 }
 
 #[tokio::main]
@@ -55,8 +60,22 @@ async fn main() -> Result<()> {
     let pool = db::open_pool(&database_url).await?;
     tracing::info!("db ok");
 
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let mail = email::Email::do_ambiente(http.clone());
+    tracing::info!(
+        "e-mail: {}",
+        if mail.is_some() {
+            "configurado (Resend)"
+        } else {
+            "desligado (sem RESEND_API_KEY) — cadastro nao manda confirmacao"
+        }
+    );
+
     let state = AppState {
         pool: Arc::new(pool),
+        email: mail.clone(),
     };
     let pool_arc = state.pool.clone();
 
@@ -87,12 +106,24 @@ async fn main() -> Result<()> {
         }
     );
 
+    let pool_arc2 = pool_arc.clone();
     let econ_state = econ_admin::EconState::from_env(pool_arc);
     tracing::info!("econ admin: pronto (POST /api/econ/login)");
 
     let app = Router::new()
         .nest("/api", api)
         .nest("/api/auth/google", google::router(google_state))
+        .nest(
+            "/api/auth",
+            Router::new()
+                .route("/confirmar", get(contas::confirmar))
+                .route("/esqueci", post(contas::esqueci))
+                .route("/reset", get(contas::reset_form).post(contas::reset))
+                .with_state(contas::Contas {
+                    pool: (*pool_arc2).clone(),
+                    email: mail,
+                }),
+        )
         .nest("/api/pixel", pixel::router(pixel_state))
         .nest("/api/econ", econ_admin::router(econ_state))
         .fallback_service(ServeDir::new(&static_dir).append_index_html_on_directories(true))
@@ -158,13 +189,38 @@ async fn register(
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("hash: {e}")))?;
 
     match db::insert_account(&s.pool, username, &email, &hash, "none").await {
-        Ok(id) => Ok((
-            StatusCode::CREATED,
-            Json(RegisterRes {
-                id,
-                username: username.into(),
-            }),
-        )),
+        Ok(id) => {
+            // A CONFIRMACAO sai aqui, e a falha dela NAO derruba o cadastro.
+            //
+            // A conta ja' existe no banco neste ponto; responder erro faria o
+            // jogador tentar de novo e bater em "username ja existe", sem
+            // conta nenhuma na mao dele. Quem nao recebeu pede de novo pela
+            // tela de login.
+            if let Some(mail) = s.email.as_ref() {
+                match contas::emite(&s.pool, id, contas::TIPO_CONFIRMACAO).await {
+                    Ok(t) => {
+                        if let Err(e) = mail.confirmacao(&email, username, &t).await {
+                            tracing::warn!("cadastro {id}: confirmacao nao saiu: {e:?}");
+                        }
+                    }
+                    Err(e) => tracing::error!("cadastro {id}: emitir token: {e:?}"),
+                }
+                // Conta nova com envio ligado nasce NAO confirmada. Sem envio
+                // ela nasce confirmada (o DEFAULT da coluna), senao ligar o
+                // e-mail depois trancaria quem entrou antes.
+                let _ = sqlx::query("UPDATE accounts SET email_confirmado = FALSE WHERE id = $1")
+                    .bind(id)
+                    .execute(&*s.pool)
+                    .await;
+            }
+            Ok((
+                StatusCode::CREATED,
+                Json(RegisterRes {
+                    id,
+                    username: username.into(),
+                }),
+            ))
+        }
         Err(db::InsertError::Duplicate(field)) => {
             Err(err(StatusCode::CONFLICT, format!("{field} ja existe")))
         }

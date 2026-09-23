@@ -51,6 +51,42 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     .execute(&pool)
     .await?;
 
+    // CONFIRMACAO DE E-MAIL e RESET DE SENHA (docs/EMAIL.md).
+    //
+    // `TRUE` no DEFAULT e' de proposito, e so' vale pra coluna nova: sem isso
+    // TODA conta que ja' existe nasceria "nao confirmada" e ninguem mais
+    // entraria no jogo. Quem ja' estava dentro fica dentro; a exigencia vale
+    // de agora em diante.
+    sqlx::query(
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_confirmado BOOLEAN NOT NULL DEFAULT TRUE",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Um so' lugar pros dois tipos de link, porque sao a mesma coisa: um
+    // segredo de uso unico, com prazo, que prova posse do e-mail. `tipo` = 0
+    // confirmacao, 1 reset.
+    //
+    // Guarda so' o SHA-256, como `login_tokens`: quem ler a tabela nao
+    // consegue usar o que leu.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS email_tokens (
+            token_hash  TEXT PRIMARY KEY,
+            account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+            tipo        SMALLINT NOT NULL,
+            expires_at  TIMESTAMPTZ NOT NULL,
+            usado_em    TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS email_tokens_conta ON email_tokens (account_id, tipo)",
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
 

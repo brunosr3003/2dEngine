@@ -197,6 +197,20 @@ pub fn criar_conta(usuario: &str, email: &str, senha: &str) -> Receiver<Resposta
     })
 }
 
+/// Pede o e-mail de redefinicao de senha.
+///
+/// Devolve `Ok` mesmo pra e-mail que nao existe, e e' assim de proposito: o
+/// servidor responde 200 nos dois casos pra esta rota nao virar um
+/// verificador de quem tem conta aqui. O recado ao jogador diz "SE existir".
+pub fn esqueci_a_senha(email: &str) -> Receiver<Result<(), String>> {
+    let corpo = format!(r#"{{"email":"{}"}}"#, escapa(email));
+    em_thread(move || match post("/api/auth/esqueci", &corpo) {
+        Ok((c, _)) if (200..300).contains(&c) => Ok(()),
+        Ok((c, corpo)) => Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("erro ({c})"))),
+        Err(e) => Err(e),
+    })
+}
+
 /// Campo de texto de um JSON pequeno do nosso servidor (sem parser completo).
 pub fn campo_json(corpo: &str, chave: &str) -> Option<String> {
     let i = corpo.find(&format!("\"{chave}\""))? + chave.len() + 2;
