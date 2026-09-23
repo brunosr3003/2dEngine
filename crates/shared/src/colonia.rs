@@ -108,8 +108,14 @@ pub const RAIO: f32 = RAIO_BLOCOS as f32 * crate::terreno::BLOCO * 0.94;
 pub const ALTURA_TOPO: f32 = 16.0;
 /// Altura da ORLA: logo acima do mar, que é o que faz ela ler como praia.
 pub const ALTURA_ORLA: f32 = 0.8;
-/// O fundo do mar em volta.
-pub const NIVEL_FUNDO: i32 = -8;
+/// O que há FORA da ilhota, em índice de bloco.
+///
+/// Bem fundo (−64 blocos = −32 u), e isso é decisão de MAQUETE, não de mundo:
+/// a colônia não é mais uma zona que se anda, é uma peça que se olha. A −8
+/// aquilo era um fundo de mar raso, e sem água por cima virava um prato bege
+/// em volta da ilha — visto na prévia. Fundo assim, ele cai atrás da saia de
+/// terra do diorama e some.
+pub const NIVEL_FUNDO: i32 = -64;
 
 /// O raio da ilhota naquela direção.
 ///
@@ -153,9 +159,22 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     //
     // A amplitude ainda cai perto da orla (`t`), pra praia continuar praia e
     // a costa não virar penhasco.
+    // A ÚLTIMA onda é CURTA de propósito.
+    //
+    // As três longas (períodos de 180, 77 e 43 u) fazem morro e vale, mas não
+    // quebram os ANÉIS: eles nascem de a altura cruzar a fronteira de um
+    // bloco ao longo de um círculo, e uma onda mais longa que o anel
+    // atravessa todos os anéis junto. Só uma onda da ordem do espaçamento
+    // deles (~14 u) faz a fronteira serpentear.
+    //
+    // A amplitude é limitada pelo passo: 0,7 u a cada 15 u de período dá 0,15
+    // u de degrau por coluna, e somada à ladeira do domo (0,34) fica em 0,98
+    // bloco — abaixo do 1 que o passo vence, por pouco.
+    // `a_ladeira_da_ilhota_nunca_vira_paredao` é quem confere.
     let ondula = ((x * 0.035 + 1.7).sin() * (z * 0.031 - 0.9).cos() * 2.9
         + (x * 0.082 - z * 0.061).sin() * 1.15
-        + ((x + z) * 0.145).sin() * 0.45)
+        + ((x + z) * 0.145).sin() * 0.45
+        + (x * 0.42 + 0.4).sin() * (z * 0.39 - 1.1).sin() * 0.70)
         * (0.30 + 0.70 * t);
     ((h + ondula) / crate::terreno::BLOCO).round() as i32 - 1
 }

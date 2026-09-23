@@ -2993,18 +2993,85 @@ mod testes_da_vestimenta {
 ///
 /// Devolve `false` quando não deu (célula pequena demais, relevo ainda
 /// assando): o painel desenha o resto e tenta de novo no quadro seguinte.
-/// O mar de fundo da maquete.
+/// O fundo da maquete: escuro e liso, pra peça se destacar.
 ///
-/// MEDIDA, não escolhida: (36,110,144) e (26,107,150) amostrados da água que
-/// o terreno desenha. Com o fundo mais escuro que ela, a borda do losango de
-/// água virava uma linha diagonal dura no meio do mar; igual, o que sobra é
-/// uma diferença de brilho que lê como profundidade.
+/// Era um azul de mar. A maquete virou DIORAMA — uma peça flutuando, não uma
+/// ilha no mundo — e água em volta contaria a história errada.
 ///
 /// **A prévia só mostra isto se limpar com esta cor.** O retângulo é 2D e vai
 /// pro alvo corrente, que na prévia é a tela — não o render target que vira
 /// PNG. Medi a cor "de fundo" da prévia uma vez achando que era esta, e era o
 /// `clear_background` dela.
-pub const COR_DO_MAR_DA_MAQUETE: Color = Color::new(0.12, 0.42, 0.57, 1.0);
+pub const COR_DO_FUNDO_DA_MAQUETE: Color = Color::new(0.09, 0.12, 0.17, 1.0);
+
+/// Quanto a saia de terra desce abaixo da orla, em unidades.
+const FUNDO_DA_SAIA: f32 = 40.0;
+
+/// A SAIA do diorama: o torrão de terra embaixo da ilhota.
+///
+/// A maquete deixou de ser "a ilha de verdade vista de longe" e virou uma
+/// PEÇA — o dono: "não precisa ser uma ilha de verdade, pode ser uma versão
+/// miniatura da ilha, de forma que dê para dar um 360 legal, zoom out, zoom
+/// in; eu só quero algo visualmente bonito".
+///
+/// É o que faz ela FLUTUAR: sem a lateral, uma ilha sem mar em volta é um
+/// recorte de grama pendurado no nada. Com a lateral, é um torrão arrancado
+/// do chão, e o olho aceita na hora.
+///
+/// Assada UMA vez (a malha vai pra GPU por PONTEIRO, e o cache não expira —
+/// refazer por quadro vazaria buffer até o fim da sessão).
+pub fn saia_da_ilhota() -> Mesh {
+    const LADOS: usize = 72;
+    // Quatro anéis: a orla, dois de barranco e a ponta. A ponta não fecha num
+    // ponto só — um cone perfeito lê como pião, e um torrão tem base.
+    // O perfil cai QUASE A PRUMO no começo e só depois recolhe. Afunilando
+    // cedo (era 0,96 / 0,78 / 0,34) o torrão ficava escondido atrás da
+    // própria ilha e só a primeira faixa aparecia — visto na prévia.
+    const ANEIS: [(f32, f32, [u8; 3]); 5] = [
+        (1.00, 1.0, [120, 92, 60]),   // terra, colada na praia
+        (0.99, -8.0, [104, 78, 52]),  // barranco
+        (0.94, -20.0, [86, 70, 54]),  // terra escura
+        (0.76, -32.0, [66, 58, 52]),  // rocha
+        (0.40, -40.0, [48, 44, 42]),  // a ponta do torrão
+    ];
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u16> = Vec::new();
+    // A luz vem do mesmo noroeste do resto do jogo, pra peça não brigar com
+    // o terreno que fica em cima dela.
+    let luz = vec2(-0.6, -0.8).normalize();
+    for k in 0..ANEIS.len() - 1 {
+        let (fa, ya, ca) = ANEIS[k];
+        let (fb, yb, cb) = ANEIS[k + 1];
+        for i in 0..LADOS {
+            let a0 = i as f32 / LADOS as f32 * std::f32::consts::TAU;
+            let a1 = (i + 1) as f32 / LADOS as f32 * std::f32::consts::TAU;
+            let base = vertices.len() as u16;
+            for (ang, f, y, c) in [(a0, fa, ya, ca), (a1, fa, ya, ca), (a1, fb, yb, cb), (a0, fb, yb, cb)] {
+                let r = shared::colonia::raio_na_direcao(ang) * f;
+                let (dx, dz) = (ang.cos(), ang.sin());
+                // Sombreado pelo rumo da face: é o que dá volume a um cone.
+                let lum = (0.62 + 0.38 * (vec2(dx, dz).dot(luz) * 0.5 + 0.5)).clamp(0.0, 1.0);
+                vertices.push(Vertex {
+                    position: vec3(dx * r, shared::colonia::ALTURA_ORLA + y, dz * r),
+                    uv: vec2(0.0, 0.0),
+                    color: [
+                        (c[0] as f32 * lum) as u8,
+                        (c[1] as f32 * lum) as u8,
+                        (c[2] as f32 * lum) as u8,
+                        255,
+                    ],
+                    normal: Vec4::ZERO,
+                });
+            }
+            indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
+    Mesh {
+        vertices,
+        indices,
+        texture: None,
+    }
+}
 
 pub fn maquete_da_ilha(
     terreno: &crate::terreno::Terreno,
@@ -3015,6 +3082,7 @@ pub fn maquete_da_ilha(
     zoom: f32,
     solido: &Material,
     moradores: &[(shared::colonia::Profissao, Vec2)],
+    saia: &Mesh,
     vox: &VoxCache,
 ) -> bool {
     if r.w < 40.0 || r.h < 40.0 {
@@ -3049,16 +3117,20 @@ pub fn maquete_da_ilha(
     // tá chapada plana". O relevo de uma ilha se lê pelo PERFIL, não pela
     // planta: é a silhueta contra o mar que diz que há morro. A 54° o olho
     // via um mapa; a 34° vê uma ilha.
-    const ELEVACAO: f32 = 0.78;
+    const ELEVACAO: f32 = 0.55;
     // ENQUADRA APERTADO: a ilhota enche o quadro e a costa sai pelas bordas.
     // Antes era 1,05 do raio, com as duas restrições valendo — sobrava mar em
     // volta e a ilha ficava pequena no meio. "Não precisa mostrar o oceano."
-    let raio = shared::colonia::RAIO * 0.72 / zoom.max(0.05);
+    // A PEÇA INTEIRA, com margem. Ela é um objeto agora, e objeto cortado
+    // pelas bordas não lê como objeto — lê como recorte. Antes eu enquadrava
+    // a 0,72 do raio e só pela horizontal, e a ilha saía cortada dos quatro
+    // lados com a saia de terra fora da tela.
+    let meia_larg = shared::colonia::RAIO * 1.12 / zoom.max(0.05);
+    // De cima a baixo: do topo do morro até a ponta do torrão.
+    let meia_alt = (shared::colonia::ALTURA_TOPO + FUNDO_DA_SAIA) * 0.62 / zoom.max(0.05);
     let meio_v = (FOVY * 0.5).tan();
     let meio_h = meio_v * (r.w / r.h).max(0.05);
-    // A HORIZONTAL manda, e só ela: exigir a vertical também afastava a
-    // câmera até caber o disco inteiro, que é o que punha o oceano na tela.
-    let dist = raio / meio_h;
+    let dist = (meia_larg / meio_h).max(meia_alt / meio_v);
     let alto = terreno.altura(centro.x, centro.y);
     // O QUARTO DE VOLTA que faltava.
     //
@@ -3076,7 +3148,9 @@ pub fn maquete_da_ilha(
         // Mira UM POUCO ACIMA do chão da praça: com a câmera rasante, mirar
         // no chão joga a vila pro terço de cima e enche a metade de baixo com
         // a encosta perto. Visto na prévia.
-        target: vec3(centro.x, alto + 9.0, centro.y),
+        // Mira no MEIO DA PEÇA, e não na praça: o torrão desce 58 u, e mirar
+        // no chão da vila jogava tudo pro terço de cima.
+        target: vec3(centro.x, alto - FUNDO_DA_SAIA * 0.30, centro.y),
         up: Vec3::Y,
         fovy: FOVY,
         viewport: Some(vp),
@@ -3089,7 +3163,10 @@ pub fn maquete_da_ilha(
     // acaba num losango e fora dele aparecia o cartão do painel — a ilha
     // parecia flutuar num diamante. Visto na prévia. Pintar o retângulo
     // inteiro antes custa um quad e resolve.
-    draw_rectangle(r.x, r.y, r.w, r.h, COR_DO_MAR_DA_MAQUETE);
+    // O FUNDO da peça: escuro e liso. Não é mar — o diorama flutua, e água
+    // em volta contaria outra história (a de uma ilha no mundo, que é
+    // justamente o que ela deixou de ser).
+    draw_rectangle(r.x, r.y, r.w, r.h, COR_DO_FUNDO_DA_MAQUETE);
     set_camera(&cam);
     limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
@@ -3210,9 +3287,21 @@ pub fn maquete_da_ilha(
         veste.tier = Some(PANOS[i % PANOS.len()]);
         desenha_rig(base, &pose, &veste, vox, None);
     }
-    macroquad::material::gl_use_material(solido);
-    crate::agua::desenha(terreno, &cam, get_time() as f32);
+    // A SAIA por último, com o material próprio do voxel (ela tem cor assada
+    // no vértice). A água saiu: o diorama não tem mar.
+    crate::gpu_estatica::desenha_voxel(
+        saia,
+        Mat4::from_translation(vec3(0.0, 0.0, 0.0)),
+        [0.0; 4],
+        crate::gpu_estatica::Faixas::default(),
+    );
     macroquad::material::gl_use_default_material();
     camera_padrao();
+    // A SOMBRA, em 2D por baixo da peça. Ela é o que assenta o diorama: sem
+    // sombra, um objeto flutuando lê como recorte colado no fundo.
+    let c = vec2(r.x + r.w * 0.5, r.y + r.h * 0.80);
+    for (k, a) in [(1.00f32, 0.20f32), (0.72, 0.16), (0.46, 0.12)] {
+        draw_ellipse(c.x, c.y, r.w * 0.30 * k, r.w * 0.07 * k, 0.0, Color::new(0.0, 0.0, 0.0, a));
+    }
     n > 0
 }

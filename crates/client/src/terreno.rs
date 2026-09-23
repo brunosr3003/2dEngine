@@ -109,6 +109,11 @@ fn pedaco_visivel(cam: &Camera3D, cx: i32, cz: i32) -> bool {
 
 pub struct Terreno {
     ger: Gerador,
+    /// Não emite coluna de ÁGUA nenhuma (nem o plano que ela cobria).
+    ///
+    /// Só a maquete da colônia liga isto: ela é uma peça flutuando, e o
+    /// plano do nível do mar em volta da ilha virava uma mesa.
+    sem_mar: bool,
     bioma: Bioma,
     /// Modelos de vegetacao assados uma vez por especie e variante. Instanciar
     /// e' copiar vertice com offset — a macroquad nao tem transform por malha,
@@ -167,16 +172,20 @@ impl Terreno {
     /// `Gerador::da_colonia` do servidor: duas montagens soltas dariam dois
     /// relevos, e o jogador andaria num chao que nao ve'.
     pub fn da_colonia(plato: f32) -> Self {
-        Self::do_gerador(
+        let mut t = Self::do_gerador(
             Gerador::da_colonia(plato),
             shared::terreno::Bioma::Floresta,
-        )
+        );
+        // A colônia é DIORAMA: sem mar, e sem o plano que o mar cobria.
+        t.sem_mar = true;
+        t
     }
 
     fn do_gerador(ger: Gerador, bioma: shared::terreno::Bioma) -> Self {
         let mut t = Self {
             ger,
             bioma,
+            sem_mar: false,
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
@@ -573,6 +582,18 @@ impl Terreno {
                 if usado[iz as usize * n + ix as usize] {
                     continue;
                 }
+                // SEM MAR: a coluna de água some em vez de virar chão.
+                //
+                // O malhador achata tudo abaixo do nível do mar num plano só
+                // (`h.max(BLOCO_DO_MAR)`), e quem cobria aquilo era a água.
+                // Na maquete da colônia não há água — ela é um diorama
+                // flutuando —, e o plano virava uma MESA em volta da ilha.
+                // Visto na prévia, duas vezes: primeiro bege, depois marrom,
+                // quando tentei afundar o fundo (o `max` ignora isso).
+                if self.sem_mar && eh_agua(ix, iz) {
+                    usado[iz as usize * n + ix as usize] = true;
+                    continue;
+                }
                 let h = em(ix, iz);
                 let a = eh_agua(ix, iz);
                 let t0 = tinta(ix, iz);
@@ -682,6 +703,9 @@ impl Terreno {
         // custaria mais do que economiza.
         for iz in 0..n as i32 {
             for ix in 0..n as i32 {
+                if self.sem_mar && eh_agua(ix, iz) {
+                    continue;
+                }
                 if eh_agua(ix, iz) {
                     continue;
                 }
@@ -1501,6 +1525,7 @@ pub async fn previa_da_colonia(
             (*m, eu + vec2(a.cos(), a.sin()) * (plato * 0.55))
         })
         .collect();
+    let saia = crate::render3d::saia_da_ilhota();
     // REPRODUZ O PAINEL, com os parâmetros dele: terreno recém-criado e
     // `atualiza(centro, 3, 8)` por quadro, que é o que `ColoniaUi::desenha`
     // faz. A prévia antes usava raio 5 e orçamento 400 — e por isso mostrava
@@ -1513,7 +1538,7 @@ pub async fn previa_da_colonia(
         for q in 0..40 {
             tp.atualiza(eu, 6, 24);
             let ok = crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], vox,
+                &tp, &construcoes, r, eu, 0.9, 1.35, solido, &[], &saia, vox,
             );
             if q % 8 == 0 || q == 39 {
                 println!(
@@ -1534,7 +1559,7 @@ pub async fn previa_da_colonia(
         // A MESMA COR de fundo que o painel pinta atrás da maquete: o
         // retângulo dele é 2D e vai pra tela, não pro render target que vira
         // PNG, então sem isto a prévia mostra um mar que o jogo não tem.
-        clear_background(crate::render3d::COR_DO_MAR_DA_MAQUETE);
+        clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
         // A MESMA PROPORÇÃO da coluna esquerda do painel (46% de 1040 por
         // 628 de altura = 0,72). Na primeira prévia este retângulo era mais
         // estreito que o de verdade, e o enquadramento que ele mostrou não
@@ -1542,7 +1567,7 @@ pub async fn previa_da_colonia(
         let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
         let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * 0.72, lado);
         let ok = crate::render3d::maquete_da_ilha(
-            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, vox,
+            &t, &construcoes, r, eu, 0.9, 1.35, solido, &onde, &saia, vox,
         );
         unsafe { macroquad::window::get_internal_gl().flush() };
         rt.texture
