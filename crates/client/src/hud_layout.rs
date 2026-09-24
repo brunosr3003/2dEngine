@@ -233,13 +233,36 @@ pub struct Zonas {
     pub exp: Rect,
 }
 
-/// Onde um dedo pode COMECAR o joystick: o quadrado inferior esquerdo da area
-/// segura inteiro (metade da largura, metade de baixo da altura). Os botoes
-/// que ficam ali dentro (bateria, montaria) continuam botoes: quem chama tira
+/// Que fatia do quadrante inferior esquerdo o joystick toma, em cada eixo.
+///
+/// 0,55 × 0,55 ≈ **30% da área** do quadrante — o número que o dono pediu.
+///
+/// Era o quadrante INTEIRO, e isso comia a tarja da Ilha Mágica: o dono
+/// "não consigo clicar em + nem sair porque eu aciono o joystick". Um campo
+/// de toque que cobre metade da tela não é generosidade, é sequestro de todo
+/// botão que caia ali.
+const FATIA_DO_JOYSTICK: f32 = 0.55;
+
+/// Onde um dedo pode COMECAR o joystick.
+///
+/// ANCORADO NO CANTO DE BAIXO À ESQUERDA, que é onde o polegar descansa —
+/// encolher pelo meio deixaria a área longe da mão. Os botoes que ficam ali
+/// dentro (bateria, montaria) continuam botoes: quem chama tira
 /// `Zonas::contem`.
 pub fn quadrante_do_joystick() -> Rect {
-    let t = tela_segura();
-    Rect::new(t.x, t.y + t.h * 0.5, t.w * 0.5, t.h * 0.5)
+    quadrante_do_joystick_em(tela_segura(), escala_ui())
+}
+
+/// Fora do desenho pra poder ser medido contra a tarja — ver
+/// `o_joystick_nao_cobre_a_tarja_da_ilha_magica`.
+pub fn quadrante_do_joystick_em(t: Rect, ui: f32) -> Rect {
+    // O polegar precisa caber: o joystick tem `RAIO_BASE` e a base inteira
+    // são dois raios. Abaixo disso o controle fica impraticável, então o
+    // piso vence a fatia.
+    let minimo = 2.0 * crate::joystick::RAIO_BASE * ui.max(0.5);
+    let w = (t.w * 0.5 * FATIA_DO_JOYSTICK).max(minimo).min(t.w * 0.5);
+    let h = (t.h * 0.5 * FATIA_DO_JOYSTICK).max(minimo).min(t.h * 0.5);
+    Rect::new(t.x, t.y + t.h - h, w, h)
 }
 
 /// As zonas da tela atual.
@@ -938,6 +961,50 @@ mod tests {
             assert!(
                 sem.minimapa.y < com.minimapa.y,
                 "{sw}×{sh}: o minimapa não volta quando a faixa sai"
+            );
+        }
+    }
+
+    /// O JOYSTICK NÃO PODE ROUBAR O TOQUE DA TARJA DA ILHA MÁGICA.
+    ///
+    /// O dono: "no lugar onde estão aqueles detalhes da Ilha Mágica hoje é
+    /// campo do joystick, aí eu não consigo clicar em + nem sair porque eu
+    /// aciono o joystick".
+    ///
+    /// O campo do joystick era o quadrante inferior esquerdo INTEIRO. Agora
+    /// são ~30% dele (0,55 em cada eixo), ancorado no canto de baixo — onde o
+    /// polegar de fato descansa.
+    ///
+    /// O teste mede as duas coisas que brigam: a tarja fica livre E o polegar
+    /// ainda cabe. Encolher até o joystick virar um selo resolveria o primeiro
+    /// e quebraria o jogo.
+    #[test]
+    fn o_joystick_nao_cobre_a_tarja_da_ilha_magica() {
+        for (sw, sh) in TELAS {
+            let z = zonas_com(sw, sh, [0.0; 4], 1.0, false, true, false);
+            let tarja = tarja_magica_rect(&z);
+            let j = quadrante_do_joystick_em(Rect::new(0.0, 0.0, sw, sh), 1.0);
+
+            let cruza = tarja.x < j.x + j.w
+                && j.x < tarja.x + tarja.w
+                && tarja.y < j.y + j.h
+                && j.y < tarja.y + tarja.h;
+            assert!(
+                !cruza,
+                "{sw}×{sh}: o joystick {j:?} cobre a tarja {tarja:?}"
+            );
+
+            // E o polegar ainda cabe.
+            let polegar = 2.0 * crate::joystick::RAIO_BASE;
+            assert!(
+                j.w >= polegar - 0.01 && j.h >= polegar - 0.01,
+                "{sw}×{sh}: o campo do joystick {j:?} ficou menor que o polegar ({polegar:.0})"
+            );
+            // Ancorado embaixo à esquerda.
+            assert!(j.x.abs() < 0.01, "{sw}×{sh}: joystick fora da esquerda");
+            assert!(
+                (j.y + j.h - sh).abs() < 1.0,
+                "{sw}×{sh}: o joystick não está colado embaixo"
             );
         }
     }

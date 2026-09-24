@@ -2526,6 +2526,17 @@ impl Jogo {
             self.dica_da_trava = None;
             return;
         }
+        // JÁ ESTÁ DENTRO? Então a dica não tem o que dizer.
+        //
+        // O dono: "na missão da Ilha Mágica, eu entrei dentro da ilha e
+        // continua o destaque do tutorial me pedindo pra entrar na Ilha
+        // Mágica". A dica é armada pela trava de nível e apontava o caminho
+        // de ENTRAR, sem nunca perguntar se o jogador já tinha entrado —
+        // então ela ficava piscando por cima de quem já estava lá.
+        if self.magica.na_ilha() {
+            self.dica_da_trava = None;
+            return;
+        }
         foco::pede(alvo_da_trava(self.magica.aberto()));
     }
 

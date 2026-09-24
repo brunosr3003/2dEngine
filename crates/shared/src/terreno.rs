@@ -3656,6 +3656,31 @@ impl Ilha {
         para: glam::Vec2,
         orcamento: usize,
     ) -> Option<Vec<glam::Vec2>> {
+        self.caminho_evitando(de, para, orcamento, &[])
+    }
+
+    /// O mesmo caminho, mas DESVIANDO dos pontos onde o corpo já emperrou.
+    ///
+    /// O dono: "caso ele ficar preso por 5 segundos parados tentando seguir
+    /// uma rota, ele tenta mudar de rota automaticamente para tentar
+    /// contornar, mesmo sendo um caminho mais longo".
+    ///
+    /// Sem isto, travar não adiantava nada: o seguidor avisava, o servidor
+    /// refazia a rota, e o A* — que não sabe que algo deu errado — devolvia
+    /// EXATAMENTE o mesmo caminho. O corpo raspava a mesma quina para sempre.
+    ///
+    /// O desvio é CARO, não proibido: uma célula perto de um ponto emperrado
+    /// custa `CUSTO_DO_DESVIO` a mais. Proibir poderia deixar o destino sem
+    /// caminho nenhum — e aí o jogador não iria a lugar nenhum, que é pior
+    /// que ir pelo caminho longo. Encarecer faz o A* dar a volta quando há
+    /// volta, e ainda assim passar por ali quando não há outro jeito.
+    pub fn caminho_evitando(
+        &self,
+        de: glam::Vec2,
+        para: glam::Vec2,
+        orcamento: usize,
+        evitar: &[glam::Vec2],
+    ) -> Option<Vec<glam::Vec2>> {
         use std::collections::{BinaryHeap, HashMap};
 
         // Destino dentro de um tronco — o jogador indo ate' um bicho que esta'
@@ -3961,7 +3986,13 @@ impl Ilha {
                 } else {
                     continue;
                 };
-                let novo = g + passo;
+                // O PEDÁGIO DO DESVIO. Ver `caminho_evitando`.
+                let pedagio = evitar
+                    .iter()
+                    .filter(|e| e.distance(pv) < RAIO_DO_DESVIO)
+                    .count() as i64
+                    * CUSTO_DO_DESVIO;
+                let novo = g + passo + pedagio;
                 if custo.get(&viz).is_some_and(|&c| c <= novo) {
                     continue;
                 }
@@ -4475,6 +4506,21 @@ impl SeguidorDeRota {
         self.travado = false;
     }
 }
+
+/// Quão longe de um ponto emperrado a célula ainda paga pedágio.
+///
+/// Uma célula e meia (a célula tem 4 unidades). Menos que isso e o desvio não
+/// sai do lugar onde o corpo está preso; muito mais e ele daria voltas
+/// absurdas por causa de uma quina.
+const RAIO_DO_DESVIO: f32 = 6.0;
+
+/// O que custa passar perto de onde já se emperrou, em milésimos de passo.
+///
+/// Doze passos retos. É caro o bastante pra o A* preferir qualquer volta
+/// razoável, e barato o bastante pra ele ainda passar por ali quando é o
+/// único caminho — que é o caso de um corredor estreito onde o estorvo era
+/// outro jogador, e ele já saiu.
+const CUSTO_DO_DESVIO: i64 = 12_000;
 
 /// Mob indo atras de um alvo: RETO enquanto o reto avanca, A* quando empaca.
 ///
@@ -6233,5 +6279,106 @@ mod testes_do_alcance_dos_npcs {
                 t += 2.0;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_desvio {
+    use super::*;
+
+    /// O DESVIO MUDA O CAMINHO — e sem ele, nada muda.
+    ///
+    /// O dono: "caso ele ficar preso por 5 segundos tentando seguir uma rota,
+    /// ele tenta mudar de rota automaticamente para contornar, mesmo sendo um
+    /// caminho mais longo".
+    ///
+    /// A metade importante é a segunda asserção: ANTES deste conserto, o
+    /// servidor já refazia a rota ao travar, e o A* devolvia exatamente a
+    /// mesma. Refazer sem mudar nada não é contornar.
+    #[test]
+    fn evitar_um_ponto_da_outra_rota_e_mais_longa() {
+        let def = def_da_zona("ilha_inicial").expect("zona");
+        let ilha = Ilha::da_ilha(def);
+        let c = ilha.cidade().expect("cidade").centro();
+        let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
+        let alvo = praca + glam::Vec2::new(60.0, 40.0);
+        let alvo = ilha.terra_mais_proxima(alvo.x, alvo.y, 60.0);
+
+        let reta = ilha.caminho(praca, alvo, 6_000).expect("rota normal");
+        assert!(reta.len() > 3, "a rota de teste é curta demais pra medir desvio");
+
+        // Bloqueia o MEIO da rota original.
+        let meio = reta[reta.len() / 2];
+        let desviada = ilha
+            .caminho_evitando(praca, alvo, 6_000, &[meio])
+            .expect("com desvio ainda há caminho");
+
+        let passa_perto = |r: &[glam::Vec2]| r.iter().any(|p| p.distance(meio) < 2.0);
+        assert!(passa_perto(&reta), "a rota original não passa pelo ponto medido");
+        assert!(
+            !passa_perto(&desviada) || comprimento(&desviada) > comprimento(&reta) + 1.0,
+            "o desvio devolveu o mesmo caminho: contornar não aconteceu"
+        );
+    }
+
+    /// SEM PONTOS A EVITAR, NADA MUDA.
+    ///
+    /// `caminho` delega pra `caminho_evitando` com lista vazia. Se o pedágio
+    /// vazasse, toda rota do jogo mudaria — e este é o tipo de regressão que
+    /// não aparece em tela, só em "por que ele foi por ali?".
+    #[test]
+    fn sem_desvio_o_caminho_e_o_mesmo_de_sempre() {
+        let def = def_da_zona("ilha_inicial").expect("zona");
+        let ilha = Ilha::da_ilha(def);
+        let c = ilha.cidade().expect("cidade").centro();
+        let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
+        for (dx, dz) in [(80.0, 0.0), (0.0, 80.0), (-60.0, 60.0)] {
+            let alvo = ilha.terra_mais_proxima(praca.x + dx, praca.y + dz, 80.0);
+            let a = ilha.caminho(praca, alvo, 6_000);
+            let b = ilha.caminho_evitando(praca, alvo, 6_000, &[]);
+            assert_eq!(
+                a.as_ref().map(|r| r.len()),
+                b.as_ref().map(|r| r.len()),
+                "a lista vazia mudou o caminho"
+            );
+        }
+    }
+
+    /// O DESVIO É PEDÁGIO, NÃO PAREDE.
+    ///
+    /// Se o ponto emperrado fosse proibido, um corredor estreito ficaria sem
+    /// caminho nenhum — e o jogador pararia de ir a lugar nenhum, que é pior
+    /// que ir pelo caminho longo. Mesmo evitando o destino, tem que haver rota.
+    #[test]
+    fn evitar_nunca_deixa_o_jogador_sem_caminho() {
+        let def = def_da_zona("ilha_inicial").expect("zona");
+        let ilha = Ilha::da_ilha(def);
+        let c = ilha.cidade().expect("cidade").centro();
+        let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
+        let alvo = ilha.terra_mais_proxima(praca.x + 50.0, praca.y + 20.0, 60.0);
+        // Seis pontos em volta do próprio alvo: o pior caso.
+        let volta: Vec<glam::Vec2> = (0..6)
+            .map(|i| {
+                let a = i as f32 / 6.0 * std::f32::consts::TAU;
+                alvo + glam::Vec2::new(a.cos(), a.sin()) * 3.0
+            })
+            .collect();
+        // `is_some()` NÃO BASTA: o `caminho` devolve o melhor esforço mesmo
+        // sem alcançar o alvo, então um desvio que virasse parede passaria
+        // por este teste — e passou, quando eu mutei pra conferir. O que
+        // prova é a rota TERMINAR no destino.
+        let r = ilha
+            .caminho_evitando(praca, alvo, 6_000, &volta)
+            .expect("sem rota nenhuma");
+        let fim = *r.last().expect("rota vazia");
+        assert!(
+            fim.distance(alvo) <= crate::constants::INTERACT_RADIUS,
+            "o desvio virou parede: a rota parou a {:.1}u do destino",
+            fim.distance(alvo)
+        );
+    }
+
+    fn comprimento(r: &[glam::Vec2]) -> f32 {
+        r.windows(2).map(|w| w[0].distance(w[1])).sum()
     }
 }

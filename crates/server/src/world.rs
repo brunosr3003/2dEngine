@@ -1423,6 +1423,17 @@ fn point_in_polygon(p: Vec2, verts: &[Vec2]) -> bool {
 
 pub struct Session {
     pub handle: SessionHandle,
+    /// Desde quando a rota está travada (sim_time), e onde o corpo emperrou.
+    ///
+    /// O dono: "caso ele ficar preso por 5 segundos parados tentando seguir
+    /// uma rota, ele tenta mudar de rota automaticamente para contornar,
+    /// mesmo sendo um caminho mais longo". Sem isto o servidor refazia a rota
+    /// a cada meio segundo e o A* devolvia SEMPRE A MESMA — o corpo raspava a
+    /// quina indefinidamente.
+    pub travado_desde: Option<f32>,
+    /// Pontos que a próxima rota desta sessão vai evitar. Ver
+    /// `Ilha::caminho_evitando`.
+    pub desvios: Vec<Vec2>,
     /// O último bônus da Ilha Mágica que esta sessão JÁ SOUBE.
     ///
     /// 254 = nunca soube de nada. Existe porque o estado da ilha só era
@@ -5185,7 +5196,16 @@ impl GameWorld {
         let Some(ilha) = self.ilha_da_sessao(sid) else {
             return;
         };
-        let Some(rota) = ilha.caminho(pos_atual, destino, ROTA_ORCAMENTO) else {
+        // OS DESVIOS ENTRAM AQUI. Eles são da SESSÃO e se acumulam enquanto
+        // ela empaca; um destino novo pedido pelo jogador os limpa (ver
+        // `handle_mover_para_novo`), senão um contorno de ontem penalizaria a
+        // viagem de hoje.
+        let desvios: Vec<Vec2> = self
+            .sessions
+            .get(&sid)
+            .map(|s| s.desvios.clone())
+            .unwrap_or_default();
+        let Some(rota) = ilha.caminho_evitando(pos_atual, destino, ROTA_ORCAMENTO, &desvios) else {
             // Nunca calado: o jogador toca, nada acontece, e ele nao tem como
             // saber se o jogo travou ou se nao ha' caminho. Foi assim que o
             // limite de 220 u passou meses invisivel.
@@ -5203,6 +5223,7 @@ impl GameWorld {
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.rota = shared::terreno::SeguidorDeRota::nova(rota, destino);
             s.rota_geracao = s.rota_geracao.wrapping_add(1);
+            s.travado_desde = None;
         }
     }
 
@@ -6761,6 +6782,8 @@ impl GameWorld {
         self.sessions.insert(
             handle.id,
             Session {
+                travado_desde: None,
+                desvios: Vec::new(),
                 sessao_nova: None,
                 magica_bonus_visto: 254,
                 handle,
@@ -7170,7 +7193,16 @@ impl GameWorld {
                     s.pending_input = Some(frame);
                 }
             }
-            ClientMessage::MoverPara { x, z } => self.handle_mover_para(id, Vec2::new(x, z)),
+            ClientMessage::MoverPara { x, z } => {
+                // DESTINO NOVO, HISTÓRIA NOVA. Os desvios são a memória de
+                // onde esta viagem emperrou; mantê-los entre viagens faria o
+                // jogador pagar hoje por uma quina de ontem.
+                if let Some(s) = self.sessions.get_mut(&id) {
+                    s.desvios.clear();
+                    s.travado_desde = None;
+                }
+                self.handle_mover_para(id, Vec2::new(x, z));
+            }
             ClientMessage::Chat { text } => {
                 // Comandos de slash
                 let trimmed = text.trim();
@@ -8956,7 +8988,37 @@ impl GameWorld {
                 // vai achar a partir de onde o corpo esta' agora — que nao e'
                 // mais onde estava quando a rota saiu.
                 if session.rota.travado() {
+                    // CINCO SEGUNDOS NO MESMO LUGAR = A ROTA NÃO SERVE.
+                    //
+                    // O seguidor se dá por travado em meio segundo, e refazer
+                    // logo é certo: o estorvo pode ter sido outro jogador que
+                    // já saiu. Mas insistir sem mudar nada é o que o dono viu
+                    // — então, passados 5 s, o ponto onde ele está entra na
+                    // lista de desvios e a rota nova é obrigada a contornar.
+                    const ATE_DESVIAR_S: f32 = 5.0;
+                    const DESVIOS_MAX: usize = 6;
+                    let t = *session.travado_desde.get_or_insert(self.sim_time_s);
+                    if self.sim_time_s - t >= ATE_DESVIAR_S {
+                        session.travado_desde = Some(self.sim_time_s);
+                        // Longe o bastante dos que já há: sem isso, meio
+                        // segundo de tremor encheria a lista com o mesmo
+                        // ponto e o pedágio viraria uma parede.
+                        if session.desvios.iter().all(|d| d.distance(aqui) > 4.0) {
+                            if session.desvios.len() >= DESVIOS_MAX {
+                                session.desvios.remove(0);
+                            }
+                            session.desvios.push(aqui);
+                            tracing::debug!(
+                                "rota travada 5s em {:.0},{:.0}: desviando ({} pontos)",
+                                aqui.x,
+                                aqui.y,
+                                session.desvios.len()
+                            );
+                        }
+                    }
                     refazer_rota.push((sid_da_sessao, session.rota.destino()));
+                } else {
+                    session.travado_desde = None;
                 }
             }
             let dir = if in_hurt || session.downed || staggered {
