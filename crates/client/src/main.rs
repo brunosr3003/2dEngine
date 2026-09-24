@@ -88,6 +88,7 @@ mod personagens;
 mod preferencias;
 mod presenca_ui;
 mod previa_skills;
+mod parado;
 mod rastro;
 mod render3d;
 mod rig;
@@ -275,6 +276,8 @@ struct Jogo {
     dialogo: dialogo::Dialogo,
     /// A rota do servidor, pro tracejado no chao.
     rastro: rastro::Rastro,
+    /// Missões que o auto pulou por exigirem o jogador. Ver `auto_missao_pula`.
+    auto_pulados: std::collections::HashSet<u16>,
     /// Golpes de chefe carregando: a forma no chao.
     telegrafos: telegrafico::Telegrafos,
     /// Tremor de camera do impacto de chefe: (forca, ate quando).
@@ -657,6 +660,7 @@ async fn main() {
         toque_barra: toque::ToqueLongo::default(),
         dialogo: dialogo::Dialogo::default(),
         rastro: rastro::Rastro::default(),
+        auto_pulados: Default::default(),
         telegrafos: telegrafico::Telegrafos::default(),
         tremor: (0.0, 0.0),
         morte: morte::Morte::default(),
@@ -1711,7 +1715,25 @@ impl Jogo {
                 funcao,
             } => {
                 self.dialogo.fechar();
-                self.escolha_npc.abrir(npc_eid, nome, funcao);
+                // COM O AUTO MISSÃO RODANDO, A ESCOLHA JÁ FOI FEITA.
+                //
+                // O NPC que tem missão E função (loja, forja, barco, banco)
+                // pergunta antes. Mas o auto missão fica esperando o diálogo,
+                // que nunca abre: ele estoura o prazo, interage de novo, o
+                // menu reabre, e trava. O dono: "quando conversa com um NPC
+                // que tem que escolher entre missão e viagem, ou missão e
+                // loja, aí também trava".
+                //
+                // Quem tocou "fazer a missão" já disse o que queria. O menu
+                // continua aparecendo pra quem clicou no NPC na mão.
+                if self.auto_missao.ativo() {
+                    self.envia(ClientMessage::EscolherNoNpc {
+                        npc_eid,
+                        missao: true,
+                    });
+                } else {
+                    self.escolha_npc.abrir(npc_eid, nome, funcao);
+                }
             }
             ServerMessage::Viagem { destinos, colonia } => {
                 self.tem_colonia = colonia;
@@ -2065,11 +2087,17 @@ impl Jogo {
                     // Vencer dungeon nao se faz andando: abre o painel na dungeon
                     // do passo (o id vem no `raio`).
                     if self.auto_missao.quest == Some(quest_id) {
-                        self.auto_missao.parar();
                         self.fecha_paineis();
                         for pedido in self.dungeon.abrir_em(raio as u16) {
                             self.envia(pedido);
                         }
+                        // DIZ POR QUE PAROU. O craft e a forja já diziam; a
+                        // dungeon parava calada, e auto missão que para sem
+                        // explicar é indistinguível de auto missão travada —
+                        // que foi como o dono descreveu.
+                        self.chat
+                            .push("Missão: vença a dungeon (o auto não luta por você).".into());
+                        self.auto_missao_pula(quest_id);
                     }
                 } else if tipo == destino_tipo::TUTORIAL {
                     // Passo tutorial nao anda: abre onde se faz (a barra, o
@@ -2091,6 +2119,7 @@ impl Jogo {
                         }
                         self.foco_tutorial = Some((quest_id, get_time()));
                         self.chat.push(format!("Tutorial: {}", t::instrucao(acao)));
+                        self.auto_missao_pula(quest_id);
                     }
                 } else if tipo == destino_tipo::PAINEL_CRAFT || tipo == destino_tipo::PAINEL_FORJA {
                     if self.auto_missao.quest == Some(quest_id) {
@@ -2111,6 +2140,7 @@ impl Jogo {
                             self.chat
                                 .push("Missão: tente refinar uma peça na Forja.".into());
                         }
+                        self.auto_missao_pula(quest_id);
                     }
                 } else {
                     let npc = npc_eid.map(|e| shared::EntityId(e as u32));
@@ -3907,6 +3937,46 @@ impl Jogo {
     }
 
     /// A cada quadro: conduz o "Ir". Teclado ou queda encerram.
+    /// PASSO MANUAL: abre o painel, avisa, e SEGUE com outra missão.
+    ///
+    /// O dono: "o auto missão mistura missão de craft com dungeon com coleta
+    /// com caça, e algumas dessas têm que ser feitas manualmente, aí ele
+    /// trava". Travava mesmo — ele parava seco no primeiro passo que exigia o
+    /// jogador, e da tela isso é idêntico a estar quebrado.
+    ///
+    /// Escolha do dono (24/09/2026): pular pra próxima missão automatizável.
+    /// O painel do passo manual fica aberto esperando, e o auto continua
+    /// rendendo no que ele sabe fazer sozinho.
+    ///
+    /// As puladas ficam guardadas pra ele não voltar pra mesma no ciclo
+    /// seguinte — e a lista zera quando o jogador escolhe uma missão na mão,
+    /// que é ele dizendo "agora eu quero esta".
+    fn auto_missao_pula(&mut self, quest_id: u16) {
+        self.auto_pulados.insert(quest_id);
+        let prox = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| {
+                q.status == shared::quests::quest_status::ACTIVE
+                    && q.id != quest_id
+                    && !self.auto_pulados.contains(&q.id)
+            })
+            .map(|q| (q.id, q.title.clone()));
+        match prox {
+            Some((id, nome)) => {
+                self.chat
+                    .push(format!("Auto missão seguiu para \"{nome}\"."));
+                self.auto_missao.iniciar(id, nome, get_time());
+            }
+            None => {
+                self.auto_missao.parar();
+                self.chat
+                    .push("Auto missão: só restam passos que são seus.".into());
+            }
+        }
+    }
+
     fn conduzir_ir_para(&mut self) {
         if !self.ir_para.ativo() {
             return;

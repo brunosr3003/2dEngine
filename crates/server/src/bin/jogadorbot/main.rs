@@ -397,6 +397,37 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
     }
 }
 
+/// EMPURRA NA DIREÇÃO DE `alvo`, e diz se ainda vale insistir.
+///
+/// O empurrão existe pros últimos metros, onde o A* não entrega. Mas ele
+/// precisa de rede EM TODO RAMO que o usa, e eu só tinha posto no ramo de
+/// chegar ao destino. Ao fazer o bot andar até o nó de coleta, armei o
+/// empurrão e voltei sem contar nada: sete bots ficaram parados a seis
+/// unidades do nó, empurrando alguma coisa, com o batimento repetindo
+/// "#601 tipo 3 a 6u · empurrando" indefinidamente.
+///
+/// Devolve `false` quando a distância não encurta há cinco decisões — aí quem
+/// chamou decide o que fazer (chamar o A*, ou largar a missão).
+fn empurra(eu: &mut Eu, alvo: glam::Vec2) -> bool {
+    let dist = eu.pos.distance(alvo);
+    if dist < eu.dist_do_empurrao - 0.3 {
+        eu.empurrao_parado = 0;
+    } else {
+        eu.empurrao_parado += 1;
+    }
+    eu.dist_do_empurrao = dist;
+    if eu.empurrao_parado >= 5 {
+        eu.empurrao_parado = 0;
+        eu.dist_do_empurrao = f32::MAX;
+        eu.empurrao = None;
+        eu.empurrao_ate = None;
+        return false;
+    }
+    eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
+    eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
+    true
+}
+
 /// UM PASSO QUE NÃO DEU: conta e, no limite, larga a missão.
 ///
 /// Todo ramo de destino tem um caminho de "não dá agora" — sem receita, sem
@@ -650,8 +681,19 @@ async fn recebe(
                 .collect();
         }
         ServerMessage::QuestUpdate { quest_id, progress, status } => {
-            eu.quests.insert(quest_id, (progress, status));
-            eu.conversas_a_toa.clear();
+            let antes = eu.quests.insert(quest_id, (progress, status));
+            // SÓ A MISSÃO EM FOCO ZERA O CONTADOR, e só se ELA mudou.
+            //
+            // Zerar em qualquer QuestUpdate era o furo: o bot conversava pela
+            // #503, o servidor oferecia e ele aceitava a #602 — outra missão
+            // —, o contador zerava, a #503 seguia parada, e ele voltava a
+            // conversar. 215 voltas em cinco minutos, em quatro bots.
+            //
+            // É a quarta vez nesta sessão que eu confundo "houve evento" com
+            // "houve progresso". O que vale é a missão que ele está tentando.
+            if eu.foco == Some(quest_id) && antes != Some((progress, status)) {
+                eu.conversas_a_toa.clear();
+            }
         }
         // O NPC QUE TEM MISSÃO **E** LOJA PERGUNTA ANTES.
         //
@@ -692,9 +734,12 @@ async fn recebe(
             // inventar uma estratégia que o jogador comum não tem.
             if let Some(q) = quests.first() {
                 ws.send(envia(&ClientMessage::AcceptQuest { quest_id: q.id })?).await?;
-                // A oferta chegou: a conversa ANDOU. Limpar aqui é o que
-                // impede o contador de acusar quem está indo bem.
-                eu.conversas_a_toa.clear();
+                // ACEITAR OUTRA MISSÃO NÃO É PROGRESSO NA QUE ELE VEIO
+                // FAZER. Só zera quando a aceita é a do foco — senão um NPC
+                // que oferece uma missão paralela reseta a conta pra sempre.
+                if eu.foco == Some(q.id) || eu.foco.is_none() {
+                    eu.conversas_a_toa.clear();
+                }
                 t.registra(ev(nome, eu, "quest_aceita", true, format!("#{}", q.id)));
             }
         }
@@ -1093,13 +1138,22 @@ async fn decide(
                         .ultima_recusa
                         .clone()
                         .unwrap_or_else(|| "sem aviso do servidor".into());
-                    t.registra(ev(nome, eu, "travou_no_caminho", false, format!(
+                    // O ÚLTIMO LAÇO SEM REDE.
+                    //
+                    // Isto soltava o destino e deixava o ciclo recomeçar:
+                    // pede destino, anda, trava, pede de novo — para sempre.
+                    // Um bot ficou assim a 24 unidades do Mestre de Missões,
+                    // com o servidor traçando rota e o corpo sem sair do
+                    // lugar ("sem aviso do servidor" = o A* achou caminho).
+                    //
+                    // Três voltas e a missão sai da frente, como todo o resto.
+                    passo_nao_deu(eu, t, nome, d.quest, "travou_no_caminho", format!(
                         "#{} parado a {:.0} de {:.0},{:.0} — {porque}",
                         d.quest,
                         eu.pos.distance(d.pos),
                         d.pos.x,
                         d.pos.y
-                    )));
+                    ));
                 } else {
                     eu.andando_para = Some((alvo, onde, paradas + 1));
                 }
@@ -1165,9 +1219,15 @@ async fn decide(
                         // progresso em zero.
                         let d_no = eu.pos.distance(onde);
                         if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
-                            eu.empurrao = Some((onde - eu.pos).normalize_or_zero());
-                            eu.empurrao_ate =
-                                Some(Instant::now() + Duration::from_millis(800));
+                            if !empurra(eu, onde) {
+                                // Não encurta: o nó pode estar do outro lado
+                                // de uma pedra. Larga ESTE nó e peça outro; se
+                                // for a missão inteira que não anda, o
+                                // `coleta_emperrada` cuida.
+                                eu.no_de_coleta = None;
+                                passo_nao_deu(eu, t, nome, d.quest, "no_inalcancavel",
+                                    format!("#{} a {d_no:.1}u do nó", d.quest));
+                            }
                             return Ok(());
                         }
                         eu.empurrao = None;
@@ -1333,8 +1393,14 @@ async fn decide(
                     let longe = eu.pos.distance(p) > 2.0;
                     // Longe do bicho: o pulso leva até ele. Perto: para de
                     // empurrar e só bate, senão o corpo atravessa o alvo.
-                    eu.empurrao = longe.then_some(dir);
-                    eu.empurrao_ate = longe.then(|| Instant::now() + Duration::from_millis(800));
+                    if longe {
+                        empurra(eu, p);
+                    } else {
+                        eu.empurrao = None;
+                        eu.empurrao_ate = None;
+                        eu.empurrao_parado = 0;
+                        eu.dist_do_empurrao = f32::MAX;
+                    }
                     *seq = seq.wrapping_add(1);
                     ws.send(envia(&ClientMessage::Input {
                         input: InputFrame {

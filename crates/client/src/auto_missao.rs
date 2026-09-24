@@ -82,24 +82,14 @@ pub struct Ctx {
     pub progresso: u32,
 }
 
-/// Quanto tempo PARADO no mesmo lugar conta como travado.
-///
-/// O dono: "fico travado toda hora nas casas", "o auto missão na verdade
-/// trava em diversas situações". Todas as queixas são o mesmo defeito: quando
-/// um passo não completa, NADA acontece — e o retry que existia só disparava
-/// com a viagem desligada (`!c.viajando`). Preso numa quina de casa, a viagem
-/// continua "ativa" e o corpo empurra a parede para sempre.
-///
-/// Três segundos é curto o bastante pra não dar tempo de a pessoa notar, e
-/// longo o bastante pra não refazer rota a cada tropeço.
-const TRAVADO_S: f64 = 3.0;
-/// Quanto o corpo precisa andar pra não contar como parado.
-const ANDOU_U: f32 = 1.5;
 /// Sem o objetivo avançar por tanto tempo, religa o auto (coleta ou combate).
 ///
 /// O dono: "quando eu tô coletando árvore e a árvore acaba, trava o auto
 /// missão; só volta quando eu ando". Exato: o religar exigia `!coleta_ativa`,
 /// e com o nó esgotado a coleta segue "ativa" sem colher nada.
+///
+/// O detector de "parado no mesmo lugar" mora em `parado.rs`: três sistemas
+/// tinham cópia dele, e eu consertei um de cada vez até perceber.
 const SEM_AVANCO_S: f64 = 6.0;
 
 #[derive(Debug, Default)]
@@ -109,18 +99,17 @@ pub struct AutoMissao {
     etapa: Option<Etapa>,
     destino: Option<Destino>,
     desde: f64,
-    /// Onde o corpo estava quando começou a ficar parado, e desde quando.
-    onde: Option<Vec2>,
-    parado_desde: f64,
+    /// "Nada está mudando" — ver `parado.rs`.
+    parado: crate::parado::Parado,
     /// Progresso do objetivo na última vez que ele mudou, e quando.
     progresso: u32,
     progresso_desde: f64,
 }
 
 impl AutoMissao {
-    /// O corpo está parado há mais de `TRAVADO_S`?
+    /// O corpo está parado há tempo demais?
     fn travado(&self, c: &Ctx) -> bool {
-        c.agora - self.parado_desde > TRAVADO_S
+        self.parado.travado(c.agora)
     }
 
     /// O objetivo parou de avançar?
@@ -130,13 +119,7 @@ impl AutoMissao {
 
     /// Uma vez por quadro: atualiza os dois relógios de "nada mudou".
     fn acompanha(&mut self, c: &Ctx) {
-        match self.onde {
-            Some(o) if o.distance(c.eu) < ANDOU_U => {}
-            _ => {
-                self.onde = Some(c.eu);
-                self.parado_desde = c.agora;
-            }
-        }
+        self.parado.acompanha(c.eu, c.agora);
         if c.progresso != self.progresso {
             self.progresso = c.progresso;
             self.progresso_desde = c.agora;
@@ -160,8 +143,7 @@ impl AutoMissao {
             etapa: Some(Etapa::PedirDestino),
             destino: None,
             desde: agora,
-            onde: None,
-            parado_desde: agora,
+            parado: crate::parado::Parado::default(),
             progresso: 0,
             progresso_desde: agora,
         };
@@ -313,7 +295,7 @@ impl AutoMissao {
                     || self.travado(&c)
                 {
                     self.desde = c.agora;
-                    self.parado_desde = c.agora;
+                    self.parado.zera(c.agora);
                     // NPC: pare do lado dele, nao em cima.
                     let alvo = if npc {
                         d.pos + (c.eu - d.pos).normalize_or_zero() * 2.0
@@ -411,6 +393,7 @@ impl AutoMissao {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parado::TRAVADO_S;
 
     fn ctx(eu: Vec2, agora: f64) -> Ctx {
         Ctx {

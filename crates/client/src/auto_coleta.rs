@@ -65,6 +65,8 @@ pub struct AutoColeta {
     /// (coluna, onde ficar, centro do no', tipo).
     alvo: Option<(u32, Vec2, Vec2, u8)>,
     desde: f64,
+    /// "Nada está mudando" — ver `parado.rs`.
+    parado: crate::parado::Parado,
     confirmou: bool,
     pub falhas: u32,
     /// O servidor pausou por bolsa cheia: fica no no' e espera abrir espaco
@@ -87,6 +89,7 @@ impl Default for AutoColeta {
             etapa: Etapa::Procurar,
             alvo: None,
             desde: f64::MIN,
+            parado: crate::parado::Parado::default(),
             confirmou: false,
             falhas: 0,
             bolsa_cheia: false,
@@ -222,6 +225,7 @@ impl AutoColeta {
 
     /// Um quadro.
     pub fn passo(&mut self, eu: Vec2, agora: f64, viajando: bool) -> Acao {
+        self.parado.acompanha(eu, agora);
         let Some(centro) = self.centro else {
             return Acao::Nada;
         };
@@ -264,8 +268,25 @@ impl AutoColeta {
                     self.desde = agora;
                     return Acao::Coletar(coluna);
                 }
-                if !viajando && agora - self.desde >= RELIGA_S {
+                // TRAVADO CONTA MESMO "VIAJANDO".
+                //
+                // O dono: "auto missão de coleta, ele fica parado na frente
+                // da árvore". Era isto: o retry exigia a viagem DESLIGADA, e
+                // encostado no tronco ela segue ativa — então ele nunca
+                // tentava de novo e nunca chegava ao alcance de coleta.
+                //
+                // Mesmo defeito, palavra por palavra, do `auto_missao.rs`.
+                // Ver `parado.rs`.
+                let travado = self.parado.travado(agora);
+                if (!viajando || travado) && agora - self.desde >= RELIGA_S {
                     self.desde = agora;
+                    if travado {
+                        self.parado.zera(agora);
+                        // Parado de verdade: o nó pode estar atrás do tronco.
+                        // Procura OUTRO em vez de insistir no mesmo.
+                        self.etapa = Etapa::Procurar;
+                        return self.passo(eu, agora, viajando);
+                    }
                     return Acao::Ir(onde);
                 }
                 Acao::Nada
@@ -554,4 +575,56 @@ mod tests {
             }
         );
     }
+    /// PARADO NA FRENTE DA ÁRVORE NÃO É "INDO".
+    ///
+    /// O dono: "auto missão de coleta, ele fica parado na frente da árvore".
+    /// O retry de caminhar até o nó só disparava com a viagem DESLIGADA, e
+    /// encostado no tronco ela segue ativa: o personagem ficava plantado,
+    /// sem nunca chegar ao alcance de coleta.
+    ///
+    /// Parado de verdade, ele procura OUTRO nó — o que estava escolhido pode
+    /// estar atrás do tronco, e insistir nele é ficar plantado de novo.
+    ///
+    /// O teste mede os dois lados: parado age, ANDANDO não age (senão a
+    /// coleta trocaria de alvo a cada três segundos de caminhada e nunca
+    /// colheria nada).
+    #[test]
+    fn parado_na_frente_da_arvore_procura_outro_no() {
+        let mut a = AutoColeta::default();
+        a.ligar(Vec2::ZERO, 0.0);
+        // Recebe um nó longe, e entra em Indo.
+        let _ = a.passo(Vec2::ZERO, 0.1, false);
+        let _ = a.no_recebido(Some((7, Vec2::new(30.0, 0.0), Vec2::new(30.0, 0.0), 0)), 0.2);
+
+        // VIAJANDO e parado: passado o prazo, ele reage.
+        let mut t = 0.3;
+        let mut reagiu = false;
+        while t < 0.3 + crate::parado::TRAVADO_S + RELIGA_S + 2.0 {
+            let acao = a.passo(Vec2::ZERO, t, true);
+            if !matches!(acao, Acao::Nada) {
+                reagiu = true;
+                break;
+            }
+            t += 0.2;
+        }
+        assert!(reagiu, "parado com viagem ativa e não fez nada");
+
+        // ANDANDO: não troca de alvo.
+        let mut b = AutoColeta::default();
+        b.ligar(Vec2::ZERO, 0.0);
+        let _ = b.passo(Vec2::ZERO, 0.1, false);
+        let _ = b.no_recebido(Some((7, Vec2::new(300.0, 0.0), Vec2::new(300.0, 0.0), 0)), 0.2);
+        let mut t = 0.3;
+        let mut x = 0.0f32;
+        while t < 30.0 {
+            x += 3.0;
+            let acao = b.passo(Vec2::new(x, 0.0), t, true);
+            assert!(
+                matches!(acao, Acao::Nada),
+                "mexeu no alvo de quem está andando (t={t}, x={x})"
+            );
+            t += 0.5;
+        }
+    }
+
 }

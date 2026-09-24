@@ -53,6 +53,8 @@ pub struct IrPara {
     desde: f64,
     pedidos_sem_progresso: u32,
     melhor: f32,
+    /// "Nada está mudando" — ver `parado.rs`.
+    parado: crate::parado::Parado,
 }
 
 impl IrPara {
@@ -70,6 +72,7 @@ impl IrPara {
             desde: agora - RELIGA_S,
             pedidos_sem_progresso: 0,
             melhor: f32::MAX,
+            parado: crate::parado::Parado::default(),
         };
     }
 
@@ -98,8 +101,21 @@ impl IrPara {
             self.parar();
             return Some(acao);
         }
-        if viajando || agora - self.desde < RELIGA_S {
+        // TRAVADO CONTA MESMO "VIAJANDO".
+        //
+        // O `viajando` sozinho fazia este passo nunca rodar enquanto o corpo
+        // empurrava uma parede: a viagem segue "ativa" e a conta de
+        // `pedidos_sem_progresso` — que é quem desiste — nunca avançava.
+        //
+        // Terceiro arquivo com a mesma suposição (ver `parado.rs`): o
+        // `auto_missao.rs` e o `auto_coleta.rs` tinham cópia dela.
+        self.parado.acompanha(eu, agora);
+        let travado = self.parado.travado(agora);
+        if (viajando && !travado) || agora - self.desde < RELIGA_S {
             return None;
+        }
+        if travado {
+            self.parado.zera(agora);
         }
         self.desde = agora;
         if d < self.melhor - PROGRESSO_MINIMO {
