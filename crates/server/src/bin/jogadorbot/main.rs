@@ -333,6 +333,13 @@ struct Eu {
     /// dentro dela SEM gastar a poção — mas mandar assim mesmo, a 30 Hz,
     /// seria o bot virando a maior carga do que observa.
     bebeu_em: Option<Instant>,
+    /// Host da zona pra onde o servidor acabou de mandar ele.
+    ///
+    /// O handoff de zona TROCA DE PROCESSO: o socket atual é de outra zona e
+    /// não serve mais. Sem seguir, o bot pedia pra ir à Arena, o servidor o
+    /// mandava, e ele continuava falando com o socket velho — 19 pedidos de
+    /// viagem e nenhuma chegada, medido em prod.
+    trocar_para: Option<String>,
     /// NPCs a quem ele já pediu balcão e não deu em poção nenhuma.
     ///
     /// Sem isto, um bot sem cobre ficaria cumprimentando o mesmo ferreiro a
@@ -400,7 +407,16 @@ async fn cadastra(api: &str, nome: &str) -> Result<()> {
     Err(anyhow!("register {}: {}", r.status(), r.text().await.unwrap_or_default()))
 }
 
+/// Cadastra e vive, seguindo o bot de zona em zona até o prazo acabar.
+///
+/// O laço existe por causa do handoff: a Arena, a Ilha Mágica e a geleira são
+/// PROCESSOS diferentes, e trocar de zona é trocar de socket. Um jogador nem
+/// percebe; o bot precisava aprender.
+///
+/// Teto de viagens pra um par de zonas que se empurram não virar um bot que só
+/// viaja.
 async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Result<()> {
+    const VIAGENS_MAX: u32 = 40;
     let mut eu = Eu::default();
     let reg = cadastra(api, nome).await;
     t.registra(Evento {
@@ -415,6 +431,24 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
     });
     reg?;
 
+    let mut onde = host.to_string();
+    for viagem in 0..VIAGENS_MAX {
+        eu.trocar_para = None;
+        sessao(&onde, nome, ate, t, &mut eu).await?;
+        let Some(proximo) = eu.trocar_para.take() else {
+            return Ok(());
+        };
+        if Instant::now() >= ate {
+            return Ok(());
+        }
+        onde = proximo;
+        t.registra(ev(nome, &eu, "reconectou", true, format!("{onde} (viagem {})", viagem + 1)));
+    }
+    Ok(())
+}
+
+/// Uma conexão, do handshake até o fim ou até o servidor mandar trocar de zona.
+async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu) -> Result<()> {
     let url = format!("ws://{host}/ws");
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await?;
     ws.send(envia(&ClientMessage::Handshake {
@@ -437,7 +471,7 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
         tokio::select! {
             _ = pensa.tick() => {
                 if fase == Fase::NoMundo {
-                    decide(&mut ws, &mut eu, nome, t, &mut seq, tick).await?;
+                    decide(&mut ws, eu, nome, t, &mut seq, tick).await?;
                 }
             }
             // O PULSO. Direção ZERO: mexer no direcional MATA a rota
@@ -475,8 +509,13 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
                     _ => continue,
                 };
                 let Ok(msg) = shared::protocol::decode::<ServerMessage>(&bytes) else { continue };
-                if let Some(nova) = recebe(msg, &mut ws, &mut eu, nome, t, &mut tick).await? {
+                if let Some(nova) = recebe(msg, &mut ws, eu, nome, t, &mut tick).await? {
                     fase = nova;
+                }
+                // TROCOU DE ZONA: este socket é de outro processo e não vale
+                // mais. Sair daqui é o que faz `vive` reconectar no host novo.
+                if eu.trocar_para.is_some() {
+                    return Ok(());
                 }
             }
         }
@@ -1224,8 +1263,11 @@ async fn recebe(
             }
         }
         ServerMessage::Kick { reason } => return Err(anyhow!("kick: {reason}")),
-        ServerMessage::TrocarZona { .. } => {
-            t.registra(ev(nome, eu, "trocou_de_zona", true, String::new()));
+        ServerMessage::TrocarZona { zona, host } => {
+            // Guarda pra onde ir; quem reconecta é o laço de `vive`, que é
+            // dono do socket.
+            eu.trocar_para = Some(host.clone());
+            t.registra(ev(nome, eu, "trocou_de_zona", true, format!("{zona} em {host}")));
         }
         _ => {}
     }
