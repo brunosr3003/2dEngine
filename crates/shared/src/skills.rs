@@ -175,7 +175,35 @@ pub struct Skill {
 /// A primeira vem junto com a arma: pegar o conjunto e não ter o que apertar
 /// seria uma arma sem verbo.
 pub const DESTRAVA_EM: [u32; 3] = [1, 5, 10];
+/// Quanto o corpo fica TRAVADO depois do impacto da skill.
+///
+/// O dono, jogando de pistola contra chefe: "morre muito rápido pros ataques,
+/// então tem que desviar, mas com skills ativas é mais difícil de desviar
+/// porque as skills são lentas de lançar".
+///
+/// O que trava não é o cast — quase toda skill é instantânea — é ISTO: o
+/// servidor segura o jogador até `impacto_em() + RECUPERACAO_S`
+/// (`habilidades.rs`), e nessa janela o chefe telegrafa e não dá pra sair.
+/// Era 0,36 s, e com as skills de carga chegava a 0,76.
+///
+/// Medi antes de mexer, e o número descartou a outra suspeita: mover cancela
+/// o cast, mas a janela em que isso é possível vai de 0,3 s até o fim da
+/// trava — 60 ms numa skill instantânea. Em todos os chefes simulados, ZERO
+/// skills perdidas por esquiva. O problema nunca foi o cancelamento; era o
+/// tempo parado.
 pub const RECUPERACAO_S: f32 = 0.36;
+
+/// A janela em que o DANO da skill foi calibrado. Ver `basico_deslocado`.
+///
+/// Separada da trava de propósito, e isto é uma decisão, não um descuido: o
+/// dano de skill sai do "quanto de básico a trava joga fora". Se ele seguisse
+/// a trava, cortar a trava pela metade cortaria o dano junto — e quem depende
+/// de skill (pistola, anel) não ganharia nada com a mudança, que existe
+/// justamente pra ajudar esses dois.
+///
+/// Então a trava encolheu e o dano ficou onde estava. Na prática é um presente
+/// de tempo de reação pra quem conjura, e é exatamente o que foi pedido.
+pub const JANELA_DE_REFERENCIA_S: f32 = 0.36;
 
 // ───────────────────── evolução das habilidades ────────────────────────
 

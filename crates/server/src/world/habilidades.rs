@@ -236,6 +236,7 @@ impl GameWorld {
         s.casting_until = agora + skill.impacto_em() + shared::skills::RECUPERACAO_S;
         s.casting_skill_id = skill_id;
         s.casting_started_at_s = agora;
+        s.casting_impacto_em = skill.impacto_em();
         s.casting_mp_paid = skill.custo_mp as f32;
         s.casting_st_paid = 0.0;
         s.cast_movement_ticks = 0;

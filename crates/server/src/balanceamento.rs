@@ -1805,6 +1805,46 @@ mod testes {
     ///   3. ESQUIVA + pocao, dois niveis abaixo: pelo menos 3 dos 4 conjuntos
     ///      ainda vencem;
     ///   4. ESQUIVA sem pocao: so' impresso (e' pra ser apertado).
+    /// ESQUIVAR DEPOIS DE ACERTAR NÃO CUSTA A SKILL.
+    ///
+    /// O dono: "com skills ativas é mais difícil de desviar, porque as skills
+    /// são lentas de lançar". A trava vai até `impacto_em() + RECUPERACAO_S`,
+    /// e a segunda metade dela é recuperação — o golpe já saiu. Mover ali
+    /// cancelava assim mesmo.
+    ///
+    /// Era errado dos dois lados, e o segundo é o que ninguém veria: o
+    /// cancelamento devolve MP e limpa a espera, então bater e dar um passo
+    /// devolvia a skill na hora. O teste tranca os dois.
+    #[test]
+    fn mover_depois_do_impacto_nao_cancela() {
+        use crate::world::{cancela_por_movimento, CARENCIA_DO_CANCEL_S};
+        // Skill de carga (o Barril da pistola: impacto em 0,4).
+        const IMPACTO: f32 = 0.4;
+        assert!(
+            !cancela_por_movimento(0.1, IMPACTO),
+            "cancelou dentro da carência: quem já andava não conseguiria conjurar"
+        );
+        assert!(
+            cancela_por_movimento(CARENCIA_DO_CANCEL_S + 0.01, IMPACTO),
+            "não cancelou ANTES do impacto, que é quando cancelar faz sentido"
+        );
+        assert!(
+            !cancela_por_movimento(IMPACTO, IMPACTO),
+            "cancelou no instante do impacto"
+        );
+        assert!(
+            !cancela_por_movimento(0.6, IMPACTO),
+            "cancelou na recuperação: o golpe já tinha saído"
+        );
+        // INSTANTÂNEA: o dano sai em t=0, então nunca há o que cancelar.
+        for idade in [0.0, 0.3, 0.35, 1.0] {
+            assert!(
+                !cancela_por_movimento(idade, 0.0),
+                "skill instantânea cancelada em {idade}s"
+            );
+        }
+    }
+
     #[test]
     fn metas_dos_chefes() {
         let t0 = std::time::Instant::now();

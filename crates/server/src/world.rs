@@ -809,6 +809,27 @@ pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
 
 /// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
 pub(crate) const REDUCAO_DO_ESCUDO: f32 = 0.40;
+/// Carencia antes de o movimento poder cancelar um cast.
+///
+/// Quem ja' estava andando quando apertou a skill nao pode cancelar no mesmo
+/// instante — seria impossivel conjurar em movimento.
+pub(crate) const CARENCIA_DO_CANCEL_S: f32 = 0.3;
+
+/// Mover cancela o cast agora?
+///
+/// So' ANTES do impacto. A trava do corpo vai ate' `impacto_em() +
+/// RECUPERACAO_S`, entao a segunda metade dela e' recuperacao — o golpe ja'
+/// saiu, e nao ha' o que cancelar. Cancelar ali era errado dos dois lados: o
+/// jogador que saia de baixo de um telegrafico DEPOIS de acertar perdia a
+/// skill, e ao mesmo tempo o cancelamento devolvia MP e limpava a espera de
+/// uma skill que ja' tinha dado dano — bastava bater e dar um passo pra t3-la
+/// de volta na hora.
+///
+/// Skill instantanea nunca cancela: o dano sai em t=0.
+pub(crate) fn cancela_por_movimento(idade_s: f32, impacto_em: f32) -> bool {
+    idade_s >= CARENCIA_DO_CANCEL_S && idade_s < impacto_em
+}
+
 /// A katana devolve em vida esta fracao do dano do golpe basico.
 ///
 /// E' o que segura quem corta de perto sem escudo, e contra bicho comum e' a
@@ -1689,6 +1710,12 @@ pub struct Session {
     /// cancel-por-movimento (player que clica skill enquanto andava nao
     /// cancela de imediato — tem 0.3s pra parar).
     pub casting_started_at_s: f32,
+    /// Quanto depois do inicio o golpe da skill SAI (`Skill::impacto_em`).
+    ///
+    /// Guardado porque o cancelamento por movimento precisa saber se o dano
+    /// ja' aconteceu — depois do impacto nao ha' o que cancelar, so' o que
+    /// punir. Ver o cancel-por-movimento.
+    pub casting_impacto_em: f32,
     /// Ticks consecutivos com `dir != 0` durante cast. Cast cancela so'
     /// depois de >= 2 ticks pra evitar race: na tick que o player toma
     /// hit, `hurt_until` ainda nao foi setado (damage_events roda DEPOIS
@@ -6950,6 +6977,7 @@ impl GameWorld {
                 gesto_skill_ordem: 0,
                 muralha_ate: 0.0,
                 casting_started_at_s: 0.0,
+                casting_impacto_em: 0.0,
                 cast_movement_ticks: 0,
                 pk_mode_on: false,
                 faction: shared::Faction::default(),
@@ -9264,7 +9292,20 @@ impl GameWorld {
             // dir, descartando o cancelamento.
             if casting && session.casting_skill_id != 0 && session.cast_movement_ticks >= 2 {
                 let cast_age = self.sim_time_s - session.casting_started_at_s;
-                if cast_age >= 0.3 {
+                // DEPOIS DO IMPACTO NAO SE CANCELA MAIS NADA.
+                //
+                // A trava vai ate' `impacto_em() + RECUPERACAO_S`, entao a
+                // segunda metade dela e' RECUPERACAO: o golpe ja' saiu. Mover
+                // ali cancelava assim mesmo, e isso era errado dos dois lados
+                // — punia quem saiu de baixo de um telegrafico DEPOIS de ter
+                // acertado, e ao mesmo tempo devolvia MP e limpava a espera de
+                // uma skill que ja' tinha dado dano (bastava bater e dar um
+                // passo pra t3-la de volta na hora).
+                //
+                // O dono: "com skills ativas e' mais dificil de desviar". Esta
+                // e' a parte da trava que era so' castigo, e ela sai sem mexer
+                // em dano nenhum.
+                if cancela_por_movimento(cast_age, session.casting_impacto_em) {
                     let cancelled_skill = session.casting_skill_id;
                     let mp_max = session.stats.mp_max as f32;
                     let st_max = session.stats.stamina_max as f32;

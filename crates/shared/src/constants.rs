@@ -774,9 +774,18 @@ pub const fn arma_magica(item_id: u16) -> bool {
 /// O peso da armadura (docs/COMBATE.md): leve da' dano e cobra resistencia,
 /// pesada o contrario, media e' o meio. Devolve (multiplicador de dano,
 /// reducao de dano somada). Sem armadura conta como media.
+/// FRAGILIDADE COMPRA DANO, e antes ela quase não comprava nada.
+///
+/// O dono: "quero fragilidade compra dano". A leve dava +10% e a pesada −10%:
+/// vinte pontos percentuais separando quem morre em dois golpes de quem tem
+/// escudo. A simulação mostrava o resultado disso — a pistola, de armadura
+/// leve, era ao mesmo tempo a mais frágil (caía a 51% de vida esquivando tudo
+/// no Colosso Maior) E mais lenta que a katana, que é de armadura média.
+///
+/// Ser o canhão de vidro tem que valer o vidro.
 pub fn peso_da_armadura(item_id: u16) -> (f32, f32) {
     match item_id {
-        item_id::ARMADURA_LEVE => (1.10, 0.0),
+        item_id::ARMADURA_LEVE => (1.28, 0.0),
         item_id::ARMADURA_PESADA => (0.90, 0.10),
         _ => (1.0, 0.0),
     }
