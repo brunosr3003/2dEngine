@@ -239,6 +239,13 @@ struct Eu {
     /// prazo fazia ele voltar a cada dez minutos pra redescobrir a mesma
     /// coisa, e um jogador não faz isso.
     impossiveis: std::collections::HashSet<u16>,
+    /// O rumo da caminhada atual e quantos saltos ainda faltam nele.
+    ///
+    /// Sem rumo, o vagar virava caminhada aleatória e o bot não saía de um
+    /// quadrado de 20 unidades em volta do porto — justamente onde o mundo NÃO
+    /// põe bicho. Ver o ramo de vagar.
+    rumo_do_vagar: Option<glam::Vec2>,
+    vagares_no_rumo: u32,
     /// Contador do empurrão até o NÓ. Ver `empurra_no`.
     no_parado: u32,
     dist_do_no: f32,
@@ -2518,6 +2525,9 @@ async fn decide(
             // o raio pra 25 sem voltar aqui: a condição virou impossível e o
             // desencalhe nunca disparou — zero em dez minutos, com 83 vagares
             // falhando. Número solto que espelha outro número é dívida.
+            // Rota não saiu: o rumo pode estar dando no mar ou numa parede.
+            // Troca de rumo no próximo salto, além de ir na mão agora.
+            eu.vagares_no_rumo = 0;
             if sobrou > LONGE * 0.8 {
                 eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
                 eu.empurrao_ate = Some(Instant::now() + Duration::from_secs(3));
@@ -2532,17 +2542,35 @@ async fn decide(
             )));
             return Ok(());
         }
-        eu.vagou = eu.vagou.wrapping_add(1);
-        // O `%` sobre o contador é um sorteio bom o bastante: não precisa de
-        // aleatoriedade boa, precisa de direções diferentes a cada vez.
-        let volta = (eu.vagou as f32) * 2.399_963_2;
-        // VINTE E CINCO, e não quarenta e cinco. Ponto longe demais cai no mar
-        // ou do outro lado de uma parede, e aí o servidor não traça rota
-        // nenhuma — "não chegou (parou a 45u)" era literal: o bot não dava um
-        // passo. Perto é mais fácil de alcançar, e o que se procura (bicho)
-        // está espalhado, não num lugar só.
-        let longe = LONGE;
-        let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
+        // VAGAR É CAÇAR, E CAÇAR É IR EMBORA DA CIDADE.
+        //
+        // Direções sorteadas a cada salto davam uma caminhada aleatória: em
+        // quinze minutos os bots andaram 318 vezes e não saíram de um quadrado
+        // de 20 unidades em volta do porto — onde NÃO NASCE BICHO, porque o
+        // mundo afasta as hordas da cidade de propósito
+        // (`MOB_LONGE_DA_CIDADE_UN`). Resultado medido: 343 ataques por minuto
+        // enquanto havia missão, e ZERO nos quinze minutos seguintes ao
+        // momento em que todas as missões da ilha se esgotaram.
+        //
+        // Agora ele escolhe um rumo e ANDA NELE por vários saltos. Uma
+        // caminhada com rumo sai do lugar; uma caminhada aleatória, não — e é
+        // sair do lugar que encontra bicho.
+        const SALTOS_POR_RUMO: u32 = 8;
+        if eu.vagares_no_rumo == 0 || eu.rumo_do_vagar.is_none() {
+            eu.vagou = eu.vagou.wrapping_add(1);
+            // O `%` sobre o contador é um sorteio bom o bastante: não precisa
+            // de aleatoriedade boa, precisa de rumos diferentes a cada vez.
+            let volta = (eu.vagou as f32) * 2.399_963_2;
+            eu.rumo_do_vagar = Some(glam::Vec2::new(volta.cos(), volta.sin()));
+            eu.vagares_no_rumo = SALTOS_POR_RUMO;
+        }
+        eu.vagares_no_rumo -= 1;
+        let rumo = eu.rumo_do_vagar.unwrap_or(glam::Vec2::X);
+        // VINTE E CINCO por salto, e não quarenta e cinco. Ponto longe demais
+        // cai no mar ou do outro lado de uma parede, e aí o servidor não traça
+        // rota nenhuma. Oito saltos de 25 no mesmo rumo dão 200 unidades de
+        // caminhada, que é o que tira o bot da orla da cidade.
+        let alvo = eu.pos + rumo * LONGE;
         eu.vagando_para = Some((alvo, Instant::now()));
         ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
         return Ok(());
