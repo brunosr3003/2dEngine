@@ -997,9 +997,14 @@ impl DungeonUi {
     /// A linha de missao "Completar ..." entre a faixa e a porta. Tocar liga
     /// e desliga o AUTO DUNGEON.
     fn missao_rect() -> Rect {
+        Self::missao_rect_em(&crate::hud_layout::atual())
+    }
+
+    /// Fora do desenho pra poder ser medida junto com o relatório — ver
+    /// `o_relatorio_da_dungeon_fica_na_coluna_da_esquerda`.
+    fn missao_rect_em(z: &crate::hud_layout::Zonas) -> Rect {
         // No lugar do rastreador de missoes: dentro da dungeon a missao E' a
         // dungeon, e as missoes normais nem aparecem (pedido do dono).
-        let z = crate::hud_layout::atual();
         Rect::new(
             z.rastreador.x,
             z.rastreador.y,
@@ -1008,22 +1013,53 @@ impl DungeonUi {
         )
     }
 
-    /// (faixa do alto, porta de sair, botao de reviver).
+    /// (relatorio da dungeon, porta de sair, botao de reviver).
+    ///
+    /// NA COLUNA DA ESQUERDA, logo abaixo da linha de missão — e não mais
+    /// centrado no alto da tela.
+    ///
+    /// O dono: "na dungeon os status de andar etc, o relatório dela no geral,
+    /// tem que ficar na lateral, no lugar onde ficam as infos da Ilha Mágica;
+    /// lá em cima é bem ruim". É a mesma faixa da tarja da ilha, e pelo mesmo
+    /// motivo: andar, tempo e grupo se leem junto do que se está fazendo, e
+    /// no alto do meio eles disputavam o lugar onde o olho procura o alvo.
+    ///
+    /// Cabe: dentro da dungeon o rastreador vira a linha de missão (40 de
+    /// altura contra os ~300 do rastreador), então a coluna fica com o vão
+    /// inteiro livre até os avisos.
     fn rects_da_instancia() -> (Rect, Rect, Rect) {
-        let f = estilo::fator_texto();
-        let seguro = crate::hud_layout::tela_segura();
-        let w = (540.0 * f).min(seguro.w - 32.0);
+        Self::rects_da_instancia_em(
+            &crate::hud_layout::atual(),
+            crate::hud_layout::tela_segura(),
+            estilo::fator_texto(),
+        )
+    }
+
+    fn rects_da_instancia_em(
+        z: &crate::hud_layout::Zonas,
+        seguro: Rect,
+        f: f32,
+    ) -> (Rect, Rect, Rect) {
+        let missao = Self::missao_rect_em(z);
         let faixa = Rect::new(
-            seguro.center().x - w * 0.5,
-            seguro.y + 104.0 * f,
-            w,
-            56.0 * f,
+            missao.x,
+            missao.y + missao.h + 6.0 * z.s,
+            missao.w,
+            58.0 * z.s,
         );
+        // O SAIR ancora na direita da faixa, e não no meio: à esquerda fica o
+        // texto, que muda de tamanho a cada andar — botão que anda é botão
+        // que se erra.
+        // PISO EM PIXELS CRUS. `area_de_toque` cresce o alvo até o dedo, mas
+        // com teto (+14): numa tela de escala 0,7 os 34 viravam 24, e nem com
+        // o crescimento chegavam aos 44 pt da Apple. Foi o teste que pegou.
+        let alto = (34.0 * z.s).max(34.0);
+        let larg = (128.0 * z.s).max(112.0).min(faixa.w);
         let porta = Rect::new(
-            faixa.center().x - 60.0 * f,
-            faixa.y + faixa.h + 6.0 * f,
-            120.0 * f,
-            34.0 * f,
+            faixa.x + faixa.w - larg,
+            faixa.y + faixa.h + 6.0 * z.s,
+            larg,
+            alto,
         );
         let reviver = Rect::new(
             seguro.center().x - 130.0 * f,
@@ -1039,6 +1075,11 @@ impl DungeonUi {
         let f = estilo::fator_texto();
         let (faixa, porta, reviver) = Self::rects_da_instancia();
         estilo::painel(faixa);
+        // O texto da faixa mede em ESCALA DE LAYOUT, como o retângulo: a
+        // faixa passou a sair de `missao_rect` (que é layout), e misturar o
+        // fator de texto aqui faria a segunda linha cair fora dela nas telas
+        // em que os dois não batem.
+        let fl = crate::hud_layout::atual().s.max(0.5);
         let andar = if i.andar >= i.andares {
             "Chefe".to_string()
         } else {
@@ -1051,9 +1092,9 @@ impl DungeonUi {
         );
         estilo::texto_ajustado(
             &titulo,
-            faixa.x + 12.0 * f,
-            faixa.y + 22.0 * f,
-            faixa.w - 24.0 * f,
+            faixa.x + 12.0 * fl,
+            faixa.y + 23.0 * fl,
+            faixa.w - 24.0 * fl,
             15,
             estilo::OURO,
         );
@@ -1078,9 +1119,9 @@ impl DungeonUi {
         };
         estilo::texto_ajustado(
             &linha,
-            faixa.x + 12.0 * f,
-            faixa.y + 44.0 * f,
-            faixa.w - 24.0 * f,
+            faixa.x + 12.0 * fl,
+            faixa.y + 45.0 * fl,
+            faixa.w - 24.0 * fl,
             13,
             cor,
         );
@@ -1454,4 +1495,51 @@ mod testes {
     fn mmss_formata() {
         assert_eq!(mmss(125), "02:05");
     }
+    /// O RELATÓRIO DA DUNGEON FICA NA COLUNA DA ESQUERDA.
+    ///
+    /// O dono: "na dungeon os status de andar etc, o relatório dela no geral,
+    /// tem que ficar na lateral, no lugar onde ficam as infos da Ilha Mágica;
+    /// lá em cima é bem ruim".
+    ///
+    /// O teste mede as três coisas que o lugar novo tem que respeitar: ficar
+    /// colado na linha de missão, não descer em cima dos avisos, e não
+    /// encostar em nada do HUD. A versão antiga ficava centrada no alto —
+    /// mover sem medir trocaria um estorvo por outro.
+    #[test]
+    fn o_relatorio_da_dungeon_fica_na_coluna_da_esquerda() {
+        for (sw, sh) in [(1920.0f32, 1080.0f32), (2400.0, 1080.0), (1280.0, 800.0)] {
+            let z = crate::hud_layout::zonas(sw, sh);
+            let seguro = Rect::new(0.0, 0.0, sw, sh);
+            let missao = DungeonUi::missao_rect_em(&z);
+            let (faixa, porta, _) = DungeonUi::rects_da_instancia_em(&z, seguro, 1.0);
+
+            assert!(
+                (faixa.x - missao.x).abs() < 0.01,
+                "{sw}×{sh}: a faixa não está alinhada com a linha de missão"
+            );
+            assert!(
+                faixa.y >= missao.y + missao.h - 0.01,
+                "{sw}×{sh}: a faixa subiu em cima da linha de missão"
+            );
+            assert!(
+                faixa.x + faixa.w <= z.rastreador.x + z.rastreador.w + 0.01,
+                "{sw}×{sh}: a faixa passa da coluna da esquerda"
+            );
+            // Nem ela nem o Sair podem cair em cima dos avisos.
+            assert!(
+                porta.y + porta.h <= z.avisos.y + 0.01,
+                "{sw}×{sh}: o Sair {porta:?} desce em cima dos avisos {:?}",
+                z.avisos
+            );
+            assert!(
+                porta.x >= faixa.x - 0.01 && porta.x + porta.w <= faixa.x + faixa.w + 0.01,
+                "{sw}×{sh}: o Sair saiu da largura da faixa"
+            );
+            assert!(
+                crate::ui::area_de_toque(porta).h >= 44.0,
+                "{sw}×{sh}: o Sair é menor que um dedo"
+            );
+        }
+    }
+
 }
