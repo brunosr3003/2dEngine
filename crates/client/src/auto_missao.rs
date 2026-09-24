@@ -76,7 +76,31 @@ pub struct Ctx {
     pub dialogo_aberto: bool,
     pub combate_ativo: bool,
     pub coleta_ativa: bool,
+    /// Quanto do objetivo já foi feito. É o sinal de "está andando" — sem
+    /// ele, um auto que gira sem colher nada é indistinguível de um que
+    /// colhe.
+    pub progresso: u32,
 }
+
+/// Quanto tempo PARADO no mesmo lugar conta como travado.
+///
+/// O dono: "fico travado toda hora nas casas", "o auto missão na verdade
+/// trava em diversas situações". Todas as queixas são o mesmo defeito: quando
+/// um passo não completa, NADA acontece — e o retry que existia só disparava
+/// com a viagem desligada (`!c.viajando`). Preso numa quina de casa, a viagem
+/// continua "ativa" e o corpo empurra a parede para sempre.
+///
+/// Três segundos é curto o bastante pra não dar tempo de a pessoa notar, e
+/// longo o bastante pra não refazer rota a cada tropeço.
+const TRAVADO_S: f64 = 3.0;
+/// Quanto o corpo precisa andar pra não contar como parado.
+const ANDOU_U: f32 = 1.5;
+/// Sem o objetivo avançar por tanto tempo, religa o auto (coleta ou combate).
+///
+/// O dono: "quando eu tô coletando árvore e a árvore acaba, trava o auto
+/// missão; só volta quando eu ando". Exato: o religar exigia `!coleta_ativa`,
+/// e com o nó esgotado a coleta segue "ativa" sem colher nada.
+const SEM_AVANCO_S: f64 = 6.0;
 
 #[derive(Debug, Default)]
 pub struct AutoMissao {
@@ -85,6 +109,39 @@ pub struct AutoMissao {
     etapa: Option<Etapa>,
     destino: Option<Destino>,
     desde: f64,
+    /// Onde o corpo estava quando começou a ficar parado, e desde quando.
+    onde: Option<Vec2>,
+    parado_desde: f64,
+    /// Progresso do objetivo na última vez que ele mudou, e quando.
+    progresso: u32,
+    progresso_desde: f64,
+}
+
+impl AutoMissao {
+    /// O corpo está parado há mais de `TRAVADO_S`?
+    fn travado(&self, c: &Ctx) -> bool {
+        c.agora - self.parado_desde > TRAVADO_S
+    }
+
+    /// O objetivo parou de avançar?
+    fn sem_avanco(&self, c: &Ctx) -> bool {
+        c.agora - self.progresso_desde > SEM_AVANCO_S
+    }
+
+    /// Uma vez por quadro: atualiza os dois relógios de "nada mudou".
+    fn acompanha(&mut self, c: &Ctx) {
+        match self.onde {
+            Some(o) if o.distance(c.eu) < ANDOU_U => {}
+            _ => {
+                self.onde = Some(c.eu);
+                self.parado_desde = c.agora;
+            }
+        }
+        if c.progresso != self.progresso {
+            self.progresso = c.progresso;
+            self.progresso_desde = c.agora;
+        }
+    }
 }
 
 impl AutoMissao {
@@ -103,6 +160,10 @@ impl AutoMissao {
             etapa: Some(Etapa::PedirDestino),
             destino: None,
             desde: agora,
+            onde: None,
+            parado_desde: agora,
+            progresso: 0,
+            progresso_desde: agora,
         };
     }
 
@@ -172,6 +233,7 @@ impl AutoMissao {
 
     /// Um quadro. Devolve o que o `main` deve fazer.
     pub fn passo(&mut self, c: Ctx) -> Vec<Acao> {
+        self.acompanha(&c);
         let (Some(id), Some(etapa)) = (self.quest, self.etapa) else {
             return Vec::new();
         };
@@ -241,8 +303,17 @@ impl AutoMissao {
                             self.etapa = Some(Etapa::Falando);
                         }
                     }
-                } else if !c.viajando && c.agora - self.desde >= RELIGA_S {
+                } else if (!c.viajando && c.agora - self.desde >= RELIGA_S)
+                    // TRAVADO CONTA MESMO VIAJANDO.
+                    //
+                    // Esta era a falha: preso na quina de uma casa, a viagem
+                    // segue ativa e o `!c.viajando` nunca deixava tentar de
+                    // novo. O corpo empurrava a parede até o jogador mexer no
+                    // direcional — "fico travado toda hora nas casas".
+                    || self.travado(&c)
+                {
                     self.desde = c.agora;
+                    self.parado_desde = c.agora;
                     // NPC: pare do lado dele, nao em cima.
                     let alvo = if npc {
                         d.pos + (c.eu - d.pos).normalize_or_zero() * 2.0
@@ -268,11 +339,28 @@ impl AutoMissao {
                     saida.push(Acao::PararAutos);
                     self.pedir_de_novo(c.agora);
                 } else if c.agora - self.desde > RELIGA_S {
-                    if etapa == Etapa::Combatendo && !c.combate_ativo {
+                    // O AUTO "ATIVO" NÃO PROVA QUE ALGO ESTÁ ACONTECENDO.
+                    //
+                    // Quando o nó de coleta esgota, a coleta continua ligada e
+                    // gira no vazio: o `!c.coleta_ativa` nunca era verdade e o
+                    // passo nunca religava. O dono: "a árvore acaba e trava; só
+                    // volta quando eu ando". Então o gatilho passa a ser
+                    // também O OBJETIVO NÃO ANDAR, que é o que importa.
+                    let parado = self.sem_avanco(&c);
+                    if etapa == Etapa::Combatendo && (!c.combate_ativo || parado) {
                         self.desde = c.agora;
+                        self.progresso_desde = c.agora;
+                        // Sem `PararAutos` aqui: o auto combate mira uma
+                        // ÁREA, não um nó, então religar por cima dele não
+                        // deixa nada preso — e desligar antes faria o
+                        // personagem largar o alvo que já estava batendo.
                         saida.push(Acao::LigarCombate(d.pos));
-                    } else if etapa == Etapa::Coletando && !c.coleta_ativa {
+                    } else if etapa == Etapa::Coletando && (!c.coleta_ativa || parado) {
                         self.desde = c.agora;
+                        self.progresso_desde = c.agora;
+                        // PARA ANTES DE LIGAR: religar por cima de uma coleta
+                        // presa no nó velho a mantém no nó velho.
+                        saida.push(Acao::PararAutos);
                         saida.push(Acao::LigarColeta(d.pos));
                     }
                 }
@@ -334,6 +422,7 @@ mod tests {
             dialogo_aberto: false,
             combate_ativo: false,
             coleta_ativa: false,
+            progresso: 0,
         }
     }
 
@@ -536,4 +625,119 @@ mod tests {
         a.parar();
         assert!(!a.ativo());
     }
+    /// TRAVADO NUMA CASA NÃO É "ESTÁ INDO".
+    ///
+    /// O dono: "fico travado toda hora nas casas" e "o auto missão na verdade
+    /// trava em diversas situações". O retry só disparava com a viagem
+    /// DESLIGADA, e preso numa quina a viagem segue ativa: o corpo empurrava
+    /// a parede até a pessoa mexer no direcional.
+    ///
+    /// O teste mede os dois lados: parado com viagem ativa tem que refazer a
+    /// rota, e ANDANDO não pode refazer — senão o auto missão recalcularia o
+    /// caminho a cada três segundos de caminhada normal.
+    #[test]
+    fn parado_com_viagem_ativa_refaz_a_rota() {
+        let mut a = AutoMissao::default();
+        a.iniciar(501, "x".into(), 0.0);
+        pede(&mut a, 0.0);
+        a.destino_recebido(501, destino_tipo::COMBATE, Vec2::new(100.0, 0.0), 8.0, None, 0.1);
+        assert_eq!(a.etapa(), Some(Etapa::Indo));
+
+        // Viajando e PARADO no mesmo ponto: passado o prazo, refaz.
+        let mut c = ctx(Vec2::ZERO, 0.2);
+        c.viajando = true;
+        assert!(a.passo(c).is_empty(), "cedo demais pra chamar de travado");
+        let mut c = ctx(Vec2::ZERO, 0.2 + TRAVADO_S + 0.1);
+        c.viajando = true;
+        let acoes = a.passo(c);
+        assert!(
+            acoes.iter().any(|x| matches!(x, Acao::Viajar(_))),
+            "parado com viagem ativa não refez a rota: {acoes:?}"
+        );
+
+        // ANDANDO não refaz: o relógio de parado zera a cada passo.
+        let mut a2 = AutoMissao::default();
+        a2.iniciar(501, "x".into(), 0.0);
+        pede(&mut a2, 0.0);
+        a2.destino_recebido(501, destino_tipo::COMBATE, Vec2::new(100.0, 0.0), 8.0, None, 0.1);
+        let mut t = 0.2;
+        let mut andou = 0.0f32;
+        while t < 20.0 {
+            andou += 3.0;
+            let mut c = ctx(Vec2::new(andou, 0.0), t);
+            c.viajando = true;
+            let acoes = a2.passo(c);
+            assert!(
+                !acoes.iter().any(|x| matches!(x, Acao::Viajar(_))),
+                "refez a rota de quem está andando (t={t})"
+            );
+            t += 1.0;
+        }
+    }
+
+    /// NÓ ESGOTADO: O AUTO "ATIVO" NÃO PROVA QUE ALGO ACONTECE.
+    ///
+    /// O dono: "quando eu tô coletando árvore e a árvore acaba, trava o auto
+    /// missão; só volta quando eu ando, e geralmente já até acabou a missão".
+    /// O religar exigia `!coleta_ativa`, e com o nó esgotado a coleta segue
+    /// ligada girando no vazio.
+    #[test]
+    fn coleta_sem_avanco_religa_mesmo_ativa() {
+        let mut a = AutoMissao::default();
+        a.iniciar(501, "x".into(), 0.0);
+        pede(&mut a, 0.0);
+        a.destino_recebido(501, destino_tipo::COLETA, Vec2::ZERO, 8.0, None, 0.1);
+        let mut c = ctx(Vec2::ZERO, 0.2);
+        let acoes = a.passo(c);
+        assert!(acoes.contains(&Acao::LigarColeta(Vec2::ZERO)));
+        assert_eq!(a.etapa(), Some(Etapa::Coletando));
+
+        // Coleta LIGADA e progresso PARADO: passado o prazo, religa.
+        let mut t = 0.3;
+        let mut religou = false;
+        while t < 0.3 + SEM_AVANCO_S + RELIGA_S + 2.0 {
+            c = ctx(Vec2::ZERO, t);
+            c.coleta_ativa = true;
+            c.progresso = 3;
+            let acoes = a.passo(c);
+            if acoes.contains(&Acao::LigarColeta(Vec2::ZERO)) {
+                assert!(
+                    acoes.contains(&Acao::PararAutos),
+                    "religou sem parar antes: fica presa no nó velho"
+                );
+                religou = true;
+                break;
+            }
+            t += 0.5;
+        }
+        assert!(religou, "a coleta travada no nó esgotado nunca religou");
+    }
+
+    /// E COLHENDO DE VERDADE, NÃO MEXE.
+    ///
+    /// O outro lado do mesmo teste: religar uma coleta que está rendendo
+    /// jogaria fora o nó bom a cada seis segundos.
+    #[test]
+    fn coleta_que_rende_nao_e_interrompida() {
+        let mut a = AutoMissao::default();
+        a.iniciar(501, "x".into(), 0.0);
+        pede(&mut a, 0.0);
+        a.destino_recebido(501, destino_tipo::COLETA, Vec2::ZERO, 8.0, None, 0.1);
+        let _ = a.passo(ctx(Vec2::ZERO, 0.2));
+        let mut t = 0.3;
+        let mut p = 0u32;
+        while t < 40.0 {
+            p += 1;
+            let mut c = ctx(Vec2::ZERO, t);
+            c.coleta_ativa = true;
+            c.progresso = p;
+            let acoes = a.passo(c);
+            assert!(
+                !acoes.contains(&Acao::PararAutos),
+                "interrompeu uma coleta que estava rendendo (t={t}, progresso={p})"
+            );
+            t += 1.0;
+        }
+    }
+
 }
