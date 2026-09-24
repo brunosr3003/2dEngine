@@ -4886,6 +4886,11 @@ impl GameWorld {
         if shared::arena::e_arena(&self.zona) {
             self.spawn_zones.clear();
             self.vagas_de_chefe.clear();
+            // E AS ÁREAS DE CHEFE DO MAPFILE TAMBÉM, que eu tinha deixado de
+            // fora. O log entregou: "boss area #0: SPAWN lv25 Lobo Grande" na
+            // zona `dungeon`. É o mesmo descuido de antes — limpei duas das
+            // três listas e achei que a ilhota estava vazia.
+            self.boss_areas.clear();
             return;
         }
         let comuns = zonas_comuns_da_ilha(ilha, def, centro_jogador);

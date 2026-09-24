@@ -37,7 +37,7 @@ use crate::terreno::{Bioma, DefIlha};
 /// O nome da zona. Um processo com `MMO_ZONA=dungeon` a serve.
 pub const ZONA: &str = "dungeon";
 
-/// Raio da ilhota, em BLOCOS. 420 blocos = 210 unidades.
+/// Raio da ilhota, em BLOCOS. 320 blocos = 160 unidades.
 ///
 /// As instâncias são separadas por `Instancia(id)` e não se veem, então o
 /// tamanho não cresce com o número de salas. Quem manda no tamanho é OUTRA
@@ -50,9 +50,13 @@ pub const ZONA: &str = "dungeon";
 /// conserto por tamanho: a conta é a mesma em qualquer escala.
 ///
 /// O que conserta é a ilhota continuar SECA além do platô. Por isso há três
-/// raios, e não um: 130 de chão plano (onde os sítios cabem), 190 de terra
+/// raios, e não um: 90 de chão plano (onde os sítios cabem), 145 de terra
 /// firme (onde o andar inteiro cabe), e este, a ilha toda.
-pub const RAIO_BLOCOS: i32 = 420;
+///
+/// ENCOLHEU de 420 a pedido do dono: "a arena de dungeon tá desnecessariamente
+/// grande". Estava dimensionada pra quatro sítios espalhados numa planície
+/// larga; quatro sítios a 70 u de distância cabem num platô bem menor.
+pub const RAIO_BLOCOS: i32 = 320;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///
@@ -77,17 +81,18 @@ pub const ALTURA: f32 = 16.0;
 /// aumentar o raio nem trocar a semente mudava isso: o ruído não faz planície
 /// por encomenda.
 ///
-/// Desenhar resolve por construção. 130 u de raio plano dão folga de sobra
-/// pros quatro sítios a 70 u, e `cabem_os_quatro_sitios_do_rodizio` confere.
-pub const RAIO_PLANO: f32 = 130.0;
+/// Desenhar resolve por construção. 90 u de raio plano bastam pros quatro
+/// sítios a 70 u — `cabem_os_quatro_sitios_do_rodizio` confere.
+pub const RAIO_PLANO: f32 = 90.0;
 
 /// Onde o chão acaba, em unidades. Entre ele e `RAIO_PLANO` desce a rampa.
 ///
-/// Sessenta unidades de rampa, e isso NÃO é enfeite: o sítio de instância
-/// mais afastado fica a ~121 u do centro e o andar tem raio 55, então o piso
-/// dele chega a 176. Terra firme até 190 é o que impede a luta de acontecer
-/// em cima do mar. `o_andar_inteiro_cai_em_terra_firme` é quem confere.
-pub const RAIO_TERRA: f32 = 190.0;
+/// Cinquenta e cinco unidades de rampa, e isso NÃO é enfeite: o sítio de
+/// instância mais afastado fica perto da borda do platô e o andar tem raio 55,
+/// então o piso dele transborda. Terra firme bem além do platô é o que impede
+/// a luta de acontecer em cima do mar.
+/// `o_andar_inteiro_cai_em_terra_firme` é quem confere.
+pub const RAIO_TERRA: f32 = 145.0;
 
 /// O que há FORA da ilhota, em índice de bloco. Fundo, pra ler como mar.
 pub const NIVEL_FUNDO: i32 = -64;
@@ -345,14 +350,23 @@ mod testes {
             );
         }
     }
-    /// A ILHOTA NASCE, TEM CHÃO E NÃO TEM ENTULHO.
+    /// A ILHOTA NASCE, TEM CHÃO, TEM FLOR E QUASE NADA DE ENTULHO.
     ///
-    /// Três coisas que só se sabem montando o relevo de verdade: que ela
-    /// existe (a `def_da_zona` acha), que tem terra seca (uma ilhota toda
-    /// submersa passaria em todos os testes de número acima), e que não tem
-    /// recurso — estorvo na arena é o A* contornando espaço de luta.
+    /// O dono: "pode ser uma ilhota bem pequena com bem pouco recurso, só pra
+    /// ser visualmente agradável, e também com mais flores etc que pedra e
+    /// árvore".
+    ///
+    /// São três medidas, e cada uma pega um erro diferente:
+    ///
+    /// * **chão seco** — uma ilhota submersa passaria em todo teste de número;
+    /// * **quase nenhum estorvo** — não ZERO, que foi a primeira versão e
+    ///   estava errada: eu zerava os estorvos do servidor e o cliente
+    ///   continuava desenhando as árvores, então a ilhota parecia cheia e se
+    ///   atravessava andando. Agora a poda é na fonte, e o pouco que sobra
+    ///   barra de verdade;
+    /// * **mais forração que árvore** — que é o pedido, em número.
     #[test]
-    fn a_ilhota_tem_chao_seco_e_nenhum_estorvo() {
+    fn a_ilhota_tem_chao_flor_e_quase_nenhum_entulho() {
         let def = crate::terreno::def_da_zona(ZONA).expect("a zona existe");
         assert_eq!(def.zona, ZONA);
         let ilha = crate::terreno::Ilha::da_ilha(def);
@@ -360,9 +374,10 @@ mod testes {
         assert!(ilha.porto().is_none(), "a arena não devia ter porto");
 
         use crate::terreno::BLOCO;
-        let raio = (RAIO_BLOCOS / 2) as i32;
-        let (mut seco, mut estorvos) = (0, 0);
-        let passo = 8;
+        let ger = crate::terreno::Gerador::da_arena();
+        let raio = RAIO_BLOCOS / 2;
+        let (mut seco, mut estorvos, mut arvores, mut plantas) = (0, 0, 0, 0);
+        let passo = 4;
         let mut bz = -raio;
         while bz < raio {
             let mut bx = -raio;
@@ -372,6 +387,21 @@ mod testes {
                     seco += 1;
                     if ilha.estorvo_em(p, 0.1).is_some() {
                         estorvos += 1;
+                    }
+                    let topo = ger.bloco_em(bx, bz);
+                    if crate::terreno::arvore_da_coluna(
+                        def.bioma, bx, bz, topo, 0, &ger, false,
+                    )
+                    .is_some()
+                    {
+                        arvores += 1;
+                    }
+                    if crate::terreno::planta_da_coluna(
+                        def.bioma, bx, bz, topo, 0, &ger, false,
+                    )
+                    .is_some()
+                    {
+                        plantas += 1;
                     }
                 }
                 bx += passo;
@@ -386,6 +416,18 @@ mod testes {
             !ilha.agua(CHEGADA.x, CHEGADA.y),
             "a chegada da Arena caiu na água"
         );
-        assert_eq!(estorvos, 0, "a arena tem {estorvos} estorvos: virou mato");
+        // QUASE nenhum: até 2% das amostras secas. Mais que isso é mato, e
+        // mato numa arena é o A* contornando espaço de luta.
+        let teto = (seco as f32 * 0.02).ceil() as i32;
+        assert!(
+            estorvos <= teto,
+            "a arena tem {estorvos} estorvos em {seco} amostras (teto {teto}): virou mato"
+        );
+        // FLOR MANDA. É o pedido, e é o que faz a ilhota parecer um lugar em
+        // vez de um tabuleiro.
+        assert!(
+            plantas > arvores * 3,
+            "a arena tem {arvores} árvore(s) pra {plantas} forração(ões) — devia ser o contrário"
+        );
     }
 }

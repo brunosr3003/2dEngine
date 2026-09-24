@@ -1147,6 +1147,14 @@ pub fn arvore_da_coluna(
         0.5
     } else if ger.e_magica() {
         0.33
+    } else if ger.e_arena() {
+        // UM DÉCIMO na Arena. O dono: "pode ser uma ilhota bem pequena com bem
+        // pouco recurso, só pra ser visualmente agradável, e com mais flores
+        // etc que pedra e árvore".
+        //
+        // Não é zero: uma ilhota careca lê como chão de teste. Algumas árvores
+        // esparsas dão silhueta sem encher o chão de contorno pro A*.
+        0.10
     } else {
         1.0
     };
@@ -1216,6 +1224,12 @@ pub fn planta_da_coluna(
         0.25
     } else if ger.e_magica() {
         0.25
+    } else if ger.e_arena() {
+        // O DOBRO da forração na Arena, e de propósito: ela é o que sobra
+        // depois de tirar árvore e pedra, e é ela que faz a ilhota parecer um
+        // lugar em vez de um tabuleiro. Flor não barra passagem, então não
+        // custa nada ao A*.
+        2.0
     } else {
         1.0
     };
@@ -1418,6 +1432,12 @@ fn recurso_montanha_da_coluna(
     agua: bool,
     energia: bool,
 ) -> Option<Minerio> {
+    // NEM PEDRA NEM ENERGIA NA ARENA. O dono: "com mais flores etc que pedra e
+    // árvore". Minério é o estorvo mais gordo que existe e não tem o que fazer
+    // num saguão onde ninguém coleta.
+    if ger.e_arena() {
+        return None;
+    }
     if agua || ger.na_cidade(bx, bz) {
         return None;
     }
@@ -1621,10 +1641,17 @@ pub fn estorvos_da_coluna(
     saida: &mut Vec<Estorvo>,
 ) {
     let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
-    // A ARENA É LIMPA INTEIRA: estorvo ali é o A* contornando espaço de luta.
-    if ger.e_arena() {
-        return;
-    }
+    // A ARENA NÃO TEM MAIS EXCEÇÃO AQUI, e a que havia era um defeito.
+    //
+    // Eu tinha zerado os estorvos dela pra livrar o A*. Só que o CLIENTE
+    // desenha a vegetação direto de `arvore_da_coluna` e `minerio_da_coluna`,
+    // sem passar por aqui: o resultado era uma ilhota cheia de árvores e
+    // pedras que se atravessava andando — o pior dos dois mundos, e foi o que
+    // o dono viu ("populada de recurso").
+    //
+    // O conserto certo é na FONTE, e está lá: árvore a um décimo da densidade,
+    // minério e energia zerados, forração ao dobro. O que sobra é pouco e
+    // barra de verdade — o que se vê é o que se esbarra.
     // A ILHOTA DO COLOSSO É LIMPA. Ver `magica::sem_recursos`.
     //
     // O `e_magica` NÃO é redundante: `ilhota_em` responde por coordenada, e

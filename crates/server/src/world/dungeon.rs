@@ -292,7 +292,10 @@ impl GameWorld {
             sid,
             shared::arena::ZONA,
             chegada,
-            Some("Você entra na Arena."),
+            // A INSTRUÇÃO DE VOLTA VAI JUNTO COM A IDA. Quem chega aqui não
+            // tem barco nem portal, e descobrir sozinho onde fica a saída não
+            // é parte do jogo.
+            Some("Você entra na Arena. Para voltar, abra Dungeons e toque em Sair."),
             Some(shared::arena::DEF.nome),
         );
     }
@@ -468,6 +471,24 @@ impl GameWorld {
             }
             Pedido::ComprarEntrada => self.dg_comprar_entrada(sid),
             Pedido::Sair => {
+                // FORA DE INSTÂNCIA, "sair" é sair da ARENA.
+                //
+                // O dono: "não tô conseguindo sair da arena da dungeon". A
+                // única saída era um botão no cabeçalho de uma janela que ele
+                // precisava saber abrir — e quem chega por handoff não tem
+                // barco, nem portal, nem motivo pra procurar ali. Uma saída
+                // que depende de adivinhar onde ela está não é saída.
+                //
+                // Agora o mesmo "Sair" que fecha a dungeon leva de volta pra
+                // ilha de origem quando não há dungeon pra fechar.
+                let em_instancia = self
+                    .sessions
+                    .get(&sid)
+                    .is_some_and(|s| s.instancia != 0);
+                if self.na_arena() && !em_instancia {
+                    self.sair_da_arena(sid, "Você deixa a Arena.");
+                    return;
+                }
                 self.dg_sair(sid);
                 return;
             }
@@ -1007,6 +1028,19 @@ impl GameWorld {
         let destino = retorno.unwrap_or_else(|| self.porto());
         self.dg_teleportar(sid, destino);
         self.dg_avisar(sid, Aviso::Saiu);
+        // ACABOU A DUNGEON, E VOCÊ ESTÁ NUM SAGUÃO.
+        //
+        // O dono: "quando eu junto o saque, sai mas eu fico preso lá no mapa".
+        // Ele não estava travado — estava na ARENA, que não tem barco, nem
+        // porto, nem missão. Sair dela dependia de saber abrir a janela de
+        // Dungeons e achar um botão no cabeçalho.
+        //
+        // Então o próprio fim da dungeon diz onde está e como voltar, e o
+        // cliente usa este aviso pra reabrir a janela com a saída à mão.
+        if self.na_arena() {
+            self.dg_avisar(sid, Aviso::NaArena { dentro: true });
+            self.dg_texto(sid, true, "Você está na Arena. Toque em Sair para voltar.");
+        }
         self.save_pending = true;
     }
 

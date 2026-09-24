@@ -290,6 +290,13 @@ impl DungeonUi {
                 self.auto = false;
                 self.inst = None;
                 self.resultado = None;
+                // NA ARENA, A JANELA REABRE. Acabada a dungeon, o jogador cai
+                // num saguão sem barco e sem missão; deixar a tela limpa é
+                // deixá-lo procurando a saída. A janela que ele já conhece é
+                // onde a saída está.
+                if self.na_arena == Some(true) {
+                    self.aberto = true;
+                }
                 return vec![pedir(Pedido::Estado)];
             }
             Aviso::Correio { .. } => {}
