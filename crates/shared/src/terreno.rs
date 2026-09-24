@@ -1621,6 +1621,10 @@ pub fn estorvos_da_coluna(
     saida: &mut Vec<Estorvo>,
 ) {
     let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
+    // A ARENA É LIMPA INTEIRA: estorvo ali é o A* contornando espaço de luta.
+    if ger.e_arena() {
+        return;
+    }
     // A ILHOTA DO COLOSSO É LIMPA. Ver `magica::sem_recursos`.
     //
     // O `e_magica` NÃO é redundante: `ilhota_em` responde por coordenada, e
@@ -1719,6 +1723,11 @@ enum RelevoDesenhado {
     /// A ilhota de praia da colonia (`colonia::bloco_da_coluna`). A praca
     /// entra POR CIMA, pelo `aplainar` de sempre.
     Colonia,
+    /// O plato liso da Arena (`arena::bloco_da_coluna`). Sem cidade, sem
+    /// porto e sem ruido nenhum: la' o que se precisa e' de CHAO PLANO, e
+    /// relevo sorteado nao faz planicie por encomenda — com ele a ilhota
+    /// comportava dois sitios de instancia em vez dos quatro do rodizio.
+    Arena,
 }
 
 /// Move um CASCO: a regra da terra, ao contrario.
@@ -2063,6 +2072,17 @@ impl Gerador {
         matches!(self.desenhado, Some(RelevoDesenhado::Magica))
     }
 
+    /// Este gerador é o da ILHOTA DA DUNGEON?
+    ///
+    /// Pelo par semente+raio, e não por um campo novo: a arena usa o relevo
+    /// de Perlin comum (não é `RelevoDesenhado`, que significa "desenhado à
+    /// mão"), e acrescentar um `bool` obrigaria a tocar todos os construtores
+    /// do gerador pra marcar `false`. O par é fixo, é só desta zona, e está
+    /// declarado num lugar só (`arena::SEMENTE`).
+    pub fn e_arena(&self) -> bool {
+        self.semente == crate::arena::SEMENTE && self.raio_blocos == crate::arena::RAIO_BLOCOS
+    }
+
     /// Esta coluna cai numa PONTE da Ilha Mágica?
     ///
     /// Nada nasce ali: a ponte é estreita de propósito (é o gargalo do PvP) e
@@ -2110,6 +2130,28 @@ impl Gerador {
         // `novo` ja' procurou cidade e porto no relevo CRU, que a ilha magica
         // nao usa. Deixa-los ali daria uma praca aplainada sobre o mar e um
         // cais para lugar nenhum — visiveis na vila, que le' a cidade.
+        g.cidade = None;
+        g.porto = None;
+        g
+    }
+
+    /// A ILHOTA DA DUNGEON: relevo comum, sem cidade, porto nem recurso.
+    ///
+    /// Ela é a ilha de Perlin de sempre — nada desenhado, ao contrário da
+    /// mágica —, porque o que a arena precisa é de CHÃO PLANO, e o relevo
+    /// normal já produz sítios planos de sobra. O que sai é o que atrapalha:
+    ///
+    /// * cidade e porto seriam uma praça e um cais onde ninguém passa;
+    /// * o recurso vira estorvo, e estorvo na arena é o A* contornando o que
+    ///   deveria ser espaço de luta — a mesma razão da ilhota do Colosso.
+    pub fn da_arena() -> Self {
+        let mut g = Self::novo(
+            crate::arena::SEMENTE,
+            crate::arena::RAIO_BLOCOS,
+            Bioma::Floresta,
+            ESCALA_ALTURA,
+        );
+        g.desenhado = Some(RelevoDesenhado::Arena);
         g.cidade = None;
         g.porto = None;
         g
@@ -2163,6 +2205,9 @@ impl Gerador {
         if crate::magica::e_magica(def.zona) {
             return Self::da_ilha_magica();
         }
+        if crate::arena::e_arena(def.zona) {
+            return Self::da_arena();
+        }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
         let mut g = Self {
@@ -2196,6 +2241,12 @@ impl Gerador {
         // 1,25 milhao de colunas.
         if self.desenhado == Some(RelevoDesenhado::Magica) {
             return crate::magica::bloco_da_coluna(bx, bz);
+        }
+        // A ARENA tambem sai antes de tudo, e pelo mesmo motivo: e' desenhada,
+        // nao sorteada. Aplainar por cima do ruido seria pagar tres oitavas de
+        // fbm por coluna pra jogar fora o resultado.
+        if self.desenhado == Some(RelevoDesenhado::Arena) {
+            return crate::arena::bloco_da_coluna(bx, bz);
         }
         let cru = match self.desenhado {
             // A colonia e' desenhada, mas a PRACA continua sendo aplainada
@@ -4803,6 +4854,11 @@ pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
                 .collect()
         });
         return defs.iter().find(|d| d.zona == zona);
+    }
+    // A ARENA (zona da dungeon) também entra aqui, pelo mesmo motivo da
+    // mágica: todo caminho que monta relevo pergunta a esta função.
+    if crate::arena::e_arena(zona) {
+        return Some(&crate::arena::DEF);
     }
     ARQUIPELAGO.iter().find(|d| d.zona == zona)
 }

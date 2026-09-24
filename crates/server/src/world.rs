@@ -945,6 +945,23 @@ pub(crate) fn zonas_comuns_da_ilha(
     def: &shared::terreno::DefIlha,
     centro_jogador: Vec2,
 ) -> ZonasComuns {
+    // A ARENA NAO TEM BICHO SOLTO.
+    //
+    // Tudo o que se luta la' e' de INSTANCIA: nasce dentro do andar, com
+    // nivel do conteudo, e some com ele. Uma horda do relevo, com nivel da
+    // faixa da ilhota, ficaria vagando entre as instancias — visivel a quem
+    // esta' esperando, invisivel a quem esta' dentro, e ninguem entende por
+    // que levou dano no saguao.
+    //
+    // E' a mesma razao pela qual a ilhota do Colosso ficou sem recurso: numa
+    // arena, o que nao e' a luta atrapalha a luta.
+    if shared::arena::e_arena(def.zona) {
+        return ZonasComuns {
+            sitios: 0,
+            centros: Vec::new(),
+            zonas: Vec::new(),
+        };
+    }
     use shared::terreno::BLOCO;
     let raio_un = def.raio_blocos as f32 * BLOCO;
     let cidade = ilha.cidade();
@@ -4799,6 +4816,23 @@ impl GameWorld {
         let cidade = ilha.cidade();
         let porto = ilha.porto();
 
+        // A ARENA FICA VAZIA DE VERDADE.
+        //
+        // Sem isto, `zonas_comuns_da_ilha` devolve zero sitios, o caminho
+        // abaixo desiste — e DESISTIR AQUI NAO E' LIMPAR: o que fica valendo
+        // e' o spawn do mapfile, desenhado num mapa de tiles de 180x140 que
+        // nada tem a ver com esta ilhota. Seria uma horda de nivel do Bosque
+        // empilhada num canto do saguao, visivel a quem espera e invisivel a
+        // quem esta' na instancia.
+        //
+        // Medido na primeira subida: o log dizia "ilha 'dungeon' sem sitio
+        // plano — spawn do mapfile mantido", e eu quase li aquilo como "ficou
+        // vazia".
+        if shared::arena::e_arena(&self.zona) {
+            self.spawn_zones.clear();
+            self.vagas_de_chefe.clear();
+            return;
+        }
         let comuns = zonas_comuns_da_ilha(ilha, def, centro_jogador);
         if comuns.sitios == 0 {
             tracing::warn!(
@@ -20015,6 +20049,30 @@ mod testes_da_ilha_magica_lotada {
     /// Com a regra do mundo cabia UMA zona por ilhota (os centros exigem 90 u
     /// entre si e a ilhota tem 46 de raio), e ainda por cima nas de coleta
     /// junto.
+    /// A ARENA NASCE VAZIA, E AS OUTRAS ILHAS NAO.
+    ///
+    /// Os dois lados importam. Sem o primeiro, bicho do relevo vaga pelo
+    /// saguao. Sem o segundo, a regra teria vazado pro mundo inteiro e o
+    /// Bosque ficaria sem mob — e o teste que so' olha a arena passaria feliz
+    /// nos dois casos.
+    #[test]
+    fn a_arena_nao_tem_horda_e_o_bosque_tem() {
+        let def = &shared::arena::DEF;
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let z = zonas_comuns_da_ilha(&ilha, def, shared::arena::CHEGADA);
+        assert_eq!(z.zonas.len(), 0, "a Arena nasceu com horda");
+        assert_eq!(z.sitios, 0);
+
+        let outro = &shared::terreno::ARQUIPELAGO[0];
+        let ilha = shared::terreno::Ilha::da_ilha(outro);
+        let z = zonas_comuns_da_ilha(&ilha, outro, Vec2::ZERO);
+        assert!(
+            !z.zonas.is_empty(),
+            "a regra da Arena vazou: '{}' ficou sem horda",
+            outro.zona
+        );
+    }
+
     #[test]
     fn a_ilha_magica_lota_as_ilhotas_de_combate() {
         let def = &shared::magica::DEF;

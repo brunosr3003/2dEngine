@@ -268,6 +268,66 @@ impl GameWorld {
         }
     }
 
+    /// Esta zona é a ARENA?
+    pub(crate) fn na_arena(&self) -> bool {
+        shared::arena::e_arena(&self.zona)
+    }
+
+    /// Leva o jogador pra Arena, lembrando de onde ele veio.
+    ///
+    /// A Arena é destino sem saída própria: ninguém navega de volta dela, e
+    /// por isso a zona de origem é guardada ANTES da viagem. Sem isso, sair
+    /// seria um chute — o mesmo cuidado que a Ilha Mágica já tem.
+    fn entrar_na_arena(&mut self, sid: SessionId) {
+        if self.na_arena() {
+            return;
+        }
+        let volta = self.zona.clone();
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.dungeon.arena_volta = volta;
+        }
+        self.save_pending = true;
+        let chegada = self.chegada_da_arena();
+        self.mandar_para_zona(
+            sid,
+            shared::arena::ZONA,
+            chegada,
+            Some("Você entra na Arena."),
+            Some(shared::arena::DEF.nome),
+        );
+    }
+
+    /// Volta pra zona de onde entrou.
+    fn sair_da_arena(&mut self, sid: SessionId, aviso: &str) {
+        if !self.na_arena() {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        // Vazio (entrou antes desta coluna existir, ou o processo caiu) volta
+        // pro Bosque: ficar preso numa arena vazia é pior que chegar na ilha
+        // errada.
+        let volta = if s.dungeon.arena_volta.is_empty() {
+            shared::terreno::ARQUIPELAGO[0].zona.to_string()
+        } else {
+            s.dungeon.arena_volta.clone()
+        };
+        let Some(def) = shared::terreno::def_da_zona(&volta) else {
+            return;
+        };
+        let chegada = shared::terreno::Gerador::da_ilha(def)
+            .cidade()
+            .map(|c| c.centro())
+            .unwrap_or(Vec2::ZERO);
+        self.mandar_para_zona(sid, def.zona, chegada, Some(aviso), Some(def.nome));
+    }
+
+    /// Onde se chega na Arena: o chão seco mais perto do meio.
+    fn chegada_da_arena(&self) -> Vec2 {
+        shared::arena::CHEGADA
+    }
+
     // ─────────────────────────────── pedidos ───────────────────────────────
 
     pub(super) fn handle_dungeon(&mut self, sid: SessionId, pedido: Pedido) {
@@ -276,7 +336,37 @@ impl GameWorld {
         }
         let agora = self.sim_time_s as f64;
         let k = chave(sid);
+        // A FILA E AS SALAS SÓ EXISTEM NA ARENA.
+        //
+        // A `mesa` vive num processo só — é isso que a torna a mesma pra todo
+        // mundo, sem sincronizar nada entre zonas. O dono criou uma sala com
+        // um personagem e não a viu com o outro justamente porque cada zona
+        // tinha a própria mesa.
+        //
+        // Quem pede daqui de fora recebe um convite, e não um silêncio: botão
+        // que não faz nada é pior que botão que explica.
+        let precisa_da_arena = matches!(
+            pedido,
+            Pedido::EntrarSolo { .. }
+                | Pedido::GrutaSolo { .. }
+                | Pedido::FilaEntrar { .. }
+                | Pedido::SalaCriar { .. }
+                | Pedido::SalasBuscar { .. }
+                | Pedido::SalaEntrar { .. }
+        );
+        if precisa_da_arena && !self.na_arena() {
+            self.dg_avisar(sid, Aviso::PrecisaDaArena);
+            return;
+        }
         match pedido {
+            Pedido::IrParaArena => {
+                self.entrar_na_arena(sid);
+                return;
+            }
+            Pedido::SairDaArena => {
+                self.sair_da_arena(sid, "Você deixa a Arena.");
+                return;
+            }
             Pedido::Estado => {}
             Pedido::EntrarSolo { conteudo } => {
                 let Some(c) = dg::conteudo(conteudo).filter(|c| c.tipo == Tipo::Porao) else {
@@ -444,6 +534,7 @@ impl GameWorld {
         let (nivel, poder) = self.dg_nivel_e_poder(sid);
         let k = chave(sid);
         let agora = self.sim_time_s as f64;
+        let zona = self.zona.clone();
         let fila = self.mesa.na_fila(k).map(|f| dg::FilaNet {
             conteudo: f.conteudo,
             estagio: f.estagio,
@@ -488,6 +579,15 @@ impl GameWorld {
                 fila,
                 sala,
             },
+        });
+        // ONDE ELE ESTÁ vai JUNTO com o estado, e não só quando ele erra.
+        //
+        // A janela precisa saber disso pra oferecer a ida ANTES do clique —
+        // um botão "Entrar" que só depois avisa "aqui não" é o mesmo botão
+        // morto que este trabalho veio consertar.
+        let dentro = shared::arena::e_arena(&zona);
+        let _ = s.handle.to_client.send(ServerMessage::Dungeon {
+            aviso: Aviso::NaArena { dentro },
         });
     }
 

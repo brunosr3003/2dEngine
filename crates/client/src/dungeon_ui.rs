@@ -79,6 +79,13 @@ pub struct DungeonUi {
     aviso: Option<(String, bool, f64)>,
     /// AUTO DUNGEON ligado (a linha de missao abaixo da faixa).
     pub auto: bool,
+    /// O jogador esta' na ARENA, a zona onde a fila e as salas existem?
+    ///
+    /// `None` = ainda nao se sabe (antes do primeiro `Estado`). Nesse caso a
+    /// janela NAO trava nada: um servidor velho, ou um quadro antes da
+    /// resposta, nao pode esconder os botoes de quem ja' esta' no lugar
+    /// certo. Quem decide de verdade e' o servidor, que recusa.
+    pub na_arena: Option<bool>,
 }
 
 /// Altura da linha de missao da instancia (antes do fator de texto).
@@ -286,6 +293,11 @@ impl DungeonUi {
                 return vec![pedir(Pedido::Estado)];
             }
             Aviso::Correio { .. } => {}
+            Aviso::NaArena { dentro } => self.na_arena = Some(dentro),
+            // O servidor recusou porque a mesa nao mora nesta zona. Corrige o
+            // que a janela achava e deixa ela oferecer a viagem — a recusa
+            // vira convite, que e' o ponto.
+            Aviso::PrecisaDaArena => self.na_arena = Some(false),
             Aviso::Texto { ok, texto } => self.aviso = Some((texto, ok, agora)),
         }
         Vec::new()
@@ -351,6 +363,17 @@ impl DungeonUi {
         if crate::ui::botao(fechar, "x", true) {
             self.fechar();
             return;
+        }
+        // A VOLTA fica no cabeçalho, e nao no meio dos botoes de entrar: quem
+        // esta' na Arena chegou por handoff e nao tem barco nem mapa daqui —
+        // sem este botao, a unica saida seria deslogar.
+        if self.na_arena == Some(true) {
+            let voltar = Rect::new(p.x + p.w - 190.0 * f, p.y + 10.0 * f, 134.0 * f, 34.0 * f);
+            if botao(voltar, "Sair da Arena", true, false) {
+                saida.push(pedir(Pedido::SairDaArena));
+                self.fechar();
+                return;
+            }
         }
         let Some(estado) = &self.estado else {
             estilo::texto(
@@ -607,6 +630,41 @@ impl DungeonUi {
         y += 22.0 * f;
         estilo::separador(dir.x, y, dir.w);
         y += 14.0 * f;
+
+        // ── FORA DA ARENA: um convite, e nao seis botoes mortos ──
+        //
+        // A fila e as salas vivem num processo so' (`shared::arena`), e e' isso
+        // que faz elas serem as MESMAS pra todo mundo: o dono criou uma sala
+        // com um personagem e nao a viu com o outro justamente porque cada
+        // zona tinha a propria mesa.
+        //
+        // Entao daqui de fora nao ha' o que clicar. Em vez de deixar os botoes
+        // la' pra falharem um a um, a janela troca todos por um: a viagem.
+        if self.na_arena == Some(false) {
+            estilo::texto(
+                dir.x,
+                y + 18.0 * f,
+                "A fila e as salas ficam na Arena.",
+                16,
+                estilo::TEXTO,
+            );
+            estilo::texto(
+                dir.x,
+                y + 40.0 * f,
+                "Você volta para onde está ao sair de lá.",
+                13,
+                estilo::SUAVE,
+            );
+            if botao(
+                Rect::new(dir.x, y + 54.0 * f, bw * 1.4, 46.0 * f),
+                "Ir para a Arena",
+                true,
+                true,
+            ) {
+                saida.push(pedir(Pedido::IrParaArena));
+            }
+            return;
+        }
 
         let aberto = cadeado.is_none() && def.disponivel;
         match def.tipo {

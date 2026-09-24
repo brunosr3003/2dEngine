@@ -8,6 +8,7 @@ pub mod bosses;
 pub mod chaves;
 pub mod combat;
 pub mod aparencia;
+pub mod arena;
 pub mod colonia;
 pub mod combinar;
 pub mod components;

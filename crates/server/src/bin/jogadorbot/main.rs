@@ -285,6 +285,19 @@ struct Eu {
     pediu_dungeon: bool,
     /// Está dentro de uma dungeon agora.
     na_dungeon: bool,
+    /// Já tentou entrar na dungeon DEPOIS de chegar na Arena.
+    ///
+    /// Sem este teto o bot entraria em laço: `NaArena` chega junto com todo
+    /// `Estado`, e cada um dispararia um `EntrarSolo` novo. Foi assim que
+    /// `dungeon_da_missao` rendeu 406 pedidos em dez minutos sem o bot pisar
+    /// numa dungeon — tentar não é entrar.
+    tentou_na_arena: bool,
+    /// Viajou pra ARENA e ainda não voltou.
+    ///
+    /// A Arena é um saguão: não tem missão, nem bicho solto, nem recurso. Um
+    /// bot que chega lá e não volta é um bot parado — e parado por um motivo
+    /// que o analisador leria como "PARADO sem fazer nada", longe da causa.
+    na_arena: bool,
     /// Destino do passo atual: (missão, tipo, ponto, raio, npc).
     destino: Option<Destino>,
     /// Há quantas decisões o bot está pedindo destino sem receber. Sem este
@@ -813,6 +826,50 @@ async fn recebe(
         ServerMessage::Dungeon { aviso } => {
             // Só o que muda decisão: entrou, acabou. O resto do aviso é
             // detalhe de tela, e o bot não tem tela.
+            // A IDA E A VOLTA DA ARENA, que o bot faz sozinho.
+            //
+            // A fila e as salas moram num processo só (`shared::arena`), então
+            // pedir dungeon de qualquer outra zona é recusado com um convite.
+            // O bot aceita o convite, entra, e — terminada a dungeon — volta
+            // pra zona de onde veio. Sem a volta ele acamparia no saguão.
+            match &aviso {
+                shared::dungeon::Aviso::PrecisaDaArena => {
+                    ws.send(envia(&ClientMessage::Dungeon {
+                        pedido: shared::dungeon::Pedido::IrParaArena,
+                    })?)
+                    .await?;
+                    // PEDIU não é CHEGOU: `na_arena` só vira verdade quando o
+                    // servidor confirma (`NaArena`). Marcar aqui seria contar
+                    // a mensagem enviada como progresso — o erro que custou
+                    // nove consertos nestes bots.
+                    t.registra(ev(nome, eu, "pediu_arena", true, String::new()));
+                    return Ok(None);
+                }
+                shared::dungeon::Aviso::NaArena { dentro } => {
+                    eu.na_arena = *dentro;
+                    if *dentro && eu.pediu_dungeon && !eu.na_dungeon {
+                        if eu.tentou_na_arena {
+                            // Já tentou aqui dentro e não entrou (sem entrada
+                            // do dia, nível baixo, o que for). Ficar seria
+                            // acampar num saguão sem missão nem bicho — então
+                            // volta pra onde há o que fazer.
+                            ws.send(envia(&ClientMessage::Dungeon {
+                                pedido: shared::dungeon::Pedido::SairDaArena,
+                            })?)
+                            .await?;
+                        } else {
+                            eu.tentou_na_arena = true;
+                            ws.send(envia(&ClientMessage::Dungeon {
+                                pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: 1 },
+                            })?)
+                            .await?;
+                        }
+                    }
+                    t.registra(ev(nome, eu, "arena", true, format!("dentro={dentro}")));
+                    return Ok(None);
+                }
+                _ => {}
+            }
             let txt = format!("{aviso:?}");
             let entrou = txt.contains("Entrou") || txt.contains("Sala");
             let saiu = txt.contains("Fim") || txt.contains("Saiu") || txt.contains("Complet");
@@ -821,6 +878,12 @@ async fn recebe(
             }
             if saiu {
                 eu.na_dungeon = false;
+                if eu.na_arena {
+                    ws.send(envia(&ClientMessage::Dungeon {
+                        pedido: shared::dungeon::Pedido::SairDaArena,
+                    })?)
+                    .await?;
+                }
             }
             t.registra(ev(nome, eu, "dungeon", true, txt));
         }
@@ -1063,7 +1126,7 @@ async fn decide(
             eu.desistiu.remove(&quest);
             eu.craft_a_toa.remove(&quest);
             t.registra(ev(nome, eu, "voltou_da_busca", true, format!(
-                "#{quest} com {tem}x item {item}"
+                "#{quest} com {tem}/{quanto}x item {item}"
             )));
             return Ok(());
         }
@@ -1467,19 +1530,69 @@ async fn decide(
                         // a tentar história novamente". Antes ele largava a
                         // missão por 10 minutos e ia fazer outra coisa — o
                         // personagem nunca melhorava.
-                        let falta = inputs.iter().find_map(|[item, q]| {
-                            let item = *item as u16;
-                            let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
-                            (tem < *q).then_some((item, *q - tem))
+                        // GUARDA O ALVO, NÃO O QUE FALTA.
+                        //
+                        // Eu guardava o DÉFICIT e comparava contra o TOTAL da
+                        // bolsa: com 90 de 100, o déficit era 10, e `90 >= 10`
+                        // dava "já tenho" na mesma decisão. Resultado: 2.580
+                        // "foi buscar" e 2.569 "voltou da busca" em meia hora,
+                        // sem colher nada. O alvo é a quantidade CHEIA.
+                        // TODOS OS QUE FALTAM, e não só o primeiro.
+                        //
+                        // A receita 200 pede "Madeira T2, Aço Cinza, Couro
+                        // T2". O bot olhava só o primeiro que faltava, via
+                        // que ele saía de coleta, e ia buscar — mas os T2 NÃO
+                        // saem de coleta, são refinados. Ele enchia a bolsa
+                        // do coletável, o craft recusava do mesmo jeito, a
+                        // forja consumia o que ele tinha colhido, e a conta
+                        // caía de novo. Ida e volta eterna, com o craft em
+                        // ZERO sucessos em 58 tentativas.
+                        let faltando: Vec<(u16, u32)> = inputs
+                            .iter()
+                            .filter_map(|[item, q]| {
+                                let item = *item as u16;
+                                let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
+                                (tem < *q).then_some((item, *q))
+                            })
+                            .collect();
+                        // Algum que NÃO vem de coleta? Então buscar não
+                        // resolve, por mais que se colha. Larga a missão —
+                        // insistir era o laço.
+                        let impossivel = faltando.iter().find(|(item, _)| {
+                            eu.fontes.get(item).is_none_or(|t| t.is_empty())
                         });
+                        if let Some((item, _)) = impossivel {
+                            passo_nao_deu(eu, t, nome, d.quest, "craft_sem_caminho", format!(
+                                "#{} item {item} não sai de coleta", d.quest
+                            ));
+                            return Ok(());
+                        }
+                        let falta = faltando.first().copied();
                         if let Some((item, quanto)) = falta {
                             // Só vale buscar o que SAI DE COLETA. Material de
                             // mob ou de loja não se resolve batendo em árvore.
                             if eu.fontes.get(&item).is_some_and(|t| !t.is_empty()) {
+                                // TETO NO VAIVÉM. Ir buscar e voltar sem que
+                                // o craft ande é laço, por mais que cada
+                                // metade pareça certa: 589 idas e 581 voltas
+                                // em quatro minutos, com 16 coletas.
+                                let n = eu.passos_a_toa.entry((d.quest, "foi_buscar")).or_default();
+                                *n += 1;
+                                if *n > 6 {
+                                    eu.passos_a_toa.remove(&(d.quest, "foi_buscar"));
+                                    eu.buscando = None;
+                                    eu.desistiu.insert(d.quest, Instant::now());
+                                    eu.destino = None;
+                                    t.registra(ev(nome, eu, "busca_em_circulo", false, format!(
+                                        "#{} item {item}: seis idas sem o craft andar", d.quest
+                                    )));
+                                    return Ok(());
+                                }
                                 eu.buscando = Some((d.quest, item, quanto));
                                 eu.destino = None;
+                                let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
                                 t.registra(ev(nome, eu, "foi_buscar", true, format!(
-                                    "#{} precisa de {quanto}x item {item}", d.quest
+                                    "#{} precisa de {quanto}x item {item} (tem {tem})", d.quest
                                 )));
                                 return Ok(());
                             }
@@ -1528,9 +1641,12 @@ async fn decide(
                         pedido: shared::dungeon::Pedido::EntrarSolo { conteudo },
                     })?)
                     .await?;
-                    t.registra(ev(nome, eu, "dungeon_da_missao", true, format!(
+                    // COM TETO, como todo passo que pode não dar. Pedir
+                    // entrada e não entrar rendeu 406 pedidos em dez minutos
+                    // (e 979 respostas), sem o bot pisar numa dungeon.
+                    passo_nao_deu(eu, t, nome, d.quest, "dungeon_da_missao", format!(
                         "#{} conteúdo {conteudo}", d.quest
-                    )));
+                    ));
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;

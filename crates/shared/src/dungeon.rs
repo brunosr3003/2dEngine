@@ -478,6 +478,14 @@ pub struct DadosDungeon {
     /// Recompensa que nao coube na bolsa e 1ª vitoria.
     pub correio: Vec<CartaDeCorreio>,
     pub proxima_carta: u64,
+    /// A zona de onde o jogador foi pra ARENA, pra onde ele volta.
+    ///
+    /// Mora AQUI, e não na sessão, pelo motivo que a Ilha Mágica ja' aprendeu:
+    /// cada zona e' outro processo, entao a memoria de quem embarcou nao
+    /// atravessa o handoff junto com ele. E mora neste JSON, e nao numa coluna
+    /// nova, porque coluna nova e' quatro edicoes de UPSERT — e uma que se
+    /// esquece derruba o save inteiro sem avisar. Vazio = volta pro Bosque.
+    pub arena_volta: String,
 }
 
 pub const BAUS_LEMBRADOS: usize = 64;
@@ -973,6 +981,18 @@ pub enum Pedido {
         conteudo: u16,
         estagio: u8,
     },
+    /// Leva o jogador pra ARENA, a zona onde as dungeons acontecem.
+    ///
+    /// A fila e as salas vivem em UM processo só (`arena::ZONA`) — é o que
+    /// faz elas serem as mesmas pra todo mundo, sem sincronizar nada. Quem
+    /// está noutra zona não as enxerga, e por isso vai até lá, como quem
+    /// entra num saguão.
+    ///
+    /// ANEXADO NO FIM: postcard é posicional, e variante no meio desloca o
+    /// discriminante de todas as seguintes.
+    IrParaArena,
+    /// Volta da Arena pra zona de onde veio.
+    SairDaArena,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1086,6 +1106,15 @@ pub enum Aviso {
     Texto {
         ok: bool,
         texto: String,
+    },
+    /// O pedido exige estar na ARENA, e o jogador não está.
+    ///
+    /// A tela usa isto pra oferecer a ida em vez de falhar em silêncio: um
+    /// botão que não faz nada é pior que um botão que explica.
+    PrecisaDaArena,
+    /// Está na Arena? A tela muda: aqui a fila e as salas funcionam.
+    NaArena {
+        dentro: bool,
     },
 }
 
