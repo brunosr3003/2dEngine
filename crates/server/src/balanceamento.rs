@@ -1079,16 +1079,22 @@ pub(crate) struct Duelo {
     pub dano_comum: i32,
     pub tomados: u32,
     pub esquivados: u32,
+    /// Skills perdidas por ter que sair de baixo de um golpe.
+    ///
+    /// E' o numero que faltava: ele mede o preco que a esquiva cobra de quem
+    /// depende de skill, e e' a diferenca entre o que o simulador dizia e o
+    /// que o dono sentia jogando.
+    pub cancelados: u32,
 }
 
 impl Duelo {
     pub fn linha(&self) -> String {
         format!(
-            "{:<24} {:<13} nv{:<2} {:<7} {} | {} em {:>5.1}s | HP min {:>3.0}% (max {:>4}) | chefe {:>3.0}% | telegr {:>5} ({} tomados/{} esquivados) | comum {:>5}",
+            "{:<24} {:<13} nv{:<2} {:<7} {} | {} em {:>5.1}s | HP min {:>3.0}% (max {:>4}) | chefe {:>3.0}% | telegr {:>5} ({} tomados/{} esquivados) | comum {:>5} | skill perdida {:>2}",
             self.nome, format!("{:?}", self.conjunto), self.nivel, format!("{:?}", self.perfil),
             if self.pocao { "poção" } else { "seco " },
             if self.venceu { "VENCE" } else { "perde" }, self.tempo, self.hp_min * 100.0, self.hp_max,
-            self.chefe_restante * 100.0, self.dano_telegrafado, self.tomados, self.esquivados, self.dano_comum,
+            self.chefe_restante * 100.0, self.dano_telegrafado, self.tomados, self.esquivados, self.dano_comum, self.cancelados,
         )
     }
 }
@@ -1245,6 +1251,9 @@ pub(crate) fn duelar(
     let mut ocupado_ate = 0.0f32;
     let mut muralha_ate = 0.0f32;
     let mut efeitos: Vec<(f32, usize)> = Vec::new();
+    /// Cast em voo: (quando comecou, indice da skill, MP pago).
+    let mut conjurando: Option<(f32, usize, f32)> = None;
+    let mut cancelados: u32 = 0;
 
     let hp_max = stats.hp_max;
     let mut hp = hp_max;
@@ -1282,6 +1291,7 @@ pub(crate) fn duelar(
         dano_comum: 0,
         tomados: 0,
         esquivados: 0,
+        cancelados: 0,
     };
     let reducao = stats.damage_reduction_pct.clamp(0.0, 0.75);
     let mut t = 0.0f32;
@@ -1346,6 +1356,31 @@ pub(crate) fn duelar(
                 // Mesma janela do servidor que a luta de zona usa acima.
                 ocupado_ate = t + s.impacto_em() + shared::skills::RECUPERACAO_S;
                 efeitos.push((t + s.impacto_em(), i));
+                conjurando = Some((t, i, s.custo_mp as f32));
+            }
+        }
+        // ESQUIVAR JOGA A SKILL FORA, e o simulador não sabia disso.
+        //
+        // O dono, jogando: "com skills ativas é mais difícil de desviar,
+        // porque as skills são lentas de lançar". Ele está certo, e o
+        // simulador dizia o contrário — aqui o jogador conjurava, saía de
+        // baixo do golpe, e o efeito acontecia mesmo assim. Nenhum número
+        // batia com a mão.
+        //
+        // No jogo, `world.rs` cancela o cast depois de 2 ticks de movimento,
+        // passada uma carência de 0,3 s: devolve MP e tira a espera, mas o
+        // dano não sai. Quem precisa esquivar muito — a pistola, de armadura
+        // leve — paga esse preço toda luta, e é isso que o guarda tem que ver.
+        if let Some((inicio, i, mp_pago)) = conjurando {
+            if movendo && t - inicio >= 0.3 {
+                efeitos.retain(|(_, j)| *j != i);
+                mp = (mp + mp_pago).min(stats.mp_max as f32);
+                pronta_em[i] = 0.0;
+                ocupado_ate = t;
+                conjurando = None;
+                cancelados += 1;
+            } else if t >= ocupado_ate {
+                conjurando = None;
             }
         }
         if !esquivando && !movendo {
@@ -1378,8 +1413,10 @@ pub(crate) fn duelar(
             }
             let dmg = dano_mitigado(stats.attack_damage, def_chefe, 0.0);
             if conjunto == Conjunto::Katana {
+                // CHEFE: a fracao menor. E' a mesma funcao que o servidor
+                // chama, entao o numero daqui nao pode divergir do jogo.
                 hp = (hp
-                    + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA)
+                    + ((dmg as f32) * crate::world::roubo_de_vida_katana(true))
                         .round()
                         .max(1.0) as i32)
                     .min(hp_max);
@@ -1809,9 +1846,19 @@ mod testes {
                         c.nome, esquiva.tempo
                     ));
                 }
-                if parado.venceu && parado.hp_min > 0.10 {
+                // PARADO NAO VENCE. Ponto.
+                //
+                // Isto tinha uma saida: so' reprovava se tambem sobrasse mais
+                // de 10% de vida. A katana passou por ela — vencia o Colosso
+                // Anciao sem esquivar UMA vez, terminando com 5%, e o guarda
+                // dizia que estava tudo bem. O dono descobriu jogando: "se eu
+                // desligo as skills e so' bato ela sola facil os bosses".
+                //
+                // Vencer raspando continua sendo vencer, e a promessa do
+                // chefe telegrafado e' que trocar golpe parado PERDE.
+                if parado.venceu {
                     falhas.push(format!(
-                        "{} {conj:?}: parado com pocao venceu com HP minimo {:.0}%",
+                        "{} {conj:?}: venceu PARADO, sem esquivar (HP minimo {:.0}%)",
                         c.nome,
                         parado.hp_min * 100.0
                     ));

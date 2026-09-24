@@ -810,7 +810,35 @@ pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
 /// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
 pub(crate) const REDUCAO_DO_ESCUDO: f32 = 0.40;
 /// A katana devolve em vida esta fracao do dano do golpe basico.
+///
+/// E' o que segura quem corta de perto sem escudo, e contra bicho comum e' a
+/// identidade da classe — fica como esta'.
 pub(crate) const ROUBO_DE_VIDA_KATANA: f32 = 0.12;
+/// ...mas contra CHEFE, esta.
+///
+/// O dono: "a classe de katana tem roubo de vida no ataque básico, então se eu
+/// desligo as skills e só bato ela sola fácil os bosses da dungeon".
+///
+/// A simulação concordou em números: parado, sem esquivar uma única vez, a
+/// katana VENCIA o Colosso Ancião em 61 s levando 4.258 de dano telegrafado.
+/// Todas as outras classes morriam em 19–53 s no mesmo teste. E esquivando ela
+/// terminava com 96% da vida, na metade do tempo da espada e escudo: era a
+/// mais rápida E a mais segura, sem troca nenhuma.
+///
+/// O chefe já rouba 25% do dano que causa, e o comentário de lá diz por quê —
+/// "pressiona o player a não trocar burro". A katana era a única classe imune
+/// a essa pressão. Um terço do roubo devolve a pressão sem tocar no que a
+/// classe é fora da luta de chefe.
+pub(crate) const ROUBO_DE_VIDA_KATANA_CHEFE: f32 = 0.04;
+
+/// Quanto a katana rouba, pelo que ela está cortando.
+pub(crate) fn roubo_de_vida_katana(alvo_e_chefe: bool) -> f32 {
+    if alvo_e_chefe {
+        ROUBO_DE_VIDA_KATANA_CHEFE
+    } else {
+        ROUBO_DE_VIDA_KATANA
+    }
+}
 /// Intervalo do tiro das pistolas (antes 0,55 do arco antigo): quem nao anda
 /// ate' o bicho paga em cadencia.
 pub(crate) const CADENCIA_DAS_PISTOLAS_S: f32 = 0.65;
@@ -11238,7 +11266,9 @@ impl GameWorld {
                 });
             }
             // Katana: o golpe basico devolve vida. E' o que segura quem corta
-            // de perto sem escudo.
+            // de perto sem escudo — MENOS contra chefe, onde ele era o que
+            // deixava a classe trocar golpe parada e ganhar (ver
+            // `ROUBO_DE_VIDA_KATANA_CHEFE`).
             if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
                 let katana = self
                     .sessions
@@ -11246,9 +11276,14 @@ impl GameWorld {
                     .find(|s| s.entity_id == attacker_id)
                     .is_some_and(|s| s.equipment.weapon == Some(shared::item_id::KATANA));
                 if katana {
+                    let e_chefe = self
+                        .ecs
+                        .get::<&EnemyTag>(entity)
+                        .is_ok_and(|tag| tag.is_boss);
+                    let fracao = roubo_de_vida_katana(e_chefe);
                     self.pending_heals.push(PendingHeal {
                         target_net: attacker_id,
-                        amount: ((dmg as f32) * ROUBO_DE_VIDA_KATANA).round().max(1.0) as i32,
+                        amount: ((dmg as f32) * fracao).round().max(1.0) as i32,
                     });
                 }
             }
