@@ -285,6 +285,19 @@ struct Eu {
     pediu_dungeon: bool,
     /// Está dentro de uma dungeon agora.
     na_dungeon: bool,
+    /// (missão, slot) do refino pedido e ainda sem resposta.
+    ///
+    /// Guardado porque o `RefinoResultado` chega no laço de mensagens, longe
+    /// da decisão que pediu — e sem a missão não dá pra contar a recusa a
+    /// quem ela atrasa.
+    refino_pedido: Option<(u16, u16)>,
+    /// Quando o bot mandou o último `Reviver` de dungeon.
+    ///
+    /// O aviso de instância chega a ~1,6 por segundo, e `reviver_em_s` segue
+    /// em `Some(0)` até o servidor processar o pedido. Sem este freio, um
+    /// pedido viraria dezenas — o observador não pode virar a maior carga do
+    /// que observa.
+    reviveu_em: Option<Instant>,
     /// Já tentou entrar na dungeon DEPOIS de chegar na Arena.
     ///
     /// Sem este teto o bot entraria em laço: `NaArena` chega junto com todo
@@ -310,6 +323,26 @@ struct Eu {
     morto: bool,
     /// Já tentou gastar o saldo atual de pontos.
     tentou_gastar: bool,
+}
+
+impl Eu {
+    /// Pode mandar `Reviver` agora? Um por segundo, no máximo.
+    ///
+    /// O aviso de instância chega a ~1,6 por segundo e `reviver_em_s` continua
+    /// em `Some(0)` até o servidor atender — sem freio, um pedido viraria
+    /// dezenas por segundo. Marca na hora de perguntar porque quem pergunta
+    /// vai mandar.
+    fn pode_reviver(&mut self) -> bool {
+        let agora = Instant::now();
+        if self
+            .reviveu_em
+            .is_some_and(|t| agora.duration_since(t) < Duration::from_secs(1))
+        {
+            return false;
+        }
+        self.reviveu_em = Some(agora);
+        true
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -870,22 +903,85 @@ async fn recebe(
                 }
                 _ => {}
             }
-            let txt = format!("{aviso:?}");
-            let entrou = txt.contains("Entrou") || txt.contains("Sala");
-            let saiu = txt.contains("Fim") || txt.contains("Saiu") || txt.contains("Complet");
-            if entrou {
-                eu.na_dungeon = true;
-            }
-            if saiu {
-                eu.na_dungeon = false;
-                if eu.na_arena {
-                    ws.send(envia(&ClientMessage::Dungeon {
-                        pedido: shared::dungeon::Pedido::SairDaArena,
-                    })?)
-                    .await?;
+            // DENTRO OU FORA, PELA VARIANTE — e não por palavra no texto.
+            //
+            // Isto estava sendo decidido por `txt.contains("Entrou")`, e NÃO
+            // EXISTE aviso com essa palavra: quem diz que o jogador está numa
+            // instância é `Instancia`. Resultado medido: `na_dungeon` nunca
+            // virava verdade, o bot pedia entrada de novo lá de dentro e
+            // levava "Você já está numa dungeon." 204 vezes.
+            //
+            // Pior, "Sala" casava com `Salas` — a LISTA de salas, que se
+            // recebe fora de qualquer dungeon. A leitura estava errada nos
+            // dois sentidos.
+            match &aviso {
+                shared::dungeon::Aviso::Instancia { reviver_em_s, .. } => {
+                    eu.na_dungeon = true;
+                    // CAIU LÁ DENTRO: LEVANTA.
+                    //
+                    // O bot morria no andar 0 e ficava deitado até o tempo
+                    // acabar — 1.484 avisos seguidos com `reviver_em_s:
+                    // Some(0)` num bot só, enquanto ele registrava 767
+                    // "atacou" que não tiravam um ponto de vida dos cinco
+                    // inimigos. O `atacou` conta o ENVIO, então a trilha
+                    // mostrava um bot ocupadíssimo e morto.
+                    //
+                    // Zero quer dizer "pode levantar agora"; o que não é zero
+                    // é contagem regressiva, e aí só se espera.
+                    if *reviver_em_s == Some(0) && eu.pode_reviver() {
+                        ws.send(envia(&ClientMessage::Dungeon {
+                            pedido: shared::dungeon::Pedido::Reviver,
+                        })?)
+                        .await?;
+                        t.registra(ev(nome, eu, "reviveu_na_dungeon", true, String::new()));
+                        return Ok(None);
+                    }
+                    // O RESTO DOS AVISOS DE INSTÂNCIA NÃO VAI PRA TRILHA.
+                    //
+                    // Eles chegam a ~1,6 por segundo e rendiam 988 eventos
+                    // "dungeon" em dez minutos: ruído que o analisador lia
+                    // como LAÇO e que escondia os avisos que importam.
+                    return Ok(None);
                 }
+                shared::dungeon::Aviso::Saiu | shared::dungeon::Aviso::Resultado { .. } => {
+                    eu.na_dungeon = false;
+                    eu.reviveu_em = None;
+                    if eu.na_arena {
+                        ws.send(envia(&ClientMessage::Dungeon {
+                            pedido: shared::dungeon::Pedido::SairDaArena,
+                        })?)
+                        .await?;
+                    }
+                }
+                _ => {}
             }
-            t.registra(ev(nome, eu, "dungeon", true, txt));
+            t.registra(ev(nome, eu, "dungeon", true, format!("{aviso:?}")));
+        }
+        ServerMessage::RefinoResultado {
+            resultado,
+            nivel,
+            motivo,
+            ..
+        } => {
+            use shared::forja::resultado as r;
+            let Some((quest, slot)) = eu.refino_pedido.take() else {
+                return Ok(None);
+            };
+            // SUBIR, FALHAR E DESTRUIR são o jogo acontecendo: a forja tem
+            // chance, e perder a peça faz parte. O que trava o bot é o que
+            // nem chegou a ser tentado — sem material, no topo, alvo inválido
+            // —, porque isso se repete igual pra sempre.
+            match resultado {
+                r::SUBIU | r::FALHOU | r::DESTRUIU => {
+                    eu.passos_a_toa.remove(&(quest, "refino_recusado"));
+                    t.registra(ev(nome, eu, "refinou", true, format!(
+                        "#{quest} slot {slot} -> nível {nivel}"
+                    )));
+                }
+                _ => passo_nao_deu(eu, t, nome, quest, "refino_recusado", format!(
+                    "#{quest} slot {slot}: {motivo}"
+                )),
+            }
         }
         ServerMessage::MercadoResultado { ok, texto } => {
             t.registra(ev(nome, eu, "mercado_resultado", ok, texto));
@@ -1153,7 +1249,35 @@ async fn decide(
                 let d_no = eu.pos.distance(onde);
                 if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
                     if !empurra(eu, onde) {
+                        // ESTE RAMO ERA MUDO, E O PREÇO FOI ALTO.
+                        //
+                        // O empurrão avisa quando a distância para de
+                        // encurtar, mas aqui ninguém escutava: o nó era
+                        // largado em silêncio, a decisão seguinte pedia
+                        // outro, o servidor devolvia O MESMO (é o mais perto)
+                        // e o ciclo recomeçava. QUATRO bots passaram mais de
+                        // dez minutos no mesmo ponto sem registrar um único
+                        // evento fora do batimento — parados de um jeito que
+                        // nem o alarme de laço pegava, porque não havia o que
+                        // contar.
+                        //
+                        // O ramo gêmeo lá embaixo (o da missão de coleta) já
+                        // tinha essa rede desde o conserto anterior. Eu pus a
+                        // rede num e deixei o outro, que é exatamente o erro
+                        // que o `parado.rs` do cliente veio corrigir.
                         eu.no_de_coleta = None;
+                        passo_nao_deu(eu, t, nome, quest, "no_inalcancavel",
+                            format!("#{quest} a {d_no:.1}u do nó, buscando item {item}"));
+                        // Desistiu da missão? Então a BUSCA dela também acaba:
+                        // `passo_nao_deu` solta o destino, mas `buscando` é
+                        // outro estado e ficaria segurando o bot aqui pra
+                        // sempre.
+                        if eu.desistiu.contains_key(&quest) {
+                            eu.buscando = None;
+                            t.registra(ev(nome, eu, "busca_emperrada", false, format!(
+                                "#{quest} item {item}: o nó não se alcança daqui"
+                            )));
+                        }
                     }
                     return Ok(());
                 }
@@ -1171,6 +1295,11 @@ async fn decide(
                     centro: [eu.pos.x, eu.pos.y],
                 })?)
                 .await?;
+                // Registrado porque um pedido que nunca vira nó é um bot
+                // parado, e sem isto a trilha não teria como dizer isso.
+                t.registra(ev(nome, eu, "pediu_no", true, format!(
+                    "#{quest} item {item} ({tem}/{quanto})"
+                )));
             }
         }
         return Ok(());
@@ -1621,11 +1750,26 @@ async fn decide(
                 // forja aceita. Sem nenhuma, o passo espera o drop.
                 match eu.slots.iter().find(|(_, sl)| sl.instance.is_some()) {
                     Some((slot, _)) => {
+                        let slot = *slot;
                         ws.send(envia(&ClientMessage::Refinar {
-                            alvo: shared::protocol::AlvoDaForja::Bolsa(*slot),
+                            alvo: shared::protocol::AlvoDaForja::Bolsa(slot),
                         })?)
                         .await?;
-                        t.registra(ev(nome, eu, "refinou", true, format!("#{} slot {slot}", d.quest)));
+                        // QUEM DIZ SE REFINOU É A RESPOSTA, não o envio.
+                        //
+                        // Isto marcava `ok: true` por ter MANDADO a mensagem —
+                        // a mesma mentira que já custou caro no craft e na
+                        // conversa. Um bot registrou "refinou #604 slot 8"
+                        // 1.514 vezes, sempre o mesmo slot, sem sair do nível.
+                        // (Ele estava morto dentro de uma dungeon; o contador
+                        // não tinha como saber, porque nunca olhou a resposta.)
+                        //
+                        // Repetir o slot NÃO serve de sinal: refinar a mesma
+                        // peça de novo é o uso normal da forja. O que serve é
+                        // `RefinoResultado`, que o servidor já manda e que o
+                        // bot ignorava — ele é quem sabe a diferença entre
+                        // "subiu" e "sem material".
+                        eu.refino_pedido = Some((d.quest, slot));
                     }
                     None => passo_nao_deu(eu, t, nome, d.quest, "sem_peca_pra_refinar", format!("#{}", d.quest)),
                 }
