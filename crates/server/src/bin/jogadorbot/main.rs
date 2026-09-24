@@ -323,6 +323,28 @@ struct Eu {
     morto: bool,
     /// Já tentou gastar o saldo atual de pontos.
     tentou_gastar: bool,
+    /// Vida atual e máxima. A primeira vem do snapshot, a segunda do
+    /// `StatsUpdate` — e o bot ignorava as duas, então bebia poção nunca.
+    hp: u16,
+    hp_max: u16,
+    /// Quando bebeu a última poção de vida.
+    ///
+    /// A recarga do grupo é de 8 s (`pocoes::CURAS`) e o servidor recusa
+    /// dentro dela SEM gastar a poção — mas mandar assim mesmo, a 30 Hz,
+    /// seria o bot virando a maior carga do que observa.
+    bebeu_em: Option<Instant>,
+    /// NPCs a quem ele já pediu balcão e não deu em poção nenhuma.
+    ///
+    /// Sem isto, um bot sem cobre ficaria cumprimentando o mesmo ferreiro a
+    /// cada decisão — movimento puro, do tipo que a trilha conta como
+    /// trabalho.
+    balcao_seco: std::collections::HashSet<shared::EntityId>,
+    /// Está saindo de um telegráfico até este instante.
+    ///
+    /// Enquanto durar, a decisão não manda em nada: sair do chão marcado é
+    /// mais urgente que qualquer missão, e é por isso que este campo
+    /// curto-circuita o `decide` inteiro.
+    desviando_ate: Option<Instant>,
 }
 
 impl Eu {
@@ -524,6 +546,76 @@ fn passo_nao_deu(
     }
 }
 
+/// Quantas poções de vida o bot tenta manter na bolsa.
+///
+/// O dono: "eles têm que ficar mais fortes, comprar poções melhores". Doze dá
+/// pra uma dungeon inteira com folga — a recarga é de 8 s e um andar dura
+/// minutos, então o que falta não é quantidade, é lembrar de beber.
+const POCOES_DESEJADAS: u32 = 12;
+
+/// Abaixo de que fração da vida o bot bebe.
+///
+/// 95%, pedido do dono, e é mais agressivo do que parece: com a recarga de
+/// 8 s, beber cedo significa estar sempre com a cura correndo durante a luta,
+/// em vez de tomar o golpe que mata e só então reagir. Foi assim que dois
+/// bots morreram no andar 0 e ficaram deitados dez minutos.
+const BEBE_ABAIXO_DE: f32 = 0.95;
+
+/// As poções de VIDA que ele tem na bolsa, como `pocoes::escolher` pede.
+fn pocoes_de_vida(eu: &Eu) -> Vec<(u16, u32)> {
+    eu.bolsa
+        .iter()
+        .filter(|(id, _)| {
+            shared::pocoes::cura_de(**id)
+                .is_some_and(|c| c.grupo == shared::pocoes::Grupo::Vida)
+        })
+        .map(|(id, q)| (*id, *q))
+        .collect()
+}
+
+/// PRA ONDE FUGIR de uma forma telegrafada, se houver pra onde.
+///
+/// Procura o ponto mais PERTO que esteja fora da marcação: fugir longe demais
+/// tira o bot da luta, e o golpe só pega quem está dentro no impacto — meio
+/// ombro pra fora já escapou (`Forma::contem` mede o centro do corpo).
+///
+/// Devolve `None` quando já está fora, ou quando nada num raio razoável
+/// escapa (um `Anel` enorme, por exemplo): aí não há esquiva, e insistir
+/// seria correr pra dentro de outra borda.
+fn saida_do_telegrafico(
+    forma: &shared::bosses::Forma,
+    centro: glam::Vec2,
+    dir: glam::Vec2,
+    eu_pos: glam::Vec2,
+) -> Option<glam::Vec2> {
+    if !forma.contem(centro, dir, eu_pos) {
+        return None;
+    }
+    let mut melhor: Option<(f32, glam::Vec2)> = None;
+    let mut r = 2.0f32;
+    while r <= 18.0 {
+        for i in 0..16 {
+            let a = i as f32 * std::f32::consts::TAU / 16.0;
+            let p = eu_pos + glam::Vec2::new(a.cos() * r, a.sin() * r);
+            if forma.contem(centro, dir, p) {
+                continue;
+            }
+            // Uma folga além da borda: parar colado nela é contar com o
+            // servidor arredondar a favor.
+            let p = p + (p - eu_pos).normalize_or_zero() * 1.5;
+            let d = eu_pos.distance(p);
+            if melhor.is_none_or(|(md, _)| d < md) {
+                melhor = Some((d, p));
+            }
+        }
+        if melhor.is_some() {
+            break;
+        }
+        r += 4.0;
+    }
+    melhor.map(|(_, p)| p)
+}
+
 /// A aparência deste bot, deduzida do nome.
 ///
 /// Sai do NOME e não de sorteio: o personagem é criado uma vez e reusado a
@@ -696,6 +788,38 @@ async fn recebe(
                         eu.andando_para = None;
                         t.registra(ev(nome, eu, "renasceu", true, String::new()));
                     }
+                    eu.hp = s.hp;
+                }
+            }
+            // BEBER É REFLEXO, NÃO DECISÃO.
+            //
+            // Fica aqui, no snapshot (30 Hz), e não no `decide` (a cada
+            // 700 ms): a vida chega por aqui, e meio segundo de atraso na
+            // poção é a diferença entre curar e morrer. É também o motivo de
+            // o `decide` não ser o lugar — lá a poção competiria com missão,
+            // craft e mercado, e perderia.
+            if !eu.morto && eu.hp_max > 0 {
+                let fracao = eu.hp as f32 / eu.hp_max as f32;
+                let na_recarga = eu.bebeu_em.is_some_and(|t| {
+                    Instant::now().duration_since(t) < Duration::from_secs(8)
+                });
+                if fracao < BEBE_ABAIXO_DE && !na_recarga {
+                    let familia = pocoes_de_vida(eu);
+                    // A MENOR que cobre o que falta: usar a melhor poção pra
+                    // curar um arranhão é jogá-la fora, e `escolher` já sabe
+                    // disso — é a mesma conta do auto da barra do jogador.
+                    if let Some(item) = shared::pocoes::escolher(&familia, 1.0 - fracao) {
+                        if let Some((slot, _)) =
+                            eu.slots.iter().find(|(_, sl)| sl.item_id == item)
+                        {
+                            let slot = *slot;
+                            eu.bebeu_em = Some(Instant::now());
+                            ws.send(envia(&ClientMessage::UseItem { slot })?).await?;
+                            t.registra(ev(nome, eu, "bebeu", true, format!(
+                                "item {item} com {:.0}% de vida", fracao * 100.0
+                            )));
+                        }
+                    }
                 }
             }
             // O alvo é o inimigo vivo mais perto DOS QUE ELE CONHECE.
@@ -718,6 +842,65 @@ async fn recebe(
             if subiu {
                 t.registra(ev(nome, eu, "subiu_de_nivel", true, String::new()));
             }
+        }
+        // BALCÃO ABERTO: ABASTECE.
+        //
+        // O dono: "comprar poções melhores". Comprar aqui, e não numa ida
+        // dedicada à loja, é o que torna isso barato: o bot já vai a NPC o
+        // tempo todo por causa das missões, e toda vez que um balcão abre ele
+        // sai com a bolsa cheia. Nenhuma navegação nova.
+        //
+        // "Melhores" é literal: compra da poção mais forte pra mais fraca,
+        // até o dinheiro ou a vontade acabarem.
+        ServerMessage::ShopOpen { items, .. } => {
+            let tenho: u32 = pocoes_de_vida(eu).iter().map(|(_, q)| q).sum();
+            if tenho >= POCOES_DESEJADAS {
+                return Ok(None);
+            }
+            // Poção de recurso se paga com COBRE, não com ouro
+            // (`pocoes::compra_com_cobre`) — olhar o ouro aqui daria um bot
+            // rico que não compra nada.
+            let mut cobre = eu
+                .bolsa
+                .get(&shared::constants::item_id::COPPER)
+                .copied()
+                .unwrap_or(0);
+            let mut faltam = POCOES_DESEJADAS - tenho;
+            // Da mais forte pra mais fraca: `Cura::total` ordena.
+            let mut balcao: Vec<(u8, u16, u32, f32)> = items
+                .iter()
+                .enumerate()
+                .filter_map(|(i, it)| {
+                    shared::pocoes::cura_de(it.item_id)
+                        .filter(|c| c.grupo == shared::pocoes::Grupo::Vida)
+                        .map(|c| (i as u8, it.item_id, it.price, c.total()))
+                })
+                .collect();
+            balcao.sort_by(|a, b| b.3.total_cmp(&a.3));
+            let mut comprou = 0u32;
+            for (slot_idx, item, preco, _) in balcao {
+                while faltam > 0 && cobre >= preco {
+                    ws.send(envia(&ClientMessage::ShopBuy { slot_idx })?).await?;
+                    cobre -= preco;
+                    faltam -= 1;
+                    comprou += 1;
+                }
+                let _ = item;
+            }
+            if comprou > 0 {
+                // `ok` é ter MANDADO compra, e a trilha diz isso na cara: o
+                // que prova a compra é a bolsa, que chega depois no
+                // `InventoryUpdate`. Contar isto como progresso seria repetir
+                // o erro do `refinou`.
+                t.registra(ev(nome, eu, "comprou_pocao", true, format!(
+                    "{comprou} pedida(s), tinha {tenho}, sobra {cobre} de cobre"
+                )));
+            }
+        }
+        // A VIDA MÁXIMA só vem por aqui, e o bot ignorava a mensagem inteira
+        // — por isso nunca soube que estava ferido.
+        ServerMessage::StatsUpdate { stats, .. } => {
+            eu.hp_max = stats.hp_max.max(0) as u16;
         }
         ServerMessage::GoldUpdate { gold } => eu.ouro = gold as i64,
         ServerMessage::StatPointsUpdate { unspent, .. } => {
@@ -983,6 +1166,33 @@ async fn recebe(
                 )),
             }
         }
+        // O CHEFE CARREGANDO UM GOLPE: sai de baixo.
+        //
+        // O dono: "desviar dos ataques dos chefes". Isto é do BOT e só dele —
+        // no jogo, desviar do telegráfico é na mão, e é a graça da luta. O bot
+        // é que precisa fazer com as próprias mãos o que uma pessoa faria.
+        ServerMessage::Telegrafico {
+            forma,
+            centro,
+            dir,
+            carga_s,
+            ..
+        } => {
+            let centro = glam::Vec2::from(centro);
+            let dir = glam::Vec2::from(dir);
+            if let Some(saida) = saida_do_telegrafico(&forma, centro, dir, eu.pos) {
+                // O prazo é a CARGA, encurtada: chegar na borda no instante
+                // do impacto é contar com a sorte. Teto de 3 s pra uma carga
+                // longa não deixar o bot parado de fuga o tempo todo.
+                let prazo = (carga_s * 0.8).clamp(0.2, 3.0);
+                eu.desviando_ate = Some(Instant::now() + Duration::from_secs_f32(prazo));
+                eu.empurrao = Some((saida - eu.pos).normalize_or_zero());
+                eu.empurrao_ate = eu.desviando_ate;
+                t.registra(ev(nome, eu, "desviou", true, format!(
+                    "{:.1}u em {carga_s:.1}s", eu.pos.distance(saida)
+                )));
+            }
+        }
         ServerMessage::MercadoResultado { ok, texto } => {
             t.registra(ev(nome, eu, "mercado_resultado", ok, texto));
         }
@@ -1072,6 +1282,53 @@ async fn decide(
     }
     if eu.morto {
         return Ok(());
+    }
+    // FUGINDO DE UM GOLPE: nada mais importa por um segundo.
+    //
+    // Sem isto a decisão seguinte trocaria o empurrão da fuga pelo da missão
+    // — e o bot voltaria a andar pra dentro da marcação que acabou de sair.
+    if eu.desviando_ate.is_some_and(|t| Instant::now() < t) {
+        return Ok(());
+    }
+    eu.desviando_ate = None;
+    // 0,5 BALCÃO À MÃO: se passou perto de um NPC e a bolsa está seca de
+    // poção, fala com ele. Vendedor abre a loja e o `ShopOpen` abastece.
+    //
+    // De carona na proximidade, e não uma viagem à cidade: o bot já vai a NPC
+    // o tempo todo por causa das missões, e uma ida dedicada custaria minutos
+    // de caminhada por uma compra que talvez nem seja possível. Se o NPC não
+    // vender nada, não acontece nada — e o teto abaixo impede insistir.
+    {
+        let tem: u32 = pocoes_de_vida(eu).iter().map(|(_, q)| q).sum();
+        if tem < POCOES_DESEJADAS / 3 {
+            let perto = eu
+                .conhecidos
+                .iter()
+                .filter(|(_, tag)| matches!(tag, shared::EntityTag::Npc))
+                .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
+                .filter(|(id, p)| {
+                    p.distance(eu.pos) <= shared::INTERACT_RADIUS
+                        && !eu.balcao_seco.contains(id)
+                })
+                .min_by(|a, b| {
+                    a.1.distance_squared(eu.pos)
+                        .total_cmp(&b.1.distance_squared(eu.pos))
+                });
+            if let Some((id, _)) = perto {
+                // UMA VEZ POR NPC. Sem isto o bot sem dinheiro ficaria
+                // cumprimentando o mesmo ferreiro para sempre — e a trilha
+                // chamaria aquilo de trabalho.
+                eu.balcao_seco.insert(id);
+                ws.send(envia(&ClientMessage::Interact {
+                    target_eid: Some(id.0 as u64),
+                })?)
+                .await?;
+                t.registra(ev(nome, eu, "procurou_balcao", true, format!(
+                    "{tem} poção(ões) na bolsa"
+                )));
+                return Ok(());
+            }
+        }
     }
     // 1. Ponto de atributo parado é dano que não se causa.
     if eu.pontos_livres > 0 && !eu.tentou_gastar {
@@ -2109,6 +2366,90 @@ mod testes_da_variedade {
             armas.len() >= 3,
             "só {} classes entre 12 bots: {armas:?}",
             armas.len()
+        );
+    }
+}
+
+#[cfg(test)]
+mod testes_da_esquiva {
+    use super::*;
+    use shared::bosses::Forma;
+
+    /// A SAÍDA ESTÁ MESMO FORA — em toda forma.
+    ///
+    /// É o erro que este tipo de código comete calado: devolver um ponto que
+    /// ainda está dentro da marcação, só que num lugar diferente. O bot
+    /// "desviaria", tomaria o golpe do mesmo jeito, e a trilha registraria
+    /// uma esquiva bem-sucedida.
+    #[test]
+    fn a_saida_fica_fora_da_marcacao() {
+        let centro = glam::Vec2::new(10.0, -4.0);
+        let dir = glam::Vec2::new(1.0, 1.0).normalize();
+        let formas = [
+            Forma::Circulo { raio: 8.0 },
+            Forma::Cone {
+                raio: 14.0,
+                abertura: 0.9,
+            },
+            Forma::Linha {
+                comprimento: 20.0,
+                largura: 6.0,
+            },
+            Forma::Anel {
+                interno: 4.0,
+                externo: 10.0,
+            },
+        ];
+        for f in formas {
+            // Um ponto claramente DENTRO de cada uma.
+            let dentro = match f {
+                Forma::Anel { interno, externo } => {
+                    centro + dir * ((interno + externo) * 0.5)
+                }
+                Forma::Linha { comprimento, .. } => centro + dir * (comprimento * 0.4),
+                Forma::Cone { raio, .. } => centro + dir * (raio * 0.5),
+                Forma::Circulo { .. } => centro,
+            };
+            assert!(f.contem(centro, dir, dentro), "o ponto de teste {f:?} não está dentro");
+            let saida = saida_do_telegrafico(&f, centro, dir, dentro)
+                .unwrap_or_else(|| panic!("{f:?}: não achou saída nenhuma"));
+            assert!(
+                !f.contem(centro, dir, saida),
+                "{f:?}: a 'saída' {saida:?} continua dentro da marcação"
+            );
+        }
+    }
+
+    /// QUEM JÁ ESTÁ FORA NÃO CORRE.
+    ///
+    /// Sem isto o bot largaria a luta a cada telegráfico do chefe, inclusive
+    /// os que nunca iam pegá-lo — e um chefe que telegrafa sem parar viraria
+    /// um bot que só foge.
+    #[test]
+    fn quem_esta_fora_nao_desvia() {
+        let f = Forma::Circulo { raio: 6.0 };
+        let centro = glam::Vec2::ZERO;
+        let fora = glam::Vec2::new(30.0, 0.0);
+        assert!(saida_do_telegrafico(&f, centro, glam::Vec2::X, fora).is_none());
+    }
+
+    /// A FUGA É CURTA.
+    ///
+    /// Sair correndo trinta unidades tira o bot da luta: ele perde o alvo,
+    /// volta andando e o chefe recupera vida. Meio ombro pra fora já escapa
+    /// (`Forma::contem` mede o centro do corpo), então a saída certa é a mais
+    /// PERTO que esteja fora, não a mais segura.
+    #[test]
+    fn a_fuga_e_a_mais_curta_possivel() {
+        let f = Forma::Circulo { raio: 6.0 };
+        let centro = glam::Vec2::ZERO;
+        // Colado na borda de dentro: dois passos resolvem.
+        let quase_fora = glam::Vec2::new(5.5, 0.0);
+        let saida = saida_do_telegrafico(&f, centro, glam::Vec2::X, quase_fora).expect("saída");
+        assert!(
+            quase_fora.distance(saida) <= 6.0,
+            "fugiu {:.1}u de uma borda a meia unidade",
+            quase_fora.distance(saida)
         );
     }
 }
