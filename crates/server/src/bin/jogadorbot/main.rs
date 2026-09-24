@@ -634,6 +634,23 @@ fn insiste(de: glam::Vec2, para: glam::Vec2, parado: u32, ultima: f32) -> (bool,
     (true, parado, dist)
 }
 
+/// Mais longe que isto não é alvo, é paisagem.
+const LONGE_DEMAIS: f32 = 60.0;
+
+/// O alvo em que VALE agir, que não é o mesmo que o alvo mais perto.
+///
+/// `eu.alvo` é o inimigo mais próximo DOS CONHECIDOS, e conhecido pode estar a
+/// duzentas unidades. A etapa 10 já filtrava por distância, mas o ramo de
+/// VAGAR ainda olhava o `eu.alvo` cru — então um bicho longe demais bloqueava
+/// a caminhada sem render um golpe, e o bot caía em `sem_o_que_fazer`: 2.393
+/// em dez minutos, todos com `destino=None`.
+///
+/// Duas leituras do mesmo campo, com regras diferentes, é sempre isto. A
+/// pergunta é uma só e agora a resposta também.
+fn alvo_util(eu: &Eu) -> Option<(shared::EntityId, glam::Vec2)> {
+    eu.alvo.filter(|(_, p)| eu.pos.distance(*p) <= LONGE_DEMAIS)
+}
+
 /// UM PASSO QUE NÃO DEU: conta e, no limite, larga a missão.
 ///
 /// Todo ramo de destino tem um caminho de "não dá agora" — sem receita, sem
@@ -1487,7 +1504,19 @@ async fn decide(
         .map(|(id, _)| *id);
     if let Some(id) = pronta {
         ws.send(envia(&ClientMessage::TurnInQuest { quest_id: id })?).await?;
-        t.registra(ev(nome, eu, "quest_entregue", true, format!("#{id}")));
+        // ENTREGAR NÃO É ENTREGUE, e este contador mentia igual aos outros.
+        //
+        // 1.714 "quest_entregue" da MESMA missão (#603) em dez minutos, com o
+        // servidor respondendo todas as vezes "entregue ao Mestre de Missões,
+        // na praça da cidade": a missão exige estar DIANTE do NPC, e o bot
+        // mandava o pedido de onde estivesse. Marcar sucesso no envio
+        // escondeu isso — e ainda enganou o analisador, que via 857
+        // "entregas" e dava o bot por produtivo.
+        //
+        // Agora conta como passo que não deu, e aos três a missão sai da
+        // frente pelo prazo da desistência — o bot vai fazer outra coisa e
+        // volta quando estiver perto do NPC de verdade.
+        passo_nao_deu(eu, t, nome, id, "quest_entregue", format!("#{id}"));
         return Ok(());
     }
     // 3. Sem missão nenhuma: pede oferta a quem tiver.
@@ -2467,9 +2496,7 @@ async fn decide(
     // O alcance do básico é 1,8 corpo a corpo e 9 à distância; 12 cobre os dois
     // com folga pro alvo estar andando.
     const ALCANCE_DO_SOCO: f32 = 12.0;
-    // Mais longe que isto não é alvo, é paisagem: deixa o vagar levar.
-    const LONGE_DEMAIS: f32 = 60.0;
-    if let Some((id, p)) = eu.alvo.filter(|(_, p)| eu.pos.distance(*p) <= LONGE_DEMAIS) {
+    if let Some((id, p)) = alvo_util(eu) {
         let dist = eu.pos.distance(p);
         if dist > ALCANCE_DO_SOCO {
             // Vai até ele PELA ROTA, uma vez só — o mesmo cuidado do destino
@@ -2512,7 +2539,7 @@ async fn decide(
     //
     // O `%` sobre o relógio é um sorteio bom o bastante: não precisa de
     // aleatoriedade boa, precisa de direções diferentes a cada vez.
-    if eu.destino.is_none() && eu.alvo.is_none() {
+    if eu.destino.is_none() && alvo_util(eu).is_none() {
         // VAGAR COM COMPROMISSO, e esta é a diferença entre andar e girar.
         //
         // Antes escolhia um ponto novo a cada ~5,6 s e mandava `MoverPara`
