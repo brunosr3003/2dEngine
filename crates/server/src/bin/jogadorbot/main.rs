@@ -231,6 +231,14 @@ struct Eu {
     desistiu: HashMap<u16, Instant>,
     /// A missão em que o bot está trabalhando agora. Ver a escolha do foco.
     foco: Option<u16>,
+    /// Missões que ele já sabe que NÃO consegue fazer, pra sempre.
+    ///
+    /// Diferente do `desistiu`, que tem prazo: aquele é pra "não dá agora"
+    /// (faltou material, o caminho não abriu). Este é pra "não dá nunca" —
+    /// uma receita cujo material não vem de lugar nenhum que o bot alcance. O
+    /// prazo fazia ele voltar a cada dez minutos pra redescobrir a mesma
+    /// coisa, e um jogador não faz isso.
+    impossiveis: std::collections::HashSet<u16>,
     /// Contador do empurrão até o NÓ. Ver `empurra_no`.
     no_parado: u32,
     dist_do_no: f32,
@@ -1090,6 +1098,22 @@ async fn recebe(
             }
         }
         ServerMessage::QuestDestino { quest_id, tipo, pos, raio, npc_eid } => {
+            // TIPO ZERO É "NÃO HÁ PRA ONDE IR NESTA ILHA", e guardar isso como
+            // destino era um beco sem saída: nenhum ramo trata o tipo 0, então
+            // o bot caía no `sem_o_que_fazer` e repetia. Um bot registrou 144
+            // seguidas, todas com `destino=Some((503, 0, 0.0, 0))`, sem nunca
+            // largar a missão — porque ter destino é o que impede de vagar.
+            //
+            // A missão não é impossível pra sempre (o objetivo pode estar
+            // noutra ilha), então ela vai pra desistência com prazo, como
+            // qualquer passo que não deu.
+            if tipo == shared::quests::destino_tipo::NENHUM {
+                eu.destino = None;
+                eu.esperando_destino = 0;
+                passo_nao_deu(eu, t, nome, quest_id, "sem_destino_nesta_ilha",
+                    format!("#{quest_id}"));
+                return Ok(None);
+            }
             eu.destino = Some(Destino {
                 quest: quest_id,
                 tipo,
@@ -1500,7 +1524,7 @@ async fn decide(
     eu.desistiu
         .retain(|_, quando| quando.elapsed() < PRAZO_DA_DESISTENCIA);
     let foco_vale = eu.foco.is_some_and(|f| {
-        !eu.desistiu.contains_key(&f)
+        !eu.desistiu.contains_key(&f) && !eu.impossiveis.contains(&f)
             && eu
                 .quests
                 .get(&f)
@@ -1519,7 +1543,9 @@ async fn decide(
             .quests
             .iter()
             .filter(|(id, (_, st))| {
-                *st == shared::quests::quest_status::ACTIVE && !eu.desistiu.contains_key(id)
+                *st == shared::quests::quest_status::ACTIVE
+                    && !eu.desistiu.contains_key(id)
+                    && !eu.impossiveis.contains(id)
             })
             .map(|(id, _)| *id)
             .collect();
@@ -2080,9 +2106,21 @@ async fn decide(
                             eu.fontes.get(item).is_none_or(|t| t.is_empty())
                         });
                         if let Some((item, _)) = impossivel {
-                            passo_nao_deu(eu, t, nome, d.quest, "craft_sem_caminho", format!(
-                                "#{} item {item} não sai de coleta", d.quest
-                            ));
+                            // DE VEZ, e não pelo prazo da desistência.
+                            //
+                            // "Não sai de coleta" é estrutural: a receita é a
+                            // mesma daqui a dez minutos, e a desistência com
+                            // prazo fazia o bot voltar pra descobrir de novo —
+                            // 96 `craft_sem_caminho` em dez minutos, sempre as
+                            // mesmas duas missões e o mesmo item 61.
+                            //
+                            // Um jogador que descobre que não tem como fazer a
+                            // peça não volta a cada dez minutos pra conferir.
+                            eu.impossiveis.insert(d.quest);
+                            eu.destino = None;
+                            t.registra(ev(nome, eu, "missao_impossivel", false, format!(
+                                "#{} item {item} não sai de coleta — largada de vez", d.quest
+                            )));
                             return Ok(());
                         }
                         let falta = faltando.first().copied();
@@ -2447,6 +2485,8 @@ async fn decide(
         // diferente, que é o que separa "andou" de "tentou andar".
         const PERTO_O_BASTANTE: f32 = 5.0;
         const PRAZO_DA_VOLTA: Duration = Duration::from_secs(25);
+        /// A que distância do ponto de vagar se anda: ver `LONGE`.
+        const LONGE: f32 = 25.0;
         if let Some((alvo, desde)) = eu.vagando_para {
             if eu.pos.distance(alvo) <= PERTO_O_BASTANTE {
                 eu.vagando_para = None;
@@ -2473,7 +2513,12 @@ async fn decide(
             // não passa, e três segundos bastam pra sair da quina.
             let sobrou = eu.pos.distance(alvo);
             eu.vagando_para = None;
-            if sobrou > 40.0 {
+            // "NÃO ANDOU NADA" é sobrar quase tudo, e isso tem que ser medido
+            // CONTRA O RAIO. Eu escrevi 40 quando o raio era 45 e depois baixei
+            // o raio pra 25 sem voltar aqui: a condição virou impossível e o
+            // desencalhe nunca disparou — zero em dez minutos, com 83 vagares
+            // falhando. Número solto que espelha outro número é dívida.
+            if sobrou > LONGE * 0.8 {
                 eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
                 eu.empurrao_ate = Some(Instant::now() + Duration::from_secs(3));
                 t.registra(ev(nome, eu, "desencalhou", true, format!(
@@ -2496,7 +2541,7 @@ async fn decide(
         // nenhuma — "não chegou (parou a 45u)" era literal: o bot não dava um
         // passo. Perto é mais fácil de alcançar, e o que se procura (bicho)
         // está espalhado, não num lugar só.
-        let longe = 25.0;
+        let longe = LONGE;
         let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
         eu.vagando_para = Some((alvo, Instant::now()));
         ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
