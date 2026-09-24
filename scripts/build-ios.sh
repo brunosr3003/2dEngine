@@ -13,6 +13,7 @@
 # Uso:
 #   scripts/build-ios.sh                 build + ipa + upload
 #   scripts/build-ios.sh --skip-upload   so' gera o .ipa
+#   scripts/build-ios.sh --iphone        instala DIRETO no iPhone pareado
 #   scripts/build-ios.sh --version 1.1 --build 2609141530
 set -euo pipefail
 
@@ -28,11 +29,13 @@ source "$ENV_FILE"
 VERSAO="1.1"
 BUILD="$(date -u +%y%m%d%H%M)"
 SKIP_UPLOAD=0
+IPHONE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSAO="$2"; shift 2;;
     --build) BUILD="$2"; shift 2;;
     --skip-upload) SKIP_UPLOAD=1; shift;;
+    --iphone) IPHONE=1; SKIP_UPLOAD=1; shift;;
     *) echo "flag desconhecida: $1"; exit 2;;
   esac
 done
@@ -175,5 +178,50 @@ if [ "$SKIP_UPLOAD" -eq 0 ]; then
   echo "==> upload TestFlight..."
   xcrun altool --upload-app --type ios --file "$IPA" \
     --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+fi
+# ── 8. instalar direto no iPhone ──────────────────────────────────────────────
+#
+# SEM TESTFLIGHT. O limite diario da Apple (erro 90382) barrava o envio, e o
+# dono perguntou se nao dava pra mandar por AirDrop: nao da', o iOS nao instala
+# .ipa solto. O que da' e' instalar pelo aparelho PAREADO, que aqui alcanca
+# pelo Tailscale.
+#
+# O app tem que ser REASSINADO: o build normal usa profile de App Store, e o
+# iOS recusa com "Attempted to install a Beta profile without the proper
+# entitlement". Precisa de profile de DESENVOLVIMENTO (get-task-allow=true,
+# com o aparelho registrado) e da identidade Apple Development.
+#
+# A copia vai pra DevPayload/ e o Payload/ original fica intacto — e' dele que
+# sai o .ipa do TestFlight.
+if [ "$IPHONE" -eq 1 ]; then
+  echo "==> reassinando pra desenvolvimento..."
+  DEV_PROF=""
+  for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobileprovision \
+           "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision; do
+    [ -f "$f" ] || continue
+    P="$(security cms -D -i "$f" 2>/dev/null)" || continue
+    ID="$(echo "$P" | plutil -extract Entitlements.application-identifier raw -o - - 2>/dev/null || true)"
+    GTA="$(echo "$P" | plutil -extract Entitlements.get-task-allow raw -o - - 2>/dev/null || true)"
+    if [ "$ID" = "$TEAM.$BUNDLE" ] && [ "$GTA" = "true" ]; then DEV_PROF="$f"; break; fi
+  done
+  [ -n "$DEV_PROF" ] || { echo "ERRO: profile de DESENVOLVIMENTO pra $TEAM.$BUNDLE nao encontrado"; exit 1; }
+
+  rm -rf "$SAIDA/DevPayload" && mkdir -p "$SAIDA/DevPayload"
+  cp -R "$APP" "$SAIDA/DevPayload/"
+  cp "$DEV_PROF" "$SAIDA/DevPayload/Tempest.app/embedded.mobileprovision"
+  security cms -D -i "$DEV_PROF" | plutil -extract Entitlements xml1 -o "$SAIDA/dev-entitlements.plist" -
+  DEV_IDENT="$(security find-identity -v -p codesigning | awk '/Apple Development/{print $2; exit}')"
+  [ -n "$DEV_IDENT" ] || { echo "ERRO: identidade Apple Development nao encontrada"; exit 1; }
+  codesign --force --timestamp --sign "$DEV_IDENT" \
+    --entitlements "$SAIDA/dev-entitlements.plist" "$SAIDA/DevPayload/Tempest.app"
+  codesign --verify --strict "$SAIDA/DevPayload/Tempest.app"
+
+  # O aparelho: o primeiro pareado. Com mais de um, passe DEVICE_ID no ambiente.
+  DEV_ID="${DEVICE_ID:-$(xcrun devicectl list devices 2>/dev/null | awk '/available \(paired\)/{print $3; exit}')}"
+  [ -n "$DEV_ID" ] || { echo "ERRO: nenhum aparelho pareado (destranque o iPhone e tente de novo)"; exit 1; }
+  echo "==> instalando em $DEV_ID..."
+  # O iPhone precisa estar DESTRANCADO: travado, o mount da imagem de
+  # desenvolvedor falha com kAMDMobileImageMounterDeviceLocked.
+  xcrun devicectl device install app --device "$DEV_ID" "$SAIDA/DevPayload/Tempest.app"
 fi
 echo "==> pronto: Tempest $VERSAO ($BUILD)"

@@ -159,8 +159,14 @@ struct Eu {
     /// dois não é redundância: `MercadoAnunciar` fala em posição, e quase
     /// todo o resto fala em item.
     slots: Vec<(u16, shared::InventorySlot)>,
-    /// O nó de coleta que o servidor apontou.
-    no_de_coleta: Option<u32>,
+    /// O nó de coleta que o servidor apontou: coluna E ONDE ELE ESTÁ.
+    ///
+    /// A posição era descartada, e isso era o defeito: o bot pede nós num
+    /// raio de 40 unidades e mandava `ColetarNo` de onde estava. Coletar
+    /// exige estar ao alcance do nó (`COLETA_ALCANCE_UN`), então o ciclo
+    /// nunca começava — `progresso 0` em 40 coletas seguidas, com três bots
+    /// parados no nível 1 a corrida inteira.
+    no_de_coleta: Option<(u32, glam::Vec2)>,
     /// Está colhendo agora? Enquanto estiver, não se decide outra coisa.
     colhendo: bool,
     /// Pra onde o auto-path já foi mandado, e onde o bot estava quando
@@ -196,6 +202,14 @@ struct Eu {
     progresso_visto: (u16, u32),
     /// Crafts recusados por missão. Ver `CraftResultado`.
     craft_a_toa: HashMap<u16, u32>,
+    /// Passos que não deram, por (missão, ação). Ver `passo_nao_deu`.
+    ///
+    /// MAPA PRÓPRIO, e isto é um conserto: eu tinha reusado o `craft_a_toa`
+    /// aqui, e o tratador de craft bem-sucedido faz `clear()` nele. Como os
+    /// bots craftam o tempo todo, o contador da forja era zerado antes de
+    /// chegar a três e a desistência NUNCA disparava — 1.081
+    /// `sem_peca_pra_refinar` em três minutos.
+    passos_a_toa: HashMap<(u16, &'static str), u32>,
     /// Missões cujo destino o bot não consegue alcançar, e larga.
     ///
     /// O Treinador da ilha inicial é o caso: o A* ACHA caminho até ele (4
@@ -380,6 +394,38 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
                 }
             }
         }
+    }
+}
+
+/// UM PASSO QUE NÃO DEU: conta e, no limite, larga a missão.
+///
+/// Todo ramo de destino tem um caminho de "não dá agora" — sem receita, sem
+/// peça pra refinar, sem ponto de atributo, sem lista de skills. Cada um
+/// desses registrava o problema, soltava o destino e deixava o laço
+/// recomeçar: `sem_peca_pra_refinar` apareceu **420 vezes em dez minutos**
+/// nos doze bots.
+///
+/// Eu vinha consertando isso caso a caso (conversa, craft, coleta) e deixando
+/// os outros. Esta função é a regra única: qualquer passo que não deu conta
+/// pra mesma missão, e aos três a missão sai da frente pelo prazo da
+/// desistência. Um jogador faria igual — o que não dá agora se faz depois.
+fn passo_nao_deu(
+    eu: &mut Eu,
+    t: &Trilha,
+    nome: &str,
+    quest: u16,
+    acao: &'static str,
+    detalhe: String,
+) {
+    let n = eu.passos_a_toa.entry((quest, acao)).or_default();
+    *n += 1;
+    let vezes = *n;
+    t.registra(ev(nome, eu, acao, false, format!("{detalhe} (tentativa {vezes})")));
+    if vezes >= 3 {
+        eu.passos_a_toa.remove(&(quest, acao));
+        eu.desistiu.insert(quest, Instant::now());
+        eu.destino = None;
+        t.registra(ev(nome, eu, "passo_emperrado", false, format!("#{quest} em '{acao}'")));
     }
 }
 
@@ -668,7 +714,7 @@ async fn recebe(
             ws.send(envia(&ClientMessage::RespawnAtCity)?).await?;
         }
         ServerMessage::NoDeColeta { no } => {
-            eu.no_de_coleta = no.map(|(coluna, _, _, _)| coluna);
+            eu.no_de_coleta = no.map(|(coluna, c, _, _)| (coluna, glam::Vec2::new(c[0], c[1])));
         }
         ServerMessage::ColetaEstado { pausado, centro, .. } => {
             // Colhendo enquanto houver centro e não estiver pausado. É o que
@@ -840,7 +886,14 @@ async fn decide(
     // O motivo de não chegar nele é quase certamente PASSAGEIRO — quatro
     // bots indo ao mesmo NPC se bloqueiam —, e desistir para sempre de algo
     // que era temporário é o pior dos dois erros.
-    const PRAZO_DA_DESISTENCIA: Duration = Duration::from_secs(120);
+    // DEZ MINUTOS, e não dois.
+    //
+    // Com 120 s a missão emperrada voltava logo e o bot repetia o mesmo
+    // passo impossível: 577 "sem peça pra refinar" em três minutos, mesmo com
+    // a desistência funcionando. Refinar exige uma peça que ele ainda não
+    // tem, e isso não muda em dois minutos — muda quando ele caça e recebe
+    // drop, que é o que ele faz enquanto a missão está de lado.
+    const PRAZO_DA_DESISTENCIA: Duration = Duration::from_secs(600);
     eu.desistiu
         .retain(|_, quando| quando.elapsed() < PRAZO_DA_DESISTENCIA);
     let foco_vale = eu.foco.is_some_and(|f| {
@@ -1101,8 +1154,25 @@ async fn decide(
                 if eu.colhendo {
                     return Ok(());
                 }
-                match eu.no_de_coleta.take() {
-                    Some(coluna) => {
+                match eu.no_de_coleta {
+                    Some((coluna, onde)) => {
+                        // ANDA ATÉ O NÓ ANTES DE COLHER.
+                        //
+                        // `COLETA_ALCANCE_UN` é curto e o nó pode estar a até
+                        // 40 unidades (o raio que o bot pede). Mandar
+                        // `ColetarNo` de longe é pedir o que o servidor
+                        // recusa — e era exatamente isso que mantinha o
+                        // progresso em zero.
+                        let d_no = eu.pos.distance(onde);
+                        if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
+                            eu.empurrao = Some((onde - eu.pos).normalize_or_zero());
+                            eu.empurrao_ate =
+                                Some(Instant::now() + Duration::from_millis(800));
+                            return Ok(());
+                        }
+                        eu.empurrao = None;
+                        eu.empurrao_ate = None;
+                        eu.no_de_coleta = None;
                         ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
                         // O SUCESSO É O OBJETIVO ANDAR, não o envio.
                         //
@@ -1135,9 +1205,29 @@ async fn decide(
                         }
                     }
                     None => {
+                        // PEDE O RECURSO QUE A MISSÃO QUER, não qualquer um.
+                        //
+                        // Com `[true; 5]` o bot pegava o nó mais perto seja
+                        // ele qual for: a 704 pede ÁRVORE, a 705 pede PEDRA, e
+                        // três bots passaram a corrida inteira derrubando o
+                        // recurso errado — 40 coletas seguidas sem o objetivo
+                        // andar, parados no nível 1. A desistência salvava o
+                        // bot do laço, mas não fazia a missão.
+                        //
+                        // `tipos[0]` é madeira e `tipos[1..4]` são as pedras
+                        // (`server::coleta::aceita`); o alvo sai da própria
+                        // definição da missão.
+                        use shared::quests::alvo_de_coleta as alvo;
+                        let quer = shared::historia::def_da_historia(d.quest)
+                            .map_or(alvo::QUALQUER, |q| q.obj_target);
+                        let tipos = match quer {
+                            alvo::ARVORE => [true, false, false, false, false],
+                            alvo::PEDRA => [false, true, true, true, true],
+                            _ => [true; 5],
+                        };
                         ws.send(envia(&ClientMessage::PedirNoDeColeta {
-                            tipos: [true; 5],
-                            energia: true,
+                            tipos,
+                            energia: quer == alvo::QUALQUER,
                             raio: 40.0,
                             centro: [eu.pos.x, eu.pos.y],
                         })?)
@@ -1168,7 +1258,7 @@ async fn decide(
                             "#{} receita {r} (recusas {recusas})", d.quest
                         )));
                     }
-                    None => t.registra(ev(nome, eu, "craft_sem_receita", false, format!("#{}", d.quest))),
+                    None => passo_nao_deu(eu, t, nome, d.quest, "craft_sem_receita", format!("#{}", d.quest)),
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;
@@ -1185,7 +1275,7 @@ async fn decide(
                         .await?;
                         t.registra(ev(nome, eu, "refinou", true, format!("#{} slot {slot}", d.quest)));
                     }
-                    None => t.registra(ev(nome, eu, "sem_peca_pra_refinar", false, format!("#{}", d.quest))),
+                    None => passo_nao_deu(eu, t, nome, d.quest, "sem_peca_pra_refinar", format!("#{}", d.quest)),
                 }
                 eu.destino = None;
                 eu.esperando_destino = 0;
@@ -1292,7 +1382,7 @@ async fn decide(
                             // Sem ponto livre não há o que gastar: o passo
                             // espera o próximo nível, e dizer "feito" seria
                             // mentir pro servidor.
-                            t.registra(ev(nome, eu, "tutorial_espera", false, "sem ponto livre".into()));
+                            passo_nao_deu(eu, t, nome, d.quest, "tutorial_espera", "sem ponto livre".into());
                         }
                     }
                     tut::EVOLUIR_SKILL => {
@@ -1306,7 +1396,7 @@ async fn decide(
                                 // inventado vira recusa silenciosa. Ela vem
                                 // no login; se não veio, é isso que a trilha
                                 // tem que dizer.
-                                t.registra(ev(nome, eu, "tutorial_espera", false, "sem lista de skills".into()));
+                                passo_nao_deu(eu, t, nome, d.quest, "tutorial_espera", "sem lista de skills".into());
                             }
                         }
                     }
