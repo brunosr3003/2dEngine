@@ -239,6 +239,12 @@ struct Eu {
     /// prazo fazia ele voltar a cada dez minutos pra redescobrir a mesma
     /// coisa, e um jogador não faz isso.
     impossiveis: std::collections::HashSet<u16>,
+    /// Alvo a que ele já mandou ir pela rota. Ver a etapa 10.
+    ///
+    /// Sem isto, o `MoverPara` seria reenviado a cada decisão e reiniciaria o
+    /// trajeto a cada 700 ms — o defeito que já custou 511 comandos de
+    /// movimento com o personagem parado no mesmo pixel.
+    indo_ao_alvo: Option<shared::EntityId>,
     /// O rumo da caminhada atual e quantos saltos ainda faltam nele.
     ///
     /// Sem rumo, o vagar virava caminhada aleatória e o bot não saía de um
@@ -2446,7 +2452,36 @@ async fn decide(
         return Ok(());
     }
     // 10. Sem mais nada a fazer: bate no inimigo mais perto.
-    if let Some((id, p)) = eu.alvo {
+    //
+    // MAS SÓ SE ELE ESTIVER AO ALCANCE, e essa linha faltava.
+    //
+    // `eu.alvo` é o inimigo mais perto DOS CONHECIDOS, e conhecido não quer
+    // dizer alcançável: pode estar a duzentas unidades, do outro lado de uma
+    // parede. O bot mandava o soco assim mesmo e, pior, mandava `move_dir` na
+    // direção dele a cada decisão — e comando manual MATA a rota do servidor.
+    // Daí os dois sintomas juntos na trilha: 767 "atacou" em dez minutos com
+    // ZERO de XP, e "rota não saiu" no desencalhe logo em seguida. Ele
+    // perseguia no direcional um alvo que nunca alcançava, e o direcional
+    // cancelava a única coisa que o tiraria dali.
+    //
+    // O alcance do básico é 1,8 corpo a corpo e 9 à distância; 12 cobre os dois
+    // com folga pro alvo estar andando.
+    const ALCANCE_DO_SOCO: f32 = 12.0;
+    // Mais longe que isto não é alvo, é paisagem: deixa o vagar levar.
+    const LONGE_DEMAIS: f32 = 60.0;
+    if let Some((id, p)) = eu.alvo.filter(|(_, p)| eu.pos.distance(*p) <= LONGE_DEMAIS) {
+        let dist = eu.pos.distance(p);
+        if dist > ALCANCE_DO_SOCO {
+            // Vai até ele PELA ROTA, uma vez só — o mesmo cuidado do destino
+            // de missão. Reenviar a cada decisão reinicia o trajeto.
+            if eu.indo_ao_alvo != Some(id) {
+                eu.indo_ao_alvo = Some(id);
+                ws.send(envia(&ClientMessage::MoverPara { x: p.x, z: p.y })?).await?;
+                t.registra(ev(nome, eu, "foi_ao_alvo", true, format!("{dist:.0}u")));
+            }
+            return Ok(());
+        }
+        eu.indo_ao_alvo = None;
         ws.send(envia(&ClientMessage::SetTarget { target: Some(id) })?).await?;
         *seq = seq.wrapping_add(1);
         let dir = (p - eu.pos).normalize_or_zero();
@@ -2454,7 +2489,7 @@ async fn decide(
             input: InputFrame {
                 seq: *seq,
                 tick,
-                move_dir: if eu.pos.distance(p) > 2.0 { dir } else { glam::Vec2::ZERO },
+                move_dir: if dist > 2.0 { dir } else { glam::Vec2::ZERO },
                 aim: dir,
                 buttons: 1,
             },

@@ -1853,7 +1853,7 @@ mod testes {
         let mut falhas: Vec<String> = Vec::new();
         for c in cat::CHEFES.iter() {
             let mut vencem_abaixo = 0;
-            for conj in CONJUNTOS {
+            for conj in Conjunto::TODOS {
                 let esquiva = duelar(c.kind, conj, c.nivel, Perfil::Esquiva, true);
                 let parado = duelar(c.kind, conj, c.nivel, Perfil::Parado, true);
                 let seco = duelar(c.kind, conj, c.nivel, Perfil::Esquiva, false);
@@ -1975,7 +1975,7 @@ mod testes {
     #[test]
     fn golpe_comum_de_chefe_nao_mata_de_uma_vez() {
         for c in cat::CHEFES.iter() {
-            for conj in CONJUNTOS {
+            for conj in Conjunto::TODOS {
                 let (e, a, p, x) = build_do_nivel(conj, c.nivel);
                 let s = effective_stats(&e, &a, &p, x);
                 let dmg = dano_mitigado(
@@ -2227,5 +2227,55 @@ mod testes_do_nivel_do_mob {
         assert_eq!(xp_do_mob(30, 6), 45);
         assert_eq!(xp_do_mob(30, 12), 63);
         assert!(xp_do_mob(30, 12) > xp_do_mob(30, 6));
+    }
+}
+
+#[cfg(test)]
+mod dps_por_ponto {
+    use super::*;
+    use shared::stat_idx;
+
+    /// DPS POR 10 PONTOS DE ATRIBUTO, por classe. Ferramenta, não guarda: só
+    /// imprime, e por isso é `#[ignore]`.
+    ///
+    /// Existe porque a pergunta "qual atributo subir" não se responde lendo a
+    /// tabela de bônus: FOR dá dano FLAT e DES dá velocidade e crítico, que
+    /// são MULTIPLICATIVOS — então o melhor atributo muda com o nível e com o
+    /// equipamento, e depende de quanta velocidade a arma já tem de fábrica.
+    ///
+    /// Rodar com:
+    ///   cargo test -p server --bins dps_por_ponto -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn tabela() {
+        for nivel in [20u32, 50] {
+            println!("\n== nível {nivel} (build da simulação, 10 pontos a mais em cada)");
+            for conj in Conjunto::TODOS {
+                let (equip, base, profs, xp) = build_do_nivel(conj, nivel);
+                let arma = arma_do(conj);
+                let dps = |al: &[u32; shared::STAT_COUNT]| {
+                    let s = crate::world::effective_stats(&equip, al, &profs, xp);
+                    let cd = crate::world::cooldown_do_ataque(arma, &s, false);
+                    let crit = 1.0
+                        + s.crit_chance.min(1.0) * (shared::constants::CRIT_DAMAGE_MULT - 1.0);
+                    (s.attack_damage as f32 * crit / cd, s.hp_max)
+                };
+                let (d0, hp0) = dps(&base);
+                print!("  {conj:<13?} base {d0:6.1} dps {hp0:5} hp ");
+                for (nome, i) in [
+                    ("FOR", stat_idx::FOR),
+                    ("DES", stat_idx::DES),
+                    ("INT", stat_idx::INT),
+                    ("VIT", stat_idx::VIT),
+                    ("RES", stat_idx::RES),
+                ] {
+                    let mut a = base;
+                    a[i] += 10;
+                    let (d, hp) = dps(&a);
+                    print!("| {nome} {:+5.1}% dps {:+4} hp ", (d / d0 - 1.0) * 100.0, hp - hp0);
+                }
+                println!();
+            }
+        }
     }
 }
