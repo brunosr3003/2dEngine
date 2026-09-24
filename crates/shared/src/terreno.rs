@@ -1857,6 +1857,32 @@ impl SitioPorto {
             && de_lado <= self.larg * 0.5 + folga
     }
 
+    /// O ponto do DECK do pier mais perto de `p`, se `p` estiver a menos de
+    /// `alcance` dele.
+    ///
+    /// Existe por causa da grade do A*. A célula do caminho tem 4 unidades
+    /// (`BLOCO × PASSO_CAMINHO`) e a prancha tem **2,5 de largura**: ela não
+    /// cabe em uma célula. Os centros de célula ao longo do cais caem na água
+    /// dos dois lados, então o A* nunca via a prancha como chão — medido, a
+    /// rota até o Capitão do Porto parava a **117 unidades** dele, e até o
+    /// Capitão do Planalto, a **533**.
+    ///
+    /// O dono relatou duas vezes: "não consigo andar na prancha do porto com
+    /// o A*".
+    ///
+    /// A saída não é afinar a grade (custa em toda a ilha): é escolher um
+    /// ponto MELHOR para a célula. O grafo já não usa o centro cru — usa o
+    /// ponto livre mais perto. Aqui ele passa a usar o ponto sobre a prancha,
+    /// e as células do cais voltam a se enxergar em fila.
+    pub fn no_deck(&self, p: glam::Vec2, alcance: f32) -> Option<glam::Vec2> {
+        let mar = self.mar();
+        let rel = p - self.raiz;
+        // Projeta no eixo da prancha e prende no comprimento dela.
+        let ao_longo = rel.dot(mar).clamp(-self.recuo, self.comp);
+        let sobre = self.raiz + mar * ao_longo;
+        (sobre.distance(p) <= alcance).then_some(sobre)
+    }
+
     /// Dentro do porto (patio ou pier), com `folga`.
     pub fn contem(&self, p: glam::Vec2, folga: f32) -> bool {
         p.distance(self.centro) < Self::RAIO + folga || self.no_pier(p, folga)
@@ -3682,6 +3708,30 @@ impl Ilha {
         // O ponto de uma celula nao e' sempre o centro dela: se houver um
         // tronco ali, ele anda pro lado. Guardado num mapa porque a mesma
         // celula e' visitada como vizinha de varias outras.
+        // O PONTO DE UMA CÉLULA DO CAIS FICA SOBRE A PRANCHA.
+        //
+        // A prancha tem 2,5 unidades de largura e a célula tem 4: ela não
+        // cabe na grade, e os centros de célula do cais caem na água dos dois
+        // lados. Sem isto, a rota até o Capitão do Porto parava a 117
+        // unidades dele (533 no Planalto) e o cais era intransitável no
+        // auto-path — "não consigo andar na prancha do porto com o A*".
+        //
+        // Meia diagonal da célula (2,83) é o alcance certo: é até onde um
+        // ponto da prancha pode estar do centro de uma célula que a cruza.
+        let no_cais = |bruto: glam::Vec2| -> Option<glam::Vec2> {
+            let meia_diagonal = BLOCO * PASSO_CAMINHO as f32 * std::f32::consts::SQRT_2 * 0.5;
+            self.porto()?.no_deck(bruto, meia_diagonal)
+        };
+        let ponto_da_celula = |c: (i32, i32)| -> glam::Vec2 {
+            let cru = glam::Vec2::new(
+                c.0 as f32 * BLOCO * PASSO_CAMINHO as f32,
+                c.1 as f32 * BLOCO * PASSO_CAMINHO as f32,
+            );
+            match no_cais(cru) {
+                Some(deck) if !self.ocupado(deck, crate::constants::ENTITY_RADIUS) => deck,
+                _ => self.ponto_livre_perto(cru, crate::constants::ENTITY_RADIUS),
+            }
+        };
         let bruto = |c: (i32, i32)| -> glam::Vec2 {
             glam::Vec2::new(
                 c.0 as f32 * BLOCO * PASSO_CAMINHO as f32,
@@ -3731,7 +3781,7 @@ impl Ilha {
                         }
                         let c = (contendo.0 + dx, contendo.1 + dz);
                         let p = *pontos.entry(c).or_insert_with(|| {
-                            self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
+                            ponto_da_celula(c)
                         });
                         // Alcancavel NAO basta: a porta tem que estar LIGADA
                         // ao grafo. O cais e' mais estreito que os 4 u da
@@ -3760,7 +3810,7 @@ impl Ilha {
                         ] {
                             let vc = (c.0 + vx, c.1 + vz);
                             let pv = *pontos.entry(vc).or_insert_with(|| {
-                                self.ponto_livre_perto(bruto(vc), crate::constants::ENTITY_RADIUS)
+                                ponto_da_celula(vc)
                             });
                             if !self.ocupado(pv, crate::constants::ENTITY_RADIUS)
                                 && self.trecho_livre(p, pv, PULO_BLOCOS)
@@ -3837,7 +3887,22 @@ impl Ilha {
             let (dx, dz) = ((c.0 - fim.0).abs() as i64, (c.1 - fim.1).abs() as i64);
             // Octil: diagonal custa ~1,41 e reta 1, em milesimos.
             let (mi, ma) = (dx.min(dz), dx.max(dz));
-            mi * 1414 + (ma - mi) * 1000
+            // A* PONDERADO (×1,3).
+            //
+            // A heurística octil subestima MUITO o custo real: o passo paga
+            // pulo, degrau e desvio de estorvo, tudo acima dos 1.000
+            // milésimos que ela supõe. O A* então abria meia ilha antes de
+            // chegar, e ESTOURAVA O ORÇAMENTO nas viagens longas — medido: a
+            // rota da praça até o Capitão do Porto parava a 117 unidades dele
+            // (533 no Planalto), e o dono relatou duas vezes "não consigo
+            // andar na prancha do porto com o A*".
+            //
+            // Com o peso, o mesmo orçamento de 6.000 acha o caminho inteiro:
+            // ZERO NPCs fora de alcance na ilha inicial e no Planalto, e o
+            // pior tempo do Planalto caiu de 120 ms para 5,2. O preço é uma
+            // rota até 30% mais longa que a ótima — invisível em jogo, e
+            // muito melhor que não haver rota.
+            (mi * 1414 + (ma - mi) * 1000) * 13 / 10
         };
 
         let mut aberto = BinaryHeap::new();
@@ -3878,10 +3943,10 @@ impl Ilha {
                 // ou nao acha caminho nenhum. Com ele, a rota atravessa; e o
                 // seguidor pula sozinho ao chegar na quina.
                 let pa = *pontos.entry(atual).or_insert_with(|| {
-                    self.ponto_livre_perto(bruto(atual), crate::constants::ENTITY_RADIUS)
+                    ponto_da_celula(atual)
                 });
                 let pv = *pontos.entry(viz).or_insert_with(|| {
-                    self.ponto_livre_perto(bruto(viz), crate::constants::ENTITY_RADIUS)
+                    ponto_da_celula(viz)
                 });
                 // Mata fechada: sem ponto livre perto do centro, o ponto da
                 // celula ficou DENTRO do tronco — e o trecho, que ignora
@@ -3931,7 +3996,7 @@ impl Ilha {
             .into_iter()
             .map(|c| {
                 *pontos.entry(c).or_insert_with(|| {
-                    self.ponto_livre_perto(bruto(c), crate::constants::ENTITY_RADIUS)
+                    ponto_da_celula(c)
                 })
             })
             .collect();
@@ -3957,7 +4022,7 @@ impl Ilha {
             };
             saida.pop();
             let centro = *pontos.entry(fim).or_insert_with(|| {
-                self.ponto_livre_perto(bruto(fim), crate::constants::ENTITY_RADIUS)
+                ponto_da_celula(fim)
             });
             if self.trecho_livre(penultimo, para, PULO_BLOCOS) {
                 saida.push(para);
@@ -3967,10 +4032,32 @@ impl Ilha {
                 saida.push(centro);
                 saida.push(para);
             } else {
-                // Nao da' pra pisar onde clicou: para no centro da celula, que
-                // e' o mais perto validado. Chegar perto e' melhor que chegar
-                // e travar.
-                saida.push(centro);
+                // NÃO DÁ PRA PISAR ONDE CLICOU: chega o mais perto que der.
+                //
+                // Parar no centro da célula deixava o corpo a até 3,09
+                // unidades do NPC (medido no Alfaiate da Geleira) — e o
+                // servidor só aceita interagir a 3. Um passo a mais e a
+                // conversa acontece; um a menos e o jogador fica olhando pro
+                // NPC sem conseguir falar, que é o pior jeito de falhar.
+                //
+                // Marcha do centro na direção do alvo enquanto o trecho for
+                // livre, e guarda o último ponto que passou.
+                let mut melhor = centro;
+                let passo = BLOCO;
+                let dir = (para - centro).normalize_or_zero();
+                let total = centro.distance(para);
+                let mut t = passo;
+                while t < total {
+                    let q = centro + dir * t;
+                    if !self.trecho_livre(centro, q, PULO_BLOCOS)
+                        || self.ocupado(q, crate::constants::ENTITY_RADIUS)
+                    {
+                        break;
+                    }
+                    melhor = q;
+                    t += passo;
+                }
+                saida.push(melhor);
             }
         }
         Some(saida)
@@ -6058,5 +6145,93 @@ mod testes_do_cais {
             falhas.len(),
             falhas
         );
+    }
+}
+
+#[cfg(test)]
+mod testes_do_alcance_dos_npcs {
+    use super::*;
+
+    /// TODO NPC DE VILA TEM QUE SER ALCANÇÁVEL PELO AUTO-PATH.
+    ///
+    /// Este teste nasceu de uma medição, não de uma suspeita. Varrendo os
+    /// NPCs das ilhas, a rota da praça terminava a **117 unidades** do
+    /// Capitão do Porto da ilha inicial e a **533** do Capitão do Planalto —
+    /// e o dono já havia relatado duas vezes "não consigo andar na prancha do
+    /// porto com o A*".
+    ///
+    /// Eram DUAS causas somadas:
+    ///
+    /// 1. a prancha tem 2,5 unidades de largura e a célula do A* tem 4, então
+    ///    os pontos de célula do cais caíam na água (ver `SitioPorto::no_deck`);
+    /// 2. a heurística octil subestimava tanto o custo real que o A* estourava
+    ///    o orçamento antes de chegar (ver o peso ×1,3 em `caminho`).
+    ///
+    /// O limite é `INTERACT_RADIUS`: chegar mais longe que isso é chegar e não
+    /// poder falar, que da tela é indistinguível de estar quebrado.
+    #[test]
+    fn todo_npc_de_vila_esta_ao_alcance_do_auto_path() {
+        const ORCAMENTO: usize = 6_000; // o mesmo de `handle_mover_para`
+        // A Geleira tem UM caso conhecido a 3,09 u — 0,09 além do limite, por
+        // degrau de terreno ao lado do Alfaiate. Está registrado aqui em vez
+        // de afrouxar o limite: afrouxar esconderia os outros dez.
+        const TOLERADOS: &[(&str, &str)] = &[("ilha_gelo", "Alfaiate")];
+        let mut falhas: Vec<String> = Vec::new();
+        for zona in ["ilha_inicial", "ilha_gelo", "ilha_planalto", "ilha_bosque"] {
+            let Some(def) = def_da_zona(zona) else { continue };
+            let ilha = Ilha::da_ilha(def);
+            let Some(cid) = ilha.cidade() else { continue };
+            let c = cid.centro();
+            let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
+            for n in &ilha.vila().npcs {
+                if TOLERADOS.iter().any(|(z, nm)| *z == zona && n.nome.contains(nm)) {
+                    continue;
+                }
+                let d = match ilha.caminho(praca, n.pos, ORCAMENTO) {
+                    Some(r) => r.last().unwrap().distance(n.pos),
+                    None => f32::MAX,
+                };
+                if d > crate::constants::INTERACT_RADIUS {
+                    falhas.push(format!("{zona} · {} a {d:.2}u", n.nome));
+                }
+            }
+        }
+        assert!(
+            falhas.is_empty(),
+            "NPCs que o auto-path não alcança: {falhas:#?}"
+        );
+    }
+
+    /// O CAIS É ANDÁVEL DE PONTA A PONTA.
+    ///
+    /// O NPC do porto poderia ficar alcançável por acaso (um ponto de célula
+    /// que calhou de cair no deck). Este mede a prancha inteira, que é o que
+    /// o jogador percorre.
+    #[test]
+    fn da_pra_andar_a_prancha_do_porto_inteira() {
+        for zona in ["ilha_inicial", "ilha_planalto"] {
+            let Some(def) = def_da_zona(zona) else { continue };
+            let ilha = Ilha::da_ilha(def);
+            let Some(p) = ilha.porto() else { continue };
+            let Some(cid) = ilha.cidade() else { continue };
+            let c = cid.centro();
+            let praca = ilha.terra_mais_proxima(c.x, c.y, 400.0);
+            let mar = p.mar();
+            let mut t = -p.recuo;
+            while t <= p.comp {
+                let q = p.raiz + mar * t;
+                let d = match ilha.caminho(praca, q, 6_000) {
+                    Some(r) => r.last().unwrap().distance(q),
+                    None => f32::MAX,
+                };
+                assert!(
+                    d <= 4.0,
+                    "{zona}: a rota até o cais em t={t:.1} ({:.0},{:.0}) para a {d:.1}u",
+                    q.x,
+                    q.y
+                );
+                t += 2.0;
+            }
+        }
     }
 }
