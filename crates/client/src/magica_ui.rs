@@ -56,7 +56,9 @@ fn rodape_de(p: Rect, f: f32, dentro: bool) -> Rect {
 /// São sete ilhotas, e ler o nome de cada uma no meio de uma briga de PvP não
 /// acontece. A cor é o que o olho separa sem ler — e é a mesma no HUD e na
 /// lista do painel, senão seriam dois códigos para a mesma coisa.
-fn cor_do_bonus(b: Bonus) -> Color {
+/// A cor de cada bônus. UMA só no jogo inteiro: a tarja do HUD e os nomes no
+/// mapa usam esta mesma, pra o jogador aprender o par cor↔ilhota uma vez.
+pub(crate) fn cor_do_bonus(b: Bonus) -> Color {
     match b {
         Bonus::Xp => Color::new(0.55, 0.78, 0.98, 1.0),
         Bonus::DropDeMob => Color::new(0.72, 0.86, 0.45, 1.0),
@@ -85,6 +87,27 @@ pub struct Estado {
     pub bonus: u8,
 }
 
+/// As peças da tarja do HUD, já medidas. Ver `pecas_da_tarja`.
+pub(crate) struct Pecas {
+    pub relogio: Rect,
+    pub ilhota: Rect,
+    pub barra: Rect,
+    pub mais: Rect,
+    pub sair: Rect,
+}
+
+impl Pecas {
+    pub fn todas(&self) -> [(&'static str, Rect); 5] {
+        [
+            ("relógio", self.relogio),
+            ("ilhota", self.ilhota),
+            ("barra", self.barra),
+            ("+", self.mais),
+            ("sair", self.sair),
+        ]
+    }
+}
+
 #[derive(Default)]
 pub struct MagicaUi {
     estado: Option<Estado>,
@@ -104,6 +127,18 @@ pub struct MagicaUi {
     /// vale o maior liberado — que é o que quase todo mundo quer.
     grau: u8,
     aviso: Option<(String, f64)>,
+    /// O cliente está CONECTADO numa zona de Ilha Mágica agora?
+    ///
+    /// Vem do nome da zona, e não de mensagem nenhuma. O `dentro` do estado
+    /// chega do processo da ilha e fica VELHO quando o jogador sai: a saída é
+    /// um handoff pra zona de origem, e lá ninguém manda estado novo. O
+    /// resultado era a tarja continuar na tela depois de sair, com o relógio
+    /// correndo — o dono: "a HUD da ilha mágica tá aparecendo até depois de
+    /// sair dela com countdown e tudo".
+    ///
+    /// Amarrar na zona conserta sem depender de mensagem chegar: se o cliente
+    /// não está falando com um processo de ilha, não há ilha.
+    na_zona_magica: bool,
 }
 
 impl MagicaUi {
@@ -174,9 +209,24 @@ impl MagicaUi {
             .map_or(0, |e| shared::magica::resta(e.fim_unix, agora_unix))
     }
 
+    /// Em que zona o cliente está. Uma vez por quadro, do nome da zona.
+    pub fn atualiza_zona(&mut self, zona: Option<&str>) {
+        self.na_zona_magica = zona.is_some_and(shared::magica::e_magica);
+    }
+
+    /// O cliente está numa zona de Ilha Mágica? (Sem olhar o relógio.)
+    pub fn na_ilha(&self) -> bool {
+        self.na_zona_magica
+    }
+
     /// Está dentro da ilha com tempo valendo?
+    ///
+    /// As TRÊS condições: a zona é de ilha (senão a tarja sobrevive à saída),
+    /// o servidor disse que está dentro, e ainda há tempo.
     pub fn dentro(&self, agora_unix: i64) -> bool {
-        self.estado.as_ref().is_some_and(|e| e.dentro) && self.resta(agora_unix) > 0
+        self.na_zona_magica
+            && self.estado.as_ref().is_some_and(|e| e.dentro)
+            && self.resta(agora_unix) > 0
     }
 
     /// O bônus da ilhota de agora.
@@ -194,19 +244,102 @@ impl MagicaUi {
     /// Fora do desenho pra poder ser medido: ele divide a tarja com o relógio
     /// e a ilhota, e medida escrita à mão nesta tela já pôs o "Entrar" fora
     /// da janela uma vez.
-    pub(crate) fn botoes_da_tarja(tarja: Rect, f: f32) -> (Rect, Rect) {
+    /// A faixa dos degraus: (y da linha de detalhe, os três botões).
+    ///
+    /// Fora do desenho pra poder ser medida. A primeira versão desta faixa
+    /// saiu com os rótulos sobrepostos no emulador, e medida escrita à mão
+    /// nesta tela já pôs o "Entrar" fora da janela uma vez.
+    pub(crate) fn faixa_dos_degraus(rod: Rect, f: f32) -> (f32, [Rect; 3]) {
+        // 34 em pixels CRUS no mínimo: `area_de_toque` cresce o alvo até o
+        // dedo, mas com teto (+14). Num `f` pequeno, 34 × 0,8 = 27 e nem com
+        // o crescimento chega aos 44 pt da Apple — o teste pegou em f=0,8.
+        let alto = (34.0 * f).max(34.0);
+        let y = rod.y - 104.0 * f;
+        let folga = 8.0 * f;
+        let larg = (rod.w - folga * 2.0) / 3.0;
+        (
+            y + alto + 15.0 * f,
+            [0, 1, 2].map(|k| {
+                Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)
+            }),
+        )
+    }
+
+    /// TODAS as peças da tarja, de uma vez.
+    ///
+    /// Uma função só porque o defeito era entre peças: os botões eram postos
+    /// dentro da tarja, em cima da barra de tempo, que ocupa a largura toda.
+    /// O teste que existia media só os dois botões ENTRE SI e por isso passou
+    /// com a sobreposição na tela. Medindo tudo junto, o teste consegue exigir
+    /// que nada encoste em nada.
+    pub(crate) fn pecas_da_tarja(tarja: Rect, f: f32) -> Pecas {
+        let pad = 12.0 * f;
         // 32 no MÍNIMO, em pixels crus: `area_de_toque` cresce o alvo até o
         // dedo, mas com teto (+14). Num `f` pequeno, 30 × 0,8 = 24 e nem com
-        // o crescimento chega aos 44 pt da Apple — foi o que o teste pegou.
-        let lado = (30.0 * f).max(32.0);
-        let y = tarja.y + tarja.h - lado - 4.0 * f;
-        let meio = tarja.x + tarja.w * 0.5;
-        // O "+" à esquerda do meio e o sair à direita: os dois moram na faixa
-        // livre entre o relógio e a ilhota.
-        (
-            Rect::new(meio - lado - 3.0 * f, y, lado, lado),
-            Rect::new(meio + 3.0 * f, y, lado, lado),
-        )
+        // o crescimento chega aos 44 pt da Apple.
+        let alto = (32.0 * f).max(32.0);
+        let lado = alto;
+        let larg_sair = (64.0 * f).max(58.0);
+        let by = tarja.y + (tarja.h - alto) * 0.5;
+        // Os botões ancoram na DIREITA e o texto ocupa o que sobra. O
+        // contrário (texto primeiro) faria o "Sair" andar conforme o nome da
+        // ilhota, e botão que muda de lugar é botão que se erra.
+        let sair = Rect::new(tarja.x + tarja.w - pad - larg_sair, by, larg_sair, alto);
+        let mais = Rect::new(sair.x - 8.0 * f - lado, by, lado, alto);
+        // O texto acaba ONDE OS BOTÕES COMEÇAM, e a barra acompanha o texto.
+        let fim = mais.x - 10.0 * f;
+        let relogio = Rect::new(tarja.x + pad, tarja.y + 6.0 * f, 92.0 * f, 26.0 * f);
+        let ilhota = Rect::new(
+            relogio.x + relogio.w + 8.0 * f,
+            tarja.y + 6.0 * f,
+            (fim - (relogio.x + relogio.w + 8.0 * f)).max(0.0),
+            30.0 * f,
+        );
+        let barra = Rect::new(
+            tarja.x + pad,
+            tarja.y + tarja.h - 12.0 * f,
+            (fim - tarja.x - pad).max(0.0),
+            5.0 * f,
+        );
+        Pecas { relogio, ilhota, barra, mais, sair }
+    }
+
+    /// A FAIXA DE PVP, entre a área e o minimapa.
+    ///
+    /// O dono: "tem que indicar essa safe zone / PvP on em algum lugar; a
+    /// minha recomendação é ali abaixo do ilha_magica SA01 CH magica1, entre
+    /// isso e o minimapa".
+    ///
+    /// Ela existe porque a regra MUDA DE ILHOTA PRA ILHOTA: a da chegada é
+    /// porto seguro e as outras seis são PvP aberto. Uma regra que muda
+    /// enquanto se anda e não aparece em lugar nenhum é uma armadilha — o
+    /// jogador só descobre qual valia depois de morrer.
+    ///
+    /// Quem decide é `shared::magica::e_porto_seguro`, a MESMA função que o
+    /// servidor usa pra recusar o dano. Duas cópias divergiriam, e a tela
+    /// diria "seguro" enquanto o servidor deixava bater.
+    pub fn desenha_faixa_pvp(&self, eu: Option<Vec2>) {
+        if !self.na_zona_magica {
+            return;
+        }
+        let z = crate::hud_layout::atual();
+        let r = crate::hud_layout::faixa_pvp_rect(&z);
+        // O Vec2 do shared é de outra versão do glam.
+        let seguro = eu.is_some_and(|p| {
+            shared::magica::e_porto_seguro(::glam::Vec2::new(p.x, p.y))
+        });
+        let (texto, cor) = if seguro {
+            ("Zona segura · sem PvP", VERDE)
+        } else {
+            ("PvP aberto", VERMELHO)
+        };
+        let f = estilo::fator_texto();
+        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.0, 0.0, 0.0, 0.55));
+        draw_rectangle(r.x, r.y, 3.0 * f, r.h, cor);
+        // O disco antes do texto: a cor sozinha num fundo escuro é fraca, e é
+        // ela que se lê de canto de olho no meio da briga.
+        draw_circle(r.x + 14.0 * f, r.y + r.h * 0.5, 4.0 * f, cor);
+        estilo::texto(r.x + 24.0 * f, r.y + r.h * 0.5 + 5.0 * f, texto, 13, cor);
     }
 
     pub fn desenha_hud(&mut self, agora_unix: i64) -> Option<PedidoMagica> {
@@ -214,48 +347,52 @@ impl MagicaUi {
             return None;
         }
         let resta = self.resta(agora_unix);
-        let s = crate::hud_layout::tela_segura();
+        let z = crate::hud_layout::atual();
         let f = estilo::fator_texto();
         let urgente = resta <= 60;
 
-        // Largura FIXA. Antes ela saía do texto, então a tarja mudava de
-        // tamanho a cada travessia de ponte — o olho via a coisa pular de
-        // lugar e o relógio nunca ficava onde se aprendeu a procurar.
-        let w = 268.0 * f;
-        let h = 62.0 * f;
-        let r = Rect::new(s.x + (s.w - w) * 0.5, s.y + 6.0 * f, w, h);
+        // NA ESQUERDA, ABAIXO DO RASTREADOR — e não mais no topo do meio.
+        //
+        // O dono: "eu disse abaixo do resumo das missões, na esquerda". E faz
+        // sentido: qual ilhota e quanto falta se lê junto da missão que se
+        // está fazendo. No topo do meio a tarja disputava o lugar onde o olho
+        // procura o alvo.
+        //
+        // A largura é a da coluna (a do rastreador), não a do texto: saindo
+        // do texto, a tarja mudava de tamanho a cada travessia de ponte e o
+        // relógio nunca ficava onde se aprendeu a procurar.
+        let r = crate::hud_layout::tarja_magica_rect(&z);
         estilo::painel(r);
+        let p = Self::pecas_da_tarja(r, f);
 
         // O RELÓGIO, grande, à esquerda. É o número que decide se vale
         // atravessar ou não.
         let cor = if urgente { VERMELHO } else { OURO };
         let relogio = format!("{}:{:02}", resta / 60, resta % 60);
-        estilo::texto_forte(r.x + 14.0 * f, r.y + 30.0 * f, &relogio, 26, cor);
+        estilo::texto_forte(p.relogio.x, p.relogio.y + 22.0 * f, &relogio, 26, cor);
 
         // A BARRA, por baixo: o relógio em número diz quanto falta, a barra
         // diz quanto falta COMPARADO ao que cabe (1h30). Um vê-se lendo, a
-        // outra vê-se de canto de olho no meio de uma briga.
-        let bx = r.x + 14.0 * f;
-        let bw = w - 28.0 * f;
-        let by = r.y + h - 16.0 * f;
+        // outra vê-se de canto de olho no meio de uma briga. Ela para onde os
+        // botões começam — antes atravessava por baixo deles.
         let frac = (resta as f32 / shared::magica::TETO_S as f32).clamp(0.0, 1.0);
-        draw_rectangle(bx, by, bw, 5.0 * f, Color::new(1.0, 1.0, 1.0, 0.13));
-        draw_rectangle(bx, by, bw * frac, 5.0 * f, cor);
+        draw_rectangle(p.barra.x, p.barra.y, p.barra.w, p.barra.h, Color::new(1.0, 1.0, 1.0, 0.13));
+        draw_rectangle(p.barra.x, p.barra.y, p.barra.w * frac, p.barra.h, cor);
 
-        // A ILHOTA, à direita, NA COR DELA. São sete bônus; cor é o que o
-        // olho separa sem ler.
+        // A ILHOTA, NA COR DELA. São sete bônus; cor é o que o olho separa
+        // sem ler. O nome e o multiplicador na mesma linha, porque a tarja
+        // agora é larga e baixa em vez de estreita e alta.
         let (nome, mult, c) = match self.bonus() {
             Some(b) => (b.nome(), format!("×{:.2}", b.multiplicador()), cor_do_bonus(b)),
             None => ("Ponte", "sem bônus".to_string(), SUAVE),
         };
-        let x = r.x + w - 14.0 * f;
-        let tn = estilo::medir(nome, 15);
-        estilo::texto(x - tn, r.y + 24.0 * f, nome, 15, c);
-        let tm = estilo::medir(&mult, 17);
-        estilo::texto_forte(x - tm, r.y + 44.0 * f, &mult, 17, c);
         // O ponto da cor, colado no nome: um rótulo colorido some no fundo
         // escuro; um disco cheio não.
-        draw_circle(x - tn - 9.0 * f, r.y + 19.0 * f, 4.0 * f, c);
+        let cx = p.ilhota.x + 5.0 * f;
+        draw_circle(cx, p.ilhota.y + 11.0 * f, 4.0 * f, c);
+        let nx = cx + 9.0 * f;
+        estilo::texto_ajustado(nome, nx, p.ilhota.y + 15.0 * f, p.ilhota.w - 14.0 * f, 15, c);
+        estilo::texto_forte(nx, p.ilhota.y + 31.0 * f, &mult, 15, c);
 
         // ESTENDER SEM SAIR DO JOGO.
         //
@@ -274,10 +411,9 @@ impl MagicaUi {
         // teto de 1h30): reimplementá-las aqui daria duas regras pro mesmo
         // assunto, e a da tela ficaria velha.
         let total = e.passes + e.gratis as u32;
-        let (mais, sair) = Self::botoes_da_tarja(r, f);
         let mut pedido = None;
         if shared::magica::pode_entrar(e.fim_unix, agora_unix, total, 1).is_ok()
-            && crate::ui::botao(mais, "+", true)
+            && crate::ui::botao(p.mais, "+", true)
         {
             pedido = Some(PedidoMagica::Entrar { entradas: 1, grau: e.grau_atual });
         }
@@ -291,7 +427,7 @@ impl MagicaUi {
         // O relógio CONTINUA correndo depois de sair, e isso é regra de
         // `PedidoMagica::Sair`: senão o jogador sairia no primeiro susto e
         // voltaria com o tempo intacto, e a ilha deixaria de ter hora.
-        if crate::ui::botao(sair, "Sair", true) {
+        if crate::ui::botao(p.sair, "Sair", true) {
             pedido = Some(PedidoMagica::Sair);
         }
         pedido
@@ -381,46 +517,60 @@ impl MagicaUi {
             }
             // ── OS DEGRAUS ──
             //
-            // O dono: "a ilha mágica precisa ter níveis; você é nv 20, aí pode
-            // entrar na ilha desbloqueada no nv 20 com poder recomendado
+            // O dono: "a ilha mágica precisa ter níveis; você é nv 15, aí pode
+            // entrar na ilha desbloqueada no nv 15 com poder recomendado
             // 1500; a próxima nv 30 etc — dessa forma todos os mobs ficam
             // padronizados".
             //
-            // Cada degrau é uma ZONA com faixa de mob estreita. O que está
-            // TRAVADO aparece assim mesmo, com o nível que falta: saber que
-            // existe um degrau adiante é metade do motivo de subir de nível.
+            // O BOTÃO É SÓ O ALGARISMO, e o detalhe vai numa linha abaixo.
+            //
+            // A primeira versão punha `"{nome}\npoder {n}"` dentro do rótulo.
+            // `ui::botao` desenha uma linha só: o `\n` não quebrou nada, o
+            // texto transbordou e os três se sobrepuseram — "Ilha Mágica
+            // I⏎poder 75" invadindo "ha Mágica II". Visto em print do
+            // emulador, que é o único jeito de ver isto.
             let grau = if self.grau == 0 { e.grau_maximo } else { self.grau };
-            let linha = rod.y - 96.0 * f;
-            let larg = (rod.w - 8.0 * f * 2.0) / 3.0;
+            let (linha, fila) = Self::faixa_dos_degraus(rod, f);
             for (k, nv) in shared::magica::NIVEIS.iter().enumerate() {
-                let r = Rect::new(rod.x + k as f32 * (larg + 8.0 * f), linha, larg, 46.0 * f);
+                let r = fila[k];
                 let liberado = e.grau_maximo >= nv.grau;
                 if nv.grau == grau {
                     estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
                 }
-                let rot = if liberado {
-                    format!("{}\npoder {}", nv.nome, crate::bolsa::milhar(nv.poder() as u64))
-                } else {
-                    format!("{}\nnível {}", nv.nome, nv.exige_nivel)
-                };
-                // O AVISO DE QUE VOCÊ ESTÁ ABAIXO.
-                //
-                // O degrau I abre no 15 e tem mob 20-23 de propósito — "deixa
-                // entrar no nv 15 mesmo ele sendo lvl 20, só sobe o poder
-                // recomendado". Só que "poder 1.234" não diz nada sozinho: o
-                // aviso é a frase, e o número é a medida dela.
-                if liberado && nv.acima_do_nivel(e.meu_nivel) {
-                    estilo::texto_centro(
-                        r.center().x,
-                        r.y + r.h + 13.0 * f,
-                        &format!("mobs nv {}-{}", nv.mob.0, nv.mob.1),
-                        11,
-                        estilo::VERMELHO,
-                    );
-                }
-                if ui::botao(r, &rot, liberado) && liberado {
+                const ROMANO: [&str; 3] = ["I", "II", "III"];
+                if ui::botao(r, ROMANO[k], liberado) && liberado {
                     self.grau = nv.grau;
                 }
+            }
+            // A LINHA DE DETALHE do degrau escolhido — uma só, centrada.
+            if let Some(nv) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) {
+                let (txt, cor) = if e.grau_maximo < nv.grau {
+                    (format!("Abre no nível {}", nv.exige_nivel), estilo::SUAVE)
+                } else if nv.acima_do_nivel(e.meu_nivel) {
+                    // O aviso de que você está abaixo: é o que torna entrar no
+                    // 15 numa ilha de 20-23 uma escolha, e não uma surpresa.
+                    (
+                        format!(
+                            "Mobs nv {}-{} · poder {} · você {}",
+                            nv.mob.0,
+                            nv.mob.1,
+                            crate::bolsa::milhar(nv.poder() as u64),
+                            e.meu_nivel
+                        ),
+                        estilo::VERMELHO,
+                    )
+                } else {
+                    (
+                        format!(
+                            "Mobs nv {}-{} · poder {}",
+                            nv.mob.0,
+                            nv.mob.1,
+                            crate::bolsa::milhar(nv.poder() as u64)
+                        ),
+                        estilo::SUAVE,
+                    )
+                };
+                estilo::texto_centro(rod.center().x, linha, &txt, 13, cor);
             }
             let n = self.entradas.max(1);
             let de_graca = (e.gratis as u32).min(n as u32);
@@ -535,27 +685,127 @@ mod testes {
     /// impossível. O dono: "clico em ilha mágica mas não abre nada e me deixa
     /// travado na quest".
     /// Os botões da tarja cabem, não se encavalam e o dedo alcança.
+    /// Os degraus não se sobrepõem e cabem num dedo.
+    ///
+    /// Este teste existe porque a primeira versão saiu SOBREPOSTA no
+    /// emulador: eu pus `"{nome}\npoder {n}"` no rótulo, `ui::botao` desenha
+    /// uma linha só, e os três textos invadiram uns aos outros. O dono: "a
+    /// HUD da ilha mágica ficou muito ruim agora, está tudo sobreposto".
     #[test]
-    fn os_botoes_da_tarja_cabem_e_nao_se_encavalam() {
+    fn os_degraus_nao_se_sobrepoem() {
+        for (w, f) in [(460.0f32, 1.0f32), (360.0, 1.4), (300.0, 2.2), (620.0, 0.8)] {
+            let rod = Rect::new(20.0, 400.0, w, 40.0 * f);
+            let (linha, fila) = MagicaUi::faixa_dos_degraus(rod, f);
+            for i in 0..3 {
+                assert!(
+                    fila[i].x >= rod.x - 0.01 && fila[i].x + fila[i].w <= rod.x + rod.w + 0.01,
+                    "{w}x{f}: degrau {i} vaza a faixa"
+                );
+                assert!(
+                    crate::ui::area_de_toque(fila[i]).h >= 44.0,
+                    "{w}x{f}: degrau {i} é menor que um dedo"
+                );
+                for j in i + 1..3 {
+                    assert!(
+                        fila[i].x + fila[i].w <= fila[j].x + 0.01,
+                        "{w}x{f}: degrau {i} encosta no {j}"
+                    );
+                }
+            }
+            // A linha de detalhe fica ABAIXO dos botões e ACIMA do rodapé —
+            // era ali que o texto batia no "Grátis hoje".
+            let fim = fila[0].y + fila[0].h;
+            assert!(linha > fim, "{w}x{f}: o detalhe sobe em cima dos botões");
+            assert!(
+                linha < rod.y,
+                "{w}x{f}: o detalhe desce em cima do rodapé"
+            );
+        }
+    }
+
+    /// NADA ENCOSTA EM NADA na tarja.
+    ///
+    /// O teste anterior media só os dois botões ENTRE SI, e por isso passou
+    /// com a tela errada: os botões eram postos dentro da tarja, em cima da
+    /// barra de tempo (que ocupa a largura toda) e ao lado do multiplicador.
+    /// O dono: "os botões de + e sair tão em cima da hud, sobrepostos".
+    ///
+    /// Medir par a par é o que pega isso — sobreposição é uma relação, e uma
+    /// peça sozinha nunca a revela.
+    #[test]
+    fn as_pecas_da_tarja_nao_se_sobrepoem() {
         for f in [0.8f32, 1.0, 1.5, 2.2] {
-            let tarja = Rect::new(100.0, 10.0, 268.0 * f, 62.0 * f);
-            let (mais, sair) = MagicaUi::botoes_da_tarja(tarja, f);
-            assert!(mais.x + mais.w <= sair.x, "f={f}: o + e o sair se encavalam");
-            for (b, nome) in [(mais, "+"), (sair, "sair")] {
-            assert!(
-                b.x >= tarja.x && b.x + b.w <= tarja.x + tarja.w,
-                "f={f}: o {nome} vaza a tarja na horizontal"
-            );
-            assert!(
-                b.y >= tarja.y && b.y + b.h <= tarja.y + tarja.h,
-                "f={f}: o {nome} vaza a tarja na vertical"
-            );
-            assert!(
-                crate::ui::area_de_toque(b).h >= 44.0,
-                "f={f}: o {nome} é menor que um dedo"
-            );
+            // A largura é a da coluna da esquerda (a do rastreador).
+            let tarja = Rect::new(20.0, 300.0, 440.0 * f, 58.0 * f);
+            let p = MagicaUi::pecas_da_tarja(tarja, f);
+            let todas = p.todas();
+            for (i, (na, a)) in todas.iter().enumerate() {
+                assert!(
+                    a.w > 0.0 && a.h > 0.0,
+                    "f={f}: a peça {na} ficou sem tamanho"
+                );
+                assert!(
+                    a.x >= tarja.x - 0.01
+                        && a.y >= tarja.y - 0.01
+                        && a.x + a.w <= tarja.x + tarja.w + 0.01
+                        && a.y + a.h <= tarja.y + tarja.h + 0.01,
+                    "f={f}: a peça {na} vaza a tarja"
+                );
+                for (nb, b) in todas.iter().skip(i + 1) {
+                    let cruza = a.x < b.x + b.w
+                        && b.x < a.x + a.w
+                        && a.y < b.y + b.h
+                        && b.y < a.y + a.h;
+                    assert!(!cruza, "f={f}: {na} e {nb} se sobrepõem");
+                }
+            }
+            for (b, nome) in [(p.mais, "+"), (p.sair, "sair")] {
+                assert!(
+                    crate::ui::area_de_toque(b).h >= 44.0,
+                    "f={f}: o {nome} é menor que um dedo"
+                );
             }
         }
+    }
+
+    /// A TARJA SOME QUANDO SE SAI DA ILHA.
+    ///
+    /// Sair é um handoff pra zona de origem, e lá ninguém manda estado novo —
+    /// o `dentro: true` que veio do processo da ilha fica na memória do
+    /// cliente pra sempre. O dono: "a HUD da ilha mágica tá aparecendo até
+    /// depois de sair dela, com countdown e tudo".
+    ///
+    /// O relógio CONTINUA correndo depois de sair (é regra da ilha, pra não
+    /// dar pra sair no primeiro susto e voltar com o tempo intacto), então
+    /// esperar o tempo acabar não resolveria: a tarja ficaria até uma hora e
+    /// meia na tela de quem já está em outro mapa.
+    #[test]
+    fn a_tarja_some_quando_se_sai_da_ilha() {
+        let agora = 1_700_000_000i64;
+        let mut ui = MagicaUi::default();
+        ui.recebe(
+            AvisoMagica::Estado {
+                grau_maximo: 1,
+                grau_atual: 1,
+                meu_nivel: 20,
+                passes: 0,
+                gratis: 0,
+                fim_unix: agora + 600,
+                dentro: true,
+                bonus: 0,
+            },
+            0.0,
+        );
+        ui.atualiza_zona(Some(shared::magica::ZONA));
+        assert!(ui.dentro(agora), "dentro da ilha a tarja tem que aparecer");
+
+        // Saiu: mesma mensagem velha na memória, mas outra zona.
+        ui.atualiza_zona(Some("ilha_inicial"));
+        assert!(!ui.dentro(agora), "a tarja sobreviveu à saída da ilha");
+
+        // E sem zona nenhuma (entre um handoff e outro) também não.
+        ui.atualiza_zona(None);
+        assert!(!ui.dentro(agora), "a tarja apareceu sem zona nenhuma");
     }
 
     #[test]
@@ -632,6 +882,9 @@ mod testes {
         );
         assert!(!ui.aberto(), "estado de dentro abriu o painel");
         assert_eq!(ui.bonus(), Some(Bonus::Xp));
+        // `dentro` exige a zona além do estado: ver
+        // `a_tarja_some_quando_se_sai_da_ilha`.
+        ui.atualiza_zona(Some(shared::magica::ZONA));
         assert!(ui.dentro(900), "com tempo sobrando ele está dentro");
         assert!(!ui.dentro(1_001), "tempo vencido não conta como dentro");
     }

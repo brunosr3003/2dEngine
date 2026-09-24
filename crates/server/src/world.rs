@@ -1003,11 +1003,35 @@ pub(crate) fn zonas_comuns_da_ilha(
     // Aqui os centros saem das ILHOTAS DE COMBATE, espaçados pelo que cabe
     // dentro de uma delas, e as de coleta ficam limpas: quem foi buscar pedra
     // não foi buscar briga.
-    let magica = def.zona == shared::magica::ZONA;
+    // TODO degrau, não só o primeiro. `== ZONA` casava só com `ilha_magica`,
+    // então os degraus II e III caíam na regra do MUNDO — a mesma que o
+    // comentário acima descreve como "quase nada": uma zona por ilhota, e mob
+    // também nas ilhotas de coleta. Quanto mais alto o degrau, mais vazia
+    // ficava a ilha, que é o contrário do que ele promete.
+    let magica = shared::magica::e_magica(def.zona);
     if magica {
-        for centro in shared::magica::centros_de_combate() {
+        for i in shared::magica::ilhotas()
+            .into_iter()
+            .filter(|i| shared::magica::e_de_combate(i.bonus))
+        {
+            let centro = i.centro;
             // Um anel de hordas dentro da ilhota, mais uma no meio.
             r.centros.push(centro);
+            // A DO COLOSSO NÃO GANHA O ANEL.
+            //
+            // O dono: "na do colosso pode ter menos mobs, quantidade normal de
+            // mobs; se não, matar o boss fica impossível". E é exatamente o
+            // caso: ela é a única ilhota que tem CHEFE, e o chefe é
+            // telegráfico — a graça dele é desviar na mão. Com quatro hordas
+            // adensadas em volta, o jogador nunca chega a jogar o chefe: ele
+            // morre puxando a ilhota inteira, ou não consegue desviar de nada
+            // porque está cercado.
+            //
+            // As outras cinco continuam adensadas: é delas que "densidade
+            // muito grande" é feito, e nenhuma tem chefe pra disputar espaço.
+            if matches!(i.bonus, shared::magica::Bonus::DropDeChefe) {
+                continue;
+            }
             for k in 0..4 {
                 let a = k as f32 / 4.0 * std::f32::consts::TAU + 0.4;
                 let p = centro + Vec2::new(a.cos(), a.sin()) * (shared::magica::RAIO_ILHOTA * 0.55);
@@ -1039,9 +1063,15 @@ pub(crate) fn zonas_comuns_da_ilha(
         // desembarque, e receber um forte de cara na praia era a diferenca
         // entre "isto aqui e' perigoso" e "eu nem sai' do porto".
         let forte = e_forte(i);
+        // A ilhota do Colosso usa a regra do MUNDO, não a da ilha mágica: uma
+        // horda de tamanho e espaçamento normais, pra sobrar chão entre o
+        // jogador e o chefe. Ver o `continue` do anel, acima.
+        let adensar = magica
+            && !shared::magica::ilhota_em(*c)
+                .is_some_and(|i| matches!(i.bonus, shared::magica::Bonus::DropDeChefe));
         let (raio, espaco, teto) = if forte {
             (FORTE_RAIO_UN, FORTE_ESPACO_UN, FORTE_POR_ZONA)
-        } else if magica {
+        } else if adensar {
             // Zona menor (cabe na ilhota), mobs mais colados e teto alto: é
             // disso que "densidade muito grande" é feito.
             (MOB_ZONA_RAIO_UN * 0.5, MOB_ESPACO_UN * 0.6, MOB_POR_ZONA)
@@ -1393,6 +1423,14 @@ fn point_in_polygon(p: Vec2, verts: &[Vec2]) -> bool {
 
 pub struct Session {
     pub handle: SessionHandle,
+    /// O último bônus da Ilha Mágica que esta sessão JÁ SOUBE.
+    ///
+    /// 254 = nunca soube de nada. Existe porque o estado da ilha só era
+    /// mandado quando o jogador ABRIA o painel: depois do handoff pra dentro
+    /// da ilha o cliente nunca recebia `dentro: true`, e a tarja do HUD — que
+    /// carrega a ilhota, o relógio, o sair e o estender — ficava invisível a
+    /// sessão inteira.
+    pub magica_bonus_visto: u8,
     /// Sessao recem-emitida ("lembrar de mim"), esperando ir na primeira
     /// `CharacterList`. Ver `send_character_list`.
     pub sessao_nova: Option<String>,
@@ -3065,6 +3103,18 @@ impl GameWorld {
         if self.safe_zone {
             return true;
         } // mapa inteiro safe (legacy)
+        // A ILHOTA DA CHEGADA DA ILHA MÁGICA É PORTO SEGURO.
+        //
+        // Círculo, e não retângulo: a ilhota é redonda, e o retângulo ou
+        // deixaria a borda dela em PvP ou protegeria água e ponte em volta.
+        // A regra é a de `shared`, a mesma que o cliente usa pra escrever na
+        // tela em qual das duas você está.
+        //
+        // Antes do laço dos retângulos porque é a resposta mais barata: uma
+        // rejeição por distância, e quase toda posição da ilha cai fora.
+        if self.na_magica() && shared::magica::e_porto_seguro(pos) {
+            return true;
+        }
         for (origin, size) in &self.safe_zones {
             if pos.x >= origin.x
                 && pos.x < origin.x + size.x
@@ -4923,6 +4973,44 @@ impl GameWorld {
         /// ele nao abre nada (cai no `_` do `handle_interact`).
         const NPC_DE_OFICIO: u16 = 9;
         self.safe_zones.clear();
+        // O VENDEDOR DE POÇÕES DA ILHA MÁGICA.
+        //
+        // O dono: "na primeira ilha, na central, tem que ter um NPC de venda
+        // de poções". Sem ele a ilha é uma hora e meia sem reposição: quem
+        // gastou as poções na primeira ilhota ou sai (e perde o tempo que
+        // pagou) ou passa o resto do relógio sem poder brigar.
+        //
+        // Um só, e na ilhota da chegada, que é justamente onde se volta ao
+        // morrer — o lugar onde a pessoa PRECISA repor.
+        //
+        // ANTES do `return` de quem não tem vila: a Ilha Mágica não tem
+        // cidade nem vila de propósito, e deixar o vendedor depois dele era
+        // deixá-lo sem nascer nunca.
+        if self.na_magica() {
+            let eid = self.alloc_entity_id();
+            let nome = "Alquimista Errante";
+            self.ecs.spawn((
+                NetId(eid),
+                Position(shared::magica::posto_de_pocoes()),
+                Velocity(Vec2::ZERO),
+                EntityKind::Npc(1),
+                VendorTag {
+                    shop_id: shared::vila::LOJA_DE_POCOES,
+                    name: nome.to_string(),
+                },
+                NpcSkin { preset: 3 },
+                NpcDaVilaTag {
+                    nome: nome.to_string(),
+                    rumo: shared::npc_kind(
+                        Some(std::f32::consts::PI),
+                        shared::construcao::Papel::Alquimista as u8,
+                    ),
+                },
+            ));
+            if crate::economy::shop_listing_for(shared::vila::LOJA_DE_POCOES).is_empty() {
+                tracing::warn!("ilha mágica: a loja de poções está vazia no banco");
+            }
+        }
         let (vila, porto) = match self.ilha.as_ref() {
             Some(i) => (i.vila().clone(), i.porto()),
             None => return,
@@ -4932,6 +5020,9 @@ impl GameWorld {
                 c.centro() - Vec2::splat(Cidade::RAIO),
                 Vec2::splat(Cidade::RAIO * 2.0),
             )),
+            // A Ilha Mágica não tem cidade de propósito, e a zona segura dela
+            // é a ilhota da chegada — círculo, resolvido em `in_safe_zone`.
+            None if self.na_magica() => {}
             None => tracing::warn!("ilha '{}' sem cidade: sem zona segura", self.zona),
         }
         if let Some(p) = porto {
@@ -6671,6 +6762,7 @@ impl GameWorld {
             handle.id,
             Session {
                 sessao_nova: None,
+                magica_bonus_visto: 254,
                 handle,
                 entrada_pendente: None,
                 target: None,
@@ -19860,6 +19952,7 @@ mod testes_da_ilha_magica_lotada {
         let perto_de = |p: Vec2, c: Vec2| p.distance(c) <= shared::magica::RAIO_ILHOTA;
         let mut de_combate = 0;
         let mut de_coleta = 0;
+        let mut colosso = 0;
         for i in shared::magica::ilhotas() {
             let n: usize = z
                 .zonas
@@ -19867,7 +19960,9 @@ mod testes_da_ilha_magica_lotada {
                 .filter(|zz| perto_de(zz.centro, i.centro))
                 .map(|zz| zz.slots.len())
                 .sum();
-            if shared::magica::e_de_combate(i.bonus) {
+            if matches!(i.bonus, shared::magica::Bonus::DropDeChefe) {
+                colosso = n;
+            } else if shared::magica::e_de_combate(i.bonus) {
                 de_combate += n;
                 assert!(
                     n >= 20,
@@ -19882,5 +19977,59 @@ mod testes_da_ilha_magica_lotada {
             de_combate > de_coleta * 2,
             "combate {de_combate} contra coleta {de_coleta}: a briga não ficou onde devia"
         );
+        // A DO COLOSSO É A EXCEÇÃO, e ela tem dono e motivo.
+        //
+        // O dono: "na do colosso pode ter menos mobs, quantidade normal de
+        // mobs; se não, matar o boss fica impossível". Ela é a única com
+        // CHEFE, e chefe aqui é telegráfico — a graça é desviar na mão, o que
+        // não existe cercado por quatro hordas adensadas.
+        //
+        // Mas ela não pode ficar VAZIA: continua sendo ilhota de combate, e
+        // uma horda normal é o alvo.
+        let media = de_combate / 4;
+        assert!(
+            colosso > 0,
+            "a ilhota do Colosso ficou sem mob nenhum: virou ilhota de passeio"
+        );
+        assert!(
+            colosso * 2 <= media,
+            "o Colosso tem {colosso} mobs contra {media} das outras: não afinou"
+        );
+    }
+
+    /// TODO DEGRAU É ADENSADO, não só o primeiro.
+    ///
+    /// A regra testava `def.zona == ZONA`, que casa só com `ilha_magica`. Os
+    /// degraus II e III caíam na regra do MUNDO — uma zona por ilhota, e mob
+    /// também nas de coleta. Quanto mais alto o degrau, mais vazia a ilha:
+    /// o contrário do que ele promete.
+    #[test]
+    fn todo_degrau_da_ilha_magica_e_adensado() {
+        for n in shared::magica::NIVEIS {
+            let def = shared::terreno::def_da_zona(n.zona)
+                .unwrap_or_else(|| panic!("o degrau {} não tem zona", n.grau));
+            let ilha = shared::terreno::Ilha::da_ilha(def);
+            let z = zonas_comuns_da_ilha(&ilha, def, Vec2::ZERO);
+            let perto_de = |p: Vec2, c: Vec2| p.distance(c) <= shared::magica::RAIO_ILHOTA;
+            for i in shared::magica::ilhotas() {
+                if !shared::magica::e_de_combate(i.bonus)
+                    || matches!(i.bonus, shared::magica::Bonus::DropDeChefe)
+                {
+                    continue;
+                }
+                let m: usize = z
+                    .zonas
+                    .iter()
+                    .filter(|zz| perto_de(zz.centro, i.centro))
+                    .map(|zz| zz.slots.len())
+                    .sum();
+                assert!(
+                    m >= 20,
+                    "degrau {} · {}: só {m} mobs",
+                    n.grau,
+                    i.bonus.nome()
+                );
+            }
+        }
     }
 }

@@ -285,6 +285,36 @@ impl GameWorld {
                 self.sair_da_magica(sid, "Seu tempo na Ilha Mágica acabou.");
                 continue;
             }
+            // O ESTADO VAI QUANDO MUDA, e é isto que acende a tarja.
+            //
+            // Antes ele só saía quando o jogador ABRIA o painel. Depois do
+            // handoff pra dentro da ilha o cliente nunca recebia
+            // `dentro: true`, e a tarja do HUD ficava invisível a sessão
+            // inteira — sem ilhota, sem sair, sem estender. O dono: "não tô
+            // vendo a HUD da ilha mágica dentro dela, nem o botão de sair nem
+            // estender".
+            //
+            // Só quando MUDA (entrou, ou trocou de ilhota). Este tick é 1x
+            // por segundo, então mandar sempre seria uma mensagem por
+            // jogador por segundo, a sessão inteira, repetindo o que o
+            // cliente já sabe. O preço é a tarja demorar até 1s pra trocar
+            // ao cruzar de ilhota, que ninguém percebe andando.
+            let bonus = self
+                .bonus_magico_de(sid)
+                .map_or(255, shared::magica::Bonus::indice);
+            let mudou = self
+                .sessions
+                .get(&sid)
+                .is_some_and(|s| s.magica_bonus_visto != bonus);
+            if mudou {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.magica_bonus_visto = bonus;
+                }
+                self.abrir_magica(sid);
+            }
+            let Some(s) = self.sessions.get_mut(&sid) else {
+                continue;
+            };
             // Um aviso por marco, e só uma vez cada: `avisado_em` guarda o
             // último marco falado, senão o chat viraria uma contagem
             // regressiva de um aviso por segundo.
@@ -356,11 +386,25 @@ mod testes {
 
     /// Um mundo com um jogador logado, na zona pedida.
     fn mundo(zona: &str) -> (GameWorld, SessionId) {
+        let (w, sid, _rx) = mundo_com_rx(zona);
+        (w, sid)
+    }
+
+    /// Igual, mas SEGURANDO a ponta do cliente. `mundo` deixa o `rx` cair, e
+    /// canal fechado faz todo `send` falhar calado — ou seja, quem quer ler o
+    /// que o servidor mandou precisa desta versão.
+    fn mundo_com_rx(
+        zona: &str,
+    ) -> (
+        GameWorld,
+        SessionId,
+        mpsc::UnboundedReceiver<shared::protocol::ServerMessage>,
+    ) {
         crate::economy::init_vazia_para_testes();
         let mut w = GameWorld::new(HashMap::new());
         w.zona = zona.to_string();
         let sid = SessionId(([127, 0, 0, 1], 19_960).into());
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel::<shared::protocol::ServerMessage>();
         w.on_connect(SessionHandle {
             id: sid,
             to_client: tx,
@@ -381,7 +425,7 @@ mod testes {
         s.entity = Some(e);
         s.entity_id = EntityId(901);
         s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
-        (w, sid)
+        (w, sid, _rx)
     }
 
     fn dar_passes(w: &mut GameWorld, sid: SessionId, n: u32) {
@@ -640,6 +684,14 @@ mod testes {
                 max: 100,
             },
         ));
+        // FORA DA CHEGADA: ela virou porto seguro (ver
+        // `na_chegada_ninguem_bate_em_ninguem`), e o que este teste mede é o
+        // PvP aberto das ilhotas de combate.
+        let combate = *shared::magica::centros_de_combate()
+            .first()
+            .expect("a ilha tem ilhota de combate");
+        poe_em(&mut w, sid, combate);
+        w.ecs.get::<&mut Position>(e).unwrap().0 = combate;
         let faccao = w.sessions[&sid].faction;
         {
             let s = w.sessions.get_mut(&outro).unwrap();
@@ -659,4 +711,196 @@ mod testes {
         w.zona = "ilha_inicial".into();
         assert!(!w.can_damage_player(EntityId(901), EntityId(902)));
     }
+    /// A TARJA TEM QUE ACENDER SOZINHA.
+    ///
+    /// O estado da ilha só saía quando o jogador ABRIA o painel. Mas quem
+    /// está dentro chegou por handoff, numa sessão nova que nunca pediu
+    /// painel nenhum — então o cliente nunca recebia `dentro: true` e a tarja
+    /// do HUD (ilhota, relógio, "+" e "Sair") ficava invisível a sessão
+    /// inteira. O dono: "não tô vendo a HUD da ilha mágica dentro dela, nem o
+    /// botão de sair nem estender".
+    ///
+    /// O teste é do TICK, e não do painel, justamente porque o painel já
+    /// funcionava: o defeito era não existir nenhum outro caminho.
+    #[test]
+    fn o_tick_acende_a_tarja_de_quem_esta_dentro() {
+        use shared::magica::AvisoMagica;
+        use shared::protocol::ServerMessage;
+
+        let (mut w, sid, mut rx) = mundo_com_rx(shared::magica::ZONA);
+        let agora = (now_ms() / 1000) as i64;
+        w.sessions.get_mut(&sid).unwrap().magica_ate = agora + 600;
+
+        w.tick_magica();
+
+        let estado = std::iter::from_fn(|| rx.try_recv().ok())
+            .find_map(|m| match m {
+                ServerMessage::Magica {
+                    aviso: AvisoMagica::Estado { dentro, bonus, .. },
+                } => Some((dentro, bonus)),
+                _ => None,
+            })
+            .expect("ninguém mandou o Estado: a tarja fica invisível dentro da ilha");
+        assert!(estado.0, "mandou `dentro: false` de dentro da ilha");
+        assert_ne!(estado.1, 255, "sem bônus não há nome de ilhota na tarja");
+
+        // E MANDA UMA VEZ SÓ. O tick é 1x por segundo: repetir o mesmo
+        // estado seria uma mensagem por segundo, por jogador, a sessão
+        // toda, pra dizer o que o cliente já sabe.
+        for _ in 0..5 {
+            w.tick_magica();
+        }
+        let repetidos = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|m| {
+                matches!(
+                    m,
+                    ServerMessage::Magica {
+                        aviso: AvisoMagica::Estado { .. }
+                    }
+                )
+            })
+            .count();
+        assert_eq!(repetidos, 0, "{repetidos} estados repetidos em 5 ticks parados");
+    }
+
+    /// TROCOU DE ILHOTA, A TARJA TROCA JUNTO.
+    ///
+    /// É o outro motivo de a tarja existir: dizer em qual ilhota o jogador
+    /// está e o que ela dá. Se só a entrada mandasse o estado, a tarja diria
+    /// "Madeira" para sempre, inclusive dentro da ilhota de XP.
+    #[test]
+    fn andar_pra_outra_ilhota_atualiza_a_tarja() {
+        use shared::magica::AvisoMagica;
+        use shared::protocol::ServerMessage;
+
+        let (mut w, sid, mut rx) = mundo_com_rx(shared::magica::ZONA);
+        let agora = (now_ms() / 1000) as i64;
+        w.sessions.get_mut(&sid).unwrap().magica_ate = agora + 600;
+        w.tick_magica();
+        let primeiro = ultimo_bonus(&mut rx).expect("nem o primeiro estado saiu");
+
+        // Um centro de combate é, por construção, outra ilhota que a chegada.
+        let outra = *shared::magica::centros_de_combate()
+            .first()
+            .expect("a ilha mágica não tem ilhota de combate");
+        poe_em(&mut w, sid, outra);
+        w.tick_magica();
+
+        let depois = ultimo_bonus(&mut rx).expect("mudou de ilhota e a tarja não soube");
+        assert_ne!(
+            primeiro, depois,
+            "a tarja continuou anunciando o bônus da ilhota anterior"
+        );
+    }
+
+    fn ultimo_bonus(
+        rx: &mut mpsc::UnboundedReceiver<shared::protocol::ServerMessage>,
+    ) -> Option<u8> {
+        use shared::magica::AvisoMagica;
+        use shared::protocol::ServerMessage;
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|m| match m {
+                ServerMessage::Magica {
+                    aviso: AvisoMagica::Estado { bonus, .. },
+                } => Some(bonus),
+                _ => None,
+            })
+            .last()
+    }
+
+    /// A ILHOTA DA CHEGADA É PORTO SEGURO — e só ela.
+    ///
+    /// O dono: "lá tem que ser PvP desativado". É onde se chega e onde se
+    /// volta ao morrer: bater em quem acabou de renascer, sem poção e sem
+    /// chance, não é disputa de ilhota, é camping de respawn.
+    ///
+    /// As outras seis continuam abertas: é delas que o PvP da ilha é feito.
+    #[test]
+    fn na_chegada_ninguem_bate_em_ninguem() {
+        let (mut w, sid) = mundo(shared::magica::ZONA);
+        let outro = SessionId(([127, 0, 0, 1], 19_962).into());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle {
+            id: outro,
+            to_client: tx,
+        });
+        let e = w.ecs.spawn((
+            NetId(EntityId(903)),
+            Position(shared::magica::CHEGADA),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health {
+                current: 100,
+                max: 100,
+            },
+        ));
+        {
+            let s = w.sessions.get_mut(&outro).unwrap();
+            s.logged_in = true;
+            s.name = "rival".into();
+            s.entity = Some(e);
+            s.entity_id = EntityId(903);
+        }
+        // Os dois na chegada: ninguém bate.
+        assert!(
+            !w.can_damage_player(EntityId(901), EntityId(903)),
+            "bateram dentro do porto seguro da chegada"
+        );
+
+        // UM SÓ dentro já basta pra proteger: senão daria pra ficar na borda
+        // batendo em quem está dentro, que é o mesmo camping por outro nome.
+        let combate = *shared::magica::centros_de_combate()
+            .first()
+            .expect("a ilha tem ilhota de combate");
+        poe_em(&mut w, sid, combate);
+        assert!(
+            !w.can_damage_player(EntityId(901), EntityId(903)),
+            "de fora deu pra bater em quem está no porto seguro"
+        );
+
+        // Os dois fora: aí sim, PvP aberto.
+        w.ecs.get::<&mut Position>(e).unwrap().0 = combate;
+        assert!(
+            w.can_damage_player(EntityId(901), EntityId(903)),
+            "nas ilhotas de combate o PvP tem que continuar aberto"
+        );
+    }
+
+    /// TEM ONDE COMPRAR POÇÃO NA CHEGADA.
+    ///
+    /// O dono: "na primeira ilha, na central, tem que ter um NPC de venda de
+    /// poções". Sem ele a ilha é até uma hora e meia sem reposição: quem
+    /// gastou as poções ou sai (e perde o tempo que pagou) ou passa o resto
+    /// do relógio sem poder brigar.
+    #[test]
+    fn a_chegada_tem_quem_venda_pocao() {
+        let (mut w, _sid) = mundo(shared::magica::ZONA);
+        w.montar_cidade(None);
+        let achou = w
+            .ecs
+            .query::<(&Position, &VendorTag)>()
+            .iter()
+            .any(|(_, (p, v))| {
+                v.shop_id == shared::vila::LOJA_DE_POCOES
+                    && shared::magica::e_porto_seguro(p.0)
+            });
+        assert!(achou, "a ilhota da chegada ficou sem vendedor de poções");
+    }
+
+    /// E O VENDEDOR NÃO NASCE EM CIMA DE QUEM RENASCE.
+    ///
+    /// A chegada é o ponto de respawn: um NPC plantado no meio receberia
+    /// todo mundo em cima dele a cada morte, e o toque nele roubaria o
+    /// clique de quem só queria sair correndo.
+    #[test]
+    fn o_vendedor_nao_fica_em_cima_do_respawn() {
+        let p = shared::magica::posto_de_pocoes();
+        let d = p.distance(shared::magica::CHEGADA);
+        assert!(d >= 12.0, "o vendedor está a {d:.1} do ponto de renascimento");
+        assert!(
+            shared::magica::e_porto_seguro(p),
+            "o vendedor caiu fora da ilhota da chegada"
+        );
+    }
+
 }

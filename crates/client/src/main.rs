@@ -3647,6 +3647,9 @@ impl Jogo {
                 dialogo_aberto: self.dialogo.aberto,
                 combate_ativo: self.auto_combate.ativo(),
                 coleta_ativa: self.auto_coleta.ativo(),
+                // O PROGRESSO É O SINAL DE VIDA do passo: é por ele que o
+                // auto missão sabe a diferença entre colher e girar no vazio.
+                progresso: q.map_or(0, |q| q.progress),
             }
         };
         for acao in self.auto_missao.passo(ctx) {
@@ -5804,6 +5807,18 @@ impl Jogo {
         if let Some(pedido) = self.magica.desenha(get_time(), agora_unix) {
             self.envia(ClientMessage::Magica { pedido });
         }
+        // A ZONA MANDA na tarja: o `dentro` do estado vem do processo da
+        // ilha e fica velho quando o jogador sai (a saída é handoff, e na
+        // zona de origem ninguém manda estado novo). Sem isto a tarja
+        // sobrevivia à saída, com o relógio correndo.
+        self.magica.atualiza_zona(self.mapa.zona());
+        // E o layout reserva a faixa dela ANTES de desenhar, senão os avisos
+        // ficariam por baixo do painel.
+        hud_layout::define_tarja_magica(self.magica.dentro(agora_unix));
+        // A faixa de PvP vale na ilha inteira, e não só com tempo valendo:
+        // quem entrou precisa saber a regra antes de apanhar por ela.
+        hud_layout::define_faixa_pvp(self.magica.na_ilha());
+        self.magica.desenha_faixa_pvp(self.world.self_pos());
         if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
             self.envia(ClientMessage::Magica { pedido });
         }

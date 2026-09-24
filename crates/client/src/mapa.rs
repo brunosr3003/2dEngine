@@ -881,6 +881,60 @@ fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma)
 /// nao dependem de filtro, nao dependem de zoom e nao dependem de o jogador
 /// descobrir uma caixinha. O filtro continua valendo pro RESTO da vila (o
 /// contorno vivo, o porto, os NPCs).
+/// OS NOMES DAS ILHOTAS, ESCRITOS NO MAPA DA ILHA MÁGICA.
+///
+/// O dono: "seria legal se no mapa da ilha mágica tivesse escrito qual é cada
+/// ilha". Sem isto o mapa da ilha é sete manchas iguais: a tarja do HUD diz
+/// onde você ESTÁ, mas nada dizia pra onde IR — e é o mapa que se abre quando
+/// se quer trocar de ilhota antes de o relógio acabar.
+///
+/// O nome vai na BORDA DE CIMA da ilhota, e não no centro, porque o centro já
+/// é de quem mora lá: o marcador do bicho dominante, o rótulo de nível da
+/// zona e o ícone de chefe. Escrever por cima deles trocaria um mapa mudo por
+/// um mapa ilegível.
+///
+/// A cor é a mesma da tarja (`magica_ui::cor_do_bonus`): o jogador aprende o
+/// par cor↔ilhota uma vez e ele vale nos dois lugares.
+/// Quais ilhotas recebem nome nesta escala, e com que nome.
+///
+/// Fora do desenho pra poder ser medido: desenhar exige tela, e o que decide
+/// se o mapa fica legível ou ilegível é esta conta — quantos rótulos entram e
+/// se eles são distintos entre si.
+fn ilhotas_rotuladas(
+    zona: Option<&str>,
+    escala: f32,
+) -> Vec<(shared::magica::Ilhota, &'static str)> {
+    if !zona.is_some_and(shared::magica::e_magica) {
+        return Vec::new();
+    }
+    shared::magica::ilhotas()
+        .into_iter()
+        // Ilhota pequena demais na tela não recebe nome: sete rótulos em cima
+        // uns dos outros são pior que rótulo nenhum. É o mesmo critério que as
+        // zonas de bicho já usam pro rótulo delas.
+        .filter(|i| i.raio * escala >= u(16.0))
+        .map(|i| (i, i.bonus.nome_curto()))
+        .collect()
+}
+
+fn nomes_das_ilhotas(
+    zona: Option<&str>,
+    ponto: impl Fn(Vec2) -> Vec2,
+    escala: f32,
+    tamanho: u16,
+) {
+    for (i, nome) in ilhotas_rotuladas(zona, escala) {
+        let rp = i.raio * escala;
+        // O Vec2 do shared é de outra versão do glam.
+        let q = ponto(vec2(i.centro.x, i.centro.y));
+        let y = q.y - rp + u(12.0);
+        // Sombra por baixo: o mapa é claro em praia e escuro em mata, e um
+        // texto de cor só some numa das duas.
+        estilo::texto_centro(q.x + 1.0, y + 1.0, nome, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+        estilo::texto_centro(q.x, y, nome, tamanho, crate::magica_ui::cor_do_bonus(i.bonus));
+    }
+}
+
 fn pintar_casas(rgba: &mut [u8], ger: &Gerador, raio: f32) {
     // Telhado e parede: duas cores, senao um quarteirao inteiro vira uma
     // mancha so' e o mapa fica pior do que sem casa nenhuma.
@@ -2182,6 +2236,11 @@ impl Mapa {
                 draw_circle(q.x, q.y, 2.5, cor);
             }
         }
+        // No minimapa também: é o mapa que fica na tela o tempo todo, e
+        // trocar de ilhota é decisão que se toma andando. Fonte menor, e o
+        // corte por tamanho de `nomes_das_ilhotas` cuida de calar quando o
+        // disco está afastado demais pra caber sete rótulos.
+        nomes_das_ilhotas(self.zona(), ponto, escala, 12);
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, 4.0, 3.0, 2.0, estilo::AUTO, Some(dentro));
         if let Some(d) = self.viagem.destino() {
@@ -2645,6 +2704,9 @@ impl Mapa {
             let q = ponto(e.render_pos);
             draw_circle(q.x, q.y, u(3.0), COR_GENTE);
         }
+        // Os nomes das ilhotas por ÚLTIMO entre os rótulos: texto por baixo de
+        // mancha some, e este é o rótulo que o jogador veio buscar.
+        nomes_das_ilhotas(self.zona(), ponto, escala, 14);
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, u(5.0), u(3.0), u(2.5), estilo::AUTO, None);
         let eu = world.self_pos();
@@ -3256,6 +3318,68 @@ mod testes_do_mapa_da_colonia {
     /// `gerar_dados` pede `ger.vila()`, e a vila sai da CIDADE. Numa zona sem
     /// nenhuma, o caminho nunca tinha sido exercitado: o jogador descobriria
     /// entrando, com meia hora de passe correndo.
+    #[test]
+    /// CADA ILHOTA TEM UM NOME, E SÃO NOMES DIFERENTES.
+    ///
+    /// O dono: "seria legal se no mapa da ilha mágica tivesse escrito qual é
+    /// cada ilha". Dois rótulos iguais não resolveriam nada — o jogador
+    /// abriria o mapa, veria "Pedra" em dois lugares e continuaria sem saber
+    /// pra onde ir.
+    #[test]
+    fn cada_ilhota_do_mapa_tem_um_nome_proprio() {
+        // Escala generosa: o mapa grande com a ilha inteira à vista.
+        let rotulos = ilhotas_rotuladas(Some(shared::magica::ZONA), 1.0);
+        assert_eq!(
+            rotulos.len(),
+            shared::magica::ilhotas().len(),
+            "nem toda ilhota recebeu nome com a ilha inteira à vista"
+        );
+        let nomes: std::collections::BTreeSet<&str> =
+            rotulos.iter().map(|(_, n)| *n).collect();
+        assert_eq!(
+            nomes.len(),
+            rotulos.len(),
+            "duas ilhotas com o mesmo nome no mapa: {nomes:?}"
+        );
+        for (_, n) in &rotulos {
+            assert!(!n.is_empty(), "ilhota sem nome");
+            assert!(
+                !n.contains("Ilhota"),
+                "o nome do mapa repete a palavra Ilhota: {n}"
+            );
+        }
+    }
+
+    /// FORA DA ILHA MÁGICA, NENHUM NOME.
+    ///
+    /// As ilhotas são posições fixas de um mapa só; escrevê-las numa ilha
+    /// comum poria sete rótulos aleatórios no meio do mar.
+    #[test]
+    fn so_a_ilha_magica_ganha_nome_de_ilhota() {
+        assert!(ilhotas_rotuladas(Some("ilha_inicial"), 1.0).is_empty());
+        assert!(ilhotas_rotuladas(Some("ilha_gelo"), 1.0).is_empty());
+        assert!(ilhotas_rotuladas(None, 1.0).is_empty());
+        // E todo degrau da ilha mágica ganha, não só o primeiro.
+        for n in shared::magica::NIVEIS {
+            assert!(
+                !ilhotas_rotuladas(Some(n.zona), 1.0).is_empty(),
+                "o degrau {} ficou sem nome de ilhota", n.grau
+            );
+        }
+    }
+
+    /// COM O MAPA AFASTADO, CALA A BOCA.
+    ///
+    /// Sete rótulos num disco de minimapa afastado viram uma mancha de texto
+    /// em cima das próprias ilhotas — pior que rótulo nenhum.
+    #[test]
+    fn de_longe_os_nomes_das_ilhotas_somem() {
+        assert!(
+            ilhotas_rotuladas(Some(shared::magica::ZONA), 0.02).is_empty(),
+            "os nomes continuaram com o mapa afastado demais"
+        );
+    }
+
     #[test]
     fn o_mapa_da_ilha_magica_monta_sem_cidade_nem_porto() {
         let def = shared::terreno::def_da_zona(shared::magica::ZONA).expect("a zona existe");

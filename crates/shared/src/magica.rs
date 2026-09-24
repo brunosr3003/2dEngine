@@ -274,6 +274,23 @@ impl Bonus {
         }
     }
 
+    /// O mesmo nome sem o "Ilhota da": o que vai ESCRITO NO MAPA.
+    ///
+    /// No mapa da Ilha Mágica tudo é ilhota, então a palavra não distingue
+    /// nada e só rouba a largura de que o nome precisa. Sete rótulos curtos
+    /// cabem onde sete longos se atropelariam.
+    pub fn nome_curto(self) -> &'static str {
+        match self {
+            Self::Xp => "Experiência",
+            Self::DropDeMob => "Espólio",
+            Self::Ouro => "Ouro",
+            Self::DropDeChefe => "Colosso",
+            Self::Coleta(0) => "Madeira",
+            Self::Coleta(5) => "Energia",
+            Self::Coleta(_) => "Pedra",
+        }
+    }
+
     /// O multiplicador que ela aplica. Não é o mesmo pra todos: o drop de
     /// chefe é o mais raro do jogo e dobrar já é muito, enquanto XP em dobro
     /// numa hora e meia não quebra nada.
@@ -331,6 +348,10 @@ pub const CHEGADA: Vec2 = Vec2::ZERO;
 /// melhor prêmio no cruzamento de todas as pontes é o que faz a ilha ter um
 /// lugar pelo qual brigar.
 pub fn ilhotas() -> Vec<Ilhota> {
+    ilhotas_fixas().to_vec()
+}
+
+fn monta_ilhotas() -> Vec<Ilhota> {
     // A ORDEM NÃO É ARBITRÁRIA na casa da Energia.
     //
     // Energia não nasce em qualquer lugar alto: ela exige cair dentro de um
@@ -349,7 +370,17 @@ pub fn ilhotas() -> Vec<Ilhota> {
         Bonus::Xp,
         Bonus::Coleta(5),
         Bonus::Ouro,
-        Bonus::Coleta(0),
+        // O COLOSSO SAI DO MEIO e vem pro anel, no lugar que era da madeira.
+        //
+        // O dono: "coloca a primeira ilha, a ilha central, para ser uma ilha
+        // de recurso sem tantos mobs, porque aí você não nasce morrendo". E
+        // era literalmente isso: `CHEGADA` e' o centro, o centro era a Ilhota
+        // do Colosso, e desde que as ilhotas de combate ficaram lotadas o
+        // jogador chegava em cima do chefe e da horda.
+        //
+        // O chefe nao precisou de mudanca: `chefes` ja' o poe na ilhota que
+        // TEM o bonus dele, onde quer que ela esteja.
+        Bonus::DropDeChefe,
         // TIER 4, e não 1: a pedra desta ilha vem da ilhota, não da altura
         // (`tier_da_pedra`), e a casa da pedra dá a MELHOR. Prometer 1 e
         // entregar 4 é o que `toda_ilhota_de_recurso_tem_o_recurso` reprova —
@@ -357,10 +388,15 @@ pub fn ilhotas() -> Vec<Ilhota> {
         Bonus::Coleta(4),
         Bonus::DropDeMob,
     ];
+    // O MEIO E' DE RECURSO, e e' onde o jogador chega (`CHEGADA`).
+    //
+    // Madeira porque e' o recurso mais inofensivo do jogo: ninguem nasce pra
+    // defender tronco, e ilhota de coleta fica fora do adensamento de combate
+    // (`e_de_combate`). Chegar e poder respirar e' o ponto.
     let mut v = vec![Ilhota {
         centro: Vec2::ZERO,
         raio: RAIO_CENTRO,
-        bonus: Bonus::DropDeChefe,
+        bonus: Bonus::Coleta(0),
     }];
     for (i, b) in volta.iter().enumerate() {
         let a = i as f32 / volta.len() as f32 * std::f32::consts::TAU;
@@ -380,6 +416,10 @@ pub fn ilhotas() -> Vec<Ilhota> {
 /// meio (e o meio é a ilhota mais disputada — ninguém atravessaria); só o anel
 /// deixaria o centro ilhado.
 pub fn pontes() -> Vec<(Vec2, Vec2)> {
+    pontes_fixas().to_vec()
+}
+
+fn monta_pontes() -> Vec<(Vec2, Vec2)> {
     let v = ilhotas();
     let mut p = Vec::new();
     for i in 1..v.len() {
@@ -392,14 +432,28 @@ pub fn pontes() -> Vec<(Vec2, Vec2)> {
 
 /// Em que ilhota está o ponto, se estiver em alguma.
 pub fn ilhota_em(p: Vec2) -> Option<Ilhota> {
-    ilhotas().into_iter().find(|i| {
-        let d = p - i.centro;
-        // A COSTA ONDULA, então a pergunta "estou na ilhota" usa o raio
-        // daquela direção, e não o raio nominal. Se esta conta e a de
-        // `bloco_da_coluna` discordarem, o jogador pisa em chão que o
-        // servidor considera mar.
-        d.length() <= raio_da_ilhota(i, d.y.atan2(d.x))
-    })
+    ilhotas_fixas()
+        .iter()
+        .find(|i| {
+            let d = p - i.centro;
+            let dist2 = d.length_squared();
+            // REJEIÇÃO BARATA PRIMEIRO. A ondulação da costa vale no máximo
+            // ±20% do raio, então o que está além disso não precisa de
+            // `atan2` nem de três senos — e quase toda coluna da ilha está.
+            // Sem esta linha, abrir a ilha travava o cliente a 100% de CPU.
+            if dist2 > (i.raio * 1.25) * (i.raio * 1.25) {
+                return false;
+            }
+            if dist2 <= (i.raio * 0.75) * (i.raio * 0.75) {
+                return true;
+            }
+            // A COSTA ONDULA, então a pergunta "estou na ilhota" usa o raio
+            // daquela direção, e não o raio nominal. Se esta conta e a de
+            // `bloco_da_coluna` discordarem, o jogador pisa em chão que o
+            // servidor considera mar.
+            dist2 <= raio_da_ilhota(i, d.y.atan2(d.x)).powi(2)
+        })
+        .copied()
 }
 
 /// O bônus que vale NESTE ponto. Na ponte não vale bônus nenhum — quem está
@@ -410,8 +464,9 @@ pub fn bonus_em(p: Vec2) -> Option<Bonus> {
 
 /// A distância do ponto ao segmento de ponte mais próximo.
 fn dist_da_ponte(p: Vec2) -> f32 {
-    pontes()
-        .into_iter()
+    pontes_fixas()
+        .iter()
+        .copied()
         .map(|(a, b)| {
             let ab = b - a;
             let t = ((p - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
@@ -551,6 +606,27 @@ fn altura_do_domo(d: f32, raio: f32) -> f32 {
     ALTURA_TOPO + (ALTURA - ALTURA_TOPO) * k * k
 }
 
+/// As ilhotas e as pontes, calculadas UMA vez.
+///
+/// `bloco_da_coluna` roda por COLUNA — 1,25 milhão delas numa ilha de 560
+/// blocos de raio —, e `ilhota_em`/`dist_da_ponte` alocavam um `Vec` a cada
+/// chamada. Com o relevo antigo (um `distance` por ilhota) isso já era caro e
+/// passava; depois que a costa ganhou ondulação (três senos por ilhota, mais
+/// a ondulação do chão) o custo por coluna multiplicou e o cliente TRAVOU a
+/// 100% de CPU ao abrir a ilha — medido no emulador, não deduzido.
+///
+/// Elas são função pura de constantes: calcular de novo por coluna nunca fez
+/// sentido, só não doía o bastante pra aparecer.
+fn ilhotas_fixas() -> &'static [Ilhota] {
+    static V: std::sync::OnceLock<Vec<Ilhota>> = std::sync::OnceLock::new();
+    V.get_or_init(monta_ilhotas)
+}
+
+fn pontes_fixas() -> &'static [(Vec2, Vec2)] {
+    static V: std::sync::OnceLock<Vec<(Vec2, Vec2)>> = std::sync::OnceLock::new();
+    V.get_or_init(monta_pontes)
+}
+
 /// O raio da ilhota NAQUELA direção — a costa não é um compasso.
 ///
 /// As ilhotas eram círculos perfeitos com um domo radial em cima, e o dono:
@@ -611,6 +687,31 @@ pub fn e_de_combate(b: Bonus) -> bool {
 }
 
 /// O centro de cada ilhota de combate — onde as hordas devem nascer.
+/// A ilhota da chegada é PORTO SEGURO: sem PvP, e com quem vender poção.
+///
+/// O dono: "coloca a ilha central para ser uma ilha de recurso sem tantos
+/// mobs, porque aí você não nasce morrendo", depois "lá tem que ser PvP
+/// desativado" e "tem que ter um NPC de venda de poções". As três coisas são
+/// a mesma: a ilhota do meio é onde se chega, onde se volta ao morrer e onde
+/// se repõe — matar alguém ali seria matar quem acabou de renascer, sem
+/// chance nenhuma.
+///
+/// Regra ÚNICA, usada pelo servidor (que decide o dano) e pelo cliente (que
+/// escreve na tela em qual das duas você está). Duas cópias divergiriam, e a
+/// tela diria "seguro" enquanto o servidor deixava bater.
+pub fn e_porto_seguro(p: Vec2) -> bool {
+    ilhota_em(p).is_some_and(|i| i.centro == CHEGADA)
+}
+
+/// Onde fica o vendedor de poções da ilhota da chegada.
+///
+/// Fora do meio: o meio é o ponto de renascimento, e um NPC plantado ali
+/// receberia todo mundo em cima dele a cada morte. A 22 u ele está longe do
+/// tumulto e ainda dentro da ilhota (raio 58).
+pub fn posto_de_pocoes() -> Vec2 {
+    CHEGADA + Vec2::new(22.0, -10.0)
+}
+
 pub fn centros_de_combate() -> Vec<Vec2> {
     ilhotas()
         .into_iter()
@@ -807,6 +908,77 @@ mod testes {
     /// recomendado". Entrar abaixo do nível é um direito — apanhar por
     /// escolha é diferente de apanhar por surpresa —, e o que separa os dois
     /// é o número avisar.
+
+    /// O relevo da ilha se monta num tempo aceitável.
+    ///
+    /// Este teste existe porque eu travei o cliente. A costa ondulada pôs
+    /// três senos por ilhota dentro de `bloco_da_coluna`, que roda por COLUNA
+    /// — 1,25 milhão delas —, e `ilhota_em`/`dist_da_ponte` ainda alocavam um
+    /// `Vec` a cada chamada. Abrir a Ilha Mágica no emulador travou o jogo a
+    /// 100% de CPU, e não havia teste nenhum olhando para isso.
+    ///
+    /// O limite é generoso de propósito: ele não mede o computador, mede
+    /// ORDEM DE GRANDEZA. Se alguém puser um fbm aqui, ele estoura.
+    /// Quem CHEGA não chega numa briga.
+    ///
+    /// O dono: "coloca a primeira ilha, a ilha central, para ser uma ilha de
+    /// recurso sem tantos mobs, porque aí você não nasce morrendo". Era
+    /// literal: `CHEGADA` é o centro, o centro era a Ilhota do Colosso, e
+    /// desde que as ilhotas de combate ficaram lotadas o jogador aparecia em
+    /// cima do chefe e de uma horda.
+    #[test]
+    fn a_chegada_e_um_lugar_calmo() {
+        let onde = ilhota_em(CHEGADA).expect("a chegada é em terra");
+        assert!(
+            !e_de_combate(onde.bonus),
+            "chega na {} — é de combate",
+            onde.bonus.nome()
+        );
+        // E o Colosso continua existindo, só que longe da chegada.
+        let chefe = ilhotas()
+            .into_iter()
+            .find(|i| i.bonus == Bonus::DropDeChefe)
+            .expect("o Colosso tem casa");
+        assert!(
+            chefe.centro.distance(CHEGADA) > RAIO_CENTRO,
+            "o Colosso continua em cima de quem chega"
+        );
+    }
+
+    #[test]
+    fn o_relevo_da_ilha_e_barato_por_coluna() {
+        let lado = 2 * RAIO_BLOCOS;
+        let amostras = 200_000usize;
+        let ger = crate::terreno::Gerador::da_ilha_magica();
+        let t0 = std::time::Instant::now();
+        let mut soma = 0i64;
+        for k in 0..amostras {
+            // Varre em diagonal pra pegar mar, ponte e ilhota na mesma conta.
+            let bx = (k as i32 * 7) % lado - RAIO_BLOCOS;
+            let bz = (k as i32 * 13) % lado - RAIO_BLOCOS;
+            let topo = bloco_da_coluna(bx, bz);
+            soma += topo as i64;
+            // A VEGETAÇÃO ENTRA NA CONTA, e ela é o pior caminho: ela chama
+            // `na_ponte_magica` por coluna, que antes do cache alocava DOIS
+            // `Vec` a cada chamada. Milhões de alocações num celular é o que
+            // travou o jogo.
+            if topo > 0 {
+                let _ = crate::terreno::arvore_da_coluna(
+                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                );
+            }
+        }
+        let por_coluna = t0.elapsed().as_secs_f64() / amostras as f64;
+        // A ilha inteira são ~1,25 milhão de colunas. A 1 µs por coluna são
+        // 1,25 s — o limite do aceitável pra montar um mundo.
+        assert!(
+            por_coluna < 1e-6,
+            "{:.0} ns por coluna: a ilha inteira levaria {:.1} s",
+            por_coluna * 1e9,
+            por_coluna * (lado as f64).powi(2)
+        );
+        assert!(soma != 0, "a varredura não tocou chão nenhum");
+    }
 
     #[test]
     fn o_poder_recomendado_e_da_escala_do_jogo() {
@@ -1177,7 +1349,14 @@ mod testes {
         v.dedup();
         assert_eq!(v.len(), n, "dois bônus no mesmo índice");
         assert_eq!(Bonus::do_indice(255), None, "255 é 'nenhum'");
-        assert_eq!(indice_do_bonus_em(CHEGADA), Bonus::DropDeChefe.indice());
+        // A CHEGADA é a ilhota de MADEIRA, e não mais a do Colosso: o
+        // jogador chega num lugar de recurso, sem horda nem chefe. Era o
+        // contrário, e ele "nascia morrendo".
+        assert_eq!(indice_do_bonus_em(CHEGADA), Bonus::Coleta(0).indice());
+        assert!(
+            !e_de_combate(bonus_em(CHEGADA).unwrap()),
+            "quem chega não pode chegar numa ilhota de combate"
+        );
     }
 
     /// A COTA DIÁRIA vira sozinha, e o empacotamento vai e volta.

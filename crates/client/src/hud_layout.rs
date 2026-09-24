@@ -49,6 +49,8 @@ static MARGENS: [AtomicU32; 4] = [
 /// Minimapa grande (0 = compacto). Entra na chave do memo do `atual`.
 static MINIMAPA_GRANDE: AtomicU32 = AtomicU32::new(0);
 static MINIMAPA_OCULTO: AtomicU32 = AtomicU32::new(0);
+static TARJA_MAGICA: AtomicU32 = AtomicU32::new(0);
+static FAIXA_PVP: AtomicU32 = AtomicU32::new(0);
 
 pub fn escala_ui() -> f32 {
     match ESCALA_UI.load(Ordering::Relaxed) {
@@ -100,6 +102,67 @@ pub fn minimapa_oculto() -> bool {
 
 pub fn define_minimapa_oculto(v: bool) {
     MINIMAPA_OCULTO.store(v as u32, Ordering::Relaxed);
+}
+
+/// Altura da tarja da Ilha Mágica, que mora logo abaixo do rastreador.
+///
+/// Mora na ESQUERDA, e não no topo do meio onde nasceu, porque é informação
+/// de missão: "em qual ilhota estou e quanto tempo falta" se lê junto do que
+/// se está fazendo, não no lugar onde o olho procura o alvo.
+pub const ALTURA_TARJA_MAGICA: f32 = 58.0;
+
+/// A tarja da Ilha Mágica está no ar? Só então o espaço dela é reservado.
+///
+/// É estado de módulo, como a escala e o minimapa, porque quem desenha os
+/// avisos (`hud.rs`) e quem desenha a tarja (`magica_ui.rs`) são dois lugares
+/// diferentes, e o de baixo precisa saber que o de cima ocupou a faixa.
+/// Reservar SEMPRE encolheria o HUD de todo mundo por causa de uma tarja que
+/// aparece em meia hora de evento.
+pub fn tarja_magica() -> bool {
+    TARJA_MAGICA.load(Ordering::Relaxed) != 0
+}
+
+pub fn define_tarja_magica(v: bool) {
+    TARJA_MAGICA.store(v as u32, Ordering::Relaxed);
+}
+
+/// Onde a tarja da Ilha Mágica é desenhada, dado o HUD montado.
+///
+/// Fora do desenho pra poder ser medida junto com os vizinhos: a versão
+/// anterior punha os botões por cima da própria barra de tempo, e o teste que
+/// existia só conferia que os dois botões não se encavalavam ENTRE SI.
+/// Altura da faixa de "zona segura / PvP aberto", entre a área e o minimapa.
+pub const ALTURA_FAIXA_PVP: f32 = 26.0;
+
+/// A faixa de PvP está no ar? Só na Ilha Mágica, onde a regra muda de ilhota
+/// pra ilhota — no resto do mundo ela seria um aviso que nunca muda.
+pub fn faixa_pvp() -> bool {
+    FAIXA_PVP.load(Ordering::Relaxed) != 0
+}
+
+pub fn define_faixa_pvp(v: bool) {
+    FAIXA_PVP.store(v as u32, Ordering::Relaxed);
+}
+
+/// Onde a faixa de PvP é desenhada: colada embaixo da área, acima do minimapa.
+///
+/// O dono: "abaixo do ilha_magica SA01 CH magica1, entre isso e o minimapa".
+pub fn faixa_pvp_rect(z: &Zonas) -> Rect {
+    Rect::new(
+        z.area.x,
+        z.area.y + z.area.h + 4.0 * z.s,
+        z.area.w,
+        ALTURA_FAIXA_PVP * z.s,
+    )
+}
+
+pub fn tarja_magica_rect(z: &Zonas) -> Rect {
+    Rect::new(
+        z.rastreador.x,
+        z.rastreador.y + z.rastreador.h + 8.0 * z.s,
+        z.rastreador.w,
+        ALTURA_TARJA_MAGICA * z.s,
+    )
 }
 
 /// Uma vez por quadro: rele' a area segura a cada 30 (girar o aparelho muda o
@@ -183,17 +246,23 @@ pub fn quadrante_do_joystick() -> Rect {
 /// Com a area segura e a escala escolhida. Chamado varias vezes por quadro:
 /// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).
 pub fn atual() -> Zonas {
-    thread_local!(static MEMO: Cell<Option<([u32; 8], Zonas)>> = const { Cell::new(None) });
+    thread_local!(static MEMO: Cell<Option<([u32; 10], Zonas)>> = const { Cell::new(None) });
     let (sw, sh) = crate::render3d::tela();
     let (mg, ui) = (margens(), escala_ui());
     let grande = minimapa_expandido();
-    let mut chave = [0u32; 8];
+    let tarja = tarja_magica();
+    let pvp = faixa_pvp();
+    let mut chave = [0u32; 10];
     chave[..7].copy_from_slice(&[sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits));
     chave[7] = grande as u32;
+    // A tarja ENTRA NA CHAVE: sem isso o memo devolveria o layout de antes de
+    // ela subir, e os avisos ficariam embaixo dela até a tela mudar de tamanho.
+    chave[8] = tarja as u32;
+    chave[9] = pvp as u32;
     MEMO.with(|c| match c.get() {
         Some((k, z)) if k == chave => z,
         _ => {
-            let z = zonas_com(sw, sh, mg, ui, grande);
+            let z = zonas_com(sw, sh, mg, ui, grande, tarja, pvp);
             c.set(Some((chave, z)));
             z
         }
@@ -203,27 +272,35 @@ pub fn atual() -> Zonas {
 /// Tela inteira, 100%: a dos testes de PC.
 #[cfg(test)]
 pub fn zonas(sw: f32, sh: f32) -> Zonas {
-    zonas_com(sw, sh, [0.0; 4], 1.0, false)
+    zonas_com(sw, sh, [0.0; 4], 1.0, false, false, false)
 }
 
 /// A mesma tela com o minimapa grande: o que vale pequeno tem que valer grande.
 #[cfg(test)]
 pub fn zonas_grandes(sw: f32, sh: f32) -> Zonas {
-    zonas_com(sw, sh, [0.0; 4], 1.0, true)
+    zonas_com(sw, sh, [0.0; 4], 1.0, true, false, false)
 }
 
 /// `margens` = area segura (topo, esquerda, baixo, direita) em px; `ui` = a
 /// escala escolhida. O HUD e' montado dentro da area segura. Se a escala pedida
 /// nao couber (sobrepoe, sai da area ou o joystick fica sem polegar), desce aos
 /// poucos ate' caber — nunca abaixo da escala da tela × min(ui, 1).
-pub fn zonas_com(sw: f32, sh: f32, margens: [f32; 4], ui: f32, minimapa_grande: bool) -> Zonas {
+pub fn zonas_com(
+    sw: f32,
+    sh: f32,
+    margens: [f32; 4],
+    ui: f32,
+    minimapa_grande: bool,
+    tarja_magica: bool,
+    faixa_pvp: bool,
+) -> Zonas {
     let [t, e, b, d] = margens;
     let (w, h) = ((sw - e - d).max(64.0), (sh - t - b).max(64.0));
     let base = escala(w, h);
     let piso = base * ui.min(1.0);
     let mut s = base * ui.max(0.1);
     loop {
-        let z = monta(w, h, s, minimapa_grande);
+        let z = monta(w, h, s, minimapa_grande, tarja_magica, faixa_pvp);
         if s <= piso + 1e-4 || cabe(&z, w, h) {
             return z.desloca(vec2(e, t));
         }
@@ -247,7 +324,14 @@ pub fn cabe(z: &Zonas, w: f32, h: f32) -> bool {
     dentro && livre && z.joystick.w >= polegar && z.joystick.h >= polegar
 }
 
-fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
+fn monta(
+    sw: f32,
+    sh: f32,
+    s: f32,
+    minimapa_grande: bool,
+    tarja_magica: bool,
+    faixa_pvp: bool,
+) -> Zonas {
     let m = 20.0 * s;
 
     // ── esquerda: ficha, buffs, rastreador ──
@@ -289,7 +373,19 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
         320.0 * s,
         56.0 * s,
     );
-    let minimapa = Rect::new(area.x, area.y + area.h + 4.0 * s, 320.0 * s, 320.0 * s);
+    // A faixa de PvP mora entre a área e o minimapa, e só na Ilha Mágica —
+    // então o minimapa desce só enquanto ela existe.
+    let vao_pvp = if faixa_pvp {
+        (ALTURA_FAIXA_PVP + 4.0) * s
+    } else {
+        0.0
+    };
+    let minimapa = Rect::new(
+        area.x,
+        area.y + area.h + 4.0 * s + vao_pvp,
+        320.0 * s,
+        320.0 * s,
+    );
     let mapa_icone = Rect::new(
         minimapa.x + minimapa.w - 32.0 * s,
         minimapa.y + 6.0 * s,
@@ -307,9 +403,19 @@ fn monta(sw: f32, sh: f32, s: f32, minimapa_grande: bool) -> Zonas {
     let exp = Rect::new(0.0, sh - 6.0, sw, 6.0);
     let base = sh - 10.0 * s;
     // Abaixo do rastreador: o canto inferior esquerdo ficou pro joystick.
+    //
+    // A tarja da Ilha Mágica entra nesta mesma faixa, e quando ela está no ar
+    // os avisos descem o tamanho dela. Os avisos são texto solto sem caixa —
+    // desenhá-los debaixo de um painel opaco os sumiria pela meia hora
+    // inteira do evento.
+    let reserva = if tarja_magica {
+        (ALTURA_TARJA_MAGICA + 8.0) * s
+    } else {
+        0.0
+    };
     let avisos = Rect::new(
         m,
-        rastreador.y + rastreador.h + 8.0 * s,
+        rastreador.y + rastreador.h + 8.0 * s + reserva,
         440.0 * s,
         68.0 * s,
     );
@@ -675,7 +781,7 @@ mod tests {
             let seguro = Rect::new(mg[1], mg[0], sw - mg[1] - mg[3], sh - mg[0] - mg[2]);
             for ui in [ESCALA_UI_MIN, 1.0, 1.3, ESCALA_UI_MAX] {
                 for grande in [false, true] {
-                    let z = zonas_com(sw, sh, mg, ui, grande);
+                    let z = zonas_com(sw, sh, mg, ui, grande, false, false);
                     let local = z.desloca(vec2(-seguro.x, -seguro.y));
                     assert!(
                         cabe(&local, seguro.w, seguro.h),
@@ -699,8 +805,8 @@ mod tests {
     fn celular_a_130_fica_maior_e_longe_do_notch() {
         let (_, sw, sh, mg) = APARELHOS[0];
         let (cem, cento_e_trinta) = (
-            zonas_com(sw, sh, mg, 1.0, false),
-            zonas_com(sw, sh, mg, 1.3, false),
+            zonas_com(sw, sh, mg, 1.0, false, false, false),
+            zonas_com(sw, sh, mg, 1.3, false, false, false),
         );
         assert!(
             cento_e_trinta.s > cem.s * 1.2,
@@ -749,6 +855,90 @@ mod tests {
                     assert!(!cruzam(a, b), "{sw}×{sh}: {na} {a:?} cobre {nb} {b:?}");
                 }
             }
+        }
+    }
+
+    /// A TARJA DA ILHA MÁGICA CABE NO VÃO QUE RESERVARAM PRA ELA.
+    ///
+    /// Ela mora na coluna da esquerda, entre o rastreador e os avisos. Os
+    /// avisos são texto solto sem caixa, e a tarja é um painel opaco: se
+    /// encostarem, os avisos somem debaixo dela pela meia hora inteira do
+    /// evento.
+    ///
+    /// O teste mede nas DUAS posições — com a tarja no ar e sem ela — porque
+    /// o defeito possível é dos dois lados: encavalar quando está no ar, ou
+    /// deixar um buraco permanente quando não está.
+    #[test]
+    fn a_tarja_magica_cabe_entre_o_rastreador_e_os_avisos() {
+        for (sw, sh) in TELAS {
+            let com = zonas_com(sw, sh, [0.0; 4], 1.0, false, true, false);
+            let sem = zonas_com(sw, sh, [0.0; 4], 1.0, false, false, false);
+            let t = tarja_magica_rect(&com);
+
+            assert!(
+                t.y >= com.rastreador.y + com.rastreador.h - 0.01,
+                "{sw}×{sh}: a tarja sobe em cima do rastreador"
+            );
+            assert!(
+                t.y + t.h <= com.avisos.y + 0.01,
+                "{sw}×{sh}: a tarja {t:?} cobre os avisos {:?}",
+                com.avisos
+            );
+            assert!(
+                t.x >= 0.0 && t.y >= 0.0 && t.x + t.w <= sw + 0.01 && t.y + t.h <= sh + 0.01,
+                "{sw}×{sh}: a tarja {t:?} sai da tela"
+            );
+            for (nome, r) in com.todos() {
+                assert!(!cruzam(t, r), "{sw}×{sh}: a tarja cobre {nome} {r:?}");
+            }
+
+            // SEM a tarja os avisos voltam pro lugar de sempre: reservar o
+            // espaço à toa deixaria um buraco na coluna o jogo inteiro.
+            assert!(
+                sem.avisos.y < com.avisos.y,
+                "{sw}×{sh}: os avisos não voltam quando a tarja sai"
+            );
+            assert!(
+                (sem.avisos.y - (sem.rastreador.y + sem.rastreador.h + 8.0 * sem.s)).abs() < 0.01,
+                "{sw}×{sh}: sem a tarja os avisos não ficam colados no rastreador"
+            );
+        }
+    }
+
+    /// A FAIXA DE PVP CABE ENTRE A ÁREA E O MINIMAPA.
+    ///
+    /// O dono escolheu o lugar: "abaixo do ilha_magica SA01 CH magica1, entre
+    /// isso e o minimapa". Ela só existe na Ilha Mágica, então o minimapa só
+    /// desce enquanto ela está no ar.
+    #[test]
+    fn a_faixa_de_pvp_cabe_entre_a_area_e_o_minimapa() {
+        for (sw, sh) in TELAS {
+            let com = zonas_com(sw, sh, [0.0; 4], 1.0, false, false, true);
+            let sem = zonas_com(sw, sh, [0.0; 4], 1.0, false, false, false);
+            let f = faixa_pvp_rect(&com);
+
+            assert!(
+                f.y >= com.area.y + com.area.h - 0.01,
+                "{sw}×{sh}: a faixa sobe em cima da área"
+            );
+            assert!(
+                f.y + f.h <= com.minimapa.y + 0.01,
+                "{sw}×{sh}: a faixa {f:?} cobre o minimapa {:?}",
+                com.minimapa
+            );
+            assert!(
+                f.x >= 0.0 && f.y >= 0.0 && f.x + f.w <= sw + 0.01 && f.y + f.h <= sh + 0.01,
+                "{sw}×{sh}: a faixa {f:?} sai da tela"
+            );
+            for (nome, r) in com.todos() {
+                assert!(!cruzam(f, r), "{sw}×{sh}: a faixa cobre {nome} {r:?}");
+            }
+            // Sem a faixa o minimapa volta a colar na área: reservar o vão à
+            // toa deixaria um buraco no canto o jogo inteiro.
+            assert!(
+                sem.minimapa.y < com.minimapa.y,
+                "{sw}×{sh}: o minimapa não volta quando a faixa sai"
+            );
         }
     }
 
