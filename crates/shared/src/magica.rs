@@ -712,6 +712,19 @@ pub fn posto_de_pocoes() -> Vec2 {
     CHEGADA + Vec2::new(22.0, -10.0)
 }
 
+/// A ilhota do COLOSSO não tem recurso nenhum.
+///
+/// O dono: "na ilha do boss eu não quero que tenham recursos, eles só
+/// atrapalham na caça pro A*". E atrapalham mesmo: árvore e pedra viram
+/// estorvo, o A* contorna cada uma, e a ilhota onde o jogador mais precisa se
+/// mover em linha reta — a do chefe telegráfico, em que desviar é a graça — é
+/// justamente a mais entulhada.
+///
+/// Ela já era a única sem bônus de coleta; agora é também a única limpa.
+pub fn sem_recursos(p: Vec2) -> bool {
+    ilhota_em(p).is_some_and(|i| matches!(i.bonus, Bonus::DropDeChefe))
+}
+
 pub fn centros_de_combate() -> Vec<Vec2> {
     ilhotas()
         .into_iter()
@@ -1405,5 +1418,85 @@ mod testes {
         assert!(e_chao(meio), "a ponte tem que ser chão");
         assert_eq!(bonus_em(meio), None);
         assert_eq!(bonus_em(v[1].centro), Some(v[1].bonus));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_ilhota_limpa {
+    use super::*;
+
+    /// A ILHOTA DO COLOSSO NÃO TEM RECURSO, E AS OUTRAS TÊM.
+    ///
+    /// O dono: "na ilha do boss eu não quero que tenham recursos, eles só
+    /// atrapalham na caça pro A*".
+    ///
+    /// Os dois lados importam: limpar a do chefe é o pedido, e NÃO limpar as
+    /// outras é o que impede o conserto de virar um apagão de recursos.
+    #[test]
+    fn so_a_ilhota_do_colosso_fica_limpa() {
+        let def = crate::terreno::def_da_zona(ZONA).expect("zona");
+        let ilha = crate::terreno::Ilha::da_ilha(def);
+        let mut limpas = 0;
+        for i in ilhotas() {
+            let tem = conta_estorvos(&ilha, i.centro);
+            if matches!(i.bonus, Bonus::DropDeChefe) {
+                limpas += 1;
+                assert_eq!(tem, 0, "a ilhota do Colosso tem {tem} estorvos");
+            } else {
+                assert!(tem > 0, "{} ficou sem recurso: o corte vazou", i.bonus.nome());
+            }
+        }
+        assert_eq!(limpas, 1, "esperava exatamente uma ilhota limpa");
+    }
+
+    /// E ILHA NORMAL NÃO PERDE NADA NAS MESMAS COORDENADAS.
+    ///
+    /// `ilhota_em` responde por COORDENADA, e `estorvos_da_coluna` roda em
+    /// toda ilha. Sem a checagem de zona, a ilha comum perderia os recursos
+    /// das colunas que caem onde ficam as ilhotas — um apagão silencioso.
+    ///
+    /// O teste compara o MESMO ponto com e sem a regra: contar "> 0" não
+    /// bastava, porque sobra recurso em volta de qualquer jeito. Foi assim
+    /// que a primeira versão passou com o vazamento.
+    #[test]
+    fn ilha_comum_nao_perde_recurso_nas_coordenadas_das_ilhotas() {
+        let def = crate::terreno::def_da_zona("ilha_inicial").expect("zona");
+        let ilha = crate::terreno::Ilha::da_ilha(def);
+        let colosso = ilhotas()
+            .into_iter()
+            .find(|i| matches!(i.bonus, Bonus::DropDeChefe))
+            .expect("há ilhota do Colosso");
+        // Na ilha COMUM, o ponto que na mágica seria do Colosso tem que ter a
+        // mesma cara dos vizinhos — a regra não pode alcançar aqui.
+        let no_ponto = conta_estorvos(&ilha, colosso.centro);
+        let vizinho = conta_estorvos(&ilha, colosso.centro + Vec2::new(90.0, 0.0));
+        assert!(
+            no_ponto > 0 || vizinho == 0,
+            "ilha comum ficou limpa em {:.0},{:.0} enquanto o vizinho tem {vizinho}: a regra vazou",
+            colosso.centro.x,
+            colosso.centro.y
+        );
+    }
+
+    /// Quantos estorvos há num quadrado de 40 unidades em volta de `centro`.
+    fn conta_estorvos(ilha: &crate::terreno::Ilha, centro: Vec2) -> usize {
+        use crate::terreno::BLOCO;
+        let mut n = 0;
+        let passo = 4;
+        let raio = (20.0 / BLOCO) as i32;
+        let (cx, cz) = ((centro.x / BLOCO) as i32, (centro.y / BLOCO) as i32);
+        let mut bz = cz - raio;
+        while bz < cz + raio {
+            let mut bx = cx - raio;
+            while bx < cx + raio {
+                let p = Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+                if ilha.estorvo_em(p, 0.1).is_some() {
+                    n += 1;
+                }
+                bx += passo;
+            }
+            bz += passo;
+        }
+        n
     }
 }

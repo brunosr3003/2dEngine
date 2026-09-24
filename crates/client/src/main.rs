@@ -1549,7 +1549,7 @@ impl Jogo {
                 self.tick = snapshot.tick;
                 self.world
                     .apply(snapshot.entered, snapshot.states, &snapshot.removed);
-                self.world.acertos(&snapshot.acertos);
+                self.world.acertos(&snapshot.acertos, get_time());
                 // Quem me bateu (bicho): a defesa da auto coleta revida.
                 let eu = self.world.self_id;
                 if let Some(a) = snapshot.acertos.iter().rev().find(|a| {
@@ -3597,6 +3597,8 @@ impl Jogo {
             montaria_skin: self.montaria_skin,
             minimapa_expandido: Some(hud_layout::minimapa_expandido()),
             minimapa_oculto: Some(hud_layout::minimapa_oculto()),
+            auto_alvo_ordem: Some(self.auto_combate.ordem.clone()),
+            auto_pvp: Some(self.auto_combate.pvp),
         }
     }
 
@@ -4319,7 +4321,21 @@ impl Jogo {
         if self.auto_combate.segurando(eu, agora) {
             return;
         }
-        let novo = self.auto_combate.escolher(&self.world, self.alvo, agora);
+        // O BICHO DA MISSÃO, quando há missão de caça ativa. É o que faz o
+        // auto priorizar o que o jogador está tentando terminar.
+        let missao_kind = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| {
+                q.status == shared::quests::quest_status::ACTIVE
+                    && q.obj_kind == shared::quests::objective_kind::KILL
+                    && q.obj_target != 0
+            })
+            .map(|q| q.obj_target);
+        let novo = self
+            .auto_combate
+            .escolher(&self.world, self.alvo, agora, missao_kind);
         if novo != self.alvo {
             self.alvo = novo;
             self.envia(ClientMessage::SetTarget { target: novo });

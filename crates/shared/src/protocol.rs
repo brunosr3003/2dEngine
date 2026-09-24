@@ -1209,6 +1209,43 @@ pub const COLETA_PARADA: u8 = 255;
 /// Teto do JSON de preferencias guardado no personagem.
 pub const PREFERENCIAS_MAX_BYTES: usize = 8 * 1024;
 
+/// AUTO COMBATE: as categorias de alvo que o jogador pode ordenar.
+///
+/// Elas descrevem SITUAÇÃO, não espécie: a lista de bichos cresceria com o
+/// bestiário e viraria manutenção, enquanto "quem está me acertando de longe"
+/// vale pra qualquer inimigo que o jogo venha a ter.
+pub mod auto_alvo {
+    /// Inimigo ranged que está ACERTANDO você de longe. É o que mais
+    /// incomoda: você bate no que está perto e continua apanhando.
+    pub const RANGED_EM_MIM: u8 = 0;
+    /// O inimigo mais próximo — o comportamento de sempre.
+    pub const MAIS_PERTO: u8 = 1;
+    /// Outro jogador. Só entra se `auto_pvp` permitir.
+    pub const JOGADOR: u8 = 2;
+
+    /// A ordem de fábrica: primeiro quem te acerta de longe, depois o mais
+    /// perto. Jogador fica de fora até alguém pedir.
+    pub const PADRAO: [u8; 2] = [RANGED_EM_MIM, MAIS_PERTO];
+
+    pub fn valido(v: u8) -> bool {
+        matches!(v, RANGED_EM_MIM | MAIS_PERTO | JOGADOR)
+    }
+}
+
+/// AUTO COMBATE: até onde ele pode ir contra JOGADOR.
+pub mod auto_pvp {
+    /// Nunca bate em jogador. É o padrão.
+    pub const NUNCA: u8 = 0;
+    /// Só revida em quem bateu primeiro.
+    pub const REVIDAR: u8 = 1;
+    /// Qualquer jogador ao alcance.
+    pub const QUALQUER: u8 = 2;
+
+    pub fn valido(v: u8) -> bool {
+        matches!(v, NUNCA | REVIDAR | QUALQUER)
+    }
+}
+
 /// Preferencias de tela do personagem, guardadas no servidor
 /// (`characters.preferencias_json`): o que era so' memoria do cliente e sumia
 /// no relog. Tudo com `serde(default)`: JSON antigo, vazio ou com campo a mais
@@ -1232,6 +1269,24 @@ pub struct Preferencias {
     pub coleta_raio: Option<f32>,
     /// AUTO COLETA: apanhou de bicho, mata e volta a coletar.
     pub coleta_defender: Option<bool>,
+    /// AUTO COMBATE: em que ORDEM ele escolhe alvo, fora a missão.
+    ///
+    /// O dono: "quando eu tiver fazendo missão tem que ser o mob da missão,
+    /// mas se eu tiver igual estou agora na Ilha Mágica eu tenho que poder
+    /// escolher: inimigos ranged que estão me atacando de longe, inimigos que
+    /// estão próximos, player".
+    ///
+    /// A MISSÃO NÃO ENTRA NA LISTA porque ela não é uma preferência: quando
+    /// há missão de caça ativa, o bicho dela vem primeiro, sempre. A lista
+    /// decide o resto. Valores em `auto_alvo`.
+    pub auto_alvo_ordem: Option<Vec<u8>>,
+    /// AUTO COMBATE: quando ele pode bater em JOGADOR (`auto_pvp`).
+    ///
+    /// Separado da ordem de propósito: "quem eu prefiro atacar" e "eu aceito
+    /// atacar gente" são perguntas diferentes, e a segunda tem consequência
+    /// (facção, PK). O padrão é NUNCA — bater em jogador sem pedir é o tipo
+    /// de automatismo que estraga a relação com quem está do outro lado.
+    pub auto_pvp: Option<u8>,
     /// Escala da interface (HUD e textos), 0,8 a 1,6.
     pub escala_ui: Option<f32>,
     /// Modo economia de energia: entra sozinho depois de N minutos sem tocar
@@ -1321,6 +1376,26 @@ impl Preferencias {
         );
         self.escala_ui = faixa(self.escala_ui, 0.8, 1.6);
         self.economia_auto_min = self.economia_auto_min.map(|m| m.min(60));
+        // AUTO COMBATE. A ordem vem do cliente, então é saneada aqui: valor
+        // fora da tabela, repetido ou lista gigante não vai pro banco.
+        if let Some(ordem) = self.auto_alvo_ordem.as_mut() {
+            ordem.retain(|v| auto_alvo::valido(*v));
+            let mut vistos = Vec::new();
+            ordem.retain(|v| {
+                let novo = !vistos.contains(v);
+                if novo {
+                    vistos.push(*v);
+                }
+                novo
+            });
+            ordem.truncate(3);
+        }
+        // Lista vazia vira "sem preferência": guardar `[]` faria o auto não
+        // escolher alvo NENHUM, que é pior que o padrão.
+        if self.auto_alvo_ordem.as_ref().is_some_and(|o| o.is_empty()) {
+            self.auto_alvo_ordem = None;
+        }
+        self.auto_pvp = self.auto_pvp.filter(|v| auto_pvp::valido(*v));
         self
     }
 }
@@ -1353,6 +1428,8 @@ mod testes_preferencias {
             minimapa_expandido: Some(true),
             minimapa_oculto: Some(true),
             coleta_defender: Some(false),
+            auto_alvo_ordem: None,
+            auto_pvp: None,
         }
         .validada(&|id| id <= 12);
         assert_eq!(p.escala_ui, Some(1.6));
@@ -1676,4 +1753,67 @@ pub fn decode<T: for<'de> serde::Deserialize<'de>>(bytes: &[u8]) -> anyhow::Resu
 
 pub fn version() -> u16 {
     PROTOCOL_VERSION
+}
+
+#[cfg(test)]
+mod testes_do_auto_combate {
+    use super::*;
+
+    /// A ORDEM QUE VEM DO CLIENTE É SANEADA.
+    ///
+    /// Ela vai pro banco e volta a cada login, então lixo aqui é lixo
+    /// permanente. Três estragos possíveis, e os três têm consequência: valor
+    /// que não existe faria o auto ignorar a linha, repetido faria a segunda
+    /// nunca ser alcançada, e lista vazia faria ele não escolher alvo NENHUM
+    /// — o auto combate ligado sem atacar nada, que da tela é igual a
+    /// quebrado.
+    #[test]
+    fn a_ordem_de_alvo_e_saneada() {
+        let sk = |_: u32| true;
+        let p = |o: Vec<u8>| {
+            Preferencias {
+                auto_alvo_ordem: Some(o),
+                ..Default::default()
+            }
+            .validada(&sk)
+            .auto_alvo_ordem
+        };
+        // Valor inventado cai fora.
+        assert_eq!(p(vec![99, auto_alvo::MAIS_PERTO]), Some(vec![auto_alvo::MAIS_PERTO]));
+        // Repetido vira um.
+        assert_eq!(
+            p(vec![auto_alvo::JOGADOR, auto_alvo::JOGADOR]),
+            Some(vec![auto_alvo::JOGADOR])
+        );
+        // Vazia (ou que esvazia ao sanear) vira "sem preferência".
+        assert_eq!(p(vec![]), None);
+        assert_eq!(p(vec![99, 98]), None);
+        // A ordem ESCOLHIDA é respeitada — não reordenada.
+        assert_eq!(
+            p(vec![auto_alvo::MAIS_PERTO, auto_alvo::RANGED_EM_MIM]),
+            Some(vec![auto_alvo::MAIS_PERTO, auto_alvo::RANGED_EM_MIM])
+        );
+    }
+
+    /// PVP INVENTADO VIRA O PADRÃO, QUE É NUNCA.
+    ///
+    /// Um número fora da tabela não pode virar "ataca qualquer um": o erro
+    /// aqui custa a relação com quem está do outro lado.
+    #[test]
+    fn pvp_fora_da_tabela_cai_pro_padrao() {
+        let sk = |_: u32| true;
+        let v = |x: u8| {
+            Preferencias {
+                auto_pvp: Some(x),
+                ..Default::default()
+            }
+            .validada(&sk)
+            .auto_pvp
+        };
+        assert_eq!(v(auto_pvp::REVIDAR), Some(auto_pvp::REVIDAR));
+        assert_eq!(v(auto_pvp::QUALQUER), Some(auto_pvp::QUALQUER));
+        assert_eq!(v(7), None, "valor inventado tinha que sumir");
+        // E o padrão de fábrica não ataca ninguém.
+        assert_eq!(Preferencias::default().auto_pvp, None);
+    }
 }

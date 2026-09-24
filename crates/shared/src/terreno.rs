@@ -1621,6 +1621,16 @@ pub fn estorvos_da_coluna(
     saida: &mut Vec<Estorvo>,
 ) {
     let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
+    // A ILHOTA DO COLOSSO É LIMPA. Ver `magica::sem_recursos`.
+    //
+    // O `e_magica` NÃO é redundante: `ilhota_em` responde por coordenada, e
+    // esta função roda em TODA ilha — sem ele, as ilhas normais perderiam os
+    // recursos das colunas que calhassem de cair onde ficam as ilhotas.
+    if ger.e_magica()
+        && crate::magica::sem_recursos(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    {
+        return;
+    }
     if let Some(a) = arvore_da_coluna(bioma, bx, bz, topo, declive, ger, agua) {
         saida.push(Estorvo {
             centro: a.centro,

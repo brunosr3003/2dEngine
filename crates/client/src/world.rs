@@ -159,6 +159,8 @@ pub struct World {
     pub efeitos: Vec<Efeito>,
     /// 0..1: a borda vermelha de quando o PROPRIO jogador apanha.
     pub dor: f32,
+    /// Quem me ACERTOU e quando. Ver `auto_combate::AGRESSOR_S`.
+    pub agressores: std::collections::HashMap<EntityId, f64>,
     /// O alvo do jogador local (espelho do `Jogo::alvo`).
     pub alvo: Option<EntityId>,
     /// Ordem estavel de desenho (y crescente) recalculada por quadro.
@@ -238,7 +240,7 @@ impl World {
     /// tranco, e o golpe vira numero e faisca. Vem do servidor com o dano
     /// REAL, e nao da queda de vida — no modo imortal a vida nao cai e o
     /// golpe tem que aparecer do mesmo jeito.
-    pub fn acertos(&mut self, lista: &[shared::protocol::Acerto]) {
+    pub fn acertos(&mut self, lista: &[shared::protocol::Acerto], agora: f64) {
         for a in lista {
             let eu = self.self_id == Some(a.alvo);
             if let Some(ent) = self.ents.get_mut(&a.alvo) {
@@ -252,6 +254,13 @@ impl World {
             }
             if eu {
                 self.dor = 1.0;
+                // QUEM ME BATEU FICA MARCADO.
+                //
+                // É o que permite "revidar em quem começou" sem abrir PvP
+                // geral, e o que dá ao auto combate a noção de agressor. O
+                // prazo é curto (`auto_combate::AGRESSOR_S`): um tiro perdido
+                // de um minuto atrás não pode marcar alguém pra sessão toda.
+                self.agressores.insert(a.atacante, agora);
             }
             let h = (a.alvo.0 as u64 ^ (self.efeitos.len() as u64).wrapping_mul(0x9E37_79B9))
                 .wrapping_mul(2_654_435_761);
