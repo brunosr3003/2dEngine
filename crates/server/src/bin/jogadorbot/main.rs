@@ -2459,10 +2459,31 @@ async fn decide(
                 // Andando. Não reenvia nada: o servidor está conduzindo.
                 return Ok(());
             }
+            // NÃO SAIU DO LUGAR: anda NA MÃO.
+            //
+            // Agora que o vagar conta a verdade, ela apareceu: "não chegou
+            // (parou a 45u)" — o bot nem começou a andar. Quatro deles
+            // passaram a corrida inteira em -51,-464 mandando `MoverPara` pra
+            // todo lado e ficando onde estavam: o A* do servidor não traça
+            // rota dali, seja porque o ponto sorteado caiu na água, seja
+            // porque o corpo está encurralado.
+            //
+            // É o que uma pessoa faz quando clicar no mapa não resolve: larga
+            // o clique e segura o direcional. O empurrão atravessa onde a rota
+            // não passa, e três segundos bastam pra sair da quina.
+            let sobrou = eu.pos.distance(alvo);
             eu.vagando_para = None;
+            if sobrou > 40.0 {
+                eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
+                eu.empurrao_ate = Some(Instant::now() + Duration::from_secs(3));
+                t.registra(ev(nome, eu, "desencalhou", true, format!(
+                    "rota não saiu de {:.0},{:.0} — indo na mão", eu.pos.x, eu.pos.y
+                )));
+                return Ok(());
+            }
             t.registra(ev(nome, eu, "vagou", false, format!(
-                "não chegou em {:.0},{:.0} (parou a {:.0}u)",
-                alvo.x, alvo.y, eu.pos.distance(alvo)
+                "não chegou em {:.0},{:.0} (parou a {sobrou:.0}u)",
+                alvo.x, alvo.y
             )));
             return Ok(());
         }
@@ -2470,7 +2491,12 @@ async fn decide(
         // O `%` sobre o contador é um sorteio bom o bastante: não precisa de
         // aleatoriedade boa, precisa de direções diferentes a cada vez.
         let volta = (eu.vagou as f32) * 2.399_963_2;
-        let longe = 45.0;
+        // VINTE E CINCO, e não quarenta e cinco. Ponto longe demais cai no mar
+        // ou do outro lado de uma parede, e aí o servidor não traça rota
+        // nenhuma — "não chegou (parou a 45u)" era literal: o bot não dava um
+        // passo. Perto é mais fácil de alcançar, e o que se procura (bicho)
+        // está espalhado, não num lugar só.
+        let longe = 25.0;
         let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
         eu.vagando_para = Some((alvo, Instant::now()));
         ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
