@@ -52,6 +52,18 @@ use trilha::{Evento, Fase, Trilha};
 /// laço de tick cheio gastaria CPU do servidor que a gente quer medir — o
 /// observador não pode ser a maior carga do que observa.
 const PENSA_A_CADA: Duration = Duration::from_millis(700);
+/// O PULSO DE INPUT: 30 Hz, o mesmo ritmo do mundo.
+///
+/// O cliente de verdade manda um `InputFrame` TODO QUADRO, mesmo parado. Não
+/// é desperdício: o servidor **para o corpo** no tick em que não chega input
+/// ("sem ordem, o corpo fica onde está"), e é dentro desse mesmo laço que ele
+/// conduz a rota do auto-path.
+///
+/// O bot só mandava input em duas situações raras. Então o `MoverPara`
+/// traçava a rota, o servidor a guardava, e ela nunca andava um passo: 28
+/// "travou_no_caminho" numa corrida, todos dizendo "parado a 100 do destino",
+/// sem nenhuma recusa do servidor — porque recusa não houve. Faltava o pulso.
+const PULSA_A_CADA: Duration = Duration::from_millis(33);
 
 struct Cfg {
     host: String,
@@ -155,6 +167,81 @@ struct Eu {
     /// mandou. As duas coisas juntas são o que detecta "pedi e não saí do
     /// lugar" sem reenviar o pedido a cada decisão.
     andando_para: Option<(glam::Vec2, glam::Vec2, u32)>,
+    /// O MUNDO QUE O BOT CONHECE: quem é quem, e onde.
+    ///
+    /// Um snapshot traz `entered` (quem ACABOU de aparecer), `states` (só
+    /// quem MUDOU) e `removed`. O bot escolhia o alvo olhando só o `entered`
+    /// do tick atual — ou seja, um inimigo só era alvo no instante em que
+    /// entrava no campo de visão e nunca mais. Numa corrida inteira ele
+    /// atacou UMA vez. Como um cliente de verdade, agora ele lembra.
+    conhecidos: HashMap<shared::EntityId, shared::EntityTag>,
+    posicoes: HashMap<shared::EntityId, glam::Vec2>,
+    /// A DIREÇÃO QUE O PULSO DEVE MANDAR nos últimos metros.
+    ///
+    /// O direcional só saía na decisão, uma vez a cada 700 ms — e cada frame
+    /// vale UM tick de 33 ms. O bot andava 33 ms a cada 700, ou seja, parava
+    /// a 5 unidades do NPC e ficava lá: o batimento mostrou ele imóvel em
+    /// -49,-494 por cinco minutos, sempre "a 5u" do destino.
+    ///
+    /// Agora quem anda é o pulso, 30 vezes por segundo, como no cliente de
+    /// verdade. Some sozinho (`empurrao_ate`) pra não virar um bot que anda
+    /// pra sempre na última direção que alguém pediu.
+    empurrao: Option<glam::Vec2>,
+    empurrao_ate: Option<Instant>,
+    /// Coletas seguidas sem o objetivo da missão andar, e o progresso visto.
+    ///
+    /// Colher é lento e o progresso demora, então o limite é alto — mas 375
+    /// coletas em dez minutos sem sair do nível 1 não é lentidão, é laço.
+    coleta_sem_avanco: u32,
+    progresso_visto: (u16, u32),
+    /// Crafts recusados por missão. Ver `CraftResultado`.
+    craft_a_toa: HashMap<u16, u32>,
+    /// Missões cujo destino o bot não consegue alcançar, e larga.
+    ///
+    /// O Treinador da ilha inicial é o caso: o A* ACHA caminho até ele (4
+    /// pontos), mas entrega o corpo a 8,6 unidades — a grade do A* é de 4
+    /// unidades e o último trecho não cabe nela —, e daí em linha reta tem
+    /// alguma coisa no meio. Um bot gastou 61 decisões seguidas ali.
+    ///
+    /// Um jogador, nessa situação, desiste e vai fazer outra coisa. O bot faz
+    /// o mesmo: a missão fica de lado, e a trilha guarda o achado — que é um
+    /// defeito do JOGO, não do bot.
+    desistiu: HashMap<u16, Instant>,
+    /// A missão em que o bot está trabalhando agora. Ver a escolha do foco.
+    foco: Option<u16>,
+    /// Quantas vezes ele saiu pra vagar. Serve de semente e de ritmo.
+    vagou: u32,
+    /// Decisões seguidas empurrando sem encurtar a distância, e qual era ela.
+    ///
+    /// Andar reto não vence quina de casa, cerca nem carroça. Um bot ficou a
+    /// CINCO unidades do primeiro NPC da história por sete minutos, empurrando
+    /// a cada 700 ms contra alguma coisa — e como empurrar não registra nada,
+    /// só o batimento denunciou. Agora, quando o empurrão não anda, ele faz o
+    /// que o jogador faria: chama o A* (`MoverPara`) e deixa o servidor achar
+    /// a volta.
+    empurrao_parado: u32,
+    dist_do_empurrao: f32,
+    /// Chamadas ao A* no mesmo destino sem chegar. Ver `desistiu`.
+    tentativas_no_destino: u32,
+    /// Decisões desde o último batimento. Ver `BATIMENTO_A_CADA`.
+    desde_o_batimento: u32,
+    /// A última recusa que o servidor explicou pelo chat de sistema. Entra no
+    /// detalhe de quem travou, pra a trilha dizer o PORQUÊ e não só o quê.
+    ultima_recusa: Option<String>,
+    /// As habilidades que o servidor mandou no login (`SkillsConfig`). O
+    /// passo de tutorial "evolua uma habilidade" precisa de um id, e inventar
+    /// um levaria a uma recusa silenciosa.
+    skills: Vec<u32>,
+    /// CONVERSAS QUE NÃO DERAM EM NADA, por NPC.
+    ///
+    /// Existe porque a trilha mentia: `conversou` saía com `ok: true` porque
+    /// a MENSAGEM foi enviada, não porque o diálogo andou. Numa corrida o bot
+    /// registrou 640 sucessos seguidos parado no nível 1, e o resumo dizia
+    /// "falhas = 0". Um contador que só sabe contar acerto é pior que nenhum:
+    /// ele faz o defeito parecer saúde.
+    ///
+    /// Zera a cada sinal de que algo mudou (oferta, aceite, progresso).
+    conversas_a_toa: HashMap<u64, u32>,
     /// Últimos anúncios que o mercado devolveu.
     anuncios: Vec<shared::mercado::AnuncioNet>,
     /// Quando o bot olhou o mercado pela última vez (em decisões).
@@ -238,6 +325,7 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
 
     let mut fase = Fase::Logando;
     let mut pensa = tokio::time::interval(PENSA_A_CADA);
+    let mut pulsa = tokio::time::interval(PULSA_A_CADA);
     let mut seq: u32 = 0;
     let mut tick: u32 = 0;
 
@@ -250,6 +338,32 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
             _ = pensa.tick() => {
                 if fase == Fase::NoMundo {
                     decide(&mut ws, &mut eu, nome, t, &mut seq, tick).await?;
+                }
+            }
+            // O PULSO. Direção ZERO: mexer no direcional MATA a rota
+            // ("comando manual sempre ganha do automático"), então o pulso
+            // tem que ser um frame parado. Ele não pede passo nenhum — só dá
+            // ao servidor o tick em que conduzir o que já foi pedido.
+            _ = pulsa.tick() => {
+                if fase == Fase::NoMundo && !eu.morto {
+                    // Expira o empurrão: ele vale pelo trecho curto que a
+                    // decisão pediu, não pra sempre.
+                    if eu.empurrao_ate.is_some_and(|t| Instant::now() >= t) {
+                        eu.empurrao = None;
+                        eu.empurrao_ate = None;
+                    }
+                    let dir = eu.empurrao.unwrap_or(glam::Vec2::ZERO);
+                    seq = seq.wrapping_add(1);
+                    ws.send(envia(&ClientMessage::Input {
+                        input: InputFrame {
+                            seq,
+                            tick,
+                            move_dir: dir,
+                            aim: if dir == glam::Vec2::ZERO { glam::Vec2::X } else { dir },
+                            buttons: 0,
+                        },
+                    })?)
+                    .await?;
                 }
             }
             frame = ws.next() => {
@@ -267,6 +381,38 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
             }
         }
     }
+}
+
+/// A aparência deste bot, deduzida do nome.
+///
+/// Sai do NOME e não de sorteio: o personagem é criado uma vez e reusado a
+/// cada reinício do serviço, mas se um dia o banco for limpo o mesmo bot
+/// renasce com a mesma cara. Aparência que muda sozinha entre sessões é pior
+/// que aparência repetida — ninguém reconhece ninguém.
+fn aparencia_de(nome: &str) -> shared::aparencia::Aparencia {
+    let semente = semente_do_nome(nome);
+    shared::aparencia::Aparencia {
+        rosto: (semente % shared::aparencia::ROSTOS as u64) as u8,
+        cabelo: ((semente / 3) % shared::aparencia::CABELOS as u64) as u8,
+        cor_cabelo: ((semente / 7) % shared::aparencia::CORES_DE_CABELO.len() as u64) as u8,
+        pele: ((semente / 13) % shared::aparencia::TONS_DE_PELE.len() as u64) as u8,
+        // Roupa 0 = o corpo padrão: skin paga não se ganha de graça nem pra bot.
+        roupa: 0,
+    }
+    .saneada()
+}
+
+/// Uma semente estável a partir do nome do bot (FNV-1a de 64 bits).
+///
+/// Estável é o ponto: `prodbot_3` tem que ter a mesma cara hoje e depois de
+/// um `systemctl restart`. Um `fastrand` daria variedade e nenhuma memória.
+fn semente_do_nome(nome: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in nome.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
 }
 
 /// Um evento com o estado atual preenchido — é o que torna a trilha uma curva
@@ -315,12 +461,41 @@ async fn recebe(
         } => {
             let m = match chars.first() {
                 Some(c) => ClientMessage::SelectCharacter { name: c.name.clone() },
-                None => ClientMessage::CreateCharacter {
-                    name: format!("{nome}c"),
-                    aparencia: Default::default(),
-                    starting_weapon: available_weapons.first().copied().unwrap_or(0),
-                    faction: Default::default(),
-                },
+                None => {
+                    // CADA BOT COM CARA E CLASSE PRÓPRIAS.
+                    //
+                    // O dono: "eles tão todos com a mesma skin?" e "varia as
+                    // skins / e as classes". Estavam mesmo: `Default::default()`
+                    // em tudo e sempre a PRIMEIRA arma da lista — doze
+                    // gêmeos idênticos na praça, o que é péssimo justamente
+                    // pro que os bots servem, que é fazer o mundo parecer
+                    // habitado.
+                    //
+                    // A semente sai do NOME, e não de sorteio: o personagem é
+                    // criado uma vez e reusado a cada reinício do serviço, mas
+                    // se um dia o banco for limpo o mesmo bot renasce com a
+                    // mesma cara. Aparência que muda sozinha entre sessões é
+                    // pior que aparência repetida.
+                    let semente = semente_do_nome(nome);
+                    let ap = aparencia_de(nome);
+                    // A CLASSE é a arma inicial, e o bot pegava sempre a
+                    // primeira: doze do mesmo estilo de luta.
+                    let arma = if available_weapons.is_empty() {
+                        0
+                    } else {
+                        available_weapons[(semente / 17) as usize % available_weapons.len()]
+                    };
+                    t.registra(ev(nome, eu, "aparencia", true, format!(
+                        "rosto {} cabelo {} cor {} pele {} arma {arma}",
+                        ap.rosto, ap.cabelo, ap.cor_cabelo, ap.pele
+                    )));
+                    ClientMessage::CreateCharacter {
+                        name: format!("{nome}c"),
+                        aparencia: ap,
+                        starting_weapon: arma,
+                        faction: Default::default(),
+                    }
+                }
             };
             let criando = matches!(m, ClientMessage::CreateCharacter { .. });
             ws.send(envia(&m)?).await?;
@@ -340,25 +515,56 @@ async fn recebe(
             eu.entidade = Some(entity_id);
             eu.pos = glam::Vec2::new(spawn[0], spawn[1]);
             eu.morto = false;
+            // VESTE A PRÓPRIA CARA, mesmo em personagem que já existia.
+            //
+            // A aparência só é escolhida na CRIAÇÃO, e os bots de produção já
+            // tinham personagem criado com o padrão — sem isto eles seguiriam
+            // gêmeos para sempre, e a variedade só valeria pra banco limpo.
+            // `UpdateVisual` é o guarda-roupa: o servidor valida e reenvia a
+            // meta pra quem já enxergava o jogador.
+            ws.send(envia(&ClientMessage::UpdateVisual {
+                aparencia: aparencia_de(nome),
+            })?)
+            .await?;
             t.registra(ev(nome, eu, "entrou_no_mundo", true, String::new()));
             return Ok(Some(Fase::NoMundo));
         }
         ServerMessage::Snapshot { snapshot } => {
             *tick = snapshot.tick;
+            // O MUNDO SE MANTÉM entre snapshots, como no cliente.
+            for m in &snapshot.entered {
+                eu.conhecidos.insert(m.id, m.tag);
+            }
+            for s in &snapshot.states {
+                eu.posicoes.insert(s.id, s.pos_f32());
+            }
+            for id in &snapshot.removed {
+                eu.conhecidos.remove(id);
+                eu.posicoes.remove(id);
+            }
             if let Some(meu) = eu.entidade {
                 if let Some(s) = snapshot.states.iter().find(|s| s.id == meu) {
                     eu.pos = s.pos_f32();
+                    // DE PÉ OUTRA VEZ. `morto` só era desfeito no login, e
+                    // `RespawnAtCity` não faz login nenhum: depois da
+                    // primeira morte o bot ficava deitado o resto da corrida
+                    // — o batimento mostrou "MORTO" por quatro minutos.
+                    if eu.morto && s.hp > 0 {
+                        eu.morto = false;
+                        eu.destino = None;
+                        eu.andando_para = None;
+                        t.registra(ev(nome, eu, "renasceu", true, String::new()));
+                    }
                 }
             }
-            // O alvo é o inimigo vivo mais perto. Escolher aqui, e não na
-            // decisão, porque é aqui que o dado chega fresco.
-            eu.alvo = snapshot
-                .states
+            // O alvo é o inimigo vivo mais perto DOS QUE ELE CONHECE.
+            eu.alvo = eu
+                .conhecidos
                 .iter()
-                .filter(|s| Some(s.id) != eu.entidade)
-                .filter(|s| snapshot.entered.iter().any(|m| m.id == s.id
-                    && matches!(m.tag, shared::EntityTag::Enemy)))
-                .map(|s| (s.id, s.pos_f32()))
+                .filter(|(id, tag)| {
+                    Some(**id) != eu.entidade && matches!(tag, shared::EntityTag::Enemy)
+                })
+                .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
                 .min_by(|a, b| {
                     a.1.distance_squared(eu.pos)
                         .total_cmp(&b.1.distance_squared(eu.pos))
@@ -399,6 +605,40 @@ async fn recebe(
         }
         ServerMessage::QuestUpdate { quest_id, progress, status } => {
             eu.quests.insert(quest_id, (progress, status));
+            eu.conversas_a_toa.clear();
+        }
+        // O NPC QUE TEM MISSÃO **E** LOJA PERGUNTA ANTES.
+        //
+        // `interagir` só manda a oferta direto quando o NPC não tem outra
+        // função. Tendo loja, forja, barco ou banco, ele manda esta escolha —
+        // e o bot a ignorava. Ou seja: mesmo chegando perto, a missão do
+        // primeiro NPC da história nunca era oferecida.
+        //
+        // O bot sempre escolhe a MISSÃO: é o caminho do jogador que está
+        // seguindo a história, e é pra isso que ele foi até lá.
+        ServerMessage::EscolhaNoNpc { npc_eid, nome: npc_nome, funcao } => {
+            ws.send(envia(&ClientMessage::EscolherNoNpc { npc_eid, missao: true })?)
+                .await?;
+            eu.conversas_a_toa.clear();
+            t.registra(ev(nome, eu, "escolheu_missao", true, format!(
+                "npc {npc_eid} '{npc_nome}' (tinha {funcao})"
+            )));
+        }
+        // O SERVIDOR EXPLICA AS RECUSAS PELO CHAT DE "SYS".
+        //
+        // "Não há caminho até ali", "Longe demais para ir a pé daqui",
+        // "Precisa do nível X" — tudo isso chega como Chat do sistema, e o
+        // bot jogava fora. Resultado: 28 `travou_no_caminho` dizendo "parado
+        // a 100 do destino" quando o servidor já tinha dito, em português, o
+        // motivo exato.
+        //
+        // Chat de JOGADOR continua ignorado: isso é conversa, não diagnóstico.
+        ServerMessage::Chat { from, text } if from == "SYS" || from == "Sistema" => {
+            eu.ultima_recusa = Some(text.clone());
+            t.registra(ev(nome, eu, "aviso_do_servidor", false, text));
+        }
+        ServerMessage::SkillsConfig { skills } => {
+            eu.skills = skills.iter().map(|s| s.id).collect();
         }
         ServerMessage::QuestGivers { available } => eu.ofertas = available,
         ServerMessage::QuestOffer { quests, .. } => {
@@ -406,6 +646,9 @@ async fn recebe(
             // inventar uma estratégia que o jogador comum não tem.
             if let Some(q) = quests.first() {
                 ws.send(envia(&ClientMessage::AcceptQuest { quest_id: q.id })?).await?;
+                // A oferta chegou: a conversa ANDOU. Limpar aqui é o que
+                // impede o contador de acusar quem está indo bem.
+                eu.conversas_a_toa.clear();
                 t.registra(ev(nome, eu, "quest_aceita", true, format!("#{}", q.id)));
             }
         }
@@ -458,6 +701,30 @@ async fn recebe(
         }
         ServerMessage::CraftResultado { recipe_id, ok, motivo, .. } => {
             t.registra(ev(nome, eu, "craft", ok, format!("receita {recipe_id}: {motivo}")));
+            // A RECUSA TEM QUE DERRUBAR A MISSÃO.
+            //
+            // O bot mandava `Craft`, o servidor respondia "faltam: Madeira
+            // 0/40", ele largava o destino, pedia de novo e craftava de novo:
+            // 1.692 tentativas em 40 minutos, com os doze parados no mesmo
+            // nível. A recusa chegava aqui e morria aqui.
+            //
+            // Faltar material não se resolve insistindo — se resolve indo
+            // buscar, que é o que o bot passa a fazer quando esta missão sai
+            // da frente.
+            if ok {
+                eu.craft_a_toa.clear();
+            } else if let Some(q) = eu.foco {
+                let n = eu.craft_a_toa.entry(q).or_default();
+                *n += 1;
+                if *n >= 3 {
+                    eu.craft_a_toa.remove(&q);
+                    eu.desistiu.insert(q, Instant::now());
+                    eu.destino = None;
+                    t.registra(ev(nome, eu, "craft_emperrado", false, format!(
+                        "#{q} receita {recipe_id}: {motivo}"
+                    )));
+                }
+            }
         }
         ServerMessage::Kick { reason } => return Err(anyhow!("kick: {reason}")),
         ServerMessage::TrocarZona { .. } => {
@@ -482,6 +749,40 @@ async fn decide(
     seq: &mut u32,
     tick: u32,
 ) -> Result<()> {
+    // O BATIMENTO: silêncio também é mentira.
+    //
+    // A trilha tinha dois jeitos de enganar. O primeiro era dizer `ok: true`
+    // pro que não deu em nada — consertado. O segundo é não dizer NADA: numa
+    // corrida o bot ficou QUATRO MINUTOS sem um único evento, andando (ou não)
+    // pra um destino a 100 unidades, e a trilha ficou muda. Um segundo bot
+    // passou seis minutos inteiros sem registrar uma linha, e eu não tinha
+    // como saber sequer se ele estava vivo.
+    //
+    // A cada ~21 s sai um batimento com onde ele está e o que está tentando.
+    // Não é ruído: é a diferença entre "está indo" e "travou em silêncio",
+    // que nenhum contador de ação revela.
+    const BATIMENTO_A_CADA: u32 = 30;
+    eu.desde_o_batimento += 1;
+    if eu.desde_o_batimento >= BATIMENTO_A_CADA {
+        eu.desde_o_batimento = 0;
+        let alvo = match eu.destino {
+            Some(d) => format!(
+                "#{} tipo {} a {:.0}u",
+                d.quest,
+                d.tipo,
+                eu.pos.distance(d.pos)
+            ),
+            None => "sem destino".into(),
+        };
+        let empurrando = if eu.empurrao.is_some() { " · empurrando" } else { "" };
+        t.registra(ev(nome, eu, "batimento", true, format!(
+            "em {:.0},{:.0} · {} quest(s) · {alvo}{}",
+            eu.pos.x,
+            eu.pos.y,
+            eu.quests.len(),
+            if eu.morto { " · MORTO" } else { "" }
+        ) + empurrando));
+    }
     if eu.morto {
         return Ok(());
     }
@@ -520,11 +821,57 @@ async fn decide(
         return Ok(());
     }
     // 4. Tem missão ativa: pergunta onde é o próximo passo.
-    let ativa = eu
-        .quests
-        .iter()
-        .find(|(_, (_, st))| *st == shared::quests::quest_status::ACTIVE)
-        .map(|(id, _)| *id);
+    // UMA MISSÃO DE CADA VEZ, E ELA GIRA.
+    //
+    // Duas tentativas anteriores erraram de lados opostos. Deixar a "ativa"
+    // sair do HashMap dava uma escolha que mudava a cada decisão: o bot pedia
+    // o destino de uma, recebia, e na seguinte cobrava o de outra, sem nunca
+    // agir. Trocar por `min()` deu o contrário — estabilidade demais: ele
+    // fixava na missão mais antiga e falou com o mesmo NPC 324 vezes em dez
+    // minutos, travado no nível 2.
+    //
+    // O certo é ter FOCO e saber largá-lo. O bot escolhe uma, insiste nela
+    // enquanto ela andar, e quando ela para de andar (`desistiu`) passa pra
+    // próxima. É o que um jogador faz com uma missão que emperrou.
+    // A DESISTÊNCIA TEM PRAZO.
+    //
+    // Numa corrida de 25 minutos com quatro bots, todos largaram a missão do
+    // Mestre de Missões e depois ficaram 2.016 decisões sem ter o que fazer.
+    // O motivo de não chegar nele é quase certamente PASSAGEIRO — quatro
+    // bots indo ao mesmo NPC se bloqueiam —, e desistir para sempre de algo
+    // que era temporário é o pior dos dois erros.
+    const PRAZO_DA_DESISTENCIA: Duration = Duration::from_secs(120);
+    eu.desistiu
+        .retain(|_, quando| quando.elapsed() < PRAZO_DA_DESISTENCIA);
+    let foco_vale = eu.foco.is_some_and(|f| {
+        !eu.desistiu.contains_key(&f)
+            && eu
+                .quests
+                .get(&f)
+                .is_some_and(|(_, st)| *st == shared::quests::quest_status::ACTIVE)
+    });
+    if !foco_vale {
+        // A MAIS NOVA primeiro: a história é numerada em ordem, então a de
+        // maior id é o passo mais recente — o que o jogador acabou de pegar.
+        let nova = eu
+            .quests
+            .iter()
+            .filter(|(id, (_, st))| {
+                *st == shared::quests::quest_status::ACTIVE && !eu.desistiu.contains_key(id)
+            })
+            .map(|(id, _)| *id)
+            .max();
+        if nova != eu.foco {
+            eu.foco = nova;
+            eu.destino = None;
+            eu.esperando_destino = 0;
+            eu.tentativas_no_destino = 0;
+            if let Some(f) = nova {
+                t.registra(ev(nome, eu, "foco", true, format!("#{f}")));
+            }
+        }
+    }
+    let ativa = eu.foco;
     if let Some(id) = ativa {
         if eu.destino.map(|d| d.quest) != Some(id) {
             // ANTI-TRAVAMENTO. O servidor pode simplesmente não ter destino
@@ -536,6 +883,16 @@ async fn decide(
             if eu.esperando_destino < 3 {
                 eu.esperando_destino += 1;
                 ws.send(envia(&ClientMessage::QuestDestino { quest_id: id })?).await?;
+                // REGISTRA O PEDIDO. Este ramo era mudo, e é justamente onde
+                // um bot com seis missões pode ficar pingando entre elas: a
+                // "ativa" sai de um HashMap, cuja ordem muda, então ele podia
+                // pedir o destino de uma, receber, e na decisão seguinte
+                // cobrar o de outra — para sempre, sem um evento na trilha.
+                t.registra(ev(nome, eu, "pediu_destino", true, format!(
+                    "#{id} (tinha {:?}, tentativa {})",
+                    eu.destino.map(|d| d.quest),
+                    eu.esperando_destino
+                )));
                 return Ok(());
             }
         }
@@ -554,12 +911,34 @@ async fn decide(
         // conversa do jogo é maior que isso, então a resposta certa é agir
         // dali: é o que a pessoa faz quando o personagem para perto e ela
         // clica no NPC assim mesmo.
-        const PERTO_O_BASTANTE: f32 = 12.0;
         /// Daqui pra dentro, o direcional termina o serviço.
         const ULTIMOS_METROS: f32 = 16.0;
         let travado = eu.andando_para.is_none_or(|(_, _, paradas)| paradas >= 8);
         let dist = eu.pos.distance(d.pos);
-        let perto = dist <= d.raio.max(3.0) || (travado && dist <= PERTO_O_BASTANTE);
+        // O QUE É "PERTO" DEPENDE DO QUE SE VAI FAZER.
+        //
+        // Falar com NPC exige `INTERACT_RADIUS` — TRÊS unidades. O bot antes
+        // se dava por perto a até 12 e mandava o `Interact` de lá: o servidor
+        // não achava NPC nenhum no alcance, não respondia nada, o destino
+        // voltava e tudo recomeçava. Era isso, e só isso, os 640 "conversou"
+        // de uma corrida inteira sem uma única missão aceita.
+        //
+        // A margem de 0,6 é porque o bot decide com a posição do último
+        // snapshot: decidir no limite exato é chegar a 3,1 e mandar mesmo
+        // assim.
+        let fala = matches!(
+            d.tipo,
+            shared::quests::destino_tipo::NPC | shared::quests::destino_tipo::ENTREGA
+        );
+        let alcance = if fala {
+            shared::INTERACT_RADIUS - 0.6
+        } else {
+            d.raio.max(3.0)
+        };
+        // TRAVADO NÃO VIRA CHEGADA quando é pra falar: insistir de longe é o
+        // laço de novo, só que com outro nome. Longe e travado desiste do
+        // destino, que é o caminho que já existe logo abaixo.
+        let perto = dist <= alcance || (travado && !fala && dist <= 12.0);
         // OS ÚLTIMOS METROS NO DIRECIONAL.
         //
         // Auto-path pro trecho longo, direcional pro fim — que é exatamente o
@@ -571,14 +950,53 @@ async fn decide(
         // destino voltava e tudo recomeçava. "Conversou 512" era o sintoma de
         // não ter conversado nenhuma vez.
         if !perto && dist <= ULTIMOS_METROS {
-            *seq = seq.wrapping_add(1);
-            let dir = (d.pos - eu.pos).normalize_or_zero();
-            ws.send(envia(&ClientMessage::Input {
-                input: InputFrame { seq: *seq, tick, move_dir: dir, aim: dir, buttons: 0 },
-            })?)
-            .await?;
+            // ENCURTOU? Então segue empurrando.
+            if dist < eu.dist_do_empurrao - 0.3 {
+                eu.empurrao_parado = 0;
+            } else {
+                eu.empurrao_parado += 1;
+            }
+            eu.dist_do_empurrao = dist;
+            // NÃO ENCURTOU EM 5 DECISÕES (~3,5 s): tem coisa no caminho.
+            // Chama o A*, que sabe contornar, e zera a conta pra dar tempo a
+            // ele. Se nem assim, o `travou_no_caminho` de baixo aparece.
+            if eu.empurrao_parado >= 5 {
+                eu.empurrao_parado = 0;
+                eu.empurrao = None;
+                eu.empurrao_ate = None;
+                eu.andando_para = None;
+                eu.tentativas_no_destino += 1;
+                // TRÊS VEZES E LARGA. A primeira chamada ao A* é conserto de
+                // obstáculo; a terceira já é insistência, e insistir era
+                // gastar a corrida inteira num NPC que o jogo não entrega.
+                if eu.tentativas_no_destino >= 3 {
+                    eu.tentativas_no_destino = 0;
+                    eu.desistiu.insert(d.quest, Instant::now());
+                    eu.destino = None;
+                    t.registra(ev(nome, eu, "destino_inalcancavel", false, format!(
+                        "#{} parou a {dist:.1}u de {:.0},{:.0} — A* entrega longe e reto não passa",
+                        d.quest, d.pos.x, d.pos.y
+                    )));
+                    return Ok(());
+                }
+                ws.send(envia(&ClientMessage::MoverPara { x: d.pos.x, z: d.pos.y })?).await?;
+                t.registra(ev(nome, eu, "empurrao_travado", false, format!(
+                    "#{} a {dist:.1}u de {:.0},{:.0} — chamando o A*",
+                    d.quest, d.pos.x, d.pos.y
+                )));
+                return Ok(());
+            }
+            // ARMA O EMPURRÃO e deixa o pulso andar. Mandar UM frame aqui
+            // movia 33 ms a cada 700 — na prática, parado.
+            eu.empurrao = Some((d.pos - eu.pos).normalize_or_zero());
+            eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
             return Ok(());
         }
+        eu.empurrao_parado = 0;
+        eu.dist_do_empurrao = f32::MAX;
+        // Longe: quem conduz é a rota, e empurrão manual a MATA.
+        eu.empurrao = None;
+        eu.empurrao_ate = None;
         if !perto {
             // AUTO-PATH, e UMA VEZ SÓ.
             //
@@ -618,8 +1036,16 @@ async fn decide(
                     // foi tratado acima como chegada.
                     eu.andando_para = None;
                     eu.destino = None;
+                    let porque = eu
+                        .ultima_recusa
+                        .clone()
+                        .unwrap_or_else(|| "sem aviso do servidor".into());
                     t.registra(ev(nome, eu, "travou_no_caminho", false, format!(
-                        "#{} parado a {:.0} do destino", d.quest, eu.pos.distance(d.pos)
+                        "#{} parado a {:.0} de {:.0},{:.0} — {porque}",
+                        d.quest,
+                        eu.pos.distance(d.pos),
+                        d.pos.x,
+                        d.pos.y
                     )));
                 } else {
                     eu.andando_para = Some((alvo, onde, paradas + 1));
@@ -637,7 +1063,32 @@ async fn decide(
                 if let Some(npc) = d.npc {
                     ws.send(envia(&ClientMessage::Interact { target_eid: Some(npc) })?).await?;
                     ws.send(envia(&ClientMessage::ConcluirConversa { npc_eid: npc })?).await?;
-                    t.registra(ev(nome, eu, "conversou", true, format!("#{} npc {npc}", d.quest)));
+                    // O SUCESSO NÃO É TER MANDADO A MENSAGEM.
+                    //
+                    // Enquanto nada voltar (oferta, escolha ou progresso), a
+                    // conta deste NPC sobe e a trilha registra FALHA a partir
+                    // da terceira. É o que teria mostrado, na primeira
+                    // corrida, que 640 "conversou" eram 640 nadas.
+                    let n = eu.conversas_a_toa.entry(npc).or_default();
+                    *n += 1;
+                    let vezes = *n;
+                    t.registra(ev(
+                        nome,
+                        eu,
+                        "conversou",
+                        vezes < 3,
+                        format!("#{} npc {npc} a {dist:.1}u (tentativa {vezes})", d.quest),
+                    ));
+                    // CINCO CONVERSAS SEM NADA: esta missão não anda por
+                    // falar. Larga e vai pra próxima — insistir foi o que deu
+                    // 324 conversas com o mesmo NPC numa corrida inteira.
+                    if vezes >= 5 {
+                        eu.conversas_a_toa.remove(&npc);
+                        eu.desistiu.insert(d.quest, Instant::now());
+                        t.registra(ev(nome, eu, "missao_emperrada", false, format!(
+                            "#{} — {vezes} conversas com o npc {npc} e nada mudou", d.quest
+                        )));
+                    }
                     eu.destino = None;
                     eu.esperando_destino = 0;
                     return Ok(());
@@ -653,7 +1104,35 @@ async fn decide(
                 match eu.no_de_coleta.take() {
                     Some(coluna) => {
                         ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
-                        t.registra(ev(nome, eu, "coletou", true, format!("#{} coluna {coluna}", d.quest)));
+                        // O SUCESSO É O OBJETIVO ANDAR, não o envio.
+                        //
+                        // Marcar `true` por ter mandado `ColetarNo` escondeu
+                        // um laço de 375 coletas em dez minutos com o bot
+                        // parado no nível 1 — a mesma mentira dos 640
+                        // "conversou", pela terceira vez neste arquivo.
+                        let agora_p = eu.quests.get(&d.quest).map_or(0, |(p, _)| *p);
+                        let andou = eu.progresso_visto != (d.quest, agora_p);
+                        if andou {
+                            eu.progresso_visto = (d.quest, agora_p);
+                            eu.coleta_sem_avanco = 0;
+                        } else {
+                            eu.coleta_sem_avanco += 1;
+                        }
+                        t.registra(ev(nome, eu, "coletou", andou, format!(
+                            "#{} coluna {coluna} (progresso {agora_p}, {} sem avanço)",
+                            d.quest, eu.coleta_sem_avanco
+                        )));
+                        // O nó pode estar esgotado, ou a missão pode pedir
+                        // outro recurso. Nos dois casos insistir não resolve:
+                        // larga a missão e vai fazer outra coisa.
+                        if eu.coleta_sem_avanco >= 40 {
+                            eu.coleta_sem_avanco = 0;
+                            eu.desistiu.insert(d.quest, Instant::now());
+                            eu.destino = None;
+                            t.registra(ev(nome, eu, "coleta_emperrada", false, format!(
+                                "#{} 40 coletas sem o objetivo andar", d.quest
+                            )));
+                        }
                     }
                     None => {
                         ws.send(envia(&ClientMessage::PedirNoDeColeta {
@@ -665,6 +1144,180 @@ async fn decide(
                         .await?;
                     }
                 }
+                return Ok(());
+            }
+            // OS PASSOS QUE NÃO SE ANDA: painel de craft, forja e dungeon.
+            //
+            // Eles são `destino_tipo` como os outros, mas não têm pra onde ir
+            // — o cliente ABRE uma janela. O bot caía no `_ => {}` e
+            // registrava "sem o que fazer": 439 numa corrida de oito minutos,
+            // todas com `tipo 6` (a forja) no detalhe.
+            destino_tipo::PAINEL_CRAFT => {
+                match eu.receitas.first().copied() {
+                    Some(r) => {
+                        ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
+                        // `ok` SAI DA CONTA DE RECUSAS, e não do envio.
+                        //
+                        // Registrar `true` por ter mandado a mensagem é a
+                        // mesma mentira que custou 640 "conversou" a nada no
+                        // começo — e eu a reintroduzi aqui, o que rendeu
+                        // 1.692 "craft_da_missao" marcados como sucesso
+                        // enquanto os doze bots giravam em falso.
+                        let recusas = eu.craft_a_toa.get(&d.quest).copied().unwrap_or(0);
+                        t.registra(ev(nome, eu, "craft_da_missao", recusas == 0, format!(
+                            "#{} receita {r} (recusas {recusas})", d.quest
+                        )));
+                    }
+                    None => t.registra(ev(nome, eu, "craft_sem_receita", false, format!("#{}", d.quest))),
+                }
+                eu.destino = None;
+                eu.esperando_destino = 0;
+                return Ok(());
+            }
+            destino_tipo::PAINEL_FORJA => {
+                // Refina a primeira peça com instância — peça única é o que a
+                // forja aceita. Sem nenhuma, o passo espera o drop.
+                match eu.slots.iter().find(|(_, sl)| sl.instance.is_some()) {
+                    Some((slot, _)) => {
+                        ws.send(envia(&ClientMessage::Refinar {
+                            alvo: shared::protocol::AlvoDaForja::Bolsa(*slot),
+                        })?)
+                        .await?;
+                        t.registra(ev(nome, eu, "refinou", true, format!("#{} slot {slot}", d.quest)));
+                    }
+                    None => t.registra(ev(nome, eu, "sem_peca_pra_refinar", false, format!("#{}", d.quest))),
+                }
+                eu.destino = None;
+                eu.esperando_destino = 0;
+                return Ok(());
+            }
+            destino_tipo::PAINEL_DUNGEON => {
+                // O `raio` carrega o id do conteúdo (0 = qualquer).
+                let conteudo = if d.raio as u16 == 0 { 1 } else { d.raio as u16 };
+                if !eu.na_dungeon {
+                    ws.send(envia(&ClientMessage::Dungeon {
+                        pedido: shared::dungeon::Pedido::EntrarSolo { conteudo },
+                    })?)
+                    .await?;
+                    t.registra(ev(nome, eu, "dungeon_da_missao", true, format!(
+                        "#{} conteúdo {conteudo}", d.quest
+                    )));
+                }
+                eu.destino = None;
+                eu.esperando_destino = 0;
+                return Ok(());
+            }
+            // TRAVA DE NÍVEL: não há pra onde ir, e conversar não resolve. A
+            // saída é subir — ou seja, caçar, que é o que o fim da decisão já
+            // faz. Larga a missão pelo prazo da desistência e segue.
+            destino_tipo::TRAVA => {
+                eu.desistiu.insert(d.quest, Instant::now());
+                eu.destino = None;
+                t.registra(ev(nome, eu, "trava_de_nivel", false, format!(
+                    "#{} — nível {} não basta", d.quest, eu.nivel
+                )));
+                return Ok(());
+            }
+            // LUGAR: chegar É o objetivo, e o servidor conclui sozinho. Aqui
+            // já se chegou (estamos no ramo do `perto`): só soltar o destino.
+            destino_tipo::LUGAR => {
+                eu.destino = None;
+                eu.esperando_destino = 0;
+                t.registra(ev(nome, eu, "chegou_no_lugar", true, format!("#{}", d.quest)));
+                return Ok(());
+            }
+            // ZONA DE BICHO: chegou, agora BATE.
+            //
+            // O bot chegava na zona e caía no `_ => {}`: nada acontecia, e
+            // ele registrava "sem_o_que_fazer" 103 vezes em pé no meio dos
+            // lobos. A missão de matar N bichos nunca andava, e como ela
+            // trava a história, o bot parava no nível 2 para sempre.
+            //
+            // Aqui não se chama auto-combate: o alvo mais perto e o soco são
+            // o que o jogador faz, e é o mesmo caminho que a seção 10 já usa
+            // quando não há mais nada pendente.
+            destino_tipo::COMBATE => {
+                if let Some((alvo, p)) = eu.alvo {
+                    ws.send(envia(&ClientMessage::SetTarget { target: Some(alvo) })?).await?;
+                    let dir = (p - eu.pos).normalize_or_zero();
+                    let longe = eu.pos.distance(p) > 2.0;
+                    // Longe do bicho: o pulso leva até ele. Perto: para de
+                    // empurrar e só bate, senão o corpo atravessa o alvo.
+                    eu.empurrao = longe.then_some(dir);
+                    eu.empurrao_ate = longe.then(|| Instant::now() + Duration::from_millis(800));
+                    *seq = seq.wrapping_add(1);
+                    ws.send(envia(&ClientMessage::Input {
+                        input: InputFrame {
+                            seq: *seq,
+                            tick,
+                            move_dir: glam::Vec2::ZERO,
+                            aim: dir,
+                            buttons: 1,
+                        },
+                    })?)
+                    .await?;
+                    return Ok(());
+                }
+                // Sem bicho à vista dentro da zona: anda pro meio dela, que é
+                // onde eles nascem.
+                eu.empurrao = Some((d.pos - eu.pos).normalize_or_zero());
+                eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
+                return Ok(());
+            }
+            // PASSO DE TUTORIAL. Não se anda: faz-se o gesto.
+            //
+            // Era aqui que o bot parava depois de destravar a conversa: 219
+            // "sem_o_que_fazer" numa corrida de 4 minutos, todos com
+            // `destino=(790, 10)`. Tipo 10 é TUTORIAL e o `raio` carrega a
+            // ação (`shared::quests::tutorial`).
+            //
+            // Os passos se dividem em dois, e o bot precisa dos dois:
+            //
+            // * os de INTERFACE (ligar o auto, mexer na barra, tocar o mapa)
+            //   só o cliente vê, e ele os reporta com `ClientMessage::Tutorial`
+            //   — é literalmente a mesma mensagem que o jogo manda quando a
+            //   pessoa faz o gesto;
+            // * os de SALDO (ponto, tier, Energia) o servidor conta ONDE A
+            //   AÇÃO ACONTECE, e mandar `Tutorial` não adiantaria nada: o bot
+            //   tem que fazer a coisa.
+            destino_tipo::TUTORIAL => {
+                use shared::quests::tutorial as tut;
+                let acao = d.raio as u16;
+                match acao {
+                    tut::PONTO_ATRIBUTO => {
+                        if eu.pontos_livres > 0 {
+                            ws.send(envia(&ClientMessage::AllocStatPoint { stat: 0 })?).await?;
+                            t.registra(ev(nome, eu, "tutorial_ponto", true, String::new()));
+                        } else {
+                            // Sem ponto livre não há o que gastar: o passo
+                            // espera o próximo nível, e dizer "feito" seria
+                            // mentir pro servidor.
+                            t.registra(ev(nome, eu, "tutorial_espera", false, "sem ponto livre".into()));
+                        }
+                    }
+                    tut::EVOLUIR_SKILL => {
+                        match eu.skills.first().copied() {
+                            Some(skill_id) => {
+                                ws.send(envia(&ClientMessage::EvoluirSkill { skill_id })?).await?;
+                                t.registra(ev(nome, eu, "tutorial_evoluiu", true, format!("skill {skill_id}")));
+                            }
+                            None => {
+                                // Sem a lista não há id pra mandar, e um id
+                                // inventado vira recusa silenciosa. Ela vem
+                                // no login; se não veio, é isso que a trilha
+                                // tem que dizer.
+                                t.registra(ev(nome, eu, "tutorial_espera", false, "sem lista de skills".into()));
+                            }
+                        }
+                    }
+                    // Os de interface: o gesto é a mensagem.
+                    _ => {
+                        ws.send(envia(&ClientMessage::Tutorial { acao })?).await?;
+                        t.registra(ev(nome, eu, "tutorial_feito", true, format!("#{} ação {acao}", d.quest)));
+                    }
+                }
+                eu.destino = None;
+                eu.esperando_destino = 0;
                 return Ok(());
             }
             _ => {}
@@ -774,10 +1427,93 @@ async fn decide(
         t.registra(ev(nome, eu, "atacou", true, String::new()));
         return Ok(());
     }
+    // O DETALHE TEM QUE BASTAR PRA CONSERTAR.
+    //
+    // A primeira versão dizia só `(quest, tipo)`, e o `raio` — que é o que
+    // diz QUAL passo de tutorial — ficava de fora. Eu precisei ir ao código
+    // pra descobrir o que "tipo 10" queria. Agora vem tudo.
+    // SEM NADA A FAZER, UM JOGADOR ANDA.
+    //
+    // Ficar parado registrando "sem o que fazer" duas mil vezes não é o que
+    // ninguém faz — e, pior, não produz nem o dado que o bot existe pra
+    // gerar. Ele sai pra caçar: escolhe um ponto a algumas dezenas de
+    // unidades e vai, que é como se acha bicho quando a missão emperrou.
+    //
+    // O `%` sobre o relógio é um sorteio bom o bastante: não precisa de
+    // aleatoriedade boa, precisa de direções diferentes a cada vez.
+    if eu.destino.is_none() && eu.alvo.is_none() {
+        eu.vagou = eu.vagou.wrapping_add(1);
+        if eu.vagou % 8 == 1 {
+            let volta = (eu.vagou as f32) * 2.399_963_2;
+            let longe = 45.0;
+            let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
+            ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
+            t.registra(ev(nome, eu, "vagou", true, format!(
+                "pra {:.0},{:.0}", alvo.x, alvo.y
+            )));
+            return Ok(());
+        }
+        return Ok(());
+    }
     t.registra(ev(nome, eu, "sem_o_que_fazer", false, format!(
         "{} quest(s), destino={:?}",
         eu.quests.len(),
-        eu.destino.map(|d| (d.quest, d.tipo)),
+        eu.destino
+            .map(|d| (d.quest, d.tipo, d.raio, d.npc.unwrap_or(0))),
     )));
     Ok(())
+}
+
+
+#[cfg(test)]
+mod testes_da_variedade {
+    use super::semente_do_nome;
+
+    /// DOZE BOTS, DOZE CARAS — e a mesma cara a cada reinício.
+    ///
+    /// O dono: "eles tão todos com a mesma skin?" e "varia as skins / e as
+    /// classes". Estavam: `Default::default()` e sempre a primeira arma.
+    ///
+    /// As duas propriedades importam e brigam entre si. VARIEDADE: doze
+    /// gêmeos na praça derrubam justamente o que os bots existem pra fazer.
+    /// ESTABILIDADE: o serviço reinicia a cada 12 h, e um bot que muda de
+    /// cara a cada reinício é pior que um bot repetido — ninguém reconhece
+    /// ninguém.
+    #[test]
+    fn cada_bot_tem_cara_propria_e_estavel() {
+        let nomes: Vec<String> = (0..12).map(|i| format!("prodbot_{i}")).collect();
+        let cara = |n: &str| {
+            let s = semente_do_nome(n);
+            (
+                s % shared::aparencia::ROSTOS as u64,
+                (s / 3) % shared::aparencia::CABELOS as u64,
+                (s / 7) % shared::aparencia::CORES_DE_CABELO.len() as u64,
+                (s / 13) % shared::aparencia::TONS_DE_PELE.len() as u64,
+                (s / 17) % 4,
+            )
+        };
+        // ESTÁVEL: duas leituras do mesmo nome dão o mesmo.
+        for n in &nomes {
+            assert_eq!(cara(n), cara(n), "{n} mudou de cara entre duas leituras");
+        }
+        // VARIADO: com 3×3×6×4×4 = 864 combinações, doze iguais seriam
+        // suspeitos. Exijo pelo menos oito combinações distintas entre doze.
+        let mut vistas: Vec<_> = nomes.iter().map(|n| cara(n)).collect();
+        vistas.sort();
+        vistas.dedup();
+        assert!(
+            vistas.len() >= 8,
+            "só {} aparências distintas entre 12 bots: {vistas:?}",
+            vistas.len()
+        );
+        // E a CLASSE (a arma) também tem que variar — era sempre a primeira.
+        let mut armas: Vec<u64> = nomes.iter().map(|n| cara(n).4).collect();
+        armas.sort();
+        armas.dedup();
+        assert!(
+            armas.len() >= 3,
+            "só {} classes entre 12 bots: {armas:?}",
+            armas.len()
+        );
+    }
 }
