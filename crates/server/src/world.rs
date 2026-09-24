@@ -2204,6 +2204,9 @@ pub struct GameWorld {
     /// Decoracoes estaticas enviadas ao cliente no login.
     pub decorations: Vec<shared::world_gen::DecoPlacement>,
     /// Zonas de spawn carregadas do MapFile — mantem quotas + respawn por delay.
+    /// Desde quando cada sessão está parada no saguão da Arena, sem dungeon
+    /// e sem fila. Ver `tick_saguao`.
+    pub saguao_desde: std::collections::HashMap<SessionId, f32>,
     pub spawn_zones: Vec<ServerSpawnZone>,
     /// Areas dedicadas de boss spawn — independente das spawn_zones, 1 boss
     /// por area, respawn timer separado.
@@ -2698,6 +2701,7 @@ impl GameWorld {
             from_mapfile,
             next_party_id: 1,
             decorations,
+            saguao_desde: Default::default(),
             spawn_zones: Vec::new(),
             boss_areas: Vec::new(),
             safe_zones: Vec::new(),
@@ -2891,6 +2895,7 @@ impl GameWorld {
             from_mapfile: true,
             next_party_id: 1,
             decorations: Vec::new(),
+            saguao_desde: Default::default(),
             spawn_zones: Vec::new(),
             boss_areas: Vec::new(),
             safe_zones: Vec::new(),

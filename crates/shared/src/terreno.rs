@@ -1250,6 +1250,16 @@ pub fn planta_da_coluna(
     let y = (topo + 1) as f32 * BLOCO;
     let solo = material_variado(bioma, y, declive, false, ger.mancha(bx, bz));
     let especie = especie_de_planta(bioma, (g2 >> 20) as f32 / 4096.0);
+    // NA ARENA, SÓ O QUE NÃO BARRA PASSAGEM.
+    //
+    // Dobrar a forração pra ter "mais flores etc que pedra e árvore" dobrou
+    // junto o MATACÃO e o TOCO, que são forração mas barram (`raio_de_planta`)
+    // — e o log entregou: 1.461 troncos e matacões na ilhota depois de eu já
+    // ter raleado as árvores a um cinquentavo. Os estorvos nunca tinham sido
+    // árvore; eram pedra de chão, e eu tinha acabado de dobrá-los.
+    if ger.e_arena() && raio_de_planta(especie).is_some() {
+        return None;
+    }
     // Pedra nasce em qualquer chao, inclusive rocha e neve; o resto so' onde o
     // solo segura. Matacao em cima de laje e' o que uma cordilheira tem.
     if !matches!(especie, Planta::Pedra) && !solo_vivo(solo) {

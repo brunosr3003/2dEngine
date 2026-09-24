@@ -37,7 +37,7 @@ use crate::terreno::{Bioma, DefIlha};
 /// O nome da zona. Um processo com `MMO_ZONA=dungeon` a serve.
 pub const ZONA: &str = "dungeon";
 
-/// Raio da ilhota, em BLOCOS. 320 blocos = 160 unidades.
+/// Raio da ilhota, em BLOCOS. 200 blocos = 100 unidades.
 ///
 /// As instâncias são separadas por `Instancia(id)` e não se veem, então o
 /// tamanho não cresce com o número de salas. Quem manda no tamanho é OUTRA
@@ -50,13 +50,13 @@ pub const ZONA: &str = "dungeon";
 /// conserto por tamanho: a conta é a mesma em qualquer escala.
 ///
 /// O que conserta é a ilhota continuar SECA além do platô. Por isso há três
-/// raios, e não um: 90 de chão plano (onde os sítios cabem), 145 de terra
+/// raios, e não um: 62 de chão plano (onde o andar assenta), 92 de terra
 /// firme (onde o andar inteiro cabe), e este, a ilha toda.
 ///
 /// ENCOLHEU de 420 a pedido do dono: "a arena de dungeon tá desnecessariamente
 /// grande". Estava dimensionada pra quatro sítios espalhados numa planície
 /// larga; quatro sítios a 70 u de distância cabem num platô bem menor.
-pub const RAIO_BLOCOS: i32 = 320;
+pub const RAIO_BLOCOS: i32 = 200;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///
@@ -83,7 +83,7 @@ pub const ALTURA: f32 = 16.0;
 ///
 /// Desenhar resolve por construção. 90 u de raio plano bastam pros quatro
 /// sítios a 70 u — `cabem_os_quatro_sitios_do_rodizio` confere.
-pub const RAIO_PLANO: f32 = 90.0;
+pub const RAIO_PLANO: f32 = 62.0;
 
 /// Onde o chão acaba, em unidades. Entre ele e `RAIO_PLANO` desce a rampa.
 ///
@@ -92,7 +92,7 @@ pub const RAIO_PLANO: f32 = 90.0;
 /// então o piso dele transborda. Terra firme bem além do platô é o que impede
 /// a luta de acontecer em cima do mar.
 /// `o_andar_inteiro_cai_em_terra_firme` é quem confere.
-pub const RAIO_TERRA: f32 = 145.0;
+pub const RAIO_TERRA: f32 = 92.0;
 
 /// O que há FORA da ilhota, em índice de bloco. Fundo, pra ler como mar.
 pub const NIVEL_FUNDO: i32 = -64;
@@ -159,28 +159,28 @@ pub const DEF: DefIlha = DefIlha {
 mod testes {
     use super::*;
 
-    /// A ILHOTA CABE UMA ARENA, COM FOLGA.
+    /// O PLATÔ CABE UM ANDAR INTEIRO, e a terra firme cabe com folga.
     ///
-    /// Ela existe só pra isso. Se o raio encolher abaixo do andar da dungeon,
-    /// as instâncias começam a esbarrar na borda do mundo — e o sintoma
-    /// apareceria como "o chefe empurrou o jogador pra fora do mapa", longe
-    /// da causa.
+    /// É a única coisa que dimensiona esta ilhota. Ela já foi de 210 u de raio
+    /// porque o servidor exigia quatro sítios de instância a 70 u de
+    /// distância — regra do mundo aberto, onde duas dungeons no mesmo lugar
+    /// seriam duas hordas empilhadas. Aqui elas não se veem, então podem
+    /// dividir o mesmo chão, e o que sobra é caber UM andar.
     #[test]
-    fn a_ilhota_cabe_a_arena() {
-        let raio_un = RAIO_BLOCOS as f32 * crate::terreno::BLOCO;
-        // `RAIO_DO_ANDAR` do servidor é 55, então uma arena tem 110 de ponta
-        // a ponta. O RAIO da ilhota tem que passar disso com folga — não o
-        // diâmetro dela, que é o erro que a primeira versão deste teste
-        // cometeu (comparou raio com diâmetro e reprovou uma ilhota que cabe
-        // quase três arenas).
-        const ARENA_DIAMETRO: f32 = 110.0;
+    fn o_plato_cabe_um_andar() {
         assert!(
-            raio_un >= ARENA_DIAMETRO * 1.2,
-            "a ilhota da dungeon ({raio_un:.0} u de raio) ficou apertada pra uma arena de {ARENA_DIAMETRO:.0}"
+            RAIO_PLANO >= RAIO_DO_ANDAR,
+            "o platô ({RAIO_PLANO}) não cabe o andar ({RAIO_DO_ANDAR})"
         );
-        // E a borda de água não pode comer o chão: o relevo é um disco, e o
-        // que serve é a parte seca. Metade do raio já é garantia de sobra.
-        assert!(raio_un * 0.5 >= ARENA_DIAMETRO * 0.5);
+        // A terra tem que ir ALÉM do andar posto na pior posição que o
+        // servidor escolheria — um sítio na borda do plano.
+        let pior = (RAIO_PLANO - 9.0) + RAIO_DO_ANDAR;
+        assert!(
+            RAIO_TERRA >= pior * 0.8,
+            "terra firme até {RAIO_TERRA} não cobre um andar na borda do platô ({pior:.0})"
+        );
+        let raio_un = RAIO_BLOCOS as f32 * crate::terreno::BLOCO;
+        assert!(raio_un > RAIO_TERRA, "a ilha é menor que a terra dela");
     }
 
     /// Raio do andar de dungeon (`RAIO_DO_ANDAR` do servidor).
@@ -215,18 +215,18 @@ mod testes {
             }
             b += 48;
         }
+        // DO MEIO PRA FORA, e sem exigir distância entre eles: é o que o
+        // servidor faz na Arena (`dg_arena`). As instâncias não se veem — cada
+        // uma vive no seu `Instancia(id)` —, então dividir chão não é
+        // problema, e exigir 70 u entre sítios era o que obrigava a ilhota a
+        // ser grande.
         cand.sort_by(|x, y| {
-            y.length_squared()
-                .total_cmp(&x.length_squared())
+            x.length_squared()
+                .total_cmp(&y.length_squared())
                 .then(x.x.total_cmp(&y.x))
         });
-        let mut sitios: Vec<glam::Vec2> = Vec::new();
-        for p in cand {
-            if sitios.iter().all(|s| s.distance(p) >= 70.0) {
-                sitios.push(p);
-            }
-        }
-        sitios
+        cand.truncate(4);
+        cand
     }
 
     /// O ANDAR INTEIRO CAI EM TERRA FIRME.
@@ -265,57 +265,18 @@ mod testes {
         }
     }
 
-    /// CABEM AS QUATRO INSTÂNCIAS, ESPALHADAS.
+    /// O RODÍZIO TEM QUATRO SÍTIOS, e todos em chão plano.
     ///
-    /// O servidor escolhe quatro sítios planos separados por pelo menos 70 u
-    /// (`dg_arena`) e reveza as instâncias entre eles. Este teste refaz essa
-    /// escolha sobre a ilhota — porque "cabe uma arena" (o teste acima) e
-    /// "cabem as quatro do rodízio" são coisas diferentes, e é a segunda que
-    /// o servidor precisa.
-    ///
-    /// Sem isto, a falta apareceria em jogo como dois grupos lutando um em
-    /// cima do outro — invisíveis entre si, mas disputando o mesmo chão —, e
-    /// ninguém ligaria o sintoma ao raio desta ilhota.
+    /// Eles não precisam mais estar espalhados (as instâncias não se veem),
+    /// mas precisam EXISTIR: o servidor pede quatro e completa repetindo o
+    /// último. Se a ilhota só oferecesse um, as quatro seriam o mesmo ponto —
+    /// o que funciona, mas esconde um relevo que encolheu demais.
     #[test]
-    fn cabem_os_quatro_sitios_do_rodizio() {
-        use crate::terreno::BLOCO;
-        let def = &DEF;
-        let ilha = crate::terreno::Ilha::da_ilha(def);
-        // Os mesmos números do `dg_arena` do servidor.
-        const ENTRE_SITIOS: f32 = 70.0;
-        let raio_sitio = (9.0 / BLOCO) as i32;
-        let passo = 48i32;
-        let mut cand: Vec<glam::Vec2> = Vec::new();
-        let mut b = -def.raio_blocos;
-        while b < def.raio_blocos {
-            let mut a = -def.raio_blocos;
-            while a < def.raio_blocos {
-                if ilha.sitio_plano(a + def.raio_blocos, b + def.raio_blocos, raio_sitio) {
-                    let p = glam::Vec2::new(a as f32 * BLOCO, b as f32 * BLOCO);
-                    if !ilha.agua(p.x, p.y) && ilha.sem_estorvo(p, 0.6) {
-                        cand.push(p);
-                    }
-                }
-                a += passo;
-            }
-            b += passo;
-        }
-        // O servidor pega os mais longe do "porto" (que aqui não existe, e
-        // vira o centro) primeiro, e exige 70 u entre eles.
-        cand.sort_by(|x, y| {
-            y.length_squared()
-                .total_cmp(&x.length_squared())
-                .then(x.x.total_cmp(&y.x))
-        });
-        let mut sitios: Vec<glam::Vec2> = Vec::new();
-        for p in cand {
-            if sitios.iter().all(|s| s.distance(p) >= ENTRE_SITIOS) {
-                sitios.push(p);
-            }
-        }
+    fn o_rodizio_tem_quatro_sitios() {
+        let sitios = sitios_do_rodizio();
         assert!(
             sitios.len() >= 4,
-            "a ilhota só comporta {} instância(s) separada(s): {sitios:?}",
+            "a ilhota só oferece {} sítio(s): {sitios:?}",
             sitios.len()
         );
     }
@@ -428,15 +389,22 @@ mod testes {
             estorvos <= teto,
             "a arena tem {estorvos} estorvos em {seco} amostras (teto {teto}): virou mato"
         );
-        // E A DENSIDADE DE ÁRVORE, contada na fonte (uma por coluna) e não
-        // pelo `estorvo_em`, que acusa a mesma árvore em várias amostras
-        // vizinhas e infla o número.
+        // E A DENSIDADE, EM u² POR ESTORVO — a unidade em que o olho mede.
+        //
+        // Medir só a árvore não bastava, e o log provou: depois de raleá-las a
+        // um cinquentavo, a ilhota ainda nascia com 1.461 "troncos e
+        // matacões". Os estorvos nunca tinham sido árvore — eram MATACÃO, que
+        // é forração, e eu tinha acabado de dobrar a forração pra ter flores.
+        //
+        // Por isso a conta é sobre tudo o que barra, e não sobre uma espécie.
         let area = seco as f32 * (passo as f32 * BLOCO).powi(2);
-        let por_arvore = area / arvores.max(1) as f32;
+        let por_estorvo = area / estorvos.max(1) as f32;
         assert!(
-            por_arvore > 250.0,
-            "uma árvore a cada {por_arvore:.0} u²: ainda é floresta ({arvores} em {area:.0} u²)"
+            por_estorvo > 250.0,
+            "um estorvo a cada {por_estorvo:.0} u²: ainda é floresta ({estorvos} em {area:.0} u²)"
         );
+        let por_arvore = area / arvores.max(1) as f32;
+        assert!(por_arvore > 250.0, "uma árvore a cada {por_arvore:.0} u²");
         // FLOR MANDA. É o pedido, e é o que faz a ilhota parecer um lugar em
         // vez de um tabuleiro.
         assert!(

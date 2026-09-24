@@ -223,13 +223,28 @@ impl GameWorld {
                 b += passo;
             }
             // O mais longe do porto primeiro: ninguem tropeca na arena.
+            //
+            // Menos NA ARENA, onde é o contrário: lá não há porto nem gente
+            // passando, e o que interessa é o andar caber inteiro em chão
+            // plano — ou seja, o mais PERTO do meio.
+            let arena = self.na_arena();
             cand.sort_by(|x, y| {
-                y.distance_squared(porto)
-                    .total_cmp(&x.distance_squared(porto))
-                    .then(x.x.total_cmp(&y.x))
+                let (a, b) = (x.distance_squared(porto), y.distance_squared(porto));
+                if arena { a.total_cmp(&b) } else { b.total_cmp(&a) }.then(x.x.total_cmp(&y.x))
             });
+            // AS QUATRO INSTÂNCIAS PODEM DIVIDIR O MESMO CHÃO — na Arena.
+            //
+            // Os 70 u de distância entre sítios vêm do mundo aberto, onde duas
+            // dungeons no mesmo lugar seriam duas hordas empilhadas. Na Arena
+            // elas não se veem: cada uma vive dentro do seu `Instancia(id)`, e
+            // o jogador de uma nunca enxerga a outra.
+            //
+            // Exigir o espaçamento ali era o que obrigava a ilhota a ser
+            // grande — o dono, duas vezes: "desnecessariamente grande". Sem
+            // ele, a ilhota só precisa caber UM andar.
+            let entre = if self.na_arena() { 0.0 } else { 70.0 };
             for p in cand {
-                if sitios.iter().all(|s| s.distance(p) >= 70.0) {
+                if sitios.iter().all(|s| s.distance(p) >= entre) {
                     sitios.push(p);
                     if sitios.len() == 4 {
                         break;
@@ -1090,7 +1105,61 @@ impl GameWorld {
         self.dg_texto(sid, true, "Você saiu da dungeon.");
     }
 
+    /// Quanto tempo se pode ficar na Arena sem estar numa dungeon.
+    ///
+    /// A Arena é SAGUÃO: entra-se pra formar grupo e sair lutando. Quem está
+    /// nela sem instância, sem fila e sem sala não está esperando nada.
+    const SO_DE_PASSAGEM_S: f32 = 45.0;
+
+    /// Devolve pra casa quem ficou parado no saguão.
+    ///
+    /// O dono: "eu e vários bots estamos presos lá dentro". E estavam mesmo —
+    /// mas não por falta do botão: a zona SALVA deles virou `dungeon`, então a
+    /// cada login eles nasciam na Arena de novo. Uma saída que depende de o
+    /// jogador achar um botão não resolve quem chega lá dormindo.
+    ///
+    /// A regra certa é a da própria Arena: ela é de passagem. Se ninguém mora
+    /// nela, ninguém fica preso nela.
+    fn tick_saguao(&mut self) {
+        if !self.na_arena() {
+            return;
+        }
+        let agora = self.sim_time_s;
+        let ociosos: Vec<SessionId> = self
+            .sessions
+            .iter()
+            .filter(|(sid, s)| {
+                s.logged_in
+                    && s.instancia == 0
+                    && matches!(self.mesa.onde(chave(**sid)), mesa::Onde::Livre)
+            })
+            .map(|(sid, _)| *sid)
+            .collect();
+        for sid in ociosos {
+            let desde = *self.saguao_desde.entry(sid).or_insert(agora);
+            if agora - desde >= Self::SO_DE_PASSAGEM_S {
+                self.saguao_desde.remove(&sid);
+                self.sair_da_arena(sid, "A Arena é de passagem: você voltou.");
+            }
+        }
+        // Quem entrou numa dungeon ou na fila zera o relógio.
+        let dentro: Vec<SessionId> = self
+            .saguao_desde
+            .keys()
+            .copied()
+            .filter(|sid| {
+                self.sessions.get(sid).is_none_or(|s| {
+                    s.instancia != 0 || !matches!(self.mesa.onde(chave(*sid)), mesa::Onde::Livre)
+                })
+            })
+            .collect();
+        for sid in dentro {
+            self.saguao_desde.remove(&sid);
+        }
+    }
+
     pub(super) fn tick_dungeons(&mut self) {
+        self.tick_saguao();
         let agora = self.sim_time_s;
         if self.tick % 15 == 0 {
             let r = mesa::Regras {
