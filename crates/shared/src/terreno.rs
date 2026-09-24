@@ -1154,7 +1154,13 @@ pub fn arvore_da_coluna(
         //
         // Não é zero: uma ilhota careca lê como chão de teste. Algumas árvores
         // esparsas dão silhueta sem encher o chão de contorno pro A*.
-        0.10
+        //
+        // UM DÉCIMO ainda era mato: a primeira subida saiu com 1.529 troncos e
+        // matacões — uma árvore a cada seis unidades. O teste não pegou porque
+        // ele mede FRAÇÃO das amostras secas (0,58%, dentro do teto de 2%), e
+        // fração pequena numa ilhota inteira ainda é floresta. O número
+        // absoluto do log foi quem disse.
+        0.02
     } else {
         1.0
     };

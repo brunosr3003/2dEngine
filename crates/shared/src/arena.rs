@@ -416,12 +416,26 @@ mod testes {
             !ilha.agua(CHEGADA.x, CHEGADA.y),
             "a chegada da Arena caiu na água"
         );
-        // QUASE nenhum: até 2% das amostras secas. Mais que isso é mato, e
-        // mato numa arena é o A* contornando espaço de luta.
+        // QUASE nenhum, e medido em FRAÇÃO E EM NÚMERO.
+        //
+        // Só a fração não bastou: a primeira subida saiu com 1.529 troncos na
+        // ilhota — uma árvore a cada seis unidades — e passou, porque 1.529
+        // era 0,58% das amostras. Fração pequena numa ilhota inteira ainda é
+        // floresta. Quem pega isso é a densidade lá embaixo, em u² por
+        // árvore, que é a unidade em que o olho mede.
         let teto = (seco as f32 * 0.02).ceil() as i32;
         assert!(
             estorvos <= teto,
             "a arena tem {estorvos} estorvos em {seco} amostras (teto {teto}): virou mato"
+        );
+        // E A DENSIDADE DE ÁRVORE, contada na fonte (uma por coluna) e não
+        // pelo `estorvo_em`, que acusa a mesma árvore em várias amostras
+        // vizinhas e infla o número.
+        let area = seco as f32 * (passo as f32 * BLOCO).powi(2);
+        let por_arvore = area / arvores.max(1) as f32;
+        assert!(
+            por_arvore > 250.0,
+            "uma árvore a cada {por_arvore:.0} u²: ainda é floresta ({arvores} em {area:.0} u²)"
         );
         // FLOR MANDA. É o pedido, e é o que faz a ilhota parecer um lugar em
         // vez de um tabuleiro.
