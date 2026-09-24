@@ -355,6 +355,65 @@ pub const ENERGIAS: [PacoteEnergia; 3] = [
     },
 ];
 
+/// Um lote de passes da Ilha Mágica, comprável com TP.
+///
+/// O dono: "tem que ter como comprar ticket de entrada de Ilha Mágica na loja
+/// de cash, que vai poder usar quando quiser, somando as entradas grátis; no
+/// caso será um item mesmo".
+///
+/// ITEM DE BOLSA, e não saldo: o passe já existe como item
+/// (`item_id::PASSE_MAGICO`) e a entrada já o conta da bolsa
+/// (`world::passes_de`). Inventar um saldo paralelo criaria duas contagens
+/// para a mesma coisa — e a que o jogador vê é a da bolsa.
+///
+/// A SOMA COM AS GRÁTIS JÁ EXISTE e não precisou de nada: `entrar_na_magica`
+/// gasta a cota do dia antes do item, e o painel mostra `grátis + passes`.
+/// Ver `a_entrada_de_graca_sai_antes_do_passe`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PacotePasse {
+    pub id: u16,
+    pub nome: &'static str,
+    /// Quantos passes o lote entrega na bolsa.
+    pub qtd: u32,
+    pub preco_tp: u64,
+}
+
+impl PacotePasse {
+    /// TP por passe — é assim que o lote maior se justifica.
+    pub fn tp_por_passe(&self) -> f32 {
+        self.preco_tp as f32 / self.qtd.max(1) as f32
+    }
+}
+
+/// Preços iniciais ⚠️ — calibrados contra o que já existe na loja (tomo 150,
+/// pet 250, montaria 500). Cada passe são 30 minutos de bônus em dobro, e
+/// ainda há 3 grátis por dia: caro demais e ninguém compra, barato demais e a
+/// cota de graça perde o sentido.
+pub const PASSES: [PacotePasse; 3] = [
+    PacotePasse {
+        id: 1,
+        nome: "Passe da Ilha Mágica",
+        qtd: 1,
+        preco_tp: 50,
+    },
+    PacotePasse {
+        id: 2,
+        nome: "Punhado de Passes",
+        qtd: 5,
+        preco_tp: 225,
+    },
+    PacotePasse {
+        id: 3,
+        nome: "Bolsa de Passes",
+        qtd: 12,
+        preco_tp: 500,
+    },
+];
+
+pub fn passe(id: u16) -> Option<&'static PacotePasse> {
+    PASSES.iter().find(|p| p.id == id)
+}
+
 pub fn energia(id: u16) -> Option<&'static PacoteEnergia> {
     ENERGIAS.iter().find(|e| e.id == id)
 }
@@ -412,6 +471,15 @@ pub enum Produto {
     /// o item some e o direito fica no guarda-roupa do personagem. Sem isso,
     /// vestir e revender manteria a aparência de graça.
     Skin(u16),
+    /// Um lote de passes da Ilha Mágica (`PASSES`). Chega como ITEM de bolsa
+    /// e soma com a cota grátis do dia — ver `PacotePasse`.
+    ///
+    /// NO FIM DO ENUM, e isso não é estética: o postcard é POSICIONAL, então
+    /// a variante carrega o índice dela no fio. Inserir no meio desloca o
+    /// discriminante de tudo o que vem depois — eu tinha posto antes de
+    /// `Skin`, e um cliente antigo comprando uma skin receberia um passe.
+    /// Variante nova entra no fim, sempre.
+    PasseMagico(u16),
 }
 
 impl Produto {
@@ -426,6 +494,7 @@ impl Produto {
             Produto::Energia(i) => format!("energia:{i}"),
             Produto::PergaminhoPet(i) => format!("pergaminho-pet:{i}"),
             Produto::ItemDePet(i) => format!("item-pet:{i}"),
+            Produto::PasseMagico(i) => format!("passe-magico:{i}"),
             Produto::Skin(i) => format!("skin:{i}"),
         }
     }
@@ -440,6 +509,7 @@ impl Produto {
             "pergaminho-montaria" => Produto::PergaminhoMontaria(id),
             "pergaminho-tomo" => Produto::PergaminhoTomo(id),
             "energia" => Produto::Energia(id),
+            "passe-magico" => Produto::PasseMagico(id),
             "pergaminho-pet" => Produto::PergaminhoPet(id),
             "item-pet" => Produto::ItemDePet(id),
             "skin" => Produto::Skin(id),
@@ -458,6 +528,7 @@ impl Produto {
             Produto::Energia(i) => energia(i).is_some(),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).is_some(),
             Produto::ItemDePet(i) => item_de_pet(i).is_some(),
+            Produto::PasseMagico(i) => passe(i).is_some(),
             Produto::Skin(i) => crate::aparencia::nome_da_skin(i).is_some(),
         }
     }
@@ -480,6 +551,7 @@ impl Produto {
                 pergaminho_pet(i).map_or("?".into(), |p| p.nome.to_string())
             }
             Produto::ItemDePet(i) => item_de_pet(i).map_or("?".into(), |p| p.nome.to_string()),
+            Produto::PasseMagico(i) => passe(i).map_or("?".into(), |p| p.nome.to_string()),
             Produto::Skin(i) => crate::aparencia::nome_da_skin(i).unwrap_or("?").to_string(),
         }
     }
@@ -495,6 +567,7 @@ impl Produto {
             Produto::Energia(i) => energia(i).map(|e| e.preco_tp),
             Produto::PergaminhoPet(i) => pergaminho_pet(i).map(|p| p.preco_tp),
             Produto::ItemDePet(i) => item_de_pet(i).map(|p| p.preco_tp),
+            Produto::PasseMagico(i) => passe(i).map(|p| p.preco_tp),
             Produto::Skin(i) => crate::aparencia::preco_da_skin(i),
         }
     }
@@ -987,4 +1060,96 @@ mod tests {
         assert!(!pedido_valido("curto"));
         assert!(!pedido_valido("com espaço aqui"));
     }
+    /// O PASSE É COMPRÁVEL, E O LOTE MAIOR VALE MAIS A PENA.
+    ///
+    /// O dono: "tem que ter como comprar ticket de entrada de Ilha Mágica na
+    /// loja de cash". Um catálogo em que o lote grande sai mais caro por
+    /// unidade é uma armadilha: o jogador paga mais por comprar mais.
+    #[test]
+    fn o_passe_da_ilha_magica_esta_na_loja() {
+        for pk in PASSES {
+            let pr = Produto::PasseMagico(pk.id);
+            assert!(pr.existe(), "o passe {} não existe no catálogo", pk.id);
+            assert_eq!(pr.preco_tp(), Some(pk.preco_tp));
+            assert_eq!(pr.nome(), pk.nome);
+            // Ida e volta pelo código guardado no banco: sem isso o pedido
+            // gravado hoje vira "produto desconhecido" no histórico amanhã.
+            assert_eq!(
+                Produto::de_codigo(&pr.codigo()),
+                Some(pr),
+                "o código '{}' não volta pro mesmo produto",
+                pr.codigo()
+            );
+            assert!(pk.qtd >= 1, "lote de passe sem passe nenhum");
+        }
+        // O maior lote tem que ser o melhor negócio por passe.
+        let mut por_passe: Vec<f32> = PASSES.iter().map(|p| p.tp_por_passe()).collect();
+        let melhor = por_passe.iter().cloned().fold(f32::MAX, f32::min);
+        assert!(
+            (PASSES.last().unwrap().tp_por_passe() - melhor).abs() < 1e-3,
+            "o lote maior não é o melhor por passe: {por_passe:?}"
+        );
+        por_passe.dedup();
+        assert!(por_passe.len() > 1, "todos os lotes têm o mesmo preço unitário");
+    }
+
+    /// PRODUTO NOVO NÃO PODE COLIDIR COM OS ANTIGOS NO BANCO.
+    ///
+    /// O código é a chave guardada em `loja_pedidos`. Dois produtos com o
+    /// mesmo código fariam o histórico de compras mostrar a coisa errada — e
+    /// pior, um reembolso devolveria outro item.
+    #[test]
+    fn nenhum_produto_divide_codigo_com_outro() {
+        let mut todos: Vec<Produto> = Vec::new();
+        todos.extend(PACOTES.iter().map(|p| Produto::Tp(p.id)));
+        todos.extend(BAUS_CRAFT.iter().map(|b| Produto::BauCraft(b.id)));
+        todos.extend(MOEDAS.iter().map(|m| Produto::Moeda(m.id)));
+        todos.extend(ENERGIAS.iter().map(|e| Produto::Energia(e.id)));
+        todos.extend(PASSES.iter().map(|p| Produto::PasseMagico(p.id)));
+        let mut codigos: Vec<String> = todos.iter().map(Produto::codigo).collect();
+        codigos.sort();
+        let antes = codigos.len();
+        codigos.dedup();
+        assert_eq!(antes, codigos.len(), "dois produtos com o mesmo código");
+    }
+
+    /// O LUGAR DE CADA PRODUTO NO FIO É FIXO.
+    ///
+    /// Postcard é POSICIONAL: a variante viaja como o índice dela no enum,
+    /// não como o nome. Inserir uma variante no meio desloca tudo o que vem
+    /// depois — e a falha é silenciosa e cara: o cliente antigo pede uma
+    /// skin, o servidor entende outro produto, debita o TP e entrega a coisa
+    /// errada.
+    ///
+    /// Eu fiz exatamente isso ao acrescentar `PasseMagico` antes de `Skin`.
+    /// Este teste trava a ordem: variante nova entra no FIM, e quem mudar a
+    /// ordem de propósito tem que subir o `PROTOCOL_VERSION` e mexer aqui.
+    #[test]
+    fn a_ordem_dos_produtos_no_fio_nao_muda() {
+        let esperado: &[(u8, Produto)] = &[
+            (0, Produto::Tp(1)),
+            (1, Produto::BauCraft(1)),
+            (2, Produto::Moeda(1)),
+            (3, Produto::PergaminhoMontaria(1)),
+            (4, Produto::PergaminhoTomo(1)),
+            (5, Produto::Energia(1)),
+            (6, Produto::PergaminhoPet(1)),
+            (7, Produto::ItemDePet(1)),
+            (8, Produto::Skin(1)),
+            (9, Produto::PasseMagico(1)),
+        ];
+        for (indice, pr) in esperado {
+            let bytes = postcard::to_allocvec(pr).expect("codifica");
+            assert_eq!(
+                bytes[0], *indice,
+                "{pr:?} saiu na posição {} e não na {indice}",
+                bytes[0]
+            );
+        }
+        // E o CÓDIGO do banco também não pode mudar: é a chave de
+        // `loja_pedidos`, e um histórico antigo tem que continuar legível.
+        assert_eq!(Produto::PasseMagico(2).codigo(), "passe-magico:2");
+        assert_eq!(Produto::Skin(2).codigo(), "skin:2");
+    }
+
 }

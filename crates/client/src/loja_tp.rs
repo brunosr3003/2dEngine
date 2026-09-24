@@ -1089,8 +1089,8 @@ impl LojaTp {
         agora: f64,
     ) {
         let vao = 12.0 * k;
-        let w = ((area.w - vao) / 2.0).min(440.0 * k);
-        let total = w * 2.0 + vao;
+        let w = ((area.w - vao * 2.0) / 3.0).min(440.0 * k);
+        let total = w * 3.0 + vao * 2.0;
         let x0 = area.center().x - total * 0.5;
         let alto = area.h - 16.0 * k;
         self.moedas(
@@ -1109,6 +1109,69 @@ impl LojaTp {
             modal,
             agora,
         );
+        self.passes(
+            Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
+    }
+
+    /// OS PASSES DA ILHA MÁGICA.
+    ///
+    /// O dono: "tem que ter como comprar ticket de entrada de Ilha Mágica na
+    /// loja de cash, que vai poder usar quando quiser, somando as entradas
+    /// grátis; no caso será um item mesmo".
+    ///
+    /// Mora nesta aba porque é a aba do que se compra e cai na hora: o passe
+    /// chega na BOLSA, e "usar quando quiser" é exatamente o que um item de
+    /// bolsa é. Ele soma com a cota grátis sem nada novo — a entrada gasta a
+    /// de graça primeiro e só então o item.
+    fn passes(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let n = cat::PASSES.len() as f32;
+        let vao = 12.0 * k;
+        let h = (area.h - vao * (n - 1.0)) / n;
+        let melhor = cat::PASSES
+            .iter()
+            .map(|p| p.tp_por_passe())
+            .fold(f32::MAX, f32::min);
+        for (i, pk) in cat::PASSES.iter().enumerate() {
+            let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
+            let melhor_rendimento = cat::PASSES.len() > 1 && pk.tp_por_passe() <= melhor;
+            let nota = (
+                format!("{:.0} TP por passe", pk.tp_por_passe()),
+                if melhor_rendimento {
+                    OURO_CLARO
+                } else {
+                    estilo::SUAVE
+                },
+            );
+            let quantos = if pk.qtd == 1 {
+                "1 entrada · 30 min".to_string()
+            } else {
+                format!("{} entradas · {} min", pk.qtd, pk.qtd * 30)
+            };
+            self.cartao_de_lista(
+                r,
+                k,
+                m,
+                livre,
+                modal,
+                agora,
+                (
+                    Color::new(0.28, 0.16, 0.36, 0.98),
+                    Color::new(0.055, 0.045, 0.13, 0.98),
+                ),
+                pk.nome,
+                &quantos,
+                Some(nota),
+                pk.preco_tp,
+                Produto::PasseMagico(pk.id),
+                |c, lado| estilo::icone_passe(c, lado),
+            );
+        }
     }
 
     /// O Pergaminho de Invocação: Montaria. Espécie e cor saem no ABRIR, como
@@ -1694,6 +1757,7 @@ impl LojaTp {
                     | Produto::Energia(_)
                     | Produto::PergaminhoPet(_)
                     | Produto::ItemDePet(_)
+                    | Produto::PasseMagico(_)
                     | Produto::Skin(_) => 0,
                 };
                 if matches!(
@@ -1775,6 +1839,13 @@ impl LojaTp {
                     Produto::PergaminhoTomo(_) => {
                         "Pergaminho · tomo aleatório para 1 de 12 habilidades".to_string()
                     }
+                    Produto::PasseMagico(id) => cat::passe(id).map_or(String::new(), |pk| {
+                        format!(
+                            "Passe · vai pra bolsa · use quando quiser ({} entrada{})",
+                            pk.qtd,
+                            if pk.qtd == 1 { "" } else { "s" }
+                        )
+                    }),
                     Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
                         format!("{} · entra na hora", milhar(mo.qtd as u64))
                     }),

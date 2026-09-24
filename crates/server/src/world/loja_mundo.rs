@@ -199,6 +199,24 @@ impl GameWorld {
                                     Produto::Skin(id) => Some(id),
                                     _ => None,
                                 };
+                                // O PASSE VAI EM LOTE: o pacote entrega N
+                                // passes, e o lote da loja multiplica por
+                                // `vezes`. Os dois se multiplicam, e o
+                                // `Consumivel` entrega um item por evento.
+                                if let Produto::PasseMagico(id) = produto {
+                                    if let Some(pk) = cat::passe(id) {
+                                        let total = pk.qtd.saturating_mul(vezes as u32);
+                                        for _ in 0..total {
+                                            let _ = tx_mundo.send(IncomingMessage::Loja(
+                                                Evento::Consumivel {
+                                                    sid,
+                                                    personagem: personagem.clone(),
+                                                    item_id: shared::item_id::PASSE_MAGICO,
+                                                },
+                                            ));
+                                        }
+                                    }
+                                }
                                 if let Some(item_id) = pergaminho {
                                     // Um evento por unidade: o `Consumivel` entrega
                                     // UM item, e empilhar na bolsa e' trabalho do

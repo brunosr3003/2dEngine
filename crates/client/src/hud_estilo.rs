@@ -149,6 +149,39 @@ pub fn icone_energia(c: Vec2, lado: f32) {
     draw_line(topo.x, topo.y, baixo.x, baixo.y, lado * 0.055, WHITE);
 }
 
+/// O PASSE DA ILHA MÁGICA, centrado em `c`.
+///
+/// Desenhado, e não do atlas: o atlas da loja só tem ouro e TP, e um ícone
+/// novo ali obrigaria a regerar a textura — trabalho de arte para uma coisa
+/// que são duas formas. É um bilhete com o entalhe dos dois lados, que é
+/// como se lê "entrada" sem legenda nenhuma.
+pub fn icone_passe(c: Vec2, lado: f32) {
+    let (w, h) = (lado * 0.78, lado * 0.46);
+    let r = Rect::new(c.x - w * 0.5, c.y - h * 0.5, w, h);
+    let roxo = Color::new(0.66, 0.44, 0.94, 1.0);
+    let claro = Color::new(0.88, 0.76, 1.0, 1.0);
+    draw_rectangle(r.x, r.y, r.w, r.h, roxo);
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, lado * 0.05, claro);
+    // O entalhe: dois semicírculos da cor do fundo comendo as laterais.
+    let fundo = Color::new(0.055, 0.045, 0.13, 1.0);
+    draw_circle(r.x, c.y, h * 0.22, fundo);
+    draw_circle(r.x + r.w, c.y, h * 0.22, fundo);
+    // A estrela pequena no meio: é passe de ilha MÁGICA.
+    let e = lado * 0.13;
+    draw_triangle(
+        vec2(c.x, c.y - e),
+        vec2(c.x - e * 0.86, c.y + e * 0.6),
+        vec2(c.x + e * 0.86, c.y + e * 0.6),
+        claro,
+    );
+    draw_triangle(
+        vec2(c.x, c.y + e),
+        vec2(c.x - e * 0.86, c.y - e * 0.6),
+        vec2(c.x + e * 0.86, c.y - e * 0.6),
+        claro,
+    );
+}
+
 /// A moeda de ouro, centrada em `c`.
 pub fn icone_ouro(c: Vec2, lado: f32) {
     if !crate::icones_ui::loja("ouro", c, lado, 1.0) {
