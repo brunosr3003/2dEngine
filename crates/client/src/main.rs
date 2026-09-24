@@ -61,6 +61,7 @@ mod chefe_anim;
 mod coleta_hud;
 mod config_barra;
 mod config_coleta;
+mod config_combate;
 mod config_interface;
 mod confirmar;
 mod construcoes;
@@ -246,6 +247,9 @@ struct Jogo {
     config_barra: config_barra::ConfigBarra,
     /// Tipos e raio do AUTO COLETA (botao direito no AUTO COLETA).
     config_coleta: config_coleta::ConfigColeta,
+    config_combate: config_combate::ConfigCombate,
+    /// Toque longo no AUTO COMBATE abre a configuração. Ver `toque`.
+    toque_combate: toque::ToqueLongo,
     config_interface: config_interface::ConfigInterface,
     /// A barrinha "Coletando · tipo · N s".
     coleta_hud: coleta_hud::BarraDeColeta,
@@ -644,6 +648,8 @@ async fn main() {
         prefs: Default::default(),
         config_barra: Default::default(),
         config_coleta: Default::default(),
+        config_combate: Default::default(),
+        toque_combate: toque::ToqueLongo::default(),
         config_interface: Default::default(),
         coleta_hud: Default::default(),
         coleta_pendente: None,
@@ -2707,6 +2713,7 @@ impl Jogo {
             || self.morte.painel
             || self.config_barra.aberto
             || self.config_coleta.aberto
+            || self.config_combate.aberto
             || self.config_interface.aberto
             || self.onde_obter.aberto()
             || self.dungeon.aberto
@@ -3012,6 +3019,7 @@ impl Jogo {
         self.morte.painel = false;
         self.config_barra.fechar();
         self.config_coleta.fechar();
+        self.config_combate.fechar();
         self.config_interface.fechar();
         self.menu.fechar();
         self.onde_obter.fechar();
@@ -3188,6 +3196,9 @@ impl Jogo {
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
         let fechou_painel = if self.config_interface.aberto {
             self.config_interface.fechar();
+            true
+        } else if self.config_combate.aberto {
+            self.config_combate.fechar();
             true
         } else if self.config_coleta.aberto {
             self.config_coleta.fechar();
@@ -3543,6 +3554,16 @@ impl Jogo {
         }
         if let Some(a) = p.camera_pitch_ajuste {
             self.cam_pitch_ajuste = a;
+        }
+        // AUTO COMBATE: o que o jogador escolheu volta no login. Sem isto a
+        // tela salvaria e nada mudaria na sessão seguinte.
+        if let Some(o) = p.auto_alvo_ordem.clone() {
+            if !o.is_empty() {
+                self.auto_combate.ordem = o;
+            }
+        }
+        if let Some(v) = p.auto_pvp {
+            self.auto_combate.pvp = v;
         }
         if let Some(t) = p.coleta_tipos {
             self.auto_coleta.tipos = t;
@@ -4272,12 +4293,30 @@ impl Jogo {
     fn atualizar_auto_combate(&mut self) {
         let movimento = self.andando_na_mao();
         let clique_mundo = self.clique_no_mundo() && !self.ui_pega_mouse();
+        // TOQUE LONGO (ou botão direito) ABRE A CONFIGURAÇÃO, como no auto
+        // coleta. É por aqui que se chega na ordem de alvo e no PvP — sem
+        // isto a lógica existiria e ninguém teria onde mexer nela.
+        let mouse_combate = Vec2::from(mouse_position());
+        let sobre_combate =
+            (!self.painel_grande() && auto_combate::pega_mouse()).then_some(0);
+        let toque_combate = self.toque_combate.quadro(
+            crate::foco::clique(),
+            is_mouse_button_down(MouseButton::Left),
+            is_mouse_button_released(MouseButton::Left),
+            sobre_combate,
+            mouse_combate,
+            get_time(),
+        );
+        if matches!(toque_combate, toque::Toque::Longo(_))
+            || (sobre_combate.is_some() && is_mouse_button_pressed(MouseButton::Right))
+        {
+            self.fecha_paineis();
+            self.config_combate.abrir();
+        }
         // O botao so' existe com o HUD a' mostra; a tecla Z vale sempre. Painel
         // aberto NAO desliga o AUTO (MIR4: o menu aberto nao para o combate).
         let alterna = is_key_pressed(KeyCode::Z)
-            || (!self.painel_grande()
-                && auto_combate::pega_mouse()
-                && crate::foco::clique());
+            || matches!(toque_combate, toque::Toque::Curto(_));
         let esc = is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_combate.ativo() && (esc || alterna) {
             self.auto_combate.parar();
@@ -5372,6 +5411,7 @@ impl Jogo {
             || self.forja.aberto()
             || self.config_barra.aberto
             || self.config_coleta.aberto
+            || self.config_combate.aberto
             || self.config_interface.aberto
         {
             hud_layout::escurece(0.55);
@@ -5388,6 +5428,14 @@ impl Jogo {
                 }
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
                 None => {}
+            }
+        }
+        if self.config_combate.aberto {
+            let (mut ordem, mut pvp) = (self.auto_combate.ordem.clone(), self.auto_combate.pvp);
+            if self.config_combate.desenha(&mut ordem, &mut pvp) {
+                // Vai pro servidor pelas preferências, como o auto coleta.
+                self.auto_combate.ordem = ordem;
+                self.auto_combate.pvp = pvp;
             }
         }
         if self.config_coleta.aberto {

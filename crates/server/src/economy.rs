@@ -1406,6 +1406,49 @@ mod loot_tests {
 /// Entao "nivel" vira posicao na lista: nivel baixo pega os primeiros, nivel
 /// alto abre a escolha ate' o fim. Sorteio simples de proposito — mob nao tem
 /// classe nem build, e uma tabela de oito linhas nao pede mais que isto.
+/// A partir deste alcance de ataque, o bicho é RANGED.
+///
+/// O golpe de mão dos bichos fica abaixo de 3; quem alcança mais que isso
+/// atira. Medido contra a tabela do banco, não chutado.
+pub const ALCANCE_DE_RANGED: f32 = 3.5;
+
+/// O bicho ataca de longe?
+pub fn e_ranged(kind: u16) -> bool {
+    enemy_attack_range(kind) > ALCANCE_DE_RANGED
+}
+
+/// O mesmo sorteio, mas SÓ COM MELEE.
+///
+/// O dono: "no caso das ilhas de exp, coleta etc quero apenas inimigos melee
+/// na Ilha Mágica, não quero ranged".
+///
+/// E faz sentido no desenho dela: as ilhotas são pequenas e ligadas por
+/// pontes estreitas, e um atirador do outro lado da ponte bate em quem não
+/// tem como chegar nele. A ilha é de encontro e de corpo a corpo.
+///
+/// Se não sobrar melee nenhum na faixa, cai no sorteio normal: uma ilha sem
+/// bicho seria pior que uma com atirador.
+pub fn kind_melee_para_nivel(bioma: shared::terreno::Bioma, nivel: u32, semente: u64) -> u16 {
+    let bestiario = kinds_do_bioma(bioma);
+    let c = cell().read();
+    let comuns: Vec<u16> = bestiario
+        .iter()
+        .copied()
+        .filter(|k| {
+            *k != KIND_CHEFE
+                && c.enemy_kinds.contains_key(k)
+                && c.enemy_kinds
+                    .get(k)
+                    .is_some_and(|e| e.attack_range <= ALCANCE_DE_RANGED)
+        })
+        .collect();
+    drop(c);
+    if comuns.is_empty() {
+        return kind_para_nivel(bioma, nivel, semente);
+    }
+    kind_para_nivel_em(&comuns, nivel, semente)
+}
+
 pub fn kind_para_nivel(bioma: shared::terreno::Bioma, nivel: u32, semente: u64) -> u16 {
     // A lista e' a do BIOMA, e ja' vem ordenada do fraco pro forte — nao se
     // ordena por numero aqui. Ordenar por kind misturaria as ilhas de novo:
@@ -2115,5 +2158,53 @@ mod testes_do_porte_dos_novos {
                 assert!(m.xp > 0, "{}: sem xp, o bicho nao paga a luta", m.name);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_melee_da_magica {
+    use super::*;
+
+    /// O SORTEIO DE MELEE NUNCA DEVOLVE UM ATIRADOR — e nunca devolve nada.
+    ///
+    /// O dono: "quero apenas inimigos melee na Ilha Mágica, não quero
+    /// ranged". As ilhotas são pequenas e as pontes estreitas: um atirador do
+    /// outro lado bate em quem não tem como chegar nele.
+    ///
+    /// Os dois lados importam. Filtrar demais deixaria a ilha VAZIA, e uma
+    /// ilha de evento sem bicho é pior que uma com atirador — por isso o
+    /// fallback, e por isso o teste exige que sempre saia alguém.
+    #[test]
+    fn o_sorteio_de_melee_filtra_e_nao_esvazia() {
+        // Uma lista onde metade atira, e o sorteio só pode ver a outra.
+        let melee = [10u16, 11, 12];
+        let todos = [10u16, 11, 12, 90, 91];
+        for nivel in [1u32, 5, 20, 45] {
+            for semente in [1u64, 7, 12345] {
+                let k = kind_para_nivel_em(&melee, nivel, semente);
+                assert!(melee.contains(&k), "nível {nivel}: saiu {k}, fora da lista");
+            }
+        }
+        // E com a lista cheia, o sorteio ainda devolve alguém — é o mesmo
+        // caminho que o fallback usa.
+        assert!(todos.contains(&kind_para_nivel_em(&todos, 20, 3)));
+        // Lista vazia não estoura: devolve 0, e quem chama cai no normal.
+        assert_eq!(kind_para_nivel_em(&[], 20, 3), 0);
+    }
+
+    /// O LIMIAR SEPARA GOLPE DE MÃO DE TIRO.
+    ///
+    /// Se ele subisse até engolir os atiradores, o filtro existiria sem
+    /// filtrar nada — e ninguém notaria, porque a ilha continuaria cheia.
+    #[test]
+    fn o_limiar_de_ranged_e_maior_que_um_golpe_de_mao() {
+        assert!(
+            ALCANCE_DE_RANGED > 2.0,
+            "o limiar ficou abaixo do alcance de um golpe corpo a corpo"
+        );
+        assert!(
+            ALCANCE_DE_RANGED < 8.0,
+            "o limiar subiu tanto que atirador passaria por melee"
+        );
     }
 }

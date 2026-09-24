@@ -3344,6 +3344,16 @@ impl GameWorld {
                     let bioma = self.bioma_da_zona();
                     let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
                         crate::economy::kind_de_praia(bioma, lcg(s_lvl))
+                    } else if self.na_magica() {
+                        // SÓ MELEE NA ILHA MÁGICA. O dono: "no caso das ilhas
+                        // de exp, coleta etc quero apenas inimigos melee na
+                        // Ilha Mágica, não quero ranged".
+                        //
+                        // As ilhotas são pequenas e ligadas por pontes
+                        // estreitas: um atirador do outro lado da ponte bate
+                        // em quem não tem como chegar nele. A ilha é de
+                        // encontro e de corpo a corpo.
+                        crate::economy::kind_melee_para_nivel(bioma, lvl, lcg(s_lvl))
                     } else {
                         crate::economy::kind_para_nivel(bioma, lvl, lcg(s_lvl))
                     };
