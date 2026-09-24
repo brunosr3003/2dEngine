@@ -231,6 +231,19 @@ struct Eu {
     desistiu: HashMap<u16, Instant>,
     /// A missão em que o bot está trabalhando agora. Ver a escolha do foco.
     foco: Option<u16>,
+    /// Pedidos de nó de coleta seguidos que o servidor não respondeu.
+    ///
+    /// Este ramo era MUDO e sem teto, e foi o que plantou quatro bots no mesmo
+    /// ponto por meia hora: sem nó do tipo pedido num raio de 40 u, o servidor
+    /// não responde nada, o bot pede de novo, e a trilha não tinha uma linha
+    /// pra contar. É o irmão do ramo da busca, que eu já tinha consertado —
+    /// e deixei este de fora, que é exatamente o erro que esta rede evita.
+    pedidos_de_no: u32,
+    /// Pra onde ele está vagando agora, e desde quando.
+    ///
+    /// Sem este compromisso o bot trocava de destino a cada 5,6 s e cada troca
+    /// reiniciava o trajeto: 275 "vagou" em meia hora sem sair do lugar.
+    vagando_para: Option<(glam::Vec2, Instant)>,
     /// Quantas vezes ele saiu pra vagar. Serve de semente e de ritmo.
     vagou: u32,
     /// Decisões seguidas empurrando sem encurtar a distância, e qual era ela.
@@ -1046,6 +1059,9 @@ async fn recebe(
         }
         ServerMessage::NoDeColeta { no } => {
             eu.no_de_coleta = no.map(|(coluna, c, _, _)| (coluna, glam::Vec2::new(c[0], c[1])));
+            if eu.no_de_coleta.is_some() {
+                eu.pedidos_de_no = 0;
+            }
         }
         ServerMessage::ColetaEstado { pausado, centro, .. } => {
             // Colhendo enquanto houver centro e não estiver pausado. É o que
@@ -1595,10 +1611,21 @@ async fn decide(
                 })?)
                 .await?;
                 // Registrado porque um pedido que nunca vira nó é um bot
-                // parado, e sem isto a trilha não teria como dizer isso.
+                // parado, e sem isto a trilha não teria como dizer isso. E com
+                // TETO, pelo mesmo motivo: sem nó do tipo por perto o servidor
+                // não responde, e pedir para sempre é o travamento silencioso
+                // que este ramo já produziu uma vez.
+                eu.pedidos_de_no += 1;
                 t.registra(ev(nome, eu, "pediu_no", true, format!(
                     "#{quest} item {item} ({tem}/{quanto})"
                 )));
+                if eu.pedidos_de_no >= 8 {
+                    eu.pedidos_de_no = 0;
+                    eu.buscando = None;
+                    t.registra(ev(nome, eu, "busca_emperrada", false, format!(
+                        "#{quest} item {item}: nada do tipo pedido em 80u"
+                    )));
+                }
             }
         }
         return Ok(());
@@ -1618,7 +1645,13 @@ async fn decide(
         // dali: é o que a pessoa faz quando o personagem para perto e ela
         // clica no NPC assim mesmo.
         /// Daqui pra dentro, o direcional termina o serviço.
-        const ULTIMOS_METROS: f32 = 16.0;
+        //
+        // VINTE E OITO, e não dezesseis. A trilha mostrou o auto-path parando
+        // a 24 u do NPC de entrega e desistindo três vezes seguidas — 24 caía
+        // fora dos "últimos metros", então o empurrão nem era tentado e a
+        // missão ia pro limbo. O empurrão tem rede própria (cinco decisões sem
+        // encurtar e ele chama o A*), então alargar aqui não cria laço.
+        const ULTIMOS_METROS: f32 = 28.0;
         let travado = eu.andando_para.is_none_or(|(_, _, paradas)| paradas >= 8);
         let dist = eu.pos.distance(d.pos);
         // O QUE É "PERTO" DEPENDE DO QUE SE VAI FAZER.
@@ -1921,6 +1954,16 @@ async fn decide(
                             centro: [eu.pos.x, eu.pos.y],
                         })?)
                         .await?;
+                        // PEDIR NÃO É RECEBER, e sem nó por perto o servidor
+                        // simplesmente não responde. Com o ramo mudo e sem
+                        // teto, quatro bots ficaram meia hora no mesmo ponto
+                        // sem um evento fora do batimento — e sem um único XP.
+                        eu.pedidos_de_no += 1;
+                        if eu.pedidos_de_no >= 8 {
+                            eu.pedidos_de_no = 0;
+                            passo_nao_deu(eu, t, nome, d.quest, "sem_no_por_perto",
+                                format!("#{} nada do tipo pedido em 40u", d.quest));
+                        }
                     }
                 }
                 return Ok(());
@@ -2222,8 +2265,15 @@ async fn decide(
     // A cada ~40 decisões (uns 30 s), e não toda vez: o bot não é um robô de
     // arbitragem, é um jogador. Olhar o mercado a cada 700 ms seria uma carga
     // que nenhum jogador faz e que sujaria a telemetria que a gente quer ler.
+    //
+    // E SÓ A PARTIR DO NÍVEL 20, que é o que o mercado exige. Abaixo disso o
+    // servidor respondia "Precisa do nível 20 para vender no mercado" a cada
+    // tentativa — 280 recusas em trinta minutos, medidas em prod, todas
+    // escondidas na lista de falha esperada do analisador. Pedir o que não se
+    // pode não é um jogador insistente, é um contador girando.
+    const NIVEL_DO_MERCADO: u32 = 20;
     eu.olhou_mercado = eu.olhou_mercado.saturating_add(1);
-    if eu.olhou_mercado >= 40 {
+    if eu.nivel >= NIVEL_DO_MERCADO && eu.olhou_mercado >= 40 {
         eu.olhou_mercado = 0;
         // VENDE a maior pilha que não seja equipamento nem consumível de vida:
         // é o que um jogador larga no mercado. Sem instância, porque item com
@@ -2336,19 +2386,51 @@ async fn decide(
     // O `%` sobre o relógio é um sorteio bom o bastante: não precisa de
     // aleatoriedade boa, precisa de direções diferentes a cada vez.
     if eu.destino.is_none() && eu.alvo.is_none() {
-        eu.vagou = eu.vagou.wrapping_add(1);
-        if eu.vagou % 8 == 1 {
-            let volta = (eu.vagou as f32) * 2.399_963_2;
-            let longe = 45.0;
-            let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
-            ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
-            t.registra(ev(nome, eu, "vagou", true, format!(
-                "pra {:.0},{:.0}", alvo.x, alvo.y
+        // VAGAR COM COMPROMISSO, e esta é a diferença entre andar e girar.
+        //
+        // Antes escolhia um ponto novo a cada ~5,6 s e mandava `MoverPara`
+        // outra vez. Cada envio REINICIA o trajeto no servidor — o mesmo
+        // defeito que já tinha custado 511 comandos de movimento com o
+        // personagem parado no mesmo pixel. Aqui rendeu 275 "vagou" em trinta
+        // minutos com o bot no MESMO ponto (-50,-464) o tempo todo, e zero XP:
+        // ele nunca chegava a lugar nenhum, então nunca encontrava bicho.
+        //
+        // Agora ele escolhe um destino e VAI até lá. Só escolhe outro quando
+        // chega, ou quando desiste — e as duas coisas vão pra trilha com `ok`
+        // diferente, que é o que separa "andou" de "tentou andar".
+        const PERTO_O_BASTANTE: f32 = 5.0;
+        const PRAZO_DA_VOLTA: Duration = Duration::from_secs(25);
+        if let Some((alvo, desde)) = eu.vagando_para {
+            if eu.pos.distance(alvo) <= PERTO_O_BASTANTE {
+                eu.vagando_para = None;
+                t.registra(ev(nome, eu, "vagou", true, format!(
+                    "chegou em {:.0},{:.0}", alvo.x, alvo.y
+                )));
+                return Ok(());
+            }
+            if Instant::now().duration_since(desde) < PRAZO_DA_VOLTA {
+                // Andando. Não reenvia nada: o servidor está conduzindo.
+                return Ok(());
+            }
+            eu.vagando_para = None;
+            t.registra(ev(nome, eu, "vagou", false, format!(
+                "não chegou em {:.0},{:.0} (parou a {:.0}u)",
+                alvo.x, alvo.y, eu.pos.distance(alvo)
             )));
             return Ok(());
         }
+        eu.vagou = eu.vagou.wrapping_add(1);
+        // O `%` sobre o contador é um sorteio bom o bastante: não precisa de
+        // aleatoriedade boa, precisa de direções diferentes a cada vez.
+        let volta = (eu.vagou as f32) * 2.399_963_2;
+        let longe = 45.0;
+        let alvo = eu.pos + glam::Vec2::new(volta.cos(), volta.sin()) * longe;
+        eu.vagando_para = Some((alvo, Instant::now()));
+        ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
         return Ok(());
     }
+    // Achou alvo ou missão: a volta pode esperar.
+    eu.vagando_para = None;
     t.registra(ev(nome, eu, "sem_o_que_fazer", false, format!(
         "{} quest(s), destino={:?}",
         eu.quests.len(),
