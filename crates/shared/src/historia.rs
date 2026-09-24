@@ -467,7 +467,19 @@ pub const PASSOS: &[QuestDef] = &[
     coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
     coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
     falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
-    criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe.", 100, 6_000),
+    // O PET SAI DAQUI, e o lugar não é arbitrário.
+    //
+    // O dono: "faz uma das missões iniciais, tipo nível 6, dar um pergaminho
+    // de invocação de pet, porque sem pet não coleta nada". Esta é a missão
+    // que ANUNCIA o farm — a descrição dela já diz "depois disso, tudo isso
+    // se farma". Entregar aqui a ferramenta que torna o farm possível fecha o
+    // sentido: o passo seguinte da história pede caçar e colher, e até agora
+    // o jogador não tinha com o quê.
+    QuestDef {
+        reward_item: item_id::PERGAMINHO_INVOCA_PET,
+        reward_item_qty: 1,
+        ..criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe — e o pergaminho que o Ferreiro te dá chama quem colhe por você.", 100, 6_000)
+    },
     cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
     tutorial(794, "O mapa mostra o caminho", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá.", tut::MAPA_IR, 60, 1_500, item_id::HEALTH_POTION, 3),
     ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
@@ -1458,6 +1470,48 @@ mod testes {
         assert_eq!(
             crate::quests::quest_by_id(PRIMEIRO_ID).unwrap().title,
             PASSOS[0].title
+        );
+    }
+}
+
+#[cfg(test)]
+mod testes_do_pet_inicial {
+    use super::*;
+
+    /// A HISTÓRIA ENTREGA UM PET ANTES DE EXIGIR FARM.
+    ///
+    /// O dono: "sem pet não coleta nada". A história pede colher (704, 705) e
+    /// caçar (702, 708) desde cedo, e até hoje o jogador chegava nesses
+    /// passos de mãos vazias.
+    ///
+    /// O teste não fixa QUAL missão dá — fixa que alguma da primeira dezena
+    /// dá, e antes do nível em que o farm vira obrigação. Assim, mover o
+    /// prêmio de lugar não quebra o teste; tirá-lo, sim.
+    #[test]
+    fn o_pergaminho_de_pet_sai_cedo_na_historia() {
+        // FILTRO, e não `take_while`: a lista não está ordenada por id, e o
+        // `take_while` parava na primeira missão fora de ordem — medindo
+        // quase nada e passando por sorte.
+        let ate_707: Vec<&QuestDef> = PASSOS.iter().filter(|d| d.id <= 707).collect();
+        assert!(
+            ate_707.len() >= 8,
+            "a história ficou curta demais pra este teste medir algo"
+        );
+        let com_pet = ate_707
+            .iter()
+            .find(|d| d.reward_item == crate::item_id::PERGAMINHO_INVOCA_PET);
+        let d = com_pet.expect("nenhuma missão inicial dá pergaminho de pet");
+        assert!(d.reward_item_qty >= 1, "o pergaminho veio com quantidade zero");
+        // E a soma de XP até ela tem que caber num personagem novo: dar o pet
+        // no fim do capítulo não resolveria o problema, que é do começo.
+        let xp: u64 = ate_707
+            .iter()
+            .filter(|q| q.id <= d.id)
+            .map(|q| q.reward_xp)
+            .sum();
+        assert!(
+            xp <= 40_000,
+            "o pet só chega com {xp} de xp acumulado — tarde demais"
         );
     }
 }

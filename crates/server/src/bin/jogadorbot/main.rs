@@ -169,6 +169,14 @@ struct Eu {
     no_de_coleta: Option<(u32, glam::Vec2)>,
     /// Está colhendo agora? Enquanto estiver, não se decide outra coisa.
     colhendo: bool,
+    /// Desde quando ele está "colhendo", e o progresso de quando começou.
+    ///
+    /// `colhendo` vem de `ColetaEstado` e fica preso em `true` quando o nó
+    /// rende nada: o bot voltava cedo da decisão PARA SEMPRE, sem registrar
+    /// um evento sequer. Sete dos doze bots ficaram assim, plantados em
+    /// -273,-274, e só o batimento denunciou — mais uma vez, "o auto está
+    /// ativo" não prova que algo está acontecendo.
+    colhendo_desde: Option<Instant>,
     /// Pra onde o auto-path já foi mandado, e onde o bot estava quando
     /// mandou. As duas coisas juntas são o que detecta "pedi e não saí do
     /// lugar" sem reenviar o pedido a cada decisão.
@@ -261,7 +269,17 @@ struct Eu {
     /// Quando o bot olhou o mercado pela última vez (em decisões).
     olhou_mercado: u32,
     /// Receitas que o servidor disse existir.
-    receitas: Vec<u16>,
+    /// As receitas INTEIRAS, com os ingredientes.
+    ///
+    /// Guardava só o id, e por isso o bot não sabia o que faltava: ele
+    /// tentava, tomava "faltam: Madeira T1 36/100" e desistia. Com os inputs
+    /// ele sabe o que buscar.
+    receitas: Vec<shared::protocol::CraftRecipeNet>,
+    /// item -> de que nós de coleta ele sai (`FonteDeItem::Coleta`). É o
+    /// "onde obter" do próprio jogo: o bot não adivinha onde acha madeira.
+    fontes: HashMap<u16, Vec<u8>>,
+    /// O que ele foi BUSCAR pra poder fabricar: (missão, item, quanto falta).
+    buscando: Option<(u16, u16, u32)>,
     /// Já pediu pra entrar no Porão nesta vida? Uma vez basta: insistir a
     /// cada decisão seria uma enxurrada de pedidos na fila.
     pediu_dungeon: bool,
@@ -771,7 +789,26 @@ async fn recebe(
             eu.anuncios = anuncios;
         }
         ServerMessage::CraftRecipes { recipes } => {
-            eu.receitas = recipes.iter().map(|r| r.id).collect();
+            eu.receitas = recipes;
+        }
+        ServerMessage::ResourceSources { items } => {
+            // DE ONDE SAI CADA ITEM, pela boca do próprio jogo. Sem isto o
+            // bot teria que adivinhar que "Madeira T1" vem de árvore — e
+            // adivinhação envelhece mal quando o conteúdo muda.
+            eu.fontes = items
+                .into_iter()
+                .map(|i| {
+                    let tipos = i
+                        .sources
+                        .iter()
+                        .filter_map(|f| match f {
+                            shared::protocol::FonteDeItem::Coleta { tipo, .. } => Some(*tipo),
+                            _ => None,
+                        })
+                        .collect();
+                    (i.item_id, tipos)
+                })
+                .collect();
         }
         ServerMessage::Dungeon { aviso } => {
             // Só o que muda decisão: entrou, acabou. O resto do aviso é
@@ -951,14 +988,26 @@ async fn decide(
     if !foco_vale {
         // A MAIS NOVA primeiro: a história é numerada em ordem, então a de
         // maior id é o passo mais recente — o que o jogador acabou de pegar.
-        let nova = eu
+        // A HISTÓRIA PRIMEIRO, e a mais ANTIGA dela.
+        //
+        // O dono: "tenta seguir ao máximo a história". A cadeia é numerada em
+        // ordem, então a de menor id é o passo em que ele parou. Só quando
+        // não há história disponível é que ele pega outra missão — e aí a
+        // mais recente, que é a que acabou de chegar.
+        let ativas: Vec<u16> = eu
             .quests
             .iter()
             .filter(|(id, (_, st))| {
                 *st == shared::quests::quest_status::ACTIVE && !eu.desistiu.contains_key(id)
             })
             .map(|(id, _)| *id)
-            .max();
+            .collect();
+        let nova = ativas
+            .iter()
+            .filter(|id| shared::historia::def_da_historia(**id).is_some())
+            .min()
+            .copied()
+            .or_else(|| ativas.iter().max().copied());
         if nova != eu.foco {
             eu.foco = nova;
             eu.destino = None;
@@ -994,6 +1043,74 @@ async fn decide(
                 return Ok(());
             }
         }
+    }
+    // 4.5 BUSCANDO MATERIAL: coleta até ter, e só então volta pra missão.
+    //
+    // O dono: "sempre tentando fazer o personagem e aprimorar ao máximo com
+    // craft, aumento de nível etc; se ficar sem recursos aí tem que ir
+    // coletar até ter recursos, fazer o upgrade e voltar a tentar história
+    // novamente".
+    //
+    // Fica ANTES do passo do destino porque a busca é o que ele está fazendo
+    // agora: deixar a missão mandar aqui o traria de volta ao craft que já
+    // recusou, e o ciclo recomeçaria.
+    if let Some((quest, item, quanto)) = eu.buscando {
+        let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
+        if tem >= quanto {
+            eu.buscando = None;
+            eu.destino = None;
+            // A missão volta a valer: ela foi largada só pra buscar.
+            eu.desistiu.remove(&quest);
+            eu.craft_a_toa.remove(&quest);
+            t.registra(ev(nome, eu, "voltou_da_busca", true, format!(
+                "#{quest} com {tem}x item {item}"
+            )));
+            return Ok(());
+        }
+        // Os tipos de nó que rendem este item, direto do "onde obter".
+        let mut tipos = [false; 5];
+        let mut energia = false;
+        for tipo in eu.fontes.get(&item).cloned().unwrap_or_default() {
+            match tipo {
+                0..=4 => tipos[tipo as usize] = true,
+                5 => energia = true,
+                _ => {}
+            }
+        }
+        if tipos.iter().all(|t| !t) && !energia {
+            // Não sai de coleta: buscar aqui seria bater em árvore pra sempre.
+            eu.buscando = None;
+            t.registra(ev(nome, eu, "busca_impossivel", false, format!(
+                "#{quest} item {item} não vem de coleta"
+            )));
+            return Ok(());
+        }
+        match eu.no_de_coleta {
+            Some((coluna, onde)) => {
+                let d_no = eu.pos.distance(onde);
+                if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
+                    if !empurra(eu, onde) {
+                        eu.no_de_coleta = None;
+                    }
+                    return Ok(());
+                }
+                eu.no_de_coleta = None;
+                ws.send(envia(&ClientMessage::ColetarNo { coluna })?).await?;
+                t.registra(ev(nome, eu, "buscou", tem > 0, format!(
+                    "#{quest} item {item}: {tem}/{quanto}"
+                )));
+            }
+            None => {
+                ws.send(envia(&ClientMessage::PedirNoDeColeta {
+                    tipos,
+                    energia,
+                    raio: 80.0,
+                    centro: [eu.pos.x, eu.pos.y],
+                })?)
+                .await?;
+            }
+        }
+        return Ok(());
     }
     // 5. Com destino: anda até lá e faz o que o tipo pede.
     if let Some(d) = eu.destino {
@@ -1205,9 +1322,29 @@ async fn decide(
                 // Já colhendo: não se manda nada. `ColetarNo` por cima de uma
                 // coleta em curso a reinicia — o mesmo erro do `MoverPara`,
                 // que custou 511 comandos e nenhum passo.
+                //
+                // MAS COM TETO. Sem ele, `colhendo` preso em `true` fazia o
+                // bot voltar cedo indefinidamente: sete bots plantados no
+                // mesmo ponto, sem um evento na trilha.
+                const COLHENDO_MAX: Duration = Duration::from_secs(25);
                 if eu.colhendo {
+                    let desde = *eu.colhendo_desde.get_or_insert(Instant::now());
+                    if desde.elapsed() < COLHENDO_MAX {
+                        return Ok(());
+                    }
+                    // Tempo demais "colhendo" sem o objetivo andar: o nó
+                    // acabou, ou nunca rendeu. Larga e procura outro.
+                    eu.colhendo = false;
+                    eu.colhendo_desde = None;
+                    eu.no_de_coleta = None;
+                    passo_nao_deu(eu, t, nome, d.quest, "coleta_sem_render", format!(
+                        "#{} {}s colhendo sem o objetivo andar",
+                        d.quest,
+                        COLHENDO_MAX.as_secs()
+                    ));
                     return Ok(());
                 }
+                eu.colhendo_desde = None;
                 match eu.no_de_coleta {
                     Some((coluna, onde)) => {
                         // ANDA ATÉ O NÓ ANTES DE COLHER.
@@ -1245,6 +1382,7 @@ async fn decide(
                         if andou {
                             eu.progresso_visto = (d.quest, agora_p);
                             eu.coleta_sem_avanco = 0;
+                            eu.colhendo_desde = None;
                         } else {
                             eu.coleta_sem_avanco += 1;
                         }
@@ -1303,8 +1441,49 @@ async fn decide(
             // registrava "sem o que fazer": 439 numa corrida de oito minutos,
             // todas com `tipo 6` (a forja) no detalhe.
             destino_tipo::PAINEL_CRAFT => {
-                match eu.receitas.first().copied() {
-                    Some(r) => {
+                // A RECEITA QUE ELE CONSEGUE FAZER, e não a primeira da
+                // lista. Tentar uma sem material é garantir a recusa.
+                let escolhida = eu
+                    .receitas
+                    .iter()
+                    .find(|r| {
+                        r.nivel_min as u32 <= eu.nivel
+                            && r.inputs.iter().all(|[item, q]| {
+                                eu.bolsa.get(&(*item as u16)).copied().unwrap_or(0) >= *q
+                            })
+                    })
+                    .or_else(|| {
+                        eu.receitas
+                            .iter()
+                            .find(|r| r.nivel_min as u32 <= eu.nivel)
+                    })
+                    .map(|r| (r.id, r.inputs.clone()));
+                match escolhida {
+                    Some((r, inputs)) => {
+                        // FALTA MATERIAL? VAI BUSCAR, não desiste.
+                        //
+                        // O dono: "se ficar sem recursos aí tem que ir
+                        // coletar até ter recursos, fazer o upgrade e voltar
+                        // a tentar história novamente". Antes ele largava a
+                        // missão por 10 minutos e ia fazer outra coisa — o
+                        // personagem nunca melhorava.
+                        let falta = inputs.iter().find_map(|[item, q]| {
+                            let item = *item as u16;
+                            let tem = eu.bolsa.get(&item).copied().unwrap_or(0);
+                            (tem < *q).then_some((item, *q - tem))
+                        });
+                        if let Some((item, quanto)) = falta {
+                            // Só vale buscar o que SAI DE COLETA. Material de
+                            // mob ou de loja não se resolve batendo em árvore.
+                            if eu.fontes.get(&item).is_some_and(|t| !t.is_empty()) {
+                                eu.buscando = Some((d.quest, item, quanto));
+                                eu.destino = None;
+                                t.registra(ev(nome, eu, "foi_buscar", true, format!(
+                                    "#{} precisa de {quanto}x item {item}", d.quest
+                                )));
+                                return Ok(());
+                            }
+                        }
                         ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
                         // `ok` SAI DA CONTA DE RECUSAS, e não do envio.
                         //
@@ -1546,7 +1725,7 @@ async fn decide(
     // recusa vai pra trilha. Conferir aqui seria reimplementar a receita no
     // bot — duas regras pro mesmo assunto, e a do bot ficaria velha.
     if !eu.receitas.is_empty() && eu.olhou_mercado == 20 {
-        let r = eu.receitas[(eu.nivel as usize) % eu.receitas.len()];
+        let r = eu.receitas[(eu.nivel as usize) % eu.receitas.len()].id;
         ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
         t.registra(ev(nome, eu, "tentou_craft", true, format!("receita {r}")));
         return Ok(());
