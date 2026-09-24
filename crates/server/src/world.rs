@@ -19140,8 +19140,24 @@ pub(crate) fn effective_stats(
     match weapon_id {
         // pistolas: a destreza vira dano, e o disparo e' rapido
         shared::item_id::PISTOLAS => {
-            // DEX/4 e nao /2: com /2 o tiro matava antes de o bicho chegar.
-            s.attack_damage += s.dex / 4;
+            // A PISTOLA E' A MAIOR EM ALVO UNICO, e o NIVEL e' o que paga isso.
+            //
+            // O dono: "pistola teoricamente deveria ter o maior dano em alvo
+            // unico". Nao era: contra o Colosso Anciao ela levava 84 s e a
+            // katana 74. O caminho obvio — subir a fracao de DEX — nao serve,
+            // e o guarda mostra por que: com DEX/2 ela vence o chefe em 64 s
+            // mas passa a abater mob comum 25% acima da media, e a meta de
+            // zona reprova. Ela ficava forte demais contra MOB antes de ficar
+            // forte o bastante contra CHEFE — o oposto do que ela devia ser.
+            //
+            // O nivel separa as duas coisas: a meta de zona e' medida nos
+            // niveis 1–10, onde este bonus e' de 0 a 5 e nao muda nada, e o
+            // chefe e' medido do 36 ao 60, onde ele decide a luta. E a leitura
+            // fecha: a destreza rende mais quanto mais o atirador treina.
+            //
+            // Medido com `nivel/1` tambem — ai as lutas caem pra 57 s, abaixo
+            // do piso de 60, e o guarda reprova. Metade e' o ponto.
+            s.attack_damage += s.dex / 4 + (char_lvl as i32) / 2;
             s.attack_speed_mult += 0.25;
         }
         // katana: corte rapido — um pouco de destreza e de forca

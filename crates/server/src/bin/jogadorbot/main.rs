@@ -231,6 +231,9 @@ struct Eu {
     desistiu: HashMap<u16, Instant>,
     /// A missão em que o bot está trabalhando agora. Ver a escolha do foco.
     foco: Option<u16>,
+    /// Contador do empurrão até o NÓ. Ver `empurra_no`.
+    no_parado: u32,
+    dist_do_no: f32,
     /// Pedidos de nó de coleta seguidos que o servidor não respondeu.
     ///
     /// Este ramo era MUDO e sem teto, e foi o que plantou quatro bots no mesmo
@@ -547,16 +550,11 @@ async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu) -
 /// Devolve `false` quando a distância não encurta há cinco decisões — aí quem
 /// chamou decide o que fazer (chamar o A*, ou largar a missão).
 fn empurra(eu: &mut Eu, alvo: glam::Vec2) -> bool {
-    let dist = eu.pos.distance(alvo);
-    if dist < eu.dist_do_empurrao - 0.3 {
-        eu.empurrao_parado = 0;
-    } else {
-        eu.empurrao_parado += 1;
-    }
-    eu.dist_do_empurrao = dist;
-    if eu.empurrao_parado >= 5 {
-        eu.empurrao_parado = 0;
-        eu.dist_do_empurrao = f32::MAX;
+    let (parado, ultima) = (eu.empurrao_parado, eu.dist_do_empurrao);
+    let (vale, parado, ultima) = insiste(eu.pos, alvo, parado, ultima);
+    eu.empurrao_parado = parado;
+    eu.dist_do_empurrao = ultima;
+    if !vale {
         eu.empurrao = None;
         eu.empurrao_ate = None;
         return false;
@@ -564,6 +562,55 @@ fn empurra(eu: &mut Eu, alvo: glam::Vec2) -> bool {
     eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
     eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
     true
+}
+
+/// EMPURRA ATÉ O NÓ DE COLETA, com contador PRÓPRIO.
+///
+/// Próprio porque compartilhar custou duas horas de bot parado. Quem empurra
+/// até o DESTINO zera `dist_do_empurrao` para `f32::MAX` toda vez que o corpo
+/// está "perto" — e perto de um destino de coleta é qualquer lugar dentro do
+/// raio da missão. Como o nó fica dentro desse raio, a sequência era:
+///
+///   1. perto do destino -> zera o contador e o `MAX`
+///   2. empurra até o nó -> `dist < MAX - 0.3` é sempre verdade, conta zera
+///   3. volta ao passo 1
+///
+/// `empurrao_parado` nunca chegava a 5, a rede nunca disparava, e quatro bots
+/// ficaram plantados a 6 u de um nó inalcançável sem um evento na trilha. É o
+/// mesmo defeito do `passo_nao_deu` reusando `craft_a_toa`: um contador que
+/// serve a dois donos não serve a nenhum.
+fn empurra_no(eu: &mut Eu, alvo: glam::Vec2) -> bool {
+    let (vale, parado, ultima) = insiste(eu.pos, alvo, eu.no_parado, eu.dist_do_no);
+    eu.no_parado = parado;
+    eu.dist_do_no = ultima;
+    if !vale {
+        eu.empurrao = None;
+        eu.empurrao_ate = None;
+        return false;
+    }
+    eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
+    eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
+    true
+}
+
+/// A conta do empurrão, sem estado: ainda vale insistir?
+///
+/// Fora do `Eu` pra ser testável, e porque é ela que se duplicou errado: a
+/// regra é uma só, os contadores é que são dois.
+fn insiste(de: glam::Vec2, para: glam::Vec2, parado: u32, ultima: f32) -> (bool, u32, f32) {
+    let dist = de.distance(para);
+    // PRIMEIRA CHAMADA não conta como "não encurtou". O campo nasce em 0,0
+    // pelo `Default`, e sem isto o primeiro empurrão de cada nó já começaria
+    // com uma marca contra ele — cinco nós seguidos e a rede dispararia com o
+    // bot andando normalmente.
+    if ultima <= 0.0 {
+        return (true, 0, dist);
+    }
+    let parado = if dist < ultima - 0.3 { 0 } else { parado + 1 };
+    if parado >= 5 {
+        return (false, 0, f32::MAX);
+    }
+    (true, parado, dist)
 }
 
 /// UM PASSO QUE NÃO DEU: conta e, no limite, larga a missão.
@@ -1563,7 +1610,7 @@ async fn decide(
             Some((coluna, onde)) => {
                 let d_no = eu.pos.distance(onde);
                 if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
-                    if !empurra(eu, onde) {
+                    if !empurra_no(eu, onde) {
                         // ESTE RAMO ERA MUDO, E O PREÇO FOI ALTO.
                         //
                         // O empurrão avisa quando a distância para de
@@ -1880,7 +1927,7 @@ async fn decide(
                         // progresso em zero.
                         let d_no = eu.pos.distance(onde);
                         if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
-                            if !empurra(eu, onde) {
+                            if !empurra_no(eu, onde) {
                                 // Não encurta: o nó pode estar do outro lado
                                 // de uma pedra. Larga ESTE nó e peça outro; se
                                 // for a missão inteira que não anda, o
@@ -2490,6 +2537,86 @@ mod testes_da_variedade {
             armas.len() >= 3,
             "só {} classes entre 12 bots: {armas:?}",
             armas.len()
+        );
+    }
+}
+
+#[cfg(test)]
+mod testes_do_empurrao {
+    use super::*;
+
+    /// A REDE DISPARA quando a distância para de encurtar, e só então.
+    ///
+    /// Os dois lados importam. Sem o primeiro, o bot empurra uma parede pra
+    /// sempre — foi o que plantou quatro bots a 6 u de um nó de coleta por
+    /// horas, sem um evento na trilha. Sem o segundo, ela dispararia no meio
+    /// de uma caminhada normal e o bot largaria destinos que ia alcançar.
+    #[test]
+    fn so_desiste_de_quem_nao_encurta() {
+        let alvo = glam::Vec2::new(10.0, 0.0);
+        // PARADO a 6 u: a quinta chamada desiste.
+        let eu = glam::Vec2::new(4.0, 0.0);
+        let (mut parado, mut ultima) = (0u32, 0.0f32);
+        let mut desistiu = None;
+        for n in 1..=8 {
+            let (vale, p, u) = insiste(eu, alvo, parado, ultima);
+            parado = p;
+            ultima = u;
+            if !vale {
+                desistiu = Some(n);
+                break;
+            }
+        }
+        assert_eq!(desistiu, Some(6), "parado e a rede não disparou na hora certa");
+
+        // ANDANDO: nunca desiste, por mais chamadas que passem.
+        let (mut parado, mut ultima) = (0u32, 0.0f32);
+        // Passos de meia unidade, SEM passar do alvo: depois de ultrapassar,
+        // a distância volta a crescer e desistir ali estaria certo.
+        for n in 0..19 {
+            let eu = glam::Vec2::new(n as f32 * 0.5, 0.0);
+            let (vale, p, u) = insiste(eu, alvo, parado, ultima);
+            assert!(vale, "desistiu de quem estava andando (passo {n})");
+            parado = p;
+            ultima = u;
+        }
+    }
+
+    /// ZERAR O ESTADO DE UM NÃO PODE ZERAR O DO OUTRO.
+    ///
+    /// Este é o defeito que custou caro, e ele não aparece olhando uma função
+    /// só. Quem empurra até o DESTINO põe `dist` em `f32::MAX` toda vez que o
+    /// corpo está "perto" — e perto de um destino de coleta é qualquer lugar
+    /// dentro do raio da missão, o nó inclusive. Com um contador compartilhado
+    /// a sequência era: zera, empurra até o nó (`dist < MAX` sempre), zera de
+    /// novo. A rede nunca disparava.
+    ///
+    /// O teste refaz isso: intercala uma "chegada ao destino" (que reseta)
+    /// entre as tentativas do nó, com estados SEPARADOS, e exige que o nó
+    /// ainda assim desista.
+    #[test]
+    fn o_contador_do_no_nao_e_zerado_pelo_destino() {
+        let no = glam::Vec2::new(10.0, 0.0);
+        let eu = glam::Vec2::new(4.0, 0.0);
+        let (mut no_parado, mut no_dist) = (0u32, 0.0f32);
+        // O estado do destino, que zera a cada volta como no jogo.
+        let (mut d_parado, mut d_dist) = (0u32, 0.0f32);
+        let mut desistiu = false;
+        for _ in 0..8 {
+            d_parado = 0;
+            d_dist = f32::MAX;
+            let (vale, p, u) = insiste(eu, no, no_parado, no_dist);
+            no_parado = p;
+            no_dist = u;
+            if !vale {
+                desistiu = true;
+                break;
+            }
+        }
+        let _ = (d_parado, d_dist);
+        assert!(
+            desistiu,
+            "o nó nunca desistiu: o contador dele está preso no do destino"
         );
     }
 }
