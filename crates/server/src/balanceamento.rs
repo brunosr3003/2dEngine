@@ -434,7 +434,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 // simulador devolvia 0,36 s de basico por conjuracao que o jogo
                 // real nao devolve — e superestimava toda skill, mais ainda a
                 // katana, que conjura sem parar.
-                ocupado_ate = t + s.impacto_em() + shared::skills::RECUPERACAO_S;
+                ocupado_ate = t + s.trava_s();
                 efeitos.push((t + s.impacto_em(), i, alvo));
             }
         }
@@ -1354,7 +1354,7 @@ pub(crate) fn duelar(
                 pronta_em[i] = t + s.espera_s;
                 ultimo_auto = s.id;
                 // Mesma janela do servidor que a luta de zona usa acima.
-                ocupado_ate = t + s.impacto_em() + shared::skills::RECUPERACAO_S;
+                ocupado_ate = t + s.trava_s();
                 efeitos.push((t + s.impacto_em(), i));
                 conjurando = Some((t, i, s.custo_mp as f32));
             }

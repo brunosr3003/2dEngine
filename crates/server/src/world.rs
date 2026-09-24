@@ -19157,7 +19157,7 @@ pub(crate) fn effective_stats(
             //
             // Medido com `nivel/1` tambem — ai as lutas caem pra 57 s, abaixo
             // do piso de 60, e o guarda reprova. Metade e' o ponto.
-            s.attack_damage += s.dex / 4 + (char_lvl as i32) / 2;
+            s.attack_damage += s.dex / 4 + (char_lvl as i32 / 3).min(12);
             s.attack_speed_mult += 0.25;
         }
         // katana: corte rapido — um pouco de destreza e de forca

@@ -233,7 +233,7 @@ impl GameWorld {
         let s = self.sessions.get_mut(&sid).unwrap();
         s.mp_current -= skill.custo_mp as f32;
         s.skill_cds.insert(skill_id, agora + skill.espera_s);
-        s.casting_until = agora + skill.impacto_em() + shared::skills::RECUPERACAO_S;
+        s.casting_until = agora + skill.trava_s();
         s.casting_skill_id = skill_id;
         s.casting_started_at_s = agora;
         s.casting_impacto_em = skill.impacto_em();

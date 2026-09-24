@@ -515,6 +515,51 @@ impl Skill {
         }
     }
 
+    /// O EFEITO SAI DO CORPO: depois do impacto, ele não depende mais de você.
+    ///
+    /// O dono, sobre o Barril: "a ideia é a animação em si só contar de tacando
+    /// o barril; ele saiu da sua mão, aí já vira projétil e pode continuar
+    /// atacando / usando outras skills ou movimentando que não dá nada". E,
+    /// sobre a cura: "as skills de cura também demoram muito pra castar, o que
+    /// deixa a cura fraca".
+    ///
+    /// São a mesma queixa. A trava do corpo ia até `impacto + RECUPERACAO_S`,
+    /// então o Barril prendia 0,76 s, a Aura 0,86 e o Julgamento 0,96 — e
+    /// nesse tempo o chefe telegrafa e você não sai. Só que, passado o
+    /// impacto, o barril já está no ar e a bênção já caiu: o corpo não tem
+    /// mais nada a fazer, e segurá-lo é castigo sem função.
+    ///
+    /// Não vale pra TODA skill. Saque avança com o corpo e Rajada é o gesto de
+    /// varrer o cano; ali a recuperação é a própria animação, e tirá-la seria
+    /// tirar o peso do golpe. A linha é essa: o que sai da mão liberta, o que
+    /// é movimento do corpo não.
+    pub fn sai_da_mao(&self) -> bool {
+        match self.forma {
+            // O tiro já está viajando.
+            Forma::Projetil => true,
+            // Arremessada a distância (Barril, Aura, Julgamento). Com alcance
+            // zero o círculo é em volta de si (Dança), e aí é gesto de corpo.
+            Forma::Circulo => self.alcance > 0.0,
+            // A bênção cai em você no instante do impacto.
+            Forma::EmSi => self.cura > 0,
+            // Gesto do corpo: o avanço do Saque, a varrida da Rajada.
+            Forma::Linha | Forma::Cone => false,
+        }
+    }
+
+    /// Quanto tempo o corpo fica TRAVADO, do começo ao fim.
+    ///
+    /// É esta que o servidor usa pra `casting_until`, e não `impacto_em() +
+    /// RECUPERACAO_S` — ver `sai_da_mao`.
+    pub fn trava_s(&self) -> f32 {
+        self.impacto_em()
+            + if self.sai_da_mao() {
+                0.0
+            } else {
+                RECUPERACAO_S
+            }
+    }
+
     /// Dano final da skill, em cima do ataque de quem conjura.
     ///
     /// Conjurar DESLIGA o ataque basico (o servidor zera `frame.buttons`
@@ -846,7 +891,11 @@ pub fn playtest() -> Vec<Skill> {
             8, "Rajada", "pistolas", 2, "cone", 16, 9.0, 0.0, 20, 0, 6.0, 0.0,
         ),
         (
-            9, "Barril", "pistolas", 3, "circulo", 24, 16.0, 0.4, 50, 0, 8.0, 3.0,
+            // CONJURACAO ZERO: a antecipacao (0,48 s) JA' E' o gesto de
+            // arremessar. Somar mais 0,4 de "carregando" era cobrar duas vezes
+            // pela mesma animacao — o dono: "a ideia e' a animacao em si so'
+            // contar de tacando o barril".
+            9, "Barril", "pistolas", 3, "circulo", 24, 16.0, 0.0, 50, 0, 8.0, 3.0,
         ),
         // ── anel magico: cura e magia ──
         (
@@ -871,7 +920,12 @@ pub fn playtest() -> Vec<Skill> {
             "circulo",
             26,
             18.0,
-            0.5,
+            // CONJURACAO ZERO. O dono: "as skills de cura tambem demoram muito
+            // pra castar, o que deixa a cura fraca". Meio segundo CARREGANDO,
+            // mais 0,35 de gesto, davam 0,85 s ate' a cura chegar — e cura que
+            // chega tarde nao cura, so' documenta que voce apanhou. A
+            // antecipacao segue sendo o gesto; o carregamento sai.
+            0.0,
             0,
             30,
             7.0,
@@ -909,4 +963,124 @@ pub fn playtest() -> Vec<Skill> {
             raio: l.11,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod testes_da_trava {
+    use super::*;
+
+    /// O QUE SAI DA MÃO LIBERTA O CORPO; O QUE É GESTO, NÃO.
+    ///
+    /// O dono, sobre o Barril: "ele saiu da sua mão, aí já vira projétil e
+    /// pode continuar atacando / usando outras skills ou movimentando que não
+    /// dá nada". E sobre a cura: "as skills de cura também demoram muito pra
+    /// castar, o que deixa a cura fraca".
+    ///
+    /// O teste trava os dois lados. Sem o primeiro, o Barril prende 0,76 s e o
+    /// Julgamento 0,96 — tempo em que o chefe telegrafa e não dá pra sair.
+    /// Sem o segundo, Saque e Rajada perderiam a recuperação que É a animação
+    /// do golpe, e o corpo passaria a teleportar entre gestos.
+    #[test]
+    fn a_trava_acaba_quando_o_efeito_sai_do_corpo() {
+        let por_nome = |n: &str| {
+            playtest()
+                .into_iter()
+                .find(|s| s.nome == n)
+                .unwrap_or_else(|| panic!("skill '{n}' sumiu do catálogo"))
+        };
+        // SOLTAM: o barril arremessado, os projéteis e a bênção que cai em
+        // você no impacto.
+        for n in ["Barril", "Tiro Certeiro", "Vento Cortante", "Bênção", "Aura", "Julgamento"] {
+            let s = por_nome(n);
+            assert!(s.sai_da_mao(), "'{n}' devia soltar o corpo");
+            assert_eq!(
+                s.trava_s(),
+                s.impacto_em(),
+                "'{n}' ainda prende depois do impacto"
+            );
+        }
+        // NÃO SOLTAM: o avanço do Saque, a varrida da Rajada, a Dança em volta
+        // de si e a Muralha.
+        for n in ["Saque", "Rajada", "Dança", "Muralha"] {
+            let s = por_nome(n);
+            assert!(!s.sai_da_mao(), "'{n}' virou arremesso");
+            assert!(
+                s.trava_s() > s.impacto_em(),
+                "'{n}' perdeu a recuperação, que é a animação do golpe"
+            );
+        }
+    }
+
+    /// QUEM FICA PLANTADO NÃO PASSA DE MEIO SEGUNDO.
+    ///
+    /// É o teto que a queixa do dono estabelece: parado mais que isso, o chefe
+    /// telegrafa no meio da skill e não há reação possível. As três mais
+    /// longas do jogo eram Julgamento (0,96), Aura (0,86) e Barril (0,76) — as
+    /// três arremessadas, e agora as três livres no impacto.
+    ///
+    /// A `Linha` fica FORA, e o teste diz por quê em vez de baixar o teto: a
+    /// Investida trava 0,88 s, mas nesse tempo o corpo está ATRAVESSANDO o
+    /// terreno até o alvo. Estar em movimento não é estar preso, e é
+    /// exatamente a diferença que o dono descreveu — o problema nunca foi a
+    /// duração, foi ficar plantado nela.
+    ///
+    /// O TETO É UM SEGUNDO, e o teste explica por que não é menos.
+    ///
+    /// Com 0,6 ele reprova o **Golpe Largo** (0,84 s) e a **Dança** (1,00 s) —
+    /// a mesma queixa do dono, em classes que ele não estava jogando. Baixar a
+    /// antecipação delas resolveria o teto e as enfraqueceria, porque o dano
+    /// da skill é cobrado em cima da janela que ela trava; e a espada e escudo
+    /// já é a mais lenta do jogo (145 s contra o Colosso Ancião).
+    ///
+    /// Então o teto guarda contra ficar PIOR, e o pior caso fica nomeado
+    /// abaixo — que é o que pega uma piora dentro do teto.
+    #[test]
+    fn quem_fica_plantado_nao_prende_mais_que_um_segundo() {
+        const TETO: f32 = 1.0;
+        for s in playtest() {
+            if s.forma == Forma::Linha {
+                continue;
+            }
+            assert!(
+                s.trava_s() <= TETO,
+                "'{}' prende {:.2}s plantado — o chefe telegrafa nesse tempo",
+                s.nome,
+                s.trava_s()
+            );
+        }
+        let pior = playtest()
+            .into_iter()
+            .filter(|s| s.forma != Forma::Linha)
+            .max_by(|a, b| a.trava_s().total_cmp(&b.trava_s()))
+            .expect("catálogo vazio");
+        assert_eq!(pior.nome, "Dança", "o pior caso plantado mudou de dono");
+    }
+
+    /// AS QUE O DONO RECLAMOU FICARAM MESMO MAIS CURTAS.
+    ///
+    /// Os números de antes, medidos: Barril travava **1,24 s**, Aura 1,21,
+    /// Julgamento 1,34 e Bênção 0,91 — porque a trava somava conjuração,
+    /// antecipação E recuperação. O dono sentiu isso como "demora a ser
+    /// lançada" e "a cura fica fraca".
+    ///
+    /// Este teste guarda o resultado em números absolutos, e não a regra que
+    /// os produziu: se alguém reintroduzir a recuperação, ou devolver o
+    /// carregamento do Barril, a conta passa do limite aqui.
+    #[test]
+    fn o_barril_e_a_cura_saem_rapido() {
+        let por_nome = |n: &str| {
+            playtest()
+                .into_iter()
+                .find(|s| s.nome == n)
+                .unwrap_or_else(|| panic!("skill '{n}' sumiu"))
+        };
+        for (n, teto) in [("Barril", 0.5), ("Aura", 0.4), ("Bênção", 0.6)] {
+            let s = por_nome(n);
+            assert!(
+                s.trava_s() <= teto,
+                "'{n}' voltou a prender {:.2}s (teto {teto})",
+                s.trava_s()
+            );
+        }
+    }
 }
