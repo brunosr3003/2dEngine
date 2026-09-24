@@ -492,7 +492,17 @@ impl Skill {
         self.conjuracao_s.max(0.0)
             + match self.id {
                 1 => 0.52,
-                2 => 0.48,
+                // GOLPE LARGO: 0,48 -> 0,36. Com a recuperação ele prendia
+                // 0,84 s PLANTADO, e o teste de teto o achou sozinho — a mesma
+                // queixa que o dono fez do Barril, numa classe que ele não
+                // estava jogando.
+                //
+                // E o dano sobe junto no catálogo (35 -> 41), porque encurtar
+                // sem compensar ENFRAQUECE: o dano de skill é cobrado em cima
+                // do básico que a trava desliga. Medido sem a compensação: a
+                // espada e escudo deixava de limpar uma zona de nível 5 e
+                // MORRIA nela.
+                2 => 0.36,
                 3 => 0.42,
                 4 => 0.42,
                 5 => 0.64,
@@ -832,7 +842,10 @@ pub fn playtest() -> Vec<Skill> {
             15,
             6.0,
             0.0,
-            35,
+            // 41: compensa a antecipação encurtada (ver `impacto_em`). O
+            // número do catálogo é PESO RELATIVO — o dano final sai de
+            // `dano_efetivo`, que multiplica pelo básico deslocado.
+            41,
             0,
             3.5,
             0.0,
