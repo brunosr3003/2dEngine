@@ -131,8 +131,18 @@ impl MontariasUi {
                 17,
                 estilo::SUAVE,
             );
-            let loja = Rect::new(p.center().x - 110.0 * f, p.y + 160.0 * f, 220.0 * f, 40.0 * f);
-            estilo::botao(loja, "Ver na Loja", estilo::estado_de(loja, false, false), true);
+            let loja = Rect::new(
+                p.center().x - 110.0 * f,
+                p.y + 160.0 * f,
+                220.0 * f,
+                40.0 * f,
+            );
+            estilo::botao(
+                loja,
+                "Ver na Loja",
+                estilo::estado_de(loja, false, false),
+                true,
+            );
             let acao = (clique && loja.contains(mouse)).then_some(Acao::AbrirLoja);
             // A faixa vale mesmo sem nada equipado: e' dela que se equipa.
             let faixa = Rect::new(p.x + 18.0 * f, p.y + 220.0 * f, p.w - 36.0 * f, 152.0 * f);
@@ -181,7 +191,11 @@ impl MontariasUi {
         estilo::texto_forte(
             dir.x + 14.0 * f,
             y + 24.0 * f,
-            &format!("{:.0}%", shared::montarias::velocidade(grau) * 100.0),
+            &format!(
+                "{:.0}%",
+                shared::montarias::velocidade_da_instancia(grau, equip.montaria_inst.as_ref())
+                    * 100.0
+            ),
             22,
             estilo::VERDE,
         );
@@ -191,7 +205,11 @@ impl MontariasUi {
         y += 22.0 * f;
         let mut x = dir.x + 14.0 * f;
         let af = equip.montaria_inst.as_ref().and_then(|i| i.afinidade);
-        for (i, pts) in shared::montarias::pontos_por_stat(id, af).iter().enumerate() {
+        for (i, pts) in
+            shared::montarias::pontos_por_stat_da_instancia(id, equip.montaria_inst.as_ref())
+                .iter()
+                .enumerate()
+        {
             if *pts == 0 {
                 continue;
             }
@@ -201,7 +219,13 @@ impl MontariasUi {
         }
         let poder = format!(
             "PODER  {}",
-            crate::bolsa::milhar(poder_da_montaria(id, af).max(0) as u64)
+            crate::bolsa::milhar(
+                crate::bolsa::poder_dos_pontos(shared::montarias::pontos_por_stat_da_instancia(
+                    id,
+                    equip.montaria_inst.as_ref()
+                ))
+                .max(0) as u64
+            )
         );
         estilo::texto_forte(
             dir.x + dir.w - 14.0 * f - estilo::medir_forte(&poder, 17),
@@ -227,7 +251,12 @@ impl MontariasUi {
         // ── montar ──
         let agora = get_time();
         let montando = agora < self.montando_ate;
-        let bt = Rect::new(p.center().x - 130.0 * f, p.y + h - 62.0 * f, 260.0 * f, 44.0 * f);
+        let bt = Rect::new(
+            p.center().x - 130.0 * f,
+            p.y + h - 62.0 * f,
+            260.0 * f,
+            44.0 * f,
+        );
         if montando {
             let total = (self.montando_ate - self.montando_desde).max(0.001);
             let frac = ((agora - self.montando_desde) / total).clamp(0.0, 1.0) as f32;
@@ -259,7 +288,10 @@ fn cor_do_grau(grau: u8) -> Color {
 pub(crate) fn poder_da_montaria(id: u16, af: Option<[u8; 2]>) -> i32 {
     let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
     let mut crit = 0.0f32;
-    for (i, pts) in shared::montarias::pontos_por_stat(id, af).iter().enumerate() {
+    for (i, pts) in shared::montarias::pontos_por_stat(id, af)
+        .iter()
+        .enumerate()
+    {
         let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
             continue;
         };

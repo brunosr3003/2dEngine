@@ -75,6 +75,8 @@ pub struct NpcDaVila {
     /// Rumo pra onde olha, na convencao do cliente: `atan2(dir.x, dir.z)`.
     pub yaw: f32,
     pub loja: Option<u32>,
+    /// Postos usam um giver proprio em vez do papel visual do NPC.
+    pub giver: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -121,7 +123,98 @@ pub fn montar(ger: &Gerador) -> Vila {
     if let Some(p) = ger.porto() {
         montar_porto(ger, &p, &mut vila);
     }
+    montar_postos(ger, &mut vila);
     vila
+}
+
+/// Cabanas de missao fora da cidade. A busca e deterministica e usa o relevo
+/// pronto: cliente, servidor, mapa e colisao recebem exatamente o mesmo posto.
+fn montar_postos(ger: &Gerador, vila: &mut Vila) {
+    let indice = crate::terreno::ARQUIPELAGO
+        .iter()
+        .take(3)
+        .position(|def| def.semente == ger.semente);
+    let Some(indice) = indice else {
+        return;
+    };
+    let grupos: &[u16] = match indice {
+        0 => &[201, 202, 203],
+        1 => &[204, 205, 206, 207],
+        _ => &[208, 209, 210],
+    };
+    let centro = ger.cidade().map_or(Vec2::ZERO, |c| c.centro());
+    let porto = ger.porto().map(|p| p.centro);
+    let raio = ger.raio_blocos as f32 * BLOCO;
+    let modelo = construcao::gerar(TipoCasa::Cabana, Papel::Missoes, ger.semente ^ 0xCA8A);
+    for (n, &giver) in grupos.iter().enumerate() {
+        let angulo = (n as f32 + 0.45) / grupos.len() as f32 * std::f32::consts::TAU;
+        let mut escolhido = None;
+        for passo in 0..20 {
+            let distancia = raio * (0.36 + passo as f32 * 0.025);
+            for desvio in [
+                0.0f32, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36,
+                0.48, -0.48, 0.72, -0.72, 0.96, -0.96,
+            ] {
+                let a = angulo + desvio;
+                let p = Vec2::new(a.cos(), a.sin()) * distancia;
+                if p.distance(centro) < 100.0
+                    || porto.is_some_and(|porto| p.distance(porto) < 85.0)
+                    || vila
+                        .predios
+                        .iter()
+                        .any(|c| p.distance(Vec2::new(c.pos.x, c.pos.z)) < 75.0)
+                {
+                    continue;
+                }
+                let q = quarto_para(centro - p);
+                let meia = modelo.meia(q) + Vec2::splat(2.0);
+                let nivel =
+                    ger.bloco_em((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
+                if (nivel + 1) as f32 * BLOCO <= NIVEL_DO_MAR + BLOCO {
+                    continue;
+                }
+                // Plano bloco a bloco, com folga em volta: cabana em degrau
+                // flutua ou deixa a soleira alta demais pra entrar andando.
+                let plano = (-(meia.x / BLOCO).ceil() as i32..=(meia.x / BLOCO).ceil() as i32)
+                    .all(|dx| {
+                        (-(meia.y / BLOCO).ceil() as i32..=(meia.y / BLOCO).ceil() as i32).all(
+                            |dz| {
+                                let s = p + Vec2::new(dx as f32, dz as f32) * BLOCO;
+                                ger.bloco_em(
+                                    (s.x / BLOCO).round() as i32,
+                                    (s.y / BLOCO).round() as i32,
+                                ) == nivel
+                            },
+                        )
+                    });
+                if plano {
+                    escolhido = Some((p, q, (nivel + 1) as f32 * BLOCO));
+                    break;
+                }
+            }
+            if escolhido.is_some() {
+                break;
+            }
+        }
+        let Some((p, q, chao)) = escolhido else {
+            continue;
+        };
+        let predio = Predio {
+            tipo: TipoCasa::Cabana,
+            papel: Papel::Missoes,
+            seed: ger.semente.wrapping_add(giver as i32 * 113),
+            pos: Vec3::new(p.x, chao - B_CASA + RESPIRO, p.y),
+            yaw_q: q,
+            chao,
+        };
+        let Some(mut npc) = npc_da_porta(&predio) else {
+            continue;
+        };
+        npc.nome = crate::quests::nome_do_posto(giver).unwrap_or("Vigia");
+        npc.giver = Some(giver);
+        vila.predios.push(predio);
+        vila.npcs.push(npc);
+    }
 }
 
 /// O que barra, de todos os predios e do poco.
@@ -292,6 +385,7 @@ fn npc_da_porta(p: &Predio) -> Option<NpcDaVila> {
         pos: Vec2::new(w.x, w.z),
         yaw: yaw_de(frente_de(p.yaw_q)),
         loja: (p.papel == Papel::Alquimista).then_some(LOJA_DE_POCOES),
+        giver: None,
     })
 }
 
@@ -397,6 +491,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         pos,
         yaw: yaw_de(centro - pos),
         loja: None,
+        giver: None,
     });
 
     decorar_cidade(ger, c, &chao, &lotes[1..], ang0, seed_vila, vila);
@@ -558,6 +653,7 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
         pos: raiz + mar * 4.0 + lado * 0.9,
         yaw: yaw_de(mar),
         loja: None,
+        giver: None,
     });
 
     decorar_porto(ger, p, &chao, &lotes, comp, seed, primeiro, vila);
@@ -757,9 +853,9 @@ pub fn frente_da_porta(p: &Predio) -> Option<Vec2> {
 /// O raio é generoso de propósito. Prop encostado na porta é enfeite; prop a
 /// dois metros dela é obstáculo, e quem paga a conta é o pathfinding.
 pub fn atrapalha_porta(vila: &Vila, ponto: Vec2, raio: f32) -> bool {
-    vila.predios.iter().any(|p| {
-        frente_da_porta(p).is_some_and(|f| f.distance(ponto) < raio)
-    })
+    vila.predios
+        .iter()
+        .any(|p| frente_da_porta(p).is_some_and(|f| f.distance(ponto) < raio))
 }
 
 fn enfeitar_porta(
@@ -1442,8 +1538,11 @@ mod testes {
                 while z <= p.pos.z + meia.y {
                     assert!(!i.agua(x, z), "{:?} sobre a agua", p.papel);
                     let (ix, iz) = i.coluna(x, z);
+                    // Cabana de posto fica fora da cidade, no chao plano dela.
+                    let posto = p.tipo == TipoCasa::Cabana && p.papel == Papel::Missoes;
+                    let proprio = (p.chao / BLOCO).round() as i32 - 1;
                     assert!(
-                        niveis.contains(&i.bloco(ix, iz)),
+                        niveis.contains(&i.bloco(ix, iz)) || (posto && i.bloco(ix, iz) == proprio),
                         "{:?} fora do plato",
                         p.papel
                     );
@@ -1526,7 +1625,7 @@ mod testes {
             .vila()
             .npcs
             .iter()
-            .filter(|n| n.papel == Papel::Missoes)
+            .filter(|n| n.papel == Papel::Missoes && n.giver.is_none())
             .collect();
         assert_eq!(mestres.len(), 1, "mestres de missoes: {}", mestres.len());
         let m = mestres[0];
@@ -1648,7 +1747,9 @@ mod testes {
             .construcao()
             .caixas_mundo(poco.pos, poco.yaw_q)
             .into_iter()
-            .filter(|(mn, mx)| mn.y - poco.pos.y < TETO_DA_COLISAO && mx.y - poco.pos.y > PISO_DA_COLISAO)
+            .filter(|(mn, mx)| {
+                mn.y - poco.pos.y < TETO_DA_COLISAO && mx.y - poco.pos.y > PISO_DA_COLISAO
+            })
             .map(|(mn, mx)| (Vec2::new(mn.x, mn.z), Vec2::new(mx.x, mx.z)))
             .collect();
         assert!(!caixas.is_empty(), "o poco nao tem caixa de colisao");
@@ -1696,7 +1797,11 @@ mod testes {
                 ));
             }
         }
-        assert!(falhas.is_empty(), "poco em {c:?} (raio {raio_poco:.2}):\n{}", falhas.join("\n"));
+        assert!(
+            falhas.is_empty(),
+            "poco em {c:?} (raio {raio_poco:.2}):\n{}",
+            falhas.join("\n")
+        );
     }
 
     /// Enfeite que BARRA (arvore, barraca, carroca, portal) nunca fica em
@@ -1755,3 +1860,4 @@ mod testes {
         assert_eq!(ger.pintura_do_chao(bx, bz), None);
     }
 }
+

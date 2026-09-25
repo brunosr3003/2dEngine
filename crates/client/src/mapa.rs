@@ -113,7 +113,13 @@ fn torre(c: Vec2, lado: f32, cor: Color) {
     let dente = lado / 3.0;
     for k in 0..3 {
         let x = corpo.x + k as f32 * dente;
-        draw_rectangle(x - 1.0, corpo.y - dente - 1.0, dente * 0.66 + 2.0, dente + 2.0, preto);
+        draw_rectangle(
+            x - 1.0,
+            corpo.y - dente - 1.0,
+            dente * 0.66 + 2.0,
+            dente + 2.0,
+            preto,
+        );
         draw_rectangle(x, corpo.y - dente, dente * 0.66, dente, cor);
     }
 }
@@ -869,8 +875,6 @@ fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma)
     rgba
 }
 
-
-
 /// As CASAS, assadas na imagem do mapa.
 ///
 /// Elas ja' eram desenhadas por cima, mas atras do filtro Vila — e o filtro
@@ -917,12 +921,7 @@ fn ilhotas_rotuladas(
         .collect()
 }
 
-fn nomes_das_ilhotas(
-    zona: Option<&str>,
-    ponto: impl Fn(Vec2) -> Vec2,
-    escala: f32,
-    tamanho: u16,
-) {
+fn nomes_das_ilhotas(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16) {
     for (i, nome) in ilhotas_rotuladas(zona, escala) {
         let rp = i.raio * escala;
         // O Vec2 do shared é de outra versão do glam.
@@ -930,8 +929,20 @@ fn nomes_das_ilhotas(
         let y = q.y - rp + u(12.0);
         // Sombra por baixo: o mapa é claro em praia e escuro em mata, e um
         // texto de cor só some numa das duas.
-        estilo::texto_centro(q.x + 1.0, y + 1.0, nome, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
-        estilo::texto_centro(q.x, y, nome, tamanho, crate::magica_ui::cor_do_bonus(i.bonus));
+        estilo::texto_centro(
+            q.x + 1.0,
+            y + 1.0,
+            nome,
+            tamanho,
+            Color::new(0.0, 0.0, 0.0, 0.85),
+        );
+        estilo::texto_centro(
+            q.x,
+            y,
+            nome,
+            tamanho,
+            crate::magica_ui::cor_do_bonus(i.bonus),
+        );
     }
 }
 
@@ -1179,7 +1190,11 @@ impl Mapa {
         g.vila()
             .npcs
             .iter()
-            .find(|n| shared::quests::giver_do_npc(n.papel as u16) == Some(giver))
+            .find(|n| {
+                n.giver
+                    .or_else(|| shared::quests::giver_do_npc(n.papel as u16))
+                    == Some(giver)
+            })
             .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
     }
 
@@ -2407,12 +2422,7 @@ impl Mapa {
             (ilha, "Ilha", !self.no_mundo),
             (mundo, "Mundo", self.no_mundo),
         ] {
-            estilo::botao(
-                caixa,
-                rotulo,
-                estilo::estado_de(caixa, false, ativa),
-                ativa,
-            );
+            estilo::botao(caixa, rotulo, estilo::estado_de(caixa, false, ativa), ativa);
             if clicou && caixa.contains(m) {
                 self.no_mundo = rotulo == "Mundo";
             }
@@ -2545,12 +2555,14 @@ impl Mapa {
                     WHITE,
                     DrawTextureParams {
                         dest_size: Some(vec2(r.w, r.h)),
-                        source: (z > 1.001).then(|| Rect::new(
-                            meio(foco.x) - lado * 0.5,
-                            meio(foco.y) - lado * 0.5,
-                            lado,
-                            lado,
-                        )),
+                        source: (z > 1.001).then(|| {
+                            Rect::new(
+                                meio(foco.x) - lado * 0.5,
+                                meio(foco.y) - lado * 0.5,
+                                lado,
+                                lado,
+                            )
+                        }),
                         ..Default::default()
                     },
                 )
@@ -3284,7 +3296,11 @@ mod testes_do_mapa_da_colonia {
         for nivel in [1u8, 5] {
             let plato = shared::colonia::plato_do_assentamento(nivel);
             let dados = gerar_dados_da_colonia(plato);
-            assert_eq!(dados.rgba.len(), LADO * LADO * 4, "imagem do tamanho errado");
+            assert_eq!(
+                dados.rgba.len(),
+                LADO * LADO * 4,
+                "imagem do tamanho errado"
+            );
             // Água é azulada (`cor_da_agua`): o canal B domina o R. Terra não.
             let terra = dados
                 .rgba
@@ -3303,14 +3319,16 @@ mod testes_do_mapa_da_colonia {
             // seria um atracadouro para viagem nenhuma. O que importa agora é
             // a praça, no centro, e as casas.
             assert!(dados.porto.is_none(), "nível {nivel}: a ilhota ganhou cais");
-            assert!(dados.mestre.is_some(), "nível {nivel}: o mapa não mostra a praça");
+            assert!(
+                dados.mestre.is_some(),
+                "nível {nivel}: o mapa não mostra a praça"
+            );
             assert!(
                 !dados.pegadas.is_empty(),
                 "nível {nivel}: nenhuma casa no mapa"
             );
         }
     }
-
 
     /// A Ilha Mágica não tem cidade nem porto — e o minimapa monta mesmo
     /// assim.
@@ -3334,8 +3352,7 @@ mod testes_do_mapa_da_colonia {
             shared::magica::ilhotas().len(),
             "nem toda ilhota recebeu nome com a ilha inteira à vista"
         );
-        let nomes: std::collections::BTreeSet<&str> =
-            rotulos.iter().map(|(_, n)| *n).collect();
+        let nomes: std::collections::BTreeSet<&str> = rotulos.iter().map(|(_, n)| *n).collect();
         assert_eq!(
             nomes.len(),
             rotulos.len(),
@@ -3363,7 +3380,8 @@ mod testes_do_mapa_da_colonia {
         for n in shared::magica::NIVEIS {
             assert!(
                 !ilhotas_rotuladas(Some(n.zona), 1.0).is_empty(),
-                "o degrau {} ficou sem nome de ilhota", n.grau
+                "o degrau {} ficou sem nome de ilhota",
+                n.grau
             );
         }
     }

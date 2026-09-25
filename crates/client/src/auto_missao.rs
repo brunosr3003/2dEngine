@@ -82,11 +82,11 @@ pub struct Ctx {
     pub progresso: u32,
 }
 
-/// Sem o objetivo avançar por tanto tempo, religa o auto (coleta ou combate).
+/// Sem o objetivo avançar por tanto tempo, procura outro destino de coleta
+/// ou retoma o combate.
 ///
-/// O dono: "quando eu tô coletando árvore e a árvore acaba, trava o auto
-/// missão; só volta quando eu ando". Exato: o religar exigia `!coleta_ativa`,
-/// e com o nó esgotado a coleta segue "ativa" sem colher nada.
+/// A coleta pode continuar ligada depois que o nó se esgota. O progresso
+/// da missão, e não o estado do botão, indica se ainda está rendendo.
 ///
 /// O detector de "parado no mesmo lugar" mora em `parado.rs`: três sistemas
 /// tinham cópia dele, e eu consertei um de cada vez até perceber.
@@ -274,6 +274,7 @@ impl AutoMissao {
                         destino_tipo::COLETA => {
                             saida.push(Acao::LigarColeta(d.pos));
                             self.etapa = Some(Etapa::Coletando);
+                            self.progresso_desde = c.agora;
                         }
                         destino_tipo::LUGAR => {
                             self.etapa = Some(Etapa::NoLugar);
@@ -338,12 +339,11 @@ impl AutoMissao {
                         // personagem largar o alvo que já estava batendo.
                         saida.push(Acao::LigarCombate(d.pos));
                     } else if etapa == Etapa::Coletando && (!c.coleta_ativa || parado) {
-                        self.desde = c.agora;
-                        self.progresso_desde = c.agora;
-                        // PARA ANTES DE LIGAR: religar por cima de uma coleta
-                        // presa no nó velho a mantém no nó velho.
+                        // O ponto já pode estar esgotado. Reativar a coleta
+                        // com o mesmo centro prende a missão no local antigo.
+                        // Peça ao servidor outro spot vivo e viaje até ele.
                         saida.push(Acao::PararAutos);
-                        saida.push(Acao::LigarColeta(d.pos));
+                        self.pedir_de_novo(c.agora);
                     }
                 }
             }
@@ -623,7 +623,14 @@ mod tests {
         let mut a = AutoMissao::default();
         a.iniciar(501, "x".into(), 0.0);
         pede(&mut a, 0.0);
-        a.destino_recebido(501, destino_tipo::COMBATE, Vec2::new(100.0, 0.0), 8.0, None, 0.1);
+        a.destino_recebido(
+            501,
+            destino_tipo::COMBATE,
+            Vec2::new(100.0, 0.0),
+            8.0,
+            None,
+            0.1,
+        );
         assert_eq!(a.etapa(), Some(Etapa::Indo));
 
         // Viajando e PARADO no mesmo ponto: passado o prazo, refaz.
@@ -642,7 +649,14 @@ mod tests {
         let mut a2 = AutoMissao::default();
         a2.iniciar(501, "x".into(), 0.0);
         pede(&mut a2, 0.0);
-        a2.destino_recebido(501, destino_tipo::COMBATE, Vec2::new(100.0, 0.0), 8.0, None, 0.1);
+        a2.destino_recebido(
+            501,
+            destino_tipo::COMBATE,
+            Vec2::new(100.0, 0.0),
+            8.0,
+            None,
+            0.1,
+        );
         let mut t = 0.2;
         let mut andou = 0.0f32;
         while t < 20.0 {
@@ -660,12 +674,10 @@ mod tests {
 
     /// NÓ ESGOTADO: O AUTO "ATIVO" NÃO PROVA QUE ALGO ACONTECE.
     ///
-    /// O dono: "quando eu tô coletando árvore e a árvore acaba, trava o auto
-    /// missão; só volta quando eu ando, e geralmente já até acabou a missão".
-    /// O religar exigia `!coleta_ativa`, e com o nó esgotado a coleta segue
-    /// ligada girando no vazio.
+    /// Com o nó esgotado a coleta segue ligada; a missão precisa procurar
+    /// outro spot vivo, sem esperar movimento manual.
     #[test]
-    fn coleta_sem_avanco_religa_mesmo_ativa() {
+    fn coleta_sem_avanco_pede_outro_destino() {
         let mut a = AutoMissao::default();
         a.iniciar(501, "x".into(), 0.0);
         pede(&mut a, 0.0);
@@ -675,25 +687,25 @@ mod tests {
         assert!(acoes.contains(&Acao::LigarColeta(Vec2::ZERO)));
         assert_eq!(a.etapa(), Some(Etapa::Coletando));
 
-        // Coleta LIGADA e progresso PARADO: passado o prazo, religa.
+        // Coleta LIGADA e progresso PARADO: passado o prazo, muda o destino.
         let mut t = 0.3;
-        let mut religou = false;
+        let mut mudou = false;
         while t < 0.3 + SEM_AVANCO_S + RELIGA_S + 2.0 {
             c = ctx(Vec2::ZERO, t);
             c.coleta_ativa = true;
             c.progresso = 3;
             let acoes = a.passo(c);
-            if acoes.contains(&Acao::LigarColeta(Vec2::ZERO)) {
+            if acoes.contains(&Acao::PararAutos) {
                 assert!(
-                    acoes.contains(&Acao::PararAutos),
-                    "religou sem parar antes: fica presa no nó velho"
+                    a.etapa() == Some(Etapa::PedirDestino),
+                    "parou a coleta sem procurar outro spot"
                 );
-                religou = true;
+                mudou = true;
                 break;
             }
             t += 0.5;
         }
-        assert!(religou, "a coleta travada no nó esgotado nunca religou");
+        assert!(mudou, "a coleta travada no nó esgotado nunca mudou de spot");
     }
 
     /// E COLHENDO DE VERDADE, NÃO MEXE.
@@ -722,5 +734,4 @@ mod tests {
             t += 1.0;
         }
     }
-
 }

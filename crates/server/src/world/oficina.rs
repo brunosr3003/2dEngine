@@ -35,13 +35,16 @@ impl GameWorld {
             }
             Err(m) => (false, m, 0, 0, 0),
         };
-        let _ = session.handle.to_client.send(ServerMessage::AprimorarResultado {
-            ok,
-            texto,
-            item_id,
-            grau,
-            tier,
-        });
+        let _ = session
+            .handle
+            .to_client
+            .send(ServerMessage::AprimorarResultado {
+                ok,
+                texto,
+                item_id,
+                grau,
+                tier,
+            });
     }
 
     /// Aba Combinar do Craft: tentativas de subir chave/material de cor.
@@ -53,14 +56,13 @@ impl GameWorld {
         if !session.logged_in {
             return;
         }
-        let resposta = |tentativas: u16, sucessos: u16, texto: String| {
-            ServerMessage::CombinarResultado {
+        let resposta =
+            |tentativas: u16, sucessos: u16, texto: String| ServerMessage::CombinarResultado {
                 entrada,
                 tentativas,
                 sucessos,
                 texto,
-            }
-        };
+            };
         let Some(receita) = shared::combinar::receita(entrada) else {
             let _ = session
                 .handle
@@ -133,15 +135,44 @@ mod tests {
         let (sid, mut rx) = jogador(&mut w);
         w.sessions.get_mut(&sid).unwrap().inventory =
             vec![mat(item_id::PERGAMINHO_INVOCA_TOMO, 10)];
-        w.on_message(sid, ClientMessage::AbrirPergaminhos { slot: 0, quantidade: 10 });
+        w.on_message(
+            sid,
+            ClientMessage::AbrirPergaminhos {
+                slot: 0,
+                quantidade: 10,
+            },
+        );
         let s = &w.sessions[&sid];
         assert_eq!(s.inventory[0].qty, 0);
-        assert_eq!(s.skill_progress.tomos.iter().flatten().map(|n| *n as u32).sum::<u32>(), 11);
+        assert_eq!(
+            s.skill_progress
+                .tomos
+                .iter()
+                .flatten()
+                .map(|n| *n as u32)
+                .sum::<u32>(),
+            11
+        );
         assert!(matches!(ultima(&mut rx), Some(ServerMessage::Loja {
             aviso: shared::loja::AvisoLoja::Invocacoes { premios }
         }) if premios.len() == 11));
-        w.on_message(sid, ClientMessage::AbrirPergaminhos { slot: 0, quantidade: 10 });
-        assert_eq!(w.sessions[&sid].skill_progress.tomos.iter().flatten().map(|n| *n as u32).sum::<u32>(), 11);
+        w.on_message(
+            sid,
+            ClientMessage::AbrirPergaminhos {
+                slot: 0,
+                quantidade: 10,
+            },
+        );
+        assert_eq!(
+            w.sessions[&sid]
+                .skill_progress
+                .tomos
+                .iter()
+                .flatten()
+                .map(|n| *n as u32)
+                .sum::<u32>(),
+            11
+        );
     }
 
     /// Ponta a ponta pelo `on_message`: a mensagem do cliente chega, a bolsa
@@ -222,7 +253,13 @@ mod tests {
         bolsa[4] = peca();
         bolsa[6] = mat(item_id::COPPER, 700);
         w.sessions.get_mut(&sid).unwrap().inventory = bolsa;
-        w.on_message(sid, ClientMessage::Aprimorar { slot_a: 1, slot_b: 4 });
+        w.on_message(
+            sid,
+            ClientMessage::Aprimorar {
+                slot_a: 1,
+                slot_b: 4,
+            },
+        );
         match ultima(&mut rx) {
             Some(ServerMessage::AprimorarResultado {
                 ok: true,
@@ -234,11 +271,20 @@ mod tests {
             outra => panic!("resposta errada: {outra:?}"),
         }
         let s = &w.sessions[&sid];
-        assert_eq!(s.inventory[1].instance.map(|i| (i.grau(), i.tier())), Some((1, 2)));
+        assert_eq!(
+            s.inventory[1].instance.map(|i| (i.grau(), i.tier())),
+            Some((1, 2))
+        );
         assert_eq!(s.inventory[4].qty, 0);
         assert_eq!(crate::craft::tem(&s.inventory, item_id::COPPER), 200);
         // A mesma peca duas vezes: recusa.
-        w.on_message(sid, ClientMessage::Aprimorar { slot_a: 1, slot_b: 1 });
+        w.on_message(
+            sid,
+            ClientMessage::Aprimorar {
+                slot_a: 1,
+                slot_b: 1,
+            },
+        );
         assert!(matches!(
             ultima(&mut rx),
             Some(ServerMessage::AprimorarResultado { ok: false, .. })

@@ -114,9 +114,20 @@ impl Lojas {
                 estilo::TEXTO,
             );
             let dist = eu.map_or("—".to_string(), |e| format!("{:.0} m", e.distance(*pos)));
-            estilo::texto(linha.x + u(12.0), linha.y + u(40.0), &dist, 13, estilo::SUAVE);
+            estilo::texto(
+                linha.x + u(12.0),
+                linha.y + u(40.0),
+                &dist,
+                13,
+                estilo::SUAVE,
+            );
             if crate::ui::botao(
-                Rect::new(linha.x + linha.w - u(84.0), linha.y + u(9.0), u(72.0), u(30.0)),
+                Rect::new(
+                    linha.x + linha.w - u(84.0),
+                    linha.y + u(9.0),
+                    u(72.0),
+                    u(30.0),
+                ),
                 "Ir",
                 true,
             ) {

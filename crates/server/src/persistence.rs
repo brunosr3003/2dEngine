@@ -2566,6 +2566,24 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        S {
+            id: item_id::MOEDA_MAGICA as i32,
+            name: "Moeda Mágica",
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 999999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         // Pergaminho de Teleporte: Alquimista, em cobre (`shared::viagem`).
         S {
             id: item_id::PERGAMINHO_TELEPORTE as i32,
@@ -3009,6 +3027,17 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // O id 475 pode existir em bancos antigos como montaria desativada.
+    // A moeda tem de ser empilhavel, sem slot de equipamento ou venda por NPC.
+    sqlx::query(
+        "UPDATE items SET stack_max = 999999, sell_price = 0, equip_slot = NULL, active = TRUE, \
+                          buy_price = NULL, shop_order = NULL, item_level = 1 \
+         WHERE id = $1",
+    )
+    .bind(item_id::MOEDA_MAGICA as i32)
+    .execute(pool)
+    .await?;
+
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
@@ -3113,6 +3142,20 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     }
+    // Ajuste do Ermo em bancos ja existentes. Preserva qualquer balanceamento
+    // feito pelo administrador se a linha nao tiver os valores antigos.
+    sqlx::query(
+        "UPDATE enemy_kinds SET hp_max = 260, attack_damage = 24 \
+         WHERE kind = 13 AND hp_max = 210 AND attack_damage = 14",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "UPDATE enemy_kinds SET hp_max = 600, attack_damage = 32 \
+         WHERE kind = 14 AND hp_max = 480 AND attack_damage = 26",
+    )
+    .execute(pool)
+    .await?;
     // balanceamento_hp_mobs_v1: os mobs comuns ganham ~2,4x de HP (o chefe
     // fica). Com o HP antigo tudo morria em dois golpes e quem atirava matava
     // antes de o bicho chegar — ver docs/COMBATE.md, "Balanceamento". Uma vez

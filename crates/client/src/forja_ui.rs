@@ -59,6 +59,91 @@ pub fn info(inst: &ItemInstance) -> Info {
     }
 }
 
+/// A mesma instância com o refino de uma tentativa bem-sucedida.
+fn proximo_refino(inst: &ItemInstance) -> ItemInstance {
+    let mut proximo = *inst;
+    proximo.refinement = proximo.refinement.saturating_add(1).min(forja::REFINO_MAX);
+    proximo
+}
+
+fn poder_do_item(id: u16, inst: &ItemInstance) -> i32 {
+    if shared::pets::de_item(id).is_some() {
+        return crate::bolsa::poder_dos_pontos(shared::pets::pontos_por_stat_da_instancia(
+            id,
+            Some(inst),
+        ));
+    }
+    if shared::montarias::de_item(id).is_some() {
+        return crate::bolsa::poder_dos_pontos(shared::montarias::pontos_por_stat_da_instancia(
+            id,
+            Some(inst),
+        ));
+    }
+    crate::bolsa::poder_da_instancia(inst)
+}
+
+/// Linhas de atributos calculadas com as mesmas funções usadas pelo servidor.
+fn atributos_do_refino(id: u16, inst: &ItemInstance) -> Vec<(&'static str, String)> {
+    const SIGLAS: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+    if shared::pets::de_item(id).is_some() {
+        let mut linhas: Vec<_> = shared::pets::pontos_por_stat_da_instancia(id, Some(inst))
+            .into_iter()
+            .enumerate()
+            .filter(|(_, valor)| *valor > 0)
+            .map(|(i, valor)| (SIGLAS[i], valor.to_string()))
+            .collect();
+        linhas.push((
+            "Vel. coleta",
+            format!("{:.1}%", shared::pets::mult_coleta(Some(inst)) * 100.0),
+        ));
+        return linhas;
+    }
+    if let Some((_, grau)) = shared::montarias::de_item(id) {
+        let mut linhas: Vec<_> = shared::montarias::pontos_por_stat_da_instancia(id, Some(inst))
+            .into_iter()
+            .enumerate()
+            .filter(|(_, valor)| *valor > 0)
+            .map(|(i, valor)| (SIGLAS[i], valor.to_string()))
+            .collect();
+        linhas.push((
+            "Vel. montado",
+            format!(
+                "{:.1}%",
+                shared::montarias::velocidade_da_instancia(grau, Some(inst)) * 100.0
+            ),
+        ));
+        return linhas;
+    }
+    let b = inst.effective_bonus();
+    [
+        ("Vida", b.hp_max),
+        ("Mana", b.mp_max),
+        ("Ataque", b.attack_damage),
+        ("Destreza", b.dex),
+        ("Sabedoria", b.wis),
+        ("Defesa", b.defense),
+    ]
+    .into_iter()
+    .filter(|(_, valor)| *valor != 0)
+    .map(|(nome, valor)| (nome, valor.to_string()))
+    .collect()
+}
+
+fn ganho_formatado(atual: &str, proximo: &str) -> String {
+    if let (Some(a), Some(b)) = (atual.strip_suffix('%'), proximo.strip_suffix('%')) {
+        let (a, b) = (
+            a.parse::<f32>().unwrap_or(0.0),
+            b.parse::<f32>().unwrap_or(0.0),
+        );
+        return format!("+{:.1}%", b - a);
+    }
+    let (a, b) = (
+        atual.parse::<i32>().unwrap_or(0),
+        proximo.parse::<i32>().unwrap_or(0),
+    );
+    format!("+{}", b - a)
+}
+
 /// A JANELA da confirmação, medida a partir da tela.
 ///
 /// Fora do desenho pra ser testada: foi uma conta de janela escrita à mão que
@@ -266,7 +351,12 @@ impl Forja {
     fn painel() -> Rect {
         let k = Self::escala();
         let (w, h) = (LARGURA * k, ALTURA * k);
-        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
+        Rect::new(
+            (screen_width() - w) * 0.5,
+            (screen_height() - h) * 0.5,
+            w,
+            h,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -293,7 +383,9 @@ impl Forja {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, equip, nomes, agora, palco))
+        estilo::no_painel(Self::escala(), || {
+            self.desenha_na_escala(slots, equip, nomes, agora, palco)
+        })
     }
 
     fn desenha_na_escala(
@@ -397,7 +489,13 @@ impl Forja {
                 );
             }
             if matches!(alvo, AlvoDaForja::Equipado(_)) {
-                estilo::texto(r.x + r.w - u(12.0), r.y + r.h - u(4.0), "E", 12, estilo::AUTO);
+                estilo::texto(
+                    r.x + r.w - u(12.0),
+                    r.y + r.h - u(4.0),
+                    "E",
+                    12,
+                    estilo::AUTO,
+                );
             }
             if r.contains(mouse) && clicou {
                 self.sel = Some(*alvo);
@@ -445,12 +543,8 @@ impl Forja {
             // Quanto de poder o proximo nivel da': sem isto o refino parecia
             // nao fazer nada.
             if !i.no_topo {
-                let mut prox = *inst;
-                prox.refinement += 1;
-                let (a, b) = (
-                    crate::bolsa::poder_da_instancia(inst),
-                    crate::bolsa::poder_da_instancia(&prox),
-                );
+                let prox = proximo_refino(inst);
+                let (a, b) = (poder_do_item(*id, inst), poder_do_item(*id, &prox));
                 let t = format!("Poder {a} › {b}  (+{})", b - a);
                 estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - u(2.0), &t, 15, VERDE);
             }
@@ -478,10 +572,20 @@ impl Forja {
                     15,
                     if cu >= i.cobre { VERDE } else { VERMELHO },
                 );
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(44.0), u(34.0), u(22.0))) {
+                if crate::onde_obter::botao(Rect::new(
+                    d.x + d.w - u(36.0),
+                    y + u(44.0),
+                    u(34.0),
+                    u(22.0),
+                )) {
                     self.onde_obter = Some(item_id::DARKSTEEL);
                 }
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(68.0), u(34.0), u(22.0))) {
+                if crate::onde_obter::botao(Rect::new(
+                    d.x + d.w - u(36.0),
+                    y + u(68.0),
+                    u(34.0),
+                    u(22.0),
+                )) {
                     self.onde_obter = Some(item_id::COPPER);
                 }
                 if i.risco {
@@ -500,6 +604,28 @@ impl Forja {
                         14,
                         estilo::SUAVE,
                     );
+                }
+                let atual = atributos_do_refino(*id, inst);
+                let proximo = atributos_do_refino(*id, &proximo_refino(inst));
+                estilo::texto_forte(d.x, y + u(142.0), "SE O REFINO DER CERTO", 13, estilo::OURO);
+                if proximo.is_empty() {
+                    estilo::texto(
+                        d.x,
+                        y + u(164.0),
+                        "Este item não ganha atributo.",
+                        13,
+                        estilo::SUAVE,
+                    );
+                }
+                for (n, (rotulo, depois)) in proximo.iter().take(7).enumerate() {
+                    let antes = atual
+                        .iter()
+                        .find(|(nome, _)| nome == rotulo)
+                        .map_or("0", |(_, valor)| valor.as_str());
+                    let texto = format!("{antes} › {depois}  ({})", ganho_formatado(antes, depois));
+                    let yy = y + u(162.0 + n as f32 * 18.0);
+                    estilo::texto(d.x, yy, rotulo, 12, estilo::TEXTO);
+                    estilo::texto(d.x + d.w - estilo::medir(&texto, 12), yy, &texto, 12, VERDE);
                 }
                 let tem_tudo = ds >= i.darksteel && cu >= i.cobre;
                 let b = Rect::new(d.x, d.y + d.h - u(50.0), d.w, u(40.0));
@@ -629,7 +755,8 @@ mod tests {
             let i = info(&peca(nivel));
             let destroi = nivel + 1 > forja::REFINO_SEGURO;
             assert_eq!(
-                i.risco, destroi,
+                i.risco,
+                destroi,
                 "+{nivel} → +{}: risco={} mas destrói={destroi}",
                 nivel + 1,
                 i.risco

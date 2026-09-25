@@ -37,7 +37,7 @@ pub struct Prefs {
 /// fechar e reabrir — e' o lugar certo. No desktop vale o `XDG_DATA_HOME` e
 /// depois `~/.local/share`. No Android nao ha' caminho garantido sem JNI, e o
 /// `None` daqui e' o que faz o resto degradar em silencio.
-fn caminho() -> Option<PathBuf> {
+pub(crate) fn caminho() -> Option<PathBuf> {
     #[cfg(target_os = "ios")]
     {
         let casa = std::env::var_os("HOME")?;
@@ -165,7 +165,10 @@ mod testes {
             lembrar: true,
         };
         let texto = codifica(&v);
-        assert!(!texto.contains("senha"), "campo de senha no arquivo: {texto}");
+        assert!(
+            !texto.contains("senha"),
+            "campo de senha no arquivo: {texto}"
+        );
         // E o struct não tem onde pôr uma: se alguém acrescentar o campo,
         // este teste continua passando, mas `o_que_vai_volta` quebra na
         // comparação — que é o aviso.
@@ -192,12 +195,18 @@ mod testes {
             sessao: Some("YWJjZGVmZw==".into()),
             lembrar: true,
         };
-        assert_eq!(decodifica(&codifica(&v)).sessao.as_deref(), Some("YWJjZGVmZw=="));
+        assert_eq!(
+            decodifica(&codifica(&v)).sessao.as_deref(),
+            Some("YWJjZGVmZw==")
+        );
     }
 
     /// Arquivo estragado não derruba o jogo.
     #[test]
     fn lixo_no_arquivo_vira_vazio() {
-        assert_eq!(decodifica("\u{0}\nsem igualdade\n=sem chave\n"), Prefs::default());
+        assert_eq!(
+            decodifica("\u{0}\nsem igualdade\n=sem chave\n"),
+            Prefs::default()
+        );
     }
 }

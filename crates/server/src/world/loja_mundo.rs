@@ -460,11 +460,7 @@ impl GameWorld {
             .filter(|id| shared::montarias::de_item(*id).is_some())
             .is_none()
         {
-            resultado(
-                &to,
-                false,
-                "Equipe uma montaria na bolsa antes de montar.",
-            );
+            resultado(&to, false, "Equipe uma montaria na bolsa antes de montar.");
             return;
         }
         if let Err(t) = pode_montar(s, agora) {

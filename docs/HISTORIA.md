@@ -24,8 +24,8 @@ olho da tempestade. Daí em diante começam as **Crônicas da Tempestade**.
 
 | Capítulo | Ilha | Ids | Passos | Travas |
 |---|---|---|---|---|
-| I · O Farol do Bosque | Bosque (1–15) | 700–718 | 19 | nenhuma (ver abaixo) |
-| II · O Farol Congelado | Geleira (15–30) | 719–736 | 18 | 20, 25, 30 |
+| I · O Farol do Bosque | Bosque (1–20) | 700–719 e 803 | 32 | 20, antes do barco |
+| II · O Farol Congelado | Geleira (20–30) | 720–737 | 18 | 20, 25, 30 |
 | III · Areias que Gritam | Ermo (28–42) | 737–751 | 15 | 35, 40 |
 | IV · O Coração da Tempestade | Planalto (40–60) | 752–768 | 17 | 45, 50, 55, 60 |
 
@@ -77,14 +77,18 @@ continuou com uma trava "Alcance o nível 5" no passo 704. Com a curva padrão
 
 Agora, no capítulo I:
 
-- **Não há trava de nível.** As três viraram conteúdo: 704 derrubar árvores
-  (apresenta a madeira), 710 Porão do Naufrágio, 717 Adega do Contrabandista.
+- **A única trava de nível fica antes do barco:** após os tutoriais da ilha,
+  o passo 803 pede nível 20. As secundárias do Bosque ajudam a alcançá-lo.
+  Os passos 704, 710 e 717 continuam sendo coleta e dungeons.
 - **A XP dos passos leva o nível**, sem contar bicho: nível 6 antes do Porão
-  (pede 6), 14 antes da Adega (pede 14) e 15 ao embarcar pra Geleira. A XP é
+  (pede 6) e 14 antes da Adega (pede 14). A XP é
   escrita na curva padrão e o servidor aplica o `xp_multiplier` por cima.
 - **Os passos antes do craft entregam a receita inteira** da primeira
   armadura cinza: Berloque ×10 (702), Quintessência ×10 (703), Darksteel ×200
   (704), Aço ×30 (705), Cobre ×300 e Couro (706).
+
+Ao embarcar, o personagem desembarca no porto da Geleira e fala com o
+Capitão no passo 720 antes de seguir para a cidade.
 
 Os dois contratos são testes em `historia.rs`:
 `capitulo_um_carrega_o_nivel_das_dungeons` e `o_inicio_entrega_a_primeira_armadura`.

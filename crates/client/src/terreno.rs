@@ -72,6 +72,8 @@ const BLOCO_DO_MAR: i32 = (NIVEL_DO_MAR / BLOCO) as i32 - 1;
 struct Pedaco {
     /// Na GPU a partir do primeiro desenho (`gpu_estatica`).
     malhas: Vec<MalhaEstatica>,
+    /// Projecao suave das copas, preparada junto com a vegetacao.
+    sombras: Vec<MalhaEstatica>,
     /// A superficie do mar deste pedaco (`agua::malhas_do_pedaco`), com
     /// material proprio. Vazia em pedaco todo terra.
     agua: Vec<MalhaEstatica>,
@@ -115,6 +117,8 @@ pub struct Terreno {
     /// plano do nível do mar em volta da ilha virava uma mesa.
     sem_mar: bool,
     bioma: Bioma,
+    /// Aparencia do solo da arena, escolhida pelo conteudo da dungeon.
+    bioma_visual: Bioma,
     /// Modelos de vegetacao assados uma vez por especie e variante. Instanciar
     /// e' copiar vertice com offset — a macroquad nao tem transform por malha,
     /// entao gerar de novo por planta seria refazer o volume milhares de vezes.
@@ -172,10 +176,7 @@ impl Terreno {
     /// `Gerador::da_colonia` do servidor: duas montagens soltas dariam dois
     /// relevos, e o jogador andaria num chao que nao ve'.
     pub fn da_colonia(plato: f32) -> Self {
-        let mut t = Self::do_gerador(
-            Gerador::da_colonia(plato),
-            shared::terreno::Bioma::Floresta,
-        );
+        let mut t = Self::do_gerador(Gerador::da_colonia(plato), shared::terreno::Bioma::Floresta);
         // A colônia é DIORAMA: sem mar, e sem o plano que o mar cobria.
         t.sem_mar = true;
         t
@@ -185,6 +186,7 @@ impl Terreno {
         let mut t = Self {
             ger,
             bioma,
+            bioma_visual: bioma,
             sem_mar: false,
             arvores: Vec::new(),
             plantas: Vec::new(),
@@ -229,16 +231,35 @@ impl Terreno {
                 ));
             }
         }
-        for k in 0..VARIANTES {
-        }
+        for k in 0..VARIANTES {}
         t
+    }
+
+    /// A arena compartilha a mesma geometria e colisao entre dungeons; so'
+    /// o solo muda para acompanhar a ilha do conteudo ativo.
+    pub fn tema_da_dungeon(&mut self, bioma: Bioma) {
+        if self.ger.e_arena() && self.bioma_visual != bioma {
+            self.bioma_visual = bioma;
+            self.pedacos.clear();
+        }
+    }
+
+    fn material_do_tema(&self, altura: f32, declive: i32, agua: bool, mancha: f32) -> Material {
+        if self.ger.e_arena() && !agua {
+            return match self.bioma_visual {
+                Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
+                Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
+                Bioma::Montanha => Material::Rocha,
+                Bioma::Floresta => material_variado(self.bioma_visual, altura, declive, false, mancha),
+            };
+        }
+        material_variado(self.bioma_visual, altura, declive, agua, mancha)
     }
 
     fn modelo_de_minerio(&self, tier: u8, k: u32) -> &crate::vegetacao::Modelo {
         let t = (tier.clamp(1, 4) - 1) as usize;
         &self.minerios[t * VARIANTES + (k as usize % VARIANTES)]
     }
-
 
     /// Marca uma pedra como esgotada (ou de volta) e joga fora o pedaco que a
     /// contem, pra ela sumir (ou reaparecer) no proximo quadro.
@@ -410,6 +431,16 @@ impl Terreno {
         visiveis.len()
     }
 
+    pub fn desenha_sombras(&self, cam: &Camera3D) {
+        crate::gpu_estatica::desenha(
+            crate::gpu_estatica::Programa::Sombra,
+            self.pedacos
+                .iter()
+                .filter(|((cx, cz), _)| pedaco_visivel(cam, *cx, *cz))
+                .flat_map(|(_, p)| p.sombras.iter()),
+        );
+    }
+
     /// O pe' dos veios de Energia a` vista. Eles sao desenhados quadro a
     /// quadro (`energia_vfx`) e nao entram na malha assada do pedaco.
     pub fn energias_visiveis(&self, cam: &Camera3D) -> Vec<Vec3> {
@@ -511,6 +542,9 @@ impl Terreno {
         let mut verts: Vec<Vertex> = Vec::new();
         let mut idx: Vec<u16> = Vec::new();
         let mut energias: Vec<Vec3> = Vec::new();
+        let mut sombras: Vec<Mesh> = Vec::new();
+        let mut sombra_verts: Vec<Vertex> = Vec::new();
+        let mut sombra_idx: Vec<u16> = Vec::new();
 
         let mut quad4 = |verts: &mut Vec<Vertex>,
                          idx: &mut Vec<u16>,
@@ -646,7 +680,7 @@ impl Terreno {
                     .max()
                     .unwrap_or(0);
                 let manchinha = self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz);
-                let mat = material_variado(self.bioma, y, declive, a, manchinha);
+                let mat = self.material_do_tema(y, declive, a, manchinha);
                 let mat = match t0 {
                     // Grama cuidada so' onde ja' era grama: na Geleira a
                     // cidade continua branca.
@@ -724,8 +758,7 @@ impl Terreno {
                     // O pe' da parede para na linha d'agua: penhasco na costa
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
                     let piso = hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2);
-                    let topo_mat = material_variado(
-                        self.bioma,
+                    let topo_mat = self.material_do_tema(
                         topo,
                         declive_col(&em, ix, iz),
                         false,
@@ -738,10 +771,10 @@ impl Terreno {
                     // Sem isso um barranco de dez blocos sai de uma cor so'.
                     let mut b = h;
                     while b > piso {
-                        let mat = material_de_profundidade(self.bioma, topo_mat, topo, h - b);
+                        let mat = material_de_profundidade(self.bioma_visual, topo_mat, topo, h - b);
                         let mut fim = b;
                         while fim > piso
-                            && material_de_profundidade(self.bioma, topo_mat, topo, h - fim) == mat
+                            && material_de_profundidade(self.bioma_visual, topo_mat, topo, h - fim) == mat
                         {
                             fim -= 1;
                         }
@@ -843,6 +876,24 @@ impl Terreno {
                         &mut malhas,
                         MAX_QUADS,
                     );
+                    // A sombra acompanha a copa, mas nao recalcula voxels no quadro.
+                    // Tres lobos quebram a silhueta perfeitamente oval.
+                    for (dx, dz, rx, rz, alfa) in [
+                        (1.45, -0.85, 2.25, 1.20, 67),
+                        (2.65, -1.48, 1.75, 1.08, 56),
+                        (0.18, -0.10, 0.78, 0.64, 46),
+                    ] {
+                        sombra_copa(
+                            &mut sombras,
+                            &mut sombra_verts,
+                            &mut sombra_idx,
+                            vec2(a.centro.x + dx * a.porte, a.centro.y + dz * a.porte),
+                            vec2(rx * a.porte, rz * a.porte),
+                            alfa,
+                            (topo + 1) as f32 * BLOCO,
+                            &|x, z| self.altura(x, z),
+                        );
+                    }
                 }
             }
 
@@ -962,8 +1013,16 @@ impl Terreno {
                 texture: None,
             });
         }
+        if !sombra_idx.is_empty() {
+            sombras.push(Mesh {
+                vertices: sombra_verts,
+                indices: sombra_idx,
+                texture: None,
+            });
+        }
         Pedaco {
             malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
+            sombras: sombras.into_iter().map(MalhaEstatica::nova).collect(),
             agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz)
                 .into_iter()
                 .map(MalhaEstatica::nova)
@@ -1001,6 +1060,54 @@ impl Terreno {
 }
 
 /// Maior desnivel entre a coluna e os quatro vizinhos.
+fn sombra_copa(
+    malhas: &mut Vec<Mesh>,
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u16>,
+    centro: Vec2,
+    raio: Vec2,
+    alfa: u8,
+    origem_y: f32,
+    altura: &dyn Fn(f32, f32) -> f32,
+) {
+    const LADOS: usize = 12;
+    if (altura(centro.x, centro.y) - origem_y).abs() > 0.6 {
+        return;
+    }
+    if verts.len() + LADOS + 1 > 3000 {
+        malhas.push(Mesh {
+            vertices: std::mem::take(verts),
+            indices: std::mem::take(idx),
+            texture: None,
+        });
+    }
+    let base = verts.len() as u16;
+    let nivel = altura(centro.x, centro.y);
+    let mut alturas = [0.0; LADOS];
+    let mut ponto = |x: f32, z: f32, a: u8| {
+        verts.push(Vertex {
+            position: vec3(x, altura(x, z) + 0.045, z),
+            uv: Vec2::ZERO,
+            color: [15, 20, 29, a],
+            normal: Vec4::ZERO,
+        });
+    };
+    ponto(centro.x, centro.y, alfa);
+    for i in 0..LADOS {
+        let a = i as f32 * std::f32::consts::TAU / LADOS as f32;
+        let x = centro.x + a.cos() * raio.x;
+        let z = centro.y + a.sin() * raio.y;
+        alturas[i] = altura(x, z);
+        ponto(x, z, 0);
+    }
+    for i in 0..LADOS {
+        let proximo = (i + 1) % LADOS;
+        if (alturas[i] - nivel).abs() <= 0.6 && (alturas[proximo] - nivel).abs() <= 0.6 {
+            idx.extend_from_slice(&[base, base + 1 + proximo as u16, base + 1 + i as u16]);
+        }
+    }
+}
+
 fn declive_col(em: &impl Fn(i32, i32) -> i32, ix: i32, iz: i32) -> i32 {
     let h = em(ix, iz);
     [(1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -1163,12 +1270,12 @@ mod testes {
             } else {
                 shared::terreno::minerio_da_coluna(d.bioma, bx, bz, topo, &t.ger, agua)
             }
-                .unwrap_or_else(|| {
-                    panic!(
-                        "servidor tem recurso em {:?} que o cliente nao desenha",
-                        e.centro
-                    )
-                });
+            .unwrap_or_else(|| {
+                panic!(
+                    "servidor tem recurso em {:?} que o cliente nao desenha",
+                    e.centro
+                )
+            });
             if tier == 5 {
                 assert!(
                     m.energia,
@@ -1417,10 +1524,7 @@ mod testes_da_colonia {
 /// `Terreno::da_colonia` que a mensagem do servidor monta, põe a câmera onde
 /// o jogador nasce e salva o quadro.
 #[cfg(debug_assertions)]
-pub async fn previa_da_colonia(
-    solido: &macroquad::material::Material,
-    vox: &crate::vox::VoxCache,
-) {
+pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &crate::vox::VoxCache) {
     let nome = std::env::var("MMO_PREVIA_COLONIA").unwrap_or_else(|_| "brunji".into());
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-colonia".into());
     std::fs::create_dir_all(&saida).unwrap();
@@ -1428,7 +1532,10 @@ pub async fn previa_da_colonia(
     let rt = macroquad::texture::render_target_ex(
         screen_width() as u32,
         screen_height() as u32,
-        macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
+        macroquad::texture::RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
     );
     rt.texture.set_filter(FilterMode::Linear);
     crate::render3d::define_alvo(Some(rt.clone()));
@@ -1458,7 +1565,11 @@ pub async fn previa_da_colonia(
         "[previa colonia] '{nome}' assentamento {} plato {plato:.0} chegada ({:.2}, {:.2}) \
          altura cliente {:.2} servidor {:.2} mar {:.2}",
         shared::colonia::Assentamento::do_nivel(nivel).nome(),
-        eu.x, eu.y, t.altura(eu.x, eu.y), ilha.altura(ch.x, ch.y), NIVEL_DO_MAR,
+        eu.x,
+        eu.y,
+        t.altura(eu.x, eu.y),
+        ilha.altura(ch.x, ch.y),
+        NIVEL_DO_MAR,
     );
     t.atualiza(eu, 5, 400);
     println!("[previa colonia] {} pedacos vivos", t.pedacos_vivos());
@@ -1522,7 +1633,8 @@ pub async fn previa_da_colonia(
     // Aqui havia um anel improvisado (`plato * 0,55` em volta do centro) — e
     // a prévia mostrava moradores num lugar em que o jogo nunca os pôs. Já
     // me queimei exatamente assim com o raio do terreno.
-    let onde = crate::colonia_ui::onde_ficam(&shared::terreno::Gerador::da_colonia(plato), &moradores);
+    let onde =
+        crate::colonia_ui::onde_ficam(&shared::terreno::Gerador::da_colonia(plato), &moradores);
     // REPRODUZ O PAINEL, com os parâmetros dele: terreno recém-criado e
     // `atualiza(centro, 3, 8)` por quadro, que é o que `ColoniaUi::desenha`
     // faz. A prévia antes usava raio 5 e orçamento 400 — e por isso mostrava
@@ -1533,12 +1645,24 @@ pub async fn previa_da_colonia(
     let tp = {
         let t0 = std::time::Instant::now();
         let mut tp = Terreno::da_colonia(plato);
-        println!("[previa colonia] painel: montar Terreno levou {:?}", t0.elapsed());
+        println!(
+            "[previa colonia] painel: montar Terreno levou {:?}",
+            t0.elapsed()
+        );
         let r = Rect::new(0.0, 0.0, 340.0, 270.0);
         for q in 0..40 {
             tp.atualiza(eu, 6, 24);
             let ok = crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 1.0, solido, &[], vox,
+                &tp,
+                &construcoes,
+                r,
+                eu,
+                0.9,
+                crate::render3d::ELEV_PADRAO,
+                1.0,
+                solido,
+                &[],
+                vox,
             );
             if q % 8 == 0 || q == 39 {
                 println!(
@@ -1582,9 +1706,23 @@ pub async fn previa_da_colonia(
             crate::render3d::camera_padrao();
             clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
             let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
-            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
+            let r = Rect::new(
+                screen_width() * 0.04,
+                screen_height() * 0.05,
+                lado * PROP_COLUNA,
+                lado,
+            );
             crate::render3d::maquete_da_ilha(
-                &t, &construcoes, r, eu, giro, elev, zoom, solido, &onde, vox,
+                &t,
+                &construcoes,
+                r,
+                eu,
+                giro,
+                elev,
+                zoom,
+                solido,
+                &onde,
+                vox,
             );
             unsafe { macroquad::window::get_internal_gl().flush() };
             rt.texture
@@ -1606,9 +1744,23 @@ pub async fn previa_da_colonia(
             crate::render3d::camera_padrao();
             clear_background(crate::render3d::COR_DO_FUNDO_DA_MAQUETE);
             let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
-            let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
+            let r = Rect::new(
+                screen_width() * 0.04,
+                screen_height() * 0.05,
+                lado * PROP_COLUNA,
+                lado,
+            );
             crate::render3d::maquete_da_ilha(
-                &tp, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 2.2, solido, &onde, vox,
+                &tp,
+                &construcoes,
+                r,
+                eu,
+                0.9,
+                crate::render3d::ELEV_PADRAO,
+                2.2,
+                solido,
+                &onde,
+                vox,
             );
             unsafe { macroquad::window::get_internal_gl().flush() };
             rt.texture
@@ -1620,7 +1772,11 @@ pub async fn previa_da_colonia(
             let p = crate::render3d::rotina_do_morador(m, 0, adianta);
             println!(
                 "[previa colonia] t={adianta:.0}s {} em ({:.0},{:.0}) andar={:.2} trabalhando={}",
-                m.oficio.nome(), p.onde.x, p.onde.y, p.andar, p.trabalhando
+                m.oficio.nome(),
+                p.onde.x,
+                p.onde.y,
+                p.andar,
+                p.trabalhando
             );
         }
     }
@@ -1637,15 +1793,32 @@ pub async fn previa_da_colonia(
         // não era o que o jogador veria — o mesmo erro de validar com número
         // diferente do que o jogo usa.
         let lado = (screen_height() * 0.88).min(screen_width() * 0.6);
-        let r = Rect::new(screen_width() * 0.04, screen_height() * 0.05, lado * PROP_COLUNA, lado);
+        let r = Rect::new(
+            screen_width() * 0.04,
+            screen_height() * 0.05,
+            lado * PROP_COLUNA,
+            lado,
+        );
         let ok = crate::render3d::maquete_da_ilha(
-            &t, &construcoes, r, eu, 0.9, crate::render3d::ELEV_PADRAO, 1.0, solido, &onde, vox,
+            &t,
+            &construcoes,
+            r,
+            eu,
+            0.9,
+            crate::render3d::ELEV_PADRAO,
+            1.0,
+            solido,
+            &onde,
+            vox,
         );
         unsafe { macroquad::window::get_internal_gl().flush() };
         rt.texture
             .get_texture_data()
             .export_png(&format!("{saida}/maquete.png"));
-        println!("[previa colonia] maquete do painel: desenhou={ok}, {} morador(es)", onde.len());
+        println!(
+            "[previa colonia] maquete do painel: desenhou={ok}, {} morador(es)",
+            onde.len()
+        );
         next_frame().await;
     }
 }

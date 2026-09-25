@@ -164,7 +164,15 @@ fi
 
 IDENT="$(security find-identity -v -p codesigning | awk -v t="($TEAM)" '/Apple Distribution/ && index($0,t){print $2; exit}')"
 [ -n "$IDENT" ] || { echo "ERRO: identidade Apple Distribution do time $TEAM nao encontrada"; exit 1; }
-codesign --force --timestamp --sign "$IDENT" --entitlements "$SAIDA/entitlements.plist" "$APP"
+# A instalacao direta sera' reassinada com o profile de desenvolvimento mais
+# abaixo. O servidor de timestamp da Apple pode estar indisponivel; nesse
+# caminho a assinatura intermediaria nao depende dele.
+if [ "$IPHONE" -eq 1 ]; then
+  codesign --force --timestamp=none --sign "$IDENT" --entitlements "$SAIDA/entitlements.plist" "$APP"
+else
+  codesign --force --timestamp --sign "$IDENT" --entitlements "$SAIDA/entitlements.plist" "$APP" ||
+    codesign --force --timestamp=none --sign "$IDENT" --entitlements "$SAIDA/entitlements.plist" "$APP"
+fi
 codesign --verify --deep --strict "$APP"
 
 # ── 6. ipa ────────────────────────────────────────────────────────────────────
@@ -212,7 +220,7 @@ if [ "$IPHONE" -eq 1 ]; then
   security cms -D -i "$DEV_PROF" | plutil -extract Entitlements xml1 -o "$SAIDA/dev-entitlements.plist" -
   DEV_IDENT="$(security find-identity -v -p codesigning | awk '/Apple Development/{print $2; exit}')"
   [ -n "$DEV_IDENT" ] || { echo "ERRO: identidade Apple Development nao encontrada"; exit 1; }
-  codesign --force --timestamp --sign "$DEV_IDENT" \
+  codesign --force --timestamp=none --sign "$DEV_IDENT" \
     --entitlements "$SAIDA/dev-entitlements.plist" "$SAIDA/DevPayload/Tempest.app"
   codesign --verify --strict "$SAIDA/DevPayload/Tempest.app"
 

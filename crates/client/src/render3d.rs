@@ -873,6 +873,7 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     // Clarao do golpe / corpo escurecido: puxa o rgb pra `Tinta.rgb` na
     // fracao `Tinta.a` (zero = cor do voxel). Antes era recopia na CPU.
     uniform vec4 Tinta;
+    uniform float LuzDia;
 
     // AS FAIXAS DE PALETA (docs/ARTE_DO_PERSONAGEM.md).
     //
@@ -909,6 +910,8 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
         }
 
         color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
+        // Sol baixo de fim de tarde: cor quente sobre a luz de face ja' assada.
+        color.rgb *= mix(vec3(1.0), vec3(1.13, 1.04, 0.82), LuzDia);
         uv = texcoord;
         recortavel = normal.x;
     }"#;
@@ -975,6 +978,15 @@ pub(crate) fn params_solido() -> PipelineParams {
     }
 }
 
+/// Transparencia das sombras sem gravar profundidade: copas sobrepostas
+/// continuam mesclando, e a borda transparente nao tapa o mundo atras.
+pub(crate) fn params_sombra() -> PipelineParams {
+    PipelineParams {
+        depth_write: false,
+        ..params_solido()
+    }
+}
+
 pub fn material_solido() -> Material {
     load_material(
         ShaderSource::Glsl {
@@ -986,6 +998,7 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("Recorte", UniformType::Float3),
                 UniformDesc::new("RecorteZ", UniformType::Float1),
                 UniformDesc::new("Tinta", UniformType::Float4),
+                UniformDesc::new("LuzDia", UniformType::Float1),
                 // As faixas de paleta. Este caminho (o `Material` do
                 // macroquad) e' o das PREVIAS 2D; o desenho do mundo vai pelo
                 // `gpu_estatica`. Os dois declaram a mesma lista, senao o
@@ -1344,7 +1357,26 @@ pub fn draw_entities(
     target: Option<shared::EntityId>,
     vista: &Vista,
 ) {
+    draw_entities_com_sombras(
+        world,
+        vox,
+        target,
+        vista,
+        crate::config_interface::Sombras::Leves,
+    );
+}
+
+pub fn draw_entities_com_sombras(
+    world: &mut World,
+    vox: &VoxCache,
+    target: Option<shared::EntityId>,
+    vista: &Vista,
+    sombras: crate::config_interface::Sombras,
+) {
     let order: Vec<_> = world.draw_order().to_vec();
+    if sombras != crate::config_interface::Sombras::Desligadas {
+        desenha_sombras(world, &order, vista, sombras);
+    }
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
     // o que fosse desenhado atras deles depois nao apareceria atraves.
     let mut rastros = Vec::new();
@@ -1418,7 +1450,13 @@ pub fn draw_entities(
                     v.cabelo = vox.rig(RIG_CHAPEU);
                     v
                 });
-                brilhos.extend(desenha_personagem(e, &veste, vox, vista, self_id == Some(id)));
+                brilhos.extend(desenha_personagem(
+                    e,
+                    &veste,
+                    vox,
+                    vista,
+                    self_id == Some(id),
+                ));
                 continue;
             }
         }
@@ -1484,6 +1522,94 @@ pub fn draw_entities(
     crate::lascas::avanca_e_desenha(get_frame_time());
 }
 
+/// Sombras de contato baratas: um disco suave por corpo, em uma malha por lote.
+/// A borda consulta o relevo para acompanhar encostas sem textura nem luz extra.
+fn desenha_sombras(
+    world: &World,
+    order: &[shared::EntityId],
+    vista: &Vista,
+    modo: crate::config_interface::Sombras,
+) {
+    const LADOS: usize = 12;
+    const LIMITE: usize = 1800;
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    for id in order {
+        let Some(e) = world.ents.get(id) else {
+            continue;
+        };
+        if e.morte.is_some()
+            || !matches!(
+                e.meta.tag,
+                shared::EntityTag::Player
+                    | shared::EntityTag::Enemy
+                    | shared::EntityTag::Npc
+                    | shared::EntityTag::Pet
+            )
+        {
+            continue;
+        }
+        let escala = escala_de_chefe(e).clamp(0.5, 4.0);
+        let raio = if e.meta.tag == shared::EntityTag::Enemy {
+            0.72
+        } else {
+            0.55
+        } * escala;
+        let lobos: &[(f32, f32, f32, f32, u8)] =
+            if modo == crate::config_interface::Sombras::Bonitas {
+                &[(0.0, 0.0, 1.0, 0.72, 80), (0.8, -0.46, 1.55, 0.92, 65)]
+            } else {
+                &[(0.12, 0.08, 1.0, 0.72, 72)]
+            };
+        for &(dx, dz, rx, rz, alfa) in lobos {
+            let x = e.render_pos.x + dx * escala;
+            let z = e.render_pos.y + dz * escala;
+            let chao = vista.chao_em(e.render_pos.x, e.render_pos.y);
+            let centro_chao = vista.chao_em(x, z);
+            // A projecao deslocada da sombra nunca atravessa um barranco.
+            if (centro_chao - chao).abs() > 0.6 {
+                continue;
+            }
+            if vertices.len() + LADOS + 1 > LIMITE {
+                draw_mesh(&Mesh {
+                    vertices: std::mem::take(&mut vertices),
+                    indices: std::mem::take(&mut indices),
+                    texture: None,
+                });
+            }
+            let base = vertices.len() as u16;
+            vertices.push(vtx(vec3(x, centro_chao + 0.035, z), [13, 17, 25, alfa]));
+            let mut alturas = [0.0; LADOS];
+            for i in 0..LADOS {
+                let a = i as f32 * std::f32::consts::TAU / LADOS as f32;
+                let px = x + a.cos() * raio * rx;
+                let pz = z + a.sin() * raio * rz;
+                alturas[i] = vista.chao_em(px, pz);
+                vertices.push(vtx(vec3(px, alturas[i] + 0.035, pz), [13, 17, 25, 0]));
+            }
+            for i in 0..LADOS {
+                let proximo = (i + 1) % LADOS;
+                if (alturas[i] - centro_chao).abs() <= 0.6
+                    && (alturas[proximo] - centro_chao).abs() <= 0.6
+                {
+                    indices.extend_from_slice(&[
+                        base,
+                        base + 1 + proximo as u16,
+                        base + 1 + i as u16,
+                    ]);
+                }
+            }
+        }
+    }
+    if !vertices.is_empty() {
+        draw_mesh(&Mesh {
+            vertices,
+            indices,
+            texture: None,
+        });
+    }
+}
+
 /// Os arquivos de pecas do personagem (docs/character create.md).
 pub const RIG_CORPO: &str = "personagem/corpo";
 pub const RIG_CHAPEU: &str = "personagem/cabelo_01";
@@ -1509,7 +1635,10 @@ pub fn rigs_da_cabeca() -> Vec<String> {
 }
 
 pub fn rig_do_rosto(i: u8) -> String {
-    format!("personagem/rostos/rosto_{:02}", i.min(shared::aparencia::ROSTOS - 1) + 1)
+    format!(
+        "personagem/rostos/rosto_{:02}",
+        i.min(shared::aparencia::ROSTOS - 1) + 1
+    )
 }
 
 pub fn rig_do_cabelo(i: u8) -> Option<String> {
@@ -1562,10 +1691,10 @@ pub fn cores_da_pele(i: u8) -> [[f32; 3]; 2] {
 
 pub fn cores_do_cabelo(i: u8) -> [[f32; 3]; 2] {
     const R: [[[u8; 3]; 2]; 6] = [
-        [[122, 86, 54], [54, 36, 22]],    // castanho
-        [[58, 52, 50], [20, 18, 17]],     // preto
-        [[196, 104, 52], [104, 48, 22]],  // ruivo
-        [[236, 206, 128], [150, 118, 56]], // loiro
+        [[122, 86, 54], [54, 36, 22]],      // castanho
+        [[58, 52, 50], [20, 18, 17]],       // preto
+        [[196, 104, 52], [104, 48, 22]],    // ruivo
+        [[236, 206, 128], [150, 118, 56]],  // loiro
         [[200, 200, 204], [110, 110, 118]], // grisalho
         [[244, 244, 246], [168, 168, 176]], // branco
     ];
@@ -1658,8 +1787,8 @@ fn desenha_personagem(
         },
     };
     let mut entrada = entrada;
-    let dash = e.morte.is_none() && (e.dash_visual_ate > get_time()
-        || e.state.flags & shared::ent_flags::DASHING != 0);
+    let dash = e.morte.is_none()
+        && (e.dash_visual_ate > get_time() || e.state.flags & shared::ent_flags::DASHING != 0);
     if dash {
         entrada.combate.golpe = None;
         entrada.combate.golpe_ant = None;
@@ -1752,8 +1881,11 @@ fn desenha_personagem(
         let lado = vec3(cos, 0.0, -sin);
         for i in [-1.0, 1.0] {
             let inicio = p + vec3(0.0, 0.65, 0.0) + lado * (i * 0.28);
-            draw_line_3d(inicio, inicio - frente * 1.1,
-                Color::new(0.55, 0.85, 1.0, 0.45));
+            draw_line_3d(
+                inicio,
+                inicio - frente * 1.1,
+                Color::new(0.55, 0.85, 1.0, 0.45),
+            );
         }
     }
     let s = if e.morte.is_some() {
@@ -2538,13 +2670,7 @@ fn camera_da_vitrine(
 /// Mesmo enquadramento do retrato da bolsa, que é o que já se sabe que cabe.
 /// `false` = o arquivo ainda não carregou (a carga é preguiçosa) ou a caixa é
 /// pequena demais; quem chama desenha o que tinha antes.
-pub fn vitrine_rig(
-    vox: &VoxCache,
-    nome: &str,
-    r: Rect,
-    yaw: f32,
-    solido: &Material,
-) -> bool {
+pub fn vitrine_rig(vox: &VoxCache, nome: &str, r: Rect, yaw: f32, solido: &Material) -> bool {
     if r.w < 16.0 || r.h < 16.0 {
         return false;
     }
@@ -2934,15 +3060,24 @@ mod testes_da_vestimenta {
         let cabelo = pecas(&["cabelo"]);
         let mut v = Vestimenta::nua(&corpo);
         assert!(v.peca("torso").is_some(), "sem roupa, o torso é o do corpo");
-        assert!(v.peca("cabelo").is_none(), "de cabeça descoberta, nada no slot");
+        assert!(
+            v.peca("cabelo").is_none(),
+            "de cabeça descoberta, nada no slot"
+        );
 
         v.roupa = Some(&roupa);
-        assert!(std::ptr::eq(v.peca("torso").unwrap(), roupa.get("torso").unwrap()));
+        assert!(std::ptr::eq(
+            v.peca("torso").unwrap(),
+            roupa.get("torso").unwrap()
+        ));
         assert!(
             std::ptr::eq(v.peca("braco_d").unwrap(), corpo.get("braco_d").unwrap()),
             "peça que a roupa não tem cai no corpo"
         );
-        assert!(std::ptr::eq(v.peca("cabeca").unwrap(), roupa.get("cabeca").unwrap()));
+        assert!(std::ptr::eq(
+            v.peca("cabeca").unwrap(),
+            roupa.get("cabeca").unwrap()
+        ));
 
         v.rosto = Some(&rosto);
         assert!(
@@ -2951,7 +3086,10 @@ mod testes_da_vestimenta {
         );
 
         v.cabelo = Some(&cabelo);
-        assert!(std::ptr::eq(v.peca("cabelo").unwrap(), cabelo.get("cabelo").unwrap()));
+        assert!(std::ptr::eq(
+            v.peca("cabelo").unwrap(),
+            cabelo.get("cabelo").unwrap()
+        ));
     }
 
     /// O slot do cabelo NÃO cai no corpo.
@@ -3160,7 +3298,9 @@ fn dist_que_enquadra(centro: Vec2, alto: f32, elevacao: f32, ang: f32, aspecto: 
                 pior = pior.max(4.0);
                 continue;
             }
-            pior = pior.max((clip.x / clip.w).abs()).max((clip.y / clip.w).abs());
+            pior = pior
+                .max((clip.x / clip.w).abs())
+                .max((clip.y / clip.w).abs());
         }
         if pior <= 0.0001 {
             break;
@@ -3616,11 +3756,20 @@ mod testes_da_maquete {
             // Batendo machado só parado, e parado só no fim de um trecho.
             if p.trabalhando {
                 assert!(p.andar < 0.01, "trabalhando em movimento em t={t:.1}");
-                assert!((p.onde - m.trabalho).length() < 0.01, "trabalhando longe do ponto");
+                assert!(
+                    (p.onde - m.trabalho).length() < 0.01,
+                    "trabalhando longe do ponto"
+                );
             }
         }
-        assert!(longe > dist - 0.01, "nunca chegou ao trabalho (só {longe:.1} de {dist:.1})");
-        assert!(perto < 0.01, "nunca voltou pra casa (o mais perto foi {perto:.1})");
+        assert!(
+            longe > dist - 0.01,
+            "nunca chegou ao trabalho (só {longe:.1} de {dist:.1})"
+        );
+        assert!(
+            perto < 0.01,
+            "nunca voltou pra casa (o mais perto foi {perto:.1})"
+        );
         assert!(andou, "nunca andou de verdade");
         assert!(trabalhou, "nunca trabalhou");
     }
@@ -3653,7 +3802,8 @@ mod testes_da_maquete {
             }
             let olha = vec2(p.yaw.sin(), p.yaw.cos());
             // Indo, ele se afasta de casa; voltando, se aproxima.
-            let indo = (p.onde - m.casa).length() < (rotina_do_morador(&m, 0, t + 0.2).onde - m.casa).length();
+            let indo = (p.onde - m.casa).length()
+                < (rotina_do_morador(&m, 0, t + 0.2).onde - m.casa).length();
             let esperado = if indo { ida } else { -ida };
             assert!(
                 olha.dot(esperado) > 0.99,
@@ -3674,11 +3824,22 @@ mod testes_da_maquete {
     /// A faixa nunca estoura o retângulo que o painel deu, e fica centrada.
     #[test]
     fn a_faixa_cabe_no_retangulo_dado() {
-        for (w, h) in [(512.0, 628.0), (300.0, 200.0), (900.0, 300.0), (120.0, 900.0)] {
+        for (w, h) in [
+            (512.0, 628.0),
+            (300.0, 200.0),
+            (900.0, 300.0),
+            (120.0, 900.0),
+        ] {
             let r = Rect::new(40.0, 70.0, w, h);
             let f = faixa_da_peca(r);
-            assert!(f.h <= r.h + 0.01 && f.w <= r.w + 0.01, "{f:?} nao cabe em {r:?}");
-            assert!((f.center().y - r.center().y).abs() < 0.01, "fora do centro: {f:?}");
+            assert!(
+                f.h <= r.h + 0.01 && f.w <= r.w + 0.01,
+                "{f:?} nao cabe em {r:?}"
+            );
+            assert!(
+                (f.center().y - r.center().y).abs() < 0.01,
+                "fora do centro: {f:?}"
+            );
         }
     }
 }

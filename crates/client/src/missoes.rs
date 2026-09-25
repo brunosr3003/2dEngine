@@ -62,7 +62,13 @@ pub fn desenha_contador(m: &Missoes, agora: f64) {
     let x = s.x + s.w * 0.5;
     let y = s.y + 54.0 - sobe;
     let texto = format!("Missões concluídas: {}", m.concluidas);
-    estilo::texto_centro(x + 1.0, y + 1.0, &texto, 18, Color::new(0.0, 0.0, 0.0, 0.55 * a));
+    estilo::texto_centro(
+        x + 1.0,
+        y + 1.0,
+        &texto,
+        18,
+        Color::new(0.0, 0.0, 0.0, 0.55 * a),
+    );
     estilo::texto_centro(
         x,
         y,
@@ -289,12 +295,6 @@ pub fn fracao_da_trava(alvo: u32, nivel: u32, fracao_xp: f32) -> f32 {
 
 pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
     let mut partes = Vec::new();
-    if q.reward_cobre > 0 {
-        partes.push(format!("{} cobre", q.reward_cobre));
-    }
-    if q.reward_xp > 0 {
-        partes.push(format!("{} XP", q.reward_xp));
-    }
     if q.reward_item != 0 && q.reward_item_qty > 0 {
         let nome = nomes
             .get(&q.reward_item)
@@ -308,6 +308,12 @@ pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
             .cloned()
             .unwrap_or_else(|| format!("item {}", q.reward_item2));
         partes.push(format!("{}x {nome}", q.reward_item2_qty));
+    }
+    if q.reward_cobre > 0 {
+        partes.push(format!("{} cobre", q.reward_cobre));
+    }
+    if q.reward_xp > 0 {
+        partes.push(format!("{} XP", q.reward_xp));
     }
     partes.join("  ·  ")
 }
@@ -507,7 +513,10 @@ impl Missoes {
     /// (sem rodape: "Todas as missões" ja' esta' no Menu).
     pub fn rastreador_rect(&self) -> Rect {
         let z = crate::hud_layout::atual();
-        let n = ordem_do_rastreador(&self.log).len().min(NO_RASTREADOR).max(1);
+        let n = ordem_do_rastreador(&self.log)
+            .len()
+            .min(NO_RASTREADOR)
+            .max(1);
         // MAIS ESTREITO (o dono: "tá muito grande lateralmente"), TRÊS linhas
         // e SEM RODAPÉ: o link "Todas as missões" saiu porque a mesma coisa
         // já está no Menu, e um atalho repetido só ocupa a tela.
@@ -608,7 +617,13 @@ impl Missoes {
             }
         }
 
-        estilo::texto(p.x + u(16.0), y + u(18.0), "Em andamento", 15, estilo::SUAVE);
+        estilo::texto(
+            p.x + u(16.0),
+            y + u(18.0),
+            "Em andamento",
+            15,
+            estilo::SUAVE,
+        );
         y += u(TITULO_SECAO);
         if self.log.is_empty() {
             let dica = if self.npc.is_some() {
@@ -636,14 +651,22 @@ impl Missoes {
                 estilo::TEXTO,
             );
             let estado = if ok {
-                let quem = shared::quests::papel_do_giver(q.giver)
-                    .map_or("quem deu a missão", |p| p.nome());
+                let quem = shared::quests::nome_do_posto(q.giver)
+                    .or_else(|| shared::quests::papel_do_giver(q.giver).map(|p| p.nome()))
+                    .unwrap_or("quem deu a missão");
                 format!("Pronta — entregue: {quem}")
             } else {
                 format!("{}  {feito}/{total}", verbo(q))
             };
             let cor = if ok { estilo::AUTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&estado, p.x + u(16.0), y + u(42.0), texto_w - u(110.0), 14, cor);
+            estilo::texto_ajustado(
+                &estado,
+                p.x + u(16.0),
+                y + u(42.0),
+                texto_w - u(110.0),
+                14,
+                cor,
+            );
             // Barrinha de progresso.
             let barra = Rect::new(p.x + u(16.0), y + u(52.0), texto_w - u(110.0), u(4.0));
             draw_rectangle(
@@ -780,13 +803,24 @@ impl Missoes {
             if principal {
                 // A história: uma tira dourada à esquerda. O losango e o
                 // fundo inteiro comiam a linha que agora é uma só.
-                draw_rectangle(linha.x, linha.y + 4.0 * s, 3.0 * s, linha.h - 8.0 * s, estilo::OURO);
+                draw_rectangle(
+                    linha.x,
+                    linha.y + 4.0 * s,
+                    3.0 * s,
+                    linha.h - 8.0 * s,
+                    estilo::OURO,
+                );
             }
             // O ALFINETE: fixa a missão no topo. Só pra quem não é história —
             // ela já está sempre em primeiro, e um alfinete que não muda nada
             // é um botão que mente.
             let fixada = self.fixadas.contains(&q.id);
-            let alfinete = Rect::new(linha.x + linha.w - 22.0 * s, y + 4.0 * s, 20.0 * s, 20.0 * s);
+            let alfinete = Rect::new(
+                linha.x + linha.w - 22.0 * s,
+                y + 4.0 * s,
+                20.0 * s,
+                20.0 * s,
+            );
             if !principal {
                 estilo::texto_centro(
                     alfinete.center().x,
@@ -827,7 +861,12 @@ impl Missoes {
             // A trava de nível ganha a barrinha, que é o único jeito de ver
             // que ela anda.
             if principal && q.obj_kind == objective_kind::NIVEL {
-                let b = Rect::new(linha.x + 8.0, y + LINHA * s - 5.0 * s, linha.w - 40.0 * s, 3.0 * s);
+                let b = Rect::new(
+                    linha.x + 8.0,
+                    y + LINHA * s - 5.0 * s,
+                    linha.w - 40.0 * s,
+                    3.0 * s,
+                );
                 draw_rectangle(b.x, b.y, b.w, b.h, Color::new(1.0, 1.0, 1.0, 0.10));
                 draw_rectangle(
                     b.x,
@@ -880,6 +919,13 @@ impl Missoes {
             }
             let giver = if e.meta.name.as_deref() == Some(mestre) {
                 Some(GIVER_MESTRE_DA_ILHA)
+            } else if let Some(giver) = e
+                .meta
+                .name
+                .as_deref()
+                .and_then(shared::quests::posto_por_nome)
+            {
+                Some(giver)
             } else {
                 shared::quests::giver_do_npc(shared::npc_papel_de_kind(e.meta.kind) as u16)
             };
@@ -897,7 +943,13 @@ impl Missoes {
                 Color::new(1.0, 0.84, 0.2, 1.0)
             };
             for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-                estilo::texto_centro(c.x + dx, c.y + dy, sinal, 34, Color::new(0.0, 0.0, 0.0, 0.85));
+                estilo::texto_centro(
+                    c.x + dx,
+                    c.y + dy,
+                    sinal,
+                    34,
+                    Color::new(0.0, 0.0, 0.0, 0.85),
+                );
             }
             estilo::texto_centro(c.x, c.y, sinal, 34, cor);
         }
@@ -918,7 +970,11 @@ mod tests {
         assert_eq!(curto("Caçar ursos: a temporada"), "Caçar ursos");
         // Comprido sem pontuação: corta e avisa que cortou.
         let longo = curto("Uma missão com um nome absurdamente comprido");
-        assert!(longo.chars().count() <= 18, "{longo:?} tem {} chars", longo.chars().count());
+        assert!(
+            longo.chars().count() <= 18,
+            "{longo:?} tem {} chars",
+            longo.chars().count()
+        );
         assert!(longo.ends_with('…'), "{longo:?} não avisa que foi cortado");
         // E TODO título do jogo cabe: se algum não couber, ele é cortado, mas
         // o teste existe pra ninguém achar que o rastreador mostra o nome
@@ -926,7 +982,12 @@ mod tests {
         for q in shared::quests::QUESTS.iter().take(60) {
             let c = curto(q.title);
             assert!(!c.is_empty(), "{}: resumo vazio", q.title);
-            assert!(c.chars().count() <= 18, "{}: resumo com {} chars", q.title, c.chars().count());
+            assert!(
+                c.chars().count() <= 18,
+                "{}: resumo com {} chars",
+                q.title,
+                c.chars().count()
+            );
         }
     }
 

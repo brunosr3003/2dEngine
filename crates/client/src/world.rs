@@ -720,8 +720,8 @@ mod testes {
                     faction: None,
                     kind: 0,
                     nivel: 1,
-                aparencia: 0,
-            }],
+                    aparencia: 0,
+                }],
                 vec![EntityState {
                     id,
                     pos: [16, 16],
@@ -829,8 +829,8 @@ mod testes {
                     faction: None,
                     kind: 2,
                     nivel: 1,
-                aparencia: 0,
-            }],
+                    aparencia: 0,
+                }],
                 vec![EntityState {
                     id,
                     pos,

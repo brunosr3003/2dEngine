@@ -738,8 +738,11 @@ mod testes {
             s.stats.stamina_max = 100;
             s.stamina_current = 100.0;
             s.pending_input = Some(shared::protocol::InputFrame {
-                seq: 1, tick: 1, move_dir: Vec2::X,
-                aim: Vec2::new(20.0, 10.0), buttons: buttons::DASH,
+                seq: 1,
+                tick: 1,
+                move_dir: Vec2::X,
+                aim: Vec2::new(20.0, 10.0),
+                buttons: buttons::DASH,
             });
         }
         w.step(shared::TICK_DT);
@@ -752,11 +755,17 @@ mod testes {
         assert!(!s.skill_cds.contains_key(&skill.id));
         let antes = s.stamina_current;
         w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
-            seq: 2, tick: 2, move_dir: Vec2::X,
-            aim: Vec2::new(20.0, 10.0), buttons: buttons::DASH,
+            seq: 2,
+            tick: 2,
+            move_dir: Vec2::X,
+            aim: Vec2::new(20.0, 10.0),
+            buttons: buttons::DASH,
         });
         w.step(shared::TICK_DT);
-        assert!(w.sessions[&sid].stamina_current >= antes, "recarga não cobra outro Dash");
+        assert!(
+            w.sessions[&sid].stamina_current >= antes,
+            "recarga não cobra outro Dash"
+        );
     }
 
     #[test]

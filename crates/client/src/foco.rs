@@ -149,6 +149,14 @@ pub fn novo_quadro() {
     ALVO.with(|a| a.set(direto.or(por_chave)));
 }
 
+/// Dispensa imediatamente a dica guiada, inclusive o alvo do quadro atual.
+pub fn limpar() {
+    ALVO.with(|a| a.set(None));
+    PENDENTE.with(|p| p.set(None));
+    PEDIDO.with(|p| p.borrow_mut().clear());
+    MARCAS.with(|m| m.borrow_mut().clear());
+}
+
 /// Há foco agora?
 pub fn ativo() -> bool {
     ALVO.with(|a| a.get()).is_some()
@@ -223,7 +231,12 @@ pub fn desenha(agora: f64) {
 }
 
 fn com_folga(r: Rect) -> Rect {
-    Rect::new(r.x - FOLGA, r.y - FOLGA, r.w + FOLGA * 2.0, r.h + FOLGA * 2.0)
+    Rect::new(
+        r.x - FOLGA,
+        r.y - FOLGA,
+        r.w + FOLGA * 2.0,
+        r.h + FOLGA * 2.0,
+    )
 }
 
 fn sobrepoe(a: Rect, b: Rect) -> bool {
@@ -267,7 +280,10 @@ mod testes {
             !passa(Rect::new(400.0, 400.0, 50.0, 50.0)),
             "botao longe fica travado"
         );
-        assert!(!passa_ponto(vec2(10.0, 10.0)), "toque no mundo fica travado");
+        assert!(
+            !passa_ponto(vec2(10.0, 10.0)),
+            "toque no mundo fica travado"
+        );
 
         // A folga deixa encostar um pouco fora do pixel exato.
         assert!(passa_ponto(vec2(botao.x - FOLGA * 0.5, botao.y)));

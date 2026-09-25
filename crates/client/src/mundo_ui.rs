@@ -131,7 +131,13 @@ pub fn desenha(
             },
         );
         if aqui {
-            draw_circle_lines(c.x, c.y, raio + u(5.0), u(1.0), Color::new(0.97, 0.79, 0.44, 0.5));
+            draw_circle_lines(
+                c.x,
+                c.y,
+                raio + u(5.0),
+                u(1.0),
+                Color::new(0.97, 0.79, 0.44, 0.5),
+            );
         }
         // Nome e faixa de nivel.
         let titulo = if aqui {
@@ -240,7 +246,10 @@ mod testes {
     }
 
     fn mundo(ilhas: Vec<IlhaNoMundo>) -> Mundo {
-        Mundo { ilhas, pedido_em: 0.0 }
+        Mundo {
+            ilhas,
+            pedido_em: 0.0,
+        }
     }
 
     /// A caixa tem que CABER todas as ilhas. Se ela fosse escrita a mao,
@@ -271,11 +280,17 @@ mod testes {
             no_ar: true,
         };
         let m = mundo(vec![
-            z(ARQUIPELAGO[0].zona, vec![ch("Tarde", false, 1000), ch("Vivo", true, 0)]),
+            z(
+                ARQUIPELAGO[0].zona,
+                vec![ch("Tarde", false, 1000), ch("Vivo", true, 0)],
+            ),
             z(ARQUIPELAGO[1].zona, vec![ch("Cedo", false, 200)]),
         ]);
         let l = linhas_de_chefe(&m, 100);
-        let nomes: Vec<&str> = l.iter().map(|(n, _, _)| n.split(' ').next().unwrap()).collect();
+        let nomes: Vec<&str> = l
+            .iter()
+            .map(|(n, _, _)| n.split(' ').next().unwrap())
+            .collect();
         assert_eq!(nomes, ["Vivo", "Cedo", "Tarde"], "{l:?}");
         assert!(l[0].2, "o primeiro tem que estar vivo");
         assert!(l[1].1.contains("1m40s"), "{:?}", l[1]);

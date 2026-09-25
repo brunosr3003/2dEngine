@@ -153,8 +153,8 @@ mod tests {
             faction: None,
             kind: 0,
             nivel: 1,
-                aparencia: 0,
-            };
+            aparencia: 0,
+        };
         let mut st = EntityState::quantize(
             EntityId(1),
             ::glam::Vec2::new(1.0, 1.0),

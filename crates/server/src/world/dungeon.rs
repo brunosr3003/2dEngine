@@ -230,7 +230,12 @@ impl GameWorld {
             let arena = self.na_arena();
             cand.sort_by(|x, y| {
                 let (a, b) = (x.distance_squared(porto), y.distance_squared(porto));
-                if arena { a.total_cmp(&b) } else { b.total_cmp(&a) }.then(x.x.total_cmp(&y.x))
+                if arena {
+                    a.total_cmp(&b)
+                } else {
+                    b.total_cmp(&a)
+                }
+                .then(x.x.total_cmp(&y.x))
             });
             // AS QUATRO INSTÂNCIAS PODEM DIVIDIR O MESMO CHÃO — na Arena.
             //
@@ -496,10 +501,7 @@ impl GameWorld {
                 //
                 // Agora o mesmo "Sair" que fecha a dungeon leva de volta pra
                 // ilha de origem quando não há dungeon pra fechar.
-                let em_instancia = self
-                    .sessions
-                    .get(&sid)
-                    .is_some_and(|s| s.instancia != 0);
+                let em_instancia = self.sessions.get(&sid).is_some_and(|s| s.instancia != 0);
                 if self.na_arena() && !em_instancia {
                     self.sair_da_arena(sid, "Você deixa a Arena.");
                     return;
@@ -891,16 +893,17 @@ impl GameWorld {
         } else {
             // A dungeon herda o bestiario da ILHA em que ela fica: a masmorra
             // da Geleira tem bicho de gelo, e nao caranguejo.
-            let bioma = self.bioma_da_zona();
+            let bioma = shared::terreno::def_da_zona(c.zona)
+                .map(|def| def.bioma)
+                .unwrap_or_else(|| self.bioma_da_zona());
             for i in 0..dg::inimigos_do_andar(c, andar) {
                 let ang = i as f32 * std::f32::consts::TAU / dg::inimigos_do_andar(c, andar) as f32;
                 let pos = centro + Vec2::new(ang.cos(), ang.sin()) * (10.0 + (i % 3) as f32 * 4.0);
-                let kind =
-                    crate::economy::kind_para_nivel(
-                        bioma,
-                        nivel,
-                        uid ^ ((andar as u64) << 8) ^ i as u64,
-                    );
+                let kind = crate::economy::kind_para_nivel(
+                    bioma,
+                    nivel,
+                    uid ^ ((andar as u64) << 8) ^ i as u64,
+                );
                 let semi = dg::tem_semi_chefe(c, andar) && i == 0;
                 vivos.push(self.dg_nascer_mob(id, kind, pos, centro, nivel, vida, dano, semi));
             }
@@ -981,7 +984,11 @@ impl GameWorld {
             self.dg_levantar(sid);
             let destino = self.porto();
             self.dg_teleportar(sid, destino);
-            self.dg_texto(sid, true, "A dungeon foi reiniciada; você foi recuperado no porto.");
+            self.dg_texto(
+                sid,
+                true,
+                "A dungeon foi reiniciada; você foi recuperado no porto.",
+            );
             self.save_pending = true;
             return;
         }
@@ -1074,7 +1081,11 @@ impl GameWorld {
             }
             let destino = self.porto();
             self.dg_teleportar(sid, destino);
-            self.dg_texto(sid, true, "A dungeon foi reiniciada; você saiu com segurança.");
+            self.dg_texto(
+                sid,
+                true,
+                "A dungeon foi reiniciada; você saiu com segurança.",
+            );
             self.save_pending = true;
             return;
         }
@@ -1400,6 +1411,7 @@ impl GameWorld {
                         tempo_s,
                         bonus_tempo: false,
                         primeira_vitoria: false,
+                        recompensas_primeira: Vec::new(),
                     },
                 );
             }
@@ -1421,6 +1433,7 @@ impl GameWorld {
             NpcDaVilaTag {
                 nome: format!("Baú · {}", c.nome),
                 rumo: shared::npc_kind(None, dg::PAPEL_BAU),
+                giver: None,
             },
             Instancia(id),
         ));
@@ -1437,6 +1450,7 @@ impl GameWorld {
             .collect();
         for (sid, ajudante) in presentes {
             let mut primeira = false;
+            let mut recompensas_primeira = Vec::new();
             if let Some(s) = self.sessions.get_mut(&sid) {
                 let de_todas = s.dungeon.registrar_vitoria(conteudo, estagio);
                 s.conta_dungeon.virar(semana);
@@ -1447,16 +1461,19 @@ impl GameWorld {
                     let p = dg::peca_garantida(c, estagio, &mut rng);
                     let inst = GameWorld::dg_rolar_peca(&p);
                     s.dungeon.postar(p.item_id, 1, inst, 1, quando);
+                    recompensas_primeira.push((p.item_id, 1));
                 }
                 if de_todas && !ajudante {
                     let p = dg::peca_garantida(c, estagio, &mut rng);
                     let inst = GameWorld::dg_rolar_peca(&p);
                     s.dungeon.postar(p.item_id, 1, inst, 2, quando);
+                    recompensas_primeira.push((p.item_id, 1));
                     let nivel = dg::nivel_do_estagio(c, estagio);
                     let cor = shared::chaves::faixa(nivel).cor;
                     let base = shared::item_id::CHAVES[fastrand::usize(..4)];
-                    s.dungeon
-                        .postar(shared::item_id::chave_na_cor(base, cor), 1, None, 2, quando);
+                    let chave = shared::item_id::chave_na_cor(base, cor);
+                    s.dungeon.postar(chave, 1, None, 2, quando);
+                    recompensas_primeira.push((chave, 1));
                 }
             }
             // Alvo 0 = qualquer dungeon (diarias, 510); a historia nomeia a dela.
@@ -1472,14 +1489,12 @@ impl GameWorld {
                     tempo_s,
                     bonus_tempo: bonus,
                     primeira_vitoria: primeira,
+                    recompensas_primeira,
                 },
             );
             if primeira {
-                self.dg_texto(
-                    sid,
-                    true,
-                    "Primeira vitória! A recompensa está nas Entregas.",
-                );
+                self.dg_enviar_correio(sid);
+                self.dg_texto(sid, true, "Primeira vitória! A recompensa está no Correio.");
             }
         }
         self.save_pending = true;
@@ -1578,9 +1593,8 @@ impl GameWorld {
             if shared::item_id::todas_as_chaves().contains(&item) {
                 crate::telemetria::conta("chave_drop", format!("dungeon:{item}"), qtd as i64);
             }
-            if add_to_inventory(&mut s.inventory, item, qtd, inst) {
-                itens.push((item, qtd));
-            } else {
+            itens.push((item, qtd));
+            if !add_to_inventory(&mut s.inventory, item, qtd, inst) {
                 s.dungeon.postar(item, qtd, inst, 0, quando);
                 no_correio += 1;
             }
@@ -1654,8 +1668,12 @@ impl GameWorld {
     fn dg_fechar(&mut self, idx: usize) {
         {
             let i = &self.instancias[idx];
-            let presentes: Vec<SessionId> =
-                i.membros.iter().filter(|m| !m.saiu).map(|m| m.sid).collect();
+            let presentes: Vec<SessionId> = i
+                .membros
+                .iter()
+                .filter(|m| !m.saiu)
+                .map(|m| m.sid)
+                .collect();
             let id = i.id;
             self.dg_recolher(id, &presentes);
         }

@@ -467,11 +467,24 @@ fn soma_efeito<T: Copy>(d: &crate::items::PetData, f: impl Fn(Efeito) -> Option<
 
 /// Quantos pontos de atributo o pet do grau `grau` entrega no nivel `nivel`.
 /// A base e' a curva de cor que os itens ja' usam (`items::tier_stat_mult`),
-/// em 9 pontos; o nivel dobra isso do 1 ao 30.
+/// em 18 pontos; o nivel dobra isso do 1 ao 30.
 pub fn pontos(grau: u8, nivel: u8) -> u32 {
-    let base = crate::items::tier_stat_mult(grau) * 9.0;
+    let base = crate::items::tier_stat_mult(grau) * 18.0;
     let n = nivel.clamp(1, NIVEL_MAX) as f32;
     (base * (1.0 + (n - 1.0) / (NIVEL_MAX as f32 - 1.0))).round() as u32
+}
+
+/// Tier e refino amplificam os pontos naturais e as skills do pet.
+pub fn pontos_por_stat_da_instancia(item_id: u16, inst: Option<&crate::items::ItemInstance>) -> [u32; STAT_COUNT] {
+    let d = dados(inst);
+    let af = inst.and_then(|i| i.afinidade);
+    let mult = inst.map_or(1.0, |i| 1.0 + 0.18 * (i.tier().saturating_sub(1)) as f32 + 0.05 * i.refinement as f32);
+    pontos_por_stat(item_id, &d, af).map(|p| (p as f32 * mult).round() as u32)
+}
+
+/// Multiplicador da velocidade de coleta produzido pela evolução do pet.
+pub fn mult_coleta(inst: Option<&crate::items::ItemInstance>) -> f32 {
+    inst.map_or(1.0, |i| 1.0 + 0.10 * (i.tier().saturating_sub(1)) as f32 + 0.025 * i.refinement as f32)
 }
 
 /// Os pontos do pet, ja' repartidos pelos seis atributos. A sobra da divisao
@@ -603,11 +616,11 @@ mod testes {
                 .unwrap();
             assert!(v[maior] > 0);
         }
-        assert_eq!(pontos(1, 1), 5);
-        assert_eq!(pontos(2, 1), 8);
-        assert_eq!(pontos(3, 1), 11);
-        assert_eq!(pontos(4, 1), 14);
-        assert_eq!(pontos(5, 1), 17);
+        assert_eq!(pontos(1, 1), 11);
+        assert_eq!(pontos(2, 1), 16);
+        assert_eq!(pontos(3, 1), 22);
+        assert_eq!(pontos(4, 1), 27);
+        assert_eq!(pontos(5, 1), 34);
         // O nivel maximo dobra o que o grau da' (a menos do arredondamento).
         for grau in 1..=GRAU_MAX {
             let dobro = pontos(grau, 1) * 2;

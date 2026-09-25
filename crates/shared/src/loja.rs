@@ -43,6 +43,11 @@ pub fn mult_de_montaria(montado: bool, equipada: Option<u16>) -> Option<f32> {
     )
 }
 
+pub fn mult_de_montaria_evoluida(montado: bool, equipada: Option<u16>, inst: Option<&crate::items::ItemInstance>) -> Option<f32> {
+    if !montado { return None; }
+    Some(equipada.and_then(crate::montarias::de_item).map_or(VEL_MONTADO, |(_, grau)| crate::montarias::velocidade_da_instancia(grau, inst)))
+}
+
 /// O instante da ultima luta (golpe, skill ou pancada) desmonta quem montou
 /// antes dele. `desde` = quando montou (ou comecou a subir).
 pub fn luta_desmonta(ultima_luta: f32, desde: f32) -> bool {

@@ -21,6 +21,7 @@ use super::*;
 /// O pet de um jogador, no mundo.
 pub struct PetTag {
     pub dono: SessionId,
+    pub slot: shared::EquipSlot,
     /// item_id do pet: especie e grau saem dele.
     pub item_id: u16,
     /// Saque que ele esta' buscando agora.
@@ -29,48 +30,61 @@ pub struct PetTag {
     pub desistencias: Vec<(EntityId, f32)>,
 }
 
+fn posicao_de_seguir(slot: shared::EquipSlot) -> Vec2 {
+    match slot {
+        shared::EquipSlot::Pet => Vec2::new(-1.8, 1.2),
+        shared::EquipSlot::Pet2 => Vec2::new(1.8, 1.2),
+        shared::EquipSlot::Pet3 => Vec2::new(0.0, -2.1),
+        _ => Vec2::ZERO,
+    }
+}
+
 impl GameWorld {
     /// Acerta quem tem pet no mundo com quem tem pet equipado. Roda todo tick:
     /// equipar, desequipar, trocar, morrer e deslogar passam por aqui sem
     /// precisar de gancho em cada um desses caminhos.
     pub(super) fn sincroniza_pets(&mut self) {
         // (sid, item_id desejado) de quem deveria ter pet.
-        let desejado: Vec<(SessionId, Option<u16>, u32)> = self
+        let desejado: Vec<(SessionId, shared::EquipSlot, Option<u16>, u32)> = self
             .sessions
             .values()
-            .map(|s| {
-                let quer = if s.logged_in && s.entity.is_some() {
-                    s.equipment.pet
-                } else {
-                    None
-                };
-                (s.handle.id, quer, s.instancia)
+            .flat_map(|s| {
+                s.equipment.pets().into_iter().map(move |(slot, id, _)| {
+                    let quer = if s.logged_in && s.entity.is_some() {
+                        id
+                    } else {
+                        None
+                    };
+                    (s.handle.id, slot, quer, s.instancia)
+                })
             })
             .collect();
 
         // O que existe hoje, e em que instancia ele nasceu.
-        let existe: Vec<(Entity, EntityId, SessionId, u16, u32)> = self
+        let existe: Vec<(Entity, EntityId, SessionId, shared::EquipSlot, u16, u32)> = self
             .ecs
             .query::<(&NetId, &PetTag, Option<&dungeon::Instancia>)>()
             .iter()
-            .map(|(e, (net, p, i))| (e, net.0, p.dono, p.item_id, i.map_or(0, |i| i.0)))
+            .map(|(e, (net, p, i))| (e, net.0, p.dono, p.slot, p.item_id, i.map_or(0, |i| i.0)))
             .collect();
 
-        for (sid, quer, instancia) in desejado {
-            let atual = existe.iter().find(|(_, _, d, _, _)| *d == sid);
+        for (sid, slot, quer, instancia) in desejado {
+            let atual = existe
+                .iter()
+                .find(|(_, _, d, sl, _, _)| *d == sid && *sl == slot);
             match (quer, atual) {
                 // Trocou de instancia (entrou ou saiu de dungeon): o pet
                 // renasce la' dentro. Sem isto ele ficava na instancia velha,
                 // invisivel pro dono e sem enxergar saque nenhum.
-                (Some(id), Some((_, _, _, tem, inst))) if *tem == id && *inst == instancia => {}
+                (Some(id), Some((_, _, _, _, tem, inst))) if *tem == id && *inst == instancia => {}
                 (None, None) => {}
                 _ => {
-                    if let Some((e, eid, _, _, _)) = atual {
+                    if let Some((e, eid, _, _, _, _)) = atual {
                         let _ = self.ecs.despawn(*e);
                         self.removed_this_tick.push(*eid);
                     }
                     if let Some(id) = quer {
-                        self.nasce_pet(sid, id, instancia);
+                        self.nasce_pet(sid, slot, id, instancia);
                     }
                 }
             }
@@ -91,7 +105,7 @@ impl GameWorld {
         }
     }
 
-    fn nasce_pet(&mut self, sid: SessionId, item_id: u16, instancia: u32) {
+    fn nasce_pet(&mut self, sid: SessionId, slot: shared::EquipSlot, item_id: u16, instancia: u32) {
         let Some(pos) = self
             .sessions
             .get(&sid)
@@ -103,11 +117,12 @@ impl GameWorld {
         let eid = self.alloc_entity_id();
         let pet = self.ecs.spawn((
             NetId(eid),
-            Position(pos),
+            Position(pos + posicao_de_seguir(slot)),
             Velocity(Vec2::ZERO),
             EntityKind::Pet(item_id),
             PetTag {
                 dono: sid,
+                slot,
                 item_id,
                 alvo: None,
                 desistencias: Vec::new(),
@@ -140,14 +155,19 @@ impl GameWorld {
 
         // O estado do pet de cada dono: nivel e skills mexem no raio e na
         // velocidade, e eles moram na instancia do item equipado.
-        let dados_de: HashMap<SessionId, shared::items::PetData> = self
+        let dados_de: HashMap<(SessionId, shared::EquipSlot), (shared::items::PetData, f32)> = self
             .sessions
             .values()
-            .map(|s| {
-                (
-                    s.handle.id,
-                    shared::pets::dados(s.equipment.pet_inst.as_ref()),
-                )
+            .flat_map(|s| {
+                s.equipment.pets().into_iter().map(move |(slot, _, inst)| {
+                    (
+                        (s.handle.id, slot),
+                        (
+                            shared::pets::dados(inst.as_ref()),
+                            shared::pets::mult_coleta(inst.as_ref()),
+                        ),
+                    )
+                })
             })
             .collect();
 
@@ -178,9 +198,12 @@ impl GameWorld {
             let Some((_, grau)) = shared::pets::de_item(tag.item_id) else {
                 continue;
             };
-            let d = dados_de.get(&tag.dono).copied().unwrap_or_default();
+            let (d, mult) = dados_de
+                .get(&(tag.dono, tag.slot))
+                .copied()
+                .unwrap_or_default();
             let raio = shared::pets::raio_com(grau, &d);
-            let velocidade = shared::pets::velocidade_com(grau, &d) * shared::PLAYER_SPEED;
+            let velocidade = shared::pets::velocidade_com(grau, &d) * mult * shared::PLAYER_SPEED;
 
             // O alvo de antes ainda vale?
             let alvo = tag
@@ -239,20 +262,12 @@ impl GameWorld {
                 prometidos.push(id);
             }
 
-            let mira = destino.unwrap_or_else(|| {
-                // Sem o que fazer: orbita o dono, sem colar nele.
-                let d = pos.0 - dono_pos;
-                if d.length() <= shared::pets::DISTANCIA_DE_SEGUIR {
-                    pos.0
-                } else {
-                    dono_pos + d.normalize_or_zero() * shared::pets::DISTANCIA_DE_SEGUIR
-                }
-            });
+            let mira = destino.unwrap_or_else(|| dono_pos + posicao_de_seguir(tag.slot));
 
             let delta = mira - pos.0;
             let passo = velocidade * dt;
             let (nova_pos, vel) = if teleportou {
-                (dono_pos, Vec2::ZERO)
+                (dono_pos + posicao_de_seguir(tag.slot), Vec2::ZERO)
             } else if delta.length() <= passo {
                 // CHEGOU dentro do passo: anda o que falta, e reporta a
                 // velocidade que ele andou DE VERDADE.
@@ -517,7 +532,11 @@ mod testes {
         poe_na_bolsa(&mut w, sid, id, 2);
 
         let s = &w.sessions[&sid];
-        let bicho: Vec<_> = s.inventory.iter().filter(|x| x.item_id == id && x.qty > 0).collect();
+        let bicho: Vec<_> = s
+            .inventory
+            .iter()
+            .filter(|x| x.item_id == id && x.qty > 0)
+            .collect();
         assert_eq!(bicho.len(), 2, "dois bichos, dois slots — nunca uma pilha");
         let nasceu = bicho[0].instance.and_then(|i| i.afinidade);
         assert!(nasceu.is_some(), "o bicho tem que nascer com a afinidade");
@@ -715,8 +734,10 @@ mod testes {
         let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1);
         w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
         w.sincroniza_pets();
+        // Cada slot tem o seu lugar em volta do dono: tres pets nao se empilham.
+        let lugar = posicao_de_seguir(shared::EquipSlot::Pet);
         let (_, antes) = pet_de(&w).expect("nasceu");
-        assert!(antes.distance(Vec2::ZERO) < 1.0);
+        assert!(antes.distance(lugar) < 1.0);
 
         // O dono some pro outro lado do mapa.
         let longe = Vec2::new(300.0, -180.0);
@@ -727,7 +748,7 @@ mod testes {
         w.tick_pets(1.0 / 30.0);
         let (_, depois) = pet_de(&w).expect("continua no mundo");
         assert!(
-            depois.distance(longe) < 0.01,
+            depois.distance(longe + lugar) < 0.01,
             "o pet tinha que aparecer do lado do dono, e esta' em {depois:?}"
         );
 
@@ -841,7 +862,10 @@ mod testes {
             dono,
         };
         let meu = saque(Some(eu));
-        assert!(meu.liberado_para(eu, 100.0), "pro dono, desde o primeiro quadro");
+        assert!(
+            meu.liberado_para(eu, 100.0),
+            "pro dono, desde o primeiro quadro"
+        );
         assert!(!meu.liberado_para(outro, 100.0));
         assert!(
             !meu.liberado_para(outro, 100.0 + shared::LOOT_PRIORIDADE_S - 0.01),

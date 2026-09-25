@@ -89,12 +89,7 @@ pub fn area_de_toque(r: Rect) -> Rect {
     let alvo = estilo::ALVO_DO_DEDO;
     let h = r.h.max(alvo).min(r.h + 14.0);
     let w = r.w.max(alvo).min(r.w + 8.0);
-    Rect::new(
-        r.x - (w - r.w) * 0.5,
-        r.y - (h - r.h) * 0.5,
-        w,
-        h,
-    )
+    Rect::new(r.x - (w - r.w) * 0.5, r.y - (h - r.h) * 0.5, w, h)
 }
 
 /// Botao. `true` no quadro em que foi clicado.
@@ -142,7 +137,14 @@ pub fn caixa(r: Rect, rotulo: &str, marcado: &mut bool) -> bool {
         // tem o glifo, e um tofu no lugar da marca e' pior que nada.
         let (x, y, k) = (q.x + lado * 0.22, q.y + lado * 0.52, lado);
         draw_line(x, y, x + k * 0.22, y + k * 0.22, 2.5, OURO);
-        draw_line(x + k * 0.22, y + k * 0.22, x + k * 0.58, y - k * 0.26, 2.5, OURO);
+        draw_line(
+            x + k * 0.22,
+            y + k * 0.22,
+            x + k * 0.58,
+            y - k * 0.26,
+            2.5,
+            OURO,
+        );
     }
     estilo::texto(
         q.x + lado + 10.0,
@@ -334,4 +336,3 @@ mod testes_do_alvo {
         assert_eq!(area_de_toque(Rect::new(0.0, 0.0, 150.0, 38.0)).h, alvo);
     }
 }
-

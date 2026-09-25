@@ -17,7 +17,13 @@ pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
     let papel_escuro = Color::new(0.42, 0.23, 0.12, 1.0);
     let papel = Color::new(0.96, 0.79, 0.43, 1.0);
     let luz = Color::new(1.0, 0.92, 0.66, 1.0);
-    draw_rectangle(c.x - w * 0.43 + lado * 0.05, c.y - h * 0.5 + lado * 0.06, w * 0.86, h, sombra);
+    draw_rectangle(
+        c.x - w * 0.43 + lado * 0.05,
+        c.y - h * 0.5 + lado * 0.06,
+        w * 0.86,
+        h,
+        sombra,
+    );
     draw_rectangle(c.x - w * 0.43, c.y - h * 0.5, w * 0.86, h, papel);
     draw_triangle(
         vec2(c.x - w * 0.43, c.y - h * 0.5),
@@ -26,14 +32,32 @@ pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
         papel_escuro,
     );
     for y in [-h * 0.50, h * 0.50] {
-        draw_rectangle(c.x - w * 0.58, c.y + y - lado * 0.055, w * 1.16, lado * 0.11, papel_escuro);
+        draw_rectangle(
+            c.x - w * 0.58,
+            c.y + y - lado * 0.055,
+            w * 1.16,
+            lado * 0.11,
+            papel_escuro,
+        );
         draw_circle(c.x - w * 0.58, c.y + y, lado * 0.07, luz);
         draw_circle(c.x + w * 0.58, c.y + y, lado * 0.07, luz);
     }
     for dy in [-0.18, -0.04, 0.10] {
-        draw_line(c.x - w * 0.27, c.y + h * dy, c.x + w * 0.27, c.y + h * dy, lado * 0.018, papel_escuro);
+        draw_line(
+            c.x - w * 0.27,
+            c.y + h * dy,
+            c.x + w * 0.27,
+            c.y + h * dy,
+            lado * 0.018,
+            papel_escuro,
+        );
     }
-    draw_circle(c.x, c.y + h * 0.29, lado * 0.16, Color::new(0.20, 0.04, 0.08, 1.0));
+    draw_circle(
+        c.x,
+        c.y + h * 0.29,
+        lado * 0.16,
+        Color::new(0.20, 0.04, 0.08, 1.0),
+    );
     draw_circle(c.x, c.y + h * 0.29, lado * 0.125, selo);
     draw_poly(c.x, c.y + h * 0.29, 4, lado * 0.065, 45.0, luz);
 }
@@ -52,17 +76,58 @@ pub fn icone_pergaminho_de(item_id: u16, c: Vec2, lado: f32) {
     match item_id {
         it::PERGAMINHO_INVOCA_CHAVE => {
             draw_circle_lines(c.x - lado * 0.025, y, lado * 0.045, lado * 0.018, tinta);
-            draw_line(c.x + lado * 0.02, y, c.x + lado * 0.09, y, lado * 0.018, tinta);
-            draw_line(c.x + lado * 0.07, y, c.x + lado * 0.07, y + lado * 0.035, lado * 0.014, tinta);
+            draw_line(
+                c.x + lado * 0.02,
+                y,
+                c.x + lado * 0.09,
+                y,
+                lado * 0.018,
+                tinta,
+            );
+            draw_line(
+                c.x + lado * 0.07,
+                y,
+                c.x + lado * 0.07,
+                y + lado * 0.035,
+                lado * 0.014,
+                tinta,
+            );
         }
         it::PERGAMINHO_INVOCA_MONTARIA => {
-            draw_triangle(vec2(c.x, y - lado * 0.055), vec2(c.x - lado * 0.07, y + lado * 0.04), vec2(c.x, y + lado * 0.015), tinta);
-            draw_triangle(vec2(c.x, y - lado * 0.055), vec2(c.x + lado * 0.07, y + lado * 0.04), vec2(c.x, y + lado * 0.015), tinta);
+            draw_triangle(
+                vec2(c.x, y - lado * 0.055),
+                vec2(c.x - lado * 0.07, y + lado * 0.04),
+                vec2(c.x, y + lado * 0.015),
+                tinta,
+            );
+            draw_triangle(
+                vec2(c.x, y - lado * 0.055),
+                vec2(c.x + lado * 0.07, y + lado * 0.04),
+                vec2(c.x, y + lado * 0.015),
+                tinta,
+            );
         }
         it::PERGAMINHO_INVOCA_TOMO => {
-            draw_triangle(vec2(c.x, y + lado * 0.045), vec2(c.x - lado * 0.085, y - lado * 0.025), vec2(c.x, y - lado * 0.005), tinta);
-            draw_triangle(vec2(c.x, y + lado * 0.045), vec2(c.x + lado * 0.085, y - lado * 0.025), vec2(c.x, y - lado * 0.005), tinta);
-            draw_line(c.x, y - lado * 0.025, c.x, y + lado * 0.045, lado * 0.012, tinta);
+            draw_triangle(
+                vec2(c.x, y + lado * 0.045),
+                vec2(c.x - lado * 0.085, y - lado * 0.025),
+                vec2(c.x, y - lado * 0.005),
+                tinta,
+            );
+            draw_triangle(
+                vec2(c.x, y + lado * 0.045),
+                vec2(c.x + lado * 0.085, y - lado * 0.025),
+                vec2(c.x, y - lado * 0.005),
+                tinta,
+            );
+            draw_line(
+                c.x,
+                y - lado * 0.025,
+                c.x,
+                y + lado * 0.045,
+                lado * 0.012,
+                tinta,
+            );
         }
         _ => {}
     }
@@ -140,11 +205,27 @@ impl InvocacaoUi {
                 let a = giro + i as f32 * std::f32::consts::TAU / 12.0;
                 let p1 = c + vec2(a.cos(), a.sin()) * raio * 0.62;
                 let p2 = c + vec2(a.cos(), a.sin()) * raio;
-                draw_line(p1.x, p1.y, p2.x, p2.y, (1.0 + 3.0 * abre) * k, estilo::alfa(estilo::OURO, 0.2 + abre * 0.7));
+                draw_line(
+                    p1.x,
+                    p1.y,
+                    p2.x,
+                    p2.y,
+                    (1.0 + 3.0 * abre) * k,
+                    estilo::alfa(estilo::OURO, 0.2 + abre * 0.7),
+                );
             }
-            draw_circle(c.x, c.y, (38.0 + 72.0 * abre) * k, Color::new(1.0, 0.78, 0.28, 0.10 + abre * 0.18));
+            draw_circle(
+                c.x,
+                c.y,
+                (38.0 + 72.0 * abre) * k,
+                Color::new(1.0, 0.78, 0.28, 0.10 + abre * 0.18),
+            );
             let tremor = (t * 38.0).sin() * 2.5 * abre * k;
-            icone_pergaminho(c + vec2(tremor, 0.0), (205.0 - 32.0 * abre) * k, estilo::OURO);
+            icone_pergaminho(
+                c + vec2(tremor, 0.0),
+                (205.0 - 32.0 * abre) * k,
+                estilo::OURO,
+            );
             // A fenda de luz cresce no centro até apagar o pergaminho e revelar.
             draw_rectangle(
                 c.x - (2.0 + 30.0 * abre) * k,
@@ -181,8 +262,13 @@ impl InvocacaoUi {
                     }
                     let (titulo, subtitulo, cor) = match premio {
                         PremioInvocacao::Chave { item_id, cor } => (
-                            nomes.get(item_id).cloned().unwrap_or_else(|| "Chave".into()),
-                            shared::forja::Grau::de_u8(*cor).map_or("Comum", |g| g.nome()).to_string(),
+                            nomes
+                                .get(item_id)
+                                .cloned()
+                                .unwrap_or_else(|| "Chave".into()),
+                            shared::forja::Grau::de_u8(*cor)
+                                .map_or("Comum", |g| g.nome())
+                                .to_string(),
                             // A cor E' a raridade. Era azul cravado
                             // (80,170,255) pra toda chave: o jogador abria dez
                             // e as dez saiam iguais, inclusive a roxa. Todos os
@@ -196,12 +282,18 @@ impl InvocacaoUi {
                             shared::montarias::de_item(*item_id).map_or(String::new(), |(_, g)| {
                                 format!("{} · montaria", shared::pets::nome_do_grau(g))
                             }),
-                            cor_do_grau(
-                                shared::montarias::de_item(*item_id).map_or(1, |(_, g)| g),
-                            ),
+                            cor_do_grau(shared::montarias::de_item(*item_id).map_or(1, |(_, g)| g)),
                         ),
-                        PremioInvocacao::Tomo { skill_id, grau, quantidade } => (
-                            skills.iter().find(|s| s.id == *skill_id).map_or("Tomo", |s| s.nome.as_str()).to_string(),
+                        PremioInvocacao::Tomo {
+                            skill_id,
+                            grau,
+                            quantidade,
+                        } => (
+                            skills
+                                .iter()
+                                .find(|s| s.id == *skill_id)
+                                .map_or("Tomo", |s| s.nome.as_str())
+                                .to_string(),
                             format!("{} · agora x{quantidade}", grau.nome()),
                             match grau {
                                 shared::skills::GrauTomo::Verde => estilo::VERDE,
@@ -215,115 +307,155 @@ impl InvocacaoUi {
                             shared::pets::de_item(*item_id).map_or(String::new(), |(_, g)| {
                                 format!("{} · coletor", shared::pets::nome_do_grau(g))
                             }),
-                            cor_do_grau(
-                                shared::pets::de_item(*item_id).map_or(1, |(_, g)| g),
-                            ),
+                            cor_do_grau(shared::pets::de_item(*item_id).map_or(1, |(_, g)| g)),
                         ),
                     };
-                    draw_circle(card.x + 22.0 * k, card.center().y, 12.0 * k, cor);
-                    estilo::texto_ajustado(&titulo, card.x + 42.0 * k, card.y + 29.0 * k, card.w - 48.0 * k, 14, estilo::TEXTO);
-                    estilo::texto(card.x + 42.0 * k, card.y + 55.0 * k, &subtitulo, 11, cor);
-                }
-                estilo::texto_centro_forte(c.x, r.y + 42.0 * k, "11 PRÊMIOS · BÔNUS 10+1", 24, estilo::OURO);
-            } else {
-            estilo::texto_centro_forte(
-                c.x,
-                r.y + 42.0 * k,
-                "INVOCAÇÃO CONCLUÍDA",
-                24,
-                estilo::OURO,
-            );
-            match premios[0].clone() {
-                PremioInvocacao::Chave { item_id, cor } => {
-                    let q = Rect::new(c.x - 92.0 * k, c.y - 102.0 * k, 184.0 * k, 184.0 * k);
-                    crate::icones::icone(item_id, q, Some(cor), None);
-                    let nome = nomes
-                        .get(&item_id)
-                        .cloned()
-                        .unwrap_or_else(|| "Chave de Craft".into());
-                    estilo::texto_centro_forte(c.x, c.y + 105.0 * k, &nome, 23, estilo::TEXTO);
-                    estilo::texto_centro(
-                        c.x,
-                        c.y + 132.0 * k,
-                        &format!(
-                            "Grau {}",
-                            shared::forja::Grau::de_u8(cor).map_or("Comum", |g| g.nome())
-                        ),
-                        15,
-                        estilo::SUAVE,
-                    );
-                }
-                PremioInvocacao::Montaria { item_id } => {
-                    let Some((especie, grau)) = shared::montarias::de_item(item_id) else {
-                        return;
-                    };
-                    crate::render3d::vitrine_montaria(
-                        vox,
-                        item_id,
-                        Rect::new(c.x - 170.0 * k, c.y - 135.0 * k, 340.0 * k, 245.0 * k),
-                        t * 0.45,
-                        solido,
-                    );
-                    let cor = cor_do_grau(grau);
-                    estilo::texto_centro_forte(
-                        c.x,
-                        c.y + 113.0 * k,
-                        especie.nome,
-                        25,
-                        cor,
-                    );
-                    estilo::texto_centro(
-                        c.x,
-                        c.y + 143.0 * k,
-                        &format!(
-                            "Equipe no slot da montaria: {:.0}% de velocidade montado",
-                            shared::montarias::velocidade(grau) * 100.0
-                        ),
+                    if let PremioInvocacao::Pet { item_id }
+                    | PremioInvocacao::Montaria { item_id } = premio
+                    {
+                        crate::icones::icone_com_3d(
+                            *item_id,
+                            Rect::new(card.x + 3.0 * k, card.y + 12.0 * k, 38.0 * k, 38.0 * k),
+                            None,
+                            None,
+                            Some((vox, solido)),
+                        );
+                    } else {
+                        draw_circle(card.x + 22.0 * k, card.center().y, 12.0 * k, cor);
+                    }
+                    estilo::texto_ajustado(
+                        &titulo,
+                        card.x + 42.0 * k,
+                        card.y + 29.0 * k,
+                        card.w - 48.0 * k,
                         14,
                         estilo::TEXTO,
                     );
+                    estilo::texto(card.x + 42.0 * k, card.y + 55.0 * k, &subtitulo, 11, cor);
                 }
-                PremioInvocacao::Pet { item_id } => {
-                    let Some((especie, grau)) = shared::pets::de_item(item_id) else {
-                        return;
-                    };
-                    let cor = cor_do_grau(grau);
-                    brilho_livro(c, 105.0 * k, cor, t);
-                    estilo::texto_centro_forte(
-                        c.x,
-                        c.y + 105.0 * k,
-                        especie.nome,
-                        24,
-                        cor,
-                    );
-                    estilo::texto_centro(c.x, c.y + 133.0 * k, especie.descricao, 15, estilo::TEXTO);
-                    estilo::texto_centro(
-                        c.x,
-                        c.y + 158.0 * k,
-                        &format!(
-                            "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
-                            shared::pets::raio_de_busca(grau),
-                            shared::pets::pontos(grau, 1)
-                        ),
-                        13,
-                        estilo::SUAVE,
-                    );
+                estilo::texto_centro_forte(
+                    c.x,
+                    r.y + 42.0 * k,
+                    "11 PRÊMIOS · BÔNUS 10+1",
+                    24,
+                    estilo::OURO,
+                );
+            } else {
+                estilo::texto_centro_forte(
+                    c.x,
+                    r.y + 42.0 * k,
+                    "INVOCAÇÃO CONCLUÍDA",
+                    24,
+                    estilo::OURO,
+                );
+                match premios[0].clone() {
+                    PremioInvocacao::Chave { item_id, cor } => {
+                        let q = Rect::new(c.x - 92.0 * k, c.y - 102.0 * k, 184.0 * k, 184.0 * k);
+                        crate::icones::icone(item_id, q, Some(cor), None);
+                        let nome = nomes
+                            .get(&item_id)
+                            .cloned()
+                            .unwrap_or_else(|| "Chave de Craft".into());
+                        estilo::texto_centro_forte(c.x, c.y + 105.0 * k, &nome, 23, estilo::TEXTO);
+                        estilo::texto_centro(
+                            c.x,
+                            c.y + 132.0 * k,
+                            &format!(
+                                "Grau {}",
+                                shared::forja::Grau::de_u8(cor).map_or("Comum", |g| g.nome())
+                            ),
+                            15,
+                            estilo::SUAVE,
+                        );
+                    }
+                    PremioInvocacao::Montaria { item_id } => {
+                        let Some((especie, grau)) = shared::montarias::de_item(item_id) else {
+                            return;
+                        };
+                        crate::render3d::vitrine_montaria(
+                            vox,
+                            item_id,
+                            Rect::new(c.x - 170.0 * k, c.y - 135.0 * k, 340.0 * k, 245.0 * k),
+                            t * 0.45,
+                            solido,
+                        );
+                        let cor = cor_do_grau(grau);
+                        estilo::texto_centro_forte(c.x, c.y + 113.0 * k, especie.nome, 25, cor);
+                        estilo::texto_centro(
+                            c.x,
+                            c.y + 143.0 * k,
+                            &format!(
+                                "Equipe no slot da montaria: {:.0}% de velocidade montado",
+                                shared::montarias::velocidade(grau) * 100.0
+                            ),
+                            14,
+                            estilo::TEXTO,
+                        );
+                    }
+                    PremioInvocacao::Pet { item_id } => {
+                        let Some((especie, grau)) = shared::pets::de_item(item_id) else {
+                            return;
+                        };
+                        let cor = cor_do_grau(grau);
+                        brilho_livro(c, 105.0 * k, cor, t);
+                        crate::render3d::vitrine_pet(
+                            vox,
+                            item_id,
+                            Rect::new(c.x - 170.0 * k, c.y - 135.0 * k, 340.0 * k, 245.0 * k),
+                            t * 0.45,
+                            solido,
+                        );
+                        estilo::texto_centro_forte(c.x, c.y + 105.0 * k, especie.nome, 24, cor);
+                        estilo::texto_centro(
+                            c.x,
+                            c.y + 133.0 * k,
+                            especie.descricao,
+                            15,
+                            estilo::TEXTO,
+                        );
+                        estilo::texto_centro(
+                            c.x,
+                            c.y + 158.0 * k,
+                            &format!(
+                                "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
+                                shared::pets::raio_de_busca(grau),
+                                shared::pets::pontos(grau, 1)
+                            ),
+                            13,
+                            estilo::SUAVE,
+                        );
+                    }
+                    PremioInvocacao::Tomo {
+                        skill_id,
+                        grau,
+                        quantidade,
+                    } => {
+                        let cor = match grau {
+                            shared::skills::GrauTomo::Verde => estilo::VERDE,
+                            shared::skills::GrauTomo::Roxo => Color::new(0.72, 0.42, 1.0, 1.0),
+                            shared::skills::GrauTomo::Lendario => estilo::OURO,
+                        };
+                        let nome = skills
+                            .iter()
+                            .find(|s| s.id == skill_id)
+                            .map_or("Habilidade", |s| s.nome.as_str());
+                        brilho_livro(c, 105.0 * k, cor, t);
+                        estilo::texto_centro_forte(
+                            c.x,
+                            c.y + 105.0 * k,
+                            &format!("Tomo {}", grau.nome()),
+                            24,
+                            cor,
+                        );
+                        estilo::texto_centro(
+                            c.x,
+                            c.y + 133.0 * k,
+                            &format!("{nome} · você possui x{quantidade}"),
+                            15,
+                            estilo::TEXTO,
+                        );
+                    }
                 }
-                PremioInvocacao::Tomo { skill_id, grau, quantidade } => {
-                    let cor = match grau {
-                        shared::skills::GrauTomo::Verde => estilo::VERDE,
-                        shared::skills::GrauTomo::Roxo => Color::new(0.72, 0.42, 1.0, 1.0),
-                        shared::skills::GrauTomo::Lendario => estilo::OURO,
-                    };
-                    let nome = skills
-                        .iter()
-                        .find(|s| s.id == skill_id)
-                        .map_or("Habilidade", |s| s.nome.as_str());
-                    brilho_livro(c, 105.0 * k, cor, t);
-                    estilo::texto_centro_forte(c.x, c.y + 105.0 * k, &format!("Tomo {}", grau.nome()), 24, cor);
-                    estilo::texto_centro(c.x, c.y + 133.0 * k, &format!("{nome} · você possui x{quantidade}"), 15, estilo::TEXTO);
-                }
-            }
             }
             let pronto = premios.len() == 1 || t >= 1.25 + premios.len() as f32 * 0.10;
             let bt = Rect::new(c.x - 115.0 * k, r.y + r.h - 52.0 * k, 230.0 * k, 39.0 * k);
@@ -333,10 +465,7 @@ impl InvocacaoUi {
                 estilo::estado_de(bt, !pronto, false),
                 pronto,
             );
-            if pronto
-                && crate::foco::clique()
-                && bt.contains(Vec2::from(mouse_position()))
-            {
+            if pronto && crate::foco::clique() && bt.contains(Vec2::from(mouse_position())) {
                 self.fechar();
             }
         }
@@ -348,13 +477,34 @@ impl InvocacaoUi {
 
 fn brilho_livro(c: Vec2, lado: f32, cor: Color, t: f32) {
     let p = 1.0 + (t * 4.0).sin() * 0.05;
-    draw_circle(c.x, c.y - 12.0, lado * 0.72 * p, Color::new(cor.r, cor.g, cor.b, 0.16));
+    draw_circle(
+        c.x,
+        c.y - 12.0,
+        lado * 0.72 * p,
+        Color::new(cor.r, cor.g, cor.b, 0.16),
+    );
     let w = lado * 0.92;
     let h = lado * 0.68;
-    draw_rectangle(c.x - w, c.y - h * 0.5, w, h, Color::new(0.10, 0.08, 0.16, 1.0));
+    draw_rectangle(
+        c.x - w,
+        c.y - h * 0.5,
+        w,
+        h,
+        Color::new(0.10, 0.08, 0.16, 1.0),
+    );
     draw_rectangle(c.x, c.y - h * 0.5, w, h, Color::new(0.13, 0.10, 0.20, 1.0));
-    draw_triangle(vec2(c.x, c.y + h * 0.5), vec2(c.x - w, c.y + h * 0.5), vec2(c.x, c.y + h * 0.34), cor);
-    draw_triangle(vec2(c.x, c.y + h * 0.5), vec2(c.x + w, c.y + h * 0.5), vec2(c.x, c.y + h * 0.34), cor);
+    draw_triangle(
+        vec2(c.x, c.y + h * 0.5),
+        vec2(c.x - w, c.y + h * 0.5),
+        vec2(c.x, c.y + h * 0.34),
+        cor,
+    );
+    draw_triangle(
+        vec2(c.x, c.y + h * 0.5),
+        vec2(c.x + w, c.y + h * 0.5),
+        vec2(c.x, c.y + h * 0.34),
+        cor,
+    );
     draw_line(c.x, c.y - h * 0.48, c.x, c.y + h * 0.42, 3.0, cor);
     draw_poly(c.x, c.y - 4.0, 6, lado * 0.20, t * 30.0, cor);
 }
@@ -390,10 +540,7 @@ pub async fn previa(vox: &VoxCache) {
         (
             "1-abrindo.png",
             vec![PremioInvocacao::Montaria {
-                item_id: shared::item_id::montaria_no_grau(
-                    shared::item_id::MONTARIA_BASE,
-                    3,
-                ),
+                item_id: shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 3),
             }],
             0.55,
         ),
@@ -408,10 +555,7 @@ pub async fn previa(vox: &VoxCache) {
         (
             "3-montaria.png",
             vec![PremioInvocacao::Montaria {
-                item_id: shared::item_id::montaria_no_grau(
-                    shared::item_id::MONTARIA_BASE,
-                    3,
-                ),
+                item_id: shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 3),
             }],
             2.2,
         ),

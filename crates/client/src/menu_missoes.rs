@@ -50,14 +50,8 @@ pub enum Clique {
     /// quem marcou por ultimo vai por ultimo —, e missao que nao da' pra
     /// fazer na hora e' PULADA, nao trava a fila.
     Fila(Vec<u16>),
-    /// Trava de NIVEL: abre a Ilha Magica, que e' onde se arruma XP.
-    ///
-    /// A historia para esperando nivel e o jogador chega uns tres abaixo —
-    /// o dono viu isso na missao do nivel 20, chegando no 17. O botao "Ir"
-    /// dela nao tinha pra onde ir: mandava `AutoMissao`, que respondia
-    /// "Historia: chegue ao nivel 20 para continuar" e parava. Agora ele
-    /// leva ao lugar que resolve.
-    IlhaMagica,
+    /// Trava de nível: apresenta as rotas de XP disponíveis nesta ilha.
+    OpcoesDeNivel(u32),
 }
 
 /// O que o calculo precisa saber do jogador.
@@ -94,17 +88,19 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
             .unwrap_or_else(|| format!("item {id}"))
     };
     let mut partes = Vec::new();
-    if d.reward_xp > 0 {
-        partes.push(format!("{} XP", d.reward_xp));
-    }
-    if d.reward_cobre > 0 {
-        partes.push(format!("{} cobre", d.reward_cobre));
-    }
     if d.reward_item != 0 && d.reward_item_qty > 0 {
         partes.push(format!("{}x {}", d.reward_item_qty, nome(d.reward_item)));
     }
     if d.reward_item2 != 0 && d.reward_item2_qty > 0 {
         partes.push(format!("{}x {}", d.reward_item2_qty, nome(d.reward_item2)));
+    }
+    // O cartão tem uma só linha e corta o final. Os itens precisam aparecer
+    // antes de XP/cobre para não esconder recompensas como o pergaminho de pet.
+    if d.reward_xp > 0 {
+        partes.push(format!("{} XP", d.reward_xp));
+    }
+    if d.reward_cobre > 0 {
+        partes.push(format!("{} cobre", d.reward_cobre));
     }
     if d.reward_faction_points > 0 {
         partes.push(format!("{} pts de facção", d.reward_faction_points));
@@ -172,12 +168,9 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
 pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
     match e {
         Estado::Disponivel => Clique::Aceitar(d.id),
-        // TRAVA DE NIVEL: o "Ir" leva pra Ilha Magica em vez de dizer que
-        // nao ha' pra onde ir.
-        Estado::EmAndamento { .. }
-            if d.obj_kind == shared::quests::objective_kind::NIVEL =>
-        {
-            Clique::IlhaMagica
+        // Trava de nível: o jogador escolhe uma rota de XP.
+        Estado::EmAndamento { .. } if d.obj_kind == shared::quests::objective_kind::NIVEL => {
+            Clique::OpcoesDeNivel(d.obj_count)
         }
         Estado::EmAndamento { .. } | Estado::Pronta => Clique::AutoMissao(d.id),
         Estado::Concluida => Clique::Aviso(format!("\"{}\" já foi concluída.", d.title)),
@@ -325,6 +318,11 @@ pub fn nome_da_cadeia(raiz: u16) -> Option<&'static str> {
         528 => "Mãos na terra",
         531 => "Porões e adegas",
         534 => "Gente da vila",
+        810 => "Costa das Morsas",
+        815 => "Abrigo da Floresta",
+        820 => "Passagem dos Ursos",
+        825 => "Subida do Gelo",
+        830 => "Segredos da Geleira",
         _ => return None,
     })
 }
@@ -500,7 +498,9 @@ pub fn tipo_de(l: &Linha) -> Tipo {
 
 /// A linha passa pelo filtro de tipo?
 pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
-    t == Tipo::Todos || tipo_de(l) == t
+    t == Tipo::Todos
+        || tipo_de(l) == t
+        || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
 }
 
 /// Em que aba a linha vai, pelo estado do passo atual.
@@ -536,8 +536,7 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
             if d.obj_kind == shared::quests::objective_kind::NIVEL =>
         {
             format!(
-                "Nível {feito}/{total} · a Ilha Mágica dá XP em DOBRO ({} entradas grátis por dia)",
-                shared::magica::GRATIS_POR_DIA
+                "Nível {feito}/{total} · escolha: Ilha Mágica, missões secundárias ou caça em áreas densas"
             )
         }
         Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
@@ -567,7 +566,14 @@ fn icone(c: Vec2, e: &Estado, s: f32) {
         Estado::Bloqueada(_) => cadeado(c, 9.0 * s, cor),
         Estado::Concluida => {
             draw_line(c.x - 7.0 * s, c.y, c.x - 2.0 * s, c.y + 6.0 * s, 3.0, cor);
-            draw_line(c.x - 2.0 * s, c.y + 6.0 * s, c.x + 8.0 * s, c.y - 7.0 * s, 3.0, cor);
+            draw_line(
+                c.x - 2.0 * s,
+                c.y + 6.0 * s,
+                c.x + 8.0 * s,
+                c.y - 7.0 * s,
+                3.0,
+                cor,
+            );
         }
         Estado::Pronta => estilo::texto_centro(c.x, c.y + 10.0 * s, "?", 26, cor),
         Estado::Disponivel => estilo::texto_centro(c.x, c.y + 10.0 * s, "!", 26, cor),
@@ -589,7 +595,12 @@ pub(crate) fn rodape_da_fila(p: Rect, f: f32, _tem_marca: bool) -> Option<Rect> 
     // n" e "Limpar". Agora ele carrega o "Marcar todas", que é justamente o
     // botão de quem NÃO marcou nada — se o rodapé só nascesse com marca, o
     // atalho pra marcar estaria escondido atrás do trabalho que ele evita.
-    Some(Rect::new(p.x + 18.0, p.y + p.h - 52.0 * f, p.w - 36.0, 40.0 * f))
+    Some(Rect::new(
+        p.x + 18.0,
+        p.y + p.h - 52.0 * f,
+        p.w - 36.0,
+        40.0 * f,
+    ))
 }
 
 /// Os três botões do rodapé: (marcar todas, fazer, limpar).
@@ -689,6 +700,11 @@ impl MenuMissoes {
         self.marcadas.clear();
     }
 
+    pub fn abrir_secundarias(&mut self) {
+        self.abrir();
+        self.tipo = Tipo::Secundarias;
+    }
+
     /// Marca ou desmarca uma missao pra fila. Devolve `false` quando a fila
     /// esta' cheia e a marca foi recusada.
     fn alterna_marca(&mut self, id: u16) -> bool {
@@ -741,7 +757,12 @@ impl MenuMissoes {
         let f = estilo::fator_texto();
         let w = (LARGURA * f).min(screen_width() - 24.0);
         let h = (screen_height() - 100.0).clamp(240.0, 760.0 * f);
-        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
+        Rect::new(
+            (screen_width() - w) * 0.5,
+            (screen_height() - h) * 0.5,
+            w,
+            h,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -818,10 +839,7 @@ impl MenuMissoes {
             if *tp == self.tipo {
                 estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::ACENTO, 0.28));
             }
-            let n = todas
-                .iter()
-                .filter(|(l, _)| cabe_no_tipo(l, *tp))
-                .count();
+            let n = todas.iter().filter(|(l, _)| cabe_no_tipo(l, *tp)).count();
             // Tipo sem nenhuma linha fica APAGADO em vez de sumir: a faixa
             // mudar de tamanho conforme o progresso faria o botão trocar de
             // lugar debaixo do dedo.
@@ -847,7 +865,12 @@ impl MenuMissoes {
         let rodape = rodape_da_fila(p, f, !self.marcadas.is_empty());
         let topo_lista = yt + 38.0 * f;
         let fim_lista = rodape.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
-        let area = Rect::new(p.x + 10.0, topo_lista, p.w - 20.0, (fim_lista - topo_lista).max(40.0));
+        let area = Rect::new(
+            p.x + 10.0,
+            topo_lista,
+            p.w - 20.0,
+            (fim_lista - topo_lista).max(40.0),
+        );
         let da_aba: Vec<&(Linha, Resumo)> = todas
             .iter()
             .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo))
@@ -915,7 +938,11 @@ impl MenuMissoes {
             }
             let topo = Rect::new(card.x, card.y, card.w, CARTAO * f);
             let sobre = !arrastando && topo.contains(mouse) && area.contains(mouse);
-            estilo::ret_arredondado(card, 8.0, Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.04 }));
+            estilo::ret_arredondado(
+                card,
+                8.0,
+                Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.04 }),
+            );
             icone(vec2(card.x + 24.0 * f, card.y + 28.0 * f), &r.estado, f);
             // As MESMAS medidas que o teste confere. Duas contas pro mesmo
             // lugar é como o desenho e a conta se separam sem ninguém ver.
@@ -925,7 +952,8 @@ impl MenuMissoes {
             let passo = match r.atual {
                 Some(d) if l.historia => format!(
                     "{} · {}",
-                    historia::indice(d.id).map_or(String::new(), |i| historia::nome_do_capitulo(i).to_string()),
+                    historia::indice(d.id)
+                        .map_or(String::new(), |i| historia::nome_do_capitulo(i).to_string()),
                     d.title
                 ),
                 Some(d) => format!("Passo {} de {} · {}", r.feitos + 1, r.total, d.title),
@@ -933,7 +961,14 @@ impl MenuMissoes {
             };
             estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
             if let Some(d) = r.atual {
-                estilo::texto_ajustado(&frase(d, &r.estado), tx, card.y + 63.0 * f, largura, 13, cor_do_estado(&r.estado));
+                estilo::texto_ajustado(
+                    &frase(d, &r.estado),
+                    tx,
+                    card.y + 63.0 * f,
+                    largura,
+                    13,
+                    cor_do_estado(&r.estado),
+                );
                 // O QUE ELA PAGA. Em verde e por último: é o motivo de fazer,
                 // e vem depois do que ela pede, que é o custo.
                 let premio = recompensa_de(d, c.nomes);
@@ -950,7 +985,10 @@ impl MenuMissoes {
             }
             // "Ir" no passo atual, quando da' pra fazer algo com ele.
 
-            let clicavel = matches!(r.estado, Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta);
+            let clicavel = matches!(
+                r.estado,
+                Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
+            );
             // A CAIXA DA FILA, logo abaixo do "Ir".
             //
             // Marcar é dizer "esta, e nesta ordem" — por isso ela mostra o
@@ -1005,10 +1043,25 @@ impl MenuMissoes {
                 let mut py = card.y + CARTAO * f;
                 for (d, e) in l.passos.iter().zip(&r.estados) {
                     let atual = r.atual.is_some_and(|a| a.id == d.id);
-                    let cor = if atual { estilo::OURO } else { cor_do_estado(e) };
+                    let cor = if atual {
+                        estilo::OURO
+                    } else {
+                        cor_do_estado(e)
+                    };
                     icone(vec2(tx + 6.0 * f, py + PASSO * f * 0.5), e, f * 0.7);
-                    let t = if atual { format!("› {}", d.title) } else { d.title.to_string() };
-                    estilo::texto_ajustado(&t, tx + 22.0 * f, py + PASSO * f * 0.68, (largura - 22.0 * f).max(24.0), 13, cor);
+                    let t = if atual {
+                        format!("› {}", d.title)
+                    } else {
+                        d.title.to_string()
+                    };
+                    estilo::texto_ajustado(
+                        &t,
+                        tx + 22.0 * f,
+                        py + PASSO * f * 0.68,
+                        (largura - 22.0 * f).max(24.0),
+                        13,
+                        cor,
+                    );
                     py += PASSO * f;
                 }
             }
@@ -1208,7 +1261,8 @@ mod tests {
         // coleta, dungeons, vila). 539-543 e' a CACADA: a cadeia de volume
         // (30/60/100) e as duas tematicas, pedidas em 22/09/2026 — "missoes
         // para matar mais inimigos que leva pras zonas de maior densidade".
-        let esperado: Vec<u16> = (501..=543).collect();
+        // 544-547 entregam as chaves de craft do catalogo cinza (24/09/2026).
+        let esperado: Vec<u16> = (501..=547).collect();
         assert_eq!(&bosque[..], &esperado[..], "so' as cadeias, em ordem");
         assert!(
             todas().iter().all(|d| !d.daily),
@@ -1301,15 +1355,30 @@ mod tests {
     fn linhas_juntam_a_cadeia_e_acham_o_passo_atual() {
         let ls = linhas(&[]);
         assert!(ls[0].historia, "a historia vem primeiro");
-        let nomes: Vec<&str> = ls.iter().filter(|l| !l.historia).map(|l| l.nome.as_str()).collect();
-        for n in ["Os primeiros dias", "Os chefes do Bosque", "Bestiário do Bosque", "A oficina", "Mãos na terra", "Porões e adegas", "Gente da vila"] {
+        let nomes: Vec<&str> = ls
+            .iter()
+            .filter(|l| !l.historia)
+            .map(|l| l.nome.as_str())
+            .collect();
+        for n in [
+            "Os primeiros dias",
+            "Os chefes do Bosque",
+            "Bestiário do Bosque",
+            "A oficina",
+            "Mãos na terra",
+            "Porões e adegas",
+            "Gente da vila",
+        ] {
             assert!(nomes.contains(&n), "{n} fora do menu: {nomes:?}");
         }
         let chefes = ls.iter().find(|l| l.nome == "Os chefes do Bosque").unwrap();
-        assert_eq!(chefes.passos.iter().map(|d| d.id).collect::<Vec<_>>(), vec![511, 512, 513, 514, 515]);
+        assert_eq!(
+            chefes.passos.iter().map(|d| d.id).collect::<Vec<_>>(),
+            vec![511, 512, 513, 514, 515]
+        );
 
-        // Nivel 16, a 511 entregue: a linha dos chefes esta' no passo 2 e e'
-        // do Capitao do Porto.
+        // Nivel 16, a 511 entregue: a linha dos chefes esta' no passo 2 e
+        // continua na cabana do Guia do Mirante.
         let mut entregues = HashMap::new();
         for id in 501..=507 {
             entregues.insert(id, 0);
@@ -1320,7 +1389,7 @@ mod tests {
         assert_eq!(r.atual.map(|d| d.id), Some(512));
         assert_eq!((r.feitos, r.total), (1, 5));
         assert_eq!(aba_de(&r), Aba::Disponiveis);
-        assert!(frase(r.atual.unwrap(), &r.estado).contains("Capitao do Porto"));
+        assert!(frase(r.atual.unwrap(), &r.estado).contains("Guia do Mirante"));
 
         // Em andamento vence disponivel; tudo feito vai pra Concluidas.
         let ativa = QuestNet::from_def(quest_by_id(512).unwrap(), quest_status::ACTIVE, 0);
@@ -1332,7 +1401,10 @@ mod tests {
         }
         let c3 = ctx(&[], &entregues, 16, Some("ilha_inicial"));
         let fim = resumo(chefes, &c3);
-        assert_eq!((aba_de(&fim), fim.atual.map(|d| d.id)), (Aba::Concluidas, None));
+        assert_eq!(
+            (aba_de(&fim), fim.atual.map(|d| d.id)),
+            (Aba::Concluidas, None)
+        );
         // Nivel baixo: a primeira da linha trava e ela vai pra Bloqueadas.
         let nenhuma = HashMap::new();
         let c4 = ctx(&[], &nenhuma, 1, Some("ilha_inicial"));
@@ -1435,14 +1507,22 @@ mod testes_da_trava {
             d.source == shared::quests::quest_source::NPC && !historia::e_da_historia(d.id)
         });
         if let Some(d) = de_npc {
-            let l = Linha { nome: d.title.into(), passos: vec![d], historia: false };
+            let l = Linha {
+                nome: d.title.into(),
+                passos: vec![d],
+                historia: false,
+            };
             assert_eq!(tipo_de(&l), Tipo::Moradores, "quest {} é de NPC", d.id);
         }
         let de_quadro = todas().into_iter().find(|d| {
             d.source == shared::quests::quest_source::BOARD && !historia::e_da_historia(d.id)
         });
         if let Some(d) = de_quadro {
-            let l = Linha { nome: d.title.into(), passos: vec![d], historia: false };
+            let l = Linha {
+                nome: d.title.into(),
+                passos: vec![d],
+                historia: false,
+            };
             assert_eq!(tipo_de(&l), Tipo::Secundarias, "quest {} é do quadro", d.id);
         }
     }
@@ -1622,7 +1702,7 @@ mod testes_da_trava {
     /// respondia "História: chegue ao nível 20 para continuar" e parava.
     /// Uma missão cujo botão não faz nada é pior que uma missão sem botão.
     #[test]
-    fn a_trava_de_nivel_aponta_a_ilha_magica() {
+    fn a_trava_de_nivel_mostra_rotas_de_xp() {
         let d = shared::historia::PASSOS
             .iter()
             .find(|d| d.obj_kind == shared::quests::objective_kind::NIVEL)
@@ -1631,13 +1711,13 @@ mod testes_da_trava {
             feito: 17,
             total: 20,
         };
-        assert_eq!(clique_de(d, &andando), Clique::IlhaMagica);
+        assert_eq!(clique_de(d, &andando), Clique::OpcoesDeNivel(d.obj_count));
 
         // E a frase diz o que fazer, não só o quanto falta.
         let f = frase(d, &andando);
         assert!(f.contains("17/20"), "{f}");
         assert!(f.contains("Ilha Mágica"), "{f}");
-        assert!(f.contains("DOBRO"), "{f}");
+        assert!(f.contains("missões secundárias"), "{f}");
 
         // Uma missão comum em andamento continua indo pela auto missão.
         let comum = shared::quests::QUESTS

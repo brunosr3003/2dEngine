@@ -9,9 +9,42 @@ use crate::hud_layout;
 
 pub const PASSO: f32 = 0.1;
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sombras {
+    Desligadas,
+    Leves,
+    Bonitas,
+}
+
+impl Sombras {
+    pub fn valor(self) -> &'static str {
+        match self {
+            Self::Desligadas => "0",
+            Self::Leves => "1",
+            Self::Bonitas => "2",
+        }
+    }
+}
+
 pub struct ConfigInterface {
     pub aberto: bool,
+    pub sombras: Sombras,
+}
+
+impl Default for ConfigInterface {
+    fn default() -> Self {
+        let sombras = crate::lembranca::caminho()
+            .and_then(|p| std::fs::read_to_string(p.with_file_name("sombras.prefs")).ok())
+            .map_or(Sombras::Leves, |v| match v.trim() {
+                "0" => Sombras::Desligadas,
+                "2" => Sombras::Bonitas,
+                _ => Sombras::Leves,
+            });
+        Self {
+            aberto: false,
+            sombras,
+        }
+    }
 }
 
 /// O que mudou no quadro.
@@ -21,6 +54,7 @@ pub enum Mudanca {
     /// Minutos parado ate' entrar sozinho no modo economia (0 = nunca).
     EconomiaAuto(u16),
     EconomiaAgora,
+    Sombras(Sombras),
 }
 
 /// Em passos de 10%, dentro da faixa.
@@ -30,6 +64,13 @@ pub fn ajusta(escala: f32, passos: i32) -> f32 {
 }
 
 impl ConfigInterface {
+    pub fn define_sombras(&mut self, sombras: Sombras) {
+        self.sombras = sombras;
+        if let Some(p) = crate::lembranca::caminho() {
+            let _ = std::fs::write(p.with_file_name("sombras.prefs"), sombras.valor());
+        }
+    }
+
     pub fn abrir(&mut self) {
         self.aberto = true;
     }
@@ -43,9 +84,13 @@ impl ConfigInterface {
         // O painel cresce junto com o texto que ele mostra.
         let f = estilo::fator_texto();
         let seguro = hud_layout::tela_segura();
+        if seguro.h < 500.0 * f {
+            let k = ((seguro.h - 16.0) / 320.0).min(f);
+            return estilo::no_painel(k, || self.desenha_compacto(atual, economia_auto));
+        }
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
-            (420.0 * f).min(seguro.h - 16.0),
+            (500.0 * f).min(seguro.h - 16.0),
         );
         let r = Rect::new(
             seguro.center().x - w * 0.5,
@@ -162,6 +207,47 @@ impl ConfigInterface {
             );
         }
 
+        let ys = yc + 56.0 * f;
+        estilo::texto(r.x + 18.0 * f, ys, "Sombras", 14, estilo::SUAVE);
+        let largura = (r.w - 52.0 * f) / 3.0;
+        let opcoes = [
+            (Sombras::Desligadas, "Desligadas"),
+            (Sombras::Leves, "Leves"),
+            (Sombras::Bonitas, "Bonitas"),
+        ];
+        let botoes: Vec<_> = opcoes
+            .iter()
+            .enumerate()
+            .map(|(i, &(modo, nome))| {
+                let b = Rect::new(
+                    r.x + 18.0 * f + i as f32 * (largura + 8.0 * f),
+                    ys + 10.0 * f,
+                    largura,
+                    42.0 * f,
+                );
+                estilo::cartao(b, b.contains(m), self.sombras == modo);
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 6.0 * f,
+                    nome,
+                    14,
+                    if self.sombras == modo {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
+                (b, modo)
+            })
+            .collect();
+        estilo::texto(
+            r.x + 18.0 * f,
+            ys + 70.0 * f,
+            "Bonitas: luz de fim de tarde e sombras do cenário.",
+            11,
+            estilo::SUAVE,
+        );
+
         estilo::texto(
             r.x + 18.0 * f,
             r.y + r.h - 18.0 * f,
@@ -171,6 +257,9 @@ impl ConfigInterface {
         );
         if !clicou {
             return None;
+        }
+        if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| b.contains(m)) {
+            return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
         }
         if agora.contains(m) {
             self.fechar();
@@ -185,6 +274,192 @@ impl ConfigInterface {
             ajusta(atual, 1)
         } else if botao_padrao.contains(m) {
             padrao
+        } else {
+            return None;
+        };
+        ((nova - atual).abs() > 1e-3).then_some(Mudanca::Escala(nova))
+    }
+
+    /// Em tela horizontal baixa, os controles ocupam duas colunas.
+    fn desenha_compacto(&mut self, atual: f32, economia_auto: u16) -> Option<Mudanca> {
+        let f = estilo::fator_texto();
+        let seguro = hud_layout::tela_segura();
+        let w = (760.0 * f).min(seguro.w - 16.0);
+        let r = Rect::new(
+            seguro.center().x - w * 0.5,
+            seguro.center().y - 160.0 * f,
+            w,
+            320.0 * f,
+        );
+        estilo::painel(r);
+        estilo::texto(
+            r.x + 16.0 * f,
+            r.y + 30.0 * f,
+            "Interface",
+            20,
+            estilo::OURO,
+        );
+        let fechar = Rect::new(r.x + r.w - 43.0 * f, r.y + 5.0 * f, 36.0 * f, 36.0 * f);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 7.0 * f,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
+        let m = Vec2::from(mouse_position());
+        let clicou = crate::foco::clique();
+        if clicou && fechar.contains(m) {
+            self.fechar();
+            return None;
+        }
+        let col = (r.w - 48.0 * f) * 0.5;
+        let lx = r.x + 16.0 * f;
+        let rx = lx + col + 16.0 * f;
+        estilo::texto(lx, r.y + 61.0 * f, "Tamanho do HUD", 14, estilo::SUAVE);
+        let menos = Rect::new(lx, r.y + 75.0 * f, 50.0 * f, 42.0 * f);
+        let mais = Rect::new(lx + col - 50.0 * f, menos.y, 50.0 * f, 42.0 * f);
+        for (b, nome) in [(menos, "-"), (mais, "+")] {
+            estilo::painel(b);
+            estilo::texto_centro(b.center().x, b.center().y + 8.0 * f, nome, 23, estilo::OURO);
+        }
+        estilo::texto_centro(
+            lx + col * 0.5,
+            menos.center().y + 7.0 * f,
+            &format!("{:.0}%", atual * 100.0),
+            22,
+            estilo::TEXTO,
+        );
+        let padrao = Rect::new(lx, r.y + 132.0 * f, col, 38.0 * f);
+        estilo::painel(padrao);
+        estilo::texto_centro(
+            padrao.center().x,
+            padrao.center().y + 6.0 * f,
+            "Tamanho padrão",
+            14,
+            estilo::TEXTO,
+        );
+        estilo::texto(
+            lx,
+            r.y + 194.0 * f,
+            "Economia de energia",
+            14,
+            estilo::SUAVE,
+        );
+        let agora = Rect::new(lx, r.y + 204.0 * f, col, 38.0 * f);
+        estilo::painel(agora);
+        estilo::texto_centro(
+            agora.center().x,
+            agora.center().y + 6.0 * f,
+            "Ativar agora",
+            14,
+            estilo::TEXTO,
+        );
+        estilo::texto(
+            lx,
+            r.y + 263.0 * f,
+            "Auto após inatividade",
+            12,
+            estilo::SUAVE,
+        );
+        let n = economia::OPCOES_AUTO_MIN.len();
+        let cw = (col - 6.0 * f * (n as f32 - 1.0)) / n as f32;
+        let chips: Vec<_> = economia::OPCOES_AUTO_MIN
+            .iter()
+            .enumerate()
+            .map(|(i, &min)| {
+                let b = Rect::new(
+                    lx + i as f32 * (cw + 6.0 * f),
+                    r.y + 271.0 * f,
+                    cw,
+                    32.0 * f,
+                );
+                estilo::cartao(b, b.contains(m), min == economia_auto);
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 5.0 * f,
+                    &if min == 0 {
+                        "Nunca".to_string()
+                    } else {
+                        format!("{min} min")
+                    },
+                    12,
+                    if min == economia_auto {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
+                (b, min)
+            })
+            .collect();
+        estilo::texto(rx, r.y + 61.0 * f, "Sombras", 14, estilo::SUAVE);
+        let nomes = [
+            (Sombras::Desligadas, "Desligadas"),
+            (Sombras::Leves, "Leves"),
+            (Sombras::Bonitas, "Bonitas"),
+        ];
+        let sw = (col - 12.0 * f) / 3.0;
+        let sombras: Vec<_> = nomes
+            .iter()
+            .enumerate()
+            .map(|(i, &(modo, nome))| {
+                let b = Rect::new(rx + i as f32 * (sw + 6.0 * f), r.y + 75.0 * f, sw, 42.0 * f);
+                estilo::cartao(b, b.contains(m), modo == self.sombras);
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 6.0 * f,
+                    nome,
+                    13,
+                    if modo == self.sombras {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
+                (b, modo)
+            })
+            .collect();
+        estilo::texto(
+            rx,
+            r.y + 151.0 * f,
+            "Bonitas: sol de fim de tarde",
+            13,
+            estilo::SUAVE,
+        );
+        estilo::texto(
+            rx,
+            r.y + 173.0 * f,
+            "e sombras suaves do cenário.",
+            13,
+            estilo::SUAVE,
+        );
+        estilo::texto(
+            rx,
+            r.y + 301.0 * f,
+            "A escolha fica salva no aparelho.",
+            12,
+            estilo::SUAVE,
+        );
+        if !clicou {
+            return None;
+        }
+        if let Some(&(_, modo)) = sombras.iter().find(|(b, _)| b.contains(m)) {
+            return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
+        }
+        if agora.contains(m) {
+            self.fechar();
+            return Some(Mudanca::EconomiaAgora);
+        }
+        if let Some(&(_, min)) = chips.iter().find(|(b, _)| b.contains(m)) {
+            return (min != economia_auto).then_some(Mudanca::EconomiaAuto(min));
+        }
+        let nova = if menos.contains(m) {
+            ajusta(atual, -1)
+        } else if mais.contains(m) {
+            ajusta(atual, 1)
+        } else if padrao.contains(m) {
+            hud_layout::escala_ui_padrao()
         } else {
             return None;
         };

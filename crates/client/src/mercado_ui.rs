@@ -40,6 +40,8 @@ pub struct Contexto<'a> {
     pub ouro: u64,
     pub nivel: u32,
     pub digitado: &'a [char],
+    pub vox: &'a crate::vox::VoxCache,
+    pub solido: &'a macroquad::material::Material,
 }
 
 /// Uma compra sendo confirmada.
@@ -79,8 +81,7 @@ pub struct Mercado {
     aviso: Option<(String, bool, f64)>,
     /// Primeira linha visivel da lista da aba.
     rolagem: usize,
-    /// Correio das dungeons (1ª vitoria, bolsa cheia): mora nas Entregas.
-    pub correio: Vec<shared::dungeon::CartaNet>,
+    rolagem_venda: crate::rolagem::Rolagem,
 }
 
 fn filtro_tp() -> FiltroNet {
@@ -99,9 +100,6 @@ impl Mercado {
         self.compra = None;
         let mut v = self.pedidos_da_aba();
         v.push(ClientMessage::MercadoEntregas);
-        v.push(ClientMessage::Dungeon {
-            pedido: shared::dungeon::Pedido::Correio,
-        });
         v
     }
 
@@ -153,12 +151,7 @@ impl Mercado {
         match self.aba {
             Aba::Comprar => vec![self.buscar()],
             Aba::Vender | Aba::Meus => vec![ClientMessage::MercadoMeus],
-            Aba::Entregas => vec![
-                ClientMessage::MercadoEntregas,
-                ClientMessage::Dungeon {
-                    pedido: shared::dungeon::Pedido::Correio,
-                },
-            ],
+            Aba::Entregas => vec![ClientMessage::MercadoEntregas],
             Aba::Tp => {
                 self.ultima_busca_tp = true;
                 vec![
@@ -216,6 +209,7 @@ impl Mercado {
         }
         self.aba = aba;
         self.rolagem = 0;
+        self.rolagem_venda.zera();
         self.foco_busca = false;
         self.compra = None;
         self.pedidos_da_aba()
@@ -223,7 +217,9 @@ impl Mercado {
 
     /// Desenha e devolve os pedidos do quadro.
     pub fn desenha(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
-        estilo::no_painel(estilo::escala_do_painel(980.0, 660.0), || self.desenha_na_escala(c, agora))
+        estilo::no_painel(estilo::escala_do_painel(980.0, 660.0), || {
+            self.desenha_na_escala(c, agora)
+        })
     }
 
     fn desenha_na_escala(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
@@ -269,7 +265,7 @@ impl Mercado {
             let r = Rect::new(p.x + 18.0 * f + i as f32 * tw, ty, tw - 4.0 * f, 40.0 * f);
             let sobre = livre && r.contains(m);
             estilo::aba(r, rotulo, self.aba == *aba, sobre);
-            if *aba == Aba::Entregas && (!self.cartas.is_empty() || !self.correio.is_empty()) {
+            if *aba == Aba::Entregas && !self.cartas.is_empty() {
                 estilo::badge(r);
             }
             if sobre && clicou {
@@ -285,7 +281,7 @@ impl Mercado {
         match self.aba {
             Aba::Comprar => self.aba_comprar(area, c, f, livre, &mut saida),
             Aba::Vender => self.aba_vender(area, c, f, livre, &mut saida),
-            Aba::Meus => self.aba_meus(area, f, livre, &mut saida),
+            Aba::Meus => self.aba_meus(area, c, f, livre, &mut saida),
             Aba::Entregas => self.aba_entregas(area, c, f, livre, &mut saida),
             Aba::Tp => self.aba_tp(area, c, f, livre, &mut saida),
         }
@@ -478,7 +474,12 @@ impl Mercado {
         if botao(cima, "Subir", livre && self.rolagem > 0, false) {
             self.rolagem = self.rolagem.saturating_sub(cabem.max(2) - 1);
         }
-        if botao(baixo, "Descer", livre && self.rolagem + cabem < total, false) {
+        if botao(
+            baixo,
+            "Descer",
+            livre && self.rolagem + cabem < total,
+            false,
+        ) {
             self.rolagem += cabem.max(2) - 1;
         }
         self.rolagem = self.rolagem.min(total.saturating_sub(cabem));
@@ -514,11 +515,12 @@ impl Mercado {
         if tp {
             estilo::icone_tp(vec2(r.x + 42.0 * f, y + 24.0 * f), 50.0 * f);
         } else {
-            crate::icones::icone(
+            crate::icones::icone_com_3d(
                 an.item_id,
                 Rect::new(r.x + 18.0 * f, y, 48.0 * f, 48.0 * f),
                 an.instancia.map(|i| i.rarity),
                 None,
+                Some((c.vox, c.solido)),
             );
         }
         let xn = r.x + 76.0 * f;
@@ -601,7 +603,6 @@ impl Mercado {
         saida: &mut Vec<ClientMessage>,
     ) {
         let m = Vec2::from(mouse_position());
-        let clicou = crate::foco::clique();
         let pode = c.nivel >= regras::NIVEL_PARA_VENDER;
         let esq = Rect::new(a.x, a.y, a.w * 0.52, a.h);
         let dir = Rect::new(a.x + a.w * 0.55, a.y, a.w * 0.45, a.h);
@@ -631,9 +632,13 @@ impl Mercado {
         let lado = 66.0 * f;
         let por_linha = ((esq.w / lado).floor() as usize).max(1);
         let grade = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f - 46.0 * f);
-        let linhas_cabem = ((grade.h / lado).floor() as usize).max(1);
         let total_linhas = vendaveis.len().div_ceil(por_linha);
-        self.rolagem = self.rolagem.min(total_linhas.saturating_sub(linhas_cabem));
+        let clique_na_grade = if livre {
+            self.rolagem_venda
+                .quadro(grade, total_linhas as f32 * lado, lado)
+        } else {
+            None
+        };
         if self.venda_slot.is_some_and(|i| {
             c.slots
                 .get(i)
@@ -650,23 +655,27 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
-        for (k, (i, s)) in vendaveis
-            .iter()
-            .enumerate()
-            .skip(self.rolagem * por_linha)
-            .take(linhas_cabem * por_linha)
-        {
-            let k = k - self.rolagem * por_linha;
+        crate::rolagem::recortar(Some(grade));
+        for (k, (i, s)) in vendaveis.iter().enumerate() {
             let r = Rect::new(
                 grade.x + (k % por_linha) as f32 * lado,
-                grade.y + (k / por_linha) as f32 * lado,
+                grade.y + (k / por_linha) as f32 * lado - self.rolagem_venda.pos,
                 lado - 6.0 * f,
                 lado - 6.0 * f,
             );
+            if r.y + r.h < grade.y || r.y > grade.y + grade.h {
+                continue;
+            }
             let sel = self.venda_slot == Some(*i);
             estilo::slot(r, None, livre && r.contains(m), sel);
-            crate::icones::icone(s.item_id, r, s.instance.map(|x| x.rarity), Some(s.qty));
-            if livre && clicou && r.contains(m) {
+            crate::icones::icone_com_3d(
+                s.item_id,
+                r,
+                s.instance.map(|x| x.rarity),
+                Some(s.qty),
+                Some((c.vox, c.solido)),
+            );
+            if clique_na_grade.is_some_and(|p| r.contains(p)) {
                 self.venda_slot = Some(*i);
                 self.venda_qtd = 1;
                 if self.venda_preco == 0 {
@@ -684,13 +693,9 @@ impl Mercado {
                 });
             }
         }
-        self.rolar(
-            Rect::new(esq.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f),
-            total_linhas,
-            linhas_cabem,
-            livre,
-            f,
-        );
+        crate::rolagem::recortar(None);
+        self.rolagem_venda
+            .desenha(grade, total_linhas as f32 * lado);
 
         // Formulario.
         estilo::painel(dir);
@@ -820,7 +825,14 @@ impl Mercado {
 
     // ─────────────────────────────── Meus ───────────────────────────────
 
-    fn aba_meus(&mut self, a: Rect, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) {
+    fn aba_meus(
+        &mut self,
+        a: Rect,
+        c: &Contexto,
+        f: f32,
+        livre: bool,
+        saida: &mut Vec<ClientMessage>,
+    ) {
         let esq = Rect::new(a.x, a.y, a.w * 0.58, a.h);
         let dir = Rect::new(a.x + a.w * 0.61, a.y, a.w * 0.39, a.h);
         estilo::texto_forte(
@@ -843,13 +855,6 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
-        let vazio = Contexto {
-            slots: &[],
-            nomes: &HashMap::new(),
-            ouro: 0,
-            nivel: 0,
-            digitado: &[],
-        };
         for (i, an) in self.meus.iter().enumerate().skip(self.rolagem).take(cabem) {
             let r = Rect::new(
                 lista.x,
@@ -857,7 +862,7 @@ impl Mercado {
                 lista.w,
                 alt - 6.0 * f,
             );
-            if linha_de_anuncio(r, an, &vazio, f, livre, "Cancelar", true) {
+            if linha_de_anuncio(r, an, c, f, livre, "Cancelar", true) {
                 saida.push(ClientMessage::MercadoCancelar {
                     anuncio: an.id.clone(),
                 });
@@ -943,62 +948,7 @@ impl Mercado {
             saida.push(ClientMessage::MercadoReceber);
         }
         let alt = 54.0 * f;
-        // Correio das dungeons primeiro: recompensa de 1ª vitoria e o que nao
-        // coube na bolsa. Uma caixa so' com as entregas do mercado.
-        let mut topo = a.y + 46.0 * f;
-        for carta in self.correio.iter().take(3) {
-            let r = Rect::new(a.x, topo, a.w, alt - 6.0 * f);
-            estilo::cartao(r, false, true);
-            let icone = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f);
-            crate::icones::icone(carta.item_id, icone, None, None);
-            let nome = c
-                .nomes
-                .get(&carta.item_id)
-                .cloned()
-                .unwrap_or_else(|| format!("Item {}", carta.item_id));
-            let motivo = match carta.motivo {
-                1 => "Dungeon · primeira vitória da semana",
-                2 => "Dungeon · primeira vitória",
-                shared::presenca::MOTIVO_CORREIO => "Calendário de presença · não coube na bolsa",
-                _ => "Dungeon · não coube na bolsa",
-            };
-            let x = icone.x + icone.w + 10.0 * f;
-            estilo::texto_ajustado(
-                &format!("{nome} ×{}", milhar(carta.qtd as u64)),
-                x,
-                r.y + 22.0 * f,
-                r.w * 0.5,
-                16,
-                estilo::TEXTO,
-            );
-            estilo::texto_ajustado(motivo, x, r.y + 40.0 * f, r.w * 0.5, 12, estilo::SUAVE);
-            if botao(
-                Rect::new(
-                    r.x + r.w - 130.0 * f,
-                    r.y + 8.0 * f,
-                    120.0 * f,
-                    r.h - 16.0 * f,
-                ),
-                "Receber",
-                livre,
-                true,
-            ) {
-                saida.push(ClientMessage::Dungeon {
-                    pedido: shared::dungeon::Pedido::CorreioRetirar { id: carta.id },
-                });
-            }
-            topo += alt;
-        }
-        if self.correio.len() > 3 {
-            estilo::texto(
-                a.x,
-                topo + 14.0 * f,
-                &format!("+ {} recompensas de dungeon", self.correio.len() - 3),
-                13,
-                estilo::SUAVE,
-            );
-            topo += 22.0 * f;
-        }
+        let topo = a.y + 46.0 * f;
         let lista = Rect::new(a.x, topo, a.w, (a.y + a.h - 46.0 * f - topo).max(alt));
         let cabem = ((lista.h / alt).floor() as usize).max(1);
         self.rolagem = self.rolagem.min(self.cartas.len().saturating_sub(cabem));
@@ -1028,11 +978,12 @@ impl Mercado {
             let icone = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f);
             let mut partes = Vec::new();
             if carta.item_id != 0 {
-                crate::icones::icone(
+                crate::icones::icone_com_3d(
                     carta.item_id,
                     icone,
                     carta.instancia.map(|x| x.rarity),
                     None,
+                    Some((c.vox, c.solido)),
                 );
                 partes.push(format!(
                     "{} ×{}",
@@ -1297,7 +1248,13 @@ fn linha_de_anuncio(
         estilo::icone_tp(icone.center(), icone.w.min(icone.h) * 0.95);
         icone.x + icone.w + 10.0 * f
     } else {
-        crate::icones::icone(an.item_id, icone, an.instancia.map(|i| i.rarity), None);
+        crate::icones::icone_com_3d(
+            an.item_id,
+            icone,
+            an.instancia.map(|i| i.rarity),
+            None,
+            Some((c.vox, c.solido)),
+        );
         icone.x + icone.w + 10.0 * f
     };
     let bw = 116.0 * f;
@@ -1427,10 +1384,7 @@ mod tests {
         m.abrir();
         assert!(matches!(
             m.trocar_aba(Aba::Entregas)[..],
-            [
-                ClientMessage::MercadoEntregas,
-                ClientMessage::Dungeon { .. }
-            ]
+            [ClientMessage::MercadoEntregas]
         ));
         assert!(
             m.trocar_aba(Aba::Entregas).is_empty(),

@@ -130,7 +130,12 @@ impl Economia {
     }
 
     /// A janela do resumo, por cima do jogo. Fecha no botao.
-    pub fn desenha_resumo(&mut self, nome_item: &dyn Fn(u16) -> String) {
+    pub fn desenha_resumo(
+        &mut self,
+        nome_item: &dyn Fn(u16) -> String,
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) {
         let Some(r) = &self.resumo else { return };
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -195,7 +200,7 @@ impl Economia {
                 lado,
             );
             estilo::cartao(c, c.contains(m), false);
-            crate::icones::icone(*id, c, None, Some(*q));
+            crate::icones::icone_com_3d(*id, c, None, Some(*q), Some((vox, solido)));
             if *q == 1 {
                 estilo::texto_centro_forte(
                     c.x + c.w - 10.0 * f,

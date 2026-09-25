@@ -98,9 +98,8 @@ impl GameWorld {
         // Ia pra bolsa, e isso apagava a ilha como lugar: dava pra administrar
         // a colonia inteira de outra ilha, sem nunca pisar nela. Agora colher
         // enche o bau, e buscar e' uma viagem — que e' o que o dono pediu.
-        let espacos = shared::colonia::espacos_do_bau(
-            s.colonia.niveis[shared::colonia::eixo::BANCO],
-        );
+        let espacos =
+            shared::colonia::espacos_do_bau(s.colonia.niveis[shared::colonia::eixo::BANCO]);
         let mut texto = Vec::new();
         let mut sobrou = false;
         for (id, q) in &ganho {
@@ -116,7 +115,10 @@ impl GameWorld {
             // de trabalho de quem chegou com o bau cheio, e o jogador nao
             // teria como saber o que perdeu.
             if falar {
-                self.avisa_colonia(sid, "O baú da ilha está cheio. Retire o que há nele primeiro.");
+                self.avisa_colonia(
+                    sid,
+                    "O baú da ilha está cheio. Retire o que há nele primeiro.",
+                );
             }
             return;
         }
@@ -127,7 +129,10 @@ impl GameWorld {
                 texto.join(", ")
             )
         } else {
-            format!("Colheita de {horas:.0}h, no baú da ilha: {}.", texto.join(", "))
+            format!(
+                "Colheita de {horas:.0}h, no baú da ilha: {}.",
+                texto.join(", ")
+            )
         };
         self.avisa_colonia(sid, &aviso);
         self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_COLHER);
@@ -401,7 +406,11 @@ impl GameWorld {
     }
 
     /// A porta de entrada de tudo o que a colonia pede.
-    pub(super) fn handle_colonia(&mut self, sid: SessionId, pedido: shared::colonia::PedidoColonia) {
+    pub(super) fn handle_colonia(
+        &mut self,
+        sid: SessionId,
+        pedido: shared::colonia::PedidoColonia,
+    ) {
         use shared::colonia::PedidoColonia as P;
         // Sem a escritura nao ha' o que abrir, colher ou melhorar. A trava
         // fica AQUI, e nao em cada braco: braco novo nasce travado.

@@ -228,6 +228,14 @@ pub struct Equipment {
     pub montaria: Option<u16>,
     #[serde(default)]
     pub montaria_inst: Option<crate::items::ItemInstance>,
+    #[serde(default)]
+    pub pet2: Option<u16>,
+    #[serde(default)]
+    pub pet2_inst: Option<crate::items::ItemInstance>,
+    #[serde(default)]
+    pub pet3: Option<u16>,
+    #[serde(default)]
+    pub pet3_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -245,6 +253,8 @@ impl Equipment {
             Bracelet => (&mut self.bracelet, &mut self.bracelet_inst),
             Belt => (&mut self.belt, &mut self.belt_inst),
             Pet => (&mut self.pet, &mut self.pet_inst),
+            Pet2 => (&mut self.pet2, &mut self.pet2_inst),
+            Pet3 => (&mut self.pet3, &mut self.pet3_inst),
             Montaria => (&mut self.montaria, &mut self.montaria_inst),
         }
     }
@@ -282,6 +292,11 @@ impl Equipment {
             .iter()
             .map(|s| (self.get(*s), self.get_inst(*s)))
             .collect()
+    }
+
+    pub fn pets(&self) -> [(crate::constants::EquipSlot, Option<u16>, Option<crate::items::ItemInstance>); 3] {
+        use crate::constants::EquipSlot;
+        [EquipSlot::Pet, EquipSlot::Pet2, EquipSlot::Pet3].map(|slot| (slot, self.get(slot), self.get_inst(slot)))
     }
 }
 

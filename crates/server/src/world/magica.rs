@@ -451,15 +451,33 @@ mod testes {
         dar_passes(&mut w, sid, 2);
         // Sem canal da Ilha Mágica no ar (não há diretório neste mundo de
         // teste), a entrada tem que ser recusada ANTES de gastar.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 1, grau: 1 });
+        w.handle_magica(
+            sid,
+            shared::magica::PedidoMagica::Entrar {
+                entradas: 1,
+                grau: 1,
+            },
+        );
         assert_eq!(w.passes_de(sid), 2, "o passe sumiu sem entregar a ilha");
         assert_eq!(w.sessions[&sid].magica_ate, 0, "o relógio começou sem ida");
 
         // Pedir mais passes do que tem também não gasta nada.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 3, grau: 1 });
+        w.handle_magica(
+            sid,
+            shared::magica::PedidoMagica::Entrar {
+                entradas: 3,
+                grau: 1,
+            },
+        );
         assert_eq!(w.passes_de(sid), 2);
         // Nem um número que não existe.
-        w.handle_magica(sid, shared::magica::PedidoMagica::Entrar { entradas: 9, grau: 1 });
+        w.handle_magica(
+            sid,
+            shared::magica::PedidoMagica::Entrar {
+                entradas: 9,
+                grau: 1,
+            },
+        );
         assert_eq!(w.passes_de(sid), 2);
     }
 
@@ -760,7 +778,10 @@ mod testes {
                 )
             })
             .count();
-        assert_eq!(repetidos, 0, "{repetidos} estados repetidos em 5 ticks parados");
+        assert_eq!(
+            repetidos, 0,
+            "{repetidos} estados repetidos em 5 ticks parados"
+        );
     }
 
     /// TROCOU DE ILHOTA, A TARJA TROCA JUNTO.
@@ -881,8 +902,7 @@ mod testes {
             .query::<(&Position, &VendorTag)>()
             .iter()
             .any(|(_, (p, v))| {
-                v.shop_id == shared::vila::LOJA_DE_POCOES
-                    && shared::magica::e_porto_seguro(p.0)
+                v.shop_id == shared::vila::LOJA_DE_POCOES && shared::magica::e_porto_seguro(p.0)
             });
         assert!(achou, "a ilhota da chegada ficou sem vendedor de poções");
     }
@@ -896,11 +916,13 @@ mod testes {
     fn o_vendedor_nao_fica_em_cima_do_respawn() {
         let p = shared::magica::posto_de_pocoes();
         let d = p.distance(shared::magica::CHEGADA);
-        assert!(d >= 12.0, "o vendedor está a {d:.1} do ponto de renascimento");
+        assert!(
+            d >= 12.0,
+            "o vendedor está a {d:.1} do ponto de renascimento"
+        );
         assert!(
             shared::magica::e_porto_seguro(p),
             "o vendedor caiu fora da ilhota da chegada"
         );
     }
-
 }

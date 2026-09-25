@@ -216,6 +216,28 @@ pub const GIVER_MESTRE_DA_ILHA: u16 = 121;
 /// as cadeias do Bosque passam de um NPC pro outro (511-538).
 pub const GIVER_DA_VILA: u16 = 140;
 
+/// NPCs das cabanas espalhadas pelo Bosque e pela Geleira.
+pub const POSTOS: [(u16, &str); 10] = [
+    (201, "Lenhador da Trilha"),
+    (202, "Vigia da Clareira"),
+    (203, "Guia do Mirante"),
+    (204, "Vigia das Morsas"),
+    (205, "Guardiã da Floresta"),
+    (206, "Batedor dos Ursos"),
+    (207, "Exploradora do Gelo"),
+    (208, "Provisora do Ermo"),
+    (209, "Pesquisador das Dunas"),
+    (210, "Vigia do Naufrágio"),
+];
+
+pub fn posto_por_nome(nome: &str) -> Option<u16> {
+    POSTOS.iter().find(|(_, n)| *n == nome).map(|(id, _)| *id)
+}
+
+pub fn nome_do_posto(giver: u16) -> Option<&'static str> {
+    POSTOS.iter().find(|(id, _)| *id == giver).map(|(_, n)| *n)
+}
+
 /// O giver de um NPC da vila. O Mestre continua com o dele.
 pub const fn giver_do_papel(p: crate::construcao::Papel) -> u16 {
     match p {
@@ -244,6 +266,9 @@ pub fn giver_do_npc(papel: u16) -> Option<u16> {
 /// O NPC da vila por tras de um giver (o Mestre inclusive).
 pub fn papel_do_giver(g: u16) -> Option<crate::construcao::Papel> {
     use crate::construcao::Papel;
+    if nome_do_posto(g).is_some() {
+        return Some(Papel::Missoes);
+    }
     if g == GIVER_MESTRE_DA_ILHA {
         return Some(Papel::Missoes);
     }
@@ -256,6 +281,9 @@ pub fn papel_do_giver(g: u16) -> Option<crate::construcao::Papel> {
 
 /// Nome do NPC que da' (e recebe) a missao, pra dizer "fale com o X".
 pub fn quem_da(d: &QuestDef) -> Option<&'static str> {
+    if let Some(nome) = nome_do_posto(d.giver) {
+        return Some(nome);
+    }
     papel_do_giver(d.giver).map(|p| p.nome())
 }
 
@@ -272,8 +300,9 @@ pub fn zona_da_missao(id: u16) -> Option<&'static str> {
     }
     match id {
         500..=609 => Some("ilha_inicial"),
+        810..=833 => Some("ilha_gelo"),
         610..=619 => Some("ilha_gelo"),
-        620..=629 => Some("ilha_deserto"),
+        620..=629 | 840..=854 => Some("ilha_deserto"),
         630..=639 => Some("ilha_planalto"),
         _ => None,
     }
@@ -699,6 +728,14 @@ const fn de(p: crate::construcao::Papel) -> QuestDef {
     }
 }
 
+const fn posto(giver: u16) -> QuestDef {
+    QuestDef {
+        source: quest_source::NPC,
+        giver,
+        ..q()
+    }
+}
+
 // Atalho pro Mestre de Missoes da ilha inicial.
 const fn mestre() -> QuestDef {
     QuestDef {
@@ -799,31 +836,31 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(10), obj_count: 1,
         reward_cobre: 600, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 8, ..de(crate::construcao::Papel::Treinador) },
+        min_level: 8, ..posto(203) },
     QuestDef { id: 512, title: "A bandeira do Barba-Tormenta",
         desc: "O Capitão Barba-Tormenta desembarcou com a tripulação e fincou bandeira na ilha. Derrube-o e o porto volta a respirar.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(11), obj_count: 1,
         reward_cobre: 900, reward_xp: 14_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
-        requires: 511, min_level: 11, ..de(crate::construcao::Papel::Estaleiro) },
+        requires: 511, min_level: 11, ..posto(203) },
     QuestDef { id: 513, title: "O velho da encosta",
         desc: "O Urso Ancião dorme na encosta desde antes da vila. O trovão o acordou de mau humor. Derrote-o.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(12), obj_count: 1,
         reward_cobre: 1_300, reward_xp: 30_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
         reward_item2: item_id::FORTUNA_POTION, reward_item2_qty: 1,
-        requires: 512, min_level: 14, ..de(crate::construcao::Papel::Cartografo) },
+        requires: 512, min_level: 14, ..posto(203) },
     QuestDef { id: 514, title: "Caçador de chefes",
         desc: "Os três chefes do Bosque voltam depois de um tempo. Derrote 3 chefes de campo — qualquer um deles, quantas vezes precisar.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 3,
         reward_cobre: 2_000, reward_xp: 45_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 513, min_level: 14, ..de(crate::construcao::Papel::Treinador) },
+        requires: 513, min_level: 14, ..posto(203) },
     QuestDef { id: 515, title: "A lenda do Bosque",
         desc: "A vila já conta histórias sobre você. Derrote mais 5 chefes de campo e a lenda vira verdade.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 5,
         reward_cobre: 3_000, reward_xp: 70_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
-        requires: 514, min_level: 15, ..de(crate::construcao::Papel::Missoes) },
+        requires: 514, min_level: 15, ..posto(203) },
 
     // B) O bestiario: cada bicho da ilha, na ordem em que ele aparece.
     QuestDef { id: 516, title: "Matilha cinzenta",
@@ -831,43 +868,43 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 12,
         reward_cobre: 150, reward_xp: 900, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 2, ..de(crate::construcao::Papel::Deposito) },
+        min_level: 2, ..posto(202) },
     QuestDef { id: 517, title: "Garras na trilha",
         desc: "Os ursos tomaram a trilha dos lenhadores. Derrote 10.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 10,
         reward_cobre: 250, reward_xp: 2_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 4,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 516, min_level: 4, ..de(crate::construcao::Papel::Alfaiate) },
+        requires: 516, min_level: 4, ..posto(202) },
     QuestDef { id: 518, title: "Pólvora na mata",
         desc: "Pistoleiros de Morgan acampam na mata. Derrote 12 e apague as fogueiras deles.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::PISTOLEIRO), obj_count: 12,
         reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 517, min_level: 7, ..de(crate::construcao::Papel::Estaleiro) },
+        requires: 517, min_level: 7, ..posto(202) },
     QuestDef { id: 519, title: "Listras na estrada",
         desc: "Tigres caçam na estrada do porto. Derrote 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::TIGRE), obj_count: 12,
         reward_cobre: 600, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 518, min_level: 10, ..de(crate::construcao::Papel::Deposito) },
+        requires: 518, min_level: 10, ..posto(202) },
     QuestDef { id: 520, title: "Os magos do trovão",
         desc: "Magos de Morgan puxam raios do céu para as pedras do farol. Derrote 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::MAGO), obj_count: 12,
         reward_cobre: 800, reward_xp: 20_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 519, min_level: 12, ..de(crate::construcao::Papel::Identificador) },
+        requires: 519, min_level: 12, ..posto(202) },
     QuestDef { id: 521, title: "O que desceu do gelo",
         desc: "Owlbears da Geleira atravessaram o mar gelado e rondam o alto da ilha. Derrote 5.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::OWLBEAR), obj_count: 5,
         reward_cobre: 1_200, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 520, min_level: 15, ..de(crate::construcao::Papel::Cartografo) },
+        requires: 520, min_level: 15, ..posto(202) },
     QuestDef { id: 522, title: "Limpa-trilhas",
         desc: "A ilha inteira ainda ferve. Derrote 80 bichos de qualquer tipo.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 80,
         reward_cobre: 1_500, reward_xp: 45_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
-        requires: 520, min_level: 13, ..de(crate::construcao::Papel::Treinador) },
+        requires: 520, min_level: 13, ..posto(202) },
 
     // C) A oficina: refino, craft e o estoque que ele come.
     QuestDef { id: 523, title: "Martelo e bigorna",
@@ -905,19 +942,19 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 20,
         reward_cobre: 200, reward_xp: 1_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        min_level: 3, ..de(crate::construcao::Papel::Deposito) },
+        min_level: 3, ..posto(201) },
     QuestDef { id: 529, title: "Veio profundo",
         desc: "O veio da encosta ainda guarda muito. Quebre 30 pedras.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 30,
         reward_cobre: 350, reward_xp: 4_500, reward_item: item_id::STEEL, reward_item_qty: 15,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 528, min_level: 6, ..de(crate::construcao::Papel::Ferreiro) },
+        requires: 528, min_level: 6, ..posto(201) },
     QuestDef { id: 530, title: "Mãos calejadas",
         desc: "Quebre pedra ou derrube árvore: 60 coletas de qualquer tipo.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::QUALQUER, obj_count: 60,
         reward_cobre: 700, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
-        requires: 529, min_level: 11, ..de(crate::construcao::Papel::Alquimista) },
+        requires: 529, min_level: 11, ..posto(201) },
 
     // E) As duas dungeons da ilha, de novo e de novo.
     QuestDef { id: 531, title: "De volta ao porão",
@@ -982,6 +1019,29 @@ pub const QUESTS: &[QuestDef] = &[
         reward_cobre: 1_600, reward_xp: 38_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 6,
         min_level: 12, ..de(crate::construcao::Papel::Treinador) },
 
+    // As 15 receitas cinzas pedem 4 Escamas, 4 Garras, 4 Chifres e 3 Couros.
+    // IDs novos deixam a cadeia disponivel a quem concluiu as antigas.
+    QuestDef { id: 544, title: "A primeira escama",
+        desc: "O Ferreiro separou quatro Escamas Cinzas: uma para cada arma da oficina. Traga 30 de Cobre.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::COPPER, obj_count: 30,
+        reward_cobre: 80, reward_xp: 200, reward_item: item_id::SCALE, reward_item_qty: 4,
+        min_level: 1, ..de(crate::construcao::Papel::Ferreiro) },
+    QuestDef { id: 545, title: "Garra para a subarma",
+        desc: "O Treinador guarda quatro Garras Cinzas para as secundárias. Derrote 6 lobos da trilha.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 6,
+        reward_cobre: 100, reward_xp: 350, reward_item: item_id::CLAW, reward_item_qty: 4,
+        requires: 544, min_level: 2, ..de(crate::construcao::Papel::Treinador) },
+    QuestDef { id: 546, title: "Chifre do aprendiz",
+        desc: "O Identificador oferece quatro Chifres Cinzas para os acessórios. Quebre 8 pedras e traga o que encontrar.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 8,
+        reward_cobre: 120, reward_xp: 500, reward_item: item_id::HORN, reward_item_qty: 4,
+        requires: 545, min_level: 3, ..de(crate::construcao::Papel::Identificador) },
+    QuestDef { id: 547, title: "Couro para a armadura",
+        desc: "O Alfaiate reservou três Couros Cinzas, um para cada armadura. Afaste 3 ursos da estrada da vila.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 3,
+        reward_cobre: 160, reward_xp: 700, reward_item: item_id::HIDE, reward_item_qty: 3,
+        requires: 546, min_level: 4, ..de(crate::construcao::Papel::Alfaiate) },
+
     // F) A vila: quem e' quem.
     QuestDef { id: 534, title: "Notícias da taberna",
         desc: "Quem ouve tudo na ilha é o Taberneiro. Passe lá e escute.",
@@ -1024,6 +1084,14 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(607, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 400, 400, 0, 0, 10, false, true),
     diaria(608, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 500, 3_000, item_id::GREATER_HEAL, 3, 8, true, false),
     // --- Geleira (ilha_gelo, 15-30) ---
+    // Duas chaves verdes de uso unico: arma e armadura T2, liberadas no
+    // nivel 20 como as receitas verdes. Materiais continuam vindo da coleta.
+    QuestDef { id: 610, title: "Escama da Geleira",
+        desc: "O Mestre guarda uma Escama Verde para sua primeira arma T2. Derrote 20 inimigos na Geleira.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 20,
+        reward_cobre: 1_000, reward_xp: 8_000,
+        reward_item: item_id::na_cor(item_id::SCALE, 2), reward_item_qty: 1,
+        min_level: 20, ..mestre() },
     diaria(611, "Pedreira do dia", "Quebre 25 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 25, 450, 600, item_id::GREATER_HEAL, 3, 15, true, false),
     diaria(612, "Caça do dia", "Derrote 40 bichos da ilha.", objective_kind::KILL, 0, 40, 540, 800, item_id::GREATER_HEAL, 3, 15, true, false),
     diaria(613, "Mãos à obra", "Crie 1 equipamento no Craft (botão do HUD).", objective_kind::CRAFT, 0, 1, 360, 480, item_id::GREATER_MANA, 2, 15, false, false),
@@ -1032,6 +1100,176 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(616, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 750, 1_000, 0, 0, 15, false, false),
     diaria(617, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 1_200, 1_600, 0, 0, 15, false, true),
     diaria(618, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 1_500, 12_000, item_id::GREATER_HEAL, 4, 20, true, false),
+    QuestDef { id: 619, title: "Couro da Geleira",
+        desc: "O Mestre guarda um Couro Verde para sua primeira armadura T2. Quebre 20 pedras na Geleira.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
+        reward_cobre: 1_000, reward_xp: 8_000,
+        reward_item: item_id::na_cor(item_id::HIDE, 2), reward_item_qty: 1,
+        requires: 610, min_level: 20, ..mestre() },
+
+    // Cinco trilhas unicas da Geleira. Cada uma sai de uma cabana no interior
+    // ou na costa: explorar a ilha deixa de ser uma ida e volta ao porto.
+    QuestDef { id: 810, title: "O abrigo da costa", desc: "O Vigia das Morsas precisa de ajuda para manter o abrigo. Derrube cinco morsas da praia.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(10), obj_count: 5,
+        reward_cobre: 650, reward_xp: 4_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        min_level: 15, ..posto(204) },
+    QuestDef { id: 811, title: "Pedras sob a neve", desc: "Quebre dez veios perto da costa para reforçar o abrigo.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 10,
+        reward_cobre: 700, reward_xp: 4_500, reward_item: item_id::STEEL, reward_item_qty: 20,
+        requires: 810, min_level: 16, ..posto(204) },
+    QuestDef { id: 812, title: "Rastro branco", desc: "Os tigres brancos se aproximaram do abrigo. Afaste oito deles.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(12), obj_count: 8,
+        reward_cobre: 800, reward_xp: 5_500, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
+        requires: 811, min_level: 17, ..posto(204) },
+    QuestDef { id: 813, title: "Lenha para o vigia", desc: "O fogo da costa não pode apagar. Derrube doze árvores da Geleira.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 12,
+        reward_cobre: 950, reward_xp: 6_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        requires: 812, min_level: 18, ..posto(204) },
+    QuestDef { id: 814, title: "Costa protegida", desc: "Faça uma última patrulha e derrote vinte inimigos na Geleira.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 20,
+        reward_cobre: 1_200, reward_xp: 8_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 10,
+        requires: 813, min_level: 19, ..posto(204) },
+
+    QuestDef { id: 815, title: "Trilha da floresta", desc: "A Guardiã da Floresta encontrou pegadas de tigres. Derrote oito tigres brancos.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(12), obj_count: 8,
+        reward_cobre: 750, reward_xp: 5_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
+        min_level: 16, ..posto(205) },
+    QuestDef { id: 816, title: "Olhos na mata", desc: "Os owlbears também rondam as árvores geladas. Derrote seis.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 6,
+        reward_cobre: 850, reward_xp: 6_000, reward_item: item_id::EXORCISM_BAUBLE, reward_item_qty: 6,
+        requires: 815, min_level: 18, ..posto(205) },
+    QuestDef { id: 817, title: "Ramos congelados", desc: "Derrube quinze árvores para abrir uma trilha segura.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 15,
+        reward_cobre: 1_000, reward_xp: 7_000, reward_item: item_id::STEEL, reward_item_qty: 30,
+        requires: 816, min_level: 19, ..posto(205) },
+    QuestDef { id: 818, title: "Predadores do inverno", desc: "Afaste doze ursos brancos da cabana da Guardiã.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(11), obj_count: 12,
+        reward_cobre: 1_200, reward_xp: 9_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
+        requires: 817, min_level: 21, ..posto(205) },
+    QuestDef { id: 819, title: "A floresta respira", desc: "Derrote vinte e cinco criaturas da Geleira antes que a trilha feche de novo.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 25,
+        reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        requires: 818, min_level: 23, ..posto(205) },
+
+    QuestDef { id: 820, title: "Metal do abrigo", desc: "O Batedor dos Ursos precisa de cinquenta unidades de Aço para reforçar a cabana.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 50,
+        reward_cobre: 1_000, reward_xp: 7_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 150,
+        min_level: 18, ..posto(206) },
+    QuestDef { id: 821, title: "Couro de proteção", desc: "Derrube dez ursos brancos que cercam o posto.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(11), obj_count: 10,
+        reward_cobre: 1_100, reward_xp: 8_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 12,
+        requires: 820, min_level: 19, ..posto(206) },
+    QuestDef { id: 822, title: "O primeiro molde T2", desc: "Crie um equipamento no Craft para preparar a defesa do posto.",
+        obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 1,
+        reward_cobre: 1_500, reward_xp: 10_000, reward_item: item_id::na_cor(item_id::CLAW, 2), reward_item_qty: 1,
+        requires: 821, min_level: 20, ..posto(206) },
+    QuestDef { id: 823, title: "Aço temperado", desc: "Tente refinar três vezes uma peça na Forja.",
+        obj_kind: objective_kind::REFINE, obj_target: 0, obj_count: 3,
+        reward_cobre: 1_800, reward_xp: 12_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
+        requires: 822, min_level: 22, ..posto(206) },
+    QuestDef { id: 824, title: "Marcas na pedra", desc: "Quebre vinte pedras para manter o suprimento de metal.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
+        reward_cobre: 2_000, reward_xp: 14_000, reward_item: item_id::na_cor(item_id::HORN, 2), reward_item_qty: 1,
+        requires: 823, min_level: 24, ..posto(206) },
+
+    QuestDef { id: 825, title: "Vozes na subida", desc: "A Exploradora ouviu a Mãe-da-Nevasca na montanha. Derrote dez inimigos no caminho.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
+        reward_cobre: 1_100, reward_xp: 8_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
+        min_level: 20, ..posto(207) },
+    QuestDef { id: 826, title: "O primeiro chefe", desc: "Derrote um chefe de campo da Geleira. Outros aventureiros próximos também contam.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 1,
+        reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
+        requires: 825, min_level: 22, ..posto(207) },
+    QuestDef { id: 827, title: "Três sinais na neve", desc: "Derrote mais dois chefes de campo para mapear suas rotas.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 2,
+        reward_cobre: 2_000, reward_xp: 16_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 250,
+        requires: 826, min_level: 24, ..posto(207) },
+    QuestDef { id: 828, title: "O caminho do cume", desc: "Afaste trinta criaturas da trilha do mirante gelado.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30,
+        reward_cobre: 2_300, reward_xp: 18_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        requires: 827, min_level: 26, ..posto(207) },
+    QuestDef { id: 829, title: "Guardião da Geleira", desc: "Derrote um último chefe de campo e volte à cabana da Exploradora.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 1,
+        reward_cobre: 3_000, reward_xp: 24_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
+        requires: 828, min_level: 28, ..posto(207) },
+
+    QuestDef { id: 830, title: "O casco enterrado", desc: "Conclua o Casco Congelado e conte ao Vigia o que encontrou.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 3, obj_count: 1,
+        reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
+        min_level: 22, ..posto(204) },
+    QuestDef { id: 831, title: "Gelo fundo", desc: "Conclua as Grutas de Gelo Fundo com seu grupo.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 11, obj_count: 1,
+        reward_cobre: 2_000, reward_xp: 16_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
+        requires: 830, min_level: 24, ..posto(207) },
+    QuestDef { id: 832, title: "Fragmentos do casco", desc: "Quebre vinte pedras para entender por que o casco congelou.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
+        reward_cobre: 2_300, reward_xp: 18_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 250,
+        requires: 831, min_level: 27, ..posto(206) },
+    QuestDef { id: 833, title: "Segredo sob a neve", desc: "Conclua mais uma dungeon e leve o relato à Exploradora.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 0, obj_count: 1,
+        reward_cobre: 3_000, reward_xp: 25_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
+        requires: 832, min_level: 30, ..posto(207) },
+    // --- Ermo: tres cabanas fora da cidade, cinco missoes por trilha. ---
+    QuestDef { id: 840, title: "Água para a travessia", desc: "A Provisora do Ermo precisa de pedra para firmar a cisterna. Quebre dez veios.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 10,
+        reward_cobre: 950, reward_xp: 7_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
+        min_level: 30, ..posto(208) },
+    QuestDef { id: 841, title: "Casco na trilha", desc: "Escaravelhos cercam a cabana de abastecimento. Derrote oito.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(13), obj_count: 8,
+        reward_cobre: 1_050, reward_xp: 8_500, reward_item: item_id::STEEL, reward_item_qty: 30,
+        requires: 840, min_level: 30, ..posto(208) },
+    QuestDef { id: 842, title: "Reserva de metal", desc: "Entregue quarenta unidades de Aço para reparar a cisterna.",
+        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 40,
+        reward_cobre: 1_250, reward_xp: 10_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 120,
+        requires: 841, min_level: 31, ..posto(208) },
+    QuestDef { id: 843, title: "Patrulha da água", desc: "Afaste doze inimigos dos caminhos entre a cisterna e as dunas.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 12,
+        reward_cobre: 1_400, reward_xp: 12_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 5,
+        requires: 842, min_level: 32, ..posto(208) },
+    QuestDef { id: 844, title: "Suprimentos seguros", desc: "Quebre quinze veios para deixar uma reserva na cabana.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 15,
+        reward_cobre: 1_600, reward_xp: 15_000, reward_item: item_id::na_cor(item_id::HIDE, 2), reward_item_qty: 1,
+        requires: 843, min_level: 33, ..posto(208) },
+    QuestDef { id: 845, title: "Marcas na areia", desc: "O Pesquisador das Dunas estuda os escaravelhos. Derrote dez deles.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(13), obj_count: 10,
+        reward_cobre: 1_200, reward_xp: 11_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
+        min_level: 34, ..posto(209) },
+    QuestDef { id: 846, title: "Vidro sob as dunas", desc: "Quebre vinte pedras e procure os veios vitrificados pela tempestade.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
+        reward_cobre: 1_400, reward_xp: 13_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 150,
+        requires: 845, min_level: 35, ..posto(209) },
+    QuestDef { id: 847, title: "Ferramenta de pesquisa", desc: "Crie um equipamento para a expedição nas dunas.",
+        obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 1,
+        reward_cobre: 1_600, reward_xp: 15_000, reward_item: item_id::COPPER, reward_item_qty: 1_000,
+        requires: 846, min_level: 35, ..posto(209) },
+    QuestDef { id: 848, title: "A rainha das dunas", desc: "Afaste uma Rainha Escaravelho dos locais de pesquisa.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(14), obj_count: 1,
+        reward_cobre: 2_000, reward_xp: 19_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
+        requires: 847, min_level: 36, ..posto(209) },
+    QuestDef { id: 849, title: "Tumba das Areias Salgadas", desc: "Conclua uma vez a dungeon do Ermo e conte ao Pesquisador.",
+        obj_kind: objective_kind::DUNGEON, obj_target: 12, obj_count: 1,
+        reward_cobre: 2_800, reward_xp: 28_000, reward_item: item_id::na_cor(item_id::SCALE, 2), reward_item_qty: 1,
+        requires: 848, min_level: 36, ..posto(209) },
+    QuestDef { id: 850, title: "Vigia do naufrágio", desc: "Derrote dez inimigos que rondam a costa do Ermo.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 10,
+        reward_cobre: 1_500, reward_xp: 14_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
+        min_level: 37, ..posto(210) },
+    QuestDef { id: 851, title: "Restos da capitânia", desc: "Quebre vinte veios da costa para reforçar o abrigo do Vigia.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
+        reward_cobre: 1_700, reward_xp: 16_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 180,
+        requires: 850, min_level: 38, ..posto(210) },
+    QuestDef { id: 852, title: "Linha de defesa", desc: "Derrote quinze inimigos antes que alcancem a cabana da costa.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
+        reward_cobre: 1_900, reward_xp: 19_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 5,
+        requires: 851, min_level: 39, ..posto(210) },
+    QuestDef { id: 853, title: "Guarda do Ermo", desc: "Derrote um chefe de campo da ilha e volte ao Vigia.",
+        obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 1,
+        reward_cobre: 2_600, reward_xp: 26_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
+        requires: 852, min_level: 40, ..posto(210) },
+    QuestDef { id: 854, title: "Rota para o Planalto", desc: "Faça um equipamento para a jornada além do Ermo.",
+        obj_kind: objective_kind::CRAFT, obj_target: 0, obj_count: 1,
+        reward_cobre: 3_000, reward_xp: 30_000, reward_item: item_id::na_cor(item_id::HIDE, 3), reward_item_qty: 1,
+        requires: 853, min_level: 40, ..posto(210) },
     // --- Ermo (ilha_deserto, 28-42) ---
     diaria(621, "Pedreira do dia", "Quebre 30 pedras em qualquer veio da ilha.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 30, 750, 1_200, item_id::GREATER_HEAL, 4, 28, true, false),
     diaria(622, "Caça do dia", "Derrote 50 bichos da ilha.", objective_kind::KILL, 0, 50, 900, 1_600, item_id::GREATER_HEAL, 4, 28, true, false),
@@ -1328,6 +1566,45 @@ pub fn is_tutorial_quest(id: u16) -> bool {
 mod testes_dos_givers {
     use super::*;
 
+    /// O estoque das secundarias novas cobre cada receita cinza uma vez,
+    /// mesmo que o personagem ja tenha concluido as cadeias antigas.
+    #[test]
+    fn chaves_das_secundarias_cobrem_o_catalogo_cinza_e_duas_t2() {
+        let receitas = crate::receitas::receitas_de_equipamento();
+        for chave in item_id::CHAVES {
+            let necessarias = receitas
+                .iter()
+                .filter(|r| r.tier == 1 && r.inputs[0][0] == chave as u32)
+                .count();
+            let entregues: usize = QUESTS
+                .iter()
+                .filter(|q| (544..=547).contains(&q.id) && q.reward_item == chave)
+                .map(|q| q.reward_item_qty as usize)
+                .sum();
+            assert!(
+                entregues >= necessarias,
+                "chave {chave}: {entregues}/{necessarias}"
+            );
+        }
+        for id in [544, 545, 546, 547] {
+            let q = quest_by_id(id).unwrap();
+            assert!(!q.repeatable && q.min_level <= 4);
+            assert_eq!(zona_da_missao(id), Some("ilha_inicial"));
+        }
+        for (id, chave) in [
+            (610, item_id::na_cor(item_id::SCALE, 2)),
+            (619, item_id::na_cor(item_id::HIDE, 2)),
+        ] {
+            let q = quest_by_id(id).unwrap();
+            assert_eq!((q.reward_item, q.reward_item_qty), (chave, 1));
+            assert_eq!(q.min_level, 20);
+            assert_eq!(zona_da_missao(id), Some("ilha_gelo"));
+            assert!(receitas
+                .iter()
+                .any(|r| r.tier == 2 && r.inputs[0][0] == chave as u32));
+        }
+    }
+
     #[test]
     fn cada_npc_da_vila_e_um_giver_que_volta_pro_papel() {
         use crate::construcao::Papel;
@@ -1348,18 +1625,28 @@ mod testes_dos_givers {
     }
 
     /// As cadeias 511-538 passam de NPC em NPC: dois passos seguidos quase
-    /// nunca com o mesmo (a oficina do Ferreiro repete uma vez).
+    /// nunca com o mesmo (a oficina do Ferreiro repete uma vez). As de cabana
+    /// sao a excecao de proposito: cada posto fora da cidade tem a sua cadeia
+    /// inteira, e os tres postos do Bosque dao missao.
     #[test]
     fn as_cadeias_do_bosque_trocam_de_npc() {
         let bosque = || QUESTS.iter().filter(|d| (511..=538).contains(&d.id));
         let mut mesmos = 0;
         for d in bosque() {
             assert!(quem_da(d).is_some(), "{} sem NPC", d.id);
+            if nome_do_posto(d.giver).is_some() {
+                continue;
+            }
             if quest_by_id(d.requires).is_some_and(|a| a.giver == d.giver) {
                 mesmos += 1;
             }
         }
         assert!(mesmos <= 1, "{mesmos} passos seguidos com o mesmo NPC");
+        let postos: std::collections::HashSet<u16> = bosque()
+            .map(|d| d.giver)
+            .filter(|g| nome_do_posto(*g).is_some())
+            .collect();
+        assert_eq!(postos.len(), 3, "postos do Bosque com missao: {postos:?}");
         let npcs: std::collections::HashSet<u16> = bosque().map(|d| d.giver).collect();
         assert!(npcs.len() >= 8, "so' {} NPCs dando missao", npcs.len());
     }

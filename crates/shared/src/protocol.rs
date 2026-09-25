@@ -63,6 +63,12 @@ pub enum ClientMessage {
     UseItem {
         slot: u16,
     },
+    /// Instala uma skill da bolsa no slot escolhido do pet equipado.
+    PetSkillEquip {
+        item_slot: u16,
+        pet_slot: u8,
+        skill_slot: u8,
+    },
     /// Interagir. `target_eid` Some = entidade clicada específica (NPC/baú);
     /// None = pega o NPC mais próximo (tecla de interação / toggle).
     Interact {
@@ -103,6 +109,11 @@ pub enum ClientMessage {
     /// se faltam materiais ou inv cheio.
     Craft {
         recipe_id: u16,
+    },
+    /// Recupera materiais de uma peça da bolsa. Servidor valida receita,
+    /// devolução e espaço antes de consumir o item.
+    Desmantelar {
+        slot: u16,
     },
     StandUp,
     TeleportToVendor,
@@ -436,6 +447,9 @@ pub enum ClientMessage {
         slot: u16,
         quantidade: u8,
     },
+    /// Para imediatamente a rota automatica de aproximacao do alvo.
+    /// Anexada no fim para preservar os indices postcard anteriores.
+    PararRota,
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -859,6 +873,10 @@ pub enum ServerMessage {
         progress: u32,
         status: u8, // quests::quest_status
     },
+    /// Saque gerado ao derrotar um chefe do mapa; os itens ainda estão no chão.
+    BossRewards {
+        items: Vec<(u16, u32)>,
+    },
     /// Pontos de facção atuais do player (atualiza HUD).
     FactionPoints {
         points: u32,
@@ -1197,7 +1215,14 @@ pub enum ServerMessage {
         texto: String,
     },
     /// Enviado somente quando o servidor aceita o Dash; inclui redução por SPD.
-    DashRecarga { segundos: f32 },
+    DashRecarga {
+        segundos: f32,
+    },
+    /// Acrescentada no fim para preservar os indices postcard anteriores.
+    MagicShopOpen {
+        items: Vec<ShopItem>,
+        vendor_id: u32,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
@@ -1779,7 +1804,10 @@ mod testes_do_auto_combate {
             .auto_alvo_ordem
         };
         // Valor inventado cai fora.
-        assert_eq!(p(vec![99, auto_alvo::MAIS_PERTO]), Some(vec![auto_alvo::MAIS_PERTO]));
+        assert_eq!(
+            p(vec![99, auto_alvo::MAIS_PERTO]),
+            Some(vec![auto_alvo::MAIS_PERTO])
+        );
         // Repetido vira um.
         assert_eq!(
             p(vec![auto_alvo::JOGADOR, auto_alvo::JOGADOR]),

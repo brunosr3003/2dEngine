@@ -100,7 +100,7 @@ impl PresencaUi {
                     format!("Presença · dia {dia}: {}", lista.join(", "))
                 };
                 if no_correio > 0 {
-                    t.push_str(" (bolsa cheia: parte nas Entregas do Mercado)");
+                    t.push_str(" (bolsa cheia: parte no Correio)");
                 }
                 self.ultimo = Some(t.clone());
                 Some(t)
@@ -113,11 +113,25 @@ impl PresencaUi {
     }
 
     /// Desenha e trata o toque. Devolve os pedidos pro servidor.
-    pub fn desenha(&mut self, nomes: &HashMap<u16, String>, agora_unix: i64) -> Vec<ClientMessage> {
-        estilo::no_painel(estilo::escala_do_painel(780.0, 640.0), || self.desenha_na_escala(nomes, agora_unix))
+    pub fn desenha(
+        &mut self,
+        nomes: &HashMap<u16, String>,
+        agora_unix: i64,
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) -> Vec<ClientMessage> {
+        estilo::no_painel(estilo::escala_do_painel(780.0, 640.0), || {
+            self.desenha_na_escala(nomes, agora_unix, vox, solido)
+        })
     }
 
-    fn desenha_na_escala(&mut self, nomes: &HashMap<u16, String>, agora_unix: i64) -> Vec<ClientMessage> {
+    fn desenha_na_escala(
+        &mut self,
+        nomes: &HashMap<u16, String>,
+        agora_unix: i64,
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;
@@ -261,7 +275,7 @@ impl PresencaUi {
                     lado,
                     lado,
                 );
-                crate::icones::icone(id, ic, None, None);
+                crate::icones::icone_com_3d(id, ic, None, None, Some((vox, solido)));
                 let q = crate::economia::milhar(pp.qtd as u64);
                 estilo::texto_centro_forte(
                     r.center().x,
@@ -274,7 +288,13 @@ impl PresencaUi {
             if let Some(pp) = premios.get(1) {
                 let l2 = lado * 0.5;
                 let ic = Rect::new(r.x + r.w - l2 - 3.0 * f, r.y + 3.0 * f, l2, l2);
-                crate::icones::icone(pp.item_id, ic, None, Some(pp.qtd));
+                crate::icones::icone_com_3d(
+                    pp.item_id,
+                    ic,
+                    None,
+                    Some(pp.qtd),
+                    Some((vox, solido)),
+                );
             }
             if (i as u8) < cal.resgatados {
                 estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.0, 0.0, 0.0, 0.55));
@@ -423,7 +443,7 @@ mod tests {
             t.contains("dia 7")
                 && t.contains("Poção de Experiência ×1")
                 && t.contains("1.500 de ouro")
-                && t.contains("Entregas")
+                && t.contains("Correio")
         );
     }
 

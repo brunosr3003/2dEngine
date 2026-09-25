@@ -31,7 +31,11 @@ pub struct Banco {
 /// "+10 espaços · 2.000 ouro", ou o teto.
 pub fn rotulo_de_expandir(banco: bool, extra: u8) -> String {
     match armazem::custo(banco, extra) {
-        Some(c) => format!("+{} espaços · {} ouro", armazem::PASSO, crate::bolsa::milhar(c)),
+        Some(c) => format!(
+            "+{} espaços · {} ouro",
+            armazem::PASSO,
+            crate::bolsa::milhar(c)
+        ),
         None => "Tamanho máximo".to_string(),
     }
 }
@@ -68,14 +72,26 @@ impl Banco {
     }
 
     /// Desenha; devolve o pedido do quadro.
-    pub fn desenha(&mut self, bolsa: &[InventorySlot], ouro: u64) -> Option<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        bolsa: &[InventorySlot],
+        ouro: u64,
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
+    ) -> Option<ClientMessage> {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(bolsa, ouro))
+        estilo::no_painel(Self::escala(), || {
+            self.desenha_na_escala(bolsa, ouro, palco)
+        })
     }
 
-    fn desenha_na_escala(&mut self, bolsa: &[InventorySlot], ouro: u64) -> Option<ClientMessage> {
+    fn desenha_na_escala(
+        &mut self,
+        bolsa: &[InventorySlot],
+        ouro: u64,
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
+    ) -> Option<ClientMessage> {
         crate::hud_layout::escurece(0.5);
         let p = Self::painel();
         estilo::painel_destaque(p, estilo::OURO);
@@ -111,16 +127,36 @@ impl Banco {
         // So' a grade: a carteira (cobre, darksteel) nao vai pro banco.
         let n = crate::bolsa::grade(bolsa, bolsa_extra).min(bolsa.len());
         let bolsa = &bolsa[..n];
-        if let Some(r) = lado(esq, "Bolsa", bolsa, false, bolsa_extra, ouro, &mut self.rol_bolsa) {
+        if let Some(r) = lado(
+            esq,
+            "Bolsa",
+            bolsa,
+            false,
+            bolsa_extra,
+            ouro,
+            &mut self.rol_bolsa,
+            palco,
+        ) {
             pedido = Some(match r {
                 Toque::Item(i) => ClientMessage::VaultDeposit { inv_slot: i as u16 },
                 Toque::Expandir => ClientMessage::ExpandirArmazem { banco: false },
             });
         }
         let cofre = self.cofre.clone();
-        if let Some(r) = lado(dir, "Banco", &cofre, true, banco_extra, ouro, &mut self.rol_banco) {
+        if let Some(r) = lado(
+            dir,
+            "Banco",
+            &cofre,
+            true,
+            banco_extra,
+            ouro,
+            &mut self.rol_banco,
+            palco,
+        ) {
             pedido = Some(match r {
-                Toque::Item(i) => ClientMessage::VaultWithdraw { vault_slot: i as u16 },
+                Toque::Item(i) => ClientMessage::VaultWithdraw {
+                    vault_slot: i as u16,
+                },
                 Toque::Expandir => ClientMessage::ExpandirArmazem { banco: true },
             });
         }
@@ -142,6 +178,7 @@ fn lado(
     extra: u8,
     ouro: u64,
     rolagem: &mut Rolagem,
+    palco: Option<(&crate::vox::VoxCache, &Material)>,
 ) -> Option<Toque> {
     estilo::cartao(r, false, false);
     let tamanho = armazem::tamanho(banco, extra).max(slots.len());
@@ -153,10 +190,19 @@ fn lado(
         r.y + u(26.0),
         &ocup,
         15,
-        if ocupados >= tamanho { estilo::OURO } else { estilo::SUAVE },
+        if ocupados >= tamanho {
+            estilo::OURO
+        } else {
+            estilo::SUAVE
+        },
     );
     let pe_h = u(48.0);
-    let area = Rect::new(r.x + u(8.0), r.y + u(38.0), r.w - u(16.0), r.h - u(38.0) - pe_h - u(8.0));
+    let area = Rect::new(
+        r.x + u(8.0),
+        r.y + u(38.0),
+        r.w - u(16.0),
+        r.h - u(38.0) - pe_h - u(8.0),
+    );
     let cel = ((area.w - u(14.0) - (COLUNAS as f32 - 1.0) * u(VAO)) / COLUNAS as f32).floor();
     let passo = cel + u(VAO);
     let linhas = tamanho.div_ceil(COLUNAS);
@@ -176,7 +222,7 @@ fn lado(
             continue;
         }
         let s = slots.get(i).filter(|s| s.qty > 0);
-        celula(c, s);
+        celula(c, s, palco);
         if s.is_some() && clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
             saida = Some(Toque::Item(i));
         }
@@ -200,15 +246,16 @@ fn lado(
 }
 
 /// Uma celula: fundo, icone, a borda na cor da peca e a quantidade.
-fn celula(c: Rect, s: Option<&InventorySlot>) {
+fn celula(c: Rect, s: Option<&InventorySlot>, palco: Option<(&crate::vox::VoxCache, &Material)>) {
     estilo::ret_arredondado(c, u(6.0), Color::new(0.13, 0.12, 0.15, 1.0));
     let Some(s) = s else {
         return;
     };
-    crate::bolsa::icone_do_item(
+    crate::bolsa::icone_do_item_com(
         Rect::new(c.x + c.w * 0.1, c.y + c.h * 0.1, c.w * 0.8, c.h * 0.8),
         s.item_id,
         1.0,
+        palco,
     );
     if let Some(i) = s.instance {
         let h = shared::items::tier_color_hex(i.grau()).trim_start_matches('#');

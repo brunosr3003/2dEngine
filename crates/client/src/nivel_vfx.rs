@@ -187,9 +187,7 @@ fn fagulha(pe: Vec3, i: usize, f: f32) {
     let a = brilho(u);
     let giro = i as f32 * 2.399963 + u * 3.4;
     let r = 0.55 + 1.35 * u;
-    let p = pe
-        + vec3(giro.cos() * r, SUBIDA * suave(u), giro.sin() * r)
-        + Vec3::Y * 0.2;
+    let p = pe + vec3(giro.cos() * r, SUBIDA * suave(u), giro.sin() * r) + Vec3::Y * 0.2;
     let s = 0.13 * (1.0 - u).max(0.25);
     let c = cor(NUCLEO, 1.0, (250.0 * a) as u8);
     let v = vec![
@@ -228,13 +226,7 @@ pub fn desenha_faixa(e: &SubiuDeNivel, nivel: u32) {
         34,
         Color::new(0.0, 0.0, 0.0, 0.55 * a),
     );
-    crate::hud_estilo::texto_centro_forte(
-        cx,
-        y,
-        &texto,
-        34,
-        Color::new(1.0, 0.82, 0.45, a),
-    );
+    crate::hud_estilo::texto_centro_forte(cx, y, &texto, 34, Color::new(1.0, 0.82, 0.45, a));
 }
 
 fn suave(t: f32) -> f32 {
@@ -287,7 +279,10 @@ mod testes {
         e.passo(DURACAO * 0.5);
         assert!(e.ativo() && e.fase().is_some_and(|f| (f - 0.5).abs() < 0.01));
         e.passo(DURACAO);
-        assert!(!e.ativo() && e.fase().is_none(), "passou da duracao e apagou");
+        assert!(
+            !e.ativo() && e.fase().is_none(),
+            "passou da duracao e apagou"
+        );
     }
 
     /// Subir dois niveis seguidos REINICIA. Sem isso o segundo nivel nao
@@ -306,7 +301,10 @@ mod testes {
     #[test]
     fn a_faixa_some_antes_da_luz() {
         const FIM_DA_FAIXA: f32 = 0.6;
-        assert!(FIM_DA_FAIXA < 1.0, "a faixa nao pode durar mais que o efeito");
+        assert!(
+            FIM_DA_FAIXA < 1.0,
+            "a faixa nao pode durar mais que o efeito"
+        );
         assert!(brilho(FIM_DA_FAIXA) > 0.0, "a luz continua depois da faixa");
     }
 

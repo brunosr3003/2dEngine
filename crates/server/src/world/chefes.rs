@@ -186,7 +186,6 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
     let comuns = crate::economy::kinds_comuns();
     let ilhas_do_bicho = ilhas_dos_bichos(&comuns, &crate::economy::KINDS_DE_PRAIA);
     let mut mobs = comuns;
-    mobs.retain(|k| !cat::e_chefe(*k));
     mobs.extend(crate::economy::KINDS_DE_PRAIA);
     // So' os chefes de ILHA DO ARQUIPELAGO. O "Onde obter" localiza cada
     // fonte por INDICE de ilha, e o Colosso da Ilha Magica nao tem um — ela
@@ -195,7 +194,11 @@ pub fn onde_obter_snapshot() -> Vec<shared::protocol::ItemResourceSources> {
     // que nao dizer nada.
     let chefes = cat::CHEFES
         .iter()
-        .filter(|c| shared::terreno::ARQUIPELAGO.iter().any(|d| d.zona == c.zona))
+        .filter(|c| {
+            shared::terreno::ARQUIPELAGO
+                .iter()
+                .any(|d| d.zona == c.zona)
+        })
         .map(|c| {
             (
                 c.kind,

@@ -88,8 +88,18 @@ impl EscolhaNpc {
         let by = p.y + p.h - bh - u(56.0);
         let missao = Rect::new(p.x + u(20.0), by, bw, bh);
         let funcao = Rect::new(missao.x + bw + u(20.0), by, bw, bh);
-        estilo::botao(missao, "Missões", estilo::estado_de(missao, false, false), false);
-        estilo::botao(funcao, &q.funcao, estilo::estado_de(funcao, false, false), true);
+        estilo::botao(
+            missao,
+            "Missões",
+            estilo::estado_de(missao, false, false),
+            false,
+        );
+        estilo::botao(
+            funcao,
+            &q.funcao,
+            estilo::estado_de(funcao, false, false),
+            true,
+        );
         estilo::texto_centro(
             p.center().x,
             p.y + p.h - u(20.0),

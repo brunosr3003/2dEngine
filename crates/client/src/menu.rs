@@ -327,9 +327,7 @@ impl Menu {
                     // O foco do tutorial anda ate' aqui: "Menu > Ficha".
                     match l.0 {
                         Item::Ficha => crate::foco::marca(crate::foco::chave::MENU_FICHA, r),
-                        Item::Habilidades => {
-                            crate::foco::marca(crate::foco::chave::MENU_SKILLS, r)
-                        }
+                        Item::Habilidades => crate::foco::marca(crate::foco::chave::MENU_SKILLS, r),
                         Item::MinhaIlha => {
                             crate::foco::marca(crate::foco::chave::MENU_MINHA_ILHA, r)
                         }

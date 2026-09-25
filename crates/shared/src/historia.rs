@@ -52,6 +52,10 @@ pub const PASSO_DA_COLONIA: u16 = 718;
 /// outros (ver `id_do_passo`, que anda pela POSICAO na lista).
 pub const PRIMEIRO_ID_TUTORIAL: u16 = 790;
 pub const ULTIMO_ID_TUTORIAL: u16 = 809;
+/// Trava de nivel antes do barco pra Geleira. Entrou depois da numeracao
+/// seguida e usa um id livre da faixa de tutorial: renumerar a historia
+/// moveria o progresso salvo de quem ja' joga.
+pub const TRAVA_DO_BARCO: u16 = 803;
 /// Primeiro id das cronicas. Ate' `u16::MAX` sao 55.536 passos de epilogo —
 /// mais de nove mil capitulos.
 pub const PRIMEIRO_ID_DO_EPILOGO: u16 = 10_000;
@@ -448,7 +452,8 @@ pub const PASSOS: &[QuestDef] = &[
     // ═════════════ I · O Farol do Bosque (Bosque, 1–15) ═════════════
     // XP: a historia CARREGA o nivel do capitulo I (lobo da' 32 de XP e o
     // nivel 5 pede 15.000 — trava de nivel aqui era 450 lobos). Chega ao 6
-    // antes do Porao, ao 14 antes da Adega e ao 15 no barco. E os passos ate'
+    // antes do Porao e ao 14 antes da Adega. O barco espera o nivel 20 para
+    // dar tempo de fazer as secundarias do Bosque. E os passos ate'
     // o craft entregam a receita INTEIRA da primeira armadura cinza. Os dois
     // contratos sao testes: `capitulo_um_carrega_o_nivel_das_dungeons` e
     // `o_inicio_entrega_a_primeira_armadura`.
@@ -515,16 +520,17 @@ pub const PASSOS: &[QuestDef] = &[
     tutorial(800, "O primeiro morador", "Casa vazia não rende. Na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. Toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
+    nivel(TRAVA_DO_BARCO, "Alcance o nível 20", 20),
     viajar(719, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
-    falar(720, "Frio de rachar os ossos", "Você desembarcou na Geleira. Apresente-se ao Mestre de Missões da praça.", Papel::Missoes, 200, 1_200, item_id::GREATER_HEAL, 2),
+    falar(720, "Frio de rachar os ossos", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
     tutorial(797, "O primeiro despertar", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, item_id::XP_POTION, 1),
     falar(721, "Histórias de taberna", "Quem sabe dos Morganeers na neve é o Taberneiro. Pague um ouvido a ele.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
     cacar(722, "Corujursos na neve", "Owlbears famintos atacam as trilhas de gelo. Derrote 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
     coletar(723, "Gelo que guarda trovão", "A pedra da Geleira prende relâmpago. Quebre 20 pedras.", 20, 300, 2_000, VERDE, 4),
     falar(724, "O fragmento de gelo", "Mostre o que achou nas pedras ao Identificador.", Papel::Identificador, 250, 2_000, item_id::GREATER_MANA, 2),
     ir(725, "O farol congelado", "O farol da Geleira fica no alto. Suba até o mirante da ilha.", ponto::MIRANTE, 350, 2_600),
-    nivel(726, "Alcance o nível 20", 20),
+    nivel(726, "Alcance o nível 22", 22),
     cacar(727, "Arqueiros da nevasca", "Arqueiros dos Morganeers vigiam o farol. Derrote 8.", alvo_de_mob(mob_kind::ARQUEIRO), 8, 400, 3_200, item_id::GREATER_HEAL),
     criar(728, "Couraça contra o frio", "Crie uma peça nova no Craft para o frio que vem.", 350, 3_000),
     refinar(729, "Aço que não quebra", "Tente refinar duas vezes na Forja.", 2, 400, 3_400),
@@ -828,11 +834,11 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
         ],
         719 | 737 | 752 => &[
             "O barco está pronto e a maré ajuda.",
-            "Suba a bordo. Do outro lado, procure o Mestre de Missões da praça.",
+            "Suba a bordo. Do outro lado, apresente-se ao Capitão do Porto.",
             "Que os faróis guiem você.",
         ],
         720 => &[
-            "Mais um que o Capitão mandou. Bem-vindo à Geleira.",
+            "Bem-vindo ao porto da Geleira. A estrada leva à cidade.",
             "Nosso farol ainda brilha, mas o gelo está rachando a pedra.",
             "O Taberneiro sabe onde os Morganeers se escondem na neve.",
         ],
@@ -1003,8 +1009,15 @@ mod testes {
         let mut escrito = PRIMEIRO_ID;
         for d in PASSOS.iter() {
             assert!(vistos.insert(d.id), "{} repetido", d.id);
-            if (PRIMEIRO_ID_TUTORIAL..=ULTIMO_ID_TUTORIAL).contains(&d.id) {
-                assert_eq!(d.obj_kind, objective_kind::TUTORIAL, "{} na faixa de tutorial", d.id);
+            if d.id == TRAVA_DO_BARCO {
+                assert_eq!(d.obj_kind, objective_kind::NIVEL);
+            } else if (PRIMEIRO_ID_TUTORIAL..=ULTIMO_ID_TUTORIAL).contains(&d.id) {
+                assert_eq!(
+                    d.obj_kind,
+                    objective_kind::TUTORIAL,
+                    "{} na faixa de tutorial",
+                    d.id
+                );
             } else {
                 // Os de sempre seguem 700, 701, 702... com tutorial no meio.
                 assert_eq!(d.id, escrito, "passo fora de ordem");
@@ -1035,7 +1048,7 @@ mod testes {
             // dono pediu e que so' cabe aqui (a ilha se visita uma vez, no
             // meio do capitulo I, e e' a unica hora em que da' pra ensina-la).
             //
-            // O capitulo I carrega TREZE tutoriais alem da historia, e e' por
+            // O capitulo I carrega onze tutoriais alem da historia, e e' por
             // isso que ele e' o maior. Os outros tres seguem entre 12 e 20 —
             // se algum deles chegar perto de 30, o teto nao e' o problema.
             let so_historia = passos_do_capitulo(c)
@@ -1121,11 +1134,7 @@ mod testes {
                 .find(|d| d.obj_kind == objective_kind::TUTORIAL && d.obj_target == acao)
                 .unwrap_or_else(|| panic!("o tutorial da acao {acao} nao esta' na historia"));
             let i = indice(d.id).unwrap();
-            assert!(
-                i >= escritura,
-                "{}: abre ANTES de a ilha ser sua",
-                d.title
-            );
+            assert!(i >= escritura, "{}: abre ANTES de a ilha ser sua", d.title);
             assert!(i < barco, "{}: cai depois do barco pra Geleira", d.title);
         }
         // Os de saldo fecham sozinhos; os de gesto se refazem.
@@ -1262,9 +1271,8 @@ mod testes {
     }
 
     /// O capitulo I leva o nivel sozinho: so' a XP dos passos (sem contar
-    /// bicho) ja' passa o nivel minimo de cada dungeon ANTES do passo dela, e
-    /// o 15 da Geleira antes do barco. Trava de nivel no capitulo I nao ha':
-    /// era ela que parava o jogador no 704 pedindo ~450 lobos.
+    /// bicho) ja' passa o nivel minimo de cada dungeon ANTES do passo dela.
+    /// A unica trava fica antes do barco: nivel 20, para fazer as secundarias.
     #[test]
     fn capitulo_um_carrega_o_nivel_das_dungeons() {
         let mult = crate::constants::DEFAULT_XP_MULTIPLIER;
@@ -1274,11 +1282,10 @@ mod testes {
         let mut dungeons = 0;
         for d in passos_do_capitulo(&cap) {
             let id = d.id;
-            assert_ne!(
-                d.obj_kind,
-                objective_kind::NIVEL,
-                "{id}: trava de nivel no capitulo I"
-            );
+            if d.obj_kind == objective_kind::NIVEL {
+                assert_eq!(id, TRAVA_DO_BARCO);
+                assert_eq!(d.obj_count, 20);
+            }
             let nivel = crate::constants::level_of_xp_with_mult(xp, mult);
             if d.obj_kind == objective_kind::DUNGEON {
                 let c = crate::dungeon::conteudo(d.obj_target)
@@ -1501,7 +1508,10 @@ mod testes_do_pet_inicial {
             .iter()
             .find(|d| d.reward_item == crate::item_id::PERGAMINHO_INVOCA_PET);
         let d = com_pet.expect("nenhuma missão inicial dá pergaminho de pet");
-        assert!(d.reward_item_qty >= 1, "o pergaminho veio com quantidade zero");
+        assert!(
+            d.reward_item_qty >= 1,
+            "o pergaminho veio com quantidade zero"
+        );
         // E a soma de XP até ela tem que caber num personagem novo: dar o pet
         // no fim do capítulo não resolveria o problema, que é do começo.
         let xp: u64 = ate_707

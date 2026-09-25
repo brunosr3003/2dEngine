@@ -167,10 +167,15 @@ pub enum Junta {
     Cabeca,
     Pescoco,
     Cauda,
-    Pata { frente: bool, esq: bool },
+    Pata {
+        frente: bool,
+        esq: bool,
+    },
     /// Asa: dragao, hipogrifo e coruja. Bate junto com a passada, mas com
     /// amplitude propria — asa nao e' pata, ela nao toca o chao.
-    Asa { esq: bool },
+    Asa {
+        esq: bool,
+    },
 }
 
 /// Nome do objeto no `.vox` -> junta.
@@ -214,7 +219,11 @@ pub fn pivo_vox(j: Junta, lo: [usize; 3], hi: [usize; 3]) -> [f32; 3] {
         // A asa gira onde encosta no tronco: a borda de DENTRO, no eixo X.
         // Girar no meio dela arrancaria a asa do corpo a cada batida.
         Junta::Asa { esq } => [
-            if esq { (hi[0] + 1) as f32 } else { lo[0] as f32 },
+            if esq {
+                (hi[0] + 1) as f32
+            } else {
+                lo[0] as f32
+            },
             meio(1),
             meio(2),
         ],
@@ -702,7 +711,10 @@ mod tests {
         // E o topo nao dispara: o dragao e' filhote, nao um dragao pequeno.
         let topo = altura_do_pet(shared::pets::ESPECIES.last().unwrap());
         let base = altura_do_pet(&shared::pets::ESPECIES[0]);
-        assert!(topo < base * 1.6, "o topo ({topo:.2}) dobrou a base ({base:.2})");
+        assert!(
+            topo < base * 1.6,
+            "o topo ({topo:.2}) dobrou a base ({base:.2})"
+        );
         // E a escala tem que estar CHEGANDO no desenho: `render3d` multiplica
         // por ela porque a altura e' assada por ARQUIVO, e o mesmo arquivo
         // serve o pet e a montaria. Se o dragao-pet e o dragao-montaria
@@ -738,7 +750,11 @@ mod tests {
                  montaria mais baixa que quem monta nao le' como montaria",
                 e.nome
             );
-            assert!(h > anterior, "{} ({h:.2}) nao passou do grau anterior ({anterior:.2})", e.nome);
+            assert!(
+                h > anterior,
+                "{} ({h:.2}) nao passou do grau anterior ({anterior:.2})",
+                e.nome
+            );
             anterior = h;
         }
     }

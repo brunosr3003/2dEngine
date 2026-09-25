@@ -596,7 +596,10 @@ impl Personagens {
                 }
             }
         }
-        self.rolagem.pos = self.rolagem.pos.clamp(0.0, crate::rolagem::maximo(area, total));
+        self.rolagem.pos = self
+            .rolagem
+            .pos
+            .clamp(0.0, crate::rolagem::maximo(area, total));
         crate::rolagem::recortar(Some(area));
         for (i, c) in chars.iter().enumerate() {
             let card = Rect::new(
@@ -1011,7 +1014,11 @@ impl Personagens {
         let linhas: [(&str, u8, u8); 5] = [
             ("Rosto", ap::ROSTOS, self.aparencia.rosto),
             ("Cabelo", cabelos, self.aparencia.cabelo),
-            ("Cor", ap::CORES_DE_CABELO.len() as u8, self.aparencia.cor_cabelo),
+            (
+                "Cor",
+                ap::CORES_DE_CABELO.len() as u8,
+                self.aparencia.cor_cabelo,
+            ),
             ("Pele", ap::TONS_DE_PELE.len() as u8, self.aparencia.pele),
             ("Roupa", roupas, atual_roupa),
         ];

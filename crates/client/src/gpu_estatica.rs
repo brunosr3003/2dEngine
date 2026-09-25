@@ -106,9 +106,16 @@ impl Drop for MalhaEstatica {
 #[derive(Clone, Copy, PartialEq)]
 pub enum Programa {
     /// O do mundo (`render3d::material_solido`), com o recorte do jogador.
-    Solido { recorte: Vec3, recorte_z: f32 },
+    Solido {
+        recorte: Vec3,
+        recorte_z: f32,
+    },
+    Sombra,
     /// O mar (`agua::material`).
-    Agua { tempo: f32, ondas: f32 },
+    Agua {
+        tempo: f32,
+        ondas: f32,
+    },
 }
 
 #[repr(C)]
@@ -118,6 +125,7 @@ struct UniformesSolido {
     recorte: Vec3,
     recorte_z: f32,
     tinta: [f32; 4],
+    luz_dia: f32,
     faixas: Faixas,
 }
 
@@ -167,17 +175,23 @@ struct UniformesAgua {
 
 struct Programas {
     solido: Pipeline,
+    sombra: Pipeline,
     agua: Pipeline,
     branco: TextureId,
 }
 
 thread_local! {
     static PROGRAMAS: RefCell<Option<Programas>> = const { RefCell::new(None) };
+    static LUZ_DIA: Cell<f32> = const { Cell::new(0.0) };
     /// Buffers das malhas de voxel (`VoxCache`), pela posicao dos vertices na
     /// memoria. O cache de vox carrega uma vez e nunca solta nem troca malha,
     /// entao o endereco e' estavel durante o jogo inteiro.
     static VOXEL: RefCell<std::collections::HashMap<(usize, usize, usize), (BufferId, BufferId, i32)>> =
         RefCell::new(std::collections::HashMap::new());
+}
+
+pub fn define_luz_dia(valor: f32) {
+    LUZ_DIA.with(|l| l.set(valor));
 }
 
 fn atributos() -> [VertexAttribute; 4] {
@@ -212,6 +226,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Recorte", UniformType::Float3),
                 ("RecorteZ", UniformType::Float1),
                 ("Tinta", UniformType::Float4),
+                ("LuzDia", UniformType::Float1),
                 ("TierClaro", UniformType::Float4),
                 ("TierEsc", UniformType::Float4),
                 ("CabeloClaro", UniformType::Float4),
@@ -239,6 +254,12 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
             &atributos(),
             solido,
             crate::render3d::params_solido(),
+        ),
+        sombra: ctx.new_pipeline(
+            &[BufferLayout::default()],
+            &atributos(),
+            solido,
+            crate::render3d::params_sombra(),
         ),
         agua: ctx.new_pipeline(
             &[BufferLayout::default()],
@@ -280,8 +301,21 @@ pub fn desenha<'a>(
                     recorte,
                     recorte_z,
                     tinta: [0.0; 4],
+                    luz_dia: LUZ_DIA.with(|l| l.get()),
                     // O lote de malha ESTATICA (terreno, vegetacao) nunca
                     // tinge por faixa: ela e' do personagem.
+                    faixas: Faixas::default(),
+                }));
+            }
+            Programa::Sombra => {
+                ctx.apply_pipeline(&p.sombra);
+                ctx.apply_uniforms(UniformsSource::table(&UniformesSolido {
+                    projection,
+                    model: Mat4::IDENTITY,
+                    recorte: Vec3::ZERO,
+                    recorte_z: 0.0,
+                    tinta: [0.0; 4],
+                    luz_dia: 0.0,
                     faixas: Faixas::default(),
                 }));
             }
@@ -387,6 +421,7 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             recorte: Vec3::ZERO,
             recorte_z: 0.0,
             tinta,
+            luz_dia: LUZ_DIA.with(|l| l.get()),
             faixas,
         }));
         ctx.apply_bindings(&Bindings {

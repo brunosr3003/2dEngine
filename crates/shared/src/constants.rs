@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 133;
+pub const PROTOCOL_VERSION: u16 = 138;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -580,6 +580,8 @@ pub mod item_id {
     /// linha de código nova — e o "quantos eu tenho" é a quantidade na bolsa,
     /// que o jogador já sabe ler.
     pub const PASSE_MAGICO: u16 = 466;
+    /// Recompensa garantida de combate e coleta na Ilha Magica.
+    pub const MOEDA_MAGICA: u16 = 475;
 
     pub const fn montaria_no_grau(base: u16, grau: u8) -> u16 {
         base + (if grau < 1 {
@@ -622,8 +624,8 @@ pub mod item_id {
         Some((PET_BASE, (id - PET_BASE) as u8 + 1))
     }
 
-    /// As quatro CHAVES de craft (uma por receita), pelo id da cinza. So'
-    /// caem de chefe e de dungeon/raid (`shared::chaves`).
+    /// As quatro CHAVES de craft (uma por receita), pelo id da cinza.
+    /// Caem de chefes/dungeon e tambem sao recompensa de algumas missoes.
     pub const CHAVES: [u16; 4] = [SCALE, CLAW, HORN, HIDE];
     /// A cor 5 (lendaria) das chaves. Ficou fora da faixa contigua de
     /// `na_cor`: o id seguinte ao roxo ja' e' o proximo material.
@@ -816,7 +818,7 @@ pub const FOR_DA_ARMADURA_MEDIA: u32 = 1;
 /// A cada tantos niveis a media empresta mais um ponto de FOR.
 pub const FOR_DA_MEDIA_A_CADA: u32 = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum EquipSlot {
     /// A arma: o conjunto (docs/COMBATE.md).
     Weapon,
@@ -830,13 +832,15 @@ pub enum EquipSlot {
     /// O pet coletor (docs/PETS.md). Equipado, ele nasce no mundo e busca o
     /// saque do chao; os atributos dele entram como pontos alocados.
     Pet,
+    Pet2,
+    Pet3,
     /// A montaria (docs/MONTARIAS.md). E' nela que se monta, e a cor dela
     /// manda na velocidade.
     Montaria,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 9] = [
+    pub const TODOS: [EquipSlot; 11] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -846,6 +850,8 @@ impl EquipSlot {
         EquipSlot::Belt,
         EquipSlot::Pet,
         EquipSlot::Montaria,
+        EquipSlot::Pet2,
+        EquipSlot::Pet3,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -859,6 +865,8 @@ impl EquipSlot {
             EquipSlot::Bracelet => "bracelet",
             EquipSlot::Belt => "belt",
             EquipSlot::Pet => "pet",
+            EquipSlot::Pet2 => "pet2",
+            EquipSlot::Pet3 => "pet3",
             EquipSlot::Montaria => "montaria",
         }
     }
@@ -1647,8 +1655,7 @@ mod testes_atributos {
         assert!(ENERGIA_DO_TUTORIAL > 0);
         // E ele tem que caber em pouca coleta: mais que dois veios inteiros
         // seria farm, nao tutorial. Um veio rende COLETAS_POR_ENERGIA ciclos.
-        let por_veio =
-            crate::skills::energia_por_coleta(0) * COLETAS_POR_ENERGIA as u64;
+        let por_veio = crate::skills::energia_por_coleta(0) * COLETAS_POR_ENERGIA as u64;
         assert!(
             (ENERGIA_DO_TUTORIAL as u64) <= por_veio * 2,
             "{} de Energia sao mais de dois veios ({por_veio} cada)",
@@ -1682,7 +1689,10 @@ mod testes_atributos {
     /// menos defesa que a pesada e nao tem o dano da leve.
     #[test]
     fn so_a_armadura_media_empresta_forca() {
-        assert_eq!(for_da_armadura(item_id::ARMADURA_MEDIA, 1), FOR_DA_ARMADURA_MEDIA);
+        assert_eq!(
+            for_da_armadura(item_id::ARMADURA_MEDIA, 1),
+            FOR_DA_ARMADURA_MEDIA
+        );
         assert!(FOR_DA_ARMADURA_MEDIA > 0);
         for nivel in [1, 8, 30, 60] {
             assert_eq!(for_da_armadura(item_id::ARMADURA_LEVE, nivel), 0);
@@ -1726,5 +1736,4 @@ mod testes_atributos {
         // Um level-up inteiro (3 pontos) no comeco cabe em 3 coletas da ilha 1.
         assert!(custo_energia_de_varios(0, POINTS_PER_LEVEL) <= 3 * 12 + 9);
     }
-
 }

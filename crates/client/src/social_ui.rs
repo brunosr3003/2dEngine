@@ -21,7 +21,9 @@ pub struct Social {
     pub estado: Estado,
     pub grupo: Vec<String>,
     pub convite: Option<(String, f64)>,
-    pub entregas: bool,
+    /// Recompensas da dungeon, guardadas no correio do personagem.
+    pub correio_dungeon: Vec<shared::dungeon::CartaNet>,
+    recompensas: bool,
     pub nomes: std::collections::HashMap<u16, String>,
     oficial: bool,
     admin: bool,
@@ -50,6 +52,7 @@ pub struct Social {
     ok: bool,
     carregado: bool,
     atualizar_em: f64,
+    correio_atualizar_em: f64,
     ocupado_ate: f64,
     /// Pedidos em fila do "Pegar tudo e apagar".
     ///
@@ -65,6 +68,28 @@ fn msg(pedido: Pedido) -> ClientMessage {
 }
 
 impl Social {
+    /// Mantem a bolinha do Correio atualizada mesmo antes de abrir a janela.
+    pub fn verificar_correio_dungeon(&mut self, agora: f64) -> Option<ClientMessage> {
+        if agora < self.correio_atualizar_em {
+            return None;
+        }
+        self.correio_atualizar_em = agora + 20.0;
+        Some(ClientMessage::Dungeon {
+            pedido: shared::dungeon::Pedido::Correio,
+        })
+    }
+
+    /// Carta ainda nao lida ou recompensa aguardando resgate.
+    pub fn correio_pendente(&self) -> bool {
+        !self.correio_dungeon.is_empty()
+            || self
+                .estado
+                .cartas
+                .iter()
+                .chain(&self.estado.oficiais)
+                .any(|c| !c.lida || (!c.resgatada && !c.anexos.is_empty()))
+    }
+
     pub fn abrir(&mut self, aba: Aba) -> Vec<ClientMessage> {
         self.aberto = true;
         self.aba = aba;
@@ -75,7 +100,14 @@ impl Social {
         self.foco = None;
         self.confirmacao = None;
         self.atualizar_em = get_time() + 5.0;
-        vec![msg(Pedido::Estado)]
+        let mut pedidos = vec![msg(Pedido::Estado)];
+        if aba == Aba::Correio {
+            self.correio_atualizar_em = get_time() + 20.0;
+            pedidos.push(ClientMessage::Dungeon {
+                pedido: shared::dungeon::Pedido::Correio,
+            });
+        }
+        pedidos
     }
     pub fn fechar(&mut self) {
         self.aberto = false;
@@ -134,7 +166,13 @@ impl Social {
         }
         None
     }
-    pub fn desenha(&mut self, eu: &str, digitado: &[char]) -> Vec<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        eu: &str,
+        digitado: &[char],
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;
@@ -182,20 +220,13 @@ impl Social {
             let alerta = match aba {
                 Aba::Grupo => self.convite.is_some(),
                 Aba::Amigos => !self.estado.recebidos.is_empty(),
-                Aba::Correio => self
-                    .estado
-                    .cartas
-                    .iter()
-                    .chain(&self.estado.oficiais)
-                    .any(|c| !c.lida),
+                Aba::Correio => self.correio_pendente(),
                 Aba::Cla => !self.estado.convites_cla.is_empty(),
             };
             if alerta {
                 e::badge(r);
             }
-            if r.contains(Vec2::from(mouse_position()))
-                && crate::foco::clique()
-            {
+            if r.contains(Vec2::from(mouse_position())) && crate::foco::clique() {
                 self.aba = *aba;
                 self.pagina = 0;
                 self.foco = None;
@@ -205,7 +236,7 @@ impl Social {
         match self.aba {
             Aba::Grupo => self.grupo_ui(a, digitado, &mut saida),
             Aba::Amigos => self.amigos_ui(a, digitado, &mut saida),
-            Aba::Correio => self.correio_ui(a, digitado, &mut saida),
+            Aba::Correio => self.correio_ui(a, digitado, &mut saida, vox, solido),
             Aba::Cla => self.cla_ui(a, eu, digitado, &mut saida),
         }
         let aviso = if !self.carregado && self.aviso.is_empty() {
@@ -500,7 +531,14 @@ impl Social {
             }
         }
     }
-    fn correio_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
+    fn correio_ui(
+        &mut self,
+        a: Rect,
+        d: &[char],
+        s: &mut Vec<ClientMessage>,
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) {
         if crate::ui::botao(Rect::new(a.x, a.y, 150.0, 38.0), "Escrever carta", true) {
             self.escrevendo = true;
             self.carta = None;
@@ -509,11 +547,14 @@ impl Social {
         }
         if crate::ui::botao(
             Rect::new(a.x + 160.0, a.y, 210.0, 38.0),
-            "Recompensas",
+            &format!("Recompensas ({})", self.correio_dungeon.len()),
             true,
         ) {
-            self.entregas = true;
-            self.fechar();
+            self.recompensas = !self.recompensas;
+            self.pagina = 0;
+        }
+        if self.recompensas {
+            self.recompensas_da_dungeon(a, s, vox, solido);
             return;
         }
         if self.estado.cargo.is_some()
@@ -739,9 +780,7 @@ impl Social {
                 16,
                 if c.lida { e::TEXTO } else { e::OURO },
             );
-            if r.contains(Vec2::from(mouse_position()))
-                && crate::foco::clique()
-            {
+            if r.contains(Vec2::from(mouse_position())) && crate::foco::clique() {
                 self.carta = Some(c.id);
                 self.carta_pagina = 0;
                 if !c.lida {
@@ -866,6 +905,60 @@ impl Social {
                 16,
                 e::SUAVE,
             );
+        }
+    }
+
+    fn recompensas_da_dungeon(
+        &mut self,
+        a: Rect,
+        saida: &mut Vec<ClientMessage>,
+        vox: &crate::vox::VoxCache,
+        solido: &macroquad::material::Material,
+    ) {
+        let lista = Rect::new(a.x, a.y + 58.0, a.w, a.h - 58.0);
+        if self.correio_dungeon.is_empty() {
+            e::texto(
+                lista.x,
+                lista.y + 28.0,
+                "Nenhuma recompensa aguardando no Correio.",
+                16,
+                e::SUAVE,
+            );
+        }
+        let range = paginacao(lista, self.correio_dungeon.len(), &mut self.pagina);
+        for (n, carta) in self.correio_dungeon[range].iter().enumerate() {
+            let r = Rect::new(lista.x, lista.y + n as f32 * 50.0, lista.w, 44.0);
+            e::cartao(r, false, true);
+            let icone = Rect::new(r.x + 4.0, r.y + 2.0, 40.0, 40.0);
+            crate::icones::icone_com_3d(carta.item_id, icone, None, None, Some((vox, solido)));
+            let nome = self
+                .nomes
+                .get(&carta.item_id)
+                .map(String::as_str)
+                .unwrap_or("Item");
+            let origem = match carta.motivo {
+                1 => "Primeira vitória da semana",
+                2 => "Primeira vitória",
+                shared::presenca::MOTIVO_CORREIO => "Calendário de presença",
+                _ => "Bolsa cheia",
+            };
+            e::texto_ajustado(
+                &format!("{nome} ×{} · {origem}", carta.qtd),
+                r.x + 52.0,
+                r.y + 28.0,
+                r.w - 200.0,
+                15,
+                e::TEXTO,
+            );
+            if crate::ui::botao(
+                Rect::new(r.x + r.w - 136.0, r.y + 3.0, 128.0, 38.0),
+                "Receber",
+                true,
+            ) {
+                saida.push(ClientMessage::Dungeon {
+                    pedido: shared::dungeon::Pedido::CorreioRetirar { id: carta.id },
+                });
+            }
         }
     }
     fn picker_ui(&mut self, a: Rect, d: &[char]) {
@@ -1273,6 +1366,8 @@ pub async fn previa() {
     crate::render3d::define_alvo(Some(rt.clone()));
     crate::hud_layout::define_escala_ui(1.3);
     let mut ui = Social::default();
+    let vox = crate::vox::VoxCache::default();
+    let solido = crate::render3d::material_solido();
     ui.receber(Aviso::Estado(Estado {
         amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsário".into()],enviados:vec!["Capitã".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
@@ -1292,7 +1387,7 @@ pub async fn previa() {
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-            ui.desenha("brunji", &[]);
+            ui.desenha("brunji", &[], &vox, &solido);
             unsafe { get_internal_gl().flush() };
             rt.texture
                 .get_texture_data()
@@ -1309,7 +1404,7 @@ pub async fn previa() {
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-            ui.desenha("brunji", &[]);
+            ui.desenha("brunji", &[], &vox, &solido);
             if editor {
                 ui.foco = Some(2);
                 ui.editor_mobile(crate::hud_layout::tela_segura(), &[]);
@@ -1334,11 +1429,13 @@ pub async fn previa() {
         social::Anexo {
             item_id: 1,
             qtd: 10,
-                    instance: None,
-                },
-        social::Anexo { item_id: 2, qtd: 5,
-                    instance: None,
-                },
+            instance: None,
+        },
+        social::Anexo {
+            item_id: 2,
+            qtd: 5,
+            instance: None,
+        },
     ];
     for etapa in ["admin-enviar", "admin-anexos", "oficial-receber"] {
         ui.picker = etapa == "admin-anexos";
@@ -1361,7 +1458,7 @@ pub async fn previa() {
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-            ui.desenha("brunji", &[]);
+            ui.desenha("brunji", &[], &vox, &solido);
             unsafe { get_internal_gl().flush() };
             rt.texture
                 .get_texture_data()
@@ -1371,7 +1468,6 @@ pub async fn previa() {
     }
     crate::render3d::define_alvo(None);
 }
-
 
 #[cfg(test)]
 mod testes {

@@ -29,8 +29,14 @@ Giver `GIVER_MESTRE_DA_ILHA` (121). Cada uma só aparece depois da anterior
 "crie seu primeiro equipamento" sem nunca ter sido informado de onde sai o
 resto. Cada uma das quatro novas apresenta uma fonte — árvore (a única madeira
 do jogo), Darksteel da pedra, Quintessência do tigre, Berloque do owlbear — e
-a última paga em chave, que é o único desses itens que não se farma na ilha
-(só cai de chefe, ver [LOOT_DOS_MOBS.md](LOOT_DOS_MOBS.md)).
+a última paga em chave, que não vem de mob comum nem de pedra. Chefes e
+missões secundárias também a entregam (ver [LOOT_DOS_MOBS.md](LOOT_DOS_MOBS.md)).
+
+As secundárias 544–547 da primeira ilha entregam, uma vez por personagem,
+4 Escamas, 4 Garras, 4 Chifres e 3 Couros cinzas: uma chave para cada uma das
+15 receitas cinzas. Na Geleira, as secundárias 610 e 619 entregam uma Escama
+Verde e um Couro Verde no nível 20 para começar arma e armadura T2. Os outros
+materiais continuam sendo obtidos por coleta e combate.
 
 ## O resto do Bosque (511–538): seis cadeias, de NPC em NPC
 
@@ -84,6 +90,27 @@ o último golpe e a party dele — chefe de campo é luta de muitos (a XP contin
 só para matador e party). A auto missão vai até a vaga do chefe, preferindo um
 vivo; o auto combate luta, mas **não desvia** dos telegráficos — isso é do
 jogador. Há também a diária **Chefe do dia** em cada ilha (608, 618, 628, 638).
+
+## Postos de missão no Bosque e na Geleira
+
+Cabanas e NPCs de missão são gerados no relevo das duas ilhas pela mesma
+fonte usada por servidor, cliente, mapa e colisão. Cada posto tem um NPC
+próprio, marcador de missão e zona segura. A missão é aceita e entregue nele;
+o destino automático volta ao mesmo NPC.
+
+| Ilha | NPC do posto | Cadeias |
+|---|---|---|
+| Bosque | Lenhador da Trilha | coleta 528–530 |
+| Bosque | Vigia da Clareira | bestiário 516–522 |
+| Bosque | Guia do Mirante | chefes 511–515 |
+| Geleira | Vigia das Morsas | costa 810–814 e início das dungeons 830 |
+| Geleira | Guardiã da Floresta | fauna 815–819 |
+| Geleira | Batedor dos Ursos | recursos e craft 820–824 |
+| Geleira | Exploradora do Gelo | chefes 825–829 e dungeons 831–833 |
+
+As cinco cadeias novas da Geleira somam 24 missões de nível 15–30. A Garra
+Verde sai da missão 822 e o Chifre Verde da 824, uma vez por personagem.
+As recompensas existentes das missões 610 e 619 continuam disponíveis.
 
 ## Regras (todas no servidor)
 

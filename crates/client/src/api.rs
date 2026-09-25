@@ -316,7 +316,10 @@ mod testes {
         ];
         assert_eq!(porta_de_entrada(&lotado, "SA01").as_deref(), Some("h:9001"));
         // Sem ilha inicial no ar: entra pelo que houver.
-        assert_eq!(porta_de_entrada(&canais[..1], "SA01").as_deref(), Some("h:9100"));
+        assert_eq!(
+            porta_de_entrada(&canais[..1], "SA01").as_deref(),
+            Some("h:9100")
+        );
     }
 
     #[test]
@@ -331,7 +334,10 @@ mod testes {
             RespostaCadastro::Recusado("senha deve ter 6-128 chars".into())
         );
         // Sem corpo util, ainda assim diz o que houve.
-        assert!(matches!(interpreta_cadastro(502, ""), RespostaCadastro::Erro(_)));
+        assert!(matches!(
+            interpreta_cadastro(502, ""),
+            RespostaCadastro::Erro(_)
+        ));
     }
 
     /// Senha com aspas não quebra o JSON.
@@ -347,7 +353,9 @@ mod testes {
         // leitor de campo.
         let corpo = format!(
             r#"{{"username":"{}","email":"{}","password":"{}"}}"#,
-            escapa("zé"), escapa("a@b.c"), escapa(r#"se"nha"#)
+            escapa("zé"),
+            escapa("a@b.c"),
+            escapa(r#"se"nha"#)
         );
         assert_eq!(campo_json(&corpo, "password").as_deref(), Some(r#"se"nha"#));
         assert_eq!(campo_json(&corpo, "username").as_deref(), Some("zé"));

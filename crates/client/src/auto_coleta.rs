@@ -404,10 +404,8 @@ mod tests {
             ..*shared::quests::quest_by_id(796).expect("796 existe")
         };
 
-        let (tipos, energia) = tipos_da_missao(&def(
-            objective_kind::TUTORIAL,
-            tutorial::COLETA_ENERGIA,
-        ));
+        let (tipos, energia) =
+            tipos_da_missao(&def(objective_kind::TUTORIAL, tutorial::COLETA_ENERGIA));
         assert!(energia, "o passo pede Energia");
         assert!(!tipos.iter().any(|t| *t), "e nada mais: {tipos:?}");
 
@@ -594,7 +592,10 @@ mod tests {
         a.ligar(Vec2::ZERO, 0.0);
         // Recebe um nó longe, e entra em Indo.
         let _ = a.passo(Vec2::ZERO, 0.1, false);
-        let _ = a.no_recebido(Some((7, Vec2::new(30.0, 0.0), Vec2::new(30.0, 0.0), 0)), 0.2);
+        let _ = a.no_recebido(
+            Some((7, Vec2::new(30.0, 0.0), Vec2::new(30.0, 0.0), 0)),
+            0.2,
+        );
 
         // VIAJANDO e parado: passado o prazo, ele reage.
         let mut t = 0.3;
@@ -613,7 +614,10 @@ mod tests {
         let mut b = AutoColeta::default();
         b.ligar(Vec2::ZERO, 0.0);
         let _ = b.passo(Vec2::ZERO, 0.1, false);
-        let _ = b.no_recebido(Some((7, Vec2::new(300.0, 0.0), Vec2::new(300.0, 0.0), 0)), 0.2);
+        let _ = b.no_recebido(
+            Some((7, Vec2::new(300.0, 0.0), Vec2::new(300.0, 0.0), 0)),
+            0.2,
+        );
         let mut t = 0.3;
         let mut x = 0.0f32;
         while t < 30.0 {
@@ -626,5 +630,4 @@ mod tests {
             t += 0.5;
         }
     }
-
 }

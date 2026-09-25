@@ -1168,7 +1168,11 @@ mod testes_do_quadrante {
     #[test]
     fn o_joystick_e_o_canto_de_baixo_e_ainda_cabe_o_polegar() {
         // A do emulador (2400x1080) entra junto: e' nela que o dono testa.
-        for (sw, sh) in super::tests::TELAS.iter().copied().chain([(2400.0, 1080.0)]) {
+        for (sw, sh) in super::tests::TELAS
+            .iter()
+            .copied()
+            .chain([(2400.0, 1080.0)])
+        {
             let z = zonas(sw, sh);
             let j = z.joystick;
             assert!(

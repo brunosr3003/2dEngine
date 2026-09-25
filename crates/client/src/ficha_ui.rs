@@ -228,7 +228,11 @@ impl FichaUi {
             esq.y + 27.0 * f,
             &texto_energia,
             13,
-            if paga { estilo::SUAVE } else { estilo::VERMELHO },
+            if paga {
+                estilo::SUAVE
+            } else {
+                estilo::VERMELHO
+            },
         );
 
         // A COLUNA inteira dos "+", e nao um botao so': o passo e' "gaste um
@@ -486,7 +490,10 @@ mod tests {
         // O preco acompanha o que ja' esta' alocado, igual ao servidor.
         ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert_eq!(ui.custo_do_proximo_ponto(), 10 + 5 * 10);
-        assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)), "10 nao paga 60");
+        assert!(
+            (0..STAT_COUNT).all(|i| !ui.pode_alocar(i)),
+            "10 nao paga 60"
+        );
         ui.energia = 60;
         assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
         // Sem ponto livre nao adianta ter Energia.

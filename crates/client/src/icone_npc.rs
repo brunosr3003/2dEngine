@@ -86,8 +86,19 @@ pub fn desenha(world: &crate::world::World, vista: &crate::render3d::Vista<'_>, 
         };
         // Some no fim do alcance em vez de sumir de uma vez.
         let a = ((ALCANCE - dist) / 8.0).clamp(0.0, 1.0);
-        draw_circle(c.x, c.y, lado * 0.62, Color::new(0.05, 0.06, 0.09, 0.72 * a));
-        draw_circle_lines(c.x, c.y, lado * 0.62, 1.5, estilo::alfa(estilo::OURO, 0.8 * a));
+        draw_circle(
+            c.x,
+            c.y,
+            lado * 0.62,
+            Color::new(0.05, 0.06, 0.09, 0.72 * a),
+        );
+        draw_circle_lines(
+            c.x,
+            c.y,
+            lado * 0.62,
+            1.5,
+            estilo::alfa(estilo::OURO, 0.8 * a),
+        );
         let cor = estilo::alfa(estilo::OURO, a);
         match icone {
             Icone::Ui(n) => {

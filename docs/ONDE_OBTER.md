@@ -35,6 +35,7 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | **Chefe do mundo** | `itens_do_chefe` (o mesmo que `loot_de_chefe` rola; teste garante) | nome, nível, chance e a **ilha** |
 | **Vendedor** | lojas que existem num NPC da vila (hoje a do Alquimista) | NPC, preço |
 | **Craft** | receitas (`craft_recipes`) pelo item que sai | receita, nível mínimo |
+| **Craft de material** | sínteses de `shared::combinar` para aço, platina e os demais materiais coloridos | 10 da cor anterior e os custos da síntese |
 | **Missão** | recompensas de `QUESTS` (item 1 e 2) | título, se é diária |
 | **Dungeon** | chaves de craft (Escama/Garra/Chifre/Couro) | **Abrir**: a janela das Dungeons (Menu → Aventura → Dungeons). A Caçada (raid) segue em breve |
 | **Mercado** | o cliente acrescenta para todo item **não vinculado** | abre o Mercado buscando o nome |
@@ -48,6 +49,7 @@ economia (`ServerMessage::ResourceSources`, protocolo 96). Só o que existe:
 | Chefe | vai até o chefe e liga o auto combate. **Nível do chefe > seu nível + 5**: só chega (nada liga sozinho) e avisa |
 | Vendedor | vai até o NPC e fala com ele (a loja abre) |
 | Craft | abre o Craft na receita |
+| Craft de material | abre a aba Materiais do Craft na síntese correspondente |
 | Mercado | abre o Mercado na aba Comprar, buscando o item |
 | Missão | sem Ir |
 | Dungeon | abre a janela das Dungeons |

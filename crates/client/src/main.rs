@@ -19,13 +19,14 @@ mod bolsa;
 mod colecao;
 mod craft_ui;
 mod dungeon_ui;
+mod nivel_ui;
+mod recompensas_ui;
 mod efeitos;
 mod energia_vfx;
 mod entrada;
 mod evolucao_skills;
 mod ficha_ui;
 mod foco;
-mod pets_ui;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
@@ -46,6 +47,7 @@ mod mercado_ui;
 mod missoes;
 mod nativo;
 mod oficina_ui;
+mod pets_ui;
 mod rolagem;
 mod social_ui;
 mod teclado_virtual;
@@ -59,6 +61,7 @@ mod barra;
 mod camera_suave;
 mod chefe_anim;
 mod coleta_hud;
+mod colonia_ui;
 mod config_barra;
 mod config_coleta;
 mod config_combate;
@@ -71,25 +74,28 @@ mod diarias;
 mod economia;
 mod escolha_npc;
 mod gesto_camera;
+mod guarda_roupa_ui;
 mod habilidades_vfx;
 mod ir_para;
 mod joystick;
-mod lembranca;
 mod lascas;
+mod lembranca;
 mod loja_tp;
-mod map;
 mod magica_ui;
+mod map;
 mod mapa;
 mod menu_missoes;
 mod montarias_ui;
 mod morte;
+mod mundo_ui;
 mod net;
+mod nivel_vfx;
 mod onde_obter;
+mod parado;
 mod personagens;
 mod preferencias;
 mod presenca_ui;
 mod previa_skills;
-mod parado;
 mod rastro;
 mod render3d;
 mod rig;
@@ -98,10 +104,6 @@ mod terreno;
 mod toque;
 mod ui;
 mod vegetacao;
-mod colonia_ui;
-mod guarda_roupa_ui;
-mod mundo_ui;
-mod nivel_vfx;
 mod viagem_ui;
 mod vox;
 mod world;
@@ -324,6 +326,8 @@ struct Jogo {
     faccao_qid: u8,
     /// Ultima vez que o "ir ate' o alvo" pediu rota.
     ultima_aproximacao: f64,
+    /// Rota que o cliente pediu para alcancar o alvo em combate.
+    aproximando_alvo: Option<shared::EntityId>,
     /// Ultimo `ServerMessage::SemVisada`: (alvo, quando).
     sem_visada: Option<(shared::EntityId, f64)>,
     input_seq: u32,
@@ -433,6 +437,7 @@ struct Jogo {
     montar_auto_em: f64,
     /// Dungeons: janela, fila, pronto-check, instancia e resultado.
     dungeon: dungeon_ui::DungeonUi,
+    recompensas: recompensas_ui::Ui,
     /// "Onde obter" (`onde_obter.rs`).
     onde_obter: onde_obter::OndeObter,
     /// Ultimo pedido de tela acesa mandado ao sistema.
@@ -469,6 +474,7 @@ struct Jogo {
     /// o mesmo gesto dos outros tutoriais: o buraco aceso anda MENU → Evento
     /// → Ilha Mágica.
     dica_da_trava: Option<f64>,
+    nivel_ui: nivel_ui::NivelUi,
 }
 
 #[macroquad::main(window_conf)]
@@ -514,9 +520,11 @@ async fn main() {
     // cai no modelo inteiro de antes.
     // As armas do primeiro conjunto (tools/voxrender/armas.py).
     // E as ferramentas de coleta (machado, picareta de cada cor).
-    for nome in ["espada", "escudo", "katana", "bainha", "pistola", "coldre", "arco"]
-        .into_iter()
-        .chain(rig::FERRAMENTAS)
+    for nome in [
+        "espada", "escudo", "katana", "bainha", "pistola", "coldre", "arco",
+    ]
+    .into_iter()
+    .chain(rig::FERRAMENTAS)
     {
         vox.load_arma(nome, render3d::VOXEL).await;
     }
@@ -688,6 +696,7 @@ async fn main() {
         quest_entregues: std::collections::HashMap::new(),
         faccao_qid: 0,
         ultima_aproximacao: 0.0,
+        aproximando_alvo: None,
         sem_visada: None,
         input_seq: 0,
         ultimo_input: 0.0,
@@ -737,6 +746,7 @@ async fn main() {
         montaria_skin: None,
         montar_auto_em: -99.0,
         dungeon: dungeon_ui::DungeonUi::default(),
+        recompensas: recompensas_ui::Ui::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
         pulo_toque: false,
@@ -749,6 +759,7 @@ async fn main() {
         fila_feitas: 0,
         fila_puladas: 0,
         dica_da_trava: None,
+        nivel_ui: nivel_ui::NivelUi::default(),
     };
     // `MMO_HOST` explicito pula a escolha — e' o caminho do run-client.sh e dos
     // testes de carga.
@@ -905,7 +916,9 @@ mod testes_do_login {
         const ALTURA: f32 = 560.0;
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_login(r);
-        let nomes = ["usuário", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci"];
+        let nomes = [
+            "usuário", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci",
+        ];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
                 a.y >= r.y && a.y + a.h <= r.y + ALTURA,
@@ -1015,7 +1028,12 @@ mod testes_do_login {
     #[test]
     fn o_que_se_toca_cabe_num_dedo() {
         let p = layout_do_login(Rect::new(0.0, 0.0, 460.0, 480.0));
-        for (r, nome) in [(p[2], "lembrar"), (p[3], "entrar"), (p[5], "google"), (p[6], "criar")] {
+        for (r, nome) in [
+            (p[2], "lembrar"),
+            (p[3], "entrar"),
+            (p[5], "google"),
+            (p[6], "criar"),
+        ] {
             let toque = ui::area_de_toque(r);
             assert!(toque.h >= 44.0, "{nome} tem só {:.0} pt de altura", toque.h);
         }
@@ -1062,6 +1080,9 @@ impl Jogo {
             // acabando de sair), nenhum toque chega ao mundo — so' o deslize.
             let agora = get_time();
             if let Some(pedido) = self.social.passo(agora) {
+                self.envia(pedido);
+            }
+            if let Some(pedido) = self.social.verificar_correio_dungeon(agora) {
                 self.envia(pedido);
             }
             if self
@@ -1629,8 +1650,26 @@ impl Jogo {
                 }
             }
             ServerMessage::Dungeon { aviso } => {
+                if self.mapa.zona() == Some(shared::arena::ZONA) {
+                    if let Some(terreno) = self.terreno.as_mut() {
+                        match &aviso {
+                            shared::dungeon::Aviso::Instancia { conteudo, .. } => {
+                                if let Some(bioma) = shared::dungeon::conteudo(*conteudo)
+                                    .and_then(|c| shared::terreno::def_da_zona(c.zona))
+                                    .map(|def| def.bioma)
+                                {
+                                    terreno.tema_da_dungeon(bioma);
+                                }
+                            }
+                            shared::dungeon::Aviso::Saiu => {
+                                terreno.tema_da_dungeon(shared::terreno::Bioma::Floresta);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 if let shared::dungeon::Aviso::Correio { cartas } = &aviso {
-                    self.mercado.correio = cartas.clone();
+                    self.social.correio_dungeon = cartas.clone();
                 }
                 if let Some(t) = dungeon_ui::DungeonUi::texto_pro_chat(&aviso) {
                     self.chat.push(t);
@@ -1762,7 +1801,11 @@ impl Jogo {
                     .map(|r| self.bolsa.nome(r.saida))
                     .unwrap_or_default();
                 let (txt, ok) =
-                    oficina_ui::texto_do_resultado(tentativas, sucessos, &saida, &texto);
+                    if shared::combinar::receita(entrada).is_some_and(|r| r.chance == 100) {
+                        oficina_ui::texto_da_sintese(tentativas, sucessos, &saida, &texto)
+                    } else {
+                        oficina_ui::texto_do_resultado(tentativas, sucessos, &saida, &texto)
+                    };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
             }
@@ -1826,6 +1869,15 @@ impl Jogo {
                 self.ir_para.parar();
                 self.loja.abre(vendor_id, items);
             }
+            ServerMessage::MagicShopOpen { items, vendor_id } => {
+                self.interacao.cancela();
+                self.missoes.fecha();
+                self.auto_missao.parar();
+                self.dialogo.fechar();
+                self.mapa.viagem.cancelar();
+                self.ir_para.parar();
+                self.loja.abre_magica(vendor_id, items);
+            }
             ServerMessage::ShopClose => self.loja.fecha(),
             ServerMessage::ShopTradeResult { ok, reason } => {
                 self.chat.push(format!("loja: {reason}"));
@@ -1850,7 +1902,11 @@ impl Jogo {
             ServerMessage::StaminaUpdate { current } => self.ficha.vigor = Some(current),
             ServerMessage::DashRecarga { segundos } => {
                 self.dash_recarga = (get_time() + segundos as f64, segundos);
-                if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get_mut(&id)) {
+                if let Some(e) = self
+                    .world
+                    .self_id
+                    .and_then(|id| self.world.ents.get_mut(&id))
+                {
                     e.dash_visual_ate = get_time() + shared::DASH_DURATION as f64;
                     e.skill = None;
                     e.combo = None;
@@ -1968,6 +2024,13 @@ impl Jogo {
             } => {
                 use shared::historia;
                 if status == shared::quests::quest_status::TURNED_IN {
+                    if let Some(def) = shared::quests::quest_by_id(quest_id) {
+                        let itens = [(def.reward_item, def.reward_item_qty), (def.reward_item2, def.reward_item2_qty)]
+                            .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0)
+                            .map(|(id, qtd)| (id, qtd as u32)).collect();
+                        self.recompensas.mostrar("MISSÃO CONCLUÍDA".into(), def.title.into(), itens,
+                            def.reward_cobre, def.reward_xp, def.reward_faction_points);
+                    }
                     self.quest_entregues.entry(quest_id).or_insert(0);
                     // O CONTADOR do topo: sobe a cada missao concluida, FIXADA
                     // OU NAO. Terminar uma missao so' aparecia no chat, que
@@ -1991,6 +2054,9 @@ impl Jogo {
                             .iniciar(quest_id, d.title.to_string(), get_time());
                     }
                 }
+            }
+            ServerMessage::BossRewards { items } => {
+                self.recompensas.mostrar("CHEFE DERROTADO".into(), "Saque no chão · colete os itens".into(), items, 0, 0, 0);
             }
             ServerMessage::QuestEstado { entregues, faccao } => {
                 self.quest_entregues = entregues.into_iter().collect();
@@ -2160,37 +2226,19 @@ impl Jogo {
                     ) {
                         self.chat.push(aviso);
                     }
-                    // TRAVA DE NÍVEL: além de dizer que parou, diz o que
-                    // fazer e ACENDE o caminho.
-                    //
-                    // O dono: "na missão 'pegue nível 20' geralmente ela
-                    // chega nível 17; podia ter uma dica tipo 'faça a Ilha
-                    // Mágica' e, se clicar, levar pra lá mostrando onde fica,
-                    // um tutorial mesmo igual os outros".
-                    //
-                    // É o mesmo gesto dos outros: o buraco aceso anda MENU →
-                    // Evento → Ilha Mágica, e quem toca no que está aceso
-                    // chega lá. Uma dica que só falasse seria a mesma coisa
-                    // que a trava já fazia.
+                    // A trava de nível oferece três rotas de XP. O jogador
+                    // escolhe uma delas, ou fecha o guia e continua livre.
                     if tipo == shared::quests::destino_tipo::TRAVA {
-                        self.dica_da_trava = Some(get_time());
-                        let faltam = self
+                        self.dica_da_trava = None;
+                        self.foco_tutorial = None;
+                        foco::limpar();
+                        let alvo = self
                             .missoes
                             .log
                             .iter()
                             .find(|q| q.id == quest_id)
-                            .map(|q| q.obj_count.saturating_sub(q.progress))
-                            .unwrap_or(0);
-                        self.chat.push(if faltam > 0 {
-                            format!(
-                                "Faltam {faltam} nível(is). A Ilha Mágica dá XP em DOBRO e \
-                                 tem 3 entradas grátis por dia: Menu ▸ Evento ▸ Ilha Mágica."
-                            )
-                        } else {
-                            "A Ilha Mágica dá XP em DOBRO e tem 3 entradas grátis por dia: \
-                             Menu ▸ Evento ▸ Ilha Mágica."
-                                .to_string()
-                        });
+                            .map_or(self.bolsa.nivel + 1, |q| q.obj_count);
+                        self.nivel_ui.abrir(alvo);
                     }
                 }
             }
@@ -2272,6 +2320,14 @@ impl Jogo {
                 .0
                 .and_then(|id| self.world.ents.get(&id))
                 .map(|e| (e.meta.tag, e.render_pos));
+            // Um toque em chao/saque/NPC ja' substitui a rota de combate.
+            // Nao deixar o PararRota do alvo antigo apagar a rota nova.
+            if !matches!(
+                tag,
+                Some((shared::EntityTag::Enemy | shared::EntityTag::Player, _))
+            ) {
+                self.aproximando_alvo = None;
+            }
             // Qualquer clique novo desfaz o "ir falar com o NPC" anterior.
             self.interacao.cancela();
             match tag {
@@ -2501,9 +2557,11 @@ impl Jogo {
         }
         while let Some(id) = self.fila_de_missoes.first().copied() {
             self.fila_de_missoes.remove(0);
-            let tem = self.missoes.log.iter().any(|q| {
-                q.id == id && q.status == shared::quests::quest_status::ACTIVE
-            });
+            let tem = self
+                .missoes
+                .log
+                .iter()
+                .any(|q| q.id == id && q.status == shared::quests::quest_status::ACTIVE);
             if tem {
                 self.fila_feitas += 1;
                 self.iniciar_auto_missao(id);
@@ -2544,6 +2602,32 @@ impl Jogo {
             return;
         }
         foco::pede(alvo_da_trava(self.magica.aberto()));
+    }
+
+    /// O destaque de tutorial bloqueia os demais toques. Este botão fica
+    /// acima do escurecimento e sempre permite sair da orientação.
+    fn desenhar_fechar_tutorial(&mut self) {
+        if self.nivel_ui.captura_entrada()
+            || (self.foco_tutorial.is_none() && self.dica_da_trava.is_none())
+        {
+            return;
+        }
+        let f = hud_estilo::fator_texto();
+        let seguro = hud_layout::tela_segura();
+        let r = Rect::new(seguro.x + seguro.w - 142.0 * f, seguro.y + 8.0 * f, 132.0 * f, 34.0 * f);
+        let sobre = r.contains(Vec2::from(mouse_position()));
+        hud_estilo::botao(
+            r,
+            "Fechar tutorial",
+            hud_estilo::estado(sobre, sobre && is_mouse_button_down(MouseButton::Left), false, false),
+            false,
+        );
+        // Usa o clique bruto porque o botão fica fora do buraco do foco.
+        if sobre && is_mouse_button_pressed(MouseButton::Left) {
+            self.foco_tutorial = None;
+            self.dica_da_trava = None;
+            foco::limpar();
+        }
     }
 
     /// na tela, e e' assim que o buraco anda sozinho MENU -> Ficha -> "+".
@@ -2614,6 +2698,21 @@ impl Jogo {
 
     /// Clicou numa missao do rastreador (ou "Ir" no diario): auto missao.
     fn iniciar_auto_missao(&mut self, id: u16) {
+        if let Some(alvo) = self
+            .missoes
+            .log
+            .iter()
+            .find(|q| q.id == id && q.obj_kind == shared::quests::objective_kind::NIVEL)
+            .map(|q| q.obj_count)
+            .filter(|alvo| self.bolsa.nivel < *alvo)
+        {
+            self.fecha_paineis();
+            self.foco_tutorial = None;
+            self.dica_da_trava = None;
+            foco::limpar();
+            self.nivel_ui.abrir(alvo);
+            return;
+        }
         let Some(nome) = self
             .missoes
             .log
@@ -2680,8 +2779,7 @@ impl Jogo {
             hud_estilo::estado_de(r, qtd == 0, false),
             qtd > 0,
         );
-        if !(crate::foco::clique() && r.contains(Vec2::from(mouse_position())))
-        {
+        if !(crate::foco::clique() && r.contains(Vec2::from(mouse_position()))) {
             return;
         }
         if qtd == 0 {
@@ -2829,6 +2927,10 @@ impl Jogo {
     /// direita nao pode travar o joystick da esquerda.
     fn ui_pega_dedo(&self, p: Vec2) -> bool {
         if self.carregando_desde.is_some()
+            || self.recompensas.captura_entrada()
+            || self.nivel_ui.captura_entrada()
+            || self.foco_tutorial.is_some()
+            || self.dica_da_trava.is_some()
             || self.confirmar.is_some()
             || self.economia.bloqueia_entrada(get_time())
             || self.economia.resumo.is_some()
@@ -2915,6 +3017,15 @@ impl Jogo {
 
     fn ui_pega_em(&self, m: Vec2) -> bool {
         if self.carregando_desde.is_some() {
+            return true;
+        }
+        if self.recompensas.captura_entrada() {
+            return true;
+        }
+        if self.nivel_ui.captura_entrada()
+            || self.foco_tutorial.is_some()
+            || self.dica_da_trava.is_some()
+        {
             return true;
         }
         if self.confirmar.is_some() {
@@ -3036,6 +3147,7 @@ impl Jogo {
                 self.iniciar_ir_para(alvo);
             }
             onde_obter::Ir::AbrirCraft(receita) => self.craft.abrir_receita(receita),
+            onde_obter::Ir::AbrirCraftMaterial(entrada) => self.craft.abrir_material(entrada),
             onde_obter::Ir::AbrirCalendario => {
                 for pedido in self.presenca.abrir() {
                     self.envia(pedido);
@@ -3937,6 +4049,7 @@ impl Jogo {
             return;
         }
         self.auto_combate.parar();
+        self.aproximando_alvo = None;
         self.ir_para.parar();
         self.interacao.cancela();
         self.loja.fecha();
@@ -3955,6 +4068,7 @@ impl Jogo {
     fn iniciar_ir_para(&mut self, alvo: ir_para::Alvo) {
         self.mapa.viagem.cancelar();
         self.auto_combate.parar();
+        self.aproximando_alvo = None;
         self.auto_coleta.parar();
         self.auto_missao.parar();
         self.interacao.cancela();
@@ -4068,7 +4182,7 @@ impl Jogo {
         }
     }
 
-        /// Quanto o auto missão espera entre uma fala e a próxima.
+    /// Quanto o auto missão espera entre uma fala e a próxima.
     ///
     /// Um segundo e meio: a conversa é onde a história acontece, e passar
     /// tudo num quadro faria o texto piscar e sumir sem ninguém ler. Longo o
@@ -4104,14 +4218,13 @@ impl Jogo {
             // arruma XP, e ACENDE o caminho até ela no menu — o jogador vê
             // onde ela fica, e não só que ela existe. É o mesmo gesto dos
             // outros tutoriais.
-            menu_missoes::Clique::IlhaMagica => {
+            menu_missoes::Clique::OpcoesDeNivel(alvo) => {
                 self.menu_missoes.aberto = false;
                 self.diarias.fechar();
-                self.dica_da_trava = Some(get_time());
-                self.magica.pedir_abertura();
-                self.envia(ClientMessage::Magica {
-                    pedido: shared::magica::PedidoMagica::Painel,
-                });
+                self.foco_tutorial = None;
+                self.dica_da_trava = None;
+                foco::limpar();
+                self.nivel_ui.abrir(alvo);
             }
             // PEGAR NA HORA, sem andar até o balcão.
             //
@@ -4297,8 +4410,7 @@ impl Jogo {
         // coleta. É por aqui que se chega na ordem de alvo e no PvP — sem
         // isto a lógica existiria e ninguém teria onde mexer nela.
         let mouse_combate = Vec2::from(mouse_position());
-        let sobre_combate =
-            (!self.painel_grande() && auto_combate::pega_mouse()).then_some(0);
+        let sobre_combate = (!self.painel_grande() && auto_combate::pega_mouse()).then_some(0);
         let toque_combate = self.toque_combate.quadro(
             crate::foco::clique(),
             is_mouse_button_down(MouseButton::Left),
@@ -4315,8 +4427,7 @@ impl Jogo {
         }
         // O botao so' existe com o HUD a' mostra; a tecla Z vale sempre. Painel
         // aberto NAO desliga o AUTO (MIR4: o menu aberto nao para o combate).
-        let alterna = is_key_pressed(KeyCode::Z)
-            || matches!(toque_combate, toque::Toque::Curto(_));
+        let alterna = is_key_pressed(KeyCode::Z) || matches!(toque_combate, toque::Toque::Curto(_));
         let esc = is_key_pressed(KeyCode::Escape) && !self.esc_consumido;
         if self.auto_combate.ativo() && (esc || alterna) {
             self.auto_combate.parar();
@@ -4357,9 +4468,7 @@ impl Jogo {
         let Some(eu) = self.world.self_pos() else {
             return;
         };
-        if self.auto_combate.segurando(eu, agora) {
-            return;
-        }
+        let dirigindo = self.auto_combate.segurando(eu, agora);
         // O BICHO DA MISSÃO, quando há missão de caça ativa. É o que faz o
         // auto priorizar o que o jogador está tentando terminar.
         let missao_kind = self
@@ -4385,7 +4494,7 @@ impl Jogo {
             }
         }
         // Limpou a area: vai atras do proximo em vez de ficar parado.
-        if novo.is_none() {
+        if novo.is_none() && !dirigindo {
             if let Some(p) = self.auto_combate.caca(&self.world, eu, agora) {
                 self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
             }
@@ -4394,18 +4503,27 @@ impl Jogo {
 
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.
     fn ir_ate_o_alvo(&mut self) {
+        if self.aproximando_alvo.is_some() && self.aproximando_alvo != self.alvo {
+            self.envia(ClientMessage::PararRota);
+            self.aproximando_alvo = None;
+        }
         if self.habilidades.ocupada() {
             return;
         }
         let Some(alvo) = self.alvo else { return };
-        if self.andando_na_mao() {
+        if self.andando_na_mao() || self.auto_combate.dirigindo() {
+            self.aproximando_alvo = None;
             return;
         }
         let eu = self.world.self_id.and_then(|i| self.world.ents.get(&i));
         let (Some(eu), Some(ele)) = (eu, self.world.ents.get(&alvo)) else {
             return;
         };
-        if ele.state.hp == 0 {
+        if ele.state.hp == 0 || ele.morte.is_some() {
+            if self.aproximando_alvo == Some(alvo) {
+                self.envia(ClientMessage::PararRota);
+                self.aproximando_alvo = None;
+            }
             return;
         }
         let conjunto =
@@ -4423,19 +4541,34 @@ impl Jogo {
         let sem_visada = self
             .sem_visada
             .is_some_and(|(id, t)| id == alvo && agora - t < 1.6);
-        if a.distance(b) <= alcance * 0.9 && (!sem_visada || a.distance(b) <= 2.5) {
+        let distancia = a.distance(b);
+        // A rota do ultimo pedido pode continuar andando mesmo depois de
+        // entrar no alcance. Para-la impede o melee de atravessar o mob e
+        // refazer A* a cada golpe; a mira e o ataque seguem ativos.
+        let parar_em = if conjunto.a_distancia() {
+            alcance * 0.9
+        } else {
+            alcance * 0.72
+        };
+        if distancia <= parar_em && (!sem_visada || distancia <= 2.5) {
+            if self.aproximando_alvo == Some(alvo) {
+                self.envia(ClientMessage::PararRota);
+                self.aproximando_alvo = None;
+            }
             return;
         }
-        if agora - self.ultima_aproximacao < 0.35 {
+        let intervalo = if conjunto.a_distancia() { 0.35 } else { 0.25 };
+        if agora - self.ultima_aproximacao < intervalo {
             return;
         }
         self.ultima_aproximacao = agora;
-        let perto = if sem_visada { 2.0 } else { alcance * 0.6 };
+        let perto = if sem_visada { 2.0 } else { alcance * 0.55 };
         let destino = b + (a - b).normalize_or_zero() * perto;
         self.envia(ClientMessage::MoverPara {
             x: destino.x,
             z: destino.y,
         });
+        self.aproximando_alvo = Some(alvo);
     }
 
     /// Ping de 1 em 1 segundo e janela de banda de 1 segundo.
@@ -4501,6 +4634,7 @@ impl Jogo {
         self.map = None;
         self.terreno = None;
         self.alvo = None;
+        self.aproximando_alvo = None;
         self.info = hud::Info::default();
         self.rede = hud::Rede::default();
         self.chat.clear();
@@ -4940,8 +5074,31 @@ impl Jogo {
         // O contador de missoes: por cima de tudo, menos do foco do tutorial
         // (que apaga o que nao interessa e tem que continuar apagando).
         missoes::desenha_contador(&self.missoes, get_time());
+        self.recompensas.desenhar(&self.bolsa.nomes, Some((&self.vox, &self.solido)));
         foco::desenha(get_time());
         foco::novo_quadro();
+        if let Some(escolha) = self.nivel_ui.desenhar() {
+            self.fecha_paineis();
+            match escolha {
+                nivel_ui::Escolha::IlhaMagica => {
+                    self.magica.pedir_abertura();
+                    self.envia(ClientMessage::Magica {
+                        pedido: shared::magica::PedidoMagica::Painel,
+                    });
+                    self.dica_da_trava = Some(get_time());
+                }
+                nivel_ui::Escolha::Missoes => {
+                    self.menu_missoes.abrir_secundarias();
+                    self.chat.push("Secundárias: toque Pegar, depois Ir. A auto missão segue o objetivo; craft e dungeon pedem sua ação.".into());
+                }
+                nivel_ui::Escolha::Caca => {
+                    self.mapa.abrir();
+                    self.mapa.no_mundo = false;
+                    self.chat.push("Mapa: toque um círculo FORTE para ir à área com mais mobs. Ao chegar, o auto combate liga.".into());
+                }
+            }
+        }
+        self.desenhar_fechar_tutorial();
     }
 
     fn desenhar_mundo(&mut self) {
@@ -4961,6 +5118,14 @@ impl Jogo {
             &f,
         );
         set_camera(&vista.cam);
+        let modo_sombras = self.config_interface.sombras;
+        let luz_dia = if modo_sombras == config_interface::Sombras::Bonitas {
+            1.0
+        } else {
+            0.0
+        };
+        self.solido.set_uniform("LuzDia", luz_dia);
+        gpu_estatica::define_luz_dia(luz_dia);
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
@@ -4993,6 +5158,9 @@ impl Jogo {
                     .map(|p| vec3(p.x, t.altura(p.x, p.y), p.y));
                 self.construcoes
                     .desenha(&vista.cam, jogador, recorte, corte_z);
+                if modo_sombras == config_interface::Sombras::Bonitas {
+                    t.desenha_sombras(&vista.cam);
+                }
                 // Pra onde esta' indo: tracejado rente ao chao, no mesmo passe.
                 if let Some(eu) = self.world.self_pos() {
                     let altura = |x: f32, z: f32| t.altura(x, z);
@@ -5017,8 +5185,7 @@ impl Jogo {
                 if self.subiu_de_nivel.ativo() {
                     if let Some(eu) = self.world.self_pos() {
                         let y = t.altura(eu.x, eu.y);
-                        self.subiu_de_nivel
-                            .desenha(vec3(eu.x, y, eu.y), &vista.cam);
+                        self.subiu_de_nivel.desenha(vec3(eu.x, y, eu.y), &vista.cam);
                     }
                 }
                 // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
@@ -5048,7 +5215,15 @@ impl Jogo {
         // descarte de face de costas, que os bichos tambem precisam. Dois
         // materiais seriam dois lugares pra a configuracao divergir.
         self.solido.set_uniform("Recorte", Vec3::ZERO);
-        render3d::draw_entities(&mut self.world, &self.vox, self.alvo, &vista);
+        render3d::draw_entities_com_sombras(
+            &mut self.world,
+            &self.vox,
+            self.alvo,
+            &vista,
+            modo_sombras,
+        );
+        self.solido.set_uniform("LuzDia", 0.0f32);
+        gpu_estatica::define_luz_dia(0.0);
         gl_use_default_material();
         self.habilidades.desenha_efeitos(&self.world, &vista);
         set_default_camera();
@@ -5403,6 +5578,7 @@ impl Jogo {
                 self.bolsa.ouro,
                 cobre,
                 &nome,
+                Some((&self.vox, &self.solido)),
             ) {
                 self.envia(pedido);
             }
@@ -5427,6 +5603,9 @@ impl Jogo {
                     self.economia.auto_min = Some(min)
                 }
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
+                Some(config_interface::Mudanca::Sombras(modo)) => {
+                    self.config_interface.define_sombras(modo)
+                }
                 None => {}
             }
         }
@@ -5474,16 +5653,13 @@ impl Jogo {
         let onde = self.onde_obter.aberto();
         if self.craft.aberto() && !onde {
             let nivel = self.ficha.nivel.max(1);
-            if let Some(m) =
-                self.craft
-                    .desenha(
-                        &self.bolsa.slots,
-                        &self.bolsa.nomes,
-                        nivel,
-                        get_time(),
-                        Some((&self.vox, &self.solido)),
-                    )
-            {
+            if let Some(m) = self.craft.desenha(
+                &self.bolsa.slots,
+                &self.bolsa.nomes,
+                nivel,
+                get_time(),
+                Some((&self.vox, &self.solido)),
+            ) {
                 self.envia(m);
             }
         }
@@ -5713,7 +5889,8 @@ impl Jogo {
         let pedido_da_bolsa = if onde {
             None
         } else {
-            self.bolsa.desenha(&self.vox, &self.solido)
+            self.bolsa
+                .desenha(&self.vox, &self.solido, self.craft.receitas_atuais())
         };
         if let Some(alvo) = self.bolsa.refinar.take() {
             self.fecha_paineis();
@@ -5721,7 +5898,15 @@ impl Jogo {
         }
         if let Some(item) = self.bolsa.combinar.take() {
             self.fecha_paineis();
+            self.craft.abrir_combinacao_do_item(item);
+        }
+        if let Some(item) = self.bolsa.craftar.take() {
+            self.fecha_paineis();
             self.craft.abrir_pelo_item(item);
+        }
+        if let Some((item, grau, tier)) = self.bolsa.aprimorar.take() {
+            self.fecha_paineis();
+            self.craft.abrir_aprimoramento(item, grau, tier);
         }
         if let Some(pedido) = pedido_da_bolsa {
             // Pocao de efeito ja' ativa: pergunta antes de jogar fora o tempo
@@ -5744,13 +5929,11 @@ impl Jogo {
             }
         }
         let eu_social = self.personagem_atual.clone().unwrap_or_default();
-        for pedido in self.social.desenha(&eu_social, self.teclado.digitado()) {
+        for pedido in
+            self.social
+                .desenha(&eu_social, self.teclado.digitado(), &self.vox, &self.solido)
+        {
             self.envia(pedido);
-        }
-        if std::mem::take(&mut self.social.entregas) {
-            for pedido in self.mercado.abrir_entregas() {
-                self.envia(pedido);
-            }
         }
         if self.mercado.aberto && !onde {
             let ctx = mercado_ui::Contexto {
@@ -5759,6 +5942,8 @@ impl Jogo {
                 ouro: self.bolsa.ouro,
                 nivel: self.ficha.nivel.max(self.bolsa.nivel),
                 digitado: self.teclado.digitado(),
+                vox: &self.vox,
+                solido: &self.solido,
             };
             let pedidos = self.mercado.desenha(&ctx, get_time());
             for pedido in pedidos {
@@ -5805,7 +5990,10 @@ impl Jogo {
                 onde_obter::opcoes(item, self.onde_obter.fontes_de(item), &c)
             };
             let nome = self.bolsa.nome(item);
-            if let Some(ir) = self.onde_obter.desenha(&nome, &ops) {
+            if let Some(ir) = self
+                .onde_obter
+                .desenha(&nome, &ops, Some((&self.vox, &self.solido)))
+            {
                 self.executar_onde_obter(ir);
             }
         }
@@ -5830,14 +6018,7 @@ impl Jogo {
             if !self.social.estado.recebidos.is_empty() {
                 selos.push(menu::Item::Amigos);
             }
-            if self
-                .social
-                .estado
-                .cartas
-                .iter()
-                .chain(&self.social.estado.oficiais)
-                .any(|c| !c.lida)
-            {
+            if self.social.correio_pendente() {
                 selos.push(menu::Item::Correio);
             }
             if !self.social.estado.convites_cla.is_empty() {
@@ -5881,6 +6062,7 @@ impl Jogo {
             let eu = self.personagem_atual.clone().unwrap_or_default();
             let ctx = dungeon_ui::Contexto {
                 nomes: &self.bolsa.nomes,
+                palco: Some((&self.vox, &self.solido)),
                 ouro: self.bolsa.ouro,
                 eu: &eu,
             };
@@ -5893,7 +6075,10 @@ impl Jogo {
             let agora_unix = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as i64);
-            for pedido in self.presenca.desenha(&self.bolsa.nomes, agora_unix) {
+            for pedido in
+                self.presenca
+                    .desenha(&self.bolsa.nomes, agora_unix, &self.vox, &self.solido)
+            {
                 self.envia(pedido);
             }
         }
@@ -5926,7 +6111,11 @@ impl Jogo {
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
         }
-        if let Some(pedido) = self.banco.desenha(&self.bolsa.slots, self.bolsa.ouro) {
+        if let Some(pedido) = self.banco.desenha(
+            &self.bolsa.slots,
+            self.bolsa.ouro,
+            Some((&self.vox, &self.solido)),
+        ) {
             self.envia(pedido);
         }
         // O Capitao nao leva mais pra propria ilha: ela virou painel, e abre
@@ -5993,14 +6182,13 @@ impl Jogo {
             }
             None => {}
         }
-        self.invocacao
-            .desenha(
-                &self.bolsa.nomes,
-                &self.habilidades.catalogo,
-                &self.vox,
-                &self.solido,
-                get_time(),
-            );
+        self.invocacao.desenha(
+            &self.bolsa.nomes,
+            &self.habilidades.catalogo,
+            &self.vox,
+            &self.solido,
+            get_time(),
+        );
         // "Tem certeza?" do buff ja' ativo, por cima de tudo.
         if let Some(p) = self.confirmar {
             let nome = self.bolsa.nome(p.item());
@@ -6024,7 +6212,8 @@ impl Jogo {
         // Voltou do modo economia: "Enquanto você estava fora", ate' fechar.
         {
             let bolsa = &self.bolsa;
-            self.economia.desenha_resumo(&|id| bolsa.nome(id));
+            self.economia
+                .desenha_resumo(&|id| bolsa.nome(id), &self.vox, &self.solido);
         }
         // Dentro da dungeon a derrota e' o "Reviver em N s" dela, sem cidade.
         if !self.dungeon.na_instancia() {
@@ -6146,13 +6335,7 @@ impl Jogo {
         }
         let esperando = self.esq_pedido.is_some();
 
-        ui::texto_centro(
-            cx,
-            r.y + 62.0,
-            "Digite o e-mail da conta.",
-            14,
-            ui::APOIO,
-        );
+        ui::texto_centro(cx, r.y + 62.0, "Digite o e-mail da conta.", 14, ui::APOIO);
         let digitado = self.teclado.digitado().to_vec();
         let mut email = std::mem::take(&mut self.esq_email);
         if ui::campo(ce, "e-mail", &mut email, true, false, &digitado) {
@@ -6162,7 +6345,11 @@ impl Jogo {
 
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
         let pode = self.esq_email.contains('@') && !esperando;
-        let rotulo = if esperando { "enviando…" } else { "enviar o link" };
+        let rotulo = if esperando {
+            "enviando…"
+        } else {
+            "enviar o link"
+        };
         if (ui::botao(cenviar, rotulo, pode) || (pode && enter)) && pode {
             self.campo_login_ativo = false;
             self.esq_recado = None;
@@ -6245,7 +6432,12 @@ impl Jogo {
             (cu, "usuário", std::mem::take(&mut self.cad_usuario), false),
             (ce, "e-mail", std::mem::take(&mut self.cad_email), false),
             (cs, "senha", std::mem::take(&mut self.cad_senha), true),
-            (cs2, "repetir a senha", std::mem::take(&mut self.cad_senha2), true),
+            (
+                cs2,
+                "repetir a senha",
+                std::mem::take(&mut self.cad_senha2),
+                true,
+            ),
         ];
         for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
             if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
@@ -6289,7 +6481,11 @@ impl Jogo {
             ui::texto_centro(cx, ccriar.y - 10.0, m, 13, ui::APOIO);
         }
         let pode = motivo.is_none() && !esperando;
-        let rotulo = if esperando { "criando…" } else { "criar conta" };
+        let rotulo = if esperando {
+            "criando…"
+        } else {
+            "criar conta"
+        };
         if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
             self.cad_recado = None;
@@ -6393,8 +6589,7 @@ impl Jogo {
         } else {
             let pode =
                 !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
-            let entrar =
-                ui::botao(centrar, "entrar", pode) || (pode && self.foco_senha && enter);
+            let entrar = ui::botao(centrar, "entrar", pode) || (pode && self.foco_senha && enter);
             if entrar {
                 self.campo_login_ativo = false;
                 self.erro_login = None;

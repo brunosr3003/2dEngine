@@ -118,7 +118,13 @@ impl ViagemUi {
         if colonia {
             let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 8.0 * f);
             estilo::cartao(r, false, false);
-            estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, "Minha Ilha", 17, estilo::OURO);
+            estilo::texto_forte(
+                r.x + 14.0 * f,
+                r.y + 26.0 * f,
+                "Minha Ilha",
+                17,
+                estilo::OURO,
+            );
             estilo::texto(
                 r.x + 14.0 * f,
                 r.y + 50.0 * f,

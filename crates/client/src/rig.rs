@@ -2494,7 +2494,10 @@ mod testes_do_contrato {
                 }
             }
         }
-        assert!(vistos > 100, "só {vistos} peças conferidas — achou os arquivos?");
+        assert!(
+            vistos > 100,
+            "só {vistos} peças conferidas — achou os arquivos?"
+        );
     }
 
     /// Os apelidos da cabeça caem no slot do cabelo, e nada mais inventa slot.
@@ -2505,7 +2508,11 @@ mod testes_do_contrato {
             assert_eq!(pivo(n), pivo("cabelo"), "{n} gira no pivô da cabeça");
         }
         assert_eq!(slot_de("torso"), Some("torso"));
-        assert_eq!(slot_de("perna_d"), None, "nome que não existe não vira slot");
+        assert_eq!(
+            slot_de("perna_d"),
+            None,
+            "nome que não existe não vira slot"
+        );
         assert_eq!(pivo("perna_d"), None);
     }
 }

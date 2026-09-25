@@ -279,18 +279,42 @@ pub fn aprimorar(
     };
     let (grau, tier) = forja::conferir_aprimorar(peca(&sa, &ia), peca(&sb, &ib))?;
     if grau > ia.grau() && nivel < forja::nivel_da_cor(grau) {
-        return Err(format!("requer nível {} para essa cor", forja::nivel_da_cor(grau)));
+        return Err(format!(
+            "requer nível {} para essa cor",
+            forja::nivel_da_cor(grau)
+        ));
     }
     let cobre = forja::custo_de_aprimorar(ia.grau(), ia.tier());
     if tem(inv, item_id::COPPER) < cobre {
-        return Err(format!("faltam {} de cobre", cobre - tem(inv, item_id::COPPER)));
+        return Err(format!(
+            "faltam {} de cobre",
+            cobre - tem(inv, item_id::COPPER)
+        ));
     }
     let nivel_item = ia
         .item_level
         .max(ib.item_level)
         .max(forja::nivel_de_item_da_cor(grau));
-    let Some(mut nova) = rolar(sa.item_id, nivel_item, grau, tier) else {
-        return Err("este item não se aprimora".into());
+    let bicho = conta_com_instancia(sa.item_id);
+    let saida_id = if bicho && grau > ia.grau() {
+        if shared::pets::de_item(sa.item_id).is_some() {
+            shared::item_id::pet_no_grau(shared::item_id::PET_BASE, grau)
+        } else {
+            shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, grau)
+        }
+    } else {
+        sa.item_id
+    };
+    let mut nova = if bicho {
+        let mut v = ia;
+        v.rarity = grau;
+        v.tier = tier;
+        v.refinement = 0;
+        // A evolução conserva nível, skills, alimentação e afinidade do primeiro bicho.
+        v
+    } else {
+        rolar(sa.item_id, nivel_item, grau, tier)
+            .ok_or_else(|| "este item não se aprimora".to_string())?
     };
     // Os atributos vêm diretamente da tabela fixa para item/cor/tier/nível.
     // As peças consumidas não influenciam os números da nova.
@@ -300,15 +324,38 @@ pub fn aprimorar(
     consumir(inv, item_id::COPPER, cobre);
     inv[b] = InventorySlot::default();
     inv[a] = InventorySlot {
-        item_id: sa.item_id,
+        item_id: saida_id,
         qty: 1,
         instance: Some(nova),
     };
-    Ok((sa.item_id, grau, tier))
+    Ok((saida_id, grau, tier))
 }
 
 /// Poe `qty` de um empilhavel na bolsa: completa as pilhas, depois os vazios.
 /// Tudo ou nada — sem espaco pra tudo, a bolsa nao muda.
+/// Devolução de uma peça: 20% de cada recurso da receita atual, com
+/// arredondamento para baixo; a chave tem sorteio separado de 10%.
+pub(crate) fn recursos_do_desmantelamento(
+    receita: &CraftRecipeNet,
+    sorte_da_chave: f32,
+) -> Vec<(u16, u32)> {
+    let mut recursos = Vec::new();
+    for (i, &[id, qtd]) in receita.inputs.iter().enumerate() {
+        if id == 0 || qtd == 0 {
+            continue;
+        }
+        let devolve = if i == 0 {
+            u32::from(sorte_da_chave < 0.10)
+        } else {
+            qtd / 5
+        };
+        if devolve > 0 {
+            recursos.push((id as u16, devolve));
+        }
+    }
+    recursos
+}
+
 pub(crate) fn por_empilhavel(inv: &mut [InventorySlot], id: u16, qty: u32, cap: u32) -> bool {
     if shared::armazem::e_moeda(id) {
         return crate::world::por_na_carteira(inv, id, qty);
@@ -542,7 +589,9 @@ mod testes {
     }
 
     fn foto(inv: &[InventorySlot]) -> Vec<(u16, u32, bool)> {
-        inv.iter().map(|s| (s.item_id, s.qty, s.instance.is_some())).collect()
+        inv.iter()
+            .map(|s| (s.item_id, s.qty, s.instance.is_some()))
+            .collect()
     }
 
     fn peca(cor: u8, tier: u8, refino: u8) -> InventorySlot {
@@ -566,14 +615,19 @@ mod testes {
         let mut inv = bolsa(&[(item_id::COPPER, 600)]);
         inv[3] = peca(1, 1, 4);
         inv[7] = peca(1, 1, 0);
-        let antes = rolar_katana(item_id::KATANA, 5, 1, 1).unwrap().attack_damage;
+        let antes = rolar_katana(item_id::KATANA, 5, 1, 1)
+            .unwrap()
+            .attack_damage;
         assert_eq!(
             aprimorar(&mut inv, 3, 7, 1, &mut rolar_katana),
             Ok((item_id::KATANA, 1, 2))
         );
         let nova = inv[3].instance.unwrap();
         assert_eq!((nova.grau(), nova.tier(), nova.refinement), (1, 2, 0));
-        assert!(nova.attack_damage > antes, "Tier II rola mais forte que o I");
+        assert!(
+            nova.attack_damage > antes,
+            "Tier II rola mais forte que o I"
+        );
         assert_eq!(inv[7].qty, 0);
         assert_eq!(tem(&inv, item_id::COPPER), 100);
     }
@@ -643,20 +697,13 @@ mod testes {
         assert!(e.contains("3/5"), "{e}");
     }
 
-    /// Material comum NAO combina mais.
-    ///
-    /// A sintese garantida (10 viram 1, cobrando cobre, darksteel e Po) era a
-    /// unica fonte de material roxo. Saiu por decisao do dono em 22/09/2026 —
-    /// "nem tudo pode ser combinado, apenas pet, mount e recursos chave" —, e
-    /// isto trava a decisao: se o Aco voltar pra tabela, alguem precisa
-    /// decidir de novo de onde vem o roxo.
+    /// Material comum volta a subir de cor com sintese garantida.
     #[test]
-    fn material_comum_nao_combina() {
+    fn material_comum_sobe_de_cor() {
         for base in shared::combinar::MATERIAIS {
-            assert!(
-                shared::combinar::receita(base).is_none(),
-                "{base} voltou a ser combinavel"
-            );
+            let r = shared::combinar::receita(base).unwrap();
+            assert_eq!((r.qtd, r.chance), (10, 100));
+            assert_eq!(r.saida, item_id::na_cor(base, 2));
         }
     }
 
@@ -677,7 +724,10 @@ mod testes {
         };
         let copia = foto(&inv);
         // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
-        assert_eq!(combinar(&mut inv, &r, 1, 99, &nome, &mut || 0), Err("bolsa cheia".into()));
+        assert_eq!(
+            combinar(&mut inv, &r, 1, 99, &nome, &mut || 0),
+            Err("bolsa cheia".into())
+        );
         assert_eq!(foto(&inv), copia);
     }
 
@@ -739,12 +789,22 @@ mod testes {
         let nova = inv[2].instance.expect("ganhou instancia");
         assert_eq!((nova.grau(), nova.tier(), nova.refinement), (1, 1, 0));
         assert!(inv[0].instance.is_none(), "cobre continua sem instancia");
-        assert_eq!(inv[3].instance.unwrap().tier(), 3, "peca que ja' tinha nao muda");
-        assert!(!garantir_instancias(&mut inv, &mut rolar), "segunda vez nao mexe");
+        assert_eq!(
+            inv[3].instance.unwrap().tier(),
+            3,
+            "peca que ja' tinha nao muda"
+        );
+        assert!(
+            !garantir_instancias(&mut inv, &mut rolar),
+            "segunda vez nao mexe"
+        );
 
         let mut equip = shared::Equipment::default();
         equip.set(shared::EquipSlot::Weapon, Some(item_id::KATANA), None);
         assert!(garantir_instancias_vestidas(&mut equip, &mut rolar));
-        assert_eq!(equip.get_inst(shared::EquipSlot::Weapon).map(|i| i.tier()), Some(1));
+        assert_eq!(
+            equip.get_inst(shared::EquipSlot::Weapon).map(|i| i.tier()),
+            Some(1)
+        );
     }
 }

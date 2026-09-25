@@ -47,11 +47,13 @@ const ESQUERDA: [(EquipSlot, &str); 5] = [
     (EquipSlot::Pet, "Pet"),
     (EquipSlot::Montaria, "Montaria"),
 ];
-const DIREITA: [(EquipSlot, &str); 4] = [
+const DIREITA: [(EquipSlot, &str); 6] = [
     (EquipSlot::Earring, "Brinco"),
     (EquipSlot::Necklace, "Amuleto"),
     (EquipSlot::Bracelet, "Bracelete"),
     (EquipSlot::Belt, "Cinto"),
+    (EquipSlot::Pet2, "Pet 2"),
+    (EquipSlot::Pet3, "Pet 3"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -117,6 +119,11 @@ pub struct Bolsa {
     /// quer; obriga-lo a fechar, abrir o Craft e procurar de novo e' cobrar
     /// pedagio por uma decisao que ele ja' tomou.
     pub combinar: Option<u16>,
+    pub craftar: Option<u16>,
+    pub aprimorar: Option<(u16, u8, u8)>,
+    slot_vazio: Option<EquipSlot>,
+    rolagem_compativeis: crate::rolagem::Rolagem,
+    desmantelar: Option<usize>,
     /// Expansoes compradas (`ServerMessage::Armazem`).
     pub extra: u8,
     /// A grade rola: com as expansoes ela passa do painel.
@@ -141,6 +148,11 @@ impl Default for Bolsa {
             onde_obter: None,
             refinar: None,
             combinar: None,
+            craftar: None,
+            aprimorar: None,
+            slot_vazio: None,
+            rolagem_compativeis: Default::default(),
+            desmantelar: None,
             extra: 0,
             rolagem: Default::default(),
         }
@@ -241,6 +253,20 @@ fn nome_do_slot(s: EquipSlot) -> &'static str {
         .map_or("?", |(_, n)| n)
 }
 
+fn compativel_com_slot(equip: &shared::Equipment, slot: EquipSlot, id: u16) -> bool {
+    let destino = shared::equip_slot_of(id);
+    if destino != Some(slot)
+        && !(destino == Some(EquipSlot::Pet) && matches!(slot, EquipSlot::Pet2 | EquipSlot::Pet3))
+    {
+        return false;
+    }
+    if slot == EquipSlot::Offhand {
+        let conjunto = shared::skills::Conjunto::da_arma(equip.weapon.unwrap_or(0));
+        return shared::skills::Conjunto::da_secundaria(id) == Some(conjunto);
+    }
+    true
+}
+
 fn cor_do_tier(t: u8) -> Color {
     let h = shared::items::tier_color_hex(t).trim_start_matches('#');
     let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
@@ -310,11 +336,16 @@ pub(crate) fn poder(s: &PlayerStats) -> i32 {
 
 fn poder_da_peca(p: &Peca) -> i32 {
     if shared::pets::de_item(p.id).is_some() {
-        return poder_do_pet(
+        return poder_dos_pontos(shared::pets::pontos_por_stat_da_instancia(
             p.id,
-            &shared::pets::dados(p.inst.as_ref()),
-            p.inst.as_ref().and_then(|i| i.afinidade),
-        );
+            p.inst.as_ref(),
+        ));
+    }
+    if shared::montarias::de_item(p.id).is_some() {
+        return poder_dos_pontos(shared::montarias::pontos_por_stat_da_instancia(
+            p.id,
+            p.inst.as_ref(),
+        ));
     }
     p.inst.map_or(0, |i| poder_da_instancia(&i))
 }
@@ -322,14 +353,14 @@ fn poder_da_peca(p: &Peca) -> i32 {
 /// O poder que um PET soma. Ele nao tem atributo de item: o que ele da' entra
 /// como ponto alocado (docs/PETS.md), entao a conta passa os pontos pela
 /// mesma `STAT_POINT_BONUS` do servidor e depois pela formula do `poder`.
-pub(crate) fn poder_do_pet(
-    id: u16,
-    d: &shared::items::PetData,
-    af: Option<[u8; 2]>,
-) -> i32 {
+pub(crate) fn poder_do_pet(id: u16, d: &shared::items::PetData, af: Option<[u8; 2]>) -> i32 {
+    poder_dos_pontos(shared::pets::pontos_por_stat(id, d, af))
+}
+
+pub(crate) fn poder_dos_pontos(pontos: [u32; shared::STAT_COUNT]) -> i32 {
     let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
     let mut crit = 0.0f32;
-    for (i, pts) in shared::pets::pontos_por_stat(id, d, af).iter().enumerate() {
+    for (i, pts) in pontos.iter().enumerate() {
         let Some(b) = shared::STAT_POINT_BONUS.get(i) else {
             continue;
         };
@@ -401,16 +432,22 @@ impl Bolsa {
     pub fn abrir(&mut self) {
         self.aberta = true;
         self.sel = None;
+        self.desmantelar = None;
+        self.slot_vazio = None;
     }
 
     pub fn alterna(&mut self) {
         self.aberta = !self.aberta;
         self.sel = None;
+        self.desmantelar = None;
+        self.slot_vazio = None;
     }
 
     pub fn fecha(&mut self) {
         self.aberta = false;
         self.sel = None;
+        self.desmantelar = None;
+        self.slot_vazio = None;
     }
 
     /// O mouse esta' em cima da bolsa aberta? Entao o clique e' dela, e nao do
@@ -490,14 +527,24 @@ impl Bolsa {
 
     /// Desenha a bolsa aberta. Devolve o pedido pro servidor, se o jogador fez
     /// alguma coisa.
-    pub fn desenha(&mut self, vox: &VoxCache, solido: &Material) -> Option<ClientMessage> {
+    pub fn desenha(
+        &mut self,
+        vox: &VoxCache,
+        solido: &Material,
+        receitas: &[shared::protocol::CraftRecipeNet],
+    ) -> Option<ClientMessage> {
         if !self.aberta {
             return None;
         }
-        crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido))
+        crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido, receitas))
     }
 
-    fn desenha_na_escala(&mut self, vox: &VoxCache, solido: &Material) -> Option<ClientMessage> {
+    fn desenha_na_escala(
+        &mut self,
+        vox: &VoxCache,
+        solido: &Material,
+        receitas: &[shared::protocol::CraftRecipeNet],
+    ) -> Option<ClientMessage> {
         let t = tela();
         let p = t.painel;
         draw_rectangle(
@@ -537,6 +584,9 @@ impl Bolsa {
             self.fecha();
             return None;
         }
+        if let Some(slot) = self.slot_vazio {
+            return self.lista_do_slot(p, slot, vox, solido);
+        }
 
         let cartao = Rect::new(
             t.esq.x + u(18.0),
@@ -552,7 +602,9 @@ impl Bolsa {
         if let Some(sel) = self.sel {
             match self.peca(sel) {
                 Some(peca) => {
-                    if let Some(a) = self.desenha_cartao(cartao, sel, peca, Some((vox, solido))) {
+                    if let Some(a) =
+                        self.desenha_cartao(cartao, sel, peca, Some((vox, solido)), receitas)
+                    {
                         acao = Some(a);
                     }
                 }
@@ -566,7 +618,124 @@ impl Bolsa {
                 self.aviso = None;
             }
         }
+        if let Some(slot) = self.desmantelar {
+            return self.confirma_desmantelar(p, slot, receitas);
+        }
         acao.and_then(|a| self.pedido(a))
+    }
+
+    fn lista_do_slot(
+        &mut self,
+        painel: Rect,
+        slot: EquipSlot,
+        vox: &VoxCache,
+        solido: &Material,
+    ) -> Option<ClientMessage> {
+        let w = u(480.0).min(painel.w - u(24.0));
+        let h = u(430.0).min(painel.h - u(24.0));
+        let r = Rect::new(
+            painel.center().x - w * 0.5,
+            painel.center().y - h * 0.5,
+            w,
+            h,
+        );
+        crate::hud_estilo::painel_destaque(r, ui::OURO_CLARO);
+        ui::texto(
+            r.x + u(18.0),
+            r.y + u(34.0),
+            &format!("Equipar: {}", nome_do_slot(slot)),
+            21,
+            ui::OURO_CLARO,
+        );
+        if ui::botao(
+            Rect::new(r.x + r.w - u(50.0), r.y + u(8.0), u(36.0), u(34.0)),
+            "X",
+            true,
+        ) {
+            self.slot_vazio = None;
+            return None;
+        }
+        let itens: Vec<(usize, InventorySlot)> = self
+            .slots
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, item)| {
+                item.qty == 1 && compativel_com_slot(&self.equip, slot, item.item_id)
+            })
+            .collect();
+        let area = Rect::new(r.x + u(14.0), r.y + u(52.0), r.w - u(28.0), r.h - u(66.0));
+        if itens.is_empty() {
+            crate::hud_estilo::texto_ajustado(
+                "Nenhum item compatível na bolsa.",
+                area.x + u(8.0),
+                area.y + u(30.0),
+                area.w - u(16.0),
+                16,
+                APAGADO,
+            );
+            return None;
+        }
+        let passo = u(58.0);
+        let total = itens.len() as f32 * passo;
+        let clique = self.rolagem_compativeis.quadro(area, total, passo);
+        let mut pedido = None;
+        crate::rolagem::recortar(Some(area));
+        for (n, (i, item)) in itens.iter().enumerate() {
+            let linha = Rect::new(
+                area.x,
+                area.y + n as f32 * passo - self.rolagem_compativeis.pos,
+                area.w - u(12.0),
+                u(52.0),
+            );
+            if linha.y + linha.h < area.y || linha.y > area.y + area.h {
+                continue;
+            }
+            let liberado = item
+                .instance
+                .and_then(|inst| inst.level_req)
+                .is_none_or(|nivel| self.nivel >= nivel as u32);
+            crate::hud_estilo::cartao(linha, false, clique.is_some_and(|p| linha.contains(p)));
+            celula(
+                Rect::new(linha.x + u(5.0), linha.y + u(4.0), u(44.0), u(44.0)),
+                Some(Peca {
+                    id: item.item_id,
+                    qty: item.qty,
+                    inst: item.instance,
+                }),
+                false,
+                None,
+                Some((vox, solido)),
+            );
+            crate::hud_estilo::texto_ajustado(
+                &self.nome(item.item_id),
+                linha.x + u(58.0),
+                linha.y + u(29.0),
+                linha.w - u(100.0),
+                16,
+                if liberado { TEXTO } else { APAGADO },
+            );
+            if !liberado {
+                let req = item.instance.and_then(|inst| inst.level_req).unwrap_or(0);
+                ui::texto(
+                    linha.x + linha.w - u(82.0),
+                    linha.y + u(30.0),
+                    &format!("Nível {req}"),
+                    13,
+                    VERMELHO,
+                );
+            }
+            if liberado && clique.is_some_and(|p| linha.contains(p) && area.contains(p)) {
+                pedido = Some(ClientMessage::InventorySwap {
+                    a: InvSpot::Inv(*i as u16),
+                    b: InvSpot::Equip(slot),
+                });
+                self.slot_vazio = None;
+            }
+        }
+        crate::rolagem::recortar(None);
+        self.rolagem_compativeis.desenha(area, total);
+        pedido
     }
 
     // ── a metade do personagem ──
@@ -597,7 +766,7 @@ impl Bolsa {
         };
         ui::texto(r.x + u(14.0), r.y + u(44.0), &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - u(60.0) - u(170.0)) / u(4.0) - u(16.0))
+        let s = ((r.h - u(60.0) - u(170.0)) / u(6.0) - u(16.0))
             .clamp(u(40.0), u(64.0))
             .floor();
         let passo = s + u(16.0);
@@ -608,7 +777,7 @@ impl Bolsa {
             xe + s + u(12.0),
             y0,
             xd - u(12.0) - (xe + s + u(12.0)),
-            u(4.0) * passo - u(16.0),
+            u(6.0) * passo - u(16.0),
         );
         self.desenha_retrato(retrato, vox, solido);
 
@@ -623,8 +792,14 @@ impl Bolsa {
                 celula(c, peca, sel, Some(*slot), Some((vox, solido)));
                 ui::texto_centro(c.x + s * 0.5, c.y + s + u(12.0), rotulo, 12, APAGADO);
                 let livre = bloqueio.map_or(true, |b| !b.contains(mouse()));
-                if livre && peca.is_some() && clicou_em(c) {
-                    clicado = Some(Sel::Equip(*slot));
+                if livre && clicou_em(c) {
+                    if peca.is_some() {
+                        clicado = Some(Sel::Equip(*slot));
+                    } else {
+                        self.slot_vazio = Some(*slot);
+                        self.rolagem_compativeis.zera();
+                        self.sel = None;
+                    }
                 }
             }
         }
@@ -633,7 +808,7 @@ impl Bolsa {
         }
 
         // O poder e a ficha, embaixo do retrato.
-        let mut y = y0 + u(4.0) * passo + u(8.0);
+        let mut y = y0 + u(6.0) * passo + u(8.0);
         if let Some(st) = &self.stats {
             ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "PODER", 14, APAGADO);
             ui::texto_centro(
@@ -894,6 +1069,7 @@ impl Bolsa {
         sel: Sel,
         peca: Peca,
         palco: Option<(&VoxCache, &Material)>,
+        receitas: &[shared::protocol::CraftRecipeNet],
     ) -> Option<Acao> {
         let cor = cor_do_tier(peca.grau());
         crate::hud_estilo::ret_arredondado(
@@ -969,7 +1145,13 @@ impl Bolsa {
             let linhas = [
                 (
                     "Poder",
-                    milhar(poder_do_pet(peca.id, &dados, af).max(0) as u64),
+                    milhar(
+                        poder_dos_pontos(shared::pets::pontos_por_stat_da_instancia(
+                            peca.id,
+                            peca.inst.as_ref(),
+                        ))
+                        .max(0) as u64,
+                    ),
                 ),
                 (
                     "Nível",
@@ -994,9 +1176,8 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
-            const SIGLAS: [&str; shared::STAT_COUNT] =
-                ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
-            for (i, pts) in shared::pets::pontos_por_stat(peca.id, &dados, af)
+            const SIGLAS: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+            for (i, pts) in shared::pets::pontos_por_stat_da_instancia(peca.id, peca.inst.as_ref())
                 .iter()
                 .enumerate()
             {
@@ -1021,7 +1202,7 @@ impl Bolsa {
             // pe'. So' o primeiro seria bonito e pouco util.
             ui::texto(r.x + u(20.0), y + u(4.0), especie.descricao, 15, APAGADO);
             y += u(26.0);
-            let v = shared::montarias::velocidade(grau);
+            let v = shared::montarias::velocidade_da_instancia(grau, peca.inst.as_ref());
             let esporeado = v * shared::SPRINT_SPEED_MULT;
             let vs_correr = v / shared::SPRINT_SPEED_MULT - 1.0;
             for (rot, val) in [
@@ -1034,12 +1215,12 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
-            const SIGLAS_M: [&str; shared::STAT_COUNT] =
-                ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
+            const SIGLAS_M: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
             let af = peca.inst.as_ref().and_then(|i| i.afinidade);
-            for (i, pts) in shared::montarias::pontos_por_stat(peca.id, af)
-                .iter()
-                .enumerate()
+            for (i, pts) in
+                shared::montarias::pontos_por_stat_da_instancia(peca.id, peca.inst.as_ref())
+                    .iter()
+                    .enumerate()
             {
                 if *pts == 0 {
                     continue;
@@ -1117,84 +1298,190 @@ impl Bolsa {
             ui::texto(r.x + u(20.0), y + u(4.0), txt, 16, APAGADO);
         }
 
-        // acoes
-        let by = r.y + r.h - u(50.0);
-        let principal = match sel {
-            Sel::Equip(s) => Some(("Desequipar", Acao::Desequipar(s))),
-            Sel::Inv(i) => match t {
-                Tipo::Arma(_) | Tipo::Slot(_) => Some(("Equipar", Acao::Equipar(i))),
-                Tipo::Pocao(_) | Tipo::Pergaminho => Some(("Abrir", Acao::Usar(i))),
-                _ => None,
-            },
-        };
+        // Cada ação tem seu próprio botão. O atalho aparece mesmo quando ainda
+        // faltam materiais ou uma segunda peça; o painel de destino explica o requisito.
         let mut acao = None;
-        // Uma fileira so': [acao principal] [Refinar +N] [Fechar]. No celular
-        // o cartao e' baixo e uma segunda fileira cobriria os atributos.
-        // Refinar só em peça com instância de atributos, e leva pra Forja com ela
-        // ja' escolhida.
-        // Tres colunas: `/ 3.0`, e nao `/ u(3.0)`. `u()` multiplica pela
-        // escala do texto, entao dividir por ela encolhia os botoes no
-        // celular — onde a escala e' > 1 e onde o dono joga. No desktop a
-        // escala e' 1 e o erro nao aparecia.
-        let bw3 = (r.w - u(32.0) - u(16.0)) / 3.0;
-        let coluna = |k: f32| Rect::new(r.x + u(16.0) + k * (bw3 + u(8.0)), by, bw3, u(36.0));
-        if let Some((rot, a)) = principal {
-            if ui::botao(coluna(0.0), rot, true) {
-                acao = Some(a);
+        let mut opcoes: Vec<(&str, u8)> = Vec::new();
+        match sel {
+            Sel::Equip(_) => opcoes.push(("Desequipar", 0)),
+            Sel::Inv(_) => match t {
+                Tipo::Arma(_) | Tipo::Slot(_) => opcoes.push(("Equipar", 0)),
+                Tipo::Pocao(_) | Tipo::Pergaminho => opcoes.push(("Usar", 0)),
+                _ => {}
+            },
+        }
+        if matches!(sel, Sel::Inv(_)) && matches!(t, Tipo::Pergaminho) && peca.qty >= 10 {
+            opcoes.push(("Abrir 10+1", 1));
+        }
+        if let Some(inst) = peca.inst {
+            if inst.refinement < shared::forja::REFINO_MAX {
+                opcoes.push(("Refinar", 2));
+            }
+            if matches!(sel, Sel::Inv(_)) && shared::equip_slot_of(peca.id).is_some() {
+                opcoes.push(("Aprimorar", 3));
             }
         }
-        if let (Sel::Inv(i), Tipo::Pergaminho) = (sel, t) {
-            if ui::botao(coluna(1.0), "Abrir 10+1", peca.qty >= 10) && peca.qty >= 10 {
-                acao = Some(Acao::Abrir10(i));
+        if matches!(sel, Sel::Inv(_)) {
+            if receitas.iter().any(|r| {
+                r.output_item_id == peca.id || r.inputs.iter().any(|[id, _]| *id == peca.id as u32)
+            }) {
+                opcoes.push(("Craft", 4));
+            }
+            if shared::combinar::receita(peca.id).is_some() {
+                opcoes.push(("Combinar", 5));
+            }
+            if peca.inst.is_some() && receita_do_item(receitas, peca.id, peca.grau()).is_some() {
+                opcoes.push(("Desmantelar", 6));
             }
         }
-        if let Some(i) = peca.inst {
-            let (rot, pode) = if i.refinement >= shared::forja::REFINO_MAX {
-                ("Refino máx.".to_string(), false)
-            } else {
-                (format!("Refinar +{}", i.refinement + 1), true)
-            };
-            if ui::botao(coluna(1.0), &rot, pode) {
-                self.refinar = Some(match sel {
-                    Sel::Inv(i) => shared::protocol::AlvoDaForja::Bolsa(i as u16),
-                    Sel::Equip(s) => shared::protocol::AlvoDaForja::Equipado(s),
-                });
-                self.sel = None;
+        let colunas = 3usize;
+        let bw = (r.w - u(32.0) - u(16.0)) / colunas as f32;
+        let linhas = opcoes.len().div_ceil(colunas);
+        let inicio_y = r.y + r.h
+            - u(16.0)
+            - linhas as f32 * u(38.0)
+            - (linhas.saturating_sub(1)) as f32 * u(5.0);
+        for (n, (rotulo, codigo)) in opcoes.into_iter().enumerate() {
+            let coluna = n % colunas;
+            let linha = n / colunas;
+            let botao = Rect::new(
+                r.x + u(16.0) + coluna as f32 * (bw + u(8.0)),
+                inicio_y + linha as f32 * u(43.0),
+                bw,
+                u(38.0),
+            );
+            if !ui::botao(botao, rotulo, true) {
+                continue;
+            }
+            match (codigo, sel) {
+                (0, Sel::Equip(s)) => acao = Some(Acao::Desequipar(s)),
+                (0, Sel::Inv(i)) if matches!(t, Tipo::Arma(_) | Tipo::Slot(_)) => {
+                    acao = Some(Acao::Equipar(i))
+                }
+                (0, Sel::Inv(i)) => acao = Some(Acao::Usar(i)),
+                (1, Sel::Inv(i)) => acao = Some(Acao::Abrir10(i)),
+                (2, Sel::Inv(i)) => {
+                    self.refinar = Some(shared::protocol::AlvoDaForja::Bolsa(i as u16));
+                    self.sel = None;
+                }
+                (2, Sel::Equip(s)) => {
+                    self.refinar = Some(shared::protocol::AlvoDaForja::Equipado(s));
+                    self.sel = None;
+                }
+                (3, Sel::Inv(_)) => {
+                    if let Some(inst) = peca.inst {
+                        self.aprimorar = Some((peca.id, inst.grau(), inst.tier()));
+                        self.sel = None;
+                    }
+                }
+                (4, Sel::Inv(_)) => {
+                    self.craftar = Some(peca.id);
+                    self.sel = None;
+                }
+                (5, Sel::Inv(_)) => {
+                    self.combinar = Some(peca.id);
+                    self.sel = None;
+                }
+                (6, Sel::Inv(i)) => self.desmantelar = Some(i),
+                _ => {}
             }
         }
-        // COMBINAR: leva pro Craft com a receita deste item ja' escolhida.
-        //
-        // Quem resolve QUAL receita e' o Craft, que e' quem tem a lista — a
-        // bolsa so' diz "este item aqui". Duplicar a tabela de receitas na
-        // bolsa seria uma segunda fonte de verdade pra mesma coisa.
-        //
-        // So' na coluna do meio quando ela esta' livre — e quem a ocupa e'
-        // o Refinar, que existe exatamente quando a peca tem instancia.
-        //
-        // A condicao era `self.refinar.is_none()`, que e' o campo do CLIQUE e
-        // nao do botao: ele e' `None` em todo quadro em que ninguem tocou,
-        // entao os dois botoes eram desenhados NO MESMO RETANGULO. Tocar ali
-        // acendia os dois, e o `main` abria a forja e o craft em seguida —
-        // o craft por ultimo. Era isso o "falta ter como ir pra forja direto
-        // no item": o atalho existia e era encoberto.
-        //
-        // Peca com instancia nao e' combinavel de todo jeito (so' pet,
-        // montaria e recurso), entao nada se perde.
-        if peca.inst.is_none() && !matches!(t, Tipo::Pergaminho) {
-            if ui::botao(coluna(1.0), "Combinar", true) {
-                self.combinar = Some(peca.id);
-                self.sel = None;
-            }
-        }
-        // `coluna(2.0)`: o argumento e' o INDICE da coluna, nao um tamanho.
-        // Com `u(2.0)` ele virava 2 x escala e o Fechar saia do cartao no
-        // celular.
-        if ui::botao(coluna(2.0), "Fechar", true) {
+        let fechar = Rect::new(r.x + r.w - u(42.0), r.y + u(8.0), u(30.0), u(30.0));
+        if ui::botao(fechar, "X", true) {
             self.sel = None;
         }
         acao
     }
 
+    fn confirma_desmantelar(
+        &mut self,
+        painel: Rect,
+        slot: usize,
+        receitas: &[shared::protocol::CraftRecipeNet],
+    ) -> Option<ClientMessage> {
+        let Some(peca) = self.peca(Sel::Inv(slot)) else {
+            self.desmantelar = None;
+            return None;
+        };
+        let Some(receita) = receita_do_item(receitas, peca.id, peca.grau()) else {
+            self.desmantelar = None;
+            return None;
+        };
+        crate::hud_layout::escurece(0.68);
+        let w = u(470.0).min(painel.w - u(20.0));
+        let h = u(340.0).min(painel.h - u(20.0));
+        let r = Rect::new(
+            painel.center().x - w * 0.5,
+            painel.center().y - h * 0.5,
+            w,
+            h,
+        );
+        crate::hud_estilo::painel_destaque(r, ui::OURO_CLARO);
+        ui::texto(
+            r.x + u(18.0),
+            r.y + u(33.0),
+            "Desmantelar item?",
+            21,
+            ui::OURO_CLARO,
+        );
+        ui::texto(
+            r.x + u(18.0),
+            r.y + u(62.0),
+            &self.nome(peca.id),
+            17,
+            crate::hud_estilo::TEXTO,
+        );
+        ui::texto(
+            r.x + u(18.0),
+            r.y + u(88.0),
+            "A peça será consumida. Você receberá:",
+            15,
+            crate::hud_estilo::TEXTO,
+        );
+        let mut y = r.y + u(114.0);
+        for (i, &[id, qtd]) in receita.inputs.iter().enumerate() {
+            if id == 0 || qtd == 0 {
+                continue;
+            }
+            let texto = if i == 0 {
+                format!("{}: 10% de chance de recuperar 1", self.nome(id as u16))
+            } else {
+                let volta = qtd / 5;
+                if volta == 0 {
+                    continue;
+                }
+                format!("{} ×{} (20%)", self.nome(id as u16), volta)
+            };
+            ui::texto(r.x + u(22.0), y, &texto, 14, crate::hud_estilo::TEXTO);
+            y += u(25.0);
+        }
+        let by = r.y + r.h - u(50.0);
+        let cancelar = Rect::new(r.x + u(18.0), by, (r.w - u(54.0)) * 0.5, u(36.0));
+        let confirmar = Rect::new(cancelar.x + cancelar.w + u(18.0), by, cancelar.w, u(36.0));
+        if ui::botao(cancelar, "Cancelar", true) {
+            self.desmantelar = None;
+        } else if ui::botao(confirmar, "Desmantelar", true) {
+            self.desmantelar = None;
+            self.sel = None;
+            return Some(ClientMessage::Desmantelar { slot: slot as u16 });
+        }
+        None
+    }
+}
+
+fn receita_do_item<'a>(
+    receitas: &'a [shared::protocol::CraftRecipeNet],
+    item_id: u16,
+    grau: u8,
+) -> Option<&'a shared::protocol::CraftRecipeNet> {
+    receitas.iter().find(|r| {
+        r.output_item_id == item_id
+            && r.roll_instance
+            && r.output_qty == 1
+            && r.tier == grau
+            && r.id >= shared::receitas::PRIMEIRO_ID
+            && r.id < shared::receitas::PRIMEIRO_ID + 400
+    })
 }
 
 /// Uma celula avulsa, pra quem desenha lista de item fora da bolsa (a faixa
@@ -1324,12 +1611,21 @@ pub(crate) fn icone_do_item(r: Rect, id: u16, a: f32) {
 /// forja tem q ser o icone 3d igual do inv". Eram duas caras pro mesmo bicho,
 /// e na tela de combinar (onde se arrasta cinco da MESMA cor) duas caras pro
 /// mesmo bicho e' o que mais atrapalha.
-pub(crate) fn icone_do_item_com(
-    r: Rect,
-    id: u16,
-    a: f32,
-    palco: Option<(&VoxCache, &Material)>,
-) {
+pub(crate) fn icone_do_item_com(r: Rect, id: u16, a: f32, palco: Option<(&VoxCache, &Material)>) {
+    if id == shared::item_id::MOEDA_MAGICA {
+        let c = r.center();
+        let raio = r.w.min(r.h) * 0.36;
+        draw_circle(c.x, c.y, raio, Color::new(0.30, 0.14, 0.55, a));
+        draw_circle_lines(
+            c.x,
+            c.y,
+            raio,
+            (raio * 0.16).max(1.0),
+            Color::new(0.92, 0.72, 1.0, a),
+        );
+        draw_circle(c.x, c.y, raio * 0.33, Color::new(0.75, 0.42, 1.0, a));
+        return;
+    }
     if icone_de_bicho(r, id, palco) {
         return;
     }
@@ -1728,10 +2024,7 @@ mod testes {
         };
         for cor in 1..=4u8 {
             assert_eq!(peca(item_id::na_cor(item_id::STEEL, cor)).grau(), cor);
-            assert_eq!(
-                peca(item_id::na_cor(item_id::ANIMA_STONE, cor)).grau(),
-                cor
-            );
+            assert_eq!(peca(item_id::na_cor(item_id::ANIMA_STONE, cor)).grau(), cor);
         }
         // Chave: as quatro contiguas e a lendaria, que ficou fora da faixa.
         for cor in 1..=5u8 {
@@ -1785,4 +2078,3 @@ mod testes {
         }
     }
 }
-

@@ -822,7 +822,9 @@ fn cabana(seed: i32) -> Construcao {
         }
     }
     let px = nx / 2;
-    for y in 1..=3 {
+    // O vao vai ate' o beiral: verga em y = 4 fica abaixo do teto da colisao
+    // e a porta viraria parede pra quem anda.
+    for y in 1..=pe {
         v.set(px, y, 0, BlocoCasa::Ar);
         v.set(px + 1, y, 0, BlocoCasa::Ar);
     }

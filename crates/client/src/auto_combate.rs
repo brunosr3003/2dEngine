@@ -14,7 +14,7 @@ const BUSCA: f32 = 110.0;
 /// Intervalo entre pedidos de "ir ate' la'" na caçada.
 const PASSO_DA_CACA_S: f64 = 1.2;
 
-/// Parado por este tempo depois de andar na mao, o AUTO volta a escolher alvo.
+/// Parado por este tempo depois de andar na mao, o AUTO volta a conduzir a rota.
 const VOLTA_PARADO_S: f64 = 0.4;
 
 pub struct AutoCombate {
@@ -22,8 +22,8 @@ pub struct AutoCombate {
     observado: Option<(EntityId, f32, u16, f64)>,
     ignorados: HashMap<EntityId, f64>,
     /// Andando por conta propria (teclado ou clique no chao). Andar NAO desliga
-    /// o AUTO: a area acompanha o personagem e a escolha de alvo espera ele
-    /// parar — senao a aproximacao do alvo atropela a rota do clique.
+    /// o AUTO: a area acompanha o personagem. A mira continua escolhendo
+    /// alvos; apenas a rota automatica espera o jogador parar.
     manual: bool,
     ultima_pos: Option<Vec2>,
     parado_desde: f64,
@@ -158,6 +158,9 @@ impl AutoCombate {
     pub fn ativo(&self) -> bool {
         self.centro.is_some()
     }
+    pub fn dirigindo(&self) -> bool {
+        self.ativo() && self.manual
+    }
     pub fn ligar(&mut self, p: Vec2) {
         self.centro = Some(p);
         self.observado = None;
@@ -198,8 +201,8 @@ impl AutoCombate {
         }
     }
 
-    /// Ainda andando na mao? Enquanto sim, a area vem junto e nao se escolhe
-    /// alvo. Parou, a area fica onde ele parou e o AUTO retoma dali.
+    /// Ainda andando na mao? Enquanto sim, a area vem junto. A escolha de
+    /// alvo continua; somente a rota de caca fica suspensa.
     pub fn segurando(&mut self, pos: Vec2, agora: f64) -> bool {
         let moveu = self.ultima_pos.is_some_and(|u| u.distance(pos) > 0.01);
         self.ultima_pos = Some(pos);
@@ -266,7 +269,9 @@ impl AutoCombate {
         let valido_alvo = |id: EntityId| {
             world.ents.get(&id).is_some_and(|e| {
                 let tipo_ok = e.meta.tag == EntityTag::Enemy
-                    || (aceita_gente && e.meta.tag == EntityTag::Player && world.self_id != Some(id));
+                    || (aceita_gente
+                        && e.meta.tag == EntityTag::Player
+                        && world.self_id != Some(id));
                 tipo_ok
                     && e.state.hp > 0
                     && e.morte.is_none()
@@ -416,7 +421,10 @@ mod tests {
         a.ligar(Vec2::ZERO);
         assert_eq!(a.escolher(&w, None, 0.0, None), Some(EntityId(3)));
         w.ents.get_mut(&EntityId(3)).unwrap().state.hp = 0;
-        assert_eq!(a.escolher(&w, Some(EntityId(3)), 1.0, None), Some(EntityId(4)));
+        assert_eq!(
+            a.escolher(&w, Some(EntityId(3)), 1.0, None),
+            Some(EntityId(4))
+        );
         w.ents.get_mut(&EntityId(4)).unwrap().state.hp = 0;
         assert_eq!(a.escolher(&w, Some(EntityId(4)), 2.0, None), None);
         assert!(a.ativo()); // Aguarda respawn, sem escolher player ou sair da area.
@@ -427,7 +435,10 @@ mod tests {
         let mut a = AutoCombate::default();
         a.ligar(Vec2::ZERO);
         a.escolher(&w, None, 0.0, None);
-        assert_eq!(a.escolher(&w, Some(EntityId(3)), 9.0, None), Some(EntityId(4)));
+        assert_eq!(
+            a.escolher(&w, Some(EntityId(3)), 9.0, None),
+            Some(EntityId(4))
+        );
         w.ents.get_mut(&EntityId(1)).unwrap().state.flags |= shared::ent_flags::DOWNED;
         assert_eq!(a.escolher(&w, Some(EntityId(4)), 10.0, None), None);
         assert!(!a.ativo());
@@ -456,7 +467,10 @@ mod tests {
         b.escolher(&w, None, 0.0, None);
         b.sem_visada(EntityId(3), 0.0);
         b.sem_visada(EntityId(3), 5.0);
-        assert_eq!(b.escolher(&w, Some(EntityId(3)), 5.1, None), Some(EntityId(3)));
+        assert_eq!(
+            b.escolher(&w, Some(EntityId(3)), 5.1, None),
+            Some(EntityId(3))
+        );
     }
 
     /// Limpou o que estava perto: o AUTO vai atras do proximo bicho em vez de
@@ -470,7 +484,11 @@ mod tests {
         for id in [3u32, 4] {
             w.ents.get_mut(&EntityId(id)).unwrap().state.hp = 0;
         }
-        assert_eq!(a.escolher(&w, None, 0.0, None), None, "nenhum dentro da area");
+        assert_eq!(
+            a.escolher(&w, None, 0.0, None),
+            None,
+            "nenhum dentro da area"
+        );
         assert_eq!(
             a.caca(&w, Vec2::ZERO, 1.0),
             Some(vec2(30.0, 0.0)),
@@ -509,7 +527,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod testes_da_escolha {
     use super::*;
@@ -533,8 +550,14 @@ mod testes_da_escolha {
     #[test]
     fn o_bicho_da_missao_vem_primeiro() {
         let perto = c(1, 2.0);
-        let longe_da_missao = Candidato { da_missao: true, ..c(2, 40.0) };
-        let atirando = Candidato { ranged_em_mim: true, ..c(3, 20.0) };
+        let longe_da_missao = Candidato {
+            da_missao: true,
+            ..c(2, 40.0)
+        };
+        let atirando = Candidato {
+            ranged_em_mim: true,
+            ..c(3, 20.0)
+        };
         let escolha = escolhe_alvo(
             &[perto, longe_da_missao, atirando],
             &[auto_alvo::RANGED_EM_MIM, auto_alvo::MAIS_PERTO],
@@ -547,15 +570,26 @@ mod testes_da_escolha {
     #[test]
     fn a_ordem_decide_entre_longe_e_perto() {
         let perto = c(1, 2.0);
-        let atirando = Candidato { ranged_em_mim: true, ..c(2, 25.0) };
+        let atirando = Candidato {
+            ranged_em_mim: true,
+            ..c(2, 25.0)
+        };
         // Quem atira primeiro: ele ganha mesmo estando 12x mais longe.
         assert_eq!(
-            escolhe_alvo(&[perto, atirando], &[auto_alvo::RANGED_EM_MIM, auto_alvo::MAIS_PERTO], auto_pvp::NUNCA),
+            escolhe_alvo(
+                &[perto, atirando],
+                &[auto_alvo::RANGED_EM_MIM, auto_alvo::MAIS_PERTO],
+                auto_pvp::NUNCA
+            ),
             Some(EntityId(2))
         );
         // Invertendo a ordem, o de perto ganha.
         assert_eq!(
-            escolhe_alvo(&[perto, atirando], &[auto_alvo::MAIS_PERTO, auto_alvo::RANGED_EM_MIM], auto_pvp::NUNCA),
+            escolhe_alvo(
+                &[perto, atirando],
+                &[auto_alvo::MAIS_PERTO, auto_alvo::RANGED_EM_MIM],
+                auto_pvp::NUNCA
+            ),
             Some(EntityId(1))
         );
     }
@@ -566,10 +600,18 @@ mod testes_da_escolha {
     /// jogador na lista de candidatos não pode furá-lo.
     #[test]
     fn pvp_desligado_ignora_jogador() {
-        let gente = Candidato { jogador: true, agrediu: true, ..c(1, 1.0) };
+        let gente = Candidato {
+            jogador: true,
+            agrediu: true,
+            ..c(1, 1.0)
+        };
         let bicho = c(2, 30.0);
         assert_eq!(
-            escolhe_alvo(&[gente, bicho], &[auto_alvo::JOGADOR, auto_alvo::MAIS_PERTO], auto_pvp::NUNCA),
+            escolhe_alvo(
+                &[gente, bicho],
+                &[auto_alvo::JOGADOR, auto_alvo::MAIS_PERTO],
+                auto_pvp::NUNCA
+            ),
             Some(EntityId(2)),
             "bateu em jogador com PvP desligado"
         );
@@ -582,10 +624,21 @@ mod testes_da_escolha {
     /// qualquer um", que é outra coisa.
     #[test]
     fn revidar_so_pega_quem_bateu_primeiro() {
-        let agressor = Candidato { jogador: true, agrediu: true, ..c(1, 20.0) };
-        let passante = Candidato { jogador: true, ..c(2, 2.0) };
+        let agressor = Candidato {
+            jogador: true,
+            agrediu: true,
+            ..c(1, 20.0)
+        };
+        let passante = Candidato {
+            jogador: true,
+            ..c(2, 2.0)
+        };
         assert_eq!(
-            escolhe_alvo(&[agressor, passante], &[auto_alvo::JOGADOR], auto_pvp::REVIDAR),
+            escolhe_alvo(
+                &[agressor, passante],
+                &[auto_alvo::JOGADOR],
+                auto_pvp::REVIDAR
+            ),
             Some(EntityId(1)),
             "revidou no passante em vez de em quem bateu"
         );

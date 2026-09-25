@@ -58,6 +58,7 @@ pub struct Loja {
     /// O NPC da loja aberta. `None` = fechada.
     pub vendedor: Option<EntityId>,
     itens: Vec<ShopItem>,
+    moeda_magica: bool,
     /// Linha escolhida e quanto dela vai no lote.
     sel: usize,
     qtd: u32,
@@ -102,6 +103,11 @@ impl Loja {
         };
     }
 
+    pub fn abre_magica(&mut self, vendor_id: u32, itens: Vec<ShopItem>) {
+        self.abre(vendor_id, itens);
+        self.moeda_magica = true;
+    }
+
     pub fn fecha(&mut self) {
         *self = Self::default();
     }
@@ -140,12 +146,12 @@ impl Loja {
     fn areas_na_escala(&self) -> (Rect, Rect) {
         let f = estilo::fator_texto();
         let t = crate::hud_layout::tela_segura();
-        let topo = t.y + screen_height() * 0.12;
-        let cabe = (t.y + t.h - topo - 16.0).max(200.0 * f);
         let fixo = (56.0 + DETALHE + 46.0) * f;
-        let lista_h = (self.itens.len().max(1) as f32 * LINHA * f)
-            .min((cabe - fixo).max(LINHA * f));
-        let p = Rect::new(t.x + 24.0, topo, LARGURA * f, fixo + lista_h);
+        let lista_h =
+            (self.itens.len().max(1) as f32 * LINHA * f).min((t.h - 16.0 - fixo).max(LINHA * f));
+        let w = LARGURA * f;
+        let h = fixo + lista_h;
+        let p = Rect::new(t.center().x - w * 0.5, t.center().y - h * 0.5, w, h);
         let lista = Rect::new(p.x + 8.0 * f, p.y + 52.0 * f, p.w - 16.0 * f, lista_h);
         (p, lista)
     }
@@ -163,8 +169,11 @@ impl Loja {
         ouro: u64,
         cobre: u64,
         vendedor: &str,
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
     ) -> Vec<ClientMessage> {
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nomes, slots, ouro, cobre, vendedor))
+        estilo::no_painel(Self::escala(), || {
+            self.desenha_na_escala(nomes, slots, ouro, cobre, vendedor, palco)
+        })
     }
 
     fn desenha_na_escala(
@@ -174,10 +183,27 @@ impl Loja {
         ouro: u64,
         cobre: u64,
         vendedor: &str,
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
     ) -> Vec<ClientMessage> {
         if !self.aberta() {
             return Vec::new();
         }
+        let saldo = if self.moeda_magica {
+            na_bolsa(slots, shared::item_id::MOEDA_MAGICA)
+        } else {
+            cobre
+        };
+        let moeda = if self.moeda_magica { "moedas" } else { "cobre" };
+        let pacote = |id: u16| -> u32 {
+            if self.moeda_magica {
+                shared::magica::TROCAS
+                    .iter()
+                    .find(|&&(i, _, _)| i == id)
+                    .map_or(1, |&(_, q, _)| q)
+            } else {
+                1
+            }
+        };
         let f = estilo::fator_texto();
         let (p, lista) = self.areas();
         let mouse = Vec2::from(mouse_position());
@@ -188,7 +214,14 @@ impl Loja {
                 .unwrap_or_else(|| format!("item {id}"))
         };
         estilo::painel(p);
-        estilo::texto_ajustado(vendedor, p.x + 16.0 * f, p.y + 30.0 * f, p.w - 70.0 * f, 22, estilo::OURO);
+        estilo::texto_ajustado(
+            vendedor,
+            p.x + 16.0 * f,
+            p.y + 30.0 * f,
+            p.w - 70.0 * f,
+            22,
+            estilo::OURO,
+        );
         if crate::ui::botao(
             Rect::new(p.x + p.w - 44.0 * f, p.y + 8.0 * f, 32.0 * f, 28.0 * f),
             "x",
@@ -197,11 +230,24 @@ impl Loja {
             self.fecha();
             return Vec::new();
         }
-        draw_line(p.x + 12.0, p.y + 44.0 * f, p.x + p.w - 12.0, p.y + 44.0 * f, 1.0, estilo::BORDA);
+        draw_line(
+            p.x + 12.0,
+            p.y + 44.0 * f,
+            p.x + p.w - 12.0,
+            p.y + 44.0 * f,
+            1.0,
+            estilo::BORDA,
+        );
 
         // ── lista: tocar ESCOLHE (nao compra mais sem querer) ──
         if self.itens.is_empty() {
-            estilo::texto(p.x + 16.0 * f, lista.y + 28.0 * f, "Nada à venda.", 16, estilo::SUAVE);
+            estilo::texto(
+                p.x + 16.0 * f,
+                lista.y + 28.0 * f,
+                "Nada à venda.",
+                16,
+                estilo::SUAVE,
+            );
         }
         let linha_h = LINHA * f;
         let total = self.itens.len() as f32 * linha_h;
@@ -222,17 +268,46 @@ impl Loja {
             let marcada = i == self.sel;
             let sobre = !arrastando && r.contains(mouse) && lista.contains(mouse);
             if marcada || sobre {
-                draw_rectangle(r.x, r.y, r.w, r.h, Color::new(1.0, 1.0, 1.0, if marcada { 0.10 } else { 0.05 }));
+                draw_rectangle(
+                    r.x,
+                    r.y,
+                    r.w,
+                    r.h,
+                    Color::new(1.0, 1.0, 1.0, if marcada { 0.10 } else { 0.05 }),
+                );
             }
             if marcada {
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, estilo::OURO);
             }
             let lado = r.h - 6.0 * f;
-            crate::bolsa::icone_do_item(Rect::new(r.x + 4.0 * f, r.y + 3.0 * f, lado, lado), item.item_id, 1.0);
-            estilo::texto_ajustado(&nome_de(item.item_id), r.x + lado + 14.0 * f, r.y + r.h * 0.62, r.w - lado - 130.0 * f, 16, estilo::TEXTO);
-            let preco = format!("{} cobre", crate::bolsa::milhar(item.price as u64));
-            let cor = if cobre >= item.price as u64 { COBRE } else { VERMELHO };
-            estilo::texto(r.x + r.w - 10.0 * f - estilo::medir(&preco, 15), r.y + r.h * 0.62, &preco, 15, cor);
+            crate::bolsa::icone_do_item_com(
+                Rect::new(r.x + 4.0 * f, r.y + 3.0 * f, lado, lado),
+                item.item_id,
+                1.0,
+                palco,
+            );
+            let nome = format!("{}x {}", pacote(item.item_id), nome_de(item.item_id));
+            estilo::texto_ajustado(
+                &nome,
+                r.x + lado + 14.0 * f,
+                r.y + r.h * 0.62,
+                r.w - lado - 130.0 * f,
+                16,
+                estilo::TEXTO,
+            );
+            let preco = format!("{} {moeda}", crate::bolsa::milhar(item.price as u64));
+            let cor = if saldo >= item.price as u64 {
+                COBRE
+            } else {
+                VERMELHO
+            };
+            estilo::texto(
+                r.x + r.w - 10.0 * f - estilo::medir(&preco, 15),
+                r.y + r.h * 0.62,
+                &preco,
+                15,
+                cor,
+            );
             if toque.is_some_and(|c| r.contains(c) && lista.contains(c)) && i != self.sel {
                 self.sel = i;
                 self.qtd = 1;
@@ -243,16 +318,35 @@ impl Loja {
 
         // ── compra: quanto, total e o botao ──
         let mut saida = Vec::new();
-        let d = Rect::new(p.x + 12.0 * f, lista.y + lista.h + 8.0 * f, p.w - 24.0 * f, DETALHE * f);
+        let d = Rect::new(
+            p.x + 12.0 * f,
+            lista.y + lista.h + 8.0 * f,
+            p.w - 24.0 * f,
+            DETALHE * f,
+        );
         draw_line(d.x, d.y, d.x + d.w, d.y, 1.0, estilo::BORDA);
         if let Some(item) = self.itens.get(self.sel).cloned() {
             let lote = em_lote(item.item_id);
-            let max = if lote { maximo(cobre, item.price) } else { 1 };
+            let max = if lote { maximo(saldo, item.price) } else { 1 };
             self.qtd = self.qtd.clamp(1, max.max(1));
             let tem = na_bolsa(slots, item.item_id);
-            estilo::texto_ajustado(&nome_de(item.item_id), d.x + 4.0, d.y + 24.0 * f, d.w * 0.62, 17, estilo::OURO);
+            let titulo = format!("{}x {}", pacote(item.item_id), nome_de(item.item_id));
+            estilo::texto_ajustado(
+                &titulo,
+                d.x + 4.0,
+                d.y + 24.0 * f,
+                d.w * 0.62,
+                17,
+                estilo::OURO,
+            );
             let info = format!("na bolsa: {}", crate::bolsa::milhar(tem));
-            estilo::texto(d.x + d.w - estilo::medir(&info, 14), d.y + 24.0 * f, &info, 14, estilo::SUAVE);
+            estilo::texto(
+                d.x + d.w - estilo::medir(&info, 14),
+                d.y + 24.0 * f,
+                &info,
+                14,
+                estilo::SUAVE,
+            );
 
             // Seletor: [−]  qtd  [+]   [1] [10] [50] [Máx]
             let y = d.y + 38.0 * f;
@@ -264,7 +358,13 @@ impl Loja {
                 self.qtd -= 1;
             }
             estilo::ret_arredondado(caixa, 6.0, estilo::alfa(estilo::FUNDO_BAIXO, 0.9));
-            estilo::texto_centro(caixa.center().x, caixa.y + h * 0.68, &self.qtd.to_string(), 19, estilo::TEXTO);
+            estilo::texto_centro(
+                caixa.center().x,
+                caixa.y + h * 0.68,
+                &self.qtd.to_string(),
+                19,
+                estilo::TEXTO,
+            );
             if crate::ui::botao(mais, "+", lote && self.qtd < max) {
                 self.qtd += 1;
             }
@@ -282,20 +382,42 @@ impl Loja {
 
             // Total do lote e o que sobra.
             let total_lote = item.price as u64 * self.qtd as u64;
-            let falta = total_lote > cobre;
-            let t = format!("Total: {} cobre", crate::bolsa::milhar(total_lote));
-            estilo::texto(d.x + 4.0, d.y + 104.0 * f, &t, 17, if falta { VERMELHO } else { COBRE });
+            let falta = total_lote > saldo;
+            let t = format!("Total: {} {moeda}", crate::bolsa::milhar(total_lote));
+            estilo::texto(
+                d.x + 4.0,
+                d.y + 104.0 * f,
+                &t,
+                17,
+                if falta { VERMELHO } else { COBRE },
+            );
             let resto = if falta {
-                format!("faltam {}", crate::bolsa::milhar(total_lote - cobre))
+                format!("faltam {}", crate::bolsa::milhar(total_lote - saldo))
             } else {
-                format!("sobra {}", crate::bolsa::milhar(cobre - total_lote))
+                format!("sobra {}", crate::bolsa::milhar(saldo - total_lote))
             };
-            estilo::texto(d.x + d.w - estilo::medir(&resto, 14), d.y + 104.0 * f, &resto, 14, estilo::SUAVE);
+            estilo::texto(
+                d.x + d.w - estilo::medir(&resto, 14),
+                d.y + 104.0 * f,
+                &resto,
+                14,
+                estilo::SUAVE,
+            );
             if !lote {
-                estilo::texto(d.x + 4.0, d.y + 124.0 * f, "Equipamento: um por vez.", 13, estilo::SUAVE);
+                estilo::texto(
+                    d.x + 4.0,
+                    d.y + 124.0 * f,
+                    "Equipamento: um por vez.",
+                    13,
+                    estilo::SUAVE,
+                );
             }
             let b = Rect::new(d.x, d.y + 134.0 * f, d.w, 44.0 * f);
-            let rotulo = format!("Comprar {}x", self.qtd);
+            let rotulo = if self.moeda_magica {
+                format!("Trocar por {}x", self.qtd)
+            } else {
+                format!("Comprar {}x", self.qtd)
+            };
             if crate::ui::botao(b, &rotulo, !falta && !self.itens.is_empty()) {
                 saida.push(ClientMessage::ShopComprar {
                     slot_idx: self.sel as u8,
@@ -306,15 +428,27 @@ impl Loja {
 
         // ── rodape: saldo ──
         let rodape = p.y + p.h - 38.0 * f;
-        draw_line(p.x + 12.0, rodape, p.x + p.w - 12.0, rodape, 1.0, estilo::BORDA);
-        estilo::texto(
-            p.x + 16.0 * f,
-            rodape + 25.0 * f,
-            &format!(
+        draw_line(
+            p.x + 12.0,
+            rodape,
+            p.x + p.w - 12.0,
+            rodape,
+            1.0,
+            estilo::BORDA,
+        );
+        let rodape_texto = if self.moeda_magica {
+            format!("Moedas Mágicas: {}", crate::bolsa::milhar(saldo))
+        } else {
+            format!(
                 "Cobre {}  ·  Ouro {}",
                 crate::bolsa::milhar(cobre),
                 crate::bolsa::milhar(ouro)
-            ),
+            )
+        };
+        estilo::texto(
+            p.x + 16.0 * f,
+            rodape + 25.0 * f,
+            &rodape_texto,
             15,
             estilo::OURO,
         );
@@ -390,7 +524,13 @@ mod tests {
     #[test]
     fn abrir_escolhe_o_primeiro_com_um_no_seletor() {
         let mut l = Loja::default();
-        l.abre(3, vec![ShopItem { item_id: 2, price: 10 }]);
+        l.abre(
+            3,
+            vec![ShopItem {
+                item_id: 2,
+                price: 10,
+            }],
+        );
         assert_eq!((l.sel, l.qtd), (0, 1));
         l.fecha();
         assert!(!l.aberta());

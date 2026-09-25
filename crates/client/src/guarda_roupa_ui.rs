@@ -136,10 +136,21 @@ impl GuardaRoupaUi {
         for (i, (rotulo, n, atual)) in linhas.iter().enumerate() {
             let r = Rect::new(x0, y, p.w - 40.0 * f, linha - 8.0 * f);
             estilo::cartao(r, false, false);
-            estilo::texto(r.x + 12.0 * f, r.y + r.h * 0.5 + 5.0, rotulo, 14, estilo::SUAVE);
+            estilo::texto(
+                r.x + 12.0 * f,
+                r.y + r.h * 0.5 + 5.0,
+                rotulo,
+                14,
+                estilo::SUAVE,
+            );
             let lado = 38.0 * f;
             let mut v = *atual;
-            let esq = Rect::new(r.x + r.w - lado * 2.0 - 150.0 * f, r.y + 2.0, lado, r.h - 4.0);
+            let esq = Rect::new(
+                r.x + r.w - lado * 2.0 - 150.0 * f,
+                r.y + 2.0,
+                lado,
+                r.h - 4.0,
+            );
             let dir = Rect::new(r.x + r.w - lado - 6.0 * f, r.y + 2.0, lado, r.h - 4.0);
             estilo::botao(esq, "‹", estilo::estado_de(esq, *n <= 1, false), false);
             estilo::botao(dir, "›", estilo::estado_de(dir, *n <= 1, false), false);
@@ -236,10 +247,16 @@ mod testes {
     /// fechar valesse, o jogador que só quis olhar sairia de cara nova.
     #[test]
     fn fechar_sem_aplicar_volta_ao_que_estava() {
-        let vigente = Aparencia { rosto: 1, ..Default::default() };
+        let vigente = Aparencia {
+            rosto: 1,
+            ..Default::default()
+        };
         let mut u = GuardaRoupaUi::default();
         u.abrir(&g(vigente, &[]));
-        u.provando = Some(Aparencia { rosto: 2, ..vigente });
+        u.provando = Some(Aparencia {
+            rosto: 2,
+            ..vigente
+        });
         // O que `na_escala` faz ao fechar:
         u.provando = Some(u.vigente);
         u.aberto = false;

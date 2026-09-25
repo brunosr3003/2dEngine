@@ -395,6 +395,17 @@ pub fn avancar_kill(
     mob_kind: Option<u16>,
     pvp_victim_faction: Option<u8>,
 ) -> Mudancas {
+    avancar_kill_com_chefe(active, mob_kind, pvp_victim_faction, false)
+}
+
+/// O `kind` de mob comum pode coincidir com o de um chefe. O servidor passa
+/// o marcador da entidade para a missao de chefe contar so' chefe de verdade.
+pub fn avancar_kill_com_chefe(
+    active: &mut [CharQuest],
+    mob_kind: Option<u16>,
+    pvp_victim_faction: Option<u8>,
+    e_chefe: bool,
+) -> Mudancas {
     let mut mudou = Vec::new();
     for c in active.iter_mut() {
         if c.status != quests::quest_status::ACTIVE {
@@ -406,7 +417,9 @@ pub fn avancar_kill(
         let hit = if def.obj_kind == quests::objective_kind::KILL {
             pvp_victim_faction.is_none()
                 && (def.obj_target == 0
-                    || mob_kind.is_some_and(|k| quests::kill_conta(def.obj_target, k)))
+                    || (def.obj_target == quests::ALVO_QUALQUER_CHEFE && e_chefe)
+                    || (def.obj_target != quests::ALVO_QUALQUER_CHEFE
+                        && mob_kind.is_some_and(|k| quests::alvo_de_mob(k) == def.obj_target)))
         } else if def.obj_kind == quests::objective_kind::PVP_KILL {
             pvp_victim_faction
                 .map(|vf| vf != def.faction)
@@ -691,24 +704,21 @@ mod testes {
         );
         // O Treinador ganhou a CACADA (22/09/2026): 539 abre a cadeia de
         // volume e 543 e' a tematica dos lobos, que nao depende de nada.
-        assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![511, 539, 543]);
-        assert_eq!(de(giver_do_papel(Papel::Deposito)), vec![516, 528]);
-        assert_eq!(de(giver_do_papel(Papel::Ferreiro)), vec![523]);
+        assert_eq!(de(giver_do_papel(Papel::Treinador)), vec![539, 543]);
+        // As cadeias de exploracao sairam da cidade pras cabanas (25/09/2026):
+        // o Guia do Mirante, o Vigia da Clareira e o Lenhador da Trilha.
+        assert_eq!(de(203), vec![511]);
+        assert_eq!(de(202), vec![516]);
+        assert_eq!(de(201), vec![528]);
+        // 544 abre a cadeia das chaves de craft (escama, garra, chifre, couro).
+        assert_eq!(de(giver_do_papel(Papel::Ferreiro)), vec![523, 544]);
         assert_eq!(de(giver_do_papel(Papel::Estaleiro)), vec![531]);
-        // A proxima de uma cadeia sai de OUTRO NPC: 511 entregue, a 512 e' do
-        // Capitao do Porto.
+        // Cadeia de cabana fica na cabana: 511 entregue, a 512 e' do mesmo
+        // Guia do Mirante.
         let mut depois = feitas.clone();
         depois.push(cq(511, TURNED_IN, 1));
-        let capitao = offerable(
-            src,
-            giver_do_papel(Papel::Estaleiro),
-            16,
-            0,
-            &depois,
-            0,
-            "ilha_inicial",
-        );
-        assert!(capitao.iter().any(|d| d.id == 512));
+        let guia = offerable(src, 203, 16, 0, &depois, 0, "ilha_inicial");
+        assert!(guia.iter().any(|d| d.id == 512));
         // Nivel 1: so' a primeira da cadeia antiga e a conversa na taberna.
         let novo: Vec<u16> = offerable(src, GIVER_MESTRE_DA_ILHA, 1, 0, &[], 0, "ilha_inicial")
             .iter()
@@ -730,8 +740,15 @@ mod testes {
         };
         // 511: o Lobo Alfa (kind 10), e so' ele.
         assert_eq!(um(511), (false, true, false));
-        // 514: qualquer chefe.
-        assert_eq!(um(514), (false, true, true));
+        // 514: qualquer chefe — e so' quem a entidade diz que e' chefe. O kind
+        // sozinho nao basta: escaravelho do Ermo divide numero com chefe.
+        assert_eq!(um(514), (false, false, false));
+        let chefe = |alvo: u16, kind: u16, e_chefe: bool| {
+            let mut a = vec![cq(alvo, ACTIVE, 0)];
+            !avancar_kill_com_chefe(&mut a, Some(kind), None, e_chefe).is_empty()
+        };
+        assert!(chefe(514, 10, true));
+        assert!(!chefe(514, 10, false), "bicho comum com kind de chefe");
         // 522: qualquer bicho — chefe tambem e' bicho.
         assert_eq!(um(522), (true, true, true));
     }
@@ -846,9 +863,15 @@ mod testes {
             let ger = shared::terreno::Gerador::da_ilha(d);
             ger.vila().npcs.iter().map(|n| n.papel as u16).collect()
         };
+        let postos: Vec<u16> = {
+            let d = &shared::terreno::ARQUIPELAGO[0];
+            let ger = shared::terreno::Gerador::da_ilha(d);
+            ger.vila().npcs.iter().filter_map(|n| n.giver).collect()
+        };
         let givers_da_vila: Vec<u16> = vila_papeis
             .iter()
             .filter_map(|p| shared::quests::giver_do_npc(*p))
+            .chain(postos)
             .collect();
         for d in cadeia {
             assert!(

@@ -1,9 +1,8 @@
 //! Painel de CRAFT: as receitas por categoria, os ingredientes com
 //! tem/precisa e o botao Criar.
 //!
-//! Depois das categorias, duas abas de oficina (`oficina_ui`): APRIMORAR
-//! (duas pecas iguais → tier de cima) e COMBINAR (chave/material → cor de
-//! cima).
+//! Depois das categorias: MATERIAIS (sintese 10 para 1), APRIMORAR
+//! (duas pecas iguais → tier de cima) e COMBINAR (chaves/pets/montarias).
 //!
 //! Abre pelo Menu (Oficina → Craft) — nunca por tecla.
 //! Nada aqui decide: o servidor confere nivel, materiais e espaco e responde
@@ -39,14 +38,17 @@ const ABAS: [u8; 4] = [
 ];
 
 /// As abas de oficina, depois das categorias.
-const ABA_APRIMORAR: usize = ABAS.len();
-const ABA_COMBINAR: usize = ABAS.len() + 1;
+const ABA_MATERIAIS: usize = ABAS.len();
+const ABA_APRIMORAR: usize = ABAS.len() + 1;
+const ABA_COMBINAR: usize = ABAS.len() + 2;
 
-/// Quanto de `id` (material empilhado, sem instancia) a bolsa tem.
+/// Quanto de `id` a bolsa tem. Pets e montarias possuem instancia propria,
+/// mas contam no Combinar como no servidor.
 pub fn tem(slots: &[InventorySlot], id: u16) -> u32 {
+    let bicho = shared::pets::de_item(id).is_some() || shared::montarias::de_item(id).is_some();
     slots
         .iter()
-        .filter(|s| s.item_id == id && s.instance.is_none() && s.qty > 0)
+        .filter(|s| s.item_id == id && (bicho || s.instance.is_none()) && s.qty > 0)
         .map(|s| s.qty)
         .sum()
 }
@@ -74,7 +76,13 @@ pub fn o_que_da(
     }
     let mut atributos: Vec<String> = faixas
         .iter()
-        .map(|(n, a, b)| if a == b { format!("{n} +{a}") } else { format!("{n} +{a}–{b}") })
+        .map(|(n, a, b)| {
+            if a == b {
+                format!("{n} +{a}")
+            } else {
+                format!("{n} +{a}–{b}")
+            }
+        })
         .collect();
     // A FOR da armadura MEDIA nao esta' nas faixas: ela entra em
     // `effective_stats` como ponto alocado, e nao como atributo do template.
@@ -125,6 +133,12 @@ pub struct Craft {
 }
 
 impl Craft {
+    pub fn receitas_atuais(&self) -> &[CraftRecipeNet] {
+        &self.receitas
+    }
+}
+
+impl Craft {
     pub fn abrir(&mut self) {
         self.aberto = true;
         self.so_combinar = false;
@@ -155,6 +169,14 @@ impl Craft {
         }
     }
 
+    /// Abre a sintese do material indicada pela lupa de Onde obter.
+    pub fn abrir_material(&mut self, entrada: u16) {
+        self.aberto = true;
+        self.so_combinar = false;
+        self.aba = ABA_MATERIAIS;
+        self.oficina.seleciona_receita(entrada);
+    }
+
     /// Abre no que este ITEM tem a ver: a receita que o FAZ, ou a primeira
     /// que o gasta.
     ///
@@ -163,6 +185,14 @@ impl Craft {
     /// duas, abre o Craft do jeito que estava — abrir e' sempre util, e um
     /// atalho que nao faz nada e' pior que nenhum.
     pub fn abrir_pelo_item(&mut self, item_id: u16) {
+        if let Some(r) = shared::combinar::receitas()
+            .into_iter()
+            .find(|r| r.chance == 100 && r.saida == item_id)
+            .or_else(|| shared::combinar::receita(item_id).filter(|r| r.chance == 100))
+        {
+            self.abrir_material(r.entrada);
+            return;
+        }
         let faz = self.receitas.iter().find(|r| r.output_item_id == item_id);
         let gasta = || {
             self.receitas
@@ -219,9 +249,23 @@ impl Craft {
         self.oficina.trocou_de_aba();
     }
 
+    pub fn abrir_combinacao_do_item(&mut self, item_id: u16) {
+        self.abrir_combinar();
+        self.oficina.seleciona_receita(item_id);
+    }
+
+    pub fn abrir_aprimoramento(&mut self, item_id: u16, grau: u8, tier: u8) {
+        self.aberto = true;
+        self.so_combinar = false;
+        self.aba = ABA_APRIMORAR;
+        self.oficina.seleciona_grupo(item_id, grau, tier);
+    }
+
     /// Lupa tocada em qualquer aba (receita ou oficina).
     pub fn onde_obter(&mut self) -> Option<u16> {
-        self.onde_obter.take().or_else(|| self.oficina.onde_obter.take())
+        self.onde_obter
+            .take()
+            .or_else(|| self.oficina.onde_obter.take())
     }
 
     pub fn define_receitas(&mut self, v: Vec<CraftRecipeNet>) {
@@ -242,7 +286,12 @@ impl Craft {
     fn painel() -> Rect {
         let k = Self::escala();
         let (w, h) = (LARGURA * k, ALTURA * k);
-        Rect::new((screen_width() - w) * 0.5, (screen_height() - h) * 0.5, w, h)
+        Rect::new(
+            (screen_width() - w) * 0.5,
+            (screen_height() - h) * 0.5,
+            w,
+            h,
+        )
     }
 
     pub fn pega_mouse(&self) -> bool {
@@ -270,7 +319,9 @@ impl Craft {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(slots, nomes, nivel, agora, palco))
+        estilo::no_painel(Self::escala(), || {
+            self.desenha_na_escala(slots, nomes, nivel, agora, palco)
+        })
     }
 
     fn desenha_na_escala(
@@ -284,11 +335,16 @@ impl Craft {
         let linha_h = u(LINHA);
         let p = Self::painel();
         estilo::painel(p);
-        let titulo = if self.so_combinar { "Combinar" } else { "Craft" };
+        let titulo = if self.so_combinar {
+            "Combinar"
+        } else {
+            "Craft"
+        };
         estilo::texto(p.x + u(18.0), p.y + u(32.0), titulo, 22, estilo::OURO);
         let dica = match self.aba {
-            ABA_APRIMORAR => "duas iguais sobem o tier; duas Tier IV +8 sobem a cor",
-            ABA_COMBINAR => "chave e material de uma cor tentam a cor de cima",
+            ABA_MATERIAIS => "10 materiais + cobre, darksteel e pó criam 1 da cor seguinte",
+            ABA_APRIMORAR => "duas peças iguais sobem o tier; duas Tier IV +8 sobem a cor",
+            ABA_COMBINAR => "chaves, pets e montarias: 5 para tentar a cor seguinte",
             _ => "chave + materiais da cor + darksteel + cobre",
         };
         estilo::texto(p.x + u(90.0), p.y + u(31.0), dica, 13, estilo::SUAVE);
@@ -317,7 +373,7 @@ impl Craft {
         } else {
             ABAS.iter()
                 .map(|&c| nome_da_categoria(c))
-                .chain(["Aprimorar", "Combinar"])
+                .chain(["Materiais", "Aprimorar", "Combinar"])
                 .collect()
         };
         for (i, rot) in rotulos.into_iter().enumerate() {
@@ -343,11 +399,12 @@ impl Craft {
         // Lista.
         let lista = Rect::new(p.x + u(12.0), p.y + u(84.0), u(330.0), p.h - u(96.0));
         let d = Rect::new(p.x + u(356.0), p.y + u(84.0), p.w - u(368.0), p.h - u(96.0));
-        if self.aba >= ABA_APRIMORAR {
+        if self.aba >= ABA_MATERIAIS {
             let pedido = if self.aba == ABA_APRIMORAR {
-                self.oficina.aprimorar(lista, d, slots, nomes, nivel)
+                self.oficina.aprimorar(lista, d, slots, nomes, nivel, palco)
             } else {
-                self.oficina.combinar(lista, d, slots, nomes)
+                self.oficina
+                    .combinar(lista, d, slots, nomes, self.aba == ABA_MATERIAIS, palco)
             };
             self.desenha_aviso(p, agora);
             return pedido;
@@ -472,14 +529,39 @@ impl Craft {
             // O que a peça dá: os valores fixos, pela mesma conta do servidor.
             let faixas = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
             let (texto_da, extra) = o_que_da(r, &faixas, &nome(r.output_item_id), nivel);
-            estilo::texto_ajustado(&texto_da, d.x + u(6.0), d.y + u(80.0), d.w - u(12.0), 15, VERDE);
+            estilo::texto_ajustado(
+                &texto_da,
+                d.x + u(6.0),
+                d.y + u(80.0),
+                d.w - u(12.0),
+                15,
+                VERDE,
+            );
             if let Some(e) = &extra {
-                estilo::texto_ajustado(e, d.x + u(6.0), d.y + u(100.0), d.w - u(12.0), 13, estilo::SUAVE);
+                estilo::texto_ajustado(
+                    e,
+                    d.x + u(6.0),
+                    d.y + u(100.0),
+                    d.w - u(12.0),
+                    13,
+                    estilo::SUAVE,
+                );
             }
-            estilo::texto(d.x + u(6.0), d.y + u(128.0), "Ingredientes", 15, estilo::TEXTO);
+            estilo::texto(
+                d.x + u(6.0),
+                d.y + u(128.0),
+                "Ingredientes",
+                15,
+                estilo::TEXTO,
+            );
             for (i, (id, t, q)) in ingredientes(r, slots).into_iter().enumerate() {
                 let y = d.y + u(138.0) + i as f32 * u(38.0);
-                crate::bolsa::icone_do_item_com(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0, palco);
+                crate::bolsa::icone_do_item_com(
+                    Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)),
+                    id,
+                    1.0,
+                    palco,
+                );
                 estilo::texto_ajustado(
                     &nome(id),
                     d.x + u(44.0),
@@ -498,7 +580,12 @@ impl Craft {
                     cor,
                 );
                 // Onde obter: a lupa de cada ingrediente.
-                if crate::onde_obter::botao(Rect::new(d.x + d.w - u(42.0), y - u(2.0), u(38.0), u(36.0))) {
+                if crate::onde_obter::botao(Rect::new(
+                    d.x + d.w - u(42.0),
+                    y - u(2.0),
+                    u(38.0),
+                    u(36.0),
+                )) {
                     self.onde_obter = Some(id);
                 }
             }

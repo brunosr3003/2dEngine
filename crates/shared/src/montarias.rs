@@ -167,6 +167,16 @@ pub fn velocidade(grau: u8) -> f32 {
     }
 }
 
+pub fn velocidade_da_instancia(grau: u8, inst: Option<&crate::items::ItemInstance>) -> f32 {
+    velocidade(grau) + inst.map_or(0.0, |i| 0.045 * (i.tier().saturating_sub(1)) as f32 + 0.012 * i.refinement as f32)
+}
+
+pub fn pontos_por_stat_da_instancia(item_id: u16, inst: Option<&crate::items::ItemInstance>) -> [u32; STAT_COUNT] {
+    let af = inst.and_then(|i| i.afinidade);
+    let mult = inst.map_or(1.0, |i| 1.0 + 0.18 * (i.tier().saturating_sub(1)) as f32 + 0.05 * i.refinement as f32);
+    pontos_por_stat(item_id, af).map(|p| (p as f32 * mult).round() as u32)
+}
+
 /// Pontos de atributo que a montaria entrega. Menos que o pet no mesmo grau:
 /// o pet trabalha, a montaria so' anda.
 pub fn pontos(grau: u8) -> u32 {

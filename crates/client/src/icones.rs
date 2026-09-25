@@ -78,6 +78,17 @@ pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
 /// Icone completo: fundo e moldura na cor da raridade (1..5, a mesma de
 /// `shared::items::tier_color_hex`), o desenho e a quantidade no canto.
 pub fn icone(item_id: u16, r: Rect, raridade: Option<u8>, quantidade: Option<u32>) {
+    icone_com_3d(item_id, r, raridade, quantidade, None);
+}
+
+/// Usa o modelo 3D de pets e montarias onde o painel dispõe do palco.
+pub fn icone_com_3d(
+    item_id: u16,
+    r: Rect,
+    raridade: Option<u8>,
+    quantidade: Option<u32>,
+    palco: Option<(&crate::vox::VoxCache, &macroquad::material::Material)>,
+) {
     if let Some(t) = raridade {
         let h = shared::items::tier_color_hex(t).trim_start_matches('#');
         let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
@@ -86,11 +97,15 @@ pub fn icone(item_id: u16, r: Rect, raridade: Option<u8>, quantidade: Option<u32
         draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, cor);
     }
     let pad = r.w.min(r.h) * 0.06;
-    desenha(
-        item_id,
-        Rect::new(r.x + pad, r.y + pad, r.w - pad * 2.0, r.h - pad * 2.0),
-        1.0,
-    );
+    let desenho = Rect::new(r.x + pad, r.y + pad, r.w - pad * 2.0, r.h - pad * 2.0);
+    let bicho_3d = palco.is_some_and(|(vox, solido)| {
+        let giro = get_time() as f32 * 0.5 + item_id as f32 * 0.7;
+        crate::render3d::vitrine_pet(vox, item_id, desenho, giro, solido)
+            || crate::render3d::vitrine_montaria(vox, item_id, desenho, giro, solido)
+    });
+    if !bicho_3d {
+        desenha(item_id, desenho, 1.0);
+    }
     if let Some(q) = quantidade.filter(|q| *q > 1) {
         let t = q.to_string();
         let tam = (r.w * 0.26).clamp(10.0, 16.0) as u16;
@@ -136,7 +151,11 @@ mod testes {
             }
         }
         v.extend(i::todas_as_chaves());
-        v.extend([i::MARCAS_TEMPESTADE, i::SELO_TEMPESTADE, i::PERGAMINHO_TELEPORTE]);
+        v.extend([
+            i::MARCAS_TEMPESTADE,
+            i::SELO_TEMPESTADE,
+            i::PERGAMINHO_TELEPORTE,
+        ]);
         v.sort_unstable();
         v.dedup();
         v

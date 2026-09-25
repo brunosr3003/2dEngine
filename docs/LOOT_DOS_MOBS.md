@@ -20,10 +20,10 @@ coloridos desta tabela vêm na cor cinza. Este é o balanceamento inicial.
 | Caranguejo | 3–10 | — | Vida (1; 8%) |
 | Caranguejo-rei | 12–30 | Aço (1–2; 15%) | Vida (1; 12%) |
 
-## Chaves de craft: só chefe
+## Chaves de craft: chefes e missões
 
 Escama, Garra, Chifre e Couro (a chave de cada receita) **não caem de mob
-comum nem da pedra**. Saem só de chefe, na cor da faixa do **conteúdo** e com
+comum nem da pedra**. Caem de chefe, na cor da faixa do **conteúdo** e com
 chance que cai conforme a faixa sobe (`shared::chaves`). O chefe que nasce no
 mundo aberto rende bem menos que o chefe de dungeon/raid:
 
@@ -35,7 +35,9 @@ mundo aberto rende bem menos que o chefe de dungeon/raid:
 | 60–79 | épica | 3% | 1% |
 | 80+ | lendária | 1% | 0,3% |
 
-Cai uma das quatro, sorteada. A chave lendária existe (ids 353–356) mas ainda
+Cai uma das quatro, sorteada. Missões secundárias da primeira ilha dão as
+15 chaves cinzas das receitas de equipamento; duas da Geleira dão chaves verdes
+para arma e armadura T2. A chave lendária existe (ids 353–356) mas ainda
 não tem de onde cair: nenhum chefe passa do 60 e dungeon/raid não existem.
 Missão pode dar chave de recompensa (é de propósito). Bancos antigos perdem as
 linhas de chave pela migração `chaves_so_de_chefe_v1`.

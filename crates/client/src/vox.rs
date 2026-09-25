@@ -337,26 +337,26 @@ fn malha(model: &VoxModel, scale: f32, origem: [f32; 3]) -> Vec<Mesh> {
                          corners: [[f32; 3]; 4],
                          color: [u8; 4],
                          faixa: [f32; 3]| {
-            let b = verts.len() as u16;
-            for c in corners {
-                verts.push(Vertex {
-                    // voxel (x, y, z) -> mundo (-x, z, y). ROTACAO, nao espelho:
-                    // trocar so' dois eixos, como era antes, e' reflexo — e tudo
-                    // que o modelo tinha na mao direita aparecia na esquerda.
-                    position: vec3(
-                        (cx - c[0]) * scale,
-                        (c[2] - base) * scale,
-                        (c[1] - cy) * scale,
-                    ),
-                    uv: vec2(0.0, 0.0),
-                    color,
-                    // x e' o RECORTE, que o shader solido ja' lia. y/z/w
-                    // estavam sobrando e agora levam a faixa de paleta.
-                    normal: Vec4::new(0.0, faixa[0], faixa[1], faixa[2]),
-                });
-            }
-            idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
-        };
+        let b = verts.len() as u16;
+        for c in corners {
+            verts.push(Vertex {
+                // voxel (x, y, z) -> mundo (-x, z, y). ROTACAO, nao espelho:
+                // trocar so' dois eixos, como era antes, e' reflexo — e tudo
+                // que o modelo tinha na mao direita aparecia na esquerda.
+                position: vec3(
+                    (cx - c[0]) * scale,
+                    (c[2] - base) * scale,
+                    (c[1] - cy) * scale,
+                ),
+                uv: vec2(0.0, 0.0),
+                color,
+                // x e' o RECORTE, que o shader solido ja' lia. y/z/w
+                // estavam sobrando e agora levam a faixa de paleta.
+                normal: Vec4::new(0.0, faixa[0], faixa[1], faixa[2]),
+            });
+        }
+        idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
+    };
 
     for axis in 0..3usize {
         let u = (axis + 1) % 3;
@@ -703,7 +703,9 @@ impl VoxCache {
         let mut pivo_da_junta: HashMap<Junta, [f32; 3]> = HashMap::new();
         for ((nome, _), (l, h)) in pecas.iter().zip(&caixas) {
             if let Some(j) = junta_de(nome) {
-                pivo_da_junta.entry(j).or_insert_with(|| pivo_vox(j, *l, *h));
+                pivo_da_junta
+                    .entry(j)
+                    .or_insert_with(|| pivo_vox(j, *l, *h));
             }
         }
         let mut out = Vec::new();
@@ -790,12 +792,13 @@ impl VoxCache {
     /// alocar outra no mesmo endereço devolveria o buffer velho, e o jogador
     /// apareceria com a roupa errada, sem erro nenhum.
     pub async fn atende_um_pendente(&mut self, scale: f32) -> bool {
-        let Some(nome) = self
-            .pendentes
-            .try_borrow_mut()
-            .ok()
-            .and_then(|mut p| if p.is_empty() { None } else { Some(p.remove(0)) })
-        else {
+        let Some(nome) = self.pendentes.try_borrow_mut().ok().and_then(|mut p| {
+            if p.is_empty() {
+                None
+            } else {
+                Some(p.remove(0))
+            }
+        }) else {
             return false;
         };
         // Mesmo que o arquivo não exista: marca como visto pra não pedir de
@@ -833,7 +836,9 @@ impl VoxCache {
                 continue;
             }
             let Some(p) = pivo(&nome) else {
-                eprintln!("[vox] {name}: peca '{nome}' fora do contrato do rig — nao sera desenhada");
+                eprintln!(
+                    "[vox] {name}: peca '{nome}' fora do contrato do rig — nao sera desenhada"
+                );
                 continue;
             };
             let ms = mesh_na_origem(&m, scale, p);
@@ -1475,7 +1480,10 @@ mod testes_das_faixas {
             .iter()
             .map(|f| f.slot())
             .collect();
-        assert!(slots.iter().all(|s| *s > 0.5), "slot zero colide com 'sem faixa'");
+        assert!(
+            slots.iter().all(|s| *s > 0.5),
+            "slot zero colide com 'sem faixa'"
+        );
         assert_eq!(slots.len(), 3);
         assert!(slots[0] != slots[1] && slots[1] != slots[2] && slots[0] != slots[2]);
     }
@@ -1494,10 +1502,14 @@ mod testes_das_faixas {
             }
         }
         // E ligada, o alfa sobe — senão o shader ignoraria a cor mandada.
-        let f = crate::gpu_estatica::Faixas::nova(None, None, Some([[1.0, 0.9, 0.8], [0.5, 0.4, 0.3]]));
+        let f =
+            crate::gpu_estatica::Faixas::nova(None, None, Some([[1.0, 0.9, 0.8], [0.5, 0.4, 0.3]]));
         assert_eq!(f.pele[0][3], 1.0);
         assert_eq!(f.pele[0][0], 1.0);
-        assert_eq!(f.cabelo[0][3], 0.0, "a faixa que não foi pedida fica desligada");
+        assert_eq!(
+            f.cabelo[0][3], 0.0,
+            "a faixa que não foi pedida fica desligada"
+        );
     }
 }
 
@@ -1703,12 +1715,16 @@ mod testes_da_carga_da_cabeca {
         for i in 0..total {
             let Some(nome) = crate::render3d::rig_do_cabelo(i) else {
                 // Só o "sem cabelo" pode não ter arquivo.
-                assert_eq!(i, ap::CABELOS, "índice {i} sem arquivo e não é 'sem cabelo'");
+                assert_eq!(
+                    i,
+                    ap::CABELOS,
+                    "índice {i} sem arquivo e não é 'sem cabelo'"
+                );
                 continue;
             };
             let caminho = format!("../../assets/vox/{nome}.vox");
-            let bytes = std::fs::read(&caminho)
-                .unwrap_or_else(|e| panic!("índice {i} → {caminho}: {e}"));
+            let bytes =
+                std::fs::read(&caminho).unwrap_or_else(|e| panic!("índice {i} → {caminho}: {e}"));
             let pecas = parse_nomeado(&bytes).expect("vox");
             let mut quads = 0;
             for (n, m) in &pecas {

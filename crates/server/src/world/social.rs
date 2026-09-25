@@ -240,8 +240,16 @@ mod tests {
         let (ack, mut rx) = tokio::sync::oneshot::channel();
         let antes = s.inventory.clone();
         let anexos = vec![
-            shared::social::Anexo { item_id: 1, qtd: 1, instance: None },
-            shared::social::Anexo { item_id: 2, qtd: 1, instance: None },
+            shared::social::Anexo {
+                item_id: 1,
+                qtd: 1,
+                instance: None,
+            },
+            shared::social::Anexo {
+                item_id: 2,
+                qtd: 1,
+                instance: None,
+            },
         ];
         w.on_correio_entrega(crate::correio_admin::Entrega {
             sid,
@@ -264,7 +272,11 @@ mod tests {
                 id: 1,
                 token: "x".into(),
             },
-            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1, instance: None }],
+            anexos: vec![shared::social::Anexo {
+                item_id: 1,
+                qtd: 1,
+                instance: None,
+            }],
             aceitou: ack,
         });
         assert!(rx.try_recv().unwrap());
@@ -277,7 +289,11 @@ mod tests {
                 id: 1,
                 token: "x".into(),
             },
-            anexos: vec![shared::social::Anexo { item_id: 1, qtd: 1, instance: None }],
+            anexos: vec![shared::social::Anexo {
+                item_id: 1,
+                qtd: 1,
+                instance: None,
+            }],
             aceitou: ack,
         });
         assert!(!rx.try_recv().unwrap());

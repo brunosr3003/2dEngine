@@ -1,5 +1,6 @@
-//! As CHAVES de craft — Escama, Garra, Chifre e Couro — so' caem de CHEFE:
-//! chefe do mundo (raro) e chefe de dungeon/raid (docs/LOOT_DOS_MOBS.md).
+//! As CHAVES de craft — Escama, Garra, Chifre e Couro — caem de chefes
+//! do mundo e de dungeon/raid, e algumas missoes secundarias entregam um
+//! estoque unico para o primeiro craft de cada faixa.
 //!
 //! A cor segue o nivel do CONTEUDO (o chefe, a dungeon), nao o de quem mata:
 //! ate' o 19 cinza, 20–39 verde, 40–59 azul, 60–79 epica, 80+ lendaria. E a

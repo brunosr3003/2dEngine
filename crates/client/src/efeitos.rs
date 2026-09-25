@@ -166,9 +166,7 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
         let eu_mesmo = world.self_id == Some(*id);
         // Longe demais não recebe placa: a tela não pode virar um mural. O
         // próprio jogador é sempre visível (distância zero).
-        if !eu_mesmo
-            && minha_pos.is_some_and(|p| p.distance(e.render_pos) > 34.0)
-        {
+        if !eu_mesmo && minha_pos.is_some_and(|p| p.distance(e.render_pos) > 34.0) {
             continue;
         }
         // Morto não tem placa: o corpo caído já diz o que precisa.
@@ -187,11 +185,23 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             && e.meta.faction.is_some()
             && e.meta.faction != minha_faccao;
         let (cheia, brilho) = if inimigo {
-            (Color::new(0.86, 0.22, 0.18, 1.0), Color::new(1.0, 0.45, 0.38, 0.8))
+            (
+                Color::new(0.86, 0.22, 0.18, 1.0),
+                Color::new(1.0, 0.45, 0.38, 0.8),
+            )
         } else {
-            (Color::new(0.30, 0.78, 0.35, 1.0), Color::new(0.55, 0.95, 0.60, 0.8))
+            (
+                Color::new(0.30, 0.78, 0.35, 1.0),
+                Color::new(0.55, 0.95, 0.60, 0.8),
+            )
         };
-        draw_rectangle(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0, Color::new(0.0, 0.0, 0.0, 0.75));
+        draw_rectangle(
+            r.x - 1.0,
+            r.y - 1.0,
+            r.w + 2.0,
+            r.h + 2.0,
+            Color::new(0.0, 0.0, 0.0, 0.75),
+        );
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.10, 0.12, 0.10, 0.9));
         draw_rectangle(r.x, r.y, r.w * f, r.h, cheia);
         draw_rectangle(r.x, r.y, r.w * f, r.h * 0.35, brilho);
@@ -312,7 +322,6 @@ pub fn desenha(world: &World, vista: &Vista) {
         }
     }
 }
-
 
 #[cfg(test)]
 mod testes_da_placa {

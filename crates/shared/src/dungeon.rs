@@ -743,10 +743,22 @@ pub fn nivel_da_peca(grau: Grau, nivel: u32) -> u16 {
     (nivel as u16).clamp(lo, hi)
 }
 
-/// Uma peca (arma, secundaria, armadura ou acessorio) sorteada.
-pub fn sortear_peca(grau: Grau, nivel: u32, r: f32) -> Premio {
+/// Uma peca sorteada. Se a categoria for arma, sorteia de novo entre os
+/// quatro tipos de arma; a primeira vitoria nao fica presa a um modelo.
+pub fn sortear_peca(grau: Grau, nivel: u32, r: f32, r_arma: f32) -> Premio {
     let n = (item_id::CINTO - item_id::ESPADA_E_ESCUDO + 1) as f32;
-    let id = item_id::ESPADA_E_ESCUDO + ((r.clamp(0.0, 0.999_999) * n) as u16);
+    let pos = (r.clamp(0.0, 0.999_999) * n) as u16;
+    let id = if pos < 4 {
+        const ARMAS: [u16; 4] = [
+            item_id::ESPADA_E_ESCUDO,
+            item_id::KATANA,
+            item_id::PISTOLAS,
+            item_id::ANEL_MAGICO,
+        ];
+        ARMAS[(r_arma.clamp(0.0, 0.999_999) * ARMAS.len() as f32) as usize]
+    } else {
+        item_id::ESPADA_E_ESCUDO + pos
+    };
     Premio {
         item_id: id,
         qtd: 1,
@@ -887,7 +899,7 @@ pub fn rolar_bau(
         let (chance, dist) = tabela_de_peca(c.tipo, nivel, estagio);
         if rng() < chance {
             let g = rolar_grau(dist, rng(), teto_de_grau(nivel));
-            itens.push(sortear_peca(g, nivel, rng()));
+            itens.push(sortear_peca(g, nivel, rng(), rng()));
         }
         if let Some(chave) = chaves::rolar(nivel, chaves::Fonte::Dungeon, 1.0, rng(), rng()) {
             itens.push(Premio {
@@ -927,7 +939,7 @@ pub fn peca_garantida(c: &Conteudo, estagio: u8, rng: &mut dyn FnMut() -> f32) -
     let teto = teto_de_grau(nivel);
     let g = rolar_grau(dist, rng(), teto);
     let g = g.acima().unwrap_or(g).min(teto);
-    sortear_peca(g, nivel, rng())
+    sortear_peca(g, nivel, rng(), rng())
 }
 
 // ─────────────────────────────── rede ───────────────────────────────
@@ -1093,6 +1105,8 @@ pub enum Aviso {
         tempo_s: u32,
         bonus_tempo: bool,
         primeira_vitoria: bool,
+        #[serde(default)]
+        recompensas_primeira: Vec<(u16, u32)>,
     },
     Bau {
         itens: Vec<(u16, u32)>,

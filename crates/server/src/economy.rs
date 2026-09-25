@@ -1727,9 +1727,9 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     KindInicial {
         kind: 13,
         name: "Escaravelho",
-        hp: 210,
+        hp: 260,
         sp: 1.7,
-        dmg: 14,
+        dmg: 24,
         cd: 1.9,
         det: 8.0,
         rng: 1.7,
@@ -1743,9 +1743,9 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     KindInicial {
         kind: 14,
         name: "Rainha Escaravelho",
-        hp: 480,
+        hp: 600,
         sp: 1.3,
-        dmg: 26,
+        dmg: 32,
         cd: 2.8,
         det: 9.0,
         rng: 2.0,

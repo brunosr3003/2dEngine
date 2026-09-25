@@ -944,8 +944,8 @@ mod tests {
             faction: None,
             kind,
             nivel: 1,
-                aparencia: 0,
-            };
+            aparencia: 0,
+        };
         let estado =
             EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);
         w.apply(vec![meta], vec![estado], &[]);
@@ -975,12 +975,11 @@ mod testes_do_assentamento {
     fn o_assentamento_nao_estoura_o_orcamento_de_desenho() {
         for nivel in [1u8, 3, 5] {
             let plato = shared::colonia::plato_do_assentamento(nivel);
-            let moradores: Vec<shared::colonia::Profissao> =
-                shared::colonia::Profissao::TODAS
-                    .into_iter()
-                    .cycle()
-                    .take(shared::colonia::vagas_de_trabalho(nivel))
-                    .collect();
+            let moradores: Vec<shared::colonia::Profissao> = shared::colonia::Profissao::TODAS
+                .into_iter()
+                .cycle()
+                .take(shared::colonia::vagas_de_trabalho(nivel))
+                .collect();
             let assadas = assar_colonia(plato, &moradores);
             let malhas: usize = assadas.iter().map(|a| a.partes.len()).sum();
             let quads: usize = assadas

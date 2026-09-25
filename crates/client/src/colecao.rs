@@ -147,7 +147,11 @@ impl Colecao {
         let bt_eq = Rect::new(r.x + r.w - bw * 2.0 - 22.0 * f, by, bw, 32.0 * f);
         estilo::botao(
             bt_eq,
-            if escolhida.equipada { "Em uso" } else { "Equipar" },
+            if escolhida.equipada {
+                "Em uso"
+            } else {
+                "Equipar"
+            },
             estilo::estado_de(bt_eq, escolhida.equipada, false),
             !escolhida.equipada,
         );
@@ -201,7 +205,12 @@ impl Colecao {
                 }
             }
             None => {
-                estilo::botao(bt_co, "No topo", estilo::estado_de(bt_co, true, false), false);
+                estilo::botao(
+                    bt_co,
+                    "No topo",
+                    estilo::estado_de(bt_co, true, false),
+                    false,
+                );
                 estilo::texto(
                     r.x + 14.0 * f,
                     by + 36.0 * f,
@@ -285,12 +294,8 @@ mod testes {
         ];
         let so_pet = |id: u16| shared::pets::de_item(id).is_some();
         let so_montaria = |id: u16| shared::montarias::de_item(id).is_some();
-        let conta = |f: &dyn Fn(u16) -> bool| {
-            bolsa
-                .iter()
-                .filter(|s| s.qty > 0 && f(s.item_id))
-                .count()
-        };
+        let conta =
+            |f: &dyn Fn(u16) -> bool| bolsa.iter().filter(|s| s.qty > 0 && f(s.item_id)).count();
         assert_eq!(conta(&so_pet), 1);
         assert_eq!(conta(&so_montaria), 1);
         // Slot vazio nunca entra, nem que o id caia na faixa por acaso.

@@ -38,6 +38,7 @@ pub const OUTRA_ILHA: &str = "Outra ilha";
 pub enum Ir {
     Alvo(Alvo),
     AbrirCraft(u16),
+    AbrirCraftMaterial(u16),
     AbrirMercado(u16),
     /// Menu → Aventura → Dungeons.
     AbrirDungeons,
@@ -138,6 +139,22 @@ fn sem_lugar(o: &mut Opcao, ilhas: &[u8], c: &Onde) {
 /// missao e o que ainda nao existe.
 pub fn opcoes(item: u16, fontes: &[FonteDeItem], c: &Onde) -> Vec<Opcao> {
     let mut v: Vec<Opcao> = fontes.iter().map(|f| opcao(f, c)).collect();
+    if let Some(r) = shared::combinar::receitas()
+        .into_iter()
+        .find(|r| r.chance == 100 && r.saida == item)
+    {
+        v.push(Opcao {
+            titulo: "Craft de material".into(),
+            detalhe: format!(
+                "{} da cor anterior · {} cobre · {} darksteel · {} pó",
+                r.qtd, r.cobre, r.darksteel, r.po
+            ),
+            aviso: None,
+            ir: Some(Ir::AbrirCraftMaterial(r.entrada)),
+            sem_ir: None,
+            ordem: (2, 0),
+        });
+    }
     if !c.vinculado {
         v.push(Opcao {
             titulo: "Mercado".into(),
@@ -421,12 +438,22 @@ impl OndeObter {
     }
 
     /// Desenha o popup. `Some` no quadro em que um "Ir" foi tocado.
-    pub fn desenha(&mut self, nome: &str, ops: &[Opcao]) -> Option<Ir> {
+    pub fn desenha(
+        &mut self,
+        nome: &str,
+        ops: &[Opcao],
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
+    ) -> Option<Ir> {
         self.item?;
-        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nome, ops))
+        estilo::no_painel(Self::escala(), || self.desenha_na_escala(nome, ops, palco))
     }
 
-    fn desenha_na_escala(&mut self, nome: &str, ops: &[Opcao]) -> Option<Ir> {
+    fn desenha_na_escala(
+        &mut self,
+        nome: &str,
+        ops: &[Opcao],
+        palco: Option<(&crate::vox::VoxCache, &Material)>,
+    ) -> Option<Ir> {
         let item = self.item?;
         let mut entrada = crate::rolagem::Entrada::agora();
         if self.espera_soltar {
@@ -442,10 +469,11 @@ impl OndeObter {
         let f = estilo::fator_texto();
         let p = Self::painel();
         estilo::painel(p);
-        crate::bolsa::icone_do_item(
+        crate::bolsa::icone_do_item_com(
             Rect::new(p.x + 14.0 * f, p.y + 10.0 * f, 40.0 * f, 40.0 * f),
             item,
             1.0,
+            palco,
         );
         estilo::texto_ajustado(
             &format!("Onde obter: {nome}"),
@@ -524,7 +552,7 @@ impl OndeObter {
                     let visivel = b.y + b.h > lista.y && b.y < lista.y + lista.h;
                     let rotulo = match ir {
                         Ir::Alvo(_) => "Ir",
-                        Ir::AbrirCraft(_) => "Abrir",
+                        Ir::AbrirCraft(_) | Ir::AbrirCraftMaterial(_) => "Abrir",
                         Ir::AbrirMercado(_) => "Buscar",
                         Ir::AbrirDungeons | Ir::AbrirCalendario => "Abrir",
                     };
@@ -614,7 +642,7 @@ mod tests {
                     lv_min: 1,
                     lv_max: 3,
                     bichos: vec![(0, 80), (1, 20)],
-            forte: false,
+                    forte: false,
                 },
                 ZonaNoMapa {
                     centro: [400.0, 0.0],
@@ -622,7 +650,7 @@ mod tests {
                     lv_min: 30,
                     lv_max: 32,
                     bichos: vec![(5, 100)],
-            forte: false,
+                    forte: false,
                 },
             ],
             recursos: vec![

@@ -107,11 +107,7 @@ struct Maquete {
 
 impl ColoniaUi {
     /// O relevo mudou (ou o jogador entrou): remonta a maquete.
-    pub fn define_maquete(
-        &mut self,
-        plato: f32,
-        trabalhadores: Vec<shared::colonia::Profissao>,
-    ) {
+    pub fn define_maquete(&mut self, plato: f32, trabalhadores: Vec<shared::colonia::Profissao>) {
         let terreno = crate::terreno::Terreno::da_colonia(plato);
         let ger = shared::terreno::Gerador::da_colonia(plato);
         let centro = ger.cidade().map(|c| c.centro()).unwrap_or_default();
@@ -123,7 +119,6 @@ impl ColoniaUi {
             moradores,
         });
     }
-
 
     pub fn abrir(&mut self, e: Estado) {
         self.estado = Some(e);
@@ -305,8 +300,8 @@ impl ColoniaUi {
         }
         let roda = mouse_wheel().1;
         if roda != 0.0 && mr.contains(m) {
-            self.zoom = (self.zoom * if roda > 0.0 { 1.12 } else { 1.0 / 1.12 })
-                .clamp(ZOOM_MIN, ZOOM_MAX);
+            self.zoom =
+                (self.zoom * if roda > 0.0 { 1.12 } else { 1.0 / 1.12 }).clamp(ZOOM_MIN, ZOOM_MAX);
         }
         estilo::texto_centro(
             mr.center().x,
@@ -323,10 +318,8 @@ impl ColoniaUi {
         } else {
             0.0
         };
-        let total = 56.0 * f + 12.0 * f + 52.0 * f + 12.0 * f
-            + linha_h * EIXOS as f32
-            + vagas_h
-            + 12.0 * f;
+        let total =
+            56.0 * f + 12.0 * f + 52.0 * f + 12.0 * f + linha_h * EIXOS as f32 + vagas_h + 12.0 * f;
         // A rolagem é quem decide o que é clique e o que é arrasto: sem isso,
         // rolar a lista com o dedo contrataria um morador no caminho.
         let clique = self.rolagem.quadro(dir, total, linha_h);
@@ -391,7 +384,11 @@ impl ColoniaUi {
                     lista(&dentro, nome_item)
                 },
                 12,
-                if dentro.is_empty() { estilo::SUAVE } else { estilo::TEXTO },
+                if dentro.is_empty() {
+                    estilo::SUAVE
+                } else {
+                    estilo::TEXTO
+                },
             );
             if !e.bau.is_empty() {
                 let b = Rect::new(
@@ -437,7 +434,11 @@ impl ColoniaUi {
                 &if no_maximo {
                     "No máximo.".to_string()
                 } else {
-                    format!("{} · custa {}", depois(i, e.niveis[i]), lista(&custo, nome_item))
+                    format!(
+                        "{} · custa {}",
+                        depois(i, e.niveis[i]),
+                        lista(&custo, nome_item)
+                    )
                 },
                 12,
                 estilo::SUAVE,
@@ -504,10 +505,8 @@ impl ColoniaUi {
                 }
                 let texto = match quem {
                     Some(q) => {
-                        let (item, qtd) = shared::colonia::por_hora_do_trabalhador(
-                            q,
-                            e.niveis[eixo::RECURSOS],
-                        );
+                        let (item, qtd) =
+                            shared::colonia::por_hora_do_trabalhador(q, e.niveis[eixo::RECURSOS]);
                         format!("{} · {} {}/h", q.nome(), qtd, nome_item(item))
                     }
                     None => match sob_o_dedo {
@@ -526,7 +525,11 @@ impl ColoniaUi {
                     r.y + 30.0 * f,
                     &texto,
                     13,
-                    if quem.is_some() { estilo::TEXTO } else { estilo::SUAVE },
+                    if quem.is_some() {
+                        estilo::TEXTO
+                    } else {
+                        estilo::SUAVE
+                    },
                 );
                 // Um botao por oficio, do lado direito. Sao cinco e cabem:
                 // uma lista suspensa esconderia a escolha atras de um toque.
@@ -755,13 +758,14 @@ fn agora(i: usize, n: u8) -> String {
             }
         }
         eixo::RECURSOS => {
-            let (_, q) = shared::colonia::por_hora_do_trabalhador(
-                shared::colonia::Profissao::Lenhador,
-                n,
-            );
+            let (_, q) =
+                shared::colonia::por_hora_do_trabalhador(shared::colonia::Profissao::Lenhador, n);
             format!("Cada morador rende {q}/h do ofício dele.")
         }
-        _ => format!("{} espaços no baú da ilha.", shared::colonia::espacos_do_bau(n)),
+        _ => format!(
+            "{} espaços no baú da ilha.",
+            shared::colonia::espacos_do_bau(n)
+        ),
     }
 }
 
@@ -786,11 +790,7 @@ fn depois(i: usize, n: u8) -> String {
         }
         eixo::RECURSOS => {
             let ate = |x: u8| {
-                shared::colonia::por_hora_do_trabalhador(
-                    shared::colonia::Profissao::Lenhador,
-                    x,
-                )
-                .1
+                shared::colonia::por_hora_do_trabalhador(shared::colonia::Profissao::Lenhador, x).1
             };
             format!("→ {}/h por morador (de {})", ate(p), ate(n))
         }
@@ -833,10 +833,8 @@ fn colheita_em_texto(e: &Estado, nome_item: &dyn Fn(u16) -> String) -> String {
     }
     // Com morador, é só tempo: dizer QUANTO falta é o que transforma
     // "não rendeu" em "volte às tantas".
-    let por_hora = shared::colonia::por_hora_dos_trabalhadores(
-        &e.trabalhadores,
-        e.niveis[eixo::RECURSOS],
-    );
+    let por_hora =
+        shared::colonia::por_hora_dos_trabalhadores(&e.trabalhadores, e.niveis[eixo::RECURSOS]);
     match por_hora.first() {
         Some((id, q)) if *q > 0 => {
             let min = (60.0 / *q as f32).ceil() as u32;
@@ -890,7 +888,14 @@ mod testes {
         for nivel in 1..=shared::colonia::NIVEL_MAX {
             let plato = shared::colonia::plato_do_assentamento(nivel);
             let ger = shared::terreno::Gerador::da_colonia(plato);
-            let equipe = [P::Lenhador, P::Minerador, P::Mercenario, P::Curtidor, P::Lenhador, P::Minerador];
+            let equipe = [
+                P::Lenhador,
+                P::Minerador,
+                P::Mercenario,
+                P::Curtidor,
+                P::Lenhador,
+                P::Minerador,
+            ];
             for m in onde_ficam(&ger, &equipe) {
                 let p = m.trabalho;
                 let bx = (p.x / shared::terreno::BLOCO).round() as i32;
@@ -898,7 +903,9 @@ mod testes {
                 assert!(
                     ger.bloco_em(bx, bz) > 0,
                     "{:?} trabalha na água em ({:.0},{:.0}), nivel {nivel}",
-                    m.oficio, p.x, p.y
+                    m.oficio,
+                    p.x,
+                    p.y
                 );
                 let r = p.length();
                 assert!(
@@ -921,7 +928,10 @@ mod testes {
         use shared::colonia::Profissao as P;
         let ger = shared::terreno::Gerador::da_colonia(shared::colonia::plato_do_assentamento(3));
         let equipe = [P::Lenhador; 8];
-        let pontos: Vec<Vec2> = onde_ficam(&ger, &equipe).iter().map(|m| m.trabalho).collect();
+        let pontos: Vec<Vec2> = onde_ficam(&ger, &equipe)
+            .iter()
+            .map(|m| m.trabalho)
+            .collect();
         for i in 0..pontos.len() {
             for j in i + 1..pontos.len() {
                 let d = (pontos[i] - pontos[j]).length();
@@ -929,7 +939,6 @@ mod testes {
             }
         }
     }
-
 
     fn e(horas: f32) -> Estado {
         Estado {

@@ -14,6 +14,7 @@ use crate::hud_estilo as estilo;
 
 pub struct Contexto<'a> {
     pub nomes: &'a HashMap<u16, String>,
+    pub palco: Option<(&'a crate::vox::VoxCache, &'a macroquad::material::Material)>,
     pub ouro: u64,
     /// Nome do personagem (pra saber se e' o lider da sala).
     pub eu: &'a str,
@@ -59,6 +60,7 @@ struct Resultado {
     tempo_s: u32,
     bonus: bool,
     primeira: bool,
+    recompensas_primeira: Vec<(u16, u32)>,
     bau: Option<(Vec<(u16, u32)>, u32, u8)>,
     fechado: bool,
     /// `get_time()` no 1º desenho: a contagem ate' a instancia fechar.
@@ -86,6 +88,9 @@ pub struct DungeonUi {
     /// resposta, nao pode esconder os botoes de quem ja' esta' no lugar
     /// certo. Quem decide de verdade e' o servidor, que recusa.
     pub na_arena: Option<bool>,
+    /// Entrada escolhida antes da troca de zona. O estado da UI sobrevive ao
+    /// handoff; o pedido só pode ser enviado após o login no servidor da Arena.
+    entrada_pendente: Option<Pedido>,
 }
 
 /// Altura da linha de missao da instancia (antes do fator de texto).
@@ -114,6 +119,20 @@ fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
         primario,
     );
     sobre && crate::foco::clique()
+}
+
+fn desenha_itens_resultado(c: &Contexto, caixa: Rect, y: f32, itens: &[(u16, u32)]) {
+    let f = estilo::fator_texto();
+    let cw = (caixa.w - 32.0 * f) / 5.0;
+    for (i, (id, qtd)) in itens.iter().enumerate() {
+        let x = caixa.x + 16.0 * f + (i % 5) as f32 * cw;
+        let iy = y + (i / 5) as f32 * 76.0 * f;
+        if iy + 70.0 * f > caixa.y + caixa.h - 90.0 * f { break; }
+        crate::icones::icone_com_3d(*id, Rect::new(x + (cw - 46.0 * f) * 0.5, iy, 46.0 * f, 46.0 * f), None, Some(*qtd), c.palco);
+        let nome = c.nomes.get(id).map(String::as_str).unwrap_or("Item");
+        let curto = if nome.chars().count() > 15 { format!("{}…", nome.chars().take(14).collect::<String>()) } else { nome.to_string() };
+        estilo::texto_centro(x + cw * 0.5, iy + 62.0 * f, &curto, 11, estilo::TEXTO);
+    }
 }
 
 impl DungeonUi {
@@ -237,6 +256,7 @@ impl DungeonUi {
                 membros,
                 concluida,
             } => {
+                self.entrada_pendente = None;
                 if self.inst.is_none() {
                     // Entrou: a janela e o pronto-check saem da frente.
                     self.aberto = false;
@@ -263,6 +283,7 @@ impl DungeonUi {
                 tempo_s,
                 bonus_tempo,
                 primeira_vitoria,
+                recompensas_primeira,
             } => {
                 self.resultado = Some(Resultado {
                     conteudo,
@@ -271,6 +292,7 @@ impl DungeonUi {
                     tempo_s,
                     bonus: bonus_tempo,
                     primeira: primeira_vitoria,
+                    recompensas_primeira,
                     bau: None,
                     fechado: false,
                     chegou: 0.0,
@@ -300,7 +322,14 @@ impl DungeonUi {
                 return vec![pedir(Pedido::Estado)];
             }
             Aviso::Correio { .. } => {}
-            Aviso::NaArena { dentro } => self.na_arena = Some(dentro),
+            Aviso::NaArena { dentro } => {
+                self.na_arena = Some(dentro);
+                if dentro {
+                    if let Some(pedido) = self.entrada_pendente.take() {
+                        return vec![pedir(pedido)];
+                    }
+                }
+            }
             // O servidor recusou porque a mesa nao mora nesta zona. Corrige o
             // que a janela achava e deixa ela oferecer a viagem — a recusa
             // vira convite, que e' o ponto.
@@ -638,36 +667,56 @@ impl DungeonUi {
         estilo::separador(dir.x, y, dir.w);
         y += 14.0 * f;
 
-        // ── FORA DA ARENA: um convite, e nao seis botoes mortos ──
+        // ── FORA DA ARENA: entrar direto ou viajar para formar grupo ──
         //
         // A fila e as salas vivem num processo so' (`shared::arena`), e e' isso
         // que faz elas serem as MESMAS pra todo mundo: o dono criou uma sala
         // com um personagem e nao a viu com o outro justamente porque cada
         // zona tinha a propria mesa.
         //
-        // Entao daqui de fora nao ha' o que clicar. Em vez de deixar os botoes
-        // la' pra falharem um a um, a janela troca todos por um: a viagem.
+        // A entrada solo atravessa a troca de zona; fila e salas ainda exigem
+        // viajar para o saguão antes de formar o grupo.
         if self.na_arena == Some(false) {
             estilo::texto(
                 dir.x,
                 y + 18.0 * f,
-                "A fila e as salas ficam na Arena.",
+                "A dungeon começa na Arena.",
                 16,
                 estilo::TEXTO,
             );
             estilo::texto(
                 dir.x,
                 y + 40.0 * f,
-                "Você volta para onde está ao sair de lá.",
+                "Entre sozinho ou vá até lá para formar grupo.",
                 13,
                 estilo::SUAVE,
             );
+            let aberto = cadeado.is_none() && def.disponivel;
+            if def.tipo != Tipo::Cacada
+                && botao(
+                    Rect::new(dir.x, y + 54.0 * f, bw * 1.4, 46.0 * f),
+                    "Entrar na dungeon",
+                    aberto,
+                    true,
+                )
+            {
+                self.entrada_pendente = Some(match def.tipo {
+                    Tipo::Porao => Pedido::EntrarSolo { conteudo: def.id },
+                    Tipo::Gruta => Pedido::GrutaSolo {
+                        conteudo: def.id,
+                        estagio,
+                    },
+                    Tipo::Cacada => unreachable!(),
+                });
+                saida.push(pedir(Pedido::IrParaArena));
+            }
             if botao(
-                Rect::new(dir.x, y + 54.0 * f, bw * 1.4, 46.0 * f),
+                Rect::new(dir.x, y + 108.0 * f, bw * 1.4, 40.0 * f),
                 "Ir para a Arena",
                 true,
-                true,
+                false,
             ) {
+                self.entrada_pendente = None;
                 saida.push(pedir(Pedido::IrParaArena));
             }
             return;
@@ -774,7 +823,12 @@ impl DungeonUi {
                     estilo::borda_arredondada(cx, 3.0 * f, 1.5, estilo::TEXTO);
                     if self.completar_pela_fila {
                         estilo::ret_arredondado(
-                            Rect::new(cx.x + 4.0 * f, cx.y + 4.0 * f, cx.w - 8.0 * f, cx.h - 8.0 * f),
+                            Rect::new(
+                                cx.x + 4.0 * f,
+                                cx.y + 4.0 * f,
+                                cx.w - 8.0 * f,
+                                cx.h - 8.0 * f,
+                            ),
                             2.0 * f,
                             estilo::AUTO,
                         );
@@ -1287,13 +1341,14 @@ impl DungeonUi {
         }
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let linhas = r.bau.as_ref().map_or(0, |b| b.0.len() + 1);
+        let linhas = r.bau.as_ref().map_or(0, |b| b.0.len().div_ceil(5))
+            + r.recompensas_primeira.len().div_ceil(5);
         let (w, h) = (
-            (460.0 * f).min(seguro.w - 16.0),
-            (196.0 * f + 20.0 * f * linhas as f32).min(seguro.h - 16.0),
+            (610.0 * f).min(seguro.w - 16.0),
+            (240.0 * f + 76.0 * f * linhas as f32).min(seguro.h - 16.0),
         );
         let caixa = Rect::new(
-            seguro.x + seguro.w - w - 16.0 * f,
+            seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
             w,
             h,
@@ -1346,45 +1401,18 @@ impl DungeonUi {
             );
             y += 18.0 * f;
         }
-        if r.primeira {
-            estilo::texto_centro(
-                caixa.center().x,
-                y,
-                "Primeira vitória! Recompensa nas Entregas.",
-                13,
-                estilo::AUTO,
-            );
-            y += 18.0 * f;
-        }
+        if r.primeira { y += 4.0 * f; }
         match &r.bau {
             Some((itens, marcas, no_correio)) => {
-                for (id, q) in itens {
-                    let nome = c
-                        .nomes
-                        .get(id)
-                        .cloned()
-                        .unwrap_or_else(|| format!("Item {id}"));
-                    estilo::texto(
-                        caixa.x + 24.0 * f,
-                        y + 4.0 * f,
-                        &format!("• {nome} ×{q}"),
-                        13,
-                        estilo::TEXTO,
-                    );
-                    y += 20.0 * f;
+                estilo::texto(caixa.x + 22.0 * f, y, "BAÚ DE CONCLUSÃO", 14, estilo::OURO);
+                y += 16.0 * f;
+                desenha_itens_resultado(c, caixa, y, itens);
+                y += itens.len().div_ceil(5) as f32 * 76.0 * f + 6.0 * f;
+                if *no_correio > 0 {
+                    estilo::texto(caixa.x + 22.0 * f, y, &format!("{} item(ns) no Correio: bolsa cheia", no_correio), 12, estilo::SUAVE);
+                    y += 17.0 * f;
                 }
-                let extra = if *no_correio > 0 {
-                    format!(" · {no_correio} nas Entregas (bolsa cheia)")
-                } else {
-                    String::new()
-                };
-                estilo::texto(
-                    caixa.x + 24.0 * f,
-                    y + 4.0 * f,
-                    &format!("+{marcas} Marcas da Tempestade{extra}"),
-                    13,
-                    estilo::OURO,
-                );
+                let _ = marcas;
             }
             None if r.vitoria => estilo::texto_centro(
                 caixa.center().x,
@@ -1401,14 +1429,18 @@ impl DungeonUi {
                 estilo::SUAVE,
             ),
         }
+        if !r.recompensas_primeira.is_empty() {
+            estilo::texto(caixa.x + 22.0 * f, y, "PRIMEIRA VITÓRIA · NO CORREIO", 14, estilo::AUTO);
+            y += 16.0 * f;
+            desenha_itens_resultado(c, caixa, y, &r.recompensas_primeira);
+        }
         // Vitoria: tempo pra juntar o saque do chao antes de a instancia
         // fechar; sair antes traz o que sobrou (sozinho) — nada se perde.
         if r.chegou == 0.0 {
             r.chegou = get_time();
         }
         if r.vitoria {
-            let resta = (shared::dungeon::FECHA_DEPOIS_DE_VENCER_S as f64
-                - (get_time() - r.chegou))
+            let resta = (shared::dungeon::FECHA_DEPOIS_DE_VENCER_S as f64 - (get_time() - r.chegou))
                 .max(0.0) as u32;
             estilo::texto_centro(
                 caixa.center().x,
@@ -1539,6 +1571,7 @@ mod testes {
                 tempo_s: 300,
                 bonus_tempo: true,
                 primeira_vitoria: false,
+                recompensas_primeira: Vec::new(),
             },
             0.0,
         );
@@ -1606,5 +1639,4 @@ mod testes {
             );
         }
     }
-
 }

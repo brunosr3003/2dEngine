@@ -119,7 +119,13 @@ impl ConfigCombate {
             13,
             estilo::AUTO,
         );
-        estilo::texto(r.x + 18.0, r.y + 88.0, "Depois dela, nesta ordem", 14, estilo::SUAVE);
+        estilo::texto(
+            r.x + 18.0,
+            r.y + 88.0,
+            "Depois dela, nesta ordem",
+            14,
+            estilo::SUAVE,
+        );
 
         let mut mudou = false;
         // As três categorias: as escolhidas em ordem, depois as de fora.
@@ -167,7 +173,13 @@ impl ConfigCombate {
             // A SETA PRA CIMA só em quem está dentro e não é o primeiro.
             let seta = Rect::new(linha.x + linha.w - 36.0, linha.y + 4.0, 30.0, 28.0);
             if dentro && i > 0 {
-                estilo::texto_centro(seta.center().x, seta.center().y + 6.0, "^", 18, estilo::OURO);
+                estilo::texto_centro(
+                    seta.center().x,
+                    seta.center().y + 6.0,
+                    "^",
+                    18,
+                    estilo::OURO,
+                );
                 if clicou && seta.contains(m) && sobe(ordem, i) {
                     mudou = true;
                     continue;
@@ -192,7 +204,13 @@ impl ConfigCombate {
             if *pvp == v {
                 draw_circle(bolinha.x, bolinha.y, 5.0, estilo::AUTO);
             }
-            estilo::texto(linha.x + 32.0, linha.y + 18.0, nome_do_pvp(v), 14, estilo::TEXTO);
+            estilo::texto(
+                linha.x + 32.0,
+                linha.y + 18.0,
+                nome_do_pvp(v),
+                14,
+                estilo::TEXTO,
+            );
             if clicou && linha.contains(m) && *pvp != v {
                 *pvp = v;
                 mudou = true;
@@ -214,7 +232,10 @@ mod testes {
     #[test]
     fn nao_da_pra_desmarcar_a_ultima() {
         let mut o = vec![auto_alvo::MAIS_PERTO];
-        assert!(!alterna(&mut o, auto_alvo::MAIS_PERTO), "desmarcou a última");
+        assert!(
+            !alterna(&mut o, auto_alvo::MAIS_PERTO),
+            "desmarcou a última"
+        );
         assert_eq!(o, vec![auto_alvo::MAIS_PERTO]);
         // Com duas, desmarcar uma vale.
         let mut o = vec![auto_alvo::RANGED_EM_MIM, auto_alvo::MAIS_PERTO];
@@ -249,7 +270,11 @@ mod testes {
     /// isso no dia em que alguém acrescentar uma categoria sem tocar aqui.
     #[test]
     fn tudo_tem_nome() {
-        for c in [auto_alvo::RANGED_EM_MIM, auto_alvo::MAIS_PERTO, auto_alvo::JOGADOR] {
+        for c in [
+            auto_alvo::RANGED_EM_MIM,
+            auto_alvo::MAIS_PERTO,
+            auto_alvo::JOGADOR,
+        ] {
             assert_ne!(nome_da_categoria(c), "?", "categoria {c} sem nome");
             assert!(!dica_da_categoria(c).is_empty(), "categoria {c} sem dica");
         }

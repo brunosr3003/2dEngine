@@ -120,7 +120,8 @@ impl Diarias {
     fn painel() -> Rect {
         let k = Self::escala();
         let w = (LARGURA * k).min(screen_width() - 24.0);
-        let h = (screen_height() - 140.0 * k).clamp((260.0 * k).min(screen_height() - 24.0), 720.0 * k);
+        let h =
+            (screen_height() - 140.0 * k).clamp((260.0 * k).min(screen_height() - 24.0), 720.0 * k);
         Rect::new(
             (screen_width() - w) * 0.5,
             (screen_height() - h) * 0.5,
@@ -234,7 +235,9 @@ impl Diarias {
                 Estado::Pronta => {
                     estilo::texto_centro(icone.x, icone.y + u(10.0), "?", 26, estilo::AUTO)
                 }
-                Estado::Disponivel => estilo::texto_centro(icone.x, icone.y + u(10.0), "!", 26, cor),
+                Estado::Disponivel => {
+                    estilo::texto_centro(icone.x, icone.y + u(10.0), "!", 26, cor)
+                }
                 Estado::EmAndamento { .. } => {
                     draw_circle_lines(icone.x, icone.y, u(8.0), u(2.0), estilo::TEXTO)
                 }
@@ -273,14 +276,24 @@ impl Diarias {
                 && d.obj_target != 0
                 && !apagada
             {
-                let lupa = Rect::new(linha.x + linha.w - u(164.0), linha.y + u(20.0), u(36.0), u(34.0));
+                let lupa = Rect::new(
+                    linha.x + linha.w - u(164.0),
+                    linha.y + u(20.0),
+                    u(36.0),
+                    u(34.0),
+                );
                 let _ = crate::onde_obter::botao(lupa);
                 if tocou(lupa) {
                     self.onde_obter = Some(d.obj_target);
                 }
             }
             if let Some(t) = botao_de(&e) {
-                let b = Rect::new(linha.x + linha.w - u(122.0), linha.y + u(22.0), u(110.0), u(30.0));
+                let b = Rect::new(
+                    linha.x + linha.w - u(122.0),
+                    linha.y + u(22.0),
+                    u(110.0),
+                    u(30.0),
+                );
                 let _ = crate::ui::botao(b, t, true);
                 if tocou(b) {
                     saida = Some(clique_da_diaria(d, &e, c.agora_unix));
@@ -313,7 +326,13 @@ impl Diarias {
             );
             estilo::texto(x + u(30.0), y + u(22.0), "Pré-requisitos", 14, estilo::OURO);
             for (i, s) in m.iter().enumerate() {
-                estilo::texto(x + u(12.0), y + u(42.0) + i as f32 * u(20.0), s, 14, estilo::TEXTO);
+                estilo::texto(
+                    x + u(12.0),
+                    y + u(42.0) + i as f32 * u(20.0),
+                    s,
+                    14,
+                    estilo::TEXTO,
+                );
             }
         }
         saida

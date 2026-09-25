@@ -212,7 +212,10 @@ mod tests {
     #[test]
     fn toque_parado_e_clique_no_soltar() {
         let mut r = Rolagem::default();
-        assert_eq!(r.passo(AREA, 1000.0, 40.0, e(50.0, 100.0, true, true, false)), None);
+        assert_eq!(
+            r.passo(AREA, 1000.0, 40.0, e(50.0, 100.0, true, true, false)),
+            None
+        );
         assert_eq!(
             r.passo(AREA, 1000.0, 40.0, e(52.0, 101.0, false, false, true)),
             Some(vec2(52.0, 101.0))

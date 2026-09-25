@@ -20,6 +20,9 @@ pub struct PetsUi {
     giro: f32,
     /// A faixa "meus pets": escolher, equipar, combinar.
     colecao: crate::colecao::Colecao,
+    selecionado: usize,
+    skill_slot_escolhido: Option<usize>,
+    rolagem_skills: crate::rolagem::Rolagem,
 }
 
 const SIGLAS: [&str; shared::STAT_COUNT] = ["FOR", "DES", "INT", "VIT", "SPD", "RES"];
@@ -31,6 +34,7 @@ impl PetsUi {
 
     pub fn fechar(&mut self) {
         self.aberta = false;
+        self.skill_slot_escolhido = None;
     }
 
     /// `agora_unix` decide se o pet está com fome. Devolve o pedido de uso da
@@ -73,7 +77,7 @@ impl PetsUi {
         crate::hud_layout::escurece(0.55);
         estilo::painel(p);
         let mouse = Vec2::from(mouse_position());
-        let clique = crate::foco::clique();
+        let clique = crate::foco::clique() && self.skill_slot_escolhido.is_none();
 
         estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "PET", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
@@ -84,7 +88,34 @@ impl PetsUi {
         }
 
         let mut pedido: Option<ClientMessage> = None;
-        let Some(pet) = equip.pet.filter(|id| shared::pets::de_item(*id).is_some()) else {
+        let pets = equip.pets();
+        let ocupados = pets.iter().filter(|(_, id, _)| id.is_some()).count();
+        for i in 0..3 {
+            let botao = Rect::new(
+                p.x + (130.0 + i as f32 * 91.0) * f,
+                p.y + 8.0 * f,
+                82.0 * f,
+                38.0 * f,
+            );
+            let ativo = pets[i].1.is_some();
+            estilo::botao(
+                botao,
+                &format!("Pet {}", i + 1),
+                estilo::estado_de(botao, !ativo, self.selecionado == i),
+                ativo,
+            );
+            if clique && ativo && botao.contains(mouse) {
+                self.selecionado = i;
+                self.skill_slot_escolhido = None;
+            }
+        }
+        if pets[self.selecionado].1.is_none() {
+            self.selecionado = pets.iter().position(|(_, id, _)| id.is_some()).unwrap_or(0);
+        }
+        let Some((_, pet, pet_inst)) = pets[self.selecionado]
+            .1
+            .map(|id| (pets[self.selecionado].0, id, pets[self.selecionado].2))
+        else {
             estilo::texto_ajustado(
                 "Nenhum pet equipado. Equipe um no slot Pet da bolsa — ele nasce no mundo e busca o saque do chão pra você.",
                 p.x + 24.0 * f,
@@ -96,7 +127,7 @@ impl PetsUi {
             return None;
         };
         let (especie, grau) = shared::pets::de_item(pet).expect("filtrado acima");
-        let d = shared::pets::dados(equip.pet_inst.as_ref());
+        let d = shared::pets::dados(pet_inst.as_ref());
         let nivel = shared::pets::nivel_de_xp(d.xp);
         let cor = cor_do_grau(grau);
 
@@ -120,7 +151,12 @@ impl PetsUi {
         estilo::texto_forte(
             dir.x + 14.0 * f,
             y,
-            &format!("Nível {nivel} / {}", shared::pets::NIVEL_MAX),
+            &format!(
+                "Nível {nivel} / {} · {ocupados}/3 pets · T{} +{}",
+                shared::pets::NIVEL_MAX,
+                pet_inst.map_or(1, |i| i.tier()),
+                pet_inst.map_or(0, |i| i.refinement)
+            ),
             19,
             estilo::OURO,
         );
@@ -211,8 +247,8 @@ impl PetsUi {
 
         // ── atributos e poder ──
         y += 62.0 * f;
-        let af = equip.pet_inst.as_ref().and_then(|i| i.afinidade);
-        let pontos = shared::pets::pontos_por_stat(pet, &d, af);
+        let af = pet_inst.as_ref().and_then(|i| i.afinidade);
+        let pontos = shared::pets::pontos_por_stat_da_instancia(pet, pet_inst.as_ref());
         let mut x = dir.x + 14.0 * f;
         for (i, pts) in pontos.iter().enumerate() {
             if *pts == 0 {
@@ -224,7 +260,7 @@ impl PetsUi {
         }
         let poder = format!(
             "PODER  {}",
-            crate::bolsa::milhar(crate::bolsa::poder_do_pet(pet, &d, af).max(0) as u64)
+            crate::bolsa::milhar(crate::bolsa::poder_dos_pontos(pontos).max(0) as u64)
         );
         estilo::texto_forte(
             dir.x + dir.w - 14.0 * f - estilo::medir_forte(&poder, 18),
@@ -241,7 +277,7 @@ impl PetsUi {
             f,
             "MEUS PETS",
             bolsa,
-            equip.pet,
+            Some(pet),
             &|id| shared::pets::de_item(id).is_some(),
             &|id| shared::pets::nome_do_item(id).unwrap_or_default(),
             Some((vox, solido)),
@@ -262,12 +298,13 @@ impl PetsUi {
         estilo::texto(
             baixo.x + 90.0 * f,
             baixo.y + 25.0 * f,
-            "Compradas na Loja e instaladas pela bolsa. O Removedor devolve os slots.",
+            "Toque num slot livre para escolher uma skill da bolsa.",
             13,
             estilo::SUAVE,
         );
         let abertos = shared::pets::slots_de_skill(nivel);
         let sw = (baixo.w - 28.0 * f - 20.0 * f) / 3.0;
+        let mut abriu_skill_agora = false;
         for i in 0..3 {
             let r = Rect::new(
                 baixo.x + 14.0 * f + i as f32 * (sw + 10.0 * f),
@@ -310,13 +347,132 @@ impl PetsUi {
                     estilo::texto_centro(
                         r.center().x,
                         r.center().y + 6.0 * f,
-                        "Slot livre",
+                        "Slot livre · toque para escolher",
                         15,
                         estilo::SUAVE,
                     );
+                    if clique && r.contains(mouse) {
+                        self.skill_slot_escolhido = Some(i);
+                        self.rolagem_skills.zera();
+                        abriu_skill_agora = true;
+                    }
                 }
             }
         }
+        if let Some(skill_slot) = self.skill_slot_escolhido.filter(|_| !abriu_skill_agora) {
+            if let Some(msg) = self.escolher_skill(p, f, bolsa, &d, skill_slot) {
+                pedido = Some(msg);
+            }
+        }
+        pedido
+    }
+
+    fn escolher_skill(
+        &mut self,
+        painel: Rect,
+        f: f32,
+        bolsa: &[InventorySlot],
+        pet: &PetData,
+        skill_slot: usize,
+    ) -> Option<ClientMessage> {
+        crate::hud_layout::escurece(0.65);
+        let largura = (510.0 * f).min(painel.w - 24.0);
+        let altura = (420.0 * f).min(painel.h - 24.0);
+        let r = Rect::new(
+            painel.center().x - largura * 0.5,
+            painel.center().y - altura * 0.5,
+            largura,
+            altura,
+        );
+        estilo::painel_destaque(r, estilo::OURO);
+        estilo::texto_forte(
+            r.x + 16.0 * f,
+            r.y + 32.0 * f,
+            &format!("Skill para o slot {}", skill_slot + 1),
+            20,
+            estilo::OURO,
+        );
+        let fechar = Rect::new(r.x + r.w - 48.0 * f, r.y + 8.0 * f, 38.0 * f, 36.0 * f);
+        if crate::ui::botao(fechar, "X", true) {
+            self.skill_slot_escolhido = None;
+            return None;
+        }
+        let disponiveis: Vec<_> = bolsa
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                if item.qty == 0 || pet.skills.contains(&item.item_id) {
+                    return None;
+                }
+                shared::pets::skill(item.item_id).map(|skill| (i, item.qty, skill))
+            })
+            .collect();
+        let area = Rect::new(
+            r.x + 14.0 * f,
+            r.y + 52.0 * f,
+            r.w - 28.0 * f,
+            r.h - 66.0 * f,
+        );
+        if disponiveis.is_empty() {
+            estilo::texto_ajustado(
+                "Você não tem skills disponíveis na bolsa. Elas podem ser compradas na Loja.",
+                area.x + 8.0 * f,
+                area.y + 34.0 * f,
+                area.w - 16.0 * f,
+                15,
+                estilo::SUAVE,
+            );
+            return None;
+        }
+        let passo = 54.0 * f;
+        let total = disponiveis.len() as f32 * passo;
+        let toque = self.rolagem_skills.quadro(area, total, passo);
+        let mut pedido = None;
+        crate::rolagem::recortar(Some(area));
+        for (n, (item_slot, quantidade, skill)) in disponiveis.iter().enumerate() {
+            let linha = Rect::new(
+                area.x,
+                area.y + n as f32 * passo - self.rolagem_skills.pos,
+                area.w - 10.0 * f,
+                48.0 * f,
+            );
+            if linha.y + linha.h < area.y || linha.y > area.y + area.h {
+                continue;
+            }
+            estilo::cartao(linha, false, toque.is_some_and(|p| linha.contains(p)));
+            estilo::texto_forte(
+                linha.x + 12.0 * f,
+                linha.y + 21.0 * f,
+                skill.nome,
+                16,
+                estilo::TEXTO,
+            );
+            estilo::texto_ajustado(
+                skill.descricao,
+                linha.x + 12.0 * f,
+                linha.y + 41.0 * f,
+                linha.w - 100.0 * f,
+                13,
+                estilo::VERDE,
+            );
+            estilo::texto(
+                linha.x + linha.w - 70.0 * f,
+                linha.y + 28.0 * f,
+                &format!("×{quantidade}"),
+                14,
+                estilo::OURO,
+            );
+            if toque.is_some_and(|p| linha.contains(p) && area.contains(p)) {
+                pedido = Some(ClientMessage::PetSkillEquip {
+                    item_slot: *item_slot as u16,
+                    pet_slot: self.selecionado as u8,
+                    skill_slot: skill_slot as u8,
+                });
+                self.skill_slot_escolhido = None;
+            }
+        }
+        crate::rolagem::recortar(None);
+        self.rolagem_skills.desenha(area, total);
         pedido
     }
 }
@@ -370,8 +526,14 @@ pub async fn previa(vox: &VoxCache, solido: &Material) {
     };
     let bolsa = vec![
         item(shared::item_id::RACAO_DE_PET, 7),
-        item(shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2), 3),
-        item(shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1), 1),
+        item(
+            shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2),
+            3,
+        ),
+        item(
+            shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 1),
+            1,
+        ),
         item(
             shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3),
             1,

@@ -43,7 +43,8 @@ cair mais que o que ela pede em 100, senão o gargalo muda de lugar sozinho:
 | Pó Cintilante | 1 | 3% |
 
 **A chave não cai da pedra nem de mob.** Escama, Garra, Chifre e Couro saem
-só de chefe, na cor da faixa do conteúdo, com a chance caindo conforme sobe —
+de chefe e como recompensa única de algumas missões. Nos chefes, a cor segue
+a faixa do conteúdo e a chance cai conforme sobe —
 chefe de dungeon/raid 30% cinza (até 19), 10% verde (20–39), 6% azul (40–59),
 3% épica (60–79), 1% lendária (80+); chefe do mundo 12% no início e depois
 3/2/1/0,3%.
@@ -126,12 +127,12 @@ e vira **matéria-prima de progressão**.
   `CraftResultado` diz o motivo da recusa ("faltam: Aço 12/30").
 - **Cliente:** painel de Craft (abas Arma/Secundária/Armadura/Acessório,
   ingredientes com tem/precisa, botão Criar), aberto pelo HUD — sem tecla.
-- **Material roxo continua sem fonte** até a síntese de cor, então a receita
-  Épica existe mas ainda não se cumpre.
+- **Material roxo vem da síntese de cor** na aba Materiais do Craft; as receitas Épicas
+  podem ser cumpridas juntando material azul e os custos da síntese.
 
-## O que ainda não existe no código
+## Síntese e outras formas de obter materiais
 
-- ~~A síntese de cor~~ **existe desde 18/09/2026**: aba **Combinar** do Craft
+- A síntese de cor fica na aba **Materiais** do Craft
   (`shared::combinar`). Material: 10 → 1 garantido, com o cobre, o darksteel e
   o pó da tabela acima (azul → roxo no valor extrapolado). Chave (Escama,
   Garra, Chifre, Couro): 5 → 1 da cor de cima com **10% em todo degrau**, até

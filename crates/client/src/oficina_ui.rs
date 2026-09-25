@@ -17,6 +17,7 @@ use shared::{item_id, InventorySlot};
 
 use crate::craft_ui::tem;
 use crate::hud_estilo::{self as estilo, u};
+use crate::vox::VoxCache;
 
 const LINHA: f32 = 44.0;
 const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
@@ -197,6 +198,19 @@ pub fn texto_do_resultado(
     )
 }
 
+pub fn texto_da_sintese(
+    tentativas: u16,
+    criados: u16,
+    saida: &str,
+    motivo: &str,
+) -> (String, bool) {
+    if tentativas == 0 {
+        (format!("Não criou: {motivo}"), false)
+    } else {
+        (format!("Craft de material: {criados}x {saida}!"), true)
+    }
+}
+
 // ────────────────────────────── desenho ─────────────────────────────────
 
 #[derive(Default)]
@@ -269,10 +283,22 @@ fn linha_de_custo(
     t: u32,
     precisa: u32,
     onde: &mut Option<u16>,
+    palco: Option<(&VoxCache, &Material)>,
 ) {
-    crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0);
-    estilo::texto_ajustado(nome, d.x + u(44.0), y + u(20.0), d.w - u(210.0), 15, estilo::TEXTO);
-    let txt = format!("{}/{}", crate::bolsa::milhar(t as u64), crate::bolsa::milhar(precisa as u64));
+    crate::bolsa::icone_do_item_com(Rect::new(d.x + u(6.0), y, u(30.0), u(30.0)), id, 1.0, palco);
+    estilo::texto_ajustado(
+        nome,
+        d.x + u(44.0),
+        y + u(20.0),
+        d.w - u(210.0),
+        15,
+        estilo::TEXTO,
+    );
+    let txt = format!(
+        "{}/{}",
+        crate::bolsa::milhar(t as u64),
+        crate::bolsa::milhar(precisa as u64)
+    );
     let cor = if t >= precisa { VERDE } else { VERMELHO };
     estilo::texto(
         d.x + d.w - estilo::medir(&txt, 15) - u(50.0),
@@ -287,6 +313,15 @@ fn linha_de_custo(
 }
 
 impl Oficina {
+    pub fn seleciona_grupo(&mut self, item_id: u16, grau: u8, tier: u8) {
+        self.sel_grupo = Some((item_id, grau, tier));
+        self.rolagem.zera();
+    }
+    pub fn seleciona_receita(&mut self, entrada: u16) {
+        self.sel_receita = Some(entrada);
+        self.rolagem.zera();
+    }
+
     pub fn trocou_de_aba(&mut self) {
         self.rolagem.zera();
     }
@@ -299,8 +334,14 @@ impl Oficina {
         slots: &[InventorySlot],
         nomes: &HashMap<u16, String>,
         nivel: u32,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
-        let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+        let nome = |id: u16| {
+            nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"))
+        };
         let chave = |g: &Grupo| (g.item_id, g.grau, g.tier);
         fundo_da_lista(lista);
         let gs = grupos(slots);
@@ -308,10 +349,25 @@ impl Oficina {
         let clique = self.rolagem.quadro(lista, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
         if gs.is_empty() {
-            estilo::texto(lista.x + u(10.0), lista.y + u(24.0), "Nenhuma peça na bolsa.", 14, estilo::SUAVE);
-            estilo::texto(lista.x + u(10.0), lista.y + u(44.0), "Crie no Craft ou guarde as que caírem.", 13, estilo::SUAVE);
+            estilo::texto(
+                lista.x + u(10.0),
+                lista.y + u(24.0),
+                "Nenhuma peça na bolsa.",
+                14,
+                estilo::SUAVE,
+            );
+            estilo::texto(
+                lista.x + u(10.0),
+                lista.y + u(44.0),
+                "Crie no Craft ou guarde as que caírem.",
+                13,
+                estilo::SUAVE,
+            );
         }
-        if self.sel_grupo.is_none_or(|s| !gs.iter().any(|g| chave(g) == s)) {
+        if self
+            .sel_grupo
+            .is_none_or(|s| !gs.iter().any(|g| chave(g) == s))
+        {
             self.sel_grupo = gs.first().map(chave);
         }
         let mouse = Vec2::from(mouse_position());
@@ -324,9 +380,25 @@ impl Oficina {
             let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
             let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_grupo == Some(chave(g)), sobre);
-            crate::bolsa::icone_do_item(Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)), g.item_id, 1.0);
-            let cor = if g.fundivel(slots) { estilo::TEXTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&nome(g.item_id), linha.x + u(44.0), linha.y + u(18.0), linha.w - u(100.0), 15, cor);
+            crate::bolsa::icone_do_item_com(
+                Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)),
+                g.item_id,
+                1.0,
+                palco,
+            );
+            let cor = if g.fundivel(slots) {
+                estilo::TEXTO
+            } else {
+                estilo::SUAVE
+            };
+            estilo::texto_ajustado(
+                &nome(g.item_id),
+                linha.x + u(44.0),
+                linha.y + u(18.0),
+                linha.w - u(100.0),
+                15,
+                cor,
+            );
             estilo::texto(
                 linha.x + u(44.0),
                 linha.y + u(35.0),
@@ -340,7 +412,13 @@ impl Oficina {
                 cor_da_cor(g.grau),
             );
             if motivo_aprimorar(g, slots, nivel).is_none() {
-                estilo::texto(linha.x + linha.w - u(48.0), linha.y + u(26.0), "pronto", 12, VERDE);
+                estilo::texto(
+                    linha.x + linha.w - u(48.0),
+                    linha.y + u(26.0),
+                    "pronto",
+                    12,
+                    VERDE,
+                );
             }
             if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_grupo = Some(chave(g));
@@ -353,16 +431,28 @@ impl Oficina {
         let (grau_novo, tier_novo) = resultado(g);
         let escolhidas = g.escolhidas(slots);
         let titulo = if g.sobe_de_cor() {
-            format!("{} · {} para {}", nome(g.item_id), nome_da_cor(g.grau), nome_da_cor(grau_novo))
+            format!(
+                "{} · {} para {}",
+                nome(g.item_id),
+                nome_da_cor(g.grau),
+                nome_da_cor(grau_novo)
+            )
         } else {
             format!("{} · {}", nome(g.item_id), nome_da_cor(g.grau))
         };
-        estilo::texto_ajustado(&titulo, d.x + u(6.0), d.y + u(22.0), d.w - u(12.0), 19, estilo::OURO);
+        estilo::texto_ajustado(
+            &titulo,
+            d.x + u(6.0),
+            d.y + u(22.0),
+            d.w - u(12.0),
+            19,
+            estilo::OURO,
+        );
         let cy = d.y + u(44.0);
         for k in 0..2 {
             let r = Rect::new(d.x + u(6.0) + k as f32 * u(70.0), cy, u(60.0), u(60.0));
             let tem_peca = escolhidas.len() > k;
-            crate::bolsa::icone_do_item(r, g.item_id, if tem_peca { 1.0 } else { 0.25 });
+            crate::bolsa::icone_do_item_com(r, g.item_id, if tem_peca { 1.0 } else { 0.25 }, palco);
             let mut rot = format!("T {}", romano(g.tier));
             if let Some(&i) = escolhidas.get(k) {
                 if refino(slots, i) > 0 {
@@ -373,7 +463,7 @@ impl Oficina {
         }
         seta(d.x + u(152.0), cy + u(30.0));
         let r = Rect::new(d.x + u(196.0), cy, u(60.0), u(60.0));
-        crate::bolsa::icone_do_item(r, g.item_id, 1.0);
+        crate::bolsa::icone_do_item_com(r, g.item_id, 1.0, palco);
         estilo::texto(
             r.x,
             r.y + r.h + u(16.0),
@@ -383,7 +473,10 @@ impl Oficina {
         );
         let (l1, l2) = if g.sobe_de_cor() {
             (
-                format!("Duas Tier IV +{} viram uma da cor de cima,", forja::REFINO_PARA_COR),
+                format!(
+                    "Duas Tier IV +{} viram uma da cor de cima,",
+                    forja::REFINO_PARA_COR
+                ),
                 "no Tier I, com os atributos fixos da nova cor.".to_string(),
             )
         } else {
@@ -413,6 +506,7 @@ impl Oficina {
             tem(slots, item_id::COPPER),
             cobre,
             &mut self.onde_obter,
+            palco,
         );
         let m = motivo_aprimorar(g, slots, nivel);
         let b = Rect::new(d.x + d.w - u(160.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
@@ -435,8 +529,15 @@ impl Oficina {
         d: Rect,
         slots: &[InventorySlot],
         nomes: &HashMap<u16, String>,
+        materiais: bool,
+        palco: Option<(&VoxCache, &Material)>,
     ) -> Option<ClientMessage> {
-        let nome = |id: u16| nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"));
+        let nome = |id: u16| {
+            nomes
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| format!("item {id}"))
+        };
         let t = |id: u16| tem(slots, id);
         // ── filtro: a barra come a primeira faixa da lista ──
         let filtro = Rect::new(lista.x, lista.y, lista.w - u(12.0), u(26.0));
@@ -446,7 +547,10 @@ impl Oficina {
             lista.w,
             (lista.h - u(32.0)).max(u(40.0)),
         );
-        let todas = receitas(slots);
+        let todas: Vec<_> = receitas(slots)
+            .into_iter()
+            .filter(|r| (r.chance == 100) == materiais)
+            .collect();
         let quantas_dao = todas
             .iter()
             .filter(|r| combinar::vezes_possiveis(r, &t) > 0)
@@ -470,7 +574,11 @@ impl Oficina {
             .collect();
         if rs.is_empty() {
             estilo::texto_ajustado(
-                "Nada pronto pra combinar agora. Toque de novo pra ver a lista inteira.",
+                if materiais {
+                    "Nada pronto pra criar agora. Toque de novo pra ver a lista inteira."
+                } else {
+                    "Nada pronto pra combinar agora. Toque de novo pra ver a lista inteira."
+                },
                 lista.x + u(10.0),
                 lista.y + u(26.0),
                 lista.w - u(24.0),
@@ -500,19 +608,45 @@ impl Oficina {
             let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
             let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
             realce(linha, self.sel_receita == Some(r.entrada), sobre);
-            crate::bolsa::icone_do_item(Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)), r.entrada, 1.0);
+            crate::bolsa::icone_do_item_com(
+                Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)),
+                r.entrada,
+                1.0,
+                palco,
+            );
             let pode = combinar::vezes_possiveis(r, &t) > 0;
-            let cor = if t(r.entrada) > 0 { estilo::TEXTO } else { estilo::SUAVE };
-            estilo::texto_ajustado(&nome(r.entrada), linha.x + u(44.0), linha.y + u(18.0), linha.w - u(100.0), 15, cor);
+            let cor = if t(r.entrada) > 0 {
+                estilo::TEXTO
+            } else {
+                estilo::SUAVE
+            };
+            estilo::texto_ajustado(
+                &nome(r.entrada),
+                linha.x + u(44.0),
+                linha.y + u(18.0),
+                linha.w - u(100.0),
+                15,
+                cor,
+            );
             estilo::texto(
                 linha.x + u(44.0),
                 linha.y + u(35.0),
-                &format!("{} por 1 · {}% · tem {}", r.qtd, r.chance, t(r.entrada)),
+                &if r.chance == 100 {
+                    format!("{} por 1 · garantido · tem {}", r.qtd, t(r.entrada))
+                } else {
+                    format!("{} por 1 · {}% · tem {}", r.qtd, r.chance, t(r.entrada))
+                },
                 12,
                 estilo::SUAVE,
             );
             if pode {
-                estilo::texto(linha.x + linha.w - u(48.0), linha.y + u(26.0), "pronto", 12, VERDE);
+                estilo::texto(
+                    linha.x + linha.w - u(48.0),
+                    linha.y + u(26.0),
+                    "pronto",
+                    12,
+                    VERDE,
+                );
             }
             if clique.is_some_and(|c| linha.contains(c)) {
                 self.sel_receita = Some(r.entrada);
@@ -523,18 +657,58 @@ impl Oficina {
         let r = rs.iter().find(|r| Some(r.entrada) == self.sel_receita)?;
         // Detalhe: N da cor → 1 da de cima, a chance e o que cada tentativa cobra.
         let cy = d.y + u(8.0);
-        crate::bolsa::icone_do_item(Rect::new(d.x + u(6.0), cy, u(56.0), u(56.0)), r.entrada, 1.0);
-        estilo::texto(d.x + u(70.0), cy + u(36.0), &format!("{}x", r.qtd), 17, estilo::TEXTO);
+        crate::bolsa::icone_do_item_com(
+            Rect::new(d.x + u(6.0), cy, u(56.0), u(56.0)),
+            r.entrada,
+            1.0,
+            palco,
+        );
+        estilo::texto(
+            d.x + u(70.0),
+            cy + u(36.0),
+            &format!("{}x", r.qtd),
+            17,
+            estilo::TEXTO,
+        );
         seta(d.x + u(108.0), cy + u(28.0));
-        crate::bolsa::icone_do_item(Rect::new(d.x + u(146.0), cy, u(56.0), u(56.0)), r.saida, 1.0);
-        estilo::texto_ajustado(&nome(r.saida), d.x + u(210.0), cy + u(24.0), d.w - u(216.0), 16, estilo::OURO);
+        crate::bolsa::icone_do_item_com(
+            Rect::new(d.x + u(146.0), cy, u(56.0), u(56.0)),
+            r.saida,
+            1.0,
+            palco,
+        );
+        estilo::texto_ajustado(
+            &nome(r.saida),
+            d.x + u(210.0),
+            cy + u(24.0),
+            d.w - u(216.0),
+            16,
+            estilo::OURO,
+        );
         let (chance, cor) = if r.chance >= 100 {
             ("sempre dá certo".to_string(), VERDE)
         } else {
             (format!("{}% por tentativa", r.chance), AMARELO)
         };
-        estilo::texto_ajustado(&chance, d.x + u(210.0), cy + u(46.0), d.w - u(216.0), 14, cor);
-        estilo::texto(d.x + u(6.0), d.y + u(92.0), "Cada tentativa gasta", 15, estilo::TEXTO);
+        estilo::texto_ajustado(
+            &chance,
+            d.x + u(210.0),
+            cy + u(46.0),
+            d.w - u(216.0),
+            14,
+            cor,
+        );
+        estilo::texto(
+            d.x + u(6.0),
+            d.y + u(92.0),
+            if r.chance == 100 {
+                "Cada síntese gasta"
+            } else {
+                "Cada tentativa gasta"
+            },
+            15,
+            estilo::TEXTO,
+        );
         let mut y = d.y + u(104.0);
         for (id, custo) in [
             (r.entrada, r.qtd),
@@ -545,25 +719,59 @@ impl Oficina {
             if custo == 0 {
                 continue;
             }
-            linha_de_custo(d, y, id, &nome(id), t(id), custo, &mut self.onde_obter);
+            linha_de_custo(
+                d,
+                y,
+                id,
+                &nome(id),
+                t(id),
+                custo,
+                &mut self.onde_obter,
+                palco,
+            );
             y += u(36.0);
         }
         if r.chance < 100 {
-            estilo::texto(d.x + u(6.0), y + u(16.0), "Falhar consome tudo.", 13, estilo::SUAVE);
+            estilo::texto(
+                d.x + u(6.0),
+                y + u(16.0),
+                "Falhar consome tudo.",
+                13,
+                estilo::SUAVE,
+            );
         }
         let n = combinar::vezes_possiveis(r, &t);
         let b1 = Rect::new(d.x + d.w - u(160.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
         let b2 = Rect::new(d.x + d.w - u(320.0), d.y + d.h - u(48.0), u(150.0), u(38.0));
         if n == 0 {
-            estilo::texto(d.x + u(6.0), b1.y - u(10.0), "Falta material para uma tentativa.", 14, VERMELHO);
+            estilo::texto(
+                d.x + u(6.0),
+                b1.y - u(10.0),
+                "Falta material para uma tentativa.",
+                14,
+                VERMELHO,
+            );
         }
-        if crate::ui::botao(b1, "Combinar 1x", n > 0) {
+        if crate::ui::botao(
+            b1,
+            if r.chance == 100 {
+                "Sintetizar 1x"
+            } else {
+                "Combinar 1x"
+            },
+            n > 0,
+        ) {
             return Some(ClientMessage::Combinar {
                 entrada: r.entrada,
                 vezes: 1,
             });
         }
-        if n > 1 && crate::ui::botao(b2, &format!("Combinar {n}x"), true) {
+        let rotulo_tudo = if r.chance == 100 {
+            format!("Sintetizar {n}x")
+        } else {
+            format!("Combinar {n}x")
+        };
+        if n > 1 && crate::ui::botao(b2, &rotulo_tudo, true) {
             return Some(ClientMessage::Combinar {
                 entrada: r.entrada,
                 vezes: n as u16,
@@ -610,9 +818,20 @@ mod tests {
             peca(k, 2, 1, 0),
         ];
         let gs = grupos(&slots);
-        assert_eq!(gs[0], Grupo { item_id: k, grau: 1, tier: 1, slots: vec![2, 4, 0] });
+        assert_eq!(
+            gs[0],
+            Grupo {
+                item_id: k,
+                grau: 1,
+                tier: 1,
+                slots: vec![2, 4, 0]
+            }
+        );
         assert!(gs[0].fundivel(&slots));
-        assert!(gs[1..].iter().all(|g| !g.fundivel(&slots)), "a Tier II e a verde estao sozinhas");
+        assert!(
+            gs[1..].iter().all(|g| !g.fundivel(&slots)),
+            "a Tier II e a verde estao sozinhas"
+        );
         assert_eq!(refino_perdido(&gs[0], &slots), 2);
         assert_eq!(
             motivo_aprimorar(&gs[0], &slots, 1).as_deref(),
@@ -630,27 +849,26 @@ mod tests {
         ];
         let g = grupos(&slots)[0].clone();
         assert!(!g.fundivel(&slots), "so' uma +8");
-        assert!(motivo_aprimorar(&g, &slots, 30).unwrap().contains("você tem 1"));
+        assert!(motivo_aprimorar(&g, &slots, 30)
+            .unwrap()
+            .contains("você tem 1"));
         slots[0] = peca(k, 1, 4, 10);
         let g = grupos(&slots)[0].clone();
         assert_eq!(g.escolhidas(&slots), vec![1, 0]);
         assert_eq!(resultado(&g), (2, 1));
-        assert!(motivo_aprimorar(&g, &slots, 19).unwrap().contains("nível 20"));
+        assert!(motivo_aprimorar(&g, &slots, 19)
+            .unwrap()
+            .contains("nível 20"));
         assert_eq!(motivo_aprimorar(&g, &slots, 20), None);
     }
 
     #[test]
     fn combinar_mostra_primeiro_o_que_da_pra_tentar() {
-        // Material comum NAO e' mais combinavel (so' chave, pet e montaria —
-        // decisao de 22/09/2026, ver `shared::combinar`), entao o Aco nao
-        // entra na lista. O que ordena continua sendo "da' pra tentar agora".
+        // Material comum aparece na lista; quem pode agir vem primeiro.
         let slots = vec![material(item_id::HORN, 7), material(item_id::SCALE, 2)];
         let rs = receitas(&slots);
         assert_eq!(rs[0].entrada, item_id::HORN, "chifre: 7 pagam uma");
-        assert!(
-            rs.iter().all(|r| r.entrada != item_id::STEEL),
-            "material comum voltou pra aba de combinar"
-        );
+        assert!(rs.iter().any(|r| r.entrada == item_id::STEEL));
         assert_eq!(rs.len(), combinar::receitas().len());
     }
 
@@ -689,8 +907,12 @@ mod tests {
 
     #[test]
     fn texto_do_resultado_diz_quantas_deram_certo() {
-        assert!(texto_do_resultado(3, 1, "Chifre", "").0.contains("1x Chifre"));
+        assert!(texto_do_resultado(3, 1, "Chifre", "")
+            .0
+            .contains("1x Chifre"));
         assert!(!texto_do_resultado(3, 0, "Chifre", "").1);
-        assert!(texto_do_resultado(0, 0, "", "faltam: x").0.contains("faltam"));
+        assert!(texto_do_resultado(0, 0, "", "faltam: x")
+            .0
+            .contains("faltam"));
     }
 }

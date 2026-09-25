@@ -259,9 +259,7 @@ impl MagicaUi {
         let larg = (rod.w - folga * 2.0) / 3.0;
         (
             y + alto + 15.0 * f,
-            [0, 1, 2].map(|k| {
-                Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)
-            }),
+            [0, 1, 2].map(|k| Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)),
         )
     }
 
@@ -301,7 +299,13 @@ impl MagicaUi {
             (fim - tarja.x - pad).max(0.0),
             5.0 * f,
         );
-        Pecas { relogio, ilhota, barra, mais, sair }
+        Pecas {
+            relogio,
+            ilhota,
+            barra,
+            mais,
+            sair,
+        }
     }
 
     /// A FAIXA DE PVP, entre a área e o minimapa.
@@ -325,9 +329,8 @@ impl MagicaUi {
         let z = crate::hud_layout::atual();
         let r = crate::hud_layout::faixa_pvp_rect(&z);
         // O Vec2 do shared é de outra versão do glam.
-        let seguro = eu.is_some_and(|p| {
-            shared::magica::e_porto_seguro(::glam::Vec2::new(p.x, p.y))
-        });
+        let seguro =
+            eu.is_some_and(|p| shared::magica::e_porto_seguro(::glam::Vec2::new(p.x, p.y)));
         let (texto, cor) = if seguro {
             ("Zona segura · sem PvP", VERDE)
         } else {
@@ -376,14 +379,24 @@ impl MagicaUi {
         // outra vê-se de canto de olho no meio de uma briga. Ela para onde os
         // botões começam — antes atravessava por baixo deles.
         let frac = (resta as f32 / shared::magica::TETO_S as f32).clamp(0.0, 1.0);
-        draw_rectangle(p.barra.x, p.barra.y, p.barra.w, p.barra.h, Color::new(1.0, 1.0, 1.0, 0.13));
+        draw_rectangle(
+            p.barra.x,
+            p.barra.y,
+            p.barra.w,
+            p.barra.h,
+            Color::new(1.0, 1.0, 1.0, 0.13),
+        );
         draw_rectangle(p.barra.x, p.barra.y, p.barra.w * frac, p.barra.h, cor);
 
         // A ILHOTA, NA COR DELA. São sete bônus; cor é o que o olho separa
         // sem ler. O nome e o multiplicador na mesma linha, porque a tarja
         // agora é larga e baixa em vez de estreita e alta.
         let (nome, mult, c) = match self.bonus() {
-            Some(b) => (b.nome(), format!("×{:.2}", b.multiplicador()), cor_do_bonus(b)),
+            Some(b) => (
+                b.nome(),
+                format!("×{:.2}", b.multiplicador()),
+                cor_do_bonus(b),
+            ),
             None => ("Ponte", "sem bônus".to_string(), SUAVE),
         };
         // O ponto da cor, colado no nome: um rótulo colorido some no fundo
@@ -391,7 +404,14 @@ impl MagicaUi {
         let cx = p.ilhota.x + 5.0 * f;
         draw_circle(cx, p.ilhota.y + 11.0 * f, 4.0 * f, c);
         let nx = cx + 9.0 * f;
-        estilo::texto_ajustado(nome, nx, p.ilhota.y + 15.0 * f, p.ilhota.w - 14.0 * f, 15, c);
+        estilo::texto_ajustado(
+            nome,
+            nx,
+            p.ilhota.y + 15.0 * f,
+            p.ilhota.w - 14.0 * f,
+            15,
+            c,
+        );
         estilo::texto_forte(nx, p.ilhota.y + 31.0 * f, &mult, 15, c);
 
         // ESTENDER SEM SAIR DO JOGO.
@@ -415,7 +435,10 @@ impl MagicaUi {
         if shared::magica::pode_entrar(e.fim_unix, agora_unix, total, 1).is_ok()
             && crate::ui::botao(p.mais, "+", true)
         {
-            pedido = Some(PedidoMagica::Entrar { entradas: 1, grau: e.grau_atual });
+            pedido = Some(PedidoMagica::Entrar {
+                entradas: 1,
+                grau: e.grau_atual,
+            });
         }
         // SAIR DA ILHA, daqui mesmo.
         //
@@ -468,7 +491,13 @@ impl MagicaUi {
 
         estilo::texto_forte(x, p.y + 32.0 * f, "Ilha Mágica", 20, OURO);
         let fechar = Rect::new(p.x + p.w - 44.0 * f, p.y + 8.0 * f, 36.0 * f, 34.0 * f);
-        estilo::texto_centro(fechar.center().x, fechar.center().y + 6.0 * f, "X", 18, estilo::TEXTO);
+        estilo::texto_centro(
+            fechar.center().x,
+            fechar.center().y + 6.0 * f,
+            "X",
+            18,
+            estilo::TEXTO,
+        );
 
         estilo::texto(
             x,
@@ -487,7 +516,11 @@ impl MagicaUi {
         let total = e.passes + e.gratis as u32;
 
         if e.dentro {
-            if ui::botao(Rect::new(rod.x, rod.y + 6.0 * f, rod.w, 38.0 * f), "Sair da ilha", true) {
+            if ui::botao(
+                Rect::new(rod.x, rod.y + 6.0 * f, rod.w, 38.0 * f),
+                "Sair da ilha",
+                true,
+            ) {
                 pedido = Some(PedidoMagica::Sair);
                 self.aberto = false;
             }
@@ -529,7 +562,11 @@ impl MagicaUi {
             // texto transbordou e os três se sobrepuseram — "Ilha Mágica
             // I⏎poder 75" invadindo "ha Mágica II". Visto em print do
             // emulador, que é o único jeito de ver isto.
-            let grau = if self.grau == 0 { e.grau_maximo } else { self.grau };
+            let grau = if self.grau == 0 {
+                e.grau_maximo
+            } else {
+                self.grau
+            };
             let (linha, fila) = Self::faixa_dos_degraus(rod, f);
             for (k, nv) in shared::magica::NIVEIS.iter().enumerate() {
                 let r = fila[k];
@@ -716,10 +753,7 @@ mod testes {
             // era ali que o texto batia no "Grátis hoje".
             let fim = fila[0].y + fila[0].h;
             assert!(linha > fim, "{w}x{f}: o detalhe sobe em cima dos botões");
-            assert!(
-                linha < rod.y,
-                "{w}x{f}: o detalhe desce em cima do rodapé"
-            );
+            assert!(linha < rod.y, "{w}x{f}: o detalhe desce em cima do rodapé");
         }
     }
 
@@ -752,10 +786,8 @@ mod testes {
                     "f={f}: a peça {na} vaza a tarja"
                 );
                 for (nb, b) in todas.iter().skip(i + 1) {
-                    let cruza = a.x < b.x + b.w
-                        && b.x < a.x + a.w
-                        && a.y < b.y + b.h
-                        && b.y < a.y + a.h;
+                    let cruza =
+                        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
                     assert!(!cruza, "f={f}: {na} e {nb} se sobrepõem");
                 }
             }
@@ -835,7 +867,10 @@ mod testes {
         // Segunda vez, PEDINDO: abre.
         ui.pedir_abertura();
         ui.recebe(estado(false), 2.0);
-        assert!(ui.aberto(), "o pedido tem que abrir, e era isto que faltava");
+        assert!(
+            ui.aberto(),
+            "o pedido tem que abrir, e era isto que faltava"
+        );
 
         // E o pedido é de uso único: não fica valendo pro estado seguinte.
         ui.fechar();

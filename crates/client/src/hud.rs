@@ -397,7 +397,12 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
     let raio = r.w * 0.5;
     let cor = Color::new(0.35, 0.86, 1.0, 1.0);
     let pronto = restante <= 0.0;
-    let e = estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !pronto, false);
+    let e = estilo::estado(
+        sobre,
+        is_mouse_button_down(MouseButton::Left),
+        !pronto,
+        false,
+    );
     estilo::botao_redondo(c, raio, cor, e, pronto);
     // Duas marcas inclinadas de impulso; desenho proprio pra nao depender de
     // glifo ausente na fonte nem de um asset novo.
@@ -420,10 +425,23 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
     if !pronto {
         let fracao = (restante / duracao.max(0.01)).clamp(0.0, 1.0);
         estilo::setor(c, raio - 3.0, fracao, Color::new(0.0, 0.0, 0.0, 0.62));
-        estilo::arco(c, raio - 2.0, -std::f32::consts::FRAC_PI_2, fracao, 2.0, estilo::OURO);
+        estilo::arco(
+            c,
+            raio - 2.0,
+            -std::f32::consts::FRAC_PI_2,
+            fracao,
+            2.0,
+            estilo::OURO,
+        );
         let texto = format!("{restante:.1}");
-        estilo::texto_sombra(c.x - estilo::medir_forte(&texto, 22) * 0.5,
-            c.y + 8.0, &texto, 22, WHITE, true);
+        estilo::texto_sombra(
+            c.x - estilo::medir_forte(&texto, 22) * 0.5,
+            c.y + 8.0,
+            &texto,
+            22,
+            WHITE,
+            true,
+        );
     }
     layout::chip(r, "CTRL");
     pronto && sobre && crate::foco::clique()
@@ -466,10 +484,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
         );
     }
     layout::chip(r, "ESP");
-    (
-        sobre && crate::foco::clique(),
-        segurando,
-    )
+    (sobre && crate::foco::clique(), segurando)
 }
 
 /// A bateria no canto inferior esquerdo, sempre na tela: liga o modo

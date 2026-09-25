@@ -58,7 +58,11 @@ pub fn desenha(nos: impl Iterator<Item = Vec3>, cam: &Camera3D, agora: f32) {
         // fase é a mesma em toda máquina (nada de aleatório por sessão).
         let fase = (p.x * 0.7 + p.z * 1.3).sin() * 3.0;
         let dir = vec3((p.x * 1.1).sin(), 0.0, (p.z * 0.9).cos()).normalize_or_zero();
-        let dir = if dir.length_squared() < 0.1 { Vec3::X } else { dir };
+        let dir = if dir.length_squared() < 0.1 {
+            Vec3::X
+        } else {
+            dir
+        };
         desenha_um(p, dir, fase, olho, agora);
     }
 }
@@ -151,7 +155,9 @@ fn lasca(base: Vec3, alta: f32, inclina: Vec3, t: f32) {
         let k = (0.25 + 0.55 * h + 0.75 * perto).min(1.0);
         let mut c = [0u8; 4];
         for i in 0..3 {
-            c[i] = (FRIO[i] + (ACESO[i] - FRIO[i]) * k).round().clamp(0.0, 255.0) as u8;
+            c[i] = (FRIO[i] + (ACESO[i] - FRIO[i]) * k)
+                .round()
+                .clamp(0.0, 255.0) as u8;
         }
         c[3] = 255;
         c
@@ -307,7 +313,10 @@ mod testes {
         // h=0 e h=1 serem o mesmo ponto —, e ai' as duas dao cheio.
         let no_meio = 1.6 * 0.5;
         assert!(tom(1.0, no_meio) > tom(0.0, no_meio));
-        assert!((tom(1.0, 0.0) - tom(0.0, 0.0)).abs() < 0.01, "a volta fecha");
+        assert!(
+            (tom(1.0, 0.0) - tom(0.0, 0.0)).abs() < 0.01,
+            "a volta fecha"
+        );
         // A faixa da' a volta: no instante em que ela sai pelo topo, ja'
         // esta' entrando pelo pe' — energia subindo nao tem fim.
         let quase_fim = tom(0.02, 1.6 * 0.995);
@@ -335,8 +344,7 @@ mod testes {
 /// profundidade (ver o teste em `personagens.rs`).
 #[cfg(debug_assertions)]
 pub async fn previa(solido: &Material) {
-    let saida =
-        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-energia".into());
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-energia".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = macroquad::texture::render_target_ex(

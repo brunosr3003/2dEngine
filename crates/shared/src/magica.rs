@@ -35,6 +35,30 @@
 
 use glam::Vec2;
 
+/// Trocas do Mercador Magico: (item recebido, quantidade, moedas por pacote).
+/// Uma tabela unica para a loja no cliente e a validacao no servidor.
+pub const TROCAS: &[(u16, u32, u32)] = &[
+    (crate::item_id::GLITTERING_POWDER, 1, 12),
+    // Ritmo observado pelo dono: ~100 moedas/min. Itens da loja cash
+    // seguem 100 moedas por TP para nao sair em poucos minutos de farm.
+    (crate::item_id::COPPER, 1_000, 200),
+    (crate::item_id::DARKSTEEL, 200, 600),
+    (crate::item_id::SCALE, 1, 2_500),
+    (crate::item_id::CLAW, 1, 2_500),
+    (crate::item_id::HORN, 1, 2_500),
+    (crate::item_id::HIDE, 1, 2_500),
+    (crate::item_id::PERGAMINHO_INVOCA_CHAVE, 1, 12_000),
+    (crate::item_id::PERGAMINHO_INVOCA_PET, 1, 25_000),
+    (crate::item_id::PERGAMINHO_INVOCA_MONTARIA, 1, 50_000),
+    (crate::item_id::PASSE_MAGICO, 1, 5_000),
+];
+
+pub const LOJA_DE_TROCAS: u32 = 90_475;
+
+pub fn posto_de_trocas() -> Vec2 {
+    CHEGADA + Vec2::new(22.0, 3.0)
+}
+
 /// O nome da zona do PRIMEIRO nível. Os outros são `ilha_magica_2`, `_3`…
 ///
 /// Ver `NIVEIS`: cada nível é uma ZONA própria, e não uma instância.

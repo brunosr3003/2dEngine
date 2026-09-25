@@ -230,7 +230,11 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
             });
             let extra = [0, 1, 2, 3].map(|k| {
                 let (x, z) = cantos[k];
-                (onda_alcancavel(x, z), espuma_de(profs[k]), cor_da_agua(profs[k]))
+                (
+                    onda_alcancavel(x, z),
+                    espuma_de(profs[k]),
+                    cor_da_agua(profs[k]),
+                )
             });
             quad(&mut verts, &mut idx, pos, extra);
         }
