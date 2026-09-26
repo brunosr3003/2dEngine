@@ -1,6 +1,6 @@
 //! Menu → Sistema → Interface: o tamanho da interface (HUD e textos) e o modo
 //! economia de energia. No celular a tela e' densa e 100% fica miudo, entao o
-//! padrao la' e' 130%. Muda na hora e salva nas preferencias do personagem.
+//! padrao e' 160%. Muda na hora e salva nas preferencias do personagem.
 use macroquad::prelude::*;
 
 use crate::economia;
@@ -106,6 +106,7 @@ impl ConfigInterface {
             20,
             estilo::OURO,
         );
+        crate::sons::controle(Rect::new(r.x + r.w - 196.0*f, r.y + 6.0*f, 144.0*f, 34.0*f));
         let fechar = Rect::new(r.x + r.w - 44.0 * f, r.y + 8.0 * f, 36.0 * f, 36.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -299,6 +300,7 @@ impl ConfigInterface {
             20,
             estilo::OURO,
         );
+        crate::sons::controle(Rect::new(r.x + r.w - 196.0*f, r.y + 6.0*f, 144.0*f, 34.0*f));
         let fechar = Rect::new(r.x + r.w - 43.0 * f, r.y + 5.0 * f, 36.0 * f, 36.0 * f);
         estilo::texto_centro(
             fechar.center().x,

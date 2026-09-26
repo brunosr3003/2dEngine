@@ -36,13 +36,50 @@ fn janela(seguro: Rect, f: f32) -> Rect {
     )
 }
 
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-magica-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let mut ui = MagicaUi::default();
+    ui.na_zona_magica = true;
+    ui.recebe(
+        AvisoMagica::Estado {
+            grau_maximo: 2,
+            grau_atual: 1,
+            meu_nivel: 30,
+            passes: 0,
+            gratis: 0,
+            fim_unix: 1600,
+            dentro: true,
+            bonus: 255,
+        },
+        0.0,
+    );
+    ui.abrir();
+    for _ in 0..3 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+        ui.desenha(0.0, 1000);
+        unsafe { get_internal_gl().flush() };
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{saida}/magica.png"));
+        next_frame().await;
+    }
+}
+
 /// O RODAPÉ — onde mora o botão de entrar —, ancorado no fundo da janela.
 ///
 /// Fora do desenho porque é a medida que quebrou: com a janela em pixels
 /// crus e o texto em `f`, o conteúdo empurrava o botão pra fora e não havia
 /// como entrar na ilha. Ancorado ao fundo e testado, ele não tem como sair.
 fn rodape_de(p: Rect, f: f32, dentro: bool) -> Rect {
-    let alt = if dentro { 64.0 * f } else { 104.0 * f };
+    let _ = dentro;
+    let alt = 104.0 * f;
     Rect::new(
         p.x + 16.0 * f,
         p.y + p.h - alt - 10.0 * f,
@@ -156,6 +193,10 @@ impl MagicaUi {
     /// o melhor jeito de matar o jogador.
     pub fn recebe(&mut self, aviso: AvisoMagica, agora: f64) {
         match aviso {
+            AvisoMagica::AbrirPainel => {
+                self.grau = self.estado.as_ref().map_or(0, |e| e.grau_atual);
+                self.aberto = true;
+            }
             AvisoMagica::Estado {
                 grau_maximo,
                 grau_atual,
@@ -516,8 +557,45 @@ impl MagicaUi {
         let total = e.passes + e.gratis as u32;
 
         if e.dentro {
+            let grau = if self.grau == 0 {
+                e.grau_atual
+            } else {
+                self.grau
+            };
+            let (linha, fila) = Self::faixa_dos_degraus(rod, f);
+            for (k, nv) in shared::magica::NIVEIS.iter().enumerate() {
+                let liberado = e.grau_maximo >= nv.grau;
+                if grau == nv.grau {
+                    estilo::ret_arredondado(fila[k], 6.0, estilo::alfa(estilo::OURO, 0.22));
+                }
+                const ROMANO: [&str; 3] = ["I", "II", "III"];
+                if ui::botao(fila[k], ROMANO[k], liberado) && liberado {
+                    self.grau = nv.grau;
+                }
+            }
+            if let Some(nv) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) {
+                estilo::texto_centro(
+                    rod.center().x,
+                    linha,
+                    &format!(
+                        "{} · mobs nv {}-{} · poder {}",
+                        nv.nome,
+                        nv.mob.0,
+                        nv.mob.1,
+                        crate::bolsa::milhar(nv.poder() as u64)
+                    ),
+                    13,
+                    SUAVE,
+                );
+            }
+            let viajar = Rect::new(rod.x, rod.y + 5.0 * f, rod.w, 38.0 * f);
+            let pode_viajar = grau != e.grau_atual && grau > 0 && grau <= e.grau_maximo;
+            if ui::botao(viajar, "Trocar de ilha sem gastar passe", pode_viajar) && pode_viajar {
+                pedido = Some(PedidoMagica::Trocar { grau });
+                self.aberto = false;
+            }
             if ui::botao(
-                Rect::new(rod.x, rod.y + 6.0 * f, rod.w, 38.0 * f),
+                Rect::new(rod.x, rod.y + 51.0 * f, rod.w, 34.0 * f),
                 "Sair da ilha",
                 true,
             ) {
@@ -526,17 +604,21 @@ impl MagicaUi {
             }
             estilo::texto(
                 rod.x,
-                rod.y + 60.0 * f,
-                "Sair não para o relógio: o tempo continua correndo.",
+                rod.y + 100.0 * f,
+                "Trocar e sair não pausam o relógio.",
                 12,
                 SUAVE,
             );
         } else {
+            let retomar = shared::magica::resta(e.fim_unix, agora_unix) > 0;
             // Escolher 1, 2 ou 3 antes de ir: acumular é decisão do jogador,
             // e gastar três de uma vez sem ter pedido seria roubo.
             let bw = (rod.w - 16.0 * f) / 3.0;
             for n in 1u8..=3 {
                 let caixa = Rect::new(rod.x + (n - 1) as f32 * (bw + 8.0 * f), rod.y, bw, 32.0 * f);
+                if retomar {
+                    continue;
+                }
                 let pode = total >= n as u32;
                 estilo::botao(
                     caixa,
@@ -619,17 +701,31 @@ impl MagicaUi {
                 format!("Entrar — {n} passe(s)")
             };
             // Sem degrau liberado não há entrada: o portão é o nível.
-            let pode = total >= n as u32 && grau > 0;
+            let pode = (retomar || total >= n as u32) && grau > 0;
             let b = Rect::new(rod.x, rod.y + 40.0 * f, rod.w, 40.0 * f);
             // O destaque da trava de nível mira AQUI depois que o painel abre.
             crate::foco::marca(crate::foco::chave::MAGICA_ENTRAR, b);
-            if ui::botao(b, &rot, pode) && pode {
-                pedido = Some(PedidoMagica::Entrar { entradas: n, grau });
+            if ui::botao(
+                b,
+                if retomar {
+                    "Voltar sem gastar passe"
+                } else {
+                    &rot
+                },
+                pode,
+            ) && pode
+            {
+                pedido = Some(PedidoMagica::Entrar {
+                    entradas: if retomar { 0 } else { n },
+                    grau,
+                });
             }
             estilo::texto(
                 rod.x,
                 rod.y + 96.0 * f,
-                if pode {
+                if retomar {
+                    "Seu tempo continua correndo fora da ilha."
+                } else if pode {
                     "Cada entrada vale 30 min. As grátis voltam às 4h."
                 } else {
                     "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes."
@@ -707,6 +803,28 @@ impl MagicaUi {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn guia_abre_painel_dentro_sem_abrir_a_cada_estado() {
+        let mut ui = MagicaUi::default();
+        ui.recebe(
+            AvisoMagica::Estado {
+                grau_maximo: 2,
+                grau_atual: 1,
+                meu_nivel: 30,
+                passes: 0,
+                gratis: 0,
+                fim_unix: 1600,
+                dentro: true,
+                bonus: 255,
+            },
+            0.0,
+        );
+        assert!(!ui.aberto());
+        ui.recebe(AvisoMagica::AbrirPainel, 0.0);
+        assert!(ui.aberto());
+        assert_eq!(ui.grau, 1);
+    }
 
     /// O painel abre quando o jogador PEDE e não quando ele está jogando.
     ///

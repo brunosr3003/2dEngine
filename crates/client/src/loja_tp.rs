@@ -373,6 +373,7 @@ impl LojaTp {
                 Some(format!("Loja: {texto}"))
             }
             AvisoLoja::Montando { .. } => None,
+            AvisoLoja::MontariaCombate { .. } => None,
             AvisoLoja::Invocacao { .. } => None,
             AvisoLoja::Invocacoes { .. } => None,
         }
@@ -2267,6 +2268,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     ];
     for (id, tag, kind, p, flags) in elenco {
         metas.push(EntityMeta {
+            auras: 0,
             id: EntityId(id),
             tag,
             name: None,
@@ -2274,6 +2276,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             faction: None,
             kind,
             nivel: 10,
+            desafio: None,
             aparencia: 0,
         });
         estados.push(EntityState::quantize(

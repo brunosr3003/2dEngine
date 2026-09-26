@@ -33,6 +33,7 @@ pub enum Item {
     Forja,
     Encantar,
     Mapa,
+    Mobs,
     Aventuras,
     /// Calendario de presenca.
     Presenca,
@@ -116,6 +117,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
         "AVENTURA",
         &[
             (Item::Mapa, "Mapa", None),
+            (Item::Mobs, "Mobs", None),
             (Item::Aventuras, "Dungeons", None),
             (Item::MinhaIlha, "Minha Ilha", None),
             (Item::Montaria, "Montaria", None),
@@ -406,6 +408,7 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Forja => "forja",
         Item::Encantar => "encantar",
         Item::Mapa => "mapa",
+        Item::Mobs => "mobs",
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
         Item::GuardaRoupa => "ficha",
@@ -477,6 +480,7 @@ mod tests {
             Item::Forja,
             Item::Habilidades,
             Item::Mapa,
+            Item::Mobs,
             Item::Lojas,
             Item::Banco,
             Item::Mercado,

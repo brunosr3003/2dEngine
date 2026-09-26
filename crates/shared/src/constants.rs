@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 138;
+pub const PROTOCOL_VERSION: u16 = 146;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -310,7 +310,48 @@ pub const DOWNED_HP_MAX: i32 = 100;
 /// `shared::skills::Conjunto as usize`.
 pub const PROF_COUNT: usize = 4;
 
-/// Nivel de proficiencia dado XP acumulado (curva quadratica similar ao XP do player).
+/// Acima de 50, cada nivel pede 12% mais pratica que o anterior. A curva
+/// antiga ate' 50 fica intacta; o teto alto nao e' uma meta de temporada.
+pub const PROFICIENCY_LEVEL_CAP: u32 = 200;
+
+pub const fn proficiency_xp_for_level(level: u32) -> u64 {
+    let mut xp = 0u64;
+    let mut lvl = 1u32;
+    let mut need = 50u64;
+    while lvl < level && lvl < PROFICIENCY_LEVEL_CAP {
+        xp = xp.saturating_add(need);
+        lvl += 1;
+        need = if lvl > 50 {
+            need.saturating_mul(112).saturating_add(99) / 100
+        } else {
+            (lvl as u64) * 50
+        };
+    }
+    xp
+}
+
+pub const fn proficiency_xp_to_next(level: u32) -> u64 {
+    proficiency_xp_for_level(level.saturating_add(1))
+        .saturating_sub(proficiency_xp_for_level(level))
+}
+
+/// A morte tira 10% do custo do nivel atual; pode derrubar proficiencia.
+pub const fn proficiency_loss_on_death(xp: u64) -> u64 {
+    if xp == 0 {
+        return 0;
+    }
+    let nivel = proficiency_level(xp);
+    let perda = proficiency_xp_to_next(nivel) / 10;
+    if perda == 0 {
+        1
+    } else if perda > xp {
+        xp
+    } else {
+        perda
+    }
+}
+
+/// Nivel de proficiencia dado XP acumulado.
 pub const fn proficiency_level(prof_xp: u64) -> u32 {
     let mut lvl = 1u32;
     let mut need = 50u64;
@@ -318,12 +359,43 @@ pub const fn proficiency_level(prof_xp: u64) -> u32 {
     while rem >= need {
         rem -= need;
         lvl += 1;
-        need = (lvl as u64) * 50;
-        if lvl >= 100 {
+        if lvl >= PROFICIENCY_LEVEL_CAP {
             break;
         }
+        need = if lvl > 50 {
+            need.saturating_mul(112).saturating_add(99) / 100
+        } else {
+            (lvl as u64) * 50
+        };
     }
     lvl
+}
+
+#[cfg(test)]
+mod testes_proficiencia {
+    use super::*;
+
+    #[test]
+    fn curva_preserva_ate_50_e_desacelera_depois() {
+        assert_eq!(proficiency_xp_for_level(50), 61_250);
+        assert_eq!(proficiency_xp_to_next(50), 2_500);
+        assert_eq!(proficiency_level(67_665), 52);
+        assert!(proficiency_xp_to_next(70) > 20_000);
+        assert!(proficiency_xp_to_next(100) > 700_000);
+        assert!(proficiency_xp_for_level(115) > 30_000_000);
+        for n in [1, 49, 50, 51, 70, 100, 115] {
+            assert_eq!(proficiency_level(proficiency_xp_for_level(n)), n);
+        }
+    }
+
+    #[test]
+    fn morte_pode_derrubar_o_nivel_de_proficiencia() {
+        let inicio = proficiency_xp_for_level(52);
+        let perda = proficiency_loss_on_death(inicio);
+        assert!(perda > 0);
+        assert_eq!(proficiency_level(inicio - perda), 51);
+        assert_eq!(proficiency_loss_on_death(0), 0);
+    }
 }
 
 /// XP ganho por matar um inimigo (fallback — helpers por kind mais abaixo).
@@ -582,6 +654,8 @@ pub mod item_id {
     pub const PASSE_MAGICO: u16 = 466;
     /// Recompensa garantida de combate e coleta na Ilha Magica.
     pub const MOEDA_MAGICA: u16 = 475;
+    pub const ACESSORIO_PET_INICIO: u16 = 520;
+    pub const ACESSORIO_MONTARIA_INICIO: u16 = 528;
 
     pub const fn montaria_no_grau(base: u16, grau: u8) -> u16 {
         base + (if grau < 1 {
@@ -762,6 +836,8 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         CINTO => Some(EquipSlot::Belt),
         id if pet_de_id(id).is_some() => Some(EquipSlot::Pet),
         id if montaria_de_id(id).is_some() => Some(EquipSlot::Montaria),
+        520..=527 => Some(EquipSlot::AcessorioPet),
+        528..=535 => Some(EquipSlot::AcessorioMontaria),
         _ => None,
     }
 }
@@ -837,10 +913,12 @@ pub enum EquipSlot {
     /// A montaria (docs/MONTARIAS.md). E' nela que se monta, e a cor dela
     /// manda na velocidade.
     Montaria,
+    AcessorioPet,
+    AcessorioMontaria,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 11] = [
+    pub const TODOS: [EquipSlot; 13] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -852,6 +930,8 @@ impl EquipSlot {
         EquipSlot::Montaria,
         EquipSlot::Pet2,
         EquipSlot::Pet3,
+        EquipSlot::AcessorioPet,
+        EquipSlot::AcessorioMontaria,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -868,6 +948,8 @@ impl EquipSlot {
             EquipSlot::Pet2 => "pet2",
             EquipSlot::Pet3 => "pet3",
             EquipSlot::Montaria => "montaria",
+            EquipSlot::AcessorioPet => "acessorio_pet",
+            EquipSlot::AcessorioMontaria => "acessorio_montaria",
         }
     }
 
@@ -1476,7 +1558,7 @@ pub const COLETA_CICLO_ARVORE_S: f32 = 2.0;
 ///
 /// Eram 20 ciclos — 240 de Energia por veio na primeira ilha, o que o dono
 /// resumiu em 20/09/2026 como "acaba rápido, é muito pouco". Um veio agora
-/// paga 600, e eles nascem em CAMPO (`terreno::no_campo_de_energia`), não
+/// paga 1.500, e eles nascem em CAMPO (`terreno::no_campo_de_energia`), não
 /// soltos pela ilha: o lugar é que é a fonte, e não o cristal.
 pub const COLETAS_POR_ENERGIA: u32 = 50;
 pub const RESPAWN_DA_ENERGIA: f32 = 360.0;

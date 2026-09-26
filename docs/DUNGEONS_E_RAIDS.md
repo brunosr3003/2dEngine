@@ -1058,3 +1058,8 @@ existe para fazer. Há teste (`o_preco_cresce_sempre_e_nunca_da_a_volta`).
 
 O **Porão continua sem venda**: as recompensas dele são por dia, e vender
 entrada ali seria vender a recompensa.
+# Saída depois da dungeon
+
+Na tela de resultado, **Voltar à ilha** sai da instância e depois da Arena.
+Quem preferir juntar o saque e sair da instância pelo botão normal encontra
+**Sair da Arena · Voltar à ilha** em destaque no HUD da Arena, sem abrir o menu.

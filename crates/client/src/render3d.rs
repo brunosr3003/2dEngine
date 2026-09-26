@@ -1520,6 +1520,7 @@ pub fn draw_entities_com_sombras(
     }
     // Lascas e faiscas da coleta: um pool so', avancado uma vez por quadro.
     crate::lascas::avanca_e_desenha(get_frame_time());
+    crate::auras::desenha();
 }
 
 /// Sombras de contato baratas: um disco suave por corpo, em uma malha por lote.
@@ -1866,7 +1867,8 @@ fn desenha_personagem(
     }
     let mut pose = crate::rig::pose(&entrada);
     if montaria.is_some() {
-        crate::rig::aplica_montado(&mut pose, entrada.tempo);
+        crate::rig::aplica_montado(&mut pose, entrada.tempo,
+            entrada.combate.sacada > 0.0 || entrada.combate.golpe.is_some());
     }
     if e.skill.is_some_and(|(id, _, _)| id == 9) {
         pose.na_mao = false;
@@ -1937,6 +1939,11 @@ fn desenha_personagem(
         * Mat4::from_rotation_x(-cai + inclina)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let (mats, armas) = desenha_rig(base, &pose, veste, vox, clarao(e, eu));
+    if e.meta.tag == shared::EntityTag::Player && e.morte.is_none() {
+        crate::auras::personagem(e.meta.auras, &mats, &armas, vox,
+            if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0 as u32,
+            pose.ferramenta.is_some(), e.combo.is_some() || e.skill.is_some());
+    }
     e.emissores = crate::rig::palmas(&mats, VOXEL);
     // Coleta: a rajada de lascas no quadro em que a cabeca da ferramenta bate.
     if let Some((tipo, _)) = entrada.combate.coleta {
@@ -2598,6 +2605,33 @@ pub fn vitrine_pet(
     macroquad::material::gl_use_default_material();
     camera_padrao();
     true
+}
+
+/// Modelo real do inimigo no bestiário, usando a mesma malha do mundo.
+pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
+    r: Rect, yaw: f32, solido: &Material) -> bool {
+    if let Some((nome, _)) = crate::bicho::do_mob(shared::EntityTag::Enemy, kind, chefe) {
+        let Some(b) = vox.bicho(nome) else { return false; };
+        let Some(vp) = viewport_na_tela(r) else { return false; };
+        let cam = camera_da_vitrine(b, 1.0, 1.35, vp);
+        set_camera(&cam);
+        limpa_so_profundidade();
+        macroquad::material::gl_use_material(solido);
+        desenha_bicho_montaria(b, 1.0, None, Vec3::ZERO, yaw,
+            0.0, 0.0, get_time() as f32, kind as f32);
+        macroquad::material::gl_use_default_material();
+        camera_padrao();
+        true
+    } else {
+        let nome = if chefe {
+            match shared::bosses::chefe(kind).map(|c| c.corpo) {
+                Some(shared::bosses::Corpo::Gente(k)) => modelo_do_mob(k),
+                Some(shared::bosses::Corpo::Pirata) => "pistoleiro",
+                _ => modelo_do_mob(kind),
+            }
+        } else { modelo_do_mob(kind) };
+        vitrine_rig(vox, nome, r, yaw, solido)
+    }
 }
 
 /// A cor do grau como tinta — hoje SEM EFEITO, e de proposito.

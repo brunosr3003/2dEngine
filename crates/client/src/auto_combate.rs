@@ -224,7 +224,7 @@ impl AutoCombate {
     /// Nenhum bicho na area: para onde ir caçar. Move a area pro personagem e
     /// devolve o bicho vivo mais perto dentro de `BUSCA` — quem anda ate' la'
     /// e' o `main`. `None` quando nao ha' o que caçar (ou e' cedo demais).
-    pub fn caca(&mut self, world: &World, eu: Vec2, agora: f64) -> Option<Vec2> {
+    pub fn caca(&mut self, world: &World, eu: Vec2, agora: f64, missao: Option<u16>) -> Option<Vec2> {
         if !self.ativo() || self.manual {
             return None;
         }
@@ -235,11 +235,16 @@ impl AutoCombate {
         }
         let alvo = world
             .ents
-            .values()
-            .filter(|e| e.meta.tag == EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none())
-            .map(|e| e.render_pos)
-            .filter(|p| p.distance(eu) <= BUSCA)
-            .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))?;
+            .iter()
+            .filter(|(id, e)| e.meta.tag == EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none()
+                && !self.ignorados.get(id).is_some_and(|ate| *ate > agora))
+            .map(|(_, e)| e)
+            .filter(|e| e.render_pos.distance(eu) <= BUSCA)
+            .min_by(|a, b| {
+                missao.is_some_and(|k| a.meta.kind != k)
+                    .cmp(&missao.is_some_and(|k| b.meta.kind != k)).then_with(||
+                    a.render_pos.distance_squared(eu).total_cmp(&b.render_pos.distance_squared(eu)))
+            })?.render_pos;
         self.caca_em = agora;
         Some(alvo)
     }
@@ -252,14 +257,18 @@ impl AutoCombate {
         agora: f64,
         missao: Option<u16>,
     ) -> Option<EntityId> {
-        let centro = self.centro?;
+        let mut centro = self.centro?;
         let eu = world.self_id.and_then(|id| world.ents.get(&id))?;
         if eu.state.hp == 0
             || eu.state.flags & shared::ent_flags::DOWNED != 0
-            || eu.render_pos.distance(centro) > RAIO + 4.0
         {
             self.parar();
             return None;
+        }
+        // Perseguir um mob não desliga o auto ao sair da área inicial.
+        if eu.render_pos.distance(centro) > RAIO + 4.0 {
+            centro = eu.render_pos;
+            self.centro = Some(centro);
         }
         self.ignorados.retain(|_, ate| *ate > agora);
         // Quem PODE ser alvo. Jogador só entra quando o ajuste permite —
@@ -394,6 +403,7 @@ mod tests {
             (6, EntityTag::Enemy, 2.0, 0),
         ] {
             metas.push(shared::EntityMeta {
+                auras: 0,
                 id: EntityId(id),
                 tag,
                 name: None,
@@ -401,7 +411,8 @@ mod tests {
                 faction: None,
                 kind: 0,
                 nivel: 1,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             });
             estados.push(shared::EntityState::quantize(
                 EntityId(id),
@@ -476,6 +487,29 @@ mod tests {
     /// Limpou o que estava perto: o AUTO vai atras do proximo bicho em vez de
     /// ficar parado (era a queixa do dono — "so' mata um e para").
     #[test]
+    fn caca_prioriza_missao_e_nao_volta_ao_alvo_ignorado() {
+        let mut w = mundo();
+        let mut a = AutoCombate::default();
+        a.ligar(Vec2::ZERO);
+        w.ents.get_mut(&EntityId(5)).unwrap().meta.kind = 7;
+        assert_eq!(a.caca(&w, Vec2::ZERO, 1.0, Some(7)), Some(vec2(30.0, 0.0)));
+        a.ignorados.insert(EntityId(5), 20.0);
+        a.ignorados.insert(EntityId(3), 20.0);
+        assert_eq!(a.caca(&w, Vec2::ZERO, 3.0, Some(7)), Some(vec2(8.0, 0.0)));
+    }
+
+    #[test]
+    fn perseguir_fora_da_area_nao_desliga_o_auto() {
+        let mut w = mundo();
+        let mut a = AutoCombate::default();
+        a.ligar(Vec2::ZERO);
+        w.ents.get_mut(&EntityId(1)).unwrap().render_pos = vec2(40.0, 0.0);
+        w.ents.get_mut(&EntityId(5)).unwrap().render_pos = vec2(42.0, 0.0);
+        assert_eq!(a.escolher(&w, Some(EntityId(5)), 10.0, None), Some(EntityId(5)));
+        assert!(a.ativo());
+    }
+
+    #[test]
     fn sem_bicho_na_area_vai_cacar_o_proximo() {
         let mut w = mundo();
         let mut a = AutoCombate::default();
@@ -490,22 +524,22 @@ mod tests {
             "nenhum dentro da area"
         );
         assert_eq!(
-            a.caca(&w, Vec2::ZERO, 1.0),
+            a.caca(&w, Vec2::ZERO, 1.0, None),
             Some(vec2(30.0, 0.0)),
             "vai ate' o proximo"
         );
         assert_eq!(
-            a.caca(&w, Vec2::ZERO, 1.1),
+            a.caca(&w, Vec2::ZERO, 1.1, None),
             None,
             "nao repete o pedido a cada quadro"
         );
         // Andou ate' la': a area foi junto e o `escolher` pega o bicho.
         w.ents.get_mut(&EntityId(1)).unwrap().render_pos = vec2(28.0, 0.0);
-        a.caca(&w, vec2(28.0, 0.0), 2.4);
+        a.caca(&w, vec2(28.0, 0.0), 2.4, None);
         assert_eq!(a.escolher(&w, None, 2.5, None), Some(EntityId(5)));
         // Longe demais: nao ha' o que caçar.
         w.ents.get_mut(&EntityId(5)).unwrap().render_pos = vec2(400.0, 0.0);
-        assert_eq!(a.caca(&w, Vec2::ZERO, 9.0), None);
+        assert_eq!(a.caca(&w, Vec2::ZERO, 9.0, None), None);
     }
 
     #[test]

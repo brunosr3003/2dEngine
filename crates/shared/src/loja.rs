@@ -17,9 +17,30 @@ pub const VEL_MONTADO: f32 = 1.8;
 pub const MONTAR_S: f32 = 1.0;
 /// Sem atacar nem apanhar por isto antes de poder montar.
 pub const SEM_COMBATE_PRA_MONTAR_S: f32 = 3.0;
+pub const FIRMEZA_MAX: f32 = 100.0;
+pub const QUEDA_MONTARIA_MS: u64 = 5_000;
+
+pub fn perda_de_firmeza(dano: i32, hp_max: i32) -> f32 {
+    if dano <= 0 { return 0.0; }
+    (100.0 * dano as f32 / hp_max.max(1) as f32).max(15.0)
+}
+
+#[cfg(test)]
+mod testes_firmeza {
+    use super::*;
+    #[test]
+    fn firmeza_depende_do_dano_real_e_golpes_pequenos_tambem_derrubam() {
+        assert_eq!(perda_de_firmeza(0, 100), 0.0);
+        assert_eq!(perda_de_firmeza(1, 1000), 15.0);
+        assert_eq!(perda_de_firmeza(300, 1000), 30.0);
+        let mut firmeza = FIRMEZA_MAX;
+        for _ in 0..7 { firmeza = (firmeza - perda_de_firmeza(1, 1000)).max(0.0); }
+        assert_eq!(firmeza, 0.0);
+    }
+}
 /// Velocidade de andar. Montado vale o multiplicador da MONTARIA — que sai da
-/// cor dela (`montarias::velocidade`) — e perde o sprint; a pe' vale o sprint
-/// de quem esta' correndo. `montado` = `None` quando esta' a pe'.
+/// cor dela (`montarias::velocidade`) — multiplicado pelo sprint, inclusive
+/// durante ataques montados. `montado` = `None` quando esta' a pe'.
 pub fn velocidade_de_andar(base: f32, montado: Option<f32>, sprint_mult: f32) -> f32 {
     // Os dois MULTIPLICAM. Antes a montaria SUBSTITUIA o sprint: montado, o
     // botao de correr nao fazia nada, e a montaria de grau 1 (1,80) mal batia
@@ -753,6 +774,7 @@ pub enum AvisoLoja {
     Montando {
         segundos: f32,
     },
+    MontariaCombate { firmeza: u8, bloqueio_segundos: f32 },
     Invocacao {
         premio: PremioInvocacao,
     },

@@ -34,6 +34,7 @@ pub enum Etapa {
     Falando,
     Combatendo,
     Coletando,
+    SaindoDaColeta,
     AguardandoProxima,
     /// Chegou no ponto-chave da historia: espera o servidor concluir o passo.
     NoLugar,
@@ -82,16 +83,6 @@ pub struct Ctx {
     pub progresso: u32,
 }
 
-/// Sem o objetivo avançar por tanto tempo, procura outro destino de coleta
-/// ou retoma o combate.
-///
-/// A coleta pode continuar ligada depois que o nó se esgota. O progresso
-/// da missão, e não o estado do botão, indica se ainda está rendendo.
-///
-/// O detector de "parado no mesmo lugar" mora em `parado.rs`: três sistemas
-/// tinham cópia dele, e eu consertei um de cada vez até perceber.
-const SEM_AVANCO_S: f64 = 6.0;
-
 #[derive(Debug, Default)]
 pub struct AutoMissao {
     pub quest: Option<u16>,
@@ -101,9 +92,7 @@ pub struct AutoMissao {
     desde: f64,
     /// "Nada está mudando" — ver `parado.rs`.
     parado: crate::parado::Parado,
-    /// Progresso do objetivo na última vez que ele mudou, e quando.
-    progresso: u32,
-    progresso_desde: f64,
+    recurso_parou: bool,
 }
 
 impl AutoMissao {
@@ -112,18 +101,9 @@ impl AutoMissao {
         self.parado.travado(c.agora)
     }
 
-    /// O objetivo parou de avançar?
-    fn sem_avanco(&self, c: &Ctx) -> bool {
-        c.agora - self.progresso_desde > SEM_AVANCO_S
-    }
-
-    /// Uma vez por quadro: atualiza os dois relógios de "nada mudou".
+    /// Acompanha movimento apenas para recuperar a viagem até a área.
     fn acompanha(&mut self, c: &Ctx) {
         self.parado.acompanha(c.eu, c.agora);
-        if c.progresso != self.progresso {
-            self.progresso = c.progresso;
-            self.progresso_desde = c.agora;
-        }
     }
 }
 
@@ -144,8 +124,7 @@ impl AutoMissao {
             destino: None,
             desde: agora,
             parado: crate::parado::Parado::default(),
-            progresso: 0,
-            progresso_desde: agora,
+            recurso_parou: false,
         };
     }
 
@@ -213,6 +192,13 @@ impl AutoMissao {
         }
     }
 
+    /// O servidor avisou que o nó parou (esgotou ou recusou a coleta).
+    pub fn recurso_parou(&mut self) {
+        if self.etapa == Some(Etapa::Coletando) {
+            self.recurso_parou = true;
+        }
+    }
+
     /// Um quadro. Devolve o que o `main` deve fazer.
     pub fn passo(&mut self, c: Ctx) -> Vec<Acao> {
         self.acompanha(&c);
@@ -274,7 +260,6 @@ impl AutoMissao {
                         destino_tipo::COLETA => {
                             saida.push(Acao::LigarColeta(d.pos));
                             self.etapa = Some(Etapa::Coletando);
-                            self.progresso_desde = c.agora;
                         }
                         destino_tipo::LUGAR => {
                             self.etapa = Some(Etapa::NoLugar);
@@ -282,8 +267,12 @@ impl AutoMissao {
                         _ => {
                             if let Some(n) = d.npc {
                                 saida.push(Acao::Interagir(n, d.pos));
+                                self.etapa = Some(Etapa::Falando);
+                            } else {
+                                // O NPC ainda pode estar fora do AOI. Pedir seu
+                                // identificador de novo quando chegar perto.
+                                self.pedir_de_novo(c.agora);
                             }
-                            self.etapa = Some(Etapa::Falando);
                         }
                     }
                 } else if (!c.viajando && c.agora - self.desde >= RELIGA_S)
@@ -321,30 +310,32 @@ impl AutoMissao {
                 if c.pronta {
                     saida.push(Acao::PararAutos);
                     self.pedir_de_novo(c.agora);
-                } else if c.agora - self.desde > RELIGA_S {
-                    // O AUTO "ATIVO" NÃO PROVA QUE ALGO ESTÁ ACONTECENDO.
-                    //
-                    // Quando o nó de coleta esgota, a coleta continua ligada e
-                    // gira no vazio: o `!c.coleta_ativa` nunca era verdade e o
-                    // passo nunca religava. O dono: "a árvore acaba e trava; só
-                    // volta quando eu ando". Então o gatilho passa a ser
-                    // também O OBJETIVO NÃO ANDAR, que é o que importa.
-                    let parado = self.sem_avanco(&c);
-                    if etapa == Etapa::Combatendo && (!c.combate_ativo || parado) {
+                } else if self.recurso_parou || c.agora - self.desde > RELIGA_S {
+                    // O modo especializado conduz a caça/coleta até concluir.
+                    // Tempo sem aumentar o contador não significa travamento.
+                    if etapa == Etapa::Combatendo && !c.combate_ativo {
                         self.desde = c.agora;
-                        self.progresso_desde = c.agora;
-                        // Sem `PararAutos` aqui: o auto combate mira uma
-                        // ÁREA, não um nó, então religar por cima dele não
-                        // deixa nada preso — e desligar antes faria o
-                        // personagem largar o alvo que já estava batendo.
-                        saida.push(Acao::LigarCombate(d.pos));
-                    } else if etapa == Etapa::Coletando && (!c.coleta_ativa || parado) {
-                        // O ponto já pode estar esgotado. Reativar a coleta
-                        // com o mesmo centro prende a missão no local antigo.
-                        // Peça ao servidor outro spot vivo e viaje até ele.
+                        saida.push(Acao::LigarCombate(c.eu));
+                    } else if etapa == Etapa::Coletando && !self.recurso_parou && !c.coleta_ativa {
+                        self.desde = c.agora;
+                        saida.push(Acao::LigarColeta(c.eu));
+                    } else if etapa == Etapa::Coletando && self.recurso_parou {
+                        // Sai do alcance do nó antes de perguntar pelo próximo.
+                        // O cliente ainda pode ter o nó antigo como alvo por
+                        // alguns quadros após o esgotamento.
+                        let dir = (c.eu - d.pos).normalize_or(vec2(1.0, 0.0));
                         saida.push(Acao::PararAutos);
-                        self.pedir_de_novo(c.agora);
+                        saida.push(Acao::Viajar(c.eu + dir * 7.0));
+                        self.etapa = Some(Etapa::SaindoDaColeta);
+                        self.desde = c.agora;
+                        self.recurso_parou = false;
                     }
+                }
+            }
+            Etapa::SaindoDaColeta => {
+                if self.destino.is_none_or(|d| c.eu.distance(d.pos) >= 6.0)
+                    || c.agora - self.desde > 4.0 {
+                    self.pedir_de_novo(c.agora);
                 }
             }
             Etapa::AguardandoProxima => {
@@ -379,6 +370,7 @@ impl AutoMissao {
             Some(Etapa::Falando) => "conversando",
             Some(Etapa::Combatendo) => "lutando",
             Some(Etapa::Coletando) => "coletando",
+            Some(Etapa::SaindoDaColeta) => "procurando outro recurso",
             Some(Etapa::AguardandoProxima) => "recebendo a próxima",
         }
     }
@@ -506,7 +498,7 @@ mod tests {
         // O auto combate caiu (perseguiu longe demais): religa.
         assert_eq!(
             a.passo(ctx(vec2(190.0, 0.0), 7.0)),
-            vec![Acao::LigarCombate(zona)]
+            vec![Acao::LigarCombate(vec2(190.0, 0.0))]
         );
         let mut c = ctx(vec2(190.0, 0.0), 20.0);
         c.combate_ativo = true;
@@ -558,6 +550,36 @@ mod tests {
             vec![Acao::LigarColeta(vec2(10.0, 0.0))]
         );
         assert_eq!(a.etapa(), Some(Etapa::Coletando));
+    }
+
+    #[test]
+    fn npc_fora_do_aoi_e_procurado_de_novo_ao_chegar() {
+        let mut a = AutoMissao::default();
+        a.iniciar(501, "Converse".into(), 0.0);
+        a.passo(ctx(Vec2::ZERO, 0.0));
+        a.destino_recebido(501, destino_tipo::NPC, Vec2::ZERO, 3.0, None, 0.1);
+        assert!(a.passo(ctx(Vec2::ZERO, 0.2)).is_empty());
+        assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
+        assert_eq!(a.passo(ctx(Vec2::ZERO, 1.0)), vec![Acao::PedirDestino(501)]);
+    }
+
+    #[test]
+    fn combate_mantem_auto_ate_concluir_mesmo_sem_contador_avancar() {
+        let mut a = AutoMissao::default();
+        a.iniciar(502, "Lobos".into(), 0.0);
+        a.passo(ctx(Vec2::ZERO, 0.0));
+        a.destino_recebido(502, destino_tipo::COMBATE, Vec2::ZERO, 5.0, None, 0.1);
+        a.passo(ctx(Vec2::ZERO, 0.2));
+        let mut c = ctx(Vec2::ZERO, 7.0);
+        c.combate_ativo = true;
+        for t in [7.0, 30.0, 120.0] {
+            c.agora = t;
+            assert!(a.passo(c).is_empty());
+            assert_eq!(a.etapa(), Some(Etapa::Combatendo));
+        }
+        c.pronta = true;
+        assert_eq!(a.passo(c), vec![Acao::PararAutos]);
+        assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
     }
 
     #[test]
@@ -672,40 +694,37 @@ mod tests {
         }
     }
 
-    /// NÓ ESGOTADO: O AUTO "ATIVO" NÃO PROVA QUE ALGO ACONTECE.
-    ///
-    /// Com o nó esgotado a coleta segue ligada; a missão precisa procurar
-    /// outro spot vivo, sem esperar movimento manual.
     #[test]
-    fn coleta_sem_avanco_pede_outro_destino() {
+    fn coleta_ativa_nao_e_cancelada_pelo_tempo_sem_progresso() {
         let mut a = AutoMissao::default();
         a.iniciar(501, "x".into(), 0.0);
         pede(&mut a, 0.0);
         a.destino_recebido(501, destino_tipo::COLETA, Vec2::ZERO, 8.0, None, 0.1);
-        let mut c = ctx(Vec2::ZERO, 0.2);
-        let acoes = a.passo(c);
-        assert!(acoes.contains(&Acao::LigarColeta(Vec2::ZERO)));
-        assert_eq!(a.etapa(), Some(Etapa::Coletando));
-
-        // Coleta LIGADA e progresso PARADO: passado o prazo, muda o destino.
-        let mut t = 0.3;
-        let mut mudou = false;
-        while t < 0.3 + SEM_AVANCO_S + RELIGA_S + 2.0 {
-            c = ctx(Vec2::ZERO, t);
+        assert!(a.passo(ctx(Vec2::ZERO, 0.2)).contains(&Acao::LigarColeta(Vec2::ZERO)));
+        for t in [7.0, 30.0, 120.0] {
+            let mut c = ctx(Vec2::ZERO, t);
             c.coleta_ativa = true;
-            c.progresso = 3;
-            let acoes = a.passo(c);
-            if acoes.contains(&Acao::PararAutos) {
-                assert!(
-                    a.etapa() == Some(Etapa::PedirDestino),
-                    "parou a coleta sem procurar outro spot"
-                );
-                mudou = true;
-                break;
-            }
-            t += 0.5;
+            assert!(a.passo(c).is_empty());
+            assert_eq!(a.etapa(), Some(Etapa::Coletando));
         }
-        assert!(mudou, "a coleta travada no nó esgotado nunca mudou de spot");
+        let mut c = ctx(Vec2::ZERO, 121.0);
+        c.pronta = true;
+        assert_eq!(a.passo(c), vec![Acao::PararAutos]);
+        assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
+    }
+
+    #[test]
+    fn recurso_esgotado_sai_sem_esperar_seis_segundos() {
+        let mut a = AutoMissao::default();
+        a.iniciar(503, "Cobre".into(), 0.0);
+        assert_eq!(a.passo(ctx(Vec2::ZERO, 0.0)), vec![Acao::PedirDestino(503)]);
+        a.destino_recebido(503, destino_tipo::COLETA, Vec2::ZERO, 6.0, None, 0.1);
+        a.passo(ctx(Vec2::ZERO, 0.2));
+        a.recurso_parou();
+        let acoes = a.passo(ctx(Vec2::ZERO, 0.3));
+        assert!(acoes.contains(&Acao::PararAutos));
+        assert!(acoes.iter().any(|acao| matches!(acao, Acao::Viajar(p) if p.length() >= 6.9)));
+        assert_eq!(a.etapa(), Some(Etapa::SaindoDaColeta));
     }
 
     /// E COLHENDO DE VERDADE, NÃO MEXE.

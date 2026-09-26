@@ -38,6 +38,7 @@ impl GameWorld {
         match pedido {
             P::Painel => self.abrir_magica(sid),
             P::Entrar { entradas, grau } => self.entrar_na_magica(sid, entradas, grau),
+            P::Trocar { grau } => self.trocar_degrau_magico(sid, grau),
             P::Sair => self.sair_da_magica(sid, "Você deixa a Ilha Mágica."),
         }
     }
@@ -128,10 +129,7 @@ impl GameWorld {
             self.avisa_magica(sid, "A Ilha Mágica não abre daqui.");
             return;
         }
-        if self.na_magica() {
-            self.avisa_magica(sid, "Você já está na Ilha Mágica.");
-            return;
-        }
+        let dentro = self.na_magica();
         let agora = (now_ms() / 1000) as i64;
         let Some(s) = self.sessions.get(&sid) else {
             return;
@@ -168,6 +166,33 @@ impl GameWorld {
             self.avisa_magica(sid, &msg);
             return;
         }
+        if entradas == 0 {
+            if dentro || shared::magica::resta(s.magica_ate, agora) == 0 {
+                self.avisa_magica(sid, "Não há tempo ativo para retomar.");
+                return;
+            }
+            if self
+                .diretorio
+                .as_ref()
+                .and_then(|d| d.melhor(alvo.zona))
+                .is_none()
+            {
+                self.avisa_magica(sid, &format!("{} está fechada no momento.", alvo.nome));
+                return;
+            }
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.magica_volta = self.zona.clone();
+            }
+            self.save_pending = true;
+            self.mandar_para_zona(
+                sid,
+                alvo.zona,
+                shared::magica::CHEGADA,
+                Some("Você retoma seu tempo na Ilha Mágica."),
+                Some(alvo.nome),
+            );
+            return;
+        }
         // A COTA DIÁRIA ENTRA NA CONTA, e é gasta PRIMEIRO.
         //
         // O dono: "a Ilha Mágica terá 3 passes por dia de 30 min grátis".
@@ -186,11 +211,12 @@ impl GameWorld {
         // A ZONA TEM QUE ESTAR NO AR antes de gastar o passe. `mandar_para_zona`
         // também confere e recusa, mas ali o passe já teria sumido — e o
         // jogador ficaria sem passe e sem ilha.
-        if self
-            .diretorio
-            .as_ref()
-            .and_then(|d| d.melhor(alvo.zona))
-            .is_none()
+        if !dentro
+            && self
+                .diretorio
+                .as_ref()
+                .and_then(|d| d.melhor(alvo.zona))
+                .is_none()
         {
             let msg = format!("{} está fechada no momento.", alvo.nome);
             self.avisa_magica(sid, &msg);
@@ -212,13 +238,29 @@ impl GameWorld {
             s.inventory_dirty = true;
         }
         s.magica_ate = shared::magica::fim_apos_entrar(s.magica_ate, agora, entradas);
-        s.magica_volta = volta;
+        if !dentro {
+            s.magica_volta = volta;
+        }
         // Os avisos do relogio valem de novo: quem gastou mais um passe
         // merece ouvir "5 minutos" outra vez.
         s.magica_avisado = i64::MAX;
         let minutos = shared::magica::resta(s.magica_ate, agora) / 60;
         let nome = s.name.clone();
         self.save_pending = true;
+        if dentro {
+            self.abrir_magica(sid);
+            let _ = self
+                .sessions
+                .get(&sid)
+                .unwrap()
+                .handle
+                .to_client
+                .send(ServerMessage::Chat {
+                    from: "System".into(),
+                    text: format!("Tempo da Ilha Mágica estendido: {minutos} minutos restantes."),
+                });
+            return;
+        }
         let aviso = format!("Você entra na {} — {minutos} minutos.", alvo.nome);
         crate::telemetria::conta("magica_entrada", self.zona.clone(), entradas as i64);
         tracing::info!(
@@ -229,6 +271,58 @@ impl GameWorld {
             alvo.zona,
             shared::magica::CHEGADA,
             Some(&aviso),
+            Some(alvo.nome),
+        );
+    }
+
+    fn trocar_degrau_magico(&mut self, sid: SessionId, grau: u8) {
+        if !self.na_magica() {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if !s.logged_in || s.downed || s.instancia != 0 {
+            return;
+        }
+        let agora = (now_ms() / 1000) as i64;
+        if shared::magica::resta(s.magica_ate, agora) == 0 {
+            self.avisa_magica(sid, "Seu tempo na Ilha Mágica acabou.");
+            return;
+        }
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let Some(alvo) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) else {
+            self.avisa_magica(sid, "Degrau desconhecido.");
+            return;
+        };
+        if nivel < alvo.exige_nivel {
+            self.avisa_magica(
+                sid,
+                &format!("{} abre no nível {}.", alvo.nome, alvo.exige_nivel),
+            );
+            return;
+        }
+        if alvo.zona == self.zona {
+            self.avisa_magica(sid, "Você já está neste degrau.");
+            return;
+        }
+        if self
+            .diretorio
+            .as_ref()
+            .and_then(|d| d.melhor(alvo.zona))
+            .is_none()
+        {
+            self.avisa_magica(sid, &format!("{} está fechada no momento.", alvo.nome));
+            return;
+        }
+        self.mandar_para_zona(
+            sid,
+            alvo.zona,
+            shared::magica::CHEGADA,
+            Some(&format!(
+                "Você viaja para a {}. O relógio continua.",
+                alvo.nome
+            )),
             Some(alvo.nome),
         );
     }
@@ -440,6 +534,103 @@ mod testes {
     fn poe_em(w: &mut GameWorld, sid: SessionId, p: Vec2) {
         let e = w.sessions[&sid].entity.unwrap();
         w.ecs.get::<&mut Position>(e).unwrap().0 = p;
+    }
+
+    #[test]
+    fn guia_abre_painel_para_trocar_degrau() {
+        let (mut w, sid, mut rx) = mundo_com_rx(shared::magica::ZONA);
+        let p = shared::magica::posto_dos_degraus();
+        poe_em(&mut w, sid, p);
+        let eid = EntityId(902);
+        w.ecs.spawn((
+            NetId(eid),
+            Position(p),
+            EntityKind::Npc(9),
+            NpcDaVilaTag {
+                nome: shared::magica::GUIA_DOS_DEGRAUS.into(),
+                rumo: 0,
+                giver: None,
+            },
+        ));
+        w.interagir(sid, Some(eid.0 as u64), false);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(ServerMessage::Magica {
+                aviso: shared::magica::AvisoMagica::AbrirPainel
+            })
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(ServerMessage::Magica {
+                aviso: shared::magica::AvisoMagica::Estado { dentro: true, .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn tempo_ativo_permite_voltar_sem_nova_entrada() {
+        let (mut w, sid, mut rx) = mundo_com_rx("ilha_deserto");
+        w.diretorio = Some(crate::canais::Diretorio::para_teste(&[
+            shared::magica::ZONA,
+        ]));
+        let agora = (now_ms() / 1000) as i64;
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        s.magica_ate = agora + 600;
+        let gratis = s.magica_gratis;
+        w.handle_magica(
+            sid,
+            shared::magica::PedidoMagica::Entrar {
+                entradas: 0,
+                grau: 1,
+            },
+        );
+        assert_eq!(w.passes_de(sid), 0);
+        assert_eq!(w.sessions[&sid].magica_gratis, gratis);
+        assert_eq!(w.sessions[&sid].magica_ate, agora + 600);
+        assert_eq!(w.sessions[&sid].magica_volta, "ilha_deserto");
+        assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(
+            |m| matches!(m, ServerMessage::TrocarZona { zona, .. } if zona == shared::magica::ZONA)
+        ));
+    }
+
+    #[test]
+    fn troca_degrau_preserva_relogio_e_volta() {
+        let (mut w, sid, mut rx) = mundo_com_rx(shared::magica::ZONA);
+        w.diretorio = Some(crate::canais::Diretorio::para_teste(&["ilha_magica_2"]));
+        let agora = (now_ms() / 1000) as i64;
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        s.magica_ate = agora + 600;
+        s.magica_volta = "ilha_deserto".into();
+        w.handle_magica(sid, shared::magica::PedidoMagica::Trocar { grau: 2 });
+        assert_eq!(w.sessions[&sid].magica_ate, agora + 600);
+        assert_eq!(w.sessions[&sid].magica_volta, "ilha_deserto");
+        assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(
+            |m| matches!(m, ServerMessage::TrocarZona { zona, .. } if zona == "ilha_magica_2")
+        ));
+    }
+
+    #[test]
+    fn estender_dentro_nao_troca_a_zona_de_volta() {
+        let (mut w, sid) = mundo(shared::magica::ZONA);
+        let agora = (now_ms() / 1000) as i64;
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        s.magica_ate = agora + 600;
+        s.magica_volta = "ilha_deserto".into();
+        w.handle_magica(
+            sid,
+            shared::magica::PedidoMagica::Entrar {
+                entradas: 1,
+                grau: 1,
+            },
+        );
+        assert_eq!(
+            w.sessions[&sid].magica_ate,
+            agora + 600 + shared::magica::DURACAO_S
+        );
+        assert_eq!(w.sessions[&sid].magica_volta, "ilha_deserto");
     }
 
     /// RECUSA NÃO GASTA. É a propriedade que mais importa: um passe é meia

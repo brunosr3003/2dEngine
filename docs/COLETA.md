@@ -22,7 +22,7 @@ Quando a reserva zera o nó **esgota**: some pra todo mundo, **sai da colisão**
 |---|---|---|
 | reserva da pedra (coletas) | cinza 14 · verde 24 · azul 64 · roxa 128 | `docs/COLETA.md` "A pedra é uma pedra" (tabela) · `COLETAS_POR_PEDRA` |
 | respawn da pedra | 300 · 420 · 600 · 900 s | `docs/COLETA.md` (mesma tabela) · `RESPAWN_DA_PEDRA` |
-| rendimento por coleta | Cobre 40–120 sempre; Aço 55%; Darksteel 35%; Platina 30%; … | `docs/ECONOMIA_DE_CRAFT.md` "Onde tudo isso sai" · `linhas_da_pedra` |
+| rendimento por coleta | Cobre 40–120 sempre; Aço 55%; Darksteel 35%; Platina 30%; pedra roxa entrega 50% mais unidades por ciclo, arredondando para cima | `docs/ECONOMIA_DE_CRAFT.md` "Onde tudo isso sai" · `linhas_da_pedra` |
 | cor do material por pedra | 100/0/0 · 80/20/0 · 65/25/10 · 55/27/18 | `docs/COLETA.md` (tabela) · `RENDIMENTO_DA_PEDRA` |
 | reserva e respawn da árvore | 8 coletas · 90 s | já era **provisório** no código (`COLETAS_POR_ARVORE`); o planejamento não define |
 | tempo de um ciclo | pedra 2,5 · 2,8 · 3,1 · 3,4 s; tronco 2,0 s | **decisão provisória (não estava no planejamento)** — o doc só tinha o ritmo por densidade |
@@ -32,7 +32,7 @@ Quando a reserva zera o nó **esgota**: some pra todo mundo, **sai da colisão**
 
 O **cristal de Energia** é um novo recurso coletável (tipo 5), distinto de
 pedra e árvore. Cada ciclo credita Energia diretamente ao personagem, sem
-ocupar bolsa: 12/28/60/120 por ciclo, conforme a ilha. Ela serve à evolução
+ocupar bolsa: 30/70/150/300 por ciclo, conforme a ilha. Ela serve à evolução
 das habilidades ([SKILLS.md](SKILLS.md)). O filtro do mapa mostra regiões
 agregadas, não cada cristal; o AUTO COLETA tem uma opção própria para ele.
 Missões que pedem especificamente **pedra** não contam Energia. Os cristais
@@ -143,7 +143,7 @@ modelo — ela *parece* melhor de longe.
 | **cinza** | 14 | 300s | só cinza |
 | **verde** | 24 | 420s | 80% cinza · 20% verde |
 | **azul** | 64 | 600s | 65% cinza · 25% verde · 10% azul |
-| **roxa** | 128 | 900s | 55% cinza · 27% verde · 18% azul · **0% roxo** |
+| **roxa** | 128 | 900s | 55% cinza · 27% verde · 18% azul · **0% roxo**; 50% mais unidades por ciclo |
 
 O que a pedra roxa compra é **tempo de coleta**, não um material novo: nove
 vezes mais coletas que a cinza, e a maior taxa de azul do jogo. Material roxo

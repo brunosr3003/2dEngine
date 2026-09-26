@@ -16,6 +16,7 @@ pub async fn abrir(vox: &VoxCache) {
         (5, shared::EntityTag::Enemy, 6, vec2(2.8, 0.5)),
     ] {
         metas.push(shared::EntityMeta {
+            auras: 0,
             id: shared::EntityId(id),
             tag,
             name: None,
@@ -23,6 +24,7 @@ pub async fn abrir(vox: &VoxCache) {
             faction: None,
             kind,
             nivel: 10,
+            desafio: None,
             aparencia: 0,
         });
         estados.push(shared::EntityState::quantize(

@@ -14,6 +14,7 @@ const APLICADOS_LEMBRADOS: usize = 64;
 #[derive(Debug, Default, PartialEq)]
 pub(super) struct Entrega {
     pub ouro: u64,
+    pub energia: u64,
     pub na_bolsa: Vec<(u16, u32)>,
     pub no_correio: Vec<(u16, u32)>,
 }
@@ -24,6 +25,7 @@ pub(super) struct Entrega {
 pub(super) fn entregar(
     premios: &[Premio],
     gold: &mut u64,
+    energia: &mut u64,
     mut na_bolsa: impl FnMut(u16, u32) -> bool,
     dungeon: &mut shared::dungeon::DadosDungeon,
     quando: i64,
@@ -33,6 +35,9 @@ pub(super) fn entregar(
         if p.item_id == pr::OURO {
             *gold = gold.saturating_add(p.qtd as u64);
             e.ouro += p.qtd as u64;
+        } else if p.item_id == pr::ENERGIA {
+            *energia = energia.saturating_add(p.qtd as u64);
+            e.energia += p.qtd as u64;
         } else if na_bolsa(p.item_id, p.qtd) {
             e.na_bolsa.push((p.item_id, p.qtd));
         } else {
@@ -227,10 +232,15 @@ impl GameWorld {
         let e = entregar(
             premios,
             &mut s.gold,
+            &mut s.skill_progress.energia,
             |item, q| add_to_inventory(inventario, item, q, None),
             &mut s.dungeon,
             unix,
         );
+        if e.energia > 0 {
+            s.skills_dirty = true;
+            let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills { progresso: s.skill_progress.clone() });
+        }
         s.inventory_dirty = true;
         tracing::info!("[presenca] {personagem} recebeu {id}: {e:?}");
         self.save_pending = true;
@@ -242,6 +252,18 @@ impl GameWorld {
 mod tests {
     use super::*;
     use shared::item_id;
+
+    #[test]
+    fn energia_vai_ao_saldo_sem_depender_da_bolsa() {
+        let mut gold = 0;
+        let mut energia = 100;
+        let mut dg = shared::dungeon::DadosDungeon::default();
+        let e = entregar(&[Premio { item_id: pr::ENERGIA, qtd: 5_000 }],
+            &mut gold, &mut energia, |_, _| panic!("Energia nao e item"), &mut dg, 1);
+        assert_eq!(energia, 5_100);
+        assert_eq!(e.energia, 5_000);
+        assert!(dg.correio.is_empty());
+    }
 
     #[test]
     fn ouro_vai_pro_gold_item_pra_bolsa() {
@@ -261,6 +283,7 @@ mod tests {
         let e = entregar(
             &premios,
             &mut gold,
+            &mut 0,
             |id, q| {
                 bolsa.push((id, q));
                 true
@@ -286,7 +309,7 @@ mod tests {
             item_id: item_id::MARCAS_TEMPESTADE,
             qtd: 40,
         }];
-        let e = entregar(&premios, &mut gold, |_, _| false, &mut dg, 99);
+        let e = entregar(&premios, &mut gold, &mut 0, |_, _| false, &mut dg, 99);
         assert_eq!(e.no_correio, vec![(item_id::MARCAS_TEMPESTADE, 40)]);
         assert_eq!(dg.correio.len(), 1);
         assert_eq!(

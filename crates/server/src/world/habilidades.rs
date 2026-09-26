@@ -230,6 +230,8 @@ impl GameWorld {
                 return;
             }
         };
+        // A desmontagem e o cast sao atomicos no servidor, antes de qualquer dano.
+        self.desmontar(sid);
         let s = self.sessions.get_mut(&sid).unwrap();
         s.mp_current -= skill.custo_mp as f32;
         s.skill_cds.insert(skill_id, agora + skill.espera_s);

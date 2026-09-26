@@ -72,6 +72,13 @@ próprio, custo de mana e recarga. Atalhos **1, 2 e 3** ou clique na barra.
 Uma proficiência por conjunto de arma — quatro. O desbloqueio das skills usa
 o nível do personagem, independente da proficiência.
 
+Cada golpe concede 1 XP de proficiência e cada abate, mais 10. Até o nível 50,
+o custo do próximo nível continua sendo `50 × nível`. Depois disso, cresce
+12% por nível: o nível 70 exige cerca de 24 mil XP só no próximo degrau, o
+100 cerca de 723 mil, e o 115 cerca de 4 milhões. O limite técnico é 200.
+Ao morrer, perde 10% do custo do nível atual em cada arma já treinada; isso
+pode reduzir o nível. A ficha mostra nível e progresso de cada arma.
+
 ## O que ainda falta decidir
 
 1. ~~O peso da armadura é por PEÇA ou por conjunto?~~ **Decidido: por
@@ -239,6 +246,26 @@ pistola limpa 22% mais rápido que a média e paga com o menor HP dos quatro
 (24% contra 69% do anel) — e nenhum valor de ganho de área fecha essa
 diferença, já que os dois extremos ficam presos no teto.
 
+## Atributos dos mobs e equipamento
+
+Não há multiplicador oculto por diferença de nível. O nível da faixa aumenta
+os atributos reais de cada mob. Após o nível 12, a cada nível: +4% da vida
+base, +3,5% do ataque base e +0,5 de defesa. A curva inicial dos níveis 1–4
+continua igual. Chefes já têm vida, ataque e defesa próprios que crescem com
+o nível. Os golpes usam o ataque do inimigo contra a defesa do jogador; os
+golpes do jogador usam a defesa do inimigo. Assim, equipamento melhor pode
+compensar uma diferença de nível.
+
+O servidor envia, junto à identificação de cada inimigo, vida, ataque e
+defesa reais e três referências de equipamento: ataque, defesa e poder
+recomendados. A partir do nível 20 a referência inclui ao menos duas peças
+verdes; a partir do 30, três peças azuis, arma refinada e proficiência da
+arma. O poder sugerido sobe por faixa e pelos atributos do inimigo, com
+referência acima de 4.300 para mobs do nível 34. O Menu → Mobs lista a versão
+mais forte de cada espécie das ilhas visitadas, os chefes e os inimigos
+vistos de perto. Compara as referências com os atributos atuais do personagem. São orientações,
+não travas de entrada nem modificadores secretos de dano.
+
 ## Início do jogo
 
 Queixa (jogando a produção no iPhone): "morrer numa quest nível 1 é meio
@@ -332,3 +359,31 @@ Cada caçada de missão leva 70–130 s; o nível 5 sai em 19–21 min. Metas an
 no nível 5: dano por mob e s/abate iguais, razão 1,46×; HP mínimo subiu
 (espada 47→71%, katana 43→47%, pistolas 59→73%, anel 69→73%) pelo fôlego.
 Nível 10 idêntico.
+
+## INT no ataque básico mágico (26/09/2026)
+
+Com o Anel Mágico equipado, cada ponto **alocado** em INT agora acrescenta
+mais 1 ao dano bruto do ataque básico, além do +1 que já entra no atributo
+geral de ataque. Dez pontos de INT dão +20 ao básico em relação ao anel sem
+esses pontos. As skills continuam usando apenas o ataque geral; armas físicas
+não recebem esse bônus. O cálculo é feito no servidor antes do crítico e da
+mitigação e usa `shared::basic_attack_damage`, também empregado nos
+simuladores de combate.
+
+## População inicial — 26/09/2026
+
+Na ilha inicial, áreas comuns cuja faixa começa até o nível 10 têm teto de
+30 mobs (antes 18), mantendo 8 unidades entre slots e os filtros de terreno
+acessível, cidade, porto e cabanas. Fortes mantêm a população anterior.
+A reposição nas faixas iniciais passa de 20 para 12 segundos. O limite real
+depende dos pontos válidos de cada área. Validação: população do Bosque,
+proteção de postos e simulação `metas_do_inicio`.
+
+## Início progressivo — 26/09/2026
+
+A curva introdutória dura até o mob de nível 10, alcançando os valores
+completos no 11 (antes já no 5). Dano nos níveis 1..10: 40%, 45%, 50%,
+55%, 60%, 68%, 75%, 82%, 90%, 95%. Vida: 60% a 100%. Visão, raio de
+matilha e velocidade de investida também sobem gradualmente. O fôlego
+fora de dano começa em 3% de HP/s após 3 segundos, perde força do nível
+6 ao 10 e termina no 11. Mantidos os multiplicadores de nível 20+.

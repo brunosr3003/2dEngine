@@ -9,6 +9,16 @@ use macroquad::prelude::*;
 use std::f32::consts::{PI, TAU};
 
 pub fn material() -> Material {
+    material_com_depth(false)
+}
+
+/// O backend OpenGL da miniquad só ativa GL_DEPTH_TEST com depth_write.
+/// Auras persistentes precisam da oclusão do corpo e do equipamento.
+pub fn material_com_oclusao() -> Material {
+    material_com_depth(true)
+}
+
+fn material_com_depth(depth_write: bool) -> Material {
     load_material(ShaderSource::Glsl {
         vertex: r#"#version 100
             attribute vec3 position; attribute vec4 color0;
@@ -17,9 +27,9 @@ pub fn material() -> Material {
             void main() { gl_Position = Projection * Model * vec4(position, 1.0); cor = color0 / 255.0; }"#,
         fragment: r#"#version 100
             varying lowp vec4 cor;
-            void main() { gl_FragColor = cor; }"#,
+            void main() { if (cor.a <= 0.001) discard; gl_FragColor = cor; }"#,
     }, MaterialParams { pipeline_params: PipelineParams {
-        depth_test: Comparison::LessOrEqual, depth_write: false,
+        depth_test: Comparison::LessOrEqual, depth_write,
         color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)),
         ..Default::default()
     }, ..Default::default() }).expect("material emissivo das skills")

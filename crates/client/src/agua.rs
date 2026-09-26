@@ -330,22 +330,24 @@ uniform highp float Ondas;
 //
 // Gerstner ja' faz crista afiada e vale chato, entao a onda so'-pra-cima le'
 // como mar mesmo — o que se perde e' um vale que nao cabia de qualquer jeito.
-#define ONDA(dx, dz, k, w, amp, fase)                                    \
-    theta = k * (dx * position.x + dz * position.z) - w * Tempo + fase;  \
-    sn = sin(theta); cs = cos(theta);                                    \
-    p.y += a * amp * (sn * 0.5 + 0.5);                                   \
-    p.x -= a * amp * dx * cs;                                            \
-    p.z -= a * amp * dz * cs;
+// GLSL ES 1.00 não aceita continuação de linha em macros em todos os
+// drivers. Uma função evita o erro de compilação ao abrir os personagens.
+highp vec3 deslocamento_onda(highp vec2 direcao, highp float k,
+    highp float velocidade, highp float amplitude, highp float fase) {
+    highp float theta = k * dot(direcao, position.xz) - velocidade * Tempo + fase;
+    highp float sn = sin(theta);
+    highp float cs = cos(theta);
+    return amplitude * vec3(-direcao.x * cs, sn * 0.5 + 0.5, -direcao.y * cs);
+}
 
 void main() {
     highp vec3 p = position;
     // `normal.y` e' o quanto ESTE vertice leva de onda: zero na costa (a
     // beira fica colada na areia) e cheio no fundo.
     highp float a = normal.y * Ondas;
-    highp float theta, sn, cs;
-    ONDA(0.5646, 0.8253, 0.1208, 1.089, 0.341, 0.0)
-    ONDA(0.7470, 0.6648, 0.2027, 1.410, 0.198, 1.7)
-    ONDA(0.1977, 0.9803, 0.3491, 1.851, 0.110, 4.1)
+    p += a * deslocamento_onda(vec2(0.5646, 0.8253), 0.1208, 1.089, 0.341, 0.0);
+    p += a * deslocamento_onda(vec2(0.7470, 0.6648), 0.2027, 1.410, 0.198, 1.7);
+    p += a * deslocamento_onda(vec2(0.1977, 0.9803), 0.3491, 1.851, 0.110, 4.1);
     gl_Position = Projection * Model * vec4(p, 1.0);
     cor = color0 / 255.0;
     mundo = p;

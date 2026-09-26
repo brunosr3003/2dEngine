@@ -104,7 +104,9 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     );
     // O "x" de fechar e' icone, nao rotulo: botao discreto.
     estilo::botao(r, rotulo, e, false);
-    sobre && crate::foco::clique()
+    let clicou = sobre && crate::foco::clique();
+    if clicou { crate::sons::tocar(crate::sons::Som::Clique); }
+    clicou
 }
 
 /// Caixinha de marcar, com o rotulo ao lado.

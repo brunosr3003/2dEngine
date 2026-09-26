@@ -761,11 +761,15 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
         .iter()
         .find(|n| matches!(n.papel, shared::construcao::Papel::Missoes))
         .map(|n| vec2(n.pos.x, n.pos.y));
-    let npcs = vila
+    let mut npcs: Vec<(String, Vec2)> = vila
         .npcs
         .iter()
         .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
         .collect();
+    if shared::magica::e_magica(def.zona) {
+        let p = shared::magica::posto_dos_degraus();
+        npcs.push((shared::magica::GUIA_DOS_DEGRAUS.to_string(), vec2(p.x, p.y)));
+    }
     Dados {
         rgba,
         pegadas,

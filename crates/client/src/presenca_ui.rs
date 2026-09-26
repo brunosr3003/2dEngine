@@ -27,6 +27,9 @@ pub struct PresencaUi {
 
 /// "Poção de Experiência ×2" / "1.500 de ouro".
 pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
+    if p.item_id == pr::ENERGIA {
+        return format!("{} de Energia", crate::economia::milhar(p.qtd as u64));
+    }
     if p.item_id == pr::OURO {
         return format!("{} de ouro", crate::economia::milhar(p.qtd as u64));
     }
@@ -35,6 +38,17 @@ pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
         .cloned()
         .unwrap_or_else(|| format!("Item {}", p.item_id));
     format!("{nome} ×{}", p.qtd)
+}
+
+fn rotulo_curto(p: &Premio) -> String {
+    use shared::item_id::*;
+    let nome = match p.item_id {
+        pr::ENERGIA => "Energia", pr::OURO => "Ouro",
+        PERGAMINHO_INVOCA_PET => "Inv. Pet", PERGAMINHO_INVOCA_MONTARIA => "Inv. Montaria",
+        PASSE_MAGICO => "Ilha Mágica", COPPER => "Cobre", DARKSTEEL => "Darksteel",
+        GLITTERING_POWDER => "Pó Cintilante", _ => "Item",
+    };
+    format!("{} ×{}", nome, crate::economia::milhar(p.qtd as u64))
 }
 
 /// "5h 12m" / "12m".
@@ -261,40 +275,21 @@ impl PresencaUi {
                 if marco { estilo::OURO } else { estilo::SUAVE },
             );
             let premios: Vec<&Premio> = dia.iter().filter(|p| p.qtd > 0).collect();
-            // Marco: icone maior; o segundo premio num canto.
-            let lado = (r.w.min(r.h) * if marco { 0.62 } else { 0.52 }).max(16.0);
-            if let Some(pp) = premios.first() {
-                let id = if pp.item_id == pr::OURO {
-                    shared::item_id::GOLD
+            // Todos os premios ficam escritos no cartao, inclusive os tres do dia 28.
+            let linha = ((r.h - 23.0 * f) / premios.len().max(1) as f32).min(25.0 * f);
+            for (j, pp) in premios.iter().enumerate() {
+                let yy = r.y + 22.0 * f + j as f32 * linha;
+                let lado = (linha - 3.0 * f).min(22.0 * f);
+                let ic = Rect::new(r.x + 4.0 * f, yy, lado, lado);
+                if pp.item_id == pr::ENERGIA {
+                    estilo::icone_energia(ic.center(), lado * 0.5);
                 } else {
-                    pp.item_id
-                };
-                let ic = Rect::new(
-                    r.center().x - lado * 0.5,
-                    r.y + (r.h - lado) * 0.45,
-                    lado,
-                    lado,
-                );
-                crate::icones::icone_com_3d(id, ic, None, None, Some((vox, solido)));
-                let q = crate::economia::milhar(pp.qtd as u64);
-                estilo::texto_centro_forte(
-                    r.center().x,
-                    r.y + r.h - 6.0 * f,
-                    &format!("×{q}"),
-                    12,
-                    estilo::TEXTO,
-                );
-            }
-            if let Some(pp) = premios.get(1) {
-                let l2 = lado * 0.5;
-                let ic = Rect::new(r.x + r.w - l2 - 3.0 * f, r.y + 3.0 * f, l2, l2);
-                crate::icones::icone_com_3d(
-                    pp.item_id,
-                    ic,
-                    None,
-                    Some(pp.qtd),
-                    Some((vox, solido)),
-                );
+                    crate::icones::icone_com_3d(if pp.item_id == pr::OURO { shared::item_id::GOLD } else { pp.item_id }, ic, None, None, Some((vox, solido)));
+                }
+                let rotulo = rotulo_curto(pp);
+                estilo::texto_ajustado(&rotulo, ic.x + lado + 3.0 * f, yy + lado * 0.8,
+                    r.w - lado - 13.0 * f, if marco { 12 } else { 11 },
+                    if marco { estilo::OURO } else { estilo::TEXTO });
             }
             if (i as u8) < cal.resgatados {
                 estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.0, 0.0, 0.0, 0.55));

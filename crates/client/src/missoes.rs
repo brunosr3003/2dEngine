@@ -36,7 +36,7 @@ pub enum NoRastreador {
     Rolar(bool),
 }
 
-/// O CONTADOR de missoes concluidas, no centro superior da tela.
+/// O progresso da ultima missao atualizada, no centro superior da tela.
 ///
 /// Aparece quando sobe e desaparece sozinho. Terminar uma missao so' deixava
 /// rastro no chat — que rola, some e compete com conversa: o jogador fechava
@@ -48,33 +48,33 @@ pub enum NoRastreador {
 /// pra mostrar um placar seria pior que nao mostrar.
 pub fn desenha_contador(m: &Missoes, agora: f64) {
     const DURACAO: f64 = 3.2;
-    if m.concluidas == 0 {
+    if m.aviso_progresso.is_empty() {
         return;
     }
-    let t = agora - m.concluida_em;
+    let t = agora - m.aviso_em;
     if t > DURACAO {
         return;
     }
     // Entra depressa, fica, e some no ultimo terco.
     let a = ((DURACAO - t) / (DURACAO * 0.33)).clamp(0.0, 1.0) as f32;
     let sobe = (1.0 - (t / 0.25).clamp(0.0, 1.0) as f32) * 14.0;
-    let s = crate::hud_layout::tela_segura();
-    let x = s.x + s.w * 0.5;
-    let y = s.y + 54.0 - sobe;
-    let texto = format!("Missões concluídas: {}", m.concluidas);
+    let alvo = crate::hud_layout::atual().alvo;
+    let x = alvo.x + alvo.w * 0.5;
+    let y = alvo.y + alvo.h + 25.0 - sobe;
+    let texto = &m.aviso_progresso;
     estilo::texto_centro(
         x + 1.0,
         y + 1.0,
-        &texto,
+        texto,
         18,
         Color::new(0.0, 0.0, 0.0, 0.55 * a),
     );
     estilo::texto_centro(
         x,
         y,
-        &texto,
+        texto,
         18,
-        Color::new(estilo::OURO.r, estilo::OURO.g, estilo::OURO.b, a),
+        Color::new(estilo::AUTO.r, estilo::AUTO.g, estilo::AUTO.b, a),
     );
 }
 
@@ -122,6 +122,9 @@ pub struct Missoes {
     /// so' no chat, que rola e some.
     pub concluidas: u32,
     pub concluida_em: f64,
+    /// Aviso temporário do último avanço, inclusive missões não fixadas.
+    pub aviso_progresso: String,
+    pub aviso_em: f64,
     /// O giver do NPC que abriu a janela (o Mestre ou um oficio da vila):
     /// so' as missoes DELE se entregam aqui.
     giver: Option<u16>,
@@ -629,7 +632,7 @@ impl Missoes {
             let dica = if self.npc.is_some() {
                 "Nenhuma missão ativa."
             } else {
-                "Nenhuma missão ativa. Fale com o Mestre de Missões na praça."
+                "Nenhuma missão ativa. Abra Menu › Missões para pegar várias."
             };
             estilo::texto_ajustado(dica, p.x + u(16.0), y + u(22.0), texto_w, 15, estilo::SUAVE);
         }

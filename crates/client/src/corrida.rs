@@ -16,12 +16,22 @@ const MEXENDO: f32 = 0.5;
 
 #[derive(Default)]
 pub struct Corrida {
+    escolha: Option<bool>,
     andando: f32,
     parado: f32,
     ultima: Option<Vec2>,
 }
 
 impl Corrida {
+    /// A escolha manual prevalece sobre a corrida automática da viagem.
+    pub fn ativa(&self, automatico: bool) -> bool {
+        self.escolha.unwrap_or(automatico)
+    }
+
+    pub fn alternar(&mut self, automatico: bool) {
+        self.escolha = Some(!self.ativa(automatico));
+    }
+
     /// Um quadro. `automatico` = o personagem esta' indo sozinho e nada o
     /// segura (sem dialogo aberto, sem auto combate ou coleta parados na
     /// zona). Devolve se deve correr.
@@ -52,6 +62,21 @@ impl Corrida {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toque_alterna_e_desligar_impede_auto_de_religar() {
+        let mut c = Corrida::default();
+        assert!(!c.ativa(false));
+        c.alternar(false);
+        assert!(c.ativa(false));
+        c.alternar(false);
+        assert!(!c.ativa(true));
+        c.alternar(true);
+        assert!(c.ativa(false));
+        let mut c = Corrida::default();
+        c.alternar(true);
+        assert!(!c.ativa(true));
+    }
 
     /// Anda `quadros` quadros a 4 u/s em linha reta.
     fn anda(c: &mut Corrida, x: &mut f32, quadros: u32, automatico: bool) -> bool {

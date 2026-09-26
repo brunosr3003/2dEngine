@@ -384,7 +384,7 @@ fn segura_duas_maos(p: &Pose, m: &mut [Mat4; N], voxel: f32, entre_maos: f32) {
 /// Montado (docs/MONTARIAS.md): pernas abertas pros lados do bicho com o
 /// joelho dobrado, maos juntas na frente (a redea), tronco um pouco pra
 /// frente. A arma fica guardada e nada anda: quem anda e' a montaria.
-pub fn aplica_montado(p: &mut Pose, tempo: f32) {
+pub fn aplica_montado(p: &mut Pose, tempo: f32, em_combate: bool) {
     let s = (tempo * std::f32::consts::TAU * 0.8).sin();
     // A coxa ABRE muito (≈49°) antes de ir pra frente: com pouca abertura a
     // perna sobe POR CIMA do lombo e entra no corpo do bicho. Menos `frente`
@@ -393,6 +393,9 @@ pub fn aplica_montado(p: &mut Pose, tempo: f32) {
     p.rot[COXA_E] = abre(-1.0, 1.15) * frente(0.6);
     p.rot[CANELA_D] = dobra_pra_tras(1.3);
     p.rot[CANELA_E] = dobra_pra_tras(1.3);
+    p.subida = 0.0;
+    p.ferramenta = None;
+    if em_combate { return; }
     p.rot[BRACO_D] = frente(0.7 + 0.04 * s);
     p.rot[BRACO_E] = frente(0.7 + 0.04 * s);
     p.rot[ANTEBRACO_D] = frente(0.6);

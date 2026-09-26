@@ -36,44 +36,32 @@ resgate no servidor em `crates/server/src/world/presenca.rs`, janela em
 - **Teste:** `MMO_PRESENCA_TESTE_OFFSET_S` adianta o relógio do calendário no
   servidor de teste; `MMO_PRESENCA_TESTE_PENDENTE_S` muda a janela do
   pendente. Bot: `cargo run --bin presencabot`.
-- **Ouro** vai direto pro ouro do personagem; **item** vai pra bolsa; o que não
-  couber vira carta nas **Entregas do Mercado** (motivo "Calendário de
-  presença").
-- Nada de moeda TP, equipamento ou item negociável. **Pergaminho de invocação
-  pode**, desde que entre **vinculado**: é item de loja, mas assim não vira
-  torneira de mercado, e quem não paga também abre (docs/PETS.md). Hoje só o
-  Pergaminho de Invocação: Pet, nos dias 14 e 28.
+- **Energia** vai direto ao saldo; **cobre e Darksteel** usam a carteira.
+  Outros itens vão à bolsa; o que não couber vira carta nas **Entregas do
+  Mercado**, com motivo "Calendário de presença".
+- Sem TP ou equipamentos. Pergaminhos de Pet e Montaria são vinculados.
 
-## Prêmios do mês ⚠️
+## Prêmios do mês — atualização 26/09/2026
 
-| dia | prêmio | | dia | prêmio |
-|---:|---|---|---:|---|
-| 1 | 500 ouro | | 15 | 1.500 ouro |
-| 2 | Poção de Vida ×10 | | 16 | Poção de Mana ×15 |
-| 3 | Poção de Mana ×10 | | 17 | Poção de Vigor ×8 |
-| 4 | Poção de Vigor ×5 | | 18 | Poção de Fortuna ×1 |
-| 5 | 800 ouro | | 19 | 1.800 ouro |
-| 6 | Poção de Vida+ ×5 | | 20 | Poção de Vida+ ×10 |
-| **7** | **Poção de XP ×1 + Marcas ×10** | | **21** | **Poção de XP ×2 + Marcas ×20** |
-| 8 | 1.000 ouro | | 22 | 2.000 ouro |
-| 9 | Poção de Vida ×15 | | 23 | Poção de Mana+ ×8 |
-| 10 | Poção de Mana+ ×5 | | 24 | Poção de Sorte ×1 |
-| 11 | Poção de Fortuna ×1 | | 25 | 2.500 ouro |
-| 12 | 1.200 ouro | | 26 | Poção de Vida+ ×12 |
-| 13 | Poção de Vida+ ×8 | | 27 | Poção de Fortuna ×1 |
-| **14** | **Poção de XP ×2 + Poção de Sorte ×1** | | **28** | **Poção de XP ×3 + Marcas ×40** |
+Sem poções de vida, mana, XP ou drop. Recursos nos demais dias: cobre,
+Darksteel, energia e pó reluzente.
 
-Total do mês: 11.300 ouro, 8 Poções de XP, 70 Marcas da Tempestade, 3 de
-Fortuna, 2 de Sorte e poções comuns.
+| Dia | Prêmio |
+|---|---|
+| 1 | 5.000 Energia |
+| 2 | 5.000 Darksteel |
+| 3 | 1 invocação de Montaria + 5.000 Energia |
+| 4 | 1 invocação de Pet + 10.000 Cobre |
+| 7 | 10 invocações de Pet |
+| 14 | 10 invocações de Montaria |
+| 21 | 10 invocações de Pet |
+| 28 | 10 invocações de Montaria + 10 de Pet + 5 entradas na Ilha Mágica |
 
-**Vinculado:** Poção de XP e Marcas já eram vinculadas; Fortuna e Sorte passam
-a ser (migração `presenca_vinculados_v1`, só saem de recompensa). As poções
-comuns são as que o Alquimista vende — dar algumas não cria nada que não se
-compre. Cobre, Darksteel, Pó Cintilante e chaves de craft **ficaram de fora**:
-são negociáveis no mercado, e a pilha de item não tem vínculo por unidade
-(só a peça de equipamento tem `vinculado` na instância). O teste
-`marcos_sao_os_melhores_e_a_grade_so_tem_permitido` barra item fora da lista
-`PERMITIDOS`.
+Energia é creditada no saldo e salva na mesma transação do resgate.
+A grade exibe nome e quantidade de todos os prêmios de cada dia.
+Cada semana significa sete resgates; não precisa ser consecutiva.
+O calendário continua reiniciando mensalmente às 04:00 de Brasília.
+Os pergaminhos são vinculados; criaturas invocadas seguem as regras existentes.
 
 ## Eventos
 
@@ -97,8 +85,7 @@ servidor e app (a grade vai pelo protocolo).
   quando há resgate hoje.
 - **Menu → Aventura → Presença.**
 - **Sozinha no login**, uma vez por sessão do app, quando há resgate.
-- Grade de 7 × 4 com ícone e quantidade; marcos com borda dourada e ícone
-  maior (o segundo prêmio no canto); o dia de hoje destacado; os já
+- Grade de 7 × 4 com ícone e quantidade; marcos com borda dourada e todos os prêmios listados; o dia de hoje destacado; os já
   resgatados escurecidos com visto; toque num dia mostra os prêmios. Rodapé:
   resgatados X/28, contador até o próximo reset e o botão **Resgatar**.
 - "Onde obter": item que sai do calendário mostra a fonte "Calendário de

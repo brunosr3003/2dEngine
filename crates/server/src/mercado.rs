@@ -200,7 +200,25 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
-    razao::criar_tabela(pool).await
+    razao::criar_tabela(pool).await?;
+    let mut tx = pool.begin().await?;
+    let antigos = sqlx::query("SELECT id, realm, personagem, qtd_restante FROM mercado_anuncios WHERE item_id = 359 AND estado = 0 FOR UPDATE")
+        .fetch_all(&mut *tx).await?;
+    for row in antigos {
+        let id: String = row.get("id");
+        let realm: String = row.get("realm");
+        let personagem: String = row.get("personagem");
+        let qtd = row.get::<i64, _>("qtd_restante").max(0) as u64;
+        carta(&mut tx, &format!("{id}:fim-teleporte"), &realm, &personagem,
+            shared::item_id::COPPER, qtd.saturating_mul(100), None, 0,
+            "Pergaminho de Teleporte retirado: reembolso em cobre").await?;
+        sqlx::query("UPDATE mercado_anuncios SET estado = $2, qtd_restante = 0 WHERE id = $1")
+            .bind(&id).bind(regras::ESTADO_CANCELADO as i16).execute(&mut *tx).await?;
+    }
+    sqlx::query("UPDATE mercado_cartas SET item_id = $1, qtd = qtd * 100, instancia = NULL WHERE item_id = 359")
+        .bind(shared::item_id::COPPER as i32).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 // ─────────────────────────── realm → central ───────────────────────────
@@ -404,6 +422,9 @@ async fn carta(
     gold: u64,
     motivo: &str,
 ) -> Result<()> {
+    let (item_id, qtd) = if item_id == shared::item_id::PERGAMINHO_TELEPORTE {
+        (shared::item_id::COPPER, qtd.saturating_mul(100))
+    } else { (item_id, qtd) };
     sqlx::query(
         "INSERT INTO mercado_cartas (id, realm, personagem, item_id, qtd, instancia, gold, motivo)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING",
@@ -458,7 +479,7 @@ async fn anunciar_item(
         .bind(format!("anuncios:{realm}:{personagem}"))
         .execute(&mut **tx)
         .await?;
-    let recusa = if qtd == 0 || item_id == 0 {
+    let recusa = if qtd == 0 || item_id == 0 || item_id == shared::item_id::PERGAMINHO_TELEPORTE {
         Some(Recusa::Quantidade)
     } else if !regras::preco_valido(preco_unit) {
         Some(Recusa::Preco)

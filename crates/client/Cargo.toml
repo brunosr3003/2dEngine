@@ -13,7 +13,7 @@ path = "src/main.rs"
 # a mao como o cliente Unity fazia em Protocol.cs — drift de versao
 # deixa de ser possivel por construcao.
 shared.workspace = true
-macroquad = "0.4"
+macroquad = { version = "0.4", features = ["audio"] }
 tungstenite = "0.24"
 anyhow.workspace = true
 glam.workspace = true

@@ -256,6 +256,7 @@ mod testes {
             recursos,
             nomes,
             rendimentos,
+            mobs: Vec::new(),
             chefes: Vec::new(),
         };
         let bytes = shared::protocol::encode(&msg).unwrap().len();

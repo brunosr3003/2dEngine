@@ -229,6 +229,14 @@ pub struct Equipment {
     #[serde(default)]
     pub montaria_inst: Option<crate::items::ItemInstance>,
     #[serde(default)]
+    pub acessorio_pet: Option<u16>,
+    #[serde(default)]
+    pub acessorio_pet_inst: Option<crate::items::ItemInstance>,
+    #[serde(default)]
+    pub acessorio_montaria: Option<u16>,
+    #[serde(default)]
+    pub acessorio_montaria_inst: Option<crate::items::ItemInstance>,
+    #[serde(default)]
     pub pet2: Option<u16>,
     #[serde(default)]
     pub pet2_inst: Option<crate::items::ItemInstance>,
@@ -256,6 +264,8 @@ impl Equipment {
             Pet2 => (&mut self.pet2, &mut self.pet2_inst),
             Pet3 => (&mut self.pet3, &mut self.pet3_inst),
             Montaria => (&mut self.montaria, &mut self.montaria_inst),
+            AcessorioPet => (&mut self.acessorio_pet, &mut self.acessorio_pet_inst),
+            AcessorioMontaria => (&mut self.acessorio_montaria, &mut self.acessorio_montaria_inst),
         }
     }
 
@@ -465,6 +475,9 @@ pub const POS_SCALE: f32 = 8.0;
 /// segundo — 23 bytes por tick por mob, exatamente nas entidades que se movem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityMeta {
+    /// Grau/refino por peça, ver `auras`.
+    #[serde(default)]
+    pub auras: u64,
     pub id: EntityId,
     pub tag: EntityTag,
     pub name: Option<String>,
@@ -477,6 +490,9 @@ pub struct EntityMeta {
     pub kind: u16,
     /// Nivel: o do mob, ou o do personagem. Vai na placa em cima da cabeca.
     pub nivel: u16,
+    /// Atributos reais do inimigo e referências de equipamento para enfrentá-lo.
+    #[serde(default)]
+    pub desafio: Option<DesafioMob>,
     /// APARENCIA empacotada (`aparencia::Aparencia::empacota`). Zero = o
     /// corpo padrao — e' o que mob, saque e projetil mandam.
     ///
@@ -486,6 +502,108 @@ pub struct EntityMeta {
     /// (`loja_mundo::atualizar_montaria_vista`).
     #[serde(default)]
     pub aparencia: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DesafioMob {
+    pub ataque: u16,
+    pub defesa: u16,
+    pub ataque_recomendado: u16,
+    pub defesa_recomendada: u16,
+    pub poder_recomendado: u32,
+    pub grau_minimo: u8,
+    pub pecas_minimas: u8,
+    pub item_level_minimo: u16,
+    pub refino_arma_minimo: u8,
+    pub proficiencia_minima: u16,
+}
+
+/// Referências derivadas da vida, ataque e defesa reais do inimigo. São guias
+/// de equipamento, nunca uma trava de nível nem multiplicador oculto de dano.
+pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
+    let defesa = s.defense.max(0);
+    let ataque = s.attack_damage.max(0);
+    let recomendado_ataque = if chefe {
+        s.hp_max.max(1) / 150 + defesa * 2
+    } else {
+        s.hp_max.max(1) / 9 + defesa * 2
+    }.max(10);
+    let dano_alvo = if chefe { 35.0 } else { 18.0 };
+    let recomendado_defesa = if ataque as f32 <= dano_alvo {
+        0
+    } else {
+        (((1.0 - dano_alvo / ataque as f32) / 0.015).ceil() as i32).clamp(0, 50)
+    };
+    let (grau, pecas, item_level, refino, prof, piso_poder) = if nivel >= 60 {
+        (4, 5, 60, 5, 80, 10_500 + 200 * nivel.saturating_sub(60))
+    } else if nivel >= 50 {
+        (4, 4, 46, 4, 70, 8_500 + 170 * (nivel - 50))
+    } else if nivel >= 40 {
+        (3, 4, 35, 4, 60, 6_500 + 150 * (nivel - 40))
+    } else if nivel >= 30 {
+        (3, 3, 26, 2, 45 + (nivel - 30) as u16, 4_500 + 140 * (nivel - 30))
+    } else if nivel >= 20 {
+        (2, 2, 18, 0, 30 + (nivel - 20) as u16, 2_400 + 110 * (nivel - 20))
+    } else {
+        (1, 1, 5, 0, nivel.min(20) as u16, 500 + 70 * nivel)
+    };
+    let poder_recomendado = piso_poder as i32
+        + ataque * 6 + defesa * 8;
+    let poder_recomendado = if chefe {
+        poder_recomendado * 115 / 100
+    } else { poder_recomendado };
+    DesafioMob {
+        ataque: ataque.min(u16::MAX as i32) as u16,
+        defesa: defesa.min(u16::MAX as i32) as u16,
+        ataque_recomendado: recomendado_ataque.min(u16::MAX as i32) as u16,
+        defesa_recomendada: recomendado_defesa as u16,
+        poder_recomendado: poder_recomendado.max(0) as u32,
+        grau_minimo: grau,
+        pecas_minimas: pecas + u8::from(chefe),
+        item_level_minimo: item_level,
+        refino_arma_minimo: refino + u8::from(chefe),
+        proficiencia_minima: prof + u16::from(chefe) * 5,
+    }
+}
+
+#[cfg(test)]
+mod testes_desafio_mob {
+    use super::*;
+
+    #[test]
+    fn recomendacoes_seguem_atributos_reais() {
+        let mut s = base_player_stats();
+        s.hp_max = 900;
+        s.attack_damage = 50;
+        s.defense = 15;
+        let a = desafio_do_mob(&s, 20, false);
+        assert_eq!((a.ataque, a.defesa), (50, 15));
+        s.hp_max = 1_200;
+        s.attack_damage = 70;
+        s.defense = 25;
+        let b = desafio_do_mob(&s, 20, false);
+        assert!(b.ataque_recomendado > a.ataque_recomendado);
+        assert!(b.defesa_recomendada > a.defesa_recomendada);
+        assert!(b.poder_recomendado > a.poder_recomendado);
+    }
+
+    #[test]
+    fn faixas_20_e_30_pedem_pecas_verdes_e_azuis() {
+        let mut s = base_player_stats();
+        s.hp_max = 500;
+        s.attack_damage = 40;
+        s.defense = 12;
+        let vinte = desafio_do_mob(&s, 20, false);
+        let trinta = desafio_do_mob(&s, 30, false);
+        let trinta_quatro = desafio_do_mob(&s, 34, false);
+        assert_eq!((vinte.grau_minimo, vinte.pecas_minimas), (2, 2));
+        assert_eq!((trinta.grau_minimo, trinta.pecas_minimas), (3, 3));
+        assert!(trinta_quatro.poder_recomendado > 4_300);
+        assert!(trinta_quatro.proficiencia_minima >= 49);
+        let chefe = desafio_do_mob(&s, 34, true);
+        assert!(chefe.poder_recomendado > trinta_quatro.poder_recomendado);
+        assert!(chefe.pecas_minimas > trinta_quatro.pecas_minimas);
+    }
 }
 
 /// Rumo de NPC parado, guardado no `EntityMeta::kind` (so' pra

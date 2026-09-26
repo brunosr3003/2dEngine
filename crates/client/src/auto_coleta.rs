@@ -196,6 +196,10 @@ impl AutoColeta {
     }
 
     /// `ColetaEstado` do servidor: coletando, ou parou (esgotou, recusou).
+    pub fn coletando_confirmado(&self) -> bool {
+        self.etapa == Etapa::Coletando && self.confirmou
+    }
+
     pub fn estado_coleta(&mut self, tipo: u8, pausado: bool, agora: f64) {
         if !self.ativo() {
             return;
@@ -375,7 +379,8 @@ impl AutoColeta {
 /// passo nunca andaria.
 pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
     use shared::quests::{objective_kind, tutorial};
-    if def.obj_kind == objective_kind::TUTORIAL && def.obj_target == tutorial::COLETA_ENERGIA {
+    if def.obj_kind == objective_kind::TUTORIAL && matches!(def.obj_target,
+        tutorial::COLETA_ENERGIA | tutorial::PONTO_ATRIBUTO | tutorial::EVOLUIR_SKILL) {
         return ([false; 5], true);
     }
     if def.obj_kind != objective_kind::GATHER {
@@ -435,6 +440,23 @@ mod tests {
         a.parar();
         assert_eq!(a.tipos_efetivos(), [true; 5], "solta, volta a configuracao");
         assert!(a.energia_efetiva());
+    }
+
+    #[test]
+    fn recusa_antes_de_coletar_nao_e_recurso_esgotado() {
+        let mut a = AutoColeta::default();
+        a.ligar(Vec2::ZERO, 0.0);
+        a.passo(Vec2::ZERO, 0.0, false);
+        a.no_recebido(Some((77, Vec2::ZERO, Vec2::X, 2)), 0.1);
+        assert_eq!(a.passo(Vec2::ZERO, 0.2, true), Acao::Coletar(77));
+        assert!(!a.coletando_confirmado());
+        a.estado_coleta(shared::protocol::COLETA_PARADA, false, 0.3);
+        assert!(!a.coletando_confirmado());
+        a.passo(Vec2::ZERO, 2.0, false);
+        a.no_recebido(Some((78, Vec2::ZERO, Vec2::X, 2)), 2.1);
+        a.passo(Vec2::ZERO, 2.2, false);
+        a.estado_coleta(2, false, 2.3);
+        assert!(a.coletando_confirmado());
     }
 
     #[test]

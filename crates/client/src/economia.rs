@@ -48,6 +48,10 @@ pub struct Resumo<'a> {
     pub estado: (&'a str, Color),
     pub ping_ms: f32,
     pub nome_item: &'a dyn Fn(u16) -> String,
+    pub auto_resumo: Option<&'a crate::auto_resumo::AutoResumo>,
+    pub missao_atual: Option<(u16, &'a str, u32, u32)>,
+    pub proximas_missoes: &'a [u16],
+    pub nomes_itens: &'a std::collections::HashMap<u16, String>,
 }
 
 /// O que rendeu enquanto o jogador estava fora: mostrado numa janela
@@ -353,6 +357,11 @@ impl Economia {
         );
         y += 40.0 * f;
 
+        if let Some(auto) = r.auto_resumo {
+            let alto = (seguro.y + seguro.h - 108.0 * f - y).max(100.0 * f);
+            auto.desenhar(Rect::new(x, y - 12.0 * f, w, alto),
+                r.missao_atual, r.proximas_missoes, r.nomes_itens);
+        } else {
         estilo::texto_forte(x, y, "DESDE QUE LIGOU", 12, suave);
         y += 26.0 * f;
         let niveis = r.nivel.saturating_sub(self.nivel_inicio);
@@ -409,6 +418,7 @@ impl Economia {
             );
             estilo::texto_forte(xd + cw - estilo::medir_forte(&qtd, 14), yd, &qtd, 14, texto);
             yd += 22.0 * f;
+        }
         }
         if r.ping_ms > 0.0 {
             let p = format!("{:.0} ms", r.ping_ms);

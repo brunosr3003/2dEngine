@@ -273,6 +273,7 @@ async fn main() -> anyhow::Result<()> {
                         AvisoLoja::Invocacao { premio } => {
                             linhas.push(format!("invocacao: {premio:?}"));
                         }
+                        AvisoLoja::MontariaCombate { .. } => {}
                         AvisoLoja::Invocacoes { premios } => {
                             linhas.push(format!("invocacoes: {premios:?}"));
                         }

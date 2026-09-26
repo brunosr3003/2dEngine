@@ -224,3 +224,64 @@ entregar, com travas só por nível e pela rota entre ilhas. Detalhes em
 ### Recompensas extras das diárias
 
 Além da recompensa própria, cada diária paga uma poção: as de área (quebrar pedra, caçar) dão **Poção de Experiência**, a de criar item dá **Poção de Fortuna** e a de refinar dá **Poção de Sorte** (ver `docs/ITENS.md`).
+
+## Atalhos individuais e execução em lote (26/09/2026)
+
+Missões manuais não aparecem na seleção do “Fazer tudo”, inclusive quando
+prontas. O filtro também é aplicado ao receber e executar a fila.
+
+Individualmente, uma missão ativa de Craft, Forja ou Dungeon oferece **Abrir**:
+o cliente cancela a fila e abre o painel correspondente; Dungeon já seleciona
+o conteúdo pedido. Tesouro abre o mapa e tutoriais abrem seus painéis ou guiam
+a ação. A descrição detalhada continua disponível ao expandir o cartão.
+Quando o objetivo manual estiver pronto, **Ir** permite a entrega individual.
+Funcionalidades ainda indisponíveis continuam mostrando detalhes.
+
+### Coleta de energia no automático — 26/09/2026
+
+A missão 796, "A luz nas pedras", usa o tipo TUTORIAL, mas seu objetivo é
+coleta no mundo. Ela entra no automático e o clique individual pede o destino
+ao servidor, que indica um cristal; ao chegar, coleta apenas energia.
+Os demais tutoriais de interface, craft e dungeon continuam manuais e fora
+da fila. Regressão coberta por `tutorial_de_energia_viaja_e_coleta_sem_abrir_painel_manual`.
+
+Revisão dos demais passos: o clique individual em PONTO_ATRIBUTO e
+EVOLUIR_SKILL também consulta o destino do servidor. Se faltar energia
+(segundo o limiar já usado pelo servidor), busca somente cristais; quando
+o servidor responde TUTORIAL, encerra a coleta e abre Ficha ou Habilidades.
+Esses passos permanecem manuais e fora da fila. Todos os passos de PASSOS
+têm classificação e clique verificados em teste.
+
+### Destinos de caça e coleta — 26/09/2026
+
+Caça e drops usam o bestiário da ilha e distinguem praia de mata. O destino
+é um mob vivo do tipo pedido; sem alvo vivo, uma vaga real de spawn, nunca
+o centro geométrico vazio. Faixas compatíveis com o nível têm prioridade.
+Na coleta próxima, o destino é um ponto de interação alcançável de um nó
+vivo. Antes de coletar, o cliente cancela a viagem e envia PararRota.
+Recusa inicial de coleta não dispara a saída de recurso esgotado; essa saída
+exige confirmação de que a coleta havia começado.
+
+## Auto missão: área → modo automático → conclusão (26/09/2026)
+
+Ao chegar à área, encerra a rota de viagem no cliente e no servidor e liga
+combate ou coleta. O modo especializado permanece responsável por alvos,
+aproximação e recursos até o objetivo ficar pronto. O auto missão não cancela
+mais por seis segundos sem progresso no contador. Uma luta longa, um ciclo
+de coleta demorado ou a espera por respawn não reiniciam a viagem.
+
+A caça prioriza o tipo de mob da missão selecionada (inclusive kind 0),
+ignora alvos temporariamente descartados e acompanha a perseguição para fora
+da área inicial sem desligar. Ao concluir, encerra a rota e o modo automático
+antes de pedir a entrega/próxima etapa. Na coleta, o evento real de recurso
+encerrado mantém o pequeno deslocamento solicitado anteriormente para buscar
+outro nó; ausência temporária de progresso não dispara esse procedimento.
+
+# Resumo do auto missão
+
+Enquanto o auto missão executa uma missão ou uma fila, **somente a tela do
+modo economia de bateria** mostra a missão atual e seu progresso, as próximas
+da fila, quantas foram entregues, a
+recompensa das últimas entregas e o total de recompensas confirmado pelo
+servidor. Itens e Energia obtidos durante a auto coleta aparecem em um total
+separado. Uma nova execução começa um novo resumo.

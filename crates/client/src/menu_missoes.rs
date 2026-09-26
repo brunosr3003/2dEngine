@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::hud_estilo as estilo;
 use crate::missoes::{progresso, pronta, Tem};
 
-const LARGURA: f32 = 540.0;
+const LARGURA: f32 = 850.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Estado {
@@ -39,8 +39,12 @@ pub enum Clique {
     /// balcao era pedagio. O servidor continua exigindo que o NPC exista
     /// nesta ilha.
     Aceitar(u16),
+    /// Ultimo passo do tutorial inicial: executar pelo menu.
+    FazerTutorial(u16),
     /// Em andamento ou pronta: a auto missao que ja' existe.
     AutoMissao(u16),
+    /// Abre a tela da tarefa manual, sem entrar na fila.
+    AbrirManual(u16),
     /// Nao anda: so' avisa.
     Aviso(String),
     /// A FILA: fazer estas, nesta ordem.
@@ -168,16 +172,51 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
 pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
     match e {
         Estado::Disponivel => Clique::Aceitar(d.id),
+        Estado::EmAndamento { .. } if d.id == 905 => Clique::FazerTutorial(d.id),
         // Trava de nível: o jogador escolhe uma rota de XP.
         Estado::EmAndamento { .. } if d.obj_kind == shared::quests::objective_kind::NIVEL => {
             Clique::OpcoesDeNivel(d.obj_count)
         }
+        Estado::EmAndamento { .. } if tem_atalho_manual(d) => Clique::AbrirManual(d.id),
+        Estado::EmAndamento { .. } if !automatizavel(d) => {
+            Clique::Aviso(format!("\"{}\" exige ação manual.", d.title))
+        }
         Estado::EmAndamento { .. } | Estado::Pronta => Clique::AutoMissao(d.id),
         Estado::Concluida => Clique::Aviso(format!("\"{}\" já foi concluída.", d.title)),
-        Estado::Bloqueada(m) => {
-            Clique::Aviso(format!("\"{}\" bloqueada: {}.", d.title, m.join(" · ")))
-        }
+        Estado::Bloqueada(m) => nivel_bloqueado(m).map_or_else(
+            || Clique::Aviso(format!("\"{}\" bloqueada: {}.", d.title, m.join(" · "))),
+            Clique::OpcoesDeNivel,
+        ),
     }
+}
+
+fn nivel_bloqueado(motivos: &[String]) -> Option<u32> {
+    motivos.iter().find_map(|s| s.strip_prefix("Requer nível ")?.parse().ok())
+}
+
+/// Só objetivos que a máquina e o servidor conseguem executar sem gesto do jogador.
+/// A mesma regra governa botão, fila e avanço automático da história.
+pub fn automatizavel(d: &QuestDef) -> bool {
+    use shared::quests::objective_kind as obj;
+    matches!(d.obj_kind, obj::COLLECT | obj::KILL | obj::EXPLORE | obj::DELIVER
+        | obj::TRANSPORT | obj::TALK | obj::GATHER | obj::LUGAR | obj::VIAGEM)
+        // Este tutorial é coleta no mundo: o servidor indica o cristal.
+        || (d.obj_kind == obj::TUTORIAL
+            && d.obj_target == shared::quests::tutorial::COLETA_ENERGIA)
+}
+
+pub fn tem_atalho_manual(d: &QuestDef) -> bool {
+    use shared::quests::objective_kind as o;
+    !automatizavel(d)
+        && matches!(d.obj_kind, o::CRAFT | o::REFINE | o::DUNGEON | o::TREASURE | o::TUTORIAL)
+}
+
+pub fn pode_ir(d: &QuestDef, e: &Estado) -> bool {
+    automatizavel(d) || matches!(e, Estado::Pronta)
+}
+
+pub fn pode_iniciar_auto(d: &QuestDef, status: u8) -> bool {
+    automatizavel(d) || status == shared::quests::quest_status::READY
 }
 
 /// Quanto falta pro reset das diarias (meia-noite UTC), "5h 07min".
@@ -332,6 +371,11 @@ pub fn nome_da_cadeia(raiz: u16) -> Option<&'static str> {
 pub fn linhas(log: &[QuestNet]) -> Vec<Linha> {
     let lista = lista_do_menu(log);
     let mut v = Vec::new();
+    if log.iter().any(|q| q.id == 905 && q.status == shared::quests::quest_status::ACTIVE) {
+        if let Some(d) = shared::quests::quest_by_id(905) {
+            v.push(Linha { nome: "Aprenda a fazer missões".into(), passos: vec![d], historia: true });
+        }
+    }
     let hist: Vec<&'static QuestDef> = lista
         .iter()
         .copied()
@@ -503,6 +547,21 @@ pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
         || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
 }
 
+const MAPAS: [Option<&str>; 5] = [
+    None,
+    Some("ilha_inicial"),
+    Some("ilha_gelo"),
+    Some("ilha_deserto"),
+    Some("ilha_planalto"),
+];
+
+fn cabe_no_mapa(l: &Linha, r: &Resumo, mapa: Option<&str>) -> bool {
+    let Some(mapa) = mapa else { return true };
+    // A história atravessa ilhas: seu mapa é o do passo que aparece no cartão.
+    let passo = r.atual.or_else(|| l.passos.last().copied());
+    passo.is_some_and(|d| zona_da_missao(d.id) == Some(mapa))
+}
+
 /// Em que aba a linha vai, pelo estado do passo atual.
 pub fn aba_de(r: &Resumo) -> Aba {
     match r.estado {
@@ -539,6 +598,9 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
                 "Nível {feito}/{total} · escolha: Ilha Mágica, missões secundárias ou caça em áreas densas"
             )
         }
+        Estado::EmAndamento { feito, total } if !automatizavel(d) => {
+            format!("Manual · {feito}/{total} · {}", caminho_manual(d))
+        }
         Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
         Estado::Pronta => match shared::quests::quem_da(d) {
             Some(q) => format!("Pronta · entregar: {q}"),
@@ -547,6 +609,49 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
         Estado::Concluida => "Concluída".into(),
         Estado::Bloqueada(m) => m.join(" · "),
     }
+}
+
+fn caminho_manual(d: &QuestDef) -> String {
+    use shared::quests::objective_kind as obj;
+    match d.obj_kind {
+        obj::CRAFT => format!("Menu › Craft: crie {} equipamento(s)", d.obj_count),
+        obj::REFINE => format!("Menu › Forja: tente refinar {} vez(es)", d.obj_count),
+        obj::DUNGEON => {
+            let onde = if d.obj_target == 0 { "qualquer dungeon".to_string() }
+                else { shared::dungeon::conteudo(d.obj_target)
+                    .map_or_else(|| "a dungeon indicada".to_string(), |c| c.nome.to_string()) };
+            format!("Menu › Dungeons: conclua {} vez(es) {onde}", d.obj_count)
+        }
+        obj::TREASURE => "Mapa: encontre e abra o baú indicado".into(),
+        obj::PVP_KILL => format!("Combate PvP: derrote {} rival(is)", d.obj_count),
+        obj::TUTORIAL => shared::quests::tutorial::instrucao(d.obj_target).to_string(),
+        obj::NIVEL => format!("Alcance o nível {}", d.obj_count),
+        obj::RAID => "Conclua a raid indicada".into(),
+        obj::ENCHANT => "Encante o equipamento indicado".into(),
+        _ => "Siga a descrição da missão".into(),
+    }
+}
+
+fn quebrar_linhas(texto: &str, largura: f32) -> Vec<String> {
+    let mut linhas = Vec::new();
+    let mut linha = String::new();
+    for palavra in texto.split_whitespace() {
+        let tentativa = if linha.is_empty() { palavra.to_string() } else { format!("{linha} {palavra}") };
+        if !linha.is_empty() && estilo::medir(&tentativa, 13) > largura {
+            linhas.push(std::mem::take(&mut linha));
+            linha.push_str(palavra);
+        } else {
+            linha = tentativa;
+        }
+    }
+    if !linha.is_empty() { linhas.push(linha); }
+    linhas
+}
+
+fn detalhes_manuais(d: &QuestDef, largura: f32) -> Vec<String> {
+    let mut linhas = quebrar_linhas(&format!("O que fazer: {}.", caminho_manual(d)), largura);
+    linhas.extend(quebrar_linhas(d.desc, largura));
+    linhas
 }
 
 fn cor_do_estado(e: &Estado) -> Color {
@@ -665,6 +770,7 @@ pub struct MenuMissoes {
     /// O filtro de tipo. Nasce em `Todos`: quem abre o menu quer ver o que
     /// tem, nao escolher uma gaveta antes de saber o que ha' dentro.
     tipo: Tipo,
+    mapa: Option<&'static str>,
     /// Linha aberta (mostra os passos), pelo nome.
     expandida: Option<String>,
     /// As missoes MARCADAS pra fila, na ordem em que foram marcadas.
@@ -693,6 +799,7 @@ impl MenuMissoes {
         self.aberto = true;
         self.aba = None;
         self.tipo = Tipo::Todos;
+        self.mapa = None;
         self.expandida = None;
         self.rolagem.zera();
         // As marcas NAO sobrevivem ao fechar: uma fila montada ontem e
@@ -781,7 +888,15 @@ impl MenuMissoes {
         let f = estilo::fator_texto();
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + 18.0, p.y + 32.0 * f, "Missões", 22, estilo::OURO);
+        let lateral = (150.0 * f).min(p.w * 0.24);
+        let conteudo_x = p.x + lateral + 16.0;
+        let conteudo_w = p.x + p.w - conteudo_x - 12.0;
+        estilo::ret_arredondado(
+            Rect::new(p.x + 6.0, p.y + 42.0 * f, lateral, p.h - 50.0 * f),
+            6.0,
+            Color::new(0.055, 0.10, 0.16, 0.92),
+        );
+        estilo::texto(p.x + 18.0, p.y + 32.0 * f, "MISSÕES", 22, estilo::OURO);
         if crate::ui::botao(
             Rect::new(p.x + p.w - 44.0 * f, p.y + 10.0, 32.0 * f, 28.0 * f),
             "x",
@@ -808,7 +923,7 @@ impl MenuMissoes {
         let conta = |a: Aba| {
             todas
                 .iter()
-                .filter(|(l, r)| aba_de(r) == a && cabe_no_tipo(l, tipo))
+                .filter(|(l, r)| aba_de(r) == a && cabe_no_tipo(l, tipo) && cabe_no_mapa(l, r, self.mapa))
                 .count()
         };
         let aba = *self.aba.get_or_insert(if conta(Aba::EmAndamento) > 0 {
@@ -816,10 +931,10 @@ impl MenuMissoes {
         } else {
             Aba::Disponiveis
         });
-        let ya = p.y + 44.0 * f;
-        let wa = (p.w - 20.0 - 3.0 * 6.0) / 4.0;
+        let ya = p.y + 48.0 * f;
+        let wa = (conteudo_w - 3.0 * 6.0) / 4.0;
         for (k, a) in Aba::TODAS.iter().enumerate() {
-            let r = Rect::new(p.x + 10.0 + k as f32 * (wa + 6.0), ya, wa, 34.0 * f);
+            let r = Rect::new(conteudo_x + k as f32 * (wa + 6.0), ya, wa, 34.0 * f);
             if *a == aba {
                 estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
             }
@@ -833,13 +948,13 @@ impl MenuMissoes {
 
         // ── a faixa de TIPO, o segundo eixo ──
         let yt = ya + 38.0 * f;
-        let wt = (p.w - 20.0 - 4.0 * 5.0) / 5.0;
+        let wt = (conteudo_w - 4.0 * 5.0) / 5.0;
         for (k, tp) in Tipo::TODOS.iter().enumerate() {
-            let r = Rect::new(p.x + 10.0 + k as f32 * (wt + 5.0), yt, wt, 30.0 * f);
+            let r = Rect::new(conteudo_x + k as f32 * (wt + 5.0), yt, wt, 30.0 * f);
             if *tp == self.tipo {
                 estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::ACENTO, 0.28));
             }
-            let n = todas.iter().filter(|(l, _)| cabe_no_tipo(l, *tp)).count();
+            let n = todas.iter().filter(|(l, r)| cabe_no_tipo(l, *tp) && cabe_no_mapa(l, r, self.mapa)).count();
             // Tipo sem nenhuma linha fica APAGADO em vez de sumir: a faixa
             // mudar de tamanho conforme o progresso faria o botão trocar de
             // lugar debaixo do dedo.
@@ -848,6 +963,25 @@ impl MenuMissoes {
                 self.expandida = None;
                 self.rolagem.zera();
             }
+        }
+
+        // Mapa: mantém os filtros de estado e tipo independentes.
+        estilo::texto(p.x + 18.0, ya + 4.0 * f, "MAPAS", 14, estilo::SUAVE);
+        let passo_mapa = ((p.h - 90.0 * f) / MAPAS.len() as f32).clamp(27.0 * f, 43.0 * f);
+        for (k, mapa) in MAPAS.iter().enumerate() {
+            let r = Rect::new(p.x + 12.0, ya + 22.0 * f + k as f32 * passo_mapa,
+                lateral - 12.0, passo_mapa - 4.0 * f);
+            if *mapa == self.mapa {
+                estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
+            }
+            if crate::ui::botao(r, "", true) && *mapa != self.mapa {
+                self.mapa = *mapa;
+                self.aba = None;
+                self.expandida = None;
+                self.rolagem.zera();
+            }
+            let nome = mapa.map_or("Todos".to_string(), nome_da_zona);
+            estilo::texto_ajustado(&nome, r.x + 8.0, r.y + r.h * 0.68, r.w - 16.0, 15, estilo::TEXTO);
         }
 
         // ── a lista da aba ──
@@ -866,14 +1000,14 @@ impl MenuMissoes {
         let topo_lista = yt + 38.0 * f;
         let fim_lista = rodape.map_or(p.y + p.h - 10.0, |r| r.y - 8.0 * f);
         let area = Rect::new(
-            p.x + 10.0,
+            conteudo_x,
             topo_lista,
-            p.w - 20.0,
+            conteudo_w,
             (fim_lista - topo_lista).max(40.0),
         );
         let da_aba: Vec<&(Linha, Resumo)> = todas
             .iter()
-            .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo))
+            .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo) && cabe_no_mapa(l, r, self.mapa))
             .collect();
         // O QUE O "MARCAR TODAS" ALCANÇA: o que está na tela e dá pra marcar.
         //
@@ -888,14 +1022,21 @@ impl MenuMissoes {
                 matches!(
                     r.estado,
                     Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
-                )
+                ) && r.atual.is_some_and(automatizavel)
             })
             .filter_map(|(_, r)| r.atual.map(|d| d.id))
             .collect();
         let altura = |l: &Linha| {
             CARTAO * f
                 + if self.expandida.as_deref() == Some(l.nome.as_str()) {
-                    l.passos.len() as f32 * PASSO * f + 8.0
+                    let detalhe = todas.iter().find(|(outra, _)| outra.nome == l.nome)
+                        .and_then(|(_, r)| r.atual)
+                        .filter(|d| !automatizavel(d))
+                        .map_or(0.0, |d| {
+                            let w = (area.w - 62.0 * f).max(80.0);
+                            detalhes_manuais(d, w).len() as f32 * 20.0 * f + 12.0 * f
+                        });
+                    l.passos.len() as f32 * PASSO * f + detalhe + 8.0
                 } else {
                     0.0
                 }
@@ -941,7 +1082,7 @@ impl MenuMissoes {
             estilo::ret_arredondado(
                 card,
                 8.0,
-                Color::new(1.0, 1.0, 1.0, if sobre { 0.08 } else { 0.04 }),
+                Color::new(0.13, 0.21, 0.30, if sobre { 0.96 } else { 0.82 }),
             );
             icone(vec2(card.x + 24.0 * f, card.y + 28.0 * f), &r.estado, f);
             // As MESMAS medidas que o teste confere. Duas contas pro mesmo
@@ -988,7 +1129,8 @@ impl MenuMissoes {
             let clicavel = matches!(
                 r.estado,
                 Estado::Disponivel | Estado::EmAndamento { .. } | Estado::Pronta
-            );
+            ) || matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some());
+            let auto = r.atual.is_some_and(|d| pode_ir(d, &r.estado));
             // A CAIXA DA FILA, logo abaixo do "Ir".
             //
             // Marcar é dizer "esta, e nesta ordem" — por isso ela mostra o
@@ -996,7 +1138,7 @@ impl MenuMissoes {
             // algo está marcado sem saber onde não ajuda a montar nada.
 
             let mut marcou = None;
-            if let (true, Some(d)) = (clicavel, r.atual) {
+            if let (true, Some(d)) = (clicavel && r.atual.is_some_and(automatizavel), r.atual) {
                 let pos = self.posicao_na_fila(d.id);
                 estilo::cartao(cx, cx.contains(mouse), pos.is_some());
                 match pos {
@@ -1025,14 +1167,29 @@ impl MenuMissoes {
             if let (true, Some(d), None) = (clicavel, r.atual, marcou) {
                 // "Pegar" quando ela ainda não foi aceita: o botão diz o que
                 // vai acontecer, e o que acontece agora é aceitar na hora.
-                let rotulo = if matches!(r.estado, Estado::Disponivel) {
+                let rotulo = if d.id == 905 {
+                    "Fazer"
+                } else if matches!(r.estado, Estado::Disponivel) {
                     "Pegar"
+                } else if matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some())
+                    || d.obj_kind == shared::quests::objective_kind::NIVEL && !auto {
+                    "Como subir"
+                } else if !auto && tem_atalho_manual(d) {
+                    "Abrir"
+                } else if !auto {
+                    "Detalhes"
                 } else {
                     "Ir"
                 };
                 let _ = crate::ui::botao(ir, rotulo, true);
                 if tocou(ir) {
-                    saida = Some(clique_de(d, &r.estado));
+                    if auto || tem_atalho_manual(d) || matches!(r.estado, Estado::Disponivel)
+                        || d.obj_kind == shared::quests::objective_kind::NIVEL
+                        || matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some()) {
+                        saida = Some(clique_de(d, &r.estado));
+                    } else {
+                        alternar = Some(l.nome.clone());
+                    }
                 }
             }
             if tocou(topo) && !(clicavel && (tocou(ir) || tocou(cx))) {
@@ -1041,6 +1198,18 @@ impl MenuMissoes {
             // Aberta: os passos, com o que ja' foi, o atual e o que falta.
             if self.expandida.as_deref() == Some(l.nome.as_str()) {
                 let mut py = card.y + CARTAO * f;
+                if let Some(d) = r.atual.filter(|d| !automatizavel(d)) {
+                    let linhas = detalhes_manuais(d, (card.w - 62.0 * f).max(80.0));
+                    let h = linhas.len() as f32 * 20.0 * f + 12.0 * f;
+                    estilo::ret_arredondado(
+                        Rect::new(card.x + 12.0 * f, py, card.w - 24.0 * f, h),
+                        5.0, Color::new(0.08, 0.15, 0.22, 0.95));
+                    for (i, linha) in linhas.iter().enumerate() {
+                        estilo::texto(card.x + 20.0 * f, py + (20.0 + i as f32 * 20.0) * f,
+                            linha, 13, if i == 0 { estilo::OURO } else { estilo::TEXTO });
+                    }
+                    py += h;
+                }
                 for (d, e) in l.passos.iter().zip(&r.estados) {
                     let atual = r.atual.is_some_and(|a| a.id == d.id);
                     let cor = if atual {
@@ -1235,13 +1404,83 @@ mod tests {
             Clique::AutoMissao(501)
         );
         match clique_de(d501, &Estado::Bloqueada(vec!["Requer nível 3".into()])) {
-            Clique::Aviso(s) => assert!(s.contains("Requer nível 3"), "{s}"),
+            Clique::OpcoesDeNivel(3) => {},
             outro => panic!("bloqueada andou: {outro:?}"),
         }
         assert!(matches!(
             clique_de(d501, &Estado::Concluida),
             Clique::Aviso(_)
         ));
+    }
+
+    #[test]
+    fn todos_os_passos_da_historia_tem_acao_compativel() {
+        use shared::quests::{objective_kind as o, tutorial as t};
+        for d in shared::historia::PASSOS {
+            let mundo = matches!(d.obj_kind, o::TALK | o::KILL | o::GATHER | o::LUGAR | o::VIAGEM)
+                || (d.obj_kind == o::TUTORIAL && d.obj_target == t::COLETA_ENERGIA);
+            assert_eq!(automatizavel(d), mundo, "{}: {}", d.id, d.title);
+            let clique = clique_de(d, &Estado::EmAndamento { feito: 0, total: d.obj_count });
+            if mundo {
+                assert_eq!(clique, Clique::AutoMissao(d.id));
+            } else if d.obj_kind == o::NIVEL {
+                assert!(matches!(clique, Clique::OpcoesDeNivel(_)));
+            } else {
+                assert_eq!(clique, Clique::AbrirManual(d.id));
+            }
+        }
+    }
+
+    #[test]
+    fn tutorial_de_energia_viaja_e_coleta_sem_abrir_painel_manual() {
+        let d = quest_by_id(796).unwrap();
+        assert!(automatizavel(d));
+        assert!(pode_iniciar_auto(d, quest_status::ACTIVE));
+        assert!(!tem_atalho_manual(d));
+        assert_eq!(clique_de(d, &Estado::EmAndamento { feito: 0, total: d.obj_count }), Clique::AutoMissao(d.id));
+        for acao in [shared::quests::tutorial::PONTO_ATRIBUTO, shared::quests::tutorial::EVOLUIR_SKILL] {
+            assert!(!automatizavel(&QuestDef { obj_target: acao, ..*d }));
+        }
+    }
+
+    #[test]
+    fn tarefas_manuais_nao_entram_no_auto() {
+        use shared::quests::objective_kind as obj;
+        let base = *quest_by_id(502).unwrap();
+        assert!(automatizavel(&base));
+        for tipo in [obj::CRAFT, obj::REFINE, obj::DUNGEON, obj::RAID,
+            obj::PVP_KILL, obj::ENCHANT, obj::TREASURE, obj::TUTORIAL, obj::NIVEL] {
+            let d = QuestDef { obj_kind: tipo, ..base };
+            assert!(!automatizavel(&d), "tipo {tipo} entrou no auto");
+            let acao = clique_de(&d, &Estado::EmAndamento { feito: 0, total: 1 });
+            assert!(matches!(acao, Clique::Aviso(_) | Clique::OpcoesDeNivel(_) | Clique::AbrirManual(_)));
+            assert_eq!(clique_de(&d, &Estado::Pronta), Clique::AutoMissao(d.id));
+            assert!(!pode_iniciar_auto(&d, quest_status::ACTIVE));
+            assert!(pode_iniciar_auto(&d, quest_status::READY));
+        }
+    }
+
+    #[test]
+    fn atalho_individual_nao_libera_fila_manual() {
+        for id in [524,523] {
+            let d=quest_by_id(id).unwrap();
+            assert_eq!(clique_de(d,&Estado::EmAndamento {feito:0,total:1}),Clique::AbrirManual(id));
+            assert!(!automatizavel(d));
+            assert!(!pode_iniciar_auto(d,quest_status::ACTIVE));
+            assert_eq!(clique_de(d,&Estado::Pronta),Clique::AutoMissao(id));
+        }
+    }
+
+    #[test]
+    fn missao_manual_explica_menu_quantidade_e_dungeon() {
+        let craft = quest_by_id(524).unwrap();
+        let forja = quest_by_id(523).unwrap();
+        let dungeon = quest_by_id(531).unwrap();
+        assert!(caminho_manual(craft).contains("Menu › Craft: crie 2"));
+        assert!(caminho_manual(forja).contains("Menu › Forja: tente refinar 3"));
+        assert!(caminho_manual(dungeon).contains("Porão do Naufrágio"));
+        let linha = frase(craft, &Estado::EmAndamento { feito: 1, total: 2 });
+        assert!(linha.contains("1/2") && linha.contains("Craft"), "{linha}");
     }
 
     #[test]
@@ -1525,6 +1764,24 @@ mod testes_da_trava {
             };
             assert_eq!(tipo_de(&l), Tipo::Secundarias, "quest {} é do quadro", d.id);
         }
+    }
+
+    #[test]
+    fn filtro_de_mapa_separa_ilhas_sem_esconder_historia_atual() {
+        let ls = linhas(&[]);
+        let bos = ls.iter().find(|l| l.passos.iter().any(|d| d.id == 501)).unwrap();
+        let gelo = ls.iter().find(|l| l.passos.iter().any(|d| d.id == 810)).unwrap();
+        let resumo = |l: &Linha| Resumo {
+            atual: l.passos.first().copied(),
+            estado: Estado::Disponivel,
+            feitos: 0,
+            total: l.passos.len(),
+            estados: Vec::new(),
+        };
+        assert!(cabe_no_mapa(bos, &resumo(bos), Some("ilha_inicial")));
+        assert!(!cabe_no_mapa(bos, &resumo(bos), Some("ilha_gelo")));
+        assert!(cabe_no_mapa(gelo, &resumo(gelo), Some("ilha_gelo")));
+        assert!(cabe_no_mapa(gelo, &resumo(gelo), None));
     }
 
     /// Todo tipo tem nome, e nenhum repete — eles são rótulo de botão.

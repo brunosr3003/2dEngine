@@ -200,3 +200,27 @@ game.seudominio.com {
 ```
 
 Cliente conecta em `wss://game.seudominio.com/ws/`.
+
+### Android: fechamento após login no shader da água (26/09/2026)
+
+O driver do aparelho reportou `shader da agua (gpu): CompilationError`,
+`Typename expected, found 'theta'`. A macro `ONDA` usava continuação de
+linha, recusada em GLSL ES 1.00 pelo compilador do dispositivo. O erro também
+foi reproduzido com `glslangValidator`. Foi substituída por uma função GLSL,
+conservando as três ondas, suas amplitudes e a atenuação na costa.
+
+Validação dos shaders reais (vertex + fragment e ligação):
+`python3 scripts/check-water-shaders.py` (requer `glslangValidator`).
+Testes da geometria: `cargo test -p client agua::`.
+A prévia Android com `MMO_PREVIA_PERSONAGENS=1 scripts/build-android.sh`
+exercita a cena de seleção com água sem login; gere novamente sem essa
+variável antes de distribuir o APK normal.
+
+### Validação de todos os shaders Android
+
+`python3 scripts/check-shaders.py` descobre os shaders GLSL do cliente,
+inclusive os inline, e compila/liga cada par vertex/fragment. A geração do
+APK chama essa verificação antes de compilar Rust e para se houver erro.
+Requer `glslangValidator` no PATH. A revisão de 26/09 validou os três pares
+do cliente (mundo/sombras, água e efeitos/auras) e os dois pares internos da
+macroquad 0.4.16. Isso detecta erros GLSL; não substitui testes em cada driver.

@@ -33,6 +33,7 @@ impl BarraDeColeta {
             *self = Self::default();
             return;
         }
+        if !pausado && progresso < 0.1 { crate::sons::tocar(if tipo == 0 {crate::sons::Som::Machado} else {crate::sons::Som::Picareta}); }
         *self = Self {
             tipo: Some(tipo),
             intervalo: intervalo_s,
@@ -146,6 +147,7 @@ mod tests {
         use shared::{EntityId, EntityMeta, EntityState, EntityTag};
         let mut w = crate::world::World::default();
         let meta = EntityMeta {
+            auras: 0,
             id: EntityId(1),
             tag: EntityTag::Player,
             name: None,
@@ -153,6 +155,7 @@ mod tests {
             faction: None,
             kind: 0,
             nivel: 1,
+            desafio: None,
             aparencia: 0,
         };
         let mut st = EntityState::quantize(

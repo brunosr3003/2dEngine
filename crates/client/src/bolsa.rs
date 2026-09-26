@@ -40,20 +40,22 @@ const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
 
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
-const ESQUERDA: [(EquipSlot, &str); 5] = [
+const ESQUERDA: [(EquipSlot, &str); 6] = [
     (EquipSlot::Weapon, "Arma"),
     (EquipSlot::Offhand, "Secundária"),
     (EquipSlot::Armor, "Armadura"),
     (EquipSlot::Pet, "Pet"),
     (EquipSlot::Montaria, "Montaria"),
+    (EquipSlot::AcessorioMontaria, "Aces. mont."),
 ];
-const DIREITA: [(EquipSlot, &str); 6] = [
+const DIREITA: [(EquipSlot, &str); 7] = [
     (EquipSlot::Earring, "Brinco"),
     (EquipSlot::Necklace, "Amuleto"),
     (EquipSlot::Bracelet, "Bracelete"),
     (EquipSlot::Belt, "Cinto"),
     (EquipSlot::Pet2, "Pet 2"),
     (EquipSlot::Pet3, "Pet 3"),
+    (EquipSlot::AcessorioPet, "Aces. pet"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -766,8 +768,8 @@ impl Bolsa {
         };
         ui::texto(r.x + u(14.0), r.y + u(44.0), &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - u(60.0) - u(170.0)) / u(6.0) - u(16.0))
-            .clamp(u(40.0), u(64.0))
+        let s = ((r.h - u(60.0) - u(170.0)) / u(7.0) - u(16.0))
+            .clamp(u(32.0), u(64.0))
             .floor();
         let passo = s + u(16.0);
         let y0 = r.y + u(60.0);
@@ -777,7 +779,7 @@ impl Bolsa {
             xe + s + u(12.0),
             y0,
             xd - u(12.0) - (xe + s + u(12.0)),
-            u(6.0) * passo - u(16.0),
+            u(7.0) * passo - u(16.0),
         );
         self.desenha_retrato(retrato, vox, solido);
 
@@ -808,7 +810,7 @@ impl Bolsa {
         }
 
         // O poder e a ficha, embaixo do retrato.
-        let mut y = y0 + u(6.0) * passo + u(8.0);
+        let mut y = y0 + u(7.0) * passo + u(8.0);
         if let Some(st) = &self.stats {
             ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "PODER", 14, APAGADO);
             ui::texto_centro(
@@ -1231,6 +1233,11 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
+        } else if let Some((pet, efeito)) = shared::acessorios::tipo(peca.id) {
+            ui::texto(r.x + u(20.0), y + u(4.0), efeito.nome(), 17, VERDE);
+            y += u(28.0);
+            ui::texto(r.x + u(20.0), y + u(4.0),
+                if pet { "Ativo com um pet equipado" } else { "Ativo com montaria equipada" }, 15, APAGADO);
         } else if let Some(i) = peca.inst {
             let atributos = [
                 ("Ataque", i.attack_damage),

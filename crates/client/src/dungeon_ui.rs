@@ -91,6 +91,10 @@ pub struct DungeonUi {
     /// Entrada escolhida antes da troca de zona. O estado da UI sobrevive ao
     /// handoff; o pedido só pode ser enviado após o login no servidor da Arena.
     entrada_pendente: Option<Pedido>,
+    /// Resultado: sair da instância e, ao receber `Saiu`, voltar à ilha.
+    voltar_apos_instancia: bool,
+    /// Botão grande no HUD da Arena depois de uma dungeon.
+    mostrar_saida_arena: bool,
 }
 
 /// Altura da linha de missao da instancia (antes do fator de texto).
@@ -188,6 +192,10 @@ impl DungeonUi {
         let m = Vec2::from(mouse_position());
         let caido = self.inst.as_ref().is_some_and(|i| i.reviver_em_s.is_some());
         let (faixa, porta, reviver) = Self::rects_da_instancia();
+        if self.mostrar_saida_arena && self.na_arena == Some(true)
+            && self.inst.is_none() && Self::saida_arena_rect().contains(m) {
+            return true;
+        }
         self.inst.is_some()
             && (faixa.contains(m)
                 || porta.contains(m)
@@ -257,7 +265,9 @@ impl DungeonUi {
                 concluida,
             } => {
                 self.entrada_pendente = None;
+                self.mostrar_saida_arena = false;
                 if self.inst.is_none() {
+                    self.voltar_apos_instancia = false;
                     // Entrou: a janela e o pronto-check saem da frente.
                     self.aberto = false;
                     self.pronto = None;
@@ -312,18 +322,20 @@ impl DungeonUi {
                 self.auto = false;
                 self.inst = None;
                 self.resultado = None;
-                // NA ARENA, A JANELA REABRE. Acabada a dungeon, o jogador cai
-                // num saguão sem barco e sem missão; deixar a tela limpa é
-                // deixá-lo procurando a saída. A janela que ele já conhece é
-                // onde a saída está.
-                if self.na_arena == Some(true) {
-                    self.aberto = true;
+                self.aberto = false;
+                if self.voltar_apos_instancia && self.na_arena == Some(true) {
+                    self.voltar_apos_instancia = false;
+                    self.mostrar_saida_arena = false;
+                    return vec![pedir(Pedido::SairDaArena)];
                 }
+                self.voltar_apos_instancia = false;
+                self.mostrar_saida_arena = self.na_arena == Some(true);
                 return vec![pedir(Pedido::Estado)];
             }
             Aviso::Correio { .. } => {}
             Aviso::NaArena { dentro } => {
                 self.na_arena = Some(dentro);
+                if !dentro { self.mostrar_saida_arena = false; }
                 if dentro {
                     if let Some(pedido) = self.entrada_pendente.take() {
                         return vec![pedir(pedido)];
@@ -366,6 +378,7 @@ impl DungeonUi {
             self.desenha_instancia(agora, &mut saida);
         } else if !self.aberto {
             self.desenha_faixa_da_fila(agora, &mut saida);
+            self.desenha_saida_arena(&mut saida);
         }
         estilo::no_painel(estilo::escala_do_painel(980.0, 660.0), || {
             if self.aberto {
@@ -375,6 +388,24 @@ impl DungeonUi {
             self.desenha_pronto(agora, &mut saida);
         });
         saida
+    }
+
+    fn saida_arena_rect() -> Rect {
+        let seguro = crate::hud_layout::tela_segura();
+        let f = estilo::fator_texto();
+        let w = (300.0 * f).min(seguro.w - 24.0);
+        let h = (58.0 * f).max(48.0);
+        Rect::new(seguro.center().x - w * 0.5,
+            seguro.y + seguro.h - h - 92.0 * f, w, h)
+    }
+
+    fn desenha_saida_arena(&mut self, saida: &mut Vec<ClientMessage>) {
+        if !self.mostrar_saida_arena || self.na_arena != Some(true) { return; }
+        let r = Self::saida_arena_rect();
+        if botao(r, "SAIR DA ARENA", true, true) {
+            self.mostrar_saida_arena = false;
+            saida.push(pedir(Pedido::SairDaArena));
+        }
     }
 
     // ─────────────────────────────── janela ───────────────────────────────
@@ -1463,10 +1494,11 @@ impl DungeonUi {
         }
         if botao(
             Rect::new(caixa.x + caixa.w - 20.0 * f - bw, by, bw, 40.0 * f),
-            "Sair",
+            "Voltar à ilha",
             true,
-            false,
+            true,
         ) {
+            self.voltar_apos_instancia = true;
             saida.push(pedir(Pedido::Sair));
         }
     }
@@ -1475,6 +1507,26 @@ impl DungeonUi {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn fim_da_instancia_mostra_saida_na_tela_sem_abrir_menu() {
+        let mut d = DungeonUi::default();
+        d.na_arena = Some(true);
+        let pedidos = d.aviso(Aviso::Saiu, 1.0);
+        assert!(!d.aberto);
+        assert!(d.mostrar_saida_arena);
+        assert!(matches!(pedidos.as_slice(), [ClientMessage::Dungeon { pedido: Pedido::Estado }]));
+    }
+
+    #[test]
+    fn voltar_da_tela_final_sai_da_arena_apos_sair_da_instancia() {
+        let mut d = DungeonUi::default();
+        d.na_arena = Some(true);
+        d.voltar_apos_instancia = true;
+        let pedidos = d.aviso(Aviso::Saiu, 1.0);
+        assert!(!d.mostrar_saida_arena);
+        assert!(matches!(pedidos.as_slice(), [ClientMessage::Dungeon { pedido: Pedido::SairDaArena }]));
+    }
 
     #[test]
     fn abrir_pede_o_estado() {

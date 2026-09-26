@@ -491,22 +491,12 @@ impl GameWorld {
             }
             Pedido::ComprarEntrada => self.dg_comprar_entrada(sid),
             Pedido::Sair => {
-                // FORA DE INSTÂNCIA, "sair" é sair da ARENA.
-                //
-                // O dono: "não tô conseguindo sair da arena da dungeon". A
-                // única saída era um botão no cabeçalho de uma janela que ele
-                // precisava saber abrir — e quem chega por handoff não tem
-                // barco, nem portal, nem motivo pra procurar ali. Uma saída
-                // que depende de adivinhar onde ela está não é saída.
-                //
-                // Agora o mesmo "Sair" que fecha a dungeon leva de volta pra
-                // ilha de origem quando não há dungeon pra fechar.
-                let em_instancia = self.sessions.get(&sid).is_some_and(|s| s.instancia != 0);
-                if self.na_arena() && !em_instancia {
-                    self.sair_da_arena(sid, "Você deixa a Arena.");
-                    return;
-                }
+                // Um toque encerra a instância e retorna à ilha de origem.
+                // dg_sair preserva a entrega do saque antes da troca de zona.
                 self.dg_sair(sid);
+                if self.na_arena() {
+                    self.sair_da_arena(sid, "Você deixa a Arena.");
+                }
                 return;
             }
             Pedido::Reviver => {
@@ -933,6 +923,7 @@ impl GameWorld {
         let hp = ((hp as f32) * vida * fv).round().max(1.0) as i32;
         tag.stats.hp_max = hp;
         tag.stats.attack_damage = ((d as f32) * dano * fd).round().max(0.0) as i32;
+        tag.stats.defense = crate::world::defesa_do_mob(tag.stats.defense, nivel);
         if semi {
             tag.boss_name = Some("Guardião da Gruta".into());
             tag.size_scale *= 1.4;

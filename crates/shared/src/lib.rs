@@ -4,6 +4,7 @@
 //! targets (native + wasm + headless) para manter o protocolo canonico.
 
 pub mod armazem;
+pub mod auras;
 pub mod bosses;
 pub mod chaves;
 pub mod combat;
@@ -17,6 +18,7 @@ pub mod construcao;
 pub mod dungeon;
 pub mod forja;
 pub mod historia;
+pub mod acessorios;
 pub mod items;
 pub mod loja;
 pub mod magica;

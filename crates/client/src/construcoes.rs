@@ -937,6 +937,7 @@ mod tests {
         let esperado = shared::npc_yaw_de_kind(kind).unwrap();
         let mut w = crate::world::World::default();
         let meta = EntityMeta {
+            auras: 0,
             id: EntityId(7),
             tag: EntityTag::Npc,
             name: None,
@@ -944,6 +945,7 @@ mod tests {
             faction: None,
             kind,
             nivel: 1,
+            desafio: None,
             aparencia: 0,
         };
         let estado =

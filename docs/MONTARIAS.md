@@ -1,3 +1,10 @@
+> **Atualização 26/09/2026:** combate básico montado permitido contra mobs comuns,
+> com o mesmo dano a pé. As regras de combate/velocidade abaixo que dizem que
+> atacar ou apanhar desmonta foram substituídas por
+> [Combate montado e viagem](COMBATE_MONTADO_E_VIAGEM.md).
+> Presente de atualização e missão 794 dão pergaminho de montaria;
+> o calendário também concede invocações de pet e montaria.
+
 # Montarias
 
 A montaria é **item de bolsa**, como o pet (docs/PETS.md): o grau (a cor) mora
@@ -69,17 +76,15 @@ novo.
   bateria do modo economia), ou "Montar" na janela Menu → Personagem →
   Montaria. Nada por tecla.
 - Leva **1 s** (`MONTAR_S`) com um anel de progresso no botão.
-- Só monta **fora de combate** (3 s sem golpear, conjurar nem apanhar),
-  **fora de dungeon**, sem coletar, vivo e sem carregar nada. Na cidade pode.
+- Monta também **durante o combate e dentro da dungeon**, sem coletar, vivo e sem carregar nada.
 - Montado anda o que a COR da montaria manda (`montarias::velocidade`), sem
   sprint por cima.
-- **Desmonta sozinho** ao golpear (inclusive o auto-ataque), conjurar skill,
-  apanhar, começar a coletar, cair, entrar em dungeon ou carregar algo. O
-  mesmo vale durante a subida: ela é cancelada.
+- **Desmonta sozinho** ao começar a coletar, cair ou carregar algo.
+  Golpes, skills e dano recebido não cancelam a subida.
 - **Viagem automática** (mapa, "Ir para", auto missão) monta sozinha se
   houver montaria EQUIPADA e o personagem estiver a pé (o cliente pede no máximo
   a cada 6 s). Viagem pelo mapa que chega sem nada automático seguindo
-  desmonta. Auto combate não monta: lutar desmonta.
+  desmonta.
 - Quem decide qual montaria vale é o **slot do equipamento**, conferido no
   servidor: desequipar no meio da montada derruba quem estava montado.
 

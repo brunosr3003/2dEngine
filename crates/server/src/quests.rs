@@ -118,12 +118,19 @@ pub fn available_givers(
     for d in quests::QUESTS.iter() {
         if na_zona(d, zona)
             && pode_aceitar(d, level, faction, active, now)
+            && aparece_no_npc(d)
             && !set.contains(&d.giver)
         {
             set.push(d.giver);
         }
     }
     set
+}
+
+/// Missoes comuns comecam pelo menu. O NPC oferece apenas a proxima de uma
+/// cadeia ja' iniciada, depois que o requisito foi entregue.
+pub fn aparece_no_npc(d: &QuestDef) -> bool {
+    d.source != quests::quest_source::NPC || d.requires != 0
 }
 
 /// Quests que `giver` (source+id) oferece e o player PODE aceitar agora.

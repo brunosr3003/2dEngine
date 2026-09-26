@@ -28,14 +28,8 @@ pub fn escala(sw: f32, sh: f32) -> f32 {
 pub const ESCALA_UI_MIN: f32 = 0.8;
 pub const ESCALA_UI_MAX: f32 = 1.6;
 
-/// Celular: tela pequena e densa, o texto de 14 px some. PC fica em 100%.
-pub fn escala_ui_padrao() -> f32 {
-    if crate::nativo::TECLADO_NA_TELA {
-        1.3
-    } else {
-        1.0
-    }
-}
+/// Escala padrao de 160%; a preferencia manual salva continua valendo.
+pub fn escala_ui_padrao() -> f32 { 1.6 }
 
 /// Bits do f32; 0 = nunca escolheu (vale o padrao da plataforma).
 static ESCALA_UI: AtomicU32 = AtomicU32::new(0);
@@ -206,6 +200,8 @@ pub struct Zonas {
     pub economia: Rect,
     /// Montar/desmontar: ao lado da bateria, sempre visivel.
     pub montaria: Rect,
+    /// Sprint: toque alterna correr/andar.
+    pub sprint: Rect,
     /// DASH: ocupa o quarto lugar do arco, ao lado das habilidades.
     pub dash: Rect,
     /// Botao de PULO: separado e um pouco acima do dash.
@@ -529,6 +525,7 @@ fn monta(
         lado_eco,
         lado_eco,
     );
+    let sprint = Rect::new(montaria.x + montaria.w + 10.0 * s, economia.y, lado_eco, lado_eco);
     let jbaixo = economia.y - 8.0 * s;
     // O teto: nem acima da metade da tela, nem por cima do rastreador.
     let jtopo = (jbaixo - lado_joy)
@@ -577,6 +574,7 @@ fn monta(
         mapa_icone,
         economia,
         montaria,
+        sprint,
         dash,
         pulo,
         avisos,
@@ -608,6 +606,7 @@ impl Zonas {
             &mut self.mapa_icone,
             &mut self.economia,
             &mut self.montaria,
+            &mut self.sprint,
             &mut self.dash,
             &mut self.pulo,
             &mut self.avisos,
@@ -643,6 +642,7 @@ impl Zonas {
             ("joystick", self.joystick),
             ("economia", self.economia),
             ("montaria", self.montaria),
+            ("sprint", self.sprint),
             ("pulo", self.pulo),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
@@ -696,6 +696,7 @@ impl Zonas {
             self.pocao,
             self.economia,
             self.montaria,
+            self.sprint,
             self.pulo,
         ]
         .iter()

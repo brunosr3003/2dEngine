@@ -486,7 +486,7 @@ pub const PASSOS: &[QuestDef] = &[
         ..criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe — e o pergaminho que o Ferreiro te dá chama quem colhe por você.", 100, 6_000)
     },
     cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
-    tutorial(794, "O mapa mostra o caminho", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá.", tut::MAPA_IR, 60, 1_500, item_id::HEALTH_POTION, 3),
+    tutorial(794, "O mapa mostra o caminho", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá. Ao concluir, abra o Pergaminho de Invocação: Montaria na bolsa, equipe a montaria e use o botão Montar para viajar mais rápido.", tut::MAPA_IR, 60, 1_500, item_id::PERGAMINHO_INVOCA_MONTARIA, 1),
     ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
     dungeon(710, "O porão do naufrágio", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
     refinar(711, "Fogo na forja", "Peça fraca não aguenta a tempestade. Tente refinar uma peça na Forja.", 1, 150, 20_000),
@@ -1484,6 +1484,14 @@ mod testes {
 #[cfg(test)]
 mod testes_do_pet_inicial {
     use super::*;
+
+    #[test]
+    fn montaria_chega_antes_da_viagem_ao_mirante() {
+        let entrega = PASSOS.iter().position(|q| q.reward_item == item_id::PERGAMINHO_INVOCA_MONTARIA).unwrap();
+        let viagem = PASSOS.iter().position(|q| q.id == 709).unwrap();
+        assert!(entrega < viagem);
+        assert_eq!(PASSOS[entrega].reward_item_qty, 1);
+    }
 
     /// A HISTÓRIA ENTREGA UM PET ANTES DE EXIGIR FARM.
     ///

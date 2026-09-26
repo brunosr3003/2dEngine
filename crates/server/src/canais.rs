@@ -81,7 +81,9 @@ impl Chefes {
 /// ja' faz a cada 5s pro diretorio de canais. Uma consulta a mais na viagem
 /// que ja' estava marcada.
 #[derive(Clone, Default)]
-pub struct MundoDeChefes(Arc<std::sync::RwLock<Vec<(String, String, Vec<shared::bosses::ChefeNoMapa>)>>>);
+pub struct MundoDeChefes(
+    Arc<std::sync::RwLock<Vec<(String, String, Vec<shared::bosses::ChefeNoMapa>)>>>,
+);
 
 impl MundoDeChefes {
     fn set(&self, v: Vec<(String, String, Vec<shared::bosses::ChefeNoMapa>)>) {
@@ -198,6 +200,15 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
 pub struct Diretorio(Arc<std::sync::RwLock<Vec<(String, String, i32)>>>);
 
 impl Diretorio {
+    #[cfg(test)]
+    pub(crate) fn para_teste(zonas: &[&str]) -> Self {
+        Self(Arc::new(std::sync::RwLock::new(
+            zonas
+                .iter()
+                .map(|z| (z.to_string(), "127.0.0.1:9999".to_string(), 0))
+                .collect(),
+        )))
+    }
     /// Host menos cheio que serve `zona`. `None` = zona fora do ar; quem
     /// chama tem que tratar (o jogador nao pode sumir num portal quebrado).
     pub fn melhor(&self, zona: &str) -> Option<String> {

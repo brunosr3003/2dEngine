@@ -109,6 +109,8 @@ pub mod tutorial {
     pub const PONTO_ATRIBUTO: u16 = 7;
     /// Evoluiu uma habilidade de tier, gastando Energia.
     pub const EVOLUIR_SKILL: u16 = 8;
+    /// Abriu Missões, escolheu o passo na lista e tocou Fazer.
+    pub const MISSAO_MENU: u16 = 14;
 
     // ── A PROPRIA ILHA (docs/COLONIA.md) ──
     //
@@ -166,6 +168,7 @@ pub mod tutorial {
             COLETA_ENERGIA => "Junte Energia nos cristais azuis",
             PONTO_ATRIBUTO => "Menu › Ficha: gaste um ponto",
             EVOLUIR_SKILL => "Menu › Habilidades: evolua um tier",
+            MISSAO_MENU => "Abra Menu › Missões, escolha a missão e toque Fazer",
             COLONIA_PAINEL => "Abra Menu › Minha Ilha",
             COLONIA_ASSENTAMENTO => "No mural: melhore o Assentamento",
             COLONIA_CONTRATAR => "No mural: escolha um ofício na casa vazia",
@@ -1444,6 +1447,10 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "Va ate a arena (a leste) e derrote 3 inimigos com sua arma nova. Vai te dar XP pra subir de nivel!",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 3,
         reward_xp: 120, ..q() },
+    QuestDef { id: 905, source: quest_source::HISTORIA, title: "Aprenda a fazer missões",
+        desc: "Abra Menu › Missões. Escolha esta missão na lista e toque Fazer. Depois, no mundo, use Pegar para juntar várias missões antes de usar Ir ou Fazer tudo.",
+        obj_kind: objective_kind::TUTORIAL, obj_target: tutorial::MISSAO_MENU, obj_count: 1,
+        reward_xp: 40, ..q() },
     // ===================== STORYLINE (4xx) — Lvl 1-10 (Chapter 1) =====================
     QuestDef { id: 401, source: quest_source::NPC, giver: 107,
         title: "O Sal da Terra", desc: "A Armada Real bloqueou o porto. Fale com os pescadores e ajude coletando 15 Madeiras para reparar as barricadas.",
@@ -1547,7 +1554,7 @@ pub const QUESTS: &[QuestDef] = &[
 /// (auto em TUTORIAL_MODE); concluir a última finaliza o tutorial.
 /// Ordem: pular+falar → equipar → colher+entregar → forjar → combater →
 /// convocar barco → ir à vela → ir ao leme → navegar.
-pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904];
+pub const TUTORIAL_CHAIN: &[u16] = &[900, 901, 902, 903, 904, 905];
 /// Primeira quest da cadeia (concedida no spawn do tutorial).
 pub fn tutorial_first() -> u16 {
     TUTORIAL_CHAIN[0]

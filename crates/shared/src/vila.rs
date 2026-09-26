@@ -152,8 +152,8 @@ fn montar_postos(ger: &Gerador, vila: &mut Vila) {
         for passo in 0..20 {
             let distancia = raio * (0.36 + passo as f32 * 0.025);
             for desvio in [
-                0.0f32, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36,
-                0.48, -0.48, 0.72, -0.72, 0.96, -0.96,
+                0.0f32, 0.12, -0.12, 0.24, -0.24, 0.36, -0.36, 0.48, -0.48, 0.72, -0.72, 0.96,
+                -0.96,
             ] {
                 let a = angulo + desvio;
                 let p = Vec2::new(a.cos(), a.sin()) * distancia;
@@ -175,8 +175,8 @@ fn montar_postos(ger: &Gerador, vila: &mut Vila) {
                 }
                 // Plano bloco a bloco, com folga em volta: cabana em degrau
                 // flutua ou deixa a soleira alta demais pra entrar andando.
-                let plano = (-(meia.x / BLOCO).ceil() as i32..=(meia.x / BLOCO).ceil() as i32)
-                    .all(|dx| {
+                let plano =
+                    (-(meia.x / BLOCO).ceil() as i32..=(meia.x / BLOCO).ceil() as i32).all(|dx| {
                         (-(meia.y / BLOCO).ceil() as i32..=(meia.y / BLOCO).ceil() as i32).all(
                             |dz| {
                                 let s = p + Vec2::new(dx as f32, dz as f32) * BLOCO;
@@ -323,10 +323,24 @@ const DESVIOS: [f32; 17] = [
 type Volta = (f32, f32, f32);
 const VOLTAS: [Volta; 3] = [(11.5, 25.0, 1.0), (11.5, 40.0, 1.0), (9.0, 56.0, 0.2)];
 
+fn corredor_livre(de: Vec2, ate: Vec2, lote: (Vec2, Vec2)) -> bool {
+    let (centro, meia) = lote;
+    let comprimento = de.distance(ate);
+    let passos = (comprimento / 0.5).ceil().max(1.0) as usize;
+    for i in 0..=passos {
+        let p = de.lerp(ate, i as f32 / passos as f32);
+        if (p.x - centro.x).abs() < meia.x + 0.8 && (p.y - centro.y).abs() < meia.y + 0.8 {
+            return false;
+        }
+    }
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn assentar(
     chao: &Chao,
     lotes: &mut Vec<(Vec2, Vec2)>,
+    acessos: &mut Vec<Vec2>,
     centro: Vec2,
     chao_y: f32,
     tipo: TipoCasa,
@@ -353,15 +367,32 @@ fn assentar(
                     let q = quarto_para(centro - pos);
                     let meia = c.meia(q);
                     if chao.cabe(lotes, pos, meia, folga) {
-                        lotes.push((pos, meia));
-                        return Some(Predio {
+                        let predio = Predio {
                             tipo,
                             papel,
                             seed,
                             pos: Vec3::new(pos.x, chao_y - B_CASA + RESPIRO, pos.y),
                             yaw_q: q,
                             chao: chao_y,
-                        });
+                        };
+                        let entrada = npc_da_porta(&predio).map(|npc| npc.pos);
+                        let inicio = |fim: Vec2| centro + (fim - centro).normalize_or_zero() * 7.0;
+                        if entrada.is_some_and(|fim| {
+                            lotes[1..]
+                                .iter()
+                                .any(|&lote| !corredor_livre(inicio(fim), fim, lote))
+                        }) || acessos
+                            .iter()
+                            .any(|&fim| !corredor_livre(inicio(fim), fim, (pos, meia)))
+                        {
+                            r += 1.6;
+                            continue;
+                        }
+                        lotes.push((pos, meia));
+                        if let Some(entrada) = entrada {
+                            acessos.push(entrada);
+                        }
+                        return Some(predio);
                     }
                     r += 1.6;
                 }
@@ -402,6 +433,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
 
     // A PRACA fica livre: poco, bancos e lampioes.
     let mut lotes: Vec<(Vec2, Vec2)> = vec![(centro, Vec2::splat(6.8))];
+    let mut acessos = Vec::new();
 
     // Anel de oficios virado pro poco, e as casas de morador do outro lado.
     let oficios = [
@@ -420,6 +452,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         if let Some(p) = assentar(
             &chao,
             &mut lotes,
+            &mut acessos,
             centro,
             chao_y,
             TipoCasa::Casebre,
@@ -437,6 +470,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         if let Some(p) = assentar(
             &chao,
             &mut lotes,
+            &mut acessos,
             centro,
             chao_y,
             TipoCasa::Casebre,
@@ -476,7 +510,17 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         });
     }
 
-    let npcs: Vec<NpcDaVila> = vila.predios.iter().filter_map(npc_da_porta).collect();
+    let npcs: Vec<NpcDaVila> = vila
+        .predios
+        .iter()
+        .filter_map(npc_da_porta)
+        .map(|mut npc| {
+            // O anel da praca e' caminhavel. A porta pode ficar isolada entre
+            // casas mesmo quando a soleira em si esta' livre.
+            npc.pos = centro + (npc.pos - centro).normalize_or_zero() * 7.5;
+            npc
+        })
+        .collect();
     vila.npcs.extend(npcs);
 
     // O MESTRE DE MISSOES fica na praca, e nao numa porta: e' o primeiro
@@ -490,6 +534,19 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         nome: Papel::Missoes.nome(),
         pos,
         yaw: yaw_de(centro - pos),
+        loja: None,
+        giver: None,
+    });
+
+    // O banco do porto continua; esta atendente deixa o mesmo banco
+    // acessivel na cidade, perto do poco e do Mestre de Missoes.
+    let ang_banco = ang0 + PI * 0.5;
+    let pos_banco = centro + Vec2::new(ang_banco.cos(), ang_banco.sin()) * MESTRE_DO_POCO;
+    vila.npcs.push(NpcDaVila {
+        papel: Papel::Deposito,
+        nome: "Banqueira",
+        pos: pos_banco,
+        yaw: yaw_de(centro - pos_banco),
         loja: None,
         giver: None,
     });
@@ -1399,6 +1456,18 @@ mod testes {
         }
     }
 
+    #[test]
+    fn toda_cidade_tem_banqueira_perto_da_praca() {
+        for d in crate::terreno::ARQUIPELAGO.iter() {
+            let ger = Gerador::da_ilha(d);
+            let Some(cidade) = ger.cidade() else { continue };
+            assert!(ger.vila().npcs.iter().any(|n|
+                n.nome == "Banqueira" && n.papel == Papel::Deposito
+                    && n.pos.distance(cidade.centro()) < 8.0),
+                "{} sem Banqueira na praca", d.zona);
+        }
+    }
+
     use crate::terreno::{
         Ilha, SeguidorDeRota, ARQUIPELAGO, DEGRAU_BLOCOS, ESCALA_ALTURA, PULO_BLOCOS,
     };
@@ -1414,6 +1483,35 @@ mod testes {
             let d = &ARQUIPELAGO[0];
             Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA)
         })
+    }
+
+    #[test]
+    fn todos_os_npcs_da_vila_tem_acesso_pela_praca() {
+        for d in &ARQUIPELAGO {
+            let i = Ilha::gerar(d.semente, 800, d.bioma, ESCALA_ALTURA);
+            let vila = i.vila();
+            let centro = i.cidade().expect("ilha sem cidade").centro();
+            let mut falhas = Vec::new();
+            for npc in &vila.npcs {
+                if centro.distance(npc.pos) > 70.0 {
+                    continue;
+                }
+                let partida =
+                    i.ponto_livre_perto(centro + (npc.pos - centro).normalize_or_zero() * 5.5, R);
+                let destino = i.ponto_livre_perto(npc.pos, R);
+                let rota = i.caminho(partida, destino, 60_000);
+                let fim = simula_rota(&i, partida, destino);
+                if rota.is_none() || fim.distance(npc.pos) >= 2.5 {
+                    falhas.push(format!("{:?}: {:.1}", npc.papel, fim.distance(npc.pos)));
+                }
+            }
+            assert!(
+                falhas.is_empty(),
+                "{}: NPCs inacessíveis: {}",
+                d.zona,
+                falhas.join(", ")
+            );
+        }
     }
 
     fn anda_ate(i: &Ilha, de: Vec2, para: Vec2, ticks: u32) -> Vec2 {
@@ -1860,4 +1958,3 @@ mod testes {
         assert_eq!(ger.pintura_do_chao(bx, bz), None);
     }
 }
-

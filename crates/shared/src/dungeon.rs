@@ -467,6 +467,8 @@ impl Entradas {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DadosDungeon {
+    /// Relogio UTC para sobreviver a reconexao e troca de canal.
+    pub montaria_bloqueada_ate_ms: u64,
     pub gruta: Entradas,
     pub porao: Entradas,
     /// (conteudo, maior estagio vencido).

@@ -512,6 +512,37 @@ pub fn draw_botao_economia(z: &Zonas) -> bool {
 /// Montar/desmontar, ao lado da bateria. `progresso` 0..1 enquanto sobe;
 /// sem montaria o icone fica apagado (o toque avisa onde obter). `true` no
 /// clique.
+/// Controle persistente: um toque liga, o próximo desliga.
+pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
+    let r = z.sprint;
+    let sobre = r.contains(mouse());
+    estilo::cartao(r, sobre, ativo);
+    let cor = if ativo { estilo::ACENTO } else { estilo::TEXTO };
+    // Silhueta correndo, legível sem depender de fonte de ícones.
+    let c = r.center() - vec2(0.0, r.h * 0.10);
+    let u = r.w * 0.22;
+    let esp = (r.w * 0.05).max(1.5);
+    draw_circle(c.x + u * 0.3, c.y - u * 0.8, u * 0.21, cor);
+    for (a, b) in [
+        (vec2(0.2, -0.45), vec2(-0.15, 0.25)),
+        (vec2(0.12, -0.25), vec2(0.7, 0.0)),
+        (vec2(0.7, 0.0), vec2(0.85, -0.4)),
+        (vec2(0.1, -0.3), vec2(-0.5, -0.45)),
+        (vec2(-0.5, -0.45), vec2(-0.8, 0.0)),
+        (vec2(-0.15, 0.25), vec2(0.45, 0.55)),
+        (vec2(0.45, 0.55), vec2(0.25, 0.95)),
+        (vec2(-0.15, 0.25), vec2(-0.65, 0.85)),
+    ] {
+        let a = c + a * u;
+        let b = c + b * u;
+        draw_line(a.x, a.y, b.x, b.y, esp, cor);
+    }
+    estilo::texto(r.x + r.w * 0.10, r.y + r.h * 0.92,
+        if ativo { "LIGADO" } else { "SPRINT" }, (r.w * 0.19) as u16, cor);
+    if sobre { dica(r, if ativo { "Desligar sprint [Shift]" } else { "Ligar sprint [Shift]" }); }
+    sobre && crate::foco::clique()
+}
+
 pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem: bool) -> bool {
     let r = z.montaria;
     let m = mouse();

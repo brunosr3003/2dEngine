@@ -27,6 +27,8 @@ loja), `Armazem`, `Doca`, `Cabana`/cabana do cartógrafo, e os props `Lampiao`,
 `Poco`, `Banco`, `Caixas`, `Barril`. Extras do Tempest: soleira, floreira sob a
 janela, diagonais do enxaimel, lampião na porta das lojas, piso do sobrado.
 
+O banco atende no porto e também na praça da cidade: a Banqueira usa o mesmo depósito do Banqueiro.
+
 - `gerar(tipo, papel, seed)` / `gerar_prop(tipo, seed)` → `Construcao`.
 - Voxel: `B_CASA = 0.5` (prédio), `B_PROP = 0.125` (prop). Cor em
   `BlocoCasa::rgb()`; `brilha()` = chama sem sombreamento.
@@ -77,12 +79,6 @@ Capitão (`PERTO_DO_CAPITAO`), ilha liberada, canal no ar; aí `embarcar` grava
 a chegada na praça de lá e manda `TrocarZona`. Se o Capitão tem missão a
 oferecer, o diálogo vem antes e o menu abre quando ele fecha.
 
-O **Pergaminho de Teleporte** (id 359) é vendido pelo Alquimista em cobre
-(`viagem::PRECO_PERGAMINHO`, 100). Com uma viagem longa em curso — ponto
-marcado no mapa, "Ir" de missão, ir até um NPC — aparece o botão
-**Teleportar ×N** embaixo da faixa (a partir de `TELEPORTE_MIN`, 40 m).
-`ClientMessage::Teleportar` gasta 1 e põe o corpo no chão firme mais perto do
-destino (`terra_mais_proxima`, até 16 m); a viagem termina ali mesmo e o "Ir"
-faz o que faria ao chegar. Não cruza o mar e não vale em dungeon, caído ou
-carregando alguém; recusa não gasta.
-
+O **Pergaminho de Teleporte** (id 359) foi retirado em 26/09/2026.
+As unidades antigas viram 100 cobre cada. Viagens dentro da ilha usam a rota
+do mapa e a montaria; o botão de teleporte saiu. Ver COMBATE_MONTADO_E_VIAGEM.md.

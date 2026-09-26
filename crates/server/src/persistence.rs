@@ -1026,7 +1026,43 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     }
 
     seed_economy_if_needed(pool).await?;
+    migrar_viagem_montada(pool).await?;
 
+    Ok(())
+}
+
+/// Seed inicial: insere defaults pros itens/enemies que ainda não estão no DB.
+async fn migrar_viagem_montada(pool: &PgPool) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('viagem_montada_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected() > 0;
+    sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = 359").execute(&mut *tx).await?;
+    sqlx::query("UPDATE items SET active = FALSE, buy_price = NULL WHERE id = 359").execute(&mut *tx).await?;
+    if nova {
+        for tabela in ["inventory", "vault"] {
+            sqlx::query(&format!("UPDATE {tabela} SET item_id = $1, qty = qty * 100, instance_data = NULL WHERE item_id = 359"))
+                .bind(shared::item_id::COPPER as i32).execute(&mut *tx).await?;
+        }
+        let rows: Vec<(String, String)> = sqlx::query_as("SELECT name, dungeon_json FROM characters FOR UPDATE")
+            .fetch_all(&mut *tx).await?;
+        for (nome, json) in rows {
+            let mut dados: shared::dungeon::DadosDungeon = if json.is_empty() { Default::default() }
+                else { serde_json::from_str(&json)? };
+            for carta in &mut dados.correio {
+                if carta.item_id == shared::item_id::PERGAMINHO_TELEPORTE {
+                    carta.item_id = shared::item_id::COPPER;
+                    carta.qtd = carta.qtd.saturating_mul(shared::viagem::PRECO_PERGAMINHO);
+                    carta.instance = None;
+                }
+            }
+            // Presente da atualizacao, uma vez por personagem existente.
+            dados.postar(shared::item_id::PERGAMINHO_INVOCA_MONTARIA, 1, None, 3,
+                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64);
+            sqlx::query("UPDATE characters SET dungeon_json = $2 WHERE name = $1")
+                .bind(nome).bind(serde_json::to_string(&dados)?).execute(&mut *tx).await?;
+        }
+    }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -2589,7 +2625,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             id: item_id::PERGAMINHO_TELEPORTE as i32,
             name: "Pergaminho de Teleporte",
             sell: 25,
-            buy: Some(shared::viagem::PRECO_PERGAMINHO as i32),
+            buy: None,
             ord: None,
             stack: 999,
             slot: None,
@@ -3005,6 +3041,21 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    // Um acessorio utilitario por pet e por montaria. Sem atributos no template.
+    for id in shared::acessorios::PET_INICIO..shared::acessorios::MONTARIA_INICIO + 8 {
+        let (pet, _) = shared::acessorios::tipo(id).unwrap();
+        let slot = if pet { shared::EquipSlot::AcessorioPet } else { shared::EquipSlot::AcessorioMontaria };
+        sqlx::query(
+            "INSERT INTO items (id, name, sell_price, buy_price, shop_order, stack_max, equip_slot, item_level, icon_col, icon_row) \
+             VALUES ($1,$2,1000,5000,NULL,1,$3,1,-1,-1) \
+             ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, equip_slot=EXCLUDED.equip_slot, stack_max=1, buy_price=5000"
+        )
+        .bind(id as i32)
+        .bind(shared::acessorios::nome(id).unwrap())
+        .bind(slot.as_db_str())
+        .execute(pool).await?;
+    }
+
     // O PASSE DA ILHA MAGICA: a forma da linha e' FORCADA, nao inserida.
     //
     // O `INSERT ... ON CONFLICT` da lista estatica so' atualiza icone e
@@ -3041,8 +3092,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // O pergaminho de pet cai na recompensa diaria, e o calendario nao
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
-    sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = $1")
-        .bind(item_id::PERGAMINHO_INVOCA_PET as i32)
+    sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
+        .bind(vec![item_id::PERGAMINHO_INVOCA_PET as i32, item_id::PERGAMINHO_INVOCA_MONTARIA as i32])
         .execute(pool)
         .await?;
 
@@ -3360,11 +3411,6 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         (5, item_id::CINTO),
         (6, item_id::PISTOLAS),
         (6, item_id::COLDRE),
-        // O Alquimista da vila (loja de pocoes) vende o pergaminho de teleporte.
-        (
-            shared::vila::LOJA_DE_POCOES as i32,
-            item_id::PERGAMINHO_TELEPORTE,
-        ),
         // Recursos T1 vendaveis no Mercador — facilita early game.
         (1, item_id::WOOD_T1),
         (1, item_id::LEATHER_T1),
@@ -3392,6 +3438,14 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
         }
+    }
+    for item in shared::acessorios::PET_INICIO..shared::acessorios::MONTARIA_INICIO + 8 {
+        let next_order: i32 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vendor_shop_items WHERE shop_id = 1"
+        ).fetch_one(pool).await?;
+        sqlx::query(
+            "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) VALUES (1, $1, $2) ON CONFLICT DO NOTHING"
+        ).bind(item as i32).bind(next_order).execute(pool).await?;
     }
 
     // Recursos T1 — buy_price = sell_price * 3 (custa 3x o preco de venda).
@@ -4578,5 +4632,51 @@ mod testes_da_faxina_de_slots {
                 "'{morto}' nao e' slot do jogo e nao devia estar na lista"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_migracao_montaria {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requer MMO_MIGRACAO_TEST_URL; usa schema isolado"]
+    async fn migracao_converte_e_presenteia_uma_unica_vez() {
+        use sqlx::postgres::PgConnectOptions;
+        use std::str::FromStr;
+        let url = std::env::var("MMO_MIGRACAO_TEST_URL").unwrap();
+        let schema = format!("teste_montaria_{}", std::process::id());
+        let admin = PgPool::connect(&url).await.unwrap();
+        sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin).await.unwrap();
+        let opts = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
+        let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        for sql in [
+            "CREATE TABLE migracoes_de_dados(nome TEXT PRIMARY KEY)",
+            "CREATE TABLE vendor_shop_items(item_id INT)",
+            "CREATE TABLE items(id INT, active BOOL, buy_price INT)",
+            "CREATE TABLE inventory(item_id INT, qty INT, instance_data TEXT)",
+            "CREATE TABLE vault(item_id INT, qty INT, instance_data TEXT)",
+            "CREATE TABLE characters(name TEXT, dungeon_json TEXT)",
+            "INSERT INTO items VALUES(359, TRUE, 100)",
+            "INSERT INTO vendor_shop_items VALUES(359)",
+            "INSERT INTO inventory VALUES(359, 3, NULL)",
+            "INSERT INTO vault VALUES(359, 2, NULL)",
+        ] { sqlx::query(sql).execute(&pool).await.unwrap(); }
+        let mut dg = shared::dungeon::DadosDungeon::default();
+        dg.postar(shared::item_id::PERGAMINHO_TELEPORTE, 4, None, 0, 0);
+        sqlx::query("INSERT INTO characters VALUES('teste', $1)").bind(serde_json::to_string(&dg).unwrap()).execute(&pool).await.unwrap();
+        migrar_viagem_montada(&pool).await.unwrap();
+        migrar_viagem_montada(&pool).await.unwrap();
+        let inv: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM inventory").fetch_one(&pool).await.unwrap();
+        let vault: (i32, i32) = sqlx::query_as("SELECT item_id, qty FROM vault").fetch_one(&pool).await.unwrap();
+        assert_eq!(inv, (344, 300));
+        assert_eq!(vault, (344, 200));
+        let json: String = sqlx::query_scalar("SELECT dungeon_json FROM characters").fetch_one(&pool).await.unwrap();
+        let dg: shared::dungeon::DadosDungeon = serde_json::from_str(&json).unwrap();
+        assert_eq!(dg.correio.len(), 2);
+        assert_eq!((dg.correio[0].item_id, dg.correio[0].qtd), (344, 400));
+        assert_eq!((dg.correio[1].item_id, dg.correio[1].qtd), (shared::item_id::PERGAMINHO_INVOCA_MONTARIA, 1));
+        pool.close().await;
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE")).execute(&admin).await.unwrap();
     }
 }

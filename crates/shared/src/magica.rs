@@ -54,9 +54,14 @@ pub const TROCAS: &[(u16, u32, u32)] = &[
 ];
 
 pub const LOJA_DE_TROCAS: u32 = 90_475;
+pub const GUIA_DOS_DEGRAUS: &str = "Guia dos Degraus";
 
 pub fn posto_de_trocas() -> Vec2 {
     CHEGADA + Vec2::new(22.0, 3.0)
+}
+
+pub fn posto_dos_degraus() -> Vec2 {
+    CHEGADA + Vec2::new(12.0, 12.0)
 }
 
 /// O nome da zona do PRIMEIRO nível. Os outros são `ilha_magica_2`, `_3`…
@@ -671,7 +676,8 @@ fn raio_da_ilhota(i: &Ilhota, ang: f32) -> f32 {
     // lóbulos gordos e iguais, que de longe lê como folha e não como ilha.
     // A terceira, mais rápida e fraca, quebra a repetição sem virar serrilha.
     i.raio
-        * (1.0 + 0.10 * (ang * 3.0 + fase).sin()
+        * (1.0
+            + 0.10 * (ang * 3.0 + fase).sin()
             + 0.06 * (ang * 5.0 - fase * 1.7).sin()
             + 0.035 * (ang * 8.0 + fase * 0.6).sin())
 }
@@ -840,11 +846,14 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
 pub enum PedidoMagica {
     /// Abrir o painel: quantos passes tenho, quanto tempo resta.
     Painel,
-    /// Gastar `entradas` passes e ir ao degrau `grau`. Recusa não gasta nada.
+    /// Gastar `entradas` passes e ir ao degrau `grau`. Zero retoma o tempo
+    /// ativo sem cobrar nova entrada.
     ///
     /// `grau` é `NivelMagico::grau`; 0 significa "o maior que eu posso", que é
     /// o que o botão da tarja manda ao estender — lá não há onde escolher.
     Entrar { entradas: u8, grau: u8 },
+    /// Trocar de degrau, dentro da ilha, sem alterar o relógio nem a volta.
+    Trocar { grau: u8 },
     /// Sair antes da hora. O tempo CONTINUA correndo — senão o jogador sairia
     /// no primeiro susto e voltaria com o relógio intacto, e a ilha deixaria
     /// de ter hora.
@@ -854,6 +863,8 @@ pub enum PedidoMagica {
 /// O que o servidor conta sobre a Ilha Mágica.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum AvisoMagica {
+    /// Interação com o guia dos degraus abre o painel dentro da ilha.
+    AbrirPainel,
     Estado {
         /// O maior degrau liberado pro nível deste personagem — 0 se nenhum.
         ///
@@ -917,6 +928,15 @@ pub fn indice_do_bonus_em(p: Vec2) -> u8 {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn guia_dos_degraus_fica_na_chegada_segura() {
+        let p = posto_dos_degraus();
+        assert!(e_chao(p));
+        assert!(e_porto_seguro(p));
+        assert!(p.distance(posto_de_pocoes()) > 8.0);
+        assert!(p.distance(posto_de_trocas()) > 8.0);
+    }
 
     /// NADA nasce na ponte: nem árvore, nem pedra.
     ///
@@ -1001,7 +1021,13 @@ mod testes {
             // travou o jogo.
             if topo > 0 {
                 let _ = crate::terreno::arvore_da_coluna(
-                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                    crate::terreno::Bioma::Floresta,
+                    bx,
+                    bz,
+                    topo,
+                    0,
+                    &ger,
+                    false,
                 );
             }
         }
@@ -1063,12 +1089,24 @@ mod testes {
                 n.exige_nivel,
                 n.mob.1
             );
-            assert!(crate::terreno::def_da_zona(n.zona).is_some(), "{}: zona sem def", n.nome);
+            assert!(
+                crate::terreno::def_da_zona(n.zona).is_some(),
+                "{}: zona sem def",
+                n.nome
+            );
             if let Some(a) = antes {
                 assert!(n.grau == a.grau + 1, "graus fora de ordem");
-                assert!(n.exige_nivel > a.exige_nivel, "{}: não sobe o portão", n.nome);
+                assert!(
+                    n.exige_nivel > a.exige_nivel,
+                    "{}: não sobe o portão",
+                    n.nome
+                );
                 assert!(n.poder() > a.poder(), "{}: não sobe o poder", n.nome);
-                assert!(n.mob.0 > a.mob.1, "{}: faixa encavalada com a anterior", n.nome);
+                assert!(
+                    n.mob.0 > a.mob.1,
+                    "{}: faixa encavalada com a anterior",
+                    n.nome
+                );
             }
             antes = Some(n);
         }
@@ -1078,7 +1116,11 @@ mod testes {
     #[test]
     fn o_portao_libera_por_nivel() {
         let primeiro = NIVEIS[0].exige_nivel;
-        assert_eq!(maior_liberado(primeiro - 1), None, "abaixo do primeiro, nada");
+        assert_eq!(
+            maior_liberado(primeiro - 1),
+            None,
+            "abaixo do primeiro, nada"
+        );
         assert_eq!(maior_liberado(primeiro).map(|n| n.grau), Some(1));
         let ultimo = NIVEIS.last().unwrap();
         assert_eq!(
@@ -1119,7 +1161,10 @@ mod testes {
         );
         // Fora da Ilha Mágica a regra não vale: o mundo continua com a dele.
         let mundo = crate::terreno::Gerador::novo(
-            7, 700, crate::terreno::Bioma::Floresta, crate::terreno::ESCALA_ALTURA,
+            7,
+            700,
+            crate::terreno::Bioma::Floresta,
+            crate::terreno::ESCALA_ALTURA,
         );
         assert_eq!(tier_da_pedra(&mundo, 0, 0), None);
     }
@@ -1127,7 +1172,11 @@ mod testes {
     #[test]
     fn a_ilha_magica_e_rala_e_rica() {
         // RICA: a pedra de 30 vira 60, que é o número do dono.
-        assert_eq!(Bonus::Coleta(1).multiplicador(), 2.0, "o nó tem que pagar o dobro");
+        assert_eq!(
+            Bonus::Coleta(1).multiplicador(),
+            2.0,
+            "o nó tem que pagar o dobro"
+        );
 
         // RALA: contando nós numa faixa igual das duas ilhas.
         let magica = crate::terreno::Gerador::da_ilha_magica();
@@ -1146,7 +1195,13 @@ mod testes {
                         continue;
                     }
                     if crate::terreno::arvore_da_coluna(
-                        crate::terreno::Bioma::Floresta, bx, bz, topo, 0, ger, false,
+                        crate::terreno::Bioma::Floresta,
+                        bx,
+                        bz,
+                        topo,
+                        0,
+                        ger,
+                        false,
                     )
                     .is_some()
                     {
@@ -1201,20 +1256,35 @@ mod testes {
                         continue;
                     }
                     pontos_de_ponte += 1;
-                let topo = ger.bloco_em(bx, bz);
-                let arv = crate::terreno::arvore_da_coluna(
-                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
-                );
-                let pl = crate::terreno::planta_da_coluna(
-                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
-                );
-                if arv.is_some() || pl.is_some() {
-                    com_estorvo += 1;
-                }
+                    let topo = ger.bloco_em(bx, bz);
+                    let arv = crate::terreno::arvore_da_coluna(
+                        crate::terreno::Bioma::Floresta,
+                        bx,
+                        bz,
+                        topo,
+                        0,
+                        &ger,
+                        false,
+                    );
+                    let pl = crate::terreno::planta_da_coluna(
+                        crate::terreno::Bioma::Floresta,
+                        bx,
+                        bz,
+                        topo,
+                        0,
+                        &ger,
+                        false,
+                    );
+                    if arv.is_some() || pl.is_some() {
+                        com_estorvo += 1;
+                    }
                 }
             }
         }
-        assert!(pontos_de_ponte > 50, "varreu pouca ponte: {pontos_de_ponte} pontos");
+        assert!(
+            pontos_de_ponte > 50,
+            "varreu pouca ponte: {pontos_de_ponte} pontos"
+        );
         assert_eq!(com_estorvo, 0, "{com_estorvo} pontos de ponte com estorvo");
     }
 
@@ -1231,7 +1301,13 @@ mod testes {
                 let bz = (p.y / crate::terreno::BLOCO).round() as i32;
                 let topo = ger.bloco_em(bx, bz);
                 if crate::terreno::arvore_da_coluna(
-                    crate::terreno::Bioma::Floresta, bx, bz, topo, 0, &ger, false,
+                    crate::terreno::Bioma::Floresta,
+                    bx,
+                    bz,
+                    topo,
+                    0,
+                    &ger,
+                    false,
                 )
                 .is_some()
                 {
@@ -1239,7 +1315,10 @@ mod testes {
                 }
             }
         }
-        assert!(achou > 0, "a ilhota ficou pelada: o corte pegou mais que a ponte");
+        assert!(
+            achou > 0,
+            "a ilhota ficou pelada: o corte pegou mais que a ponte"
+        );
     }
 
     #[test]
@@ -1417,16 +1496,17 @@ mod testes {
         }
         assert_eq!(gratis_restantes(g, hoje), 0, "a cota acabou");
         g = apos_gastar_gratis(g, hoje, 1);
-        assert_eq!(gratis_restantes(g, hoje), 0, "gastar a mais não vira dívida");
+        assert_eq!(
+            gratis_restantes(g, hoje),
+            0,
+            "gastar a mais não vira dívida"
+        );
 
         // AMANHÃ ela está cheia de novo, sem ninguém rodar nada.
         assert_eq!(gratis_restantes(g, amanha), GRATIS_POR_DIA);
 
         // E as três de uma vez valem o mesmo que três separadas.
-        assert_eq!(
-            gratis_restantes(apos_gastar_gratis(0, hoje, 3), hoje),
-            0
-        );
+        assert_eq!(gratis_restantes(apos_gastar_gratis(0, hoje, 3), hoje), 0);
         // O dia guardado é o dia do jogo (vira às 04:00 de Brasília).
         assert_eq!(
             apos_gastar_gratis(0, hoje, 1).div_euclid(16),
@@ -1467,7 +1547,11 @@ mod testes_da_ilhota_limpa {
                 limpas += 1;
                 assert_eq!(tem, 0, "a ilhota do Colosso tem {tem} estorvos");
             } else {
-                assert!(tem > 0, "{} ficou sem recurso: o corte vazou", i.bonus.nome());
+                assert!(
+                    tem > 0,
+                    "{} ficou sem recurso: o corte vazou",
+                    i.bonus.nome()
+                );
             }
         }
         assert_eq!(limpas, 1, "esperava exatamente uma ilhota limpa");

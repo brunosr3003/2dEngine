@@ -26,6 +26,9 @@ pub struct FichaUi {
     /// Saldo de Energia da evolucao: alocar atributo tambem gasta dela.
     energia: u64,
     confirmar_reset: bool,
+    proficiencias: Option<[u64; shared::PROF_COUNT]>,
+    aba_proficiencias: bool,
+    prof_selecionada: Option<usize>,
 }
 
 impl FichaUi {
@@ -36,6 +39,7 @@ impl FichaUi {
     pub fn fechar(&mut self) {
         self.aberta = false;
         self.confirmar_reset = false;
+        self.prof_selecionada = None;
     }
 
     pub fn atualizar_pontos(
@@ -52,7 +56,19 @@ impl FichaUi {
     /// O que o equipamento empresta de cada atributo (ver `atualizar_pontos`).
     pub fn limpar_pontos(&mut self) {
         self.pontos = None;
+        self.proficiencias = None;
+        self.prof_selecionada = None;
         self.confirmar_reset = false;
+    }
+
+    pub fn atualizar_proficiencias(&mut self, xp: [u64; shared::PROF_COUNT]) {
+        self.proficiencias = Some(xp);
+    }
+
+    pub fn nivel_da_arma(&self, arma: Option<u16>) -> Option<u32> {
+        let conjunto = shared::skills::Conjunto::da_arma(arma?);
+        self.proficiencias
+            .map(|xp| shared::proficiency_level(xp[conjunto as usize]))
     }
 
     pub fn pontos_disponiveis(&self) -> Option<u32> {
@@ -87,6 +103,7 @@ impl FichaUi {
         mult_xp: u64,
         stats: Option<&PlayerStats>,
         energia: u64,
+        arma_equipada: Option<u16>,
     ) -> Option<ClientMessage> {
         if !self.aberta {
             return None;
@@ -97,7 +114,7 @@ impl FichaUi {
             .min((seguro.w - 16.0) / 860.0)
             .min((seguro.h - 16.0) / 540.0);
         estilo::no_painel(escala, || {
-            self.desenha_na_escala(nome, nivel, xp, mult_xp, stats)
+            self.desenha_na_escala(nome, nivel, xp, mult_xp, stats, arma_equipada)
         })
     }
 
@@ -108,6 +125,7 @@ impl FichaUi {
         xp: u64,
         mult_xp: u64,
         stats: Option<&PlayerStats>,
+        arma_equipada: Option<u16>,
     ) -> Option<ClientMessage> {
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -339,14 +357,29 @@ impl FichaUi {
             self.confirmar_reset = false;
         }
 
-        estilo::texto_forte(
-            dir.x + 14.0 * f,
-            dir.y + 28.0 * f,
-            "STATUS DE COMBATE",
-            17,
-            estilo::OURO,
+        let aba_status = Rect::new(dir.x + 10.0 * f, dir.y + 7.0 * f, 190.0 * f, 34.0 * f);
+        let aba_profs = Rect::new(dir.x + 205.0 * f, dir.y + 7.0 * f, 198.0 * f, 34.0 * f);
+        estilo::botao(
+            aba_status,
+            "COMBATE",
+            estilo::estado_de(aba_status, false, !self.aba_proficiencias),
+            false,
         );
-        if let Some(s) = stats {
+        estilo::botao(
+            aba_profs,
+            "PROFICIÊNCIAS",
+            estilo::estado_de(aba_profs, false, self.aba_proficiencias),
+            false,
+        );
+        if clique && aba_status.contains(mouse) {
+            self.aba_proficiencias = false;
+        }
+        if clique && aba_profs.contains(mouse) {
+            self.aba_proficiencias = true;
+        }
+        if self.aba_proficiencias {
+            self.desenha_proficiencias(dir, f, clique, mouse, arma_equipada);
+        } else if let Some(s) = stats {
             let linhas = [
                 ("Vida máxima", s.hp_max.to_string()),
                 ("Mana máxima", s.mp_max.to_string()),
@@ -386,11 +419,148 @@ impl FichaUi {
         }
         None
     }
+
+    fn desenha_proficiencias(
+        &mut self, dir: Rect, f: f32, clique: bool, mouse: Vec2, arma_equipada: Option<u16>,
+    ) {
+        const NOMES: [&str; shared::PROF_COUNT] =
+            ["Espada e escudo", "Katana", "Pistolas", "Anel mágico"];
+        const ARMAS: [u16; shared::PROF_COUNT] = [
+            shared::item_id::ESPADA_E_ESCUDO,
+            shared::item_id::KATANA,
+            shared::item_id::PISTOLAS,
+            shared::item_id::ANEL_MAGICO,
+        ];
+        if let Some(i) = self.prof_selecionada {
+            let voltar = Rect::new(dir.x + 10.0 * f, dir.y + 51.0 * f, 92.0 * f, 34.0 * f);
+            estilo::botao(voltar, "VOLTAR", estilo::estado_de(voltar, false, false), false);
+            if clique && voltar.contains(mouse) {
+                self.prof_selecionada = None;
+                return;
+            }
+            let xp = self.proficiencias.map_or(0, |v| v[i]);
+            let nivel = shared::proficiency_level(xp);
+            estilo::texto_forte(dir.x + 116.0 * f, dir.y + 76.0 * f,
+                &format!("{}  ·  Nv. {nivel}", NOMES[i]), 18, estilo::OURO);
+            let ativo = arma_equipada == Some(ARMAS[i]);
+            estilo::texto(dir.x + 14.0 * f, dir.y + 111.0 * f,
+                if ativo { "Bônus ativos com a arma equipada" } else { "Equipe esta arma para ativar os bônus" },
+                14, if ativo { estilo::VERDE } else { estilo::SUAVE });
+            let b = bonus_proficiencia(ARMAS[i], nivel);
+            let bonus = [
+                ("Vida máxima", b.0), ("Mana máxima", b.1), ("Ataque", b.2),
+                ("Defesa", b.3), ("Destreza", b.4), ("Sabedoria", b.5),
+            ];
+            let mut linha = 0;
+            for (rotulo, valor) in bonus {
+                if valor == 0 { continue; }
+                let y = dir.y + (145.0 + linha as f32 * 45.0) * f;
+                estilo::texto(dir.x + 14.0 * f, y, rotulo, 15, estilo::TEXTO);
+                estilo::texto_forte(dir.x + 250.0 * f, y,
+                    &format!("+{valor}"), 17, if ativo { estilo::VERDE } else { estilo::SUAVE });
+                linha += 1;
+            }
+            estilo::texto(dir.x + 14.0 * f, dir.y + 281.0 * f,
+                "Os bônus são calculados pelo seu nível atual.", 12, estilo::SUAVE);
+            if i == 1 || i == 2 {
+                estilo::texto(dir.x + 14.0 * f, dir.y + 304.0 * f,
+                    "Destreza também aumenta o dano desta arma.", 12, estilo::SUAVE);
+            }
+            return;
+        }
+        for (i, nome) in NOMES.iter().enumerate() {
+            let y = dir.y + (48.0 + i as f32 * 77.0) * f;
+            let linha = Rect::new(dir.x + 10.0 * f, y, dir.w - 20.0 * f, 70.0 * f);
+            estilo::cartao(linha, false, false);
+            if clique && linha.contains(mouse) && self.proficiencias.is_some() {
+                self.prof_selecionada = Some(i);
+            }
+            let Some(xp) = self.proficiencias.map(|v| v[i]) else {
+                estilo::texto(
+                    linha.x + 12.0 * f,
+                    linha.y + 28.0 * f,
+                    nome,
+                    15,
+                    estilo::TEXTO,
+                );
+                estilo::texto(
+                    linha.x + 12.0 * f,
+                    linha.y + 51.0 * f,
+                    "Aguardando servidor…",
+                    12,
+                    estilo::SUAVE,
+                );
+                continue;
+            };
+            let nivel = shared::proficiency_level(xp);
+            estilo::texto_forte(
+                linha.x + 12.0 * f,
+                linha.y + 26.0 * f,
+                nome,
+                16,
+                estilo::TEXTO,
+            );
+            estilo::texto_forte(
+                linha.x + linha.w - 98.0 * f,
+                linha.y + 26.0 * f,
+                &format!("Nv. {nivel}"),
+                16,
+                estilo::OURO,
+            );
+            if nivel >= shared::PROFICIENCY_LEVEL_CAP {
+                estilo::texto(
+                    linha.x + 12.0 * f,
+                    linha.y + 52.0 * f,
+                    "Nível máximo",
+                    12,
+                    estilo::VERDE,
+                );
+                continue;
+            }
+            let base = shared::proficiency_xp_for_level(nivel);
+            let precisa = shared::proficiency_xp_to_next(nivel);
+            let atual = xp.saturating_sub(base).min(precisa);
+            estilo::barra(
+                Rect::new(
+                    linha.x + 12.0 * f,
+                    linha.y + 39.0 * f,
+                    linha.w - 145.0 * f,
+                    11.0 * f,
+                ),
+                atual as f32 / precisa as f32,
+                atual as f32 / precisa as f32,
+                estilo::ACENTO,
+                None,
+            );
+            estilo::texto(
+                linha.x + linha.w - 125.0 * f,
+                linha.y + 51.0 * f,
+                &format!("{} / {} XP", atual, precisa),
+                12,
+                estilo::SUAVE,
+            );
+        }
+    }
+}
+
+/// Mesma multiplicação e truncamento usados pelo servidor ao montar os atributos.
+fn bonus_proficiencia(arma: u16, nivel: u32) -> (i32, i32, i32, i32, i32, i32) {
+    let b = shared::weapon_scaling(arma);
+    let n = nivel as f32;
+    ((b.hp_max * n) as i32, (b.mp_max * n) as i32,
+     (b.attack_damage * n) as i32, (b.defense * n) as i32,
+     (b.dex * n) as i32, (b.wis * n) as i32)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bonus_da_ficha_usa_o_mesmo_truncamento_do_combate() {
+        assert_eq!(bonus_proficiencia(shared::item_id::PISTOLAS, 52), (0, 0, 5, 0, 26, 0));
+        assert_eq!(bonus_proficiencia(shared::item_id::ESPADA_E_ESCUDO, 3), (3, 0, 0, 0, 0, 0));
+    }
 
     #[test]
     fn todos_os_seis_atributos_recebem_pontos_do_servidor() {
@@ -513,6 +683,8 @@ pub async fn previa() {
     crate::render3d::define_alvo(Some(rt.clone()));
     let mut ui = FichaUi::default();
     ui.atualizar_pontos(7, [8, 13, 5, 11, 4, 2], [3, 0, 0, 2, 0, 0]);
+    ui.atualizar_proficiencias([224, 1720, 67665, 2619]);
+    ui.aba_proficiencias = true;
     ui.abrir();
     let mut stats = shared::base_player_stats();
     stats.hp_max = 278;
@@ -525,11 +697,19 @@ pub async fn previa() {
     for _ in 0..3 {
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-        ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480);
+        ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480,
+            Some(shared::item_id::PISTOLAS));
         unsafe { get_internal_gl().flush() };
         rt.texture
             .get_texture_data()
             .export_png(&format!("{saida}/ficha.png"));
         next_frame().await;
     }
+    ui.prof_selecionada = Some(2);
+    crate::render3d::camera_padrao();
+    clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+    ui.desenha("Camteste", 16, (xp16 + xp17) / 2, 1, Some(&stats), 1_480,
+        Some(shared::item_id::PISTOLAS));
+    unsafe { get_internal_gl().flush() };
+    rt.texture.get_texture_data().export_png(&format!("{saida}/ficha-detalhe.png"));
 }

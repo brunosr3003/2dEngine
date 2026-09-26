@@ -76,7 +76,7 @@ impl Morte {
     /// (Reviver, Recuperar) na tela de morte, pra uma tela `sw`×`sh`.
     pub fn botoes_da_tela(sw: f32, sh: f32) -> (Rect, Rect) {
         let (w, h) = (240.0, 44.0);
-        let y = sh * 0.5 + 40.0;
+        let y = sh * 0.5 + 72.0;
         (
             Rect::new(sw * 0.5 - w - 8.0, y, w, h),
             Rect::new(sw * 0.5 + 8.0, y, w, h),
@@ -98,7 +98,7 @@ impl Morte {
     fn desenha_tela(&mut self, ouro: u64) -> Option<ClientMessage> {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.08, 0.0, 0.0, 0.55));
-        let caixa = Rect::new(sw * 0.5 - 280.0, sh * 0.5 - 110.0, 560.0, 220.0);
+        let caixa = Rect::new(sw * 0.5 - 280.0, sh * 0.5 - 140.0, 560.0, 280.0);
         estilo::painel(caixa);
         estilo::texto_centro(sw * 0.5, caixa.y + 44.0, "VOCÊ FOI DERROTADO", 30, VERMELHO);
         let linha = if self.xp_perdido > 0 {
@@ -110,10 +110,16 @@ impl Morte {
             "Nenhuma experiência a recuperar desta morte.".to_string()
         };
         estilo::texto_centro(sw * 0.5, caixa.y + 80.0, &linha, 16, estilo::TEXTO);
+        estilo::texto_centro(sw * 0.5, caixa.y + 112.0,
+            "Cada proficiência treinada perde XP ao morrer:", 15, VERMELHO);
+        estilo::texto_centro(sw * 0.5, caixa.y + 135.0,
+            "10% do custo do próximo nível. Seu nível pode cair.", 14, estilo::TEXTO);
+        estilo::texto_centro(sw * 0.5, caixa.y + 158.0,
+            "Recuperar XP não devolve proficiência.", 14, estilo::SUAVE);
         if let Some((t, ok)) = &self.aviso {
             estilo::texto_centro(
                 sw * 0.5,
-                caixa.y + 106.0,
+                caixa.y + 186.0,
                 t,
                 14,
                 if *ok { estilo::AUTO } else { VERMELHO },

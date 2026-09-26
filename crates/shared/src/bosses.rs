@@ -772,7 +772,11 @@ pub fn vida(nivel: u32) -> i32 {
 /// Dano do golpe COMUM (mitigado normalmente). O telegrafado nao usa isto:
 /// ele tira fracao da vida (`dano_telegrafado`).
 pub fn dano(nivel: u32) -> i32 {
-    12 + nivel as i32 * 2
+    15 + (nivel as f32 * 2.4).round() as i32
+}
+
+pub fn defesa(nivel: u32) -> i32 {
+    (nivel as f32 * 0.65).round() as i32
 }
 
 /// A resistencia total que `dano_mitigado` do servidor aplica: defesa a 1,5%

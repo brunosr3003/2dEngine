@@ -101,6 +101,7 @@ struct Mob {
     hp: i32,
     hp_max: i32,
     dano: i32,
+    defesa: i32,
     /// Alcance de visao no nivel (`world::deteccao_do_nivel`).
     det: f32,
     vivo: bool,
@@ -124,6 +125,7 @@ impl Mob {
             hp,
             hp_max: hp,
             dano,
+            defesa: crate::world::defesa_do_mob(def.def, nivel),
             det: crate::world::deteccao_do_nivel(def.det, nivel),
             vivo: true,
             volta_em: 0.0,
@@ -484,7 +486,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 }
             }
             let m = &mut mobs[a];
-            let dmg = dano_mitigado(stats.attack_damage, m.def.def, 0.0);
+            let dmg = dano_mitigado(shared::basic_attack_damage(stats, arma, 0), m.defesa, 0.0);
             if conjunto == Conjunto::Katana {
                 *hp = (*hp
                     + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA)
@@ -536,10 +538,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                     }
                     if d <= raio {
                         o.hp -= dano_mitigado(
-                            s.dano_efetivo(stats.attack_damage, cd_base),
-                            o.def.def,
-                            0.0,
-                        );
+                            s.dano_efetivo(stats.attack_damage, cd_base), o.defesa, 0.0);
                         if o.hp <= 0 {
                             abateu(o, t, &mut r, alvo_kind);
                         }
@@ -1130,8 +1129,7 @@ pub(crate) fn build_do_nivel(
     alloc[principal] = pontos / 3;
     alloc[stat_idx::VIT] = pontos - pontos / 3;
     let mut profs = [0u64; shared::PROF_COUNT];
-    // `proficiency_level`: do nivel k pro k+1 custa 50·k.
-    profs[conjunto as usize] = 50 * ((nivel as u64 - 1) * nivel as u64 / 2);
+    profs[conjunto as usize] = shared::proficiency_xp_for_level(nivel);
     let xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
 
     let ilvl = shared::receitas::FAIXAS
@@ -1236,7 +1234,7 @@ pub(crate) fn duelar(
     let base = crate::economy::kind_inicial(base_kind).expect("kind conhecido");
     let hp_chefe_max = cat::vida(c.nivel);
     let mut hp_chefe = hp_chefe_max;
-    let def_chefe = c.nivel as i32 / 2;
+    let def_chefe = cat::defesa(c.nivel);
     let dano_chefe = cat::dano(c.nivel);
     let alcance_chefe = base.rng.max(2.4);
     let raio_do_chefe = shared::HIT_TARGET_RADIUS * c.escala.max(1.0);
@@ -1411,7 +1409,11 @@ pub(crate) fn duelar(
             if eu.distance(chefe) > alcance + raio_do_chefe {
                 continue;
             }
-            let dmg = dano_mitigado(stats.attack_damage, def_chefe, 0.0);
+            let dmg = dano_mitigado(
+                shared::basic_attack_damage(&stats, arma, alloc[shared::stat_idx::INT]),
+                def_chefe,
+                0.0,
+            );
             if conjunto == Conjunto::Katana {
                 // CHEFE: a fracao menor. E' a mesma funcao que o servidor
                 // chama, entao o numero daqui nao pode divergir do jogo.
@@ -1438,8 +1440,8 @@ pub(crate) fn duelar(
                 muralha_ate = t + s.duracao_efeito();
             }
             if s.dano > 0 {
-                hp_chefe -=
-                    dano_mitigado(s.dano_efetivo(stats.attack_damage, cd_base), def_chefe, 0.0);
+                hp_chefe -= dano_mitigado(
+                    s.dano_efetivo(stats.attack_damage, cd_base), def_chefe, 0.0);
             }
         }
         if hp_chefe <= 0 {
@@ -1843,6 +1845,16 @@ mod testes {
                 "skill instantânea cancelada em {idade}s"
             );
         }
+    }
+
+    #[test]
+    fn mobs_de_faixa_alta_tem_atributos_reais_maiores() {
+        let (vida_12, dano_12) = crate::world::vida_e_dano_do_mob(280, 18, 12);
+        let (vida_38, dano_38) = crate::world::vida_e_dano_do_mob(280, 18, 38);
+        assert_eq!((vida_12, dano_12), (280, 18));
+        assert!(vida_38 > vida_12 * 2 - 1);
+        assert!(dano_38 > dano_12);
+        assert!(crate::world::defesa_do_mob(8, 38) > crate::world::defesa_do_mob(8, 12));
     }
 
     #[test]

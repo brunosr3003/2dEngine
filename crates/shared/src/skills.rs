@@ -442,7 +442,7 @@ pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
 /// Energia por ciclo de um cristal, conforme a ilha. O índice é a ilha do
 /// arquipélago; canais sem ilha usam o primeiro valor.
 pub fn energia_por_coleta(indice_da_ilha: usize) -> u64 {
-    [12, 28, 60, 120].get(indice_da_ilha).copied().unwrap_or(12)
+    [30, 70, 150, 300].get(indice_da_ilha).copied().unwrap_or(30)
 }
 
 /// O `dano` de cada skill do catalogo e' peso relativo, e este e' o meio da

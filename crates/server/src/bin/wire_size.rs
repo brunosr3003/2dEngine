@@ -8,6 +8,7 @@ use shared::{EntityId, EntityMeta, EntityState, EntityTag};
 
 fn meta(i: u32) -> EntityMeta {
     EntityMeta {
+        auras: 0,
         id: EntityId(1000 + i),
         tag: EntityTag::Enemy,
         name: Some("Green Goblin Lv3".to_string()),
@@ -15,7 +16,8 @@ fn meta(i: u32) -> EntityMeta {
         faction: None,
         kind: 0,
         nivel: 1,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             }
 }
 

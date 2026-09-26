@@ -375,7 +375,7 @@ impl GameWorld {
         health.current = hp;
         tag.stats.hp_max = hp;
         tag.stats.attack_damage = cat::dano(nivel);
-        tag.stats.defense = nivel as i32 / 2;
+        tag.stats.defense = cat::defesa(nivel);
         tag.level = nivel;
         tag.is_boss = true;
         tag.boss_name = Some(c.nome.to_string());

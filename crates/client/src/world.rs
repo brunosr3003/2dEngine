@@ -243,6 +243,13 @@ impl World {
     pub fn acertos(&mut self, lista: &[shared::protocol::Acerto], agora: f64) {
         for a in lista {
             let eu = self.self_id == Some(a.alvo);
+            if let Some(e) = self.ents.get(&a.alvo) {
+                let som = if eu {crate::sons::Som::Dor} else if a.critico {crate::sons::Som::Critico} else if a.alvo.0 % 2 == 0 {crate::sons::Som::Acerto} else {crate::sons::Som::Acerto2};
+                crate::sons::mundo(som,e.render_pos,self.self_pos(),eu || self.self_id == Some(a.atacante));
+                if e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && a.dano > 0 {
+                    crate::sons::mob(crate::sons::Som::MobDor,e.render_pos,self.self_pos(),self.self_id==Some(a.atacante));
+                }
+            }
             if let Some(ent) = self.ents.get_mut(&a.alvo) {
                 ent.ferido = Some(0.0);
                 ent.golpe_de = Vec2::new(a.de[0] as f32, a.de[1] as f32) / 127.0;
@@ -348,6 +355,7 @@ impl World {
                 carga_chefe: None,
             });
         }
+        let ouvinte = self.self_pos();
         for st in states {
             let Some(ent) = self.ents.get_mut(&st.id) else {
                 continue;
@@ -391,6 +399,8 @@ impl World {
                 let (g, v) = (acao::gesto(st.acao), acao::variante(st.acao));
                 let (ga, va) = (acao::gesto(ent.state.acao), acao::variante(ent.state.acao));
                 if g == acao::GOLPE && (ga != acao::GOLPE || va != v) {
+                    let som = match acao::conjunto(st.acao) {2=>crate::sons::Som::Disparo,3=>crate::sons::Som::Magia,_=>if v%2==0 {crate::sons::Som::Golpe} else {crate::sons::Som::Golpe2}};
+                    if ent.state.pos != [0,0] {crate::sons::mundo(som,ent.render_pos,ouvinte,self.self_id==Some(st.id));}
                     ent.combo_ant = ent.combo;
                     ent.combo = Some((v, 0.0));
                     // quem golpeia ja' esta' com a arma: nao espera sacar
@@ -415,6 +425,14 @@ impl World {
                 );
                 if tem_vida && caido {
                     if ent.morte.is_none() {
+                        if ent.state.hp > 0 && ent.state.pos != [0,0] {
+                            if ent.meta.tag == shared::EntityTag::Enemy {
+                                let perto=ouvinte.is_some_and(|p|p.distance(ent.render_pos)<12.0);
+                                crate::sons::mob(crate::sons::Som::MobMorte,ent.render_pos,ouvinte,perto);
+                            } else {
+                                crate::sons::mundo(crate::sons::Som::Morte,ent.render_pos,ouvinte,self.self_id == Some(st.id));
+                            }
+                        }
                         ent.morte = Some(if ent.state.pos == [0, 0] { 9.0 } else { 0.0 });
                     }
                 } else {
@@ -713,6 +731,7 @@ mod testes {
         for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
                 vec![EntityMeta {
+                    auras: 0,
                     id,
                     tag: EntityTag::Player,
                     name: None,
@@ -720,7 +739,8 @@ mod testes {
                     faction: None,
                     kind: 0,
                     nivel: 1,
-                    aparencia: 0,
+                    desafio: None,
+            aparencia: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -767,6 +787,7 @@ mod testes {
         };
         w.apply(
             vec![EntityMeta {
+                auras: 0,
                 id,
                 tag: EntityTag::Player,
                 name: None,
@@ -774,7 +795,8 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 1,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             }],
             vec![estado(1.0)],
             &[],
@@ -822,6 +844,7 @@ mod testes {
         ] {
             w.apply(
                 vec![EntityMeta {
+                    auras: 0,
                     id,
                     tag,
                     name: None,
@@ -829,7 +852,8 @@ mod testes {
                     faction: None,
                     kind: 2,
                     nivel: 1,
-                    aparencia: 0,
+                    desafio: None,
+            aparencia: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -884,6 +908,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta {
+                auras: 0,
                 id,
                 tag: EntityTag::Player,
                 name: None,
@@ -891,7 +916,8 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             }],
             vec![EntityState {
                 id,
@@ -985,6 +1011,7 @@ mod testes {
         };
         w.apply(
             vec![EntityMeta {
+                auras: 0,
                 id,
                 tag: EntityTag::Player,
                 name: None,
@@ -992,7 +1019,8 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             }],
             vec![estado(0.0)],
             &[],
@@ -1075,6 +1103,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta {
+                auras: 0,
                 id,
                 tag: EntityTag::Player,
                 name: None,
@@ -1082,7 +1111,8 @@ mod testes {
                 faction: None,
                 kind: 0,
                 nivel: 0,
-                aparencia: 0,
+                desafio: None,
+            aparencia: 0,
             }],
             vec![EntityState {
                 id,

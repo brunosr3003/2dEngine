@@ -22,6 +22,8 @@ pub enum Acao {
 #[derive(Default)]
 pub struct MontariasUi {
     pub aberto: bool,
+    pub firmeza: u8,
+    pub bloqueada_ate: f64,
     /// Gira o modelo no palco.
     giro: f32,
     /// A faixa "minhas montarias": escolher, equipar, combinar.
@@ -69,6 +71,10 @@ impl MontariasUi {
 
     /// O que a loja avisa que interessa aqui: o inicio da montada.
     pub fn receber(&mut self, aviso: &shared::loja::AvisoLoja, agora: f64) {
+        if let shared::loja::AvisoLoja::MontariaCombate { firmeza, bloqueio_segundos } = aviso {
+            self.firmeza = *firmeza;
+            self.bloqueada_ate = agora + *bloqueio_segundos as f64;
+        }
         if let shared::loja::AvisoLoja::Montando { segundos } = aviso {
             self.montando_desde = agora;
             self.montando_ate = agora + *segundos as f64;

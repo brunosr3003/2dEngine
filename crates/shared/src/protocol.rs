@@ -1027,6 +1027,8 @@ pub enum ServerMessage {
         recursos: Vec<RegiaoNoMapa>,
         nomes: Vec<(u16, String)>,
         rendimentos: Vec<(u8, String)>,
+        /// Catálogo da versão mais forte de cada espécie na ilha e dos chefes.
+        mobs: Vec<MobNoCatalogo>,
         /// Chefes de campo da ilha (onde moram, nome, nivel, se estao vivos).
         #[serde(default)]
         chefes: Vec<crate::bosses::ChefeNoMapa>,
@@ -1502,6 +1504,16 @@ pub struct MorteRecuperavelNet {
 
 /// Uma zona de spawn no mapa. `bichos` = (kind, chance em %), da maior chance
 /// pra menor — a mesma conta de `quests::chance_do_kind` que a auto missao usa.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MobNoCatalogo {
+    pub kind: u16,
+    pub nivel: u16,
+    pub nome: String,
+    pub vida: u16,
+    pub chefe: bool,
+    pub desafio: crate::DesafioMob,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ZonaNoMapa {
     pub centro: [f32; 2],

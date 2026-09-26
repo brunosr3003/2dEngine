@@ -12,9 +12,8 @@
 //! - Eventos: calendario proprio com periodo, que complementa ou substitui o
 //!   mensal. `EVENTOS` vem vazio (desligado).
 //!
-//! Premio e' so' o que ja' e' vinculado (Pocao de XP, Fortuna, Sorte, Marcas),
-//! pocao que o Alquimista vende e ouro — nada vai pro mercado, nada de TP nem
-//! de equipamento.
+//! Recursos de progressao, energia, invocacoes e entradas da Ilha Magica.
+//! Sem pocoes. Energia vai direto ao saldo do personagem.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +26,8 @@ pub const DIAS: usize = 28;
 pub const MARCOS: [u8; 4] = [7, 14, 21, 28];
 /// `Premio::item_id` de ouro (vai pro `gold` do personagem, nao pra bolsa).
 pub const OURO: u16 = 0;
+/// Saldo de energia, nunca item de bolsa.
+pub const ENERGIA: u16 = u16::MAX;
 /// `calendario` do mensal nas mensagens.
 pub const MENSAL: u32 = 0;
 
@@ -43,58 +44,51 @@ const fn p(item_id: u16, qtd: u32) -> Premio {
 }
 const NADA: Premio = p(OURO, 0);
 
-pub type Dia = [Premio; 2];
+pub type Dia = [Premio; 4];
 
-/// A grade do mes. Valores ⚠️ iniciais (docs/CALENDARIO.md).
+const fn comum(primeiro: Premio) -> Dia {
+    [primeiro, NADA, NADA, NADA]
+}
+
+/// Recursos de progressao e invocacoes; nenhum tipo de pocao.
 pub const CALENDARIO: [Dia; DIAS] = {
     use item_id::*;
     [
-        [p(OURO, 500), NADA],
-        [p(HEALTH_POTION, 10), NADA],
-        [p(MANA_POTION, 10), NADA],
-        [p(STAMINA_POTION, 5), NADA],
-        [p(OURO, 800), NADA],
-        [p(GREATER_HEAL, 5), NADA],
-        [p(XP_POTION, 1), p(MARCAS_TEMPESTADE, 10)], // 7
-        [p(OURO, 1_000), NADA],
-        [p(HEALTH_POTION, 15), NADA],
-        [p(GREATER_MANA, 5), NADA],
-        [p(FORTUNA_POTION, 1), NADA],
-        [p(OURO, 1_200), NADA],
-        [p(GREATER_HEAL, 8), NADA],
-        [p(XP_POTION, 2), p(PERGAMINHO_INVOCA_PET, 1)], // 14
-        [p(OURO, 1_500), NADA],
-        [p(MANA_POTION, 15), NADA],
-        [p(STAMINA_POTION, 8), NADA],
-        [p(FORTUNA_POTION, 1), NADA],
-        [p(OURO, 1_800), NADA],
-        [p(GREATER_HEAL, 10), NADA],
-        [p(XP_POTION, 2), p(MARCAS_TEMPESTADE, 20)], // 21
-        [p(OURO, 2_000), NADA],
-        [p(GREATER_MANA, 8), NADA],
-        [p(SORTE_POTION, 1), NADA],
-        [p(OURO, 2_500), NADA],
-        [p(GREATER_HEAL, 12), NADA],
-        [p(FORTUNA_POTION, 1), NADA],
-        [p(XP_POTION, 3), p(PERGAMINHO_INVOCA_PET, 2)], // 28
+        comum(p(ENERGIA, 5_000)),
+        comum(p(DARKSTEEL, 5_000)),
+        [p(PERGAMINHO_INVOCA_MONTARIA, 1), p(ENERGIA, 5_000), NADA, NADA],
+        [p(PERGAMINHO_INVOCA_PET, 1), p(COPPER, 10_000), NADA, NADA],
+        comum(p(GLITTERING_POWDER, 100)),
+        comum(p(ENERGIA, 5_000)),
+        comum(p(PERGAMINHO_INVOCA_PET, 10)),
+        comum(p(DARKSTEEL, 7_500)),
+        comum(p(COPPER, 15_000)),
+        comum(p(ENERGIA, 7_500)),
+        comum(p(GLITTERING_POWDER, 150)),
+        comum(p(DARKSTEEL, 7_500)),
+        comum(p(ENERGIA, 7_500)),
+        comum(p(PERGAMINHO_INVOCA_MONTARIA, 10)),
+        comum(p(COPPER, 20_000)),
+        comum(p(DARKSTEEL, 10_000)),
+        comum(p(ENERGIA, 10_000)),
+        comum(p(GLITTERING_POWDER, 200)),
+        comum(p(COPPER, 20_000)),
+        comum(p(ENERGIA, 10_000)),
+        comum(p(PERGAMINHO_INVOCA_PET, 10)),
+        comum(p(DARKSTEEL, 15_000)),
+        comum(p(COPPER, 25_000)),
+        comum(p(ENERGIA, 15_000)),
+        comum(p(GLITTERING_POWDER, 300)),
+        comum(p(DARKSTEEL, 15_000)),
+        comum(p(ENERGIA, 15_000)),
+        [p(PERGAMINHO_INVOCA_MONTARIA, 10), p(PERGAMINHO_INVOCA_PET, 10), p(PASSE_MAGICO, 5), NADA],
     ]
 };
 
-/// Itens que podem aparecer num calendario: vinculados, vendidos pelo
-/// Alquimista, ou pergaminho de invocacao — que e' item de loja, mas entra
-/// aqui VINCULADO, pra quem nao paga tambem abrir (docs/CALENDARIO.md).
-/// O teste da grade (e de todo evento) confere contra esta lista.
-pub const PERMITIDOS: [u16; 10] = [
-    item_id::HEALTH_POTION,
-    item_id::MANA_POTION,
-    item_id::STAMINA_POTION,
-    item_id::GREATER_HEAL,
-    item_id::GREATER_MANA,
-    item_id::XP_POTION,
-    item_id::FORTUNA_POTION,
-    item_id::SORTE_POTION,
-    item_id::MARCAS_TEMPESTADE,
-    item_id::PERGAMINHO_INVOCA_PET,
+pub const PERMITIDOS: &[u16] = &[
+    item_id::COPPER, item_id::DARKSTEEL, item_id::GLITTERING_POWDER,
+    ENERGIA, item_id::PERGAMINHO_INVOCA_PET, item_id::PERGAMINHO_INVOCA_MONTARIA,
+    item_id::PASSE_MAGICO,
 ];
 
 pub fn e_marco(dia_da_grade: u8) -> bool {
@@ -418,7 +412,7 @@ pub fn itens_com_dias(eventos: &'static [EventoDePresenca]) -> Vec<(u16, Vec<u8>
     let grades = std::iter::once(&CALENDARIO[..]).chain(eventos.iter().map(|e| e.grade));
     for grade in grades {
         for (i, d) in grade.iter().enumerate() {
-            for pr in d.iter().filter(|p| p.qtd > 0 && p.item_id != OURO) {
+            for pr in d.iter().filter(|p| p.qtd > 0 && p.item_id != OURO && p.item_id != ENERGIA) {
                 match v.iter_mut().find(|x| x.0 == pr.item_id) {
                     Some(x) => {
                         if !x.1.contains(&(i as u8 + 1)) {
@@ -573,30 +567,25 @@ mod tests {
 
     #[test]
     fn marcos_sao_os_melhores_e_a_grade_so_tem_permitido() {
-        let valor = |d: &Dia| d.iter().filter(|p| p.qtd > 0 && p.item_id != OURO).count();
-        for (i, d) in CALENDARIO.iter().enumerate() {
-            let n = i as u8 + 1;
-            if e_marco(n) {
-                assert_eq!(valor(d), 2, "dia {n}: marco com dois premios");
-                assert!(d.iter().any(|p| p.item_id == item_id::XP_POTION));
-            } else {
-                assert!(d[1].qtd == 0, "dia {n}: dia comum tem um premio so'");
-            }
-            for pr in d.iter().filter(|p| p.qtd > 0 && p.item_id != OURO) {
-                assert!(
-                    PERMITIDOS.contains(&pr.item_id),
-                    "dia {n}: item {} fora da lista",
-                    pr.item_id
-                );
-                assert!(crate::equip_slot_of(pr.item_id).is_none());
+        for d in CALENDARIO {
+            for pr in d.iter().filter(|p| p.qtd > 0) {
+                assert!(PERMITIDOS.contains(&pr.item_id));
+                assert!(crate::pocoes::cura_de(pr.item_id).is_none());
             }
         }
+        assert_eq!(CALENDARIO[0][0], p(ENERGIA, 5_000));
+        assert_eq!(CALENDARIO[1][0], p(item_id::DARKSTEEL, 5_000));
+        assert_eq!(CALENDARIO[2][0], p(item_id::PERGAMINHO_INVOCA_MONTARIA, 1));
+        assert_eq!(CALENDARIO[2][1], p(ENERGIA, 5_000));
+        assert_eq!(CALENDARIO[6][0], p(item_id::PERGAMINHO_INVOCA_PET, 10));
+        assert_eq!(CALENDARIO[13][0], p(item_id::PERGAMINHO_INVOCA_MONTARIA, 10));
+        assert_eq!(CALENDARIO[27], [p(item_id::PERGAMINHO_INVOCA_MONTARIA, 10), p(item_id::PERGAMINHO_INVOCA_PET, 10), p(item_id::PASSE_MAGICO, 5), NADA]);
     }
 
     static GRADE_TESTE: [Dia; 3] = [
-        [p(OURO, 1), NADA],
-        [p(item_id::XP_POTION, 1), NADA],
-        [p(item_id::SORTE_POTION, 1), NADA],
+        comum(p(OURO, 1)),
+        comum(p(item_id::XP_POTION, 1)),
+        comum(p(item_id::SORTE_POTION, 1)),
     ];
     static EV_COMPLEMENTA: [EventoDePresenca; 1] = [EventoDePresenca {
         id: 7,
@@ -681,8 +670,9 @@ mod tests {
     #[test]
     fn itens_do_calendario_com_os_dias() {
         let v = itens_com_dias(EVENTOS);
-        let xp = v.iter().find(|x| x.0 == item_id::XP_POTION).unwrap();
-        assert_eq!(xp.1, vec![7, 14, 21, 28]);
+        let pet = v.iter().find(|x| x.0 == item_id::PERGAMINHO_INVOCA_PET).unwrap();
+        assert_eq!(pet.1, vec![4, 7, 21, 28]);
+        assert!(v.iter().all(|x| x.0 != ENERGIA));
         assert!(v.iter().all(|x| x.0 != OURO));
     }
 }

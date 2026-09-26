@@ -634,3 +634,16 @@ forte do outro lado da ilha perde pra zona comum ali do lado.
   do projeto antigo e tem que sair.
 - **Colocar as zonas de spawn** nos sítios planos que `sitio_plano` acha.
 - **Editor** pra encaixar as peças `.vox` feitas por fora.
+
+## Mobs entre áreas de caça (26/09/2026)
+
+As 60 áreas principais não cobriam a ilha inteira. Além delas, o servidor
+agora cria grupos comuns de até três mobs nos trechos sem população: cada
+sítio de nascimento válido fica a até 36 unidades de algum slot real.
+Os grupos usam raio de 18 unidades e espaçamento mínimo de 12 entre mobs.
+A regra segue o nível pela distância do desembarque, sem transformar os
+novos grupos em fortes. Ativação e respawn continuam por proximidade.
+
+Cidade, porto, cabanas e terra desconectada continuam excluídos. Ilhas
+mágicas e arenas mantêm sua distribuição própria. Na ilha inicial, o teste
+de cobertura verifica 12.256 sítios e gerou 201 grupos pequenos adicionais.

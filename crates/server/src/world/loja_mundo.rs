@@ -2,12 +2,8 @@
 //! docs/MONTARIAS.md). Compra fala com o banco central fora do tick
 //! (`crate::loja`); montar e desmontar sao do mundo, autoritativos.
 //!
-//! Montado:
-//! - so' fora de combate (`SEM_COMBATE_PRA_MONTAR_S`), fora de dungeon, sem
-//!   coletar, vivo e sem carregar nada; leva `MONTAR_S`;
-//! - desmonta sozinho ao golpear, conjurar, apanhar, coletar, cair, entrar
-//!   em dungeon ou carregar algo;
-//! - anda `VEL_MONTADO` mais rapido. Nada de combate muda.
+//! Montado: pode subir em combate e dungeon, mas nao durante coleta, caido
+//! ou carregando outro jogador. Leva `MONTAR_S` e conserva a velocidade.
 use super::*;
 use crate::loja::{self as banco, Evento, Resposta};
 use shared::loja::{self as cat, AvisoLoja, EstadoLoja, PedidoLoja, Produto};
@@ -497,13 +493,8 @@ impl GameWorld {
             if s.montando_ate <= 0.0 && !s.montado {
                 continue;
             }
-            let desde = if s.montado {
-                s.montado_em
-            } else {
-                s.montando_ate - cat::MONTAR_S
-            };
-            let lutou = cat::luta_desmonta(ultima_luta(s), desde);
-            let pode = pode_ficar_montado(s) && !lutou;
+            // Combate pode continuar durante a subida e depois de montar.
+            let pode = pode_ficar_montado(s);
             if s.montando_ate > 0.0 {
                 if !pode {
                     s.montando_ate = 0.0;
@@ -511,6 +502,10 @@ impl GameWorld {
                 } else if agora >= s.montando_ate {
                     s.montando_ate = 0.0;
                     s.montado = true;
+                    s.montaria_firmeza = cat::FIRMEZA_MAX;
+                    avisa(&s.handle.to_client, AvisoLoja::MontariaCombate {
+                        firmeza: 100, bloqueio_segundos: 0.0,
+                    });
                     s.montado_em = agora;
                     crate::telemetria::conta("montaria", s.montaria_vista.unwrap_or(0), 1);
                 }
@@ -529,34 +524,20 @@ impl GameWorld {
     }
 }
 
-/// O instante mais recente de golpe, skill ou pancada recebida.
-fn ultima_luta(s: &Session) -> f32 {
-    s.last_combat_at_s
-        .max(s.combo_last_attack)
-        .max(s.gesto_skill_em)
-}
-
 fn pode_ficar_montado(s: &Session) -> bool {
     !s.downed
         && s.carrying.is_none()
-        && s.instancia == 0
         && s.coleta_no.is_none()
         && s.entity.is_some()
 }
 
 /// Pode comecar a montar agora? O texto e' o motivo pro jogador.
-fn pode_montar(s: &Session, agora: f32) -> Result<(), &'static str> {
-    if s.instancia != 0 {
-        return Err("Não dá para montar dentro da dungeon.");
-    }
+fn pode_montar(s: &Session, _agora: f32) -> Result<(), &'static str> {
     if s.coleta_no.is_some() {
         return Err("Pare a coleta para montar.");
     }
     if !pode_ficar_montado(s) {
         return Err("Agora não dá para montar.");
-    }
-    if !cat::pode_montar_apos_luta(ultima_luta(s), agora) {
-        return Err("Saia do combate para montar.");
     }
     Ok(())
 }
@@ -572,4 +553,207 @@ fn milhar(v: u64) -> String {
         out.push(c);
     }
     out
+}
+
+#[cfg(test)]
+mod testes_combate_montado {
+    use super::*;
+
+    fn mundo() -> (GameWorld, SessionId) {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        let sid = SessionId(([127, 0, 0, 1], 19841).into());
+        let (tx, _) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((NetId(EntityId(904)), Position(Vec2::ZERO),
+            Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 }));
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.logged_in = true;
+        s.entity = Some(e);
+        s.entity_id = EntityId(904);
+        s.equipment.montaria = Some(shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1));
+        w.sim_time_s = 20.0;
+        (w, sid)
+    }
+
+    #[test]
+    fn combate_montado_mantem_velocidade_e_sprint() {
+        for grau in [1, 5] {
+            for sprint in [false, true] {
+                let velocidade = |em_luta: bool| {
+                    let (mut w, sid) = mundo();
+                    let s = w.sessions.get_mut(&sid).unwrap();
+                    s.montado = true;
+                    s.montado_em = 1.0;
+                    s.equipment.montaria = Some(shared::item_id::montaria_no_grau(
+                        shared::item_id::MONTARIA_BASE, grau));
+                    s.stamina_current = 100.0;
+                    if em_luta {
+                        s.last_combat_at_s = 19.9;
+                        s.combo_last_attack = 19.9;
+                    }
+                    s.pending_input = Some(shared::protocol::InputFrame {
+                        seq: 1, tick: 1, move_dir: Vec2::X, aim: Vec2::X,
+                        buttons: if sprint { shared::protocol::buttons::SPRINT } else { 0 },
+                    });
+                    let e = s.entity.unwrap();
+                    w.step(1.0 / 30.0);
+                    assert!(w.sessions[&sid].montado);
+                    let v = w.ecs.get::<&Velocity>(e).unwrap().0.length();
+                    v
+                };
+                let normal = velocidade(false);
+                assert!(normal > 0.0);
+                assert!((velocidade(true) - normal).abs() < 0.001,
+                    "montaria grau {grau}, sprint {sprint}: combate reduziu velocidade");
+            }
+        }
+    }
+
+    #[test]
+    fn ataque_e_dano_nao_desmontam_nem_a_instancia() {
+        let (mut w, sid) = mundo();
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.montado = true;
+            s.montado_em = 10.0;
+            s.combo_last_attack = 19.0;
+            s.last_combat_at_s = 19.5;
+        }
+        w.avancar_montarias();
+        assert!(w.sessions[&sid].montado);
+        w.sessions.get_mut(&sid).unwrap().instancia = 1;
+        w.avancar_montarias();
+        assert!(w.sessions[&sid].montado);
+    }
+
+    #[test]
+    fn monta_dentro_da_dungeon_e_mantem_apos_a_subida() {
+        let (mut w, sid) = mundo();
+        w.sessions.get_mut(&sid).unwrap().instancia = 1;
+        w.pedir_montar(sid);
+        assert!(w.sessions[&sid].montando_ate > 0.0);
+        w.sim_time_s += cat::MONTAR_S;
+        w.avancar_montarias();
+        assert!(w.sessions[&sid].montado);
+    }
+
+    #[test]
+    fn golpe_durante_subida_permite_montar() {
+        let (mut w, sid) = mundo();
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.target = Some(EntityId(905));
+            s.last_combat_at_s = w.sim_time_s;
+        }
+        w.pedir_montar(sid);
+        assert!(w.sessions[&sid].montando_ate > 0.0);
+        w.sim_time_s += 0.5;
+        w.sessions.get_mut(&sid).unwrap().last_combat_at_s = w.sim_time_s;
+        w.avancar_montarias();
+        assert!(w.sessions[&sid].montando_ate > 0.0);
+        w.sim_time_s += cat::MONTAR_S;
+        w.avancar_montarias();
+        assert!(w.sessions[&sid].montado);
+        assert!(w.sessions[&sid].montado);
+    }
+
+    #[test]
+    fn ataque_basico_causa_o_mesmo_dano_montado_e_a_pe() {
+        let lutar = |montado| {
+            let (mut w, sid) = mundo();
+            w.safe_zone = false;
+            let alvo = w.ecs.spawn((NetId(EntityId(905)), Position(Vec2::new(1.0, 0.0)),
+                EntityKind::Enemy(1), Health { current: 10_000, max: 10_000 }));
+            {
+                let s = w.sessions.get_mut(&sid).unwrap();
+                s.montado = montado;
+                s.montado_em = 1.0;
+                s.equipment.weapon = Some(shared::item_id::KATANA);
+                s.target = Some(EntityId(905));
+                s.stats.attack_damage = 100;
+                s.stats.crit_chance = 0.0;
+                s.stamina_current = 1000.0;
+            }
+            for n in 0..60 {
+                w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+                    seq: n, tick: n, move_dir: Vec2::ZERO, aim: Vec2::X, buttons: 0,
+                });
+                w.step(1.0 / 30.0);
+            }
+            assert_eq!(w.sessions[&sid].montado, montado);
+            let hp = w.ecs.get::<&Health>(alvo).unwrap().current;
+            10_000 - hp
+        };
+        let a_pe = lutar(false);
+        assert!(a_pe > 0);
+        assert_eq!(lutar(true), a_pe);
+    }
+
+    #[test]
+    fn ataque_montado_atinge_chefe_sem_desmontar() {
+        let (mut w, sid) = mundo();
+        w.safe_zone = false;
+        w.imortal = false;
+        let (mut tag, _) = w.build_enemy_tag(7, Vec2::ZERO, 0.0, Vec2::X);
+        tag.is_boss = true;
+        tag.stats.defense = 0;
+        tag.stats.damage_reduction_pct = 0.0;
+        let alvo = w.ecs.spawn((NetId(EntityId(905)), Position(Vec2::X),
+            EntityKind::Enemy(7), Health { current: 10000, max: 10000 }, tag));
+        w.pedir_montar(sid);
+        assert!(w.sessions[&sid].montando_ate > 0.0);
+        w.sim_time_s += cat::MONTAR_S;
+        w.avancar_montarias();
+        w.sessions.get_mut(&sid).unwrap().target = Some(EntityId(905));
+        w.pending_skill_hits.push(PendingSkillHit {
+            target_net: EntityId(905), attacker_net: EntityId(904),
+            damage: 100, hurt_dir: Vec2::X, is_crit: false,
+            from_player: true, knockback: 0.0,
+        });
+        w.step(1.0 / 30.0);
+        assert!(w.sessions[&sid].montado);
+        assert!(w.ecs.get::<&Health>(alvo).unwrap().current < 10000);
+    }
+
+    #[test]
+    fn dano_no_mundo_reduz_hp_sem_desmontar() {
+        let (mut w, sid) = mundo();
+        w.safe_zone = false;
+        w.imortal = false;
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.montado = true;
+            s.montado_em = 1.0;
+            s.stats.hp_max = 100;
+            s.stats.defense = 0;
+            s.stats.damage_reduction_pct = 0.0;
+            s.stats.hp_regen = 0.0;
+            s.poise_current = 0.0;
+            s.last_press_primary_at = f32::NEG_INFINITY;
+            s.last_press_secondary_at = f32::NEG_INFINITY;
+        }
+        for _ in 0..7 {
+            w.pending_skill_hits.push(PendingSkillHit {
+                target_net: EntityId(904), attacker_net: EntityId(999),
+                damage: 1, hurt_dir: Vec2::X, is_crit: false,
+                from_player: false, knockback: 0.0,
+            });
+            w.step(1.0 / 30.0);
+        }
+        let s = &w.sessions[&sid];
+        assert!(s.montado);
+        assert_eq!(s.montaria_firmeza, cat::FIRMEZA_MAX);
+        assert_eq!(s.dungeon.montaria_bloqueada_ate_ms, 0);
+        let hp = w.ecs.get::<&Health>(s.entity.unwrap()).unwrap();
+        assert_eq!(hp.current, 93, "montaria nao absorve o dano");
+    }
+
+    #[test]
+    fn entrega_antiga_de_teleporte_converte_em_cobre() {
+        let mut bolsa = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS + 2];
+        assert!(add_to_inventory(&mut bolsa, shared::item_id::PERGAMINHO_TELEPORTE, 3, None));
+        assert!(!bolsa.iter().any(|i| i.item_id == shared::item_id::PERGAMINHO_TELEPORTE));
+        assert_eq!(bolsa.iter().filter(|i| i.item_id == shared::item_id::COPPER).map(|i| i.qty).sum::<u32>(), 300);
+    }
 }

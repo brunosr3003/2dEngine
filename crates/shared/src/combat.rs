@@ -12,6 +12,18 @@ use crate::constants::{
     STAMINA_COST_MULT_MIN,
 };
 
+/// Dano bruto do ataque básico. INT alocada já contribui para
+/// `attack_damage` do anel e acrescenta um segundo ponto somente ao básico.
+/// Skills continuam usando `attack_damage` diretamente.
+pub fn basic_attack_damage(stats: &PlayerStats, weapon_id: u16, allocated_int: u32) -> i32 {
+    let bonus = if crate::constants::arma_magica(weapon_id) {
+        allocated_int.min(i32::MAX as u32) as i32
+    } else {
+        0
+    };
+    stats.attack_damage.saturating_add(bonus).max(1)
+}
+
 /// Custo final de stamina pra um block, escalado pelo `defense_stamina_cost_mult`
 /// do alvo (RES reduz). Capado por `STAMINA_COST_MULT_MIN`.
 pub fn block_stamina_cost(stats: &PlayerStats) -> f32 {
