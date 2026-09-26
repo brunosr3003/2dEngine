@@ -95,7 +95,7 @@ impl ConfigCombate {
         let (sw, sh) = (screen_width(), screen_height());
         let r = Rect::new(sw * 0.5 - 210.0, sh * 0.5 - 200.0, 420.0, 400.0);
         estilo::painel(r);
-        estilo::texto(r.x + 18.0, r.y + 32.0, "Auto combate", 20, estilo::OURO);
+        estilo::texto(r.x + 18.0, r.y + 32.0, "Combate", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
         estilo::texto_centro(
             fechar.center().x,

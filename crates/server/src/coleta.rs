@@ -16,10 +16,27 @@ pub fn ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
         <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
 }
 
+/// O cliente pode parar antes do destino. Mesmo o ponto mais distante
+/// dessa tolerância precisa continuar dentro do alcance de coleta.
+pub fn aproximacao_ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
+    pos.distance(centro) + shared::COLETA_TOLERANCIA_CHEGADA
+        - raio_no - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
+}
+
 /// Onde ficar pra coletar: do lado de quem chega, no meio do alcance.
 pub fn ponto_de_coleta(centro: Vec2, raio_no: f32, eu: Vec2) -> Vec2 {
     let dir = (eu - centro).try_normalize().unwrap_or(Vec2::X);
     centro + dir * (raio_no + shared::ENTITY_RADIUS + shared::COLETA_ALCANCE_UN * 0.5)
+}
+
+/// Pontos ao redor do nó, começando pelo lado de quem chega. O A* pode
+/// alcançar o outro lado mesmo quando um corpo ou degrau fecha a frente.
+pub fn pontos_de_coleta(centro: Vec2, raio_no: f32, eu: Vec2) -> [Vec2; 8] {
+    let frente = ponto_de_coleta(centro, raio_no, eu) - centro;
+    [0.0_f32, 1.0, -1.0, 2.0, -2.0, 3.0, -3.0, 4.0].map(|passo| {
+        let (s, c) = (passo * std::f32::consts::FRAC_PI_4).sin_cos();
+        centro + Vec2::new(frente.x * c - frente.y * s, frente.x * s + frente.y * c)
+    })
 }
 
 /// O tipo (0 madeira, 1..4 pedra) esta' marcado?
@@ -100,6 +117,19 @@ mod testes {
             "nao fica dentro do no'"
         );
         assert!(!ao_alcance(centro + Vec2::new(5.0, 0.0), centro, 0.6));
+    }
+
+    #[test]
+    fn aproximacoes_suportam_parada_antecipada_do_cliente() {
+        let centro = Vec2::new(10.0, -4.0);
+        for raio in [0.3, 0.6, 1.5] {
+            for p in pontos_de_coleta(centro, raio, Vec2::ZERO) {
+                assert!(aproximacao_ao_alcance(p, centro, raio));
+                let parada = p + (p - centro).normalize() * shared::COLETA_TOLERANCIA_CHEGADA;
+                assert!(ao_alcance(parada, centro, raio));
+                assert!(!aproximacao_ao_alcance(p + (p - centro).normalize(), centro, raio));
+            }
+        }
     }
 
     #[test]

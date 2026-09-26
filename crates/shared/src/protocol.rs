@@ -141,9 +141,8 @@ pub enum ClientMessage {
     RefineItem {
         slot: u16,
     },
-    /// Toggle do PK Mode (player vs player opt-in). Quando ON, o player
-    /// pode dar/levar dano de outros players com pk_mode ON tambem.
-    /// Futuro: zonas PvP forcam ON; faccoes diferentes ignoram flag.
+    /// Alterna entre Pacífico (OFF) e Hostil (ON). Quando ON, o player
+    /// pode atacar outros jogadores fora de zonas seguras. O alvo não precisa ativar Hostil.
     TogglePkMode {
         on: bool,
     },

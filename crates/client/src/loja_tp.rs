@@ -2268,6 +2268,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
     ];
     for (id, tag, kind, p, flags) in elenco {
         metas.push(EntityMeta {
+            pk: Default::default(),
             auras: 0,
             id: EntityId(id),
             tag,

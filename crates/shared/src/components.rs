@@ -445,6 +445,13 @@ pub mod ent_flags {
     pub const DASHING: u8 = 1 << 7;
 }
 
+/// Modo de combate e penalidade persistente por mortes de jogadores.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PkState {
+    pub hostil: bool,
+    pub pontos: u32,
+}
+
 /// Precisao da posicao no wire: 1/8 de tile.
 ///
 /// Com `i16` isso cobre +-4095 tiles e corta a posicao de 8 bytes (2x f32)
@@ -475,6 +482,8 @@ pub const POS_SCALE: f32 = 8.0;
 /// segundo — 23 bytes por tick por mob, exatamente nas entidades que se movem.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityMeta {
+    #[serde(default)]
+    pub pk: PkState,
     /// Grau/refino por peça, ver `auras`.
     #[serde(default)]
     pub auras: u64,
@@ -823,8 +832,8 @@ pub mod attack_anim {
     pub const TOOL_GATHER: u8 = 9; // Flower — p2 rows 4-7
 }
 
-/// Facção do personagem, escolhida na criação. Define ilha de spawn e
-/// regras de PvP (facções diferentes = PvP sempre ON). Serializa como
+/// Facção do personagem, escolhida na criação. Não ignora o modo de combate.
+/// Serializa como
 /// string lowercase ("morganeers"/"peacemain") pra interop com o cliente C#.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

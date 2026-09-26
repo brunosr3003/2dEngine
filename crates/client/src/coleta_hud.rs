@@ -147,6 +147,7 @@ mod tests {
         use shared::{EntityId, EntityMeta, EntityState, EntityTag};
         let mut w = crate::world::World::default();
         let meta = EntityMeta {
+            pk: Default::default(),
             auras: 0,
             id: EntityId(1),
             tag: EntityTag::Player,

@@ -731,6 +731,7 @@ mod testes {
         for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
                 vec![EntityMeta {
+                    pk: Default::default(),
                     auras: 0,
                     id,
                     tag: EntityTag::Player,
@@ -787,6 +788,7 @@ mod testes {
         };
         w.apply(
             vec![EntityMeta {
+                pk: Default::default(),
                 auras: 0,
                 id,
                 tag: EntityTag::Player,
@@ -844,6 +846,7 @@ mod testes {
         ] {
             w.apply(
                 vec![EntityMeta {
+                    pk: Default::default(),
                     auras: 0,
                     id,
                     tag,
@@ -908,6 +911,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta {
+                pk: Default::default(),
                 auras: 0,
                 id,
                 tag: EntityTag::Player,
@@ -1011,6 +1015,7 @@ mod testes {
         };
         w.apply(
             vec![EntityMeta {
+                pk: Default::default(),
                 auras: 0,
                 id,
                 tag: EntityTag::Player,
@@ -1103,6 +1108,7 @@ mod testes {
         let id = shared::EntityId(1);
         w.apply(
             vec![EntityMeta {
+                pk: Default::default(),
                 auras: 0,
                 id,
                 tag: EntityTag::Player,

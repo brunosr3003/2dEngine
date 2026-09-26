@@ -362,3 +362,17 @@ um e meio a dois por ciclo):
   recua no impacto e volta ao meio.
 
 Sem partícula de lasca/faísca ainda (pendência).
+
+## Áreas exclusivas de coleta
+
+Campos de Energia não recebem minério, árvores, tocos nem pedras de cenário.
+Os patamares de mineração também ficam livres de árvores e obstáculos de
+cenário; a Energia fica apenas nos campos próprios. Flores e plantas sem
+colisão podem continuar como decoração. Na Ilha Mágica, cada ilhota de
+coleta contém somente seu recurso, inclusive nas bordas.
+
+A regra está no gerador compartilhado: cliente desenha os mesmos recursos
+que o servidor usa na colisão. O cache guarda apenas altura e refaz o plantio
+ao carregar. A escolha automática tenta pontos em volta do nó e verifica o
+alcance no fim do caminho, reservando a tolerância de chegada do cliente.
+Se o personagem já está ao alcance, começa a coleta onde está.

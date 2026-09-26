@@ -873,7 +873,7 @@ mod testes {
         assert!(w.renascimento_magico().is_none());
     }
 
-    /// Na Ilha Mágica o PvP é aberto: nem facção nem PK ON contam.
+    /// Na Ilha Mágica atacar também exige Hostil; o alvo pode estar Pacífico.
     #[test]
     fn na_ilha_magica_todo_mundo_pode_bater_em_todo_mundo() {
         let (mut w, sid) = mundo(shared::magica::ZONA);
@@ -911,12 +911,13 @@ mod testes {
             s.faction = faccao;
             s.pk_mode_on = false;
         }
-        w.sessions.get_mut(&sid).unwrap().pk_mode_on = false;
+        w.sessions.get_mut(&sid).unwrap().pk_mode_on = true;
         assert!(
             w.can_damage_player(EntityId(901), EntityId(902)),
-            "mesma facção e PK OFF: na Ilha Mágica tem que bater mesmo assim"
+            "Hostil pode atacar um alvo Pacífico na Ilha Mágica"
         );
-        // A mesma dupla, FORA dela, continua protegida.
+        // Desligar Hostil impede o ataque também fora da ilha.
+        w.sessions.get_mut(&sid).unwrap().pk_mode_on = false;
         w.zona = "ilha_inicial".into();
         assert!(!w.can_damage_player(EntityId(901), EntityId(902)));
     }
@@ -1070,7 +1071,8 @@ mod testes {
             "de fora deu pra bater em quem está no porto seguro"
         );
 
-        // Os dois fora: aí sim, PvP aberto.
+        // Os dois fora e atacante Hostil: PvP aberto.
+        w.sessions.get_mut(&sid).unwrap().pk_mode_on = true;
         w.ecs.get::<&mut Position>(e).unwrap().0 = combate;
         assert!(
             w.can_damage_player(EntityId(901), EntityId(903)),

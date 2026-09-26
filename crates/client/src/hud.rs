@@ -868,7 +868,22 @@ pub fn draw_ficha(
     );
 }
 
-/// Os buffs de pocao lado a lado, logo abaixo de `abaixo_de`: Experiencia,
+/// Um toque alterna o modo; a cor e o texto mostram o estado confirmado pelo servidor.
+pub fn draw_modo_pk(z: &Zonas, pk: shared::PkState) -> bool {
+    let r = z.modo_pk;
+    let sobre = r.contains(mouse());
+    let cor = if pk.hostil { Color::new(0.76, 0.35, 1.0, 1.0) } else { estilo::AUTO };
+    estilo::cartao(r, sobre, pk.hostil);
+    draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * z.s, cor);
+    estilo::texto_centro_forte(r.center().x, r.y + 18.0 * z.s,
+        if pk.hostil { "Hostil" } else { "Pacífico" }, fonte(16.0, z.s), cor);
+    estilo::texto_centro(r.center().x, r.y + 33.0 * z.s,
+        &format!("PK: {}", pk.pontos), fonte(11.0, z.s), estilo::SUAVE);
+    if sobre { dica(r, if pk.hostil { "Toque para ficar Pacífico" } else { "Toque para ativar Hostil" }); }
+    sobre && crate::foco::clique()
+}
+
+/// Os buffs de pocao lado a lado, na faixa reservada ao lado do modo de combate: Experiencia,
 /// Fortuna e Sorte, cada um com os minutos que faltam; o hover explica.
 /// Buff inativo nao aparece.
 pub fn draw_buffs(
@@ -876,9 +891,11 @@ pub fn draw_buffs(
     fortuna_ate: i64,
     sorte_ate: i64,
     agora: i64,
-    abaixo_de: Rect,
+    area: Rect,
     curas: [f32; 3],
 ) {
+    // Reserva espaço para os três bônus e as três curas, incluindo os tempos.
+    let k = (area.h / 54.0).min(area.w / (6.0 * 48.0));
     let lista = [
         (
             xp_ate,
@@ -899,28 +916,28 @@ pub fn draw_buffs(
             format!("+{}% chance de drop", shared::BONUS_SORTE_PCT),
         ),
     ];
-    let mut x = abaixo_de.x;
+    let mut x = area.x;
     let mut dica_ativa = None;
     for (ate, sigla, cor, dica) in lista {
         if ate <= agora {
             continue;
         }
         let min = ((ate - agora) as f32 / 60.0).ceil() as i64;
-        let r = Rect::new(x, abaixo_de.y + abaixo_de.h + 6.0, 40.0, 40.0);
+        let r = Rect::new(x, area.y, 40.0 * k, 40.0 * k);
         estilo::cartao(r, r.contains(mouse()), false);
         let c = r.center();
         estilo::ret_arredondado(
-            Rect::new(c.x - 3.0, c.y - 15.0, 6.0, 8.0),
-            2.0,
+            Rect::new(c.x - 3.0 * k, c.y - 15.0 * k, 6.0 * k, 8.0 * k),
+            2.0 * k,
             Color::new(0.75, 0.82, 0.88, 1.0),
         );
-        draw_circle(c.x, c.y + 3.0, 11.0, cor);
-        estilo::texto_centro(c.x, c.y + 7.0, sigla, 11, Color::new(0.12, 0.09, 0.02, 1.0));
-        estilo::texto_centro(c.x, r.y + r.h + 12.0, &format!("{min}m"), 11, estilo::OURO);
+        draw_circle(c.x, c.y + 3.0 * k, 11.0 * k, cor);
+        estilo::texto_centro(c.x, c.y + 7.0 * k, sigla, fonte(11.0, k), Color::new(0.12, 0.09, 0.02, 1.0));
+        estilo::texto_centro(c.x, r.y + r.h + 12.0 * k, &format!("{min}m"), fonte(11.0, k), estilo::OURO);
         if r.contains(mouse()) {
             dica_ativa = Some((r, format!("{dica} · {min} min")));
         }
-        x += 48.0;
+        x += 48.0 * k;
     }
     // Curas de pocao correndo (vida, mana, vigor), com os segundos que faltam.
     let curando = [
@@ -933,22 +950,22 @@ pub fn draw_buffs(
         if s <= 0.0 {
             continue;
         }
-        let r = Rect::new(x, abaixo_de.y + abaixo_de.h + 6.0, 40.0, 40.0);
+        let r = Rect::new(x, area.y, 40.0 * k, 40.0 * k);
         estilo::cartao(r, r.contains(mouse()), false);
         let c = r.center();
-        draw_circle(c.x, c.y, 13.0, cor);
-        estilo::texto_centro(c.x, c.y + 5.0, sigla, 12, Color::new(0.08, 0.06, 0.05, 1.0));
+        draw_circle(c.x, c.y, 13.0 * k, cor);
+        estilo::texto_centro(c.x, c.y + 5.0 * k, sigla, fonte(12.0, k), Color::new(0.08, 0.06, 0.05, 1.0));
         estilo::texto_centro(
             c.x,
-            r.y + r.h + 12.0,
+            r.y + r.h + 12.0 * k,
             &format!("{:.0}s", s.ceil()),
-            11,
+            fonte(11.0, k),
             estilo::OURO,
         );
         if r.contains(mouse()) {
             dica_ativa = Some((r, format!("{nome} · {:.0} s", s.ceil())));
         }
-        x += 48.0;
+        x += 48.0 * k;
     }
     if let Some((r, dica)) = dica_ativa {
         estilo::tooltip(r, &dica, false);

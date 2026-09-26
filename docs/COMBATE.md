@@ -387,3 +387,18 @@ completos no 11 (antes já no 5). Dano nos níveis 1..10: 40%, 45%, 50%,
 matilha e velocidade de investida também sobem gradualmente. O fôlego
 fora de dano começa em 3% de HP/s após 3 segundos, perde força do nível
 6 ao 10 e termina no 11. Mantidos os multiplicadores de nível 20+.
+
+## Modo Pacífico, Hostil e pontos de PK
+
+No HUD, logo abaixo do poder e acima das missões, o botão ao lado dos buffs
+alterna Pacífico / Hostil com um toque e mostra os PK points. Pacífico bloqueia ataques a jogadores, inclusive contra outra
+facção e na Ilha Mágica. Hostil permite atacar jogadores mesmo que o alvo seja
+Pacífico. O nome de quem está Hostil fica roxo para todos os observadores.
+
+Zonas seguras bloqueiam PvP para ambos os lados, inclusive personagens com
+PK points. Fora delas, a morte de um jogador sem PK points dá +1 ponto ao
+atacante. O ponto é cobrado uma única vez ao zerar o HP, na mesma transição
+que aplica as penalidades de morte; acertar golpes não dá pontos. Matar quem
+já tem PK points não dá pontos. Nos três graus da Ilha Mágica, mortes não dão
+pontos. Modo e pontos persistem ao sair e trocar de zona; não há redução
+automática de pontos nesta versão. Protocolo 147.

@@ -168,7 +168,7 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         let grau = 3u64;
         let tier = i as u64;
         let bits = (0..shared::auras::SLOTS).fold(0, |b, s| b | ((grau | (tier << 3)) << (s*8)));
-        metas.push(shared::EntityMeta { auras: bits, id: shared::EntityId(i+1), tag: shared::EntityTag::Player,
+        metas.push(shared::EntityMeta { pk: Default::default(), auras: bits, id: shared::EntityId(i+1), tag: shared::EntityTag::Player,
             name: None, hp_max: 100, faction: None, kind: 0, nivel: 20, desafio: None, aparencia: 0 });
         let mut st = shared::EntityState::quantize(shared::EntityId(i+1), ::glam::Vec2::new(i as f32*2.2-3.3,0.0), ::glam::Vec2::ZERO,100,0);
         st.acao = shared::components::acao::monta(0,true,0,0); estados.push(st);

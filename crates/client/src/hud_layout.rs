@@ -181,6 +181,8 @@ pub struct Zonas {
     pub s: f32,
     /// Nivel, nome, HP, MP, vigor e Poder. Canto superior esquerdo.
     pub ficha: Rect,
+    /// Modo Pacífico/Hostil, abaixo do poder e ao lado dos buffs.
+    pub modo_pk: Rect,
     /// Linha de buffs logo abaixo da ficha.
     pub buffs: Rect,
     /// Area MAXIMA do rastreador de missoes (esquerda, abaixo dos buffs).
@@ -355,7 +357,8 @@ fn monta(
 
     // ── esquerda: ficha, buffs, rastreador ──
     let ficha = Rect::new(m, m, 440.0 * s, 160.0 * s);
-    let buffs = Rect::new(m, ficha.y + ficha.h + 6.0 * s, 440.0 * s, 40.0 * s);
+    let modo_pk = Rect::new(m, ficha.y + ficha.h + 6.0 * s, 120.0 * s, 40.0 * s);
+    let buffs = Rect::new(modo_pk.x + modo_pk.w + 8.0 * s, modo_pk.y, 312.0 * s, 40.0 * s);
     // 16:10 ganha uma missao; tela baixa perde. Medido na altura "de 1080"
     // (px / escala): no celular a 130% sobra menos altura que os px sugerem.
     let hb = sh / s;
@@ -563,6 +566,7 @@ fn monta(
     Zonas {
         s,
         ficha,
+        modo_pk,
         buffs,
         rastreador,
         missoes_no_rastreador: n,
@@ -597,6 +601,7 @@ impl Zonas {
         let d = move |r: Rect| Rect::new(r.x + o.x, r.y + o.y, r.w, r.h);
         for r in [
             &mut self.ficha,
+            &mut self.modo_pk,
             &mut self.buffs,
             &mut self.rastreador,
             &mut self.alvo,
@@ -633,6 +638,7 @@ impl Zonas {
     pub fn todos(&self) -> Vec<(&'static str, Rect)> {
         let mut v = vec![
             ("ficha", self.ficha),
+            ("modo_pk", self.modo_pk),
             ("buffs", self.buffs),
             ("rastreador", self.rastreador),
             ("alvo", self.alvo),
@@ -687,6 +693,7 @@ impl Zonas {
         };
         [
             self.ficha,
+            self.modo_pk,
             self.menu,
             self.area,
             minimapa,

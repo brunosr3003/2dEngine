@@ -486,6 +486,16 @@ struct Jogo {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    // Finder não inicia o app na pasta dos assets.
+    #[cfg(target_os = "macos")]
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
+            let resources = contents.join("Resources");
+            if resources.join("assets").is_dir() {
+                std::env::set_current_dir(&resources).expect("pasta de recursos do aplicativo");
+            }
+        }
+    }
     sons::carregar().await;
     // Os modelos entram uma vez, no boot. O desenho e' sincrono, entao nada
     // pode ficar carregando no meio do quadro.
@@ -5442,12 +5452,17 @@ impl Jogo {
                     vigor_max,
                     poder,
                 );
+                let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.meta.pk).unwrap_or_default();
+                if hud::draw_modo_pk(&z, pk) {
+                    self.envia(ClientMessage::TogglePkMode { on: !pk.hostil });
+                }
                 hud::draw_buffs(
                     self.bonus_xp_ate,
                     self.bonus_fortuna_ate,
                     self.bonus_sorte_ate,
                     agora_unix,
-                    Rect::new(z.buffs.x, z.buffs.y - 6.0, z.buffs.w, 0.0),
+                    z.buffs,
                     self.barra.curas(get_time()),
                 );
                 let conjunto =

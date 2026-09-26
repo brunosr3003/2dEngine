@@ -31,6 +31,7 @@ pub struct CharacterRow {
     pub vault: Vec<shared::InventorySlot>,
     /// Fame: pontuacao de prestigio; ganha matando players/bosses.
     pub fame: u64,
+    pub pk: shared::PkState,
     /// Aura/Poise: pontos ganhos SOMENTE em vitorias PvP. Perde ao ser
     /// morto por outro player. Base pra sistema de stagger futuro.
     pub aura: u64,
@@ -402,6 +403,8 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS pk_hostil BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS pk_points BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fame BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
         .await?;
@@ -3801,6 +3804,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64)))
         .collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
+    let pk_map: HashMap<String, (bool, i64)> = busca!((String, bool, i64), "name, pk_hostil, pk_points")
+        .into_iter().map(|(n, h, p)| (n, (h, p))).collect();
     let faction_rows = busca!((String, String), "name, faction");
     let faction_map: HashMap<String, shared::Faction> = faction_rows
         .into_iter()
@@ -3901,6 +3906,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (account_id, visual_json, gold) =
             extras_map.get(&name).cloned().unwrap_or((None, None, 0));
         let faction = faction_map.get(&name).copied().unwrap_or_default();
+        let (hostil, pontos) = pk_map.get(&name).copied().unwrap_or_default();
+        let pk = shared::PkState { hostil, pontos: pontos.clamp(0, u32::MAX as i64) as u32 };
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
@@ -3947,6 +3954,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 equipment: equip,
                 vault,
                 fame: fame.max(0) as u64,
+                pk,
                 aura: aura.max(0) as u64,
                 proficiencies: profs,
                 unspent_points: unspent.max(0) as u32,
@@ -4474,6 +4482,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.magica_gratis)
         .execute(&mut *tx)
         .await?;
+        sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3 WHERE name = $1")
+            .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)
+            .execute(&mut *tx).await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal
         // da conta nunca se separam.
         if let (Some(conta), false) = (row.account_id, row.conta_dungeon_json.is_empty()) {

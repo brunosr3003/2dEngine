@@ -1190,6 +1190,10 @@ pub fn arvore_da_coluna(
     )) {
         return None;
     }
+    // Campos de energia e minas são clareiras exclusivas do recurso.
+    if ger.zona_de_coleta(bx, bz, topo).is_some_and(|tipo| tipo != 0) {
+        return None;
+    }
     Some(ArvorePlantada {
         especie: especie_de_arvore(bioma, (h2 >> 20) as f32 / 4096.0),
         // Desvio dentro da coluna: sem ele as arvores nascem todas no centro
@@ -1257,7 +1261,8 @@ pub fn planta_da_coluna(
     // — e o log entregou: 1.461 troncos e matacões na ilhota depois de eu já
     // ter raleado as árvores a um cinquentavo. Os estorvos nunca tinham sido
     // árvore; eram pedra de chão, e eu tinha acabado de dobrá-los.
-    if ger.e_arena() && raio_de_planta(especie).is_some() {
+    if raio_de_planta(especie).is_some()
+        && (ger.e_arena() || ger.zona_de_coleta(bx, bz, topo).is_some_and(|tipo| tipo != 0)) {
         return None;
     }
     // Pedra nasce em qualquer chao, inclusive rocha e neve; o resto so' onde o
@@ -1426,8 +1431,7 @@ pub fn no_campo_de_energia(bx: i32, bz: i32) -> bool {
     false
 }
 
-/// Cristal de Energia: grade independente da de minérios. Não transforma
-/// minério em Energia nem reduz a oferta de pedra na ilha.
+/// Cristal de Energia: grade própria em campos exclusivos, sem árvores ou minério.
 pub fn energia_da_coluna(
     bioma: Bioma,
     bx: i32,
@@ -1495,6 +1499,12 @@ fn recurso_montanha_da_coluna(
             }
         }
     }
+    // Dentro do campo, só Energia. As ilhotas de coleta também reservam
+    // toda a área ao recurso anunciado, inclusive a orla.
+    if !energia && (ger.campo_de_energia(bx, bz)
+        || ger.recurso_da_ilhota(bx, bz).is_some_and(|t| t == 0 || t == 5)) {
+        return None;
+    }
     let g0 = meu;
 
     // ── chao limpo ──────────────────────────────────────────────────────
@@ -1517,17 +1527,8 @@ fn recurso_montanha_da_coluna(
     //
     // A ENERGIA nao passa por aqui: exigir cume dela seria pedir um campo
     // inteiro de picos, e campo de Energia e' clareira, nao cordilheira.
-    let c = if energia { 0 } else { MINERIO_CUME };
-    let mut dz = -c;
-    while dz <= c {
-        let mut dx = -c;
-        while dx <= c {
-            if dx * dx + dz * dz <= c * c && ger.bloco_em(bx + dx, bz + dz) > topo + 1 {
-                return None;
-            }
-            dx += 2;
-        }
-        dz += 2;
+    if !energia && !ger.cume_de_minerio(bx, bz, topo) {
+        return None;
     }
 
     let (pmin, pmax) = MINERIO_PORTE;
@@ -1538,8 +1539,8 @@ fn recurso_montanha_da_coluna(
     );
     let porte = pmin + ((g0 >> 14) & 0xff) as f32 / 255.0 * (pmax - pmin);
     if energia {
-        // A grade nova nao desloca nem cobre uma pedra antiga. Duas grades
-        // podem escolher colunas vizinhas, entao conferir a distancia real.
+        // Na borda do campo ainda pode haver uma pedra do lado de fora.
+        // Confere a distância real para os corpos não se sobreporem.
         for dz in -2..=2 {
             for dx in -2..=2 {
                 let nx = bx + dx;
@@ -2655,6 +2656,39 @@ impl Gerador {
             return crate::magica::no_campo_de_energia(bx, bz);
         }
         no_campo_de_energia(bx, bz)
+    }
+
+    /// Recurso prometido pela ilhota de coleta; o resto mantém seu bioma.
+    fn recurso_da_ilhota(&self, bx: i32, bz: i32) -> Option<u8> {
+        if !self.e_magica() { return None; }
+        let p = glam::Vec2::new(bx as f32, bz as f32) * BLOCO;
+        match crate::magica::ilhota_em(p)?.bonus {
+            crate::magica::Bonus::Coleta(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// A área de mineração usa o mesmo patamar que permite nascer minério.
+    fn cume_de_minerio(&self, bx: i32, bz: i32, topo: i32) -> bool {
+        let c = MINERIO_CUME;
+        for dz in (-c..=c).step_by(2) {
+            for dx in (-c..=c).step_by(2) {
+                if dx * dx + dz * dz <= c * c && self.bloco_em(bx + dx, bz + dz) > topo + 1 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Clareiras de recurso: 5 Energia, 1..4 pedra, 0 madeira nas ilhotas.
+    /// Cliente e servidor consultam isto antes de plantar obstáculos.
+    pub fn zona_de_coleta(&self, bx: i32, bz: i32, topo: i32) -> Option<u8> {
+        if self.e_arena() { return None; }
+        if let Some(tipo) = self.recurso_da_ilhota(bx, bz) { return Some(tipo); }
+        if self.campo_de_energia(bx, bz) { return Some(5); }
+        ((topo + 1) as f32 * BLOCO >= self.pico() * MINERIO_LIMIAR
+            && self.cume_de_minerio(bx, bz, topo)).then_some(1)
     }
 
     pub fn pico(&self) -> f32 {
@@ -4863,6 +4897,8 @@ mod testes_da_ilha_magica {
             };
             let mut achados = Vec::new();
             ilha.coletaveis_em(i.centro, i.raio, &mut achados);
+            assert!(achados.iter().all(|c| c.tier == tipo),
+                "{} contém recurso de outro tipo", i.bonus.nome());
             let n = achados.iter().filter(|c| c.tier == tipo).count();
             println!("{}: {n} nos do tipo {tipo}", i.bonus.nome());
             assert!(

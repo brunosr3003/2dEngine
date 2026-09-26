@@ -1497,12 +1497,15 @@ pub struct PortalTag {
     pub cooldown: f32,
 }
 
-/// Gating de PvP entre dois players. Regras:
-///  - Safe zone (cidade) protege TODOS: se atacante ou alvo está em safe
-///    zone, nunca há dano (mesmo cross-facção).
-///  - Facções diferentes: PvP SEMPRE ON (Morganeers vs Peacemain).
-///  - Mesma facção: opt-in — ambos precisam de PK Mode ON.
+/// Todo ataque a jogador exige modo Hostil. Zonas seguras protegem os dois lados.
 impl GameWorld {
+    fn registrar_morte_pk(&mut self, killer: EntityId, pontos_da_vitima: u32) {
+        if self.na_magica() || pontos_da_vitima > 0 { return; }
+        if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
+            s.pk_points = s.pk_points.saturating_add(1);
+        }
+    }
+
     pub fn can_damage_player(&self, attacker_eid: EntityId, target_eid: EntityId) -> bool {
         if attacker_eid == target_eid {
             return false;
@@ -1525,23 +1528,7 @@ impl GameWorld {
                 }
             }
         }
-        // ILHA MÁGICA: PvP ABERTO.
-        //
-        // Foi pedido assim ("lá será open pvp"), e é o que dá peso às pontes:
-        // a ilhota do bônus só vale se alguém puder disputá-la. Aqui a facção
-        // e o PK ON não contam — quem entrou com o passe aceitou a regra da
-        // ilha.
-        //
-        // Depois da safe zone de propósito: se algum dia houver uma lá, ela
-        // continua valendo.
-        if self.na_magica() {
-            return true;
-        }
-        // Cross-facção: sempre PvP. Mesma facção: opt-in (ambos PK ON).
-        if att.faction != tgt.faction {
-            return true;
-        }
-        att.pk_mode_on && tgt.pk_mode_on
+        att.pk_mode_on
     }
 }
 
@@ -1851,11 +1838,13 @@ pub struct Session {
     /// do input), entao `in_hurt` eh false e dir nao eh zerado → 1 tick
     /// nao basta. Resetado quando dir == 0.
     pub cast_movement_ticks: u8,
-    /// PK Mode (opt-in PvP). Quando ON, player aparece como targetavel
-    /// por outros players com PK ON. Default OFF.
+    /// Modo Hostil habilita ataques contra jogadores.
+    /// Novos personagens começam no modo Pacífico.
     pub pk_mode_on: bool,
+    pub pk_points: u32,
+    pk_visto: shared::PkState,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
-    /// PvP cross-facção (sempre ON) e cor no mapa.
+    /// quests e identidade do personagem.
     pub faction: shared::Faction,
     /// Skill_id do cast em progresso (usado pra notificar cliente da pose).
     pub casting_skill_id: u32,
@@ -6095,6 +6084,8 @@ impl GameWorld {
             s.gold = saved_gold;
             s.gold_last_sent = u64::MAX; // forca envio inicial
             s.fame = saved_fame;
+            s.pk_mode_on = row.pk.hostil;
+            s.pk_points = row.pk.pontos;
             s.fame_last_sent = u64::MAX;
             s.aura = saved_aura;
             s.aura_last_sent = u64::MAX;
@@ -7289,6 +7280,8 @@ impl GameWorld {
                 casting_impacto_em: 0.0,
                 cast_movement_ticks: 0,
                 pk_mode_on: false,
+                pk_points: 0,
+                pk_visto: Default::default(),
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -9168,6 +9161,12 @@ impl GameWorld {
             .map(|(_, (net, pos))| (net.0, pos.0))
             .collect();
 
+        let jogadores: std::collections::HashSet<_> = self.sessions.values()
+            .filter(|s| s.logged_in).map(|s| s.entity_id).collect();
+        let ataques_pvp_bloqueados: std::collections::HashSet<_> = self.sessions.values()
+            .filter(|s| s.target.is_some_and(|t| jogadores.contains(&t)
+                && !self.can_damage_player(s.entity_id, t)))
+            .map(|s| s.entity_id).collect();
         let mut input_results: Vec<InputResult> = Vec::new();
         /// Quem nao mandou input neste tick: a velocidade deles zera depois do
         /// laco, onde o ECS esta' livre (ver o `else` do `pending_input`).
@@ -9683,7 +9682,8 @@ impl GameWorld {
             let was_dashing = dash_prioritario || self.sim_time_s < session.dash_until;
             // Preenchida pelo bloco abaixo quando o auto-ataque dispara.
             let mut attack_aim: Option<Vec2> = None;
-            let wants_attack = if session.downed
+            let wants_attack = if ataques_pvp_bloqueados.contains(&session.entity_id)
+                || session.downed
                 || session.carrying.is_some()
                 || in_hurt
                 || was_dashing
@@ -11449,8 +11449,7 @@ impl GameWorld {
                 }
                 if let Some((e, target_is_player)) = found {
                     // PvP gating em skill hits: player→player so' se
-                    // can_damage_player (PK Mode ambos ON, ou futuramente
-                    // zona PvP / faccoes). enemy→enemy: skip (sem ff).
+                    // can_damage_player. enemy→enemy: skip (sem ff).
                     if h.from_player && target_is_player {
                         if !self.can_damage_player(h.attacker_net, h.target_net) {
                             continue;
@@ -11571,6 +11570,16 @@ impl GameWorld {
             kb_strength,
         ) in damage_events
         {
+            // Revalida toda fonte de dano no impacto, inclusive projéteis e áreas.
+            if attacker_is_player && self.ecs.get::<&PlayerTag>(entity).is_ok()
+                && !self.can_damage_player(attacker_id, target_id) {
+                continue;
+            }
+            // Não reatribui um golpe fatal a outro ataque no mesmo tick.
+            if !downed_targets.contains(&target_id)
+                && self.ecs.get::<&Health>(entity).is_ok_and(|hp| hp.current <= 0) {
+                continue;
+            }
             // Revalida no impacto: ataques montados não atingem jogadores.
             if attacker_is_player && self.sessions.values().any(|s| s.entity_id == attacker_id && s.montado)
                 && self.ecs.get::<&PlayerTag>(entity).is_ok() {
@@ -12417,9 +12426,13 @@ impl GameWorld {
             })
             .collect();
         let mut mortes_na_dungeon: Vec<(u32, String)> = Vec::new();
+        let mut mortes_pk = Vec::new();
         for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
+                    if let Some(killer) = kill_credits.get(&eid).copied() {
+                        mortes_pk.push((killer, session.pk_points));
+                    }
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
                     session.downed_hp = shared::DOWNED_HP_MAX;
@@ -12438,6 +12451,9 @@ impl GameWorld {
                     break;
                 }
             }
+        }
+        for (killer, pontos_da_vitima) in mortes_pk {
+            self.registrar_morte_pk(killer, pontos_da_vitima);
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
@@ -12977,7 +12993,11 @@ impl GameWorld {
         // A APARENCIA de cada jogador, ja' empacotada (docs/PERSONAGEM.md).
         let mut alterados = Vec::new();
         let mut auras_de = HashMap::new();
+        let mut pk_de = HashMap::new();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
+            let pk = shared::PkState { hostil: s.pk_mode_on, pontos: s.pk_points };
+            pk_de.insert(s.entity_id, pk);
+            if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
             let auras = shared::auras::equipamento(&s.equipment);
             auras_de.insert(s.entity_id, auras);
             if auras != s.auras_vistas {
@@ -13140,7 +13160,7 @@ impl GameWorld {
                     if montaria_de.get(&net.0).is_some_and(|m| m.0) {
                         flags |= shared::ent_flags::MONTADO;
                     }
-                    let meta = EntityMeta {
+                    let meta = EntityMeta { pk: pk_de.get(&net.0).copied().unwrap_or_default(),
                         auras: auras_de.get(&net.0).copied().unwrap_or(0),
                         id: net.0,
                         tag,
@@ -13549,6 +13569,7 @@ impl GameWorld {
             equipment: shared::Equipment,
             vault: Vec<shared::InventorySlot>,
             fame: u64,
+            pk: shared::PkState,
             aura: u64,
             proficiencies: [u64; shared::PROF_COUNT],
             unspent_points: u32,
@@ -13613,6 +13634,7 @@ impl GameWorld {
                 equipment: session.equipment,
                 vault: session.vault.clone(),
                 fame: session.fame,
+                pk: shared::PkState { hostil: session.pk_mode_on, pontos: session.pk_points },
                 aura: session.aura,
                 proficiencies: session.proficiencies,
                 unspent_points: session.unspent_points,
@@ -13668,6 +13690,7 @@ impl GameWorld {
                 equipment: e.equipment,
                 vault: e.vault,
                 fame: e.fame,
+                pk: e.pk,
                 aura: e.aura,
                 proficiencies: e.proficiencies,
                 unspent_points: e.unspent_points,
@@ -18948,22 +18971,26 @@ impl GameWorld {
                 .distance_squared(eu)
                 .total_cmp(&b.centro.distance_squared(eu))
         });
+        let mut rotas_restantes = 8;
         for c in achados.into_iter().take(8) {
             let raio_no = ilha.estorvo_em(c.centro, 0.01).map_or(0.4, |e| e.raio);
-            let onde = ilha.ponto_livre_perto(
-                crate::coleta::ponto_de_coleta(c.centro, raio_no, eu),
-                ENTITY_RADIUS,
-            );
-            if !crate::coleta::ao_alcance(onde, c.centro, raio_no) {
-                continue;
+            if crate::coleta::ao_alcance(eu, c.centro, raio_no) {
+                return Some((c.coluna, eu, c.centro, c.tier));
             }
-            let chega = eu.distance(onde) <= 1.0
-                || ilha
-                    .caminho(eu, onde, 8_000)
-                    .and_then(|r| r.last().copied())
-                    .is_some_and(|fim| fim.distance(onde) <= 1.0);
-            if chega {
-                return Some((c.coluna, onde, c.centro, c.tier));
+            for ponto in crate::coleta::pontos_de_coleta(c.centro, raio_no, eu) {
+                let onde = ilha.ponto_livre_perto(ponto, ENTITY_RADIUS);
+                if !crate::coleta::aproximacao_ao_alcance(onde, c.centro, raio_no) {
+                    continue;
+                }
+                if rotas_restantes == 0 { return None; }
+                rotas_restantes -= 1;
+                let chega = ilha.caminho(eu, onde, 8_000)
+                        .and_then(|r| r.last().copied())
+                        .is_some_and(|fim| fim.distance(onde) <= 0.5
+                            && crate::coleta::ao_alcance(fim, c.centro, raio_no));
+                if chega {
+                    return Some((c.coluna, onde, c.centro, c.tier));
+                }
             }
         }
         None
@@ -19502,6 +19529,7 @@ impl GameWorld {
             equipment: session.equipment,
             vault: session.vault.clone(),
             fame: session.fame,
+                pk: shared::PkState { hostil: session.pk_mode_on, pontos: session.pk_points },
             aura: session.aura,
             proficiencies: session.proficiencies,
             unspent_points: session.unspent_points,
@@ -21190,5 +21218,139 @@ mod testes_da_ilha_magica_lotada {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pk_tests {
+    use super::*;
+
+    fn mundo() -> (GameWorld, [SessionId; 2], mpsc::UnboundedReceiver<ServerMessage>) {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = "ilha_inicial".into();
+        w.imortal = false;
+        w.safe_zone = false;
+        let ids = [SessionId(([127,0,0,1],19801).into()), SessionId(([127,0,0,1],19802).into())];
+        let mut receptor = None;
+        for (i, sid) in ids.iter().enumerate() {
+            let (tx, rx) = mpsc::unbounded_channel();
+            if i == 0 { receptor = Some(rx); }
+            w.on_connect(SessionHandle { id: *sid, to_client: tx });
+            let eid = EntityId(900+i as u32);
+            let e = w.ecs.spawn((NetId(eid), Position(Vec2::new(10.0+i as f32,10.0)),
+                Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 },
+                PlayerTag { name: format!("pk{i}"), player_id: PlayerId(i as u64),
+                    attack_anim_pending: None, combo_step_pending: None }));
+            let s = w.sessions.get_mut(sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.entity_id = eid;
+            s.name = format!("pk{i}");
+            s.poise_current = 0.0;
+            s.last_combat_at_s = 10000.0;
+        }
+        (w, ids, receptor.unwrap())
+    }
+
+    fn golpe(w: &mut GameWorld, dano: i32) {
+        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(901), damage: dano,
+            attacker_net: EntityId(900), hurt_dir: Vec2::X, is_crit: false,
+            from_player: true, knockback: 0.0 });
+        w.step(shared::TICK_DT);
+    }
+
+    #[test]
+    fn pk_pacifico_nao_inicia_basico_nem_gasta_recarga() {
+        let (mut w, ids, _rx) = mundo();
+        for hostil in [false, true] {
+            let s = w.sessions.get_mut(&ids[0]).unwrap();
+            s.pk_mode_on = hostil;
+            s.target = Some(EntityId(901));
+            s.stamina_current = 100.0;
+            s.pending_input = Some(InputFrame { seq: 1, tick: 1, move_dir: Vec2::ZERO,
+                aim: Vec2::X, buttons: 0 });
+            w.step(shared::TICK_DT);
+            assert_eq!(w.sessions[&ids[0]].attack_cooldown > 0.0,hostil);
+        }
+    }
+
+    #[test]
+    fn pk_pontos_e_modo_entram_no_save_periodico_e_na_saida() {
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_points = 7;
+        let esperado = shared::PkState { hostil: true, pontos: 7 };
+        let rows = w.collect_character_rows();
+        assert_eq!(rows.iter().find(|r|r.name == "pk0").unwrap().pk, esperado);
+        w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
+        let row = w.take_character_for_disconnect(&ids[0]).unwrap();
+        assert!(!row.pk.hostil);
+        assert_eq!(row.pk.pontos,7,"desligar Hostil não apaga os pontos");
+    }
+
+    #[test]
+    fn pk_pacifico_bloqueia_e_hostil_ataca_alvo_pacifico_independente_da_faccao() {
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[1]).unwrap().faction = shared::Faction::Morganeers;
+        assert!(!w.can_damage_player(EntityId(900), EntityId(901)));
+        golpe(&mut w, 50);
+        assert_eq!(w.ecs.get::<&Health>(w.sessions[&ids[1]].entity.unwrap()).unwrap().current,100);
+        w.on_message(ids[0], ClientMessage::TogglePkMode { on: true });
+        assert!(w.can_damage_player(EntityId(900), EntityId(901)));
+        assert!(!w.can_damage_player(EntityId(901), EntityId(900)));
+        golpe(&mut w, 10);
+        assert!(w.ecs.get::<&Health>(w.sessions[&ids[1]].entity.unwrap()).unwrap().current < 100);
+        assert_eq!(w.sessions[&ids[0]].pk_points,0);
+        w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
+        assert!(!w.can_damage_player(EntityId(900), EntityId(901)));
+    }
+
+    #[test]
+    fn pk_morte_cobra_uma_vez_e_isenta_criminoso_e_todos_os_degraus_magicos() {
+        for (zona, pontos, esperado) in [("ilha_inicial",0,1),("ilha_inicial",3,0),
+            ("ilha_magica",0,0),("ilha_magica_2",0,0),("ilha_magica_3",0,0)] {
+            let (mut w, ids, _rx) = mundo();
+            w.zona = zona.into();
+            w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+            w.sessions.get_mut(&ids[1]).unwrap().pk_points = pontos;
+            // Ilhota de combate, longe do porto seguro.
+            if w.na_magica() {
+                let p = shared::magica::centros_de_combate()[0];
+                for sid in ids { let e=w.sessions[&sid].entity.unwrap(); w.ecs.get::<&mut Position>(e).unwrap().0=p; }
+            }
+            golpe(&mut w, 10000);
+            assert!(w.sessions[&ids[1]].downed, "{zona}");
+            assert_eq!(w.sessions[&ids[0]].pk_points,esperado,"{zona}");
+            w.step(shared::TICK_DT);
+            assert_eq!(w.sessions[&ids[0]].pk_points,esperado,"não cobrar novamente");
+        }
+    }
+
+    #[test]
+    fn pk_safe_zone_protege_os_dois_lados_mesmo_com_pontos() {
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[1]).unwrap().pk_points = 2;
+        for x in [9.5,10.5] {
+            w.safe_zones = vec![(Vec2::new(x,9.5),Vec2::ONE)];
+            assert!(!w.can_damage_player(EntityId(900),EntityId(901)));
+            golpe(&mut w, 10000);
+            assert!(!w.sessions[&ids[1]].downed);
+        }
+    }
+
+    #[test]
+    fn pk_mudanca_reenvia_meta_a_quem_ja_esta_vendo() {
+        let (mut w, ids, mut rx) = mundo();
+        w.send_snapshots();
+        while rx.try_recv().is_ok() {}
+        w.on_message(ids[1],ClientMessage::TogglePkMode { on: true });
+        w.sessions.get_mut(&ids[1]).unwrap().pk_points = 4;
+        w.send_snapshots();
+        let metas: Vec<_> = std::iter::from_fn(||rx.try_recv().ok()).filter_map(|m| match m {
+            ServerMessage::Snapshot { snapshot } => Some(snapshot.entered), _=>None
+        }).flatten().collect();
+        assert!(metas.iter().any(|m|m.id==EntityId(901) && m.pk.hostil && m.pk.pontos==4));
     }
 }

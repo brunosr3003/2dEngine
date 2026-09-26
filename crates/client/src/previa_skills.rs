@@ -16,6 +16,7 @@ pub async fn abrir(vox: &VoxCache) {
         (5, shared::EntityTag::Enemy, 6, vec2(2.8, 0.5)),
     ] {
         metas.push(shared::EntityMeta {
+            pk: Default::default(),
             auras: 0,
             id: shared::EntityId(id),
             tag,

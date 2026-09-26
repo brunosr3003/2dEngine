@@ -703,12 +703,12 @@ fn montar_porto(ger: &Gerador, p: &SitioPorto, vila: &mut Vila) {
         .filter_map(npc_da_porta)
         .collect();
     vila.npcs.extend(npcs);
-    // O CAPITAO DO PORTO no cais, olhando o mar.
+    // Capitão na entrada do cais, do lado de terra, voltado para a ilha.
     vila.npcs.push(NpcDaVila {
         papel: Papel::Estaleiro,
         nome: Papel::Estaleiro.nome(),
-        pos: raiz + mar * 4.0 + lado * 0.9,
-        yaw: yaw_de(mar),
+        pos: raiz - mar * 2.0 + lado * 0.9,
+        yaw: yaw_de(-mar),
         loja: None,
         giver: None,
     });
@@ -1445,7 +1445,12 @@ mod testes {
             if ger.porto().is_none() {
                 continue; // ilha sem costa que sirva nao promete porto
             }
-            let papeis: Vec<Papel> = ger.vila().npcs.iter().map(|n| n.papel).collect();
+            let vila = ger.vila();
+            let porto = vila.porto.as_ref().unwrap();
+            let capitao = vila.npcs.iter().find(|n| n.papel == Papel::Estaleiro).unwrap();
+            assert!((capitao.pos - porto.raiz).dot(porto.mar) < 0.0,
+                "{}: capitão precisa ficar na entrada do cais, dentro da ilha", d.zona);
+            let papeis: Vec<Papel> = vila.npcs.iter().map(|n| n.papel).collect();
             for papel in [Papel::Estaleiro, Papel::Deposito, Papel::Cartografo] {
                 assert!(
                     papeis.contains(&papel),

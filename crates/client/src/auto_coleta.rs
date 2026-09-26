@@ -10,7 +10,7 @@ use macroquad::prelude::*;
 use crate::hud_estilo as estilo;
 
 /// Perto disto do ponto de coleta, chegou.
-const CHEGOU: f32 = 0.9;
+const CHEGOU: f32 = shared::COLETA_TOLERANCIA_CHEGADA;
 /// Pediu (no' ou coleta) e o servidor nao respondeu: pede de novo.
 const REPEDE_S: f64 = 4.0;
 /// Nada no raio: espera isso antes de perguntar de novo.

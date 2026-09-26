@@ -8,6 +8,7 @@ use shared::{EntityId, EntityMeta, EntityState, EntityTag};
 
 fn meta(i: u32) -> EntityMeta {
     EntityMeta {
+        pk: Default::default(),
         auras: 0,
         id: EntityId(1000 + i),
         tag: EntityTag::Enemy,

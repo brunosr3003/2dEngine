@@ -937,6 +937,7 @@ mod tests {
         let esperado = shared::npc_yaw_de_kind(kind).unwrap();
         let mut w = crate::world::World::default();
         let meta = EntityMeta {
+            pk: Default::default(),
             auras: 0,
             id: EntityId(7),
             tag: EntityTag::Npc,

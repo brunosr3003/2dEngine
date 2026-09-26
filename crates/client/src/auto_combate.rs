@@ -274,7 +274,7 @@ impl AutoCombate {
         // Quem PODE ser alvo. Jogador só entra quando o ajuste permite —
         // `escolhe_alvo` decide de novo lá dentro, mas deixar entrar aqui é o
         // que torna a categoria "jogador" possível.
-        let aceita_gente = self.pvp != shared::protocol::auto_pvp::NUNCA;
+        let aceita_gente = eu.meta.pk.hostil && self.pvp != shared::protocol::auto_pvp::NUNCA;
         let valido_alvo = |id: EntityId| {
             world.ents.get(&id).is_some_and(|e| {
                 let tipo_ok = e.meta.tag == EntityTag::Enemy
@@ -403,6 +403,7 @@ mod tests {
             (6, EntityTag::Enemy, 2.0, 0),
         ] {
             metas.push(shared::EntityMeta {
+                pk: Default::default(),
                 auras: 0,
                 id: EntityId(id),
                 tag,
@@ -425,6 +426,20 @@ mod tests {
         w.apply(metas, estados, &[]);
         w
     }
+    #[test]
+    fn pk_pacifico_retira_jogador_do_auto_ate_com_prioridade_e_alvo_atual() {
+        let mut w = mundo();
+        let mut a = AutoCombate::default();
+        a.pvp = shared::protocol::auto_pvp::QUALQUER;
+        a.ordem = vec![shared::protocol::auto_alvo::JOGADOR];
+        a.ligar(Vec2::ZERO);
+        assert_eq!(a.escolher(&w, Some(EntityId(2)), 0.0, None), Some(EntityId(3)));
+        w.ents.get_mut(&EntityId(1)).unwrap().meta.pk.hostil = true;
+        assert_eq!(a.escolher(&w, None, 1.0, None), Some(EntityId(2)));
+        w.ents.get_mut(&EntityId(1)).unwrap().meta.pk.hostil = false;
+        assert_eq!(a.escolher(&w, Some(EntityId(2)), 2.0, None), Some(EntityId(3)));
+    }
+
     #[test]
     fn escolhe_monstro_vivo_proximo_e_troca_apos_morte() {
         let mut w = mundo();

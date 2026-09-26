@@ -215,7 +215,9 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             nome.to_string()
         };
         let largura = crate::hud_estilo::medir_forte(&txt, tam as u16);
-        let cor = if eu_mesmo {
+        let cor = if e.meta.pk.hostil {
+            Color::new(0.76, 0.35, 1.0, 1.0)
+        } else if eu_mesmo {
             ui::OURO
         } else if inimigo {
             Color::new(1.0, 0.72, 0.68, 0.98)

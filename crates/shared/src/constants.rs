@@ -39,7 +39,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 146;
+pub const PROTOCOL_VERSION: u16 = 147;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -1565,6 +1565,8 @@ pub const RESPAWN_DA_ENERGIA: f32 = 360.0;
 pub const COLETA_CICLO_ENERGIA_S: f32 = 2.5;
 /// Distancia maxima da BORDA do corpo pra coletar. DECISAO PROVISORIA.
 pub const COLETA_ALCANCE_UN: f32 = 1.4;
+/// Distância ao ponto de aproximação em que o cliente pede para coletar.
+pub const COLETA_TOLERANCIA_CHEGADA: f32 = 0.9;
 /// Raio de busca do AUTO COLETA a partir de onde foi ligado (config do
 /// jogador). DECISAO PROVISORIA; o padrao e' o raio da busca de spot antiga.
 pub const COLETA_RAIO_AUTO_MIN: f32 = 20.0;

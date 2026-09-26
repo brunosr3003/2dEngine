@@ -69,6 +69,9 @@ não nasce na cidade nem no porto. O rumo do NPC vai no `EntityMeta.kind`
 
 ## Viajar e Pergaminho de Teleporte
 
+O **Capitão do Porto** fica na entrada do cais, do lado de terra, voltado
+para dentro da ilha.
+
 Tocar no **Capitão do Porto** abre o menu **Viajar** (`ServerMessage::Viagem`):
 uma linha por ilha do `ARQUIPELAGO` — "você está aqui", **Embarcar**,
 "sem barco agora" (servidor da ilha fora do ar) ou bloqueada com o passo da
