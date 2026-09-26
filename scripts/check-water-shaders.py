@@ -21,3 +21,10 @@ with tempfile.TemporaryDirectory(prefix='tempest-water-') as directory:
         path.write_text(match.group(1))
         shaders.append(str(path))
     subprocess.run(['glslangValidator', '-l', *shaders], check=True)
+    # Exercita também GLES2 sem highp no fragmento e o caminho desktop.
+    condition = 'defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)'
+    original = [pathlib.Path(p).read_text() for p in shaders]
+    for high_precision in (False, True):
+        for path, shader in zip(shaders, original):
+            pathlib.Path(path).write_text(shader.replace(condition, str(int(high_precision))))
+        subprocess.run(['glslangValidator', '-l', *shaders], check=True)

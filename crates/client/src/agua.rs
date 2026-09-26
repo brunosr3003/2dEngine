@@ -285,19 +285,24 @@ fn horizonte(centro: Vec2) -> Vec<Mesh> {
 }
 
 pub(crate) const VERTICE: &str = r#"#version 100
+#if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)
+#define AGUA_PRECISAO highp
+#else
+#define AGUA_PRECISAO mediump
+#endif
 attribute vec3 position;
 attribute vec2 texcoord;
 attribute vec4 color0;
 attribute vec4 normal;
 
 varying lowp vec4 cor;
-varying highp vec3 mundo;
+varying AGUA_PRECISAO vec3 mundo;
 varying lowp float espuma;
 varying lowp float onda;
 
 uniform mat4 Model;
 uniform mat4 Projection;
-uniform highp float Tempo;
+uniform AGUA_PRECISAO float Tempo;
 uniform highp float Ondas;
 
 // ── O MAR DE GERSTNER ────────────────────────────────────────────────
@@ -355,23 +360,26 @@ void main() {
     onda = normal.y;
 }"#;
 
+// A precisão de Tempo e mundo deve casar nos dois estágios. OpenGL desktop
+// (macOS) não define GL_FRAGMENT_PRECISION_HIGH, mas suporta highp.
 // Fragmento sem `highp` fixo: GPU de celular pode nao ter `highp` no
 // fragmento (GLES2 deixa opcional) e recusaria compilar. Usa `highp` quando o
 // driver oferece; senao cai pra `mediump` — as manchas de brilho ficam menos
 // finas longe da origem, mas o shader compila.
 pub(crate) const FRAGMENTO: &str = r#"#version 100
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
+#if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)
+#define AGUA_PRECISAO highp
 #else
-precision mediump float;
+#define AGUA_PRECISAO mediump
 #endif
+precision AGUA_PRECISAO float;
 varying lowp vec4 cor;
-varying vec3 mundo;
+varying AGUA_PRECISAO vec3 mundo;
 varying lowp float espuma;
 varying lowp float onda;
 
 uniform sampler2D Texture;
-uniform float Tempo;
+uniform AGUA_PRECISAO float Tempo;
 
 void main() {
     vec3 c = cor.rgb;
