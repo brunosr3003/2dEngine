@@ -236,6 +236,19 @@ pub struct Efeito {
 }
 
 impl World {
+    /// Os dados completos do dono chegam separados da meta do AOI.
+    /// Funciona também se chegaram antes do primeiro snapshot/reconexão.
+    pub fn sincroniza_visual_local(
+        &mut self,
+        equipamento: &shared::Equipment,
+        aparencia: shared::aparencia::Aparencia,
+    ) {
+        if let Some(e) = self.self_id.and_then(|id| self.ents.get_mut(&id)) {
+            e.meta.auras = shared::auras::equipamento(equipamento);
+            e.meta.aparencia = aparencia.empacota();
+        }
+    }
+
     /// Os acertos do tick (`WorldSnapshot::acertos`): quem apanhou da' o
     /// tranco, e o golpe vira numero e faisca. Vem do servidor com o dano
     /// REAL, e nao da queda de vida — no modo imortal a vida nao cai e o
@@ -721,6 +734,41 @@ impl World {
 mod testes {
     use super::*;
     use shared::{EntityTag, PULO_DURACAO, PULO_ESPERA};
+
+    #[test]
+    fn login_restaura_auras_e_skin_sem_reequipar_e_fechar_cancela_previa() {
+        let mut equipamento = shared::Equipment::default();
+        equipamento.weapon = Some(400);
+        equipamento.weapon_inst = Some(shared::items::ItemInstance::vazia_de_grau(4));
+        let salva = shared::aparencia::Aparencia {
+            roupa: shared::aparencia::ROUPA_BASE,
+            ..Default::default()
+        };
+        // Cada mundo novo representa abrir o jogo ou reconectar ao canal.
+        for _ in 0..2 {
+            let mut w = World::default();
+            w.sincroniza_visual_local(&equipamento, salva);
+            for (id, flags) in [(EntityId(1), ent_flags::SELF), (EntityId(2), 0)] {
+                w.apply(vec![EntityMeta {
+                    pk: Default::default(), auras: 0, id, tag: EntityTag::Player,
+                    name: None, hp_max: 100, faction: None, kind: 0, nivel: 1,
+                    desafio: None, aparencia: 0,
+                }], vec![EntityState {
+                    id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0,
+                }], &[]);
+            }
+            w.sincroniza_visual_local(&equipamento, salva);
+            assert_ne!(w.ents[&EntityId(1)].meta.auras, 0);
+            assert_eq!(w.ents[&EntityId(1)].meta.aparencia, salva.empacota());
+            assert_eq!(w.ents[&EntityId(2)].meta.auras, 0);
+            assert_eq!(w.ents[&EntityId(2)].meta.aparencia, 0);
+            w.sincroniza_visual_local(&equipamento, shared::aparencia::Aparencia::default());
+            w.sincroniza_visual_local(&equipamento, salva);
+            assert_eq!(w.ents[&EntityId(1)].meta.aparencia, salva.empacota());
+            w.sincroniza_visual_local(&shared::Equipment::default(), salva);
+            assert_eq!(w.ents[&EntityId(1)].meta.auras, 0);
+        }
+    }
 
     /// O OUTRO jogador olha pro rumo que veio no fio, parado, com suavizacao;
     /// o proprio personagem ignora o rumo (previsao local).

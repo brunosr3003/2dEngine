@@ -83,6 +83,7 @@ async fn main() -> Result<()> {
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/version", get(version))
+        .route("/client-release", get(client_release))
         .route("/channels", get(channels))
         .with_state(state);
 
@@ -290,6 +291,15 @@ async fn login(
 }
 
 // ── version endpoint ──────────────────────────────────────────────────────
+
+/// O manifesto só avança depois que os downloads foram publicados.
+async fn client_release() -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    let pasta = std::env::var("WEB_STATIC").unwrap_or_else(|_| "static".into());
+    let texto = std::fs::read_to_string(std::path::Path::new(&pasta).join("releases.json"))
+        .map_err(|_| axum::http::StatusCode::SERVICE_UNAVAILABLE)?;
+    serde_json::from_str(&texto).map(Json)
+        .map_err(|_| axum::http::StatusCode::SERVICE_UNAVAILABLE)
+}
 
 #[derive(Debug, Serialize)]
 struct VersionRes {

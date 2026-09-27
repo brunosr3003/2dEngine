@@ -1,3 +1,15 @@
+27/09/2026 — Aparência, skins e atualização
+
+Aparência e skins
+O Menu > Aparência permite escolher rosto, cabelo, cor, pele e skins desbloqueadas. O menu se adapta a telas menores e pode ser rolado. Fechar a prévia sem aplicar restaura sua aparência anterior. Corrigida a seleção de chapéus.
+
+Auras ao entrar
+As auras do seu personagem acompanham os equipamentos recebidos no login, sem precisar tirar e colocar os itens novamente.
+
+Aviso de atualização
+Na entrada, o jogo verifica se há uma versão nova para sua plataforma e mostra “Cliente desatualizado”, com um botão para atualizar. No computador, abre o site; no celular, abre o canal de distribuição disponível. Você pode escolher “Agora não”. Uma falha na consulta não impede o login.
+No iPhone, o botão abre o TestFlight. No Android, enquanto a distribuição for por APK, ele abre o download oficial. A abertura de links no Android também foi implementada.
+
 26/09/2026 — Controles e correções
 
 Controles para computador

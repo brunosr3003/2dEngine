@@ -198,6 +198,20 @@ pub struct Contexto<'a> {
 #[derive(Default)]
 pub struct Menu {
     pub aberto: bool,
+    rolagem: crate::rolagem::Rolagem,
+}
+
+/// Duas colunas só quando ambas comportam cinco alvos de toque.
+fn grade(largura: f32) -> (usize, usize, f32) {
+    let colunas = if largura >= 2.0 * (44.0 * POR_LINHA + 40.0) + 14.0 {
+        2
+    } else {
+        1
+    };
+    let coluna = (largura - 14.0 * (colunas - 1) as f32) / colunas as f32;
+    let por_linha = (((coluna + 10.0) / 54.0).floor() as usize).clamp(1, POR_LINHA as usize);
+    let tamanho = ((coluna - 10.0 * (por_linha - 1) as f32) / por_linha as f32).min(110.0);
+    (colunas, por_linha, tamanho)
 }
 
 impl Menu {
@@ -234,7 +248,6 @@ impl Menu {
         let p = Self::painel();
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
-        let clique = crate::foco::clique();
         estilo::texto_forte(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
         if crate::ui::botao(
             Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0),
@@ -308,23 +321,43 @@ impl Menu {
             p.x + p.w - 14.0 - (esq.x + esq.w + 14.0),
             esq.h,
         );
-        let colunas = [&GRUPOS[..4], &GRUPOS[4..]];
-        let col_w = (dir.w - 14.0) * 0.5;
-        let por_linha = POR_LINHA;
-        let t_w = (col_w - 10.0 * (por_linha - 1.0)) / por_linha;
-        let t_h = (dir.h / 4.0) - 46.0;
-        let t = t_w.min(t_h).clamp(44.0, 110.0);
+        let (ncolunas, por_linha, tamanho) = grade(dir.w - 14.0);
+        let colunas: Vec<_> = if ncolunas == 2 {
+            vec![&GRUPOS[..4], &GRUPOS[4..]]
+        } else {
+            vec![&GRUPOS[..]]
+        };
+        let col_w = (dir.w - 14.0 - 14.0 * (ncolunas - 1) as f32) / ncolunas as f32;
+        let t = tamanho.min((dir.h / 4.0 - 46.0).max(44.0));
+        let altura_grupo =
+            |itens: &[Linha]| 46.0 + itens.len().div_ceil(por_linha) as f32 * (t + 10.0) - 10.0;
+        let total = colunas
+            .iter()
+            .map(|grupos| {
+                grupos
+                    .iter()
+                    .map(|(_, itens)| altura_grupo(itens))
+                    .sum::<f32>()
+            })
+            .fold(0.0, f32::max);
+        let toque = self.rolagem.quadro(dir, total, t + 46.0);
         let mut saida = None;
         let mut dica: Option<(Rect, String)> = None;
+        crate::rolagem::recortar(Some(dir));
         for (k, grupos) in colunas.iter().enumerate() {
             let x0 = dir.x + k as f32 * (col_w + 14.0);
-            let mut gy = dir.y;
+            let mut gy = dir.y - self.rolagem.pos;
             for (nome, itens) in grupos.iter() {
                 estilo::texto_forte(x0, gy + 16.0, nome, 12, estilo::SUAVE);
                 gy += 24.0;
                 for (i, l) in itens.iter().enumerate() {
-                    let r = Rect::new(x0 + i as f32 * (t + 10.0), gy, t, t);
-                    let sobre = r.contains(m);
+                    let r = Rect::new(
+                        x0 + (i % por_linha) as f32 * (t + 10.0),
+                        gy + (i / por_linha) as f32 * (t + 10.0),
+                        t,
+                        t,
+                    );
+                    let sobre = r.contains(m) && dir.contains(m) && !self.rolagem.arrastando();
                     let travado = l.2.is_some();
                     // O foco do tutorial anda ate' aqui: "Menu > Ficha".
                     match l.0 {
@@ -356,13 +389,15 @@ impl Menu {
                     } else if c.selos.contains(&l.0) {
                         selo(r);
                     }
-                    if sobre && clique {
+                    if toque.is_some_and(|p| dir.contains(p) && r.contains(p)) {
                         saida = Some(clique_de(l));
                     }
                 }
-                gy += t + 22.0;
+                gy += altura_grupo(itens) - 24.0;
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(dir, total);
         if let Some((r, texto)) = dica {
             estilo::tooltip(r, &texto, false);
         }
@@ -461,6 +496,18 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grade_cabe_sem_sobrepor_aparencia_a_coluna_seguinte() {
+        for largura in [180.0, 260.0, 400.0, 540.0, 900.0, 1200.0] {
+            let (colunas, n, t) = grade(largura);
+            let coluna = (largura - (colunas - 1) as f32 * 14.0) / colunas as f32;
+            assert!(n as f32 * t + (n - 1) as f32 * 10.0 <= coluna + 0.01);
+            assert!(t >= 44.0);
+        }
+        assert_eq!(grade(400.0).0, 1);
+        assert_eq!(grade(900.0).0, 2);
+    }
 
     #[test]
     fn todo_sistema_que_existe_abre_e_o_resto_so_avisa() {

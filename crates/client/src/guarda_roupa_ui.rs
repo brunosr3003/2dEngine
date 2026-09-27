@@ -47,7 +47,9 @@ impl GuardaRoupaUi {
     pub fn define(&mut self, g: &GuardaRoupa) {
         self.vigente = g.aparencia;
         self.destravadas = g.desbloqueadas.clone();
-        if !self.aberto {
+        if self.aberto {
+            self.provando = Some(g.aparencia);
+        } else {
             self.provando = None;
         }
     }
@@ -85,7 +87,7 @@ impl GuardaRoupaUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Guarda-roupa", 20, estilo::OURO);
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Aparência e skins", 20, estilo::OURO);
         estilo::texto(
             x0,
             p.y + 60.0 * f,
@@ -125,12 +127,13 @@ impl GuardaRoupaUi {
             .iter()
             .position(|r| *r == a.roupa)
             .map_or(0, |i| i as u8 + 1);
+        let atual_cabelo = indice_do_cabelo(a.cabelo, &chapeus);
         let linhas: [(&str, u8, u8); 5] = [
             ("Rosto", ap::ROSTOS, a.rosto),
-            ("Cabelo", cabelos, a.cabelo),
+            ("Cabelo", cabelos, atual_cabelo),
             ("Cor", ap::CORES_DE_CABELO.len() as u8, a.cor_cabelo),
             ("Pele", ap::TONS_DE_PELE.len() as u8, a.pele),
-            ("Roupa", roupas, atual_roupa),
+            ("Skin", roupas, atual_roupa),
         ];
         let mut novos = [0u8; 5];
         for (i, (rotulo, n, atual)) in linhas.iter().enumerate() {
@@ -211,6 +214,16 @@ impl GuardaRoupaUi {
     }
 }
 
+fn indice_do_cabelo(cabelo: u8, chapeus: &[u16]) -> u8 {
+    use shared::aparencia as ap;
+    ap::chapeu_do_cabelo(cabelo).map_or(cabelo, |id| {
+        chapeus
+            .iter()
+            .position(|c| *c == id)
+            .map_or(ap::CABELOS, |i| ap::CABELOS + 1 + i as u8)
+    })
+}
+
 fn nome_da_opcao(i: usize, v: u8, vestes: &[u16], chapeus: &[u16]) -> String {
     use shared::aparencia as ap;
     match i {
@@ -241,6 +254,16 @@ mod testes {
             aparencia: ap,
             desbloqueadas: skins.to_vec(),
         }
+    }
+
+    #[test]
+    fn confirmacao_do_servidor_corrige_a_previa_aberta() {
+        let mut u = GuardaRoupaUi::default();
+        let salva = g(Aparencia::default(), &[]);
+        u.abrir(&salva);
+        u.provando.as_mut().unwrap().roupa = shared::aparencia::ROUPA_BASE;
+        u.define(&salva);
+        assert_eq!(u.provando(), Some(salva.aparencia));
     }
 
     /// Fechar sem aplicar DESISTE. Experimentar tem que ser seguro: se
@@ -304,6 +327,7 @@ mod testes {
         );
         // E o índice global correspondente é o do chapéu 2, não o do 0.
         let global = ap::cabelo_do_chapeu(ap::CHAPEU_BASE + 2).unwrap();
+        assert_eq!(indice_do_cabelo(global, &chapeus), ap::CABELOS + 1);
         assert_ne!(global, ap::CABELOS + 1, "o índice local vazou pro global");
         assert_eq!(ap::chapeu_do_cabelo(global), Some(ap::CHAPEU_BASE + 2));
     }

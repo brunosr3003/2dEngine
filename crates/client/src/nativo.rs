@@ -37,7 +37,7 @@ pub fn abrir_url(url: &str) -> bool {
             .spawn()
             .is_ok()
     }
-    // Android e web: ainda nao.
+    // Web: ainda nao.
     #[cfg(not(any(unix, windows)))]
     {
         let _ = url;
@@ -45,8 +45,42 @@ pub fn abrir_url(url: &str) -> bool {
     }
     #[cfg(target_os = "android")]
     {
-        let _ = url;
-        false
+        android_abrir_url(url)
+    }
+}
+
+/// Intent ACTION_VIEW usando a Activity da miniquad. Local frame libera as
+/// referências JNI; exceção (sem navegador/loja) vira erro visível na UI.
+#[cfg(target_os = "android")]
+fn android_abrir_url(url: &str) -> bool {
+    use macroquad::miniquad::native::android::{attach_jni_env, ndk_sys::jvalue, ACTIVITY};
+    let Ok(url) = std::ffi::CString::new(url) else { return false; };
+    unsafe {
+        let env = attach_jni_env();
+        let j = &**env;
+        if (j.PushLocalFrame.unwrap())(env, 16) != 0 { return false; }
+        let resultado = (|| {
+            let uri_class = (j.FindClass.unwrap())(env, b"android/net/Uri\0".as_ptr().cast());
+            let intent_class = (j.FindClass.unwrap())(env, b"android/content/Intent\0".as_ptr().cast());
+            let activity_class = (j.GetObjectClass.unwrap())(env, ACTIVITY);
+            if uri_class.is_null() || intent_class.is_null() || activity_class.is_null() { return false; }
+            let parse = (j.GetStaticMethodID.unwrap())(env, uri_class, b"parse\0".as_ptr().cast(), b"(Ljava/lang/String;)Landroid/net/Uri;\0".as_ptr().cast());
+            let ctor = (j.GetMethodID.unwrap())(env, intent_class, b"<init>\0".as_ptr().cast(), b"(Ljava/lang/String;Landroid/net/Uri;)V\0".as_ptr().cast());
+            let start = (j.GetMethodID.unwrap())(env, activity_class, b"startActivity\0".as_ptr().cast(), b"(Landroid/content/Intent;)V\0".as_ptr().cast());
+            if parse.is_null() || ctor.is_null() || start.is_null() { return false; }
+            let texto = (j.NewStringUTF.unwrap())(env, url.as_ptr());
+            let action = (j.NewStringUTF.unwrap())(env, b"android.intent.action.VIEW\0".as_ptr().cast());
+            if texto.is_null() || action.is_null() { return false; }
+            let uri = (j.CallStaticObjectMethodA.unwrap())(env, uri_class, parse, [jvalue { l: texto }].as_ptr());
+            if uri.is_null() { return false; }
+            let intent = (j.NewObjectA.unwrap())(env, intent_class, ctor, [jvalue { l: action }, jvalue { l: uri }].as_ptr());
+            if intent.is_null() { return false; }
+            (j.CallVoidMethodA.unwrap())(env, ACTIVITY, start, [jvalue { l: intent }].as_ptr());
+            (j.ExceptionCheck.unwrap())(env) == 0
+        })();
+        if (j.ExceptionCheck.unwrap())(env) != 0 { (j.ExceptionClear.unwrap())(env); }
+        (j.PopLocalFrame.unwrap())(env, std::ptr::null_mut());
+        resultado
     }
 }
 

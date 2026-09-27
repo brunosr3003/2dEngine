@@ -16,6 +16,7 @@ shared.workspace = true
 macroquad = { version = "0.4", features = ["audio"] }
 tungstenite = "0.24"
 anyhow.workspace = true
+serde_json.workspace = true
 glam.workspace = true
 
 # APK pelo `cargo quad-apk` (scripts/build-android.sh). Os `.vox` sao lidos em

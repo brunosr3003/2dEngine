@@ -243,3 +243,21 @@ A página pública de download está em `web/download-site/`; ela não precisa d
 bundler e usa `/download-assets/` para estilos e imagens. Os links apontam aos
 pacotes em `/downloads/`. A conta/cadastro anterior deve ser preservada como
 `conta.html` ao atualizar a página inicial em produção.
+
+Linux: `bash scripts/build-linux-client.sh` empacota o cliente x86_64 com
+assets em `target/linux/MMORPG-Linux.zip`, apontando para a API de produção.
+
+### Aviso de cliente desatualizado
+
+`crates/client/src/atualizacao.rs::BUILD` é o número crescente da release,
+independente do protocolo. Incremente antes de selar as notas. O cliente
+consulta `/api/client-release` nas telas de servidor/login, inclusive antes
+do login automático. Uma falha na consulta não impede entrar.
+
+O endpoint lê `WEB_STATIC/releases.json`. Publique esse mesmo JSON em
+`/downloads/releases.json` no site, somente depois dos pacotes. Dentro de
+`platforms`, cada plataforma (`windows`, `linux`, `mac`, `android`, `ios`)
+informa `build` e `update_url`, além de arquivo, tamanho e SHA-256 quando há
+download. Não avance `ios` antes de a build estar disponível no TestFlight.
+Desktop abre o site; mobile usa o endereço publicado. O TestFlight por
+convite abre com `itms-beta://`; Android ainda distribuído por APK usa o site.

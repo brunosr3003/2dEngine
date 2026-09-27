@@ -26,6 +26,7 @@ mod efeitos;
 mod energia_vfx;
 mod entrada;
 mod novidades;
+mod atualizacao;
 mod desktop;
 mod evolucao_skills;
 mod ficha_ui;
@@ -370,6 +371,7 @@ struct Jogo {
     /// Fila de digitacao. Ver `entrada` — a repeticao de tecla passa por aqui.
     teclado: entrada::Teclado,
     novidades: novidades::Novidades,
+    atualizacao: atualizacao::Atualizacao,
     /// Quanto o jogador inclinou A MAIS do que o zoom pediu, em radianos.
     ///
     /// Guardar o DESVIO e nao o angulo e' o que deixa o automatico e a mao
@@ -743,6 +745,7 @@ async fn main() {
         cam_altura_vel: 0.0,
         teclado: entrada::Teclado::novo(),
         novidades: novidades::Novidades::default(),
+        atualizacao: atualizacao::Atualizacao::default(),
         cam_pitch_ajuste: 0.0,
         mouse_camera: desktop::ArrastoCamera::default(),
         gesto_camera: gesto_camera::GestoCamera::default(),
@@ -5205,6 +5208,13 @@ impl Jogo {
     }
 
     fn desenhar_mundo(&mut self) {
+        // Equipamento e guarda-roupa chegam completos no login, antes da
+        // primeira entidade. Reaplica quando ela existir e a cada quadro:
+        // fechar a prévia também restaura o visual confirmado pelo servidor.
+        self.world.sincroniza_visual_local(
+            &self.bolsa.equip,
+            self.guarda_roupa.provando().unwrap_or(self.guarda_roupa_salvo.aparencia),
+        );
         render3d::clear();
         let centro = self.world.self_pos().unwrap_or(Vec2::ZERO)
             + chefe_anim::sacudida(self.tremor.0, self.tremor.1, get_time());
@@ -6240,14 +6250,6 @@ impl Jogo {
         if let Some(msg) = self.guarda_roupa.desenha() {
             self.envia(msg);
         }
-        // PROVAR É VER. Com a janela aberta, o próprio boneco no mundo usa a
-        // aparência experimentada — sem ida à rede, e sem esperar o servidor.
-        // É local e some ao fechar; quem manda continua sendo a meta.
-        if let (Some(a), Some(id)) = (self.guarda_roupa.provando(), self.world.self_id) {
-            if let Some(e) = self.world.ents.get_mut(&id) {
-                e.meta.aparencia = a.empacota();
-            }
-        }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
@@ -6366,6 +6368,7 @@ impl Jogo {
 
     fn tela_servidores(&mut self) {
         ui::fundo();
+        if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
         let r = ui::painel(560.0, 460.0, "escolha o servidor");
         let cx = r.x + r.w * 0.5;
@@ -6653,6 +6656,7 @@ impl Jogo {
 
     fn tela_login(&mut self) {
         ui::fundo();
+        if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
         // o "lembrar de mim" valer a pena — lembrar só o nome de usuário

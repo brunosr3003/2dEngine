@@ -64,6 +64,13 @@ pub fn buscar_canais() -> Receiver<Result<Vec<Canal>, String>> {
     em_thread(|| get("/api/channels").map(|(_, corpo)| parse(&corpo)))
 }
 
+pub fn buscar_release() -> Receiver<Result<String, String>> {
+    em_thread(|| match get("/api/client-release")? {
+        (200, corpo) => Ok(corpo),
+        (codigo, _) => Err(format!("release: HTTP {codigo}")),
+    })
+}
+
 /// Roda `f` numa thread e devolve o receiver do resultado.
 fn em_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
     let (tx, rx) = mpsc::channel();
