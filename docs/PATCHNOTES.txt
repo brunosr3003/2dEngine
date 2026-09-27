@@ -6,6 +6,7 @@ As teclas 1, 2 e 3 usam habilidades, incluindo o teclado numérico. Espaço atac
 
 Correções gráficas
 Corrigida a falha no shader da água que podia fechar o jogo ao carregar os personagens após o login no Mac. A correção também está nas builds Windows e Android.
+Melhorada a compatibilidade gráfica no Windows quando o driver não oferece todas as funções de desenho em lote.
 
 Novidades na entrada
 Os patch notes agora aparecem na entrada quando há novidades. Você pode reabrir esta lista pelo botão “Novidades” nas telas de servidor e login.

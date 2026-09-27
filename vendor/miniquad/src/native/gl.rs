@@ -336,6 +336,12 @@ macro_rules! gl_loader {
     };
 }
 
+/// TEMPEST: versão GL anunciada não garante que o driver carregou instancing.
+#[cfg(target_os = "windows")]
+pub fn instancing_loaded() -> bool {
+    unsafe { __pfns::glVertexAttribDivisor.is_some() && __pfns::glDrawElementsInstanced.is_some() }
+}
+
 gl_loader!(
     fn glGetStringi(name: GLenum, index: GLuint) -> *const GLubyte,
     fn glGetString(name: GLenum) -> *const GLubyte,

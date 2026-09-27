@@ -830,8 +830,12 @@ fn gl_info() -> ContextInfo {
         || gl_version_string.starts_with("OpenGL ES 2");
     let webgl1 = gl_version_string == "WebGL 1.0";
 
+    #[cfg(target_os = "windows")]
+    let instancing = !gl2 && crate::native::gl::instancing_loaded();
+    #[cfg(not(target_os = "windows"))]
+    let instancing = !gl2;
     let features = Features {
-        instancing: !gl2,
+        instancing,
         resolve_attachments: !webgl1 && !gl2,
     };
 
@@ -1739,18 +1743,20 @@ impl RenderingBackend for GlContext {
         let index_type = self.cache.index_type.expect("Unset index buffer type");
 
         unsafe {
-            glDrawElementsInstanced(
-                primitive_type,
-                num_elements,
-                match index_type {
-                    1 => GL_UNSIGNED_BYTE,
-                    2 => GL_UNSIGNED_SHORT,
-                    4 => GL_UNSIGNED_INT,
-                    _ => panic!("Unsupported index buffer type!"),
-                },
-                (index_type as i32 * base_element) as *mut _,
-                num_instances,
-            );
+            let element_type = match index_type {
+                1 => GL_UNSIGNED_BYTE,
+                2 => GL_UNSIGNED_SHORT,
+                4 => GL_UNSIGNED_INT,
+                _ => panic!("Unsupported index buffer type!"),
+            };
+            let indices = (index_type as i32 * base_element) as *mut _;
+            if self.info.features.instancing {
+                glDrawElementsInstanced(primitive_type, num_elements, element_type, indices, num_instances);
+            } else {
+                // Acima já recusamos num_instances != 1. Desenho comum não
+                // precisa da extensão, inclusive em drivers Windows antigos.
+                glDrawElements(primitive_type, num_elements, element_type, indices);
+            }
         }
     }
 }

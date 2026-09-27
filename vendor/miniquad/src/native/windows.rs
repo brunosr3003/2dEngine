@@ -1030,6 +1030,10 @@ impl WindowsDisplay {
     unsafe fn get_proc_address(&mut self, proc: &str) -> Option<unsafe extern "C" fn() -> ()> {
         let proc = std::ffi::CString::new(proc).unwrap();
         let mut proc_ptr = (self.libopengl32.wglGetProcAddress)(proc.as_ptr());
+        // TEMPEST: alguns drivers Windows expõem instancing só pelo nome ARB.
+        if proc_ptr.is_null() && proc.to_bytes() == b"glVertexAttribDivisor" {
+            proc_ptr = (self.libopengl32.wglGetProcAddress)(b"glVertexAttribDivisorARB\0".as_ptr() as _);
+        }
         if proc_ptr.is_null() {
             proc_ptr = GetProcAddress(self.libopengl32.module.0, proc.as_ptr());
         }
