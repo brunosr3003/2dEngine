@@ -34,6 +34,7 @@
 //!     --n 4 --minutos 30 --trilha /tmp/bots.jsonl
 //! ```
 
+mod progresso;
 mod trilha;
 
 use std::collections::HashMap;
@@ -389,6 +390,9 @@ struct Eu {
     /// mais urgente que qualquer missão, e é por isso que este campo
     /// curto-circuita o `decide` inteiro.
     desviando_ate: Option<Instant>,
+    /// O que ele faz entre uma missão e outra: zona da faixa, viagem, forja,
+    /// Energia, Ilha Mágica (`progresso.rs`).
+    prog: progresso::Progresso,
 }
 
 impl Eu {
@@ -696,7 +700,7 @@ const POCOES_DESEJADAS: u32 = 12;
 /// 8 s, beber cedo significa estar sempre com a cura correndo durante a luta,
 /// em vez de tomar o golpe que mata e só então reagir. Foi assim que dois
 /// bots morreram no andar 0 e ficaram deitados dez minutos.
-const BEBE_ABAIXO_DE: f32 = 0.95;
+const BEBE_ABAIXO_DE: f32 = 0.65;
 
 /// As poções de VIDA que ele tem na bolsa, como `pocoes::escolher` pede.
 fn pocoes_de_vida(eu: &Eu) -> Vec<(u16, u32)> {
@@ -885,6 +889,8 @@ async fn recebe(
             eu.entidade = Some(entity_id);
             eu.pos = glam::Vec2::new(spawn[0], spawn[1]);
             eu.morto = false;
+            // A praça desta zona: é de onde se acha o Capitão do Porto.
+            eu.prog.cidade = Some(eu.pos);
             // VESTE A PRÓPRIA CARA, mesmo em personagem que já existia.
             //
             // A aparência só é escolhida na CRIAÇÃO, e os bots de produção já
@@ -904,6 +910,9 @@ async fn recebe(
             // O MUNDO SE MANTÉM entre snapshots, como no cliente.
             for m in &snapshot.entered {
                 eu.conhecidos.insert(m.id, m.tag);
+                if matches!(m.tag, shared::EntityTag::Npc) {
+                    eu.prog.npc_kind.insert(m.id, m.kind);
+                }
             }
             for s in &snapshot.states {
                 eu.posicoes.insert(s.id, s.pos_f32());
@@ -911,6 +920,7 @@ async fn recebe(
             for id in &snapshot.removed {
                 eu.conhecidos.remove(id);
                 eu.posicoes.remove(id);
+                eu.prog.npc_kind.remove(id);
             }
             if let Some(meu) = eu.entidade {
                 if let Some(s) = snapshot.states.iter().find(|s| s.id == meu) {
@@ -1036,12 +1046,33 @@ async fn recebe(
         }
         // A VIDA MÁXIMA só vem por aqui, e o bot ignorava a mensagem inteira
         // — por isso nunca soube que estava ferido.
-        ServerMessage::StatsUpdate { stats, .. } => {
+        ServerMessage::StatsUpdate { stats, equipment } => {
             eu.hp_max = stats.hp_max.max(0) as u16;
+            eu.prog.equip = equipment;
         }
+        ServerMessage::MapaDaIlha { zonas, .. } => {
+            eu.prog.zonas = zonas;
+            eu.prog.plano = None;
+        }
+        ServerMessage::ProgressoDeSkills { progresso } => {
+            eu.prog.energia = progresso.energia;
+        }
+        ServerMessage::Viagem { destinos, .. } => {
+            eu.prog.destinos = destinos;
+        }
+        ServerMessage::Magica { aviso } => match aviso {
+            shared::magica::AvisoMagica::Estado { grau_maximo, passes, gratis, dentro, .. } => {
+                eu.prog.magica = Some(progresso::Magica { grau_maximo, gratis, passes, dentro });
+            }
+            shared::magica::AvisoMagica::Recusa(texto) => {
+                t.registra(ev(nome, eu, "ilha_magica_recusou", false, texto));
+            }
+            _ => {}
+        },
         ServerMessage::GoldUpdate { gold } => eu.ouro = gold as i64,
-        ServerMessage::StatPointsUpdate { unspent, .. } => {
+        ServerMessage::StatPointsUpdate { unspent, allocated, .. } => {
             eu.pontos_livres = unspent;
+            eu.prog.alocados = allocated;
             // Saldo novo, tentativa nova. Sem isto o bot que teve UM pedido
             // recusado fica pedindo pra sempre e não faz mais nada: 139
             // tentativas em 2 minutos, medido na trilha.
@@ -1089,7 +1120,12 @@ async fn recebe(
         // O bot sempre escolhe a MISSÃO: é o caminho do jogador que está
         // seguindo a história, e é pra isso que ele foi até lá.
         ServerMessage::EscolhaNoNpc { npc_eid, nome: npc_nome, funcao } => {
-            ws.send(envia(&ClientMessage::EscolherNoNpc { npc_eid, missao: true })?)
+            // Indo embarcar: com o Capitão, a escolha é o BARCO, não a missão.
+            let embarcando = matches!(
+                eu.prog.plano,
+                Some(progresso::Plano::Embarcar { .. })
+            );
+            ws.send(envia(&ClientMessage::EscolherNoNpc { npc_eid, missao: !embarcando })?)
                 .await?;
             eu.conversas_a_toa.clear();
             t.registra(ev(nome, eu, "escolheu_missao", true, format!(
@@ -1304,6 +1340,9 @@ async fn recebe(
         } => {
             use shared::forja::resultado as r;
             let Some((quest, slot)) = eu.refino_pedido.take() else {
+                // Não foi a missão que pediu: foi a progressão (refino do
+                // equipamento vestido).
+                progresso::refino_respondido(eu, t, nome, resultado, nivel, &motivo);
                 return Ok(None);
             };
             // SUBIR, FALHAR E DESTRUIR são o jogo acontecendo: a forja tem
@@ -1384,6 +1423,16 @@ async fn recebe(
             // Guarda pra onde ir; quem reconecta é o laço de `vive`, que é
             // dono do socket.
             eu.trocar_para = Some(host.clone());
+            // Outra ilha, outro mapa: o que ele sabia daqui não vale lá.
+            eu.prog.zonas.clear();
+            eu.prog.npc_kind.clear();
+            eu.prog.plano = None;
+            eu.prog.rondando = None;
+            eu.conhecidos.clear();
+            eu.posicoes.clear();
+            eu.destino = None;
+            eu.andando_para = None;
+            eu.no_de_coleta = None;
             t.registra(ev(nome, eu, "trocou_de_zona", true, format!("{zona} em {host}")));
         }
         _ => {}
@@ -1490,10 +1539,20 @@ async fn decide(
         }
     }
     // 1. Ponto de atributo parado é dano que não se causa.
-    if eu.pontos_livres > 0 && !eu.tentou_gastar {
+    //
+    // NA CLASSE, e só com a Energia que o ponto custa. Era sempre FOR (`stat:
+    // 0`), o que deixava o pistoleiro e o mago batendo com o atributo errado,
+    // e mandava o pedido sem Energia — o servidor recusava e o bot não sabia
+    // por quê. Sem Energia, quem vai colher é a progressão (`progresso.rs`).
+    let custo = shared::custo_energia_do_ponto(eu.prog.alocados.iter().sum());
+    if eu.pontos_livres > 0 && !eu.tentou_gastar && eu.prog.energia >= custo {
         eu.tentou_gastar = true;
-        ws.send(envia(&ClientMessage::AllocStatPoint { stat: 0 })?).await?;
-        t.registra(ev(nome, eu, "ponto_gasto", true, format!("{} livres", eu.pontos_livres)));
+        let arma = eu.prog.equip.weapon.unwrap_or(0);
+        let stat = progresso::proximo_ponto(arma, &eu.prog.alocados);
+        ws.send(envia(&ClientMessage::AllocStatPoint { stat })?).await?;
+        t.registra(ev(nome, eu, "ponto_gasto", true, format!(
+            "stat {stat}, {} livres, energia {} (custa {custo})", eu.pontos_livres, eu.prog.energia
+        )));
         return Ok(());
     }
     // 2. Missão pronta: entrega.
@@ -2387,6 +2446,16 @@ async fn decide(
             _ => {}
         }
     }
+    // 5.9 A PROGRESSÃO: sem passo de história pra fazer, ele faz o que um
+    // jogador faz entre missões — veste, colhe Energia, refina, fabrica,
+    // entra na Ilha Mágica, caça na zona da faixa e embarca pra próxima ilha
+    // (`progresso.rs`). O mercado e o Porão continuam abaixo, e o ramo 10
+    // (bater no bicho perto) é quem luta dentro da zona.
+    if eu.destino.is_none() && eu.buscando.is_none() && !eu.na_dungeon && !eu.na_arena
+        && progresso::progride(ws, eu, nome, t).await?
+    {
+        return Ok(());
+    }
     // 6. O MERCADO, de vez em quando.
     //
     // A cada ~40 decisões (uns 30 s), e não toda vez: o bot não é um robô de
@@ -2455,17 +2524,9 @@ async fn decide(
             return Ok(());
         }
     }
-    // 8. CRAFT: tenta uma receita de vez em quando.
-    //
-    // Sem conferir se os materiais dão: o servidor recusa com motivo, e a
-    // recusa vai pra trilha. Conferir aqui seria reimplementar a receita no
-    // bot — duas regras pro mesmo assunto, e a do bot ficaria velha.
-    if !eu.receitas.is_empty() && eu.olhou_mercado == 20 {
-        let r = eu.receitas[(eu.nivel as usize) % eu.receitas.len()].id;
-        ws.send(envia(&ClientMessage::Craft { recipe_id: r })?).await?;
-        t.registra(ev(nome, eu, "tentou_craft", true, format!("receita {r}")));
-        return Ok(());
-    }
+    // 8. (O craft de receita sorteada saiu em 27/09: a progressão fabrica a
+    // peça da faixa que melhora o vestido, e vai colher o que falta. Tentar
+    // receita a esmo só produzia recusa na trilha.)
     // 9. DUNGEON: o Porão, que entra sozinho, a partir do nível 5.
     //
     // Uma vez por vida do bot. Insistir a cada decisão seria uma enxurrada de
