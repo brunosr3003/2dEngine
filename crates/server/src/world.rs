@@ -1497,12 +1497,29 @@ pub struct PortalTag {
     pub cooldown: f32,
 }
 
-/// Todo ataque a jogador exige modo Hostil. Zonas seguras protegem os dois lados.
+/// Hostil permite iniciar PvP; autodefesa permite revidar por 15 segundos.
+/// Zonas seguras protegem os dois lados.
 impl GameWorld {
-    fn registrar_morte_pk(&mut self, killer: EntityId, pontos_da_vitima: u32) {
-        if self.na_magica() || pontos_da_vitima > 0 { return; }
+    fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, pontos_da_vitima: u32) {
+        if self.na_magica() || pontos_da_vitima > 0 || self.pode_revidar(killer, vitima) { return; }
         if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
             s.pk_points = s.pk_points.saturating_add(1);
+        }
+    }
+
+    fn pode_revidar(&self, defensor: EntityId, agressor: EntityId) -> bool {
+        self.sessions.values().find(|s| s.entity_id == defensor)
+            .and_then(|s| s.agressores.get(&agressor))
+            .is_some_and(|ate| *ate > self.sim_time_s)
+    }
+
+    fn registrar_agressao(&mut self, agressor: EntityId, vitima: EntityId) {
+        // Revidar não transforma a vítima no agressor nem isenta quem iniciou.
+        if self.pode_revidar(agressor, vitima) { return; }
+        let agora = self.sim_time_s;
+        if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == vitima) {
+            s.agressores.retain(|_, ate| *ate > agora);
+            s.agressores.insert(agressor, agora + 15.0);
         }
     }
 
@@ -1528,7 +1545,7 @@ impl GameWorld {
                 }
             }
         }
-        att.pk_mode_on
+        att.pk_mode_on || self.pode_revidar(attacker_eid, target_eid)
     }
 }
 
@@ -1842,6 +1859,8 @@ pub struct Session {
     /// Novos personagens começam no modo Pacífico.
     pub pk_mode_on: bool,
     pub pk_points: u32,
+    /// Direito temporário de revidar, por agressor; nunca persistido.
+    agressores: HashMap<EntityId, f32>,
     pk_visto: shared::PkState,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
@@ -6084,6 +6103,7 @@ impl GameWorld {
             s.gold = saved_gold;
             s.gold_last_sent = u64::MAX; // forca envio inicial
             s.fame = saved_fame;
+            s.agressores.clear();
             s.pk_mode_on = row.pk.hostil;
             s.pk_points = row.pk.pontos;
             s.fame_last_sent = u64::MAX;
@@ -7281,6 +7301,7 @@ impl GameWorld {
                 cast_movement_ticks: 0,
                 pk_mode_on: false,
                 pk_points: 0,
+                agressores: HashMap::new(),
                 pk_visto: Default::default(),
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
@@ -11591,6 +11612,10 @@ impl GameWorld {
             {
                 continue;
             }
+            // Impacto PvP válido também permite revidar se escudo/poise absorver.
+            if attacker_is_player && dmg > 0 && self.ecs.get::<&PlayerTag>(entity).is_ok() {
+                self.registrar_agressao(attacker_id, target_id);
+            }
             // Resistencia do alvo reduz dano recebido (min 1).
             let (target_defense, target_dmg_reduction_pct) = {
                 let mut d = 0i32;
@@ -12431,7 +12456,7 @@ impl GameWorld {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
                     if let Some(killer) = kill_credits.get(&eid).copied() {
-                        mortes_pk.push((killer, session.pk_points));
+                        mortes_pk.push((killer, eid, session.pk_points));
                     }
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
@@ -12452,8 +12477,8 @@ impl GameWorld {
                 }
             }
         }
-        for (killer, pontos_da_vitima) in mortes_pk {
-            self.registrar_morte_pk(killer, pontos_da_vitima);
+        for (killer, vitima, pontos_da_vitima) in mortes_pk {
+            self.registrar_morte_pk(killer, vitima, pontos_da_vitima);
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
@@ -21323,6 +21348,38 @@ mod pk_tests {
         assert_eq!(w.sessions[&ids[0]].pk_points,0);
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
         assert!(!w.can_damage_player(EntityId(900), EntityId(901)));
+    }
+
+    #[test]
+    fn pk_autodefesa_pacifico_expira_e_nao_isenta_agressor() {
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        golpe(&mut w, 1);
+        assert!(w.can_damage_player(EntityId(901), EntityId(900)));
+        assert!(!w.sessions[&ids[1]].pk_mode_on);
+        w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
+        assert!(w.can_damage_player(EntityId(901), EntityId(900)), "desligar Hostil não apaga agressão");
+        w.registrar_agressao(EntityId(901), EntityId(900));
+        assert!(!w.pode_revidar(EntityId(900), EntityId(901)), "agressor não ganha isenção por sofrer revide");
+        w.safe_zone = true;
+        assert!(!w.can_damage_player(EntityId(901), EntityId(900)));
+        w.safe_zone = false;
+        w.sim_time_s += 15.1;
+        assert!(!w.can_damage_player(EntityId(901), EntityId(900)));
+    }
+
+    #[test]
+    fn pk_autodefesa_golpe_fatal_nao_cobra_pontos() {
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        golpe(&mut w, 1);
+        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(900), damage: 10000,
+            attacker_net: EntityId(901), hurt_dir: Vec2::X, is_crit: false,
+            from_player: true, knockback: 0.0 });
+        w.step(shared::TICK_DT);
+        assert!(w.sessions[&ids[0]].downed);
+        assert_eq!(w.sessions[&ids[1]].pk_points, 0);
+        assert!(!w.sessions[&ids[1]].pk_mode_on);
     }
 
     #[test]

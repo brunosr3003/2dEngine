@@ -13,3 +13,6 @@ Os patch notes agora aparecem na entrada quando há novidades. Você pode reabri
 
 Visibilidade de jogadores
 Jogadores da mesma zona e instância passam a ser enviados mesmo longe, sem disputar o limite de visibilidade com mobs e recursos. A mudança depende da atualização do servidor.
+
+Autodefesa no PvP
+Mesmo em modo Pacífico, você pode revidar contra quem te atacou nos últimos 15 segundos, sem ganhar PK points por derrotar esse agressor. Safe zones continuam sem combate.
