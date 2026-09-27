@@ -166,6 +166,15 @@ impl EconomyConfig {
             .collect()
     }
 
+    /// Usa a mesma tabela, fallback e filtro de itens do sorteio real.
+    pub fn itens_possiveis_do_mob(&self, kind: u16) -> Vec<u16> {
+        self.loot_tables.get(&kind)
+            .or_else(|| (0..kind).rev().find_map(|k| self.loot_tables.get(&k)))
+            .into_iter().flatten()
+            .filter(|e| e.chance > 0.0 && e.qty_max > 0 && self.permitido_em_mob(e.item_id))
+            .map(|e| e.item_id).collect()
+    }
+
     /// Vale tambem para tabelas antigas ou reintroduzidas pelo hot-reload.
     fn permitido_em_mob(&self, id: u16) -> bool {
         shared::equip_slot_of(id).is_none()
@@ -812,6 +821,19 @@ mod testes_onde_obter {
             active: true,
             vinculado: vinc,
             template: Default::default(),
+        }
+    }
+
+    #[test]
+    fn previa_do_drop_respeita_fallback_inativos_e_equipamento() {
+        let mut c = cfg();
+        let equipamento = shared::item_id::KATANA;
+        c.items.insert(equipamento, item(equipamento,false));
+        c.items.get_mut(&HEALTH_POTION).unwrap().active = false;
+        c.loot_tables.get_mut(&0).unwrap().push(LootEntry { item_id: equipamento,qty_min:1,qty_max:1,chance:1. });
+        assert_eq!(c.itens_possiveis_do_mob(1),vec![COPPER]);
+        for seed in 0..100 {
+            for (id,_) in c.roll_loot(1,seed) { assert!(c.itens_possiveis_do_mob(1).contains(&id)); }
         }
     }
 

@@ -75,6 +75,8 @@ pub struct DungeonUi {
     estagio: u8,
     salas: Option<Vec<dg::SalaNet>>,
     completar_pela_fila: bool,
+    ver_recompensas: bool,
+    rolagem_recompensas: crate::rolagem::Rolagem,
     pronto: Option<ProntoAberto>,
     inst: Option<Inst>,
     resultado: Option<Resultado>,
@@ -505,6 +507,7 @@ impl DungeonUi {
         }
         if let Some(id) = novo_sel {
             self.sel = id;
+            self.rolagem_recompensas.zera();
             self.estagio = 1;
             self.salas = None;
         }
@@ -581,12 +584,26 @@ impl DungeonUi {
                 );
                 if sobre && clicou {
                     self.estagio = e;
+                    self.rolagem_recompensas.zera();
                     self.salas = None;
                 }
             }
             y += 60.0 * f;
         }
         let estagio = self.estagio.clamp(1, n);
+        let largura_abas = (p.x+p.w - if self.na_arena == Some(true) {202.0*f} else {60.0*f} - dir.x).max(100.0*f);
+        for (i, (titulo, recompensas)) in [("Entrada", false), ("Recompensas", true)].into_iter().enumerate() {
+            let r = Rect::new(dir.x + i as f32*largura_abas*0.5, p.y + 10.0*f, largura_abas*0.5-8.0*f, 34.0*f);
+            if botao(r, titulo, true, self.ver_recompensas == recompensas) {
+                self.ver_recompensas = recompensas;
+                self.rolagem_recompensas.zera();
+            }
+        }
+        if self.ver_recompensas {
+            crate::dungeon_recompensas::desenha(c, def, ce, estagio,
+                Rect::new(dir.x,y,dir.w,dir.y+dir.h-y), &mut self.rolagem_recompensas);
+            return;
+        }
         let nivel = dg::nivel_do_estagio(def, estagio);
         let cadeado = ce.cadeados.get((estagio - 1) as usize).cloned().flatten();
         let teto = dg::teto_de_grau(nivel);
@@ -1598,6 +1615,9 @@ mod testes {
                     })
                     .collect(),
                 vitorias: 0,
+                primeiras_concluidas: vec![false; dg::estagios(c) as usize],
+                semanais_recebidas: vec![false; dg::estagios(c) as usize],
+                drops_chefe: vec![],
             })
             .collect();
         d.aviso(
@@ -1689,6 +1709,48 @@ mod testes {
                 crate::ui::area_de_toque(porta).h >= 44.0,
                 "{sw}×{sh}: o Sair é menor que um dedo"
             );
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa_recompensas() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let nomes: HashMap<u16,String> = std::fs::read_to_string("/tmp/tempest-dungeon-item-names.json").ok()
+        .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let contexto = Contexto { nomes: &nomes, palco: None, ouro: 100000, eu: "brunji" };
+    for (w,h) in [(1280,720),(1920,1080)] {
+        let rt = render_target(w,h);
+        crate::render3d::define_alvo(Some(rt.clone()));
+        crate::hud_layout::define_escala_ui(1.6);
+        let mut d = DungeonUi::default();
+        d.aberto = true;
+        d.sel = 10;
+        d.estagio = 1;
+        d.ver_recompensas = true;
+        d.na_arena = Some(true);
+        d.estado = Some(Estado {
+            conteudos: dg::CONTEUDOS.iter().map(|c| dg::ConteudoEstado {
+                id:c.id, liberado:3, cadeados:vec![None;dg::estagios(c) as usize],vitorias:2,
+                primeiras_concluidas:(1..=dg::estagios(c)).map(|e|e==1).collect(),
+                semanais_recebidas:(1..=dg::estagios(c)).map(|e|e==1).collect(),
+                drops_chefe:vec![shared::item_id::GOLD,shared::item_id::COPPER,shared::item_id::DARKSTEEL,
+                    shared::item_id::STEEL,shared::item_id::PLATINUM,shared::item_id::GREATER_HEAL,
+                    shared::item_id::GLITTERING_POWDER,shared::item_id::SCALE],
+            }).collect(),
+            entradas:dg::EntradasNet {gruta:3,gruta_preco:Some(500),porao:2},fila:None,sala:None,
+        });
+        for (nome,estagio,scroll,recompensas) in [("recebida",1,0.,true),("disponivel",2,0.,true),("boss",2,260.,true),("entrada",2,0.,false)] {
+            d.estagio=estagio; d.rolagem_recompensas.pos=scroll; d.ver_recompensas=recompensas;
+            for _ in 0..3 {
+                crate::render3d::camera_padrao();
+                clear_background(Color::new(0.08,0.12,0.16,1.));
+                d.desenha(&contexto,get_time());
+                unsafe { get_internal_gl().flush() };
+                rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}-{w}.png"));
+                next_frame().await;
+            }
         }
     }
 }

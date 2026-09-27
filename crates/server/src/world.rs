@@ -13027,6 +13027,10 @@ impl GameWorld {
         for s in self.sessions.values_mut() {
             for id in &alterados { s.last_sent.remove(id); }
         }
+        for (_, (net, pet)) in self.ecs.query::<(&NetId,&pets::PetTag)>().iter() {
+            auras_de.insert(net.0,pet.auras);
+        }
+
         let aparencia_de: HashMap<EntityId, u32> = self
             .sessions
             .values()

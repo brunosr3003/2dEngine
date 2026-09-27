@@ -1,7 +1,10 @@
-//! Aparência de equipamentos: sete bytes, sem transmitir atributos ou rolls.
+//! Aparência de equipamentos: oito bytes, sem transmitir atributos ou rolls.
 use crate::Equipment;
-pub const SLOTS: usize = 7;
-/// Arma, mão secundária, armadura, brinco, colar, bracelete e cinto.
+pub const SLOTS: usize = 8;
+pub const MONTARIA: usize = 7;
+/// O pet tem entidade própria: usa o primeiro byte da sua própria meta.
+pub const PET: usize = 0;
+/// Arma, mão secundária, armadura, brinco, colar, bracelete, cinto e montaria.
 pub fn equipamento(e: &Equipment) -> u64 {
     let pecas = [
         (e.weapon, &e.weapon_inst), (e.offhand, &e.offhand_inst),
@@ -9,13 +12,25 @@ pub fn equipamento(e: &Equipment) -> u64 {
         (e.necklace, &e.necklace_inst), (e.bracelet, &e.bracelet_inst),
         (e.belt, &e.belt_inst),
     ];
-    pecas.iter().enumerate().fold(0, |bits, (slot, (id, inst))| {
+    let bits = pecas.iter().enumerate().fold(0, |bits, (slot, (id, inst))| {
         let byte = match (id, inst) {
             (Some(_), Some(i)) if i.grau() >= 2 => i.grau() | ((i.tier() - 1) << 3) | (patamar(i.refinement) << 5),
             _ => 0,
         };
         bits | ((byte as u64) << (slot * 8))
-    })
+    });
+    // A cor da montaria mora no item_id; montarias antigas podem não ter instância.
+    let montaria = e.montaria.and_then(crate::montarias::de_item)
+        .map_or(0, |(_, grau)| byte_animal(grau,e.montaria_inst.as_ref()));
+    bits | (u64::from(montaria) << (MONTARIA*8))
+}
+fn byte_animal(grau: u8, inst: Option<&crate::items::ItemInstance>) -> u8 {
+    if grau < 2 { return 0; }
+    let (tier, refino) = inst.map_or((1,0), |i| (i.tier(),i.refinement));
+    grau | ((tier-1)<<3) | (patamar(refino)<<5)
+}
+pub fn pet(id: u16, inst: Option<&crate::items::ItemInstance>) -> u64 {
+    crate::pets::de_item(id).map_or(0, |(_,grau)| u64::from(byte_animal(grau,inst)))
 }
 pub fn peca(bits: u64, slot: usize) -> Option<(u8, u8, u8)> {
     if slot >= SLOTS { return None }
@@ -34,6 +49,30 @@ pub fn intensidade(tier: u8, refino: u8) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn montaria_e_pet_guardam_cor_tier_refino_e_aceitam_itens_antigos() {
+        use crate::item_id::*;
+        for grau in 1..=5 {
+            let mut e = Equipment::default();
+            e.montaria = Some(montaria_no_grau(MONTARIA_BASE,grau));
+            let id_pet = pet_no_grau(PET_BASE,grau);
+            let esperado = (grau >= 2).then_some((grau,1,0));
+            assert_eq!(peca(equipamento(&e),MONTARIA),esperado);
+            assert_eq!(peca(pet(id_pet,None),PET),esperado);
+            let mut inst = crate::items::ItemInstance::vazia_de_grau(grau);
+            inst.tier=4; inst.refinement=12;
+            e.montaria_inst=Some(inst);
+            e.weapon=Some(ESPADA_E_ESCUDO);
+            e.weapon_inst=Some(crate::items::ItemInstance::vazia_de_grau(3));
+            let salvo = serde_json::to_string(&e).unwrap();
+            let e: Equipment = serde_json::from_str(&salvo).unwrap();
+            assert_eq!(peca(equipamento(&e),MONTARIA),(grau>=2).then_some((grau,4,10)));
+            assert_eq!(peca(equipamento(&e),0),Some((3,1,0)));
+            assert_eq!(peca(pet(id_pet,Some(&inst)),PET),(grau>=2).then_some((grau,4,10)));
+        }
+        assert_eq!(pet(0,None),0);
+    }
+
     #[test]
     fn pecas_independentes_e_intensidade_limitada() {
         let bits = 3 | (1 << 5) | ((4 | (3 << 3) | (3 << 5)) << 16);

@@ -20,6 +20,7 @@ mod bolsa;
 mod colecao;
 mod craft_ui;
 mod dungeon_ui;
+mod dungeon_recompensas;
 mod nivel_ui;
 mod recompensas_ui;
 mod efeitos;
@@ -561,6 +562,11 @@ async fn main() {
         novidades::previa().await;
         return;
     }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_AURAS_ANIMAIS").is_ok() {
+        auras::previa_animais(&vox).await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_AURAS").is_ok() {
         auras::previa(&vox).await;
         return;
@@ -607,6 +613,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_OFICINA").is_ok() {
         craft_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_DUNGEON_RECOMPENSAS").is_ok() {
+        dungeon_ui::previa_recompensas().await;
         return;
     }
     #[cfg(debug_assertions)]

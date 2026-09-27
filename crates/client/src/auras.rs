@@ -83,6 +83,31 @@ pub fn personagem(bits: u64, mats: &[Mat4; crate::rig::N], armas: &[(&str, Mat4)
     por(bits, 6, mats[0], vec3(0.0, -0.015, 0.0), vec3(0.27, 0.07, 0.17), fase+5.0, perto);
     FILA.with(|f| { for e in &mut f.borrow_mut()[inicio..] { e.distancia = distancia; } });
 }
+/// A aura usa o mesmo tronco animado e a mesma escala do animal desenhado.
+pub fn animal(bits: u64, slot: usize, mat: Mat4, bicho: &crate::bicho::Bicho, modelo: &str, distancia: f32, id: u32) {
+    if distancia > 38.0 || shared::auras::peca(bits, slot).is_none() { return; }
+    let limites = LIMITES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let chave = format!("animal/{modelo}");
+        if let Some(limites) = cache.get(&chave) { return Some(*limites); }
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
+        for v in bicho.pecas.iter().filter(|p| p.junta == crate::bicho::Junta::Tronco)
+            .flat_map(|p| &p.malhas).flat_map(|m| &m.vertices) {
+            min = min.min(v.position); max = max.max(v.position);
+        }
+        if !min.is_finite() { return None; }
+        let limites = ((min+max)*0.5, ((max-min)*0.5+Vec3::splat(0.06)).max(Vec3::splat(0.1)));
+        cache.insert(chave,limites);
+        Some(limites)
+    });
+    if let Some((centro, raio)) = limites {
+        let inicio = FILA.with(|f| f.borrow().len());
+        por(bits,slot,mat,centro,raio,id as f32*0.618+7.0,distancia<18.0);
+        FILA.with(|f| { for e in &mut f.borrow_mut()[inicio..] { e.distancia=distancia; } });
+    }
+}
+
 fn quad(mesh: &mut Mesh, p: [Vec3;4], cor: Color) {
     let b = mesh.vertices.len() as u16;
     for position in p { mesh.vertices.push(Vertex { position, uv: Vec2::ZERO, color: cor.into(), normal: Vec4::ZERO }); }
@@ -196,5 +221,48 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             rt.texture.get_texture_data().export_png("/tmp/tempest-auras.png");
         }
         next_frame().await;
+    }
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa_animais(vox: &crate::vox::VoxCache) {
+    let solido = crate::render3d::material_solido();
+    for montaria in [true,false] {
+        let mut world = crate::world::World::default();
+        let mut metas = Vec::new(); let mut estados = Vec::new();
+        for i in 0..4u32 {
+            let grau=i as u8+2;
+            let mut inst=shared::ItemInstance::vazia_de_grau(grau); inst.tier=i as u8+1; inst.refinement=12;
+            let (kind,tag,bits,flags) = if montaria {
+                let id=shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE,grau);
+                let mut e=shared::Equipment::default(); e.montaria=Some(id); e.montaria_inst=Some(inst);
+                (id,shared::EntityTag::Player,shared::auras::equipamento(&e),shared::ent_flags::MONTADO)
+            } else {
+                let id=shared::item_id::pet_no_grau(shared::item_id::PET_BASE,grau);
+                (id,shared::EntityTag::Pet,shared::auras::pet(id,Some(&inst)),0)
+            };
+            metas.push(shared::EntityMeta {pk:Default::default(),auras:bits,id:shared::EntityId(i+1),tag,name:None,hp_max:100,faction:None,kind,nivel:20,desafio:None,aparencia:0});
+            let x=(i as f32-1.5)*if montaria {4.2} else {1.8};
+            estados.push(shared::EntityState::quantize(shared::EntityId(i+1),::glam::Vec2::new(x,0.),::glam::Vec2::ZERO,100,flags));
+        }
+        world.apply(metas,estados,&[]);
+        let rt=render_target(1280,800);
+        for frame in 0..60 {
+            world.tick(1./60.,&|_,_|0.);
+            for e in world.ents.values_mut() { e.yaw=0.4; }
+            let mut vista=crate::render3d::Vista::nova(Vec2::ZERO,0.,0.,0.8,0.,&|_,_|0.);
+            vista.cam.position=if montaria {vec3(0.,6.,-16.)} else {vec3(0.,2.8,-6.5)};
+            vista.cam.target=vec3(0.,if montaria {1.3} else {0.35},0.);
+            vista.cam.render_target=Some(rt.clone());
+            set_camera(&vista.cam); clear_background(Color::from_rgba(15,20,29,255));
+            draw_plane(Vec3::ZERO,vec2(24.,24.),None,Color::from_rgba(27,35,42,255));
+            gl_use_material(&solido);solido.set_uniform("Recorte",Vec3::ZERO);
+            crate::render3d::draw_entities(&mut world,vox,None,&vista);gl_use_default_material();
+            let mut hud=Camera2D::from_display_rect(Rect::new(0.,0.,1280.,800.));hud.render_target=Some(rt.clone());set_camera(&hud);
+            draw_text(if montaria {"AURAS DE MONTARIAS"} else {"AURAS DE PETS"},30.,45.,30.,WHITE);
+            draw_text("Verde T1 +12 / Azul T2 +12 / Roxo T3 +12 / Laranja T4 +12",30.,77.,22.,WHITE);
+            if frame==59 {unsafe{get_internal_gl().flush();}rt.texture.get_texture_data().export_png(if montaria {"/tmp/tempest-montarias-auras.png"}else{"/tmp/tempest-pets-auras.png"});}
+            next_frame().await;
+        }
     }
 }

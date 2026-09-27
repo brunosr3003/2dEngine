@@ -1,3 +1,12 @@
+27/09/2026 — Recompensas de dungeons e auras de animais
+
+Recompensas antes de entrar
+O menu Dungeons ganhou a aba Recompensas. Selecione a dungeon e o estágio para ver os drops possíveis do boss, o baú de conclusão e os bônus da primeira vitória. Os drops do boss vêm do catálogo ativo do servidor. A lista tem ícones e rolagem por mouse ou toque.
+A primeira conclusão mostra se ainda está disponível ou já foi concluída naquele estágio. O bônus semanal mostra se a conta já o recebeu nesta semana. A estreia concede um equipamento aleatório e uma chave; o bônus semanal concede outro equipamento. As recompensas de primeira vitória vão para o Correio ao vencer com entrada/recompensa disponível.
+
+Auras de montarias e pets
+Montarias e os três pets equipados agora têm aura da própria criatura, com a cor da raridade e intensidade de tier/refinamento, como os equipamentos. O efeito acompanha o corpo animado, volta ao entrar no jogo e atualiza sem tirar e recolocar o item. Montarias antigas sem instância também usam a cor correta. Itens comuns continuam sem aura, seguindo a regra dos equipamentos.
+
 27/09/2026 — Grupo, XP e ações de jogadores
 
 XP em grupo

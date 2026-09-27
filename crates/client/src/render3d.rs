@@ -1922,7 +1922,9 @@ fn desenha_personagem(
     }
     let sela = match montaria {
         Some((m, s, b)) => {
-            desenha_montaria(e, m, s, b, p);
+            let matriz = desenha_montaria(e, m, s, b, p);
+            crate::auras::animal(e.meta.auras, shared::auras::MONTARIA, matriz, b, m.bicho,
+                if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0);
             let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
             // A sela e' o LOMBO DO MODELO vezes a escala da especie, e nao um
             // numero escrito na tabela: numero a mao nao acompanha a escala, e
@@ -2481,6 +2483,11 @@ fn desenha_bicho(
             draw_mesh_mat_tinta(m, &mat, tinta);
         }
     }
+    if !morto {
+        if let Some((modelo,_)) = crate::bicho::do_pet(e.meta.tag,e.meta.kind) {
+            crate::auras::animal(e.meta.auras,shared::auras::PET,tronco,b,modelo,p.distance(vista.cam.target),e.meta.id.0);
+        }
+    }
     crate::bicho::rastro(&entrada, &b.anat).map(|r| (patas, r))
 }
 
@@ -2492,7 +2499,7 @@ fn desenha_montaria(
     grau: u8,
     b: &crate::bicho::Bicho,
     p: Vec3,
-) {
+) -> Mat4 {
     let vel = e.andar * shared::PLAYER_SPEED * shared::montarias::velocidade(grau);
     // A fase do cavaleiro anda com a DISTANCIA, mas dividida pela passada de
     // GENTE; o bicho tem passada de outro tamanho. Converter pela razao entre
@@ -2511,7 +2518,7 @@ fn desenha_montaria(
         e.fase,
         get_time() as f32,
         e.meta.id.0 as f32,
-    );
+    )
 }
 
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.
@@ -2782,7 +2789,7 @@ pub fn desenha_bicho_montaria(
     passada: f32,
     tempo: f32,
     semente: f32,
-) {
+) -> Mat4 {
     let entrada = crate::bicho::Entrada {
         passada,
         vel,
@@ -2816,6 +2823,7 @@ pub fn desenha_bicho_montaria(
             draw_mesh_mat_tinta(malha, &mat, tinta);
         }
     }
+    tronco
 }
 
 /// O rastro das garras: tres riscos finos acompanhando o arco, por cima de um

@@ -573,6 +573,14 @@ impl GameWorld {
             mesa::Onde::Sala(id) => self.mesa.sala(id).map(|s| self.dg_sala_net(s)),
             _ => None,
         };
+        // Antes do empréstimo da sessão: o catálogo acompanha o hot-reload.
+        let drops: std::collections::HashMap<u16, Vec<u16>> = dg::CONTEUDOS.iter().map(|c| {
+            let mut itens = crate::economy::com_config(|cfg| cfg.itens_possiveis_do_mob(c.chefe));
+            itens.extend(super::chefes::itens_do_chefe(c.chefe).into_iter().filter(|(_, chance)| *chance > 0.0).map(|(id, _)| id));
+            itens.sort_unstable();
+            itens.dedup();
+            (c.id, itens)
+        }).collect();
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
@@ -589,6 +597,10 @@ impl GameWorld {
                     cadeados: (1..=dg::estagios(c))
                         .map(|e| dg::cadeado(c, e, nivel, poder, liberado, tem_selo))
                         .collect(),
+                    primeiras_concluidas: (1..=dg::estagios(c)).map(|e| s.dungeon.vitorias(c.id,e) > 0).collect(),
+                    semanais_recebidas: (1..=dg::estagios(c)).map(|e|
+                        s.conta_dungeon.semana == dg::semana(unix_agora()) && s.conta_dungeon.primeiras.contains(&(c.id,e))).collect(),
+                    drops_chefe: drops.get(&c.id).cloned().unwrap_or_default(),
                     vitorias: (1..=dg::estagios(c))
                         .map(|e| s.dungeon.vitorias(c.id, e))
                         .sum(),
@@ -1753,6 +1765,34 @@ impl GameWorld {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn menu_recompensas_preserva_estagio_e_reseta_apenas_a_semana() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        let sid = SessionId(([127,0,0,1],19882).into());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.logged_in = true;
+        s.dungeon.registrar_vitoria(10,1);
+        // O estado deve continuar correto depois de salvar e recarregar.
+        s.dungeon = serde_json::from_str(&serde_json::to_string(&s.dungeon).unwrap()).unwrap();
+        s.conta_dungeon.virar(dg::semana(unix_agora()));
+        s.conta_dungeon.primeira_da_semana(10,2);
+        for nova_semana in [false,true] {
+            if nova_semana { w.sessions.get_mut(&sid).unwrap().conta_dungeon.semana -= 1; }
+            w.dg_enviar_estado(sid);
+            let mut conteudos = None;
+            while let Ok(msg) = rx.try_recv() {
+                if let ServerMessage::Dungeon { aviso: Aviso::Estado { conteudos: c, .. } } = msg { conteudos = Some(c); }
+            }
+            let c = conteudos.unwrap().into_iter().find(|c| c.id == 10).unwrap();
+            assert_eq!(&c.primeiras_concluidas[..2], &[true,false]);
+            assert_eq!(&c.semanais_recebidas[..2], &[false,!nova_semana]);
+            assert!(c.drops_chefe.contains(&shared::item_id::GOLD));
+        }
+    }
 
     #[test]
     fn tirar_item_so_tira_se_tiver_tudo() {

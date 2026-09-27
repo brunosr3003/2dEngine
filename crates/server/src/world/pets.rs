@@ -24,6 +24,7 @@ pub struct PetTag {
     pub slot: shared::EquipSlot,
     /// item_id do pet: especie e grau saem dele.
     pub item_id: u16,
+    pub auras: u64,
     /// Saque que ele esta' buscando agora.
     pub alvo: Option<EntityId>,
     /// (saque, ate' quando ignorar) — bolsa cheia na ultima tentativa.
@@ -103,6 +104,19 @@ impl GameWorld {
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
         }
+        // A instância do item pode mudar sem trocar o id (tier/refino).
+        // Reenvia a meta para todos que enxergam o pet, inclusive o dono.
+        let mut alterados = Vec::new();
+        for (_, (net, pet)) in self.ecs.query_mut::<(&NetId, &mut PetTag)>() {
+            let aura = self.sessions.get(&pet.dono).and_then(|s|
+                s.equipment.pets().into_iter().find(|(slot,_,_)| *slot == pet.slot))
+                .map_or(0, |(_,id,inst)| id.map_or(0, |id| shared::auras::pet(id,inst.as_ref())));
+            if pet.auras != aura { pet.auras = aura; alterados.push(net.0); }
+        }
+        for s in self.sessions.values_mut() {
+            for id in &alterados { s.last_sent.remove(id); }
+        }
+
     }
 
     fn nasce_pet(&mut self, sid: SessionId, slot: shared::EquipSlot, item_id: u16, instancia: u32) {
@@ -124,6 +138,7 @@ impl GameWorld {
                 dono: sid,
                 slot,
                 item_id,
+                auras: 0,
                 alvo: None,
                 desistencias: Vec::new(),
             },
@@ -387,6 +402,42 @@ mod testes {
         s.entity_id = EntityId(900);
         s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
         (w, sid)
+    }
+
+    #[test]
+    fn auras_dos_tres_pets_chegam_no_snapshot_e_atualizam_sem_reequipar() {
+        let (mut w,sid) = mundo();
+        let (tx,mut rx) = mpsc::unbounded_channel();
+        w.sessions.get_mut(&sid).unwrap().handle.to_client=tx;
+        let e = &mut w.sessions.get_mut(&sid).unwrap().equipment;
+        e.pet=Some(shared::item_id::pet_no_grau(shared::item_id::PET_BASE,2));
+        e.pet2=Some(shared::item_id::pet_no_grau(shared::item_id::PET_BASE,3));
+        e.pet3=Some(shared::item_id::pet_no_grau(shared::item_id::PET_BASE,4));
+        // Simula o equipamento que veio do save no login.
+        let salvo=serde_json::to_string(e).unwrap();
+        *e=serde_json::from_str(&salvo).unwrap();
+        w.sincroniza_pets();
+        w.send_snapshots();
+        let mut pets=Vec::new();
+        while let Ok(msg)=rx.try_recv() {
+            if let ServerMessage::Snapshot{snapshot}=msg {
+                pets.extend(snapshot.entered.into_iter().filter(|m|m.tag==shared::EntityTag::Pet));
+            }
+        }
+        assert_eq!(pets.len(),3);
+        for p in &pets { assert_eq!(shared::auras::peca(p.auras,shared::auras::PET),Some((shared::pets::de_item(p.kind).unwrap().1,1,0))); }
+        let mut inst=shared::ItemInstance::vazia_de_grau(3); inst.tier=4; inst.refinement=12;
+        w.sessions.get_mut(&sid).unwrap().equipment.pet2_inst=Some(inst);
+        w.sincroniza_pets(); w.send_snapshots();
+        let mut alterados=Vec::new();
+        while let Ok(msg)=rx.try_recv() {
+            if let ServerMessage::Snapshot{snapshot}=msg {
+                alterados.extend(snapshot.entered.into_iter().filter(|m|m.tag==shared::EntityTag::Pet));
+            }
+        }
+        assert_eq!(alterados.len(),1);
+        assert_eq!(shared::auras::peca(alterados[0].auras,shared::auras::PET),Some((3,4,10)));
+        assert_eq!(w.ecs.query::<&PetTag>().iter().count(),3,"refinar não duplica pets");
     }
 
     fn poe_saque(w: &mut GameWorld, pos: Vec2, item_id: u16, qty: u32) -> EntityId {

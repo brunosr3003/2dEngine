@@ -944,6 +944,21 @@ pub fn peca_garantida(c: &Conteudo, estagio: u8, rng: &mut dyn FnMut() -> f32) -
     sortear_peca(g, nivel, rng(), rng())
 }
 
+/// Graus possíveis da peça garantida, exatamente como `peca_garantida`.
+pub fn graus_da_primeira(c: &Conteudo, estagio: u8) -> Vec<Grau> {
+    let nivel = nivel_do_estagio(c, estagio);
+    let (_, dist) = tabela_de_peca(c.tipo, nivel, estagio);
+    let teto = teto_de_grau(nivel);
+    let mut graus = Vec::new();
+    for (i, peso) in dist.into_iter().enumerate() {
+        if peso == 0 { continue; }
+        let g = Grau::TODOS[i].min(teto);
+        let g = g.acima().unwrap_or(g).min(teto);
+        if !graus.contains(&g) { graus.push(g); }
+    }
+    graus
+}
+
 // ─────────────────────────────── rede ───────────────────────────────
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1016,6 +1031,12 @@ pub struct ConteudoEstado {
     /// Um por estagio: `None` = aberto.
     pub cadeados: Vec<Option<Cadeado>>,
     pub vitorias: u32,
+    /// Uma entrada por estágio; a estreia é controlada por personagem.
+    pub primeiras_concluidas: Vec<bool>,
+    /// A primeira vitória semanal é controlada por conta.
+    pub semanais_recebidas: Vec<bool>,
+    /// Catálogo efetivo do servidor: tabela ativa + saque extra do chefe.
+    pub drops_chefe: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1149,6 +1170,21 @@ mod testes {
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             (s >> 11) as f32 / (1u64 << 53) as f32
+        }
+    }
+
+    #[test]
+    fn previa_da_primeira_cobre_o_sorteio_real_em_todos_os_estagios() {
+        for c in CONTEUDOS {
+            for e in 1..=estagios(c) {
+                let previstos = graus_da_primeira(c,e);
+                assert!(!previstos.is_empty());
+                for seed in 0..200 {
+                    let premio = peca_garantida(c,e,&mut rng(seed));
+                    assert!(previstos.contains(&premio.peca.unwrap().0));
+                    assert!((item_id::ESPADA_E_ESCUDO..=item_id::CINTO).contains(&premio.item_id));
+                }
+            }
         }
     }
 
