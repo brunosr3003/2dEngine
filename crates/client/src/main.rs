@@ -25,6 +25,7 @@ mod recompensas_ui;
 mod efeitos;
 mod energia_vfx;
 mod entrada;
+mod novidades;
 mod desktop;
 mod evolucao_skills;
 mod ficha_ui;
@@ -368,6 +369,7 @@ struct Jogo {
     cam_altura_vel: f32,
     /// Fila de digitacao. Ver `entrada` — a repeticao de tecla passa por aqui.
     teclado: entrada::Teclado,
+    novidades: novidades::Novidades,
     /// Quanto o jogador inclinou A MAIS do que o zoom pediu, em radianos.
     ///
     /// Guardar o DESVIO e nao o angulo e' o que deixa o automatico e a mao
@@ -478,6 +480,13 @@ struct Jogo {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    // Atalhos do Windows podem iniciar com outra pasta de trabalho.
+    #[cfg(target_os = "windows")]
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(pasta) = exe.parent().filter(|p| p.join("assets").is_dir()) {
+            std::env::set_current_dir(pasta).expect("pasta de recursos do aplicativo");
+        }
+    }
     // Finder não inicia o app na pasta dos assets.
     #[cfg(target_os = "macos")]
     if let Ok(exe) = std::env::current_exe() {
@@ -542,6 +551,10 @@ async fn main() {
         vox.load_bicho(nome, altura).await;
     }
 
+    if std::env::var("MMO_PREVIA_NOVIDADES").is_ok() {
+        novidades::previa().await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_AURAS").is_ok() {
         auras::previa(&vox).await;
         return;
@@ -729,6 +742,7 @@ async fn main() {
         cam_altura: f32::MIN,
         cam_altura_vel: 0.0,
         teclado: entrada::Teclado::novo(),
+        novidades: novidades::Novidades::default(),
         cam_pitch_ajuste: 0.0,
         mouse_camera: desktop::ArrastoCamera::default(),
         gesto_camera: gesto_camera::GestoCamera::default(),
@@ -6352,6 +6366,7 @@ impl Jogo {
 
     fn tela_servidores(&mut self) {
         ui::fundo();
+        if self.novidades.desenha() { return; }
         let r = ui::painel(560.0, 460.0, "escolha o servidor");
         let cx = r.x + r.w * 0.5;
 
@@ -6637,6 +6652,8 @@ impl Jogo {
     }
 
     fn tela_login(&mut self) {
+        ui::fundo();
+        if self.novidades.desenha() { return; }
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
         // o "lembrar de mim" valer a pena — lembrar só o nome de usuário
         // ainda deixaria a senha pra digitar no celular.
@@ -6652,7 +6669,6 @@ impl Jogo {
             self.conectar();
             return;
         }
-        ui::fundo();
         // Cresceu duas vezes: 440 -> 480 pelo "lembrar de mim", 480 -> 540
         // pelo "criar conta". Cada linha nova empurra o resto, e é por isso
         // que as posições viraram `layout_do_login` com teste.

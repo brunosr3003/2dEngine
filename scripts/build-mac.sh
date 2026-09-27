@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/check-release-notes.py
 [[ $(uname -s) == Darwin ]] || { echo 'Execute este script no Mac.' >&2; exit 1; }
 export PATH="$HOME/.cargo/bin:$PATH"
 export MMO_API_PADRAO="${MMO_API_PADRAO:-mmo.brunji.com.br:80}"

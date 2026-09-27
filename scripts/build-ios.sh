@@ -19,6 +19,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+python3 scripts/check-release-notes.py
 export PATH="$HOME/.cargo/bin:$PATH"
 
 ENV_FILE="${TEMPEST_ENV:-$HOME/MMORPG/.env}"

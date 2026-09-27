@@ -1,0 +1,11 @@
+26/09/2026 — Controles e correções
+
+Controles para computador
+WASD ou setas movem o personagem. Segure o botão direito do mouse e arraste para girar a câmera; use a roda para ajustar o zoom.
+As teclas 1, 2 e 3 usam habilidades, incluindo o teclado numérico. Espaço ataca, R pula e G defende.
+
+Correções gráficas
+Corrigida a falha no shader da água que podia fechar o jogo ao carregar os personagens após o login no Mac. A correção também está nas builds Windows e Android.
+
+Novidades na entrada
+Os patch notes agora aparecem na entrada quando há novidades. Você pode reabrir esta lista pelo botão “Novidades” nas telas de servidor e login.

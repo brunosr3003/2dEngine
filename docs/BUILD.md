@@ -224,3 +224,22 @@ APK chama essa verificação antes de compilar Rust e para se houver erro.
 Requer `glslangValidator` no PATH. A revisão de 26/09 validou os três pares
 do cliente (mundo/sombras, água e efeitos/auras) e os dois pares internos da
 macroquad 0.4.16. Isso detecta erros GLSL; não substitui testes em cada driver.
+
+### Patch notes obrigatórios nas builds do cliente
+
+Antes de distribuir uma mudança, escreva a data e as novidades para o jogador
+em `docs/PATCHNOTES.txt`. Depois rode `python3 scripts/check-release-notes.py --seal`
+e versione o texto e `docs/patchnotes-release.json` junto com o código.
+Os scripts Android, iOS, Mac e Windows bloqueiam o empacotamento se o cliente
+ou os assets mudaram sem notas atualizadas. Rebuild do mesmo código reutiliza
+as mesmas notas. O texto fica embutido no app e pode ser reaberto nas telas
+de servidor e login pelo botão **Novidades**.
+
+Windows: `bash scripts/build-windows.sh` gera `target/windows/MMORPG-Windows.zip`
+com executável x64 e assets. Requer o target Rust `x86_64-pc-windows-gnu` e MinGW.
+O script aceita MinGW no PATH ou em `~/.local/share/tempest-mingw/usr/bin`.
+
+A página pública de download está em `web/download-site/`; ela não precisa de
+bundler e usa `/download-assets/` para estilos e imagens. Os links apontam aos
+pacotes em `/downloads/`. A conta/cadastro anterior deve ser preservada como
+`conta.html` ao atualizar a página inicial em produção.

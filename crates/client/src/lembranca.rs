@@ -51,7 +51,16 @@ pub(crate) fn caminho() -> Option<PathBuf> {
     {
         return None;
     }
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(target_os = "windows")]
+    {
+        let mut p = PathBuf::from(std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("APPDATA"))?);
+        p.push("Tempest");
+        std::fs::create_dir_all(&p).ok()?;
+        p.push("prefs");
+        return Some(p);
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android", target_os = "windows")))]
     {
         let mut p = match std::env::var_os("XDG_DATA_HOME") {
             Some(d) if !d.is_empty() => PathBuf::from(d),

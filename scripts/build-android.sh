@@ -14,9 +14,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+python3 scripts/check-release-notes.py
 
 # Compilar Rust não verifica GLSL: drivers Android podem recusar o shader.
 python3 scripts/check-shaders.py
+python3 scripts/check-water-shaders.py
 
 export JAVA_HOME="${JAVA_HOME:-$HOME/opt/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
