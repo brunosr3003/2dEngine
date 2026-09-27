@@ -78,17 +78,17 @@ pub async fn init(realm: &PgPool) -> Result<()> {
     let url = std::env::var("DATABASE_URL_CENTRAL").unwrap_or_default();
     if url.trim().is_empty() {
         tracing::warn!(
-            "mercado: DATABASE_URL_CENTRAL nao setada — mercado global DESLIGADO neste processo"
+            "market: DATABASE_URL_CENTRAL not set — global market OFF in this process"
         );
         return Ok(());
     }
     match abrir_central(&url).await {
         Ok(pool) => {
             let _ = CENTRAL.set(pool);
-            tracing::info!("mercado: banco central conectado — mercado global ligado");
+            tracing::info!("market: central database connected — global market on");
         }
         Err(e) => {
-            tracing::error!("mercado: banco central nao abriu ({e:#}) — mercado global DESLIGADO")
+            tracing::error!("market: central database did not open ({e:#}) — global market OFF")
         }
     }
     Ok(())
@@ -979,10 +979,10 @@ pub fn spawn_relay(realm: PgPool, tx: mpsc::UnboundedSender<IncomingMessage>) {
                 _ = tokio::time::sleep(Duration::from_secs(3)) => {}
             }
             if let Err(e) = enviar_saida(&realm, &central, &tx).await {
-                tracing::warn!("mercado: envio ao central falhou (tenta de novo): {e:#}");
+                tracing::warn!("market: send to central failed (will retry): {e:#}");
             }
             if let Err(e) = avisar_entregues(&realm, &central).await {
-                tracing::warn!("mercado: aviso de entregas falhou (tenta de novo): {e:#}");
+                tracing::warn!("market: delivery notice failed (will retry): {e:#}");
             }
         }
     });
@@ -1005,7 +1005,7 @@ pub async fn enviar_saida(
             Err(e) => {
                 // Nunca marca como enviada: e' item/gold de alguem. Fica pra
                 // correcao a' mao.
-                tracing::error!("mercado: payload ilegivel em mercado_saida {id}: {e}");
+                tracing::error!("market: unreadable payload in mercado_saida {id}: {e}");
                 continue;
             }
         };

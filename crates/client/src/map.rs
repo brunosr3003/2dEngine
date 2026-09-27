@@ -53,7 +53,7 @@ impl Map {
             std::env::var("MMO_MAP").unwrap_or_else(|_| format!("data/maps/{}.json", self.name));
         match shared::mapfile::MapFile::load(&path) {
             Ok(mf) => {
-                println!("[map] carregado de {path}: {}x{}", mf.width, mf.height);
+                println!("[map] loaded from {path}: {}x{}", mf.width, mf.height);
                 self.width = mf.width;
                 self.height = mf.height;
                 self.tiles = mf.tiles;

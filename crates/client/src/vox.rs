@@ -546,7 +546,7 @@ async fn ler_vox(rel: &str) -> Option<Vec<u8>> {
     match ler_asset(&caminho).await {
         Ok(bytes) => Some(bytes),
         Err(e) => {
-            eprintln!("[vox] falta {caminho}: {e}");
+            eprintln!("[vox] missing {caminho}: {e}");
             None
         }
     }
@@ -620,7 +620,7 @@ impl VoxCache {
             self.meshes
                 .insert(format!("{name}_{sufixo}"), mesh(&m, scale));
         }
-        println!("[vox] {name}: {} cores", variantes.len());
+        println!("[vox] {name}: {} colours", variantes.len());
         Some(())
     }
 
@@ -637,7 +637,7 @@ impl VoxCache {
         let (m, pega) = modelo_de_arma(&bytes)?;
         let malhas = mesh_na_origem(&m, scale, pega);
         let tris = malhas.iter().map(|x| x.indices.len() / 3).sum::<usize>();
-        println!("[vox] arma {name}: {tris} triangulos");
+        println!("[vox] weapon {name}: {tris} triangles");
         self.armas.insert(name.to_string(), malhas);
         Some(tris)
     }
@@ -754,7 +754,7 @@ impl VoxCache {
         };
         let n = out.len();
         println!(
-            "[vox] {name}: {n} pecas, {tris} triangulos, lombo {lombo:.2} de {altura:.2} ({:.0}%)",
+            "[vox] {name}: {n} parts, {tris} triangles, ridge {lombo:.2} of {altura:.2} ({:.0}%)",
             lombo / altura * 100.0
         );
         self.bichos
@@ -832,12 +832,12 @@ impl VoxCache {
             // peca do corpo aparece por baixo e o personagem sai meio-armado,
             // sem aviso nenhum.
             if nome.is_empty() {
-                eprintln!("[vox] {name}: peca SEM NOME descartada — salve o objeto com nome no MagicaVoxel");
+                eprintln!("[vox] {name}: UNNAMED part discarded — save the object with a name in MagicaVoxel");
                 continue;
             }
             let Some(p) = pivo(&nome) else {
                 eprintln!(
-                    "[vox] {name}: peca '{nome}' fora do contrato do rig — nao sera desenhada"
+                    "[vox] {name}: part '{nome}' is outside the rig contract — it will not be drawn"
                 );
                 continue;
             };
@@ -849,7 +849,7 @@ impl VoxCache {
             mapa.insert(slot.to_string(), ms);
         }
         let n = mapa.len();
-        println!("[vox] {name}: {n} pecas, {tris} triangulos");
+        println!("[vox] {name}: {n} parts, {tris} triangles");
         self.rigs.insert(name.to_string(), mapa);
         Some(n)
     }
@@ -884,7 +884,7 @@ impl VoxCache {
                 .max_by_key(|m| m.cells.iter().filter(|c| **c != 0).count())?;
             let meshes = mesh(&m, escala(&m));
             let tris: usize = meshes.iter().map(|x| x.indices.len() / 3).sum();
-            println!("[vox] {name}: {} malha(s), {tris} triangulos", meshes.len());
+            println!("[vox] {name}: {} mesh(es), {tris} triangles", meshes.len());
             self.meshes.insert(name.to_string(), meshes);
         }
         self.meshes.get(name)

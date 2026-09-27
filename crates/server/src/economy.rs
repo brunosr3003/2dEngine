@@ -360,7 +360,7 @@ pub fn spawn_hot_reload(pool: PgPool) {
                     tracing::info!("economy hot-reload: v{v}");
                 }
                 Ok(false) => {}
-                Err(e) => tracing::warn!("economy reload falhou: {e}"),
+                Err(e) => tracing::warn!("economy reload failed: {e}"),
             }
         }
     });
@@ -2173,7 +2173,7 @@ mod testes_do_porte_dos_novos {
 
         for d in ARQUIPELAGO.iter() {
             for k in kinds_do_bioma(d.bioma).iter().chain(kinds_de_praia_do_bioma(d.bioma)) {
-                let m = kind_inicial(*k).expect("kind conhecido");
+                let m = kind_inicial(*k).expect("known kind");
                 if bosque.iter().any(|b| b.kind == m.kind) {
                     continue; // ja' calibrado
                 }

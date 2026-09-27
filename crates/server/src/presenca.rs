@@ -254,7 +254,7 @@ pub fn spawn_estado(
             Ok(feitos) => {
                 let _ = tx.send(IncomingMessage::Presenca(Evento::Estado { sid, feitos }));
             }
-            Err(e) => tracing::warn!("presenca: estado falhou: {e:#}"),
+            Err(e) => tracing::warn!("attendance: state failed: {e:#}"),
         }
     });
 }
@@ -282,7 +282,7 @@ pub fn spawn_resgate(
                 feitos: Some(feitos),
             },
             Err(e) => {
-                tracing::warn!("presenca: resgate de {personagem} falhou: {e:#}");
+                tracing::warn!("attendance: claim for {personagem} failed: {e:#}");
                 Evento::Recusado {
                     sid,
                     texto: "Calendário indisponível agora. Tente de novo.".into(),
@@ -306,7 +306,7 @@ pub fn spawn_ao_logar(
         {
             Ok(p) => p,
             Err(e) => {
-                tracing::warn!("presenca: pendentes de {personagem} falhou: {e:#}");
+                tracing::warn!("attendance: pending for {personagem} failed: {e:#}");
                 Vec::new()
             }
         };
@@ -319,7 +319,7 @@ pub fn spawn_ao_logar(
                     feitos,
                 }));
             }
-            Err(e) => tracing::warn!("presenca: estado de {personagem} falhou: {e:#}"),
+            Err(e) => tracing::warn!("attendance: state for {personagem} failed: {e:#}"),
         }
     });
 }

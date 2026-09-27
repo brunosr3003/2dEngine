@@ -478,7 +478,7 @@ pub fn publicar(w: &GameWorld, ultima: &mut f32) {
     let texto: Arc<str> = match serde_json::to_string(&p) {
         Ok(t) => t.into(),
         Err(e) => {
-            tracing::warn!("panoptico: nao consegui serializar: {e}");
+            tracing::warn!("panoptico: could not serialise: {e}");
             return;
         }
     };

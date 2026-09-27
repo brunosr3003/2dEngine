@@ -19,7 +19,7 @@ mod pixel;
 use anyhow::Result;
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
@@ -167,8 +167,22 @@ fn err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ErrorRes
     (status, Json(ErrorRes { error: msg.into() }))
 }
 
+/// Em que lingua responder a ESTE pedido.
+///
+/// O `Accept-Language` do navegador (ou do cliente do jogo) e' a unica pista
+/// que existe no momento do cadastro — a conta ainda nao existe, e coluna de
+/// idioma em `accounts` seria migracao pra guardar o que o cabecalho ja' diz.
+/// Cabecalho ausente ou lingua que o jogo nao fala caem no portugues.
+pub fn idioma_do_pedido(h: &HeaderMap) -> shared::idioma::Idioma {
+    h.get("accept-language")
+        .and_then(|v| v.to_str().ok())
+        .and_then(shared::idioma::Idioma::do_codigo)
+        .unwrap_or_default()
+}
+
 async fn register(
     State(s): State<AppState>,
+    cabecalhos: HeaderMap,
     Json(req): Json<RegisterReq>,
 ) -> Result<(StatusCode, Json<RegisterRes>), (StatusCode, Json<ErrorRes>)> {
     let username = req.username.trim();
@@ -225,7 +239,8 @@ async fn register(
             } else if let Some(mail) = s.email.as_ref() {
                 match contas::emite(&s.pool, id, contas::TIPO_CONFIRMACAO).await {
                     Ok(t) => {
-                        if let Err(e) = mail.confirmacao(&email, username, &t).await {
+                        let lang = idioma_do_pedido(&cabecalhos);
+                        if let Err(e) = mail.confirmacao(&email, username, &t, lang).await {
                             tracing::warn!("cadastro {id}: confirmacao nao saiu: {e:?}");
                         }
                     }

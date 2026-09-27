@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
             .execute(&pool)
             .await?;
         }
-        println!("loja {} ← {} itens", sid, items.len());
+        println!("shop {} ← {} items", sid, items.len());
     }
 
     // buy_price dos itens do Nobre que podem estar sem preço (gema/colares).
@@ -92,6 +92,6 @@ async fn main() -> Result<()> {
     )
     .fetch_one(&pool)
     .await?;
-    println!("✓ lojas configuradas. economy_version → v{}", v);
+    println!("✓ shops configured. economy_version → v{}", v);
     Ok(())
 }

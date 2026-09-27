@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     )
     .execute(&pool)
     .await?;
-    tracing::info!("buy_price backfilled em {} items", updated.rows_affected());
+    tracing::info!("buy_price backfilled on {} items", updated.rows_affected());
 
     // 2. Lista todos itens ativos.
     let items: Vec<(i32,)> = sqlx::query_as("SELECT id FROM items WHERE active = TRUE ORDER BY id")
@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     .await?;
 
     tracing::info!(
-        "✓ {} novos itens adicionados ao shop=1 (total ativos: {}); economy v{}",
+        "✓ {} new items added to shop=1 ({} active in total); economy v{}",
         inserted,
         items.len(),
         v

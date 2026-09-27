@@ -24,6 +24,6 @@ async fn main() -> Result<()> {
     } else {
         sqlx::query("INSERT INTO social_staff(account_id,cargo) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET cargo=excluded.cargo").bind(conta).bind(&args[1]).execute(&pool).await?;
     }
-    println!("Conta do personagem {}: {}", args[0], args[1]);
+    println!("Account for character {}: {}", args[0], args[1]);
     Ok(())
 }

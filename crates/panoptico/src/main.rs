@@ -136,10 +136,12 @@ async fn main() -> anyhow::Result<()> {
     let p = |c: &str| auth.caminho(c);
     let mut app = axum::Router::new()
         .route(&p("/"), get(pagina))
+        .route(&p("/camera.js"), get(camera_js))
         .route(&p("/login"), get(login_form).post(login))
         .route(&p("/sair"), post(sair))
         .route(&p("/api/mundo"), get(mundo))
         .route(&p("/api/mapa/:zona"), get(mapa_png))
+        .route(&p("/api/terreno/:zona"), get(terreno_3d))
         .route(&p("/api/economia"), get(economia))
         .route(&p("/api/jogadores"), get(jogadores))
         .route(&p("/api/mercado"), get(mercado))
@@ -281,6 +283,10 @@ async fn sair(State(st): State<Estado>, headers: HeaderMap) -> Response {
 
 async fn pagina() -> Html<&'static str> {
     Html(include_str!("../estatico/index.html"))
+}
+
+async fn camera_js() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../estatico/camera.js"))
 }
 
 // ─────────────────────────────── canais ───────────────────────────────
@@ -596,6 +602,28 @@ async fn mapa_png(State(st): State<Estado>, Path(zona): Path<String>) -> impl In
     };
     st.mapas.write().await.insert(zona, png.clone());
     png_resposta(png)
+}
+
+async fn terreno_3d(
+    Path(zona): Path<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(def) = shared::terreno::def_da_zona(&zona) else {
+        return (StatusCode::NOT_FOUND, "zona desconhecida").into_response();
+    };
+    let pos = |nome: &str| -> i32 {
+        q.get(nome)
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0)
+            .clamp(-(def.raio_blocos as f32), def.raio_blocos as f32)
+            .round() as i32
+    };
+    let (x, z) = (pos("x"), pos("z"));
+    match tokio::task::spawn_blocking(move || mapa::recorte_3d(def, x, z)).await {
+        Ok(recorte) => axum::Json(recorte).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")).into_response(),
+    }
 }
 
 fn png_resposta(png: Arc<Vec<u8>>) -> Response {

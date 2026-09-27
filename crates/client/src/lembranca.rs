@@ -29,6 +29,15 @@ pub struct Prefs {
     pub sessao: Option<String>,
     /// O estado da caixinha "lembrar de mim".
     pub lembrar: bool,
+    /// O idioma da interface.
+    ///
+    /// Fica no APARELHO, e nao no personagem, por dois motivos. O primeiro e'
+    /// que a tela de login tem que estar traduzida ANTES de haver personagem
+    /// — se o idioma viesse do servidor, quem joga em ingles veria a primeira
+    /// tela em portugues, toda vez. O segundo e' que a escolha e' de quem
+    /// segura o aparelho: a mesma conta num celular emprestado nao deve levar
+    /// o idioma de outra pessoa.
+    pub idioma: shared::idioma::Idioma,
 }
 
 /// Onde o arquivo mora, por plataforma.
@@ -118,7 +127,12 @@ pub fn esquece_a_sessao() {
 }
 
 fn codifica(v: &Prefs) -> String {
-    let mut s = format!("usuario={}\nlembrar={}\n", v.usuario, v.lembrar as u8);
+    let mut s = format!(
+        "usuario={}\nlembrar={}\nidioma={}\n",
+        v.usuario,
+        v.lembrar as u8,
+        v.idioma.codigo()
+    );
     if let Some(t) = v.sessao.as_ref().filter(|_| v.lembrar) {
         s.push_str(&format!("sessao={t}\n"));
     }
@@ -138,6 +152,10 @@ fn decodifica(texto: &str) -> Prefs {
             "usuario" => v.usuario = valor.trim().to_string(),
             "lembrar" => v.lembrar = valor.trim() == "1",
             "sessao" if !valor.trim().is_empty() => v.sessao = Some(valor.trim().to_string()),
+            // Codigo desconhecido (arquivo de uma versao futura, ou editado na
+            // mao) cai no padrao em vez de falhar: preferencia estragada nao
+            // e' motivo pra nao abrir o jogo.
+            "idioma" => v.idioma = shared::idioma::Idioma::do_codigo(valor).unwrap_or_default(),
             _ => {}
         }
     }
@@ -159,6 +177,7 @@ mod testes {
             usuario: "brunji".into(),
             sessao: Some("abc123".into()),
             lembrar: true,
+            idioma: shared::idioma::Idioma::Pt,
         };
         assert_eq!(decodifica(&codifica(&v)), v);
     }
@@ -172,6 +191,7 @@ mod testes {
             usuario: "brunji".into(),
             sessao: Some("token".into()),
             lembrar: true,
+            idioma: shared::idioma::Idioma::Pt,
         };
         let texto = codifica(&v);
         assert!(
@@ -183,6 +203,27 @@ mod testes {
         // comparação — que é o aviso.
     }
 
+    /// O idioma vai e volta, e o desconhecido não derruba o resto.
+    ///
+    /// O caso que motiva: arquivo escrito por uma versão que fala uma língua
+    /// que esta não fala. Ler `idioma=fr` tem que dar português e MANTER o
+    /// usuário — perder o nome de quem entra por causa de um idioma é trocar
+    /// um defeito pequeno por um grande.
+    #[test]
+    fn o_idioma_vai_e_volta_e_o_desconhecido_cai_no_padrao() {
+        let v = Prefs {
+            usuario: "brunji".into(),
+            sessao: None,
+            lembrar: false,
+            idioma: shared::idioma::Idioma::En,
+        };
+        assert_eq!(decodifica(&codifica(&v)).idioma, shared::idioma::Idioma::En);
+
+        let estranho = decodifica("usuario=brunji\nidioma=fr\n");
+        assert_eq!(estranho.idioma, shared::idioma::Idioma::Pt);
+        assert_eq!(estranho.usuario, "brunji");
+    }
+
     /// Sem "lembrar", a sessão não é gravada nem lida.
     #[test]
     fn sem_lembrar_a_sessao_nao_fica() {
@@ -190,6 +231,7 @@ mod testes {
             usuario: "brunji".into(),
             sessao: Some("abc123".into()),
             lembrar: false,
+            idioma: shared::idioma::Idioma::Pt,
         };
         let texto = codifica(&v);
         assert!(!texto.contains("abc123"), "sessão gravada sem permissão");
@@ -203,6 +245,7 @@ mod testes {
             usuario: "a".into(),
             sessao: Some("YWJjZGVmZw==".into()),
             lembrar: true,
+            idioma: shared::idioma::Idioma::Pt,
         };
         assert_eq!(
             decodifica(&codifica(&v)).sessao.as_deref(),

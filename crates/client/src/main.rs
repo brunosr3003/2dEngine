@@ -491,7 +491,7 @@ async fn main() {
     #[cfg(target_os = "windows")]
     if let Ok(exe) = std::env::current_exe() {
         if let Some(pasta) = exe.parent().filter(|p| p.join("assets").is_dir()) {
-            std::env::set_current_dir(pasta).expect("pasta de recursos do aplicativo");
+            std::env::set_current_dir(pasta).expect("app resources folder");
         }
     }
     // Finder não inicia o app na pasta dos assets.
@@ -500,7 +500,7 @@ async fn main() {
         if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
             let resources = contents.join("Resources");
             if resources.join("assets").is_dir() {
-                std::env::set_current_dir(&resources).expect("pasta de recursos do aplicativo");
+                std::env::set_current_dir(&resources).expect("app resources folder");
             }
         }
     }
@@ -557,6 +557,26 @@ async fn main() {
     for (nome, altura) in bicho::BICHOS {
         vox.load_bicho(nome, altura).await;
     }
+
+    // O IDIOMA ENTRA ANTES DE QUALQUER TELA — inclusive antes das prévias.
+    //
+    // Estava depois, junto do resto da leitura de preferências, e as prévias
+    // (que terminam em `return`) nunca chegavam nele: a captura em inglês saía
+    // IDÊNTICA à em português, byte por byte. Prévia é o jeito de conferir
+    // tradução sem abrir o jogo, então ela é justamente quem mais precisa.
+    //
+    // A escolha de servidor e a tela de entrar também já são texto: trocar o
+    // idioma depois do login faria a primeira tela aparecer em português para
+    // quem joga em inglês.
+    //
+    // `MMO_IDIOMA` ganha do arquivo — é como o teste e a captura de tela pedem
+    // uma língua sem mexer nas preferências de ninguém.
+    shared::idioma::definir(
+        std::env::var("MMO_IDIOMA")
+            .ok()
+            .and_then(|v| shared::idioma::Idioma::do_codigo(&v))
+            .unwrap_or_else(|| lembranca::carrega().idioma),
+    );
 
     if std::env::var("MMO_PREVIA_NOVIDADES").is_ok() {
         novidades::previa().await;
@@ -1419,6 +1439,9 @@ impl Jogo {
                     usuario: self.usuario.clone(),
                     sessao: self.token_login.clone(),
                     lembrar: self.lembrar,
+                    // O idioma corrente, e nao o do arquivo: se o jogador
+                    // trocou antes de entrar, e' essa escolha que fica.
+                    idioma: shared::idioma::atual(),
                 });
                 self.personagens = chars;
                 self.personagens
@@ -1706,6 +1729,7 @@ impl Jogo {
             }
             ServerMessage::PartyUpdate { members } => {
                 self.social.grupo = members;
+                self.missoes.membros_grupo = self.social.grupo.len();
                 self.social.convite = None;
             }
             ServerMessage::MercadoLista {
@@ -3117,7 +3141,7 @@ impl Jogo {
         // Minimo curto pra nao piscar; teto pra nunca prender o jogador.
         if (pronto && passou >= 0.35) || passou >= 10.0 {
             println!(
-                "[carregando] acabou em {passou:.2} s ({})",
+                "[loading] finished in {passou:.2} s ({})",
                 if pronto {
                     "chao pronto"
                 } else {
@@ -5535,6 +5559,33 @@ impl Jogo {
             Some((_, _, n, _)) if self.ficha.nivel == 0 => *n,
             _ => self.ficha.nivel,
         };
+        // A ILHA MÁGICA, ANTES DE TODO O RESTO DO HUD.
+        //
+        // O dono: "o hud onde fica o contador da ilha mágica e o adicionar
+        // tempo ou sair da ilha fica na frente de todo outro hud do jogo, não
+        // quero isso; tem que ficar atrás de tudo". Desenhando primeiro, tudo
+        // que vem depois passa por cima dela — e o painel da ilha (janela, e
+        // janela é pra ficar em cima) continua no fim do quadro.
+        //
+        // A ZONA MANDA na tarja: o `dentro` do estado vem do processo da ilha e
+        // fica velho quando o jogador sai (a saída é handoff, e na zona de
+        // origem ninguém manda estado novo). Sem isto a tarja sobrevivia à
+        // saída, com o relógio correndo.
+        self.magica.atualiza_zona(self.mapa.zona());
+        // E o layout reserva a faixa dela, senão os avisos ficariam por baixo.
+        hud_layout::define_tarja_magica(self.magica.dentro(agora_unix));
+        // A faixa de PvP vale na ilha inteira, e não só com tempo valendo: quem
+        // entrou precisa saber a regra antes de apanhar por ela.
+        hud_layout::define_faixa_pvp(self.magica.na_ilha());
+        // Com painel grande aberto ela nem desenha: ficar atrás de uma janela
+        // que cobre a tela é ficar invisível, e os botões dela continuariam
+        // pegando o clique por baixo dela.
+        if !painel {
+            self.magica.desenha_faixa_pvp(self.world.self_pos());
+            if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
+                self.envia(ClientMessage::Magica { pedido });
+            }
+        }
         // Painel grande aberto: o HUD some, como no MIR4 — fica a EXP e a faixa.
         if !painel {
             if hud::draw_hud(
@@ -5678,6 +5729,8 @@ impl Jogo {
                 // missao dela ocupa este mesmo lugar): as missoes normais nao
                 // aparecem.
                 if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() {
+                    // Quem mede a caixa precisa saber o tamanho do grupo.
+                    self.missoes.membros_grupo = self.social.grupo.len();
                     let clique = {
                         let slots = &self.bolsa.slots;
                         let nivel = self.ficha.nivel.max(1);
@@ -5702,7 +5755,9 @@ impl Jogo {
                             }
                         }
                         Some(missoes::NoRastreador::Missao(id)) => self.iniciar_auto_missao(id),
-                        Some(missoes::NoRastreador::Diario) => self.abrir_diario(),
+                        // A aba so' troca o conteudo da caixa. Abrir o diario
+                        // daqui era o que o dono NAO queria.
+                        Some(missoes::NoRastreador::Aba(grupo)) => self.missoes.aba_grupo = grupo,
                         // As setas andam a janela de três.
                         Some(missoes::NoRastreador::Rolar(pra_frente)) => {
                             let d = &mut self.missoes.desloca_rastreador;
@@ -5714,10 +5769,26 @@ impl Jogo {
                         }
                         None => {}
                     }
+                    // A ABA DO GRUPO, dentro da mesma caixa: o rastreador
+                    // desenhou a moldura e as abas, aqui vai o conteudo.
+                    if self.missoes.aba_grupo {
+                        let corpo = self.missoes.corpo_do_rastreador();
+                        if let Some(acao) =
+                            social_hud::grupo_no_corpo(corpo, &self.social.grupo, &self.world)
+                        {
+                            self.acao_social_alvo(acao);
+                        }
+                    }
                 }
             }
-            if let Some(acao) = self.social_hud.grupo(&z, &self.social.grupo, &self.world) {
-                self.acao_social_alvo(acao);
+            // Dentro da dungeon nao ha' rastreador (a linha da missao da
+            // instancia ocupa o lugar dele), e sem rastreador nao ha' aba: ali
+            // o grupo continua no painel solto, ao lado dela.
+            self.social_hud.solto = self.dungeon.na_instancia();
+            if self.social_hud.solto {
+                if let Some(acao) = self.social_hud.grupo(&z, &self.social.grupo, &self.world) {
+                    self.acao_social_alvo(acao);
+                }
             }
             let alvo = self
                 .alvo
@@ -5881,6 +5952,18 @@ impl Jogo {
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
                 Some(config_interface::Mudanca::Sombras(modo)) => {
                     self.config_interface.define_sombras(modo)
+                }
+                // TROCA NA HORA: o proximo quadro ja' desenha na lingua nova,
+                // porque a traducao acontece ao desenhar. Nada recarrega, nada
+                // reconecta — e o que estiver na tela muda junto.
+                Some(config_interface::Mudanca::Idioma(lang)) => {
+                    shared::idioma::definir(lang);
+                    // Salva na hora: o jogador que troca o idioma e fecha o
+                    // jogo sem entrar em nenhum personagem ainda quer a
+                    // escolha de volta na proxima abertura.
+                    let mut prefs = crate::lembranca::carrega();
+                    prefs.idioma = lang;
+                    crate::lembranca::salva(&prefs);
                 }
                 None => {}
             }
@@ -6430,30 +6513,14 @@ impl Jogo {
                 self.envia(ClientMessage::Colonia { pedido });
             }
         }
-        // A ILHA MAGICA: o painel (quando aberto) e a tarja do relogio
-        // (sempre que se esta' la' dentro).
-        let agora_unix = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)) as i64;
+        // A ILHA MAGICA: aqui so' o PAINEL (quando aberto), que e' janela e vem
+        // por cima. A tarja do relogio desenha no comeco do quadro, atras de
+        // todo o resto do HUD.
         if let Some(pedido) = self.magica.desenha(get_time(), agora_unix) {
             self.envia(ClientMessage::Magica { pedido });
         }
-        // A ZONA MANDA na tarja: o `dentro` do estado vem do processo da
-        // ilha e fica velho quando o jogador sai (a saída é handoff, e na
-        // zona de origem ninguém manda estado novo). Sem isto a tarja
-        // sobrevivia à saída, com o relógio correndo.
-        self.magica.atualiza_zona(self.mapa.zona());
-        // E o layout reserva a faixa dela ANTES de desenhar, senão os avisos
-        // ficariam por baixo do painel.
-        hud_layout::define_tarja_magica(self.magica.dentro(agora_unix));
-        // A faixa de PvP vale na ilha inteira, e não só com tempo valendo:
-        // quem entrou precisa saber a regra antes de apanhar por ela.
-        hud_layout::define_faixa_pvp(self.magica.na_ilha());
-        self.magica.desenha_faixa_pvp(self.world.self_pos());
-        if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
-            self.envia(ClientMessage::Magica { pedido });
-        }
+        // A TARJA e a faixa de PvP desenham no COMECO do quadro (mais acima):
+        // aqui fica so' o painel, que e' janela e janela vem por cima.
         // Loja de cash e janela de montarias (Menu).
         self.loja_tp.define_personagem(self.guarda_roupa_salvo.aparencia, self.bolsa.equip.weapon.unwrap_or(0));
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {

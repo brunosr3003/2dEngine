@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
                     xp: 0,
                     ouro: 0,
                 });
-                eprintln!("[{nome}] parou: {e:#}");
+                eprintln!("[{nome}] stopped: {e:#}");
             }
         }));
     }
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
         let _ = x.await;
     }
     println!("{}", t.resumo());
-    println!("trilha completa em {}", c.trilha);
+    println!("full trail in {}", c.trilha);
     Ok(())
 }
 
@@ -1952,14 +1952,14 @@ async fn decide(
                     let porque = eu
                         .ultima_recusa
                         .clone()
-                        .unwrap_or_else(|| "sem aviso do servidor".into());
+                        .unwrap_or_else(|| "no notice from the server".into());
                     // O ÚLTIMO LAÇO SEM REDE.
                     //
                     // Isto soltava o destino e deixava o ciclo recomeçar:
                     // pede destino, anda, trava, pede de novo — para sempre.
                     // Um bot ficou assim a 24 unidades do Mestre de Missões,
                     // com o servidor traçando rota e o corpo sem sair do
-                    // lugar ("sem aviso do servidor" = o A* achou caminho).
+                    // lugar ("no notice from the server" = o A* achou caminho).
                     //
                     // Três voltas e a missão sai da frente, como todo o resto.
                     passo_nao_deu(eu, t, nome, d.quest, "travou_no_caminho", format!(

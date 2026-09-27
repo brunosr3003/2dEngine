@@ -19,6 +19,7 @@ pub mod dungeon;
 pub mod escada;
 pub mod forja;
 pub mod historia;
+pub mod idioma;
 pub mod acessorios;
 pub mod items;
 pub mod loja;

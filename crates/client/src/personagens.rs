@@ -835,7 +835,7 @@ impl Personagens {
                 std::sync::atomic::AtomicBool::new(false);
             if !AVISOU.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 eprintln!(
-                    "[previa] rig {} nao carregou — veja as linhas [vox] falta",
+                    "[preview] rig {} did not load — see the [vox] missing lines",
                     render3d::RIG_CORPO
                 );
             }
@@ -869,7 +869,7 @@ impl Personagens {
                 std::sync::atomic::AtomicBool::new(false);
             if !AVISOU_VP.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 eprintln!(
-                    "[previa] viewport vazio: area {area:?} escala {escala} altura {alto_px}"
+                    "[preview] empty viewport: area {area:?} scale {escala} height {alto_px}"
                 );
             }
             ui::texto_centro(
@@ -1244,6 +1244,9 @@ impl LayoutCriacao {
 
 /// Como `texto_linhas`, mas para antes de `limite` (y). Devolve o y da ultima linha.
 fn texto_linhas_ate(t: &str, x: f32, y: f32, w: f32, tam: u16, cor: Color, limite: f32) -> f32 {
+    // Traduz antes de quebrar: a quebra desenha PEDACOS, e pedaco nao casa com
+    // verbete (ver `hud_estilo::desenha_texto`).
+    let t = &shared::idioma::tr(t);
     let mut linha = String::new();
     let mut y = y;
     for palavra in t.split_whitespace() {
@@ -1267,6 +1270,9 @@ fn texto_linhas_ate(t: &str, x: f32, y: f32, w: f32, tam: u16, cor: Color, limit
     y
 }
 fn texto_linhas(t: &str, x: f32, y: f32, w: f32, tam: u16, cor: Color) {
+    // Traduz antes de quebrar: a quebra desenha PEDACOS, e pedaco nao casa com
+    // verbete (ver `hud_estilo::desenha_texto`).
+    let t = &shared::idioma::tr(t);
     let mut linha = String::new();
     let mut y = y;
     for palavra in t.split_whitespace() {

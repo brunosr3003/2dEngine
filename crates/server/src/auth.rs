@@ -30,7 +30,7 @@ fn fila() -> &'static Semaphore {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| (num_cpus().max(2) / 2).max(1));
-        tracing::info!("fila de login: {n} verificacoes em paralelo");
+        tracing::info!("login queue: {n} checks in parallel");
         Semaphore::new(n)
     })
 }
@@ -194,7 +194,7 @@ pub async fn emite_sessao(pool: &PgPool, account_id: i64) -> Option<String> {
         // A tabela e' criada pelo `web`. Sem ela, nao ha' o que lembrar — e
         // isso nao pode derrubar um login que ja' deu certo.
         Err(e) => {
-            tracing::warn!("nao consegui emitir sessao: {e:?}");
+            tracing::warn!("could not issue a session: {e:?}");
             None
         }
     }

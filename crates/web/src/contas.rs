@@ -10,7 +10,7 @@ use anyhow::Result;
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     Json,
 };
@@ -174,7 +174,11 @@ pub struct EsqueciReq {
 /// Responder 404 pra e-mail que nao existe transformaria esta rota num
 /// verificador de cadastro: qualquer um descobriria quem tem conta aqui. A
 /// resposta e' a mesma nos dois casos, e o e-mail so' sai se houver conta.
-pub async fn esqueci(State(st): State<Contas>, Json(req): Json<EsqueciReq>) -> StatusCode {
+pub async fn esqueci(
+    State(st): State<Contas>,
+    cabecalhos: HeaderMap,
+    Json(req): Json<EsqueciReq>,
+) -> StatusCode {
     let email = req.email.trim().to_lowercase();
     let achou: Option<(i64, String, bool)> = sqlx::query_as(
         "SELECT id, username, google_sub IS NOT NULL FROM accounts WHERE lower(email) = $1",
@@ -192,7 +196,8 @@ pub async fn esqueci(State(st): State<Contas>, Json(req): Json<EsqueciReq>) -> S
         } else {
             match emite(&st.pool, id, TIPO_RESET).await {
                 Ok(t) => {
-                    if let Err(e) = mail.reset(&email, &usuario, &t).await {
+                    let lang = crate::idioma_do_pedido(&cabecalhos);
+                    if let Err(e) = mail.reset(&email, &usuario, &t, lang).await {
                         tracing::warn!("nao consegui mandar reset pra conta {id}: {e:?}");
                     }
                 }

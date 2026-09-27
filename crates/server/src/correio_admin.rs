@@ -106,7 +106,7 @@ pub fn resgatar(
             Ok(()) => "Anexos recebidos e salvos.".to_string(),
             Err(e) => {
                 if e.downcast_ref::<sqlx::Error>().is_some() {
-                    tracing::error!("correio resgate: {e:#}");
+                    tracing::error!("mail claim: {e:#}");
                     "Não foi possível concluir o resgate. Tente novamente.".into()
                 } else {
                     e.to_string()

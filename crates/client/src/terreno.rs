@@ -1572,7 +1572,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
         NIVEL_DO_MAR,
     );
     t.atualiza(eu, 5, 400);
-    println!("[previa colonia] {} pedacos vivos", t.pedacos_vivos());
+    println!("[colony preview] {} live chunks", t.pedacos_vivos());
 
     let apoio = t.altura(eu.x, eu.y);
     // O ASSENTAMENTO: a casa do jogador e a de cada morador do nivel.
@@ -1590,7 +1590,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
         next_frame().await;
     }
     println!(
-        "[previa colonia] {} morador(es): {}",
+        "[colony preview] {} resident(s): {}",
         moradores.len(),
         moradores
             .iter()
@@ -1617,7 +1617,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
             rt.texture
                 .get_texture_data()
                 .export_png(&format!("{saida}/colonia-{k}.png"));
-            println!("[previa colonia] quadro {k}: {n} pedacos desenhados");
+            println!("[colony preview] frame {k}: {n} chunks drawn");
             next_frame().await;
         }
     }
@@ -1646,7 +1646,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
         let t0 = std::time::Instant::now();
         let mut tp = Terreno::da_colonia(plato);
         println!(
-            "[previa colonia] painel: montar Terreno levou {:?}",
+            "[colony preview] panel: building Terrain took {:?}",
             t0.elapsed()
         );
         let r = Rect::new(0.0, 0.0, 340.0, 270.0);
@@ -1666,7 +1666,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
             );
             if q % 8 == 0 || q == 39 {
                 println!(
-                    "[previa colonia] painel quadro {q:2}: desenhou={ok} pedacos={}",
+                    "[colony preview] panel frame {q:2}: drew={ok} chunks={}",
                     tp.pedacos_vivos()
                 );
             }
@@ -1730,7 +1730,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
                 .export_png(&format!("{saida}/vista-{k}.png"));
             next_frame().await;
         }
-        println!("[previa colonia] vista {k}: giro {giro:.2} elev {elev:.2} zoom {zoom:.1}");
+        println!("[colony preview] view {k}: spin {giro:.2} elev {elev:.2} zoom {zoom:.1}");
     }
     // QUATRO MOMENTOS DO CICLO, e não quatro quadros seguidos.
     //
@@ -1771,7 +1771,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
         for m in &onde {
             let p = crate::render3d::rotina_do_morador(m, 0, adianta);
             println!(
-                "[previa colonia] t={adianta:.0}s {} em ({:.0},{:.0}) andar={:.2} trabalhando={}",
+                "[colony preview] t={adianta:.0}s {} at ({:.0},{:.0}) walk={:.2} working={}",
                 m.oficio.nome(),
                 p.onde.x,
                 p.onde.y,
@@ -1816,7 +1816,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
             .get_texture_data()
             .export_png(&format!("{saida}/maquete.png"));
         println!(
-            "[previa colonia] maquete do painel: desenhou={ok}, {} morador(es)",
+            "[colony preview] panel model: drew={ok}, {} resident(s)",
             onde.len()
         );
         next_frame().await;

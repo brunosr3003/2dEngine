@@ -41,7 +41,7 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     .execute(pool)
     .await?;
     tracing::info!(
-        "[quests] schema pronto ({} defs estáticas)",
+        "[quests] schema ready ({} static defs)",
         quests::QUESTS.len()
     );
     Ok(())
@@ -233,7 +233,7 @@ pub fn garantir_historia(active: &mut Vec<CharQuest>) -> Option<u16> {
             && historia::indice(c.quest_id).is_none();
         if fantasma {
             tracing::warn!(
-                "passo {} nao existe mais na historia — descartado; o marcador reassume",
+                "step {} no longer exists in the story — discarded; the marker takes over",
                 c.quest_id
             );
         }

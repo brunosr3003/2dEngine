@@ -1,3 +1,26 @@
+27/09/2026 — O jogo em inglês
+
+Idioma no menu
+Menu › Sistema › Interface tem agora a escolha de idioma: Português ou English. A troca vale na hora, sem reiniciar e sem reconectar — o que está na tela muda junto. A escolha fica salva no aparelho, então ela vale também na tela de servidor e na de entrar, antes de qualquer login.
+
+O que está traduzido
+HUD, menus, bolsa, ficha, loja, missões, história, nomes e descrições de item, avisos do servidor e os e-mails da sua conta. São cerca de 2.300 frases. O que ainda não tiver tradução aparece em português, sem erro e sem buraco na tela: falta de verbete nunca quebra nada. Esta tela de Novidades é uma das que continuam em português.
+
+Nada muda pra quem joga em português
+A escolha começa em português e o servidor não mudou de língua: ele continua mandando português, e é o seu jogo que traduz ao desenhar. Por isso os dois idiomas convivem no mesmo servidor, na mesma dungeon e no mesmo grupo.
+
+27/09/2026 — Grupo na caixa das missões
+
+O grupo tinha uma caixa só dele, flutuando ao lado das missões. Agora ele é uma aba: a caixa da esquerda tem Missões e Grupo, e o clique troca entre as duas. Cada membro é uma linha compacta, com o nome e a vida dentro da própria barra, e clicar num deles o seleciona. Sem grupo, a aba vira o convite.
+
+Clicar em Missões deixou de abrir o menu de todas as missões — ele só volta pra aba das missões de agora. A lista completa continua no Menu.
+
+Dentro da dungeon, onde a linha da missão da instância ocupa esse canto, o grupo continua no painel ao lado dela.
+
+27/09/2026 — O relógio da Ilha Mágica saiu da frente
+
+A tarja com o tempo restante, o botão de somar tempo e o de sair da ilha desenhava por cima de todo o resto da interface, inclusive de menus abertos. Agora ela desenha atrás: qualquer painel passa por cima dela, e com um menu grande aberto ela sai da frente por completo — inclusive os botões, que antes ainda pegavam o toque por baixo do menu.
+
 27/09/2026 — Atualização obrigatória
 
 Esta versão é obrigatória: as versões anteriores do jogo não conectam mais. As telas de criação e de refino passaram a mostrar os atributos pela régua nova de equipamento (a escada), e só a versão nova mostra os mesmos números que o servidor aplica. Se o jogo avisar “Atualização necessária”, use o botão para abrir o site e baixar a versão nova.

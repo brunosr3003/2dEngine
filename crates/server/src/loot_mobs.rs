@@ -110,7 +110,7 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
             .execute(&mut *tx)
             .await?;
-        tracing::info!("Loot dos caranguejos semeado");
+        tracing::info!("Crab loot seeded");
     }
     // O bestiario das outras ilhas: loot dos kinds 10-15, e a faxina dos
     // kinds do MAR (20-24), que ficaram orfaos quando o Mar Aberto foi
@@ -140,7 +140,7 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!(
-            "Bestiario por ilha semeado; {kinds} kinds do mar e {orfaos} linhas de loot removidos"
+            "Per-island bestiary seeded; {kinds} sea kinds and {orfaos} loot rows removed"
         );
     }
     // Chaves de craft (Escama, Garra, Chifre, Couro) so' de chefe e
@@ -175,12 +175,12 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!(
-            "Chaves de craft tiradas de {mobs} linhas de mob e {pedras} de coleta: agora so' chefe"
+            "Crafting keys removed from {mobs} mob rows and {pedras} gathering rows: bosses only now"
         );
     }
     tx.commit().await?;
     if nova {
-        tracing::info!("Loot dos mobs atualizado: cobre, materiais e pocoes; sem equipamentos");
+        tracing::info!("Mob loot updated: copper, materials and potions; no gear");
     }
     Ok(())
 }

@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         .await?;
 
     tracing::info!(
-        "✓ bruno setado: char xp={} (L100), 8 profs com {} xp (L100), 100 SP, learned_skills limpo",
+        "✓ bruno set: char xp={} (L100), 8 profs with {} xp (L100), 100 SP, learned_skills cleared",
         char_xp,
         prof_xp,
     );

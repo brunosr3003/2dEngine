@@ -42,6 +42,13 @@
   .mudo, .ruim { color: var(--ruim); }
   .bom { color: var(--bom); }
   #tela { position: absolute; inset: 0; cursor: crosshair; }
+  #camera3d { position: absolute; inset: 0; display: none; width: 100%; height: 100%; cursor: grab; }
+  #camera3d.ativa { display: block; }
+  #camera3d:active { cursor: grabbing; }
+  #camera-controles { position: absolute; right: 10px; top: 10px; z-index: 3; display: none; gap: 6px; align-items: center; }
+  #camera-controles.ativo { display: flex; }
+  #camera-aviso { position: absolute; left: 10px; bottom: 10px; z-index: 3; display: none; max-width: 75%; padding: 6px 10px; background: rgba(13,16,20,.86); border: 1px solid var(--linha); }
+  #camera-aviso.ativo { display: block; }
   #hud {
     position: absolute; left: 10px; top: 10px; z-index: 2;
     background: rgba(13,16,20,.82); border: 1px solid var(--linha);
@@ -132,6 +139,9 @@
 
 <main>
   <canvas id="tela"></canvas>
+  <canvas id="camera3d"></canvas>
+  <div id="camera-controles"><span id="camera-nome" class="tag"></span><span class="tag">relevo do jogo · personagens simplificados</span><button class="acao" id="camera-fechar">voltar ao mapa</button></div>
+  <div id="camera-aviso"></div>
   <div id="hud"></div>
 </main>
 
@@ -344,6 +354,7 @@
   </div>
 </div>
 
+<script src="camera.js"></script>
 <script>
 // ── O painel inteiro, sem framework ──────────────────────────────────────
 // Caminhos RELATIVOS: o painel pode morar em /panoptico/ atras do nginx.
@@ -366,6 +377,7 @@ const ctx = tela.getContext('2d');
 let mundo = { canais: [] };
 let canalAtivo = null;
 let selecionado = null;      // {tipo, id}
+let seguindo = null;         // {canal, id}; acompanha o retrato ao vivo
 const mapas = {};            // zona -> Image
 let cam = { x: 0, z: 0, escala: 0 };
 let arrasto = null;
@@ -475,13 +487,14 @@ function desenhaCanais() {
       <div class="sub">${r
         ? `${r.jogadores.length} jog · ${r.mobs.length} mobs · ${(r.instancias || []).length} dungeons${r.build ? ' · p' + r.build.protocolo : ''}${r.imortal ? ' · <span class="tag">imortal</span>' : ''}`
         : '<span class="mudo">sem retrato — canal mudo</span>'}</div>`;
-    d.onclick = () => { canalAtivo = c.id; selecionado = null; enquadra(); desenhaCanais(); mostraAba('mundo'); };
+    d.onclick = () => { canalAtivo = c.id; selecionado = null; seguindo = null; enquadra(); desenhaCanais(); mostraAba('mundo'); };
     el.appendChild(d);
   }
   if (!mundo.canais.length) el.innerHTML = '<div class="vazio">nenhum canal batendo</div>';
 }
 
 function enquadra() {
+  seguindo = null;
   const r = retrato();
   if (!r) return;
   cam.x = 0; cam.z = 0;
@@ -505,6 +518,7 @@ function paraMundo(px, pz) { return [(px - tela.width / 2) / cam.escala + cam.x,
 
 function quadro() {
   if (abaAtual !== 'mundo') return requestAnimationFrame(quadro);
+  if (cameraAtiva) return requestAnimationFrame(quadro);
   const dpr = devicePixelRatio || 1;
   const cx = tela.parentElement.clientWidth, cy = tela.parentElement.clientHeight;
   if (tela.width !== cx * dpr || tela.height !== cy * dpr) {
@@ -519,6 +533,14 @@ function quadro() {
     return requestAnimationFrame(quadro);
   }
   if (!cam.escala) enquadra();
+  if (seguindo) {
+    const j = r.jogadores.find(j => j.id === seguindo.id);
+    if (canalAtivo !== seguindo.canal || !j) {
+      seguindo = null;
+    } else {
+      cam.x = j.x; cam.z = j.z;
+    }
+  }
   const meio = r.raio_blocos * 0.5;
   const img = imagemDaZona(r.zona);
   if (img.complete && img.naturalWidth) {
@@ -607,6 +629,7 @@ addEventListener('mouseup', e => { if (arrasto && !arrasto.moveu && e.target ===
 addEventListener('mousemove', e => {
   if (!arrasto) return;
   if (Math.abs(e.clientX - arrasto.x) + Math.abs(e.clientY - arrasto.y) > 3) arrasto.moveu = true;
+  if (arrasto.moveu) seguindo = null;
   cam.x -= e.movementX * (devicePixelRatio || 1) / cam.escala;
   cam.z -= e.movementY * (devicePixelRatio || 1) / cam.escala;
 });
@@ -636,7 +659,20 @@ function clique(ev) {
   olha(r.jogadores, 'jogador');
   olha(r.mobs, 'mob');
   selecionado = melhor;
+  if (melhor?.tipo === 'jogador') seguirJogador(melhor.id);
+  else seguindo = null;
   desenhaDetalhe();
+}
+
+function seguirJogador(id) {
+  const j = retrato()?.jogadores.find(j => j.id === id);
+  if (!j) return;
+  seguindo = { canal: canalAtivo, id };
+  selecionado = { tipo: 'jogador', id };
+  cam.x = j.x; cam.z = j.z;
+  cam.escala = Math.max(cam.escala, 5);
+  mostraAba('mundo');
+  abrirCamera();
 }
 
 // ── detalhe ─────────────────────────────────────────────────────────────
@@ -688,11 +724,14 @@ function desenhaDetalhe() {
   const { e, tipo } = achado;
   const linhas = [];
   const campo = (k, v) => linhas.push(`<dt>${k}</dt><dd>${v}</dd>`);
-  campo('nome', `<b>${esc(e.nome)}</b> <span class="tag">${tipo}</span> <span class="tag">#${e.id}</span> <a href="#" onclick="selecionado=null;desenhaDetalhe();return false">canal</a>`);
+  campo('nome', `<b>${esc(e.nome)}</b> <span class="tag">${tipo}</span> <span class="tag">#${e.id}</span> <a href="#" onclick="fecharCamera();seguindo=null;selecionado=null;desenhaDetalhe();return false">canal</a>`);
   campo('estado', `<span class="tag">${esc(e.estado)}</span>`);
   campo('nível', e.nivel);
   campo('vida', barra(e.hp, e.hp_max, '#57c26a'));
   if (tipo === 'jogador') {
+    campo('ao vivo', cameraAtiva && seguindo?.id === e.id && seguindo.canal === canalAtivo
+      ? '<span class="bom">● câmera 3D ao vivo</span> · <button onclick="fecharCamera()">voltar ao mapa</button>'
+      : `<button onclick="seguirJogador(${e.id})">abrir câmera 3D</button>`);
     campo('mana', barra(e.mp, e.mp_max, '#4ea3ff'));
     campo('vigor', barra(e.stamina, e.stamina_max, '#d9b45a'));
     campo('conta / sessão', `${e.conta ?? '—'} · ${esc(e.sessao)}`);
@@ -734,7 +773,8 @@ window.irPara = (id, x, z) => {
   const e = [...r.jogadores, ...r.mobs].find(q => q.id === id);
   if (!e) return;
   selecionado = { tipo: r.jogadores.includes(e) ? 'jogador' : 'mob', id };
-  cam.x = e.x; cam.z = e.z;
+  if (r.jogadores.includes(e)) seguirJogador(id);
+  else { seguindo = null; cam.x = e.x; cam.z = e.z; }
   mostraAba('mundo');
   desenhaDetalhe();
 };
@@ -747,6 +787,7 @@ const PUXA = {
   correio: montaCorreio,
 };
 function mostraAba(nome) {
+  if (nome !== 'mundo') fecharCamera();
   if (nome !== 'mundo' && !PUXA[nome]) nome = 'mundo';
   abaAtual = nome;
   document.querySelectorAll('.aba[data-aba]').forEach(x => x.classList.toggle('ativa', x.dataset.aba === nome));
@@ -795,7 +836,7 @@ function desenhaJogadores() {
       const buffs = [['XP', j.buff_xp_s], ['For', j.buff_fortuna_s], ['Sor', j.buff_sorte_s]].filter(b => b[1] > 0).map(b => `${b[0]} ${dur(b[1])}`).join(' · ');
       const h = j.historia;
       return [
-        `${j.online ? '<span class="bom">●</span> ' : ''}<b>${esc(j.nome)}</b>${j.online ? ` <span class="tag">${esc(j.online)}</span>` : ''}`,
+        `${j.online ? '<span class="bom">●</span> ' : ''}${j.online ? `<button class="ver-jogador" data-nome="${esc(j.nome)}" data-canal="${esc(j.online)}">${esc(j.nome)}</button>` : `<b>${esc(j.nome)}</b>`}${j.online ? ` <span class="tag">${esc(j.online)}</span>` : ''}`,
         `${esc(j.usuario || '—')} <span style="color:var(--fraco)">#${j.conta}</span>`,
         j.nivel, num(j.ouro), esc(j.zona || '—'), j.online ? 'agora' : ha(j.visto),
         h ? `${esc(h.titulo)}${h.pronta ? ' <span class="tag">pronta</span>' : ''}<div class="pe" style="color:var(--fraco)">${esc(h.capitulo || '')} · ${h.concluidas} feitas</div>` : '—',
@@ -806,6 +847,17 @@ function desenhaJogadores() {
       ];
     }), [0, 1, 4, 6, 7, 8, 9, 10]);
 }
+document.getElementById('jog-lista').addEventListener('click', ev => {
+  const botao = ev.target.closest('.ver-jogador');
+  if (!botao) return;
+  const canal = mundo.canais.find(c => c.id === botao.dataset.canal &&
+    c.retrato?.jogadores.some(j => j.nome === botao.dataset.nome));
+  if (!canal) return;
+  canalAtivo = canal.id;
+  desenhaCanais();
+  const j = canal.retrato.jogadores.find(j => j.nome === botao.dataset.nome);
+  seguirJogador(j.id);
+});
 
 // ── economia ──────────────────────────────────────────────────────────
 let economia = null;

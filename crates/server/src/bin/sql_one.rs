@@ -11,7 +11,7 @@ use sqlx::postgres::PgPoolOptions;
 async fn main() -> Result<()> {
     let url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".into());
-    let sql = std::env::var("SQL").context("env SQL não setada")?;
+    let sql = std::env::var("SQL").context("env SQL not set")?;
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(&url)

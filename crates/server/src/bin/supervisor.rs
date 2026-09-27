@@ -101,8 +101,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(0.70);
 
     tracing::info!(
-        "servidor {realm}: canais {min}..{max}{}, {cap_canal} por canal (abre em {abrir_em}), teto do servidor {cap_realm}",
-        if unico { " (CANAL UNICO)" } else { "" }
+        "server {realm}: channels {min}..{max}{}, {cap_canal} per channel (opens at {abrir_em}), server cap {cap_realm}",
+        if unico { " (SINGLE CHANNEL)" } else { "" }
     );
 
     let pool: PgPool = PgPoolOptions::new().max_connections(2).connect(&db).await?;
@@ -119,7 +119,7 @@ async fn main() -> anyhow::Result<()> {
         canais.retain_mut(|c| match c.processo.try_wait() {
             Ok(Some(status)) => {
                 tracing::warn!(
-                    "canal {} morreu ({status}); sera' reaberto se preciso",
+                    "channel {} died ({status}); it will be reopened if needed",
                     c.numero
                 );
                 false
@@ -163,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
             match abrir(&bin, &realm, numero, porta, &host_base, &caminho, cap_canal, unico) {
                 Ok(processo) => {
                     tracing::info!(
-                        "canal {numero} aberto na porta {porta} (total {total} jogadores)"
+                        "channel {numero} opened on port {porta} ({total} players in total)"
                     );
                     canais.push(Canal {
                         numero,
@@ -173,7 +173,7 @@ async fn main() -> anyhow::Result<()> {
                     });
                 }
                 Err(e) => {
-                    tracing::error!("falha abrindo canal {numero}: {e}");
+                    tracing::error!("failed to open channel {numero}: {e}");
                     break;
                 }
             }
@@ -206,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
                 if sobra_vaga {
                     let mut c = canais.remove(i);
                     tracing::info!(
-                        "canal {} vazio ha {} ciclos; fechando",
+                        "channel {} empty for {} cycles; closing",
                         c.numero,
                         c.vazio_ha
                     );
@@ -215,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
                     let _ = c.processo.wait();
                 } else if canais[i].vazio_ha == fechar_apos {
                     tracing::info!(
-                        "canal {} esta' vazio, mas e' a unica vaga do servidor; mantendo aberto",
+                        "channel {} is empty, but it is the only slot on the server; keeping it open",
                         canais[i].numero
                     );
                 }
@@ -224,7 +224,7 @@ async fn main() -> anyhow::Result<()> {
 
         if total >= cap_realm {
             tracing::warn!(
-                "servidor {realm} no teto ({total}/{cap_realm}) — quem chegar entra na fila"
+                "server {realm} at capacity ({total}/{cap_realm}) — anyone arriving joins the queue"
             );
         }
     }

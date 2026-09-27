@@ -35,7 +35,7 @@ fn state(i: u32) -> EntityState {
 fn main() {
     let mbs = |b: usize| b as f64 * 30.0 / 1024.0 / 1024.0;
     println!(
-        "estado por entidade: {} bytes",
+        "state per entity: {} bytes",
         shared::protocol::encode(&state(0)).unwrap().len()
     );
     println!(

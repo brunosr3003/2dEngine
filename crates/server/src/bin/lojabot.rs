@@ -207,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
                 let Some(quadro) = quadro else { break };
                 let bytes = match quadro? { Message::Binary(b) => b.to_vec(), Message::Close(_) => break, _ => continue };
                 let Ok(msg) = shared::protocol::decode::<ServerMessage>(&bytes) else {
-                    if std::env::var("LJ_DEBUG").is_ok() { eprintln!("decode falhou ({} bytes)", bytes.len()); }
+                    if std::env::var("LJ_DEBUG").is_ok() { eprintln!("decode failed ({} bytes)", bytes.len()); }
                     continue;
                 };
                 if std::env::var("LJ_DEBUG").is_ok() && !matches!(msg, ServerMessage::Snapshot { .. }) {

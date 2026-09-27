@@ -1014,7 +1014,7 @@ pub fn material_solido() -> Material {
             ..Default::default()
         },
     )
-    .expect("shader do mundo")
+    .expect("world shader")
 }
 
 pub fn clear() {

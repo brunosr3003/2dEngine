@@ -124,7 +124,7 @@ async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
             Some("montarias_viraram_item_v1"),
         )
         .await?;
-        tracing::info!("migracao de montaria: {conta} recebeu {tp} TP de volta");
+        tracing::info!("mount migration: {conta} got {tp} TP back");
     }
     sqlx::query("DELETE FROM loja_posses WHERE produto LIKE 'montaria:%' OR produto LIKE 'skin:%'")
         .execute(pool)
@@ -136,7 +136,7 @@ async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
-    tracing::info!("migracao de montaria: {} conta(s) atendidas", gastos.len());
+    tracing::info!("mount migration: {} account(s) handled", gastos.len());
     Ok(())
 }
 

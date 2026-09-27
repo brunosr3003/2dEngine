@@ -55,6 +55,9 @@ pub enum Mudanca {
     EconomiaAuto(u16),
     EconomiaAgora,
     Sombras(Sombras),
+    /// O idioma da interface. Vale na hora e fica salvo no APARELHO — ver
+    /// `lembranca::Prefs::idioma`.
+    Idioma(shared::idioma::Idioma),
 }
 
 /// Em passos de 10%, dentro da faixa.
@@ -90,7 +93,8 @@ impl ConfigInterface {
         }
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
-            (500.0 * f).min(seguro.h - 16.0),
+            // 574 e nao 500: a fila do idioma entrou embaixo das sombras.
+            (574.0 * f).min(seguro.h - 16.0),
         );
         let r = Rect::new(
             seguro.center().x - w * 0.5,
@@ -249,6 +253,50 @@ impl ConfigInterface {
             estilo::SUAVE,
         );
 
+        // ── idioma ──
+        //
+        // Fica aqui, e nao numa tela propria, porque quem procura idioma
+        // procura em opcoes — e porque a fila e' igual a das sombras: duas
+        // escolhas exclusivas, uma marcada.
+        let yi = ys + 92.0 * f;
+        estilo::texto(r.x + 18.0 * f, yi, "Idioma do jogo", 14, estilo::SUAVE);
+        let atual_idioma = shared::idioma::atual();
+        let li = (r.w - 44.0 * f) / 2.0;
+        let idiomas: Vec<_> = shared::idioma::Idioma::TODAS
+            .iter()
+            .enumerate()
+            .map(|(i, &lang)| {
+                let b = Rect::new(
+                    r.x + 18.0 * f + i as f32 * (li + 8.0 * f),
+                    yi + 10.0 * f,
+                    li,
+                    42.0 * f,
+                );
+                estilo::cartao(b, b.contains(m), lang == atual_idioma);
+                // O nome de cada lingua NA PROPRIA LINGUA, e por isso fora do
+                // dicionario: quem procura ingles procura "English".
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 6.0 * f,
+                    lang.nome(),
+                    15,
+                    if lang == atual_idioma {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
+                (b, lang)
+            })
+            .collect();
+        estilo::texto(
+            r.x + 18.0 * f,
+            yi + 70.0 * f,
+            "Frase sem tradução aparece em português.",
+            11,
+            estilo::SUAVE,
+        );
+
         estilo::texto(
             r.x + 18.0 * f,
             r.y + r.h - 18.0 * f,
@@ -258,6 +306,9 @@ impl ConfigInterface {
         );
         if !clicou {
             return None;
+        }
+        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
+            return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
         }
         if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| b.contains(m)) {
             return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
@@ -436,6 +487,31 @@ impl ConfigInterface {
             13,
             estilo::SUAVE,
         );
+        // O idioma tambem no compacto: sem isso, celular em pe' com tela
+        // baixa nao teria como trocar de lingua.
+        estilo::texto(rx, r.y + 194.0 * f, "Idioma", 14, estilo::SUAVE);
+        let atual_idioma = shared::idioma::atual();
+        let iw = (col - 6.0 * f) / 2.0;
+        let idiomas: Vec<_> = shared::idioma::Idioma::TODAS
+            .iter()
+            .enumerate()
+            .map(|(i, &lang)| {
+                let b = Rect::new(rx + i as f32 * (iw + 6.0 * f), r.y + 204.0 * f, iw, 38.0 * f);
+                estilo::cartao(b, b.contains(m), lang == atual_idioma);
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 6.0 * f,
+                    lang.nome(),
+                    13,
+                    if lang == atual_idioma {
+                        estilo::OURO
+                    } else {
+                        estilo::TEXTO
+                    },
+                );
+                (b, lang)
+            })
+            .collect();
         estilo::texto(
             rx,
             r.y + 301.0 * f,
@@ -445,6 +521,9 @@ impl ConfigInterface {
         );
         if !clicou {
             return None;
+        }
+        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
+            return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
         }
         if let Some(&(_, modo)) = sombras.iter().find(|(b, _)| b.contains(m)) {
             return (modo != self.sombras).then_some(Mudanca::Sombras(modo));

@@ -32,7 +32,7 @@ fn material_com_depth(depth_write: bool) -> Material {
         depth_test: Comparison::LessOrEqual, depth_write,
         color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)),
         ..Default::default()
-    }, ..Default::default() }).expect("material emissivo das skills")
+    }, ..Default::default() }).expect("emissive material for skills")
 }
 
 pub fn duracao(id: u32) -> f32 {

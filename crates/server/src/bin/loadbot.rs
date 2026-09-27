@@ -67,7 +67,7 @@ async fn main() {
     let rampa: u64 = arg("--rampa-ms", "20").parse().expect("--rampa-ms");
 
     println!(
-        "subindo {n} bots por {secs}s em {} canal(is): {}",
+        "bringing up {n} bots for {secs}s on {} channel(s): {}",
         hosts.len(),
         hosts.join(", ")
     );
@@ -83,7 +83,7 @@ async fn main() {
             if let Err(e) = bot(url, user, senha, st.clone(), secs).await {
                 st.falhas.fetch_add(1, Ordering::Relaxed);
                 if st.falhas.load(Ordering::Relaxed) <= 3 {
-                    eprintln!("bot falhou: {e}");
+                    eprintln!("bot failed: {e}");
                 }
             }
         }));
@@ -123,11 +123,11 @@ async fn main() {
         "conectados      {}",
         stats.conectados.load(Ordering::Relaxed)
     );
-    println!("entraram        {dentro}");
+    println!("entered         {dentro}");
     println!("falhas          {}", stats.falhas.load(Ordering::Relaxed));
-    println!("bytes recebidos {:.1} MB", b as f64 / 1024.0 / 1024.0);
+    println!("bytes received  {:.1} MB", b as f64 / 1024.0 / 1024.0);
     println!(
-        "por jogador     {:.1} KB/s",
+        "per player      {:.1} KB/s",
         b as f64 / 1024.0 / secs as f64 / dentro as f64
     );
     println!(
@@ -135,7 +135,7 @@ async fn main() {
         snaps as f64 / secs as f64 / dentro as f64
     );
     println!(
-        "estados/snap    {:.1}",
+        "states/snap     {:.1}",
         stats.states.load(Ordering::Relaxed) as f64 / snaps as f64
     );
     println!(

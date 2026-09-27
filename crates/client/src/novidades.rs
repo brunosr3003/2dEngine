@@ -113,6 +113,10 @@ impl Novidades {
 }
 
 fn quebra(texto: &str, largura: f32, medir: &impl Fn(&str) -> f32) -> Vec<String> {
+    // Traduz ANTES de quebrar: a quebra entrega PEDACOS ao desenho, e pedaco de
+    // frase nao casa com verbete. Traduzindo aqui, a quebra ja' mede e parte o
+    // ingles — que e' mais comprido que o portugues e quebra em outro lugar.
+    let texto = &shared::idioma::tr(texto);
     let mut linhas = Vec::new();
     for paragrafo in texto.lines() {
         let mut linha = String::new();

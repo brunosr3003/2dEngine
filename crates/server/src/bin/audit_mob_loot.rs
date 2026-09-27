@@ -15,18 +15,18 @@ async fn main() -> anyhow::Result<()> {
         let table = cfg
             .loot_tables
             .get(&kind)
-            .ok_or_else(|| anyhow::anyhow!("Tabela ausente: {kind}"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing table: {kind}"))?;
         for e in table {
             let item = cfg
                 .items
                 .get(&e.item_id)
-                .ok_or_else(|| anyhow::anyhow!("Item ausente: {}", e.item_id))?;
+                .ok_or_else(|| anyhow::anyhow!("Missing item: {}", e.item_id))?;
             anyhow::ensure!(
                 shared::equip_slot_of(e.item_id).is_none() && item.equip_slot.is_none(),
-                "Equipamento no loot: {}",
+                "Gear in the loot: {}",
                 e.item_id
             );
-            anyhow::ensure!(item.active, "Item inativo no loot: {}", e.item_id);
+            anyhow::ensure!(item.active, "Inactive item in the loot: {}", e.item_id);
         }
         for seed in 0..10000 {
             let drops = cfg.roll_loot(kind, seed);
@@ -34,17 +34,17 @@ async fn main() -> anyhow::Result<()> {
                 drops
                     .iter()
                     .any(|d| d.0 == shared::item_id::COPPER && d.1 > 0),
-                "Cobre ausente: tipo {kind}, seed {seed}"
+                "Missing copper: kind {kind}, seed {seed}"
             );
             anyhow::ensure!(
                 drops.iter().all(|d| shared::equip_slot_of(d.0).is_none()),
-                "Equipamento sorteado"
+                "Gear rolled"
             );
             total += 1;
         }
         let nome = cfg.enemy_kind(kind).map_or("?", |e| e.name.as_str());
         println!(
-            "{kind} {nome}: {} entradas, 10000 mortes verificadas",
+            "{kind} {nome}: {} entries, 10000 kills checked",
             table.len()
         );
         for e in table {
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
             );
         }
     }
-    println!("OK: {total} mortes simuladas com o banco atual; zero equipamento e cobre em todas.");
+    println!("OK: {total} kills simulated against the current database; zero gear and copper in all of them.");
     pool.close().await;
     Ok(())
 }

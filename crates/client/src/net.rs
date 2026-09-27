@@ -164,7 +164,7 @@ fn forward(tx_in: &Sender<NetEvent>, bytes: &[u8]) {
         }
         // Mensagem desconhecida nao derruba a sessao: o servidor pode ter
         // variantes que este cliente ainda nao trata.
-        Err(e) => eprintln!("[net] decode falhou: {e}"),
+        Err(e) => eprintln!("[net] decode failed: {e}"),
     }
 }
 

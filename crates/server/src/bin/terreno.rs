@@ -41,7 +41,7 @@ fn main() {
 
     println!(
         "{:<14} {:>7} {:>7} {:>8} {:>8} {:>8} {:>10} {:>11} {:>7}",
-        "ilha", "raio", "terra", "plana", "andavel", "parede", "sitio mob", "sitio chefe", "gerar"
+        "ilha", "raio", "terra", "plana", "andavel", "parede", "mob site", "boss site", "gerar"
     );
     for d in ARQUIPELAGO.iter() {
         let raio = if cheio {
@@ -110,7 +110,7 @@ fn varre() {
     let d = &ARQUIPELAGO[0];
     println!(
         "{:>6} {:>8} {:>7} {:>8} {:>8} {:>8} {:>10} {:>11}",
-        "escala", "terraco", "pico", "plana", "andavel", "parede", "sitio mob", "sitio chefe"
+        "escala", "terraco", "pico", "plana", "andavel", "parede", "mob site", "boss site"
     );
     for escala in [0.35f32, 0.6, 0.9, 1.2] {
         for passo in [2i32, 4, 6] {
@@ -211,7 +211,7 @@ fn alcance(args: &[String]) {
         }
     }
     println!(
-        "{}: {} regioes, {} alcancaveis da cidade",
+        "{}: {} regions, {} reachable from the city",
         d.zona,
         regioes.len(),
         ok
@@ -239,7 +239,7 @@ fn alcance(args: &[String]) {
                 de.x, de.y, c.x, c.y, de.distance(*c), chega(de, *c, 6_000), chega(de, *c, 2_000_000));
         }
         println!(
-            "altura em {:.0},{:.0}: {:.1}",
+            "height at {:.0},{:.0}: {:.1}",
             de.x,
             de.y,
             ilha.altura(de.x, de.y)

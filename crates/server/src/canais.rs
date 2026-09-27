@@ -309,7 +309,7 @@ pub fn spawn_heartbeat(
             .execute(&pool)
             .await;
             if let Err(e) = r {
-                tracing::warn!("heartbeat do canal '{id}': {e}");
+                tracing::warn!("channel heartbeat '{id}': {e}");
             }
 
             // Os chefes DESTE canal, pro mapa-mundi de quem estiver noutra
@@ -364,7 +364,7 @@ pub fn spawn_heartbeat(
         }
     });
     tracing::info!(
-        "servidor {} / canal {} anunciado",
+        "server {} / channel {} announced",
         realm_id,
         std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into())
     );

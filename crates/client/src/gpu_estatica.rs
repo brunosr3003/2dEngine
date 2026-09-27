@@ -235,7 +235,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("PeleEsc", UniformType::Float4),
             ]),
         )
-        .expect("shader do mundo (gpu)");
+        .expect("world shader (gpu)");
     let agua = ctx
         .new_shader(
             ShaderSource::Glsl {
@@ -247,7 +247,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Ondas", UniformType::Float1),
             ]),
         )
-        .expect("shader da agua (gpu)");
+        .expect("water shader (gpu)");
     Programas {
         solido: ctx.new_pipeline(
             &[BufferLayout::default()],

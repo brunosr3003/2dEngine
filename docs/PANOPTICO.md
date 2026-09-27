@@ -70,6 +70,14 @@ nova no protocolo).
   vermelho em quem está abaixo de 35% de vida. Sem ninguém selecionado, a
   coluna da direita mostra o canal: build, uptime, chefes, dungeons abertas,
   fila e últimos avisos.
+  Clicar em um jogador online abre uma câmera 3D que o acompanha. O relevo vem
+  do mesmo gerador do jogo e a posição, distância, inclinação e campo de visão
+  usam as regras da câmera do cliente. Arrastar gira a vista, a roda altera o
+  zoom e “voltar ao mapa” fecha a câmera. O retrato do Panóptico traz posições
+  cinco vezes por segundo; a câmera interpola o desenho entre retratos.
+  Entidades aparecem como marcadores 3D simples: o retrato não inclui a malha,
+  roupa ou animação do cliente. O cenário de instâncias não está disponível
+  neste fluxo e a câmera avisa quando o jogador entra numa.
 * **jogadores** — contas (Google, novas), online, ativos 24 h/7 d, por zona, e
   a lista de personagens: nível, ouro, visto, capítulo da história, dungeon
   (vitórias, estágio, entradas, correio), buffs, mortes a recuperar, auto.

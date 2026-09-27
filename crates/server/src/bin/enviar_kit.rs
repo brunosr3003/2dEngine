@@ -94,6 +94,6 @@ async fn main() -> Result<()> {
         anexos,
     };
     let n = correio::enviar(&pool, nome, conta, &pedido).await?;
-    println!("enviado para {n} destinatário(s): {} peças", KIT.len());
+    println!("sent to {n} recipient(s): {} pieces", KIT.len());
     Ok(())
 }

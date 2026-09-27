@@ -42,12 +42,12 @@ async fn main() -> Result<()> {
     // inicializacao (tick.rs::run_world_loop).
     let (sx, sy) = match std::env::var("MAP_FILE") {
         Ok(path) if !path.is_empty() => {
-            tracing::info!("usando MAP_FILE={}", path);
+            tracing::info!("using MAP_FILE={}", path);
             let mf = MapFile::load(&path)?;
             (mf.spawn[0] as i32, mf.spawn[1] as i32)
         }
         _ => {
-            tracing::info!("usando crafted map default");
+            tracing::info!("using the default crafted map");
             build_crafted_map().map.spawn_tile()
         }
     };
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
     let x = sx as f32 + 0.5;
     let y = sy as f32 + 0.5;
     tracing::info!(
-        "spawn resolvido: tile=({}, {}) → world=({:.1}, {:.1})",
+        "spawn resolved: tile=({}, {}) → world=({:.1}, {:.1})",
         sx,
         sy,
         x,
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
         sqlx::query_as("SELECT name, x, y, hp, max_hp FROM characters ORDER BY name")
             .fetch_all(&pool)
             .await?;
-    tracing::info!("encontrados {} personagens", before.len());
+    tracing::info!("found {} characters", before.len());
     for (name, bx, by, hp, max_hp) in &before {
         tracing::info!(
             "  {:<16} pos=({:.1}, {:.1}) hp={}/{}",
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
         .await?;
 
     tracing::info!(
-        "✓ {} personagens resetados pra ({:.1}, {:.1}) com HP cheio",
+        "✓ {} characters reset to ({:.1}, {:.1}) with full HP",
         res.rows_affected(),
         x,
         y,

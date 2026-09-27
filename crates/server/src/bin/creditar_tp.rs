@@ -46,9 +46,9 @@ async fn main() -> Result<()> {
     mercado_razao::criar_tabela(&central).await?;
     match mercado_razao::creditar(&central, &conta, qtd, &motivo, None).await? {
         mercado_razao::Movimento::Feito { saldo } => {
-            println!("✓ +{qtd} TP em {conta} — saldo agora {saldo}")
+            println!("✓ +{qtd} TP on {conta} — balance now {saldo}")
         }
-        outro => println!("nada mudou: {outro:?}"),
+        outro => println!("nothing changed: {outro:?}"),
     }
     Ok(())
 }

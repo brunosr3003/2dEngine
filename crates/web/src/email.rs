@@ -12,6 +12,7 @@
 //! manda o link. E' a mesma escolha do login com Google.
 
 use anyhow::{anyhow, Result};
+use shared::idioma::{tr_em, Idioma};
 
 const URL_RESEND: &str = "https://api.resend.com/emails";
 
@@ -73,34 +74,57 @@ impl Email {
         Err(anyhow!("resend {codigo}: {detalhe}"))
     }
 
-    pub async fn confirmacao(&self, para: &str, usuario: &str, token: &str) -> Result<()> {
+    /// O e-mail de confirmacao, na lingua de QUEM PEDIU.
+    ///
+    /// `idioma` vem do `Accept-Language` do cadastro, e nao de uma coluna nova
+    /// em `accounts`. A razao e' que a coluna seria migracao, INSERT mexido e
+    /// um valor a mais pra errar (ver o que "coluna nova quebra o INSERT" ja'
+    /// custou) — e o cabecalho ja' diz, de graca, em que lingua a pessoa esta'
+    /// lendo o site NESTE momento, que e' a resposta certa pra este e-mail.
+    pub async fn confirmacao(
+        &self,
+        para: &str,
+        usuario: &str,
+        token: &str,
+        idioma: Idioma,
+    ) -> Result<()> {
         let link = format!("{}/api/auth/confirmar?token={token}", self.base);
+        let t = |s: &str| tr_em(idioma, s).into_owned();
         self.manda(
             para,
-            "Confirme sua conta no Tempest",
+            &t("Confirme sua conta no Tempest"),
             &pagina(
-                &format!("Olá, {}!", escapa(usuario)),
-                "Falta confirmar seu e-mail para a conta ficar completa.",
-                "Confirmar minha conta",
+                &format!("{} {}!", t("Olá,"), escapa(usuario)),
+                &t("Falta confirmar seu e-mail para a conta ficar completa."),
+                &t("Confirmar minha conta"),
                 &link,
-                "O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar.",
+                &t("O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar."),
+                &t("Se o botão não abrir:"),
             ),
         )
         .await
     }
 
-    pub async fn reset(&self, para: &str, usuario: &str, token: &str) -> Result<()> {
+    pub async fn reset(
+        &self,
+        para: &str,
+        usuario: &str,
+        token: &str,
+        idioma: Idioma,
+    ) -> Result<()> {
         let link = format!("{}/api/auth/reset?token={token}", self.base);
+        let t = |s: &str| tr_em(idioma, s).into_owned();
         self.manda(
             para,
-            "Redefinir a senha do Tempest",
+            &t("Redefinir a senha do Tempest"),
             &pagina(
-                &format!("Olá, {}!", escapa(usuario)),
-                "Alguém pediu para redefinir a senha desta conta.",
-                "Escolher uma senha nova",
+                &format!("{} {}!", t("Olá,"), escapa(usuario)),
+                &t("Alguém pediu para redefinir a senha desta conta."),
+                &t("Escolher uma senha nova"),
                 &link,
-                "O link vale por 1 hora e só pode ser usado uma vez. Se não foi você, \
-                 pode ignorar — sua senha continua a mesma.",
+                &t("O link vale por 1 hora e só pode ser usado uma vez. Se não foi você, \
+                 pode ignorar — sua senha continua a mesma."),
+                &t("Se o botão não abrir:"),
             ),
         )
         .await
@@ -109,7 +133,14 @@ impl Email {
 
 /// O mesmo corpo para os dois e-mails: tabela e estilo em linha, que e' o que
 /// cliente de e-mail entende. Nada de CSS externo nem flexbox.
-fn pagina(saudacao: &str, frase: &str, botao: &str, link: &str, rodape: &str) -> String {
+fn pagina(
+    saudacao: &str,
+    frase: &str,
+    botao: &str,
+    link: &str,
+    rodape: &str,
+    plano_b: &str,
+) -> String {
     format!(
         r#"<!doctype html><html><body style="margin:0;padding:24px;background:#151d2b;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#e8e2d4">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
@@ -121,7 +152,7 @@ fn pagina(saudacao: &str, frase: &str, botao: &str, link: &str, rodape: &str) ->
   <a href="{link}" style="display:inline-block;background:#f0c674;color:#1d2738;font-weight:700;font-size:15px;text-decoration:none;padding:13px 26px;border-radius:8px">{botao}</a>
 </td></tr>
 <tr><td style="font-size:12px;line-height:18px;color:#8b8578">{rodape}</td></tr>
-<tr><td style="font-size:12px;line-height:18px;color:#8b8578;padding-top:12px;word-break:break-all">Se o botão não abrir: {link}</td></tr>
+<tr><td style="font-size:12px;line-height:18px;color:#8b8578;padding-top:12px;word-break:break-all">{plano_b} {link}</td></tr>
 </table></td></tr></table></body></html>"#
     )
 }
@@ -144,13 +175,39 @@ mod testes {
         assert_eq!(escapa("<b>zé</b>"), "&lt;b&gt;zé&lt;/b&gt;");
     }
 
+    /// O e-mail sai na lingua do pedido, e o corpo inteiro acompanha — nao so'
+    /// o assunto. O caso que isto pega: traduzir o titulo e esquecer o botao,
+    /// que e' o que a pessoa precisa clicar.
+    #[test]
+    fn o_corpo_do_email_acompanha_o_idioma() {
+        let en = pagina(
+            &shared::idioma::tr_em(Idioma::En, "Olá,"),
+            &shared::idioma::tr_em(Idioma::En, "Falta confirmar seu e-mail para a conta ficar completa."),
+            &shared::idioma::tr_em(Idioma::En, "Confirmar minha conta"),
+            "https://x/y",
+            &shared::idioma::tr_em(Idioma::En, "O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar."),
+            &shared::idioma::tr_em(Idioma::En, "Se o botão não abrir:"),
+        );
+        assert!(en.contains("Hello,"), "saudação não traduziu: {en}");
+        assert!(en.contains("Confirm my account"), "botão não traduziu");
+        assert!(en.contains("48 hours"), "rodapé não traduziu");
+        assert!(!en.contains("Confirmar"), "sobrou português: {en}");
+    }
+
     /// O link aparece DUAS vezes: no botão e em texto.
     ///
     /// Cliente de e-mail que bloqueia ou estraga o botão deixaria o jogador
     /// sem saída; o link em texto é o plano B, e ele tem que estar lá.
     #[test]
     fn o_link_vai_no_botao_e_em_texto() {
-        let h = pagina("Olá", "frase", "Clique", "https://x/y?token=abc", "rodapé");
+        let h = pagina(
+            "Olá",
+            "frase",
+            "Clique",
+            "https://x/y?token=abc",
+            "rodapé",
+            "Se o botão não abrir:",
+        );
         assert_eq!(h.matches("https://x/y?token=abc").count(), 2);
         assert!(h.contains("Se o botão não abrir"));
     }

@@ -28,8 +28,10 @@ const TITULO_SECAO: f32 = 26.0;
 pub enum NoRastreador {
     /// Uma missao: liga a auto missao.
     Missao(u16),
-    /// O titulo: abre o diario.
-    Diario,
+    /// As abas do alto: `true` = grupo, `false` = missoes. NAO abre o diario
+    /// (o dono: "quando clico em missoes abre o menu de todas as missoes, nao
+    /// quero isso"); "Todas as missoes" segue no Menu.
+    Aba(bool),
     /// O alfinete: fixa (ou solta) esta missao no topo do rastreador.
     Fixar(u16),
     /// As setas: anda a janela de tres. `true` = pra frente.
@@ -115,6 +117,18 @@ pub struct Missoes {
     /// Primeira missao mostrada no rastreador. So' tres cabem por vez
     /// (`NO_RASTREADOR`); as setas andam com isto.
     pub desloca_rastreador: usize,
+    /// A aba aberta na caixa do rastreador: `true` = GRUPO, `false` = missoes.
+    ///
+    /// O grupo morava num painel solto ao lado das missoes — o dono: "o hud de
+    /// grupo e' terrivel, tem que ser no mesmo menu das missoes". Uma caixa,
+    /// duas abas.
+    pub aba_grupo: bool,
+    /// Quantos membros o grupo tem, pra caixa crescer na aba do grupo.
+    ///
+    /// Vive aqui porque quem mede a caixa (`rastreador_rect`) e' chamado tambem
+    /// pelo teste de mouse, fora do quadro de desenho: passar os membros por
+    /// parametro obrigaria a carrega'-los por todo o caminho do clique.
+    pub membros_grupo: usize,
     /// Quantas missoes foram CONCLUIDAS nesta sessao, e quando a ultima.
     ///
     /// O dono pediu o contador no centro superior "subindo ao fazer qualquer
@@ -161,6 +175,38 @@ pub const NO_RASTREADOR: usize = 3;
 /// Altura de uma linha. Era 52; o dono: "tem que ser menor, mais resumido,
 /// só tipo urso 1/10". Uma linha só, então cabe em 30.
 const LINHA: f32 = 30.0;
+
+/// A CAIXA DO RASTREADOR, dado o layout e a aba aberta.
+///
+/// MAIS ESTREITA (o dono: "tá muito grande lateralmente"), TRÊS linhas e SEM
+/// RODAPÉ: o link "Todas as missões" saiu porque a mesma coisa já está no Menu,
+/// e um atalho repetido só ocupa a tela.
+///
+/// A ABA MANDA na altura: a do grupo tem uma linha por membro (nome e vida)
+/// mais o rodapé do "Gerenciar grupo"; a das missões, as três linhas de sempre.
+///
+/// Fora do `self` pra o teste poder medi-la em toda tela e escala — é ela que
+/// não pode invadir o que o layout reservou pra quem vem abaixo.
+pub(crate) fn rastreador_rect_com(
+    z: &crate::hud_layout::Zonas,
+    aba_grupo: bool,
+    membros: usize,
+    missoes: usize,
+) -> Rect {
+    let corpo = if aba_grupo {
+        crate::social_hud::LINHA_GRUPO * membros.clamp(1, 5) as f32 + 30.0
+    } else {
+        LINHA * missoes.min(NO_RASTREADOR).max(1) as f32 + 6.0
+    };
+    Rect::new(
+        z.rastreador.x,
+        z.rastreador.y,
+        z.rastreador.w * 0.62,
+        // Nunca passa do que o layout reserva: o que vem abaixo (a tarja da Ilha
+        // Mágica e os avisos) é medido por ali.
+        ((34.0 + corpo) * z.s).min(z.rastreador.h),
+    )
+}
 
 /// O RESUMO de uma missão, do jeito que ele cabe de canto de olho.
 ///
@@ -323,6 +369,10 @@ pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
 
 /// Quebra `s` em linhas que cabem em `largura`, no maximo `max` linhas.
 pub(crate) fn quebra(s: &str, largura: f32, tam: u16, max: usize) -> Vec<String> {
+    // Traduz ANTES de quebrar: a quebra entrega PEDACOS ao desenho, e pedaco de
+    // frase nao casa com verbete. Traduzindo aqui, a quebra ja' mede e parte o
+    // ingles — que e' mais comprido que o portugues e quebra em outro lugar.
+    let s = &shared::idioma::tr(s);
     let mut linhas: Vec<String> = Vec::new();
     let mut atual = String::new();
     for palavra in s.split_whitespace() {
@@ -515,20 +565,19 @@ impl Missoes {
     /// as missoes ate' o que o layout reserva; sem missao fica so' o cabecalho
     /// (sem rodape: "Todas as missões" ja' esta' no Menu).
     pub fn rastreador_rect(&self) -> Rect {
-        let z = crate::hud_layout::atual();
-        let n = ordem_do_rastreador(&self.log)
-            .len()
-            .min(NO_RASTREADOR)
-            .max(1);
-        // MAIS ESTREITO (o dono: "tá muito grande lateralmente"), TRÊS linhas
-        // e SEM RODAPÉ: o link "Todas as missões" saiu porque a mesma coisa
-        // já está no Menu, e um atalho repetido só ocupa a tela.
-        Rect::new(
-            z.rastreador.x,
-            z.rastreador.y,
-            z.rastreador.w * 0.62,
-            (34.0 + LINHA * n as f32 + 6.0) * z.s,
+        rastreador_rect_com(
+            &crate::hud_layout::atual(),
+            self.aba_grupo,
+            self.membros_grupo,
+            ordem_do_rastreador(&self.log).len(),
         )
+    }
+
+    /// O corpo da caixa, abaixo das abas: onde a aba do grupo se desenha.
+    pub fn corpo_do_rastreador(&self) -> Rect {
+        let r = self.rastreador_rect();
+        let s = crate::hud_layout::atual().s;
+        Rect::new(r.x, r.y + 36.0 * s, r.w, (r.h - 36.0 * s).max(0.0))
     }
 
     /// Desenha a janela e devolve os pedidos do quadro.
@@ -760,26 +809,44 @@ impl Missoes {
         let clique = crate::foco::clique();
         let mut saida = None;
         estilo::painel(r);
-        // Abas: Missões (ativa) e Grupo (em breve).
-        let titulo = Rect::new(r.x, r.y, r.w * 0.5, 36.0 * s);
-        let sobre = titulo.contains(mouse);
-        draw_rectangle(
-            r.x + 10.0,
-            r.y + 30.0 * s,
-            estilo::medir("Missões ›", 16),
-            2.0,
-            estilo::OURO,
-        );
-        estilo::texto(
-            r.x + 10.0,
-            r.y + 24.0 * s,
-            "Missões ›",
-            16,
-            if sobre { estilo::OURO } else { estilo::TEXTO },
-        );
-        estilo::texto(r.x + r.w * 0.5, r.y + 24.0 * s, "Grupo", 15, estilo::SUAVE);
-        if sobre && clique {
-            saida = Some(NoRastreador::Diario);
+        // AS ABAS: missões e grupo na MESMA caixa, e é a aba que troca o
+        // conteúdo. Clicar em "Missões" não abre mais o diário — só volta pra
+        // aba das missões de hoje; "Todas as missões" é do Menu.
+        let meia = r.w * 0.5;
+        for (caixa, rotulo, grupo) in [
+            (Rect::new(r.x, r.y, meia, 36.0 * s), "Missões", false),
+            (Rect::new(r.x + meia, r.y, meia, 36.0 * s), "Grupo", true),
+        ] {
+            let ativa = grupo == self.aba_grupo;
+            let sobre = caixa.contains(mouse);
+            // O número do grupo na própria aba: é o que faz olhar pra ela.
+            let rotulo = if grupo && self.membros_grupo > 0 {
+                format!("{rotulo} · {}", self.membros_grupo)
+            } else {
+                rotulo.to_string()
+            };
+            let cor = if ativa {
+                estilo::OURO
+            } else if sobre {
+                estilo::TEXTO
+            } else {
+                estilo::SUAVE
+            };
+            estilo::texto(caixa.x + 10.0, caixa.y + 24.0 * s, &rotulo, 16, cor);
+            // A sublinha é o que diz qual está aberta: duas abas na mesma caixa
+            // sem marca nenhuma viram dois títulos.
+            if ativa {
+                draw_rectangle(
+                    caixa.x + 10.0,
+                    caixa.y + 30.0 * s,
+                    estilo::medir(&rotulo, 16),
+                    2.0,
+                    estilo::OURO,
+                );
+            }
+            if clique && sobre {
+                saida = Some(NoRastreador::Aba(grupo));
+            }
         }
         draw_line(
             r.x + 8.0,
@@ -789,6 +856,11 @@ impl Missoes {
             1.0,
             estilo::BORDA,
         );
+        // A aba do grupo desenha o CORPO por fora (`social_hud`), que é quem
+        // sabe ler vida de quem está no mundo; aqui só a caixa e as abas.
+        if self.aba_grupo {
+            return saida;
+        }
         if n == 0 {
             estilo::texto_ajustado(
                 "Nenhuma missão em andamento",
@@ -961,6 +1033,34 @@ impl Missoes {
 
 #[cfg(test)]
 mod tests {
+    /// A CAIXA DO RASTREADOR CABE NO QUE O LAYOUT RESERVOU — nas duas abas.
+    ///
+    /// O grupo virou aba dela (antes era painel solto ao lado), e a aba do
+    /// grupo é a mais alta: cinco linhas de membro e o rodapé. Se ela passar do
+    /// reservado, cobre a tarja da Ilha Mágica e os avisos, que são medidos a
+    /// partir do fim desta caixa.
+    #[test]
+    fn a_caixa_do_rastreador_cabe_nas_duas_abas() {
+        for (w, h) in [(1280., 720.), (1920., 1080.), (2340., 1080.), (1024., 768.)] {
+            for ui in [0.8, 1., 1.3, 1.6] {
+                let z = crate::hud_layout::zonas_com(w, h, [0.; 4], ui, false, false, false);
+                for (aba_grupo, membros) in [(false, 0), (true, 1), (true, 5), (true, 9)] {
+                    let r = super::rastreador_rect_com(&z, aba_grupo, membros, 3);
+                    let caso = format!("{w}x{h} escala {ui} grupo={aba_grupo} membros={membros}");
+                    assert!(r.x + r.w <= w && r.y + r.h <= h, "sai da tela em {caso}");
+                    assert!(
+                        r.y + r.h <= z.rastreador.y + z.rastreador.h + 0.01,
+                        "passa do reservado em {caso}: {r:?} / {:?}",
+                        z.rastreador
+                    );
+                    // E o corpo (abaixo das abas) sobra pra pelo menos o rodapé
+                    // do grupo: caixa sem corpo é aba que não mostra nada.
+                    assert!(r.h > 36.0 * z.s + 30.0, "corpo não cabe em {caso}");
+                }
+            }
+        }
+    }
+
     /// O RESUMO é curto de verdade, e diz o que falta.
     ///
     /// O dono: "tem que ser menor, mais resumido, só tipo urso 1/10". Um

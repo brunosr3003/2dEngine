@@ -8,6 +8,13 @@ pub struct SocialHud {
     pub aberto: Option<EntityId>,
     pub recolhido: bool,
     pub pacifico: Option<EntityId>,
+    /// O painel SOLTO do grupo está no ar? Só dentro da dungeon, onde não há
+    /// rastreador pra hospedar a aba.
+    ///
+    /// Sem isto o `captura` seguiria engolindo o clique no vão à direita do
+    /// rastreador — um pedaço de mundo que deixaria de responder ao toque por
+    /// causa de um painel que não está mais lá.
+    pub solto: bool,
 }
 #[derive(Clone, Copy)]
 pub enum Acao {
@@ -19,6 +26,134 @@ pub enum Acao {
     AbrirGrupo,
 }
 
+/// Altura de uma linha de membro: a barra de vida É a linha, com o nome e os
+/// pontos escritos dentro dela.
+///
+/// Nome numa linha e barra noutra dava 40 px por membro, e cinco membros não
+/// cabiam no que o layout reserva em tela pequena — o nome vazava pra linha de
+/// baixo. Dentro da barra cabe em 26 e ainda se lê de canto de olho.
+pub const LINHA_GRUPO: f32 = 26.0;
+
+/// O GRUPO DENTRO DA CAIXA DO RASTREADOR (a aba "Grupo").
+///
+/// O painel solto ao lado das missões era o que o dono chamou de terrível: mais
+/// uma caixa flutuando num canto já cheio. Agora o grupo é uma ABA da caixa das
+/// missões, e aqui só se desenha o CONTEÚDO — a moldura e as abas são de
+/// `missoes::desenha_rastreador`.
+///
+/// `r` é o corpo (abaixo das abas). As linhas se ajustam ao que ele tem de
+/// altura, porque em tela pequena o layout reserva menos do que cinco membros
+/// pediriam.
+pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao> {
+    let s = crate::hud_layout::atual().s;
+    let p = Vec2::from(mouse_position());
+    let clicou = crate::foco::clique();
+    // Um respiro abaixo do risco das abas: o primeiro membro colado nele fazia
+    // a caixa parecer quebrada.
+    let r = Rect::new(r.x, r.y + 5.0 * s, r.w, (r.h - 5.0 * s).max(0.0));
+    let rodape = Rect::new(r.x, r.y + r.h - 28.0 * s, r.w, 28.0 * s);
+    if membros.is_empty() {
+        // Sem grupo a aba não fica vazia: ela vira o convite, e o corpo inteiro
+        // é o clique. O texto é o MESMO do menu do alvo ("Convidar para grupo")
+        // de propósito: é o mesmo ato, e verbete repetido vira duas traduções.
+        e::texto(
+            r.x + 10.0 * s,
+            r.y + 22.0 * s,
+            "Convidar para grupo",
+            (14.0 * s) as u16,
+            e::OURO,
+        );
+        return (clicou && r.contains(p)).then_some(Acao::AbrirGrupo);
+    }
+    let mostra = membros.len().min(5);
+    let altura = ((r.h - rodape.h) / mostra as f32).min(LINHA_GRUPO * s);
+    // A escala das tripas da linha: com a caixa apertada a linha encolhe, e o
+    // que está escrito dentro dela tem que encolher junto.
+    let k = (altura / LINHA_GRUPO).min(s);
+    let tam = (12.0 * k).max(9.0) as u16;
+    let mut acao = None;
+    for (i, nome) in membros.iter().take(mostra).enumerate() {
+        let linha = Rect::new(r.x + 8.0 * s, r.y + i as f32 * altura, r.w - 16.0 * s, altura);
+        let jogador = world.ents.iter().find(|(_, ent)| {
+            ent.meta.tag == shared::EntityTag::Player
+                && ent.meta.name.as_deref() == Some(nome.as_str())
+        });
+        // A BARRA É A LINHA: o fundo escuro marca o membro, o verde marca a
+        // vida dele, e o nome vive por cima dos dois.
+        let barra = Rect::new(
+            linha.x,
+            linha.y + 2.0 * k,
+            linha.w,
+            (altura - 5.0 * k).max(11.0),
+        );
+        draw_rectangle(
+            barra.x,
+            barra.y,
+            barra.w,
+            barra.h,
+            Color::new(0.08, 0.09, 0.12, 1.),
+        );
+        if linha.contains(p) {
+            draw_rectangle(
+                barra.x,
+                barra.y,
+                barra.w,
+                barra.h,
+                Color::new(1., 1., 1., 0.06),
+            );
+        }
+        let base = barra.y + barra.h * 0.5 + tam as f32 * 0.36;
+        let direita = match jogador {
+            Some((id, ent)) => {
+                let fracao = (ent.state.hp as f32 / ent.meta.hp_max.max(1) as f32).clamp(0., 1.);
+                draw_rectangle(
+                    barra.x,
+                    barra.y,
+                    barra.w * fracao,
+                    barra.h,
+                    Color::new(0.2, 0.58, 0.36, 1.),
+                );
+                if clicou && linha.contains(p) && Some(*id) != world.self_id {
+                    acao = Some(Acao::Selecionar(*id));
+                }
+                format!("{} / {}", ent.state.hp, ent.meta.hp_max)
+            }
+            // Fora de alcance não tem vida pra mostrar: a barra fica vazia e o
+            // texto diz por quê, em vez de mentir um HP velho.
+            None => "Fora de alcance".to_string(),
+        };
+        let largura = e::medir(&direita, tam);
+        e::texto_ajustado(
+            nome,
+            barra.x + 5.0 * k,
+            base,
+            barra.w - largura - 14.0 * k,
+            tam,
+            e::TEXTO,
+        );
+        e::texto(
+            barra.x + barra.w - largura - 5.0 * k,
+            base,
+            &direita,
+            tam,
+            e::TEXTO,
+        );
+    }
+    e::texto(
+        rodape.x + 10.0 * s,
+        rodape.y + 19.0 * s,
+        "Gerenciar grupo ›",
+        (12.0 * s) as u16,
+        e::OURO,
+    );
+    if clicou && rodape.contains(p) {
+        acao = Some(Acao::AbrirGrupo);
+    }
+    acao
+}
+
+/// O painel SOLTO, ao lado da linha de missão — só dentro da dungeon, onde o
+/// rastreador (e portanto a aba do grupo) não existe.
 pub fn grupo_rect(z: &Zonas, membros: usize, recolhido: bool) -> Rect {
     let s = z.s;
     Rect::new(
@@ -47,7 +182,7 @@ impl SocialHud {
     pub fn captura(&self, z: &Zonas, p: Vec2, jogador: bool, membros: usize) -> bool {
         self.aberto.is_some()
             || (jogador && z.alvo.contains(p))
-            || (membros > 0 && grupo_rect(z, membros, self.recolhido).contains(p))
+            || (self.solto && membros > 0 && grupo_rect(z, membros, self.recolhido).contains(p))
     }
     pub fn alvo(&mut self, z: &Zonas, id: Option<EntityId>, seguindo: bool) -> Option<Acao> {
         if self.aberto != id {
@@ -287,40 +422,47 @@ pub async fn previa() {
                 &[],
             );
         }
-        for _ in 0..3 {
-            crate::render3d::camera_padrao();
-            clear_background(Color::new(0.08, 0.12, 0.16, 1.));
-            e::painel(z.ficha);
-            e::texto(
-                z.ficha.x + 12.,
-                z.ficha.y + 28.,
-                "Personagem · Lv 70",
-                20,
-                e::TEXTO,
+        // AS DUAS ABAS, uma por imagem: e' a troca entre elas que se confere
+        // aqui — a caixa e' a mesma, e so' o corpo muda.
+        for aba_grupo in [false, true] {
+            let mut missoes = crate::missoes::Missoes::default();
+            missoes.aba_grupo = aba_grupo;
+            missoes.membros_grupo = nomes.len();
+            // Duas missões de verdade da tabela: a aba das missões tem que
+            // aparecer com o que o jogador vê, não com texto inventado.
+            missoes.define_log(
+                shared::quests::QUESTS
+                    .iter()
+                    .take(2)
+                    .map(|d| {
+                        shared::quests::QuestNet::from_def(d, shared::quests::quest_status::ACTIVE, 3)
+                    })
+                    .collect(),
             );
-            e::painel(z.rastreador);
-            e::texto(
-                z.rastreador.x + 12.,
-                z.rastreador.y + 24.,
-                "MISSÕES",
-                16,
-                e::OURO,
-            );
-            e::texto(
-                z.rastreador.x + 12.,
-                z.rastreador.y + 64.,
-                "Derrote monstros da floresta  3/10",
-                14,
-                e::TEXTO,
-            );
-            crate::hud::draw_alvo(&z, "MaréAlta", 72, 850, 1200, false);
-            ui.grupo(&z, &nomes, &world);
-            ui.alvo(&z, Some(EntityId(2)), false);
-            unsafe { get_internal_gl().flush() };
-            rt.texture
-                .get_texture_data()
-                .export_png(&format!("{saida}/hud-{w}.png"));
-            next_frame().await;
+            for _ in 0..3 {
+                crate::render3d::camera_padrao();
+                clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+                e::painel(z.ficha);
+                e::texto(
+                    z.ficha.x + 12.,
+                    z.ficha.y + 28.,
+                    "Personagem · Lv 70",
+                    20,
+                    e::TEXTO,
+                );
+                missoes.desenha_rastreador(&|_| 0, None, 70, 0.4);
+                if aba_grupo {
+                    grupo_no_corpo(missoes.corpo_do_rastreador(), &nomes, &world);
+                }
+                crate::hud::draw_alvo(&z, "MaréAlta", 72, 850, 1200, false);
+                ui.alvo(&z, Some(EntityId(2)), false);
+                unsafe { get_internal_gl().flush() };
+                let aba = if aba_grupo { "grupo" } else { "missoes" };
+                rt.texture
+                    .get_texture_data()
+                    .export_png(&format!("{saida}/hud-{aba}-{w}.png"));
+                next_frame().await;
+            }
         }
     }
 }

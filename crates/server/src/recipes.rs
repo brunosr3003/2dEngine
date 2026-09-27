@@ -93,7 +93,7 @@ pub async fn try_hot_reload(pool: &PgPool) -> anyhow::Result<bool> {
     reload(pool).await?;
     VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
     NEEDS_BROADCAST.store(true, std::sync::atomic::Ordering::Relaxed);
-    tracing::info!("[recipes] hot-reload aplicado: v{v}");
+    tracing::info!("[recipes] hot-reload applied: v{v}");
     Ok(true)
 }
 
@@ -106,7 +106,7 @@ pub fn spawn_hot_reload_task(pool: PgPool) {
         loop {
             iv.tick().await;
             if let Err(e) = try_hot_reload(&pool).await {
-                tracing::warn!("[recipes] hot-reload falhou: {e}");
+                tracing::warn!("[recipes] hot-reload failed: {e}");
             }
         }
     });
@@ -140,7 +140,7 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
     }
     *cell().write() = recipes;
     let n = cell().read().len();
-    tracing::info!("[recipes] carregadas {} recipes do DB", n);
+    tracing::info!("[recipes] loaded {} recipes from the DB", n);
     Ok(())
 }
 
@@ -170,7 +170,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
         .rows_affected();
     }
     if novas > 0 {
-        tracing::info!("[recipes] {novas} receitas de equipamento semeadas");
+        tracing::info!("[recipes] {novas} gear recipes seeded");
     }
     // Nivel minimo alinhado com as faixas da chave (verde 15->20, azul
     // 30->40). So' mexe em quem ainda esta' no valor antigo: ajuste manual fica.
@@ -190,7 +190,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
         .rows_affected();
     }
     if ajustadas > 0 {
-        tracing::info!("[recipes] {ajustadas} receitas com nivel minimo novo (verde 20, azul 40)");
+        tracing::info!("[recipes] {ajustadas} recipes with a new minimum level (green 20, blue 40)");
     }
     Ok(())
 }

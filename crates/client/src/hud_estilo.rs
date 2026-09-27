@@ -19,7 +19,7 @@ static FONTE: std::sync::OnceLock<Font> = std::sync::OnceLock::new();
 static FONTE_FORTE: std::sync::OnceLock<Font> = std::sync::OnceLock::new();
 
 fn carrega(bytes: &[u8]) -> Font {
-    let mut f = load_ttf_font_from_bytes(bytes).expect("fonte da HUD");
+    let mut f = load_ttf_font_from_bytes(bytes).expect("HUD font");
     f.set_filter(FilterMode::Linear);
     f
 }
@@ -98,7 +98,22 @@ fn tam(tamanho: u16) -> u16 {
     (tamanho as f32 * fator_texto()).round().clamp(1.0, 400.0) as u16
 }
 
+/// O GARGALO DA TRADUCAO.
+///
+/// Todo texto do cliente passa por aqui (726 pontos de chamada, via `texto`,
+/// `texto_centro`, `texto_forte`…). Traduzir neste ponto pega de uma vez o
+/// rotulo escrito no codigo, o nome de item que veio do banco e o aviso que o
+/// servidor mandou — sem tocar em nenhum desses lugares.
+///
+/// Em portugues `tr` devolve o que recebeu e o custo e' zero. Sem verbete, o
+/// texto sai em portugues: falta de traducao nao apaga informacao.
+///
+/// Quem MEXE na string antes de desenhar (quebra em linhas, corta com "…")
+/// tem que traduzir ANTES de mexer, senao o pedaco nao casa com verbete
+/// nenhum. Por isso `texto_ajustado` e as funcoes de quebra traduzem na
+/// entrada; aqui a segunda passada nao encontra verbete e nao faz nada.
 fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
+    let s = &shared::idioma::tr(s);
     fonte(forte, |f| {
         draw_text_ex(
             s,
@@ -115,13 +130,16 @@ fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color)
 }
 
 pub fn medir(s: &str, tamanho: u16) -> f32 {
+    let s = &shared::idioma::tr(s);
     fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width)
 }
 /// Dimensoes na fonte da UI — pra quem alinha texto com `TextDimensions`.
 pub fn medir_dim(s: &str, tamanho: u16) -> TextDimensions {
+    let s = &shared::idioma::tr(s);
     fonte(false, |f| measure_text(s, Some(f), tam(tamanho), 1.0))
 }
 pub fn medir_forte(s: &str, tamanho: u16) -> f32 {
+    let s = &shared::idioma::tr(s);
     fonte(true, |f| measure_text(s, Some(f), tam(tamanho), 1.0).width)
 }
 
@@ -267,7 +285,9 @@ pub fn texto_sombra(x: f32, y: f32, s: &str, tamanho: u16, cor: Color, forte: bo
 }
 
 pub fn texto_ajustado(s: &str, x: f32, y: f32, largura: f32, tamanho: u16, cor: Color) {
-    let mut t = s.to_string();
+    // Traduz ANTES de cortar: "Disponivel…" cortado no meio nao casaria com
+    // verbete nenhum, e o painel mostraria portugues cortado no meio do ingles.
+    let mut t = shared::idioma::tr(s).into_owned();
     if medir(&t, tamanho) > largura {
         while !t.is_empty() && medir(&format!("{t}…"), tamanho) > largura {
             t.pop();

@@ -84,6 +84,6 @@ async fn main() -> Result<()> {
     .await?;
 
     let titulo = shared::quests::quest_by_id(passo).map_or("?", |d| d.title);
-    println!("{nome}: escritura dada, história no passo {passo} '{titulo}' (índice {indice})");
+    println!("{nome}: deed granted, story at step {passo} '{titulo}' (index {indice})");
     Ok(())
 }

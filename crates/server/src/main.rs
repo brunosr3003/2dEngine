@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     // faction_points em characters, que o load_all lê por personagem).
     quests::init(&pool).await?;
     let characters = persistence::load_all(&pool).await?;
-    tracing::info!("db conectado: {} personagens carregados", characters.len());
+    tracing::info!("db connected: {} characters loaded", characters.len());
     let save_tx = persistence::spawn_writer(pool.clone());
 
     // Canal: este processo se anuncia e bate o coracao. Ver `canais`.
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
     if panoptico::ativo() {
         tokio::spawn(async {
             if let Err(e) = panoptico::servir().await {
-                tracing::error!("panoptico caiu: {e:#}");
+                tracing::error!("panoptico went down: {e:#}");
             }
         });
     }
@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
     economy::load_server_config(&pool).await?;
     recipes::init(&pool).await?;
     recipes::spawn_hot_reload_task(pool.clone());
-    tracing::info!("economia carregada (hot-reload a cada 5s; bumpa economy_version pra forçar)");
+    tracing::info!("economy loaded (hot-reload every 5s; bump economy_version to force it)");
 
     // Skills (Phase 1). Compartilha o mesmo `economy_version`.
     skills::init(&pool).await?;

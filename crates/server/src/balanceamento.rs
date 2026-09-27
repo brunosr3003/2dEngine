@@ -251,7 +251,7 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
         .map(|(i, v)| {
             let lv = nivel + (i as u32 % 3);
             let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
-            Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), v, lv)
+            Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), v, lv)
         })
         .collect();
     let mut hp = stats.hp_max;
@@ -560,7 +560,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                                 .wrapping_add(respawns.wrapping_mul(2_654_435_761));
                             let lv = lv_min + (s % (lv_max - lv_min + 1) as u64) as u32;
                             let k = kind_para_nivel_em(&comuns, lv, s >> 7);
-                            Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), m.casa, lv)
+                            Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), m.casa, lv)
                         }
                         None => Mob::novo(m.def, m.casa, m.nivel),
                     };
@@ -829,7 +829,7 @@ pub(crate) const JORNADA: &[u16] = &[
 fn bosque() -> &'static (Vec2, crate::world::ZonasComuns) {
     static B: std::sync::OnceLock<(Vec2, crate::world::ZonasComuns)> = std::sync::OnceLock::new();
     B.get_or_init(|| {
-        let def = shared::terreno::def_da_zona("ilha_inicial").expect("ilha inicial");
+        let def = shared::terreno::def_da_zona("ilha_inicial").expect("starting island");
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/ilhas");
         let ilha = shared::terreno::Ilha::carregar_ou_gerar_da_ilha(dir, def);
         let cidade = ilha.cidade().map_or(Vec2::ZERO, |c| c.centro());
@@ -924,7 +924,7 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
         let tuplas = monta_zonas(nivel);
         let Some(centro) = crate::quests::zona_do_bicho(&tuplas, &comuns, &alvos, *cidade, nivel)
         else {
-            panic!("{nome}: nenhuma zona");
+            panic!("{nome}: no zone");
         };
         let z = zonas
             .zonas
@@ -964,7 +964,7 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
                         >> 11;
                     let lv = z.lv_min + (s % (z.lv_max - z.lv_min + 1) as u64) as u32;
                     let k = kind_para_nivel_em(&comuns, lv, s >> 7);
-                    Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), *p, lv)
+                    Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), *p, lv)
                 })
                 .collect();
             let falta = total - feito;
@@ -1216,7 +1216,7 @@ pub(crate) fn duelar(
     perfil: Perfil,
     pocao: bool,
 ) -> Duelo {
-    let c = cat::chefe(kind).expect("kind de chefe");
+    let c = cat::chefe(kind).expect("boss kind");
     let (equip, alloc, profs, xp) = build_do_nivel(conjunto, nivel);
     let stats = effective_stats(&equip, &alloc, &profs, xp);
     let arma = arma_do(conjunto);
@@ -1231,7 +1231,7 @@ pub(crate) fn duelar(
         cat::Corpo::Bicho(k) | cat::Corpo::Gente(k) => k,
         cat::Corpo::Pirata => 0,
     };
-    let base = crate::economy::kind_inicial(base_kind).expect("kind conhecido");
+    let base = crate::economy::kind_inicial(base_kind).expect("known kind");
     let hp_chefe_max = cat::vida(c.nivel);
     let mut hp_chefe = hp_chefe_max;
     let def_chefe = cat::defesa(c.nivel);
@@ -2458,7 +2458,7 @@ mod metas_da_escada {
             .map(|(i, v)| {
                 let lv = nivel + (i as u32 % 3);
                 let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
-                let mut m = Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), v, lv);
+                let mut m = Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), v, lv);
                 if lugar == Lugar::Ilhota && i % 5 == 0 {
                     m.hp_max = (m.hp_max as f32 * 1.25).round() as i32;
                     m.hp = m.hp_max;

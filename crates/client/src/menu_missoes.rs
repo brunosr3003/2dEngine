@@ -633,6 +633,10 @@ fn caminho_manual(d: &QuestDef) -> String {
 }
 
 fn quebrar_linhas(texto: &str, largura: f32) -> Vec<String> {
+    // Traduz ANTES de quebrar: a quebra entrega PEDACOS ao desenho, e pedaco de
+    // frase nao casa com verbete. Traduzindo aqui, a quebra ja' mede e parte o
+    // ingles — que e' mais comprido que o portugues e quebra em outro lugar.
+    let texto = &shared::idioma::tr(texto);
     let mut linhas = Vec::new();
     let mut linha = String::new();
     for palavra in texto.split_whitespace() {

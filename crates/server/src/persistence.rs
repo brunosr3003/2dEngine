@@ -3237,7 +3237,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .execute(pool)
                 .await?;
         }
-        tracing::info!("balanceamento_hp_mobs_v1: HP dos mobs comuns atualizado");
+        tracing::info!("balanceamento_hp_mobs_v1: common mob HP updated");
     }
     // escada_armaduras_v1 (docs/ESCADA.md): a defesa das armaduras e do manto
     // do guerreiro estreitou em volta da media. O seed acima so' atualiza
@@ -3260,7 +3260,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .execute(pool)
                 .await?;
         }
-        tracing::info!("escada_armaduras_v1: defesa das armaduras estreitada");
+        tracing::info!("escada_armaduras_v1: armour defence narrowed");
     }
     // M26: os oito tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker...)
     // saem do jogo. O `INSERT ... DO NOTHING` acima nao renomeia linha que ja'
@@ -3410,7 +3410,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .await?;
             }
         }
-        tracing::info!("economy seed: {} vendor shops inseridos", shops.len());
+        tracing::info!("economy seed: {} vendor shops inserted", shops.len());
     }
 
     // Adiciona itens novos aos vendors existentes (idempotente via ON CONFLICT).
@@ -3542,7 +3542,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .await?;
         }
         tracing::info!(
-            "economy seed: {} farm node drops inseridos",
+            "economy seed: {} farm node drops inserted",
             farm_drops.len()
         );
     }
@@ -3577,7 +3577,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .await?;
             n += 1;
         }
-        tracing::info!("economy: {n} drops de pedra (materiais de craft) inseridos");
+        tracing::info!("economy: {n} rock drops (crafting materials) inserted");
     }
 
     // M27: os itens do sistema antigo viram os do formato novo (docs/COMBATE.md)
@@ -3655,7 +3655,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             feitos += sqlx::query(&sql).execute(pool).await?.rows_affected();
         }
         if feitos > 0 {
-            tracing::info!("M27: {feitos} linhas migradas pro equipamento novo");
+            tracing::info!("M27: {feitos} rows migrated to the new gear");
         }
     }
 
@@ -3705,7 +3705,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             .await?
             .rows_affected();
             tracing::info!(
-                "M30: historia renumerada — {tut} passos de tutorial e {resto} da historia remapeados"
+                "M30: story renumbered — {tut} tutorial steps and {resto} story steps remapped"
             );
         }
     }
@@ -3749,7 +3749,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .execute(pool).await?;
             }
             tracing::info!(
-                "M28: cobre e' a moeda — loja 4x, coleta sem ouro, arvore e flor com cobre"
+                "M28: copper is the currency — shop 4x, gathering without gold, tree and flower give copper"
             );
         }
     }

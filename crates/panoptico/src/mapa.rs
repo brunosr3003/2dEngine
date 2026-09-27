@@ -16,6 +16,69 @@
 use shared::terreno::{
     material_variado, tom_da_mancha, Bioma, DefIlha, Gerador, Material, BLOCO, NIVEL_DO_MAR,
 };
+use serde::Serialize;
+
+/// Recorte do mesmo gerador de terreno usado pelo cliente. A câmera 3D pede
+/// só a vizinhança do jogador; a ilha inteira seria grande demais por quadro.
+#[derive(Serialize)]
+pub struct Recorte3d {
+    pub x: i32,
+    pub z: i32,
+    pub passo: f32,
+    pub lado: usize,
+    pub alturas: Vec<f32>,
+    pub cores: Vec<[u8; 3]>,
+}
+
+pub fn recorte_3d(def: &'static DefIlha, cx: i32, cz: i32) -> Recorte3d {
+    const LADO: usize = 129;
+    let ger = Gerador::da_ilha(def);
+    let x = cx - (LADO / 2) as i32;
+    let z = cz - (LADO / 2) as i32;
+    let mut alturas = Vec::with_capacity(LADO * LADO);
+    let mut cores = Vec::with_capacity(LADO * LADO);
+    for iz in 0..LADO {
+        for ix in 0..LADO {
+            let wx = x + ix as i32;
+            let wz = z + iz as i32;
+            let bx = (wx as f32 / BLOCO).round() as i32;
+            let bz = (wz as f32 / BLOCO).round() as i32;
+            let h = ger.bloco_em(bx, bz);
+            let altura = (h + 1) as f32 * BLOCO;
+            let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .map(|(dx, dz)| (h - ger.bloco_em(bx + dx, bz + dz)).abs())
+                .max()
+                .unwrap_or(0);
+            let mat = material_variado(
+                def.bioma,
+                altura,
+                declive,
+                altura <= NIVEL_DO_MAR,
+                ger.mancha(bx, bz),
+            );
+            // A agua cobre o fundo abaixo do nivel do mar no cliente.
+            alturas.push(altura.max(NIVEL_DO_MAR));
+            let (r, g, b) = mat.rgb();
+            cores.push([r, g, b]);
+        }
+    }
+    Recorte3d { x, z, passo: 1.0, lado: LADO, alturas, cores }
+}
+
+#[cfg(test)]
+mod testes_3d {
+    #[test]
+    fn recorte_usa_altura_do_mesmo_gerador() {
+        let def = shared::terreno::def_da_zona("ilha_inicial").expect("starting island");
+        let r = super::recorte_3d(def, 10, -8);
+        assert_eq!(r.lado * r.lado, r.alturas.len());
+        assert_eq!(r.alturas.len(), r.cores.len());
+        let meio = (r.lado / 2) * r.lado + r.lado / 2;
+        let ger = shared::terreno::Gerador::da_ilha(def);
+        assert_eq!(r.alturas[meio], ger.altura(10.0, -8.0).max(shared::terreno::NIVEL_DO_MAR));
+    }
+}
 
 /// Quantas colunas do mundo cabem num pixel.
 ///
