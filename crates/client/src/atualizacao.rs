@@ -94,7 +94,7 @@ impl Atualizacao {
         let Some(url) = self.aviso.as_ref().filter(|_| !self.dispensado) else {
             return false;
         };
-        let r = crate::ui::painel(460.0, 260.0, "Cliente desatualizado");
+        let r = crate::ui::painel(460.0, 300.0, "Cliente desatualizado");
         crate::ui::texto_centro(
             r.center().x,
             r.y + 35.0,

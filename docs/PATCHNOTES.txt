@@ -9,6 +9,7 @@ As auras do seu personagem acompanham os equipamentos recebidos no login, sem pr
 Aviso de atualização
 Na entrada, o jogo verifica se há uma versão nova para sua plataforma e mostra “Cliente desatualizado”, com um botão para atualizar. No computador, abre o site; no celular, abre o canal de distribuição disponível. Você pode escolher “Agora não”. Uma falha na consulta não impede o login.
 No iPhone, o botão abre o TestFlight. No Android, enquanto a distribuição for por APK, ele abre o download oficial. A abertura de links no Android também foi implementada.
+O aviso tem uma opção para continuar no login sem atualizar naquele momento.
 
 26/09/2026 — Controles e correções
 
