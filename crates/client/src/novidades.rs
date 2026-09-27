@@ -148,6 +148,9 @@ pub async fn previa() {
     }
     let saida =
         std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-patchnotes.png".into());
+    ui::fundo();
+    notas.desenha();
+    unsafe { get_internal_gl().flush(); }
     get_screen_data().export_png(&saida);
 }
 
