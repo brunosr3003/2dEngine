@@ -1856,14 +1856,21 @@ mod testes {
         }
     }
 
+    /// O mundo nasce o bicho pela ESCADA (docs/ESCADA.md): o urso do 38 tem
+    /// mais vida, ataque e defesa que o do 12, na proporcao da regua — e e' a
+    /// mesma conta que o simulador usa (`Mob::novo`).
     #[test]
     fn mobs_de_faixa_alta_tem_atributos_reais_maiores() {
         let (vida_12, dano_12) = crate::world::vida_e_dano_do_mob(280, 18, 12);
         let (vida_38, dano_38) = crate::world::vida_e_dano_do_mob(280, 18, 38);
-        assert_eq!((vida_12, dano_12), (280, 18));
-        assert!(vida_38 > vida_12 * 2 - 1);
+        let urso = shared::escada::Perfil::relativo_ao_lobo(280, 18, 8);
+        let (m12, m38) = (shared::escada::mob(&urso, 12), shared::escada::mob(&urso, 38));
+        assert_eq!((vida_12, dano_12), (m12.vida, m12.ataque));
+        assert_eq!((vida_38, dano_38), (m38.vida, m38.ataque));
+        assert!(vida_38 as f32 > vida_12 as f32 * 1.8);
         assert!(dano_38 > dano_12);
         assert!(crate::world::defesa_do_mob(8, 38) > crate::world::defesa_do_mob(8, 12));
+        assert_eq!(crate::world::defesa_do_mob(8, 38), m38.defesa);
     }
 
     #[test]

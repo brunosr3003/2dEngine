@@ -529,20 +529,32 @@ pub struct DesafioMob {
 
 /// Referências derivadas da vida, ataque e defesa reais do inimigo. São guias
 /// de equipamento, nunca uma trava de nível nem multiplicador oculto de dano.
+///
+/// Desde 27/09/2026 saem da ESCADA (docs/ESCADA.md): o ataque recomendado é
+/// o que derruba o bicho em `GOLPES_POR_MOB` golpes passando a defesa dele,
+/// nunca abaixo do ataque esperado do nível; a defesa recomendada é a que
+/// deixa passar só o líquido do nível, nunca abaixo da defesa esperada; o
+/// poder é o da ficha com esses dois e a vida esperada. Era `(1 − 18/ataque)
+/// ÷ 1,5%` até 50 — a conta da defesa em porcentagem, que já não existe.
 pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
+    use crate::escada;
     let defesa = s.defense.max(0);
     let ataque = s.attack_damage.max(0);
-    let recomendado_ataque = if chefe {
-        s.hp_max.max(1) / 150 + defesa * 2
-    } else {
-        s.hp_max.max(1) / 9 + defesa * 2
-    }.max(10);
-    let dano_alvo = if chefe { 35.0 } else { 18.0 };
-    let recomendado_defesa = if ataque as f32 <= dano_alvo {
-        0
-    } else {
-        (((1.0 - dano_alvo / ataque as f32) / 0.015).ceil() as i32).clamp(0, 50)
-    };
+    let golpes = if chefe { escada::GOLPES_DO_CHEFE } else { escada::GOLPES_POR_MOB };
+    let recomendado_ataque = ((s.hp_max.max(1) as f32 / golpes).ceil() as i32 + defesa)
+        .max(escada::ataque(nivel));
+    let liquido = escada::dano_liquido_do_mob(nivel).round() as i32;
+    let recomendado_defesa = (ataque - liquido).max(escada::defesa(nivel)).max(0);
+    let poder_recomendado = crate::dungeon::poder_de_stats(&PlayerStats {
+        attack_damage: recomendado_ataque,
+        defense: recomendado_defesa,
+        hp_max: escada::vida(nivel),
+        mp_max: 0,
+        dex: 0,
+        wis: 0,
+        crit_chance: 0.0,
+        ..base_player_stats()
+    });
     let (grau, pecas, item_level, refino, prof, piso_poder) = if nivel >= 60 {
         (4, 5, 60, 5, 80, 10_500 + 200 * nivel.saturating_sub(60))
     } else if nivel >= 50 {
@@ -556,8 +568,7 @@ pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
     } else {
         (1, 1, 5, 0, nivel.min(20) as u16, 500 + 70 * nivel)
     };
-    let poder_recomendado = piso_poder as i32
-        + ataque * 6 + defesa * 8;
+    let _ = piso_poder;
     let poder_recomendado = if chefe {
         poder_recomendado * 115 / 100
     } else { poder_recomendado };
@@ -607,7 +618,7 @@ mod testes_desafio_mob {
         let trinta_quatro = desafio_do_mob(&s, 34, false);
         assert_eq!((vinte.grau_minimo, vinte.pecas_minimas), (2, 2));
         assert_eq!((trinta.grau_minimo, trinta.pecas_minimas), (3, 3));
-        assert!(trinta_quatro.poder_recomendado > 4_300);
+        assert!(trinta_quatro.poder_recomendado as i32 >= crate::escada::poder(34));
         assert!(trinta_quatro.proficiencia_minima >= 49);
         let chefe = desafio_do_mob(&s, 34, true);
         assert!(chefe.poder_recomendado > trinta_quatro.poder_recomendado);

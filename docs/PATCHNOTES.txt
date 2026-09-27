@@ -1,3 +1,20 @@
+27/09/2026 — A escada: defesa que subtrai, e equipamento que envelhece
+
+Como o golpe é calculado
+A defesa deixou de ser porcentagem. Agora o dano de um golpe é o ataque de quem bate menos a defesa de quem apanha, com um mínimo de 10% do golpe que sempre passa. Vale nos dois sentidos: contra você e contra os mobs. Um mob mais forte fura mais a mesma armadura, e uma armadura boa segura de verdade um mob fraco. O escudo da espada e o peso da armadura pesada continuam reduzindo em porcentagem, por cima da subtração.
+
+O que se espera em cada nível
+Cada nível tem um ataque, uma defesa e uma vida esperados, e todo mob, chefe e poder recomendado saem dessa régua. O poder recomendado das dungeons e da Ilha Mágica agora é o poder de um personagem equipado com a faixa do nível, então dá para comparar direto com o da sua ficha. Ficar com o equipamento de dez níveis atrás passa a ser sentido: os mobs furam mais e você mata mais devagar.
+
+Itens e refino
+As peças passam a nascer com atributos na escala do nível delas, e as que você já tem foram recalculadas ao entrar. O refino virou +4% dos atributos da peça por nível, sem a parte fixa de antes: +12 vale +48%, o equivalente a uns quinze níveis de adiantamento. A defesa das armaduras leve, média e pesada ficou mais próxima entre si.
+
+Mobs, fortes e Ilha Mágica
+Os mobs de cada nível ganharam vida, ataque e defesa derivados da régua; as espécies mantêm a personalidade de sempre (o urso continua o urso). Nos fortes e nas ilhotas da Ilha Mágica a horda passa a somar de verdade: quem está na faixa precisa de poção e de cuidado ao puxar, o escudeiro é quem segura a horda, e o refino compra a horda. Os mobs comuns da Ilha Mágica deixaram de ser enfraquecidos; os [FORTE] continuam mais fortes. O Ermo perdeu o bônus extra de vida e dano que tinha por cima.
+
+Chefes
+O golpe comum dos chefes passou a doer contra qualquer armadura (o telegrafado continua tirando uma fração da vida de quem fica dentro), e a vida deles agora acompanha a régua do nível, sem teto.
+
 27/09/2026 — Prévia do personagem e das skins
 
 Personagem no menu Aparência

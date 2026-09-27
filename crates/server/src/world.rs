@@ -731,10 +731,6 @@ pub(crate) struct CurvaDoInicio {
     /// Alcance de visao, fracao do da tabela. Com 9 de visao e vagas a 7,
     /// quem batia num lobo acordava o vizinho.
     pub deteccao: [f32; 10],
-    /// Dano, fracao do da tabela.
-    pub dano: [f32; 10],
-    /// Vida, fracao da tabela.
-    pub vida: [f32; 10],
     /// Folego de iniciante: sem levar dano ha' `folego_apos_s`, esta fracao
     /// da vida maxima volta por segundo. O AUTO emenda um bicho no outro e o
     /// regen base (0,5/s) nao devolvia o que a luta tirou.
@@ -748,8 +744,6 @@ pub(crate) const CURVA_DO_INICIO: CurvaDoInicio = CurvaDoInicio {
     matilha: [4.0, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0, 14.0],
     carga: [1.4, 1.4, 1.5, 1.6, 1.7, 1.8, 2.0, 2.1, 2.2, 2.3],
     deteccao: [0.50, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.90, 0.95],
-    dano: [0.40, 0.45, 0.50, 0.55, 0.60, 0.68, 0.75, 0.82, 0.90, 0.95],
-    vida: [0.60, 0.65, 0.70, 0.75, 0.80, 0.84, 0.88, 0.92, 0.96, 1.0],
     folego_por_s: 0.03,
     folego_apos_s: 3.0,
     folego_ate_nivel: 10,
@@ -800,21 +794,21 @@ pub(crate) fn xp_do_mob(base: u64, nivel: u32) -> u64 {
     (base as f32 * (1.0 + 0.10 * nivel.saturating_sub(1) as f32)).round() as u64
 }
 
+/// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu:
+/// da ESCADA (docs/ESCADA.md). Os numeros da tabela viram o PERFIL da
+/// especie, relativo ao lobo; o nivel escolhe o degrau. Era a curva de
+/// iniciante mais +4% de vida e +3,5% de dano por nivel acima do 12 — e a
+/// defesa do jogador em porcentagem fixa fazia isso nao importar.
 pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
-    let c = CURVA_DO_INICIO;
-    let acima = nivel.saturating_sub(12).min(88) as f32;
-    let (v, d) = (
-        do_inicio(c.vida, nivel, 1.0) * (1.0 + 0.04 * acima),
-        do_inicio(c.dano, nivel, 1.0) * (1.0 + 0.035 * acima),
-    );
-    (
-        ((hp as f32) * v).round().max(1.0) as i32,
-        ((dano as f32) * d).round().max(1.0) as i32,
-    )
+    let m = shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(hp, dano, 0), nivel);
+    (m.vida, m.ataque)
 }
 
+/// A defesa do mob no nivel: fracao do ataque esperado, pela defesa da
+/// tabela (`escada::Perfil`).
 pub(crate) fn defesa_do_mob(defesa: i32, nivel: u32) -> i32 {
-    defesa + (nivel.saturating_sub(12).min(88) as f32 * 0.5).round() as i32
+    let lobo = shared::escada::LOBO;
+    shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(lobo.0, lobo.1, defesa), nivel).defesa
 }
 
 /// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
@@ -3900,28 +3894,22 @@ impl GameWorld {
                 max: hp,
             };
         }
-        if self.zona == "ilha_deserto" && de_faixa {
-            // No Ermo, o nivel 30 abre a viagem, mas o equipamento T2 e a
-            // defesa decidem se o jogador aguenta as patrulhas. A pressao
-            // cresce ate' o 40 sem criar imunidade ou mecanica artificial.
-            let avancos = (nivel as u32).saturating_sub(30).min(10) as f32;
-            let vida = 1.25 + avancos * 0.04;
-            let dano = 1.25 + avancos * 0.04;
-            let hp = ((health.max as f32) * vida).round().max(1.0) as i32;
-            tag.stats.hp_max = hp;
-            tag.stats.attack_damage =
-                ((tag.stats.attack_damage as f32) * dano).round().max(1.0) as i32;
-            health.current = hp;
-            health.max = hp;
-        }
+        // O Ermo tinha +25% a +65% de vida e dano por cima, "porque o
+        // equipamento T2 e a defesa decidem se o jogador aguenta": era o
+        // remendo pra defesa em porcentagem, que deixava o mob do 30 sem
+        // efeito. Na escada (docs/ESCADA.md) o mob do 35 ja' e' o mob do 35
+        // em qualquer ilha, e o guarda mede o Ermo pelo bioma.
         if self.zona == shared::magica::ZONA && de_faixa {
-            // Quatro mobs comuns sao mais acessiveis; um slot em cinco vira
-            // Forte. O slot mantem a variante nos respawns, sem depender de
-            // sorte em cada morte. Chefes usam outro caminho de spawn.
+            // Um slot em cinco vira Forte. O slot mantem a variante nos
+            // respawns, sem depender de sorte em cada morte. Chefes usam
+            // outro caminho de spawn. Os outros quatro eram enfraquecidos
+            // (0,85 / 0,80); na escada nao sao mais — densidade ja' e' o
+            // bonus, e com o golpe por subtracao a horda soma
+            // (docs/ESCADA.md, "O que mudou").
             let (vida, dano) = if magica_forte {
                 (1.25, 1.15)
             } else {
-                (0.85, 0.80)
+                (1.0, 1.0)
             };
             let hp = ((health.max as f32) * vida).round().max(1.0) as i32;
             tag.stats.hp_max = hp;
@@ -11652,9 +11640,8 @@ impl GameWorld {
                 }
                 (d, pct.clamp(0.0, 0.75))
             };
-            // Defesa eh % redux (soulslike feel) em vez de subtracao flat.
-            // Cada ponto de defense = 1.5% redux, cap 75%. Reducao por
-            // breakpoints (damage_reduction_pct) soma em cima, cap final 90%.
+            // Defesa SUBTRAI do golpe, com piso; a reducao de identidade
+            // (escudo, peso) vem por cima (`shared::escada`).
             let mut dmg = dano_mitigado(dmg, target_defense, target_dmg_reduction_pct);
 
             // Boss bloqueando (AI PvP): -75% de dano + flash de parry no
@@ -19819,10 +19806,12 @@ mod testes_colisao_de_instancia {
     }
 }
 
+/// O golpe (docs/ESCADA.md): `max(ataque − defesa, ataque × piso)`, e a
+/// reducao de identidade (escudo, peso da armadura) por cima, com teto.
+/// Era `1,5% por ponto de defesa ate' 75%`, somado a reducao ate' 90% — uma
+/// porcentagem que nao olhava quem batia.
 pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
-    let def_resist_pct = (defesa as f32 * 0.015).clamp(0.0, 0.75);
-    let total_resist = (def_resist_pct + reducao.clamp(0.0, 0.75)).min(0.90);
-    (((dmg as f32) * (1.0 - total_resist)).round() as i32).max(1)
+    shared::escada::dano_com_reducao(dmg, defesa, reducao)
 }
 
 
@@ -19951,13 +19940,10 @@ pub(crate) fn effective_stats(
         s.dash_cd_mult += b.dash_cd_reduction_pct * pts as f32;
     }
 
-    // Breakpoints de stat — milestones que dão build identity.
-    // VIT: cada 25 pontos → +5% damage reduction (cap 75% via clamp downstream).
-    let vit = allocated[shared::stat_idx::VIT];
-    s.damage_reduction_pct += (vit / 25) as f32 * 0.05;
-    // RES: cada 30 pontos → +5% damage reduction (stack com VIT).
-    let res = allocated[shared::stat_idx::RES];
-    s.damage_reduction_pct += (res / 30) as f32 * 0.05;
+    // Os degraus de VIT/25 e RES/30 (+5% de reducao cada) sairam em 27/09:
+    // eram porcentagem fixa de qualquer golpe, o mesmo defeito da defesa
+    // antiga (docs/ESCADA.md). VIT continua dando vida e RES defesa; a
+    // reducao percentual e' so' identidade (escudo, peso da armadura).
 
     // Bonus do equipamento. Cada slot tem item_id (base bonus via
     // item_bonus) + Option<ItemInstance> (atributos fixos × cor × tier ×
@@ -21175,15 +21161,19 @@ mod testes_da_ilha_magica_lotada {
 
     #[test]
     fn dificuldade_inicial_sobe_gradualmente_sem_mudar_nivel_20() {
-        let mut anterior = vida_e_dano_do_mob(100, 100, 1);
+        let (lobo_hp, lobo_dmg, _) = shared::escada::LOBO;
+        let mut anterior = vida_e_dano_do_mob(lobo_hp, lobo_dmg, 1);
         for nivel in 2..=11 {
-            let atual = vida_e_dano_do_mob(100, 100, nivel);
+            let atual = vida_e_dano_do_mob(lobo_hp, lobo_dmg, nivel);
             assert!(atual.0 >= anterior.0 && atual.1 >= anterior.1);
             assert!(atual.1 - anterior.1 <= 10);
             assert!(matilha_raio_do_nivel(nivel) >= matilha_raio_do_nivel(nivel - 1));
             anterior = atual;
         }
-        assert_eq!(vida_e_dano_do_mob(100, 100, 20), (132, 128));
+        // O mundo e o simulador (`balanceamento`) usam a MESMA conta.
+        let m = shared::escada::mob(&shared::escada::Perfil::novo(1.0, 1.0, 0.0), 20);
+        assert_eq!(vida_e_dano_do_mob(lobo_hp, lobo_dmg, 20), (m.vida, m.ataque));
+        assert_eq!(defesa_do_mob(8, 30), shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(280, 18, 8), 30).defesa);
         assert_eq!(folego_de_iniciante(11, 100, 10.0), 0.0);
         assert_eq!(folego_de_iniciante(2, 100, 0.0), 0.0);
         assert!(folego_de_iniciante(5, 100, 10.0) > folego_de_iniciante(10, 100, 10.0));
