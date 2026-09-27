@@ -82,15 +82,15 @@ impl Novidades {
         }
         if max > 0.0 {
             if ui::botao(
-                Rect::new(r.x + 24.0, r.bottom() - 56.0, 44.0, 34.0),
-                "↑",
+                Rect::new(r.x + 24.0, r.bottom() - 56.0, 66.0, 34.0),
+                "Subir",
                 true,
             ) {
                 self.scroll = (self.scroll - 100.0).max(0.0);
             }
             if ui::botao(
-                Rect::new(r.x + 76.0, r.bottom() - 56.0, 44.0, 34.0),
-                "↓",
+                Rect::new(r.x + 98.0, r.bottom() - 56.0, 78.0, 34.0),
+                "Descer",
                 true,
             ) {
                 self.scroll = (self.scroll + 100.0).min(max);
@@ -141,17 +141,21 @@ pub async fn previa() {
         scroll: 0.0,
         arrasto: None,
     };
-    for _ in 0..5 {
-        ui::fundo();
-        notas.desenha();
-        next_frame().await;
+    let alvo = render_target(screen_width() as u32, screen_height() as u32);
+    let camera = Camera2D {
+        render_target: Some(alvo.clone()),
+        ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()))
+    };
+    set_camera(&camera);
+    ui::fundo();
+    notas.desenha();
+    unsafe {
+        get_internal_gl().flush();
     }
     let saida =
         std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-patchnotes.png".into());
-    ui::fundo();
-    notas.desenha();
-    unsafe { get_internal_gl().flush(); }
-    get_screen_data().export_png(&saida);
+    alvo.texture.get_texture_data().export_png(&saida);
+    set_default_camera();
 }
 
 #[cfg(test)]
