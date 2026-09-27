@@ -1857,6 +1857,28 @@ pub(crate) fn kind_inicial(kind: u16) -> Option<&'static KindInicial> {
     KINDS_INICIAIS.iter().find(|k| k.kind as u16 == kind)
 }
 
+impl KindInicial {
+    /// A especie como a escada a ve' (docs/ESCADA.md): vida e ataque
+    /// relativos ao lobo, defesa em fracao do ataque esperado. Os numeros
+    /// da tabela deixam de ser absolutos e passam a ser proporcao.
+    pub(crate) fn perfil(&self) -> shared::escada::Perfil {
+        shared::escada::Perfil::relativo_ao_lobo(self.hp, self.dmg, self.def)
+    }
+}
+
+impl EnemyKindDef {
+    /// O mesmo `perfil` a partir da linha do banco — a que o mundo usa.
+    pub fn perfil(&self) -> shared::escada::Perfil {
+        shared::escada::Perfil::relativo_ao_lobo(self.hp_max, self.attack_damage, self.defense)
+    }
+}
+
+/// Os atributos REAIS de um mob comum deste kind nascido no nivel: o que a
+/// tela mostra e a conta usa. E' o que o mundo chama ao nascer o bicho.
+pub fn mob_na_escada(kind: u16, nivel: u32) -> shared::escada::Mob {
+    shared::escada::mob(&enemy_def(kind).perfil(), nivel)
+}
+
 #[cfg(test)]
 mod testes_de_praia {
     use super::*;

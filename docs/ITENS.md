@@ -46,18 +46,23 @@ vai ficar, não para a que vai virar material.
 
 ## Refino +1 a +12
 
-### Quanto cada nível dá (decisão de 17/09/2026)
+### Quanto cada nível dá (decisão de 27/09/2026)
 
-Cada nível soma **+8% dos atributos da peça** e uma **parte fixa** na escala do
-nível do item (`shared::items::refino_fixo`: 1 no item nível 5, 4 no 18, 7 no
-35, 12 no 60). Vida e mana ganham o dobro da parte fixa; ataque e defesa, ela;
-destreza e sabedoria, só a percentual. A parte fixa só entra em atributo que a
-peça tem: refinar não cria atributo.
+Cada nível soma **+4% dos atributos da peça**, e só isso
+(`shared::items::REFINE_BOOST_PER_LEVEL`). +12 vale +48% — a distância de
+uns quinze níveis na escada (docs/ESCADA.md): cash compra adiantamento, não
+imunidade, e o adiantamento envelhece junto com a peça. Refinar não cria
+atributo.
 
-Antes era só +5%, e numa peça cinza (vida 13, defesa 1) o +1 arredondava pra
-nada e o +4 dava +3 de poder. Hoje a mesma armadura +4 vai a vida 25, defesa 5
-e destreza 3 (teste `cada_nivel_de_refino_aumenta_a_peca`). A Forja mostra o
-poder da peça antes e depois do próximo nível.
+Foi +5% (17/09 de manhã), depois +8% mais uma **parte fixa** por nível do
+item (17/09 à tarde), porque numa peça cinza o +1 arredondava pra nada. A
+parte fixa é o que saiu: numa peça de base baixa ela dominava — cinto de
+defesa 2 virava 18 no +5, armadura de 14 virava 55 — e, com a defesa em
+porcentagem fixa de então, deixava o dono imune do 20 ao 45. Hoje a peça já
+nasce na escala do nível (`items::escala_do_roll`), então o percentual muda
+a peça em toda faixa que importa (teste
+`o_refino_e_percentual_e_muda_toda_peca_da_faixa`). Numa cinza do começo o
++1 ainda pode arredondar pra nada: refinar cinza não é o jogo.
 
 **Estes números são os do MIR4.** Vieram da [MIR4 Wiki, revisão 4392, de 5 de
 fevereiro de 2022](https://www.mir4.wiki/wiki/Enhancing) — a era do jogo base,
@@ -200,6 +205,10 @@ Assim "trocar as botas" tem um efeito que o jogador sente e nomeia — e não é
 mesmo efeito de trocar o cinto.
 
 ## Como o grau e o tier escalam o stat
+
+> 27/09/2026: a escala de NÍVEL DE ITEM deixou de ser `1 + 1,5% por nível`
+> e passou a sair da escada (`items::escala_do_roll`, docs/ESCADA.md); a
+> razão entre cores e o +15% por tier continuam os daqui.
 
 Vinte degraus de Comum I a Lendário IV. A proposta é **+15% por degrau**:
 

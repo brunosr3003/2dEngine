@@ -200,7 +200,12 @@ pub fn nivel_do_estagio(c: &Conteudo, e: u8) -> u32 {
 }
 
 /// Poder minimo, em % do poder de referencia, por estagio.
-pub const PODER_PCT: [u32; 5] = [80, 85, 95, 105, 115];
+///
+/// A referencia e' o personagem ESPERADO do nivel (escada), equipado na
+/// faixa a +0 — nao mais o pelado com a arma inicial. Por isso as fracoes
+/// cairam: o estagio 1 deixa entrar quem esta' meia faixa atras, e so' o 5
+/// pede a escada inteira.
+pub const PODER_PCT: [u32; 5] = [55, 65, 80, 90, 100];
 
 /// O mesmo numero do "Poder" da ficha do cliente.
 pub fn poder_de_stats(s: &PlayerStats) -> i32 {
@@ -212,14 +217,16 @@ pub fn poder_de_stats(s: &PlayerStats) -> i32 {
         + (s.crit_chance * 1000.0) as i32
 }
 
-/// Poder de referencia de um nivel ⚠️: o de um personagem do nivel com o
-/// basico da faixa. Cresce devagar de proposito — porta de poder que tranca
-/// quem esta' no nivel certo so' manda o jogador embora.
+/// Poder de referencia de um nivel: o do personagem ESPERADO na escada
+/// (docs/ESCADA.md) — ataque, defesa e vida da faixa a +0, na mesma conta
+/// da ficha. E' por isso que ele se compara com o poder do jogador: "poder
+/// 2.900" nao diz nada, "2.900 de 2.900 esperados" diz tudo.
+///
+/// Era `base x 1,25 + 10 por nivel`, calibrado pro pelado passar no
+/// estagio 1 — e no nivel 34 dava 4.300 enquanto qualquer jogador real
+/// tinha o dobro. Porta que ninguem encosta nao e' porta.
 pub fn poder_referencia(nivel: u32) -> i32 {
-    // Calibrado pro estagio 1 (80%): o personagem sem ponto nenhum, so' com a
-    // arma inicial, passa no nivel do conteudo; cada nivel pede +8 de poder.
-    let base = poder_de_stats(&crate::components::base_player_stats());
-    base * 100 / 80 + 10 * nivel.saturating_sub(1) as i32
+    crate::escada::poder(nivel)
 }
 
 pub fn poder_minimo(c: &Conteudo, e: u8) -> i32 {
@@ -1247,15 +1254,19 @@ mod testes {
         let c = gruta();
         let p: Vec<i32> = (1..=5).map(|e| poder_minimo(c, e)).collect();
         assert!(p.windows(2).all(|w| w[1] > w[0]), "{p:?}");
-        // Sem ponto nenhum, com a arma inicial (+8 de ataque ≈ +80 de poder),
-        // no nivel 10: passa no estagio 1.
-        let pelado = poder_de_stats(&crate::components::base_player_stats());
+        // Quem esta' meia faixa atras (a escada de cinco niveis abaixo)
+        // passa no estagio 1; quem esta' na escada passa no 5.
+        let n = c.nivel_min;
         assert!(
-            pelado + 80 >= poder_minimo(c, 1),
-            "a porta nao tranca quem esta' no nivel: {} < {}",
-            pelado + 80,
+            crate::escada::poder(n.saturating_sub(5)) >= poder_minimo(c, 1),
+            "a porta tranca quem esta' quase no nivel: {} < {}",
+            crate::escada::poder(n.saturating_sub(5)),
             poder_minimo(c, 1)
         );
+        assert!(crate::escada::poder(nivel_do_estagio(c, 5)) >= poder_minimo(c, 5));
+        // O pelado com a arma inicial NAO passa: a porta voltou a ser porta.
+        let pelado = poder_de_stats(&crate::components::base_player_stats());
+        assert!(pelado + 80 < poder_minimo(c, 1));
     }
 
     #[test]

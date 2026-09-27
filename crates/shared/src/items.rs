@@ -156,7 +156,7 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         // === a secundaria de cada conjunto ===
         MANTO_DO_GUERREIRO => ItemTemplate {
             hp_max: r(20, 50),
-            defense: r(3, 8),
+            defense: r(1, 4),
             ..Default::default()
         },
         BAINHA => ItemTemplate {
@@ -175,10 +175,15 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
             ..Default::default()
         },
         // === armadura: o peso e' a escolha (o dano/resistencia do peso sai de
-        // `peso_da_armadura`, aqui e' so' o que ela rola) ===
+        // `peso_da_armadura`, aqui e' so' o que ela rola). A defesa das tres
+        // ficou num corredor estreito em volta da media (0,7x / 1x / 1,4x)
+        // em 27/09/2026: com o golpe por subtracao (docs/ESCADA.md) a pesada
+        // a 1,85x da media punha o escudeiro no piso contra todo mob comum, e
+        // a leve a 0,4x deixava o atirador tomando o dobro do esperado. O
+        // banco espelha isto pela migracao `escada_armaduras_v1`. ===
         ARMADURA_LEVE => ItemTemplate {
             hp_max: r(15, 35),
-            defense: r(1, 4),
+            defense: r(3, 6),
             dex: r(2, 6),
             ..Default::default()
         },
@@ -189,7 +194,7 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         },
         ARMADURA_PESADA => ItemTemplate {
             hp_max: r(60, 120),
-            defense: r(8, 16),
+            defense: r(7, 11),
             ..Default::default()
         },
         // === acessorios: iguais pra todo mundo ===
@@ -381,21 +386,18 @@ impl AffixSlot {
 }
 
 pub const MAX_REFINE: u8 = 15;
-/// Parte percentual do refino: +8% dos atributos da peca por nivel.
+/// O refino: +4% dos atributos da peca por nivel, e SO' isso (docs/ESCADA.md).
 ///
-/// Era +5% e SO' isso: numa peca cinza (vida 13, defesa 1) o +1 arredondava
-/// pra nada e o +4 dava +3 de poder em 767 — o dono refinou ate' +4 e nao viu
-/// mudar. Agora ha' tambem a parte FIXA (`refino_fixo`), que e' o que pesa no
-/// comeco; a percentual e' o que pesa em peca boa.
-pub const REFINE_BOOST_PER_LEVEL: f32 = 0.08;
-
-/// Parte fixa do refino, por nivel, na escala do nivel do item: 1 no item
-/// nivel 5, 4 no 18, 7 no 35, 12 no 60. Vida e mana ganham o dobro disso;
-/// ataque e defesa, isso; destreza e sabedoria so' a parte percentual. So'
-/// entra em atributo que a peca TEM — refinar nao cria atributo.
-pub fn refino_fixo(item_level: u16) -> i32 {
-    ((item_level as i32 + 4) / 5).max(1)
-}
+/// Foi +5%, depois +8% mais uma parte FIXA por nivel do item (17/09/2026),
+/// porque numa peca cinza o +1 arredondava pra nada. A parte fixa e' o que
+/// saiu em 27/09: numa peca de base baixa ela dominava — cinto de defesa 2
+/// virava 18 no +5, armadura de 14 virava 55 — e junto com a defesa em
+/// porcentagem fixa deixava o dono imune do 20 ao 45. Agora a peca ja' nasce
+/// na escala do nivel (`escala_do_roll`), entao o percentual muda a peca em
+/// toda faixa que importa; e +12 (o `forja::REFINO_MAX`) vale +48%, que e' a
+/// distancia de uns quinze niveis na escada: cash compra adiantamento, nao
+/// imunidade.
+pub const REFINE_BOOST_PER_LEVEL: f32 = 0.04;
 
 // ── Compatibilidade do antigo sistema de afixos ─────────────────────────
 // Tipos e tabela permanecem porque fazem parte do formato salvo e do wire.
@@ -749,13 +751,13 @@ impl ItemInstance {
             self.defense,
             self.affixes.iter().any(|a| !a.is_empty()),
         );
-        let m = mult_do_roll(self.rarity, self.item_level, self.tier);
-        self.hp_max = tpl.hp_max.roll(0.5, m);
-        self.mp_max = tpl.mp_max.roll(0.5, m);
-        self.attack_damage = tpl.attack_damage.roll(0.5, m);
-        self.dex = tpl.dex.roll(0.5, m);
-        self.wis = tpl.wis.roll(0.5, m);
-        self.defense = tpl.defense.roll(0.5, m);
+        let e = escala_do_roll(self.rarity, self.item_level, self.tier);
+        self.hp_max = tpl.hp_max.roll(0.5, e.vida);
+        self.mp_max = tpl.mp_max.roll(0.5, e.vida);
+        self.attack_damage = tpl.attack_damage.roll(0.5, e.ataque);
+        self.dex = tpl.dex.roll(0.5, e.ataque);
+        self.wis = tpl.wis.roll(0.5, e.ataque);
+        self.defense = tpl.defense.roll(0.5, e.defesa);
         self.affixes = [AffixSlot::default(); MAX_AFFIXES];
         let depois = (
             self.hp_max,
@@ -777,22 +779,15 @@ impl ItemInstance {
     /// Bônus completo dos atributos fixos × refino. Afixos legados não contam.
     pub fn effective_bonus(&self) -> crate::constants::EquipBonus {
         let m = self.refine_mult();
-        let (r, u) = (self.refinement as i32, refino_fixo(self.item_level));
-        // Percentual sobre o valor base + fixo por nível, só se a peça tem o atributo.
-        let com = |v: i32, fixo: i32| {
-            if v == 0 {
-                0
-            } else {
-                (v as f32 * m).round() as i32 + fixo * r
-            }
-        };
+        // Percentual sobre o valor da peca: refinar nao cria atributo.
+        let com = |v: i32| (v as f32 * m).round() as i32;
         crate::constants::EquipBonus {
-            hp_max: com(self.hp_max, 2 * u),
-            mp_max: com(self.mp_max, 2 * u),
-            attack_damage: com(self.attack_damage, u),
-            dex: com(self.dex, 0),
-            wis: com(self.wis, 0),
-            defense: com(self.defense, u),
+            hp_max: com(self.hp_max),
+            mp_max: com(self.mp_max),
+            attack_damage: com(self.attack_damage),
+            dex: com(self.dex),
+            wis: com(self.wis),
+            defense: com(self.defense),
         }
     }
 
@@ -814,12 +809,38 @@ impl ItemInstance {
     }
 }
 
-/// Multiplier de stats baseado em item_level. iLvl 1 = 1.0× (baseline),
-/// cresce ~1% por level. Fórmula: 1.0 + (ilvl - 1) × 0.015.
-/// O multiplicador que o roll aplica numa peca dessa cor, nivel e tier (a
-/// mesma conta do `roll_em`).
-pub fn mult_do_roll(grau: u8, item_level: u16, tier: u8) -> f32 {
-    tier_stat_mult(grau.clamp(1, 5)) * ilvl_scale(item_level) * bonus_do_tier(tier)
+/// O que multiplica cada atributo do template numa peca (docs/ESCADA.md).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Escala {
+    /// Ataque, destreza e sabedoria.
+    pub ataque: f32,
+    pub defesa: f32,
+    /// Vida e mana.
+    pub vida: f32,
+}
+
+/// A escala de uma peca dessa cor, nivel e tier (a mesma conta do `roll_em`
+/// e do `fixar`).
+///
+/// O template (no banco, espelho de `item_template`) e' so' a PROPORCAO
+/// entre as pecas; o numero vem da escada: no nivel de item `i`, na cor
+/// natural do nivel (`tier_from_ilvl`), o conjunto de referencia a +0 soma
+/// exatamente o que os itens tem que dar a um personagem do nivel `i`
+/// (`escada::*_dos_itens`). Uma cor acima da natural vale a razao das cores
+/// (`tier_stat_mult`): azul no nivel de verde e' 1,33x; cinza no nivel de
+/// verde, 0,67x. O tier soma +15% por degrau (`bonus_do_tier`).
+///
+/// Era `cor x (1 + 1,5% por nivel de item) x tier`, um numero so' pra tudo:
+/// a peca do 35 tinha 25% a mais que a do 18 enquanto o mob tinha 60% a
+/// mais, e a defesa em porcentagem escondia a diferenca.
+pub fn escala_do_roll(grau: u8, item_level: u16, tier: u8) -> Escala {
+    let cor = tier_stat_mult(grau.clamp(1, 5)) / tier_stat_mult(tier_from_ilvl(item_level));
+    let t = bonus_do_tier(tier);
+    Escala {
+        ataque: crate::escada::escala_de_ataque(item_level) * cor * t,
+        defesa: crate::escada::escala_de_defesa(item_level) * cor * t,
+        vida: crate::escada::escala_de_vida(item_level) * cor * t,
+    }
 }
 
 /// O que uma peca de `item_id` criada no `item_level` da': (atributo,
@@ -827,23 +848,19 @@ pub fn mult_do_roll(grau: u8, item_level: u16, tier: u8) -> f32 {
 /// que nao e' equipamento. E' o "o que da'" do Craft antes de criar.
 pub fn faixas_do_roll(item_id: u16, item_level: u16) -> Vec<(&'static str, i32, i32)> {
     let tpl = item_template(item_id);
-    let mult = tier_stat_mult(tier_from_ilvl(item_level)) * ilvl_scale(item_level) * bonus_do_tier(1);
+    let e = escala_do_roll(tier_from_ilvl(item_level), item_level, 1);
     [
-        ("Ataque", tpl.attack_damage),
-        ("Defesa", tpl.defense),
-        ("Vida", tpl.hp_max),
-        ("Mana", tpl.mp_max),
-        ("Destreza", tpl.dex),
-        ("Sabedoria", tpl.wis),
+        ("Ataque", tpl.attack_damage, e.ataque),
+        ("Defesa", tpl.defense, e.defesa),
+        ("Vida", tpl.hp_max, e.vida),
+        ("Mana", tpl.mp_max, e.vida),
+        ("Destreza", tpl.dex, e.ataque),
+        ("Sabedoria", tpl.wis, e.ataque),
     ]
     .into_iter()
-    .filter(|(_, r)| !r.is_zero())
-    .map(|(n, r)| (n, r.roll(0.5, mult), r.roll(0.5, mult)))
+    .filter(|(_, r, _)| !r.is_zero())
+    .map(|(n, r, m)| (n, r.roll(0.5, m), r.roll(0.5, m)))
     .collect()
-}
-
-pub fn ilvl_scale(item_level: u16) -> f32 {
-    1.0 + (item_level.saturating_sub(1) as f32) * 0.015
 }
 
 // ── Fase D: Item Sets ───────────────────────────────────────────────────
@@ -916,44 +933,69 @@ mod testes_do_refino {
         assert!(faixas_do_roll(crate::constants::item_id::COPPER, 5).is_empty());
     }
 
-    /// Cada nivel de refino MUDA a peca, ate' a cinza do comeco: o +1 nao
-    /// pode arredondar pra nada (era o caso com so' +5%).
+    /// Cada nivel de refino MUDA uma peca da faixa (verde pra cima), e o
+    /// +12 vale +48% — a distancia de uns quinze niveis na escada, nunca
+    /// mais. Numa cinza do comeco o +1 pode arredondar pra nada: e' peca de
+    /// vida 13, e refinar cinza nao e' o jogo.
     #[test]
-    fn cada_nivel_de_refino_aumenta_a_peca() {
-        let mut armadura =
-            ItemInstance::roll_for(crate::constants::item_id::ARMADURA_LEVE, 5, || 0.5).unwrap();
-        armadura.hp_max = 13;
-        armadura.mp_max = 0;
-        armadura.attack_damage = 0;
-        armadura.dex = 2;
-        armadura.wis = 0;
-        armadura.defense = 1;
-        armadura.item_level = 5;
-        for a in armadura.affixes.iter_mut() {
-            *a = AffixSlot::default();
-        }
+    fn o_refino_e_percentual_e_muda_toda_peca_da_faixa() {
+        use crate::constants::item_id::{ARMADURA_MEDIA, KATANA};
         let soma = |b: &crate::constants::EquipBonus| {
             b.hp_max + b.mp_max + b.attack_damage * 10 + b.defense * 8 + (b.dex + b.wis) * 5
         };
-        armadura.refinement = 0;
-        let mut antes = soma(&armadura.effective_bonus());
-        for nivel in 1..=crate::forja::REFINO_MAX {
-            armadura.refinement = nivel;
-            let b = armadura.effective_bonus();
-            assert!(soma(&b) > antes, "+{nivel} nao mudou a peca");
-            assert_eq!(
-                (b.attack_damage, b.mp_max, b.wis),
-                (0, 0, 0),
-                "refino criou atributo que a peca nao tem"
-            );
-            antes = soma(&b);
+        for (id, ilvl) in [(ARMADURA_MEDIA, 18u16), (KATANA, 18), (ARMADURA_MEDIA, 35), (KATANA, 60)] {
+            let mut p = ItemInstance::roll_for(id, ilvl, || 0.5).unwrap();
+            let base = p.effective_bonus();
+            let mut antes = soma(&base);
+            for nivel in 1..=crate::forja::REFINO_MAX {
+                p.refinement = nivel;
+                let b = p.effective_bonus();
+                assert!(soma(&b) > antes, "{id} nv{ilvl} +{nivel} nao mudou a peca");
+                assert_eq!(
+                    (b.attack_damage == 0, b.defense == 0, b.hp_max == 0),
+                    (base.attack_damage == 0, base.defense == 0, base.hp_max == 0),
+                    "refino criou atributo que a peca nao tem"
+                );
+                antes = soma(&b);
+            }
+            let teto = p.effective_bonus();
+            let razao = soma(&teto) as f32 / soma(&base) as f32;
+            assert!((razao - 1.48).abs() < 0.04, "{id} nv{ilvl}: +12 vale {razao:.2}x");
         }
-        armadura.refinement = 4;
-        let b = armadura.effective_bonus();
-        assert_eq!(
-            (b.hp_max, b.defense, b.dex),
-            (25, 5, 3),
-            "a armadura cinza +4 do dono"
-        );
+    }
+
+    /// A peca nasce na escala do nivel dela: o conjunto de referencia a +0,
+    /// na cor natural, soma o que a escada pede dos itens naquele nivel.
+    #[test]
+    fn o_conjunto_de_referencia_a_mais_zero_fecha_na_escada() {
+        use crate::constants::item_id::*;
+        for ilvl in [5u16, 18, 30, 35, 45, 60] {
+            let mut atk = 0;
+            let mut def = 0;
+            let mut hp = 0;
+            for id in [KATANA, BAINHA, ARMADURA_MEDIA, BRINCO, AMULETO, BRACELETE, CINTO] {
+                let p = ItemInstance::roll_for(id, ilvl, || 0.5).unwrap();
+                let b = p.effective_bonus();
+                // A destreza vira ataque na katana (`escada::ATAQUE_POR_DEX`).
+                atk += b.attack_damage + (b.dex as f32 * crate::escada::ATAQUE_POR_DEX).round() as i32;
+                def += b.defense;
+                hp += b.hp_max;
+            }
+            let n = ilvl as u32;
+            let folga = |x: f32| (x * 0.06).max(3.0);
+            let (ea, ed, ev) = (
+                crate::escada::ataque_dos_itens(n),
+                crate::escada::defesa_dos_itens(n),
+                crate::escada::vida_dos_itens(n),
+            );
+            assert!((atk as f32 - ea).abs() <= folga(ea), "nv{ilvl}: ataque {atk} vs {ea:.0}");
+            assert!((def as f32 - ed).abs() <= folga(ed), "nv{ilvl}: defesa {def} vs {ed:.0}");
+            assert!((hp as f32 - ev).abs() <= folga(ev), "nv{ilvl}: vida {hp} vs {ev:.0}");
+        }
+        // Uma cor acima da natural vale a razao das cores.
+        let verde = ItemInstance::roll_em(item_template(ARMADURA_MEDIA), 18, 2, 1, || 0.5).unwrap();
+        let azul = ItemInstance::roll_em(item_template(ARMADURA_MEDIA), 18, 3, 1, || 0.5).unwrap();
+        let r = azul.defense as f32 / verde.defense as f32;
+        assert!((r - 1.2 / 0.9).abs() < 0.08, "azul no nivel de verde: {r:.2}x");
     }
 }

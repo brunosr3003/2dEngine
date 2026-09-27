@@ -248,23 +248,26 @@ diferença, já que os dois extremos ficam presos no teto.
 
 ## Atributos dos mobs e equipamento
 
-Não há multiplicador oculto por diferença de nível. O nível da faixa aumenta
-os atributos reais de cada mob. Após o nível 12, a cada nível: +4% da vida
-base, +3,5% do ataque base e +0,5 de defesa. A curva inicial dos níveis 1–4
-continua igual. Chefes já têm vida, ataque e defesa próprios que crescem com
-o nível. Os golpes usam o ataque do inimigo contra a defesa do jogador; os
-golpes do jogador usam a defesa do inimigo. Assim, equipamento melhor pode
-compensar uma diferença de nível.
+**Desde 27/09/2026 isto é a ESCADA — docs/ESCADA.md.** O golpe é
+`max(ataque − defesa, ataque × 0,10)` nos dois sentidos, sem olhar nível; o
+que se espera de ataque, defesa e vida em cada nível são três retas
+(`shared::escada`), e mob, item, refino, chefe e poder recomendado derivam
+delas. O que segue é o registro do que valia antes.
+
+Não havia multiplicador oculto por diferença de nível. O nível da faixa
+aumentava os atributos reais de cada mob: após o nível 12, a cada nível, +4%
+da vida base, +3,5% do ataque base e +0,5 de defesa. A defesa do jogador
+valia 1,5% por ponto até 75% — e é isso que quebrou: 50 de defesa cortavam
+75% de qualquer golpe, do lobo do 1 ao Colosso do 60, e um F2P a +0 já os
+tinha.
 
 O servidor envia, junto à identificação de cada inimigo, vida, ataque e
 defesa reais e três referências de equipamento: ataque, defesa e poder
-recomendados. A partir do nível 20 a referência inclui ao menos duas peças
-verdes; a partir do 30, três peças azuis, arma refinada e proficiência da
-arma. O poder sugerido sobe por faixa e pelos atributos do inimigo, com
-referência acima de 4.300 para mobs do nível 34. O Menu → Mobs lista a versão
-mais forte de cada espécie das ilhas visitadas, os chefes e os inimigos
-vistos de perto. Compara as referências com os atributos atuais do personagem. São orientações,
-não travas de entrada nem modificadores secretos de dano.
+recomendados. O Menu → Mobs lista a versão mais forte de cada espécie das
+ilhas visitadas, os chefes e os inimigos vistos de perto, e compara as
+referências com os atributos atuais do personagem. São orientações, não
+travas de entrada nem modificadores secretos de dano. Na escada a
+referência é `escada::linha(nível)` — o mesmo número da ficha.
 
 ## Início do jogo
 

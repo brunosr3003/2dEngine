@@ -30,11 +30,11 @@ estao no catalogo.
 
 | O que | Regra |
 |---|---|
-| Vida | 8.960 + 269 × nivel, teto 20.720 (+12% em 19/09/2026, quando as skills passaram a render mais que o básico; o dano do jogador cresce com o equipamento da faixa) |
-| Golpe comum | 12 + 2 × nivel, mitigado normalmente; cadencia minima 2,4 s (`CADENCIA_COMUM_S`) |
+| Vida | 250 golpes do jogador esperado do nível contra a defesa do chefe (`escada::vida_do_chefe`, docs/ESCADA.md) — no 30 são 24.700, no 60 45.900, sem teto porque o ataque esperado é reta. Era `8.960 + 269 × nivel` com teto 20.720 (+12% em 19/09/2026) |
+| Golpe comum | a defesa esperada do nível mais dois lobos e meio de líquido (`escada::ataque_do_chefe`): quem está na escada toma 2,5× o que um lobo tira; mitigado por subtração (`escada::dano`); cadencia minima 2,4 s (`CADENCIA_COMUM_S`). Era `15 + 2,4 × nivel` contra a defesa em porcentagem, que no 30 virava 17 |
 | Golpe telegrafado | tira `dano_mult` × 12% da VIDA MAXIMA de quem ficou dentro (1,8 → 22%, 3,4 → 41%); a resistencia NAO vale contra ele (`RESISTENCIA_NO_TELEGRAFICO = 0`); fase 2 ×1,15 |
 | Roubo de vida | o chefe cura 25% de todo dano que causa (regra antiga do servidor, mantida) |
-| Defesa | nivel ÷ 2 |
+| Defesa | 40% do ataque esperado do nível (`escada::defesa_do_chefe`): quem está uma faixa atrás bate no piso. Era `nivel × 0,65` |
 | XP | 40 × nivel (o servidor ainda da' 5× por ser chefe) |
 | Respawn | 600 + 10 × nivel s (Bosque ~11–12 min, Planalto ~20 min) |
 | Fase 2 | vida ≤ 50%: golpe de fase 2 liberado, carga ×0,85, recarga ×0,75 |

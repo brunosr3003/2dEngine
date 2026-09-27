@@ -1369,7 +1369,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             hp: (20, 50),
             mp: (0, 0),
             atk: (0, 0),
-            def: (3, 8),
+            def: (1, 4),
             dex: (0, 0),
             wis: (0, 0),
         },
@@ -1441,7 +1441,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             hp: (15, 35),
             mp: (0, 0),
             atk: (0, 0),
-            def: (1, 4),
+            def: (3, 6),
             dex: (2, 6),
             wis: (0, 0),
         },
@@ -1477,7 +1477,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             hp: (60, 120),
             mp: (0, 0),
             atk: (0, 0),
-            def: (8, 16),
+            def: (7, 11),
             dex: (0, 0),
             wis: (0, 0),
         },
@@ -3238,6 +3238,29 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                 .await?;
         }
         tracing::info!("balanceamento_hp_mobs_v1: HP dos mobs comuns atualizado");
+    }
+    // escada_armaduras_v1 (docs/ESCADA.md): a defesa das armaduras e do manto
+    // do guerreiro estreitou em volta da media. O seed acima so' atualiza
+    // template de linha sem icone, e estas ja' tem; so' mexe em linha que
+    // AINDA tem a faixa antiga — ajuste de admin fica.
+    let armaduras_v1 = sqlx::query("INSERT INTO economy_migrations(name) VALUES ('escada_armaduras_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected() > 0;
+    if armaduras_v1 {
+        for (id, velho, novo) in [
+            (shared::item_id::ARMADURA_PESADA, (8, 16), (7, 11)),
+            (shared::item_id::ARMADURA_LEVE, (1, 4), (3, 6)),
+            (shared::item_id::MANTO_DO_GUERREIRO, (3, 8), (1, 4)),
+        ] {
+            sqlx::query("UPDATE items SET def_min = $1, def_max = $2 WHERE id = $3 AND def_min = $4 AND def_max = $5")
+                .bind(novo.0)
+                .bind(novo.1)
+                .bind(id as i32)
+                .bind(velho.0)
+                .bind(velho.1)
+                .execute(pool)
+                .await?;
+        }
+        tracing::info!("escada_armaduras_v1: defesa das armaduras estreitada");
     }
     // M26: os oito tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker...)
     // saem do jogo. O `INSERT ... DO NOTHING` acima nao renomeia linha que ja'

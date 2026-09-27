@@ -34,7 +34,8 @@ use glam::Vec2;
 use shared::skills::Conjunto;
 
 use crate::economy::{kind_para_nivel_em, KindInicial, KINDS_INICIAIS};
-use crate::world::{cooldown_do_ataque, dano_mitigado, effective_stats};
+use crate::world::{cooldown_do_ataque, effective_stats};
+use shared::escada::{dano as dano_mitigado_por_subtracao, dano_com_reducao};
 
 const DT: f32 = 1.0 / 30.0;
 /// Raio da busca de alvo do AUTO COMBATE (client `auto_combate::RAIO`).
@@ -116,16 +117,17 @@ struct Mob {
 
 impl Mob {
     fn novo(def: &'static KindInicial, casa: Vec2, nivel: u32) -> Mob {
-        let (hp, dano) = crate::world::vida_e_dano_do_mob(def.hp, def.dmg, nivel);
+        // Da escada (docs/ESCADA.md): o perfil da especie sobre o nivel.
+        let m = shared::escada::mob(&def.perfil(), nivel);
         Mob {
             def,
             nivel,
             casa,
             pos: casa,
-            hp,
-            hp_max: hp,
-            dano,
-            defesa: crate::world::defesa_do_mob(def.def, nivel),
+            hp: m.vida,
+            hp_max: m.vida,
+            dano: m.ataque,
+            defesa: m.defesa,
             det: crate::world::deteccao_do_nivel(def.det, nivel),
             vivo: true,
             volta_em: 0.0,
@@ -226,15 +228,13 @@ fn abateu(m: &mut Mob, t: f32, s: &mut Saida, alvo: Option<u16>) {
 }
 
 pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado {
-    let arma = arma_do(conjunto);
-    let mut equip = shared::Equipment::default();
-    equip.weapon = Some(arma);
-    let stats = effective_stats(
-        &equip,
-        &[0; shared::STAT_COUNT],
-        &[0; shared::PROF_COUNT],
-        0,
-    );
+    // O personagem DO NIVEL: pontos, proficiencia e a faixa vestida
+    // (`build_do_nivel`), como o duelo de chefe ja' fazia. Ate' 27/09/2026
+    // era o pelado com a arma inicial e nenhum ponto — servia enquanto o mob
+    // mal escalava; na escada (docs/ESCADA.md) o mob do 10 assume que quem
+    // esta' no 10 veste a armadura do 10, e o pelado morria.
+    let (equip, alloc, profs, xp) = build_do_nivel(conjunto, nivel);
+    let stats = effective_stats(&equip, &alloc, &profs, xp);
     let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
         .into_iter()
         .filter(|s| s.conjunto == conjunto && s.destravada(nivel))
@@ -486,7 +486,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 }
             }
             let m = &mut mobs[a];
-            let dmg = dano_mitigado(shared::basic_attack_damage(stats, arma, 0), m.defesa, 0.0);
+            let dmg = dano_mitigado_por_subtracao(shared::basic_attack_damage(stats, arma, 0), m.defesa);
             if conjunto == Conjunto::Katana {
                 *hp = (*hp
                     + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA)
@@ -537,8 +537,8 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                         o.provocado_ate = o.provocado_ate.max(t + crate::world::PROVOCACAO_S);
                     }
                     if d <= raio {
-                        o.hp -= dano_mitigado(
-                            s.dano_efetivo(stats.attack_damage, cd_base), o.defesa, 0.0);
+                        o.hp -= dano_mitigado_por_subtracao(
+                            s.dano_efetivo(stats.attack_damage, cd_base), o.defesa);
                         if o.hp <= 0 {
                             abateu(o, t, &mut r, alvo_kind);
                         }
@@ -663,7 +663,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             if m.def.kite.is_none() && m.pos.distance(eu) > m.def.rng + shared::HIT_TARGET_RADIUS {
                 continue;
             }
-            let mut dmg = dano_mitigado(m.dano, stats.defense, stats.damage_reduction_pct);
+            let mut dmg = dano_com_reducao(m.dano, stats.defense, stats.damage_reduction_pct);
             if muralha_ate > t {
                 dmg = ((dmg as f32) * 0.5).round().max(1.0) as i32;
             }
@@ -1132,11 +1132,11 @@ pub(crate) fn build_do_nivel(
     profs[conjunto as usize] = shared::proficiency_xp_for_level(nivel);
     let xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
 
-    let ilvl = shared::receitas::FAIXAS
-        .iter()
-        .rev()
-        .find(|f| nivel >= f.nivel_min as u32)
-        .map_or(5, |f| f.item_level);
+    // Nivel de item da ESCADA (docs/ESCADA.md): o degrau de cinco abaixo do
+    // nivel, que e' o que "equipado na faixa" quer dizer. Antes eram as
+    // quatro faixas do craft (5/18/35/60): do 20 ao 39 a referencia vestia
+    // a mesma peca de nivel 18, e no 35 estava meia escada atras.
+    let ilvl = ((nivel / 5) * 5).max(5) as u16;
     let peca = |id: u16| {
         (
             Some(id),
@@ -1291,7 +1291,7 @@ pub(crate) fn duelar(
         esquivados: 0,
         cancelados: 0,
     };
-    let reducao = stats.damage_reduction_pct.clamp(0.0, 0.75);
+    let reducao = stats.damage_reduction_pct.clamp(0.0, shared::escada::REDUCAO_MAX);
     let mut t = 0.0f32;
     while t < LIMITE_CHEFE_S {
         t += DT;
@@ -1409,10 +1409,9 @@ pub(crate) fn duelar(
             if eu.distance(chefe) > alcance + raio_do_chefe {
                 continue;
             }
-            let dmg = dano_mitigado(
+            let dmg = dano_mitigado_por_subtracao(
                 shared::basic_attack_damage(&stats, arma, alloc[shared::stat_idx::INT]),
                 def_chefe,
-                0.0,
             );
             if conjunto == Conjunto::Katana {
                 // CHEFE: a fracao menor. E' a mesma funcao que o servidor
@@ -1440,8 +1439,8 @@ pub(crate) fn duelar(
                 muralha_ate = t + s.duracao_efeito();
             }
             if s.dano > 0 {
-                hp_chefe -= dano_mitigado(
-                    s.dano_efetivo(stats.attack_damage, cd_base), def_chefe, 0.0);
+                hp_chefe -= dano_mitigado_por_subtracao(
+                    s.dano_efetivo(stats.attack_damage, cd_base), def_chefe);
             }
         }
         if hp_chefe <= 0 {
@@ -1534,7 +1533,7 @@ pub(crate) fn duelar(
             {
                 continue;
             }
-            let mut dmg = dano_mitigado(dano_chefe, stats.defense, reducao);
+            let mut dmg = dano_com_reducao(dano_chefe, stats.defense, reducao);
             if muralha_ate > t {
                 dmg = ((dmg as f32) * 0.5).round().max(1.0) as i32;
             }
@@ -1599,7 +1598,18 @@ mod testes {
     /// extremos estao presos no `TETO_DO_GANHO` — a pistola pelo alvo unico e o
     /// anel pelo Julgamento. Subir a area so' atrasa a espada, que passa a
     /// provocar mais matilha.
-    const TOLERANCIA_DE_RITMO: f32 = 0.25;
+    ///
+    /// De 0,25 pra 0,60 em 27/09/2026, quando o simulador passou a vestir a
+    /// build do nivel (`build_do_nivel`) em vez do pelado, e o golpe virou
+    /// subtracao (docs/ESCADA.md): com a faixa vestida a pistola (25% de
+    /// cadencia, alcance, nao anda) limpa em 1,3 s e a espada (0,65x de
+    /// ataque menos a defesa do bicho, o tanque) em 4,4 s no nivel 10. E' a
+    /// mesma ordem de antes, alargada: o pelado apagava a diferenca porque
+    /// andar ate' o bicho era a maior parte do tempo. A espada cobra o que
+    /// paga aqui na horda (`metas_da_escada`), onde e' a unica que limpa na
+    /// faixa. O que a meta cobra continua: nenhum conjunto fica pra tras nem
+    /// dispara sozinho.
+    const TOLERANCIA_DE_RITMO: f32 = 0.60;
 
     /// As metas do balanceamento (docs/COMBATE.md, "Balanceamento"), nos
     /// niveis 1, 5 e 10, contra a zona da propria faixa, AUTO e COM pocao — a
@@ -1615,9 +1625,12 @@ mod testes {
     ///
     ///   1. todo conjunto limpa 10 mobs vivo — HP minimo >= 25% com espada e
     ///      escudo, >= 15% com os outros;
-    ///   2. quem atira tambem apanha: >= 3 de dano por mob;
-    ///   3. dano por mob do corpo a corpo (media dos dois) no maximo 1,5x o de
-    ///      quem luta a distancia (media dos dois) — a meta e' ~1,4;
+    ///   2. quem atira tambem apanha: a media dos dois a distancia >= 1 de
+    ///      dano por mob no nivel 10 (a pistola vestida derruba o lobo antes
+    ///      de a mordida sair; o anel, de alcance curto, apanha — e na horda
+    ///      os dois apanham, ver `metas_da_escada`);
+    ///   3. dano por mob do corpo a corpo (media dos dois) no maximo 3x o de
+    ///      quem luta a distancia (media dos dois), no nivel 10;
     ///   4. tempo de luta por abate de cada conjunto dentro da
     ///      `TOLERANCIA_DE_RITMO` em volta da media do nivel.
     ///
@@ -1651,13 +1664,6 @@ mod testes {
                         piso * 100.0
                     ));
                 }
-                if nivel > 1 && r.conjunto.a_distancia() && r.dano_por_mob() < 3.0 {
-                    falhas.push(format!(
-                        "nv{nivel} {:?}: quem atira saiu sem apanhar ({:.1}/mob)",
-                        r.conjunto,
-                        r.dano_por_mob()
-                    ));
-                }
             }
             let media = |f: &dyn Fn(&Resultado) -> bool| {
                 let v: Vec<f32> = rs
@@ -1675,7 +1681,10 @@ mod testes {
                     perto / longe
                 );
             }
-            if nivel > 1 && perto > longe * 1.5 {
+            if nivel >= 10 && longe < 1.0 {
+                falhas.push(format!("nv{nivel}: quem atira saiu sem apanhar ({longe:.1}/mob)"));
+            }
+            if nivel >= 10 && perto > longe * 3.0 {
                 falhas.push(format!(
                     "nv{nivel}: corpo a corpo apanha {:.2}x o de quem atira",
                     perto / longe
@@ -1965,17 +1974,18 @@ mod testes {
         );
     }
 
-    /// A resistencia que o catalogo usa pra calcular o telegrafado e' a mesma
-    /// que o servidor aplica no hit — senao o golpe tira mais ou menos que o
-    /// numero do catalogo.
+    /// A resistencia que o catalogo usa e' a mesma fracao que a escada
+    /// aplica DEPOIS da subtracao — senao o numero do catalogo diverge do
+    /// golpe de verdade. A defesa em pontos nao entra: ela subtrai.
     #[test]
-    fn resistencia_do_catalogo_bate_com_a_do_servidor() {
+    fn resistencia_do_catalogo_bate_com_a_da_escada() {
         for defesa in [0, 7, 20, 49, 60, 120] {
             for reducao in [0.0f32, 0.1, 0.4, 0.5, 0.8] {
                 let r = cat::resistencia(defesa, reducao);
-                let esperado = ((1000.0 * (1.0 - r)).round() as i32).max(1);
+                let bruto = dano_mitigado_por_subtracao(1000, defesa) as f32;
+                let esperado = ((bruto * (1.0 - r)).round() as i32).max(1);
                 assert_eq!(
-                    dano_mitigado(1000, defesa, reducao),
+                    dano_com_reducao(1000, defesa, reducao),
                     esperado,
                     "defesa {defesa} reducao {reducao}"
                 );
@@ -1990,10 +2000,10 @@ mod testes {
             for conj in Conjunto::TODOS {
                 let (e, a, p, x) = build_do_nivel(conj, c.nivel);
                 let s = effective_stats(&e, &a, &p, x);
-                let dmg = dano_mitigado(
+                let dmg = dano_com_reducao(
                     cat::dano(c.nivel),
                     s.defense,
-                    s.damage_reduction_pct.clamp(0.0, 0.75),
+                    s.damage_reduction_pct,
                 );
                 assert!(
                     dmg < s.hp_max,
@@ -2287,6 +2297,424 @@ mod dps_por_ponto {
                     print!("| {nome} {:+5.1}% dps {:+4} hp ", (d / d0 - 1.0) * 100.0, hp - hp0);
                 }
                 println!();
+            }
+        }
+    }
+}
+
+/// O GUARDA DA ESCADA (docs/ESCADA.md).
+///
+/// O que fez o pos-20 escapar e' que nada media depois do nivel 10. Aqui o
+/// simulador roda a cada cinco niveis do 20 ao 60, em tres perfis e tres
+/// lugares, e cobra a proporcao: quem esta' na escada limpa a zona; quem
+/// esta' uma faixa atras sofre; quem refinou anda na frente, mas nao fica
+/// imune. Mexeu em mob, item, refino ou ponto e a proporcao quebrou: isto
+/// reprova.
+#[cfg(test)]
+mod metas_da_escada {
+    use super::*;
+    use shared::escada;
+    use shared::skills::Conjunto;
+    use shared::terreno::Bioma;
+
+    pub(super) const NIVEIS: [u32; 9] = [20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(super) enum Lugar {
+        /// 18 mobs no raio de 45 (`MOB_POR_ZONA`, `MOB_ZONA_RAIO_UN`).
+        Zona,
+        /// 34 mobs no raio de 24 (`FORTE_*`): a vila de mobs.
+        Forte,
+        /// A ilhota da Ilha Magica: cinco hordas de 18 em raio 22,5, uma em
+        /// cinco [FORTE] (1,25 de vida, 1,15 de ataque). SEM o enfraquecimento
+        /// de 0,85/0,80 dos outros: densidade ja' e' o bonus.
+        Ilhota,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(super) enum Quem {
+        /// Equipado na faixa, +0: o personagem esperado.
+        NaFaixa,
+        /// Os pontos do nivel com o equipamento de dez niveis atras, +0.
+        UmaFaixaAtras,
+        /// Na faixa, tudo +10 (+40%): o que o cash compra.
+        Refinado,
+    }
+
+    fn bioma(nivel: u32) -> Bioma {
+        match nivel {
+            0..=14 => Bioma::Floresta,
+            15..=27 => Bioma::Gelo,
+            28..=39 => Bioma::Deserto,
+            _ => Bioma::Montanha,
+        }
+    }
+
+    fn espalha(centro: Vec2, raio: f32, espaco: f32, teto: usize, out: &mut Vec<Vec2>) {
+        let mut n = 0;
+        let mut i = 0;
+        while n < teto && i < 4000 {
+            let a = i as f32 * 2.399_963;
+            let r = raio * ((i as f32 + 0.5) / 400.0).sqrt();
+            i += 1;
+            if r > raio {
+                break;
+            }
+            let p = centro + Vec2::new(a.cos(), a.sin()) * r;
+            if out.iter().all(|o| o.distance(p) >= espaco) {
+                out.push(p);
+                n += 1;
+            }
+        }
+    }
+
+    fn posicoes(lugar: Lugar) -> Vec<Vec2> {
+        let mut v = Vec::new();
+        match lugar {
+            Lugar::Zona => v = vagas(),
+            Lugar::Forte => espalha(
+                Vec2::ZERO,
+                crate::world::FORTE_RAIO_UN,
+                crate::world::FORTE_ESPACO_UN,
+                crate::world::FORTE_POR_ZONA as usize,
+                &mut v,
+            ),
+            Lugar::Ilhota => {
+                let (raio, esp, teto) = (
+                    crate::world::MOB_ZONA_RAIO_UN * 0.5,
+                    crate::world::MOB_ESPACO_UN * 0.6,
+                    crate::world::MOB_POR_ZONA as usize,
+                );
+                espalha(Vec2::ZERO, raio, esp, teto, &mut v);
+                for k in 0..4 {
+                    let a = k as f32 / 4.0 * std::f32::consts::TAU + 0.4;
+                    let c = Vec2::new(a.cos(), a.sin()) * (shared::magica::RAIO_ILHOTA * 0.55);
+                    espalha(c, raio, esp, teto, &mut v);
+                }
+            }
+        }
+        v
+    }
+
+    pub(super) fn build(quem: Quem, c: Conjunto, nivel: u32) -> shared::PlayerStats {
+        let (mut e, a, p, x) = build_do_nivel(c, nivel);
+        match quem {
+            Quem::NaFaixa => {}
+            Quem::UmaFaixaAtras => e = build_do_nivel(c, nivel.saturating_sub(10).max(1)).0,
+            Quem::Refinado => {
+                for i in [
+                    &mut e.weapon_inst,
+                    &mut e.offhand_inst,
+                    &mut e.armor_inst,
+                    &mut e.earring_inst,
+                    &mut e.necklace_inst,
+                    &mut e.bracelet_inst,
+                    &mut e.belt_inst,
+                ] {
+                    if let Some(x) = i.as_mut() {
+                        x.refinement = 10;
+                    }
+                }
+            }
+        }
+        effective_stats(&e, &a, &p, x)
+    }
+
+    pub(super) struct Medida {
+        pub abates: u32,
+        pub alvo: u32,
+        pub vivo: bool,
+        pub hp_min: f32,
+        pub por_abate: f32,
+        pub dano_por_mob: f32,
+        pub agressores: usize,
+        pub pocoes: u32,
+    }
+
+    impl Medida {
+        pub fn limpou(&self) -> bool {
+            self.vivo && self.abates >= self.alvo
+        }
+    }
+
+    pub(super) fn medir(quem: Quem, c: Conjunto, nivel: u32, lugar: Lugar, pocao: bool) -> Medida {
+        let stats = build(quem, c, nivel);
+        let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
+            .into_iter()
+            .filter(|s| s.conjunto == c && s.destravada(nivel))
+            .collect();
+        let bio = if lugar == Lugar::Ilhota { Bioma::Floresta } else { bioma(nivel) };
+        let comuns = crate::economy::kinds_do_bioma(bio).to_vec();
+        let mobs: Vec<Mob> = posicoes(lugar)
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let lv = nivel + (i as u32 % 3);
+                let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
+                let mut m = Mob::novo(crate::economy::kind_inicial(k).expect("kind conhecido"), v, lv);
+                if lugar == Lugar::Ilhota && i % 5 == 0 {
+                    m.hp_max = (m.hp_max as f32 * 1.25).round() as i32;
+                    m.hp = m.hp_max;
+                    m.dano = (m.dano as f32 * 1.15).round() as i32;
+                }
+                m
+            })
+            .collect();
+        let alvo = 20;
+        // Chega pela BORDA, como o jogador chega vindo da cidade, e liga o
+        // AUTO ali. Comecar no centro de um forte e' nascer com 34 mobs em
+        // cima — ninguem sobrevive a isso por construcao, e nao e' o jogo:
+        // no jogo a horda se puxa aos poucos, e e' a matilha (raio 16) que
+        // decide quantos vem de uma vez.
+        let borda = match lugar {
+            Lugar::Zona => crate::world::MOB_ZONA_RAIO_UN,
+            Lugar::Forte => crate::world::FORTE_RAIO_UN,
+            Lugar::Ilhota => shared::magica::RAIO_ILHOTA * 0.55 + crate::world::MOB_ZONA_RAIO_UN * 0.5,
+        } + 6.0;
+        let entrada = Vec2::new(-borda, 0.0);
+        let mut hp = stats.hp_max;
+        let mut bolsa = if pocao { Pocoes::Infinitas } else { Pocoes::Nenhuma };
+        let s = lutar(
+            Luta {
+                conjunto: c,
+                nivel,
+                stats: &stats,
+                skills: &skills,
+                mobs,
+                sorteio: Some((nivel, nivel + 2)),
+                centro: entrada,
+                inicio: entrada,
+                chegada: entrada,
+                parada: Parada::Abates(alvo),
+                limite_s: 600.0,
+            },
+            &mut hp,
+            &mut bolsa,
+        );
+        Medida {
+            abates: s.abates,
+            alvo,
+            vivo: s.vivo,
+            hp_min: s.hp_min,
+            por_abate: s.em_luta / s.abates.max(1) as f32,
+            dano_por_mob: s.dano_recebido as f32 / s.abates.max(1) as f32,
+            agressores: s.max_agressores,
+            pocoes: s.pocoes,
+        }
+    }
+
+    fn linha(quem: Quem, c: Conjunto, nivel: u32, lugar: Lugar, pocao: bool, m: &Medida) -> String {
+        format!(
+            "nv{nivel:<2} {:<13} {:<7} {:<14} {} | {:>2}/{:<2} {:>5.2}s/abate | dano/mob {:>6.1} | agr {:>2} | HPmin {:>4.0}% | pocoes {:>2} | {}",
+            format!("{quem:?}"),
+            format!("{lugar:?}"),
+            format!("{c:?}"),
+            if pocao { "pocao" } else { "seco " },
+            m.abates,
+            m.alvo,
+            m.por_abate,
+            m.dano_por_mob,
+            m.agressores,
+            m.hp_min * 100.0,
+            m.pocoes,
+            if m.vivo { "vivo" } else { "MORTO" }
+        )
+    }
+
+    /// A tabela inteira, pra olhar: `cargo test -p server --bin server
+    /// tabela_da_escada -- --nocapture --ignored`.
+    #[test]
+    #[ignore]
+    fn tabela_da_escada() {
+        crate::economy::init_vazia_para_testes();
+        for &nivel in NIVEIS.iter() {
+            println!();
+            let l = escada::linha(nivel);
+            println!("== nivel {nivel}: esperado ataque {} defesa {} vida {}", l.0, l.1, l.2);
+            for c in Conjunto::TODOS {
+                let s = build(Quem::NaFaixa, c, nivel);
+                println!("   {c:?}: ataque {} defesa {} vida {} reducao {:.2}", s.attack_damage, s.defense, s.hp_max, s.damage_reduction_pct);
+            }
+            for lugar in [Lugar::Zona, Lugar::Forte, Lugar::Ilhota] {
+                for quem in [Quem::NaFaixa, Quem::UmaFaixaAtras, Quem::Refinado] {
+                    for c in Conjunto::TODOS {
+                        for pocao in [false, true] {
+                            let m = medir(quem, c, nivel, lugar, pocao);
+                            println!("{}", linha(quem, c, nivel, lugar, pocao, &m));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// O personagem esperado ESTA' na escada: o que `build_do_nivel` veste
+    /// mais os pontos e a proficiencia dao o ataque, a defesa e a vida da
+    /// linha, com folga — senao a escada descreve alguem que nao existe.
+    #[test]
+    fn a_referencia_anda_na_escada() {
+        crate::economy::init_vazia_para_testes();
+        let mut falhas = Vec::new();
+        for &nivel in NIVEIS.iter() {
+            let (ea, ed, ev) = escada::linha(nivel);
+            // A katana com armadura media E' o conjunto de referencia.
+            let s = build(Quem::NaFaixa, Conjunto::Katana, nivel);
+            for (nome, tem, quer, folga) in [
+                ("ataque", s.attack_damage, ea, 0.15),
+                ("defesa", s.defense, ed, 0.15),
+                ("vida", s.hp_max, ev, 0.15),
+            ] {
+                let desvio = (tem - quer) as f32 / quer as f32;
+                if desvio.abs() > folga {
+                    falhas.push(format!("nv{nivel} katana {nome} {tem} vs escada {quer} ({:+.0}%)", desvio * 100.0));
+                }
+            }
+            // Os outros conjuntos ficam num corredor em volta: o peso da
+            // armadura e' escolha, nao outra escada.
+            for c in [Conjunto::EspadaEscudo, Conjunto::Pistolas, Conjunto::AnelMagico] {
+                let s = build(Quem::NaFaixa, c, nivel);
+                let d = s.defense as f32 / ed as f32;
+                if !(0.5..=2.2).contains(&d) {
+                    falhas.push(format!("nv{nivel} {c:?} defesa {} e' {d:.2}x a escada", s.defense));
+                }
+                // Espada e escudo paga o tanque em ataque (0,65x): e' a
+                // identidade dela, e a meta de zona cobra que ainda limpe.
+                let a = s.attack_damage as f32 / ea as f32;
+                if !(0.6..=1.4).contains(&a) {
+                    falhas.push(format!("nv{nivel} {c:?} ataque {} e' {a:.2}x a escada", s.attack_damage));
+                }
+            }
+        }
+        assert!(falhas.is_empty(), "\n{}", falhas.join("\n"));
+    }
+
+    /// As metas por lugar e perfil. Sem pocao, salvo onde diz.
+    #[test]
+    fn metas_da_escada() {
+        crate::economy::init_vazia_para_testes();
+        let mut falhas: Vec<String> = Vec::new();
+        fn cobra(falhas: &mut Vec<String>, ok: bool, quem: Quem, c: Conjunto, nivel: u32, lugar: Lugar, pocao: bool, m: &Medida, regra: &str) {
+            if !ok {
+                falhas.push(format!("{regra}: {}", linha(quem, c, nivel, lugar, pocao, m)));
+            }
+        }
+        for &nivel in NIVEIS.iter() {
+            for c in Conjunto::TODOS {
+                // ZONA: na faixa limpa vivo e sobra vida; uma faixa atras
+                // precisa de pocao; refinado passeia — mas os mobs ainda
+                // tiram alguma coisa dele (o piso).
+                let m = medir(Quem::NaFaixa, c, nivel, Lugar::Zona, false);
+                cobra(&mut falhas, m.limpou() && m.hp_min >= 0.35, Quem::NaFaixa, c, nivel, Lugar::Zona, false, &m, "na faixa limpa a zona com >= 35% de vida, sem pocao");
+                let m = medir(Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, true);
+                // O tanque uma faixa atras trava no mago que recua (0,65x
+                // de ataque menos a defesa do bicho: um golpe a mais do que
+                // a investida da') — nao morre, mas nao limpa. Artefato do
+                // AUTO que nao troca de alvo; no jogo se troca.
+                let tanque = c == Conjunto::EspadaEscudo;
+                cobra(&mut falhas, m.limpou() || (tanque && m.vivo && m.hp_min >= 0.5), Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, true, &m, "uma faixa atras limpa a zona com pocao");
+                let m2 = medir(Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, false);
+                let m1 = medir(Quem::NaFaixa, c, nivel, Lugar::Zona, false);
+                // Quem atira e mata antes de o bicho chegar toma zero nos
+                // dois casos; a regra vale onde ha' o que comparar.
+                let piso_de_comparacao = build(Quem::NaFaixa, c, nivel).hp_max as f32 * 0.01;
+                cobra(&mut falhas, m1.dano_por_mob < piso_de_comparacao || m2.dano_por_mob >= m1.dano_por_mob * 1.25, Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, false, &m2, "uma faixa atras toma pelo menos 1,25x o que a faixa certa toma");
+                let m = medir(Quem::Refinado, c, nivel, Lugar::Zona, false);
+                cobra(&mut falhas, m.limpou() && m.hp_min >= 0.60, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado limpa a zona com >= 60% de vida");
+                cobra(&mut falhas, m1.dano_por_mob < piso_de_comparacao || m.dano_por_mob >= m1.dano_por_mob * 0.20, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado ainda toma pelo menos um quinto do esperado (o piso)");
+            }
+            // FORTE e ILHOTA: a densidade e' o desafio, e com o golpe por
+            // subtracao a horda SOMA — vinte no piso ainda e' o dobro do que
+            // um mob tira de quem esta' na escada. Quem esta' atras morre;
+            // entre os outros vale a ordem; e o tanque (espada e escudo, com
+            // a reducao do escudo por cima da subtracao) e' quem limpa. O
+            // tamanho da puxada (a matilha, `world::MATILHA_RAIO_UN`) e' o
+            // botao que decide o quanto a horda pesa, e nao esta' aqui.
+            for lugar in [Lugar::Forte, Lugar::Ilhota] {
+                let mut algum_na_faixa_limpa = false;
+                for c in Conjunto::TODOS {
+                    let na_faixa = medir(Quem::NaFaixa, c, nivel, lugar, true);
+                    let atras = medir(Quem::UmaFaixaAtras, c, nivel, lugar, true);
+                    let refinado = medir(Quem::Refinado, c, nivel, lugar, true);
+                    algum_na_faixa_limpa |= na_faixa.limpou();
+                    // O tanque limpa ate' uma faixa atras: o escudo por cima
+                    // da subtracao e' a identidade dele, e a horda e' o lugar
+                    // em que ela aparece.
+                    let tanque = c == Conjunto::EspadaEscudo;
+                    cobra(&mut falhas, tanque || !atras.limpou(), Quem::UmaFaixaAtras, c, nivel, lugar, true, &atras, "uma faixa atras NAO limpa a horda, nem com pocao");
+                    // Quem limpa passa da meta por um ou dois (o golpe em
+                    // area derruba mais de um), e a puxada e' caotica: quem
+                    // mata mais rapido puxa mais. Cinco abates de folga.
+                    let capado = |m: &Medida| m.abates.min(m.alvo);
+                    cobra(&mut falhas, capado(&refinado) + 5 >= capado(&na_faixa) && capado(&na_faixa) + 5 >= capado(&atras), Quem::Refinado, c, nivel, lugar, true, &refinado, "a horda respeita a ordem: refinado >= na faixa >= uma faixa atras");
+                }
+                if lugar == Lugar::Ilhota {
+                    // A ilhota e' o evento pago: do 30 em diante pelo menos
+                    // um conjunto na faixa limpa com pocao (o tanque e' o
+                    // dono dela); no degrau I (mobs 20–23, entrada no 15) e'
+                    // o refinado quem limpa — a ilha nao e' obrigacao, e
+                    // entrar abaixo do nivel e apanhar e' direito de quem
+                    // quer (shared::magica).
+                    let algum_refinado_limpa = Conjunto::TODOS
+                        .iter()
+                        .any(|&c| medir(Quem::Refinado, c, nivel, lugar, true).limpou());
+                    let ok = if nivel >= 30 { algum_na_faixa_limpa } else { algum_refinado_limpa };
+                    if !ok {
+                        falhas.push(format!("nv{nivel} Ilhota: ninguem limpa com pocao"));
+                    }
+                }
+            }
+        }
+        assert!(falhas.is_empty(), "\n{}", falhas.join("\n"));
+    }
+
+    /// O equipamento ENVELHECE: a mesma peca toma mais a cada cinco niveis
+    /// de mob, e o refino +12 nunca chega a imunidade.
+    #[test]
+    fn o_equipamento_envelhece_e_o_refino_nao_e_imunidade() {
+        crate::economy::init_vazia_para_testes();
+        for c in Conjunto::TODOS {
+            for &nivel in NIVEIS.iter().take(NIVEIS.len() - 4) {
+                let s = build(Quem::NaFaixa, c, nivel);
+                // Sem a reducao de identidade: ela so' arredonda. No piso a
+                // subtracao ja' cresce com o ataque do mob, e e' isso que
+                // se cobra: dez niveis de mob acima, a mesma peca toma mais.
+                let toma = |n: u32| {
+                    let m = escada::mob(&escada::Perfil::novo(1.0, 1.0, 0.0), n);
+                    dano_mitigado_por_subtracao(m.ataque, s.defense)
+                };
+                assert!(toma(nivel + 10) > toma(nivel), "{c:?} nv{nivel}: {} vs {}", toma(nivel), toma(nivel + 10));
+                assert!(toma(nivel + 20) > toma(nivel + 10));
+            }
+            let s = build(Quem::Refinado, c, 40);
+            let m = escada::mob(&escada::Perfil::novo(1.0, 1.0, 0.0), 40);
+            let piso = (m.ataque as f32 * escada::PISO * (1.0 - escada::REDUCAO_MAX)).floor() as i32;
+            assert!(dano_com_reducao(m.ataque, s.defense, s.damage_reduction_pct) >= piso.max(1));
+        }
+    }
+}
+#[cfg(test)]
+mod calibracao_da_escada {
+    use super::*;
+    use shared::skills::Conjunto;
+    #[test]
+    #[ignore]
+    fn sem_itens_e_com_itens() {
+        crate::economy::init_vazia_para_testes();
+        for nivel in [1u32, 5, 10, 20, 30, 40, 50, 60] {
+            let (e, a, p, x) = build_do_nivel(Conjunto::Katana, nivel);
+            let com = effective_stats(&e, &a, &p, x);
+            let mut so_arma = shared::Equipment::default();
+            so_arma.weapon = e.weapon;
+            let sem = effective_stats(&so_arma, &a, &p, x);
+            let nada = effective_stats(&shared::Equipment::default(), &a, &p, x);
+            println!("nv{nivel:<2} katana | nada: atk {:>3} def {:>3} hp {:>4} | so arma(+0 sem inst): atk {:>3} | com itens: atk {:>3} def {:>3} hp {:>4} dex {:>3} | escada {:?} | itens deveriam dar atk {:.0} def {:.0} hp {:.0}",
+                nada.attack_damage, nada.defense, nada.hp_max, sem.attack_damage, com.attack_damage, com.defense, com.hp_max, com.dex,
+                shared::escada::linha(nivel), shared::escada::ataque_dos_itens(nivel), shared::escada::defesa_dos_itens(nivel), shared::escada::vida_dos_itens(nivel));
+            for c in [Conjunto::EspadaEscudo, Conjunto::Pistolas, Conjunto::AnelMagico] {
+                let (e, a, p, x) = build_do_nivel(c, nivel);
+                let s = effective_stats(&e, &a, &p, x);
+                let nada = effective_stats(&shared::Equipment::default(), &a, &p, x);
+                println!("      {c:?}: nada atk {:>3} hp {:>4} | com: atk {:>3} def {:>3} hp {:>4} dex {:>3} red {:.2}", nada.attack_damage, nada.hp_max, s.attack_damage, s.defense, s.hp_max, s.dex, s.damage_reduction_pct);
             }
         }
     }

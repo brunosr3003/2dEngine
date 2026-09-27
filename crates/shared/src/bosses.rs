@@ -757,32 +757,42 @@ pub fn kind_do_corpo(kind: u16) -> u16 {
     }
 }
 
-/// Vida do chefe. Dimensionada na simulacao (server `balanceamento`): um
-/// jogador do nivel, esquivando e com pocao, leva de 1 a 4 min conforme a
-/// arma; grupo bem menos. O TETO existe porque o dano do jogador cresce com o
-/// equipamento da faixa: sem ele o anel passava de 4 min no Planalto. Cabe no
-/// `u16` do fio.
+/// Vida do chefe: `escada::GOLPES_DO_CHEFE` golpes do jogador esperado do
+/// nivel (docs/ESCADA.md). Dimensionada na simulacao (server
+/// `balanceamento`): um jogador do nivel, esquivando e com pocao, leva de 1
+/// a 4 min conforme a arma; grupo bem menos. Era `8 960 + 269 x nivel` com
+/// teto em 20 720 — o teto existia porque o dano do jogador crescia com a
+/// faixa do equipamento em saltos; na escada ele e' reta, e a luta nao
+/// encurta com o nivel. Cabe no `u16` do fio.
 pub fn vida(nivel: u32) -> i32 {
-    // +12% em 19/09/2026: as skills passaram a render mais que o basico que
-    // desligam (`skills::PISO_*`), e a katana — que ja' estava no piso de 60 s
-    // — caia pra 50 s. A vida segura a duracao; skill fraca nao e' o freio.
-    (8_960 + nivel as i32 * 269).min(20_720)
+    crate::escada::vida_do_chefe(nivel)
 }
 
-/// Dano do golpe COMUM (mitigado normalmente). O telegrafado nao usa isto:
-/// ele tira fracao da vida (`dano_telegrafado`).
+/// Dano do golpe COMUM (mitigado normalmente, `escada::dano`). O telegrafado
+/// nao usa isto: ele tira fracao da vida (`dano_telegrafado`).
+///
+/// Sai da escada (docs/ESCADA.md): a defesa esperada do nivel mais tres
+/// lobos de liquido. Era `15 + 2,4 x nivel`, que contra a defesa em
+/// porcentagem virava 17 de dano no nivel 30 — o chefe so' doia no
+/// telegrafico.
 pub fn dano(nivel: u32) -> i32 {
-    15 + (nivel as f32 * 2.4).round() as i32
+    crate::escada::ataque_do_chefe(nivel)
 }
 
+/// Defesa do chefe: uma fracao do ataque esperado do nivel maior que a de
+/// qualquer mob comum (`escada::DEFESA_DO_CHEFE`). Quem esta' uma faixa
+/// atras bate no piso.
 pub fn defesa(nivel: u32) -> i32 {
-    (nivel as f32 * 0.65).round() as i32
+    crate::escada::defesa_do_chefe(nivel)
 }
 
-/// A resistencia total que `dano_mitigado` do servidor aplica: defesa a 1,5%
-/// por ponto (teto 75%), reducao somada (teto 75%), total no maximo 90%.
-pub fn resistencia(defesa: i32, reducao: f32) -> f32 {
-    ((defesa as f32 * 0.015).clamp(0.0, 0.75) + reducao.clamp(0.0, 0.75)).min(0.90)
+/// A parte da mitigacao do jogador que ainda e' FRACAO: so' a reducao de
+/// identidade (escudo, armadura pesada), com o teto da escada. A defesa em
+/// pontos ja' nao e' porcentagem de nada — ela subtrai do golpe
+/// (`escada::dano`) — e o telegrafado, que tira fracao da VIDA, nem passa
+/// por ela.
+pub fn resistencia(_defesa: i32, reducao: f32) -> f32 {
+    reducao.clamp(0.0, crate::escada::REDUCAO_MAX)
 }
 
 /// O que um golpe telegrafado TIRA de quem ficou dentro: fracao da vida
