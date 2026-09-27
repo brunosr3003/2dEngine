@@ -11260,9 +11260,17 @@ impl GameWorld {
         // Eventos de impacto: (target_eid, dir, kind) — broadcastados depois
         // do loop pra evitar dupla mut borrow de self.sessions.
         let mut projectile_impacts: Vec<(EntityId, Vec2, u8)> = Vec::new();
+        let inst_dos_golpes = self.dg_instancias_por_eid();
         'outer: for (pe, pnet, ppos, pvel, powner, pfrom_player, pdmg, pcrit, pkind) in &projs {
             for (te, tnet, tpos, is_player, size) in &targets {
                 if tnet == powner {
+                    continue;
+                }
+                // Um jogador de outra instância não pode consumir o tiro
+                // antes de ele atingir o alvo na instância do atacante.
+                if inst_dos_golpes.get(powner).copied().unwrap_or(0)
+                    != inst_dos_golpes.get(tnet).copied().unwrap_or(0)
+                {
                     continue;
                 }
                 // PvP gating: player→player so' se can_damage_player.
@@ -11594,7 +11602,6 @@ impl GameWorld {
         self.attacker_this_tick.clear();
         // Dano causado por ENEMIES neste tick — lifesteal do boss (25%).
         let mut enemy_dealt: HashMap<EntityId, i32> = HashMap::new();
-        let inst_dos_golpes = self.dg_instancias_por_eid();
         for (
             entity,
             target_id,
@@ -20694,6 +20701,25 @@ mod impacto_tests {
             w.step(shared::TICK_DT);
             assert_eq!(w.ecs.get::<&Health>(alvo).unwrap().current, if seguro { 100 } else { 80 });
         }
+    }
+
+    #[test]
+    fn jogador_de_outra_instancia_nao_intercepta_tiro_de_mob() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.safe_zones.clear();
+        let origem = Vec2::splat(30.0);
+        w.ecs.spawn((NetId(EntityId(900)), Position(origem), dungeon::Instancia(7)));
+        let estranho = w.ecs.spawn((NetId(EntityId(901)), Position(origem + Vec2::X * 2.0),
+            EntityKind::Player, Health { current: 100, max: 100 }, dungeon::Instancia(8)));
+        let alvo = w.ecs.spawn((NetId(EntityId(902)), Position(origem + Vec2::X * 6.0),
+            EntityKind::Player, Health { current: 100, max: 100 }, dungeon::Instancia(7)));
+        w.ecs.spawn((NetId(EntityId(903)), Position(origem), Velocity(Vec2::X * PROJ_SPEED),
+            EntityKind::Projectile, ProjTag { owner: EntityId(900), from_player: false,
+                ttl: PROJ_TTL, damage: 20, is_crit: false, kind: 0 }));
+        for _ in 0..60 { w.step(shared::TICK_DT); }
+        assert_eq!(w.ecs.get::<&Health>(estranho).unwrap().current, 100);
+        assert_eq!(w.ecs.get::<&Health>(alvo).unwrap().current, 80);
     }
 
     #[test]
