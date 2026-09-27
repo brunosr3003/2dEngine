@@ -77,6 +77,8 @@ pub struct LojaTp {
     contador: u32,
     /// Giro do modelo no palco (radianos) e o x do dedo arrastando.
     giro: f32,
+    aparencia: shared::aparencia::Aparencia,
+    arma: u16,
     arrasto: Option<f32>,
     /// Comemoracao de compra: texto esperando o primeiro quadro, depois
     /// (inicio, texto).
@@ -661,7 +663,7 @@ impl LojaTp {
         match self.aba {
             0 => self.materiais(area, k, m, livre, modal, agora),
             1 => self.aba_pets(area, k, m, livre, modal, agora),
-            2 => self.aba_skins(area, k, m, livre, modal),
+            2 => self.aba_skins(area, k, m, livre, modal, vox, solido),
             3 => self.moedas_e_energia(area, k, m, livre, modal, agora),
             _ => self.pacotes(area, k, m, livre, modal, agora),
         }
@@ -1007,7 +1009,22 @@ impl LojaTp {
     /// Só as PAGAS aparecem: as três roupas e os oito chapéus livres já
     /// nascem no guarda-roupa, e vender o que o jogador já tem seria
     /// propaganda enganosa.
-    fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool) {
+    pub fn define_personagem(&mut self, aparencia: shared::aparencia::Aparencia, arma: u16) {
+        self.aparencia = aparencia;
+        self.arma = arma;
+    }
+
+    fn aparencia_da_skin(&self, id: u16) -> shared::aparencia::Aparencia {
+        let mut a = self.aparencia;
+        if let Some(cabelo) = shared::aparencia::cabelo_do_chapeu(id) {
+            a.cabelo = cabelo;
+        } else if shared::aparencia::arquivo_da_roupa(id).is_some() {
+            a.roupa = id;
+        }
+        a
+    }
+
+    fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, vox: &VoxCache, solido: &Material) {
         let venda = shared::aparencia::a_venda();
         if venda.is_empty() {
             estilo::texto_centro(
@@ -1019,7 +1036,7 @@ impl LojaTp {
             );
             return;
         }
-        let colunas = 4usize;
+        let colunas = venda.len().min(4).max(1);
         let linhas = venda.len().div_ceil(colunas).max(1);
         let vao = 12.0 * k;
         let w = ((area.w - vao * (colunas as f32 - 1.0)) / colunas as f32).min(300.0 * k);
@@ -1048,10 +1065,15 @@ impl LojaTp {
                 estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5),
             );
             let nome = shared::aparencia::nome_da_skin(*id).unwrap_or("Skin");
-            estilo::texto_centro_forte(
-                r.center().x,
-                r.y + r.h * 0.44,
+            let prev = Rect::new(r.x + 8.0 * k, r.y + 8.0 * k, r.w - 16.0 * k,
+                (r.h - 112.0 * k).max(20.0));
+            crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(*id), self.arma,
+                prev, 0.18 + (get_time() as f32 * 0.4).sin() * 0.25, solido);
+            estilo::texto_ajustado(
                 nome,
+                r.x + 10.0 * k,
+                r.y + r.h - 88.0 * k,
+                r.w - 20.0 * k,
                 ts(16.0, k),
                 estilo::TEXTO,
             );
@@ -1062,11 +1084,13 @@ impl LojaTp {
                     "Roupa completa · fica no guarda-roupa deste personagem"
                 },
                 r.x + 10.0 * k,
-                r.y + r.h * 0.58,
+                r.y + r.h - 65.0 * k,
                 r.w - 20.0 * k,
                 ts(12.0, k),
                 estilo::alfa(LILAS, 0.95),
             );
+            estilo::texto_centro(r.center().x, r.y + r.h - 43.0 * k,
+                "Toque para ver e comprar", ts(12.0, k), estilo::TEXTO);
             if let Some(preco) = shared::aparencia::preco_da_skin(*id) {
                 let t = milhar(preco);
                 estilo::valor_tp(
@@ -1819,6 +1843,11 @@ impl LojaTp {
                         _ => shared::item_id::PERGAMINHO_INVOCA_CHAVE,
                     };
                     crate::invocacao_ui::icone_pergaminho_de(item_id, prev.center(), prev.w * 0.58);
+                } else if let Produto::Skin(id) = pr {
+                    self.giro += get_frame_time().min(0.1) * 0.6;
+                    crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma,
+                        Rect::new(prev.x + 4.0 * k, prev.y + 4.0 * k,
+                            prev.w - 8.0 * k, prev.h - 8.0 * k), self.giro, solido);
                 } else if let Produto::ItemDePet(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     if let Some(x) = cat::item_de_pet(id) {
@@ -2110,6 +2139,31 @@ impl LojaTp {
 }
 
 // ─────────────────────────────── previa offscreen ───────────────────────────────
+
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+pub async fn captura_aparencia(vox: &VoxCache, solido: &Material, w: u32) {
+    let mut loja = LojaTp::default();
+    loja.abrir();
+    loja.receber(AvisoLoja::Estado(EstadoLoja {
+        ligada: true, simulado: true, tp: 2000, ..Default::default()
+    }));
+    loja.define_personagem(shared::aparencia::Aparencia {
+        rosto: 2, cabelo: 1, cor_cabelo: 2, pele: 2, ..Default::default()
+    }, shared::item_id::KATANA);
+    loja.aba = 2;
+    for (nome, conf) in [("catalogo", None), ("confirmacao", Some(Confirma::Item(Produto::Skin(shared::aparencia::ROUPA_BASE + 3))))] {
+        loja.confirma = conf;
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+            loja.desenha(vox, solido);
+            unsafe { get_internal_gl().flush() };
+            crate::render3d::alvo().unwrap().texture.get_texture_data()
+                .export_png(&format!("/tmp/tempest-aparencia-{w}-loja-{nome}.png"));
+            next_frame().await;
+        }
+    }
+}
 
 /// `MMO_PREVIA_LOJA=1`: abre a loja com dados falsos e salva capturas PNG de
 /// cada aba, da confirmacao e da comemoracao em `MMO_PREVIA_SAIDA`

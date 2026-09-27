@@ -2521,6 +2521,50 @@ fn desenha_montaria(
     )
 }
 
+/// Personagem no painel de aparência, pelo mesmo caminho de viewport das
+/// vitrines: funciona também no OpenGL ES, sem framebuffer de profundidade.
+pub fn vitrine_aparencia(
+    vox: &VoxCache,
+    aparencia: shared::aparencia::Aparencia,
+    arma: u16,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    let Some(veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let aspecto = vp.2 as f32 / vp.3 as f32;
+    let cam = Camera3D {
+        position: vec3(0.0, 1.35, 4.7 * (0.62 / aspecto).max(1.0)),
+        target: vec3(0.0, 0.88, 0.0),
+        up: Vec3::Y,
+        fovy: 34f32.to_radians(),
+        aspect: Some(aspecto),
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    draw_cylinder(vec3(0.0, -0.07, 0.0), 0.9, 0.93, 0.06, None,
+        Color::new(0.12, 0.16, 0.21, 1.0));
+    gl_use_material(solido);
+    solido.set_uniform("Recorte", Vec3::ZERO);
+    let mut pose = crate::rig::pose(&crate::rig::Entrada {
+        fase: 0.0, andar: 0.0, correr: 0.0, tempo: get_time() as f32,
+        ar: 0.0, degrau: [0.0, 0.0],
+        combate: crate::rig::Combate {
+            conjunto: shared::skills::Conjunto::da_arma(arma) as u8,
+            ..Default::default()
+        },
+    });
+    pose.armado &= arma != 0;
+    desenha_rig(Mat4::from_rotation_y(yaw), &pose, &veste, vox, None);
+    gl_use_default_material();
+    camera_padrao();
+    true
+}
+
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.
 /// Desenhada DIRETO na tela num viewport (sem render target com
 /// profundidade, que o iPhone recusa — ver `viewport_em_pixels`). `false` =

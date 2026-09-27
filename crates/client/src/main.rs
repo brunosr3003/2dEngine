@@ -615,6 +615,11 @@ async fn main() {
         craft_ui::previa().await;
         return;
     }
+    #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+    if std::env::var("MMO_PREVIA_APARENCIA").is_ok() {
+        guarda_roupa_ui::previa(&mut vox).await;
+        return;
+    }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PROTOCOLO").is_ok() {
         atualizacao::previa_incompativel().await;
@@ -855,6 +860,12 @@ fn window_conf() -> Conf {
         ..Default::default()
     };
     conf.platform.linux_backend = miniquad::conf::LinuxBackend::WaylandWithX11Fallback;
+    // A captura precisa continuar quando a janela fica coberta: o Wayland
+    // pode suspender os callbacks de quadro. Só a prévia usa X11.
+    #[cfg(all(debug_assertions, target_os = "linux"))]
+    if std::env::var("MMO_PREVIA_APARENCIA").is_ok() {
+        conf.platform.linux_backend = miniquad::conf::LinuxBackend::X11Only;
+    }
     // O default do miniquad desenha decoracao do lado do cliente via libdecor;
     // o Hyprland ja decora pelo hyprbars.
     conf.platform.wayland_decorations = miniquad::conf::WaylandDecorations::ServerOnly;
@@ -6391,7 +6402,7 @@ impl Jogo {
                 self.banco.abrir(cofre);
             }
         }
-        if let Some(msg) = self.guarda_roupa.desenha() {
+        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0)) {
             self.envia(msg);
         }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);
@@ -6444,6 +6455,7 @@ impl Jogo {
             self.envia(ClientMessage::Magica { pedido });
         }
         // Loja de cash e janela de montarias (Menu).
+        self.loja_tp.define_personagem(self.guarda_roupa_salvo.aparencia, self.bolsa.equip.weapon.unwrap_or(0));
         for pedido in self.loja_tp.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }

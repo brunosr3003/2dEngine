@@ -27,6 +27,8 @@ pub struct GuardaRoupaUi {
     /// As skins destravadas, pro seletor de roupa.
     destravadas: Vec<u16>,
     giro: f32,
+    mouse_anterior: Option<Vec2>,
+    rolagem: crate::rolagem::Rolagem,
 }
 
 impl GuardaRoupaUi {
@@ -36,6 +38,9 @@ impl GuardaRoupaUi {
         self.vigente = g.aparencia;
         self.provando = Some(g.aparencia);
         self.destravadas = g.desbloqueadas.clone();
+        self.giro = 0.18;
+        self.mouse_anterior = None;
+        self.rolagem.zera();
     }
 
     pub fn fechar(&mut self) {
@@ -61,21 +66,25 @@ impl GuardaRoupaUi {
     }
 
     /// Desenha. Devolve a mensagem quando o jogador aplica.
-    pub fn desenha(&mut self) -> Option<shared::protocol::ClientMessage> {
+    pub fn desenha(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16) -> Option<shared::protocol::ClientMessage> {
         if !self.aberto {
             return None;
         }
-        estilo::no_painel(estilo::escala_do_painel(520.0, 540.0), || self.na_escala())
+        let s = crate::hud_layout::tela_segura();
+        let f = estilo::escala_do_painel(840.0, 500.0)
+            .min(((s.w - 16.0) / 840.0).max(0.85))
+            .min(((s.h - 16.0) / 500.0).max(0.85));
+        estilo::no_painel(f, || self.na_escala(vox, solido, arma))
     }
 
-    fn na_escala(&mut self) -> Option<shared::protocol::ClientMessage> {
+    fn na_escala(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16) -> Option<shared::protocol::ClientMessage> {
         use shared::aparencia as ap;
         let mut a = self.provando?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let linha = 52.0 * f;
-        let w = (520.0 * f).min(seguro.w - 16.0);
-        let h = (188.0 * f + linha * 5.0).min(seguro.h - 16.0);
+        let linha = (52.0 * f).max(52.0);
+        let w = (840.0 * f).min(seguro.w - 16.0);
+        let h = (500.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -91,7 +100,7 @@ impl GuardaRoupaUi {
         estilo::texto(
             x0,
             p.y + 60.0 * f,
-            "O boneco muda enquanto você escolhe.",
+            "Veja as mudanças antes de aplicar.",
             13,
             estilo::SUAVE,
         );
@@ -105,7 +114,12 @@ impl GuardaRoupaUi {
         );
 
         // Os cinco seletores. O de roupa lista só o que foi destravado.
-        let mut y = p.y + 80.0 * f;
+        let corpo = Rect::new(x0, p.y + 80.0 * f, p.w - 40.0 * f, p.h - 146.0 * f);
+        let palco = Rect::new(corpo.x, corpo.y, corpo.w * 0.34, corpo.h);
+        let opcoes = Rect::new(palco.x + palco.w + 16.0 * f, corpo.y,
+            corpo.w - palco.w - 16.0 * f, corpo.h);
+        let clique_opcao = self.rolagem.quadro(opcoes, linha * 5.0, linha);
+        let mut y = opcoes.y - self.rolagem.pos;
         // Cabelos + "sem cabelo" + os chapéus DESTRAVADOS. Os três dividem a
         // junta da cabeça, então dividem o seletor: um chapéu por cima de um
         // cabelo seria duas peças na mesma junta.
@@ -136,8 +150,12 @@ impl GuardaRoupaUi {
             ("Skin", roupas, atual_roupa),
         ];
         let mut novos = [0u8; 5];
+        crate::rolagem::recortar(Some(opcoes));
         for (i, (rotulo, n, atual)) in linhas.iter().enumerate() {
-            let r = Rect::new(x0, y, p.w - 40.0 * f, linha - 8.0 * f);
+            novos[i] = *atual;
+            let r = Rect::new(opcoes.x, y, opcoes.w - 14.0 * f, linha - 6.0);
+            y += linha;
+            if r.y + r.h <= opcoes.y || r.y >= opcoes.y + opcoes.h { continue; }
             estilo::cartao(r, false, false);
             estilo::texto(
                 r.x + 12.0 * f,
@@ -146,10 +164,10 @@ impl GuardaRoupaUi {
                 14,
                 estilo::SUAVE,
             );
-            let lado = 38.0 * f;
+            let lado = (38.0 * f).max(40.0);
             let mut v = *atual;
             let esq = Rect::new(
-                r.x + r.w - lado * 2.0 - 150.0 * f,
+                r.x + r.w * 0.27,
                 r.y + 2.0,
                 lado,
                 r.h - 4.0,
@@ -157,7 +175,7 @@ impl GuardaRoupaUi {
             let dir = Rect::new(r.x + r.w - lado - 6.0 * f, r.y + 2.0, lado, r.h - 4.0);
             estilo::botao(esq, "‹", estilo::estado_de(esq, *n <= 1, false), false);
             estilo::botao(dir, "›", estilo::estado_de(dir, *n <= 1, false), false);
-            if clicou && *n > 1 {
+            if let Some(m) = clique_opcao.filter(|m| opcoes.contains(*m) && *n > 1) {
                 if esq.contains(m) {
                     v = (v + n - 1) % n;
                 }
@@ -165,16 +183,22 @@ impl GuardaRoupaUi {
                     v = (v + 1) % n;
                 }
             }
-            estilo::texto_centro(
-                (esq.x + dir.x + dir.w) * 0.5,
+            let nome = nome_da_opcao(i, *atual, &vestes, &chapeus);
+            let largura_nome = (dir.x - esq.x - esq.w - 8.0 * f).max(1.0);
+            let nome_x = esq.x + esq.w + 4.0 * f
+                + (largura_nome - estilo::medir(&nome, 14).min(largura_nome)) * 0.5;
+            estilo::texto_ajustado(
+                &nome,
+                nome_x,
                 r.y + r.h * 0.5 + 5.0,
-                &nome_da_opcao(i, *atual, &vestes, &chapeus),
+                largura_nome,
                 14,
                 estilo::TEXTO,
             );
             novos[i] = v;
-            y += linha;
         }
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(opcoes, linha * 5.0);
         a.rosto = novos[0];
         a.cabelo = match novos[1] {
             // Cabelo de verdade ou "sem cabelo": o índice vale direto.
@@ -195,9 +219,28 @@ impl GuardaRoupaUi {
         };
         self.provando = Some(a);
 
+        estilo::cartao(palco, false, false);
+        let area = Rect::new(palco.x + 4.0, palco.y + 4.0,
+            palco.w - 8.0, palco.h - 32.0 * f);
+        if is_mouse_button_pressed(MouseButton::Left) && area.contains(m) {
+            self.mouse_anterior = Some(m);
+        }
+        if is_mouse_button_down(MouseButton::Left) {
+            if let Some(antes) = self.mouse_anterior {
+                self.giro += (m.x - antes.x) * 0.012;
+                self.mouse_anterior = Some(m);
+            }
+        } else { self.mouse_anterior = None; }
+        if !crate::render3d::vitrine_aparencia(vox, a, arma, area, self.giro, solido) {
+            estilo::texto_centro(area.center().x, area.center().y,
+                "Carregando personagem…", 12, estilo::SUAVE);
+        }
+        estilo::texto_centro(palco.center().x, palco.y + palco.h - 10.0 * f,
+            "Arraste para girar", 12, estilo::SUAVE);
+
         // Aplicar só aparece quando há o que aplicar.
         let mudou = a != self.vigente;
-        let b = Rect::new(x0, p.y + p.h - 56.0 * f, 180.0 * f, 42.0 * f);
+        let b = Rect::new(opcoes.x, p.y + p.h - 56.0 * f, opcoes.w, (42.0 * f).max(40.0));
         estilo::botao(b, "Aplicar", estilo::estado_de(b, !mudou, false), mudou);
         let mut saida = None;
         if clicou && mudou && b.contains(m) {
@@ -209,7 +252,6 @@ impl GuardaRoupaUi {
             self.provando = Some(self.vigente);
             self.aberto = false;
         }
-        let _ = &mut self.giro;
         saida
     }
 }
@@ -242,6 +284,45 @@ fn nome_da_opcao(i: usize, v: u8, vestes: &[u16], chapeus: &[u16]) -> String {
             .unwrap_or("padrão")
             .into(),
         _ => format!("{}", v + 1),
+    }
+}
+
+/// Captura de desktop (MMO_PREVIA_APARENCIA); o jogo usa viewport na tela.
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+pub async fn previa(vox: &mut crate::vox::VoxCache) {
+    use shared::aparencia as ap;
+    let solido = crate::render3d::material_solido();
+    for (w, h) in [(1280, 720), (844, 390), (640, 360)] {
+        let rt = render_target_ex(w, h, RenderTargetParams { depth: true, ..Default::default() });
+        crate::render3d::define_alvo(Some(rt.clone()));
+        crate::hud_layout::define_escala_ui(1.6);
+        let mut u = GuardaRoupaUi::default();
+        u.abrir(&GuardaRoupa {
+            aparencia: Aparencia::default(),
+            desbloqueadas: (0..ap::ROUPAS.len()).map(|i| ap::ROUPA_BASE + i as u16)
+                .chain((0..ap::CHAPEUS.len()).map(|i| ap::CHAPEU_BASE + i as u16)).collect(),
+        });
+        for (nome, a, giro) in [
+            ("padrao", Aparencia::default(), 0.18),
+            ("skin", Aparencia { rosto: 2, cabelo: ap::cabelo_do_chapeu(ap::CHAPEU_BASE + 2).unwrap(),
+                cor_cabelo: 2, pele: 2, roupa: ap::ROUPA_BASE + 3 }, 0.18),
+            ("girado", Aparencia { rosto: 1, cabelo: 1, cor_cabelo: 3, pele: 1,
+                roupa: ap::ROUPA_BASE + 1 }, 2.4),
+        ] {
+            u.provando = Some(a);
+            u.giro = giro;
+            u.rolagem.pos = if nome == "padrao" { 0.0 } else { 1000.0 };
+            for _ in 0..4 {
+                crate::render3d::camera_padrao();
+                clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+                u.desenha(vox, &solido, shared::item_id::KATANA);
+                unsafe { get_internal_gl().flush() };
+                rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-aparencia-{w}-{nome}.png"));
+                next_frame().await;
+                vox.atende_um_pendente(crate::render3d::VOXEL).await;
+            }
+        }
+        crate::loja_tp::captura_aparencia(vox, &solido, w).await;
     }
 }
 

@@ -1,3 +1,11 @@
+27/09/2026 — Prévia do personagem e das skins
+
+Personagem no menu Aparência
+O menu Aparência agora tem uma prévia 3D do personagem ao lado dos seletores. Rosto, cabelo, chapéu, cor, pele e skin mudam na prévia enquanto você escolhe. Arraste o boneco para girar e conferir outros ângulos. Em telas menores, os seletores rolam mantendo o personagem e o botão Aplicar visíveis. Fechar sem aplicar descarta as mudanças.
+
+Skins da loja
+A aba Aparência da loja e a confirmação de compra mostram a skin em 3D no seu personagem, preservando as outras escolhas de aparência. Você vê como a roupa ou o chapéu ficam antes de confirmar a compra. A skin comprada chega como item na bolsa; use o item para desbloqueá-la no guarda-roupa daquele personagem e depois escolha-a no menu Aparência.
+
 27/09/2026 — Link de atualização na conexão
 
 Versão incompatível e acesso aos downloads

@@ -1400,6 +1400,9 @@ mod tests {
                         && fonte.contains("MMO_PREVIA_PETS"))
                     || (p.file_name().is_some_and(|n| n == "energia_vfx.rs")
                         && fonte.contains("MMO_PREVIA_ENERGIA"))
+                    || (p.file_name().is_some_and(|n| n == "guarda_roupa_ui.rs")
+                        && fonte.contains("MMO_PREVIA_APARENCIA")
+                        && fonte.contains("#[cfg(all(debug_assertions, not(any(target_os = \"ios\", target_os = \"android\"))))]"))
                     || (p.file_name().is_some_and(|n| n == "terreno.rs")
                         && fonte.contains("MMO_PREVIA_COLONIA"));
                 for (n, l) in fonte.lines().enumerate() {
