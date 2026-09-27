@@ -1,4 +1,7 @@
-27/09/2026 — Recompensas de dungeons e auras de animais
+27/09/2026 — Ataques à distância, recompensas e auras de animais
+
+Dano dos mobs à distância
+Corrigido o movimento dos projéteis no servidor: os tiros podiam aparecer voando, mas permaneciam na origem na simulação e não atingiam o jogador. Flechas e projéteis mágicos agora percorrem a trajetória e aplicam o dano no impacto. A colisão considera o caminho percorrido entre ticks para não perder acertos de tiros rápidos.
 
 Recompensas antes de entrar
 O menu Dungeons ganhou a aba Recompensas. Selecione a dungeon e o estágio para ver os drops possíveis do boss, o baú de conclusão e os bônus da primeira vitória. Os drops do boss vêm do catálogo ativo do servidor. A lista tem ícones e rolagem por mouse ou toque.

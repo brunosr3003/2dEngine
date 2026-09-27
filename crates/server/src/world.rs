@@ -11067,6 +11067,15 @@ impl GameWorld {
             }
         }
 
+        // Projéteis não têm Solido: precisam de integração própria, sem o
+        // deslizamento/empurrão dos corpos. Sem isso ficavam na origem até
+        // expirar, embora o cliente desenhasse a trajetória pela velocidade.
+        for (_, (pos, vel, _)) in self.ecs
+            .query_mut::<(&mut Position, &Velocity, &ProjTag)>()
+        {
+            pos.0 += vel.0 * dt;
+        }
+
         // ── G: deteccao de colisao projetil → entidade ────────────────────────
         // Inclui Velocity pra calcular hurt_dir = -vel (direção OPOSTA ao voo
         // = TOWARD atacante). Sem offset Y artificial do spawn no peito.
@@ -11268,7 +11277,14 @@ impl GameWorld {
                 let r = hit_target_radius * size;
                 let dist_sq = (r + PROJ_RADIUS) * (r + PROJ_RADIUS);
                 let target_hit = *tpos;
-                if ppos.distance_squared(target_hit) < dist_sq {
+                // Varre o trajeto deste tick: um tiro rápido não pode saltar
+                // de um lado do alvo ao outro sem registrar o impacto.
+                let inicio = *ppos - *pvel * dt;
+                let passo = *ppos - inicio;
+                let t = if passo.length_squared() > 0.0 {
+                    ((target_hit - inicio).dot(passo) / passo.length_squared()).clamp(0.0, 1.0)
+                } else { 0.0 };
+                if (inicio + passo * t).distance_squared(target_hit) < dist_sq {
                     // BLOCK: enemy com escudo + stamina absorve projetil sem
                     // tomar dano. Drena 20 stamina por bloqueio. Sem stamina,
                     // recebe dano normal. So' aplica em projeteis vindos do
@@ -20609,6 +20625,76 @@ fn auto_arrange_slots(slots: &mut Vec<shared::InventorySlot>) {
 #[cfg(test)]
 mod impacto_tests {
     use super::*;
+
+    #[test]
+    fn projetil_de_mob_viaja_e_causa_dano_uma_vez() {
+        crate::economy::init_vazia_para_testes();
+        for kind in [0, 1, 5] {
+            let mut w = GameWorld::new(HashMap::new());
+            w.map = shared::mapfile::MapFile::new("tiros", 80, 80).to_world_map();
+            w.safe_zones.clear();
+            let origem = Vec2::splat(30.0);
+            w.ecs.spawn((NetId(EntityId(900)), Position(origem), Health { current: 100, max: 100 }));
+            let alvo = w.ecs.spawn((NetId(EntityId(901)), Position(origem + Vec2::X * 6.0),
+                EntityKind::Player, Health { current: 100, max: 100 }));
+            w.pending_shots.push(PendingShot {
+                owner_id: EntityId(900), target: Some(EntityId(901)), from_player: false,
+                pos: origem, dir: Vec2::X, damage: 20, is_crit: false, kind, release_tick: 1,
+            });
+            for _ in 0..60 { w.step(shared::TICK_DT); }
+            assert_eq!(w.ecs.get::<&Health>(alvo).unwrap().current, 80,
+                "projetil de mob tipo {kind} precisa viajar e acertar uma vez");
+            assert_eq!(w.ecs.query::<&ProjTag>().iter().count(), 0);
+        }
+    }
+
+    #[test]
+    fn ia_do_mob_ranged_dispara_e_acerta_o_jogador() {
+        crate::economy::init_vazia_para_testes();
+        for kind in [0, 1] {
+            let mut w = GameWorld::new(HashMap::new());
+            w.map = shared::mapfile::MapFile::new("ia-tiros", 80, 80).to_world_map();
+            w.safe_zones.clear();
+            let origem = Vec2::splat(30.0);
+            let alvo = w.ecs.spawn((NetId(EntityId(901)), Position(origem + Vec2::X * 6.0),
+                EntityKind::Player, Health { current: 100, max: 100 }));
+            w.place_enemy(origem, 4, 0.0);
+            for (_, (mob, hp)) in w.ecs.query_mut::<(&mut EnemyTag, &mut Health)>() {
+                *hp = Health { current: 100, max: 100 };
+                mob.is_melee = false;
+                mob.proj_kind = kind;
+                mob.proj_count = 1;
+                mob.stats.attack_damage = 20;
+                mob.attack_range = 10.0;
+                mob.detect_range = 15.0;
+                mob.attack_cooldown_base = 10.0;
+                mob.kite_dist = Some(3.0);
+                mob.spawn_grace_until = 0.0;
+            }
+            for _ in 0..60 { w.step(shared::TICK_DT); }
+            assert_eq!(w.ecs.get::<&Health>(alvo).unwrap().current, 80,
+                "a IA precisa mirar, preparar e acertar com o tipo {kind}");
+        }
+    }
+
+    #[test]
+    fn tiro_rapido_nao_pula_alvo_e_respeita_zona_segura() {
+        crate::economy::init_vazia_para_testes();
+        for seguro in [false, true] {
+            let mut w = GameWorld::new(HashMap::new());
+            w.safe_zones.clear();
+            let origem = Vec2::splat(30.0);
+            let destino = origem + Vec2::X * 1.5;
+            if seguro { w.safe_zones.push((destino - Vec2::splat(0.8), Vec2::splat(1.6))); }
+            let alvo = w.ecs.spawn((NetId(EntityId(901)), Position(destino),
+                EntityKind::Player, Health { current: 100, max: 100 }));
+            w.ecs.spawn((NetId(EntityId(902)), Position(origem), Velocity(Vec2::X * 300.0),
+                EntityKind::Projectile, ProjTag { owner: EntityId(900), from_player: false,
+                    ttl: PROJ_TTL, damage: 20, is_crit: false, kind: 0 }));
+            w.step(shared::TICK_DT);
+            assert_eq!(w.ecs.get::<&Health>(alvo).unwrap().current, if seguro { 100 } else { 80 });
+        }
+    }
 
     #[test]
     fn int_vira_dano_com_anel_magico_mas_nao_com_arma_fisica() {
