@@ -39,7 +39,12 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
-pub const PROTOCOL_VERSION: u16 = 148;
+///
+/// 149 (27/09/2026): o fio nao mudou, mas a escada (docs/ESCADA.md) mudou a
+/// conta que o cliente faz sozinho nas previas de craft e Forja (escala da
+/// peca e refino so' percentual). Cliente 148 mostraria numeros que o
+/// servidor nao aplica; o dono pediu pra obrigar a atualizacao.
+pub const PROTOCOL_VERSION: u16 = 149;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

@@ -1,3 +1,7 @@
+27/09/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: as versões anteriores do jogo não conectam mais. As telas de criação e de refino passaram a mostrar os atributos pela régua nova de equipamento (a escada), e só a versão nova mostra os mesmos números que o servidor aplica. Se o jogo avisar “Atualização necessária”, use o botão para abrir o site e baixar a versão nova.
+
 27/09/2026 — A escada: defesa que subtrai, e equipamento que envelhece
 
 Como o golpe é calculado
