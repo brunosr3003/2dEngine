@@ -13221,7 +13221,12 @@ impl GameWorld {
         // Hash espacial pro AOI: celula do tamanho do raio, busca em 3x3.
         let cell = AOI_RADIUS.max(SPATIAL_CELL_SIZE);
         let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
-        for (idx, (_, st)) in all.iter().enumerate() {
+        let mut jogadores = Vec::new();
+        for (idx, (meta, st)) in all.iter().enumerate() {
+            if meta.tag == shared::EntityTag::Player {
+                jogadores.push(idx);
+                continue;
+            }
             let p = st.pos_f32();
             let key = ((p.x / cell).floor() as i32, (p.y / cell).floor() as i32);
             grid.entry(key).or_default().push(idx);
@@ -13294,6 +13299,14 @@ impl GameWorld {
                     }
                 }
             }
+            // Jogadores não disputam alcance nem vagas com mobs/recursos.
+            // Mantém o isolamento entre instâncias, inclusive no tutorial.
+            for &i in &jogadores {
+                let st = &all[i].1;
+                if inst_de.get(&st.id).copied().unwrap_or(0) == session.instancia {
+                    candidatos.push((st.pos_f32().distance_squared(center), i));
+                }
+            }
             // Mais perto primeiro: se algo vai ficar de fora, que seja o que o
             // jogador menos enxerga.
             candidatos.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -13304,12 +13317,18 @@ impl GameWorld {
             let mut visiveis: std::collections::HashSet<EntityId> =
                 std::collections::HashSet::with_capacity(shared::AOI_MAX_ENTIDADES);
 
-            for (rank, (d2, i)) in candidatos.iter().enumerate() {
+            let mut rank_nao_jogador = 0;
+            for (d2, i) in &candidatos {
                 let (meta, st) = &all[*i];
                 let conhecida = session.last_sent.contains_key(&st.id);
-                let cabe = rank < shared::AOI_MAX_ENTIDADES
-                    || (conhecida && rank < limite_conhecida)
+                let jogador = meta.tag == shared::EntityTag::Player;
+                let cabe = jogador
+                    || rank_nao_jogador < shared::AOI_MAX_ENTIDADES
+                    || (conhecida && rank_nao_jogador < limite_conhecida)
                     || st.id == my_entity_id;
+                if !jogador {
+                    rank_nao_jogador += 1;
+                }
                 if !cabe {
                     continue;
                 }
@@ -21338,6 +21357,30 @@ mod pk_tests {
             golpe(&mut w, 10000);
             assert!(!w.sessions[&ids[1]].downed);
         }
+    }
+
+    #[test]
+    fn jogadores_distantes_nao_disputam_aoi_e_respeitam_instancia() {
+        let (mut w, ids, _rx) = mundo();
+        let outro = w.sessions[&ids[1]].entity.unwrap();
+        w.ecs.get::<&mut Position>(outro).unwrap().0 = Vec2::new(500.0, 500.0);
+        for i in 0..100 {
+            w.ecs.spawn((NetId(EntityId(1000 + i)), Position(Vec2::new(10.0, 10.0)),
+                Velocity(Vec2::ZERO), EntityKind::Enemy(0), Health { current: 100, max: 100 }));
+        }
+        w.ecs.spawn((NetId(EntityId(2000)), Position(Vec2::new(500.0, 500.0)),
+            Velocity(Vec2::ZERO), EntityKind::Enemy(0), Health { current: 100, max: 100 }));
+        w.send_snapshots();
+        let vistos = &w.sessions[&ids[0]].last_sent;
+        assert!(vistos.contains_key(&EntityId(901)), "jogador distante deve aparecer mesmo com horda");
+        assert!(!vistos.contains_key(&EntityId(2000)), "mob distante continua fora do alcance");
+        assert_eq!(vistos.len(), shared::AOI_MAX_ENTIDADES + 2);
+        w.ecs.insert_one(outro, dungeon::Instancia(123)).unwrap();
+        w.send_snapshots();
+        assert!(!w.sessions[&ids[0]].last_sent.contains_key(&EntityId(901)));
+        w.ecs.remove_one::<dungeon::Instancia>(outro).unwrap();
+        w.send_snapshots();
+        assert!(w.sessions[&ids[0]].last_sent.contains_key(&EntityId(901)));
     }
 
     #[test]

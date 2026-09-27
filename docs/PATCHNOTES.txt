@@ -10,3 +10,6 @@ Melhorada a compatibilidade gráfica no Windows quando o driver não oferece tod
 
 Novidades na entrada
 Os patch notes agora aparecem na entrada quando há novidades. Você pode reabrir esta lista pelo botão “Novidades” nas telas de servidor e login. A lista tem rolagem para caber em telas menores. As notas também ficam disponíveis sem internet.
+
+Visibilidade de jogadores
+Jogadores da mesma zona e instância passam a ser enviados mesmo longe, sem disputar o limite de visibilidade com mobs e recursos. A mudança depende da atualização do servidor.
