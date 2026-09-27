@@ -3,8 +3,12 @@ use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-pub const BUILD: u64 = 2026092704;
+pub const BUILD: u64 = 2026092705;
 const SITE: &str = "https://mmo.brunji.com.br/#downloads";
+
+pub fn protocolo_incompativel(mensagem: &str) -> bool {
+    mensagem.to_ascii_lowercase().contains("protocol mismatch")
+}
 
 pub struct Atualizacao {
     busca: Option<Receiver<Result<String, String>>>,
@@ -66,6 +70,26 @@ fn destino(corpo: &str, plataforma: &str, build: u64) -> Option<String> {
 }
 
 impl Atualizacao {
+    /// Erro obrigatório de conexão: funciona mesmo sem manifesto ou após
+    /// dispensar o aviso opcional. Neste fluxo o destino é sempre o site.
+    pub fn desenha_incompativel(&mut self) -> bool {
+        let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Atualização necessária");
+        let cx = r.center().x;
+        crate::ui::texto_centro(cx, r.y + 20.0,
+            "Sua versão é incompatível com o servidor.", 16, crate::ui::OURO);
+        crate::ui::texto_centro(cx, r.y + 44.0,
+            "Atualize o jogo pelo site para continuar.", 16, crate::ui::OURO);
+        if crate::ui::botao(Rect::new(r.x, r.y + 68.0, r.w, 44.0),
+            "Abrir site para atualizar", true) {
+            self.erro = !crate::nativo::abrir_url(SITE);
+        }
+        crate::ui::texto_centro(cx, r.y + 138.0, "mmo.brunji.com.br", 16, crate::ui::OURO);
+        if self.erro {
+            crate::ui::erro(cx, r.y + 164.0, "Não foi possível abrir o navegador.");
+        }
+        crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Voltar", true)
+    }
+
     /// `true`: a tela de atualização tomou o lugar do login neste quadro.
     pub fn desenha(&mut self) -> bool {
         if let Some(rx) = &self.busca {
@@ -135,6 +159,30 @@ impl Atualizacao {
             self.dispensado = true;
         }
         true
+    }
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa_incompativel() {
+    let mut aviso = Atualizacao {
+        busca: None, inicio: Instant::now(), aviso: None, dispensado: true, erro: false,
+    };
+    for (w, h) in [(960, 540), (640, 360)] {
+        request_new_screen_size(w as f32, h as f32);
+        for _ in 0..3 { next_frame().await; }
+        let rt = render_target(screen_width() as u32, screen_height() as u32);
+        crate::render3d::define_alvo(Some(rt.clone()));
+        for erro in [false, true] {
+            aviso.erro = erro;
+            for _ in 0..3 {
+                crate::render3d::camera_padrao();
+                crate::ui::fundo();
+                aviso.desenha_incompativel();
+                unsafe { get_internal_gl().flush() };
+                rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-protocolo-{w}-{erro}.png"));
+                next_frame().await;
+            }
+        }
     }
 }
 

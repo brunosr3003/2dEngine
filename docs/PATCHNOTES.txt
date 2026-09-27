@@ -1,3 +1,8 @@
+27/09/2026 — Link de atualização na conexão
+
+Versão incompatível e acesso aos downloads
+Quando o servidor recusar a conexão por “protocol mismatch”, o jogo mostra “Atualização necessária” com o botão “Abrir site para atualizar”. Ele abre mmo.brunji.com.br na seção de downloads em qualquer plataforma. O endereço fica visível na tela, inclusive se não for possível abrir o navegador automaticamente. O aviso funciona mesmo se a consulta de atualizações falhar ou se você tiver escolhido “Agora não”, e permanece visível quando a conexão é encerrada.
+
 27/09/2026 — Ataques à distância, recompensas e auras de animais
 
 Dano dos mobs à distância

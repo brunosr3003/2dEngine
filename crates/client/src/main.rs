@@ -616,6 +616,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PROTOCOLO").is_ok() {
+        atualizacao::previa_incompativel().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_DUNGEON_RECOMPENSAS").is_ok() {
         dungeon_ui::previa_recompensas().await;
         return;
@@ -1361,6 +1366,12 @@ impl Jogo {
                 }),
                 NetEvent::Disconnected(por_que) => self.tela = Tela::Erro(por_que),
                 NetEvent::Message(msg) => self.on_message(*msg),
+            }
+            // Preserva o motivo do Kick: o fechamento do socket logo depois
+            // não pode substituir o link de atualização por "server fechou".
+            if matches!(&self.tela, Tela::Erro(m) if atualizacao::protocolo_incompativel(m)) {
+                self.net = None;
+                break;
             }
         }
     }
@@ -5283,13 +5294,17 @@ impl Jogo {
             Tela::Erro(por_que) => {
                 let msg = por_que.clone();
                 ui::fundo();
-                let r = ui::painel(560.0, 220.0, "não deu");
-                ui::erro(r.x + r.w * 0.5, r.y + 50.0, &msg);
-                if ui::botao(
-                    Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0),
-                    "voltar",
-                    true,
-                ) {
+                let voltar = if atualizacao::protocolo_incompativel(&msg) {
+                    self.atualizacao.desenha_incompativel()
+                } else {
+                    let r = ui::painel(560.0, 220.0, "não deu");
+                    ui::erro(r.x + r.w * 0.5, r.y + 50.0, &msg);
+                    ui::botao(
+                        Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0),
+                        "voltar", true,
+                    )
+                };
+                if voltar {
                     self.net = None;
                     self.busca = Some(api::buscar_canais());
                     self.tela = Tela::Servidores;
