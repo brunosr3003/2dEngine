@@ -25,6 +25,7 @@ mod recompensas_ui;
 mod efeitos;
 mod energia_vfx;
 mod entrada;
+mod desktop;
 mod evolucao_skills;
 mod ficha_ui;
 mod foco;
@@ -373,16 +374,7 @@ struct Jogo {
     /// conviverem: girar a roda muda o enquadramento sem apagar a correcao
     /// que a mao fez, e a mao continua mandando dentro da banda daquele zoom.
     cam_pitch_ajuste: f32,
-    /// Onde o arrasto de camera comecou.
-    arrasto_de: Vec2,
-    /// Este aperto do botao direito ja' virou camera?
-    ///
-    /// Vale pro APERTO INTEIRO: passou do limiar uma vez, nao volta a ser
-    /// defesa ate' o jogador soltar. Sem isso, parar a mao no meio do giro
-    /// levantaria o escudo no meio da briga.
-    arrasto_virou_camera: bool,
-    /// Arrasto de rotacao em andamento: posicao do mouse no quadro anterior.
-    arrasto: Option<Vec2>,
+    mouse_camera: desktop::ArrastoCamera,
     /// Camera por toque (um dedo gira, pinca da' zoom). Ver `gesto_camera`.
     gesto_camera: gesto_camera::GestoCamera,
     /// O que o toque pediu NESTE quadro.
@@ -738,9 +730,7 @@ async fn main() {
         cam_altura_vel: 0.0,
         teclado: entrada::Teclado::novo(),
         cam_pitch_ajuste: 0.0,
-        arrasto_de: Vec2::ZERO,
-        arrasto_virou_camera: false,
-        arrasto: None,
+        mouse_camera: desktop::ArrastoCamera::default(),
         gesto_camera: gesto_camera::GestoCamera::default(),
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
@@ -2841,9 +2831,15 @@ impl Jogo {
 
     /// Algum painel GRANDE aberto (Menu, Bolsa, Mapa, Craft, Forja, Todas as
     /// missoes, Lojas)? Com ele o HUD some e todo clique e roda sao do painel.
-    /// Viagem longa em curso (mapa, "Ir" de missao, NPC): o botao do
-    /// Pergaminho de Teleporte, logo abaixo da faixa. Sem pergaminho ele
-    /// continua ali — o toque diz onde comprar.
+    /// Digitar em painéis e diálogos não pode comandar o personagem.
+    fn teclado_bloqueado(&self) -> bool {
+        self.painel_grande()
+            || self.dialogo.aberto
+            || self.confirmar.is_some()
+            || self.carregando_desde.is_some()
+            || self.economia.bloqueia_entrada(get_time())
+    }
+
     fn painel_grande(&self) -> bool {
         self.menu.aberto
             || self.bolsa.aberta
@@ -3571,13 +3567,13 @@ impl Jogo {
             self.tela_cheia = !self.tela_cheia;
             macroquad::window::set_fullscreen(self.tela_cheia);
         }
-        if self.painel_grande() || self.dialogo.aberto {
+        if self.teclado_bloqueado() {
             return;
         }
         if is_key_pressed(KeyCode::LeftShift) || is_key_pressed(KeyCode::RightShift) {
             self.corrida.alternar(self.correndo_auto);
         }
-        if is_key_pressed(KeyCode::F) {
+        if desktop::ataque_pressionado() {
             self.atacar();
         }
         if is_key_pressed(KeyCode::Tab) {
@@ -4420,7 +4416,7 @@ impl Jogo {
 
     /// Skills ofensivas usam a selecao enviada por SetTarget.
     fn usar_habilidade(&mut self) {
-        if self.painel_grande() {
+        if self.teclado_bloqueado() {
             self.habilidades.cancela_arrasto();
             return;
         }
@@ -4916,18 +4912,7 @@ impl Jogo {
     /// Andar "na mao": WASD/setas ou o joystick virtual. E' o que pausa auto
     /// missao, viagem, ir-para e a ida ate' o NPC.
     fn andando_na_mao(&self) -> bool {
-        let teclas = [
-            KeyCode::W,
-            KeyCode::A,
-            KeyCode::S,
-            KeyCode::D,
-            KeyCode::Up,
-            KeyCode::Down,
-            KeyCode::Left,
-            KeyCode::Right,
-        ]
-        .iter()
-        .any(|k| is_key_down(*k));
+        let teclas = !self.teclado_bloqueado() && desktop::movimento() != Vec2::ZERO;
         joystick::movimento_manual(teclas, &self.joystick)
     }
 
@@ -4955,46 +4940,22 @@ impl Jogo {
             .sincroniza(self.cam_yaw, self.cam_pitch_ajuste, self.cam_zoom);
         let mut dyaw = 0.0f32;
         let mut dzoom = 0.0f32;
-        if is_key_down(KeyCode::Q) {
+        if !self.teclado_bloqueado() && is_key_down(KeyCode::Q) {
             dyaw -= 2.2 * dt;
         }
-        if is_key_down(KeyCode::E) {
+        if !self.teclado_bloqueado() && is_key_down(KeyCode::E) {
             dyaw += 2.2 * dt;
         }
-        // R e F sairam da camera: F ataca e R fica reservado pro golpe letal
-        // (MIR4). Inclinar e' o arrasto do botao do meio (ou do direito) —
-        // horizontal gira, vertical inclina — e a roda aproxima.
         let mut mexeu = 0.0f32;
-        let (mx, my) = mouse_position();
-        // O botao do meio e' sempre camera. O DIREITO tem dois sentidos:
-        // parado ele defende, arrastado ele move a camera — e quem separa e'
-        // o movimento, nao um modo. E' assim que MMO faz, e evita gastar
-        // outra tecla numa acao que o jogador ja' procura no direito.
-        if is_mouse_button_pressed(MouseButton::Right) {
-            self.arrasto_de = vec2(mx, my);
-            self.arrasto_virou_camera = false;
-        }
-        if is_mouse_button_down(MouseButton::Right)
-            && (vec2(mx, my) - self.arrasto_de).length() > render3d::ARRASTO_MINIMO
-        {
-            self.arrasto_virou_camera = true;
-        }
-        if !is_mouse_button_down(MouseButton::Right) {
-            self.arrasto_virou_camera = false;
-        }
-        if is_mouse_button_down(MouseButton::Middle) || self.arrasto_virou_camera {
-            let p = vec2(mx, my);
-            if let Some(anterior) = self.arrasto {
-                dyaw += (p.x - anterior.x) * 0.008;
-                // Arrastar pra baixo LEVANTA a camera. E' a leitura de quem
-                // esta' com o mundo na mao e nao com a cabeca: puxar o chao
-                // pra baixo e' olhar de mais alto.
-                mexeu += (p.y - anterior.y) * 0.004;
-            }
-            self.arrasto = Some(p);
-        } else {
-            self.arrasto = None;
-        }
+        let segurando = is_mouse_button_down(MouseButton::Right)
+            || is_mouse_button_down(MouseButton::Middle);
+        let bloqueado = self.teclado_bloqueado() || self.toque_ativo;
+        let sobre_ui = self.ui_pega_mouse();
+        let delta = self.mouse_camera.quadro(
+            Vec2::from(mouse_position()), segurando, sobre_ui, bloqueado,
+        );
+        dyaw += delta.x * 0.008;
+        mexeu += delta.y * 0.004;
         // Toque: um dedo arrastando no mundo gira com a MESMA sensibilidade do
         // arrasto do mouse; a pinca aproxima/afasta na faixa da roda.
         // O delta do dedo passa por uma media curta: no iPhone os eventos
@@ -5035,8 +4996,8 @@ impl Jogo {
         mexeu += embalo.y;
         let (_, roda) = mouse_wheel();
         // Roda em cima do mapa e' zoom do MAPA, nao da camera.
-        if roda != 0.0 && !self.mapa.pega_mouse() && !self.painel_grande() {
-            dzoom -= roda.signum() * 0.12;
+        if roda != 0.0 && !self.ui_pega_mouse() && !self.teclado_bloqueado() {
+            dzoom -= roda.clamp(-4.0, 4.0) * 0.12;
         }
 
         // ── alvos ──
@@ -5089,22 +5050,11 @@ impl Jogo {
         }
         self.ultimo_input = agora;
 
-        let mut dir = Vec2::ZERO;
-        if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-            dir.y -= 1.0;
-        }
-        if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-            dir.y += 1.0;
-        }
-        if is_key_down(KeyCode::A) || is_key_down(KeyCode::Left) {
-            dir.x -= 1.0;
-        }
-        if is_key_down(KeyCode::D) || is_key_down(KeyCode::Right) {
-            dir.x += 1.0;
-        }
-        if dir != Vec2::ZERO {
-            dir = dir.normalize();
-        }
+        let mut dir = if self.teclado_bloqueado() {
+            Vec2::ZERO
+        } else {
+            desktop::movimento()
+        };
         // Joystick virtual: mesma direcao de TELA do WASD, com intensidade
         // (o servidor so' normaliza acima de 1 — empurrao leve anda devagar).
         let joy = self.joystick.direcao();
@@ -5115,9 +5065,8 @@ impl Jogo {
         // aqui; o que sai no fio continua sendo direcao em espaco de mundo.
         dir = render3d::input_para_mundo(dir, self.cam_yaw);
         let mut buttons = 0u32;
-        // Direito parado defende; direito arrastando e' camera, e ai' ele
-        // NAO defende — girar a vista nao pode levantar o escudo.
-        if is_mouse_button_down(MouseButton::Right) && !self.arrasto_virou_camera {
+        // Mouse direito fica livre para a câmera; G segura a defesa.
+        if !self.teclado_bloqueado() && is_key_down(KeyCode::G) {
             buttons |= shared::protocol::buttons::SECONDARY;
         }
         // Sprint ligado pelo botão ou Shift: o servidor multiplica a velocidade
@@ -5129,14 +5078,14 @@ impl Jogo {
             buttons |= shared::protocol::buttons::SPRINT;
         }
         // O servidor detecta a BORDA de subida; aqui basta mandar o estado.
-        if is_key_down(KeyCode::Space) || self.pulo_segurando {
+        if (!self.teclado_bloqueado() && is_key_down(desktop::PULO)) || self.pulo_segurando {
             buttons |= shared::protocol::buttons::PULO;
         }
         // No celular vem do quarto botao do arco; no PC, Ctrl. O toque e'
         // pulso unico para nao repetir o dash quando o dedo fica apoiado.
         if std::mem::take(&mut self.dash_toque)
-            || is_key_down(KeyCode::LeftControl)
-            || is_key_down(KeyCode::RightControl)
+            || (!self.teclado_bloqueado()
+                && (is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl)))
         {
             buttons |= shared::protocol::buttons::DASH;
         }
@@ -5144,7 +5093,7 @@ impl Jogo {
         // ANIMACAO: quem decide se o degrau de dois blocos foi vencido e' o
         // servidor, e ele responde antes de o arco chegar ao topo.
         let tocou_pulo = std::mem::take(&mut self.pulo_toque);
-        if is_key_pressed(KeyCode::Space) || tocou_pulo {
+        if (!self.teclado_bloqueado() && is_key_pressed(desktop::PULO)) || tocou_pulo {
             self.world.pular_local();
         }
         self.input_seq += 1;

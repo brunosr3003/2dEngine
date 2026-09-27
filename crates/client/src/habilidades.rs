@@ -169,7 +169,6 @@ impl Habilidades {
     }
 
     pub fn pedido(&mut self, contexto: Contexto) -> Option<u32> {
-        let teclas = [KeyCode::Key1, KeyCode::Key2, KeyCode::Key3];
         let mouse = Vec2::from(mouse_position());
         let agora = get_time();
         if crate::foco::clique() {
@@ -227,7 +226,7 @@ impl Habilidades {
             .iter()
             .find(|s| {
                 s.conjunto == contexto.conjunto
-                    && is_key_pressed(teclas[s.ordem.saturating_sub(1).min(2) as usize])
+                    && crate::desktop::skill_pressionada(s.ordem.saturating_sub(1).min(2) as usize)
             })
             .map(|s| s.id)
             .or(match gesto {

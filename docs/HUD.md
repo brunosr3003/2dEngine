@@ -250,7 +250,7 @@ Tamanhos em px a 1920×1080, **antes** da escala.
 | I | **Faixa de estado** (uma só) | centro, y = 1080−300 | até 520×34 | prioridade: aviso de skill > INDO · destino · m > AUTO MISSÃO > AUTO COMBATE/COLETA. Hoje são 3 faixas em alturas diferentes que se sobrepõem | — |
 | J | **Botão ATACAR** (grande) | inf. dir., centro em (1920−110, 1080−120) | círculo de raio 60 | sem alvo: "ALVO" (escolhe o inimigo mais perto e ataca); com alvo: "ATACAR" | **F** (MIR4) |
 | K | **Skills 1/2/3** em arco | em volta de J, a 150 px do centro. **O 1 é o mais perto do ATACAR** (MIR4 numera a partir do ataque): 1 a 180°, 2 a 225°, 3 a 270° | círculo de raio 42 | recarga em setor (já existe); AUTO no aro; bloqueada "Lv N"; arrastar ↑AUTO / ↓manual (já existe, igual ao MIR4; a dica vai para o tooltip) | 1 · 2 · 3 |
-| K2 | **Slot 4 = PULO** | 315° no mesmo arco | raio 42 | era um disco cinza sem função. O celular não tem tecla de espaço, e este é o lugar que o polegar já procura: virou o botão de PULO, com ícone próprio no atlas | 4 · Espaço |
+| K2 | **Slot 4 = PULO** | 315° no mesmo arco | raio 42 | era um disco cinza sem função. O celular não tem tecla de espaço, e este é o lugar que o polegar já procura: virou o botão de PULO, com ícone próprio no atlas | R |
 | L | **AUTO COMBATE** | à esquerda do arco, na linha de baixo, (1920−420, 1080−110) | 88×88 | anel verde girando quando ligado (já existe) | Z |
 | M | **AUTO COLETA** | à esquerda de L | 88×88 | idem | X |
 | N | **Poção + slots rápidos** | entre L e o arco | poção 64×64 + 3 slots de 56×56 | quantidade; ⚙ abre Configurações → Combate (uso automático por % de HP); sem poção: vermelho e "Ir ao vendedor". O AUTO COMBATE usa poção e slots sozinho (MIR4) | **C** poção · **8 · 9 · 0** slots (MIR4) |
@@ -298,17 +298,17 @@ porque no MIR4 a tecla é só um atalho do ícone.
 | Ação | Tecla hoje | MIR4 PC | **Tempest (decidido)** | Nota |
 |---|---|---|---|---|
 | Andar | WASD / setas; clique no chão | WASD / setas | **WASD / setas** | O clique no chão/NPC/inimigo é **mouse, não tecla**, e continua: é o equivalente do direcional de toque num jogo de câmera alta com clique. ⚠️ O MIR4 não tem clicar-para-andar |
-| Ataque básico | (clique no inimigo) | **F** + botão grande | **F** + botão ATACAR (J) | **Conflito:** F hoje aproxima a câmera, e o zoom vai para a **roda do mouse** |
+| Ataque básico | (clique no inimigo) | **F** + botão grande | **Espaço** (F alternativo) + botão ATACAR (J) | **Conflito:** F hoje aproxima a câmera, e o zoom vai para a **roda do mouse** |
 | Skills | 1 · 2 · 3 | **1–6**, o 1 perto do ataque | **1 · 2 · 3** (4 reservado), o 1 perto do ATACAR | Auto/manual por arrasto ↑/↓ (já é igual) |
-| Golpe letal | — | **R** | **R reservado** (não existe no Tempest) | **Conflito:** R hoje afasta a câmera, e o zoom vai para a roda |
+| Golpe letal | — | **R** | sem tecla; **R agora pula** | **Conflito:** R hoje afasta a câmera, e o zoom vai para a roda |
 | Alvo | clique | **Tab** (próximo perto / lista) + botão ⑥ | **Tab** = próximo inimigo perto; clique continua | A *lista* de alvos, se existir, abre só pelo botão (é painel) |
 | Poção | — | **C** + botão | **C** + botão (N) | a fazer |
 | Slots rápidos | — | **8 · 9 · 0** + botões | **8 · 9 · 0** + botões (N) | a fazer |
 | AUTO COMBATE | Z | botão ② (tem tecla, Alt mostra; ⚠️ padrão não documentado) | **Z** + botão L | Mantém Z, que já existe e não conflita |
 | AUTO COLETA | X | botão ① (idem) | **X** + botão M | idem |
 | Esquiva | — | **Shift** | reservado para quando existir | **Conflito:** Shift hoje é correr. Fica correr até existir esquiva, e aí Shift vira esquiva e a corrida fica só a automática |
-| Pular | Espaço | **Espaço** (passo aéreo) | **Espaço** | igual |
-| Câmera girar | Q / E | ⚠️ não documentado | **Q / E** (mantido) | não abre nada |
+| Pular | Espaço | **Espaço** (passo aéreo) | **R** | Espaço agora ataca |
+| Câmera girar | Q / E | ⚠️ não documentado | **segurar direito/meio e arrastar**, Q / E | direito não aciona defesa; **G** defende |
 | Câmera zoom | R / F | ⚠️ | **roda do mouse** | libera R e F para o MIR4 |
 | Mostrar teclas | — | **Alt** | **Alt** mostra os chips (R) | igual |
 | Tela cheia | — | **Alt+Enter** | **Alt+Enter** | não abre painel |
@@ -706,3 +706,17 @@ Noto Sans Regular e Bold (Google), embutidas com `include_bytes!` como antes; li
 ### Custo
 
 Um `painel` antigo eram ~22 triângulos (retângulos e linhas). O novo são ~210 (sombra 3 leques, gradiente 1 leque, borda 1 anel), em malhas pequenas que o batcher agrupa. Com 30 painéis na tela são ~6 mil triângulos por quadro no passe de UI — irrelevante até em GPU de celular, e sem textura nem render-to-texture.
+
+### Controles desktop (macOS, Windows e Linux — 26/09/2026)
+
+- WASD ou setas: movimento relativo à câmera; diagonal não aumenta a velocidade.
+- Botão direito ou central segurado + movimento do mouse: girar e inclinar a câmera.
+- Roda do mouse: zoom; rolagem sobre a interface pertence à interface.
+- 1, 2, 3 (também no teclado numérico): habilidades.
+- Espaço: ataque básico (F continua como alternativa).
+- R: pular. G segurado: defender. Ctrl: esquivar. Shift: alternar corrida.
+- Clique esquerdo: selecionar/interagir/andar, como antes. Alt mostra as teclas no HUD.
+
+Painéis e diálogos bloqueiam os comandos de teclado do personagem. Um arrasto
+iniciado sobre a interface não move a câmera ao sair dela. Os controles de
+toque permanecem disponíveis no celular.

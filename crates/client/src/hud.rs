@@ -449,7 +449,7 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
 
 /// O botao de PULO, acima do dash. Devolve `(tocou, segurando)`: o
 /// toque dispara a animacao local e o segurar manda o bit pro servidor — o
-/// mesmo que a tecla de espaco faz no PC, que no celular nao existe.
+/// mesmo que a tecla R faz no PC, que no celular nao existe.
 pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
     let r = z.pulo;
     let m = mouse();
@@ -483,7 +483,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
             estilo::alfa(cor, 0.7),
         );
     }
-    layout::chip(r, "ESP");
+    layout::chip(r, "R");
     (sobre && crate::foco::clique(), segurando)
 }
 
@@ -598,7 +598,7 @@ pub fn draw_atacar(z: &Zonas, tem_alvo: bool) -> bool {
         12,
         cor,
     );
-    layout::chip(r, "F");
+    layout::chip(r, "ESP");
     sobre && crate::foco::clique()
 }
 
