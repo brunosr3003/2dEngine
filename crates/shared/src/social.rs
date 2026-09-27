@@ -5,6 +5,17 @@ pub const MAX_AMIGOS: usize = 100;
 pub const MAX_CARTAS: usize = 100;
 pub const MAX_CLA: usize = 50;
 pub const MAX_GRUPO: usize = 5;
+/// Participantes próximos ao autor do abate, na mesma instância.
+pub const RAIO_XP_GRUPO: f32 = 25.0;
+pub fn bonus_xp_grupo(participantes: usize) -> u32 {
+    participantes.saturating_sub(1).min(3) as u32 * 10
+}
+/// A fração final é descartada; ninguém recebe mais XP que outro por ordem.
+pub fn parcela_xp_grupo(xp: u64, participantes: usize) -> u64 {
+    let n = participantes.max(1) as u128;
+    (u128::from(xp) * u128::from(100 + bonus_xp_grupo(participantes)) / (100 * n)) as u64
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Pedido {
@@ -160,6 +171,18 @@ pub fn texto_valido(texto: &str, min: usize, max: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn xp_progressiva_tem_teto_e_divisao_inteira() {
+        for (n, bonus, xp) in [(1,0,100),(2,10,55),(3,20,40),(4,30,32),(5,30,26)] {
+            assert_eq!(bonus_xp_grupo(n), bonus);
+            assert_eq!(parcela_xp_grupo(100,n), xp);
+        }
+        assert_eq!(parcela_xp_grupo(1,2),0);
+        assert_eq!(parcela_xp_grupo(0,4),0);
+        assert_eq!(parcela_xp_grupo(u64::MAX,1),u64::MAX);
+        assert_eq!(parcela_xp_grupo(u64::MAX,2), (u128::from(u64::MAX)*110/200) as u64);
+    }
+
     #[test]
     fn limites_unicode_e_controle() {
         assert!(texto_valido("Clã dos Mares", 3, 24));

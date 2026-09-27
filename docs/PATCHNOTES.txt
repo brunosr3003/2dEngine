@@ -1,3 +1,15 @@
+27/09/2026 — Grupo, XP e ações de jogadores
+
+XP em grupo
+A XP do abate é dividida igualmente entre os membros conectados na mesma área/instância, a até 25 m de quem derrotou o monstro. Dois participantes dão +10% de XP total (55% para cada um); três dão +20% (40% cada); quatro dão +30% (32,5% cada). O bônus para de crescer em quatro: com cinco participantes, fica +30% no total (26% cada). Sem aliados próximos, você recebe 100%, sem bônus de grupo. Frações finais de XP são descartadas; bônus individuais são aplicados depois.
+Corrigida uma falha que entregava a XP compartilhada apenas ao primeiro membro encontrado. A tabela e as regras aparecem em Menu > Grupo.
+
+Grupo na HUD
+Um painel recolhível ao lado das quests mostra os membros e suas barras de vida. Quem não está visível na mesma área aparece como “Fora de alcance”. Clique em um membro para selecioná-lo ou em “Gerenciar grupo” para abrir os convites e as regras.
+
+Ações do jogador
+Clique na barra de vida do jogador selecionado, no alto da tela, para expandir as opções Adicionar amigo, Seguir jogador e Convidar para grupo. Seguir acompanha o movimento mantendo distância, sem iniciar ataque. Movimento manual, outro destino, Esc ou a saída do jogador da área encerram o acompanhamento.
+
 27/09/2026 — Aparência, skins e atualização
 
 Aparência e skins

@@ -57,6 +57,8 @@ mod oficina_ui;
 mod pets_ui;
 mod rolagem;
 mod social_ui;
+mod social_hud;
+mod seguir;
 mod teclado_virtual;
 
 /// Pedacos de terreno em volta do jogador que precisam existir pra tela de
@@ -223,6 +225,8 @@ struct Jogo {
     map: Option<Map>,
     world: World,
     alvo: Option<shared::EntityId>,
+    social_hud: social_hud::SocialHud,
+    seguir: seguir::Seguir,
     /// Inventario e equipamento (icone do HUD ou Menu). Ver `bolsa`.
     bolsa: bolsa::Bolsa,
     /// Vida, mana, vigor e experiencia do HUD (`hud::Ficha`).
@@ -606,6 +610,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_SOCIAL_HUD").is_ok() {
+        social_hud::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_SOCIAL").is_ok() {
         social_ui::previa().await;
         return;
@@ -670,6 +679,8 @@ async fn main() {
         map: None,
         world: World::default(),
         alvo: None,
+        social_hud: social_hud::SocialHud::default(),
+        seguir: seguir::Seguir::default(),
         bolsa: bolsa::Bolsa::default(),
         ficha: hud::Ficha::default(),
         ficha_ui: ficha_ui::FichaUi::default(),
@@ -1177,6 +1188,7 @@ impl Jogo {
             }
             self.auto_da_barra();
             self.world.alvo = self.alvo;
+            self.conduzir_seguir();
             self.ir_ate_o_alvo();
             self.conduzir_viagem();
             self.conduzir_ir_para();
@@ -1306,6 +1318,8 @@ impl Jogo {
         self.menu.fechar();
         self.lojas.fechar();
         self.social = social_ui::Social::default();
+        self.social_hud = social_hud::SocialHud::default();
+        self.seguir = seguir::Seguir::default();
         self.voltar_ao_menu = false;
         self.map = None;
         self.terreno = None;
@@ -2375,6 +2389,8 @@ impl Jogo {
             self.alvo = None;
         }
         if self.clique_no_mundo() {
+            self.parar_seguir();
+            self.social_hud.pacifico = None;
             // Clique no mundo e' comando novo: a viagem do mapa acaba aqui, e a
             // auto missao junto.
             self.mapa.viagem.cancelar();
@@ -2793,6 +2809,7 @@ impl Jogo {
 
     /// Clicou numa missao do rastreador (ou "Ir" no diario): auto missao.
     fn iniciar_auto_missao(&mut self, id: u16) {
+        self.parar_seguir();
         let Some(def) = shared::quests::quest_by_id(id) else { return };
         if let Some(alvo) = self
             .missoes
@@ -3012,7 +3029,8 @@ impl Jogo {
         {
             return true;
         }
-        hud_layout::atual().contem(p)
+        self.social_hud.captura(&hud_layout::atual(), p, self.alvo_jogador().is_some(), self.social.grupo.len())
+            || hud_layout::atual().contem(p)
             || self.botao_teleporte.is_some_and(|r| r.contains(p))
             || self.habilidades.botao_em(p)
             || self.mapa.pega_mouse()
@@ -3111,7 +3129,8 @@ impl Jogo {
             return true;
         }
         let z = hud_layout::atual();
-        z.contem(m)
+        self.social_hud.captura(&z, m, self.alvo_jogador().is_some(), self.social.grupo.len())
+            || z.contem(m)
             || self.botao_teleporte.is_some_and(|r| r.contains(m))
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
@@ -3380,6 +3399,8 @@ impl Jogo {
     /// veio do Menu volta pro Menu; o Menu volta pro jogo. Nunca abre nada.
     /// Devolve `true` se fechou algo (ai' nao cancela alvo nem AUTO).
     fn esc(&mut self) -> bool {
+        if self.social_hud.aberto.take().is_some() { return true; }
+        if self.seguir.alvo.is_some() { self.parar_seguir(); return true; }
         if self.dialogo.aberto {
             self.dialogo.fechar();
             self.auto_missao.parar();
@@ -3630,6 +3651,8 @@ impl Jogo {
 
     /// Mira neste inimigo: e' comando novo, entao viagem e auto missao param.
     fn mirar(&mut self, id: shared::EntityId) {
+        self.parar_seguir();
+        self.social_hud.pacifico = None;
         self.mapa.viagem.cancelar();
         self.auto_missao.parar();
         self.ir_para.parar();
@@ -4142,6 +4165,7 @@ impl Jogo {
     /// Clicou no mapa ou no minimapa: viaja ate' la'. Desliga o auto combate e
     /// solta o alvo — senao "ir ate' o alvo" pede rota por cima da viagem.
     fn iniciar_viagem(&mut self, destino: Vec2) {
+        self.parar_seguir();
         if !self.mapa.terra(destino) {
             self.chat.push("mapa: lá é água".into());
             return;
@@ -4164,6 +4188,7 @@ impl Jogo {
     /// "Ir" do mapa (zona de bicho, regiao de recurso) ou do menu de missoes
     /// (ir ao Mestre). Encerra o que brigaria pela rota.
     fn iniciar_ir_para(&mut self, alvo: ir_para::Alvo) {
+        self.parar_seguir();
         self.mapa.viagem.cancelar();
         self.auto_combate.parar();
         self.aproximando_alvo = None;
@@ -4443,6 +4468,7 @@ impl Jogo {
         };
         let distancia_alvo = self
             .alvo
+            .filter(|id| self.seguir.alvo.is_none() && self.social_hud.pacifico != Some(*id))
             .and_then(|id| self.world.ents.get(&id))
             .filter(|e| e.state.hp > 0 && e.morte.is_none())
             .map(|e| eu.render_pos.distance(e.render_pos));
@@ -4649,8 +4675,89 @@ impl Jogo {
         }
     }
 
+    fn alvo_jogador(&self) -> Option<(shared::EntityId, String)> {
+        let id = self.alvo?;
+        if Some(id) == self.world.self_id { return None; }
+        let e = self.world.ents.get(&id)?;
+        (e.meta.tag == shared::EntityTag::Player && e.morte.is_none())
+            .then(|| (id, e.meta.name.clone().unwrap_or_default()))
+    }
+
+    fn parar_seguir(&mut self) {
+        if let Some(msg) = self.seguir.parar() { self.envia(msg); }
+    }
+
+    fn conduzir_seguir(&mut self) {
+        let Some(id) = self.seguir.alvo else { return };
+        if self.andando_na_mao() || self.alvo != Some(id) || self.auto_combate.ativo() {
+            self.parar_seguir();
+            return;
+        }
+        if self.habilidades.ocupada() { return; }
+        let eu = self.world.self_pos();
+        let vivo = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+            .is_some_and(|e| e.state.hp > 0 && e.morte.is_none() && e.state.flags & shared::ent_flags::DOWNED == 0);
+        if !vivo || eu.is_none() { self.parar_seguir(); return; }
+        let destino = self.world.ents.get(&id).filter(|e| e.state.hp > 0 && e.morte.is_none()).map(|e| e.render_pos);
+        if let Some(msg) = self.seguir.passo(eu.unwrap(), destino, get_time()) { self.envia(msg); }
+    }
+
+    fn acao_social_alvo(&mut self, acao: social_hud::Acao) {
+        use social_hud::Acao;
+        match acao {
+            Acao::AbrirGrupo => {
+                let pedidos = self.social.abrir(social_ui::Aba::Grupo);
+                for p in pedidos { self.envia(p); }
+            }
+            Acao::Selecionar(id) => {
+                self.parar_seguir();
+                self.auto_combate.parar();
+                self.dungeon.auto = false;
+                self.alvo = Some(id);
+                self.social_hud.aberto = None;
+                self.social_hud.pacifico = Some(id);
+                self.aproximando_alvo = None;
+                self.envia(ClientMessage::PararRota);
+                self.envia(ClientMessage::SetTarget { target: None });
+            }
+            _ => {
+                let Some((id, nome)) = self.alvo_jogador() else { return };
+                match acao {
+                    Acao::Inspecionar => {
+                        self.dungeon.auto = false;
+                        self.social_hud.pacifico = Some(id);
+                        self.auto_combate.parar();
+                        self.aproximando_alvo = None;
+                        self.envia(ClientMessage::SetTarget { target: None });
+                        self.envia(ClientMessage::PararRota);
+                    }
+                    Acao::Amigo => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::Amizade { nome } }),
+                    Acao::Grupo => self.envia(ClientMessage::PartyInvite { target_name: nome }),
+                    Acao::Seguir => {
+                        if self.seguir.alvo == Some(id) { self.parar_seguir(); return; }
+                        self.dungeon.auto = false;
+                        self.auto_combate.parar();
+                        self.auto_coleta.parar();
+                        self.auto_missao.parar();
+                        self.mapa.viagem.cancelar();
+                        self.ir_para.parar();
+                        self.interacao.cancela();
+                        self.aproximando_alvo = None;
+                        self.envia(ClientMessage::SetTarget { target: None });
+                        self.envia(ClientMessage::PararRota);
+                        self.social_hud.pacifico = Some(id);
+                        self.seguir.iniciar(id);
+                        self.chat.push(format!("Seguindo {nome}. Mova-se ou use Esc para parar."));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.
     fn ir_ate_o_alvo(&mut self) {
+        if self.seguir.alvo.is_some() { return; }
         if self.aproximando_alvo.is_some() && self.aproximando_alvo != self.alvo {
             self.envia(ClientMessage::PararRota);
             self.aproximando_alvo = None;
@@ -4667,6 +4774,8 @@ impl Jogo {
         let (Some(eu), Some(ele)) = (eu, self.world.ents.get(&alvo)) else {
             return;
         };
+        if ele.meta.tag == shared::EntityTag::Player
+            && (!eu.meta.pk.hostil || self.social_hud.pacifico == Some(alvo)) { return; }
         if ele.state.hp == 0 || ele.morte.is_some() {
             if self.aproximando_alvo == Some(alvo) {
                 self.envia(ClientMessage::PararRota);
@@ -4772,6 +4881,8 @@ impl Jogo {
         self.menu.fechar();
         self.lojas.fechar();
         self.social = social_ui::Social::default();
+        self.social_hud = social_hud::SocialHud::default();
+        self.seguir = seguir::Seguir::default();
         self.voltar_ao_menu = false;
         self.personagem_atual = None;
         self.token_login = None;
@@ -5568,6 +5679,9 @@ impl Jogo {
                     }
                 }
             }
+            if let Some(acao) = self.social_hud.grupo(&z, &self.social.grupo, &self.world) {
+                self.acao_social_alvo(acao);
+            }
             let alvo = self
                 .alvo
                 .and_then(|id| self.world.ents.get(&id))
@@ -5596,6 +5710,10 @@ impl Jogo {
             {
                 // Chefe em luta por perto sem estar selecionado: a barra dele.
                 telegrafico::desenha_barra_de_chefe(z.alvo, &nome, nv, hp, hp_max);
+            }
+            let jogador = self.alvo_jogador().map(|(id, _)| id);
+            if let Some(acao) = self.social_hud.alvo(&z, jogador, jogador.is_some() && self.seguir.alvo == jogador) {
+                self.acao_social_alvo(acao);
             }
             foco::marca(foco::chave::MENU, z.menu);
             let selo = self.selo_missoes();

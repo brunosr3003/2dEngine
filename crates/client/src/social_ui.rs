@@ -347,15 +347,13 @@ impl Social {
         }
     }
     fn grupo_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
-        e::texto(
-            a.x,
-            a.y + 14.0,
-            "Até 5 jogadores no mesmo canal. Convites duram 60 segundos.",
-            15,
-            e::SUAVE,
-        );
+        e::texto(a.x, a.y + 14.0, "Até 5 jogadores no mesmo canal. Convites duram 60 segundos.", 15, e::SUAVE);
+        e::texto(a.x, a.y + 38.0, "XP dividida igualmente: membros na mesma área, a até 25 m de quem abate.", 14, e::TEXTO);
+        e::texto(a.x, a.y + 61.0, "2 próximos: +10% (55% cada) · 3: +20% (40% cada)", 14, e::OURO);
+        e::texto(a.x, a.y + 84.0, "4 próximos: +30% (32,5% cada) · 5: +30% (26% cada)", 14, e::OURO);
+        e::texto(a.x, a.y + 107.0, "Bônus cresce até 4 participantes. Solo: 100%. Frações de XP são descartadas.", 13, e::SUAVE);
         campo(
-            Rect::new(a.x, a.y + 48.0, a.w - 180.0, 40.0),
+            Rect::new(a.x, a.y + 148.0, a.w - 180.0, 40.0),
             "Nome do personagem",
             &mut self.nome,
             0,
@@ -364,7 +362,7 @@ impl Social {
             32,
         );
         if crate::ui::botao(
-            Rect::new(a.x + a.w - 168.0, a.y + 48.0, 168.0, 40.0),
+            Rect::new(a.x + a.w - 168.0, a.y + 148.0, 168.0, 40.0),
             "Convidar",
             !self.nome.trim().is_empty(),
         ) {
@@ -373,7 +371,7 @@ impl Social {
             });
             self.foco = None;
         }
-        let mut y = a.y + 124.0;
+        let mut y = a.y + 216.0;
         if let Some((nome, _)) = self.convite.clone() {
             e::texto_ajustado(
                 &format!("{nome} convidou você"),
@@ -406,7 +404,7 @@ impl Social {
         }
         for nome in &self.grupo {
             e::texto(a.x + 12.0, y, nome, 18, e::TEXTO);
-            y += 42.0;
+            y += 30.0;
         }
         if !self.grupo.is_empty()
             && crate::ui::botao(

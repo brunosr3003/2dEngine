@@ -12329,7 +12329,7 @@ impl GameWorld {
                     (p, pos, instancia)
                 };
                 // Lista de alvos a receber XP: matador + aliados dentro de PARTY_SHARE_RADIUS
-                const PARTY_SHARE_RADIUS_SQ: f32 = 25.0 * 25.0;
+                const PARTY_SHARE_RADIUS_SQ: f32 = shared::social::RAIO_XP_GRUPO * shared::social::RAIO_XP_GRUPO;
                 let mut recipients: Vec<EntityId> = vec![attacker_eid];
                 if let Some(pid) = party_id {
                     for s in self.sessions.values() {
@@ -12348,12 +12348,7 @@ impl GameWorld {
                         }
                     }
                 }
-                // Com party, +20% bonus total; divide igual entre todos
-                let share = if recipients.len() > 1 {
-                    ((xp_reward as f32 * 1.2) / recipients.len() as f32) as u64
-                } else {
-                    xp_reward
-                };
+                let share = shared::social::parcela_xp_grupo(xp_reward, recipients.len());
                 // ILHA MAGICA: a Ilhota da Experiencia dobra o XP de abate.
                 //
                 // Aplicado ao SHARE, ja' depois da divisao de party: o bonus e'
@@ -12382,7 +12377,6 @@ impl GameWorld {
                         }
                         // XP + level-up + ProgressUpdate via fonte única.
                         session.grant_xp(share);
-                        break;
                     }
                 }
                 // Progresso de quests de KILL (mob) — credita todos os recipients.
@@ -21452,5 +21446,98 @@ mod pk_tests {
             ServerMessage::Snapshot { snapshot } => Some(snapshot.entered), _=>None
         }).flatten().collect();
         assert!(metas.iter().any(|m|m.id==EntityId(901) && m.pk.hostil && m.pk.pontos==4));
+    }
+}
+
+#[cfg(test)]
+mod xp_grupo_tests {
+    use super::*;
+
+    fn mundo(n: usize) -> (GameWorld, Vec<SessionId>) {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.safe_zone = false;
+        w.imortal = false;
+        let mut ids = Vec::new();
+        for i in 0..n {
+            let sid = SessionId(([127, 0, 0, 1], 19900 + i as u16).into());
+            let (tx, _rx) = mpsc::unbounded_channel();
+            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            let eid = EntityId(900 + i as u32);
+            let e = w.ecs.spawn((NetId(eid), Position(Vec2::new(10.0, 10.0)),
+                Velocity(Vec2::ZERO), EntityKind::Player, Health { current: 100, max: 100 },
+                PlayerTag { name: format!("xp{i}"), player_id: PlayerId(i as u64),
+                    attack_anim_pending: None, combo_step_pending: None }));
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.entity_id = eid;
+            s.name = format!("xp{i}");
+            s.party_id = (n > 1).then_some(1);
+            ids.push(sid);
+        }
+        (w, ids)
+    }
+
+    fn abate(w: &mut GameWorld, xp: u64) {
+        let p = Vec2::new(11.0, 10.0);
+        let (mut tag, _) = w.build_enemy_tag(0, p, 0.0, p);
+        tag.xp_reward = xp;
+        tag.level = 50;
+        tag.detect_range = 0.0;
+        tag.spawn_grace_until = 0.0;
+        let e = w.ecs.spawn((NetId(EntityId(5000)), Position(p), Velocity(Vec2::ZERO),
+            EntityKind::Enemy(0), Health { current: 1, max: 1 }, tag));
+        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(5000), damage: 10000,
+            attacker_net: EntityId(900), hurt_dir: Vec2::X, is_crit: false,
+            from_player: true, knockback: 0.0 });
+        w.step(shared::TICK_DT);
+        assert!(w.ecs.get::<&EnemyTag>(e).unwrap().dead, "o teste precisa completar o abate");
+    }
+
+    #[test]
+    fn xp_dividida_chega_a_todos_com_bonus_progressivo_e_teto() {
+        for n in 1..=5 {
+            let (mut w, ids) = mundo(n);
+            abate(&mut w, 100);
+            for (i, sid) in ids.iter().enumerate() {
+                let s = &w.sessions[sid];
+                assert_eq!(s.xp, [0, 100, 55, 40, 32, 26][n], "grupo de {n}, membro {i}");
+                assert_eq!(s.fame, if i == 0 { 5 } else { 0 });
+                if i == 0 {
+                    assert!(s.proficiencies.iter().sum::<u64>() >= 10);
+                } else {
+                    assert_eq!(s.proficiencies.iter().sum::<u64>(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grupo_sem_aliados_proximos_recebe_xp_solo_sem_bonus() {
+        let (mut w, ids) = mundo(3);
+        for sid in &ids[1..] {
+            let e = w.sessions[sid].entity.unwrap();
+            w.ecs.get::<&mut Position>(e).unwrap().0 = Vec2::new(60.0, 10.0);
+        }
+        abate(&mut w, 100);
+        assert_eq!(w.sessions[&ids[0]].xp, 100);
+        for sid in &ids[1..] { assert_eq!(w.sessions[sid].xp, 0); }
+    }
+
+    #[test]
+    fn xp_divide_so_entre_membros_online_proximos_na_mesma_instancia() {
+        let (mut w, ids) = mundo(6);
+        let perto = w.sessions[&ids[1]].entity.unwrap();
+        w.ecs.get::<&mut Position>(perto).unwrap().0 = Vec2::new(35.0, 10.0);
+        let longe = w.sessions[&ids[2]].entity.unwrap();
+        w.ecs.get::<&mut Position>(longe).unwrap().0 = Vec2::new(35.1, 10.0);
+        w.sessions.get_mut(&ids[3]).unwrap().instancia = 42;
+        w.sessions.get_mut(&ids[4]).unwrap().party_id = None;
+        w.sessions.get_mut(&ids[5]).unwrap().logged_in = false;
+        abate(&mut w, 100);
+        for (i, sid) in ids.iter().enumerate() {
+            assert_eq!(w.sessions[sid].xp, if i < 2 { 55 } else { 0 }, "membro {i}");
+        }
     }
 }
