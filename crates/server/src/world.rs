@@ -627,6 +627,16 @@ fn tier_de_fonte(tier: u8, tronco: bool, pedra: bool) -> bool {
     }
 }
 
+/// Passo da grade de sitios planos, em unidades (12 blocos).
+///
+/// E' a unidade real em que todo espacamento de mob se mede: um slot so'
+/// existe em cima desta grade, entao `MOB_ESPACO_UN`, `FORTE_ESPACO_UN` e o
+/// da ilhota so' mudam alguma coisa quando cruzam um multiplo dela. Com 6,
+/// vizinho reto fica a 6 e diagonal a 8,49: espacamento ate' 6 aceita todo
+/// sitio, de 6 a 8,49 deixa so' as diagonais (meia horda), e acima disso
+/// rareia de verdade.
+pub const SITIO_PASSO_UN: f32 = 6.0;
+
 /// Raio do disco plano que um mob comum exige pra nascer, em unidades.
 pub const MOB_RAIO_SITIO_UN: f32 = 3.0;
 /// Espacamento minimo entre centros de zona. Sem isso a mesma clareira recebe
@@ -657,11 +667,29 @@ pub const MOB_ESPACO_UN: f32 = 8.0;
 /// sorteados embaralhados: pegar de N em N na lista da' fortes longe uns dos
 /// outros sem uma segunda passada de espacamento.
 pub const FORTE_A_CADA: usize = 7;
-/// Raio de um forte: pouco mais da metade do da zona comum.
-pub const FORTE_RAIO_UN: f32 = 24.0;
-/// Espacamento entre inimigos dentro do forte. A grade de sitios tem passo de
-/// 6 unidades, entao isto e' "todo sitio vale" — que e' o ponto.
-pub const FORTE_ESPACO_UN: f32 = 4.0;
+/// Raio de um forte: dois tercos do da zona comum.
+///
+/// Era 24 (pouco mais da metade). Subiu junto com `FORTE_ESPACO_UN` pra os 34
+/// mobs continuarem caber depois de o espacamento tirar metade dos sitios:
+/// so' as diagonais da grade valem agora, e em raio 24 sobrariam ~25 vagas.
+pub const FORTE_RAIO_UN: f32 = 28.0;
+/// Espacamento entre inimigos dentro do forte.
+///
+/// **De 4 pra 7 em 27/09/2026** (docs/ESCADA.md, "o simulador media uma horda
+/// que nao existe"). O 4 era "todo sitio vale": a grade de sitios tem passo de
+/// `SITIO_PASSO_UN` = 6, entao qualquer espacamento ate' 6 aceita o vizinho
+/// reto e nada rareia. O 7 recusa o reto (6 < 7) e mantem o diagonal (8,49),
+/// o que tira METADE da horda de dentro de `MATILHA_RAIO_UN` sem tirar um
+/// unico mob do forte — a contagem segue 34, o XP por hora segue igual.
+///
+/// Por que: com o golpe por subtracao, o piso de 10% faz a horda somar sem
+/// olhar equipamento, e medido na grade o forte era do tanque e de mais
+/// ninguem (pistola limpava 5 dos 9 niveis, anel magico 1). Com 7/28 os
+/// QUATRO conjuntos na faixa limpam os nove. O preco esta' escrito no guarda:
+/// o forte deixa de ser portao de equipamento (quem esta' uma faixa atras
+/// tambem passa a limpar), e quem faz esse papel agora e' so' a ilhota.
+/// Decisao do dono, pedida depois de ver as duas medidas.
+pub const FORTE_ESPACO_UN: f32 = 7.0;
 /// Teto de mobs num forte.
 pub const FORTE_POR_ZONA: u32 = 34;
 /// A partir de que nivel a MISSAO de matar bicho manda pro forte. Abaixo
@@ -694,6 +722,25 @@ pub(crate) fn e_forte(i: usize) -> bool {
 
 /// Teto de mobs por zona.
 pub const MOB_POR_ZONA: u32 = 18;
+
+// ──────────────────── a horda da Ilha Magica (ilhota) ────────────────────
+//
+// Eram numeros soltos aqui e COPIADOS no simulador
+// (`balanceamento::metas_da_escada::posicoes`). Viraram constantes porque a
+// densidade da ilhota e' o que se ajusta quando a horda pesa demais, e um
+// guarda que le' numero copiado avisa da densidade que ele imagina, nao da
+// que o jogador enfrenta.
+/// Quantas hordas no anel, ALEM da do centro da ilhota.
+pub const ILHOTA_ANEL_HORDAS: usize = 4;
+/// A que fracao do raio da ilhota o anel fica.
+pub const ILHOTA_ANEL_MULT: f32 = 0.55;
+/// Raio de cada horda da ilhota, em fracao de `MOB_ZONA_RAIO_UN`: a zona
+/// encolhe pra caber dentro da ilhota.
+pub const ILHOTA_RAIO_MULT: f32 = 0.5;
+/// Espacamento entre mobs da ilhota, em fracao de `MOB_ESPACO_UN`.
+pub const ILHOTA_ESPACO_MULT: f32 = 0.6;
+/// Teto de mobs em cada horda da ilhota.
+pub const ILHOTA_POR_HORDA: u32 = 18;
 
 // ── Balanceamento corpo a corpo × distancia (docs/COMBATE.md) ─────────────
 //
@@ -1105,7 +1152,7 @@ pub(crate) fn zonas_comuns_da_ilha(
     // ── 1. sitios ────────────────────────────────────────────────────
     // Grade grossa: testar coluna a coluna seriam dez milhoes de discos.
     // 12 blocos (6 unidades) e' mais fino que a menor clareira util.
-    let passo = 12i32;
+    let passo = (SITIO_PASSO_UN / BLOCO) as i32;
     let raio_mob = (MOB_RAIO_SITIO_UN / BLOCO) as i32;
     let mut sitios: Vec<Vec2> = Vec::new();
     let mut b = -def.raio_blocos;
@@ -1186,9 +1233,11 @@ pub(crate) fn zonas_comuns_da_ilha(
             if matches!(i.bonus, shared::magica::Bonus::DropDeChefe) {
                 continue;
             }
-            for k in 0..4 {
-                let a = k as f32 / 4.0 * std::f32::consts::TAU + 0.4;
-                let p = centro + Vec2::new(a.cos(), a.sin()) * (shared::magica::RAIO_ILHOTA * 0.55);
+            for k in 0..ILHOTA_ANEL_HORDAS {
+                let a = k as f32 / ILHOTA_ANEL_HORDAS as f32 * std::f32::consts::TAU + 0.4;
+                let p = centro
+                    + Vec2::new(a.cos(), a.sin())
+                        * (shared::magica::RAIO_ILHOTA * ILHOTA_ANEL_MULT);
                 // Só onde há chão plano de verdade: mob em ladeira escorrega.
                 if sitios.iter().any(|s| s.distance(p) < 14.0) {
                     r.centros.push(p);
@@ -1228,7 +1277,11 @@ pub(crate) fn zonas_comuns_da_ilha(
         } else if adensar {
             // Zona menor (cabe na ilhota), mobs mais colados e teto alto: é
             // disso que "densidade muito grande" é feito.
-            (MOB_ZONA_RAIO_UN * 0.5, MOB_ESPACO_UN * 0.6, MOB_POR_ZONA)
+            (
+                MOB_ZONA_RAIO_UN * ILHOTA_RAIO_MULT,
+                MOB_ESPACO_UN * ILHOTA_ESPACO_MULT,
+                ILHOTA_POR_HORDA,
+            )
         } else {
             (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, MOB_POR_ZONA)
         };

@@ -198,6 +198,9 @@ pub struct Contexto<'a> {
 #[derive(Default)]
 pub struct Menu {
     pub aberto: bool,
+    /// Abriu com o botao/dedo AINDA apertado: o clique que abriu nao clica
+    /// dentro do menu. Mesma trava do `escolha_npc`, e pelo mesmo motivo.
+    espera_soltar: bool,
     rolagem: crate::rolagem::Rolagem,
 }
 
@@ -216,15 +219,43 @@ fn grade(largura: f32) -> (usize, usize, f32) {
 
 impl Menu {
     pub fn alterna(&mut self) {
-        self.aberto = !self.aberto;
+        if self.aberto {
+            self.fechar();
+        } else {
+            self.abrir();
+        }
     }
 
     pub fn abrir(&mut self) {
         self.aberto = true;
+        self.espera_soltar = is_mouse_button_down(MouseButton::Left);
     }
 
     pub fn fechar(&mut self) {
         self.aberto = false;
+        self.espera_soltar = false;
+    }
+
+    /// O clique DESTE quadro vale dentro do menu?
+    ///
+    /// O botao MENU do HUD (`hud::draw_topo`) e o "x" daqui leem o mesmo
+    /// `is_mouse_button_pressed` — e o `draw_topo` roda ANTES do menu no
+    /// mesmo quadro. Sem esta trava, um clique que pegasse os dois
+    /// retangulos abria e fechava o menu no MESMO quadro: o painel piscava.
+    ///
+    /// E eles se pegam: o "x" e' de 34x30, mas o `ui::area_de_toque` cresce o
+    /// alvo pra 42x44 e o sobe ate' `painel().y + 5`, que e' o canto de cima
+    /// do painel — a mesma altura do ≡. Medido com `zonas_com(.., 1.6, ..)`:
+    /// na janela padrao de 940x980 o "x" fica em (850,45)+42x44 e o ≡ em
+    /// (881,14)+45x34, um sliver de 11x3 px no canto de baixo do ≡; em
+    /// 1600x900 a mordida e' de 42x29; em 1920x1080 e 1920x1200 nao ha'
+    /// encontro nenhum. Por isso o defeito era "as vezes": dependia da
+    /// janela e de onde, dentro do ≡, o clique caiu.
+    fn aceita_clique(&mut self, apertado: bool) -> bool {
+        if self.espera_soltar && !apertado {
+            self.espera_soltar = false;
+        }
+        !self.espera_soltar
     }
 
     fn painel() -> Rect {
@@ -244,17 +275,20 @@ impl Menu {
         if !self.aberto {
             return None;
         }
+        let vale = self.aceita_clique(is_mouse_button_down(MouseButton::Left));
         crate::hud_layout::escurece(0.6);
         let p = Self::painel();
         estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
         estilo::texto_forte(p.x + 20.0, p.y + 34.0, "MENU", 24, estilo::OURO);
-        if crate::ui::botao(
+        // O botao desenha sempre; so' o clique e' que espera o dedo soltar.
+        let fechar = crate::ui::botao(
             Rect::new(p.x + p.w - 46.0, p.y + 12.0, 34.0, 30.0),
             "x",
             true,
-        ) {
-            self.aberto = false;
+        );
+        if fechar && vale {
+            self.fechar();
             return None;
         }
         estilo::separador(p.x + 14.0, p.y + 50.0, p.w - 28.0);
@@ -340,7 +374,7 @@ impl Menu {
                     .sum::<f32>()
             })
             .fold(0.0, f32::max);
-        let toque = self.rolagem.quadro(dir, total, t + 46.0);
+        let toque = self.rolagem.quadro(dir, total, t + 46.0).filter(|_| vale);
         let mut saida = None;
         let mut dica: Option<(Rect, String)> = None;
         crate::rolagem::recortar(Some(dir));
@@ -569,6 +603,34 @@ mod tests {
                 "{i:?} fora do menu"
             );
         }
+    }
+
+    /// O clique que ABRE o menu nao pode clicar dentro dele.
+    ///
+    /// O quadro em que o ≡ do HUD foi apertado e' o MESMO em que o menu
+    /// desenha, e `is_mouse_button_pressed` ainda esta' de pe': o "x" via
+    /// esse clique e fechava na hora — o painel aparecia por um quadro so'.
+    #[test]
+    fn o_clique_que_abre_nao_fecha() {
+        let mut m = Menu::default();
+        // Abriu com o botao apertado (o proprio clique no ≡).
+        m.aberto = true;
+        m.espera_soltar = true;
+        assert!(!m.aceita_clique(true), "o clique que abriu nao pode valer");
+        // Ainda segurando: continua sem valer.
+        assert!(!m.aceita_clique(true));
+        // Soltou: o proximo clique ja' e' outro clique.
+        assert!(m.aceita_clique(false), "soltou, a trava sai");
+        assert!(m.aceita_clique(true), "clique novo vale");
+    }
+
+    /// Aberto pelo teclado (Esc volta ao menu) nao ha' o que esperar.
+    #[test]
+    fn sem_dedo_na_tela_o_primeiro_clique_ja_vale() {
+        let mut m = Menu::default();
+        m.aberto = true;
+        m.espera_soltar = false;
+        assert!(m.aceita_clique(true));
     }
 
     /// A grade dimensiona o quadradinho por `POR_LINHA`; um item a mais que

@@ -143,15 +143,17 @@ impl Mob {
 
 /// Vagas de uma zona: 18 no raio de 45, espalhadas.
 fn vagas() -> Vec<Vec2> {
-    let n = crate::world::MOB_POR_ZONA as usize;
-    let raio = crate::world::MOB_ZONA_RAIO_UN;
-    (0..n)
-        .map(|i| {
-            let a = i as f32 * 2.399_963;
-            let r = raio * ((i as f32 + 0.5) / n as f32).sqrt();
-            Vec2::new(a.cos() * r, a.sin() * r)
-        })
-        .collect()
+    // A grade de sitios do servidor, como em `metas_da_escada::espalha`: a
+    // zona comum tambem recusa slot a menos de `MOB_ESPACO_UN` do vizinho.
+    let mut v = Vec::new();
+    metas_da_escada::espalha(
+        Vec2::ZERO,
+        crate::world::MOB_ZONA_RAIO_UN,
+        crate::world::MOB_ESPACO_UN,
+        crate::world::MOB_POR_ZONA as usize,
+        &mut v,
+    );
+    v
 }
 
 /// Pocoes de vida do jogador na luta.
@@ -1609,7 +1611,16 @@ mod testes {
     /// paga aqui na horda (`metas_da_escada`), onde e' a unica que limpa na
     /// faixa. O que a meta cobra continua: nenhum conjunto fica pra tras nem
     /// dispara sozinho.
-    const TOLERANCIA_DE_RITMO: f32 = 0.60;
+    ///
+    /// De 0,60 pra 0,75 em 27/09/2026, quando a horda do simulador passou a
+    /// nascer na GRADE DE SITIOS do servidor e nao numa espiral continua (ver
+    /// `metas_da_escada::espalha`). A espiral adensava o meio da zona; a grade
+    /// poe distancia de verdade entre um bicho e o seguinte, e quem paga isso
+    /// e' o tanque, que anda ate' cada um e e' o mais lento dos quatro: no
+    /// nivel 10 ele foi de +60% pra +69% da media sem nada ter mudado no
+    /// combate. Alargar aqui e' aceitar o numero honesto; apertar seria pedir
+    /// que a espada corresse.
+    const TOLERANCIA_DE_RITMO: f32 = 0.75;
 
     /// As metas do balanceamento (docs/COMBATE.md, "Balanceamento"), nos
     /// niveis 1, 5 e 10, contra a zona da propria faixa, AUTO e COM pocao — a
@@ -2357,17 +2368,41 @@ mod metas_da_escada {
         }
     }
 
-    fn espalha(centro: Vec2, raio: f32, espaco: f32, teto: usize, out: &mut Vec<Vec2>) {
+    /// A GRADE DE SITIOS, e nao uma espiral continua.
+    ///
+    /// `world::zonas_da_ilha` escolhe slot na grade de sitios planos, de passo
+    /// `SITIO_PASSO_UN` (12 blocos), embaralhada, e recusa quem cai a menos de
+    /// `espaco` de um slot ja' aceito. A espiral continua que estava aqui
+    /// aceitava QUALQUER ponto, e por isso o espacamento significava uma coisa
+    /// no simulador e outra no servidor: com `espaco` 6, vizinho reto na grade
+    /// fica a exatamente 6 e passa (`< espaco` e' falso), mas na espiral o
+    /// mesmo 6 varria metade dos pontos. O guarda media' uma horda que o
+    /// jogador nunca enfrenta.
+    pub(super) fn espalha(centro: Vec2, raio: f32, espaco: f32, teto: usize, out: &mut Vec<Vec2>) {
+        // Os sitios da grade dentro do raio, na mesma ordem embaralhada que o
+        // servidor usa (LCG com semente fixa: a mesma horda em toda corrida).
+        let passo = crate::world::SITIO_PASSO_UN;
+        let lado = (raio / passo).ceil() as i32;
+        let mut grade: Vec<Vec2> = Vec::new();
+        for gz in -lado..=lado {
+            for gx in -lado..=lado {
+                let p = Vec2::new(gx as f32 * passo, gz as f32 * passo);
+                if p.length() <= raio {
+                    grade.push(centro + p);
+                }
+            }
+        }
+        let mut semente: u64 = 0x5A17_E5;
+        for i in (1..grade.len()).rev() {
+            semente = semente.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            grade.swap(i, (semente >> 33) as usize % (i + 1));
+        }
         let mut n = 0;
-        let mut i = 0;
-        while n < teto && i < 4000 {
-            let a = i as f32 * 2.399_963;
-            let r = raio * ((i as f32 + 0.5) / 400.0).sqrt();
-            i += 1;
-            if r > raio {
+        for p in grade {
+            if n >= teto {
                 break;
             }
-            let p = centro + Vec2::new(a.cos(), a.sin()) * r;
+            // O MESMO criterio do servidor: `< espaco` recusa, `>=` aceita.
             if out.iter().all(|o| o.distance(p) >= espaco) {
                 out.push(p);
                 n += 1;
@@ -2387,15 +2422,18 @@ mod metas_da_escada {
                 &mut v,
             ),
             Lugar::Ilhota => {
+                // Os MESMOS numeros de `world::zonas_da_ilha`, lidos de la'.
+                use crate::world as w;
                 let (raio, esp, teto) = (
-                    crate::world::MOB_ZONA_RAIO_UN * 0.5,
-                    crate::world::MOB_ESPACO_UN * 0.6,
-                    crate::world::MOB_POR_ZONA as usize,
+                    w::MOB_ZONA_RAIO_UN * w::ILHOTA_RAIO_MULT,
+                    w::MOB_ESPACO_UN * w::ILHOTA_ESPACO_MULT,
+                    w::ILHOTA_POR_HORDA as usize,
                 );
                 espalha(Vec2::ZERO, raio, esp, teto, &mut v);
-                for k in 0..4 {
-                    let a = k as f32 / 4.0 * std::f32::consts::TAU + 0.4;
-                    let c = Vec2::new(a.cos(), a.sin()) * (shared::magica::RAIO_ILHOTA * 0.55);
+                for k in 0..w::ILHOTA_ANEL_HORDAS {
+                    let a = k as f32 / w::ILHOTA_ANEL_HORDAS as f32 * std::f32::consts::TAU + 0.4;
+                    let c = Vec2::new(a.cos(), a.sin())
+                        * (shared::magica::RAIO_ILHOTA * w::ILHOTA_ANEL_MULT);
                     espalha(c, raio, esp, teto, &mut v);
                 }
             }
@@ -2558,6 +2596,69 @@ mod metas_da_escada {
     /// O personagem esperado ESTA' na escada: o que `build_do_nivel` veste
     /// mais os pontos e a proficiencia dao o ataque, a defesa e a vida da
     /// linha, com folga — senao a escada descreve alguem que nao existe.
+    /// A horda que o guarda mede tem que ser a que o servidor consegue montar.
+    ///
+    /// Este e' o teste que faltava. Enquanto `espalha` era uma espiral
+    /// continua, o simulador punha bicho em qualquer ponto e empilhava a horda
+    /// mais junto do que a grade de sitios permite — e, medida assim, ela
+    /// matava na faixa quem no jogo limpava. O guarda inteiro ficou calibrado
+    /// contra uma horda que nao existe.
+    #[test]
+    fn a_horda_do_simulador_nasce_na_grade_do_servidor() {
+        let passo = crate::world::SITIO_PASSO_UN;
+        for lugar in [Lugar::Zona, Lugar::Forte, Lugar::Ilhota] {
+            let v = posicoes(lugar);
+            assert!(!v.is_empty(), "{lugar:?} sem mob");
+            for p in &v {
+                // Todo slot cai num sitio da grade (as ilhotas do anel saem de
+                // um centro deslocado, entao a checagem e' contra o resto).
+                let resto = |x: f32| {
+                    let r = (x / passo).round() * passo;
+                    (x - r).abs()
+                };
+                assert!(
+                    resto(p.x).min(passo - resto(p.x)) < 1e-2 || lugar == Lugar::Ilhota,
+                    "{lugar:?}: {p:?} fora da grade de {passo}"
+                );
+            }
+            // E ninguem nasce mais perto do vizinho do que o servidor deixa.
+            let espaco = match lugar {
+                Lugar::Zona => crate::world::MOB_ESPACO_UN,
+                Lugar::Forte => crate::world::FORTE_ESPACO_UN,
+                Lugar::Ilhota => crate::world::MOB_ESPACO_UN * crate::world::ILHOTA_ESPACO_MULT,
+            };
+            for (i, a) in v.iter().enumerate() {
+                for b in v.iter().skip(i + 1) {
+                    assert!(
+                        a.distance(*b) >= espaco - 1e-3,
+                        "{lugar:?}: {a:?} e {b:?} a {:.2}, abaixo de {espaco}",
+                        a.distance(*b)
+                    );
+                }
+            }
+        }
+    }
+
+    /// Espacamento so' muda alguma coisa quando cruza um multiplo do passo da
+    /// grade: com 6 de passo, o vizinho reto esta' a 6 e o diagonal a 8,49.
+    /// Mexer de 4 pra 6 nao tira um bicho do lugar no servidor — e tiraria
+    /// metade da horda num simulador de espiral. E' a armadilha que fez o
+    /// guarda mentir, escrita como teste pra nao voltar.
+    #[test]
+    fn espacamento_abaixo_do_passo_da_grade_nao_muda_nada() {
+        let passo = crate::world::SITIO_PASSO_UN;
+        let conta = |espaco: f32| {
+            let mut v = Vec::new();
+            espalha(Vec2::ZERO, 24.0, espaco, 34, &mut v);
+            v.len()
+        };
+        assert_eq!(conta(4.0), conta(passo), "ate' o passo, todo sitio vale");
+        assert!(
+            conta(passo * 1.2) < conta(passo),
+            "passando do passo, a horda rareia"
+        );
+    }
+
     #[test]
     fn a_referencia_anda_na_escada() {
         crate::economy::init_vazia_para_testes();
@@ -2624,7 +2725,18 @@ mod metas_da_escada {
                 // Quem atira e mata antes de o bicho chegar toma zero nos
                 // dois casos; a regra vale onde ha' o que comparar.
                 let piso_de_comparacao = build(Quem::NaFaixa, c, nivel).hp_max as f32 * 0.01;
-                cobra(&mut falhas, m1.dano_por_mob < piso_de_comparacao || m2.dano_por_mob >= m1.dano_por_mob * 1.25, Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, false, &m2, "uma faixa atras toma pelo menos 1,25x o que a faixa certa toma");
+                // O TANQUE NAO ENTRA NESTA. Quem tem escudo tira 40% DEPOIS da
+                // subtracao, e com isso os dois perfis caem no piso de 10%: na
+                // medida da grade o atras toma 34,2 contra 35,7 do na faixa no
+                // 20 e 92,2 contra 80,8 no 60 — anda pros dois lados, e nunca
+                // 1,25x. Nao e' defeito da escada, e' o que o escudo faz. No
+                // tanque o equipamento aparece no ABATE, nao no dano tomado, e
+                // as regras de limpar cobram isso. A regra passava antes porque
+                // o simulador empilhava a horda mais junto do que a grade de
+                // sitios permite (ver `metas_da_escada::espalha`), e horda mais
+                // junta exagera qualquer diferenca.
+                let tanque_na_zona = c == Conjunto::EspadaEscudo;
+                cobra(&mut falhas, tanque_na_zona || m1.dano_por_mob < piso_de_comparacao || m2.dano_por_mob >= m1.dano_por_mob * 1.25, Quem::UmaFaixaAtras, c, nivel, Lugar::Zona, false, &m2, "uma faixa atras toma pelo menos 1,25x o que a faixa certa toma");
                 let m = medir(Quem::Refinado, c, nivel, Lugar::Zona, false);
                 cobra(&mut falhas, m.limpou() && m.hp_min >= 0.60, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado limpa a zona com >= 60% de vida");
                 cobra(&mut falhas, m1.dano_por_mob < piso_de_comparacao || m.dano_por_mob >= m1.dano_por_mob * 0.20, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado ainda toma pelo menos um quinto do esperado (o piso)");
@@ -2647,7 +2759,33 @@ mod metas_da_escada {
                     // da subtracao e' a identidade dele, e a horda e' o lugar
                     // em que ela aparece.
                     let tanque = c == Conjunto::EspadaEscudo;
-                    cobra(&mut falhas, tanque || !atras.limpou(), Quem::UmaFaixaAtras, c, nivel, lugar, true, &atras, "uma faixa atras NAO limpa a horda, nem com pocao");
+                    // A HORDA NAO E' PORTAO DE EQUIPAMENTO, e nao tem como
+                    // ser: com `dano = max(ataque - defesa, ataque x 0,10)`,
+                    // vinte bichos no piso tiram de quem refinou quase o mesmo
+                    // que de quem nao refinou — a defesa responde a UM golpe,
+                    // nunca a vinte. O que o equipamento compra na horda e'
+                    // MARGEM, e e' margem o que se cobra: quem esta' uma faixa
+                    // atras ou nao limpa, ou limpa RASPANDO — gastando pocao e
+                    // terminando embaixo. O "nao limpa" seco passava so'
+                    // enquanto o simulador empilhava a horda mais junto do que
+                    // a grade de sitios deixa (ver `espalha`).
+                    // E SO' A ILHOTA QUE E' PORTAO DE EQUIPAMENTO.
+                    //
+                    // O forte era o outro, e deixou de ser por decisao do dono
+                    // em 27/09/2026: `FORTE_ESPACO_UN` foi de 4 pra 7 pra os
+                    // quatro conjuntos na faixa poderem limpa-lo (antes so' o
+                    // tanque limpava, e a missao manda pro forte desde o nivel
+                    // 7). Medido depois: quem esta' uma faixa atras tambem
+                    // limpa, com 38% a 46% de vida e uma ou duas pocoes. Era o
+                    // preco anunciado, e esta' pago aqui — o que sobra pro
+                    // forte e' a ORDEM (abaixo), nao o portao.
+                    //
+                    // A ilhota guarda o portao porque e' o evento PAGO e a
+                    // unica horda que nao esta' no caminho de missao nenhuma:
+                    // entrar nela e' escolha, e escolher entrar despreparado
+                    // pode custar.
+                    let raspou = atras.pocoes >= 3 || atras.hp_min <= 0.35;
+                    cobra(&mut falhas, tanque || lugar == Lugar::Forte || !atras.limpou() || raspou, Quem::UmaFaixaAtras, c, nivel, lugar, true, &atras, "uma faixa atras nao limpa a ilhota, ou limpa raspando (pocao e vida baixa)");
                     // Quem limpa passa da meta por um ou dois (o golpe em
                     // area derruba mais de um), e a puxada e' caotica: quem
                     // mata mais rapido puxa mais. Cinco abates de folga.

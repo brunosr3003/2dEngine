@@ -196,6 +196,125 @@ pesa, e ficou onde estava.
 Chefes: as doze lutas continuam entre 60 e 240 s esquivando com poção, parado
 não vence, e três conjuntos vencem dois níveis abaixo (`metas_dos_chefes`).
 
+## O simulador media uma horda que nao existe (27/09/2026)
+
+Achado ao investigar um relato do dono: um personagem de **pistolas com 126 de
+defesa** morrendo onde, pela tabela acima, ele nao devia nem tomar dano.
+
+A tabela acima estava errada, e o erro era de geometria, nao de balanceamento.
+O servidor so' poe mob em **sitio plano**, e sitio plano existe numa grade de
+passo fixo — `world::SITIO_PASSO_UN`, 12 blocos = 6 unidades. O simulador
+espalhava a horda numa **espiral continua**, aceitando qualquer ponto. Com
+isso ele empilhava mais bicho por metro quadrado do que o servidor consegue, e
+media uma horda mais pesada do que a que o jogador enfrenta.
+
+Quanto pesava a diferenca (na faixa, com pocao, "limpou os 20?"):
+
+| Lugar · conjunto | espiral (o que o guarda media) | grade (o que o jogo tem) |
+|---|---|---|
+| Ilhota · pistolas | 0/9 niveis | **9/9** |
+| Ilhota · katana | 0/9 | **9/9** |
+| Ilhota · anel | 0/9 | 7/9 |
+| Forte · pistolas | 0/9 | 5/9 |
+| Forte · katana | 0/9 | 7/9 |
+| Forte · anel | 0/9 | 1/9 |
+| Forte e ilhota · espada e escudo | 8/9 e 9/9 | 9/9 e 9/9 |
+
+No nivel 45, na ilhota, a pistola na faixa: a espiral dizia 12 agressores,
+285,8 de dano por mob e MORTO no quinto abate; a grade da' 6 agressores, 114,9
+por mob e os 20 abates com 46% de vida.
+
+Ou seja: **"so' o tanque limpa a horda" era artefato do simulador.** Na
+geometria real, quem esta' na faixa limpa a ilhota com os quatro conjuntos
+(o anel em 7 dos 9 niveis) e o forte com tres deles.
+
+`espalha` e `vagas` agora nascem na grade, com o MESMO criterio do servidor
+(`distance < espaco` recusa). Dois testes prendem isso:
+`a_horda_do_simulador_nasce_na_grade_do_servidor` e
+`espacamento_abaixo_do_passo_da_grade_nao_muda_nada`.
+
+### O que a grade ensina sobre mexer em densidade
+
+Espacamento **so' muda alguma coisa quando cruza um multiplo do passo**. Com
+passo 6, o vizinho reto fica a 6 e o diagonal a 8,49; entao:
+
+* ate' 6 — todo sitio vale (e' onde estao `FORTE_ESPACO_UN` 4 e o 4,8 da
+  ilhota: os dois aceitam tudo);
+* de 6 a 8,49 — so' as diagonais, **meia horda**;
+* acima de 8,49 — rareia de verdade.
+
+E' um degrau, nao um dial: `FORTE_ESPACO_UN` de 4 pra 6 nao tira UM bicho do
+lugar no servidor. Baixar a CONTAGEM tambem nao e' o dial que parece ser —
+hordas se sobrepoem, entao 56 mobs em tres hordas chegaram a ser mais faceis
+que 42 em duas. O que decide e' quantos cabem dentro de `MATILHA_RAIO_UN`.
+
+### A horda nao pode ser portao de equipamento
+
+Com `dano = max(ataque - defesa, ataque x 0,10)`, vinte bichos no piso tiram de
+quem refinou quase o mesmo que de quem nao refinou: a defesa responde a UM
+golpe, nunca a vinte. E' por isso que 126 de defesa nao salvam ninguem de uma
+matilha — e a resposta nao e' mais defesa, e' menos agressores ao mesmo tempo.
+
+Duas regras do guarda diziam o contrario e passavam so' pela horda-fantasma:
+
+* "uma faixa atras NAO limpa a horda" virou "**ou nao limpa, ou limpa
+  raspando**" (pocao e vida baixa). Na geometria real quem esta' atras limpa a
+  ilhota nos niveis 55 e 60 gastando 3 a 5 pocoes e terminando com 3% a 31% de
+  vida — que e' o portao funcionando, nao falhando.
+* "uma faixa atras toma pelo menos 1,25x o que a faixa certa toma" **nao vale
+  pro tanque**: com o escudo (40% depois da subtracao) os dois perfis caem no
+  piso, e o medido anda pros dois lados (34,2 contra 35,7 no nivel 20; 92,2
+  contra 80,8 no 60). No tanque o equipamento aparece no abate, nao no dano.
+
+`TOLERANCIA_DE_RITMO` foi de 0,60 pra 0,75: a grade poe distancia real entre um
+bicho e o seguinte, e quem paga e' o tanque, que anda ate' cada um.
+
+### O forte abriu: espacamento 4 → 7 (decisao do dono, 27/09/2026)
+
+Na grade, o forte ainda era do tanque e de mais ninguem: **pistola limpava 5
+dos 9 niveis e anel magico 1**. E o forte nao e' opcional — a missao de matar
+bicho manda pra ele desde o nivel `FORTE_NA_MISSAO_NIVEL` = 7.
+
+O unico ajuste que o servidor honra ali e' o espacamento, e ele e' um degrau:
+
+```rust
+pub const FORTE_ESPACO_UN: f32 = 7.0;   // era 4.0 ("todo sitio vale")
+pub const FORTE_RAIO_UN: f32 = 28.0;    // era 24.0, pros 34 mobs ainda caberem
+```
+
+**Nenhum mob saiu do forte** — a contagem segue 34 e o XP por hora segue igual.
+O que mudou e' que so' as diagonais da grade valem, e isso tira metade da horda
+de dentro de `MATILHA_RAIO_UN`. Medido (na faixa, com pocao, dos nove niveis):
+
+| Forte, na faixa | antes (4/24) | depois (7/28) |
+|---|---|---|
+| espada e escudo | 9/9 | 9/9 |
+| katana | 7/9 | **9/9** |
+| pistolas | 5/9 | **9/9** |
+| anel magico | 1/9 | **9/9** |
+
+E o preco, anunciado antes de aplicar: **o forte deixou de ser portao de
+equipamento.** Uma faixa atras agora limpa (katana e pistola 7/9, com 38% a 46%
+de vida e uma ou duas pocoes; anel 2/9). Nao havia valor no meio — a grade nao
+tem meio. Quem guarda o portao agora e' so' a **ilhota**, e ela guarda bem:
+uma faixa atras fica em pistola 0/9, katana 1/9, anel 2/9. E' o que a regra
+`uma faixa atras nao limpa a ilhota, ou limpa raspando` passou a cobrar, agora
+so' na ilhota.
+
+A escolha faz sentido de lugar: o forte esta' no caminho de missao, a ilhota e'
+o evento pago em que entrar e' escolha.
+
+### O que ficou de fora, e por que
+
+O **anel magico na ilhota** (7 de 9 niveis) e' o que resta abaixo do resto, e
+resta de proposito: ele limpa do 30 em diante, e os dois niveis que faltam sao
+os degraus de entrada, onde `metas_da_escada` ja' aceita que quem limpa e' o
+refinado.
+
+A **zona comum** nao foi tocada: medida na grade, os quatro conjuntos limpam
+com 93% a 100% de vida e 2 agressores. Baixar `MOB_POR_ZONA` custaria XP por
+hora sem comprar seguranca nenhuma.
+
 ## O guarda
 
 "Sempre balanceado" é um teste, não uma intenção. Em
