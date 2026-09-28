@@ -1,3 +1,13 @@
+28/09/2026 — Atualização obrigatória: protocolo 155
+
+Atualize o jogo para continuar entrando nos servidores.
+
+A escada de raridade ficou de dez em dez: VERDE no nível 20, AZUL no 30, ÉPICA no 40 e LENDÁRIA no 50. Antes a épica só vinha no 60 e a lendária no 80 — e como o chefe mais alto do jogo é de nível 60, a chave lendária era uma cor que existia e não tinha de onde cair. Agora ela cai.
+
+Vale para os dois lados. As CHAVES de craft seguem a cor da faixa do chefe ou da dungeon, e o BAÚ de dungeon acompanha: o teto de grau da peça desceu junto, e a distribuição de cores subiu uma faixa inteira — o conteúdo de nível 40 a 49 passa a soltar peça Épica, e o de 50 em diante, Lendária.
+
+A tela de recompensa da dungeon é calculada no cliente, e por isso a atualização é obrigatória.
+
 28/09/2026 — Atualização obrigatória: protocolo 154
 
 Atualize o jogo para continuar entrando nos servidores.

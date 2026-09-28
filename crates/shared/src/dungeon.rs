@@ -638,11 +638,16 @@ pub struct Bau {
     pub marcas: u32,
 }
 
-/// Teto duro de grau pelo nivel do estagio: Epico so' 60+, Lendario so' 80+.
+/// Teto duro de grau pelo nivel do estagio: Epico so' 40+, Lendario so' 50+.
+///
+/// Era 60 e 80. Desceu em 28/09/2026 junto com `shared::chaves` (epica no 40,
+/// lendaria no 50), a pedido do dono: "epic is lvl 40 and legendary lvl 50 —
+/// the craft and equip". Chave e PECA tinham que contar a mesma historia; com
+/// o teto velho a dungeon de 50 dava chave lendaria e peça so' ate' Rara.
 pub fn teto_de_grau(nivel: u32) -> Grau {
-    if nivel >= 80 {
+    if nivel >= 50 {
         Grau::Lendario
-    } else if nivel >= 60 {
+    } else if nivel >= 40 {
         Grau::Epico
     } else {
         Grau::Raro
@@ -676,21 +681,14 @@ pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
                 (0.25, [0, 800, 200, 0, 0])
             }
         }
+        // DE 40 PRA CIMA a escada desceu 20 niveis em 28/09/2026: as FORMAS
+        // que estavam em 60-69, 70-79 e 80+ passaram pra 40-49, 50-59 e 60+,
+        // sem numero novo inventado. E' o que faz "Epico no 40, Lendario no
+        // 50" valer na PECA e nao so' no teto — `teto_de_grau` sozinho nao
+        // mudava nada, porque a distribuicao nunca dava peso a Epico antes do
+        // 60. O Raro puro (a linha de 1000 que morava no 50-59) sai: e' o
+        // degrau que a faixa nova ocupa.
         40..=49 => {
-            if alto {
-                (0.30, [0, 200, 800, 0, 0])
-            } else {
-                (0.25, [0, 600, 400, 0, 0])
-            }
-        }
-        50..=59 => {
-            if alto {
-                (0.30, [0, 0, 1000, 0, 0])
-            } else {
-                (0.25, [0, 100, 900, 0, 0])
-            }
-        }
-        60..=69 => {
             if topo {
                 (0.35, [0, 0, 800, 200, 0])
             } else if alto {
@@ -699,9 +697,9 @@ pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
                 (0.25, [0, 0, 980, 20, 0])
             }
         }
-        70..=79 => {
+        50..=59 => {
             if topo {
-                (0.35, [0, 0, 400, 600, 0])
+                (0.35, [0, 0, 400, 595, 5])
             } else if alto {
                 (0.30, [0, 0, 650, 350, 0])
             } else {
@@ -742,6 +740,19 @@ pub fn rolar_grau(dist: [u32; 5], r: f32, teto: Grau) -> Grau {
 
 /// Nivel da instancia pra a peca sair no grau pedido (`tier_from_ilvl`).
 pub fn nivel_da_peca(grau: Grau, nivel: u32) -> u16 {
+    // O PISO de Epico (46) e Lendario (71) NAO desceu com a faixa do bau.
+    //
+    // Tentei descer pra 40/50 e o invariante `o nivel da peca da' o grau`
+    // reprovou: `items::tier_from_ilvl(40)` e' Raro, entao uma peca Epica de
+    // nivel de item 40 seria uma peca cuja cor nao bate com o proprio nivel, e
+    // esse par e' testado. Descer `tier_from_ilvl` junto resolveria — e
+    // reescalaria TODA peca do jogo (e' o eixo de `escala_do_roll`,
+    // docs/ESCADA.md), o que e' outra mudanca, bem maior.
+    //
+    // Consequencia de ficar como esta': a dungeon de nivel 40 entrega Epico de
+    // nivel de item 46 — seis a frente do conteudo. Cor mais rara vindo um
+    // pouco adiantada e' defensavel; o contrario (cor sem nivel que a sustente)
+    // nao seria.
     let (lo, hi) = match grau {
         Grau::Comum => (1, 10),
         Grau::Fino => (11, 25),
@@ -1431,9 +1442,13 @@ mod testes {
         assert!(c.primeira_da_semana(10, 2));
     }
 
-    /// 80 mil baus por faixa: nunca Epico abaixo do 60, nunca Lendario abaixo do 80.
+    /// 80 mil baus por faixa: o grau do bau nunca passa de `teto_de_grau`.
+    ///
+    /// O nome dizia "antes do 60 / antes do 80" e o corpo repetia os numeros;
+    /// quando a faixa desceu pra 40/50 em 28/09/2026 o teste reprovou por estar
+    /// desatualizado, e nao por o bau estar errado. Agora sai do proprio teto.
     #[test]
-    fn bau_nunca_da_epico_antes_do_60_nem_lendario_antes_do_80() {
+    fn bau_nunca_passa_do_teto_de_grau() {
         let mut r = rng(0xBA_0001);
         for &(nivel_min, tipo) in &[
             (6u32, Tipo::Porao),
@@ -1467,8 +1482,11 @@ mod testes {
                     let g = peca_garantida(&c, estagio, &mut r).peca.unwrap().0;
                     maior = maior.max(g);
                 }
-                assert!(nivel >= 60 || maior <= Grau::Raro, "nv {nivel}: {maior:?}");
-                assert!(nivel >= 80 || maior <= Grau::Epico, "nv {nivel}: {maior:?}");
+                assert!(
+                    maior <= teto_de_grau(nivel),
+                    "nv {nivel}: {maior:?} passa do teto {:?}",
+                    teto_de_grau(nivel)
+                );
             }
         }
     }

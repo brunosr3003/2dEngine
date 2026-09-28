@@ -3,7 +3,7 @@
 //! estoque unico para o primeiro craft de cada faixa.
 //!
 //! A cor segue o nivel do CONTEUDO (o chefe, a dungeon), nao o de quem mata:
-//! ate' o 19 cinza, 20–29 verde, 30–59 azul, 60–79 epica, 80+ lendaria. E a
+//! ate' o 19 cinza, 20–29 verde, 30–39 azul, 40–49 epica, 50+ lendaria. E a
 //! chance cai conforme a faixa sobe — chave boa e' rara de proposito, e e' ela
 //! que decide quantos itens o mundo produz.
 //!
@@ -65,13 +65,20 @@ pub const FAIXAS: [FaixaDeChave; 5] = [
         chance_mundo: 0.02,
     },
     FaixaDeChave {
-        nivel_min: 60,
+        // 60 → 40 em 28/09/2026, junto com a lendaria. A escada das chaves
+        // virou de dez em dez a partir do 20 (20 verde, 30 azul, 40 epica,
+        // 50 lendaria): antes ela abria de vinte em vinte e as duas cores de
+        // cima ficavam fora do alcance do jogo que existe.
+        nivel_min: 40,
         cor: 4,
         chance: 0.03,
         chance_mundo: 0.01,
     },
     FaixaDeChave {
-        nivel_min: 80,
+        // 80 → 50. O chefe mais alto do catalogo e' de 60, entao a lendaria
+        // era uma cor que existia (ids 353-356) e nao tinha DE ONDE cair. Com
+        // 50 ela passa a cair do conteudo de 50 a 60 que ja' esta' no jogo.
+        nivel_min: 50,
         cor: 5,
         chance: 0.01,
         chance_mundo: 0.003,
@@ -122,10 +129,10 @@ mod tests {
             (20, 2),
             (29, 2),
             (30, 3),
-            (59, 3),
-            (60, 4),
-            (79, 4),
-            (80, 5),
+            (39, 3),
+            (40, 4),
+            (49, 4),
+            (50, 5),
             (120, 5),
         ] {
             assert_eq!(faixa(nivel).cor, cor, "nivel {nivel}");
@@ -155,8 +162,8 @@ mod tests {
     fn rola_uma_das_quatro_na_cor_certa() {
         let d = Fonte::Dungeon;
         assert_eq!(rolar(10, d, 1.0, 0.0, 0.0), Some(na_cor(SCALE, 1)));
-        assert_eq!(rolar(45, d, 1.0, 0.0, 0.99), Some(na_cor(HIDE, 3)));
-        assert_eq!(rolar(65, Fonte::Raid, 1.0, 0.0, 0.3), Some(na_cor(CLAW, 4)));
+        assert_eq!(rolar(35, d, 1.0, 0.0, 0.99), Some(na_cor(HIDE, 3)));
+        assert_eq!(rolar(45, Fonte::Raid, 1.0, 0.0, 0.3), Some(na_cor(CLAW, 4)));
         assert_eq!(rolar(90, d, 1.0, 0.0, 0.6), Some(HORN_LENDARIA));
         assert_eq!(
             rolar(10, d, 1.0, 0.30, 0.0),

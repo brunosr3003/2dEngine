@@ -722,7 +722,13 @@ mod testes {
     #[test]
     fn chefe_da_chave_na_cor_da_faixa_e_rara() {
         let chaves = todas_as_chaves_da_cor;
-        for (kind, cor) in [(10u16, 1u8), (13, 2), (17, 3), (18, 4)] {
+        // A cor ESPERADA sai do nivel do chefe pela propria tabela, e nao de um
+        // par escrito a mao: as faixas mudaram em 28/09/2026 (epica pro 40,
+        // lendaria pro 50) e este teste reprovava por estar desatualizado, nao
+        // por o jogo estar errado. Os cinco kinds cobrem as cinco cores —
+        // 10 (nv 8), 13 (24), 15 (36), 16 (41), 17 (52).
+        for kind in [10u16, 13, 15, 16, 17] {
+            let cor = shared::chaves::faixa(cat::chefe(kind).unwrap().nivel).cor;
             const N: u64 = 20_000;
             let mut caiu = 0;
             for seed in 0..N {

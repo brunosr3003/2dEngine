@@ -31,14 +31,15 @@ mundo aberto rende bem menos que o chefe de dungeon/raid:
 |---|---|---:|---:|
 | 1–19 | cinza | 15% | 5% |
 | 20–29 | verde | 10% | 3% |
-| 30–59 | azul | 6% | 2% |
-| 60–79 | épica | 3% | 1% |
-| 80+ | lendária | 1% | 0,3% |
+| 30–39 | azul | 6% | 2% |
+| 40–49 | épica | 3% | 1% |
+| 50+ | lendária | 1% | 0,3% |
 
 Cai uma das quatro, sorteada. Missões secundárias da primeira ilha dão as
 15 chaves cinzas das receitas de equipamento; duas da Geleira dão chaves verdes
-para arma e armadura T2. A chave lendária existe (ids 353–356) mas ainda
-não tem de onde cair: nenhum chefe passa do 60 e dungeon/raid não existem.
+para arma e armadura T2. A chave lendária (ids 353–356) **passou a ter de onde cair** em
+28/09/2026, quando a faixa dela desceu pro nível 50: o chefe mais alto do
+catálogo é de 60, então antes, com a faixa em 80, ela era uma cor sem fonte.
 Missão pode dar chave de recompensa (é de propósito). Bancos antigos perdem as
 linhas de chave pela migração `chaves_so_de_chefe_v1`.
 

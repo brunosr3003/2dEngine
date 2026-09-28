@@ -55,11 +55,17 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`). Cliente 153
 /// diria "Verde, 10%" no conteudo de 30-39, onde o servidor ja' solta azul.
 ///
+/// 155 (28/09/2026): a escada de raridade virou 20/30/40/50 nos DOIS lados —
+/// `chaves` (epica no 40, lendaria no 50) e `dungeon::teto_de_grau` mais a
+/// distribuicao de `tabela_de_peca`. O cliente le' os dois pra mostrar a
+/// recompensa esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`):
+/// cliente 154 anunciaria a cor e o teto errados.
+///
 /// ORDEM OBRIGATORIA ao subir isto: cliente PUBLICADO nas cinco plataformas
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 154;
+pub const PROTOCOL_VERSION: u16 = 155;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
