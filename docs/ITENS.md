@@ -347,8 +347,10 @@ sendo o mesmo jogo; só cabe numa sessão.
   campo lê como I).
   - duas peças com o mesmo `item_id`, cor e tier → uma do tier seguinte;
   - duas **Tier IV +8** → uma da **cor de cima, Tier I** (`REFINO_PARA_COR`),
-    pedindo o nível da cor (verde 20, azul 40, épico 60, lendário 80) e subindo
-    o nível do item pro da cor;
+    pedindo o nível da cor (verde 20, azul 30, épico 40, lendário 50 — o mesmo
+    mínimo do craft, **lido** de `chaves::FAIXAS` desde 28/09/2026, quando a
+    tabela copiada do `forja` ficou presa no 40/60/80) e subindo o nível do item
+    pro da cor (5 / 18 / 35 / 60 / 80, o do craft da cor);
   - a nova recebe os valores fixos do novo degrau (`ItemInstance::roll_em`):
     cada tier soma +15% (`bonus_do_tier`, IV = 1,52×); o refino se perde; peça
     vinculada contamina; peça com gema é recusada;

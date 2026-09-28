@@ -331,26 +331,24 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
 pub const REFINO_PARA_COR: u8 = 8;
 
 /// Nivel do personagem pra ter uma peca desta cor pelo Aprimorar: o mesmo
-/// minimo do craft (`receitas::FAIXAS`), e 80 pro lendario.
+/// minimo do craft.
+///
+/// LIDO de `receitas`, nao copiado. Era copiado, e dizia 40 no azul, 60 no
+/// roxo e 80 no lendario — os valores de antes de 28/09/2026. Quem criava a
+/// peca Rara no 30 nao conseguia aprimorar pra Rara antes do 40: a mesma cor
+/// com duas portas de altura diferente.
 pub fn nivel_da_cor(grau: u8) -> u32 {
-    match grau {
-        0 | 1 => 1,
-        2 => 20,
-        3 => 40,
-        4 => 60,
-        _ => 80,
-    }
+    crate::receitas::nivel_da_cor(grau.max(1)) as u32
 }
 
-/// Nivel de item da peca que sobe pra esta cor (o do craft da cor; 80 no
-/// lendario). Nunca desce: fica o maior entre este e o das duas.
+/// Nivel de item da peca que sobe pra esta cor: o MESMO do craft daquela cor,
+/// pra aprimorar e criar entregarem a mesma peca. Nunca desce: fica o maior
+/// entre este e o das duas.
 pub fn nivel_de_item_da_cor(grau: u8) -> u16 {
-    match grau {
-        0 | 1 => 5,
-        2 => 18,
-        3 => 35,
-        4 => 60,
-        _ => 80,
+    let cor = grau.clamp(1, 5);
+    match crate::receitas::FAIXAS.iter().find(|f| f.cor == cor) {
+        Some(f) => f.item_level,
+        None => 5,
     }
 }
 

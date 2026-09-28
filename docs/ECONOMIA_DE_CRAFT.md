@@ -45,14 +45,15 @@ cair mais que o que ela pede em 100, senão o gargalo muda de lugar sozinho:
 **A chave não cai da pedra nem de mob.** Escama, Garra, Chifre e Couro saem
 de chefe e como recompensa única de algumas missões. Nos chefes, a cor segue
 a faixa do conteúdo e a chance cai conforme sobe —
-chefe de dungeon/raid 30% cinza (até 19), 10% verde (20–39), 6% azul (40–59),
-3% épica (60–79), 1% lendária (80+); chefe do mundo 12% no início e depois
+chefe de dungeon/raid 30% cinza (até 19), 10% verde (20–29), 6% azul (30–39),
+3% épica (40–49), 1% lendária (50+); chefe do mundo 12% no início e depois
 3/2/1/0,3%.
 Ver [Loot dos mobs](LOOT_DOS_MOBS.md). O nível mínimo do craft segue as mesmas
-faixas (verde 20, azul 40, épico 60). Continua sendo o regulador real: material
+faixas (verde 20, azul 30, épico 40, lendária 50) — e agora as **lê** de
+`chaves::FAIXAS`, em vez de copiá-las. Continua sendo o regulador real: material
 sobra, chave falta, e é ela que decide quantos itens o mundo produz por hora.
 A chave é a exceção à regra do roxo abaixo: a chave
-épica cai (rara) de conteúdo 60+.
+épica cai (rara) de conteúdo 40+.
 
 Como fonte alternativa, a loja de TP vende o **Baú de Chaves de Craft** por
 120 TP. Ele dá uma das quatro chaves, com 55% de chance cinza, 28% verde,
@@ -104,7 +105,7 @@ e vira **matéria-prima de progressão**.
 
 ## O que o código faz hoje
 
-- **As 60 receitas existem** (`shared::receitas`): 15 peças (ids 400–414) × 4
+- **As 75 receitas existem** (`shared::receitas`): 15 peças (ids 400–414) × 5
   cores, ids de receita `1000 + faixa×100 + peça`. Cada uma pede os seis
   ingredientes da tabela acima — a quantidade é **nossa, de play test**, não a
   do MIR4:
@@ -113,12 +114,21 @@ e vira **matéria-prima de progressão**.
   |---|---|---|---|---|---|---|---|
   | cinza | Comum | 1 | 1 | 30 | 10 | 200 | 300 |
   | verde | Fino | 20 | 1 | 90 | 30 | 1.500 | 2.000 |
-  | azul | Raro | 40 | 1 | 300 | 100 | 8.000 | 10.000 |
-  | roxo | Épico | 60 | 1 | 300 | 100 | 60.000 | 50.000 |
+  | azul | Raro | 30 | 1 | 300 | 100 | 8.000 | 10.000 |
+  | roxo | Épico | 40 | 1 | 300 | 100 | 60.000 | 50.000 |
+  | laranja | Lendário | 50 | 1 | 600 | 200 | 150.000 | 120.000 |
 
   O grau sai da cor (o nível da instância criada cai no grau certo) e o nível
   mínimo é validado no servidor: **nível 20 não cria Épico** — só a partir do
-  60 (docs/DUNGEONS_E_RAIDS.md).
+  40 (docs/DUNGEONS_E_RAIDS.md).
+
+  A faixa **Lendária** entrou em 28/09/2026 e é a única em que a chave e o
+  material não têm a mesma cor: material colorido só existe em quatro cores
+  (`item_id::na_cor`), então a receita laranja pede a **chave lendária**
+  (ids 353–356, 1% em conteúdo 50+) mais o dobro de material *roxo*. O que
+  separa Lendário de Épico é a chave, não um material novo. A peça sai no
+  nível de item **80**, o mesmo que o Aprimorar entrega ao subir de cor — criar
+  e aprimorar dão a mesma peça, e não duas lendárias de força diferente.
 - **Banco:** o `recipes` semeia as receitas em `craft_recipes` (coluna nova
   `nivel_min`) com `ON CONFLICT DO NOTHING` — ajuste manual fica. A M27 não
   apaga mais ids 1000+.

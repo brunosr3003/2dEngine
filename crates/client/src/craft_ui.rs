@@ -794,7 +794,19 @@ mod tests {
         let mut c = Craft::default();
         c.define_receitas(shared::receitas::receitas_de_equipamento());
         let armas = c.da_aba();
-        assert_eq!(armas.len(), 16, "4 armas x 4 cores");
+        // Contado das tabelas, nao escrito: a aba tem uma linha por peca POR
+        // COR, e em 28/09/2026 entrou a quinta cor (Lendaria). Um 16 na mao
+        // reprovava aqui sem nada estar errado na aba.
+        let por_cor = shared::receitas::PECAS
+            .iter()
+            .filter(|p| p.2 == categoria::ARMA)
+            .count();
+        assert_eq!(
+            armas.len(),
+            por_cor * shared::receitas::FAIXAS.len(),
+            "{por_cor} armas x {} cores",
+            shared::receitas::FAIXAS.len()
+        );
         assert!(armas.iter().all(|r| r.category == categoria::ARMA));
         assert!(armas.windows(2).all(|w| w[0].nivel_min <= w[1].nivel_min));
         c.aba = 3;

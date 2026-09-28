@@ -2714,7 +2714,8 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
-        // Chaves lendarias (cor 5): so' chefe/raid de nivel 80+ (`shared::chaves`).
+        // Chaves lendarias (cor 5): chefe/raid de nivel 50+ (`shared::chaves`),
+        // a 1%. Abrem as 15 receitas Lendarias (`shared::receitas`, ids 1400+).
         S {
             id: item_id::SCALE_LENDARIA as i32,
             name: "Escama Lendária",

@@ -50,7 +50,7 @@ pub fn nome_da_categoria(c: u8) -> &'static str {
 /// minimo pra criar e as quantidades.
 #[derive(Debug, Clone, Copy)]
 pub struct Faixa {
-    /// 1 cinza .. 4 roxo (`item_id::na_cor`).
+    /// 1 cinza .. 5 lendaria (`item_id::chave_na_cor`).
     pub cor: u8,
     pub grau: Grau,
     pub nivel_min: u16,
@@ -60,6 +60,23 @@ pub struct Faixa {
     pub secundario: u32,
     pub darksteel: u32,
     pub cobre: u32,
+}
+
+impl Faixa {
+    /// A cor dos tres MATERIAIS. Material colorido so' existe em quatro cores
+    /// (`item_id::na_cor`): o id seguinte ao roxo ja' e' o proximo material.
+    /// A chave, sim, tem a quinta (`item_id::chave_na_cor`, ids 353-356).
+    ///
+    /// Entao o que separa a receita Lendaria da Epica e' a CHAVE lendaria, que
+    /// so' cai de conteudo 50+ e a 1% — mais o dobro de material roxo. Inventar
+    /// uma cor 5 de Aco e de Platina seria inventar a cadeia de drop inteira.
+    pub const fn cor_material(&self) -> u8 {
+        if self.cor > 4 {
+            4
+        } else {
+            self.cor
+        }
+    }
 }
 
 /// O nivel minimo pra criar na cor `cor`: a MESMA faixa da chave daquela cor.
@@ -77,7 +94,7 @@ pub const fn nivel_da_cor(cor: u8) -> u16 {
     1
 }
 
-pub const FAIXAS: [Faixa; 4] = [
+pub const FAIXAS: [Faixa; 5] = [
     Faixa {
         cor: 1,
         grau: Grau::Comum,
@@ -117,6 +134,24 @@ pub const FAIXAS: [Faixa; 4] = [
         secundario: 100,
         darksteel: 60_000,
         cobre: 50_000,
+    },
+    Faixa {
+        // A LENDARIA, aberta em 28/09/2026. A cor existia no jogo inteiro —
+        // grau, chave (ids 353-356), multiplicador de atributo, cor na bolsa —
+        // e so' saia de bau e do Aprimorar: nao havia receita nenhuma de tier
+        // 5, e o catalogo parava no Epico. Agora sao 75 receitas.
+        //
+        // `item_level` 80 de proposito: e' o mesmo que `forja` ja' da' pra
+        // peca que sobe de cor pelo Aprimorar, entao criar e aprimorar
+        // entregam a MESMA peca, e nao duas lendarias de forca diferente.
+        cor: 5,
+        grau: Grau::Lendario,
+        nivel_min: nivel_da_cor(5),
+        item_level: 80,
+        principal: 600,
+        secundario: 200,
+        darksteel: 150_000,
+        cobre: 120_000,
     },
 ];
 
@@ -265,12 +300,15 @@ pub const PECAS: [Peca; 15] = {
     ]
 };
 
-/// As 60 receitas: 15 pecas × 4 cores. Id = `PRIMEIRO_ID + faixa*100 + peca`.
+/// As 75 receitas: 15 pecas × 5 cores. Id = `PRIMEIRO_ID + faixa*100 + peca`.
 pub fn receitas_de_equipamento() -> Vec<CraftRecipeNet> {
     let mut v = Vec::with_capacity(FAIXAS.len() * PECAS.len());
     for (fi, f) in FAIXAS.iter().enumerate() {
         for (pi, &(peca, nome, cat, chave, principal, s1, s2)) in PECAS.iter().enumerate() {
-            let cor = |base: u16| item_id::na_cor(base, f.cor) as u32;
+            // A chave vai na cor da faixa (tem cinco); o material, na cor de
+            // material (tem quatro). Ate' a roxa as duas dao o mesmo id.
+            let chave_da_faixa = item_id::chave_na_cor(chave, f.cor) as u32;
+            let cor = |base: u16| item_id::na_cor(base, f.cor_material()) as u32;
             v.push(CraftRecipeNet {
                 id: PRIMEIRO_ID + fi as u16 * 100 + pi as u16,
                 name: format!("{nome} · {}", f.grau.nome()),
@@ -278,7 +316,7 @@ pub fn receitas_de_equipamento() -> Vec<CraftRecipeNet> {
                 station: 0,
                 tier: fi as u8 + 1,
                 inputs: vec![
-                    [cor(chave), 1],
+                    [chave_da_faixa, 1],
                     [cor(principal), f.principal],
                     [cor(s1), f.secundario],
                     [cor(s2), f.secundario],
@@ -330,23 +368,31 @@ mod testes {
 
 
     #[test]
-    fn sessenta_receitas_com_ids_unicos_e_seis_ingredientes() {
+    fn uma_receita_por_peca_e_por_cor_com_ids_unicos_e_seis_ingredientes() {
         let r = receitas_de_equipamento();
-        assert_eq!(r.len(), 60);
+        let esperado = FAIXAS.len() * PECAS.len();
+        assert_eq!(r.len(), esperado);
         let mut ids: Vec<u16> = r.iter().map(|x| x.id).collect();
         ids.sort();
         ids.dedup();
-        assert_eq!(ids.len(), 60);
+        assert_eq!(ids.len(), esperado);
         assert!(r.iter().all(|x| x.inputs.len() == 6 && x.id >= PRIMEIRO_ID));
+        // Uma faixa por cor, sem buraco: a lendaria entrou em 28/09/2026 e o
+        // catalogo tem que cobrir 1..=5, senao existe uma cor que o jogo
+        // pinta, dropa e aprimora e ninguem consegue CRIAR.
+        let mut cores: Vec<u8> = FAIXAS.iter().map(|f| f.cor).collect();
+        cores.sort();
+        assert_eq!(cores, vec![1, 2, 3, 4, 5]);
     }
 
     /// O grau que sai e' o da cor pedida, e Epico nao se cria antes do 60.
     #[test]
     fn a_cor_decide_o_grau_e_o_nivel_sai_da_faixa_da_chave() {
-        // A escada, explicita: 1 cinza · 20 verde · 30 azul · 40 epica. Se
-        // `chaves::FAIXAS` andar, isto anda junto — e se alguem desencostar as
-        // duas tabelas, reprova aqui e nao no jogo do dono.
-        for (cor, esperado) in [(1u8, 1u16), (2, 20), (3, 30), (4, 40)] {
+        // A escada, explicita: 1 cinza · 20 verde · 30 azul · 40 epica ·
+        // 50 lendaria. Se `chaves::FAIXAS` andar, isto anda junto — e se
+        // alguem desencostar as duas tabelas, reprova aqui e nao no jogo do
+        // dono.
+        for (cor, esperado) in [(1u8, 1u16), (2, 20), (3, 30), (4, 40), (5, 50)] {
             assert_eq!(nivel_da_cor(cor), esperado, "cor {cor}");
             assert_eq!(
                 nivel_da_cor(cor) as u32,
@@ -374,17 +420,25 @@ mod testes {
                 "{}: nivel fora da faixa da chave",
                 r.name
             );
-            // Todo material colorido na cor da faixa.
-            for [id, _] in &r.inputs[..4] {
+            // A chave na cor da FAIXA (cinco cores), pela peca que ela abre.
+            let chave_da_peca = PECAS[(r.id - PRIMEIRO_ID) as usize % 100].3;
+            assert_eq!(
+                r.inputs[0],
+                [item_id::chave_na_cor(chave_da_peca, f.cor) as u32, 1],
+                "{}: chave fora da cor da faixa",
+                r.name
+            );
+            // E os tres materiais na cor de MATERIAL (quatro cores).
+            for [id, _] in &r.inputs[1..4] {
                 let id = *id as u16;
                 let base = PECAS
                     .iter()
-                    .flat_map(|p| [p.3, p.4, p.5, p.6])
+                    .flat_map(|p| [p.4, p.5, p.6])
                     .find(|b| (*b..*b + 4).contains(&id))
                     .unwrap();
                 assert_eq!(
                     id - base + 1,
-                    f.cor as u16,
+                    f.cor_material() as u16,
                     "{}: material fora da cor",
                     r.name
                 );
