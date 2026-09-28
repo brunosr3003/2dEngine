@@ -340,23 +340,30 @@ de servir. O jogador ve' "5-8 por golpe" e a conclusao natural e' "preciso de
 mais defesa", que e' exatamente a jogada errada. A ficha mostra defesa, nao
 mostra "voce esta' no piso".
 
-#### O piso: 0,10 → 0,06
+#### O piso: 0,10 → 0,085
 
 O piso e' a unica coisa que uma horda entrega a quem tem defesa de sobra, e por
-isso e' ele que decide se a horda e' jogavel. Contra mob de 20–30 (ataque
-58–81) o 0,10 dava 6 a 8 por golpe; 0,06 da' 3 a 5.
+isso e' ele que decide se a horda e' jogavel.
 
-Medido antes de mexer, e e' o numero que justifica a mudanca: **baixar o piso
-nao move a escada.** A tabela da ilhota saiu identica com 0,10 e com 0,04,
-porque quem esta' na faixa nao encosta no piso — so' encosta quem tem defesa
+Foi ajustado DUAS vezes no mesmo dia, com o dono jogando. Primeiro pra **0,06**
+("3-5 the minimal damage"), e isso tirou demais; em seguida pra **0,085**, que
+e' o pedido "4-7": contra os mesmos mobs em que 0,10 tirava 5-8, 4/5 a 7/8 e'
+0,85 do que era, e `0,10 x 0,85 = 0,085`. Contra ataque 50-80 da' 4,3 a 6,8.
+
+Medido antes de mexer, e e' o numero que justifica tudo isto: **mexer no piso
+nao move a escada.** A tabela da ilhota saiu IDENTICA com 0,10, 0,06, 0,085 e
+0,04 — quem esta' na faixa nao encosta no piso, so' encosta quem tem defesa
 demais pro que enfrenta. O piso e' fracao e nao numero: contra mob de 60
-(ataque 151) ele ainda tira 9, e e' assim que o equipamento envelhece.
+(ataque 151) ele tira 13, e e' assim que o equipamento envelhece.
 
 O limite achado por medida: **0,04 quebra** a regra
 `refinado ainda toma pelo menos um quinto do esperado` em 6 dos 9 niveis (o
-+10 chega perto de imune, que e' o que o piso existe pra impedir); **0,06
-passa**. O pedido do dono ficou exatamente na borda em que o refino continua
-adiantamento e nao imunidade.
++10 chega perto de imune, que e' o que o piso existe pra impedir); de 0,06 pra
+cima passa. E' a faixa em que o refino continua adiantamento e nao imunidade.
+
+**O piso mora em `shared`**, entao o cliente calcula previa de dano com ele: o
+piso mudar OBRIGA cliente novo (`PROTOCOL_VERSION`), e a ordem de publicar esta'
+escrita no comentario da constante.
 
 #### A ilhota: espacamento 0,6 → 0,9
 

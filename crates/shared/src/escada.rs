@@ -119,7 +119,12 @@ pub fn vida(nivel: u32) -> i32 {
 /// ilhota saiu idêntica com 0,10 e com 0,04, porque quem está NA FAIXA não
 /// encosta no piso — só quem tem defesa demais pro que está enfrentando
 /// encosta. O preço está no refino, e está escrito em `metas_da_escada`.
-pub const PISO: f32 = 0.06;
+///
+/// **Corrigido pra 0,085 no mesmo dia**, ainda jogando: 0,06 tirou demais.
+/// O dono pediu "4-7 the minimal damage" contra os mesmos mobs em que 0,10
+/// tirava 5-8 — 4/5 a 7/8 é 0,85 do que era, e `0,10 × 0,85 = 0,085`. Contra
+/// ataque 50-80 dá 4,3 a 6,8; contra mob de 60 (ataque 151) dá 13.
+pub const PISO: f32 = 0.085;
 
 /// Teto das reduções percentuais de IDENTIDADE (escudo, armadura pesada),
 /// aplicadas depois da subtração. Escudo (0,40) mais pesada (0,10) batem
@@ -436,7 +441,10 @@ mod testes {
     fn a_reducao_de_identidade_vem_depois_e_tem_teto() {
         assert_eq!(dano_com_reducao(100, 30, 0.40), 42);
         assert_eq!(dano_com_reducao(100, 30, 0.90), 35, "teto");
-        let com_teto = ((100.0 * PISO) * (1.0 - REDUCAO_MAX)).round().max(1.0) as i32;
+        // Duas etapas, como `dano_com_reducao`: o golpe arredonda PRIMEIRO, e a
+        // reducao vem por cima do inteiro. Calcular `100 x PISO x 0,5` de uma
+        // vez erra por um quando o piso cai em meio ponto.
+        let com_teto = ((dano(100, 100) as f32) * (1.0 - REDUCAO_MAX)).round().max(1.0) as i32;
         assert_eq!(dano_com_reducao(100, 100, 0.50), com_teto, "piso e teto juntos: ainda nao e' zero");
         assert!(com_teto >= 1, "piso mais teto nunca chega a zero");
         assert_eq!(dano_com_reducao(100, 30, 0.0), 70);

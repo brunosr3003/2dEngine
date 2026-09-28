@@ -1,3 +1,9 @@
+27/09/2026 — Atualização obrigatória: protocolo 152
+
+Atualize o jogo para continuar entrando nos servidores. O dano mínimo que passa por qualquer defesa foi reajustado, e essa conta também é feita no cliente — versões antigas mostrariam números que o servidor não aplica.
+
+O ajuste: quem está bem defendido agora toma de 4 a 7 por golpe nos monstros da faixa da Ilha Mágica, no lugar dos 3 a 5 da versão anterior e dos 5 a 8 de antes dela. O restante do balanceamento das hordas continua igual — inimigos espalhados nos fortes e nas ilhotas de combate, sem redução no número deles.
+
 27/09/2026 — Hordas mais justas e menos dano por golpe
 
 Os fortes e as ilhotas de combate da Ilha Mágica tinham inimigos nascendo colados uns nos outros, e por isso a horda inteira caía em cima de quem encostava nela. O número de inimigos é o mesmo — eles agora nascem espalhados, então vêm menos de uma vez. Dá para escolher a briga.

@@ -44,7 +44,17 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// conta que o cliente faz sozinho nas previas de craft e Forja (escala da
 /// peca e refino so' percentual). Cliente 148 mostraria numeros que o
 /// servidor nao aplica; o dono pediu pra obrigar a atualizacao.
-pub const PROTOCOL_VERSION: u16 = 151;
+///
+/// 152 (27/09/2026): mesmo motivo, de novo. O fio nao mudou, mas
+/// `escada::PISO` mudou, e o piso e' `shared` — o cliente 151 calcula previa
+/// de dano com o piso velho e mostra numero que o servidor nao aplica. O dono
+/// pediu pra obrigar a atualizacao.
+///
+/// ORDEM OBRIGATORIA ao subir isto: cliente PUBLICADO nas cinco plataformas
+/// ANTES de o servidor subir, e o iOS so' conta depois de
+/// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
+/// TestFlight fica sem nada pra atualizar e trancado fora.
+pub const PROTOCOL_VERSION: u16 = 152;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
