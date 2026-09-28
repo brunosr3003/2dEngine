@@ -115,6 +115,27 @@ mod tests {
         c.vida_baixa = false;
         assert_eq!(h.proximo_auto(c, 13.0), None);
     }
+
+    /// O caminho do MODO ECONOMIA: entrada bloqueada, AUTO rodando.
+    ///
+    /// O dono morria toda vez que o modo economia ligava e aguentava jogando.
+    /// `usar_habilidade` saia no `teclado_bloqueado()` e levava a rotacao AUTO
+    /// junto — nenhuma skill, nem a de cura, com a tela preta. So' a pocao
+    /// continuava, e ela tem recarga de grupo.
+    #[test]
+    fn com_a_entrada_bloqueada_o_auto_ainda_cura() {
+        let (mut h, mut c) = exemplo();
+        c.conjunto = Conjunto::AnelMagico;
+        c.distancia_alvo = None;
+        c.vida_baixa = true;
+        // Este e' o caminho que `usar_habilidade` toma com o modo economia
+        // ligado: nao le' gesto nem tecla, e ainda assim lanca.
+        assert_eq!(h.pedido_automatico(c, 10.0), Some(10), "a cura tem que sair");
+        // E cobra a mesma espera do caminho normal, pra tela preta nao virar
+        // uma metralhadora de pedidos.
+        assert_eq!(h.pedido_automatico(c, 10.0), None, "sem respeitar a espera");
+        assert_eq!(h.pedido_automatico(c, 13.0), Some(11));
+    }
 }
 
 impl Habilidades {
@@ -260,6 +281,23 @@ impl Habilidades {
         if self.arrasto.inicio.is_some() {
             return None;
         }
+        self.pedido_automatico(contexto, agora)
+    }
+
+    /// So' a rotacao AUTO, SEM ler entrada nenhuma.
+    ///
+    /// E' o caminho de quando a entrada do jogador nao vale pro mundo: modo
+    /// economia de energia e painel grande aberto. O AUTO nao e' entrada — e'
+    /// o jogo se jogando, do mesmo jeito que o auto combate segue escolhendo
+    /// alvo com o menu aberto (`atualizar_auto_combate`).
+    ///
+    /// Antes disto `usar_habilidade` saia inteiro no `teclado_bloqueado()`, e
+    /// levava o AUTO junto: no modo economia o personagem nao lancava NADA.
+    /// Sem skill de dano a luta durava muito mais (mais golpes tomados) e, o
+    /// que de fato matava, a skill de CURA nunca saia — so' a pocao, que tem
+    /// recarga de grupo. E' por isso que se aguentava jogando e se morria no
+    /// modo economia.
+    pub fn pedido_automatico(&mut self, contexto: Contexto, agora: f64) -> Option<u32> {
         let id = self.proximo_auto(contexto, agora)?;
         self.ultimo_auto = id;
         self.pendente_ate = agora + 1.5;

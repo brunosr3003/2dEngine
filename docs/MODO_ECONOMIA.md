@@ -18,8 +18,14 @@ sem gastar bateria. Código: `crates/client/src/economia.rs`.
   apagado no OLED), só um resumo pequeno e escuro.
 - O quadro cai pra **10 fps** (`economia::FPS`); o terreno não gera malha
   nova.
-- Rede, auto combate, auto coleta, auto missão e poções automáticas seguem
-  rodando nesse ritmo.
+- Rede, auto combate, **skills automáticas**, auto coleta, auto missão e poções
+  automáticas seguem rodando nesse ritmo.
+  - As skills **não seguiam** até 28/09/2026: `bloqueia_entrada` entra no
+    `teclado_bloqueado()`, e `usar_habilidade` saía inteiro nele, levando a
+    rotação AUTO junto com o gesto e a tecla. Com a tela preta o personagem não
+    lançava nada — nem a skill de cura, que é o que sustenta — e morria em lugar
+    onde aguentava jogando. Entrada bloqueada vale pro toque, não pro
+    automático: `habilidades::pedido_automatico`.
 - **Tela sempre acesa** enquanto joga (no iOS, `idleTimerDisabled`), com ou
   sem o modo: no automático ninguém toca e o iPhone apagaria e pausaria o app.
 - O resumo escorrega uns pixels devagar, pra não marcar a tela.

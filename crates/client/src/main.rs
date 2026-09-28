@@ -4617,9 +4617,14 @@ impl Jogo {
 
     /// Skills ofensivas usam a selecao enviada por SetTarget.
     fn usar_habilidade(&mut self) {
-        if self.teclado_bloqueado() {
+        // Entrada bloqueada NAO desliga o AUTO: no modo economia e com painel
+        // aberto o gesto e a tecla nao valem, mas a rotacao automatica segue
+        // — igual ao auto combate, que continua escolhendo alvo. Isto era um
+        // `return` seco, e no modo economia o personagem parava de lancar
+        // tudo, inclusive a CURA (ver `habilidades::pedido_automatico`).
+        let entrada_bloqueada = self.teclado_bloqueado();
+        if entrada_bloqueada {
             self.habilidades.cancela_arrasto();
-            return;
         }
         let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
         let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
@@ -4639,7 +4644,13 @@ impl Jogo {
             vida_baixa: eu.state.hp as f32 / (eu.meta.hp_max.max(1) as f32) < 0.85,
             distancia_alvo,
         };
-        let Some(id) = self.habilidades.pedido(contexto) else {
+        let pedido = if entrada_bloqueada {
+            self.habilidades
+                .pedido_automatico(contexto, macroquad::prelude::get_time())
+        } else {
+            self.habilidades.pedido(contexto)
+        };
+        let Some(id) = pedido else {
             return;
         };
         self.envia(ClientMessage::SkillCast { skill_id: id });

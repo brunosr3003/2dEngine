@@ -3,7 +3,14 @@
 //! A tela continua ACESA (o jogo segue no automatico), mas o mundo 3D para de
 //! ser desenhado: fundo preto, um resumo pequeno do que rendeu desde que o modo
 //! ligou e um trilho pra deslizar e voltar. O quadro cai pra `FPS` — a rede, o
-//! auto combate, a coleta e as pocoes seguem rodando nesse ritmo.
+//! auto combate, as SKILLS automaticas, a coleta e as pocoes seguem rodando
+//! nesse ritmo.
+//!
+//! As skills nao seguiam: `bloqueia_entrada` entra no `teclado_bloqueado()` do
+//! jogo, e `usar_habilidade` saia inteiro nele — a rotacao AUTO ia embora com
+//! o gesto e a tecla. Com a tela preta o personagem nao lancava NADA, nem a
+//! cura, e morria em lugar onde aguentava jogando. Entrada bloqueada e' pra
+//! valer pro toque, nao pro automatico (`habilidades::pedido_automatico`).
 //!
 //! Toque no preto nao faz nada: nem anda, nem mira, nem desliga o auto. So' o
 //! deslize completo volta.
