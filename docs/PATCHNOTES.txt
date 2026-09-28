@@ -1,3 +1,15 @@
+27/09/2026 — Hordas mais justas e menos dano por golpe
+
+Os fortes e as ilhotas de combate da Ilha Mágica tinham inimigos nascendo colados uns nos outros, e por isso a horda inteira caía em cima de quem encostava nela. O número de inimigos é o mesmo — eles agora nascem espalhados, então vêm menos de uma vez. Dá para escolher a briga.
+
+O dano mínimo que passa por qualquer defesa caiu: quem está bem defendido toma bem menos por golpe. Antes, defesa alta travava num piso que ainda somava muito quando eram doze bichos ao mesmo tempo.
+
+Vale lembrar que defesa tem limite: chegando no piso, mais defesa não reduz mais nada, e o que segura uma horda é VIDA (VIT). Se você distribuiu os pontos e quer refazer, o botão "Redistribuir grátis" na Ficha devolve todos eles.
+
+27/09/2026 — Bases e nuvens em voxels
+
+As bases das Ilhas Mágicas agora usam os mesmos blocos de meio metro do terreno, com faces quadradas e camadas de rocha em degraus. Os cones facetados e os fragmentos pontudos foram removidos. As nuvens agora usam os modelos voxel do Zone14: formas variadas, luz suave em branco e azul e movimento lento pelo céu. Pontes, recursos e limites de movimento permanecem iguais.
+
 27/09/2026 — Ilhas Mágicas no céu
 
 As ilhotas agora flutuam acima das nuvens, com bases de rocha suspensas, fragmentos no ar e pontes sobre o vazio. O mar deu lugar ao céu.

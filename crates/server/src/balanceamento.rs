@@ -2741,71 +2741,57 @@ mod metas_da_escada {
                 cobra(&mut falhas, m.limpou() && m.hp_min >= 0.60, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado limpa a zona com >= 60% de vida");
                 cobra(&mut falhas, m1.dano_por_mob < piso_de_comparacao || m.dano_por_mob >= m1.dano_por_mob * 0.20, Quem::Refinado, c, nivel, Lugar::Zona, false, &m, "refinado ainda toma pelo menos um quinto do esperado (o piso)");
             }
-            // FORTE e ILHOTA: a densidade e' o desafio, e com o golpe por
-            // subtracao a horda SOMA — vinte no piso ainda e' o dobro do que
-            // um mob tira de quem esta' na escada. Quem esta' atras morre;
-            // entre os outros vale a ordem; e o tanque (espada e escudo, com
-            // a reducao do escudo por cima da subtracao) e' quem limpa. O
-            // tamanho da puxada (a matilha, `world::MATILHA_RAIO_UN`) e' o
-            // botao que decide o quanto a horda pesa, e nao esta' aqui.
+            // FORTE e ILHOTA: a horda e' JOGAVEL por quem esta' na escada, e
+            // o equipamento aparece no PRECO, nao na permissao.
+            //
+            // Era o contrario: "quem esta' atras morre, e o tanque e' quem
+            // limpa". Duas coisas derrubaram isso em 27/09/2026 — o simulador
+            // passou a montar a horda na grade de sitios (ela era mais densa
+            // do que o servidor consegue, ver `espalha`), e o dono abriu forte
+            // e ilhota de proposito depois de morrer na Ilha Magica:
+            // `FORTE_ESPACO_UN` 4 → 7, `ILHOTA_ESPACO_MULT` 0,6 → 0,9 e
+            // `escada::PISO` 0,10 → 0,06. Nenhum mob saiu de lugar nenhum;
+            // eles e' que deixaram de nascer todos colados.
+            //
+            // O portao de equipamento na horda ACABOU, e nao tinha como ser
+            // diferente: com `max(ataque - defesa, ataque x PISO)` a defesa
+            // responde a UM golpe e nunca a doze, entao horda que mata o
+            // desequipado mata o equipado junto. O que o equipamento compra e'
+            // o preco do ingresso, e e' isso que se cobra aqui.
             for lugar in [Lugar::Forte, Lugar::Ilhota] {
-                let mut algum_na_faixa_limpa = false;
                 for c in Conjunto::TODOS {
                     let na_faixa = medir(Quem::NaFaixa, c, nivel, lugar, true);
                     let atras = medir(Quem::UmaFaixaAtras, c, nivel, lugar, true);
                     let refinado = medir(Quem::Refinado, c, nivel, lugar, true);
-                    algum_na_faixa_limpa |= na_faixa.limpou();
-                    // O tanque limpa ate' uma faixa atras: o escudo por cima
-                    // da subtracao e' a identidade dele, e a horda e' o lugar
-                    // em que ela aparece.
+                    // 1. QUEM ESTA' NA ESCADA LIMPA. Os quatro conjuntos, os
+                    //    nove niveis, nas duas hordas. E' a promessa que o dono
+                    //    pediu, e e' mais forte do que o "algum conjunto limpa"
+                    //    que estava aqui — aquele se contentava com o tanque e
+                    //    deixou a pistola e o anel de fora por niveis inteiros
+                    //    sem ninguem notar.
+                    cobra(&mut falhas, na_faixa.limpou(), Quem::NaFaixa, c, nivel, lugar, true, &na_faixa, "na faixa limpa a horda com pocao");
+                    // 2. O EQUIPAMENTO APARECE NO DANO TOMADO. No 60, ilhota,
+                    //    katana: 205,6 uma faixa atras, 111,8 na faixa, 27,5
+                    //    refinado. Quem entra pior paga mais caro pelos mesmos
+                    //    vinte abates, e quem refinou paga pouco — o refino
+                    //    continua adiantamento, nao imunidade (o piso garante,
+                    //    e `o_equipamento_envelhece_e_o_refino_nao_e_imunidade`
+                    //    cobra).
+                    //
+                    //    O TANQUE NAO ENTRA: o escudo (0,40 depois da
+                    //    subtracao) poe os tres perfis no piso, e ai' a ordem
+                    //    anda pros dois lados — 23,5 atras contra 32,2 na
+                    //    faixa no mesmo teste. E' o escudo funcionando, e vale
+                    //    o mesmo que na zona (ver `tanque_na_zona`).
                     let tanque = c == Conjunto::EspadaEscudo;
-                    // A HORDA NAO E' PORTAO DE EQUIPAMENTO, e nao tem como
-                    // ser: com `dano = max(ataque - defesa, ataque x 0,10)`,
-                    // vinte bichos no piso tiram de quem refinou quase o mesmo
-                    // que de quem nao refinou — a defesa responde a UM golpe,
-                    // nunca a vinte. O que o equipamento compra na horda e'
-                    // MARGEM, e e' margem o que se cobra: quem esta' uma faixa
-                    // atras ou nao limpa, ou limpa RASPANDO — gastando pocao e
-                    // terminando embaixo. O "nao limpa" seco passava so'
-                    // enquanto o simulador empilhava a horda mais junto do que
-                    // a grade de sitios deixa (ver `espalha`).
-                    // E SO' A ILHOTA QUE E' PORTAO DE EQUIPAMENTO.
-                    //
-                    // O forte era o outro, e deixou de ser por decisao do dono
-                    // em 27/09/2026: `FORTE_ESPACO_UN` foi de 4 pra 7 pra os
-                    // quatro conjuntos na faixa poderem limpa-lo (antes so' o
-                    // tanque limpava, e a missao manda pro forte desde o nivel
-                    // 7). Medido depois: quem esta' uma faixa atras tambem
-                    // limpa, com 38% a 46% de vida e uma ou duas pocoes. Era o
-                    // preco anunciado, e esta' pago aqui — o que sobra pro
-                    // forte e' a ORDEM (abaixo), nao o portao.
-                    //
-                    // A ilhota guarda o portao porque e' o evento PAGO e a
-                    // unica horda que nao esta' no caminho de missao nenhuma:
-                    // entrar nela e' escolha, e escolher entrar despreparado
-                    // pode custar.
-                    let raspou = atras.pocoes >= 3 || atras.hp_min <= 0.35;
-                    cobra(&mut falhas, tanque || lugar == Lugar::Forte || !atras.limpou() || raspou, Quem::UmaFaixaAtras, c, nivel, lugar, true, &atras, "uma faixa atras nao limpa a ilhota, ou limpa raspando (pocao e vida baixa)");
-                    // Quem limpa passa da meta por um ou dois (o golpe em
-                    // area derruba mais de um), e a puxada e' caotica: quem
-                    // mata mais rapido puxa mais. Cinco abates de folga.
+                    cobra(&mut falhas, tanque || atras.dano_por_mob > na_faixa.dano_por_mob, Quem::UmaFaixaAtras, c, nivel, lugar, true, &atras, "uma faixa atras PAGA mais caro a horda que quem esta' na faixa");
+                    cobra(&mut falhas, tanque || refinado.dano_por_mob < na_faixa.dano_por_mob, Quem::Refinado, c, nivel, lugar, true, &refinado, "refinado paga menos que quem esta' na faixa");
+                    // 3. A ordem nos abates. Quem limpa passa da meta por um ou
+                    //    dois (o golpe em area derruba mais de um), e a puxada
+                    //    e' caotica: quem mata mais rapido puxa mais. Cinco
+                    //    abates de folga.
                     let capado = |m: &Medida| m.abates.min(m.alvo);
                     cobra(&mut falhas, capado(&refinado) + 5 >= capado(&na_faixa) && capado(&na_faixa) + 5 >= capado(&atras), Quem::Refinado, c, nivel, lugar, true, &refinado, "a horda respeita a ordem: refinado >= na faixa >= uma faixa atras");
-                }
-                if lugar == Lugar::Ilhota {
-                    // A ilhota e' o evento pago: do 30 em diante pelo menos
-                    // um conjunto na faixa limpa com pocao (o tanque e' o
-                    // dono dela); no degrau I (mobs 20–23, entrada no 15) e'
-                    // o refinado quem limpa — a ilha nao e' obrigacao, e
-                    // entrar abaixo do nivel e apanhar e' direito de quem
-                    // quer (shared::magica).
-                    let algum_refinado_limpa = Conjunto::TODOS
-                        .iter()
-                        .any(|&c| medir(Quem::Refinado, c, nivel, lugar, true).limpou());
-                    let ok = if nivel >= 30 { algum_na_faixa_limpa } else { algum_refinado_limpa };
-                    if !ok {
-                        falhas.push(format!("nv{nivel} Ilhota: ninguem limpa com pocao"));
-                    }
                 }
             }
         }

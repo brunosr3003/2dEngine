@@ -276,6 +276,15 @@ pub fn desenha<'a>(
     programa: Programa,
     malhas: impl IntoIterator<Item = &'a MalhaEstatica>,
 ) -> usize {
+    desenha_com_modelo(programa, malhas, Mat4::IDENTITY)
+}
+
+/// Reusa buffers estáticos com transformação por instância (nuvens ao vento).
+pub fn desenha_com_modelo<'a>(
+    programa: Programa,
+    malhas: impl IntoIterator<Item = &'a MalhaEstatica>,
+    modelo: Mat4,
+) -> usize {
     let mut gl = unsafe { get_internal_gl() };
     // O lote pendente sai antes: o que foi pedido antes aparece antes.
     gl.flush();
@@ -297,7 +306,7 @@ pub fn desenha<'a>(
                 ctx.apply_pipeline(&p.solido);
                 ctx.apply_uniforms(UniformsSource::table(&UniformesSolido {
                     projection,
-                    model: Mat4::IDENTITY,
+                    model: modelo,
                     recorte,
                     recorte_z,
                     tinta: [0.0; 4],
@@ -311,7 +320,7 @@ pub fn desenha<'a>(
                 ctx.apply_pipeline(&p.sombra);
                 ctx.apply_uniforms(UniformsSource::table(&UniformesSolido {
                     projection,
-                    model: Mat4::IDENTITY,
+                    model: modelo,
                     recorte: Vec3::ZERO,
                     recorte_z: 0.0,
                     tinta: [0.0; 4],
@@ -323,7 +332,7 @@ pub fn desenha<'a>(
                 ctx.apply_pipeline(&p.agua);
                 ctx.apply_uniforms(UniformsSource::table(&UniformesAgua {
                     projection,
-                    model: Mat4::IDENTITY,
+                    model: modelo,
                     tempo,
                     ondas,
                 }));

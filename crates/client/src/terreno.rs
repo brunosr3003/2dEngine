@@ -836,6 +836,58 @@ impl Terreno {
             }
         }
 
+        // A base é a casca inferior das MESMAS colunas de meio metro.
+        // Faces internas somem; os lotes seguem o teto e o culling do terreno.
+        if self.ger.e_magica() {
+            let mut bases = vec![4.0; lado * lado];
+            for iz in 0..lado {
+                for ix in 0..lado {
+                    bases[iz * lado + ix] = base_da_ilhota(
+                        cx * CHUNK + ix as i32 - 1,
+                        cz * CHUNK + iz as i32 - 1,
+                    );
+                }
+            }
+            let base = |x: i32, z: i32| bases[(z + 1) as usize * lado + (x + 1) as usize];
+            for iz in 0..n as i32 {
+                for ix in 0..n as i32 {
+                    if eh_agua(ix, iz) { continue; }
+                    let bx = cx * CHUNK + ix;
+                    let bz = cz * CHUNK + iz;
+                    let x0 = bx as f32 * BLOCO - BLOCO * 0.5;
+                    let z0 = bz as f32 * BLOCO - BLOCO * 0.5;
+                    let x1 = x0 + BLOCO;
+                    let z1 = z0 + BLOCO;
+                    let y0 = base(ix, iz);
+                    let grao = ((bx.wrapping_mul(7) ^ bz.wrapping_mul(13)) & 7) as f32 * 0.7;
+                    let cor = |luz: f32| {
+                        let profundidade = ((4.0 - y0) / 42.0).clamp(0.0, 1.0);
+                        let c = (vec3(150.0, 158.0, 172.0) - Vec3::splat(profundidade * 25.0)
+                            + Vec3::splat(grao)) * luz;
+                        [c.x as u8, c.y as u8, c.z as u8, 255]
+                    };
+                    quad(&mut verts, &mut idx, &mut malhas,
+                        [vec3(x0,y0,z0),vec3(x1,y0,z0),vec3(x1,y0,z1),vec3(x0,y0,z1)],
+                        -Vec3::Y, cor(0.72));
+                    for (dx,dz) in [(1,0),(-1,0),(0,1),(0,-1)] {
+                        let y1 = if eh_agua(ix+dx,iz+dz) {
+                            if self.ger.na_ponte_magica(bx,bz) { 7.0 } else { 4.0 }
+                        } else { base(ix+dx,iz+dz) };
+                        if y1 <= y0 { continue; }
+                        let p = if dx != 0 {
+                            let x = if dx > 0 {x1} else {x0};
+                            [vec3(x,y0,z0),vec3(x,y0,z1),vec3(x,y1,z1),vec3(x,y1,z0)]
+                        } else {
+                            let z = if dz > 0 {z1} else {z0};
+                            [vec3(x0,y0,z),vec3(x1,y0,z),vec3(x1,y1,z),vec3(x0,y1,z)]
+                        };
+                        quad(&mut verts, &mut idx, &mut malhas,p,
+                            vec3(dx as f32,0.0,dz as f32),cor(if dx!=0 {0.92} else {0.82}));
+                    }
+                }
+            }
+        }
+
         // ── vegetacao ────────────────────────────────────────────────────
         if vegetacao {
             // Assada na malha do PEDACO, nao desenhada por arvore: pedaco e'
@@ -1069,6 +1121,21 @@ impl Terreno {
             255,
         ]
     }
+}
+
+/// Fundo voxel alinhado ao terreno: blocos de 0,5 u, sem faces inclinadas.
+fn base_da_ilhota(bx: i32, bz: i32) -> f32 {
+    let p = ::glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+    let Some(i) = shared::magica::ilhota_em(p) else {
+        return if shared::magica::na_ponte(p) { 7.0 } else { 4.0 };
+    };
+    let d = p - i.centro;
+    let r = shared::magica::raio_da_ilhota(&i, d.y.atan2(d.x));
+    let dentro = (1.0 - d.length() / r).clamp(0.0, 1.0);
+    let nervuras = (p.x * 0.17).sin() * (p.y * 0.13).cos() * 3.0;
+    let fundo = 4.0 - 40.0 * dentro.powf(0.7) + nervuras * dentro;
+    // Patamares de dois blocos dão leitura de rocha sem alterar a grade.
+    fundo.floor()
 }
 
 /// Paleta apenas visual: preserva alturas, colisões e todos os recursos.

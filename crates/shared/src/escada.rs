@@ -104,7 +104,22 @@ pub fn vida(nivel: u32) -> i32 {
 /// Fração do golpe que passa por qualquer defesa. É o que impede a
 /// imunidade: um mob quinze níveis abaixo ainda belisca, e uma horda deles
 /// ainda soma.
-pub const PISO: f32 = 0.10;
+///
+/// **De 0,10 pra 0,06 em 27/09/2026**, a pedido do dono, jogando na Ilha
+/// Mágica. O piso é a ÚNICA coisa que uma horda entrega a quem já tem defesa
+/// de sobra, e por isso é ele que decide se a horda é jogável: com 0,10 o mob
+/// de nível 20–30 (ataque 58–81) tirava 6 a 8 por golpe de quem estava no
+/// piso, e doze deles somavam mais do que qualquer defesa podia responder.
+/// Com 0,06 o mesmo golpe tira 3 a 5.
+///
+/// O piso é FRAÇÃO, não número: contra mob de 60 (ataque 151) ele ainda tira
+/// 9. É isso que faz o equipamento envelhecer, e é de propósito.
+///
+/// Medido antes de mexer: baixar o piso **não move a escada**. A tabela da
+/// ilhota saiu idêntica com 0,10 e com 0,04, porque quem está NA FAIXA não
+/// encosta no piso — só quem tem defesa demais pro que está enfrentando
+/// encosta. O preço está no refino, e está escrito em `metas_da_escada`.
+pub const PISO: f32 = 0.06;
 
 /// Teto das reduções percentuais de IDENTIDADE (escudo, armadura pesada),
 /// aplicadas depois da subtração. Escudo (0,40) mais pesada (0,10) batem
@@ -402,21 +417,28 @@ mod testes {
         assert_eq!(defesa(40) - defesa(30), defesa(60) - defesa(50));
     }
 
+    /// O piso sai de `PISO`, e não de um 10 escrito à mão: quando ele desceu
+    /// pra 0,06 este teste falhava sem que nada estivesse errado.
     #[test]
     fn o_golpe_subtrai_e_tem_piso() {
+        let piso_de_100 = (100.0 * PISO).round() as i32;
         assert_eq!(dano(100, 30), 70);
-        assert_eq!(dano(100, 100), 10, "defesa igual ao ataque: o piso");
-        assert_eq!(dano(100, 1000), 10, "defesa absurda: o piso, nunca imune");
+        assert_eq!(dano(100, 100), piso_de_100, "defesa igual ao ataque: o piso");
+        assert_eq!(dano(100, 1000), piso_de_100, "defesa absurda: o piso, nunca imune");
         assert_eq!(dano(3, 1000), 1, "nunca abaixo de 1");
         assert_eq!(dano(100, 0), 100);
         assert_eq!(dano(100, -5), 100, "defesa negativa não amplifica");
+        // O que o piso É: nunca zero, e nunca a defesa inteira.
+        assert!(piso_de_100 > 0 && piso_de_100 < 100);
     }
 
     #[test]
     fn a_reducao_de_identidade_vem_depois_e_tem_teto() {
         assert_eq!(dano_com_reducao(100, 30, 0.40), 42);
         assert_eq!(dano_com_reducao(100, 30, 0.90), 35, "teto");
-        assert_eq!(dano_com_reducao(100, 100, 0.50), 5, "piso e teto juntos: ainda nao e' zero");
+        let com_teto = ((100.0 * PISO) * (1.0 - REDUCAO_MAX)).round().max(1.0) as i32;
+        assert_eq!(dano_com_reducao(100, 100, 0.50), com_teto, "piso e teto juntos: ainda nao e' zero");
+        assert!(com_teto >= 1, "piso mais teto nunca chega a zero");
         assert_eq!(dano_com_reducao(100, 30, 0.0), 70);
     }
 

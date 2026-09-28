@@ -736,9 +736,18 @@ pub const ILHOTA_ANEL_HORDAS: usize = 4;
 pub const ILHOTA_ANEL_MULT: f32 = 0.55;
 /// Raio de cada horda da ilhota, em fracao de `MOB_ZONA_RAIO_UN`: a zona
 /// encolhe pra caber dentro da ilhota.
-pub const ILHOTA_RAIO_MULT: f32 = 0.5;
+///
+/// Era 0,5. Subiu junto com `ILHOTA_ESPACO_MULT` pra o teto de mobs continuar
+/// alcancavel depois de o espacamento tirar metade dos sitios.
+pub const ILHOTA_RAIO_MULT: f32 = 0.7;
 /// Espacamento entre mobs da ilhota, em fracao de `MOB_ESPACO_UN`.
-pub const ILHOTA_ESPACO_MULT: f32 = 0.6;
+///
+/// **De 0,6 pra 0,9 em 27/09/2026**, a pedido do dono. 0,6 x 8 = 4,8, que esta'
+/// ABAIXO do `SITIO_PASSO_UN` de 6: era "todo sitio vale", a horda mais
+/// apertada que a grade permite. 0,9 x 8 = 7,2 recusa o vizinho reto (6) e
+/// mantem o diagonal (8,49) — meia horda dentro de `MATILHA_RAIO_UN`, sem
+/// tirar mob da ilhota. Mesmo degrau que abriu os fortes.
+pub const ILHOTA_ESPACO_MULT: f32 = 0.9;
 /// Teto de mobs em cada horda da ilhota.
 pub const ILHOTA_POR_HORDA: u32 = 18;
 

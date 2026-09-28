@@ -304,6 +304,93 @@ so' na ilhota.
 A escolha faz sentido de lugar: o forte esta' no caminho de missao, a ilhota e'
 o evento pago em que entrar e' escolha.
 
+### A horda virou jogavel: piso 0,06 e ilhota espalhada (27/09/2026)
+
+Pedido do dono **jogando na Ilha Magica**, com uma pistola de 126 de defesa:
+
+> "i just spend all my point in resistance and still take 8-5 damage per hit,
+> which is a problem because with the amount of mobs there is here i stay
+> dying"
+
+Duas coisas nesse relato, e a primeira nao era balanceamento.
+
+#### RES nao faz nada pra quem ja' esta' no piso
+
+`DEFENSE_PER_RES` = **1**: cada ponto em RES vale +1 de defesa. Quem ja' esta'
+no piso (`ataque - defesa` abaixo de `ataque x PISO`) nao ganha NADA com mais
+defesa — o piso ja' e' o minimo, e defesa a mais nao desce dele. Os outros dois
+efeitos de RES (absorcao no block, custo de stamina no block/parry) exigem
+escudo, que pistola nao tem. Ou seja: todos os pontos foram pro unico atributo
+que, na situacao dele, valia exatamente zero.
+
+O que funciona contra horda e' **VIT**: +5 de `hp_max` por ponto. Com dano no
+piso, sobreviver e' `vida / (piso x numero de mobs)`, e a vida e' a unica
+alavanca que os atributos oferecem. A referencia da escada (`build_do_nivel`)
+assume **um terco no principal e dois em VIT** — quem poe tudo em RES fica com
+~0 de VIT e MUITO abaixo da vida que toda medida deste documento pressupoe. E'
+por isso que a ilhota o matava mesmo com a tabela dizendo que pistola na faixa
+limpa 9/9.
+
+Tem conserto no jogo, de graca: **Menu › Ficha › "Redistribuir gratis"**
+(`world::handle_reset_stats`, sem custo e sem cooldown). Devolve os PONTOS, nao
+a Energia — quem redistribui paga a escada de `custo_energia_do_ponto` de novo.
+
+**Defeito de design que fica anotado:** nada na interface diz que defesa parou
+de servir. O jogador ve' "5-8 por golpe" e a conclusao natural e' "preciso de
+mais defesa", que e' exatamente a jogada errada. A ficha mostra defesa, nao
+mostra "voce esta' no piso".
+
+#### O piso: 0,10 → 0,06
+
+O piso e' a unica coisa que uma horda entrega a quem tem defesa de sobra, e por
+isso e' ele que decide se a horda e' jogavel. Contra mob de 20–30 (ataque
+58–81) o 0,10 dava 6 a 8 por golpe; 0,06 da' 3 a 5.
+
+Medido antes de mexer, e e' o numero que justifica a mudanca: **baixar o piso
+nao move a escada.** A tabela da ilhota saiu identica com 0,10 e com 0,04,
+porque quem esta' na faixa nao encosta no piso — so' encosta quem tem defesa
+demais pro que enfrenta. O piso e' fracao e nao numero: contra mob de 60
+(ataque 151) ele ainda tira 9, e e' assim que o equipamento envelhece.
+
+O limite achado por medida: **0,04 quebra** a regra
+`refinado ainda toma pelo menos um quinto do esperado` em 6 dos 9 niveis (o
++10 chega perto de imune, que e' o que o piso existe pra impedir); **0,06
+passa**. O pedido do dono ficou exatamente na borda em que o refino continua
+adiantamento e nao imunidade.
+
+#### A ilhota: espacamento 0,6 → 0,9
+
+Mesmo degrau que abriu os fortes. `ILHOTA_ESPACO_MULT` 0,6 x `MOB_ESPACO_UN` 8
+= 4,8, abaixo do `SITIO_PASSO_UN` de 6: era "todo sitio vale", a horda mais
+apertada que a grade permite. 0,9 x 8 = 7,2 recusa o vizinho reto e mantem o
+diagonal — meia horda dentro de `MATILHA_RAIO_UN`. `ILHOTA_RAIO_MULT` foi de
+0,5 pra 0,7 pra o teto de mobs continuar alcancavel. **Nenhum mob saiu da
+ilhota**; eles so' deixaram de nascer colados.
+
+#### O resultado, e o que ele custou
+
+Na faixa, com pocao, dos nove niveis — os QUATRO conjuntos limpam as DUAS
+hordas, 9/9. Antes desta sessao (com a horda-fantasma) era: forte so' o tanque,
+ilhota so' o tanque.
+
+O preco: **o portao de equipamento na horda acabou.** Uma faixa atras limpa o
+forte (katana e pistola 7/9) e a ilhota (katana 5/9, pistola 6/9). Nao tinha
+como ser diferente — com `max(ataque - defesa, ataque x PISO)` a defesa
+responde a UM golpe e nunca a doze, entao horda que mata o desequipado mata o
+equipado junto.
+
+O guarda mudou pra cobrar o que agora e' verdade, e ficou MAIS forte num ponto:
+
+1. **na faixa limpa a horda** — os quatro conjuntos, os nove niveis, nas duas.
+   O "algum conjunto limpa" que estava aqui se contentava com o tanque, e foi
+   por isso que pistola e anel ficaram de fora por niveis inteiros sem ninguem
+   notar.
+2. **o equipamento aparece no DANO TOMADO**: no 60, ilhota, katana — 205,6 uma
+   faixa atras, 111,8 na faixa, 27,5 refinado. O ingresso tem preco diferente
+   pra cada um. O TANQUE nao entra nesta: o escudo poe os tres no piso e a
+   ordem anda pros dois lados (23,5 atras contra 32,2 na faixa).
+3. a ordem nos abates, como antes.
+
 ### O que ficou de fora, e por que
 
 O **anel magico na ilhota** (7 de 9 niveis) e' o que resta abaixo do resto, e
