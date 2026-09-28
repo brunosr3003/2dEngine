@@ -82,3 +82,7 @@ Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
 
 `hecs` (ECS) · `tokio` + WebSocket binário · `postcard` · `glam` ·
 `sqlx`/Postgres · `argon2` · `axum` · `macroquad`
+
+## Licença
+
+Proprietário — todos os direitos reservados. O código é público só como portfólio; não há permissão para usar, copiar, modificar, distribuir ou hospedar. Material de terceiros em `vendor/` e `assets/` segue as licenças próprias. Veja [LICENSE](LICENSE).
