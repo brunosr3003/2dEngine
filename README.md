@@ -1,88 +1,97 @@
 # Tempest
 
-MMO de mundo aberto em Rust: servidor autoritativo, cliente próprio em
-macroquad e um arquipélago de ilhas voxel geradas por semente.
+An open-world MMO in Rust: authoritative server, purpose-built macroquad
+client, and an archipelago of voxel islands generated from a seed.
 
 ```
 crates/
-  shared/      regra e terreno — o que os dois lados PRECISAM concordar
-  server/      simulação autoritativa, um processo por canal
-  client/      cliente 3D (macroquad/miniquad)
-  web/         cadastro, login e diretório de canais
-  panoptico/   painel de observabilidade (só leitura)
-  admin_cli/   ferramentas de operação
-tools/voxrender/  pipeline de arte voxel → sprite
+  shared/      rules and terrain — what both sides MUST agree on
+  server/      authoritative simulation, one process per channel
+  client/      3D client (macroquad/miniquad)
+  web/         signup, login and channel directory
+  panoptico/   observability dashboard (read-only)
+  admin_cli/   operations tooling
+tools/voxrender/  voxel art → sprite pipeline
 ```
 
-## O que define este projeto
+## What defines this project
 
-**O terreno nunca viaja pela rede.** Cliente e servidor geram a mesma ilha da
-mesma semente, com o mesmo código em `shared::terreno`. O servidor guarda 2
-bytes por coluna (~16 MB/km² contra ~416 MB de volume cheio); o cliente gera o
-volume só em volta do jogador. O que trafega é posição, e nada mais.
+**The terrain never travels over the network.** Client and server generate the
+same island from the same seed, with the same code in `shared::terreno`. The
+server keeps 2 bytes per column (~16 MB/km² against ~416 MB for a full volume);
+the client builds the volume only around the player. What goes over the wire is
+position, and nothing else.
 
-**A colisão é uma comparação de inteiros.** Não existe malha de navegação nem
-colisão 3D: um bloco de subida anda, dois a três só pulando, quatro é parede.
-Descer é livre. Tronco, matação e toco barram; flor e capim não.
+**Collision is an integer comparison.** There is no navigation mesh and no 3D
+collision: a one-block rise is walkable, two to three need a jump, four is a
+wall. Going down is free. Trunks, thickets and stumps block; flowers and grass
+do not.
 
-**O cliente não prediz.** Ele suaviza. Toda decisão de jogo — mover, pular,
-atacar, achar caminho — acontece no servidor, e o cliente desenha o resultado.
-Ver [docs/NETWORKING.md](docs/NETWORKING.md).
+**The client does not predict.** It smooths. Every game decision — moving,
+jumping, attacking, pathfinding — happens on the server, and the client draws
+the result. See [docs/NETWORKING.md](docs/NETWORKING.md).
 
-**Uma verdade por pergunta.** Quando duas partes do código respondem a mesma
-pergunta por contas diferentes, elas divergem — e o sintoma aparece longe da
-causa. O histórico deste repositório é feito disso: o desenho da árvore e a
-colisão dela, a altura do pulo e a regra de degrau, a câmera e o desvio de
-morro. Cada um foi um bug com o mesmo formato, e a correção foi sempre a
-mesma: uma função só, chamada pelos dois lados.
+**One truth per question.** When two parts of the code answer the same question
+by different arithmetic, they drift — and the symptom shows up far from the
+cause. This repository's history is made of that: the way a tree is drawn and
+the way it collides, jump height and the step rule, the camera and hill
+avoidance. Each one was a bug with the same shape, and the fix was always the
+same: a single function, called by both sides.
 
-## Rodar
+## Running
 
 ```bash
-# banco + web (cadastro, lista de canais)
+# database + web (signup, channel list)
 cargo run --release --bin web
 
-# um canal
+# a single channel
 MMO_ZONA=ilha_inicial BIND_ADDR=0.0.0.0:9200 cargo run --release --bin server
 
-# cliente, lado a lado com o terminal
+# the client, side by side with the terminal
 ./scripts/run-client.sh --build
 ```
 
-Detalhes de build em [docs/BUILD.md](docs/BUILD.md); operação de canais em
+Build details in [docs/BUILD.md](docs/BUILD.md); running channels in
 [docs/SERVIDORES_E_CANAIS.md](docs/SERVIDORES_E_CANAIS.md).
 
-## Documentos
+Most documents under `docs/` are written in Portuguese.
 
-| Onde | O quê |
+## Documents
+
+| Where | What |
 |---|---|
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | as peças e por que estão separadas |
-| [MUNDO](docs/MUNDO.md) | geração das ilhas, movimento, vegetação |
-| [NETWORKING](docs/NETWORKING.md) | protocolo, AOI, o que trafega |
-| [SERVIDORES_E_CANAIS](docs/SERVIDORES_E_CANAIS.md) | realm, canal, auto-escala |
-| [ECONOMIA](docs/ECONOMIA.md) / [ITENS](docs/ITENS.md) | moeda, forja, grau e refino |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | the pieces and why they are apart |
+| [MUNDO](docs/MUNDO.md) | island generation, movement, vegetation |
+| [NETWORKING](docs/NETWORKING.md) | protocol, AOI, what goes over the wire |
+| [SERVIDORES_E_CANAIS](docs/SERVIDORES_E_CANAIS.md) | realm, channel, auto-scaling |
+| [ECONOMIA](docs/ECONOMIA.md) / [ITENS](docs/ITENS.md) | currency, forge, grade and refinement |
 | [GAMEPLAY](docs/GAMEPLAY.md) / [NEW_MECHANICS](docs/NEW_MECHANICS.md) | design |
-| [PANOPTICO](docs/PANOPTICO.md) | painel de observabilidade |
+| [PANOPTICO](docs/PANOPTICO.md) | observability dashboard |
 | [PIPELINE_ARTE](docs/PIPELINE_ARTE.md) | voxel → sprite |
-| [COMBATE](docs/COMBATE.md) | conjuntos de arma, peso de armadura, skills |
-| [SKILLS](docs/SKILLS.md) | as 12 habilidades e desbloqueio por nível |
-| [COLETA](docs/COLETA.md) | coleta automática por densidade do lugar |
-| [ECONOMIA_DE_CRAFT](docs/ECONOMIA_DE_CRAFT.md) | materiais, receitas, síntese de cor |
-| [PERSONAGEM](docs/PERSONAGEM.md) | rig, animação, montaria |
-| [character create](docs/character%20create.md) | what to model: parts, sizes, pivots, palette (EN) |
-| [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | combate e wire binário |
-| [BOSSES](docs/BOSSES.md) | chefes de campo, golpes telegrafados, lugar e respawn |
-| [VILA_E_PORTO](docs/VILA_E_PORTO.md) | cidade, porto, casas voxel, NPCs de porta |
-| [MISSOES](docs/MISSOES.md) | Mestre de Missões, cadeia da ilha inicial, diário (J) |
-| [HISTORIA](docs/HISTORIA.md) | a missão principal sem fim: capítulos por ilha, travas de nível, Crônicas da Tempestade |
-| [DUNGEONS_E_RAIDS](docs/DUNGEONS_E_RAIDS.md) | desenho: dungeons, raids, chefes, matchmaking entre realms, recompensas por faixa |
-| [HUD](docs/HUD.md) | HUD e Menu Principal no molde do MIR4: layout, painéis, nada abre por tecla |
+| [COMBATE](docs/COMBATE.md) | weapon sets, armor weight, skills |
+| [SKILLS](docs/SKILLS.md) | the 12 abilities and their level gates |
+| [COLETA](docs/COLETA.md) | auto-gathering driven by local density |
+| [ECONOMIA_DE_CRAFT](docs/ECONOMIA_DE_CRAFT.md) | materials, recipes, color synthesis |
+| [PERSONAGEM](docs/PERSONAGEM.md) | rig, animation, mounts |
+| [character create](docs/character%20create.md) | what to model: parts, sizes, pivots, palette |
+| [COMBATE_POR_ALVO](docs/COMBATE_POR_ALVO.md) | targeted combat and the binary wire |
+| [BOSSES](docs/BOSSES.md) | field bosses, telegraphed attacks, placement and respawn |
+| [VILA_E_PORTO](docs/VILA_E_PORTO.md) | town, port, voxel houses, doorway NPCs |
+| [MISSOES](docs/MISSOES.md) | Quest Master, the starting island's chain, journal (J) |
+| [HISTORIA](docs/HISTORIA.md) | the endless main quest: chapters per island, level gates, Chronicles of the Tempest |
+| [DUNGEONS_E_RAIDS](docs/DUNGEONS_E_RAIDS.md) | design: dungeons, raids, bosses, cross-realm matchmaking, rewards by band |
+| [HUD](docs/HUD.md) | HUD and main menu in the MIR4 mold: layout, panels, nothing opens by keystroke |
+| [RELEASE_MAC](docs/RELEASE_MAC.md) | Mac signing, notarization, and why `xattr` was needed |
+| [MODO_ECONOMIA](docs/MODO_ECONOMIA.md) | power-saving mode: what keeps running behind the black screen |
 
 ## Stack
 
-`hecs` (ECS) · `tokio` + WebSocket binário · `postcard` · `glam` ·
+`hecs` (ECS) · `tokio` + binary WebSocket · `postcard` · `glam` ·
 `sqlx`/Postgres · `argon2` · `axum` · `macroquad`
 
-## Licença
+## License
 
-Proprietário — todos os direitos reservados. O código é público só como portfólio; não há permissão para usar, copiar, modificar, distribuir ou hospedar. Material de terceiros em `vendor/` e `assets/` segue as licenças próprias. Veja [LICENSE](LICENSE).
+Proprietary — all rights reserved. The code is public as a portfolio only;
+there is no permission to use, copy, modify, distribute or host it. Third-party
+material under `vendor/` and `assets/` keeps its own licenses. See
+[LICENSE](LICENSE).
