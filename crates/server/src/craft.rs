@@ -525,12 +525,17 @@ mod testes {
         let e = conferir(&inv, &r, 1, 1, &nome).unwrap_err();
         assert!(e.starts_with("faltam"), "{e}");
         assert_eq!(contagem(&inv), antes);
+        // A receita MAIS ALTA que existe, e nao ">= 60": o nivel das cores sai
+        // de `chaves::FAIXAS` e desceu (epica 60 -> 40) em 28/09/2026. Procurar
+        // por 60 achava `None` e o teste estourava num `unwrap`, sem nada estar
+        // errado no craft.
         let epico = shared::receitas::receitas_de_equipamento()
             .into_iter()
-            .find(|x| x.nivel_min >= 60)
+            .max_by_key(|x| x.nivel_min)
             .unwrap();
-        let e = conferir(&com_tudo(&epico), &epico, 20, 1, &nome).unwrap_err();
-        assert_eq!(e, "requer nível 60");
+        let n = epico.nivel_min;
+        let e = conferir(&com_tudo(&epico), &epico, n as u32 - 1, 1, &nome).unwrap_err();
+        assert_eq!(e, format!("requer nível {n}"));
     }
 
     #[test]

@@ -712,13 +712,16 @@ mod tests {
             motivo(&r, &falta, 1).as_deref(),
             Some("Faltam 2 ingrediente(s)")
         );
+        // A MAIS ALTA que existe, e nao ">= 60": o nivel das cores sai de
+        // `chaves::FAIXAS` e a epica desceu pro 40 em 28/09/2026.
         let epico = shared::receitas::receitas_de_equipamento()
             .into_iter()
-            .find(|r| r.nivel_min >= 60)
+            .max_by_key(|r| r.nivel_min)
             .unwrap();
+        let n = epico.nivel_min;
         assert_eq!(
-            motivo(&epico, &tudo, 10).as_deref(),
-            Some("Requer nível 60")
+            motivo(&epico, &tudo, n as u32 - 1).as_deref(),
+            Some(format!("Requer nível {n}").as_str())
         );
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));

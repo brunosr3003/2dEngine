@@ -10,9 +10,13 @@
 //! elas cabem numa sessao de play test na faixa de cada ilha.
 //!
 //! O GRAU que sai e' a cor do material, e cada cor tem nivel minimo — as
-//! mesmas faixas da chave (`shared::chaves`): verde 20, azul 40, Epico so' a
-//! partir do 60 (docs/DUNGEONS_E_RAIDS.md). O servidor semeia estas
-//! receitas no banco (`craft_recipes`, ids 1000+) sem apagar ajuste manual.
+//! mesmas faixas da chave (`shared::chaves`), e agora LIDAS de la' por
+//! `nivel_da_cor` em vez de copiadas a mao. Eram copiadas, e em 28/09/2026 a
+//! escada das chaves desceu (azul 40→30, epica 60→40) sem que esta tabela
+//! soubesse: a chave azul ja' caia no 30 e a receita da katana Rara continuava
+//! pedindo 40. Duas respostas pra mesma pergunta divergem; e' so' questao de
+//! quando. O servidor semeia estas receitas no banco (`craft_recipes`, ids
+//! 1000+) sem apagar ajuste manual.
 
 use crate::constants::item_id;
 use crate::forja::Grau;
@@ -58,11 +62,26 @@ pub struct Faixa {
     pub cobre: u32,
 }
 
+/// O nivel minimo pra criar na cor `cor`: a MESMA faixa da chave daquela cor.
+///
+/// `const fn` de proposito — assim `FAIXAS` continua `const` e nao ha' como
+/// alguem "so' ajustar aqui" e deixar as duas tabelas discordando de novo.
+pub const fn nivel_da_cor(cor: u8) -> u16 {
+    let mut i = 0;
+    while i < crate::chaves::FAIXAS.len() {
+        if crate::chaves::FAIXAS[i].cor == cor {
+            return crate::chaves::FAIXAS[i].nivel_min as u16;
+        }
+        i += 1;
+    }
+    1
+}
+
 pub const FAIXAS: [Faixa; 4] = [
     Faixa {
         cor: 1,
         grau: Grau::Comum,
-        nivel_min: 1,
+        nivel_min: nivel_da_cor(1),
         item_level: 5,
         principal: 30,
         secundario: 10,
@@ -72,7 +91,7 @@ pub const FAIXAS: [Faixa; 4] = [
     Faixa {
         cor: 2,
         grau: Grau::Fino,
-        nivel_min: 20,
+        nivel_min: nivel_da_cor(2),
         item_level: 18,
         principal: 90,
         secundario: 30,
@@ -82,7 +101,7 @@ pub const FAIXAS: [Faixa; 4] = [
     Faixa {
         cor: 3,
         grau: Grau::Raro,
-        nivel_min: 40,
+        nivel_min: nivel_da_cor(3),
         item_level: 35,
         principal: 300,
         secundario: 100,
@@ -92,7 +111,7 @@ pub const FAIXAS: [Faixa; 4] = [
     Faixa {
         cor: 4,
         grau: Grau::Epico,
-        nivel_min: 60,
+        nivel_min: nivel_da_cor(4),
         item_level: 60,
         principal: 300,
         secundario: 100,
@@ -323,7 +342,21 @@ mod testes {
 
     /// O grau que sai e' o da cor pedida, e Epico nao se cria antes do 60.
     #[test]
-    fn a_cor_decide_o_grau_e_epico_so_no_sessenta() {
+    fn a_cor_decide_o_grau_e_o_nivel_sai_da_faixa_da_chave() {
+        // A escada, explicita: 1 cinza · 20 verde · 30 azul · 40 epica. Se
+        // `chaves::FAIXAS` andar, isto anda junto — e se alguem desencostar as
+        // duas tabelas, reprova aqui e nao no jogo do dono.
+        for (cor, esperado) in [(1u8, 1u16), (2, 20), (3, 30), (4, 40)] {
+            assert_eq!(nivel_da_cor(cor), esperado, "cor {cor}");
+            assert_eq!(
+                nivel_da_cor(cor) as u32,
+                crate::chaves::FAIXAS
+                    .iter()
+                    .find(|f| f.cor == cor)
+                    .unwrap()
+                    .nivel_min
+            );
+        }
         for r in receitas_de_equipamento() {
             let f = FAIXAS[(r.tier - 1) as usize];
             assert_eq!(
@@ -332,14 +365,15 @@ mod testes {
                 "{}",
                 r.name
             );
-            if f.grau >= Grau::Epico {
-                assert!(
-                    r.nivel_min >= 60,
-                    "{} sai Epico no nivel {}",
-                    r.name,
-                    r.nivel_min
-                );
-            }
+            // O nivel de cada cor sai da faixa da CHAVE, nao de um 60 escrito
+            // aqui: quando a escada desceu, este assert reprovava por estar
+            // desatualizado e nao por a receita estar errada.
+            assert_eq!(
+                r.nivel_min,
+                nivel_da_cor(f.cor),
+                "{}: nivel fora da faixa da chave",
+                r.name
+            );
             // Todo material colorido na cor da faixa.
             for [id, _] in &r.inputs[..4] {
                 let id = *id as u16;

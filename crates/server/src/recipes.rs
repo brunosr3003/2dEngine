@@ -172,22 +172,38 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     if novas > 0 {
         tracing::info!("[recipes] {novas} gear recipes seeded");
     }
-    // Nivel minimo alinhado com as faixas da chave (verde 15->20, azul
-    // 30->40). So' mexe em quem ainda esta' no valor antigo: ajuste manual fica.
+    // Nivel minimo alinhado com as faixas da chave. So' mexe em quem ainda
+    // esta' num valor ANTIGO conhecido: ajuste manual fica.
+    //
+    // O seed acima e' `ON CONFLICT DO NOTHING`, entao mudar a constante NAO
+    // alcanca receita ja' semeada — e foi por isso que a katana Rara continuou
+    // pedindo 40 depois de a chave azul passar a cair no 30. Cada vez que a
+    // escada anda, o valor velho entra nesta lista.
+    //
+    // (indice da faixa, valores que aquela faixa ja' teve)
     let mut ajustadas = 0u64;
-    for (faixa, antigo) in [(1i32, 15i16), (2, 30)] {
+    for (faixa, antigos) in [
+        (1i32, &[15i16][..]),
+        (2, &[30, 40][..]), // azul: 30->40 em 19/09, 40->30 em 28/09
+        (3, &[60][..]),     // epico: 60->40 em 28/09
+    ] {
         let novo = shared::receitas::FAIXAS[faixa as usize].nivel_min as i16;
         let de = shared::receitas::PRIMEIRO_ID as i32 + faixa * 100;
-        ajustadas += sqlx::query(
-            "UPDATE craft_recipes SET nivel_min = $1 WHERE id BETWEEN $2 AND $3 AND nivel_min = $4",
-        )
-        .bind(novo)
-        .bind(de)
-        .bind(de + 99)
-        .bind(antigo)
-        .execute(pool)
-        .await?
-        .rows_affected();
+        for antigo in antigos {
+            if *antigo == novo {
+                continue;
+            }
+            ajustadas += sqlx::query(
+                "UPDATE craft_recipes SET nivel_min = $1 WHERE id BETWEEN $2 AND $3 AND nivel_min = $4",
+            )
+            .bind(novo)
+            .bind(de)
+            .bind(de + 99)
+            .bind(*antigo)
+            .execute(pool)
+            .await?
+            .rows_affected();
+        }
     }
     if ajustadas > 0 {
         tracing::info!("[recipes] {ajustadas} recipes with a new minimum level (green 20, blue 40)");
