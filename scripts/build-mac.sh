@@ -57,6 +57,20 @@ zip="$out/Tempest-Mac-$(uname -m).zip"
 
 if [[ -n "$id_devid" ]]; then
     echo "Assinando com: $id_devid"
+    # Por SSH o keychain de login fica TRANCADO e o codesign morre com
+    # `errSecInternalComponent` — o mesmo que o build-ios.sh ja' resolvia. Duas
+    # coisas: destrancar, e a `set-key-partition-list`, que e' a que autoriza o
+    # codesign a USAR a chave sem caixinha de senha. `security import -T` sozinho
+    # nao basta em macOS moderno.
+    KC="$HOME/Library/Keychains/login.keychain-db"
+    if [ -z "${KEYCHAIN_PASSWORD:-}" ] && [ -f "$HOME/.tempest-keychain-pass" ]; then
+        KEYCHAIN_PASSWORD="$(cat "$HOME/.tempest-keychain-pass")"
+    fi
+    if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KC"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
+    fi
     # `--options runtime` (hardened runtime) e' EXIGIDO pra notarizar, e
     # `--timestamp` tambem: sem carimbo de tempo a Apple recusa.
     codesign --force --deep --timestamp --options runtime \

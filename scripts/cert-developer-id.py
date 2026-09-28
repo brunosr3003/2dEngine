@@ -172,6 +172,16 @@ def instalar(cer):
     finally:
         p12.unlink(missing_ok=True)
 
+    # O `-T` acima entra na ACL, mas em macOS moderno quem de fato libera o
+    # codesign a usar a chave sem caixinha de senha e' a partition list. Sem
+    # ela o codesign falha com `errSecInternalComponent` — o build-ios.sh ja'
+    # sabia disso, e este script nao sabia.
+    if senha_kc:
+        subprocess.run(["security", "set-key-partition-list", "-S",
+                        "apple-tool:,apple:,codesign:", "-s", "-k", senha_kc, kc],
+                       check=True, capture_output=True)
+        print("partition list liberada pro codesign")
+
     idents = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
                             capture_output=True, text=True).stdout
     print("\n== identidades de assinatura agora ==")
