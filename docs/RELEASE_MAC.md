@@ -1,77 +1,115 @@
-# Mac: assinatura, notarização e o `xattr`
+# Mac: signing, notarization, and the `xattr`
 
-## O problema
+## The problem
 
-Todo arquivo que um **navegador** baixa recebe o atributo estendido
-`com.apple.quarantine`. App em quarentena que a Apple não notarizou não abre:
-no macOS Sequoia nem pelo botão direito → Abrir, só por **Ajustes do Sistema →
-Privacidade e Segurança → Abrir Mesmo Assim**. A saída na mão é
+Every file a **browser** downloads gets the extended attribute
+`com.apple.quarantine`. A quarantined app that Apple has not notarized will not
+open: on macOS Sequoia not even through right-click → Open, only through
+**System Settings → Privacy & Security → Open Anyway**. The manual escape is
 
 ```
-xattr -cr /caminho/Tempest.app
+xattr -cr /path/to/Tempest.app
 ```
 
-que apaga o atributo — e volta na próxima baixada. Era o que o dono fazia a
-cada versão.
+which deletes the attribute — and it comes back on the next download. That was
+the step the owner had to repeat for every release.
 
-**Assinatura ad-hoc não resolve.** `codesign --sign -` (o que o build fazia até
-28/09/2026) só faz o binário *rodar* no Apple Silicon, que exige assinatura
-mesmo que anônima. Ela não diz nada sobre quem publicou, então o Gatekeeper
-segue barrando o download. Quem tira a quarentena do caminho é o **ticket de
-notarização** grampeado no `.app`.
+**Ad-hoc signing does not fix it.** `codesign --sign -` (what the build did
+until 28/09/2026) only makes the binary *run* on Apple Silicon, which demands a
+signature even an anonymous one. It says nothing about who published the app, so
+Gatekeeper keeps blocking the download. What clears quarantine out of the way is
+the **notarization ticket** stapled into the `.app`.
 
-## A solução: Developer ID + notarização + staple
+## The solution: Developer ID + notarization + staple
 
-`scripts/build-mac.sh` faz isso sozinho **se** existir uma identidade
-`Developer ID Application` no login keychain:
+`scripts/build-mac.sh` does this on its own **if** a `Developer ID Application`
+identity exists in the login keychain:
 
 1. `codesign --options runtime --timestamp --sign "Developer ID Application: …"`
-   — hardened runtime e carimbo de tempo são exigidos pra notarizar.
-2. `xcrun notarytool submit … --wait` — manda o zip e espera o veredito
-   (normalmente 1–5 min). Usa a chave da App Store Connect que o
-   `build-ios.sh` já usa (`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID` +
-   `~/.appstoreconnect/private_keys/AuthKey_<id>.p8`), e cai no
-   `APPLE_ID`/`APPLE_APP_PASSWORD` se a chave não estiver lá.
-3. `xcrun stapler staple Tempest.app` — grampeia o ticket **no app**, não no
-   zip. É por isso que o zip final é feito depois.
-4. `spctl --assess --type execute` — a prova: é a mesma resposta que o
-   Gatekeeper vai dar na máquina de quem baixou.
+   — hardened runtime and a timestamp are both required for notarization.
+2. `xcrun notarytool submit … --wait` — uploads the zip and waits for the
+   verdict. It uses the same App Store Connect key `build-ios.sh` already uses
+   (`ASC_API_KEY_ID`/`ASC_API_ISSUER_ID` plus
+   `~/.appstoreconnect/private_keys/AuthKey_<id>.p8`), falling back to
+   `APPLE_ID`/`APPLE_APP_PASSWORD`.
+3. `xcrun stapler staple Tempest.app` — staples the ticket **into the app**, not
+   into the zip. That is why the final zip is built after the staple.
+4. `spctl --assess --type execute` — the proof: it is the same answer Gatekeeper
+   will give on the machine that downloaded the app.
 
-Sem a identidade, o script cai no ad-hoc de antes e **avisa** no stderr, porque
-build sem notarização é build que vai pedir `xattr` do outro lado.
+Without the identity the script falls back to ad-hoc and **warns** on stderr,
+because a build without notarization is a build that will ask for `xattr` on the
+other end.
 
-## O certificado (uma vez só)
+## Done (28/09/2026)
 
-O keychain do Mac tem hoje `Apple Development` e `Apple Distribution` — as duas
-são de App Store/TestFlight. Distribuir **fora** da App Store pede um tipo
-diferente, `Developer ID Application`, que a conta paga do Programa de
-Desenvolvedores dá direito e que precisa ser criado uma vez:
+Certificate created and installed: `Developer ID Application: Bruno Soares Reis
+(294S2R54ZP)`. The first submission took about **1h50** — Apple is slow with a
+Developer ID it has never seen; later ones take minutes. Result:
+
+```
+spctl --assess --type execute --verbose=2 Tempest.app
+  Tempest.app: accepted
+  source=Notarized Developer ID
+
+xcrun stapler validate Tempest.app
+  The validate action worked!
+
+codesign -dv Tempest.app
+  flags=0x10000(runtime)
+  Authority=Developer ID Application: Bruno Soares Reis (294S2R54ZP)
+  Authority=Developer ID Certification Authority
+  Authority=Apple Root CA
+```
+
+Two stumbles on the way, both already solved in `build-ios.sh` and not reused
+here at first:
+
+- `security import` of a `.p12` with an **empty password** fails with "MAC
+  verification failed during PKCS12 import (wrong password?)". The password is
+  now random and the file is deleted in the `finally`.
+- `codesign` died with **`errSecInternalComponent`**. Two things were missing:
+  over SSH the login keychain is locked (`security unlock-keychain`), and the
+  `-T` on import only edits the ACL — what authorizes `codesign` to *use* the
+  key without a password dialog is `security set-key-partition-list`.
+
+And one macOS trap that is not the project's fault: **TCC** stops `sshd` from
+reading `~/Downloads`. You can see the file exists (`test -f` succeeds) and you
+cannot open or move it — `openssl` and `mv` both get `Operation not permitted`.
+The `.cer` had to be moved out of there from the Mac's own Terminal.
+
+## The certificate (one time only)
+
+The Mac keychain already had `Apple Development` and `Apple Distribution`; both
+are App Store/TestFlight certificates. Distributing **outside** the App Store
+needs a different type, `Developer ID Application`, which a paid Developer
+Program account is entitled to and which has to be created once:
 
 1. `ssh mac 'cd ~/2dEngine-release && python3 scripts/cert-developer-id.py --csr'`
-   — gera a chave privada e o CSR em `~/.appstoreconnect/developer-id/`. A
-   chave **nunca sai do Mac**.
-2. No Mac, em
-   `developer.apple.com/account/resources/certificates/add` → **Developer ID
-   Application** → subir `developer-id.csr` → baixar o `.cer`.
-3. `python3 scripts/cert-developer-id.py --instalar ~/Downloads/<o>.cer` —
-   junta o certificado com a chave privada num `.p12` e importa no login
-   keychain, autorizando o `codesign` a usá-la sem pedir senha.
+   — generates the private key and the CSR under
+   `~/.appstoreconnect/developer-id/`. The key **never leaves the Mac**.
+2. On the Mac, at `developer.apple.com/account/resources/certificates/add` →
+   **Developer ID Application** → upload `developer-id.csr` → download the
+   `.cer`.
+3. `python3 scripts/cert-developer-id.py --instalar ~/Downloads/<file>.cer` —
+   joins the certificate with the private key into a `.p12`, imports it into the
+   login keychain and authorizes `codesign` to use it without prompting.
 
-**Pela API não dá.** Tentado em 28/09/2026: `POST /v1/certificates` com
-`certificateType: DEVELOPER_ID_APPLICATION` responde
+**The API cannot do it.** Tried on 28/09/2026: `POST /v1/certificates` with
+`certificateType: DEVELOPER_ID_APPLICATION` answers
 `403 FORBIDDEN_ERROR — This operation can only be performed by the Account
-Holder`, e chave de API não pode ter esse papel. O passo 2 é do navegador,
-logado como o dono da conta; não há como automatizar.
+Holder`, and an API key cannot hold that role. Step 2 belongs to a browser
+logged in as the account owner; there is no way around it.
 
-Detalhes que valem saber antes: o limite é de **dois** certificados Developer
-ID ativos por conta, e a chave privada existe só onde o CSR nasceu — perdê-la é
-ter que criar outro. Depois disso nada mais é manual: o `build-mac.sh` acha a
-identidade sozinho e passa a notarizar.
+Worth knowing beforehand: the limit is **two** active Developer ID certificates
+per account, and the private key exists only where the CSR was born — losing it
+means creating another. It is worth backing up
+`~/.appstoreconnect/developer-id/`.
 
-## Enquanto não houver o certificado
+## If there is ever no certificate
 
-Baixar por `curl` **não** põe quarentena — quem põe é o navegador. Então isto
-abre de primeira num build ad-hoc, sem `xattr`:
+Downloading with `curl` does **not** set quarantine — the browser does. So this
+opens on the first try even on an ad-hoc build:
 
 ```
 curl -L -o ~/Downloads/Tempest.zip https://mmo.brunji.com.br/downloads/MMORPG-Mac.zip
