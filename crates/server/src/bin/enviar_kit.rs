@@ -22,9 +22,23 @@ use anyhow::{bail, Context, Result};
 use shared::items::ItemInstance;
 use shared::social::{Anexo, Pedido};
 
-/// Uma peça por slot: a arma do conjunto espada-e-escudo, a secundária dela,
-/// a armadura média e os quatro acessórios.
-const KIT: [u16; 7] = [400, 404, 409, 411, 412, 413, 414];
+/// Uma peça por slot, montada PELA ARMA DO PERSONAGEM.
+///
+/// Era fixa em espada-e-escudo (`[400, 404, …]`), e em 28/09/2026 o dono pediu
+/// um conjunto pro `kuni`, que é KATANA: duas das sete peças chegariam inúteis
+/// na bolsa dele — a arma e a secundária, que é a metade que importa.
+///
+/// A cauda (armadura média e os quatro acessórios) sai de
+/// `escada::CONJUNTO_DE_REFERENCIA`, que é o conjunto em que a escada de dano
+/// foi medida. Peso de armadura é ESCOLHA, não classe: a média é o meio do
+/// corredor, e é de propósito que o kit de teste não opine.
+fn kit_da_arma(arma: u16) -> [u16; 7] {
+    let conj = shared::skills::Conjunto::da_arma(arma);
+    let cauda = &shared::escada::CONJUNTO_DE_REFERENCIA[2..];
+    let mut kit = [arma, conj.secundaria(), 0, 0, 0, 0, 0];
+    kit[2..].copy_from_slice(cauda);
+    kit
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,13 +56,15 @@ async fn main() -> Result<()> {
     economy::init(&pool).await?;
     correio::init(&pool).await?;
 
-    let conta: i64 = sqlx::query_scalar(
-        "SELECT account_id FROM characters WHERE lower(name)=lower($1) AND account_id IS NOT NULL",
+    let (conta, arma): (i64, i16) = sqlx::query_as(
+        "SELECT account_id, starting_weapon FROM characters \
+         WHERE lower(name)=lower($1) AND account_id IS NOT NULL",
     )
     .bind(nome)
     .fetch_optional(&pool)
     .await?
     .context("personagem não encontrado")?;
+    let kit = kit_da_arma(arma as u16);
 
     // O autor precisa ser staff. Ferramenta local: concede e segue.
     sqlx::query(
@@ -60,7 +76,7 @@ async fn main() -> Result<()> {
     .await?;
 
     let nivel = shared::forja::nivel_de_item_da_cor(cor);
-    let anexos: Vec<Anexo> = KIT
+    let anexos: Vec<Anexo> = kit
         .iter()
         .map(|id| {
             let mut i = ItemInstance::roll_em(
@@ -88,12 +104,13 @@ async fn main() -> Result<()> {
         para: Some(nome.clone()),
         assunto: format!("Equipamento de teste ({})", shared::items::tier_name(cor)),
         texto: format!(
-            "Conjunto completo: cor {}, Tier {}, +{}. Abra a bolsa e equipe.",
+            "Conjunto completo do seu conjunto de arma: cor {}, Tier {}, +{}. \
+             Abra a bolsa e equipe.",
             cor, tier, refino
         ),
         anexos,
     };
     let n = correio::enviar(&pool, nome, conta, &pedido).await?;
-    println!("sent to {n} recipient(s): {} pieces", KIT.len());
+    println!("sent to {n} recipient(s): {} pieces {kit:?}", kit.len());
     Ok(())
 }
