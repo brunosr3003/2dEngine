@@ -1,3 +1,11 @@
+28/09/2026 — Modo economia não para mais as suas skills
+
+No modo economia de energia o personagem parava de lançar TODAS as skills, inclusive a de cura. Sobravam o ataque básico e a poção — e a poção tem recarga de grupo. Era por isso que se aguentava jogando e se morria com a tela preta, no mesmo lugar e contra os mesmos bichos. O bloqueio de toque da tela preta estava levando a rotação automática junto com o dedo. Agora o AUTO segue lançando: skill de dano e, principalmente, a cura quando a vida cai. O mesmo valia com um painel grande aberto — abrir a bolsa no meio da luta também parava as suas skills, e também está resolvido.
+
+O craft ganhou a faixa LENDÁRIA: 15 receitas novas, uma por peça, liberadas no nível 50. Elas pedem a chave lendária, que cai de chefes e dungeons de nível 50 ou mais, junto com o dobro de material roxo. A peça sai no nível de item 80 — a mesma que o Aprimorar entrega ao subir de cor, então criar e aprimorar dão exatamente a mesma peça. Antes o catálogo parava no Épico e a cor laranja só vinha de baú.
+
+O Aprimorar cobrava o nível errado para subir de cor: pedia 40 para AZUL, 60 para ÉPICA e 80 para LENDÁRIA, os valores antigos. Agora cobra os mesmos do craft — 30, 40 e 50. Quem criava uma peça Rara no nível 30 não conseguia aprimorar para Rara antes do 40.
+
 28/09/2026 — Planalto da Tormenta: níveis 40–60 (protocolo 156)
 
 Atualize o jogo para explorar o Planalto da Tormenta, a quarta ilha. O porto do Último Abrigo conecta-se às Encostas dos Sentinelas, Mosteiro dos Ventos, Vale do Trovão, Forja Partida e Olho da Tempestade por estradas com rampas e um atalho. O mapa mostra nomes, níveis e acesso às duas dungeons.
