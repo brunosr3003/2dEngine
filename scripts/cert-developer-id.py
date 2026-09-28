@@ -150,12 +150,25 @@ def instalar(cer):
                     "-inkey", str(chave), "-in", str(pem),
                     "-passout", f"pass:{senha}"], check=True)
     os.chmod(p12, 0o600)
+    kc = os.path.expanduser("~/Library/Keychains/login.keychain-db")
+    # Por ssh o login keychain esta' TRANCADO, e ai' o import morre com "User
+    # interaction is not allowed" — ele nao tem como pedir a senha. Mesma
+    # destranca que o build-ios.sh faz, mesma fonte de senha.
+    senha_kc = os.environ.get("KEYCHAIN_PASSWORD")
+    arq_senha = pathlib.Path(os.path.expanduser("~/.tempest-keychain-pass"))
+    if not senha_kc and arq_senha.exists():
+        senha_kc = arq_senha.read_text().strip()
+    if senha_kc:
+        subprocess.run(["security", "unlock-keychain", "-p", senha_kc, kc], check=True)
     try:
-        subprocess.run(["security", "import", str(p12), "-k",
-                        os.path.expanduser("~/Library/Keychains/login.keychain-db"),
-                        "-P", senha, "-T", "/usr/bin/codesign",
-                        "-T", "/usr/bin/security"], check=True)
-        print(f"importado no login keychain a partir de {p12}")
+        r = subprocess.run(["security", "import", str(p12), "-k", kc,
+                            "-P", senha, "-T", "/usr/bin/codesign",
+                            "-T", "/usr/bin/security"],
+                           capture_output=True, text=True)
+        if r.returncode:
+            # Sem repetir o comando: a senha do .p12 ia junto no traceback.
+            sys.exit("security import falhou: " + (r.stderr or r.stdout).strip())
+        print("importado no login keychain")
     finally:
         p12.unlink(missing_ok=True)
 
