@@ -47,17 +47,26 @@ são de App Store/TestFlight. Distribuir **fora** da App Store pede um tipo
 diferente, `Developer ID Application`, que a conta paga do Programa de
 Desenvolvedores dá direito e que precisa ser criado uma vez:
 
-1. Abrir **Acesso às Chaves → Assistente de Certificação → Solicitar
-   Certificado de uma Autoridade de Certificação**, salvar em disco
-   (`CertificateSigningRequest.certSigningRequest`).
-2. Em developer.apple.com → Certificates → `+` → **Developer ID Application**,
-   subir o CSR e baixar o `.cer`.
-3. Duplo clique no `.cer` pra instalar no login keychain.
+1. `ssh mac 'cd ~/2dEngine-release && python3 scripts/cert-developer-id.py --csr'`
+   — gera a chave privada e o CSR em `~/.appstoreconnect/developer-id/`. A
+   chave **nunca sai do Mac**.
+2. No Mac, em
+   `developer.apple.com/account/resources/certificates/add` → **Developer ID
+   Application** → subir `developer-id.csr` → baixar o `.cer`.
+3. `python3 scripts/cert-developer-id.py --instalar ~/Downloads/<o>.cer` —
+   junta o certificado com a chave privada num `.p12` e importa no login
+   keychain, autorizando o `codesign` a usá-la sem pedir senha.
 
-Detalhes que valem saber antes: só o **Account Holder** cria certificado
-Developer ID, o limite é de dois ativos por conta, e a chave privada fica só
-no keychain onde o CSR nasceu — perdê-la é ter que criar outro. Depois disso
-nada mais é manual: o `build-mac.sh` acha a identidade sozinho.
+**Pela API não dá.** Tentado em 28/09/2026: `POST /v1/certificates` com
+`certificateType: DEVELOPER_ID_APPLICATION` responde
+`403 FORBIDDEN_ERROR — This operation can only be performed by the Account
+Holder`, e chave de API não pode ter esse papel. O passo 2 é do navegador,
+logado como o dono da conta; não há como automatizar.
+
+Detalhes que valem saber antes: o limite é de **dois** certificados Developer
+ID ativos por conta, e a chave privada existe só onde o CSR nasceu — perdê-la é
+ter que criar outro. Depois disso nada mais é manual: o `build-mac.sh` acha a
+identidade sozinho e passa a notarizar.
 
 ## Enquanto não houver o certificado
 

@@ -20,6 +20,15 @@ CUIDADO, e' por isso que este script nao roda sozinho em build nenhuma: a
 Apple permite no maximo DOIS certificados Developer ID Application ativos por
 conta, so' o Account Holder cria, e revogar um quebra tudo que ele assinou e
 ainda nao foi notarizado. Rode o `--listar` primeiro.
+
+O `--criar` NAO FUNCIONA pela API: tentado em 28/09/2026, a Apple responde
+HTTP 403 "This operation can only be performed by the Account Holder", e chave
+de API nao pode ter esse papel. Vale so' pelo portal. Entao o caminho e':
+
+    python3 scripts/cert-developer-id.py --csr        # gera chave + CSR aqui
+    # sobe o .csr em developer.apple.com > Certificates > + > Developer ID
+    # Application, baixa o .cer
+    python3 scripts/cert-developer-id.py --instalar ~/Downloads/developerID.cer
 """
 import argparse, base64, json, os, pathlib, subprocess, sys, time, urllib.error, urllib.request
 
@@ -82,13 +91,14 @@ def listar(token):
     return achou
 
 
-def criar(token, env):
+def gerar_csr(env):
+    """Chave privada + CSR, aqui no Mac. A chave nunca sai desta maquina."""
     SAIDA.mkdir(parents=True, exist_ok=True)
     os.chmod(SAIDA, 0o700)
     chave, csr = SAIDA / "developer-id.key", SAIDA / "developer-id.csr"
     if chave.exists():
-        sys.exit(f"{chave} ja' existe. Ele guarda a chave privada de um certificado "
-                 "que talvez esteja em uso: apague a mao se tem certeza.")
+        print(f"reusando a chave que ja' existe: {chave}")
+        return chave, csr
     nome = env.get("APPLE_ID", "tempest")
     subprocess.run(
         ["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes",
@@ -97,8 +107,12 @@ def criar(token, env):
         check=True, capture_output=True,
     )
     os.chmod(chave, 0o600)
-    print(f"chave privada: {chave}")
+    print(f"chave privada: {chave}\nCSR pra subir:  {csr}")
+    return chave, csr
 
+
+def criar(token, env):
+    chave, csr = gerar_csr(env)
     r = chamar(token, "certificates", {
         "data": {
             "type": "certificates",
@@ -110,7 +124,16 @@ def criar(token, env):
     cer.write_bytes(base64.b64decode(a["certificateContent"]))
     print(f"certificado:   {cer}\n  nome:   {a.get('displayName')}\n"
           f"  expira: {a.get('expirationDate')}")
+    instalar(cer)
 
+
+def instalar(cer):
+    """Junta o .cer do portal com a chave privada local e poe no keychain."""
+    cer = pathlib.Path(os.path.expanduser(str(cer)))
+    chave = SAIDA / "developer-id.key"
+    if not chave.exists():
+        sys.exit(f"falta a chave privada em {chave}: rode --csr antes (e o .cer "
+                 "tem que ser o do CSR daquela chave).")
     # Keychain: o codesign precisa da chave privada E do certificado juntos,
     # entao vai um .p12. Sem `-A`/`-T` o codesign pediria senha a cada uso.
     pem = SAIDA / "developer-id.pem"
@@ -141,10 +164,19 @@ def criar(token, env):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--listar", action="store_true")
-    p.add_argument("--criar", action="store_true")
+    p.add_argument("--csr", action="store_true", help="gera chave privada + CSR")
+    p.add_argument("--criar", action="store_true", help="tenta pela API (403 hoje)")
+    p.add_argument("--instalar", metavar="CER", help=".cer baixado do portal")
     args = p.parse_args()
     token, env = credenciais()
-    if args.criar:
+    if args.instalar:
+        instalar(args.instalar)
+    elif args.csr:
+        gerar_csr(env)
+        print("\nAgora, no Mac: developer.apple.com/account/resources/certificates/add\n"
+              "  > Developer ID Application > sobe o .csr acima > baixa o .cer\n"
+              "  > python3 scripts/cert-developer-id.py --instalar <o .cer>")
+    elif args.criar:
         if listar(token) >= 2:
             sys.exit("\nJa' existem 2 certificados Developer ID Application: a Apple "
                      "nao deixa criar um terceiro. Revogue um no portal antes.")
