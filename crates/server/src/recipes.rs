@@ -206,7 +206,9 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
         }
     }
     if ajustadas > 0 {
-        tracing::info!("[recipes] {ajustadas} recipes with a new minimum level (green 20, blue 40)");
+        // Sem citar numero: a mensagem envelhece junto com a escada, e uma
+        // linha de log que mente e' pior do que uma linha vaga.
+        tracing::info!("[recipes] {ajustadas} recipes realigned to the key bands");
     }
     Ok(())
 }
