@@ -30,8 +30,8 @@ mundo aberto rende bem menos que o chefe de dungeon/raid:
 | nível do chefe | cor | dungeon / raid | chefe do mundo |
 |---|---|---:|---:|
 | 1–19 | cinza | 15% | 5% |
-| 20–39 | verde | 10% | 3% |
-| 40–59 | azul | 6% | 2% |
+| 20–29 | verde | 10% | 3% |
+| 30–59 | azul | 6% | 2% |
 | 60–79 | épica | 3% | 1% |
 | 80+ | lendária | 1% | 0,3% |
 

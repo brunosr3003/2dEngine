@@ -431,6 +431,14 @@ struct Jogo {
     escolha_npc: escolha_npc::EscolhaNpc,
     /// Menu do Capitao que chegou com um dialogo aberto: abre quando fechar.
     viagem_pendente: Option<Vec<shared::viagem::Destino>>,
+    /// A missao que o AUTO conduzia quando embarcou pra outra ilha.
+    ///
+    /// A troca de zona passa por `conectar`, que para todos os autos e limpa o
+    /// log — sem guardar isto, o auto atravessava o mar e desligava sozinho ao
+    /// desembarcar, que e' pior do que nao ter atravessado: o jogador volta
+    /// pro teclado numa ilha que nao escolheu. `conectar` NAO limpa este
+    /// campo, de proposito.
+    retomar_auto_missao: Option<u16>,
     /// A quest da ilha propria ja' passou (docs/COLONIA.md). Vem no menu do
     /// Capitao, que e' o unico lugar de onde se viaja pra la'.
     tem_colonia: bool,
@@ -838,6 +846,7 @@ async fn main() {
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
         viagem_pendente: None,
+        retomar_auto_missao: None,
         tem_colonia: false,
         guarda_roupa_salvo: Default::default(),
         escolha_npc: escolha_npc::EscolhaNpc::default(),
@@ -1236,6 +1245,8 @@ impl Jogo {
             if self.voltar_ao_menu && !self.painel_grande() && !self.missoes.aberta {
                 self.voltar_ao_menu = false;
             }
+            // Chegou na ilha pra onde o auto missao embarcou? Volta a conduzir.
+            self.retomar_auto_apos_viagem();
             if !eco {
                 self.teclas_de_acao();
             }
@@ -1917,7 +1928,7 @@ impl Jogo {
                     self.viagem_pendente = Some(destinos);
                 } else {
                     self.fecha_paineis();
-                    self.viagem.abrir(destinos);
+                    self.abrir_viagem(destinos);
                 }
             }
             ServerMessage::CombinarResultado {
@@ -4234,6 +4245,75 @@ impl Jogo {
 
     /// Clicou no mapa ou no minimapa: viaja ate' la'. Desliga o auto combate e
     /// solta o alvo — senao "ir ate' o alvo" pede rota por cima da viagem.
+    /// A ilha (indice do `ARQUIPELAGO`) que a missao do AUTO exige, quando ela
+    /// mora em OUTRA ilha. A conta e' de `auto_missao::ilha_da_missao`.
+    ///
+    /// O servidor ja' resolve a primeira metade disto: pra passo de historia de
+    /// outra ilha, `handle_quest_destino` manda o destino pro Capitao do Porto
+    /// em vez de mandar pra lugar nenhum. O auto entao caminha ate' o cais e
+    /// abre o menu — e era ai' que ele parava, esperando um toque. Este e' o
+    /// toque.
+    fn ilha_que_o_auto_precisa(&self) -> Option<u8> {
+        let quest = self.auto_missao.quest?;
+        auto_missao::ilha_da_missao(quest, self.mapa.zona()?)
+    }
+
+    /// O menu do Capitao do Porto. Com o AUTO conduzindo missao de outra ilha,
+    /// EMBARCA sozinho em vez de abrir o menu.
+    ///
+    /// Embarcar nao custa nada (`shared::viagem` nao cobra) e se desfaz voltando
+    /// pelo mesmo Capitao, entao nao ha' o que confirmar: quem ligou o auto numa
+    /// missao de outra ilha pediu a viagem junto.
+    ///
+    /// Ilha bloqueada ou fora do ar PARA o auto e diz por que — antes deste ramo
+    /// ele ficava girando no cais sem nada a fazer, e "parado sem explicacao" e'
+    /// indistinguivel de travado.
+    fn abrir_viagem(&mut self, destinos: Vec<shared::viagem::Destino>) {
+        match auto_missao::rumo(&destinos, self.ilha_que_o_auto_precisa()) {
+            auto_missao::Rumo::Embarcar(ilha) => {
+                let nome = destinos
+                    .iter()
+                    .find(|d| d.ilha == ilha)
+                    .map(|d| d.nome.clone())
+                    .unwrap_or_default();
+                self.chat
+                    .push(format!("Auto missão: embarcando para {nome}."));
+                // Guardado ANTES de `conectar` limpar tudo: e' o que faz o auto
+                // voltar a conduzir ao desembarcar.
+                self.retomar_auto_missao = self.auto_missao.quest;
+                self.envia(ClientMessage::Viajar { ilha });
+            }
+            auto_missao::Rumo::Parar(aviso) => {
+                self.chat.push(aviso);
+                self.auto_missao.parar();
+                self.viagem.abrir(destinos);
+            }
+            auto_missao::Rumo::Menu => self.viagem.abrir(destinos),
+        }
+    }
+
+    /// Desembarcou: o auto que embarcou volta a conduzir sozinho.
+    ///
+    /// Espera as tres coisas que `conectar` derrubou: estar na zona certa, ter
+    /// a missao de novo no log (o log chega depois do mundo) e ja' ter posicao
+    /// — `iniciar_auto_missao` precisa de onde o personagem esta'.
+    fn retomar_auto_apos_viagem(&mut self) {
+        let Some(quest) = self.retomar_auto_missao else {
+            return;
+        };
+        let chegou = shared::quests::zona_da_missao(quest)
+            .zip(self.mapa.zona())
+            .is_some_and(|(alvo, aqui)| alvo == aqui);
+        if !chegou || self.world.self_pos().is_none() {
+            return;
+        }
+        if self.missoes.log.iter().any(|q| q.id == quest) {
+            self.retomar_auto_missao = None;
+            self.chat.push("Auto missão: desembarcou, retomando.".into());
+            self.iniciar_auto_missao(quest);
+        }
+    }
+
     fn iniciar_viagem(&mut self, destino: Vec2) {
         self.parar_seguir();
         if !self.mapa.terra(destino) {
@@ -6490,7 +6570,7 @@ impl Jogo {
             if let Some(d) = self.viagem_pendente.take() {
                 self.fecha_paineis();
                 self.missoes.fecha();
-                self.viagem.abrir(d);
+                self.abrir_viagem(d);
             }
             if let Some(cofre) = self.banco_pendente.take() {
                 self.fecha_paineis();

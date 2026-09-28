@@ -382,10 +382,124 @@ impl AutoMissao {
     }
 }
 
+/// A ilha do `ARQUIPELAGO` em que a missao `quest` acontece, quando NAO e' a
+/// zona de `aqui`. `None` = e' aqui, ou a missao nao mora em ilha nenhuma.
+///
+/// Existe separado do `main` pra ser testavel: e' a ponte entre o id da missao
+/// e o indice que o Capitao do Porto entende, e ela quebra silenciosamente se
+/// alguem reordenar o `ARQUIPELAGO`.
+pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
+    let alvo = shared::quests::zona_da_missao(quest)?;
+    if alvo == aqui {
+        return None;
+    }
+    shared::terreno::ARQUIPELAGO
+        .iter()
+        .position(|d| d.zona == alvo)
+        .map(|i| i as u8)
+}
+
+/// O que o AUTO faz com o menu do Capitao do Porto.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rumo {
+    /// Embarca sozinho: a missao e' de outra ilha e ela esta' liberada.
+    Embarcar(u8),
+    /// Nao da' pra chegar la'. Para o auto e diz por que.
+    Parar(String),
+    /// Nada a decidir: abre o menu e deixa o jogador escolher.
+    Menu,
+}
+
+/// A decisao, sem tocar em estado: `ilha` e' o que `ilha_da_missao` devolveu.
+pub fn rumo(destinos: &[shared::viagem::Destino], ilha: Option<u8>) -> Rumo {
+    use shared::viagem::estado;
+    let Some(ilha) = ilha else {
+        return Rumo::Menu;
+    };
+    match destinos.iter().find(|d| d.ilha == ilha) {
+        Some(d) if d.estado == estado::LIBERADA => Rumo::Embarcar(ilha),
+        Some(d) if d.estado == estado::FORA_DO_AR => {
+            Rumo::Parar(format!("{} está fora do ar: a auto missão para aqui.", d.nome))
+        }
+        Some(d) if d.estado == estado::BLOQUEADA => {
+            let falta = if d.requisito.is_empty() {
+                String::new()
+            } else {
+                format!(" (libera em \"{}\")", d.requisito)
+            };
+            Rumo::Parar(format!(
+                "{} ainda não foi liberada{falta}: a auto missão para aqui.",
+                d.nome
+            ))
+        }
+        // AQUI (ja' estamos) ou ilha que o menu nem lista: nada a automatizar.
+        _ => Rumo::Menu,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parado::TRAVADO_S;
+
+    fn destino(ilha: u8, estado: u8) -> shared::viagem::Destino {
+        shared::viagem::Destino {
+            ilha,
+            nome: format!("Ilha {ilha}"),
+            nivel_min: 1,
+            nivel_max: 10,
+            estado,
+            requisito: String::new(),
+        }
+    }
+
+    /// O auto embarca sozinho SO' quando a ilha da missao esta' liberada.
+    #[test]
+    fn o_auto_embarca_na_ilha_liberada_e_para_nas_outras() {
+        use shared::viagem::estado;
+        let ds = vec![
+            destino(0, estado::AQUI),
+            destino(1, estado::LIBERADA),
+            destino(2, estado::FORA_DO_AR),
+            destino(3, estado::BLOQUEADA),
+        ];
+        assert_eq!(rumo(&ds, Some(1)), Rumo::Embarcar(1));
+        assert!(matches!(rumo(&ds, Some(2)), Rumo::Parar(_)), "fora do ar para");
+        assert!(matches!(rumo(&ds, Some(3)), Rumo::Parar(_)), "bloqueada para");
+        // Sem missao de outra ilha o menu e' do jogador.
+        assert_eq!(rumo(&ds, None), Rumo::Menu);
+        // A ilha em que ja' estamos nao se "viaja".
+        assert_eq!(rumo(&ds, Some(0)), Rumo::Menu);
+        // Ilha que o menu nem lista: nao inventa embarque.
+        assert_eq!(rumo(&ds, Some(9)), Rumo::Menu);
+    }
+
+    /// A ponte id-da-missao → indice do Capitao. Se alguem reordenar o
+    /// `ARQUIPELAGO`, o auto embarcaria na ilha errada — e' isto que prende.
+    #[test]
+    fn a_missao_de_outra_ilha_aponta_o_indice_certo() {
+        // Uma missao de cada ilha conhecida, pela propria tabela de zonas.
+        for (i, d) in shared::terreno::ARQUIPELAGO.iter().enumerate() {
+            let Some(q) = shared::quests::QUESTS
+                .iter()
+                .find(|q| shared::quests::zona_da_missao(q.id) == Some(d.zona))
+            else {
+                continue;
+            };
+            // Visto de OUTRA ilha, aponta pro indice desta.
+            let outra = if i == 0 { 1 } else { 0 };
+            let de = shared::terreno::ARQUIPELAGO[outra].zona;
+            assert_eq!(
+                ilha_da_missao(q.id, de),
+                Some(i as u8),
+                "missao {} ({}) devia apontar pra ilha {i}",
+                q.id,
+                d.zona
+            );
+            // Visto de DENTRO da propria ilha, nao ha' viagem.
+            assert_eq!(ilha_da_missao(q.id, d.zona), None);
+        }
+    }
 
     fn ctx(eu: Vec2, agora: f64) -> Ctx {
         Ctx {

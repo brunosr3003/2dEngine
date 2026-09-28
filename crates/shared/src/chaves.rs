@@ -3,7 +3,7 @@
 //! estoque unico para o primeiro craft de cada faixa.
 //!
 //! A cor segue o nivel do CONTEUDO (o chefe, a dungeon), nao o de quem mata:
-//! ate' o 19 cinza, 20–39 verde, 40–59 azul, 60–79 epica, 80+ lendaria. E a
+//! ate' o 19 cinza, 20–29 verde, 30–59 azul, 60–79 epica, 80+ lendaria. E a
 //! chance cai conforme a faixa sobe — chave boa e' rara de proposito, e e' ela
 //! que decide quantos itens o mundo produz.
 //!
@@ -56,7 +56,10 @@ pub const FAIXAS: [FaixaDeChave; 5] = [
         chance_mundo: 0.03,
     },
     FaixaDeChave {
-        nivel_min: 40,
+        // De 40 pra 30 em 28/09/2026, a pedido do dono: a chave AZUL (Raro) e'
+        // a que destrava o craft de peca Rara, e esperar o chefe de 40 deixava
+        // a faixa 30-39 sem nada pra construir. A verde encurtou pra 20-29.
+        nivel_min: 30,
         cor: 3,
         chance: 0.06,
         chance_mundo: 0.02,
@@ -117,8 +120,8 @@ mod tests {
             (1, 1),
             (19, 1),
             (20, 2),
-            (39, 2),
-            (40, 3),
+            (29, 2),
+            (30, 3),
             (59, 3),
             (60, 4),
             (79, 4),

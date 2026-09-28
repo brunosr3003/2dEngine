@@ -1,3 +1,11 @@
+28/09/2026 — Atualização obrigatória: protocolo 154
+
+Atualize o jogo para continuar entrando nos servidores.
+
+As chaves de craft AZUIS (Raro) agora caem de chefes a partir do nível 30, e não mais do 40. A faixa 30–39 ficava sem nada para construir: a chave verde já não servia e a azul ainda não vinha. A faixa verde passou a ser 20–29. A tela de recompensa da dungeon é calculada no cliente, e por isso a atualização é obrigatória.
+
+As missões agora VIAJAM SOZINHAS entre as ilhas. Com a auto missão ligada em um passo que acontece em outra ilha, o personagem caminha até o Capitão do Porto, embarca e retoma a missão sozinho ao desembarcar — antes ele chegava ao cais e parava, esperando você escolher a ilha no menu. Se a ilha ainda não foi liberada pela história, ou se o servidor dela está fora do ar, a auto missão para e diz o motivo.
+
 28/09/2026 — Ícones mais claros e completos
 
 Combinar, Ilha Mágica, Mobs e Presença agora têm ícones próprios. Pets, Aparência e Minha Ilha deixaram de reutilizar ícones de outras funções. Bolsa, Ficha, Montaria, Craft, Pulo, Sprint e Dash ganharam desenhos mais legíveis, com contornos mais leves em todo o HUD. Os botões e suas funções permanecem iguais.

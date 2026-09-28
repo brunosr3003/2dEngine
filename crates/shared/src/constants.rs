@@ -50,11 +50,16 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// de dano com o piso velho e mostra numero que o servidor nao aplica. O dono
 /// pediu pra obrigar a atualizacao.
 ///
+/// 154 (28/09/2026): a faixa da chave AZUL desceu pra nivel 30 em
+/// `shared::chaves`, e o cliente le' essa tabela pra mostrar a recompensa
+/// esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`). Cliente 153
+/// diria "Verde, 10%" no conteudo de 30-39, onde o servidor ja' solta azul.
+///
 /// ORDEM OBRIGATORIA ao subir isto: cliente PUBLICADO nas cinco plataformas
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 153;
+pub const PROTOCOL_VERSION: u16 = 154;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
