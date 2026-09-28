@@ -30,7 +30,7 @@ de API nao pode ter esse papel. Vale so' pelo portal. Entao o caminho e':
     # Application, baixa o .cer
     python3 scripts/cert-developer-id.py --instalar ~/Downloads/developerID.cer
 """
-import argparse, base64, json, os, pathlib, subprocess, sys, time, urllib.error, urllib.request
+import argparse, base64, json, os, pathlib, secrets, subprocess, sys, time, urllib.error, urllib.request
 
 import jwt
 
@@ -134,21 +134,30 @@ def instalar(cer):
     if not chave.exists():
         sys.exit(f"falta a chave privada em {chave}: rode --csr antes (e o .cer "
                  "tem que ser o do CSR daquela chave).")
-    # Keychain: o codesign precisa da chave privada E do certificado juntos,
-    # entao vai um .p12. Sem `-A`/`-T` o codesign pediria senha a cada uso.
+    # Keychain: o codesign precisa da chave privada E do certificado juntos.
+    # Vao os dois num .p12 com SENHA ALEATORIA — e nao com senha vazia, que o
+    # `security` da Apple recusa com "MAC verification failed during PKCS12
+    # import (wrong password?)". A senha nao e' segredo de nada: ela existe
+    # pelos poucos milissegundos entre exportar e importar, e o arquivo morre
+    # no fim. Sem `-T` o codesign pediria senha do keychain a cada assinatura.
     pem = SAIDA / "developer-id.pem"
     subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(cer),
                     "-out", str(pem)], check=True)
+    senha = secrets.token_urlsafe(24)
     p12 = SAIDA / "developer-id.p12"
+    p12.unlink(missing_ok=True)
     subprocess.run(["openssl", "pkcs12", "-export", "-out", str(p12),
-                    "-inkey", str(chave), "-in", str(pem), "-passout", "pass:"],
-                   check=True)
+                    "-inkey", str(chave), "-in", str(pem),
+                    "-passout", f"pass:{senha}"], check=True)
     os.chmod(p12, 0o600)
-    subprocess.run(["security", "import", str(p12), "-k",
-                    os.path.expanduser("~/Library/Keychains/login.keychain-db"),
-                    "-P", "", "-T", "/usr/bin/codesign", "-T", "/usr/bin/security"],
-                   check=True)
-    print(f"importado no login keychain a partir de {p12}")
+    try:
+        subprocess.run(["security", "import", str(p12), "-k",
+                        os.path.expanduser("~/Library/Keychains/login.keychain-db"),
+                        "-P", senha, "-T", "/usr/bin/codesign",
+                        "-T", "/usr/bin/security"], check=True)
+        print(f"importado no login keychain a partir de {p12}")
+    finally:
+        p12.unlink(missing_ok=True)
 
     idents = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
                             capture_output=True, text=True).stdout
