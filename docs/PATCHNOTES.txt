@@ -1,3 +1,7 @@
+28/09/2026 — Ícones mais claros e completos
+
+Combinar, Ilha Mágica, Mobs e Presença agora têm ícones próprios. Pets, Aparência e Minha Ilha deixaram de reutilizar ícones de outras funções. Bolsa, Ficha, Montaria, Craft, Pulo, Sprint e Dash ganharam desenhos mais legíveis, com contornos mais leves em todo o HUD. Os botões e suas funções permanecem iguais.
+
 28/09/2026 — Atualização obrigatória: protocolo 153
 
 Atualize o jogo para continuar entrando nos servidores. Esta versão torna obrigatória a atualização com o HUD renovado, a bolsa ajustada para telas menores e as melhorias de legibilidade. Os controles e as regras de combate permanecem iguais.

@@ -459,11 +459,11 @@ fn cadeado(c: Vec2, s: f32) {
     );
 }
 
-fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
-    let nome = match item {
+fn nome_do_icone(item: Item) -> &'static str {
+    match item {
         Item::Bolsa => "bolsa",
         Item::Ficha => "ficha",
-        Item::Pets => "montaria",
+        Item::Pets => "pets",
         Item::Habilidades => "habilidades",
         Item::Montaria => "montaria",
         Item::RecuperarXp => "recuperar_xp",
@@ -480,8 +480,8 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Mobs => "mobs",
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
-        Item::GuardaRoupa => "ficha",
-        Item::MinhaIlha => "mapa",
+        Item::GuardaRoupa => "guarda_roupa",
+        Item::MinhaIlha => "minha_ilha",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -495,7 +495,11 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
         Item::Configuracoes => "configuracoes",
         Item::TrocarPersonagem => "trocar_personagem",
         Item::Sair => "sair",
-    };
+    }
+}
+
+fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
+    let nome = nome_do_icone(item);
     if crate::icones_ui::ui(nome, c, s * 2.6, cor) {
         return;
     }
@@ -530,6 +534,19 @@ fn icone_do_item(item: Item, c: Vec2, s: f32, cor: Color) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cada_entrada_do_menu_tem_arte_propria() {
+        let mut nomes = std::collections::HashSet::new();
+        for (_, linhas) in GRUPOS {
+            for (item, _, _) in linhas {
+                let nome = nome_do_icone(*item);
+                assert!(crate::icones_ui::celula_ui(nome).is_some(), "{item:?}: {nome} ausente");
+                assert!(nomes.insert(nome), "icone repetido: {nome}");
+            }
+        }
+    }
+
 
     #[test]
     fn grade_cabe_sem_sobrepor_aparencia_a_coluna_seguinte() {

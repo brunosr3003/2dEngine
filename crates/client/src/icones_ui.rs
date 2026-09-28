@@ -28,6 +28,8 @@ pub const USADOS_LOJA: &[&str] = &["ouro", "tp", "tp_1", "tp_2", "tp_3", "tp_4"]
 /// um existe no atlas: renomear no gerador sem mexer aqui quebra o teste, nao
 /// a tela.
 pub const USADOS_UI: &[&str] = &[
+    "pets", "guarda_roupa", "minha_ilha", "ilha_magica", "combinar",
+    "mobs", "presenca", "dash", "sprint", "pulo", "banco",
     "bolsa",
     "missoes",
     "todas_missoes",

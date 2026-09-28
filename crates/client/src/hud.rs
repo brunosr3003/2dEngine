@@ -404,23 +404,7 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
         false,
     );
     estilo::botao_redondo(c, raio, cor, e, pronto);
-    // Duas marcas inclinadas de impulso; desenho proprio pra nao depender de
-    // glifo ausente na fonte nem de um asset novo.
-    let s = raio * 0.38;
-    for dx in [-s * 0.42, s * 0.42] {
-        estilo::traco(
-            c + vec2(dx - s * 0.48, s * 0.72),
-            c + vec2(dx + s * 0.48, 0.0),
-            3.2,
-            cor,
-        );
-        estilo::traco(
-            c + vec2(dx + s * 0.48, 0.0),
-            c + vec2(dx - s * 0.48, -s * 0.72),
-            3.2,
-            cor,
-        );
-    }
+    crate::icones_ui::ui("dash", c - vec2(0.0, raio * 0.10), raio * 1.35, cor);
     estilo::texto_centro_forte(c.x, c.y + raio * 0.70, "DASH", 10, cor);
     if !pronto {
         let fracao = (restante / duracao.max(0.01)).clamp(0.0, 1.0);
@@ -518,25 +502,7 @@ pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
     let sobre = r.contains(mouse());
     estilo::cartao(r, sobre, ativo);
     let cor = if ativo { estilo::ACENTO } else { estilo::TEXTO };
-    // Silhueta correndo, legível sem depender de fonte de ícones.
-    let c = r.center() - vec2(0.0, r.h * 0.10);
-    let u = r.w * 0.22;
-    let esp = (r.w * 0.05).max(1.5);
-    draw_circle(c.x + u * 0.3, c.y - u * 0.8, u * 0.21, cor);
-    for (a, b) in [
-        (vec2(0.2, -0.45), vec2(-0.15, 0.25)),
-        (vec2(0.12, -0.25), vec2(0.7, 0.0)),
-        (vec2(0.7, 0.0), vec2(0.85, -0.4)),
-        (vec2(0.1, -0.3), vec2(-0.5, -0.45)),
-        (vec2(-0.5, -0.45), vec2(-0.8, 0.0)),
-        (vec2(-0.15, 0.25), vec2(0.45, 0.55)),
-        (vec2(0.45, 0.55), vec2(0.25, 0.95)),
-        (vec2(-0.15, 0.25), vec2(-0.65, 0.85)),
-    ] {
-        let a = c + a * u;
-        let b = c + b * u;
-        draw_line(a.x, a.y, b.x, b.y, esp, cor);
-    }
+    crate::icones_ui::ui("sprint", r.center() - vec2(0.0, r.h * 0.10), r.w * 0.75, cor);
     estilo::texto(r.x + r.w * 0.10, r.y + r.h * 0.92,
         if ativo { "LIGADO" } else { "SPRINT" }, (r.w * 0.19) as u16, cor);
     if sobre { dica(r, if ativo { "Desligar sprint [Shift]" } else { "Ligar sprint [Shift]" }); }

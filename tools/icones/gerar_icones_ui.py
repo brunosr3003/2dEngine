@@ -274,6 +274,62 @@ HUD = {
              ("S", linha((34, 32), (52, 32)), 5.5), ("F", poly([(47, 23), (58, 32), (47, 41)]))],
 }
 
+# Distinct HUD symbols, drawn on the same 64px grid with generous counters.
+HUD.update({
+    "bolsa": [("S", "M23,20V16a9,9 0 0 1 18,0V20", 4),
+              ("S", rrect(13,20,38,36,7), 4), ("S", "M14,30Q32,40 50,30", 3),
+              ("F", rrect(28,31,8,10,2)), ("S", linha((24,47),(40,47)), 3)],
+    "ficha": [("S", rrect(10,8,44,48,6), 3.5), ("F", circ(32,23,7)),
+              ("S", "M20,43Q20,33 32,33Q44,33 44,43", 4),
+              ("S", linha((22,50),(42,50)), 3)],
+    "montaria": [("F", "M15,55L19,42L22,28L16,23L25,12L34,10L40,6L42,17L52,31L48,39L39,37L36,55Z"),
+                 ("D", circ(37,24,2.5)), ("DS", "M24,18Q34,26 27,46", 3),
+                 ("DS", linha((41,32),(48,34)), 2.5)],
+    "craft": [("S", linha((17,51),(40,23)), 6),
+              ("F", "M29,14L35,7L54,23L47,32Z"),
+              ("S", linha((13,16),(46,52)), 4),
+              ("S", "M10,11L18,10L23,16L19,23L12,20Z", 3)],
+
+    "pets": [("F", "M18,45Q20,36 27,32Q32,28 37,32Q44,36 46,45Q48,54 39,53Q32,49 25,53Q16,54 18,45Z"),
+             ("F", elipse(13,29,5,7)), ("F", elipse(25,19,5,7)),
+             ("F", elipse(39,19,5,7)), ("F", elipse(51,29,5,7))],
+    "guarda_roupa": [("S", "M27,17a5,5 0 1 1 7,5v6L54,42Q58,47 52,48H12Q6,47 10,42L30,29", 4),
+                     ("S", linha((21,44),(21,53),(43,53),(43,44)), 3)],
+    "minha_ilha": [("F", "M7,44L22,37L49,38L57,45L34,57Z"),
+                   ("DS", linha((10,45),(34,49),(54,45)), 2.5),
+                   ("F", "M18,29L32,16L46,29V41H18Z"),
+                   ("D", rrect(28,30,8,12,1)), ("S", linha((14,29),(32,12),(50,29)), 4)],
+    "ilha_magica": [("F", "M7,36L22,29L46,29L57,36L42,50L31,58L20,48Z"),
+                    ("DS", linha((9,36),(32,42),(55,36)), 3),
+                    ("DS", linha((32,42),(31,54)), 2.5),
+                    ("F", estrela(32,17,12,4,4)), ("F", estrela(51,14,5,2,4))],
+    "combinar": [("S", linha((13,15),(24,15),(32,29),(40,15),(51,15)), 4),
+                 ("F", poly([(8,10),(18,10),(18,20),(8,20)])),
+                 ("F", poly([(46,10),(56,10),(56,20),(46,20)])),
+                 ("S", linha((32,28),(32,36)), 4),
+                 ("F", poly([(32,35),(45,45),(32,58),(19,45)])),
+                 ("DS", linha((23,45),(41,45)), 2.5)],
+    "mobs": [("F", "M15,27L8,9L24,18Q32,14 40,18L56,9L49,27L51,43L42,54H22L13,43Z"),
+             ("D", "M19,29L29,33L24,38Z M45,29L35,33L40,38Z"),
+             ("D", "M27,42H37L32,48Z"), ("DS", linha((24,51),(32,49),(40,51)), 2)],
+    "presenca": [("S", "M32,24C15,26 13,15 19,12C27,8 32,24 32,24C32,24 37,8 45,12C51,15 49,26 32,24", 3.5),
+                 ("F", rrect(10,24,44,11,2)), ("F", rrect(14,38,36,17,2)),
+                 ("DS", linha((32,25),(32,55)), 4)],
+    "dash": [("S", linha((10,18),(24,32),(10,46)), 5),
+             ("S", linha((31,18),(45,32),(31,46)), 5),
+             ("S", linha((7,32),(13,32)), 3)],
+    "sprint": [("F", circ(40,13,6)), ("S", linha((35,24),(28,36),(42,43),(38,55)), 5),
+               ("S", linha((28,36),(22,47),(10,47)), 5),
+               ("S", linha((35,24),(43,31),(53,27)), 4),
+               ("S", linha((35,24),(24,20),(17,28)), 4),
+               ("S", linha((7,19),(15,19)), 3)],
+    "pulo": [("F", circ(34,15,6)), ("S", linha((31,26),(29,38),(18,46)), 5),
+             ("S", linha((29,38),(43,40),(48,49)), 5),
+             ("S", linha((31,26),(20,29),(15,20)), 4),
+             ("S", linha((31,26),(42,24),(46,13)), 4),
+             ("S", "M10,56Q32,52 54,56", 3)],
+})
+
 MAPA = {
     "jogador": [("F", poly([(32, 7), (53, 55), (32, 43), (11, 55)]))],
     "destino": [("S", circ(32, 32, 19), 5), ("S", linha((32, 5), (32, 16)), 4.5), ("S", linha((32, 48), (32, 59)), 4.5),
@@ -464,6 +520,13 @@ def svg_mono(elems):
             '<g>%s</g><g>%s</g></svg>') % ("".join(sombra), "".join(topo))
 
 
+def svg_hud(elems):
+    # Lighter edging and near-flat ivory keep small HUD symbols crisp.
+    return (svg_mono(elems).replace('stroke-opacity="0.5"', 'stroke-opacity="0.22"')
+            .replace('fill-opacity="0.5"', 'fill-opacity="0.22"')
+            .replace('#bcc6d4', '#edf0ed'))
+
+
 def svg_skill(paleta, elems):
     claro, escuro, aro, glifo = PALETAS[paleta]
     sombra, topo = [], []
@@ -529,7 +592,7 @@ def main():
         hud = sorted(HUD.items())
         mapa = sorted(MAPA.items())
         skills = sorted(SKILLS.items())
-        i_hud, w_hud, h_hud = monta(hud, 64, 8, "hud.png", tmp, svg_mono)
+        i_hud, w_hud, h_hud = monta(hud, 64, 8, "hud.png", tmp, svg_hud)
         i_mapa, w_mapa, h_mapa = monta(mapa, 48, 8, "mapa.png", tmp, svg_mono)
         i_sk, w_sk, h_sk = monta(skills, 96, 6, "skills.png", tmp, lambda d: svg_skill(d[0], d[1]))
         loja = sorted(LOJA.items())
