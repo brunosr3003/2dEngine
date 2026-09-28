@@ -825,25 +825,7 @@ impl Missoes {
             } else {
                 rotulo.to_string()
             };
-            let cor = if ativa {
-                estilo::OURO
-            } else if sobre {
-                estilo::TEXTO
-            } else {
-                estilo::SUAVE
-            };
-            estilo::texto(caixa.x + 10.0, caixa.y + 24.0 * s, &rotulo, 16, cor);
-            // A sublinha é o que diz qual está aberta: duas abas na mesma caixa
-            // sem marca nenhuma viram dois títulos.
-            if ativa {
-                draw_rectangle(
-                    caixa.x + 10.0,
-                    caixa.y + 30.0 * s,
-                    estilo::medir(&rotulo, 16),
-                    2.0,
-                    estilo::OURO,
-                );
-            }
+            estilo::aba(caixa, &rotulo, ativa, sobre);
             if clique && sobre {
                 saida = Some(NoRastreador::Aba(grupo));
             }

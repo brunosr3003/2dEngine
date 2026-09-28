@@ -2301,7 +2301,7 @@ impl Mapa {
                 Color::new(0.0, 0.0, 0.0, 0.18 - k * 0.04),
             );
         }
-        estilo::arco(c, rad, 0.0, 1.0, 2.5, estilo::alfa(estilo::OURO, 0.75));
+        estilo::arco(c, rad, 0.0, 1.0, 1.0, estilo::alfa(estilo::OURO, 0.50));
         estilo::arco(
             c,
             rad - 3.0,

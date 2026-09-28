@@ -1398,7 +1398,9 @@ mod tests {
                 // Excecoes: previas de captura que so' rodam no desktop pra
                 // gerar PNG e nunca entram no fluxo do app. A loja e a
                 // revelacao de montaria precisam de profundidade na cena 3D.
-                let previa = (p.file_name().is_some_and(|n| n == "loja_tp.rs")
+                let previa_hud = p.file_name().is_some_and(|n| n == "previa_hud.rs")
+                    && fonte.contains("#![cfg(all(debug_assertions, not(any(target_os = \"ios\", target_os = \"android\"))))]");
+                let previa = previa_hud || (p.file_name().is_some_and(|n| n == "loja_tp.rs")
                     && fonte.contains("MMO_PREVIA_LOJA"))
                     || (p.file_name().is_some_and(|n| n == "invocacao_ui.rs")
                         && fonte.contains("MMO_PREVIA_INVOCACAO"))

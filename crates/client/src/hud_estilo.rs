@@ -300,31 +300,31 @@ pub fn texto_ajustado(s: &str, x: f32, y: f32, largura: f32, tamanho: u16, cor: 
 // ─────────────────────────────── tokens ──────────────────────────────
 
 /// Superficie de painel: azul-ardosia escuro, translucido.
-pub const FUNDO: Color = Color::new(0.040, 0.052, 0.078, 0.88);
+pub const FUNDO: Color = Color::new(0.047, 0.063, 0.078, 0.96);
 /// Topo do gradiente do painel e cartoes elevados.
-pub const FUNDO_ALTO: Color = Color::new(0.085, 0.102, 0.140, 0.92);
+pub const FUNDO_ALTO: Color = Color::new(0.082, 0.102, 0.118, 0.98);
 /// Trilhos e areas rebaixadas (fundo de barra, slot vazio).
-pub const FUNDO_BAIXO: Color = Color::new(0.020, 0.026, 0.040, 0.92);
+pub const FUNDO_BAIXO: Color = Color::new(0.027, 0.039, 0.051, 0.96);
 /// Borda de 1 px quase invisivel: separa sem desenhar caixa.
-pub const BORDA: Color = Color::new(0.62, 0.70, 0.82, 0.20);
-pub const BORDA_FORTE: Color = Color::new(0.66, 0.74, 0.86, 0.42);
+pub const BORDA: Color = Color::new(0.70, 0.76, 0.77, 0.14);
+pub const BORDA_FORTE: Color = Color::new(0.78, 0.81, 0.78, 0.32);
 /// O filete claro no topo que da' a sensacao de vidro.
-pub const BRILHO: Color = Color::new(1.0, 1.0, 1.0, 0.08);
+pub const BRILHO: Color = Color::new(1.0, 0.96, 0.86, 0.045);
 /// Dourado: raridade, chefe, destaque de valor.
-pub const OURO: Color = Color::new(0.97, 0.79, 0.44, 1.0);
+pub const OURO: Color = Color::new(0.87, 0.75, 0.52, 1.0);
 /// Acento principal (selecao, hover, links).
-pub const ACENTO: Color = Color::new(0.42, 0.80, 1.0, 1.0);
-pub const TEXTO: Color = Color::new(0.95, 0.96, 0.98, 1.0);
-pub const SUAVE: Color = Color::new(0.64, 0.70, 0.78, 1.0);
+pub const ACENTO: Color = Color::new(0.89, 0.79, 0.59, 1.0);
+pub const TEXTO: Color = Color::new(0.95, 0.94, 0.89, 1.0);
+pub const SUAVE: Color = Color::new(0.68, 0.74, 0.76, 1.0);
 pub const AUTO: Color = Color::new(0.37, 0.94, 0.76, 1.0);
 pub const VERMELHO: Color = Color::new(0.95, 0.36, 0.36, 1.0);
 pub const VERDE: Color = Color::new(0.42, 0.88, 0.52, 1.0);
 pub const AZUL: Color = Color::new(0.38, 0.64, 1.0, 1.0);
 pub const SOMBRA: Color = Color::new(0.0, 0.0, 0.0, 0.34);
 
-pub const RAIO: f32 = 9.0;
+pub const RAIO: f32 = 8.0;
 pub const RAIO_PEQUENO: f32 = 5.0;
-pub const RAIO_GRANDE: f32 = 14.0;
+pub const RAIO_GRANDE: f32 = 10.0;
 pub const ESPACO: f32 = 8.0;
 
 /// Escala tipografica.
@@ -482,7 +482,7 @@ pub fn borda_arredondada(r: Rect, raio: f32, esp: f32, cor: Color) {
 
 /// Sombra suave: tres camadas crescendo e sumindo, deslocadas pra baixo.
 pub fn sombra(r: Rect, raio: f32, forca: f32) {
-    for (k, a) in [(1.0, 0.16), (4.0, 0.09), (8.0, 0.05)] {
+    for (k, a) in [(1.0, 0.10), (3.0, 0.045)] {
         ret_arredondado(
             Rect::new(
                 r.x - k,
@@ -611,12 +611,9 @@ pub fn painel(r: Rect) {
 /// Painel com filete colorido no topo (janelas principais, chefe, raridade).
 pub fn painel_destaque(r: Rect, cor: Color) {
     painel(r);
-    let w = (r.w * 0.34).min(160.0);
-    ret_arredondado(
-        Rect::new(r.center().x - w * 0.5, r.y - 1.0, w, 3.0),
-        1.5,
-        alfa(cor, 0.9),
-    );
+    // Quiet inset accent: follows the frame instead of floating above it.
+    draw_line(r.x + RAIO, r.y + 1.0, r.x + r.w - RAIO, r.y + 1.0,
+        1.0, alfa(cor, 0.38));
 }
 
 /// Cartao dentro de painel (item de lista, ladrilho de menu).
@@ -637,6 +634,14 @@ pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
     brilho_topo(r, RAIO_PEQUENO + 2.0);
 }
 
+// Measure the translated label against its existing rectangle. This changes
+// typography only: the click/touch region remains owned by the caller.
+fn fonte_do_controle(r: Rect, rotulo: &str, preferido: u16) -> u16 {
+    let mut t = preferido.min((r.h * 0.46 / fator_texto()).max(8.0) as u16);
+    while t > 8 && medir_forte(rotulo, t) > (r.w - 12.0).max(0.0) { t -= 1; }
+    t
+}
+
 /// Botao com rotulo. `primario` pinta de acento; o resto e' vidro.
 pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
     let h = anima(
@@ -650,8 +655,8 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
     let desab = e == Estado::Desabilitado;
     let base = if primario {
         misturar(
-            Color::new(0.16, 0.42, 0.62, 0.95),
-            Color::new(0.22, 0.52, 0.74, 0.97),
+            Color::new(0.24, 0.22, 0.16, 0.98),
+            Color::new(0.34, 0.30, 0.21, 1.0),
             h,
         )
     } else {
@@ -663,23 +668,23 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
     if !desab {
         sombra(rr, RAIO_PEQUENO + 2.0, 0.6);
     }
-    ret_gradiente(rr, RAIO_PEQUENO + 2.0, clarear(base, 0.08), base);
+    ret_gradiente(rr, RAIO_PEQUENO + 2.0, clarear(base, 0.025), base);
     borda_arredondada(
         rr,
         RAIO_PEQUENO + 2.0,
         1.0,
         if primario {
-            alfa(ACENTO, 0.55 + 0.3 * h)
+            alfa(ACENTO, 0.35 + 0.35 * h)
         } else {
             misturar(BORDA, BORDA_FORTE, h)
         },
     );
     brilho_topo(rr, RAIO_PEQUENO + 2.0);
-    let t = tam::CORPO.min(((r.h * 0.5) as u16).max(10));
+    let t = fonte_do_controle(r, rotulo, tam::CORPO);
     let cor = if desab { alfa(SUAVE, 0.6) } else { TEXTO };
     texto_centro_forte(
         rr.center().x,
-        rr.center().y + t as f32 * 0.36,
+        rr.center().y + tam(t) as f32 * 0.36,
         rotulo,
         t,
         cor,
@@ -702,24 +707,13 @@ pub fn botao_redondo(c: Vec2, raio: f32, cor: Color, e: Estado, halo: bool) {
     } else {
         raio
     };
-    draw_circle(c.x, c.y + 4.0, r + 3.0, Color::new(0.0, 0.0, 0.0, 0.30));
+    draw_circle(c.x, c.y + 3.0, r + 2.0, alfa(SOMBRA, 0.25));
+    draw_circle(c.x, c.y, r, FUNDO);
+    draw_circle(c.x, c.y, r - 2.0, misturar(FUNDO_ALTO, alfa(cor, 0.22), h * 0.35));
+    draw_circle_lines(c.x, c.y, r - 0.5, 1.0, alfa(cor, if halo { 0.85 } else { 0.36 + 0.34 * h }));
     if halo {
-        let p = 0.5 + 0.5 * (get_time() as f32 * 3.0).sin();
-        draw_circle(c.x, c.y, r + 6.0 + 2.0 * p, alfa(cor, 0.10 + 0.06 * p));
+        arco(c, r - 4.0, -PI * 0.5, 0.18, 2.0, cor);
     }
-    draw_circle(c.x, c.y, r, FUNDO_BAIXO);
-    draw_circle(c.x, c.y - r * 0.08, r * 0.94, alfa(FUNDO_ALTO, 0.95));
-    draw_circle(c.x, c.y + r * 0.10, r * 0.80, alfa(FUNDO, 0.9));
-    draw_circle_lines(c.x, c.y, r - 1.0, 2.0 + h, alfa(cor, 0.55 + 0.35 * h));
-    draw_circle_lines(c.x, c.y, r - 5.0, 1.0, alfa(cor, 0.16));
-    arco(
-        c,
-        r - 1.0,
-        PI * 1.15,
-        0.20,
-        1.5,
-        Color::new(1.0, 1.0, 1.0, 0.18 + 0.12 * h),
-    );
     if e == Estado::Desabilitado {
         draw_circle(c.x, c.y, r, Color::new(0.0, 0.0, 0.0, 0.45));
     }
@@ -738,13 +732,13 @@ pub fn aba(r: Rect, rotulo: &str, ativa: bool, sobre: bool) {
             ),
         );
     }
-    let t = tam::LEGENDA.min(((r.h * 0.46) as u16).max(10));
+    let t = fonte_do_controle(r, rotulo, tam::LEGENDA);
     let cor = if ativa {
         TEXTO
     } else {
         misturar(SUAVE, TEXTO, h)
     };
-    texto_centro_forte(r.center().x, r.center().y + t as f32 * 0.36, rotulo, t, cor);
+    texto_centro_forte(r.center().x, r.center().y + tam(t) as f32 * 0.36, rotulo, t, cor);
     if ativa {
         let w = (r.w * 0.45).min(56.0);
         ret_arredondado(
@@ -766,7 +760,7 @@ pub fn chip_tecla(canto: Vec2, tecla: &str) {
         Color::new(0.16, 0.17, 0.21, 0.97),
         Color::new(0.08, 0.09, 0.12, 0.97),
     );
-    borda_arredondada(c, RAIO_PEQUENO, 1.0, alfa(OURO, 0.7));
+    borda_arredondada(c, RAIO_PEQUENO, 1.0, BORDA_FORTE);
     texto_centro_forte(c.center().x, c.y + 14.0, tecla, tam::MINI, OURO);
 }
 
@@ -774,7 +768,7 @@ pub fn chip_tecla(canto: Vec2, tecla: &str) {
 /// com brilho, "fantasma" claro do que acabou de sair e texto no meio.
 pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
     let f = f.clamp(0.0, 1.0);
-    let raio = (r.h * 0.5).min(RAIO_PEQUENO + 2.0);
+    let raio = (r.h * 0.5).min(3.0);
     ret_arredondado(
         Rect::new(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0),
         raio + 1.0,
@@ -792,14 +786,8 @@ pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
     if f > 0.001 {
         let w = (r.w * f).max(raio * 2.0).min(r.w);
         let cheio = Rect::new(r.x, r.y, w, r.h);
-        ret_gradiente(cheio, raio, clarear(cor, 0.22), clarear(cor, -0.18));
-        if r.h >= 6.0 {
-            ret_arredondado(
-                Rect::new(r.x + 2.0, r.y + 1.5, (w - 4.0).max(0.0), r.h * 0.34),
-                raio * 0.6,
-                Color::new(1.0, 1.0, 1.0, 0.18),
-            );
-        }
+        ret_gradiente(cheio, raio, clarear(cor, 0.07), clarear(cor, -0.08));
+
     }
     if let Some(t) = rotulo {
         let tamanho = (r.h * 0.82).clamp(10.0, 15.0) as u16;
@@ -830,9 +818,9 @@ pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
             Rect::new(r.x, r.y + r.h * 0.35, r.w, r.h * 0.65),
             RAIO_PEQUENO + 1.0,
             alfa(c, 0.0),
-            alfa(c, 0.22),
+            alfa(c, 0.10),
         );
-        borda_arredondada(r, RAIO_PEQUENO + 1.0, 1.5, alfa(c, 0.65 + 0.35 * h));
+        borda_arredondada(r, RAIO_PEQUENO + 1.0, 1.0, alfa(c, 0.40 + 0.45 * h));
     } else {
         borda_arredondada(r, RAIO_PEQUENO + 1.0, 1.0, misturar(BORDA, BORDA_FORTE, h));
     }
@@ -860,8 +848,8 @@ pub fn tooltip(ancora: Rect, t: &str, acima: bool) {
     ret_gradiente(
         c,
         RAIO_PEQUENO + 1.0,
-        Color::new(0.10, 0.12, 0.16, 0.97),
-        Color::new(0.06, 0.07, 0.10, 0.97),
+        FUNDO_ALTO,
+        FUNDO,
     );
     borda_arredondada(c, RAIO_PEQUENO + 1.0, 1.0, BORDA_FORTE);
     texto(c.x + 10.0, c.y + 18.0, t, tam::LEGENDA + 1, TEXTO);

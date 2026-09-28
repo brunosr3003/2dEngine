@@ -91,7 +91,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             barra.y,
             barra.w,
             barra.h,
-            Color::new(0.08, 0.09, 0.12, 1.),
+            e::FUNDO_ALTO,
         );
         if linha.contains(p) {
             draw_rectangle(
@@ -311,7 +311,7 @@ impl SocialHud {
                 y,
                 linha.w,
                 15.0 * k,
-                Color::new(0.08, 0.09, 0.12, 1.),
+                e::FUNDO_ALTO,
             );
             if let Some((id, ent)) = jogador {
                 let fracao = (ent.state.hp as f32 / ent.meta.hp_max.max(1) as f32).clamp(0., 1.);

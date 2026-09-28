@@ -26,17 +26,22 @@ use crate::render3d;
 use crate::ui;
 use crate::vox::VoxCache;
 
+
+// Capture dimensions agree with the HUD; normal gameplay uses the window.
+fn screen_width() -> f32 { render3d::tela().0 }
+fn screen_height() -> f32 { render3d::tela().1 }
+
 const COLUNAS: usize = 8;
 const VAO: f32 = 6.0;
 
-const FUNDO: Color = Color::new(0.06, 0.06, 0.08, 0.97);
-const SECAO: Color = Color::new(0.10, 0.09, 0.12, 1.0);
-const VAZIA: Color = Color::new(0.13, 0.12, 0.15, 1.0);
-const BORDA: Color = Color::new(0.27, 0.23, 0.19, 1.0);
-const TEXTO: Color = Color::new(0.88, 0.87, 0.85, 1.0);
-const APAGADO: Color = Color::new(0.52, 0.51, 0.54, 1.0);
-const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
-const VERMELHO: Color = Color::new(0.88, 0.38, 0.32, 1.0);
+const FUNDO: Color = crate::hud_estilo::FUNDO;
+const SECAO: Color = crate::hud_estilo::FUNDO_ALTO;
+const VAZIA: Color = crate::hud_estilo::FUNDO_BAIXO;
+const BORDA: Color = crate::hud_estilo::BORDA;
+const TEXTO: Color = crate::hud_estilo::TEXTO;
+const APAGADO: Color = crate::hud_estilo::SUAVE;
+const VERDE: Color = crate::hud_estilo::VERDE;
+const VERMELHO: Color = crate::hud_estilo::VERMELHO;
 
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
@@ -395,6 +400,8 @@ struct Tela {
 /// Escala da bolsa (no celular ela cresce ate' encher a tela).
 fn escala() -> f32 {
     crate::hud_estilo::escala_do_painel(1080.0, 680.0)
+        .min((screen_width() - 16.0) / 1080.0)
+        .min((screen_height() - 16.0) / 680.0)
 }
 
 fn tela() -> Tela {
@@ -768,7 +775,7 @@ impl Bolsa {
         };
         ui::texto(r.x + u(14.0), r.y + u(44.0), &em_uso, 16, ui::OURO_CLARO);
 
-        let s = ((r.h - u(60.0) - u(170.0)) / u(7.0) - u(16.0))
+        let s = ((r.h - u(60.0) - u(170.0)) / 7.0 - u(16.0))
             .clamp(u(32.0), u(64.0))
             .floor();
         let passo = s + u(16.0);
@@ -779,7 +786,7 @@ impl Bolsa {
             xe + s + u(12.0),
             y0,
             xd - u(12.0) - (xe + s + u(12.0)),
-            u(7.0) * passo - u(16.0),
+            7.0 * passo - u(16.0),
         );
         self.desenha_retrato(retrato, vox, solido);
 
@@ -810,7 +817,7 @@ impl Bolsa {
         }
 
         // O poder e a ficha, embaixo do retrato.
-        let mut y = y0 + u(7.0) * passo + u(8.0);
+        let mut y = y0 + 7.0 * passo + u(8.0);
         if let Some(st) = &self.stats {
             ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "PODER", 14, APAGADO);
             ui::texto_centro(
@@ -828,10 +835,10 @@ impl Bolsa {
                 ("Mana", st.mp_max.to_string()),
                 ("Destreza", st.dex.to_string()),
                 ("Sabedoria", st.wis.to_string()),
-                ("Crítico", format!("{:.1}%", st.crit_chance * u(100.0))),
+                ("Crítico", format!("{:.1}%", st.crit_chance * 100.0)),
                 (
                     "Vel. ataque",
-                    format!("{:.0}%", st.attack_speed_mult * u(100.0)),
+                    format!("{:.0}%", st.attack_speed_mult * 100.0),
                 ),
             ];
             let col_w = (r.w - u(28.0)) * 0.5;
@@ -859,7 +866,7 @@ impl Bolsa {
             return;
         }
         // um fundo atras, e o chao em que ele pisa
-        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.09, 0.08, 0.11, 1.0));
+        draw_rectangle(r.x, r.y, r.w, r.h, crate::hud_estilo::FUNDO_BAIXO);
         let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
             ui::texto_centro(
                 r.x + r.w * 0.5,
@@ -887,6 +894,7 @@ impl Bolsa {
             fovy: 30f32.to_radians(),
             aspect: Some(vp.2 as f32 / vp.3 as f32),
             viewport: Some(vp),
+            render_target: render3d::alvo(),
             ..Default::default()
         };
         set_camera(&cam);
@@ -912,7 +920,7 @@ impl Bolsa {
         veste.cabelo = vox.rig(render3d::RIG_CHAPEU);
         render3d::desenha_rig(base, &pose, &veste, vox, None);
         gl_use_default_material();
-        set_default_camera();
+        render3d::camera_padrao();
         // a plataforma dourada do MIR4, em 2D por cima do pe'
         let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
         draw_ellipse_lines(
@@ -942,7 +950,7 @@ impl Bolsa {
     ) -> Option<Acao> {
         let mut acao = None;
         // abas
-        let aba_w = (r.w - u(3.0) * u(6.0)) / u(4.0);
+        let aba_w = (r.w - 3.0 * u(6.0)) / 4.0;
         for (k, (aba, rotulo)) in ABAS.iter().enumerate() {
             let a = Rect::new(r.x + k as f32 * (aba_w + u(6.0)), r.y, aba_w, u(32.0));
             let ativa = self.aba == *aba;
@@ -1077,7 +1085,7 @@ impl Bolsa {
         crate::hud_estilo::ret_arredondado(
             r,
             crate::hud_estilo::RAIO,
-            Color::new(0.05, 0.06, 0.09, 0.97),
+            crate::hud_estilo::FUNDO,
         );
         crate::hud_estilo::painel_destaque(r, cor);
         crate::hud_estilo::borda_arredondada(r, crate::hud_estilo::RAIO, 1.0, com_alfa(cor, 0.55));

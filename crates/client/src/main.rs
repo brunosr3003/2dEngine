@@ -38,6 +38,8 @@ mod gpu_estatica;
 mod habilidades;
 mod habilidades_input;
 mod hud;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod previa_hud;
 mod hud_estilo;
 mod hud_layout;
 mod icone_npc;
@@ -579,6 +581,11 @@ async fn main() {
             .unwrap_or_else(|| lembranca::carrega().idioma),
     );
 
+    #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+    if std::env::var("MMO_PREVIA_HUD").is_ok() {
+        previa_hud::abrir(&vox).await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_NOVIDADES").is_ok() {
         novidades::previa().await;
         return;

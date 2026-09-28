@@ -1,3 +1,9 @@
+28/09/2026 — Interface renovada
+
+O HUD ganhou painéis em ardósia escura, textos mais claros e detalhes dourados suaves. Botões, abas, inventário, barras de vida e mana e janelas compartilham um visual mais limpo. Os botões de combate e a moldura do minimapa têm menos contornos.
+
+Corrigidos textos sobrepostos na ficha do HUD e o encaixe da bolsa em telas menores. O custo de mana das habilidades fica legível sobre cenários claros. Os controles, atalhos e regras do jogo continuam iguais.
+
 27/09/2026 — Atualização obrigatória: protocolo 152
 
 Atualize o jogo para continuar entrando nos servidores. O dano mínimo que passa por qualquer defesa foi reajustado, e essa conta também é feita no cliente — versões antigas mostrariam números que o servidor não aplica.

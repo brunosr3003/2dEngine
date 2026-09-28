@@ -778,94 +778,81 @@ pub fn draw_ficha(
     vigor_max: i32,
     poder: Option<i32>,
 ) {
-    let r = z.ficha;
-    let k = r.w / 306.0;
-    estilo::painel(r);
-    let c = vec2(r.x + 38.0 * k, r.y + 40.0 * k);
-    estilo::botao_redondo(c, 28.0 * k, estilo::OURO, estilo::Estado::Normal, false);
-    estilo::arco(
-        c,
-        32.0 * k,
-        -2.8,
-        0.39,
-        1.5,
-        estilo::alfa(estilo::OURO, 0.35),
-    );
-    estilo::arco(
-        c,
-        32.0 * k,
-        0.35,
-        0.39,
-        1.5,
-        estilo::alfa(estilo::OURO, 0.35),
-    );
-    estilo::texto_centro_forte(c.x, c.y - 7.0 * k, "LV", fonte(10.0, k), estilo::SUAVE);
-    estilo::texto_centro_forte(
-        c.x,
-        c.y + 14.0 * k,
-        &nivel.to_string(),
-        fonte(25.0, k),
-        estilo::TEXTO,
-    );
-    estilo::texto_centro_forte(c.x, r.y + 88.0 * k, "PODER", fonte(9.0, k), estilo::SUAVE);
-    let poder = poder
-        .map(|v| crate::bolsa::milhar(v.max(0) as u64))
-        .unwrap_or_else(|| "—".into());
-    estilo::texto_centro_forte(
-        c.x,
-        r.y + 105.0 * k,
-        &poder,
-        fonte(if poder.len() > 7 { 12.0 } else { 16.0 }, k),
-        estilo::OURO,
-    );
-    let bx = r.x + 80.0 * k;
-    let bw = r.w - 94.0 * k;
-    estilo::texto_ajustado(nome, bx, r.y + 24.0 * k, bw, fonte(19.0, k), estilo::TEXTO);
-    let f_hp = (hp as f32 / hp_max.max(1) as f32).clamp(0.0, 1.0);
-    ficha.hp_rastro = if f_hp >= ficha.hp_rastro {
-        f_hp
-    } else {
-        (ficha.hp_rastro - dt * 0.35).max(f_hp)
-    };
-    let pulsa = if f_hp < 0.3 {
-        0.8 + 0.2 * (get_time() as f32 * 6.0).sin()
-    } else {
-        1.0
-    };
-    barra_de_recurso(
-        Rect::new(bx, r.y + 35.0 * k, bw, 17.0 * k),
-        f_hp,
-        ficha.hp_rastro,
-        Color::new(0.72 * pulsa, 0.17, 0.22, 1.0),
-        Color::new(1.0, 0.55, 0.55, 0.28),
-        Some(&format!("{hp} / {hp_max}")),
-    );
-    let mp = ficha.mp.unwrap_or(mp_max);
-    barra_de_recurso(
-        Rect::new(bx, r.y + 59.0 * k, bw, 12.0 * k),
-        mp as f32 / mp_max.max(1) as f32,
-        0.0,
-        Color::new(0.16, 0.40, 0.69, 1.0),
-        Color::new(0.55, 0.80, 1.0, 0.25),
-        Some(&format!("{mp} / {mp_max}")),
-    );
-    let vigor = ficha.vigor.unwrap_or(vigor_max);
-    barra_de_recurso(
-        Rect::new(bx, r.y + 79.0 * k, bw, 3.0 * k),
-        vigor as f32 / vigor_max.max(1) as f32,
-        0.0,
-        estilo::OURO,
-        estilo::OURO,
-        None,
-    );
-    estilo::texto(bx, r.y + 102.0 * k, "VIGOR", fonte(10.0, k), estilo::SUAVE);
-    estilo::texto(
-        bx + 46.0 * k,
-        r.y + 102.0 * k,
-        &format!("{vigor}/{vigor_max}"),
-        fonte(11.0, k),
-        estilo::OURO,
-    );
+    // These font sizes already include the layout scale; avoid scaling twice.
+    estilo::no_painel(1.0, || {
+        let r = z.ficha;
+        let k = r.w / 306.0;
+        estilo::painel(r);
+        let c = vec2(r.x + 38.0 * k, r.y + 40.0 * k);
+        estilo::botao_redondo(c, 28.0 * k, estilo::OURO, estilo::Estado::Normal, false);
+        estilo::texto_centro_forte(c.x, c.y - 7.0 * k, "LV", fonte(10.0, k), estilo::SUAVE);
+        estilo::texto_centro_forte(
+            c.x,
+            c.y + 14.0 * k,
+            &nivel.to_string(),
+            fonte(25.0, k),
+            estilo::TEXTO,
+        );
+        estilo::texto_centro_forte(c.x, r.y + 88.0 * k, "PODER", fonte(9.0, k), estilo::SUAVE);
+        let poder = poder
+            .map(|v| crate::bolsa::milhar(v.max(0) as u64))
+            .unwrap_or_else(|| "—".into());
+        estilo::texto_centro_forte(
+            c.x,
+            r.y + 105.0 * k,
+            &poder,
+            fonte(if poder.len() > 7 { 12.0 } else { 16.0 }, k),
+            estilo::OURO,
+        );
+        let bx = r.x + 80.0 * k;
+        let bw = r.w - 94.0 * k;
+        estilo::texto_ajustado(nome, bx, r.y + 24.0 * k, bw, fonte(19.0, k), estilo::TEXTO);
+        let f_hp = (hp as f32 / hp_max.max(1) as f32).clamp(0.0, 1.0);
+        ficha.hp_rastro = if f_hp >= ficha.hp_rastro {
+            f_hp
+        } else {
+            (ficha.hp_rastro - dt * 0.35).max(f_hp)
+        };
+        let pulsa = if f_hp < 0.3 {
+            0.8 + 0.2 * (get_time() as f32 * 6.0).sin()
+        } else {
+            1.0
+        };
+        barra_de_recurso(
+            Rect::new(bx, r.y + 35.0 * k, bw, 17.0 * k),
+            f_hp,
+            ficha.hp_rastro,
+            Color::new(0.72 * pulsa, 0.17, 0.22, 1.0),
+            Color::new(1.0, 0.55, 0.55, 0.28),
+            Some(&format!("{hp} / {hp_max}")),
+        );
+        let mp = ficha.mp.unwrap_or(mp_max);
+        barra_de_recurso(
+            Rect::new(bx, r.y + 59.0 * k, bw, 12.0 * k),
+            mp as f32 / mp_max.max(1) as f32,
+            0.0,
+            Color::new(0.16, 0.40, 0.69, 1.0),
+            Color::new(0.55, 0.80, 1.0, 0.25),
+            Some(&format!("{mp} / {mp_max}")),
+        );
+        let vigor = ficha.vigor.unwrap_or(vigor_max);
+        barra_de_recurso(
+            Rect::new(bx, r.y + 79.0 * k, bw, 3.0 * k),
+            vigor as f32 / vigor_max.max(1) as f32,
+            0.0,
+            estilo::OURO,
+            estilo::OURO,
+            None,
+        );
+        estilo::texto(bx, r.y + 102.0 * k, "VIGOR", fonte(10.0, k), estilo::SUAVE);
+        estilo::texto(
+            bx + 46.0 * k,
+            r.y + 102.0 * k,
+            &format!("{vigor}/{vigor_max}"),
+            fonte(11.0, k),
+            estilo::OURO,
+        );
+    });
 }
 
 /// Um toque alterna o modo; a cor e o texto mostram o estado confirmado pelo servidor.

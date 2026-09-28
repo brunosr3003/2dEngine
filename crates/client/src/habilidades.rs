@@ -451,17 +451,14 @@ impl Habilidades {
                 estilo::borda_arredondada(pilula, 8.5, 1.0, estilo::alfa(estilo::AUTO, 0.7));
                 estilo::texto_centro_forte(c.x, r.y + r.h + 3.0, "AUTO", 11, estilo::AUTO);
             }
-            estilo::texto_centro(
-                c.x,
-                r.y + r.h + 23.0,
-                &format!("{} MP", s.custo_mp),
-                13,
-                if mp < s.custo_mp {
-                    ORANGE
-                } else {
-                    estilo::SUAVE
-                },
-            );
+            let custo = format!("{} MP", s.custo_mp);
+            estilo::no_painel(1.0, || {
+                let w = estilo::medir(&custo, 11) + 12.0;
+                let legenda = Rect::new(c.x - w * 0.5, r.y + r.h + 7.0, w, 18.0);
+                estilo::ret_arredondado(legenda, 4.0, estilo::FUNDO);
+                estilo::texto_centro(c.x, legenda.y + 13.0, &custo, 11,
+                    if mp < s.custo_mp { ORANGE } else { estilo::SUAVE });
+            });
             let arrastando = self.arrasto.inicio.is_some_and(|(id, _)| id == s.id);
             if arrastando {
                 let (_, inicio) = self.arrasto.inicio.unwrap();
