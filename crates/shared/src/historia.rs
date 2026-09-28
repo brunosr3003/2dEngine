@@ -98,6 +98,7 @@ pub mod ponto {
             CAIS => "a ponta do cais",
             MIRANTE => "o mirante",
             COSTA => "a costa distante",
+            40..=44 => crate::planalto::NOMES[(p-40) as usize],
             _ => "o lugar",
         }
     }
@@ -559,20 +560,25 @@ pub const PASSOS: &[QuestDef] = &[
     falar(751, "O Capitão do Ermo", "No porto, o Capitão diz que o último farol fica no Planalto.", Papel::Estaleiro, 1_000, 12_000, item_id::GREATER_MANA, 3),
     viajar(752, "Rumo ao Planalto", "Embarque com o Capitão rumo ao Planalto, perto do olho da tempestade.", 3, 1_500, 18_000),
     // ═════════════ IV · O Coração da Tempestade (Planalto, 40–60) ═════════════
-    falar(753, "Ar rarefeito", "No Planalto o vento corta. Apresente-se ao Mestre de Missões.", Papel::Missoes, 1_000, 14_000, item_id::GREATER_HEAL, 4),
+    falar(753, "Porto do Último Abrigo", "Bem-vindo ao Planalto da Tormenta. O Mestre de Missões do Último Abrigo prepara a expedição ao farol.", Papel::Missoes, 1_000, 14_000, item_id::GREATER_HEAL, 4),
+    ir(855, "A estrada dos sentinelas", "Siga a estrada até as Encostas dos Sentinelas. Os campos de caça ficam ao lado do caminho.", crate::planalto::PONTO_BASE, 1_200, 90_000),
     cacar(754, "Sentinelas do Planalto", "Arqueiros vigiam os penhascos. Derrote 12.", alvo_de_mob(mob_kind::ARQUEIRO), 12, 1_400, 18_000, item_id::GREATER_HEAL),
     coletar(755, "Pedra do céu", "As pedras do Planalto guardam o trovão mais forte. Quebre 30.", 30, 1_400, 19_000, AZUL, 4),
     falar(756, "A última runa", "O Identificador lê a runa gravada na pedra do céu.", Papel::Identificador, 1_200, 18_000, item_id::GREATER_MANA, 4),
+    dungeon(856, "O sino dos ventos", "Recupere a runa do Mosteiro dos Ventos. Abra Dungeons e vença o Mosteiro; reúna um grupo se precisar.", 13, 2_000, 240_000, item_id::GREATER_HEAL, 8),
     nivel(757, "Alcance o nível 45", 45),
-    ir(758, "O farol do céu", "O último farol fica no ponto mais alto do arquipélago. Suba ao mirante.", ponto::MIRANTE, 1_800, 24_000),
+    ir(758, "O vale carregado", "Explore o Vale do Trovão. A tempestade carrega seus cristais por dez minutos a cada meia hora, alternando com a Forja Partida. O mapa marca o campo ativo.", crate::planalto::PONTO_BASE + 2, 1_800, 24_000),
     cacar(759, "A frota de Morgan", "A frota inteira dos Morganeers desembarcou. Derrote 50 inimigos.", 0, 50, 2_200, 30_000, item_id::GREATER_HEAL),
     criar(760, "Armadura para o olho", "Crie uma peça nova no Craft para enfrentar o olho da tempestade.", 1_800, 26_000),
     refinar(761, "Aço de trovão", "Tente refinar três vezes na Forja.", 3, 2_000, 28_000),
     nivel(762, "Alcance o nível 50", 50),
+    ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
+    dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
     falar(763, "Brinde aos faróis", "Três faróis voltaram a brilhar. O Taberneiro serve a rodada.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "O olho no horizonte", "Da ponta do cais se vê o olho da tempestade girando. Vá até lá.", ponto::CAIS, 2_000, 30_000),
     nivel(765, "Alcance o nível 55", 55),
     cacar(766, "As feras do vento", "As feras do olho da tempestade descem ao Planalto. Derrote 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
+    ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
     falar(767, "O que há além", "O Cartógrafo quer desenhar o que existe além da tempestade.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
     nivel(768, "Alcance o nível 60", 60),
     falar(769, "O juramento do Guardião", "Os quatro faróis brilham. O Mestre de Missões tem um juramento para você.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
@@ -935,6 +941,11 @@ pub fn ponto_da_historia(
 ) -> Option<glam::Vec2> {
     use glam::Vec2;
     let c = cidade?;
+    if (crate::planalto::PONTO_BASE..crate::planalto::PONTO_BASE+5).contains(&p) {
+        let nivel = (altura(c.x,c.y)/crate::terreno::BLOCO).round() as i32 - 1;
+        let plano = crate::planalto::Plano::novo(crate::terreno::Cidade::nova(c.x/crate::terreno::BLOCO,c.y/crate::terreno::BLOCO,nivel),None);
+        return Some(plano.regioes[(p-crate::planalto::PONTO_BASE) as usize].centro);
+    }
     match p {
         ponto::CIDADE => Some(c),
         ponto::PORTO => porto.map(|x| x.0),
@@ -1018,6 +1029,8 @@ mod testes {
                     "{} na faixa de tutorial",
                     d.id
                 );
+            } else if (855..=859).contains(&d.id) {
+                assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
             } else {
                 // Os de sempre seguem 700, 701, 702... com tutorial no meio.
                 assert_eq!(d.id, escrito, "passo fora de ordem");

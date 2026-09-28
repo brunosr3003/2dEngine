@@ -65,7 +65,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 155;
+pub const PROTOCOL_VERSION: u16 = 156;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

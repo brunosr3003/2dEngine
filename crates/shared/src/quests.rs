@@ -306,7 +306,7 @@ pub fn zona_da_missao(id: u16) -> Option<&'static str> {
         810..=833 => Some("ilha_gelo"),
         610..=619 => Some("ilha_gelo"),
         620..=629 | 840..=854 => Some("ilha_deserto"),
-        630..=639 => Some("ilha_planalto"),
+        630..=639 | 860..=864 => Some("ilha_planalto"),
         _ => None,
     }
 }
@@ -1291,6 +1291,11 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(636, "Porão do dia", "Conclua uma dungeon (Porão ou Gruta).", objective_kind::DUNGEON, 0, 1, 2_000, 4_000, 0, 0, 40, false, false),
     diaria(637, "Caçada do dia", "Derrote o chefe da Caçada.", objective_kind::RAID, 0, 1, 3_200, 6_400, 0, 0, 40, false, true),
     diaria(638, "Chefe do dia", "Derrote um chefe de campo da ilha (o mapa mostra onde).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 4_000, 40_000, item_id::GREATER_HEAL, 6, 48, true, false),
+
+    QuestDef { id: 860, title: "Contrato dos Sentinelas", desc: "Derrote 30 inimigos do Planalto e volte ao Mestre. Contrato disponível a cada dez minutos.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30, reward_cobre: 1_200, reward_xp: 60_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4, min_level: 40, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 861, title: "Pedra para o farol", desc: "Quebre 20 pedras do Planalto. O campo de tempestade marcado no mapa melhora a coleta quando está ativo.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20, reward_cobre: 1_000, reward_xp: 50_000, reward_item: item_id::na_cor(item_id::STEEL, 3), reward_item_qty: 8, min_level: 40, repeatable: true, cooldown_secs: 600, ..mestre() },
+    diaria(862, "O sino do Mosteiro", "Vença o Mosteiro dos Ventos.", objective_kind::DUNGEON, 13, 1, 3_000, 180_000, item_id::GREATER_HEAL, 8, 40, false, false),
+    diaria(863, "O fogo da Forja", "Vença a Forja do Titã.", objective_kind::DUNGEON, 14, 1, 4_000, 260_000, item_id::GREATER_HEAL, 10, 50, false, false),
 
     // ===================== BOARD (quadro da cidade) — DIÁRIAS =====================
     QuestDef { id: 101, title: "Madeireiro", desc: "O quadro pede madeira para as obras da cidade.",

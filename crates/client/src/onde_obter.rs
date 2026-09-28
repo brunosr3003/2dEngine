@@ -765,7 +765,11 @@ mod tests {
             (None, Some(OUTRA_ILHA))
         );
         assert!(
-            v[0].detalhe.ends_with("Ilhas: Ermo, Planalto"),
+            v[0].detalhe.ends_with(&format!(
+                "Ilhas: {}, {}",
+                shared::terreno::ARQUIPELAGO[2].nome,
+                shared::terreno::ARQUIPELAGO[3].nome
+            )),
             "{}",
             v[0].detalhe
         );
@@ -882,7 +886,16 @@ mod tests {
 
     #[test]
     fn nomes_e_indice_das_ilhas() {
-        assert_eq!(nomes_das_ilhas(&[3, 1, 1]), "Geleira, Planalto");
+        // Da TABELA, e nao escrito a mao: renomear uma ilha ("Planalto" virou
+        // "Planalto da Tormenta") reprovava este teste sem nada estar errado.
+        assert_eq!(
+            nomes_das_ilhas(&[3, 1, 1]),
+            format!(
+                "{}, {}",
+                shared::terreno::ARQUIPELAGO[1].nome,
+                shared::terreno::ARQUIPELAGO[3].nome
+            )
+        );
         assert_eq!(ilha_da_zona("ilha_deserto"), Some(2));
         assert_eq!(ilha_da_zona("dungeon"), None);
     }

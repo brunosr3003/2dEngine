@@ -1184,6 +1184,7 @@ pub(crate) fn zonas_comuns_da_ilha(
         sitios.retain(|s| !p.contem(*s, MOB_LONGE_DA_CIDADE_UN));
     }
     sitios.retain(|s| !perto_de_posto(*s, &postos));
+    if let Some(p) = ilha.planalto() { sitios.retain(|s| !p.sem_spawn(*s)); }
     let mut r = ZonasComuns {
         sitios: sitios.len(),
         centros: Vec::new(),
@@ -1301,6 +1302,7 @@ pub(crate) fn zonas_comuns_da_ilha(
         let faixa = (def.nivel.1 - def.nivel.0) as f32;
         let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
         let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
+        let (lv_min, lv_max) = ilha.planalto().map_or((lv_min, lv_max), |p| p.faixa(*c));
         if def.zona == "ilha_inicial" && lv_min <= 10 && !forte {
             teto = 30;
         }
@@ -1354,6 +1356,7 @@ pub(crate) fn zonas_comuns_da_ilha(
             let faixa = (def.nivel.1 - def.nivel.0) as f32;
             let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
             let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
+        let (lv_min, lv_max) = ilha.planalto().map_or((lv_min, lv_max), |p| p.faixa(*c));
             ocupados.extend(slots.iter().copied());
             let indice = r.centros.len();
             r.centros.push(*c);
@@ -3498,7 +3501,16 @@ impl GameWorld {
         // Zonas que vao adormecer agora — coleta primeiro pra evitar borrow
         // conflict ao despawnar mobs no ecs.
         let mut zones_to_sleep: Vec<u32> = Vec::new();
+        let campo_ativo = self.ilha.as_ref().and_then(|i| i.planalto())
+            .and_then(|p| p.campo((now_ms()/1000) as i64))
+            .map(|(i,_)| shared::planalto::ZONA_EVENTO + (i-2) as u32);
         for z in self.spawn_zones.iter_mut() {
+            if self.zona == shared::planalto::ZONA
+                && (shared::planalto::ZONA_EVENTO..shared::planalto::ZONA_EVENTO+2).contains(&z.id)
+                && campo_ativo != Some(z.id) {
+                if z.active { zones_to_sleep.push(z.id); }
+                continue;
+            }
             let near = {
                 // AABB com margem; se polygon existir, usa o bbox dele
                 // (mais apertado que origin/size em zonas irregulares).
@@ -5235,6 +5247,30 @@ impl GameWorld {
                 last_player_near_at: -1e9,
                 forte: z.forte,
             });
+        }
+
+        if let Some(pl) = ilha.planalto() {
+            for i in [2usize,3] {
+                let c = pl.centro_campo(i);
+                let mut slots = Vec::new();
+                for x in -3..=3 { for y in -3..=3 {
+                    let pos = c + Vec2::new(x as f32,y as f32)*7.0;
+                    let ix = (pos.x/BLOCO).round() as i32 + def.raio_blocos;
+                    let iz = (pos.y/BLOCO).round() as i32 + def.raio_blocos;
+                    if !pl.sem_spawn(pos) && ilha.sitio_plano(ix,iz,4)
+                        && zonas.iter().flat_map(|z| &z.slots).all(|s| s.pos.distance(pos)>4.0)
+                        && slots.len()<8 {
+                        slots.push(SpawnSlot { pos, occupant: None, respawn_at: 0.0 });
+                    }
+                } }
+                let n = slots.len() as u32;
+                let (mn,mx) = shared::planalto::NIVEIS[i];
+                zonas.push(ServerSpawnZone { id: shared::planalto::ZONA_EVENTO + (i-2) as u32,
+                    origin: c-Vec2::splat(32.0), size: Vec2::splat(64.0), respawn_delay_s: 45.0,
+                    quotas: Vec::new(), live: Vec::new(), respawn_queue: Vec::new(), polygon: None,
+                    level_range: Some((mn,mx,n)), level_range_live: 0, level_range_queue: Vec::new(),
+                    slots, active: false, last_player_near_at: -1e9, forte: false });
+            }
         }
 
         // ── 3. praias ────────────────────────────────────────────────────
@@ -14293,6 +14329,11 @@ impl GameWorld {
             return *v;
         }
         let v = self.ilha.as_ref().and_then(|ilha| {
+            if let Some(pl) = ilha.planalto() {
+                if let Some(i) = p.checked_sub(shared::planalto::PONTO_BASE).filter(|i| *i < 5) {
+                    return Some(pl.regioes[i as usize].centro);
+                }
+            }
             let porto = ilha.vila().porto.as_ref().map(|x| (x.centro, x.ponta));
             let cidade = ilha.cidade().map(|c| c.centro());
             let raio = ilha.raio_blocos as f32 * shared::terreno::BLOCO;
@@ -19222,6 +19263,7 @@ impl GameWorld {
     /// Devolve `false` quando a bolsa nao comporta o que saiu: nesse caso nada
     /// e' entregue, a reserva do no' nao anda e quem chama pausa a coleta.
     fn coletar_plantado(&mut self, sid: SessionId, c: shared::terreno::Coletavel) -> bool {
+        let tempestade = self.ilha.as_ref().and_then(|i| i.planalto()).is_some_and(|p| p.bonus_coleta(c.centro, (now_ms()/1000) as i64));
         let (limite, respawn_s, kind) = match c.tier {
             0 => (
                 shared::COLETAS_POR_ARVORE,
@@ -19263,7 +19305,7 @@ impl GameWorld {
             let qtd = shared::skills::energia_por_coleta(ilha);
             // ILHA MAGICA: a Ilhota da Energia dobra o que o veio entrega.
             let bonus = self.sessions.get(&sid).map_or(0.0, |s| shared::acessorios::bonus(&s.equipment).energia);
-            let qtd = (qtd as f32 * self.mult_magico(sid, shared::magica::Bonus::Coleta(5)) * (1.0 + bonus)).round()
+            let qtd = (qtd as f32 * self.mult_magico(sid, shared::magica::Bonus::Coleta(5)) * (1.0 + bonus) * if tempestade { 1.5 } else { 1.0 }).round()
                 as u64;
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.skill_progress.energia = s.skill_progress.energia.saturating_add(qtd);
@@ -19320,6 +19362,7 @@ impl GameWorld {
         let mult = shared::mult_de_sorte((now_ms() / 1000) as i64, sorte_ate)
             * self.mult_magico(sid, shared::magica::Bonus::Coleta(c.tier));
         let mut drops = crate::economy::farm_node_loot_com_sorte(kind, tier_material, seed, mult);
+        if tempestade { for (_, qtd) in &mut drops { *qtd = qtd.saturating_add(qtd.saturating_add(1) / 2); } }
         if c.tier == 4 {
             for (_, qtd) in &mut drops {
                 *qtd = qtd.saturating_add(qtd.saturating_add(1) / 2);
@@ -21707,5 +21750,43 @@ mod xp_grupo_tests {
         for (i, sid) in ids.iter().enumerate() {
             assert_eq!(w.sessions[sid].xp, if i < 2 { 55 } else { 0 }, "membro {i}");
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_planalto {
+    use super::*;
+    #[test]
+    fn planalto_tem_cinco_faixas_recursos_e_eventos() {
+        crate::economy::init_vazia_para_testes();
+        let def = &shared::terreno::ARQUIPELAGO[3];
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let pl = ilha.planalto().unwrap().clone();
+        let comuns = zonas_comuns_da_ilha(&ilha,def,ilha.porto().unwrap().centro);
+        for i in 0..5 {
+            assert!(comuns.zonas.iter().any(|z| pl.regiao(z.centro)==i), "região {i} sem caça");
+        }
+        for z in &comuns.zonas {
+            assert_eq!((z.lv_min,z.lv_max),pl.faixa(z.centro));
+            assert!(z.slots.iter().all(|p| !pl.sem_spawn(*p)), "mob na estrada");
+        }
+        for i in [2,3] {
+            let mut recursos = Vec::new();
+            ilha.coletaveis_em(pl.centro_campo(i),32.0,&mut recursos);
+            eprintln!("campo {i}: {} recursos",recursos.len());
+            assert!(recursos.iter().any(|r| if i==2 {r.tier==5} else {(1..=4).contains(&r.tier)}),"campo {i} sem recurso prometido");
+        }
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::planalto::ZONA.into();
+        let origem = ilha.porto().unwrap().centro;
+        w.ilha = Some(ilha);
+        w.povoar_ilha(origem);
+        for id in shared::planalto::ZONA_EVENTO..shared::planalto::ZONA_EVENTO+2 {
+            let z = w.spawn_zones.iter().find(|z| z.id==id).unwrap();
+            assert!(!z.slots.is_empty(), "campo {id} sem inimigos");
+            assert!(!z.active);
+        }
+        assert_eq!(w.vagas_de_chefe.len(),2);
+        for (ch,i) in w.vagas_de_chefe.iter().zip([2,4]) { assert_eq!(pl.regiao(ch.pos),i); }
     }
 }

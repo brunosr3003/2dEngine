@@ -329,6 +329,12 @@ impl GameWorld {
                 .map(|i| i.centro)
                 .take(chefes.len())
                 .collect()
+        } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
+            [2usize, 4].iter().filter_map(|i| {
+                let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
+                candidatos.iter().copied().filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
+                    .min_by(|a,b| a.distance_squared(alvo).total_cmp(&b.distance_squared(alvo)))
+            }).collect()
         } else {
             sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len())
         };

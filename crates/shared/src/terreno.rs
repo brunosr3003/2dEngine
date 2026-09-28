@@ -1476,7 +1476,8 @@ fn recurso_montanha_da_coluna(
     } else {
         MINERIO_LIMIAR
     };
-    if y < pico * limiar {
+    let campo_planalto = ger.planalto().is_some_and(|p| [2,3].iter().any(|i| p.centro_campo(*i).distance(glam::Vec2::new(bx as f32, bz as f32) * BLOCO) <= 32.0));
+    if y < pico * limiar && !campo_planalto {
         return None;
     }
 
@@ -1513,6 +1514,7 @@ fn recurso_montanha_da_coluna(
         || ger.recurso_da_ilhota(bx, bz).is_some_and(|t| t == 0 || t == 5)) {
         return None;
     }
+    if ger.planalto().is_some() && !campo_planalto && meu % 4 != 0 { return None; }
     let g0 = meu;
 
     // ── chao limpo ──────────────────────────────────────────────────────
@@ -1535,7 +1537,7 @@ fn recurso_montanha_da_coluna(
     //
     // A ENERGIA nao passa por aqui: exigir cume dela seria pedir um campo
     // inteiro de picos, e campo de Energia e' clareira, nao cordilheira.
-    if !energia && !ger.cume_de_minerio(bx, bz, topo) {
+    if !energia && !campo_planalto && !ger.cume_de_minerio(bx, bz, topo) {
         return None;
     }
 
@@ -1758,6 +1760,7 @@ pub struct Gerador {
     /// Casas, props e NPCs. Calculada na primeira vez que alguem pede — o
     /// cliente e o servidor pedem, o `terreno --varre` nao.
     vila: std::sync::OnceLock<crate::vila::Vila>,
+    planalto: std::sync::OnceLock<Option<crate::planalto::Plano>>,
     /// Zona de relevo DESENHADO, se for uma. `None` = o Perlin de sempre.
     desenhado: Option<RelevoDesenhado>,
 }
@@ -2238,6 +2241,7 @@ impl Gerador {
             porto: None,
             rumo_do_mar: None,
             vila: std::sync::OnceLock::new(),
+            planalto: std::sync::OnceLock::new(),
             desenhado: None,
         };
         g.cidade = g.achar_cidade();
@@ -2277,10 +2281,60 @@ impl Gerador {
             porto: None,
             rumo_do_mar: def.rumo_do_porto(),
             vila: std::sync::OnceLock::new(),
+            planalto: std::sync::OnceLock::new(),
             desenhado: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
+        // O ULTIMO ABRIGO: a cidade do Planalto anda pra perto do porto, pra o
+        // hub ser a chegada e nao uma caminhada.
+        //
+        // O NIVEL sai do chao de verdade, e nao de `porto.nivel + 8`. Com o
+        // palpite, `Cidade::aplainar` desistia da maioria das colunas — ela
+        // recusa aplainar onde o relevo cru esta' a mais de `Cidade::MORRO` do
+        // nivel pedido —, e a praca saiu com 69% do plato no lugar e quatro
+        // NPCs a menos que as outras ilhas. Pelo chao real ela aplaina como em
+        // qualquer ilha.
+        if def.zona == crate::planalto::ZONA {
+            if let Some(p) = g.porto {
+                // O sitio e' PROCURADO perto do porto, com o mesmo criterio das
+                // outras ilhas (`avaliar_sitio`: variancia do chao, sem agua no
+                // plato), e nao fixado a 180 u no rumo da terra.
+                //
+                // Com o ponto fixo a praca caia onde calhasse: 90% do plato no
+                // nivel contra 100% nas outras tres, e quatro NPCs a menos,
+                // porque `Cidade::aplainar` desiste das colunas a mais de
+                // `Cidade::MORRO` do nivel. Procurar custa ~50 avaliacoes, uma
+                // vez, no boot.
+                let rumo = (-p.centro).normalize_or_zero();
+                let mut melhor: Option<(f32, Cidade)> = None;
+                for passo in 0..6 {
+                    let dist = 140.0 + passo as f32 * 20.0;
+                    for k in -4..=4 {
+                        let a = k as f32 * 0.17;
+                        let dir = glam::Vec2::new(
+                            rumo.x * a.cos() - rumo.y * a.sin(),
+                            rumo.x * a.sin() + rumo.y * a.cos(),
+                        );
+                        let c = p.centro + dir * dist;
+                        let (cx, cz) = (c.x / BLOCO, c.y / BLOCO);
+                        let Some((var, nivel)) = g.avaliar_sitio(cx, cz) else {
+                            continue;
+                        };
+                        // Entre dois sitios bons, o mais perto do cais.
+                        let nota = var + dist * 0.01;
+                        if melhor.is_none_or(|(n, _)| nota < n) {
+                            melhor = Some((nota, Cidade::nova(cx, cz, nivel)));
+                        }
+                    }
+                }
+                // Nenhum serve: fica a cidade que `achar_cidade` escolheu.
+                if let Some((_, c)) = melhor {
+                    g.cidade = Some(c);
+                    g.planalto = std::sync::OnceLock::new();
+                }
+            }
+        }
         g
     }
 
@@ -2309,6 +2363,7 @@ impl Gerador {
             Some(RelevoDesenhado::Colonia) => crate::colonia::bloco_da_coluna(bx, bz),
             _ => self.bloco_cru(bx, bz),
         };
+        let cru = self.planalto().map_or(cru, |p| p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru));
         let b = match &self.cidade {
             Some(c) => c.aplainar(bx, bz, cru),
             None => cru,
@@ -2317,6 +2372,13 @@ impl Gerador {
             Some(p) => p.aplainar(bx, bz, b),
             None => b,
         }
+    }
+
+    pub fn planalto(&self) -> Option<&crate::planalto::Plano> {
+        self.planalto.get_or_init(|| {
+            (self.semente == ARQUIPELAGO[3].semente && self.raio_blocos == ARQUIPELAGO[3].raio_blocos)
+                .then(|| self.cidade.map(|c| crate::planalto::Plano::novo(c, self.porto))).flatten()
+        }).as_ref()
     }
 
     /// A cidade desta ilha, se ela coube.
@@ -2338,6 +2400,16 @@ impl Gerador {
     /// grama cuidada. `None` = o chao natural. So' cor — a altura nao muda,
     /// entao o cache de relevo nao precisa de versao nova.
     pub fn pintura_do_chao(&self, bx: i32, bz: i32) -> Option<Material> {
+        // A ESTRADA e' a unica coisa pintada no Planalto, e e' pintada porque e'
+        // FEITA: pedra posta por gente. O resto do chao continua do bioma.
+        //
+        // Havia aqui uma segunda regra que pintava tudo num raio de 94 u de cada
+        // uma das cinco regioes de `Rocha`, com uma tira de `Terra` a cada setima
+        // celula de 8x10 u. Nas capturas isso virou cinco patios cinzentos com um
+        // xadrez marrom por cima, e quebrava a regra que docs/MUNDO.md registra:
+        // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
+        // apaga a unica leitura de relevo que o jogo da' sem texto.
+        if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
         if !self.na_cidade(bx, bz) {
             return None;
         }
@@ -2353,7 +2425,7 @@ impl Gerador {
     /// nada nasce ali.
     pub fn na_cidade(&self, bx: i32, bz: i32) -> bool {
         let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        self.cidade
+        self.planalto().is_some_and(|pl| pl.sem_obstaculo(p)) || self.cidade
             .is_some_and(|c| c.distancia(p) < c.raio + Cidade::FOLGA_DO_MATO)
             || self
                 .porto
@@ -2660,6 +2732,11 @@ impl Gerador {
     /// responde por si: a grade global tem celula de 300 blocos e foi feita
     /// pra ilha de 1,6 km, e numa de 280 u ela cai onde cai.
     pub fn campo_de_energia(&self, bx: i32, bz: i32) -> bool {
+        if let Some(p) = self.planalto() {
+            let q = glam::Vec2::new(bx as f32,bz as f32) * BLOCO;
+            if p.centro_campo(2).distance(q) <= 32.0 { return true; }
+            if p.centro_campo(3).distance(q) <= 32.0 { return false; }
+        }
         if self.desenhado == Some(RelevoDesenhado::Magica) {
             return crate::magica::no_campo_de_energia(bx, bz);
         }
@@ -2840,6 +2917,7 @@ const MAGICA: [u8; 4] = *b"TALT";
 const VERSAO: u16 = 8;
 
 impl Ilha {
+    pub fn planalto(&self) -> Option<&crate::planalto::Plano> { self.ger.planalto() }
     pub fn gerar(semente: i32, raio_blocos: i32, bioma: Bioma, escala_altura: f32) -> Self {
         let p = bioma.perfil();
         Self::com_terraco(
@@ -2985,7 +3063,8 @@ impl Ilha {
             return Self::da_ilha(def);
         }
 
-        let caminho = format!("{dir}/{}-{}.alt", def.semente, def.raio_blocos);
+        let revisao = if def.zona == crate::planalto::ZONA { format!("-planalto{}", crate::planalto::REVISAO) } else { String::new() };
+        let caminho = format!("{dir}/{}-{}{revisao}.alt", def.semente, def.raio_blocos);
         if let Some(i) = Self::carregar_da_ilha(&caminho, def) {
             return i;
         }
@@ -4854,7 +4933,7 @@ pub const ARQUIPELAGO: [DefIlha; 4] = [
     },
     DefIlha {
         zona: "ilha_planalto",
-        nome: "Planalto",
+        nome: "Planalto da Tormenta",
         semente: 0x3011_7A04,
         raio_blocos: 1600,
         bioma: Bioma::Montanha,

@@ -383,6 +383,7 @@ impl Filtros {
 pub enum Entrada {
     /// Ponto qualquer: viagem.
     Viajar(Vec2),
+    Dungeon(u16),
     /// Zona de bicho ou regiao de recurso (ou "Ir" do painel): ir e fazer.
     Ir(Alvo),
 }
@@ -2047,6 +2048,10 @@ impl Mapa {
                     self.zoom_do_mapa(true);
                     return None;
                 }
+                if let Some((id,_)) = self.botoes_dungeon(r,eu).into_iter().find(|(_,b)| b.contains(m)) {
+                    self.aberto = false;
+                    return Some(Entrada::Dungeon(id));
+                }
                 let foco = self.foco_do_zoom(eu);
                 if let Some(a) = self
                     .marcador_sob(m, r, foco)
@@ -2386,6 +2391,21 @@ impl Mapa {
 
     /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
     /// painel. `nivel` escolhe a zona certa pra cada bicho.
+    fn botoes_dungeon(&self, r: Rect, eu: Option<Vec2>) -> Vec<(u16,Rect)> {
+        if self.no_mundo { return Vec::new(); }
+        let Some(pl) = self.ger.as_ref().and_then(|g| g.planalto()) else { return Vec::new(); };
+        let raio = self.raio()/self.zoom_grande;
+        let foco = self.foco_do_zoom(eu);
+        [(1,13),(3,14)].into_iter().filter_map(|(i,id)| {
+            let c = pl.regioes[i].centro;
+            let q = para_tela(vec2(c.x,c.y)-foco,r,raio);
+            // Abaixo do ponto e mais estreito: em cima ficam os rotulos em
+            // escada, e o botao largo tapava o nome da regiao vizinha.
+            let b = Rect::new(q.x-u(37.0),q.y+u(10.0),u(74.0),u(19.0));
+            (r.contains(vec2(b.x,b.y)) && r.contains(vec2(b.x+b.w,b.y+b.h))).then_some((id,b))
+        }).collect()
+    }
+
     pub fn desenha_grande(
         &mut self,
         world: &World,
@@ -2404,8 +2424,11 @@ impl Mapa {
                 self.desenha_abas(r);
                 return self.lateral_do_mundo(r, mundo, agora_unix);
             }
-            self.desenha_grande_mapa(world);
+            self.desenha_grande_mapa(world, agora_unix);
             self.desenha_abas(r);
+            for (_,b) in self.botoes_dungeon(r,world.self_pos()) {
+                estilo::botao(b,"Dungeon",estilo::estado_de(b,false,false),false);
+            }
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.contains(m) {
@@ -2508,7 +2531,7 @@ impl Mapa {
         None
     }
 
-    fn desenha_grande_mapa(&self, world: &World) {
+    fn desenha_grande_mapa(&self, world: &World, agora_unix: i64) {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let r = Self::grande_rect();
@@ -2519,21 +2542,26 @@ impl Mapa {
             r.h + u(46.0),
         ));
         let nome = self.def.map_or(self.nome_sem_def.as_str(), |d| d.nome);
+        // DEPOIS das abas, e nao em `r.x`: o titulo nascia debaixo de "Ilha" e
+        // "Mundo", desenhadas no mesmo canto. Com nome curto dava pra nao
+        // reparar; "Planalto da Tormenta" botou o defeito na tela.
+        let (_, mundo) = Self::abas_rect(r);
         estilo::texto_forte(
-            r.x,
+            mundo.x + mundo.w + u(12.0),
             r.y - u(14.0),
-            &format!("Mapa · {nome}"),
+            nome,
             17,
             estilo::OURO,
         );
+        // A DICA CEDE O LUGAR AO NOME. Ela e' alinhada a' direita e o titulo
+        // cresce pra direita; com nome longo os dois se escreviam por cima. O
+        // nome da ilha diz onde voce esta' e a dica repete um atalho — quando
+        // so' um cabe, fica o nome.
         let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
-        estilo::texto(
-            r.x + r.w - u(36.0) - estilo::medir(dica, 13),
-            r.y - u(14.0),
-            dica,
-            13,
-            estilo::SUAVE,
-        );
+        let x_dica = r.x + r.w - u(36.0) - estilo::medir(dica, 13);
+        if x_dica > mundo.x + mundo.w + u(12.0) + estilo::medir(nome, 17) + u(10.0) {
+            estilo::texto(x_dica, r.y - u(14.0), dica, 13, estilo::SUAVE);
+        }
         let f = Self::fechar_rect(r);
         if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
             estilo::texto_centro(f.x + f.w * 0.5, f.y + u(19.0), "x", 18, estilo::TEXTO);
@@ -2597,6 +2625,36 @@ impl Mapa {
         // O recorte fecha ANTES dos botões de zoom, que ficam por cima do
         // desenho de propósito e têm que continuar aparecendo.
         crate::rolagem::recortar(Some(r));
+        if let Some(pl) = self.ger.as_ref().and_then(|g| g.planalto()) {
+            for e in &pl.estradas {
+                let a = ponto(vec2(e.a.x,e.a.y)); let b = ponto(vec2(e.b.x,e.b.y));
+                draw_line(a.x,a.y,b.x,b.y,u(3.0),Color::new(0.78,0.68,0.46,0.85));
+            }
+            // EM ESCADA, e nao todos na linha do proprio ponto: as cinco
+            // regioes ficam a ~100 u uma da outra, e no zoom de ilha inteira os
+            // cinco nomes caiam uns por cima dos outros — e por cima do Abrigo e
+            // do Porto. O degrau por indice da' linha propria a cada um mesmo
+            // quando dois pontos coincidem, e a guia liga o nome ao ponto dele.
+            for (i, regiao) in pl.regioes.iter().enumerate() {
+                let q = ponto(vec2(regiao.centro.x,regiao.centro.y));
+                let (a,b) = shared::planalto::NIVEIS[i];
+                let nome = format!("{} · {}–{}",shared::planalto::NOMES[i],a,b);
+                let dy = (i as f32 - 2.0) * u(12.0) - u(10.0);
+                draw_circle(q.x,q.y,u(4.0),estilo::OURO);
+                draw_line(q.x,q.y,q.x,q.y+dy+u(3.0),1.0,Color::new(1.0,0.78,0.35,0.45));
+                estilo::texto_centro(q.x+1.0,q.y+dy+1.0,&nome,12,BLACK);
+                estilo::texto_centro(q.x,q.y+dy,&nome,12,estilo::OURO);
+            }
+            if let Some(g) = &self.ger { if let Some(c) = g.cidade() {
+                let q = ponto(vec2(c.centro().x,c.centro().y));
+                estilo::texto_centro(q.x,q.y-u(22.0),"Último Abrigo",13,estilo::OURO);
+            } }
+            if let Some((_,c)) = pl.campo(agora_unix) {
+                let q = ponto(vec2(c.x,c.y));
+                draw_circle_lines(q.x,q.y,32.0*escala,u(2.0),SKYBLUE);
+                estilo::texto_centro(q.x,q.y+u(22.0),"Tempestade · coleta +50%",12,SKYBLUE);
+            }
+        }
         if let Some(info) = &self.info {
             // Chefes sempre visiveis: sao o que se procura no mapa.
             for ch in &info.chefes {

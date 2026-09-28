@@ -432,6 +432,20 @@ impl Terreno {
             crate::gpu_estatica::Programa::Solido { recorte, recorte_z },
             visiveis.iter().flat_map(|p| p.malhas.iter()),
         );
+        if let Some(pl) = self.ger.planalto() {
+            let agora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0,|d| d.as_secs() as i64);
+            if let Some((_,c)) = pl.campo(agora) {
+                if vec2(c.x-cam.target.x,c.y-cam.target.z).length()<180.0 {
+                    for i in 0..64 {
+                        let angulo = i as f32*std::f32::consts::TAU/64.0;
+                        let proximo = (i+1) as f32*std::f32::consts::TAU/64.0;
+                        let a = vec2(c.x,c.y)+vec2(angulo.cos(),angulo.sin())*32.0;
+                        let b = vec2(c.x,c.y)+vec2(proximo.cos(),proximo.sin())*32.0;
+                        draw_line_3d(vec3(a.x,self.ger.altura(a.x,a.y)+0.15,a.y),vec3(b.x,self.ger.altura(b.x,b.y)+0.15,b.y),SKYBLUE);
+                    }
+                }
+            }
+        }
         visiveis.len()
     }
 
@@ -1264,6 +1278,93 @@ pub async fn previa_das_ilhas_magicas() {
             next_frame().await;
         }
     }
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa_do_planalto() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-planalto".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let def = &shared::terreno::ARQUIPELAGO[3];
+    let g = shared::terreno::Gerador::da_ilha(def);
+    let pl = g.planalto().unwrap();
+    let mut t = Terreno::novo(def);
+    let mut casas = crate::construcoes::Construcoes::para(Some(def));
+    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    let solido = crate::render3d::material_solido();
+    let vistas = std::iter::once(("abrigo".to_string(),g.cidade().unwrap().centro()))
+        .chain(pl.regioes.iter().enumerate().map(|(i,r)|(format!("regiao-{i}"),r.centro)));
+    for (nome,c) in vistas {
+        let centro = vec2(c.x,c.y);
+        let distancia = 150.0;
+        let chao = g.altura(c.x,c.y);
+        t.atualiza(centro, 16, 2000);
+        for _ in 0..3 {
+            let cam = Camera3D {
+                position: vec3(
+                    centro.x + distancia * 0.45,
+                    chao + distancia * 0.65,
+                    centro.y + distancia,
+                ),
+                target: vec3(centro.x, chao, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            casas.desenha(&cam,None,Vec3::ZERO,0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+    // O MAPA VAI PRO MESMO RENDER TARGET, e nao pra tela.
+    //
+    // Antes isto fazia `define_alvo(None)` + `set_default_camera()` e capturava
+    // com `get_screen_data()` — e o cliente morria em SIGSEGV no fim da previa,
+    // depois de ja' ter gravado as seis vistas 3D. Sob llvmpipe o framebuffer
+    // padrao nao se le' de volta (o mesmo motivo que deixa a captura em branco);
+    // `camera_padrao` respeita o alvo, entao o 2D do mapa cai na textura e sai
+    // por `get_texture_data`, como as outras.
+    let mut mapa = crate::mapa::Mapa::para(Some(def));
+    mapa.abrir();
+    let mundo = crate::world::World::default();
+    for _ in 0..120 {
+        mapa.acompanhar();
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 24, 34, 255));
+        mapa.desenha_grande(&mundo, 40, &crate::mundo_ui::Mundo::default(), 0);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    crate::render3d::camera_padrao();
+    clear_background(Color::from_rgba(18, 24, 34, 255));
+    mapa.desenha_grande(&mundo, 40, &crate::mundo_ui::Mundo::default(), 0);
+    unsafe { get_internal_gl().flush() };
+    rt.texture
+        .get_texture_data()
+        .export_png(&format!("{saida}/mapa.png"));
+    crate::render3d::define_alvo(None);
+
 }
 
 /// Maior desnivel entre a coluna e os quatro vizinhos.

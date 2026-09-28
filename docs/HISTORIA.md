@@ -220,3 +220,9 @@ um anel dourado em volta dele e **trava o toque fora dali**.
   de inserção tem o marcador realinhado ao passo em andamento no login
   (`quests::garantir_historia`). Esse personagem não vê os tutoriais que ficaram
   para trás.
+
+## Planalto da Tormenta (28/09/2026)
+
+O capítulo IV recebeu os passos 855–859 entre os ids existentes: visita às
+Encostas, vitória no Mosteiro, visita à Forja, vitória na Forja do Titã e
+chegada ao farol. O 758 agora aponta ao Vale do Trovão. Veja [PLANALTO](PLANALTO.md).

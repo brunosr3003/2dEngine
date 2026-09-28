@@ -124,6 +124,17 @@ pub fn montar(ger: &Gerador) -> Vila {
         montar_porto(ger, &p, &mut vila);
     }
     montar_postos(ger, &mut vila);
+    if let Some(pl) = ger.planalto() {
+        for (i,r) in pl.regioes.iter().enumerate() {
+            let tipo = match i { 4 => TipoProp::FarolTormenta, 2 => TipoProp::CristalTormenta, _ => TipoProp::RuinaTormenta };
+            let p = r.centro + Vec2::new(22.0,-22.0);
+            vila.props.push(PropPosto { tipo, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+            if i == 1 || i == 3 {
+                let p = r.centro + Vec2::new(-10.0,-12.0);
+                vila.props.push(PropPosto { tipo: TipoProp::Portal, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+            }
+        }
+    }
     vila
 }
 
@@ -742,6 +753,9 @@ pub fn prop_barra(t: TipoProp) -> bool {
             | TipoProp::Barraca
             | TipoProp::Carroca
             | TipoProp::Portal
+            | TipoProp::FarolTormenta
+            | TipoProp::RuinaTormenta
+            | TipoProp::CristalTormenta
     )
 }
 

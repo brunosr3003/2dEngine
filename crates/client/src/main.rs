@@ -632,6 +632,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PLANALTO").is_ok() {
+        terreno::previa_do_planalto().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_ILHAS_MAGICAS").is_ok() {
         terreno::previa_das_ilhas_magicas().await;
         return;
@@ -1217,6 +1222,10 @@ impl Jogo {
                     Some(mapa::Entrada::Viajar(destino)) => {
                         self.iniciar_viagem(destino);
                         self.tutorial(shared::quests::tutorial::MAPA_IR);
+                    }
+                    Some(mapa::Entrada::Dungeon(id)) => {
+                        self.mapa.aberto = false;
+                        for pedido in self.dungeon.abrir_em(id) { self.envia(pedido); }
                     }
                     Some(mapa::Entrada::Ir(alvo)) => {
                         self.iniciar_ir_para(alvo);
@@ -6328,6 +6337,10 @@ impl Jogo {
             .mapa
             .desenha_grande(&self.world, nivel, &self.mundo, agora_unix)
         {
+            Some(mapa::Entrada::Dungeon(id)) => {
+                self.mapa.aberto = false;
+                for pedido in self.dungeon.abrir_em(id) { self.envia(pedido); }
+            }
             Some(mapa::Entrada::Ir(alvo)) => {
                 self.iniciar_ir_para(alvo);
                 self.tutorial(shared::quests::tutorial::MAPA_IR);

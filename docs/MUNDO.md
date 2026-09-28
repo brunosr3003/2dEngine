@@ -647,3 +647,9 @@ novos grupos em fortes. Ativação e respawn continuam por proximidade.
 Cidade, porto, cabanas e terra desconectada continuam excluídos. Ilhas
 mágicas e arenas mantêm sua distribuição própria. Na ilha inicial, o teste
 de cobertura verifica 12.256 sítios e gerou 201 grupos pequenos adicionais.
+
+## Planalto da Tormenta (28/09/2026)
+
+A quarta ilha tem terreno e progressão por regiões desenhadas, com porto e cidade
+próximos, estradas e campos de tempestade. Sua população usa a região mais próxima,
+em vez da distância ao desembarque. Detalhes em [PLANALTO](PLANALTO.md).

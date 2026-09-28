@@ -1,3 +1,11 @@
+28/09/2026 — Planalto da Tormenta: níveis 40–60 (protocolo 156)
+
+Atualize o jogo para explorar o Planalto da Tormenta, a quarta ilha. O porto do Último Abrigo conecta-se às Encostas dos Sentinelas, Mosteiro dos Ventos, Vale do Trovão, Forja Partida e Olho da Tempestade por estradas com rampas e um atalho. O mapa mostra nomes, níveis e acesso às duas dungeons.
+
+Novos passos da história levam pelas regiões e pelas dungeons Mosteiro dos Ventos e Forja do Titã. O Mestre oferece dois contratos repetíveis e duas diárias de dungeon. O Owlbear Primevo guarda o Vale; o Arquimago da Tormenta guarda a região do farol.
+
+A cada meia hora, uma tempestade de dez minutos alterna entre os cristais do Vale e o minério da Forja. O campo marcado ganha inimigos extras e rende 50% a mais na coleta. As caçadas comuns continuam disponíveis fora dele. Os inimigos nascem afastados das estradas.
+
 28/09/2026 — Atualização obrigatória: protocolo 155
 
 Atualize o jogo para continuar entrando nos servidores.

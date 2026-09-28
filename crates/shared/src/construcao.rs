@@ -367,6 +367,9 @@ pub enum TipoProp {
     Rede,
     Boia,
     Barquinho,
+    FarolTormenta,
+    RuinaTormenta,
+    CristalTormenta,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -538,6 +541,7 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::Rede => rede(),
         TipoProp::Boia => boia(),
         TipoProp::Barquinho => barquinho(seed),
+        TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => marco_tormenta(tipo),
     }
 }
 
@@ -2103,4 +2107,29 @@ mod testes {
             assert_eq!(quarto_para(frente_de(q)), q);
         }
     }
+}
+
+/// Silhuetas do Planalto, no mesmo pipeline voxel e colisão das construções.
+fn marco_tormenta(tipo: TipoProp) -> Construcao {
+    let (r, h) = match tipo { TipoProp::FarolTormenta => (7, 80), TipoProp::RuinaTormenta => (10, 24), _ => (4, 20) };
+    let mut v = Voxels::novo(-r,0,-r,2*r+1,h+1,2*r+1);
+    for y in 0..=h { for x in -r..=r { for z in -r..=r {
+        let borda = x.abs().max(z.abs());
+        let bloco = match tipo {
+            TipoProp::FarolTormenta if y>=h-13 && y<h-3 && borda<=r-2 && x.abs()+z.abs()<=r+1 => BlocoCasa::Lume,
+            TipoProp::FarolTormenta if (y==h-14 || y==h-3 || y==0 || y==1) && x.abs()+z.abs()<=r+3 => BlocoCasa::PedraBase,
+            TipoProp::FarolTormenta if y>=h-2 && borda<=(h-y+1).max(1) => BlocoCasa::PinturaAzul,
+            TipoProp::FarolTormenta if y<h-14 && x.abs()+z.abs()<=r+1 && borda<=r-1
+                && (borda>=r-3 || y<3)
+                && !(z<0 && x.abs()<=1 && ((y>8 && y<15)||(y>29 && y<36)||(y>50 && y<57))) =>
+                    if y%12<=1 { BlocoCasa::PedraBase } else { BlocoCasa::PedraNegra },
+            TipoProp::RuinaTormenta if borda >= r-1 && y < h-(x+z).abs()%8 && !(z == -r && x.abs()<4 && y<15) => BlocoCasa::PedraNegra,
+            TipoProp::CristalTormenta if x.abs()+z.abs() <= ((h-y)/4).min(r) => BlocoCasa::PinturaAzul,
+            _ => BlocoCasa::Ar,
+        };
+        v.set(x,y,z,bloco);
+    } } }
+    let mut c = prop(tipo,v);
+    c.escala = 0.5;
+    c
 }

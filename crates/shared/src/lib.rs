@@ -36,6 +36,7 @@ pub mod quests;
 pub mod receitas;
 pub mod skills;
 pub mod terreno;
+pub mod planalto;
 pub mod viagem;
 pub mod vila;
 pub mod world_gen;
