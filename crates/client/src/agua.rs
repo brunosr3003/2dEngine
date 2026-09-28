@@ -418,6 +418,7 @@ pub(crate) fn params_agua() -> PipelineParams {
 /// Desenha o mar (horizonte e superficie dos pedacos visiveis). Troca o
 /// material: quem chama volta o dele depois.
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
+    if t.sem_oceano() { return; }
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
     let ondas = if ONDAS { 1.0f32 } else { 0.0 };
     // O anel acompanha o alvo da camera, refeito so' quando ele anda 32 u.

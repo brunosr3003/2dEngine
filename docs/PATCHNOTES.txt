@@ -1,3 +1,23 @@
+27/09/2026 — Ilhas Mágicas no céu
+
+As ilhotas agora flutuam acima das nuvens, com bases de rocha suspensas, fragmentos no ar e pontes sobre o vazio. O mar deu lugar ao céu.
+
+As ilhotas da Experiência, do Ouro e do Espólio ficaram sem pedras de mineração e sem pedras decorativas, mantendo monstros, flores e vegetação. A ilhota da Pedra continua com seus recursos.
+
+Corrigido o chão invisível fora das ilhas: o servidor usava um contorno antigo em cache, diferente do desenho atual. As bordas agora acompanham o terreno correto e empurrões também respeitam o vazio. Os caminhos entre ilhotas continuam disponíveis. Protocolo 151: atualize o cliente para entrar.
+
+27/09/2026 — Atualização obrigatória: protocolo 150
+
+Atualize o jogo para continuar entrando nos servidores. Esta versão inclui o novo visual das Ilhas Mágicas e a correção do clique que fechava o menu logo após abrir.
+
+27/09/2026 — Ilhas Mágicas renovadas e menu corrigido
+
+As Ilhas Mágicas ganharam campos verdes mais suaves, caminhos de pedra clara ligados às pontes e pequenos detalhes de cor próprios de cada ilhota. A iluminação das encostas ficou mais leve e o chão perdeu o excesso de manchas e pontilhado, deixando recursos e personagens mais fáceis de distinguir.
+
+O desenho é novo, mas as alturas, passagens, recursos, inimigos, bônus e tempo de acesso continuam iguais.
+
+O menu também deixou de fechar imediatamente em alguns cliques ou toques no botão de abrir. O toque que abre o painel agora precisa terminar antes de acionar os botões internos.
+
 27/09/2026 — O jogo em inglês
 
 Idioma no menu

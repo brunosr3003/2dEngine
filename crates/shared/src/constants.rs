@@ -44,7 +44,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// conta que o cliente faz sozinho nas previas de craft e Forja (escala da
 /// peca e refino so' percentual). Cliente 148 mostraria numeros que o
 /// servidor nao aplica; o dono pediu pra obrigar a atualizacao.
-pub const PROTOCOL_VERSION: u16 = 149;
+pub const PROTOCOL_VERSION: u16 = 151;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

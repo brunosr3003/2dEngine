@@ -111,6 +111,7 @@ mod render3d;
 mod rig;
 mod telegrafico;
 mod terreno;
+mod ilhas_aereas;
 mod toque;
 mod ui;
 mod vegetacao;
@@ -613,6 +614,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_FICHA").is_ok() {
         ficha_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ILHAS_MAGICAS").is_ok() {
+        terreno::previa_das_ilhas_magicas().await;
         return;
     }
     #[cfg(debug_assertions)]

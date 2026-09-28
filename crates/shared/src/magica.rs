@@ -670,7 +670,7 @@ fn pontes_fixas() -> &'static [(Vec2, Vec2)] {
 ///
 /// A FASE VEM DO CENTRO da ilhota: sem isso as seis sairiam com a mesma
 /// silhueta girada, que é outro jeito de parecer padrão.
-fn raio_da_ilhota(i: &Ilhota, ang: f32) -> f32 {
+pub fn raio_da_ilhota(i: &Ilhota, ang: f32) -> f32 {
     let fase = i.centro.x * 0.031 + i.centro.y * 0.017;
     // TRÊS harmônicas, e não duas. Com duas a silhueta saía em trevo — três
     // lóbulos gordos e iguais, que de longe lê como folha e não como ilha.
@@ -753,6 +753,11 @@ pub fn posto_de_pocoes() -> Vec2 {
 /// Ela já era a única sem bônus de coleta; agora é também a única limpa.
 pub fn sem_recursos(p: Vec2) -> bool {
     ilhota_em(p).is_some_and(|i| matches!(i.bonus, Bonus::DropDeChefe))
+}
+
+/// Ilhotas de combate ficam sem minério e sem pedras decorativas.
+pub fn sem_pedras(p: Vec2) -> bool {
+    ilhota_em(p).is_some_and(|i| e_de_combate(i.bonus))
 }
 
 pub fn centros_de_combate() -> Vec<Vec2> {

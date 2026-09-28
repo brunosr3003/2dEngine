@@ -116,6 +116,7 @@ pub struct Terreno {
     /// Só a maquete da colônia liga isto: ela é uma peça flutuando, e o
     /// plano do nível do mar em volta da ilha virava uma mesa.
     sem_mar: bool,
+    ilhas_aereas: Option<crate::ilhas_aereas::IlhasAereas>,
     bioma: Bioma,
     /// Aparencia do solo da arena, escolhida pelo conteudo da dungeon.
     bioma_visual: Bioma,
@@ -183,11 +184,13 @@ impl Terreno {
     }
 
     fn do_gerador(ger: Gerador, bioma: shared::terreno::Bioma) -> Self {
+        let aerea = ger.e_magica();
         let mut t = Self {
             ger,
             bioma,
             bioma_visual: bioma,
-            sem_mar: false,
+            sem_mar: aerea,
+            ilhas_aereas: aerea.then(crate::ilhas_aereas::IlhasAereas::nova),
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
@@ -418,6 +421,7 @@ impl Terreno {
     /// `recorte`/`recorte_z`: o furo que deixa ver o jogador (ver
     /// `render3d::recorte_do_jogador`); zero desliga.
     pub fn desenha(&self, cam: &Camera3D, recorte: Vec3, recorte_z: f32) -> usize {
+        if let Some(cenario) = &self.ilhas_aereas { cenario.desenha(); }
         let visiveis: Vec<&Pedaco> = self
             .pedacos
             .iter()
@@ -453,6 +457,8 @@ impl Terreno {
 
     /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
     /// material da agua (ver `agua::desenha`).
+    pub fn sem_oceano(&self) -> bool { self.sem_mar }
+
     pub fn desenha_agua(&self, cam: &Camera3D, tempo: f32, ondas: f32) {
         crate::gpu_estatica::desenha(
             crate::gpu_estatica::Programa::Agua { tempo, ondas },
@@ -757,7 +763,10 @@ impl Terreno {
                     }
                     // O pe' da parede para na linha d'agua: penhasco na costa
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
-                    let piso = hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2);
+                    let piso = if self.ger.e_magica() && eh_agua(ix + dx, iz + dz) {
+                        let ponte = self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
+                        hv.max(if ponte { h - 2 } else { 7 })
+                    } else { hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2) };
                     let topo_mat = self.material_do_tema(
                         topo,
                         declive_col(&em, ix, iz),
@@ -1023,7 +1032,7 @@ impl Terreno {
         Pedaco {
             malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
             sombras: sombras.into_iter().map(MalhaEstatica::nova).collect(),
-            agua: crate::agua::malhas_do_pedaco(&self.ger, cx, cz)
+            agua: (if self.sem_mar { Vec::new() } else { crate::agua::malhas_do_pedaco(&self.ger, cx, cz) })
                 .into_iter()
                 .map(MalhaEstatica::nova)
                 .collect(),
@@ -1037,6 +1046,9 @@ impl Terreno {
     /// vizinha teria cor propria e o merge guloso deixaria de juntar — o
     /// pedaco quadruplicaria pra ganhar um chiado que ninguem ve' de cima.
     fn cor(&self, mat: Material, bx: i32, bz: i32, by: i32, luz: f32, tom: f32) -> [u8; 4] {
+        if self.ger.e_magica() {
+            return cor_das_ilhas_magicas(bx, bz, by, luz);
+        }
         let (r, g, b) = mat.rgb();
         // hash barato e estavel: mesmo quad, mesma cor, sempre.
         // GRAO DO VOXEL, e nao do quad: `(x*7 + z*13 + y*5) & 7` varia por
@@ -1056,6 +1068,134 @@ impl Terreno {
             (b as f32 * luz + g4).clamp(0.0, 255.0) as u8,
             255,
         ]
+    }
+}
+
+/// Paleta apenas visual: preserva alturas, colisões e todos os recursos.
+fn cor_das_ilhas_magicas(bx: i32, bz: i32, by: i32, luz: f32) -> [u8; 4] {
+    use shared::magica::{self, Bonus};
+    static PONTES: std::sync::OnceLock<Vec<(::glam::Vec2, ::glam::Vec2)>> =
+        std::sync::OnceLock::new();
+    let p = ::glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+    let ilha = magica::ilhota_em(p);
+    let dist_caminho = PONTES
+        .get_or_init(magica::pontes)
+        .iter()
+        .map(|(a, b)| {
+            let ab = *b - *a;
+            let t = ((p - *a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
+            p.distance(*a + ab * t)
+        })
+        .fold(f32::INFINITY, f32::min);
+    let altura = (by + 1) as f32 * BLOCO;
+    let mut cor = vec3(164.0, 177.0, 181.0);
+    if let Some(i) = ilha {
+        let d = p.distance(i.centro);
+        let acento = match i.bonus {
+            Bonus::Xp => vec3(139.0, 166.0, 195.0),
+            Bonus::DropDeMob => vec3(175.0, 151.0, 181.0),
+            Bonus::Ouro => vec3(198.0, 178.0, 119.0),
+            Bonus::DropDeChefe => vec3(158.0, 151.0, 190.0),
+            Bonus::Coleta(0) => vec3(126.0, 170.0, 132.0),
+            Bonus::Coleta(5) => vec3(119.0, 186.0, 183.0),
+            Bonus::Coleta(_) => vec3(159.0, 164.0, 188.0),
+        };
+        // Campos contínuos substituem manchas de bioma e ruído por voxel.
+        let onda = (p.x * 0.055).sin() * (p.y * 0.043).cos();
+        cor = vec3(112.0, 157.0, 120.0) + Vec3::splat(onda * 4.0);
+        if altura < magica::ALTURA + 1.5 {
+            cor = vec3(207.0, 202.0, 175.0);
+        }
+        // Praça central e caminhos seguem as conexões reais, sem novo obstáculo.
+        if d < 9.0 || dist_caminho < 1.8 {
+            cor = vec3(211.0, 215.0, 204.0);
+        }
+        if (d - 9.0).abs() < 0.65 || (1.8..2.35).contains(&dist_caminho) {
+            cor = acento;
+        }
+        if altura < magica::ALTURA && luz < 0.99 {
+            cor = vec3(159.0, 173.0, 165.0);
+        }
+    } else if luz > 0.99 {
+        cor = if dist_caminho > 2.3 {
+            vec3(155.0, 176.0, 178.0)
+        } else {
+            vec3(220.0, 219.0, 203.0)
+        };
+    }
+    let grao = ((bx.wrapping_mul(7) ^ bz.wrapping_mul(13) ^ by.wrapping_mul(5)) & 7) as f32;
+    // Luz difusa nas encostas evita listras escuras em cada degrau.
+    let luz = if altura >= magica::ALTURA {
+        0.90 + luz * 0.10
+    } else {
+        0.65 + luz * 0.35
+    };
+    cor = cor * luz + Vec3::splat((grao - 3.5) * 0.35);
+    [
+        cor.x.clamp(0.0, 255.0) as u8,
+        cor.y.clamp(0.0, 255.0) as u8,
+        cor.z.clamp(0.0, 255.0) as u8,
+        255,
+    ]
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa_das_ilhas_magicas() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-ilhas-magicas".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let mut t = Terreno::novo(&shared::magica::def_do_nivel(&shared::magica::NIVEIS[0]));
+    let solido = crate::render3d::material_solido();
+    for (nome, centro, distancia) in [
+        ("centro", Vec2::ZERO, 65.0),
+        ("pontes", vec2(70.0, 0.0), 95.0),
+        ("aerea", vec2(30.0, 0.0), 165.0),
+        (
+            "jardim",
+            vec2(
+                shared::magica::ilhotas()[1].centro.x,
+                shared::magica::ilhotas()[1].centro.y,
+            ),
+            65.0,
+        ),
+    ] {
+        t.atualiza(centro, 16, 2000);
+        for _ in 0..3 {
+            let cam = Camera3D {
+                position: vec3(
+                    centro.x + distancia * 0.45,
+                    distancia * 0.48,
+                    centro.y + distancia,
+                ),
+                target: vec3(centro.x, 10.0, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
     }
 }
 

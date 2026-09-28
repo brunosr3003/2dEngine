@@ -1254,6 +1254,11 @@ pub fn planta_da_coluna(
     let y = (topo + 1) as f32 * BLOCO;
     let solo = material_variado(bioma, y, declive, false, ger.mancha(bx, bz));
     let especie = especie_de_planta(bioma, (g2 >> 20) as f32 / 4096.0);
+    if matches!(especie, Planta::Pedra) && ger.e_magica()
+        && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+        return None;
+    }
+
     // NA ARENA, SÓ O QUE NÃO BARRA PASSAGEM.
     //
     // Dobrar a forração pra ter "mais flores etc que pedra e árvore" dobrou
@@ -1452,6 +1457,9 @@ fn recurso_montanha_da_coluna(
     agua: bool,
     energia: bool,
 ) -> Option<Minerio> {
+    if ger.e_magica() && crate::magica::sem_pedras(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+        return None;
+    }
     // NEM PEDRA NEM ENERGIA NA ARENA. O dono: "com mais flores etc que pedra e
     // árvore". Minério é o estorvo mais gordo que existe e não tem o que fazer
     // num saguão onde ninguém coleta.
@@ -2971,6 +2979,12 @@ impl Ilha {
 
     /// `carregar_ou_gerar` pra uma ilha do arquipelago.
     pub fn carregar_ou_gerar_da_ilha(dir: &str, def: &DefIlha) -> Self {
+        // Ilhas desenhadas mudam de contorno sem mudar semente/raio. Um cache
+        // antigo mantinha chão sólido onde o cliente já mostrava água.
+        if crate::magica::e_magica(def.zona) {
+            return Self::da_ilha(def);
+        }
+
         let caminho = format!("{dir}/{}-{}.alt", def.semente, def.raio_blocos);
         if let Some(i) = Self::carregar_da_ilha(&caminho, def) {
             return i;
@@ -3370,6 +3384,8 @@ impl Ilha {
     /// E sobreposicao acontece — slot de spawn que nao olhou a arvore, ou o
     /// empurrao entre corpos.
     pub fn cabe(&self, de: glam::Vec2, para: glam::Vec2, raio: f32) -> bool {
+        if self.ger.e_magica() && self.agua(para.x, para.y) { return false; }
+
         let (c0x, c0z) = self.celula(de.x.min(para.x) - raio, de.y.min(para.y) - raio);
         let (c1x, c1z) = self.celula(de.x.max(para.x) + raio, de.y.max(para.y) + raio);
         // Por tronco: entrar MAIS em algum reprova. Mas num bolsao de dois,
@@ -6525,5 +6541,104 @@ mod testes_do_desvio {
 
     fn comprimento(r: &[glam::Vec2]) -> f32 {
         r.windows(2).map(|w| w[0].distance(w[1])).sum()
+    }
+}
+
+#[cfg(test)]
+mod testes_ilhas_aereas {
+    use super::*;
+    #[test]
+    fn cache_antigo_nao_cria_chao_no_vazio() {
+        let dir = std::env::temp_dir().join(format!("tempest-cache-magica-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let def = crate::magica::def_do_nivel(&crate::magica::NIVEIS[0]);
+        let mut velha = Ilha::da_ilha(&def);
+        let p = glam::Vec2::new(70.0, 40.0);
+        assert!(velha.agua(p.x, p.y));
+        let (x, z) = velha.coluna(p.x, p.y);
+        velha.blocos[z as usize * velha.lado + x as usize] = crate::magica::NIVEL_CHAO as i16;
+        let arquivo = dir.join(format!("{}-{}.alt", def.semente, def.raio_blocos));
+        velha.salvar(arquivo.to_str().unwrap()).unwrap();
+        let atual = Ilha::carregar_ou_gerar_da_ilha(dir.to_str().unwrap(), &def);
+        assert!(atual.agua(p.x, p.y), "cache obsoleto virou chão no vazio");
+        assert!(
+            !atual.cabe(glam::Vec2::ZERO, p, 0.35),
+            "empurrão permitiu entrar no vazio"
+        );
+        std::fs::remove_file(arquivo).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn ponte_barra_saida_lateral_andando_pulando_e_correndo() {
+        let ilha = Ilha::da_ilha_magica();
+        for degrau in [DEGRAU_BLOCOS, PULO_BLOCOS] {
+            for velocidade in [5.0, 30.0] {
+                let mut p = glam::Vec2::new(80.0, 0.0);
+                for _ in 0..150 {
+                    p = ilha.mover_com_degrau(
+                        p,
+                        glam::Vec2::new(0.0, velocidade),
+                        1.0 / 30.0,
+                        0.35,
+                        degrau,
+                    );
+                    assert!(!ilha.agua(p.x, p.y));
+                }
+                assert!(p.y <= crate::magica::MEIA_PONTE + 0.25);
+            }
+        }
+    }
+    #[test]
+    fn combate_sem_pedras_mantem_vegetacao_e_mina() {
+        let g = Gerador::da_ilha_magica();
+        for i in crate::magica::ilhotas() {
+            if !matches!(
+                i.bonus,
+                crate::magica::Bonus::Xp
+                    | crate::magica::Bonus::Ouro
+                    | crate::magica::Bonus::DropDeMob
+                    | crate::magica::Bonus::Coleta(4)
+            ) {
+                continue;
+            }
+            let mut pedras = 0;
+            let mut plantas = 0;
+            for bz in ((i.centro.y - i.raio - 5.0) / BLOCO) as i32
+                ..=((i.centro.y + i.raio + 5.0) / BLOCO) as i32
+            {
+                for bx in ((i.centro.x - i.raio - 5.0) / BLOCO) as i32
+                    ..=((i.centro.x + i.raio + 5.0) / BLOCO) as i32
+                {
+                    let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+                    if crate::magica::bonus_em(p) != Some(i.bonus) {
+                        continue;
+                    }
+                    let h = g.bloco_em(bx, bz);
+                    let agua = (h + 1) as f32 * BLOCO <= NIVEL_DO_MAR;
+                    pedras +=
+                        minerio_da_coluna(Bioma::Floresta, bx, bz, h, &g, agua).is_some() as usize;
+                    let declive = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .into_iter()
+                        .map(|(x, z)| (h - g.bloco_em(bx + x, bz + z)).abs())
+                        .max()
+                        .unwrap();
+                    if let Some(pl) =
+                        planta_da_coluna(Bioma::Floresta, bx, bz, h, declive, &g, agua)
+                    {
+                        if matches!(pl.especie, Planta::Pedra) {
+                            pedras += 1;
+                        } else {
+                            plantas += 1;
+                        }
+                    }
+                }
+            }
+            if matches!(i.bonus, crate::magica::Bonus::Coleta(4)) {
+                assert!(pedras > 0, "a mina perdeu as pedras");
+            } else {
+                assert_eq!(pedras, 0, "{:?}", i.bonus);
+                assert!(plantas > 0, "a vegetação sumiu");
+            }
+        }
     }
 }
