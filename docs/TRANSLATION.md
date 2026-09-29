@@ -145,14 +145,20 @@ banco") and have to migrate with the code.
    `m` is `ladder::Mob` in one file and the simulator's own `Mob` in another.
    Rename through the type or the module path, and let the compiler find the
    field accesses — it does, reliably.
-3. **Compile between batches.** A rename that does not compile is a rename that
+3. **A batch file is single-use.** `apply` rewrites the lines it was built
+   from, so the line numbers in that JSON are stale the moment it runs.
+   Re-extract before translating the next chunk; never add translations to a
+   batch that has already been applied. The tool refuses the second apply
+   (it checks each block is still the text it extracted) rather than
+   corrupting the file, but the refusal aborts partway through the run.
+4. **Compile between batches.** A rename that does not compile is a rename that
    silently changed meaning somewhere else.
-4. **Game-content literals stay; developer literals go.** A string the player
+5. **Game-content literals stay; developer literals go.** A string the player
    reads is keyed by the translation tables and only moves in pass 4. An
    `assert!` message, a `panic!` or a `tracing` line is read by us, not by a
    player, and is translated with the code around it.
-5. **Never rename a database column or value in passes 1–3.** Persistence reads
+6. **Never rename a database column or value in passes 1–3.** Persistence reads
    columns by name, and a column that disappears is a kick at login.
-6. **Keep `Danca`, `Muralha`, `Saque` and the other skill names as they are**
+7. **Keep `Danca`, `Muralha`, `Saque` and the other skill names as they are**
    until pass 4 decides what the English game calls them — they are content,
    not code.
