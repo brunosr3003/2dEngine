@@ -45,8 +45,8 @@ pub struct Social {
     carta: Option<i64>,
     carta_pagina: usize,
     escrevendo: bool,
-    /// (texto, pedidos). E' uma LISTA porque o "Pegar tudo" confirma varios
-    /// de uma vez — um pedido so' e' uma lista de um.
+    /// (text, requests). It is a LIST because "Take all" confirms several at
+    /// once — a single request is a list of one.
     confirmacao: Option<(String, Vec<Pedido>)>,
     aviso: String,
     ok: bool,
@@ -56,11 +56,11 @@ pub struct Social {
     ocupado_ate: f64,
     /// Pedidos em fila do "Pegar tudo e apagar".
     ///
-    /// O servidor resgata UMA carta por vez (`correio_em_voo`), entao o botao
-    /// nao pode disparar tudo de uma vez: a fila escoa em `passo`, um pedido
-    /// por resposta, aproveitando que `ocupado_ate` ja' zera quando o
-    /// servidor responde. Resgatar vem antes de apagar — apagar uma carta com
-    /// anexo por resgatar e' jogar o item fora.
+    /// The server claims ONE letter at a time (`correio_em_voo`), so the button
+    /// cannot fire everything at once: the queue drains in `passo`, one request
+    /// per answer, taking advantage of `ocupado_ate` already zeroing when the
+    /// server replies. Claiming comes before deleting — deleting a letter with an
+    /// unclaimed attachment is throwing the item away.
     fila: Vec<Pedido>,
 }
 fn msg(pedido: Pedido) -> ClientMessage {
@@ -68,7 +68,7 @@ fn msg(pedido: Pedido) -> ClientMessage {
 }
 
 impl Social {
-    /// Mantem a bolinha do Correio atualizada mesmo antes de abrir a janela.
+    /// Keeps the Mail dot up to date even before the window is opened.
     pub fn verificar_correio_dungeon(&mut self, agora: f64) -> Option<ClientMessage> {
         if agora < self.correio_atualizar_em {
             return None;
@@ -79,7 +79,7 @@ impl Social {
         })
     }
 
-    /// Carta ainda nao lida ou recompensa aguardando resgate.
+    /// A letter not yet read, or a reward awaiting claim.
     pub fn correio_pendente(&self) -> bool {
         !self.correio_dungeon.is_empty()
             || self
@@ -150,7 +150,7 @@ impl Social {
         if self.convite.as_ref().is_some_and(|(_, ate)| agora >= *ate) {
             self.convite = None;
         }
-        // A fila do "Pegar tudo" escoa aqui: um pedido por resposta.
+        // The "Take all" queue drains here: one request per answer.
         if agora >= self.ocupado_ate && !self.fila.is_empty() {
             let p = self.fila.remove(0);
             self.ocupado_ate = agora + 8.0;
@@ -159,7 +159,7 @@ impl Social {
             self.ok = true;
             return Some(msg(p));
         }
-        // Atualiza notificacoes mesmo com a janela fechada, sem interromper digitacao.
+        // Updates notifications even with the window closed, without interrupting typing.
         if agora >= self.atualizar_em && agora >= self.ocupado_ate {
             self.atualizar_em = agora + if self.aberto { 5.0 } else { 20.0 };
             return Some(msg(Pedido::Estado));
@@ -192,8 +192,8 @@ impl Social {
             self.fechar();
             return saida;
         }
-        // Editor acima do teclado virtual, inclusive para cartas longas.
-        // Volta ao formulario ao concluir, sem enviar nada implicitamente.
+        // Editor above the on-screen keyboard, including for long letters.
+        // Returns to the form on finishing, without sending anything implicitly.
         if crate::nativo::TECLADO_NA_TELA && self.foco.is_some() {
             self.editor_mobile(t, digitado);
             return saida;
@@ -337,8 +337,8 @@ impl Social {
             get_time() >= self.ocupado_ate,
         ) {
             self.confirmacao = None;
-            // Um pedido vai direto; varios entram na fila, que escoa em
-            // `passo` conforme o servidor responde.
+            // One request goes straight through; several enter the queue, which drains
+            // in `passo` as the server answers.
             let mut it = pedidos.into_iter();
             if let Some(primeiro) = it.next() {
                 self.enviar(primeiro, saida);
@@ -726,9 +726,9 @@ impl Social {
         };
         // ── pegar tudo e apagar ──
         //
-        // Resgatar carta por carta e apagar uma a uma era o unico caminho, e
-        // com meia duzia de cartas vira trabalho. Resgate ANTES do apagar, na
-        // fila: a ordem e' o que garante que nenhum anexo vai pro lixo.
+        // Claiming letter by letter and deleting one by one was the only path, and
+        // with half a dozen letters it becomes work. Claim BEFORE delete, in the
+        // queue: the order is what guarantees no attachment goes in the bin.
         let a_resgatar: Vec<i64> = cartas
             .iter()
             .filter(|c| c.oficial && !c.anexos.is_empty() && !c.resgatada)
@@ -1354,7 +1354,7 @@ fn texto_em_linhas(texto: &str, r: Rect, tam: u16, cor: Color, desloc: usize) ->
     linhas.len()
 }
 
-/// Capturas locais com dados ficticios, sem rede ou alteracao de personagens.
+/// Local captures with fictional data, with no network and no character changes.
 #[cfg(debug_assertions)]
 pub async fn previa() {
     let saida =
@@ -1471,9 +1471,9 @@ pub async fn previa() {
 mod testes {
     use super::*;
 
-    /// "Pegar tudo" resgata ANTES de apagar. Invertido, a carta com anexo
-    /// sumia com o item dentro — o jeito mais caro possivel de esvaziar a
-    /// caixa.
+    /// "Take all" claims BEFORE deleting. Inverted, a letter with an attachment
+    /// vanished with the item inside — the most expensive possible way to empty
+    /// the inbox.
     #[test]
     fn a_fila_resgata_antes_de_apagar() {
         let carta = |id: i64, anexos: bool, resgatada: bool| shared::social::Carta {
@@ -1495,7 +1495,7 @@ mod testes {
             },
             resgatada,
         };
-        // Duas com anexo por pegar, uma ja' resgatada, uma sem anexo.
+        // Two with an unclaimed attachment, one already claimed, one with no attachment.
         let cartas = vec![
             carta(1, true, false),
             carta(2, true, true),
@@ -1515,7 +1515,7 @@ mod testes {
             .collect();
         fila.extend(cartas.iter().map(|c| Pedido::ApagarCarta { id: c.id }));
 
-        // Todo resgate vem antes de todo apagar.
+        // Every claim comes before every delete.
         let primeiro_apagar = fila
             .iter()
             .position(|p| matches!(p, Pedido::ApagarCarta { .. }))
@@ -1526,7 +1526,7 @@ mod testes {
                 .all(|p| matches!(p, Pedido::ReceberAnexos { .. })),
             "apagar entrou no meio dos resgates"
         );
-        // E toda carta e' apagada, inclusive as que nao tinham anexo.
+        // And every letter is deleted, including the ones that had no attachment.
         assert_eq!(fila.len(), a_resgatar.len() + cartas.len());
         for c in &cartas {
             assert!(

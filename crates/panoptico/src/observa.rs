@@ -1,10 +1,10 @@
 //! O resto do jogo visto de cima: jogadores, mercado, dungeons, atividade
 //! (telemetria), missoes, itens e infraestrutura.
 //!
-//! Tudo SO' leitura e tudo tolerante: consulta que falha vira lista vazia e um
-//! aviso no log, nunca um painel fora do ar. Os numeros de desenho (catalogo de
-//! dungeons, nomes de missao, chaves) saem de `shared` — o mesmo codigo do
-//! jogo, sem copia aqui.
+//! Everything READ-only and everything tolerant: a query that fails becomes
+//! an empty list and a log warning, never a panel that is down. The drawing's
+//! numbers (dungeon catalogue, quest names, keys) come from `shared` — the
+//! game's own code, with no copy here.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -40,8 +40,8 @@ fn agora_unix() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// `characters.updated` guarda unix em segundos ou em ms, conforme a epoca do
-/// banco. Normaliza pra segundos.
+/// `characters.updated` holds unix in seconds or in ms, depending on the
+/// database's era. Normalises to seconds.
 pub fn para_segundos(v: i64) -> i64 {
     if v > 100_000_000_000 {
         v / 1000
@@ -87,7 +87,7 @@ fn capitulo_de(id: u16) -> Option<&'static str> {
         .map(|c| c.nome)
 }
 
-/// Categoria de uma missao, pro painel.
+/// A quest's category, for the panel.
 pub fn categoria_da_missao(id: u16) -> &'static str {
     if e_historia(id) {
         "história"
@@ -112,7 +112,7 @@ fn nome_do_conteudo(id: u16) -> String {
 
 // ─────────────────────────────── jogadores ───────────────────────────────
 
-/// `online`: nome do personagem -> canal onde esta' agora (dos retratos).
+/// `online`: character name -> the channel they are on now (from the portraits).
 pub async fn jogadores(pool: &PgPool, online: &HashMap<String, String>) -> Value {
     let agora = agora_unix();
     let mult = multiplicador_de_xp(pool).await;
@@ -124,7 +124,7 @@ pub async fn jogadores(pool: &PgPool, online: &HashMap<String, String>) -> Value
     )
     .await;
 
-    // Historia: onde cada um esta' na cadeia.
+    // Story: where each one is in the chain.
     let mut historia: HashMap<String, (u16, u8, u32)> = HashMap::new(); // (atual, status, concluidas)
     for r in linhas(
         pool,
@@ -500,7 +500,7 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
 
 // ─────────────────────────────── telemetria ───────────────────────────────
 
-/// Soma por `(tipo, chave)` na janela, pra quem monta tabela.
+/// Sum per `(type, key)` in the window, for whoever builds a table.
 async fn somas(pool: &PgPool, filtro: &str, horas: i32) -> Vec<(String, String, i64)> {
     if !tem_tabela(pool, "telemetria").await {
         return Vec::new();
@@ -522,7 +522,7 @@ async fn somas(pool: &PgPool, filtro: &str, horas: i32) -> Vec<(String, String, 
     }
 }
 
-/// Rotulo legivel de uma chave de telemetria.
+/// A readable label for a telemetry key.
 pub fn rotulo(
     tipo: &str,
     chave: &str,
@@ -705,7 +705,7 @@ pub async fn dungeons(pool: &PgPool, horas: i32) -> Value {
     }
     bau_itens.sort_by(|a, b| b.2.cmp(&a.2));
 
-    // O que os personagens guardam: vitorias de sempre, correio, entradas.
+    // What the characters hold: all-time wins, mail, entries.
     let hoje = shared::dungeon::dia(agora_unix());
     let mut vitorias_sempre: BTreeMap<(u16, u8), u32> = BTreeMap::new();
     let mut liberado: BTreeMap<(u16, u8), u32> = BTreeMap::new();
@@ -830,7 +830,7 @@ pub async fn missoes(pool: &PgPool, horas: i32) -> Value {
             })
         })
         .collect();
-    // Onde a historia de cada um parou, por capitulo.
+    // Where each one's story stopped, by chapter.
     let mut capitulos: BTreeMap<String, i64> = BTreeMap::new();
     let mut atual: HashMap<String, u16> = HashMap::new();
     for r in linhas(
@@ -890,14 +890,14 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
     .into_iter()
     .map(item)
     .collect();
-    // Materiais por cor: a mesma ladder que o craft pede.
+    // Materials by color: the same ladder the craft asks for.
     let materiais: Vec<Value> = i::MATERIAIS_COLORIDOS
         .iter()
         .map(|&base| {
             let cores: Vec<i64> = (1..=4)
                 .map(|c| estoque.get(&(i::na_cor(base, c) as i64)).map_or(0, |e| e.0))
                 .collect();
-            // O id base e' o da cinza ("Aço Cinza"): o nome da linha e' o material.
+            // The base id is the grey one ("Aço Cinza"): the row's name is the material.
             let nome = nomes.get(&(base as i64)).cloned().unwrap_or_default();
             let nome = nome
                 .strip_suffix(" Cinza")
@@ -1127,9 +1127,9 @@ mod testes {
     }
 }
 
-/// Loja de cash (docs/LOJA.md): receita dos pacotes de TP (simulada enquanto
-/// o pagamento for simulado), TP vendida e gasta, pedidos por status, itens
-/// mais comprados, ultimos pedidos e jogadores montados agora.
+/// Cash shop (docs/LOJA.md): revenue from the TP bundles (simulated while the
+/// payment is simulated), TP sold and spent, orders by status, most bought
+/// items, latest orders and players mounted right now.
 pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     let montados = uma(
         realm,

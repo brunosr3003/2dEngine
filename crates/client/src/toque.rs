@@ -21,7 +21,7 @@ pub enum Toque {
     Curto(u32),
     /// Held still: fires ONCE, with the finger still down.
     Longo(u32),
-    /// Moveu: nem curto nem longo.
+    /// Moved: neither short nor long.
     Arrasto(u32),
 }
 

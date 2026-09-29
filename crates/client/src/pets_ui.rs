@@ -556,8 +556,8 @@ pub async fn previa(vox: &VoxCache, solido: &Material) {
 mod testes {
     use super::*;
 
-    /// O painel e' leitura: sem pet equipado ele nao pede nada, e a barra de
-    /// XP nunca estoura nem divide por zero no topo.
+    /// The panel is a read: with no pet equipped it asks for nothing, and the XP
+    /// bar never overflows nor divides by zero at the top.
     #[test]
     fn sem_pet_nao_ha_pedido_e_o_topo_nao_quebra() {
         let ui = PetsUi::default();
@@ -569,8 +569,8 @@ mod testes {
         };
         let n = shared::pets::nivel_de_xp(d.xp);
         assert_eq!(n, shared::pets::NIVEL_MAX);
-        // No topo, `xp_para_nivel(n + 1)` satura no proprio teto: a conta da
-        // barra tem que cair no ramo do "nivel maximo", nao dividir por zero.
+        // At the top, `xp_para_nivel(n + 1)` saturates at its own cap: the bar's
+        //  maths has to fall into the "max level" branch, not divide by zero.
         assert_eq!(
             shared::pets::xp_para_nivel(n + 1),
             shared::pets::xp_para_nivel(n)

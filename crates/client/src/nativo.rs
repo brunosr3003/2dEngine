@@ -1,16 +1,17 @@
-//! O pouco que depende da plataforma: abrir URL no navegador e o teclado
-//! virtual do iPhone.
+//! The little that depends on the platform: opening a URL in the browser and
+//! the iPhone's on-screen keyboard.
 //!
-//! Teclado: a miniquad 0.4.11 cria um `UITextField` escondido e le' dele os
-//! caracteres (`char_event`, Enter e Backspace ja' chegam pelo caminho normal
-//! do `entrada::Teclado`), mas o pedido `show_keyboard` cai num `_ => {}` no
-//! iOS e nunca chama `becomeFirstResponder`. Aqui o campo e' achado na view do
-//! app e o pedido e' feito direto, por FFI Objective-C, sem dependencia nova.
+//! Keyboard: miniquad 0.4.11 creates a hidden `UITextField` and reads the
+//! characters from it (`char_event`, Enter and Backspace already arrive by the
+//! normal `entrada::Teclado` path), but the `show_keyboard` request falls into
+//! a `_ => {}` on iOS and never calls `becomeFirstResponder`. Here the field
+//! is found in the app's view and the request is made directly, by
+//! Objective-C FFI, with no new dependency.
 
-/// Esta plataforma tem teclado na tela (e o painel precisa subir)?
+/// Does this platform have an on-screen keyboard (and does the panel need to rise)?
 pub const TECLADO_NA_TELA: bool = cfg!(any(target_os = "ios", target_os = "android"));
 
-/// Abre `url` no navegador do sistema. `false` se nao conseguiu.
+/// Opens `url` in the system browser. `false` if it could not.
 pub fn abrir_url(url: &str) -> bool {
     #[cfg(target_os = "ios")]
     {
@@ -37,7 +38,7 @@ pub fn abrir_url(url: &str) -> bool {
             .spawn()
             .is_ok()
     }
-    // Web: ainda nao.
+    // Web: not yet.
     #[cfg(not(any(unix, windows)))]
     {
         let _ = url;
@@ -49,8 +50,8 @@ pub fn abrir_url(url: &str) -> bool {
     }
 }
 
-/// Intent ACTION_VIEW usando a Activity da miniquad. Local frame libera as
-/// referências JNI; exceção (sem navegador/loja) vira erro visível na UI.
+/// An ACTION_VIEW intent using miniquad's Activity. A local frame releases the
+/// JNI references; an exception (no browser/store) becomes a visible UI error.
 #[cfg(target_os = "android")]
 fn android_abrir_url(url: &str) -> bool {
     use macroquad::miniquad::native::android::{attach_jni_env, ndk_sys::jvalue, ACTIVITY};
@@ -84,7 +85,7 @@ fn android_abrir_url(url: &str) -> bool {
     }
 }
 
-/// Mostra ou esconde o teclado na tela. No desktop nao faz nada.
+/// Shows or hides the on-screen keyboard. Does nothing on desktop.
 pub fn teclado_virtual(mostrar: bool) {
     #[cfg(target_os = "ios")]
     ios::teclado(mostrar);
@@ -94,8 +95,8 @@ pub fn teclado_virtual(mostrar: bool) {
     let _ = mostrar;
 }
 
-/// Tela sempre acesa enquanto joga: no automatico ninguem toca e o iPhone
-/// apagaria a tela (e pausaria o app). No desktop nao faz nada.
+/// Screen always awake while playing: on automatic nobody touches it and the
+/// iPhone would turn the screen off (and pause the app). Does nothing on desktop.
 pub fn manter_tela_acesa(sim: bool) {
     #[cfg(target_os = "ios")]
     ios::manter_tela_acesa(sim);
@@ -103,9 +104,9 @@ pub fn manter_tela_acesa(sim: bool) {
     let _ = sim;
 }
 
-/// Area segura da tela, em px da macroquad: (topo, esquerda, baixo, direita).
-/// No iPhone em paisagem o notch/Dynamic Island come um lado, os cantos sao
-/// arredondados e a barra do home fica embaixo. Fora do iOS, zero.
+/// The screen's safe area, in macroquad px: (top, left, bottom, right). On an
+/// iPhone in landscape the notch/Dynamic Island eats one side, the corners are
+/// rounded and the home bar sits at the bottom. Outside iOS, zero.
 pub fn area_segura() -> [f32; 4] {
     #[cfg(target_os = "ios")]
     {
@@ -145,7 +146,7 @@ mod ios {
         sel_registerName(c.as_ptr())
     }
 
-    // arm64: objc_msgSend chamado com a assinatura exata de cada uso.
+    // arm64: objc_msgSend called with the exact signature of each use.
     unsafe fn msg(obj: Id, s: &str) -> Id {
         let f: unsafe extern "C" fn(Id, Sel) -> Id =
             std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
@@ -204,7 +205,7 @@ mod ios {
         }
     }
 
-    /// O `UITextField` que a miniquad pendurou na view do view controller.
+    /// The `UITextField` miniquad hung on the view controller's view.
     unsafe fn campo_escondido() -> Option<Id> {
         let tipo = classe("UITextField");
         let app = msg(classe("UIApplication"), "sharedApplication");
@@ -239,8 +240,8 @@ mod ios {
         f(obj, sel(s))
     }
 
-    /// `safeAreaInsets` da janela (pontos) convertido pra px da macroquad pela
-    /// razao largura-da-tela / largura-da-janela.
+    /// The window's `safeAreaInsets` (points) converted to macroquad px by the
+    /// screen-width / window-width ratio.
     pub fn area_segura() -> [f32; 4] {
         unsafe {
             let app = msg(classe("UIApplication"), "sharedApplication");
@@ -255,8 +256,8 @@ mod ios {
             }
             let i = msg_quatro(janela, "safeAreaInsets");
             let k = macroquad::window::screen_width() as f64 / b.2;
-            // Respiro: 4 pt alem do inset e nunca menos de 16 pt — em paisagem
-            // o topo tem inset zero mas o canto arredondado corta.
+            // Breathing room: 4 pt beyond the inset and never less than 16 pt — in
+            // landscape the top has a zero inset but the rounded corner cuts.
             let px = |v: f64| ((v.max(0.0) + 4.0).max(16.0) * k) as f32;
             [px(i.0), px(i.1), px(i.2), px(i.3)]
         }

@@ -1,18 +1,19 @@
-//! "Ir para": do menu do mapa ou do menu de missoes, o personagem vai sozinho
-//! ate' um LUGAR e, ao chegar, faz o que o lugar pede — liga o auto combate na
-//! zona do bicho, a auto coleta na regiao do recurso, ou fala com o NPC.
+//! "Go to": from the map menu or the quest menu, the character walks there
+//! alone and, on arriving, does what the place asks — switches on auto combat
+//! in the creature's zone, auto gathering in the resource's region, or talks
+//! to the NPC.
 //!
-//! A viagem e' a do mapa (etapas, tracejado no chao, corrida automatica): aqui
-//! so' se decide o proximo passo, sem macroquad no nucleo.
+//! The travel is the map's (legs, a dashed line on the ground, automatic
+//! running): here we only decide the next step, with no macroquad in the core.
 use macroquad::prelude::*;
 
-/// A viagem acabou longe do alvo: pede de novo depois disso.
+/// The travel ended far from the target: ask again after this.
 const RELIGA_S: f64 = 1.0;
-/// Perto disto do NPC: chegou (o "ir ate' o NPC" da loja fecha o caminho).
+/// Within this of the NPC: arrived (the shop's "go to the NPC" closes the path).
 const PERTO_DO_NPC: f32 = 4.5;
-/// Zona e regiao sao grandes; chegar e' entrar nelas, nao pisar no centro.
+/// Zones and regions are large; arriving means entering them, not stepping on the center.
 const CHEGOU_MAX: f32 = 12.0;
-/// Pedidos seguidos sem chegar mais perto que isto: desiste.
+/// Repeated requests without getting closer than this: give up.
 const DESISTE_APOS: u32 = 8;
 const PROGRESSO_MINIMO: f32 = 2.0;
 
@@ -20,11 +21,11 @@ const PROGRESSO_MINIMO: f32 = 2.0;
 pub enum Objetivo {
     /// Zona de bicho: auto combate centrado nela.
     Combate,
-    /// Regiao de recurso do tipo (0 madeira, 1..4 pedra pela cor).
+    /// Resource region of the type (0 wood, 1..4 stone by color).
     Coleta(u8),
-    /// Um NPC: fala com ele ao chegar.
+    /// An NPC: talk to them on arrival.
     Npc,
-    /// So' chegar la' (chefe muito acima do nivel: nada liga sozinho).
+    /// Just get there (a boss far above the level: nothing switches on by itself).
     Lugar,
 }
 
@@ -33,7 +34,7 @@ pub struct Alvo {
     pub objetivo: Objetivo,
     pub pos: Vec2,
     pub raio: f32,
-    /// "Lobo", "Pedra azul", "Mestre de Missões": o que o HUD mostra.
+    /// "Wolf", "Blue stone", "Quest Master": what the HUD shows.
     pub rotulo: String,
 }
 
@@ -42,7 +43,7 @@ pub enum Acao {
     Viajar(Vec2),
     LigarCombate(Vec2),
     LigarColeta(u8, Vec2),
-    /// Falar com o NPC que estiver perto deste ponto.
+    /// Talk to whichever NPC is near this point.
     FalarPerto(Vec2),
     Aviso(String),
 }
@@ -53,7 +54,7 @@ pub struct IrPara {
     desde: f64,
     pedidos_sem_progresso: u32,
     melhor: f32,
-    /// "Nada está mudando" — ver `parado.rs`.
+    /// "Nothing is changing" — see `parado.rs`.
     parado: crate::parado::Parado,
 }
 
@@ -87,7 +88,7 @@ impl IrPara {
         }
     }
 
-    /// Um quadro. `viajando` = a viagem do mapa ainda esta' andando.
+    /// One frame. `viajando` = the map's travel is still running.
     pub fn passo(&mut self, eu: Vec2, agora: f64, viajando: bool) -> Option<Acao> {
         let a = self.alvo.as_ref()?;
         let d = eu.distance(a.pos);
@@ -103,12 +104,12 @@ impl IrPara {
         }
         // TRAVADO CONTA MESMO "VIAJANDO".
         //
-        // O `viajando` sozinho fazia este passo nunca rodar enquanto o corpo
-        // empurrava uma parede: a viagem segue "ativa" e a conta de
-        // `pedidos_sem_progresso` — que é quem desiste — nunca avançava.
+        // `viajando` on its own made this step never run while the body pushed
+        // against a wall: the travel stays "active" and the `pedidos_sem_progresso`
+        // count — which is what gives up — never advanced.
         //
-        // Terceiro arquivo com a mesma suposição (ver `parado.rs`): o
-        // `auto_missao.rs` e o `auto_coleta.rs` tinham cópia dela.
+        // A third file with the same assumption (see `parado.rs`): `auto_missao.rs`
+        // and `auto_coleta.rs` each had a copy of it.
         self.parado.acompanha(eu, agora);
         let travado = self.parado.travado(agora);
         if (viajando && !travado) || agora - self.desde < RELIGA_S {
@@ -129,7 +130,7 @@ impl IrPara {
                 return Some(Acao::Aviso(format!("Não achei caminho até {rotulo}.")));
             }
         }
-        // NPC: pare do lado dele, nao em cima.
+        // NPC: stop beside them, not on top.
         let destino = match a.objetivo {
             Objetivo::Npc => a.pos + (eu - a.pos).normalize_or_zero() * 2.0,
             _ => a.pos,
@@ -167,9 +168,9 @@ mod tests {
             ir.passo(Vec2::ZERO, 0.0, false),
             Some(Acao::Viajar(vec2(300.0, 0.0)))
         );
-        // Viajando: nao pede de novo.
+        // Travelling: do not ask again.
         assert_eq!(ir.passo(vec2(100.0, 0.0), 0.5, true), None);
-        // Dentro da zona (ate' 12 do centro): liga o combate e acaba.
+        // Inside the zone (within 12 of the center): switch combat on and finish.
         assert_eq!(
             ir.passo(vec2(290.0, 0.0), 3.0, true),
             Some(Acao::LigarCombate(vec2(300.0, 0.0)))

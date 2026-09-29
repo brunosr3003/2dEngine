@@ -1,16 +1,18 @@
 //! Porta do panoptico: senha, sessao em cookie e freio de tentativas.
 //!
-//! O painel mostra conta, ouro e posicao de todo mundo. Na internet ele fica
-//! atras do nginx (HTTPS) e do tunel, e mesmo assim nada passa sem sessao:
+//! The panel shows everyone's account, gold and position. On the internet it
+//! sits behind nginx (HTTPS) and the tunnel, and even so nothing gets through
+//! without a session:
 //!
-//! * **Senha** de `PANOPTICO_SENHA` (16+ chars), comparada em tempo constante.
-//! * **Sessao** aleatoria de 256 bits (`/dev/urandom`), em cookie `HttpOnly`,
-//!   `SameSite=Strict`, `Secure` (desligavel so' pra teste local), no caminho
-//!   do prefixo, valendo 12 h. Nada de token na URL: URL vai pra log, pra
-//!   historico e pro `Referer`.
-//! * **Freio**: 5 senhas erradas em 15 min travam o IP ate' a janela passar.
-//!   Atras de proxy o IP vem do `X-Real-IP`/`X-Forwarded-For` — so' com
-//!   `PANOPTICO_CONFIAR_PROXY=1`, porque sem proxy qualquer um forja o cabecalho.
+//! * **Password** from `PANOPTICO_SENHA` (16+ chars), compared in constant time.
+//! * **Session** random 256 bits (`/dev/urandom`), in an `HttpOnly`,
+//! `SameSite=Strict`, `Secure` cookie (disableable only for local testing),
+//! on the prefix's path, valid for 12 h. No token in the URL: a URL goes to
+//! logs, to history and to the `Referer`.
+//! * **Brake**: 5 wrong passwords in 15 min lock the IP until the window
+//! passes. Behind a proxy the IP comes from `X-Real-IP`/`X-Forwarded-For` —
+//! only with `PANOPTICO_CONFIAR_PROXY=1`, because with no proxy anyone can
+//! forge the header.
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -23,12 +25,12 @@ pub const VALIDADE: Duration = Duration::from_secs(12 * 3600);
 pub const JANELA_DE_FALHAS: Duration = Duration::from_secs(15 * 60);
 pub const MAX_FALHAS: u32 = 5;
 pub const NOME_DO_COOKIE: &str = "panoptico";
-/// Teto de sessoes vivas: cada login cria uma, e ninguem precisa de mil.
+/// Cap on live sessions: each login creates one, and nobody needs a thousand.
 const MAX_SESSOES: usize = 256;
 
 pub struct Auth {
     senha: String,
-    /// Prefixo do caminho ("" ou "/panoptico"), sem barra no fim.
+    /// The path prefix ("" or "/panoptico"), with no trailing slash.
     pub prefixo: String,
     seguro: bool,
     pub confiar_proxy: bool,
@@ -36,7 +38,7 @@ pub struct Auth {
     falhas: Mutex<HashMap<String, (u32, Instant)>>,
 }
 
-/// "" ou "/x/y", sem barra no fim.
+/// "" or "/x/y", with no trailing slash.
 pub fn normaliza_prefixo(p: &str) -> String {
     let t = p.trim().trim_matches('/');
     if t.is_empty() {
@@ -53,15 +55,15 @@ impl Auth {
         seguro: bool,
         confiar_proxy: bool,
     ) -> anyhow::Result<Auth> {
-        // Minimo 8 (escolha do dono): o freio de tentativas por IP e' o que
-        // segura forca bruta pela internet.
+        // Minimum 8 (the owner's choice): the per-IP attempt brake is what holds
+        // off brute force from the internet.
         if senha.chars().count() < 8 {
             anyhow::bail!(
                 "PANOPTICO_SENHA precisa de pelo menos 8 caracteres — este painel mostra conta, ouro e posicao de todo mundo"
             );
         }
-        // Falha cedo se nao ha' fonte de aleatoriedade: sessao previsivel e'
-        // o mesmo que nenhuma.
+        // Fails early if there is no source of randomness: a predictable session is
+        // the same as none.
         aleatorio_hex(8)?;
         Ok(Auth {
             senha,
@@ -96,7 +98,7 @@ impl Auth {
 
     pub fn falhou(&self, ip: &str, agora: Instant) {
         let mut g = self.falhas.lock();
-        // Nao deixa o mapa crescer com IPs velhos.
+        // Does not let the map grow with old IPs.
         g.retain(|_, (_, desde)| agora.duration_since(*desde) < JANELA_DE_FALHAS);
         let e = g.entry(ip.to_string()).or_insert((0, agora));
         e.0 += 1;
@@ -111,7 +113,7 @@ impl Auth {
         let mut g = self.sessoes.lock();
         g.retain(|_, expira| *expira > agora);
         if g.len() >= MAX_SESSOES {
-            // Derruba a que expira primeiro.
+            // Drops whichever expires first.
             if let Some(velha) = g.iter().min_by_key(|(_, e)| **e).map(|(k, _)| k.clone()) {
                 g.remove(&velha);
             }
@@ -161,7 +163,7 @@ impl Auth {
     }
 }
 
-/// Compara sem sair cedo: o tempo nao diz quantos bytes bateram.
+/// Compares without returning early: the timing does not say how many bytes matched.
 pub fn iguais_em_tempo_constante(a: &[u8], b: &[u8]) -> bool {
     let mut dif = (a.len() ^ b.len()) as u8 | ((a.len() ^ b.len()) >> 8) as u8;
     for i in 0..a.len().max(b.len()) {
@@ -194,7 +196,7 @@ pub fn token_do_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-/// De onde veio o pedido. Cabecalho de proxy so' vale com `confiar_proxy`.
+/// Where the request came from. A proxy header only counts with `confiar_proxy`.
 pub fn ip_do_pedido(headers: &HeaderMap, par: std::net::SocketAddr, confiar_proxy: bool) -> String {
     if confiar_proxy {
         let cab = |n: &str| {

@@ -1,20 +1,20 @@
-//! Loja de NPC: clicar num vendedor abre; tocar num item ESCOLHE, e o bloco de
-//! baixo diz quanto comprar (−/+, 1, 10, 50, Max) e quanto custa o lote.
-//! Preco, cobre, espaco na bolsa e alcance continuam validados pelo servidor
-//! (`ShopComprar`, tudo ou nada).
+//! NPC shop: clicking a vendor opens it; touching an item SELECTS it, and the
+//! block below says how many to buy (-/+, 1, 10, 50, Max) and what the batch
+//! costs. Price, copper, bag space and range are still validated by the
+//! server (`ShopComprar`, all or nothing).
 use crate::hud_estilo as estilo;
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, ShopItem};
 use shared::{EntityId, InventorySlot};
 use std::collections::HashMap;
 
-/// Chega a isto do NPC antes de pedir. Um pouco dentro do alcance do
-/// `Interact`, pra arredondamento de posicao nao fazer o servidor recusar.
+/// Get this close to the NPC before asking. A little inside `Interact`'s
+/// range, so a rounding of position does not make the server refuse.
 pub const PERTO: f32 = shared::INTERACT_RADIUS * 0.9;
-/// Longe disto a loja fecha sozinha: o servidor ja' recusaria a compra.
+/// Beyond this the shop closes itself: the server would refuse the purchase anyway.
 const FECHA_LONGE: f32 = shared::INTERACT_RADIUS + 1.5;
 
-/// Clique num NPC longe: o personagem anda ate' ele e interage ao chegar.
+/// A click on a distant NPC: the character walks there and interacts on arrival.
 #[derive(Default)]
 pub struct Pendente {
     pub npc: Option<EntityId>,
@@ -28,8 +28,8 @@ impl Pendente {
         self.npc = None;
     }
 
-    /// A cada quadro. Chegou perto: devolve o NPC uma vez, pra interagir.
-    /// O NPC sumiu: desiste.
+    /// Every frame. Got close: returns the NPC once, to interact.
+    /// The NPC vanished: gives up.
     pub fn acompanhar(&mut self, eu: Vec2, npc: Option<Vec2>) -> Option<EntityId> {
         let id = self.npc?;
         let Some(p) = npc else {
@@ -44,7 +44,7 @@ impl Pendente {
     }
 }
 
-/// Maior lote de uma vez (o mesmo teto do servidor).
+/// Largest batch at once (the same cap as the server's).
 pub const MAX_LOTE: u32 = 999;
 /// Atalhos de quantidade do seletor.
 const ATALHOS: [u32; 3] = [1, 10, 50];
@@ -59,15 +59,15 @@ pub struct Loja {
     pub vendedor: Option<EntityId>,
     itens: Vec<ShopItem>,
     moeda_magica: bool,
-    /// Linha escolhida e quanto dela vai no lote.
+    /// The chosen row and how much of it goes in the batch.
     sel: usize,
     qtd: u32,
-    /// (texto, deu certo, quando).
+    /// (text, succeeded, when).
     aviso: Option<(String, bool, f64)>,
     rolagem: crate::rolagem::Rolagem,
 }
 
-/// Quantos o cobre paga, no teto do lote (pelo menos 1, pra o botao existir).
+/// How many the copper pays for, at the batch cap (at least 1, so the button exists).
 pub fn maximo(cobre: u64, preco: u32) -> u32 {
     if preco == 0 {
         return MAX_LOTE;
@@ -75,12 +75,12 @@ pub fn maximo(cobre: u64, preco: u32) -> u32 {
     ((cobre / preco as u64).min(MAX_LOTE as u64) as u32).max(1)
 }
 
-/// Equipamento vai um por vez (pode ir direto pro corpo); o resto em lote.
+/// Equipment goes one at a time (it may go straight onto the body); the rest in a batch.
 pub fn em_lote(item_id: u16) -> bool {
     shared::equip_slot_of(item_id).is_none()
 }
 
-/// Quanto de `id` (empilhado) a bolsa tem.
+/// How much of `id` (stacked) the bag holds.
 fn na_bolsa(slots: &[InventorySlot], id: u16) -> u64 {
     slots
         .iter()
@@ -116,13 +116,13 @@ impl Loja {
         self.aviso = Some((s, false, get_time()));
     }
 
-    /// O lote saiu: diz quanto e volta o seletor pra 1.
+    /// The batch went through: says how many and returns the selector to 1.
     pub fn sucesso(&mut self, s: String) {
         self.aviso = Some((s, true, get_time()));
         self.qtd = 1;
     }
 
-    /// Fecha se o vendedor sumiu ou o personagem se afastou dele.
+    /// Closes if the vendor vanished or the character walked away from them.
     pub fn conferir_distancia(&mut self, eu: Option<Vec2>, npc: Option<Vec2>) {
         if !self.aberta() {
             return;
@@ -133,8 +133,8 @@ impl Loja {
         }
     }
 
-    /// (painel, lista). A lista mostra no maximo o que cabe acima do bloco de
-    /// compra; o resto rola.
+    /// (panel, list). The list shows at most what fits above the purchase block;
+    /// the rest scrolls.
     fn escala() -> f32 {
         estilo::escala_do_painel(LARGURA, 640.0)
     }
@@ -156,7 +156,7 @@ impl Loja {
         (p, lista)
     }
 
-    /// Com o mouse em cima do painel o clique e' da loja, e nao do mundo.
+    /// With the mouse over the panel the click belongs to the shop, not the world.
     pub fn pega_mouse(&self) -> bool {
         self.aberta() && self.areas().0.contains(Vec2::from(mouse_position()))
     }
@@ -239,7 +239,7 @@ impl Loja {
             estilo::BORDA,
         );
 
-        // ── lista: tocar ESCOLHE (nao compra mais sem querer) ──
+        // ── list: touching SELECTS (no more buying by accident) ──
         if self.itens.is_empty() {
             estilo::texto(
                 p.x + 16.0 * f,
@@ -348,7 +348,7 @@ impl Loja {
                 estilo::SUAVE,
             );
 
-            // Seletor: [−]  qtd  [+]   [1] [10] [50] [Máx]
+            // Selector: [-]  qty  [+]   [1] [10] [50] [Max]
             let y = d.y + 38.0 * f;
             let h = 36.0 * f;
             let menos = Rect::new(d.x, y, 40.0 * f, h);
@@ -380,7 +380,7 @@ impl Loja {
                 self.qtd = max;
             }
 
-            // Total do lote e o que sobra.
+            // The batch total and what is left.
             let total_lote = item.price as u64 * self.qtd as u64;
             let falta = total_lote > saldo;
             let t = format!("Total: {} {moeda}", crate::bolsa::milhar(total_lote));
