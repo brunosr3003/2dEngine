@@ -1,3 +1,17 @@
+29/09/2026 — A Ilha Mágica virou uma luta que dá pra aguentar
+
+As ilhotas de combate da Ilha Mágica tinham mobs demais, e não era só a conta: as cinco hordas de cada ilhota se sobrepõem de propósito, e elas estavam nascendo em cima umas das outras — dois grupos ocupando o mesmo pedaço de chão. Uma ilhota chegava a 76 bichos, e uma única pancada acordava 39 deles de uma vez. Não havia classe que segurasse isso.
+
+Agora cada ilhota tem uma horda de 9 no meio e uma de 3 a 6 em cada lado, e duas hordas não dividem mais o mesmo lugar. A pior puxada caiu de 39 bichos para 9. A ilha inteira saiu de 221 bichos para 96, nos três degraus.
+
+A ilhota do Colosso desceu junto. Ela continua com o espaço largo de sempre — é o que deixa chão entre você e o chefe, e desviar dele na mão é a graça —, mas com todo o resto caindo para 9 e 6 ela tinha virado a horda mais cheia da ilha, bem onde isso mais atrapalha.
+
+O nível em cima da cabeça agora acompanha quem sobe de nível. Ele só era enviado uma vez, quando o personagem entrava no seu campo de visão, então se alguém subisse de nível na sua frente o número continuava o antigo até você relogar. Junto foi uma conta errada: com a Poção de Experiência ligada, a plaquinha e a ficha mostravam níveis diferentes pela mesma XP.
+
+O painel da dungeon não fica mais na frente do resto da tela. Ele era desenhado por último e tapava a bolsa, o mercado, as lojas, o painel social e o Menu; agora é o primeiro, e todo o resto passa por cima dele.
+
+Esta atualização é OBRIGATÓRIA: o protocolo subiu para 157. Nada mudou na conversa entre cliente e servidor — o número subiu só para garantir que todo mundo receba a correção do painel da dungeon, que é do lado do cliente.
+
 29/09/2026 — O jogo agora é escrito em inglês, e o português é a tradução
 
 Até aqui o jogo era escrito em português e o inglês era a tradução por cima. Agora é o contrário: o texto nasce em inglês e o português é a tradução. Para quem joga em português nada muda na tela — a mesma frase, no mesmo lugar. O que muda é que o inglês deixa de ter buracos: onde faltava tradução, antes aparecia português no meio da tela em inglês.

@@ -61,11 +61,23 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// recompensa esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`):
 /// cliente 154 anunciaria a cor e o teto errados.
 ///
+/// 157 (29/09/2026): NAO ha' mudanca de wire nenhuma. Nenhuma mensagem, nenhum
+/// campo, nenhuma struct de `protocol.rs` mudou entre o 156 e o 157 — o
+/// servidor 157 e o cliente 156 se entenderiam perfeitamente. O numero subiu
+/// porque o dono quis FORCAR a atualizacao: a correcao do HUD da dungeon
+/// (que ficava na frente de todo o resto do HUD) e' so' do cliente, e sem o
+/// corte quem nao atualizasse continuaria com o defeito na tela.
+///
+/// Fica registrado porque e' um uso diferente do resto desta lista: os outros
+/// degraus existem porque o cliente velho LERIA ERRADO: este existe so' pra
+/// empurrar o cliente novo. Se um dia alguem procurar "o que mudou no fio
+/// entre 156 e 157", a resposta e' nada.
+///
 /// ORDEM OBRIGATORIA ao subir isto: cliente PUBLICADO nas cinco plataformas
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 156;
+pub const PROTOCOL_VERSION: u16 = 157;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
