@@ -1,24 +1,24 @@
-//! A TRILHA: tudo que um bot faz vira uma linha, e nada se perde.
+//! THE TRAIL: everything a bot does becomes a line, and nothing is lost.
 //!
-//! O pedido era "tudo isso tem que ser trackável". Trackável de verdade quer
-//! dizer duas coisas diferentes, e as duas estao aqui:
+//! The request was "all of this has to be trackable". Really trackable means
+//! two different things, and both are here:
 //!
-//! 1. **O que aconteceu**, em ordem, com hora: um JSONL, uma linha por evento.
-//!    E' o que responde "por que o bot 3 travou as 14h12" — pergunta que um
-//!    contador agregado nunca responde.
-//! 2. **Como esta indo**, em numero: o resumo, que responde "quanto tempo leva
-//!    pra chegar no nivel 10" e "quantas missoes por hora".
+//! 1. **What happened**, in order, with a time: a JSONL, one line per event.
+//!    It is what answers "why did bot 3 jam at 14:12" — a question an
+//! aggregated counter never answers.
+//! 2. **How it is going**, as a number: the summary, which answers "how long
+//!    does it take to reach level 10" and "how many quests per hour".
 //!
-//! JSONL e nao um banco: o arquivo e' anexavel, sobrevive a queda do processo,
-//! e da' pra ler com `tail -f` enquanto roda. Banco exigiria schema e migracao
-//! pra um dado que e' descartavel por natureza.
+//! JSONL and not a database: the file is appendable, survives the process
+//! crashing, and can be read with `tail -f` while it runs. A database would
+//! demand a schema and a migration for data that is disposable by nature.
 
 use std::io::Write;
 use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-/// Em que ponto da vida o bot esta'. E' o eixo que separa "o bot nao faz
-/// missao" de "o bot nunca chegou a entrar no mundo".
+/// At what point in its life the bot is. It is the axis that separates "the
+/// bot does not do quests" from "the bot never got into the world at all".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fase {
     Cadastrando,
@@ -46,13 +46,13 @@ impl Fase {
 pub struct Evento<'a> {
     pub bot: &'a str,
     pub fase: Fase,
-    /// Verbo curto e estavel: `quest_aceita`, `mob_morto`, `item_vendido`.
-    /// Estavel porque e' por ele que se agrega depois.
+    /// A short, stable verb: `quest_aceita`, `mob_morto`, `item_vendido`. Stable
+    /// because it is what gets aggregated later.
     pub acao: &'a str,
     pub ok: bool,
-    /// Livre, pra quem for ler com o olho.
+    /// Free-form, for whoever reads it with their eyes.
     pub detalhe: String,
-    /// Numeros do estado no momento — e' o que deixa reconstruir a curva.
+    /// Numbers of the state at that moment — it is what lets the curve be rebuilt.
     pub nivel: u32,
     pub xp: i64,
     pub ouro: i64,
@@ -68,13 +68,13 @@ pub struct Trilha {
 pub struct Resumo {
     pub eventos: u64,
     pub falhas: u64,
-    /// Contagem por ação, que é o agregado que responde "quantas por hora".
+    /// Count per action, which is the aggregate that answers "how many per hour".
     pub por_acao: std::collections::BTreeMap<String, u64>,
-    /// Quando cada bot chegou a cada nível, em segundos desde o início. É a
-    /// curva de progressão — o número que o dono quer ver pra saber se o jogo
-    /// está calibrado.
+    /// When each bot reached each level, in seconds since the start. It is the
+    /// progression curve — the number the owner wants to see to know whether the
+    /// game is calibrated.
     pub nivel_em_s: std::collections::BTreeMap<u32, Vec<f64>>,
-    /// A última falha de cada ação, pra não precisar caçar no arquivo.
+    /// The last failure of each action, so there is no need to hunt in the file.
     pub ultima_falha: std::collections::BTreeMap<String, String>,
 }
 
@@ -188,12 +188,11 @@ fn json_str(v: &str) -> String {
 mod testes {
     use super::*;
 
-    /// Detalhe com aspas ou quebra de linha não pode estragar o JSONL.
+    /// A detail with quotes or a line break must not spoil the JSONL.
     ///
-    /// Uma linha quebrada torna o arquivo inteiro ilegível pra `jq`, e é
-    /// justamente numa FALHA que o detalhe costuma trazer texto de erro com
-    /// aspas — ou seja, o defeito apareceria exatamente quando o arquivo mais
-    /// importa.
+    /// One broken line makes the whole file unreadable to `jq`, and it is
+    /// precisely on a FAILURE that the detail tends to carry error text with
+    /// quotes — that is, the defect would appear exactly when the file matters most.
     #[test]
     fn detalhe_com_aspas_nao_quebra_a_linha() {
         assert_eq!(json_str(r#"erro: "x" não achado"#), r#""erro: \"x\" não achado""#);
@@ -203,7 +202,7 @@ mod testes {
 
     #[test]
     fn a_fase_tem_nome_estavel() {
-        // Os nomes são chave de agregação: mudar um quebra relatório antigo.
+        // The names are aggregation keys: changing one breaks an old report.
         assert_eq!(Fase::NoMundo.nome(), "no_mundo");
         assert_eq!(Fase::Cadastrando.nome(), "cadastrando");
     }

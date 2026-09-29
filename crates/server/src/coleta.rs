@@ -1,13 +1,13 @@
-//! Coleta por NO': as contas puras. O jogador escolhe uma pedra (ou tronco),
-//! chega ao alcance e coleta ELA, ciclo a ciclo; o estado por sessao e as
-//! mensagens moram no `world`. Ver docs/COLETA.md.
+//! Gathering by NODE: the pure sums. The player picks a stone (or a log),
+//! gets in range and gathers THAT one, cycle by cycle; the per-session state
+//! and the messages live in `world`. See docs/COLETA.md.
 use glam::Vec2;
 
-/// Quanto o corpo pode escorregar (empurrao, arredondamento) sem que conte
-/// como "andou" e a coleta pare.
+/// How far the body may slip (a shove, rounding) without it counting as
+/// "moved" and stopping the gathering.
 pub const TOLERANCIA_MOVER: f32 = 0.35;
 
-/// Folga em cima do alcance: o cliente para PERTO do ponto, nao nele.
+/// Slack on top of the range: the client stops NEAR the point, not on it.
 const FOLGA_ALCANCE: f32 = 0.25;
 
 /// Da borda do corpo do jogador a' borda do no' cabe no alcance?
@@ -16,14 +16,14 @@ pub fn ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
         <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
 }
 
-/// O cliente pode parar antes do destino. Mesmo o ponto mais distante
-/// dessa tolerância precisa continuar dentro do alcance de coleta.
+/// The client may stop short of the destination. Even the furthest point of
+/// that tolerance has to stay within gathering range.
 pub fn aproximacao_ao_alcance(pos: Vec2, centro: Vec2, raio_no: f32) -> bool {
     pos.distance(centro) + shared::COLETA_TOLERANCIA_CHEGADA
         - raio_no - shared::ENTITY_RADIUS <= shared::COLETA_ALCANCE_UN + FOLGA_ALCANCE
 }
 
-/// Onde ficar pra coletar: do lado de quem chega, no meio do alcance.
+/// Where to stand to gather: on the side of whoever arrives, in the middle of the range.
 pub fn ponto_de_coleta(centro: Vec2, raio_no: f32, eu: Vec2) -> Vec2 {
     let dir = (eu - centro).try_normalize().unwrap_or(Vec2::X);
     centro + dir * (raio_no + shared::ENTITY_RADIUS + shared::COLETA_ALCANCE_UN * 0.5)

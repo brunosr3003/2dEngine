@@ -1,5 +1,5 @@
-//! Evolução das doze habilidades. A tela só apresenta custos e envia pedidos;
-//! Energia, cobre, tomos e tier são sempre conferidos pelo servidor.
+//! Evolution of the twelve skills. The screen only presents costs and sends
+//! requests; Energy, copper, tomes and tier are always checked by the server.
 
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
@@ -30,12 +30,12 @@ impl EvolucaoSkills {
         self.aviso = Some(texto);
     }
 
-    /// Da' pra evoluir ALGUMA habilidade agora mesmo? E' o ponto vermelho na
-    /// aba Habilidades: sem ele, o jogador so' descobria que juntou Energia
-    /// e tomo bastante abrindo o painel e conferindo as doze na mao.
+    /// Can SOME skill be evolved right now? It is the red dot on the Skills tab:
+    /// without it, the player only found out they had gathered enough Energy and
+    /// tomes by opening the panel and checking all twelve by hand.
     ///
-    /// As mesmas quatro contas do botao "Evoluir habilidade": nivel, Energia,
-    /// cobre e tomo. Nao adianta acender por uma e o botao continuar apagado.
+    /// The same four sums as the "Evolve skill" button: level, Energy, copper
+    /// and tome. There is no point lighting up for one while the button stays dark.
     pub fn pode_evoluir_alguma(&self, catalogo: &[Skill], nivel: u32, cobre: u32) -> bool {
         catalogo.iter().any(|skill| {
             if nivel < skill.nivel_necessario() {
@@ -112,14 +112,14 @@ impl EvolucaoSkills {
 
         // ── o foco do tutorial cobre o CORPO do painel ──
         //
-        // O passo e' "evolua uma habilidade", nao "evolua esta aqui". Marcando
-        // so' o botao da skill SELECIONADA, o foco travava o toque no resto e
-        // a unica que dava pra subir era a primeira da lista — o mesmo defeito
-        // que a coluna de "+" da Ficha teve, achado jogando em 20/09/2026.
+        // The step is "evolve a skill", not "evolve this one". Marking only the
+        // SELECTED skill's button, the focus locked the touch on everything else and
+        // the only one that could be raised was the first in the list — the same
+        // defect the Sheet's "+" column had, found while playing on 20/09/2026.
         //
-        // O painel INTEIRO, e nao so' da' lista pra baixo: as abas de
-        // conjunto, as doze habilidades, o botao de evoluir — e o X. Deixar o
-        // X de fora prendia o jogador no painel ate' o foco expirar sozinho.
+        // The WHOLE panel, and not only from the list down: the weapon-set tabs,
+        // the twelve skills, the evolve button — and the X. Leaving the X out
+        // trapped the player in the panel until the focus expired by itself.
         crate::foco::marca(crate::foco::chave::SKILL_EVOLUIR, p);
 
         let largura_aba = 210.0 * f;
@@ -247,16 +247,16 @@ impl EvolucaoSkills {
                 },
             );
         }
-        // O QUE FALTA, item a item — e nao tudo numa linha cinza.
+        // WHAT IS MISSING, item by item — and not everything on one grey line.
         //
-        // Era: "Proximo: Tier V · nv 15 · 1.500 Energia + 2.000 cobre + tomo
-        // Verde". Tudo verdadeiro, e ilegivel: nao dizia o que o jogador TEM,
-        // entao ele nao sabia o que estava faltando nem quanto ia gastar. O
-        // dono: "nao da' pra saber quantos livros ta gastando, quanto eu
-        // tenho, nada ali ta fazendo sentido".
+        // It was: "Next: Tier V · lv 15 · 1,500 Energy + 2,000 copper + Green
+        // tome". All true, and illegible: it did not say what the player HAS, so
+        // they did not know what was missing nor how much they would spend. The
+        // owner: "there's no way to know how many books you're spending, how many I
+        // have, nothing there makes sense".
         //
-        // Uma linha por requisito, cada uma com o que se pede e o que se tem,
-        // verde quando cumprido e vermelho quando nao. O olho acha o vermelho.
+        // One line per requirement, each with what is asked and what is held, green
+        // when met and red when not. The eye finds the red.
         let custo = skills::custo_de_evolucao(tier);
         match custo {
             None => estilo::texto_ajustado(
@@ -304,10 +304,10 @@ impl EvolucaoSkills {
                             format!("1 tomo {} · você: {tem_tomo}", g.nome()),
                             tem_tomo > 0,
                         ),
-                        // Dizer que NAO pede tomo importa tanto quanto dizer
-                        // que pede: os tres primeiros tiers nao pedem, e o
-                        // dono achou que estava bugado por conseguir evoluir
-                        // "sem ter livros".
+                        // Saying it does NOT need a tome matters as much as saying
+                        // it does: the first three tiers do not, and the owner
+                        // thought it was bugged for being able to evolve
+                        // "without having books".
                         None => ("Este tier não pede tomo.".to_string(), true),
                     },
                 ];
@@ -353,9 +353,9 @@ impl EvolucaoSkills {
         estilo::texto(
             x,
             y + 339.0 * f,
-            // "Condensar" nao dizia nada a ninguem — o dono: "condensar livro
-            // nem sei o que e'". O que o botao faz e' FABRICAR um tomo desta
-            // habilidade gastando Energia e cobre; entao e' isso que ele diz.
+            // "Condense" said nothing to anyone — the owner: "condense a book, I don't
+            // even know what that is". What the button does is MAKE a tome for this
+            // skill by spending Energy and copper; so that is what it says.
             &format!(
                 "Fabricar 1 tomo {} desta habilidade — custa {} Energia + {} cobre",
                 grau.nome(),
@@ -409,7 +409,7 @@ impl EvolucaoSkills {
     }
 }
 
-/// Captura local do painel, sem conexão nem personagem real.
+/// Local capture of the panel, with no connection and no real character.
 #[cfg(debug_assertions)]
 pub async fn previa() {
     let saida = std::env::var("MMO_PREVIA_SAIDA")

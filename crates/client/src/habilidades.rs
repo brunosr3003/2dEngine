@@ -1,4 +1,4 @@
-//! Barra de skills e efeitos confirmados pelo servidor.
+//! Skill bar and effects confirmed by the server.
 use crate::{
     habilidades_input::{Arrasto, Gesto},
     hud_estilo as estilo,
@@ -20,8 +20,8 @@ pub struct Habilidades {
     efeitos: Vec<Efeito>,
     luz: Option<macroquad::material::Material>,
     pub automaticas: HashSet<u32>,
-    /// O jogador LIGOU o automatico de uma skill neste quadro (o passo
-    /// tutorial conta o gesto; o `main` le' e zera).
+    /// The player SWITCHED ON a skill's automatic this frame (the tutorial step
+    /// counts the gesture; `main` reads it and clears it).
     pub ligou_auto: bool,
     arrasto: Arrasto,
     tentar_apos: HashMap<u32, f64>,
@@ -133,21 +133,21 @@ mod tests {
 
     /// O caminho do MODO ECONOMIA: entrada bloqueada, AUTO rodando.
     ///
-    /// O dono morria toda vez que o modo economia ligava e aguentava jogando.
-    /// `usar_habilidade` saia no `teclado_bloqueado()` e levava a rotacao AUTO
-    /// junto — nenhuma skill, nem a de cura, com a tela preta. So' a pocao
-    /// continuava, e ela tem recarga de grupo.
+    /// The owner died every time power-saving mode switched on and they kept
+    /// playing. `usar_habilidade` bailed out at `teclado_bloqueado()` and took the
+    /// AUTO rotation with it — no skill, not even the heal, with the screen
+    /// black. Only the potion kept going, and it has a group cooldown.
     #[test]
     fn com_a_entrada_bloqueada_o_auto_ainda_cura() {
         let (mut h, mut c) = exemplo();
         c.conjunto = Conjunto::AnelMagico;
         c.distancia_alvo = None;
         c.vida_baixa = true;
-        // Este e' o caminho que `usar_habilidade` toma com o modo economia
-        // ligado: nao le' gesto nem tecla, e ainda assim lanca.
+        // This is the path `usar_habilidade` takes with power-saving mode on: it
+        // reads neither gesture nor key, and still casts.
         assert_eq!(h.pedido_automatico(c, 10.0), Some(10), "a cura tem que sair");
-        // E cobra a mesma espera do caminho normal, pra tela preta nao virar
-        // uma metralhadora de pedidos.
+        // And it charges the same wait as the normal path, so a black screen does
+        // not become a machine gun of requests.
         assert_eq!(h.pedido_automatico(c, 10.0), None, "sem respeitar a espera");
         assert_eq!(h.pedido_automatico(c, 13.0), Some(11));
     }
@@ -178,8 +178,8 @@ impl Habilidades {
         self.arrasto.cancela();
     }
 
-    /// O aviso das skills ainda valendo — vai pra faixa de estado unica, com
-    /// prioridade sobre as outras.
+    /// The notice of the skills still in effect — it goes to the single status
+    /// strip, with priority over the others.
     pub fn aviso_ativo(&self) -> Option<&str> {
         self.aviso
             .as_ref()
@@ -191,16 +191,16 @@ impl Habilidades {
         get_time() < self.ocupada_ate || get_time() < self.pendente_ate
     }
 
-    /// O ponto `p` cai num botao de skill (ou no de pulo)? Sem olhar arrasto
-    /// em andamento — e' o que o joystick pergunta pro OUTRO dedo.
+    /// Does point `p` land on a skill button (or the jump one)? Without looking
+    /// at a drag in progress — it is what the joystick asks about the OTHER finger.
     pub fn botao_em(&self, p: Vec2) -> bool {
         (0..4).any(|i| retangulo(i).contains(p))
     }
 
     pub fn pega_mouse(&self) -> bool {
         let (x, y) = mouse_position();
-        // 0..4: o quarto e' o botao de PULO, e tocar nele tambem nao pode
-        // virar clique no mundo.
+        // 0..4: the fourth is the JUMP button, and touching it must not become a
+        // click in the world either.
         self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).contains(vec2(x, y)))
     }
 
@@ -299,19 +299,19 @@ impl Habilidades {
         self.pedido_automatico(contexto, agora)
     }
 
-    /// So' a rotacao AUTO, SEM ler entrada nenhuma.
+    /// The AUTO rotation only, WITHOUT reading any input.
     ///
-    /// E' o caminho de quando a entrada do jogador nao vale pro mundo: modo
-    /// economia de energia e painel grande aberto. O AUTO nao e' entrada — e'
-    /// o jogo se jogando, do mesmo jeito que o auto combate segue escolhendo
-    /// alvo com o menu aberto (`atualizar_auto_combate`).
+    /// It is the path for when the player's input does not count for the world:
+    /// power-saving mode and a large panel open. AUTO is not input — it is the
+    /// game playing itself, the same way auto combat keeps choosing a target with
+    /// the menu open (`atualizar_auto_combate`).
     ///
-    /// Antes disto `usar_habilidade` saia inteiro no `teclado_bloqueado()`, e
-    /// levava o AUTO junto: no modo economia o personagem nao lancava NADA.
-    /// Sem skill de dano a luta durava muito mais (mais golpes tomados) e, o
-    /// que de fato matava, a skill de CURA nunca saia — so' a pocao, que tem
-    /// recarga de grupo. E' por isso que se aguentava jogando e se morria no
-    /// modo economia.
+    /// Before this `usar_habilidade` bailed out entirely at `teclado_bloqueado()`,
+    /// and took AUTO with it: in power-saving mode the character cast NOTHING.
+    /// With no damage skill the fight lasted much longer (more blows taken) and,
+    /// what actually killed, the HEAL skill never came out — only the potion,
+    /// which has a group cooldown. That is why you kept playing and died in
+    /// power-saving mode.
     pub fn pedido_automatico(&mut self, contexto: Contexto, agora: f64) -> Option<u32> {
         let id = self.proximo_auto(contexto, agora)?;
         self.ultimo_auto = id;
@@ -452,7 +452,7 @@ impl Habilidades {
                 pronto && auto,
             );
             let alfa = if pronto { 1.0 } else { 0.40 };
-            // Arte colorida da skill no disco da arma; o vetor so' se faltar.
+            // The skill's colored art on the weapon's disc; the vector only if it is missing.
             if !crate::icones_ui::skill(s.id, c, raio * 1.5, if livre { alfa } else { 0.30 }) {
                 estilo::icone(s.id, c, raio * 0.58, Color::new(cor.r, cor.g, cor.b, alfa));
             }

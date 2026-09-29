@@ -34,14 +34,14 @@ async fn main() -> Result<()> {
 
     // Content by role.
     let shops: &[(i32, &[i32])] = &[
-        // Mercador: armas/armaduras básicas + poções básicas
+        // Merchant: basic weapons/armor + basic potions
         (1, &[3, 12, 14, 4, 7, 16, 2, 8]),
-        // Alquimista: poções
+        // Alchemist: potions
         (3, &[2, 8, 9, 10, 11]),
-        // Nobre: joias e amuletos. O item 100 era o barco antigo, apagado em
-        // 20/09/2026 — o Nobre passou a anunciar um id que nao existe mais.
+        // Noble: jewellery and amulets. Item 100 was the old boat, deleted on
+        // 20/09/2026 — the Noble started advertising an id that no longer exists.
         (7, &[5, 19, 20, 29, 30, 43, 44, 21]),
-        // Camponês: comida (placeholder — trocar por itens de comida quando existirem)
+        // Peasant: food (placeholder — swap for food items when they exist)
         (8, &[2, 11]),
     ];
     for (sid, items) in shops {
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         println!("shop {} ← {} items", sid, items.len());
     }
 
-    // buy_price dos itens do Nobre que podem estar sem preço (gema/colares).
+    // buy_price of the Noble's items that may have no price (gem/necklaces).
     for (item, price) in [
         (21, 500i32),
         (43, 250),
