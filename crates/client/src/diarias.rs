@@ -1,12 +1,12 @@
-//! O painel das DIARIAS, no molde dos "Pedidos" do MIR4: separado do
-//! rastreador e do menu de todas as missoes. Abre pelo icone no topo direito
-//! e pelo Menu — nunca por tecla (docs/HUD.md 2.5).
+//! The DAILIES panel, in the mould of MIR4's "Requests": separate from the
+//! tracker and from the all-quests menu. Opens from the icon at the top right
+//! and from the Menu — never by key (docs/HUD.md 2.5).
 //!
-//! Aceitar e entregar sao com o Mestre de Missoes: o servidor recusa longe
-//! dele. O botao "Pegar" manda `AcceptQuest` direto desde 22/09/2026 — o
-//! antigo "Ir aceitar" levava
-//! ate' o Mestre (a oferta abre ao chegar), "Ir" liga a auto missao e "Ir
-//! entregar" tambem — ela ja' volta ao Mestre com o objetivo cumprido.
+//! Accepting and handing in are with the Quest Master: the server refuses
+//! from far away. The "Take" button sends `AcceptQuest` directly since
+//! 22/09/2026 — the old "Go accept" walked you to the Master (the offer opens
+//! on arrival), "Go" switches on the auto quest and "Go hand in" too — it
+//! already returns to the Master with the objective met.
 use macroquad::prelude::*;
 use shared::quests::{zona_da_missao, QuestDef, QUESTS};
 use std::collections::HashMap;
@@ -28,8 +28,8 @@ pub fn da_ilha(zona: Option<&str>) -> Vec<&'static QuestDef> {
     v
 }
 
-/// Estado de uma diaria. Entregue e ainda antes do reset e' "concluida hoje"
-/// — no menu geral isso aparecia como bloqueada com cooldown em minutos.
+/// A daily's state. Handed in and still before the reset is "completed today"
+///  — in the general menu that showed as blocked with a cooldown in minutes.
 pub fn estado_da_diaria(d: &QuestDef, c: &Contexto) -> Estado {
     let no_log = c.log.iter().any(|q| q.id == d.id);
     if !no_log && c.entregues.get(&d.id).is_some_and(|&cd| cd > c.agora_unix) {
@@ -38,7 +38,7 @@ pub fn estado_da_diaria(d: &QuestDef, c: &Contexto) -> Estado {
     estado(d, c)
 }
 
-/// O rotulo do botao pra cada estado; `None` = sem botao.
+/// The button label for each state; `None` = no button.
 pub fn botao_de(e: &Estado) -> Option<&'static str> {
     match e {
         Estado::Disponivel => Some("Pegar"),
@@ -48,7 +48,7 @@ pub fn botao_de(e: &Estado) -> Option<&'static str> {
     }
 }
 
-/// O clique numa diaria. Concluida avisa quando volta.
+/// The click on a daily. A completed one says when it comes back.
 pub fn clique_da_diaria(d: &QuestDef, e: &Estado, agora_unix: i64) -> Clique {
     match e {
         Estado::Concluida => Clique::Aviso(format!(
@@ -60,14 +60,14 @@ pub fn clique_da_diaria(d: &QuestDef, e: &Estado, agora_unix: i64) -> Clique {
     }
 }
 
-/// Alguma diaria pra aceitar ou entregar agora: ponto vermelho.
+/// Some daily to accept or hand in right now: a red dot.
 pub fn tem_pendente(c: &Contexto) -> bool {
     da_ilha(c.zona)
         .iter()
         .any(|d| matches!(estado_da_diaria(d, c), Estado::Disponivel | Estado::Pronta))
 }
 
-/// "80 cobre · 120 XP · 1× Poção de Experiência".
+/// "80 copper · 120 XP · 1x Experience Potion".
 pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     let mut partes = Vec::new();
     if d.reward_cobre > 0 {
@@ -99,7 +99,7 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
 pub struct Diarias {
     pub aberto: bool,
     rolagem: crate::rolagem::Rolagem,
-    /// Lupa numa diaria de juntar item: o item pro "Onde obter".
+    /// The magnifier on a collect-item daily: the item for "Where to get".
     pub onde_obter: Option<u16>,
 }
 
@@ -393,7 +393,7 @@ mod tests {
             "pega na hora, sem andar ate' o Mestre"
         );
 
-        // A Cacada (raid) ainda nao existe; a dungeon (606) ja' conta.
+        // The Hunt (raid) does not exist yet; the dungeon (606) already counts.
         let d607 = quest_by_id(607).unwrap();
         assert_eq!(
             estado_da_diaria(d607, &c),
@@ -444,7 +444,7 @@ mod tests {
     fn ponto_vermelho_so_com_algo_pra_aceitar_ou_entregar() {
         let vazio = HashMap::new();
         assert!(tem_pendente(&ctx(&[], &vazio, Some("ilha_inicial"))));
-        // Tudo que existe entregue hoje; as "em breve" continuam trancadas.
+        // Everything that exists handed in today; the "coming soon" ones stay locked.
         let entregues: HashMap<u16, i64> = da_ilha(Some("ilha_inicial"))
             .iter()
             .filter(|d| !d.em_breve)

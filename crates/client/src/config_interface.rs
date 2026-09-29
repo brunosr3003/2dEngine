@@ -47,11 +47,11 @@ impl Default for ConfigInterface {
     }
 }
 
-/// O que mudou no quadro.
+/// What changed this frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Mudanca {
     Escala(f32),
-    /// Minutos parado ate' entrar sozinho no modo economia (0 = nunca).
+    /// Minutes idle before entering power-saving mode on its own (0 = never).
     EconomiaAuto(u16),
     EconomiaAgora,
     Sombras(Sombras),
@@ -84,7 +84,7 @@ impl ConfigInterface {
 
     /// Desenha e trata o clique.
     pub fn desenha(&mut self, atual: f32, economia_auto: u16) -> Option<Mudanca> {
-        // O painel cresce junto com o texto que ele mostra.
+        // The panel grows along with the text it shows.
         let f = estilo::fator_texto();
         let seguro = hud_layout::tela_segura();
         if seguro.h < 500.0 * f {
@@ -93,7 +93,7 @@ impl ConfigInterface {
         }
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
-            // 574 e nao 500: a fila do idioma entrou embaixo das sombras.
+            // 574 and not 500: the language row went in under the shadows.
             (574.0 * f).min(seguro.h - 16.0),
         );
         let r = Rect::new(
@@ -255,9 +255,9 @@ impl ConfigInterface {
 
         // ── idioma ──
         //
-        // Fica aqui, e nao numa tela propria, porque quem procura idioma
-        // procura em opcoes — e porque a fila e' igual a das sombras: duas
-        // escolhas exclusivas, uma marcada.
+        // It lives here, and not on a screen of its own, because someone looking
+        // for language looks in options — and because the row is the same as the
+        // shadows one: two exclusive choices, one ticked.
         let yi = ys + 92.0 * f;
         estilo::texto(r.x + 18.0 * f, yi, "Idioma do jogo", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
@@ -273,8 +273,8 @@ impl ConfigInterface {
                     42.0 * f,
                 );
                 estilo::cartao(b, b.contains(m), lang == atual_idioma);
-                // O nome de cada lingua NA PROPRIA LINGUA, e por isso fora do
-                // dicionario: quem procura ingles procura "English".
+                // Each language's name IN ITS OWN LANGUAGE, and therefore outside the
+                // dictionary: someone looking for English looks for "English".
                 estilo::texto_centro(
                     b.center().x,
                     b.center().y + 6.0 * f,
@@ -487,8 +487,8 @@ impl ConfigInterface {
             13,
             estilo::SUAVE,
         );
-        // O idioma tambem no compacto: sem isso, celular em pe' com tela
-        // baixa nao teria como trocar de lingua.
+        // The language in the compact layout too: without this, a phone held
+        // upright with a short screen would have no way to change language.
         estilo::texto(rx, r.y + 194.0 * f, "Idioma", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
         let iw = (col - 6.0 * f) / 2.0;

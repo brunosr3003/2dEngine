@@ -1,10 +1,10 @@
-//! Menu → Comércio → Mercado: o mercado global (docs/MERCADO.md), no molde do
-//! MIR4. Um mercado so' pra todos os servidores.
+//! Menu -> Trade -> Market: the global market (docs/MERCADO.md), in the MIR4
+//! mould. One market for every server.
 //!
-//! O cliente so' PEDE. Nivel, vinculo, gold, custodia e taxa sao decididos no
-//! servidor; a conta de taxa daqui e' a mesma funcao (`shared::mercado`), so'
-//! pra mostrar antes de confirmar. Tudo por toque: quantidade e preco sao
-//! botoes, nao digitacao — so' a busca usa o teclado.
+//! The client only ASKS. Level, binding, gold, escrow and fee are decided on
+//! the server; the fee maths here is the same function (`shared::mercado`),
+//! only to show before confirming. Everything by touch: quantity and price
+//! are buttons, not typing — only the search uses the keyboard.
 use std::collections::{HashMap, HashSet};
 
 use macroquad::prelude::*;
@@ -33,7 +33,7 @@ const ABAS: [(Aba, &str); 5] = [
     (Aba::Tp, "TP"),
 ];
 
-/// O que o painel le do jogo.
+/// What the panel reads from the game.
 pub struct Contexto<'a> {
     pub slots: &'a [InventorySlot],
     pub nomes: &'a HashMap<u16, String>,
@@ -44,7 +44,7 @@ pub struct Contexto<'a> {
     pub solido: &'a macroquad::material::Material,
 }
 
-/// Uma compra sendo confirmada.
+/// A purchase being confirmed.
 struct Compra {
     anuncio: AnuncioNet,
     qtd: u64,
@@ -53,9 +53,9 @@ struct Compra {
 #[derive(Default)]
 pub struct Mercado {
     pub aberto: bool,
-    /// A lupa de um item pediu o "Onde obter" (main abre o popup).
+    /// An item's magnifier asked for "Where to get" (main opens the popup).
     pub onde_obter: Option<u16>,
-    /// Itens vinculados (`ItemsConfig`): nao aparecem pra vender.
+    /// Bound items (`ItemsConfig`): they do not show up to sell.
     pub vinculados: HashSet<u16>,
     aba: Aba,
     categoria: u8,
@@ -65,7 +65,7 @@ pub struct Mercado {
     lista: Vec<AnuncioNet>,
     tem_mais: bool,
     lista_tp: Vec<AnuncioNet>,
-    /// A ultima busca pedida foi a de TP (a resposta nao diz).
+    /// The last search asked for was the TP one (the answer does not say).
     ultima_busca_tp: bool,
     meus: Vec<AnuncioNet>,
     historico: Vec<VendaNet>,
@@ -77,7 +77,7 @@ pub struct Mercado {
     venda_preco: u64,
     tp_qtd: u64,
     tp_preco: u64,
-    /// (texto, ok, quando)
+    /// (text, ok, when)
     aviso: Option<(String, bool, f64)>,
     /// Primeira linha visivel da lista da aba.
     rolagem: usize,
@@ -93,7 +93,7 @@ fn filtro_tp() -> FiltroNet {
 }
 
 impl Mercado {
-    /// Abre na aba Comprar e devolve o que pedir ao servidor.
+    /// Opens on the Buy tab and returns what to ask the server.
     pub fn abrir(&mut self) -> Vec<ClientMessage> {
         self.aberto = true;
         self.aba = Aba::Comprar;
@@ -112,7 +112,7 @@ impl Mercado {
         self.pedidos_da_aba()
     }
 
-    /// Abre na aba Comprar ja' buscando `texto` (o "Buscar" do Onde obter).
+    /// Opens on the Buy tab already searching `texto` (the "Search" from Where to get).
     pub fn abrir_buscando(&mut self, texto: &str) -> Vec<ClientMessage> {
         self.busca = texto.to_string();
         self.categoria = Categoria::Todas as u8;
@@ -127,7 +127,7 @@ impl Mercado {
         self.compra = None;
     }
 
-    /// O teclado da tela abre com a busca em foco.
+    /// The on-screen keyboard opens with the search focused.
     pub fn foco_na_busca(&self) -> bool {
         self.aberto && self.foco_busca
     }
@@ -164,7 +164,7 @@ impl Mercado {
         }
     }
 
-    // ── o que o servidor manda ──
+    // ── what the server sends ──
 
     pub fn lista(&mut self, anuncios: Vec<AnuncioNet>, pagina: u16, tem_mais: bool) {
         let de_tp = anuncios
@@ -403,7 +403,7 @@ impl Mercado {
             ) {
                 comprar = Some(an.clone());
             }
-            // Tocar no icone do item: "Onde obter" (TP nao tem).
+            // Touching the item's icon: "Where to get" (TP has none).
             if an.tipo == regras::TIPO_ITEM
                 && livre
                 && crate::onde_obter::lupa_no_icone(icone_do_anuncio(r, f))
@@ -456,7 +456,7 @@ impl Mercado {
         }
     }
 
-    /// Setas ▲▼ quando a lista nao cabe (no celular nao ha' roda do mouse).
+    /// Arrows up/down when the list does not fit (on a phone there is no mouse wheel).
     fn rolar(&mut self, r: Rect, total: usize, cabem: usize, livre: bool, f: f32) {
         let (_, roda) = mouse_wheel();
         if livre && roda != 0.0 {
@@ -681,7 +681,7 @@ impl Mercado {
                 if self.venda_preco == 0 {
                     self.venda_preco = 100;
                 }
-                // Referencia de preco: o que ja' esta' a' venda desse item.
+                // Price reference: what is already on sale for that item.
                 let nome = c.nomes.get(&s.item_id).cloned().unwrap_or_default();
                 self.ultima_busca_tp = false;
                 saida.push(ClientMessage::MercadoBuscar {
@@ -1227,12 +1227,12 @@ fn nome_do_anuncio(an: &AnuncioNet, c: &Contexto) -> String {
     }
 }
 
-/// O quadrado do icone numa linha de anuncio.
+/// The icon's square on a listing row.
 fn icone_do_anuncio(r: Rect, f: f32) -> Rect {
     Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f)
 }
 
-/// Uma linha de anuncio com botao a' direita. `true` no clique do botao.
+/// A listing row with a button on the right. `true` on the button's click.
 fn linha_de_anuncio(
     r: Rect,
     an: &AnuncioNet,
@@ -1289,8 +1289,8 @@ fn linha_de_anuncio(
     botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancelar")
 }
 
-/// Numero por toque: [Mín][−] valor [+][Máx] pra quantidade; [÷10][−] valor
-/// [+][×10] pra preco (± anda 10% do valor, no minimo 1).
+/// A number by touch: [Min][-] value [+][Max] for quantity; [/10][-] value
+/// [+][x10] for price (+- moves 10% of the value, at least 1).
 fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bool, f: f32) {
     estilo::texto(r.x, r.y - 6.0 * f, rotulo, 13, estilo::SUAVE);
     let bw = (52.0 * f).min(r.w / 6.0);

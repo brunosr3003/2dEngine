@@ -1,12 +1,13 @@
-//! Conexao WebSocket com o servidor autoritativo.
+//! WebSocket connection to the authoritative server.
 //!
-//! A macroquad roda o loop de render na thread principal e nao tem runtime
-//! async proprio, entao o socket vive numa thread dedicada que fala com o
-//! jogo por canais. A thread e' dona do socket: poe o TcpStream em
-//! non-blocking e alterna entre drenar a fila de saida e ler frames.
+//! macroquad runs the render loop on the main thread and has no async runtime
+//! of its own, so the socket lives on a dedicated thread that talks to the
+//! game over channels. The thread owns the socket: it puts the TcpStream in
+//! non-blocking mode and alternates between draining the outgoing queue and
+//! reading frames.
 //!
-//! Codificacao: `shared::protocol::{encode, decode}` — os MESMOS helpers que
-//! o servidor usa. Nao existe serializacao duplicada neste cliente.
+//! Encoding: `shared::protocol::{encode, decode}` — the SAME helpers the
+//! server uses. There is no duplicate serialisation in this client.
 
 use std::io::ErrorKind;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,15 +28,15 @@ pub enum NetEvent {
 pub struct Net {
     tx_out: Sender<ClientMessage>,
     rx_in: Receiver<NetEvent>,
-    /// Bytes de payload recebidos desde a conexao. E' o numero que decide se o
-    /// jogo cabe num plano de dados, entao ele e' medido aqui, na thread que
-    /// realmente le' o socket, e nao estimado a partir das mensagens.
+    /// Payload bytes received since connecting. It is the number that decides
+    /// whether the game fits in a data plan, so it is measured here, on the
+    /// thread that actually reads the socket, and not estimated from the messages.
     bytes_in: Arc<AtomicU64>,
 }
 
 impl Net {
-    /// Abre a conexao numa thread de fundo. Nao bloqueia o chamador — os
-    /// erros de conexao chegam como `NetEvent::Disconnected`.
+    /// Opens the connection on a background thread. Does not block the caller —
+    /// connection errors arrive as `NetEvent::Disconnected`.
     pub fn connect(url: String) -> Self {
         let (tx_out, rx_out) = mpsc::channel::<ClientMessage>();
         let (tx_in, rx_in) = mpsc::channel::<NetEvent>();
@@ -56,8 +57,8 @@ impl Net {
             }
             let _ = tx_in.send(NetEvent::Connected);
             pump(&mut ws, &rx_out, &tx_in, &contador);
-            // Close limpo: o servidor encerra a sessao e salva o personagem em
-            // vez de esperar o socket morrer por timeout.
+            // A clean close: the server ends the session and saves the character
+            // instead of waiting for the socket to die by timeout.
             let _ = ws.close(None);
             let _ = ws.flush();
         });
@@ -69,8 +70,8 @@ impl Net {
         }
     }
 
-    /// Total de bytes recebidos ate agora. Quem chama tira a diferenca entre
-    /// duas leituras pra ter a taxa.
+    /// Total bytes received so far. The caller takes the difference between two
+    /// reads to get the rate.
     pub fn bytes_in(&self) -> u64 {
         self.bytes_in.load(Ordering::Relaxed)
     }
@@ -88,7 +89,7 @@ impl Net {
 fn set_nonblocking(ws: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>) -> Result<(), String> {
     let stream = match ws.get_mut() {
         MaybeTlsStream::Plain(s) => s,
-        // TLS ainda nao e' necessario: em dev o server e' ws:// local.
+        // TLS is not needed yet: in dev the server is a local ws://.
         _ => return Err("conexao TLS nao suportada ainda".into()),
     };
     stream
@@ -103,7 +104,7 @@ fn pump(
     bytes_in: &AtomicU64,
 ) {
     loop {
-        // Saida — drena tudo que o jogo enfileirou neste frame.
+        // Outgoing — drains everything the game queued this frame.
         loop {
             match rx_out.try_recv() {
                 Ok(msg) => {
@@ -128,7 +129,7 @@ fn pump(
         }
         let _ = ws.flush();
 
-        // Entrada — le o que chegou sem bloquear.
+        // Incoming — reads what arrived without blocking.
         loop {
             match ws.read() {
                 Ok(Message::Binary(b)) => {
@@ -152,7 +153,7 @@ fn pump(
             }
         }
 
-        // ~1ms de folga: o servidor tica a 30Hz, nao ha ganho em girar quente.
+        // ~1ms of slack: the server ticks at 30Hz, there is no gain in spinning hot.
         std::thread::sleep(Duration::from_millis(1));
     }
 }
@@ -162,8 +163,8 @@ fn forward(tx_in: &Sender<NetEvent>, bytes: &[u8]) {
         Ok(sm) => {
             let _ = tx_in.send(NetEvent::Message(Box::new(sm)));
         }
-        // Mensagem desconhecida nao derruba a sessao: o servidor pode ter
-        // variantes que este cliente ainda nao trata.
+        // An unknown message does not drop the session: the server may have
+        // variants this client does not handle yet.
         Err(e) => eprintln!("[net] decode failed: {e}"),
     }
 }

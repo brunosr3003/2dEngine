@@ -1,7 +1,6 @@
-//! Configurador da barra de itens, no molde do MIR4: escolhe o consumivel de
-//! cada espaco, liga o AUTO e ajusta o limiar. Abre pelo Menu (Sistema →
-//! Barra), clicando num espaco vazio ou com o botao direito num espaco —
-//! nenhuma tecla abre.
+//! Item bar configurator, in the MIR4 mould: pick each slot's consumable,
+//! switch AUTO on and adjust the threshold. Opens from the Menu (System ->
+//! Bar), by clicking an empty slot or right-clicking a slot — no key opens it.
 //!
 //! Escolher e' dois cliques: um item da lista e um espaco (ou o contrario).
 use macroquad::prelude::*;
@@ -19,15 +18,15 @@ pub struct ConfigBarra {
     selecionado: Option<u16>,
     /// Espaco escolhido, esperando um item.
     pub espaco_alvo: Option<usize>,
-    /// A lupa de um item pediu o "Onde obter" (main abre o popup).
+    /// An item's magnifier asked for "Where to get" (main opens the popup).
     pub onde_obter: Option<u16>,
-    /// A lista de consumiveis: com a bolsa cheia de pocoes ela passa da tela.
+    /// The consumables list: with a bag full of potions it runs off the screen.
     rolagem: crate::rolagem::Rolagem,
-    /// Mexeu na % de uso de uma pocao neste quadro (o passo tutorial conta).
+    /// Touched a potion's use % this frame (the tutorial step counts it).
     pub mexeu_no_limiar: bool,
 }
 
-/// Consumiveis da bolsa que cabem na barra, sem repetir, com a quantidade.
+/// Consumables in the bag that fit on the bar, without repeats, with the quantity.
 pub fn consumiveis(slots: &[InventorySlot]) -> Vec<(u16, u32)> {
     let mut v: Vec<(u16, u32)> = Vec::new();
     for s in slots
@@ -44,7 +43,7 @@ pub fn consumiveis(slots: &[InventorySlot]) -> Vec<(u16, u32)> {
 }
 
 impl ConfigBarra {
-    /// `espaco`: ja' abre com esse espaco escolhido (clique num vazio).
+    /// `espaco`: opens with that slot already chosen (a click on an empty one).
     pub fn abrir(&mut self, espaco: Option<usize>) {
         *self = Self {
             aberto: true,
@@ -58,7 +57,7 @@ impl ConfigBarra {
         *self = Self::default();
     }
 
-    /// Clique num item da lista. Devolve se mudou a barra.
+    /// A click on a list item. Returns whether the bar changed.
     pub fn escolhe_item(&mut self, barra: &mut Barra, id: u16) -> bool {
         match self.espaco_alvo.take() {
             Some(i) => {
@@ -72,7 +71,7 @@ impl ConfigBarra {
         }
     }
 
-    /// Clique num espaco. Devolve se mudou a barra.
+    /// A click on a slot. Returns whether the bar changed.
     pub fn escolhe_espaco(&mut self, barra: &mut Barra, i: usize) -> bool {
         match self.selecionado.take() {
             Some(id) => {
@@ -90,7 +89,7 @@ impl ConfigBarra {
         }
     }
 
-    /// Desenha e trata o clique. Devolve `true` quando a barra mudou (salvar).
+    /// Draws and handles the click. Returns `true` when the bar changed (save).
     pub fn desenha(
         &mut self,
         barra: &mut Barra,
@@ -179,7 +178,7 @@ impl ConfigBarra {
                 continue;
             }
             estilo::texto(tx, linha.y + 26.0, &nome(esp.item_id), 15, estilo::TEXTO);
-            // Lupa: onde conseguir mais desse consumivel.
+            // Magnifier: where to get more of this consumable.
             if crate::onde_obter::botao(Rect::new(
                 linha.x + linha.w - 44.0,
                 linha.y + 44.0,
@@ -202,13 +201,13 @@ impl ConfigBarra {
                 barra.alterna_auto(i);
                 mudou = true;
             }
-            // Limiar so' pra recurso.
+            // Threshold only for a resource.
             if let Some(c) = cat {
                 if c.limiar_padrao().is_some() {
                     let menos = Rect::new(b_auto.x + b_auto.w + 10.0, b_auto.y, 26.0, 26.0);
                     let mais = Rect::new(menos.x + 86.0, b_auto.y, 26.0, 26.0);
-                    // Os dois botoes e o "< N%" no meio viram UM alvo de
-                    // tutorial: o passo e' "mexa na %", nao "aperte o menos".
+                    // The two buttons and the "< N%" between them become ONE tutorial
+                    // target: the step is "touch the %", not "press minus".
                     crate::foco::marca(
                         crate::foco::chave::POCAO_LIMIAR,
                         Rect::new(menos.x, menos.y, mais.x + mais.w - menos.x, menos.h),
@@ -278,8 +277,8 @@ impl ConfigBarra {
                 estilo::SUAVE,
             );
         }
-        // Rola (dedo, roda ou barra) em vez de cortar o que nao cabe. Toque
-        // no item ou na lupa vale no soltar.
+        // Scrolls (finger, wheel or bar) instead of cutting off what does not fit.
+        // A touch on the item or the magnifier counts on release.
         let area = Rect::new(lx, p.y + 102.0, lw, p.h - 112.0);
         let total = lista.len() as f32 * 50.0;
         let toque = self.rolagem.quadro(area, total, 50.0);
@@ -365,7 +364,7 @@ mod tests {
         assert_eq!(b.espacos[3].limiar, 40, "limiar padrao da categoria");
         b.limpar(3);
         assert_eq!(b.espacos[3], EspacoDaBarra::default());
-        // Abrir por um espaco vazio ja' deixa ele escolhido.
+        // Opening from an empty slot leaves it already chosen.
         c.abrir(Some(1));
         assert!(c.escolhe_item(&mut b, it::STAMINA_POTION));
         assert_eq!(b.espacos[1].item_id, it::STAMINA_POTION);

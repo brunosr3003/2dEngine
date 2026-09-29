@@ -1,12 +1,13 @@
-//! Icones do HUD, das skills e do mapa: arte vetorial propria rasterizada por
-//! `tools/icones/gerar_icones_ui.py` em tres atlas (ver docs/PIPELINE_ARTE.md).
+//! HUD, skill and map icons: our own vector art, rasterised by
+//! `tools/icones/gerar_icones_ui.py` into three atlases (see docs/PIPELINE_ARTE.md).
 //!
-//! HUD e mapa sao silhuetas BRANCAS com contorno escuro: quem desenha passa a
-//! cor do estado (normal, sobre, ativo, travado) e o branco vira essa cor. As
-//! skills ja' vem coloridas no disco da arma; so' o alfa muda.
+//! HUD and map are WHITE silhouettes with a dark outline: the caller passes
+//! the state's color (normal, hover, active, locked) and the white becomes
+//! that color. Skills already come colored on the weapon's disc; only the
+//! alpha changes.
 //!
-//! Filtro LINEAR (nao `Nearest` como os itens de pixel art): o desenho e'
-//! vetor, e reduzido pro tamanho do botao ele tem que continuar liso.
+//! LINEAR filter (not `Nearest` like the pixel-art items): the drawing is
+//! vector, and shrunk to the button's size it has to stay smooth.
 
 use std::cell::OnceCell;
 
@@ -20,13 +21,13 @@ const PNG_MAPA: &[u8] = include_bytes!("../../../assets/icones/mapa.png");
 const PNG_SKILLS: &[u8] = include_bytes!("../../../assets/icones/skills.png");
 const PNG_LOJA: &[u8] = include_bytes!("../../../assets/icones/loja.png");
 
-/// Arte colorida da loja: a moeda TP (`tp`), os pacotes (`tp_1`..`tp_4`) e o
-/// ouro. Nao se tinge.
+/// Colored shop art: the TP coin (`tp`), the bundles (`tp_1`..`tp_4`) and
+/// gold. It is not tinted.
 pub const USADOS_LOJA: &[&str] = &["ouro", "tp", "tp_1", "tp_2", "tp_3", "tp_4"];
 
-/// Todo nome de icone do HUD/menu que o codigo pede. O teste confere que cada
-/// um existe no atlas: renomear no gerador sem mexer aqui quebra o teste, nao
-/// a tela.
+/// Every HUD/menu icon name the code asks for. The test checks that each one
+/// exists in the atlas: renaming in the generator without touching here
+/// breaks the test, not the screen.
 pub const USADOS_UI: &[&str] = &[
     "pets", "guarda_roupa", "minha_ilha", "ilha_magica", "combinar",
     "mobs", "presenca", "dash", "sprint", "pulo", "banco",
@@ -70,7 +71,7 @@ pub const USADOS_UI: &[&str] = &[
     "paleta",
 ];
 
-/// Todo nome de marcador do mapa que o codigo pede.
+/// Every map marker name the code asks for.
 pub const USADOS_MAPA: &[&str] = &[
     "jogador",
     "destino",
@@ -160,8 +161,8 @@ pub fn celula_loja(nome: &str) -> Option<Rect> {
     ))
 }
 
-/// Arte colorida da loja centrada em `c` (moeda TP, pacotes, ouro), com
-/// `alfa`. `false` = nome sem arte.
+/// Colored shop art centered on `c` (TP coin, bundles, gold), with `alfa`.
+/// `false` = a name with no art.
 pub fn loja(nome: &str, c: Vec2, lado: f32, alfa: f32) -> bool {
     let Some(f) = celula_loja(nome) else {
         return false;
@@ -186,8 +187,8 @@ fn desenha(tex: usize, fonte: Rect, c: Vec2, lado: f32, cor: Color, rotacao: f32
     );
 }
 
-/// Icone de HUD/menu centrado em `c`, quadrado de `lado`, tingido por `cor`.
-/// `false` = nome sem icone (quem chamou desenha o substituto).
+/// HUD/menu icon centered on `c`, a square of `lado`, tinted by `cor`.
+/// `false` = a name with no icon (the caller draws the substitute).
 pub fn ui(nome: &str, c: Vec2, lado: f32, cor: Color) -> bool {
     let Some(f) = celula_ui(nome) else {
         return false;
@@ -196,8 +197,8 @@ pub fn ui(nome: &str, c: Vec2, lado: f32, cor: Color) -> bool {
     true
 }
 
-/// Marcador de mapa centrado em `c`, tingido por `cor`, girado `rotacao`
-/// radianos (a seta do jogador).
+/// Map marker centered on `c`, tinted by `cor`, rotated `rotacao` radians
+/// (the player's arrow).
 pub fn mapa(nome: &str, c: Vec2, lado: f32, cor: Color, rotacao: f32) -> bool {
     let Some(f) = celula_mapa(nome) else {
         return false;
@@ -206,7 +207,7 @@ pub fn mapa(nome: &str, c: Vec2, lado: f32, cor: Color, rotacao: f32) -> bool {
     true
 }
 
-/// Icone colorido da skill, com `alfa` (0,4 = indisponivel).
+/// The skill's colored icon, with `alfa` (0.4 = unavailable).
 pub fn skill(id: u32, c: Vec2, lado: f32, alfa: f32) -> bool {
     let Some(f) = celula_skill(id) else {
         return false;
@@ -215,7 +216,7 @@ pub fn skill(id: u32, c: Vec2, lado: f32, alfa: f32) -> bool {
     true
 }
 
-/// O marcador do mapa pra cada bicho da tabela (`economy::KINDS_INICIAIS`).
+/// The map marker for each creature in the table (`economy::KINDS_INICIAIS`).
 pub fn nome_do_bicho(kind: u16) -> &'static str {
     match kind {
         0 | 7 => "lobo",
@@ -298,8 +299,8 @@ mod tests {
         }
     }
 
-    /// Decodifica o atlas (sem GL) e confere: cada celula tem desenho e
-    /// nenhuma e' igual a outra.
+    /// Decodes the atlas (without GL) and checks: every cell has a drawing and
+    /// none is equal to another.
     fn cheias_e_distintas(png: &[u8], celulas: &[u16], lado: u32, colunas: u32, largura: u32) {
         let img =
             Image::from_file_with_format(png, Some(ImageFormat::Png)).expect("atlas decodifica");

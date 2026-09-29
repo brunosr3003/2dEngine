@@ -1,13 +1,13 @@
-//! "Entrar com Google" no cliente.
+//! "Sign in with Google" in the client.
 //!
-//! O cliente nunca ve' senha nem segredo do Google: pede ao `web` um login
-//! novo, abre a URL no navegador do sistema e fica perguntando ao `web` se o
-//! navegador ja' terminou. Quando termina, recebe o username e uma sessao
-//! (token) que o servidor de jogo aceita no lugar da senha
-//! (`ClientMessage::LoginToken`). Ver docs/LOGIN_GOOGLE.md.
+//! The client never sees a Google password or secret: it asks `web` for a new
+//! login, opens the URL in the system browser and keeps asking `web` whether
+//! the browser has finished. When it does, it receives the username and a
+//! session (token) that the game server accepts in place of the password
+//! (`ClientMessage::LoginToken`). See docs/LOGIN_GOOGLE.md.
 //!
-//! A decisao (o que fazer com cada resposta) e' separada da rede pra ser
-//! testada sem thread nem servidor.
+//! The decision (what to do with each answer) is separate from the network so
+//! it can be tested with no thread and no server.
 
 use std::sync::mpsc::Receiver;
 
@@ -15,14 +15,14 @@ use crate::api::{self, RespostaPoll};
 
 /// De quanto em quanto tempo pergunta ao `web`.
 const INTERVALO_POLL_S: f64 = 1.5;
-/// Desiste se o navegador nao voltar nisso.
+/// Gives up if the browser does not come back within this.
 const ESPERA_MAX_S: f64 = 300.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fase {
-    /// Ainda perguntando ao `web` se o Google esta' configurado.
+    /// Still asking `web` whether Google is configured.
     Consultando,
-    /// Servidor sem Google (ou fora do ar): o botao nao aparece.
+    /// A server with no Google (or offline): the button does not appear.
     Indisponivel,
     Disponivel,
     Iniciando,
@@ -34,7 +34,7 @@ pub enum Fase {
     Erro(String),
 }
 
-/// O que a camada de rede/plataforma precisa fazer.
+/// What the network/platform layer needs to do.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Saida {
     AbrirUrl(String),
@@ -42,7 +42,7 @@ pub enum Saida {
     Pronto { usuario: String, token: String },
 }
 
-/// Uma resposta que chegou.
+/// An answer that arrived.
 pub enum Entrada {
     Config(bool),
     Start(Result<(String, String), String>),
@@ -68,7 +68,7 @@ impl Default for LoginGoogle {
 }
 
 impl LoginGoogle {
-    /// Comeca perguntando ao `web` se o Google esta' ligado.
+    /// Starts by asking `web` whether Google is switched on.
     pub fn consultando() -> Self {
         Self {
             fase: Fase::Consultando,
@@ -108,8 +108,8 @@ impl LoginGoogle {
         self.poll = None;
     }
 
-    /// Um quadro: recolhe o que chegou da rede, decide, e dispara o proximo
-    /// pedido. Devolve o que a plataforma tem que fazer (abrir URL, logar).
+    /// One frame: collects what arrived from the network, decides, and fires the
+    /// next request. Returns what the platform has to do (open URL, log in).
     pub fn tick(&mut self, agora: f64) -> Option<Saida> {
         let mut entradas = Vec::new();
         if let Some(Ok(v)) = self.cfg.as_ref().map(|r| r.try_recv()) {
@@ -142,7 +142,7 @@ impl LoginGoogle {
         }
     }
 
-    /// A decisao sobre uma resposta. Sem rede: e' o que os testes exercitam.
+    /// The decision about one answer. No network: this is what the tests exercise.
     pub fn aplicar(&mut self, entrada: Entrada, agora: f64) -> Option<Saida> {
         match entrada {
             Entrada::Config(ligado) => {
@@ -219,7 +219,7 @@ impl LoginGoogle {
         Some(Saida::Consultar(state.clone()))
     }
 
-    /// Texto de estado pra tela de login.
+    /// Status text for the login screen.
     pub fn texto(&self) -> Option<String> {
         match &self.fase {
             Fase::Iniciando => Some("Abrindo o Google…".into()),
@@ -259,7 +259,7 @@ mod testes {
     #[test]
     fn fluxo_completo_abre_url_pergunta_e_entrega_a_sessao() {
         let mut g = pronto_pra_clicar();
-        g.fase = Fase::Iniciando; // `iniciar` dispara rede; aqui so' a decisao
+        g.fase = Fase::Iniciando; // `iniciar` fires network; only the decision here
         let s = g.aplicar(
             Entrada::Start(Ok(("st".into(), "https://accounts.google.com/x".into()))),
             10.0,

@@ -13,7 +13,7 @@ const VERMELHO: Color = Color::new(0.86, 0.32, 0.28, 1.0);
 
 #[derive(Default)]
 pub struct Morte {
-    /// Caido: a tela de derrota esta' na frente.
+    /// Down: the defeat screen is in front.
     pub morto: bool,
     /// XP lost on the last death (0 = none, or already recovered).
     pub xp_perdido: u64,

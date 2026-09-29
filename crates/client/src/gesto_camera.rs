@@ -1,13 +1,13 @@
-//! Camera por TOQUE (iOS): um dedo arrastando no mundo gira, pinca da' zoom.
+//! Camera by TOUCH (iOS): one finger dragging in the world rotates, a pinch zooms.
 //!
-//! No PC a camera e' o arrasto do botao direito/meio e a roda. No toque nao ha'
-//! nenhum dos dois, e a macroquad simula o botao ESQUERDO a partir do dedo — o
-//! aperto chega no instante em que o dedo encosta, antes de dar pra saber se
-//! vai virar arrasto. Por isso, com toque, o clique no mundo sai no SOLTAR, e
-//! so' se o dedo nao arrastou.
+//! On PC the camera is the right/middle button drag and the wheel. On touch
+//! there is neither, and macroquad simulates the LEFT button from the finger
+//! — the press arrives the instant the finger lands, before it is possible to
+//! know whether it will become a drag. So, with touch, the click in the world
+//! comes out on RELEASE, and only if the finger did not drag.
 //!
-//! O nucleo nao conhece a macroquad: recebe os toques do quadro e diz o que
-//! fazer. `main` le `touches()` e aplica.
+//! The core does not know macroquad: it receives the frame's touches and says
+//! what to do. `main` reads `touches()` and applies.
 use macroquad::prelude::Vec2;
 
 use crate::toque::TOLERANCIA_PX;
@@ -33,7 +33,7 @@ pub enum Acao {
     Clique(Vec2),
     /// Arrasto de um dedo: quanto o dedo andou neste quadro, em pixels.
     Gira(Vec2),
-    /// Pinca: quanto a distancia entre os dedos mudou, em pixels (+ = abriu).
+    /// Pinch: how much the distance between the fingers changed, in pixels (+ = opened).
     Zoom(f32),
 }
 
@@ -50,25 +50,25 @@ struct Dedo {
 pub struct GestoCamera {
     dedo: Option<Dedo>,
     pinca: Option<f32>,
-    /// Passou por dois dedos: nada de clique ate' soltar tudo.
+    /// Went through two fingers: no click until everything is released.
     cancelado: bool,
 }
 
 impl GestoCamera {
-    /// Algum dedo em jogo (com toque, o aperto simulado do mouse nao vale).
+    /// Some finger in play (with touch, the mouse's simulated press does not count).
     pub fn ativo(&self) -> bool {
         self.dedo.is_some() || self.pinca.is_some() || self.cancelado
     }
 
-    /// Um quadro. `sobre_hud` diz se o ponto do PRIMEIRO dedo esta' em cima de
-    /// botao/painel — so' e' lido no quadro em que ele encosta.
+    /// One frame. `sobre_hud` says whether the FIRST finger's point is over a
+    /// button/panel — it is only read on the frame it lands.
     pub fn quadro(&mut self, toques: &[ToqueNoQuadro], sobre_hud: bool) -> Acao {
         let mut vivos: Vec<&ToqueNoQuadro> =
             toques.iter().filter(|t| t.fase != Fase::Acabou).collect();
         vivos.sort_by_key(|t| t.id);
 
         if vivos.len() >= 2 {
-            // Entrou o segundo dedo: o clique do primeiro morre aqui.
+            // The second finger came in: the first one's click dies here.
             self.dedo = None;
             self.cancelado = true;
             let d = vivos[0].pos.distance(vivos[1].pos);
@@ -91,7 +91,7 @@ impl GestoCamera {
         let t = todos[0];
 
         if self.cancelado {
-            // Depois da pinca, soltar o que sobrou nao clica nem gira.
+            // After a pinch, releasing what is left neither clicks nor rotates.
             if vivos.is_empty() {
                 self.cancelado = false;
                 self.dedo = None;
@@ -120,7 +120,7 @@ impl GestoCamera {
             }
             Some(mut d) => {
                 if d.id != t.id {
-                    // Outro dedo (o primeiro saiu sem Acabou visivel): recomeca.
+                    // Another finger (the first left with no visible Acabou): starts over.
                     self.dedo = Some(Dedo {
                         id: t.id,
                         inicio: t.pos,
@@ -279,7 +279,7 @@ mod testes {
             ],
             false,
         );
-        // Solta o segundo e depois o primeiro, parados: nada de clique.
+        // Releases the second and then the first, both still: no click.
         assert_eq!(
             g.quadro(
                 &[

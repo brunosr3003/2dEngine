@@ -1,10 +1,11 @@
 //! Montarias (docs/MONTARIAS.md): Menu → Personagem → Montaria.
 //!
-//! A montaria virou **item de bolsa**, como o pet: quem escolhe qual vale é o
-//! slot Montaria do equipamento, não esta janela. Aqui só se vê a equipada —
-//! em 3D, na cor dela — e se monta.
+//! The mount became a **bag item**, like the pet: what decides which one
+//! counts is the equipment's Mount slot, not this window. Here you only see
+//! the equipped one — in 3D, in its color — and mount it.
 //!
-//! Não há mais skin: **a cor é a variação**. O catálogo de skins saiu inteiro.
+//! There are no skins any more: **the color is the variation**. The skin
+//! catalogue went entirely.
 
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
@@ -12,7 +13,7 @@ use shared::protocol::ClientMessage;
 use crate::hud_estilo as estilo;
 use crate::vox::VoxCache;
 
-/// O que a janela pede ao jogo.
+/// What the window asks of the game.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Acao {
     AbrirLoja,
@@ -28,7 +29,7 @@ pub struct MontariasUi {
     giro: f32,
     /// A faixa "minhas montarias": escolher, equipar, combinar.
     colecao: crate::colecao::Colecao,
-    /// Relogio (get_time) em que a montada termina; 0 = nao esta' montando.
+    /// Clock (get_time) at which mounting ends; 0 = not mounting.
     montando_ate: f64,
     montando_desde: f64,
 }
@@ -64,12 +65,12 @@ impl MontariasUi {
         Some(((agora - self.montando_desde) / total).clamp(0.0, 1.0) as f32)
     }
 
-    /// Esta' no meio da montada?
+    /// In the middle of mounting?
     pub fn montando(&self, agora: f64) -> bool {
         agora < self.montando_ate
     }
 
-    /// O que a loja avisa que interessa aqui: o inicio da montada.
+    /// What the shop announces that matters here: the start of mounting.
     pub fn receber(&mut self, aviso: &shared::loja::AvisoLoja, agora: f64) {
         if let shared::loja::AvisoLoja::MontariaCombate { firmeza, bloqueio_segundos } = aviso {
             self.firmeza = *firmeza;
@@ -150,7 +151,7 @@ impl MontariasUi {
                 true,
             );
             let acao = (clique && loja.contains(mouse)).then_some(Acao::AbrirLoja);
-            // A faixa vale mesmo sem nada equipado: e' dela que se equipa.
+            // The band counts even with nothing equipped: it is what you equip from.
             let faixa = Rect::new(p.x + 18.0 * f, p.y + 220.0 * f, p.w - 36.0 * f, 152.0 * f);
             let msg = self.colecao.desenha(
                 faixa,
@@ -290,7 +291,7 @@ fn cor_do_grau(grau: u8) -> Color {
     Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }
 
-/// O poder que a montaria soma, pela mesma formula do resto da ficha.
+/// The power the mount adds, by the same formula as the rest of the sheet.
 pub(crate) fn poder_da_montaria(id: u16, af: Option<[u8; 2]>) -> i32 {
     let (mut atk, mut def, mut hp, mut mp, mut dex, mut wis) = (0, 0, 0, 0, 0, 0);
     let mut crit = 0.0f32;
@@ -317,8 +318,8 @@ pub(crate) fn poder_da_montaria(id: u16, af: Option<[u8; 2]>) -> i32 {
 mod testes {
     use super::*;
 
-    /// Sem montaria equipada a janela nao pede nada alem de abrir a Loja, e
-    /// com uma equipada ela sabe dizer o que a cor da'.
+    /// With no mount equipped the window asks for nothing beyond opening the
+    /// Shop, and with one equipped it can say what the color gives.
     #[test]
     fn a_janela_le_a_montaria_equipada() {
         let ui = MontariasUi::default();
@@ -331,7 +332,7 @@ mod testes {
         let (e, grau) = shared::montarias::de_item(id).unwrap();
         assert_eq!(grau, 4);
         assert_eq!(e.grau, 4, "a criatura E' o grau");
-        // O poder acompanha a cor: roxo vale mais que cinza.
+        // Power follows the color: purple is worth more than grey.
         let cinza = shared::item_id::montaria_no_grau(shared::item_id::MONTARIA_BASE, 1);
         assert!(poder_da_montaria(id, None) > poder_da_montaria(cinza, None));
     }

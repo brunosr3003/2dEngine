@@ -1,9 +1,10 @@
-//! A aba Pets: o bichinho equipado em 3D, o nível, a fome e os slots de
-//! skill (docs/PETS.md).
+//! The Pets tab: the equipped critter in 3D, the level, the hunger and the
+//! skill slots (docs/PETS.md).
 //!
-//! Tudo aqui é leitura do que o servidor mandou — o painel não calcula nem
-//! gasta nada. Alimentar e instalar skill são `UseItem` na bolsa, que é o
-//! mesmo caminho da poção; o botão daqui só manda o pedido.
+//! Everything here is a read of what the server sent — the panel neither
+//! computes nor spends anything. Feeding and installing a skill are `UseItem`
+//! in the bag, which is the same path as the potion; the button here only
+//! sends the request.
 
 use macroquad::prelude::*;
 use shared::items::PetData;
@@ -37,8 +38,8 @@ impl PetsUi {
         self.skill_slot_escolhido = None;
     }
 
-    /// `agora_unix` decide se o pet está com fome. Devolve o pedido de uso da
-    /// Ração quando o jogador toca em ALIMENTAR.
+    /// `agora_unix` decides whether the pet is hungry. Returns the request to use
+    /// the Feed when the player touches FEED.
     pub fn desenha(
         &mut self,
         vox: &VoxCache,
@@ -131,7 +132,7 @@ impl PetsUi {
         let nivel = shared::pets::nivel_de_xp(d.xp);
         let cor = cor_do_grau(grau);
 
-        // ── palco 3D, à esquerda ──
+        // ── 3D stage, on the left ──
         let palco = Rect::new(p.x + 18.0 * f, p.y + 60.0 * f, 250.0 * f, 250.0 * f);
         estilo::cartao(palco, false, false);
         self.giro += get_frame_time().min(0.1) * 0.6;
@@ -144,7 +145,7 @@ impl PetsUi {
             cor,
         );
 
-        // ── nível e experiência ──
+        // ── level and experience ──
         let dir = Rect::new(p.x + 284.0 * f, p.y + 60.0 * f, p.w - 302.0 * f, 250.0 * f);
         estilo::cartao(dir, false, false);
         let mut y = dir.y + 30.0 * f;
@@ -270,7 +271,7 @@ impl PetsUi {
             estilo::OURO,
         );
 
-        // ── meus pets: tudo o que esta' na bolsa ──
+        // ── my pets: everything in the bag ──
         let faixa = Rect::new(p.x + 18.0 * f, p.y + 318.0 * f, p.w - 36.0 * f, 152.0 * f);
         if let Some(msg) = self.colecao.desenha(
             faixa,
@@ -483,10 +484,10 @@ fn cor_do_grau(grau: u8) -> Color {
     Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 255)
 }
 
-/// `MMO_PREVIA_PETS=1`: captura local sem rede, pra conferir layout e
-/// legibilidade no celular. So' roda no desktop, pra gerar PNG — nunca entra
-/// no fluxo do app, que e' por isso que ela pode usar render target com
-/// profundidade (ver o teste em `personagens.rs`).
+/// `MMO_PREVIA_PETS=1`: local capture with no network, to check layout and
+/// legibility on a phone. It only runs on desktop, to generate a PNG — it
+/// never enters the app's flow, which is why it can use a render target with
+/// depth (see the test in `personagens.rs`).
 #[cfg(debug_assertions)]
 pub async fn previa(vox: &VoxCache, solido: &Material) {
     let saida =
