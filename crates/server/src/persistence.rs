@@ -3755,7 +3755,63 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
     }
 
+    nomes_em_ingles(pool).await?;
     crate::loot_mobs::migrar(pool).await?;
+    Ok(())
+}
+
+/// The seeded names become ENGLISH, because English is the source now.
+///
+/// Item, creature and vendor names are born in this seed and reach the client
+/// over the protocol, where `idioma::tr` turns them into the player's
+/// language. Once the source is English, a database still holding Portuguese
+/// means the dictionary is asked to translate "Lobo" into Portuguese, finds
+/// nothing, and the English player reads "Lobo".
+///
+/// Three rules, and they are what keep this safe to run on a live realm:
+///
+///   * **it uses the dictionary as the map**, so the migration cannot drift
+///     from the code — a name the game can translate is a name this can
+///     migrate, by construction;
+///   * **it only touches a row that still holds the old seed value**
+///     (`WHERE name = $old`), so an admin edit survives, exactly like
+///     `balanceamento_hp_mobs_v1`;
+///   * **it never touches `characters`**. That name is the PRIMARY KEY and
+///     `proficiencies.character_name` is a foreign key onto it — and it is
+///     the player's, not ours. Only the three seeded tables are listed.
+///
+/// A fresh database is seeded in English already and the UPDATEs find nothing.
+async fn nomes_em_ingles(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    let nova = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('nomes_em_ingles_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0;
+    if !nova {
+        return Ok(());
+    }
+    let mut mexidas = 0u64;
+    for parte in shared::idioma::pt::PARTES {
+        for (en, pt) in parte.iter() {
+            // A phrase with a hole is a template, not a name: it can never be
+            // what a row holds.
+            if pt.contains('{') || en.contains('{') {
+                continue;
+            }
+            for tabela in ["items", "enemy_kinds", "vendor_shops"] {
+                let sql = format!("UPDATE {tabela} SET name = $1 WHERE name = $2");
+                mexidas += sqlx::query(&sql)
+                    .bind(en)
+                    .bind(pt)
+                    .execute(pool)
+                    .await?
+                    .rows_affected();
+            }
+        }
+    }
+    tracing::info!("nomes_em_ingles_v1: {mexidas} seeded names are now English");
     Ok(())
 }
 
