@@ -1,29 +1,29 @@
-//! Auto missao: clicou numa missao do rastreador (ou "Ir" no diario), o
-//! personagem vai sozinho — fala com o NPC, luta na zona onde o bicho nasce,
-//! coleta no veio — e volta ao Mestre pra entregar. Quem aperta "Proximo" e
-//! "Receber" e' o jogador; o resto anda sozinho.
+//! Auto quest: clicked a quest in the tracker (or "Go" in the journal), the
+//! character goes alone — talks to the NPC, fights in the zone where the
+//! creature spawns, gathers at the vein — and returns to the Master to hand
+//! it in. The player presses "Next" and "Receive"; the rest moves by itself.
 //!
-//! ONDE fica cada objetivo quem diz e' o servidor (`QuestDestino`): ele
-//! conhece as zonas de spawn e o que esta' esgotado. Aqui so' se decide o
-//! proximo passo, sem macroquad no nucleo — a maquina e' testada inteira.
+//! WHERE each objective is, the server says (`QuestDestino`): it knows the
+//! spawn zones and what is exhausted. Here we only decide the next step,
+//! with no macroquad in the core — the machine is tested whole.
 use macroquad::prelude::*;
 use shared::quests::destino_tipo;
 use shared::EntityId;
 
-/// Chegou perto disto do NPC: pede a conversa (o "ir ate' o NPC" da loja
-/// termina o caminho e interage).
+/// Got this close to the NPC: asks for the conversation (the shop's "go to
+/// the NPC" ends the path and interacts).
 const PERTO_DO_NPC: f32 = 4.5;
-/// Sem resposta do servidor nesse tempo: pede de novo.
+/// No answer from the server in this time: ask again.
 const REPEDE_S: f64 = 4.0;
-/// Viagem acabou longe do destino, ou o auto combate/coleta desligou: tenta
-/// de novo depois disso.
+/// Travel ended far from the destination, or auto combat/gathering switched
+/// off: try again after this.
 const RELIGA_S: f64 = 1.0;
 /// Interagiu e nenhum dialogo abriu nesse tempo: pergunta o destino de novo.
 const ESPERA_FALA_S: f64 = 5.0;
-/// Entregou e o Mestre nao ofereceu a proxima nesse tempo: acabou.
+/// Handed in and the Master did not offer the next one in this time: it is over.
 const ESPERA_PROXIMA_S: f64 = 6.0;
-/// Depois de conversar ou cumprir o objetivo, o servidor precisa de um
-/// instante pra mandar o `QuestUpdate` antes de o destino mudar.
+/// After talking or meeting the objective, the server needs a moment to send
+/// the `QuestUpdate` before the destination changes.
 const FOLGA_DO_SERVIDOR_S: f64 = 0.6;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,7 +40,8 @@ pub enum Etapa {
     NoLugar,
 }
 
-/// No ponto-chave sem o passo mudar nesse tempo: pergunta o destino de novo.
+/// At the key point with the step not changing in this time: ask for the
+/// destination again.
 const ESPERA_NO_LUGAR_S: f64 = 6.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +56,7 @@ pub struct Destino {
 pub enum Acao {
     PedirDestino(u16),
     Viajar(Vec2),
-    /// Falar com o NPC (id e onde o servidor disse que ele esta').
+    /// Talk to the NPC (id and where the server said they are).
     Interagir(EntityId, Vec2),
     LigarCombate(Vec2),
     LigarColeta(Vec2),
@@ -64,22 +65,22 @@ pub enum Acao {
     Aviso(String),
 }
 
-/// O que o quadro sabe e a maquina precisa.
+/// What the frame knows and the machine needs.
 #[derive(Debug, Clone, Copy)]
 pub struct Ctx {
     pub eu: Vec2,
     pub agora: f64,
     pub viajando: bool,
-    /// O objetivo esta' cumprido (pronta pra entregar).
+    /// The objective is met (ready to hand in).
     pub pronta: bool,
-    /// A missao ainda esta' no andamento.
+    /// The quest is still in progress.
     pub na_log: bool,
     pub dialogo_aberto: bool,
     pub combate_ativo: bool,
     pub coleta_ativa: bool,
-    /// Quanto do objetivo já foi feito. É o sinal de "está andando" — sem
-    /// ele, um auto que gira sem colher nada é indistinguível de um que
-    /// colhe.
+    /// How much of the objective is done. It is the "it is moving" signal —
+    /// without it, an auto that spins harvesting nothing is indistinguishable
+    /// from one that harvests.
     pub progresso: u32,
 }
 
@@ -90,18 +91,18 @@ pub struct AutoMissao {
     etapa: Option<Etapa>,
     destino: Option<Destino>,
     desde: f64,
-    /// "Nada está mudando" — ver `parado.rs`.
+    /// "Nothing is changing" — see `parado.rs`.
     parado: crate::parado::Parado,
     recurso_parou: bool,
 }
 
 impl AutoMissao {
-    /// O corpo está parado há tempo demais?
+    /// Has the body been still for too long?
     fn travado(&self, c: &Ctx) -> bool {
         self.parado.travado(c.agora)
     }
 
-    /// Acompanha movimento apenas para recuperar a viagem até a área.
+    /// Tracks movement only to recover the travel to the area.
     fn acompanha(&mut self, c: &Ctx) {
         self.parado.acompanha(c.eu, c.agora);
     }
@@ -138,8 +139,8 @@ impl AutoMissao {
         self.desde = agora + FOLGA_DO_SERVIDOR_S;
     }
 
-    /// Resposta do servidor. `Some(aviso)` quando a missao nao tem pra onde ir
-    /// (a auto missao para).
+    /// The server's answer. `Some(aviso)` when the quest has nowhere to go
+    /// (the auto quest stops).
     pub fn destino_recebido(
         &mut self,
         quest_id: u16,
@@ -171,12 +172,12 @@ impl AutoMissao {
             npc,
         });
         self.etapa = Some(Etapa::Indo);
-        // Ja' pode pedir a viagem no proximo quadro.
+        // Travel can already be requested next frame.
         self.desde = agora - RELIGA_S;
         None
     }
 
-    /// O jogador terminou o dialogo de "fale com": a proxima e' voltar.
+    /// The player finished the "talk to" dialogue: the next one is to go back.
     pub fn conversou(&mut self, agora: f64) {
         if self.ativo() {
             self.pedir_de_novo(agora);
@@ -192,23 +193,23 @@ impl AutoMissao {
         }
     }
 
-    /// O servidor avisou que o nó parou (esgotou ou recusou a coleta).
+    /// The server warned that the node stopped (exhausted, or refused the gathering).
     pub fn recurso_parou(&mut self) {
         if self.etapa == Some(Etapa::Coletando) {
             self.recurso_parou = true;
         }
     }
 
-    /// Um quadro. Devolve o que o `main` deve fazer.
+    /// One frame. Returns what `main` should do.
     pub fn passo(&mut self, c: Ctx) -> Vec<Acao> {
         self.acompanha(&c);
         let (Some(id), Some(etapa)) = (self.quest, self.etapa) else {
             return Vec::new();
         };
         let mut saida = Vec::new();
-        // Abandonada (ou entregue por fora): nao ha' o que conduzir. Pedindo o
-        // destino nao conta — a missao recem-aceita ainda nao chegou no log, e
-        // a abandonada o servidor responde com `NENHUM`.
+        // Abandoned (or handed in elsewhere): there is nothing to drive. Asking for
+        // the destination does not count — a just-accepted quest has not reached the
+        // log yet, and for an abandoned one the server answers `NENHUM`.
         if !c.na_log
             && !matches!(
                 etapa,
@@ -244,7 +245,7 @@ impl AutoMissao {
                     return saida;
                 };
                 let npc = d.tipo == destino_tipo::NPC || d.tipo == destino_tipo::ENTREGA;
-                // Luta/coleta cumprida no caminho (a bolsa ja' tinha): volta.
+                // Fight/gathering met on the way (the bag already had it): go back.
                 if !npc && c.pronta {
                     self.pedir_de_novo(c.agora);
                     return saida;
@@ -269,8 +270,8 @@ impl AutoMissao {
                                 saida.push(Acao::Interagir(n, d.pos));
                                 self.etapa = Some(Etapa::Falando);
                             } else {
-                                // O NPC ainda pode estar fora do AOI. Pedir seu
-                                // identificador de novo quando chegar perto.
+                                // The NPC may still be outside the AOI. Ask for its identifier again
+                                // on getting close.
                                 self.pedir_de_novo(c.agora);
                             }
                         }
@@ -278,15 +279,15 @@ impl AutoMissao {
                 } else if (!c.viajando && c.agora - self.desde >= RELIGA_S)
                     // TRAVADO CONTA MESMO VIAJANDO.
                     //
-                    // Esta era a falha: preso na quina de uma casa, a viagem
-                    // segue ativa e o `!c.viajando` nunca deixava tentar de
-                    // novo. O corpo empurrava a parede até o jogador mexer no
-                    // direcional — "fico travado toda hora nas casas".
+                    // This was the failure: stuck on the corner of a house, travel stays
+                    // active and `!c.viajando` never let it try again. The body pushed the
+                    //  wall until the player touched the D-pad — "I get stuck on the houses
+                    // all the time".
                     || self.travado(&c)
                 {
                     self.desde = c.agora;
                     self.parado.zera(c.agora);
-                    // NPC: pare do lado dele, nao em cima.
+                    // NPC: stop beside them, not on top.
                     let alvo = if npc {
                         d.pos + (c.eu - d.pos).normalize_or_zero() * 2.0
                     } else {
@@ -311,8 +312,8 @@ impl AutoMissao {
                     saida.push(Acao::PararAutos);
                     self.pedir_de_novo(c.agora);
                 } else if self.recurso_parou || c.agora - self.desde > RELIGA_S {
-                    // O modo especializado conduz a caça/coleta até concluir.
-                    // Tempo sem aumentar o contador não significa travamento.
+                    // The specialised mode drives the hunt/gathering to completion.
+                    // Time without the counter rising does not mean being stuck.
                     if etapa == Etapa::Combatendo && !c.combate_ativo {
                         self.desde = c.agora;
                         saida.push(Acao::LigarCombate(c.eu));
@@ -320,9 +321,9 @@ impl AutoMissao {
                         self.desde = c.agora;
                         saida.push(Acao::LigarColeta(c.eu));
                     } else if etapa == Etapa::Coletando && self.recurso_parou {
-                        // Sai do alcance do nó antes de perguntar pelo próximo.
-                        // O cliente ainda pode ter o nó antigo como alvo por
-                        // alguns quadros após o esgotamento.
+                        // Leaves the node's range before asking for the next one.
+                        // The client may still hold the old node as its target for
+                        // a few frames after it is exhausted.
                         let dir = (c.eu - d.pos).normalize_or(vec2(1.0, 0.0));
                         saida.push(Acao::PararAutos);
                         saida.push(Acao::Viajar(c.eu + dir * 7.0));
@@ -382,12 +383,12 @@ impl AutoMissao {
     }
 }
 
-/// A ilha do `ARQUIPELAGO` em que a missao `quest` acontece, quando NAO e' a
-/// zona de `aqui`. `None` = e' aqui, ou a missao nao mora em ilha nenhuma.
+/// The `ARQUIPELAGO` island where quest `quest` happens, when it is NOT
+/// `aqui`'s zone. `None` = it is here, or the quest lives on no island.
 ///
-/// Existe separado do `main` pra ser testavel: e' a ponte entre o id da missao
-/// e o indice que o Capitao do Porto entende, e ela quebra silenciosamente se
-/// alguem reordenar o `ARQUIPELAGO`.
+/// It exists separately from `main` to be testable: it is the bridge between
+/// the quest id and the index the Harbour Captain understands, and it breaks
+/// silently if someone reorders the `ARQUIPELAGO`.
 pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
     let alvo = shared::quests::zona_da_missao(quest)?;
     if alvo == aqui {
@@ -399,18 +400,18 @@ pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
         .map(|i| i as u8)
 }
 
-/// O que o AUTO faz com o menu do Capitao do Porto.
+/// What AUTO does with the Harbour Captain's menu.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rumo {
-    /// Embarca sozinho: a missao e' de outra ilha e ela esta' liberada.
+    /// Boards on its own: the quest is on another island and that island is unlocked.
     Embarcar(u8),
-    /// Nao da' pra chegar la'. Para o auto e diz por que.
+    /// There is no getting there. Stops the auto and says why.
     Parar(String),
     /// Nada a decidir: abre o menu e deixa o jogador escolher.
     Menu,
 }
 
-/// A decisao, sem tocar em estado: `ilha` e' o que `ilha_da_missao` devolveu.
+/// The decision, touching no state: `ilha` is what `ilha_da_missao` returned.
 pub fn rumo(destinos: &[shared::viagem::Destino], ilha: Option<u8>) -> Rumo {
     use shared::viagem::estado;
     let Some(ilha) = ilha else {
@@ -432,7 +433,7 @@ pub fn rumo(destinos: &[shared::viagem::Destino], ilha: Option<u8>) -> Rumo {
                 d.nome
             ))
         }
-        // AQUI (ja' estamos) ou ilha que o menu nem lista: nada a automatizar.
+        // HERE (we are already) or an island the menu does not even list: nothing to automate.
         _ => Rumo::Menu,
     }
 }
@@ -453,7 +454,7 @@ mod tests {
         }
     }
 
-    /// O auto embarca sozinho SO' quando a ilha da missao esta' liberada.
+    /// The auto only boards on its own when the quest's island is unlocked.
     #[test]
     fn o_auto_embarca_na_ilha_liberada_e_para_nas_outras() {
         use shared::viagem::estado;
@@ -466,19 +467,19 @@ mod tests {
         assert_eq!(rumo(&ds, Some(1)), Rumo::Embarcar(1));
         assert!(matches!(rumo(&ds, Some(2)), Rumo::Parar(_)), "fora do ar para");
         assert!(matches!(rumo(&ds, Some(3)), Rumo::Parar(_)), "bloqueada para");
-        // Sem missao de outra ilha o menu e' do jogador.
+        // With no quest on another island the menu belongs to the player.
         assert_eq!(rumo(&ds, None), Rumo::Menu);
-        // A ilha em que ja' estamos nao se "viaja".
+        // The island we are already on is not "travelled" to.
         assert_eq!(rumo(&ds, Some(0)), Rumo::Menu);
-        // Ilha que o menu nem lista: nao inventa embarque.
+        // An island the menu does not even list: it does not invent a boarding.
         assert_eq!(rumo(&ds, Some(9)), Rumo::Menu);
     }
 
-    /// A ponte id-da-missao → indice do Capitao. Se alguem reordenar o
-    /// `ARQUIPELAGO`, o auto embarcaria na ilha errada — e' isto que prende.
+    /// The quest-id -> Captain-index bridge. If someone reorders the
+    /// `ARQUIPELAGO`, the auto would board for the wrong island — this is what holds it.
     #[test]
     fn a_missao_de_outra_ilha_aponta_o_indice_certo() {
-        // Uma missao de cada ilha conhecida, pela propria tabela de zonas.
+        // One quest from each known island, from the zone table itself.
         for (i, d) in shared::terreno::ARQUIPELAGO.iter().enumerate() {
             let Some(q) = shared::quests::QUESTS
                 .iter()
@@ -496,7 +497,7 @@ mod tests {
                 q.id,
                 d.zona
             );
-            // Visto de DENTRO da propria ilha, nao ha' viagem.
+            // Seen from INSIDE the island itself, there is no travel.
             assert_eq!(ilha_da_missao(q.id, d.zona), None);
         }
     }
@@ -523,8 +524,8 @@ mod tests {
         assert_eq!(a.etapa(), Some(Etapa::Esperando));
     }
 
-    /// Fale com: pede destino, viaja, interage, dialogo, conversou → volta ao
-    /// Mestre, entrega, recebe → proxima.
+    /// Talk to: asks for the destination, travels, interacts, dialogue, talked ->
+    /// back to the Master, hands in, receives -> next.
     #[test]
     fn npc_dialogo_entrega_e_proxima() {
         let mut a = AutoMissao::default();
@@ -534,13 +535,13 @@ mod tests {
         assert!(a
             .destino_recebido(501, destino_tipo::NPC, alq, 3.0, Some(EntityId(7)), 0.1)
             .is_none());
-        // Longe: viaja pra perto dele.
+        // Far: travel to near them.
         let v = a.passo(ctx(Vec2::ZERO, 0.2));
         assert!(
             matches!(v.as_slice(), [Acao::Viajar(p)] if p.distance(vec2(98.0, 0.0)) < 0.01),
             "{v:?}"
         );
-        // Viajando: nao repete.
+        // Travelling: does not repeat.
         let mut c = ctx(vec2(50.0, 0.0), 0.5);
         c.viajando = true;
         assert!(a.passo(c).is_empty());
@@ -562,7 +563,7 @@ mod tests {
             a.passo(ctx(vec2(97.0, 0.0), 4.2)),
             vec![Acao::PedirDestino(501)]
         );
-        // Agora o destino e' o Mestre.
+        // Now the destination is the Master.
         a.destino_recebido(
             501,
             destino_tipo::ENTREGA,
@@ -578,7 +579,7 @@ mod tests {
         c.pronta = true;
         assert_eq!(a.passo(c), vec![Acao::Interagir(EntityId(9), Vec2::ZERO)]);
         a.entregue(10.0);
-        // A missao some do log depois de entregue: nao e' erro.
+        // The quest leaves the log after being handed in: that is not an error.
         let mut c = ctx(vec2(1.0, 0.0), 10.5);
         c.na_log = false;
         assert!(a.passo(c).is_empty());
@@ -591,8 +592,9 @@ mod tests {
         );
     }
 
-    /// Luta: vai a' zona, liga o combate, religa se desligar, e com o objetivo
-    /// cumprido desliga tudo e pergunta o destino (o Mestre).
+    /// Fight: goes to the zone, switches combat on, switches it back on if it
+    /// drops, and with the objective met switches everything off and asks for the
+    /// destination (the Master).
     #[test]
     fn kill_combate_completo_volta() {
         let mut a = AutoMissao::default();
@@ -621,8 +623,8 @@ mod tests {
         assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
     }
 
-    /// Historia: vai ao ponto-chave e espera la'; a trava de nivel para a auto
-    /// missao com aviso.
+    /// Story: goes to the key point and waits there; a level gate stops the auto
+    /// quest with a notice.
     #[test]
     fn historia_espera_no_lugar_e_para_na_trava() {
         let mut a = AutoMissao::default();
@@ -643,7 +645,7 @@ mod tests {
             Some(Etapa::PedirDestino),
             "sem mudar, pergunta de novo"
         );
-        // Proximo passo e' trava: para e avisa.
+        // The next step is a gate: stops and warns.
         a.iniciar(710, "Alcance o nível 10".into(), 10.0);
         a.passo(ctx(Vec2::ZERO, 10.0));
         let aviso = a
@@ -701,7 +703,7 @@ mod tests {
         let mut a = AutoMissao::default();
         a.iniciar(505, "Porto".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
-        // Destino desconhecido: para e avisa.
+        // Unknown destination: stops and warns.
         assert!(a
             .destino_recebido(505, destino_tipo::NENHUM, Vec2::ZERO, 0.0, None, 0.1)
             .is_some());
@@ -735,7 +737,7 @@ mod tests {
         // Servidor mudo: pergunta de novo.
         a.passo(ctx(Vec2::ZERO, 5.0));
         assert_eq!(a.passo(ctx(Vec2::ZERO, 5.1)), vec![Acao::PedirDestino(502)]);
-        // Sem missao nova depois de entregar: acaba sozinho.
+        // No new quest after handing in: it ends by itself.
         a.entregue(10.0);
         let v = a.passo(ctx(Vec2::ZERO, 17.0));
         assert!(matches!(v.as_slice(), [Acao::Aviso(_)]));
@@ -744,16 +746,16 @@ mod tests {
         a.parar();
         assert!(!a.ativo());
     }
-    /// TRAVADO NUMA CASA NÃO É "ESTÁ INDO".
+    /// STUCK ON A HOUSE IS NOT "GOING".
     ///
-    /// O dono: "fico travado toda hora nas casas" e "o auto missão na verdade
-    /// trava em diversas situações". O retry só disparava com a viagem
-    /// DESLIGADA, e preso numa quina a viagem segue ativa: o corpo empurrava
-    /// a parede até a pessoa mexer no direcional.
+    /// The owner: "I get stuck on the houses all the time" and "the auto quest
+    /// actually gets stuck in all sorts of situations". The retry only fired
+    /// with travel OFF, and stuck on a corner travel stays active: the body
+    /// pushed the wall until the person touched the D-pad.
     ///
-    /// O teste mede os dois lados: parado com viagem ativa tem que refazer a
-    /// rota, e ANDANDO não pode refazer — senão o auto missão recalcularia o
-    /// caminho a cada três segundos de caminhada normal.
+    /// The test measures both sides: still with travel active has to redo the
+    /// route, and WALKING must not redo it — otherwise the auto quest would
+    /// recompute the path every three seconds of normal walking.
     #[test]
     fn parado_com_viagem_ativa_refaz_a_rota() {
         let mut a = AutoMissao::default();
@@ -781,7 +783,7 @@ mod tests {
             "parado com viagem ativa não refez a rota: {acoes:?}"
         );
 
-        // ANDANDO não refaz: o relógio de parado zera a cada passo.
+        // WALKING does not redo: the still clock zeroes at every step.
         let mut a2 = AutoMissao::default();
         a2.iniciar(501, "x".into(), 0.0);
         pede(&mut a2, 0.0);
@@ -841,10 +843,10 @@ mod tests {
         assert_eq!(a.etapa(), Some(Etapa::SaindoDaColeta));
     }
 
-    /// E COLHENDO DE VERDADE, NÃO MEXE.
+    /// AND GENUINELY HARVESTING, IT DOES NOT TOUCH IT.
     ///
-    /// O outro lado do mesmo teste: religar uma coleta que está rendendo
-    /// jogaria fora o nó bom a cada seis segundos.
+    /// The other side of the same test: restarting a gathering that is yielding
+    /// would throw the good node away every six seconds.
     #[test]
     fn coleta_que_rende_nao_e_interrompida() {
         let mut a = AutoMissao::default();

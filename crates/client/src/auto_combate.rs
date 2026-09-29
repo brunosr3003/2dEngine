@@ -75,29 +75,29 @@ pub struct Candidato {
 
 /// How long someone who hit you keeps counting as an aggressor.
 ///
-/// Oito segundos: tempo de você revidar sem que um tiro perdido de um minuto
-/// atrás marque um jogador como inimigo pro resto da sessão.
+/// Eight seconds: time for you to hit back without a stray shot from a
+/// minute ago marking a player as an enemy for the rest of the session.
 pub const AGRESSOR_S: f64 = 8.0;
 
-/// A partir daqui, quem te acerta está te acertando DE LONGE.
+/// From here on, whoever hits you is hitting you FROM RANGE.
 ///
-/// Seis unidades: mais que o alcance de qualquer golpe de mão. Quem bate em
-/// você de mais longe que isso está atirando, seja lá qual for a espécie.
+/// Six units: more than the reach of any hand strike. Whoever hits you from
+/// further than that is shooting, whatever the species.
 pub const DISTANCIA_DE_LONGE: f32 = 6.0;
 
-/// A ESCOLHA DE ALVO, por prioridade.
+/// TARGET SELECTION, by priority.
 ///
-/// O dono: "quando eu tiver fazendo missão tem que ser o mob da missão, mas
-/// se eu tiver igual estou agora na Ilha Mágica eu tenho que poder escolher:
-/// inimigos ranged que estão me atacando de longe, inimigos que estão
-/// próximos, player".
+/// The owner: "when I'm doing a quest it has to be the quest mob, but if
+/// I'm like I am now on the Magic Island I have to be able to choose: ranged
+/// enemies attacking me from a distance, enemies that are close, player".
 ///
-/// A MISSÃO VEM PRIMEIRO E NÃO É AJUSTÁVEL: quem ligou o auto no meio de uma
-/// missão de caça quer a missão andando, e uma preferência que atrapalhasse
-/// isso seria um pé na própria caça. O resto segue a ordem escolhida.
+/// THE QUEST COMES FIRST AND IS NOT ADJUSTABLE: someone who switched auto on
+/// in the middle of a hunting quest wants the quest moving, and a preference
+/// that got in the way of that would be a foot in their own hunt. The rest
+/// follows the chosen order.
 ///
-/// Dentro de cada categoria, o mais perto — e o id desempata, pra a escolha
-/// não tremer entre dois iguais.
+/// Within each category, the nearest — and the id breaks ties, so the choice
+/// does not flicker between two equals.
 pub fn escolhe_alvo(cands: &[Candidato], ordem: &[u8], pvp: u8) -> Option<EntityId> {
     use shared::protocol::{auto_alvo, auto_pvp};
     let pode = |c: &Candidato| -> bool {
@@ -106,7 +106,7 @@ pub fn escolhe_alvo(cands: &[Candidato], ordem: &[u8], pvp: u8) -> Option<Entity
         }
         match pvp {
             auto_pvp::QUALQUER => true,
-            // REVIDAR não é "atacar jogador": é responder a quem começou.
+            // HITTING BACK is not "attacking a player": it is answering whoever started.
             auto_pvp::REVIDAR => c.agrediu,
             _ => false,
         }
@@ -118,7 +118,7 @@ pub fn escolhe_alvo(cands: &[Candidato], ordem: &[u8], pvp: u8) -> Option<Entity
             .min_by(|a, b| a.dist.total_cmp(&b.dist).then(a.id.0.cmp(&b.id.0)))
             .map(|c| c.id)
     };
-    // 1. A missão, sempre.
+    // 1. The quest, always.
     if let Some(id) = melhor(&|c| c.da_missao) {
         return Some(id);
     }
@@ -134,16 +134,16 @@ pub fn escolhe_alvo(cands: &[Candidato], ordem: &[u8], pvp: u8) -> Option<Entity
             return achado;
         }
     }
-    // 3. Nenhuma categoria pegou: o mais perto que for permitido. Sem isto,
-    //    uma ordem só de "jogador" com PvP desligado deixaria o auto ligado
-    //    sem bater em nada — que da tela é igual a estar quebrado.
+    // 3. No category caught anything: the nearest one allowed. Without this,
+    //    an order of only "player" with PvP off would leave auto switched on
+    // hitting nothing — which, from the screen, is the same as being broken.
     melhor(&|_| true)
 }
 
-/// Aviso de "sem visada" seguido por este tempo: o AUTO larga o alvo. O
-/// servidor avisa 1 vez por segundo, entao o segundo aviso ja' troca.
+/// A "no line of sight" notice repeated for this long: AUTO drops the target.
+/// The server warns once a second, so the second notice already switches.
 const TROCA_SEM_VISADA_S: f64 = 0.9;
-/// Mais que isto sem aviso novo: a sequencia recomeca.
+/// Longer than this with no new notice: the sequence restarts.
 const SEM_VISADA_ESQUECE_S: f64 = 2.5;
 
 /// O botao AUTO COMBATE na linha de baixo do cluster (ver `hud_layout`).
@@ -171,9 +171,9 @@ impl AutoCombate {
         *self = Self::default();
     }
 
-    /// O servidor avisou que o alvo `id` esta' sem visada (`ServerMessage::
-    /// SemVisada`). Com o AUTO ligado, aviso repetido larga o alvo por 10 s —
-    /// em vez de esperar os 8 s sem dano do `escolher`.
+    /// The server warned that target `id` has no line of sight
+    /// (`ServerMessage::SemVisada`). With AUTO on, a repeated notice drops the
+    /// target for 10 s — instead of waiting the 8 s with no damage in `escolher`.
     pub fn sem_visada(&mut self, id: EntityId, agora: f64) {
         if !self.ativo() {
             self.sem_visada = None;
@@ -193,7 +193,7 @@ impl AutoCombate {
         }
     }
 
-    /// O jogador esta' andando na mao neste quadro.
+    /// The player is walking by hand this frame.
     pub fn andar_manual(&mut self, agora: f64) {
         if self.ativo() {
             self.manual = true;
@@ -221,14 +221,14 @@ impl AutoCombate {
         true
     }
 
-    /// Nenhum bicho na area: para onde ir caçar. Move a area pro personagem e
-    /// devolve o bicho vivo mais perto dentro de `BUSCA` — quem anda ate' la'
-    /// e' o `main`. `None` quando nao ha' o que caçar (ou e' cedo demais).
+    /// No creature in the area: where to go and hunt. Moves the area to the
+    /// character and returns the nearest live creature within `BUSCA` — walking
+    /// there is `main`'s job. `None` when there is nothing to hunt (or it is too soon).
     pub fn caca(&mut self, world: &World, eu: Vec2, agora: f64, missao: Option<u16>) -> Option<Vec2> {
         if !self.ativo() || self.manual {
             return None;
         }
-        // A area acompanha o personagem: sem isso, limpar o lugar e' o fim.
+        // The area follows the character: without that, clearing the place is the end.
         self.centro = Some(eu);
         if agora - self.caca_em < PASSO_DA_CACA_S {
             return None;
@@ -249,7 +249,7 @@ impl AutoCombate {
         Some(alvo)
     }
 
-    /// `missao` = o `kind` do bicho que a missão ativa pede, quando há.
+    /// `missao` = the `kind` of creature the active quest asks for, when there is one.
     pub fn escolher(
         &mut self,
         world: &World,
@@ -265,15 +265,15 @@ impl AutoCombate {
             self.parar();
             return None;
         }
-        // Perseguir um mob não desliga o auto ao sair da área inicial.
+        // Chasing a mob does not switch auto off on leaving the initial area.
         if eu.render_pos.distance(centro) > RAIO + 4.0 {
             centro = eu.render_pos;
             self.centro = Some(centro);
         }
         self.ignorados.retain(|_, ate| *ate > agora);
-        // Quem PODE ser alvo. Jogador só entra quando o ajuste permite —
-        // `escolhe_alvo` decide de novo lá dentro, mas deixar entrar aqui é o
-        // que torna a categoria "jogador" possível.
+        // Who CAN be a target. A player only enters when the setting allows —
+        // `escolhe_alvo` decides again in there, but letting them in here is what
+        // makes the "player" category possible.
         let aceita_gente = eu.meta.pk.hostil && self.pvp != shared::protocol::auto_pvp::NUNCA;
         let valido_alvo = |id: EntityId| {
             world.ents.get(&id).is_some_and(|e| {
@@ -309,7 +309,7 @@ impl AutoCombate {
                 return Some(id);
             }
         }
-        // A ESCOLHA POR PRIORIDADE. Antes era só o mais perto.
+        // CHOICE BY PRIORITY. It used to be just the nearest.
         let cands: Vec<Candidato> = world
             .ents
             .iter()
@@ -318,13 +318,13 @@ impl AutoCombate {
                 id: *id,
                 dist: eu.render_pos.distance(e.render_pos),
                 jogador: e.meta.tag == EntityTag::Player,
-                // "ME ACERTANDO DE LONGE" SEM PRECISAR SABER A ESPÉCIE.
+                // "HITTING ME FROM RANGE" WITHOUT NEEDING TO KNOW THE SPECIES.
                 //
-                // Eu ia ler `ENEMY_SHOOT`, mas ele é constante de ANIMAÇÃO e
-                // não viaja no estado da entidade. O sinal que existe de
-                // verdade é melhor: quem me ACERTOU há pouco e está a mais de
-                // um braço de distância só pode estar atirando. Isso vale pra
-                // qualquer inimigo que o jogo venha a ter, sem tabela.
+                // I was going to read `ENEMY_SHOOT`, but it is an ANIMATION constant and
+                // does not travel in the entity's state. The signal that really exists is
+                // better: whoever HIT me recently and is more than an arm's length away can
+                // only be shooting. That holds for any enemy the game may come to have,
+                // with no table.
                 ranged_em_mim: eu.render_pos.distance(e.render_pos) > DISTANCIA_DE_LONGE
                     && world
                         .agressores
@@ -349,7 +349,7 @@ impl AutoCombate {
         escolhido
     }
 
-    /// O botao. A tecla (Z) so' aparece com Alt; o estado vai pra faixa unica.
+    /// The button. The key (Z) only shows with Alt; the state goes to the single strip.
     pub fn desenha(&self) {
         let r = retangulo();
         let c = r.center();
@@ -377,7 +377,7 @@ impl AutoCombate {
         crate::hud_layout::chip(r, "Z");
     }
 
-    /// O texto da faixa de estado, com o AUTO ligado.
+    /// The status strip's text, with AUTO on.
     pub fn faixa(&self, tem_alvo: bool) -> Option<&'static str> {
         self.ativo().then_some(if tem_alvo {
             "AUTO COMBATE · ATACANDO"
@@ -453,7 +453,7 @@ mod tests {
         );
         w.ents.get_mut(&EntityId(4)).unwrap().state.hp = 0;
         assert_eq!(a.escolher(&w, Some(EntityId(4)), 2.0, None), None);
-        assert!(a.ativo()); // Aguarda respawn, sem escolher player ou sair da area.
+        assert!(a.ativo()); // Waits for the respawn, without choosing a player or leaving the area.
     }
     #[test]
     fn abandona_alvo_inacessivel_e_para_quando_personagem_cai() {
@@ -487,7 +487,7 @@ mod tests {
             Some(EntityId(4)),
             "segundo aviso em ~1 s troca"
         );
-        // Aviso velho nao conta: a sequencia recomeca.
+        // An old notice does not count: the sequence restarts.
         let mut b = AutoCombate::default();
         b.ligar(Vec2::ZERO);
         b.escolher(&w, None, 0.0, None);
@@ -499,8 +499,8 @@ mod tests {
         );
     }
 
-    /// Limpou o que estava perto: o AUTO vai atras do proximo bicho em vez de
-    /// ficar parado (era a queixa do dono — "so' mata um e para").
+    /// Cleared what was nearby: AUTO goes after the next creature instead of
+    /// standing still (it was the owner's complaint — "it only kills one and stops").
     #[test]
     fn caca_prioriza_missao_e_nao_volta_ao_alvo_ignorado() {
         let mut w = mundo();
@@ -548,11 +548,11 @@ mod tests {
             None,
             "nao repete o pedido a cada quadro"
         );
-        // Andou ate' la': a area foi junto e o `escolher` pega o bicho.
+        // Walked there: the area came along and `escolher` picks the creature up.
         w.ents.get_mut(&EntityId(1)).unwrap().render_pos = vec2(28.0, 0.0);
         a.caca(&w, vec2(28.0, 0.0), 2.4, None);
         assert_eq!(a.escolher(&w, None, 2.5, None), Some(EntityId(5)));
-        // Longe demais: nao ha' o que caçar.
+        // Too far: there is nothing to hunt.
         w.ents.get_mut(&EntityId(5)).unwrap().render_pos = vec2(400.0, 0.0);
         assert_eq!(a.caca(&w, Vec2::ZERO, 9.0, None), None);
     }
@@ -562,14 +562,14 @@ mod tests {
         let mut a = AutoCombate::default();
         a.ligar(Vec2::ZERO);
         a.segurando(Vec2::ZERO, 0.0);
-        // Anda 40 unidades — bem alem do raio de onde ligou.
+        // Walks 40 units — well beyond the radius of where it was switched on.
         for k in 1..=40 {
             a.andar_manual(k as f64 * 0.1);
             assert!(a.segurando(vec2(k as f32, 0.0), k as f64 * 0.1));
         }
         assert!(a.ativo());
         assert_eq!(a.centro, Some(vec2(40.0, 0.0)));
-        // Solta a tecla: ainda segura um instante, depois volta a caçar dali.
+        // Releases the key: still holds for a moment, then goes back to hunting from there.
         assert!(a.segurando(vec2(40.0, 0.0), 4.2));
         assert!(!a.segurando(vec2(40.0, 0.0), 4.5));
         assert!(a.ativo());
@@ -592,10 +592,11 @@ mod testes_da_escolha {
         }
     }
 
-    /// A MISSÃO GANHA DE TUDO, e não é ajustável.
+    /// THE QUEST BEATS EVERYTHING, and is not adjustable.
     ///
-    /// Quem ligou o auto no meio de uma missão de caça quer a missão andando.
-    /// Uma preferência que atrapalhasse isso seria um pé na própria caça.
+    /// Someone who switched auto on in the middle of a hunting quest wants the
+    /// quest moving. A preference that got in the way of that would be a foot in
+    /// their own hunt.
     #[test]
     fn o_bicho_da_missao_vem_primeiro() {
         let perto = c(1, 2.0);
@@ -623,7 +624,7 @@ mod testes_da_escolha {
             ranged_em_mim: true,
             ..c(2, 25.0)
         };
-        // Quem atira primeiro: ele ganha mesmo estando 12x mais longe.
+        // Whoever shoots first: they win even being 12x further away.
         assert_eq!(
             escolhe_alvo(
                 &[perto, atirando],
@@ -643,10 +644,10 @@ mod testes_da_escolha {
         );
     }
 
-    /// PVP DESLIGADO NÃO BATE EM GENTE — nem se ela for o alvo "ideal".
+    /// PVP OFF DOES NOT HIT PEOPLE — not even if they are the "ideal" target.
     ///
-    /// É a regra que protege quem está do outro lado. O padrão é NUNCA, e um
-    /// jogador na lista de candidatos não pode furá-lo.
+    /// It is the rule that protects whoever is on the other side. The default is
+    /// NEVER, and a player in the candidate list cannot pierce it.
     #[test]
     fn pvp_desligado_ignora_jogador() {
         let gente = Candidato {
@@ -666,11 +667,11 @@ mod testes_da_escolha {
         );
     }
 
-    /// REVIDAR É RESPONDER, NÃO CAÇAR.
+    /// HITTING BACK IS ANSWERING, NOT HUNTING.
     ///
-    /// Com `REVIDAR`, só entra o jogador que bateu primeiro. O que passou ao
-    /// lado sem encostar continua de fora — senão "revidar" viraria "atacar
-    /// qualquer um", que é outra coisa.
+    /// With `REVIDAR`, only the player who hit first enters. Someone who walked
+    ///  past without touching stays out — otherwise "hit back" would become
+    /// "attack anyone", which is something else.
     #[test]
     fn revidar_so_pega_quem_bateu_primeiro() {
         let agressor = Candidato {
@@ -691,7 +692,7 @@ mod testes_da_escolha {
             Some(EntityId(1)),
             "revidou no passante em vez de em quem bateu"
         );
-        // Só o passante: não há em quem revidar, e não se inventa alvo.
+        // Only the passer-by: there is nobody to hit back at, and a target is not invented.
         assert_eq!(
             escolhe_alvo(&[passante], &[auto_alvo::JOGADOR], auto_pvp::REVIDAR),
             None
@@ -700,9 +701,9 @@ mod testes_da_escolha {
 
     /// NENHUMA CATEGORIA PEGOU? AINDA ASSIM ATACA.
     ///
-    /// Uma ordem só de "jogador" com PvP desligado deixaria o auto ligado sem
-    /// bater em nada — e auto combate que não ataca é, da tela, idêntico a
-    /// estar quebrado.
+    /// An order of only "player" with PvP off would leave auto switched on
+    /// hitting nothing — and auto combat that does not attack is, from the
+    /// screen, identical to being broken.
     #[test]
     fn sem_categoria_valida_ainda_ataca_o_mais_perto() {
         let bicho = c(9, 5.0);

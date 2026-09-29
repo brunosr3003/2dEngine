@@ -1,10 +1,10 @@
-//! A barra de itens (MIR4): quatro espacos configuraveis — C, 8, 9 e 0 —,
-//! cada um com o consumivel que usa, se usa sozinho (AUTO) e o limiar.
+//! The item bar (MIR4): four configurable slots — C, 8, 9 and 0 — each with
+//! the consumable it uses, whether it uses it on its own (AUTO) and the threshold.
 //!
-//! Gesto igual ao das skills: clique curto USA, arrastar pra cima liga o AUTO
-//! daquele espaco, pra baixo desliga. Quem decide QUANDO beber e' o cliente;
-//! o servidor valida o `UseItem` como sempre. A configuracao mora no
-//! personagem, no servidor (`SalvarBarra` / `BarraDeItens`).
+//! The same gesture as the skills: a short click USES, dragging up switches
+//! that slot's AUTO on, down switches it off. The CLIENT decides WHEN to
+//! drink; the server validates the `UseItem` as always. The configuration
+//! lives on the character, on the server (`SalvarBarra` / `BarraDeItens`).
 use macroquad::prelude::{Rect, Vec2};
 use shared::constants::item_id as it;
 use shared::protocol::{EspacoDaBarra, ESPACOS_DA_BARRA};
@@ -24,7 +24,7 @@ pub enum Categoria {
     Sorte,
 }
 
-/// O que um item e' na barra. `None` = nao vai na barra.
+/// What an item is on the bar. `None` = it does not go on the bar.
 pub fn categoria(id: u16) -> Option<Categoria> {
     match id {
         x if x == it::HEALTH_POTION || x == it::GREATER_HEAL => Some(Categoria::Vida),
@@ -38,7 +38,7 @@ pub fn categoria(id: u16) -> Option<Categoria> {
 }
 
 impl Categoria {
-    /// Limiar do AUTO em % pra recurso; buff nao tem (usa quando acaba).
+    /// AUTO threshold in % for a resource; a buff has none (it uses when it runs out).
     pub fn limiar_padrao(self) -> Option<u8> {
         match self {
             Categoria::Vida => Some(60),
@@ -48,7 +48,7 @@ impl Categoria {
         }
     }
 
-    /// Grupo de recarga (`shared::pocoes`); buff nao tem.
+    /// Cooldown group (`shared::pocoes`); a buff has none.
     pub fn grupo(self) -> Option<shared::pocoes::Grupo> {
         match self {
             Categoria::Vida => Some(shared::pocoes::Grupo::Vida),
@@ -58,10 +58,10 @@ impl Categoria {
         }
     }
 
-    /// Intervalo minimo entre dois pedidos. Quem segura a pocao de recurso e'
-    /// a recarga do grupo (o servidor recusa e manda `PocaoGrupo`); este so'
-    /// evita pedir de novo antes da resposta chegar. Buff espera mais — o
-    /// "ativo" vem numa mensagem propria.
+    /// Minimum interval between two requests. What holds a resource potion back
+    /// is the group's cooldown (the server refuses and sends `PocaoGrupo`); this
+    /// one only avoids asking again before the answer arrives. A buff waits
+    ///  longer — the "active" comes in a message of its own.
     fn intervalo_s(self) -> f64 {
         match self {
             Categoria::Vida | Categoria::Mana | Categoria::Vigor => 1.0,
@@ -69,7 +69,7 @@ impl Categoria {
         }
     }
 
-    /// A familia: Vida e Vida+ contam juntas e uma cobre a outra.
+    /// The family: Health and Health+ count together and one covers the other.
     fn familia(self) -> &'static [u16] {
         match self {
             Categoria::Vida => &[it::HEALTH_POTION, it::GREATER_HEAL],
@@ -81,7 +81,7 @@ impl Categoria {
         }
     }
 
-    /// Como o AUTO dispara, pro texto do configurador.
+    /// How AUTO fires, for the configurator's text.
     pub fn regra(self) -> &'static str {
         match self {
             Categoria::Vida => "vida abaixo do limiar",
@@ -94,7 +94,7 @@ impl Categoria {
     }
 }
 
-/// Um espaco com o item e o limiar padrao dele, AUTO desligado.
+/// A slot with the item and its default threshold, AUTO off.
 pub fn espaco(id: u16, auto: bool) -> EspacoDaBarra {
     EspacoDaBarra {
         item_id: id,
@@ -103,8 +103,8 @@ pub fn espaco(id: u16, auto: bool) -> EspacoDaBarra {
     }
 }
 
-/// A barra de quem nunca configurou: vida com AUTO (como no MIR4), mana, vigor
-/// e experiencia manuais.
+/// The bar of someone who never configured it: health with AUTO (as in
+/// MIR4), mana, stamina and experience manual.
 pub fn padrao() -> [EspacoDaBarra; ESPACOS] {
     [
         espaco(it::HEALTH_POTION, true),
@@ -114,7 +114,7 @@ pub fn padrao() -> [EspacoDaBarra; ESPACOS] {
     ]
 }
 
-/// Quanto a bolsa tem do consumivel do espaco (a familia inteira).
+/// How much of the slot's consumable the bag holds (the whole family).
 pub fn quantidade(slots: &[InventorySlot], id: u16) -> u32 {
     let Some(c) = categoria(id) else { return 0 };
     slots
@@ -124,8 +124,8 @@ pub fn quantidade(slots: &[InventorySlot], id: u16) -> u32 {
         .sum()
 }
 
-/// O slot da bolsa pra usar. `forte`: a maior da familia primeiro; senao o
-/// item escolhido e, sem ele, qualquer outro da familia.
+/// The bag slot to use. `forte`: the largest of the family first; otherwise
+/// the chosen item and, failing that, any other of the family.
 pub fn slot_para_usar(slots: &[InventorySlot], id: u16, forte: bool) -> Option<usize> {
     let c = categoria(id)?;
     let tem = |x: u16| {
@@ -141,7 +141,7 @@ pub fn slot_para_usar(slots: &[InventorySlot], id: u16, forte: bool) -> Option<u
     tem(id).or_else(|| c.familia().iter().find_map(|&x| tem(x)))
 }
 
-/// O que o AUTO precisa saber do personagem. Fracoes de 0 a 1.
+/// What AUTO needs to know about the character. Fractions from 0 to 1.
 #[derive(Clone, Copy, Debug)]
 pub struct Estado {
     pub vivo: bool,
@@ -157,8 +157,8 @@ pub struct Barra {
     pub espacos: [EspacoDaBarra; ESPACOS],
     ultimo: [f64; ESPACOS],
     arrasto: Arrasto,
-    /// Fim da recarga e da cura de cada grupo de pocao (relogio do cliente),
-    /// vindo do `PocaoGrupo`.
+    /// End of the cooldown and of the heal-over-time of each potion group (the
+    /// client's clock), coming from `PocaoGrupo`.
     recarga_ate: [f64; shared::pocoes::GRUPOS],
     cura_ate: [f64; shared::pocoes::GRUPOS],
 }
@@ -198,7 +198,7 @@ impl Barra {
         Some((resta, total))
     }
 
-    /// A cura do grupo do espaco esta' correndo?
+    /// Is the slot's group heal-over-time running?
     pub fn curando(&self, i: usize, agora: f64) -> bool {
         self.espacos
             .get(i)
@@ -207,12 +207,12 @@ impl Barra {
             .is_some_and(|g| self.cura_ate[g as usize] > agora)
     }
 
-    /// Segundos de cura restantes por grupo (vida, mana, vigor), pro HUD.
+    /// Seconds of heal left per group (health, mana, stamina), for the HUD.
     pub fn curas(&self, agora: f64) -> [f32; shared::pocoes::GRUPOS] {
         std::array::from_fn(|g| (self.cura_ate[g] - agora).max(0.0) as f32)
     }
 
-    /// O que o servidor guardou. Vazio (nunca configurou) volta a' padrao.
+    /// What the server stored. Empty (never configured) falls back to the default.
     pub fn do_servidor(&mut self, v: &[EspacoDaBarra]) {
         self.espacos = padrao();
         if v.is_empty() {
@@ -246,14 +246,14 @@ impl Barra {
         }
     }
 
-    /// Limiar em passos de 5, entre 5% e 95%.
+    /// Threshold in steps of 5, between 5% and 95%.
     pub fn ajustar_limiar(&mut self, i: usize, delta: i32) {
         if let Some(e) = self.espacos.get_mut(i) {
             e.limiar = (e.limiar as i32 + delta).clamp(5, 95) as u8;
         }
     }
 
-    /// O mouse deste quadro sobre os botoes. Devolve o gesto concluido.
+    /// This frame's mouse over the buttons. Returns the completed gesture.
     pub fn entrada(
         &mut self,
         rects: &[Rect; ESPACOS],
@@ -278,13 +278,13 @@ impl Barra {
         None
     }
 
-    /// Esquece o gesto em curso (o toque longo virou "abrir configurador":
-    /// soltar depois nao usa o item nem mexe no AUTO).
+    /// Forgets the gesture in progress (the long press became "open the
+    /// configurator": releasing afterwards neither uses the item nor touches AUTO).
     pub fn cancela_gesto(&mut self) {
         self.arrasto.cancela();
     }
 
-    /// Arrastando: qual espaco e de onde saiu (pra dica "↑ Solte: AUTO").
+    /// Dragging: which slot and where it came from (for the "^ Release: AUTO" hint).
     pub fn arrastando(&self) -> Option<(usize, Vec2)> {
         self.arrasto.inicio.map(|(i, p)| (i as usize, p))
     }
@@ -305,14 +305,14 @@ impl Barra {
         }
     }
 
-    /// Qual espaco usar agora, se algum: `(indice, forte)`.
+    /// Which slot to use now, if any: `(index, strong)`.
     ///
-    /// Regra do AUTO pras pocoes de recurso: abaixo do limiar, com o grupo
-    /// FORA da recarga (dentro dela o servidor recusaria — e a recarga cobre a
-    /// cura inteira, entao nunca ha' cura correndo fora da recarga). O tier e'
-    /// o MENOR cujo total cobre o que falta pro maximo; nenhum cobre, o maior
-    /// que houver (`shared::pocoes::escolher`). `forte` = usar o maior da
-    /// familia.
+    /// The AUTO rule for resource potions: below the threshold, with the group
+    /// OUT of cooldown (inside it the server would refuse — and the cooldown
+    /// covers the whole heal, so there is never a heal running outside the
+    /// cooldown). The tier is the SMALLEST whose total covers what is missing to
+    /// the maximum; if none covers it, the largest there is
+    /// (`shared::pocoes::escolher`). `forte` = use the largest of the family.
     pub fn decide(
         &mut self,
         e: &Estado,
@@ -433,7 +433,7 @@ mod tests {
             .unwrap();
         b.aplica(g);
         assert!(!b.espacos[1].auto, "pra baixo desliga");
-        // Espaco vazio nao liga AUTO.
+        // An empty slot does not switch AUTO on.
         b.limpar(2);
         assert_eq!(b.aplica(Gesto::Auto(2, true)), (None, false));
     }
@@ -448,7 +448,7 @@ mod tests {
         // Falta 50%: nenhuma cobre (14% / 21%) — a maior.
         e.hp = 0.5;
         assert_eq!(b.decide(&e, &qtd, &slots, 10.0), Some((0, true)));
-        // O servidor confirmou: grupo em recarga por 8 s, nada sai antes.
+        // The server confirmed: the group is on cooldown for 8 s, nothing goes out before.
         b.pocao_grupo(0, 8.0, 5.0, 10.0);
         assert!(b.curando(0, 12.0));
         assert!(b
@@ -461,11 +461,11 @@ mod tests {
             Some((0, true)),
             "fim da recarga libera"
         );
-        // Falta pouco (10%) com limiar 95: a menor que cobre, a comum.
+        // A little is missing (10%) with threshold 95: the smallest that covers, the common one.
         b.ajustar_limiar(0, 35);
         e.hp = 0.9;
         assert_eq!(b.decide(&e, &qtd, &slots, 30.0), Some((0, false)));
-        // Sem a comum na bolsa, a que houver.
+        // With no common one in the bag, whichever there is.
         assert_eq!(
             b.decide(&e, &qtd, &[slot(it::GREATER_HEAL, 2)], 40.0),
             Some((0, true))
@@ -492,7 +492,7 @@ mod tests {
         );
         e.vivo = true;
         assert_eq!(b.decide(&e, &[5; ESPACOS], &[], 10.0), Some((1, false)));
-        // Sorte no espaco 3: so' sem o buff, e com espera longa.
+        // Luck in slot 3: only without the buff, and with a long wait.
         b.atribuir(3, it::SORTE_POTION);
         b.alterna_auto(3);
         e.mp = 1.0;

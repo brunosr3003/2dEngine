@@ -1,18 +1,18 @@
 //! As CRIATURAS em pecas: a marcha e a patada.
 //!
-//! Porta do zone14 (`ModeloVoxel.PassoDaPata`, `GiroDaJunta`, `DoGolpe`). As
-//! patas destes bichos sao TOCOS SOLTOS — o estilo, ver
-//! docs/PIPELINE_ARTE.md —, e perna solta se anima por TRANSLACAO: girar o
-//! toco no proprio topo move o pe' uns 4% da altura enquanto o corpo cruza
-//! metros de chao, e a caminhada le' como deslizar no gelo. O pe' faz um D:
-//! reto pra tras enquanto esta' plantado, na velocidade em que o chao passa,
-//! e volta pela frente levantando.
+//! A port from zone14 (`ModeloVoxel.PassoDaPata`, `GiroDaJunta`, `DoGolpe`).
+//! These creatures' legs are LOOSE STUMPS — the style, see
+//! docs/PIPELINE_ARTE.md — and a loose leg is animated by TRANSLATION:
+//! rotating the stump at its own top moves the foot about 4% of the height
+//! while the body crosses metres of ground, and the walk reads as sliding on
+//! ice. The foot makes a D: straight back while planted, at the speed the
+//! ground passes, and returns at the front, lifting.
 //!
-//! Nao deslizar e' identidade, nao sorte:
+//! Not sliding is identity, not luck:
 //!
 //! ```text
-//! viagem do pe' no apoio == distancia que o corpo andou no apoio
-//! 2 * MEIA_VIAGEM_DO_PE * altura * alonga == FRACAO_DE_APOIO * ciclo
+//! the foot's travel in stance == the distance the body walked in stance
+//! 2 * MEIA_VIAGEM_DO_PE * height * stretch == FRACAO_DE_APOIO * cycle
 //! ```
 //!
 //! e o `ciclo` sai dai. `o_pe_plantado_nao_desliza` cobra.
@@ -23,20 +23,20 @@ use std::f32::consts::{PI, TAU};
 
 /// Meia-viagem do pe', em fracao da altura do bicho: passo de bicho andando.
 pub const MEIA_VIAGEM_DO_PE: f32 = 0.18;
-/// Quanto do ciclo o pe' passa PLANTADO. Quadrupede andando tem sempre mais
-/// pe' no chao que no ar.
+/// How much of the cycle the foot spends PLANTED. A walking quadruped always
+/// has more feet on the ground than in the air.
 pub const FRACAO_DE_APOIO: f32 = 0.60;
-/// Quanto o pe' levanta na volta, em fracao da meia-viagem. Sem levantar, o D
-/// vira um vai-e-vem arrastado.
+/// How much the foot lifts on the return, as a fraction of the half-travel.
+/// Without lifting, the D becomes a dragged back-and-forth.
 pub const ALTURA_DO_PASSO: f32 = 0.42;
-/// Correndo, o passo alonga em vez de so' acelerar — senao a perna vira
-/// desenho animado.
+/// Running, the stride stretches instead of only speeding up — otherwise the
+/// leg becomes a cartoon.
 pub const ALONGA_NA_CORRIDA: f32 = 1.6;
-/// Velocidade (u/s) em que a marcha ja' e' trote de todo.
+/// Speed (u/s) at which the gait is fully a trot.
 const VEL_DE_TROTE: f32 = 5.0;
 
-/// Cada bicho que anda em pecas: o arquivo (`tools/voxrender/bichos.py`) e a
-/// altura na tela, em unidades de mundo.
+/// Each creature that walks in pieces: the file
+/// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
 pub const BICHOS: [(&str, f32); 17] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
@@ -46,34 +46,35 @@ pub const BICHOS: [(&str, f32); 17] = [
     // `tools/voxrender/caranguejos.py`: andam de lado (`Anatomia::lateral`)
     ("bichos/caranguejo", 0.5),
     ("bichos/caranguejo_rei", 0.85),
-    // A ladder de pet e montaria: uma CRIATURA por cor (docs/PETS.md,
-    // docs/MONTARIAS.md). Altura do bicho ADULTO — o pet usa a mesma malha
-    // numa escala menor, que e' o que ja' se fazia com o lobo e o tigre.
+    // The pet and mount ladder: one CREATURE per color (docs/PETS.md,
+    // docs/MONTARIAS.md). The height of the ADULT creature — the pet uses the
+    // same mesh at a smaller scale, which is what was already done with the
+    // wolf and the tiger.
     ("bichos/cervo", 1.6),
     ("bichos/hipogrifo", 1.9),
     ("bichos/dragao", 2.4),
     ("bichos/porco", 0.8),
-    // ── O bestiario das outras ilhas (`economy::kinds_do_bioma`) ──
-    // Alturas do bicho de verdade: a morsa e' baixa e comprida, o besouro
-    // rasteiro, a rainha maior que ele, e o rochoso atarracado.
+    // ── The bestiary of the other islands (`economy::kinds_do_bioma`) ──
+    // Heights of the real creature: the walrus is low and long, the beetle
+    // ground-hugging, the queen bigger than it, and the rocky one squat.
     ("bichos/morsa", 1.1),
     ("bichos/escaravelho", 0.8),
     ("bichos/escaravelho_rainha", 1.3),
     ("bichos/rochoso", 1.2),
-    // Os BRANCOS da Geleira. Mesma altura dos parentes: e' o mesmo bicho de
-    // outra pelagem, e nao outra especie.
+    // The WHITE ones of the Glacier. The same height as their relatives: it is
+    // the same creature in another coat, and not another species.
     ("bichos/urso_polar", 1.3),
     ("bichos/tigre_branco", 0.95),
 ];
 
-/// O bicho deste mob, se ele for bicho. Gente (pistoleiro, mago, arqueiro)
-/// fica de fora: ela anda no rig do personagem, nao neste.
-/// O bicho da MONTARIA deste jogador, com a altura ja' na escala dela.
+/// This mob's creature, if it is a creature. People (gunner, mage, archer)
+/// are left out: they walk on the character rig, not this one.
+/// The MOUNT's creature for this player, with the height already at its scale.
 ///
-/// Existe pra montaria andar pelo MESMO caminho do mob: a fase da passada
-/// acumula com o ciclo do bicho (`anda_a_fase`) e a marcha sai da velocidade
-/// real, sem conversao no meio. O `kind` de quem esta' montado carrega a
-/// skin (`render3d`), e a skin diz qual montaria e' .
+/// It exists so a mount walks the SAME path as a mob: the stride's phase
+/// accumulates with the creature's cycle (`anda_a_fase`) and the gait comes
+/// from the real speed, with no conversion in between. The `kind` of whoever
+/// is mounted carries the skin (`render3d`), and the skin says which mount it is.
 pub fn da_montaria(
     tag: shared::EntityTag,
     kind: u16,
@@ -82,15 +83,15 @@ pub fn da_montaria(
     if tag != shared::EntityTag::Player || !montado {
         return None;
     }
-    // O `kind` do jogador montado e' o item_id da montaria: especie e cor
-    // saem dele (docs/MONTARIAS.md).
+    // The `kind` of a mounted player is the mount's item_id: species and color
+    // come from it (docs/MONTARIAS.md).
     let (e, _) = shared::montarias::de_item(kind)?;
     let (nome, altura) = BICHOS.iter().copied().find(|(n, _)| *n == e.bicho)?;
     Some((nome, altura * e.escala))
 }
 
-/// O bicho de um PET (docs/PETS.md), com a altura ja' na escala dele. O
-/// `kind` da meta e' o item_id, que carrega especie e grau.
+/// A PET's creature (docs/PETS.md), with the height already at its scale.
+/// The meta's `kind` is the item_id, which carries species and grade.
 pub fn do_pet(tag: shared::EntityTag, kind: u16) -> Option<(&'static str, f32)> {
     if tag != shared::EntityTag::Pet {
         return None;
@@ -105,27 +106,27 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
         return None;
     }
     if boss {
-        // Chefe de campo: o bicho do corpo preset dele (a escala e' do
-        // render3d). Gente e pirata nao andam neste rig.
+        // A field boss: the creature of its preset body (the scale is render3d's).
+        // People and pirates do not walk on this rig.
         use shared::bosses::Corpo;
         return match shared::bosses::chefe(kind).map(|c| c.corpo) {
-            // Lobo: o chefe usa o lobo de CORPO INTEIRO (o detalhado), e nao o
-            // pequeno escalado — de perto os voxels do escalado ficam grossos.
-            // A escala se corrige em `fator_do_modelo_de_chefe`.
+            // Wolf: the boss uses the FULL-BODY wolf (the detailed one), and not the
+            // small one scaled up — up close the scaled one's voxels are coarse.
+            // The scale is corrected in `fator_do_modelo_de_chefe`.
             Some(Corpo::Bicho(7)) | Some(Corpo::Bicho(0)) | None => Some(BICHOS[4]),
             Some(Corpo::Bicho(k)) => do_mob(tag, k, false).or(Some(BICHOS[4])),
             Some(_) => None,
         };
     }
-    // Por NOME, e nao por indice. Indexar `BICHOS` por posicao e' o tipo de
-    // coisa que quebra calada quando a lista cresce — e ela cresceu em
-    // 21/09/2026, com o bestiario por ilha.
+    // By NAME, and not by index. Indexing `BICHOS` by position is the kind of
+    // thing that breaks silently when the list grows — and it grew on
+    // 21/09/2026, with the per-island bestiary.
     let nome = modelo_de_kind(kind)?;
     BICHOS.iter().copied().find(|(n, _)| *n == nome)
 }
 
-/// O modelo de cada mob. Gente (Pistoleiro 2, Mago 4, Arqueiro 6) fica de
-/// fora: ela anda no rig do personagem.
+/// Each mob's model. People (Gunner 2, Mage 4, Archer 6) are left out: they
+/// walk on the character rig.
 pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
     Some(match kind {
         0 | 7 => "bichos/lobo_pequeno",
@@ -136,12 +137,12 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         9 => "bichos/caranguejo_rei",
         // As outras ilhas.
         10 => "bichos/morsa",
-        // O urso e o tigre BRANCOS tem MODELO proprio, com a paleta do pelo
-        // trocada no gerador (`bichos.py: PELAGENS`). Ate' 21/09/2026 eram o
-        // urso e o tigre com um multiplicador branco por vertice, e o dono
-        // olhou e matou a ideia: "urso normal pintado de branco, isso nao
-        // existe, fica muito feio". Tinta por cima clareia TUDO — a listra do
-        // tigre junto, e tigre branco sem listra preta e' um gato.
+        // The WHITE bear and tiger have their OWN MODEL, with the coat's palette
+        // swapped in the generator (`bichos.py: PELAGENS`). Until 21/09/2026 they
+        // were the bear and the tiger with a white per-vertex multiplier, and the
+        // owner looked and killed the idea: "a normal bear painted white, that
+        // doesn't exist, it looks terrible". Paint on top lightens EVERYTHING — the
+        // tiger's stripe along with it, and a white tiger with no black stripe is a cat.
         11 => "bichos/urso_polar",
         12 => "bichos/tigre_branco",
         13 => "bichos/escaravelho",
@@ -151,9 +152,9 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
     })
 }
 
-/// Quanto a escala do catalogo de chefes (`bosses::Chefe::escala`, pensada
-/// sobre o corpo do mob comum) muda quando o chefe troca pro modelo de corpo
-/// inteiro: o tamanho na tela fica o mesmo.
+/// How much the boss catalogue's scale (`bosses::Chefe::escala`, designed
+/// around the common mob's body) changes when the boss switches to the
+/// full-body model: the on-screen size stays the same.
 pub fn fator_do_modelo_de_chefe(kind: u16) -> f32 {
     match shared::bosses::chefe(kind).map(|c| c.corpo) {
         Some(shared::bosses::Corpo::Bicho(0)) => BICHOS[0].1 / BICHOS[4].1,
@@ -171,8 +172,8 @@ pub enum Junta {
         frente: bool,
         esq: bool,
     },
-    /// Asa: dragao, hipogrifo e coruja. Bate junto com a passada, mas com
-    /// amplitude propria — asa nao e' pata, ela nao toca o chao.
+    /// Wing: dragon, hippogriff and owl. It beats along with the stride, but
+    /// with its own amplitude — a wing is not a leg, it does not touch the ground.
     Asa {
         esq: bool,
     },
@@ -207,17 +208,17 @@ pub fn junta_de(nome: &str) -> Option<Junta> {
     })
 }
 
-/// Onde a peca gira, na tela de voxels (em cantos de voxel; `hi` inclusivo).
+/// Where the piece rotates, in the voxel grid (in voxel corners; `hi` inclusive).
 ///
-/// O bicho olha pro +Y do voxel. A pata pendura do TOPO; a cabeca e o
-/// pescoco giram na borda de TRAS, que e' onde encostam no corpo; a cauda na
-/// da FRENTE, pelo mesmo motivo.
+/// The creature looks towards voxel +Y. The leg hangs from the TOP; the head
+/// and neck rotate at the BACK edge, which is where they meet the body; the
+/// tail at the FRONT one, for the same reason.
 pub fn pivo_vox(j: Junta, lo: [usize; 3], hi: [usize; 3]) -> [f32; 3] {
     let meio = |i: usize| (lo[i] + hi[i] + 1) as f32 * 0.5;
     match j {
         Junta::Pata { .. } => [meio(0), meio(1), (hi[2] + 1) as f32],
-        // A asa gira onde encosta no tronco: a borda de DENTRO, no eixo X.
-        // Girar no meio dela arrancaria a asa do corpo a cada batida.
+        // The wing rotates where it meets the trunk: the INNER edge, on the X axis.
+        // Rotating at its middle would tear the wing off the body at every beat.
         Junta::Asa { esq } => [
             if esq {
                 (hi[0] + 1) as f32
@@ -240,29 +241,29 @@ pub struct PecaDeBicho {
     pub malhas: Vec<Mesh>,
 }
 
-/// O que a patada precisa saber do corpo, medido no carregamento.
+/// What the paw strike needs to know about the body, measured at load time.
 #[derive(Clone, Copy, Debug)]
 pub struct Anatomia {
     /// Altura na tela, em unidades.
     pub altura: f32,
-    /// Z do ponto mais a' frente do bicho (o focinho), no espaco dele.
+    /// Z of the creature's frontmost point (the muzzle), in its own space.
     pub frente: f32,
-    /// Altura do LOMBO — o topo do tronco —, em unidades de mundo na altura
-    /// em que o bicho foi carregado. E' onde o cavaleiro senta.
+    /// Height of the BACK — the top of the trunk — in world units at the height
+    /// the creature was loaded at. It is where the rider sits.
     ///
-    /// MEDIDO NO MODELO, e nao escrito a mao por especie. A sela escrita a
-    /// mao era um numero por bicho que ninguem revisava quando a escala
-    /// mudava: em 21/09/2026 o cervo cresceu e a sela ficou em 81% da altura
-    /// dele — ou seja, na altura da CABECA —, e o jogador ficou boiando. O
-    /// tronco e' o unico que sabe onde e' o lombo.
+    /// MEASURED ON THE MODEL, and not written by hand per species. A hand-written
+    /// saddle was one number per creature that nobody revised when the scale
+    /// changed: on 21/09/2026 the deer grew and the saddle stayed at 81% of its
+    /// height — that is, at HEAD height — and the player floated. The trunk is
+    /// the only thing that knows where the back is.
     pub lombo: f32,
-    /// Pivo da pata que golpeia (a dianteira direita) parada.
+    /// Pivot of the striking paw (the front right) at rest.
     pub ombro: Vec3,
-    /// De que lado (sinal de X) fica essa pata. A patada abre pra fora
-    /// dela e cruza pro outro lado.
+    /// Which side (sign of X) that paw is on. The strike opens outwards from it
+    /// and crosses to the other side.
     pub lado: f32,
-    /// Caranguejo: anda DE LADO. As "patas da frente" sao as pincas e as de
-    /// tras os dois grupos de pernas (`tools/voxrender/caranguejos.py`).
+    /// Crab: it walks SIDEWAYS. The "front legs" are the pincers and the back
+    /// ones the two groups of legs (`tools/voxrender/caranguejos.py`).
     pub lateral: bool,
 }
 
@@ -271,28 +272,28 @@ pub struct Bicho {
     pub pecas: Vec<PecaDeBicho>,
 }
 
-/// O que a pose precisa saber do quadro.
+/// What the pose needs to know about the frame.
 #[derive(Default)]
 pub struct Entrada {
-    /// Fase da passada, em radianos: anda com a DISTANCIA (ver `ciclo`).
+    /// Stride phase, in radians: it advances with DISTANCE (see `ciclo`).
     pub passada: f32,
     /// Velocidade desenhada, u/s.
     pub vel: f32,
-    /// Relogio, pra o que mexe mesmo parado (cauda, cabeca, respiro).
+    /// A clock, for what moves even at rest (tail, head, breathing).
     pub tempo: f32,
-    /// Segundos desde o comeco do ultimo golpe. Grande = sem golpe.
+    /// Seconds since the start of the last strike. Large = no strike.
     pub golpe: f32,
     /// Desencontra bichos iguais lado a lado.
     pub semente: f32,
     /// Segundos desde o ultimo golpe RECEBIDO.
     pub ferido: Option<f32>,
-    /// Pra onde o golpe empurra (longe do atacante), no espaco do bicho.
+    /// Where the blow pushes (away from the attacker), in the creature's space.
     pub recuo: Vec3,
 }
 
 struct Marcha {
     amp: f32,
-    /// A perna "acorda" com o movimento: parado, o passo some sem estalo.
+    /// The leg "wakes up" with movement: at rest, the stride fades with no snap.
     acorda: f32,
     /// 0 = passeio (quatro tempos) .. 1 = trote (diagonais juntas).
     corre: f32,
