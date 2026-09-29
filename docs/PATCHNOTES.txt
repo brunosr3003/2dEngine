@@ -1,3 +1,11 @@
+29/09/2026 — O número da versão na tela
+
+No canto de baixo à esquerda, ao lado do fps, agora aparece o número da build (ex.: 2026092909). É pra acabar com o "baixei a nova e continua igual": o número diz na hora se o jogo que abriu é o que você baixou.
+
+No site, cada botão de download passou a mostrar a versão que entrega, e o link muda a cada versão — o navegador não consegue mais devolver o arquivo antigo.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
 29/09/2026 — O ícone do Porão no mapa virou um cadeado
 
 O marcador das portas de Porão era um quadradinho dourado com um vão escuro — uma porta vista de cima — que, no tamanho do mapa, não se distinguia de uma casa e quase sumia na areia do Ermo. Agora é um CADEADO, com contorno escuro pra continuar legível em qualquer chão. Ele diz o que a porta é: uma coisa que se abre com chave.
