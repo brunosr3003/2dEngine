@@ -11,7 +11,7 @@ segurada com as duas mãos, na guarda e nos golpes:
 | arma (principal) | secundária | leitura |
 |---|---|---|
 | **espada e escudo** | manto do guerreiro | linha de frente |
-| **katana** | bainha | corte rápido, saque |
+| **katana** | bainha | opens and closes: draw and execute |
 | **duas pistolas** | coldre | à distância, pirata |
 | **anel mágico** | manto do mago | cura e magia |
 
@@ -24,6 +24,37 @@ sai do slot e vai pro conjunto — que é onde ela tem consequência de verdade.
 
 O **anel mágico** no lugar da varinha é decisão de tema: num mundo de
 navegação e ilhas, quem cura não anda com um graveto na mão.
+
+## The katana OPENS and CLOSES (the draw)
+
+The katana's passive lifesteal is **gone**. It was 100% of the class's defence,
+which is how it managed to be the fastest **and** the safest at once: it
+cleared the Ilha Mágica horde at level 60 on 86% health — above the pistol
+(78%) and the ring (66%) — while still killing faster than both. Measured with
+the lifesteal at zero, the same horde left the katana at **18%**. It was not a
+bonus on top of the class's defence; it *was* the defence.
+
+Against a BOSS it already made no difference at all: 4% or 0% give exactly the
+same line when dodging. What holds the katana up against a boss is VIT regen,
+which every set gets.
+
+In its place the katana gets what no other set has — the ends of the fight:
+
+| | what it is | how much |
+|---|---|---|
+| **Opener** | first strike on someone who has not seen the player | `KATANA_OPENER_MULT` 2.5× |
+| **Execute** | strike on a target below 30% health | `KATANA_EXECUTE_MULT` 1.6× |
+| **Thirst** | lifesteal window opened by **Dança** | `KATANA_THIRST_LIFESTEAL` 25% for `KATANA_THIRST_S` 3 s |
+
+And it pays for that in the middle: allocated STRENGTH **no longer pays
+twice**. It already gives +1 attack per point through `STAT_POINT_BONUS`, and
+the extra half the katana added was a second payment for the same point — 62%
+more attack than the sword on the SAME 0.40 s swing. At level 60 attack drops
+from 359 to 326, putting sustained damage below the pistol's (381), which is
+the set that should hold the highest single-target damage.
+
+Sustain is now **chosen**: Dança costs 18 mana and a 15 s cooldown, and the
+window is short. Outside it the katana does not heal itself.
 
 ## Armadura tem PESO, e o peso é a escolha
 
@@ -159,12 +190,13 @@ skill", abaixo.
 | Tiro das pistolas | 0,55 s, DEX/2 no dano | 0,65 s, DEX/4 |
 | Anel (cadência de dano) | 0,32 s | 0,45 s |
 | Espada e escudo | +20 de vida | +60 de vida e escudo absorve 40% |
-| Katana | — | 12% do golpe volta como vida |
+| Katana | 12% do golpe volta como vida | opener 2.5× and execute 1.6×; the lifesteal became Dança's window |
 | HP dos mobs comuns | lobo 50, urso 120, pistoleiro 35, tigre 40, mago 45, owlbear 200, arqueiro 45 | 120, 280, 85, 95, 105, 460, 105 |
 
 As constantes estão no topo de `world.rs` (`PROVOCACAO_S`,
 `MATILHA_RAIO_UN`, `CARGA_PROVOCADO_MULT`, `REDUCAO_DO_ESCUDO`,
-`ROUBO_DE_VIDA_KATANA`, `CADENCIA_DAS_PISTOLAS_S`, `CADENCIA_DO_ANEL_S`). O
+`ABERTURA_DA_KATANA`, `EXECUCAO_DA_KATANA`, `ROUBO_DA_SEDE`,
+`CADENCIA_DAS_PISTOLAS_S`, `CADENCIA_DO_ANEL_S`). O
 HP dos mobs vai ao banco pela migração `balanceamento_hp_mobs_v1`, que só
 altera linha com o HP antigo do seed.
 

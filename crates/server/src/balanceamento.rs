@@ -113,6 +113,9 @@ struct Mob {
     hurt_ate: f32,
     preso_ate: f32,
     provocado_ate: f32,
+    /// Has ever noticed the player. Mirrors `EnemyTag::ai_target`: it is what
+    /// decides the katana's OPENER (`world::KATANA_OPENER_MULT`).
+    engaged: bool,
 }
 
 impl Mob {
@@ -137,6 +140,7 @@ impl Mob {
             hurt_ate: 0.0,
             preso_ate: 0.0,
             provocado_ate: 0.0,
+            engaged: false,
         }
     }
 }
@@ -355,6 +359,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
     let mut ocupado_ate = 0.0f32;
     let mut ultimo_auto = 0u32;
     let mut muralha_ate = 0.0f32;
+    let mut thirst_until = 0.0f32;
     let mut efeitos: Vec<(f32, usize, Option<usize>)> = Vec::new();
     let mut r = Saida {
         vivo: true,
@@ -488,10 +493,24 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 }
             }
             let m = &mut mobs[a];
-            let dmg = dano_mitigado_por_subtracao(shared::basic_attack_damage(stats, arma, 0), m.defesa);
+            // The katana OPENS and CLOSES (world: `KATANA_OPENER_MULT`). It
+            // multiplies before mitigation, exactly as the server does.
+            let mut bruto = shared::basic_attack_damage(stats, arma, 0);
             if conjunto == Conjunto::Katana {
+                let mut mult = 1.0f32;
+                if !m.engaged {
+                    mult *= crate::world::KATANA_OPENER_MULT;
+                }
+                if (m.hp as f32) < m.hp_max as f32 * crate::world::EXECUTE_HP_THRESHOLD {
+                    mult *= crate::world::KATANA_EXECUTE_MULT;
+                }
+                bruto = ((bruto as f32) * mult).round().max(1.0) as i32;
+            }
+            let dmg = dano_mitigado_por_subtracao(bruto, m.defesa);
+            // ...and it only steals life inside the THIRST window Danca opens.
+            if conjunto == Conjunto::Katana && thirst_until > t {
                 *hp = (*hp
-                    + ((dmg as f32) * crate::world::ROUBO_DE_VIDA_KATANA)
+                    + ((dmg as f32) * crate::world::KATANA_THIRST_LIFESTEAL)
                         .round()
                         .max(1.0) as i32)
                     .min(hp_max);
@@ -522,6 +541,10 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             }
             if s.dano == 0 && s.cura == 0 {
                 muralha_ate = t + s.duracao_efeito();
+            }
+            // Danca (5) opens THIRST: the katana's lifesteal window.
+            if s.id == 5 {
+                thirst_until = thirst_until.max(t + crate::world::KATANA_THIRST_S);
             }
             if s.dano > 0 {
                 let Some(a) = alvo_da_skill.filter(|a| mobs[*a].vivo) else {
@@ -593,6 +616,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             let persegue = provocado || d < m.det;
             if persegue {
                 agressores += 1;
+                m.engaged = true;
                 m.aggro_timer += DT;
                 if m.aggro_timer > 5.0 {
                     m.voltando = true;
@@ -1250,6 +1274,7 @@ pub(crate) fn duelar(
     let mut mp = stats.mp_max as f32;
     let mut ocupado_ate = 0.0f32;
     let mut muralha_ate = 0.0f32;
+    let mut thirst_until = 0.0f32;
     let mut efeitos: Vec<(f32, usize)> = Vec::new();
     /// Cast em voo: (quando comecou, indice da skill, MP pago).
     let mut conjurando: Option<(f32, usize, f32)> = None;
@@ -1411,15 +1436,20 @@ pub(crate) fn duelar(
             if eu.distance(chefe) > alcance + raio_do_chefe {
                 continue;
             }
-            let dmg = dano_mitigado_por_subtracao(
-                shared::basic_attack_damage(&stats, arma, alloc[shared::stat_idx::INT]),
-                def_chefe,
-            );
+            let mut bruto = shared::basic_attack_damage(&stats, arma, alloc[shared::stat_idx::INT]);
             if conjunto == Conjunto::Katana {
-                // CHEFE: a fracao menor. E' a mesma funcao que o servidor
-                // chama, entao o numero daqui nao pode divergir do jogo.
+                // NO opener: the boss sees the player from the first tick. The
+                // EXECUTE does apply, and it is what lets the katana CLOSE.
+                if (hp_chefe as f32) < hp_chefe_max as f32 * crate::world::EXECUTE_HP_THRESHOLD {
+                    bruto = ((bruto as f32) * crate::world::KATANA_EXECUTE_MULT)
+                        .round()
+                        .max(1.0) as i32;
+                }
+            }
+            let dmg = dano_mitigado_por_subtracao(bruto, def_chefe);
+            if conjunto == Conjunto::Katana && thirst_until > t {
                 hp = (hp
-                    + ((dmg as f32) * crate::world::roubo_de_vida_katana(true))
+                    + ((dmg as f32) * crate::world::KATANA_THIRST_LIFESTEAL)
                         .round()
                         .max(1.0) as i32)
                     .min(hp_max);
@@ -1439,6 +1469,9 @@ pub(crate) fn duelar(
             }
             if s.dano == 0 && s.cura == 0 {
                 muralha_ate = t + s.duracao_efeito();
+            }
+            if s.id == 5 {
+                thirst_until = thirst_until.max(t + crate::world::KATANA_THIRST_S);
             }
             if s.dano > 0 {
                 hp_chefe -= dano_mitigado_por_subtracao(
@@ -2796,6 +2829,72 @@ mod metas_da_escada {
             }
         }
         assert!(falhas.is_empty(), "\n{}", falhas.join("\n"));
+    }
+
+    /// THE HORDE'S HP FLOOR HAS AN ORDER.
+    ///
+    /// THIS IS THE GUARD THAT WAS MISSING. `metas_da_escada` only asks that a
+    /// set CLEAR the horde alive, which is how the katana spent so long being
+    /// the best on both sides without anyone seeing it: it cleared the Ilha
+    /// Magica horde at level 60 on 86% health — above the pistol (78%) and the
+    /// ring (66%) — with the passive lifesteal paying for all of it. Measured
+    /// with that lifesteal at zero, the SAME horde left it at 18%. The test
+    /// passed either way.
+    ///
+    /// Only the TOP of the ladder (nv50+). Below that the floor swings with
+    /// the biome's mob composition — the pistol goes from 31% at nv20 to 80%
+    /// at nv30 in the same Ilhota, with nothing about it having changed — and
+    /// a guard measured in that noise fails on a monster roll, not on balance.
+    ///
+    ///   1. the SHIELD holds the highest floor: whoever carries it outlasts
+    ///      everyone in a horde, and that is what it buys;
+    ///   2. the KATANA does not outlast the PISTOL. Melee with no shield may
+    ///      trade damage for position, never keep both.
+    ///
+    /// The `FLOOR_TOLERANCE` slack on rule 2 is deliberate: the floor is a
+    /// minimum over a whole run, and one point of difference is measurement
+    /// granularity, not an advantage. What this is meant to catch is the real
+    /// gap — the old katana opened 8 and 9 points over the pistol at nv50 and
+    /// nv60.
+
+    /// How far the katana may sit above the pistol's floor without it counting
+    /// as an advantage.
+    const FLOOR_TOLERANCE: f32 = 0.05;
+
+    #[test]
+    fn horde_hp_floor_has_an_order() {
+        crate::economy::init_vazia_para_testes();
+        let mut failures: Vec<String> = Vec::new();
+        for &level in NIVEIS.iter().filter(|n| **n >= 50) {
+            for place in [Lugar::Forte, Lugar::Ilhota] {
+                let floor = |c: Conjunto| medir(Quem::NaFaixa, c, level, place, false).hp_min;
+                let (shield, katana, pistol, ring) = (
+                    floor(Conjunto::EspadaEscudo),
+                    floor(Conjunto::Katana),
+                    floor(Conjunto::Pistolas),
+                    floor(Conjunto::AnelMagico),
+                );
+                if shield < katana.max(pistol).max(ring) {
+                    failures.push(format!(
+                        "nv{level} {place:?}: the shield ({:.0}%) is not the highest floor \
+                         (katana {:.0}%, pistol {:.0}%, ring {:.0}%)",
+                        shield * 100.0,
+                        katana * 100.0,
+                        pistol * 100.0,
+                        ring * 100.0
+                    ));
+                }
+                if katana > pistol + FLOOR_TOLERANCE {
+                    failures.push(format!(
+                        "nv{level} {place:?}: the katana ({:.0}%) outlasts the pistol ({:.0}%) \
+                         — melee with no shield does not get to keep both",
+                        katana * 100.0,
+                        pistol * 100.0
+                    ));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "\n{}", failures.join("\n"));
     }
 
     /// O equipamento ENVELHECE: a mesma peca toma mais a cada cinco niveis

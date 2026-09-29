@@ -890,36 +890,37 @@ pub(crate) fn cancela_por_movimento(idade_s: f32, impacto_em: f32) -> bool {
     idade_s >= CARENCIA_DO_CANCEL_S && idade_s < impacto_em
 }
 
-/// A katana devolve em vida esta fracao do dano do golpe basico.
+/// THE KATANA OPENS AND CLOSES THE FIGHT.
 ///
-/// E' o que segura quem corta de perto sem escudo, e contra bicho comum e' a
-/// identidade da classe — fica como esta'.
-pub(crate) const ROUBO_DE_VIDA_KATANA: f32 = 0.12;
-/// ...mas contra CHEFE, esta.
+/// THE PASSIVE LIFESTEAL IS GONE. It was 100% of the class's defence, which is
+/// how the katana managed to be the fastest AND the safest at the same time.
+/// Measured on the Ilha Magica horde (`metas_da_escada`, Ilhota) at level 60,
+/// the HP floor went from 18% with no lifesteal to 86% with the old 12% — no
+/// other number in the class moves it anywhere near that much. Against a BOSS
+/// it was already irrelevant: 4% or 0% give exactly the same line when dodging.
 ///
-/// O dono: "a classe de katana tem roubo de vida no ataque básico, então se eu
-/// desligo as skills e só bato ela sola fácil os bosses da dungeon".
-///
-/// A simulação concordou em números: parado, sem esquivar uma única vez, a
-/// katana VENCIA o Colosso Ancião em 61 s levando 4.258 de dano telegrafado.
-/// Todas as outras classes morriam em 19–53 s no mesmo teste. E esquivando ela
-/// terminava com 96% da vida, na metade do tempo da espada e escudo: era a
-/// mais rápida E a mais segura, sem troca nenhuma.
-///
-/// O chefe já rouba 25% do dano que causa, e o comentário de lá diz por quê —
-/// "pressiona o player a não trocar burro". A katana era a única classe imune
-/// a essa pressão. Um terço do roubo devolve a pressão sem tocar no que a
-/// classe é fora da luta de chefe.
-pub(crate) const ROUBO_DE_VIDA_KATANA_CHEFE: f32 = 0.04;
+/// In its place the katana gets what no other set has — the FIRST strike.
+/// Against someone who has not seen the player yet, the draw multiplies by
+/// this.
+pub(crate) const KATANA_OPENER_MULT: f32 = 2.5;
+/// ...and the LAST one: below this fraction of health the target is within
+/// reach of the finishing blow.
+pub(crate) const EXECUTE_HP_THRESHOLD: f32 = 0.30;
+/// How much the finishing blow multiplies by.
+pub(crate) const KATANA_EXECUTE_MULT: f32 = 1.6;
 
-/// Quanto a katana rouba, pelo que ela está cortando.
-pub(crate) fn roubo_de_vida_katana(alvo_e_chefe: bool) -> f32 {
-    if alvo_e_chefe {
-        ROUBO_DE_VIDA_KATANA_CHEFE
-    } else {
-        ROUBO_DE_VIDA_KATANA
-    }
-}
+/// THIRST (Danca, skill 5): the window in which the katana steals life again.
+///
+/// It is the old lifesteal, but ACTIVE — it costs mana, it costs Danca's
+/// cooldown, and it costs picking the moment. The fraction is larger than the
+/// old 12% precisely because it is now worth a slice of the time rather than
+/// all of it. At 3s on a 15s cooldown that is ~20% uptime, roughly 5%
+/// effective; a 5s window measured out at ~8%, close enough to the old passive
+/// that the horde floor barely moved.
+pub(crate) const KATANA_THIRST_S: f32 = 3.0;
+/// How much the basic strike gives back while THIRST is open.
+pub(crate) const KATANA_THIRST_LIFESTEAL: f32 = 0.25;
+
 /// Intervalo do tiro das pistolas (antes 0,55 do arco antigo): quem nao anda
 /// ate' o bicho paga em cadencia.
 pub(crate) const CADENCIA_DAS_PISTOLAS_S: f32 = 0.65;
@@ -1898,6 +1899,8 @@ pub struct Session {
     pub gesto_skill_em: f32,
     pub gesto_skill_ordem: u8,
     pub muralha_ate: f32,
+    /// sim_time until the katana's THIRST window (Danca) is open.
+    pub thirst_until: f32,
     /// Sim_time em que o cast atual começou. Usado pra grace period no
     /// cancel-por-movimento (player que clica skill enquanto andava nao
     /// cancela de imediato — tem 0.3s pra parar).
@@ -7382,6 +7385,7 @@ impl GameWorld {
                 gesto_skill_em: 0.0,
                 gesto_skill_ordem: 0,
                 muralha_ate: 0.0,
+                thirst_until: 0.0,
                 casting_started_at_s: 0.0,
                 casting_impacto_em: 0.0,
                 cast_movement_ticks: 0,
@@ -11738,6 +11742,38 @@ impl GameWorld {
                 }
                 (d, pct.clamp(0.0, 0.75))
             };
+            // THE KATANA OPENS AND CLOSES (`KATANA_OPENER_MULT`). Only on the
+            // basic melee strike — the same gate the lifesteal used. Multiplies
+            // BEFORE mitigation: a bigger swing cuts through more defence,
+            // which is what the ladder's subtraction means.
+            let dmg = if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
+                let katana = self
+                    .sessions
+                    .values()
+                    .find(|s| s.entity_id == attacker_id)
+                    .is_some_and(|s| s.equipment.weapon == Some(shared::item_id::KATANA));
+                if katana {
+                    let mut mult = 1.0f32;
+                    // Has not seen anyone yet: the draw lands for free.
+                    if self
+                        .ecs
+                        .get::<&EnemyTag>(entity)
+                        .is_ok_and(|t| t.ai_target.is_none())
+                    {
+                        mult *= KATANA_OPENER_MULT;
+                    }
+                    if self.ecs.get::<&Health>(entity).is_ok_and(|h| {
+                        h.max > 0 && (h.current as f32) < h.max as f32 * EXECUTE_HP_THRESHOLD
+                    }) {
+                        mult *= KATANA_EXECUTE_MULT;
+                    }
+                    ((dmg as f32) * mult).round().max(1.0) as i32
+                } else {
+                    dmg
+                }
+            } else {
+                dmg
+            };
             // Defesa SUBTRAI do golpe, com piso; a reducao de identidade
             // (escudo, peso) vem por cima (`shared::escada`).
             let mut dmg = dano_mitigado(dmg, target_defense, target_dmg_reduction_pct);
@@ -11812,25 +11848,22 @@ impl GameWorld {
                     amount: heal,
                 });
             }
-            // Katana: o golpe basico devolve vida. E' o que segura quem corta
-            // de perto sem escudo — MENOS contra chefe, onde ele era o que
-            // deixava a classe trocar golpe parada e ganhar (ver
-            // `ROUBO_DE_VIDA_KATANA_CHEFE`).
+            // Katana: THIRST (Danca) is the only window in which it steals
+            // life again. Outside it the class does not heal itself at all —
+            // that is the price of opening and closing the fight this fast.
             if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
-                let katana = self
+                let thirsty = self
                     .sessions
                     .values()
                     .find(|s| s.entity_id == attacker_id)
-                    .is_some_and(|s| s.equipment.weapon == Some(shared::item_id::KATANA));
-                if katana {
-                    let e_chefe = self
-                        .ecs
-                        .get::<&EnemyTag>(entity)
-                        .is_ok_and(|tag| tag.is_boss);
-                    let fracao = roubo_de_vida_katana(e_chefe);
+                    .is_some_and(|s| {
+                        s.equipment.weapon == Some(shared::item_id::KATANA)
+                            && s.thirst_until > now_for_buff
+                    });
+                if thirsty {
                     self.pending_heals.push(PendingHeal {
                         target_net: attacker_id,
-                        amount: ((dmg as f32) * fracao).round().max(1.0) as i32,
+                        amount: ((dmg as f32) * KATANA_THIRST_LIFESTEAL).round().max(1.0) as i32,
                     });
                 }
             }
@@ -20111,7 +20144,6 @@ pub(crate) fn effective_stats(
     //   permanece separada. Hoje a unica arma magica e' o anel.
     //   Bow/Crossbow: cada DEX = +0.5 atk (ranger usa destreza) + atk_speed
     //   Spear:        DEX bonus baixo (1/5), FOR bonus alto (1/1)
-    let for_pts = allocated[shared::stat_idx::FOR] as i32;
     if shared::arma_magica(weapon_id) {
         s.attack_damage += allocated[shared::stat_idx::INT] as i32;
     }
@@ -20138,9 +20170,15 @@ pub(crate) fn effective_stats(
             s.attack_damage += s.dex / 4 + (char_lvl as i32 / 3).min(12);
             s.attack_speed_mult += 0.25;
         }
-        // katana: corte rapido — um pouco de destreza e de forca
+        // katana: fast cut. Dexterity from the pieces still pays; allocated
+        // STRENGTH does NOT pay twice. It already yields +1 attack per point
+        // through `STAT_POINT_BONUS`, and the half-STRENGTH term that used to
+        // live here was a second payment for the same point — it gave 62% more
+        // attack than the sword, on the SAME 0.40 s swing and the same primary
+        // stat. The katana's sustained damage sits below the pistol's on
+        // purpose: what it has is the OPENER and the EXECUTE, not the grind.
         shared::item_id::KATANA => {
-            s.attack_damage += s.dex / 5 + for_pts / 2;
+            s.attack_damage += s.dex / 5;
             s.attack_speed_mult += 0.10;
         }
         _ => {}

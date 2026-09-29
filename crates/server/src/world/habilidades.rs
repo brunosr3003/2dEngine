@@ -412,6 +412,17 @@ impl GameWorld {
             }
             return;
         }
+        // Danca (5): besides the cut around the caster, it OPENS THIRST — the
+        // window in which the katana steals life again. The passive lifesteal
+        // on the basic strike is gone (see `world::KATANA_THIRST_LIFESTEAL`);
+        // this is the same sustain as before, but chosen, and paid for in mana
+        // and cooldown.
+        if skill.id == 5 {
+            let until = self.sim_time_s + crate::world::KATANA_THIRST_S;
+            if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
+                s.thirst_until = s.thirst_until.max(until);
+            }
+        }
         if skill.id == 1 && tier >= 8 {
             if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
                 s.muralha_ate = s.muralha_ate.max(self.sim_time_s + 2.0);
