@@ -1,3 +1,9 @@
+29/09/2026 — O ícone do Porão no mapa virou um cadeado
+
+O marcador das portas de Porão era um quadradinho dourado com um vão escuro — uma porta vista de cima — que, no tamanho do mapa, não se distinguia de uma casa e quase sumia na areia do Ermo. Agora é um CADEADO, com contorno escuro pra continuar legível em qualquer chão. Ele diz o que a porta é: uma coisa que se abre com chave.
+
+Nada mais mudou. Não é atualização obrigatória — o protocolo continua o 159.
+
 29/09/2026 — As portas do Porão agora se acham, e o lag da tarde
 
 Três consertos, os três de coisas que vocês apontaram.
