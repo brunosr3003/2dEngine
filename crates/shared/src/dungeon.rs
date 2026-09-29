@@ -405,7 +405,14 @@ pub const GRUTA_COMPRAS_POR_DIA: u8 = 2;
 /// ~2.500 e fator 3, a 30ª compra ja' passa de 10^15 — o corte existe pra o
 /// numero nao virar lixo, nao pra limitar ninguem.
 pub const COMPRAS_ATE_O_ABSURDO: u8 = 24;
-pub const PORAO_RECOMPENSAS_POR_DIA: u8 = 3;
+/// APOSENTADA em 29/09/2026. O Porão não tem mais cota diária: a chave que se
+/// fabrica (`crate::porao`) é o freio, e ela é o freio INTEIRO — sem ela não se
+/// entra, e com ela a recompensa é cheia todas as vezes.
+///
+/// Fica registrada porque o número conta uma história: enquanto existiu, o teto
+/// do que o Porão despejava na economia era 3 baús por dia por personagem. Quem
+/// for mexer no custo da chave está mexendo nesse teto.
+pub const PORAO_RECOMPENSAS_POR_DIA_APOSENTADA: u8 = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entradas {
@@ -422,7 +429,11 @@ impl Entradas {
             return;
         }
         match tipo {
-            Tipo::Porao => self.saldo = PORAO_RECOMPENSAS_POR_DIA,
+            // APOSENTADO em 29/09/2026: o Porão virou dungeon física e não tem
+            // mais cota — entra e ganha quantas vezes tiver chave
+            // (`crate::porao`). O braço fica porque `Entradas` é struct salva
+            // no banco e o campo `porao` continua lá; o que sumiu foi o uso.
+            Tipo::Porao => {}
             _ => {
                 let dias = if self.dia == 0 {
                     1
@@ -983,8 +994,20 @@ pub fn graus_da_primeira(c: &Conteudo, estagio: u8) -> Vec<Grau> {
 pub enum Pedido {
     /// Estado da janela (conteudos, cadeados, entradas, fila, sala).
     Estado,
-    /// Porao: entra direto, sozinho.
+    /// Porao pelo PAINEL. Aposentado em 29/09/2026, quando o Porao virou
+    /// dungeon fisica: quem entra e' `AbrirPorao`, na porta.
+    ///
+    /// A variante fica pra nao renumerar o enum e derrubar cliente antigo por
+    /// nada — o servidor responde a ela com o convite de ir ate' a porta.
     EntrarSolo {
+        conteudo: u16,
+    },
+    /// Porao pela PORTA, no cenario: a entrada fisica.
+    ///
+    /// Vem sem posicao de proposito. Quem diz onde o jogador esta' e' o
+    /// servidor, que ja' tem a entidade dele; posicao mandada pelo cliente e'
+    /// posicao que se mente, e aqui ela decide se uma porta abre.
+    AbrirPorao {
         conteudo: u16,
     },
     FilaEntrar {
@@ -1363,11 +1386,14 @@ mod testes {
         // E o saldo cresceu com as compras.
         assert!(e.saldo >= 4);
 
-        // O Porao continua sem venda: as recompensas dele sao por dia, e
-        // vender entrada ali seria vender a recompensa.
+        // O PORÃO NÃO TEM MAIS COTA NENHUMA pra virar o dia (29/09/2026):
+        // ele virou dungeon física e o freio passou a ser a chave que se
+        // fabrica (`crate::porao`). `atualizar` não mexe mais no saldo dele, e
+        // continuar sem venda de entrada é consequência disso, não regra à
+        // parte — não há entrada pra vender.
         let mut p = Entradas::default();
         p.atualizar(Tipo::Porao, 5);
-        assert_eq!(p.saldo, PORAO_RECOMPENSAS_POR_DIA);
+        assert_eq!(p.saldo, 0, "o Porão voltou a ganhar cota diária");
         assert_eq!(p.preco_da_compra(Tipo::Porao, 10), None);
     }
 

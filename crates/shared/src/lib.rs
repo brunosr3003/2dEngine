@@ -16,6 +16,7 @@ pub mod components;
 pub mod constants;
 pub mod construcao;
 pub mod dungeon;
+pub mod porao;
 pub mod ladder;
 pub mod forja;
 pub mod historia;

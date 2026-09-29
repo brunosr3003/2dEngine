@@ -185,6 +185,72 @@ impl GameWorld {
         dg::cadeado(c, estagio, nivel, poder, s.dungeon.liberado(c.id), tem_selo).map(|x| x.texto())
     }
 
+    /// ABRE UM PORÃO PELA PORTA, no cenário.
+    ///
+    /// Três coisas são conferidas aqui, e as três no SERVIDOR: a zona é a do
+    /// conteúdo, o jogador está a `ALCANCE_DA_PORTA` da porta, e a chave está
+    /// na bolsa. A posição sai da entidade dele, nunca do pedido — um pedido
+    /// traz o que o cliente quiser que ele traga, e aqui ela decide se a porta
+    /// abre.
+    ///
+    /// Não há conta de entradas: o Porão passou a ser ilimitado em entrada E
+    /// em recompensa, e o freio é a chave (`shared::porao`). Quem tem chave
+    /// entra; quem não tem, fabrica.
+    fn dg_abrir_porao(&mut self, sid: SessionId, conteudo: u16) {
+        let Some(c) = dg::conteudo(conteudo).filter(|c| c.tipo == Tipo::Porao) else {
+            return;
+        };
+        if c.zona != self.zona {
+            self.dg_texto(
+                sid,
+                false,
+                format!("{} has its door on another island.", c.nome),
+            );
+            return;
+        }
+        if let Some(motivo) = self.dg_recusa(sid, c, 1) {
+            self.dg_texto(sid, false, motivo);
+            return;
+        }
+        let Some(porta) = self.porta_do_porao(c) else {
+            return;
+        };
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let Some(e) = s.entity else { return };
+        let onde = self.ecs.get::<&Position>(e).map(|p| p.0).ok();
+        let Some(onde) = onde else { return };
+        if onde.distance(porta) > shared::porao::ALCANCE_DA_PORTA {
+            self.dg_texto(sid, false, format!("Get closer to the {} door.", c.nome));
+            return;
+        }
+        let Some(chave) = shared::porao::chave_de(c) else {
+            return;
+        };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        if !tirar_item(&mut s.inventory, chave, 1) {
+            let nome = shared::porao::nome_da_chave(chave).unwrap_or_else(|| "key".into());
+            self.dg_texto(sid, false, format!("You need a {nome} to open this."));
+            return;
+        }
+        s.inventory_dirty = true;
+        crate::telemetria::conta("porao_chave_usada", format!("{conteudo}"), 1);
+        self.dg_comecar(conteudo, 1, vec![sid]);
+    }
+
+    /// Onde fica a porta deste Porão nesta zona.
+    ///
+    /// A cidade é a âncora (ver `shared::porao::porta_de`), então a porta anda
+    /// junto com ela se a ilha for regerada — coordenada escrita à mão viraria
+    /// porta no mar no dia em que a semente mudasse.
+    pub(crate) fn porta_do_porao(&self, c: &dg::Conteudo) -> Option<Vec2> {
+        let cidade = self.ilha.as_ref()?.cidade()?.centro();
+        shared::porao::porta_de(c, cidade)
+    }
+
     // ─────────────────────────────── arena ───────────────────────────────
 
     /// Os sitios dos andares: planos, longe da cidade, do porto e dos chefes
@@ -381,6 +447,17 @@ impl GameWorld {
             self.dg_avisar(sid, Aviso::PrecisaDaArena);
             return;
         }
+        // O PORÃO NÃO PASSA MAIS PELA ARENA.
+        //
+        // Ele virou dungeon física em 29/09/2026: a entrada é uma porta na
+        // ilha dele, e a instância nasce NESTE processo, sem viagem nenhuma.
+        // `AbrirPorao` fica de fora de `precisa_da_arena` por isso — exigir a
+        // Arena aqui seria mandar o jogador atravessar o mundo pra abrir uma
+        // porta que está na frente dele.
+        if let Pedido::AbrirPorao { conteudo } = pedido {
+            self.dg_abrir_porao(sid, conteudo);
+            return;
+        }
         match pedido {
             Pedido::IrParaArena => {
                 self.entrar_na_arena(sid);
@@ -391,19 +468,17 @@ impl GameWorld {
                 return;
             }
             Pedido::Estado => {}
+            // Cliente velho ainda pedindo o Porão pelo painel. Em vez de
+            // silêncio, a explicação: a porta agora fica na ilha.
             Pedido::EntrarSolo { conteudo } => {
-                let Some(c) = dg::conteudo(conteudo).filter(|c| c.tipo == Tipo::Porao) else {
-                    return;
-                };
-                if let Some(motivo) = self.dg_recusa(sid, c, 1) {
-                    self.dg_texto(sid, false, motivo);
-                    return;
-                }
-                let ev = self.mesa.remover(k, agora);
-                self.dg_eventos(ev);
-                self.dg_comecar(conteudo, 1, vec![sid]);
+                let onde = dg::conteudo(conteudo)
+                    .filter(|c| c.tipo == Tipo::Porao)
+                    .map(|c| format!("{} is now entered at its door, on the island.", c.nome))
+                    .unwrap_or_else(|| "This cellar is now entered at its door.".into());
+                self.dg_texto(sid, false, onde);
                 return;
             }
+            Pedido::AbrirPorao { .. } => return,
             Pedido::GrutaSolo { conteudo, estagio } => {
                 let Some(c) = dg::conteudo(conteudo).filter(|c| c.tipo == Tipo::Gruta) else {
                     return;
@@ -765,9 +840,22 @@ impl GameWorld {
             let Some(s) = self.sessions.get_mut(sid) else {
                 continue;
             };
-            let entradas = s.dungeon.entradas(c.tipo);
-            entradas.atualizar(c.tipo, hoje);
-            let ajudante = !entradas.consumir();
+            // O PORÃO NÃO TEM MAIS COTA — nem de entrada, nem de recompensa.
+            //
+            // O dono, em 29/09/2026: "that way porao will be infity enters and
+            // inifty rewards but needing key to get in". A chave já foi gasta
+            // em `dg_abrir_porao`; cobrar também uma entrada do dia seria cobrar
+            // duas vezes, e a partir da quarta o baú viria pela metade sem que
+            // nada na tela explicasse por quê.
+            //
+            // A Gruta segue com a conta de sempre: lá a entrada é o freio.
+            let ajudante = if c.tipo == Tipo::Porao {
+                false
+            } else {
+                let entradas = s.dungeon.entradas(c.tipo);
+                entradas.atualizar(c.tipo, hoje);
+                !entradas.consumir()
+            };
             crate::telemetria::conta(
                 "dungeon_entrada",
                 format!(
@@ -1792,6 +1880,104 @@ mod testes {
             assert_eq!(&c.semanais_recebidas[..2], &[false,!nova_semana]);
             assert!(c.drops_chefe.contains(&shared::item_id::GOLD));
         }
+    }
+
+    /// A PORTA CONFERE DISTÂNCIA E CHAVE, e as duas no servidor.
+    ///
+    /// São as duas mentiras que um cliente adulterado contaria pra entrar de
+    /// graça: "estou na porta" e "tenho a chave". Nenhuma das duas vem no
+    /// pedido — a posição sai da entidade e a chave sai da bolsa —, e este
+    /// teste é o que prova que continua assim.
+    ///
+    /// Também prova que a chave é GASTA: sem isso ela abriria o Porão pra
+    /// sempre, e a única torneira do conteúdo ficaria aberta.
+    #[test]
+    fn a_porta_do_porao_exige_estar_perto_e_ter_a_chave() {
+        crate::economy::init_vazia_para_testes();
+        let porao = dg::CONTEUDOS
+            .iter()
+            .find(|c| c.tipo == Tipo::Porao)
+            .expect("um porão no catálogo");
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = porao.zona.to_string();
+        // A ILHA DE VERDADE, senão não há porta e o teste passa sem medir
+        // nada: `porta_do_porao` ancora na cidade, e `GameWorld::new` nasce
+        // sem ilha. Foi exatamente assim que esta primeira versão passou
+        // verde sem executar uma linha do que queria provar.
+        let def = shared::terreno::def_da_zona(porao.zona).expect("def da ilha do porão");
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(def));
+        let porta = w
+            .porta_do_porao(porao)
+            .expect("a ilha tem cidade, logo o porão tem porta");
+        let sid = SessionId(([127, 0, 0, 1], 19883).into());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((
+            NetId(EntityId(950)),
+            Position(porta + Vec2::new(400.0, 0.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+        ));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.inventory = vec![shared::InventorySlot::default(); 8];
+            // Nível e poder acima do cadeado do conteúdo: sem isto `dg_recusa`
+            // barra antes por nível, e o teste mediria o cadeado em vez da
+            // porta — que foi o que aconteceu na primeira tentativa.
+            s.xp = shared::xp_for_level(porao.nivel_min + 10);
+            s.stats.hp_max = 100_000;
+            s.stats.attack_damage = 100_000;
+            s.stats.defense = 100_000;
+        }
+        assert!(
+            w.dg_recusa(sid, porao, 1).is_none(),
+            "o personagem do teste ainda está barrado por cadeado: {:?}",
+            w.dg_recusa(sid, porao, 1)
+        );
+        let chave = shared::porao::chave_de(porao).unwrap();
+        let recado = |rx: &mut mpsc::UnboundedReceiver<ServerMessage>| -> String {
+            let mut t = String::new();
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Dungeon { aviso: Aviso::Texto { texto, .. } } = m {
+                    t = texto;
+                }
+            }
+            t
+        };
+
+        // Longe e sem chave: recusa por distância, e a chave nem é olhada.
+        w.dg_abrir_porao(sid, porao.id);
+        assert!(
+            recado(&mut rx).contains("closer"),
+            "longe da porta tinha que reclamar da distância"
+        );
+        assert_eq!(w.sessions[&sid].instancia, 0, "entrou de longe");
+
+        // Na porta, mas sem chave.
+        w.ecs.get::<&mut Position>(e).unwrap().0 = porta;
+        w.dg_abrir_porao(sid, porao.id);
+        assert!(
+            recado(&mut rx).contains("need a"),
+            "na porta e sem chave tinha que pedir a chave"
+        );
+        assert_eq!(w.sessions[&sid].instancia, 0, "entrou sem chave");
+
+        // Na porta e com a chave: entra, e a chave some da bolsa.
+        w.sessions.get_mut(&sid).unwrap().inventory[0] = shared::InventorySlot {
+            item_id: chave,
+            qty: 1,
+            instance: None,
+        };
+        w.dg_abrir_porao(sid, porao.id);
+        let s = &w.sessions[&sid];
+        assert!(s.instancia != 0, "com chave na porta tinha que entrar");
+        assert!(
+            s.inventory.iter().all(|i| i.item_id != chave || i.qty == 0),
+            "a chave não foi gasta"
+        );
     }
 
     #[test]
