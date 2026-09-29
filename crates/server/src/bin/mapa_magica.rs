@@ -1,10 +1,10 @@
-//! Mapa de altura da Ilha Magica, em PNG (na verdade PPM) — so' pra olhar.
+//! Height map of the Magic Island, as a PNG (actually a PPM) — just to look at.
 //!
-//! Existe porque a forma da ilha e' uma funcao pura, e funcao pura nao se
-//! julga lendo: o dono reclamou que "as ilhas estao so' redondas bem padrao"
-//! e depois que a praia era um contorno, e as duas coisas so' ficaram obvias
-//! olhando a silhueta de cima. Rodar isto custa segundos e evita subir uma
-//! ilha feia pro TestFlight pra descobrir la'.
+//! It exists because the island's shape is a pure function, and a pure
+//! function is not judged by reading: the owner complained that "the islands
+//! are just plain round" and then that the beach was an outline, and both only
+//! became obvious looking at the silhouette from above. Running this costs
+//! seconds and avoids shipping an ugly island to TestFlight to find out there.
 //!
 //! ```sh
 //! cargo run --release --bin mapa_magica

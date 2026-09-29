@@ -1,20 +1,20 @@
-//! "Tem certeza?" antes de gastar uma poção de efeito que já está ativa.
+//! "Are you sure?" before spending an effect potion that is already active.
 //!
-//! O servidor RENOVA a hora cheia em vez de somar (`renovar_bonus_xp`,
-//! `renovar_buff`): beber a segunda com 55 minutos restantes joga esses 55
-//! minutos fora. Quem usa no automático nunca cai aqui — a barra já pula buff
-//! ativo; isto é só pro toque na bolsa e no slot.
+//! The server RENEWS the full hour instead of adding (`renovar_bonus_xp`,
+//! `renovar_buff`): drinking the second one with 55 minutes left throws those
+//! 55 minutes away. Anyone using it on automatic never lands here — the bar
+//! already skips an active buff; this is only for a touch in the bag or the slot.
 
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
 
-/// O uso que está esperando resposta.
+/// The use that is waiting for an answer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Pendente {
-    /// Duplo toque na bolsa.
+    /// Double touch in the bag.
     Bolsa { slot: u16, item: u16 },
-    /// Slot da barra de itens.
+    /// Item bar slot.
     Barra { i: usize, forte: bool, item: u16 },
 }
 
@@ -26,7 +26,7 @@ impl Pendente {
     }
 }
 
-/// "1h 02m" / "12m" / "40s": o que ainda resta do efeito.
+/// "1h 02m" / "12m" / "40s": what is left of the effect.
 pub fn resta(segundos: i64) -> String {
     let s = segundos.max(0);
     let (h, m) = (s / 3600, s / 60 % 60);
@@ -39,8 +39,8 @@ pub fn resta(segundos: i64) -> String {
     }
 }
 
-/// Desenha a janela. `None` = ainda esperando; `Some(true)` = usar assim
-/// mesmo; `Some(false)` = cancelou.
+/// Draws the window. `None` = still waiting; `Some(true)` = use it anyway;
+/// `Some(false)` = cancelled.
 pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     let f = estilo::fator_texto();
     let seguro = crate::hud_layout::tela_segura();

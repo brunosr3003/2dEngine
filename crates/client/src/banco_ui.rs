@@ -1,9 +1,9 @@
-//! O BANCO, com o Banqueiro da vila: a bolsa a' esquerda, o banco a' direita.
-//! Tocar num item o passa pro outro lado (`VaultDeposit` / `VaultWithdraw`).
-//! Embaixo de cada lado, o "+10 espaços" em ouro (`shared::armazem`).
+//! THE BANK, with the village Banker: the bag on the left, the bank on the
+//! right. Touching an item passes it to the other side (`VaultDeposit` /
+//! `VaultWithdraw`). Below each side, "+10 slots" in gold (`shared::armazem`).
 //!
-//! Abre quando o servidor manda `VaultOpen` (toque no Banqueiro). Nada aqui
-//! decide: o servidor confere a distancia, o espaco e o ouro.
+//! Opens when the server sends `VaultOpen` (touching the Banker). Nothing
+//! here decides: the server checks distance, space and gold.
 
 use macroquad::prelude::*;
 use shared::armazem;
@@ -28,7 +28,7 @@ pub struct Banco {
     rol_banco: Rolagem,
 }
 
-/// "+10 espaços · 2.000 ouro", ou o teto.
+/// "+10 slots · 2,000 gold", or the cap.
 pub fn rotulo_de_expandir(banco: bool, extra: u8) -> String {
     match armazem::custo(banco, extra) {
         Some(c) => format!(
@@ -71,7 +71,7 @@ impl Banco {
         self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
     }
 
-    /// Desenha; devolve o pedido do quadro.
+    /// Draws; returns this frame's request.
     pub fn desenha(
         &mut self,
         bolsa: &[InventorySlot],
@@ -124,7 +124,7 @@ impl Banco {
         let dir = Rect::new(esq.x + col_w + meio, topo, col_w, alto);
         let mut pedido = None;
         let (bolsa_extra, banco_extra) = (self.bolsa_extra, self.banco_extra);
-        // So' a grade: a carteira (cobre, darksteel) nao vai pro banco.
+        // The grid only: the wallet (copper, darksteel) does not go to the bank.
         let n = crate::bolsa::grade(bolsa, bolsa_extra).min(bolsa.len());
         let bolsa = &bolsa[..n];
         if let Some(r) = lado(
@@ -169,7 +169,7 @@ enum Toque {
     Expandir,
 }
 
-/// Um lado: titulo com a ocupacao, a grade que rola e o botao de expandir.
+/// One side: a title with the occupancy, the grid that scrolls and the expand button.
 fn lado(
     r: Rect,
     titulo: &str,
@@ -229,7 +229,7 @@ fn lado(
     }
     crate::rolagem::recortar(None);
     rolagem.desenha(area, total);
-    // o pe': expandir
+    // the foot: expand
     let b = Rect::new(r.x + u(8.0), r.y + r.h - pe_h, r.w - u(16.0), pe_h - u(8.0));
     let custo = armazem::custo(banco, extra);
     let pode = custo.is_some_and(|c| ouro >= c);
@@ -245,7 +245,7 @@ fn lado(
     saida
 }
 
-/// Uma celula: fundo, icone, a borda na cor da peca e a quantidade.
+/// One cell: background, icon, the border in the piece's color and the quantity.
 fn celula(c: Rect, s: Option<&InventorySlot>, palco: Option<(&crate::vox::VoxCache, &Material)>) {
     estilo::ret_arredondado(c, u(6.0), Color::new(0.13, 0.12, 0.15, 1.0));
     let Some(s) = s else {

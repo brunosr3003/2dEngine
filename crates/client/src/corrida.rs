@@ -1,17 +1,17 @@
-//! Corrida automatica: indo sozinho (viagem do mapa, auto missao, rota por
-//! clique), depois de um tempo andando sem parar o personagem passa a correr.
+//! Automatic running: going somewhere alone (map travel, auto quest, click
+//! route), after a while walking without stopping the character starts to run.
 //!
-//! O cliente so' liga o bit `SPRINT` do input. Quem decide se da' pra correr
-//! e' o servidor, como com o Shift: sem vigor ele nao corre, e volta a correr
-//! sozinho quando o vigor recupera, sem precisar parar.
+//! The client only sets the input's `SPRINT` bit. Whether running is possible
+//! is the server's call, as with Shift: with no stamina it does not run, and
+//! it starts running again on its own when stamina recovers, without having to stop.
 
 use macroquad::prelude::*;
 
-/// Andando continuo por este tempo, corre.
+/// Walking continuously for this long, it runs.
 const ESPERA_S: f32 = 1.5;
-/// Parado por mais que isto, o contador zera.
+/// Stopped for longer than this, the counter zeroes.
 const PARADO_S: f32 = 0.3;
-/// Abaixo desta velocidade (u/s) conta como parado.
+/// Below this speed (u/s) it counts as stopped.
 const MEXENDO: f32 = 0.5;
 
 #[derive(Default)]
@@ -23,7 +23,7 @@ pub struct Corrida {
 }
 
 impl Corrida {
-    /// A escolha manual prevalece sobre a corrida automática da viagem.
+    /// A manual choice wins over the travel's automatic run.
     pub fn ativa(&self, automatico: bool) -> bool {
         self.escolha.unwrap_or(automatico)
     }
@@ -32,9 +32,9 @@ impl Corrida {
         self.escolha = Some(!self.ativa(automatico));
     }
 
-    /// Um quadro. `automatico` = o personagem esta' indo sozinho e nada o
-    /// segura (sem dialogo aberto, sem auto combate ou coleta parados na
-    /// zona). Devolve se deve correr.
+    /// One frame. `automatico` = the character is going somewhere alone and
+    /// nothing is holding them (no dialogue open, no auto combat or gathering
+    /// stopped in the zone). Returns whether they should run.
     pub fn atualiza(&mut self, pos: Option<Vec2>, automatico: bool, dt: f32) -> bool {
         let mexeu = match (pos, self.ultima) {
             (Some(p), Some(u)) if dt > 0.0 => p.distance(u) / dt > MEXENDO,
@@ -78,7 +78,7 @@ mod tests {
         assert!(!c.ativa(true));
     }
 
-    /// Anda `quadros` quadros a 4 u/s em linha reta.
+    /// Walks `quadros` frames at 4 u/s in a straight line.
     fn anda(c: &mut Corrida, x: &mut f32, quadros: u32, automatico: bool) -> bool {
         let dt = 1.0 / 60.0;
         let mut r = false;
@@ -109,13 +109,13 @@ mod tests {
     fn parar_zera_e_tropeco_curto_nao() {
         let (mut c, mut x) = (Corrida::default(), 0.0);
         assert!(anda(&mut c, &mut x, 120, true));
-        // Quina de 0,2 s: continua contando.
+        // A 0.2 s corner: keeps counting.
         fica(&mut c, x, 12);
         assert!(
             anda(&mut c, &mut x, 2, true),
             "tropeco curto zerou a corrida"
         );
-        // Parou de verdade (chegou): zera.
+        // Really stopped (arrived): zeroes.
         assert!(!fica(&mut c, x, 30));
         assert!(
             !anda(&mut c, &mut x, 60, true),
@@ -127,7 +127,7 @@ mod tests {
     fn fora_do_automatico_nunca_corre() {
         let (mut c, mut x) = (Corrida::default(), 0.0);
         assert!(!anda(&mut c, &mut x, 300, false));
-        // Dialogo abriu no meio da corrida: desliga e zera.
+        // A dialogue opened mid-run: switches off and zeroes.
         assert!(anda(&mut c, &mut x, 120, true));
         assert!(!anda(&mut c, &mut x, 1, false));
         assert!(!anda(&mut c, &mut x, 30, true));

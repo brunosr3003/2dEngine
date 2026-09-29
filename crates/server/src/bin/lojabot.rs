@@ -1,14 +1,15 @@
-//! Bot da loja de cash e das montarias: o teste de aceite de docs/LOJA.md e
-//! docs/MONTARIAS.md, contra um servidor de TESTE.
+//! Bot for the cash shop and the mounts: the acceptance test for docs/LOJA.md
+//! and docs/MONTARIAS.md, against a TEST server.
 //!
-//! Cenarios (`--cenario`):
-//! - `completo`: compra pacote de TP com o MESMO pedido duas vezes (conta um
-//!   credito so'), compra o pergaminho de montaria duas vezes, mede a
-//!   velocidade a pe' e montado, chama um chefe de teste perto e confere que
-//!   desmonta ao lutar.
-//! - `estado`: so' loga e imprime o saldo (reconexao mantem tudo).
-//! - `pedido`: compra o pacote `--pacote` com o pedido fixo `--pedido` (dois
-//!   processos da mesma conta ao mesmo tempo nao duplicam o credito).
+//! Scenarios (`--cenario`):
+//! - `completo`: buys a TP bundle with the SAME order twice (counts one
+//! credit only), buys the mount scroll twice, measures speed on foot and
+//! mounted, calls a test boss nearby and checks that it dismounts on
+//! fighting.
+//! - `estado`: only logs in and prints the balance (reconnecting keeps
+//! everything).
+//! - `pedido`: buys the `--pacote` bundle with the fixed order `--pedido`
+//! (two processes on the same account at once do not duplicate the credit).
 //!
 //! ```sh
 //! cargo run --bin lojabot -- --host 127.0.0.1:9340 --user bot0 --cenario completo --secret X
@@ -120,8 +121,8 @@ async fn main() -> anyhow::Result<()> {
                         if cenario == "pedido" {
                             muda(&mut fase, &mut fase_em, Fase::Fim, &mut linhas);
                         } else {
-                            // A montaria virou ITEM: compra-se o pergaminho, e
-                            // ele e' repetivel (docs/MONTARIAS.md).
+                            // The mount became an ITEM: you buy the scroll, and
+                            // it is repeatable (docs/MONTARIAS.md).
                             muda(&mut fase, &mut fase_em, Fase::CompraMontaria, &mut linhas);
                             ws.send(envia(ClientMessage::Loja { pedido: PedidoLoja::ComprarItem { produto: Produto::PergaminhoMontaria(1), vezes: 1, pedido: format!("{tag}-m1") } })?).await?;
                         }
@@ -163,7 +164,7 @@ async fn main() -> anyhow::Result<()> {
                             if let Some((m0, p0)) = medida { vel_montado = minha_pos.distance(p0) / m0.elapsed().as_secs_f32(); }
                             andar = glam::Vec2::ZERO;
                             linhas.push(format!("velocidade a pe' {vel_a_pe:.2} u/s, montado {vel_montado:.2} u/s, razao {:.2}", vel_montado / vel_a_pe.max(0.01)));
-                            // Sai da zona segura montado (la' dentro nao ha' combate).
+                            // Leaves the safe zone mounted (there is no combat in there).
                             muda(&mut fase, &mut fase_em, Fase::Viagem, &mut linhas);
                             origem = minha_pos;
                         }
@@ -177,14 +178,14 @@ async fn main() -> anyhow::Result<()> {
                             let alvo = minha_pos + glam::Vec2::new(2.5, 0.0);
                             ws.send(envia(ClientMessage::AdminCommand { secret: segredo.clone(), target_char: None, action: AdminAction::SpawnTestBoss { x: alvo.x, z: alvo.y, hp: 1000 } })?).await?;
                         } else {
-                            // Tenta uma direcao por vez; a que andar, segue.
+                            // Tries one direction at a time; whichever moves, it follows.
                             let dir = [glam::Vec2::new(-1.0, 0.0), glam::Vec2::new(0.0, 1.0), glam::Vec2::new(0.0, -1.0), glam::Vec2::new(1.0, 0.0)][(t.as_secs() / 17) as usize % 4];
                             let destino = origem + dir * (fora + 20.0);
                             ws.send(envia(ClientMessage::MoverPara { x: destino.x, z: destino.y })?).await?;
                         }
                     }
                     Fase::Luta => {
-                        // O chefe de teste mais perto vira alvo; o auto-ataque bate.
+                        // The nearest test boss becomes the target; the auto-attack hits.
                         if let Some((id, p)) = ents.iter().filter(|(_, e)| e.0 == EntityTag::Enemy).min_by(|a, b| a.1 .1.distance(minha_pos).total_cmp(&b.1 .1.distance(minha_pos))).map(|(id, e)| (*id, e.1)) {
                             ws.send(envia(ClientMessage::SetTarget { target: Some(id) })?).await?;
                             if p.distance(minha_pos) > 1.5 {

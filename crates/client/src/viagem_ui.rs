@@ -1,19 +1,19 @@
-//! Menu "Viajar" do Capitao do Porto: uma linha por ilha, com "Embarcar" nas
-//! que a historia ja' liberou. Quem decide tudo e' o servidor
-//! (`shared::viagem`); aqui so' se desenha a lista que ele mandou.
+//! The Harbour Captain's "Travel" menu: one row per island, with "Board" on
+//! the ones the story has unlocked. The server decides everything
+//! (`shared::viagem`); here we only draw the list it sent.
 
 use macroquad::prelude::*;
 use shared::viagem::{estado, Destino};
 
 use crate::hud_estilo as estilo;
 
-/// O que o jogador escolheu no menu do Capitao.
+/// What the player chose in the Captain's menu.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Escolha {
-    /// Uma ilha do arquipelago.
+    /// One island of the archipelago.
     Ilha(u8),
-    /// A colonia (docs/COLONIA.md). Nao e' uma ilha do `ARQUIPELAGO` e nao
-    /// tem indice: e' por isso que a escolha e' um enum e nao um `u8`.
+    /// The colony (docs/COLONIA.md). It is not an island of the `ARQUIPELAGO`
+    /// and has no index: that is why the choice is an enum and not a `u8`.
     MinhaIlha,
 }
 
@@ -37,9 +37,9 @@ impl ViagemUi {
 
     /// Desenha; devolve o destino escolhido (o menu fecha junto).
     ///
-    /// `colonia` e' se a historia ja' entregou a ilha propria: sem isso a
-    /// linha nao aparece, porque o menu nao pode oferecer o que o servidor
-    /// vai recusar.
+    /// `colonia` is whether the story has already handed over the player's own
+    /// island: without it the row does not appear, because the menu cannot offer
+    /// what the server is going to refuse.
     pub fn desenha(&mut self, colonia: bool) -> Option<Escolha> {
         estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || {
             self.desenha_na_escala(colonia)
@@ -113,8 +113,8 @@ impl ViagemUi {
             }
             y += linha_h;
         }
-        // A ilha propria fecha a lista: e' o destino que ninguem disputa, e
-        // ela nao entra no meio das ilhas porque nao e' uma delas.
+        // The player's own island closes the list: it is the destination nobody
+        // competes for, and it does not sit among the islands because it is not one.
         if colonia {
             let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 8.0 * f);
             estilo::cartao(r, false, false);
@@ -150,7 +150,7 @@ impl ViagemUi {
     }
 }
 
-/// A segunda linha de cada ilha: nivel e o que falta pra ir.
+/// Each island's second line: level and what is missing to go.
 pub fn subtitulo(d: &Destino) -> String {
     let nivel = format!("Nível {}–{}", d.nivel_min, d.nivel_max);
     match d.estado {

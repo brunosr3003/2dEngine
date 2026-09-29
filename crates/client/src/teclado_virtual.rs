@@ -1,8 +1,9 @@
-//! Quando o teclado da tela abre e fecha, e quanto o painel sobe.
+//! When the on-screen keyboard opens and closes, and how far the panel rises.
 //!
-//! Separado da plataforma (`nativo`) pra ser testado: a regra e' "campo de
-//! texto com foco = teclado aberto", e so' mudancas viram pedido — pedir
-//! `becomeFirstResponder` todo quadro faria o iOS reabrir o teclado sem parar.
+//! Separate from the platform (`nativo`) so it can be tested: the rule is "a
+//! text field with focus = keyboard open", and only changes become a request
+//! — asking for `becomeFirstResponder` every frame would make iOS reopen the
+//! keyboard endlessly.
 
 #[derive(Default, Debug)]
 pub struct TecladoVirtual {
@@ -10,8 +11,8 @@ pub struct TecladoVirtual {
 }
 
 impl TecladoVirtual {
-    /// `precisa` = algum campo de texto esta' com foco neste quadro. Devolve o
-    /// pedido a fazer (`Some(true)` abrir, `Some(false)` fechar) so' quando muda.
+    /// `precisa` = some text field has focus this frame. Returns the request to
+    /// make (`Some(true)` open, `Some(false)` close) only when it changes.
     pub fn quer(&mut self, precisa: bool) -> Option<bool> {
         (precisa != self.aberto).then(|| {
             self.aberto = precisa;
@@ -24,12 +25,12 @@ impl TecladoVirtual {
     }
 }
 
-/// Fracao de baixo da tela que o teclado cobre no celular deitado.
+/// Fraction of the bottom of the screen the keyboard covers on a phone in landscape.
 const FRACAO_DO_TECLADO: f32 = 0.52;
 
-/// Quanto subir um painel pra que `fundo_do_campo` (y da borda de baixo do
-/// campo com foco) fique acima do teclado. Nunca sobe alem de deixar o topo
-/// do painel (`topo_do_painel`) a 8 px da borda.
+/// How far to raise a panel so that `fundo_do_campo` (the y of the bottom
+/// edge of the focused field) sits above the keyboard. Never rises beyond
+/// leaving the panel's top (`topo_do_painel`) 8 px from the edge.
 pub fn deslocamento(
     aberto: bool,
     altura_tela: f32,
@@ -62,11 +63,11 @@ mod testes {
     #[test]
     fn painel_sobe_so_o_bastante_e_nao_sai_da_tela() {
         assert_eq!(deslocamento(false, 800.0, 200.0, 700.0), 0.0);
-        // Teclado cobre de 384 pra baixo; campo termina em 500 -> sobe 128.
+        // Keyboard covers from 384 down; the field ends at 500 -> rises 128.
         assert_eq!(deslocamento(true, 800.0, 200.0, 500.0), 128.0);
-        // Campo ja' acima do teclado: nao mexe.
+        // Field already above the keyboard: leave it alone.
         assert_eq!(deslocamento(true, 800.0, 200.0, 300.0), 0.0);
-        // Nao sobe alem do topo do painel.
+        // Does not rise beyond the panel's top.
         assert_eq!(deslocamento(true, 800.0, 50.0, 760.0), 42.0);
     }
 }

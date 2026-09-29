@@ -1,25 +1,25 @@
-//! CLI pra mandar AdminCommand pro game server sem precisar de cliente Unity.
+//! CLI to send AdminCommand to the game server without needing a Unity client.
 //!
-//! Uso:
-//!   admin_cli --secret SECRET --target CHAR <ACAO> [args]
-//!   admin_cli --secret SECRET <ACAO> [args]   # self (sender)
+//! Usage:
+//! admin_cli --secret SECRET --target CHAR <ACTION> [args]
+//! admin_cli --secret SECRET <ACTION> [args]   # self (sender)
 //!
-//! Acoes:
-//!   set_xp <xp>
-//!   set_gold <gold>
-//!   give_item <item_id> <qty>
-//!   clear_inv
-//!   heal
-//!   grant_sp <amount>
+//! Actions:
+//! set_xp <xp>
+//! set_gold <gold>
+//! give_item <item_id> <qty>
+//! clear_inv
+//! heal
+//! grant_sp <amount>
 //!
 //! Env:
-//!   MMORPG_WS_URL   default ws://127.0.0.1:9000 (local). Pra prod use
-//!                   wss://mmo.brunji.com.br/game
+//! MMORPG_WS_URL   default ws://127.0.0.1:9000 (local). For prod use
+//! wss://mmo.brunji.com.br/game
 //!
-//! Como funciona:
-//!   - Abre WS, envia Handshake (protocol_version casa do shared)
-//!   - Envia AdminCommand com target_char (server resolve sid por nome)
-//!   - Espera 500ms pra server processar, desconecta
+//! How it works:
+//! - Opens the WS, sends Handshake (protocol_version matches shared)
+//! - Sends AdminCommand with target_char (the server resolves sid by name)
+//! - Waits 500ms for the server to process, disconnects
 
 use anyhow::{bail, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
         target_char: target.clone(),
         action,
     };
-    // Credenciais nunca vao para stdout/stderr.
+    // Credentials never go to stdout/stderr.
     tx.send(Message::Binary(shared::protocol::encode(&admin)?))
         .await?;
 

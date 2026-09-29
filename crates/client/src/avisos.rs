@@ -1,15 +1,15 @@
-//! As mensagens do jogo ("Missão concluída", "Auto coleta: atacado") como
-//! AVISO passageiro, e nao como caixa de chat.
+//! The game's messages ("Quest complete", "Auto gather: attacked") as a
+//! passing NOTICE, and not as a chat box.
 //!
-//! Antes havia um painel fixo no canto esquerdo, ocupando o lugar onde o
-//! polegar procura o joystick. O dono pediu pra tirar: a informacao continua,
-//! agora em texto solto que some sozinho.
+//! There used to be a fixed panel in the left corner, taking the spot where
+//! the thumb looks for the joystick. The owner asked for it to go: the
+//! information stays, now as loose text that disappears on its own.
 
-/// Quanto tempo cada linha fica na tela.
+/// How long each line stays on screen.
 const VIDA_S: f64 = 9.0;
-/// Quantas linhas aparecem de uma vez.
+/// How many lines show at once.
 const LINHAS: usize = 3;
-/// Teto do historico guardado (o painel de log, se voltar, le' daqui).
+/// Cap on the kept history (the log panel, if it comes back, reads from here).
 const GUARDADAS: usize = 20;
 
 #[derive(Default)]
@@ -18,8 +18,8 @@ pub struct Avisos {
 }
 
 impl Avisos {
-    /// Mesma assinatura do `Vec::push` que estava aqui antes: todo lugar que
-    /// avisava alguma coisa continua igual.
+    /// The same signature as the `Vec::push` that used to be here: everywhere
+    /// that announced something stays the same.
     pub fn push(&mut self, texto: String) {
         self.linhas.push((texto, macroquad::time::get_time()));
         if self.linhas.len() > GUARDADAS {
@@ -27,12 +27,12 @@ impl Avisos {
         }
     }
 
-    /// Limpa tudo (trocar de personagem, sair do mundo).
+    /// Clears everything (switching character, leaving the world).
     pub fn clear(&mut self) {
         self.linhas.clear();
     }
 
-    /// As ultimas linhas ainda vivas, da mais velha pra mais nova.
+    /// The last lines still alive, oldest to newest.
     pub fn recentes(&self, agora: f64) -> Vec<&str> {
         self.linhas
             .iter()
@@ -57,7 +57,7 @@ mod testes {
         for i in 0..GUARDADAS + 5 {
             a.linhas.push((format!("linha {i}"), i as f64));
         }
-        // O teto so' vale pelo `push`; aqui o que importa e' a janela de tempo.
+        // The cap only applies via `push`; here what matters is the time window.
         let agora = (GUARDADAS + 4) as f64;
         let vistas = a.recentes(agora);
         assert_eq!(vistas.len(), LINHAS, "mostra as tres ultimas");

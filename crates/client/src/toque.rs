@@ -1,16 +1,17 @@
-//! Toque longo num lugar so'.
+//! A long press in one spot.
 //!
-//! No iOS nao ha' botao direito nem hover: o que era "clique direito abre a
-//! configuracao" vira SEGURAR o botao. Um detector pra todos, pra regra ser a
-//! mesma em todo canto: segurou parado `SEGURAR_S` = longo; soltou antes =
-//! curto (a acao normal); moveu alem de `TOLERANCIA_PX` = arrasto (nem curto
-//! nem longo — quem arrasta e' outro gesto, como o AUTO da barra).
+//! On iOS there is no right button and no hover: what was "right click opens
+//! the configuration" becomes HOLDING the button. One detector for everyone,
+//! so the rule is the same everywhere: held still for `SEGURAR_S` = long;
+//! released before that = short (the normal action); moved beyond
+//! `TOLERANCIA_PX` = a drag (neither short nor long — dragging is another
+//! gesture, like the bar's AUTO).
 use macroquad::prelude::Vec2;
 
-/// Quanto segurar parado pra virar toque longo.
+/// How long to hold still for it to become a long press.
 pub const SEGURAR_S: f64 = 0.5;
-/// Mais que isto de movimento e' arrasto, nao toque. O mesmo limiar do
-/// arrasto do AUTO (`habilidades_input`), pra os dois gestos nao brigarem.
+/// More movement than this is a drag, not a press. The same threshold as the
+/// AUTO drag (`habilidades_input`), so the two gestures do not fight.
 pub const TOLERANCIA_PX: f32 = 12.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,7 +19,7 @@ pub enum Toque {
     Nada,
     /// Soltou rapido, parado: a acao normal do botao.
     Curto(u32),
-    /// Segurou parado: dispara UMA vez, ainda com o dedo em cima.
+    /// Held still: fires ONCE, with the finger still down.
     Longo(u32),
     /// Moveu: nem curto nem longo.
     Arrasto(u32),
@@ -32,8 +33,8 @@ pub struct ToqueLongo {
 }
 
 impl ToqueLongo {
-    /// Um quadro. `alvo` e' o botao sob o dedo no momento em que APERTOU
-    /// (`None` = apertou fora: nao comeca nada).
+    /// One frame. `alvo` is the button under the finger at the moment of the
+    /// PRESS (`None` = pressed outside: nothing starts).
     pub fn quadro(
         &mut self,
         apertou: bool,
@@ -80,12 +81,12 @@ impl ToqueLongo {
         Toque::Nada
     }
 
-    /// Segurando algo ainda (pra quem precisa esperar o toque decidir).
+    /// Still holding something (for whoever needs to wait for the press to decide).
     pub fn ativo(&self) -> bool {
         self.inicio.is_some()
     }
 
-    /// Ja' disparou o longo neste aperto.
+    /// The long press has already fired in this press.
     pub fn disparou(&self) -> bool {
         self.inicio.is_some() && self.disparou
     }

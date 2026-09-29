@@ -1,30 +1,30 @@
-//! Preferencias de tela do personagem (skills AUTO, filtros do mapa, zooms),
-//! guardadas no servidor. Aqui so' a SINCRONIA: quando mandar.
+//! The character's screen preferences (AUTO skills, map filters, zooms),
+//! stored on the server. Only the SYNC lives here: when to send.
 //!
-//! Duas regras:
-//!   * nada sai antes de chegar o `Preferencias` do servidor — senao o padrao
-//!     do cliente, que ainda nao aplicou nada, sobrescreveria o que estava
-//!     salvo;
-//!   * mudanca so' vai `ESPERA_S` depois da ULTIMA mudanca: girar a roda da
-//!     camera nao vira uma mensagem por quadro.
+//! Two rules:
+//! * nothing goes out before the server's `Preferencias` arrives — otherwise
+//! the client's default, which has not applied anything yet, would overwrite
+//! what was saved;
+//! * a change only goes `ESPERA_S` after the LAST change: spinning the camera
+//! wheel does not become one message per frame.
 use shared::protocol::Preferencias;
 
-/// Quanto esperar parado depois de mudar antes de mandar.
+/// How long to sit still after a change before sending.
 pub const ESPERA_S: f64 = 2.0;
 
 #[derive(Default)]
 pub struct Sincronia {
     recebidas: bool,
-    /// O que o servidor tem (recebido ou ja' mandado).
+    /// What the server has (received, or already sent).
     no_servidor: Option<Preferencias>,
-    /// O estado do quadro anterior e desde quando ele e' assim.
+    /// The previous frame's state and how long it has been that way.
     visto: Option<Preferencias>,
     mudou_em: f64,
 }
 
 impl Sincronia {
-    /// Chegou do servidor, JA' aplicado: `atual` e' o estado depois de aplicar
-    /// (com os recortes do cliente), pra nao ecoar de volta.
+    /// Arrived from the server, ALREADY applied: `atual` is the state after
+    /// applying (with the client's clamps), so as not to echo it back.
     pub fn recebeu(&mut self, atual: &Preferencias) {
         self.recebidas = true;
         self.no_servidor = Some(atual.clone());
@@ -35,7 +35,7 @@ impl Sincronia {
         self.recebidas
     }
 
-    /// A cada quadro com o estado atual. Devolve o que mandar, se for hora.
+    /// Every frame, with the current state. Returns what to send, if it is time.
     pub fn acompanhar(&mut self, atual: &Preferencias, agora: f64) -> Option<Preferencias> {
         if !self.recebidas {
             return None;
@@ -51,7 +51,7 @@ impl Sincronia {
         Some(atual.clone())
     }
 
-    /// Saindo ou trocando de zona: manda JA' o que estiver pendente.
+    /// Leaving or changing zone: send whatever is pending NOW.
     pub fn forcar(&mut self, atual: &Preferencias) -> Option<Preferencias> {
         if !self.recebidas || self.no_servidor.as_ref() == Some(atual) {
             return None;

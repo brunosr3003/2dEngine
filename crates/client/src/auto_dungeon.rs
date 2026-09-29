@@ -1,44 +1,44 @@
-//! AUTO DUNGEON: a "missao" de completar a dungeon, ligada pela linha abaixo
-//! da faixa da instancia.
+//! AUTO DUNGEON: the "quest" of completing the dungeon, switched on by the
+//! line below the instance's band.
 //!
-//! O que um jogador faria, na ordem: caiu, revive assim que pode; ainda ha'
-//! inimigo, luta (o auto combate de sempre, com a area andando junto, e anda
-//! ate' o inimigo mais perto quando nenhum esta' no alcance dele); venceu, vai
-//! ate' o bau e abre; aberto, sai. Os andares o servidor avanca sozinho quando
-//! o andar esvazia.
+//! What a player would do, in order: went down, revive as soon as possible;
+//! there is still an enemy, fight (the usual auto combat, with the area moving
+//! along, and walk to the nearest enemy when none is in range); won, go to the
+//! chest and open it; opened, leave. The server advances the floors by itself
+//! when a floor empties.
 //!
-//! Aqui so' a DECISAO, pura e testada. Quem manda mensagem e' o `main`.
+//! Only the DECISION here, pure and tested. Sending messages is `main`'s job.
 
 use macroquad::prelude::Vec2;
 
-/// O que a instancia diz neste quadro.
+/// What the instance says this frame.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Estado {
     pub caido: bool,
-    /// A espera de reviver acabou.
+    /// The wait to revive is over.
     pub reviver_pronto: bool,
     pub vitoria: bool,
     pub bau_aberto: bool,
-    /// Posicao do bau, se ja' apareceu.
+    /// The chest's position, if it has appeared.
     pub bau: Option<Vec2>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Passo {
-    /// Esperando (caido sem poder reviver, bau ainda nao apareceu).
+    /// Waiting (down and unable to revive, chest has not appeared yet).
     Esperar,
     Reviver,
     Lutar,
-    /// Anda ate' o bau (longe) ou toca nele (perto).
+    /// Walks to the chest (far) or touches it (near).
     IrAoBau {
         perto: bool,
     },
     Sair,
 }
 
-/// Distancia pra tocar no bau.
+/// Distance at which to touch the chest.
 pub const PERTO_DO_BAU: f32 = 2.5;
-/// Espera depois de abrir o bau, pra o resultado aparecer antes de sair.
+/// Wait after opening the chest, so the result shows before leaving.
 pub const SAIR_APOS_BAU_S: f64 = 4.0;
 
 pub fn decide(e: Estado, eu: Vec2, bau_aberto_ha_s: Option<f64>) -> Passo {

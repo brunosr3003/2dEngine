@@ -1,10 +1,11 @@
-//! O que entrou na bolsa, na tela: "+57 Cobre" subindo do personagem.
+//! What came into the bag, on screen: "+57 Copper" rising from the character.
 //!
-//! A coleta e' automatica e silenciosa (docs/COLETA.md): sem isto o jogador
-//! so' via a bolsa crescer se abrisse a bolsa. Sai da DIFERENCA entre duas
-//! `InventoryUpdate` — coleta, loot, compra e recompensa aparecem sem o
-//! servidor mandar mensagem nova. Nao vai pro chat: a coleta entrega a cada
-//! um ou dois segundos e empurraria pra fora o que importa ler la'.
+//! Gathering is automatic and silent (docs/COLETA.md): without this the
+//! player only saw the bag grow by opening the bag. It comes from the
+//! DIFFERENCE between two `InventoryUpdate` — gathering, loot, purchase and
+//! reward all appear without the server sending a new message. It does not go
+//! to chat: gathering delivers every second or two and would push out what
+//! actually matters to read there.
 
 use std::collections::HashMap;
 
@@ -12,18 +13,18 @@ use macroquad::prelude::*;
 
 use crate::render3d::world_to_screen;
 
-/// Quanto cada linha fica na tela.
+/// How long each line stays on screen.
 const VIDA: f32 = 1.8;
-/// Linhas ao mesmo tempo; a mais velha sai.
+/// Lines at once; the oldest leaves.
 const MAX_LINHAS: usize = 6;
-/// O mesmo item de novo dentro disto soma na linha que ja' esta' subindo.
+/// The same item again within this adds to the line already rising.
 const JUNTA_S: f32 = 0.35;
 
 #[derive(Default)]
 pub struct Ganhos {
     anterior: Option<HashMap<u16, u32>>,
     energia_anterior: Option<u64>,
-    /// (origem, quantidade, idade em segundos)
+    /// (source, quantity, age in seconds)
     pub linhas: Vec<(Origem, u64, f32)>,
 }
 
@@ -42,8 +43,8 @@ fn totais(slots: &[shared::InventorySlot]) -> HashMap<u16, u32> {
 }
 
 impl Ganhos {
-    /// Chegou bolsa nova. Devolve o que ENTROU (`(item, quantidade)`, por id).
-    /// A primeira bolsa da sessao nao conta: e' o login, nao um ganho.
+    /// A new bag arrived. Returns what CAME IN (`(item, quantity)`, by id). The
+    /// session's first bag does not count: that is the login, not a gain.
     pub fn bolsa_nova(&mut self, slots: &[shared::InventorySlot]) -> Vec<(u16, u32)> {
         let agora = totais(slots);
         let mut entrou: Vec<(u16, u32)> = match &self.anterior {
@@ -52,8 +53,8 @@ impl Ganhos {
                 .iter()
                 .filter_map(|(id, q)| {
                     let a = antes.get(id).copied().unwrap_or(0);
-                    // `then` e nao `then_some`: a conta so' roda quando entrou
-                    // — gastar faria `q - a` estourar.
+                    // `then` and not `then_some`: the maths only runs when something came in
+                    // — spending would make `q - a` overflow.
                     (*q > a).then(|| (*id, q - a))
                 })
                 .collect(),
@@ -66,8 +67,8 @@ impl Ganhos {
         entrou
     }
 
-    /// O saldo novo veio do servidor. O primeiro é o login, não uma coleta;
-    /// aumentos seguintes aparecem como "+N Energia" sobre o personagem.
+    /// The new balance came from the server. The first is the login, not a
+    /// gather; later increases show as "+N Energy" over the character.
     pub fn energia_nova(&mut self, saldo: u64) -> Option<u64> {
         let ganho = self
             .energia_anterior
@@ -100,7 +101,7 @@ impl Ganhos {
         self.linhas.retain(|l| l.2 < VIDA);
     }
 
-    /// Desenha em 2D por cima do mundo, subindo da cabeca de `pe`.
+    /// Draws in 2D over the world, rising from the head of `pe`.
     pub fn desenha(&mut self, cam: &Camera3D, pe: Vec3, nome: impl Fn(u16) -> String) {
         self.avanca(get_frame_time().min(0.1));
         let Some(c) = world_to_screen(cam, pe + vec3(0.0, 2.3, 0.0)) else {
@@ -153,7 +154,7 @@ mod tests {
         );
         let entrou = g.bolsa_nova(&[slot(344, 557), slot(300, 3), slot(301, 4)]);
         assert_eq!(entrou, vec![(300 + 1, 4), (344, 57)]);
-        // Gastar/vender nao aparece como ganho.
+        // Spending/selling does not show as a gain.
         assert!(g.bolsa_nova(&[slot(344, 10)]).is_empty());
         assert_eq!(g.linhas.len(), 2);
     }
@@ -167,7 +168,7 @@ mod tests {
         assert_eq!(g.linhas, vec![(Origem::Item(344), 100, 0.0)]);
         g.avanca(VIDA + 0.1);
         assert!(g.linhas.is_empty());
-        // Pilha em dois slots conta junta.
+        // A stack in two slots counts together.
         g.bolsa_nova(&[slot(344, 60), slot(344, 60)]);
         assert_eq!(g.linhas, vec![(Origem::Item(344), 20, 0.0)]);
     }

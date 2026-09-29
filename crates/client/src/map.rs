@@ -1,13 +1,13 @@
-//! Mapa de tiles do lado do cliente.
+//! Client-side tile map.
 //!
-//! O servidor manda `MapChange` com `tiles` VAZIO de proposito: o arquipelago
-//! real tem ~24M tiles, o que daria ~72MB de JSON por login. O cliente Unity
-//! contornava isso desenhando o mundo a partir da propria cena — que e'
-//! justamente a cena de 100MB que ficou fora do git.
+//! The server sends `MapChange` with `tiles` deliberately EMPTY: the real
+//! archipelago has ~24M tiles, which would be ~72MB of JSON per login. The
+//! Unity client worked around this by drawing the world from its own scene —
+//! which is exactly the 100MB scene that stayed out of git.
 //!
-//! Aqui o mapa e' DADO: o mesmo `MapFile` que o servidor carrega, versionavel
-//! e sem cena binaria gigante. A prazo isto vira streaming por chunk em volta
-//! do player; por ora o arquivo basta.
+//! Here the map is DATA: the same `MapFile` the server loads, versionable and
+//! with no giant binary scene. In time this becomes per-chunk streaming around
+//! the player; for now the file is enough.
 
 use shared::constants::tile_id;
 
@@ -32,9 +32,9 @@ impl Map {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
             return tile_id::WALL;
         }
-        // Checagem contra o tamanho REAL do vetor, e nao so' contra
-        // width/height: o servidor pode mandar as dimensoes com o array vazio,
-        // e dado de rede nunca indexa as cegas.
+        // Checked against the vector's REAL length, and not only against
+        // width/height: the server may send the dimensions with an empty array,
+        // and network data never indexes blind.
         let i = (y as u32 * self.width + x as u32) as usize;
         self.tiles.get(i).copied().unwrap_or(tile_id::WALL)
     }
@@ -43,12 +43,12 @@ impl Map {
         self.tiles.is_empty()
     }
 
-    /// Preenche os tiles a partir do `MapFile` em disco. Usado quando o
-    /// servidor manda o array vazio.
+    /// Fills the tiles from the `MapFile` on disk. Used when the server sends
+    /// an empty array.
     pub fn fill_from_disk(&mut self) -> bool {
-        // O arquivo vem do NOME da zona que o servidor mandou. Cada zona roda
-        // em processo proprio com mapa proprio; carregar sempre o mesmo
-        // arquivo mostrava o campo enquanto o jogador estava na cidade.
+        // The file comes from the NAME of the zone the server sent. Each zone runs
+        // in its own process with its own map; always loading the same file showed
+        // the field while the player was in the city.
         let path =
             std::env::var("MMO_MAP").unwrap_or_else(|_| format!("data/maps/{}.json", self.name));
         match shared::mapfile::MapFile::load(&path) {

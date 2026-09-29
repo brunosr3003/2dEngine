@@ -1,13 +1,13 @@
-//! Põe um personagem no começo da LINHA DA ILHA, pra poder testá-la.
+//! Puts a character at the start of the ISLAND LINE, so it can be tested.
 //!
-//! A linha do tutorial da colônia (798-802) só abre depois da escritura, que
-//! só vem depois de meia história. Testar o fim do capítulo I jogando até lá
-//! toda vez não é teste, é maratona — e foi assim que a linha inteira foi pro
-//! ar travada no primeiro degrau sem ninguém ver.
+//! The colony tutorial line (798-802) only opens after the deed, which only
+//! comes after half the story. Testing the end of chapter I by playing all the
+//! way there every time is not a test, it is a marathon — and that is how the
+//! whole line went live stuck on the first step without anyone seeing.
 //!
-//! Isto dá a escritura e adianta o marcador da história até o passo pedido.
-//! Só pra personagem de diagnóstico; nunca correr num personagem de verdade,
-//! que perderia o progresso dele.
+//! This gives the deed and advances the story marker to the requested step.
+//! Only for a diagnostic character; never run it on a real one, which would
+//! lose its progress.
 //!
 //!   DATABASE_URL=… cargo run --bin dar_ilha -- diagcoloniac [id_do_passo]
 
@@ -34,18 +34,18 @@ async fn main() -> Result<()> {
         .fetch_optional(&pool)
         .await?
         .context("personagem não existe")?;
-    // A colônia volta ao ZERO, e não só ganha a escritura.
+    // The colony goes back to ZERO, and does not merely gain the deed.
     //
-    // Antes isto só mexia em `tem` e no relógio: os moradores e o nível da
-    // rodada anterior ficavam. Testar "O primeiro morador" com um morador já
-    // contratado faz o passo fechar na hora e o SEGUINTE travar — e o teste
-    // acusa um defeito que é dele mesmo. Foi o que aconteceu aqui: instrumento
-    // que não reseta mede a sujeira da corrida passada.
+    // Before, this only touched `tem` and the clock: the residents and the level
+    // from the previous round stayed. Testing "The first resident" with a
+    // resident already hired closes the step instantly and jams the NEXT one —
+    // and the test reports a defect that is its own. That is what happened here:
+    // an instrument that does not reset measures the last run's dirt.
     let _ = atual;
     let mut dados = shared::colonia::DadosColonia::default();
     dados.tem = true;
-    // A conta das horas começa AGORA: sem isso a primeira colheita entregaria
-    // tudo o que "rendeu" desde 1970.
+    // The hour count starts NOW: without this the first harvest would deliver
+    // everything it had "earned" since 1970.
     dados.colhida_em = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
@@ -55,9 +55,9 @@ async fn main() -> Result<()> {
         .execute(&pool)
         .await?;
 
-    // A história: o MARCADOR guarda o índice, e o passo em andamento guarda o
-    // id. Os dois têm que andar juntos, senão `garantir_historia` realinha o
-    // marcador pelo passo velho e desfaz isto.
+    // The story: the MARKER holds the index, and the step in progress holds the
+    // id. The two have to move together, or `garantir_historia` realigns the
+    // marker by the old step and undoes this.
     sqlx::query("DELETE FROM character_quests WHERE char_name=$1 AND (quest_id=$2 OR quest_id>=700)")
         .bind(&nome)
         .bind(shared::historia::ID_MARCO as i32)

@@ -1,9 +1,9 @@
 //! Bot do calendario de presenca: o teste de aceite de docs/CALENDARIO.md.
 //!
-//! Faz o caminho de um jogador: login, entra num personagem (cria se nao
-//! existir), opcionalmente enche a bolsa pelo comando de admin (servidor de
-//! TESTE), pede o estado e resgata `--vezes` vezes. Imprime tudo que o
-//! servidor respondeu, o ouro e a bolsa no fim.
+//! Walks a player's path: login, enters a character (creates one if it does
+//! not exist), optionally fills the bag through the admin command (TEST
+//! server), asks for the state and claims `--vezes` times. Prints everything
+//! the server answered, the gold and the bag at the end.
 //!
 //! ```sh
 //! cargo run --bin presencabot -- --host 127.0.0.1:9311 --user presenca1 --char pres_a --vezes 2 --secret X
@@ -34,8 +34,8 @@ async fn main() -> anyhow::Result<()> {
     let personagem = arg("--char", "pres_a");
     let segredo = arg("--secret", "");
     let vezes: u32 = arg("--vezes", "1").parse()?;
-    // Espera antes de resgatar: da' tempo de dois bots em canais diferentes
-    // chegarem juntos ao mesmo instante (`--em-unix`).
+    // Waits before claiming: gives two bots on different channels time to
+    // arrive at the same instant together (`--em-unix`).
     let em_unix: u64 = arg("--em-unix", "0").parse()?;
     let segs: u64 = arg("--secs", "12").parse()?;
     let encher = tem("--encher");
@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
                                 ws.send(envia(ClientMessage::AdminCommand { secret: segredo.clone(), target_char: None, action: AdminAction::ClearInventory })?).await?;
                             }
                             if encher {
-                                // 40 materiais diferentes (1 de cada): nenhum premio empilha.
+                                // 40 different materials (1 of each): no prize stacks.
                                 for base in shared::item_id::MATERIAIS_COLORIDOS {
                                     for cor in 1..=4u8 {
                                         let item_id = shared::item_id::na_cor(base, cor);

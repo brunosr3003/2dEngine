@@ -1,7 +1,7 @@
-//! A barrinha de coleta: "Coletando · Pedra azul · 2,4 s", enchendo ate' o
-//! proximo ciclo. O servidor manda o intervalo e o progresso ao comecar, a
-//! cada ciclo e ao parar (`ColetaEstado`); entre uma mensagem e outra o
-//! cliente so' anda o relogio.
+//! The gathering bar: "Gathering · Blue stone · 2.4 s", filling up to the
+//! next cycle. The server sends the interval and the progress on starting, on
+//! every cycle and on stopping (`ColetaEstado`); between one message and the
+//! next the client only runs the clock.
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -13,9 +13,9 @@ pub struct BarraDeColeta {
     intervalo: f32,
     base: f32,
     desde: f64,
-    /// Centro do no' coletado (pra virar o personagem pra ele).
+    /// Center of the gathered node (to turn the character towards it).
     pub centro: Option<Vec2>,
-    /// Bolsa cheia: a barra fica parada e avisa, sem sumir.
+    /// Bag full: the bar stops and warns, without disappearing.
     pub pausado: bool,
 }
 
@@ -48,7 +48,7 @@ impl BarraDeColeta {
         self.tipo.is_some()
     }
 
-    /// 0..1 ate' o proximo ciclo.
+    /// 0..1 until the next cycle.
     pub fn progresso(&self, agora: f64) -> f32 {
         if self.intervalo <= 0.0 || self.pausado {
             return 0.0;
@@ -56,7 +56,7 @@ impl BarraDeColeta {
         (self.base + ((agora - self.desde) as f32 / self.intervalo)).clamp(0.0, 1.0)
     }
 
-    /// Segundos ate' o proximo ciclo.
+    /// Seconds until the next cycle.
     pub fn restante_s(&self, agora: f64) -> f32 {
         (1.0 - self.progresso(agora)) * self.intervalo
     }
@@ -131,7 +131,7 @@ mod tests {
             1.0,
             "nao passa de cheio antes do proximo aviso"
         );
-        // Bolsa cheia: continua ativa, parada.
+        // Bag full: stays active, stopped.
         b.recebe(3, 2.0, 0.0, Some([4.0, 5.0]), true, 12.0);
         assert!(b.ativa() && b.pausado);
         assert_eq!(b.progresso(20.0), 0.0, "pausada nao anda");
@@ -139,8 +139,8 @@ mod tests {
         assert!(!b.ativa());
     }
 
-    /// O gesto de coleta que vem do fio escolhe a ferramenta pelo TIPO, o
-    /// relogio anda enquanto dura e zera quando apaga.
+    /// The gathering gesture that comes off the wire picks the tool by TYPE, the
+    /// clock runs while it lasts and zeroes when it goes out.
     #[test]
     fn gesto_de_coleta_leva_o_tipo_e_o_relogio() {
         use shared::components::acao;
@@ -179,7 +179,7 @@ mod tests {
             e.coleta_t
         );
         assert_eq!(crate::rig::ferramenta_de(e.coleta.unwrap()), "picareta_3");
-        // Troca pra madeira: zera o relogio e pega o machado.
+        // Switching to wood: zeroes the clock and takes the axe.
         st.acao = acao::monta_coleta(0, false, 0);
         w.apply(vec![meta.clone()], vec![st], &[]);
         assert_eq!(w.ents[&EntityId(1)].coleta, Some(0));

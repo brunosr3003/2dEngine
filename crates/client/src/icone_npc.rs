@@ -1,29 +1,29 @@
-//! O icone do oficio em cima de cada NPC da vila: pocao no Alquimista,
-//! bigorna no Ferreiro, cofre no Banqueiro, ancora no Capitao... Da' pra
-//! achar quem se quer sem chegar perto pra ler o nome.
+//! The trade icon above each village NPC: a potion on the Alchemist, an anvil
+//! on the Blacksmith, a safe on the Banker, an anchor on the Captain... You
+//! can find who you want without walking up to read the name.
 //!
-//! Fica logo acima da cabeca; o "!"/"?" de missao continua mais alto.
+//! It sits just above the head; the quest "!"/"?" stays higher.
 
 use macroquad::prelude::*;
 use shared::construcao::Papel;
 
 use crate::hud_estilo as estilo;
 
-/// De onde vem o desenho.
+/// Where the drawing comes from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Icone {
-    /// Atlas da interface (`icones_ui::ui`).
+    /// Interface atlas (`icones_ui::ui`).
     Ui(&'static str),
-    /// Atlas dos marcadores do mapa (`icones_ui::mapa`).
+    /// Map marker atlas (`icones_ui::mapa`).
     Mapa(&'static str),
-    /// Icone de item (`bolsa::icone_do_item`).
+    /// Item icon (`bolsa::icone_do_item`).
     Item(u16),
 }
 
-/// Longe disto o icone some (so' polui).
+/// Beyond this the icon disappears (it only clutters).
 const ALCANCE: f32 = 40.0;
 
-/// O icone do papel do NPC; `None` pra quem nao tem oficio (morador).
+/// The icon for the NPC's role; `None` for someone with no trade (a resident).
 pub fn do_papel(papel: u8) -> Option<Icone> {
     use shared::item_id as it;
     let p = |x: Papel| x as u8 == papel;
@@ -56,7 +56,7 @@ pub fn do_papel(papel: u8) -> Option<Icone> {
     })
 }
 
-/// Desenha os icones dos NPCs perto de `eu`.
+/// Draws the icons of the NPCs near `eu`.
 pub fn desenha(world: &crate::world::World, vista: &crate::render3d::Vista<'_>, eu: Option<Vec2>) {
     let Some(eu) = eu else {
         return;
@@ -71,7 +71,7 @@ pub fn desenha(world: &crate::world::World, vista: &crate::render3d::Vista<'_>, 
         if dist > ALCANCE {
             continue;
         }
-        // O Mestre de Missoes se reconhece pelo nome (o kind dele e' generico).
+        // The Quest Master is recognised by name (its kind is generic).
         let papel = if e.meta.name.as_deref() == Some(mestre) {
             Papel::Missoes as u8
         } else {
@@ -84,7 +84,7 @@ pub fn desenha(world: &crate::world::World, vista: &crate::render3d::Vista<'_>, 
         let Some(c) = crate::render3d::world_to_screen(&vista.cam, topo) else {
             continue;
         };
-        // Some no fim do alcance em vez de sumir de uma vez.
+        // Fades at the end of the range instead of vanishing at once.
         let a = ((ALCANCE - dist) / 8.0).clamp(0.0, 1.0);
         draw_circle(
             c.x,

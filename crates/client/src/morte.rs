@@ -1,9 +1,9 @@
-//! Morte no molde do MIR4: tela de derrota por cima de tudo, com "Reviver na
-//! cidade" e "Recuperar XP", e o painel "Recuperar experiencia" do Menu.
+//! Death in the MIR4 mould: a defeat screen over everything, with "Revive in
+//! town" and "Recover XP", and the Menu's "Recover experience" panel.
 //!
-//! Quem decide tudo e' o servidor (perda de 10% do nivel, 3 recuperacoes
-//! gratis por dia, custo em ouro depois — ver docs/GAMEPLAY.md, Morte). Aqui
-//! so' se mostra e se pede. Nenhuma tecla abre nem revive: so' clique.
+//! The server decides everything (losing 10% of the level, 3 free recoveries
+//! per day, a gold cost after that — see docs/GAMEPLAY.md, Death). Here we
+//! only show and ask. No key opens or revives: click only.
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, MorteRecuperavelNet};
 
@@ -15,11 +15,11 @@ const VERMELHO: Color = Color::new(0.86, 0.32, 0.28, 1.0);
 pub struct Morte {
     /// Caido: a tela de derrota esta' na frente.
     pub morto: bool,
-    /// XP perdido na ultima morte (0 = nada ou ja' recuperado).
+    /// XP lost on the last death (0 = none, or already recovered).
     pub xp_perdido: u64,
     pub mortes: Vec<MorteRecuperavelNet>,
     pub gratis: u8,
-    /// Painel "Recuperar experiencia" aberto pelo Menu.
+    /// The "Recover experience" panel opened from the Menu.
     pub painel: bool,
     aviso: Option<(String, bool)>,
 }
@@ -54,12 +54,12 @@ impl Morte {
         self.aviso = Some((motivo, ok));
     }
 
-    /// O clique e' da tela de morte ou do painel, nao do mundo.
+    /// The click belongs to the death screen or the panel, not to the world.
     pub fn pega_mouse(&self) -> bool {
         self.morto || self.painel
     }
 
-    /// A morte mais recente que ainda da' pra recuperar.
+    /// The most recent death that can still be recovered.
     pub fn ultima(&self) -> Option<MorteRecuperavelNet> {
         self.mortes.iter().max_by_key(|m| m.quando).copied()
     }
@@ -73,7 +73,7 @@ impl Morte {
         }
     }
 
-    /// (Reviver, Recuperar) na tela de morte, pra uma tela `sw`×`sh`.
+    /// (Revive, Recover) on the death screen, for an `sw`x`sh` screen.
     pub fn botoes_da_tela(sw: f32, sh: f32) -> (Rect, Rect) {
         let (w, h) = (240.0, 44.0);
         let y = sh * 0.5 + 72.0;
@@ -83,7 +83,7 @@ impl Morte {
         )
     }
 
-    /// Desenha o que estiver aberto e devolve o pedido do clique.
+    /// Draws whatever is open and returns the click's request.
     pub fn desenha(&mut self, ouro: u64, agora: i64) -> Option<ClientMessage> {
         let mut pedido = None;
         if self.painel {

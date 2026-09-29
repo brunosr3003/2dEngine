@@ -1,5 +1,5 @@
-//! Revelação de pergaminhos de invocação. O prêmio já chega decidido pelo
-//! servidor; aqui só há apresentação, portanto fechar/pular nunca muda o ganho.
+//! Summoning scroll reveal. The prize already arrives decided by the server;
+//! this is presentation only, so closing/skipping never changes the gain.
 
 use macroquad::material::Material;
 use macroquad::prelude::*;
@@ -8,8 +8,8 @@ use shared::loja::PremioInvocacao;
 use crate::hud_estilo as estilo;
 use crate::vox::VoxCache;
 
-/// Pergaminho fechado usado na loja e na bolsa. Tem rolos, fitas e selo em
-/// camadas para continuar legível mesmo num slot pequeno.
+/// The closed scroll used in the shop and the bag. It has rolls, ribbons and
+/// a seal in layers so it stays legible even in a small slot.
 pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
     let w = lado * 0.58;
     let h = lado * 0.76;
@@ -62,7 +62,7 @@ pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
     draw_poly(c.x, c.y + h * 0.29, 4, lado * 0.065, 45.0, luz);
 }
 
-/// Varia o selo por conteúdo: chave, cabeça de montaria ou livro aberto.
+/// Varies the seal by content: a key, a mount's head or an open book.
 pub fn icone_pergaminho_de(item_id: u16, c: Vec2, lado: f32) {
     use shared::item_id as it;
     let cor = match item_id {
@@ -226,7 +226,7 @@ impl InvocacaoUi {
                 (205.0 - 32.0 * abre) * k,
                 estilo::OURO,
             );
-            // A fenda de luz cresce no centro até apagar o pergaminho e revelar.
+            // The slit of light grows in the center until it erases the scroll and reveals.
             draw_rectangle(
                 c.x - (2.0 + 30.0 * abre) * k,
                 c.y - 92.0 * k,
@@ -269,11 +269,11 @@ impl InvocacaoUi {
                             shared::forja::Grau::de_u8(*cor)
                                 .map_or("Comum", |g| g.nome())
                                 .to_string(),
-                            // A cor E' a raridade. Era azul cravado
-                            // (80,170,255) pra toda chave: o jogador abria dez
-                            // e as dez saiam iguais, inclusive a roxa. Todos os
-                            // outros premios ja' usavam `cor_do_grau` — a
-                            // chave era a unica que mentia.
+                            // The color IS the rarity. It used to be hardcoded blue
+                            // (80,170,255) for every key: the player opened ten
+                            // and all ten came out the same, the purple one
+                            // included. Every other prize already used
+                            // `cor_do_grau` — the key was the only one that lied.
                             cor_do_grau(*cor),
                         ),
                         PremioInvocacao::Montaria { item_id } => (
@@ -509,8 +509,8 @@ fn brilho_livro(c: Vec2, lado: f32, cor: Color, t: f32) {
     draw_poly(c.x, c.y - 4.0, 6, lado * 0.20, t * 30.0, cor);
 }
 
-/// `MMO_PREVIA_INVOCACAO=1`: captura a abertura e os dois tipos de prêmio,
-/// sem servidor.
+/// `MMO_PREVIA_INVOCACAO=1`: captures the opening and both prize types,
+/// with no server.
 #[cfg(debug_assertions)]
 pub async fn previa(vox: &VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA")
@@ -587,7 +587,7 @@ pub async fn previa(vox: &VoxCache) {
     }
 }
 
-/// A cor do grau do pet: a mesma tabela de cor dos itens.
+/// The pet's grade color: the same color table as the items.
 fn cor_do_grau(grau: u8) -> Color {
     let h = shared::items::tier_color_hex(grau).trim_start_matches('#');
     let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);

@@ -1,9 +1,9 @@
-//! Calendario de presenca (docs/CALENDARIO.md): a grade dos 28 premios do
-//! mes, o dia de hoje destacado, os ja' resgatados marcados e o botao
-//! Resgatar. Abre pelo icone do topo do HUD ou pelo Menu (Aventura →
-//! Presença) e, uma vez por sessao, sozinha no login quando ha' resgate.
+//! Attendance calendar (docs/CALENDARIO.md): the grid of the month's 28
+//! prizes, today highlighted, the claimed ones marked and the Claim button.
+//! Opens from the icon at the top of the HUD or from the Menu (Adventure ->
+//! Attendance) and, once per session, on its own at login when there is something to claim.
 //!
-//! Tudo que vale e' do servidor: a janela so' mostra o estado e pede.
+//! Everything that counts is the server's: the window only shows state and asks.
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -19,13 +19,13 @@ pub struct PresencaUi {
     pub aberto: bool,
     estado: Option<EstadoPresenca>,
     aba: usize,
-    /// Ja' abriu sozinha nesta sessao do app.
+    /// Already opened on its own in this app session.
     abriu_no_login: bool,
     /// Ultimo resgate, mostrado no rodape.
     ultimo: Option<String>,
 }
 
-/// "Poção de Experiência ×2" / "1.500 de ouro".
+/// "Experience Potion x2" / "1,500 gold".
 pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
     if p.item_id == pr::ENERGIA {
         return format!("{} de Energia", crate::economia::milhar(p.qtd as u64));
@@ -74,7 +74,7 @@ impl PresencaUi {
         self.aberto = false;
     }
 
-    /// Ha' premio pra resgatar hoje (selo vermelho no icone).
+    /// There is a prize to claim today (a red badge on the icon).
     pub fn tem_resgate(&self) -> bool {
         self.estado.as_ref().is_some_and(|e| e.tem_resgate())
     }
@@ -107,7 +107,7 @@ impl PresencaUi {
             } => {
                 let lista: Vec<String> =
                     premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
-                // Dia 0: premio de um resgate que ficou pendente (queda antes do save).
+                // Day 0: the prize of a claim left pending (a crash before the save).
                 let mut t = if dia == 0 {
                     format!("Presença · prêmio pendente entregue: {}", lista.join(", "))
                 } else {
@@ -198,7 +198,7 @@ impl PresencaUi {
             );
             return saida;
         }
-        // Abas: o mensal e cada evento ativo.
+        // Tabs: the monthly one and each active event.
         let mut y = p.y + 52.0 * f;
         if estado.calendarios.len() > 1 {
             let mut x = x0;
@@ -240,7 +240,7 @@ impl PresencaUi {
         estilo::texto(x0, y + 18.0 * f, &sub, 13, estilo::SUAVE);
         y += 30.0 * f;
 
-        // A grade: 7 por linha.
+        // The grid: 7 per row.
         let linhas = cal.grade.len().div_ceil(COLUNAS).max(1);
         let vao = 8.0 * f;
         let rodape = 96.0 * f;
@@ -275,7 +275,7 @@ impl PresencaUi {
                 if marco { estilo::OURO } else { estilo::SUAVE },
             );
             let premios: Vec<&Premio> = dia.iter().filter(|p| p.qtd > 0).collect();
-            // Todos os premios ficam escritos no cartao, inclusive os tres do dia 28.
+            // Every prize is written on the card, including the three on day 28.
             let linha = ((r.h - 23.0 * f) / premios.len().max(1) as f32).min(25.0 * f);
             for (j, pp) in premios.iter().enumerate() {
                 let yy = r.y + 22.0 * f + j as f32 * linha;
