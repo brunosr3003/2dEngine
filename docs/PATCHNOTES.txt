@@ -1,3 +1,15 @@
+29/09/2026 — O jogo agora é escrito em inglês, e o português é a tradução
+
+Até aqui o jogo era escrito em português e o inglês era a tradução por cima. Agora é o contrário: o texto nasce em inglês e o português é a tradução. Para quem joga em português nada muda na tela — a mesma frase, no mesmo lugar. O que muda é que o inglês deixa de ter buracos: onde faltava tradução, antes aparecia português no meio da tela em inglês.
+
+Se você joga em inglês, atualize. O servidor passou a mandar os nomes dos itens e dos bichos em inglês, e o cliente antigo não sabe traduzi-los de volta — quem ficar na versão anterior vai ver "Wolf" e "Iron Ore" mesmo com o jogo em português.
+
+Duas contas de número estavam erradas em inglês e foram corrigidas: o preço em reais saía como R$ 1.234.56, com o mesmo ponto valendo milhar e centavo, e os números grandes saíam com ponto no lugar da vírgula. Agora cada idioma usa a pontuação dele — R$ 1.234,56 em português, R$ 1,234.56 em inglês.
+
+O nome das chaves de craft continua concordando em português: Chave Épica e Chave Lendária, e não "Chave Épico".
+
+Nenhuma outra regra do jogo mudou, e o protocolo continua o 156 — não é atualização obrigatória.
+
 28/09/2026 — A katana abre e fecha a luta
 
 A katana não rouba mais vida em todo golpe. Aquele roubo era a defesa inteira da classe, e por isso ela conseguia ser a mais rápida E a mais segura ao mesmo tempo: limpava a horda da Ilha Mágica no nível 60 com 86% de vida, acima da pistola e do anel, e ainda matando mais rápido que os dois.
