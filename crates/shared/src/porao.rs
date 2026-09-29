@@ -190,27 +190,75 @@ pub const ALCANCE_DA_PORTA: f32 = 4.0;
 /// Onde fica a porta deste Porão, em coordenadas de mundo.
 ///
 /// Sai da CIDADE da ilha e não de um par de números escrito à mão: o relevo é
-/// gerado por semente, e uma coordenada fixa que hoje cai em chão plano pode
-/// cair na água quando a ilha for regerada. Ancorando na cidade, a porta anda
-/// junto com ela.
+/// gerado por semente, e uma coordenada fixa que hoje cai em chão bom pode
+/// cair na água quando a ilha for regerada.
 ///
-/// Cada Porão da mesma ilha recebe um ângulo diferente pra as portas não
-/// nascerem uma em cima da outra.
-pub fn porta_de(c: &Conteudo, cidade: Vec2) -> Option<Vec2> {
+/// ## A âncora sozinha não bastava
+///
+/// A primeira versão escolhia um ângulo fixo por Porão e parava aí. Ancorar na
+/// cidade garante que a porta ande junto com ela, mas não garante NADA sobre o
+/// que tem naquele ângulo — e no Ermo o ângulo apontava para o mar. A porta da
+/// Caravana Afundada nasceu na água, a 2 unidades abaixo do nível do mar, onde
+/// jogador nenhum ia chegar. Ela foi publicada assim.
+///
+/// Agora a porta PROCURA chão: varre ângulos a partir do preferido e distâncias
+/// a partir de 56 u, e fica no primeiro ponto que está acima do nível do mar em
+/// si e na volta toda. A varredura é determinística — mesma ilha, mesma porta —,
+/// e é a mesma nos dois lados porque os dois passam o mesmo `Gerador`.
+pub fn porta_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
     if c.tipo != Tipo::Porao {
         return None;
     }
+    let cidade = ger.cidade()?.centro();
     let i = crate::dungeon::CONTEUDOS
         .iter()
         .filter(|o| o.tipo == Tipo::Porao && o.zona == c.zona)
         .position(|o| o.id == c.id)? as f32;
-    // Fora do platô da cidade (RAIO 42) e perto o bastante pra se achar sem
-    // mapa. O ângulo separa as portas da mesma ilha.
-    let ang = 0.7 + i * 2.1;
-    Some(cidade + Vec2::new(ang.cos(), ang.sin()) * 56.0)
+    let preferido = 0.7 + i * 2.1;
+    // Nem em cima do platô da cidade (RAIO 42) nem longe demais pra se achar.
+    for passo_d in 0..8 {
+        let d = 56.0 + passo_d as f32 * 9.0;
+        for passo_a in 0..24 {
+            // Abre em leque a partir do ângulo preferido: +0, +15°, -15°, …
+            let giro = (passo_a as f32 / 2.0).ceil() * 0.262
+                * if passo_a % 2 == 0 { 1.0 } else { -1.0 };
+            let a = preferido + giro;
+            let p = cidade + Vec2::new(a.cos(), a.sin()) * d;
+            if firme(ger, p) {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// Este ponto aguenta uma porta? Chão seco nele e nos quatro lados, pra ela
+/// não nascer na beirada com metade no ar.
+fn firme(ger: &crate::terreno::Gerador, p: Vec2) -> bool {
+    let seco = |q: Vec2| ger.altura(q.x, q.y) > crate::terreno::NIVEL_DO_MAR;
+    seco(p)
+        && [
+            Vec2::new(2.5, 0.0),
+            Vec2::new(-2.5, 0.0),
+            Vec2::new(0.0, 2.5),
+            Vec2::new(0.0, -2.5),
+        ]
+        .iter()
+        .all(|d| seco(p + *d))
 }
 
 /// Todos os Porões desta zona, com a chave e a receita de cada um.
+/// As portas desta zona, já procuradas no relevo: `(id do conteúdo, posição)`.
+///
+/// CALCULE UMA VEZ E GUARDE. A busca varre até 192 pontos e sonda cinco alturas
+/// em cada um — barato uma vez por zona, caro por quadro.
+pub fn portas_da_zona(zona: &str, ger: &crate::terreno::Gerador) -> Vec<(u16, Vec2)> {
+    poroes_da_zona(zona)
+        .into_iter()
+        .filter_map(|c| porta_de(c, ger).map(|p| (c.id, p)))
+        .collect()
+}
+
 pub fn poroes_da_zona(zona: &str) -> Vec<&'static Conteudo> {
     crate::dungeon::CONTEUDOS
         .iter()
@@ -376,12 +424,11 @@ mod testes {
     /// AS PORTAS DA MESMA ILHA NÃO NASCEM UMA EM CIMA DA OUTRA.
     #[test]
     fn portas_da_mesma_ilha_ficam_separadas() {
-        let cidade = Vec2::new(100.0, -40.0);
         for zona in ["ilha_inicial", "ilha_gelo"] {
-            let portas: Vec<Vec2> = poroes_da_zona(zona)
-                .iter()
-                .filter_map(|c| porta_de(c, cidade))
-                .collect();
+            let Some(def) = crate::terreno::def_da_zona(zona) else { continue };
+            let ger = crate::terreno::Gerador::da_ilha(def);
+            let cidade = ger.cidade().map(|c| c.centro()).unwrap_or_default();
+            let portas: Vec<Vec2> = portas_da_zona(zona, &ger).into_iter().map(|(_, p)| p).collect();
             for (i, a) in portas.iter().enumerate() {
                 assert!(
                     a.distance(cidade) > crate::terreno::Cidade::RAIO,
@@ -642,6 +689,38 @@ mod testes {
                 r.madeira_qtd,
                 r.material_qtd
             );
+        }
+    }
+
+    /// NENHUMA PORTA NASCE NO MAR.
+    ///
+    /// Este teste existe porque aconteceu. A primeira versão de `porta_de`
+    /// escolhia um ângulo fixo a 56 u da cidade e não olhava o chão: no Ermo
+    /// esse ângulo apontava pro oceano, e a porta da Caravana Afundada foi
+    /// publicada a duas unidades ABAIXO do nível do mar, onde jogador nenhum
+    /// chegaria. O dono encontrou do jeito mais caro — procurando no jogo.
+    #[test]
+    fn nenhuma_porta_nasce_na_agua() {
+        for def in crate::terreno::ARQUIPELAGO {
+            let ger = crate::terreno::Gerador::da_ilha(&def);
+            let portas = portas_da_zona(def.zona, &ger);
+            assert_eq!(
+                portas.len(),
+                poroes_da_zona(def.zona).len(),
+                "{}: alguma porta não achou chão nenhum",
+                def.zona
+            );
+            for (id, p) in portas {
+                let alt = ger.altura(p.x, p.y);
+                assert!(
+                    alt > crate::terreno::NIVEL_DO_MAR,
+                    "{}: a porta de {} ficou em {alt:.2}, no mar",
+                    def.zona,
+                    crate::dungeon::conteudo(id).map_or("?", |c| c.nome)
+                );
+                // E firme na volta toda, pra não nascer pendurada na beirada.
+                assert!(firme(&ger, p), "{}: porta na beirada", def.zona);
+            }
         }
     }
 }

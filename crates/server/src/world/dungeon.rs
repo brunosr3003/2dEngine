@@ -247,8 +247,13 @@ impl GameWorld {
     /// junto com ela se a ilha for regerada — coordenada escrita à mão viraria
     /// porta no mar no dia em que a semente mudasse.
     pub(crate) fn porta_do_porao(&self, c: &dg::Conteudo) -> Option<Vec2> {
-        let cidade = self.ilha.as_ref()?.cidade()?.centro();
-        shared::porao::porta_de(c, cidade)
+        // O MESMO `Gerador` que o cliente usa, pela `def` da zona — e não a
+        // `Ilha` carregada. Os dois lados precisam chegar na MESMA porta, e a
+        // busca por chão firme (`porao::porta_de`) só é determinística se a
+        // fonte do relevo for a mesma dos dois lados.
+        let def = shared::terreno::def_da_zona(&self.zona)?;
+        let ger = shared::terreno::Gerador::da_ilha(def);
+        shared::porao::porta_de(c, &ger)
     }
 
     // ─────────────────────────────── arena ───────────────────────────────

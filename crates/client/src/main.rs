@@ -656,11 +656,6 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
-    if std::env::var("MMO_PREVIA_PORAO").is_ok() {
-        porao_ui::previa().await;
-        return;
-    }
-    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PRESENCA").is_ok() {
         presenca_ui::previa().await;
         return;
@@ -5658,15 +5653,16 @@ impl Jogo {
         // posição é calculada (`shared::porao::porta_de`), não vem do
         // servidor. Desenhar no chão de verdade é o que evita porta flutuando
         // — a altura sai do mesmo terreno que o jogador pisa.
-        if let Some(terreno) = &self.terreno {
-            let cidade = porao_ui::cidade_da_zona(&self.zona_atual);
+        if self.terreno.is_some() {
             let eu = self.world.self_pos();
-            for (pos, _) in porao_ui::PoraoUi::porta_visivel(&self.zona_atual, cidade) {
-                let perto = eu.is_some_and(|e| {
-                    e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA
-                });
-                let y = terreno.altura(pos.x, pos.y);
-                render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), perto);
+            let portas = self.porao.portas(&self.zona_atual).to_vec();
+            if let Some(terreno) = &self.terreno {
+                for (_, pos) in portas {
+                    let perto = eu
+                        .is_some_and(|e| e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA);
+                    let y = terreno.altura(pos.x, pos.y);
+                    render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), perto);
+                }
             }
         }
         self.solido.set_uniform("LuzDia", 0.0f32);
@@ -5747,17 +5743,13 @@ impl Jogo {
             // A PORTA DO PORÃO: só aparece se houver uma perto, e só abre na
             // porta com a chave. O servidor confere tudo de novo.
             {
-                let cidade = porao_ui::cidade_da_zona(&self.zona_atual);
                 let slots = self.bolsa.slots.clone();
                 let tem = move |chave: u16| {
                     slots.iter().any(|i| i.item_id == chave && i.qty > 0)
                 };
-                if let Some(msg) = self.porao.desenha(
-                    &self.zona_atual,
-                    cidade,
-                    self.world.self_pos(),
-                    &tem,
-                ) {
+                let eu = self.world.self_pos();
+                let zona = self.zona_atual.clone();
+                if let Some(msg) = self.porao.desenha(&zona, eu, &tem) {
                     self.envia(msg);
                 }
             }
@@ -6426,9 +6418,20 @@ impl Jogo {
                 palco: Some((&self.vox, &self.solido)),
                 ouro: self.bolsa.ouro,
                 eu: &eu,
+                zona: &self.zona_atual,
             };
             for pedido in self.dungeon.desenha(&ctx, get_time()) {
                 self.envia(pedido);
+            }
+            // "Go to the door": o painel não entra, ele encaminha.
+            if let Some((pos, nome)) = self.dungeon.ir_para_a_porta.take() {
+                self.dungeon.fechar();
+                self.iniciar_ir_para(ir_para::Alvo {
+                    objetivo: ir_para::Objetivo::Lugar,
+                    pos,
+                    raio: shared::porao::ALCANCE_DA_PORTA,
+                    rotulo: nome,
+                });
             }
         }
         match self

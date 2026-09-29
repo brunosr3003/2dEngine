@@ -83,18 +83,17 @@ fn nome_da_chave(chave: u16) -> String {
 /// Fora do desenho pra poder ser testada: é a regra que decide se uma dungeon
 /// inteira aparece ou não.
 pub fn aviso_de(
-    zona: &str,
-    cidade: Option<Vec2>,
+    portas: &[(u16, Vec2)],
     eu: Option<Vec2>,
     tem_chave: &dyn Fn(u16) -> bool,
 ) -> Option<Aviso> {
-    let (cidade, eu) = (cidade?, eu?);
-    shared::porao::poroes_da_zona(zona)
-        .into_iter()
-        .filter_map(|c| {
-            let porta = pra_mq(shared::porao::porta_de(c, pra_shared(cidade))?);
+    let eu = eu?;
+    portas
+        .iter()
+        .filter_map(|(id, porta)| {
+            let c = shared::dungeon::conteudo(*id)?;
             let chave = shared::porao::chave_de(c)?;
-            let d = eu.distance(porta);
+            let d = eu.distance(*porta);
             (d <= ALCANCE_DO_AVISO).then(|| Aviso {
                 conteudo: c.id,
                 nome: c.nome,
@@ -111,18 +110,41 @@ pub fn aviso_de(
 #[derive(Default)]
 pub struct PoraoUi {
     aviso: Option<Aviso>,
+    /// As portas desta zona, achadas uma vez. A busca sonda até 192 pontos no
+    /// relevo — barato ao trocar de ilha, caro a 60 quadros por segundo.
+    cache: Option<(String, Vec<(u16, Vec2)>)>,
+}
+
+/// As portas desta zona, procurando o chão de verdade. Uma vez por zona.
+pub fn portas_da_zona(zona: &str) -> Vec<(u16, Vec2)> {
+    let Some(def) = shared::terreno::def_da_zona(zona) else {
+        return Vec::new();
+    };
+    let ger = shared::terreno::Gerador::da_ilha(def);
+    shared::porao::portas_da_zona(zona, &ger)
+        .into_iter()
+        .map(|(id, p)| (id, pra_mq(p)))
+        .collect()
 }
 
 impl PoraoUi {
     /// Recalcula e desenha. Devolve o pedido quando o jogador aperta o botão.
+    /// As portas desta zona, do cache. Recalcula só quando a ilha muda.
+    pub fn portas(&mut self, zona: &str) -> &[(u16, Vec2)] {
+        if self.cache.as_ref().is_none_or(|(z, _)| z != zona) {
+            self.cache = Some((zona.to_string(), portas_da_zona(zona)));
+        }
+        &self.cache.as_ref().unwrap().1
+    }
+
     pub fn desenha(
         &mut self,
         zona: &str,
-        cidade: Option<Vec2>,
         eu: Option<Vec2>,
         tem_chave: &dyn Fn(u16) -> bool,
     ) -> Option<ClientMessage> {
-        self.aviso = aviso_de(zona, cidade, eu, tem_chave);
+        let portas = self.portas(zona).to_vec();
+        self.aviso = aviso_de(&portas, eu, tem_chave);
         let a = self.aviso.clone()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -165,77 +187,11 @@ impl PoraoUi {
         None
     }
 
-    /// Onde desenhar o marco no mundo, pra a porta se achar de longe.
-    pub fn porta_visivel(zona: &str, cidade: Option<Vec2>) -> Vec<(Vec2, &'static str)> {
-        let Some(cidade) = cidade else {
-            return Vec::new();
-        };
-        shared::porao::poroes_da_zona(zona)
-            .into_iter()
-            .filter_map(|c| {
-                shared::porao::porta_de(c, pra_shared(cidade)).map(|p| (pra_mq(p), c.nome))
-            })
-            .collect()
-    }
-}
-
-/// A cidade desta zona, que é a âncora das portas.
-///
-/// Mesmo `Gerador` que o servidor usa, então os dois chegam na MESMA porta —
-/// uma tarja que aparecesse a três metros de onde o servidor aceita abrir
-/// seria pior que tarja nenhuma.
-pub fn cidade_da_zona(zona: &str) -> Option<Vec2> {
-    let def = shared::terreno::def_da_zona(zona)?;
-    shared::terreno::Gerador::da_ilha(def)
-        .cidade()
-        .map(|c| pra_mq(c.centro()))
-}
-
-/// Prévia da tarja da porta (`MMO_PREVIA_PORAO=1`; PNGs em `MMO_PREVIA_SAIDA`).
-///
-/// Os três estados que o jogador vê, porque são três telas diferentes: longe
-/// com a chave, na porta sem a chave, e na porta com ela.
-#[cfg(debug_assertions)]
-pub async fn previa() {
-    let saida =
-        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-porao-preview".into());
-    std::fs::create_dir_all(&saida).unwrap();
-    next_frame().await;
-    let rt = render_target(screen_width() as u32, screen_height() as u32);
-    crate::render3d::define_alvo(Some(rt.clone()));
-    let c = dg::CONTEUDOS
-        .iter()
-        .find(|c| c.tipo == dg::Tipo::Porao)
-        .unwrap();
-    let cidade = cidade_da_zona(c.zona).unwrap_or(Vec2::ZERO);
-    let porta = pra_mq(shared::porao::porta_de(c, pra_shared(cidade)).unwrap());
-    let casos: [(&str, Vec2, bool); 3] = [
-        ("porao-longe-com-chave", porta + Vec2::new(18.0, 0.0), true),
-        ("porao-na-porta-sem-chave", porta, false),
-        ("porao-na-porta-com-chave", porta, true),
-    ];
-    for (nome, eu, tem) in casos {
-        let mut ui = PoraoUi::default();
-        for _ in 0..3 {
-            crate::render3d::camera_padrao();
-            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-            ui.desenha(c.zona, Some(cidade), Some(eu), &move |_| tem);
-            unsafe { get_internal_gl().flush() };
-            rt.texture
-                .get_texture_data()
-                .export_png(&format!("{saida}/{nome}.png"));
-            next_frame().await;
-        }
-    }
 }
 
 #[cfg(test)]
 mod testes {
     use super::*;
-
-    fn cidade() -> Vec2 {
-        Vec2::new(120.0, -60.0)
-    }
 
     fn primeiro_porao() -> &'static dg::Conteudo {
         dg::CONTEUDOS
@@ -246,21 +202,22 @@ mod testes {
 
     /// LONGE NÃO MOSTRA, PERTO MOSTRA, E SÓ NA PORTA ABRE.
     ///
-    /// Os três estados são a regra inteira. O do meio é o que importa: ver a
-    /// porta de longe é o que faz uma dungeon física existir pro jogador, e
+    /// Ver a porta de longe é o que faz a dungeon física existir pro jogador;
     /// abrir de longe é o que o servidor recusa.
     #[test]
     fn a_tarja_aparece_de_longe_e_o_botao_so_na_porta() {
         let c = primeiro_porao();
-        let porta = pra_mq(shared::porao::porta_de(c, pra_shared(cidade())).unwrap());
+        let portas = portas_da_zona(c.zona);
+        let (_, porta) = *portas.iter().find(|(id, _)| *id == c.id).unwrap();
         let tem = |_: u16| true;
 
-        let longe = aviso_de(c.zona, Some(cidade()), Some(porta + Vec2::new(500.0, 0.0)), &tem);
-        assert!(longe.is_none(), "a tarja apareceu do outro lado da ilha");
+        assert!(
+            aviso_de(&portas, Some(porta + Vec2::new(500.0, 0.0)), &tem).is_none(),
+            "a tarja apareceu do outro lado da ilha"
+        );
 
         let perto = aviso_de(
-            c.zona,
-            Some(cidade()),
+            &portas,
             Some(porta + Vec2::new(ALCANCE_DO_AVISO - 2.0, 0.0)),
             &tem,
         )
@@ -268,21 +225,18 @@ mod testes {
         assert!(!perto.na_porta, "abriu antes de chegar");
         assert_eq!(perto.recado(), "Get closer");
 
-        let na_porta = aviso_de(c.zona, Some(cidade()), Some(porta), &tem).unwrap();
+        let na_porta = aviso_de(&portas, Some(porta), &tem).unwrap();
         assert!(na_porta.pode_abrir());
         assert_eq!(na_porta.recado(), "Open");
     }
 
     /// SEM CHAVE, A TARJA DIZ QUAL CHAVE — e o botão não abre.
-    ///
-    /// Um botão que só depois avisa "faltou a chave" é o botão morto que o
-    /// resto deste jogo já evitou uma vez (ver `dungeon_ui`, a recusa da
-    /// Arena virando convite).
     #[test]
     fn sem_chave_o_botao_diz_qual_falta() {
         let c = primeiro_porao();
-        let porta = pra_mq(shared::porao::porta_de(c, pra_shared(cidade())).unwrap());
-        let a = aviso_de(c.zona, Some(cidade()), Some(porta), &|_| false).unwrap();
+        let portas = portas_da_zona(c.zona);
+        let (_, porta) = *portas.iter().find(|(id, _)| *id == c.id).unwrap();
+        let a = aviso_de(&portas, Some(porta), &|_| false).unwrap();
         assert!(!a.pode_abrir(), "abriu sem chave");
         let recado = a.recado();
         assert!(recado.starts_with("Needs "), "{recado}");
@@ -292,25 +246,33 @@ mod testes {
     /// NUMA ILHA SEM PORÃO NÃO HÁ TARJA NENHUMA.
     #[test]
     fn zona_sem_porao_nao_mostra_nada() {
-        assert!(aviso_de("ilha_magica", Some(cidade()), Some(cidade()), &|_| true).is_none());
-        assert!(aviso_de("dungeon", Some(cidade()), Some(cidade()), &|_| true).is_none());
+        for zona in ["ilha_magica", "dungeon"] {
+            let portas = portas_da_zona(zona);
+            assert!(portas.is_empty(), "{zona} tem porta e não devia");
+            assert!(aviso_de(&portas, Some(Vec2::ZERO), &|_| true).is_none());
+        }
     }
 
-    /// COM DUAS PORTAS NA ILHA, VALE A MAIS PERTO.
+    /// TODA PORTA DO MAPA ESTÁ EM TERRA — a mesma garantia de `shared::porao`,
+    /// conferida no caminho que o CLIENTE usa pra desenhar e pra marcar o mapa.
     #[test]
-    fn duas_portas_na_mesma_ilha_a_mais_perto_ganha() {
-        let poroes = shared::porao::poroes_da_zona("ilha_inicial");
-        if poroes.len() < 2 {
-            return;
-        }
-        let a = pra_mq(shared::porao::porta_de(poroes[0], pra_shared(cidade())).unwrap());
-        let b = pra_mq(shared::porao::porta_de(poroes[1], pra_shared(cidade())).unwrap());
-        let meio = (a + b) * 0.5;
-        // Um passo na direção de `a` decide o empate.
-        let eu = meio + (a - meio).normalize() * 1.0;
-        let visto = aviso_de("ilha_inicial", Some(cidade()), Some(eu), &|_| true);
-        if let Some(v) = visto {
-            assert_eq!(v.conteudo, poroes[0].id, "escolheu a porta mais longe");
+    fn as_portas_que_o_cliente_desenha_estao_em_terra() {
+        for def in shared::terreno::ARQUIPELAGO {
+            let ger = shared::terreno::Gerador::da_ilha(&def);
+            let portas = portas_da_zona(def.zona);
+            assert_eq!(
+                portas.len(),
+                shared::porao::poroes_da_zona(def.zona).len(),
+                "{}: sumiu porta no caminho do cliente",
+                def.zona
+            );
+            for (_, p) in portas {
+                assert!(
+                    ger.altura(p.x, p.y) > shared::terreno::NIVEL_DO_MAR,
+                    "{}: porta na água",
+                    def.zona
+                );
+            }
         }
     }
 }

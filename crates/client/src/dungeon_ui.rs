@@ -18,6 +18,8 @@ pub struct Contexto<'a> {
     pub ouro: u64,
     /// Nome do personagem (pra saber se e' o lider da sala).
     pub eu: &'a str,
+    /// A ilha em que o personagem está, pra o "Go to" saber se a porta é aqui.
+    pub zona: &'a str,
 }
 
 fn pedir(p: Pedido) -> ClientMessage {
@@ -95,6 +97,8 @@ pub struct DungeonUi {
     entrada_pendente: Option<Pedido>,
     /// Resultado: sair da instância e, ao receber `Saiu`, voltar à ilha.
     voltar_apos_instancia: bool,
+    /// A porta que o jogador mandou "Go to". O laço principal lê e anda.
+    pub ir_para_a_porta: Option<(Vec2, String)>,
     /// Botão grande no HUD da Arena depois de uma dungeon.
     mostrar_saida_arena: bool,
 }
@@ -464,9 +468,40 @@ impl DungeonUi {
             (p.w * 0.38).floor(),
             p.h - 56.0 * f - 44.0 * f,
         );
-        let alt = ((esq.h / estado.conteudos.len().max(1) as f32).min(62.0 * f)).max(36.0 * f);
+        // ── DUAS SEÇÕES, e não uma lista só ──
+        //
+        // O dono: "it should not be in the dungeun menu as is now, it should be
+        // in a separate sub-menu". Porão e Gruta viraram coisas diferentes — uma
+        // se entra na porta, a outra pelo painel —, e listá-las misturadas
+        // sugeria que se entra nas duas do mesmo jeito.
+        let (poroes, grutas): (Vec<_>, Vec<_>) = estado
+            .conteudos
+            .iter()
+            .filter(|ce| dg::conteudo(ce.id).is_some())
+            .partition(|ce| dg::conteudo(ce.id).unwrap().tipo == Tipo::Porao);
+        let mut linhas: Vec<(Option<&str>, Option<&dg::ConteudoEstado>)> = Vec::new();
+        if !poroes.is_empty() {
+            linhas.push((Some("CELLARS · at their door"), None));
+            linhas.extend(poroes.iter().map(|ce| (None, Some(*ce))));
+        }
+        if !grutas.is_empty() {
+            linhas.push((Some("CAVERNS · from here"), None));
+            linhas.extend(grutas.iter().map(|ce| (None, Some(*ce))));
+        }
+        let alt = ((esq.h / linhas.len().max(1) as f32).min(62.0 * f)).max(30.0 * f);
         let mut novo_sel = None;
-        for (i, ce) in estado.conteudos.iter().enumerate() {
+        for (i, (titulo, ce)) in linhas.iter().enumerate() {
+            if let Some(t) = titulo {
+                estilo::texto(
+                    esq.x + 4.0 * f,
+                    esq.y + i as f32 * alt + alt * 0.66,
+                    t,
+                    11,
+                    estilo::SUAVE,
+                );
+                continue;
+            }
+            let ce = ce.unwrap();
             let Some(def) = dg::conteudo(ce.id) else {
                 continue;
             };
@@ -773,17 +808,33 @@ impl DungeonUi {
 
         let aberto = cadeado.is_none() && def.disponivel;
         match def.tipo {
-            // Sem botão de entrar: a entrada é a porta. Um "Enter" aqui seria
-            // o botão morto que este painel já aprendeu a não ter.
+            // "GO TO" E NÃO "ENTER", porque daqui não se entra: a porta é um
+            // lugar, e o botão leva até ele. O dono: "instead of enter you will
+            // have a go to, because you need to go to where the dungeun is".
             Tipo::Porao => {
-                let _ = aberto;
-                estilo::texto(
-                    dir.x,
-                    y + 14.0 * f,
-                    "Find its door on the island.",
-                    13,
-                    estilo::SUAVE,
-                );
+                let aqui = def.zona == c.zona;
+                let rotulo = if aqui { "Go to the door" } else { "On another island" };
+                if botao(Rect::new(dir.x, y, bw * 1.4, 40.0 * f), rotulo, aberto && aqui, true)
+                    && aqui
+                {
+                    if let Some((_, pos)) = crate::porao_ui::portas_da_zona(def.zona)
+                        .into_iter()
+                        .find(|(id, _)| *id == def.id)
+                    {
+                        self.ir_para_a_porta = Some((pos, def.nome.to_string()));
+                    }
+                }
+                if !aqui {
+                    let onde = shared::terreno::def_da_zona(def.zona)
+                        .map_or(def.zona, |d| d.nome);
+                    estilo::texto(
+                        dir.x,
+                        y + 56.0 * f,
+                        &format!("Its door is on {onde}."),
+                        13,
+                        estilo::SUAVE,
+                    );
+                }
             }
             Tipo::Cacada => {
                 estilo::texto(
@@ -1727,7 +1778,7 @@ pub async fn previa_recompensas() {
     std::fs::create_dir_all(&saida).unwrap();
     let nomes: HashMap<u16,String> = std::fs::read_to_string("/tmp/tempest-dungeon-item-names.json").ok()
         .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
-    let contexto = Contexto { nomes: &nomes, palco: None, ouro: 100000, eu: "brunji" };
+    let contexto = Contexto { nomes: &nomes, palco: None, ouro: 100000, eu: "brunji", zona: "ilha_inicial" };
     for (w,h) in [(1280,720),(1920,1080)] {
         let rt = render_target(w,h);
         crate::render3d::define_alvo(Some(rt.clone()));

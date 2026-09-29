@@ -771,6 +771,16 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
         let p = shared::magica::posto_dos_degraus();
         npcs.push((shared::magica::GUIA_DOS_DEGRAUS.to_string(), vec2(p.x, p.y)));
     }
+    // AS PORTAS DE PORÃO ENTRAM NO MAPA.
+    //
+    // Sem isto elas eram invisíveis pra quem não tropeçasse nelas: a tarja só
+    // acende a 26 unidades, e uma ilha tem centenas. O dono, ao procurar a
+    // primeira: "it is in the world? where is it i cant find it in the map
+    // menu". Uma dungeon que só se acha por acaso não está no mundo.
+    for (id, p) in crate::porao_ui::portas_da_zona(def.zona) {
+        let nome = shared::dungeon::conteudo(id).map_or("Cellar", |c| c.nome);
+        npcs.push((nome.to_string(), p));
+    }
     Dados {
         rgba,
         pegadas,
