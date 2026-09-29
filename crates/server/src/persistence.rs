@@ -3756,7 +3756,73 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     }
 
     nomes_em_ingles(pool).await?;
+    nomes_compostos_em_ingles(pool).await?;
     crate::loot_mobs::migrar(pool).await?;
+    Ok(())
+}
+
+/// The COMPOSED names the first migration could not reach.
+///
+/// `nomes_em_ingles_v1` maps through the dictionary, and the dictionary holds
+/// phrases the code writes. These sixteen are not phrases: they were built by
+/// joining a species to a grade colour ("Filhote de Tigre" + "Cinza"), so the
+/// whole string never existed as an entry and nothing matched. It is why that
+/// migration reported 17 rows where the seed had 47 Portuguese names.
+///
+/// They survived because the items upsert never updates `name`
+/// (`ON CONFLICT (id) DO UPDATE` sets slots, icons and stat ranges), so a row
+/// keeps whatever it was first inserted with, for ever.
+///
+/// Written out by hand rather than regenerated from `pets::nome_do_item`,
+/// deliberately. The pet naming scheme CHANGED — the creature is the grade
+/// now, instead of one creature tinted five ways — so regenerating would
+/// rename these rows to whatever the ids mean today, which is not necessarily
+/// what the player has in their bag. The Colossus chests have no generator in
+/// the code at all any more.
+///
+/// Each row is pinned by id AND by the name it still holds, so it is
+/// idempotent and cannot touch a row an admin has already renamed.
+async fn nomes_compostos_em_ingles(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+    let nova = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('nomes_compostos_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected()
+        > 0;
+    if !nova {
+        return Ok(());
+    }
+    const NOMES: &[(i32, &str, &str)] = &[
+        (430, "Filhote de Tigre Cinza", "Grey Tiger Cub"),
+        (431, "Filhote de Tigre Verde", "Green Tiger Cub"),
+        (432, "Filhote de Tigre Azul", "Blue Tiger Cub"),
+        (433, "Filhote de Tigre Roxo", "Purple Tiger Cub"),
+        (434, "Filhote de Tigre Laranja", "Orange Tiger Cub"),
+        (465, "Tigre das Neves Cinza", "Grey Snow Tiger"),
+        (466, "Tigre das Neves Verde", "Green Snow Tiger"),
+        (467, "Tigre das Neves Azul", "Blue Snow Tiger"),
+        (468, "Tigre das Neves Roxo", "Purple Snow Tiger"),
+        (469, "Tigre das Neves Laranja", "Orange Snow Tiger"),
+        (473, "Urso de Carga Roxo", "Purple Pack Bear"),
+        (474, "Urso de Carga Laranja", "Orange Pack Bear"),
+        (490, "Baú do Colosso (T1)", "Colossus Chest (T1)"),
+        (491, "Baú do Colosso (T2)", "Colossus Chest (T2)"),
+        (492, "Baú do Colosso (T3)", "Colossus Chest (T3)"),
+        (493, "Baú do Colosso (T4)", "Colossus Chest (T4)"),
+        (494, "Baú do Colosso (T5)", "Colossus Chest (T5)"),
+    ];
+    let mut mexidas = 0u64;
+    for (id, velho, novo) in NOMES {
+        mexidas += sqlx::query("UPDATE items SET name = $1 WHERE id = $2 AND name = $3")
+            .bind(novo)
+            .bind(id)
+            .bind(velho)
+            .execute(pool)
+            .await?
+            .rows_affected();
+    }
+    tracing::info!("nomes_compostos_v1: {mexidas} composed names are now English");
     Ok(())
 }
 
