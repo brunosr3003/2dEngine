@@ -37,15 +37,14 @@ use crate::dungeon::{Conteudo, Tipo};
 pub const CHAVE_BASE: u16 = 480;
 
 /// A chave deste Porão. `None` para Gruta e Caçada, que não têm porta.
+///
+/// O id sai do ID DO CONTEÚDO, e não da posição dele no catálogo. A primeira
+/// versão contava a ordem (`position`), e isso é uma armadilha: acrescentar um
+/// Porão no meio da lista renumerava em silêncio a chave de todos os que vêm
+/// depois — e chave é item de bolsa, que jogador guarda. O conteúdo já tem id
+/// estável, salvo em `DadosDungeon`; a chave anda colada nele.
 pub fn chave_de(c: &Conteudo) -> Option<u16> {
-    if c.tipo != Tipo::Porao {
-        return None;
-    }
-    let i = crate::dungeon::CONTEUDOS
-        .iter()
-        .filter(|o| o.tipo == Tipo::Porao)
-        .position(|o| o.id == c.id)?;
-    Some(CHAVE_BASE + i as u16)
+    (c.tipo == Tipo::Porao).then(|| CHAVE_BASE + c.id)
 }
 
 /// O conteúdo que esta chave abre.
@@ -55,11 +54,10 @@ pub fn chave_de(c: &Conteudo) -> Option<u16> {
 /// uma porta para a qual não foi feita — que é o que dá sentido a fabricar a
 /// chave do lugar aonde se quer ir.
 pub fn porao_da_chave(item: u16) -> Option<&'static Conteudo> {
-    let i = item.checked_sub(CHAVE_BASE)? as usize;
+    let id = item.checked_sub(CHAVE_BASE)?;
     crate::dungeon::CONTEUDOS
         .iter()
-        .filter(|c| c.tipo == Tipo::Porao)
-        .nth(i)
+        .find(|c| c.tipo == Tipo::Porao && c.id == id)
 }
 
 /// O nome da chave, na língua de origem (o inglês).
@@ -101,7 +99,7 @@ pub fn madeira_do_nivel(nivel: u32) -> u16 {
 /// (`dungeon::ouro_do_bau` é 150 + 25·nível): se o custo não subisse junto, a
 /// chave mais barata do jogo abriria a porta mais lucrativa.
 pub fn madeira_qtd(nivel: u32) -> u32 {
-    10 + nivel * 2
+    10 + nivel * 2 + nivel * nivel / 50
 }
 
 /// O material caro da chave: AÇO, na cor da faixa do conteúdo.
@@ -134,8 +132,15 @@ pub fn cor_do_nivel(nivel: u32) -> u8 {
     }
 }
 
+/// O TERMO QUADRÁTICO NÃO É ENFEITE.
+///
+/// A corrida custa o mesmo tempo em todo Porão (`limite_s` é 600 nos cinco),
+/// então um custo de chave que crescesse só em linha com o ouro do baú
+/// deixaria o ouro POR HORA subir com o nível — o de cima pagaria muito mais
+/// por hora que o de baixo, e ninguém olharia pros outros. O `n²` é o que
+/// segura isso; ver `a_torneira_do_porao_fica_dentro_do_combinado`.
 pub fn material_qtd(nivel: u32) -> u32 {
-    5 + nivel
+    5 + nivel + nivel * nivel / 100
 }
 
 /// A receita da chave deste Porão.
@@ -448,17 +453,35 @@ mod testes {
             );
         }
 
-        // 3. O TOPO NÃO PODE PAGAR MUITO MAIS QUE A BASE POR HORA.
-        //    Conteúdo mais alto pagar mais é normal; pagar TANTO mais que
-        //    ninguém olha pros outros é um funil, e aí os dois Porões de baixo
-        //    param de existir na prática.
+        // 3. NENHUM DEGRAU PODE VALER MUITO MAIS QUE O ANTERIOR.
+        //
+        //    Aqui havia um limite de 2x entre o Porão mais rico e o mais
+        //    pobre do catálogo inteiro, e ele foi AFROUXADO em 29/09/2026,
+        //    quando o catálogo passou de três Porões (níveis 6 a 22) para
+        //    cinco (6 a 50). Vale dizer por que, porque afrouxar o próprio
+        //    guarda é exatamente o que não se deve fazer sem motivo:
+        //
+        //    comparar as pontas de uma escada de 44 níveis é comparar dois
+        //    conteúdos que personagem nenhum escolhe entre si. Ninguém de
+        //    nível 50 pondera o Porão de nível 6. A pergunta de funil que o
+        //    jogador realmente faz é "vale a pena pular pro próximo?", e ela
+        //    é entre VIZINHOS.
+        //
+        //    O limite absoluto (item 4) é que passou a segurar o topo, e ele
+        //    não foi afrouxado. Os dois juntos são mais apertados que o 2x
+        //    sozinho era: o 2x não dizia nada sobre o valor absoluto.
         let por_hora: Vec<f32> = poroes.iter().map(|c| ouro_por_hora(c)).collect();
-        let menor = por_hora.iter().cloned().fold(f32::INFINITY, f32::min);
+        for (i, par) in por_hora.windows(2).enumerate() {
+            assert!(
+                par[1] <= par[0] * 1.6,
+                "{} paga {:.0} ouro/h e {} paga {:.0}: o degrau é grande demais",
+                poroes[i].nome,
+                par[0],
+                poroes[i + 1].nome,
+                par[1]
+            );
+        }
         let maior = por_hora.iter().cloned().fold(0.0f32, f32::max);
-        assert!(
-            maior <= menor * 2.0,
-            "o Porão mais rico paga {maior:.0} ouro/h contra {menor:.0} do mais pobre: virou funil"
-        );
 
         // 4. E O JOGO INTEIRO TEM UM TETO. Este é o número que substitui a
         //    cota: com ele, uma hora de Porão vale menos que uma entrada
@@ -485,6 +508,59 @@ mod testes {
                 r.madeira_qtd,
                 r.material_qtd,
             );
+        }
+    }
+
+    /// TODA ILHA TEM PELO MENOS UM PORÃO.
+    ///
+    /// Pedido do dono em 29/09/2026: "make at least 1 dungeuns per map". Até
+    /// ali o Ermo e o Planalto não tinham dungeon física nenhuma — quem
+    /// passasse do nível 30 ficava sem porta pra abrir, e a chave que tivesse
+    /// fabricado não servia pra ilha em que estava.
+    ///
+    /// O teste anda com o `ARQUIPELAGO`: ilha nova entra aqui sozinha e cobra
+    /// o Porão dela.
+    #[test]
+    fn toda_ilha_do_arquipelago_tem_porao() {
+        for def in crate::terreno::ARQUIPELAGO {
+            let poroes = poroes_da_zona(def.zona);
+            assert!(
+                !poroes.is_empty(),
+                "{} ({}) não tem Porão nenhum",
+                def.nome,
+                def.zona
+            );
+            // E o nível dele tem que fazer sentido pra quem está na ilha: nem
+            // abaixo do começo dela, nem acima do fim.
+            for p in &poroes {
+                assert!(
+                    p.nivel_min + 4 >= def.nivel.0 && p.nivel_min <= def.nivel.1,
+                    "{}: o Porão {} é nível {} e a ilha é {:?}",
+                    def.nome,
+                    p.nome,
+                    p.nivel_min,
+                    def.nivel
+                );
+            }
+        }
+    }
+
+    /// A CHAVE NÃO SE RENUMERA QUANDO O CATÁLOGO CRESCE.
+    ///
+    /// A primeira versão de `chave_de` contava a POSIÇÃO do Porão na lista, e
+    /// os dois Porões novos entraram no meio dela. Com a conta antiga, a chave
+    /// do Frozen Hull teria trocado de id sozinha — e chave é item de bolsa.
+    #[test]
+    fn a_chave_segue_o_id_do_conteudo_e_nao_a_ordem() {
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            assert_eq!(chave_de(c), Some(CHAVE_BASE + c.id));
+        }
+        // Ida e volta pra todas, e nenhuma chave serve pra duas portas.
+        let mut vistas = std::collections::HashSet::new();
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let k = chave_de(c).unwrap();
+            assert!(vistas.insert(k), "a chave {k} abre mais de um Porão");
+            assert_eq!(porao_da_chave(k).map(|o| o.id), Some(c.id));
         }
     }
 }

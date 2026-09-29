@@ -88,11 +88,44 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nome: "Frozen Hull",
         tipo: Tipo::Porao,
         zona: "ilha_gelo",
-        nivel_min: 22,
+        nivel_min: 24,
         grupo_max: 1,
         limite_s: 600,
         andares: 2,
         chefe: 13,
+        disponivel: true,
+    },
+    // UM PORÃO POR ILHA, pedido do dono em 29/09/2026: "make at least 1
+    // dungeuns per map". O Bosque já tinha dois (6 e 14) e a Geleira um (24);
+    // faltavam o Ermo e o Planalto, que até aqui não tinham dungeon física
+    // nenhuma — quem passasse do nível 30 ficava sem porta pra abrir.
+    //
+    // O nível de cada um fica no meio da faixa da ilha (`ARQUIPELAGO`), que é
+    // onde o jogador daquela ilha de fato está: Ermo é 28-42 e Planalto 40-60.
+    Conteudo {
+        id: 4,
+        nome: "Sunken Caravan",
+        tipo: Tipo::Porao,
+        zona: "ilha_deserto",
+        nivel_min: 34,
+        grupo_max: 1,
+        limite_s: 600,
+        andares: 2,
+        // O Arqueiro do Ermo era o único chefe do catálogo sem conteúdo
+        // nenhum, e é do deserto.
+        chefe: 16,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 5,
+        nome: "Thunder Vault",
+        tipo: Tipo::Porao,
+        zona: "ilha_planalto",
+        nivel_min: 50,
+        grupo_max: 1,
+        limite_s: 600,
+        andares: 2,
+        chefe: 18,
         disponivel: true,
     },
     Conteudo {
