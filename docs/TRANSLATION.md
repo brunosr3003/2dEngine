@@ -11,7 +11,7 @@ different English ones in two different files.
 | pass | what | state |
 |---|---|---|
 | 1 | identifiers: files, modules, functions, fields, variables | in progress — `ladder` done |
-| 2 | comments and doc comments | not started |
+| 2 | comments and doc comments | in progress — `ladder` done (78 blocks); tool at `tools/translate_comments.py` |
 | 3 | `docs/*.md` | not started |
 | 4 | locale inversion (English native, Portuguese as translation) + DB name migration | not started |
 
@@ -147,8 +147,10 @@ banco") and have to migrate with the code.
    field accesses — it does, reliably.
 3. **Compile between batches.** A rename that does not compile is a rename that
    silently changed meaning somewhere else.
-4. **Never rename a string literal in passes 1–3.** Literals are game content
-   and are keyed by the translation tables; moving them is pass 4.
+4. **Game-content literals stay; developer literals go.** A string the player
+   reads is keyed by the translation tables and only moves in pass 4. An
+   `assert!` message, a `panic!` or a `tracing` line is read by us, not by a
+   player, and is translated with the code around it.
 5. **Never rename a database column or value in passes 1–3.** Persistence reads
    columns by name, and a column that disappears is a kick at login.
 6. **Keep `Danca`, `Muralha`, `Saque` and the other skill names as they are**
