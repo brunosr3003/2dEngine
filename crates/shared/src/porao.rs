@@ -84,12 +84,7 @@ pub struct Receita {
 /// Repetir a regra aqui com outros cortes seria ter duas verdades sobre o que
 /// é "madeira do nível 22".
 pub fn madeira_do_nivel(nivel: u32) -> u16 {
-    match nivel {
-        0..=15 => item_id::WOOD_T1,
-        16..=30 => item_id::WOOD_T2,
-        31..=50 => item_id::WOOD_T3,
-        _ => item_id::WOOD_T4,
-    }
+    item_id::WOOD_T1 + (tier_da_madeira(nivel) - 1) as u16
 }
 
 /// Quanta madeira, pelo nível do conteúdo.
@@ -99,8 +94,32 @@ pub fn madeira_do_nivel(nivel: u32) -> u16 {
 /// (`dungeon::ouro_do_bau` é 150 + 25·nível): se o custo não subisse junto, a
 /// chave mais barata do jogo abriria a porta mais lucrativa.
 pub fn madeira_qtd(nivel: u32) -> u32 {
-    10 + nivel * 2 + nivel * nivel / 50
+    let t = segundos_alvo(nivel) * REPARTE_MADEIRA;
+    (t / crate::constants::COLETA_CICLO_ARVORE_S * rende_por_ciclo(tier_da_madeira(nivel))).round()
+        as u32
 }
+
+/// QUANTOS SEGUNDOS DE COLETA A CHAVE DEVE CUSTAR — e o resto sai daqui.
+///
+/// A quantidade de madeira e de aço deixou de ser escrita à mão em 29/09/2026
+/// e passou a ser DERIVADA deste alvo. O motivo é que a quantidade sozinha não
+/// diz nada: 22 de madeira parece um custo até se descobrir que uma árvore
+/// derruba 3 a 5 por ciclo, e aí viram cinco segundos. Foi exatamente esse o
+/// erro — o modelo supunha um item por ciclo e errava por quatro.
+///
+/// Escrevendo o TEMPO, o custo continua verdadeiro quando o rendimento do nó
+/// mudar: a receita se ajusta sozinha.
+///
+/// A escada (3 min no nível 6, 11 min no 50) é a que o dono escolheu em
+/// 29/09/2026, entre quatro formas de segurar a torneira: "keys cost ~4x,
+/// chest gold UNCHANGED". O Porão passa a ser um laço de quem coleta — junta
+/// um tanto, entra uma vez.
+pub fn segundos_alvo(nivel: u32) -> f32 {
+    180.0 + 10.9 * (nivel.max(6) - 6) as f32
+}
+
+/// Quanto do tempo da chave é madeira; o resto é aço.
+const REPARTE_MADEIRA: f32 = 0.6;
 
 /// O material caro da chave: AÇO, na cor da faixa do conteúdo.
 ///
@@ -140,7 +159,10 @@ pub fn cor_do_nivel(nivel: u32) -> u8 {
 /// por hora que o de baixo, e ninguém olharia pros outros. O `n²` é o que
 /// segura isso; ver `a_torneira_do_porao_fica_dentro_do_combinado`.
 pub fn material_qtd(nivel: u32) -> u32 {
-    5 + nivel + nivel * nivel / 100
+    let tier = cor_do_nivel(nivel).clamp(1, 4);
+    let t = segundos_alvo(nivel) * (1.0 - REPARTE_MADEIRA);
+    (t / crate::constants::COLETA_CICLO_PEDRA_S[tier as usize] * rende_por_ciclo(tier)).round()
+        as u32
 }
 
 /// A receita da chave deste Porão.
@@ -212,11 +234,42 @@ pub fn poroes_da_zona(zona: &str) -> Vec<&'static Conteudo> {
 /// Os ciclos saem de `constants`: `COLETA_CICLO_ARVORE_S` e
 /// `COLETA_CICLO_PEDRA_S[tier]`.
 pub fn segundos_de_coleta(nivel: u32) -> f32 {
-    let madeira = madeira_qtd(nivel) as f32 * crate::constants::COLETA_CICLO_ARVORE_S;
+    let t_madeira = tier_da_madeira(nivel);
+    let ciclos_madeira = madeira_qtd(nivel) as f32 / rende_por_ciclo(t_madeira);
+    let madeira = ciclos_madeira * crate::constants::COLETA_CICLO_ARVORE_S;
     // O aço vem de PEDRA, e a pedra do tier da faixa.
-    let tier = cor_do_nivel(nivel).clamp(1, 4) as usize;
-    let pedra = material_qtd(nivel) as f32 * crate::constants::COLETA_CICLO_PEDRA_S[tier];
+    let t_pedra = cor_do_nivel(nivel).clamp(1, 4);
+    let ciclos_pedra = material_qtd(nivel) as f32 / rende_por_ciclo(t_pedra);
+    let pedra = ciclos_pedra * crate::constants::COLETA_CICLO_PEDRA_S[t_pedra as usize];
     madeira + pedra
+}
+
+/// Quanto um nó de coleta daquele tier rende POR CICLO, em média.
+///
+/// ⚠️ ESTE NÚMERO CORRIGE UM ERRO. A primeira versão do modelo supunha UM item
+/// por ciclo, e a suposição estava escrita como tal — mas estava errada por um
+/// fator de quatro, e o guarda inteiro media uma torneira que não existe.
+///
+/// O número de verdade está no seed de `farm_node_drops`
+/// (`persistence.rs`), com a regra escrita ao lado: `qty_base = 2 + tier` e
+/// um extra de 0 a 2. A média é, portanto, `3 + tier`.
+///
+/// Fica aqui como espelho por um motivo chato: a tabela real mora numa função
+/// async do crate `server`, que este crate não enxerga. Espelho mente com o
+/// tempo, então quem mexer num dos dois tem que mexer no outro — é o mesmo
+/// arranjo do simulador da escada, e vale o mesmo cuidado.
+pub fn rende_por_ciclo(tier: u8) -> f32 {
+    3.0 + tier.clamp(1, 4) as f32
+}
+
+/// O tier (1-4) da madeira daquele nível, na regra do loot.
+pub fn tier_da_madeira(nivel: u32) -> u8 {
+    match nivel {
+        0..=15 => 1,
+        16..=30 => 2,
+        31..=50 => 3,
+        _ => 4,
+    }
 }
 
 /// Segundos de uma corrida do Porão, no ritmo que o próprio jogo chama de bom.
@@ -444,10 +497,14 @@ mod testes {
                 "{}: a chave custa só {coleta:.0}s de coleta",
                 c.nome
             );
-            // 2. NEM PODE SER UMA PAREDE. Mais de dez minutos juntando pra dez
-            //    minutos de dungeon e o conteúdo vira lição de casa.
+            // 2. NEM PODE SER UMA PAREDE. O teto era 600s e subiu pra 720 em
+            //    29/09/2026, quando o dono escolheu a forma "keys cost ~4x,
+            //    chest gold UNCHANGED" entre as quatro que seguravam a
+            //    torneira. Nessa forma a coleta DOMINA de propósito — 11
+            //    minutos juntando pros 6 de dungeon no topo da escada —, e um
+            //    teto de 10 minutos proibiria a própria decisão.
             assert!(
-                coleta <= 600.0,
+                coleta <= 720.0,
                 "{}: a chave custa {coleta:.0}s de coleta, virou parede",
                 c.nome
             );
@@ -561,6 +618,30 @@ mod testes {
             let k = chave_de(c).unwrap();
             assert!(vistas.insert(k), "a chave {k} abre mais de um Porão");
             assert_eq!(porao_da_chave(k).map(|o| o.id), Some(c.id));
+        }
+    }
+
+    /// A CHAVE TEM QUE CABER NA BOLSA.
+    ///
+    /// A madeira empilha até 999 (`persistence`, `stack: 999`), e a chave do
+    /// Thunder Vault pede 1187 — mais de uma pilha cheia. Isso é aceitável, e
+    /// está aqui escrito pra ser uma decisão e não uma surpresa: a receita
+    /// ocupa DUAS vagas de madeira, e o `tirar_item` do servidor já varre
+    /// várias vagas. O que não pode é passar de um punhado de vagas, senão a
+    /// bolsa inteira vira depósito de uma chave só.
+    #[test]
+    fn a_chave_nao_toma_a_bolsa_inteira() {
+        const PILHA: u32 = 999;
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let r = receita_de(c).unwrap();
+            let vagas = r.madeira_qtd.div_ceil(PILHA) + r.material_qtd.div_ceil(PILHA);
+            assert!(
+                vagas <= 4,
+                "{}: a receita ocupa {vagas} vagas de bolsa ({} madeira + {} aço)",
+                c.nome,
+                r.madeira_qtd,
+                r.material_qtd
+            );
         }
     }
 }

@@ -2891,6 +2891,45 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             wis: (0, 0),
         });
     }
+    // AS CHAVES DE PORÃO saem do catálogo de dungeons, e não escritas a mão:
+    // Porão novo em `dungeon::CONTEUDOS` é chave nova aqui, sozinha. Foi por
+    // isso que o id da chave deixou de depender da ORDEM da lista
+    // (`shared::porao::chave_de`) — ordem muda, id de item na bolsa não pode.
+    //
+    // `sell: 0` DE PROPÓSITO, e é a decisão mais importante desta linha. A
+    // chave se fabrica com madeira e aço, que se junta do chão; se o NPC
+    // comprasse chave, o caminho "coletar → fabricar → vender" viraria uma
+    // torneira de ouro que nem precisa entrar na dungeon. Vender pro NPC é o
+    // vazamento; trocar entre jogadores no mercado continua valendo, que é o
+    // que o dono pediu.
+    for c in shared::dungeon::CONTEUDOS
+        .iter()
+        .filter(|c| c.tipo == shared::dungeon::Tipo::Porao)
+    {
+        let Some(id) = shared::porao::chave_de(c) else {
+            continue;
+        };
+        // O nome vive tanto quanto o processo: o seed roda uma vez na subida.
+        let nome: &'static str = Box::leak(format!("{} Key", c.nome).into_boxed_str());
+        seed.push(S {
+            id: id as i32,
+            name: nome,
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: c.nivel_min as i32,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        });
+    }
     for (i, (_, nome)) in shared::aparencia::CHAPEUS.iter().enumerate() {
         seed.push(S {
             id: (shared::aparencia::CHAPEU_BASE + i as u16) as i32,
