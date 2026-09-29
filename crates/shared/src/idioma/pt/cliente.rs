@@ -968,20 +968,20 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Switching and leaving do not pause the clock.", "Trocar e sair não pausam o relógio."),
     ("Enter — {de_graca} free + {} pass", "Entrar — {de_graca} grátis + {} passe"),
     (
-        "Seu tempo continua correndo fora da ilha.",
         "Your time keeps running while you are off the island.",
+        "Seu tempo continua correndo fora da ilha.",
     ),
     (
-        "Cada entrada vale 30 min. As grátis voltam às 4h.",
         "Each entry is worth 30 min. The free ones come back at 4am.",
+        "Cada entrada vale 30 min. As grátis voltam às 4h.",
     ),
     (
-        "Sete ilhotas por pontes · PvP aberto · morrer volta à chegada",
         "Seven islets joined by bridges · PvP open · dying sends you back to the landing",
+        "Sete ilhotas por pontes · PvP aberto · morrer volta à chegada",
     ),
     (
-        "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes.",
         "No entry left: the 3 free ones come back at 4am, and passes drop from bosses.",
+        "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes.",
     ),
     // ──────────────────────── cliente: o laço principal e o login ────────────────────────
     ("Shop", "Loja"),
@@ -1860,8 +1860,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     // há como saber onde um termina e o outro começa. A forma mais longa vem
     // primeiro porque tem mais texto fixo.
     (
-        "Grátis hoje {}/{}  ·  Passes {}  ·  resta {}:{}",
         "Free today {}/{}  ·  Passes {}  ·  {}:{} left",
+        "Grátis hoje {}/{}  ·  Passes {}  ·  resta {}:{}",
     ),
     ("Free today {}/{}  ·  Passes {}", "Grátis hoje {}/{}  ·  Passes {}"),
     // Chegaram DEPOIS da varredura, com a caixa de grupo no rastreador. É o

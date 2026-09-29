@@ -40,15 +40,21 @@ pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
     format!("{nome} ×{}", p.qtd)
 }
 
-fn rotulo_curto(p: &Premio) -> String {
+/// O nome e a QUANTIDADE separados, porque o cartao desenha os dois em pontas
+/// opostas: nome encostado no icone, numero encostado na borda direita.
+///
+/// Junto num texto so' eles brigavam pela mesma largura e quem perdia era o
+/// fim da frase — "Darksteel ×15,0…", que esconde justamente o que o jogador
+/// quer saber. Separados, o numero nunca some e so' o nome encurta.
+fn rotulo_curto(p: &Premio) -> (&'static str, String) {
     use shared::item_id::*;
     let nome = match p.item_id {
         pr::ENERGIA => "Energy", pr::OURO => "Gold",
-        PERGAMINHO_INVOCA_PET => "Pet Summ.", PERGAMINHO_INVOCA_MONTARIA => "Mount Summ.",
-        PASSE_MAGICO => "Magic Island", COPPER => "Copper", DARKSTEEL => "Darksteel",
-        GLITTERING_POWDER => "Shimmering Dust", _ => "Item",
+        PERGAMINHO_INVOCA_PET => "Pet Scroll", PERGAMINHO_INVOCA_MONTARIA => "Mount Scroll",
+        PASSE_MAGICO => "Magic Pass", COPPER => "Copper", DARKSTEEL => "Darksteel",
+        GLITTERING_POWDER => "Dust", _ => "Item",
     };
-    format!("{} ×{}", nome, crate::economia::milhar(p.qtd as u64))
+    (nome, format!("×{}", crate::economia::milhar(p.qtd as u64)))
 }
 
 /// "5h 12m" / "12m".
@@ -152,8 +158,16 @@ impl PresencaUi {
         }
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let w = (780.0 * f).min(seguro.w - 16.0);
-        let h = (640.0 * f).min(seguro.h - 16.0);
+        // MAIS LARGO E MENOS ALTO QUE ANTES.
+        //
+        // Era 780x640 com o cartao limitado a 1,15x a propria largura, e a
+        // conta saia ao contrario do que o olho precisa: sobrava altura (um
+        // cartao de um premio so' usava o terco de cima e deixava o resto
+        // vazio) e faltava largura, onde o rotulo cabia em 122 px e virava
+        // "Darksteel …". Nenhum premio dava pra ler, que e' a unica coisa que
+        // o calendario tem pra dizer.
+        let w = (940.0 * f).min(seguro.w - 16.0);
+        let h = (560.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
@@ -245,8 +259,11 @@ impl PresencaUi {
         let vao = 8.0 * f;
         let rodape = 96.0 * f;
         let cw = (p.w - 40.0 * f - vao * (COLUNAS as f32 - 1.0)) / COLUNAS as f32;
+        // 0,80 e nao 1,15: o cartao passa a ser mais LARGO que alto. Tres
+        // premios (o dia 28) ainda cabem — sao 22 px de cabecalho mais tres
+        // linhas de 25.
         let ch =
-            ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 1.15);
+            ((p.y + p.h - rodape - y - vao * (linhas as f32 - 1.0)) / linhas as f32).min(cw * 0.80);
         let proximo = cal.resgatados as usize;
         let mut dica: Option<(Rect, String)> = None;
         for (i, dia) in cal.grade.iter().enumerate() {
@@ -279,17 +296,23 @@ impl PresencaUi {
             let linha = ((r.h - 23.0 * f) / premios.len().max(1) as f32).min(25.0 * f);
             for (j, pp) in premios.iter().enumerate() {
                 let yy = r.y + 22.0 * f + j as f32 * linha;
-                let lado = (linha - 3.0 * f).min(22.0 * f);
-                let ic = Rect::new(r.x + 4.0 * f, yy, lado, lado);
+                let lado = (linha - 3.0 * f).min(18.0 * f);
+                let ic = Rect::new(r.x + 3.0 * f, yy, lado, lado);
                 if pp.item_id == pr::ENERGIA {
                     estilo::icone_energia(ic.center(), lado * 0.5);
                 } else {
                     crate::icones::icone_com_3d(if pp.item_id == pr::OURO { shared::item_id::GOLD } else { pp.item_id }, ic, None, None, Some((vox, solido)));
                 }
-                let rotulo = rotulo_curto(pp);
-                estilo::texto_ajustado(&rotulo, ic.x + lado + 3.0 * f, yy + lado * 0.8,
-                    r.w - lado - 13.0 * f, if marco { 12 } else { 11 },
-                    if marco { estilo::OURO } else { estilo::TEXTO });
+                let (nome, qtd) = rotulo_curto(pp);
+                let tam = if marco { 12 } else { 11 };
+                let cor = if marco { estilo::OURO } else { estilo::TEXTO };
+                let ty = yy + lado * 0.8;
+                // O numero primeiro, colado na direita: ele tem largura fixa e
+                // e' o que nao pode sumir. O nome fica com o que sobrar.
+                let wq = estilo::medir(&qtd, tam);
+                estilo::texto(r.x + r.w - 6.0 * f - wq, ty, &qtd, tam, cor);
+                let xn = ic.x + lado + 3.0 * f;
+                estilo::texto_ajustado(nome, xn, ty, r.x + r.w - 10.0 * f - wq - xn, tam, cor);
             }
             if (i as u8) < cal.resgatados {
                 estilo::ret_arredondado(r, estilo::RAIO_PEQUENO, Color::new(0.0, 0.0, 0.0, 0.55));
@@ -366,6 +389,45 @@ impl PresencaUi {
             estilo::tooltip(r, &t, true);
         }
         saida
+    }
+}
+
+/// Previa do calendario de presenca (`MMO_PREVIA_PRESENCA=1`; PNGs em
+/// `MMO_PREVIA_SAIDA`).
+///
+/// Dois estados, porque sao os dois que o jogador ve': com premio pra resgatar
+/// hoje e sem. Uma captura so' nao mostra o botao nos dois modos.
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-presenca-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let vox = crate::vox::VoxCache::default();
+    let solido = crate::render3d::material_solido();
+    let nomes: HashMap<u16, String> = HashMap::new();
+    for (nome, pode) in [("presenca-com-resgate", true), ("presenca-sem-resgate", false)] {
+        let mut ui = PresencaUi::default();
+        let mut e = shared::presenca::DadosPresenca::default()
+            .estado(1_789_000_000, pr::EVENTOS);
+        for c in &mut e.calendarios {
+            c.pode_hoje = pode;
+        }
+        ui.estado = Some(e);
+        ui.aberto = true;
+        ui.ultimo = Some("Experience Potion x2".into());
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+            ui.desenha(&nomes, 1_789_000_000, &vox, &solido);
+            unsafe { get_internal_gl().flush() };
+            rt.texture
+                .get_texture_data()
+                .export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
     }
 }
 

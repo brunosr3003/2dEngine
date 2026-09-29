@@ -221,17 +221,9 @@ fn botao(r: Rect, texto: &str, ativo: bool) -> bool {
     ativo && sobre && crate::foco::clique()
 }
 
-/// 1200 -> "1.200".
+/// 1200 -> "1.200" em pt, "1,200" em en.
 pub fn milhar(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
-            out.push('.');
-        }
-        out.push(c);
-    }
-    out
+    shared::idioma::milhar(n)
 }
 
 #[cfg(test)]
@@ -273,9 +265,9 @@ mod testes {
         );
         assert_eq!(
             Morte::rotulo_recuperar(&m(1, 1, 1200), 0),
-            "Recover XP · 1.200 gold"
+            "Recover XP · 1,200 gold"
         );
-        assert_eq!(milhar(1234567), "1.234.567");
+        assert_eq!(milhar(1234567), "1,234,567");
         assert_eq!(milhar(999), "999");
     }
 

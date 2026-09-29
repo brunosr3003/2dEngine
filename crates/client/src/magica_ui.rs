@@ -19,6 +19,14 @@ use crate::ui;
 /// A janela, em unidades de `fator_texto`. `escala_do_painel` encolhe isto
 /// até caber na tela — e era o passo que faltava.
 const LARGURA: f32 = 460.0;
+/// NAO BAIXAR SEM MEXER NO RODAPE JUNTO.
+///
+/// Tentado 380 -> 344 em 29/09/2026 pra fechar o vao entre a linha do saldo e
+/// os botoes. O vao fecha, mas o rodape e' ancorado EMBAIXO: encolher a janela
+/// sobe os botoes por cima da lista de ilhotas, e "Islet of the Colossus" e
+/// "Islet of Spoils" ficam atras dos botoes I/II/III. Os testes de layout daqui
+/// passaram assim mesmo — eles cuidam da tarja e das bordas, nao da lista
+/// contra os botoes —, entao quem for tentar de novo confere na imagem.
 const ALTURA: f32 = 380.0;
 
 const OURO: Color = Color::new(0.93, 0.76, 0.33, 1.0);
@@ -543,7 +551,7 @@ impl MagicaUi {
         estilo::texto(
             x,
             p.y + 54.0 * f,
-            "Sete ilhotas por pontes · PvP aberto · morrer volta à chegada",
+            "Seven islets joined by bridges · PvP open · dying sends you back to the landing",
             13,
             SUAVE,
         );
@@ -724,11 +732,11 @@ impl MagicaUi {
                 rod.x,
                 rod.y + 96.0 * f,
                 if retomar {
-                    "Seu tempo continua correndo fora da ilha."
+                    "Your time keeps running while you are off the island."
                 } else if pode {
-                    "Cada entrada vale 30 min. As grátis voltam às 4h."
+                    "Each entry is worth 30 min. The free ones come back at 4am."
                 } else {
-                    "Sem entrada: as 3 grátis voltam às 4h, e o passe cai de chefes."
+                    "No entry left: the 3 free ones come back at 4am, and passes drop from bosses."
                 },
                 12,
                 SUAVE,
@@ -742,12 +750,12 @@ impl MagicaUi {
             x,
             saldo_y,
             &format!(
-                "Grátis hoje {}/{}  ·  Passes {}{}",
+                "Free today {}/{}  ·  Passes {}{}",
                 e.gratis,
                 shared::magica::GRATIS_POR_DIA,
                 e.passes,
                 if resta > 0 {
-                    format!("  ·  resta {}:{:02}", resta / 60, resta % 60)
+                    format!("  ·  {}:{:02} left", resta / 60, resta % 60)
                 } else {
                     String::new()
                 }

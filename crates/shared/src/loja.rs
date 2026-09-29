@@ -610,18 +610,12 @@ impl Produto {
 ///
 /// The currency stays R$ in both: the price is in reais whoever is reading.
 pub fn preco_brl(centavos: u32) -> String {
-    let (milhar, decimal) = match crate::idioma::atual() {
-        crate::idioma::Idioma::Pt => ('.', ','),
-        crate::idioma::Idioma::En => (',', '.'),
-    };
-    let reais = centavos / 100;
+    // A regra dos dois separadores mora em `idioma::separadores`, e nao aqui:
+    // `bolsa::milhar` e `morte::milhar` tinham a propria copia, com o ponto
+    // fixo, e por isso o ingles mostrava "power 2.708".
+    let (_, decimal) = crate::idioma::separadores();
     let c = centavos % 100;
-    let mut r = reais.to_string();
-    let mut i = r.len() as i32 - 3;
-    while i > 0 {
-        r.insert(i as usize, milhar);
-        i -= 3;
-    }
+    let r = crate::idioma::milhar((centavos / 100) as u64);
     format!("R$ {r}{decimal}{c:02}")
 }
 

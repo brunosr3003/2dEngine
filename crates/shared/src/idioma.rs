@@ -198,6 +198,49 @@ pub fn tr_f_em(idioma: Idioma, s: &str) -> Cow<'_, str> {
     tr_em(idioma, s)
 }
 
+/// O separador de MILHAR e o DECIMAL do idioma em uso, nesta ordem.
+///
+/// Os dois andam juntos e por isso saem da mesma funcao: pt escreve 1.234,56 e
+/// en escreve 1,234.56. Trocar so' um foi exatamente como nasceu o
+/// `R$ 1.234.56` que `loja::preco_brl` conta — o mesmo sinal valendo milhar e
+/// centavo na mesma linha.
+pub fn separadores() -> (char, char) {
+    separadores_em(atual())
+}
+
+/// O mesmo, com o idioma dito na mao.
+///
+/// Existe pelo motivo que `tr_em` existe: o idioma atual e' um global do
+/// processo, e um teste que mexe nele corre junto com todos os outros do
+/// binario. Perguntar explicitamente e' o unico jeito de prender os dois
+/// idiomas num teste so'.
+pub fn separadores_em(idioma: Idioma) -> (char, char) {
+    match idioma {
+        Idioma::Pt => ('.', ','),
+        Idioma::En => (',', '.'),
+    }
+}
+
+/// 1234567 -> "1.234.567" em pt, "1,234,567" em en.
+///
+/// Nao e' frase de dicionario: o separador mora DENTRO do numero, e verbete
+/// nenhum alcanca ele.
+pub fn milhar(v: u64) -> String {
+    milhar_em(atual(), v)
+}
+
+/// O mesmo, com o idioma dito na mao. Ver `separadores_em`.
+pub fn milhar_em(idioma: Idioma, v: u64) -> String {
+    let (milhar, _) = separadores_em(idioma);
+    let mut r = v.to_string();
+    let mut i = r.len() as i32 - 3;
+    while i > 0 {
+        r.insert(i as usize, milhar);
+        i -= 3;
+    }
+    r
+}
+
 /// Traduz só se houver verbete, e diz quando não houve.
 ///
 /// É o que a varredura de largura e os testes usam pra separar "está em
@@ -547,6 +590,33 @@ mod testes {
         assert_eq!(tr_em(Idioma::Pt, "Bolsa"), "Bolsa");
         // Nem passa pelo dicionário: frase que não existe sai igual.
         assert_eq!(tr_em(Idioma::Pt, "frase que ninguém escreveu"), "frase que ninguém escreveu");
+    }
+
+    /// OS DOIS SEPARADORES ANDAM JUNTOS, e cada idioma tem o seu.
+    ///
+    /// `bolsa::milhar` e `morte::milhar` tinham cada um a sua copia com o ponto
+    /// FIXO, entao o ingles mostrava "power 2.708" — dois inteiros e sete
+    /// decimos, onde o jogo queria dizer dois mil setecentos e oito. Os testes
+    /// daquelas copias chegaram a cravar `"Recover XP · 1.200 gold"`: frase em
+    /// ingles com pontuacao portuguesa, o defeito escrito como se fosse regra.
+    ///
+    /// Pergunta pelos dois idiomas de proposito: o idioma atual e' um global do
+    /// processo, e um teste que o troca corre junto com o resto do binario.
+    #[test]
+    fn cada_idioma_pontua_o_numero_do_seu_jeito() {
+        assert_eq!(milhar_em(Idioma::En, 2708), "2,708");
+        assert_eq!(milhar_em(Idioma::Pt, 2708), "2.708");
+        assert_eq!(milhar_em(Idioma::En, 1_234_567), "1,234,567");
+        assert_eq!(milhar_em(Idioma::Pt, 1_234_567), "1.234.567");
+        // Curto demais pra separador nenhum: os dois dizem a mesma coisa.
+        for i in [Idioma::En, Idioma::Pt] {
+            assert_eq!(milhar_em(i, 12), "12");
+            assert_eq!(milhar_em(i, 999), "999");
+        }
+        // O decimal e' o OUTRO em cada idioma — trocar so' um foi como nasceu
+        // o `R$ 1.234.56`, com o mesmo sinal valendo milhar e centavo.
+        assert_eq!(separadores_em(Idioma::En), (',', '.'));
+        assert_eq!(separadores_em(Idioma::Pt), ('.', ','));
     }
 
     #[test]

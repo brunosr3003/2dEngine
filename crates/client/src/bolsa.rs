@@ -291,23 +291,19 @@ pub(crate) fn curta(q: u32) -> String {
     if q >= 10_000 {
         format!("{}k", q / 1000)
     } else if q >= 1000 {
-        format!("{:.1}k", q as f32 / 1000.0).replace('.', ",")
+        // O decimal do idioma, e nao a virgula fixa: 1,5k em pt e 1.5k em en.
+        format!("{:.1}k", q as f32 / 1000.0).replace('.', &shared::idioma::separadores().1.to_string())
     } else {
         q.to_string()
     }
 }
 
-/// 1234567 -> "1.234.567".
+/// 1234567 -> "1.234.567" em pt, "1,234,567" em en.
+///
+/// O ponto era fixo aqui, entao o ingles lia "power 2.708" como dois inteiros
+/// e sete decimos. Quem sabe a pontuacao de cada idioma e' `idioma`.
 pub(crate) fn milhar(v: u64) -> String {
-    let s = v.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
-            out.push('.');
-        }
-        out.push(c);
-    }
-    out
+    shared::idioma::milhar(v)
 }
 
 /// Primeiro espaco livre da bolsa, contando os que o servidor ainda nem
@@ -2007,9 +2003,9 @@ mod testes {
     #[test]
     fn numeros_cabem_na_celula() {
         assert_eq!(curta(999), "999");
-        assert_eq!(curta(5226), "5,2k");
+        assert_eq!(curta(5226), "5.2k");
         assert_eq!(curta(12_345), "12k");
-        assert_eq!(milhar(1_234_567), "1.234.567");
+        assert_eq!(milhar(1_234_567), "1,234,567");
         assert_eq!(milhar(12), "12");
     }
 

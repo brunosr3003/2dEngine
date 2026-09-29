@@ -642,6 +642,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PRESENCA").is_ok() {
+        presenca_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_MAGICA").is_ok() {
         magica_ui::previa().await;
         return;
