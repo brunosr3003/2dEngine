@@ -1969,6 +1969,13 @@ pub struct Session {
     pub allocated_points: [u32; shared::STAT_COUNT],
     /// Marca que precisa enviar StatPointsUpdate no proximo tick.
     pub stat_points_dirty: bool,
+    /// Subiu de nivel e a PLACA dos outros ainda nao sabe.
+    ///
+    /// A placa em cima da cabeca le' `EntityMeta::nivel`, e a meta sai UMA VEZ,
+    /// quando a entidade entra na visao de alguem. Sem forcar o reenvio o
+    /// numero so' mudava quando a entidade reentrava na visao — na pratica, no
+    /// relog. `send_snapshots` consome esta marca.
+    pub nivel_mudou: bool,
     /// Ultimo level conhecido pra detectar level-up.
     pub last_level: u32,
     /// Inventario do jogador. Tamanho fixo = shared::INVENTORY_SLOTS.
@@ -2342,6 +2349,8 @@ impl Session {
                 .skill_points_earned
                 .saturating_add(gained * shared::SP_PER_LEVEL);
             self.skills_dirty = true;
+            // A placa dos OUTROS (e a dele) vem da meta, que nao sai por tick.
+            self.nivel_mudou = true;
             tracing::info!(
                 "{} subiu pra L{} (+{} pontos livres, +{} SP)",
                 self.name,
@@ -7369,6 +7378,7 @@ impl GameWorld {
                 unspent_points: 0,
                 allocated_points: [0; shared::STAT_COUNT],
                 stat_points_dirty: false,
+                nivel_mudou: false,
                 last_level: 1,
                 mp_current: 0.0,
                 mp_last_sent: 0,
@@ -12988,6 +12998,21 @@ impl GameWorld {
         if !self.manda_estado_neste_tick() {
             return;
         }
+        // QUEM SUBIU DE NIVEL PRECISA DE META NOVA.
+        //
+        // `EntityMeta` sai uma vez, quando a entidade entra na visao, e e' de
+        // la' que a placa tira o "Lv N". Apagar o `last_sent` forca o reenvio a
+        // quem ja' esta' vendo — o mesmo caminho da aparencia e do PK.
+        let subiram: Vec<EntityId> = self
+            .sessions
+            .values_mut()
+            .filter_map(|s| std::mem::take(&mut s.nivel_mudou).then_some(s.entity_id))
+            .collect();
+        for s in self.sessions.values_mut() {
+            for eid in &subiram {
+                s.last_sent.remove(eid);
+            }
+        }
         self.enviar_rotas();
         // Coleta attack_pending dos inimigos e zera pra mandar 1 vez só.
         // Junto vai a direção do golpe (attack_dir) — cliente seta facing
@@ -13208,7 +13233,15 @@ impl GameWorld {
             .sessions
             .values()
             .filter(|s| s.logged_in)
-            .map(|s| (s.entity_id, shared::level_of_xp(s.xp) as u16))
+            // A MESMA conta do level-up (`ganha_xp`) e do `ProgressUpdate`.
+            //
+            // Aqui era `level_of_xp` cru, sem o multiplicador. Com o mult
+            // ligado a placa mostrava um nivel e a ficha do jogador outro, pela
+            // mesma xp — e quem visse a placa leria o numero errado.
+            .map(|s| {
+                let n = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+                (s.entity_id, n as u16)
+            })
             .collect();
         let acao_de: HashMap<EntityId, u8> = {
             use shared::components::acao;
@@ -21764,6 +21797,51 @@ mod pk_tests {
         w.ecs.remove_one::<dungeon::Instancia>(outro).unwrap();
         w.send_snapshots();
         assert!(w.sessions[&ids[0]].last_sent.contains_key(&EntityId(901)));
+    }
+
+    /// A PLACA EM CIMA DA CABECA TEM QUE SEGUIR O LEVEL UP.
+    ///
+    /// O dono, em 29/09/2026: "player lvl in game in the name at top of
+    /// character is not right, it seems it just upload once per login, so if i
+    /// lvl up after login it stays the same lvl as before".
+    ///
+    /// E era isso mesmo: `EntityMeta` sai UMA VEZ, quando a entidade entra na
+    /// visao, e a placa le' o `nivel` de la'. Quem ja' estava vendo o jogador
+    /// nunca recebia meta nova, entao o numero congelava ate' o relog.
+    #[test]
+    fn subir_de_nivel_reenvia_a_placa_a_quem_ja_esta_vendo() {
+        let (mut w, ids, mut rx) = mundo();
+        w.send_snapshots();
+        while rx.try_recv().is_ok() {}
+
+        // O outro jogador sobe de nivel dando xp de verdade.
+        let antes = shared::level_of_xp_with_mult(
+            w.sessions[&ids[1]].xp,
+            crate::economy::xp_multiplier(),
+        );
+        w.sessions.get_mut(&ids[1]).unwrap().somar_xp(1_000_000);
+        let depois = shared::level_of_xp_with_mult(
+            w.sessions[&ids[1]].xp,
+            crate::economy::xp_multiplier(),
+        );
+        assert!(depois > antes, "a xp do teste nao subiu nivel nenhum");
+
+        w.send_snapshots();
+        let metas: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|m| match m {
+                ServerMessage::Snapshot { snapshot } => Some(snapshot.entered),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let placa = metas
+            .iter()
+            .find(|m| m.id == EntityId(901))
+            .unwrap_or_else(|| panic!("ninguem reenviou a meta de quem subiu de nivel"));
+        assert_eq!(
+            placa.nivel, depois as u16,
+            "a placa reenviada veio com o nivel velho"
+        );
     }
 
     #[test]
