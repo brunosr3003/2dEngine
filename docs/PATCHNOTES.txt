@@ -1,3 +1,15 @@
+29/09/2026 — As portas do Porão agora se acham, e o lag da tarde
+
+Três consertos, os três de coisas que vocês apontaram.
+
+O LAG DEPOIS DAS 16:00. Era o cliente, não o servidor: a versão das 16:08 regerava a ilha inteira duas vezes por quadro pra desenhar a porta do Porão — 49 ms de trabalho num quadro que tem 16. O jogo caiu pra 15-20 fps em toda plataforma. Isso já saiu na versão das 17:02; o contador de fps novo, no canto de baixo à esquerda, é pra vocês verem por conta própria.
+
+AS PORTAS NO MAPA. Elas estavam lá, mas dentro da lista de NPCs, que nasce fechada — ou seja, ninguém via. Agora cada porta é um marcador próprio, sempre visível, com o nome ao lado, e entra na lista "Go to" da lateral com o botão "Ir" e a distância, do mesmo jeito que a praça e o porto.
+
+O BOTÃO "IR ATÉ A PORTA". Não existia mesmo: ele só era desenhado pra quem estivesse dentro da Arena, justamente o único lugar onde o jogador de Porão não está. Agora, com um Porão selecionado na ilha dele, o botão aparece e leva você até a porta. Se a porta for em outra ilha, ele diz qual.
+
+Não é atualização obrigatória — o protocolo continua o 159 e o servidor não mudou. Mas sem ela as portas continuam escondidas no mapa e o botão continua sem aparecer.
+
 29/09/2026 — As portas do Porão no mapa, e uma que estava no mar
 
 Se você procurou o Porão e não achou, não era você. A porta da Caravana Afundada, no Ermo, tinha nascido dentro do oceano — dois metros abaixo da linha d'água, onde ninguém chega. Ela agora procura chão firme de verdade, e todas as cinco estão em terra.
