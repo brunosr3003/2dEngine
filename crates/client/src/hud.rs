@@ -75,7 +75,12 @@ mod fps {
 pub fn desenha_fps(z: &Zonas) {
     let f = fps::suave(get_fps() as f32);
     let s = layout::escala_ui();
-    let texto = format!("{f:.0} fps");
+    // O BUILD JUNTO DO FPS. O dono baixou "a versão nova" pelo Chrome, abriu o
+    // jogo e disse "it still the same" — e não havia NENHUM lugar na tela que
+    // dissesse qual build estava rodando. Sem isso, "atualizou ou não" vira
+    // adivinhação dos dois lados. É o número de `atualizacao::BUILD`, o mesmo
+    // do releases.json.
+    let texto = format!("{f:.0} fps · {}", crate::atualizacao::BUILD);
     let x = z.economia.x + 2.0 * s;
     let y = z.economia.y - 8.0 * s;
     // Sombra primeiro: o número cai por cima de terreno claro e escuro.
