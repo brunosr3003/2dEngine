@@ -40,6 +40,7 @@ mod habilidades_input;
 mod hud;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod porao_ui;
+mod previa_porta;
 mod previa_hud;
 mod hud_estilo;
 mod hud_layout;
@@ -644,6 +645,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_ILHAS_MAGICAS").is_ok() {
         terreno::previa_das_ilhas_magicas().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PORTA").is_ok() {
+        previa_porta::abrir(&render3d::material_solido()).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -5643,6 +5649,23 @@ impl Jogo {
             &vista,
             modo_sombras,
         );
+        // AS PORTAS DE PORÃO, antes de largar o material sólido.
+        //
+        // Ficam aqui e não entre as entidades porque não SÃO entidades: a
+        // posição é calculada (`shared::porao::porta_de`), não vem do
+        // servidor. Desenhar no chão de verdade é o que evita porta flutuando
+        // — a altura sai do mesmo terreno que o jogador pisa.
+        if let Some(terreno) = &self.terreno {
+            let cidade = porao_ui::cidade_da_zona(&self.zona_atual);
+            let eu = self.world.self_pos();
+            for (pos, _) in porao_ui::PoraoUi::porta_visivel(&self.zona_atual, cidade) {
+                let perto = eu.is_some_and(|e| {
+                    e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA
+                });
+                let y = terreno.altura(pos.x, pos.y);
+                render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), perto);
+            }
+        }
         self.solido.set_uniform("LuzDia", 0.0f32);
         gpu_estatica::define_luz_dia(0.0);
         gl_use_default_material();

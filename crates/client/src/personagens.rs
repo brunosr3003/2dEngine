@@ -1412,7 +1412,9 @@ mod tests {
                         && fonte.contains("MMO_PREVIA_APARENCIA")
                         && fonte.contains("#[cfg(all(debug_assertions, not(any(target_os = \"ios\", target_os = \"android\"))))]"))
                     || (p.file_name().is_some_and(|n| n == "terreno.rs")
-                        && fonte.contains("MMO_PREVIA_COLONIA"));
+                        && fonte.contains("MMO_PREVIA_COLONIA"))
+                    || (p.file_name().is_some_and(|n| n == "previa_porta.rs")
+                        && fonte.contains("MMO_PREVIA_PORTA"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(

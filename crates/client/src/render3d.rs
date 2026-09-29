@@ -1255,6 +1255,44 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
     }
 }
 
+/// A PORTA DO PORÃO: dois batentes de pedra, uma verga e o vão escuro.
+///
+/// Existe porque sem ela a dungeon física não é física: `porao_ui` avisa a 26
+/// unidades, mas quem nunca chegasse a 26 de uma porta nunca saberia que
+/// existe uma. Um conteúdo que só aparece pra quem já sabe onde ele está não
+/// está no cenário, está num menu com passos extras.
+///
+/// Desenhada com cubos, como o baú logo abaixo, e não com malha estática: são
+/// cinco portas no jogo inteiro, uma por ilha, e nenhuma delas se move.
+///
+/// `perto` acende: de longe é pedra parada, de perto o vão brilha e o anel
+/// pulsa — é o mesmo "isto aqui é interagível" que o baú já diz.
+pub fn desenha_porta_do_porao(p: Vec3, perto: bool) {
+    let t = get_time() as f32;
+    let pedra = Color::from_rgba(104, 106, 118, 255);
+    let pedra_escura = Color::from_rgba(72, 74, 84, 255);
+    // Os dois batentes.
+    for dx in [-0.9f32, 0.9] {
+        draw_cube(p + vec3(dx, 1.1, 0.0), vec3(0.42, 2.2, 0.5), None, pedra);
+    }
+    // A verga, atravessada em cima.
+    draw_cube(p + vec3(0.0, 2.32, 0.0), vec3(2.3, 0.44, 0.58), None, pedra_escura);
+    // O vão: escuro sempre, aceso quando dá pra abrir.
+    let vao = if perto {
+        let a = 0.45 + 0.25 * (t * 2.2).sin();
+        Color::new(0.95, 0.76, 0.35, a)
+    } else {
+        Color::new(0.05, 0.05, 0.08, 0.95)
+    };
+    draw_cube(p + vec3(0.0, 1.0, -0.12), vec3(1.38, 2.0, 0.12), None, vao);
+    // Dois degraus na frente, pra a porta assentar no chão em vez de flutuar.
+    draw_cube(p + vec3(0.0, 0.08, 0.62), vec3(2.0, 0.16, 0.5), None, pedra_escura);
+    // SEM ANEL NO CHÃO, e isso foi tentado. Um `draw_line_3d` aqui não
+    // desenha nada: esta função roda com o material SÓLIDO ligado, e a linha
+    // não passa por ele. Ficou visível na prévia — ou melhor, não ficou. Quem
+    // avisa que dá pra abrir é o vão aceso, que já basta e custa um cubo.
+}
+
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
 fn desenha_bau(p: Vec3) {
     let t = get_time() as f32;
