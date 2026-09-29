@@ -418,7 +418,7 @@ impl GameWorld {
         // this is the same sustain as before, but chosen, and paid for in mana
         // and cooldown.
         if skill.id == 5 {
-            let until = self.sim_time_s + crate::world::KATANA_THIRST_S;
+            let until = self.sim_time_s + shared::KATANA_THIRST_S;
             if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
                 s.thirst_until = s.thirst_until.max(until);
             }

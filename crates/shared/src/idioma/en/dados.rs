@@ -413,8 +413,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "A fanning volley aimed at the selected target.",
     ),
     (
-        "Atinge o alvo próximo e os inimigos ao redor dele.",
-        "Strikes the nearby target and the enemies around it.",
+        "Atinge o alvo e os inimigos ao redor, e rouba 25% do dano dos seus golpes por 3 segundos.",
+        "Strikes the target and the enemies around it, and steals 25% of your strike damage for 3 seconds.",
     ),
     ("Vigia", "Watchman"),
     // ─────────────────────── os itens (o nome que vem do banco) ───────────────────────

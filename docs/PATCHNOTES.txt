@@ -1,3 +1,15 @@
+28/09/2026 — A katana abre e fecha a luta
+
+A katana não rouba mais vida em todo golpe. Aquele roubo era a defesa inteira da classe, e por isso ela conseguia ser a mais rápida E a mais segura ao mesmo tempo: limpava a horda da Ilha Mágica no nível 60 com 86% de vida, acima da pistola e do anel, e ainda matando mais rápido que os dois.
+
+No lugar dele a katana ganha as pontas da luta. O saque contra um inimigo que ainda não te viu dá 2,5x de dano — aproxime-se por fora do alcance de visão dele e abra a luta com isso. E o golpe em alvo abaixo de 30% de vida dá 1,6x: a katana fecha o que começou.
+
+O roubo de vida voltou como janela da Dança: por 3 segundos depois do corte, seus golpes devolvem 25% do dano. A Dança agora tem um anel vermelho em volta do ícone enquanto a janela está aberta. É a mesma sustentação de antes, mas você escolhe a hora, e ela custa mana e recarga.
+
+Em troca, o dano contínuo da katana caiu: a Força alocada estava pagando duas vezes no ataque, e agora paga uma. As pistolas voltam a ser a maior de dano em alvo único, como sempre foi a intenção.
+
+Nenhuma outra classe mudou, e o protocolo continua o 156 — não é atualização obrigatória.
+
 28/09/2026 — Modo economia não para mais as suas skills
 
 No modo economia de energia o personagem parava de lançar TODAS as skills, inclusive a de cura. Sobravam o ataque básico e a poção — e a poção tem recarga de grupo. Era por isso que se aguentava jogando e se morria com a tela preta, no mesmo lugar e contra os mesmos bichos. O bloqueio de toque da tela preta estava levando a rotação automática junto com o dedo. Agora o AUTO segue lançando: skill de dano e, principalmente, a cura quando a vida cai. O mesmo valia com um painel grande aberto — abrir a bolsa no meio da luta também parava as suas skills, e também está resolvido.

@@ -955,8 +955,8 @@ fn estilo(c: Conjunto) -> (&'static str, &'static str) {
             "Lute na linha de frente com investidas, cortes amplos e uma barreira protetora.",
         ),
         Conjunto::Katana => (
-            "Cortes e mobilidade",
-            "Empunhe com as duas mãos e combine saques rápidos, cortes em área e ondas de energia.",
+            "Abre e fecha a luta",
+            "Empunhe com as duas mãos: o saque contra quem ainda não te viu dá 2,5x de dano, e o golpe em alvo abaixo de 30% de vida dá 1,6x. Em troca, o dano contínuo é menor que o das pistolas, e a vida só volta na janela da Dança.",
         ),
         Conjunto::Pistolas => (
             "Combate à distância",

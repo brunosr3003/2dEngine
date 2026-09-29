@@ -26,6 +26,21 @@ pub struct Habilidades {
     arrasto: Arrasto,
     tentar_apos: HashMap<u32, f64>,
     ultimo_auto: u32,
+    /// get_time() until the katana's THIRST window is open.
+    ///
+    /// The server owns the effect (`KATANA_THIRST_LIFESTEAL`); this is only
+    /// the clock to draw with. It is born from the PLAYER'S OWN Danca
+    /// `SkillImpactFx`, the same instant at which the server opens the
+    /// window — which is why this needed no new message and no
+    /// PROTOCOL_VERSION bump.
+    thirst_until: f64,
+}
+
+impl Habilidades {
+    /// Danca landed: open the lifesteal window.
+    pub fn open_thirst(&mut self) {
+        self.thirst_until = get_time() + shared::KATANA_THIRST_S as f64;
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -440,6 +455,23 @@ impl Habilidades {
             // Arte colorida da skill no disco da arma; o vetor so' se faltar.
             if !crate::icones_ui::skill(s.id, c, raio * 1.5, if livre { alfa } else { 0.30 }) {
                 estilo::icone(s.id, c, raio * 0.58, Color::new(cor.r, cor.g, cor.b, alfa));
+            }
+            // THIRST OPEN: a live red ring around Danca, shrinking with what
+            // is left of the window. It is the only signal the player gets
+            // that their strikes are giving health back right now.
+            if s.id == 5 {
+                let left = (self.thirst_until - agora).max(0.0);
+                if left > 0.0 {
+                    let f = (left as f32 / shared::KATANA_THIRST_S).min(1.0);
+                    estilo::arco(
+                        c,
+                        raio + 3.0,
+                        -std::f32::consts::FRAC_PI_2,
+                        f,
+                        3.0,
+                        Color::new(0.85, 0.15, 0.20, 0.95),
+                    );
+                }
             }
             if cd > 0.0 {
                 let f = (cd as f32 / s.espera_s.max(0.01)).min(1.0);

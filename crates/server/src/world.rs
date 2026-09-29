@@ -890,37 +890,6 @@ pub(crate) fn cancela_por_movimento(idade_s: f32, impacto_em: f32) -> bool {
     idade_s >= CARENCIA_DO_CANCEL_S && idade_s < impacto_em
 }
 
-/// THE KATANA OPENS AND CLOSES THE FIGHT.
-///
-/// THE PASSIVE LIFESTEAL IS GONE. It was 100% of the class's defence, which is
-/// how the katana managed to be the fastest AND the safest at the same time.
-/// Measured on the Ilha Magica horde (`metas_da_escada`, Ilhota) at level 60,
-/// the HP floor went from 18% with no lifesteal to 86% with the old 12% — no
-/// other number in the class moves it anywhere near that much. Against a BOSS
-/// it was already irrelevant: 4% or 0% give exactly the same line when dodging.
-///
-/// In its place the katana gets what no other set has — the FIRST strike.
-/// Against someone who has not seen the player yet, the draw multiplies by
-/// this.
-pub(crate) const KATANA_OPENER_MULT: f32 = 2.5;
-/// ...and the LAST one: below this fraction of health the target is within
-/// reach of the finishing blow.
-pub(crate) const EXECUTE_HP_THRESHOLD: f32 = 0.30;
-/// How much the finishing blow multiplies by.
-pub(crate) const KATANA_EXECUTE_MULT: f32 = 1.6;
-
-/// THIRST (Danca, skill 5): the window in which the katana steals life again.
-///
-/// It is the old lifesteal, but ACTIVE — it costs mana, it costs Danca's
-/// cooldown, and it costs picking the moment. The fraction is larger than the
-/// old 12% precisely because it is now worth a slice of the time rather than
-/// all of it. At 3s on a 15s cooldown that is ~20% uptime, roughly 5%
-/// effective; a 5s window measured out at ~8%, close enough to the old passive
-/// that the horde floor barely moved.
-pub(crate) const KATANA_THIRST_S: f32 = 3.0;
-/// How much the basic strike gives back while THIRST is open.
-pub(crate) const KATANA_THIRST_LIFESTEAL: f32 = 0.25;
-
 /// Intervalo do tiro das pistolas (antes 0,55 do arco antigo): quem nao anda
 /// ate' o bicho paga em cadencia.
 pub(crate) const CADENCIA_DAS_PISTOLAS_S: f32 = 0.65;
@@ -11742,7 +11711,7 @@ impl GameWorld {
                 }
                 (d, pct.clamp(0.0, 0.75))
             };
-            // THE KATANA OPENS AND CLOSES (`KATANA_OPENER_MULT`). Only on the
+            // THE KATANA OPENS AND CLOSES (`shared::KATANA_OPENER_MULT`). Only on the
             // basic melee strike — the same gate the lifesteal used. Multiplies
             // BEFORE mitigation: a bigger swing cuts through more defence,
             // which is what the ladder's subtraction means.
@@ -11760,12 +11729,12 @@ impl GameWorld {
                         .get::<&EnemyTag>(entity)
                         .is_ok_and(|t| t.ai_target.is_none())
                     {
-                        mult *= KATANA_OPENER_MULT;
+                        mult *= shared::KATANA_OPENER_MULT;
                     }
                     if self.ecs.get::<&Health>(entity).is_ok_and(|h| {
-                        h.max > 0 && (h.current as f32) < h.max as f32 * EXECUTE_HP_THRESHOLD
+                        h.max > 0 && (h.current as f32) < h.max as f32 * shared::EXECUTE_HP_THRESHOLD
                     }) {
-                        mult *= KATANA_EXECUTE_MULT;
+                        mult *= shared::KATANA_EXECUTE_MULT;
                     }
                     ((dmg as f32) * mult).round().max(1.0) as i32
                 } else {
@@ -11863,7 +11832,7 @@ impl GameWorld {
                 if thirsty {
                     self.pending_heals.push(PendingHeal {
                         target_net: attacker_id,
-                        amount: ((dmg as f32) * KATANA_THIRST_LIFESTEAL).round().max(1.0) as i32,
+                        amount: ((dmg as f32) * shared::KATANA_THIRST_LIFESTEAL).round().max(1.0) as i32,
                     });
                 }
             }

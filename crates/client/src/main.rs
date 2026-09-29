@@ -2139,6 +2139,11 @@ impl Jogo {
                 target_pos,
             } => {
                 sons::skill(skill_id, true, vec2(target_pos.x,target_pos.y), self.world.self_pos(), self.world.self_id == Some(caster_eid));
+                // MY Danca landed: the same instant the server opens the
+                // katana's THIRST lifesteal window.
+                if skill_id == 5 && self.world.self_id == Some(caster_eid) {
+                    self.habilidades.open_thirst();
+                }
                 self.habilidades.efeito(
                     skill_id,
                     caster_eid,

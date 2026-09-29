@@ -499,10 +499,10 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             if conjunto == Conjunto::Katana {
                 let mut mult = 1.0f32;
                 if !m.engaged {
-                    mult *= crate::world::KATANA_OPENER_MULT;
+                    mult *= shared::KATANA_OPENER_MULT;
                 }
-                if (m.hp as f32) < m.hp_max as f32 * crate::world::EXECUTE_HP_THRESHOLD {
-                    mult *= crate::world::KATANA_EXECUTE_MULT;
+                if (m.hp as f32) < m.hp_max as f32 * shared::EXECUTE_HP_THRESHOLD {
+                    mult *= shared::KATANA_EXECUTE_MULT;
                 }
                 bruto = ((bruto as f32) * mult).round().max(1.0) as i32;
             }
@@ -510,7 +510,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             // ...and it only steals life inside the THIRST window Danca opens.
             if conjunto == Conjunto::Katana && thirst_until > t {
                 *hp = (*hp
-                    + ((dmg as f32) * crate::world::KATANA_THIRST_LIFESTEAL)
+                    + ((dmg as f32) * shared::KATANA_THIRST_LIFESTEAL)
                         .round()
                         .max(1.0) as i32)
                     .min(hp_max);
@@ -544,7 +544,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             }
             // Danca (5) opens THIRST: the katana's lifesteal window.
             if s.id == 5 {
-                thirst_until = thirst_until.max(t + crate::world::KATANA_THIRST_S);
+                thirst_until = thirst_until.max(t + shared::KATANA_THIRST_S);
             }
             if s.dano > 0 {
                 let Some(a) = alvo_da_skill.filter(|a| mobs[*a].vivo) else {
@@ -1440,8 +1440,8 @@ pub(crate) fn duelar(
             if conjunto == Conjunto::Katana {
                 // NO opener: the boss sees the player from the first tick. The
                 // EXECUTE does apply, and it is what lets the katana CLOSE.
-                if (hp_chefe as f32) < hp_chefe_max as f32 * crate::world::EXECUTE_HP_THRESHOLD {
-                    bruto = ((bruto as f32) * crate::world::KATANA_EXECUTE_MULT)
+                if (hp_chefe as f32) < hp_chefe_max as f32 * shared::EXECUTE_HP_THRESHOLD {
+                    bruto = ((bruto as f32) * shared::KATANA_EXECUTE_MULT)
                         .round()
                         .max(1.0) as i32;
                 }
@@ -1449,7 +1449,7 @@ pub(crate) fn duelar(
             let dmg = dano_mitigado_por_subtracao(bruto, def_chefe);
             if conjunto == Conjunto::Katana && thirst_until > t {
                 hp = (hp
-                    + ((dmg as f32) * crate::world::KATANA_THIRST_LIFESTEAL)
+                    + ((dmg as f32) * shared::KATANA_THIRST_LIFESTEAL)
                         .round()
                         .max(1.0) as i32)
                     .min(hp_max);
@@ -1471,7 +1471,7 @@ pub(crate) fn duelar(
                 muralha_ate = t + s.duracao_efeito();
             }
             if s.id == 5 {
-                thirst_until = thirst_until.max(t + crate::world::KATANA_THIRST_S);
+                thirst_until = thirst_until.max(t + shared::KATANA_THIRST_S);
             }
             if s.dano > 0 {
                 hp_chefe -= dano_mitigado_por_subtracao(

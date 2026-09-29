@@ -1431,6 +1431,37 @@ pub const fn enemy_is_melee(kind: u16) -> bool {
 }
 
 /// Raio do golpe melee em tiles.
+/// THE KATANA OPENS AND CLOSES THE FIGHT.
+///
+/// THE PASSIVE LIFESTEAL IS GONE. It was 100% of the class's defence, which is
+/// how the katana managed to be the fastest AND the safest at the same time.
+/// Measured on the Ilha Magica horde (`metas_da_escada`, Ilhota) at level 60,
+/// the HP floor went from 18% with no lifesteal to 86% with the old 12% — no
+/// other number in the class moves it anywhere near that much. Against a BOSS
+/// it was already irrelevant: 4% or 0% give exactly the same line when dodging.
+///
+/// In its place the katana gets what no other set has — the FIRST strike.
+/// Against someone who has not seen the player yet, the draw multiplies by
+/// this.
+pub const KATANA_OPENER_MULT: f32 = 2.5;
+/// ...and the LAST one: below this fraction of health the target is within
+/// reach of the finishing blow.
+pub const EXECUTE_HP_THRESHOLD: f32 = 0.30;
+/// How much the finishing blow multiplies by.
+pub const KATANA_EXECUTE_MULT: f32 = 1.6;
+
+/// THIRST (Danca, skill 5): the window in which the katana steals life again.
+///
+/// It is the old lifesteal, but ACTIVE — it costs mana, it costs Danca's
+/// cooldown, and it costs picking the moment. The fraction is larger than the
+/// old 12% precisely because it is now worth a slice of the time rather than
+/// all of it. At 3s on a 15s cooldown that is ~20% uptime, roughly 5%
+/// effective; a 5s window measured out at ~8%, close enough to the old passive
+/// that the horde floor barely moved.
+pub const KATANA_THIRST_S: f32 = 3.0;
+/// How much the basic strike gives back while THIRST is open.
+pub const KATANA_THIRST_LIFESTEAL: f32 = 0.25;
+
 pub const MELEE_RANGE: f32 = 1.8;
 
 /// Alcance do auto-ataque com arma a distancia, em tiles.

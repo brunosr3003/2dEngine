@@ -1550,7 +1550,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("+  Novo personagem", "+  New character"),
     ("NOME DO PERSONAGEM", "CHARACTER NAME"),
     ("Combate à distância", "Ranged combat"),
-    ("Cortes e mobilidade", "Slashes and mobility"),
+    ("Abre e fecha a luta", "Opens and closes the fight"),
     ("Criando personagem…", "Creating the character…"),
     ("Escolha seu personagem", "Choose your character"),
     ("SEUS PERSONAGENS  ·  {}", "YOUR CHARACTERS  ·  {}"),
@@ -1596,8 +1596,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Restore your health, heal nearby allies and call down a magical impact on your target.",
     ),
     (
-        "Empunhe com as duas mãos e combine saques rápidos, cortes em área e ondas de energia.",
-        "Wield it two-handed and chain quick draws, sweeping slashes and waves of energy.",
+        "Empunhe com as duas mãos: o saque contra quem ainda não te viu dá 2,5x de dano, e o golpe em alvo abaixo de 30% de vida dá 1,6x. Em troca, o dano contínuo é menor que o das pistolas, e a vida só volta na janela da Dança.",
+        "Wield it two-handed: the draw against someone who has not seen you hits for 2.5x, and a strike on a target below 30% health for 1.6x. In exchange its sustained damage is lower than the pistols', and health only comes back inside Danca's window.",
     ),
     // ───────────────────────────────── cliente: pets ─────────────────────────────────
     ("MEUS PETS", "MY PETS"),

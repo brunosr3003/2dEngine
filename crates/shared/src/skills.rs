@@ -617,7 +617,7 @@ impl Skill {
             2 => "Corte amplo voltado para o alvo selecionado.",
             3 => "Reduz o dano recebido em 50% por 5 segundos.",
             4 => "Saca a katana e corta em linha até o alvo.",
-            5 => "Atinge o alvo próximo e os inimigos ao redor dele.",
+            5 => "Atinge o alvo e os inimigos ao redor, e rouba 25% do dano dos seus golpes por 3 segundos.",
             6 => "Uma onda cortante atinge o alvo selecionado.",
             7 => "Dispara um tiro poderoso no alvo selecionado.",
             8 => "Rajada em leque voltada para o alvo selecionado.",
