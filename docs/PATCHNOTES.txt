@@ -1,3 +1,15 @@
+29/09/2026 — A Ilha Mágica e o calendário de presença ficaram legíveis
+
+O painel da Ilha Mágica estava metade em português no meio de um jogo em inglês: "Sete ilhotas por pontes", "Grátis hoje 0/3 · resta 10:00". Eram frases que ficaram escritas em português no código depois que o jogo passou a nascer em inglês, e mais cinco verbetes do dicionário guardados ao contrário. Agora o painel inteiro fala um idioma só — o seu.
+
+O poder recomendado saía como "power 2.708", que em inglês se lê dois e sete décimos. O separador de milhar estava fixo em ponto, do jeito português, em três lugares diferentes do cliente. Agora cada idioma usa a pontuação dele: 2.708 em português, 2,708 em inglês. Vale para todo número grande do jogo — ouro, preço de slot, XP de recuperação.
+
+No calendário de presença nenhum prêmio dava para ler. "Energy ×5…", "Darksteel …", "Mount Su…": o nome era cortado no meio, que é justamente a única coisa que o calendário tem para dizer. A culpa era do formato do cartão, mais alto do que largo — um dia de um prêmio só usava o terço de cima e deixava o resto vazio, enquanto o texto brigava por espaço na horizontal.
+
+Agora o cartão é mais largo que alto, e o nome e a quantidade são escritos em pontas opostas em vez de virarem uma frase só. O número nunca some; quando falta espaço, encurta o nome. "Copper ×25,000" e "Energy ×15,000" aparecem inteiros.
+
+Nada mudou nas regras do jogo, e o protocolo continua o 157 — não é atualização obrigatória.
+
 29/09/2026 — A Ilha Mágica virou uma luta que dá pra aguentar
 
 As ilhotas de combate da Ilha Mágica tinham mobs demais, e não era só a conta: as cinco hordas de cada ilhota se sobrepõem de propósito, e elas estavam nascendo em cima umas das outras — dois grupos ocupando o mesmo pedaço de chão. Uma ilhota chegava a 76 bichos, e uma única pancada acordava 39 deles de uma vez. Não havia classe que segurasse isso.
