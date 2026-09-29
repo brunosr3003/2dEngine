@@ -6349,6 +6349,27 @@ impl Jogo {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
+        // DUNGEONS: O PRIMEIRO DOS PAINEIS A DESENHAR, LOGO O DE BAIXO.
+        //
+        // Isto ficava depois da bolsa, do mercado, das lojas, do social e do
+        // Menu, e em modo imediato quem desenha depois fica POR CIMA: a janela
+        // da dungeon tapava todos eles. O dono, em 29/09/2026: "dungeon hud is
+        // in front of every other hud, i dont want that, it should be behind".
+        //
+        // Aqui em cima ele e' o primeiro painel do quadro, entao todo o resto
+        // do HUD passa a cobri-lo.
+        {
+            let eu = self.personagem_atual.clone().unwrap_or_default();
+            let ctx = dungeon_ui::Contexto {
+                nomes: &self.bolsa.nomes,
+                palco: Some((&self.vox, &self.solido)),
+                ouro: self.bolsa.ouro,
+                eu: &eu,
+            };
+            for pedido in self.dungeon.desenha(&ctx, get_time()) {
+                self.envia(pedido);
+            }
+        }
         match self
             .mapa
             .desenha_grande(&self.world, nivel, &self.mundo, agora_unix)
@@ -6568,19 +6589,6 @@ impl Jogo {
         let agora_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
-        // Dungeons: HUD da instancia, fila, janela, resultado e pronto-check.
-        {
-            let eu = self.personagem_atual.clone().unwrap_or_default();
-            let ctx = dungeon_ui::Contexto {
-                nomes: &self.bolsa.nomes,
-                palco: Some((&self.vox, &self.solido)),
-                ouro: self.bolsa.ouro,
-                eu: &eu,
-            };
-            for pedido in self.dungeon.desenha(&ctx, get_time()) {
-                self.envia(pedido);
-            }
-        }
         // Calendario de presenca (icone do topo, Menu, ou sozinho no login).
         {
             let agora_unix = std::time::SystemTime::now()
