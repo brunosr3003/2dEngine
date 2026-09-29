@@ -1,29 +1,30 @@
-//! Auto coleta POR NO' (X ou o botao acima do COMBATE; botao direito abre a
-//! configuracao): o servidor aponta o no' vivo mais perto dos tipos marcados
-//! dentro do raio a partir de onde foi ligado; o personagem vai ate' ele,
-//! manda coletar e fica ate' esgotar; ai' pede o proximo. Sem no' no raio,
-//! espera o respawn sem sair da area ("Aguardando recursos…").
+//! Auto gathering BY NODE (X, or the button above COMBAT; right click opens
+//! the configuration): the server points at the nearest live node of the
+//! ticked types within the radius from where it was switched on; the
+//! character walks there, sends gather and stays until it runs out; then asks
+//! for the next. With no node in the radius, it waits for the respawn without
+//! leaving the area ("Waiting for resources…").
 //!
-//! Parado perto nao rende nada: a coleta e' do no' escolhido (docs/COLETA.md).
+//! Standing nearby yields nothing: gathering is from the chosen node (docs/COLETA.md).
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
 
 /// Perto disto do ponto de coleta, chegou.
 const CHEGOU: f32 = shared::COLETA_TOLERANCIA_CHEGADA;
-/// Pediu (no' ou coleta) e o servidor nao respondeu: pede de novo.
+/// Asked (for a node or to gather) and the server did not answer: ask again.
 const REPEDE_S: f64 = 4.0;
-/// Nada no raio: espera isso antes de perguntar de novo.
+/// Nothing in the radius: wait this long before asking again.
 const APOS_FALHA_S: f64 = 6.0;
 /// O servidor recusou a coleta (longe, esgotou no caminho): respiro curto.
 const APOS_RECUSA_S: f64 = 1.5;
-/// A viagem acabou longe do ponto: manda de novo depois disso.
+/// The travel ended far from the point: send again after this.
 const RELIGA_S: f64 = 1.5;
 
 #[derive(Debug, PartialEq)]
 pub enum Acao {
     Nada,
-    /// Pedir o no' mais perto dos tipos, a ate' `raio` de `centro`.
+    /// Ask for the nearest node of the types, within `raio` of `centro`.
     PedirNo {
         tipos: [bool; 5],
         energia: bool,
@@ -54,26 +55,27 @@ pub struct AutoColeta {
     pub tipos: [bool; 5],
     pub energia: bool,
     pub raio: f32,
-    /// Tipos da missao em curso: ignoram a configuracao.
-    /// Missao mandando: (tipos de corpo, aceita Energia). A Energia e' um
-    /// campo proprio porque ela nao e' um tier de `tipos` — e' um recurso a
-    /// parte, com passo de tutorial proprio.
+    /// Types of the quest in progress: they ignore the configuration.
+    /// A quest commanding: (body types, accepts Energy). Energy is its own
+    /// field because it is not a tier of `tipos` — it is a separate resource,
+    /// with its own tutorial step.
     forcados: Option<([bool; 5], bool)>,
-    /// Coleta de UM tipo em volta de um ponto (o "Ir" do mapa numa regiao).
+    /// Gathering of ONE type around a point (the map's "Go" on a region).
     pub filtro: Option<(u8, Vec2)>,
     etapa: Etapa,
-    /// (coluna, onde ficar, centro do no', tipo).
+    /// (column, where to stand, node's center, type).
     alvo: Option<(u32, Vec2, Vec2, u8)>,
     desde: f64,
-    /// "Nada está mudando" — ver `parado.rs`.
+    /// "Nothing is changing" — see `parado.rs`.
     parado: crate::parado::Parado,
     confirmou: bool,
     pub falhas: u32,
-    /// O servidor pausou por bolsa cheia: fica no no' e espera abrir espaco
-    /// (quem retoma e' o servidor, quando a bolsa muda).
+    /// The server paused for a full bag: it stays at the node and waits for space
+    /// (the server is what resumes, when the bag changes).
     bolsa_cheia: bool,
-    /// Configuracao: apanhou de bicho coletando, larga o no', mata o bicho e
-    /// volta a coletar. Salva nas preferencias; ligado por padrao.
+    /// Configuration: took a hit from a creature while gathering, drops the node,
+    /// kills the creature and goes back to gathering. Saved in the preferences;
+    /// on by default.
     pub defender: bool,
 }
 
@@ -107,14 +109,14 @@ pub fn pega_mouse() -> bool {
     retangulo().contains(Vec2::from(mouse_position()))
 }
 
-/// A engrenagem no canto do botao: abre a configuracao com toque ou clique
-/// esquerdo (no iOS nao ha' botao direito).
+/// The cog in the button's corner: opens the configuration with a touch or a
+/// left click (on iOS there is no right button).
 pub fn engrenagem() -> Rect {
     engrenagem_de(retangulo())
 }
 
-/// O canto superior direito do botao, dentro dele — nao cria retangulo novo
-/// no HUD (o teste de sobreposicao continua valendo) e nao cobre o miolo.
+/// The button's top right corner, inside it — it creates no new rectangle in
+/// the HUD (the overlap test still holds) and does not cover the middle.
 pub fn engrenagem_de(r: Rect) -> Rect {
     let t = (r.w * 0.32).max(22.0).min(r.w * 0.45);
     Rect::new(r.x + r.w - t, r.y, t, t)
@@ -125,13 +127,13 @@ impl AutoColeta {
         self.centro.is_some()
     }
 
-    /// Liga com a configuracao do jogador.
+    /// Switches on with the player's configuration.
     pub fn ligar(&mut self, p: Vec2, _agora: f64) {
         self.reinicia(Some(p));
         self.forcados = None;
     }
 
-    /// Liga pra uma missao: os tipos dela, nao os da configuracao.
+    /// Switches on for a quest: its types, not the configuration's.
     pub fn ligar_missao(&mut self, p: Vec2, tipos: [bool; 5], energia: bool, _agora: f64) {
         self.reinicia(Some(p));
         self.forcados = Some((tipos, energia));
@@ -153,8 +155,8 @@ impl AutoColeta {
         self.falhas = 0;
     }
 
-    /// Volta a procurar no' do zero, mantendo onde foi ligado, a missao e o
-    /// filtro. Depois de largar o no' pra se defender.
+    /// Goes back to looking for a node from scratch, keeping where it was
+    /// switched on, the quest and the filter. After dropping the node to defend itself.
     pub fn retomar(&mut self) {
         self.etapa = Etapa::Procurar;
         self.alvo = None;
@@ -162,14 +164,14 @@ impl AutoColeta {
         self.confirmou = false;
     }
 
-    /// Tipos que valem agora: os da missao, se houver.
+    /// The types that count now: the quest's, if there is one.
     pub fn tipos_efetivos(&self) -> [bool; 5] {
         self.forcados.map_or(self.tipos, |(t, _)| t)
     }
 
-    /// Aceita Energia agora? Com missao mandando, e' ela quem diz — o passo
-    /// do tutorial pede Energia e SO' Energia, e as outras missoes de coleta
-    /// nao podem gastar o veio do jogador sem ele mandar.
+    /// Accepts Energy now? With a quest commanding, it decides — the tutorial
+    /// step asks for Energy and ONLY Energy, and the other gathering quests
+    /// cannot spend the player's vein without them saying so.
     pub fn energia_efetiva(&self) -> bool {
         self.forcados.map_or(self.energia, |(_, e)| e)
     }
@@ -212,8 +214,8 @@ impl AutoColeta {
             return;
         }
         if self.etapa == Etapa::Coletando {
-            // Coletou e parou: o no' esgotou, vai pro proximo. Nem comecou:
-            // recusou (longe, esgotou no caminho) — respiro e procura outro.
+            // Gathered and stopped: the node ran out, move to the next. Did not even
+            // start: refused (too far, ran out on the way) — a breath and look for another.
             self.etapa = if self.confirmou {
                 Etapa::Procurar
             } else {
@@ -274,20 +276,19 @@ impl AutoColeta {
                 }
                 // TRAVADO CONTA MESMO "VIAJANDO".
                 //
-                // O dono: "auto missão de coleta, ele fica parado na frente
-                // da árvore". Era isto: o retry exigia a viagem DESLIGADA, e
-                // encostado no tronco ela segue ativa — então ele nunca
-                // tentava de novo e nunca chegava ao alcance de coleta.
+                // The owner: "auto gathering quest, he just stands in front of the
+                // tree". This was it: the retry required travel to be OFF, and leaning
+                // on the trunk it stays active — so it never tried again and never
+                // reached gathering range.
                 //
-                // Mesmo defeito, palavra por palavra, do `auto_missao.rs`.
-                // Ver `parado.rs`.
+                // The same defect, word for word, as `auto_missao.rs`. See `parado.rs`.
                 let travado = self.parado.travado(agora);
                 if (!viajando || travado) && agora - self.desde >= RELIGA_S {
                     self.desde = agora;
                     if travado {
                         self.parado.zera(agora);
-                        // Parado de verdade: o nó pode estar atrás do tronco.
-                        // Procura OUTRO em vez de insistir no mesmo.
+                        // Genuinely still: the node may be behind the trunk. Looks for ANOTHER
+                        // instead of insisting on the same one.
                         self.etapa = Etapa::Procurar;
                         return self.passo(eu, agora, viajando);
                     }
@@ -305,7 +306,7 @@ impl AutoColeta {
         }
     }
 
-    /// O botao. A tecla (X) so' aparece com Alt; o estado vai pra faixa unica.
+    /// The button. The key (X) only shows with Alt; the state goes to the single strip.
     pub fn desenha(&self) {
         let r = retangulo();
         let c = r.center();
@@ -355,7 +356,7 @@ impl AutoColeta {
         }
     }
 
-    /// O texto da faixa de estado, com a coleta ligada.
+    /// The status strip's text, with gathering on.
     pub fn faixa(&self, _eu: Option<Vec2>) -> Option<&'static str> {
         if !self.ativo() {
             return None;
@@ -370,13 +371,13 @@ impl AutoColeta {
     }
 }
 
-/// Os tipos que uma missao de coleta pede (0 madeira, 1..4 pedra). Missao que
-/// nao e' de coleta por no' aceita tudo.
-/// O que a missao manda coletar: (tipos de corpo, aceita Energia).
+/// The types a gathering quest asks for (0 wood, 1..4 stone). A quest that is
+/// not node gathering accepts everything.
+/// What the quest asks to gather: (body types, accepts Energy).
 ///
-/// O tutorial da Energia e' o unico que quer SO' Energia: mandar junto os
-/// troncos e as pedras faria o auto parar no primeiro toco do caminho e o
-/// passo nunca andaria.
+/// The Energy tutorial is the only one that wants ONLY Energy: sending the
+/// logs and stones along would make the auto stop at the first stump on the
+/// way and the step would never advance.
 pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
     use shared::quests::{objective_kind, tutorial};
     if def.obj_kind == objective_kind::TUTORIAL && matches!(def.obj_target,
@@ -386,7 +387,7 @@ pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
     if def.obj_kind != objective_kind::GATHER {
         return ([true; 5], true);
     }
-    // Missao de pedra/arvore nao gasta o veio de Energia do jogador.
+    // A stone/tree quest does not spend the player's Energy vein.
     (
         std::array::from_fn(|t| shared::quests::alvo_de_coleta::conta(def.obj_target, t as u8)),
         false,
@@ -397,9 +398,9 @@ pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
 mod tests {
     use super::*;
 
-    /// O tutorial da Energia quer SO' Energia: com tronco e pedra ligados o
-    /// auto parava no primeiro toco do caminho e o passo nunca andava. E o
-    /// contrario tambem vale — missao de pedra nao gasta o veio de Energia.
+    /// The Energy tutorial wants ONLY Energy: with logs and stone on, the auto
+    /// stopped at the first stump on the way and the step never advanced. And
+    /// the reverse holds too — a stone quest does not spend the Energy vein.
     #[test]
     fn a_missao_manda_no_que_o_auto_coleta() {
         use shared::quests::{objective_kind, tutorial};
@@ -414,12 +415,12 @@ mod tests {
         assert!(energia, "o passo pede Energia");
         assert!(!tipos.iter().any(|t| *t), "e nada mais: {tipos:?}");
 
-        // Tutorial de GESTO nao coleta nada em especial: fica com o padrao.
+        // A GESTURE tutorial gathers nothing in particular: it keeps the default.
         let (t_gesto, e_gesto) =
             tipos_da_missao(&def(objective_kind::TUTORIAL, tutorial::AUTO_COLETA));
         assert!(t_gesto.iter().all(|t| *t) && e_gesto);
 
-        // Missao de arvore: so' tronco, e sem Energia.
+        // A tree quest: logs only, and no Energy.
         let (t_arv, e_arv) = tipos_da_missao(&def(
             objective_kind::GATHER,
             shared::quests::alvo_de_coleta::ARVORE,
@@ -428,7 +429,7 @@ mod tests {
         assert!(!t_arv[1..].iter().any(|t| *t), "pedra nao conta");
         assert!(!e_arv, "missao de arvore nao gasta o veio de Energia");
 
-        // E o forcado manda mesmo com a configuracao dizendo o contrario.
+        // And the forced one commands even with the configuration saying otherwise.
         let mut a = AutoColeta::default();
         a.tipos = [true; 5];
         a.energia = true;
@@ -515,7 +516,7 @@ mod tests {
                 "coletando: fica"
             );
         }
-        // Esgotou: o servidor para, e o auto procura o proximo.
+        // Ran out: the server stops, and the auto looks for the next.
         a.estado_coleta(shared::protocol::COLETA_PARADA, false, 30.0);
         assert!(matches!(a.passo(onde, 30.1, false), Acao::PedirNo { .. }));
     }
@@ -535,7 +536,7 @@ mod tests {
             a.passo(Vec2::ZERO, 7.0, false),
             Acao::PedirNo { .. }
         ));
-        // Recusado ao chegar (sem ter coletado): respiro curto antes de pedir.
+        // Refused on arrival (without having gathered): a short breath before asking.
         a.no_recebido(Some((5, Vec2::ZERO, Vec2::X, 0)), 7.1);
         assert_eq!(a.passo(Vec2::ZERO, 7.2, false), Acao::Coletar(5));
         a.estado_coleta(shared::protocol::COLETA_PARADA, false, 7.3);
@@ -595,31 +596,31 @@ mod tests {
             }
         );
     }
-    /// PARADO NA FRENTE DA ÁRVORE NÃO É "INDO".
+    /// STANDING IN FRONT OF THE TREE IS NOT "GOING".
     ///
-    /// O dono: "auto missão de coleta, ele fica parado na frente da árvore".
-    /// O retry de caminhar até o nó só disparava com a viagem DESLIGADA, e
-    /// encostado no tronco ela segue ativa: o personagem ficava plantado,
-    /// sem nunca chegar ao alcance de coleta.
+    /// The owner: "auto gathering quest, he just stands in front of the tree".
+    /// The retry of walking to the node only fired with travel OFF, and leaning
+    /// on the trunk it stays active: the character stood planted, never reaching
+    /// gathering range.
     ///
-    /// Parado de verdade, ele procura OUTRO nó — o que estava escolhido pode
-    /// estar atrás do tronco, e insistir nele é ficar plantado de novo.
+    /// Genuinely still, it looks for ANOTHER node — the chosen one may be
+    /// behind the trunk, and insisting on it is standing planted again.
     ///
-    /// O teste mede os dois lados: parado age, ANDANDO não age (senão a
-    /// coleta trocaria de alvo a cada três segundos de caminhada e nunca
-    /// colheria nada).
+    /// The test measures both sides: still acts, WALKING does not (otherwise
+    /// gathering would change target every three seconds of walking and would
+    /// never harvest anything).
     #[test]
     fn parado_na_frente_da_arvore_procura_outro_no() {
         let mut a = AutoColeta::default();
         a.ligar(Vec2::ZERO, 0.0);
-        // Recebe um nó longe, e entra em Indo.
+        // Receives a distant node, and enters Indo.
         let _ = a.passo(Vec2::ZERO, 0.1, false);
         let _ = a.no_recebido(
             Some((7, Vec2::new(30.0, 0.0), Vec2::new(30.0, 0.0), 0)),
             0.2,
         );
 
-        // VIAJANDO e parado: passado o prazo, ele reage.
+        // TRAVELLING and still: past the deadline, it reacts.
         let mut t = 0.3;
         let mut reagiu = false;
         while t < 0.3 + crate::parado::TRAVADO_S + RELIGA_S + 2.0 {
@@ -632,7 +633,7 @@ mod tests {
         }
         assert!(reagiu, "parado com viagem ativa e não fez nada");
 
-        // ANDANDO: não troca de alvo.
+        // WALKING: does not change target.
         let mut b = AutoColeta::default();
         b.ligar(Vec2::ZERO, 0.0);
         let _ = b.passo(Vec2::ZERO, 0.1, false);

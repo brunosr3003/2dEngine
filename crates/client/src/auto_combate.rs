@@ -1,5 +1,5 @@
-//! Seleciona apenas monstros perto do ponto onde AUTO foi ligado.
-//! Movimento, ataques e dano continuam validados pelo servidor.
+//! Selects only monsters near the point where AUTO was switched on.
+//! Movement, attacks and damage are still validated by the server.
 use crate::{hud_estilo as estilo, world::World};
 use macroquad::prelude::*;
 use shared::{EntityId, EntityTag};
@@ -7,33 +7,33 @@ use std::collections::HashMap;
 
 const RAIO: f32 = 24.0;
 
-/// Sem bicho na area: o AUTO vai ATRAS do mais perto ate' esta distancia. Sem
-/// isto ele limpava o lugar e ficava parado olhando o mato — a area sо' andava
-/// quando o jogador andava na mao.
+/// With no creature in the area: AUTO goes AFTER the nearest one up to this
+/// distance. Without it, it cleared the place and stood looking at the bush —
+/// the area only moved when the player walked by hand.
 const BUSCA: f32 = 110.0;
-/// Intervalo entre pedidos de "ir ate' la'" na caçada.
+/// Interval between "go over there" requests during the hunt.
 const PASSO_DA_CACA_S: f64 = 1.2;
 
-/// Parado por este tempo depois de andar na mao, o AUTO volta a conduzir a rota.
+/// Still for this long after walking by hand, AUTO takes the route back over.
 const VOLTA_PARADO_S: f64 = 0.4;
 
 pub struct AutoCombate {
     pub centro: Option<Vec2>,
     observado: Option<(EntityId, f32, u16, f64)>,
     ignorados: HashMap<EntityId, f64>,
-    /// Andando por conta propria (teclado ou clique no chao). Andar NAO desliga
-    /// o AUTO: a area acompanha o personagem. A mira continua escolhendo
-    /// alvos; apenas a rota automatica espera o jogador parar.
+    /// Walking under your own steam (keyboard or a click on the ground). Walking
+    /// does NOT switch AUTO off: the area follows the character. The aim keeps
+    /// choosing targets; only the automatic route waits for the player to stop.
     manual: bool,
     ultima_pos: Option<Vec2>,
     parado_desde: f64,
-    /// Alvo que o servidor diz estar sem visada: (id, primeiro aviso, ultimo).
+    /// A target the server says has no line of sight: (id, first notice, last).
     sem_visada: Option<(EntityId, f64, f64)>,
-    /// Ultimo "ir ate' la'" da caçada.
+    /// The hunt's last "go over there".
     caca_em: f64,
     /// A ordem de prioridade escolhida (`shared::protocol::auto_alvo`).
     pub ordem: Vec<u8>,
-    /// Até onde vai contra jogador (`shared::protocol::auto_pvp`).
+    /// How far it goes against a player (`shared::protocol::auto_pvp`).
     pub pvp: u8,
 }
 
@@ -54,26 +54,26 @@ impl Default for AutoCombate {
     }
 }
 
-/// Um candidato a alvo, já reduzido ao que a escolha precisa saber.
+/// A target candidate, already reduced to what the choice needs to know.
 ///
-/// Fora do `World` de propósito: a regra de prioridade é a parte que erra, e
-/// ela precisa de teste sem montar um mundo inteiro.
+/// Outside `World` on purpose: the priority rule is the part that gets
+/// things wrong, and it needs a test without building a whole world.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Candidato {
     pub id: EntityId,
-    /// Distância até mim.
+    /// Distance to me.
     pub dist: f32,
-    /// É jogador (e não bicho)?
+    /// Is it a player (and not a creature)?
     pub jogador: bool,
-    /// Está ACERTANDO você de longe agora.
+    /// Is HITTING you from range right now.
     pub ranged_em_mim: bool,
-    /// Bateu em você há pouco.
+    /// Hit you recently.
     pub agrediu: bool,
-    /// É o bicho que a missão ativa pede.
+    /// Is the creature the active quest asks for.
     pub da_missao: bool,
 }
 
-/// Por quanto tempo alguém que te bateu continua contando como agressor.
+/// How long someone who hit you keeps counting as an aggressor.
 ///
 /// Oito segundos: tempo de você revidar sem que um tiro perdido de um minuto
 /// atrás marque um jogador como inimigo pro resto da sessão.

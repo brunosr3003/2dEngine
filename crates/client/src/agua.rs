@@ -1,21 +1,21 @@
-//! O mar: superficie propria por cima do leito, com cor pela profundidade,
-//! espuma na costa, brilho andando e ondulacao — tudo no SHADER, com um
-//! uniform de tempo so'.
+//! The sea: its own surface above the bed, colored by depth, foam at the
+//! shore, moving glints and swell — all in the SHADER, with a single time uniform.
 //!
-//! Antes o mar era o topo das colunas submersas pintado de um azul chapado,
-//! e alem do ultimo pedaco gerado nao havia nada: o ceu aparecia no lugar do
-//! oceano. Aqui:
+//! Before, the sea was the top of the submerged columns painted a flat blue,
+//! and beyond the last generated chunk there was nothing: the sky appeared
+//! where the ocean should be. Here:
 //!
-//!   * a profundidade (nivel do mar menos o fundo do `Gerador`) e' calculada
-//!     UMA vez por vertice, na geracao do pedaco — raso turquesa, fundo azul
-//!     escuro, e o raso deixa ver a areia do leito (alfa menor);
-//!   * a onda e' soma de duas senoides no vertex shader, com amplitude zero
-//!     na costa (senao a agua descolaria da areia) e cheia a partir de 3 u;
-//!   * espuma e brilho saem do fragment shader, sem textura;
-//!   * um anel de horizonte segue a camera e some na cor do ceu.
+//! * depth (sea level minus the `Gerador`'s floor) is computed ONCE per
+//! vertex, when the chunk is generated — shallow turquoise, deep dark blue,
+//! and the shallows let the bed's sand show through (lower alpha);
+//! * the wave is a sum of two sinusoids in the vertex shader, with zero
+//! amplitude at the shore (otherwise the water would peel off the sand)
+//! and full from 3 u out;
+//! * foam and glint come out of the fragment shader, with no texture;
+//! * a horizon ring follows the camera and fades into the sky's color.
 //!
-//! Custo por quadro: um uniform e o desenho. Nada de vertice na CPU, nada de
-//! segunda passada — pensado pra GPU de celular.
+//! Cost per frame: one uniform and the draw. No vertex work on the CPU, no
+//! second pass — designed for a phone GPU.
 
 use std::cell::RefCell;
 
@@ -24,37 +24,37 @@ use shared::terreno::{Gerador, BLOCO, NIVEL_DO_MAR};
 
 use crate::terreno::{Terreno, CHUNK};
 
-/// Altura da superficie parada. Acima do topo das colunas submersas (que
-/// ficam no nivel do mar) e abaixo do primeiro bloco de terra.
+/// Height of the surface at rest. Above the top of the submerged columns
+/// (which sit at sea level) and below the first block of land.
 pub const ALTURA_DA_AGUA: f32 = NIVEL_DO_MAR + 0.12;
-/// Soma das amplitudes das ondas do shader, em unidades.
+/// Sum of the shader's wave amplitudes, in units.
 ///
-/// Tem que casar com as constantes do vertex shader: ha' um teste que confere
-/// que a crista nao encosta no primeiro bloco de terra.
+/// It has to match the vertex shader's constants: there is a test that checks
+/// the crest does not touch the first block of land.
 pub const AMPLITUDE_MAX: f32 = 0.65;
 
 /// `false` desliga a ondulacao (o resto continua).
 ///
-/// **Ficou desligada de 19/09 a 21/09/2026.** O que havia eram duas senoides
-/// de comprimento curto somadas no vertice, e no playtest leu feio — parecia
-/// plastico ondulando, nao agua. Agora o mar e' o modelo de GERSTNER do
-/// zone14 (docs/MAR_ABERTO.md): ondas longas, de cristas afiadas, que e'
-/// o que o olho reconhece como mar aberto.
+/// **It was switched off from 19/09 to 21/09/2026.** What was there were two
+/// short-wavelength sinusoids summed at the vertex, and in playtest it read
+/// badly — it looked like rippling plastic, not water. Now the sea is
+/// zone14's GERSTNER model (docs/MAR_ABERTO.md): long waves with sharp
+/// crests, which is what the eye recognises as open sea.
 pub const ONDAS: bool = true;
 
 /// Profundidade (u) a partir da qual a agua e' "fundo" na cor.
 const PROFUNDO: f32 = 6.0;
-/// Ate' aqui a onda e' zero: a borda da agua fica colada na areia.
+/// Up to here the wave is zero: the water's edge stays glued to the sand.
 const COSTA_SEM_ONDA: f32 = 0.5;
-/// Daqui pra fundo a onda e' cheia.
+/// From here outwards the wave is full.
 const ONDA_CHEIA: f32 = 3.0;
-/// Espuma some ate' esta profundidade.
+/// Foam fades out by this depth.
 const ESPUMA_ATE: f32 = 0.9;
-/// Mesmo teto de desenho do terreno (4.800 indices por malha).
+/// The same draw cap as the terrain (4,800 indices per mesh).
 const MAX_QUADS: usize = 800;
 /// Passo da grade perto da costa, em blocos (1 u).
 const PASSO_FINO: i32 = 2;
-/// Passo em mar aberto, em blocos (4 u): o fundo nao tem o que mostrar.
+/// Step in open sea, in blocks (4 u): the bottom has nothing to show.
 const PASSO_GROSSO: i32 = 8;
 /// Cor do ceu (a mesma do `render3d::clear`): o horizonte some nela.
 const CEU: [f32; 3] = [150.0, 186.0, 214.0];
@@ -64,18 +64,17 @@ fn suave(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Profundidade da agua sobre a coluna `(bx, bz)`, em unidades. Negativa em
-/// terra.
+/// Water depth over column `(bx, bz)`, in units. Negative on land.
 pub fn profundidade(ger: &Gerador, bx: i32, bz: i32) -> f32 {
     NIVEL_DO_MAR - (ger.bloco_em(bx, bz) + 1) as f32 * BLOCO
 }
 
-/// Quanto da onda este vertice leva (0 na costa, 1 no fundo).
+/// How much of the wave this vertex takes (0 at the shore, 1 in deep water).
 pub fn onda_de(prof: f32) -> f32 {
     suave((prof - COSTA_SEM_ONDA) / (ONDA_CHEIA - COSTA_SEM_ONDA))
 }
 
-/// Espuma do vertice (1 na linha da costa, 0 depois de `ESPUMA_ATE`).
+/// The vertex's foam (1 at the shoreline, 0 after `ESPUMA_ATE`).
 pub fn espuma_de(prof: f32) -> f32 {
     if prof < -0.3 {
         return 0.0;
@@ -83,8 +82,8 @@ pub fn espuma_de(prof: f32) -> f32 {
     1.0 - suave(prof / ESPUMA_ATE)
 }
 
-/// Cor e alfa da agua pela profundidade: raso turquesa e translucido, meio
-/// azul, fundo azul escuro quase opaco.
+/// Water color and alpha by depth: shallow turquoise and translucent, mid
+/// blue, deep almost opaque dark blue.
 pub fn cor_da_agua(prof: f32) -> [u8; 4] {
     const RASO: [f32; 4] = [72.0, 206.0, 200.0, 140.0];
     const MEIO: [f32; 4] = [34.0, 140.0, 180.0, 212.0];
@@ -102,8 +101,8 @@ pub fn cor_da_agua(prof: f32) -> [u8; 4] {
     c
 }
 
-/// Cor do leito (o topo das colunas submersas): areia que escurece com a
-/// profundidade. E' o que o raso translucido deixa ver.
+/// Bed color (the top of the submerged columns): sand darkening with depth.
+/// It is what the translucent shallows let you see.
 pub fn cor_do_leito(bloco: i32, bx: i32, bz: i32) -> [u8; 4] {
     let prof = NIVEL_DO_MAR - (bloco + 1) as f32 * BLOCO;
     let k = 1.0 - 0.6 * (prof.max(0.0) / 4.0).clamp(0.0, 1.0);
@@ -112,8 +111,8 @@ pub fn cor_do_leito(bloco: i32, bx: i32, bz: i32) -> [u8; 4] {
     [canal(196.0), canal(182.0), canal(136.0), 255]
 }
 
-/// Um quad e' agua se algum canto esta' no mar (ou quase): quad inteiro em
-/// terra ficaria enterrado e so' gastaria vertice.
+/// A quad is water if any corner is in the sea (or nearly): a quad entirely
+/// on land would be buried and would only cost vertices.
 pub fn quad_de_agua(profs: [f32; 4]) -> bool {
     profs.iter().any(|p| *p > -0.25)
 }
@@ -140,11 +139,11 @@ fn quad(
             position: v,
             uv: vec2(0.0, 0.0),
             color: cor,
-            // x = 0: agua nao entra no recorte; y = onda; z = espuma.
+            // x = 0: water does not enter the clip; y = wave; z = foam.
             normal: Vec4::new(0.0, onda, espuma, 0.0),
         });
     }
-    // Olha pra cima (mesma conta do terreno: a ordem sai da normal).
+    // Faces up (the same sum as the terrain: the order comes from the normal).
     let geom = (p[1] - p[0]).cross(p[2] - p[0]);
     if geom.y >= 0.0 {
         idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
@@ -153,10 +152,10 @@ fn quad(
     }
 }
 
-/// A superficie do pedaco `(cx, cz)`. Vazia se o pedaco e' todo terra.
+/// The surface of chunk `(cx, cz)`. Empty if the chunk is all land.
 pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
     let (bx0, bz0) = (cx * CHUNK, cz * CHUNK);
-    // Amostra grossa pra decidir: todo terra → nada; todo fundo → grade grossa.
+    // A coarse sample to decide: all land -> nothing; all deep -> coarse grid.
     let mut min_prof = f32::MAX;
     let mut max_prof = f32::MIN;
     for iz in 0..=4 {
@@ -175,11 +174,11 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
         PASSO_FINO
     };
     let n = CHUNK / passo;
-    // A grade tem UMA BORDA de folga de cada lado. Ela existe porque a onda
-    // de cada vertice e' limitada pela agua VIZINHA (ver `onda_alcancavel`),
-    // e sem a borda os vertices da beira do pedaco olhariam pra uma vizinhanca
-    // menor que a dos pedacos ao lado — dando alturas diferentes no mesmo
-    // ponto, ou seja, uma costura visivel entre pedacos.
+    // The grid has ONE BORDER of slack on each side. It exists because each
+    // vertex's wave is limited by the NEIGHBOURING water (see `onda_alcancavel`),
+    // and without the border the vertices at a chunk's edge would look at a
+    // smaller neighbourhood than the chunks beside them — giving different
+    // heights at the same point, that is, a visible seam between chunks.
     let lado = n + 3;
     let mut grade = vec![0.0f32; (lado * lado) as usize];
     for iz in -1..=n + 1 {
@@ -189,17 +188,17 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
         }
     }
     let prof = |ix: i32, iz: i32| grade[((iz + 1) * lado + ix + 1) as usize];
-    // A ONDA QUE CABE: o Gerstner nao so' sobe e desce, ele ANDA na
-    // horizontal — ate' `AMPLITUDE_MAX` de deslocamento. Um vertice em agua
-    // funda pode terminar o passeio em cima de uma coluna rasa, e ai o vale
-    // dele fica ABAIXO do leito: o chao aparece por dentro da agua. Medido no
-    // arquipelago, o pior caso era um vertice em 2 u de fundo caindo sobre
-    // terra meio metro ACIMA do mar — 0,80 u de penetracao.
+    // THE WAVE THAT FITS: Gerstner does not only rise and fall, it MOVES
+    // horizontally — up to `AMPLITUDE_MAX` of displacement. A vertex in deep
+    // water can end its trip on top of a shallow column, and then its trough
+    // ends up BELOW the bed: the ground shows through the water. Measured on the
+    // archipelago, the worst case was a vertex in 2 u of depth landing on land
+    // half a metre ABOVE the sea — 0.80 u of penetration.
     //
-    // A regra, entao, nao e' "a onda tem a altura do fundo daqui", e sim "a
-    // onda tem a altura da agua mais rasa que ela ALCANCA". O passo da grade
-    // (>= 1 u) ja' cobre o alcance (0,65 u), entao o minimo dos vizinhos basta
-    // e nao custa uma consulta a mais ao gerador.
+    // The rule, then, is not "the wave has the depth of the water here" but "the
+    // wave has the depth of the shallowest water it REACHES". The grid step
+    // (>= 1 u) already covers the reach (0.65 u), so the minimum of the
+    // neighbours is enough and costs no extra query to the generator.
     let onda_alcancavel = |ix: i32, iz: i32| {
         let mut m = f32::MAX;
         for dz in -1..=1 {
@@ -243,7 +242,7 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
     malhas
 }
 
-/// Anel de oceano do fim dos pedacos ate' o horizonte, sumindo no ceu.
+/// A ring of ocean from the end of the chunks to the horizon, fading into the sky.
 fn horizonte(centro: Vec2) -> Vec<Mesh> {
     const RAIOS: [f32; 8] = [84.0, 110.0, 150.0, 210.0, 300.0, 430.0, 600.0, 800.0];
     const LADOS: usize = 48;
@@ -266,8 +265,7 @@ fn horizonte(centro: Vec2) -> Vec<Mesh> {
             }
             let a0 = k as f32 / LADOS as f32 * std::f32::consts::TAU;
             let a1 = (k + 1) as f32 / LADOS as f32 * std::f32::consts::TAU;
-            // Um tico abaixo da agua dos pedacos: onde os dois se cruzam, a de
-            // perto ganha na profundidade.
+            // A touch below the chunks' water: where the two cross, the near one wins on depth.
             let y = ALTURA_DA_AGUA - 0.05;
             let pt = |r: f32, a: f32| vec3(centro.x + r * a.cos(), y, centro.y + r * a.sin());
             let p = [pt(r0, a0), pt(r1, a0), pt(r1, a1), pt(r0, a1)];
@@ -307,36 +305,38 @@ uniform highp float Ondas;
 
 // ── O MAR DE GERSTNER ────────────────────────────────────────────────
 //
-// Portado do zone14 (`GameSim/Ocean.cs`), que usa CINCO ondas de
-// comprimentos 52/31/18/9,5/4,8 m. Aqui sao TRES, e o corte tem motivo:
-// a grade da agua em mar aberto tem passo de 4 u, e Nyquist diz que
-// abaixo de 8 u de comprimento a onda nao e' representada — ela vira
-// serrilha andando. As curtas do zone14 existem porque la' a malha e'
-// muito mais fina; aqui elas so' custariam.
+// Ported from zone14 (`GameSim/Ocean.cs`), which uses FIVE waves of
+// wavelength 52/31/18/9.5/4.8 m. Here there are THREE, and the cut has a
+// reason: the water grid in open sea has a 4 u step, and Nyquist says that
+// below 8 u of wavelength the wave is not represented — it becomes moving
+// aliasing. zone14's short ones exist because its mesh is far finer; here
+// they would only cost.
 //
-// Gerstner, e nao soma de senoides: alem de subir e descer, o vertice
-// ANDA na horizontal contra a direcao da onda. E' isso que afia a crista
-// e achata o vale — a diferenca entre "agua" e "lencol balancando", que
-// foi exatamente a reclamacao que desligou a onda antiga.
+// Gerstner, and not a sum of sinusoids: besides rising and falling, the
+// vertex MOVES horizontally against the wave's direction. That is what
+// sharpens the crest and flattens the trough — the difference between
+// "water" and "a sheet flapping", which was exactly the complaint that
+// switched the old wave off.
 //
-// omega = sqrt(g*k) e' a relacao de dispersao de agua funda: onda longa
-// corre mais rapido que onda curta, sozinha. Sem isso todas andam juntas
-// e o padrao se repete de um jeito que o olho pega.
-// A ONDA SO' SOBE. `(sn+1)/2` poe a contribuicao de cada onda em [0, amp]
-// em vez de [-amp, amp]: a superficie oscila PRA CIMA do repouso e nunca
-// desce abaixo dele.
+// omega = sqrt(g*k) is the deep-water dispersion relation: a long wave runs
+// faster than a short one, on its own. Without it they all move together and
+// the pattern repeats in a way the eye catches.
+// THE WAVE ONLY RISES. `(sn+1)/2` puts each wave's contribution in [0, amp]
+// instead of [-amp, amp]: the surface oscillates UPWARD from rest and never
+// drops below it.
 //
-// Sem isso o vale furava o chao. E o chao do mar nao esta' onde o gerador
-// diz: `terreno.rs` achata TODA coluna submersa em `BLOCO_DO_MAR`
-// (`h.max(BLOCO_DO_MAR)`, pro merge guloso juntar o leito num plano so'),
-// entao o que se DESENHA e' um plano em NIVEL_DO_MAR. Entre ele e a agua ha'
-// 0,12 de folga, e a onda balancava 0,65: o vale ia a meio metro ABAIXO do
-// leito, e o jogador via o chao por dentro da agua.
+// Without this the trough pierced the ground. And the sea floor is not where
+// the generator says: `terreno.rs` flattens EVERY submerged column to
+// `BLOCO_DO_MAR` (`h.max(BLOCO_DO_MAR)`, so the greedy merge joins the bed
+// into one plane), so what is DRAWN is a plane at NIVEL_DO_MAR. Between it
+// and the water there is 0.12 of slack, and the wave swung 0.65: the trough
+// went half a metre BELOW the bed, and the player saw the ground through the water.
 //
-// Gerstner ja' faz crista afiada e vale chato, entao a onda so'-pra-cima le'
-// como mar mesmo — o que se perde e' um vale que nao cabia de qualquer jeito.
-// GLSL ES 1.00 não aceita continuação de linha em macros em todos os
-// drivers. Uma função evita o erro de compilação ao abrir os personagens.
+// Gerstner already makes a sharp crest and a flat trough, so an upward-only
+// wave reads as sea anyway — what is lost is a trough that did not fit in
+// any case.
+// GLSL ES 1.00 does not accept line continuation in macros on all drivers.
+// A function avoids the compile error when opening the characters.
 highp vec3 deslocamento_onda(highp vec2 direcao, highp float k,
     highp float velocidade, highp float amplitude, highp float fase) {
     highp float theta = k * dot(direcao, position.xz) - velocidade * Tempo + fase;
@@ -347,8 +347,8 @@ highp vec3 deslocamento_onda(highp vec2 direcao, highp float k,
 
 void main() {
     highp vec3 p = position;
-    // `normal.y` e' o quanto ESTE vertice leva de onda: zero na costa (a
-    // beira fica colada na areia) e cheio no fundo.
+    // `normal.y` is how much of the wave THIS vertex takes: zero at the shore
+    // (the edge stays glued to the sand) and full in deep water.
     highp float a = normal.y * Ondas;
     p += a * deslocamento_onda(vec2(0.5646, 0.8253), 0.1208, 1.089, 0.341, 0.0);
     p += a * deslocamento_onda(vec2(0.7470, 0.6648), 0.2027, 1.410, 0.198, 1.7);
@@ -360,12 +360,12 @@ void main() {
     onda = normal.y;
 }"#;
 
-// A precisão de Tempo e mundo deve casar nos dois estágios. OpenGL desktop
-// (macOS) não define GL_FRAGMENT_PRECISION_HIGH, mas suporta highp.
-// Fragmento sem `highp` fixo: GPU de celular pode nao ter `highp` no
-// fragmento (GLES2 deixa opcional) e recusaria compilar. Usa `highp` quando o
-// driver oferece; senao cai pra `mediump` — as manchas de brilho ficam menos
-// finas longe da origem, mas o shader compila.
+// The precision of Tempo and world must match in both stages. Desktop OpenGL
+// (macOS) does not define GL_FRAGMENT_PRECISION_HIGH, but supports highp.
+// A fragment with no fixed `highp`: a phone GPU may have no `highp` in the
+// fragment (GLES2 makes it optional) and would refuse to compile. Uses
+// `highp` when the driver offers it; otherwise falls back to `mediump` — the
+// glint patches are less fine far from the origin, but the shader compiles.
 pub(crate) const FRAGMENTO: &str = r#"#version 100
 #if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)
 #define AGUA_PRECISAO highp
@@ -387,8 +387,8 @@ void main() {
     float n = sin(mundo.x * 1.7 + Tempo * 1.3) * sin(mundo.z * 1.3 - Tempo * 1.1);
     float f = clamp(espuma * (0.62 + 0.38 * n), 0.0, 1.0);
     c = mix(c, vec3(0.93, 0.97, 1.0), f);
-    // Sem brilho falso: as manchas claras andando liam como bolinhas brancas
-    // no playtest. Cor por profundidade e espuma da costa bastam.
+    // No fake glint: the moving bright patches read as white blobs in playtest.
+    // Color by depth and foam at the shore are enough.
     gl_FragColor = vec4(c, max(cor.a, f * 0.9));
 }"#;
 
@@ -396,8 +396,8 @@ thread_local! {
     static HORIZONTE: RefCell<Option<((i32, i32), Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
 }
 
-/// Estado de pipeline do mar (sem descarte de face: a onda vira o quad).
-/// Compartilhado com o desenho direto na GPU (`gpu_estatica`).
+/// The sea's pipeline state (no face culling: the wave turns the quad).
+/// Shared with the direct GPU draw (`gpu_estatica`).
 pub(crate) fn params_agua() -> PipelineParams {
     use macroquad::miniquad::graphics::{
         BlendFactor, BlendState, BlendValue, Comparison, CullFace, Equation,
@@ -415,13 +415,13 @@ pub(crate) fn params_agua() -> PipelineParams {
     }
 }
 
-/// Desenha o mar (horizonte e superficie dos pedacos visiveis). Troca o
-/// material: quem chama volta o dele depois.
+/// Draws the sea (the horizon and the surface of visible chunks). It swaps
+/// the material: the caller restores its own afterwards.
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     if t.sem_oceano() { return; }
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
     let ondas = if ONDAS { 1.0f32 } else { 0.0 };
-    // O anel acompanha o alvo da camera, refeito so' quando ele anda 32 u.
+    // The ring follows the camera's target, rebuilt only when it moves 32 u.
     let chave = (
         (cam.target.x / 32.0).round() as i32,
         (cam.target.z / 32.0).round() as i32,
@@ -483,18 +483,16 @@ mod testes {
 
     #[test]
     fn a_agua_nunca_sobe_na_terra() {
-        // A onda so' chega na altura de um bloco de terra em agua FUNDA.
+        // The wave only reaches the height of a block of land in DEEP water.
         //
-        // Este teste ja' exigiu que a crista CHEIA coubesse abaixo do
-        // primeiro bloco. Era simples e errado: cobrava o mar aberto por uma
-        // regra que so' vale na praia. Com o mar de Gerstner a amplitude
-        // cresceu, e a pergunta certa passou a ser outra — a onda cheia so'
-        // acontece onde `onda_de` deixa, e la' a terra mais perto esta'
-        // longe.
+        // This test used to demand that the FULL crest fit below the first block.
+        // It was simple and wrong: it charged the open sea by a rule that only
+        // holds at the beach. With the Gerstner sea the amplitude grew, and the
+        // right question became another — the full wave only happens where
+        // `onda_de` allows, and there the nearest land is far away.
         //
-        // O que se guarda entao e': a partir de que profundidade a crista
-        // alcancaria um bloco de terra? Tem que ser agua funda o bastante
-        // pra nao ser beira de praia nenhuma.
+        // What is kept, then, is: from what depth would the crest reach a block of
+        // land? It has to be deep enough not to be any kind of beach edge.
         let primeira_terra = NIVEL_DO_MAR + BLOCO;
         let alcanca = (0..200)
             .map(|k| k as f32 * 0.05)
@@ -504,9 +502,9 @@ mod testes {
             alcanca >= 1.5,
             "a crista alcanca terra com so' {alcanca} u de fundo — isso e' praia"
         );
-        // E na propria linha da costa ela e' zero.
+        // And on the shoreline itself it is zero.
         assert_eq!(onda_de(0.0), 0.0);
-        // E acima do leito (topo das colunas submersas, no nivel do mar).
+        // And above the bed (the top of the submerged columns, at sea level).
         assert!(ALTURA_DA_AGUA > NIVEL_DO_MAR);
         assert!(
             !quad_de_agua([-0.5, -1.0, -3.0, -0.3]),
@@ -519,7 +517,7 @@ mod testes {
     fn malha_da_agua_cabe_no_desenho() {
         let d = &ARQUIPELAGO[0];
         let ger = Gerador::da_ilha(d);
-        // Em volta do porto (costa, agua rasa e fundo) com o raio de desenho do jogo.
+        // Around the harbour (shore, shallow water and deep) with the game's draw radius.
         let porto = ger
             .vila()
             .porto
@@ -572,32 +570,32 @@ mod testes_do_vale {
     use super::*;
     use shared::terreno::ARQUIPELAGO;
 
-    /// O LEITO QUE SE DESENHA, e não o que o gerador diz.
+    /// THE BED THAT IS DRAWN, and not the one the generator says.
     ///
-    /// `terreno.rs` achata toda coluna submersa em `BLOCO_DO_MAR`
-    /// (`alt[i] = h.max(BLOCO_DO_MAR)`, pro merge guloso juntar o fundo num
-    /// plano só). Então o chão do mar **não** está na profundidade do
-    /// gerador: é um plano em `NIVEL_DO_MAR`, a 0,12 da água.
+    /// `terreno.rs` flattens every submerged column to `BLOCO_DO_MAR`
+    /// (`alt[i] = h.max(BLOCO_DO_MAR)`, so the greedy merge joins the bottom into
+    /// one plane). So the sea floor is **not** at the generator's depth: it is a
+    /// plane at `NIVEL_DO_MAR`, 0.12 from the water.
     ///
-    /// A primeira versão deste teste usava a profundidade do GERADOR. Ela
-    /// passava — medindo um fundo que ninguém desenha — enquanto o dono via o
-    /// chão aparecendo por dentro da água. Um teste que modela a coisa errada
-    /// é pior que teste nenhum: ele dá licença.
+    /// The first version of this test used the GENERATOR's depth. It passed —
+    /// measuring a bottom nobody draws — while the owner watched the ground
+    /// appear through the water. A test that models the wrong thing is worse
+    /// than no test: it grants permission.
     const LEITO_DESENHADO: f32 = NIVEL_DO_MAR;
 
-    /// A onda NÃO desce abaixo do repouso, e por isso não fura o leito.
+    /// The wave does NOT go below rest, and so it does not pierce the bed.
     #[test]
     fn a_onda_nunca_desce_abaixo_do_leito_desenhado() {
-        // O shader soma `amp * (sen + 1)/2` por onda: o mínimo de cada termo
-        // é ZERO, então a superfície mínima é a de repouso.
+        // The shader sums `amp * (sin + 1)/2` per wave: each term's minimum is
+        // ZERO, so the minimum surface is the one at rest.
         let minimo = ALTURA_DA_AGUA;
         assert!(
             minimo > LEITO_DESENHADO,
             "a água em repouso ({minimo}) não está acima do leito desenhado \
              ({LEITO_DESENHADO})"
         );
-        // E a folga é pequena de verdade — é por isso que a onda tem que ser
-        // só pra cima em vez de simétrica.
+        // And the slack really is small — that is why the wave has to be
+        // upward-only instead of symmetric.
         let folga = ALTURA_DA_AGUA - LEITO_DESENHADO;
         assert!(
             folga < AMPLITUDE_MAX,
@@ -606,8 +604,8 @@ mod testes_do_vale {
         );
     }
 
-    /// E ela CONTINUA ondulando: uma onda só pra cima que fosse zerada em
-    /// todo lugar seria trocar um defeito por um mar de gelo.
+    /// And it DOES still swell: an upward-only wave zeroed everywhere would be
+    /// trading one defect for a sea of ice.
     #[test]
     fn o_mar_aberto_continua_ondulando() {
         let ger = Gerador::da_ilha(&ARQUIPELAGO[0]);
@@ -625,14 +623,14 @@ mod testes_do_vale {
 
     /// A CRISTA continua cabendo abaixo do primeiro bloco de terra.
     ///
-    /// Com a onda só pra cima, a crista fica no mesmo lugar de antes (o topo
-    /// do seno não mudou) — mas isso precisa ser dito, não suposto.
+    /// With the upward-only wave the crest stays where it was (the sine's peak
+    /// did not change) — but that has to be stated, not assumed.
     #[test]
     fn a_crista_nao_subiu_com_a_onda_so_pra_cima() {
         let crista = ALTURA_DA_AGUA + AMPLITUDE_MAX;
         let simetrica_antes = ALTURA_DA_AGUA + AMPLITUDE_MAX;
         assert_eq!(crista, simetrica_antes);
-        // E o teste da terra (`a_agua_nunca_sobe_na_terra`) continua valendo:
-        // ele mede exatamente esta conta.
+        // And the land test (`a_agua_nunca_sobe_na_terra`) still holds: it measures
+        // exactly this sum.
     }
 }

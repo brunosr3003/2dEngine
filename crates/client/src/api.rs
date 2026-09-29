@@ -1,11 +1,11 @@
 //! Consulta a lista de canais no `web`.
 //!
-//! HTTP cru sobre `TcpStream`, sem dependencia nova. E' UMA requisicao GET num
-//! endpoint conhecido; trazer um cliente HTTP completo pra isso engordaria o
-//! binario do celular por nada.
+//! Raw HTTP over `TcpStream`, with no new dependency. It is ONE GET request
+//! to a known endpoint; bringing in a full HTTP client for that would fatten
+//! the phone binary for nothing.
 //!
-//! Roda numa thread propria — o loop de render nao pode parar esperando rede,
-//! e a resposta chega por canal como qualquer outro evento.
+//! Runs on its own thread — the render loop cannot stop waiting for the
+//! network, and the answer arrives over a channel like any other event.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -23,18 +23,18 @@ pub struct Canal {
 }
 
 impl Canal {
-    /// Nome do servidor (realm) e do canal, separados: o id vem como
-    /// `SA01/2`.
+    /// Server (realm) name and channel name, separate: the id arrives as `SA01/2`.
     pub fn realm(&self) -> &str {
         self.id.split('/').next().unwrap_or(&self.id)
     }
 }
 
-/// Por onde se entra no servidor `realm`: o canal menos cheio da ilha
-/// inicial (sem fila, se houver). O jogador so' escolhe o SERVIDOR — a ilha e'
-/// a do personagem: ao escolher um salvo em outra ilha, o proprio servidor
-/// manda reconectar la' (`TrocarZona`), e o personagem novo nasce no Bosque.
-/// Sem canal da ilha inicial no ar, qualquer um do servidor serve de porta.
+/// How you get into server `realm`: the least full channel of the starting
+/// island (with no queue, if there is one). The player only chooses the
+/// SERVER — the island is the character's: choosing one saved on another
+/// island, the server itself tells you to reconnect there (`TrocarZona`), and
+/// a new character is born in the Woods. With no starting-island channel up,
+/// any of the server's will do as a door.
 pub fn porta_de_entrada(canais: &[Canal], realm: &str) -> Option<String> {
     let inicial = shared::terreno::ARQUIPELAGO[0].zona;
     canais
@@ -44,22 +44,22 @@ pub fn porta_de_entrada(canais: &[Canal], realm: &str) -> Option<String> {
         .map(|c| c.host.clone())
 }
 
-/// Onde o `web` atende. No celular (iOS e Android) nao ha variavel de ambiente
-/// nem servidor local: vai direto no web de producao
+/// Where `web` listens. On a phone (iOS and Android) there is no environment
+/// variable and no local server: it goes straight to the production web
 /// (docs/SERVIDORES_E_CANAIS.md).
 fn endereco() -> String {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     const PADRAO: &str = "mmo.brunji.com.br:80";
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     const PADRAO: &str = "127.0.0.1:8080";
-    // `MMO_API_PADRAO` na COMPILACAO troca o padrao: e' como um APK de teste
-    // aponta pro web local (10.0.2.2 no emulador), ja' que no celular nao ha'
-    // variavel de ambiente.
+    // `MMO_API_PADRAO` at COMPILE time changes the default: it is how a test APK
+    // points at the local web (10.0.2.2 on the emulator), since there is no
+    // environment variable on a phone.
     std::env::var("MMO_API")
         .unwrap_or_else(|_| option_env!("MMO_API_PADRAO").unwrap_or(PADRAO).into())
 }
 
-/// Dispara a busca. O resultado (ou o erro) chega pelo receiver.
+/// Fires the lookup. The result (or the error) arrives on the receiver.
 pub fn buscar_canais() -> Receiver<Result<Vec<Canal>, String>> {
     em_thread(|| get("/api/channels").map(|(_, corpo)| parse(&corpo)))
 }
@@ -71,7 +71,7 @@ pub fn buscar_release() -> Receiver<Result<String, String>> {
     })
 }
 
-/// Roda `f` numa thread e devolve o receiver do resultado.
+/// Runs `f` on a thread and returns the result's receiver.
 fn em_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -110,9 +110,9 @@ fn get(caminho: &str) -> Result<(u16, String), String> {
 
 /// POST cru no `web`: (codigo HTTP, corpo).
 ///
-/// Gemeo do `get`, e nao uma generalizacao dele: o pedido com corpo precisa de
-/// `Content-Length` e de `Content-Type`, e enfiar isso no `get` com `Option`
-/// deixaria as duas chamadas piores pra nao repetir dez linhas.
+/// A twin of `get`, and not a generalisation of it: a request with a body
+/// needs `Content-Length` and `Content-Type`, and stuffing that into `get`
+/// with an `Option` would make both calls worse to avoid repeating ten lines.
 fn post(caminho: &str, corpo_json: &str) -> Result<(u16, String), String> {
     let endereco = endereco();
     let mut fluxo = TcpStream::connect(&endereco).map_err(|e| format!("{endereco}: {e}"))?;
@@ -142,11 +142,11 @@ fn post(caminho: &str, corpo_json: &str) -> Result<(u16, String), String> {
     Ok((codigo, corpo.to_string()))
 }
 
-/// Escapa o que vai DENTRO de uma string JSON.
+/// Escapes what goes INSIDE a JSON string.
 ///
-/// Sem isto, uma senha com aspas ou barra invertida quebraria o JSON e o
-/// servidor responderia 400 com uma mensagem que nao explica nada — e senha
-/// e' justamente onde esses caracteres aparecem.
+/// Without this, a password with a quote or a backslash would break the JSON
+/// and the server would answer 400 with a message that explains nothing — and
+/// a password is exactly where those characters show up.
 fn escapa(v: &str) -> String {
     let mut s = String::with_capacity(v.len() + 2);
     for c in v.chars() {
@@ -163,13 +163,13 @@ fn escapa(v: &str) -> String {
     s
 }
 
-/// O que o cadastro respondeu.
+/// What the signup answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RespostaCadastro {
     Criada,
-    /// Usuario ou e-mail ja' existe (409), com o campo que bateu.
+    /// Username or email already exists (409), with the field that matched.
     JaExiste(String),
-    /// O servidor recusou (400) — a mensagem dele ja' e' em portugues.
+    /// The server refused (400) — its message is already in Portuguese.
     Recusado(String),
     Erro(String),
 }
@@ -190,7 +190,7 @@ pub fn interpreta_cadastro(codigo: u16, corpo: &str) -> RespostaCadastro {
     }
 }
 
-/// Cria a conta por usuario, e-mail e senha.
+/// Creates the account from username, email and password.
 pub fn criar_conta(usuario: &str, email: &str, senha: &str) -> Receiver<RespostaCadastro> {
     let corpo = format!(
         r#"{{"username":"{}","email":"{}","password":"{}"}}"#,
@@ -206,9 +206,9 @@ pub fn criar_conta(usuario: &str, email: &str, senha: &str) -> Receiver<Resposta
 
 /// Pede o e-mail de redefinicao de senha.
 ///
-/// Devolve `Ok` mesmo pra e-mail que nao existe, e e' assim de proposito: o
-/// servidor responde 200 nos dois casos pra esta rota nao virar um
-/// verificador de quem tem conta aqui. O recado ao jogador diz "SE existir".
+/// Returns `Ok` even for an email that does not exist, and that is
+/// deliberate: the server answers 200 in both cases so this route does not
+/// become a checker of who has an account here. The message says "IF it exists".
 pub fn esqueci_a_senha(email: &str) -> Receiver<Result<(), String>> {
     let corpo = format!(r#"{{"email":"{}"}}"#, escapa(email));
     em_thread(move || match post("/api/auth/esqueci", &corpo) {
@@ -218,7 +218,7 @@ pub fn esqueci_a_senha(email: &str) -> Receiver<Result<(), String>> {
     })
 }
 
-/// Campo de texto de um JSON pequeno do nosso servidor (sem parser completo).
+/// A text field of a small JSON from our own server (with no full parser).
 pub fn campo_json(corpo: &str, chave: &str) -> Option<String> {
     let i = corpo.find(&format!("\"{chave}\""))? + chave.len() + 2;
     let resto = corpo[i..].trim_start_matches([':', ' ']);
@@ -265,7 +265,7 @@ pub fn interpreta_poll(codigo: u16, corpo: &str) -> RespostaPoll {
     }
 }
 
-/// O servidor tem login com Google configurado?
+/// Does the server have Google login configured?
 pub fn google_config() -> Receiver<bool> {
     em_thread(|| {
         get("/api/auth/google/config")
@@ -288,7 +288,7 @@ pub fn google_start() -> Receiver<Result<(String, String), String>> {
 
 /// Consulta se o login do `state` terminou no navegador.
 pub fn google_poll(state: &str) -> Receiver<Result<RespostaPoll, String>> {
-    // `state` e' base64url: nao precisa de escape na query.
+    // `state` is base64url: it needs no escaping in the query.
     let caminho = format!("/api/auth/google/poll?state={state}");
     em_thread(move || get(&caminho).map(|(c, corpo)| interpreta_poll(c, &corpo)))
 }
@@ -316,13 +316,13 @@ mod testes {
         assert_eq!(porta_de_entrada(&canais, "SA01").as_deref(), Some("h:9001"));
         assert_eq!(porta_de_entrada(&canais, "BR1").as_deref(), Some("b:9000"));
         assert_eq!(porta_de_entrada(&canais, "XX"), None);
-        // Canal da ilha inicial lotado vem depois do que tem vaga.
+        // A full starting-island channel comes after one with room.
         let lotado = vec![
             c("SA01/1", "ilha_inicial", "h:9000", 10, true),
             c("SA01/2", "ilha_inicial", "h:9001", 9, false),
         ];
         assert_eq!(porta_de_entrada(&lotado, "SA01").as_deref(), Some("h:9001"));
-        // Sem ilha inicial no ar: entra pelo que houver.
+        // With no starting island up: enter through whatever there is.
         assert_eq!(
             porta_de_entrada(&canais[..1], "SA01").as_deref(),
             Some("h:9100")
@@ -340,24 +340,23 @@ mod testes {
             interpreta_cadastro(400, r#"{"error":"senha deve ter 6-128 chars"}"#),
             RespostaCadastro::Recusado("senha deve ter 6-128 chars".into())
         );
-        // Sem corpo util, ainda assim diz o que houve.
+        // No useful body, and it still says what happened.
         assert!(matches!(
             interpreta_cadastro(502, ""),
             RespostaCadastro::Erro(_)
         ));
     }
 
-    /// Senha com aspas não quebra o JSON.
+    /// A password with quotes does not break the JSON.
     ///
-    /// É o caractere que mais aparece em senha gerada por gerenciador, e sem
-    /// escape o servidor responderia 400 com uma mensagem que não explica
-    /// nada — o jogador veria "dados inválidos" com dados válidos.
+    /// It is the character that appears most in a manager-generated password,
+    /// and without escaping the server would answer 400 with a message that
+    /// explains nothing — the player would see "invalid data" with valid data.
     #[test]
     fn senha_com_aspas_e_barra_sobrevive() {
         assert_eq!(escapa(r#"a"b\c"#), r#"a\"b\\c"#);
         assert_eq!(escapa("linha\nnova"), "linha\\nnova");
-        // E o corpo montado continua sendo JSON legível pelo nosso próprio
-        // leitor de campo.
+        // And the assembled body is still JSON readable by our own field reader.
         let corpo = format!(
             r#"{{"username":"{}","email":"{}","password":"{}"}}"#,
             escapa("zé"),
@@ -395,10 +394,10 @@ mod testes {
     }
 }
 
-/// Extrai os campos que interessam sem trazer um parser de JSON.
+/// Extracts the fields that matter without bringing in a JSON parser.
 ///
-/// O formato e' do nosso proprio servidor e tem uma forma so'; um parser
-/// completo aqui seria peso sem retorno.
+/// The format is our own server's and has only one shape; a full parser here
+/// would be weight with no return.
 fn parse(corpo: &str) -> Vec<Canal> {
     let mut saida = Vec::new();
     for bloco in corpo.split('{').skip(1) {
