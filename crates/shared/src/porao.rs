@@ -191,6 +191,50 @@ pub fn poroes_da_zona(zona: &str) -> Vec<&'static Conteudo> {
         .collect()
 }
 
+// ───────────────────────── a torneira, medida ─────────────────────────
+
+/// Quantos segundos de coleta uma chave custa.
+///
+/// ⚠️ ISTO É UM MODELO, E NÃO UMA MEDIÇÃO. Uma coisa aqui é suposição e está
+/// dita de propósito: **um item por ciclo de coleta**. O rendimento de verdade
+/// mora na tabela de loot do banco (`economy::farm_node_loot`), que nenhum
+/// teste alcança, então o número abaixo é um PISO — se um tronco der duas
+/// madeiras, a chave sai na metade do tempo daqui.
+///
+/// O que o modelo serve pra pegar é a MUDANÇA: no dia em que alguém cortar o
+/// custo da chave pela metade, a conta muda junto e o guarda fala.
+///
+/// Os ciclos saem de `constants`: `COLETA_CICLO_ARVORE_S` e
+/// `COLETA_CICLO_PEDRA_S[tier]`.
+pub fn segundos_de_coleta(nivel: u32) -> f32 {
+    let madeira = madeira_qtd(nivel) as f32 * crate::constants::COLETA_CICLO_ARVORE_S;
+    // O aço vem de PEDRA, e a pedra do tier da faixa.
+    let tier = cor_do_nivel(nivel).clamp(1, 4) as usize;
+    let pedra = material_qtd(nivel) as f32 * crate::constants::COLETA_CICLO_PEDRA_S[tier];
+    madeira + pedra
+}
+
+/// Segundos de uma corrida do Porão, no ritmo que o próprio jogo chama de bom.
+///
+/// 60% do limite é o corte de `dungeon::bonus_tempo` — matar o chefe antes
+/// disso paga bônus. Usar o limite cheio fingiria que todo mundo joga no
+/// talo do cronômetro; usar 60% é o número que o jogo já escolheu pra dizer
+/// "correu bem".
+pub fn segundos_de_corrida(c: &Conteudo) -> f32 {
+    c.limite_s as f32 * 0.6
+}
+
+/// Ouro por hora que este Porão despeja, contando a chave E a corrida.
+///
+/// É o número que a cota diária escondia: enquanto havia 3 baús por dia, o
+/// teto era 3 × `ouro_do_bau`. Agora é isto, e não tem teto nenhum além do
+/// tempo do jogador.
+pub fn ouro_por_hora(c: &Conteudo) -> f32 {
+    let ciclo = segundos_de_coleta(c.nivel_min) + segundos_de_corrida(c);
+    let ouro = crate::dungeon::ouro_do_bau(c.tipo, c.nivel_min, false) as f32;
+    ouro * 3600.0 / ciclo
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -366,5 +410,81 @@ mod testes {
         assert_eq!(cor_do_nivel(14), 2);
         assert_eq!(cor_do_nivel(22), 3);
         assert_eq!(cor_do_nivel(50), 4);
+    }
+
+    /// A TORNEIRA DO PORÃO, MEDIDA E PRESA.
+    ///
+    /// Este é o guarda que a fase 4 existia pra escrever. Enquanto houve cota
+    /// diária, o que o Porão despejava na economia era 3 baús por dia por
+    /// personagem, e ponto. Tirada a cota, o teto virou o tempo do jogador —
+    /// e, porque a chave é vendável no mercado, o teto do SERVIDOR virou a
+    /// madeira e o aço que o servidor inteiro junta. Um gatherer abastece
+    /// muitos corredores.
+    ///
+    /// Os três limites abaixo são escolhas, e estão aqui pra serem discutidas
+    /// quando alguém mexer no custo — não pra passarem despercebidas.
+    #[test]
+    fn a_torneira_do_porao_fica_dentro_do_combinado() {
+        let poroes: Vec<_> = crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == Tipo::Porao)
+            .collect();
+
+        for c in &poroes {
+            let coleta = segundos_de_coleta(c.nivel_min);
+            // 1. A CHAVE NÃO PODE SER DE GRAÇA. Menos de um minuto de coleta e
+            //    ela deixa de ser freio: vira uma formalidade entre corridas.
+            assert!(
+                coleta >= 60.0,
+                "{}: a chave custa só {coleta:.0}s de coleta",
+                c.nome
+            );
+            // 2. NEM PODE SER UMA PAREDE. Mais de dez minutos juntando pra dez
+            //    minutos de dungeon e o conteúdo vira lição de casa.
+            assert!(
+                coleta <= 600.0,
+                "{}: a chave custa {coleta:.0}s de coleta, virou parede",
+                c.nome
+            );
+        }
+
+        // 3. O TOPO NÃO PODE PAGAR MUITO MAIS QUE A BASE POR HORA.
+        //    Conteúdo mais alto pagar mais é normal; pagar TANTO mais que
+        //    ninguém olha pros outros é um funil, e aí os dois Porões de baixo
+        //    param de existir na prática.
+        let por_hora: Vec<f32> = poroes.iter().map(|c| ouro_por_hora(c)).collect();
+        let menor = por_hora.iter().cloned().fold(f32::INFINITY, f32::min);
+        let maior = por_hora.iter().cloned().fold(0.0f32, f32::max);
+        assert!(
+            maior <= menor * 2.0,
+            "o Porão mais rico paga {maior:.0} ouro/h contra {menor:.0} do mais pobre: virou funil"
+        );
+
+        // 4. E O JOGO INTEIRO TEM UM TETO. Este é o número que substitui a
+        //    cota: com ele, uma hora de Porão vale menos que uma entrada
+        //    comprada de Gruta no nível 20 (`preco_da_compra`, base 2.500).
+        assert!(
+            maior <= 6_000.0,
+            "o Porão está despejando {maior:.0} ouro por hora"
+        );
+    }
+
+    /// A tabela que o dono lê pra decidir se o custo está certo.
+    #[test]
+    fn mostra_a_torneira() {
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let r = receita_de(c).unwrap();
+            println!(
+                "{:<20} lv{:<3} chave={:>3}s corrida={:>3}s  ouro/baú={:<5} ouro/h={:>6.0}  ({}x madeira + {}x aço)",
+                c.nome,
+                c.nivel_min,
+                segundos_de_coleta(c.nivel_min) as i32,
+                segundos_de_corrida(c) as i32,
+                crate::dungeon::ouro_do_bau(c.tipo, c.nivel_min, false),
+                ouro_por_hora(c),
+                r.madeira_qtd,
+                r.material_qtd,
+            );
+        }
     }
 }
