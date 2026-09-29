@@ -691,6 +691,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ICONE_PORTA").is_ok() {
+        mapa::previa_icones().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_MAPA").is_ok() {
         mapa::previa().await;
         return;

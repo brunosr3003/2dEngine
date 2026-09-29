@@ -1180,27 +1180,124 @@ pub async fn previa() {
     }
 }
 
-/// O marcador de uma porta de Porão: um vão escuro entre dois batentes, o
-/// mesmo desenho da porta no mundo visto de cima, e o nome em cima.
+/// O marcador de uma porta de Porão no mapa.
 ///
-/// Ouro, como a praça: é pra onde se vai, não o que se evita.
+/// Três candidatos, escolhidos olhando (`MMO_PREVIA_ICONE_PORTA=1` desenha os
+/// três lado a lado, no tamanho real do mapa e do minimapa):
 ///
-/// O NOME VAI AO LADO, NÃO EM CIMA — e alterna de lado por porta. As portas
-/// ficam a 56 u da cidade, que no mapa inteiro são uns 30 px: um nome em cima
-/// do ícone cai em cima do "City", e duas portas na mesma ilha caem uma em
-/// cima da outra. Foi o que a prévia mostrou: "Smuggler's Cellar" e
-/// "Shipwreck Cellar" viraram um borrão sobre a cidade. À direita pra uma e à
-/// esquerda pra outra, os dois nomes se afastam da cidade e entre si.
+/// * `Arco`     — um arco de pedra com o vão escuro: a porta vista de frente.
+/// * `Fechadura`— um buraco de fechadura: "isto se abre com chave".
+/// * `Cadeado`  — um cadeado fechado: o mesmo recado, mais gordo e mais
+///                legível a 6 px.
+///
+/// `ICONE_PORTA` diz qual está em uso. O nome vai ao lado e alterna de lado
+/// por porta, porque duas portas a 56 u da cidade viram um borrão se o nome
+/// ficar em cima (visto na prévia do mapa em 29/09/2026).
+#[derive(Clone, Copy, PartialEq)]
+pub enum IconePorta {
+    Arco,
+    Fechadura,
+    Cadeado,
+}
+
+pub const ICONE_PORTA: IconePorta = IconePorta::Cadeado;
+
 fn porta_no_mapa(q: Vec2, lado: f32, nome: &str, fonte: u16, direita: bool) {
+    icone_da_porta(ICONE_PORTA, q, lado);
     let cor = estilo::OURO;
-    let escuro = Color::new(0.05, 0.05, 0.08, 1.0);
-    draw_rectangle(q.x - lado, q.y - lado, lado * 2.0, lado * 2.0, cor);
-    draw_rectangle(q.x - lado * 0.5, q.y - lado * 0.7, lado, lado * 1.7, escuro);
     let largura = estilo::medir(nome, fonte);
     let x = if direita { q.x + lado + 6.0 } else { q.x - lado - 6.0 - largura };
     estilo::texto(x, q.y + fonte as f32 * 0.35, nome, fonte, cor);
 }
 
+/// Só o desenho, sem nome: é o que a prévia dos ícones compara.
+pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
+    let ouro = estilo::OURO;
+    let escuro = Color::new(0.05, 0.05, 0.08, 1.0);
+    let contorno = Color::new(0.0, 0.0, 0.0, 0.75);
+    match qual {
+        IconePorta::Arco => {
+            // Contorno escuro pra destacar do verde/areia, depois o arco.
+            draw_rectangle(q.x - lado - 1.5, q.y - lado * 0.4 - 1.5, lado * 2.0 + 3.0, lado * 1.6 + 3.0, contorno);
+            draw_circle(q.x, q.y - lado * 0.4, lado + 1.5, contorno);
+            draw_rectangle(q.x - lado, q.y - lado * 0.4, lado * 2.0, lado * 1.6, ouro);
+            draw_circle(q.x, q.y - lado * 0.4, lado, ouro);
+            // O vão.
+            draw_rectangle(q.x - lado * 0.45, q.y - lado * 0.3, lado * 0.9, lado * 1.5, escuro);
+            draw_circle(q.x, q.y - lado * 0.3, lado * 0.45, escuro);
+        }
+        IconePorta::Fechadura => {
+            draw_circle(q.x, q.y, lado * 1.35, contorno);
+            draw_circle(q.x, q.y, lado * 1.2, ouro);
+            // O buraco: círculo em cima, cunha embaixo.
+            draw_circle(q.x, q.y - lado * 0.25, lado * 0.42, escuro);
+            draw_triangle(
+                vec2(q.x - lado * 0.22, q.y - lado * 0.05),
+                vec2(q.x + lado * 0.22, q.y - lado * 0.05),
+                vec2(q.x, q.y + lado * 0.75),
+                escuro,
+            );
+            draw_rectangle(q.x - lado * 0.22, q.y - lado * 0.1, lado * 0.44, lado * 0.55, escuro);
+        }
+        IconePorta::Cadeado => {
+            let w = lado * 1.8;
+            let h = lado * 1.4;
+            let topo = q.y - lado * 0.2;
+            // Contorno.
+            draw_rectangle(q.x - w * 0.5 - 1.5, topo - 1.5, w + 3.0, h + 3.0, contorno);
+            draw_circle_lines(q.x, topo - lado * 0.15, lado * 0.62, lado * 0.42 + 3.0, contorno);
+            // A alça.
+            draw_circle_lines(q.x, topo - lado * 0.15, lado * 0.62, lado * 0.42, ouro);
+            draw_rectangle(q.x - w * 0.5, topo - lado * 0.15, w, lado * 0.3, ouro);
+            // O corpo.
+            draw_rectangle(q.x - w * 0.5, topo, w, h, ouro);
+            // O buraco.
+            draw_circle(q.x, topo + h * 0.42, lado * 0.28, escuro);
+            draw_rectangle(q.x - lado * 0.12, topo + h * 0.42, lado * 0.24, h * 0.38, escuro);
+        }
+    }
+}
+
+/// Prévia dos ícones de porta (`MMO_PREVIA_ICONE_PORTA=1`): os três, no
+/// tamanho do mapa grande (6 px) e do minimapa (~11 px), sobre floresta e
+/// sobre areia — os dois fundos em que eles têm que ser lidos.
+#[cfg(debug_assertions)]
+pub async fn previa_icones() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA")
+        .unwrap_or_else(|_| "/tmp/tempest-icone-porta".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let rt = render_target(1200, 520);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(1.6);
+    let floresta = Color::from_rgba(78, 128, 58, 255);
+    let areia = Color::from_rgba(214, 190, 140, 255);
+    for _ in 0..3 {
+        // `camera_padrao` já aponta pro alvo; um `set_default_camera` aqui
+        // devolvia o desenho pra TELA e o PNG saía só com o fundo.
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+        draw_rectangle(0.0, 0.0, 1200.0, 260.0, floresta);
+        draw_rectangle(0.0, 260.0, 1200.0, 260.0, areia);
+        let icones = [(IconePorta::Arco, "Arco"), (IconePorta::Fechadura, "Fechadura"), (IconePorta::Cadeado, "Cadeado")];
+        for (i, (ic, nome)) in icones.iter().enumerate() {
+            let cx = 200.0 + i as f32 * 400.0;
+            for (fundo_y, _) in [(0.0f32, floresta), (260.0, areia)] {
+                // tamanho do mapa grande, tamanho do minimapa, e um grande pra ver a forma
+                icone_da_porta(*ic, vec2(cx - 120.0, fundo_y + 130.0), 6.0);
+                icone_da_porta(*ic, vec2(cx - 40.0, fundo_y + 130.0), 11.2);
+                icone_da_porta(*ic, vec2(cx + 80.0, fundo_y + 130.0), 40.0);
+                // Legendas embaixo de cada tamanho, sem uma cair em cima da outra.
+                estilo::texto_centro(cx - 120.0, fundo_y + 210.0, "mapa 6px", 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                estilo::texto_centro(cx - 40.0, fundo_y + 232.0, "minimapa 11px", 12, Color::new(0.0, 0.0, 0.0, 0.8));
+                estilo::texto_centro(cx + 80.0, fundo_y + 210.0, "forma", 12, Color::new(0.0, 0.0, 0.0, 0.8));
+            }
+            estilo::texto_centro(cx, 30.0, nome, 22, Color::new(1.0, 1.0, 1.0, 1.0));
+        }
+        unsafe { get_internal_gl().flush() };
+        rt.texture.get_texture_data().export_png(&format!("{saida}/icones-porta.png"));
+        next_frame().await;
+    }
+}
 
 impl Mapa {
     /// Raio visivel do minimapa (as preferencias guardam).
