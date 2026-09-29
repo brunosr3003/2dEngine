@@ -140,6 +140,57 @@ pub fn tr_em(idioma: Idioma, s: &str) -> Cow<'_, str> {
     }
 }
 
+/// A FEMININE form, for a word English has only one of.
+///
+/// Portuguese agrees in gender; English does not. `chaves::nome_da_cor`
+/// describes a *chave* (feminine) and `forja::Grau` describes an *item*
+/// (masculine), and both are the same word in English — "Epic", "Legendary",
+/// "Purple". Once English is the source, the Portuguese form cannot be
+/// recovered from the word alone: `tr("Epic")` has no way to know whether the
+/// noun beside it is feminine.
+///
+/// So the call site says. A place that describes a feminine noun asks for the
+/// feminine form, and English ignores the request — the table is only
+/// consulted in Portuguese, and anything missing from it falls through to the
+/// ordinary dictionary.
+///
+/// This is deliberately a short table and not a general gender system. Only
+/// the grade words hit the problem, because only they are pinned to a noun
+/// that varies; the rest of the collapses (Todas/Todos, seu/sua) are labels
+/// where one form reads fine.
+static FEMININO: &[(&str, &str)] = &[
+    ("Purple", "Roxa"),
+    ("Epic", "Épica"),
+    ("Legendary", "Lendária"),
+    ("Rare", "Rara"),
+    ("Fine", "Fina"),
+];
+
+/// `tr`, asking for the feminine form where Portuguese has one.
+///
+/// Safe to use before the locale inversion as well as after it: while the
+/// source is still Portuguese the lookup misses (the table is keyed by the
+/// English word) and it behaves exactly like `tr`.
+pub fn tr_f(s: &str) -> Cow<'_, str> {
+    tr_f_em(atual(), s)
+}
+
+/// The same, with the language said by hand.
+///
+/// It exists for the same reason `tr_em` does — the `web` process has no
+/// "current language", it has the language of that account — and for one
+/// more: the current language is a process global, so a test that sets it
+/// races every other test in the binary. Asking explicitly is the only way
+/// to pin the behaviour of both languages in one test.
+pub fn tr_f_em(idioma: Idioma, s: &str) -> Cow<'_, str> {
+    if idioma == Idioma::Pt {
+        if let Some((_, f)) = FEMININO.iter().find(|(en, _)| *en == s) {
+            return Cow::Borrowed(f);
+        }
+    }
+    tr_em(idioma, s)
+}
+
 /// Traduz só se houver verbete, e diz quando não houve.
 ///
 /// É o que a varredura de largura e os testes usam pra separar "está em

@@ -200,11 +200,28 @@ Mounted spd.). That is an improvement on its own terms.
 **Ten collisions cannot be fixed by better English**, because English carries
 no gender and no adjective plural:
 
+Option 2 was chosen: **the grade words keep their agreement, the rest
+collapse.** `idioma::tr_f` (and `tr_f_em`) ask for the feminine form of a
+word English has only one of. The table is consulted only in Portuguese, so
+English never sees the request and no marker can leak into it.
+
+After step 2, these call sites must ask for the feminine form, because the
+noun beside them is feminine (*chave*):
+
+  * `client/src/dungeon_ui.rs` — "Chave de craft {cor}"
+  * `client/src/dungeon_recompensas.rs` — the same colour, in the rewards list
+
+and these must NOT, because theirs is masculine (*item*): `forja::Grau`,
+`oficina_ui::nome_da_cor`, `pets`, `skills`.
+
+The other seven collapses stay collapsed — they are labels where one form
+reads fine:
+
 | English | Portuguese forms | kept on inversion |
 |---|---|---|
-| Purple | Roxa / Roxo | Roxo |
-| Epic | Épica / Épico | Épico |
-| Legendary | Lendária / Lendário | Lendário |
+| Purple | Roxa / Roxo | both, via `tr_f` |
+| Epic | Épica / Épico | both, via `tr_f` |
+| Legendary | Lendária / Lendário | both, via `tr_f` |
 | All | Tudo / Todas / Todos | Todas |
 | Completed | Concluída / Concluídas | Concluída |
 | Available | Disponível / Disponíveis | Disponível |

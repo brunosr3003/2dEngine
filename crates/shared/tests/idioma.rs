@@ -192,3 +192,38 @@ fn nenhum_verbete_tem_buracos_colados() {
         erros.join("\n")
     );
 }
+
+/// THE FEMININE FORM SURVIVES THE INVERSION.
+///
+/// English carries no gender, so "Epic" is both *Épica* (a chave) and
+/// *Épico* (an item). Once English is the source, `tr` alone cannot tell
+/// them apart — `tr_f` is how a call site beside a feminine noun says so.
+///
+/// The test pins both directions, because the trap is one-sided: it is easy
+/// to make Portuguese right and leave the marker leaking into English.
+///
+/// It asks by hand rather than through `definir`. The current language is a
+/// process global, and the first version of this test failed for that and
+/// not for the feature: another test in the binary had set Portuguese while
+/// this one was checking English.
+#[test]
+fn o_feminino_nao_vaza_pro_ingles() {
+    use shared::idioma::{tr_em, tr_f_em, Idioma::{En, Pt}};
+
+    // Enquanto a fonte e' portuguesa, `tr_f` e' `tr`: a tabela e' chaveada
+    // pelo ingles e a busca erra de proposito.
+    assert_eq!(tr_f_em(Pt, "Épica"), "Épica");
+    // E ja' responde pela chave inglesa, que e' o que vale depois da inversao.
+    assert_eq!(tr_f_em(Pt, "Epic"), "Épica");
+    assert_eq!(tr_f_em(Pt, "Legendary"), "Lendária");
+    assert_eq!(tr_f_em(Pt, "Purple"), "Roxa");
+    // Palavra sem forma feminina propria cai no dicionario comum.
+    assert_eq!(tr_f_em(Pt, "Azul"), tr_em(Pt, "Azul"));
+
+    // O INGLES NAO VE O PEDIDO. Nenhum marcador, nenhuma forma estranha.
+    assert_eq!(tr_f_em(En, "Epic"), "Epic");
+    assert_eq!(tr_f_em(En, "Legendary"), "Legendary");
+    assert_eq!(tr_f_em(En, "Purple"), "Purple");
+    // E a palavra portuguesa continua traduzindo como sempre.
+    assert_eq!(tr_f_em(En, "Épica"), "Epic");
+}
