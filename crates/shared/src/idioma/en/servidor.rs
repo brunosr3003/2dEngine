@@ -322,7 +322,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Antes de zarpar, aprende as missoes: abre Menu > Missoes, escolhe Aprenda a fazer missoes na lista e toca Fazer. Mais tarde, Pegar so aceita; usa Fazer tudo quando quiser partir.",
         "Before you sail, learn how quests work: open Menu > Quests, pick Learn how quests work from the list and tap Do. Later on, Take only accepts; use Do all when you want to set off.",
     ),
-    ("Guardiao de Treino", "Training Guardian"),
+    ("Guardiao de Treino", "Training Guardian (legacy spelling)"),
     (
         "Sem espaco acessivel fora da zona segura.",
         "No reachable space outside the safe zone.",
