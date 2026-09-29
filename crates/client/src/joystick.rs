@@ -1,25 +1,26 @@
 //! Joystick VIRTUAL (toque), no molde do MIR4 mobile: WASD na metade esquerda.
 //!
-//! Flutuante: a base aparece onde o dedo encostou, o manipulo segue o dedo
-//! preso ao raio. A saida e' uma direcao de TELA (x pra direita, y pra baixo,
-//! igual ao WASD) vezes a intensidade; `main` converte pra mundo com o yaw da
-//! camera e manda no `InputFrame` como o teclado.
+//! Floating: the base appears where the finger landed, the stick follows the
+//! finger pinned to the radius. The output is a SCREEN direction (x right, y
+//! down, like WASD) times the intensity; `main` converts it to world with the
+//! camera's yaw and sends it in the `InputFrame` like the keyboard.
 //!
-//! O dedo do joystick e' SO' dele: nao vira clique no mundo nem gira a camera
-//! (`sem_dedo` tira ele da lista que vai pro `gesto_camera`).
+//! The joystick's finger is ITS OWN: it does not become a click in the world
+//! and does not rotate the camera (`sem_dedo` removes it from the list that
+//! goes to `gesto_camera`).
 //!
-//! O nucleo nao conhece a macroquad; `main` le os toques e desenha.
+//! The core does not know macroquad; `main` reads the touches and draws.
 use macroquad::prelude::*;
 
 use crate::gesto_camera::{Fase, ToqueNoQuadro};
 use crate::hud_estilo as estilo;
 
-/// Raio do manipulo a 1920×1080 (px), multiplicado pela escala do HUD.
+/// Stick radius at 1920x1080 (px), multiplied by the HUD's scale.
 pub const RAIO_BASE: f32 = 78.0;
-/// Fracao do raio que nao anda (dedo parado tremendo).
+/// Fraction of the radius that does not move (a still finger trembling).
 pub const ZONA_MORTA: f32 = 0.12;
-/// Intensidade minima fora da zona morta: o servidor trata |dir|² <= 0,01
-/// como "parado", entao abaixo disso o empurrao sutil seria ignorado.
+/// Minimum intensity outside the dead zone: the server treats |dir|² <= 0.01
+/// as "stopped", so below that a subtle push would be ignored.
 pub const INTENSIDADE_MINIMA: f32 = 0.35;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -31,7 +32,7 @@ pub struct Joystick {
 }
 
 impl Joystick {
-    /// Id do dedo que o joystick esta' usando.
+    /// Id of the finger the joystick is using.
     pub fn dedo(&self) -> Option<u64> {
         self.dedo
     }
@@ -44,8 +45,8 @@ impl Joystick {
         self.dedo = None;
     }
 
-    /// Um quadro: prende um dedo que COMECOU dentro da `area` (e fora do HUD —
-    /// quem decide e' `pode_comecar`), acompanha ate' ele sair.
+    /// One frame: claims a finger that STARTED inside `area` (and outside the
+    /// HUD — `pode_comecar` decides), follows it until it leaves.
     pub fn quadro(
         &mut self,
         toques: &[ToqueNoQuadro],
@@ -56,7 +57,7 @@ impl Joystick {
         if let Some(id) = self.dedo {
             match toques.iter().find(|t| t.id == id) {
                 Some(t) if t.fase != Fase::Acabou => self.ponta = t.pos,
-                // Saiu (ou sumiu sem Acabou visivel): solta.
+                // Left (or vanished with no visible Acabou): releases.
                 _ => self.dedo = None,
             }
             return;
@@ -85,12 +86,12 @@ impl Joystick {
         v.normalize_or_zero() * intensidade
     }
 
-    /// O joystick esta' mandando andar (conta como teclado).
+    /// The joystick is asking to walk (counts as keyboard).
     pub fn movendo(&self) -> bool {
         self.direcao() != Vec2::ZERO
     }
 
-    /// Onde desenhar o manipulo: preso ao raio.
+    /// Where to draw the stick: pinned to the radius.
     pub fn manipulo(&self) -> Vec2 {
         let v = self.ponta - self.base;
         if v.length() > self.raio {
@@ -100,16 +101,16 @@ impl Joystick {
         }
     }
 
-    /// Onde a base descansa quando ninguem esta' com o dedo nela: em cima da
-    /// faixa do joystick, na altura do polegar (baixo e' onde a mao fica).
+    /// Where the base rests when nobody's finger is on it: on top of the
+    /// joystick's strip, at thumb height (down is where the hand sits).
     pub fn base_em_repouso(z: &crate::hud_layout::Zonas) -> Vec2 {
         let r = z.joystick;
         let raio = RAIO_BASE * z.s;
         vec2(r.x + raio + 16.0 * z.s, r.y + r.h - raio - 16.0 * z.s)
     }
 
-    /// Desenha. SEMPRE aparece (pedido do dono): parado, a base fica apagada
-    /// no lugar de descanso; com o dedo, ela vai pra onde ele encostou.
+    /// Draws. It ALWAYS shows (the owner's request): idle, the base sits dimmed
+    /// at its resting place; with a finger, it goes where the finger landed.
     pub fn desenha(&self, z: &crate::hud_layout::Zonas) {
         let segurando = self.dedo.is_some();
         let (r, b) = if segurando {
@@ -144,17 +145,17 @@ impl Joystick {
     }
 }
 
-/// A lista de toques sem o dedo do joystick — e' o que vai pro gesto da
-/// camera e pro clique no mundo.
+/// The touch list without the joystick's finger — it is what goes to the
+/// camera gesture and to the click in the world.
 #[cfg(test)]
 pub fn sem_dedo(toques: &[ToqueNoQuadro], dedo: Option<u64>) -> Vec<ToqueNoQuadro> {
     sem_dedos(toques, &[dedo])
 }
 
-/// Igual, tirando varios. `main` passa o dedo de ANTES e o de DEPOIS do
-/// `quadro`: no quadro em que o dedo solta o joystick ja' esqueceu o id, e o
-/// `Acabou` dele caia no gesto como toque curto — clique no mundo, andar ate'
-/// onde o polegar saiu.
+/// The same, removing several. `main` passes the finger from BEFORE and from
+/// AFTER `quadro`: on the frame the finger releases, the joystick has already
+/// forgotten the id, and its `Acabou` fell into the gesture as a short touch
+/// — a click in the world, walking to where the thumb left.
 pub fn sem_dedos(toques: &[ToqueNoQuadro], dedos: &[Option<u64>]) -> Vec<ToqueNoQuadro> {
     toques
         .iter()
@@ -163,8 +164,8 @@ pub fn sem_dedos(toques: &[ToqueNoQuadro], dedos: &[Option<u64>]) -> Vec<ToqueNo
         .collect()
 }
 
-/// Andar "na mao": teclado OU joystick. E' o que pausa auto missao, viagem,
-/// ir-para e a ida ate' o NPC, igual ao WASD.
+/// Walking "by hand": keyboard OR joystick. It is what pauses the auto quest,
+/// travel, go-to and the walk to the NPC, just like WASD.
 pub fn movimento_manual(teclas: bool, joy: &Joystick) -> bool {
     teclas || joy.movendo()
 }
@@ -192,7 +193,7 @@ mod testes {
         assert!(!j.ativo(), "metade direita nao e' joystick");
         j.quadro(&[t(2, Fase::Comecou, 200.0, 700.0)], 80.0, &area_esquerda);
         assert_eq!(j.dedo(), Some(2));
-        // Arrastar pra fora da area continua sendo o joystick.
+        // Dragging outside the area is still the joystick.
         j.quadro(&[t(2, Fase::Segurando, 600.0, 300.0)], 80.0, &area_esquerda);
         assert!(j.ativo());
         j.quadro(&[t(2, Fase::Acabou, 600.0, 300.0)], 80.0, &area_esquerda);
@@ -245,7 +246,7 @@ mod testes {
             100.0,
             &area_esquerda,
         );
-        // Pra cima na tela = W.
+        // Up on the screen = W.
         let w = crate::render3d::input_para_mundo(vec2(0.0, -1.0), 0.7);
         let joy = crate::render3d::input_para_mundo(j.direcao(), 0.7);
         assert!(
@@ -265,7 +266,7 @@ mod testes {
         let resto = sem_dedo(&quadro, j.dedo());
         assert_eq!(resto.len(), 1);
         assert_eq!(resto[0].id, 2, "so' o outro dedo vai pro gesto da camera");
-        // Com so' o joystick, o gesto nao recebe nada: nada de clique no soltar.
+        // With only the joystick, the gesture receives nothing: no click on release.
         let mut g = crate::gesto_camera::GestoCamera::default();
         let so_joy = [t(1, Fase::Acabou, 200.0, 700.0)];
         assert_eq!(
@@ -274,7 +275,7 @@ mod testes {
         );
     }
 
-    /// O bug do iPhone: soltar o polegar do joystick andava ate' ali (clique).
+    /// The iPhone bug: releasing the thumb from the joystick walked you there (a click).
     #[test]
     fn soltar_o_joystick_nao_vira_clique_no_mundo() {
         let mut j = Joystick::default();
@@ -300,7 +301,7 @@ mod testes {
             "soltar nao clica"
         );
         assert!(!j.ativo());
-        // Um toque curto de verdade, depois, continua sendo clique.
+        // A genuinely short touch, afterwards, is still a click.
         assert_eq!(
             passo(&mut j, &mut g, &[t(8, Fase::Comecou, 900.0, 300.0)]),
             Acao::Nada

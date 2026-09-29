@@ -1,21 +1,22 @@
-//! Carga das skills do banco.
+//! Loading the skills from the database.
 //!
-//! Doze linhas, todas ativas, tres por conjunto de arma. A tabela antiga tinha
-//! 44 colunas — rank, afinidade, payload por rank, passiva — pra um sistema que
-//! nao existe mais.
+//! Twelve rows, all active, three per weapon set. The old table had 44
+//! columns — rank, affinity, payload per rank, passive — for a system that
+//! no longer exists.
 
 use shared::skills::{Conjunto, Forma, Skill};
 use sqlx::{PgPool, Row};
 
 /// Cria a tabela e semeia as doze do playtest, se estiver vazia.
 pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
-    // Banco de antes do redesenho (44 colunas: name, prof, tier…): o `CREATE
-    // TABLE IF NOT EXISTS` abaixo nao faz nada com a tabela velha no lugar, e o
-    // INSERT das doze morre em "column nome does not exist" — o canal nao sobe.
-    // Aconteceu na producao. A velha vira `skills_legado` (dados e a FK do
-    // `player_skills` antigo vao junto) e a nova nasce limpa. A constraint e'
-    // renomeada tambem: `skills_pkey` e' nome de indice, e a tabela nova
-    // criaria outra com o mesmo nome.
+    // A database from before the redesign (44 columns: name, prof, tier…): the
+    // `CREATE TABLE IF NOT EXISTS` below does nothing with the old table in
+    // place, and the INSERT of the twelve dies with "column nome does not
+    // exist" — the channel does not come up. It happened in production. The old
+    // one becomes `skills_legado` (its data and the old `player_skills` FK go
+    // with it) and the new one is born clean. The constraint is renamed too:
+    // `skills_pkey` is an index name, and the new table would create another
+    // with the same name.
     let legado: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM information_schema.tables
                         WHERE table_schema = 'public' AND table_name = 'skills')
@@ -64,8 +65,9 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
 
 /// As doze do playtest.
 ///
-/// Numeros de partida, nao de equilibrio: eles existem pra o playtest ter o que
-/// apertar, e o painel de economia e' quem vai dizer se estao no lugar.
+/// Starting numbers, not balance ones: they exist so the playtest has
+/// something to press, and the economy panel is what will say whether they
+/// are in the right place.
 async fn semear(pool: &PgPool) -> anyhow::Result<()> {
     // (id, nome, conjunto, ordem, forma, mp, espera, conjuracao, dano, cura, alcance, raio)
     for l in shared::skills::playtest() {
@@ -95,7 +97,7 @@ async fn semear(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Catalogo em memoria. Doze linhas — cabe num `RwLock` sem cerimonia.
+/// In-memory catalogue. Twelve rows — it fits in an `RwLock` without ceremony.
 static CATALOGO: parking_lot::RwLock<Vec<Skill>> = parking_lot::RwLock::new(Vec::new());
 
 /// Todas as skills, pro cliente montar a barra.
@@ -143,9 +145,9 @@ pub async fn carregar(pool: &PgPool) -> Vec<Skill> {
     };
     rs.iter()
         .filter_map(|r| {
-            // Linha com conjunto ou forma desconhecidos e' PULADA e avisada.
-            // Cair no primeiro valor por padrao poria a skill na arma errada,
-            // e ninguem descobriria olhando o banco.
+            // A row with an unknown set or shape is SKIPPED and reported. Falling back
+            // to the first value by default would put the skill on the wrong weapon,
+            // and nobody would find out by looking at the database.
             let conjunto: String = r.get("conjunto");
             let forma: String = r.get("forma");
             let (Some(conjunto), Some(forma)) =

@@ -1,11 +1,11 @@
-//! As duas abas de oficina do painel de Craft: APRIMORAR (duas pecas iguais
-//! viram uma do tier seguinte) e COMBINAR (chave/material de uma cor tenta a
-//! cor de cima).
+//! The Craft panel's two workshop tabs: UPGRADE (two identical pieces become
+//! one of the next tier) and COMBINE (a key/material of one color tries for
+//! the color above).
 //!
-//! Mesma regra do resto do painel: nada aqui decide. O servidor confere e
-//! sorteia (`Aprimorar` → `AprimorarResultado`, `Combinar` →
-//! `CombinarResultado`); o painel so' le' a bolsa pra mostrar o que da' e nao
-//! mandar pedido que volta recusado.
+//! Same rule as the rest of the panel: nothing here decides. The server
+//! checks and rolls (`Aprimorar` -> `AprimorarResultado`, `Combinar` ->
+//! `CombinarResultado`); the panel only reads the bag to show what is
+//! possible and not send a request that comes back refused.
 
 use std::collections::HashMap;
 
@@ -51,8 +51,8 @@ impl Grupo {
         self.tier >= forja::TIER_MAX
     }
 
-    /// As duas que vao pra fusao: as de menor refino (perde-se menos); na
-    /// subida de cor, so' entre as +8.
+    /// The two that go into the fusion: the ones with the least refinement (less
+    /// is lost); on a color step up, only among the +8s.
     pub fn escolhidas(&self, slots: &[InventorySlot]) -> Vec<usize> {
         self.slots
             .iter()
@@ -62,7 +62,7 @@ impl Grupo {
             .collect()
     }
 
-    /// Da' pra fundir (sem contar cobre e nivel)?
+    /// Can it be fused (not counting copper and level)?
     pub fn fundivel(&self, slots: &[InventorySlot]) -> bool {
         self.escolhidas(slots).len() == 2 && !(self.sobe_de_cor() && self.grau >= 5)
     }
@@ -72,9 +72,9 @@ pub fn nome_da_cor(grau: u8) -> &'static str {
     forja::Grau::de_u8(grau).map_or("Comum", |g| g.nome())
 }
 
-/// As pecas de equipamento da bolsa agrupadas pra aba: as que se fundem
-/// primeiro, depois as que ainda esperam a segunda igual. Peca com gema fica
-/// de fora (o servidor recusa).
+/// The bag's equipment pieces grouped for the tab: the ones that fuse first,
+/// then the ones still waiting for a matching second. A piece with a gem is
+/// left out (the server refuses).
 pub fn grupos(slots: &[InventorySlot]) -> Vec<Grupo> {
     let mut v: Vec<Grupo> = Vec::new();
     for (i, s) in slots.iter().enumerate() {
@@ -105,7 +105,7 @@ pub fn grupos(slots: &[InventorySlot]) -> Vec<Grupo> {
     v
 }
 
-/// O maior refino que a fusao do grupo joga fora (das duas escolhidas).
+/// The highest refinement the group's fusion throws away (of the two chosen).
 pub fn refino_perdido(g: &Grupo, slots: &[InventorySlot]) -> u8 {
     g.escolhidas(slots)
         .iter()
@@ -114,7 +114,7 @@ pub fn refino_perdido(g: &Grupo, slots: &[InventorySlot]) -> u8 {
         .unwrap_or(0)
 }
 
-/// (cor, tier) que sai da fusao do grupo.
+/// (color, tier) that comes out of the group's fusion.
 pub fn resultado(g: &Grupo) -> (u8, u8) {
     if g.sobe_de_cor() {
         ((g.grau + 1).min(5), 1)
@@ -123,7 +123,7 @@ pub fn resultado(g: &Grupo) -> (u8, u8) {
     }
 }
 
-/// Por que o grupo nao se funde agora (`None` = funde).
+/// Why the group does not fuse right now (`None` = it fuses).
 pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Option<String> {
     if g.sobe_de_cor() && g.grau >= 5 {
         return Some("Lendário IV é o topo".into());
@@ -157,9 +157,9 @@ pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Optio
 
 // ─────────────────────────────── combinar ────────────────────────────────
 
-/// As receitas na ordem da aba: primeiro as que da' pra tentar, depois as de
-/// que se tem alguma coisa, depois o resto (pra mostrar o caminho). Dentro de
-/// cada faixa, chaves antes de material e cor crescente.
+/// The recipes in the tab's order: first the ones that can be tried, then the
+/// ones you have something for, then the rest (to show the path). Within each
+/// band, keys before materials and ascending color.
 pub fn receitas(slots: &[InventorySlot]) -> Vec<ReceitaDeCombinar> {
     let mut v = combinar::receitas();
     let t = |id: u16| tem(slots, id);
@@ -219,16 +219,16 @@ pub struct Oficina {
     sel_grupo: Option<(u16, u8, u8)>,
     /// Receita escolhida no Combinar (a entrada).
     sel_receita: Option<u16>,
-    /// Combinar: mostrar so' o que da' pra tentar agora. A lista tem uma
-    /// receita por material de cada cor — sao dezenas, e quase sempre o
-    /// jogador quer ver as quatro que ele consegue fazer hoje.
+    /// Combine: show only what can be tried right now. The list has one recipe
+    /// per material of each color — there are dozens, and almost always the
+    /// player wants to see the four they can make today.
     so_possiveis: bool,
     rolagem: crate::rolagem::Rolagem,
-    /// Lupa tocada: o item pro "Onde obter".
+    /// Magnifier touched: the item for "Where to get".
     pub onde_obter: Option<u16>,
 }
 
-/// Seta "vira" entre dois icones. Desenhada: a fonte do HUD nao tem o "→".
+/// An arrow that "becomes" between two icons. Drawn: the HUD font has no "->".
 fn seta(x: f32, y: f32) {
     let c = estilo::OURO;
     draw_rectangle(x, y - u(3.0), u(18.0), u(6.0), c);
@@ -274,7 +274,7 @@ fn realce(linha: Rect, marcada: bool, sobre: bool) {
     );
 }
 
-/// Uma linha "icone  nome ........ tem/precisa" com a lupa do Onde obter.
+/// A row "icon  name ........ have/need" with the Where to get magnifier.
 fn linha_de_custo(
     d: Rect,
     y: f32,
@@ -326,7 +326,7 @@ impl Oficina {
         self.rolagem.zera();
     }
 
-    /// Aba Aprimorar. `lista` e `d` sao as duas colunas do painel.
+    /// Upgrade tab. `lista` and `d` are the panel's two columns.
     pub fn aprimorar(
         &mut self,
         lista: Rect,
@@ -427,7 +427,7 @@ impl Oficina {
         crate::rolagem::recortar(None);
         self.rolagem.desenha(lista, total);
         let g = gs.iter().find(|g| Some(chave(g)) == self.sel_grupo)?;
-        // Detalhe: duas pecas → uma do degrau de cima.
+        // Detail: two pieces -> one of the step above.
         let (grau_novo, tier_novo) = resultado(g);
         let escolhidas = g.escolhidas(slots);
         let titulo = if g.sobe_de_cor() {
@@ -588,7 +588,7 @@ impl Oficina {
             self.sel_receita = None;
             return None;
         }
-        // A escolhida saiu da lista com o filtro: cai na primeira que ficou.
+        // The chosen one left the list with the filter: falls to the first one remaining.
         if !rs.iter().any(|r| Some(r.entrada) == self.sel_receita) {
             self.sel_receita = None;
         }
@@ -655,7 +655,7 @@ impl Oficina {
         crate::rolagem::recortar(None);
         self.rolagem.desenha(lista, total);
         let r = rs.iter().find(|r| Some(r.entrada) == self.sel_receita)?;
-        // Detalhe: N da cor → 1 da de cima, a chance e o que cada tentativa cobra.
+        // Detail: N of the color -> 1 of the one above, the chance and what each attempt costs.
         let cy = d.y + u(8.0);
         crate::bolsa::icone_do_item_com(
             Rect::new(d.x + u(6.0), cy, u(56.0), u(56.0)),
@@ -864,7 +864,7 @@ mod tests {
 
     #[test]
     fn combinar_mostra_primeiro_o_que_da_pra_tentar() {
-        // Material comum aparece na lista; quem pode agir vem primeiro.
+        // A common material appears in the list; whoever can act comes first.
         let slots = vec![material(item_id::HORN, 7), material(item_id::SCALE, 2)];
         let rs = receitas(&slots);
         assert_eq!(rs[0].entrada, item_id::HORN, "chifre: 7 pagam uma");
@@ -872,8 +872,8 @@ mod tests {
         assert_eq!(rs.len(), combinar::receitas().len());
     }
 
-    /// O filtro do Combinar mostra so' o que da' pra tentar AGORA — e a
-    /// conta que vai no rotulo e' a mesma que o filtro aplica.
+    /// The Combine filter shows only what can be tried NOW — and the sum that
+    /// goes in the label is the same one the filter applies.
     #[test]
     fn o_filtro_do_combinar_deixa_so_o_que_da() {
         let slots = vec![material(item_id::HORN, 7), material(item_id::STEEL, 3)];
@@ -892,8 +892,8 @@ mod tests {
             dao.iter().all(|r| t(r.entrada) >= r.qtd),
             "entrou no filtro sem ter as pecas na mao"
         );
-        // Bolsa vazia: o filtro nao deixa nada, e a tela tem que dizer isso
-        // em vez de mostrar uma lista em branco.
+        // An empty bag: the filter leaves nothing, and the screen has to say so
+        // instead of showing a blank list.
         let vazia: Vec<InventorySlot> = Vec::new();
         let sem = |id: u16| tem(&vazia, id);
         assert_eq!(

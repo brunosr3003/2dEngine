@@ -1,21 +1,23 @@
-//! Pra onde o corpo OLHA, no fio (`EntityState::rumo`).
+//! Where the body LOOKS, on the wire (`EntityState::rumo`).
 //!
-//! O cliente tirava o rumo so' da velocidade: quem estava de fora via o outro
-//! jogador parado coletando, atacando ou mirando olhando pro ultimo passo. O
-//! servidor e' quem sabe pra onde o corpo esta' virado, entao ele escreve.
+//! The client derived the facing from velocity alone: anyone outside saw the
+//! other player, standing still gathering, attacking or aiming, looking at
+//! their last step. The server is the one that knows where the body is
+//! turned, so it writes it.
 use glam::Vec2;
 
-/// Abaixo disto (u/s) o corpo esta' parado: a velocidade nao diz rumo.
+/// Below this (u/s) the body is still: velocity says nothing about facing.
 pub const VEL_MINIMA: f32 = 0.2;
 
-/// O rumo de um corpo neste tick, na ordem do que manda mais:
+/// A body's facing this tick, in order of what wins:
 ///
-///  1. `mira` — um PONTO pra onde ele olha (o no' que coleta, o alvo que ataca);
-///  2. `golpe` — a DIRECAO de um golpe em curso (o mob que morde);
-///  3. a velocidade, andando;
-///  4. `fixo` — o rumo parado de quem nao se move (NPC da vila);
+/// 1. `mira` — a POINT it looks at (the node being gathered, the target being
+/// attacked);
+/// 2. `golpe` — the DIRECTION of a strike in progress (the mob that bites);
+/// 3. velocity, while walking;
+/// 4. `fixo` — the still facing of someone who does not move (a village NPC);
 ///
-/// e 0 (sem rumo: o cliente mantem o que tinha) se nada disso vale.
+/// and 0 (no facing: the client keeps what it had) if none of that applies.
 pub fn escolhe(
     pos: Vec2,
     mira: Option<Vec2>,
@@ -71,13 +73,13 @@ mod testes {
             None,
         );
         assert!(yaw(r).abs() < 0.03, "olha pro golpe (+Z)");
-        // Andando: pra onde anda.
+        // Walking: where it walks.
         let r = escolhe(pos, None, None, Vec2::new(-2.0, 0.0), None);
         assert!((yaw(r) - 3.0 * q).abs() < 0.03, "olha pra onde anda (-X)");
-        // Parado sem nada: NPC mantem o fixo; o resto fica sem rumo.
+        // Still with nothing: an NPC keeps its fixed facing; the rest have none.
         assert!((yaw(escolhe(pos, None, None, Vec2::ZERO, Some(q))) - q).abs() < 0.03);
         assert_eq!(escolhe(pos, None, None, Vec2::new(0.05, 0.0), None), 0);
-        // Mira em cima do proprio corpo nao diz nada: cai pro resto.
+        // Aiming at its own body says nothing: falls through to the rest.
         assert_eq!(escolhe(pos, Some(pos), None, Vec2::ZERO, None), 0);
     }
 }

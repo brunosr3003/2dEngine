@@ -1,16 +1,17 @@
-//! Mercado global no loop do mundo (docs/MERCADO.md): valida o pedido, tira
-//! da bolsa (ou do gold) o que vai pra custodia e aplica as cartas que voltam.
-//! Falar com o banco central e' com `crate::mercado`, sempre fora do tick.
+//! The global market in the world loop (docs/MERCADO.md): validates the
+//! request, takes what goes into escrow out of the bag (or out of gold) and
+//! applies the letters that come back. Talking to the central database is
+//! `crate::mercado`'s job, always outside the tick.
 use super::*;
 use crate::mercado::{self, Evento, OpCentral, Registro};
 use shared::mercado::{self as regras, CartaNet, Recusa};
 
-/// Pedidos ao mercado mais perto que isto sao ignorados (segundos de sim).
+/// Market requests closer together than this are ignored (sim seconds).
 const INTERVALO_MIN_S: f32 = 0.25;
-/// Id de anuncio que cabe no banco.
+/// A listing id that fits in the database.
 const ID_MAX: usize = 64;
 
-/// O personagem, do jeito que o mercado precisa.
+/// The character, the way the market needs it.
 struct Quem {
     to_client: mpsc::UnboundedSender<ServerMessage>,
     nome: String,
@@ -39,7 +40,7 @@ impl GameWorld {
         })
     }
 
-    /// Todo pedido do painel Mercado passa por aqui.
+    /// Every request from the Market panel goes through here.
     pub(super) fn handle_mercado(&mut self, sid: SessionId, msg: ClientMessage) {
         let Some(quem) = self.mercado_quem(sid) else {
             return;
@@ -55,7 +56,7 @@ impl GameWorld {
         let agora = self.sim_time_s;
         let recebe = matches!(msg, ClientMessage::MercadoReceber);
         match self.mercado_pedido_em.get(&sid) {
-            // O "Receber" que o proprio servidor encadeia nao conta como spam.
+            // The "Receive" the server chains itself does not count as spam.
             Some(t) if agora - t < INTERVALO_MIN_S && !recebe => return,
             _ => {}
         }
@@ -174,8 +175,9 @@ impl GameWorld {
         }
     }
 
-    /// O item sai da bolsa AGORA e a operacao entra na fila do save. Os dois
-    /// vao pro banco na mesma transacao; o relay leva ao central depois.
+    /// The item leaves the bag NOW and the operation joins the save queue. Both
+    /// go to the database in the same transaction; the relay carries it to the
+    /// central one later.
     fn mercado_anunciar(
         &mut self,
         sid: SessionId,
@@ -231,7 +233,7 @@ impl GameWorld {
         self.save_pending = true;
     }
 
-    /// O gold sai AGORA; o central fecha a compra ou devolve por carta.
+    /// The gold leaves NOW; the central one closes the purchase or returns it by letter.
     fn mercado_comprar(
         &mut self,
         sid: SessionId,
@@ -272,8 +274,8 @@ impl GameWorld {
         self.save_pending = true;
     }
 
-    /// Registros que vao no save destes personagens. O resto espera o save
-    /// do dono: operacao gravada sem a bolsa que ela mudou duplicaria item.
+    /// Records that go in these characters' save. The rest waits for the owner's
+    /// save: an operation recorded without the bag it changed would duplicate an item.
     pub fn tomar_registros_mercado(
         &mut self,
         rows: &[crate::persistence::CharacterRow],

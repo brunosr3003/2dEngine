@@ -1,37 +1,37 @@
-//! Digitação: a fila de caracteres, com a REPETIÇÃO sob controle.
+//! Typing: the character queue, with REPEAT under control.
 //!
-//! A macroquad guarda todo `char_event` numa fila e `get_char_pressed()` tira
-//! um por vez. O problema e' que ela empilha o evento de REPETICAO junto com o
-//! da tecla — os dois viram o mesmo `char` na fila, indistinguiveis. Uma tecla
-//! encostada por um instante entra quatro vezes no campo de texto.
+//! macroquad stores every `char_event` in a queue and `get_char_pressed()`
+//! takes one at a time. The problem is that it stacks the REPEAT event
+//! together with the key's own — both become the same `char` in the queue,
+//! indistinguishable. A key touched for an instant enters the text field four times.
 //!
-//! Aqui a fila e' montada do evento cru, que ainda tem a bandeira `repeat`.
-//! Tecla nova entra sempre; repeticao entra so' depois de uma espera e
-//! espacada — que e' o que qualquer campo de texto faz, e o que faz segurar o
-//! apagar funcionar sem apagar tudo de uma vez.
+//! Here the queue is built from the raw event, which still has the `repeat`
+//! flag. A new key always enters; a repeat only enters after a wait and
+//! spaced out — which is what any text field does, and what makes holding
+//! backspace work without deleting everything at once.
 
 use macroquad::input::utils::{register_input_subscriber, repeat_all_miniquad_input};
 use macroquad::miniquad::{EventHandler, KeyCode, KeyMods};
 use std::collections::HashSet;
 
-/// Quanto uma tecla precisa ficar apertada antes de comecar a repetir.
+/// How long a key has to be held before it starts repeating.
 const ESPERA: f64 = 0.42;
-/// Intervalo entre repeticoes depois que ela comeca.
+/// Interval between repeats once it starts.
 const INTERVALO: f64 = 0.035;
 
 pub struct Teclado {
     inscricao: usize,
-    /// `MMO_LOG_TECLA=1` imprime cada evento cru com a bandeira de repeticao.
+    /// `MMO_LOG_TECLA=1` prints every raw event with the repeat flag.
     ///
-    /// Vale a linha: quando o campo de texto se comporta mal, a pergunta e'
-    /// sempre "quantos eventos chegaram e o que eles diziam", e ela nao tem
-    /// resposta olhando pro texto que apareceu na tela. Lido uma vez e nao
-    /// por tecla — consultar o ambiente por caractere e' trabalho por nada.
+    /// It earns its line: when a text field misbehaves, the question is always
+    /// "how many events arrived and what did they say", and that has no answer
+    /// from looking at the text that appeared on screen. Read once and not per
+    /// key — querying the environment per character is work for nothing.
     registra: bool,
-    /// Caracteres prontos pra quem estiver com o foco, neste quadro.
+    /// Characters ready for whoever has focus, this frame.
     fila: Vec<char>,
-    /// Quando a tecla que esta' repetindo comecou, e quando ela entregou o
-    /// ultimo caractere. Ambos em segundos de relogio da macroquad.
+    /// When the repeating key started, and when it delivered the last character.
+    /// Both in macroquad clock seconds.
     repetindo_desde: f64,
     ultima_repeticao: f64,
     agora: f64,
@@ -55,30 +55,29 @@ impl Teclado {
         }
     }
 
-    /// Recolhe o que foi teclado neste quadro. Chamar uma vez por quadro,
-    /// antes de qualquer tela ler.
+    /// Collects what was typed this frame. Call once per frame, before any
+    /// screen reads.
     pub fn coleta(&mut self, agora: f64) {
         self.fila.clear();
         self.agora = agora;
-        // `repeat_all_miniquad_input` precisa de `&mut self` duas vezes se o
-        // proprio `Teclado` for o handler, entao o handler e' um vizinho que
-        // escreve no que interessa.
+        // `repeat_all_miniquad_input` needs `&mut self` twice if `Teclado` itself is
+        // the handler, so the handler is a neighbour that writes into what matters.
         let inscricao = self.inscricao;
         let mut ouvinte = Ouvinte { dono: self };
         repeat_all_miniquad_input(&mut ouvinte, inscricao);
     }
 
-    /// O que foi teclado neste quadro, em ordem.
+    /// What was typed this frame, in order.
     pub fn digitado(&self) -> &[char] {
         &self.fila
     }
 
-    /// Descarta o que estava na fila.
+    /// Discards whatever was in the queue.
     ///
-    /// Serve pra trocar de tela sem levar junto o que foi teclado na anterior:
-    /// tudo que o jogador teclou ANDANDO (WASD e' lido por `is_key_down`, e
-    /// ninguem consome a fila durante o jogo) caia de uma vez no campo de
-    /// usuario assim que a tela de login aparecia.
+    /// It is for changing screen without carrying over what was typed on the
+    /// previous one: everything the player typed while WALKING (WASD is read by
+    /// `is_key_down`, and nobody consumes the queue during play) fell into the
+    /// username field all at once the moment the login screen appeared.
     pub fn limpa(&mut self) {
         self.fila.clear();
         while macroquad::input::get_char_pressed().is_some() {}
@@ -94,8 +93,8 @@ impl EventHandler for Ouvinte<'_> {
     fn draw(&mut self) {}
 
     fn key_down_event(&mut self, k: KeyCode, _m: KeyMods, repeticao: bool) {
-        // Alguns caminhos de entrada entregam key-down repetido sem marcar
-        // repeat. Uma nova digitacao exige soltar a tecla primeiro.
+        // Some input paths deliver a repeated key-down without marking repeat.
+        // A new keystroke requires releasing the key first.
         self.dono.tecla_repetida = !self.dono.pressionadas.insert(k) || repeticao;
         self.dono.tecla_atual = Some(k);
     }
@@ -110,11 +109,11 @@ impl EventHandler for Ouvinte<'_> {
             self.dono.repetindo_desde = agora;
             self.dono.ultima_repeticao = 0.0;
             self.dono.fila.push(c);
-            // Tambem cobre caracteres duplicados entre o mesmo down/up.
+            // Also covers duplicate characters between the same down/up.
             self.dono.tecla_repetida = self.dono.tecla_atual.is_some();
             return;
         }
-        // Repeticao: so' depois da espera, e espacada.
+        // Repeat: only after the wait, and spaced out.
         if agora - self.dono.repetindo_desde < ESPERA {
             return;
         }
