@@ -38,9 +38,12 @@ mod gpu_estatica;
 mod habilidades;
 mod habilidades_input;
 mod hud;
-#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod porao_ui;
+// A prévia da porta é só do desktop em debug, como a do HUD: ela usa alvo com
+// profundidade, que no iOS some.
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_porta;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_hud;
 mod hud_estilo;
 mod hud_layout;

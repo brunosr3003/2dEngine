@@ -10,6 +10,8 @@ Em troca, o Porão não tem mais limite nenhum. Nada de 3 recompensas por dia: e
 
 E agora toda ilha tem um. O Ermo e o Planalto não tinham dungeon física nenhuma — quem passava do nível 30 ficava sem porta pra abrir. Entraram a Caravana Afundada (nível 34, no Ermo) e o Cofre do Trovão (nível 50, no Planalto), e o Casco Congelado subiu do 22 pro 24.
 
+Se você abrir o painel procurando o Porão, ele continua listado — mas agora diz que a entrada é na porta, na ilha. O conteúdo não sumiu, mudou de lugar.
+
 Nada mudou na Gruta, e o protocolo continua o 157 — não é atualização obrigatória. Mas sem o cliente novo as portas não aparecem.
 
 29/09/2026 — A Ilha Mágica e o calendário de presença ficaram legíveis
