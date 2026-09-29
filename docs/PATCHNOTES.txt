@@ -1,3 +1,13 @@
+29/09/2026 — Atualização obrigatória: as portas do Porão
+
+Esta é a mesma novidade da versão anterior — o Porão virou dungeon física, com porta na ilha e chave de craft —, só que agora obrigatória. O protocolo subiu para 158.
+
+O motivo é simples: as portas são desenhadas pelo cliente. Quem ficasse na versão passada andaria por cima de cinco dungeons sem ver nenhuma delas, porque o servidor já está servindo as portas mas a versão antiga não sabe desenhá-las. Em vez de deixar metade dos jogadores sem enxergar o conteúdo, o corte garante que todo mundo veja.
+
+Nada mudou na conversa entre cliente e servidor — nenhuma mensagem, nenhum campo. O número subiu só para forçar a atualização.
+
+Se você já está na 2026092904, atualize mesmo assim: ela também é recusada.
+
 29/09/2026 — O Porão virou uma porta de verdade, com chave de craft
 
 Até aqui o Porão e a Gruta entravam pelo mesmo painel, na Arena, e só se diferenciavam na conta de entradas. Agora são duas coisas separadas.

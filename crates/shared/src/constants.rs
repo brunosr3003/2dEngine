@@ -73,11 +73,25 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// empurrar o cliente novo. Se um dia alguem procurar "o que mudou no fio
 /// entre 156 e 157", a resposta e' nada.
 ///
+/// 158 (29/09/2026): tambem SEM mudanca de wire, como o 157. O Porao virou
+/// dungeon fisica no mesmo dia — porta na ilha, chave de craft, sem cota — e
+/// `AbrirPorao` entrou no enum de pedidos, mas ENTRAR num enum nao quebra
+/// cliente velho nenhum: ele simplesmente nunca manda a variante nova.
+///
+/// O numero sobe porque quem nao atualizar nao VE as portas: o prop e a tarja
+/// sao do cliente, e um jogador no 2026092904 andaria por cima de cinco
+/// dungeons sem nada aparecer na tela. O corte e' o que garante que todo mundo
+/// enxergue o conteudo que o servidor ja' esta' servindo.
+///
+/// Segundo degrau seguido com o mesmo motivo (o 157 forcou o conserto do HUD
+/// da dungeon), e vale o registro: dois cortes num dia so' e' caro pra quem
+/// joga. O terceiro tem que ter razao melhor que "seria bom todo mundo ter".
+///
 /// ORDEM OBRIGATORIA ao subir isto: cliente PUBLICADO nas cinco plataformas
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 157;
+pub const PROTOCOL_VERSION: u16 = 158;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
