@@ -1,19 +1,19 @@
-//! Loja do NPC: comprar em LOTE. As regras, puras e testaveis; o `world.rs`
-//! acha o vendedor por perto, chama e responde.
+//! NPC shop: buying in a BATCH. The rules, pure and testable; `world.rs`
+//! finds the vendor nearby, calls in and answers.
 //!
-//! A loja cobra em COBRE (docs/ECONOMIA.md). Um lote e' tudo ou nada: o cobre
-//! do lote inteiro e o espaco pra ele sao conferidos antes de mexer na bolsa —
-//! antes, comprar 50 eram 50 pedidos, e se o cobre acabava no meio chegavam
-//! dezenas de recusas no chat.
+//! The shop charges in COPPER (docs/ECONOMIA.md). A batch is all or nothing:
+//! the copper for the whole batch and the space for it are checked before the
+//! bag is touched — before, buying 50 was 50 requests, and if the copper ran
+//! out halfway dozens of refusals arrived in the chat.
 
 use shared::{item_id, InventorySlot};
 
-/// Maior lote de uma vez.
+/// Largest batch at once.
 pub const MAX_LOTE: u32 = 999;
 
-/// Compra `qtd` de `item` a `preco` cobre cada: tira o cobre e poe o item
-/// (empilhado ate' `cap`). Devolve o total pago. Na recusa a bolsa nao muda e
-/// o `Err` e' a frase que o jogador le.
+/// Buys `qtd` of `item` at `preco` copper each: takes the copper and puts
+/// the item in (stacked up to `cap`). Returns the total paid. On refusal the
+/// bag does not change and the `Err` is the sentence the player reads.
 pub fn comprar_lote(
     inv: &mut [InventorySlot],
     item: u16,
@@ -80,13 +80,13 @@ mod testes {
 
     #[test]
     fn sem_espaco_nao_cobra() {
-        // Pilha de 20: 45 pocoes pedem 3 slots e so' ha' 1 vago (+ o do
-        // cobre, que nao esvazia).
+        // A stack of 20: 45 potions need 3 slots and only 1 is free (+ the copper's,
+        // which does not empty).
         let mut inv = bolsa(&[(item_id::COPPER, 10_000)], 1);
         let e = comprar_lote(&mut inv, POCAO, 10, 45, 20).unwrap_err();
         assert!(e.contains("bolsa cheia"), "{e}");
         assert_eq!(crate::craft::tem(&inv, item_id::COPPER), 10_000);
-        // O cobre que o lote gasta inteiro libera o slot dele.
+        // The copper the batch spends entirely frees its slot.
         let mut justo = bolsa(&[(item_id::COPPER, 200)], 1);
         assert_eq!(comprar_lote(&mut justo, POCAO, 10, 20, 10), Ok(200));
         assert_eq!(crate::craft::tem(&justo, POCAO), 20);

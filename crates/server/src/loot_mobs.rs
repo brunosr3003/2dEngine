@@ -1,5 +1,5 @@
-//! Base de loot dos oito tipos: cobre, materiais e poucas pocoes.
-//! Cada entrada rola separadamente; equipamento nunca faz parte do pool.
+//! Base loot for the eight types: copper, materials and few potions.
+//! Each entry rolls separately; equipment is never part of the pool.
 use shared::item_id::*;
 
 // (tipo, item, minimo, maximo, chance)
@@ -36,12 +36,12 @@ pub const BASE: &[(i32, u16, i32, i32, f32)] = &[
     (7, GREATER_MANA, 1, 1, 0.25),
 ];
 
-/// Os caranguejos de praia (kinds 8 e 9): cobre e pocao; o rei rende um pouco
-/// de aco. Migrados a parte, com marcador proprio — o
-/// `loot_mobs_recursos_v1` ja' rodou nos bancos que existem.
+/// The beach crabs (kinds 8 and 9): copper and a potion; the king yields a
+/// little steel. Migrated separately, with their own marker — the
+/// `loot_mobs_recursos_v1` has already run on the databases that exist.
 ///
-/// Nenhum mob da' CHAVE (Escama, Garra, Chifre, Couro): so' chefe e
-/// dungeon/raid (`shared::chaves`, migracao `chaves_so_de_chefe_v1`).
+/// No mob gives a KEY (Scale, Claw, Horn, Hide): only bosses and
+/// dungeon/raid (`shared::chaves`, migration `chaves_so_de_chefe_v1`).
 pub const BASE_PRAIA: &[(i32, u16, i32, i32, f32)] = &[
     (8, COPPER, 3, 10, 1.0),
     (8, HEALTH_POTION, 1, 1, 0.08),
@@ -50,10 +50,10 @@ pub const BASE_PRAIA: &[(i32, u16, i32, i32, f32)] = &[
     (9, HEALTH_POTION, 1, 1, 0.12),
 ];
 
-/// O BESTIARIO DAS OUTRAS ILHAS (kinds 10-15, `economy::kinds_do_bioma`).
+/// THE BESTIARY OF THE OTHER ISLANDS (kinds 10-15, `economy::kinds_do_bioma`).
 ///
-/// Cada ilha derruba o material que a faixa dela pede, e o cobre sobe com a
-/// faixa. Nenhum da' CHAVE — chave e' so' de chefe e dungeon.
+/// Each island drops the material its tier asks for, and the copper rises
+/// with the tier. None gives a KEY — keys are boss and dungeon only.
 pub const BASE_ILHAS: &[(i32, u16, i32, i32, f32)] = &[
     // Geleira
     (10, COPPER, 30, 70, 1.0),
@@ -80,7 +80,7 @@ pub const BASE_ILHAS: &[(i32, u16, i32, i32, f32)] = &[
     (15, GLITTERING_POWDER, 1, 1, 0.04),
 ];
 
-/// Migra apenas a economia dos mobs, uma vez, dentro de uma transacao.
+/// Migrates only the mobs' economy, once, inside a transaction.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS economy_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())")
@@ -98,8 +98,8 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
     }
-    // Caranguejos: uma vez, so' se o kind ja' existe (o seed de `enemy_kinds`
-    // roda antes). Nao apaga nada: kind 8 e 9 nao tinham loot.
+    // Crabs: once, only if the kind already exists (the `enemy_kinds` seed runs
+    // first). Deletes nothing: kinds 8 and 9 had no loot.
     let praia=sqlx::query("INSERT INTO economy_migrations(name) VALUES ('loot_caranguejos_v1') ON CONFLICT DO NOTHING")
         .execute(&mut *tx).await?.rows_affected()>0;
     if praia {
@@ -112,10 +112,10 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .await?;
         tracing::info!("Crab loot seeded");
     }
-    // O bestiario das outras ilhas: loot dos kinds 10-15, e a faxina dos
-    // kinds do MAR (20-24), que ficaram orfaos quando o Mar Aberto foi
-    // desfeito. Eles nao nascem mais (o sorteio agora e' por bioma), mas
-    // continuavam aparecendo em "onde obter" e nas contas de economia.
+    // The bestiary of the other islands: loot for kinds 10-15, and the cleanup
+    // of the SEA kinds (20-24), orphaned when the Open Sea was undone. They no
+    // longer spawn (the draw is by biome now), but they still showed up in
+    // "where to get" and in the economy sums.
     let ilhas = sqlx::query(
         "INSERT INTO economy_migrations(name) VALUES ('bestiario_por_ilha_v1') ON CONFLICT DO NOTHING",
     )
@@ -143,9 +143,9 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             "Per-island bestiary seeded; {kinds} sea kinds and {orfaos} loot rows removed"
         );
     }
-    // Chaves de craft (Escama, Garra, Chifre, Couro) so' de chefe e
-    // dungeon/raid: saem de todo mob e de toda pedra, em toda cor. Banco novo
-    // ja' nasce sem (BASE e `linhas_da_pedra` nao tem chave).
+    // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
+    // they come off every mob and every stone, in every color. A new database
+    // is born without them (BASE and `linhas_da_pedra` have no keys).
     let chaves=sqlx::query("INSERT INTO economy_migrations(name) VALUES ('chaves_so_de_chefe_v1') ON CONFLICT DO NOTHING")
         .execute(&mut *tx).await?.rows_affected()>0;
     if chaves {
@@ -211,7 +211,7 @@ mod tests {
                 assert!(e.2 > 0 && e.3 >= e.2 && e.4 > 0.0 && e.4 <= 1.0);
             }
         }
-        // o rei rende mais que o pequeno
+        // the king yields more than the small one
         let cobre = |k: i32| {
             BASE_PRAIA
                 .iter()
@@ -255,11 +255,12 @@ mod tests {
 mod testes {
     use super::*;
 
-    /// TODO bicho do bestiario tem loot.
+    /// EVERY creature in the bestiary has loot.
     ///
-    /// Bicho sem linha em `loot_drops` cai e nao larga nada — nem cobre. Nao
-    /// da' erro, nao aparece no log: o jogador so' acha que a ilha e' pobre.
-    /// O teste percorre o bestiario de verdade, e nao uma lista escrita aqui.
+    /// A creature with no row in `loot_drops` dies and drops nothing — not even
+    /// copper. It is not an error and does not appear in the log: the player just
+    /// thinks the island is poor. The test walks the real bestiary, and not a
+    /// list written here.
     #[test]
     fn nenhum_bicho_do_bestiario_cai_sem_nada() {
         use shared::terreno::ARQUIPELAGO;
@@ -283,9 +284,9 @@ mod testes {
         }
     }
 
-    /// E todo bicho larga COBRE, com chance 1. O cobre e' a moeda do dia a
-    /// dia (docs/ECONOMIA.md): um bicho que as vezes nao paga nada faz a
-    /// ilha inteira parecer quebrada.
+    /// And every creature drops COPPER, with chance 1. Copper is the day-to-day
+    /// currency (docs/ECONOMIA.md): a creature that sometimes pays nothing makes
+    /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
         for tabela in [BASE, BASE_PRAIA, BASE_ILHAS] {
@@ -301,8 +302,8 @@ mod testes {
         }
     }
 
-    /// Nenhum mob da' CHAVE — so' chefe e dungeon (`shared::chaves`). Uma
-    /// chave num mob comum derruba a economia de craft inteira.
+    /// No mob gives a KEY — bosses and dungeons only (`shared::chaves`). A key on
+    /// a common mob brings the whole craft economy down.
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();

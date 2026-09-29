@@ -1,9 +1,9 @@
-//! Recipes de crafting carregadas do DB. Schema em `craft_recipes`.
-//! Seed inicial vem de `shared::CRAFT_RECIPES` se a tabela estiver vazia.
-//! Admin pode UPDATE/INSERT pra mudar custos/outputs sem rebuild.
+//! Crafting recipes loaded from the DB. Schema in `craft_recipes`.
+//! The initial seed comes from `shared::CRAFT_RECIPES` if the table is empty.
+//! An admin can UPDATE/INSERT to change costs/outputs without a rebuild.
 //!
-//! Cache estatico — recarrega no startup. Hot-reload pode ser adicionado
-//! depois (mesmo padrao da economia).
+//! Static cache — reloads at startup. Hot-reload can be added later (the
+//! same pattern as the economy).
 
 use parking_lot::RwLock;
 use serde_json::Value as JsonValue;
@@ -19,12 +19,12 @@ fn cell() -> Arc<RwLock<Vec<CraftRecipeNet>>> {
         .clone()
 }
 
-/// Versao corrente em cache — comparada ao `recipes_version` do DB pra detectar
-/// mudancas. World tick chama `try_hot_reload` periodicamente.
+/// The version currently cached — compared against the DB's `recipes_version`
+/// to detect changes. The world tick calls `try_hot_reload` periodically.
 static VERSION: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
-/// Sentinela atomica setada quando reload aplicou mudancas. World tick ve,
-/// faz broadcast pros clientes, e limpa.
+/// An atomic sentinel set when a reload applied changes. The world tick sees
+/// it, broadcasts to the clients, and clears it.
 static NEEDS_BROADCAST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn version() -> i64 {
@@ -35,7 +35,7 @@ pub fn take_broadcast_flag() -> bool {
     NEEDS_BROADCAST.swap(false, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Inicializa schema, seed se vazio, e carrega recipes pra cache.
+/// Initialises the schema, seeds if empty, and loads the recipes into the cache.
 pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS craft_recipes (
@@ -53,7 +53,7 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     )
     .execute(pool)
     .await?;
-    // Tabela versao — admin bumpa pra forcar hot-reload sem restart.
+    // Version table — an admin bumps it to force a hot-reload with no restart.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS recipes_version (
             id      INT PRIMARY KEY DEFAULT 1,
@@ -81,8 +81,8 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Hot-reload check — chamado periodicamente do world tick. Retorna true se
-/// recarregou (caller deve broadcast `CraftRecipes` pra todos).
+/// Hot-reload check — called periodically from the world tick. Returns true
+/// if it reloaded (the caller must broadcast `CraftRecipes` to everyone).
 pub async fn try_hot_reload(pool: &PgPool) -> anyhow::Result<bool> {
     let v: i64 = sqlx::query_scalar("SELECT version FROM recipes_version WHERE id = 1")
         .fetch_one(pool)
@@ -97,8 +97,8 @@ pub async fn try_hot_reload(pool: &PgPool) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-/// Spawn detached — checa version a cada 5s + seta NEEDS_BROADCAST quando
-/// muda. World tick checa o flag + faz broadcast pra logged-in clients.
+/// Detached spawn — checks the version every 5s + sets NEEDS_BROADCAST when
+/// it changes. The world tick checks the flag + broadcasts to logged-in clients.
 pub fn spawn_hot_reload_task(pool: PgPool) {
     tokio::spawn(async move {
         let mut iv = tokio::time::interval(std::time::Duration::from_secs(5));
@@ -112,7 +112,7 @@ pub fn spawn_hot_reload_task(pool: PgPool) {
     });
 }
 
-/// Recarrega o cache do DB. Pode ser chamado externamente (futuro hot-reload).
+/// Reloads the cache from the DB. Can be called externally (future hot-reload).
 pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
     let rows: Vec<(i32, String, i16, i16, JsonValue, i32, i32, i32, bool, i16)> = sqlx::query_as(
         "SELECT id, name, category, tier, inputs, output_item_id, output_qty, output_item_level, roll_instance, nivel_min \
@@ -126,8 +126,8 @@ pub async fn reload(pool: &PgPool) -> anyhow::Result<()> {
             id: id as u16,
             name,
             category: cat.max(0) as u8,
-            // `craft_station_of` so' existia pra mandar barco pra CARPENTRY;
-            // sem barco, toda receita e' da FORGE. O cliente nem le' o campo.
+            // `craft_station_of` only existed to send the boat to CARPENTRY; with no
+            // boat, every recipe belongs to the FORGE. The client does not even read the field.
             station: shared::craft_station::FORGE,
             tier: tier.max(1) as u8,
             inputs,

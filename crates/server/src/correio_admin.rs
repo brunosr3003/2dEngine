@@ -1,9 +1,9 @@
-//! Correio oficial: a parte que precisa do LOOP DO MUNDO — listar a caixa de
-//! quem esta' online e resgatar anexo na bolsa.
+//! Official mail: the part that needs the WORLD LOOP — listing the inbox of
+//! someone online and claiming an attachment into the bag.
 //!
-//! O envio em si (permissao, campanha auditavel, destinatarios fotografados
-//! na transacao) mora no crate `correio`, porque o panoptico tambem envia.
-//! Reexportado aqui pra quem chamava continuar chamando.
+//! The send itself (permission, an auditable campaign, recipients
+//! photographed inside the transaction) lives in the `correio` crate, because
+//! the panoptico sends too. Re-exported here so existing callers keep working.
 
 pub use correio::{cargo, enviar, init};
 use crate::world::{IncomingMessage, SessionId};
@@ -58,8 +58,8 @@ pub async fn ler_apagar(pool: &PgPool, eu: &str, id: i64, apagar: bool) -> Resul
     Ok(())
 }
 
-/// Recibo e bolsa sao confirmados juntos. Token impede um save antigo de
-/// confirmar uma reserva de outro processo apos perda da conexao.
+/// Receipt and bag are confirmed together. The token stops an old save from
+/// confirming another process's reservation after a lost connection.
 #[derive(Debug, Clone)]
 pub struct Recibo {
     pub id: i64,
@@ -91,8 +91,9 @@ pub struct Entrega {
     pub aceitou: oneshot::Sender<bool>,
 }
 
-/// Conexao dedicada segura advisory lock ate o save confirmar o recibo.
-/// Sem prazo arbitrario: banco lento nao permite um segundo resgate.
+/// A dedicated connection holds the advisory lock until the save confirms
+/// the receipt. No arbitrary deadline: a slow database does not allow a
+/// second claim.
 pub fn resgatar(
     pool: PgPool,
     tx: mpsc::UnboundedSender<IncomingMessage>,
@@ -151,8 +152,8 @@ async fn resgatar_inner(
         crate::presenca::agora(),
         fastrand::u64(..)
     );
-    // Reconfere sob o lock da linha: um save antigo pode concluir entre
-    // a leitura acima e esta reserva, mesmo apos perder o advisory lock.
+    // Re-checks under the row's lock: an old save may finish between the read
+    // above and this reservation, even after losing the advisory lock.
     let reservou = sqlx::query("UPDATE social_oficiais SET token=$1 WHERE id=$2 AND para=$3 AND NOT resgatada AND NOT apagada")
         .bind(&token)
         .bind(id)
@@ -256,7 +257,7 @@ pub mod tests {
             enviar(p, "Bia", 2, &pedido).await.is_err(),
             "revogacao imediata"
         );
-        // O recibo participa da transacao: rollback nao consome o anexo.
+        // The receipt takes part in the transaction: a rollback does not consume the attachment.
         let id = -cartas[0].id;
         sqlx::query("UPDATE social_oficiais SET token='teste-token' WHERE id=$1")
             .bind(id)
@@ -299,7 +300,8 @@ pub mod tests {
                 .resgatada
         );
         ler_apagar(p, "Caio", -id, true).await?;
-        // Exerce a reserva real, com duas conexoes e retorno pelo canal do mundo.
+        // Exercises the real reservation, with two connections and the return over
+        // the world's channel.
         let schema: String = sqlx::query_scalar("SELECT current_schema()")
             .fetch_one(p)
             .await?;
@@ -350,7 +352,7 @@ pub mod tests {
             "anexo salvo nao pode ser resgatado novamente"
         );
         scoped.close().await;
-        // Esvazia apenas registros de teste para a suite social existente.
+        // Empties only test records, for the existing social suite.
         sqlx::query("DELETE FROM social_oficiais")
             .execute(p)
             .await?;

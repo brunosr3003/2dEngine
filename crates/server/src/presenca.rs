@@ -1,17 +1,19 @@
 //! Calendario de presenca no banco do realm (docs/CALENDARIO.md).
 //!
-//! Uma linha por resgate em `presenca_resgates`. O banco decide quem leva o
-//! dia: o resgate trava a CONTA (`pg_advisory_xact_lock`), le as linhas,
-//! planeja com `shared::presenca::planejar` e insere, tudo numa transacao.
-//! Dois personagens da conta em canais (processos) diferentes pedindo ao
-//! mesmo tempo: um insere, o outro le a linha e e' recusado. As restricoes
-//! UNIQUE (um por dia, um por dia da grade) seguram mesmo sem o lock.
+//! One row per claim in `presenca_resgates`. The database decides who gets
+//! the day: the claim locks the ACCOUNT (`pg_advisory_xact_lock`), reads the
+//! rows, plans with `shared::presenca::planejar` and inserts, all in one
+//! transaction. Two characters of the account on different channels
+//! (processes) asking at the same time: one inserts, the other reads the row
+//! and is refused. The UNIQUE constraints (one per day, one per grid day)
+//! hold even without the lock.
 //!
-//! A entrega e' idempotente como a carta do mercado: a linha nasce
-//! `aplicado = FALSE`; o canal poe o premio na bolsa e o save do personagem
-//! marca `aplicado` na MESMA transacao da bolsa. Queda no meio deixa a linha
-//! pendente, e o proximo login da conta (depois de `PENDENTE_APOS_S`, pra nao
-//! pegar um save que ainda vai acontecer) reserva e entrega de novo.
+//! Delivery is idempotent like the market's letter: the row is born
+//! `aplicado = FALSE`; the channel puts the prize in the bag and the
+//! character's save marks `aplicado` in the SAME transaction as the bag. A
+//! crash in the middle leaves the row pending, and the account's next login
+//! (after `PENDENTE_APOS_S`, so as not to catch a save that is still going to
+//! happen) reserves it and delivers again.
 
 use anyhow::Result;
 use shared::presenca::{self as pr, Premio, Recusa, ResgateFeito};
@@ -20,13 +22,13 @@ use tokio::sync::mpsc;
 
 use crate::world::{IncomingMessage, SessionId};
 
-/// Linha nao aplicada ha' mais que isto e' de um canal que caiu antes do save.
+/// A row unapplied for longer than this belongs to a channel that fell before the save.
 pub const PENDENTE_APOS_S: i64 = 120;
-/// Linhas lidas por conta: dois meses cheios e sobra pra eventos.
+/// Rows read per account: two full months with room to spare for events.
 const LINHAS_LIDAS: i64 = 200;
 
-/// Relogio do calendario. `MMO_PRESENCA_TESTE_OFFSET_S` (servidor de TESTE)
-/// adianta o dia sem mexer no relogio da maquina.
+/// The calendar's clock. `MMO_PRESENCA_TESTE_OFFSET_S` (TEST server) advances
+/// the day without touching the machine's clock.
 pub fn agora() -> i64 {
     let offset: i64 = std::env::var("MMO_PRESENCA_TESTE_OFFSET_S")
         .ok()
@@ -109,8 +111,8 @@ pub enum Resultado {
     },
 }
 
-/// Resgata o proximo premio de `calendario` pra `conta`, no banco. So' um
-/// pedido por dia vence, em qualquer numero de processos.
+/// Claims the next prize of `calendario` for `conta`, in the database. Only
+/// one request a day wins, across any number of processes.
 pub async fn reivindicar(
     pool: &PgPool,
     conta: i64,
@@ -155,7 +157,7 @@ pub async fn reivindicar(
     .await?
     .rows_affected();
     if inseriu == 0 {
-        // Nao acontece com o lock; se acontecer, a linha de outro venceu.
+        // Does not happen with the lock; if it does, another row's claim won.
         tx.rollback().await?;
         return Ok(Resultado::Recusado {
             recusa: Recusa::JaResgatouHoje,
@@ -172,9 +174,9 @@ pub async fn reivindicar(
     Ok(Resultado::Resgatou { id, plano, feitos })
 }
 
-/// Resgates da conta que nunca chegaram a um save (canal caiu): reserva pra
-/// `personagem` e devolve pra entregar. A reserva e' atomica (UPDATE ...
-/// RETURNING): dois logins ao mesmo tempo nao pegam a mesma linha.
+/// Claims of the account that never reached a save (the channel fell):
+/// reserves for `personagem` and returns it to be delivered. The reservation
+/// is atomic (UPDATE ... RETURNING): two logins at once do not take the same row.
 pub async fn reservar_pendentes(
     pool: &PgPool,
     conta: i64,
@@ -202,7 +204,7 @@ pub async fn reservar_pendentes(
         .collect())
 }
 
-/// Dentro do save do personagem: o premio ja' esta' na bolsa gravada.
+/// Inside the character's save: the prize is already in the recorded bag.
 pub async fn marcar_aplicados(tx: &mut Transaction<'_, Postgres>, ids: &[String]) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
@@ -214,9 +216,9 @@ pub async fn marcar_aplicados(tx: &mut Transaction<'_, Postgres>, ids: &[String]
     Ok(())
 }
 
-// ─────────────────────────────── ponte com o mundo ───────────────────────────────
+// ─────────────────────────────── bridge with the world ───────────────────────────────
 
-/// O que as tarefas async devolvem ao loop do mundo.
+/// What the async tasks return to the world loop.
 #[derive(Debug)]
 pub enum Evento {
     Estado {
@@ -328,8 +330,8 @@ pub fn spawn_ao_logar(
 mod tests {
     use super::*;
 
-    /// Postgres descartavel: `DATABASE_URL_PRESENCA_TESTE` (ou o do mercado).
-    /// Sem a variavel o teste nao faz nada (e diz).
+    /// A disposable Postgres: `DATABASE_URL_PRESENCA_TESTE` (or the market's).
+    /// Without the variable the test does nothing (and says so).
     #[tokio::test]
     async fn um_resgate_por_dia_mesmo_com_dois_canais_ao_mesmo_tempo() {
         let Ok(url) = std::env::var("DATABASE_URL_PRESENCA_TESTE")
@@ -349,7 +351,7 @@ mod tests {
         let conta: i64 = 9_000_000_000 + fastrand::i64(0..1_000_000_000);
         let t = agora();
 
-        // Dois "canais" (tarefas com conexoes proprias), mesma conta, mesmo instante.
+        // Two "channels" (tasks with their own connections), same account, same instant.
         let (a, b) = tokio::join!(
             reivindicar(&pool, conta, "ana", pr::MENSAL, t),
             reivindicar(&pool, conta, "bia", pr::MENSAL, t)
@@ -401,8 +403,9 @@ mod tests {
                 .unwrap();
         assert_eq!(n, 2);
 
-        // Nada foi aplicado: as duas linhas sao pendentes. Janela de 1 h nao pega
-        // (o canal que resgatou ainda vai salvar); janela 0 reserva as duas.
+        // Nothing was applied: both rows are pending. A 1 h window does not catch
+        // them (the channel that claimed is still going to save); a 0 window
+        // reserves both.
         assert!(reservar_pendentes(&pool, conta, "caio", 3600)
             .await
             .unwrap()
@@ -411,7 +414,7 @@ mod tests {
         assert_eq!(pend.len(), 2);
         assert!(pend.iter().all(|(_, premios)| !premios.is_empty()));
 
-        // O save marca aplicado (duas vezes nao faz mal) e some dos pendentes.
+        // The save marks applied (twice does no harm) and it leaves the pending set.
         let ids: Vec<String> = pend.iter().map(|p| p.0.clone()).collect();
         for _ in 0..2 {
             let mut tx = pool.begin().await.unwrap();

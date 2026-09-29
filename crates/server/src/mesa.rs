@@ -1,19 +1,20 @@
-//! A `mesa`: fila automatica, lista de salas e pronto-check das dungeons
-//! (docs/DUNGEONS_E_RAIDS.md, secao 6, decisao 3).
+//! The `mesa`: automatic queue, room list and ready-check for the dungeons
+//! (docs/DUNGEONS_E_RAIDS.md, section 6, decision 3).
 //!
-//! Regra pura, sem mundo nem rede: quem joga e' uma CHAVE (`u64`), e a mesa
-//! so' devolve eventos. Hoje mora no canal e so' junta quem esta' no mesmo
-//! processo; a interface e' a mesma que um servico entre canais/realms vai
-//! implementar (a F5 do plano), por isso nada aqui conhece sessao.
+//! A pure rule, with no world and no network: a player is a KEY (`u64`), and
+//! the table only returns events. Today it lives in the channel and only
+//! joins people in the same process; the interface is the one a
+//! cross-channel/realm service will implement (F5 of the plan), which is why
+//! nothing here knows about sessions.
 //!
-//! - Uma pessoa esta' em UMA coisa so': fila, sala ou pronto-check.
-//! - Fila fecha grupo quando lota, ou depois de `ESPERA_PRA_MENOS_S` com o
-//!   minimo do estagio.
-//! - Sala: o lider inicia quando quiser; sala cheia inicia sozinha; com
-//!   "completar pela fila" puxa da fila depois de `SALA_PUXA_FILA_S`.
-//! - Pronto-check de `PRONTO_S`: todos aceitam, comeca. Alguem recusa ou deixa
-//!   expirar: quem aceitou volta pro topo da fila (ou fica na sala), quem
-//!   recusou sai.
+//! - A person is in ONE thing only: queue, room or ready-check.
+//! - The queue closes a group when it fills, or after `ESPERA_PRA_MENOS_S`
+//! with the stage's minimum.
+//! - Room: the leader starts when they like; a full room starts on its own;
+//! with "fill from the queue" it pulls from the queue after `SALA_PUXA_FILA_S`.
+//! - Ready-check of `PRONTO_S`: everyone accepts, it starts. Someone refuses
+//! or lets it expire: whoever accepted returns to the top of the queue (or
+//! stays in the room), whoever refused leaves.
 
 pub type Chave = u64;
 
@@ -49,9 +50,9 @@ pub struct Pronto {
     pub membros: Vec<Chave>,
     pub aceitos: Vec<Chave>,
     pub expira: f64,
-    /// De uma sala (quem aceitou volta pra ela) ou da fila.
+    /// From a room (whoever accepted returns to it) or from the queue.
     pub sala: Option<u32>,
-    /// Quando saiu da fila, por membro — pra voltar ao TOPO se cair.
+    /// When they left the queue, per member — to return to the TOP if it falls through.
     pub desde: Vec<(Chave, f64)>,
 }
 
@@ -59,7 +60,7 @@ pub struct Pronto {
 pub enum Evento {
     /// Abriu um pronto-check: avisar os membros.
     Pronto(Pronto),
-    /// Todos aceitaram: criar a instancia.
+    /// Everyone accepted: create the instance.
     Comecar {
         conteudo: u16,
         estagio: u8,
@@ -94,7 +95,7 @@ pub struct Mesa {
     prox_partida: u32,
 }
 
-/// Tamanho maximo e minimo da fila por (conteudo, estagio).
+/// Maximum and minimum queue size per (content, stage).
 pub struct Regras<'a> {
     pub grupo_max: &'a dyn Fn(u16) -> u8,
     pub minimo: &'a dyn Fn(u16, u8) -> u8,
@@ -228,7 +229,7 @@ impl Mesa {
         self.salas.retain(|s| !s.membros.is_empty());
     }
 
-    /// O lider abre o pronto-check com quem esta' na sala.
+    /// The leader opens the ready-check with whoever is in the room.
     pub fn iniciar_sala(&mut self, k: Chave, agora: f64) -> Result<Evento, &'static str> {
         let Some(s) = self.salas.iter().find(|s| s.membros.contains(&k)) else {
             return Err("Você não está numa sala.");
@@ -285,7 +286,7 @@ impl Mesa {
         self.fechar_prontos(agora, Some((partida, k)))
     }
 
-    /// Desconectou: sai de tudo. Pronto-check aberto conta como recusa.
+    /// Disconnected: leaves everything. An open ready-check counts as a refusal.
     pub fn remover(&mut self, k: Chave, agora: f64) -> Vec<Evento> {
         self.sair_fila(k);
         self.sair_sala(k, agora);
@@ -334,7 +335,7 @@ impl Mesa {
                 });
                 continue;
             }
-            // Caiu: quem recusou sai; quem nao recusou volta.
+            // Fell through: whoever refused leaves; whoever did not refuse returns.
             match p.sala {
                 Some(id) => {
                     for k in &recusou {
@@ -345,7 +346,7 @@ impl Mesa {
                     }
                 }
                 None => {
-                    // Volta pro TOPO: com o `desde` de quando entrou.
+                    // Back to the TOP: with the `desde` of when they joined.
                     for &k in p.membros.iter().filter(|m| !recusou.contains(m)) {
                         let desde = p.desde.iter().find(|d| d.0 == k).map_or(agora, |d| d.1);
                         self.fila.push(NaFila {
@@ -367,12 +368,12 @@ impl Mesa {
         ev
     }
 
-    /// Um passo: expira pronto-check, completa sala pela fila, fecha grupo da
-    /// fila e fecha sala parada.
+    /// One step: expires the ready-check, fills a room from the queue, closes a
+    /// group from the queue and closes an idle room.
     pub fn tick(&mut self, agora: f64, r: &Regras) -> Vec<Evento> {
         let mut ev = self.fechar_prontos(agora, None);
 
-        // Sala com "completar pela fila": puxa depois de um minuto.
+        // A room with "fill from the queue": pulls after a minute.
         for si in 0..self.salas.len() {
             let (id, c, e, max, puxa, parada) = {
                 let s = &self.salas[si];
@@ -425,7 +426,7 @@ impl Mesa {
             });
         }
 
-        // Fila: por (conteudo, estagio), na ordem de chegada.
+        // Queue: per (content, stage), in arrival order.
         let mut chaves: Vec<(u16, u8)> = Vec::new();
         for f in &self.fila {
             if !chaves.contains(&(f.conteudo, f.estagio)) {
@@ -462,7 +463,7 @@ impl Mesa {
         ev
     }
 
-    /// Salas abertas de um conteudo/estagio (pra a lista Procurar).
+    /// Open rooms of a content/stage (for the Search list).
     pub fn salas_de(&self, conteudo: u16, estagio: u8) -> Vec<&Sala> {
         self.salas
             .iter()

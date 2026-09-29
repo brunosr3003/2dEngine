@@ -1,11 +1,10 @@
 //! Livro-caixa da TP, no banco CENTRAL (docs/MERCADO.md).
 //!
-//! TP e' dinheiro de verdade: nunca um saldo sobrescrito. Cada movimento e'
-//! uma linha (quem, quanto, por que, saldo depois); o saldo e' a ultima linha
-//! da conta. `referencia` unica faz o mesmo movimento pedido duas vezes valer
-//! uma so'.
+//! TP is real money: never an overwritten balance. Every movement is a row
+//! (who, how much, why, the balance after); the balance is the account's last
+//! row. A unique `referencia` makes the same movement, requested twice, count once.
 //!
-//! Arquivo sem `crate::`: o binario `creditar_tp` inclui ele por `#[path]`.
+//! A file with no `crate::`: the `creditar_tp` binary includes it by `#[path]`.
 use anyhow::Result;
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -34,17 +33,17 @@ pub enum Movimento {
     Feito {
         saldo: u64,
     },
-    /// A `referencia` ja' tinha sido lancada: nada muda.
+    /// The `referencia` had already been posted: nothing changes.
     JaFeito {
         saldo: u64,
     },
-    /// Debito maior que o saldo: nada muda.
+    /// A debit larger than the balance: nothing changes.
     SemSaldo {
         saldo: u64,
     },
 }
 
-/// Saldo atual de uma conta.
+/// An account's current balance.
 pub async fn saldo<'e, E: sqlx::PgExecutor<'e>>(exec: E, conta: &str) -> Result<u64> {
     let s: Option<i64> = sqlx::query_scalar(
         "SELECT saldo_depois FROM tp_razao WHERE conta = $1 ORDER BY id DESC LIMIT 1",
@@ -55,8 +54,8 @@ pub async fn saldo<'e, E: sqlx::PgExecutor<'e>>(exec: E, conta: &str) -> Result<
     Ok(s.unwrap_or(0).max(0) as u64)
 }
 
-/// Lanca `delta` na conta, dentro da transacao de quem chama. A trava por
-/// conta serializa dois movimentos simultaneos da mesma conta.
+/// Posts `delta` to the account, inside the caller's transaction. The
+/// per-account lock serialises two simultaneous movements on the same account.
 pub async fn mover(
     tx: &mut Transaction<'_, Postgres>,
     conta: &str,
@@ -98,7 +97,7 @@ pub async fn mover(
     Ok(Movimento::Feito { saldo: novo as u64 })
 }
 
-/// Credito avulso numa transacao propria (TP de teste, compra de TP).
+/// A standalone credit in its own transaction (test TP, a TP purchase).
 pub async fn creditar(
     pool: &PgPool,
     conta: &str,

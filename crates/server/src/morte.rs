@@ -1,28 +1,29 @@
-//! Morte no molde do MIR4: cai, perde XP, revive na cidade da ilha e pode
-//! RECUPERAR o XP perdido — 3 vezes por dia de graca, depois pagando ouro.
+//! Death in the MIR4 mould: you go down, lose XP, revive in the island's
+//! city and can RECOVER the lost XP — 3 times a day free, then paying gold.
 //!
-//! Regras puras aqui; quem aplica e persiste e' o `world`. Ver
-//! docs/GAMEPLAY.md, secao Morte.
+//! Pure rules here; applying and persisting is `world`'s job. See
+//! docs/GAMEPLAY.md, Death section.
 
 use serde::{Deserialize, Serialize};
 use shared::{level_of_xp_with_mult, xp_for_level_with_mult};
 
-/// Recuperacoes de XP sem custo por dia (reset a meia-noite UTC).
+/// Free XP recoveries per day (resets at UTC midnight).
 pub const GRATIS_POR_DIA: u32 = 3;
-/// Quanto tempo uma morte fica recuperavel.
+/// How long a death stays recoverable.
 pub const VALIDADE_S: i64 = 24 * 3600;
-/// Mortes recuperaveis guardadas (as mais antigas saem).
+/// Recoverable deaths kept (the oldest drop off).
 pub const MAX_MORTES: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MorteRecuperavel {
-    /// Instante da morte (unix secs). E' a identidade dela.
+    /// The instant of death (unix secs). It is its identity.
     pub quando: i64,
     pub xp: u64,
 }
 
-/// XP que uma morte tira: 10% do que o nivel ATUAL pede pra subir, mas nunca
-/// abaixo do inicio do nivel — morrer nao derruba nivel nem deixa XP negativo.
+/// The XP a death takes: 10% of what the CURRENT level needs to level up,
+/// but never below the level's start — dying drops no level and leaves no
+/// negative XP.
 pub fn perda_de_xp(xp: u64, mult: u64) -> u64 {
     let nivel = level_of_xp_with_mult(xp, mult);
     let piso = xp_for_level_with_mult(nivel, mult);
@@ -30,8 +31,8 @@ pub fn perda_de_xp(xp: u64, mult: u64) -> u64 {
     (degrau / 10).min(xp.saturating_sub(piso))
 }
 
-/// Ouro pra recuperar uma morte quando as gratis do dia acabaram: um piso que
-/// cresce com o nivel mais metade do XP devolvido.
+/// Gold to recover a death once the day's free ones are gone: a floor that
+/// grows with the level plus half the XP returned.
 pub fn custo_gold(xp: u64, nivel: u32) -> u64 {
     100 + nivel as u64 * 50 + xp / 2
 }
@@ -40,7 +41,7 @@ pub fn dia(agora: i64) -> i64 {
     agora.div_euclid(86_400)
 }
 
-/// Gratis que ainda restam hoje. Dia novo zera o contador.
+/// Free ones still left today. A new day zeroes the counter.
 pub fn gratis_restantes(dia_salvo: i64, usadas: u32, agora: i64) -> u32 {
     if dia(agora) != dia_salvo {
         GRATIS_POR_DIA
@@ -49,7 +50,7 @@ pub fn gratis_restantes(dia_salvo: i64, usadas: u32, agora: i64) -> u32 {
     }
 }
 
-/// Registra uma morte (sem XP perdido, nada a recuperar) e tira as vencidas.
+/// Records a death (with no XP lost, nothing to recover) and drops the expired ones.
 pub fn registrar(mortes: &mut Vec<MorteRecuperavel>, quando: i64, xp: u64) {
     mortes.retain(|m| m.quando + VALIDADE_S > quando);
     if xp == 0 {
@@ -62,7 +63,7 @@ pub fn registrar(mortes: &mut Vec<MorteRecuperavel>, quando: i64, xp: u64) {
     }
 }
 
-/// As que ainda valem agora.
+/// The ones still valid now.
 pub fn validas(mortes: &[MorteRecuperavel], agora: i64) -> Vec<MorteRecuperavel> {
     mortes
         .iter()
@@ -71,8 +72,9 @@ pub fn validas(mortes: &[MorteRecuperavel], agora: i64) -> Vec<MorteRecuperavel>
         .collect()
 }
 
-/// Recupera a morte `quando`. Devolve (XP devolvido, ouro cobrado) e ja'
-/// atualiza a lista e o contador do dia; o chamador soma o XP e desconta o ouro.
+/// Recovers the death at `quando`. Returns (XP returned, gold charged) and
+/// already updates the list and the day's counter; the caller adds the XP and
+/// deducts the gold.
 pub fn recuperar(
     mortes: &mut Vec<MorteRecuperavel>,
     quando: i64,
@@ -123,12 +125,12 @@ mod testes {
 
     #[test]
     fn perde_dez_por_cento_do_nivel_sem_cair_de_nivel() {
-        // Nivel 5 comeca em xp_for_level(5); o degrau ate' o 6 e' 25*MULT.
+        // Level 5 starts at xp_for_level(5); the step to 6 is 25*MULT.
         let piso = xp_for_level_with_mult(5, MULT);
         let degrau = xp_for_level_with_mult(6, MULT) - piso;
         let xp = piso + degrau / 2;
         assert_eq!(perda_de_xp(xp, MULT), degrau / 10);
-        // Recem-chegado no nivel: perde so' o que tem acima do piso.
+        // Newly arrived at the level: loses only what is above the floor.
         assert_eq!(perda_de_xp(piso + 3, MULT), 3);
         assert_eq!(perda_de_xp(piso, MULT), 0);
         assert_eq!(level_of_xp_with_mult(xp - perda_de_xp(xp, MULT), MULT), 5);
