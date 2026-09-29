@@ -1,10 +1,10 @@
-//! Helpers de combate compartilhados entre cliente e servidor.
+//! Combat helpers shared between client and server.
 //!
-//! Mecanica 100% ativa: nao ha chance passiva. Block exige RMB segurado +
-//! arma ranged; Parry exige edge-press de LMB ou RMB dentro de PARRY_WINDOW_S
-//! antes do hit. RES (Resistencia) altera a efetividade:
-//!   - `block_dmg_reduction` ↑ (mais dano absorvido)
-//!   - `defense_stamina_cost_mult` ↓ (custos menores em block + parry)
+//! 100% active mechanics: there is no passive chance. Block requires RMB held
+//! + a ranged weapon; Parry requires an edge-press of LMB or RMB within
+//! PARRY_WINDOW_S before the hit. RES (Resistance) changes the effectiveness:
+//! - `block_dmg_reduction` up (more damage absorbed)
+//! - `defense_stamina_cost_mult` down (lower costs on block + parry)
 
 use crate::components::PlayerStats;
 use crate::constants::{
@@ -12,9 +12,9 @@ use crate::constants::{
     STAMINA_COST_MULT_MIN,
 };
 
-/// Dano bruto do ataque básico. INT alocada já contribui para
-/// `attack_damage` do anel e acrescenta um segundo ponto somente ao básico.
-/// Skills continuam usando `attack_damage` diretamente.
+/// Raw damage of the basic attack. Allocated INT already contributes to the
+/// ring's `attack_damage` and adds a second point to the basic only. Skills
+/// keep using `attack_damage` directly.
 pub fn basic_attack_damage(stats: &PlayerStats, weapon_id: u16, allocated_int: u32) -> i32 {
     let bonus = if crate::constants::arma_magica(weapon_id) {
         allocated_int.min(i32::MAX as u32) as i32
@@ -24,32 +24,32 @@ pub fn basic_attack_damage(stats: &PlayerStats, weapon_id: u16, allocated_int: u
     stats.attack_damage.saturating_add(bonus).max(1)
 }
 
-/// Custo final de stamina pra um block, escalado pelo `defense_stamina_cost_mult`
-/// do alvo (RES reduz). Capado por `STAMINA_COST_MULT_MIN`.
+/// Final stamina cost for a block, scaled by the target's
+/// `defense_stamina_cost_mult` (RES reduces it). Capped by `STAMINA_COST_MULT_MIN`.
 pub fn block_stamina_cost(stats: &PlayerStats) -> f32 {
     let mult = stats.defense_stamina_cost_mult.max(STAMINA_COST_MULT_MIN);
     BLOCK_STAMINA_COST * mult
 }
 
-/// Custo final de stamina pra um parry. Mesma lei do block.
+/// Final stamina cost for a parry. The same law as block.
 pub fn parry_stamina_cost(stats: &PlayerStats) -> f32 {
     let mult = stats.defense_stamina_cost_mult.max(STAMINA_COST_MULT_MIN);
     PARRY_STAMINA_COST * mult
 }
 
-/// Calcula o dano residual apos block. Usa `block_dmg_reduction` do alvo
-/// (base 0.6 + RES), capado em `BLOCK_REDUCTION_MAX`. Min 1 — nunca chega a zero.
-/// `round()` em vez de `ceil()` evita drift de 1ponto por causa de float
-/// precision (ex.: 50 * 0.1 = 5.0000004 que ceil pra 6).
+/// Computes the residual damage after a block. Uses the target's
+/// `block_dmg_reduction` (base 0.6 + RES), capped at `BLOCK_REDUCTION_MAX`.
+/// Min 1 — it never reaches zero. `round()` instead of `ceil()` avoids a
+/// 1-point drift from float precision (e.g. 50 * 0.1 = 5.0000004 which ceils to 6).
 pub fn apply_block_damage(stats: &PlayerStats, raw_damage: i32) -> i32 {
     let reduction = stats.block_dmg_reduction.clamp(0.0, BLOCK_REDUCTION_MAX);
     let residual = ((raw_damage as f32) * (1.0 - reduction)).round() as i32;
     residual.max(1)
 }
 
-/// Tenta consumir stamina pra um block ATIVO (RMB held + ranged + stamina).
-/// Retorna `Some((dano_residual, custo))` se conseguiu, None se faltou stamina.
-/// Caller deve drenar stamina_current pelo `custo` retornado.
+/// Tries to consume stamina for an ACTIVE block (RMB held + ranged +
+/// stamina). Returns `Some((residual_damage, cost))` on success, None if
+/// stamina was short. The caller must drain stamina_current by the returned `custo`.
 pub fn try_block_active(
     stats: &PlayerStats,
     target_stamina: f32,
@@ -62,8 +62,8 @@ pub fn try_block_active(
     Some((apply_block_damage(stats, raw_damage), cost))
 }
 
-/// Tenta consumir stamina pra um parry. Retorna `Some((custo, stagger_s))`
-/// se conseguiu. Anula o dano + staggera atacante.
+/// Tries to consume stamina for a parry. Returns `Some((cost, stagger_s))` on
+/// success. Nullifies the damage + staggers the attacker.
 pub fn try_parry_active(stats: &PlayerStats, target_stamina: f32) -> Option<(f32, f32)> {
     let cost = parry_stamina_cost(stats);
     if target_stamina < cost {

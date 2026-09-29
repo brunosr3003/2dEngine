@@ -1,27 +1,27 @@
-//! As CHAVES de craft — Escama, Garra, Chifre e Couro — caem de chefes
-//! do mundo e de dungeon/raid, e algumas missoes secundarias entregam um
-//! estoque unico para o primeiro craft de cada faixa.
+//! The craft KEYS — Scale, Claw, Horn and Hide — drop from world and
+//! dungeon/raid bosses, and some side quests hand over a one-off stock for
+//! the first craft of each tier.
 //!
-//! A cor segue o nivel do CONTEUDO (o chefe, a dungeon), nao o de quem mata:
-//! ate' o 19 cinza, 20–29 verde, 30–39 azul, 40–49 epica, 50+ lendaria. E a
-//! chance cai conforme a faixa sobe — chave boa e' rara de proposito, e e' ela
-//! que decide quantos itens o mundo produz.
+//! The color follows the level of the CONTENT (the boss, the dungeon), not
+//! that of whoever kills it: up to 19 grey, 20-29 green, 30-39 blue, 40-49
+//! epic, 50+ legendary. And the chance falls as the tier rises — a good key
+//! is rare on purpose, and it is what decides how many items the world produces.
 //!
-//! Pedra e mob comum nao dao chave nenhuma.
+//! Stone and common mobs give no key at all.
 
 use crate::constants::item_id;
 
-/// De onde a chave sai.
+/// Where the key comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fonte {
-    /// Chefe que nasce no mundo aberto: chance menor, qualquer um farma.
+    /// A boss that spawns in the open world: a lower chance, anyone can farm it.
     ChefeDoMundo,
     /// Chefe de dungeon ou raid: a chance cheia da tabela.
     Dungeon,
     Raid,
 }
 
-/// Uma faixa: a partir de que nivel, a cor que cai e a chance por morte.
+/// One tier: from what level, the color that drops and the chance per kill.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FaixaDeChave {
     pub nivel_min: u32,
@@ -56,28 +56,28 @@ pub const FAIXAS: [FaixaDeChave; 5] = [
         chance_mundo: 0.03,
     },
     FaixaDeChave {
-        // De 40 pra 30 em 28/09/2026, a pedido do dono: a chave AZUL (Raro) e'
-        // a que destrava o craft de peca Rara, e esperar o chefe de 40 deixava
-        // a faixa 30-39 sem nada pra construir. A verde encurtou pra 20-29.
+        // From 40 to 30 on 28/09/2026, at the owner's request: the BLUE (Rare) key
+        // is what unlocks crafting a Rare piece, and waiting for the level 40 boss
+        // left the 30-39 tier with nothing to build. The green one shortened to 20-29.
         nivel_min: 30,
         cor: 3,
         chance: 0.06,
         chance_mundo: 0.02,
     },
     FaixaDeChave {
-        // 60 → 40 em 28/09/2026, junto com a lendaria. A ladder das chaves
-        // virou de dez em dez a partir do 20 (20 verde, 30 azul, 40 epica,
-        // 50 lendaria): antes ela abria de vinte em vinte e as duas cores de
-        // cima ficavam fora do alcance do jogo que existe.
+        // 60 -> 40 on 28/09/2026, along with the legendary. The keys' ladder became
+        // ten by ten from 20 on (20 green, 30 blue, 40 epic, 50 legendary): before,
+        // it opened twenty by twenty and the top two colors were out of reach of the
+        // game that actually exists.
         nivel_min: 40,
         cor: 4,
         chance: 0.03,
         chance_mundo: 0.01,
     },
     FaixaDeChave {
-        // 80 → 50. O chefe mais alto do catalogo e' de 60, entao a lendaria
-        // era uma cor que existia (ids 353-356) e nao tinha DE ONDE cair. Com
-        // 50 ela passa a cair do conteudo de 50 a 60 que ja' esta' no jogo.
+        // 80 -> 50. The highest boss in the catalogue is level 60, so the legendary
+        // was a color that existed (ids 353-356) and had nowhere to drop FROM. At
+        // 50 it starts dropping from the level 50-60 content already in the game.
         nivel_min: 50,
         cor: 5,
         chance: 0.01,
@@ -104,9 +104,9 @@ pub fn nome_da_cor(cor: u8) -> &'static str {
     }
 }
 
-/// Rola a chave de um chefe de nivel `nivel`. `mult` multiplica a chance
-/// (Pocao de Sorte); `r_chance` e `r_qual` sao dois sorteios em [0, 1): um
-/// decide se cai, o outro qual das quatro.
+/// Rolls the key of a level `nivel` boss. `mult` multiplies the chance (Luck
+/// Potion); `r_chance` and `r_qual` are two draws in [0, 1): one decides
+/// whether it drops, the other which of the four.
 pub fn rolar(nivel: u32, fonte: Fonte, mult: f32, r_chance: f32, r_qual: f32) -> Option<u16> {
     let f = faixa(nivel);
     if r_chance >= (f.chance_de(fonte) * mult.max(0.0)).min(1.0) {

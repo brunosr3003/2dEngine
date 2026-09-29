@@ -1,14 +1,15 @@
-//! Login com Google (OAuth 2.0 + PKCE S256) pro cliente do jogo.
+//! Login with Google (OAuth 2.0 + PKCE S256) for the game client.
 //!
 //!   GET /api/auth/google/config    -> { enabled }
 //!   GET /api/auth/google/start     -> { state, url }
 //!   GET /api/auth/google/callback  <- redirect do Google (pagina HTML)
 //!   GET /api/auth/google/poll      -> { status: pendente|ok|erro, username?, token? }
 //!
-//! O cliente abre `url` no navegador e fica no `poll`. O callback troca o
-//! `code` pelo `id_token`, valida, acha/cria a conta e deixa pronta uma sessao
-//! (`login_tokens`) que o servidor de jogo aceita em `ClientMessage::LoginToken`.
-//! Nada do Google e' guardado. Ver docs/LOGIN_GOOGLE.md.
+//! The client opens `url` in the browser and stays in `poll`. The callback
+//! exchanges the `code` for the `id_token`, validates it, finds/creates the
+//! account and leaves a session ready (`login_tokens`) that the game server
+//! accepts in `ClientMessage::LoginToken`. Nothing from Google is stored.
+//! See docs/LOGIN_GOOGLE.md.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -35,7 +36,7 @@ const URL_TOKEN: &str = "https://oauth2.googleapis.com/token";
 const URL_JWKS: &str = "https://www.googleapis.com/oauth2/v3/certs";
 const REDIRECT_PADRAO: &str = "https://mmo.brunji.com.br/api/auth/google/callback";
 
-/// Quanto tempo o jogador tem pra terminar no navegador.
+/// How long the player has to finish in the browser.
 const VALIDADE_STATE: Duration = Duration::from_secs(10 * 60);
 /// Sessao do jogo emitida no fim.
 const VALIDADE_SESSAO_HORAS: i64 = 12;
@@ -111,12 +112,12 @@ struct Pendente {
     verifier: String,
     nonce: String,
     criado: Instant,
-    /// O callback ja' usou o verifier (nao aceita um segundo callback).
+    /// The callback has already used the verifier (it does not accept a second callback).
     usado: bool,
     resultado: Resultado,
 }
 
-/// O que o `poll` responde.
+/// What `poll` answers.
 #[derive(Debug, PartialEq)]
 pub enum Consulta {
     Desconhecido,
@@ -160,7 +161,7 @@ impl Pendentes {
         Some(())
     }
 
-    /// Callback: entrega (verifier, nonce) uma vez so'.
+    /// Callback: hands over (verifier, nonce) once only.
     pub fn para_callback(&mut self, state: &str, agora: Instant) -> Option<(String, String)> {
         self.limpa(agora);
         let p = self.mapa.get_mut(state)?;
@@ -177,7 +178,7 @@ impl Pendentes {
         }
     }
 
-    /// Poll: resultado final sai uma vez e o state morre.
+    /// Poll: the final result comes out once and the state dies.
     pub fn consulta(&mut self, state: &str, agora: Instant) -> Consulta {
         self.limpa(agora);
         match self.mapa.get(state).map(|p| &p.resultado) {
@@ -198,7 +199,7 @@ pub fn desafio_pkce(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-/// Mesmo hash que `server::auth::hash_do_token` confere.
+/// The same hash `server::auth::hash_do_token` checks.
 pub fn hash_do_token(token: &str) -> String {
     Sha256::digest(token.as_bytes())
         .iter()
@@ -245,7 +246,7 @@ struct Jwks {
 struct Claims {
     sub: String,
     email: Option<String>,
-    /// O Google manda bool; ja' mandou string "true".
+    /// Google sends a bool; it has also sent the string "true".
     email_verified: Option<serde_json::Value>,
     name: Option<String>,
     nonce: Option<String>,
@@ -260,12 +261,12 @@ pub struct Identidade {
 
 #[derive(Debug, PartialEq)]
 pub enum ErroToken {
-    /// `kid` fora do JWKS em cache (pode ser rotacao: vale rebuscar).
+    /// A `kid` not in the cached JWKS (it may be a rotation: worth re-fetching).
     ChaveDesconhecida,
     Invalido(String),
 }
 
-/// Assinatura (RS256 com a chave do JWKS), `aud`, `iss`, `exp`, `nonce` e
+/// Signature (RS256 with the JWKS key), `aud`, `iss`, `exp`, `nonce` and
 /// `email_verified`.
 pub fn valida_id_token(
     token: &str,
@@ -322,7 +323,7 @@ impl GoogleState {
             let cache = self.jwks.lock().unwrap();
             if let Some((quando, chaves)) = cache.as_ref() {
                 let idade = quando.elapsed();
-                // Rotacao: rebusca, mas no maximo 1x por minuto.
+                // Rotation: re-fetch, but at most once a minute.
                 if idade < JWKS_VALIDADE && !(forcar && idade > Duration::from_secs(60)) {
                     return Ok(chaves.clone());
                 }
@@ -595,7 +596,7 @@ mod testes {
     use super::*;
     use jsonwebtoken::{encode, EncodingKey, Header};
 
-    /// Chave RSA gerada so' pra este teste (nao e' de nenhum ambiente).
+    /// An RSA key generated only for this test (it belongs to no environment).
     const CHAVE_TESTE: &str = "-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC8j2d+NaQ4Btdt
 zdzim3lmVHelEFp08w48G/V4xDHMn48L4GcuseQWg9lJpLcBgVLx52zt4WfSiJ5U
@@ -675,7 +676,7 @@ Hx2PooAsxPNlnATcYqGFpDo=
         assert_eq!(id.sub, "1100220033");
         assert_eq!(id.email.as_deref(), Some("fulano@gmail.com"));
         assert_eq!(id.nome.as_deref(), Some("Fulano"));
-        // iss sem https tambem e' do Google; email_verified como string tambem.
+        // An iss without https is also Google's; email_verified as a string too.
         assert!(valida(&token(|c| {
             c["iss"] = json!("accounts.google.com");
             c["email_verified"] = json!("true");
@@ -727,7 +728,7 @@ Hx2PooAsxPNlnATcYqGFpDo=
             ),
             "nonce"
         );
-        // Chave que nao esta' no JWKS.
+        // A key that is not in the JWKS.
         let outro_kid = valida_id_token(
             &token(|_| {}),
             &[Jwk {

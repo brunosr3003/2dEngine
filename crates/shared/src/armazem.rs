@@ -1,45 +1,44 @@
-//! Tamanho da bolsa e do banco, e o que custa aumentar.
+//! The size of the bag and the bank, and what it costs to grow them.
 //!
-//! Os dois comecam com `INVENTORY_SLOTS` (40) espacos e sobem de 10 em 10,
-//! pagando OURO — a bolsa ate' 100, o banco ate' 160. O banco fica com o
-//! Banqueiro da vila (toda ilha tem um). Quantas expansoes cada personagem ja'
-//! comprou mora no personagem (`bolsa_extra`, `banco_extra`); o tamanho e' so'
-//! conta. Ver docs/BANCO.md.
+//! Both start with `INVENTORY_SLOTS` (40) slots and go up in tens, paying
+//! GOLD — the bag up to 100, the bank up to 160. The bank is with the
+//! village Banker (every island has one). How many expansions each character
+//! has bought lives on the character (`bolsa_extra`, `banco_extra`); the size
+//! is only maths. See docs/BANCO.md.
 
 use crate::constants::{item_id, INVENTORY_SLOTS};
 
-/// As moedas que moram na CARTEIRA: os dois ultimos espacos da lista da
-/// bolsa, fora da grade (nao ocupam espaco nem aparecem como item). O ouro
-/// nem isso: e' um saldo a parte (`gold`). Ver docs/BANCO.md.
+/// The coins that live in the WALLET: the last two entries of the bag's list,
+/// outside the grid (they take no space and do not appear as items). Gold not
+/// even that: it is a separate balance (`gold`). See docs/BANCO.md.
 pub const CARTEIRA: [u16; 2] = [item_id::COPPER, item_id::DARKSTEEL];
 
 pub fn e_moeda(id: u16) -> bool {
     CARTEIRA.contains(&id)
 }
 
-/// Espacos a mais por expansao.
+/// Extra slots per expansion.
 pub const PASSO: usize = 10;
 pub const BOLSA_MAX: usize = 100;
 pub const BANCO_MAX: usize = 160;
 
-/// Quantas expansoes ha' ate' o teto.
+/// How many expansions there are up to the cap.
 pub const fn expansoes_max(banco: bool) -> u8 {
     let teto = if banco { BANCO_MAX } else { BOLSA_MAX };
     ((teto - INVENTORY_SLOTS) / PASSO) as u8
 }
 
-/// Espacos com `extra` expansoes compradas.
+/// Slots with `extra` expansions bought.
 pub fn tamanho(banco: bool, extra: u8) -> usize {
     (INVENTORY_SLOTS + extra.min(expansoes_max(banco)) as usize * PASSO)
         .min(if banco { BANCO_MAX } else { BOLSA_MAX })
 }
 
-/// Ouro da PROXIMA expansao, tendo `extra` compradas. `None` = ja' no teto.
+/// Gold for the NEXT expansion, having bought `extra`. `None` = already at the cap.
 ///
-/// A bolsa sobe rapido (dobra a cada passo: 2 mil, 4 mil ... 64 mil): carregar
-/// mais e' conforto de quem caça. O banco e' mais barato por passo e sobe
-/// devagar (mil, 4 mil, 9 mil ... ao quadrado): guardar e' o que se faz na
-/// cidade, sem pressa.
+/// The bag rises fast (doubling each step: 2k, 4k ... 64k): carrying more is
+/// a comfort for whoever hunts. The bank is cheaper per step and rises slowly
+/// (1k, 4k, 9k ... squared): storing is what you do in the city, unhurried.
 pub fn custo(banco: bool, extra: u8) -> Option<u64> {
     if extra >= expansoes_max(banco) {
         return None;

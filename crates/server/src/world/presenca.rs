@@ -10,7 +10,7 @@ use shared::presenca::{self as pr, AvisoPresenca, DadosPresenca, PedidoPresenca,
 /// Ids de resgate lembrados por sessao (o save marca todos).
 const APLICADOS_LEMBRADOS: usize = 64;
 
-/// Onde cada premio foi parar.
+/// Where each prize ended up.
 #[derive(Debug, Default, PartialEq)]
 pub(super) struct Entrega {
     pub ouro: u64,
@@ -19,9 +19,9 @@ pub(super) struct Entrega {
     pub no_correio: Vec<(u16, u32)>,
 }
 
-/// Entrega `premios`: ouro soma no `gold`; item vai pra bolsa; se nao couber,
-/// vira carta no correio (Entregas do Mercado). Nada se perde.
-/// `na_bolsa(item, qtd)` tenta por na bolsa (`add_to_inventory`).
+/// Delivers `premios`: gold adds to `gold`; an item goes to the bag; if it
+/// does not fit, it becomes a letter in the mail (Market Deliveries). Nothing
+/// is lost. `na_bolsa(item, qtd)` tries to put it in the bag (`add_to_inventory`).
 pub(super) fn entregar(
     premios: &[Premio],
     gold: &mut u64,
@@ -48,7 +48,7 @@ pub(super) fn entregar(
     e
 }
 
-/// `true` = o id ainda nao tinha sido entregue nesta sessao (e agora esta').
+/// `true` = the id had not been delivered in this session yet (and now it has).
 pub(super) fn marcar_entregue(aplicados: &mut Vec<String>, id: &str) -> bool {
     if aplicados.iter().any(|a| a == id) {
         return false;
@@ -80,8 +80,8 @@ impl GameWorld {
                 db::spawn_estado(ctx.pool.clone(), ctx.tx.clone(), sid, conta)
             }
             PedidoPresenca::Resgatar { calendario } => {
-                // Duplo toque: o segundo espera a resposta do primeiro. O banco
-                // recusaria de qualquer jeito; isto so' poupa a ida.
+                // Double touch: the second waits for the first one's answer. The database
+                // would refuse anyway; this only saves the trip.
                 if s.presenca_em_voo {
                     return;
                 }
@@ -134,8 +134,8 @@ impl GameWorld {
             } => {
                 let entregue = self.presenca_entregar(sid, &personagem, &id, &plano.premios, unix);
                 let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.name == personagem) else {
-                    // Saiu antes da resposta: a linha fica pendente e o proximo
-                    // login da conta recebe.
+                    // Left before the answer: the row stays pending and the account's next
+                    // login receives it.
                     tracing::warn!(
                         "[presenca] {personagem} saiu antes de receber {id}: fica pendente"
                     );
@@ -211,8 +211,8 @@ impl GameWorld {
         }
     }
 
-    /// Entrega o premio do resgate `id` ao personagem logado, uma vez por id.
-    /// `None` = ja' entregue ou o personagem nao esta' mais nesta sessao.
+    /// Delivers the prize of claim `id` to the logged-in character, once per id.
+    /// `None` = already delivered, or the character is no longer in this session.
     fn presenca_entregar(
         &mut self,
         sid: SessionId,
@@ -322,8 +322,8 @@ mod tests {
         );
     }
 
-    /// A mesma resposta do banco chegando duas vezes (ou o pendente de um
-    /// resgate ja' entregue) nao entrega de novo.
+    /// The same answer from the database arriving twice (or the pending one of a
+    /// claim already delivered) does not deliver again.
     #[test]
     fn mesmo_id_entrega_uma_vez() {
         let mut aplicados = Vec::new();

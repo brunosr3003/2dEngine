@@ -1,16 +1,16 @@
-//! Social por personagem, compartilhado por todos os canais do realm.
+//! Per-character social, shared by every channel of the realm.
 use serde::{Deserialize, Serialize};
 
 pub const MAX_AMIGOS: usize = 100;
 pub const MAX_CARTAS: usize = 100;
 pub const MAX_CLA: usize = 50;
 pub const MAX_GRUPO: usize = 5;
-/// Participantes próximos ao autor do abate, na mesma instância.
+/// Participants near the kill's author, in the same instance.
 pub const RAIO_XP_GRUPO: f32 = 25.0;
 pub fn bonus_xp_grupo(participantes: usize) -> u32 {
     participantes.saturating_sub(1).min(3) as u32 * 10
 }
-/// A fração final é descartada; ninguém recebe mais XP que outro por ordem.
+/// The final fraction is discarded; nobody gets more XP than another by order.
 pub fn parcela_xp_grupo(xp: u64, participantes: usize) -> u64 {
     let n = participantes.max(1) as u128;
     (u128::from(xp) * u128::from(100 + bonus_xp_grupo(participantes)) / (100 * n)) as u64
@@ -79,7 +79,7 @@ pub struct Estado {
     pub amigos: Vec<String>,
     pub recebidos: Vec<String>,
     pub enviados: Vec<String>,
-    /// Online neste canal; ausencia nao implica offline em outro canal.
+    /// Online on this channel; absence does not imply offline on another channel.
     pub neste_canal: Vec<String>,
     pub cartas: Vec<Carta>,
     pub cla: Option<Cla>,
@@ -102,20 +102,20 @@ pub struct Carta {
     pub resgatada: bool,
 }
 
-// Sem `Eq`: a instancia tem float (`value_pct` dos afixos), e float nao tem
-// igualdade total. `PartialEq` basta pra tudo o que o correio compara.
+// No `Eq`: the instance has a float (the affixes' `value_pct`), and floats
+// have no total equality. `PartialEq` is enough for everything the mail compares.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Anexo {
     pub item_id: u16,
     pub qtd: u32,
     /// A INSTANCIA do item: raridade, tier, refino, afixos, afinidade.
     ///
-    /// Sem ela o correio entregava o item PELADO. Nao e' um detalhe de
-    /// equipamento: pet enviado por correio chegava nivel 1, sem skills e com
-    /// a afinidade re-sorteada, **em silencio** — a mesma coisa com montaria.
-    /// O jogador nao tinha como saber que o correio comia metade do item.
+    /// Without it the mail delivered the item BARE. It is not an equipment
+    /// detail: a pet sent by mail arrived at level 1, with no skills and with its
+    /// affinity re-rolled, **silently** — the same with a mount. The player had
+    /// no way to know the mail ate half the item.
     ///
-    /// `None` = item sem instancia (material, pocao, cobre), que e' a maioria.
+    /// `None` = an item with no instance (material, potion, copper), which is most of them.
     #[serde(default)]
     pub instance: Option<crate::items::ItemInstance>,
 }
@@ -128,8 +128,8 @@ pub fn anexos_validos(anexos: &[Anexo]) -> bool {
         && anexos
             .iter()
             .all(|a| a.item_id > 0 && a.qtd > 0 && a.qtd <= MAX_QTD_ANEXO)
-        // Item COM instancia nao empilha (cada um e' unico), entao mandar
-        // dois de uma vez entregaria um so'.
+        // An item WITH an instance does not stack (each is unique), so sending two
+        // at once would deliver only one.
         && anexos
             .iter()
             .all(|a| a.instance.is_none() || a.qtd == 1)
@@ -161,7 +161,7 @@ pub enum Aviso {
     Resultado { ok: bool, texto: String },
 }
 
-/// Valida antes de consultar o banco; limites em caracteres E bytes.
+/// Validates before querying the database; limits in characters AND bytes.
 pub fn texto_valido(texto: &str, min: usize, max: usize) -> bool {
     texto.len() <= max * 4
         && (min..=max).contains(&texto.trim().chars().count())

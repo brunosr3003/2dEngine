@@ -1,21 +1,21 @@
-//! O dicionário português → inglês, partido por área de origem.
+//! The Portuguese -> English dictionary, split by area of origin.
 //!
-//! A chave é a frase EXATA que está no código. Mudou a frase em português?
-//! muda a chave aqui também, senão o verbete deixa de casar e a tela volta pro
-//! português — sem quebrar nada, mas sem traduzir.
+//! The key is the EXACT phrase that is in the code. Changed the Portuguese
+//! phrase? change the key here too, or the entry stops matching and the screen
+//! falls back to Portuguese — breaking nothing, but translating nothing.
 //!
-//! Regras que o teste em `crates/shared/tests/idioma.rs` cobra:
+//! Rules the test in `crates/shared/tests/idioma.rs` enforces:
 //!
-//! - o buraco do português tem que ter par no inglês, e vice-versa;
-//! - buraco NOMEADO (`{n}`) pode mudar de lugar na tradução; buraco anônimo
-//!   (`{}`, `{:.0}`) segue a ordem, então tradução que reordena é obrigada a
-//!   nomear;
-//! - chave repetida é erro (a segunda nunca seria usada).
+//! - a Portuguese hole must have a pair in the English, and vice versa;
+//! - a NAMED hole (`{n}`) may move in the translation; an anonymous hole
+//! (`{}`, `{:.0}`) follows the order, so a translation that reorders is
+//! obliged to name them;
+//! - a repeated key is an error (the second would never be used).
 //!
-//! Partido em cinco porque um arquivo de três mil pares não se revisa: cada
-//! parte acompanha os arquivos de onde o texto saiu, e dá pra ler lado a lado
-//! com o código. Frase que serve os dois idiomas igual (nome próprio, "OK",
-//! "XP", "PvP") não entra: sem verbete, o texto sai como está.
+//! Split into five because a file of three thousand pairs cannot be reviewed:
+//! each part follows the files the text came from, and can be read side by
+//! side with the code. A phrase that serves both languages the same (a proper
+//! noun, "OK", "XP", "PvP") does not go in: with no entry, the text comes out as is.
 
 pub mod cliente;
 pub mod dados;
@@ -23,11 +23,11 @@ pub mod historia;
 pub mod missoes;
 pub mod servidor;
 
-/// As partes, na ordem de revisão. O dicionário lê todas como se fossem uma.
+/// The parts, in review order. The dictionary reads them all as if they were one.
 ///
-/// Fatias em vez de um `const` só porque `const` não concatena: juntar no
-/// construtor sai de graça (uma vez por processo) e mantém os arquivos
-/// separados.
+/// Slices instead of a single `const` only because `const` does not
+/// concatenate: joining them in the constructor is free (once per process)
+/// and keeps the files separate.
 pub const PARTES: &[&[(&str, &str)]] = &[
     cliente::VERBETES,
     servidor::VERBETES,

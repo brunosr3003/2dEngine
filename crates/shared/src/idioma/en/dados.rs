@@ -1,9 +1,9 @@
-//!  Dados do jogo: itens, habilidades, bichos, loja, pets, montarias, colônia.
+//! Game data: items, skills, creatures, shop, pets, mounts, colony.
 
 pub const VERBETES: &[(&str, &str)] = &[
-    // ─────────────────────────── as cores e os graus ───────────────────────────
-    // Estas cinco frases aparecem em item, chave, pet, montaria e refino. São a
-    // espinha do vocabulário: mudar uma aqui muda o jogo inteiro.
+    // ─────────────────────────── the colors and the grades ───────────────────────────
+    // These five phrases appear on items, keys, pets, mounts and refinement.
+    // They are the spine of the vocabulary: changing one here changes the whole game.
     ("Azul", "Blue"),
     ("Cinza", "Grey"),
     ("Verde", "Green"),
@@ -15,7 +15,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Lendário", "Legendary"),
     ("Fino", "Fine"),
     ("Raro", "Rare"),
-    // ─────────────────────────── acessórios: os bônus ───────────────────────────
+    // ─────────────────────────── accessories: the bonuses ───────────────────────────
     ("XP recebido +10%", "XP gained +10%"),
     ("Chance de drop +10%", "Drop chance +10%"),
     ("Coleta de Energia +15%", "Energy gathering +15%"),
@@ -24,7 +24,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Coleta de Darksteel +15%", "Darksteel gathering +15%"),
     ("Chance de loot melhor +5%", "Better loot chance +5%"),
     ("Regen base de mana +0,5/s", "Base mana regen +0.5/s"),
-    // ───────────────────────────── aparência: chapéus ─────────────────────────────
+    // ───────────────────────────── appearance: hats ─────────────────────────────
     ("Capuz", "Hood"),
     ("Faixa", "Headband"),
     ("Lenço", "Bandana"),
@@ -80,7 +80,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Lobo Alfa da Clareira", "Alpha Wolf of the Glade"),
     ("Capitao Barba-Tormenta", "Captain Stormbeard"),
     ("Colosso da Ilha Mágica", "Colossus of the Magic Island"),
-    // ──────────────────────────────── a colônia ────────────────────────────────
+    // ──────────────────────────────── the colony ────────────────────────────────
     ("Casa", "House"),
     ("Ofício", "Trade"),
     ("Castelo", "Castle"),
@@ -138,10 +138,10 @@ pub const VERBETES: &[(&str, &str)] = &[
         "para subir de cor, as duas Tier IV precisam estar +{REFINO_PARA_COR}",
         "to raise the colour, both Tier IV pieces have to be +{REFINO_PARA_COR}",
     ),
-    // ─────────────────── os afixos dos itens (a instância de atributos) ───────────────────
-    // São sufixos e prefixos que se colam ao nome da peça. Em inglês o gênero
-    // desaparece, então "Ágil" e "da Fúria" viram os dois um adjetivo ou um
-    // "of the …" — o que soar como nome de item.
+    // ─────────────────── the item affixes (the attribute instance) ───────────────────
+    // They are suffixes and prefixes that attach to the piece's name. In English
+    //  gender disappears, so "Ágil" and "da Fúria" both become either an
+    // adjective or an "of the …" — whichever sounds like an item name.
     ("Ágil", "Nimble"),
     ("Forte", "Mighty"),
     ("Sábio", "Wise"),
@@ -193,7 +193,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Sorteia de novo os atributos do pet ou da montaria equipada.",
         "Rerolls the attributes of the equipped pet or mount.",
     ),
-    // ───────────────────────────── a Ilha Mágica: as ilhotas ─────────────────────────────
+    // ───────────────────────────── the Magic Island: the islets ─────────────────────────────
     ("Pedra", "Stone"),
     ("Colosso", "Colossus"),
     ("Espólio", "Spoils"),
@@ -314,7 +314,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "+3 attribute points, in the species' affinity.",
     ),
     ("Vigor", "Stamina"),
-    // ───────────────────────────── presença: o calendário ─────────────────────────────
+    // ───────────────────────────── attendance: the calendar ─────────────────────────────
     ("Presença do mês", "Attendance for the month"),
     ("Esse calendário não está ativo.", "That calendar is not active."),
     (
@@ -326,7 +326,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "You've already claimed today. Come back after the reset (04:00).",
     ),
     ("Calendário indisponível agora. Tente de novo.", "Calendar unavailable right now. Try again."),
-    // ───────────────────── as habilidades e os degraus de evolução ─────────────────────
+    // ───────────────────── the skills and the evolution steps ─────────────────────
     ("Aura", "Aura"),
     ("Dança", "Dance"),
     ("Saque", "Draw"),
@@ -417,10 +417,10 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Strikes the target and the enemies around it, and steals 25% of your strike damage for 3 seconds.",
     ),
     ("Vigia", "Watchman"),
-    // ─────────────────────── os itens (o nome que vem do banco) ───────────────────────
-    // Estes nomes nascem no seed do Postgres e chegam ao cliente pelo protocolo.
-    // A tradução acontece no desenho, então não há coluna nova nem migração: o
-    // banco continua em português e é ele que a lógica compara.
+    // ─────────────────────── the items (the name that comes from the database) ───────────────────────
+    // These names are born in the Postgres seed and reach the client over the
+    // protocol. Translation happens at draw time, so there is no new column and
+    // no migration: the database stays in Portuguese and it is what the logic compares.
     ("Baiacu", "Pufferfish"),
     ("Bainha", "Scabbard"),
     ("Coldre", "Holster"),

@@ -1,4 +1,4 @@
-//!  Servidor: os avisos que chegam pelo protocolo e o texto que o servidor monta.
+//! Server: the notices that arrive over the protocol and the text the server builds.
 
 pub const VERBETES: &[(&str, &str)] = &[
     // ─────────────────────────── servidor: correio oficial ───────────────────────────
@@ -327,7 +327,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Sem espaco acessivel fora da zona segura.",
         "No reachable space outside the safe zone.",
     ),
-    // ─────────────────────────────── servidor: a colônia ───────────────────────────────
+    // ─────────────────────────────── server: the colony ───────────────────────────────
     ("Do baú: {}.", "From the chest: {}."),
     ("{} foi embora.", "{} has left."),
     ("O baú está vazio.", "The chest is empty."),
@@ -409,7 +409,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Você entra na Arena. Para voltar, abra Dungeons e toque em Sair.",
         "You enter the Arena. To go back, open Dungeons and tap Leave.",
     ),
-    // ─────────────────────────── servidor: evolução de skill ───────────────────────────
+    // ─────────────────────────── server: skill evolution ───────────────────────────
     ("habilidade inválida", "invalid skill"),
     ("faltam {} de Energia", "{} Energy short"),
     ("falta o Tomo {} de {}", "missing Tome {} of {}"),
@@ -462,7 +462,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Invocação indisponível. Os pergaminhos voltaram pelas Entregas.",
         "Summoning unavailable. The scrolls came back through Deliveries.",
     ),
-    // ───────────────────────── servidor: a Ilha Mágica e o relógio ─────────────────────────
+    // ───────────────────────── server: the Magic Island and the clock ─────────────────────────
     ("Degrau desconhecido.", "Unknown step."),
     ("{} abre no nível {}.", "{} opens at level {}."),
     ("Você deixa a Ilha Mágica.", "You leave the Magic Island."),
@@ -508,7 +508,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ),
     ("isso não se combina", "that cannot be combined"),
     ("Calendário indisponível.", "Calendar unavailable."),
-    // ──────────────────────────── servidor: social e clã ────────────────────────────
+    // ──────────────────────────── server: social and clan ────────────────────────────
     ("Atualizado.", "Updated."),
     ("Conta não autenticada.", "Account not authenticated."),
     ("Convite de clã enviado.", "Clan invite sent."),
@@ -561,7 +561,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Preencha assunto (até 60) e mensagem (até 1000 caracteres).",
         "Fill in a subject (up to 60) and a message (up to 1000 characters).",
     ),
-    // ───────────────────────── servidor: missões, objetivos ─────────────────────────
+    // ───────────────────────── server: quests, objectives ─────────────────────────
     ("faltam {} de {}", "{} of {} short"),
     ("missão já entregue", "quest already turned in"),
     ("o objetivo ainda não foi cumprido", "the objective has not been met yet"),

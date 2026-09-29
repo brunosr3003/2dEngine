@@ -27,8 +27,8 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     .execute(&pool)
     .await?;
 
-    // Login com Google (docs/LOGIN_GOOGLE.md). `google_sub` e' o id estavel da
-    // conta Google; unico so' entre quem tem.
+    // Login with Google (docs/LOGIN_GOOGLE.md). `google_sub` is the stable id of
+    // the Google account; unique only among those who have one.
     sqlx::query("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS google_sub TEXT")
         .execute(&pool)
         .await?;
@@ -38,8 +38,8 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     )
     .execute(&pool)
     .await?;
-    // Sessao emitida pelo login com Google e aceita pelo servidor de jogo
-    // (`ClientMessage::LoginToken`). Guarda so' o SHA-256 do token.
+    // A session issued by the Google login and accepted by the game server
+    // (`ClientMessage::LoginToken`). Stores only the token's SHA-256.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS login_tokens (
             token_hash  TEXT PRIMARY KEY,
@@ -53,22 +53,22 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
 
     // CONFIRMACAO DE E-MAIL e RESET DE SENHA (docs/EMAIL.md).
     //
-    // `TRUE` no DEFAULT e' de proposito, e so' vale pra coluna nova: sem isso
-    // TODA conta que ja' existe nasceria "nao confirmada" e ninguem mais
-    // entraria no jogo. Quem ja' estava dentro fica dentro; a exigencia vale
-    // de agora em diante.
+    // `TRUE` in the DEFAULT is deliberate, and only applies to the new column:
+    // without it EVERY existing account would be born "unconfirmed" and nobody
+    // would get into the game any more. Whoever was already in stays in; the
+    // requirement applies from now on.
     sqlx::query(
         "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS email_confirmado BOOLEAN NOT NULL DEFAULT TRUE",
     )
     .execute(&pool)
     .await?;
 
-    // Um so' lugar pros dois tipos de link, porque sao a mesma coisa: um
-    // segredo de uso unico, com prazo, que prova posse do e-mail. `tipo` = 0
-    // confirmacao, 1 reset.
+    // A single place for both link types, because they are the same thing: a
+    // single-use secret, with a deadline, that proves ownership of the email.
+    // `tipo` = 0 confirmation, 1 reset.
     //
-    // Guarda so' o SHA-256, como `login_tokens`: quem ler a tabela nao
-    // consegue usar o que leu.
+    // Stores only the SHA-256, like `login_tokens`: whoever reads the table
+    // cannot use what they read.
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS email_tokens (
             token_hash  TEXT PRIMARY KEY,
@@ -90,9 +90,9 @@ pub async fn open_pool(database_url: &str) -> Result<PgPool> {
     Ok(pool)
 }
 
-/// Username inicial de quem entra pela primeira vez com Google: o nome (ou o
-/// comeco do e-mail) so' com letras sem acento, numeros e `_`, de 3 a 20.
-/// Ajustavel depois; colisao ganha sufixo em `conta_google`.
+/// The starting username of someone entering with Google for the first time:
+/// the name (or the start of the email) with unaccented letters, digits and
+/// `_` only, 3 to 20. Adjustable later; a collision gets a suffix in `conta_google`.
 pub fn base_de_usuario(nome: Option<&str>, email: Option<&str>) -> String {
     let fonte = nome
         .filter(|n| !n.trim().is_empty())
@@ -126,8 +126,8 @@ pub fn base_de_usuario(nome: Option<&str>, email: Option<&str>) -> String {
     }
 }
 
-/// Variacao da base quando o nome ja' existe: `base_1234`, com os digitos
-/// tirados do `sub` e da tentativa (estavel, sem sorteio).
+/// A variation of the base when the name already exists: `base_1234`, with
+/// the digits taken from the `sub` and the attempt (stable, no draw).
 fn usuario_com_sufixo(base: &str, sub: &str, tentativa: u32) -> String {
     let mut h: u32 = 2166136261;
     for b in sub.bytes().chain(tentativa.to_le_bytes()) {
@@ -137,11 +137,11 @@ fn usuario_com_sufixo(base: &str, sub: &str, tentativa: u32) -> String {
     format!("{raiz}_{:04}", h % 10000)
 }
 
-/// A conta de quem entrou com Google: a vinculada ao `sub`, ou uma nova.
+/// The account of whoever signed in with Google: the one linked to the `sub`, or a new one.
 ///
-/// Nao vincula por e-mail a conta de senha existente: o cadastro por senha nao
-/// verifica e-mail, entao "mesmo e-mail" nao prova que e' a mesma pessoa. Se o
-/// e-mail ja' esta' em uso, a conta nova fica com um e-mail marcador.
+/// Does not link an existing password account by email: password signup does
+/// not verify the email, so "same email" does not prove it is the same
+/// person. If the email is already in use, the new account gets a placeholder email.
 pub async fn conta_google(
     pool: &PgPool,
     sub: &str,
@@ -209,7 +209,7 @@ pub async fn conta_google(
                 if e.constraint().is_some_and(|c| c.contains("email")) {
                     email_final = marcador.clone();
                 }
-                // username em uso: a proxima volta tenta com sufixo.
+                // username in use: the next round tries with a suffix.
             }
             Err(e) => return Err(e.into()),
         }
@@ -217,7 +217,7 @@ pub async fn conta_google(
     anyhow::bail!("nao achei username livre pra conta Google")
 }
 
-/// Grava a sessao do login com Google (so' o hash) e limpa as vencidas.
+/// Records the Google login's session (the hash only) and clears expired ones.
 pub async fn grava_token_de_login(
     pool: &PgPool,
     account_id: i64,
@@ -266,8 +266,8 @@ mod testes {
         assert_ne!(s, usuario_com_sufixo("Joao_da_Silva", "123", 2));
     }
 
-    /// Criacao idempotente pelo `sub`, contra um Postgres de verdade. So' roda
-    /// com `DATABASE_URL_TESTE` (ex. o banco local de dev) e limpa o que criou.
+    /// Idempotent creation by `sub`, against a real Postgres. Only runs with
+    /// `DATABASE_URL_TESTE` (e.g. the local dev database) and cleans up what it created.
     #[tokio::test]
     #[ignore]
     async fn conta_google_idempotente_no_banco() {

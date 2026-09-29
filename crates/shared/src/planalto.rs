@@ -1,4 +1,4 @@
-//! Planalto da Tormenta: terreno, estradas e progressão compartilhados.
+//! Storm Plateau: shared terrain, roads and progression.
 use crate::terreno::{Cidade, SitioPorto};
 use glam::Vec2;
 pub const ZONA: &str = "ilha_planalto";
@@ -12,16 +12,16 @@ pub const NOMES: [&str; 5] = [
 ];
 pub const NIVEIS: [(u32, u32); 5] = [(40, 44), (44, 49), (48, 53), (52, 57), (57, 60)];
 pub const PONTO_BASE: u16 = 40;
-/// Ate' onde a regiao chega: o fim da rampa.
+/// How far the region reaches: the end of the ramp.
 pub const RAIO: f32 = 78.0;
-/// O nucleo PLANO da regiao. Dali ate' `RAIO` o chao volta ao relevo por
-/// smoothstep, como a praca da cidade faz (`Cidade::RAIO_PLATO`/`RAIO`).
+/// The region's FLAT core. From there to `RAIO` the ground returns to the
+/// relief by smoothstep, the way the city square does (`Cidade::RAIO_PLATO`/`RAIO`).
 ///
-/// Era `RAIO` inteiro: o peso `((RAIO + 40 - d)/40)` satura em 1 dentro dos 78,
-/// entao cada regiao virava um disco PERFEITAMENTE plano de 156 u de ponta a
-/// ponta. Cinco deles mais a cidade e a montanha sumia — as capturas de
-/// 28/09/2026 mostram estacionamento, nao planalto. docs/MUNDO.md ja' tinha
-/// medido que area plana nunca foi o recurso escasso; contraste era.
+/// It was the whole `RAIO`: the weight `((RAIO + 40 - d)/40)` saturates at 1
+/// within 78, so each region became a PERFECTLY flat disc 156 u across. Five
+/// of them plus the city and the mountain disappeared — the 28/09/2026
+/// captures show a car park, not a plateau. docs/MUNDO.md had already
+/// measured that flat area was never the scarce resource; contrast was.
 pub const RAIO_PLATO: f32 = 30.0;
 pub const ESTRADA: f32 = 4.5;
 pub const PERIODO: i64 = 1800;
@@ -123,31 +123,31 @@ impl Plano {
     pub fn sem_spawn(&self, p: Vec2) -> bool {
         self.sem_obstaculo(p) || self.distancia_estrada(p) < 24.0
     }
-    /// Smoothstep: a mesma curva que `aplainar_sitio` usa pra descer o plato.
+    /// Smoothstep: the same curve `aplainar_sitio` uses to step the plateau down.
     fn suave(t: f32) -> f32 {
         t * t * (3.0 - 2.0 * t)
     }
 
     pub fn bloco(&self, p: Vec2, cru: i32) -> i32 {
-        // A CIDADE nao entra aqui. `Cidade::aplainar` ja' aplaina a praca no
-        // `bloco_em`, DEPOIS deste desenho, com o plato e a rampa dela. Ter uma
-        // segunda conta pra mesma pergunta era o que fazia o Ultimo Abrigo sair
-        // num disco de 140 u — e e' o defeito que o README chama de "uma verdade
-        // por pergunta".
-        // O TERRACO se afasta da cidade — a ESTRADA nao.
+        // The CITY does not come in here. `Cidade::aplainar` already flattens the
+        // square in `bloco_em`, AFTER this drawing, with its own plateau and ramp.
+        // Having a second calculation for the same question is what made Last
+        // Refuge come out as a 140 u disc — and it is the defect the README calls
+        //  "one truth per question".
+        // The TERRACE steps away from the city — the ROAD does not.
         //
-        // `Cidade::aplainar` roda DEPOIS disto e e' quem faz a praca; terracear
-        // por baixo dela empurrava o chao pra longe do nivel pedido e a
-        // aplainagem desistia (ela recusa acima de `Cidade::MORRO`). Mas a
-        // estrada precisa continuar valendo ate' a praca: suprimir os dois
-        // deixava degrau no meio do caminho do porto, e o teste das estradas
-        // pegou na hora.
+        // `Cidade::aplainar` runs AFTER this and is what makes the square;
+        // terracing underneath it pushed the ground away from the requested level
+        // and the flattening gave up (it refuses above `Cidade::MORRO`). But the
+        // road has to keep counting all the way to the square: suppressing both
+        // left a step in the middle of the harbour path, and the roads test caught
+        // it immediately.
         let d_cidade = self.cidade.centro().distance(p);
         let fora = Self::suave(((d_cidade - (Cidade::RAIO + 6.0)) / 34.0).clamp(0.0, 1.0));
         let mut h = cru as f32;
-        // So' a regiao MAIS PERTO manda. Somar as cinco em sequencia deixava a
-        // ultima da lista sobrescrever as outras onde os discos se tocam, e elas
-        // se tocam: os centros estao a ~100 u uns dos outros.
+        // Only the NEAREST region rules. Adding the five in sequence let the last
+        // in the list overwrite the others where the discs touch, and they do touch:
+        // the centers are ~100 u from each other.
         if let Some(r) = self.regioes.iter().min_by(|a, b| {
             a.centro
                 .distance_squared(p)
