@@ -5,7 +5,10 @@ pub const ZONA: &str = "ilha_planalto";
 pub const REVISAO: u32 = 1;
 pub const NOMES: [&str; 5] = [
     "Encostas dos Sentinelas",
-    "Monastery of the Winds",
+    // Era "Monastery of the Winds", o MESMO nome da Gruta 13. No mapa o trecho
+    // de trilha parecia uma dungeon — o dono pediu pra tirar. O trecho é um
+    // lugar, e ganha nome de lugar, como os vizinhos.
+    "Passo dos Ventos",
     "Vale do Trovão",
     "Forja Partida",
     "Olho da Tempestade",
