@@ -646,23 +646,21 @@ impl DungeonUi {
         // Entradas.
         let bw = (dir.w - 12.0 * f) * 0.5;
         match def.tipo {
+            // O PORÃO SAIU DO PAINEL em 29/09/2026: virou dungeon física, com
+            // porta na ilha e chave de craft (`porao_ui`). O painel ficou só
+            // com a Gruta — fila, salas e estágios —, que é o que ele sempre
+            // soube fazer.
+            //
+            // A linha aqui não some: quem abrir o painel procurando o Porão
+            // precisa saber pra onde ele foi, senão o conteúdo simplesmente
+            // desapareceu do jogo do ponto de vista de quem joga.
             Tipo::Porao => {
-                estilo::texto(
-                    dir.x,
-                    y,
-                    &format!(
-                        "Rewards today: {}/{}",
-                        estado.entradas.porao,
-                        dg::PORAO_RECOMPENSAS_POR_DIA
-                    ),
-                    14,
-                    estilo::TEXTO,
-                );
+                estilo::texto(dir.x, y, "Entered at its door, on the island.", 14, estilo::TEXTO);
                 y += 18.0 * f;
                 estilo::texto(
                     dir.x,
                     y,
-                    "Entrada livre; sem recompensa, só cobre e Marcas.",
+                    "Unlimited runs and full rewards — you just need its key.",
                     12,
                     estilo::SUAVE,
                 );
@@ -749,6 +747,9 @@ impl DungeonUi {
                 )
             {
                 self.entrada_pendente = Some(match def.tipo {
+                    // Não há mais entrada de Porão por aqui; o braço existe só
+                    // porque o `match` é exaustivo. O servidor responde a
+                    // `EntrarSolo` mandando o jogador pra porta.
                     Tipo::Porao => Pedido::EntrarSolo { conteudo: def.id },
                     Tipo::Gruta => Pedido::GrutaSolo {
                         conteudo: def.id,
@@ -772,10 +773,17 @@ impl DungeonUi {
 
         let aberto = cadeado.is_none() && def.disponivel;
         match def.tipo {
+            // Sem botão de entrar: a entrada é a porta. Um "Enter" aqui seria
+            // o botão morto que este painel já aprendeu a não ter.
             Tipo::Porao => {
-                if botao(Rect::new(dir.x, y, bw, 46.0 * f), "Enter", aberto, true) {
-                    saida.push(pedir(Pedido::EntrarSolo { conteudo: def.id }));
-                }
+                let _ = aberto;
+                estilo::texto(
+                    dir.x,
+                    y + 14.0 * f,
+                    "Find its door on the island.",
+                    13,
+                    estilo::SUAVE,
+                );
             }
             Tipo::Cacada => {
                 estilo::texto(

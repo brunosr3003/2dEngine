@@ -39,6 +39,7 @@ mod habilidades;
 mod habilidades_input;
 mod hud;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod porao_ui;
 mod previa_hud;
 mod hud_estilo;
 mod hud_layout;
@@ -387,6 +388,10 @@ struct Jogo {
     /// que a mao fez, e a mao continua mandando dentro da banda daquele zoom.
     cam_pitch_ajuste: f32,
     mouse_camera: desktop::ArrastoCamera,
+    /// A zona em que o personagem está, pra saber que portas de Porão existem
+    /// aqui. Chega no `Map` e vale até a próxima troca.
+    zona_atual: String,
+    porao: porao_ui::PoraoUi,
     /// Camera por toque (um dedo gira, pinca da' zoom). Ver `gesto_camera`.
     gesto_camera: gesto_camera::GestoCamera,
     /// O que o toque pediu NESTE quadro.
@@ -642,6 +647,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PORAO").is_ok() {
+        porao_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PRESENCA").is_ok() {
         presenca_ui::previa().await;
         return;
@@ -831,6 +841,8 @@ async fn main() {
         atualizacao: atualizacao::Atualizacao::default(),
         cam_pitch_ajuste: 0.0,
         mouse_camera: desktop::ArrastoCamera::default(),
+        zona_atual: String::new(),
+        porao: porao_ui::PoraoUi::default(),
         gesto_camera: gesto_camera::GestoCamera::default(),
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
@@ -1627,6 +1639,7 @@ impl Jogo {
                 self.rastro.limpa();
                 // Ilha do arquipelago: o terreno nasce da SEMENTE, e nem o
                 // arquivo de tiles nem um byte de rede entram nisso.
+                self.zona_atual = map_name.clone();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
@@ -5705,6 +5718,23 @@ impl Jogo {
         // pegando o clique por baixo dela.
         if !painel {
             self.magica.desenha_faixa_pvp(self.world.self_pos());
+            // A PORTA DO PORÃO: só aparece se houver uma perto, e só abre na
+            // porta com a chave. O servidor confere tudo de novo.
+            {
+                let cidade = porao_ui::cidade_da_zona(&self.zona_atual);
+                let slots = self.bolsa.slots.clone();
+                let tem = move |chave: u16| {
+                    slots.iter().any(|i| i.item_id == chave && i.qty > 0)
+                };
+                if let Some(msg) = self.porao.desenha(
+                    &self.zona_atual,
+                    cidade,
+                    self.world.self_pos(),
+                    &tem,
+                ) {
+                    self.envia(msg);
+                }
+            }
             if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
                 self.envia(ClientMessage::Magica { pedido });
             }
