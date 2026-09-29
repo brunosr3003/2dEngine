@@ -2306,10 +2306,6 @@ impl Mapa {
                     self.zoom_do_mapa(true);
                     return None;
                 }
-                if let Some((id,_)) = self.botoes_dungeon(r,eu).into_iter().find(|(_,b)| b.contains(m)) {
-                    self.aberto = false;
-                    return Some(Entrada::Dungeon(id));
-                }
                 let foco = self.foco_do_zoom(eu);
                 if let Some(a) = self
                     .marcador_sob(m, r, foco)
@@ -2657,20 +2653,6 @@ impl Mapa {
 
     /// O mapa grande (M) com o painel lateral. Devolve o "Ir" clicado no
     /// painel. `nivel` escolhe a zona certa pra cada bicho.
-    fn botoes_dungeon(&self, r: Rect, eu: Option<Vec2>) -> Vec<(u16,Rect)> {
-        if self.no_mundo { return Vec::new(); }
-        let Some(pl) = self.ger.as_ref().and_then(|g| g.planalto()) else { return Vec::new(); };
-        let raio = self.raio()/self.zoom_grande;
-        let foco = self.foco_do_zoom(eu);
-        [(1,13),(3,14)].into_iter().filter_map(|(i,id)| {
-            let c = pl.regioes[i].centro;
-            let q = para_tela(vec2(c.x,c.y)-foco,r,raio);
-            // Abaixo do ponto e mais estreito: em cima ficam os rotulos em
-            // ladder, e o botao largo tapava o nome da regiao vizinha.
-            let b = Rect::new(q.x-u(37.0),q.y+u(10.0),u(74.0),u(19.0));
-            (r.contains(vec2(b.x,b.y)) && r.contains(vec2(b.x+b.w,b.y+b.h))).then_some((id,b))
-        }).collect()
-    }
 
     pub fn desenha_grande(
         &mut self,
@@ -2692,9 +2674,6 @@ impl Mapa {
             }
             self.desenha_grande_mapa(world, agora_unix);
             self.desenha_abas(r);
-            for (_,b) in self.botoes_dungeon(r,world.self_pos()) {
-                estilo::botao(b,"Dungeon",estilo::estado_de(b,false,false),false);
-            }
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.contains(m) {
