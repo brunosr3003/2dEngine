@@ -2443,6 +2443,33 @@ mod metas_da_escada {
         }
     }
 
+    /// Os slots de UMA ilhota de combate da Ilha Magica, como o servidor os
+    /// monta, com o centro da ilhota na origem.
+    ///
+    /// A ilhota da EXPERIENCIA: e' a primeira de combate e a unica das tres sem
+    /// forte, entao mede a horda comum e nao a excecao. `RAIO_ILHOTA` pega as
+    /// cinco hordas dela — a do centro e as quatro dos lados.
+    fn ilhota_de_verdade() -> &'static Vec<Vec2> {
+        static I: std::sync::OnceLock<Vec<Vec2>> = std::sync::OnceLock::new();
+        I.get_or_init(|| {
+            let def = shared::terreno::def_da_zona("ilha_magica").expect("magic island");
+            let ilha = shared::terreno::Ilha::da_ilha(def);
+            let z = crate::world::zonas_comuns_da_ilha(&ilha, def, shared::magica::CHEGADA);
+            let alvo = shared::magica::ilhotas()
+                .into_iter()
+                .find(|i| matches!(i.bonus, shared::magica::Bonus::Xp))
+                .expect("xp islet");
+            let v: Vec<Vec2> = z
+                .zonas
+                .iter()
+                .filter(|h| h.centro.distance(alvo.centro) <= shared::magica::RAIO_ILHOTA)
+                .flat_map(|h| h.slots.iter().map(|s| *s - alvo.centro))
+                .collect();
+            assert!(!v.is_empty(), "a ilhota da Experiencia nasceu sem mob");
+            v
+        })
+    }
+
     fn posicoes(lugar: Lugar) -> Vec<Vec2> {
         let mut v = Vec::new();
         match lugar {
@@ -2454,22 +2481,21 @@ mod metas_da_escada {
                 crate::world::FORTE_POR_ZONA as usize,
                 &mut v,
             ),
-            Lugar::Ilhota => {
-                // Os MESMOS numeros de `world::zonas_da_ilha`, lidos de la'.
-                use crate::world as w;
-                let (raio, esp, teto) = (
-                    w::MOB_ZONA_RAIO_UN * w::ILHOTA_RAIO_MULT,
-                    w::MOB_ESPACO_UN * w::ILHOTA_ESPACO_MULT,
-                    w::ILHOTA_POR_HORDA as usize,
-                );
-                espalha(Vec2::ZERO, raio, esp, teto, &mut v);
-                for k in 0..w::ILHOTA_ANEL_HORDAS {
-                    let a = k as f32 / w::ILHOTA_ANEL_HORDAS as f32 * std::f32::consts::TAU + 0.4;
-                    let c = Vec2::new(a.cos(), a.sin())
-                        * (shared::magica::RAIO_ILHOTA * w::ILHOTA_ANEL_MULT);
-                    espalha(c, raio, esp, teto, &mut v);
-                }
-            }
+            // A ILHOTA DE VERDADE, e nao uma aproximacao dela.
+            //
+            // Aqui havia uma copia da regra: cinco discos com os mesmos raio,
+            // espacamento e teto do servidor. A copia mentia, e mentiu feio em
+            // 29/09/2026 — a grade de `espalha` trata TODO ponto do disco como
+            // chao plano, mas na ilhota de verdade o chao plano so' existe no
+            // plato do meio. Com o teto novo (9/6) os mobs do simulador se
+            // espalhavam por 31u e o jogador encontrava UM de cada vez
+            // (`agr 1`, dano zero); na ilha de verdade os mesmos 9 nascem
+            // colados no plato e a puxada e' de 9.
+            //
+            // Entao o guarda le' os slots que o SERVIDOR montou. Nao ha' mais
+            // numero pra copiar, e nenhuma mudanca de densidade pode passar por
+            // aqui sem o simulador ver.
+            Lugar::Ilhota => v = ilhota_de_verdade().clone(),
         }
         v
     }
@@ -2547,7 +2573,9 @@ mod metas_da_escada {
         let borda = match lugar {
             Lugar::Zona => crate::world::MOB_ZONA_RAIO_UN,
             Lugar::Forte => crate::world::FORTE_RAIO_UN,
-            Lugar::Ilhota => shared::magica::RAIO_ILHOTA * 0.55 + crate::world::MOB_ZONA_RAIO_UN * 0.5,
+            // A ilhota inteira: o jogador desembarca na beira dela, nao no meio
+            // da horda. `ilhota_de_verdade` ja' vem centrada na origem.
+            Lugar::Ilhota => shared::magica::RAIO_ILHOTA,
         } + 6.0;
         let entrada = Vec2::new(-borda, 0.0);
         let mut hp = stats.hp_max;

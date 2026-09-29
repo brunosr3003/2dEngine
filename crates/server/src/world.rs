@@ -733,6 +733,17 @@ pub const MOB_POR_ZONA: u32 = 18;
 /// Quantas hordas no anel, ALEM da do centro da ilhota.
 pub const ILHOTA_ANEL_HORDAS: usize = 4;
 /// A que fracao do raio da ilhota o anel fica.
+///
+/// Fica em 0,55 DE PROPOSITO, com as hordas sobrepostas. Empurrar o anel pra
+/// fora foi tentado em 29/09/2026 e reprovou na medicao: o relevo da ilhota so'
+/// tem chao plano em duas faixas — o plato (0-25u) e a beira (35-45u) —, e
+/// entre elas, que e' justamente onde um anel separado cairia, nao ha' um
+/// sitio plano sequer. A 32u o anel inteiro morria no `slots.len() >= 3` e a
+/// ilhota ficava so' com a horda do centro.
+///
+/// A separacao que importa veio de outro lugar: as hordas continuam se
+/// sobrepondo, mas nao EMPILHAM mais mob no mesmo sitio (`ocupados` la'
+/// embaixo).
 pub const ILHOTA_ANEL_MULT: f32 = 0.55;
 /// Raio de cada horda da ilhota, em fracao de `MOB_ZONA_RAIO_UN`: a zona
 /// encolhe pra caber dentro da ilhota.
@@ -748,8 +759,18 @@ pub const ILHOTA_RAIO_MULT: f32 = 0.7;
 /// mantem o diagonal (8,49) — meia horda dentro de `MATILHA_RAIO_UN`, sem
 /// tirar mob da ilhota. Mesmo degrau que abriu os fortes.
 pub const ILHOTA_ESPACO_MULT: f32 = 0.9;
-/// Teto de mobs em cada horda da ilhota.
-pub const ILHOTA_POR_HORDA: u32 = 18;
+/// Mob cap for the CENTER horde of an islet.
+///
+/// **18 → 9 on 29/09/2026**, asked for by the owner: "like 3-6 mobs in each
+/// side of the island and in the center 9".
+pub const ILHOTA_CENTRO_POR_HORDA: u32 = 9;
+/// Mob cap for each RING horde of an islet — one per side.
+///
+/// **18 → 6 on 29/09/2026.** The floor of the owner's "3-6" is not written
+/// here: a horde that cannot place 3 flat slots is dropped whole
+/// (`slots.len() >= 3` below), so a ring horde lands between 3 and 6 depending
+/// on how much flat ground its side of the islet actually has.
+pub const ILHOTA_ANEL_POR_HORDA: u32 = 6;
 
 // ── Balanceamento corpo a corpo × distancia (docs/COMBATE.md) ─────────────
 //
@@ -1237,6 +1258,8 @@ pub(crate) fn zonas_comuns_da_ilha(
             }
         }
     }
+    // Sitios ja' tomados por uma horda da ilhota. Ver o `magica &&` la' dentro.
+    let mut ocupados: Vec<Vec2> = Vec::new();
     for (i, c) in r.centros.iter().enumerate() {
         // FORTE: um a cada `FORTE_A_CADA` centros. A lista ja' foi embaralhada
         // pela semente da ilha, entao pegar de N em N espalha sozinho — e da'
@@ -1249,19 +1272,33 @@ pub(crate) fn zonas_comuns_da_ilha(
         // A ilhota do Colosso usa a regra do MUNDO, não a da ilha mágica: uma
         // horda de tamanho e espaçamento normais, pra sobrar chão entre o
         // jogador e o chefe. Ver o `continue` do anel, acima.
-        let adensar = magica
-            && !shared::magica::ilhota_em(*c)
-                .is_some_and(|i| matches!(i.bonus, shared::magica::Bonus::DropDeChefe));
+        let ilhota = magica.then(|| shared::magica::ilhota_em(*c)).flatten();
+        let adensar =
+            ilhota.is_some_and(|i| !matches!(i.bonus, shared::magica::Bonus::DropDeChefe));
+        // O centro da ilhota e o anel em volta têm tamanhos DIFERENTES: o do
+        // meio é a horda cheia, os quatro do anel são as "sides". Enquanto os
+        // dois usavam o mesmo raio, cada horda era mais larga que a distância
+        // até a vizinha e a ilhota virava uma massa só.
+        let no_centro = ilhota.is_some_and(|i| i.centro == *c);
         let (raio, espaco, mut teto) = if forte {
             (FORTE_RAIO_UN, FORTE_ESPACO_UN, FORTE_POR_ZONA)
         } else if adensar {
-            // Zona menor (cabe na ilhota), mobs mais colados e teto alto: é
-            // disso que "densidade muito grande" é feito.
+            // Zona menor (cabe na ilhota) e teto BAIXO: uma horda tem que ser
+            // puxável sozinha, e o teto é o que decide isso.
             (
                 MOB_ZONA_RAIO_UN * ILHOTA_RAIO_MULT,
                 MOB_ESPACO_UN * ILHOTA_ESPACO_MULT,
-                ILHOTA_POR_HORDA,
+                if no_centro { ILHOTA_CENTRO_POR_HORDA } else { ILHOTA_ANEL_POR_HORDA },
             )
+        } else if magica {
+            // A ILHOTA DO COLOSSO: raio e espacamento do MUNDO, teto da ilhota.
+            //
+            // O raio grande continua sendo de proposito — e' o que deixa chao
+            // entre o jogador e o chefe telegrafico, em que desviar e' a graca.
+            // O TETO nao: com as outras caindo pra 9/6, um 18 aqui fazia da
+            // ilhota do chefe a horda mais cheia da ilha inteira, que e' o
+            // contrario do "na do colosso pode ter menos mobs" do dono.
+            (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, ILHOTA_CENTRO_POR_HORDA)
         } else {
             (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, MOB_POR_ZONA)
         };
@@ -1288,9 +1325,29 @@ pub(crate) fn zonas_comuns_da_ilha(
             if s.distance(*c) > raio || slots.iter().any(|o| o.distance(*s) < espaco) {
                 continue;
             }
+            // NA ILHA MAGICA, UMA HORDA NAO OCUPA O SITIO DA OUTRA.
+            //
+            // O `espaco` acima olha so' os slots DESTA horda. No mundo isso
+            // basta, porque `MOB_ZONA_ESPACO_UN` (90u) mantem as hordas longe
+            // umas das outras. Na ilhota nao: as cinco hordas cabem num circulo
+            // de 46u e se sobrepoem de proposito, entao duas hordas escolhiam o
+            // MESMO sitio plano e empilhavam mob em cima de mob.
+            //
+            // Medido em 29/09/2026 na ilhota da Experiencia: 76 mobs por
+            // ilhota, e uma unica pancada acordava 39 deles dentro de
+            // `MATILHA_RAIO_UN`. O dono: "no one can tank that amount of mobs
+            // at the same time". So' com o teto novo (9/6) ainda eram 22.
+            // Deixando de empilhar, a mesma ilhota da' 28 mobs e a pior puxada
+            // cai pra 9.
+            if magica && ocupados.iter().any(|o: &Vec2| o.distance(*s) < espaco) {
+                continue;
+            }
             slots.push(*s);
         }
         if slots.len() >= 3 {
+            if magica {
+                ocupados.extend(slots.iter().copied());
+            }
             r.zonas.push(ZonaComum {
                 indice: i,
                 centro: *c,
@@ -21253,6 +21310,63 @@ mod testes_da_ilha_magica_lotada {
     /// saguao. Sem o segundo, a regra teria vazado pro mundo inteiro e o
     /// Bosque ficaria sem mob — e o teste que so' olha a arena passaria feliz
     /// nos dois casos.
+    /// A HORDA DA ILHOTA TEM QUE SER PUXAVEL POR UM JOGADOR SO'.
+    ///
+    /// O dono, em 29/09/2026: "i want to make the hordes with less mobs and
+    /// more spaced between them, like 3-6 mobs in each side of the island and
+    /// in the center 9 — the problem is that no one can tank that amount of
+    /// mobs at the same time".
+    ///
+    /// Tres numeros, e os tres sao o pedido:
+    ///
+    /// - a horda do CENTRO da ilhota da' 9;
+    /// - cada horda de LADO da' de 3 a 6 — o 3 nao e' teto nenhum, e' o
+    ///   `slots.len() >= 3` que descarta a horda que nao acha chao plano;
+    /// - e a PIOR PUXADA, que e' o que ele sentiu: quantos mobs acordam juntos
+    ///   dentro de `MATILHA_RAIO_UN`. Era 39 antes desta mudanca.
+    ///
+    /// O guarda mede a ilha de verdade porque a densidade sai do relevo: as
+    /// cinco hordas se sobrepoem dentro de um circulo de 46u, e o que as separa
+    /// nao e' distancia, e' `ocupados` — uma horda nao ocupa o sitio da outra.
+    #[test]
+    fn a_horda_da_ilhota_e_puxavel_por_um_jogador() {
+        for zona in ["ilha_magica", "ilha_magica_2", "ilha_magica_3"] {
+            let def = shared::terreno::def_da_zona(zona).expect("zona magica");
+            let ilha = shared::terreno::Ilha::da_ilha(def);
+            let z = zonas_comuns_da_ilha(&ilha, def, shared::magica::CHEGADA);
+
+            for h in &z.zonas {
+                let Some(i) = shared::magica::ilhota_em(h.centro) else { continue };
+                // A do Colosso usa a regra do MUNDO de proposito: horda normal,
+                // pra sobrar chao entre o jogador e o chefe telegrafico.
+                if matches!(i.bonus, shared::magica::Bonus::DropDeChefe) || h.forte {
+                    continue;
+                }
+                let n = h.slots.len();
+                if i.centro == h.centro {
+                    assert_eq!(n, 9, "{zona}: a horda do centro de {:?} deu {n}", i.bonus);
+                } else {
+                    assert!(
+                        (3..=6).contains(&n),
+                        "{zona}: uma horda de lado de {:?} deu {n}, fora do 3-6",
+                        i.bonus
+                    );
+                }
+            }
+
+            let todos: Vec<Vec2> = z.zonas.iter().flat_map(|h| h.slots.iter().copied()).collect();
+            let pior = todos
+                .iter()
+                .map(|m| todos.iter().filter(|o| o.distance(*m) <= MATILHA_RAIO_UN).count())
+                .max()
+                .unwrap_or(0);
+            assert!(
+                pior <= 12,
+                "{zona}: uma pancada acorda {pior} mobs de uma vez (limite 12)"
+            );
+        }
+    }
+
     #[test]
     fn a_arena_nao_tem_horda_e_o_bosque_tem() {
         let def = &shared::arena::DEF;
