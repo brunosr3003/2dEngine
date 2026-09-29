@@ -762,15 +762,28 @@ pub const ILHOTA_ESPACO_MULT: f32 = 0.9;
 /// Mob cap for the CENTER horde of an islet.
 ///
 /// **18 → 9 on 29/09/2026**, asked for by the owner: "like 3-6 mobs in each
-/// side of the island and in the center 9".
-pub const ILHOTA_CENTRO_POR_HORDA: u32 = 9;
+/// side of the island and in the center 9". Then 9 → 10, when he asked for "a
+/// few more mobs": see `ILHOTA_ANEL_POR_HORDA` for why a few is all there is.
+pub const ILHOTA_CENTRO_POR_HORDA: u32 = 10;
 /// Mob cap for each RING horde of an islet — one per side.
 ///
-/// **18 → 6 on 29/09/2026.** The floor of the owner's "3-6" is not written
-/// here: a horde that cannot place 3 flat slots is dropped whole
-/// (`slots.len() >= 3` below), so a ring horde lands between 3 and 6 depending
-/// on how much flat ground its side of the islet actually has.
-pub const ILHOTA_ANEL_POR_HORDA: u32 = 6;
+/// **18 → 6 on 29/09/2026**, then 6 → 7 when the owner asked for "a few more
+/// mobs". The floor is not written here: a horde that cannot place 3 flat slots
+/// is dropped whole (`slots.len() >= 3` below), so a ring horde lands between 3
+/// and the cap depending on how much flat ground its side of the islet has.
+///
+/// A FEW IS ALL QUE CABE, e o teto nao e' quem manda. Medido em 29/09/2026: com
+/// o espacamento de 7,2 u a ilhota satura perto de 31 mobs, e subir os tetos de
+/// 9/6 ate' 14/9 so' move mob do anel pro centro — o total anda de 28 pra 31 e
+/// para. O que segura e' o chao: os sitios planos ficam numa grade de 6 u, e
+/// qualquer espacamento acima de 6 recusa o vizinho reto.
+///
+/// Para caber MAIS que isso so' baixando `ILHOTA_ESPACO_MULT` pra 0,75 (6,0 u),
+/// que aceita o vizinho reto e leva a ilhota a 33-40 mobs. O preco esta' medido
+/// e e' o proprio defeito de volta: a pior puxada dentro de `MATILHA_RAIO_UN`
+/// salta de 9 pra 19-20, contra os 22 que o dono descreveu como "no one can
+/// tank that amount of mobs at the same time".
+pub const ILHOTA_ANEL_POR_HORDA: u32 = 7;
 
 // ── Balanceamento corpo a corpo × distancia (docs/COMBATE.md) ─────────────
 //
@@ -21352,9 +21365,10 @@ mod testes_da_ilha_magica_lotada {
     ///
     /// Tres numeros, e os tres sao o pedido:
     ///
-    /// - a horda do CENTRO da ilhota da' 9;
-    /// - cada horda de LADO da' de 3 a 6 — o 3 nao e' teto nenhum, e' o
-    ///   `slots.len() >= 3` que descarta a horda que nao acha chao plano;
+    /// - a horda do CENTRO da ilhota da' `ILHOTA_CENTRO_POR_HORDA`;
+    /// - cada horda de LADO da' de 3 ate' `ILHOTA_ANEL_POR_HORDA` — o 3 nao e'
+    ///   teto nenhum, e' o `slots.len() >= 3` que descarta a horda que nao acha
+    ///   chao plano;
     /// - e a PIOR PUXADA, que e' o que ele sentiu: quantos mobs acordam juntos
     ///   dentro de `MATILHA_RAIO_UN`. Era 39 antes desta mudanca.
     ///
@@ -21377,12 +21391,15 @@ mod testes_da_ilha_magica_lotada {
                 }
                 let n = h.slots.len();
                 if i.centro == h.centro {
-                    assert_eq!(n, 9, "{zona}: a horda do centro de {:?} deu {n}", i.bonus);
+                    assert_eq!(
+                        n, ILHOTA_CENTRO_POR_HORDA as usize,
+                        "{zona}: a horda do centro de {:?} deu {n}", i.bonus
+                    );
                 } else {
                     assert!(
-                        (3..=6).contains(&n),
-                        "{zona}: uma horda de lado de {:?} deu {n}, fora do 3-6",
-                        i.bonus
+                        (3..=ILHOTA_ANEL_POR_HORDA as usize).contains(&n),
+                        "{zona}: uma horda de lado de {:?} deu {n}, fora do 3-{}",
+                        i.bonus, ILHOTA_ANEL_POR_HORDA
                     );
                 }
             }
