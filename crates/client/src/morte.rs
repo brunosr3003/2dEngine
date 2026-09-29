@@ -269,11 +269,11 @@ mod testes {
         assert_eq!(t.ultima().map(|x| x.quando), Some(30));
         assert_eq!(
             Morte::rotulo_recuperar(&m(1, 1, 1200), 2),
-            "Recuperar XP (grátis 2/3)"
+            "Recover XP (free 2/3)"
         );
         assert_eq!(
             Morte::rotulo_recuperar(&m(1, 1, 1200), 0),
-            "Recuperar XP · 1.200 ouro"
+            "Recover XP · 1.200 gold"
         );
         assert_eq!(milhar(1234567), "1.234.567");
         assert_eq!(milhar(999), "999");

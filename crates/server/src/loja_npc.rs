@@ -73,7 +73,7 @@ mod testes {
     fn sem_cobre_pro_lote_inteiro_nao_compra_nada() {
         let mut inv = bolsa(&[(item_id::COPPER, 95)], 2);
         let e = comprar_lote(&mut inv, POCAO, 10, 10, 999).unwrap_err();
-        assert!(e.contains("faltam 5 de cobre"), "{e}");
+        assert!(e.contains("5 copper short"), "{e}");
         assert_eq!(crate::craft::tem(&inv, item_id::COPPER), 95);
         assert_eq!(crate::craft::tem(&inv, POCAO), 0);
     }
@@ -84,7 +84,7 @@ mod testes {
         // which does not empty).
         let mut inv = bolsa(&[(item_id::COPPER, 10_000)], 1);
         let e = comprar_lote(&mut inv, POCAO, 10, 45, 20).unwrap_err();
-        assert!(e.contains("bag full"), "{e}");
+        assert!(e.contains("bag too full"), "{e}");
         assert_eq!(crate::craft::tem(&inv, item_id::COPPER), 10_000);
         // The copper the batch spends entirely frees its slot.
         let mut justo = bolsa(&[(item_id::COPPER, 200)], 1);

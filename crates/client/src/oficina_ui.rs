@@ -835,7 +835,7 @@ mod tests {
         assert_eq!(refino_perdido(&gs[0], &slots), 2);
         assert_eq!(
             motivo_aprimorar(&gs[0], &slots, 1).as_deref(),
-            Some("Faltam 490 de cobre")
+            Some("Missing 490 copper")
         );
     }
 
@@ -858,7 +858,7 @@ mod tests {
         assert_eq!(resultado(&g), (2, 1));
         assert!(motivo_aprimorar(&g, &slots, 19)
             .unwrap()
-            .contains("nível 20"));
+            .contains("level 20"));
         assert_eq!(motivo_aprimorar(&g, &slots, 20), None);
     }
 
@@ -909,7 +909,7 @@ mod tests {
     fn texto_do_resultado_diz_quantas_deram_certo() {
         assert!(texto_do_resultado(3, 1, "Horn", "")
             .0
-            .contains("1x Chifre"));
+            .contains("1x Horn"));
         assert!(!texto_do_resultado(3, 0, "Horn", "").1);
         assert!(texto_do_resultado(0, 0, "", "faltam: x")
             .0

@@ -535,7 +535,7 @@ mod testes {
             .unwrap();
         let n = epico.nivel_min;
         let e = conferir(&com_tudo(&epico), &epico, n as u32 - 1, 1, &nome).unwrap_err();
-        assert_eq!(e, format!("requer nível {n}"));
+        assert_eq!(e, format!("requires level {n}"));
     }
 
     #[test]
@@ -647,7 +647,7 @@ mod testes {
         inv[7] = peca(1, 4, 9);
         // Verde pede nivel 20.
         let e = aprimorar(&mut inv, 3, 7, 19, &mut rolar_katana).unwrap_err();
-        assert!(e.contains("nível 20"), "{e}");
+        assert!(e.contains("level 20"), "{e}");
         assert_eq!(
             aprimorar(&mut inv, 3, 7, 20, &mut rolar_katana),
             Ok((item_id::KATANA, 2, 1))

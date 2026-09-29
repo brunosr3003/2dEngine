@@ -219,8 +219,10 @@ mod testes {
         };
         assert_eq!(decodifica(&codifica(&v)).idioma, shared::idioma::Idioma::En);
 
+        // Idioma que nao existe cai no PADRAO, e o padrao agora e' o ingles:
+        // o jogo e' escrito em ingles e o portugues e' a traducao.
         let estranho = decodifica("usuario=brunji\nidioma=fr\n");
-        assert_eq!(estranho.idioma, shared::idioma::Idioma::Pt);
+        assert_eq!(estranho.idioma, shared::idioma::Idioma::En);
         assert_eq!(estranho.usuario, "brunji");
     }
 

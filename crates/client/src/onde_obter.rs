@@ -766,7 +766,7 @@ mod tests {
         );
         assert!(
             v[0].detalhe.ends_with(&format!(
-                "Ilhas: {}, {}",
+                "Islands: {}, {}",
                 shared::terreno::ARQUIPELAGO[2].nome,
                 shared::terreno::ARQUIPELAGO[3].nome
             )),
@@ -793,7 +793,7 @@ mod tests {
             &onde(&i, &[], true),
         );
         assert_eq!(v[0].sem_ir.as_deref(), Some(OUTRA_ILHA));
-        assert!(v[0].detalhe.ends_with("Ilha: Geleira"), "{}", v[0].detalhe);
+        assert!(v[0].detalhe.ends_with("Island: Geleira"), "{}", v[0].detalhe);
     }
 
     #[test]
@@ -848,11 +848,11 @@ mod tests {
         assert_eq!(
             titulos,
             vec![
-                "Coletar: Pedra verde",
-                "Comprar: Alquimista Ana",
-                "Criar: Katana",
+                "Gather: Green stone",
+                "Buy: Alquimista Ana",
+                "Craft: Katana",
                 "Market",
-                "Recompensa: Pedreira",
+                "Reward: Pedreira",
                 "Dungeon boss (Cavern)"
             ]
         );
@@ -881,7 +881,7 @@ mod tests {
             (v[0].ir.clone(), v[0].sem_ir.as_deref()),
             (None, Some("Off the islands"))
         );
-        assert!(v[0].detalhe.ends_with("Ilha: Bosque"));
+        assert!(v[0].detalhe.ends_with("Island: Bosque"));
     }
 
     #[test]

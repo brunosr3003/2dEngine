@@ -2548,7 +2548,7 @@ mod tests {
                 ok: true,
                 texto: "ok".into()
             }),
-            Some("Loja: ok".into())
+            Some("Shop: ok".into())
         );
         assert!(!l.em_voo);
         assert!(l.festa_pendente.is_some());

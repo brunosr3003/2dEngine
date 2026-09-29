@@ -227,7 +227,7 @@ mod tests {
         );
         assert_eq!(
             ir.passo(vec2(36.0, 0.0), 2.0, false),
-            Some(Acao::Aviso("Chegou: x.".into()))
+            Some(Acao::Aviso("Arrived: x.".into()))
         );
         assert!(!ir.ativo());
     }

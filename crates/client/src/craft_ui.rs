@@ -710,7 +710,7 @@ mod tests {
         falta[5].qty = 1;
         assert_eq!(
             motivo(&r, &falta, 1).as_deref(),
-            Some("Faltam 2 ingrediente(s)")
+            Some("Missing 2 ingredient(s)")
         );
         // A MAIS ALTA que existe, e nao ">= 60": o nivel das cores sai de
         // `chaves::FAIXAS` e a epica desceu pro 40 em 28/09/2026.
@@ -735,8 +735,8 @@ mod tests {
             .unwrap();
         let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
         let (da, extra) = o_que_da(&r, &f, "Katana", 10);
-        assert!(da.starts_with("Dá: Ataque +"), "{da}");
-        assert!(da.contains("Destreza +"), "{da}");
+        assert!(da.starts_with("Gives: Attack +"), "{da}");
+        assert!(da.contains("Dexterity +"), "{da}");
         assert!(!da.contains('–'), "não mostra faixa: {da}");
         assert!(extra.as_deref().is_none_or(|e| !e.contains("aleat")));
     }
@@ -757,9 +757,9 @@ mod tests {
         for nivel in [1u32, 30, 60] {
             let (da, _) = o_que_da(&r, &f, "Medium Armour", nivel);
             let esperado = shared::for_da_armadura(shared::item_id::ARMADURA_MEDIA, nivel);
-            assert!(esperado > 0, "a média deixou de dar FOR");
+            assert!(esperado > 0, "medium armour stopped giving STR");
             assert!(
-                da.contains(&format!("Força +{esperado}")),
+                da.contains(&format!("Strength +{esperado}")),
                 "nível {nivel}: '{da}' não diz a Força que a peça empresta"
             );
         }

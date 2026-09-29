@@ -184,7 +184,7 @@ pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
         Estado::EmAndamento { .. } | Estado::Pronta => Clique::AutoMissao(d.id),
         Estado::Concluida => Clique::Aviso(format!("\"{}\" has already been completed.", d.title)),
         Estado::Bloqueada(m) => nivel_bloqueado(m).map_or_else(
-            || Clique::Aviso(format!("\"{}\" bloqueada: {}.", d.title, m.join(" · "))),
+            || Clique::Aviso(format!("\"{}\" blocked: {}.", d.title, m.join(" · "))),
             Clique::OpcoesDeNivel,
         ),
     }
@@ -595,7 +595,7 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
             if d.obj_kind == shared::quests::objective_kind::NIVEL =>
         {
             format!(
-                "Nível {feito}/{total} · escolha: Ilha Mágica, missões secundárias ou caça em áreas densas"
+                "Level {feito}/{total} · pick: Magic Island, side quests or hunting in dense areas"
             )
         }
         Estado::EmAndamento { feito, total } if !automatizavel(d) => {
@@ -1363,13 +1363,13 @@ mod tests {
         assert_eq!(estado(d501, &c), Estado::Disponivel);
         assert_eq!(
             estado(d502, &c),
-            Estado::Bloqueada(vec!["Conclua: Conheça o Alquimista".into()])
+            Estado::Bloqueada(vec!["Complete: Meet the Alchemist".into()])
         );
         // 504: nivel 3 e a 503 antes.
         match estado(d504, &c) {
             Estado::Bloqueada(m) => {
-                assert!(m.contains(&"Requer nível 3".to_string()), "{m:?}");
-                assert!(m.iter().any(|s| s.starts_with("Conclua: ")), "{m:?}");
+                assert!(m.contains(&"Requires level 3".to_string()), "{m:?}");
+                assert!(m.iter().any(|s| s.starts_with("Complete: ")), "{m:?}");
             }
             outro => panic!("{outro:?}"),
         }
@@ -1377,7 +1377,7 @@ mod tests {
         let fora = ctx(&[], &vazio, 1, Some("ilha_gelo"));
         assert_eq!(
             estado(d501, &fora),
-            Estado::Bloqueada(vec!["Na ilha Bosque".into()])
+            Estado::Bloqueada(vec!["On Bosque".into()])
         );
     }
 
@@ -1407,7 +1407,7 @@ mod tests {
             clique_de(d501, &Estado::EmAndamento { feito: 0, total: 1 }),
             Clique::AutoMissao(501)
         );
-        match clique_de(d501, &Estado::Bloqueada(vec!["Requer nível 3".into()])) {
+        match clique_de(d501, &Estado::Bloqueada(vec!["Requires level 3".into()])) {
             Clique::OpcoesDeNivel(3) => {},
             outro => panic!("bloqueada andou: {outro:?}"),
         }
@@ -1480,8 +1480,8 @@ mod tests {
         let craft = quest_by_id(524).unwrap();
         let forja = quest_by_id(523).unwrap();
         let dungeon = quest_by_id(531).unwrap();
-        assert!(caminho_manual(craft).contains("Menu › Craft: crie 2"));
-        assert!(caminho_manual(forja).contains("Menu › Forja: tente refinar 3"));
+        assert!(caminho_manual(craft).contains("Menu › Craft: create 2"));
+        assert!(caminho_manual(forja).contains("Menu › Forge: try refining 3"));
         assert!(caminho_manual(dungeon).contains("Shipwreck Cellar"));
         let linha = frase(craft, &Estado::EmAndamento { feito: 1, total: 2 });
         assert!(linha.contains("1/2") && linha.contains("Craft"), "{linha}");
@@ -1540,8 +1540,8 @@ mod tests {
         match estado_da_historia(historia::def_da_historia(712).unwrap(), &c) {
             Estado::Bloqueada(m) => {
                 // Capitulo I sem trava de nivel: a historia carrega o nivel.
-                assert!(!m.iter().any(|s| s.starts_with("Requer nível")), "{m:?}");
-                assert!(m.iter().any(|s| s.starts_with("Conclua: ")), "{m:?}");
+                assert!(!m.iter().any(|s| s.starts_with("Requires level")), "{m:?}");
+                assert!(m.iter().any(|s| s.starts_with("Complete: ")), "{m:?}");
             }
             outro => panic!("{outro:?}"),
         }
@@ -1558,7 +1558,7 @@ mod tests {
         // Outra ilha no futuro: diz onde. (721 desde que o barco entrou na
         // historia e empurrou o capitulo II em dois — docs/MAR_ABERTO.md.)
         match estado_da_historia(historia::def_da_historia(721).unwrap(), &c) {
-            Estado::Bloqueada(m) => assert!(m.iter().any(|s| s == "Na ilha Geleira"), "{m:?}"),
+            Estado::Bloqueada(m) => assert!(m.iter().any(|s| s == "On Geleira"), "{m:?}"),
             outro => panic!("{outro:?}"),
         }
         let lista = lista_do_menu(&log);
@@ -1978,7 +1978,7 @@ mod testes_da_trava {
         let f = frase(d, &andando);
         assert!(f.contains("17/20"), "{f}");
         assert!(f.contains("Magic Island"), "{f}");
-        assert!(f.contains("missões secundárias"), "{f}");
+        assert!(f.contains("side quests"), "{f}");
 
         // Uma missão comum em andamento continua indo pela auto missão.
         let comum = shared::quests::QUESTS

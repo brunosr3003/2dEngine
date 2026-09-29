@@ -845,7 +845,7 @@ mod testes {
         let coleta = cq(503, ACTIVE, 0);
         assert!(checar_entrega(def(503), &coleta, 10)
             .unwrap_err()
-            .contains("faltam 20"));
+            .contains("20 of"));
         assert_eq!(checar_entrega(def(503), &coleta, 30), Ok(30));
         assert!(
             checar_entrega(def(502), &cq(502, ACTIVE, 5), 0).is_err(),

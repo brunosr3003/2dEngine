@@ -566,13 +566,23 @@ pub fn formata_duracao(s: f64) -> String {
     }
 }
 
-/// 1234567 -> "1.234.567".
+/// 1234567 -> "1,234,567" in English, "1.234.567" in Portuguese.
+/// The thousands separator for the language in use.
+///
+/// Portuguese groups with '.', English with ','. This is not a phrase for the
+/// dictionary — it sits inside a number, where no entry can reach it — so it
+/// is read from the language, the same way `loja::preco_brl` picks both of
+/// its separators.
 pub fn milhar(v: u64) -> String {
+    let sep = match shared::idioma::atual() {
+        shared::idioma::Idioma::Pt => '.',
+        shared::idioma::Idioma::En => ',',
+    };
     let d = v.to_string();
     let mut out = String::with_capacity(d.len() + d.len() / 3);
     for (i, ch) in d.chars().enumerate() {
         if i > 0 && (d.len() - i) % 3 == 0 {
-            out.push('.');
+            out.push(sep);
         }
         out.push(ch);
     }
@@ -676,7 +686,12 @@ mod tests {
 
     #[test]
     fn textos() {
+        // O separador segue o idioma: os dois lados, pra nenhum passar batido.
+        shared::idioma::definir(shared::idioma::Idioma::En);
+        assert_eq!(milhar(1234567), "1,234,567");
+        shared::idioma::definir(shared::idioma::Idioma::Pt);
         assert_eq!(milhar(1234567), "1.234.567");
+        shared::idioma::definir(shared::idioma::Idioma::En);
         assert_eq!(milhar(12), "12");
         assert_eq!(formata_duracao(3725.0), "1h 02m");
         assert_eq!(formata_duracao(65.0), "1m 05s");

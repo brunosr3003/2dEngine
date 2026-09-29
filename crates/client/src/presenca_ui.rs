@@ -313,7 +313,7 @@ impl PresencaUi {
                 dica = Some((
                     r,
                     format!(
-                        "Dia {n}{}: {}",
+                        "Day {n}{}: {}",
                         if marco { " (marco)" } else { "" },
                         t.join(" + ")
                     ),
@@ -435,9 +435,9 @@ mod tests {
             )
             .unwrap();
         assert!(
-            t.contains("dia 7")
-                && t.contains("Poção de Experiência ×1")
-                && t.contains("1.500 de ouro")
+            t.contains("day 7")
+                && t.contains("Experience Potion ×1")
+                && t.contains("1,500 gold")
                 && t.contains("Mail")
         );
     }

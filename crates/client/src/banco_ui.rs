@@ -281,8 +281,8 @@ mod tests {
 
     #[test]
     fn rotulo_mostra_preco_e_o_teto() {
-        assert_eq!(rotulo_de_expandir(false, 0), "+10 espaços · 2.000 ouro");
-        assert_eq!(rotulo_de_expandir(true, 1), "+10 espaços · 4.000 ouro");
+        assert_eq!(rotulo_de_expandir(false, 0), "+10 slots · 2.000 gold");
+        assert_eq!(rotulo_de_expandir(true, 1), "+10 slots · 4.000 gold");
         assert_eq!(rotulo_de_expandir(false, 6), "Maximum size");
     }
 }
