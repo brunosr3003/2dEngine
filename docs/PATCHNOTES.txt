@@ -1,3 +1,9 @@
+29/09/2026 — "Passo dos Ventos"
+
+O trecho da trilha do Planalto que se chamava "Monastery of the Winds" — o mesmo nome de uma das Grutas — agora se chama PASSO DOS VENTOS. No mapa ele parecia uma dungeon, e não é: é um pedaço da trilha, como os vizinhos. A Gruta do Mosteiro continua no painel de dungeons, igual.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
 29/09/2026 — Mapa do Planalto mais limpo
 
 Saíram os dois botões "Dungeon" que ficavam na trilha do Planalto da Tormenta, embaixo do Mosteiro dos Ventos e da Forja Partida. Eles não levavam a lugar nenhum da ilha — só abriam o painel da Arena. As Grutas continuam no painel de dungeons; no mapa ficam só lugares de verdade, como a porta do Cofre do Trovão.
