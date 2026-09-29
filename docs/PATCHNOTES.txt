@@ -1,3 +1,17 @@
+29/09/2026 — O Porão virou uma porta de verdade, com chave de craft
+
+Até aqui o Porão e a Gruta entravam pelo mesmo painel, na Arena, e só se diferenciavam na conta de entradas. Agora são duas coisas separadas.
+
+O Porão saiu do painel. Cada um tem uma PORTA na ilha dele — batentes de pedra e um vão que acende quando você chega perto. Chegue na porta com a chave e entre. O painel ficou só com a Gruta: fila, salas e estágios, que é o que ele sempre soube fazer.
+
+A chave se FABRICA, com madeira e aço. Quanto mais fundo o Porão, mais madeira ela pede e melhor o aço: a do Naufrágio sai com 216 de Madeira T1 e 115 de Aço Cinza; a do Cofre do Trovão, lá no nível 50, pede 1.187 de madeira e 543 de Aço Roxo. Dá pra vender e comprar chave no mercado — quem gosta de coletar abastece quem gosta de entrar.
+
+Em troca, o Porão não tem mais limite nenhum. Nada de 3 recompensas por dia: entra quantas vezes tiver chave, e a recompensa é cheia todas as vezes. A chave passou a ser o único freio.
+
+E agora toda ilha tem um. O Ermo e o Planalto não tinham dungeon física nenhuma — quem passava do nível 30 ficava sem porta pra abrir. Entraram a Caravana Afundada (nível 34, no Ermo) e o Cofre do Trovão (nível 50, no Planalto), e o Casco Congelado subiu do 22 pro 24.
+
+Nada mudou na Gruta, e o protocolo continua o 157 — não é atualização obrigatória. Mas sem o cliente novo as portas não aparecem.
+
 29/09/2026 — A Ilha Mágica e o calendário de presença ficaram legíveis
 
 O painel da Ilha Mágica estava metade em português no meio de um jogo em inglês: "Sete ilhotas por pontes", "Grátis hoje 0/3 · resta 10:00". Eram frases que ficaram escritas em português no código depois que o jogo passou a nascer em inglês, e mais cinco verbetes do dicionário guardados ao contrário. Agora o painel inteiro fala um idioma só — o seu.
