@@ -13,6 +13,76 @@ use crate::hud_estilo as estilo;
 use crate::hud_layout::{self as layout, Zonas};
 use crate::map::Map;
 
+/// O CONTADOR DE FPS, sempre na tela.
+///
+/// Já havia um número de fps aqui, mas só enquanto se segurasse F3, junto do
+/// resto do diagnóstico. Isso deixava de fora quem mais precisa dele: no
+/// Android e no iOS não há F3 nenhum, e é justamente no celular que a taxa de
+/// quadros decide se o jogo está jogável. O dono pediu um contador, e contador
+/// é coisa que se olha de relance enquanto joga — não algo que se segura uma
+/// tecla pra ver.
+///
+/// O painel do F3 continua onde estava, com tick, entidades, rede e posição.
+/// Este aqui é só o número.
+mod fps {
+    use std::cell::Cell;
+
+    thread_local! {
+        static SUAVE: Cell<f32> = const { Cell::new(60.0) };
+    }
+
+    /// A taxa de quadros amaciada.
+    ///
+    /// `get_fps()` da macroquad é o inverso do ÚLTIMO quadro, e um único
+    /// engasgo de 30 ms o joga pra 33 — um número que pisca a cada quadro não
+    /// se lê, só incomoda. A média corrida de ~0,5 s mostra o que a mão sente.
+    pub fn suave(cru: f32) -> f32 {
+        SUAVE.with(|s| {
+            let novo = if cru.is_finite() && cru > 0.0 {
+                s.get() * 0.9 + cru * 0.1
+            } else {
+                s.get()
+            };
+            s.set(novo);
+            novo
+        })
+    }
+
+    /// Verde acima de 50, âmbar de 30 a 50, vermelho abaixo.
+    ///
+    /// A cor é o que faz o número ser lido sem ser lido: quem está jogando não
+    /// para pra comparar dígitos, mas vê quando fica vermelho.
+    pub fn cor(f: f32) -> macroquad::color::Color {
+        if f >= 50.0 {
+            macroquad::color::Color::new(0.55, 0.9, 0.55, 0.85)
+        } else if f >= 30.0 {
+            macroquad::color::Color::new(0.95, 0.8, 0.35, 0.9)
+        } else {
+            macroquad::color::Color::new(1.0, 0.45, 0.4, 0.95)
+        }
+    }
+}
+
+/// Desenha o contador ACIMA dos botões de baixo à esquerda.
+///
+/// A primeira tentativa foi o canto de baixo à esquerda, que parecia livre e
+/// não é: ali moram a bateria do modo economia, a montaria e o sprint, e o
+/// número ficou escondido atrás deles. Foi visto na prévia da HUD, não
+/// deduzido do código.
+///
+/// Por isso recebe a zona: a posição sai do botão da economia, e sobe com ele
+/// se o layout mudar.
+pub fn desenha_fps(z: &Zonas) {
+    let f = fps::suave(get_fps() as f32);
+    let s = layout::escala_ui();
+    let texto = format!("{f:.0} fps");
+    let x = z.economia.x + 2.0 * s;
+    let y = z.economia.y - 8.0 * s;
+    // Sombra primeiro: o número cai por cima de terreno claro e escuro.
+    estilo::texto(x + 1.0, y + 1.0, &texto, 13, estilo::alfa(estilo::FUNDO, 0.85));
+    estilo::texto(x, y, &texto, 13, fps::cor(f));
+}
+
 /// O que o servidor contou sobre este canal (`ServerMessage::InfoCanal`).
 #[derive(Clone, Default)]
 pub struct Info {
@@ -79,6 +149,10 @@ pub fn draw_hud(
     pos: Vec2,
     avisos: &[&str],
 ) -> bool {
+    // O contador entra junto do resto do HUD do mundo, e não no laço
+    // principal: aqui ele já está dentro da mesma passada 2D e some junto com
+    // a HUD quando ela some (cinemática, tela de morte, painel cheio).
+    desenha_fps(z);
     let r = z.area;
     estilo::painel(r);
     let sobre = r.contains(mouse());
