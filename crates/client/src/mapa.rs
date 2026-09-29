@@ -1198,9 +1198,17 @@ pub enum IconePorta {
     Arco,
     Fechadura,
     Cadeado,
+    /// Escada descendo num alçapão: "porão" é pra baixo.
+    Escada,
+    /// Caveira: perigo, dungeon.
+    Caveira,
+    /// Espadas cruzadas sobre escudo: combate.
+    Espadas,
+    /// Boca de caverna escura com brilho: entrada.
+    Caverna,
 }
 
-pub const ICONE_PORTA: IconePorta = IconePorta::Cadeado;
+pub const ICONE_PORTA: IconePorta = IconePorta::Caverna;
 
 fn porta_no_mapa(q: Vec2, lado: f32, nome: &str, fonte: u16, direita: bool) {
     icone_da_porta(ICONE_PORTA, q, lado);
@@ -1239,6 +1247,58 @@ pub fn icone_da_porta(qual: IconePorta, q: Vec2, lado: f32) {
             );
             draw_rectangle(q.x - lado * 0.22, q.y - lado * 0.1, lado * 0.44, lado * 0.55, escuro);
         }
+        IconePorta::Escada => {
+            let r = lado * 1.25;
+            draw_circle(q.x, q.y, r + 1.5, contorno);
+            draw_circle(q.x, q.y, r, Color::new(0.16, 0.12, 0.09, 1.0));
+            // Degraus descendo, cada um mais escuro.
+            for i in 0..4 {
+                let t = i as f32 / 4.0;
+                let w = r * (1.5 - t * 0.9);
+                let y = q.y - r * 0.55 + t * r * 1.05;
+                let c = Color::new(ouro.r * (1.0 - t * 0.55), ouro.g * (1.0 - t * 0.55), ouro.b * (1.0 - t * 0.55), 1.0);
+                draw_rectangle(q.x - w * 0.5, y, w, r * 0.2, c);
+            }
+            draw_circle_lines(q.x, q.y, r, 1.5f32.max(lado * 0.18), ouro);
+        }
+        IconePorta::Caveira => {
+            let r = lado * 1.05;
+            draw_circle(q.x, q.y - r * 0.1, r + 1.5, contorno);
+            draw_rectangle(q.x - r * 0.55 - 1.5, q.y + r * 0.35, r * 1.1 + 3.0, r * 0.6 + 1.5, contorno);
+            draw_circle(q.x, q.y - r * 0.1, r, ouro);
+            draw_rectangle(q.x - r * 0.55, q.y + r * 0.35, r * 1.1, r * 0.6, ouro);
+            draw_circle(q.x - r * 0.4, q.y - r * 0.05, r * 0.28, escuro);
+            draw_circle(q.x + r * 0.4, q.y - r * 0.05, r * 0.28, escuro);
+            draw_triangle(vec2(q.x, q.y + r * 0.2), vec2(q.x - r * 0.12, q.y + r * 0.42), vec2(q.x + r * 0.12, q.y + r * 0.42), escuro);
+            for dx in [-0.3f32, 0.0, 0.3] {
+                draw_line(q.x + r * dx, q.y + r * 0.55, q.x + r * dx, q.y + r * 0.95, 1.0f32.max(lado * 0.1), escuro);
+            }
+        }
+        IconePorta::Espadas => {
+            let r = lado * 1.3;
+            // Escudo.
+            let escudo = |c: Color, k: f32| {
+                draw_rectangle(q.x - r * 0.65 * k, q.y - r * 0.7 * k, r * 1.3 * k, r * 0.8 * k, c);
+                draw_triangle(vec2(q.x - r * 0.65 * k, q.y + r * 0.1 * k), vec2(q.x + r * 0.65 * k, q.y + r * 0.1 * k), vec2(q.x, q.y + r * 0.85 * k), c);
+            };
+            escudo(contorno, 1.15);
+            escudo(Color::new(0.45, 0.12, 0.10, 1.0), 1.0);
+            let g = 2.0f32.max(lado * 0.28);
+            draw_line(q.x - r * 0.75, q.y - r * 0.75, q.x + r * 0.75, q.y + r * 0.6, g + 2.0, contorno);
+            draw_line(q.x + r * 0.75, q.y - r * 0.75, q.x - r * 0.75, q.y + r * 0.6, g + 2.0, contorno);
+            draw_line(q.x - r * 0.75, q.y - r * 0.75, q.x + r * 0.75, q.y + r * 0.6, g, ouro);
+            draw_line(q.x + r * 0.75, q.y - r * 0.75, q.x - r * 0.75, q.y + r * 0.6, g, ouro);
+        }
+        IconePorta::Caverna => {
+            let r = lado * 1.3;
+            // Rocha em volta, boca escura, brilho roxo no fundo.
+            draw_circle(q.x, q.y, r + 1.5, contorno);
+            draw_circle(q.x, q.y, r, Color::new(0.42, 0.40, 0.44, 1.0));
+            draw_circle(q.x, q.y + r * 0.2, r * 0.65, escuro);
+            draw_rectangle(q.x - r * 0.65, q.y + r * 0.2, r * 1.3, r * 0.75, escuro);
+            draw_circle(q.x, q.y + r * 0.35, r * 0.3, Color::new(0.75, 0.45, 1.0, 0.9));
+            draw_circle_lines(q.x, q.y, r, 1.5f32.max(lado * 0.15), ouro);
+        }
         IconePorta::Cadeado => {
             let w = lado * 1.8;
             let h = lado * 1.4;
@@ -1266,32 +1326,34 @@ pub async fn previa_icones() {
     let saida = std::env::var("MMO_PREVIA_SAIDA")
         .unwrap_or_else(|_| "/tmp/tempest-icone-porta".into());
     std::fs::create_dir_all(&saida).unwrap();
-    let rt = render_target(1200, 520);
+    let (w, h) = (1400.0f32, 560.0f32);
+    let rt = render_target(w as u32, h as u32);
     crate::render3d::define_alvo(Some(rt.clone()));
     crate::hud_layout::define_escala_ui(1.6);
     let floresta = Color::from_rgba(78, 128, 58, 255);
     let areia = Color::from_rgba(214, 190, 140, 255);
+    let icones = [
+        (IconePorta::Escada, "1 Escada"),
+        (IconePorta::Caveira, "2 Caveira"),
+        (IconePorta::Espadas, "3 Espadas"),
+        (IconePorta::Caverna, "4 Caverna"),
+        (IconePorta::Arco, "5 Arco"),
+        (IconePorta::Fechadura, "6 Fechadura"),
+        (IconePorta::Cadeado, "7 Cadeado (atual)"),
+    ];
     for _ in 0..3 {
-        // `camera_padrao` já aponta pro alvo; um `set_default_camera` aqui
-        // devolvia o desenho pra TELA e o PNG saía só com o fundo.
         crate::render3d::camera_padrao();
         clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-        draw_rectangle(0.0, 0.0, 1200.0, 260.0, floresta);
-        draw_rectangle(0.0, 260.0, 1200.0, 260.0, areia);
-        let icones = [(IconePorta::Arco, "Arco"), (IconePorta::Fechadura, "Fechadura"), (IconePorta::Cadeado, "Cadeado")];
+        draw_rectangle(0.0, 0.0, w, h * 0.5, floresta);
+        draw_rectangle(0.0, h * 0.5, w, h * 0.5, areia);
         for (i, (ic, nome)) in icones.iter().enumerate() {
-            let cx = 200.0 + i as f32 * 400.0;
-            for (fundo_y, _) in [(0.0f32, floresta), (260.0, areia)] {
-                // tamanho do mapa grande, tamanho do minimapa, e um grande pra ver a forma
-                icone_da_porta(*ic, vec2(cx - 120.0, fundo_y + 130.0), 6.0);
-                icone_da_porta(*ic, vec2(cx - 40.0, fundo_y + 130.0), 11.2);
-                icone_da_porta(*ic, vec2(cx + 80.0, fundo_y + 130.0), 40.0);
-                // Legendas embaixo de cada tamanho, sem uma cair em cima da outra.
-                estilo::texto_centro(cx - 120.0, fundo_y + 210.0, "mapa 6px", 12, Color::new(0.0, 0.0, 0.0, 0.8));
-                estilo::texto_centro(cx - 40.0, fundo_y + 232.0, "minimapa 11px", 12, Color::new(0.0, 0.0, 0.0, 0.8));
-                estilo::texto_centro(cx + 80.0, fundo_y + 210.0, "forma", 12, Color::new(0.0, 0.0, 0.0, 0.8));
+            let cx = 100.0 + i as f32 * 200.0;
+            estilo::texto_centro(cx, 34.0, nome, 18, WHITE);
+            for fy in [0.0f32, h * 0.5] {
+                icone_da_porta(*ic, vec2(cx, fy + 110.0), 40.0);
+                icone_da_porta(*ic, vec2(cx - 40.0, fy + 220.0), 6.0);
+                icone_da_porta(*ic, vec2(cx + 30.0, fy + 220.0), 11.2);
             }
-            estilo::texto_centro(cx, 30.0, nome, 22, Color::new(1.0, 1.0, 1.0, 1.0));
         }
         unsafe { get_internal_gl().flush() };
         rt.texture.get_texture_data().export_png(&format!("{saida}/icones-porta.png"));
