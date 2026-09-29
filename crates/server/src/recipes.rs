@@ -178,7 +178,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     // O seed acima e' `ON CONFLICT DO NOTHING`, entao mudar a constante NAO
     // alcanca receita ja' semeada — e foi por isso que a katana Rara continuou
     // pedindo 40 depois de a chave azul passar a cair no 30. Cada vez que a
-    // escada anda, o valor velho entra nesta lista.
+    // ladder anda, o valor velho entra nesta lista.
     //
     // (indice da faixa, valores que aquela faixa ja' teve)
     let mut ajustadas = 0u64;
@@ -206,7 +206,7 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
         }
     }
     if ajustadas > 0 {
-        // Sem citar numero: a mensagem envelhece junto com a escada, e uma
+        // Sem citar numero: a mensagem envelhece junto com a ladder, e uma
         // linha de log que mente e' pior do que uma linha vaga.
         tracing::info!("[recipes] {ajustadas} recipes realigned to the key bands");
     }

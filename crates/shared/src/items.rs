@@ -395,7 +395,7 @@ pub const MAX_REFINE: u8 = 15;
 /// porcentagem fixa deixava o dono imune do 20 ao 45. Agora a peca ja' nasce
 /// na escala do nivel (`escala_do_roll`), entao o percentual muda a peca em
 /// toda faixa que importa; e +12 (o `forja::REFINO_MAX`) vale +48%, que e' a
-/// distancia de uns quinze niveis na escada: cash compra adiantamento, nao
+/// distancia de uns quinze niveis na ladder: cash compra adiantamento, nao
 /// imunidade.
 pub const REFINE_BOOST_PER_LEVEL: f32 = 0.04;
 
@@ -823,10 +823,10 @@ pub struct Escala {
 /// e do `fixar`).
 ///
 /// O template (no banco, espelho de `item_template`) e' so' a PROPORCAO
-/// entre as pecas; o numero vem da escada: no nivel de item `i`, na cor
+/// entre as pecas; o numero vem da ladder: no nivel de item `i`, na cor
 /// natural do nivel (`tier_from_ilvl`), o conjunto de referencia a +0 soma
 /// exatamente o que os itens tem que dar a um personagem do nivel `i`
-/// (`escada::*_dos_itens`). Uma cor acima da natural vale a razao das cores
+/// (`ladder::*_dos_itens`). Uma cor acima da natural vale a razao das cores
 /// (`tier_stat_mult`): azul no nivel de verde e' 1,33x; cinza no nivel de
 /// verde, 0,67x. O tier soma +15% por degrau (`bonus_do_tier`).
 ///
@@ -837,9 +837,9 @@ pub fn escala_do_roll(grau: u8, item_level: u16, tier: u8) -> Escala {
     let cor = tier_stat_mult(grau.clamp(1, 5)) / tier_stat_mult(tier_from_ilvl(item_level));
     let t = bonus_do_tier(tier);
     Escala {
-        ataque: crate::escada::escala_de_ataque(item_level) * cor * t,
-        defesa: crate::escada::escala_de_defesa(item_level) * cor * t,
-        vida: crate::escada::escala_de_vida(item_level) * cor * t,
+        ataque: crate::ladder::attack_scale(item_level) * cor * t,
+        defesa: crate::ladder::defense_scale(item_level) * cor * t,
+        vida: crate::ladder::health_scale(item_level) * cor * t,
     }
 }
 
@@ -934,7 +934,7 @@ mod testes_do_refino {
     }
 
     /// Cada nivel de refino MUDA uma peca da faixa (verde pra cima), e o
-    /// +12 vale +48% — a distancia de uns quinze niveis na escada, nunca
+    /// +12 vale +48% — a distancia de uns quinze niveis na ladder, nunca
     /// mais. Numa cinza do comeco o +1 pode arredondar pra nada: e' peca de
     /// vida 13, e refinar cinza nao e' o jogo.
     #[test]
@@ -965,7 +965,7 @@ mod testes_do_refino {
     }
 
     /// A peca nasce na escala do nivel dela: o conjunto de referencia a +0,
-    /// na cor natural, soma o que a escada pede dos itens naquele nivel.
+    /// na cor natural, soma o que a ladder pede dos itens naquele nivel.
     #[test]
     fn o_conjunto_de_referencia_a_mais_zero_fecha_na_escada() {
         use crate::constants::item_id::*;
@@ -976,17 +976,17 @@ mod testes_do_refino {
             for id in [KATANA, BAINHA, ARMADURA_MEDIA, BRINCO, AMULETO, BRACELETE, CINTO] {
                 let p = ItemInstance::roll_for(id, ilvl, || 0.5).unwrap();
                 let b = p.effective_bonus();
-                // A destreza vira ataque na katana (`escada::ATAQUE_POR_DEX`).
-                atk += b.attack_damage + (b.dex as f32 * crate::escada::ATAQUE_POR_DEX).round() as i32;
+                // A destreza vira ataque na katana (`ladder::ATTACK_PER_DEX`).
+                atk += b.attack_damage + (b.dex as f32 * crate::ladder::ATTACK_PER_DEX).round() as i32;
                 def += b.defense;
                 hp += b.hp_max;
             }
             let n = ilvl as u32;
             let folga = |x: f32| (x * 0.06).max(3.0);
             let (ea, ed, ev) = (
-                crate::escada::ataque_dos_itens(n),
-                crate::escada::defesa_dos_itens(n),
-                crate::escada::vida_dos_itens(n),
+                crate::ladder::item_attack(n),
+                crate::ladder::item_defense(n),
+                crate::ladder::item_health(n),
             );
             assert!((atk as f32 - ea).abs() <= folga(ea), "nv{ilvl}: ataque {atk} vs {ea:.0}");
             assert!((def as f32 - ed).abs() <= folga(ed), "nv{ilvl}: defesa {def} vs {ed:.0}");

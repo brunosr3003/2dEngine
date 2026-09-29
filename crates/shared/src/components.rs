@@ -537,18 +537,18 @@ pub struct DesafioMob {
 /// poder é o da ficha com esses dois e a vida esperada. Era `(1 − 18/ataque)
 /// ÷ 1,5%` até 50 — a conta da defesa em porcentagem, que já não existe.
 pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
-    use crate::escada;
+    use crate::ladder;
     let defesa = s.defense.max(0);
     let ataque = s.attack_damage.max(0);
-    let golpes = if chefe { escada::GOLPES_DO_CHEFE } else { escada::GOLPES_POR_MOB };
+    let golpes = if chefe { ladder::BOSS_STRIKES } else { ladder::STRIKES_PER_MOB };
     let recomendado_ataque = ((s.hp_max.max(1) as f32 / golpes).ceil() as i32 + defesa)
-        .max(escada::ataque(nivel));
-    let liquido = escada::dano_liquido_do_mob(nivel).round() as i32;
-    let recomendado_defesa = (ataque - liquido).max(escada::defesa(nivel)).max(0);
+        .max(ladder::attack(nivel));
+    let liquido = ladder::mob_net_damage(nivel).round() as i32;
+    let recomendado_defesa = (ataque - liquido).max(ladder::defense(nivel)).max(0);
     let poder_recomendado = crate::dungeon::poder_de_stats(&PlayerStats {
         attack_damage: recomendado_ataque,
         defense: recomendado_defesa,
-        hp_max: escada::vida(nivel),
+        hp_max: ladder::health(nivel),
         mp_max: 0,
         dex: 0,
         wis: 0,
@@ -618,7 +618,7 @@ mod testes_desafio_mob {
         let trinta_quatro = desafio_do_mob(&s, 34, false);
         assert_eq!((vinte.grau_minimo, vinte.pecas_minimas), (2, 2));
         assert_eq!((trinta.grau_minimo, trinta.pecas_minimas), (3, 3));
-        assert!(trinta_quatro.poder_recomendado as i32 >= crate::escada::poder(34));
+        assert!(trinta_quatro.poder_recomendado as i32 >= crate::ladder::power(34));
         assert!(trinta_quatro.proficiencia_minima >= 49);
         let chefe = desafio_do_mob(&s, 34, true);
         assert!(chefe.poder_recomendado > trinta_quatro.poder_recomendado);

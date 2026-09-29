@@ -29,12 +29,12 @@ use shared::social::{Anexo, Pedido};
 /// na bolsa dele — a arma e a secundária, que é a metade que importa.
 ///
 /// A cauda (armadura média e os quatro acessórios) sai de
-/// `escada::CONJUNTO_DE_REFERENCIA`, que é o conjunto em que a escada de dano
+/// `ladder::REFERENCE_SET`, que é o conjunto em que a ladder de dano
 /// foi medida. Peso de armadura é ESCOLHA, não classe: a média é o meio do
 /// corredor, e é de propósito que o kit de teste não opine.
 fn kit_da_arma(arma: u16) -> [u16; 7] {
     let conj = shared::skills::Conjunto::da_arma(arma);
-    let cauda = &shared::escada::CONJUNTO_DE_REFERENCIA[2..];
+    let cauda = &shared::ladder::REFERENCE_SET[2..];
     let mut kit = [arma, conj.secundaria(), 0, 0, 0, 0, 0];
     kit[2..].copy_from_slice(cauda);
     kit

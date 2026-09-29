@@ -545,7 +545,7 @@ impl GameWorld {
                         let quer = cat::dano_telegrafado(h, fase, hp_max, resist);
                         // O hit ainda passa por `dano_mitigado`: manda o bruto
                         // que, mitigado, da' o que o golpe quer tirar. Na
-                        // escada a defesa SUBTRAI, entao ela entra no bruto
+                        // ladder a defesa SUBTRAI, entao ela entra no bruto
                         // — o telegrafado tira fracao da vida, qualquer que
                         // seja a armadura (docs/ESCADA.md).
                         let bruto = (quer as f32 / (1.0 - resist).max(0.1)).ceil() as i32 + defesa;

@@ -65,7 +65,7 @@ pub const FAIXAS: [FaixaDeChave; 5] = [
         chance_mundo: 0.02,
     },
     FaixaDeChave {
-        // 60 → 40 em 28/09/2026, junto com a lendaria. A escada das chaves
+        // 60 → 40 em 28/09/2026, junto com a lendaria. A ladder das chaves
         // virou de dez em dez a partir do 20 (20 verde, 30 azul, 40 epica,
         // 50 lendaria): antes ela abria de vinte em vinte e as duas cores de
         // cima ficavam fora do alcance do jogo que existe.

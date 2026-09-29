@@ -37,13 +37,13 @@ pub struct Especie {
 /// Os pesos de `afinidade` somam isto.
 pub const PESO_TOTAL: u8 = 10;
 
-/// A escada do pet: do bichinho de quintal ao filhote de dragao. A ordem E'
+/// A ladder do pet: do bichinho de quintal ao filhote de dragao. A ordem E'
 /// o grau — subir de cor e' trocar de bicho, nao repintar o mesmo.
 ///
 /// **A `escala` e' o que faz o FILHOTE ser filhote.** Ela multiplica a altura
 /// em que o bicho e' carregado (`client::bicho::BICHOS`), e essas alturas sao
 /// do bicho ADULTO: o dragao vem com 2,4 — mais alto que o jogador, e do
-/// tamanho da montaria. A escada sai em 0,65 / 0,70 / 0,75 / 0,85 / 0,95:
+/// tamanho da montaria. A ladder sai em 0,65 / 0,70 / 0,75 / 0,85 / 0,95:
 /// cresce de leve, todos claramente menores que a montaria mais baixa
 /// (1,46), e `nenhum_pet_chega_ao_tamanho_de_montaria` cobra o teto.
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
@@ -86,7 +86,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         bicho: "bichos/dragao",
         escala: 0.396,
         afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::INT, 3), (stat_idx::VIT, 3)]),
-        descricao: "Pequeno, e já sabe disso. O topo da escada.",
+        descricao: "Pequeno, e já sabe disso. O topo da ladder.",
     },
 ];
 
@@ -217,7 +217,7 @@ pub fn alimentado(d: &crate::items::PetData, agora_unix: i64) -> bool {
 /// Velocidade do pet, em multiplos de `PLAYER_SPEED`. O laranja empata com a
 /// montaria (`loja::VEL_MONTADO`): so' o topo acompanha quem esta' montado.
 ///
-/// A escada SUBIU junto com a das montarias em 22/09/2026. Ela nao e'
+/// A ladder SUBIU junto com a das montarias em 22/09/2026. Ela nao e'
 /// independente: o teto do pet e' `VEL_MONTADO` por contrato, e deixar o pet
 /// para tras quando a montaria acelerou seria trocar um defeito por outro —
 /// o jogador montado veria o pet laranja, o mais caro do jogo, ficando

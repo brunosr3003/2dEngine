@@ -1331,7 +1331,7 @@ pub(crate) async fn load_from_db(pool: &PgPool) -> Result<EconomyConfig> {
 pub const KIND_CHEFE: u16 = 7;
 
 /// Bichos de PRAIA: caranguejo e caranguejo-rei. Nascem so' nas zonas de
-/// praia (`world::ZONA_DE_PRAIA_ID`), com sorteio proprio; a escada por nivel
+/// praia (`world::ZONA_DE_PRAIA_ID`), com sorteio proprio; a ladder por nivel
 /// das zonas comuns (`kind_para_nivel`, `kinds_comuns`) nunca tira eles.
 pub const KINDS_DE_PRAIA: [u16; 2] = [8, 9];
 /// Um em quantos caranguejos e' rei.
@@ -1858,25 +1858,25 @@ pub(crate) fn kind_inicial(kind: u16) -> Option<&'static KindInicial> {
 }
 
 impl KindInicial {
-    /// A especie como a escada a ve' (docs/ESCADA.md): vida e ataque
+    /// A especie como a ladder a ve' (docs/ESCADA.md): vida e ataque
     /// relativos ao lobo, defesa em fracao do ataque esperado. Os numeros
     /// da tabela deixam de ser absolutos e passam a ser proporcao.
-    pub(crate) fn perfil(&self) -> shared::escada::Perfil {
-        shared::escada::Perfil::relativo_ao_lobo(self.hp, self.dmg, self.def)
+    pub(crate) fn perfil(&self) -> shared::ladder::Profile {
+        shared::ladder::Profile::relativo_ao_lobo(self.hp, self.dmg, self.def)
     }
 }
 
 impl EnemyKindDef {
     /// O mesmo `perfil` a partir da linha do banco — a que o mundo usa.
-    pub fn perfil(&self) -> shared::escada::Perfil {
-        shared::escada::Perfil::relativo_ao_lobo(self.hp_max, self.attack_damage, self.defense)
+    pub fn perfil(&self) -> shared::ladder::Profile {
+        shared::ladder::Profile::relativo_ao_lobo(self.hp_max, self.attack_damage, self.defense)
     }
 }
 
 /// Os atributos REAIS de um mob comum deste kind nascido no nivel: o que a
 /// tela mostra e a conta usa. E' o que o mundo chama ao nascer o bicho.
-pub fn mob_na_escada(kind: u16, nivel: u32) -> shared::escada::Mob {
-    shared::escada::mob(&enemy_def(kind).perfil(), nivel)
+pub fn mob_na_escada(kind: u16, nivel: u32) -> shared::ladder::Mob {
+    shared::ladder::mob(&enemy_def(kind).perfil(), nivel)
 }
 
 #[cfg(test)]
@@ -1979,7 +1979,7 @@ mod testes_da_pedra {
             assert!(
                 (taxa(vezes.get(&GLITTERING_POWDER).copied().unwrap_or(0)) - 0.03).abs() < 0.005
             );
-            // A COR do material segue a escada da pedra, e roxo nao cai.
+            // A COR do material segue a ladder da pedra, e roxo nao cai.
             let aco = soma(STEEL);
             for cor in 1..=4u8 {
                 let obtido =
@@ -1988,7 +1988,7 @@ mod testes_da_pedra {
                     shared::RENDIMENTO_DA_PEDRA[pedra as usize][cor as usize - 1] as f32 / 100.0;
                 assert!(
                     (obtido - esperado).abs() < 0.02,
-                    "pedra {pedra}: aço cor {cor} a {obtido:.3}, escada diz {esperado}"
+                    "pedra {pedra}: aço cor {cor} a {obtido:.3}, ladder diz {esperado}"
                 );
             }
             for base in MATERIAIS_COLORIDOS {

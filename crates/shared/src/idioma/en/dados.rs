@@ -306,7 +306,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Caçador desde pequeno. Força e destreza.", "A hunter from the start. Strength and dexterity."),
     ("Rápido e curioso. Destreza e velocidade.", "Quick and curious. Dexterity and speed."),
     (
-        "Pequeno, e já sabe disso. O topo da escada.",
+        "Pequeno, e já sabe disso. O topo da ladder.",
         "Small, and well aware of it. The top of the ladder.",
     ),
     (

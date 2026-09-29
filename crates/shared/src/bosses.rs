@@ -757,42 +757,42 @@ pub fn kind_do_corpo(kind: u16) -> u16 {
     }
 }
 
-/// Vida do chefe: `escada::GOLPES_DO_CHEFE` golpes do jogador esperado do
+/// Vida do chefe: `ladder::BOSS_STRIKES` golpes do jogador esperado do
 /// nivel (docs/ESCADA.md). Dimensionada na simulacao (server
 /// `balanceamento`): um jogador do nivel, esquivando e com pocao, leva de 1
 /// a 4 min conforme a arma; grupo bem menos. Era `8 960 + 269 x nivel` com
 /// teto em 20 720 — o teto existia porque o dano do jogador crescia com a
-/// faixa do equipamento em saltos; na escada ele e' reta, e a luta nao
+/// faixa do equipamento em saltos; na ladder ele e' reta, e a luta nao
 /// encurta com o nivel. Cabe no `u16` do fio.
 pub fn vida(nivel: u32) -> i32 {
-    crate::escada::vida_do_chefe(nivel)
+    crate::ladder::boss_health(nivel)
 }
 
-/// Dano do golpe COMUM (mitigado normalmente, `escada::dano`). O telegrafado
+/// Dano do golpe COMUM (mitigado normalmente, `ladder::damage`). O telegrafado
 /// nao usa isto: ele tira fracao da vida (`dano_telegrafado`).
 ///
-/// Sai da escada (docs/ESCADA.md): a defesa esperada do nivel mais tres
+/// Sai da ladder (docs/ESCADA.md): a defesa esperada do nivel mais tres
 /// lobos de liquido. Era `15 + 2,4 x nivel`, que contra a defesa em
 /// porcentagem virava 17 de dano no nivel 30 — o chefe so' doia no
 /// telegrafico.
 pub fn dano(nivel: u32) -> i32 {
-    crate::escada::ataque_do_chefe(nivel)
+    crate::ladder::boss_attack(nivel)
 }
 
 /// Defesa do chefe: uma fracao do ataque esperado do nivel maior que a de
-/// qualquer mob comum (`escada::DEFESA_DO_CHEFE`). Quem esta' uma faixa
+/// qualquer mob comum (`ladder::BOSS_DEFENSE`). Quem esta' uma faixa
 /// atras bate no piso.
 pub fn defesa(nivel: u32) -> i32 {
-    crate::escada::defesa_do_chefe(nivel)
+    crate::ladder::boss_defense(nivel)
 }
 
 /// A parte da mitigacao do jogador que ainda e' FRACAO: so' a reducao de
-/// identidade (escudo, armadura pesada), com o teto da escada. A defesa em
+/// identidade (escudo, armadura pesada), com o teto da ladder. A defesa em
 /// pontos ja' nao e' porcentagem de nada — ela subtrai do golpe
-/// (`escada::dano`) — e o telegrafado, que tira fracao da VIDA, nem passa
+/// (`ladder::damage`) — e o telegrafado, que tira fracao da VIDA, nem passa
 /// por ela.
 pub fn resistencia(_defesa: i32, reducao: f32) -> f32 {
-    reducao.clamp(0.0, crate::escada::REDUCAO_MAX)
+    reducao.clamp(0.0, crate::ladder::MAX_REDUCTION)
 }
 
 /// O que um golpe telegrafado TIRA de quem ficou dentro: fracao da vida

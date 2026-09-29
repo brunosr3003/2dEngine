@@ -32,7 +32,7 @@ pub const BLOCO: f32 = 0.5;
 /// Acima disto e' terra. O relevo nasce em metros com o mar no zero.
 pub const NIVEL_DO_MAR: f32 = 0.0;
 
-/// Degrau que se sobe ANDANDO: um bloco, como escada.
+/// Degrau que se sobe ANDANDO: um bloco, como ladder.
 pub const DEGRAU_BLOCOS: i32 = 1;
 
 /// Degrau que se sobe PULANDO. Acima disto e' parede — nao ha' escalada.
@@ -221,7 +221,7 @@ pub struct PerfilDeRelevo {
     /// Degrau do terraco, em BLOCOS inteiros. `0` desliga.
     ///
     /// Em blocos e nao em metros porque e' o bloco que o jogador sobe: com
-    /// degrau de 1 o patamar inteiro e' andavel como escada; com 2 a borda
+    /// degrau de 1 o patamar inteiro e' andavel como ladder; com 2 a borda
     /// so' passa pulando, e o patamar vira plato de verdade.
     pub terraco_blocos: i32,
     /// Quanto do relevo original o terraco engole, de 0 a 1. Fraco demais e o
@@ -1340,7 +1340,7 @@ pub const MINERIO_LIMIAR: f32 = 0.42;
 /// cortando um patamar ao meio poria pedra de duas cores no mesmo cume. O
 /// corte do roxo subiu pra 0,82 quando o terraco desceu de 4 pra 3 blocos
 /// (degrau de 4 e' parede que nem pulando vence): com 0,78 o topo engolia a
-/// faixa azul e a escada de raridade invertia.
+/// faixa azul e a ladder de raridade invertia.
 pub fn tier_de_minerio(altura: f32, pico: f32) -> u8 {
     let t = altura / pico.max(1.0);
     if t < 0.57 {
@@ -3621,7 +3621,7 @@ impl Ilha {
     }
 
     /// Da' pra ANDAR de um ponto ao outro? Um bloco de subida passa como
-    /// escada; mais que isso, nao.
+    /// ladder; mais que isso, nao.
     ///
     /// Nao existe malha de navegacao nem colisao 3D: e' esta comparacao de
     /// inteiros que faz penhasco virar parede. Descer e' livre — cair de um
@@ -6067,7 +6067,7 @@ mod testes {
         let d = &ARQUIPELAGO[0];
         // A ilha REAL, e nao a de raio 800: o gerador refaz o relevo pelo
         // tamanho, entao a de 800 e' outra ilha — deu azul acima de verde
-        // enquanto a do jogo da' a escada certa.
+        // enquanto a do jogo da' a ladder certa.
         let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let raio_un = i.raio_blocos as f32 * BLOCO;
 
@@ -6116,7 +6116,7 @@ mod testes {
         let d = &ARQUIPELAGO[0];
         // A ilha REAL, e nao a de raio 800: o gerador refaz o relevo pelo
         // tamanho, entao a de 800 e' outra ilha — deu azul acima de verde
-        // enquanto a do jogo da' a escada certa.
+        // enquanto a do jogo da' a ladder certa.
         let i = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
         let mut por_tier = [0u32; 5];
         let mut troncos = 0u32;
@@ -6152,11 +6152,11 @@ mod testes {
             })),
             "cristal de Energia cobre ou compartilha coluna com minerio"
         );
-        // A escada tem que DESCER: pedra melhor tem que ser mais rara, senao
+        // A ladder tem que DESCER: pedra melhor tem que ser mais rara, senao
         // subir a montanha nao e' progressao, e' passeio.
         assert!(
             por_tier[1] > por_tier[2] && por_tier[2] > por_tier[3] && por_tier[3] > por_tier[4],
-            "escada de raridade invertida: {:?}",
+            "ladder de raridade invertida: {:?}",
             &por_tier[1..]
         );
     }

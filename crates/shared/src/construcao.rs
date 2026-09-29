@@ -1090,7 +1090,7 @@ fn casebre(seed: i32, papel: Papel) -> Construcao {
         }
     }
 
-    // PISO do sobrado, com o vao da escada no fundo.
+    // PISO do sobrado, com o vao da ladder no fundo.
     if sobrado {
         for x in 1..nx - 1 {
             for z in 1..nz - 1 {

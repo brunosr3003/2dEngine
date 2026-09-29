@@ -173,7 +173,7 @@ pub const ARRASTO_MINIMO: f32 = 6.0;
 /// unidade de uma vez, e degraus encadeados acumulam mais ainda.
 ///
 /// A mola tem INERCIA: parte do repouso e freia no fim, entao a mesma
-/// perseguicao serve pro degrau, pra escada e pra queda. Criticamente
+/// perseguicao serve pro degrau, pra ladder e pra queda. Criticamente
 /// amortecida — chega e para, sem passar do ponto e voltar, que numa camera
 /// leria como enjoo.
 ///
@@ -522,7 +522,7 @@ mod testes_camera {
 
     /// A camera nao pode ARRANCAR num degrau — e' o defeito que a mola veio
     /// consertar. A interpolacao exponencial anda proporcional a distancia,
-    /// entao um degrau isolado saia macio e uma escada saia chicoteando.
+    /// entao um degrau isolado saia macio e uma ladder saia chicoteando.
     #[test]
     fn a_camera_engole_o_degrau() {
         let dt = 1.0 / 60.0;

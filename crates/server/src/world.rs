@@ -608,7 +608,7 @@ pub struct ServerSpawnZone {
     pub active: bool,
     /// sim_time_s da ultima vez que algum player estava dentro do wake radius.
     pub last_player_near_at: f32,
-    /// FORTE: mesma escada de nivel das outras, mas com o dobro de inimigos
+    /// FORTE: mesma ladder de nivel das outras, mas com o dobro de inimigos
     /// no mesmo pedaco de chao. E' o que aparece marcado no mapa.
     pub forte: bool,
 }
@@ -856,15 +856,15 @@ pub(crate) fn xp_do_mob(base: u64, nivel: u32) -> u64 {
 /// iniciante mais +4% de vida e +3,5% de dano por nivel acima do 12 — e a
 /// defesa do jogador em porcentagem fixa fazia isso nao importar.
 pub(crate) fn vida_e_dano_do_mob(hp: i32, dano: i32, nivel: u32) -> (i32, i32) {
-    let m = shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(hp, dano, 0), nivel);
-    (m.vida, m.ataque)
+    let m = shared::ladder::mob(&shared::ladder::Profile::relativo_ao_lobo(hp, dano, 0), nivel);
+    (m.health, m.attack)
 }
 
 /// A defesa do mob no nivel: fracao do ataque esperado, pela defesa da
-/// tabela (`escada::Perfil`).
+/// tabela (`ladder::Profile`).
 pub(crate) fn defesa_do_mob(defesa: i32, nivel: u32) -> i32 {
-    let lobo = shared::escada::LOBO;
-    shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(lobo.0, lobo.1, defesa), nivel).defesa
+    let lobo = shared::ladder::WOLF;
+    shared::ladder::mob(&shared::ladder::Profile::relativo_ao_lobo(lobo.0, lobo.1, defesa), nivel).defense
 }
 
 /// O escudo do conjunto espada e escudo absorve esta fracao de todo golpe.
@@ -913,7 +913,7 @@ pub(crate) fn regen_de_hp(atual: i32, max: i32, resto: &mut f32, quanto: f32) ->
 pub const MOB_ZONAS_MAX: u32 = 60;
 
 /// Zonas com id a partir daqui sao de PRAIA: sorteiam `economy::kind_de_praia`
-/// (caranguejos) em vez da escada por nivel.
+/// (caranguejos) em vez da ladder por nivel.
 pub const ZONA_DE_PRAIA_ID: u32 = 20_000;
 /// Grade da busca de sitio de praia, em blocos.
 const PRAIA_PASSO_BLOCOS: i32 = 8;
@@ -3943,13 +3943,13 @@ impl GameWorld {
         // O Ermo tinha +25% a +65% de vida e dano por cima, "porque o
         // equipamento T2 e a defesa decidem se o jogador aguenta": era o
         // remendo pra defesa em porcentagem, que deixava o mob do 30 sem
-        // efeito. Na escada (docs/ESCADA.md) o mob do 35 ja' e' o mob do 35
+        // efeito. Na ladder (docs/ESCADA.md) o mob do 35 ja' e' o mob do 35
         // em qualquer ilha, e o guarda mede o Ermo pelo bioma.
         if self.zona == shared::magica::ZONA && de_faixa {
             // Um slot em cinco vira Forte. O slot mantem a variante nos
             // respawns, sem depender de sorte em cada morte. Chefes usam
             // outro caminho de spawn. Os outros quatro eram enfraquecidos
-            // (0,85 / 0,80); na escada nao sao mais — densidade ja' e' o
+            // (0,85 / 0,80); na ladder nao sao mais — densidade ja' e' o
             // bonus, e com o golpe por subtracao a horda soma
             // (docs/ESCADA.md, "O que mudou").
             let (vida, dano) = if magica_forte {
@@ -11744,7 +11744,7 @@ impl GameWorld {
                 dmg
             };
             // Defesa SUBTRAI do golpe, com piso; a reducao de identidade
-            // (escudo, peso) vem por cima (`shared::escada`).
+            // (escudo, peso) vem por cima (`shared::ladder`).
             let mut dmg = dano_mitigado(dmg, target_defense, target_dmg_reduction_pct);
 
             // Boss bloqueando (AI PvP): -75% de dano + flash de parry no
@@ -16219,7 +16219,7 @@ impl GameWorld {
                         &kinds,
                         z.forte,
                     );
-                    // Praia sorteia os proprios bichos, fora da escada por nivel.
+                    // Praia sorteia os proprios bichos, fora da ladder por nivel.
                     if z.id >= ZONA_DE_PRAIA_ID {
                         zn.bichos = crate::economy::bichos_de_praia(self.bioma_da_zona());
                     }
@@ -19918,7 +19918,7 @@ mod testes_colisao_de_instancia {
 /// Era `1,5% por ponto de defesa ate' 75%`, somado a reducao ate' 90% — uma
 /// porcentagem que nao olhava quem batia.
 pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
-    shared::escada::dano_com_reducao(dmg, defesa, reducao)
+    shared::ladder::damage_with_reduction(dmg, defesa, reducao)
 }
 
 
@@ -21273,7 +21273,7 @@ mod testes_da_ilha_magica_lotada {
 
     #[test]
     fn dificuldade_inicial_sobe_gradualmente_sem_mudar_nivel_20() {
-        let (lobo_hp, lobo_dmg, _) = shared::escada::LOBO;
+        let (lobo_hp, lobo_dmg, _) = shared::ladder::WOLF;
         let mut anterior = vida_e_dano_do_mob(lobo_hp, lobo_dmg, 1);
         for nivel in 2..=11 {
             let atual = vida_e_dano_do_mob(lobo_hp, lobo_dmg, nivel);
@@ -21283,9 +21283,9 @@ mod testes_da_ilha_magica_lotada {
             anterior = atual;
         }
         // O mundo e o simulador (`balanceamento`) usam a MESMA conta.
-        let m = shared::escada::mob(&shared::escada::Perfil::novo(1.0, 1.0, 0.0), 20);
-        assert_eq!(vida_e_dano_do_mob(lobo_hp, lobo_dmg, 20), (m.vida, m.ataque));
-        assert_eq!(defesa_do_mob(8, 30), shared::escada::mob(&shared::escada::Perfil::relativo_ao_lobo(280, 18, 8), 30).defesa);
+        let m = shared::ladder::mob(&shared::ladder::Profile::novo(1.0, 1.0, 0.0), 20);
+        assert_eq!(vida_e_dano_do_mob(lobo_hp, lobo_dmg, 20), (m.health, m.attack));
+        assert_eq!(defesa_do_mob(8, 30), shared::ladder::mob(&shared::ladder::Profile::relativo_ao_lobo(280, 18, 8), 30).defense);
         assert_eq!(folego_de_iniciante(11, 100, 10.0), 0.0);
         assert_eq!(folego_de_iniciante(2, 100, 0.0), 0.0);
         assert!(folego_de_iniciante(5, 100, 10.0) > folego_de_iniciante(10, 100, 10.0));

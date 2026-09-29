@@ -890,7 +890,7 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
     .into_iter()
     .map(item)
     .collect();
-    // Materiais por cor: a mesma escada que o craft pede.
+    // Materiais por cor: a mesma ladder que o craft pede.
     let materiais: Vec<Value> = i::MATERIAIS_COLORIDOS
         .iter()
         .map(|&base| {

@@ -29,9 +29,9 @@ where
 
 #[derive(Serialize)]
 pub struct Economia {
-    /// A escada de refino, por grau. Previsao.
+    /// A ladder de refino, por grau. Previsao.
     escadas: Vec<EscadaDoGrau>,
-    /// A escada de DEGRAUS (grau x tier) com o refino em cima. E' aqui que as
+    /// A ladder de DEGRAUS (grau x tier) com o refino em cima. E' aqui que as
     /// duas se multiplicam.
     degraus: Vec<DegrauNoMundo>,
     /// Os niveis de refino que a tabela de degraus mostra.
@@ -248,7 +248,7 @@ fn escadas() -> Vec<EscadaDoGrau> {
             EscadaDoGrau {
                 grau: g.nome().to_string(),
                 tentativa: [ds, cu],
-                degraus: forja::escada(g)
+                degraus: forja::ladder(g)
                     .into_iter()
                     .map(|e| Nivel {
                         alvo: e.alvo,

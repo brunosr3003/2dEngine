@@ -201,10 +201,10 @@ pub fn nivel_do_estagio(c: &Conteudo, e: u8) -> u32 {
 
 /// Poder minimo, em % do poder de referencia, por estagio.
 ///
-/// A referencia e' o personagem ESPERADO do nivel (escada), equipado na
+/// A referencia e' o personagem ESPERADO do nivel (ladder), equipado na
 /// faixa a +0 — nao mais o pelado com a arma inicial. Por isso as fracoes
 /// cairam: o estagio 1 deixa entrar quem esta' meia faixa atras, e so' o 5
-/// pede a escada inteira.
+/// pede a ladder inteira.
 pub const PODER_PCT: [u32; 5] = [55, 65, 80, 90, 100];
 
 /// O mesmo numero do "Poder" da ficha do cliente.
@@ -217,7 +217,7 @@ pub fn poder_de_stats(s: &PlayerStats) -> i32 {
         + (s.crit_chance * 1000.0) as i32
 }
 
-/// Poder de referencia de um nivel: o do personagem ESPERADO na escada
+/// Poder de referencia de um nivel: o do personagem ESPERADO na ladder
 /// (docs/ESCADA.md) — ataque, defesa e vida da faixa a +0, na mesma conta
 /// da ficha. E' por isso que ele se compara com o poder do jogador: "poder
 /// 2.900" nao diz nada, "2.900 de 2.900 esperados" diz tudo.
@@ -226,7 +226,7 @@ pub fn poder_de_stats(s: &PlayerStats) -> i32 {
 /// estagio 1 — e no nivel 34 dava 4.300 enquanto qualquer jogador real
 /// tinha o dobro. Porta que ninguem encosta nao e' porta.
 pub fn poder_referencia(nivel: u32) -> i32 {
-    crate::escada::poder(nivel)
+    crate::ladder::power(nivel)
 }
 
 pub fn poder_minimo(c: &Conteudo, e: u8) -> i32 {
@@ -681,7 +681,7 @@ pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
                 (0.25, [0, 800, 200, 0, 0])
             }
         }
-        // DE 40 PRA CIMA a escada desceu 20 niveis em 28/09/2026: as FORMAS
+        // DE 40 PRA CIMA a ladder desceu 20 niveis em 28/09/2026: as FORMAS
         // que estavam em 60-69, 70-79 e 80+ passaram pra 40-49, 50-59 e 60+,
         // sem numero novo inventado. E' o que faz "Epico no 40, Lendario no
         // 50" valer na PECA e nao so' no teto — `teto_de_grau` sozinho nao
@@ -1265,16 +1265,16 @@ mod testes {
         let c = gruta();
         let p: Vec<i32> = (1..=5).map(|e| poder_minimo(c, e)).collect();
         assert!(p.windows(2).all(|w| w[1] > w[0]), "{p:?}");
-        // Quem esta' meia faixa atras (a escada de cinco niveis abaixo)
-        // passa no estagio 1; quem esta' na escada passa no 5.
+        // Quem esta' meia faixa atras (a ladder de cinco niveis abaixo)
+        // passa no estagio 1; quem esta' na ladder passa no 5.
         let n = c.nivel_min;
         assert!(
-            crate::escada::poder(n.saturating_sub(5)) >= poder_minimo(c, 1),
+            crate::ladder::power(n.saturating_sub(5)) >= poder_minimo(c, 1),
             "a porta tranca quem esta' quase no nivel: {} < {}",
-            crate::escada::poder(n.saturating_sub(5)),
+            crate::ladder::power(n.saturating_sub(5)),
             poder_minimo(c, 1)
         );
-        assert!(crate::escada::poder(nivel_do_estagio(c, 5)) >= poder_minimo(c, 5));
+        assert!(crate::ladder::power(nivel_do_estagio(c, 5)) >= poder_minimo(c, 5));
         // O pelado com a arma inicial NAO passa: a porta voltou a ser porta.
         let pelado = poder_de_stats(&crate::components::base_player_stats());
         assert!(pelado + 80 < poder_minimo(c, 1));

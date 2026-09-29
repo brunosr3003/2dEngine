@@ -2400,7 +2400,7 @@ impl Mapa {
             let c = pl.regioes[i].centro;
             let q = para_tela(vec2(c.x,c.y)-foco,r,raio);
             // Abaixo do ponto e mais estreito: em cima ficam os rotulos em
-            // escada, e o botao largo tapava o nome da regiao vizinha.
+            // ladder, e o botao largo tapava o nome da regiao vizinha.
             let b = Rect::new(q.x-u(37.0),q.y+u(10.0),u(74.0),u(19.0));
             (r.contains(vec2(b.x,b.y)) && r.contains(vec2(b.x+b.w,b.y+b.h))).then_some((id,b))
         }).collect()

@@ -6,7 +6,7 @@
 //!
 //! ## A conta que o desenho implica
 //!
-//! "Dois viram um" aplicado cinco vezes por cor da uma escada exponencial:
+//! "Dois viram um" aplicado cinco vezes por cor da uma ladder exponencial:
 //!
 //! ```text
 //! Comum I → Comum IV          8 pecas
@@ -72,7 +72,7 @@ impl Grau {
 
 pub const TIER_MAX: u8 = 4;
 
-/// Onde a peca esta' na escada. Tier vai de 1 a 4 (I..IV).
+/// Onde a peca esta' na ladder. Tier vai de 1 a 4 (I..IV).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Degrau {
     pub grau: Grau,
@@ -105,7 +105,7 @@ impl Degrau {
         1u64 << passos.min(63)
     }
 
-    /// Posicao absoluta na escada, 0 = Comum I.
+    /// Posicao absoluta na ladder, 0 = Comum I.
     pub fn indice(self) -> u32 {
         (self.grau as u32 - 1) * TIER_MAX as u32 + (self.tier as u32 - 1)
     }
@@ -316,7 +316,7 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
 
 // ────────────────────────────── aprimorar ─────────────────────────────
 //
-// A aba "Aprimorar" do Craft, a escada de `combinar` aplicada ao item de
+// A aba "Aprimorar" do Craft, a ladder de `combinar` aplicada ao item de
 // verdade. A instancia guarda a COR em `rarity` e o TIER em `tier`:
 //
 //   2 x (cor G, Tier I..III)        ->  1 x (cor G, tier seguinte)
@@ -402,7 +402,7 @@ pub fn conferir_aprimorar(a: PecaDoAprimorar, b: PecaDoAprimorar) -> Result<(u8,
 mod testes {
     use super::*;
 
-    /// A escada inteira, e o numero que ela implica. Se alguem mexer na regra
+    /// A ladder inteira, e o numero que ela implica. Se alguem mexer na regra
     /// de combinacao sem perceber, o custo do jogo muda por ordens de
     /// grandeza — e isso tem que quebrar um teste, nao aparecer no forum.
     #[test]
@@ -489,7 +489,7 @@ mod testes {
     }
 }
 
-// ─────────────────────── o custo da escada, fechado ───────────────────────
+// ─────────────────────── o custo da ladder, fechado ───────────────────────
 
 /// Darksteel por hora de mineracao ATIVA.
 ///
@@ -518,7 +518,7 @@ pub struct Escada {
     pub horas: f64,
 }
 
-/// A escada inteira de um grau, do +1 ao `REFINO_MAX`.
+/// A ladder inteira de um grau, do +1 ao `REFINO_MAX`.
 ///
 /// A conta separa os dois regimes, e tem que separar: eles cobram diferente.
 ///
@@ -528,11 +528,11 @@ pub struct Escada {
 ///   * **do +6 em diante** cada tentativa e' moeda unica: ou sobe, ou destroi.
 ///     Uma tentativa por peca viva, e as que morrem param de gastar ali.
 ///
-/// A primeira versao multiplicava a escada inteira pelo numero de pecas, como
+/// A primeira versao multiplicava a ladder inteira pelo numero de pecas, como
 /// se toda peca perdida tivesse pago ate' o topo. Dava o DOBRO: 205 horas
 /// pra um Raro +7 que o desenho da economia fixou em 106. Peca que morre no
 /// +6 nunca pagou a tentativa do +7.
-pub fn escada(grau: Grau) -> Vec<Escada> {
+pub fn ladder(grau: Grau) -> Vec<Escada> {
     let (ds, cu) = custo_de_refino(grau);
     let chance = |k: u8| chance_de_refino(k) as f64 / 100.0;
     let mut fora = Vec::new();
@@ -565,13 +565,13 @@ pub fn escada(grau: Grau) -> Vec<Escada> {
 mod testes_escada {
     use super::*;
 
-    /// A escada tem que bater com o numero que decidiu o desenho da economia:
+    /// A ladder tem que bater com o numero que decidiu o desenho da economia:
     /// **Raro +7 sai por ~106 horas de mineracao ativa**. E' dele que veio a
     /// colonia offline, e se ele mudar sem ninguem ver, a colonia passa a
     /// resolver um problema que nao existe mais.
     #[test]
     fn raro_mais_sete_custa_cem_e_poucas_horas() {
-        let e = escada(Grau::Raro);
+        let e = ladder(Grau::Raro);
         let sete = e.iter().find(|x| x.alvo == 7).unwrap();
         assert!(
             (sete.pecas - 17.0).abs() < 1.0,
@@ -590,7 +590,7 @@ mod testes_escada {
     #[test]
     fn ate_o_seguro_a_peca_sempre_chega() {
         for grau in Grau::TODOS {
-            for e in escada(grau).iter().filter(|e| e.alvo <= REFINO_SEGURO) {
+            for e in ladder(grau).iter().filter(|e| e.alvo <= REFINO_SEGURO) {
                 assert!(
                     (e.pecas - 1.0).abs() < 1e-9,
                     "{grau:?} +{}: {:.2} pecas dentro da faixa segura",
@@ -625,7 +625,7 @@ pub struct CustoTotal {
 }
 
 pub fn custo_total(degrau: Degrau, alvo: u8, base: Degrau) -> CustoTotal {
-    let e = escada(degrau.grau)
+    let e = ladder(degrau.grau)
         .into_iter()
         .find(|e| e.alvo == alvo)
         .unwrap_or(Escada {
@@ -682,7 +682,7 @@ mod testes_custo_total {
         assert!(c.pecas_base > raro1.pecas_base * 7.0);
     }
 
-    /// Sem refino, o custo e' so' a escada de degraus: dobra a cada tier.
+    /// Sem refino, o custo e' so' a ladder de degraus: dobra a cada tier.
     #[test]
     fn cada_degrau_dobra() {
         let base = Degrau::novo(Grau::Comum, 1);

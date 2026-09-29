@@ -990,7 +990,7 @@ pub const QUESTS: &[QuestDef] = &[
     // de procurar um LUGAR CHEIO — que e' onde o auto-caminho leva
     // (`spot_de_coleta_longe` / a zona forte do mapa).
     //
-    // A escada de XP acompanha a da historia no mesmo nivel: 30 mortes valem
+    // A ladder de XP acompanha a da historia no mesmo nivel: 30 mortes valem
     // mais que a caça de 6 do começo e menos que uma dungeon.
     QuestDef { id: 539, title: "Rotina de caça",
         desc: "A ilha está cheia demais. Derrote 30 inimigos, de qualquer espécie — procure as manchas densas no mapa.",

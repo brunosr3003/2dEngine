@@ -1842,7 +1842,7 @@ pub fn pulsos(m: &[Mat4; N], voxel: f32) -> [Mat4; 2] {
 ///    nomeadas de `humanoides.py`) — so' o modelo PLANO tinha o arco. Entao o
 ///    braco fazia o movimento de puxar no vazio;
 /// 2. **a corda nao pode ser puxada em voxel.** Ela e' uma linha de blocos de
-///    meio bloco: curvada vira escada, e curvada ANIMADA vira escada que se
+///    meio bloco: curvada vira ladder, e curvada ANIMADA vira ladder que se
 ///    mexe. O dono viu e disse o certo — "nem precisa ser [dinamica] mais,
 ///    pode ser fixo".
 ///

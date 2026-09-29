@@ -12,7 +12,7 @@
 //! O GRAU que sai e' a cor do material, e cada cor tem nivel minimo — as
 //! mesmas faixas da chave (`shared::chaves`), e agora LIDAS de la' por
 //! `nivel_da_cor` em vez de copiadas a mao. Eram copiadas, e em 28/09/2026 a
-//! escada das chaves desceu (azul 40→30, epica 60→40) sem que esta tabela
+//! ladder das chaves desceu (azul 40→30, epica 60→40) sem que esta tabela
 //! soubesse: a chave azul ja' caia no 30 e a receita da katana Rara continuava
 //! pedindo 40. Duas respostas pra mesma pergunta divergem; e' so' questao de
 //! quando. O servidor semeia estas receitas no banco (`craft_recipes`, ids
@@ -388,7 +388,7 @@ mod testes {
     /// O grau que sai e' o da cor pedida, e Epico nao se cria antes do 60.
     #[test]
     fn a_cor_decide_o_grau_e_o_nivel_sai_da_faixa_da_chave() {
-        // A escada, explicita: 1 cinza · 20 verde · 30 azul · 40 epica ·
+        // A ladder, explicita: 1 cinza · 20 verde · 30 azul · 40 epica ·
         // 50 lendaria. Se `chaves::FAIXAS` andar, isto anda junto — e se
         // alguem desencostar as duas tabelas, reprova aqui e nao no jogo do
         // dono.
@@ -412,7 +412,7 @@ mod testes {
                 r.name
             );
             // O nivel de cada cor sai da faixa da CHAVE, nao de um 60 escrito
-            // aqui: quando a escada desceu, este assert reprovava por estar
+            // aqui: quando a ladder desceu, este assert reprovava por estar
             // desatualizado e nao por a receita estar errada.
             assert_eq!(
                 r.nivel_min,

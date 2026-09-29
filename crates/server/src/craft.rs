@@ -14,7 +14,7 @@ use shared::{item_id, InventorySlot, ItemInstance};
 /// Instancia sempre quis dizer "peca unica, fora do material empilhado" — e
 /// o Combinar, que so' mexe com material, ignorava quem tivesse uma. Desde
 /// que o bicho nasce com afinidade (docs/PETS.md) ele SEMPRE tem instancia,
-/// e a regra velha apagaria a escada de cor inteira: nenhum pet apareceria
+/// e a regra velha apagaria a ladder de cor inteira: nenhum pet apareceria
 /// pro Combinar. Aqui o bicho e' a excecao, e so' ele.
 fn conta_com_instancia(id: u16) -> bool {
     shared::pets::de_item(id).is_some() || shared::montarias::de_item(id).is_some()

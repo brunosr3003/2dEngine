@@ -247,7 +247,7 @@ mod testes {
     #[test]
     fn cada_item_sobe_por_um_caminho_so_e_nunca_vira_ele_mesmo() {
         let v = receitas();
-        // 4 chaves x 4 degraus; UMA escada de montaria e UMA de pet, de 4
+        // 4 chaves x 4 degraus; UMA ladder de montaria e UMA de pet, de 4
         // degraus cada (a cor E' a criatura desde 20/09/2026).
         assert_eq!(v.len(), 4 * 4 + 8 * 3 + 4 + 4);
         for (i, a) in v.iter().enumerate() {

@@ -40,13 +40,13 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// Versao do protocolo. INCREMENTAR sempre que mensagens/layouts mudarem
 /// em shared::protocol — clientes com versao errada sao rejeitados.
 ///
-/// 149 (27/09/2026): o fio nao mudou, mas a escada (docs/ESCADA.md) mudou a
+/// 149 (27/09/2026): o fio nao mudou, mas a ladder (docs/ESCADA.md) mudou a
 /// conta que o cliente faz sozinho nas previas de craft e Forja (escala da
 /// peca e refino so' percentual). Cliente 148 mostraria numeros que o
 /// servidor nao aplica; o dono pediu pra obrigar a atualizacao.
 ///
 /// 152 (27/09/2026): mesmo motivo, de novo. O fio nao mudou, mas
-/// `escada::PISO` mudou, e o piso e' `shared` — o cliente 151 calcula previa
+/// `ladder::FLOOR` mudou, e o piso e' `shared` — o cliente 151 calcula previa
 /// de dano com o piso velho e mostra numero que o servidor nao aplica. O dono
 /// pediu pra obrigar a atualizacao.
 ///
@@ -55,7 +55,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`). Cliente 153
 /// diria "Verde, 10%" no conteudo de 30-39, onde o servidor ja' solta azul.
 ///
-/// 155 (28/09/2026): a escada de raridade virou 20/30/40/50 nos DOIS lados —
+/// 155 (28/09/2026): a ladder de raridade virou 20/30/40/50 nos DOIS lados —
 /// `chaves` (epica no 40, lendaria no 50) e `dungeon::teto_de_grau` mais a
 /// distribuicao de `tabela_de_peca`. O cliente le' os dois pra mostrar a
 /// recompensa esperada da dungeon (`dungeon_ui`, `dungeon_recompensas`):
@@ -1008,7 +1008,7 @@ pub const ENERGIA_PASSO_DO_PONTO: u64 = 5;
 
 /// Energia do PROXIMO ponto de atributo, dado quantos ja' estao alocados.
 /// Sobe em passo fixo: o ponto 1 custa 10, o 11 custa 60, o 51 custa 260.
-/// Quem redistribui de graca volta ao comeco da escada e paga a subida de
+/// Quem redistribui de graca volta ao comeco da ladder e paga a subida de
 /// novo — o reset devolve os pontos, nunca a Energia.
 pub fn custo_energia_do_ponto(ja_alocados: u32) -> u64 {
     ENERGIA_BASE_DO_PONTO + ENERGIA_PASSO_DO_PONTO * ja_alocados as u64
@@ -1020,7 +1020,7 @@ pub fn custo_energia_do_ponto(ja_alocados: u32) -> u64 {
 pub const NIVEL_DO_TUTORIAL_DE_ENERGIA: u32 = 4;
 
 /// Energia pra gastar, do zero, todos os pontos que um personagem ganha ate'
-/// `nivel`. E' a soma da escada `custo_energia_do_ponto`, em forma fechada
+/// `nivel`. E' a soma da ladder `custo_energia_do_ponto`, em forma fechada
 /// porque isto precisa ser `const` (a missao guarda o numero).
 pub const fn energia_pros_pontos_ate_o_nivel(nivel: u32) -> u64 {
     let n = (POINTS_PER_LEVEL * nivel.saturating_sub(1)) as u64;
@@ -1654,7 +1654,7 @@ pub fn nome_do_no(tier: u8) -> &'static str {
 
 /// O que uma pedra de cada tier ENTREGA, em peso por tier de material.
 ///
-/// A escada e' a mesma em toda linha: o material cinza e' sempre a maioria, e
+/// A ladder e' a mesma em toda linha: o material cinza e' sempre a maioria, e
 /// cada tier acrescenta um pouco do proprio e um pouco mais do anterior. A
 /// pedra roxa NAO da' material roxo — ela da' mais azul que a azul, e paga a
 /// diferenca em tempo de coleta (`COLETAS_POR_PEDRA`).
@@ -1665,7 +1665,7 @@ pub const RENDIMENTO_DA_PEDRA: [[u16; 4]; 5] = [
     [100, 0, 0, 0],  // cinza: so' cinza
     [80, 20, 0, 0],  // verde: verde, com muito mais cinza
     [65, 25, 10, 0], // azul: cinza ainda manda, mais verde que a anterior, um pouco de azul
-    [55, 27, 18, 0], // roxo: mesma escada, sem roxo, um pouquinho mais de azul
+    [55, 27, 18, 0], // roxo: mesma ladder, sem roxo, um pouquinho mais de azul
 ];
 
 /// Tier do MATERIAL que sai desta pedra neste sorteio. `f` e' 0..1.
@@ -1712,7 +1712,7 @@ pub const FISH_HOOK_RADIUS: f32 = 0.7;
 mod testes_coleta {
     use super::*;
 
-    /// A escada de rendimento tem que obedecer, linha por linha, o que foi
+    /// A ladder de rendimento tem que obedecer, linha por linha, o que foi
     /// pedido: cinza sempre a maioria, cada tier acrescenta um pouco do
     /// proprio e um pouco mais do anterior, e a pedra roxa NAO da' roxo.
     #[test]
@@ -1775,7 +1775,7 @@ pub const MOB_ATTACK_IMPACT_S: f32 = MOB_ATTACK_PREPARE_S + MOB_ATTACK_CUT_S;
 mod testes_atributos {
     use super::*;
 
-    /// A forma fechada tem que bater com a escada somada um a um — se ela
+    /// A forma fechada tem que bater com a ladder somada um a um — se ela
     /// divergir, a missao pede um numero que nao corresponde a nada.
     #[test]
     fn a_conta_fechada_do_tutorial_bate_com_a_escada() {

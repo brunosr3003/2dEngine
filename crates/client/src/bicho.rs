@@ -46,7 +46,7 @@ pub const BICHOS: [(&str, f32); 17] = [
     // `tools/voxrender/caranguejos.py`: andam de lado (`Anatomia::lateral`)
     ("bichos/caranguejo", 0.5),
     ("bichos/caranguejo_rei", 0.85),
-    // A escada de pet e montaria: uma CRIATURA por cor (docs/PETS.md,
+    // A ladder de pet e montaria: uma CRIATURA por cor (docs/PETS.md,
     // docs/MONTARIAS.md). Altura do bicho ADULTO — o pet usa a mesma malha
     // numa escala menor, que e' o que ja' se fazia com o lobo e o tigre.
     ("bichos/cervo", 1.6),
@@ -681,7 +681,7 @@ fn altura_da_montaria(e: &shared::montarias::Especie) -> f32 {
 #[cfg(test)]
 mod tests {
     /// PET e' bichinho: nenhum chega perto do porte de uma montaria, e a
-    /// escada cresce de leve em vez de dar um salto no topo.
+    /// ladder cresce de leve em vez de dar um salto no topo.
     ///
     /// O filhote de dragao saiu com 0,91 na primeira versao — quase o dobro
     /// dos outros pets e metade de um jogador — porque a altura do catalogo
@@ -730,7 +730,7 @@ mod tests {
         );
     }
 
-    /// MONTARIA nao pode ser mais baixa que quem monta, e a escada sobe: o
+    /// MONTARIA nao pode ser mais baixa que quem monta, e a ladder sobe: o
     /// dragao tem que ser visivelmente maior que o cervo.
     #[test]
     fn a_montaria_e_maior_que_o_jogador_e_a_escada_sobe() {

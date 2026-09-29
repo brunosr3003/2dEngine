@@ -45,7 +45,7 @@ pub struct Especie {
 /// Os pesos de `afinidade` somam isto.
 pub const PESO_TOTAL: u8 = 10;
 
-/// A escada: do bicho de carga ao dragao. A ordem E' o grau.
+/// A ladder: do bicho de carga ao dragao. A ordem E' o grau.
 ///
 /// **O porte tem um piso: o jogador.** A `escala` multiplica a altura do
 /// bicho ADULTO (`client::bicho::BICHOS`).
@@ -56,7 +56,7 @@ pub const PESO_TOTAL: u8 = 10;
 /// piso dele era 75% da altura do jogador, e 75% e' exatamente a licenca pra
 /// montaria ser mais baixa que quem monta.
 ///
-/// Agora o piso e' o jogador INTEIRO, e a escada vai de 1,95 (cervo) a 2,80
+/// Agora o piso e' o jogador INTEIRO, e a ladder vai de 1,95 (cervo) a 2,80
 /// (dragao), sempre subindo. Onde o cavaleiro SENTA nao esta' aqui: sai do
 /// tronco do proprio modelo (`client::vox::lombo_medido`), porque um numero
 /// por especie escrito a mao nao acompanha a escala quando ela muda — e foi
@@ -155,7 +155,7 @@ pub fn nome_do_item(id: u16) -> Option<String> {
 /// que tem bonus de velocidade" — nao parecia porque nao tinha: era penalidade
 /// de 9% e de 3%. A primeira montaria do jogo era um downgrade.
 ///
-/// A escada mantem o passo de +0,10; so' mudou de onde ela parte.
+/// A ladder mantem o passo de +0,10; so' mudou de onde ela parte.
 /// `nenhuma_montaria_e_mais_lenta_que_correr` trava o piso.
 pub fn velocidade(grau: u8) -> f32 {
     match grau {
@@ -211,7 +211,7 @@ pub fn pontos_por_stat(item_id: u16, afinidade: Option<[u8; 2]>) -> [u32; STAT_C
 
 // ─────────────────────────── pergaminho e combinacao ───────────────────────
 
-/// Chance de cada grau no Pergaminho de Invocação: Montaria. Mesma escada do
+/// Chance de cada grau no Pergaminho de Invocação: Montaria. Mesma ladder do
 /// pergaminho de pet.
 pub const CHANCES_DO_PERGAMINHO: [u8; GRAU_MAX as usize] = [55, 28, 12, 4, 1];
 
@@ -281,7 +281,7 @@ mod testes {
                  montar seria ficar mais lento"
             );
         }
-        // E a escada tem que subir de verdade a cada grau.
+        // E a ladder tem que subir de verdade a cada grau.
         for grau in 1..GRAU_MAX {
             assert!(
                 velocidade(grau + 1) > velocidade(grau),
