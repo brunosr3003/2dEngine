@@ -1,22 +1,22 @@
-//! Bot de carga: conecta N jogadores falsos e mede o custo REAL por jogador.
+//! Load bot: connects N fake players and measures the REAL cost per player.
 //!
-//! Tudo que foi medido ate aqui (CPU do servidor, bytes no wire) foi com UM
-//! jogador. O numero que decide se um MMO escala e' outro: montar snapshot e'
-//! O(jogadores x entidades visiveis), e e' nessa multiplicacao que servidor de
-//! MMO morre. Este binario existe pra essa conta parar de ser teoria.
+//! Everything measured so far (server CPU, bytes on the wire) was with ONE
+//! player. The number that decides whether an MMO scales is another: building
+//! a snapshot is O(players x visible entities), and that multiplication is
+//! where an MMO server dies. This binary exists so that sum stops being theory.
 //!
-//! Cada bot faz o caminho inteiro de um cliente de verdade — handshake, login,
-//! selecao/criacao de personagem — e depois anda em circulos mandando input a
-//! 30Hz, que e' o pior caso pro delta (jogador parado nao gera trafego).
+//! Each bot walks a real client's whole path — handshake, login, character
+//! selection/creation — and then walks in circles sending input at 30Hz,
+//! which is the worst case for the delta (an idle player generates no traffic).
 //!
 //! ```sh
 //! cargo run --release --bin loadbot -- --n 50 --secs 30
-//! # espalhado por varios canais, como o jogo faz de verdade:
+//! # spread over several channels, the way the game really does it:
 //! cargo run --release --bin loadbot -- --n 1000 --secs 120 \
-//!     --hosts 127.0.0.1:9000,127.0.0.1:9001,127.0.0.1:9002
+//!   --hosts 127.0.0.1:9000,127.0.0.1:9001,127.0.0.1:9002
 //! ```
 //!
-//! As contas precisam existir antes (`scripts/loadbot-accounts.sh`).
+//! The accounts have to exist beforehand (`scripts/loadbot-accounts.sh`).
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -49,9 +49,9 @@ async fn main() {
             .unwrap_or_else(|| padrao.to_string())
     };
     let n: usize = arg("--n", "50").parse().expect("--n");
-    // `--hosts` (plural) espalha os bots pelos canais em rodizio. Um canal so'
-    // mede o teto de UM processo; o que interessa num teste de realm e' a
-    // maquina inteira segurando a carga dividida, que e' como o jogo roda.
+    // `--hosts` (plural) spreads the bots over the channels in rotation. One
+    // channel only measures the ceiling of ONE process; what matters in a realm
+    // test is the whole machine holding the divided load, which is how the game runs.
     let hosts: Vec<String> = arg("--hosts", &arg("--host", "127.0.0.1:9000"))
         .split(',')
         .map(|h| h.trim().to_string())
@@ -59,11 +59,11 @@ async fn main() {
         .collect();
     let secs: u64 = arg("--secs", "30").parse().expect("--secs");
     let senha = arg("--pass", "bruno123");
-    // Primeiro numero de conta. Serve pra rodar dois loadbots ao mesmo tempo
-    // sem que os dois tentem logar como `bot0`.
+    // The first account number. Useful for running two loadbots at once without
+    // both trying to log in as `bot0`.
     let offset: usize = arg("--offset", "0").parse().expect("--offset");
-    // Intervalo entre entradas. 1000 bots batendo no argon2 juntos mediriam a
-    // fila de login, nao o custo de regime.
+    // Interval between joins. 1000 bots hitting argon2 together would measure
+    // the login queue, not the steady-state cost.
     let rampa: u64 = arg("--rampa-ms", "20").parse().expect("--rampa-ms");
 
     println!(
@@ -90,7 +90,7 @@ async fn main() {
         tokio::time::sleep(Duration::from_millis(rampa)).await;
     }
 
-    // Amostra por segundo, pra ver o custo estabilizar em vez de so' a media.
+    // One sample per second, to watch the cost settle rather than only the average.
     let inicio = Instant::now();
     let mut ultimo_bytes = 0u64;
     for _ in 0..secs {
@@ -168,8 +168,8 @@ async fn bot(
     let mut seq = 0u32;
     let mut tick = 0u32;
     let mut input = tokio::time::interval(Duration::from_millis(33));
-    // Cada bot anda num circulo de fase propria: assim eles se espalham pelo
-    // mapa em vez de empilhar no mesmo ponto, que daria um AOI irrealista.
+    // Each bot walks a circle with its own phase: that way they spread over the
+    // map instead of stacking on the same point, which would give an unrealistic AOI.
     let fase = (user.len() as f32 * 1.7) + user.bytes().map(|b| b as f32).sum::<f32>() * 0.013;
 
     while Instant::now() < fim {

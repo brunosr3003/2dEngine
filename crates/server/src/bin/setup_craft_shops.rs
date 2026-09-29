@@ -1,8 +1,8 @@
-//! One-off: reconfigura as lojas dos vendors por papel (praça de craft).
-//!   1=Mercador (armas/armaduras básicas), 3=Alquimista (poções),
-//!   7=Nobre (joias/amuletos/barcos), 8=Camponês (comida — placeholder por ora).
-//! Garante buy_price dos itens do Nobre (gem/boat/colares). Bumpa
-//! economy_version pra hot-reload. Rodar: cargo run --bin setup_craft_shops
+//! One-off: reconfigures the vendors' shops by role (the craft square).
+//! 1=Merchant (basic weapons/armor), 3=Alchemist (potions),
+//! 7=Noble (jewellery/amulets/boats), 8=Peasant (food — a placeholder for now).
+//! Ensures buy_price on the Noble's items (gem/boat/necklaces). Bumps
+//! economy_version for a hot-reload. Run: cargo run --bin setup_craft_shops
 use anyhow::Result;
 use sqlx::postgres::PgPoolOptions;
 
@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
         .connect(&url)
         .await?;
 
-    // Garante as lojas (7 e 8 são novas).
+    // Ensures the shops exist (7 and 8 are new).
     for (sid, name) in [
         (1, "Mercador"),
         (3, "Alquimista"),
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         .await?;
     }
 
-    // Conteúdo por papel.
+    // Content by role.
     let shops: &[(i32, &[i32])] = &[
         // Mercador: armas/armaduras básicas + poções básicas
         (1, &[3, 12, 14, 4, 7, 16, 2, 8]),

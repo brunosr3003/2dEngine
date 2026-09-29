@@ -1,25 +1,26 @@
-//! Lascas e faiscas da coleta: a rajada no instante em que a ferramenta bate.
+//! Chips and sparks from gathering: the burst at the instant the tool lands.
 //!
-//! O gesto de coleta vem do fio (`acao`), entao todo mundo que ve o golpe ve
-//! a rajada: e' disparada no desenho do personagem, no quadro em que a fase
-//! do golpe CRUZA o impacto (`rig::fase_do_impacto`). Machado solta lascas de
-//! madeira; picareta solta faiscas curtas e po'/pedrinhas na cor da pedra.
+//! The gathering gesture comes off the wire (`acao`), so everyone who sees
+//! the strike sees the burst: it is fired in the character's drawing, on the
+//! frame where the strike's phase CROSSES the impact (`rig::fase_do_impacto`).
+//! An axe throws wood chips; a pickaxe throws short sparks and dust/pebbles
+//! in the stone's color.
 //!
-//! Pool FIXO: nada aloca por quadro. Rajada nova reaproveita a vaga mais
-//! antiga quando o pool esta' cheio — melhor sumir uma lasca velha que crescer.
+//! FIXED pool: nothing allocates per frame. A new burst reuses the oldest
+//! slot when the pool is full — better to lose an old chip than to grow.
 
 use macroquad::prelude::*;
 use std::cell::RefCell;
 
-/// Vagas do pool. Uma rajada de coleta usa 8–10 e uma de golpe de chefe 7:
-/// cabe uma dezena de golpes e a aura dos chefes no ar.
+/// Pool slots. A gathering burst uses 8-10 and a boss strike 7: a dozen
+/// strikes and the bosses' aura fit in the air at once.
 pub const TAMANHO_DO_POOL: usize = 256;
-/// Quanto dura uma lasca/pedrinha.
+/// How long a chip/pebble lasts.
 const VIDA_S: f32 = 0.55;
-/// Quanto dura uma faisca.
+/// How long a spark lasts.
 const VIDA_DA_FAISCA_S: f32 = 0.22;
-/// Gravidade das lascas, em unidades/s². Mais que a real: o tamanho do
-/// boneco na tela pede queda rapida, senao flutua.
+/// Gravity of the chips, in units/s². More than real: the size of the figure
+/// on screen calls for a fast fall, otherwise it floats.
 const GRAVIDADE: f32 = 9.0;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -55,8 +56,8 @@ impl Default for Lascas {
     }
 }
 
-/// Cor da lasca pelo tipo da coleta: 0 madeira; 1..4 a cor da pedra
-/// (`shared::items::tier_color_hex`, a mesma do icone e da cabeca da picareta).
+/// The chip's color by gathering type: 0 wood; 1..4 the stone's color
+/// (`shared::items::tier_color_hex`, the same as the icon and the pickaxe head).
 pub fn cor_do_tipo(tipo: u8) -> [u8; 3] {
     if tipo == 0 {
         return [122, 82, 46];
@@ -66,8 +67,8 @@ pub fn cor_do_tipo(tipo: u8) -> [u8; 3] {
     [c(0), c(2), c(4)]
 }
 
-/// A fase do golpe passou pelo impacto entre o quadro anterior e este? Conta
-/// a volta do relogio (fim do golpe → comeco do proximo).
+/// Did the strike's phase pass the impact between the previous frame and this
+/// one? Accounts for the clock wrapping (end of the strike -> start of the next).
 pub fn cruzou(antes: f32, agora: f32, impacto: f32) -> bool {
     if agora >= antes {
         antes < impacto && agora >= impacto
@@ -77,7 +78,7 @@ pub fn cruzou(antes: f32, agora: f32, impacto: f32) -> bool {
 }
 
 impl Lascas {
-    /// Uma rajada em `pos`. `semente` so' varia o desenho entre golpes.
+    /// One burst at `pos`. `semente` only varies the drawing between strikes.
     pub fn emite(&mut self, pos: Vec3, tipo: u8, semente: u32) {
         let mut s = semente.wrapping_mul(2_654_435_761) | 1;
         let mut rnd = move || {
@@ -90,7 +91,7 @@ impl Lascas {
         let n = if tipo == 0 { 8 } else { 10 };
         for k in 0..n {
             let ang = rnd() * std::f32::consts::TAU;
-            // Na picareta as quatro primeiras sao faiscas: claras, rapidas, curtas.
+            // On the pickaxe the first four are sparks: bright, fast, short.
             let faisca = tipo != 0 && k < 4;
             let lado = 0.5 + rnd() * 1.1;
             let sobe = 1.3 + rnd() * 1.6;
@@ -127,8 +128,8 @@ impl Lascas {
         self.prox = (self.prox + 1) % TAMANHO_DO_POOL;
     }
 
-    /// Rajada de golpe de chefe: pedacos maiores na cor do elemento, saindo
-    /// pra cima e pra fora, e um par de brilhos claros.
+    /// A boss strike's burst: larger pieces in the element's color, going up and
+    /// outwards, and a pair of bright glints.
     pub fn explosao(&mut self, pos: Vec3, cor: [u8; 3], semente: u32) {
         let mut s = semente.wrapping_mul(2_654_435_761) | 1;
         let mut rnd = move || {
@@ -162,7 +163,7 @@ impl Lascas {
         }
     }
 
-    /// Uma faisca de aura: sobe devagar em volta do chefe e some.
+    /// One aura spark: rises slowly around the boss and fades.
     pub fn faisca_de_aura(&mut self, pos: Vec3, cor: [u8; 3], semente: u32) {
         let lado = ((semente % 100) as f32 * 0.01 - 0.5) * 0.3;
         self.poe(Lasca {
@@ -213,17 +214,17 @@ pub fn impacto(pos: Vec3, tipo: u8, semente: u32) {
     LASCAS.with(|l| l.borrow_mut().emite(pos, tipo, semente));
 }
 
-/// A rajada de um golpe de chefe (no impacto e na queda dele).
+/// The burst of a boss strike (on its impact and on its landing).
 pub fn explosao(pos: Vec3, cor: [u8; 3], semente: u32) {
     LASCAS.with(|l| l.borrow_mut().explosao(pos, cor, semente));
 }
 
-/// Uma faisca da aura de chefe.
+/// One spark of a boss aura.
 pub fn aura(pos: Vec3, cor: [u8; 3], semente: u32) {
     LASCAS.with(|l| l.borrow_mut().faisca_de_aura(pos, cor, semente));
 }
 
-/// Uma vez por quadro, no passe do mundo.
+/// Once per frame, in the world pass.
 pub fn avanca_e_desenha(dt: f32) {
     LASCAS.with(|l| {
         let mut l = l.borrow_mut();
@@ -250,7 +251,7 @@ mod tests {
             !cruzou(0.90, 0.05, 0.58),
             "virar sem passar pelo impacto nao dispara"
         );
-        // Tres golpes a 60 quadros por segundo: tres rajadas.
+        // Three strikes at 60 frames per second: three bursts.
         let (mut ant, mut n, mut t) = (0.0f32, 0, 0.0f32);
         while t < 3.0 * crate::rig::PERIODO_DA_COLETA - 0.01 {
             t += 1.0 / 60.0;
@@ -279,7 +280,7 @@ mod tests {
                 );
             }
         }
-        // O po' da rajada sai na cor do tier (as faiscas sao claras e a parte).
+        // The burst's dust comes out in the tier's color (the sparks are bright and separate).
         let mut l = Lascas::default();
         l.emite(Vec3::ZERO, 2, 7);
         let base = cor_do_tipo(2);

@@ -1,15 +1,16 @@
 //! Bots de dungeon: o teste de aceite da F1/F2 (docs/DUNGEONS_E_RAIDS.md).
 //!
-//! Cada bot faz o caminho de um jogador: login, sobe de nivel pelo comando de
-//! admin (servidor de TESTE), pede a fila da Gruta (ou entra no Porao),
-//! aceita o pronto-check, luta andar por andar mirando o inimigo mais perto,
-//! revive quando pode, abre o bau e sai. No fim imprime o que cada um viu.
+//! Each bot walks a player's path: login, levels up through the admin command
+//! (TEST server), asks for the Grotto queue (or enters the Cellar), accepts
+//! the ready-check, fights floor by floor aiming at the nearest enemy,
+//! revives when it can, opens the chest and leaves. At the end it prints what
+//! each one saw.
 //!
 //! ```sh
-//! # 5 bots na Gruta (fila), 1 no Porao:
+//! # 5 bots in the Grotto (queue), 1 in the Cellar:
 //! cargo run --bin dungeonbot -- --host 127.0.0.1:9300 --n 5 --cenario gruta --secret X
 //! cargo run --bin dungeonbot -- --host 127.0.0.1:9300 --n 1 --offset 10 --cenario porao --secret X
-//! # parados (servidor com MMO_DUNGEON_TESTE_DANO alto e LIMITE curto): wipe e tempo esgotado
+//! # idle (server with a high MMO_DUNGEON_TESTE_DANO and a short LIMITE): wipe and time out
 //! cargo run --bin dungeonbot -- --host 127.0.0.1:9301 --n 3 --offset 20 --cenario parado --secret X
 //! ```
 
@@ -36,7 +37,7 @@ struct Relato {
     bau: Option<(Vec<(u16, u32)>, u32)>,
     saiu: bool,
     textos: Vec<String>,
-    /// Posicao 4 s depois de entrar (teste de colisao entre instancias).
+    /// Position 4 s after entering (collision test between instances).
     pos_dentro: Option<(f32, f32)>,
     esperas_de_reviver: Vec<u16>,
 }
@@ -51,7 +52,7 @@ async fn main() {
             .cloned()
             .unwrap_or_else(|| padrao.to_string())
     };
-    // `--hash SENHA`: imprime o argon2 pra criar as contas de teste no banco.
+    // `--hash SENHA`: prints the argon2 to create the test accounts in the database.
     if let Some(senha) = args
         .iter()
         .position(|a| a == "--hash")
@@ -75,7 +76,7 @@ async fn main() {
     let segredo = arg("--secret", "");
     let nivel: u32 = arg("--nivel", "16").parse().expect("--nivel");
     let secs: u64 = arg("--secs", "900").parse().expect("--secs");
-    // Conteudo: 10 = Toca dos Lobos-do-Mar (Gruta, fila), 1 = Porao (solo).
+    // Content: 10 = Sea Wolves' Den (Grotto, queue), 1 = Cellar (solo).
     let conteudo: u16 = arg("--conteudo", if cenario == "porao" { "1" } else { "10" })
         .parse()
         .expect("--conteudo");
@@ -166,15 +167,15 @@ async fn bot(
     let mut venceu_em: Option<Instant> = None;
     let mut acabou_em: Option<Instant> = None;
     let mut tique = tokio::time::interval(Duration::from_millis(400));
-    // O servidor so' processa ataque e rota de quem manda input (o cliente
-    // manda sempre, parado ou nao).
+    // The server only processes attacks and routes from whoever sends input
+    // (the client always sends, idle or not).
     let mut entrada = tokio::time::interval(Duration::from_millis(50));
     let (mut seq, mut tick_srv) = (0u32, 0u32);
-    // parado: nao luta nem revive (tempo esgotado). colisao: igual, so' mede a
-    // posicao. sala: 0 cria (completar pela fila), 1 procura e entra, 2+ na
-    // fila; o lider comeca aos 75 s.
-    // wipe: parado e sem reviver ate' o grupo inteiro cair e o andar recomecar;
-    // depois luta e revive como na gruta.
+    // parado: neither fights nor revives (times out). colisao: the same, only
+    // measures the position. sala: 0 creates (completing via the queue), 1
+    // searches and enters, 2+ queue; the leader starts at 75 s.
+    // wipe: idle and not reviving until the whole group falls and the floor
+    // restarts; after that it fights and revives as in the grotto.
     let parado_fixo = cenario == "parado" || cenario == "colisao";
     let mut entrou_em: Option<Instant> = None;
     let mut sala_pediu_inicio = false;
@@ -217,7 +218,7 @@ async fn bot(
                     r.pos_dentro = Some((minha.x, minha.y));
                 }
                 if let Some(v) = venceu_em {
-                    // Venceu: vai ate' o bau e toca nele; aberto, sai.
+                    // Won: walks to the chest and touches it; opened, leaves.
                     if r.bau.is_none() {
                         if let Some((id, p)) = ents.iter().find(|(_, e)| e.tag == EntityTag::Npc && shared::npc_papel_de_kind(e.kind) == dg::PAPEL_BAU).map(|(id, e)| (*id, e.pos)) {
                             if p.distance(minha) > 3.0 {
@@ -286,7 +287,7 @@ async fn bot(
                         if no_mundo_em.is_none() {
                             no_mundo_em = Some(Instant::now());
                             ws.send(envia(ClientMessage::AdminCommand { secret: segredo.into(), target_char: None, action: AdminAction::SetLevel { level: nivel } })?).await?;
-                            // Os pontos do nivel, como um jogador distribuiria: metade VIT, metade FOR.
+                            // The level's points, the way a player would spread them: half VIT, half STR.
                             let pontos = 3 * nivel.saturating_sub(1);
                             for i in 0..pontos {
                                 let stat = if i % 2 == 0 { shared::stat_idx::VIT } else { 0 };

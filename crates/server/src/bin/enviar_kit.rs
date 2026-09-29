@@ -1,19 +1,20 @@
-//! Manda um CONJUNTO de equipamento por correio oficial, pra testar.
+//! Sends a SET of equipment by official mail, for testing.
 //!
-//! Existe porque testar equipamento de faixa alta pela mão custa horas de
-//! farm, e porque o correio é o caminho certo: ele passa pelo mesmo funil do
-//! jogo (`correio::enviar` → `add_to_inventory`), então o que chega é o que
-//! um jogador receberia — e não uma linha escrita na marra no banco.
+//! It exists because testing high-tier equipment by hand costs hours of
+//! farming, and because the mail is the right path: it goes through the
+//! game's own funnel (`correio::enviar` -> `add_to_inventory`), so what
+//! arrives is what a player would receive — and not a row written by force
+//! into the database.
 //!
 //! Uso:
 //!
 //!   DATABASE_URL=… cargo run --bin enviar_kit -- <personagem> [cor] [tier] [refino]
 //!
-//! Padrão: cor 4 (roxo), tier IV, +8. A cor é 1 cinza .. 5 laranja; o tier é
-//! I..IV DENTRO da cor (`forja::TIER_MAX`); o refino é o +N.
+//! Default: color 4 (purple), tier IV, +8. The color is 1 grey .. 5 orange;
+//! the tier is I..IV WITHIN the color (`forja::TIER_MAX`); the refinement is the +N.
 //!
-//! O autor do envio precisa ser staff (`social_staff`). Se o personagem
-//! pedido for o único da conta, ele mesmo assina — é ferramenta local.
+//! The sender has to be staff (`social_staff`). If the requested character is
+//! the account's only one, they sign it themselves — it is a local tool.
 
 #[path = "../economy.rs"]
 mod economy;
@@ -22,16 +23,17 @@ use anyhow::{bail, Context, Result};
 use shared::items::ItemInstance;
 use shared::social::{Anexo, Pedido};
 
-/// Uma peça por slot, montada PELA ARMA DO PERSONAGEM.
+/// One piece per slot, built FROM THE CHARACTER'S WEAPON.
 ///
-/// Era fixa em espada-e-escudo (`[400, 404, …]`), e em 28/09/2026 o dono pediu
-/// um conjunto pro `kuni`, que é KATANA: duas das sete peças chegariam inúteis
-/// na bolsa dele — a arma e a secundária, que é a metade que importa.
+/// It was fixed to sword-and-shield (`[400, 404, …]`), and on 28/09/2026 the
+/// owner asked for a set for `kuni`, who is KATANA: two of the seven pieces
+/// would have arrived useless in their bag — the weapon and the offhand,
+/// which is the half that matters.
 ///
-/// A cauda (armadura média e os quatro acessórios) sai de
-/// `ladder::REFERENCE_SET`, que é o conjunto em que a ladder de dano
-/// foi medida. Peso de armadura é ESCOLHA, não classe: a média é o meio do
-/// corredor, e é de propósito que o kit de teste não opine.
+/// The tail (medium armor and the four accessories) comes from
+/// `ladder::REFERENCE_SET`, the set the damage ladder was measured on. Armor
+/// weight is a CHOICE, not a class: medium is the middle of the corridor, and
+/// it is deliberate that the test kit does not take sides.
 fn kit_da_arma(arma: u16) -> [u16; 7] {
     let conj = shared::skills::Conjunto::da_arma(arma);
     let cauda = &shared::ladder::REFERENCE_SET[2..];
@@ -66,7 +68,7 @@ async fn main() -> Result<()> {
     .context("personagem não encontrado")?;
     let kit = kit_da_arma(arma as u16);
 
-    // O autor precisa ser staff. Ferramenta local: concede e segue.
+    // The sender must be staff. A local tool: it grants and moves on.
     sqlx::query(
         "INSERT INTO social_staff (account_id, cargo) VALUES ($1,'admin') \
          ON CONFLICT (account_id) DO UPDATE SET cargo='admin'",
@@ -96,8 +98,8 @@ async fn main() -> Result<()> {
         })
         .collect::<Result<_>>()?;
 
-    // O identificador torna o envio IDEMPOTENTE: rodar de novo com os mesmos
-    // argumentos não manda duas vezes.
+    // The identifier makes the send IDEMPOTENT: running it again with the same
+    // arguments does not send twice.
     let envio = format!("kit-{nome}-{cor}-{tier}-{refino}").to_lowercase();
     let pedido = Pedido::EnviarOficial {
         envio,
