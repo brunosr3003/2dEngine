@@ -4,7 +4,7 @@
 //! só aparece na tela do jogador: verbete com buraco a mais, buraco a menos,
 //! buraco renomeado, ou chave repetida (a segunda nunca seria usada).
 
-use shared::idioma::{self, en, Idioma};
+use shared::idioma::{self, pt, Idioma};
 use std::collections::HashMap;
 
 /// Todos os pares, com o nome da parte de onde vieram, pra a mensagem de erro
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 fn todos() -> Vec<(&'static str, &'static str, &'static str)> {
     let nomes = ["cliente", "servidor", "dados", "missoes", "historia"];
     let mut v = Vec::new();
-    for (i, parte) in en::PARTES.iter().enumerate() {
+    for (i, parte) in pt::PARTES.iter().enumerate() {
         for (pt, en) in parte.iter() {
             v.push((nomes.get(i).copied().unwrap_or("?"), *pt, *en));
         }
@@ -87,20 +87,21 @@ fn nenhuma_traducao_vazia_ou_igual_por_engano() {
 fn o_dicionario_traduz_de_ponta_a_ponta() {
     // Não é sobre uma frase: é sobre o caminho inteiro (construir, indexar,
     // achar) funcionar com o dicionário de verdade.
-    let (pt, en) = todos()
+    let (en, pt) = todos()
         .into_iter()
-        .find(|(_, pt, _)| idioma::buracos(pt).is_empty())
-        .map(|(_, pt, en)| (pt, en))
+        .find(|(_, en, _)| idioma::buracos(en).is_empty())
+        .map(|(_, en, pt)| (en, pt))
         .expect("nenhum verbete sem buraco no dicionário");
-    assert_eq!(idioma::tr_em(Idioma::En, pt), en);
-    assert_eq!(idioma::tr_em(Idioma::Pt, pt), pt);
+    assert_eq!(idioma::tr_em(Idioma::Pt, en), pt);
+    // O ingles e' a fonte: traduzir pra ele e' nao fazer nada.
+    assert_eq!(idioma::tr_em(Idioma::En, en), en);
 }
 
 #[test]
 fn frase_montada_de_verdade_casa() {
     // Um verbete com buraco, pego do dicionário, preenchido e conferido.
-    assert_eq!(idioma::tr_em(Idioma::En, "Nível 12"), "Level 12");
-    assert_eq!(idioma::tr_em(Idioma::En, "Requer nível 30"), "Requires level 30");
+    assert_eq!(idioma::tr_em(Idioma::Pt, "Level 12"), "Nível 12");
+    assert_eq!(idioma::tr_em(Idioma::Pt, "Requires level 30"), "Requer nível 30");
 }
 
 /// A troca de idioma vale pro processo inteiro, na hora.
@@ -111,17 +112,17 @@ fn frase_montada_de_verdade_casa() {
 /// acusava. `definir` tem que valer pra quem desenhar em seguida.
 #[test]
 fn definir_vale_na_hora_e_para_quem_desenhar_depois() {
-    idioma::definir(Idioma::Pt);
-    assert_eq!(idioma::atual(), Idioma::Pt);
-    assert_eq!(idioma::tr("Bolsa"), "Bolsa");
-
     idioma::definir(Idioma::En);
     assert_eq!(idioma::atual(), Idioma::En);
-    assert_eq!(idioma::tr("Bolsa"), "Bag");
+    assert_eq!(idioma::tr("Bag"), "Bag");
+
+    idioma::definir(Idioma::Pt);
+    assert_eq!(idioma::atual(), Idioma::Pt);
+    assert_eq!(idioma::tr("Bag"), "Bolsa");
 
     // E volta.
-    idioma::definir(Idioma::Pt);
-    assert_eq!(idioma::tr("Bolsa"), "Bolsa");
+    idioma::definir(Idioma::En);
+    assert_eq!(idioma::tr("Bag"), "Bag");
 }
 
 /// Verbete que não traduz nada não entra.
@@ -210,20 +211,17 @@ fn nenhum_verbete_tem_buracos_colados() {
 fn o_feminino_nao_vaza_pro_ingles() {
     use shared::idioma::{tr_em, tr_f_em, Idioma::{En, Pt}};
 
-    // Enquanto a fonte e' portuguesa, `tr_f` e' `tr`: a tabela e' chaveada
-    // pelo ingles e a busca erra de proposito.
-    assert_eq!(tr_f_em(Pt, "Épica"), "Épica");
-    // E ja' responde pela chave inglesa, que e' o que vale depois da inversao.
+    // A fonte e' inglesa: a chave e' a palavra inglesa.
     assert_eq!(tr_f_em(Pt, "Epic"), "Épica");
     assert_eq!(tr_f_em(Pt, "Legendary"), "Lendária");
     assert_eq!(tr_f_em(Pt, "Purple"), "Roxa");
     // Palavra sem forma feminina propria cai no dicionario comum.
-    assert_eq!(tr_f_em(Pt, "Azul"), tr_em(Pt, "Azul"));
+    assert_eq!(tr_f_em(Pt, "Blue"), tr_em(Pt, "Blue"));
 
     // O INGLES NAO VE O PEDIDO. Nenhum marcador, nenhuma forma estranha.
     assert_eq!(tr_f_em(En, "Epic"), "Epic");
     assert_eq!(tr_f_em(En, "Legendary"), "Legendary");
     assert_eq!(tr_f_em(En, "Purple"), "Purple");
-    // E a palavra portuguesa continua traduzindo como sempre.
-    assert_eq!(tr_f_em(En, "Épica"), "Epic");
+    // E o ingles e' identidade: nada a traduzir, nada a marcar.
+    assert_eq!(tr_f_em(En, "Blue"), "Blue");
 }

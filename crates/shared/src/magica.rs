@@ -54,7 +54,7 @@ pub const TROCAS: &[(u16, u32, u32)] = &[
 ];
 
 pub const LOJA_DE_TROCAS: u32 = 90_475;
-pub const GUIA_DOS_DEGRAUS: &str = "Guia dos Degraus";
+pub const GUIA_DOS_DEGRAUS: &str = "Guide of the Steps";
 
 pub fn posto_de_trocas() -> Vec2 {
     CHEGADA + Vec2::new(22.0, 3.0)
@@ -101,7 +101,7 @@ pub fn e_magica(z: &str) -> bool {
 /// O relevo é O MESMO nos três — muda a faixa de mob e o portão de entrada.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NivelMagico {
-    /// 1, 2, 3… — é o que aparece pro jogador ("Ilha Mágica I").
+    /// 1, 2, 3… — é o que aparece pro jogador ("Magic Island I").
     pub grau: u8,
     pub zona: &'static str,
     pub nome: &'static str,
@@ -124,26 +124,26 @@ pub const NIVEIS: &[NivelMagico] = &[
     NivelMagico {
         grau: 1,
         zona: "ilha_magica",
-        nome: "Ilha Mágica I",
+        nome: "Magic Island I",
         exige_nivel: 15,
         mob: (20, 23),
-        nome_do_chefe: "Colosso da Ilha Mágica",
+        nome_do_chefe: "Colossus of the Magic Island",
     },
     NivelMagico {
         grau: 2,
         zona: "ilha_magica_2",
-        nome: "Ilha Mágica II",
+        nome: "Magic Island II",
         exige_nivel: 30,
         mob: (30, 33),
-        nome_do_chefe: "Colosso Maior da Ilha Mágica",
+        nome_do_chefe: "Greater Colossus of the Magic Island",
     },
     NivelMagico {
         grau: 3,
         zona: "ilha_magica_3",
-        nome: "Ilha Mágica III",
+        nome: "Magic Island III",
         exige_nivel: 45,
         mob: (45, 48),
-        nome_do_chefe: "Colosso Ancião da Ilha Mágica",
+        nome_do_chefe: "Elder Colossus of the Magic Island",
     },
 ];
 
@@ -254,10 +254,10 @@ pub fn fim_apos_entrar(fim_atual: i64, agora_unix: i64, n: u8) -> i64 {
 /// se é falta de passe ou excesso de tempo.
 pub fn pode_entrar(fim_atual: i64, agora_unix: i64, passes: u32, n: u8) -> Result<(), String> {
     if n == 0 || n > ENTRADAS_MAX {
-        return Err("entre 1 e 3 entradas".into());
+        return Err("between 1 and 3 entries".into());
     }
     if (passes as u8) < n {
-        return Err(format!("faltam passes: você tem {passes}"));
+        return Err(format!("not enough passes: you have {passes}"));
     }
     let resta_agora = resta(fim_atual, agora_unix);
     if resta_agora + DURACAO_S * n as i64 > TETO_S + DURACAO_S / 2 {
@@ -293,13 +293,13 @@ pub enum Bonus {
 impl Bonus {
     pub fn nome(self) -> &'static str {
         match self {
-            Self::Xp => "Ilhota da Experiência",
-            Self::DropDeMob => "Ilhota do Espólio",
-            Self::Ouro => "Ilhota do Ouro",
-            Self::DropDeChefe => "Ilhota do Colosso",
-            Self::Coleta(0) => "Ilhota da Madeira",
-            Self::Coleta(5) => "Ilhota da Energia",
-            Self::Coleta(_) => "Ilhota da Pedra",
+            Self::Xp => "Islet of Experience",
+            Self::DropDeMob => "Islet of Spoils",
+            Self::Ouro => "Islet of Gold",
+            Self::DropDeChefe => "Islet of the Colossus",
+            Self::Coleta(0) => "Islet of Wood",
+            Self::Coleta(5) => "Islet of Energy",
+            Self::Coleta(_) => "Islet of Stone",
         }
     }
 
@@ -310,13 +310,13 @@ impl Bonus {
     /// cabem onde sete longos se atropelariam.
     pub fn nome_curto(self) -> &'static str {
         match self {
-            Self::Xp => "Experiência",
-            Self::DropDeMob => "Espólio",
-            Self::Ouro => "Ouro",
-            Self::DropDeChefe => "Colosso",
-            Self::Coleta(0) => "Madeira",
-            Self::Coleta(5) => "Energia",
-            Self::Coleta(_) => "Pedra",
+            Self::Xp => "Experience",
+            Self::DropDeMob => "Spoils",
+            Self::Ouro => "Gold",
+            Self::DropDeChefe => "Colossus",
+            Self::Coleta(0) => "Wood",
+            Self::Coleta(5) => "Energy",
+            Self::Coleta(_) => "Stone",
         }
     }
 
@@ -554,7 +554,7 @@ pub fn def_do_nivel(n: &NivelMagico) -> crate::terreno::DefIlha {
 
 pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     zona: ZONA,
-    nome: "Ilha Mágica",
+    nome: "Magic Island",
     semente: SEMENTE,
     raio_blocos: RAIO_BLOCOS,
     bioma: crate::terreno::Bioma::Floresta,

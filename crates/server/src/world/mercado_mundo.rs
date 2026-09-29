@@ -98,7 +98,7 @@ impl GameWorld {
                         .await
                     {
                         Ok(cartas) if cartas.is_empty() => {
-                            responde(&quem.to_client, true, "Nenhuma entrega esperando.")
+                            responde(&quem.to_client, true, "No delivery waiting.")
                         }
                         Ok(cartas) => {
                             let _ = tx_mundo.send(IncomingMessage::Mercado(Evento::Cartas {
@@ -362,8 +362,8 @@ impl GameWorld {
         }
         let mut texto = match recebidas {
             0 => String::new(),
-            1 => "1 entrega recebida".to_string(),
-            n => format!("{n} entregas recebidas"),
+            1 => "1 delivery claimed".to_string(),
+            n => format!("{n} deliveries claimed"),
         };
         if gold > 0 {
             texto.push_str(&format!(" (+{gold} gold)"));
@@ -378,7 +378,7 @@ impl GameWorld {
             &to_client,
             recebidas > 0,
             if texto.is_empty() {
-                "Nada para receber.".to_string()
+                "Nothing to claim.".to_string()
             } else {
                 texto
             },

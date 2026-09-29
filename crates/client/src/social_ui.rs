@@ -131,7 +131,7 @@ impl Social {
                 self.carregado = true;
             }
             Aviso::Resultado { ok, texto } => {
-                if ok && (texto == "Carta enviada." || texto.starts_with("Correio oficial enviado"))
+                if ok && (texto == "Letter sent." || texto.starts_with("Official mail sent"))
                 {
                     self.texto.clear();
                     self.assunto.clear();
@@ -155,7 +155,7 @@ impl Social {
             let p = self.fila.remove(0);
             self.ocupado_ate = agora + 8.0;
             self.atualizar_em = agora + 5.0;
-            self.aviso = format!("Esvaziando a caixa… faltam {}", self.fila.len() + 1);
+            self.aviso = format!("Emptying the inbox… {} left", self.fila.len() + 1);
             self.ok = true;
             return Some(msg(p));
         }
@@ -203,10 +203,10 @@ impl Social {
             return saida;
         }
         let abas = [
-            (Aba::Grupo, "Grupo"),
-            (Aba::Amigos, "Amigos"),
-            (Aba::Correio, "Correio"),
-            (Aba::Cla, "Clã"),
+            (Aba::Grupo, "Party"),
+            (Aba::Amigos, "Friends"),
+            (Aba::Correio, "Mail"),
+            (Aba::Cla, "Clan"),
         ];
         let tw = (p.w - 40.0) / 4.0;
         for (i, (aba, nome)) in abas.iter().enumerate() {
@@ -240,7 +240,7 @@ impl Social {
             Aba::Cla => self.cla_ui(a, eu, digitado, &mut saida),
         }
         let aviso = if !self.carregado && self.aviso.is_empty() {
-            "Carregando…"
+            "Loading…"
         } else {
             &self.aviso
         };
@@ -264,20 +264,20 @@ impl Social {
         e::painel_destaque(painel, e::OURO);
         if crate::ui::botao(
             Rect::new(x + largura - 140.0, y + 10.0, 125.0, 38.0),
-            "Concluir",
+            "Complete",
             true,
         ) {
             self.foco = None;
             return;
         }
         let (label, valor, max) = match id {
-            1 => ("Assunto", &mut self.assunto, 60),
-            2 => ("Mensagem", &mut self.texto, 1000),
-            3 => ("Nome do clã", &mut self.nome_cla, 24),
-            4 => ("Aviso do clã", &mut self.aviso_cla, 200),
-            5 => ("Buscar item", &mut self.busca_item, 60),
-            6 => ("Quantidade", &mut self.quantidade, 6),
-            _ => ("Nome do personagem", &mut self.nome, 32),
+            1 => ("Subject", &mut self.assunto, 60),
+            2 => ("Message", &mut self.texto, 1000),
+            3 => ("Clan name", &mut self.nome_cla, 24),
+            4 => ("Clan notice", &mut self.aviso_cla, 200),
+            5 => ("Search item", &mut self.busca_item, 60),
+            6 => ("Quantity", &mut self.quantidade, 6),
+            _ => ("Character name", &mut self.nome, 32),
         };
         campo(
             Rect::new(
@@ -301,7 +301,7 @@ impl Social {
         }
         self.ocupado_ate = get_time() + 8.0;
         self.atualizar_em = get_time() + 5.0;
-        self.aviso = "Aguardando servidor…".into();
+        self.aviso = "Waiting for the server…".into();
         self.ok = true;
         self.foco = None;
         saida.push(msg(p));
@@ -326,14 +326,14 @@ impl Social {
         );
         if crate::ui::botao(
             Rect::new(p.center().x - 170.0, p.y + p.h - 85.0, 160.0, 42.0),
-            "Cancelar",
+            "Cancel",
             true,
         ) {
             self.confirmacao = None;
         }
         if crate::ui::botao(
             Rect::new(p.center().x + 10.0, p.y + p.h - 85.0, 160.0, 42.0),
-            "Confirmar",
+            "Confirm",
             get_time() >= self.ocupado_ate,
         ) {
             self.confirmacao = None;
@@ -354,7 +354,7 @@ impl Social {
         e::texto(a.x, a.y + 107.0, "Bônus cresce até 4 participantes. Solo: 100%. Frações de XP são descartadas.", 13, e::SUAVE);
         campo(
             Rect::new(a.x, a.y + 148.0, a.w - 180.0, 40.0),
-            "Nome do personagem",
+            "Character name",
             &mut self.nome,
             0,
             &mut self.foco,
@@ -363,7 +363,7 @@ impl Social {
         );
         if crate::ui::botao(
             Rect::new(a.x + a.w - 168.0, a.y + 148.0, 168.0, 40.0),
-            "Convidar",
+            "Invite",
             !self.nome.trim().is_empty(),
         ) {
             s.push(ClientMessage::PartyInvite {
@@ -374,7 +374,7 @@ impl Social {
         let mut y = a.y + 216.0;
         if let Some((nome, _)) = self.convite.clone() {
             e::texto_ajustado(
-                &format!("{nome} convidou você"),
+                &format!("{nome} invited you"),
                 a.x,
                 y,
                 a.w - 235.0,
@@ -383,7 +383,7 @@ impl Social {
             );
             if crate::ui::botao(
                 Rect::new(a.x + a.w - 226.0, y - 24.0, 108.0, 36.0),
-                "Aceitar",
+                "Accept",
                 true,
             ) {
                 s.push(ClientMessage::PartyAccept);
@@ -391,7 +391,7 @@ impl Social {
             }
             if crate::ui::botao(
                 Rect::new(a.x + a.w - 108.0, y - 24.0, 108.0, 36.0),
-                "Recusar",
+                "Decline",
                 true,
             ) {
                 s.push(ClientMessage::PartyDecline);
@@ -400,7 +400,7 @@ impl Social {
             y += 56.0;
         }
         if self.grupo.is_empty() {
-            e::texto(a.x, y, "Você está jogando solo.", 18, e::TEXTO);
+            e::texto(a.x, y, "You are playing solo.", 18, e::TEXTO);
         }
         for nome in &self.grupo {
             e::texto(a.x + 12.0, y, nome, 18, e::TEXTO);
@@ -409,7 +409,7 @@ impl Social {
         if !self.grupo.is_empty()
             && crate::ui::botao(
                 Rect::new(a.x, a.y + a.h - 36.0, 160.0, 36.0),
-                "Sair do grupo",
+                "Leave party",
                 true,
             )
         {
@@ -419,7 +419,7 @@ impl Social {
     fn amigos_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
         campo(
             Rect::new(a.x, a.y + 20.0, a.w - 190.0, 40.0),
-            "Nome do personagem",
+            "Character name",
             &mut self.nome,
             0,
             &mut self.foco,
@@ -428,7 +428,7 @@ impl Social {
         );
         if crate::ui::botao(
             Rect::new(a.x + a.w - 178.0, a.y + 20.0, 178.0, 40.0),
-            "Adicionar amigo",
+            "Add friend",
             !self.nome.trim().is_empty(),
         ) {
             self.enviar(
@@ -463,7 +463,7 @@ impl Social {
             e::texto(
                 a.x,
                 area.y + 25.0,
-                "Adicione amigos para encontrá-los aqui.",
+                "Add friends to find them here.",
                 18,
                 e::SUAVE,
             );
@@ -471,13 +471,13 @@ impl Social {
         for (i, (nome, tipo)) in rows[range].iter().enumerate() {
             let y = area.y + i as f32 * 50.0;
             let status = match tipo {
-                0 => "quer ser seu amigo",
-                2 => "pedido enviado",
+                0 => "wants to be your friend",
+                2 => "request sent",
                 _ => {
                     if self.estado.neste_canal.contains(nome) {
-                        "neste canal"
+                        "on this channel"
                     } else {
-                        "fora deste canal"
+                        "off this channel"
                     }
                 }
             };
@@ -490,7 +490,7 @@ impl Social {
                 e::TEXTO,
             );
             if *tipo == 0 {
-                if botao_fim(a, y, 2, "Aceitar") {
+                if botao_fim(a, y, 2, "Accept") {
                     self.enviar(
                         Pedido::ResponderAmizade {
                             nome: nome.clone(),
@@ -499,7 +499,7 @@ impl Social {
                         s,
                     );
                 }
-                if botao_fim(a, y, 1, "Recusar") {
+                if botao_fim(a, y, 1, "Decline") {
                     self.enviar(
                         Pedido::ResponderAmizade {
                             nome: nome.clone(),
@@ -509,20 +509,20 @@ impl Social {
                     );
                 }
             } else {
-                if *tipo == 1 && botao_fim(a, y, 3, "Grupo") {
+                if *tipo == 1 && botao_fim(a, y, 3, "Party") {
                     s.push(ClientMessage::PartyInvite {
                         target_name: nome.clone(),
                     });
                 }
-                if *tipo == 1 && botao_fim(a, y, 2, "Carta") {
+                if *tipo == 1 && botao_fim(a, y, 2, "Letter") {
                     self.nome = nome.clone();
                     self.aba = Aba::Correio;
                     self.escrevendo = true;
                     self.foco = None;
                 }
-                if botao_fim(a, y, 1, if *tipo == 2 { "Cancelar" } else { "Remover" }) {
+                if botao_fim(a, y, 1, if *tipo == 2 { "Cancel" } else { "Remove" }) {
                     self.confirmar(
-                        format!("Remover amizade ou pedido com {nome}?"),
+                        format!("Remove friendship or request with {nome}?"),
                         Pedido::RemoverAmigo { nome: nome.clone() },
                     );
                 }
@@ -537,7 +537,7 @@ impl Social {
         vox: &crate::vox::VoxCache,
         solido: &macroquad::material::Material,
     ) {
-        if crate::ui::botao(Rect::new(a.x, a.y, 150.0, 38.0), "Escrever carta", true) {
+        if crate::ui::botao(Rect::new(a.x, a.y, 150.0, 38.0), "Write a letter", true) {
             self.escrevendo = true;
             self.carta = None;
             self.admin = false;
@@ -545,7 +545,7 @@ impl Social {
         }
         if crate::ui::botao(
             Rect::new(a.x + 160.0, a.y, 210.0, 38.0),
-            &format!("Recompensas ({})", self.correio_dungeon.len()),
+            &format!("Rewards ({})", self.correio_dungeon.len()),
             true,
         ) {
             self.recompensas = !self.recompensas;
@@ -558,7 +558,7 @@ impl Social {
         if self.estado.cargo.is_some()
             && crate::ui::botao(
                 Rect::new(a.x + 382.0, a.y, 180.0, 38.0),
-                "Envio admin/mod",
+                "Admin/mod send",
                 true,
             )
         {
@@ -592,9 +592,9 @@ impl Social {
                 if crate::ui::botao(
                     Rect::new(a.x + a.w - 360.0, a.y, 240.0, 38.0),
                     if self.todos {
-                        "Todos os personagens"
+                        "All characters"
                     } else {
-                        "Um personagem"
+                        "One character"
                     },
                     true,
                 ) {
@@ -604,7 +604,7 @@ impl Social {
             }
             if crate::ui::botao(
                 Rect::new(a.x + a.w - 110.0, a.y, 110.0, 38.0),
-                "Caixa",
+                "Inbox",
                 true,
             ) {
                 self.escrevendo = false;
@@ -612,7 +612,7 @@ impl Social {
             }
             if self.admin && self.todos {
                 e::texto_ajustado(
-                    &format!("Todos: {} personagens", self.estado.destinatarios),
+                    &format!("All: {} characters", self.estado.destinatarios),
                     a.x,
                     a.y + 102.0,
                     a.w * 0.35,
@@ -622,7 +622,7 @@ impl Social {
             } else {
                 campo(
                     Rect::new(a.x, a.y + 76.0, a.w * 0.35, 40.0),
-                    "Para",
+                    "To",
                     &mut self.nome,
                     0,
                     &mut self.foco,
@@ -632,7 +632,7 @@ impl Social {
             }
             campo(
                 Rect::new(a.x + a.w * 0.37, a.y + 76.0, a.w * 0.63, 40.0),
-                "Assunto",
+                "Subject",
                 &mut self.assunto,
                 1,
                 &mut self.foco,
@@ -641,7 +641,7 @@ impl Social {
             );
             campo(
                 Rect::new(a.x, a.y + 155.0, a.w, a.h - 208.0),
-                "Mensagem (até 1000 caracteres)",
+                "Message (up to 1000 characters)",
                 &mut self.texto,
                 2,
                 &mut self.foco,
@@ -650,7 +650,7 @@ impl Social {
             );
             if crate::ui::botao(
                 Rect::new(a.x + a.w - 140.0, a.y + a.h - 40.0, 140.0, 40.0),
-                "Enviar",
+                "Send",
                 (self.todos && self.admin || !self.nome.trim().is_empty())
                     && !self.assunto.trim().is_empty()
                     && !self.texto.trim().is_empty()
@@ -695,7 +695,7 @@ impl Social {
             if self.admin
                 && crate::ui::botao(
                     Rect::new(a.x, a.y + a.h - 40.0, 240.0, 40.0),
-                    &format!("Anexos: {} / 8", self.anexos.len()),
+                    &format!("Attachments: {} / 8", self.anexos.len()),
                     true,
                 )
             {
@@ -708,9 +708,9 @@ impl Social {
         if crate::ui::botao(
             Rect::new(a.x + a.w - 245.0, a.y, 245.0, 38.0),
             if self.oficial {
-                "Oficiais · trocar caixa"
+                "Official · switch inbox"
             } else {
-                "Pessoais · trocar caixa"
+                "Personal · switch inbox"
             },
             true,
         ) {
@@ -738,9 +738,9 @@ impl Social {
         if crate::ui::botao(
             Rect::new(a.x + a.w - 500.0, a.y, 245.0, 38.0),
             &if a_resgatar.is_empty() {
-                format!("Apagar tudo ({quantas})")
+                format!("Delete everything ({quantas})")
             } else {
-                format!("Pegar tudo e apagar ({quantas})")
+                format!("Take everything and delete ({quantas})")
             },
             quantas > 0 && self.fila.is_empty(),
         ) {
@@ -760,7 +760,7 @@ impl Social {
         }
         let range = paginacao(left, cartas.len(), &mut self.pagina);
         if cartas.is_empty() {
-            e::texto(left.x, left.y + 25.0, "Sua caixa está vazia.", 18, e::SUAVE);
+            e::texto(left.x, left.y + 25.0, "Your inbox is empty.", 18, e::SUAVE);
         }
         for (i, c) in cartas[range].iter().enumerate() {
             let r = Rect::new(left.x, left.y + i as f32 * 50.0, left.w - 12.0, 44.0);
@@ -768,7 +768,7 @@ impl Social {
             e::texto_ajustado(
                 &format!(
                     "{}{} · {}",
-                    if c.lida { "" } else { "Nova: " },
+                    if c.lida { "" } else { "New: " },
                     c.de,
                     c.assunto
                 ),
@@ -792,7 +792,7 @@ impl Social {
             e::texto(
                 right.x,
                 right.y + 52.0,
-                &format!("De: {}", c.de),
+                &format!("From: {}", c.de),
                 15,
                 e::SUAVE,
             );
@@ -822,13 +822,13 @@ impl Social {
                 c.texto.clone()
             } else {
                 format!(
-                    "{}  |  Anexos: {}. {}",
+                    "{}  |  Attachments: {}. {}",
                     c.texto,
                     anexos,
                     if c.resgatada {
-                        "Recebidos."
+                        "Received."
                     } else {
-                        "Aguardando resgate."
+                        "Waiting to be claimed."
                     }
                 )
             };
@@ -853,7 +853,7 @@ impl Social {
                 e::texto(
                     right.x + 75.0,
                     y + 22.0,
-                    &format!("Texto {} / {}", self.carta_pagina + 1, paginas),
+                    &format!("Text {} / {}", self.carta_pagina + 1, paginas),
                     13,
                     e::SUAVE,
                 );
@@ -868,9 +868,9 @@ impl Social {
             if crate::ui::botao(
                 Rect::new(right.x, right.y + right.h - 40.0, 130.0, 40.0),
                 if c.oficial {
-                    "Receber itens"
+                    "Claim items"
                 } else {
-                    "Responder"
+                    "Reply"
                 },
                 !c.oficial
                     || (!c.anexos.is_empty() && !c.resgatada && get_time() >= self.ocupado_ate),
@@ -887,11 +887,11 @@ impl Social {
             }
             if crate::ui::botao(
                 Rect::new(right.x + 140.0, right.y + right.h - 40.0, 130.0, 40.0),
-                "Apagar",
+                "Delete",
                 !c.oficial || c.anexos.is_empty() || c.resgatada,
             ) {
                 self.confirmar(
-                    "Apagar esta carta?".into(),
+                    "Delete this letter?".into(),
                     Pedido::ApagarCarta { id: c.id },
                 );
             }
@@ -899,7 +899,7 @@ impl Social {
             e::texto(
                 right.x,
                 right.y + 24.0,
-                "Selecione uma carta para ler.",
+                "Select a letter to read.",
                 16,
                 e::SUAVE,
             );
@@ -935,10 +935,10 @@ impl Social {
                 .map(String::as_str)
                 .unwrap_or("Item");
             let origem = match carta.motivo {
-                1 => "Primeira vitória da semana",
-                2 => "Primeira vitória",
-                shared::presenca::MOTIVO_CORREIO => "Calendário de presença",
-                _ => "Bolsa cheia",
+                1 => "First win of the week",
+                2 => "First win",
+                shared::presenca::MOTIVO_CORREIO => "Attendance calendar",
+                _ => "Bag full",
             };
             e::texto_ajustado(
                 &format!("{nome} ×{} · {origem}", carta.qtd),
@@ -950,7 +950,7 @@ impl Social {
             );
             if crate::ui::botao(
                 Rect::new(r.x + r.w - 136.0, r.y + 3.0, 128.0, 38.0),
-                "Receber",
+                "Receive",
                 true,
             ) {
                 saida.push(ClientMessage::Dungeon {
@@ -962,7 +962,7 @@ impl Social {
     fn picker_ui(&mut self, a: Rect, d: &[char]) {
         if crate::ui::botao(
             Rect::new(a.x + a.w - 160.0, a.y, 160.0, 38.0),
-            "Voltar à carta",
+            "Back to the letter",
             true,
         ) {
             self.picker = false;
@@ -971,7 +971,7 @@ impl Social {
         }
         campo(
             Rect::new(a.x, a.y + 80.0, a.w * 0.55, 40.0),
-            "Buscar item por nome ou ID",
+            "Search for an item by name or ID",
             &mut self.busca_item,
             5,
             &mut self.foco,
@@ -980,7 +980,7 @@ impl Social {
         );
         campo(
             Rect::new(a.x + a.w * 0.60, a.y + 80.0, 150.0, 40.0),
-            "Quantidade",
+            "Quantity",
             &mut self.quantidade,
             6,
             &mut self.foco,
@@ -1014,7 +1014,7 @@ impl Social {
             );
             if crate::ui::botao(
                 Rect::new(area.x + area.w - 110.0, y, 104.0, 38.0),
-                "Adicionar",
+                "Add",
                 qtd.is_some()
                     && self.anexos.len() < social::MAX_ANEXOS
                     && !self.anexos.iter().any(|a| a.item_id == *id),
@@ -1030,7 +1030,7 @@ impl Social {
         e::texto(
             x,
             a.y + 150.0,
-            &format!("Anexos: {} / 8", self.anexos.len()),
+            &format!("Attachments: {} / 8", self.anexos.len()),
             16,
             e::OURO,
         );
@@ -1060,7 +1060,7 @@ impl Social {
             let lider = c.lider == eu;
             e::texto_ajustado(
                 &format!(
-                    "{} · {} / {} membros · Líder: {}",
+                    "{} · {} / {} members · Leader: {}",
                     c.nome,
                     c.membros.len(),
                     social::MAX_CLA,
@@ -1075,7 +1075,7 @@ impl Social {
             if lider {
                 campo(
                     Rect::new(a.x, a.y + 54.0, a.w - 145.0, 42.0),
-                    "Aviso do clã",
+                    "Clan notice",
                     &mut self.aviso_cla,
                     4,
                     &mut self.foco,
@@ -1084,7 +1084,7 @@ impl Social {
                 );
                 if crate::ui::botao(
                     Rect::new(a.x + a.w - 135.0, a.y + 54.0, 135.0, 42.0),
-                    "Salvar aviso",
+                    "Save notice",
                     true,
                 ) {
                     self.enviar(
@@ -1096,7 +1096,7 @@ impl Social {
                 }
                 campo(
                     Rect::new(a.x, a.y + 132.0, a.w - 145.0, 40.0),
-                    "Convidar personagem",
+                    "Invite a character",
                     &mut self.nome,
                     0,
                     &mut self.foco,
@@ -1105,7 +1105,7 @@ impl Social {
                 );
                 if crate::ui::botao(
                     Rect::new(a.x + a.w - 135.0, a.y + 132.0, 135.0, 40.0),
-                    "Convidar",
+                    "Invite",
                     !self.nome.trim().is_empty(),
                 ) {
                     self.enviar(
@@ -1129,14 +1129,14 @@ impl Social {
             for (i, n) in c.membros[range].iter().enumerate() {
                 let y = area.y + i as f32 * 50.0;
                 let status = if self.estado.neste_canal.contains(n) {
-                    "neste canal"
+                    "on this channel"
                 } else {
-                    "fora deste canal"
+                    "off this channel"
                 };
                 e::texto_ajustado(
                     &format!(
                         "{n} · {status}{}",
-                        if *n == c.lider { " · Líder" } else { "" }
+                        if *n == c.lider { " · Leader" } else { "" }
                     ),
                     a.x,
                     y + 24.0,
@@ -1145,18 +1145,18 @@ impl Social {
                     e::TEXTO,
                 );
                 if n != eu {
-                    if botao_fim(a, y, 3, "Grupo") {
+                    if botao_fim(a, y, 3, "Party") {
                         s.push(ClientMessage::PartyInvite {
                             target_name: n.clone(),
                         });
                     }
                     if lider {
-                        if botao_fim(a, y, 2, "Líder") {
+                        if botao_fim(a, y, 2, "Leader") {
                             self.confirmar(format!("Transferir a liderança para {n}? Você perderá a administração do clã."),Pedido::LiderCla{nome:n.clone()});
                         }
-                        if botao_fim(a, y, 1, "Expulsar") {
+                        if botao_fim(a, y, 1, "Kick") {
                             self.confirmar(
-                                format!("Expulsar {n} do clã?"),
+                                format!("Kick {n} from the clan?"),
                                 Pedido::ExpulsarCla { nome: n.clone() },
                             );
                         }
@@ -1166,9 +1166,9 @@ impl Social {
             if crate::ui::botao(
                 Rect::new(a.x, a.y + a.h - 36.0, 180.0, 36.0),
                 if lider {
-                    "Dissolver clã"
+                    "Disband clan"
                 } else {
-                    "Sair do clã"
+                    "Leave clan"
                 },
                 true,
             ) {
@@ -1176,7 +1176,7 @@ impl Social {
                     if lider {
                         "Dissolver o clã e remover todos os membros?"
                     } else {
-                        "Sair do clã?"
+                        "Leave the clan?"
                     }
                     .into(),
                     if lider {
@@ -1189,7 +1189,7 @@ impl Social {
         } else {
             campo(
                 Rect::new(a.x, a.y + 24.0, a.w - 150.0, 40.0),
-                "Nome do novo clã (3 a 24 caracteres)",
+                "Name of the new clan (3 to 24 characters)",
                 &mut self.nome_cla,
                 3,
                 &mut self.foco,
@@ -1198,7 +1198,7 @@ impl Social {
             );
             if crate::ui::botao(
                 Rect::new(a.x + a.w - 138.0, a.y + 24.0, 138.0, 40.0),
-                "Criar clã",
+                "Create clan",
                 self.nome_cla.trim().chars().count() >= 3,
             ) {
                 self.enviar(
@@ -1208,7 +1208,7 @@ impl Social {
                     s,
                 );
             }
-            e::texto(a.x, a.y + 110.0, "Convites recebidos", 18, e::OURO);
+            e::texto(a.x, a.y + 110.0, "Invites received", 18, e::OURO);
             let area = Rect::new(a.x, a.y + 132.0, a.w, a.h - 132.0);
             let convites = self.estado.convites_cla.clone();
             let range = paginacao(area, convites.len(), &mut self.pagina);
@@ -1216,7 +1216,7 @@ impl Social {
                 e::texto(
                     a.x,
                     area.y + 25.0,
-                    "Você ainda não tem convites de clã.",
+                    "You have no clan invites yet.",
                     17,
                     e::SUAVE,
                 );
@@ -1224,14 +1224,14 @@ impl Social {
             for (i, c) in convites[range].iter().enumerate() {
                 let y = area.y + i as f32 * 50.0;
                 e::texto_ajustado(
-                    &format!("{} · convite de {}", c.nome, c.de),
+                    &format!("{} · invite from {}", c.nome, c.de),
                     a.x,
                     y + 24.0,
                     a.w - 240.0,
                     17,
                     e::TEXTO,
                 );
-                if botao_fim(a, y, 2, "Aceitar") {
+                if botao_fim(a, y, 2, "Accept") {
                     self.enviar(
                         Pedido::ResponderCla {
                             id: c.id,
@@ -1240,7 +1240,7 @@ impl Social {
                         s,
                     );
                 }
-                if botao_fim(a, y, 1, "Recusar") {
+                if botao_fim(a, y, 1, "Decline") {
                     self.enviar(
                         Pedido::ResponderCla {
                             id: c.id,
@@ -1367,9 +1367,9 @@ pub async fn previa() {
     let vox = crate::vox::VoxCache::default();
     let solido = crate::render3d::material_solido();
     ui.receber(Aviso::Estado(Estado {
-        amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsário".into()],enviados:vec!["Capitã".into()],
+        amigos:vec!["MaréAlta".into(),"Navegante".into()],recebidos:vec!["Corsair".into()],enviados:vec!["Captain".into()],
         neste_canal:vec!["brunji".into(),"MaréAlta".into()],
-        cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Prontos para a próxima aventura?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
+        cartas:vec![social::Carta{id:1,de:"MaréAlta".into(),assunto:"Ready for the next adventure?".into(),texto:"Vamos reunir o grupo na vila e explorar as dungeons. Se precisar de ajuda, mande uma carta!".into(),quando:0,lida:false,oficial:false,anexos:vec![],resgatada:false}],
         cla:Some(social::Cla{id:1,nome:"Corsários da Maré".into(),lider:"brunji".into(),aviso:"Encontro na vila para a próxima expedição.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into()]}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
     }));
@@ -1396,7 +1396,7 @@ pub async fn previa() {
     ui.abrir(Aba::Correio);
     ui.escrevendo = true;
     ui.nome = "MaréAlta".into();
-    ui.assunto = "Encontro na vila".into();
+    ui.assunto = "Meeting in the village".into();
     ui.texto = "Vamos explorar juntos depois de reunir o grupo?".into();
     for editor in [false, true] {
         for _ in 0..3 {
@@ -1419,10 +1419,10 @@ pub async fn previa() {
     ui.admin = true;
     ui.todos = true;
     ui.picker = false;
-    ui.assunto = "Recompensa do evento".into();
+    ui.assunto = "Event reward".into();
     ui.texto = "Obrigado por participar! Receba seus itens abaixo.".into();
-    ui.nomes.insert(1, "Poção de Vida".into());
-    ui.nomes.insert(2, "Pedra de Forja".into());
+    ui.nomes.insert(1, "Health Potion".into());
+    ui.nomes.insert(2, "Forge Stone".into());
     ui.anexos = vec![
         social::Anexo {
             item_id: 1,
@@ -1478,7 +1478,7 @@ mod testes {
     fn a_fila_resgata_antes_de_apagar() {
         let carta = |id: i64, anexos: bool, resgatada: bool| shared::social::Carta {
             id,
-            de: "Sistema".into(),
+            de: "System".into(),
             assunto: "x".into(),
             texto: "y".into(),
             quando: 0,

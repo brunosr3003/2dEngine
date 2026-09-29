@@ -129,10 +129,10 @@ impl Colecao {
         };
         let by = y + lado + 12.0 * f;
         estilo::texto_ajustado(
-            // "Em uso" em vez de "equipado/equipada": o mesmo texto serve
+            // "In use" em vez de "equipado/equipada": o mesmo texto serve
             // pro pet e pra montaria, sem errar a concordancia num dos dois.
             &if escolhida.equipada {
-                format!("{} · em uso", nome(escolhida.item_id))
+                format!("{} · in use", nome(escolhida.item_id))
             } else {
                 nome(escolhida.item_id)
             },
@@ -148,9 +148,9 @@ impl Colecao {
         estilo::botao(
             bt_eq,
             if escolhida.equipada {
-                "Em uso"
+                "In use"
             } else {
-                "Equipar"
+                "Equip"
             },
             estilo::estado_de(bt_eq, escolhida.equipada, false),
             !escolhida.equipada,
@@ -178,7 +178,7 @@ impl Colecao {
                 let pode = tem >= rc.qtd;
                 estilo::botao(
                     bt_co,
-                    &format!("Combinar {}/{}", tem.min(rc.qtd), rc.qtd),
+                    &format!("Combine {}/{}", tem.min(rc.qtd), rc.qtd),
                     estilo::estado_de(bt_co, !pode, false),
                     pode,
                 );
@@ -207,7 +207,7 @@ impl Colecao {
             None => {
                 estilo::botao(
                     bt_co,
-                    "No topo",
+                    "At the top",
                     estilo::estado_de(bt_co, true, false),
                     false,
                 );

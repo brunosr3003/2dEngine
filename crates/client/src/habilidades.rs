@@ -246,14 +246,14 @@ impl Habilidades {
                 }
                 self.aviso(
                     if ligar {
-                        "Uso automático ativado"
+                        "Automatic use switched on"
                     } else {
-                        "Uso automático desativado"
+                        "Automatic use switched off"
                     }
                     .into(),
                 );
             } else {
-                self.aviso("Esta skill ainda está bloqueada".into());
+                self.aviso("This skill is still locked".into());
             }
             return None;
         }
@@ -272,15 +272,15 @@ impl Habilidades {
         if let Some(id) = manual {
             let s = self.catalogo.iter().find(|s| s.id == id)?;
             let erro = if !s.destravada(contexto.nivel) {
-                Some(format!("Libera no nível {}", s.nivel_necessario()))
+                Some(format!("Unlocks at level {}", s.nivel_necessario()))
             } else if !contexto.vivo {
-                Some("Personagem incapacitado".into())
+                Some("Character incapacitated".into())
             } else if self.ocupada() {
-                Some("Aguarde terminar a ação atual".into())
+                Some("Wait for the current action to finish".into())
             } else if self.recargas.get(&id).is_some_and(|&t| t > agora) {
-                Some("Skill em recarga".into())
+                Some("Skill on cooldown".into())
             } else if contexto.mp < s.custo_mp {
-                Some("Mana insuficiente".into())
+                Some("Not enough mana".into())
             } else if s.dano > 0 && contexto.distancia_alvo.is_none() {
                 Some("Selecione um inimigo para usar esta skill".into())
             } else {
@@ -359,7 +359,7 @@ impl Habilidades {
             self.ocupada_ate = 0.0;
             self.pendente_ate = 0.0;
             self.tentar_apos.insert(id, get_time() + 2.5);
-            self.aviso("Skill interrompida".into());
+            self.aviso("Skill interrupted".into());
         }
     }
 
@@ -534,9 +534,9 @@ impl Habilidades {
                 let (_, inicio) = self.arrasto.inicio.unwrap();
                 let p = Vec2::from(mouse_position());
                 let texto = if p.y > inicio.y + 20.0 {
-                    "Solte: MANUAL"
+                    "Release: MANUAL"
                 } else {
-                    "Solte: AUTO"
+                    "Release: AUTO"
                 };
                 estilo::painel(Rect::new(c.x - 82.0, r.y - 74.0, 164.0, 31.0));
                 estilo::texto_centro(c.x, r.y - 53.0, texto, 15, estilo::AUTO);

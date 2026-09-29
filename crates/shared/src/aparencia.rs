@@ -49,13 +49,13 @@ pub const CHAPEU_BASE: u16 = 500;
 /// As roupas, na ordem dos ids (`ROUPA_BASE + i`). O nome e' o arquivo em
 /// `assets/vox/personagem/skins/`.
 pub const ROUPAS: [(&str, &str); 4] = [
-    ("aventureiro", "Aventureiro"),
-    ("mercenario", "Mercenário"),
-    ("andarilho", "Andarilho"),
+    ("aventureiro", "Adventurer"),
+    ("mercenario", "Mercenary"),
+    ("andarilho", "Wanderer"),
     // A primeira PAGA. As três de cima são as "variações mais simples de
     // graça" que o dono pediu; esta existe pra a corrente da loja ser
     // demonstrável ponta a ponta — comprar, usar, destravar, vestir.
-    ("capitao", "Capitão da Tempestade"),
+    ("capitao", "Storm Captain"),
 ];
 
 /// Quantas roupas nascem destravadas. As de índice maior são da loja.
@@ -64,14 +64,14 @@ pub const ROUPAS_GRATIS: usize = 3;
 /// Os chapeus, na ordem dos ids (`CHAPEU_BASE + i`), em
 /// `assets/vox/personagem/chapeus/`.
 pub const CHAPEUS: [(&str, &str); 8] = [
-    ("capuz", "Capuz"),
-    ("pontudo", "Chapéu Pontudo"),
-    ("tricornio", "Tricórnio"),
-    ("aba", "Chapéu de Aba"),
-    ("boina_pena", "Boina de Pena"),
-    ("lenco", "Lenço"),
-    ("faixa", "Faixa"),
-    ("touca", "Touca"),
+    ("capuz", "Hood"),
+    ("pontudo", "Pointed Hat"),
+    ("tricornio", "Tricorne"),
+    ("aba", "Brimmed Hat"),
+    ("boina_pena", "Feathered Beret"),
+    ("lenco", "Bandana"),
+    ("faixa", "Headband"),
+    ("touca", "Cap"),
 ];
 
 /// O arquivo da skin de roupa deste id. `None` = id que nao e' roupa.
@@ -204,7 +204,7 @@ impl Aparencia {
         if self.rosto >= ROSTOS {
             self.rosto = 0;
         }
-        // `CABELOS` é o índice do "sem cabelo"; acima disso são os chapéus.
+        // `CABELOS` é o índice do "no hair"; acima disso são os chapéus.
         // Quem valida se o chapéu foi DESTRAVADO é o guarda-roupa do
         // servidor — aqui só se corta o que não existe em tabela nenhuma.
         if self.cabelo > CABELOS + CHAPEUS.len() as u8 {
@@ -318,7 +318,7 @@ mod testes_das_skins {
     /// verdade. Um erro de um índice aqui põe chapéu onde devia ter cabelo.
     #[test]
     fn chapeu_e_cabelo_dividem_o_slot_sem_se_atropelar() {
-        // Os cabelos de verdade, e o "sem cabelo", não são chapéu.
+        // Os cabelos de verdade, e o "no hair", não são chapéu.
         for c in 0..=CABELOS {
             assert_eq!(chapeu_do_cabelo(c), None, "cabelo {c} virou chapéu");
         }

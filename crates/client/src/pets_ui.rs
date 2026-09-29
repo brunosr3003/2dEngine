@@ -153,7 +153,7 @@ impl PetsUi {
             dir.x + 14.0 * f,
             y,
             &format!(
-                "Nível {nivel} / {} · {ocupados}/3 pets · T{} +{}",
+                "Level {nivel} / {} · {ocupados}/3 pets · T{} +{}",
                 shared::pets::NIVEL_MAX,
                 pet_inst.map_or(1, |i| i.tier()),
                 pet_inst.map_or(0, |i| i.refinement)
@@ -182,10 +182,10 @@ impl PetsUi {
             dir.x + 14.0 * f,
             y,
             &if no_topo {
-                "Nível máximo.".to_string()
+                "Maximum level.".to_string()
             } else {
                 format!(
-                    "Faltam {} de experiência para o nível {}",
+                    "{} experience short of level {}",
                     crate::bolsa::milhar(prox.saturating_sub(d.xp)),
                     nivel + 1
                 )
@@ -201,7 +201,7 @@ impl PetsUi {
             let falta = (d.alimentado_ate - agora_unix).max(0);
             (
                 format!(
-                    "Alimentado por mais {}h{:02}",
+                    "Fed for another {}h{:02}",
                     falta / 3600,
                     (falta % 3600) / 60
                 ),
@@ -209,7 +209,7 @@ impl PetsUi {
             )
         } else {
             (
-                "Com fome: não ganha experiência nenhuma".to_string(),
+                "Hungry: gains no experience at all".to_string(),
                 estilo::VERMELHO,
             )
         };
@@ -223,7 +223,7 @@ impl PetsUi {
         let alimentar = Rect::new(dir.x + 14.0 * f, y, 180.0 * f, 34.0 * f);
         estilo::botao(
             alimentar,
-            &format!("Alimentar ({racoes})"),
+            &format!("Feed ({racoes})"),
             estilo::estado_de(alimentar, racoes == 0, false),
             racoes > 0,
         );
@@ -239,7 +239,7 @@ impl PetsUi {
             dir.x + 204.0 * f,
             y + 22.0 * f,
             &format!(
-                "A Ração dura {}h por uso",
+                "Feed lasts {}h per use",
                 shared::pets::duracao_da_racao(&d) / 3600
             ),
             13,
@@ -260,7 +260,7 @@ impl PetsUi {
             x += 62.0 * f;
         }
         let poder = format!(
-            "PODER  {}",
+            "POWER  {}",
             crate::bolsa::milhar(crate::bolsa::poder_dos_pontos(pontos).max(0) as u64)
         );
         estilo::texto_forte(
@@ -276,7 +276,7 @@ impl PetsUi {
         if let Some(msg) = self.colecao.desenha(
             faixa,
             f,
-            "MEUS PETS",
+            "MY PETS",
             bolsa,
             Some(pet),
             &|id| shared::pets::de_item(id).is_some(),
@@ -319,7 +319,7 @@ impl PetsUi {
                 estilo::texto_centro(
                     r.center().x,
                     r.center().y + 6.0 * f,
-                    &format!("Abre no nível {}", shared::pets::nivel_do_slot(i)),
+                    &format!("Opens at level {}", shared::pets::nivel_do_slot(i)),
                     14,
                     estilo::SUAVE,
                 );
@@ -348,7 +348,7 @@ impl PetsUi {
                     estilo::texto_centro(
                         r.center().x,
                         r.center().y + 6.0 * f,
-                        "Slot livre · toque para escolher",
+                        "Free slot · tap to choose",
                         15,
                         estilo::SUAVE,
                     );
@@ -389,7 +389,7 @@ impl PetsUi {
         estilo::texto_forte(
             r.x + 16.0 * f,
             r.y + 32.0 * f,
-            &format!("Skill para o slot {}", skill_slot + 1),
+            &format!("Skill for slot {}", skill_slot + 1),
             20,
             estilo::OURO,
         );

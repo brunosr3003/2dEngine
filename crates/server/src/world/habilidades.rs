@@ -23,19 +23,19 @@ fn valida(
     ocupado: bool,
 ) -> Result<(), &'static str> {
     if skill.conjunto != arma {
-        return Err("Esta skill pertence a outra arma.");
+        return Err("This skill belongs to another weapon.");
     }
     if !skill.destravada(nivel) {
-        return Err("Seu nível ainda não libera esta skill.");
+        return Err("Your level does not unlock this skill yet.");
     }
     if ocupado {
-        return Err("Aguarde terminar a ação atual.");
+        return Err("Wait for the current action to finish.");
     }
     if recarga > 0.0 {
-        return Err("Skill em recarga.");
+        return Err("Skill on cooldown.");
     }
     if mp < skill.custo_mp as f32 {
-        return Err("Mana insuficiente.");
+        return Err("Not enough mana.");
     }
     Ok(())
 }
@@ -125,7 +125,7 @@ impl GameWorld {
         crate::telemetria::conta("skill_pedida", skill_id, 1);
         let Some(skill) = crate::skills::skill_of(skill_id).filter(|s| (1..=12).contains(&s.id))
         else {
-            self.rejeita_skill(sid, skill_id, "Skill indisponível.");
+            self.rejeita_skill(sid, skill_id, "Skill unavailable.");
             return;
         };
         self.conjurar_skill(sid, skill);
@@ -143,10 +143,10 @@ impl GameWorld {
             .ecs
             .query::<(&NetId, &Position, &EntityKind, &Health)>();
         let Some((e, (_, pos, kind, hp))) = q.iter().find(|(_, (n, _, _, _))| n.0 == alvo) else {
-            return Err("O alvo não está mais disponível.");
+            return Err("The target is no longer available.");
         };
         if hp.current <= 0 {
-            return Err("O alvo está morto.");
+            return Err("The target is dead.");
         }
         if skill.dano <= 0 {
             return Ok(pos.0);
@@ -159,17 +159,17 @@ impl GameWorld {
                 .get::<&EnemyTag>(e)
                 .is_ok_and(|t| t.dead || t.returning_home || t.spawn_grace_until > self.sim_time_s)
         {
-            return Err("Selecione um inimigo válido.");
+            return Err("Select a valid enemy.");
         }
         if self.in_safe_zone(pos.0) {
-            return Err("O alvo está na zona segura.");
+            return Err("The target is in the safe zone.");
         }
         if de.distance(pos.0) > skill.alcance_alvo() {
-            return Err("Alvo fora do alcance.");
+            return Err("Target out of range.");
         }
         // Skill com alvo vai em arco, como o tiro basico (`visada_de_tiro`).
         if !visada_de_tiro(self.ilha.as_ref(), &self.map, de, pos.0) {
-            return Err("O alvo está atrás de um obstáculo.");
+            return Err("The target is behind an obstacle.");
         }
         Ok(pos.0)
     }
@@ -211,12 +211,12 @@ impl GameWorld {
         let de = pos.0;
         drop(pos);
         if skill.dano > 0 && self.in_safe_zone(de) {
-            self.rejeita_skill(sid, skill_id, "Não é possível atacar na zona segura.");
+            self.rejeita_skill(sid, skill_id, "You cannot attack in the safe zone.");
             return;
         }
         let alvo_eid = if skill.dano > 0 {
             let Some(alvo) = s.target else {
-                self.rejeita_skill(sid, skill_id, "Selecione um inimigo para usar esta skill.");
+                self.rejeita_skill(sid, skill_id, "Select an enemy to use this skill.");
                 return;
             };
             alvo
@@ -368,7 +368,7 @@ impl GameWorld {
             }
             if h.skill.id == 1 && pos.distance(h.alvo) > 1.8 {
                 self.cancelar_habilidade(h.sid, h.skill.id);
-                self.rejeita_skill(h.sid, h.skill.id, "Não foi possível alcançar o alvo.");
+                self.rejeita_skill(h.sid, h.skill.id, "The target could not be reached.");
                 continue;
             }
             let origem = if h.skill.id == 1 { h.de } else { pos };

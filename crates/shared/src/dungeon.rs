@@ -31,8 +31,8 @@ impl Tipo {
     pub fn nome(self) -> &'static str {
         match self {
             Tipo::Porao => "Porão",
-            Tipo::Gruta => "Gruta",
-            Tipo::Cacada => "Caçada",
+            Tipo::Gruta => "Cavern",
+            Tipo::Cacada => "Hunt",
         }
     }
 }
@@ -61,7 +61,7 @@ pub struct Conteudo {
 pub const CONTEUDOS: &[Conteudo] = &[
     Conteudo {
         id: 1,
-        nome: "Porão do Naufrágio",
+        nome: "Shipwreck Cellar",
         tipo: Tipo::Porao,
         zona: "ilha_inicial",
         nivel_min: 6,
@@ -73,7 +73,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 2,
-        nome: "Adega do Contrabandista",
+        nome: "Smuggler's Cellar",
         tipo: Tipo::Porao,
         zona: "ilha_inicial",
         nivel_min: 14,
@@ -85,7 +85,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 3,
-        nome: "Casco Congelado",
+        nome: "Frozen Hull",
         tipo: Tipo::Porao,
         zona: "ilha_gelo",
         nivel_min: 22,
@@ -97,7 +97,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 10,
-        nome: "Toca dos Lobos-do-Mar",
+        nome: "Sea Wolves' Den",
         tipo: Tipo::Gruta,
         zona: "ilha_inicial",
         nivel_min: 10,
@@ -109,7 +109,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 11,
-        nome: "Grutas de Gelo Fundo",
+        nome: "Deep Ice Caverns",
         tipo: Tipo::Gruta,
         zona: "ilha_gelo",
         nivel_min: 20,
@@ -121,7 +121,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 12,
-        nome: "Tumba das Areias Salgadas",
+        nome: "Tomb of the Salt Sands",
         tipo: Tipo::Gruta,
         zona: "ilha_deserto",
         nivel_min: 30,
@@ -133,7 +133,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 13,
-        nome: "Mosteiro dos Ventos",
+        nome: "Monastery of the Winds",
         tipo: Tipo::Gruta,
         zona: "ilha_planalto",
         nivel_min: 40,
@@ -145,7 +145,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 14,
-        nome: "Forja do Titã",
+        nome: "Forge of the Titan",
         tipo: Tipo::Gruta,
         zona: "ilha_planalto",
         nivel_min: 50,
@@ -157,7 +157,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 15,
-        nome: "Cemitério de Navios",
+        nome: "Ship Graveyard",
         tipo: Tipo::Gruta,
         zona: "recife_tempestade",
         nivel_min: 60,
@@ -169,7 +169,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
     },
     Conteudo {
         id: 20,
-        nome: "Mãe-da-Nevasca",
+        nome: "Mother of Blizzards",
         tipo: Tipo::Cacada,
         zona: "ilha_gelo",
         nivel_min: 25,
@@ -207,7 +207,7 @@ pub fn nivel_do_estagio(c: &Conteudo, e: u8) -> u32 {
 /// pede a ladder inteira.
 pub const PODER_PCT: [u32; 5] = [55, 65, 80, 90, 100];
 
-/// O mesmo numero do "Poder" da ficha do cliente.
+/// O mesmo numero do "Power" da ficha do cliente.
 pub fn poder_de_stats(s: &PlayerStats) -> i32 {
     s.attack_damage * 10
         + s.defense * 8
@@ -268,11 +268,11 @@ pub enum Cadeado {
 impl Cadeado {
     pub fn texto(&self) -> String {
         match self {
-            Cadeado::EmBreve => "Em breve".into(),
-            Cadeado::Nivel(n) => format!("Requer nível {n}"),
-            Cadeado::Poder { tem, precisa } => format!("Poder {tem}/{precisa}"),
-            Cadeado::Estagio(e) => format!("Vença o estágio {e}"),
-            Cadeado::Selo => "Requer Selo da Tempestade".into(),
+            Cadeado::EmBreve => "Coming soon".into(),
+            Cadeado::Nivel(n) => format!("Requires level {n}"),
+            Cadeado::Poder { tem, precisa } => format!("Power {tem}/{precisa}"),
+            Cadeado::Estagio(e) => format!("Beat stage {e}"),
+            Cadeado::Selo => "Requires a Storm Seal".into(),
         }
     }
 }

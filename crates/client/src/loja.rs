@@ -244,7 +244,7 @@ impl Loja {
             estilo::texto(
                 p.x + 16.0 * f,
                 lista.y + 28.0 * f,
-                "Nada à venda.",
+                "Nothing for sale.",
                 16,
                 estilo::SUAVE,
             );
@@ -339,7 +339,7 @@ impl Loja {
                 17,
                 estilo::OURO,
             );
-            let info = format!("na bolsa: {}", crate::bolsa::milhar(tem));
+            let info = format!("in your bag: {}", crate::bolsa::milhar(tem));
             estilo::texto(
                 d.x + d.w - estilo::medir(&info, 14),
                 d.y + 24.0 * f,
@@ -376,7 +376,7 @@ impl Loja {
                 }
                 x += w + 4.0 * f;
             }
-            if crate::ui::botao(Rect::new(x, y, w, h), "Máx", lote && max > 1) {
+            if crate::ui::botao(Rect::new(x, y, w, h), "Max", lote && max > 1) {
                 self.qtd = max;
             }
 
@@ -407,16 +407,16 @@ impl Loja {
                 estilo::texto(
                     d.x + 4.0,
                     d.y + 124.0 * f,
-                    "Equipamento: um por vez.",
+                    "Gear: one at a time.",
                     13,
                     estilo::SUAVE,
                 );
             }
             let b = Rect::new(d.x, d.y + 134.0 * f, d.w, 44.0 * f);
             let rotulo = if self.moeda_magica {
-                format!("Trocar por {}x", self.qtd)
+                format!("Trade for {}x", self.qtd)
             } else {
-                format!("Comprar {}x", self.qtd)
+                format!("Buy {}x", self.qtd)
             };
             if crate::ui::botao(b, &rotulo, !falta && !self.itens.is_empty()) {
                 saida.push(ClientMessage::ShopComprar {
@@ -437,10 +437,10 @@ impl Loja {
             estilo::BORDA,
         );
         let rodape_texto = if self.moeda_magica {
-            format!("Moedas Mágicas: {}", crate::bolsa::milhar(saldo))
+            format!("Magic Coins: {}", crate::bolsa::milhar(saldo))
         } else {
             format!(
-                "Cobre {}  ·  Ouro {}",
+                "Copper {}  ·  Gold {}",
                 crate::bolsa::milhar(cobre),
                 crate::bolsa::milhar(ouro)
             )

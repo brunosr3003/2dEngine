@@ -104,28 +104,28 @@ impl PacoteTp {
 pub const PACOTES: [PacoteTp; 4] = [
     PacoteTp {
         id: 1,
-        nome: "Punhado de TP",
+        nome: "Handful of TP",
         tp: 100,
         bonus: 0,
         centavos: 490,
     },
     PacoteTp {
         id: 2,
-        nome: "Bolsa de TP",
+        nome: "TP pouch",
         tp: 500,
         bonus: 50,
         centavos: 2490,
     },
     PacoteTp {
         id: 3,
-        nome: "Baú de TP",
+        nome: "TP Chest",
         tp: 1000,
         bonus: 200,
         centavos: 4990,
     },
     PacoteTp {
         id: 4,
-        nome: "Tesouro de TP",
+        nome: "TP Hoard",
         tp: 2000,
         bonus: 600,
         centavos: 9990,
@@ -146,7 +146,7 @@ pub struct BauCraft {
 
 pub const BAUS_CRAFT: [BauCraft; 1] = [BauCraft {
     id: 1,
-    nome: "Pergaminho de Invocação: Chaves",
+    nome: "Summoning Scroll: Keys",
     preco_tp: 120,
     descricao: "Abra na bolsa para invocar 1 chave aleatória de craft.",
     chances_cor: [55, 28, 12, 5],
@@ -161,7 +161,7 @@ pub struct PergaminhoMontaria {
 
 pub const PERGAMINHOS_MONTARIA: [PergaminhoMontaria; 1] = [PergaminhoMontaria {
     id: 1,
-    nome: "Pergaminho de Invocação: Montaria",
+    nome: "Summoning Scroll: Mount",
     preco_tp: 500,
 }];
 
@@ -188,7 +188,7 @@ pub struct PergaminhoTomo {
 
 pub const PERGAMINHOS_TOMO: [PergaminhoTomo; 1] = [PergaminhoTomo {
     id: 1,
-    nome: "Pergaminho de Invocação: Tomos",
+    nome: "Summoning Scroll: Tomes",
     preco_tp: 150,
     chances: [75, 20, 5],
 }];
@@ -204,7 +204,7 @@ pub struct PergaminhoPet {
 /// ABRIR, por `pets::rolar` — a compra so' entrega o pergaminho na bolsa.
 pub const PERGAMINHOS_PET: [PergaminhoPet; 1] = [PergaminhoPet {
     id: 1,
-    nome: "Pergaminho de Invocação: Pet",
+    nome: "Summoning Scroll: Pet",
     preco_tp: 250,
 }];
 
@@ -225,21 +225,21 @@ const FIXOS: [ItemDePet; 3] = [
     ItemDePet {
         id: 1,
         item_id: crate::item_id::RACAO_DE_PET,
-        nome: "Ração de Pet",
+        nome: "Pet Feed",
         descricao: "Alimenta o pet por 2 h. Com fome ele não ganha experiência.",
         preco_tp: 30,
     },
     ItemDePet {
         id: 2,
         item_id: crate::item_id::REMOVEDOR_DE_SKILL_PET,
-        nome: "Removedor de Skill",
+        nome: "Skill Remover",
         descricao: "Tira todas as skills do pet e devolve os slots.",
         preco_tp: 200,
     },
     ItemDePet {
         id: 3,
         item_id: crate::item_id::PEDRA_DE_AFINIDADE,
-        nome: "Pedra de Afinidade",
+        nome: "Affinity Stone",
         descricao: "Sorteia de novo os atributos do pet ou da montaria equipada.",
         preco_tp: 250,
     },
@@ -314,21 +314,21 @@ pub struct PacoteMoeda {
 pub const MOEDAS: [PacoteMoeda; 3] = [
     PacoteMoeda {
         id: 1,
-        nome: "Saco de Ouro",
+        nome: "Sack of Gold",
         item_id: crate::item_id::GOLD,
         qtd: 10_000,
         preco_tp: 50,
     },
     PacoteMoeda {
         id: 2,
-        nome: "Saco de Cobre",
+        nome: "Sack of Copper",
         item_id: crate::item_id::COPPER,
         qtd: 20_000,
         preco_tp: 40,
     },
     PacoteMoeda {
         id: 3,
-        nome: "Barras de Darksteel",
+        nome: "Darksteel Bars",
         item_id: crate::item_id::DARKSTEEL,
         qtd: 2_000,
         preco_tp: 60,
@@ -363,19 +363,19 @@ impl PacoteEnergia {
 pub const ENERGIAS: [PacoteEnergia; 3] = [
     PacoteEnergia {
         id: 1,
-        nome: "Fagulha de Energia",
+        nome: "Energy Spark",
         qtd: 2_000,
         preco_tp: 40,
     },
     PacoteEnergia {
         id: 2,
-        nome: "Cristal de Energia",
+        nome: "Energy Crystal",
         qtd: 12_000,
         preco_tp: 200,
     },
     PacoteEnergia {
         id: 3,
-        nome: "Núcleo de Energia",
+        nome: "Energy Core",
         qtd: 70_000,
         preco_tp: 1_000,
     },
@@ -418,19 +418,19 @@ impl PacotePasse {
 pub const PASSES: [PacotePasse; 3] = [
     PacotePasse {
         id: 1,
-        nome: "Passe da Ilha Mágica",
+        nome: "Magic Island Pass",
         qtd: 1,
         preco_tp: 50,
     },
     PacotePasse {
         id: 2,
-        nome: "Punhado de Passes",
+        nome: "Handful of Passes",
         qtd: 5,
         preco_tp: 225,
     },
     PacotePasse {
         id: 3,
-        nome: "Bolsa de Passes",
+        nome: "Pouch of Passes",
         qtd: 12,
         preco_tp: 500,
     },
@@ -600,16 +600,29 @@ impl Produto {
 }
 
 /// "R$ 24,90".
+/// The price in reais, punctuated for the language in use.
+///
+/// This is NOT a phrase for the dictionary. The two separators swap round
+/// together — Portuguese writes R$ 1.234,56 and English R$ 1,234.56 — and a
+/// dictionary entry cannot reach the thousands separator, which sits inside
+/// the number. Translating only the decimal one is how this briefly came out
+/// as `R$ 1.234.56`, with the same mark meaning both things.
+///
+/// The currency stays R$ in both: the price is in reais whoever is reading.
 pub fn preco_brl(centavos: u32) -> String {
+    let (milhar, decimal) = match crate::idioma::atual() {
+        crate::idioma::Idioma::Pt => ('.', ','),
+        crate::idioma::Idioma::En => (',', '.'),
+    };
     let reais = centavos / 100;
     let c = centavos % 100;
     let mut r = reais.to_string();
     let mut i = r.len() as i32 - 3;
     while i > 0 {
-        r.insert(i as usize, '.');
+        r.insert(i as usize, milhar);
         i -= 3;
     }
-    format!("R$ {r},{c:02}")
+    format!("R$ {r}{decimal}{c:02}")
 }
 
 /// banco; o banco confere de novo).
@@ -622,8 +635,8 @@ pub enum RecusaCompra {
 impl RecusaCompra {
     pub fn texto(&self) -> &'static str {
         match self {
-            RecusaCompra::ProdutoInvalido => "Produto indisponível.",
-            RecusaCompra::SemSaldo => "TP insuficiente.",
+            RecusaCompra::ProdutoInvalido => "Product unavailable.",
+            RecusaCompra::SemSaldo => "Not enough TP.",
         }
     }
 }
@@ -1080,9 +1093,16 @@ mod tests {
 
     #[test]
     fn textos_e_ids() {
+        // Os DOIS separadores viram juntos: traduzir so' o decimal deixava
+        // `R$ 1.234.56`, com o mesmo sinal valendo milhar e centavo.
+        crate::idioma::definir(crate::idioma::Idioma::En);
+        assert_eq!(preco_brl(490), "R$ 4.90");
+        assert_eq!(preco_brl(9990), "R$ 99.90");
+        assert_eq!(preco_brl(123456), "R$ 1,234.56");
+        crate::idioma::definir(crate::idioma::Idioma::Pt);
         assert_eq!(preco_brl(490), "R$ 4,90");
-        assert_eq!(preco_brl(9990), "R$ 99,90");
         assert_eq!(preco_brl(123456), "R$ 1.234,56");
+        crate::idioma::definir(crate::idioma::Idioma::En);
         assert!(pedido_valido("a1b2c3d4-xyz"));
         assert!(!pedido_valido("curto"));
         assert!(!pedido_valido("com espaço aqui"));

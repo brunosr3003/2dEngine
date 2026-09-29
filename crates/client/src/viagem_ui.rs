@@ -65,7 +65,7 @@ impl ViagemUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Viajar", 20, estilo::OURO);
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Travel", 20, estilo::OURO);
         estilo::texto(
             x0,
             p.y + 62.0 * f,
@@ -106,7 +106,7 @@ impl ViagemUi {
                     124.0 * f,
                     40.0 * f,
                 );
-                estilo::botao(b, "Embarcar", estilo::estado_de(b, false, false), true);
+                estilo::botao(b, "Board", estilo::estado_de(b, false, false), true);
                 if clicou && b.contains(m) {
                     escolha = Some(Escolha::Ilha(d.ilha));
                 }
@@ -121,7 +121,7 @@ impl ViagemUi {
             estilo::texto_forte(
                 r.x + 14.0 * f,
                 r.y + 26.0 * f,
-                "Minha Ilha",
+                "My Island",
                 17,
                 estilo::OURO,
             );
@@ -152,13 +152,13 @@ impl ViagemUi {
 
 /// Each island's second line: level and what is missing to go.
 pub fn subtitulo(d: &Destino) -> String {
-    let nivel = format!("Nível {}–{}", d.nivel_min, d.nivel_max);
+    let nivel = format!("Level {}–{}", d.nivel_min, d.nivel_max);
     match d.estado {
-        estado::AQUI => format!("{nivel} · você está aqui"),
+        estado::AQUI => format!("{nivel} · you are here"),
         estado::LIBERADA => nivel,
         estado::FORA_DO_AR => format!("{nivel} · sem barco agora (servidor fora do ar)"),
-        _ if d.requisito.is_empty() => format!("{nivel} · bloqueada"),
-        _ => format!("{nivel} · libera em \"{}\"", d.requisito),
+        _ if d.requisito.is_empty() => format!("{nivel} · locked"),
+        _ => format!("{nivel} · unlocks at \"{}\"", d.requisito),
     }
 }
 
@@ -173,7 +173,7 @@ mod tests {
             nivel_min: 15,
             nivel_max: 30,
             estado: e,
-            requisito: "Rumo à Geleira".into(),
+            requisito: "Bound for the Glacier".into(),
         }
     }
 
@@ -181,7 +181,7 @@ mod tests {
     fn subtitulo_diz_o_que_falta() {
         assert_eq!(subtitulo(&d(estado::LIBERADA)), "Nível 15–30");
         assert!(subtitulo(&d(estado::AQUI)).ends_with("você está aqui"));
-        assert!(subtitulo(&d(estado::BLOQUEADA)).contains("Rumo à Geleira"));
+        assert!(subtitulo(&d(estado::BLOQUEADA)).contains("Bound for the Glacier"));
         assert!(subtitulo(&d(estado::FORA_DO_AR)).contains("fora do ar"));
     }
 }

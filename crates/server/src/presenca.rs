@@ -287,7 +287,7 @@ pub fn spawn_resgate(
                 tracing::warn!("attendance: claim for {personagem} failed: {e:#}");
                 Evento::Recusado {
                     sid,
-                    texto: "Calendário indisponível agora. Tente de novo.".into(),
+                    texto: "Calendar unavailable right now. Try again.".into(),
                     feitos: None,
                 }
             }

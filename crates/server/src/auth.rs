@@ -64,7 +64,7 @@ pub enum AuthError {
     Internal(String),
 }
 
-/// `lembrar`: o cliente marcou "lembrar de mim". So' nesse caso uma sessao e'
+/// `lembrar`: o cliente marcou "remember me". So' nesse caso uma sessao e'
 /// emitida — emitir sempre gastaria uma linha de tabela por login de quem nao
 /// pediu nada.
 pub async fn authenticate(
@@ -151,7 +151,7 @@ pub async fn authenticate(
     }
 }
 
-/// Quanto tempo a sessao de "lembrar de mim" vale.
+/// Quanto tempo a sessao de "remember me" vale.
 ///
 /// Trinta dias, e nao as 12 h do login com Google: aquela e' a janela de uma
 /// sessao de jogo, esta e' a promessa de nao pedir senha de novo. E' o mesmo

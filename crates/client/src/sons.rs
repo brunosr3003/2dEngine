@@ -280,7 +280,7 @@ fn vaga(vozes: &[(usize, f64, bool)], prioridade: bool) -> Result<Option<usize>,
 pub fn controle(r: Rect) {
     let v = AUDIO.with(|a| a.borrow().as_ref().map_or(0., |a| a.volume));
     let texto = if v == 0. {
-        "Som: desligado".to_string()
+        "Sound: off".to_string()
     } else {
         format!("Som: {:.0}%", v * 100.)
     };

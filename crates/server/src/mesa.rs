@@ -135,7 +135,7 @@ impl Mesa {
         agora: f64,
     ) -> Result<(), &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
-            return Err("Responda o pronto-check antes.");
+            return Err("Answer the ready check first.");
         }
         self.sair_sala(k, agora);
         self.fila.retain(|f| f.chave != k);
@@ -161,7 +161,7 @@ impl Mesa {
         agora: f64,
     ) -> Result<u32, &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
-            return Err("Responda o pronto-check antes.");
+            return Err("Answer the ready check first.");
         }
         self.sair_fila(k);
         self.sair_sala(k, agora);
@@ -187,19 +187,19 @@ impl Mesa {
         agora: f64,
     ) -> Result<(), &'static str> {
         if matches!(self.onde(k), Onde::Pronto(_)) {
-            return Err("Responda o pronto-check antes.");
+            return Err("Answer the ready check first.");
         }
         if self.prontos.iter().any(|p| p.sala == Some(id)) {
-            return Err("A sala está começando.");
+            return Err("The room is starting.");
         }
         let Some(s) = self.salas.iter().find(|s| s.id == id) else {
-            return Err("A sala não existe mais.");
+            return Err("The room no longer exists.");
         };
         if s.membros.contains(&k) {
             return Ok(());
         }
         if s.membros.len() >= grupo_max as usize {
-            return Err("A sala está cheia.");
+            return Err("The room is full.");
         }
         self.sair_fila(k);
         self.sair_sala(k, agora);
@@ -232,13 +232,13 @@ impl Mesa {
     /// The leader opens the ready-check with whoever is in the room.
     pub fn iniciar_sala(&mut self, k: Chave, agora: f64) -> Result<Evento, &'static str> {
         let Some(s) = self.salas.iter().find(|s| s.membros.contains(&k)) else {
-            return Err("Você não está numa sala.");
+            return Err("You are not in a room.");
         };
         if s.lider != k {
-            return Err("Só o líder começa.");
+            return Err("Only the leader can start.");
         }
         if self.prontos.iter().any(|p| p.sala == Some(s.id)) {
-            return Err("O pronto-check já está aberto.");
+            return Err("The ready check is already open.");
         }
         let (id, conteudo, estagio, membros) = (s.id, s.conteudo, s.estagio, s.membros.clone());
         Ok(self.abrir_pronto(conteudo, estagio, membros, Some(id), Vec::new(), agora))
@@ -598,7 +598,7 @@ mod testes {
         let mut m = Mesa::default();
         let s = m.criar_sala(1, 10, 1, true, 0.0).unwrap();
         m.entrar_sala(2, s, 5, 1.0).unwrap();
-        assert_eq!(m.iniciar_sala(2, 2.0), Err("Só o líder começa."));
+        assert_eq!(m.iniciar_sala(2, 2.0), Err("Only the leader can start."));
         for k in 10..=12 {
             m.entrar_fila(k, 10, 1, 3.0).unwrap();
         }

@@ -32,11 +32,11 @@ pub struct Banco {
 pub fn rotulo_de_expandir(banco: bool, extra: u8) -> String {
     match armazem::custo(banco, extra) {
         Some(c) => format!(
-            "+{} espaços · {} ouro",
+            "+{} slots · {} gold",
             armazem::PASSO,
             crate::bolsa::milhar(c)
         ),
-        None => "Tamanho máximo".to_string(),
+        None => "Maximum size".to_string(),
     }
 }
 
@@ -95,7 +95,7 @@ impl Banco {
         crate::hud_layout::escurece(0.5);
         let p = Self::painel();
         estilo::painel_destaque(p, estilo::OURO);
-        estilo::texto_forte(p.x + u(20.0), p.y + u(36.0), "Banco", 22, estilo::OURO);
+        estilo::texto_forte(p.x + u(20.0), p.y + u(36.0), "Bank", 22, estilo::OURO);
         estilo::texto(
             p.x + u(110.0),
             p.y + u(35.0),
@@ -103,7 +103,7 @@ impl Banco {
             14,
             estilo::SUAVE,
         );
-        let ouro_txt = format!("Ouro {}", crate::bolsa::milhar(ouro));
+        let ouro_txt = format!("Gold {}", crate::bolsa::milhar(ouro));
         estilo::texto(
             p.x + p.w - u(70.0) - estilo::medir(&ouro_txt, 15),
             p.y + u(35.0),
@@ -129,7 +129,7 @@ impl Banco {
         let bolsa = &bolsa[..n];
         if let Some(r) = lado(
             esq,
-            "Bolsa",
+            "Bag",
             bolsa,
             false,
             bolsa_extra,
@@ -145,7 +145,7 @@ impl Banco {
         let cofre = self.cofre.clone();
         if let Some(r) = lado(
             dir,
-            "Banco",
+            "Bank",
             &cofre,
             true,
             banco_extra,
@@ -283,6 +283,6 @@ mod tests {
     fn rotulo_mostra_preco_e_o_teto() {
         assert_eq!(rotulo_de_expandir(false, 0), "+10 espaços · 2.000 ouro");
         assert_eq!(rotulo_de_expandir(true, 1), "+10 espaços · 4.000 ouro");
-        assert_eq!(rotulo_de_expandir(false, 6), "Tamanho máximo");
+        assert_eq!(rotulo_de_expandir(false, 6), "Maximum size");
     }
 }

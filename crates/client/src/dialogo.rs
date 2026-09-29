@@ -10,9 +10,9 @@ use crate::hud_estilo as estilo;
 pub enum Fim {
     /// "Fale com": ao terminar, o servidor marca a conversa.
     Conversa { quest_id: u16, npc: EntityId },
-    /// Entrega a quem deu: "Receber".
+    /// Entrega a quem deu: "Receive".
     Entrega { quest_id: u16 },
-    /// Missao nova: "Aceitar" ou "Agora não".
+    /// Missao nova: "Accept" ou "Not now".
     Oferta { quest_id: u16 },
 }
 
@@ -103,7 +103,7 @@ impl Dialogo {
         r
     }
 
-    /// "Agora não" numa oferta.
+    /// "Not now" numa oferta.
     pub fn recusar(&mut self) -> Resultado {
         match self.fim {
             Some(Fim::Oferta { quest_id }) if self.aberto => {
@@ -130,7 +130,7 @@ impl Dialogo {
         )
     }
 
-    /// Os botões do rodapé: (principal, "Agora não").
+    /// Os botões do rodapé: (principal, "Not now").
     ///
     /// Fora do desenho pra ser medido. `ALVO_DO_DEDO` é o piso: abaixo dele o
     /// toque erra, e errar aqui custa recusar uma missão sem querer.
@@ -241,7 +241,7 @@ impl Dialogo {
         );
         if ultima && paga && !self.recompensa.is_empty() {
             estilo::texto_ajustado(
-                &format!("Recompensa: {}", self.recompensa),
+                &format!("Reward: {}", self.recompensa),
                 p.x + 60.0,
                 rodape,
                 p.w - 330.0,
@@ -250,13 +250,13 @@ impl Dialogo {
             );
         }
         let rotulo = if !ultima {
-            "Próximo"
+            "Next"
         } else {
             match self.fim {
-                Some(Fim::Conversa { .. }) => "Concluir",
-                Some(Fim::Entrega { .. }) => "Receber",
-                Some(Fim::Oferta { .. }) => "Aceitar",
-                None => "Fechar",
+                Some(Fim::Conversa { .. }) => "Complete",
+                Some(Fim::Entrega { .. }) => "Receive",
+                Some(Fim::Oferta { .. }) => "Accept",
+                None => "Close",
             }
         };
         let (b, nao) = Self::botoes(p, f);
@@ -265,7 +265,7 @@ impl Dialogo {
         }
         if ultima
             && matches!(self.fim, Some(Fim::Oferta { .. }))
-            && crate::ui::botao(nao, "Agora não", true)
+            && crate::ui::botao(nao, "Not now", true)
         {
             return self.recusar();
         }
@@ -283,7 +283,7 @@ mod tests {
     fn o_auto_conduz_a_conversa_e_nunca_recusa() {
         let mut d = Dialogo::default();
         d.abrir(
-            "Mestre",
+            "Master",
             "Uma caçada",
             &["Olá.", "Há ursos no bosque.", "Traga dez peles."],
             Fim::Oferta { quest_id: 42 },
@@ -323,7 +323,7 @@ mod tests {
     fn o_auto_entrega_a_missao_pronta() {
         let mut d = Dialogo::default();
         d.abrir(
-            "Mestre",
+            "Master",
             "Feito",
             &["Bom trabalho."],
             Fim::Entrega { quest_id: 7 },
@@ -342,7 +342,7 @@ mod tests {
         let mut d = Dialogo::default();
         assert_eq!(d.avancar(), Resultado::Nada, "fechado");
         d.abrir(
-            "Alquimista",
+            "Alchemist",
             "Conheça",
             &["a", "b", "c"],
             Fim::Conversa {
@@ -365,7 +365,7 @@ mod tests {
         assert!(!d.aberto);
 
         d.abrir(
-            "Mestre",
+            "Master",
             "x",
             &["ok"],
             Fim::Entrega { quest_id: 502 },
@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(d.avancar(), Resultado::Receber(502));
 
         d.abrir(
-            "Mestre",
+            "Master",
             "x",
             &["a", "b"],
             Fim::Oferta { quest_id: 503 },
@@ -383,7 +383,7 @@ mod tests {
         d.avancar();
         assert_eq!(d.recusar(), Resultado::Recusou(503));
         d.abrir(
-            "Mestre",
+            "Master",
             "x",
             &[],
             Fim::Oferta { quest_id: 503 },
@@ -395,7 +395,7 @@ mod tests {
             "sem fala ainda tem o fim"
         );
         d.abrir(
-            "Mestre",
+            "Master",
             "x",
             &["a"],
             Fim::Entrega { quest_id: 502 },

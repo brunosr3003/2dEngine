@@ -67,9 +67,9 @@ impl Morte {
     /// Texto do botao: gratis enquanto houver, senao o preco.
     pub fn rotulo_recuperar(m: &MorteRecuperavelNet, gratis: u8) -> String {
         if gratis > 0 {
-            format!("Recuperar XP (grátis {gratis}/3)")
+            format!("Recover XP (free {gratis}/3)")
         } else {
-            format!("Recuperar XP · {} ouro", milhar(m.custo_gold))
+            format!("Recover XP · {} gold", milhar(m.custo_gold))
         }
     }
 
@@ -100,7 +100,7 @@ impl Morte {
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.08, 0.0, 0.0, 0.55));
         let caixa = Rect::new(sw * 0.5 - 280.0, sh * 0.5 - 140.0, 560.0, 280.0);
         estilo::painel(caixa);
-        estilo::texto_centro(sw * 0.5, caixa.y + 44.0, "VOCÊ FOI DERROTADO", 30, VERMELHO);
+        estilo::texto_centro(sw * 0.5, caixa.y + 44.0, "YOU WERE DEFEATED", 30, VERMELHO);
         let linha = if self.xp_perdido > 0 {
             format!(
                 "Experiência perdida: {} (recuperável por 24 h)",
@@ -115,7 +115,7 @@ impl Morte {
         estilo::texto_centro(sw * 0.5, caixa.y + 135.0,
             "10% do custo do próximo nível. Seu nível pode cair.", 14, estilo::TEXTO);
         estilo::texto_centro(sw * 0.5, caixa.y + 158.0,
-            "Recuperar XP não devolve proficiência.", 14, estilo::SUAVE);
+            "Recovering XP does not give proficiency back.", 14, estilo::SUAVE);
         if let Some((t, ok)) = &self.aviso {
             estilo::texto_centro(
                 sw * 0.5,
@@ -127,7 +127,7 @@ impl Morte {
         }
         let (reviver, recuperar) = Self::botoes_da_tela(sw, sh);
         let mut pedido = None;
-        if botao(reviver, "Reviver na cidade", true) {
+        if botao(reviver, "Revive in city", true) {
             pedido = Some(ClientMessage::RespawnAtCity);
         }
         if let Some(m) = self.ultima().filter(|_| self.xp_perdido > 0) {
@@ -153,11 +153,11 @@ impl Morte {
         estilo::texto(
             caixa.x + 20.0,
             caixa.y + 34.0,
-            "RECUPERAR EXPERIÊNCIA",
+            "RECOVER EXPERIENCE",
             22,
             estilo::OURO,
         );
-        let gratis = format!("Grátis hoje: {}/3 · depois custa ouro", self.gratis);
+        let gratis = format!("Free today: {}/3 · after that it costs gold", self.gratis);
         estilo::texto(caixa.x + 20.0, caixa.y + 58.0, &gratis, 14, estilo::SUAVE);
         let fechar = Rect::new(caixa.x + caixa.w - 40.0, caixa.y + 12.0, 28.0, 28.0);
         if botao(fechar, "X", true) {
@@ -168,7 +168,7 @@ impl Morte {
             estilo::texto(
                 caixa.x + 20.0,
                 caixa.y + 104.0,
-                "Nenhuma morte para recuperar.",
+                "No death to recover from.",
                 16,
                 estilo::TEXTO,
             );
@@ -178,7 +178,7 @@ impl Morte {
         for (i, m) in ordem.iter().enumerate() {
             let y = caixa.y + 80.0 + i as f32 * 48.0;
             let resta = ((m.expira - agora).max(0) as f32 / 3600.0).ceil() as i64;
-            let t = format!("{} XP · expira em {resta} h", milhar(m.xp));
+            let t = format!("{} XP · expires in {resta} h", milhar(m.xp));
             estilo::texto(caixa.x + 20.0, y + 28.0, &t, 16, estilo::TEXTO);
             let pode = self.gratis > 0 || ouro >= m.custo_gold;
             let b = Rect::new(caixa.x + caixa.w - 270.0, y + 4.0, 250.0, 38.0);

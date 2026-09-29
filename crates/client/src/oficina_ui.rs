@@ -69,7 +69,7 @@ impl Grupo {
 }
 
 pub fn nome_da_cor(grau: u8) -> &'static str {
-    forja::Grau::de_u8(grau).map_or("Comum", |g| g.nome())
+    forja::Grau::de_u8(grau).map_or("Common", |g| g.nome())
 }
 
 /// The bag's equipment pieces grouped for the tab: the ones that fuse first,
@@ -126,7 +126,7 @@ pub fn resultado(g: &Grupo) -> (u8, u8) {
 /// Why the group does not fuse right now (`None` = it fuses).
 pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Option<String> {
     if g.sobe_de_cor() && g.grau >= 5 {
-        return Some("Lendário IV é o topo".into());
+        return Some("Legendary IV is the top".into());
     }
     if g.escolhidas(slots).len() < 2 {
         if g.sobe_de_cor() {
@@ -145,14 +145,14 @@ pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Optio
     let (grau, _) = resultado(g);
     if grau > g.grau && nivel < forja::nivel_da_cor(grau) {
         return Some(format!(
-            "Requer nível {} para {}",
+            "Requires level {} for {}",
             forja::nivel_da_cor(grau),
             nome_da_cor(grau)
         ));
     }
     let cobre = forja::custo_de_aprimorar(g.grau, g.tier);
     let t = tem(slots, item_id::COPPER);
-    (t < cobre).then(|| format!("Faltam {} de cobre", cobre - t))
+    (t < cobre).then(|| format!("Missing {} copper", cobre - t))
 }
 
 // ─────────────────────────────── combinar ────────────────────────────────
@@ -184,7 +184,7 @@ pub fn texto_do_resultado(
     motivo: &str,
 ) -> (String, bool) {
     if tentativas == 0 {
-        return (format!("Não combinou: {motivo}"), false);
+        return (format!("Not combined: {motivo}"), false);
     }
     if sucessos == 0 {
         return (
@@ -205,9 +205,9 @@ pub fn texto_da_sintese(
     motivo: &str,
 ) -> (String, bool) {
     if tentativas == 0 {
-        (format!("Não criou: {motivo}"), false)
+        (format!("Not created: {motivo}"), false)
     } else {
-        (format!("Craft de material: {criados}x {saida}!"), true)
+        (format!("Material craft: {criados}x {saida}!"), true)
     }
 }
 
@@ -352,7 +352,7 @@ impl Oficina {
             estilo::texto(
                 lista.x + u(10.0),
                 lista.y + u(24.0),
-                "Nenhuma peça na bolsa.",
+                "No piece in your bag.",
                 14,
                 estilo::SUAVE,
             );
@@ -403,7 +403,7 @@ impl Oficina {
                 linha.x + u(44.0),
                 linha.y + u(35.0),
                 &format!(
-                    "{} · Tier {} · {} na bolsa",
+                    "{} · Tier {} · {} in your bag",
                     nome_da_cor(g.grau),
                     romano(g.tier),
                     g.slots.len()
@@ -432,7 +432,7 @@ impl Oficina {
         let escolhidas = g.escolhidas(slots);
         let titulo = if g.sobe_de_cor() {
             format!(
-                "{} · {} para {}",
+                "{} · {} to {}",
                 nome(g.item_id),
                 nome_da_cor(g.grau),
                 nome_da_cor(grau_novo)
@@ -513,7 +513,7 @@ impl Oficina {
         if let Some(m) = &m {
             estilo::texto_ajustado(m, d.x + u(6.0), b.y - u(10.0), d.w - u(12.0), 14, VERMELHO);
         }
-        if crate::ui::botao(b, "Aprimorar", m.is_none()) {
+        if crate::ui::botao(b, "Upgrade", m.is_none()) {
             return Some(ClientMessage::Aprimorar {
                 slot_a: escolhidas[0] as u16,
                 slot_b: escolhidas[1] as u16,
@@ -558,9 +558,9 @@ impl Oficina {
         if crate::ui::botao(
             filtro,
             &if self.so_possiveis {
-                format!("mostrando só o que dá ({quantas_dao})")
+                format!("showing only what works ({quantas_dao})")
             } else {
-                format!("mostrar só o que dá ({quantas_dao})")
+                format!("show only what works ({quantas_dao})")
             },
             true,
         ) {
@@ -632,9 +632,9 @@ impl Oficina {
                 linha.x + u(44.0),
                 linha.y + u(35.0),
                 &if r.chance == 100 {
-                    format!("{} por 1 · garantido · tem {}", r.qtd, t(r.entrada))
+                    format!("{} for 1 · guaranteed · you have {}", r.qtd, t(r.entrada))
                 } else {
-                    format!("{} por 1 · {}% · tem {}", r.qtd, r.chance, t(r.entrada))
+                    format!("{} for 1 · {}% · you have {}", r.qtd, r.chance, t(r.entrada))
                 },
                 12,
                 estilo::SUAVE,
@@ -686,9 +686,9 @@ impl Oficina {
             estilo::OURO,
         );
         let (chance, cor) = if r.chance >= 100 {
-            ("sempre dá certo".to_string(), VERDE)
+            ("always succeeds".to_string(), VERDE)
         } else {
-            (format!("{}% por tentativa", r.chance), AMARELO)
+            (format!("{}% per attempt", r.chance), AMARELO)
         };
         estilo::texto_ajustado(
             &chance,
@@ -702,9 +702,9 @@ impl Oficina {
             d.x + u(6.0),
             d.y + u(92.0),
             if r.chance == 100 {
-                "Cada síntese gasta"
+                "Each synthesis spends"
             } else {
-                "Cada tentativa gasta"
+                "Each attempt spends"
             },
             15,
             estilo::TEXTO,
@@ -735,7 +735,7 @@ impl Oficina {
             estilo::texto(
                 d.x + u(6.0),
                 y + u(16.0),
-                "Falhar consome tudo.",
+                "Failing consumes everything.",
                 13,
                 estilo::SUAVE,
             );
@@ -747,7 +747,7 @@ impl Oficina {
             estilo::texto(
                 d.x + u(6.0),
                 b1.y - u(10.0),
-                "Falta material para uma tentativa.",
+                "Not enough material for one attempt.",
                 14,
                 VERMELHO,
             );
@@ -755,9 +755,9 @@ impl Oficina {
         if crate::ui::botao(
             b1,
             if r.chance == 100 {
-                "Sintetizar 1x"
+                "Synthesise 1x"
             } else {
-                "Combinar 1x"
+                "Combine 1x"
             },
             n > 0,
         ) {
@@ -767,9 +767,9 @@ impl Oficina {
             });
         }
         let rotulo_tudo = if r.chance == 100 {
-            format!("Sintetizar {n}x")
+            format!("Synthesise {n}x")
         } else {
-            format!("Combinar {n}x")
+            format!("Combine {n}x")
         };
         if n > 1 && crate::ui::botao(b2, &rotulo_tudo, true) {
             return Some(ClientMessage::Combinar {
@@ -907,10 +907,10 @@ mod tests {
 
     #[test]
     fn texto_do_resultado_diz_quantas_deram_certo() {
-        assert!(texto_do_resultado(3, 1, "Chifre", "")
+        assert!(texto_do_resultado(3, 1, "Horn", "")
             .0
             .contains("1x Chifre"));
-        assert!(!texto_do_resultado(3, 0, "Chifre", "").1);
+        assert!(!texto_do_resultado(3, 0, "Horn", "").1);
         assert!(texto_do_resultado(0, 0, "", "faltam: x")
             .0
             .contains("faltam"));

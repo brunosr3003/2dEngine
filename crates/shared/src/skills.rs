@@ -101,10 +101,10 @@ impl Conjunto {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Self::EspadaEscudo => "Espada e Escudo",
+            Self::EspadaEscudo => "Sword and Shield",
             Self::Katana => "Katana",
-            Self::Pistolas => "Duas Pistolas",
-            Self::AnelMagico => "Anel Mágico",
+            Self::Pistolas => "Twin Pistols",
+            Self::AnelMagico => "Magic Ring",
         }
     }
 }
@@ -225,9 +225,9 @@ impl GrauTomo {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Self::Verde => "Verde",
-            Self::Roxo => "Roxo",
-            Self::Lendario => "Lendário",
+            Self::Verde => "Green",
+            Self::Roxo => "Purple",
+            Self::Lendario => "Legendary",
         }
     }
 
@@ -399,42 +399,42 @@ pub fn tier_romano(tier: u8) -> &'static str {
 /// mas o texto é compartilhado para a tela nunca prometer outra coisa.
 pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
     match (skill_id, tier) {
-        (1, 5) => "Impacto mais forte",
-        (1, 8) => "Escudo por 2 s após a investida",
-        (1, 10) => "Golpe final ampliado",
-        (2, 5) => "Cone mais longo",
-        (2, 8) => "Corte reforçado",
-        (2, 10) => "Corte final ampliado",
-        (3, 5) => "Muralha por 6 s",
-        (3, 8) => "Reduz 55% do dano",
-        (3, 10) => "Reduz 60% por 8 s",
-        (4, 5) => "Linha mais longa",
-        (4, 8) => "Corte atravessa mais longe",
-        (4, 10) => "Saque final ampliado",
-        (5, 5) => "Área maior",
-        (5, 8) => "Área e dano ampliados",
-        (5, 10) => "Golpe final",
-        (6, 5) => "Onda mais forte e longa",
-        (6, 8) => "Onda atravessa mais longe",
-        (6, 10) => "Onda final ampliada",
-        (7, 5) => "Tiro mais forte",
-        (7, 8) => "Empurra o alvo",
-        (7, 10) => "Crítico garantido",
-        (8, 5) => "Leque maior",
-        (8, 8) => "Empurra inimigos",
-        (8, 10) => "Rajada final",
-        (9, 5) => "Explosão maior",
-        (9, 8) => "Explosão mais forte",
-        (9, 10) => "Incêndio devastador",
-        (10, 5) => "Cura reforçada",
-        (10, 8) => "Recuperação adicional",
-        (10, 10) => "Cura máxima",
-        (11, 5) => "Aura maior",
-        (11, 8) => "Área e cura reforçadas",
-        (11, 10) => "Pulso de cura máximo",
-        (12, 5) => "Impacto maior",
-        (12, 8) => "Atinge alvos mais distantes",
-        (12, 10) => "Julgamento final",
+        (1, 5) => "Stronger impact",
+        (1, 8) => "Shield for 2 s after the charge",
+        (1, 10) => "Wider final strike",
+        (2, 5) => "Longer cone",
+        (2, 8) => "Stronger slash",
+        (2, 10) => "Wider final slash",
+        (3, 5) => "Bulwark for 6 s",
+        (3, 8) => "Cuts 55% of the damage",
+        (3, 10) => "Cuts 60% for 8 s",
+        (4, 5) => "Longer line",
+        (4, 8) => "The slash travels further",
+        (4, 10) => "Wider final draw",
+        (5, 5) => "Wider area",
+        (5, 8) => "Wider area and more damage",
+        (5, 10) => "Final strike",
+        (6, 5) => "Stronger, longer wave",
+        (6, 8) => "The wave travels further",
+        (6, 10) => "Wider final wave",
+        (7, 5) => "Stronger shot",
+        (7, 8) => "Pushes the target",
+        (7, 10) => "Guaranteed critical",
+        (8, 5) => "Wider fan",
+        (8, 8) => "Pushes enemies",
+        (8, 10) => "Final volley",
+        (9, 5) => "Bigger explosion",
+        (9, 8) => "Stronger explosion",
+        (9, 10) => "Devastating blaze",
+        (10, 5) => "Stronger healing",
+        (10, 8) => "Extra recovery",
+        (10, 10) => "Maximum healing",
+        (11, 5) => "Wider aura",
+        (11, 8) => "Wider area and stronger healing",
+        (11, 10) => "Maximum healing pulse",
+        (12, 5) => "Greater impact",
+        (12, 8) => "Reaches targets further away",
+        (12, 10) => "Final judgement",
         _ => "",
     }
 }
@@ -622,8 +622,8 @@ impl Skill {
             7 => "Dispara um tiro poderoso no alvo selecionado.",
             8 => "Rajada em leque voltada para o alvo selecionado.",
             9 => "Arremessa um barril que explode no alvo.",
-            10 => "Restaura a própria vida.",
-            11 => "Cura você e aliados ao seu redor.",
+            10 => "Restores your own health.",
+            11 => "Heals you and allies around you.",
             12 => "Impacto mágico no alvo e nos inimigos próximos.",
             _ => "",
         }
@@ -821,7 +821,7 @@ pub fn playtest() -> Vec<Skill> {
         // ── espada e escudo: segurar a linha ──
         (
             1,
-            "Investida",
+            "Charge",
             "espada_escudo",
             1,
             "linha",
@@ -835,7 +835,7 @@ pub fn playtest() -> Vec<Skill> {
         ),
         (
             2,
-            "Golpe Largo",
+            "Wide Strike",
             "espada_escudo",
             2,
             "cone",
@@ -852,7 +852,7 @@ pub fn playtest() -> Vec<Skill> {
         ),
         (
             3,
-            "Muralha",
+            "Bulwark",
             "espada_escudo",
             3,
             "em_si",
@@ -866,14 +866,14 @@ pub fn playtest() -> Vec<Skill> {
         ),
         // ── katana: corte rapido ──
         (
-            4, "Saque", "katana", 1, "linha", 8, 10.0, 0.0, 30, 0, 4.0, 0.8,
+            4, "Draw", "katana", 1, "linha", 8, 10.0, 0.0, 30, 0, 4.0, 0.8,
         ),
         (
-            5, "Dança", "katana", 2, "circulo", 18, 15.0, 0.0, 28, 0, 0.0, 2.5,
+            5, "Dance", "katana", 2, "circulo", 18, 15.0, 0.0, 28, 0, 0.0, 2.5,
         ),
         (
             6,
-            "Vento Cortante",
+            "Cutting Wind",
             "katana",
             3,
             "projetil",
@@ -888,7 +888,7 @@ pub fn playtest() -> Vec<Skill> {
         // ── duas pistolas: distancia ──
         (
             7,
-            "Tiro Certeiro",
+            "True Shot",
             "pistolas",
             1,
             "projetil",
@@ -901,19 +901,19 @@ pub fn playtest() -> Vec<Skill> {
             0.0,
         ),
         (
-            8, "Rajada", "pistolas", 2, "cone", 16, 9.0, 0.0, 20, 0, 6.0, 0.0,
+            8, "Volley", "pistolas", 2, "cone", 16, 9.0, 0.0, 20, 0, 6.0, 0.0,
         ),
         (
             // CONJURACAO ZERO: a antecipacao (0,48 s) JA' E' o gesto de
             // arremessar. Somar mais 0,4 de "carregando" era cobrar duas vezes
             // pela mesma animacao — o dono: "a ideia e' a animacao em si so'
             // contar de tacando o barril".
-            9, "Barril", "pistolas", 3, "circulo", 24, 16.0, 0.0, 50, 0, 8.0, 3.0,
+            9, "Barrel", "pistolas", 3, "circulo", 24, 16.0, 0.0, 50, 0, 8.0, 3.0,
         ),
         // ── anel magico: cura e magia ──
         (
             10,
-            "Bênção",
+            "Blessing",
             "anel_magico",
             1,
             "em_si",
@@ -946,7 +946,7 @@ pub fn playtest() -> Vec<Skill> {
         ),
         (
             12,
-            "Julgamento",
+            "Judgement",
             "anel_magico",
             3,
             "circulo",
@@ -1003,7 +1003,7 @@ mod testes_da_trava {
         };
         // SOLTAM: o barril arremessado, os projéteis e a bênção que cai em
         // você no impacto.
-        for n in ["Barril", "Tiro Certeiro", "Vento Cortante", "Bênção", "Aura", "Julgamento"] {
+        for n in ["Barrel", "True Shot", "Cutting Wind", "Blessing", "Aura", "Judgement"] {
             let s = por_nome(n);
             assert!(s.sai_da_mao(), "'{n}' devia soltar o corpo");
             assert_eq!(
@@ -1014,7 +1014,7 @@ mod testes_da_trava {
         }
         // NÃO SOLTAM: o avanço do Saque, a varrida da Rajada, a Dança em volta
         // de si e a Muralha.
-        for n in ["Saque", "Rajada", "Dança", "Muralha"] {
+        for n in ["Draw", "Volley", "Dance", "Bulwark"] {
             let s = por_nome(n);
             assert!(!s.sai_da_mao(), "'{n}' virou arremesso");
             assert!(
@@ -1066,7 +1066,7 @@ mod testes_da_trava {
             .filter(|s| s.forma != Forma::Linha)
             .max_by(|a, b| a.trava_s().total_cmp(&b.trava_s()))
             .expect("catálogo vazio");
-        assert_eq!(pior.nome, "Dança", "o pior caso plantado mudou de dono");
+        assert_eq!(pior.nome, "Dance", "o pior caso plantado mudou de dono");
     }
 
     /// AS QUE O DONO RECLAMOU FICARAM MESMO MAIS CURTAS.
@@ -1087,7 +1087,7 @@ mod testes_da_trava {
                 .find(|s| s.nome == n)
                 .unwrap_or_else(|| panic!("skill '{n}' sumiu"))
         };
-        for (n, teto) in [("Barril", 0.5), ("Aura", 0.4), ("Bênção", 0.6)] {
+        for (n, teto) in [("Barrel", 0.5), ("Aura", 0.4), ("Blessing", 0.6)] {
             let s = por_nome(n);
             assert!(
                 s.trava_s() <= teto,

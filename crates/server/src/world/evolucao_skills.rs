@@ -32,11 +32,11 @@ impl GameWorld {
                     None
                 }
             })
-            .ok_or_else(|| "habilidade inválida".to_string())?;
+            .ok_or_else(|| "invalid skill".to_string())?;
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let precisa = shared::skills::DESTRAVA_EM[(skill.ordem.saturating_sub(1) as usize).min(2)];
         if nivel < precisa {
-            return Err(format!("essa habilidade libera no nível {precisa}"));
+            return Err(format!("that skill unlocks at level {precisa}"));
         }
         Ok(skill)
     }
@@ -48,7 +48,7 @@ impl GameWorld {
         grau: u8,
     ) {
         let Some(grau) = GrauTomo::de_u8(grau) else {
-            self.resposta_de_evolucao(sid, false, "grau de tomo inválido");
+            self.resposta_de_evolucao(sid, false, "invalid tome grade");
             return;
         };
         let resultado = {
@@ -65,14 +65,14 @@ impl GameWorld {
             let custo = skills::custo_de_tomo(grau);
             let cobre = crate::craft::tem(&s.inventory, shared::item_id::COPPER);
             if s.skill_progress.tomos(skill_id, grau) == u16::MAX {
-                Err("limite de tomos alcançado".into())
+                Err("tome limit reached".into())
             } else if s.skill_progress.energia < custo.energia {
                 Err(format!(
-                    "faltam {} de Energia",
+                    "{} Energy short",
                     custo.energia - s.skill_progress.energia
                 ))
             } else if cobre < custo.cobre {
-                Err(format!("faltam {} de cobre", custo.cobre - cobre))
+                Err(format!("{} copper short", custo.cobre - cobre))
             } else {
                 s.skill_progress.energia -= custo.energia;
                 crate::craft::consumir(&mut s.inventory, shared::item_id::COPPER, custo.cobre);
@@ -82,7 +82,7 @@ impl GameWorld {
                 s.inventory_dirty = true;
                 s.skills_dirty = true;
                 Ok(format!(
-                    "Tomo {} de {} condensado.",
+                    "Tome {} of {} condensed.",
                     grau.nome(),
                     skill.nome
                 ))
@@ -112,7 +112,7 @@ impl GameWorld {
             };
             let atual = s.skill_progress.tier(skill_id);
             let Some(custo) = skills::custo_de_evolucao(atual) else {
-                self.resposta_de_evolucao(sid, false, "essa habilidade já está no Tier X");
+                self.resposta_de_evolucao(sid, false, "that skill is already at Tier X");
                 return;
             };
             let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
@@ -120,22 +120,22 @@ impl GameWorld {
             let i = (skill_id - 1) as usize;
             if nivel < custo.nivel {
                 Err(format!(
-                    "o Tier {} exige nível {}",
+                    "Tier {} requires level {}",
                     skills::tier_romano(custo.destino),
                     custo.nivel
                 ))
             } else if s.skill_progress.energia < custo.energia {
                 Err(format!(
-                    "faltam {} de Energia",
+                    "{} Energy short",
                     custo.energia - s.skill_progress.energia
                 ))
             } else if cobre < custo.cobre {
-                Err(format!("faltam {} de cobre", custo.cobre - cobre))
+                Err(format!("{} copper short", custo.cobre - cobre))
             } else if let Some(grau) = custo
                 .tomo
                 .filter(|g| s.skill_progress.tomos[i][*g as usize] == 0)
             {
-                Err(format!("falta o Tomo {} de {}", grau.nome(), skill.nome))
+                Err(format!("missing Tome {} of {}", grau.nome(), skill.nome))
             } else {
                 s.skill_progress.energia -= custo.energia;
                 crate::craft::consumir(&mut s.inventory, shared::item_id::COPPER, custo.cobre);
@@ -146,7 +146,7 @@ impl GameWorld {
                 s.inventory_dirty = true;
                 s.skills_dirty = true;
                 Ok(format!(
-                    "{} evoluiu para Tier {}.",
+                    "{} evolved to Tier {}.",
                     skill.nome,
                     skills::tier_romano(custo.destino)
                 ))
@@ -222,7 +222,7 @@ mod testes {
         let mut avisou = false;
         while let Ok(m) = rx.try_recv() {
             if let ServerMessage::ResultadoDeEvolucao { ok: false, texto } = m {
-                avisou |= texto.contains("Energia");
+                avisou |= texto.contains("Energy");
             }
         }
         assert!(avisou, "recusa por Energia tem que chegar ao cliente");

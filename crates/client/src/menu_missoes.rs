@@ -107,7 +107,7 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
         partes.push(format!("{} cobre", d.reward_cobre));
     }
     if d.reward_faction_points > 0 {
-        partes.push(format!("{} pts de facção", d.reward_faction_points));
+        partes.push(format!("{} faction pts", d.reward_faction_points));
     }
     partes.join("  ·  ")
 }
@@ -140,26 +140,26 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
         }
         if cd > c.agora_unix {
             let min = ((cd - c.agora_unix) as f32 / 60.0).ceil() as i64;
-            motivos.push(format!("Disponível de novo em {min} min"));
+            motivos.push(format!("Available again in {min} min"));
         }
     }
     if d.em_breve {
-        motivos.push("Em breve".to_string());
+        motivos.push("Coming soon".to_string());
     }
     match zona_da_missao(d.id) {
-        Some(z) if Some(z) != c.zona => motivos.push(format!("Na ilha {}", nome_da_zona(z))),
-        None => motivos.push("Indisponível nesta versão".to_string()),
+        Some(z) if Some(z) != c.zona => motivos.push(format!("On {}", nome_da_zona(z))),
+        None => motivos.push("Unavailable in this version".to_string()),
         _ => {}
     }
     if d.min_level > c.nivel {
-        motivos.push(format!("Requer nível {}", d.min_level));
+        motivos.push(format!("Requires level {}", d.min_level));
     }
     if d.requires != 0 && !c.entregues.contains_key(&d.requires) {
         let t = shared::quests::quest_by_id(d.requires).map_or("?", |r| r.title);
-        motivos.push(format!("Conclua: {t}"));
+        motivos.push(format!("Complete: {t}"));
     }
     if d.faction != faction_id::NONE && d.faction != c.faccao {
-        motivos.push(format!("Só para {}", nome_da_faccao(d.faction)));
+        motivos.push(format!("Only for {}", nome_da_faccao(d.faction)));
     }
     if motivos.is_empty() {
         Estado::Disponivel
@@ -179,10 +179,10 @@ pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
         }
         Estado::EmAndamento { .. } if tem_atalho_manual(d) => Clique::AbrirManual(d.id),
         Estado::EmAndamento { .. } if !automatizavel(d) => {
-            Clique::Aviso(format!("\"{}\" exige ação manual.", d.title))
+            Clique::Aviso(format!("\"{}\" needs you to act.", d.title))
         }
         Estado::EmAndamento { .. } | Estado::Pronta => Clique::AutoMissao(d.id),
-        Estado::Concluida => Clique::Aviso(format!("\"{}\" já foi concluída.", d.title)),
+        Estado::Concluida => Clique::Aviso(format!("\"{}\" has already been completed.", d.title)),
         Estado::Bloqueada(m) => nivel_bloqueado(m).map_or_else(
             || Clique::Aviso(format!("\"{}\" bloqueada: {}.", d.title, m.join(" · "))),
             Clique::OpcoesDeNivel,
@@ -191,7 +191,7 @@ pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
 }
 
 fn nivel_bloqueado(motivos: &[String]) -> Option<u32> {
-    motivos.iter().find_map(|s| s.strip_prefix("Requer nível ")?.parse().ok())
+    motivos.iter().find_map(|s| s.strip_prefix("Requires level ")?.parse().ok())
 }
 
 /// Só objetivos que a máquina e o servidor conseguem executar sem gesto do jogador.
@@ -297,7 +297,7 @@ pub fn estado_da_historia(d: &QuestDef, c: &Contexto) -> Estado {
             break;
         };
         if p.obj_kind == shared::quests::objective_kind::NIVEL && p.obj_count > c.nivel {
-            motivos.push(format!("Requer nível {}", p.obj_count));
+            motivos.push(format!("Requires level {}", p.obj_count));
             break;
         }
     }
@@ -306,10 +306,10 @@ pub fn estado_da_historia(d: &QuestDef, c: &Contexto) -> Estado {
         .and_then(historia::id_do_passo)
         .and_then(historia::def_da_historia)
     {
-        motivos.push(format!("Conclua: {}", p.title));
+        motivos.push(format!("Complete: {}", p.title));
     }
     if let Some(z) = zona_da_missao(d.id).filter(|z| Some(*z) != c.zona) {
-        motivos.push(format!("Na ilha {}", nome_da_zona(z)));
+        motivos.push(format!("On {}", nome_da_zona(z)));
     }
     Estado::Bloqueada(motivos)
 }
@@ -350,18 +350,18 @@ pub struct Linha {
 /// Nome de cada cadeia, pela primeira missao dela.
 pub fn nome_da_cadeia(raiz: u16) -> Option<&'static str> {
     Some(match raiz {
-        501 => "Os primeiros dias",
-        511 => "Os chefes do Bosque",
-        516 => "Bestiário do Bosque",
-        523 => "A oficina",
-        528 => "Mãos na terra",
-        531 => "Porões e adegas",
-        534 => "Gente da vila",
-        810 => "Costa das Morsas",
-        815 => "Abrigo da Floresta",
-        820 => "Passagem dos Ursos",
-        825 => "Subida do Gelo",
-        830 => "Segredos da Geleira",
+        501 => "The first days",
+        511 => "The bosses of the Grove",
+        516 => "Bestiary of the Grove",
+        523 => "Workshop",
+        528 => "Hands in the soil",
+        531 => "Cellars and vaults",
+        534 => "Village folk",
+        810 => "Walrus Coast",
+        815 => "Forest Shelter",
+        820 => "Bear Pass",
+        825 => "The Ice Climb",
+        830 => "Secrets of the Glacier",
         _ => return None,
     })
 }
@@ -373,7 +373,7 @@ pub fn linhas(log: &[QuestNet]) -> Vec<Linha> {
     let mut v = Vec::new();
     if log.iter().any(|q| q.id == 905 && q.status == shared::quests::quest_status::ACTIVE) {
         if let Some(d) = shared::quests::quest_by_id(905) {
-            v.push(Linha { nome: "Aprenda a fazer missões".into(), passos: vec![d], historia: true });
+            v.push(Linha { nome: "Learn how quests work".into(), passos: vec![d], historia: true });
         }
     }
     let hist: Vec<&'static QuestDef> = lista
@@ -383,7 +383,7 @@ pub fn linhas(log: &[QuestNet]) -> Vec<Linha> {
         .collect();
     if !hist.is_empty() {
         v.push(Linha {
-            nome: "História".into(),
+            nome: "Story".into(),
             passos: hist,
             historia: true,
         });
@@ -471,10 +471,10 @@ impl Aba {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Aba::EmAndamento => "Em andamento",
-            Aba::Disponiveis => "Disponíveis",
-            Aba::Bloqueadas => "Bloqueadas",
-            Aba::Concluidas => "Concluídas",
+            Aba::EmAndamento => "In progress",
+            Aba::Disponiveis => "Available",
+            Aba::Bloqueadas => "Locked",
+            Aba::Concluidas => "Completed",
         }
     }
 }
@@ -514,11 +514,11 @@ impl Tipo {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Tipo::Todos => "Todas",
-            Tipo::Historia => "História",
-            Tipo::Secundarias => "Secundárias",
-            Tipo::Moradores => "Moradores",
-            Tipo::Faccao => "Facção",
+            Tipo::Todos => "All",
+            Tipo::Historia => "Story",
+            Tipo::Secundarias => "Side quests",
+            Tipo::Moradores => "Residents",
+            Tipo::Faccao => "Faction",
         }
     }
 }
@@ -576,8 +576,8 @@ pub fn aba_de(r: &Resumo) -> Aba {
 pub fn frase(d: &QuestDef, e: &Estado) -> String {
     match e {
         Estado::Disponivel => match shared::quests::quem_da(d) {
-            Some(q) => format!("Disponível · pegar com: {q}"),
-            None => "Disponível".into(),
+            Some(q) => format!("Available · take it from: {q}"),
+            None => "Available".into(),
         },
         Estado::EmAndamento { feito, total }
             if d.obj_kind == shared::quests::objective_kind::TUTORIAL =>
@@ -601,12 +601,12 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
         Estado::EmAndamento { feito, total } if !automatizavel(d) => {
             format!("Manual · {feito}/{total} · {}", caminho_manual(d))
         }
-        Estado::EmAndamento { feito, total } => format!("Em andamento · {feito}/{total}"),
+        Estado::EmAndamento { feito, total } => format!("In progress · {feito}/{total}"),
         Estado::Pronta => match shared::quests::quem_da(d) {
-            Some(q) => format!("Pronta · entregar: {q}"),
-            None => "Pronta pra entregar".into(),
+            Some(q) => format!("Ready · turn in to: {q}"),
+            None => "Ready to turn in".into(),
         },
-        Estado::Concluida => "Concluída".into(),
+        Estado::Concluida => "Completed".into(),
         Estado::Bloqueada(m) => m.join(" · "),
     }
 }
@@ -614,21 +614,21 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
 fn caminho_manual(d: &QuestDef) -> String {
     use shared::quests::objective_kind as obj;
     match d.obj_kind {
-        obj::CRAFT => format!("Menu › Craft: crie {} equipamento(s)", d.obj_count),
-        obj::REFINE => format!("Menu › Forja: tente refinar {} vez(es)", d.obj_count),
+        obj::CRAFT => format!("Menu › Craft: create {} piece(s) of gear", d.obj_count),
+        obj::REFINE => format!("Menu › Forge: try refining {} time(s)", d.obj_count),
         obj::DUNGEON => {
-            let onde = if d.obj_target == 0 { "qualquer dungeon".to_string() }
+            let onde = if d.obj_target == 0 { "any dungeon".to_string() }
                 else { shared::dungeon::conteudo(d.obj_target)
-                    .map_or_else(|| "a dungeon indicada".to_string(), |c| c.nome.to_string()) };
+                    .map_or_else(|| "the dungeon named".to_string(), |c| c.nome.to_string()) };
             format!("Menu › Dungeons: conclua {} vez(es) {onde}", d.obj_count)
         }
-        obj::TREASURE => "Mapa: encontre e abra o baú indicado".into(),
-        obj::PVP_KILL => format!("Combate PvP: derrote {} rival(is)", d.obj_count),
+        obj::TREASURE => "Map: find and open the chest named".into(),
+        obj::PVP_KILL => format!("PvP combat: defeat {} rival(s)", d.obj_count),
         obj::TUTORIAL => shared::quests::tutorial::instrucao(d.obj_target).to_string(),
-        obj::NIVEL => format!("Alcance o nível {}", d.obj_count),
-        obj::RAID => "Conclua a raid indicada".into(),
-        obj::ENCHANT => "Encante o equipamento indicado".into(),
-        _ => "Siga a descrição da missão".into(),
+        obj::NIVEL => format!("Reach level {}", d.obj_count),
+        obj::RAID => "Complete the raid named".into(),
+        obj::ENCHANT => "Enchant the gear named".into(),
+        _ => "Follow the quest description".into(),
     }
 }
 
@@ -653,7 +653,7 @@ fn quebrar_linhas(texto: &str, largura: f32) -> Vec<String> {
 }
 
 fn detalhes_manuais(d: &QuestDef, largura: f32) -> Vec<String> {
-    let mut linhas = quebrar_linhas(&format!("O que fazer: {}.", caminho_manual(d)), largura);
+    let mut linhas = quebrar_linhas(&format!("What to do: {}.", caminho_manual(d)), largura);
     linhas.extend(quebrar_linhas(d.desc, largura));
     linhas
 }
@@ -701,7 +701,7 @@ pub(crate) fn rodape_da_fila(p: Rect, f: f32, _tem_marca: bool) -> Option<Rect> 
     // SEMPRE presente, e isso mudou com o "fazer todas".
     //
     // Antes ele só aparecia com alguma marca, porque só servia pra "Fazer as
-    // n" e "Limpar". Agora ele carrega o "Marcar todas", que é justamente o
+    // n" e "Clear". Agora ele carrega o "Select all", que é justamente o
     // botão de quem NÃO marcou nada — se o rodapé só nascesse com marca, o
     // atalho pra marcar estaria escondido atrás do trabalho que ele evita.
     Some(Rect::new(
@@ -789,7 +789,7 @@ pub struct MenuMissoes {
     /// Um evento e nao um espelho do conjunto: espelhar apagaria as fixadas
     /// na mao toda vez que alguem marcasse qualquer coisa.
     marca_mudou: Option<(u16, bool)>,
-    /// Marcas soltas de uma vez pelo "Limpar". Uma so' variavel de evento nao
+    /// Marcas soltas de uma vez pelo "Clear". Uma so' variavel de evento nao
     /// daria conta de dez baixas no mesmo quadro.
     desfixar: Vec<u16>,
 }
@@ -832,7 +832,7 @@ impl MenuMissoes {
         true
     }
 
-    /// As marcas soltas em bloco pelo "Limpar". Consome.
+    /// As marcas soltas em bloco pelo "Clear". Consome.
     pub fn desfixar(&mut self) -> Vec<u16> {
         std::mem::take(&mut self.desfixar)
     }
@@ -900,7 +900,7 @@ impl MenuMissoes {
             6.0,
             Color::new(0.055, 0.10, 0.16, 0.92),
         );
-        estilo::texto(p.x + 18.0, p.y + 32.0 * f, "MISSÕES", 22, estilo::OURO);
+        estilo::texto(p.x + 18.0, p.y + 32.0 * f, "QUESTS", 22, estilo::OURO);
         if crate::ui::botao(
             Rect::new(p.x + p.w - 44.0 * f, p.y + 10.0, 32.0 * f, 28.0 * f),
             "x",
@@ -970,7 +970,7 @@ impl MenuMissoes {
         }
 
         // Mapa: mantém os filtros de estado e tipo independentes.
-        estilo::texto(p.x + 18.0, ya + 4.0 * f, "MAPAS", 14, estilo::SUAVE);
+        estilo::texto(p.x + 18.0, ya + 4.0 * f, "MAPS", 14, estilo::SUAVE);
         let passo_mapa = ((p.h - 90.0 * f) / MAPAS.len() as f32).clamp(27.0 * f, 43.0 * f);
         for (k, mapa) in MAPAS.iter().enumerate() {
             let r = Rect::new(p.x + 12.0, ya + 22.0 * f + k as f32 * passo_mapa,
@@ -984,7 +984,7 @@ impl MenuMissoes {
                 self.expandida = None;
                 self.rolagem.zera();
             }
-            let nome = mapa.map_or("Todos".to_string(), nome_da_zona);
+            let nome = mapa.map_or("All".to_string(), nome_da_zona);
             estilo::texto_ajustado(&nome, r.x + 8.0, r.y + r.h * 0.68, r.w - 16.0, 15, estilo::TEXTO);
         }
 
@@ -1060,13 +1060,13 @@ impl MenuMissoes {
             // dizer só "nada em andamento" mandaria o jogador procurar o que
             // ele mesmo escondeu um botão acima.
             let vazio: String = if self.tipo != Tipo::Todos {
-                format!("Nada de {} nesta aba.", self.tipo.nome().to_lowercase())
+                format!("No {} in this tab.", self.tipo.nome().to_lowercase())
             } else {
                 match aba {
-                    Aba::EmAndamento => "Nada em andamento. Veja as Disponíveis.",
-                    Aba::Disponiveis => "Nada pra pegar agora.",
-                    Aba::Bloqueadas => "Nenhuma linha travada.",
-                    Aba::Concluidas => "Nenhuma linha concluída ainda.",
+                    Aba::EmAndamento => "Nothing in progress. Check Available.",
+                    Aba::Disponiveis => "Nothing to take right now.",
+                    Aba::Bloqueadas => "No locked line.",
+                    Aba::Concluidas => "No line completed yet.",
                 }
                 .to_string()
             };
@@ -1101,8 +1101,8 @@ impl MenuMissoes {
                         .map_or(String::new(), |i| historia::nome_do_capitulo(i).to_string()),
                     d.title
                 ),
-                Some(d) => format!("Passo {} de {} · {}", r.feitos + 1, r.total, d.title),
-                None => format!("{} de {} passos", r.total, r.total),
+                Some(d) => format!("Step {} of {} · {}", r.feitos + 1, r.total, d.title),
+                None => format!("{} of {} steps", r.total, r.total),
             };
             estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
             if let Some(d) = r.atual {
@@ -1119,7 +1119,7 @@ impl MenuMissoes {
                 let premio = recompensa_de(d, c.nomes);
                 if !premio.is_empty() {
                     estilo::texto_ajustado(
-                        &format!("Dá: {premio}"),
+                        &format!("Gives: {premio}"),
                         tx,
                         card.y + 83.0 * f,
                         largura,
@@ -1169,19 +1169,19 @@ impl MenuMissoes {
                 marca_pedida = Some(id);
             }
             if let (true, Some(d), None) = (clicavel, r.atual, marcou) {
-                // "Pegar" quando ela ainda não foi aceita: o botão diz o que
+                // "Take" quando ela ainda não foi aceita: o botão diz o que
                 // vai acontecer, e o que acontece agora é aceitar na hora.
                 let rotulo = if d.id == 905 {
-                    "Fazer"
+                    "Do"
                 } else if matches!(r.estado, Estado::Disponivel) {
-                    "Pegar"
+                    "Take"
                 } else if matches!(&r.estado, Estado::Bloqueada(m) if nivel_bloqueado(m).is_some())
                     || d.obj_kind == shared::quests::objective_kind::NIVEL && !auto {
-                    "Como subir"
+                    "How to level"
                 } else if !auto && tem_atalho_manual(d) {
-                    "Abrir"
+                    "Open"
                 } else if !auto {
-                    "Detalhes"
+                    "Details"
                 } else {
                     "Ir"
                 };
@@ -1243,7 +1243,7 @@ impl MenuMissoes {
         self.rolagem.desenha(area, total);
         if let Some(id) = marca_pedida {
             if !self.alterna_marca(id) {
-                saida = Some(Clique::Aviso(format!("A fila já tem {FILA_MAX} missões.")));
+                saida = Some(Clique::Aviso(format!("The queue already has {FILA_MAX} quests.")));
             }
         }
         if let Some(nome) = alternar {
@@ -1277,7 +1277,7 @@ impl MenuMissoes {
             // Para no teto da fila em vez de recusar tudo: encher dez de doze
             // é o que a pessoa quis, e recusar por causa das duas que sobram
             // seria obedecer ao número em vez de à intenção.
-            if crate::ui::botao(todas_b, "Marcar todas", !marcaveis.is_empty()) {
+            if crate::ui::botao(todas_b, "Select all", !marcaveis.is_empty()) {
                 let cabem = FILA_MAX.saturating_sub(self.marcadas.len());
                 let novas: Vec<u16> = marcaveis
                     .iter()
@@ -1290,10 +1290,10 @@ impl MenuMissoes {
                     self.marca_mudou = Some((id, true));
                 }
             }
-            if crate::ui::botao(b, &format!("Fazer as {n}"), n > 0) {
+            if crate::ui::botao(b, &format!("Do all {n}"), n > 0) {
                 saida = Some(Clique::Fila(std::mem::take(&mut self.marcadas)));
             }
-            if crate::ui::botao(limpar, "Limpar", n > 0) {
+            if crate::ui::botao(limpar, "Clear", n > 0) {
                 // Desfixa uma por uma, pra quem escuta receber cada baixa: o
                 // `Limpar` tem que soltar as do rastreador junto, senão a
                 // lista da esquerda fica com missões que ninguém mais vai
@@ -1482,7 +1482,7 @@ mod tests {
         let dungeon = quest_by_id(531).unwrap();
         assert!(caminho_manual(craft).contains("Menu › Craft: crie 2"));
         assert!(caminho_manual(forja).contains("Menu › Forja: tente refinar 3"));
-        assert!(caminho_manual(dungeon).contains("Porão do Naufrágio"));
+        assert!(caminho_manual(dungeon).contains("Shipwreck Cellar"));
         let linha = frase(craft, &Estado::EmAndamento { feito: 1, total: 2 });
         assert!(linha.contains("1/2") && linha.contains("Craft"), "{linha}");
     }
@@ -1604,17 +1604,17 @@ mod tests {
             .map(|l| l.nome.as_str())
             .collect();
         for n in [
-            "Os primeiros dias",
-            "Os chefes do Bosque",
-            "Bestiário do Bosque",
-            "A oficina",
-            "Mãos na terra",
-            "Porões e adegas",
-            "Gente da vila",
+            "The first days",
+            "The bosses of the Grove",
+            "Bestiary of the Grove",
+            "Workshop",
+            "Hands in the soil",
+            "Cellars and vaults",
+            "Village folk",
         ] {
             assert!(nomes.contains(&n), "{n} fora do menu: {nomes:?}");
         }
-        let chefes = ls.iter().find(|l| l.nome == "Os chefes do Bosque").unwrap();
+        let chefes = ls.iter().find(|l| l.nome == "The bosses of the Grove").unwrap();
         assert_eq!(
             chefes.passos.iter().map(|d| d.id).collect::<Vec<_>>(),
             vec![511, 512, 513, 514, 515]
@@ -1632,7 +1632,7 @@ mod tests {
         assert_eq!(r.atual.map(|d| d.id), Some(512));
         assert_eq!((r.feitos, r.total), (1, 5));
         assert_eq!(aba_de(&r), Aba::Disponiveis);
-        assert!(frase(r.atual.unwrap(), &r.estado).contains("Guia do Mirante"));
+        assert!(frase(r.atual.unwrap(), &r.estado).contains("Lookout Guide"));
 
         // Em andamento vence disponivel; tudo feito vai pra Concluidas.
         let ativa = QuestNet::from_def(quest_by_id(512).unwrap(), quest_status::ACTIVE, 0);
@@ -1654,7 +1654,7 @@ mod tests {
         assert_eq!(aba_de(&resumo(chefes, &c4)), Aba::Bloqueadas);
     }
 
-    /// Diaria de sistema que ainda nao existe: cadeado com "Em breve"; reset
+    /// Diaria de sistema que ainda nao existe: cadeado com "Coming soon"; reset
     /// conta ate' a meia-noite UTC.
     #[test]
     fn diaria_em_breve_bloqueia_e_o_reset_conta_ate_a_meia_noite() {
@@ -1662,7 +1662,7 @@ mod tests {
         let c = ctx(&[], &vazio, 50, Some("ilha_inicial"));
         assert_eq!(
             estado(quest_by_id(607).unwrap(), &c),
-            Estado::Bloqueada(vec!["Em breve".into()])
+            Estado::Bloqueada(vec!["Coming soon".into()])
         );
         assert_eq!(estado(quest_by_id(601).unwrap(), &c), Estado::Disponivel);
         assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "4h 07min");
@@ -1720,7 +1720,7 @@ mod testes_da_trava {
 
     /// O rodapé existe mesmo sem marca nenhuma.
     ///
-    /// É onde mora o "Marcar todas", que é justamente o botão de quem não
+    /// É onde mora o "Select all", que é justamente o botão de quem não
     /// marcou nada: escondê-lo atrás de uma marca seria trancar o atalho
     /// atrás do trabalho que ele evita.
     #[test]
@@ -1730,11 +1730,11 @@ mod testes_da_trava {
         assert!(rodape_da_fila(p, 1.0, true).is_some());
     }
 
-    /// Cada linha cai num tipo só, e "Todas" aceita qualquer uma.
+    /// Cada linha cai num tipo só, e "All" aceita qualquer uma.
     #[test]
     fn o_tipo_separa_as_linhas() {
         let hist = Linha {
-            nome: "História".into(),
+            nome: "Story".into(),
             // Qualquer passo serve: `tipo_de` olha a bandeira `historia`
             // antes da fonte, e é isso que o teste quer travar.
             passos: vec![todas().into_iter().next().unwrap()],
@@ -1745,7 +1745,7 @@ mod testes_da_trava {
         assert!(cabe_no_tipo(&hist, Tipo::Historia));
         assert!(!cabe_no_tipo(&hist, Tipo::Secundarias));
 
-        // Uma cadeia de NPC é "Moradores"; uma de quadro é "Secundárias".
+        // Uma cadeia de NPC é "Residents"; uma de quadro é "Side quests".
         let de_npc = todas().into_iter().find(|d| {
             d.source == shared::quests::quest_source::NPC && !historia::e_da_historia(d.id)
         });
@@ -1900,7 +1900,7 @@ mod testes_da_trava {
                 for tem_marca in [false, true] {
                     let rod = rodape_da_fila(p, f, tem_marca);
                     // O rodapé passou a existir SEMPRE (23/09/2026): ele
-                    // carrega o "Marcar todas", que é o botão de quem ainda
+                    // carrega o "Select all", que é o botão de quem ainda
                     // não marcou nada. O que este teste guarda continua
                     // valendo, e é o que importa — ele não pode cobrir a
                     // lista.
@@ -1977,7 +1977,7 @@ mod testes_da_trava {
         // E a frase diz o que fazer, não só o quanto falta.
         let f = frase(d, &andando);
         assert!(f.contains("17/20"), "{f}");
-        assert!(f.contains("Ilha Mágica"), "{f}");
+        assert!(f.contains("Magic Island"), "{f}");
         assert!(f.contains("missões secundárias"), "{f}");
 
         // Uma missão comum em andamento continua indo pela auto missão.

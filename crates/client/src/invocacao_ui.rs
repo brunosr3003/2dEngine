@@ -234,11 +234,11 @@ impl InvocacaoUi {
                 184.0 * k,
                 Color::new(1.0, 0.94, 0.72, abre * 0.82),
             );
-            estilo::texto_centro_forte(c.x, r.y + 38.0 * k, "ABRINDO PERGAMINHO", 22, estilo::OURO);
+            estilo::texto_centro_forte(c.x, r.y + 38.0 * k, "OPENING THE SCROLL", 22, estilo::OURO);
             estilo::texto_centro(
                 c.x,
                 r.y + r.h - 24.0 * k,
-                "toque para revelar",
+                "tap to reveal",
                 13,
                 estilo::SUAVE,
             );
@@ -265,9 +265,9 @@ impl InvocacaoUi {
                             nomes
                                 .get(item_id)
                                 .cloned()
-                                .unwrap_or_else(|| "Chave".into()),
+                                .unwrap_or_else(|| "Key".into()),
                             shared::forja::Grau::de_u8(*cor)
-                                .map_or("Comum", |g| g.nome())
+                                .map_or("Common", |g| g.nome())
                                 .to_string(),
                             // The color IS the rarity. It used to be hardcoded blue
                             // (80,170,255) for every key: the player opened ten
@@ -278,7 +278,7 @@ impl InvocacaoUi {
                         ),
                         PremioInvocacao::Montaria { item_id } => (
                             shared::montarias::de_item(*item_id)
-                                .map_or("Montaria".into(), |(e, _)| e.nome.to_string()),
+                                .map_or("Mount".into(), |(e, _)| e.nome.to_string()),
                             shared::montarias::de_item(*item_id).map_or(String::new(), |(_, g)| {
                                 format!("{} · montaria", shared::pets::nome_do_grau(g))
                             }),
@@ -292,9 +292,9 @@ impl InvocacaoUi {
                             skills
                                 .iter()
                                 .find(|s| s.id == *skill_id)
-                                .map_or("Tomo", |s| s.nome.as_str())
+                                .map_or("Tome", |s| s.nome.as_str())
                                 .to_string(),
-                            format!("{} · agora x{quantidade}", grau.nome()),
+                            format!("{} · now x{quantidade}", grau.nome()),
                             match grau {
                                 shared::skills::GrauTomo::Verde => estilo::VERDE,
                                 shared::skills::GrauTomo::Roxo => Color::new(0.72, 0.42, 1.0, 1.0),
@@ -336,7 +336,7 @@ impl InvocacaoUi {
                 estilo::texto_centro_forte(
                     c.x,
                     r.y + 42.0 * k,
-                    "11 PRÊMIOS · BÔNUS 10+1",
+                    "11 PRIZES · 10+1 BONUS",
                     24,
                     estilo::OURO,
                 );
@@ -344,7 +344,7 @@ impl InvocacaoUi {
                 estilo::texto_centro_forte(
                     c.x,
                     r.y + 42.0 * k,
-                    "INVOCAÇÃO CONCLUÍDA",
+                    "SUMMONING COMPLETE",
                     24,
                     estilo::OURO,
                 );
@@ -355,14 +355,14 @@ impl InvocacaoUi {
                         let nome = nomes
                             .get(&item_id)
                             .cloned()
-                            .unwrap_or_else(|| "Chave de Craft".into());
+                            .unwrap_or_else(|| "Crafting Key".into());
                         estilo::texto_centro_forte(c.x, c.y + 105.0 * k, &nome, 23, estilo::TEXTO);
                         estilo::texto_centro(
                             c.x,
                             c.y + 132.0 * k,
                             &format!(
-                                "Grau {}",
-                                shared::forja::Grau::de_u8(cor).map_or("Comum", |g| g.nome())
+                                "Grade {}",
+                                shared::forja::Grau::de_u8(cor).map_or("Common", |g| g.nome())
                             ),
                             15,
                             estilo::SUAVE,
@@ -438,19 +438,19 @@ impl InvocacaoUi {
                         let nome = skills
                             .iter()
                             .find(|s| s.id == skill_id)
-                            .map_or("Habilidade", |s| s.nome.as_str());
+                            .map_or("Skill", |s| s.nome.as_str());
                         brilho_livro(c, 105.0 * k, cor, t);
                         estilo::texto_centro_forte(
                             c.x,
                             c.y + 105.0 * k,
-                            &format!("Tomo {}", grau.nome()),
+                            &format!("Tome {}", grau.nome()),
                             24,
                             cor,
                         );
                         estilo::texto_centro(
                             c.x,
                             c.y + 133.0 * k,
-                            &format!("{nome} · você possui x{quantidade}"),
+                            &format!("{nome} · you own x{quantidade}"),
                             15,
                             estilo::TEXTO,
                         );
@@ -461,7 +461,7 @@ impl InvocacaoUi {
             let bt = Rect::new(c.x - 115.0 * k, r.y + r.h - 52.0 * k, 230.0 * k, 39.0 * k);
             estilo::botao(
                 bt,
-                if pronto { "GUARDAR" } else { "REVELANDO…" },
+                if pronto { "STORE" } else { "REVEALING…" },
                 estilo::estado_de(bt, !pronto, false),
                 pronto,
             );
@@ -528,7 +528,7 @@ pub async fn previa(vox: &VoxCache) {
     crate::render3d::define_alvo(Some(rt.clone()));
     let solido = crate::render3d::material_solido();
     let nomes =
-        std::collections::HashMap::from([(shared::item_id::HORN + 2, "Chifre Azul".to_string())]);
+        std::collections::HashMap::from([(shared::item_id::HORN + 2, "Blue Horn".to_string())]);
     let lote: Vec<_> = (0..11)
         .map(|i| PremioInvocacao::Tomo {
             skill_id: i % 12 + 1,

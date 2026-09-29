@@ -23,9 +23,9 @@ pub struct ConfigCombate {
 /// O nome de cada categoria, na tela.
 pub fn nome_da_categoria(v: u8) -> &'static str {
     match v {
-        auto_alvo::RANGED_EM_MIM => "Quem me acerta de longe",
-        auto_alvo::MAIS_PERTO => "O mais perto",
-        auto_alvo::JOGADOR => "Jogador",
+        auto_alvo::RANGED_EM_MIM => "Whoever hits me from afar",
+        auto_alvo::MAIS_PERTO => "The nearest",
+        auto_alvo::JOGADOR => "Player",
         _ => "?",
     }
 }
@@ -43,9 +43,9 @@ pub fn dica_da_categoria(v: u8) -> &'static str {
 
 pub fn nome_do_pvp(v: u8) -> &'static str {
     match v {
-        auto_pvp::NUNCA => "Nunca atacar jogador",
-        auto_pvp::REVIDAR => "Só revidar em quem me bateu",
-        auto_pvp::QUALQUER => "Atacar qualquer jogador",
+        auto_pvp::NUNCA => "Never attack players",
+        auto_pvp::REVIDAR => "Only strike back at whoever hit me",
+        auto_pvp::QUALQUER => "Attack any player",
         _ => "?",
     }
 }
@@ -95,7 +95,7 @@ impl ConfigCombate {
         let (sw, sh) = (screen_width(), screen_height());
         let r = Rect::new(sw * 0.5 - 210.0, sh * 0.5 - 200.0, 420.0, 400.0);
         estilo::painel(r);
-        estilo::texto(r.x + 18.0, r.y + 32.0, "Combate", 20, estilo::OURO);
+        estilo::texto(r.x + 18.0, r.y + 32.0, "Combat", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
         estilo::texto_centro(
             fechar.center().x,
@@ -122,7 +122,7 @@ impl ConfigCombate {
         estilo::texto(
             r.x + 18.0,
             r.y + 88.0,
-            "Depois dela, nesta ordem",
+            "After that, in this order",
             14,
             estilo::SUAVE,
         );
@@ -193,7 +193,7 @@ impl ConfigCombate {
         // PVP, separado: "quem eu prefiro atacar" e "eu aceito atacar gente"
         // são perguntas diferentes, e a segunda tem consequência.
         let y0 = r.y + 102.0 + 3.0 * 42.0 + 12.0;
-        estilo::texto(r.x + 18.0, y0, "Contra jogador", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0, y0, "Against players", 14, estilo::SUAVE);
         for (k, v) in [auto_pvp::NUNCA, auto_pvp::REVIDAR, auto_pvp::QUALQUER]
             .into_iter()
             .enumerate()

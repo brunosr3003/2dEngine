@@ -141,11 +141,11 @@ pub fn desenha(
         }
         // Nome e faixa de nivel.
         let titulo = if aqui {
-            format!("{} · você está aqui", d.nome)
+            format!("{} · you are here", d.nome)
         } else if no_ar {
             format!("{} · Nv {}–{}", d.nome, d.nivel.0, d.nivel.1)
         } else {
-            format!("{} · fora do ar", d.nome)
+            format!("{} · offline", d.nome)
         };
         estilo::texto_centro(
             c.x,

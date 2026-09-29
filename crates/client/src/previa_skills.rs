@@ -127,7 +127,7 @@ pub async fn abrir(vox: &VoxCache) {
             Color::new(0.16, 0.19, 0.20, 1.0),
         );
         gl_use_material(&solido);
-        solido.set_uniform("Recorte", Vec3::ZERO);
+        solido.set_uniform("Crop", Vec3::ZERO);
         render3d::draw_entities(&mut mundo, vox, None, &vista);
         gl_use_default_material();
         let de = Vec3::ZERO;
@@ -167,7 +167,7 @@ pub async fn abrir(vox: &VoxCache) {
                 &crate::hud::Info {
                     realm: "Tempest".into(),
                     canal: "1".into(),
-                    zona: "Vale dos Ventos".into(),
+                    zona: "Valley of Winds".into(),
                     jogadores: 12,
                     capacidade: 100,
                 },
@@ -184,7 +184,7 @@ pub async fn abrir(vox: &VoxCache) {
                 &[
                     "Guardião de Treino sofreu 245 de dano.",
                     "Julgamento está pronto.",
-                    "Auto coleta: atacado, revidando.",
+                    "Auto gather: attacked, striking back.",
                 ],
             );
             crate::hud::draw_ficha(
@@ -199,7 +199,7 @@ pub async fn abrir(vox: &VoxCache) {
                 100,
                 Some(12750),
             );
-            crate::hud::draw_alvo(&z, "Guardião de Treino", 20, 38450, 50000, true);
+            crate::hud::draw_alvo(&z, "Training Guardian", 20, 38450, 50000, true);
             crate::hud::draw_exp(&z, &ficha, 20);
             if !automatico {
                 let _ = habilidades.pedido(crate::habilidades::Contexto {

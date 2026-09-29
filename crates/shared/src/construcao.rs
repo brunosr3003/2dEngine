@@ -324,21 +324,21 @@ impl Papel {
     pub fn nome(self) -> &'static str {
         use Papel::*;
         match self {
-            Casa => "Morador",
-            Ferreiro => "Ferreiro",
-            Armas | Armaduras => "Armeiro",
+            Casa => "Resident",
+            Ferreiro => "Blacksmith",
+            Armas | Armaduras => "Armourer",
             Itens => "Mercador",
-            Identificador => "Identificador",
-            Treinador => "Treinador",
-            Cartografo => "Cartografo",
-            Taberna => "Taberneiro",
-            Deposito => "Banqueiro",
-            Alfaiate => "Alfaiate",
-            Estaleiro => "Capitao do Porto",
+            Identificador => "Appraiser",
+            Treinador => "Trainer",
+            Cartografo => "Cartographer",
+            Taberna => "Innkeeper",
+            Deposito => "Banker",
+            Alfaiate => "Tailor",
+            Estaleiro => "Harbour Captain",
             Mercador => "Mercador",
-            Naufrago => "Naufrago",
-            Alquimista => "Alquimista",
-            Missoes => "Mestre de Missoes",
+            Naufrago => "Castaway",
+            Alquimista => "Alchemist",
+            Missoes => "Quest Master",
         }
     }
 }

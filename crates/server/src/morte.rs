@@ -101,7 +101,7 @@ pub fn recuperar(
     } else {
         let c = custo_gold(xp, nivel);
         if gold < c {
-            return Err(format!("Precisa de {c} de ouro."));
+            return Err(format!("You need {c} gold."));
         }
         c
     };

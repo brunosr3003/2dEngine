@@ -92,14 +92,14 @@ impl Email {
         let t = |s: &str| tr_em(idioma, s).into_owned();
         self.manda(
             para,
-            &t("Confirme sua conta no Tempest"),
+            &t("Confirm your Tempest account"),
             &pagina(
-                &format!("{} {}!", t("Olá,"), escapa(usuario)),
+                &format!("{} {}!", t("Hello,"), escapa(usuario)),
                 &t("Falta confirmar seu e-mail para a conta ficar completa."),
-                &t("Confirmar minha conta"),
+                &t("Confirm my account"),
                 &link,
                 &t("O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar."),
-                &t("Se o botão não abrir:"),
+                &t("If the button doesn't work:"),
             ),
         )
         .await
@@ -116,15 +116,15 @@ impl Email {
         let t = |s: &str| tr_em(idioma, s).into_owned();
         self.manda(
             para,
-            &t("Redefinir a senha do Tempest"),
+            &t("Reset your Tempest password"),
             &pagina(
-                &format!("{} {}!", t("Olá,"), escapa(usuario)),
+                &format!("{} {}!", t("Hello,"), escapa(usuario)),
                 &t("Alguém pediu para redefinir a senha desta conta."),
-                &t("Escolher uma senha nova"),
+                &t("Choose a new password"),
                 &link,
                 &t("O link vale por 1 hora e só pode ser usado uma vez. Se não foi você, \
                  pode ignorar — sua senha continua a mesma."),
-                &t("Se o botão não abrir:"),
+                &t("If the button doesn't work:"),
             ),
         )
         .await
@@ -181,17 +181,17 @@ mod testes {
     #[test]
     fn o_corpo_do_email_acompanha_o_idioma() {
         let en = pagina(
-            &shared::idioma::tr_em(Idioma::En, "Olá,"),
+            &shared::idioma::tr_em(Idioma::En, "Hello,"),
             &shared::idioma::tr_em(Idioma::En, "Falta confirmar seu e-mail para a conta ficar completa."),
-            &shared::idioma::tr_em(Idioma::En, "Confirmar minha conta"),
+            &shared::idioma::tr_em(Idioma::En, "Confirm my account"),
             "https://x/y",
             &shared::idioma::tr_em(Idioma::En, "O link vale por 48 horas. Se não foi você que criou a conta, é só ignorar."),
-            &shared::idioma::tr_em(Idioma::En, "Se o botão não abrir:"),
+            &shared::idioma::tr_em(Idioma::En, "If the button doesn't work:"),
         );
         assert!(en.contains("Hello,"), "saudação não traduziu: {en}");
         assert!(en.contains("Confirm my account"), "botão não traduziu");
         assert!(en.contains("48 hours"), "rodapé não traduziu");
-        assert!(!en.contains("Confirmar"), "sobrou português: {en}");
+        assert!(!en.contains("Confirm"), "sobrou português: {en}");
     }
 
     /// O link aparece DUAS vezes: no botão e em texto.
@@ -206,7 +206,7 @@ mod testes {
             "Clique",
             "https://x/y?token=abc",
             "rodapé",
-            "Se o botão não abrir:",
+            "If the button doesn't work:",
         );
         assert_eq!(h.matches("https://x/y?token=abc").count(), 2);
         assert!(h.contains("Se o botão não abrir"));

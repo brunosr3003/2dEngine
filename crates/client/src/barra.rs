@@ -84,12 +84,12 @@ impl Categoria {
     /// How AUTO fires, for the configurator's text.
     pub fn regra(self) -> &'static str {
         match self {
-            Categoria::Vida => "vida abaixo do limiar",
-            Categoria::Mana => "mana abaixo do limiar",
-            Categoria::Vigor => "vigor abaixo do limiar",
-            Categoria::Experiencia => "sem bônus de XP ativo",
-            Categoria::Fortuna => "sem Fortuna ativa",
-            Categoria::Sorte => "sem Sorte ativa",
+            Categoria::Vida => "health below the threshold",
+            Categoria::Mana => "mana below the threshold",
+            Categoria::Vigor => "stamina below the threshold",
+            Categoria::Experiencia => "no XP bonus active",
+            Categoria::Fortuna => "no Fortune active",
+            Categoria::Sorte => "no Luck active",
         }
     }
 }

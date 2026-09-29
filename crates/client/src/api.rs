@@ -98,12 +98,12 @@ fn get(caminho: &str) -> Result<(u16, String), String> {
 
     let (cabecalho, corpo) = resposta
         .split_once("\r\n\r\n")
-        .ok_or("resposta sem corpo")?;
+        .ok_or("response had no body")?;
     let codigo = cabecalho
         .split_whitespace()
         .nth(1)
         .and_then(|c| c.parse().ok())
-        .ok_or("resposta sem codigo HTTP")?;
+        .ok_or("response had no HTTP status")?;
     // `Connection: close` evita chunked encoding, entao o corpo vem inteiro.
     Ok((codigo, corpo.to_string()))
 }
@@ -133,12 +133,12 @@ fn post(caminho: &str, corpo_json: &str) -> Result<(u16, String), String> {
         .map_err(|e| e.to_string())?;
     let (cabecalho, corpo) = resposta
         .split_once("\r\n\r\n")
-        .ok_or("resposta sem corpo")?;
+        .ok_or("response had no body")?;
     let codigo = cabecalho
         .split_whitespace()
         .nth(1)
         .and_then(|c| c.parse().ok())
-        .ok_or("resposta sem codigo HTTP")?;
+        .ok_or("response had no HTTP status")?;
     Ok((codigo, corpo.to_string()))
 }
 
@@ -179,13 +179,13 @@ pub fn interpreta_cadastro(codigo: u16, corpo: &str) -> RespostaCadastro {
     match codigo {
         201 => RespostaCadastro::Criada,
         409 => RespostaCadastro::JaExiste(
-            campo_json(corpo, "error").unwrap_or_else(|| "já existe".into()),
+            campo_json(corpo, "error").unwrap_or_else(|| "already exists".into()),
         ),
         400 => RespostaCadastro::Recusado(
-            campo_json(corpo, "error").unwrap_or_else(|| "dados inválidos".into()),
+            campo_json(corpo, "error").unwrap_or_else(|| "invalid data".into()),
         ),
         c => RespostaCadastro::Erro(
-            campo_json(corpo, "error").unwrap_or_else(|| format!("erro do servidor ({c})")),
+            campo_json(corpo, "error").unwrap_or_else(|| format!("server error ({c})")),
         ),
     }
 }
@@ -213,7 +213,7 @@ pub fn esqueci_a_senha(email: &str) -> Receiver<Result<(), String>> {
     let corpo = format!(r#"{{"email":"{}"}}"#, escapa(email));
     em_thread(move || match post("/api/auth/esqueci", &corpo) {
         Ok((c, _)) if (200..300).contains(&c) => Ok(()),
-        Ok((c, corpo)) => Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("erro ({c})"))),
+        Ok((c, corpo)) => Err(campo_json(&corpo, "error").unwrap_or_else(|| format!("error ({c})"))),
         Err(e) => Err(e),
     })
 }
@@ -256,12 +256,12 @@ pub fn interpreta_poll(codigo: u16, corpo: &str) -> RespostaPoll {
         Some("pendente") => RespostaPoll::Pendente,
         Some("ok") => match (campo_json(corpo, "username"), campo_json(corpo, "token")) {
             (Some(usuario), Some(token)) => RespostaPoll::Pronto { usuario, token },
-            _ => RespostaPoll::Erro("resposta incompleta do servidor".into()),
+            _ => RespostaPoll::Erro("incomplete response from the server".into()),
         },
         Some("erro") => {
             RespostaPoll::Erro(campo_json(corpo, "error").unwrap_or_else(|| "erro".into()))
         }
-        _ => RespostaPoll::Erro(format!("resposta inesperada ({codigo})")),
+        _ => RespostaPoll::Erro(format!("unexpected response ({codigo})")),
     }
 }
 
@@ -281,7 +281,7 @@ pub fn google_start() -> Receiver<Result<(String, String), String>> {
         match (campo_json(&corpo, "state"), campo_json(&corpo, "url")) {
             (Some(state), Some(url)) if codigo == 200 => Ok((state, url)),
             _ => Err(campo_json(&corpo, "error")
-                .unwrap_or_else(|| format!("servidor respondeu {codigo}"))),
+                .unwrap_or_else(|| format!("server replied {codigo}"))),
         }
     })
 }

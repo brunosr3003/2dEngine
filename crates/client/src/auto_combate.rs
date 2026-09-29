@@ -370,7 +370,7 @@ impl AutoCombate {
         estilo::texto_centro_forte(
             c.x,
             c.y + raio * 0.62,
-            if self.ativo() { "AUTO" } else { "COMBATE" },
+            if self.ativo() { "AUTO" } else { "COMBAT" },
             10,
             cor,
         );
@@ -380,9 +380,9 @@ impl AutoCombate {
     /// The status strip's text, with AUTO on.
     pub fn faixa(&self, tem_alvo: bool) -> Option<&'static str> {
         self.ativo().then_some(if tem_alvo {
-            "AUTO COMBATE · ATACANDO"
+            "AUTO COMBAT · ATTACKING"
         } else {
-            "AUTO COMBATE · BUSCANDO"
+            "AUTO COMBAT · SEARCHING"
         })
     }
 }

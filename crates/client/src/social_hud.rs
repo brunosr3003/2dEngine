@@ -34,7 +34,7 @@ pub enum Acao {
 /// baixo. Dentro da barra cabe em 26 e ainda se lê de canto de olho.
 pub const LINHA_GRUPO: f32 = 26.0;
 
-/// O GRUPO DENTRO DA CAIXA DO RASTREADOR (a aba "Grupo").
+/// O GRUPO DENTRO DA CAIXA DO RASTREADOR (a aba "Party").
 ///
 /// O painel solto ao lado das missões era o que o dono chamou de terrível: mais
 /// uma caixa flutuando num canto já cheio. Agora o grupo é uma ABA da caixa das
@@ -54,12 +54,12 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
     let rodape = Rect::new(r.x, r.y + r.h - 28.0 * s, r.w, 28.0 * s);
     if membros.is_empty() {
         // Sem grupo a aba não fica vazia: ela vira o convite, e o corpo inteiro
-        // é o clique. O texto é o MESMO do menu do alvo ("Convidar para grupo")
+        // é o clique. O texto é o MESMO do menu do alvo ("Invite to party")
         // de propósito: é o mesmo ato, e verbete repetido vira duas traduções.
         e::texto(
             r.x + 10.0 * s,
             r.y + 22.0 * s,
-            "Convidar para grupo",
+            "Invite to party",
             (14.0 * s) as u16,
             e::OURO,
         );
@@ -120,7 +120,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             }
             // Fora de alcance não tem vida pra mostrar: a barra fica vazia e o
             // texto diz por quê, em vez de mentir um HP velho.
-            None => "Fora de alcance".to_string(),
+            None => "Out of range".to_string(),
         };
         let largura = e::medir(&direita, tam);
         e::texto_ajustado(
@@ -142,7 +142,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
     e::texto(
         rodape.x + 10.0 * s,
         rodape.y + 19.0 * s,
-        "Gerenciar grupo ›",
+        "Manage party ›",
         (12.0 * s) as u16,
         e::OURO,
     );
@@ -195,9 +195,9 @@ impl SocialHud {
             z.alvo.x + z.alvo.w - 108.0 * z.s,
             z.alvo.y + 16.0 * z.s,
             if self.aberto.is_some() {
-                "Ações −"
+                "Actions −"
             } else {
-                "Ações +"
+                "Actions +"
             },
             (11.0 * z.s) as u16,
             e::OURO,
@@ -216,16 +216,16 @@ impl SocialHud {
         let r = menu_rect(z);
         e::painel(r);
         for (i, (titulo, acao)) in [
-            ("Adicionar amigo", Acao::Amigo),
+            ("Add friend", Acao::Amigo),
             (
                 if seguindo {
-                    "Parar de seguir"
+                    "Stop following"
                 } else {
-                    "Seguir jogador"
+                    "Follow player"
                 },
                 Acao::Seguir,
             ),
-            ("Convidar para grupo", Acao::Grupo),
+            ("Invite to party", Acao::Grupo),
         ]
         .into_iter()
         .enumerate()
@@ -270,7 +270,7 @@ impl SocialHud {
             r.x + 10.0 * s,
             r.y + 24.0 * s,
             &format!(
-                "GRUPO · {}  {}",
+                "PARTY · {}  {}",
                 membros.len(),
                 if self.recolhido { "+" } else { "−" }
             ),
@@ -336,7 +336,7 @@ impl SocialHud {
                 e::texto(
                     linha.x + 4.0 * s,
                     y + 12.0 * k,
-                    "Fora de alcance",
+                    "Out of range",
                     (10.0 * k).max(9.0) as u16,
                     e::TEXTO,
                 );
@@ -346,7 +346,7 @@ impl SocialHud {
         e::texto(
             rodape.x + 10.0 * s,
             rodape.y + 20.0 * s,
-            "Gerenciar grupo ›",
+            "Manage party ›",
             (12.0 * s) as u16,
             e::OURO,
         );

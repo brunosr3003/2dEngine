@@ -64,7 +64,7 @@ pub const PESO_TOTAL: u8 = 10;
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
         grau: 1,
-        nome: "Cervo do Bosque",
+        nome: "Grove Stag",
         bicho: "bichos/cervo",
         escala: 1.22,
         sela_frente: -0.34,
@@ -73,7 +73,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     },
     Especie {
         grau: 2,
-        nome: "Lobo da Clareira",
+        nome: "Glade Wolf",
         bicho: "bichos/lobo",
         escala: 0.75,
         sela_frente: -0.38,
@@ -82,16 +82,16 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     },
     Especie {
         grau: 3,
-        nome: "Tigre das Neves",
+        nome: "Snow Tiger",
         bicho: "bichos/tigre",
         escala: 2.4,
         sela_frente: -0.38,
         afinidade: pesos(&[(stat_idx::FOR, 6), (stat_idx::DES, 4)]),
-        descricao: "Silencioso na neve, feroz na estrada.",
+        descricao: "Silent in the snow, fierce on the road.",
     },
     Especie {
         grau: 4,
-        nome: "Hipogrifo",
+        nome: "Hippogriff",
         bicho: "bichos/hipogrifo",
         escala: 1.32,
         sela_frente: -0.30,
@@ -100,7 +100,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     },
     Especie {
         grau: 5,
-        nome: "Dragão",
+        nome: "Dragon",
         bicho: "bichos/dragao",
         escala: 1.17,
         sela_frente: -0.26,
@@ -130,7 +130,7 @@ pub fn de_item(item_id: u16) -> Option<(&'static Especie, u8)> {
     Some((especie(grau)?, grau))
 }
 
-/// "Tigre das Neves". O nome JA' diz o grau — a criatura e' o grau —, entao
+/// "Snow Tiger". O nome JA' diz o grau — a criatura e' o grau —, entao
 /// nao se cola a cor atras dele como se fazia quando eram tres especies
 /// tingidas de cinco jeitos.
 pub fn nome_do_item(id: u16) -> Option<String> {

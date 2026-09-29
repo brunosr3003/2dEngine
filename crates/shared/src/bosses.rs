@@ -205,7 +205,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             // Pancada Sísmica começou com 1,6 s e foi reprovada por 1,36 s
             // efetivos contra 1,53 s necessários.
             h(
-                "Pancada Sísmica",
+                "Seismic Blow",
                 Circulo { raio: 5.5 },
                 EmSi,
                 1.9,
@@ -216,7 +216,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
                 1.0,
             ),
             h(
-                "Investida do Colosso",
+                "Charge of the Colossus",
                 Linha {
                     comprimento: 16.0,
                     largura: 2.6,
@@ -230,7 +230,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
                 0.9,
             ),
             h(
-                "Onda de Pedra",
+                "Stone Wave",
                 Anel {
                     interno: 4.0,
                     externo: 9.5,
@@ -248,14 +248,14 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
 pub const CHEFES: [Chefe; 12] = [
     Chefe {
         kind: 10,
-        nome: "Lobo Alfa da Clareira",
+        nome: "Alpha Wolf of the Glade",
         corpo: Corpo::Bicho(0),
         escala: 2.3,
         zona: "ilha_inicial",
         nivel: 8,
         habilidades: &[
             h(
-                "Mordida Dilacerante",
+                "Rending Bite",
                 Cone {
                     raio: 3.6,
                     abertura: 0.6,
@@ -269,7 +269,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.6,
             ),
             h(
-                "Investida",
+                "Charge",
                 Linha {
                     comprimento: 12.0,
                     largura: 2.2,
@@ -283,7 +283,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.2,
             ),
             h(
-                "Uivo da Matilha",
+                "Howl of the Pack",
                 Anel {
                     interno: 0.8,
                     externo: 7.0,
@@ -300,14 +300,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 11,
-        nome: "Capitao Barba-Tormenta",
+        nome: "Captain Stormbeard",
         corpo: Corpo::Pirata,
         escala: 1.8,
         zona: "ilha_inicial",
         nivel: 11,
         habilidades: &[
             h(
-                "Corte de Sabre",
+                "Sabre Slash",
                 Cone {
                     raio: 4.0,
                     abertura: 0.75,
@@ -321,7 +321,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.6,
             ),
             h(
-                "Tiro de Canhao",
+                "Cannon Shot",
                 Circulo { raio: 3.0 },
                 NoAlvo,
                 1.6,
@@ -332,7 +332,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.0,
             ),
             h(
-                "Barragem",
+                "Barrage",
                 Circulo { raio: 5.0 },
                 NoAlvo,
                 2.0,
@@ -346,14 +346,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 12,
-        nome: "Urso Anciao",
+        nome: "Elder Bear",
         corpo: Corpo::Bicho(1),
         escala: 2.0,
         zona: "ilha_inicial",
         nivel: 14,
         habilidades: &[
             h(
-                "Patada Larga",
+                "Wide Swipe",
                 Cone {
                     raio: 4.5,
                     abertura: 0.9,
@@ -367,7 +367,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.9,
             ),
             h(
-                "Pisao Sismico",
+                "Seismic Stomp",
                 Circulo { raio: 6.0 },
                 EmSi,
                 2.0,
@@ -378,7 +378,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.2,
             ),
             h(
-                "Rugido Esmagador",
+                "Crushing Roar",
                 Anel {
                     interno: 1.0,
                     externo: 9.0,
@@ -395,14 +395,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 13,
-        nome: "Tigre das Neves",
+        nome: "Snow Tiger",
         corpo: Corpo::Bicho(3),
         escala: 2.2,
         zona: "ilha_gelo",
         nivel: 24,
         habilidades: &[
             h(
-                "Garras em Leque",
+                "Fanning Claws",
                 Cone {
                     raio: 4.0,
                     abertura: 1.0,
@@ -416,7 +416,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.7,
             ),
             h(
-                "Salto Predador",
+                "Predator Leap",
                 Circulo { raio: 3.5 },
                 NoAlvo,
                 1.35,
@@ -427,7 +427,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.2,
             ),
             h(
-                "Rodopio",
+                "Whirl",
                 Circulo { raio: 5.0 },
                 EmSi,
                 1.7,
@@ -441,14 +441,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 14,
-        nome: "Lobo da Tempestade",
+        nome: "Storm Wolf",
         corpo: Corpo::Bicho(7),
         escala: 1.0,
         zona: "ilha_gelo",
         nivel: 30,
         habilidades: &[
             h(
-                "Investida Trovejante",
+                "Thundering Charge",
                 Linha {
                     comprimento: 16.0,
                     largura: 3.0,
@@ -462,7 +462,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.5,
             ),
             h(
-                "Uivo da Tempestade",
+                "Howl of the Storm",
                 Anel {
                     interno: 1.0,
                     externo: 10.0,
@@ -476,7 +476,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.0,
             ),
             h(
-                "Relampago Caido",
+                "Fallen Lightning",
                 Circulo { raio: 4.0 },
                 NoAlvo,
                 1.5,
@@ -490,14 +490,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 15,
-        nome: "Saqueador das Areias",
+        nome: "Sand Raider",
         corpo: Corpo::Gente(2),
         escala: 1.7,
         zona: "ilha_deserto",
         nivel: 36,
         habilidades: &[
             h(
-                "Linha de Tiro",
+                "Firing Line",
                 Linha {
                     comprimento: 18.0,
                     largura: 1.6,
@@ -511,7 +511,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.6,
             ),
             h(
-                "Rajada em Leque",
+                "Fanning Volley",
                 Cone {
                     raio: 10.0,
                     abertura: 0.45,
@@ -525,7 +525,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.5,
             ),
             h(
-                "Barril Explosivo",
+                "Explosive Barrel",
                 Circulo { raio: 4.0 },
                 NoAlvo,
                 1.6,
@@ -539,14 +539,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 16,
-        nome: "Arqueira do Ermo",
+        nome: "Archer of the Waste",
         corpo: Corpo::Gente(6),
         escala: 1.7,
         zona: "ilha_deserto",
         nivel: 41,
         habilidades: &[
             h(
-                "Flecha Perfurante",
+                "Piercing Arrow",
                 Linha {
                     comprimento: 20.0,
                     largura: 1.4,
@@ -560,7 +560,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.6,
             ),
             h(
-                "Chuva de Flechas",
+                "Arrow Rain",
                 Circulo { raio: 5.5 },
                 NoAlvo,
                 1.8,
@@ -571,7 +571,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.3,
             ),
             h(
-                "Armadilha Espinhosa",
+                "Thorn Trap",
                 Anel {
                     interno: 2.0,
                     externo: 6.0,
@@ -588,14 +588,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 17,
-        nome: "Owlbear Primevo",
+        nome: "Primeval Owlbear",
         corpo: Corpo::Bicho(5),
         escala: 2.0,
         zona: "ilha_planalto",
         nivel: 52,
         habilidades: &[
             h(
-                "Patada Dupla",
+                "Double Swipe",
                 Cone {
                     raio: 5.0,
                     abertura: 0.8,
@@ -609,7 +609,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.0,
             ),
             h(
-                "Giro Selvagem",
+                "Feral Spin",
                 Anel {
                     interno: 2.0,
                     externo: 6.5,
@@ -623,7 +623,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.2,
             ),
             h(
-                "Queda Estrondosa",
+                "Thunderous Fall",
                 Circulo { raio: 6.2 },
                 NoAlvo,
                 2.0,
@@ -637,14 +637,14 @@ pub const CHEFES: [Chefe; 12] = [
     },
     Chefe {
         kind: 18,
-        nome: "Arquimago da Tormenta",
+        nome: "Archmage of the Tempest",
         corpo: Corpo::Gente(4),
         escala: 1.7,
         zona: "ilha_planalto",
         nivel: 60,
         habilidades: &[
             h(
-                "Raio Arcano",
+                "Arcane Bolt",
                 Linha {
                     comprimento: 22.0,
                     largura: 2.0,
@@ -658,7 +658,7 @@ pub const CHEFES: [Chefe; 12] = [
                 0.8,
             ),
             h(
-                "Meteoro",
+                "Meteor",
                 Circulo { raio: 4.5 },
                 NoAlvo,
                 1.8,
@@ -669,7 +669,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.0,
             ),
             h(
-                "Nova de Gelo",
+                "Ice Nova",
                 Circulo { raio: 6.2 },
                 EmSi,
                 2.0,
@@ -680,7 +680,7 @@ pub const CHEFES: [Chefe; 12] = [
                 1.2,
             ),
             h(
-                "Anel de Chamas",
+                "Ring of Flames",
                 Anel {
                     interno: 5.0,
                     externo: 11.0,
@@ -706,7 +706,7 @@ pub const CHEFES: [Chefe; 12] = [
     // ilha que qualquer um entra seria um muro; um de 10, um boneco.
     Chefe {
         kind: 19,
-        nome: "Colosso da Ilha Mágica",
+        nome: "Colossus of the Magic Island",
         corpo: Corpo::Gente(4),
         escala: 1.9,
         zona: crate::magica::ZONA,

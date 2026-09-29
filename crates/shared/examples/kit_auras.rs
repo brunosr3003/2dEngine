@@ -1,7 +1,7 @@
 //! Generates test attachments; touches neither database nor mail.
 fn main() {
     let mut cartas = Vec::new();
-    for (grau, cor) in [(2,"Verde"),(3,"Azul"),(4,"Roxo"),(5,"Laranja")] {
+    for (grau, cor) in [(2,"Green"),(3,"Blue"),(4,"Purple"),(5,"Orange")] {
         for refino in [0,5,7,10] {
             let pecas: Vec<_> = (400..=414).map(|id| {
                 let mut inst = shared::items::ItemInstance::roll_em(

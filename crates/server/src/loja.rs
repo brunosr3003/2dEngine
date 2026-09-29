@@ -199,7 +199,7 @@ impl Provedor {
                 externo: format!("sim-{pedido}"),
             },
             Provedor::Desligado => Aprovacao::Recusado {
-                motivo: "Pagamento indisponível no momento.".into(),
+                motivo: "Payment unavailable right now.".into(),
             },
         }
     }
@@ -234,7 +234,7 @@ impl Resposta {
             Resposta::Feito { texto, .. }
             | Resposta::JaFeito { texto, .. }
             | Resposta::Recusado { texto } => texto.clone(),
-            Resposta::Pendente { .. } => "Pagamento aguardando confirmação.".into(),
+            Resposta::Pendente { .. } => "Payment awaiting confirmation.".into(),
         }
     }
 
@@ -252,7 +252,7 @@ pub async fn comprar_tp(
     pedido: &str,
 ) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
-        return Ok(Resposta::recusa("Pedido inválido."));
+        return Ok(Resposta::recusa("Invalid order."));
     }
     let Some(pacote) = cat::pacote(pacote_id) else {
         return Ok(Resposta::recusa(RecusaCompra::ProdutoInvalido.texto()));
@@ -276,16 +276,16 @@ pub async fn comprar_tp(
         .await?;
     let (dono, produto, status): (String, String, String) = (row.get(0), row.get(1), row.get(2));
     if dono != conta || produto != codigo {
-        return Ok(Resposta::recusa("Pedido inválido."));
+        return Ok(Resposta::recusa("Invalid order."));
     }
     match status.as_str() {
         "creditado" => {
             return Ok(Resposta::JaFeito {
                 saldo: razao::saldo(central, conta).await?,
-                texto: "Esta compra já foi creditada.".into(),
+                texto: "This purchase has already been credited.".into(),
             });
         }
-        "recusado" => return Ok(Resposta::recusa("Pagamento recusado.")),
+        "recusado" => return Ok(Resposta::recusa("Payment refused.")),
         _ => {}
     }
     match provedor.iniciar(pedido, pacote).await {
@@ -325,7 +325,7 @@ pub async fn confirmar_pagamento(
     .fetch_optional(&mut *tx)
     .await?
     else {
-        return Ok(Resposta::recusa("Pedido não encontrado."));
+        return Ok(Resposta::recusa("Order not found."));
     };
     let (conta, produto, status, tipo): (String, String, String, String) =
         (row.get(0), row.get(1), row.get(2), row.get(3));
@@ -334,14 +334,14 @@ pub async fn confirmar_pagamento(
         _ => None,
     };
     let Some(pacote) = pacote else {
-        return Ok(Resposta::recusa("Pedido inválido."));
+        return Ok(Resposta::recusa("Invalid order."));
     };
     if status == "creditado" {
         let saldo = razao::saldo(&mut *tx, &conta).await?;
         tx.commit().await?;
         return Ok(Resposta::JaFeito {
             saldo,
-            texto: "Esta compra já foi creditada.".into(),
+            texto: "This purchase has already been credited.".into(),
         });
     }
     let m = razao::mover(
@@ -361,12 +361,12 @@ pub async fn confirmar_pagamento(
     Ok(match m {
         razao::Movimento::Feito { saldo } => Resposta::Feito {
             saldo,
-            texto: format!("+{} TP creditados.", pacote.total()),
+            texto: format!("+{} TP credited.", pacote.total()),
         },
         razao::Movimento::JaFeito { saldo } | razao::Movimento::SemSaldo { saldo } => {
             Resposta::JaFeito {
                 saldo,
-                texto: "Esta compra já foi creditada.".into(),
+                texto: "This purchase has already been credited.".into(),
             }
         }
     })
@@ -384,7 +384,7 @@ pub async fn comprar_item(
     pedido: &str,
 ) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
-        return Ok(Resposta::recusa("Pedido inválido."));
+        return Ok(Resposta::recusa("Invalid order."));
     }
     let vezes = cat::lote(vezes);
     let Some(unitario) = produto.preco_tp() else {
@@ -419,7 +419,7 @@ pub async fn comprar_item(
     let (dono, prod, status, motivo): (String, String, String, String) =
         (row.get(0), row.get(1), row.get(2), row.get(3));
     if dono != conta || prod != codigo {
-        return Ok(Resposta::recusa("Pedido inválido."));
+        return Ok(Resposta::recusa("Invalid order."));
     }
     match status.as_str() {
         "entregue" => {
@@ -427,13 +427,13 @@ pub async fn comprar_item(
             tx.commit().await?;
             return Ok(Resposta::JaFeito {
                 saldo,
-                texto: "Esta compra já foi entregue.".into(),
+                texto: "This purchase has already been delivered.".into(),
             });
         }
         "recusado" => {
             tx.commit().await?;
             return Ok(Resposta::recusa(if motivo.is_empty() {
-                "Compra recusada.".to_string()
+                "Purchase refused.".to_string()
             } else {
                 motivo
             }));

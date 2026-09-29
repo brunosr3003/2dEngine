@@ -177,7 +177,7 @@ impl Recusa {
         match self {
             Recusa::JaResgatouHoje => "Você já resgatou hoje. Volte depois do reset (04:00).",
             Recusa::CicloCompleto => "Calendário completo! O próximo começa no dia 1.",
-            Recusa::SemCalendario => "Esse calendário não está ativo.",
+            Recusa::SemCalendario => "That calendar is not active.",
         }
     }
 }
@@ -268,7 +268,7 @@ impl DadosPresenca {
         if !ativos.iter().any(|e| e.substitui) {
             calendarios.push(CalendarioNet {
                 id: MENSAL,
-                nome: "Presença do mês".into(),
+                nome: "Attendance for the month".into(),
                 resgatados: d.mensal.resgatados,
                 pode_hoje: d.mensal.pode(hoje, DIAS),
                 fim_unix: 0,

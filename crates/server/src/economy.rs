@@ -645,7 +645,7 @@ pub fn fontes_de_itens(
             .get(&kind)
             .map(|e| e.name.clone())
             .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| format!("Bicho {kind}"));
+            .unwrap_or_else(|| format!("Beast {kind}"));
         for e in tabela
             .iter()
             .filter(|e| e.chance > 0.0 && cfg.permitido_em_mob(e.item_id))
@@ -853,7 +853,7 @@ mod testes_onde_obter {
             0,
             EnemyKindDef {
                 kind: 0,
-                name: "Lobo".into(),
+                name: "Wolf".into(),
                 ..Default::default()
             },
         );
@@ -905,7 +905,7 @@ mod testes_onde_obter {
             3,
             VendorShop {
                 shop_id: 3,
-                name: "Alquimista".into(),
+                name: "Alchemist".into(),
                 items: vec![HEALTH_POTION],
             },
         );
@@ -1528,7 +1528,7 @@ pub(crate) struct KindInicial {
 pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     KindInicial {
         kind: 0,
-        name: "Lobo",
+        name: "Wolf",
         hp: 120,
         sp: 2.0,
         dmg: 10,
@@ -1544,7 +1544,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 1,
-        name: "Urso",
+        name: "Bear",
         hp: 280,
         sp: 1.3,
         dmg: 18,
@@ -1560,7 +1560,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 2,
-        name: "Pistoleiro",
+        name: "Gunman",
         hp: 85,
         sp: 2.4,
         dmg: 12,
@@ -1576,7 +1576,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 3,
-        name: "Tigre",
+        name: "Tiger",
         hp: 95,
         sp: 4.2,
         dmg: 15,
@@ -1592,7 +1592,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 4,
-        name: "Mago",
+        name: "Mage",
         hp: 105,
         sp: 1.4,
         dmg: 22,
@@ -1624,7 +1624,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 6,
-        name: "Arqueiro",
+        name: "Archer",
         hp: 105,
         sp: 2.8,
         dmg: 14,
@@ -1640,7 +1640,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 7,
-        name: "Lobo Grande",
+        name: "Great Wolf",
         hp: 700,
         sp: 1.6,
         dmg: 40,
@@ -1659,7 +1659,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     // lobo e o urso.
     KindInicial {
         kind: 8,
-        name: "Caranguejo",
+        name: "Crab",
         hp: 90,
         sp: 1.8,
         dmg: 8,
@@ -1675,7 +1675,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 9,
-        name: "Caranguejo-rei",
+        name: "King Crab",
         hp: 220,
         sp: 1.5,
         dmg: 15,
@@ -1700,7 +1700,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     // ja' aconteceu com os bichos do mar) daria um bicho impossivel.
     KindInicial {
         kind: 10,
-        name: "Morsa",
+        name: "Walrus",
         hp: 340,
         sp: 1.1,
         dmg: 20,
@@ -1716,7 +1716,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 11,
-        name: "Urso Branco",
+        name: "White Bear",
         hp: 320,
         sp: 1.5,
         dmg: 20,
@@ -1732,7 +1732,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 12,
-        name: "Tigre Branco",
+        name: "White Tiger",
         hp: 110,
         sp: 4.4,
         dmg: 17,
@@ -1748,7 +1748,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 13,
-        name: "Escaravelho",
+        name: "Scarab",
         hp: 260,
         sp: 1.7,
         dmg: 24,
@@ -1764,7 +1764,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 14,
-        name: "Rainha Escaravelho",
+        name: "Scarab Queen",
         hp: 600,
         sp: 1.3,
         dmg: 32,
@@ -1780,7 +1780,7 @@ pub(crate) const KINDS_INICIAIS: [KindInicial; 16] = [
     },
     KindInicial {
         kind: 15,
-        name: "Rochoso",
+        name: "Rockback",
         hp: 560,
         sp: 1.0,
         dmg: 30,
@@ -1964,7 +1964,7 @@ mod testes_da_pedra {
                 "pedra {pedra}: cobre {cobre:?} fora de 40-120"
             );
             for (nome, base, esperado, tol) in [
-                ("Aço", STEEL, 0.55, 0.015),
+                ("Steel", STEEL, 0.55, 0.015),
                 ("Platina", PLATINUM, 0.30, 0.015),
                 ("Coração Negro", DARK_HEART_STONE, 0.12, 0.01),
                 ("Ânima", ANIMA_STONE, 0.12, 0.01),

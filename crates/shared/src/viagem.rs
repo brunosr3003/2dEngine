@@ -1,4 +1,4 @@
-//! Ir e voltar entre as ilhas (menu "Viajar" do Capitao do Porto) e o
+//! Ir e voltar entre as ilhas (menu "Travel" do Capitao do Porto) e o
 //! Pergaminho de Teleporte (salto pra um destino marcado DENTRO da ilha).
 //!
 //! Antes daqui a unica viagem era o passo de historia "Rumo a …": quem ia pra
@@ -22,7 +22,7 @@ pub const TELEPORTE_MIN: f32 = 40.0;
 /// Quanto o servidor procura chao firme em volta do ponto pedido (o NPC fica
 /// na porta da casa; o ponto marcado pode cair num tronco).
 pub const TELEPORTE_BUSCA: f32 = 16.0;
-/// Perto disto do Capitao o "Embarcar" vale (o menu abre no alcance do
+/// Perto disto do Capitao o "Board" vale (o menu abre no alcance do
 /// clique; o pedido confere de novo, com folga pro passo dado no meio).
 pub const PERTO_DO_CAPITAO: f32 = 8.0;
 
@@ -38,7 +38,7 @@ pub mod estado {
     pub const BLOQUEADA: u8 = 3;
 }
 
-/// Uma linha do menu "Viajar".
+/// Uma linha do menu "Travel".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Destino {
     /// Indice no `ARQUIPELAGO`.
@@ -48,7 +48,7 @@ pub struct Destino {
     pub nivel_min: u16,
     pub nivel_max: u16,
     pub estado: u8,
-    /// Bloqueada: o passo da historia que libera ("Rumo à Geleira").
+    /// Bloqueada: o passo da historia que libera ("Bound for the Glacier").
     pub requisito: String,
 }
 
@@ -117,7 +117,7 @@ mod testes {
         for i in 1..ARQUIPELAGO.len() {
             assert!(passo_que_libera(i).is_some(), "ilha {i} sem passo de viagem");
         }
-        assert_eq!(passo_que_libera(1).unwrap().1, "Rumo à Geleira");
+        assert_eq!(passo_que_libera(1).unwrap().1, "Bound for the Glacier");
     }
 
     #[test]

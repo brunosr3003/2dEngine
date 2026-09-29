@@ -84,63 +84,63 @@ const POR_LINHA: f32 = 5.0;
 /// Os grupos, na ordem da tela.
 pub const GRUPOS: [(&str, &[Linha]); 8] = [
     (
-        "PERSONAGEM",
+        "CHARACTER",
         &[
-            (Item::Bolsa, "Bolsa", None),
-            (Item::Ficha, "Ficha", None),
-            (Item::Habilidades, "Habilidades", None),
+            (Item::Bolsa, "Bag", None),
+            (Item::Ficha, "Sheet", None),
+            (Item::Habilidades, "Skills", None),
             (Item::Pets, "Pets", None),
-            (Item::GuardaRoupa, "Aparência", None),
+            (Item::GuardaRoupa, "Appearance", None),
         ],
     ),
     (
-        "PROGRESSO",
+        "PROGRESS",
         &[
-            (Item::Missoes, "Missões", None),
-            (Item::TodasMissoes, "Todas", None),
-            (Item::Diarias, "Diárias", None),
-            (Item::Conquistas, "Conquistas", Some("Em breve")),
-            (Item::RecuperarXp, "Recuperar XP", None),
+            (Item::Missoes, "Quests", None),
+            (Item::TodasMissoes, "All", None),
+            (Item::Diarias, "Dailies", None),
+            (Item::Conquistas, "Achievements", Some("Coming soon")),
+            (Item::RecuperarXp, "Recover XP", None),
         ],
     ),
     (
-        "OFICINA",
+        "WORKSHOP",
         &[
             (Item::Craft, "Craft", None),
-            (Item::Combinar, "Combinar", None),
-            (Item::Forja, "Forja", None),
-            (Item::Encantar, "Encantar", Some("Em breve")),
-            (Item::Coleta, "Coleta", None),
+            (Item::Combinar, "Combine", None),
+            (Item::Forja, "Forge", None),
+            (Item::Encantar, "Enchant", Some("Coming soon")),
+            (Item::Coleta, "Gathering", None),
         ],
     ),
     (
-        "AVENTURA",
+        "ADVENTURE",
         &[
-            (Item::Mapa, "Mapa", None),
+            (Item::Mapa, "Map", None),
             (Item::Mobs, "Mobs", None),
             (Item::Aventuras, "Dungeons", None),
-            (Item::MinhaIlha, "Minha Ilha", None),
-            (Item::Montaria, "Montaria", None),
+            (Item::MinhaIlha, "My Island", None),
+            (Item::Montaria, "Mount", None),
         ],
     ),
     (
         "SOCIAL",
         &[
-            (Item::Grupo, "Grupo", None),
-            (Item::Amigos, "Amigos", None),
-            (Item::Correio, "Correio", None),
-            (Item::Clan, "Clã", None),
+            (Item::Grupo, "Party", None),
+            (Item::Amigos, "Friends", None),
+            (Item::Correio, "Mail", None),
+            (Item::Clan, "Clan", None),
         ],
     ),
-    // "Loja" do Menu e' a loja de CASH (Tempest Points), que ainda nao existe.
-    // Vendedor NPC nunca vende de longe: "Vendedores" so' leva ate' ele.
+    // "Shop" do Menu e' a loja de CASH (Tempest Points), que ainda nao existe.
+    // Vendedor NPC nunca vende de longe: "Vendors" so' leva ate' ele.
     (
-        "COMÉRCIO",
+        "TRADE",
         &[
-            (Item::LojaTp, "Loja", None),
-            (Item::Lojas, "Vendedores", None),
-            (Item::Mercado, "Mercado", None),
-            (Item::Banco, "Banco", None),
+            (Item::LojaTp, "Shop", None),
+            (Item::Lojas, "Vendors", None),
+            (Item::Mercado, "Market", None),
+            (Item::Banco, "Bank", None),
         ],
     ),
     // EVENTO: o que tem HORA, e nao o que esta' sempre la'.
@@ -151,19 +151,19 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
     // evento sao a mesma categoria de coisa, e ela estava em AVENTURA por
     // falta de lugar melhor.
     (
-        "EVENTO",
+        "EVENT",
         &[
-            (Item::Presenca, "Presença", None),
-            (Item::IlhaMagica, "Ilha Mágica", None),
+            (Item::Presenca, "Presence", None),
+            (Item::IlhaMagica, "Magic Island", None),
         ],
     ),
     (
-        "SISTEMA",
+        "SYSTEM",
         &[
-            (Item::BarraItens, "Barra", None),
+            (Item::BarraItens, "Bar", None),
             (Item::Configuracoes, "Interface", None),
-            (Item::TrocarPersonagem, "Trocar", Some("Em breve")),
-            (Item::Sair, "Sair", None),
+            (Item::TrocarPersonagem, "Switch", Some("Coming soon")),
+            (Item::Sair, "Leave", None),
         ],
     ),
 ];
@@ -316,7 +316,7 @@ impl Menu {
         y += 24.0;
         estilo::texto_ajustado(c.arma, esq.x + 14.0, y, esq.w - 28.0, 14, estilo::SUAVE);
         y += 30.0;
-        estilo::texto(esq.x + 14.0, y, "PODER", 11, estilo::SUAVE);
+        estilo::texto(esq.x + 14.0, y, "POWER", 11, estilo::SUAVE);
         let poder = c
             .poder
             .map(|v| crate::bolsa::milhar(v.max(0) as u64))
@@ -331,7 +331,7 @@ impl Menu {
         y += 16.0;
         estilo::separador(esq.x + 10.0, y, esq.w - 20.0);
         y += 24.0;
-        estilo::texto(esq.x + 14.0, y, "SALDOS", 11, estilo::SUAVE);
+        estilo::texto(esq.x + 14.0, y, "BALANCES", 11, estilo::SUAVE);
         for (rotulo, valor) in c.saldos {
             y += 22.0;
             if y > esq.y + esq.h - 8.0 {
@@ -601,16 +601,16 @@ mod tests {
                     Clique::Abrir(i) => assert!(abre.contains(&i), "{:?} abre mas nao existe", i),
                     Clique::Aviso(t) => {
                         assert!(!abre.contains(&l.0), "{:?} existe mas esta' travado", l.0);
-                        assert!(t.contains("Em breve"), "aviso sem motivo: {t}");
+                        assert!(t.contains("Coming soon"), "aviso sem motivo: {t}");
                     }
                 }
             }
         }
-        // "Loja" e' a de cash (TP); vendedor NPC so' com "Ir".
+        // "Shop" e' a de cash (TP); vendedor NPC so' com "Ir".
         let loja = GRUPOS
             .iter()
             .flat_map(|(_, it)| it.iter())
-            .find(|l| l.1 == "Loja")
+            .find(|l| l.1 == "Shop")
             .expect("sem Loja");
         assert_eq!(loja.0, Item::LojaTp);
         assert_eq!(clique_de(loja), Clique::Abrir(Item::LojaTp));

@@ -6461,7 +6461,7 @@ mod testes_do_alcance_dos_npcs {
         // A Geleira tem UM caso conhecido a 3,09 u — 0,09 além do limite, por
         // degrau de terreno ao lado do Alfaiate. Está registrado aqui em vez
         // de afrouxar o limite: afrouxar esconderia os outros dez.
-        const TOLERADOS: &[(&str, &str)] = &[("ilha_gelo", "Alfaiate")];
+        const TOLERADOS: &[(&str, &str)] = &[("ilha_gelo", "Tailor")];
         let mut falhas: Vec<String> = Vec::new();
         for zona in ["ilha_inicial", "ilha_gelo", "ilha_planalto", "ilha_bosque"] {
             let Some(def) = def_da_zona(zona) else { continue };

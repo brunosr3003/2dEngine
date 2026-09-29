@@ -10,7 +10,7 @@
 //! Cada toque num seletor muda a prévia na hora, mas não vai pra rede: o
 //! servidor reenvia a meta pra TODOS que veem o jogador a cada troca
 //! (`last_sent.remove`), e mandar a cada clique seria uma tempestade de metas
-//! por um jogador mexendo numa seta. Vai no "Aplicar".
+//! por um jogador mexendo numa seta. Vai no "Apply".
 
 use macroquad::prelude::*;
 use shared::aparencia::{Aparencia, GuardaRoupa};
@@ -96,7 +96,7 @@ impl GuardaRoupaUi {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Aparência e skins", 20, estilo::OURO);
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Appearance and skins", 20, estilo::OURO);
         estilo::texto(
             x0,
             p.y + 60.0 * f,
@@ -120,7 +120,7 @@ impl GuardaRoupaUi {
             corpo.w - palco.w - 16.0 * f, corpo.h);
         let clique_opcao = self.rolagem.quadro(opcoes, linha * 5.0, linha);
         let mut y = opcoes.y - self.rolagem.pos;
-        // Cabelos + "sem cabelo" + os chapéus DESTRAVADOS. Os três dividem a
+        // Cabelos + "no hair" + os chapéus DESTRAVADOS. Os três dividem a
         // junta da cabeça, então dividem o seletor: um chapéu por cima de um
         // cabelo seria duas peças na mesma junta.
         let chapeus: Vec<u16> = self
@@ -143,10 +143,10 @@ impl GuardaRoupaUi {
             .map_or(0, |i| i as u8 + 1);
         let atual_cabelo = indice_do_cabelo(a.cabelo, &chapeus);
         let linhas: [(&str, u8, u8); 5] = [
-            ("Rosto", ap::ROSTOS, a.rosto),
-            ("Cabelo", cabelos, atual_cabelo),
+            ("Face", ap::ROSTOS, a.rosto),
+            ("Hair", cabelos, atual_cabelo),
             ("Cor", ap::CORES_DE_CABELO.len() as u8, a.cor_cabelo),
-            ("Pele", ap::TONS_DE_PELE.len() as u8, a.pele),
+            ("Skin tone", ap::TONS_DE_PELE.len() as u8, a.pele),
             ("Skin", roupas, atual_roupa),
         ];
         let mut novos = [0u8; 5];
@@ -201,7 +201,7 @@ impl GuardaRoupaUi {
         self.rolagem.desenha(opcoes, linha * 5.0);
         a.rosto = novos[0];
         a.cabelo = match novos[1] {
-            // Cabelo de verdade ou "sem cabelo": o índice vale direto.
+            // Cabelo de verdade ou "no hair": o índice vale direto.
             k if k <= ap::CABELOS => k,
             // Chapéu: o índice do SELETOR (que só lista os destravados) vira
             // o índice GLOBAL da tabela de chapéus — são coisas diferentes, e
@@ -233,15 +233,15 @@ impl GuardaRoupaUi {
         } else { self.mouse_anterior = None; }
         if !crate::render3d::vitrine_aparencia(vox, a, arma, area, self.giro, solido) {
             estilo::texto_centro(area.center().x, area.center().y,
-                "Carregando personagem…", 12, estilo::SUAVE);
+                "Loading character…", 12, estilo::SUAVE);
         }
         estilo::texto_centro(palco.center().x, palco.y + palco.h - 10.0 * f,
-            "Arraste para girar", 12, estilo::SUAVE);
+            "Drag to rotate", 12, estilo::SUAVE);
 
         // Aplicar só aparece quando há o que aplicar.
         let mudou = a != self.vigente;
         let b = Rect::new(opcoes.x, p.y + p.h - 56.0 * f, opcoes.w, (42.0 * f).max(40.0));
-        estilo::botao(b, "Aplicar", estilo::estado_de(b, !mudou, false), mudou);
+        estilo::botao(b, "Apply", estilo::estado_de(b, !mudou, false), mudou);
         let mut saida = None;
         if clicou && mudou && b.contains(m) {
             saida = Some(shared::protocol::ClientMessage::UpdateVisual { aparencia: a });
@@ -269,19 +269,19 @@ fn indice_do_cabelo(cabelo: u8, chapeus: &[u16]) -> u8 {
 fn nome_da_opcao(i: usize, v: u8, vestes: &[u16], chapeus: &[u16]) -> String {
     use shared::aparencia as ap;
     match i {
-        1 if v == ap::CABELOS => "sem cabelo".into(),
+        1 if v == ap::CABELOS => "no hair".into(),
         1 if v > ap::CABELOS => chapeus
             .get((v - ap::CABELOS - 1) as usize)
             .and_then(|id| ap::nome_da_skin(*id))
-            .unwrap_or("sem cabelo")
+            .unwrap_or("no hair")
             .into(),
         2 => ap::CORES_DE_CABELO[(v as usize).min(5)].into(),
         3 => ap::TONS_DE_PELE[(v as usize).min(3)].into(),
-        4 if v == 0 => "padrão".into(),
+        4 if v == 0 => "default".into(),
         4 => vestes
             .get(v as usize - 1)
             .and_then(|id| ap::nome_da_skin(*id))
-            .unwrap_or("padrão")
+            .unwrap_or("default")
             .into(),
         _ => format!("{}", v + 1),
     }
@@ -384,14 +384,14 @@ mod testes {
     fn a_roupa_lista_o_padrao_mais_o_destravado() {
         use shared::aparencia as ap;
         let v = [ap::ROUPA_BASE, ap::ROUPA_BASE + 1];
-        assert_eq!(nome_da_opcao(4, 0, &v, &[]), "padrão");
+        assert_eq!(nome_da_opcao(4, 0, &v, &[]), "default");
         assert_eq!(nome_da_opcao(4, 1, &v, &[]), ap::ROUPAS[0].1);
         assert_eq!(nome_da_opcao(4, 2, &v, &[]), ap::ROUPAS[1].1);
         // Índice além do destravado não inventa skin.
-        assert_eq!(nome_da_opcao(4, 9, &v, &[]), "padrão");
+        assert_eq!(nome_da_opcao(4, 9, &v, &[]), "default");
     }
 
-    /// O seletor de cabelo lista cabelo, "sem cabelo" e os CHAPÉUS — e o
+    /// O seletor de cabelo lista cabelo, "no hair" e os CHAPÉUS — e o
     /// índice do seletor (que só tem os destravados) não é o índice global
     /// da tabela de chapéus. Confundir os dois põe o chapéu errado.
     #[test]
@@ -400,7 +400,7 @@ mod testes {
         // Só o terceiro chapéu destravado.
         let chapeus = [ap::CHAPEU_BASE + 2];
         assert_eq!(nome_da_opcao(1, 0, &[], &chapeus), "1");
-        assert_eq!(nome_da_opcao(1, ap::CABELOS, &[], &chapeus), "sem cabelo");
+        assert_eq!(nome_da_opcao(1, ap::CABELOS, &[], &chapeus), "no hair");
         // O primeiro do SELETOR é o terceiro da TABELA.
         assert_eq!(
             nome_da_opcao(1, ap::CABELOS + 1, &[], &chapeus),

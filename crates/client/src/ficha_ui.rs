@@ -8,12 +8,12 @@ use shared::{PlayerStats, STAT_COUNT};
 use crate::hud_estilo as estilo;
 
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
-    ("FOR", "+1 ataque · +2 vida"),
-    ("DES", "+1 destreza · crítico/ataque"),
-    ("INT", "+1 dano mágico · +2 mana"),
-    ("VIT", "+5 vida · regeneração"),
+    ("FOR", "+1 attack · +2 health"),
+    ("DES", "+1 dexterity · crit/attack"),
+    ("INT", "+1 magic damage · +2 mana"),
+    ("VIT", "+5 health · regeneration"),
     ("SPD", "+2 vigor · regeneração · recarga do Dash"),
-    ("RES", "+1 defesa · bloqueio"),
+    ("RES", "+1 defence · block"),
 ];
 
 #[derive(Default)]
@@ -145,7 +145,7 @@ impl FichaUi {
         estilo::texto_forte(
             p.x + 20.0 * f,
             p.y + 36.0 * f,
-            "FICHA DO PERSONAGEM",
+            "CHARACTER SHEET",
             23,
             estilo::OURO,
         );
@@ -167,7 +167,7 @@ impl FichaUi {
         estilo::texto(
             p.x + 22.0 * f,
             p.y + 97.0 * f,
-            &format!("Nível {}", nivel.max(1)),
+            &format!("Level {}", nivel.max(1)),
             15,
             estilo::SUAVE,
         );
@@ -176,7 +176,7 @@ impl FichaUi {
             p.x + 545.0 * f,
             p.y + 75.0 * f,
             &format!(
-                "PODER  {}",
+                "POWER  {}",
                 poder.map_or_else(|| "—".into(), |v| crate::bolsa::milhar(v.max(0) as u64))
             ),
             19,
@@ -201,7 +201,7 @@ impl FichaUi {
         estilo::texto(
             p.x + 22.0 * f,
             p.y + 143.0 * f,
-            &format!("XP para o próximo nível: {}", crate::bolsa::milhar(falta)),
+            &format!("XP to the next level: {}", crate::bolsa::milhar(falta)),
             13,
             estilo::SUAVE,
         );
@@ -213,7 +213,7 @@ impl FichaUi {
         estilo::texto_forte(
             esq.x + 14.0 * f,
             esq.y + 28.0 * f,
-            "ATRIBUTOS",
+            "ATTRIBUTES",
             17,
             estilo::OURO,
         );
@@ -222,7 +222,7 @@ impl FichaUi {
             esq.x + 120.0 * f,
             esq.y + 27.0 * f,
             &format!(
-                "Livres: {}",
+                "Unspent: {}",
                 pontos.map_or_else(|| "…".into(), |n| n.to_string())
             ),
             14,
@@ -237,7 +237,7 @@ impl FichaUi {
         let custo = self.custo_do_proximo_ponto();
         let paga = self.energia >= custo;
         let texto_energia = format!(
-            "Energia: {} · ponto −{}",
+            "Energy: {} · point −{}",
             crate::bolsa::milhar(self.energia),
             crate::bolsa::milhar(custo)
         );
@@ -332,7 +332,7 @@ impl FichaUi {
             estilo::texto(
                 esq.x + 201.0 * f,
                 esq.y + 354.0 * f,
-                "Toque novamente para confirmar",
+                "Tap again to confirm",
                 11,
                 estilo::SUAVE,
             );
@@ -340,9 +340,9 @@ impl FichaUi {
         estilo::botao(
             reset,
             if self.confirmar_reset {
-                "Confirmar reset"
+                "Confirm reset"
             } else {
-                "Redistribuir grátis"
+                "Redistribute for free"
             },
             estilo::estado_de(reset, total == 0, false),
             false,
@@ -361,13 +361,13 @@ impl FichaUi {
         let aba_profs = Rect::new(dir.x + 205.0 * f, dir.y + 7.0 * f, 198.0 * f, 34.0 * f);
         estilo::botao(
             aba_status,
-            "COMBATE",
+            "COMBAT",
             estilo::estado_de(aba_status, false, !self.aba_proficiencias),
             false,
         );
         estilo::botao(
             aba_profs,
-            "PROFICIÊNCIAS",
+            "PROFICIENCIES",
             estilo::estado_de(aba_profs, false, self.aba_proficiencias),
             false,
         );
@@ -381,24 +381,24 @@ impl FichaUi {
             self.desenha_proficiencias(dir, f, clique, mouse, arma_equipada);
         } else if let Some(s) = stats {
             let linhas = [
-                ("Vida máxima", s.hp_max.to_string()),
-                ("Mana máxima", s.mp_max.to_string()),
-                ("Ataque", s.attack_damage.to_string()),
-                ("Defesa", s.defense.to_string()),
-                ("Destreza", s.dex.to_string()),
-                ("Sabedoria", s.wis.to_string()),
-                ("Crítico", format!("{:.1}%", s.crit_chance * 100.0)),
-                ("Vel. ataque", format!("{:.2}x", s.attack_speed_mult)),
-                ("Reg. vida", format!("{:.1}/s", s.hp_regen)),
-                ("Reg. mana", format!("{:.1}/s", s.mp_regen)),
-                ("Vigor máx.", s.stamina_max.to_string()),
-                ("Reg. vigor", format!("{:.1}/s", s.stamina_regen)),
-                ("Bloqueio", format!("{:.0}%", s.block_dmg_reduction * 100.0)),
+                ("Maximum health", s.hp_max.to_string()),
+                ("Maximum mana", s.mp_max.to_string()),
+                ("Attack", s.attack_damage.to_string()),
+                ("Defence", s.defense.to_string()),
+                ("Dexterity", s.dex.to_string()),
+                ("Wisdom", s.wis.to_string()),
+                ("Critical", format!("{:.1}%", s.crit_chance * 100.0)),
+                ("Atk. speed", format!("{:.2}x", s.attack_speed_mult)),
+                ("Health regen", format!("{:.1}/s", s.hp_regen)),
+                ("Mana regen", format!("{:.1}/s", s.mp_regen)),
+                ("Max stamina", s.stamina_max.to_string()),
+                ("Stamina regen", format!("{:.1}/s", s.stamina_regen)),
+                ("Block", format!("{:.0}%", s.block_dmg_reduction * 100.0)),
                 (
-                    "Red. dano",
+                    "Dmg. red.",
                     format!("{:.0}%", s.damage_reduction_pct * 100.0),
                 ),
-                ("Recarga do Dash", format!("{:.2}x", s.dash_cd_mult)),
+                ("Dash cooldown", format!("{:.2}x", s.dash_cd_mult)),
             ];
             for (i, (rotulo, valor)) in linhas.iter().enumerate() {
                 let col = i / 7;
@@ -412,7 +412,7 @@ impl FichaUi {
             estilo::texto(
                 dir.x + 14.0 * f,
                 dir.y + 65.0 * f,
-                "Aguardando atributos do servidor…",
+                "Waiting for attributes from the server…",
                 14,
                 estilo::SUAVE,
             );
@@ -424,7 +424,7 @@ impl FichaUi {
         &mut self, dir: Rect, f: f32, clique: bool, mouse: Vec2, arma_equipada: Option<u16>,
     ) {
         const NOMES: [&str; shared::PROF_COUNT] =
-            ["Espada e escudo", "Katana", "Pistolas", "Anel mágico"];
+            ["Sword and shield", "Katana", "Pistols", "Magic ring"];
         const ARMAS: [u16; shared::PROF_COUNT] = [
             shared::item_id::ESPADA_E_ESCUDO,
             shared::item_id::KATANA,
@@ -433,7 +433,7 @@ impl FichaUi {
         ];
         if let Some(i) = self.prof_selecionada {
             let voltar = Rect::new(dir.x + 10.0 * f, dir.y + 51.0 * f, 92.0 * f, 34.0 * f);
-            estilo::botao(voltar, "VOLTAR", estilo::estado_de(voltar, false, false), false);
+            estilo::botao(voltar, "BACK", estilo::estado_de(voltar, false, false), false);
             if clique && voltar.contains(mouse) {
                 self.prof_selecionada = None;
                 return;
@@ -441,15 +441,15 @@ impl FichaUi {
             let xp = self.proficiencias.map_or(0, |v| v[i]);
             let nivel = shared::proficiency_level(xp);
             estilo::texto_forte(dir.x + 116.0 * f, dir.y + 76.0 * f,
-                &format!("{}  ·  Nv. {nivel}", NOMES[i]), 18, estilo::OURO);
+                &format!("{}  ·  Lv. {nivel}", NOMES[i]), 18, estilo::OURO);
             let ativo = arma_equipada == Some(ARMAS[i]);
             estilo::texto(dir.x + 14.0 * f, dir.y + 111.0 * f,
-                if ativo { "Bônus ativos com a arma equipada" } else { "Equipe esta arma para ativar os bônus" },
+                if ativo { "Bonuses active with the equipped weapon" } else { "Equip this weapon to activate the bonuses" },
                 14, if ativo { estilo::VERDE } else { estilo::SUAVE });
             let b = bonus_proficiencia(ARMAS[i], nivel);
             let bonus = [
-                ("Vida máxima", b.0), ("Mana máxima", b.1), ("Ataque", b.2),
-                ("Defesa", b.3), ("Destreza", b.4), ("Sabedoria", b.5),
+                ("Maximum health", b.0), ("Maximum mana", b.1), ("Attack", b.2),
+                ("Defence", b.3), ("Dexterity", b.4), ("Wisdom", b.5),
             ];
             let mut linha = 0;
             for (rotulo, valor) in bonus {
@@ -486,7 +486,7 @@ impl FichaUi {
                 estilo::texto(
                     linha.x + 12.0 * f,
                     linha.y + 51.0 * f,
-                    "Aguardando servidor…",
+                    "Waiting for the server…",
                     12,
                     estilo::SUAVE,
                 );
@@ -503,7 +503,7 @@ impl FichaUi {
             estilo::texto_forte(
                 linha.x + linha.w - 98.0 * f,
                 linha.y + 26.0 * f,
-                &format!("Nv. {nivel}"),
+                &format!("Lv. {nivel}"),
                 16,
                 estilo::OURO,
             );
@@ -511,7 +511,7 @@ impl FichaUi {
                 estilo::texto(
                     linha.x + 12.0 * f,
                     linha.y + 52.0 * f,
-                    "Nível máximo",
+                    "Maximum level",
                     12,
                     estilo::VERDE,
                 );

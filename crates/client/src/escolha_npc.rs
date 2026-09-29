@@ -77,7 +77,7 @@ impl EscolhaNpc {
         estilo::texto_centro(
             p.center().x,
             p.y + u(68.0),
-            "O que você quer?",
+            "What do you want?",
             15,
             estilo::SUAVE,
         );
@@ -90,7 +90,7 @@ impl EscolhaNpc {
         let funcao = Rect::new(missao.x + bw + u(20.0), by, bw, bh);
         estilo::botao(
             missao,
-            "Missões",
+            "Quests",
             estilo::estado_de(missao, false, false),
             false,
         );
@@ -103,7 +103,7 @@ impl EscolhaNpc {
         estilo::texto_centro(
             p.center().x,
             p.y + p.h - u(20.0),
-            "toque fora para fechar",
+            "tap outside to close",
             12,
             estilo::SUAVE,
         );

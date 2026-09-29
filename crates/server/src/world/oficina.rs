@@ -67,7 +67,7 @@ impl GameWorld {
             let _ = session
                 .handle
                 .to_client
-                .send(resposta(0, 0, "isso não se combina".into()));
+                .send(resposta(0, 0, "that cannot be combined".into()));
             return;
         };
         let vezes = vezes.clamp(1, shared::combinar::MAX_VEZES);

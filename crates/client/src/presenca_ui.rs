@@ -28,10 +28,10 @@ pub struct PresencaUi {
 /// "Experience Potion x2" / "1,500 gold".
 pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
     if p.item_id == pr::ENERGIA {
-        return format!("{} de Energia", crate::economia::milhar(p.qtd as u64));
+        return format!("{} Energy", crate::economia::milhar(p.qtd as u64));
     }
     if p.item_id == pr::OURO {
-        return format!("{} de ouro", crate::economia::milhar(p.qtd as u64));
+        return format!("{} gold", crate::economia::milhar(p.qtd as u64));
     }
     let nome = nomes
         .get(&p.item_id)
@@ -43,10 +43,10 @@ pub fn texto_do_premio(p: &Premio, nomes: &HashMap<u16, String>) -> String {
 fn rotulo_curto(p: &Premio) -> String {
     use shared::item_id::*;
     let nome = match p.item_id {
-        pr::ENERGIA => "Energia", pr::OURO => "Ouro",
-        PERGAMINHO_INVOCA_PET => "Inv. Pet", PERGAMINHO_INVOCA_MONTARIA => "Inv. Montaria",
-        PASSE_MAGICO => "Ilha Mágica", COPPER => "Cobre", DARKSTEEL => "Darksteel",
-        GLITTERING_POWDER => "Pó Cintilante", _ => "Item",
+        pr::ENERGIA => "Energy", pr::OURO => "Gold",
+        PERGAMINHO_INVOCA_PET => "Pet Summ.", PERGAMINHO_INVOCA_MONTARIA => "Mount Summ.",
+        PASSE_MAGICO => "Magic Island", COPPER => "Copper", DARKSTEEL => "Darksteel",
+        GLITTERING_POWDER => "Shimmering Dust", _ => "Item",
     };
     format!("{} ×{}", nome, crate::economia::milhar(p.qtd as u64))
 }
@@ -111,10 +111,10 @@ impl PresencaUi {
                 let mut t = if dia == 0 {
                     format!("Presença · prêmio pendente entregue: {}", lista.join(", "))
                 } else {
-                    format!("Presença · dia {dia}: {}", lista.join(", "))
+                    format!("Attendance · day {dia}: {}", lista.join(", "))
                 };
                 if no_correio > 0 {
-                    t.push_str(" (bolsa cheia: parte no Correio)");
+                    t.push_str(" (bag full: part of it in your Mail)");
                 }
                 self.ultimo = Some(t.clone());
                 Some(t)
@@ -168,7 +168,7 @@ impl PresencaUi {
         estilo::texto_forte(
             x0,
             p.y + 36.0 * f,
-            "Calendário de presença",
+            "Attendance calendar",
             20,
             estilo::OURO,
         );
@@ -185,14 +185,14 @@ impl PresencaUi {
             return saida;
         }
         let Some(estado) = self.estado.clone() else {
-            estilo::texto(x0, p.y + 80.0 * f, "Carregando…", 15, estilo::SUAVE);
+            estilo::texto(x0, p.y + 80.0 * f, "Loading…", 15, estilo::SUAVE);
             return saida;
         };
         if estado.calendarios.is_empty() {
             estilo::texto(
                 x0,
                 p.y + 80.0 * f,
-                "Nenhum calendário ativo.",
+                "No active calendar.",
                 15,
                 estilo::SUAVE,
             );
@@ -230,12 +230,12 @@ impl PresencaUi {
         let cal = &estado.calendarios[self.aba.min(estado.calendarios.len() - 1)];
         let sub = if cal.fim_unix > 0 {
             format!(
-                "{} · termina em {}",
+                "{} · ends in {}",
                 cal.nome,
                 falta(cal.fim_unix - agora_unix)
             )
         } else {
-            format!("{} · o mês vira no dia 1 às 04:00", cal.nome)
+            format!("{} · the month turns over on the 1st at 04:00", cal.nome)
         };
         estilo::texto(x0, y + 18.0 * f, &sub, 13, estilo::SUAVE);
         y += 30.0 * f;
@@ -326,15 +326,15 @@ impl PresencaUi {
         estilo::texto_forte(
             x0,
             yb + 18.0 * f,
-            &format!("Resgatados {}/{}", cal.resgatados, cal.grade.len()),
+            &format!("Claimed {}/{}", cal.resgatados, cal.grade.len()),
             15,
             estilo::TEXTO,
         );
         let contador = if cal.pode_hoje {
-            "Resgate de hoje disponível".to_string()
+            "Today's claim is available".to_string()
         } else {
             format!(
-                "Próximo resgate em {}",
+                "Next claim in {}",
                 falta(estado.proximo_reset_unix - agora_unix)
             )
         };
@@ -353,7 +353,7 @@ impl PresencaUi {
         estilo::texto_centro_forte(
             bot.center().x,
             bot.center().y + 7.0 * f,
-            if ativo { "Resgatar" } else { "Resgatado" },
+            if ativo { "Claim" } else { "Claimed" },
             18,
             if ativo { estilo::OURO } else { estilo::SUAVE },
         );
@@ -411,7 +411,7 @@ mod tests {
         let mut nomes = HashMap::new();
         nomes.insert(
             shared::item_id::XP_POTION,
-            "Poção de Experiência".to_string(),
+            "Experience Potion".to_string(),
         );
         let mut ui = PresencaUi::default();
         let t = ui
@@ -438,7 +438,7 @@ mod tests {
             t.contains("dia 7")
                 && t.contains("Poção de Experiência ×1")
                 && t.contains("1.500 de ouro")
-                && t.contains("Correio")
+                && t.contains("Mail")
         );
     }
 

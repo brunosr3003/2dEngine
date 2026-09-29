@@ -45,7 +45,7 @@ async fn enviar_estado(
         }
         Err(e) => {
             tracing::warn!("loja: estado falhou: {e:#}");
-            resultado(to, false, "Loja indisponível no momento.");
+            resultado(to, false, "The shop is unavailable right now.");
         }
     }
 }
@@ -75,7 +75,7 @@ impl GameWorld {
                     ..Default::default()
                 }),
             );
-            resultado(&to, false, "A loja está desligada neste servidor.");
+            resultado(&to, false, "The shop is switched off on this server.");
             return;
         };
         let compra = matches!(
@@ -128,7 +128,7 @@ impl GameWorld {
                         }
                         Err(e) => {
                             tracing::warn!("loja: compra de TP falhou: {e:#}");
-                            resultado(&to, false, "Loja indisponível no momento.");
+                            resultado(&to, false, "The shop is unavailable right now.");
                         }
                     }
                 }
@@ -232,7 +232,7 @@ impl GameWorld {
                         }
                         Err(e) => {
                             tracing::warn!("loja: compra de item falhou: {e:#}");
-                            resultado(&to, false, "Loja indisponível no momento.");
+                            resultado(&to, false, "The shop is unavailable right now.");
                         }
                     }
                 }
@@ -369,7 +369,7 @@ impl GameWorld {
                 resultado(
                     &s.handle.to_client,
                     true,
-                    format!("Você recebeu {} de {nome}!", milhar(qtd as u64)),
+                    format!("You received {} {nome}!", milhar(qtd as u64)),
                 );
             }
             Evento::Energia {
@@ -395,7 +395,7 @@ impl GameWorld {
                 resultado(
                     &s.handle.to_client,
                     true,
-                    format!("Você recebeu {} de Energia!", milhar(qtd)),
+                    format!("You received {} Energy!", milhar(qtd)),
                 );
             }
         }
@@ -534,10 +534,10 @@ fn pode_ficar_montado(s: &Session) -> bool {
 /// Pode comecar a montar agora? O texto e' o motivo pro jogador.
 fn pode_montar(s: &Session, _agora: f32) -> Result<(), &'static str> {
     if s.coleta_no.is_some() {
-        return Err("Pare a coleta para montar.");
+        return Err("Stop gathering to mount.");
     }
     if !pode_ficar_montado(s) {
-        return Err("Agora não dá para montar.");
+        return Err("You cannot mount right now.");
     }
     Ok(())
 }

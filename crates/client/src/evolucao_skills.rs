@@ -84,7 +84,7 @@ impl EvolucaoSkills {
         estilo::texto_forte(
             p.x + 20.0 * f,
             p.y + 36.0 * f,
-            "HABILIDADES",
+            "SKILLS",
             23,
             estilo::OURO,
         );
@@ -98,14 +98,14 @@ impl EvolucaoSkills {
         estilo::texto(
             p.x + 50.0 * f,
             p.y + 75.0 * f,
-            &format!("Energia {}", crate::bolsa::milhar(self.progresso.energia)),
+            &format!("Energy {}", crate::bolsa::milhar(self.progresso.energia)),
             17,
             estilo::ACENTO,
         );
         estilo::texto(
             p.x + 265.0 * f,
             p.y + 75.0 * f,
-            &format!("Cobre {}", crate::bolsa::milhar(cobre as u64)),
+            &format!("Copper {}", crate::bolsa::milhar(cobre as u64)),
             16,
             estilo::OURO,
         );
@@ -165,7 +165,7 @@ impl EvolucaoSkills {
                 estilo::TEXTO,
             );
             let estado = if nivel < skill.nivel_necessario() {
-                format!("Libera no nível {}", skill.nivel_necessario())
+                format!("Unlocks at level {}", skill.nivel_necessario())
             } else {
                 format!(
                     "Tier {}  ·  +{:.0}%",
@@ -204,7 +204,7 @@ impl EvolucaoSkills {
             x + 84.0 * f,
             y + 56.0 * f,
             &format!(
-                "Tier {}  ·  Poder {:.0}%",
+                "Tier {}  ·  Power {:.0}%",
                 skills::tier_romano(tier),
                 skills::multiplicador_do_tier(tier) * 100.0
             ),
@@ -260,7 +260,7 @@ impl EvolucaoSkills {
         let custo = skills::custo_de_evolucao(tier);
         match custo {
             None => estilo::texto_ajustado(
-                "Tier máximo alcançado",
+                "Maximum tier reached",
                 x,
                 y + 215.0 * f,
                 555.0 * f,
@@ -271,7 +271,7 @@ impl EvolucaoSkills {
                 estilo::texto(
                     x,
                     y + 200.0 * f,
-                    &format!("PARA O TIER {}", skills::tier_romano(c.destino)),
+                    &format!("TO TIER {}", skills::tier_romano(c.destino)),
                     13,
                     estilo::OURO,
                 );
@@ -280,12 +280,12 @@ impl EvolucaoSkills {
                     .map_or(0, |g| self.progresso.tomos(skill.id, g) as u64);
                 let linhas: [(String, bool); 4] = [
                     (
-                        format!("Nível {} · você: {nivel}", c.nivel),
+                        format!("Level {} · you: {nivel}", c.nivel),
                         nivel >= c.nivel,
                     ),
                     (
                         format!(
-                            "{} Energia · você: {}",
+                            "{} Energy · you: {}",
                             crate::bolsa::milhar(c.energia),
                             crate::bolsa::milhar(self.progresso.energia)
                         ),
@@ -293,7 +293,7 @@ impl EvolucaoSkills {
                     ),
                     (
                         format!(
-                            "{} cobre · você: {}",
+                            "{} copper · you: {}",
                             crate::bolsa::milhar(c.cobre as u64),
                             crate::bolsa::milhar(cobre as u64)
                         ),
@@ -301,14 +301,14 @@ impl EvolucaoSkills {
                     ),
                     match c.tomo {
                         Some(g) => (
-                            format!("1 tomo {} · você: {tem_tomo}", g.nome()),
+                            format!("1 tome {} · you: {tem_tomo}", g.nome()),
                             tem_tomo > 0,
                         ),
                         // Saying it does NOT need a tome matters as much as saying
                         // it does: the first three tiers do not, and the owner
                         // thought it was bugged for being able to evolve
                         // "without having books".
-                        None => ("Este tier não pede tomo.".to_string(), true),
+                        None => ("This tier needs no tome.".to_string(), true),
                     },
                 ];
                 for (i, (t, ok)) in linhas.iter().enumerate() {
@@ -322,7 +322,7 @@ impl EvolucaoSkills {
                 }
             }
         }
-        estilo::texto(x, y + 258.0 * f, "TOMOS DESTA HABILIDADE", 15, estilo::OURO);
+        estilo::texto(x, y + 258.0 * f, "TOMES FOR THIS SKILL", 15, estilo::OURO);
 
         for (i, grau) in GrauTomo::TODOS.iter().enumerate() {
             let r = Rect::new(x + i as f32 * 188.0 * f, y + 270.0 * f, 180.0 * f, 70.0 * f);
@@ -369,7 +369,7 @@ impl EvolucaoSkills {
         let fabricar = Rect::new(x, y + 357.0 * f, 260.0 * f, 45.0 * f);
         estilo::botao(
             fabricar,
-            &format!("Fabricar tomo {}", grau.nome()),
+            &format!("Craft tome {}", grau.nome()),
             estilo::estado_de(fabricar, !fabrica, false),
             fabrica,
         );
@@ -388,7 +388,7 @@ impl EvolucaoSkills {
         let evoluir = Rect::new(x + 287.0 * f, y + 357.0 * f, 267.0 * f, 45.0 * f);
         estilo::botao(
             evoluir,
-            "Evoluir habilidade",
+            "Evolve skill",
             estilo::estado_de(evoluir, !pode, false),
             pode,
         );

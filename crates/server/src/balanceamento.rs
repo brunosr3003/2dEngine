@@ -88,7 +88,7 @@ impl Resultado {
             "{:<13} nv{:<2} {} | mortos {:>2} | 1º {}s | 10º {}s | {:>4.2}s/abate | dano/mob {:>5.1} | agressores {:>2} | {} | HP min {:>3.0}%",
             format!("{:?}", self.conjunto), self.nivel, if self.pocao { "poção" } else { "seco " },
             self.mortos, t(self.t1), t(self.t10), self.por_abate(), self.dano_por_mob(), self.max_agressores,
-            if self.vivo { "vivo " } else { "MORTO" }, self.hp_min * 100.0,
+            if self.vivo { "vivo " } else { "DEAD" }, self.hp_min * 100.0,
         )
     }
 }
@@ -2595,7 +2595,7 @@ mod metas_da_escada {
             m.agressores,
             m.hp_min * 100.0,
             m.pocoes,
-            if m.vivo { "vivo" } else { "MORTO" }
+            if m.vivo { "vivo" } else { "DEAD" }
         )
     }
 

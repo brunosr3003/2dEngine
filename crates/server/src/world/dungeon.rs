@@ -172,13 +172,13 @@ impl GameWorld {
     fn dg_recusa(&self, sid: SessionId, c: &dg::Conteudo, estagio: u8) -> Option<String> {
         let s = self.sessions.get(&sid)?;
         if !s.logged_in || s.entity.is_none() {
-            return Some("Personagem fora do jogo.".into());
+            return Some("Character out of the game.".into());
         }
         if s.instancia != 0 {
-            return Some("Você já está numa dungeon.".into());
+            return Some("You are already in a dungeon.".into());
         }
         if s.downed {
-            return Some("Levante-se antes.".into());
+            return Some("Get up first.".into());
         }
         let (nivel, poder) = self.dg_nivel_e_poder(sid);
         let tem_selo = tem_item(&s.inventory, shared::item_id::SELO_TEMPESTADE);
@@ -387,7 +387,7 @@ impl GameWorld {
                 return;
             }
             Pedido::SairDaArena => {
-                self.sair_da_arena(sid, "Você deixa a Arena.");
+                self.sair_da_arena(sid, "You leave the Arena.");
                 return;
             }
             Pedido::Estado => {}
@@ -455,7 +455,7 @@ impl GameWorld {
             }
             Pedido::SalaEntrar { sala } => {
                 let Some((c, e)) = self.mesa.sala(sala).map(|s| (s.conteudo, s.estagio)) else {
-                    self.dg_texto(sid, false, "A sala não existe mais.");
+                    self.dg_texto(sid, false, "The room no longer exists.");
                     return;
                 };
                 let Some(def) = dg::conteudo(c) else { return };
@@ -495,7 +495,7 @@ impl GameWorld {
                 // dg_sair preserva a entrega do saque antes da troca de zona.
                 self.dg_sair(sid);
                 if self.na_arena() {
-                    self.sair_da_arena(sid, "Você deixa a Arena.");
+                    self.sair_da_arena(sid, "You leave the Arena.");
                 }
                 return;
             }
@@ -623,7 +623,7 @@ impl GameWorld {
         // ONDE ELE ESTÁ vai JUNTO com o estado, e não só quando ele erra.
         //
         // A janela precisa saber disso pra oferecer a ida ANTES do clique —
-        // um botão "Entrar" que só depois avisa "aqui não" é o mesmo botão
+        // um botão "Enter" que só depois avisa "aqui não" é o mesmo botão
         // morto que este trabalho veio consertar.
         let dentro = shared::arena::e_arena(&zona);
         let _ = s.handle.to_client.send(ServerMessage::Dungeon {
@@ -642,7 +642,7 @@ impl GameWorld {
             let _ = s.handle.to_client.send(ServerMessage::Dungeon {
                 aviso: Aviso::Texto {
                     ok: false,
-                    texto: "Sem mais entradas à venda hoje.".into(),
+                    texto: "No more entries for sale today.".into(),
                 },
             });
             return;
@@ -651,7 +651,7 @@ impl GameWorld {
             let _ = s.handle.to_client.send(ServerMessage::Dungeon {
                 aviso: Aviso::Texto {
                     ok: false,
-                    texto: format!("Faltam {} de ouro.", preco - s.gold),
+                    texto: format!("{} gold short.", preco - s.gold),
                 },
             });
             return;
@@ -661,7 +661,7 @@ impl GameWorld {
         crate::telemetria::conta("dungeon_entrada_comprada", "gruta", 1);
         crate::telemetria::conta("ouro_ralo", "dungeon_entrada", preco as i64);
         self.save_pending = true;
-        self.dg_texto(sid, true, format!("Entrada comprada por {preco} de ouro."));
+        self.dg_texto(sid, true, format!("Entry bought for {preco} gold."));
     }
 
     // ─────────────────────────────── mesa ───────────────────────────────
@@ -713,7 +713,7 @@ impl GameWorld {
                     for m in &membros {
                         if let Some(sid) = self.dg_sid_da_chave(*m) {
                             let texto = if recusou.contains(m) {
-                                "Você saiu da partida.".to_string()
+                                "You left the run.".to_string()
                             } else {
                                 "Alguém não aceitou: você voltou pra fila.".to_string()
                             };
@@ -725,7 +725,7 @@ impl GameWorld {
                 EventoDaMesa::SalaFechou { membros, .. } => {
                     for m in membros {
                         if let Some(sid) = self.dg_sid_da_chave(m) {
-                            self.dg_texto(sid, false, "A sala ficou parada e fechou.");
+                            self.dg_texto(sid, false, "The room sat idle and closed.");
                             self.dg_enviar_estado(sid);
                         }
                     }
@@ -937,7 +937,7 @@ impl GameWorld {
         tag.stats.attack_damage = ((d as f32) * dano * fd).round().max(0.0) as i32;
         tag.stats.defense = crate::world::defesa_do_mob(tag.stats.defense, nivel);
         if semi {
-            tag.boss_name = Some("Guardião da Gruta".into());
+            tag.boss_name = Some("Guardian of the Cavern".into());
             tag.size_scale *= 1.4;
             tag.xp_reward *= 3;
         }
@@ -999,7 +999,7 @@ impl GameWorld {
             return;
         }
         if falta > 0.0 {
-            self.dg_texto(sid, false, format!("Reviver em {:.0} s.", falta.ceil()));
+            self.dg_texto(sid, false, format!("Revive in {:.0} s.", falta.ceil()));
             return;
         }
         let Some(andar) = self
@@ -1116,7 +1116,7 @@ impl GameWorld {
             m.saiu = true;
         }
         self.dg_devolver(sid);
-        self.dg_texto(sid, true, "Você saiu da dungeon.");
+        self.dg_texto(sid, true, "You left the dungeon.");
     }
 
     /// Quanto tempo se pode ficar na Arena sem estar numa dungeon.
@@ -1153,7 +1153,7 @@ impl GameWorld {
             let desde = *self.saguao_desde.entry(sid).or_insert(agora);
             if agora - desde >= Self::SO_DE_PASSAGEM_S {
                 self.saguao_desde.remove(&sid);
-                self.sair_da_arena(sid, "A Arena é de passagem: você voltou.");
+                self.sair_da_arena(sid, "The Arena is a waypoint: you went back.");
             }
         }
         // Quem entrou numa dungeon ou na fila zera o relógio.
@@ -1272,7 +1272,7 @@ impl GameWorld {
                     );
                     self.dg_povoar_andar(idx);
                     for sid in &presentes {
-                        self.dg_texto(*sid, false, "O grupo caiu: o andar recomeçou.");
+                        self.dg_texto(*sid, false, "The party went down: the floor restarted.");
                     }
                     self.instancias[idx].aviso_em = 0.0;
                 } else if !todos_caidos {
@@ -1434,7 +1434,7 @@ impl GameWorld {
             Velocity(Vec2::ZERO),
             EntityKind::Npc(0),
             NpcDaVilaTag {
-                nome: format!("Baú · {}", c.nome),
+                nome: format!("Chest · {}", c.nome),
                 rumo: shared::npc_kind(None, dg::PAPEL_BAU),
                 giver: None,
             },
@@ -1537,7 +1537,7 @@ impl GameWorld {
             _ => false,
         };
         if !perto {
-            self.dg_texto(sid, false, "Chegue perto do baú.");
+            self.dg_texto(sid, false, "Get close to the chest.");
             return true;
         }
         self.dg_dar_bau(idx, sid);
@@ -1661,7 +1661,7 @@ impl GameWorld {
                 self.dg_texto(
                     *sid,
                     true,
-                    &format!("{} item(ns) do chão recolhidos.", recolhidos[i]),
+                    &format!("{} item(s) picked up off the ground.", recolhidos[i]),
                 );
             }
         }
@@ -1735,7 +1735,7 @@ impl GameWorld {
             let _ = s.handle.to_client.send(ServerMessage::Dungeon {
                 aviso: Aviso::Texto {
                     ok: false,
-                    texto: "Bolsa cheia.".into(),
+                    texto: "Bag full.".into(),
                 },
             });
             return;

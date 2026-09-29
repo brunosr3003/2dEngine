@@ -37,12 +37,12 @@ pub mod categoria {
 
 pub fn nome_da_categoria(c: u8) -> &'static str {
     match c {
-        categoria::ARMA => "Arma",
-        categoria::ARMADURA => "Armadura",
+        categoria::ARMA => "Weapon",
+        categoria::ARMADURA => "Armour",
         categoria::MATERIAL => "Material",
-        categoria::SECUNDARIA => "Secundária",
-        categoria::ACESSORIO => "Acessório",
-        _ => "Outros",
+        categoria::SECUNDARIA => "Off-hand",
+        categoria::ACESSORIO => "Accessory",
+        _ => "Other",
     }
 }
 
@@ -164,7 +164,7 @@ pub const PECAS: [Peca; 15] = {
     [
         (
             ESPADA_E_ESCUDO,
-            "Espada e Escudo",
+            "Sword and Shield",
             ARMA,
             SCALE,
             STEEL,
@@ -182,7 +182,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             PISTOLAS,
-            "Duas Pistolas",
+            "Twin Pistols",
             ARMA,
             SCALE,
             STEEL,
@@ -191,7 +191,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             ANEL_MAGICO,
-            "Anel Mágico",
+            "Magic Ring",
             ARMA,
             SCALE,
             STEEL,
@@ -200,7 +200,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             MANTO_DO_GUERREIRO,
-            "Manto do Guerreiro",
+            "Warrior's Mantle",
             SECUNDARIA,
             CLAW,
             STEEL,
@@ -209,7 +209,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             BAINHA,
-            "Bainha",
+            "Scabbard",
             SECUNDARIA,
             CLAW,
             STEEL,
@@ -218,7 +218,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             COLDRE,
-            "Coldre",
+            "Holster",
             SECUNDARIA,
             CLAW,
             STEEL,
@@ -227,7 +227,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             MANTO_DO_MAGO,
-            "Manto do Mago",
+            "Mage's Mantle",
             SECUNDARIA,
             CLAW,
             STEEL,
@@ -236,7 +236,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             ARMADURA_LEVE,
-            "Armadura Leve",
+            "Light Armour",
             ARMADURA,
             HIDE,
             STEEL,
@@ -245,7 +245,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             ARMADURA_MEDIA,
-            "Armadura Média",
+            "Medium Armour",
             ARMADURA,
             HIDE,
             STEEL,
@@ -254,7 +254,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             ARMADURA_PESADA,
-            "Armadura Pesada",
+            "Heavy Armour",
             ARMADURA,
             HIDE,
             STEEL,
@@ -263,7 +263,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             BRINCO,
-            "Brinco",
+            "Earring",
             ACESSORIO,
             HORN,
             PLATINUM,
@@ -272,7 +272,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             AMULETO,
-            "Amuleto",
+            "Amulet",
             ACESSORIO,
             HORN,
             PLATINUM,
@@ -281,7 +281,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             BRACELETE,
-            "Bracelete",
+            "Bracelet",
             ACESSORIO,
             HORN,
             PLATINUM,
@@ -290,7 +290,7 @@ pub const PECAS: [Peca; 15] = {
         ),
         (
             CINTO,
-            "Cinto",
+            "Belt",
             ACESSORIO,
             HORN,
             PLATINUM,
@@ -343,7 +343,7 @@ pub const RECEITA_SELO: u16 = 1900;
 pub fn receita_do_selo() -> CraftRecipeNet {
     CraftRecipeNet {
         id: RECEITA_SELO,
-        name: "Selo da Tempestade".into(),
+        name: "Storm Seal".into(),
         category: categoria::MATERIAL,
         station: 0,
         tier: 4,

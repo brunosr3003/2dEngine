@@ -995,7 +995,7 @@ pub fn material_solido() -> Material {
         },
         MaterialParams {
             uniforms: vec![
-                UniformDesc::new("Recorte", UniformType::Float3),
+                UniformDesc::new("Crop", UniformType::Float3),
                 UniformDesc::new("RecorteZ", UniformType::Float1),
                 UniformDesc::new("Tinta", UniformType::Float4),
                 UniformDesc::new("LuzDia", UniformType::Float1),
@@ -1643,7 +1643,7 @@ pub fn rig_do_rosto(i: u8) -> String {
 }
 
 pub fn rig_do_cabelo(i: u8) -> Option<String> {
-    // Acima dos cabelos vem o "sem cabelo" e depois os CHAPEUS: os tres
+    // Acima dos cabelos vem o "no hair" e depois os CHAPEUS: os tres
     // dividem a junta da cabeca, entao dividem o campo.
     if let Some(id) = shared::aparencia::chapeu_do_cabelo(i) {
         let arq = shared::aparencia::CHAPEUS
@@ -2549,7 +2549,7 @@ pub fn vitrine_aparencia(
     draw_cylinder(vec3(0.0, -0.07, 0.0), 0.9, 0.93, 0.06, None,
         Color::new(0.12, 0.16, 0.21, 1.0));
     gl_use_material(solido);
-    solido.set_uniform("Recorte", Vec3::ZERO);
+    solido.set_uniform("Crop", Vec3::ZERO);
     let mut pose = crate::rig::pose(&crate::rig::Entrada {
         fase: 0.0, andar: 0.0, correr: 0.0, tempo: get_time() as f32,
         ar: 0.0, degrau: [0.0, 0.0],

@@ -68,7 +68,7 @@ impl Lojas {
         estilo::texto(
             p.x + u(18.0),
             p.y + u(32.0),
-            "Vendedores da ilha",
+            "Island vendors",
             22,
             estilo::OURO,
         );
@@ -92,7 +92,7 @@ impl Lojas {
             estilo::texto(
                 p.x + u(18.0),
                 p.y + u(92.0),
-                "Nenhum vendedor nesta ilha.",
+                "No vendor on this island.",
                 15,
                 estilo::SUAVE,
             );

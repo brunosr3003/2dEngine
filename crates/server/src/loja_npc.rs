@@ -22,13 +22,13 @@ pub fn comprar_lote(
     cap: u32,
 ) -> Result<u64, String> {
     if qtd == 0 || qtd > MAX_LOTE {
-        return Err(format!("escolha de 1 a {MAX_LOTE}"));
+        return Err(format!("choose from 1 to {MAX_LOTE}"));
     }
     let total = preco as u64 * qtd as u64;
     let tem = crate::craft::tem(inv, item_id::COPPER) as u64;
     if tem < total {
         return Err(format!(
-            "faltam {} de cobre ({} por unidade)",
+            "{} copper short ({} per unit)",
             total - tem,
             preco
         ));
@@ -36,7 +36,7 @@ pub fn comprar_lote(
     let mut sim = inv.to_vec();
     crate::craft::consumir(&mut sim, item_id::COPPER, total as u32);
     if !crate::craft::por_empilhavel(&mut sim, item, qtd, cap) {
-        return Err("bolsa cheia pra esse lote".into());
+        return Err("bag too full for that batch".into());
     }
     inv.copy_from_slice(&sim);
     Ok(total)
@@ -84,7 +84,7 @@ mod testes {
         // which does not empty).
         let mut inv = bolsa(&[(item_id::COPPER, 10_000)], 1);
         let e = comprar_lote(&mut inv, POCAO, 10, 45, 20).unwrap_err();
-        assert!(e.contains("bolsa cheia"), "{e}");
+        assert!(e.contains("bag full"), "{e}");
         assert_eq!(crate::craft::tem(&inv, item_id::COPPER), 10_000);
         // The copper the batch spends entirely frees its slot.
         let mut justo = bolsa(&[(item_id::COPPER, 200)], 1);

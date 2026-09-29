@@ -91,14 +91,14 @@ impl BarraDeColeta {
             estilo::texto_centro(
                 r.center().x,
                 r.y + r.h * 0.5 + 1.0,
-                "Bolsa cheia — coleta pausada",
+                "Bag full — gathering paused",
                 13,
                 estilo::TEXTO,
             );
             return;
         }
         let texto = format!(
-            "Coletando · {} · {:.1} s",
+            "Gathering · {} · {:.1} s",
             shared::nome_do_no(tipo),
             self.restante_s(agora)
         )

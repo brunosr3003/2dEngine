@@ -451,7 +451,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     // ── Prefixes (name_id 1..999) ──
     AffixDef {
         name_id: 1,
-        display: "Forte",
+        display: "Mighty",
         stat: AffixStat::Attack,
         is_prefix: true,
         tiers: [(2, 5), (5, 10), (10, 18)],
@@ -467,7 +467,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 3,
-        display: "Resistente",
+        display: "Sturdy",
         stat: AffixStat::Hp,
         is_prefix: true,
         tiers: [(10, 25), (25, 50), (50, 90)],
@@ -475,7 +475,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 4,
-        display: "Fortificado",
+        display: "Fortified",
         stat: AffixStat::Defense,
         is_prefix: true,
         tiers: [(2, 5), (5, 10), (10, 18)],
@@ -483,7 +483,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 5,
-        display: "Mágico",
+        display: "Arcane",
         stat: AffixStat::Mp,
         is_prefix: true,
         tiers: [(15, 30), (30, 60), (60, 110)],
@@ -491,7 +491,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 6,
-        display: "Ágil",
+        display: "Nimble",
         stat: AffixStat::Dex,
         is_prefix: true,
         tiers: [(2, 5), (5, 9), (9, 15)],
@@ -499,7 +499,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 7,
-        display: "Sábio",
+        display: "Wise",
         stat: AffixStat::Wis,
         is_prefix: true,
         tiers: [(2, 5), (5, 9), (9, 15)],
@@ -507,7 +507,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 8,
-        display: "Implacável",
+        display: "Relentless",
         stat: AffixStat::AttackSpeed,
         is_prefix: true,
         tiers: [(3, 7), (7, 12), (12, 20)],
@@ -515,7 +515,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     }, // %
     AffixDef {
         name_id: 9,
-        display: "Crítico",
+        display: "Critical",
         stat: AffixStat::CritChance,
         is_prefix: true,
         tiers: [(2, 5), (5, 8), (8, 15)],
@@ -523,7 +523,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     }, // %
     AffixDef {
         name_id: 10,
-        display: "Veloz",
+        display: "Swift",
         stat: AffixStat::MoveSpeed,
         is_prefix: true,
         tiers: [(2, 5), (5, 8), (8, 12)],
@@ -532,7 +532,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     // ── Suffixes (name_id 1000..1999) ──
     AffixDef {
         name_id: 1001,
-        display: "do Urso",
+        display: "of the Bear",
         stat: AffixStat::Hp,
         is_prefix: false,
         tiers: [(15, 30), (30, 60), (60, 100)],
@@ -540,7 +540,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1002,
-        display: "do Touro",
+        display: "of the Bull",
         stat: AffixStat::Attack,
         is_prefix: false,
         tiers: [(3, 7), (7, 13), (13, 22)],
@@ -548,7 +548,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1003,
-        display: "da Tartaruga",
+        display: "of the Turtle",
         stat: AffixStat::Defense,
         is_prefix: false,
         tiers: [(3, 6), (6, 11), (11, 18)],
@@ -556,7 +556,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1004,
-        display: "do Lince",
+        display: "of the Lynx",
         stat: AffixStat::Dex,
         is_prefix: false,
         tiers: [(3, 7), (7, 11), (11, 17)],
@@ -564,7 +564,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1005,
-        display: "do Mago",
+        display: "of the Mage",
         stat: AffixStat::Wis,
         is_prefix: false,
         tiers: [(3, 7), (7, 11), (11, 17)],
@@ -572,7 +572,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1006,
-        display: "do Vento",
+        display: "of the Wind",
         stat: AffixStat::MoveSpeed,
         is_prefix: false,
         tiers: [(2, 5), (5, 8), (8, 12)],
@@ -580,7 +580,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1007,
-        display: "da Fúria",
+        display: "of Fury",
         stat: AffixStat::AttackSpeed,
         is_prefix: false,
         tiers: [(3, 7), (7, 12), (12, 20)],
@@ -588,7 +588,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1008,
-        display: "do Assassino",
+        display: "of the Assassin",
         stat: AffixStat::CritChance,
         is_prefix: false,
         tiers: [(2, 5), (5, 8), (8, 15)],
@@ -596,7 +596,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1009,
-        display: "do Manancial",
+        display: "of the Wellspring",
         stat: AffixStat::Mp,
         is_prefix: false,
         tiers: [(15, 40), (40, 80), (80, 140)],
@@ -604,7 +604,7 @@ pub const AFFIX_TABLE: &[AffixDef] = &[
     },
     AffixDef {
         name_id: 1010,
-        display: "da Regeneração",
+        display: "of Regeneration",
         stat: AffixStat::HpRegen,
         is_prefix: false,
         tiers: [(1, 3), (3, 5), (5, 9)],
@@ -850,12 +850,12 @@ pub fn faixas_do_roll(item_id: u16, item_level: u16) -> Vec<(&'static str, i32, 
     let tpl = item_template(item_id);
     let e = escala_do_roll(tier_from_ilvl(item_level), item_level, 1);
     [
-        ("Ataque", tpl.attack_damage, e.ataque),
-        ("Defesa", tpl.defense, e.defesa),
-        ("Vida", tpl.hp_max, e.vida),
+        ("Attack", tpl.attack_damage, e.ataque),
+        ("Defence", tpl.defense, e.defesa),
+        ("Health", tpl.hp_max, e.vida),
         ("Mana", tpl.mp_max, e.vida),
-        ("Destreza", tpl.dex, e.ataque),
-        ("Sabedoria", tpl.wis, e.ataque),
+        ("Dexterity", tpl.dex, e.ataque),
+        ("Wisdom", tpl.wis, e.ataque),
     ]
     .into_iter()
     .filter(|(_, r, _)| !r.is_zero())
@@ -924,7 +924,7 @@ mod testes_do_refino {
     fn faixas_do_roll_cercam_o_que_o_craft_rola() {
         use crate::constants::item_id::KATANA;
         let f = faixas_do_roll(KATANA, 5);
-        assert_eq!(f.iter().map(|x| x.0).collect::<Vec<_>>(), vec!["Ataque", "Destreza"]);
+        assert_eq!(f.iter().map(|x| x.0).collect::<Vec<_>>(), vec!["Attack", "Dexterity"]);
         for r in [0.0f32, 0.3, 0.7, 0.999] {
             let i = ItemInstance::roll_for(KATANA, 5, || r).unwrap();
             assert!((f[0].1..=f[0].2).contains(&i.attack_damage), "{r}: {}", i.attack_damage);

@@ -36,9 +36,9 @@ impl Grupo {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Grupo::Vida => "Vida",
+            Grupo::Vida => "Health",
             Grupo::Mana => "Mana",
-            Grupo::Vigor => "Vigor",
+            Grupo::Vigor => "Stamina",
         }
     }
 }

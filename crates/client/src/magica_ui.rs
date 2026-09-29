@@ -136,7 +136,7 @@ pub(crate) struct Pecas {
 impl Pecas {
     pub fn todas(&self) -> [(&'static str, Rect); 5] {
         [
-            ("relógio", self.relogio),
+            ("clock", self.relogio),
             ("ilhota", self.ilhota),
             ("barra", self.barra),
             ("+", self.mais),
@@ -154,7 +154,7 @@ pub struct MagicaUi {
     /// Existe porque a abertura tem que vir do PEDIDO, e não de o estado ser
     /// desconhecido. A versão anterior abria em `estado.is_none()` — ou seja,
     /// só na primeira vez da sessão. Da segunda em diante o jogador tocava
-    /// "Ilha Mágica" no menu, o pedido saía, o servidor respondia, e nada
+    /// "Magic Island" no menu, o pedido saía, o servidor respondia, e nada
     /// acontecia na tela. O dono: "clico em ilha mágica mas não abre nada e
     /// me deixa travado na quest".
     pedida: bool,
@@ -235,7 +235,7 @@ impl MagicaUi {
         self.aberto = true;
     }
 
-    /// O jogador tocou "Ilha Mágica": a próxima notícia de estado ABRE.
+    /// O jogador tocou "Magic Island": a próxima notícia de estado ABRE.
     ///
     /// Chamado junto do envio do pedido, nunca sozinho — é o par do
     /// `PedidoMagica::Painel`.
@@ -283,13 +283,13 @@ impl MagicaUi {
     /// Onde fica o botão "+" de estender, dada a tarja.
     ///
     /// Fora do desenho pra poder ser medido: ele divide a tarja com o relógio
-    /// e a ilhota, e medida escrita à mão nesta tela já pôs o "Entrar" fora
+    /// e a ilhota, e medida escrita à mão nesta tela já pôs o "Enter" fora
     /// da janela uma vez.
     /// A faixa dos degraus: (y da linha de detalhe, os três botões).
     ///
     /// Fora do desenho pra poder ser medida. A primeira versão desta faixa
     /// saiu com os rótulos sobrepostos no emulador, e medida escrita à mão
-    /// nesta tela já pôs o "Entrar" fora da janela uma vez.
+    /// nesta tela já pôs o "Enter" fora da janela uma vez.
     pub(crate) fn faixa_dos_degraus(rod: Rect, f: f32) -> (f32, [Rect; 3]) {
         // 34 em pixels CRUS no mínimo: `area_de_toque` cresce o alvo até o
         // dedo, mas com teto (+14). Num `f` pequeno, 34 × 0,8 = 27 e nem com
@@ -321,7 +321,7 @@ impl MagicaUi {
         let larg_sair = (64.0 * f).max(58.0);
         let by = tarja.y + (tarja.h - alto) * 0.5;
         // Os botões ancoram na DIREITA e o texto ocupa o que sobra. O
-        // contrário (texto primeiro) faria o "Sair" andar conforme o nome da
+        // contrário (texto primeiro) faria o "Leave" andar conforme o nome da
         // ilhota, e botão que muda de lugar é botão que se erra.
         let sair = Rect::new(tarja.x + tarja.w - pad - larg_sair, by, larg_sair, alto);
         let mais = Rect::new(sair.x - 8.0 * f - lado, by, lado, alto);
@@ -373,9 +373,9 @@ impl MagicaUi {
         let seguro =
             eu.is_some_and(|p| shared::magica::e_porto_seguro(::glam::Vec2::new(p.x, p.y)));
         let (texto, cor) = if seguro {
-            ("Zona segura · sem PvP", VERDE)
+            ("Safe zone · no PvP", VERDE)
         } else {
-            ("PvP aberto", VERMELHO)
+            ("PvP open", VERMELHO)
         };
         let f = estilo::fator_texto();
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.0, 0.0, 0.0, 0.55));
@@ -438,7 +438,7 @@ impl MagicaUi {
                 format!("×{:.2}", b.multiplicador()),
                 cor_do_bonus(b),
             ),
-            None => ("Ponte", "sem bônus".to_string(), SUAVE),
+            None => ("Bridge", "no bonus".to_string(), SUAVE),
         };
         // O ponto da cor, colado no nome: um rótulo colorido some no fundo
         // escuro; um disco cheio não.
@@ -491,7 +491,7 @@ impl MagicaUi {
         // O relógio CONTINUA correndo depois de sair, e isso é regra de
         // `PedidoMagica::Sair`: senão o jogador sairia no primeiro susto e
         // voltaria com o tempo intacto, e a ilha deixaria de ter hora.
-        if crate::ui::botao(p.sair, "Sair", true) {
+        if crate::ui::botao(p.sair, "Leave", true) {
             pedido = Some(PedidoMagica::Sair);
         }
         pedido
@@ -516,7 +516,7 @@ impl MagicaUi {
         // Antes ela vinha de `ui::painel(480, 430)`, que monta o retângulo em
         // PIXELS CRUS — e o texto dentro dele escala por `fator_texto()`. No
         // celular o conteúdo media ~443 px numa área útil de 346: o botão
-        // "Entrar" caía FORA da janela. O dono: "a HUD de entrar na Ilha
+        // "Enter" caía FORA da janela. O dono: "a HUD de entrar na Ilha
         // Mágica tá um lixo, nem consigo entrar".
         //
         // Agora tudo multiplica por `f`, e `escala_do_painel` (que recebe a
@@ -530,7 +530,7 @@ impl MagicaUi {
         let larg = p.w - 32.0 * f;
         let mut pedido = None;
 
-        estilo::texto_forte(x, p.y + 32.0 * f, "Ilha Mágica", 20, OURO);
+        estilo::texto_forte(x, p.y + 32.0 * f, "Magic Island", 20, OURO);
         let fechar = Rect::new(p.x + p.w - 44.0 * f, p.y + 8.0 * f, 36.0 * f, 34.0 * f);
         estilo::texto_centro(
             fechar.center().x,
@@ -578,7 +578,7 @@ impl MagicaUi {
                     rod.center().x,
                     linha,
                     &format!(
-                        "{} · mobs nv {}-{} · poder {}",
+                        "{} · mobs lv {}-{} · power {}",
                         nv.nome,
                         nv.mob.0,
                         nv.mob.1,
@@ -590,13 +590,13 @@ impl MagicaUi {
             }
             let viajar = Rect::new(rod.x, rod.y + 5.0 * f, rod.w, 38.0 * f);
             let pode_viajar = grau != e.grau_atual && grau > 0 && grau <= e.grau_maximo;
-            if ui::botao(viajar, "Trocar de ilha sem gastar passe", pode_viajar) && pode_viajar {
+            if ui::botao(viajar, "Switch island without spending a pass", pode_viajar) && pode_viajar {
                 pedido = Some(PedidoMagica::Trocar { grau });
                 self.aberto = false;
             }
             if ui::botao(
                 Rect::new(rod.x, rod.y + 51.0 * f, rod.w, 34.0 * f),
-                "Sair da ilha",
+                "Leave island",
                 true,
             ) {
                 pedido = Some(PedidoMagica::Sair);
@@ -605,7 +605,7 @@ impl MagicaUi {
             estilo::texto(
                 rod.x,
                 rod.y + 100.0 * f,
-                "Trocar e sair não pausam o relógio.",
+                "Switching and leaving do not pause the clock.",
                 12,
                 SUAVE,
             );
@@ -664,13 +664,13 @@ impl MagicaUi {
             // A LINHA DE DETALHE do degrau escolhido — uma só, centrada.
             if let Some(nv) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) {
                 let (txt, cor) = if e.grau_maximo < nv.grau {
-                    (format!("Abre no nível {}", nv.exige_nivel), estilo::SUAVE)
+                    (format!("Opens at level {}", nv.exige_nivel), estilo::SUAVE)
                 } else if nv.acima_do_nivel(e.meu_nivel) {
                     // O aviso de que você está abaixo: é o que torna entrar no
                     // 15 numa ilha de 20-23 uma escolha, e não uma surpresa.
                     (
                         format!(
-                            "Mobs nv {}-{} · poder {} · você {}",
+                            "Mobs lv {}-{} · power {} · you {}",
                             nv.mob.0,
                             nv.mob.1,
                             crate::bolsa::milhar(nv.poder() as u64),
@@ -681,7 +681,7 @@ impl MagicaUi {
                 } else {
                     (
                         format!(
-                            "Mobs nv {}-{} · poder {}",
+                            "Mobs lv {}-{} · power {}",
                             nv.mob.0,
                             nv.mob.1,
                             crate::bolsa::milhar(nv.poder() as u64)
@@ -694,11 +694,11 @@ impl MagicaUi {
             let n = self.entradas.max(1);
             let de_graca = (e.gratis as u32).min(n as u32);
             let rot = if de_graca == n as u32 {
-                format!("Entrar — {n} grátis")
+                format!("Enter — {n} free")
             } else if de_graca > 0 {
-                format!("Entrar — {de_graca} grátis + {} passe", n as u32 - de_graca)
+                format!("Enter — {de_graca} free + {} pass", n as u32 - de_graca)
             } else {
-                format!("Entrar — {n} passe(s)")
+                format!("Enter — {n} pass(es)")
             };
             // Sem degrau liberado não há entrada: o portão é o nível.
             let pode = (retomar || total >= n as u32) && grau > 0;
@@ -708,7 +708,7 @@ impl MagicaUi {
             if ui::botao(
                 b,
                 if retomar {
-                    "Voltar sem gastar passe"
+                    "Go back without spending a pass"
                 } else {
                     &rot
                 },
@@ -832,7 +832,7 @@ mod testes {
     /// isso abrisse o painel, o jogador atravessaria uma ponte no meio de uma
     /// briga de PvP e levaria uma janela na cara — que é o melhor jeito de
     /// morrer sem entender por quê.
-    /// Tocar "Ilha Mágica" abre o painel TODA vez, não só na primeira.
+    /// Tocar "Magic Island" abre o painel TODA vez, não só na primeira.
     ///
     /// A versão anterior abria em `estado.is_none()`: da segunda vez em
     /// diante o jogador tocava no menu, o pedido saía, o servidor respondia e

@@ -101,7 +101,7 @@ impl MobsUi {
         estilo::cartao(detalhe, false, false);
         if self.registros.is_empty() {
             estilo::texto(lista.x + 12.0, lista.y + 32.0,
-                "Visite uma ilha para ver seus mobs.", 14, estilo::SUAVE);
+                "Visit an island to see its mobs.", 14, estilo::SUAVE);
             return None;
         }
         let por_pagina = ((lista.h - 58.0) / 42.0).floor().max(1.0) as usize;
@@ -129,7 +129,7 @@ impl MobsUi {
         if clique && proximo.contains(m) { self.pagina = (self.pagina + 1).min(max_pagina); }
         let Some(r) = self.selecionado.and_then(|i| self.registros.get(i)) else {
             estilo::texto(detalhe.x + 14.0, detalhe.y + 32.0,
-                "Toque em um mob para ver os detalhes.", 14, estilo::SUAVE);
+                "Tap a mob to see the details.", 14, estilo::SUAVE);
             return None;
         };
         let d = r.desafio;
@@ -153,25 +153,25 @@ impl MobsUi {
             None => estilo::SUAVE,
         };
         let linhas = [
-            ("Vida", r.vida.to_string(), estilo::TEXTO),
-            ("Ataque do mob", d.ataque.to_string(), estilo::TEXTO),
-            ("Defesa do mob", d.defesa.to_string(), estilo::TEXTO),
-            ("Poder sugerido", format!("{} · seu {}", d.poder_recomendado,
+            ("Health", r.vida.to_string(), estilo::TEXTO),
+            ("Mob attack", d.ataque.to_string(), estilo::TEXTO),
+            ("Mob defence", d.defesa.to_string(), estilo::TEXTO),
+            ("Suggested power", format!("{} · yours {}", d.poder_recomendado,
                 stats.map_or_else(|| "—".into(), |s| shared::dungeon::poder_de_stats(s).to_string())),
                 cor_de(stats.map(|s| shared::dungeon::poder_de_stats(s) >= d.poder_recomendado as i32))),
-            ("Ataque sugerido", format!("{} · seu {}", d.ataque_recomendado,
+            ("Suggested attack", format!("{} · yours {}", d.ataque_recomendado,
                 stats.map_or_else(|| "—".into(), |s| s.attack_damage.to_string())),
                 cor_de(stats.map(|s| s.attack_damage >= d.ataque_recomendado as i32))),
-            ("Defesa sugerida", format!("{} · sua {}", d.defesa_recomendada,
+            ("Suggested defence", format!("{} · yours {}", d.defesa_recomendada,
                 stats.map_or_else(|| "—".into(), |s| s.defense.to_string())),
                 cor_de(stats.map(|s| s.defense >= d.defesa_recomendada as i32))),
-            ("Proficiência", format!("{} · sua {}", d.proficiencia_minima,
+            ("Proficiency", format!("{} · yours {}", d.proficiencia_minima,
                 proficiencia.map_or_else(|| "—".into(), |p| p.to_string())),
                 cor_de(proficiencia.map(|p| p >= d.proficiencia_minima as u32))),
-            ("Peças do conjunto", format!("{} {} Nv{} · suas {}", d.pecas_minimas,
+            ("Set pieces", format!("{} {} Lv{} · yours {}", d.pecas_minimas,
                 nome_do_grau(d.grau_minimo), d.item_level_minimo, pecas),
                 cor_de(Some(pecas >= d.pecas_minimas as usize))),
-            ("Refino da arma", format!("+{} · sua +{}", d.refino_arma_minimo, refino),
+            ("Weapon refine", format!("+{} · yours +{}", d.refino_arma_minimo, refino),
                 cor_de(Some(refino >= d.refino_arma_minimo))),
         ];
         let topo = palco.y + palco.h + 10.0;
@@ -212,13 +212,13 @@ mod testes {
         };
         let desafio = shared::desafio_do_mob(&stats, 30, false);
         ui.catalogo(vec![shared::protocol::MobNoCatalogo {
-            kind: 1, nivel: 30, nome: "Urso".into(), vida: 500,
+            kind: 1, nivel: 30, nome: "Bear".into(), vida: 500,
             chefe: false, desafio,
         }]);
         assert_eq!(ui.registros.len(), 1);
         assert_eq!(ui.registros[0].desafio, desafio);
         ui.catalogo(vec![shared::protocol::MobNoCatalogo {
-            kind: 1, nivel: 30, nome: "Urso".into(), vida: 600,
+            kind: 1, nivel: 30, nome: "Bear".into(), vida: 600,
             chefe: false, desafio,
         }]);
         assert_eq!(ui.registros.len(), 1);

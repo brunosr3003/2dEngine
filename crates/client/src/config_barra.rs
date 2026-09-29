@@ -105,7 +105,7 @@ impl ConfigBarra {
         let clique = crate::foco::clique();
         let mut mudou = false;
 
-        estilo::texto(p.x + 20.0, p.y + 34.0, "Barra de itens", 22, estilo::OURO);
+        estilo::texto(p.x + 20.0, p.y + 34.0, "Item bar", 22, estilo::OURO);
         estilo::texto(p.x + 20.0, p.y + 56.0, "Escolha um item e depois um espaço (ou o contrário). Na tela, arraste o botão pra CIMA pra ligar o AUTO.", 13, estilo::SUAVE);
         let x_fechar = Rect::new(p.x + p.w - 38.0, p.y + 12.0, 26.0, 26.0);
         estilo::painel(x_fechar);
@@ -168,9 +168,9 @@ impl ConfigBarra {
                     tx,
                     linha.y + 38.0,
                     if alvo {
-                        "Escolha um item na lista ›"
+                        "Pick an item from the list ›"
                     } else {
-                        "Vazio"
+                        "Empty"
                     },
                     15,
                     estilo::SUAVE,
@@ -192,9 +192,9 @@ impl ConfigBarra {
             let b_auto = Rect::new(tx, linha.y + 38.0, 118.0, 26.0);
             estilo::painel(b_auto);
             let (txt, cor) = if esp.auto {
-                ("AUTO · ligado", estilo::AUTO)
+                ("AUTO · on", estilo::AUTO)
             } else {
-                ("AUTO · desligado", estilo::SUAVE)
+                ("AUTO · off", estilo::SUAVE)
             };
             estilo::texto_centro(b_auto.center().x, b_auto.center().y + 5.0, txt, 13, cor);
             if clique && b_auto.contains(m) {
@@ -243,7 +243,7 @@ impl ConfigBarra {
                 estilo::texto(
                     tx,
                     linha.y + 80.0,
-                    &format!("AUTO usa com {}", c.regra()),
+                    &format!("AUTO uses at {}", c.regra()),
                     12,
                     estilo::SUAVE,
                 );
@@ -253,7 +253,7 @@ impl ConfigBarra {
             estilo::texto_centro(
                 limpar.center().x,
                 limpar.center().y + 5.0,
-                "Limpar",
+                "Clear",
                 12,
                 estilo::TEXTO,
             );
@@ -266,13 +266,13 @@ impl ConfigBarra {
         // ── consumiveis da bolsa ──
         let lx = p.x + col + 12.0;
         let lw = p.w - col - 28.0;
-        estilo::texto(lx, p.y + 90.0, "Consumíveis na bolsa", 15, estilo::OURO);
+        estilo::texto(lx, p.y + 90.0, "Consumables in your bag", 15, estilo::OURO);
         let lista = consumiveis(slots);
         if lista.is_empty() {
             estilo::texto(
                 lx,
                 p.y + 120.0,
-                "Nenhum consumível na bolsa.",
+                "No consumables in your bag.",
                 13,
                 estilo::SUAVE,
             );

@@ -128,7 +128,7 @@ impl ConfigInterface {
         estilo::texto(
             r.x + 18.0 * f,
             r.y + 70.0 * f,
-            "Tamanho do HUD e dos textos",
+            "Size of the HUD and text",
             14,
             estilo::SUAVE,
         );
@@ -152,14 +152,14 @@ impl ConfigInterface {
         estilo::texto_centro(
             botao_padrao.center().x,
             botao_padrao.center().y + 6.0 * f,
-            &format!("Voltar ao padrão ({:.0}%)", padrao * 100.0),
+            &format!("Back to default ({:.0}%)", padrao * 100.0),
             15,
             estilo::TEXTO,
         );
 
         // ── economia de energia ──
         let ye = botao_padrao.y + botao_padrao.h + 34.0 * f;
-        estilo::texto(r.x + 18.0 * f, ye, "Economia de energia", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0 * f, ye, "Battery saver", 14, estilo::SUAVE);
         let agora = Rect::new(r.x + 18.0 * f, ye + 12.0 * f, r.w - 36.0 * f, 42.0 * f);
         estilo::painel(agora);
         economia::bateria(
@@ -170,7 +170,7 @@ impl ConfigInterface {
         estilo::texto_centro(
             agora.center().x,
             agora.center().y + 6.0 * f,
-            "Ativar agora",
+            "Enable now",
             15,
             estilo::TEXTO,
         );
@@ -199,7 +199,7 @@ impl ConfigInterface {
             let marcado = min == economia_auto;
             estilo::cartao(c, c.contains(m), marcado);
             let t = if min == 0 {
-                "Nunca".to_string()
+                "Never".to_string()
             } else {
                 format!("{min} min")
             };
@@ -213,12 +213,12 @@ impl ConfigInterface {
         }
 
         let ys = yc + 56.0 * f;
-        estilo::texto(r.x + 18.0 * f, ys, "Sombras", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0 * f, ys, "Shadows", 14, estilo::SUAVE);
         let largura = (r.w - 52.0 * f) / 3.0;
         let opcoes = [
-            (Sombras::Desligadas, "Desligadas"),
-            (Sombras::Leves, "Leves"),
-            (Sombras::Bonitas, "Bonitas"),
+            (Sombras::Desligadas, "Off"),
+            (Sombras::Leves, "Light"),
+            (Sombras::Bonitas, "Pretty"),
         ];
         let botoes: Vec<_> = opcoes
             .iter()
@@ -259,7 +259,7 @@ impl ConfigInterface {
         // for language looks in options — and because the row is the same as the
         // shadows one: two exclusive choices, one ticked.
         let yi = ys + 92.0 * f;
-        estilo::texto(r.x + 18.0 * f, yi, "Idioma do jogo", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0 * f, yi, "Game language", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
         let li = (r.w - 44.0 * f) / 2.0;
         let idiomas: Vec<_> = shared::idioma::Idioma::TODAS
@@ -369,7 +369,7 @@ impl ConfigInterface {
         let col = (r.w - 48.0 * f) * 0.5;
         let lx = r.x + 16.0 * f;
         let rx = lx + col + 16.0 * f;
-        estilo::texto(lx, r.y + 61.0 * f, "Tamanho do HUD", 14, estilo::SUAVE);
+        estilo::texto(lx, r.y + 61.0 * f, "HUD size", 14, estilo::SUAVE);
         let menos = Rect::new(lx, r.y + 75.0 * f, 50.0 * f, 42.0 * f);
         let mais = Rect::new(lx + col - 50.0 * f, menos.y, 50.0 * f, 42.0 * f);
         for (b, nome) in [(menos, "-"), (mais, "+")] {
@@ -388,14 +388,14 @@ impl ConfigInterface {
         estilo::texto_centro(
             padrao.center().x,
             padrao.center().y + 6.0 * f,
-            "Tamanho padrão",
+            "Default size",
             14,
             estilo::TEXTO,
         );
         estilo::texto(
             lx,
             r.y + 194.0 * f,
-            "Economia de energia",
+            "Battery saver",
             14,
             estilo::SUAVE,
         );
@@ -404,14 +404,14 @@ impl ConfigInterface {
         estilo::texto_centro(
             agora.center().x,
             agora.center().y + 6.0 * f,
-            "Ativar agora",
+            "Enable now",
             14,
             estilo::TEXTO,
         );
         estilo::texto(
             lx,
             r.y + 263.0 * f,
-            "Auto após inatividade",
+            "Auto after idling",
             12,
             estilo::SUAVE,
         );
@@ -432,7 +432,7 @@ impl ConfigInterface {
                     b.center().x,
                     b.center().y + 5.0 * f,
                     &if min == 0 {
-                        "Nunca".to_string()
+                        "Never".to_string()
                     } else {
                         format!("{min} min")
                     },
@@ -446,11 +446,11 @@ impl ConfigInterface {
                 (b, min)
             })
             .collect();
-        estilo::texto(rx, r.y + 61.0 * f, "Sombras", 14, estilo::SUAVE);
+        estilo::texto(rx, r.y + 61.0 * f, "Shadows", 14, estilo::SUAVE);
         let nomes = [
-            (Sombras::Desligadas, "Desligadas"),
-            (Sombras::Leves, "Leves"),
-            (Sombras::Bonitas, "Bonitas"),
+            (Sombras::Desligadas, "Off"),
+            (Sombras::Leves, "Light"),
+            (Sombras::Bonitas, "Pretty"),
         ];
         let sw = (col - 12.0 * f) / 3.0;
         let sombras: Vec<_> = nomes
@@ -476,20 +476,20 @@ impl ConfigInterface {
         estilo::texto(
             rx,
             r.y + 151.0 * f,
-            "Bonitas: sol de fim de tarde",
+            "Pretty: late-afternoon sun",
             13,
             estilo::SUAVE,
         );
         estilo::texto(
             rx,
             r.y + 173.0 * f,
-            "e sombras suaves do cenário.",
+            "and soft shadows from the scenery.",
             13,
             estilo::SUAVE,
         );
         // The language in the compact layout too: without this, a phone held
         // upright with a short screen would have no way to change language.
-        estilo::texto(rx, r.y + 194.0 * f, "Idioma", 14, estilo::SUAVE);
+        estilo::texto(rx, r.y + 194.0 * f, "Language", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
         let iw = (col - 6.0 * f) / 2.0;
         let idiomas: Vec<_> = shared::idioma::Idioma::TODAS
@@ -515,7 +515,7 @@ impl ConfigInterface {
         estilo::texto(
             rx,
             r.y + 301.0 * f,
-            "A escolha fica salva no aparelho.",
+            "The choice is saved on this device.",
             12,
             estilo::SUAVE,
         );

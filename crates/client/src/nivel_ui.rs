@@ -32,7 +32,7 @@ impl NivelUi {
         let h = (380.0 * f).min(seguro.h - 16.0);
         let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
         estilo::painel_destaque(r, estilo::OURO);
-        estilo::texto_centro_forte(r.center().x, r.y + 34.0 * f, &format!("CAMINHOS PARA O NÍVEL {alvo}"), 20, estilo::OURO);
+        estilo::texto_centro_forte(r.center().x, r.y + 34.0 * f, &format!("WAYS TO REACH LEVEL {alvo}"), 20, estilo::OURO);
         estilo::texto_centro(r.center().x, r.y + 58.0 * f, "Escolha como ganhar XP para continuar a história.", 13, estilo::SUAVE);
         let mouse = Vec2::from(mouse_position());
         let fechar = Rect::new(r.x + r.w - 40.0 * f, r.y + 8.0 * f, 30.0 * f, 30.0 * f);
@@ -41,9 +41,9 @@ impl NivelUi {
             return None;
         }
         let opcoes = [
-            (Escolha::IlhaMagica, "ILHA MÁGICA", "PvP nas ilhotas de combate; XP e coleta até 2× nas ilhotas de bônus."),
-            (Escolha::Missoes, "MISSÕES SECUNDÁRIAS", "XP, equipamentos e recursos. Toque Pegar e depois Ir para usar auto missão."),
-            (Escolha::Caca, "CAÇAR EM ÁREAS DENSAS", "No mapa, toque um círculo FORTE. Ir leva até lá e liga o auto combate."),
+            (Escolha::IlhaMagica, "MAGIC ISLAND", "PvP nas ilhotas de combate; XP e coleta até 2× nas ilhotas de bônus."),
+            (Escolha::Missoes, "SIDE QUESTS", "XP, equipamentos e recursos. Toque Pegar e depois Ir para usar auto missão."),
+            (Escolha::Caca, "HUNT IN DENSE AREAS", "No mapa, toque um círculo FORTE. Ir leva até lá e liga o auto combate."),
         ];
         let gap = 8.0 * f;
         let top = r.y + 77.0 * f;
@@ -61,7 +61,7 @@ impl NivelUi {
             }
         }
         let sair = Rect::new(r.center().x - 52.0 * f, r.y + r.h - 40.0 * f, 104.0 * f, 29.0 * f);
-        if botao(sair, "Fechar", mouse) {
+        if botao(sair, "Close", mouse) {
             self.alvo = None;
         }
         None

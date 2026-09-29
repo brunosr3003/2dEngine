@@ -39,7 +39,7 @@ impl GameWorld {
             P::Painel => self.abrir_magica(sid),
             P::Entrar { entradas, grau } => self.entrar_na_magica(sid, entradas, grau),
             P::Trocar { grau } => self.trocar_degrau_magico(sid, grau),
-            P::Sair => self.sair_da_magica(sid, "Você deixa a Ilha Mágica."),
+            P::Sair => self.sair_da_magica(sid, "You leave the Magic Island."),
         }
     }
 
@@ -126,7 +126,7 @@ impl GameWorld {
     /// Gasta `entradas` passes e vai. Qualquer recusa não gasta nada.
     fn entrar_na_magica(&mut self, sid: SessionId, entradas: u8, grau: u8) {
         if self.tutorial_mode || self.dungeon_mode {
-            self.avisa_magica(sid, "A Ilha Mágica não abre daqui.");
+            self.avisa_magica(sid, "The Magic Island does not open from here.");
             return;
         }
         let dentro = self.na_magica();
@@ -152,7 +152,7 @@ impl GameWorld {
             self.avisa_magica(
                 sid,
                 &format!(
-                    "A Ilha Mágica abre no nível {}.",
+                    "The Magic Island opens at level {}.",
                     shared::magica::NIVEIS[0].exige_nivel
                 ),
             );
@@ -160,7 +160,7 @@ impl GameWorld {
         };
         if nivel < alvo.exige_nivel {
             let msg = format!(
-                "{} abre no nível {} (você: {nivel}).",
+                "{} opens at level {} (you: {nivel}).",
                 alvo.nome, alvo.exige_nivel
             );
             self.avisa_magica(sid, &msg);
@@ -168,7 +168,7 @@ impl GameWorld {
         }
         if entradas == 0 {
             if dentro || shared::magica::resta(s.magica_ate, agora) == 0 {
-                self.avisa_magica(sid, "Não há tempo ativo para retomar.");
+                self.avisa_magica(sid, "There is no active time to resume.");
                 return;
             }
             if self
@@ -177,7 +177,7 @@ impl GameWorld {
                 .and_then(|d| d.melhor(alvo.zona))
                 .is_none()
             {
-                self.avisa_magica(sid, &format!("{} está fechada no momento.", alvo.nome));
+                self.avisa_magica(sid, &format!("{} is closed right now.", alvo.nome));
                 return;
             }
             if let Some(s) = self.sessions.get_mut(&sid) {
@@ -188,7 +188,7 @@ impl GameWorld {
                 sid,
                 alvo.zona,
                 shared::magica::CHEGADA,
-                Some("Você retoma seu tempo na Ilha Mágica."),
+                Some("You resume your time on the Magic Island."),
                 Some(alvo.nome),
             );
             return;
@@ -218,7 +218,7 @@ impl GameWorld {
                 .and_then(|d| d.melhor(alvo.zona))
                 .is_none()
         {
-            let msg = format!("{} está fechada no momento.", alvo.nome);
+            let msg = format!("{} is closed right now.", alvo.nome);
             self.avisa_magica(sid, &msg);
             return;
         }
@@ -261,7 +261,7 @@ impl GameWorld {
                 });
             return;
         }
-        let aviso = format!("Você entra na {} — {minutos} minutos.", alvo.nome);
+        let aviso = format!("You enter {} — {minutos} minutes.", alvo.nome);
         crate::telemetria::conta("magica_entrada", self.zona.clone(), entradas as i64);
         tracing::info!(
             "{nome}: entra na Ilha Mágica por {minutos} min ({de_graca} de graça, {do_item} passe(s))"
@@ -287,23 +287,23 @@ impl GameWorld {
         }
         let agora = (now_ms() / 1000) as i64;
         if shared::magica::resta(s.magica_ate, agora) == 0 {
-            self.avisa_magica(sid, "Seu tempo na Ilha Mágica acabou.");
+            self.avisa_magica(sid, "Your time on the Magic Island is over.");
             return;
         }
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let Some(alvo) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) else {
-            self.avisa_magica(sid, "Degrau desconhecido.");
+            self.avisa_magica(sid, "Unknown step.");
             return;
         };
         if nivel < alvo.exige_nivel {
             self.avisa_magica(
                 sid,
-                &format!("{} abre no nível {}.", alvo.nome, alvo.exige_nivel),
+                &format!("{} opens at level {}.", alvo.nome, alvo.exige_nivel),
             );
             return;
         }
         if alvo.zona == self.zona {
-            self.avisa_magica(sid, "Você já está neste degrau.");
+            self.avisa_magica(sid, "You are already on this step.");
             return;
         }
         if self
@@ -312,7 +312,7 @@ impl GameWorld {
             .and_then(|d| d.melhor(alvo.zona))
             .is_none()
         {
-            self.avisa_magica(sid, &format!("{} está fechada no momento.", alvo.nome));
+            self.avisa_magica(sid, &format!("{} is closed right now.", alvo.nome));
             return;
         }
         self.mandar_para_zona(
@@ -376,7 +376,7 @@ impl GameWorld {
             let resta = shared::magica::resta(s.magica_ate, agora);
             if resta == 0 {
                 s.magica_ate = 0;
-                self.sair_da_magica(sid, "Seu tempo na Ilha Mágica acabou.");
+                self.sair_da_magica(sid, "Your time on the Magic Island is over.");
                 continue;
             }
             // O ESTADO VAI QUANDO MUDA, e é isto que acende a tarja.
@@ -416,12 +416,12 @@ impl GameWorld {
                 if resta <= marco && s.magica_avisado > marco {
                     s.magica_avisado = marco;
                     let texto = if marco >= 60 {
-                        format!("Ilha Mágica: {} minuto(s) restantes.", marco / 60)
+                        format!("Magic Island: {} minute(s) left.", marco / 60)
                     } else {
-                        format!("Ilha Mágica: {marco} segundos restantes.")
+                        format!("Magic Island: {marco} seconds left.")
                     };
                     let _ = s.handle.to_client.send(ServerMessage::Chat {
-                        from: "Sistema".into(),
+                        from: "System".into(),
                         text: texto,
                     });
                     break;
@@ -926,7 +926,7 @@ mod testes {
     /// O estado da ilha só saía quando o jogador ABRIA o painel. Mas quem
     /// está dentro chegou por handoff, numa sessão nova que nunca pediu
     /// painel nenhum — então o cliente nunca recebia `dentro: true` e a tarja
-    /// do HUD (ilhota, relógio, "+" e "Sair") ficava invisível a sessão
+    /// do HUD (ilhota, relógio, "+" e "Leave") ficava invisível a sessão
     /// inteira. O dono: "não tô vendo a HUD da ilha mágica dentro dela, nem o
     /// botão de sair nem estender".
     ///
@@ -980,7 +980,7 @@ mod testes {
     ///
     /// É o outro motivo de a tarja existir: dizer em qual ilhota o jogador
     /// está e o que ela dá. Se só a entrada mandasse o estado, a tarja diria
-    /// "Madeira" para sempre, inclusive dentro da ilhota de XP.
+    /// "Wood" para sempre, inclusive dentro da ilhota de XP.
     #[test]
     fn andar_pra_outra_ilhota_atualiza_a_tarja() {
         use shared::magica::AvisoMagica;

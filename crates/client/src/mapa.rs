@@ -41,7 +41,7 @@ impl InfoDaIlha {
         self.nomes
             .get(&kind)
             .cloned()
-            .unwrap_or_else(|| format!("Bicho {kind}"))
+            .unwrap_or_else(|| format!("Beast {kind}"))
     }
 
     /// Todo bicho que nasce em alguma zona da ilha, do mais baixo pro mais alto.
@@ -181,13 +181,13 @@ pub fn regiao_mais_perto(recursos: &[RegiaoNoMapa], tipo: u8, eu: Vec2) -> Optio
 
 pub fn nome_do_tipo(t: u8) -> &'static str {
     match t {
-        0 => "Madeira",
-        1 => "Pedra cinza",
-        2 => "Pedra verde",
-        3 => "Pedra azul",
-        4 => "Pedra roxa",
-        5 => "Energia",
-        _ => "Recurso",
+        0 => "Wood",
+        1 => "Grey stone",
+        2 => "Green stone",
+        3 => "Blue stone",
+        4 => "Purple stone",
+        5 => "Energy",
+        _ => "Node",
     }
 }
 
@@ -351,7 +351,7 @@ impl Filtros {
     }
 
     /// Zona aparece se mobs estao ligados e o bicho DOMINANTE dela nao foi
-    /// escondido: esconder "Lobo" tira as zonas de lobo.
+    /// escondido: esconder "Wolf" tira as zonas de lobo.
     /// A zona de mob aparece no mapa?
     ///
     /// Com o filtro DESLIGADO (o padrao), so' as de ALTA DENSIDADE — as
@@ -404,7 +404,7 @@ enum Chip {
     Vila,
 }
 
-/// Largura do painel de filtros e "Ir para" ao lado do mapa grande.
+/// Largura do painel de filtros e "Go to" ao lado do mapa grande.
 const LARGURA_LATERAL: f32 = 260.0;
 const LINHA_IR: f32 = 26.0;
 
@@ -819,10 +819,10 @@ fn gerar_dados_da_colonia(plato: f32) -> Dados {
     let mural = ger.cidade().map(|c| c.centro()).map(|c| vec2(c.x, c.y));
     let mut npcs = Vec::new();
     if let Some(m) = mural {
-        npcs.push(("Mural da Ilha".to_string(), m));
+        npcs.push(("Island Board".to_string(), m));
     }
     if let Some(p) = &porto {
-        npcs.push(("Barqueiro".to_string(), p.centro));
+        npcs.push(("Boatman".to_string(), p.centro));
     }
     Dados {
         rgba,
@@ -1025,9 +1025,9 @@ pub struct Mapa {
     pub rota: Vec<Vec2>,
     /// Onde fica o Mestre de Missoes nesta ilha.
     pub mestre: Option<Vec2>,
-    /// NPCs da vila (da thread do mapa): o marcador e o "Ir para".
+    /// NPCs da vila (da thread do mapa): o marcador e o "Go to".
     npcs: Vec<(String, Vec2)>,
-    /// A secao NPCs do "Ir para" aberta (fechada por padrao: e' lista longa).
+    /// A secao NPCs do "Go to" aberta (fechada por padrao: e' lista longa).
     npcs_abertos: bool,
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
@@ -1150,7 +1150,7 @@ impl Mapa {
         m.cidade = ger.cidade();
         m.ger = Some(ger);
         m.raio_sem_def = Some(raio_blocos as f32 * BLOCO);
-        m.nome_sem_def = "Minha Ilha".into();
+        m.nome_sem_def = "My Island".into();
         m.rx = Some(rx);
         m
     }
@@ -1352,14 +1352,14 @@ impl Mapa {
                     return;
                 };
                 linhas.push((nome, COR_NPC));
-                linhas.push(("clique: ir falar (ou teleportar)".into(), estilo::AUTO));
+                linhas.push(("click: go talk (or teleport)".into(), estilo::AUTO));
             }
             Marcador::Zona(i) => {
                 let Some(z) = info.zonas.get(i) else { return };
                 linhas.push((
                     format!(
                         "{} · Nv {}–{}",
-                        if z.forte { "FORTE" } else { "Zona de caça" },
+                        if z.forte { "STRONGHOLD" } else { "Hunting zone" },
                         z.lv_min,
                         z.lv_max
                     ),
@@ -1370,14 +1370,14 @@ impl Mapa {
                     // vem de uma vez. Dizer isso e' o que faz o jogador
                     // escolher entrar em vez de tropecar.
                     linhas.push((
-                        "muito mais inimigos no mesmo espaço".into(),
+                        "many more enemies in the same space".into(),
                         estilo::VERMELHO,
                     ));
                 }
                 for (k, c) in &z.bichos {
                     linhas.push((format!("{}  {c}%", info.nome(*k)), cor_do_bicho(*k)));
                 }
-                linhas.push(("clique: ir caçar (auto combate)".into(), estilo::AUTO));
+                linhas.push(("click: go hunt (auto combat)".into(), estilo::AUTO));
             }
             Marcador::Regiao(i) => {
                 let Some(g) = info.recursos.get(i) else {
@@ -1392,7 +1392,7 @@ impl Mapa {
                         linhas.push((parte.to_string(), estilo::TEXTO));
                     }
                 }
-                linhas.push(("clique: ir coletar (auto coleta)".into(), estilo::AUTO));
+                linhas.push(("click: go gather (auto gather)".into(), estilo::AUTO));
             }
         }
         let w = linhas
@@ -1419,7 +1419,7 @@ impl Mapa {
         )
     }
 
-    /// Filtros e "Ir para", ao lado do mapa grande. Devolve o "Ir" clicado.
+    /// Filtros e "Go to", ao lado do mapa grande. Devolve o "Ir" clicado.
     fn desenha_lateral(&mut self, r: Rect, eu: Option<Vec2>, nivel: u32) -> Option<Entrada> {
         let lat = Self::lateral_rect(r);
         estilo::painel(lat);
@@ -1427,7 +1427,7 @@ impl Mapa {
             estilo::texto(
                 lat.x + u(14.0),
                 lat.y + u(28.0),
-                "carregando zonas…",
+                "loading zones…",
                 14,
                 estilo::SUAVE,
             );
@@ -1442,7 +1442,7 @@ impl Mapa {
         estilo::texto_forte(
             lat.x + u(14.0),
             lat.y + u(26.0),
-            "Filtros",
+            "Filters",
             16,
             estilo::OURO,
         );
@@ -1469,7 +1469,7 @@ impl Mapa {
                 Chip::Recurso(t),
             ));
         }
-        chips.push(("Vila".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
+        chips.push(("Village".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
         for (rotulo, ligado, cor, id) in &chips {
             let w = estilo::medir(rotulo, 13) + u(24.0);
             if x + w > lat.x + lat.w - u(10.0) {
@@ -1514,7 +1514,7 @@ impl Mapa {
 
         // ── ir para ──
         y += u(44.0);
-        estilo::texto(lat.x + u(14.0), y, "Ir para", 16, estilo::OURO);
+        estilo::texto(lat.x + u(14.0), y, "Go to", 16, estilo::OURO);
         let area = Rect::new(
             lat.x + u(6.0),
             y + u(8.0),
@@ -1578,7 +1578,7 @@ impl Mapa {
         // VILAS primeiro: é para onde se volta, e é o que o jogador procura
         // quando está perdido no meio da ilha.
         if visivel(ly) {
-            estilo::texto(area.x + u(6.0), ly + u(18.0), "Vilas", 13, estilo::SUAVE);
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Villages", 13, estilo::SUAVE);
         }
         ly += u(LINHA_IR);
         for (nome, p, raio) in &vilas {
@@ -1635,7 +1635,7 @@ impl Mapa {
             ly += u(LINHA_IR);
         }
         if visivel(ly) {
-            estilo::texto(area.x + u(6.0), ly + u(18.0), "Bichos", 13, estilo::SUAVE);
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Beasts", 13, estilo::SUAVE);
         }
         ly += u(LINHA_IR);
         for k in &bichos {
@@ -1643,8 +1643,8 @@ impl Mapa {
             let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
             let faixa = info
                 .faixa(*k)
-                .map_or(String::new(), |(a, b)| format!("Nv {a}–{b} · "));
-            let detalhe = z.map_or("sem zona".to_string(), |z| {
+                .map_or(String::new(), |(a, b)| format!("Lv {a}–{b} · "));
+            let detalhe = z.map_or("no zone".to_string(), |z| {
                 format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu))
             });
             let alvo = z.map(|z| Alvo {
@@ -1657,7 +1657,7 @@ impl Mapa {
             ly += u(LINHA_IR);
         }
         if visivel(ly) {
-            estilo::texto(area.x + u(6.0), ly + u(18.0), "Recursos", 13, estilo::SUAVE);
+            estilo::texto(area.x + u(6.0), ly + u(18.0), "Nodes", 13, estilo::SUAVE);
         }
         ly += u(LINHA_IR);
         for t in &tipos {
@@ -1665,7 +1665,7 @@ impl Mapa {
             let n = info.recursos.iter().filter(|r| r.tipo == *t).count();
             let detalhe = g.map_or("—".to_string(), |g| {
                 format!(
-                    "{n} regiões · {:.0} m",
+                    "{n} regions · {:.0} m",
                     vec2(g.centro[0], g.centro[1]).distance(eu)
                 )
             });
@@ -1867,7 +1867,7 @@ impl Mapa {
         crate::hud_layout::atual().minimapa
     }
 
-    /// O mapa quadrado, com o painel lateral de filtros e "Ir para" a' direita.
+    /// O mapa quadrado, com o painel lateral de filtros e "Go to" a' direita.
     /// As duas abas em cima do mapa: Ilha | Mundo.
     fn abas_rect(r: Rect) -> (Rect, Rect) {
         let k = Self::escala();
@@ -1912,10 +1912,10 @@ impl Mapa {
         // Vec2 da macroquad. São dois `glam` no grafo de dependências.
         if let Some(c) = self.cidade {
             let p = c.centro();
-            v.push(("Praça da vila", vec2(p.x, p.y), 10.0));
+            v.push(("Village square", vec2(p.x, p.y), 10.0));
         }
         if let Some(p) = self.porto {
-            v.push(("Porto", vec2(p.centro.x, p.centro.y), p.raio.max(8.0)));
+            v.push(("Port", vec2(p.centro.x, p.centro.y), p.raio.max(8.0)));
         }
         v
     }
@@ -2026,7 +2026,7 @@ impl Mapa {
                 }
                 // Fora do mapa ou no X: fecha — MENOS na moldura de cima, que
                 // tem as abas Ilha|Mundo. Elas ficam ACIMA do `grande_rect`, e
-                // sem esta excecao tocar em "Mundo" trocava a aba e fechava o
+                // sem esta excecao tocar em "World" trocava a aba e fechava o
                 // mapa no mesmo quadro: o dono via o mapa sumir.
                 if Self::fechar_rect(r).contains(m)
                     || (!r.contains(m) && !Self::moldura_rect(r).contains(m))
@@ -2164,7 +2164,7 @@ impl Mapa {
         let escala = dentro.w * 0.5 / alcance;
         match &self.tex {
             Some(tex) => disco_do_mapa(tex, c, rad, eu, alcance, raio),
-            None => estilo::texto_centro(c.x, c.y + 30.0, "carregando mapa…", 12, estilo::SUAVE),
+            None => estilo::texto_centro(c.x, c.y + 30.0, "loading map…", 12, estilo::SUAVE),
         }
         let ponto = |p: Vec2| c + (p - eu) * escala;
         // O DISCO é que manda, não o retângulo.
@@ -2446,12 +2446,12 @@ impl Mapa {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         for (caixa, rotulo, ativa) in [
-            (ilha, "Ilha", !self.no_mundo),
-            (mundo, "Mundo", self.no_mundo),
+            (ilha, "Island", !self.no_mundo),
+            (mundo, "World", self.no_mundo),
         ] {
             estilo::botao(caixa, rotulo, estilo::estado_de(caixa, false, ativa), ativa);
             if clicou && caixa.contains(m) {
-                self.no_mundo = rotulo == "Mundo";
+                self.no_mundo = rotulo == "World";
             }
         }
     }
@@ -2467,8 +2467,8 @@ impl Mapa {
             r.w + u(16.0),
             r.h + u(46.0),
         ));
-        estilo::texto_forte(r.x, r.y - u(14.0), "Mundo", 17, estilo::OURO);
-        let dica = "chefes de todas as ilhas · Esc fecha";
+        estilo::texto_forte(r.x, r.y - u(14.0), "World", 17, estilo::OURO);
+        let dica = "bosses from every island · Esc closes";
         estilo::texto(
             r.x + r.w - u(36.0) - estilo::medir(dica, 13),
             r.y - u(14.0),
@@ -2493,12 +2493,12 @@ impl Mapa {
     ) -> Option<Entrada> {
         let lat = Self::lateral_rect(r);
         estilo::painel(lat);
-        estilo::texto_forte(lat.x + u(14.0), lat.y + u(26.0), "Chefes", 16, estilo::OURO);
+        estilo::texto_forte(lat.x + u(14.0), lat.y + u(26.0), "Bosses", 16, estilo::OURO);
         if mundo.vazio() {
             estilo::texto(
                 lat.x + u(14.0),
                 lat.y + u(52.0),
-                "consultando as ilhas…",
+                "asking the islands…",
                 14,
                 estilo::SUAVE,
             );
@@ -2509,7 +2509,7 @@ impl Mapa {
             estilo::texto(
                 lat.x + u(14.0),
                 lat.y + u(52.0),
-                "nenhuma ilha respondeu.",
+                "no island replied.",
                 14,
                 estilo::SUAVE,
             );
@@ -2542,8 +2542,8 @@ impl Mapa {
             r.h + u(46.0),
         ));
         let nome = self.def.map_or(self.nome_sem_def.as_str(), |d| d.nome);
-        // DEPOIS das abas, e nao em `r.x`: o titulo nascia debaixo de "Ilha" e
-        // "Mundo", desenhadas no mesmo canto. Com nome curto dava pra nao
+        // DEPOIS das abas, e nao em `r.x`: o titulo nascia debaixo de "Island" e
+        // "World", desenhadas no mesmo canto. Com nome curto dava pra nao
         // reparar; "Planalto da Tormenta" botou o defeito na tela.
         let (_, mundo) = Self::abas_rect(r);
         estilo::texto_forte(
@@ -2602,7 +2602,7 @@ impl Mapa {
             None => estilo::texto_centro(
                 r.x + r.w * 0.5,
                 r.y + r.h * 0.5,
-                "carregando mapa…",
+                "loading map…",
                 18,
                 estilo::SUAVE,
             ),
@@ -2707,7 +2707,7 @@ impl Mapa {
                 if rp >= u(14.0) {
                     if let Some(b) = z.bichos.first() {
                         let t = if z.forte {
-                            format!("Forte · {} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
+                            format!("Stronghold · {} · Lv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
                         } else {
                             format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
                         };
@@ -2748,7 +2748,7 @@ impl Mapa {
                 estilo::OURO,
             );
             casinha(q, u(7.0), estilo::OURO);
-            estilo::texto_centro(q.x, q.y - u(12.0), "Cidade", 14, estilo::OURO);
+            estilo::texto_centro(q.x, q.y - u(12.0), "City", 14, estilo::OURO);
         }
         for (centro, meia) in self.pegadas.iter().filter(|_| self.filtros.vila) {
             pegada(ponto(*centro - *meia), ponto(*centro + *meia), 1.0);
@@ -2759,10 +2759,10 @@ impl Mapa {
             draw_circle_lines(q.x, q.y, (po.raio * escala).max(u(6.0)), u(2.0), COR_PORTO);
             draw_line(a.x, a.y, b.x, b.y, u(3.0), COR_PREDIO);
             ancora(q, u(7.0), COR_PORTO);
-            estilo::texto_centro(q.x, q.y - u(14.0), "Porto", 14, COR_PORTO);
+            estilo::texto_centro(q.x, q.y - u(14.0), "Port", 14, COR_PORTO);
         }
         // NPCs da vila, com o filtro Vila (o `world` so' tem os de perto).
-        // Tocar leva ate' ele; a lista do "Ir para" tem todos, sempre.
+        // Tocar leva ate' ele; a lista do "Go to" tem todos, sempre.
         if self.filtros.vila {
             for (_, p) in &self.npcs {
                 let q = ponto(*p);
@@ -2833,7 +2833,7 @@ impl Mapa {
         // Onde o clique cairia: agua avisa antes de clicar.
         let m = Vec2::from(mouse_position());
         if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio) + foco) {
-            estilo::texto_centro(m.x, m.y - u(12.0), "água", 13, estilo::SUAVE);
+            estilo::texto_centro(m.x, m.y - u(12.0), "water", 13, estilo::SUAVE);
         }
     }
 
@@ -2842,7 +2842,7 @@ impl Mapa {
         let (Some(d), Some(eu)) = (self.viagem.destino(), eu) else {
             return None;
         };
-        Some(format!("Viajando · {:.0} m", eu.distance(d)))
+        Some(format!("Travelling · {:.0} m", eu.distance(d)))
     }
 }
 
@@ -3294,7 +3294,7 @@ fn volta_em(ch: &shared::bosses::ChefeNoMapa) -> String {
     match shared::bosses::falta_pra_voltar(ch, agora) {
         None if ch.vivo => String::new(),
         None => " (renascendo)".into(),
-        Some(s) => format!(" · volta em {}", shared::bosses::conta_regressiva(s)),
+        Some(s) => format!(" · back in {}", shared::bosses::conta_regressiva(s)),
     }
 }
 
@@ -3403,7 +3403,7 @@ mod testes_do_mapa_da_colonia {
     ///
     /// O dono: "seria legal se no mapa da ilha mágica tivesse escrito qual é
     /// cada ilha". Dois rótulos iguais não resolveriam nada — o jogador
-    /// abriria o mapa, veria "Pedra" em dois lugares e continuaria sem saber
+    /// abriria o mapa, veria "Stone" em dois lugares e continuaria sem saber
     /// pra onde ir.
     #[test]
     fn cada_ilhota_do_mapa_tem_um_nome_proprio() {

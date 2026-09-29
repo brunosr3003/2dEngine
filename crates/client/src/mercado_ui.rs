@@ -26,10 +26,10 @@ pub enum Aba {
 }
 
 const ABAS: [(Aba, &str); 5] = [
-    (Aba::Comprar, "Comprar"),
-    (Aba::Vender, "Vender"),
-    (Aba::Meus, "Meus anúncios"),
-    (Aba::Entregas, "Entregas"),
+    (Aba::Comprar, "Buy"),
+    (Aba::Vender, "Sell"),
+    (Aba::Meus, "My listings"),
+    (Aba::Entregas, "Deliveries"),
     (Aba::Tp, "TP"),
 ];
 
@@ -241,7 +241,7 @@ impl Mercado {
             h,
         );
         estilo::painel(p);
-        estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "Mercado", 22, estilo::OURO);
+        estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "Market", 22, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f);
         // Saldo: moeda de ouro e cristal de TP, os mesmos icones da Loja.
         let txt_tp = self.tp.map_or("—".to_string(), milhar);
@@ -354,7 +354,7 @@ impl Mercado {
             estilo::texto(
                 campo.x + 12.0 * f,
                 campo.center().y + 5.0 * f,
-                "Buscar item…",
+                "Search item…",
                 14,
                 estilo::SUAVE,
             );
@@ -362,7 +362,7 @@ impl Mercado {
         let enter = self.foco_busca
             && (is_key_pressed(KeyCode::Enter)
                 || c.digitado.iter().any(|ch| *ch == '\r' || *ch == '\n'));
-        if botao(bb, "Buscar", livre, true) || enter {
+        if botao(bb, "Search", livre, true) || enter {
             self.pagina = 0;
             self.rolagem = 0;
             self.foco_busca = false;
@@ -375,7 +375,7 @@ impl Mercado {
             estilo::texto(
                 lista.x + 4.0,
                 lista.y + 30.0 * f,
-                "Nenhum anúncio encontrado.",
+                "No listing found.",
                 15,
                 estilo::SUAVE,
             );
@@ -398,7 +398,7 @@ impl Mercado {
                 c,
                 f,
                 livre,
-                if an.meu { "Seu" } else { "Comprar" },
+                if an.meu { "Yours" } else { "Buy" },
                 !an.meu,
             ) {
                 comprar = Some(an.clone());
@@ -434,11 +434,11 @@ impl Mercado {
         estilo::texto_centro(
             ant.x - 60.0 * f,
             yb + 25.0 * f,
-            &format!("Página {}", self.pagina + 1),
+            &format!("Page {}", self.pagina + 1),
             14,
             estilo::SUAVE,
         );
-        if botao(ant, "‹ Anterior", livre && self.pagina > 0, false) {
+        if botao(ant, "‹ Previous", livre && self.pagina > 0, false) {
             self.pagina -= 1;
             self.rolagem = 0;
             saida.push(ClientMessage::MercadoBuscar {
@@ -446,7 +446,7 @@ impl Mercado {
             });
             self.ultima_busca_tp = false;
         }
-        if botao(prox, "Próxima ›", livre && self.tem_mais, false) {
+        if botao(prox, "Next ›", livre && self.tem_mais, false) {
             self.pagina += 1;
             self.rolagem = 0;
             saida.push(ClientMessage::MercadoBuscar {
@@ -471,12 +471,12 @@ impl Mercado {
         }
         let cima = Rect::new(r.x, r.y, 78.0 * f, r.h);
         let baixo = Rect::new(r.x + 84.0 * f, r.y, 78.0 * f, r.h);
-        if botao(cima, "Subir", livre && self.rolagem > 0, false) {
+        if botao(cima, "Up", livre && self.rolagem > 0, false) {
             self.rolagem = self.rolagem.saturating_sub(cabem.max(2) - 1);
         }
         if botao(
             baixo,
-            "Descer",
+            "Down",
             livre && self.rolagem + cabem < total,
             false,
         ) {
@@ -507,7 +507,7 @@ impl Mercado {
         estilo::texto_forte(
             r.x + 18.0 * f,
             r.y + 34.0 * f,
-            "Confirmar compra",
+            "Confirm purchase",
             18,
             estilo::OURO,
         );
@@ -536,7 +536,7 @@ impl Mercado {
             xn,
             y + 42.0 * f,
             &format!(
-                "{} gold cada · {} à venda",
+                "{} gold each · {} for sale",
                 milhar(an.preco_unit),
                 milhar(an.qtd)
             ),
@@ -547,7 +547,7 @@ impl Mercado {
         let max = an.qtd.max(1);
         seletor(
             Rect::new(r.x + 18.0 * f, y, r.w - 36.0 * f, 44.0 * f),
-            "Quantidade",
+            "Quantity",
             &mut compra.qtd,
             1,
             max,
@@ -570,7 +570,7 @@ impl Mercado {
             estilo::texto(
                 r.x + 18.0 * f,
                 y + 20.0 * f,
-                "Gold insuficiente.",
+                "Not enough gold.",
                 13,
                 estilo::VERMELHO,
             );
@@ -578,11 +578,11 @@ impl Mercado {
         let yb = r.y + r.h - 56.0 * f;
         let cancelar = Rect::new(r.x + 18.0 * f, yb, (r.w - 48.0 * f) * 0.5, 42.0 * f);
         let confirmar = Rect::new(cancelar.x + cancelar.w + 12.0 * f, yb, cancelar.w, 42.0 * f);
-        if botao(cancelar, "Cancelar", true, false) {
+        if botao(cancelar, "Cancel", true, false) {
             self.compra = None;
             return;
         }
-        if botao(confirmar, "Comprar", cabe, true) {
+        if botao(confirmar, "Buy", cabe, true) {
             saida.push(ClientMessage::MercadoComprar {
                 anuncio: an.id.clone(),
                 qtd: compra.qtd,
@@ -606,7 +606,7 @@ impl Mercado {
         let pode = c.nivel >= regras::NIVEL_PARA_VENDER;
         let esq = Rect::new(a.x, a.y, a.w * 0.52, a.h);
         let dir = Rect::new(a.x + a.w * 0.55, a.y, a.w * 0.45, a.h);
-        estilo::texto_forte(esq.x, esq.y + 14.0 * f, "Da bolsa", 14, estilo::SUAVE);
+        estilo::texto_forte(esq.x, esq.y + 14.0 * f, "From bag", 14, estilo::SUAVE);
         let vendaveis: Vec<(usize, InventorySlot)> = c
             .slots
             .iter()
@@ -620,7 +620,7 @@ impl Mercado {
             .filter(|s| s.qty > 0 && self.vinculados.contains(&s.item_id))
             .count();
         if presos > 0 {
-            let t = format!("{presos} vinculado(s) fora da lista");
+            let t = format!("{presos} bound item(s) left out of the list");
             estilo::texto(
                 esq.x + esq.w - estilo::medir(&t, 12),
                 esq.y + 14.0 * f,
@@ -650,7 +650,7 @@ impl Mercado {
             estilo::texto(
                 grade.x,
                 grade.y + 30.0 * f,
-                "Nada vendável na bolsa.",
+                "Nothing sellable in your bag.",
                 15,
                 estilo::SUAVE,
             );
@@ -702,7 +702,7 @@ impl Mercado {
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
         let mut y = dir.y + 30.0 * f;
         let ativos = format!(
-            "Anúncios ativos {}/{}",
+            "Active listings {}/{}",
             self.meus.len(),
             regras::MAX_ANUNCIOS
         );
@@ -724,7 +724,7 @@ impl Mercado {
         }
         let Some(slot) = self.venda_slot.and_then(|i| c.slots.get(i).copied()) else {
             estilo::texto_ajustado(
-                "Escolha um item da bolsa.",
+                "Pick an item from your bag.",
                 x,
                 y + 20.0 * f,
                 w,
@@ -752,7 +752,7 @@ impl Mercado {
         y += 44.0 * f;
         seletor(
             Rect::new(x, y, w, 42.0 * f),
-            "Quantidade",
+            "Quantity",
             &mut self.venda_qtd,
             1,
             slot.qty.max(1) as u64,
@@ -762,7 +762,7 @@ impl Mercado {
         y += 66.0 * f;
         seletor(
             Rect::new(x, y, w, 42.0 * f),
-            "Preço por unidade (gold)",
+            "Price per unit (gold)",
             &mut self.venda_preco,
             1,
             regras::PRECO_MAX_UNIT,
@@ -776,7 +776,7 @@ impl Mercado {
             x,
             y + 22.0 * f,
             w,
-            &format!("Taxa {}%", regras::TAXA_PCT),
+            &format!("Fee {}%", regras::TAXA_PCT),
             &format!("−{}", milhar(regras::taxa(bruto))),
             estilo::SUAVE,
             f,
@@ -785,7 +785,7 @@ impl Mercado {
             x,
             y + 44.0 * f,
             w,
-            "Você recebe",
+            "You receive",
             &milhar(regras::liquido(bruto)),
             estilo::OURO,
             f,
@@ -800,7 +800,7 @@ impl Mercado {
             estilo::texto(
                 x,
                 y + 70.0 * f,
-                &format!("Menor preço à venda: {} gold", milhar(pr)),
+                &format!("Lowest asking price: {} gold", milhar(pr)),
                 13,
                 estilo::SUAVE,
             );
@@ -808,7 +808,7 @@ impl Mercado {
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
         if botao(
             bt,
-            "Anunciar",
+            "List",
             livre && pode && self.meus.len() < regras::MAX_ANUNCIOS,
             true,
         ) {
@@ -838,7 +838,7 @@ impl Mercado {
         estilo::texto_forte(
             esq.x,
             esq.y + 14.0 * f,
-            &format!("Ativos ({}/{})", self.meus.len(), regras::MAX_ANUNCIOS),
+            &format!("Active ({}/{})", self.meus.len(), regras::MAX_ANUNCIOS),
             14,
             estilo::SUAVE,
         );
@@ -850,7 +850,7 @@ impl Mercado {
             estilo::texto(
                 lista.x,
                 lista.y + 30.0 * f,
-                "Nenhum anúncio ativo.",
+                "No active listing.",
                 15,
                 estilo::SUAVE,
             );
@@ -862,7 +862,7 @@ impl Mercado {
                 lista.w,
                 alt - 6.0 * f,
             );
-            if linha_de_anuncio(r, an, c, f, livre, "Cancelar", true) {
+            if linha_de_anuncio(r, an, c, f, livre, "Cancel", true) {
                 saida.push(ClientMessage::MercadoCancelar {
                     anuncio: an.id.clone(),
                 });
@@ -880,23 +880,23 @@ impl Mercado {
         estilo::texto_forte(
             dir.x + 14.0 * f,
             dir.y + 26.0 * f,
-            "Histórico",
+            "History",
             15,
             estilo::SUAVE,
         );
         let mut y = dir.y + 52.0 * f;
         if self.historico.is_empty() {
-            estilo::texto(dir.x + 14.0 * f, y, "Nada ainda.", 14, estilo::SUAVE);
+            estilo::texto(dir.x + 14.0 * f, y, "Nothing yet.", 14, estilo::SUAVE);
         }
         for v in &self.historico {
             if y > dir.y + dir.h - 12.0 * f {
                 break;
             }
             let (verbo, valor, cor) = if v.vendi {
-                ("Vendeu", format!("+{}", milhar(v.liquido)), estilo::VERDE)
+                ("Sold", format!("+{}", milhar(v.liquido)), estilo::VERDE)
             } else {
                 (
-                    "Comprou",
+                    "Bought",
                     format!("−{}", milhar(v.qtd * v.preco_unit)),
                     estilo::TEXTO,
                 )
@@ -941,7 +941,7 @@ impl Mercado {
         let receber = Rect::new(a.x + a.w - 180.0 * f, a.y - 4.0 * f, 180.0 * f, 40.0 * f);
         if botao(
             receber,
-            "Receber tudo",
+            "Claim everything",
             livre && !self.cartas.is_empty(),
             true,
         ) {
@@ -956,7 +956,7 @@ impl Mercado {
             estilo::texto(
                 lista.x,
                 lista.y + 30.0 * f,
-                "Nenhuma entrega esperando.",
+                "No delivery waiting.",
                 15,
                 estilo::SUAVE,
             );
@@ -1039,7 +1039,7 @@ impl Mercado {
         estilo::texto_forte(
             esq.x,
             esq.y + 14.0 * f,
-            "TP à venda (gold por TP)",
+            "TP for sale (gold per TP)",
             14,
             estilo::SUAVE,
         );
@@ -1051,7 +1051,7 @@ impl Mercado {
             estilo::texto(
                 lista.x,
                 lista.y + 30.0 * f,
-                "Ninguém vendendo TP agora.",
+                "Nobody selling TP right now.",
                 15,
                 estilo::SUAVE,
             );
@@ -1076,7 +1076,7 @@ impl Mercado {
                 c,
                 f,
                 livre,
-                if an.meu { "Seu" } else { "Comprar" },
+                if an.meu { "Yours" } else { "Buy" },
                 !an.meu,
             ) {
                 comprar = Some(an.clone());
@@ -1099,7 +1099,7 @@ impl Mercado {
         estilo::painel(dir);
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
         let saldo = self.tp.unwrap_or(0);
-        let rotulo = "Seus TP";
+        let rotulo = "Your TP";
         estilo::texto_forte(x, dir.y + 32.0 * f, rotulo, 18, estilo::SUAVE);
         estilo::valor_tp(
             x + estilo::medir_forte(rotulo, 18) + 10.0 * f,
@@ -1119,7 +1119,7 @@ impl Mercado {
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
             estilo::texto_ajustado(
-                &format!("Vender TP libera no nível {}.", regras::NIVEL_PARA_VENDER),
+                &format!("Selling TP unlocks at level {}.", regras::NIVEL_PARA_VENDER),
                 x,
                 y,
                 w,
@@ -1136,7 +1136,7 @@ impl Mercado {
         }
         seletor(
             Rect::new(x, y, w, 42.0 * f),
-            "TP a vender",
+            "TP to sell",
             &mut self.tp_qtd,
             1,
             saldo.clamp(1, regras::TP_MAX_POR_ANUNCIO),
@@ -1146,7 +1146,7 @@ impl Mercado {
         y += 66.0 * f;
         seletor(
             Rect::new(x, y, w, 42.0 * f),
-            "Gold por TP",
+            "Gold per TP",
             &mut self.tp_preco,
             1,
             regras::PRECO_MAX_UNIT,
@@ -1160,7 +1160,7 @@ impl Mercado {
             x,
             y + 22.0 * f,
             w,
-            &format!("Taxa {}%", regras::TAXA_PCT),
+            &format!("Fee {}%", regras::TAXA_PCT),
             &format!("−{}", milhar(regras::taxa(bruto))),
             estilo::SUAVE,
             f,
@@ -1169,7 +1169,7 @@ impl Mercado {
             x,
             y + 44.0 * f,
             w,
-            "Você recebe",
+            "You receive",
             &milhar(regras::liquido(bruto)),
             estilo::OURO,
             f,
@@ -1179,7 +1179,7 @@ impl Mercado {
             && c.nivel >= regras::NIVEL_PARA_VENDER
             && saldo >= self.tp_qtd
             && self.meus.len() < regras::MAX_ANUNCIOS;
-        if botao(bt, "Anunciar TP", pode, true) {
+        if botao(bt, "List TP", pode, true) {
             saida.push(ClientMessage::MercadoAnunciarTp {
                 qtd: self.tp_qtd,
                 preco_unit: self.tp_preco,
@@ -1286,7 +1286,7 @@ fn linha_de_anuncio(
         bw,
         38.0 * f,
     );
-    botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancelar")
+    botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancel")
 }
 
 /// A number by touch: [Min][-] value [+][Max] for quantity; [/10][-] value
@@ -1297,7 +1297,7 @@ fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bo
     let rotulos = if preco {
         ["÷10", "−", "+", "×10"]
     } else {
-        ["Mín", "−", "+", "Máx"]
+        ["Min", "−", "+", "Max"]
     };
     let rects = [
         Rect::new(r.x, r.y, bw, r.h),
@@ -1348,7 +1348,7 @@ mod tests {
             id: "a".into(),
             tipo,
             item_id: 60,
-            nome: "Madeira".into(),
+            nome: "Wood".into(),
             categoria: 2,
             instancia: None,
             qtd: 5,

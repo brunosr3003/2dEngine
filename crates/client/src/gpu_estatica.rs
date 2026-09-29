@@ -223,7 +223,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 fragment: crate::render3d::SOLIDO_FRAGMENTO,
             },
             meta(&[
-                ("Recorte", UniformType::Float3),
+                ("Crop", UniformType::Float3),
                 ("RecorteZ", UniformType::Float1),
                 ("Tinta", UniformType::Float4),
                 ("LuzDia", UniformType::Float1),

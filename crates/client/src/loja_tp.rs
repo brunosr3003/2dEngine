@@ -25,10 +25,10 @@ use crate::vox::VoxCache;
 const ABA_TP: usize = 3;
 
 const ABAS: [(&str, &str); 5] = [
-    ("Materiais", "craft"),
+    ("Materials", "craft"),
     ("Pets", "montaria"),
-    ("Aparência", "ficha"),
-    ("Moedas", "bolsa"),
+    ("Appearance", "ficha"),
+    ("Coins", "bolsa"),
     ("Tempest Points", ""),
 ];
 
@@ -101,7 +101,7 @@ pub fn selo_da_montaria(id: u16) -> Option<&'static str> {
 pub fn selo_do_pacote(id: u16) -> Option<&'static str> {
     match id {
         2 => Some("POPULAR"),
-        4 => Some("MELHOR VALOR"),
+        4 => Some("BEST VALUE"),
         _ => None,
     }
 }
@@ -372,7 +372,7 @@ impl LojaTp {
                     self.festa_pendente = Some(texto.clone());
                 }
                 self.ultimo = Some((ok, texto.clone()));
-                Some(format!("Loja: {texto}"))
+                Some(format!("Shop: {texto}"))
             }
             AvisoLoja::Montando { .. } => None,
             AvisoLoja::MontariaCombate { .. } => None,
@@ -461,7 +461,7 @@ impl LojaTp {
         estilo::texto(
             xh + 66.0 * k,
             p.y + 72.0 * k,
-            "Itens exclusivos da Tempestade",
+            "Items exclusive to the Storm",
             ts(13.0, k),
             estilo::alfa(LILAS, 0.9),
         );
@@ -504,7 +504,7 @@ impl LojaTp {
             estilo::texto_centro(
                 p.center().x,
                 p.center().y,
-                "Carregando a vitrine…",
+                "Loading the storefront…",
                 ts(17.0, k),
                 estilo::SUAVE,
             );
@@ -576,7 +576,7 @@ impl LojaTp {
             self.aba = ABA_TP;
         }
         if estado.simulado {
-            let t = "PAGAMENTO SIMULADO";
+            let t = "SIMULATED PAYMENT";
             let tam = ts(10.0, k);
             let tw = estilo::medir_forte(t, tam) + 18.0 * k;
             let r = Rect::new(
@@ -593,7 +593,7 @@ impl LojaTp {
             estilo::texto_centro(
                 p.center().x,
                 p.center().y,
-                "A loja está desligada neste servidor.",
+                "The shop is switched off on this server.",
                 ts(17.0, k),
                 estilo::SUAVE,
             );
@@ -702,7 +702,7 @@ impl LojaTp {
                 .take(3)
                 .map(|c| format!("{} · {}", c.produto, c.valor))
                 .collect();
-            let t = format!("Últimas compras:  {}", hist.join("   |   "));
+            let t = format!("Latest purchases:  {}", hist.join("   |   "));
             let largura = p.w * 0.50;
             estilo::texto_ajustado(
                 &t,
@@ -781,18 +781,18 @@ impl LojaTp {
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
-            "Invocação de Chaves",
+            "Key Summoning",
             ts(22.0, k),
             estilo::TEXTO,
         );
         estilo::texto_centro(
             r.center().x,
             r.y + r.h * 0.53,
-            "1 chave aleatória de craft.",
+            "1 random crafting key.",
             ts(14.0, k),
             estilo::alfa(LILAS, 0.95),
         );
-        let nomes = ["Cinza 55%", "Verde 28%", "Azul 12%", "Roxa 5%"];
+        let nomes = ["Grey 55%", "Green 28%", "Blue 12%", "Purple 5%"];
         let cores = [
             Color::from_rgba(180, 186, 198, 255),
             Color::from_rgba(88, 220, 125, 255),
@@ -825,9 +825,9 @@ impl LojaTp {
         botao_ouro(
             bt,
             if self.em_voo {
-                "AGUARDE…"
+                "PLEASE WAIT…"
             } else {
-                "COMPRAR PERGAMINHO"
+                "BUY SCROLL"
             },
             ativo,
             !modal && bt.contains(m),
@@ -866,18 +866,18 @@ impl LojaTp {
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
-            "Invocação de Tomos",
+            "Tome Summoning",
             ts(22.0, k),
             estilo::TEXTO,
         );
         estilo::texto_centro(
             r.center().x,
             r.y + r.h * 0.53,
-            "1 tomo para uma de 12 habilidades.",
+            "1 tome for one of 12 skills.",
             ts(13.0, k),
             estilo::alfa(estilo::VERDE, 0.95),
         );
-        let graus = ["Verde 75%", "Roxo 20%", "Lendário 5%"];
+        let graus = ["Green 75%", "Purple 20%", "Legendary 5%"];
         let cores = [
             Color::from_rgba(88, 220, 125, 255),
             Color::from_rgba(184, 88, 245, 255),
@@ -909,9 +909,9 @@ impl LojaTp {
         botao_ouro(
             bt,
             if self.em_voo {
-                "AGUARDE…"
+                "PLEASE WAIT…"
             } else {
-                "COMPRAR PERGAMINHO"
+                "BUY SCROLL"
             },
             !self.em_voo,
             !modal && bt.contains(m),
@@ -1030,7 +1030,7 @@ impl LojaTp {
             estilo::texto_centro(
                 area.center().x,
                 area.center().y,
-                "Nenhuma aparência à venda agora.",
+                "No appearance for sale right now.",
                 ts(16.0, k),
                 estilo::alfa(LILAS, 0.9),
             );
@@ -1090,7 +1090,7 @@ impl LojaTp {
                 estilo::alfa(LILAS, 0.95),
             );
             estilo::texto_centro(r.center().x, r.y + r.h - 43.0 * k,
-                "Toque para ver e comprar", ts(12.0, k), estilo::TEXTO);
+                "Tap to view and buy", ts(12.0, k), estilo::TEXTO);
             if let Some(preco) = shared::aparencia::preco_da_skin(*id) {
                 let t = milhar(preco);
                 estilo::valor_tp(
@@ -1172,7 +1172,7 @@ impl LojaTp {
             let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
             let melhor_rendimento = cat::PASSES.len() > 1 && pk.tp_por_passe() <= melhor;
             let nota = (
-                format!("{:.0} TP por passe", pk.tp_por_passe()),
+                format!("{:.0} TP per pass", pk.tp_por_passe()),
                 if melhor_rendimento {
                     OURO_CLARO
                 } else {
@@ -1180,9 +1180,9 @@ impl LojaTp {
                 },
             );
             let quantos = if pk.qtd == 1 {
-                "1 entrada · 30 min".to_string()
+                "1 entry · 30 min".to_string()
             } else {
-                format!("{} entradas · {} min", pk.qtd, pk.qtd * 30)
+                format!("{} entries · {} min", pk.qtd, pk.qtd * 30)
             };
             self.cartao_de_lista(
                 r,
@@ -1242,14 +1242,14 @@ impl LojaTp {
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
-            "Invocação de Montaria",
+            "Mount Summoning",
             ts(22.0, k),
             estilo::TEXTO,
         );
         estilo::texto_centro(
             r.center().x,
             r.y + r.h * 0.53,
-            "1 montaria, espécie sorteada.",
+            "1 mount, species drawn at random.",
             ts(13.0, k),
             estilo::alfa(LILAS, 0.95),
         );
@@ -1286,9 +1286,9 @@ impl LojaTp {
         botao_ouro(
             bt,
             if self.em_voo {
-                "AGUARDE…"
+                "PLEASE WAIT…"
             } else {
-                "COMPRAR PERGAMINHO"
+                "BUY SCROLL"
             },
             !self.em_voo,
             !modal && bt.contains(m),
@@ -1338,14 +1338,14 @@ impl LojaTp {
         estilo::texto_centro_forte(
             r.center().x,
             r.y + r.h * 0.47,
-            "Invocação de Pet",
+            "Pet Summoning",
             ts(22.0, k),
             estilo::TEXTO,
         );
         estilo::texto_centro(
             r.center().x,
             r.y + r.h * 0.53,
-            "1 pet coletor, espécie sorteada.",
+            "1 gatherer pet, species drawn at random.",
             ts(13.0, k),
             estilo::alfa(AMBAR, 0.95),
         );
@@ -1383,9 +1383,9 @@ impl LojaTp {
         botao_ouro(
             bt,
             if self.em_voo {
-                "AGUARDE…"
+                "PLEASE WAIT…"
             } else {
-                "COMPRAR PERGAMINHO"
+                "BUY SCROLL"
             },
             !self.em_voo,
             !modal && bt.contains(m),
@@ -1457,7 +1457,7 @@ impl LojaTp {
         let ativo = !self.em_voo;
         botao_ouro(
             bt,
-            if self.em_voo { "AGUARDE…" } else { "COMPRAR" },
+            if self.em_voo { "PLEASE WAIT…" } else { "COMPRAR" },
             ativo,
             !modal && bt.contains(m),
             k,
@@ -1488,7 +1488,7 @@ impl LojaTp {
                     Color::new(0.055, 0.045, 0.13, 0.98),
                 ),
                 pk.nome,
-                &format!("{} de uma vez", milhar(pk.qtd as u64)),
+                &format!("{} at once", milhar(pk.qtd as u64)),
                 None,
                 pk.preco_tp,
                 Produto::Moeda(pk.id),
@@ -1518,7 +1518,7 @@ impl LojaTp {
             let r = Rect::new(area.x, area.y + i as f32 * (h + vao), area.w, h);
             let melhor_rendimento = cat::ENERGIAS.len() > 1 && pk.tp_por_mil() <= melhor;
             let nota = (
-                format!("{:.1} TP/mil", pk.tp_por_mil()).replace('.', ","),
+                format!("{:.1} TP/thousand", pk.tp_por_mil()).replace('.', ","),
                 if melhor_rendimento {
                     OURO_CLARO
                 } else {
@@ -1537,7 +1537,7 @@ impl LojaTp {
                     Color::new(0.045, 0.055, 0.13, 0.98),
                 ),
                 pk.nome,
-                &format!("{} de Energia", milhar(pk.qtd)),
+                &format!("{} Energy", milhar(pk.qtd)),
                 Some(nota),
                 pk.preco_tp,
                 Produto::Energia(pk.id),
@@ -1564,7 +1564,7 @@ impl LojaTp {
                 ch,
             );
             let sobre = !modal && r.contains(m);
-            let melhor = selo_do_pacote(pk.id) == Some("MELHOR VALOR");
+            let melhor = selo_do_pacote(pk.id) == Some("BEST VALUE");
             let rc = 18.0 * k;
             if melhor {
                 estilo::ret_arredondado(
@@ -1635,7 +1635,7 @@ impl LojaTp {
             );
             y += 12.0 * k;
             if pk.bonus > 0 {
-                let t = format!("+{}% DE BÔNUS", bonus_pct(pk));
+                let t = format!("+{}% BONUS", bonus_pct(pk));
                 let tam_b = ts(12.0, k);
                 let bw = estilo::medir_forte(&t, tam_b) + 22.0 * k;
                 let b = Rect::new(r.center().x - bw * 0.5, y, bw, 24.0 * k);
@@ -1655,7 +1655,7 @@ impl LojaTp {
                 estilo::texto_centro(
                     r.center().x,
                     b.y + b.h + 18.0 * k,
-                    &format!("{} + {} de bônus", milhar(pk.tp), milhar(pk.bonus)),
+                    &format!("{} + {} bonus", milhar(pk.tp), milhar(pk.bonus)),
                     ts(11.0, k),
                     estilo::SUAVE,
                 );
@@ -1725,7 +1725,7 @@ impl LojaTp {
         estilo::texto_centro_forte(
             r.center().x,
             r.y + 40.0 * k,
-            "Confirmar compra",
+            "Confirm purchase",
             ts(22.0, k),
             OURO_CLARO,
         );
@@ -1778,12 +1778,12 @@ impl LojaTp {
                 estilo::texto(
                     x,
                     y,
-                    "Pacote de Tempest Points",
+                    "Tempest Points bundle",
                     ts(13.0, k),
                     estilo::alfa(LILAS, 0.9),
                 );
                 y += 40.0 * k;
-                estilo::texto(x, y, "Você recebe", ts(13.0, k), estilo::SUAVE);
+                estilo::texto(x, y, "You receive", ts(13.0, k), estilo::SUAVE);
                 estilo::valor_tp(
                     x + largura - estilo::largura_tp_texto(&milhar(pk.total()), ts(22.0, k), true),
                     y + 4.0 * k,
@@ -1792,7 +1792,7 @@ impl LojaTp {
                     OURO_CLARO,
                 );
                 y += 38.0 * k;
-                estilo::texto(x, y, "Preço", ts(13.0, k), estilo::SUAVE);
+                estilo::texto(x, y, "Price", ts(13.0, k), estilo::SUAVE);
                 let preco = cat::preco_brl(pk.centavos);
                 estilo::texto_forte(
                     x + largura - estilo::medir_forte(&preco, ts(22.0, k)),
@@ -1804,7 +1804,7 @@ impl LojaTp {
                 if estado.simulado {
                     y += 32.0 * k;
                     estilo::texto_ajustado(
-                        "Pagamento simulado: nada é cobrado.",
+                        "Simulated payment: nothing is charged.",
                         x,
                         y,
                         largura,
@@ -1913,10 +1913,10 @@ impl LojaTp {
                         )
                     }),
                     Produto::Moeda(id) => cat::moeda(id).map_or(String::new(), |mo| {
-                        format!("{} · entra na hora", milhar(mo.qtd as u64))
+                        format!("{} · applied right away", milhar(mo.qtd as u64))
                     }),
                     Produto::Energia(id) => cat::energia(id).map_or(String::new(), |e| {
-                        format!("{} de Energia · entra na hora", milhar(e.qtd))
+                        format!("{} Energy · applied right away", milhar(e.qtd))
                     }),
                     Produto::PergaminhoPet(_) => {
                         "Pergaminho · 1 pet coletor · espécie e grau sorteados".to_string()
@@ -1991,9 +1991,9 @@ impl LojaTp {
                 linha(
                     y,
                     &if lote > 1 {
-                        format!("Preço · {lote}x {}", milhar(unitario))
+                        format!("Price · {lote}x {}", milhar(unitario))
                     } else {
-                        "Preço".to_string()
+                        "Price".to_string()
                     },
                     preco,
                     OURO_CLARO,
@@ -2020,16 +2020,16 @@ impl LojaTp {
                     );
                 }
                 y += 34.0 * k;
-                linha(y, "Seu saldo", estado.tp, estilo::TEXTO);
+                linha(y, "Your balance", estado.tp, estilo::TEXTO);
                 y += 34.0 * k;
                 match saldo_apos(estado.tp, preco) {
-                    Some(v) => linha(y, "Após a compra", v, estilo::TEXTO),
+                    Some(v) => linha(y, "After the purchase", v, estilo::TEXTO),
                     None => {
                         insuficiente = true;
                         estilo::texto_forte(
                             x,
                             y,
-                            "Saldo insuficiente",
+                            "Not enough balance",
                             ts(15.0, k),
                             estilo::VERMELHO,
                         );
@@ -2042,9 +2042,9 @@ impl LojaTp {
         let bh = 50.0 * k;
         let cancelar = Rect::new(r.x + 26.0 * k, r.y + r.h - 24.0 * k - bh, bw, bh);
         let confirmar = Rect::new(cancelar.x + bw + 26.0 * k, cancelar.y, bw, bh);
-        botao_contorno(cancelar, "Cancelar", cancelar.contains(m), k);
+        botao_contorno(cancelar, "Cancel", cancelar.contains(m), k);
         let rotulo = if insuficiente {
-            "COMPRAR TP"
+            "BUY TP"
         } else {
             "CONFIRMAR"
         };
@@ -2121,9 +2121,9 @@ impl LojaTp {
         let pop = (e * 6.0).min(1.0);
         let escala = 0.75 + 0.25 * pop + (1.0 - pop) * 0.2;
         estilo::texto_sombra(
-            c.x - estilo::medir_forte("Compra concluída!", ts(34.0 * escala, k)) * 0.5,
+            c.x - estilo::medir_forte("Purchase complete!", ts(34.0 * escala, k)) * 0.5,
             c.y,
-            "Compra concluída!",
+            "Purchase complete!",
             ts(34.0 * escala, k),
             estilo::alfa(OURO_CLARO, some.max(0.0)),
             true,
@@ -2211,19 +2211,19 @@ pub async fn previa(vox: &VoxCache) {
         tp: 1_250,
         historico: vec![
             cat::CompraNet {
-                produto: "Bolsa de TP".into(),
+                produto: "TP pouch".into(),
                 valor: "R$ 24,90".into(),
                 status: "creditado".into(),
                 quando_unix: 0,
             },
             cat::CompraNet {
-                produto: "Lobo da Clareira".into(),
+                produto: "Glade Wolf".into(),
                 valor: "500 TP".into(),
                 status: "entregue".into(),
                 quando_unix: 0,
             },
             cat::CompraNet {
-                produto: "Lobo da Meia-Noite".into(),
+                produto: "Midnight Wolf".into(),
                 valor: "300 TP".into(),
                 status: "entregue".into(),
                 quando_unix: 0,
@@ -2378,7 +2378,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
                 Color::new(0.20, 0.24, 0.22, 1.0),
             );
             macroquad::material::gl_use_material(solido);
-            solido.set_uniform("Recorte", Vec3::ZERO);
+            solido.set_uniform("Crop", Vec3::ZERO);
             crate::render3d::draw_entities(&mut mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
@@ -2457,14 +2457,14 @@ async fn previa_montado(
                 Color::new(0.20, 0.24, 0.22, 1.0),
             );
             macroquad::material::gl_use_material(solido);
-            solido.set_uniform("Recorte", Vec3::ZERO);
+            solido.set_uniform("Crop", Vec3::ZERO);
             crate::render3d::draw_entities(mundo, vox, None, &vista);
             macroquad::material::gl_use_default_material();
             crate::render3d::camera_padrao();
             estilo::texto(
                 16.0,
                 30.0,
-                &format!("MONTADO · {nome} · cavaleiro no tigre"),
+                &format!("MOUNTED · {nome} · rider on the tiger"),
                 15,
                 WHITE,
             );
@@ -2519,7 +2519,7 @@ mod tests {
 
     #[test]
     fn selos_bonus_e_saldo() {
-        assert_eq!(selo_do_pacote(4), Some("MELHOR VALOR"));
+        assert_eq!(selo_do_pacote(4), Some("BEST VALUE"));
         assert_eq!(selo_do_pacote(1), None);
         assert_eq!(bonus_pct(cat::pacote(2).unwrap()), 10);
         assert_eq!(bonus_pct(cat::pacote(4).unwrap()), 30);

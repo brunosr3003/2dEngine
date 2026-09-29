@@ -46,7 +46,7 @@ fn token_novo() -> String {
 
 /// Emite um token e devolve o segredo EM CLARO (o banco guarda so' o hash).
 ///
-/// Apaga os anteriores do mesmo tipo: pedir "esqueci minha senha" tres vezes
+/// Apaga os anteriores do mesmo tipo: pedir "I forgot my password" tres vezes
 /// nao pode deixar tres chaves valendo ao mesmo tempo.
 pub async fn emite(pool: &PgPool, account_id: i64, tipo: i16) -> Result<String> {
     let token = token_novo();
@@ -232,7 +232,7 @@ pub async fn reset_form(Query(q): Query<HashMap<String, String>>) -> Response {
 <div style="font-size:16px;margin-bottom:16px">Escolha uma senha nova</div>
 <input id="a" type="password" placeholder="nova senha" autocomplete="new-password"
   style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:10px;border-radius:8px;border:1px solid #3a4658;background:#151d2b;color:#e8e2d4;font-size:16px">
-<input id="b" type="password" placeholder="repetir a senha" autocomplete="new-password"
+<input id="b" type="password" placeholder="repeat the password" autocomplete="new-password"
   style="width:100%;box-sizing:border-box;padding:12px;margin-bottom:6px;border-radius:8px;border:1px solid #3a4658;background:#151d2b;color:#e8e2d4;font-size:16px">
 <div id="m" style="font-size:13px;color:#e08a7a;min-height:19px;margin-bottom:10px"></div>
 <button id="s" style="width:100%;padding:13px;border:0;border-radius:8px;background:#f0c674;color:#1d2738;font-weight:700;font-size:15px;cursor:pointer">Salvar</button>
@@ -297,7 +297,7 @@ pub async fn reset(State(st): State<Contas>, Json(req): Json<ResetReq>) -> Respo
     // A troca de senha DERRUBA as sessões guardadas.
     //
     // "Esqueci minha senha" é o que a pessoa faz quando desconfia que alguém
-    // entrou. Deixar de pé um "lembrar de mim" emitido antes manteria esse
+    // entrou. Deixar de pé um "remember me" emitido antes manteria esse
     // alguém dentro justamente depois do conserto.
     let r = sqlx::query("UPDATE accounts SET password_hash = $1, email_confirmado = TRUE WHERE id = $2")
         .bind(&hash)

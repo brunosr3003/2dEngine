@@ -244,19 +244,19 @@ fn curto(titulo: &str) -> String {
 
 fn verbo(q: &QuestNet) -> &'static str {
     match q.obj_kind {
-        objective_kind::TALK => "Conversar",
-        objective_kind::KILL | objective_kind::PVP_KILL => "Derrotar",
-        objective_kind::COLLECT | objective_kind::DELIVER => "Juntar",
-        objective_kind::EXPLORE | objective_kind::TRANSPORT => "Chegar",
-        objective_kind::GATHER => "Coletar",
-        objective_kind::CRAFT => "Criar",
-        objective_kind::REFINE => "Refinar",
-        objective_kind::LUGAR => "Ir até",
-        objective_kind::NIVEL => "Nível",
-        objective_kind::VIAGEM => "Viajar",
-        objective_kind::DUNGEON => "Vencer",
-        objective_kind::TUTORIAL => "Aprender",
-        _ => "Objetivo",
+        objective_kind::TALK => "Talk",
+        objective_kind::KILL | objective_kind::PVP_KILL => "Defeat",
+        objective_kind::COLLECT | objective_kind::DELIVER => "Collect",
+        objective_kind::EXPLORE | objective_kind::TRANSPORT => "Reach",
+        objective_kind::GATHER => "Gather",
+        objective_kind::CRAFT => "Create",
+        objective_kind::REFINE => "Refine",
+        objective_kind::LUGAR => "Go to",
+        objective_kind::NIVEL => "Level",
+        objective_kind::VIAGEM => "Travel",
+        objective_kind::DUNGEON => "Beat",
+        objective_kind::TUTORIAL => "Learn",
+        _ => "Objective",
     }
 }
 
@@ -293,12 +293,12 @@ pub fn ordem_com_fixadas<'a>(log: &'a [QuestNet], fixadas: &HashSet<u16>) -> Vec
 /// A linha de estado de um passo da historia no rastreador.
 fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
     if q.status == quest_status::READY {
-        return "Concluindo…".into();
+        return "Turning in…".into();
     }
     match q.obj_kind {
-        objective_kind::NIVEL => format!("Alcance o nível {} · você: {nivel}", q.obj_count),
-        objective_kind::LUGAR => format!("Ir até {}", historia::ponto::nome(q.obj_target)),
-        objective_kind::VIAGEM => "Fale com o Capitão do Porto".into(),
+        objective_kind::NIVEL => format!("Reach level {} · you: {nivel}", q.obj_count),
+        objective_kind::LUGAR => format!("Go to {}", historia::ponto::nome(q.obj_target)),
+        objective_kind::VIAGEM => "Talk to the Harbour Captain".into(),
         // O Capitao leva; o botao e' MINHA ILHA, e nao Embarcar.
         // Tutorial de GESTO nao tem contagem (obj_count 1): "1/1" nao diz
         // nada. O da Energia pede uma quantia, e ai' o quanto falta e' a
@@ -312,15 +312,15 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
             }
         }
         objective_kind::DUNGEON => match shared::dungeon::conteudo(q.obj_target) {
-            Some(c) => format!("Vencer {} · toque para abrir", c.nome),
-            None => "Vencer uma dungeon · toque para abrir".into(),
+            Some(c) => format!("Beat {} · tap to open", c.nome),
+            None => "Beat a dungeon · tap to open".into(),
         },
         objective_kind::TALK => {
             let nome = shared::quests::PAPEIS_DE_CONVERSA
                 .iter()
                 .find(|p| **p as u16 == q.obj_target)
                 .map_or("?", |p| p.nome());
-            format!("Conversar com {nome}")
+            format!("Talk to {nome}")
         }
         _ => format!(
             "{}  {}/{}",
@@ -484,7 +484,7 @@ impl Missoes {
         } else {
             self.oferta.clear();
             self.npc = None;
-            self.quem = "Diário de missões".into();
+            self.quem = "Quest journal".into();
             self.aberta = true;
         }
     }
@@ -628,7 +628,7 @@ impl Missoes {
         let mut y = area.y + u(4.0) - self.rolagem.pos;
 
         if !self.oferta.is_empty() {
-            estilo::texto(p.x + u(16.0), y + u(18.0), "Disponíveis", 15, estilo::SUAVE);
+            estilo::texto(p.x + u(16.0), y + u(18.0), "Available", 15, estilo::SUAVE);
             y += u(TITULO_SECAO);
             for q in &self.oferta {
                 if fora(y, u(LINHA_OFERTA)) {
@@ -661,7 +661,7 @@ impl Missoes {
                     estilo::OURO,
                 );
                 let b = Rect::new(p.x + p.w - u(120.0), y + u(4.0), u(92.0), u(26.0));
-                let _ = crate::ui::botao(b, "Aceitar", true);
+                let _ = crate::ui::botao(b, "Accept", true);
                 if tocou(b) {
                     saida.push(ClientMessage::AcceptQuest { quest_id: q.id });
                 }
@@ -672,14 +672,14 @@ impl Missoes {
         estilo::texto(
             p.x + u(16.0),
             y + u(18.0),
-            "Em andamento",
+            "In progress",
             15,
             estilo::SUAVE,
         );
         y += u(TITULO_SECAO);
         if self.log.is_empty() {
             let dica = if self.npc.is_some() {
-                "Nenhuma missão ativa."
+                "No active quest."
             } else {
                 "Nenhuma missão ativa. Abra Menu › Missões para pegar várias."
             };
@@ -705,8 +705,8 @@ impl Missoes {
             let estado = if ok {
                 let quem = shared::quests::nome_do_posto(q.giver)
                     .or_else(|| shared::quests::papel_do_giver(q.giver).map(|p| p.nome()))
-                    .unwrap_or("quem deu a missão");
-                format!("Pronta — entregue: {quem}")
+                    .unwrap_or("whoever gave the quest");
+                format!("Ready — turn in to: {quem}")
             } else {
                 format!("{}  {feito}/{total}", verbo(q))
             };
@@ -739,7 +739,7 @@ impl Missoes {
             if ok && com_o_mestre && Some(q.giver) == self.giver {
                 bx -= u(92.0);
                 let b = Rect::new(bx, y + u(4.0), u(92.0), u(26.0));
-                let _ = crate::ui::botao(b, "Entregar", true);
+                let _ = crate::ui::botao(b, "Turn in", true);
                 if tocou(b) {
                     saida.push(ClientMessage::TurnInQuest { quest_id: q.id });
                 }
@@ -767,7 +767,7 @@ impl Missoes {
             // A historia nao se abandona.
             if !historia::e_da_historia(q.id) {
                 let b = Rect::new(bx - u(92.0), y + u(34.0), u(92.0), u(24.0));
-                let _ = crate::ui::botao(b, "Abandonar", true);
+                let _ = crate::ui::botao(b, "Abandon", true);
                 if tocou(b) {
                     saida.push(ClientMessage::AbandonQuest { quest_id: q.id });
                 }
@@ -784,7 +784,7 @@ impl Missoes {
     }
 
     /// O rastreador na esquerda. Clicar numa missao liga a auto missao; o
-    /// titulo "Missões ›" abre o diario. `auto`
+    /// titulo "Quests ›" abre o diario. `auto`
     /// e' a que esta' em auto agora (marcada).
     pub fn desenha_rastreador(
         &self,
@@ -810,12 +810,12 @@ impl Missoes {
         let mut saida = None;
         estilo::painel(r);
         // AS ABAS: missões e grupo na MESMA caixa, e é a aba que troca o
-        // conteúdo. Clicar em "Missões" não abre mais o diário — só volta pra
+        // conteúdo. Clicar em "Quests" não abre mais o diário — só volta pra
         // aba das missões de hoje; "Todas as missões" é do Menu.
         let meia = r.w * 0.5;
         for (caixa, rotulo, grupo) in [
-            (Rect::new(r.x, r.y, meia, 36.0 * s), "Missões", false),
-            (Rect::new(r.x + meia, r.y, meia, 36.0 * s), "Grupo", true),
+            (Rect::new(r.x, r.y, meia, 36.0 * s), "Quests", false),
+            (Rect::new(r.x + meia, r.y, meia, 36.0 * s), "Party", true),
         ] {
             let ativa = grupo == self.aba_grupo;
             let sobre = caixa.contains(mouse);
@@ -845,7 +845,7 @@ impl Missoes {
         }
         if n == 0 {
             estilo::texto_ajustado(
-                "Nenhuma missão em andamento",
+                "No quest in progress",
                 r.x + 12.0,
                 r.y + 66.0 * s,
                 r.w - 24.0,
@@ -1050,7 +1050,7 @@ mod tests {
     /// rastreador vira uma tira ilegível.
     #[test]
     fn o_resumo_do_rastreador_e_curto() {
-        assert_eq!(curto("Urso"), "Urso");
+        assert_eq!(curto("Bear"), "Bear");
         assert_eq!(curto("A caçada · Bosque Sombrio"), "A caçada");
         assert_eq!(curto("Caçar ursos: a temporada"), "Caçar ursos");
         // Comprido sem pontuação: corta e avisa que cortou.
@@ -1113,7 +1113,7 @@ mod tests {
         let mut m = Missoes::default();
         m.abre_oferta(
             Some(EntityId(9)),
-            "Mestre".into(),
+            "Master".into(),
             vec![q(501, quest_status::ACTIVE, 0)],
         );
         assert!(m.aberta);
@@ -1157,7 +1157,7 @@ mod tests {
         let mut m = Missoes::default();
         m.abre_oferta(
             None,
-            "Mestre".into(),
+            "Master".into(),
             vec![
                 q(501, quest_status::TURNED_IN, 1),
                 q(502, quest_status::ACTIVE, 0),
@@ -1215,7 +1215,7 @@ mod tests {
     #[test]
     fn janela_do_npc_fecha_longe_e_o_diario_nao() {
         let mut m = Missoes::default();
-        m.abre_oferta(Some(EntityId(9)), "Mestre".into(), Vec::new());
+        m.abre_oferta(Some(EntityId(9)), "Master".into(), Vec::new());
         m.conferir_distancia(Some(vec2(0.0, 0.0)), Some(vec2(4.0, 0.0)));
         assert!(m.aberta);
         m.conferir_distancia(Some(vec2(0.0, 0.0)), Some(vec2(5.0, 0.0)));

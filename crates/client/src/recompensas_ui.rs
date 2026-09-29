@@ -49,7 +49,7 @@ impl Ui {
             let mut partes = Vec::new();
             if r.xp > 0 { partes.push(format!("+{} XP", r.xp)); }
             if r.cobre > 0 { partes.push(format!("+{} cobre", r.cobre)); }
-            if r.faccao > 0 { partes.push(format!("+{} facção", r.faccao)); }
+            if r.faccao > 0 { partes.push(format!("+{} faction", r.faccao)); }
             estilo::texto_centro(boxr.center().x, y, &partes.join("   ·   "), 14, estilo::AUTO);
             y += 28.0 * f;
         }

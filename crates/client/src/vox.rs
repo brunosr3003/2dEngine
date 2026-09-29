@@ -1714,7 +1714,7 @@ mod testes_da_carga_da_cabeca {
         let mut com_malha = 0;
         for i in 0..total {
             let Some(nome) = crate::render3d::rig_do_cabelo(i) else {
-                // Só o "sem cabelo" pode não ter arquivo.
+                // Só o "no hair" pode não ter arquivo.
                 assert_eq!(
                     i,
                     ap::CABELOS,

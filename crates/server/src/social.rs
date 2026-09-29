@@ -24,7 +24,7 @@ pub async fn init(pool: &PgPool) -> Result<()> {
 
 async fn alvo(db: &mut PgConnection, eu: &str, nome: &str) -> Result<String> {
     if !texto_valido(nome, 1, 32) {
-        bail!("Nome de personagem inválido.");
+        bail!("Invalid character name.");
     }
     let nomes: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM characters WHERE lower(name)=lower($1) ORDER BY name LIMIT 2",
@@ -34,10 +34,10 @@ async fn alvo(db: &mut PgConnection, eu: &str, nome: &str) -> Result<String> {
     .await?;
     let nome = match nomes.as_slice() {
         [n] => n.clone(),
-        _ => bail!("Personagem não encontrado ou nome ambíguo."),
+        _ => bail!("Character not found, or the name is ambiguous."),
     };
     if nome == eu {
-        bail!("Escolha outro personagem.");
+        bail!("Choose another character.");
     }
     Ok(nome)
 }
@@ -49,7 +49,7 @@ async fn meu_cla(db: &mut PgConnection, eu: &str) -> Result<Option<(i64, String)
 async fn lider(db: &mut PgConnection, eu: &str) -> Result<i64> {
     match meu_cla(db, eu).await? {
         Some((id, nome)) if nome == eu => Ok(id),
-        _ => bail!("Só o líder do clã pode fazer isso."),
+        _ => bail!("Only the clan leader can do that."),
     }
 }
 async fn vagas_amigo(db: &mut PgConnection, nome: &str) -> Result<()> {
@@ -58,7 +58,7 @@ async fn vagas_amigo(db: &mut PgConnection, nome: &str) -> Result<()> {
         .fetch_one(db)
         .await?;
     if n >= MAX_AMIGOS as i64 {
-        bail!("Lista de amigos ou pedidos cheia (100).");
+        bail!("Friend or request list is full (100).");
     }
     Ok(())
 }
@@ -89,14 +89,14 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             bail!("Envio administrativo deve passar pelo canal autenticado.");
         }
         Pedido::ReceberAnexos { .. } => {
-            bail!("Resgate deve passar pelo mundo.");
+            bail!("The claim has to go through the world.");
         }
         Pedido::Amizade { nome } => {
             let outro = alvo(&mut tx, eu, nome).await?;
             let existe: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM social_amigos WHERE (de=$1 AND para=$2) OR (de=$2 AND para=$1))")
                 .bind(eu).bind(&outro).fetch_one(&mut *tx).await?;
             if existe {
-                bail!("Já existe amizade ou pedido entre vocês.");
+                bail!("There is already a friendship or request between you.");
             }
             vagas_amigo(&mut tx, eu).await?;
             vagas_amigo(&mut tx, &outro).await?;
@@ -120,7 +120,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .rows_affected()
                 == 0
             {
-                bail!("Pedido de amizade não está mais disponível.");
+                bail!("That friend request is no longer available.");
             }
         }
         Pedido::RemoverAmigo { nome } => {
@@ -146,7 +146,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .fetch_one(&mut *tx)
                 .await?;
             if n >= MAX_CARTAS as i64 {
-                bail!("Caixa do destinatário cheia (100 cartas).");
+                bail!("The recipient's inbox is full (100 letters).");
             }
             let agora: i64 = sqlx::query_scalar("SELECT extract(epoch FROM now())::bigint")
                 .fetch_one(&mut *tx)
@@ -157,7 +157,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                     .fetch_optional(&mut *tx)
                     .await?;
             if ultimo.is_some_and(|t| agora - t < 10) {
-                bail!("Aguarde 10 segundos entre cartas.");
+                bail!("Wait 10 seconds between letters.");
             }
             sqlx::query(
                 "INSERT INTO social_cartas(de,para,assunto,texto,quando) VALUES($1,$2,$3,$4,$5)",
@@ -186,15 +186,15 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .rows_affected()
                 == 0
             {
-                bail!("Carta não encontrada.");
+                bail!("Letter not found.");
             }
         }
         Pedido::CriarCla { nome } => {
             if !texto_valido(nome, 3, 24) {
-                bail!("Nome do clã: de 3 a 24 caracteres.");
+                bail!("Clan name: 3 to 24 characters.");
             }
             if meu_cla(&mut tx, eu).await?.is_some() {
-                bail!("Você já pertence a um clã.");
+                bail!("You already belong to a clan.");
             }
             let existe: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM social_clas WHERE lower(nome)=lower($1))",
@@ -203,7 +203,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             .fetch_one(&mut *tx)
             .await?;
             if existe {
-                bail!("Já existe um clã com esse nome.");
+                bail!("A clan with that name already exists.");
             }
             let id: i64 = sqlx::query_scalar(
                 "INSERT INTO social_clas(nome,lider) VALUES($1,$2) RETURNING id",
@@ -226,7 +226,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             let id = lider(&mut tx, eu).await?;
             let nome = alvo(&mut tx, eu, nome).await?;
             if meu_cla(&mut tx, &nome).await?.is_some() {
-                bail!("Esse personagem já tem clã.");
+                bail!("That character already has a clan.");
             }
             let n: i64 =
                 sqlx::query_scalar("SELECT count(*) FROM social_convites WHERE nome=$1 OR cla=$2")
@@ -235,7 +235,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                     .fetch_one(&mut *tx)
                     .await?;
             if n >= MAX_CLA as i64 {
-                bail!("Limite de convites pendentes atingido.");
+                bail!("Pending invite limit reached.");
             }
             sqlx::query(
                 "INSERT INTO social_convites(nome,cla,de) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
@@ -255,18 +255,18 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .rows_affected()
                 == 0
             {
-                bail!("Convite de clã não está mais disponível.");
+                bail!("That clan invite is no longer available.");
             }
             if *aceitar {
                 if meu_cla(&mut tx, eu).await?.is_some() {
-                    bail!("Saia do seu clã antes de aceitar outro.");
+                    bail!("Leave your clan before accepting another.");
                 }
                 let n: i64 = sqlx::query_scalar("SELECT count(*) FROM social_membros WHERE cla=$1")
                     .bind(id)
                     .fetch_one(&mut *tx)
                     .await?;
                 if n >= MAX_CLA as i64 {
-                    bail!("Clã cheio (50 membros).");
+                    bail!("Clan full (50 members).");
                 }
                 sqlx::query("INSERT INTO social_membros(nome,cla) VALUES($1,$2)")
                     .bind(eu)
@@ -281,7 +281,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
         }
         Pedido::SairCla => {
             let Some((_, chefe)) = meu_cla(&mut tx, eu).await? else {
-                bail!("Você não tem clã.");
+                bail!("You have no clan.");
             };
             if chefe == eu {
                 bail!("Transfira a liderança ou dissolva o clã antes de sair.");
@@ -295,7 +295,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             let id = lider(&mut tx, eu).await?;
             let nome = alvo(&mut tx, eu, nome).await?;
             if !meu_cla(&mut tx, &nome).await?.is_some_and(|(c, _)| c == id) {
-                bail!("Personagem não pertence ao seu clã.");
+                bail!("That character does not belong to your clan.");
             }
             if matches!(pedido, Pedido::LiderCla { .. }) {
                 sqlx::query("UPDATE social_clas SET lider=$1 WHERE id=$2")
@@ -314,7 +314,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
         Pedido::AvisoCla { texto } => {
             let id = lider(&mut tx, eu).await?;
             if !texto_valido(texto, 0, 200) {
-                bail!("Aviso do clã: até 200 caracteres.");
+                bail!("Clan notice: up to 200 characters.");
             }
             sqlx::query("UPDATE social_clas SET aviso=$1 WHERE id=$2")
                 .bind(texto.trim())

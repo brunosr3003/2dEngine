@@ -5,7 +5,7 @@ pub const ZONA: &str = "ilha_planalto";
 pub const REVISAO: u32 = 1;
 pub const NOMES: [&str; 5] = [
     "Encostas dos Sentinelas",
-    "Mosteiro dos Ventos",
+    "Monastery of the Winds",
     "Vale do Trovão",
     "Forja Partida",
     "Olho da Tempestade",

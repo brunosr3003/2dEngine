@@ -499,10 +499,10 @@ async fn anunciar_item(
             qtd,
             inst.as_deref(),
             0,
-            &format!("Anúncio recusado: {nome}"),
+            &format!("Listing refused: {nome}"),
         )
         .await?;
-        return Ok((false, format!("{} {nome} volta em Entregas.", r.texto())));
+        return Ok((false, format!("{} {nome} comes back in Deliveries.", r.texto())));
     }
     sqlx::query(
         "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit)
@@ -582,7 +582,7 @@ async fn comprar(
                     0,
                     None,
                     pago,
-                    "Compra não fechou: gold devolvido",
+                    "The purchase didn't go through: gold refunded",
                 )
                 .await?;
             }
@@ -610,7 +610,7 @@ async fn comprar(
             tx,
             conta,
             f.vendida as i64,
-            "comprou TP no mercado",
+            "bought TP on the market",
             Some(&format!("{id}:tp")),
         )
         .await?
@@ -630,7 +630,7 @@ async fn comprar(
             f.vendida,
             inst.as_deref(),
             0,
-            &format!("Comprado no mercado: {nome}"),
+            &format!("Bought on the market: {nome}"),
         )
         .await?;
         format!("Comprado: {nome} ×{}. Receba em Entregas.", f.vendida)
@@ -645,7 +645,7 @@ async fn comprar(
             0,
             None,
             f.liquido,
-            &format!("Venda: {nome} ×{} (taxa {})", f.vendida, f.taxa),
+            &format!("Sale: {nome} ×{} (fee {})", f.vendida, f.taxa),
         )
         .await?;
     }
@@ -690,10 +690,10 @@ pub async fn cancelar(
     .fetch_optional(&mut *tx)
     .await?
     else {
-        return Ok((false, "Anúncio não encontrado.".into()));
+        return Ok((false, "Listing not found.".into()));
     };
     if l.get::<i16, _>("estado") as u8 != regras::ESTADO_ATIVO {
-        return Ok((false, "O anúncio já não está ativo.".into()));
+        return Ok((false, "The listing is no longer active.".into()));
     }
     let restante = l.get::<i64, _>("qtd_restante").max(0) as u64;
     let nome: String = l.get("nome");
@@ -708,7 +708,7 @@ pub async fn cancelar(
             &mut tx,
             &conta,
             restante as i64,
-            "cancelou anúncio de TP",
+            "cancelled a TP listing",
             Some(&format!("{anuncio}:cancelado")),
         )
         .await?;
@@ -724,12 +724,12 @@ pub async fn cancelar(
             restante,
             inst.as_deref(),
             0,
-            &format!("Anúncio cancelado: {nome}"),
+            &format!("Listing cancelled: {nome}"),
         )
         .await?;
         format!("Anúncio cancelado: {nome} ×{restante} volta em Entregas.")
     } else {
-        "Anúncio cancelado.".into()
+        "Listing cancelled.".into()
     };
     tx.commit().await?;
     Ok((true, texto))
@@ -763,7 +763,7 @@ pub async fn anunciar_tp(
         &mut tx,
         conta,
         -(qtd as i64),
-        "anunciou TP no mercado",
+        "listed TP on the market",
         Some(&format!("{id}:custodia")),
     )
     .await?
@@ -960,7 +960,7 @@ pub enum Evento {
         ok: bool,
         texto: String,
     },
-    /// Cartas pra aplicar (pedido "Receber").
+    /// Cartas pra aplicar (pedido "Receive").
     Cartas {
         sid: SessionId,
         personagem: String,

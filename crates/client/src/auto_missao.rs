@@ -163,7 +163,7 @@ impl AutoMissao {
         if tipo == destino_tipo::TRAVA {
             let nome = std::mem::take(&mut self.nome);
             self.parar();
-            return Some(format!("História: {nome} para continuar."));
+            return Some(format!("Story: {nome} to continue."));
         }
         self.destino = Some(Destino {
             tipo,
@@ -359,27 +359,27 @@ impl AutoMissao {
     pub fn texto_da_etapa(&self) -> &'static str {
         match self.etapa {
             None => "",
-            Some(Etapa::PedirDestino | Etapa::Esperando) => "procurando o objetivo",
+            Some(Etapa::PedirDestino | Etapa::Esperando) => "looking for the objective",
             Some(Etapa::Indo) => match self.destino.map(|d| d.tipo) {
-                Some(destino_tipo::NPC) => "indo conversar",
-                Some(destino_tipo::ENTREGA) => "voltando ao Mestre",
-                Some(destino_tipo::COMBATE) => "indo à zona dos bichos",
-                Some(destino_tipo::LUGAR) => "indo ao ponto-chave",
-                _ => "indo ao veio",
+                Some(destino_tipo::NPC) => "going to talk",
+                Some(destino_tipo::ENTREGA) => "returning to the Master",
+                Some(destino_tipo::COMBATE) => "heading to the beast zone",
+                Some(destino_tipo::LUGAR) => "heading to the key point",
+                _ => "heading to the vein",
             },
             Some(Etapa::NoLugar) => "chegando",
             Some(Etapa::Falando) => "conversando",
             Some(Etapa::Combatendo) => "lutando",
             Some(Etapa::Coletando) => "coletando",
-            Some(Etapa::SaindoDaColeta) => "procurando outro recurso",
-            Some(Etapa::AguardandoProxima) => "recebendo a próxima",
+            Some(Etapa::SaindoDaColeta) => "looking for another node",
+            Some(Etapa::AguardandoProxima) => "taking the next one",
         }
     }
 
     /// O texto da faixa de estado unica do HUD.
     pub fn faixa(&self) -> Option<String> {
         self.ativo()
-            .then(|| format!("AUTO MISSÃO · {} · {}", self.nome, self.texto_da_etapa()))
+            .then(|| format!("AUTO QUEST · {} · {}", self.nome, self.texto_da_etapa()))
     }
 }
 
@@ -529,7 +529,7 @@ mod tests {
     #[test]
     fn npc_dialogo_entrega_e_proxima() {
         let mut a = AutoMissao::default();
-        a.iniciar(501, "Conheça o Alquimista".into(), 0.0);
+        a.iniciar(501, "Meet the Alchemist".into(), 0.0);
         pede(&mut a, 0.0);
         let alq = vec2(100.0, 0.0);
         assert!(a
@@ -585,7 +585,7 @@ mod tests {
         assert!(a.passo(c).is_empty());
         assert!(a.ativo());
         // Chegou a oferta e o main aceitou: comeca a proxima.
-        a.iniciar(502, "Lobos na estrada".into(), 11.0);
+        a.iniciar(502, "Wolves on the road".into(), 11.0);
         assert_eq!(
             a.passo(ctx(vec2(1.0, 0.0), 11.0)),
             vec![Acao::PedirDestino(502)]
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn historia_espera_no_lugar_e_para_na_trava() {
         let mut a = AutoMissao::default();
-        a.iniciar(709, "O mirante do Bosque".into(), 0.0);
+        a.iniciar(709, "The lookout of the Grove".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
         let mirante = vec2(60.0, 0.0);
         a.destino_recebido(709, destino_tipo::LUGAR, mirante, 26.0, None, 0.1);
@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn coleta_liga_auto_coleta() {
         let mut a = AutoMissao::default();
-        a.iniciar(503, "Cobre".into(), 0.0);
+        a.iniciar(503, "Copper".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
         a.destino_recebido(503, destino_tipo::COLETA, vec2(10.0, 0.0), 6.0, None, 0.1);
         assert_eq!(
@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn cancelamentos_e_sem_destino() {
         let mut a = AutoMissao::default();
-        a.iniciar(505, "Porto".into(), 0.0);
+        a.iniciar(505, "Port".into(), 0.0);
         a.passo(ctx(Vec2::ZERO, 0.0));
         // Unknown destination: stops and warns.
         assert!(a
@@ -832,7 +832,7 @@ mod tests {
     #[test]
     fn recurso_esgotado_sai_sem_esperar_seis_segundos() {
         let mut a = AutoMissao::default();
-        a.iniciar(503, "Cobre".into(), 0.0);
+        a.iniciar(503, "Copper".into(), 0.0);
         assert_eq!(a.passo(ctx(Vec2::ZERO, 0.0)), vec![Acao::PedirDestino(503)]);
         a.destino_recebido(503, destino_tipo::COLETA, Vec2::ZERO, 6.0, None, 0.1);
         a.passo(ctx(Vec2::ZERO, 0.2));

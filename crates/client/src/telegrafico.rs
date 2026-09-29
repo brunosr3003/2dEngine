@@ -631,9 +631,9 @@ impl Malha {
 /// "Fase 2" abaixo de metade da vida (a mesma regra do servidor).
 pub fn texto_de_fase(hp: u16, hp_max: u16) -> &'static str {
     if shared::bosses::fase(hp as i32, hp_max as i32) >= 1 {
-        "FASE 2"
+        "PHASE 2"
     } else {
-        "FASE 1"
+        "PHASE 1"
     }
 }
 
@@ -657,7 +657,7 @@ pub fn chefe_perto(world: &crate::world::World, eu: Vec2) -> Option<(String, u16
         })
         .map(|e| {
             (
-                e.meta.name.clone().unwrap_or_else(|| "Chefe".into()),
+                e.meta.name.clone().unwrap_or_else(|| "Boss".into()),
                 e.meta.nivel,
                 e.state.hp,
                 e.meta.hp_max,
@@ -716,7 +716,7 @@ pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u16, hp_ma
     estilo::texto(
         slot.x + 40.0,
         slot.y + 18.0,
-        &format!("CHEFE · {}", texto_de_fase(hp, hp_max)),
+        &format!("BOSS · {}", texto_de_fase(hp, hp_max)),
         11,
         laranja,
     );
@@ -1008,8 +1008,8 @@ mod testes {
         t.envelhece(1.0 + POEIRA_S + 0.05);
         assert_eq!(t.quantos(), 0);
         assert!(t.termina(9, true, 1.0).is_none());
-        assert_eq!(texto_de_fase(40, 100), "FASE 2");
-        assert_eq!(texto_de_fase(60, 100), "FASE 1");
+        assert_eq!(texto_de_fase(40, 100), "PHASE 2");
+        assert_eq!(texto_de_fase(60, 100), "PHASE 1");
     }
 
     #[test]

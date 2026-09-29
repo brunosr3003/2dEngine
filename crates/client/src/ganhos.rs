@@ -113,7 +113,7 @@ impl Ganhos {
             let y = c.y - 18.0 - k as f32 * 20.0 - 30.0 * u;
             let txt = match origem {
                 Origem::Item(id) => format!("+{q} {}", nome(*id)),
-                Origem::Energia => format!("+{q} Energia"),
+                Origem::Energia => format!("+{q} Energy"),
             };
             let tam = 19.0;
             let w = crate::hud_estilo::medir_forte(&txt, tam as u16);

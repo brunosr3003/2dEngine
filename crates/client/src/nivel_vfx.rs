@@ -217,7 +217,7 @@ pub fn desenha_faixa(e: &SubiuDeNivel, nivel: u32) {
     // Sobe um pouco enquanto some: parada, ela lia como elemento fixo do HUD.
     let y = seguro.y + seguro.h * 0.26 - (1.0 - vis) * crate::hud_estilo::u(26.0);
     let a = vis * vis;
-    let texto = format!("NÍVEL {nivel}");
+    let texto = format!("LEVEL {nivel}");
     let cx = seguro.center().x;
     crate::hud_estilo::texto_centro_forte(
         cx + 2.0,

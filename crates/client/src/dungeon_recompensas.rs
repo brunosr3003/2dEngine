@@ -14,8 +14,8 @@ fn recebido(flags: &[bool], estagio: u8) -> Option<bool> {
 fn status(flags: &[bool], estagio: u8, concluida: &str) -> String {
     match recebido(flags, estagio) {
         Some(true) => concluida.into(),
-        Some(false) => "Disponível".into(),
-        None => "Consultando progresso…".into(),
+        Some(false) => "Available".into(),
+        None => "Checking progress…".into(),
     }
 }
 fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha> {
@@ -27,12 +27,12 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
         .collect::<Vec<_>>()
         .join(" / ");
     let mut linhas = vec![
-        Linha::Titulo(format!("Primeira conclusão · estágio {estagio}")),
+        Linha::Titulo(format!("First completion · stage {estagio}")),
         Linha::Texto(
             status(
                 &ce.primeiras_concluidas,
                 estagio,
-                "Já concluída · bônus único encerrado",
+                "Already completed · one-off bonus closed",
             ),
             true,
         ),
@@ -40,14 +40,14 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
             "1 equipamento aleatório + 1 chave de craft aleatória.".into(),
             false,
         ),
-        Linha::Texto(format!("Equipamento garantido: {graus}."), false),
+        Linha::Texto(format!("Guaranteed gear: {graus}."), false),
         Linha::Texto(
             "Entrega no Correio ao vencer com entrada/recompensa.".into(),
             false,
         ),
-        Linha::Titulo("Primeira vitória da semana · por conta".into()),
+        Linha::Titulo("First win of the week · per account".into()),
         Linha::Texto(
-            status(&ce.semanais_recebidas, estagio, "Já recebeu nesta semana"),
+            status(&ce.semanais_recebidas, estagio, "Already received this week"),
             true,
         ),
         Linha::Texto(
@@ -58,10 +58,10 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
             "Na estreia, os dois bônus podem ser recebidos juntos.".into(),
             false,
         ),
-        Linha::Titulo("Drops possíveis do boss".into()),
+        Linha::Titulo("Possible boss drops".into()),
         Linha::Texto(
             shared::bosses::chefe(def.chefe)
-                .map_or("Chefe", |b| b.nome)
+                .map_or("Boss", |b| b.nome)
                 .into(),
             true,
         ),
@@ -95,7 +95,7 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
         ),
         Linha::Texto(
             format!(
-                "Equipamento: {:.0}% · até {}.",
+                "Gear: {:.0}% · up to {}.",
                 chance * 100.0,
                 dg::teto_de_grau(nivel).nome()
             ),
@@ -103,7 +103,7 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
         ),
         Linha::Texto(
             format!(
-                "Chave {}: {:.0}% no total.",
+                "Key {}: {:.0}% in total.",
                 shared::chaves::nome_da_cor(cor),
                 shared::chaves::faixa(nivel).chance * 100.0
             ),
@@ -117,10 +117,10 @@ fn linhas(def: &dg::Conteudo, ce: &dg::ConteudoEstado, estagio: u8) -> Vec<Linha
             "Ajudante: sem equipamento, chave ou bônus de estreia.".into(),
             false,
         ),
-        Linha::Titulo("Equipamento aleatório · uma destas peças".into()),
+        Linha::Titulo("Random gear · one of these pieces".into()),
         Linha::Itens((item_id::ESPADA_E_ESCUDO..=item_id::CINTO).collect()),
         Linha::Titulo(format!(
-            "Chave aleatória · cor {}",
+            "Random key · colour {}",
             shared::chaves::nome_da_cor(cor)
         )),
         Linha::Itens(
@@ -211,8 +211,8 @@ mod tests {
     #[test]
     fn status_e_do_estagio_selecionado_e_ausencia_nao_vira_recebido() {
         assert_eq!(status(&[true, false], 1, "Recebida"), "Recebida");
-        assert_eq!(status(&[true, false], 2, "Recebida"), "Disponível");
-        assert_eq!(status(&[true], 2, "Recebida"), "Consultando progresso…");
+        assert_eq!(status(&[true, false], 2, "Recebida"), "Available");
+        assert_eq!(status(&[true], 2, "Recebida"), "Checking progress…");
         assert_eq!(recebido(&[true], 0), None);
     }
 }

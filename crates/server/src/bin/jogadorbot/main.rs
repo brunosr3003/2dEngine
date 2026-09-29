@@ -826,7 +826,7 @@ async fn recebe(
             .await?;
         }
         ServerMessage::LoginDenied { reason } => {
-            return Err(anyhow!("login negado: {reason}"));
+            return Err(anyhow!("login denied: {reason}"));
         }
         ServerMessage::CharacterList {
             chars,
@@ -928,7 +928,7 @@ async fn recebe(
                     // DE PÉ OUTRA VEZ. `morto` só era desfeito no login, e
                     // `RespawnAtCity` não faz login nenhum: depois da
                     // primeira morte o bot ficava deitado o resto da corrida
-                    // — o batimento mostrou "MORTO" por quatro minutos.
+                    // — o batimento mostrou "DEAD" por quatro minutos.
                     if eu.morto && s.hp > 0 {
                         eu.morto = false;
                         eu.destino = None;
@@ -1141,7 +1141,7 @@ async fn recebe(
         // motivo exato.
         //
         // Chat de JOGADOR continua ignorado: isso é conversa, não diagnóstico.
-        ServerMessage::Chat { from, text } if from == "SYS" || from == "Sistema" => {
+        ServerMessage::Chat { from, text } if from == "SYS" || from == "System" => {
             eu.ultima_recusa = Some(text.clone());
             t.registra(ev(nome, eu, "aviso_do_servidor", false, text));
         }
@@ -1214,7 +1214,7 @@ async fn recebe(
         }
         ServerMessage::ResourceSources { items } => {
             // DE ONDE SAI CADA ITEM, pela boca do próprio jogo. Sem isto o
-            // bot teria que adivinhar que "Madeira T1" vem de árvore — e
+            // bot teria que adivinhar que "Wood T1" vem de árvore — e
             // adivinhação envelhece mal quando o conteúdo muda.
             eu.fontes = items
                 .into_iter()
@@ -1284,7 +1284,7 @@ async fn recebe(
             // EXISTE aviso com essa palavra: quem diz que o jogador está numa
             // instância é `Instancia`. Resultado medido: `na_dungeon` nunca
             // virava verdade, o bot pedia entrada de novo lá de dentro e
-            // levava "Você já está numa dungeon." 204 vezes.
+            // levava "You are already in a dungeon." 204 vezes.
             //
             // Pior, "Sala" casava com `Salas` — a LISTA de salas, que se
             // recebe fora de qualquer dungeon. A leitura estava errada nos
@@ -1418,7 +1418,7 @@ async fn recebe(
                 }
             }
         }
-        ServerMessage::Kick { reason } => return Err(anyhow!("kick: {reason}")),
+        ServerMessage::Kick { reason } => return Err(anyhow!("kicked: {reason}")),
         ServerMessage::TrocarZona { zona, host } => {
             // Guarda pra onde ir; quem reconecta é o laço de `vive`, que é
             // dono do socket.

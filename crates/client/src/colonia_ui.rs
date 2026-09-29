@@ -200,7 +200,7 @@ impl ColoniaUi {
         estilo::painel_destaque(p, estilo::ACENTO);
         let m = Vec2::from(mouse_position());
         let x0 = p.x + 20.0 * f;
-        estilo::texto_forte(x0, p.y + 36.0 * f, "Minha Ilha", 20, estilo::OURO);
+        estilo::texto_forte(x0, p.y + 36.0 * f, "My Island", 20, estilo::OURO);
         estilo::texto(x0, p.y + 60.0 * f, &resumo(&e), 14, estilo::SUAVE);
 
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
@@ -241,7 +241,7 @@ impl ColoniaUi {
             estilo::texto_centro(
                 mr.center().x,
                 mr.center().y,
-                "montando a ilha…",
+                "building the island…",
                 13,
                 estilo::SUAVE,
             );
@@ -306,7 +306,7 @@ impl ColoniaUi {
         estilo::texto_centro(
             mr.center().x,
             mr.y + mr.h - 10.0 * f,
-            "arraste para girar · pinça dá zoom",
+            "drag to rotate · pinch to zoom",
             12,
             estilo::SUAVE,
         );
@@ -355,7 +355,7 @@ impl ColoniaUi {
                 40.0 * f,
             );
             crate::foco::marca(crate::foco::chave::ILHA_COLHER, b);
-            estilo::botao(b, "Colher", estilo::estado_de(b, false, false), true);
+            estilo::botao(b, "Harvest", estilo::estado_de(b, false, false), true);
             if clicou_em(b) {
                 pedido = Some(PedidoColonia::Colher);
             }
@@ -371,7 +371,7 @@ impl ColoniaUi {
             estilo::texto_forte(
                 br.x + 14.0 * f,
                 br.y + 22.0 * f,
-                &format!("Baú da ilha · {}/{} espaços", e.bau.len(), e.banco),
+                &format!("Island chest · {}/{} slots", e.bau.len(), e.banco),
                 14,
                 estilo::OURO,
             );
@@ -379,7 +379,7 @@ impl ColoniaUi {
                 br.x + 14.0 * f,
                 br.y + 42.0 * f,
                 &if dentro.is_empty() {
-                    "Vazio — a colheita cai aqui.".to_string()
+                    "Empty — the harvest lands here.".to_string()
                 } else {
                     lista(&dentro, nome_item)
                 },
@@ -398,7 +398,7 @@ impl ColoniaUi {
                     38.0 * f,
                 );
                 crate::foco::marca(crate::foco::chave::ILHA_RETIRAR, b);
-                estilo::botao(b, "Retirar", estilo::estado_de(b, false, false), false);
+                estilo::botao(b, "Withdraw", estilo::estado_de(b, false, false), false);
                 if clicou_em(b) {
                     pedido = Some(PedidoColonia::Retirar);
                 }
@@ -432,7 +432,7 @@ impl ColoniaUi {
                 r.x + 14.0 * f,
                 r.y + 62.0 * f,
                 &if no_maximo {
-                    "No máximo.".to_string()
+                    "At maximum.".to_string()
                 } else {
                     format!(
                         "{} · custa {}",
@@ -453,7 +453,7 @@ impl ColoniaUi {
                 if i == eixo::ASSENTAMENTO {
                     crate::foco::marca(crate::foco::chave::ILHA_ASSENTAMENTO, b);
                 }
-                estilo::botao(b, "Melhorar", estilo::estado_de(b, false, false), false);
+                estilo::botao(b, "Improve", estilo::estado_de(b, false, false), false);
                 if clicou_em(b) {
                     pedido = Some(PedidoColonia::Melhorar { eixo: i as u8 });
                 }
@@ -465,7 +465,7 @@ impl ColoniaUi {
         // pra alguem. Vem DEPOIS dos eixos porque o assentamento e' quem abre
         // as vagas — a ordem da tela e' a ordem em que se faz a coisa.
         if e.vagas > 0 {
-            estilo::texto_forte(cx, y + 20.0 * f, "Moradores", 16, estilo::OURO);
+            estilo::texto_forte(cx, y + 20.0 * f, "Residents", 16, estilo::OURO);
             y += 32.0 * f;
             for vaga in 0..e.vagas as usize {
                 let r = Rect::new(cx, y, cw, 72.0 * f);
@@ -515,9 +515,9 @@ impl ColoniaUi {
                                 op,
                                 e.niveis[eixo::RECURSOS],
                             );
-                            format!("{} daria {} {}/h", op.nome(), qtd, nome_item(item))
+                            format!("{} would give {} {}/h", op.nome(), qtd, nome_item(item))
                         }
-                        None => "Casa vazia — escolha um ofício".to_string(),
+                        None => "Empty house — pick a trade".to_string(),
                     },
                 };
                 estilo::texto(
@@ -752,9 +752,9 @@ fn agora(i: usize, n: u8) -> String {
             let a = shared::colonia::Assentamento::do_nivel(n);
             let v = shared::colonia::vagas_de_trabalho(n);
             match v {
-                0 => format!("{}, sem casa pra morador.", a.nome()),
-                1 => format!("{}, 1 casa de ofício.", a.nome()),
-                _ => format!("{}, {v} casas de ofício.", a.nome()),
+                0 => format!("{}, no house for a resident.", a.nome()),
+                1 => format!("{}, 1 trade house.", a.nome()),
+                _ => format!("{}, {v} trade houses.", a.nome()),
             }
         }
         eixo::RECURSOS => {
@@ -763,7 +763,7 @@ fn agora(i: usize, n: u8) -> String {
             format!("Cada morador rende {q}/h do ofício dele.")
         }
         _ => format!(
-            "{} espaços no baú da ilha.",
+            "{} slots in the island chest.",
             shared::colonia::espacos_do_bau(n)
         ),
     }
@@ -772,7 +772,7 @@ fn agora(i: usize, n: u8) -> String {
 /// O que a PRÓXIMA melhoria muda, em relação ao que se tem.
 fn depois(i: usize, n: u8) -> String {
     if n >= NIVEL_MAX {
-        return "No máximo.".into();
+        return "At maximum.".into();
     }
     let p = n + 1;
     match i {
@@ -783,19 +783,19 @@ fn depois(i: usize, n: u8) -> String {
             );
             let nome = shared::colonia::Assentamento::do_nivel(p).nome();
             if b > a {
-                format!("→ {nome}, {b} casas (+{})", b - a)
+                format!("→ {nome}, {b} houses (+{})", b - a)
             } else {
-                format!("→ {nome}, mais terreno plano")
+                format!("→ {nome}, more flat ground")
             }
         }
         eixo::RECURSOS => {
             let ate = |x: u8| {
                 shared::colonia::por_hora_do_trabalhador(shared::colonia::Profissao::Lenhador, x).1
             };
-            format!("→ {}/h por morador (de {})", ate(p), ate(n))
+            format!("→ {}/h per resident (from {})", ate(p), ate(n))
         }
         _ => format!(
-            "→ {} espaços (de {})",
+            "→ {} slots (from {})",
             shared::colonia::espacos_do_bau(p),
             shared::colonia::espacos_do_bau(n)
         ),
@@ -822,7 +822,7 @@ fn lista(itens: &[(u16, u32)], nome_item: &dyn Fn(u16) -> String) -> String {
 /// colhido"; a frase que faltava era a que separa esses dois casos.
 fn colheita_em_texto(e: &Estado, nome_item: &dyn Fn(u16) -> String) -> String {
     if !e.colheita.is_empty() {
-        return format!("Pronto para colher: {}", lista(&e.colheita, nome_item));
+        return format!("Ready to harvest: {}", lista(&e.colheita, nome_item));
     }
     if e.trabalhadores.is_empty() {
         return if e.vagas == 0 {
@@ -843,7 +843,7 @@ fn colheita_em_texto(e: &Estado, nome_item: &dyn Fn(u16) -> String) -> String {
                 lista(&por_hora, nome_item)
             )
         }
-        _ => "A ilha ainda não rendeu nada.".into(),
+        _ => "The island hasn't yielded anything yet.".into(),
     }
 }
 

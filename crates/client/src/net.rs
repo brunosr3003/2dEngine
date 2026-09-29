@@ -90,7 +90,7 @@ fn set_nonblocking(ws: &mut WebSocket<MaybeTlsStream<std::net::TcpStream>>) -> R
     let stream = match ws.get_mut() {
         MaybeTlsStream::Plain(s) => s,
         // TLS is not needed yet: in dev the server is a local ws://.
-        _ => return Err("conexao TLS nao suportada ainda".into()),
+        _ => return Err("TLS connection not supported yet".into()),
     };
     stream
         .set_nonblocking(true)
@@ -141,7 +141,7 @@ fn pump(
                     forward(tx_in, t.as_bytes())
                 }
                 Ok(Message::Close(_)) => {
-                    let _ = tx_in.send(NetEvent::Disconnected("server fechou".into()));
+                    let _ = tx_in.send(NetEvent::Disconnected("the server closed the connection".into()));
                     return;
                 }
                 Ok(_) => {}

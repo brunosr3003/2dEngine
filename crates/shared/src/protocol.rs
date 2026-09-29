@@ -1184,11 +1184,11 @@ pub enum ServerMessage {
         sucessos: u16,
         texto: String,
     },
-    /// Clique no Capitao do Porto: o menu "Viajar", uma linha por ilha.
+    /// Clique no Capitao do Porto: o menu "Travel", uma linha por ilha.
     Viagem {
         destinos: Vec<crate::viagem::Destino>,
         /// A quest da ilha propria (docs/COLONIA.md) ja' passou. Falso
-        /// esconde a linha "Minha Ilha" — o menu nao oferece o que a
+        /// esconde a linha "My Island" — o menu nao oferece o que a
         /// historia ainda nao deu.
         colonia: bool,
     },
@@ -1200,7 +1200,7 @@ pub enum ServerMessage {
     },
     /// Toque num NPC que tem missao E uma funcao: o jogador escolhe o que
     /// quer (antes a missao vinha na frente e a funcao abria atras dela).
-    /// `funcao` e' o rotulo do botao: "Loja", "Forja", "Viajar", "Banco".
+    /// `funcao` e' o rotulo do botao: "Shop", "Forge", "Travel", "Bank".
     EscolhaNoNpc {
         npc_eid: u64,
         nome: String,

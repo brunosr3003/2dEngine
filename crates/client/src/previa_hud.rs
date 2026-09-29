@@ -158,7 +158,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                     let mut menu = crate::menu::Menu::default();
                     menu.abrir();
                     menu.desenha(&crate::menu::Contexto { nome: "Navegante", nivel:70,
-                        poder:Some(24850), arma:"Katana", saldos:&[("Ouro",148250)], selos:&[] });
+                        poder:Some(24850), arma:"Katana", saldos:&[("Gold",148250)], selos:&[] });
                 }
                 unsafe { get_internal_gl().flush() };
                 rt.texture

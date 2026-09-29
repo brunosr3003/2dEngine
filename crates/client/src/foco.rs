@@ -35,9 +35,9 @@ pub mod chave {
 
     /// O botão MENU do HUD: o começo de quase todo caminho.
     pub const MENU: u16 = 100;
-    /// A linha "Ficha" dentro do Menu.
+    /// A linha "Sheet" dentro do Menu.
     pub const MENU_FICHA: u16 = 101;
-    /// A linha "Habilidades" dentro do Menu.
+    /// A linha "Skills" dentro do Menu.
     pub const MENU_SKILLS: u16 = 102;
     /// O "+" de um atributo, na Ficha.
     pub const FICHA_MAIS: u16 = 103;
@@ -53,15 +53,15 @@ pub mod chave {
     // vida, e nenhum deles com o buraco aceso. O dono jogou e disse que
     // "está faltando aquele destaque de onde deve clicar igual outros
     // tutoriais" — estava faltando mesmo, em todos os cinco.
-    /// O botão "Melhorar" da linha do Assentamento, no painel da ilha.
+    /// O botão "Improve" da linha do Assentamento, no painel da ilha.
     pub const ILHA_ASSENTAMENTO: u16 = 106;
     /// Um botão de ofício numa casa vazia, no painel da ilha.
     pub const ILHA_CONTRATAR: u16 = 107;
-    /// O botão "Colher".
+    /// O botão "Harvest".
     pub const ILHA_COLHER: u16 = 108;
-    /// O botão "Retirar", do baú.
+    /// O botão "Withdraw", do baú.
     pub const ILHA_RETIRAR: u16 = 109;
-    /// A linha "Ilha Mágica" dentro do Menu.
+    /// A linha "Magic Island" dentro do Menu.
     ///
     /// A história trava esperando nível (`objective_kind::NIVEL`), e o
     /// jogador chega nela uns três níveis abaixo. Antes a trava só dizia
@@ -69,17 +69,17 @@ pub mod chave {
     /// Ilha Mágica é a resposta — XP em dobro, três entradas de graça por
     /// dia —, mas só serve se ele souber onde ela fica.
     pub const MENU_ILHA_MAGICA: u16 = 111;
-    /// O botão "Entrar" DENTRO do painel da Ilha Mágica.
+    /// O botão "Enter" DENTRO do painel da Ilha Mágica.
     ///
     /// A trava de nível acendia o caminho até o menu e parava ali. Aberto o
     /// painel, o destaque continuava no MENU — o jogador via o jogo pedindo
     /// pra abrir o que já estava aberto. O dono: "eu abro a ilha mágica e
     /// continua pedindo pra eu abrir o menu e não pra entrar na ilha mágica".
     pub const MAGICA_ENTRAR: u16 = 112;
-    /// A linha "Minha Ilha" dentro do Menu.
+    /// A linha "My Island" dentro do Menu.
     ///
     /// O primeiro passo da linha da ilha ("A escritura da ilha") manda
-    /// "Abra Menu › Minha Ilha" e caía no `_ => return` do
+    /// "Open Menu › My Island" e caía no `_ => return` do
     /// `foco_do_tutorial`: os quatro passos de DENTRO do painel tinham
     /// destaque e o que ensina a ACHAR o painel, não. O dono: "a missão a
     /// escritura da ilha tá sem tutorial destacando onde é pra clicar igual o

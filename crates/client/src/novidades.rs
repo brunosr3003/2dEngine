@@ -29,7 +29,7 @@ impl Novidades {
     /// True captures this screen: login fields do not get the same click.
     pub fn desenha(&mut self) -> bool {
         if !self.aberta {
-            if !ui::botao(Rect::new(16.0, 16.0, 180.0, 36.0), "Novidades", true) {
+            if !ui::botao(Rect::new(16.0, 16.0, 180.0, 36.0), "What's new", true) {
                 return false;
             }
             self.aberta = true;
@@ -44,7 +44,7 @@ impl Novidades {
             h,
         );
         estilo::painel_destaque(r, ui::OURO);
-        estilo::texto(r.x + 24.0, r.y + 34.0, "NOVIDADES DO TEMPEST", 20, ui::OURO);
+        estilo::texto(r.x + 24.0, r.y + 34.0, "WHAT'S NEW IN TEMPEST", 20, ui::OURO);
         let mut notas = NOTAS.lines();
         estilo::texto(
             r.x + 24.0,
@@ -83,14 +83,14 @@ impl Novidades {
         if max > 0.0 {
             if ui::botao(
                 Rect::new(r.x + 24.0, r.bottom() - 56.0, 66.0, 34.0),
-                "Subir",
+                "Up",
                 true,
             ) {
                 self.scroll = (self.scroll - 100.0).max(0.0);
             }
             if ui::botao(
                 Rect::new(r.x + 98.0, r.bottom() - 56.0, 78.0, 34.0),
-                "Descer",
+                "Down",
                 true,
             ) {
                 self.scroll = (self.scroll + 100.0).min(max);
@@ -98,7 +98,7 @@ impl Novidades {
         }
         if ui::botao(
             Rect::new(r.right() - 166.0, r.bottom() - 56.0, 142.0, 34.0),
-            "Continuar",
+            "Continue",
             true,
         ) || is_key_pressed(KeyCode::Escape)
         {

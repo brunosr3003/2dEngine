@@ -46,21 +46,21 @@ const VERMELHO: Color = crate::hud_estilo::VERMELHO;
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
 const ESQUERDA: [(EquipSlot, &str); 6] = [
-    (EquipSlot::Weapon, "Arma"),
-    (EquipSlot::Offhand, "Secundária"),
-    (EquipSlot::Armor, "Armadura"),
+    (EquipSlot::Weapon, "Weapon"),
+    (EquipSlot::Offhand, "Off-hand"),
+    (EquipSlot::Armor, "Armour"),
     (EquipSlot::Pet, "Pet"),
-    (EquipSlot::Montaria, "Montaria"),
-    (EquipSlot::AcessorioMontaria, "Aces. mont."),
+    (EquipSlot::Montaria, "Mount"),
+    (EquipSlot::AcessorioMontaria, "Mount acc."),
 ];
 const DIREITA: [(EquipSlot, &str); 7] = [
-    (EquipSlot::Earring, "Brinco"),
-    (EquipSlot::Necklace, "Amuleto"),
-    (EquipSlot::Bracelet, "Bracelete"),
-    (EquipSlot::Belt, "Cinto"),
+    (EquipSlot::Earring, "Earring"),
+    (EquipSlot::Necklace, "Amulet"),
+    (EquipSlot::Bracelet, "Bracelet"),
+    (EquipSlot::Belt, "Belt"),
     (EquipSlot::Pet2, "Pet 2"),
     (EquipSlot::Pet3, "Pet 3"),
-    (EquipSlot::AcessorioPet, "Aces. pet"),
+    (EquipSlot::AcessorioPet, "Pet acc."),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -79,9 +79,9 @@ enum Aba {
 }
 
 const ABAS: [(Aba, &str); 4] = [
-    (Aba::Tudo, "Tudo"),
-    (Aba::Equip, "Equipamento"),
-    (Aba::Consumivel, "Consumível"),
+    (Aba::Tudo, "All"),
+    (Aba::Equip, "Gear"),
+    (Aba::Consumivel, "Consumable"),
     (Aba::Material, "Material"),
 ];
 
@@ -117,7 +117,7 @@ pub struct Bolsa {
     pub onde_obter: Option<u16>,
     /// "Refinar +N" tocado no cartao: a peca pra Forja abrir ja' escolhida.
     pub refinar: Option<shared::protocol::AlvoDaForja>,
-    /// "Combinar" tocado no cartao: a receita pro Craft abrir ja' escolhida.
+    /// "Combine" tocado no cartao: a receita pro Craft abrir ja' escolhida.
     ///
     /// O dono pediu "atalho para combinar, forjar, aprimorar, tudo direto no
     /// item no inventario". Refinar ja' saltava pra Forja com a peca na mao;
@@ -525,7 +525,7 @@ impl Bolsa {
                     b: InvSpot::Inv(i as u16),
                 }),
                 None => {
-                    self.aviso = Some(("A bolsa está cheia.".into(), get_time()));
+                    self.aviso = Some(("Your bag is full.".into(), get_time()));
                     None
                 }
             },
@@ -566,16 +566,16 @@ impl Bolsa {
         crate::hud_estilo::ret_arredondado(p, crate::hud_estilo::RAIO, FUNDO);
         crate::hud_estilo::painel_destaque(p, ui::OURO);
         crate::hud_estilo::separador(p.x + u(16.0), p.y + u(46.0), p.w - u(32.0));
-        ui::texto(p.x + u(22.0), p.y + u(33.0), "BOLSA", 26, ui::OURO);
+        ui::texto(p.x + u(22.0), p.y + u(33.0), "BAG", 26, ui::OURO);
         // Duas linhas de saldos: assim a Energia cabe no celular sem virar
         // item da grade nem empurrar o titulo da bolsa para fora do painel.
         let linha_1 = format!(
-            "Ouro {}    Cobre {}",
+            "Gold {}    Copper {}",
             milhar(self.ouro),
             milhar(self.moeda(item_id::COPPER)),
         );
         let linha_2 = format!(
-            "Darksteel {}    Energia {}",
+            "Darksteel {}    Energy {}",
             milhar(self.moeda(item_id::DARKSTEEL)),
             milhar(self.energia),
         );
@@ -652,7 +652,7 @@ impl Bolsa {
         ui::texto(
             r.x + u(18.0),
             r.y + u(34.0),
-            &format!("Equipar: {}", nome_do_slot(slot)),
+            &format!("Equip: {}", nome_do_slot(slot)),
             21,
             ui::OURO_CLARO,
         );
@@ -676,7 +676,7 @@ impl Bolsa {
         let area = Rect::new(r.x + u(14.0), r.y + u(52.0), r.w - u(28.0), r.h - u(66.0));
         if itens.is_empty() {
             crate::hud_estilo::texto_ajustado(
-                "Nenhum item compatível na bolsa.",
+                "No compatible item in your bag.",
                 area.x + u(8.0),
                 area.y + u(30.0),
                 area.w - u(16.0),
@@ -729,7 +729,7 @@ impl Bolsa {
                 ui::texto(
                     linha.x + linha.w - u(82.0),
                     linha.y + u(30.0),
-                    &format!("Nível {req}"),
+                    &format!("Level {req}"),
                     13,
                     VERMELHO,
                 );
@@ -757,9 +757,9 @@ impl Bolsa {
         bloqueio: Option<Rect>,
     ) -> Option<Acao> {
         crate::hud_estilo::cartao(r, false, false);
-        ui::texto(r.x + u(14.0), r.y + u(24.0), "Equipamento", 20, ui::OURO);
+        ui::texto(r.x + u(14.0), r.y + u(24.0), "Gear", 20, ui::OURO);
         if self.nivel > 0 {
-            let n = format!("Nível {}", self.nivel);
+            let n = format!("Level {}", self.nivel);
             let d = crate::hud_estilo::medir_dim(&n, 17);
             ui::texto(r.x + r.w - u(14.0) - d.width, r.y + u(24.0), &n, 17, TEXTO);
         }
@@ -767,11 +767,11 @@ impl Bolsa {
         let arma = self.equip.weapon;
         let em_uso = match arma {
             Some(id) => format!(
-                "Em uso: {} · {}",
+                "In use: {} · {}",
                 Conjunto::da_arma(id).nome(),
                 self.nome(id)
             ),
-            None => "Em uso: nenhuma arma".to_string(),
+            None => "In use: no weapon".to_string(),
         };
         ui::texto(r.x + u(14.0), r.y + u(44.0), &em_uso, 16, ui::OURO_CLARO);
 
@@ -819,7 +819,7 @@ impl Bolsa {
         // O poder e a ficha, embaixo do retrato.
         let mut y = y0 + 7.0 * passo + u(8.0);
         if let Some(st) = &self.stats {
-            ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "PODER", 14, APAGADO);
+            ui::texto_centro(r.x + r.w * 0.5, y + u(12.0), "POWER", 14, APAGADO);
             ui::texto_centro(
                 r.x + r.w * 0.5,
                 y + u(42.0),
@@ -829,15 +829,15 @@ impl Bolsa {
             );
             y += u(62.0);
             let linhas = [
-                ("Ataque", st.attack_damage.to_string()),
-                ("Defesa", st.defense.to_string()),
-                ("Vida", st.hp_max.to_string()),
+                ("Attack", st.attack_damage.to_string()),
+                ("Defence", st.defense.to_string()),
+                ("Health", st.hp_max.to_string()),
                 ("Mana", st.mp_max.to_string()),
-                ("Destreza", st.dex.to_string()),
-                ("Sabedoria", st.wis.to_string()),
-                ("Crítico", format!("{:.1}%", st.crit_chance * 100.0)),
+                ("Dexterity", st.dex.to_string()),
+                ("Wisdom", st.wis.to_string()),
+                ("Critical", format!("{:.1}%", st.crit_chance * 100.0)),
                 (
-                    "Vel. ataque",
+                    "Atk. speed",
                     format!("{:.0}%", st.attack_speed_mult * 100.0),
                 ),
             ];
@@ -881,7 +881,7 @@ impl Bolsa {
             ui::texto_centro(
                 r.x + r.w * 0.5,
                 r.y + r.h * 0.5,
-                "Retrato sem espaço na tela",
+                "No room for the portrait",
                 12,
                 APAGADO,
             );
@@ -962,7 +962,7 @@ impl Bolsa {
             }
         }
 
-        // Quais espacos aparecem: em "Tudo", a bolsa inteira na ordem dela; nas
+        // Quais espacos aparecem: em "All", a bolsa inteira na ordem dela; nas
         // outras abas, so' os itens daquela categoria, juntos no comeco.
         let tamanho = self.tamanho();
         let mut mostrar: Vec<Option<usize>> = if self.aba == Aba::Tudo {
@@ -1050,7 +1050,7 @@ impl Bolsa {
         if custo.is_some() && clicou_em(exp) {
             acao = Some(Acao::Expandir);
         }
-        if ui::botao(org, "Organizar", true) {
+        if ui::botao(org, "Sort", true) {
             acao = Some(Acao::Organizar);
         }
         acao
@@ -1112,11 +1112,11 @@ impl Bolsa {
         }
         let t = tipo(peca.id);
         let classe = match t {
-            Tipo::Arma(c) => format!("Arma · {}", c.nome()),
+            Tipo::Arma(c) => format!("Weapon · {}", c.nome()),
             Tipo::Slot(s) => nome_do_slot(s).to_string(),
-            Tipo::Pocao(_) => "Consumível".into(),
-            Tipo::Pergaminho => "Pergaminho de Invocação".into(),
-            Tipo::Ouro => "Moeda".into(),
+            Tipo::Pocao(_) => "Consumable".into(),
+            Tipo::Pergaminho => "Summoning Scroll".into(),
+            Tipo::Ouro => "Currency".into(),
             _ => "Material".into(),
         };
         ui::texto(tx, r.y + u(62.0), &classe, 16, TEXTO);
@@ -1125,8 +1125,8 @@ impl Bolsa {
                 tx,
                 r.y + u(80.0),
                 &format!(
-                    "{} · Tier {} · nível do item {}",
-                    shared::forja::Grau::de_u8(i.grau()).map_or("Comum", |g| g.nome()),
+                    "{} · Tier {} · item level {}",
+                    shared::forja::Grau::de_u8(i.grau()).map_or("Common", |g| g.nome()),
                     ROMANO[(i.tier() - 1) as usize],
                     i.item_level
                 ),
@@ -1137,7 +1137,7 @@ impl Bolsa {
             ui::texto(
                 tx,
                 r.y + u(80.0),
-                &format!("Quantidade {}", milhar(peca.qty as u64)),
+                &format!("Quantity {}", milhar(peca.qty as u64)),
                 15,
                 APAGADO,
             );
@@ -1154,7 +1154,7 @@ impl Bolsa {
             y += u(26.0);
             let linhas = [
                 (
-                    "Poder",
+                    "Power",
                     milhar(
                         poder_dos_pontos(shared::pets::pontos_por_stat_da_instancia(
                             peca.id,
@@ -1164,7 +1164,7 @@ impl Bolsa {
                     ),
                 ),
                 (
-                    "Nível",
+                    "Level",
                     format!(
                         "{} / {}",
                         shared::pets::nivel_de_xp(dados.xp),
@@ -1172,11 +1172,11 @@ impl Bolsa {
                     ),
                 ),
                 (
-                    "Velocidade",
+                    "Speed",
                     format!("{:.0}%", shared::pets::velocidade_com(grau, &dados) * 100.0),
                 ),
                 (
-                    "Busca saque a",
+                    "Loot pickup range",
                     format!("{:.0} tiles", shared::pets::raio_com(grau, &dados)),
                 ),
             ];
@@ -1216,9 +1216,9 @@ impl Bolsa {
             let esporeado = v * shared::SPRINT_SPEED_MULT;
             let vs_correr = v / shared::SPRINT_SPEED_MULT - 1.0;
             for (rot, val) in [
-                ("Velocidade", format!("{:.0}%", v * 100.0)),
-                ("Esporeando", format!("{:.0}%", esporeado * 100.0)),
-                ("vs. correr a pé", format!("{:+.0}%", vs_correr * 100.0)),
+                ("Speed", format!("{:.0}%", v * 100.0)),
+                ("Spurring", format!("{:.0}%", esporeado * 100.0)),
+                ("vs. running on foot", format!("{:+.0}%", vs_correr * 100.0)),
             ] {
                 ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
                 let d = crate::hud_estilo::medir_dim(&val, 17);
@@ -1245,15 +1245,15 @@ impl Bolsa {
             ui::texto(r.x + u(20.0), y + u(4.0), efeito.nome(), 17, VERDE);
             y += u(28.0);
             ui::texto(r.x + u(20.0), y + u(4.0),
-                if pet { "Ativo com um pet equipado" } else { "Ativo com montaria equipada" }, 15, APAGADO);
+                if pet { "Active with a pet equipped" } else { "Active with a mount equipped" }, 15, APAGADO);
         } else if let Some(i) = peca.inst {
             let atributos = [
-                ("Ataque", i.attack_damage),
-                ("Defesa", i.defense),
-                ("Vida", i.hp_max),
+                ("Attack", i.attack_damage),
+                ("Defence", i.defense),
+                ("Health", i.hp_max),
                 ("Mana", i.mp_max),
-                ("Destreza", i.dex),
-                ("Sabedoria", i.wis),
+                ("Dexterity", i.dex),
+                ("Wisdom", i.wis),
             ];
             for (rot, v) in atributos.iter().filter(|(_, v)| *v != 0) {
                 ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
@@ -1269,7 +1269,7 @@ impl Bolsa {
             // vezes: uma na ficha e outra montando a peca no Craft.
             let emp = shared::for_da_armadura(peca.id, self.nivel.max(1));
             if emp > 0 {
-                ui::texto(r.x + u(20.0), y + u(4.0), "Força", 17, TEXTO);
+                ui::texto(r.x + u(20.0), y + u(4.0), "Strength", 17, TEXTO);
                 let val = format!("+{emp}");
                 let d = crate::hud_estilo::medir_dim(&val, 17);
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
@@ -1280,7 +1280,7 @@ impl Bolsa {
                 ui::texto(
                     r.x + u(20.0),
                     y + u(8.0),
-                    &format!("Requer nível {req}"),
+                    &format!("Requires level {req}"),
                     16,
                     if falta { VERMELHO } else { APAGADO },
                 );
@@ -1292,23 +1292,23 @@ impl Bolsa {
                 let vestido = self.peca(Sel::Equip(slot));
                 let saldo = poder_da_peca(&peca) - vestido.map_or(0, |v| poder_da_peca(&v));
                 let (txt, c) = match saldo {
-                    0 => ("mesmo poder do vestido".to_string(), APAGADO),
-                    s if s > 0 => (format!("+{s} de poder sobre o vestido"), VERDE),
-                    s => (format!("{s} de poder sobre o vestido"), VERMELHO),
+                    0 => ("same power as equipped".to_string(), APAGADO),
+                    s if s > 0 => (format!("+{s} power over what you have on"), VERDE),
+                    s => (format!("{s} power over what you have on"), VERMELHO),
                 };
                 ui::texto(r.x + u(20.0), y + u(10.0), &txt, 16, c);
             }
         } else {
             let txt = match t {
-                Tipo::Pocao(0) => "Recupera vida.",
-                Tipo::Pocao(1) => "Recupera mana.",
+                Tipo::Pocao(0) => "Restores health.",
+                Tipo::Pocao(1) => "Restores mana.",
                 Tipo::Pocao(3) => "+30% de XP por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(4) => "+30% de ouro e cobre dos bichos por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(5) => "+20% de chance de drop (bichos e coleta) por 1 hora. Beber outra renova a hora.",
-                Tipo::Pocao(_) => "Recupera vigor.",
+                Tipo::Pocao(_) => "Restores stamina.",
                 Tipo::Pergaminho => "Abra para revelar um prêmio aleatório decidido pelo servidor.",
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
-                _ => "Material de criação.",
+                _ => "Crafting material.",
             };
             ui::texto(r.x + u(20.0), y + u(4.0), txt, 16, APAGADO);
         }
@@ -1318,22 +1318,22 @@ impl Bolsa {
         let mut acao = None;
         let mut opcoes: Vec<(&str, u8)> = Vec::new();
         match sel {
-            Sel::Equip(_) => opcoes.push(("Desequipar", 0)),
+            Sel::Equip(_) => opcoes.push(("Unequip", 0)),
             Sel::Inv(_) => match t {
-                Tipo::Arma(_) | Tipo::Slot(_) => opcoes.push(("Equipar", 0)),
-                Tipo::Pocao(_) | Tipo::Pergaminho => opcoes.push(("Usar", 0)),
+                Tipo::Arma(_) | Tipo::Slot(_) => opcoes.push(("Equip", 0)),
+                Tipo::Pocao(_) | Tipo::Pergaminho => opcoes.push(("Use", 0)),
                 _ => {}
             },
         }
         if matches!(sel, Sel::Inv(_)) && matches!(t, Tipo::Pergaminho) && peca.qty >= 10 {
-            opcoes.push(("Abrir 10+1", 1));
+            opcoes.push(("Open 10+1", 1));
         }
         if let Some(inst) = peca.inst {
             if inst.refinement < shared::forja::REFINO_MAX {
-                opcoes.push(("Refinar", 2));
+                opcoes.push(("Refine", 2));
             }
             if matches!(sel, Sel::Inv(_)) && shared::equip_slot_of(peca.id).is_some() {
-                opcoes.push(("Aprimorar", 3));
+                opcoes.push(("Upgrade", 3));
             }
         }
         if matches!(sel, Sel::Inv(_)) {
@@ -1343,10 +1343,10 @@ impl Bolsa {
                 opcoes.push(("Craft", 4));
             }
             if shared::combinar::receita(peca.id).is_some() {
-                opcoes.push(("Combinar", 5));
+                opcoes.push(("Combine", 5));
             }
             if peca.inst.is_some() && receita_do_item(receitas, peca.id, peca.grau()).is_some() {
-                opcoes.push(("Desmantelar", 6));
+                opcoes.push(("Salvage", 6));
             }
         }
         let colunas = 3usize;
@@ -1435,7 +1435,7 @@ impl Bolsa {
         ui::texto(
             r.x + u(18.0),
             r.y + u(33.0),
-            "Desmantelar item?",
+            "Salvage item?",
             21,
             ui::OURO_CLARO,
         );
@@ -1459,7 +1459,7 @@ impl Bolsa {
                 continue;
             }
             let texto = if i == 0 {
-                format!("{}: 10% de chance de recuperar 1", self.nome(id as u16))
+                format!("{}: 10% chance to recover 1", self.nome(id as u16))
             } else {
                 let volta = qtd / 5;
                 if volta == 0 {
@@ -1473,9 +1473,9 @@ impl Bolsa {
         let by = r.y + r.h - u(50.0);
         let cancelar = Rect::new(r.x + u(18.0), by, (r.w - u(54.0)) * 0.5, u(36.0));
         let confirmar = Rect::new(cancelar.x + cancelar.w + u(18.0), by, cancelar.w, u(36.0));
-        if ui::botao(cancelar, "Cancelar", true) {
+        if ui::botao(cancelar, "Cancel", true) {
             self.desmantelar = None;
-        } else if ui::botao(confirmar, "Desmantelar", true) {
+        } else if ui::botao(confirmar, "Salvage", true) {
             self.desmantelar = None;
             self.sel = None;
             return Some(ClientMessage::Desmantelar { slot: slot as u16 });

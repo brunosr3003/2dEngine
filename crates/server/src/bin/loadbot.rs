@@ -229,10 +229,10 @@ async fn bot(
                         st.entered.fetch_add(snapshot.entered.len() as u64, Ordering::Relaxed);
                     }
                     ServerMessage::Kick { reason } => {
-                        anyhow::bail!("kick: {reason}");
+                        anyhow::bail!("kicked: {reason}");
                     }
                     ServerMessage::LoginDenied { reason } => {
-                        anyhow::bail!("login negado: {reason}");
+                        anyhow::bail!("login denied: {reason}");
                     }
                     _ => {}
                 }

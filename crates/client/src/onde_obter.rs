@@ -31,7 +31,7 @@ pub const ACIMA_DO_NIVEL: u32 = 5;
 const CHANCE_MINIMA_PCT: u8 = 15;
 const VERMELHO: Color = Color::new(0.92, 0.42, 0.36, 1.0);
 /// Sem "Ir" porque a fonte e' de outra ilha.
-pub const OUTRA_ILHA: &str = "Outra ilha";
+pub const OUTRA_ILHA: &str = "Another island";
 
 /// O que o "Ir" de uma fonte faz.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,7 +54,7 @@ pub struct Opcao {
     /// Em vermelho: nivel alto, chefe renascendo.
     pub aviso: Option<String>,
     pub ir: Option<Ir>,
-    /// Sem "Ir": o porque ("Não há nesta ilha", "Outra ilha", "Em breve").
+    /// Sem "Ir": o porque ("None on this island", "Another island", "Coming soon").
     pub sem_ir: Option<String>,
     /// (grupo, distancia): menor primeiro.
     pub ordem: (u8, u32),
@@ -122,15 +122,15 @@ fn distancia(eu: Option<Vec2>, p: Vec2) -> u32 {
 fn sem_lugar(o: &mut Opcao, ilhas: &[u8], c: &Onde) {
     let fora_daqui = !ilhas.is_empty() && c.ilha_atual.is_none_or(|a| !ilhas.contains(&a));
     if !ilhas.is_empty() {
-        let rotulo = if ilhas.len() == 1 { "Ilha" } else { "Ilhas" };
+        let rotulo = if ilhas.len() == 1 { "Island" } else { "Islands" };
         o.detalhe = format!("{} · {rotulo}: {}", o.detalhe, nomes_das_ilhas(ilhas));
     }
     o.sem_ir = Some(if c.info.is_none() {
-        "Fora de ilha".into()
+        "Off the islands".into()
     } else if fora_daqui {
         OUTRA_ILHA.into()
     } else {
-        "Não há nesta ilha".into()
+        "None on this island".into()
     });
 }
 
@@ -144,7 +144,7 @@ pub fn opcoes(item: u16, fontes: &[FonteDeItem], c: &Onde) -> Vec<Opcao> {
         .find(|r| r.chance == 100 && r.saida == item)
     {
         v.push(Opcao {
-            titulo: "Craft de material".into(),
+            titulo: "Material craft".into(),
             detalhe: format!(
                 "{} da cor anterior · {} cobre · {} darksteel · {} pó",
                 r.qtd, r.cobre, r.darksteel, r.po
@@ -157,8 +157,8 @@ pub fn opcoes(item: u16, fontes: &[FonteDeItem], c: &Onde) -> Vec<Opcao> {
     }
     if !c.vinculado {
         v.push(Opcao {
-            titulo: "Mercado".into(),
-            detalhe: "Comprar de outros jogadores".into(),
+            titulo: "Market".into(),
+            detalhe: "Buy from other players".into(),
             aviso: None,
             ir: Some(Ir::AbrirMercado(item)),
             sem_ir: None,
@@ -186,8 +186,8 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             qty_min,
             qty_max,
         } => {
-            o.titulo = format!("Coletar: {}", nome_do_tipo(*tipo));
-            o.detalhe = format!("{} por coleta · {}", qtd(*qty_min, *qty_max), pct(*chance));
+            o.titulo = format!("Gather: {}", nome_do_tipo(*tipo));
+            o.detalhe = format!("{} per gather · {}", qtd(*qty_min, *qty_max), pct(*chance));
             let regiao = c.info.and_then(|i| {
                 i.recursos
                     .iter()
@@ -211,9 +211,9 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     o.ordem = (5, 0);
                     o.sem_ir = Some(
                         if fora {
-                            "Fora de ilha"
+                            "Off the islands"
                         } else {
-                            "Não há nesta ilha"
+                            "None on this island"
                         }
                         .into(),
                     );
@@ -228,7 +228,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             qty_max,
             ilhas,
         } => {
-            o.titulo = format!("Caçar: {nome}");
+            o.titulo = format!("Hunt: {nome}");
             let zona = c.info.and_then(|i| {
                 let com: Vec<_> = i
                     .zonas
@@ -249,7 +249,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 Some(z) => {
                     let pos = vec2(z.centro[0], z.centro[1]);
                     o.detalhe = format!(
-                        "Nv {}–{} · {} por morte · {}",
+                        "Lv {}–{} · {} per kill · {}",
                         z.lv_min,
                         z.lv_max,
                         pct(*chance),
@@ -257,7 +257,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     );
                     let alto = z.lv_min as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
-                        o.aviso = Some(format!("Zona nível {}+: acima do seu nível", z.lv_min));
+                        o.aviso = Some(format!("Level {}+ zone: above your level", z.lv_min));
                     }
                     o.ordem = (if alto { 3 } else { 0 }, distancia(c.eu, pos));
                     o.ir = Some(Ir::Alvo(Alvo {
@@ -268,7 +268,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     }));
                 }
                 None => {
-                    o.detalhe = format!("{} por morte · {}", pct(*chance), qtd(*qty_min, *qty_max));
+                    o.detalhe = format!("{} per kill · {}", pct(*chance), qtd(*qty_min, *qty_max));
                     sem_lugar(&mut o, ilhas, c);
                 }
             }
@@ -280,8 +280,8 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             chance,
             ilha,
         } => {
-            o.titulo = format!("Chefe: {nome}");
-            o.detalhe = format!("Chefe Nv {nivel} · {}", pct(*chance));
+            o.titulo = format!("Boss: {nome}");
+            o.detalhe = format!("Boss Lv {nivel} · {}", pct(*chance));
             match c
                 .info
                 .and_then(|i| i.chefes.iter().find(|ch| ch.kind == *kind))
@@ -294,7 +294,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                             "Nível {nivel}: bem acima do seu — o combate não liga sozinho"
                         ));
                     } else if !ch.vivo {
-                        o.aviso = Some("Renascendo".into());
+                        o.aviso = Some("Respawning".into());
                     }
                     o.ordem = (if alto { 4 } else { 1 }, distancia(c.eu, pos));
                     let objetivo = if alto {
@@ -318,8 +318,8 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 .iter()
                 .filter(|l| l.0 == *loja)
                 .min_by_key(|l| distancia(c.eu, l.2));
-            o.titulo = format!("Comprar: {}", npc.map_or(nome.as_str(), |n| n.1.as_str()));
-            o.detalhe = format!("{preco} de ouro");
+            o.titulo = format!("Buy: {}", npc.map_or(nome.as_str(), |n| n.1.as_str()));
+            o.detalhe = format!("{preco} gold");
             match npc {
                 Some((_, n, pos)) => {
                     o.ordem = (1, distancia(c.eu, *pos));
@@ -334,9 +334,9 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 None => {
                     o.sem_ir = Some(
                         if fora {
-                            "Fora de ilha"
+                            "Off the islands"
                         } else {
-                            "Não há nesta ilha"
+                            "None on this island"
                         }
                         .into(),
                     )
@@ -348,35 +348,35 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             nome,
             nivel_min,
         } => {
-            o.titulo = format!("Criar: {nome}");
-            o.detalhe = format!("Craft · nível mínimo {}", (*nivel_min).max(1));
+            o.titulo = format!("Craft: {nome}");
+            o.detalhe = format!("Craft · minimum level {}", (*nivel_min).max(1));
             if c.nivel < *nivel_min as u32 {
-                o.aviso = Some(format!("Requer nível {nivel_min}"));
+                o.aviso = Some(format!("Requires level {nivel_min}"));
             }
             o.ordem = (2, *nivel_min as u32);
             o.ir = Some(Ir::AbrirCraft(*receita));
         }
         FonteDeItem::Missao { titulo, diaria, .. } => {
-            o.titulo = format!("Recompensa: {titulo}");
+            o.titulo = format!("Reward: {titulo}");
             o.detalhe = if *diaria {
-                "Missão diária".into()
+                "Daily quest".into()
             } else {
-                "Missão".into()
+                "Quest".into()
             };
             o.ordem = (7, 0);
-            o.sem_ir = Some("Missão".into());
+            o.sem_ir = Some("Quest".into());
         }
         FonteDeItem::DungeonRaid => {
-            o.titulo = "Chefe de dungeon (Gruta)".into();
-            o.detalhe = "15/10/6/3/1% por faixa · Caçada em breve".into();
+            o.titulo = "Dungeon boss (Cavern)".into();
+            o.detalhe = "15/10/6/3/1% per band · Hunt coming soon".into();
             o.ordem = (8, 0);
             o.ir = Some(Ir::AbrirDungeons);
         }
         FonteDeItem::Calendario { dias } => {
-            o.titulo = "Calendário de presença".into();
+            o.titulo = "Attendance calendar".into();
             let lista: Vec<String> = dias.iter().map(|d| d.to_string()).collect();
             o.detalhe = format!(
-                "Resgate diário · dia{} {}",
+                "Daily claim · day{} {}",
                 if dias.len() > 1 { "s" } else { "" },
                 lista.join(", ")
             );
@@ -476,7 +476,7 @@ impl OndeObter {
             palco,
         );
         estilo::texto_ajustado(
-            &format!("Onde obter: {nome}"),
+            &format!("Where to get: {nome}"),
             p.x + 62.0 * f,
             p.y + 36.0 * f,
             p.w - 130.0 * f,
@@ -503,7 +503,7 @@ impl OndeObter {
             estilo::texto(
                 lista.x + 8.0,
                 lista.y + 26.0 * f,
-                "Nenhuma fonte conhecida para este item.",
+                "No known source for this item.",
                 15,
                 estilo::SUAVE,
             );
@@ -552,9 +552,9 @@ impl OndeObter {
                     let visivel = b.y + b.h > lista.y && b.y < lista.y + lista.h;
                     let rotulo = match ir {
                         Ir::Alvo(_) => "Ir",
-                        Ir::AbrirCraft(_) | Ir::AbrirCraftMaterial(_) => "Abrir",
-                        Ir::AbrirMercado(_) => "Buscar",
-                        Ir::AbrirDungeons | Ir::AbrirCalendario => "Abrir",
+                        Ir::AbrirCraft(_) | Ir::AbrirCraftMaterial(_) => "Open",
+                        Ir::AbrirMercado(_) => "Search",
+                        Ir::AbrirDungeons | Ir::AbrirCalendario => "Open",
                     };
                     let _ = crate::ui::botao(b, rotulo, visivel);
                     if visivel && clique.is_some_and(|c| b.contains(c) && lista.contains(c)) {
@@ -563,7 +563,7 @@ impl OndeObter {
                 }
                 (None, Some(motivo)) => {
                     let w = estilo::medir(motivo, 13);
-                    if motivo == "Em breve" {
+                    if motivo == "Coming soon" {
                         crate::menu_missoes::cadeado(
                             vec2(b.x + b.w - w - 20.0 * f, b.center().y),
                             7.0 * f,
@@ -736,7 +736,7 @@ mod tests {
         );
         assert_eq!(
             (sem[0].ir.clone(), sem[0].sem_ir.as_deref()),
-            (None, Some("Não há nesta ilha"))
+            (None, Some("None on this island"))
         );
         assert_eq!(sem.len(), 1, "vinculado: sem Mercado");
     }
@@ -751,7 +751,7 @@ mod tests {
         );
         assert_eq!(alvo(&v[0]).objetivo, Objetivo::Combate);
         assert!(v[0].aviso.is_some(), "zona 30+ pro nivel 5");
-        let lobo = opcoes(1, &[mob(0, "Lobo", 0.08, vec![0])], &onde(&i, &[], true));
+        let lobo = opcoes(1, &[mob(0, "Wolf", 0.08, vec![0])], &onde(&i, &[], true));
         assert!(lobo[0].aviso.is_none());
         assert_eq!(alvo(&lobo[0]).pos, vec2(100.0, 0.0));
     }
@@ -759,7 +759,7 @@ mod tests {
     #[test]
     fn bicho_de_outra_ilha_diz_qual_e_nao_tem_ir() {
         let i = info();
-        let v = opcoes(1, &[mob(9, "Mago", 0.2, vec![2, 3])], &onde(&i, &[], true));
+        let v = opcoes(1, &[mob(9, "Mage", 0.2, vec![2, 3])], &onde(&i, &[], true));
         assert_eq!(
             (v[0].ir.clone(), v[0].sem_ir.as_deref()),
             (None, Some(OUTRA_ILHA))
@@ -774,8 +774,8 @@ mod tests {
             v[0].detalhe
         );
         // Nasce aqui, mas nenhuma zona perto no mapa.
-        let aqui = opcoes(1, &[mob(9, "Mago", 0.2, vec![0])], &onde(&i, &[], true));
-        assert_eq!(aqui[0].sem_ir.as_deref(), Some("Não há nesta ilha"));
+        let aqui = opcoes(1, &[mob(9, "Mage", 0.2, vec![0])], &onde(&i, &[], true));
+        assert_eq!(aqui[0].sem_ir.as_deref(), Some("None on this island"));
     }
 
     #[test]
@@ -785,7 +785,7 @@ mod tests {
             1,
             &[FonteDeItem::ChefeDoMundo {
                 kind: 13,
-                nome: "Tigre das Neves".into(),
+                nome: "Snow Tiger".into(),
                 nivel: 24,
                 chance: 0.0075,
                 ilha: 1,
@@ -851,9 +851,9 @@ mod tests {
                 "Coletar: Pedra verde",
                 "Comprar: Alquimista Ana",
                 "Criar: Katana",
-                "Mercado",
+                "Market",
                 "Recompensa: Pedreira",
-                "Chefe de dungeon (Gruta)"
+                "Dungeon boss (Cavern)"
             ]
         );
         assert_eq!(alvo(&v[1]).objetivo, Objetivo::Npc);
@@ -876,10 +876,10 @@ mod tests {
             vinculado: true,
             ilha_atual: None,
         };
-        let v = opcoes(1, &[mob(0, "Lobo", 0.1, vec![0])], &c);
+        let v = opcoes(1, &[mob(0, "Wolf", 0.1, vec![0])], &c);
         assert_eq!(
             (v[0].ir.clone(), v[0].sem_ir.as_deref()),
-            (None, Some("Fora de ilha"))
+            (None, Some("Off the islands"))
         );
         assert!(v[0].detalhe.ends_with("Ilha: Bosque"));
     }

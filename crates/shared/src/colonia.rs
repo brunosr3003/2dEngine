@@ -51,7 +51,7 @@ pub mod eixo {
     pub const RECURSOS: usize = 1;
     /// O BANCO LOCAL: espacos de deposito na propria ilha.
     pub const BANCO: usize = 2;
-    pub const NOMES: [&str; super::EIXOS] = ["Assentamento", "Ofício", "Banco"];
+    pub const NOMES: [&str; super::EIXOS] = ["Settlement", "Trade", "Bank"];
 }
 
 /// Niveis por eixo, 0..=MAX.
@@ -227,9 +227,9 @@ impl Assentamento {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Self::Casa => "Casa",
-            Self::Vila => "Vila",
-            Self::Castelo => "Castelo",
+            Self::Casa => "House",
+            Self::Vila => "Village",
+            Self::Castelo => "Castle",
         }
     }
 
@@ -326,11 +326,11 @@ impl Profissao {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Self::Lenhador => "Lenhador",
-            Self::Minerador => "Minerador",
-            Self::Mercenario => "Mercenário",
-            Self::Curtidor => "Curtidor",
-            Self::Alquimista => "Alquimista",
+            Self::Lenhador => "Woodcutter",
+            Self::Minerador => "Miner",
+            Self::Mercenario => "Mercenary",
+            Self::Curtidor => "Tanner",
+            Self::Alquimista => "Alchemist",
         }
     }
 

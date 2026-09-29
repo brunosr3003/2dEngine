@@ -92,14 +92,14 @@ pub mod ponto {
 
     pub fn nome(p: u16) -> &'static str {
         match p {
-            CIDADE => "a praça",
-            SAIDA => "a saída da cidade",
-            PORTO => "o porto",
-            CAIS => "a ponta do cais",
-            MIRANTE => "o mirante",
-            COSTA => "a costa distante",
+            CIDADE => "the square",
+            SAIDA => "the way out of the city",
+            PORTO => "the port",
+            CAIS => "the end of the quay",
+            MIRANTE => "the lookout",
+            COSTA => "the distant coast",
             40..=44 => crate::planalto::NOMES[(p-40) as usize],
-            _ => "o lugar",
+            _ => "the place",
         }
     }
 }
@@ -116,25 +116,25 @@ pub struct Capitulo {
 
 pub const CAPITULOS: &[Capitulo] = &[
     Capitulo {
-        nome: "I · O Farol do Bosque",
+        nome: "I · The Lighthouse of the Grove",
         ilha: 0,
         primeiro: 700,
         ultimo: 719,
     },
     Capitulo {
-        nome: "II · O Farol Congelado",
+        nome: "II · The Frozen Lighthouse",
         ilha: 1,
         primeiro: 720,
         ultimo: 737,
     },
     Capitulo {
-        nome: "III · Areias que Gritam",
+        nome: "III · Sands That Scream",
         ilha: 2,
         primeiro: 738,
         ultimo: 752,
     },
     Capitulo {
-        nome: "IV · O Coração da Tempestade",
+        nome: "IV · The Heart of the Storm",
         ilha: 3,
         primeiro: 753,
         ultimo: 769,
@@ -458,21 +458,21 @@ pub const PASSOS: &[QuestDef] = &[
     // o craft entregam a receita INTEIRA da primeira armadura cinza. Os dois
     // contratos sao testes: `capitulo_um_carrega_o_nivel_das_dungeons` e
     // `o_inicio_entrega_a_primeira_armadura`.
-    falar(700, "Desperte na praça", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 500, item_id::HEALTH_POTION, 5),
-    falar(701, "Um gole de coragem", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5),
+    falar(700, "Wake in the square", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 500, item_id::HEALTH_POTION, 5),
+    falar(701, "A sip of courage", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5),
     // Tutoriais (790+): cada um ensina UMA coisa da interface, na hora em que
     // ela passa a fazer falta. Ids fora da sequencia de proposito.
-    tutorial(790, "Poção na hora certa", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
-    tutorial(791, "Luta sem as mãos", "Antes dos lobos, aprenda a lutar sem pensar: toque em COMBATE, no canto de baixo, e o personagem enfrenta sozinho o que estiver perto. Toque de novo para parar.", tut::AUTO_COMBATE, 20, 300, item_id::HEALTH_POTION, 3),
-    cacar_com(702, "A trilha dos lobos", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
-    falar(703, "Mãos firmes", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
-    tutorial(792, "Golpe no automático", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
-    tutorial(793, "Coleta sem esforço", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
-    tutorial_de(796, "A luz nas pedras", "O trovão deixou cristais azuis no relevo: é Energia, e ela não ocupa espaço na bolsa e é o que paga os seus pontos de atributo. Toque no passo que o caminho até um veio abre sozinho — junte o bastante pra gastar tudo o que os primeiros níveis te deram.", tut::COLETA_ENERGIA, crate::constants::ENERGIA_DO_TUTORIAL, 40, 900, item_id::HEALTH_POTION, 3),
-    tutorial(795, "O que o nível te deu", "Cada ponto de atributo custa Energia — a mesma dos cristais azuis do relevo. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma: FOR bate mais forte, DES acerta mais, INT move a magia. Se faltar Energia, quebre um cristal e volte.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
-    coletar_com(704, "Lenha para a forja", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
-    coletar_com(705, "Pedra que canta", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
-    falar_com_dois(706, "O metal da tempestade", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
+    tutorial(790, "A potion at the right moment", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
+    tutorial(791, "Fighting hands-free", "Antes dos lobos, aprenda a lutar sem pensar: toque em COMBATE, no canto de baixo, e o personagem enfrenta sozinho o que estiver perto. Toque de novo para parar.", tut::AUTO_COMBATE, 20, 300, item_id::HEALTH_POTION, 3),
+    cacar_com(702, "The wolves' trail", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
+    falar(703, "Steady hands", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
+    tutorial(792, "Striking on automatic", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
+    tutorial(793, "Gathering without effort", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
+    tutorial_de(796, "The light in the stones", "O trovão deixou cristais azuis no relevo: é Energia, e ela não ocupa espaço na bolsa e é o que paga os seus pontos de atributo. Toque no passo que o caminho até um veio abre sozinho — junte o bastante pra gastar tudo o que os primeiros níveis te deram.", tut::COLETA_ENERGIA, crate::constants::ENERGIA_DO_TUTORIAL, 40, 900, item_id::HEALTH_POTION, 3),
+    tutorial(795, "What the level gave you", "Cada ponto de atributo custa Energia — a mesma dos cristais azuis do relevo. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma: FOR bate mais forte, DES acerta mais, INT move a magia. Se faltar Energia, quebre um cristal e volte.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
+    coletar_com(704, "Firewood for the forge", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
+    coletar_com(705, "The singing stone", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
+    falar_com_dois(706, "The metal of the storm", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
     // O PET SAI DAQUI, e o lugar não é arbitrário.
     //
     // O dono: "faz uma das missões iniciais, tipo nível 6, dar um pergaminho
@@ -484,19 +484,19 @@ pub const PASSOS: &[QuestDef] = &[
     QuestDef {
         reward_item: item_id::PERGAMINHO_INVOCA_PET,
         reward_item_qty: 1,
-        ..criar(707, "Sua primeira peça", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe — e o pergaminho que o Ferreiro te dá chama quem colhe por você.", 100, 6_000)
+        ..criar(707, "Your first piece", "Você tem tudo o que a Armadura pede: o couro do Ferreiro, Aço, Quintessência, Berloque, Darksteel e cobre. Abra o Craft e crie sua primeira armadura. Depois disso, tudo isso se farma: pedra, árvore, bicho e chefe — e o pergaminho que o Ferreiro te dá chama quem colhe por você.", 100, 6_000)
     },
-    cacar(708, "Ursos na encosta", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
-    tutorial(794, "O mapa mostra o caminho", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá. Ao concluir, abra o Pergaminho de Invocação: Montaria na bolsa, equipe a montaria e use o botão Montar para viajar mais rápido.", tut::MAPA_IR, 60, 1_500, item_id::PERGAMINHO_INVOCA_MONTARIA, 1),
-    ir(709, "O mirante do Bosque", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
-    dungeon(710, "O porão do naufrágio", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
-    refinar(711, "Fogo na forja", "Peça fraca não aguenta a tempestade. Tente refinar uma peça na Forja.", 1, 150, 20_000),
-    cacar(712, "Os pistoleiros de Morgan", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
-    ir(713, "A estrada do porto", "Os Peacemain guardam o porto. Siga pela estrada até o pátio do cais.", ponto::PORTO, 150, 37_500),
-    falar(714, "O Capitão do Porto", "O Capitão sabe por que os faróis apagam. Fale com ele no porto.", Papel::Estaleiro, 200, 57_500, item_id::GREATER_HEAL, 3),
-    cacar(715, "Garras no caminho do cais", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
-    ir(716, "O cais ao amanhecer", "Vá até a ponta do cais: o Capitão prometeu mostrar a rota das ilhas.", ponto::CAIS, 200, 120_000),
-    dungeon(717, "A adega do contrabandista", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 500, 97_500, item_id::GREATER_HEAL, 5),
+    cacar(708, "Bears on the slope", "The bears came down from the slopes chasing the smell of thunder. Defeat 4 bears.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
+    tutorial(794, "The map shows the way", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá. Ao concluir, abra o Pergaminho de Invocação: Montaria na bolsa, equipe a montaria e use o botão Montar para viajar mais rápido.", tut::MAPA_IR, 60, 1_500, item_id::PERGAMINHO_INVOCA_MONTARIA, 1),
+    ir(709, "The lookout of the Grove", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
+    dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
+    refinar(711, "Fire in the forge", "A weak piece won't survive the storm. Try refining a piece at the Forge.", 1, 150, 20_000),
+    cacar(712, "Morgan's gunmen", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
+    ir(713, "The port road", "The Peacemain guard the port. Follow the road to the quay yard.", ponto::PORTO, 150, 37_500),
+    falar(714, "The Harbour Captain", "The Captain knows why the lighthouses go dark. Talk to him at the port.", Papel::Estaleiro, 200, 57_500, item_id::GREATER_HEAL, 3),
+    cacar(715, "Claws on the road to the quay", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
+    ir(716, "The quay at dawn", "Go to the end of the quay: the Captain promised to show the island route.", ponto::CAIS, 200, 120_000),
+    dungeon(717, "The smuggler's cellar", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 500, 97_500, item_id::GREATER_HEAL, 5),
     // A escritura E' o passo de ABRIR o painel.
     //
     // Era "pise na ilha" (`objective_kind::COLONIA`), de quando ela era uma
@@ -521,67 +521,67 @@ pub const PASSOS: &[QuestDef] = &[
     tutorial(800, "O primeiro morador", "Casa vazia não rende. Na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. Toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
-    nivel(TRAVA_DO_BARCO, "Alcance o nível 20", 20),
-    viajar(719, "Rumo à Geleira", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
+    nivel(TRAVA_DO_BARCO, "Reach level 20", 20),
+    viajar(719, "Bound for the Glacier", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
-    falar(720, "Frio de rachar os ossos", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
-    tutorial(797, "O primeiro despertar", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, item_id::XP_POTION, 1),
-    falar(721, "Histórias de taberna", "Quem sabe dos Morganeers na neve é o Taberneiro. Pague um ouvido a ele.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
-    cacar(722, "Corujursos na neve", "Owlbears famintos atacam as trilhas de gelo. Derrote 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
-    coletar(723, "Gelo que guarda trovão", "A pedra da Geleira prende relâmpago. Quebre 20 pedras.", 20, 300, 2_000, VERDE, 4),
-    falar(724, "O fragmento de gelo", "Mostre o que achou nas pedras ao Identificador.", Papel::Identificador, 250, 2_000, item_id::GREATER_MANA, 2),
-    ir(725, "O farol congelado", "O farol da Geleira fica no alto. Suba até o mirante da ilha.", ponto::MIRANTE, 350, 2_600),
-    nivel(726, "Alcance o nível 22", 22),
-    cacar(727, "Arqueiros da nevasca", "Arqueiros dos Morganeers vigiam o farol. Derrote 8.", alvo_de_mob(mob_kind::ARQUEIRO), 8, 400, 3_200, item_id::GREATER_HEAL),
-    criar(728, "Couraça contra o frio", "Crie uma peça nova no Craft para o frio que vem.", 350, 3_000),
-    refinar(729, "Aço que não quebra", "Tente refinar duas vezes na Forja.", 2, 400, 3_400),
-    falar(730, "Capa de lã-de-tempestade", "O Alfaiate costura com fios que seguram o vento. Fale com ele.", Papel::Alfaiate, 350, 3_200, item_id::GREATER_HEAL, 3),
-    nivel(731, "Alcance o nível 25", 25),
-    cacar(732, "A patrulha de Morgan", "Os Morganeers cercam a ilha. Derrote 30 inimigos de qualquer tipo.", 0, 30, 600, 4_500, item_id::GREATER_HEAL),
-    ir(733, "A costa distante", "Um barco dos Morganeers encalhou na costa mais distante. Vá até lá.", ponto::COSTA, 500, 4_200),
-    falar(734, "O mapa do Ermo", "O Cartógrafo do porto desenhou a rota para o Ermo. Busque o mapa com ele.", Papel::Cartografo, 450, 4_000, item_id::GREATER_MANA, 3),
-    nivel(735, "Alcance o nível 30", 30),
-    ir(736, "De volta ao cais", "Com o mapa na mão, volte ao pátio do porto.", ponto::PORTO, 400, 4_000),
-    viajar(737, "Rumo ao Ermo", "O Capitão do Porto leva você ao Ermo, onde o terceiro farol foi soterrado.", 2, 800, 6_000),
+    falar(720, "Bone-cracking cold", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
+    tutorial(797, "The first waking", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, item_id::XP_POTION, 1),
+    falar(721, "Tavern tales", "The one who knows about the Morganeers in the snow is the Innkeeper. Buy his ear.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
+    cacar(722, "Owlbear cubs in the snow", "Starving owlbears are attacking the ice trails. Defeat 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
+    coletar(723, "Ice that holds thunder", "The Glacier's stone traps lightning. Break 20 rocks.", 20, 300, 2_000, VERDE, 4),
+    falar(724, "The shard of ice", "Show the Appraiser what you found in the stones.", Papel::Identificador, 250, 2_000, item_id::GREATER_MANA, 2),
+    ir(725, "The frozen lighthouse", "The Glacier's lighthouse stands high up. Climb to the island's lookout.", ponto::MIRANTE, 350, 2_600),
+    nivel(726, "Reach level 22", 22),
+    cacar(727, "Archers of the blizzard", "Morganeer archers are watching the lighthouse. Defeat 8.", alvo_de_mob(mob_kind::ARQUEIRO), 8, 400, 3_200, item_id::GREATER_HEAL),
+    criar(728, "A shell against the cold", "Create a new piece in Craft for the cold that's coming.", 350, 3_000),
+    refinar(729, "Steel that will not break", "Try refining twice at the Forge.", 2, 400, 3_400),
+    falar(730, "Cloak of stormwool", "The Tailor sews with thread that holds the wind. Talk to him.", Papel::Alfaiate, 350, 3_200, item_id::GREATER_HEAL, 3),
+    nivel(731, "Reach level 25", 25),
+    cacar(732, "Morgan's patrol", "The Morganeers are closing in on the island. Defeat 30 enemies of any kind.", 0, 30, 600, 4_500, item_id::GREATER_HEAL),
+    ir(733, "The distant coast", "A Morganeer boat ran aground on the far coast. Go there.", ponto::COSTA, 500, 4_200),
+    falar(734, "The map of the Waste", "The Cartographer at the port drew the route to the Waste. Fetch the map from him.", Papel::Cartografo, 450, 4_000, item_id::GREATER_MANA, 3),
+    nivel(735, "Reach level 30", 30),
+    ir(736, "Back to the quay", "With the map in hand, return to the port yard.", ponto::PORTO, 400, 4_000),
+    viajar(737, "Bound for the Waste", "The Harbour Captain will take you to the Waste, where the third lighthouse was buried.", 2, 800, 6_000),
     // ═════════════ III · Areias que Gritam (Ermo, 28–42) ═════════════
-    falar(738, "O calor do Ermo", "Areia até onde a vista alcança. Procure o Mestre de Missões na praça.", Papel::Missoes, 500, 5_500, item_id::GREATER_HEAL, 3),
-    falar(739, "Água e remédio", "Sem água ninguém atravessa as dunas. Fale com o Alquimista.", Papel::Alquimista, 500, 5_500, item_id::GREATER_MANA, 3),
-    cacar(740, "Magos da areia", "Magos dos Morganeers usam o trovão preso na areia. Derrote 10.", alvo_de_mob(mob_kind::MAGO), 10, 700, 7_500, item_id::GREATER_HEAL),
-    coletar(741, "Vidro de relâmpago", "Onde o raio cai, a areia vira pedra. Quebre 25 pedras.", 25, 700, 8_000, VERDE, 6),
-    falar(742, "Lâminas de vidro", "Leve o vidro ao Ferreiro. Dizem que corta tempestade.", Papel::Ferreiro, 600, 7_500, item_id::COPPER, 800),
-    criar(743, "Arma do deserto", "Crie uma peça nova no Craft com o que o Ermo deu.", 700, 8_500),
-    nivel(744, "Alcance o nível 35", 35),
-    ir(745, "O farol soterrado", "O farol do Ermo está no topo das dunas. Suba ao mirante.", ponto::MIRANTE, 900, 10_000),
-    cacar(746, "O cerco das dunas", "Os Morganeers querem o farol. Derrote 40 inimigos.", 0, 40, 1_100, 12_000, item_id::GREATER_HEAL),
-    refinar(747, "Têmpera no calor", "Tente refinar duas vezes na Forja.", 2, 900, 11_000),
-    falar(748, "A dança da tempestade", "O Treinador conhece o passo de quem luta dentro do vento. Aprenda com ele.", Papel::Treinador, 900, 11_000, item_id::GREATER_HEAL, 3),
-    nivel(749, "Alcance o nível 40", 40),
-    ir(750, "O naufrágio de Morgan", "A nau capitânia de Morgan jaz na costa mais distante. Vá até lá.", ponto::COSTA, 1_100, 13_000),
-    falar(751, "O Capitão do Ermo", "No porto, o Capitão diz que o último farol fica no Planalto.", Papel::Estaleiro, 1_000, 12_000, item_id::GREATER_MANA, 3),
-    viajar(752, "Rumo ao Planalto", "Embarque com o Capitão rumo ao Planalto, perto do olho da tempestade.", 3, 1_500, 18_000),
+    falar(738, "The heat of the Waste", "Sand as far as the eye can see. Look for the Quest Master in the square.", Papel::Missoes, 500, 5_500, item_id::GREATER_HEAL, 3),
+    falar(739, "Water and remedy", "Nobody crosses the dunes without water. Talk to the Alchemist.", Papel::Alquimista, 500, 5_500, item_id::GREATER_MANA, 3),
+    cacar(740, "Mages of the sand", "Morganeer mages use the thunder trapped in the sand. Defeat 10.", alvo_de_mob(mob_kind::MAGO), 10, 700, 7_500, item_id::GREATER_HEAL),
+    coletar(741, "Lightning glass", "Where lightning strikes, sand turns to stone. Break 25 rocks.", 25, 700, 8_000, VERDE, 6),
+    falar(742, "Blades of glass", "Take the glass to the Blacksmith. They say it cuts through storms.", Papel::Ferreiro, 600, 7_500, item_id::COPPER, 800),
+    criar(743, "Weapon of the desert", "Create a new piece in Craft with what the Waste gave you.", 700, 8_500),
+    nivel(744, "Reach level 35", 35),
+    ir(745, "The buried lighthouse", "The Waste's lighthouse sits atop the dunes. Climb to the lookout.", ponto::MIRANTE, 900, 10_000),
+    cacar(746, "The siege of the dunes", "The Morganeers want the lighthouse. Defeat 40 enemies.", 0, 40, 1_100, 12_000, item_id::GREATER_HEAL),
+    refinar(747, "Tempered in the heat", "Try refining twice at the Forge.", 2, 900, 11_000),
+    falar(748, "The dance of the storm", "The Trainer knows the footwork of those who fight inside the wind. Learn it from him.", Papel::Treinador, 900, 11_000, item_id::GREATER_HEAL, 3),
+    nivel(749, "Reach level 40", 40),
+    ir(750, "Morgan's shipwreck", "Morgan's flagship lies on the far coast. Go there.", ponto::COSTA, 1_100, 13_000),
+    falar(751, "The Captain of the Waste", "At the port, the Captain says the last lighthouse is on the Plateau.", Papel::Estaleiro, 1_000, 12_000, item_id::GREATER_MANA, 3),
+    viajar(752, "Bound for the Plateau", "Set sail with the Captain for the Plateau, close to the eye of the storm.", 3, 1_500, 18_000),
     // ═════════════ IV · O Coração da Tempestade (Planalto, 40–60) ═════════════
     falar(753, "Porto do Último Abrigo", "Bem-vindo ao Planalto da Tormenta. O Mestre de Missões do Último Abrigo prepara a expedição ao farol.", Papel::Missoes, 1_000, 14_000, item_id::GREATER_HEAL, 4),
     ir(855, "A estrada dos sentinelas", "Siga a estrada até as Encostas dos Sentinelas. Os campos de caça ficam ao lado do caminho.", crate::planalto::PONTO_BASE, 1_200, 90_000),
-    cacar(754, "Sentinelas do Planalto", "Arqueiros vigiam os penhascos. Derrote 12.", alvo_de_mob(mob_kind::ARQUEIRO), 12, 1_400, 18_000, item_id::GREATER_HEAL),
-    coletar(755, "Pedra do céu", "As pedras do Planalto guardam o trovão mais forte. Quebre 30.", 30, 1_400, 19_000, AZUL, 4),
-    falar(756, "A última runa", "O Identificador lê a runa gravada na pedra do céu.", Papel::Identificador, 1_200, 18_000, item_id::GREATER_MANA, 4),
+    cacar(754, "Sentinels of the Plateau", "Archers watch the cliffs. Defeat 12.", alvo_de_mob(mob_kind::ARQUEIRO), 12, 1_400, 18_000, item_id::GREATER_HEAL),
+    coletar(755, "Skystone", "The Plateau's stones hold the strongest thunder. Break 30.", 30, 1_400, 19_000, AZUL, 4),
+    falar(756, "The last rune", "The Appraiser reads the rune carved into the skystone.", Papel::Identificador, 1_200, 18_000, item_id::GREATER_MANA, 4),
     dungeon(856, "O sino dos ventos", "Recupere a runa do Mosteiro dos Ventos. Abra Dungeons e vença o Mosteiro; reúna um grupo se precisar.", 13, 2_000, 240_000, item_id::GREATER_HEAL, 8),
-    nivel(757, "Alcance o nível 45", 45),
+    nivel(757, "Reach level 45", 45),
     ir(758, "O vale carregado", "Explore o Vale do Trovão. A tempestade carrega seus cristais por dez minutos a cada meia hora, alternando com a Forja Partida. O mapa marca o campo ativo.", crate::planalto::PONTO_BASE + 2, 1_800, 24_000),
-    cacar(759, "A frota de Morgan", "A frota inteira dos Morganeers desembarcou. Derrote 50 inimigos.", 0, 50, 2_200, 30_000, item_id::GREATER_HEAL),
-    criar(760, "Armadura para o olho", "Crie uma peça nova no Craft para enfrentar o olho da tempestade.", 1_800, 26_000),
-    refinar(761, "Aço de trovão", "Tente refinar três vezes na Forja.", 3, 2_000, 28_000),
-    nivel(762, "Alcance o nível 50", 50),
+    cacar(759, "Morgan's fleet", "The Morganeers' entire fleet has landed. Defeat 50 enemies.", 0, 50, 2_200, 30_000, item_id::GREATER_HEAL),
+    criar(760, "Armour for the eye", "Create a new piece in Craft to face the eye of the storm.", 1_800, 26_000),
+    refinar(761, "Thunder steel", "Try refining three times at the Forge.", 3, 2_000, 28_000),
+    nivel(762, "Reach level 50", 50),
     ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
     dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
-    falar(763, "Brinde aos faróis", "Três faróis voltaram a brilhar. O Taberneiro serve a rodada.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
-    ir(764, "O olho no horizonte", "Da ponta do cais se vê o olho da tempestade girando. Vá até lá.", ponto::CAIS, 2_000, 30_000),
-    nivel(765, "Alcance o nível 55", 55),
-    cacar(766, "As feras do vento", "As feras do olho da tempestade descem ao Planalto. Derrote 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
+    falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
+    ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
+    nivel(765, "Reach level 55", 55),
+    cacar(766, "The beasts of the wind", "The beasts from the eye of the storm come down to the Plateau. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
     ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
-    falar(767, "O que há além", "O Cartógrafo quer desenhar o que existe além da tempestade.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
-    nivel(768, "Alcance o nível 60", 60),
-    falar(769, "O juramento do Guardião", "Os quatro faróis brilham. O Mestre de Missões tem um juramento para você.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
+    falar(767, "What lies beyond", "The Cartographer wants to draw what lies beyond the storm.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
+    nivel(768, "Reach level 60", 60),
+    falar(769, "The Guardian's oath", "All four lighthouses shine. The Quest Master has an oath for you.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
 ];
 
 // ─────────────────────────── consultas ───────────────────────────
@@ -659,12 +659,12 @@ pub fn passos_do_capitulo(c: &Capitulo) -> &'static [QuestDef] {
     }
 }
 
-/// Nome do capitulo do passo de indice `i` ("I · O Farol do Bosque",
+/// Nome do capitulo do passo de indice `i` ("I · The Lighthouse of the Grove",
 /// "Crônica 3").
 pub fn nome_do_capitulo(i: u32) -> String {
     match id_do_passo(i).and_then(capitulo_escrito) {
         Some(c) => c.nome.to_string(),
-        None => format!("Crônicas da Tempestade · {}", numero_da_cronica(i)),
+        None => format!("Chronicles of the Storm · {}", numero_da_cronica(i)),
     }
 }
 
@@ -705,46 +705,46 @@ fn cronica(k: u32) -> Option<QuestDef> {
     let def = match j {
         0 => {
             let t = escolhe(&[
-                "A caçada sem fim",
-                "Feras da maré alta",
-                "O rastro do trovão",
-                "Sombras na mata",
+                "The endless hunt",
+                "Beasts of the high tide",
+                "The trail of thunder",
+                "Shadows in the woods",
             ]);
             let q = 40 + 5 * (c % 12);
             QuestDef {
-                title: leak(format!("Crônica {n} · {t}")),
+                title: leak(format!("Chronicle {n} · {t}")),
                 desc: leak(format!("A tempestade não dorme e os bichos não param. Derrote {q} inimigos de qualquer tipo.")),
                 ..cacar(id, "", "", 0, q, gold, xp, item_id::GREATER_HEAL)
             }
         }
         1 => {
             let t = escolhe(&[
-                "Pedras que cantam",
-                "O veio da tormenta",
-                "Minério do relâmpago",
+                "Stones that sing",
+                "The vein of the tempest",
+                "Lightning ore",
             ]);
             let q = 30 + 2 * (c % 15);
             QuestDef {
-                title: leak(format!("Crônica {n} · {t}")),
+                title: leak(format!("Chronicle {n} · {t}")),
                 desc: leak(format!(
-                    "Os faróis bebem pedra de trovão. Quebre {q} pedras em qualquer veio."
+                    "The lighthouses drink thunderstone. Break {q} rocks at any vein."
                 )),
                 ..coletar(id, "", "", q, gold, xp, AZUL, 4 + (c % 4) as u16)
             }
         }
         2 => {
-            let t = escolhe(&["Uma peça para a jornada", "Ferro forjado no vento"]);
+            let t = escolhe(&["A piece for the journey", "Iron forged in the wind"]);
             QuestDef {
-                title: leak(format!("Crônica {n} · {t}")),
-                desc: "Os guardiões precisam de equipamento novo. Crie uma peça no Craft.",
+                title: leak(format!("Chronicle {n} · {t}")),
+                desc: "The guardians need new gear. Create a piece in Craft.",
                 ..criar(id, "", "", gold, xp)
             }
         }
         3 => {
-            let t = escolhe(&["Fogo mais quente", "O brilho do aço"]);
+            let t = escolhe(&["A hotter fire", "The gleam of steel"]);
             let vezes = 1 + (c % 3);
             QuestDef {
-                title: leak(format!("Crônica {n} · {t}")),
+                title: leak(format!("Chronicle {n} · {t}")),
                 desc: leak(format!("Aço que enfrenta a tempestade é aço refinado. Tente refinar {vezes} vez(es) na Forja.")),
                 ..refinar(id, "", "", vezes, gold, xp)
             }
@@ -753,37 +753,37 @@ fn cronica(k: u32) -> Option<QuestDef> {
             let (p, t, d) = match c % 3 {
                 0 => (
                     ponto::MIRANTE,
-                    "Vigia do mirante",
-                    "Suba ao mirante da ilha em que estiver e confira se o farol ainda brilha.",
+                    "Watch of the lookout",
+                    "Climb to the lookout of whichever island you're on and check whether the lighthouse still shines.",
                 ),
                 1 => (
                     ponto::COSTA,
-                    "A costa distante",
-                    "Barcos estranhos rondam a costa mais distante da ilha. Vá ver.",
+                    "The distant coast",
+                    "Strange boats are circling the island's far coast. Go and look.",
                 ),
                 _ => (
                     ponto::CAIS,
-                    "Sinais no cais",
-                    "O Capitão acendeu um sinal na ponta do cais. Vá até lá.",
+                    "Signs on the quay",
+                    "The Captain lit a signal at the end of the quay. Go to him.",
                 ),
             };
             QuestDef {
-                title: leak(format!("Crônica {n} · {t}")),
+                title: leak(format!("Chronicle {n} · {t}")),
                 ..ir(id, "", d, p, gold, xp)
             }
         }
         _ => {
             if trava <= crate::constants::CHAR_LEVEL_CAP as u64 {
                 QuestDef {
-                    title: leak(format!("Crônica {n} · Alcance o nível {trava}")),
+                    title: leak(format!("Chronicle {n} · Reach level {trava}")),
                     ..nivel(id, "", trava as u32)
                 }
             } else {
                 let q = 60;
                 QuestDef {
-                    title: leak(format!("Crônica {n} · Guardião da Tempestade")),
+                    title: leak(format!("Chronicle {n} · Guardian of the Storm")),
                     desc: leak(format!(
-                        "No teto do poder, a guarda nunca acaba. Derrote {q} inimigos."
+                        "At the roof of power, the watch never ends. Defeat {q} enemies."
                     )),
                     ..cacar(id, "", "", 0, q, gold, xp, item_id::GREATER_HEAL)
                 }
@@ -805,119 +805,119 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
     }
     let f: &[&str] = match id {
         700 => &[
-            "Você está vivo! O mar trouxe você na noite em que o farol apagou.",
+            "You're alive! The sea brought you in the night the lighthouse went dark.",
             "Há gerações quatro faróis de pedra-trovão seguram a Grande Tempestade longe das ilhas.",
             "O do Bosque se apagou. Os bichos enlouquecem e os Morganeers já sentiram o cheiro.",
-            "Primeiro, cuide de você: o Alquimista tem o que você precisa.",
+            "First, look after yourself: the Alchemist has what you need.",
         ],
         701 => &[
-            "O Mestre mandou você? Então é o náufrago do farol.",
+            "The Master sent you? Then you're the castaway from the lighthouse.",
             "Sem poção, a mata engole qualquer um. Tome estas, e beba antes de cair — não depois.",
-            "Os lobos estão estranhos. Vá ver a trilha, mas com cuidado.",
+            "The wolves are behaving strangely. Go look at the trail, but carefully.",
         ],
         703 => &[
-            "Ouvi falar dos lobos. Nada mal para quem chegou boiando.",
-            "Guarde isto: quintessência. Armadura nenhuma fecha sem ela.",
+            "I heard about the wolves. Not bad for someone who washed up floating.",
+            "Keep this: quintessence. No armour closes without it.",
             "A forja precisa de lenha e o Ferreiro paga bem por ela. Vá derrubar umas árvores.",
         ],
         706 => &[
-            "Pedra que canta? Deixe eu ouvir… É trovão preso no metal.",
-            "Esse metal é o que endurece os bichos. E também faz boa armadura.",
+            "A singing stone? Let me listen… That's thunder trapped in metal.",
+            "That metal is what hardens the beasts. It also makes good armour.",
             "Toda peça pede um couro curtido para segurar o metal. Tome o meu — é o último, e some depois de uma forja.",
-            "Outro só arrancando de chefe: o do Porão do Naufrágio carrega chave no bolso.",
-            "Tome o cobre também. Com o que você juntou, já dá uma armadura. Vá ao Craft.",
+            "Another one only a boss will give up: the one in the Shipwreck Cellar carries a key in his pocket.",
+            "Take the copper as well. With what you've gathered, that's an armour. Go to Craft.",
         ],
         714 => &[
-            "Então você viu o farol apagado do mirante. Eu vi também.",
+            "So you saw the dark lighthouse from the lookout. I saw it too.",
             "Os Peacemain guardam os portos e os faróis. Os Morganeers querem a tempestade para eles.",
-            "Se os faróis caírem, a tempestade engole as ilhas uma a uma.",
-            "Vá até a ponta do cais comigo ao amanhecer. Vou mostrar a rota.",
+            "If the lighthouses fall, the storm swallows the islands one by one.",
+            "Come to the end of the quay with me at dawn. I'll show you the route.",
         ],
         718 => &[
-            "Tem uma ilhota a meia hora do cais. Sem dono desde a tempestade.",
-            "A escritura é sua. Terra pequena, mas rende sozinha enquanto você navega.",
-            "Quando quiser ir até lá, é só me dizer: o barco sai daqui e volta pra cá.",
+            "There's an islet half an hour from the quay. Ownerless since the storm.",
+            "The deed is yours. Small land, but it yields on its own while you sail.",
+            "Whenever you want to go there, just say the word: the boat leaves here and comes back here.",
         ],
         719 | 737 | 752 => &[
-            "O barco está pronto e a maré ajuda.",
-            "Suba a bordo. Do outro lado, apresente-se ao Capitão do Porto.",
-            "Que os faróis guiem você.",
+            "The boat is ready and the tide is with us.",
+            "Come aboard. On the other side, report to the Harbour Captain.",
+            "May the lighthouses guide you.",
         ],
         720 => &[
-            "Bem-vindo ao porto da Geleira. A estrada leva à cidade.",
-            "Nosso farol ainda brilha, mas o gelo está rachando a pedra.",
-            "O Taberneiro sabe onde os Morganeers se escondem na neve.",
+            "Welcome to the Glacier's port. The road leads to the city.",
+            "Our lighthouse still shines, but the ice is cracking the stone.",
+            "The Innkeeper knows where the Morganeers hide in the snow.",
         ],
         721 => &[
-            "Senta, esquenta as mãos. Morganeers? Chegaram com a nevasca.",
-            "Os corujursos descem das trilhas atrás deles, famintos.",
-            "E a pedra daqui prende relâmpago. Eles querem essa pedra.",
+            "Sit, warm your hands. Morganeers? They came in with the blizzard.",
+            "The owlbear cubs come down the trails after them, starving.",
+            "And the stone here traps lightning. That stone is what they want.",
         ],
         724 => &[
-            "Deixe eu ver… Este fragmento é um pedaço do farol.",
-            "Alguém está arrancando pedras do farol congelado.",
-            "Suba lá antes que ele caia.",
+            "Let me see… This shard is a piece of the lighthouse.",
+            "Someone is tearing stones out of the frozen lighthouse.",
+            "Get up there before it falls.",
         ],
         730 => &[
-            "Lã-de-tempestade: fio que segura o vento. Não é para qualquer um.",
-            "Você salvou nosso farol. Esta capa é por minha conta.",
-            "O Cartógrafo do porto tem algo para você.",
+            "Stormwool: thread that holds the wind. Not for just anyone.",
+            "You saved our lighthouse. This cloak is on me.",
+            "The Cartographer at the port has something for you.",
         ],
         734 => &[
-            "O Ermo fica ao sul, depois do mar de areia molhada.",
-            "O farol de lá foi soterrado. Morgan esteve lá primeiro.",
-            "Leve o mapa. Volte ao porto quando estiver pronto.",
+            "The Waste lies to the south, past the sea of wet sand.",
+            "The lighthouse there was buried. Morgan got there first.",
+            "Take the map. Come back to the port when you're ready.",
         ],
         738 => &[
-            "Você chegou vivo ao Ermo. Poucos chegam.",
-            "O farol daqui está debaixo das dunas, e os magos de Morgan cavam dia e noite.",
-            "Fale com o Alquimista antes de pisar na areia.",
+            "You reached the Waste alive. Few do.",
+            "The lighthouse here is under the dunes, and Morgan's mages dig day and night.",
+            "Talk to the Alchemist before you set foot on the sand.",
         ],
         739 => &[
-            "Água, sal e remédio: é o que mantém alguém vivo aqui.",
-            "Os magos usam o trovão da areia. Cuidado com os raios.",
-            "Tome isto e vá.",
+            "Water, salt and remedy: that's what keeps a person alive out here.",
+            "The mages use the thunder in the sand. Mind the lightning.",
+            "Take this and go.",
         ],
         742 => &[
-            "Vidro de relâmpago… Afiado como nada que eu já forjei.",
-            "Com isso dá para cortar o vento da tempestade.",
-            "Leve cobre e crie sua arma.",
+            "Lightning glass… Sharper than anything I've ever forged.",
+            "With this you can cut through the storm's wind.",
+            "Take copper and craft your weapon.",
         ],
         748 => &[
-            "Quem luta dentro do vento não pode ficar parado.",
-            "Mova-se com a tempestade, não contra ela.",
-            "Você está pronto para o que vem.",
+            "Whoever fights inside the wind cannot stand still.",
+            "Move with the storm, not against it.",
+            "You are ready for what comes next.",
         ],
         751 => &[
-            "O farol do Ermo voltou a brilhar. Eu vi do mar.",
-            "Mas o olho da tempestade se aproximou do Planalto.",
-            "O último farol fica lá. Eu levo você.",
+            "The lighthouse of the Waste shines again. I saw it from the sea.",
+            "But the eye of the storm has moved closer to the Plateau.",
+            "The last lighthouse is out there. I'll take you.",
         ],
         753 => &[
-            "O ar é fino aqui em cima. Respire devagar.",
-            "Daqui dá para ver o olho da tempestade girando.",
-            "O último farol é o mais alto de todos. Vai precisar de força.",
+            "The air is thin up here. Breathe slowly.",
+            "From here you can see the eye of the storm turning.",
+            "The last lighthouse is the highest of them all. You'll need strength.",
         ],
         756 => &[
-            "Esta runa diz: “quem acende o farol do céu vira guardião”.",
-            "Morgan leu a mesma runa. Ele quer ser o guardião da tempestade.",
-            "Suba antes dele.",
+            "This rune reads: “whoever lights the lighthouse of the sky becomes a guardian”.",
+            "Morgan read the same rune. He wants to be the guardian of the storm.",
+            "Climb before he does.",
         ],
         763 => &[
-            "Três faróis acesos! A casa paga a rodada.",
-            "Dizem que Morgan desembarcou com a frota inteira.",
-            "Beba. Amanhã o vento vai soprar forte.",
+            "Three lighthouses lit! The house buys this round.",
+            "They say Morgan has landed with the entire fleet.",
+            "Drink. Tomorrow the wind will blow hard.",
         ],
         767 => &[
-            "Ninguém nunca desenhou o que existe além da tempestade.",
-            "Com os quatro faróis acesos, talvez o mar se abra.",
-            "Quando estiver pronto, o Mestre espera você.",
+            "Nobody has ever drawn what lies beyond the storm.",
+            "With all four lighthouses lit, perhaps the sea will open.",
+            "When you're ready, the Master is waiting for you.",
         ],
         769 => &[
-            "Os quatro faróis brilham. Você fez o que nenhum náufrago fez.",
-            "Mas a tempestade não morre: ela dorme e acorda.",
-            "Faça o juramento dos Guardiões: vigiar os faróis enquanto houver vento.",
-            "Suas crônicas começam agora.",
+            "All four lighthouses shine. You did what no castaway ever has.",
+            "But the storm does not die: it sleeps and it wakes.",
+            "Take the Guardians' oath: to watch the lighthouses as long as there is wind.",
+            "Your chronicles begin now.",
         ],
         _ => return Some(vec![def_da_historia(id).map_or("…", |d| d.desc)]),
     };
@@ -1416,7 +1416,7 @@ mod testes {
             t::EVOLUIR_SKILL,
         ] {
             assert_eq!(acoes.iter().filter(|x| **x == a).count(), 1, "acao {a}");
-            assert_ne!(t::instrucao(a), "Siga a dica");
+            assert_ne!(t::instrucao(a), "Follow the hint");
         }
         // Todo tutorial mora num capitulo — o da hora em que aquilo passa a
         // fazer falta. Quase todos no I; o despertar de skill espera a

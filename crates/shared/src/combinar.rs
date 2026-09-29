@@ -1,4 +1,4 @@
-//! A aba "Combinar" tem duas formas de subir a cor:
+//! A aba "Combine" tem duas formas de subir a cor:
 //!
 //! Chaves, pets e montarias continuam na aposta:
 //! - **cinco** entram;

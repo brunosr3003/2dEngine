@@ -58,7 +58,7 @@ pub fn conferir(
     nome: &dyn Fn(u16) -> String,
 ) -> Result<usize, String> {
     if nivel < r.nivel_min as u32 {
-        return Err(format!("requer nível {}", r.nivel_min));
+        return Err(format!("requires level {}", r.nivel_min));
     }
     let faltas: Vec<String> = r
         .inputs
@@ -84,7 +84,7 @@ pub fn conferir(
         }
     }
     // O slot que os materiais liberam tambem serve: se nao ha' vazio agora,
-    // simula o consumo antes de dizer "bolsa cheia".
+    // simula o consumo antes de dizer "bag full".
     if let Some(i) = inv.iter().position(|s| s.qty == 0) {
         return Ok(i);
     }
@@ -96,7 +96,7 @@ pub fn conferir(
     }
     sim.iter()
         .position(|s| s.qty == 0)
-        .ok_or_else(|| "bolsa cheia".to_string())
+        .ok_or_else(|| "bag full".to_string())
 }
 
 /// Consome os materiais e poe o item. Chame so' depois de `conferir`. Devolve
@@ -259,14 +259,14 @@ pub fn aprimorar(
     rolar: &mut dyn FnMut(u16, u16, u8, u8) -> Option<ItemInstance>,
 ) -> Result<(u16, u8, u8), String> {
     if a == b || a >= inv.len() || b >= inv.len() {
-        return Err("escolha duas peças diferentes da bolsa".into());
+        return Err("choose two different pieces from your bag".into());
     }
     let (sa, sb) = (inv[a], inv[b]);
     let (Some(ia), Some(ib)) = (sa.instance, sb.instance) else {
-        return Err("só peça de equipamento se aprimora".into());
+        return Err("only gear can be upgraded".into());
     };
     if sa.qty == 0 || sb.qty == 0 {
-        return Err("escolha duas peças diferentes da bolsa".into());
+        return Err("choose two different pieces from your bag".into());
     }
     let peca = |s: &InventorySlot, i: &ItemInstance| {
         (
@@ -280,14 +280,14 @@ pub fn aprimorar(
     let (grau, tier) = forja::conferir_aprimorar(peca(&sa, &ia), peca(&sb, &ib))?;
     if grau > ia.grau() && nivel < forja::nivel_da_cor(grau) {
         return Err(format!(
-            "requer nível {} para essa cor",
+            "requires level {} for that colour",
             forja::nivel_da_cor(grau)
         ));
     }
     let cobre = forja::custo_de_aprimorar(ia.grau(), ia.tier());
     if tem(inv, item_id::COPPER) < cobre {
         return Err(format!(
-            "faltam {} de cobre",
+            "{} copper short",
             cobre - tem(inv, item_id::COPPER)
         ));
     }
@@ -314,7 +314,7 @@ pub fn aprimorar(
         v
     } else {
         rolar(sa.item_id, nivel_item, grau, tier)
-            .ok_or_else(|| "este item não se aprimora".to_string())?
+            .ok_or_else(|| "this item cannot be upgraded".to_string())?
     };
     // Os atributos vêm diretamente da tabela fixa para item/cor/tier/nível.
     // As peças consumidas não influenciam os números da nova.
@@ -437,7 +437,7 @@ pub fn combinar(
     let mut sim = inv.to_vec();
     cobra(&mut sim);
     if !por_empilhavel(&mut sim, r.saida, n, cap) {
-        return Err("bolsa cheia".into());
+        return Err("bag full".into());
     }
     // Cada sucesso sorteia o SEU item dentro da familia da cor de cima.
     //
@@ -731,7 +731,7 @@ mod testes {
         // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
         assert_eq!(
             combinar(&mut inv, &r, 1, 99, &nome, &mut || 0),
-            Err("bolsa cheia".into())
+            Err("bag full".into())
         );
         assert_eq!(foto(&inv), copia);
     }

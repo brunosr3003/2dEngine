@@ -93,7 +93,7 @@ fn atributos_do_refino(id: u16, inst: &ItemInstance) -> Vec<(&'static str, Strin
             .map(|(i, valor)| (SIGLAS[i], valor.to_string()))
             .collect();
         linhas.push((
-            "Vel. coleta",
+            "Gather speed",
             format!("{:.1}%", shared::pets::mult_coleta(Some(inst)) * 100.0),
         ));
         return linhas;
@@ -106,7 +106,7 @@ fn atributos_do_refino(id: u16, inst: &ItemInstance) -> Vec<(&'static str, Strin
             .map(|(i, valor)| (SIGLAS[i], valor.to_string()))
             .collect();
         linhas.push((
-            "Vel. montado",
+            "Mounted spd.",
             format!(
                 "{:.1}%",
                 shared::montarias::velocidade_da_instancia(grau, Some(inst)) * 100.0
@@ -116,12 +116,12 @@ fn atributos_do_refino(id: u16, inst: &ItemInstance) -> Vec<(&'static str, Strin
     }
     let b = inst.effective_bonus();
     [
-        ("Vida", b.hp_max),
+        ("Health", b.hp_max),
         ("Mana", b.mp_max),
-        ("Ataque", b.attack_damage),
-        ("Destreza", b.dex),
-        ("Sabedoria", b.wis),
-        ("Defesa", b.defense),
+        ("Attack", b.attack_damage),
+        ("Dexterity", b.dex),
+        ("Wisdom", b.wis),
+        ("Defence", b.defense),
     ]
     .into_iter()
     .filter(|(_, valor)| *valor != 0)
@@ -172,13 +172,13 @@ fn botoes_da_confirmacao(r: Rect, f: f32) -> (Rect, Rect) {
     (cancelar, sim)
 }
 
-/// "Refinar mesmo assim?" — a pergunta antes de arriscar a peça.
+/// "Refine anyway?" — a pergunta antes de arriscar a peça.
 ///
 /// `None` = ainda esperando; `Some(true)` = manda ver; `Some(false)` = não.
 ///
 /// Existe porque o aviso ESCRITO não bastava. O painel já dizia "se falhar, a
 /// peça é DESTRUÍDA" numa linha vermelha ao lado do botão, e o botão já se
-/// chamava "Refinar (arriscado)" — mas quem lê a mesma linha vinte vezes
+/// chamava "Refine (risky)" — mas quem lê a mesma linha vinte vezes
 /// para de lê-la, e o toque que custa uma peça épica acaba sendo o mesmo
 /// toque de sempre. Um gesto a mais é o que separa a decisão do reflexo.
 ///
@@ -191,7 +191,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     crate::hud_layout::escurece(0.55);
     estilo::painel_destaque(r, VERMELHO);
     let x = r.x + 24.0 * f;
-    estilo::texto_forte(x, r.y + 42.0 * f, "Refinar mesmo assim?", 20, VERMELHO);
+    estilo::texto_forte(x, r.y + 42.0 * f, "Refine anyway?", 20, VERMELHO);
     estilo::texto_ajustado(
         &format!("{nome} +{} → +{}", i.nivel, i.nivel + 1),
         x,
@@ -202,7 +202,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     );
     estilo::texto_ajustado(
         &format!(
-            "{}% de subir · {}% de DESTRUIR a peça.",
+            "{}% to rise · {}% to DESTROY the piece.",
             i.chance,
             100u8.saturating_sub(i.chance)
         ),
@@ -228,7 +228,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     estilo::texto_centro_forte(
         cancelar.center().x,
         cancelar.center().y + 6.0 * f,
-        "Cancelar",
+        "Cancel",
         16,
         estilo::OURO,
     );
@@ -236,7 +236,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     estilo::texto_centro(
         sim.center().x,
         sim.center().y + 6.0 * f,
-        "Sim, refinar",
+        "Yes, refine",
         16,
         VERMELHO,
     );
@@ -257,17 +257,17 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
 /// A frase do resultado.
 pub fn texto_do_resultado(res: u8, nivel: u8, nome: &str, motivo: &str) -> (String, Color) {
     match res {
-        resultado::SUBIU => (format!("Sucesso! {nome} agora é +{nivel}."), VERDE),
+        resultado::SUBIU => (format!("Success! {nome} is now +{nivel}."), VERDE),
         resultado::FALHOU => (
             format!("Falhou. {nome} continua +{nivel} (só o material foi)."),
             AMARELO,
         ),
-        resultado::DESTRUIU => (format!("Falhou e {nome} foi destruída."), VERMELHO),
+        resultado::DESTRUIU => (format!("It failed and {nome} was destroyed."), VERMELHO),
         _ => (
             if motivo.is_empty() {
-                "Não deu pra refinar.".to_string()
+                "Refining wasn't possible.".to_string()
             } else {
-                format!("Não refinou: {motivo}.")
+                format!("Not refined: {motivo}.")
             },
             VERMELHO,
         ),
@@ -326,7 +326,7 @@ impl Forja {
         self.aberto = true;
     }
 
-    /// Abre com a peca `alvo` ja' escolhida (o "Refinar" do cartao da bolsa).
+    /// Abre com a peca `alvo` ja' escolhida (o "Refine" do cartao da bolsa).
     pub fn abrir_em(&mut self, alvo: shared::protocol::AlvoDaForja) {
         self.sel = Some(alvo);
         self.aberto = true;
@@ -412,7 +412,7 @@ impl Forja {
                 );
             }
         }
-        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Forja", 22, estilo::OURO);
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Forge", 22, estilo::OURO);
         estilo::texto(
             p.x + u(92.0),
             p.y + u(31.0),
@@ -451,7 +451,7 @@ impl Forja {
             estilo::texto(
                 grade.x + u(4.0),
                 grade.y + u(24.0),
-                "Nenhuma peça refinável.",
+                "No refinable piece.",
                 15,
                 estilo::SUAVE,
             );
@@ -524,7 +524,7 @@ impl Forja {
             let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) {
                 "vestida"
             } else {
-                "na bolsa"
+                "in your bag"
             };
             estilo::texto(
                 d.x + u(74.0),
@@ -535,7 +535,7 @@ impl Forja {
             );
             let y = d.y + u(100.0);
             let agora_prox = if i.no_topo {
-                format!("+{} (no topo)", i.nivel)
+                format!("+{} (at the top)", i.nivel)
             } else {
                 format!("+{}  ›  +{}", i.nivel, i.nivel + 1)
             };
@@ -545,7 +545,7 @@ impl Forja {
             if !i.no_topo {
                 let prox = proximo_refino(inst);
                 let (a, b) = (poder_do_item(*id, inst), poder_do_item(*id, &prox));
-                let t = format!("Poder {a} › {b}  (+{})", b - a);
+                let t = format!("Power {a} › {b}  (+{})", b - a);
                 estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - u(2.0), &t, 15, VERDE);
             }
             if !i.no_topo {
@@ -568,7 +568,7 @@ impl Forja {
                 estilo::texto(
                     d.x,
                     y + u(84.0),
-                    &format!("Cobre {cu}/{}", i.cobre),
+                    &format!("Copper {cu}/{}", i.cobre),
                     15,
                     if cu >= i.cobre { VERDE } else { VERMELHO },
                 );
@@ -592,7 +592,7 @@ impl Forja {
                     estilo::texto(
                         d.x,
                         y + u(116.0),
-                        "Atenção: se falhar, a peça é DESTRUÍDA.",
+                        "Careful: if it fails, the piece is DESTROYED.",
                         15,
                         VERMELHO,
                     );
@@ -600,19 +600,19 @@ impl Forja {
                     estilo::texto(
                         d.x,
                         y + u(116.0),
-                        "Falhar aqui só gasta o material.",
+                        "Failing here only spends the material.",
                         14,
                         estilo::SUAVE,
                     );
                 }
                 let atual = atributos_do_refino(*id, inst);
                 let proximo = atributos_do_refino(*id, &proximo_refino(inst));
-                estilo::texto_forte(d.x, y + u(142.0), "SE O REFINO DER CERTO", 13, estilo::OURO);
+                estilo::texto_forte(d.x, y + u(142.0), "IF THE REFINE SUCCEEDS", 13, estilo::OURO);
                 if proximo.is_empty() {
                     estilo::texto(
                         d.x,
                         y + u(164.0),
-                        "Este item não ganha atributo.",
+                        "This item gains no attribute.",
                         13,
                         estilo::SUAVE,
                     );
@@ -632,9 +632,9 @@ impl Forja {
                 if crate::ui::botao(
                     b,
                     if i.risco {
-                        "Refinar (arriscado)"
+                        "Refine (risky)"
                     } else {
-                        "Refinar"
+                        "Refine"
                     },
                     tem_tudo,
                 ) {
@@ -696,8 +696,8 @@ mod tests {
     ///
     /// Mesmo guarda que o painel da Ilha Mágica ganhou depois de prender o
     /// jogador: lá a janela era montada em pixels crus com o conteúdo em
-    /// escala, o "Entrar" caía fora e não havia como fechar. Uma janela de
-    /// confirmação com o "Cancelar" fora da tela seria o mesmo — e pior,
+    /// escala, o "Enter" caía fora e não havia como fechar. Uma janela de
+    /// confirmação com o "Cancel" fora da tela seria o mesmo — e pior,
     /// porque o único jeito de sair dela seria dizendo sim.
     #[test]
     fn os_botoes_da_confirmacao_nunca_saem_da_janela() {
@@ -715,7 +715,7 @@ mod tests {
                     "{w}x{h} f={f}: a janela passa da tela"
                 );
                 let (cancelar, sim) = botoes_da_confirmacao(r, f);
-                for (nome, b) in [("Cancelar", cancelar), ("Sim", sim)] {
+                for (nome, b) in [("Cancel", cancelar), ("Sim", sim)] {
                     assert!(
                         b.y >= r.y && b.y + b.h <= r.y + r.h + 0.01,
                         "{w}x{h} f={f}: {nome} vai de {:.0} a {:.0} numa janela de \

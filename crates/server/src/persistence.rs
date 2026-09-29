@@ -1216,7 +1216,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // So' recompensa de missao de area: sem preco de compra, venda simbolica.
         S {
             id: item_id::XP_POTION as i32,
-            name: "Poção de Experiência",
+            name: "Experience Potion",
             sell: 1,
             buy: None,
             ord: None,
@@ -1235,7 +1235,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Recompensa de diaria de oficina: sem preco de compra, venda simbolica.
         S {
             id: item_id::FORTUNA_POTION as i32,
-            name: "Poção de Fortuna",
+            name: "Potion of Fortune",
             sell: 1,
             buy: None,
             ord: None,
@@ -1253,7 +1253,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::SORTE_POTION as i32,
-            name: "Poção de Sorte",
+            name: "Potion of Luck",
             sell: 1,
             buy: None,
             ord: None,
@@ -1285,7 +1285,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // (`items::item_template`). ===
         S {
             id: item_id::ESPADA_E_ESCUDO as i32,
-            name: "Espada e Escudo",
+            name: "Sword and Shield",
             sell: 60,
             buy: Some(960),
             ord: Some(20),
@@ -1321,7 +1321,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::PISTOLAS as i32,
-            name: "Duas Pistolas",
+            name: "Twin Pistols",
             sell: 60,
             buy: Some(960),
             ord: Some(22),
@@ -1339,7 +1339,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::ANEL_MAGICO as i32,
-            name: "Anel Mágico",
+            name: "Magic Ring",
             sell: 60,
             buy: Some(960),
             ord: Some(23),
@@ -1357,7 +1357,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::MANTO_DO_GUERREIRO as i32,
-            name: "Manto do Guerreiro",
+            name: "Warrior's Mantle",
             sell: 40,
             buy: Some(640),
             ord: Some(24),
@@ -1375,7 +1375,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::BAINHA as i32,
-            name: "Bainha",
+            name: "Scabbard",
             sell: 40,
             buy: Some(640),
             ord: Some(25),
@@ -1393,7 +1393,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::COLDRE as i32,
-            name: "Coldre",
+            name: "Holster",
             sell: 40,
             buy: Some(640),
             ord: Some(26),
@@ -1411,7 +1411,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::MANTO_DO_MAGO as i32,
-            name: "Manto do Mago",
+            name: "Mage's Mantle",
             sell: 40,
             buy: Some(640),
             ord: Some(27),
@@ -1429,7 +1429,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::ARMADURA_LEVE as i32,
-            name: "Armadura Leve",
+            name: "Light Armour",
             sell: 50,
             buy: Some(800),
             ord: Some(28),
@@ -1447,7 +1447,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::ARMADURA_MEDIA as i32,
-            name: "Armadura Média",
+            name: "Medium Armour",
             sell: 70,
             buy: Some(1120),
             ord: Some(29),
@@ -1465,7 +1465,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::ARMADURA_PESADA as i32,
-            name: "Armadura Pesada",
+            name: "Heavy Armour",
             sell: 90,
             buy: Some(1440),
             ord: Some(30),
@@ -1483,7 +1483,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::BRINCO as i32,
-            name: "Brinco",
+            name: "Earring",
             sell: 35,
             buy: Some(560),
             ord: Some(31),
@@ -1501,7 +1501,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::AMULETO as i32,
-            name: "Amuleto",
+            name: "Amulet",
             sell: 35,
             buy: Some(560),
             ord: Some(32),
@@ -1519,7 +1519,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::BRACELETE as i32,
-            name: "Bracelete",
+            name: "Bracelet",
             sell: 35,
             buy: Some(560),
             ord: Some(33),
@@ -1537,7 +1537,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::CINTO as i32,
-            name: "Cinto",
+            name: "Belt",
             sell: 35,
             buy: Some(560),
             ord: Some(34),
@@ -1555,7 +1555,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::WOOD_T1 as i32,
-            name: "Madeira T1",
+            name: "Wood T1",
             sell: 2,
             buy: None,
             ord: None,
@@ -1573,7 +1573,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::WOOD_T2 as i32,
-            name: "Madeira T2",
+            name: "Wood T2",
             sell: 6,
             buy: None,
             ord: None,
@@ -1591,7 +1591,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::WOOD_T3 as i32,
-            name: "Madeira T3",
+            name: "Wood T3",
             sell: 18,
             buy: None,
             ord: None,
@@ -1609,7 +1609,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::WOOD_T4 as i32,
-            name: "Madeira T4",
+            name: "Wood T4",
             sell: 54,
             buy: None,
             ord: None,
@@ -1627,7 +1627,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::LEATHER_T1 as i32,
-            name: "Couro T1",
+            name: "Leather T1",
             sell: 3,
             buy: None,
             ord: None,
@@ -1645,7 +1645,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::LEATHER_T2 as i32,
-            name: "Couro T2",
+            name: "Leather T2",
             sell: 9,
             buy: None,
             ord: None,
@@ -1663,7 +1663,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::LEATHER_T3 as i32,
-            name: "Couro T3",
+            name: "Leather T3",
             sell: 27,
             buy: None,
             ord: None,
@@ -1681,7 +1681,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::LEATHER_T4 as i32,
-            name: "Couro T4",
+            name: "Leather T4",
             sell: 81,
             buy: None,
             ord: None,
@@ -1702,7 +1702,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // existe nas quatro cores, e a cor E' o tier.
         S {
             id: item_id::na_cor(item_id::STEEL, 1) as i32,
-            name: "Aço Cinza",
+            name: "Grey Steel",
             sell: 3,
             buy: None,
             ord: None,
@@ -1720,7 +1720,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::STEEL, 2) as i32,
-            name: "Aço Verde",
+            name: "Green Steel",
             sell: 12,
             buy: None,
             ord: None,
@@ -1738,7 +1738,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::STEEL, 3) as i32,
-            name: "Aço Azul",
+            name: "Blue Steel",
             sell: 48,
             buy: None,
             ord: None,
@@ -1756,7 +1756,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::STEEL, 4) as i32,
-            name: "Aço Roxa",
+            name: "Purple Steel",
             sell: 192,
             buy: None,
             ord: None,
@@ -1774,7 +1774,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::DARK_HEART_STONE, 1) as i32,
-            name: "Pedra do Coração Negro Cinza",
+            name: "Grey Blackheart Stone",
             sell: 5,
             buy: None,
             ord: None,
@@ -1792,7 +1792,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::DARK_HEART_STONE, 2) as i32,
-            name: "Pedra do Coração Negro Verde",
+            name: "Green Blackheart Stone",
             sell: 20,
             buy: None,
             ord: None,
@@ -1810,7 +1810,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::DARK_HEART_STONE, 3) as i32,
-            name: "Pedra do Coração Negro Azul",
+            name: "Blue Blackheart Stone",
             sell: 80,
             buy: None,
             ord: None,
@@ -1828,7 +1828,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::DARK_HEART_STONE, 4) as i32,
-            name: "Pedra do Coração Negro Roxa",
+            name: "Purple Blackheart Stone",
             sell: 320,
             buy: None,
             ord: None,
@@ -1846,7 +1846,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 1) as i32,
-            name: "Pedra Sombra-da-Lua Cinza",
+            name: "Grey Moonshadow Stone",
             sell: 5,
             buy: None,
             ord: None,
@@ -1864,7 +1864,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 2) as i32,
-            name: "Pedra Sombra-da-Lua Verde",
+            name: "Green Moonshadow Stone",
             sell: 20,
             buy: None,
             ord: None,
@@ -1882,7 +1882,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 3) as i32,
-            name: "Pedra Sombra-da-Lua Azul",
+            name: "Blue Moonshadow Stone",
             sell: 80,
             buy: None,
             ord: None,
@@ -1900,7 +1900,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::MOON_SHADOW_STONE, 4) as i32,
-            name: "Pedra Sombra-da-Lua Roxa",
+            name: "Purple Moonshadow Stone",
             sell: 320,
             buy: None,
             ord: None,
@@ -1918,7 +1918,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::QUINTESSENCE, 1) as i32,
-            name: "Quintessência Cinza",
+            name: "Grey Quintessence",
             sell: 5,
             buy: None,
             ord: None,
@@ -1936,7 +1936,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::QUINTESSENCE, 2) as i32,
-            name: "Quintessência Verde",
+            name: "Green Quintessence",
             sell: 20,
             buy: None,
             ord: None,
@@ -1954,7 +1954,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::QUINTESSENCE, 3) as i32,
-            name: "Quintessência Azul",
+            name: "Blue Quintessence",
             sell: 80,
             buy: None,
             ord: None,
@@ -1972,7 +1972,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::QUINTESSENCE, 4) as i32,
-            name: "Quintessência Roxa",
+            name: "Purple Quintessence",
             sell: 320,
             buy: None,
             ord: None,
@@ -1990,7 +1990,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 1) as i32,
-            name: "Berloque de Exorcismo Cinza",
+            name: "Grey Exorcism Charm",
             sell: 5,
             buy: None,
             ord: None,
@@ -2008,7 +2008,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 2) as i32,
-            name: "Berloque de Exorcismo Verde",
+            name: "Green Exorcism Charm",
             sell: 20,
             buy: None,
             ord: None,
@@ -2026,7 +2026,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 3) as i32,
-            name: "Berloque de Exorcismo Azul",
+            name: "Blue Exorcism Charm",
             sell: 80,
             buy: None,
             ord: None,
@@ -2044,7 +2044,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::EXORCISM_BAUBLE, 4) as i32,
-            name: "Berloque de Exorcismo Roxa",
+            name: "Purple Exorcism Charm",
             sell: 320,
             buy: None,
             ord: None,
@@ -2062,7 +2062,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::PLATINUM, 1) as i32,
-            name: "Platina Cinza",
+            name: "Grey Platinum",
             sell: 3,
             buy: None,
             ord: None,
@@ -2080,7 +2080,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::PLATINUM, 2) as i32,
-            name: "Platina Verde",
+            name: "Green Platinum",
             sell: 12,
             buy: None,
             ord: None,
@@ -2098,7 +2098,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::PLATINUM, 3) as i32,
-            name: "Platina Azul",
+            name: "Blue Platinum",
             sell: 48,
             buy: None,
             ord: None,
@@ -2116,7 +2116,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::PLATINUM, 4) as i32,
-            name: "Platina Roxa",
+            name: "Purple Platinum",
             sell: 192,
             buy: None,
             ord: None,
@@ -2134,7 +2134,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 1) as i32,
-            name: "Fragmento Iluminante Cinza",
+            name: "Grey Illuminating Shard",
             sell: 5,
             buy: None,
             ord: None,
@@ -2152,7 +2152,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 2) as i32,
-            name: "Fragmento Iluminante Verde",
+            name: "Green Illuminating Shard",
             sell: 20,
             buy: None,
             ord: None,
@@ -2170,7 +2170,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 3) as i32,
-            name: "Fragmento Iluminante Azul",
+            name: "Blue Illuminating Shard",
             sell: 80,
             buy: None,
             ord: None,
@@ -2188,7 +2188,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ILLUMINATING_FRAGMENT, 4) as i32,
-            name: "Fragmento Iluminante Roxa",
+            name: "Purple Illuminating Shard",
             sell: 320,
             buy: None,
             ord: None,
@@ -2206,7 +2206,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ANIMA_STONE, 1) as i32,
-            name: "Pedra de Ânima Cinza",
+            name: "Grey Anima Stone",
             sell: 5,
             buy: None,
             ord: None,
@@ -2224,7 +2224,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ANIMA_STONE, 2) as i32,
-            name: "Pedra de Ânima Verde",
+            name: "Green Anima Stone",
             sell: 20,
             buy: None,
             ord: None,
@@ -2242,7 +2242,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ANIMA_STONE, 3) as i32,
-            name: "Pedra de Ânima Azul",
+            name: "Blue Anima Stone",
             sell: 80,
             buy: None,
             ord: None,
@@ -2260,7 +2260,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::ANIMA_STONE, 4) as i32,
-            name: "Pedra de Ânima Roxa",
+            name: "Purple Anima Stone",
             sell: 320,
             buy: None,
             ord: None,
@@ -2278,7 +2278,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::SCALE, 1) as i32,
-            name: "Escama Cinza",
+            name: "Grey Scale",
             sell: 40,
             buy: None,
             ord: None,
@@ -2296,7 +2296,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::SCALE, 2) as i32,
-            name: "Escama Verde",
+            name: "Green Scale",
             sell: 160,
             buy: None,
             ord: None,
@@ -2314,7 +2314,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::SCALE, 3) as i32,
-            name: "Escama Azul",
+            name: "Blue Scale",
             sell: 640,
             buy: None,
             ord: None,
@@ -2332,7 +2332,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::SCALE, 4) as i32,
-            name: "Escama Roxa",
+            name: "Purple Scale",
             sell: 2560,
             buy: None,
             ord: None,
@@ -2350,7 +2350,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::CLAW, 1) as i32,
-            name: "Garra Cinza",
+            name: "Grey Claw",
             sell: 40,
             buy: None,
             ord: None,
@@ -2368,7 +2368,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::CLAW, 2) as i32,
-            name: "Garra Verde",
+            name: "Green Claw",
             sell: 160,
             buy: None,
             ord: None,
@@ -2386,7 +2386,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::CLAW, 3) as i32,
-            name: "Garra Azul",
+            name: "Blue Claw",
             sell: 640,
             buy: None,
             ord: None,
@@ -2404,7 +2404,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::CLAW, 4) as i32,
-            name: "Garra Roxa",
+            name: "Purple Claw",
             sell: 2560,
             buy: None,
             ord: None,
@@ -2422,7 +2422,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::HORN, 1) as i32,
-            name: "Chifre Cinza",
+            name: "Grey Horn",
             sell: 40,
             buy: None,
             ord: None,
@@ -2440,7 +2440,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::HORN, 2) as i32,
-            name: "Chifre Verde",
+            name: "Green Horn",
             sell: 160,
             buy: None,
             ord: None,
@@ -2458,7 +2458,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::HORN, 3) as i32,
-            name: "Chifre Azul",
+            name: "Blue Horn",
             sell: 640,
             buy: None,
             ord: None,
@@ -2476,7 +2476,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::na_cor(item_id::HORN, 4) as i32,
-            name: "Chifre Roxa",
+            name: "Purple Horn",
             sell: 2560,
             buy: None,
             ord: None,
@@ -2494,7 +2494,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::COPPER as i32,
-            name: "Cobre",
+            name: "Copper",
             sell: 1,
             buy: None,
             ord: None,
@@ -2530,7 +2530,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::GLITTERING_POWDER as i32,
-            name: "Pó Cintilante",
+            name: "Shimmering Dust",
             sell: 60,
             buy: None,
             ord: None,
@@ -2549,7 +2549,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Dungeons: Marcas (conclusao) e Selo (entrada do topo). Vinculados.
         S {
             id: item_id::MARCAS_TEMPESTADE as i32,
-            name: "Marcas da Tempestade",
+            name: "Storm Marks",
             sell: 1,
             buy: None,
             ord: None,
@@ -2567,7 +2567,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::SELO_TEMPESTADE as i32,
-            name: "Selo da Tempestade",
+            name: "Storm Seal",
             sell: 1,
             buy: None,
             ord: None,
@@ -2589,7 +2589,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // meia hora fora.
         S {
             id: item_id::PASSE_MAGICO as i32,
-            name: "Passe da Ilha Mágica",
+            name: "Magic Island Pass",
             sell: 500,
             buy: None,
             ord: None,
@@ -2607,7 +2607,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::MOEDA_MAGICA as i32,
-            name: "Moeda Mágica",
+            name: "Magic Coin",
             sell: 0,
             buy: None,
             ord: None,
@@ -2626,7 +2626,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // Pergaminho de Teleporte: Alquimista, em cobre (`shared::viagem`).
         S {
             id: item_id::PERGAMINHO_TELEPORTE as i32,
-            name: "Pergaminho de Teleporte",
+            name: "Teleport Scroll",
             sell: 25,
             buy: None,
             ord: None,
@@ -2644,7 +2644,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::PERGAMINHO_INVOCA_CHAVE as i32,
-            name: "Pergaminho de Invocação: Chaves",
+            name: "Summoning Scroll: Keys",
             sell: 1,
             buy: None,
             ord: None,
@@ -2662,7 +2662,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::PERGAMINHO_INVOCA_MONTARIA as i32,
-            name: "Pergaminho de Invocação: Montaria",
+            name: "Summoning Scroll: Mount",
             sell: 1,
             buy: None,
             ord: None,
@@ -2680,7 +2680,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::PERGAMINHO_INVOCA_PET as i32,
-            name: "Pergaminho de Invocação: Pet",
+            name: "Summoning Scroll: Pet",
             sell: 1,
             buy: None,
             ord: None,
@@ -2698,7 +2698,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::PERGAMINHO_INVOCA_TOMO as i32,
-            name: "Pergaminho de Invocação: Tomos",
+            name: "Summoning Scroll: Tomes",
             sell: 1,
             buy: None,
             ord: None,
@@ -2718,7 +2718,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // a 1%. Abrem as 15 receitas Lendarias (`shared::receitas`, ids 1400+).
         S {
             id: item_id::SCALE_LENDARIA as i32,
-            name: "Escama Lendária",
+            name: "Legendary Scale",
             sell: 10240,
             buy: None,
             ord: None,
@@ -2736,7 +2736,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::CLAW_LENDARIA as i32,
-            name: "Garra Lendária",
+            name: "Legendary Claw",
             sell: 10240,
             buy: None,
             ord: None,
@@ -2754,7 +2754,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::HORN_LENDARIA as i32,
-            name: "Chifre Lendário",
+            name: "Legendary Horn",
             sell: 10240,
             buy: None,
             ord: None,
@@ -2772,7 +2772,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::HIDE_LENDARIA as i32,
-            name: "Couro Lendário",
+            name: "Legendary Leather",
             sell: 10240,
             buy: None,
             ord: None,
@@ -2793,7 +2793,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         // pra NÃO virar Items/r###_c## no backfill de icon_path).
         S {
             id: item_id::FISH_ANCHOVY as i32,
-            name: "Anchova",
+            name: "Anchovy",
             sell: 8,
             buy: None,
             ord: None,
@@ -2811,7 +2811,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::FISH_CLOWNFISH as i32,
-            name: "Peixe-palhaço",
+            name: "Clownfish",
             sell: 18,
             buy: None,
             ord: None,
@@ -2829,7 +2829,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::FISH_SURGEONFISH as i32,
-            name: "Peixe-cirurgião",
+            name: "Surgeonfish",
             sell: 35,
             buy: None,
             ord: None,
@@ -2847,7 +2847,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         S {
             id: item_id::FISH_PUFFERFISH as i32,
-            name: "Baiacu",
+            name: "Pufferfish",
             sell: 60,
             buy: None,
             ord: None,
@@ -2972,17 +2972,17 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         let mut consumiveis: Vec<(i32, String, i32)> = vec![
             (
                 item_id::RACAO_DE_PET as i32,
-                "Ração de Pet".to_string(),
+                "Pet Feed".to_string(),
                 50,
             ),
             (
                 item_id::REMOVEDOR_DE_SKILL_PET as i32,
-                "Removedor de Skill de Pet".to_string(),
+                "Pet Skill Remover".to_string(),
                 200,
             ),
             (
                 item_id::PEDRA_DE_AFINIDADE as i32,
-                "Pedra de Afinidade".to_string(),
+                "Affinity Stone".to_string(),
                 250,
             ),
         ];
@@ -3280,14 +3280,14 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
     for (kind, velho, novo) in [
-        (0, "Grunt", "Lobo"),
-        (1, "Tank", "Urso"),
-        (2, "Ranger", "Pistoleiro"),
-        (3, "Ninja", "Tigre"),
-        (4, "Mago", "Mago"),
+        (0, "Grunt", "Wolf"),
+        (1, "Tank", "Bear"),
+        (2, "Ranger", "Gunman"),
+        (3, "Ninja", "Tiger"),
+        (4, "Mage", "Mage"),
         (5, "Berserker", "Owlbear"),
-        (6, "Arqueiro", "Arqueiro"),
-        (7, "Boss", "Lobo Grande"),
+        (6, "Archer", "Archer"),
+        (7, "Boss", "Great Wolf"),
     ] {
         sqlx::query(
             "UPDATE enemy_kinds SET name = $3, tint_r = 1, tint_g = 1, tint_b = 1, tint_a = 1, \

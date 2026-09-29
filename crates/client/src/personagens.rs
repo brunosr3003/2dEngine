@@ -71,10 +71,10 @@ pub struct Personagens {
 pub fn valida_nome(nome: &str) -> Result<&str, &'static str> {
     let nome = nome.trim();
     if !(2..=24).contains(&nome.len()) {
-        return Err("Use de 2 a 24 caracteres.");
+        return Err("Use 2 to 24 characters.");
     }
     if !nome.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err("Use letras sem acento, números ou _.");
+        return Err("Use unaccented letters, numbers or _.");
     }
     Ok(nome)
 }
@@ -119,9 +119,9 @@ impl Personagens {
         self.aguardando = None;
         self.criando = true;
         self.mensagem = Some(match motivo.as_str() {
-            "nome ja em uso" => "Esse nome já está em uso. Escolha outro.".into(),
-            "nome 2-24 chars" => "Use um nome de 2 a 24 caracteres.".into(),
-            "nome so letras/numeros/_" => "Use letras sem acento, números ou _.".into(),
+            "name already taken" => "That name is already taken. Choose another.".into(),
+            "name 2-24 chars" => "Use a name of 2 to 24 characters.".into(),
+            "name: letters/numbers/_ only" => "Use unaccented letters, numbers or _.".into(),
             _ => motivo,
         });
     }
@@ -131,7 +131,7 @@ impl Personagens {
         let arma = self
             .arma
             .filter(|&id| conjunto_disponivel(id, armas))
-            .ok_or("Escolha uma arma disponível.")?;
+            .ok_or("Choose an available weapon.")?;
         Ok(ClientMessage::CreateCharacter {
             name: nome.into(),
             aparencia: self.aparencia,
@@ -175,9 +175,9 @@ impl Personagens {
             draw_circle(x, y, 1.0, Color::new(0.85, 0.73, 0.47, 0.18));
         }
         let titulo = if self.criando {
-            "Crie sua história"
+            "Write your own story"
         } else {
-            "Escolha seu personagem"
+            "Choose your character"
         };
         let seguro = crate::nativo::area_segura();
         let compacto = self.criando && h < ALTURA_COMPACTA;
@@ -190,9 +190,9 @@ impl Personagens {
                 32.0,
                 103.0,
                 if self.criando {
-                    "Uma arma. Um novo começo."
+                    "One weapon. One fresh start."
                 } else {
-                    "Seu próximo capítulo está esperando."
+                    "Your next chapter is waiting."
                 },
                 15,
                 ui::SUAVE,
@@ -206,7 +206,7 @@ impl Personagens {
         };
         if botao(
             voltar,
-            if self.criando { "Cancelar" } else { "Voltar" },
+            if self.criando { "Cancel" } else { "Back" },
             !ocupado,
             false,
         ) || (!ocupado && is_key_pressed(KeyCode::Escape))
@@ -224,7 +224,7 @@ impl Personagens {
             .as_ref()
             .is_some_and(|(_, t)| get_time() - t > 15.0)
         {
-            self.mensagem = Some("Aguardando confirmação do servidor…".into());
+            self.mensagem = Some("Waiting for confirmation from the server…".into());
         }
         if self.criando {
             self.desenha_criacao(armas, digitado, vox, solido)
@@ -260,7 +260,7 @@ impl Personagens {
             ui::texto_centro(
                 cx,
                 l.retrato.y + l.retrato.h - 6.0,
-                "Arraste o personagem para girar",
+                "Drag the character to rotate",
                 13,
                 ui::SUAVE,
             );
@@ -279,9 +279,9 @@ impl Personagens {
                 campo.h + 40.0,
                 Color::new(0.012, 0.018, 0.030, 0.94),
             );
-            ui::texto(campo.x, campo.y - 10.0, "NOME DO PERSONAGEM", 12, ui::OURO);
+            ui::texto(campo.x, campo.y - 10.0, "CHARACTER NAME", 12, ui::OURO);
         } else if !l.compacto {
-            ui::texto(campo.x, campo.y - 8.0, "NOME", 12, ui::OURO);
+            ui::texto(campo.x, campo.y - 8.0, "NAME", 12, ui::OURO);
         }
         if !ocupado {
             if let Some(p) = apertou_em() {
@@ -319,7 +319,7 @@ impl Personagens {
             ui::texto_centro(
                 campo.x + campo.w * 0.5,
                 meio,
-                "Toque para escolher o nome",
+                "Tap to choose the name",
                 16,
                 ui::SUAVE,
             );
@@ -348,7 +348,7 @@ impl Personagens {
                 None
             })
             .or(if self.foco_nome {
-                Some("2 a 24 caracteres · letras, números e _")
+                Some("2 to 24 characters · letters, numbers and _")
             } else {
                 None
             });
@@ -376,11 +376,11 @@ impl Personagens {
 
         let pode = !ocupado && self.pedido_criacao(armas).is_ok();
         let rotulo = if ocupado {
-            "Criando personagem…"
+            "Creating the character…"
         } else if self.nome.trim().is_empty() {
-            "Escolha um nome"
+            "Choose a name"
         } else {
-            "Criar personagem"
+            "Create character"
         };
         if dy == 0.0 {
             if botao(l.botao, rotulo, pode, true) {
@@ -405,7 +405,7 @@ impl Personagens {
         let lw = painel.w - 28.0;
         let card_h = l.card_h;
         // ── as duas abas ──
-        for (i, nome) in ["Arma & Facção", "Aparência"].iter().enumerate() {
+        for (i, nome) in ["Weapon & Faction", "Appearance"].iter().enumerate() {
             let r = Rect::new(
                 x + i as f32 * (lw + 8.0) * 0.5,
                 painel.y + 8.0,
@@ -420,7 +420,7 @@ impl Personagens {
             self.desenha_aparencia(x, painel.y + l.aba_h + 22.0, lw, l.faccao_h, ocupado);
             return None;
         }
-        ui::texto(x, painel.y + l.aba_h + 30.0, "ARMA INICIAL", 13, ui::OURO);
+        ui::texto(x, painel.y + l.aba_h + 30.0, "STARTING WEAPON", 13, ui::OURO);
         for (i, c) in Conjunto::TODOS.iter().enumerate() {
             let r = Rect::new(
                 x + (i % 2) as f32 * (lw + 8.0) * 0.5,
@@ -476,7 +476,7 @@ impl Personagens {
             );
             ui::texto_ajustado(
                 if !disponivel {
-                    "Indisponível"
+                    "Unavailable"
                 } else {
                     estilo(*c).0
                 },
@@ -493,7 +493,7 @@ impl Personagens {
             }
         }
         let fy = painel.y + l.aba_h + 40.0 + 2.0 * (card_h + 6.0) + 14.0;
-        ui::texto(x, fy, "FACÇÃO", 13, ui::OURO);
+        ui::texto(x, fy, "FACTION", 13, ui::OURO);
         for (i, (f, n)) in [
             (Faction::Peacemain, "Peacemain"),
             (Faction::Morganeers, "Morganeers"),
@@ -516,9 +516,9 @@ impl Personagens {
             x,
             y,
             if self.faccao == Faction::Peacemain {
-                "Aventureiros e exploradores."
+                "Adventurers and explorers."
             } else {
-                "Piratas em busca de saques."
+                "Pirates after plunder."
             },
             13,
             ui::SUAVE,
@@ -571,7 +571,7 @@ impl Personagens {
         ui::texto(
             r.x + 18.0,
             r.y + 28.0,
-            &format!("SEUS PERSONAGENS  ·  {}", chars.len()),
+            &format!("YOUR CHARACTERS  ·  {}", chars.len()),
             13,
             ui::OURO,
         );
@@ -686,14 +686,14 @@ impl Personagens {
             ui::texto(
                 r.x + 18.0,
                 r.y + r.h - 62.0,
-                "Arraste para ver mais personagens",
+                "Drag to see more characters",
                 12,
                 ui::SUAVE,
             );
         }
         if botao(
             Rect::new(r.x + 12.0, r.y + r.h - 50.0, r.w - 24.0, 38.0),
-            "+  Novo personagem",
+            "+  New character",
             true,
             false,
         ) {
@@ -712,7 +712,7 @@ impl Personagens {
             ui::texto_centro(
                 cx,
                 hero.y + hero.h - 29.0,
-                &format!("Nível {}  ·  {}", c.level, conjunto.nome()),
+                &format!("Level {}  ·  {}", c.level, conjunto.nome()),
                 16,
                 ui::OURO,
             );
@@ -725,7 +725,7 @@ impl Personagens {
             );
             if botao(
                 Rect::new(hero.x, h - 66.0, hero.w, 42.0),
-                "Entrar no mundo",
+                "Enter the world",
                 true,
                 true,
             ) || is_key_pressed(KeyCode::Enter)
@@ -778,7 +778,7 @@ impl Personagens {
         };
         set_camera(&cam);
         gl_use_material(solido);
-        solido.set_uniform("Recorte", Vec3::ZERO);
+        solido.set_uniform("Crop", Vec3::ZERO);
         solido.set_uniform("RecorteZ", 0.0f32);
         f.terreno.desenha(&cam, Vec3::ZERO, 0.0);
         f.casas.desenha(&cam, None, Vec3::ZERO, 0.0);
@@ -842,7 +842,7 @@ impl Personagens {
             ui::texto_centro(
                 area.x + area.w * 0.5,
                 area.y + area.h * 0.5,
-                "Modelo do personagem indisponível",
+                "Character model unavailable",
                 14,
                 ui::SUAVE,
             );
@@ -875,7 +875,7 @@ impl Personagens {
             ui::texto_centro(
                 area.x + area.w * 0.5,
                 area.y + area.h * 0.5,
-                "Prévia sem espaço na tela",
+                "No room for the preview",
                 13,
                 ui::SUAVE,
             );
@@ -915,7 +915,7 @@ impl Personagens {
             );
         }
         gl_use_material(solido);
-        solido.set_uniform("Recorte", Vec3::ZERO);
+        solido.set_uniform("Crop", Vec3::ZERO);
         let entrada = crate::rig::Entrada {
             fase: 0.0,
             andar: 0.0,
@@ -951,19 +951,19 @@ fn nome_faccao(f: Faction) -> &'static str {
 fn estilo(c: Conjunto) -> (&'static str, &'static str) {
     match c {
         Conjunto::EspadaEscudo => (
-            "Defesa e pressão",
+            "Defence and pressure",
             "Lute na linha de frente com investidas, cortes amplos e uma barreira protetora.",
         ),
         Conjunto::Katana => (
-            "Abre e fecha a luta",
+            "Opens and closes the fight",
             "Empunhe com as duas mãos: o saque contra quem ainda não te viu dá 2,5x de dano, e o golpe em alvo abaixo de 30% de vida dá 1,6x. Em troca, o dano contínuo é menor que o das pistolas, e a vida só volta na janela da Dança.",
         ),
         Conjunto::Pistolas => (
-            "Combate à distância",
+            "Ranged combat",
             "Mantenha distância com tiros precisos, rajadas e um barril explosivo.",
         ),
         Conjunto::AnelMagico => (
-            "Magia e suporte",
+            "Magic and support",
             "Restaure sua vida, cure aliados próximos e invoque um impacto mágico sobre o alvo.",
         ),
     }
@@ -973,7 +973,7 @@ fn estilo(c: Conjunto) -> (&'static str, &'static str) {
 /// No iPhone o "mouse" e' simulado a partir do toque, e no quadro em que o dedo
 /// encosta ele ainda aponta pro toque ANTERIOR. Testar o clique contra ele
 /// errava o alvo: o toque no campo de nome nao dava foco, o nome ficava vazio,
-/// e com nome vazio o "Criar personagem" ficava desabilitado pra sempre — o
+/// e com nome vazio o "Create character" ficava desabilitado pra sempre — o
 /// botao parecia quebrado. E' o mesmo defeito que ja' tinha sido corrigido no
 /// HUD (ver `ui_pega_em` em main.rs), so' que esta tela desenha antes dele e
 /// ficou de fora. Por isso o toque real vem primeiro; sem dedo, o mouse de
@@ -998,10 +998,10 @@ impl Personagens {
     /// Devolve o y em que terminou.
     fn desenha_aparencia(&mut self, x: f32, y: f32, lw: f32, alt: f32, ocupado: bool) -> f32 {
         use shared::aparencia as ap;
-        ui::texto(x, y, "APARÊNCIA", 13, ui::OURO);
+        ui::texto(x, y, "APPEARANCE", 13, ui::OURO);
         let mut y = y + 8.0;
         // (rótulo, quantas opções, índice atual)
-        // Cabelo + "sem cabelo" + os CHAPÉUS, que são grátis e já vêm
+        // Cabelo + "no hair" + os CHAPÉUS, que são grátis e já vêm
         // destravados — não há por que escondê-los de quem está criando.
         let cabelos = ap::CABELOS + 1 + ap::CHAPEUS.len() as u8;
         // Roupa: o padrão mais as grátis. As pagas ficam pra loja.
@@ -1012,15 +1012,15 @@ impl Personagens {
             0
         };
         let linhas: [(&str, u8, u8); 5] = [
-            ("Rosto", ap::ROSTOS, self.aparencia.rosto),
-            ("Cabelo", cabelos, self.aparencia.cabelo),
+            ("Face", ap::ROSTOS, self.aparencia.rosto),
+            ("Hair", cabelos, self.aparencia.cabelo),
             (
                 "Cor",
                 ap::CORES_DE_CABELO.len() as u8,
                 self.aparencia.cor_cabelo,
             ),
-            ("Pele", ap::TONS_DE_PELE.len() as u8, self.aparencia.pele),
-            ("Roupa", roupas, atual_roupa),
+            ("Skin tone", ap::TONS_DE_PELE.len() as u8, self.aparencia.pele),
+            ("Outfit", roupas, atual_roupa),
         ];
         // A mesma constante que dimensiona o painel (`altura_da_aparencia`).
         debug_assert_eq!(linhas.len() as f32, LINHAS_DE_APARENCIA);
@@ -1041,16 +1041,16 @@ impl Personagens {
                 v = (v + 1) % n;
             }
             let nome = match i {
-                1 if *atual == ap::CABELOS => "sem cabelo".to_string(),
+                1 if *atual == ap::CABELOS => "no hair".to_string(),
                 1 if *atual > ap::CABELOS => ap::chapeu_do_cabelo(*atual)
                     .and_then(ap::nome_da_skin)
-                    .unwrap_or("sem cabelo")
+                    .unwrap_or("no hair")
                     .to_string(),
                 2 => ap::CORES_DE_CABELO[(*atual as usize).min(5)].to_string(),
                 3 => ap::TONS_DE_PELE[(*atual as usize).min(3)].to_string(),
-                4 if *atual == 0 => "padrão".to_string(),
+                4 if *atual == 0 => "default".to_string(),
                 4 => ap::nome_da_skin(ap::ROUPA_BASE + *atual as u16 - 1)
-                    .unwrap_or("padrão")
+                    .unwrap_or("default")
                     .to_string(),
                 _ => format!("{} {}", rotulo, atual + 1),
             };
@@ -1129,7 +1129,7 @@ const ALTURA_COMPACTA: f32 = 560.0;
 
 /// Onde cada parte da criacao fica. Separado do desenho pra ser testado nos
 /// tamanhos de tela de verdade: no iPhone deitado o campo de nome caia em
-/// y=450 numa tela de 390 — fora dela — e sem nome o "Criar personagem" nunca
+/// y=450 numa tela de 390 — fora dela — e sem nome o "Create character" nunca
 /// acendia.
 /// Quantos seletores o bloco de APARENCIA tem (rosto, cabelo, cor, pele,
 /// roupa). Mora aqui porque DOIS lugares precisam concordar: quem desenha e
@@ -1556,7 +1556,7 @@ mod tests {
         assert_eq!(sel, 1);
         assert!(!p.criando);
         assert!(p.aguardando.is_none());
-        p.falhou("nome ja em uso".into());
+        p.falhou("name already taken".into());
         assert_eq!(p.nome, "Novo");
         assert_eq!(p.arma, Some(armas[0]));
         assert!(p.criando);

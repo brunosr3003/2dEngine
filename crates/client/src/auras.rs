@@ -209,12 +209,12 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         vista.cam.render_target = Some(rt.clone());
         set_camera(&vista.cam); clear_background(Color::from_rgba(15,20,29,255));
         draw_plane(Vec3::ZERO,vec2(20.0,20.0),None,Color::from_rgba(27,35,42,255));
-        gl_use_material(&solido); solido.set_uniform("Recorte",Vec3::ZERO);
+        gl_use_material(&solido); solido.set_uniform("Crop",Vec3::ZERO);
         crate::render3d::draw_entities(&mut world,vox,None,&vista);
         gl_use_default_material();
         let mut hud = Camera2D::from_display_rect(Rect::new(0.0,0.0,1280.0,800.0));
         hud.render_target = Some(rt.clone()); set_camera(&hud);
-        draw_text("AURAS POR EQUIPAMENTO",30.0,42.0,30.0,WHITE);
+        draw_text("AURAS BY GEAR",30.0,42.0,30.0,WHITE);
         draw_text("Mesma cor e refino: T4           T3           T2           T1",30.0,76.0,22.0,WHITE);
         if frame == 89 {
             unsafe { get_internal_gl().flush(); }
@@ -256,10 +256,10 @@ pub async fn previa_animais(vox: &crate::vox::VoxCache) {
             vista.cam.render_target=Some(rt.clone());
             set_camera(&vista.cam); clear_background(Color::from_rgba(15,20,29,255));
             draw_plane(Vec3::ZERO,vec2(24.,24.),None,Color::from_rgba(27,35,42,255));
-            gl_use_material(&solido);solido.set_uniform("Recorte",Vec3::ZERO);
+            gl_use_material(&solido);solido.set_uniform("Crop",Vec3::ZERO);
             crate::render3d::draw_entities(&mut world,vox,None,&vista);gl_use_default_material();
             let mut hud=Camera2D::from_display_rect(Rect::new(0.,0.,1280.,800.));hud.render_target=Some(rt.clone());set_camera(&hud);
-            draw_text(if montaria {"AURAS DE MONTARIAS"} else {"AURAS DE PETS"},30.,45.,30.,WHITE);
+            draw_text(if montaria {"MOUNT AURAS"} else {"PET AURAS"},30.,45.,30.,WHITE);
             draw_text("Verde T1 +12 / Azul T2 +12 / Roxo T3 +12 / Laranja T4 +12",30.,77.,22.,WHITE);
             if frame==59 {unsafe{get_internal_gl().flush();}rt.texture.get_texture_data().export_png(if montaria {"/tmp/tempest-montarias-auras.png"}else{"/tmp/tempest-pets-auras.png"});}
             next_frame().await;

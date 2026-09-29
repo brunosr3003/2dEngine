@@ -37,7 +37,7 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
         anexos,
     } = pedido
     else {
-        bail!("Pedido inválido.");
+        bail!("Invalid order.");
     };
     if envio.len() < 8
         || envio.len() > 100
@@ -93,7 +93,7 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
                 .await?;
         match nomes.as_slice() {
             [n] => Some(n.clone()),
-            _ => bail!("Personagem não encontrado ou nome ambíguo."),
+            _ => bail!("Character not found, or the name is ambiguous."),
         }
     } else {
         None

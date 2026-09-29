@@ -9,7 +9,7 @@
 //!
 //! - o **nome de usuario**, sempre, pra o campo ja' vir preenchido;
 //! - a **sessao** (o mesmo token de `login_tokens` que o login com Google
-//!   usa), so' se o jogador marcar "lembrar de mim";
+//!   usa), so' se o jogador marcar "remember me";
 //! - a **senha**, NUNCA. Guardar senha em claro no aparelho e' trocar a
 //!   comodidade de um por um risco que o jogador nao escolheu. O token faz o
 //!   mesmo servico, vence sozinho e da' pra revogar no banco sem trocar a
@@ -27,7 +27,7 @@ pub struct Prefs {
     pub usuario: String,
     /// A sessao guardada, se o jogador pediu pra ser lembrado.
     pub sessao: Option<String>,
-    /// O estado da caixinha "lembrar de mim".
+    /// O estado da caixinha "remember me".
     pub lembrar: bool,
     /// O idioma da interface.
     ///
@@ -141,7 +141,7 @@ fn codifica(v: &Prefs) -> String {
 
 /// Parte na PRIMEIRA igualdade, e nao em todas: o token e' base64 e pode ter
 /// `=` de enchimento. Partir em todas devolveria um token cortado, que e'
-/// pior que nenhum — o jogador veria "sessao invalida" sem entender.
+/// pior que nenhum — o jogador veria "invalid session" sem entender.
 fn decodifica(texto: &str) -> Prefs {
     let mut v = Prefs::default();
     for linha in texto.lines() {

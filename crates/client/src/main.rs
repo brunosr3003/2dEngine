@@ -181,7 +181,7 @@ struct Jogo {
     usuario: String,
     senha: String,
     foco_senha: bool,
-    /// A caixinha "lembrar de mim" da tela de login.
+    /// A caixinha "remember me" da tela de login.
     lembrar: bool,
     /// Já houve um login bem-sucedido nesta execução. É o que separa o
     /// primeiro login da reconexão por troca de zona.
@@ -206,7 +206,7 @@ struct Jogo {
     /// Algum campo de login foi tocado: o teclado da tela fica aberto.
     campo_login_ativo: bool,
     teclado_virtual: teclado_virtual::TecladoVirtual,
-    /// "Entrar com Google" (docs/LOGIN_GOOGLE.md).
+    /// "Sign in with Google" (docs/LOGIN_GOOGLE.md).
     google: login_google::LoginGoogle,
     /// Sessao do login com Google: vai no lugar da senha em toda conexao
     /// (inclusive na troca de zona), ate' sair.
@@ -305,7 +305,7 @@ struct Jogo {
     telegrafos: telegrafico::Telegrafos,
     /// Tremor de camera do impacto de chefe: (forca, ate quando).
     tremor: (f32, f64),
-    /// Tela de morte e "Recuperar XP".
+    /// Tela de morte e "Recover XP".
     morte: morte::Morte,
     /// Indo sozinho ha' 1,5 s: corre. `correndo_auto` e' o resultado do quadro.
     corrida: corrida::Corrida,
@@ -317,7 +317,7 @@ struct Jogo {
     mapa: mapa::Mapa,
     /// Casas, props e cais da vila, assados numa thread quando a zona muda.
     construcoes: construcoes::Construcoes,
-    /// "Ir para" do mapa (zona de bicho, regiao de recurso) e do menu de
+    /// "Go to" do mapa (zona de bicho, regiao de recurso) e do menu de
     /// missoes (ir ao Mestre).
     ir_para: ir_para::IrPara,
     /// Menu de todas as missoes (rodape do rastreador ou Menu).
@@ -416,7 +416,7 @@ struct Jogo {
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
     presenca: presenca_ui::PresencaUi,
-    /// Menu "Viajar" do Capitao do Porto.
+    /// Menu "Travel" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
     colonia: colonia_ui::ColoniaUi,
     magica: magica_ui::MagicaUi,
@@ -977,7 +977,7 @@ fn alvo_da_trava(painel_aberto: bool) -> &'static [u16] {
     }
 }
 
-/// Onde cada peça da tela de "esqueci minha senha" fica.
+/// Onde cada peça da tela de "I forgot my password" fica.
 ///
 /// Ordem: e-mail, enviar, voltar.
 fn layout_do_esqueci(r: Rect) -> [Rect; 3] {
@@ -1007,7 +1007,7 @@ fn layout_do_cadastro(r: Rect) -> [Rect; 6] {
 /// Ordem: usuário, senha, lembrar, entrar, "ou", google.
 ///
 /// Extraída porque as posições eram números soltos no meio do desenho, e
-/// acrescentar UMA linha ("lembrar de mim") empurrou três delas. Sem função
+/// acrescentar UMA linha ("remember me") empurrou três delas. Sem função
 /// não há como conferir que nada encosta em nada a não ser abrindo o jogo — e
 /// deixar de abrir é o que já me fez entregar tela quebrada mais de uma vez
 /// neste projeto.
@@ -1038,7 +1038,7 @@ mod testes_do_login {
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_login(r);
         let nomes = [
-            "usuário", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci",
+            "username", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci",
         ];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
@@ -1077,7 +1077,7 @@ mod testes_do_login {
         );
     }
 
-    /// A tela de "esqueci minha senha" também não se sobrepõe.
+    /// A tela de "I forgot my password" também não se sobrepõe.
     #[test]
     fn a_tela_de_esqueci_nao_se_sobrepoe() {
         const ALTURA: f32 = 300.0;
@@ -1119,7 +1119,7 @@ mod testes_do_login {
         const ALTURA: f32 = 496.0;
         let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
         let pecas = layout_do_cadastro(r);
-        let nomes = ["usuário", "e-mail", "senha", "repetir", "criar", "voltar"];
+        let nomes = ["username", "e-mail", "senha", "repetir", "criar", "voltar"];
         for (i, a) in pecas.iter().enumerate() {
             assert!(
                 a.y >= r.y && a.y + a.h <= r.y + ALTURA,
@@ -1354,7 +1354,7 @@ impl Jogo {
             }
             Ok(Err(e)) => {
                 self.canais.clear();
-                self.chat.push(format!("lista de servidores: {e}"));
+                self.chat.push(format!("server list: {e}"));
                 self.busca = None;
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -1432,7 +1432,7 @@ impl Jogo {
                 NetEvent::Message(msg) => self.on_message(*msg),
             }
             // Preserva o motivo do Kick: o fechamento do socket logo depois
-            // não pode substituir o link de atualização por "server fechou".
+            // não pode substituir o link de atualização por "the server closed the connection".
             if matches!(&self.tela, Tela::Erro(m) if atualizacao::protocolo_incompativel(m)) {
                 self.net = None;
                 break;
@@ -1509,17 +1509,17 @@ impl Jogo {
                 self.tela = Tela::Personagens;
             }
             ServerMessage::LoginDenied { reason } => {
-                // Sessão vencida (Google ou "lembrar de mim"): some do disco e
+                // Sessão vencida (Google ou "remember me"): some do disco e
                 // do jogo, e o jogador entra de novo. Sem apagar do disco, a
                 // próxima abertura tentaria o MESMO token morto e cairia no
                 // mesmo erro pra sempre.
                 if self.token_login.take().is_some() {
                     crate::lembranca::esquece_a_sessao();
                     self.lembrar = false;
-                    self.erro_login = Some("sua sessão expirou — entre de novo".into());
+                    self.erro_login = Some("your session expired — sign in again".into());
                     self.tela = Tela::Login;
                 } else {
-                    self.tela = Tela::Erro(format!("login negado: {reason}"));
+                    self.tela = Tela::Erro(format!("login denied: {reason}"));
                 }
             }
             ServerMessage::SemVisada { alvo } => {
@@ -1537,7 +1537,7 @@ impl Jogo {
                     self.rede.ms * 0.7 + rtt * 0.3
                 };
             }
-            ServerMessage::Kick { reason } => self.tela = Tela::Erro(format!("kick: {reason}")),
+            ServerMessage::Kick { reason } => self.tela = Tela::Erro(format!("kicked: {reason}")),
             ServerMessage::FilaDeEntrada { posicao, total } => {
                 self.tela = Tela::Fila { posicao, total };
             }
@@ -1597,7 +1597,7 @@ impl Jogo {
                 // (banco compartilhado no realm), entao a sessao refaz o
                 // caminho de login sozinha e o jogador so' ve uma tela de
                 // carregamento.
-                self.chat.push(format!("indo pra {zona}"));
+                self.chat.push(format!("heading to {zona}"));
                 self.personagem_atual = self
                     .personagens
                     .get(self.selecionado)
@@ -1826,7 +1826,7 @@ impl Jogo {
             }
             ServerMessage::MercadoResultado { ok, texto } => {
                 // Venda fechada chega com o painel fechado: o chat avisa.
-                self.chat.push(format!("Mercado: {texto}"));
+                self.chat.push(format!("Market: {texto}"));
                 for pedido in self.mercado.resultado(ok, texto, get_time()) {
                     self.envia(pedido);
                 }
@@ -1876,9 +1876,9 @@ impl Jogo {
                 ..
             } => {
                 let txt = if ok {
-                    format!("Criado: {}", self.bolsa.nome(item_id))
+                    format!("Created: {}", self.bolsa.nome(item_id))
                 } else {
-                    format!("Craft recusado: {motivo}")
+                    format!("Craft refused: {motivo}")
                 };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
@@ -1892,13 +1892,13 @@ impl Jogo {
             } => {
                 let txt = if ok {
                     format!(
-                        "Aprimorado: {} agora é {} {}!",
+                        "Upgraded: {} is now {} {}!",
                         self.bolsa.nome(item_id),
                         oficina_ui::nome_da_cor(grau),
                         oficina_ui::romano(tier)
                     )
                 } else {
-                    format!("Não aprimorou: {texto}")
+                    format!("Not upgraded: {texto}")
                 };
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
@@ -2029,7 +2029,7 @@ impl Jogo {
             }
             ServerMessage::ShopClose => self.loja.fecha(),
             ServerMessage::ShopTradeResult { ok, reason } => {
-                self.chat.push(format!("loja: {reason}"));
+                self.chat.push(format!("shop: {reason}"));
                 if ok {
                     self.loja.sucesso(reason);
                 } else {
@@ -2197,7 +2197,7 @@ impl Jogo {
                         let itens = [(def.reward_item, def.reward_item_qty), (def.reward_item2, def.reward_item2_qty)]
                             .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0)
                             .map(|(id, qtd)| (id, qtd as u32)).collect();
-                        self.recompensas.mostrar("MISSÃO CONCLUÍDA".into(), def.title.into(), itens,
+                        self.recompensas.mostrar("QUEST COMPLETE".into(), def.title.into(), itens,
                             def.reward_cobre, def.reward_xp, def.reward_faction_points);
                     }
                     self.quest_entregues.entry(quest_id).or_insert(0);
@@ -2221,9 +2221,9 @@ impl Jogo {
                     sons::tocar(if status == shared::quests::quest_status::TURNED_IN { sons::Som::Recompensa } else if status == shared::quests::quest_status::READY { sons::Som::Pronta } else { sons::Som::Progresso });
                     if let Some(def) = shared::quests::quest_by_id(quest_id) {
                         self.missoes.aviso_progresso = if status == shared::quests::quest_status::TURNED_IN {
-                            format!("Missões concluídas: {} · {}", self.missoes.concluidas, def.title)
+                            format!("Quests completed: {} · {}", self.missoes.concluidas, def.title)
                         } else if status == shared::quests::quest_status::READY {
-                            format!("{} · {}/{} · Pronta!", def.title, def.obj_count, def.obj_count)
+                            format!("{} · {}/{} · Ready!", def.title, def.obj_count, def.obj_count)
                         } else {
                             format!("{} · {}/{}", def.title, progress.min(def.obj_count), def.obj_count)
                         };
@@ -2238,7 +2238,7 @@ impl Jogo {
                 }
             }
             ServerMessage::BossRewards { items } => {
-                self.recompensas.mostrar("CHEFE DERROTADO".into(), "Saque no chão · colete os itens".into(), items, 0, 0, 0);
+                self.recompensas.mostrar("BOSS DEFEATED".into(), "Loot on the ground · pick the items up".into(), items, 0, 0, 0);
             }
             ServerMessage::QuestEstado { entregues, faccao } => {
                 self.quest_entregues = entregues.into_iter().collect();
@@ -2403,12 +2403,12 @@ impl Jogo {
                             self.craft
                                 .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel);
                             self.chat
-                                .push("Missão: crie um equipamento no Craft.".into());
+                                .push("Quest: craft a piece of gear in Craft.".into());
                         } else {
                             self.craft.fechar();
                             self.forja.abrir();
                             self.chat
-                                .push("Missão: tente refinar uma peça na Forja.".into());
+                                .push("Quest: try refining a piece at the Forge.".into());
                         }
                         self.auto_missao_pula(quest_id);
                     }
@@ -2678,7 +2678,7 @@ impl Jogo {
     }
 
     /// Resposta do Mestre (`QuestOffer`): entrega pronta vira dialogo de
-    /// "Receber"; missao nova vira dialogo de "Aceitar" — ou, em auto missao
+    /// "Receive"; missao nova vira dialogo de "Accept" — ou, em auto missao
     /// logo depois de receber, ja' e' aceita e o personagem segue; sem nada a
     /// fazer, a janela de sempre.
     fn ao_receber_oferta(
@@ -2715,7 +2715,7 @@ impl Jogo {
             if self.auto_missao.etapa() == Some(auto_missao::Etapa::AguardandoProxima)
                 && shared::quests::quest_by_id(q.id).is_some_and(menu_missoes::automatizavel) {
                 self.envia(ClientMessage::AcceptQuest { quest_id: q.id });
-                self.chat.push(format!("Nova missão: {}", q.title));
+                self.chat.push(format!("New quest: {}", q.title));
                 self.auto_missao.iniciar(q.id, q.title.clone(), get_time());
             } else {
                 let r = missoes::recompensa(&q, &self.bolsa.nomes);
@@ -2780,7 +2780,7 @@ impl Jogo {
             self.chat.push(if pl > 0 {
                 format!("Fila terminada: {f} feita(s), {pl} pulada(s).")
             } else {
-                format!("Fila terminada: {f} missão(ões).")
+                format!("Queue finished: {f} quest(s).")
             });
         }
         self.fila_feitas = 0;
@@ -2824,7 +2824,7 @@ impl Jogo {
         let sobre = r.contains(Vec2::from(mouse_position()));
         hud_estilo::botao(
             r,
-            "Fechar tutorial",
+            "Close the tutorial",
             hud_estilo::estado(sobre, sobre && is_mouse_button_down(MouseButton::Left), false, false),
             false,
         );
@@ -2928,7 +2928,7 @@ impl Jogo {
                 self.abrir_missao_manual(id);
                 return;
             }
-            self.chat.push(format!("{} exige ação manual.", def.title));
+            self.chat.push(format!("{} needs you to act.", def.title));
             return;
         }
         let Some(nome) = self
@@ -3028,19 +3028,19 @@ impl Jogo {
     fn estado_da_economia(&self) -> (&'static str, Color) {
         let verde = Color::new(0.45, 0.85, 0.52, 1.0);
         if self.net.is_none() {
-            ("SEM CONEXÃO", Color::new(0.92, 0.30, 0.30, 1.0))
+            ("NO CONNECTION", Color::new(0.92, 0.30, 0.30, 1.0))
         } else if self.morte.morto {
-            ("MORTO", Color::new(0.92, 0.30, 0.30, 1.0))
+            ("DEAD", Color::new(0.92, 0.30, 0.30, 1.0))
         } else if self.dialogo.aberto {
-            ("AGUARDANDO VOCÊ", hud_estilo::OURO)
+            ("WAITING FOR YOU", hud_estilo::OURO)
         } else if self.auto_combate.ativo() {
-            ("AUTO COMBATE", verde)
+            ("AUTO COMBAT", verde)
         } else if self.auto_coleta.ativo() {
-            ("AUTO COLETA", verde)
+            ("AUTO GATHER", verde)
         } else if self.auto_missao.etapa().is_some() {
-            ("AUTO MISSÃO", verde)
+            ("AUTO QUEST", verde)
         } else {
-            ("PARADO", Color::new(0.55, 0.56, 0.60, 1.0))
+            ("IDLE", Color::new(0.55, 0.56, 0.60, 1.0))
         }
     }
 
@@ -3183,7 +3183,7 @@ impl Jogo {
                 if pronto {
                     "chao pronto"
                 } else {
-                    "teto de 10 s"
+                    "10 s cap"
                 }
             );
             self.carregando_desde = None;
@@ -3195,7 +3195,7 @@ impl Jogo {
         ui::fundo();
         let (w, h) = (screen_width(), screen_height());
         let c = vec2(w * 0.5, h * 0.5);
-        ui::texto_centro(c.x, c.y - 18.0, "Carregando…", 26, ui::OURO);
+        ui::texto_centro(c.x, c.y - 18.0, "Loading…", 26, ui::OURO);
         let bw = (w * 0.4).clamp(220.0, 420.0);
         let barra = Rect::new(c.x - bw * 0.5, c.y + 6.0, bw, 8.0);
         ui::barra(barra, self.progresso_do_carregando());
@@ -3251,7 +3251,7 @@ impl Jogo {
             .is_some_and(|e| e.state.flags & shared::ent_flags::MONTADO != 0)
     }
 
-    /// Botao do HUD e "Montar" da janela: monta, desmonta ou cancela.
+    /// Botao do HUD e "Ride" da janela: monta, desmonta ou cancela.
     fn alternar_montaria(&mut self) {
         use shared::loja::PedidoLoja;
         if self.eu_montado() || self.montarias.montando(get_time()) {
@@ -3334,7 +3334,7 @@ impl Jogo {
         self.missoes.fecha();
         match ir {
             onde_obter::Ir::Alvo(alvo) => {
-                self.chat.push(format!("Indo: {}", alvo.rotulo));
+                self.chat.push(format!("Heading to: {}", alvo.rotulo));
                 self.iniciar_ir_para(alvo);
             }
             onde_obter::Ir::AbrirCraft(receita) => self.craft.abrir_receita(receita),
@@ -3399,7 +3399,7 @@ impl Jogo {
             Item::Mobs => self.mobs_ui.abrir(),
             Item::Mapa => {
                 self.voltar_ao_menu = false;
-                self.chat.push("Mapa: só nas ilhas.".into());
+                self.chat.push("Map: only on the islands.".into());
             }
             Item::Lojas => self.lojas.abrir(),
             // O banco so' abre no Banqueiro: o Menu leva ate' ele.
@@ -3410,16 +3410,16 @@ impl Jogo {
                     .mapa
                     .npcs_da_vila()
                     .into_iter()
-                    .filter(|(n, _)| n == "Banqueira" || n == shared::construcao::Papel::Deposito.nome())
+                    .filter(|(n, _)| n == "Banker" || n == shared::construcao::Papel::Deposito.nome())
                     .min_by(|a, b| a.1.distance_squared(eu).total_cmp(&b.1.distance_squared(eu)))
                 {
                     Some((nome, pos)) => {
-                        self.chat.push(format!("Indo ao banco: {nome}"));
+                        self.chat.push(format!("Heading to the bank: {nome}"));
                         self.iniciar_ir_para(ir_para::Alvo {
                             objetivo: ir_para::Objetivo::Npc,
                             pos,
                             raio: 0.0,
-                            rotulo: format!("Banco · {nome}"),
+                            rotulo: format!("Bank · {nome}"),
                         });
                     }
                     None => self
@@ -3661,9 +3661,9 @@ impl Jogo {
             .is_some_and(|(id, t)| Some(id) == self.alvo && get_time() - t < 1.6)
         {
             let t = if self.auto_combate.ativo() {
-                "Sem visada · trocando de alvo"
+                "No line of sight · switching target"
             } else {
-                "Sem visada · aproximando"
+                "No line of sight · closing in"
             };
             return Some((t.to_string(), hud_estilo::OURO));
         }
@@ -3687,7 +3687,7 @@ impl Jogo {
             .filter(|m| *m >= 1.0)
             .map(|m| {
                 (
-                    format!("Andando · {}", rastro::formata_distancia(m)),
+                    format!("Walking · {}", rastro::formata_distancia(m)),
                     hud_estilo::AUTO,
                 )
             })
@@ -3772,7 +3772,7 @@ impl Jogo {
         }
         match self.inimigos_perto().first() {
             Some(&id) => self.mirar(id),
-            None => self.chat.push("Nenhum inimigo por perto.".into()),
+            None => self.chat.push("No enemy nearby.".into()),
         }
     }
 
@@ -3848,7 +3848,7 @@ impl Jogo {
             Some(slot) => self.envia(ClientMessage::UseItem { slot: slot as u16 }),
             None => self
                 .chat
-                .push(format!("Sem {} na bolsa.", self.bolsa.nome(esp.item_id))),
+                .push(format!("No {} in your bag.", self.bolsa.nome(esp.item_id))),
         }
     }
 
@@ -4002,9 +4002,9 @@ impl Jogo {
             self.auto_missao.parar();
             self.chat.push(
                 if morto {
-                    "Auto missão pausada: você caiu."
+                    "Auto quest paused: you went down."
                 } else {
-                    "Auto missão pausada."
+                    "Auto quest paused."
                 }
                 .into(),
             );
@@ -4108,7 +4108,7 @@ impl Jogo {
             self.defesa_da_coleta = Some(id);
             self.mapa.viagem.cancelar();
             self.envia(ClientMessage::PararColeta);
-            self.chat.push("Auto coleta: atacado, revidando.".into());
+            self.chat.push("Auto gather: attacked, striking back.".into());
         }
         let Some(id) = self.defesa_da_coleta else {
             return false;
@@ -4331,7 +4331,7 @@ impl Jogo {
     fn iniciar_viagem(&mut self, destino: Vec2) {
         self.parar_seguir();
         if !self.mapa.terra(destino) {
-            self.chat.push("mapa: lá é água".into());
+            self.chat.push("map: that is water".into());
             return;
         }
         self.auto_combate.parar();
@@ -4404,7 +4404,7 @@ impl Jogo {
         match prox {
             Some((id, nome)) => {
                 self.chat
-                    .push(format!("Auto missão seguiu para \"{nome}\"."));
+                    .push(format!("Auto quest moved on to \"{nome}\"."));
                 self.auto_missao.iniciar(id, nome, get_time());
             }
             None => {
@@ -4465,7 +4465,7 @@ impl Jogo {
                     .map(|(id, e)| (*id, e.render_pos));
                 match npc {
                     Some((id, pos)) => self.falar_com(id, pos),
-                    None => self.chat.push("Não achei o NPC aqui.".into()),
+                    None => self.chat.push("I couldn't find the NPC here.".into()),
                 }
             }
             ir_para::Acao::Aviso(s) => self.chat.push(s),
@@ -4572,7 +4572,7 @@ impl Jogo {
             menu_missoes::Clique::Aceitar(id) => {
                 self.envia(ClientMessage::AcceptQuest { quest_id: id });
                 if let Some(d) = shared::quests::quest_by_id(id) {
-                    self.chat.push(format!("Missão aceita: {}.", d.title));
+                    self.chat.push(format!("Quest accepted: {}.", d.title));
                 }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
@@ -4603,7 +4603,7 @@ impl Jogo {
         self.mapa.viagem = viagem;
         match passo {
             mapa::Passo::Enviar(p) => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
-            mapa::Passo::Desistiu => self.chat.push("viagem: caminho bloqueado".into()),
+            mapa::Passo::Desistiu => self.chat.push("travel: path blocked".into()),
             // Viagem pelo mapa chegou (e nada automatico segue): desce.
             mapa::Passo::Chegou => {
                 if self.eu_montado()
@@ -5450,7 +5450,7 @@ impl Jogo {
                 let voltar = if atualizacao::protocolo_incompativel(&msg) {
                     self.atualizacao.desenha_incompativel()
                 } else {
-                    let r = ui::painel(560.0, 220.0, "não deu");
+                    let r = ui::painel(560.0, 220.0, "didn't work");
                     ui::erro(r.x + r.w * 0.5, r.y + 50.0, &msg);
                     ui::botao(
                         Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 110.0, 160.0, 40.0),
@@ -5548,7 +5548,7 @@ impl Jogo {
             ),
             None => (Vec3::ZERO, 0.0),
         };
-        self.solido.set_uniform("Recorte", recorte);
+        self.solido.set_uniform("Crop", recorte);
         self.solido.set_uniform("RecorteZ", corte_z);
         match &self.terreno {
             Some(t) => {
@@ -5617,7 +5617,7 @@ impl Jogo {
         // Desligar por UNIFORME e nao por material: o material carrega o
         // descarte de face de costas, que os bichos tambem precisam. Dois
         // materiais seriam dois lugares pra a configuracao divergir.
-        self.solido.set_uniform("Recorte", Vec3::ZERO);
+        self.solido.set_uniform("Crop", Vec3::ZERO);
         render3d::draw_entities_com_sombras(
             &mut self.world,
             &self.vox,
@@ -5968,8 +5968,8 @@ impl Jogo {
                     self.fecha_paineis();
                     self.diarias.abrir();
                 }
-                Some(hud::Topo::Grupo) => self.chat.push("Grupo: em breve.".into()),
-                Some(hud::Topo::Avisos) => self.chat.push("Avisos: nada novo.".into()),
+                Some(hud::Topo::Grupo) => self.chat.push("Party: coming soon.".into()),
+                Some(hud::Topo::Avisos) => self.chat.push("Notices: nothing new.".into()),
                 Some(hud::Topo::Menu) => {
                     self.fecha_paineis();
                     self.menu.abrir();
@@ -6029,7 +6029,7 @@ impl Jogo {
                 .vendedor
                 .and_then(|id| self.world.ents.get(&id))
                 .and_then(|e| e.meta.name.clone())
-                .unwrap_or_else(|| "Loja".into());
+                .unwrap_or_else(|| "Shop".into());
             let cobre: u64 = self
                 .bolsa
                 .slots
@@ -6169,7 +6169,7 @@ impl Jogo {
         }
         if self.ficha_ui.aberta && !onde {
             let pedido = self.ficha_ui.desenha(
-                self.personagem_atual.as_deref().unwrap_or("Personagem"),
+                self.personagem_atual.as_deref().unwrap_or("Character"),
                 self.ficha.nivel.max(1),
                 self.ficha.xp,
                 self.ficha.mult_xp,
@@ -6518,8 +6518,8 @@ impl Jogo {
             );
             let tem = |id: u16| missoes::na_bolsa(&self.bolsa.slots, id) as u64;
             let saldos = [
-                ("Ouro", self.bolsa.ouro),
-                ("Cobre", tem(shared::constants::item_id::COPPER)),
+                ("Gold", self.bolsa.ouro),
+                ("Copper", tem(shared::constants::item_id::COPPER)),
                 ("Darksteel", tem(shared::constants::item_id::DARKSTEEL)),
             ];
             let mut selos: Vec<menu::Item> = Vec::new();
@@ -6564,7 +6564,7 @@ impl Jogo {
                 None => {}
             }
         }
-        // Morte e "Recuperar XP" por cima de tudo. So' clique: Esc nao revive.
+        // Morte e "Recover XP" por cima de tudo. So' clique: Esc nao revive.
         let agora_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
@@ -6622,7 +6622,7 @@ impl Jogo {
             self.envia(pedido);
         }
         // O Capitao nao leva mais pra propria ilha: ela virou painel, e abre
-        // pelo Menu de qualquer lugar. `false` tira a linha "Minha Ilha" da
+        // pelo Menu de qualquer lugar. `false` tira a linha "My Island" da
         // lista de destinos.
         match self.viagem.desenha(false) {
             Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
@@ -6697,7 +6697,7 @@ impl Jogo {
                 None => {}
             }
         }
-        // Voltou do modo economia: "Enquanto você estava fora", ate' fechar.
+        // Voltou do modo economia: "While you were away", ate' fechar.
         {
             let bolsa = &self.bolsa;
             self.economia
@@ -6715,25 +6715,25 @@ impl Jogo {
         ui::fundo();
         if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
-        let r = ui::painel(560.0, 460.0, "escolha o servidor");
+        let r = ui::painel(560.0, 460.0, "choose the server");
         let cx = r.x + r.w * 0.5;
 
         if self.busca.is_some() {
-            ui::texto_centro(cx, r.y + 60.0, "procurando servidores...", 20, ui::OURO);
+            ui::texto_centro(cx, r.y + 60.0, "looking for servers...", 20, ui::OURO);
             return;
         }
         if self.canais.is_empty() {
-            ui::erro(cx, r.y + 50.0, "nenhum servidor no ar");
+            ui::erro(cx, r.y + 50.0, "no server online");
             ui::texto_centro(
                 cx,
                 r.y + 78.0,
-                "confira o web (/api/channels)",
+                "check the web (/api/channels)",
                 16,
                 ui::OURO,
             );
             if ui::botao(
                 Rect::new(cx - 80.0, r.y + 110.0, 160.0, 40.0),
-                "procurar de novo",
+                "search again",
                 true,
             ) {
                 self.busca = Some(api::buscar_canais());
@@ -6805,7 +6805,7 @@ impl Jogo {
             topo,
             topo + 134.0,
         ));
-        let r = ui::painel(460.0, ALTURA, "esqueci minha senha");
+        let r = ui::painel(460.0, ALTURA, "I forgot my password");
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
         let [ce, cenviar, cvoltar] = layout_do_esqueci(r);
@@ -6819,13 +6819,13 @@ impl Jogo {
                             .into(),
                         false,
                     ),
-                    Err(e) => (format!("falhou: {e}"), true),
+                    Err(e) => (format!("failed: {e}"), true),
                 });
             }
         }
         let esperando = self.esq_pedido.is_some();
 
-        ui::texto_centro(cx, r.y + 62.0, "Digite o e-mail da conta.", 14, ui::APOIO);
+        ui::texto_centro(cx, r.y + 62.0, "Type the account's e-mail.", 14, ui::APOIO);
         let digitado = self.teclado.digitado().to_vec();
         let mut email = std::mem::take(&mut self.esq_email);
         if ui::campo(ce, "e-mail", &mut email, true, false, &digitado) {
@@ -6838,7 +6838,7 @@ impl Jogo {
         let rotulo = if esperando {
             "enviando…"
         } else {
-            "enviar o link"
+            "send the link"
         };
         if (ui::botao(cenviar, rotulo, pode) || (pode && enter)) && pode {
             self.campo_login_ativo = false;
@@ -6883,7 +6883,7 @@ impl Jogo {
             topo,
             fundo_campo,
         ));
-        let r = ui::painel(460.0, ALTURA, "criar conta");
+        let r = ui::painel(460.0, ALTURA, "create account");
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
         let [cu, ce, cs, cs2, ccriar, cvoltar] = layout_do_cadastro(r);
@@ -6911,7 +6911,7 @@ impl Jogo {
                     }
                     R::JaExiste(m) => self.cad_recado = Some((m, true)),
                     R::Recusado(m) => self.cad_recado = Some((m, true)),
-                    R::Erro(m) => self.cad_recado = Some((format!("falhou: {m}"), true)),
+                    R::Erro(m) => self.cad_recado = Some((format!("failed: {m}"), true)),
                 }
             }
         }
@@ -6919,12 +6919,12 @@ impl Jogo {
         let esperando = self.cad_pedido.is_some();
         let digitado = self.teclado.digitado().to_vec();
         let mut campos = [
-            (cu, "usuário", std::mem::take(&mut self.cad_usuario), false),
+            (cu, "username", std::mem::take(&mut self.cad_usuario), false),
             (ce, "e-mail", std::mem::take(&mut self.cad_email), false),
             (cs, "senha", std::mem::take(&mut self.cad_senha), true),
             (
                 cs2,
-                "repetir a senha",
+                "repeat the password",
                 std::mem::take(&mut self.cad_senha2),
                 true,
             ),
@@ -6955,15 +6955,15 @@ impl Jogo {
         // deve ter 6-128 chars" é uma espera que o jogador não precisa pagar.
         // O servidor continua sendo quem decide — isto aqui só adianta.
         let motivo = if self.cad_usuario.trim().is_empty() || self.cad_usuario.trim().len() > 32 {
-            Some("usuário: de 1 a 32 caracteres")
+            Some("username: 1 to 32 characters")
         } else if !self.cad_email.contains('@') || self.cad_email.trim().len() > 254 {
-            Some("e-mail inválido")
+            Some("invalid e-mail")
         } else if self.cad_senha.len() < 6 {
-            Some("senha: no mínimo 6 caracteres")
+            Some("password: at least 6 characters")
         } else if self.cad_senha.len() > 128 {
-            Some("senha: no máximo 128 caracteres")
+            Some("password: at most 128 characters")
         } else if self.cad_senha != self.cad_senha2 {
-            Some("as duas senhas não são iguais")
+            Some("the two passwords don't match")
         } else {
             None
         };
@@ -6974,7 +6974,7 @@ impl Jogo {
         let rotulo = if esperando {
             "criando…"
         } else {
-            "criar conta"
+            "create account"
         };
         if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
@@ -7004,7 +7004,7 @@ impl Jogo {
         if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
-        // o "lembrar de mim" valer a pena — lembrar só o nome de usuário
+        // o "remember me" valer a pena — lembrar só o nome de usuário
         // ainda deixaria a senha pra digitar no celular.
         //
         // O `host.is_some()` NÃO é zelo: `conectar` sai calado sem host, sem
@@ -7018,8 +7018,8 @@ impl Jogo {
             self.conectar();
             return;
         }
-        // Cresceu duas vezes: 440 -> 480 pelo "lembrar de mim", 480 -> 540
-        // pelo "criar conta". Cada linha nova empurra o resto, e é por isso
+        // Cresceu duas vezes: 440 -> 480 pelo "remember me", 480 -> 540
+        // pelo "create account". Cada linha nova empurra o resto, e é por isso
         // que as posições viraram `layout_do_login` com teste.
         const ALTURA: f32 = 540.0;
         // Teclado da tela aberto: o painel sobe o bastante pro campo com foco
@@ -7037,7 +7037,7 @@ impl Jogo {
         ui::subir_paineis(0.0);
         let cx = r.x + r.w * 0.5;
         if let Some(realm) = &self.realm {
-            ui::texto_centro(cx, r.y + 6.0, &format!("servidor {realm}"), 15, ui::OURO);
+            ui::texto_centro(cx, r.y + 6.0, &format!("server {realm}"), 15, ui::OURO);
         }
 
         if let Some(e) = self.erro_login.clone() {
@@ -7049,7 +7049,7 @@ impl Jogo {
         let digitado = self.teclado.digitado().to_vec();
         let clicou_u = ui::campo(
             cu,
-            "usuário",
+            "username",
             &mut usuario,
             !self.foco_senha,
             false,
@@ -7091,7 +7091,7 @@ impl Jogo {
         }
         // LEMBRAR DE MIM. Desmarcar apaga a sessão guardada NA HORA, e não só
         // no próximo login: quem desmarca está pedindo pra esquecer agora.
-        if ui::caixa(clembrar, "lembrar de mim", &mut self.lembrar) && !self.lembrar {
+        if ui::caixa(clembrar, "remember me", &mut self.lembrar) && !self.lembrar {
             self.token_login = None;
             crate::lembranca::esquece_a_sessao();
         }
@@ -7100,7 +7100,7 @@ impl Jogo {
         // Fica ABAIXO do Google de propósito. O `/api/register` sempre
         // existiu no servidor e nunca teve tela — quem não tinha conta não
         // tinha como entrar no jogo por conta própria.
-        if ui::botao(ccriar, "criar conta", true) {
+        if ui::botao(ccriar, "create account", true) {
             self.campo_login_ativo = false;
             self.erro_login = None;
             self.cad_recado = None;
@@ -7108,7 +7108,7 @@ impl Jogo {
         }
         // ESQUECI MINHA SENHA. Discreto (texto, não botão cheio): é o caminho
         // raro, e competir com "entrar" pelo olho só atrapalharia quem lembra.
-        if ui::botao(cesq, "esqueci minha senha", true) {
+        if ui::botao(cesq, "I forgot my password", true) {
             self.campo_login_ativo = false;
             self.erro_login = None;
             self.esq_recado = None;
@@ -7137,7 +7137,7 @@ impl Jogo {
                 }
             } else {
                 ui::texto_centro(cx, cou.y + 6.0, "ou", 13, ui::OURO);
-                if ui::botao(rg, "Entrar com Google", true) {
+                if ui::botao(rg, "Sign in with Google", true) {
                     self.campo_login_ativo = false;
                     self.google.iniciar();
                 }
@@ -7163,7 +7163,7 @@ impl Jogo {
         match self.google.tick(get_time()) {
             Some(login_google::Saida::AbrirUrl(url)) => {
                 if !nativo::abrir_url(&url) {
-                    self.google.falhou("Não consegui abrir o navegador.");
+                    self.google.falhou("I couldn't open the browser.");
                 }
             }
             Some(login_google::Saida::Pronto { usuario, token }) => {
@@ -7224,16 +7224,16 @@ impl Jogo {
 
     fn tela_fila(&mut self, posicao: u32, total: u32) {
         ui::fundo();
-        let r = ui::painel(460.0, 240.0, "fila de entrada");
+        let r = ui::painel(460.0, 240.0, "entry queue");
         let cx = r.x + r.w * 0.5;
         ui::texto_centro(
             cx,
             r.y + 60.0,
-            &format!("{posicao}º de {total}"),
+            &format!("{posicao} of {total}"),
             40,
             ui::OURO_CLARO,
         );
-        ui::texto_centro(cx, r.y + 96.0, "este canal está cheio", 17, ui::OURO);
+        ui::texto_centro(cx, r.y + 96.0, "this channel is full", 17, ui::OURO);
         // A barra anda pra tras conforme a fila anda: sem numero mexendo, a
         // espera e' indistinguivel de travamento.
         let frac = if total > 0 {
@@ -7244,7 +7244,7 @@ impl Jogo {
         ui::barra(Rect::new(r.x + 40.0, r.y + 120.0, r.w - 80.0, 10.0), frac);
         if ui::botao(
             Rect::new(cx - 90.0, r.y + 155.0, 180.0, 40.0),
-            "sair da fila",
+            "leave queue",
             true,
         ) {
             self.net = None;

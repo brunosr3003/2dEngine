@@ -148,7 +148,7 @@ impl GameWorld {
             return;
         };
         if s.colonia.bau.is_empty() {
-            self.avisa_colonia(sid, "O baú está vazio.");
+            self.avisa_colonia(sid, "The chest is empty.");
             return;
         }
         let mut levou = Vec::new();
@@ -182,8 +182,8 @@ impl GameWorld {
         s.inventory_dirty = true;
         self.save_pending = true;
         let aviso = match (levou.is_empty(), ficou) {
-            (true, _) => "A bolsa está cheia: nada saiu do baú.".to_string(),
-            (false, 0) => format!("Do baú: {}.", levou.join(", ")),
+            (true, _) => "Your bag is full: nothing left the chest.".to_string(),
+            (false, 0) => format!("From the chest: {}.", levou.join(", ")),
             (false, n) => format!(
                 "Do baú: {}. Ficaram {n} pilha(s) — a bolsa encheu.",
                 levou.join(", ")
@@ -206,7 +206,7 @@ impl GameWorld {
         };
         let atual = s.colonia.niveis[e];
         if atual >= shared::colonia::NIVEL_MAX {
-            self.avisa_colonia(sid, "Este eixo já está no máximo.");
+            self.avisa_colonia(sid, "This track is already at maximum.");
             return;
         }
         let custo = shared::colonia::custo(e, atual + 1);
@@ -215,7 +215,7 @@ impl GameWorld {
         };
         for (id, q) in custo {
             if crate::craft::tem(&s.inventory, id) < q {
-                self.avisa_colonia(sid, "Falta material para esta melhoria.");
+                self.avisa_colonia(sid, "Not enough material for this upgrade.");
                 return;
             }
         }
@@ -250,7 +250,7 @@ impl GameWorld {
             }
             let _ = self.mandar_terreno_da_colonia(sid);
         }
-        self.avisa_colonia(sid, &format!("{nome} melhorado."));
+        self.avisa_colonia(sid, &format!("{nome} upgraded."));
         if e == shared::colonia::eixo::ASSENTAMENTO {
             self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_ASSENTAMENTO);
         }
@@ -293,7 +293,7 @@ impl GameWorld {
         // Abrir o painel mandava so' o `Estado`. A maquete do cliente nasce
         // do `Terreno`, e ele so' era enviado ao MELHORAR o assentamento ou ao
         // CONTRATAR alguem — entao quem abria a Minha Ilha numa sessao nova
-        // via "montando a ilha…" e ficava vendo aquilo pra sempre, porque
+        // via "building the island…" e ficava vendo aquilo pra sempre, porque
         // nao havia o que montar. O dono: "o 3d da ilha ta ficando em
         // montando a ilha.... meio q eternamente".
         //
@@ -343,7 +343,7 @@ impl GameWorld {
     /// minerador. Colher primeiro fecha o periodo com quem de fato trabalhou.
     fn contratar_na_colonia(&mut self, sid: SessionId, vaga: u8, oficio: u8) {
         let Some(p) = shared::colonia::Profissao::do_indice(oficio) else {
-            self.avisa_colonia(sid, "Esse ofício não existe.");
+            self.avisa_colonia(sid, "That trade does not exist.");
             return;
         };
         let vagas = self
@@ -370,7 +370,7 @@ impl GameWorld {
         //
         // Sem isso, contratar e colher em seguida nao rende NADA: um lenhador
         // faz 8 de madeira por hora, entao a primeira unidade sai em 7,5
-        // minutos. O passo "Colher" do tutorial abria e ficava esperando.
+        // minutos. O passo "Harvest" do tutorial abria e ficava esperando.
         //
         // So' na primeira contratacao (colonia sem ninguem): depois o relogio
         // e' o relogio, e esperar faz parte.
@@ -385,7 +385,7 @@ impl GameWorld {
         t[vaga as usize] = p;
         t.truncate(vagas);
         self.save_pending = true;
-        self.avisa_colonia(sid, &format!("{} mudou-se para a sua ilha.", p.nome()));
+        self.avisa_colonia(sid, &format!("{} has moved to your island.", p.nome()));
         self.passo_de_tutorial(sid, shared::quests::tutorial::COLONIA_CONTRATAR);
         let _ = self.mandar_terreno_da_colonia(sid);
     }
@@ -401,7 +401,7 @@ impl GameWorld {
         }
         let quem = s.colonia.trabalhadores.remove(vaga as usize);
         self.save_pending = true;
-        self.avisa_colonia(sid, &format!("{} foi embora.", quem.nome()));
+        self.avisa_colonia(sid, &format!("{} has left.", quem.nome()));
         let _ = self.mandar_terreno_da_colonia(sid);
     }
 
@@ -415,7 +415,7 @@ impl GameWorld {
         // Sem a escritura nao ha' o que abrir, colher ou melhorar. A trava
         // fica AQUI, e nao em cada braco: braco novo nasce travado.
         if !self.sessions.get(&sid).is_some_and(|s| s.colonia.tem) {
-            self.avisa_colonia(sid, "Você ainda não tem uma ilha.");
+            self.avisa_colonia(sid, "You don't have an island yet.");
             return;
         }
         // A ilha e' um PAINEL: abre e se administra de qualquer lugar. A trava

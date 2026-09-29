@@ -96,11 +96,11 @@ pub fn faixa(nivel: u32) -> FaixaDeChave {
 
 pub fn nome_da_cor(cor: u8) -> &'static str {
     match cor {
-        1 => "Cinza",
-        2 => "Verde",
-        3 => "Azul",
-        4 => "Épica",
-        _ => "Lendária",
+        1 => "Grey",
+        2 => "Green",
+        3 => "Blue",
+        4 => "Epic",
+        _ => "Legendary",
     }
 }
 

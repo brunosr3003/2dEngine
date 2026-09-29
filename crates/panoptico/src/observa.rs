@@ -897,7 +897,7 @@ pub async fn itens(pool: &PgPool, horas: i32) -> Value {
             let cores: Vec<i64> = (1..=4)
                 .map(|c| estoque.get(&(i::na_cor(base, c) as i64)).map_or(0, |e| e.0))
                 .collect();
-            // The base id is the grey one ("Aço Cinza"): the row's name is the material.
+            // The base id is the grey one ("Grey Steel"): the row's name is the material.
             let nome = nomes.get(&(base as i64)).cloned().unwrap_or_default();
             let nome = nome
                 .strip_suffix(" Cinza")
@@ -1088,12 +1088,12 @@ mod testes {
 
     #[test]
     fn rotulos_resolvem_nomes() {
-        let itens: HashMap<i64, String> = [(332, "Escama Cinza".to_string())].into();
+        let itens: HashMap<i64, String> = [(332, "Grey Scale".to_string())].into();
         let receitas: HashMap<i64, String> = [(1000, "Espada".to_string())].into();
         let skills: HashMap<i64, String> = [(4, "Corte".to_string())].into();
         assert_eq!(
             rotulo("drop", "332", &itens, &receitas, &skills),
-            "Escama Cinza"
+            "Grey Scale"
         );
         assert_eq!(rotulo("drop", "9", &itens, &receitas, &skills), "item 9");
         assert_eq!(

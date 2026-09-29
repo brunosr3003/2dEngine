@@ -38,7 +38,7 @@ impl AutoResumo {
             }
         }
         self.concluidas.push(Concluida { id: d.id, nome: d.title.into(),
-            premio: if partes.is_empty() { "Sem recompensa".into() } else { partes.join(" · ") } });
+            premio: if partes.is_empty() { "No reward".into() } else { partes.join(" · ") } });
         self.xp = self.xp.saturating_add(d.reward_xp);
         self.cobre = self.cobre.saturating_add(d.reward_cobre as u64);
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
@@ -65,19 +65,19 @@ impl AutoResumo {
         let x = r.x + 12.0 * s;
         let w = r.w - 24.0 * s;
         let compacto = r.h < 150.0 * s;
-        estilo::texto_ajustado(&format!("AUTO MISSÃO  ·  {} concluída(s)", self.concluidas.len()),
+        estilo::texto_ajustado(&format!("AUTO QUEST  ·  {} completed", self.concluidas.len()),
             x, r.y + 21.0 * s, w, 14, estilo::OURO);
         let agora = atual.map(|(_, nome, feito, total)|
-            format!("Fazendo: {nome}  {feito}/{total}"))
-            .unwrap_or_else(|| "Escolhendo próxima missão...".into());
+            format!("Doing: {nome}  {feito}/{total}"))
+            .unwrap_or_else(|| "Picking the next quest...".into());
         estilo::texto_ajustado(&agora, x, r.y + 43.0 * s, w, 13, estilo::TEXTO);
         if compacto {
             if let Some(c) = self.concluidas.last() {
-                estilo::texto_ajustado(&format!("Última: {} · {}", c.nome, c.premio),
+                estilo::texto_ajustado(&format!("Last: {} · {}", c.nome, c.premio),
                     x, r.y + 64.0 * s, w, 12, estilo::VERDE);
             }
             let coletado = self.texto_coletado(nomes);
-            estilo::texto_ajustado(&format!("Coletado: {coletado}"),
+            estilo::texto_ajustado(&format!("Gathered: {coletado}"),
                 x, r.y + 85.0 * s, w, 12, estilo::VERDE);
             return;
         }
@@ -90,16 +90,16 @@ impl AutoResumo {
             estilo::texto_ajustado(&texto, x, r.y + 62.0 * s, w, 12, estilo::SUAVE);
         }
         if let Some(c) = self.concluidas.last() {
-            estilo::texto_ajustado(&format!("Concluída: {} · {}", c.nome, c.premio),
+            estilo::texto_ajustado(&format!("Completed: {} · {}", c.nome, c.premio),
                 x, r.y + 84.0 * s, w, 12, estilo::VERDE);
         } else {
-            estilo::texto(x, r.y + 84.0 * s, "Recompensas: aguardando conclusão", 12, estilo::SUAVE);
+            estilo::texto(x, r.y + 84.0 * s, "Rewards: waiting for completion", 12, estilo::SUAVE);
         }
-        estilo::texto_ajustado(&format!("Coletado: {}", self.texto_coletado(nomes)),
+        estilo::texto_ajustado(&format!("Gathered: {}", self.texto_coletado(nomes)),
             x, r.y + 107.0 * s, w, 12, estilo::VERDE);
         if self.concluidas.len() > 1 {
             let anterior = &self.concluidas[self.concluidas.len() - 2];
-            estilo::texto_ajustado(&format!("Anterior: {} · {}", anterior.nome, anterior.premio),
+            estilo::texto_ajustado(&format!("Previous: {} · {}", anterior.nome, anterior.premio),
                 x, r.y + 130.0 * s, w, 11, estilo::SUAVE);
         }
         let mut premios = Vec::new();
@@ -109,14 +109,14 @@ impl AutoResumo {
             premios.push(format!("{} {}", qtd,
                 nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))));
         }
-        estilo::texto_ajustado(&format!("Total recebido: {}", if premios.is_empty() {
+        estilo::texto_ajustado(&format!("Total received: {}", if premios.is_empty() {
             "—".into()
         } else { premios.join(" · ") }), x, r.y + 153.0 * s, w, 11, estilo::OURO);
     }
 
     fn texto_coletado(&self, nomes: &HashMap<u16, String>) -> String {
         let mut ganhos = Vec::new();
-        if self.energia > 0 { ganhos.push(format!("{} Energia", self.energia)); }
+        if self.energia > 0 { ganhos.push(format!("{} Energy", self.energia)); }
         for (&id, &qtd) in &self.coletados {
             ganhos.push(format!("{} {}", qtd,
                 nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))));

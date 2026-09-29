@@ -267,7 +267,7 @@ async fn register(
         }
         Err(db::InsertError::Other(e)) => {
             tracing::error!("register db err: {e:?}");
-            Err(err(StatusCode::INTERNAL_SERVER_ERROR, "erro interno"))
+            Err(err(StatusCode::INTERNAL_SERVER_ERROR, "internal error"))
         }
     }
 }
@@ -292,7 +292,7 @@ async fn login(
         .await
         .map_err(|e| {
             tracing::error!("login db err: {e:?}");
-            err(StatusCode::INTERNAL_SERVER_ERROR, "erro interno")
+            err(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
         })?;
     let row = row.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "credenciais invalidas"))?;
     let ok = auth::verify_password(&row.password_hash, &req.password).unwrap_or(false);

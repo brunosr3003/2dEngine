@@ -471,18 +471,18 @@ pub fn avancar_conversa(active: &mut [CharQuest], papel: u16) -> Mudancas {
 /// motivo, pra dizer ao jogador em vez de ignorar o clique.
 pub fn checar_entrega(d: &QuestDef, c: &CharQuest, tem: u32) -> Result<u32, String> {
     if c.status == quests::quest_status::TURNED_IN {
-        return Err("missão já entregue".into());
+        return Err("quest already turned in".into());
     }
     if d.obj_kind == quests::objective_kind::COLLECT
         || d.obj_kind == quests::objective_kind::DELIVER
     {
         if tem < d.obj_count {
-            return Err(format!("faltam {} de {}", d.obj_count - tem, d.obj_count));
+            return Err(format!("{} of {} short", d.obj_count - tem, d.obj_count));
         }
         return Ok(d.obj_count);
     }
     if c.status != quests::quest_status::READY {
-        return Err("o objetivo ainda não foi cumprido".into());
+        return Err("the objective has not been met yet".into());
     }
     Ok(0)
 }
@@ -837,7 +837,7 @@ mod testes {
             quests::papel_de_conversa(Papel::Estaleiro.nome()),
             Some(Papel::Estaleiro as u16)
         );
-        assert_eq!(quests::papel_de_conversa("Morador"), None);
+        assert_eq!(quests::papel_de_conversa("Resident"), None);
     }
 
     #[test]

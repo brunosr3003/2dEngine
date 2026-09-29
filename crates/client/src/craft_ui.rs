@@ -72,7 +72,7 @@ pub fn o_que_da(
 ) -> (String, Option<String>) {
     if faixas.is_empty() || !r.roll_instance {
         let qtd = r.output_qty.max(1);
-        return (format!("Cria: {qtd}× {nome_da_saida}"), None);
+        return (format!("Creates: {qtd}× {nome_da_saida}"), None);
     }
     let mut atributos: Vec<String> = faixas
         .iter()
@@ -92,14 +92,14 @@ pub fn o_que_da(
     // Ela cresce com o NIVEL DO JOGADOR, entao e' o nivel dele que entra.
     let emp = shared::for_da_armadura(r.output_item_id, nivel.max(1));
     if emp > 0 {
-        atributos.push(format!("Força +{emp}"));
+        atributos.push(format!("Strength +{emp}"));
     }
     let mut extra = Vec::new();
     if r.output_item_level > 5 {
-        extra.push(format!("usar a partir do Nv {}", r.output_item_level / 2));
+        extra.push(format!("usable from Lv {}", r.output_item_level / 2));
     }
     (
-        format!("Dá: {}", atributos.join(" · ")),
+        format!("Gives: {}", atributos.join(" · ")),
         (!extra.is_empty()).then(|| extra.join(" · ")),
     )
 }
@@ -107,13 +107,13 @@ pub fn o_que_da(
 /// Por que nao da' pra criar agora (`None` = da').
 pub fn motivo(r: &CraftRecipeNet, slots: &[InventorySlot], nivel: u32) -> Option<String> {
     if nivel < r.nivel_min as u32 {
-        return Some(format!("Requer nível {}", r.nivel_min));
+        return Some(format!("Requires level {}", r.nivel_min));
     }
     let faltam = ingredientes(r, slots)
         .iter()
         .filter(|(_, t, p)| t < p)
         .count();
-    (faltam > 0).then(|| format!("Faltam {faltam} ingrediente(s)"))
+    (faltam > 0).then(|| format!("Missing {faltam} ingredient(s)"))
 }
 
 #[derive(Default)]
@@ -156,7 +156,7 @@ impl Craft {
         self.aberto
     }
 
-    /// Abre direto numa receita (o "Abrir" do Onde obter).
+    /// Abre direto numa receita (o "Open" do Onde obter).
     pub fn abrir_receita(&mut self, id: u16) {
         self.aberto = true;
         self.so_combinar = false;
@@ -336,7 +336,7 @@ impl Craft {
         let p = Self::painel();
         estilo::painel(p);
         let titulo = if self.so_combinar {
-            "Combinar"
+            "Combine"
         } else {
             "Craft"
         };
@@ -373,7 +373,7 @@ impl Craft {
         } else {
             ABAS.iter()
                 .map(|&c| nome_da_categoria(c))
-                .chain(["Materiais", "Aprimorar", "Combinar"])
+                .chain(["Materials", "Upgrade", "Combine"])
                 .collect()
         };
         for (i, rot) in rotulos.into_iter().enumerate() {
@@ -425,7 +425,7 @@ impl Craft {
             estilo::texto(
                 lista.x + u(10.0),
                 lista.y + u(24.0),
-                "Nenhuma receita nesta aba.",
+                "No recipe in this tab.",
                 14,
                 estilo::SUAVE,
             );
@@ -519,7 +519,7 @@ impl Craft {
                 d.x + u(72.0),
                 d.y + u(48.0),
                 &format!(
-                    "{} · nível mínimo {}",
+                    "{} · minimum level {}",
                     nome_da_categoria(r.category),
                     r.nivel_min.max(1)
                 ),
@@ -550,7 +550,7 @@ impl Craft {
             estilo::texto(
                 d.x + u(6.0),
                 d.y + u(128.0),
-                "Ingredientes",
+                "Ingredients",
                 15,
                 estilo::TEXTO,
             );
@@ -594,7 +594,7 @@ impl Craft {
             if let Some(m) = &m {
                 estilo::texto(d.x + u(6.0), b.y + u(24.0), m, 14, VERMELHO);
             }
-            if crate::ui::botao(b, "Criar", m.is_none()) {
+            if crate::ui::botao(b, "Create", m.is_none()) {
                 pedido = Some(ClientMessage::Craft { recipe_id: r.id });
             }
         }
@@ -656,15 +656,15 @@ pub async fn previa() {
     let mut nomes = HashMap::new();
     for (id, n) in [
         (item_id::KATANA, "Katana"),
-        (item_id::PISTOLAS, "Pistolas"),
-        (item_id::COPPER, "Cobre"),
-        (item_id::HORN, "Chifre"),
-        (item_id::na_cor(item_id::HORN, 2), "Chifre Verde"),
-        (item_id::SCALE, "Escama"),
-        (item_id::STEEL, "Aço"),
-        (item_id::na_cor(item_id::STEEL, 2), "Aço Verde"),
+        (item_id::PISTOLAS, "Pistols"),
+        (item_id::COPPER, "Copper"),
+        (item_id::HORN, "Horn"),
+        (item_id::na_cor(item_id::HORN, 2), "Green Horn"),
+        (item_id::SCALE, "Scale"),
+        (item_id::STEEL, "Steel"),
+        (item_id::na_cor(item_id::STEEL, 2), "Green Steel"),
         (item_id::DARKSTEEL, "Darksteel"),
-        (item_id::GLITTERING_POWDER, "Pó Cintilante"),
+        (item_id::GLITTERING_POWDER, "Shimmering Dust"),
     ] {
         nomes.insert(id, n.to_string());
     }
@@ -721,7 +721,7 @@ mod tests {
         let n = epico.nivel_min;
         assert_eq!(
             motivo(&epico, &tudo, n as u32 - 1).as_deref(),
-            Some(format!("Requer nível {n}").as_str())
+            Some(format!("Requires level {n}").as_str())
         );
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));
@@ -755,7 +755,7 @@ mod tests {
             .expect("não há receita de armadura média");
         let f = shared::items::faixas_do_roll(r.output_item_id, r.output_item_level);
         for nivel in [1u32, 30, 60] {
-            let (da, _) = o_que_da(&r, &f, "Armadura Média", nivel);
+            let (da, _) = o_que_da(&r, &f, "Medium Armour", nivel);
             let esperado = shared::for_da_armadura(shared::item_id::ARMADURA_MEDIA, nivel);
             assert!(esperado > 0, "a média deixou de dar FOR");
             assert!(
@@ -769,8 +769,8 @@ mod tests {
             .find(|r| r.output_item_id == shared::item_id::ARMADURA_LEVE);
         if let Some(l) = leve {
             let fl = shared::items::faixas_do_roll(l.output_item_id, l.output_item_level);
-            let (da, _) = o_que_da(&l, &fl, "Armadura Leve", 30);
-            assert!(!da.contains("Força"), "a leve não empresta FOR: {da}");
+            let (da, _) = o_que_da(&l, &fl, "Light Armour", 30);
+            assert!(!da.contains("Strength"), "a leve não empresta FOR: {da}");
         }
     }
 

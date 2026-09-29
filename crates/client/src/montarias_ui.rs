@@ -118,7 +118,7 @@ impl MontariasUi {
         let mouse = Vec2::from(mouse_position());
         let clique = crate::foco::clique();
 
-        estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "MONTARIA", 23, estilo::OURO);
+        estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "MOUNT", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
         if clique && fechar.contains(mouse) {
@@ -146,7 +146,7 @@ impl MontariasUi {
             );
             estilo::botao(
                 loja,
-                "Ver na Loja",
+                "See in Shop",
                 estilo::estado_de(loja, false, false),
                 true,
             );
@@ -156,7 +156,7 @@ impl MontariasUi {
             let msg = self.colecao.desenha(
                 faixa,
                 f,
-                "MINHAS MONTARIAS",
+                "MY MOUNTS",
                 bolsa,
                 None,
                 &|id| shared::montarias::de_item(id).is_some(),
@@ -194,7 +194,7 @@ impl MontariasUi {
             estilo::SUAVE,
         );
         y += 34.0 * f;
-        estilo::texto(dir.x + 14.0 * f, y, "Velocidade montado", 13, estilo::SUAVE);
+        estilo::texto(dir.x + 14.0 * f, y, "Mounted speed", 13, estilo::SUAVE);
         estilo::texto_forte(
             dir.x + 14.0 * f,
             y + 24.0 * f,
@@ -208,7 +208,7 @@ impl MontariasUi {
         );
 
         y += 62.0 * f;
-        estilo::texto(dir.x + 14.0 * f, y, "ATRIBUTOS", 13, estilo::SUAVE);
+        estilo::texto(dir.x + 14.0 * f, y, "ATTRIBUTES", 13, estilo::SUAVE);
         y += 22.0 * f;
         let mut x = dir.x + 14.0 * f;
         let af = equip.montaria_inst.as_ref().and_then(|i| i.afinidade);
@@ -225,7 +225,7 @@ impl MontariasUi {
             x += 62.0 * f;
         }
         let poder = format!(
-            "PODER  {}",
+            "POWER  {}",
             crate::bolsa::milhar(
                 crate::bolsa::poder_dos_pontos(shared::montarias::pontos_por_stat_da_instancia(
                     id,
@@ -247,7 +247,7 @@ impl MontariasUi {
         let msg = self.colecao.desenha(
             faixa,
             f,
-            "MINHAS MONTARIAS",
+            "MY MOUNTS",
             bolsa,
             Some(id),
             &|x| shared::montarias::de_item(x).is_some(),
@@ -271,12 +271,12 @@ impl MontariasUi {
             estilo::texto_centro_forte(
                 bt.center().x,
                 bt.center().y + 6.0 * f,
-                "MONTANDO…",
+                "MOUNTING…",
                 18,
                 estilo::TEXTO,
             );
         } else {
-            estilo::botao(bt, "MONTAR", estilo::estado_de(bt, false, false), true);
+            estilo::botao(bt, "MOUNT UP", estilo::estado_de(bt, false, false), true);
             if clique && bt.contains(mouse) {
                 return (Some(Acao::Montar), msg);
             }

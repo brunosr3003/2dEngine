@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     // Ensures the shops exist (7 and 8 are new).
     for (sid, name) in [
         (1, "Mercador"),
-        (3, "Alquimista"),
+        (3, "Alchemist"),
         (7, "Nobre"),
         (8, "Camponês"),
     ] {

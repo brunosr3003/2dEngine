@@ -52,7 +52,7 @@ impl ConfigColeta {
         let (sw, sh) = (screen_width(), screen_height());
         let r = Rect::new(sw * 0.5 - 200.0, sh * 0.5 - 207.0, 400.0, 414.0);
         estilo::painel(r);
-        estilo::texto(r.x + 18.0, r.y + 32.0, "Auto coleta", 20, estilo::OURO);
+        estilo::texto(r.x + 18.0, r.y + 32.0, "Auto gather", 20, estilo::OURO);
         let fechar = Rect::new(r.x + r.w - 38.0, r.y + 10.0, 28.0, 28.0);
         estilo::texto_centro(
             fechar.center().x,
@@ -67,7 +67,7 @@ impl ConfigColeta {
             self.fechar();
             return false;
         }
-        estilo::texto(r.x + 18.0, r.y + 62.0, "O que coletar", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0, r.y + 62.0, "What to gather", 14, estilo::SUAVE);
         let mut mudou = false;
         for i in 0..5 {
             let linha = Rect::new(r.x + 18.0, r.y + 74.0 + i as f32 * 34.0, r.w - 36.0, 28.0);
@@ -108,7 +108,7 @@ impl ConfigColeta {
         estilo::texto(
             linha_energia.x + 32.0,
             linha_energia.y + 20.0,
-            "Energia",
+            "Energy",
             15,
             estilo::TEXTO,
         );
@@ -117,7 +117,7 @@ impl ConfigColeta {
             mudou = true;
         }
         let y = r.y + 296.0;
-        estilo::texto(r.x + 18.0, y, "Raio de busca", 14, estilo::SUAVE);
+        estilo::texto(r.x + 18.0, y, "Search radius", 14, estilo::SUAVE);
         let menos = Rect::new(r.x + 160.0, y - 20.0, 30.0, 28.0);
         let mais = Rect::new(r.x + 280.0, y - 20.0, 30.0, 28.0);
         for (b, t) in [(menos, "-"), (mais, "+")] {

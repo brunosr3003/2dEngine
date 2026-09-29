@@ -327,7 +327,7 @@ impl AutoColeta {
         estilo::texto_centro_forte(
             c.x,
             c.y + raio * 0.66,
-            if self.ativo() { "AUTO" } else { "COLETA" },
+            if self.ativo() { "AUTO" } else { "GATHER" },
             10,
             cor,
         );
@@ -362,11 +362,11 @@ impl AutoColeta {
             return None;
         }
         Some(match self.etapa {
-            Etapa::Procurar | Etapa::Esperando => "AUTO COLETA · PROCURANDO",
-            Etapa::Indo => "AUTO COLETA · INDO AO RECURSO",
-            Etapa::Coletando if self.bolsa_cheia => "AUTO COLETA · BOLSA CHEIA",
-            Etapa::Coletando => "AUTO COLETA · COLETANDO",
-            Etapa::Aguardando => "AUTO COLETA · AGUARDANDO RECURSOS…",
+            Etapa::Procurar | Etapa::Esperando => "AUTO GATHER · SEARCHING",
+            Etapa::Indo => "AUTO GATHER · HEADING TO NODE",
+            Etapa::Coletando if self.bolsa_cheia => "AUTO GATHER · BAG FULL",
+            Etapa::Coletando => "AUTO GATHER · GATHERING",
+            Etapa::Aguardando => "AUTO GATHER · WAITING FOR NODES…",
         })
     }
 }
@@ -499,7 +499,7 @@ mod tests {
         );
         a.estado_coleta(2, false, 3.1);
         a.estado_coleta(2, true, 3.15);
-        assert_eq!(a.faixa(None), Some("AUTO COLETA · BOLSA CHEIA"));
+        assert_eq!(a.faixa(None), Some("AUTO GATHER · BAG FULL"));
         for k in 0..5 {
             assert_eq!(
                 a.passo(onde, 3.16 + k as f64 * 0.01, false),
@@ -508,7 +508,7 @@ mod tests {
             );
         }
         a.estado_coleta(2, false, 3.19);
-        assert_eq!(a.faixa(None), Some("AUTO COLETA · COLETANDO"));
+        assert_eq!(a.faixa(None), Some("AUTO GATHER · GATHERING"));
         for k in 0..20 {
             assert_eq!(
                 a.passo(onde, 3.2 + k as f64, false),
@@ -530,7 +530,7 @@ mod tests {
             Acao::PedirNo { .. }
         ));
         assert_eq!(a.no_recebido(None, 0.5), Acao::Nada);
-        assert_eq!(a.faixa(None), Some("AUTO COLETA · AGUARDANDO RECURSOS…"));
+        assert_eq!(a.faixa(None), Some("AUTO GATHER · WAITING FOR NODES…"));
         assert_eq!(a.passo(Vec2::ZERO, 3.0, false), Acao::Nada);
         assert!(matches!(
             a.passo(Vec2::ZERO, 7.0, false),

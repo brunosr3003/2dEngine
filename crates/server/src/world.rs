@@ -646,7 +646,7 @@ pub const MOB_ZONA_ESPACO_UN: f32 = 90.0;
 pub const MOB_ZONA_RAIO_UN: f32 = 45.0;
 /// Espacamento minimo entre dois mobs da mesma zona.
 ///
-/// Subiu de 7 pra 8 em 21/09/2026. O passo "Ursos na encosta" (nv 6) passava
+/// Subiu de 7 pra 8 em 21/09/2026. O passo "Bears on the slope" (nv 6) passava
 /// na simulacao com margem ZERO — 35% de HP contra um piso de 35% — pras
 /// classes de longe, que nao tem como mitigar tres ursos de uma vez. Qualquer
 /// mexida no relevo derrubava, e foi o que o cais virado pra rota fez.
@@ -699,7 +699,7 @@ pub const FORTE_POR_ZONA: u32 = 34;
 /// valendo desde o nivel 3 a primeira cacada (702) da' QUATRO bichos em cima,
 /// vida a zero e morte.
 ///
-/// **Subiu de 5 pra 7 em 21/09/2026.** O 5 deixava "Ursos na encosta" (708,
+/// **Subiu de 5 pra 7 em 21/09/2026.** O 5 deixava "Bears on the slope" (708,
 /// nivel 6) cair num forte, e as classes de LONGE terminavam com 24% de vida
 /// contra um piso de 35% — elas nao tem como mitigar tres ursos de uma vez.
 /// Passava por margem zero antes so' porque o sorteio dos fortes calhava de
@@ -1670,7 +1670,7 @@ pub struct Session {
     /// carrega a ilhota, o relógio, o sair e o estender — ficava invisível a
     /// sessão inteira.
     pub magica_bonus_visto: u8,
-    /// Sessao recem-emitida ("lembrar de mim"), esperando ir na primeira
+    /// Sessao recem-emitida ("remember me"), esperando ir na primeira
     /// `CharacterList`. Ver `send_character_list`.
     pub sessao_nova: Option<String>,
     /// Dados guardados enquanto o jogador espera na fila de entrada.
@@ -2157,7 +2157,7 @@ impl Session {
         self.stats_dirty = true;
         let _ = self.handle.to_client.send(ServerMessage::Chat {
             from: "System".to_string(),
-            text: "Você perdeu proficiência em armas ao morrer.".to_string(),
+            text: "You lost weapon proficiency when you died.".to_string(),
         });
     }
 
@@ -2262,11 +2262,11 @@ impl Session {
                 .equipment
                 .pet
                 .and_then(shared::pets::nome_do_item)
-                .unwrap_or_else(|| "Seu pet".into());
+                .unwrap_or_else(|| "Your pet".into());
             let aviso = if shared::pets::slots_de_skill(n) > shared::pets::slots_de_skill(n - 1) {
                 format!("[Pet] {nome} chegou ao nível {n} — um slot de skill abriu!")
             } else {
-                format!("[Pet] {nome} chegou ao nível {n}.")
+                format!("[Pet] {nome} reached level {n}.")
             };
             let _ = self.handle.to_client.send(ServerMessage::Chat {
                 from: "System".to_string(),
@@ -2709,7 +2709,7 @@ const TUTORIAL_ISLAND_BLOBS: [(f32, f32, f32, f32); 6] = [
 ];
 /// Spawn do player: ao SUL da pedra (precisa pular pra chegar no Matteo).
 const TUTORIAL_SPAWN: (f32, f32) = (195.5, 996.5);
-/// "Pedra"/cliff: linha de WALL que o player PULA (mecânica climb). y da linha
+/// "Stone"/cliff: linha de WALL que o player PULA (mecânica climb). y da linha
 /// + intervalo x (atravessa a ilha inteira → força o pulo).
 const TUTORIAL_CLIFF_Y: i32 = 1012;
 // Intervalo largo (além de qualquer borda da ilha) — o guard `contains` no loop
@@ -3967,7 +3967,7 @@ impl GameWorld {
             if magica_forte {
                 tag.xp_reward = (tag.xp_reward as f32 * 1.5).round() as u64;
                 tag.boss_name = Some(format!(
-                    "[FORTE] {}",
+                    "[STRONGHOLD] {}",
                     crate::economy::enemy_def(kind_def).name
                 ));
             }
@@ -4576,12 +4576,12 @@ impl GameWorld {
             (
                 mf.morganeer_spawn,
                 shared::Faction::Morganeers,
-                "Capitão Morganeer",
+                "Captain Morganeer",
             ),
             (
                 mf.peacemain_spawn,
                 shared::Faction::Peacemain,
-                "Guardião Peacemain",
+                "Peacemain Guardian",
             ),
         ];
         for (sp, fac, name) in faction_npcs.iter() {
@@ -4842,7 +4842,7 @@ impl GameWorld {
             let falta = custo - s.skill_progress.energia;
             let _ = s.handle.to_client.send(ServerMessage::ResultadoDeEvolucao {
                 ok: false,
-                texto: format!("faltam {falta} de Energia para este ponto"),
+                texto: format!("{falta} Energy short for this point"),
             });
             return;
         }
@@ -4977,7 +4977,7 @@ impl GameWorld {
                     // Texto que o cliente mostra direto. Nao e' "erro": e' o
                     // que falta fazer, e dizer isso e' o conserto.
                     crate::auth::AuthError::NaoConfirmado => {
-                        "confirme seu e-mail para entrar".to_string()
+                        "confirm your e-mail to sign in".to_string()
                     }
                     crate::auth::AuthError::Internal(msg) => format!("internal error: {msg}"),
                 };
@@ -5008,7 +5008,7 @@ impl GameWorld {
         for stale in stale_sids {
             if let Some(old) = self.sessions.get(&stale) {
                 let _ = old.handle.to_client.send(ServerMessage::Kick {
-                    reason: "conta conectada em outro lugar".into(),
+                    reason: "the account is connected somewhere else".into(),
                 });
             }
             // Persiste + limpa a sessao antiga.
@@ -5422,7 +5422,7 @@ impl GameWorld {
         // deixá-lo sem nascer nunca.
         if self.na_magica() {
             let eid = self.alloc_entity_id();
-            let nome = "Alquimista Errante";
+            let nome = "Wandering Alchemist";
             self.ecs.spawn((
                 NetId(eid),
                 Position(shared::magica::posto_de_pocoes()),
@@ -5446,7 +5446,7 @@ impl GameWorld {
                 tracing::warn!("ilha mágica: a loja de poções está vazia no banco");
             }
             let eid = self.alloc_entity_id();
-            let nome = "Mercador Mágico";
+            let nome = "Magic Merchant";
             self.ecs.spawn((
                 NetId(eid),
                 Position(shared::magica::posto_de_trocas()),
@@ -5658,7 +5658,7 @@ impl GameWorld {
             s.rota.limpa();
         }
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
-            self.avisa_missao(sid, "Longe demais para ir a pé daqui.".into());
+            self.avisa_missao(sid, "Too far to walk from here.".into());
             return;
         }
         let Some(ilha) = self.ilha_da_sessao(sid) else {
@@ -5677,7 +5677,7 @@ impl GameWorld {
             // Nunca calado: o jogador toca, nada acontece, e ele nao tem como
             // saber se o jogo travou ou se nao ha' caminho. Foi assim que o
             // limite de 220 u passou meses invisivel.
-            self.avisa_missao(sid, "Não há caminho até ali.".into());
+            self.avisa_missao(sid, "There is no path there.".into());
             return;
         };
         tracing::debug!(
@@ -6023,7 +6023,7 @@ impl GameWorld {
                 None => {
                     if let Some(s) = self.sessions.get(&sid) {
                         let _ = s.handle.to_client.send(ServerMessage::Kick {
-                            reason: "Dungeon cheia, tente novamente em instantes".to_string(),
+                            reason: "Dungeon full, try again in a moment".to_string(),
                         });
                     }
                     return;
@@ -7627,7 +7627,7 @@ impl GameWorld {
 
                 let Some(auth_ctx) = self.auth_ctx.clone() else {
                     let _ = handle.to_client.send(ServerMessage::LoginDenied {
-                        reason: "auth nao disponivel".into(),
+                        reason: "auth unavailable".into(),
                     });
                     return;
                 };
@@ -7656,7 +7656,7 @@ impl GameWorld {
 
                 let Some(auth_ctx) = self.auth_ctx.clone() else {
                     let _ = handle.to_client.send(ServerMessage::LoginDenied {
-                        reason: "auth nao disponivel".into(),
+                        reason: "auth unavailable".into(),
                     });
                     return;
                 };
@@ -7731,7 +7731,7 @@ impl GameWorld {
                         .collect();
                     list.sort();
                     let txt = if list.is_empty() {
-                        "[/who] ninguém online".to_string()
+                        "[/who] nobody online".to_string()
                     } else {
                         format!(
                             "[/who] {} online: {}",
@@ -8262,7 +8262,7 @@ impl GameWorld {
     /// Player downed escolheu respawnar direto na cidade — pula o timer de
     /// stand-up. HP restaurado pra max, posicao = spawn_tile, downed limpa.
     fn handle_respawn_at_city(&mut self, sid: SessionId) {
-        // Na dungeon nao ha' cidade: e' o "Reviver" dela.
+        // Na dungeon nao ha' cidade: e' o "Revive" dela.
         if self.sessions.get(&sid).is_some_and(|s| s.instancia != 0) {
             self.dg_reviver(sid);
             return;
@@ -8414,9 +8414,9 @@ impl GameWorld {
                 crate::telemetria::conta("xp_recuperado", "", xp as i64);
                 crate::telemetria::conta("ouro_ralo", "recuperar_xp", custo as i64);
                 let motivo = if custo == 0 {
-                    "Experiência recuperada (grátis).".to_string()
+                    "Experience recovered (free).".to_string()
                 } else {
-                    format!("Experiência recuperada por {custo} de ouro.")
+                    format!("Experience recovered for {custo} gold.")
                 };
                 let _ = s
                     .handle
@@ -8504,7 +8504,7 @@ impl GameWorld {
                         }
                         if let Some(tc) = to_client {
                             let _ = tc.send(ServerMessage::Kick {
-                                reason: "char nao encontrado".into(),
+                                reason: "character not found".into(),
                             });
                         }
                     });
@@ -8513,7 +8513,7 @@ impl GameWorld {
                 tracing::warn!("SelectCharacter '{}': char nao encontrado", name);
                 let _ = self.sessions.get(&sid).map(|s| {
                     s.handle.to_client.send(ServerMessage::Kick {
-                        reason: "char nao encontrado".into(),
+                        reason: "character not found".into(),
                     })
                 });
                 return;
@@ -8527,7 +8527,7 @@ impl GameWorld {
             );
             let _ = self.sessions.get(&sid).map(|s| {
                 s.handle.to_client.send(ServerMessage::Kick {
-                    reason: "char nao autorizado".into(),
+                    reason: "character not authorised".into(),
                 })
             });
             return;
@@ -8579,7 +8579,7 @@ impl GameWorld {
                 s.handle
                     .to_client
                     .send(ServerMessage::CharacterCreationFailed {
-                        reason: "nome 2-24 chars".into(),
+                        reason: "name 2-24 chars".into(),
                     })
             });
             return;
@@ -8589,7 +8589,7 @@ impl GameWorld {
                 s.handle
                     .to_client
                     .send(ServerMessage::CharacterCreationFailed {
-                        reason: "nome so letras/numeros/_".into(),
+                        reason: "name: letters/numbers/_ only".into(),
                     })
             });
             return;
@@ -8603,7 +8603,7 @@ impl GameWorld {
                 s.handle
                     .to_client
                     .send(ServerMessage::CharacterCreationFailed {
-                        reason: "arma invalida".into(),
+                        reason: "invalid weapon".into(),
                     })
             });
             return;
@@ -8618,7 +8618,7 @@ impl GameWorld {
                 s.handle
                     .to_client
                     .send(ServerMessage::CharacterCreationFailed {
-                        reason: "sessao invalida".into(),
+                        reason: "invalid session".into(),
                     })
             });
             return;
@@ -8658,7 +8658,7 @@ impl GameWorld {
                     .handle
                     .to_client
                     .send(ServerMessage::CharacterCreationFailed {
-                        reason: "auth nao disponivel".into(),
+                        reason: "auth unavailable".into(),
                     });
                 return;
             };
@@ -8727,27 +8727,27 @@ impl GameWorld {
                                     name_for_db
                                 );
                                 let _ = to_client.send(ServerMessage::CharacterCreationFailed {
-                                    reason: "erro interno".into(),
+                                    reason: "internal error".into(),
                                 });
                             }
                         }
                         Err(e) => {
                             tracing::error!("CreateCharacter load_all err: {e:?}");
                             let _ = to_client.send(ServerMessage::CharacterCreationFailed {
-                                reason: "erro interno".into(),
+                                reason: "internal error".into(),
                             });
                         }
                     }
                 }
                 Ok(false) => {
                     let _ = to_client.send(ServerMessage::CharacterCreationFailed {
-                        reason: "nome ja em uso".into(),
+                        reason: "name already taken".into(),
                     });
                 }
                 Err(e) => {
                     tracing::error!("CreateCharacter db err: {e:?}");
                     let _ = to_client.send(ServerMessage::CharacterCreationFailed {
-                        reason: "erro interno".into(),
+                        reason: "internal error".into(),
                     });
                 }
             }
@@ -8786,7 +8786,7 @@ impl GameWorld {
             );
             let _ = self.sessions.get(&sid).map(|s| {
                 s.handle.to_client.send(ServerMessage::Kick {
-                    reason: "char nao autorizado".into(),
+                    reason: "character not authorised".into(),
                 })
             });
             return;
@@ -9269,7 +9269,7 @@ impl GameWorld {
             if session.montado && alvo_jogador {
                 session.montado = false;
                 let _ = session.handle.to_client.send(ServerMessage::Loja { aviso: shared::loja::AvisoLoja::Resultado {
-                    ok: true, texto: "Combate contra jogadores é a pé.".into(),
+                    ok: true, texto: "Player combat happens on foot.".into(),
                 }});
             }
             if session.attack_cooldown > 0.0 {
@@ -10338,7 +10338,7 @@ impl GameWorld {
                         {
                             enemy.ai_block_until = now_sim + 2.0;
                             enemy.ai_block_cd_until = now_sim + 4.0;
-                            enemy.parry_flash_pending = true; // "ergueu o escudo"
+                            enemy.parry_flash_pending = true; // "raised their shield"
                             vel.0 = to_player * (enemy.locomotor_speed * 0.85);
                             continue;
                         }
@@ -13998,7 +13998,7 @@ impl GameWorld {
                         if char_level_now < req as u32 {
                             let _ = session.handle.to_client.send(ServerMessage::Chat {
                                 from: "SYS".into(),
-                                text: format!("Esta peça pede nível {req}."),
+                                text: format!("This piece asks for level {req}."),
                             });
                         }
                     }
@@ -14170,7 +14170,7 @@ impl GameWorld {
         self.send_chat_to(
             sid,
             &format!(
-                "[Desmantelar] Materiais recuperados: {}.",
+                "[Salvage] Materials recovered: {}.",
                 if lista.is_empty() { "nenhum" } else { &lista }
             ),
         );
@@ -14179,7 +14179,7 @@ impl GameWorld {
     fn handle_craft(&mut self, sid: SessionId, recipe_id: u16) {
         // Recipes vem do DB cache (admin pode mudar custos sem rebuild).
         let Some(recipe) = crate::recipes::find(recipe_id) else {
-            self.resultado_do_craft(sid, recipe_id, Err("receita desconhecida".into()));
+            self.resultado_do_craft(sid, recipe_id, Err("unknown recipe".into()));
             return;
         };
         let craft_output_id = recipe.output_item_id; // p/ o gatilho da quest 903
@@ -14211,7 +14211,7 @@ impl GameWorld {
                 .virar(shared::dungeon::semana((now_ms() / 1000) as i64));
             if !session.conta_dungeon.pode_craftar_selo() {
                 let motivo = format!(
-                    "teto da semana: {} Selos por conta",
+                    "weekly cap: {} Seals per account",
                     shared::dungeon::SELOS_POR_SEMANA
                 );
                 self.resultado_do_craft(sid, recipe_id, Err(motivo));
@@ -14227,7 +14227,7 @@ impl GameWorld {
             None
         };
         if crate::craft::aplicar(&mut session.inventory, &recipe, inst).is_none() {
-            self.resultado_do_craft(sid, recipe_id, Err("bolsa cheia".into()));
+            self.resultado_do_craft(sid, recipe_id, Err("bag full".into()));
             return;
         }
         if selo {
@@ -14242,7 +14242,7 @@ impl GameWorld {
         self.resultado_do_craft(sid, recipe_id, Ok(craft_output_id));
         self.quest_on_evento(sid, shared::quests::objective_kind::CRAFT, 1);
 
-        // Tutorial: o GATILHO da quest 903 ("Forje sua Arma") é o ATO de craftar
+        // Tutorial: o GATILHO da quest 903 ("Forge your Weapon") é o ATO de craftar
         // uma ARMA — checa pelo slot Weapon (os ids craftados são T1 migrados,
         // 221..=268, NÃO os base 3/6/12...). Não ter/equipar (isso completaria
         // sem craftar).
@@ -14549,10 +14549,10 @@ impl GameWorld {
             }
             let texto = match proximo {
                 Some(p) => format!(
-                    "História: \"{}\" concluída. Próximo: {}",
+                    "Story: \"{}\" completed. Next: {}",
                     feito.title, p.title
                 ),
-                None => format!("História: \"{}\" concluída.", feito.title),
+                None => format!("Story: \"{}\" completed.", feito.title),
             };
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
@@ -14607,7 +14607,7 @@ impl GameWorld {
             .map(|p| p.centro)
             .or_else(|| ger.cidade().map(|c| c.centro()))
             .unwrap_or(Vec2::ZERO);
-        let aviso = format!("Você embarca rumo a {}.", dest.nome);
+        let aviso = format!("You set sail for {}.", dest.nome);
         self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome))
     }
 
@@ -14750,14 +14750,14 @@ impl GameWorld {
         let Some(custo) = shared::armazem::custo(banco, extra) else {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
-                text: "Já está no tamanho máximo.".into(),
+                text: "It is already at maximum size.".into(),
             });
             return;
         };
         if s.gold < custo {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
-                text: format!("Faltam {} de ouro para aumentar.", custo - s.gold),
+                text: format!("{} gold short to make it bigger.", custo - s.gold),
             });
             return;
         }
@@ -14782,7 +14782,7 @@ impl GameWorld {
             from: "SYS".into(),
             text: format!(
                 "{} agora tem {tam} espaços (−{custo} de ouro).",
-                if banco { "O banco" } else { "A bolsa" }
+                if banco { "The bank" } else { "The bag" }
             ),
         });
         crate::telemetria::conta(
@@ -14816,7 +14816,7 @@ impl GameWorld {
     }
 
     /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
-    /// "Viajar", com toda ilha e se da' pra ir.
+    /// "Travel", com toda ilha e se da' pra ir.
     fn abrir_menu_viagem(&self, sid: SessionId) {
         let Some(s) = self.sessions.get(&sid) else {
             return;
@@ -14834,7 +14834,7 @@ impl GameWorld {
         if self.zona == "ilha_inicial" && nivel < 20 {
             if let Some(geleira) = destinos.get_mut(1) {
                 geleira.estado = shared::viagem::estado::BLOQUEADA;
-                geleira.requisito = "Alcance o nível 20".into();
+                geleira.requisito = "Reach level 20".into();
             }
         }
         let _ = s.handle.to_client.send(ServerMessage::Viagem {
@@ -14843,7 +14843,7 @@ impl GameWorld {
         });
     }
 
-    /// "Embarcar" no menu do Capitao: perto dele, ilha liberada pela
+    /// "Board" no menu do Capitao: perto dele, ilha liberada pela
     /// historia e com canal no ar.
     fn handle_viajar(&mut self, sid: SessionId, ilha: u8) {
         if self.tutorial_mode || self.dungeon_mode {
@@ -14873,7 +14873,7 @@ impl GameWorld {
         };
         if !shared::viagem::liberada(i, indice) {
             let passo = shared::viagem::passo_que_libera(i)
-                .map(|(_, t)| format!(" (libera em \"{t}\")"))
+                .map(|(_, t)| format!(" (unlocks at \"{t}\")"))
                 .unwrap_or_default();
             self.avisa_missao(
                 sid,
@@ -14916,7 +14916,7 @@ impl GameWorld {
             }
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
-                text: format!("{} diária(s) expiraram na virada do dia.", sairam.len()),
+                text: format!("{} daily quest(s) expired when the day turned over.", sairam.len()),
             });
             self.send_quest_givers(sid);
         }
@@ -14948,7 +14948,7 @@ impl GameWorld {
                 resultado: resultado::INVALIDO,
                 nivel: 0,
                 item_id,
-                motivo: "essa peça não pode ser refinada".into(),
+                motivo: "that piece cannot be refined".into(),
             });
             return;
         };
@@ -14957,9 +14957,9 @@ impl GameWorld {
         let motivo = match res {
             resultado::SEM_MATERIAL => {
                 let (ds, cu) = crate::craft::custo_do_refino(&inst);
-                format!("precisa de {ds} Darksteel e {cu} Cobre")
+                format!("needs {ds} Darksteel and {cu} Copper")
             }
-            resultado::NO_TOPO => format!("já está no +{}", shared::forja::REFINO_MAX),
+            resultado::NO_TOPO => format!("it is already at +{}", shared::forja::REFINO_MAX),
             _ => String::new(),
         };
         let tentou = matches!(
@@ -15267,11 +15267,11 @@ impl GameWorld {
         if inviter_group
             .is_some_and(|pid| self.party_members(pid).len() >= shared::social::MAX_GRUPO)
         {
-            self.social_resultado(sid, false, "Grupo cheio (5 jogadores).");
+            self.social_resultado(sid, false, "Party full (5 players).");
             return;
         }
         if inviter_name.eq_ignore_ascii_case(target_name.trim()) {
-            self.social_resultado(sid, false, "Escolha outro personagem.");
+            self.social_resultado(sid, false, "Choose another character.");
             return;
         }
         // Procura o alvo
@@ -15281,11 +15281,11 @@ impl GameWorld {
             .find(|(_, s)| s.logged_in && s.name.eq_ignore_ascii_case(target_name.trim()))
             .map(|(k, _)| *k);
         let Some(target_sid) = target_sid else {
-            self.social_resultado(sid, false, "Personagem não está neste canal.");
+            self.social_resultado(sid, false, "The character is not on this channel.");
             if let Some(s) = self.sessions.get(&sid) {
                 let _ = s.handle.to_client.send(ServerMessage::Chat {
                     from: "PARTY".into(),
-                    text: format!("{target_name} não está neste canal."),
+                    text: format!("{target_name} is not on this channel."),
                 });
             }
             return;
@@ -15300,7 +15300,7 @@ impl GameWorld {
             return;
         }
         if target.party_invite_from.is_some() && target.party_invite_until > self.sim_time_s {
-            self.social_resultado(sid, false, "Jogador já tem um convite pendente.");
+            self.social_resultado(sid, false, "That player already has a pending invite.");
             return;
         }
         if let Some(ts) = self.sessions.get_mut(&target_sid) {
@@ -15312,7 +15312,7 @@ impl GameWorld {
                 .to_client
                 .send(ServerMessage::PartyInviteReceived { from: inviter_name });
         }
-        self.social_resultado(sid, true, "Convite de grupo enviado (60 segundos).");
+        self.social_resultado(sid, true, "Party invite sent (60 seconds).");
     }
 
     fn handle_party_accept(&mut self, sid: SessionId) {
@@ -15327,7 +15327,7 @@ impl GameWorld {
                 return;
             };
             if self.sim_time_s >= s.party_invite_until {
-                self.social_resultado(sid, false, "Convite de grupo expirou.");
+                self.social_resultado(sid, false, "The party invite expired.");
                 return;
             }
             (from, s.name.clone())
@@ -15353,7 +15353,7 @@ impl GameWorld {
                 .party_id
                 .is_some_and(|pid| self.party_members(pid).len() >= shared::social::MAX_GRUPO)
         {
-            self.social_resultado(sid, false, "Grupo cheio ou convite não é mais válido.");
+            self.social_resultado(sid, false, "Party full, or the invite is no longer valid.");
             return;
         }
         // Descobre party_id (cria uma nova se inviter nao tem)
@@ -15637,7 +15637,7 @@ impl GameWorld {
         if do_mestre {
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
-                text: "Missão cumprida: volte ao Mestre de Missões.".into(),
+                text: "Objective met: go back to the Quest Master.".into(),
             });
         }
     }
@@ -15661,7 +15661,7 @@ impl GameWorld {
             .map(|(_, (_, p, t))| (p.0, t.nome.clone()));
         let Some((pos, nome)) = achado else { return };
         if !crate::quests::pode_concluir_conversa(eu.distance(pos)) {
-            self.avisa_missao(sid, "Chegue mais perto pra conversar.".into());
+            self.avisa_missao(sid, "Get closer to talk.".into());
             return;
         }
         let Some(papel) = shared::quests::papel_de_conversa(&nome) else {
@@ -15917,7 +15917,7 @@ impl GameWorld {
                     // O Capitão pode estar fora da área ativa do jogador. A
                     // vila procedural ainda conhece sua posição exata; use-a
                     // como fonte autoritativa e associe a entidade NPC que
-                    // nasceu naquele ponto. Assim "Rumo à Geleira" nunca
+                    // nasceu naquele ponto. Assim "Bound for the Glacier" nunca
                     // responde que não sabe onde fica o objetivo só porque o
                     // jogador está longe do porto.
                     let p = self
@@ -16568,7 +16568,7 @@ impl GameWorld {
 
     fn handle_abandon_quest(&mut self, sid: SessionId, quest_id: u16) {
         if quest_id == shared::historia::ID_MARCO || shared::historia::e_da_historia(quest_id) {
-            self.avisa_missao(sid, "A história não pode ser abandonada.".into());
+            self.avisa_missao(sid, "The story cannot be abandoned.".into());
             return;
         }
         let Some(s) = self.sessions.get_mut(&sid) else {
@@ -16954,7 +16954,7 @@ impl GameWorld {
                     903 => "Vai na estacao de craft (a bigorna/bancada ali) e forja sua arma. Os materiais ja sao seus.",
                     904 => "Cuidado, marujo! Derrota aquele inimigo ali primeiro.",
                     905 => "Abre Menu > Missoes, escolhe Aprenda a fazer missoes e toca Fazer. Depois podes pegar varias no menu e usar Fazer tudo.",
-                    _ => "Continua firme, marujo.",
+                    _ => "Keep at it, sailor.",
                 };
                 self.tutorial_say(sid, "Matteo", hint);
             }
@@ -17158,24 +17158,24 @@ impl GameWorld {
     /// O que o NPC faz alem de dar missao: o rotulo do botao na escolha.
     fn funcao_do_npc(&self, e: hecs::Entity) -> Option<&'static str> {
         if self.na_magica() && self.ecs.get::<&NpcDaVilaTag>(e).is_ok_and(|t| t.nome == shared::magica::GUIA_DOS_DEGRAUS) {
-            return Some("Viajar");
+            return Some("Travel");
         }
         if self.ecs.get::<&VendorTag>(e).is_ok() {
-            return Some("Loja");
+            return Some("Shop");
         }
         if self.tutorial_mode || self.dungeon_mode {
             return None;
         }
         if self.e_capitao(e) {
-            return Some("Viajar");
+            return Some("Travel");
         }
         if self.e_estivador(e) {
-            return Some("Banco");
+            return Some("Bank");
         }
         let ferreiro = self.ecs.get::<&NpcDaVilaTag>(e).is_ok_and(|t| {
             shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Ferreiro as u8
         });
-        ferreiro.then_some("Forja")
+        ferreiro.then_some("Forge")
     }
 
     fn interagir(&mut self, sid: SessionId, clicked_eid: Option<u64>, pular_missao: bool) {
@@ -17380,7 +17380,7 @@ impl GameWorld {
                     } else {
                         let _ = handle.to_client.send(ServerMessage::Chat {
                             from: "SYS".into(),
-                            text: "Este representante não atende sua facção.".into(),
+                            text: "This representative does not serve your faction.".into(),
                         });
                     }
                 }
@@ -17511,7 +17511,7 @@ impl GameWorld {
         });
         let _ = h.to_client.send(ServerMessage::Chat {
             from: "SYS".into(),
-            text: "Você abriu o baú e encontrou a relíquia!".into(),
+            text: "You opened the chest and found the relic!".into(),
         });
         if fac_reward {
             let _ = h
@@ -17607,7 +17607,7 @@ impl GameWorld {
                 s.carried_by = Some(carrier_eid);
                 let _ = s.handle.to_client.send(ServerMessage::Chat {
                     from: "SYS".into(),
-                    text: "voce esta sendo carregado".into(),
+                    text: "you are being carried".into(),
                 });
                 tracing::info!("{} esta carregando {}", carrier_eid.0, target_eid.0);
                 break;
@@ -17695,7 +17695,7 @@ impl GameWorld {
                 let _ = session.handle.to_client.send(ServerMessage::Chat {
                     from: "SHOP".into(),
                     text: format!(
-                        "Faltam {} de {moeda} ({price} por unidade).",
+                        "{} {moeda} short ({price} per unit).",
                         price as u64 - tem
                     ),
                 });
@@ -17745,7 +17745,7 @@ impl GameWorld {
             crate::telemetria::conta("loja_compra", item_id, 1);
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
-                text: format!("Comprado por {price} de {moeda}."),
+                text: format!("Bought for {price} {moeda}."),
             });
             new_max
         };
@@ -17783,7 +17783,7 @@ impl GameWorld {
     /// ir direto pro corpo).
     fn handle_shop_comprar(&mut self, sid: SessionId, slot_idx: usize, qtd: u32) {
         let Some(shop_id) = self.loja_perto(sid) else {
-            self.send_trade_result(sid, false, "longe demais do vendedor");
+            self.send_trade_result(sid, false, "too far from the vendor");
             return;
         };
         if shop_id == shared::magica::LOJA_DE_TROCAS {
@@ -17792,14 +17792,14 @@ impl GameWorld {
         }
         let listing = crate::economy::shop_listing_for(shop_id);
         let Some(&(item, preco)) = listing.get(slot_idx) else {
-            self.send_trade_result(sid, false, "item de loja inválido");
+            self.send_trade_result(sid, false, "invalid shop item");
             return;
         };
         if shared::equip_slot_of(item).is_some() {
             if qtd == 1 {
                 self.handle_shop_buy(sid, slot_idx);
             } else {
-                self.send_trade_result(sid, false, "equipamento se compra um de cada vez");
+                self.send_trade_result(sid, false, "gear is bought one piece at a time");
             }
             return;
         }
@@ -17813,7 +17813,7 @@ impl GameWorld {
                 session.inventory_dirty = true;
                 crate::telemetria::conta("cobre_ralo", "loja", total as i64);
                 crate::telemetria::conta("loja_compra", item, qtd as i64);
-                let texto = format!("Comprou {qtd}x {nome} por {total} de cobre.");
+                let texto = format!("You bought {qtd}x {nome} for {total} copper.");
                 let _ = session
                     .handle
                     .to_client
@@ -17828,26 +17828,26 @@ impl GameWorld {
 
     fn comprar_na_ilha_magica(&mut self, sid: SessionId, slot_idx: usize, qtd: u32) {
         if !self.na_magica() || qtd == 0 || qtd > 999 {
-            self.send_trade_result(sid, false, "quantidade inválida");
+            self.send_trade_result(sid, false, "invalid quantity");
             return;
         }
         let Some(&(item, por_pacote, preco)) = shared::magica::TROCAS.get(slot_idx) else {
-            self.send_trade_result(sid, false, "troca inválida");
+            self.send_trade_result(sid, false, "invalid trade");
             return;
         };
         let Some(total) = preco.checked_mul(qtd) else {
-            self.send_trade_result(sid, false, "quantidade inválida");
+            self.send_trade_result(sid, false, "invalid quantity");
             return;
         };
         let Some(receber) = por_pacote.checked_mul(qtd) else {
-            self.send_trade_result(sid, false, "quantidade inválida");
+            self.send_trade_result(sid, false, "invalid quantity");
             return;
         };
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
         if crate::craft::tem(&s.inventory, shared::item_id::MOEDA_MAGICA) < total {
-            self.send_trade_result(sid, false, "Moedas Mágicas insuficientes");
+            self.send_trade_result(sid, false, "not enough Magic Coins");
             return;
         }
         // Simula a bolsa apos o pagamento: a compra so' acontece se o
@@ -17857,7 +17857,7 @@ impl GameWorld {
         if !crate::coleta::cabe_tudo(&nova, &[(item, receber)], &crate::economy::item_stack_max)
             || !add_to_inventory(&mut nova, item, receber, None)
         {
-            self.send_trade_result(sid, false, "bolsa cheia para receber a troca");
+            self.send_trade_result(sid, false, "bag too full to receive the trade");
             return;
         }
         s.inventory = nova;
@@ -17973,11 +17973,11 @@ impl GameWorld {
             }
         }
         let Some((vendor_eid, shop_id, _)) = nearest else {
-            self.send_trade_result(sid, false, "longe demais do vendedor");
+            self.send_trade_result(sid, false, "too far from the vendor");
             return;
         };
         if shop_id == shared::magica::LOJA_DE_TROCAS {
-            self.send_trade_result(sid, false, "use a loja de trocas do Mercador Mágico");
+            self.send_trade_result(sid, false, "use the Magic Merchant's trade shop");
             return;
         }
         let vendor_id = vendor_eid;
@@ -17993,7 +17993,7 @@ impl GameWorld {
                 continue;
             }
             let Some(&(item_id, base_price)) = listing.get(entry.shop_slot as usize) else {
-                self.send_trade_result(sid, false, "item de loja inválido");
+                self.send_trade_result(sid, false, "invalid shop item");
                 return;
             };
             let unit_price = (base_price as f32 * buy_mult).round() as u64;
@@ -18021,17 +18021,17 @@ impl GameWorld {
         for (&slot_idx, &qty) in &sell_by_slot {
             let idx = slot_idx as usize;
             if idx >= inv_snapshot.len() {
-                self.send_trade_result(sid, false, "slot de inventário inválido");
+                self.send_trade_result(sid, false, "invalid inventory slot");
                 return;
             }
             let slot = &inv_snapshot[idx];
             if slot.qty < qty {
-                self.send_trade_result(sid, false, "quantidade indisponível no inventário");
+                self.send_trade_result(sid, false, "that quantity is not in your inventory");
                 return;
             }
             let unit_price = crate::economy::sell_price_of(slot.item_id);
             if unit_price == 0 {
-                self.send_trade_result(sid, false, "item não vendável no basket");
+                self.send_trade_result(sid, false, "that item cannot be sold in this basket");
                 return;
             }
             let unit_price_mod = (unit_price as f32 * sell_mult).round() as u64;
@@ -18045,7 +18045,7 @@ impl GameWorld {
             .saturating_add(total_sell)
             .checked_sub(total_buy)
         else {
-            self.send_trade_result(sid, false, "ouro insuficiente");
+            self.send_trade_result(sid, false, "not enough gold");
             return;
         };
 
@@ -18063,7 +18063,7 @@ impl GameWorld {
         // instance — pode ser estendido pra vender raros no futuro.
         for &(item_id, qty) in &buys {
             if !add_to_inventory(&mut sim, item_id, qty, None) {
-                self.send_trade_result(sid, false, "inventário cheio pros itens comprados");
+                self.send_trade_result(sid, false, "inventory too full for the items bought");
                 return;
             }
         }
@@ -18303,7 +18303,7 @@ impl GameWorld {
         s.inventory_dirty = true;
         let nome = shared::pets::nome_do_item(id)
             .or_else(|| shared::montarias::nome_do_item(id))
-            .unwrap_or_else(|| "o bicho".into());
+            .unwrap_or_else(|| "the beast".into());
         let stat = |i: u8| {
             shared::SIGLA_DO_STAT
                 .get(i as usize)
@@ -18311,8 +18311,8 @@ impl GameWorld {
                 .unwrap_or("?")
         };
         let de = antes.map_or_else(
-            || " (era a afinidade da criatura)".to_string(),
-            |a| format!(" (era {} e {})", stat(a[0]), stat(a[1])),
+            || " (that was the creature's affinity)".to_string(),
+            |a| format!(" (it was {} and {})", stat(a[0]), stat(a[1])),
         );
         self.send_chat_to(
             sid,
@@ -18368,11 +18368,11 @@ impl GameWorld {
             || skill_slot >= dados.skills.len()
             || dados.skills[skill_slot] != 0
         {
-            self.send_chat_to(sid, "[Pet] Esse slot de skill não está livre.");
+            self.send_chat_to(sid, "[Pet] That skill slot is not free.");
             return;
         }
         if dados.skills.contains(&skill.item_id) {
-            self.send_chat_to(sid, "[Pet] Esse pet já conhece a skill.");
+            self.send_chat_to(sid, "[Pet] That pet already knows the skill.");
             return;
         }
         dados.skills[skill_slot] = skill.item_id;
@@ -18392,7 +18392,7 @@ impl GameWorld {
         self.send_chat_to(
             sid,
             &format!(
-                "[Pet] {} aprendeu {}.",
+                "[Pet] {} learned {}.",
                 shared::pets::nome_do_item(pet_id).unwrap_or_else(|| "Pet".into()),
                 skill.nome
             ),
@@ -18414,12 +18414,12 @@ impl GameWorld {
             .into_iter()
             .find_map(|(slot, pet, inst)| pet.map(|id| (slot, id, inst)))
         else {
-            self.send_chat_to(sid, "[Pet] Equipe um pet antes.");
+            self.send_chat_to(sid, "[Pet] Equip a pet first.");
             return;
         };
         let mut d = shared::pets::dados(inst.as_ref());
         let nivel = shared::pets::nivel_de_xp(d.xp);
-        let nome = shared::pets::nome_do_item(pet).unwrap_or_else(|| "o pet".into());
+        let nome = shared::pets::nome_do_item(pet).unwrap_or_else(|| "the pet".into());
 
         let aviso = if item_id == shared::item_id::RACAO_DE_PET {
             // Alimentar acumula: usar duas racoes dobra o tempo, nao o perde.
@@ -18431,11 +18431,11 @@ impl GameWorld {
             )
         } else if item_id == shared::item_id::REMOVEDOR_DE_SKILL_PET {
             if d.skills.iter().all(|x| *x == 0) {
-                self.send_chat_to(sid, "[Pet] Esse pet não tem skill nenhuma.");
+                self.send_chat_to(sid, "[Pet] That pet has no skill at all.");
                 return;
             }
             d.skills = [0; 3];
-            format!("[Pet] As skills de {nome} foram removidas.")
+            format!("[Pet] {nome}'s skills were removed.")
         } else {
             // Skill: precisa de slot ABERTO pelo nivel e ainda vazio.
             let Some(skill) = shared::pets::skill(item_id) else {
@@ -18453,7 +18453,7 @@ impl GameWorld {
                 return;
             }
             if d.skills[..abertos].contains(&item_id) {
-                self.send_chat_to(sid, &format!("[Pet] {nome} já tem {}.", skill.nome));
+                self.send_chat_to(sid, &format!("[Pet] {nome} already has {}.", skill.nome));
                 return;
             }
             let Some(livre) = (0..abertos).find(|i| d.skills[*i] == 0) else {
@@ -18464,7 +18464,7 @@ impl GameWorld {
                 return;
             };
             d.skills[livre] = item_id;
-            format!("[Pet] {nome} aprendeu {}.", skill.nome)
+            format!("[Pet] {nome} learned {}.", skill.nome)
         };
 
         // Cobra o item so' agora, com o efeito garantido.
@@ -18518,7 +18518,7 @@ impl GameWorld {
             // existe seria cobrar duas vezes pela mesma coisa.
             let _ = s.handle.to_client.send(ServerMessage::Chat {
                 from: "SYS".into(),
-                text: "Você já tem essa aparência.".into(),
+                text: "You already have that appearance.".into(),
             });
             return;
         }
@@ -18532,7 +18532,7 @@ impl GameWorld {
         let nome = shared::aparencia::nome_da_skin(id).unwrap_or("Skin");
         let _ = s.handle.to_client.send(ServerMessage::Chat {
             from: "SYS".into(),
-            text: format!("{nome} destravado — veja no guarda-roupa."),
+            text: format!("{nome} unlocked — check your wardrobe."),
         });
         let _ = s.handle.to_client.send(ServerMessage::GuardaRoupa {
             guarda_roupa: s.guarda_roupa.clone(),
@@ -18805,7 +18805,7 @@ impl GameWorld {
                     Err(Recusa::Recarga(s)) => {
                         self.send_chat_to(
                             sid,
-                            &format!("[Poção] {} em recarga: {:.1} s", g.nome(), s),
+                            &format!("[Potion] {} on cooldown: {:.1} s", g.nome(), s),
                         );
                     }
                     Err(Recusa::Cheio) => {}
@@ -18988,7 +18988,7 @@ impl GameWorld {
             // comporta o que saiu, nada rendeu nem foi gasto: pausa.
             let rendeu = self.coletar_plantado(sid, c.coletavel);
             if !rendeu {
-                self.send_chat_to(sid, "Bolsa cheia — coleta pausada.");
+                self.send_chat_to(sid, "Bag full — gathering paused.");
             }
             if let Some(s) = self.sessions.get_mut(&sid) {
                 let bolsa = crate::coleta::impressao_da_bolsa(&s.inventory);
@@ -19043,7 +19043,7 @@ impl GameWorld {
             return;
         };
         if !crate::coleta::ao_alcance(pos, c.centro, raio) {
-            self.send_chat_to(sid, "Coleta: chegue mais perto.");
+            self.send_chat_to(sid, "Gathering: get closer.");
             self.parar_coleta_de_no(sid);
             return;
         }

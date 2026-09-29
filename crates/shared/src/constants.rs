@@ -1642,13 +1642,13 @@ pub fn ciclo_de_coleta_s(tier: u8) -> f32 {
 /// Nome do tipo de no' pra HUD: 0 madeira, 1..4 pedra pela cor.
 pub fn nome_do_no(tier: u8) -> &'static str {
     match tier {
-        0 => "Madeira",
-        1 => "Pedra cinza",
-        2 => "Pedra verde",
-        3 => "Pedra azul",
-        4 => "Pedra roxa",
-        5 => "Energia",
-        _ => "Recurso",
+        0 => "Wood",
+        1 => "Grey stone",
+        2 => "Green stone",
+        3 => "Blue stone",
+        4 => "Purple stone",
+        5 => "Energy",
+        _ => "Node",
     }
 }
 

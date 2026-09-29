@@ -49,40 +49,40 @@ pub const PESO_TOTAL: u8 = 10;
 pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
     Especie {
         grau: 1,
-        nome: "Porquinho",
+        nome: "Piglet",
         bicho: "bichos/porco",
         escala: 0.812,
         // VIT 6, RES 4 — o gordinho aguenta.
         afinidade: pesos(&[(stat_idx::VIT, 6), (stat_idx::RES, 4)]),
-        descricao: "Come tudo e não reclama. Vitalidade.",
+        descricao: "Eats anything, complains about nothing. Vitality.",
     },
     Especie {
         grau: 2,
-        nome: "Filhote de Lobo",
+        nome: "Wolf Cub",
         bicho: "bichos/lobo_pequeno",
         escala: 0.778,
         afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
-        descricao: "Rápido e curioso. Destreza e velocidade.",
+        descricao: "Quick and curious. Dexterity and speed.",
     },
     Especie {
         grau: 3,
-        nome: "Filhote de Tigre",
+        nome: "Tiger Cub",
         bicho: "bichos/tigre",
         escala: 0.789,
         afinidade: pesos(&[(stat_idx::FOR, 5), (stat_idx::DES, 5)]),
-        descricao: "Caçador desde pequeno. Força e destreza.",
+        descricao: "A hunter from the start. Strength and dexterity.",
     },
     Especie {
         grau: 4,
-        nome: "Corujurso",
+        nome: "Owlbear Cub",
         bicho: "bichos/owlbear",
         escala: 0.567,
         afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::FOR, 5)]),
-        descricao: "Estranho e sábio. O pet da arma mágica.",
+        descricao: "Odd and wise. The pet for the magic weapon.",
     },
     Especie {
         grau: 5,
-        nome: "Filhote de Dragão",
+        nome: "Dragon Hatchling",
         bicho: "bichos/dragao",
         escala: 0.396,
         afinidade: pesos(&[(stat_idx::FOR, 4), (stat_idx::INT, 3), (stat_idx::VIT, 3)]),
@@ -153,11 +153,11 @@ pub fn nome_do_item(id: u16) -> Option<String> {
 
 pub fn nome_do_grau(grau: u8) -> &'static str {
     match grau {
-        1 => "Cinza",
-        2 => "Verde",
-        3 => "Azul",
-        4 => "Roxo",
-        _ => "Laranja",
+        1 => "Grey",
+        2 => "Green",
+        3 => "Blue",
+        4 => "Purple",
+        _ => "Orange",
     }
 }
 
@@ -336,50 +336,50 @@ pub struct SkillDePet {
 pub const SKILLS: [SkillDePet; 7] = [
     SkillDePet {
         item_id: item_id::SKILL_PET_FARO,
-        nome: "Faro Apurado",
-        descricao: "+3 tiles no raio de busca.",
+        nome: "Keen Nose",
+        descricao: "+3 tiles on the search radius.",
         efeito: Efeito::RaioExtra(3.0),
         preco_tp: 300,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_PASSO,
-        nome: "Passo Leve",
-        descricao: "+20% de velocidade.",
+        nome: "Light Step",
+        descricao: "+20% speed.",
         efeito: Efeito::VelocidadeExtra(0.2),
         preco_tp: 300,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_ESTOMAGO,
-        nome: "Estômago Fundo",
-        descricao: "A Ração dura o dobro.",
+        nome: "Deep Stomach",
+        descricao: "Feed lasts twice as long.",
         efeito: Efeito::RacaoDobrada,
         preco_tp: 250,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_APRENDIZ,
-        nome: "Aprendiz",
-        descricao: "+50% da experiência que o pet recebe.",
+        nome: "Apprentice",
+        descricao: "+50% of the experience the pet gains.",
         efeito: Efeito::XpExtra(0.5),
         preco_tp: 400,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_VIGOR,
-        nome: "Vigor Emprestado",
+        nome: "Borrowed Stamina",
         descricao: "+3 pontos de atributo, na afinidade da espécie.",
         efeito: Efeito::PontosExtra(3),
         preco_tp: 500,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_REGEN_VIDA,
-        nome: "Sopro Curativo",
-        descricao: "+1,5 de vida por segundo.",
+        nome: "Healing Breath",
+        descricao: "+1.5 health per second.",
         efeito: Efeito::RegenDeVida(1.5),
         preco_tp: 450,
     },
     SkillDePet {
         item_id: item_id::SKILL_PET_REGEN_MANA,
-        nome: "Fonte Interior",
-        descricao: "+2 de mana por segundo.",
+        nome: "Inner Spring",
+        descricao: "+2 mana per second.",
         efeito: Efeito::RegenDeMana(2.0),
         preco_tp: 450,
     },
@@ -390,12 +390,12 @@ pub const PONTOS_DA_SKILL_DE_ATRIBUTO: u32 = 4;
 
 /// Nome e sigla de cada atributo, na ordem de `stat_idx`.
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
-    ("Força Emprestada", "FOR"),
-    ("Destreza Emprestada", "DES"),
-    ("Sabedoria Emprestada", "INT"),
-    ("Vitalidade Emprestada", "VIT"),
-    ("Ligeireza Emprestada", "SPD"),
-    ("Resistência Emprestada", "RES"),
+    ("Borrowed Strength", "FOR"),
+    ("Borrowed Dexterity", "DES"),
+    ("Borrowed Wisdom", "INT"),
+    ("Borrowed Vitality", "VIT"),
+    ("Borrowed Quickness", "SPD"),
+    ("Borrowed Resilience", "RES"),
 ];
 
 /// O catalogo inteiro: as fixas acima e uma por atributo.
@@ -408,12 +408,12 @@ pub fn todas_as_skills() -> Vec<SkillDePet> {
             // O `descricao` e' `&'static str`: a sigla ja' esta' no nome, e o
             // numero e' o mesmo pra todas.
             descricao: match sigla {
-                &"FOR" => "+4 de FOR.",
-                &"DES" => "+4 de DES.",
-                &"INT" => "+4 de INT.",
-                &"VIT" => "+4 de VIT.",
-                &"SPD" => "+4 de SPD.",
-                _ => "+4 de RES.",
+                &"FOR" => "+4 STR.",
+                &"DES" => "+4 DEX.",
+                &"INT" => "+4 INT.",
+                &"VIT" => "+4 VIT.",
+                &"SPD" => "+4 SPD.",
+                _ => "+4 RES.",
             },
             efeito: Efeito::PontoEm(i, PONTOS_DA_SKILL_DE_ATRIBUTO),
             preco_tp: 450,

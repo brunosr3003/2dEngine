@@ -169,7 +169,7 @@ impl LoginGoogle {
                         Some(Saida::AbrirUrl(url))
                     }
                     Err(e) => {
-                        self.fase = Fase::Erro(format!("Não deu pra iniciar: {e}"));
+                        self.fase = Fase::Erro(format!("Could not start: {e}"));
                         None
                     }
                 }
@@ -188,7 +188,7 @@ impl LoginGoogle {
                         None
                     }
                     Ok(RespostaPoll::Expirado) => {
-                        self.fase = Fase::Erro("O pedido expirou. Tente de novo.".into());
+                        self.fase = Fase::Erro("The request expired. Try again.".into());
                         None
                     }
                     // Pendente, ou rede instavel: continua esperando.
@@ -209,7 +209,7 @@ impl LoginGoogle {
             return None;
         };
         if agora - *desde > ESPERA_MAX_S {
-            self.fase = Fase::Erro("Tempo esgotado esperando o navegador.".into());
+            self.fase = Fase::Erro("Timed out waiting for the browser.".into());
             return None;
         }
         if agora - *ultimo_poll < INTERVALO_POLL_S {
@@ -222,8 +222,8 @@ impl LoginGoogle {
     /// Status text for the login screen.
     pub fn texto(&self) -> Option<String> {
         match &self.fase {
-            Fase::Iniciando => Some("Abrindo o Google…".into()),
-            Fase::Aguardando { .. } => Some("Aguardando confirmação no navegador…".into()),
+            Fase::Iniciando => Some("Opening Google…".into()),
+            Fase::Aguardando { .. } => Some("Waiting for confirmation in the browser…".into()),
             Fase::Erro(e) => Some(e.clone()),
             _ => None,
         }

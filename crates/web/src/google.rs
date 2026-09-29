@@ -468,7 +468,7 @@ async fn callback(
             .into_response();
     };
     let Some(state) = q.get("state").cloned() else {
-        return (StatusCode::BAD_REQUEST, pagina(false, "Pedido inválido.")).into_response();
+        return (StatusCode::BAD_REQUEST, pagina(false, "Invalid order.")).into_response();
     };
     let Some((verifier, nonce)) = st
         .pendentes

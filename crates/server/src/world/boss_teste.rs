@@ -45,7 +45,7 @@ impl GameWorld {
         tag.stats.attack_damage = tag.stats.attack_damage.max(90);
         tag.level = 20;
         tag.is_boss = true;
-        tag.boss_name = Some("Guardiao de Treino".into());
+        tag.boss_name = Some("Training Guardian".into());
         // Stays visible near login, but only starts the fight when provoked.
         tag.detect_range = 4.0;
         tag.wander_timer = f32::MAX;

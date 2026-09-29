@@ -57,9 +57,9 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     crate::hud_layout::escurece(0.5);
     estilo::painel(r);
     let x = r.x + 24.0 * f;
-    estilo::texto_forte(x, r.y + 40.0 * f, "Usar de novo?", 20, estilo::OURO);
+    estilo::texto_forte(x, r.y + 40.0 * f, "Use again?", 20, estilo::OURO);
     estilo::texto_ajustado(
-        &format!("{nome} já está ativa, com {} restando.", resta(restante_s)),
+        &format!("{nome} is already active, with {} left.", resta(restante_s)),
         x,
         r.y + 78.0 * f,
         w - 48.0 * f,
@@ -85,7 +85,7 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     estilo::texto_centro(
         cancelar.center().x,
         cancelar.center().y + 6.0 * f,
-        "Cancelar",
+        "Cancel",
         16,
         estilo::TEXTO,
     );
@@ -93,7 +93,7 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     estilo::texto_centro_forte(
         usar.center().x,
         usar.center().y + 6.0 * f,
-        "Usar assim mesmo",
+        "Use it anyway",
         16,
         estilo::OURO,
     );

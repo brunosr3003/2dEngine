@@ -19,7 +19,7 @@ impl GameWorld {
         };
         if let Pedido::ReceberAnexos { id } = pedido {
             if s.correio_em_voo {
-                self.social_resultado(sid, false, "Aguarde o resgate atual.");
+                self.social_resultado(sid, false, "Wait for the current claim.");
                 return;
             }
             if s.correio_recibos
@@ -43,13 +43,13 @@ impl GameWorld {
             return;
         }
         let Some(ctx) = self.auth_ctx.as_ref() else {
-            self.social_resultado(sid, false, "Social indisponível: servidor sem banco.");
+            self.social_resultado(sid, false, "Social unavailable: the server has no database.");
             return;
         };
         // At most one operation in flight per session; no SQL blocks the tick.
         if self.social_pendentes.contains_key(&sid) {
             if !matches!(pedido, Pedido::Estado) {
-                self.social_resultado(sid, false, "Aguarde a atualização e tente novamente.");
+                self.social_resultado(sid, false, "Wait for the refresh and try again.");
             }
             return;
         }
@@ -59,7 +59,7 @@ impl GameWorld {
             .is_some_and(|t| self.sim_time_s - t < 0.3)
         {
             if !matches!(pedido, Pedido::Estado) {
-                self.social_resultado(sid, false, "Aguarde um instante e tente novamente.");
+                self.social_resultado(sid, false, "Wait a moment and try again.");
             }
             return;
         }
@@ -79,7 +79,7 @@ impl GameWorld {
                             oficial_texto =
                                 Some(format!("Correio oficial enviado para {n} personagem(ns)."));
                         }),
-                    None => Err(anyhow::anyhow!("Conta não autenticada.")),
+                    None => Err(anyhow::anyhow!("Account not authenticated.")),
                 }
             } else {
                 crate::social::executar(&pool, &nome, &pedido).await
@@ -90,10 +90,10 @@ impl GameWorld {
                         true,
                         oficial_texto.unwrap_or_else(|| {
                             match pedido {
-                                Pedido::EnviarCarta { .. } => "Carta enviada.",
-                                Pedido::Amizade { .. } => "Pedido de amizade enviado.",
-                                Pedido::ConvidarCla { .. } => "Convite de clã enviado.",
-                                _ => "Atualizado.",
+                                Pedido::EnviarCarta { .. } => "Letter sent.",
+                                Pedido::Amizade { .. } => "Friend request sent.",
+                                Pedido::ConvidarCla { .. } => "Clan invite sent.",
+                                _ => "Updated.",
                             }
                             .to_string()
                         }),
@@ -101,7 +101,7 @@ impl GameWorld {
                     Err(e) => {
                         let texto = if e.downcast_ref::<sqlx::Error>().is_some() {
                             tracing::warn!("social: {e:#}");
-                            "Social indisponível. Tente novamente.".to_string()
+                            "Social unavailable. Try again.".to_string()
                         } else {
                             e.to_string()
                         };
@@ -116,7 +116,7 @@ impl GameWorld {
                     tracing::warn!("social estado: {e:#}");
                     avisos.push(Aviso::Resultado {
                         ok: false,
-                        texto: "Não foi possível carregar o social.".into(),
+                        texto: "The social panel could not be loaded.".into(),
                     });
                 }
             }
@@ -172,10 +172,10 @@ impl GameWorld {
             return;
         };
         s.correio_em_voo = false;
-        if texto == "Anexos recebidos e salvos." {
+        if texto == "Attachments received and saved." {
             s.correio_recibos.clear();
         }
-        self.social_resultado(sid, texto == "Anexos recebidos e salvos.", &texto);
+        self.social_resultado(sid, texto == "Attachments received and saved.", &texto);
         self.handle_social(sid, Pedido::Estado);
     }
 

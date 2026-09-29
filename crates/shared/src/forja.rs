@@ -49,11 +49,11 @@ impl Grau {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Grau::Comum => "Comum",
-            Grau::Fino => "Fino",
-            Grau::Raro => "Raro",
-            Grau::Epico => "Épico",
-            Grau::Lendario => "Lendário",
+            Grau::Comum => "Common",
+            Grau::Fino => "Fine",
+            Grau::Raro => "Rare",
+            Grau::Epico => "Epic",
+            Grau::Lendario => "Legendary",
         }
     }
 
@@ -316,7 +316,7 @@ pub fn tentativas_por_peca(alvo: u8, amostras: u32) -> f32 {
 
 // ────────────────────────────── aprimorar ─────────────────────────────
 //
-// A aba "Aprimorar" do Craft, a ladder de `combinar` aplicada ao item de
+// A aba "Upgrade" do Craft, a ladder de `combinar` aplicada ao item de
 // verdade. A instancia guarda a COR em `rarity` e o TIER em `tier`:
 //
 //   2 x (cor G, Tier I..III)        ->  1 x (cor G, tier seguinte)
@@ -381,14 +381,14 @@ pub fn conferir_aprimorar(a: PecaDoAprimorar, b: PecaDoAprimorar) -> Result<(u8,
         return Err("as duas peças precisam ter o mesmo tier".into());
     }
     if a.4 || b.4 {
-        return Err("tire as gemas das peças antes".into());
+        return Err("take the gems out of the pieces first".into());
     }
     let (grau, tier) = (a.1.clamp(1, 5), a.2.clamp(1, TIER_MAX));
     if tier < TIER_MAX {
         return Ok((grau, tier + 1));
     }
     if grau >= Grau::Lendario as u8 {
-        return Err("Lendário IV é o topo".into());
+        return Err("Legendary IV is the top".into());
     }
     if a.3 < REFINO_PARA_COR || b.3 < REFINO_PARA_COR {
         return Err(format!(

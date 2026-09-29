@@ -65,10 +65,10 @@ impl Categoria {
 
     pub fn nome(self) -> &'static str {
         match self {
-            Categoria::Todas => "Todas",
-            Categoria::Equipamento => "Equipamento",
+            Categoria::Todas => "All",
+            Categoria::Equipamento => "Gear",
             Categoria::Material => "Material",
-            Categoria::Consumivel => "Consumível",
+            Categoria::Consumivel => "Consumable",
             Categoria::Tp => "TP",
         }
     }
@@ -136,12 +136,12 @@ impl Recusa {
             Recusa::NivelBaixo => {
                 format!("Precisa do nível {NIVEL_PARA_VENDER} para vender no mercado.")
             }
-            Recusa::Vinculado => "Item vinculado: não pode ser vendido.".into(),
-            Recusa::Quantidade => "Quantidade inválida.".into(),
+            Recusa::Vinculado => "Bound item: it cannot be sold.".into(),
+            Recusa::Quantidade => "Invalid quantity.".into(),
             Recusa::Preco => format!("Preço inválido (1 a {PRECO_MAX_UNIT} por unidade)."),
             Recusa::MuitosAnuncios => format!("Limite de {MAX_ANUNCIOS} anúncios ativos."),
-            Recusa::SemGold => "Gold insuficiente.".into(),
-            Recusa::SemTp => "TP insuficiente.".into(),
+            Recusa::SemGold => "Not enough gold.".into(),
+            Recusa::SemTp => "Not enough TP.".into(),
             Recusa::Indisponivel => {
                 "Mercado indisponível agora. Tente de novo em instantes.".into()
             }

@@ -221,7 +221,7 @@ fn montar_postos(ger: &Gerador, vila: &mut Vila) {
         let Some(mut npc) = npc_da_porta(&predio) else {
             continue;
         };
-        npc.nome = crate::quests::nome_do_posto(giver).unwrap_or("Vigia");
+        npc.nome = crate::quests::nome_do_posto(giver).unwrap_or("Watchman");
         npc.giver = Some(giver);
         vila.predios.push(predio);
         vila.npcs.push(npc);
@@ -555,7 +555,7 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
     let pos_banco = centro + Vec2::new(ang_banco.cos(), ang_banco.sin()) * MESTRE_DO_POCO;
     vila.npcs.push(NpcDaVila {
         papel: Papel::Deposito,
-        nome: "Banqueira",
+        nome: "Banker",
         pos: pos_banco,
         yaw: yaw_de(centro - pos_banco),
         loja: None,
@@ -1481,7 +1481,7 @@ mod testes {
             let ger = Gerador::da_ilha(d);
             let Some(cidade) = ger.cidade() else { continue };
             assert!(ger.vila().npcs.iter().any(|n|
-                n.nome == "Banqueira" && n.papel == Papel::Deposito
+                n.nome == "Banker" && n.papel == Papel::Deposito
                     && n.pos.distance(cidade.centro()) < 8.0),
                 "{} sem Banqueira na praca", d.zona);
         }

@@ -81,7 +81,7 @@ pub fn no_painel<T>(k: f32, corpo: impl FnOnce() -> T) -> T {
 /// O ALVO MÍNIMO DE UM DEDO, em pontos.
 ///
 /// Quarenta e quatro é o piso que a Apple publica na HIG, e o número bate com
-/// a queixa: os botões do diálogo ("Próximo", "Receber") tinham 28 px de
+/// a queixa: os botões do diálogo ("Next", "Receive") tinham 28 px de
 /// altura, e o dono "clicava errado toda hora".
 ///
 /// Varrendo o cliente com este piso saíram **55** botões abaixo dele, de 28 a

@@ -97,7 +97,7 @@ impl IrPara {
                 Objetivo::Combate => Acao::LigarCombate(a.pos),
                 Objetivo::Coleta(t) => Acao::LigarColeta(t, a.pos),
                 Objetivo::Npc => Acao::FalarPerto(a.pos),
-                Objetivo::Lugar => Acao::Aviso(format!("Chegou: {}.", a.rotulo)),
+                Objetivo::Lugar => Acao::Aviso(format!("Arrived: {}.", a.rotulo)),
             };
             self.parar();
             return Some(acao);
@@ -127,7 +127,7 @@ impl IrPara {
             if self.pedidos_sem_progresso >= DESISTE_APOS {
                 let rotulo = a.rotulo.clone();
                 self.parar();
-                return Some(Acao::Aviso(format!("Não achei caminho até {rotulo}.")));
+                return Some(Acao::Aviso(format!("I found no path to {rotulo}.")));
             }
         }
         // NPC: stop beside them, not on top.
@@ -143,7 +143,7 @@ impl IrPara {
         let (Some(a), Some(eu)) = (&self.alvo, eu) else {
             return None;
         };
-        Some(format!("INDO · {} · {:.0} m", a.rotulo, eu.distance(a.pos)))
+        Some(format!("HEADING · {} · {:.0} m", a.rotulo, eu.distance(a.pos)))
     }
 }
 

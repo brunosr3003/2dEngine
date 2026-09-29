@@ -41,9 +41,9 @@ pub fn estado_da_diaria(d: &QuestDef, c: &Contexto) -> Estado {
 /// The button label for each state; `None` = no button.
 pub fn botao_de(e: &Estado) -> Option<&'static str> {
     match e {
-        Estado::Disponivel => Some("Pegar"),
+        Estado::Disponivel => Some("Take"),
         Estado::EmAndamento { .. } => Some("Ir"),
-        Estado::Pronta => Some("Ir entregar"),
+        Estado::Pronta => Some("Go turn it in"),
         Estado::Concluida | Estado::Bloqueada(_) => None,
     }
 }
@@ -52,7 +52,7 @@ pub fn botao_de(e: &Estado) -> Option<&'static str> {
 pub fn clique_da_diaria(d: &QuestDef, e: &Estado, agora_unix: i64) -> Clique {
     match e {
         Estado::Concluida => Clique::Aviso(format!(
-            "\"{}\" concluída hoje · reset em {}.",
+            "\"{}\" completed today · resets in {}.",
             d.title,
             reset_em(agora_unix)
         )),
@@ -141,7 +141,7 @@ impl Diarias {
     fn desenha_na_escala(&mut self, c: &Contexto, nomes: &HashMap<u16, String>) -> Option<Clique> {
         let p = Self::painel();
         estilo::painel(p);
-        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Diárias", 22, estilo::OURO);
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), "Dailies", 22, estilo::OURO);
         let ilha = c
             .zona
             .and_then(shared::terreno::def_da_zona)
@@ -149,7 +149,7 @@ impl Diarias {
         estilo::texto(
             p.x + u(18.0),
             p.y + u(54.0),
-            &format!("{ilha} · reset em {}", reset_em(c.agora_unix)),
+            &format!("{ilha} · resets in {}", reset_em(c.agora_unix)),
             14,
             estilo::SUAVE,
         );
@@ -174,7 +174,7 @@ impl Diarias {
             estilo::texto(
                 area.x + u(8.0),
                 area.y + u(22.0),
-                "Nenhuma diária nesta ilha.",
+                "No daily on this island.",
                 15,
                 estilo::SUAVE,
             );
@@ -203,12 +203,12 @@ impl Diarias {
             );
             let vermelho = Color::new(0.85, 0.45, 0.40, 1.0);
             let (rotulo, cor) = match &e {
-                Estado::Disponivel => ("Disponível".to_string(), Color::new(1.0, 0.84, 0.2, 1.0)),
+                Estado::Disponivel => ("Available".to_string(), Color::new(1.0, 0.84, 0.2, 1.0)),
                 Estado::EmAndamento { feito, total } => {
-                    (format!("Em andamento · {feito}/{total}"), estilo::TEXTO)
+                    (format!("In progress · {feito}/{total}"), estilo::TEXTO)
                 }
-                Estado::Pronta => ("Pronta pra entregar".to_string(), estilo::AUTO),
-                Estado::Concluida => ("Concluída hoje".to_string(), estilo::SUAVE),
+                Estado::Pronta => ("Ready to turn in".to_string(), estilo::AUTO),
+                Estado::Concluida => ("Completed today".to_string(), estilo::SUAVE),
                 Estado::Bloqueada(m) => (m.first().cloned().unwrap_or_default(), vermelho),
             };
             let icone = vec2(linha.x + u(22.0), linha.y + u(26.0));
@@ -324,7 +324,7 @@ impl Diarias {
                 u(7.0),
                 Color::new(0.85, 0.45, 0.40, 1.0),
             );
-            estilo::texto(x + u(30.0), y + u(22.0), "Pré-requisitos", 14, estilo::OURO);
+            estilo::texto(x + u(30.0), y + u(22.0), "Prerequisites", 14, estilo::OURO);
             for (i, s) in m.iter().enumerate() {
                 estilo::texto(
                     x + u(12.0),
@@ -386,7 +386,7 @@ mod tests {
         let c = ctx(&[], &vazio, Some("ilha_inicial"));
         let e = estado_da_diaria(d601, &c);
         assert_eq!(e, Estado::Disponivel);
-        assert_eq!(botao_de(&e), Some("Pegar"));
+        assert_eq!(botao_de(&e), Some("Take"));
         assert_eq!(
             clique_da_diaria(d601, &e, 1_000),
             Clique::Aceitar(601),
@@ -397,7 +397,7 @@ mod tests {
         let d607 = quest_by_id(607).unwrap();
         assert_eq!(
             estado_da_diaria(d607, &c),
-            Estado::Bloqueada(vec!["Em breve".into()])
+            Estado::Bloqueada(vec!["Coming soon".into()])
         );
         assert_eq!(botao_de(&estado_da_diaria(d607, &c)), None);
         assert_eq!(
@@ -432,7 +432,7 @@ mod tests {
         let c = ctx(&log, &vazio, Some("ilha_inicial"));
         let e = estado_da_diaria(d602, &c);
         assert_eq!(e, Estado::Pronta);
-        assert_eq!(botao_de(&e), Some("Ir entregar"));
+        assert_eq!(botao_de(&e), Some("Go turn it in"));
         assert_eq!(
             clique_da_diaria(d602, &e, 1_000),
             Clique::AutoMissao(602),
@@ -458,14 +458,14 @@ mod tests {
     fn recompensa_lista_cobre_xp_e_itens() {
         let d = quest_by_id(601).unwrap();
         let mut nomes = HashMap::new();
-        nomes.insert(d.reward_item2, "Poção de Experiência".to_string());
+        nomes.insert(d.reward_item2, "Experience Potion".to_string());
         nomes.insert(d.reward_item, "Item".to_string());
         let r = recompensa(d, &nomes);
         if d.reward_cobre > 0 {
             assert!(r.contains("cobre"), "{r}");
         }
         if d.reward_item2 != 0 {
-            assert!(r.contains("Poção de Experiência"), "{r}");
+            assert!(r.contains("Experience Potion"), "{r}");
         }
     }
 }

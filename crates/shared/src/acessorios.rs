@@ -12,14 +12,14 @@ impl Efeito {
         Self::Energia, Self::Minerio, Self::Darksteel, Self::Vida, Self::Mana];
     pub fn nome(self) -> &'static str {
         match self {
-            Self::Drop => "Chance de drop +10%",
-            Self::LootMelhor => "Chance de loot melhor +5%",
-            Self::Xp => "XP recebido +10%",
-            Self::Energia => "Coleta de Energia +15%",
-            Self::Minerio => "Coleta de minério +15%",
-            Self::Darksteel => "Coleta de Darksteel +15%",
-            Self::Vida => "Regen base de vida +1/s",
-            Self::Mana => "Regen base de mana +0,5/s",
+            Self::Drop => "Drop chance +10%",
+            Self::LootMelhor => "Better loot chance +5%",
+            Self::Xp => "XP gained +10%",
+            Self::Energia => "Energy gathering +15%",
+            Self::Minerio => "Ore gathering +15%",
+            Self::Darksteel => "Darksteel gathering +15%",
+            Self::Vida => "Base health regen +1/s",
+            Self::Mana => "Base mana regen +0.5/s",
         }
     }
 }
@@ -35,7 +35,7 @@ pub fn tipo(id: u16) -> Option<(bool, Efeito)> {
 
 pub fn nome(id: u16) -> Option<String> {
     let (pet, efeito) = tipo(id)?;
-    Some(format!("{}: {}", if pet { "Pet" } else { "Montaria" }, efeito.nome()))
+    Some(format!("{}: {}", if pet { "Pet" } else { "Mount" }, efeito.nome()))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

@@ -73,21 +73,21 @@ impl Atualizacao {
     /// Mandatory connection error: works even with no manifest or after
     /// dismissing the optional notice. In this flow the destination is always the site.
     pub fn desenha_incompativel(&mut self) -> bool {
-        let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Atualização necessária");
+        let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Update required");
         let cx = r.center().x;
         crate::ui::texto_centro(cx, r.y + 20.0,
-            "Sua versão é incompatível com o servidor.", 16, crate::ui::OURO);
+            "Your version is incompatible with the server.", 16, crate::ui::OURO);
         crate::ui::texto_centro(cx, r.y + 44.0,
-            "Atualize o jogo pelo site para continuar.", 16, crate::ui::OURO);
+            "Update the game from the site to continue.", 16, crate::ui::OURO);
         if crate::ui::botao(Rect::new(r.x, r.y + 68.0, r.w, 44.0),
-            "Abrir site para atualizar", true) {
+            "Open the site to update", true) {
             self.erro = !crate::nativo::abrir_url(SITE);
         }
         crate::ui::texto_centro(cx, r.y + 138.0, "mmo.brunji.com.br", 16, crate::ui::OURO);
         if self.erro {
-            crate::ui::erro(cx, r.y + 164.0, "Não foi possível abrir o navegador.");
+            crate::ui::erro(cx, r.y + 164.0, "Could not open the browser.");
         }
-        crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Voltar", true)
+        crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Back", true)
     }
 
     /// `true`: the update screen took login's place this frame.
@@ -109,7 +109,7 @@ impl Atualizacao {
             crate::ui::texto_centro(
                 r.center().x,
                 r.y + 45.0,
-                "Verificando atualizações...",
+                "Checking for updates...",
                 18,
                 crate::ui::OURO,
             );
@@ -118,24 +118,24 @@ impl Atualizacao {
         let Some(url) = self.aviso.as_ref().filter(|_| !self.dispensado) else {
             return false;
         };
-        let r = crate::ui::painel(460.0, 300.0, "Cliente desatualizado");
+        let r = crate::ui::painel(460.0, 300.0, "Client out of date");
         crate::ui::texto_centro(
             r.center().x,
             r.y + 35.0,
-            "Uma nova versão do Tempest está disponível.",
+            "A new version of Tempest is available.",
             16,
             crate::ui::OURO,
         );
         let botao = if url.starts_with("https://play.google.com/")
             || url.starts_with("https://apps.apple.com/")
         {
-            "Atualizar na loja"
+            "Update in the store"
         } else if url == "itms-beta://" || url.starts_with("https://testflight.apple.com/") {
-            "Abrir TestFlight"
+            "Open TestFlight"
         } else if plataforma() == "android" {
-            "Baixar atualização"
+            "Download update"
         } else {
-            "Abrir site para atualizar"
+            "Open the site to update"
         };
         if crate::ui::botao(
             Rect::new(r.x + 20.0, r.y + 70.0, r.w - 40.0, 44.0),
@@ -148,12 +148,12 @@ impl Atualizacao {
             crate::ui::erro(
                 r.center().x,
                 r.y + 140.0,
-                "Abra mmo.brunji.com.br no navegador.",
+                "Open mmo.brunji.com.br in your browser.",
             );
         }
         if crate::ui::botao(
             Rect::new(r.x + 20.0, r.y + 165.0, r.w - 40.0, 40.0),
-            "Agora não",
+            "Not now",
             true,
         ) {
             self.dispensado = true;

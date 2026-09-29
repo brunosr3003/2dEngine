@@ -70,7 +70,7 @@ impl GameWorld {
         let (Some(conta), Some(ctx)) = (s.account_id, self.auth_ctx.as_ref()) else {
             let _ = s.handle.to_client.send(ServerMessage::Presenca {
                 aviso: AvisoPresenca::Recusado {
-                    texto: "Calendário indisponível.".into(),
+                    texto: "Calendar unavailable.".into(),
                 },
             });
             return;

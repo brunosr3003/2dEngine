@@ -20,7 +20,7 @@ pub async fn listar(db: &mut PgConnection, eu: &str) -> Result<Vec<Carta>> {
             Ok(Carta {
                 id: -r.get::<i64, _>("id"),
                 de: format!(
-                    "Equipe · {} ({})",
+                    "Staff · {} ({})",
                     r.get::<String, _>("autor"),
                     r.get::<String, _>("cargo")
                 ),
@@ -38,7 +38,7 @@ pub async fn listar(db: &mut PgConnection, eu: &str) -> Result<Vec<Carta>> {
 
 pub async fn ler_apagar(pool: &PgPool, eu: &str, id: i64, apagar: bool) -> Result<()> {
     let Some(id) = id.checked_neg().filter(|n| *n > 0) else {
-        bail!("Carta inválida.");
+        bail!("Invalid letter.");
     };
     let sql = if apagar {
         "UPDATE social_oficiais o SET apagada=TRUE FROM social_campanhas c WHERE o.id=$1 AND o.para=$2 AND c.id=o.campanha AND (o.resgatada OR c.anexos='[]')"
@@ -104,7 +104,7 @@ pub fn resgatar(
     tokio::spawn(async move {
         let result = resgatar_inner(&pool, &tx, sid, &nome, id).await;
         let texto = match result {
-            Ok(()) => "Anexos recebidos e salvos.".to_string(),
+            Ok(()) => "Attachments received and saved.".to_string(),
             Err(e) => {
                 if e.downcast_ref::<sqlx::Error>().is_some() {
                     tracing::error!("mail claim: {e:#}");
@@ -125,7 +125,7 @@ async fn resgatar_inner(
     id: i64,
 ) -> Result<()> {
     let Some(id) = id.checked_neg().filter(|n| *n > 0) else {
-        bail!("Carta inválida.");
+        bail!("Invalid letter.");
     };
     let mut conn = PgConnection::connect_with(&pool.connect_options()).await?;
     let locked: bool = sqlx::query_scalar(
@@ -135,16 +135,16 @@ async fn resgatar_inner(
     .fetch_one(&mut conn)
     .await?;
     if !locked {
-        bail!("Este resgate já está sendo processado.");
+        bail!("This claim is already being processed.");
     }
     let r=sqlx::query("SELECT c.anexos FROM social_oficiais o JOIN social_campanhas c ON c.id=o.campanha WHERE o.id=$1 AND o.para=$2 AND NOT o.resgatada AND NOT o.apagada")
         .bind(id).bind(nome).fetch_optional(&mut conn).await?;
     let Some(r) = r else {
-        bail!("Carta já resgatada ou indisponível.");
+        bail!("Letter already claimed or unavailable.");
     };
     let anexos: Vec<Anexo> = serde_json::from_str(&r.get::<String, _>("anexos"))?;
     if anexos.is_empty() {
-        bail!("Esta carta não tem anexos.");
+        bail!("This letter has no attachments.");
     }
     let token = format!(
         "{}-{}-{}",
@@ -161,7 +161,7 @@ async fn resgatar_inner(
         .execute(&mut conn)
         .await?.rows_affected();
     if reservou != 1 {
-        bail!("Carta já resgatada ou indisponível.");
+        bail!("Letter already claimed or unavailable.");
     }
     let (ack, rx) = oneshot::channel();
     tx.send(IncomingMessage::CorreioEntrega(Entrega {
@@ -172,7 +172,7 @@ async fn resgatar_inner(
         aceitou: ack,
     }))?;
     if !rx.await.unwrap_or(false) {
-        bail!("Libere espaço na bolsa e tente novamente.");
+        bail!("Free up space in your bag and try again.");
     }
     loop {
         let salvo: bool = sqlx::query_scalar("SELECT resgatada FROM social_oficiais WHERE id=$1")

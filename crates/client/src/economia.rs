@@ -51,7 +51,7 @@ pub struct Resumo<'a> {
     pub exp: f32,
     pub xp: u64,
     pub ouro: u64,
-    /// Ex.: "AUTO COMBATE". A cor diz se esta' rendendo.
+    /// Ex.: "AUTO COMBAT". A cor diz se esta' rendendo.
     pub estado: (&'a str, Color),
     pub ping_ms: f32,
     pub nome_item: &'a dyn Fn(u16) -> String,
@@ -77,7 +77,7 @@ pub struct ResumoDaAusencia {
 #[derive(Default)]
 pub struct Economia {
     pub ativa: bool,
-    /// Janela "Enquanto você estava fora", aberta ate' o jogador fechar.
+    /// Janela "While you were away", aberta ate' o jogador fechar.
     pub resumo: Option<ResumoDaAusencia>,
     /// `None` = nunca escolheu: vale `auto_min_padrao`.
     pub auto_min: Option<u16>,
@@ -168,7 +168,7 @@ impl Economia {
         estilo::painel(p);
         let x = p.x + 24.0 * f;
         let mut y = p.y + 38.0 * f;
-        estilo::texto_forte(x, y, "Enquanto você estava fora", 20, estilo::OURO);
+        estilo::texto_forte(x, y, "While you were away", 20, estilo::OURO);
         let t = formata_duracao(r.duracao_s);
         estilo::texto(
             p.x + p.w - 24.0 * f - estilo::medir(&t, 14),
@@ -180,13 +180,13 @@ impl Economia {
         y += 36.0 * f;
         let mut numeros = vec![
             ("XP", format!("+{}", milhar(r.xp))),
-            ("Ouro", format!("+{}", milhar(r.ouro))),
+            ("Gold", format!("+{}", milhar(r.ouro))),
         ];
         if r.niveis > 0 {
-            numeros.push(("Níveis", format!("+{}", r.niveis)));
+            numeros.push(("Levels", format!("+{}", r.niveis)));
         }
         if r.mortes > 0 {
-            numeros.push(("Mortes", r.mortes.to_string()));
+            numeros.push(("Deaths", r.mortes.to_string()));
         }
         let cw = (p.w - 48.0 * f) / numeros.len() as f32;
         for (i, (rot, val)) in numeros.iter().enumerate() {
@@ -195,11 +195,11 @@ impl Economia {
             estilo::texto_centro_forte(cx, y + 26.0 * f, val, 20, estilo::TEXTO);
         }
         y += 52.0 * f;
-        estilo::texto_forte(x, y, "ITENS", 12, estilo::SUAVE);
+        estilo::texto_forte(x, y, "ITEMS", 12, estilo::SUAVE);
         y += 12.0 * f;
         let m = Vec2::from(mouse_position());
         if r.itens.is_empty() {
-            estilo::texto(x, y + 24.0 * f, "Nenhum item coletado", 14, estilo::SUAVE);
+            estilo::texto(x, y + 24.0 * f, "No item gathered", 14, estilo::SUAVE);
         }
         let cabem = colunas * linhas_itens;
         let mut dica = None;
@@ -235,7 +235,7 @@ impl Economia {
             }
         }
         if r.itens.len() > cabem {
-            let t = format!("+ {} outros itens", r.itens.len() - cabem);
+            let t = format!("+ {} other items", r.itens.len() - cabem);
             estilo::texto(x, p.y + p.h - 70.0 * f, &t, 13, estilo::SUAVE);
         }
         let ok = Rect::new(
@@ -327,7 +327,7 @@ impl Economia {
             11.0 * f,
             Color::new(0.35, 0.78, 0.45, 1.0),
         );
-        estilo::texto_forte(x + 34.0 * f, y, "MODO ECONOMIA DE ENERGIA", 13, suave);
+        estilo::texto_forte(x + 34.0 * f, y, "BATTERY SAVER MODE", 13, suave);
         let tempo = formata_duracao(agora - self.desde);
         estilo::texto(x + w - estilo::medir(&tempo, 13), y, &tempo, 13, suave);
         y += 44.0 * f;
@@ -369,7 +369,7 @@ impl Economia {
             auto.desenhar(Rect::new(x, y - 12.0 * f, w, alto),
                 r.missao_atual, r.proximas_missoes, r.nomes_itens);
         } else {
-        estilo::texto_forte(x, y, "DESDE QUE LIGOU", 12, suave);
+        estilo::texto_forte(x, y, "SINCE YOU STARTED", 12, suave);
         y += 26.0 * f;
         let niveis = r.nivel.saturating_sub(self.nivel_inicio);
         let mut linhas = vec![
@@ -378,15 +378,15 @@ impl Economia {
                 format!("+{}", milhar(r.xp.saturating_sub(self.xp_inicio))),
             ),
             (
-                "Ouro",
+                "Gold",
                 format!("+{}", milhar(r.ouro.saturating_sub(self.ouro_inicio))),
             ),
         ];
         if niveis > 0 {
-            linhas.push(("Níveis", format!("+{niveis}")));
+            linhas.push(("Levels", format!("+{niveis}")));
         }
         if self.mortes > 0 {
-            linhas.push(("Mortes", self.mortes.to_string()));
+            linhas.push(("Deaths", self.mortes.to_string()));
         }
         let mut itens = self.itens.clone();
         itens.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -407,7 +407,7 @@ impl Economia {
         let cabem = (((seguro.y + seguro.h - 150.0 * f) - y0) / (22.0 * f)).max(1.0) as usize;
         let mut yd = y0;
         if itens.is_empty() {
-            estilo::texto(xd, yd, "Nenhum item ainda", 14, suave);
+            estilo::texto(xd, yd, "No item yet", 14, suave);
         }
         for (i, (id, q)) in itens.iter().enumerate() {
             if i + 1 == cabem && itens.len() > cabem {
@@ -498,7 +498,7 @@ impl Economia {
                 BLACK,
             );
         }
-        let rotulo = "Deslize para voltar";
+        let rotulo = "Swipe to go back";
         estilo::texto_centro(
             trilho.center().x + bola * 0.4,
             trilho.center().y + 6.0,

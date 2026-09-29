@@ -34,17 +34,22 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
 
-pub mod en;
+pub mod pt;
 
 /// As línguas que o jogo fala.
 ///
-/// `Pt` é o padrão e o original: com `Pt` a tradução é identidade e custo zero
-/// (nem o dicionário é construído).
+/// `En` is the default and the ORIGINAL: with `En` the translation is the
+/// identity and costs nothing (the dictionary is not even built).
+///
+/// It was the other way round until the inversion: the source was Portuguese
+/// and English was the translation. What moved was the source, not the
+/// mechanism — `tr` is still "the phrase in the code, looked up for the
+/// language in use".
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub enum Idioma {
     #[default]
-    Pt,
     En,
+    Pt,
 }
 
 impl Idioma {
@@ -98,16 +103,18 @@ static ATUAL: AtomicU8 = AtomicU8::new(0);
 
 pub fn atual() -> Idioma {
     match ATUAL.load(Ordering::Relaxed) {
-        1 => Idioma::En,
-        _ => Idioma::Pt,
+        1 => Idioma::Pt,
+        _ => Idioma::En,
     }
 }
 
 pub fn definir(i: Idioma) {
+    // 0 is the default, and the default is English: a process that never
+    // calls `definir` must not start in Portuguese.
     ATUAL.store(
         match i {
-            Idioma::Pt => 0,
-            Idioma::En => 1,
+            Idioma::En => 0,
+            Idioma::Pt => 1,
         },
         Ordering::Relaxed,
     );
@@ -131,8 +138,8 @@ pub fn tr(s: &str) -> Cow<'_, str> {
 /// cadastros simultâneos.
 pub fn tr_em(idioma: Idioma, s: &str) -> Cow<'_, str> {
     match idioma {
-        Idioma::Pt => Cow::Borrowed(s),
-        Idioma::En => match dicionario().traduz(s) {
+        Idioma::En => Cow::Borrowed(s),
+        Idioma::Pt => match dicionario().traduz(s) {
             Achado::Exato(v) => Cow::Borrowed(v),
             Achado::Montado(v) => Cow::Owned(v),
             Achado::Nada => Cow::Borrowed(s),
@@ -197,7 +204,7 @@ pub fn tr_f_em(idioma: Idioma, s: &str) -> Cow<'_, str> {
 /// português porque o jogador quis" de "está em português porque falta
 /// verbete".
 pub fn tr_estrito(idioma: Idioma, s: &str) -> Option<String> {
-    if idioma == Idioma::Pt {
+    if idioma == Idioma::En {
         return Some(s.to_string());
     }
     match dicionario().traduz(s) {
@@ -220,7 +227,7 @@ enum Achado {
 static DICIONARIO: OnceLock<Dicionario> = OnceLock::new();
 
 fn dicionario() -> &'static Dicionario {
-    DICIONARIO.get_or_init(|| Dicionario::das_partes(en::PARTES))
+    DICIONARIO.get_or_init(|| Dicionario::das_partes(pt::PARTES))
 }
 
 pub struct Dicionario {
@@ -642,10 +649,15 @@ mod testes {
     }
 
     #[test]
-    fn sem_verbete_devolve_o_portugues() {
-        // O contrato que segura o jogo: falta de tradução não some com o texto.
-        assert_eq!(tr_em(Idioma::En, "\u{1}frase inexistente\u{1}"), "\u{1}frase inexistente\u{1}");
-        assert_eq!(tr_estrito(Idioma::En, "\u{1}frase inexistente\u{1}"), None);
+    fn sem_verbete_devolve_o_original() {
+        // O contrato que segura o jogo: falta de tradução não some com o
+        // texto. Depois da inversão o original é o INGLÊS, então quem pode
+        // ficar sem verbete é o português.
+        assert_eq!(tr_em(Idioma::Pt, "\u{1}frase inexistente\u{1}"), "\u{1}frase inexistente\u{1}");
+        assert_eq!(tr_estrito(Idioma::Pt, "\u{1}frase inexistente\u{1}"), None);
+        // E o inglês nunca fica sem: ele é a fonte.
+        assert_eq!(tr_estrito(Idioma::En, "\u{1}frase inexistente\u{1}"),
+                   Some("\u{1}frase inexistente\u{1}".to_string()));
     }
 
     #[test]

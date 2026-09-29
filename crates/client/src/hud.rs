@@ -83,14 +83,14 @@ pub fn draw_hud(
     estilo::painel(r);
     let sobre = r.contains(mouse());
     let zona = if info.zona.is_empty() {
-        map.map_or("Explorando", |m| m.name.as_str())
+        map.map_or("Exploring", |m| m.name.as_str())
     } else {
         &info.zona
     };
     let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
     estilo::texto_ajustado(zona, r.x + 12.0, r.y + r.h * 0.45, r.w - 100.0, 18, cor);
     let onde = if info.realm.is_empty() {
-        "Mundo aberto".into()
+        "Open world".into()
     } else {
         format!("{}  ·  CH {}", info.realm, info.canal)
     };
@@ -338,7 +338,7 @@ pub fn draw_topo(
     let m = mouse();
     let clique = crate::foco::clique();
     let mut saida = None;
-    let nomes = ["Bolsa", "Missões", "Diárias", "Grupo", "Avisos", "Presença"];
+    let nomes = ["Bag", "Quests", "Dailies", "Party", "Notices", "Presence"];
     let alvos = [
         Topo::Bolsa,
         Topo::Missoes,
@@ -488,7 +488,7 @@ pub fn draw_botao_economia(z: &Zonas) -> bool {
         },
     );
     if sobre {
-        dica(r, "Economia de energia");
+        dica(r, "Battery saver");
     }
     sobre && crate::foco::clique()
 }
@@ -504,8 +504,8 @@ pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
     let cor = if ativo { estilo::ACENTO } else { estilo::TEXTO };
     crate::icones_ui::ui("sprint", r.center() - vec2(0.0, r.h * 0.10), r.w * 0.75, cor);
     estilo::texto(r.x + r.w * 0.10, r.y + r.h * 0.92,
-        if ativo { "LIGADO" } else { "SPRINT" }, (r.w * 0.19) as u16, cor);
-    if sobre { dica(r, if ativo { "Desligar sprint [Shift]" } else { "Ligar sprint [Shift]" }); }
+        if ativo { "ON" } else { "SPRINT" }, (r.w * 0.19) as u16, cor);
+    if sobre { dica(r, if ativo { "Sprint off [Shift]" } else { "Sprint on [Shift]" }); }
     sobre && crate::foco::clique()
 }
 
@@ -532,7 +532,7 @@ pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem
         estilo::arco(r.center(), r.w * 0.44, -PI * 0.5, u, 3.0, estilo::ACENTO);
     }
     if sobre {
-        dica(r, if montado { "Desmontar" } else { "Montar" });
+        dica(r, if montado { "Dismount" } else { "Ride" });
     }
     sobre && crate::foco::clique()
 }
@@ -541,7 +541,7 @@ pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem
 //  CLUSTER DE COMBATE — o botao grande, a pocao e os slots rapidos
 // ═══════════════════════════════════════════════════════════════════════
 
-/// O botao grande (F). Sem alvo mostra "ALVO": escolhe o inimigo mais perto.
+/// O botao grande (F). Sem alvo mostra "TARGET": escolhe o inimigo mais perto.
 pub fn draw_atacar(z: &Zonas, tem_alvo: bool) -> bool {
     let r = z.atacar;
     let c = r.center();
@@ -560,7 +560,7 @@ pub fn draw_atacar(z: &Zonas, tem_alvo: bool) -> bool {
     estilo::texto_centro_forte(
         c.x,
         c.y + raio * 0.62,
-        if tem_alvo { "ATACAR" } else { "ALVO" },
+        if tem_alvo { "ATTACK" } else { "TARGET" },
         12,
         cor,
     );
@@ -656,9 +656,9 @@ pub fn draw_rapidos(
         match arrastando {
             Some((j, de)) if j == i => {
                 let texto = if m.y > de.y + 20.0 {
-                    "Solte: MANUAL"
+                    "Release: MANUAL"
                 } else {
-                    "Solte: AUTO"
+                    "Release: AUTO"
                 };
                 estilo::texto_centro(r.center().x, r.y - 36.0, texto, 14, estilo::AUTO);
                 draw_line(
@@ -677,7 +677,7 @@ pub fn draw_rapidos(
                     let base = if qtd[i] > 0 {
                         nome(itens[i])
                     } else {
-                        format!("{} · sem estoque", nome(itens[i]))
+                        format!("{} · out of stock", nome(itens[i]))
                     };
                     format!(
                         "{base} · {} · pra cima: AUTO · pra baixo: manual · botão direito configura",
@@ -759,7 +759,7 @@ pub fn draw_ficha(
             fonte(25.0, k),
             estilo::TEXTO,
         );
-        estilo::texto_centro_forte(c.x, r.y + 88.0 * k, "PODER", fonte(9.0, k), estilo::SUAVE);
+        estilo::texto_centro_forte(c.x, r.y + 88.0 * k, "POWER", fonte(9.0, k), estilo::SUAVE);
         let poder = poder
             .map(|v| crate::bolsa::milhar(v.max(0) as u64))
             .unwrap_or_else(|| "—".into());
@@ -810,7 +810,7 @@ pub fn draw_ficha(
             estilo::OURO,
             None,
         );
-        estilo::texto(bx, r.y + 102.0 * k, "VIGOR", fonte(10.0, k), estilo::SUAVE);
+        estilo::texto(bx, r.y + 102.0 * k, "STAMINA", fonte(10.0, k), estilo::SUAVE);
         estilo::texto(
             bx + 46.0 * k,
             r.y + 102.0 * k,
@@ -829,10 +829,10 @@ pub fn draw_modo_pk(z: &Zonas, pk: shared::PkState) -> bool {
     estilo::cartao(r, sobre, pk.hostil);
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * z.s, cor);
     estilo::texto_centro_forte(r.center().x, r.y + 18.0 * z.s,
-        if pk.hostil { "Hostil" } else { "Pacífico" }, fonte(16.0, z.s), cor);
+        if pk.hostil { "Hostile" } else { "Peaceful" }, fonte(16.0, z.s), cor);
     estilo::texto_centro(r.center().x, r.y + 33.0 * z.s,
         &format!("PK: {}", pk.pontos), fonte(11.0, z.s), estilo::SUAVE);
-    if sobre { dica(r, if pk.hostil { "Toque para ficar Pacífico" } else { "Toque para ativar Hostil" }); }
+    if sobre { dica(r, if pk.hostil { "Tap to go Peaceful" } else { "Tap to switch to Hostile" }); }
     sobre && crate::foco::clique()
 }
 
@@ -860,13 +860,13 @@ pub fn draw_buffs(
             fortuna_ate,
             "$",
             Color::new(0.95, 0.55, 0.15, 1.0),
-            format!("+{}% ouro e cobre de bicho", shared::BONUS_FORTUNA_PCT),
+            format!("+{}% gold and copper from beasts", shared::BONUS_FORTUNA_PCT),
         ),
         (
             sorte_ate,
             "S",
             Color::new(0.70, 0.45, 0.95, 1.0),
-            format!("+{}% chance de drop", shared::BONUS_SORTE_PCT),
+            format!("+{}% drop chance", shared::BONUS_SORTE_PCT),
         ),
     ];
     let mut x = area.x;
@@ -894,9 +894,9 @@ pub fn draw_buffs(
     }
     // Curas de pocao correndo (vida, mana, vigor), com os segundos que faltam.
     let curando = [
-        ("+V", Color::new(0.85, 0.25, 0.28, 1.0), "Curando vida"),
-        ("+M", Color::new(0.25, 0.50, 0.90, 1.0), "Recuperando mana"),
-        ("+E", Color::new(0.95, 0.75, 0.25, 1.0), "Recuperando vigor"),
+        ("+V", Color::new(0.85, 0.25, 0.28, 1.0), "Healing"),
+        ("+M", Color::new(0.25, 0.50, 0.90, 1.0), "Recovering mana"),
+        ("+E", Color::new(0.95, 0.75, 0.25, 1.0), "Recovering stamina"),
     ];
     for (g, (sigla, cor, nome)) in curando.into_iter().enumerate() {
         let s = curas[g];
@@ -988,7 +988,7 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u16, hp_max: u16, chefe:
     estilo::texto_forte(
         r.x + 12.0,
         r.y + 16.0 * k,
-        if chefe { "CHEFE" } else { "ALVO" },
+        if chefe { "BOSS" } else { "TARGET" },
         fonte(10.0, k),
         cor,
     );
