@@ -13,7 +13,7 @@ different English ones in two different files.
 | 1 | identifiers: files, modules, functions, fields, variables | in progress — `ladder` done |
 | 2 | comments and doc comments | in progress — `ladder` done (78 blocks); tool at `tools/translate_comments.py` |
 | 3 | `docs/*.md` | not started |
-| 4 | locale inversion (English native, Portuguese as translation) + DB name migration | not started |
+| 4 | locale inversion (English native, Portuguese as translation) + DB name migration | analysed; step 1 done, step 2 blocked |
 
 Passes 1–3 change no behaviour: no string literal moves, no protocol change.
 Pass 4 is the risky one and is planned separately, because item and mob names
@@ -162,3 +162,69 @@ banco") and have to migrate with the code.
 7. **Keep `Danca`, `Muralha`, `Saque` and the other skill names as they are**
    until pass 4 decides what the English game calls them — they are content,
    not code.
+
+## Pass 4: the locale inversion
+
+Today `Idioma::Pt` is not just the default, it is the **original**: with `Pt`,
+`tr()` is the identity and the dictionary is never even built
+(`idioma.rs`). Source literals are Portuguese, and `idioma/en/*` maps
+PT -> EN in 2,307 pairs. "English native" means turning that around.
+
+### What was measured
+
+**The inversion is 99% mechanical.** Of the 2,307 Portuguese keys, 2,289
+appear verbatim as quoted literals in the source, so the dictionary is itself
+the map for rewriting them. The 18 that do not are strings assembled at
+runtime or coming from the database.
+
+**Replacing a quoted token is safe.** `"Voltar"` includes its quotes, and
+`"Voltar agora"` does not contain that token, so there is no substring
+hazard between entries.
+
+**The database hazard is narrower than it looks.** `nome_do_item` is
+id -> name with no reverse lookup, NPC names are `&'static str` in `vila.rs`
+rather than rows, and the only `n.nome == "..."` comparison is inside a test.
+What must never be touched is `characters.name`: it is the PRIMARY KEY and
+`proficiencies.character_name` is a FOREIGN KEY onto it. The seeded name
+columns are `items`, `enemy_kinds` and `vendor_shops`.
+
+### Step 1 — done
+
+Inverting makes values into keys, and 17 English strings had more than one
+Portuguese source. Nine were imprecise English and are now fixed (Mount/Ride,
+Upgrade/Improve, Complete/Turn in, Receive/Claim, Create/Craft,
+Mounted spd.). That is an improvement on its own terms.
+
+### Step 2 — blocked, and it needs a decision first
+
+**Ten collisions cannot be fixed by better English**, because English carries
+no gender and no adjective plural:
+
+| English | Portuguese forms | kept on inversion |
+|---|---|---|
+| Purple | Roxa / Roxo | Roxo |
+| Epic | Épica / Épico | Épico |
+| Legendary | Lendária / Lendário | Lendário |
+| All | Tudo / Todas / Todos | Todas |
+| Completed | Concluída / Concluídas | Concluída |
+| Available | Disponível / Disponíveis | Disponível |
+| Banker | Banqueira / Banqueiro | Banqueira |
+| Go to | Ir para / Ir até | Ir para |
+| `{} · yours {}` | seu / sua | seu |
+| `{} Energy` | Energia / de Energia | de Energia |
+
+With English as the source, `tr_pt("Purple")` can only return one of them, so
+Portuguese loses agreement in a handful of places ("Chave Roxo" instead of
+"Chave Roxa"). Keeping both would need the English side to carry a
+disambiguating key that the player never sees — worth doing for the item
+colours, which are the visible ones, and probably not worth it for the rest.
+
+### The remaining steps
+
+2. rewrite the 2,289 Portuguese literals in the source to English, using the
+   dictionary as the map (**blocked: the sweep touches every crate at once**);
+3. flip `idioma/en/*` to `idioma/pt/*` with the pairs swapped;
+4. make `Idioma::En` the default and the identity, `Pt` the dictionary path;
+5. migrate the seeded names in `items`, `enemy_kinds` and `vendor_shops`, as
+   an `economy_migrations` entry that only touches rows still holding the old
+   seed value — and never `characters`.
