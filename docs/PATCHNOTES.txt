@@ -1,3 +1,9 @@
+29/09/2026 — Novo ícone do Porão no mapa
+
+O cadeado saiu. As portas de Porão agora aparecem no mapa como uma BOCA DE CAVERNA: anel de pedra, entrada escura e um brilho roxo lá dentro. O roxo não é usado por mais nada no mapa, então dá pra achar a porta de relance, na floresta ou na areia.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
 29/09/2026 — O número da versão na tela
 
 No canto de baixo à esquerda, ao lado do fps, agora aparece o número da build (ex.: 2026092909). É pra acabar com o "baixei a nova e continua igual": o número diz na hora se o jogo que abriu é o que você baixou.
