@@ -91,7 +91,22 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// ANTES de o servidor subir, e o iOS so' conta depois de
 /// `scripts/testflight-estado.py` mostrar a build VALID — senao quem esta' no
 /// TestFlight fica sem nada pra atualizar e trancado fora.
-pub const PROTOCOL_VERSION: u16 = 158;
+/// 159 (29/09/2026): este tem motivo de verdade, ao contrario do 158.
+///
+/// A PORTA MUDOU DE LUGAR. `porao::porta_de` passou a procurar chao firme em
+/// vez de aceitar um angulo fixo, porque a porta do Ermo tinha nascido no MAR.
+/// A funcao e' compilada nos dois lados: um cliente 158 desenha a porta velha
+/// (na agua) e o servidor 159 so' aceita abrir na nova. O jogador ficaria em
+/// pe' na porta que ve' e ouvindo "chegue mais perto" pra sempre.
+///
+/// Nao e' mudanca de fio — nenhuma mensagem mudou —, e' mudanca de REGRA
+/// compartilhada, que da' no mesmo: os dois lados precisam concordar sobre
+/// onde uma porta esta'.
+///
+/// Terceiro corte no mesmo dia (157 pelo HUD, 158 pelas portas). Os dois
+/// primeiros foram "seria bom todo mundo ter"; este e' "o conteudo nao
+/// funciona sem". A diferenca importa, e e' o criterio pro quarto.
+pub const PROTOCOL_VERSION: u16 = 159;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

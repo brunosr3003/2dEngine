@@ -1,3 +1,15 @@
+29/09/2026 — As portas do Porão no mapa, e uma que estava no mar
+
+Se você procurou o Porão e não achou, não era você. A porta da Caravana Afundada, no Ermo, tinha nascido dentro do oceano — dois metros abaixo da linha d'água, onde ninguém chega. Ela agora procura chão firme de verdade, e todas as cinco estão em terra.
+
+As portas entraram no MAPA, com nome. Antes só apareciam quando você já estava a 26 metros delas, e uma ilha tem centenas: só se achava tropeçando.
+
+No painel de dungeons, Porão e Gruta viraram duas listas separadas — são coisas diferentes e entravam de jeitos diferentes, mas estavam misturadas como se fossem a mesma. E o botão do Porão não diz mais "Entrar": diz "Ir até a porta", e leva você até lá. Se a porta for em outra ilha, ele diz qual.
+
+E entrou um CONTADOR DE FPS, no canto de baixo à esquerda, acima dos botões. Ele já existia, mas só enquanto você segurasse F3 — o que no celular era o mesmo que não existir. Verde acima de 50, amarelo entre 30 e 50, vermelho abaixo.
+
+Atualização obrigatória, protocolo 159: a posição da porta é calculada pelos dois lados, e quem ficasse na versão antiga continuaria vendo a porta velha — inclusive a que estava na água — e ouvindo "chegue mais perto" sem nunca conseguir abrir.
+
 29/09/2026 — Atualização obrigatória: as portas do Porão
 
 Esta é a mesma novidade da versão anterior — o Porão virou dungeon física, com porta na ilha e chave de craft —, só que agora obrigatória. O protocolo subiu para 158.
