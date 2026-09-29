@@ -723,6 +723,9 @@ struct Dados {
     mestre: Option<Vec2>,
     /// Os NPCs da vila (nome, posicao), montados junto — fora do quadro.
     npcs: Vec<(String, Vec2)>,
+    /// As portas de Porão da ilha (nome, posição). Separadas dos NPCs de
+    /// propósito: ver `portas` em `Mapa`.
+    portas: Vec<(&'static str, Vec2)>,
 }
 
 #[derive(Clone, Copy)]
@@ -777,16 +780,19 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
     // acende a 26 unidades, e uma ilha tem centenas. O dono, ao procurar a
     // primeira: "it is in the world? where is it i cant find it in the map
     // menu". Uma dungeon que só se acha por acaso não está no mundo.
-    for (id, p) in crate::porao_ui::portas_da_zona(def.zona) {
-        let nome = shared::dungeon::conteudo(id).map_or("Cellar", |c| c.nome);
-        npcs.push((nome.to_string(), p));
-    }
+    // Roda na thread do mapa, uma vez por ilha: é o único lugar que pode
+    // pagar o `Gerador` (24,6 ms) e a busca de chão das portas sem engasgar.
+    let portas: Vec<(&'static str, Vec2)> = crate::porao_ui::portas_da_zona(def.zona)
+        .into_iter()
+        .filter_map(|(id, p)| shared::dungeon::conteudo(id).map(|c| (c.nome, p)))
+        .collect();
     Dados {
         rgba,
         pegadas,
         porto,
         mestre,
         npcs,
+        portas,
     }
 }
 
@@ -840,6 +846,7 @@ fn gerar_dados_da_colonia(plato: f32) -> Dados {
         porto,
         mestre: mural,
         npcs,
+        portas: Vec::new(),
     }
 }
 
@@ -1037,6 +1044,14 @@ pub struct Mapa {
     pub mestre: Option<Vec2>,
     /// NPCs da vila (da thread do mapa): o marcador e o "Go to".
     npcs: Vec<(String, Vec2)>,
+    /// AS PORTAS DE PORÃO — sempre visíveis, e não dentro da lista de NPCs.
+    ///
+    /// A primeira versão empurrou as portas pra `npcs`, e `npcs` só aparece
+    /// quando o jogador abre o toggle "NPCs" na lateral — fechado por padrão.
+    /// Resultado: as portas ESTAVAM no mapa e ninguém as via. O dono: "i did
+    /// not find anything in the map". Porta é conteúdo, como o porto e o
+    /// chefe; entra sempre, com nome e com "Ir".
+    portas: Vec<(&'static str, Vec2)>,
     /// A secao NPCs do "Go to" aberta (fechada por padrao: e' lista longa).
     npcs_abertos: bool,
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
@@ -1095,6 +1110,7 @@ impl Default for Mapa {
             def: None,
             ger: None,
             cidade: None,
+            portas: Vec::new(),
             raio_sem_def: None,
             nome_sem_def: String::new(),
             rx: None,
@@ -1118,6 +1134,73 @@ impl Default for Mapa {
         }
     }
 }
+
+/// Prévia do MAPA GRANDE (`MMO_PREVIA_MAPA=1`; PNGs em `MMO_PREVIA_SAIDA`).
+///
+/// Existe porque as portas de Porão "estavam no mapa" e ninguém as via: foram
+/// parar na lista de NPCs, que nasce fechada. Uma prévia do mapa teria
+/// mostrado isso antes de o dono procurar no jogo. Renderiza a ilha inicial
+/// com a lateral aberta, que é o que o jogador vê ao apertar o mapa.
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-mapa-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let rt = render_target(1920, 1080);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(1.6);
+    let world = crate::world::World::default();
+    let mundo = crate::mundo_ui::Mundo::default();
+    for zona in ["ilha_inicial", "ilha_deserto"] {
+        let def = shared::terreno::def_da_zona(zona).expect("zona");
+        let mut m = Mapa::para(Some(def));
+        // A textura nasce numa thread; espera ela chegar.
+        for _ in 0..600 {
+            m.acompanhar();
+            if m.tex.is_some() {
+                break;
+            }
+            next_frame().await;
+        }
+        assert!(m.tex.is_some(), "{zona}: o mapa não montou");
+        m.aberto = true;
+        // A lateral só desenha com o `info` do servidor (zonas de bicho); sem
+        // ele fica em "loading zones…" e a lista de "Ir" — que é onde as
+        // portas aparecem pra quem procura — nem existe. Um `info` vazio
+        // basta: as vilas e as portas são locais.
+        m.info = Some(Default::default());
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+            m.desenha_grande(&world, 20, &mundo, 1_789_000_000);
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/mapa-{zona}.png"));
+            next_frame().await;
+        }
+    }
+}
+
+/// O marcador de uma porta de Porão: um vão escuro entre dois batentes, o
+/// mesmo desenho da porta no mundo visto de cima, e o nome em cima.
+///
+/// Ouro, como a praça: é pra onde se vai, não o que se evita.
+///
+/// O NOME VAI AO LADO, NÃO EM CIMA — e alterna de lado por porta. As portas
+/// ficam a 56 u da cidade, que no mapa inteiro são uns 30 px: um nome em cima
+/// do ícone cai em cima do "City", e duas portas na mesma ilha caem uma em
+/// cima da outra. Foi o que a prévia mostrou: "Smuggler's Cellar" e
+/// "Shipwreck Cellar" viraram um borrão sobre a cidade. À direita pra uma e à
+/// esquerda pra outra, os dois nomes se afastam da cidade e entre si.
+fn porta_no_mapa(q: Vec2, lado: f32, nome: &str, fonte: u16, direita: bool) {
+    let cor = estilo::OURO;
+    let escuro = Color::new(0.05, 0.05, 0.08, 1.0);
+    draw_rectangle(q.x - lado, q.y - lado, lado * 2.0, lado * 2.0, cor);
+    draw_rectangle(q.x - lado * 0.5, q.y - lado * 0.7, lado, lado * 1.7, escuro);
+    let largura = estilo::medir(nome, fonte);
+    let x = if direita { q.x + lado + 6.0 } else { q.x - lado - 6.0 - largura };
+    estilo::texto(x, q.y + fonte as f32 * 0.35, nome, fonte, cor);
+}
+
 
 impl Mapa {
     /// Raio visivel do minimapa (as preferencias guardam).
@@ -1173,6 +1256,7 @@ impl Mapa {
             self.porto = dados.porto;
             self.mestre = dados.mestre;
             self.npcs = dados.npcs;
+            self.portas = dados.portas;
             let t = Texture2D::from_rgba8(LADO as u16, LADO as u16, &dados.rgba);
             t.set_filter(FilterMode::Linear);
             self.tex = Some(t);
@@ -1927,6 +2011,11 @@ impl Mapa {
         if let Some(p) = self.porto {
             v.push(("Port", vec2(p.centro.x, p.centro.y), p.raio.max(8.0)));
         }
+        // As portas de Porão, com o mesmo "Ir" da praça e do cais. O raio é o
+        // de abrir a porta: o "Ir" para onde o botão de abrir já acende.
+        for (nome, p) in &self.portas {
+            v.push((nome, *p, shared::porao::ALCANCE_DA_PORTA));
+        }
         v
     }
 
@@ -2253,6 +2342,14 @@ impl Mapa {
             let q = ponto(po.centro);
             if visivel(q) {
                 ancora(q, 5.0, COR_PORTO);
+            }
+        }
+        // As portas de Porão: SEM filtro. Porta é conteúdo, não decoração da
+        // vila; some do mapa só quando a ilha não tem nenhuma.
+        for (i, (nome, p)) in self.portas.iter().enumerate() {
+            let q = ponto(*p);
+            if visivel(q) {
+                porta_no_mapa(q, (6.0f32).max(escala * 3.0), nome, 13, i % 2 == 0);
             }
         }
         for (id, e) in &world.ents {
@@ -2770,6 +2867,9 @@ impl Mapa {
             draw_line(a.x, a.y, b.x, b.y, u(3.0), COR_PREDIO);
             ancora(q, u(7.0), COR_PORTO);
             estilo::texto_centro(q.x, q.y - u(14.0), "Port", 14, COR_PORTO);
+        }
+        for (i, (nome, p)) in self.portas.iter().enumerate() {
+            porta_no_mapa(ponto(*p), u(7.0), nome, 14, i % 2 == 0);
         }
         // NPCs da vila, com o filtro Vila (o `world` so' tem os de perto).
         // Tocar leva ate' ele; a lista do "Go to" tem todos, sempre.

@@ -250,8 +250,13 @@ fn firme(ger: &crate::terreno::Gerador, p: Vec2) -> bool {
 /// Todos os Porões desta zona, com a chave e a receita de cada um.
 /// As portas desta zona, já procuradas no relevo: `(id do conteúdo, posição)`.
 ///
-/// CALCULE UMA VEZ E GUARDE. A busca varre até 192 pontos e sonda cinco alturas
-/// em cada um — barato uma vez por zona, caro por quadro.
+/// CALCULE UMA VEZ E GUARDE — E O `Gerador` TAMBÉM. Medido em release em
+/// 29/09/2026: a busca das portas custa 5 µs, mas `Gerador::da_ilha` custa
+/// **24,6 ms**, porque `novo` procura a cidade e o porto no relevo inteiro. Um
+/// quadro a 60 fps tem 16,7 ms. O cliente 2026092904 construía um `Gerador`
+/// DUAS VEZES POR QUADRO (prop da porta e tarja) e derrubou o jogo pra 15-20
+/// fps em toda plataforma — foi o "laggy after 16:00" que os jogadores
+/// relataram. Quem chamar isto guarda o resultado por zona.
 pub fn portas_da_zona(zona: &str, ger: &crate::terreno::Gerador) -> Vec<(u16, Vec2)> {
     poroes_da_zona(zona)
         .into_iter()

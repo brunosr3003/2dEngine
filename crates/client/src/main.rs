@@ -691,6 +691,16 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_MAPA").is_ok() {
+        mapa::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_DUNGEON_PAINEL").is_ok() {
+        dungeon_ui::previa_painel().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_DUNGEON_RECOMPENSAS").is_ok() {
         dungeon_ui::previa_recompensas().await;
         return;

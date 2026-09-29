@@ -757,7 +757,16 @@ impl DungeonUi {
         //
         // A entrada solo atravessa a troca de zona; fila e salas ainda exigem
         // viajar para o saguão antes de formar o grupo.
-        if self.na_arena == Some(false) {
+        // O PORÃO NUNCA ENTRA NESTE BLOCO — e já entrou, e foi um defeito.
+        //
+        // Este bloco é "você está fora da Arena, e a dungeon começa lá". Vale
+        // pra Gruta. O Porão é o contrário: ele começa na ILHA, na porta, e o
+        // jogador está exatamente onde tem que estar. Sem esta exceção o botão
+        // "Go to the door" nunca era desenhado — ficava no `match` lá embaixo,
+        // atrás deste `return` —, e a tela dizia "vá até a Arena" pra uma
+        // dungeon que não fica na Arena. O dono: "the go to the door doesnt
+        // exist at all". Não existia mesmo: era inalcançável.
+        if self.na_arena == Some(false) && def.tipo != Tipo::Porao {
             estilo::texto(
                 dir.x,
                 y + 18.0 * f,
@@ -773,7 +782,9 @@ impl DungeonUi {
                 estilo::SUAVE,
             );
             let aberto = cadeado.is_none() && def.disponivel;
-            if def.tipo != Tipo::Cacada
+            // Só a Gruta chega aqui (o Porão saiu no `if` acima, a Caçada
+            // está trancada).
+            if def.tipo == Tipo::Gruta
                 && botao(
                     Rect::new(dir.x, y + 54.0 * f, bw * 1.4, 46.0 * f),
                     "Enter the dungeon",
@@ -781,16 +792,9 @@ impl DungeonUi {
                     true,
                 )
             {
-                self.entrada_pendente = Some(match def.tipo {
-                    // Não há mais entrada de Porão por aqui; o braço existe só
-                    // porque o `match` é exaustivo. O servidor responde a
-                    // `EntrarSolo` mandando o jogador pra porta.
-                    Tipo::Porao => Pedido::EntrarSolo { conteudo: def.id },
-                    Tipo::Gruta => Pedido::GrutaSolo {
-                        conteudo: def.id,
-                        estagio,
-                    },
-                    Tipo::Cacada => unreachable!(),
+                self.entrada_pendente = Some(Pedido::GrutaSolo {
+                    conteudo: def.id,
+                    estagio,
                 });
                 saida.push(pedir(Pedido::IrParaArena));
             }
@@ -1773,6 +1777,51 @@ mod testes {
 }
 
 #[cfg(debug_assertions)]
+/// Prévia do PAINEL (`MMO_PREVIA_DUNGEON_PAINEL=1`; PNGs em `MMO_PREVIA_SAIDA`).
+///
+/// O caso que importa é o jogador NA ILHA (`na_arena = Some(false)`) com um
+/// Porão selecionado: é aí que o "Go to the door" tem que aparecer, e foi aí
+/// que ele não aparecia — ficava atrás de um `return` do bloco "vá até a
+/// Arena". A prévia de recompensas, que já existia, roda com `na_arena =
+/// Some(true)` e por isso nunca mostrou o defeito.
+#[cfg(debug_assertions)]
+pub async fn previa_painel() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-painel".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let nomes: HashMap<u16, String> = HashMap::new();
+    let rt = render_target(1920, 1080);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(1.6);
+    let estado = || Estado {
+        conteudos: dg::CONTEUDOS.iter().map(|c| dg::ConteudoEstado {
+            id: c.id, liberado: 3, cadeados: vec![None; dg::estagios(c) as usize], vitorias: 0,
+            primeiras_concluidas: vec![false; dg::estagios(c) as usize],
+            semanais_recebidas: vec![false; dg::estagios(c) as usize],
+            drops_chefe: vec![shared::item_id::GOLD],
+        }).collect(),
+        entradas: dg::EntradasNet { gruta: 2, gruta_preco: Some(500), porao: 0 }, fila: None, sala: None,
+    };
+    // (nome, selecionado, zona do jogador): Porão na própria ilha, Porão de
+    // outra ilha, e Gruta — pra provar que o caminho da Gruta não mudou.
+    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial")] {
+        let contexto = Contexto { nomes: &nomes, palco: None, ouro: 1000, eu: "brunji", zona };
+        let mut d = DungeonUi::default();
+        d.aberto = true;
+        d.sel = sel;
+        d.estagio = 1;
+        d.na_arena = Some(false);
+        d.estado = Some(estado());
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+            d.desenha(&contexto, get_time());
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+}
+
 pub async fn previa_recompensas() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-preview".into());
     std::fs::create_dir_all(&saida).unwrap();
