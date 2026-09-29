@@ -1,13 +1,13 @@
-//! Correio oficial: a parte que so' fala com o BANCO.
+//! Official mail: the part that only talks to the DATABASE.
 //!
-//! Mora num crate proprio porque dois processos a usam: o servidor de jogo
-//! (painel Social, pra quem tem cargo) e o **panoptico** (pagina de envio).
-//! Duplicar era a alternativa — e duplicar um caminho auditavel, que move
-//! item pra bolsa de jogador, e' como ter dois cofres com a mesma chave e
-//! contabilidades separadas.
+//! It lives in its own crate because two processes use it: the game server
+//! (Social panel, for whoever holds a role) and the **panoptico** (the sending
+//! page). Duplicating was the alternative — and duplicating an auditable path,
+//! one that moves an item into a player's bag, is like having two safes with
+//! the same key and separate books.
 //!
-//! O que ficou no servidor (`correio_admin.rs`) e' o que precisa do loop do
-//! mundo: listar a caixa de quem esta' online e resgatar anexo na bolsa.
+//! What stayed in the server (`correio_admin.rs`) is what needs the world
+//! loop: listing the inbox of someone online and claiming an attachment into the bag.
 
 use anyhow::{bail, Result};
 use shared::social::{anexos_validos, texto_valido, Pedido};
@@ -51,7 +51,7 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
         );
     }
     let mut tx = pool.begin().await?;
-    // Serializa envios por conta (idempotencia inclusive entre canais).
+    // Serialises sends per account (idempotency across channels too).
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('correio-admin:' || $1::text,0))")
         .bind(conta)
         .execute(&mut *tx)

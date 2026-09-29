@@ -1,4 +1,4 @@
-//! Escolha de caminhos de XP quando a história espera um nível mínimo.
+//! Choice of XP paths when the story expects a minimum level.
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;

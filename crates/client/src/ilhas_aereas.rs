@@ -1,4 +1,4 @@
-//! Nuvens voxel do Zone14, com iluminação suave e deslocamento pelo vento.
+//! Zone14 voxel clouds, with soft lighting and wind displacement.
 use crate::gpu_estatica::{MalhaEstatica, Programa};
 use macroquad::prelude::*;
 
@@ -18,8 +18,8 @@ impl IlhasAereas {
             .map(|bytes| {
                 let modelos = crate::vox::parse(bytes).expect("nuvem voxel válida");
                 let mut malhas = crate::vox::mesh(&modelos[0], 1.0);
-                // O mesher do personagem tem sombra forte. Nuvem recebe a mesma
-                // rampa curta do Zone14, preservando a paleta azul/branca original.
+                // The character mesher has a strong shadow. A cloud gets the same short
+                // Zone14 ramp, preserving the original blue/white palette.
                 for m in &mut malhas {
                     for face in m.vertices.chunks_exact_mut(4) {
                         let n = (face[1].position - face[0].position)
@@ -53,8 +53,8 @@ impl IlhasAereas {
     }
 
     pub fn desenha(&self) {
-        // Três modelos compartilham os buffers; só a matriz muda por nuvem.
-        // Movimento circular contínuo evita reaparecer de repente na borda.
+        // Three models share the buffers; only the matrix changes per cloud.
+        // Continuous circular motion avoids popping back in at the edge.
         let tempo = get_time() as f32;
         for k in 0..30 {
             let a = k as f32 * 2.39996 + tempo * 0.001;

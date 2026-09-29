@@ -1,7 +1,7 @@
-//! Configuracao do AUTO COLETA, no molde do MIR4: o que coletar (madeira e
-//! cada cor de pedra) e o raio de busca a partir de onde foi ligado. Abre com
-//! o botao direito no AUTO COLETA — nenhuma tecla abre. Salva nas
-//! preferencias do personagem.
+//! AUTO GATHER configuration, in the MIR4 mould: what to gather (wood and
+//! each stone color) and the search radius from where it was switched on.
+//! Opens with a right click on AUTO GATHER — no key opens it. Saves to the
+//! character's preferences.
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -13,8 +13,8 @@ pub struct ConfigColeta {
     pub aberto: bool,
 }
 
-/// Liga/desliga um tipo. Nao deixa desmarcar o ultimo: sem tipo nenhum o
-/// auto nunca acharia nada.
+/// Toggles a type on/off. Does not allow unchecking the last one: with no
+/// type at all the auto would never find anything.
 pub fn alterna_tipo(tipos: &mut [bool; 5], i: usize) -> bool {
     if i >= tipos.len() {
         return false;
@@ -26,7 +26,7 @@ pub fn alterna_tipo(tipos: &mut [bool; 5], i: usize) -> bool {
     true
 }
 
-/// Raio em passos de 10, dentro da faixa permitida.
+/// Radius in steps of 10, within the allowed range.
 pub fn ajusta_raio(raio: f32, passos: i32) -> f32 {
     let r = ((raio / PASSO_RAIO).round() + passos as f32) * PASSO_RAIO;
     r.clamp(shared::COLETA_RAIO_AUTO_MIN, shared::COLETA_RAIO_AUTO_MAX)
@@ -41,7 +41,7 @@ impl ConfigColeta {
         self.aberto = false;
     }
 
-    /// Desenha e trata o clique. Devolve se a configuracao mudou.
+    /// Draws and handles the click. Returns whether the configuration changed.
     pub fn desenha(
         &mut self,
         tipos: &mut [bool; 5],
@@ -140,7 +140,7 @@ impl ConfigColeta {
                 }
             }
         }
-        // Defender: apanhou coletando, mata o bicho e volta a coletar.
+        // Defend: took a hit while gathering, kill the creature and go back to gathering.
         let linha = Rect::new(r.x + 18.0, y + 16.0, r.w - 36.0, 28.0);
         let caixa = Rect::new(linha.x, linha.y + 4.0, 20.0, 20.0);
         draw_rectangle_lines(caixa.x, caixa.y, caixa.w, caixa.h, 2.0, estilo::OURO);

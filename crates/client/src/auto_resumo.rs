@@ -1,4 +1,4 @@
-//! Resumo da sessão de auto missão. Só acumula eventos confirmados pelo servidor.
+//! Summary of the auto-quest session. Only accumulates events the server confirmed.
 use std::collections::{BTreeMap, HashMap};
 
 use macroquad::prelude::*;

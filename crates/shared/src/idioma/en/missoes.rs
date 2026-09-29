@@ -1,9 +1,9 @@
-//!  Missões: título, descrição e fala de entrega de cada uma.
+//! Quests: the title, description and hand-in line of each one.
 
 pub const VERBETES: &[(&str, &str)] = &[
-    // ─────────────────────────── os títulos das missões ───────────────────────────
-    // Título curto é o que mais aparece: lista, diário, bússola. Vale soar como
-    // nome de missão em inglês, não como tradução literal.
+    // ─────────────────────────── the quest titles ───────────────────────────
+    // A short title is what shows up most: list, journal, compass. It should
+    // sound like an English quest name, not like a literal translation.
     ("Curtume", "The Tannery"),
     ("Gelo fundo", "Deep ice"),
     ("Madeireiro", "Timberman"),
@@ -178,7 +178,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "No mural: escolha um ofício na casa vazia",
         "On the board: pick a trade in the empty house",
     ),
-    // ─────────────────────── as descrições e as falas de entrega ───────────────────────
+    // ─────────────────────── the descriptions and hand-in lines ───────────────────────
     ("Os mercadores não passam mais sem escolta.", "The merchants no longer travel without an escort."),
     ("Quebre 20 pedras em qualquer veio da ilha.", "Break 20 rocks at any vein on the island."),
     ("Quebre 25 pedras em qualquer veio da ilha.", "Break 25 rocks at any vein on the island."),

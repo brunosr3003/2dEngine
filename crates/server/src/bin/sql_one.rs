@@ -1,8 +1,8 @@
-//! Executa um único UPDATE/INSERT SQL via env var. Uso pontual pra fixes.
+//! Runs a single SQL UPDATE/INSERT via env var. For one-off fixes.
 //!
-//!   SQL='UPDATE skills SET target_type='line' WHERE id=1054' cargo run --bin sql_one
+//! SQL='UPDATE skills SET target_type='line' WHERE id=1054' cargo run --bin sql_one
 //!
-//! Bumpa economy_version automaticamente pra trigger hot-reload.
+//! Bumps economy_version automatically to trigger a hot-reload.
 
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPoolOptions;

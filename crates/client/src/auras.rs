@@ -1,4 +1,4 @@
-//! Auras locais por peça, desenhadas em lote depois dos corpos opacos.
+//! Local per-piece auras, drawn in a batch after the opaque bodies.
 use macroquad::prelude::*;
 use macroquad::material::{Material, gl_use_material, gl_use_default_material};
 use std::{cell::RefCell, collections::HashMap, f32::consts::TAU};
@@ -62,7 +62,7 @@ pub fn personagem(bits: u64, mats: &[Mat4; crate::rig::N], armas: &[(&str, Mat4)
             }
         }
     }
-    // Armas mágicas não têm lâmina: a aura acompanha as palmas.
+    // Magic weapons have no blade: the aura follows the palms.
     if armas.is_empty() && !ferramenta {
         for p in crate::rig::palmas(mats, crate::render3d::VOXEL) {
             por(bits, 0, Mat4::from_translation(p), Vec3::ZERO, Vec3::splat(0.13), fase, perto);
@@ -83,7 +83,7 @@ pub fn personagem(bits: u64, mats: &[Mat4; crate::rig::N], armas: &[(&str, Mat4)
     por(bits, 6, mats[0], vec3(0.0, -0.015, 0.0), vec3(0.27, 0.07, 0.17), fase+5.0, perto);
     FILA.with(|f| { for e in &mut f.borrow_mut()[inicio..] { e.distancia = distancia; } });
 }
-/// A aura usa o mesmo tronco animado e a mesma escala do animal desenhado.
+/// The aura uses the same animated trunk and the same scale as the drawn animal.
 pub fn animal(bits: u64, slot: usize, mat: Mat4, bicho: &crate::bicho::Bicho, modelo: &str, distancia: f32, id: u32) {
     if distancia > 38.0 || shared::auras::peca(bits, slot).is_none() { return; }
     let limites = LIMITES.with(|cache| {
@@ -124,7 +124,7 @@ pub fn desenha() {
         let mut mesh = Mesh { vertices: Vec::with_capacity(4096), indices: Vec::with_capacity(6144), texture: None };
         let tempo = get_time() as f32;
         fila.sort_by(|a,b| a.distancia.total_cmp(&b.distancia));
-        // Orçamento global: prioriza o próprio personagem e os próximos.
+        // Global budget: prioritises the player's own character and the nearest ones.
         for e in fila.drain(..).take(96) {
             let intensidade = shared::auras::intensidade(e.tier, e.refino);
             let pulso = 0.82 + 0.18 * (tempo * (1.1 + intensidade * 0.35) + e.fase).sin();
@@ -132,7 +132,7 @@ pub fn desenha() {
             let n = if e.perto { 24 } else { 12 };
             let r = e.raio * ([1.03, 1.12, 1.28, 1.48][e.tier as usize-1] + if e.refino >= 5 {0.025} else {0.0});
             let principal = if r.z > r.y && r.z > r.x { 2 } else if r.x > r.y { 0 } else { 1 };
-            // Dois arcos finos abraçam a silhueta da peça, com halo externo suave.
+            // Two thin arcs hug the piece's silhouette, with a soft outer halo.
             for plano in 0..e.tier as usize {
                 let outro = (principal + 1 + plano % 2) % 3;
                 for (largura, alfa) in [(0.055 * intensidade, 0.065), (0.020 * intensidade, 0.09), (0.004 * intensidade, 0.20)] {
@@ -185,7 +185,7 @@ pub fn desenha() {
     });
 }
 
-/// Vitrine local de cores/refinos, sem alterar equipamento de personagens.
+/// Local showcase of colors/refinements, without altering characters' equipment.
 pub async fn previa(vox: &crate::vox::VoxCache) {
     let mut world = crate::world::World::default();
     let mut metas = Vec::new(); let mut estados = Vec::new();

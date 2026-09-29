@@ -1,4 +1,4 @@
-//! Segue um jogador por rotas do servidor, mantendo distância sem atacar.
+//! Follows a player along server routes, keeping distance without attacking.
 use macroquad::prelude::Vec2;
 use shared::{protocol::ClientMessage, EntityId};
 #[derive(Default)]

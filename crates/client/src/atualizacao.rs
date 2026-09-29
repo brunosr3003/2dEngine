@@ -1,4 +1,4 @@
-//! Verifica a release publicada por plataforma antes do login, sem travar a rede.
+//! Checks the published release per platform before login, without stalling the network.
 use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
@@ -57,7 +57,7 @@ fn destino(corpo: &str, plataforma: &str, build: u64) -> Option<String> {
     if plataforma == "ios" && url == "itms-beta://" {
         return Some(url.into());
     }
-    // Não encaminhar comandos/esquemas arbitrários recebidos pela rede.
+    // Do not forward arbitrary commands/schemes received over the network.
     [
         "https://play.google.com/",
         "https://apps.apple.com/",
@@ -70,8 +70,8 @@ fn destino(corpo: &str, plataforma: &str, build: u64) -> Option<String> {
 }
 
 impl Atualizacao {
-    /// Erro obrigatório de conexão: funciona mesmo sem manifesto ou após
-    /// dispensar o aviso opcional. Neste fluxo o destino é sempre o site.
+    /// Mandatory connection error: works even with no manifest or after
+    /// dismissing the optional notice. In this flow the destination is always the site.
     pub fn desenha_incompativel(&mut self) -> bool {
         let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Atualização necessária");
         let cx = r.center().x;
@@ -90,7 +90,7 @@ impl Atualizacao {
         crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Voltar", true)
     }
 
-    /// `true`: a tela de atualização tomou o lugar do login neste quadro.
+    /// `true`: the update screen took login's place this frame.
     pub fn desenha(&mut self) -> bool {
         if let Some(rx) = &self.busca {
             match rx.try_recv() {
@@ -102,8 +102,8 @@ impl Atualizacao {
                 Err(TryRecvError::Empty) => {}
             }
         }
-        // Inclusive quem usa login automático vê o aviso. Falha/timeout na
-        // consulta não impede jogar; a thread da rede pode terminar depois.
+        // Even someone on auto-login sees the notice. A failure or timeout on the
+        // query does not prevent playing; the network thread may finish later.
         if self.busca.is_some() && self.inicio.elapsed() < Duration::from_secs(3) {
             let r = crate::ui::painel(460.0, 140.0, "Tempest");
             crate::ui::texto_centro(

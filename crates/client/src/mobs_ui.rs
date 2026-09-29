@@ -1,5 +1,5 @@
-//! Bestiário das áreas visitadas nesta sessão. Todos os números de combate
-//! vêm da meta do servidor, depois do escalamento real da faixa.
+//! Bestiary of the areas visited this session. All the combat numbers come
+//! from the server's goal, after the tier's real scaling.
 use macroquad::prelude::*;
 
 use crate::{hud_estilo as estilo, world::World};

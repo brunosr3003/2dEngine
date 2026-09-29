@@ -1,8 +1,9 @@
-//! "Vendedores" (Menu → Comércio): os vendedores NPC da ilha, so' com "Ir".
+//! "Vendors" (Menu -> Trade): the island's NPC vendors, with "Go" only.
 //!
-//! Decisao do usuario: vendedor NPC NUNCA vende de longe — sem compra remota e
-//! sem taxa. O menu so' leva ate' ele: o personagem vai sozinho e a loja abre
-//! ao falar com ele. A "Loja" do Menu e' outra coisa: a de cash (TP), em breve.
+//! The user's decision: an NPC vendor NEVER sells from afar — no remote
+//! purchase and no fee. The menu only takes you to them: the character walks
+//! there alone and the shop opens on speaking to them. The Menu's "Shop" is
+//! something else: the cash one (TP), coming soon.
 use macroquad::prelude::*;
 
 use crate::hud_estilo::{self as estilo, u};
@@ -44,7 +45,7 @@ impl Lojas {
         self.aberto
     }
 
-    /// Desenha e devolve o vendedor escolhido com "Ir": (nome, posicao).
+    /// Draws and returns the vendor chosen with "Go": (name, position).
     pub fn desenha(
         &mut self,
         lojas: &[(String, Vec2)],

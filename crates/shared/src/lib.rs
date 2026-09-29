@@ -1,7 +1,7 @@
-//! Tipos compartilhados entre cliente e servidor.
+//! Types shared between client and server.
 //!
-//! Nada aqui depende de wgpu/winit/tokio — este crate compila em todos os
-//! targets (native + wasm + headless) para manter o protocolo canonico.
+//! Nothing here depends on wgpu/winit/tokio — this crate compiles on every
+//! target (native + wasm + headless) to keep the protocol canonical.
 
 pub mod armazem;
 pub mod auras;
@@ -48,8 +48,8 @@ pub use items::*;
 pub use physics::*;
 pub use skills::*;
 
-/// Serde helper: serializa/deserializa `glam::Vec2` como array `[x, y]`
-/// para compatibilidade com o cliente Unity (float[]).
+/// Serde helper: serialises/deserialises `glam::Vec2` as a `[x, y]` array
+/// for compatibility with the Unity client (float[]).
 pub mod vec2_arr {
     use glam::Vec2;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

@@ -1,5 +1,5 @@
-//! Lida com uma conexao WebSocket: aceita, decodifica, encaminha mensagens
-//! para o `world` e envia respostas. Nunca toca no ECS diretamente.
+//! Handles one WebSocket connection: accepts, decodes, forwards messages to
+//! `world` and sends replies. Never touches the ECS directly.
 
 use crate::world::{IncomingMessage, SessionHandle, SessionId};
 use anyhow::Result;
@@ -23,7 +23,7 @@ pub async fn handle_connection(
 
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<ServerMessage>();
     let session_id = SessionId(peer);
-    // Banda desta conexao, pro panoptico: atomico, sem cadeado no envio.
+    // This connection's bandwidth, for the panoptico: atomic, no lock on send.
     let banda = crate::telemetria::abrir_banda(&peer.to_string());
     to_world.send(IncomingMessage::Connected(SessionHandle {
         id: session_id,
@@ -32,23 +32,22 @@ pub async fn handle_connection(
 
     loop {
         tokio::select! {
-            // Mensagem chegando do world para enviar ao cliente
+            // Message arriving from the world to send to the client
             Some(server_msg) = rx_out.recv() => {
                 let bytes = match shared::protocol::encode(&server_msg) {
                     Ok(b) => b,
                     Err(e) => { tracing::warn!("encode: {e}"); continue; }
                 };
-                // BINARIO, nao texto. Com JSON dava pra mandar como texto; o
-                // wire agora e' postcard e `from_utf8_lossy` destruiria os
-                // bytes que nao formam UTF-8 valido — o cliente travava no
-                // handshake sem erro nenhum aparecer.
+                // BINARY, not text. With JSON it could be sent as text; the wire is postcard
+                // now and `from_utf8_lossy` would destroy the bytes that are not valid UTF-8
+                // — the client froze on the handshake with no error appearing at all.
                 banda.enviou(bytes.len());
                 if ws.send(Message::Binary(bytes)).await.is_err() {
                     break;
                 }
             }
 
-            // Frame chegando do cliente
+            // Frame arriving from the client
             frame = ws.next() => {
                 match frame {
                     None => break,

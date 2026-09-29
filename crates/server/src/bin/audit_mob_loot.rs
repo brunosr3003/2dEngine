@@ -1,4 +1,4 @@
-//! Auditoria somente leitura: DATABASE_URL deve apontar para o banco do jogo.
+//! Read-only audit: DATABASE_URL must point at the game's database.
 #[allow(dead_code)]
 #[path = "../economy.rs"]
 mod economy;

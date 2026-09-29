@@ -1,4 +1,4 @@
-//! Gesto separado do desenho: soltar um clique usa, arrastar configura AUTO.
+//! Gesture separated from drawing: releasing a click uses, dragging configures AUTO.
 use macroquad::prelude::{Rect, Vec2};
 
 #[derive(Clone, Copy, Debug, PartialEq)]

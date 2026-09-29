@@ -1,4 +1,4 @@
-//! Notas incluídas no próprio aplicativo, disponíveis mesmo sem conexão.
+//! Notes bundled inside the application itself, available even offline.
 use crate::{hud_estilo as estilo, ui};
 use macroquad::prelude::*;
 
@@ -26,7 +26,7 @@ impl Default for Novidades {
 }
 
 impl Novidades {
-    /// True captura esta tela: campos de login não recebem o mesmo clique.
+    /// True captures this screen: login fields do not get the same click.
     pub fn desenha(&mut self) -> bool {
         if !self.aberta {
             if !ui::botao(Rect::new(16.0, 16.0, 180.0, 36.0), "Novidades", true) {
@@ -113,9 +113,10 @@ impl Novidades {
 }
 
 fn quebra(texto: &str, largura: f32, medir: &impl Fn(&str) -> f32) -> Vec<String> {
-    // Traduz ANTES de quebrar: a quebra entrega PEDACOS ao desenho, e pedaco de
-    // frase nao casa com verbete. Traduzindo aqui, a quebra ja' mede e parte o
-    // ingles — que e' mais comprido que o portugues e quebra em outro lugar.
+    // Translate BEFORE wrapping: wrapping hands PIECES to the drawing, and a
+    // piece of a sentence does not match an entry. Translating here, the wrap
+    // already measures and breaks the English — which is longer than the
+    // Portuguese and breaks somewhere else.
     let texto = &shared::idioma::tr(texto);
     let mut linhas = Vec::new();
     for paragrafo in texto.lines() {

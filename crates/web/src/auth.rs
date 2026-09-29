@@ -1,4 +1,4 @@
-//! Hash e verificacao de senha via argon2id (padrao OWASP).
+//! Password hashing and verification via argon2id (OWASP standard).
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},

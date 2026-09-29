@@ -46,7 +46,7 @@ impl GameWorld {
             self.social_resultado(sid, false, "Social indisponível: servidor sem banco.");
             return;
         };
-        // No maximo uma operacao em voo por sessao; nenhum SQL bloqueia o tick.
+        // At most one operation in flight per session; no SQL blocks the tick.
         if self.social_pendentes.contains_key(&sid) {
             if !matches!(pedido, Pedido::Estado) {
                 self.social_resultado(sid, false, "Aguarde a atualização e tente novamente.");
@@ -144,13 +144,13 @@ impl GameWorld {
             let _ = aceitou.send(false);
             return;
         }
-        // Planeja numa copia: bolsa cheia nunca recebe metade dos anexos.
+        // Plans on a copy: a full bag never receives half the attachments.
         let mut bolsa = s.inventory.clone();
         if !anexos
             .iter()
-            // A INSTANCIA vai junto. Com `None` aqui o correio entregava o
-            // item pelado — equipamento sem tier nem refino, pet sem nivel
-            // nem skills, montaria sem cor — e nada avisava.
+            // The INSTANCE goes with it. With `None` here the mail delivered the item
+            // bare — equipment with no tier and no refinement, a pet with no level and no
+            // skills, a mount with no color — and nothing warned.
             .all(|a| add_to_inventory(&mut bolsa, a.item_id, a.qtd, a.instance))
         {
             let _ = aceitou.send(false);
@@ -311,7 +311,7 @@ mod tests {
         w.handle_party_invite(ids[2], "p1".into());
         w.handle_party_accept(ids[1]);
         assert_eq!(w.sessions[&ids[1]].party_id, Some(pid));
-        // Convites podem coexistir, mas aceitar reconfere as vagas.
+        // Invitations may coexist, but accepting re-checks the slots.
         for i in 2..6 {
             w.handle_party_invite(ids[0], format!("p{i}"));
         }

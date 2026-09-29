@@ -1,6 +1,6 @@
-//! Persistencia social no banco do realm. Nenhuma escrita roda no tick.
-//! Transacoes serializam as mutacoes sociais para validar limites e papeis
-//! mesmo quando pedidos chegam simultaneamente por canais diferentes.
+//! Social persistence in the realm's database. No write runs on the tick.
+//! Transactions serialise the social mutations so limits and roles are
+//! validated even when requests arrive simultaneously on different channels.
 use anyhow::{bail, Result};
 use shared::social::*;
 use sqlx::{PgConnection, PgPool, Row};
@@ -79,7 +79,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
         }
     }
     let mut tx = pool.begin().await?;
-    // Lock transacional do subsistema, compartilhado entre todos os canais.
+    // Transactional lock for the subsystem, shared by every channel.
     sqlx::query("SELECT pg_advisory_xact_lock(83910422)")
         .execute(&mut *tx)
         .await?;
@@ -401,7 +401,7 @@ mod tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
 
-    /// Schema descartavel: nunca usa os personagens reais.
+    /// Disposable schema: never uses the real characters.
     #[tokio::test]
     #[ignore = "requer TEST_DATABASE_URL; cria e remove schema isolado"]
     async fn social_postgres_permissoes_persistencia_e_concorrencia() -> Result<()> {
@@ -455,7 +455,7 @@ mod tests {
             .execute(p)
             .await?;
         init(p).await?;
-        init(p).await?; // migration idempotente
+        init(p).await?; // idempotent migration
         crate::correio_admin::tests::exercitar(p).await?;
         executar(p, "Ana", &Pedido::Amizade { nome: "bia".into() }).await?;
         assert_eq!(estado(p, "Bia").await?.recebidos, vec!["Ana"]);
@@ -485,7 +485,7 @@ mod tests {
             .is_err());
         executar(p, "Ana", &Pedido::RemoverAmigo { nome: "Bia".into() }).await?;
         assert!(estado(p, "Bia").await?.amigos.is_empty());
-        // Pedidos reciprocos simultaneos: uma relacao apenas.
+        // Simultaneous reciprocal requests: one relationship only.
         let pa = Pedido::Amizade { nome: "Bia".into() };
         let pb = Pedido::Amizade { nome: "Ana".into() };
         let (a, b) = tokio::join!(executar(p, "Ana", &pa), executar(p, "Bia", &pb));
@@ -587,7 +587,7 @@ mod tests {
         executar(p, "Bia", &Pedido::DissolverCla).await?;
         assert!(estado(p, "Caio").await?.convites_cla.is_empty());
         assert!(estado(p, "Bia").await?.cla.is_none());
-        // Limites verificados dentro da transacao; carta recusada nao e' inserida.
+        // Limits checked inside the transaction; a refused letter is not inserted.
         sqlx::query("INSERT INTO social_cartas(de,para,assunto,texto,quando) SELECT 'Caio','Dani','x','y',0 FROM generate_series(1,100)").execute(p).await?;
         assert!(executar(
             p,

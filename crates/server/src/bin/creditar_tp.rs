@@ -1,16 +1,16 @@
-//! Credita TP de TESTE numa conta, no banco central (docs/MERCADO.md).
+//! Credits TEST TP to an account, in the central database (docs/MERCADO.md).
 //!
-//! Pelo personagem (acha a conta no banco do realm):
+//! By character (finds the account in the realm's database):
 //!
-//!   DATABASE_URL_CENTRAL=… DATABASE_URL=… MMO_REALM=SA01 \
-//!     cargo run --bin creditar_tp -- Fulano 500 "teste do mercado"
+//! DATABASE_URL_CENTRAL=… DATABASE_URL=… MMO_REALM=SA01 \
+//! cargo run --bin creditar_tp -- Fulano 500 "teste do mercado"
 //!
-//! Pela chave da conta no central (`REALM:id_da_conta`):
+//! By the account key in the central database (`REALM:account_id`):
 //!
-//!   DATABASE_URL_CENTRAL=… cargo run --bin creditar_tp -- --conta SA01:12 500
+//! DATABASE_URL_CENTRAL=… cargo run --bin creditar_tp -- --conta SA01:12 500
 //!
-//! Cada credito e' uma linha nova no livro (`tp_razao`); nada e' sobrescrito.
-//! Enquanto nao existe loja de TP, este e' o unico jeito de TP entrar.
+//! Every credit is a new row in the ledger (`tp_razao`); nothing is
+//! overwritten. While there is no TP shop, this is the only way TP gets in.
 
 #[path = "../mercado_razao.rs"]
 mod mercado_razao;
@@ -65,7 +65,7 @@ async fn conta_do_personagem(nome: &str) -> Result<String> {
             .bind(nome)
             .fetch_optional(&pool)
             .await?;
-    // Mesma chave que o servidor usa (`mercado::conta_global`).
+    // The same key the server uses (`mercado::conta_global`).
     match conta {
         None => bail!("personagem '{nome}' nao existe neste realm"),
         Some(Some(id)) => Ok(format!("{realm}:{id}")),

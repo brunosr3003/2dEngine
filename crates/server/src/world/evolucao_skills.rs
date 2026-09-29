@@ -1,5 +1,5 @@
-//! Evolução determinística das habilidades: Energia coletada no mundo,
-//! cobre da carteira e tomos condensados para a habilidade escolhida.
+//! Deterministic skill evolution: Energy gathered in the world, copper from
+//! the wallet and tomes condensed into the chosen skill.
 
 use super::*;
 use shared::skills::{self, GrauTomo};
@@ -190,14 +190,14 @@ mod testes {
         (w, sid, rx)
     }
 
-    /// Atributo passou a beber da mesma Energia da evolucao, e cada ponto
-    /// custa mais que o anterior.
+    /// Attributes now drink from the same Energy as evolution, and each point
+    /// costs more than the last.
     #[test]
     fn ponto_de_atributo_cobra_energia_crescente_e_para_sem_saldo() {
         let (mut w, sid, mut rx) = jogador();
         let s = w.sessions.get_mut(&sid).unwrap();
         s.unspent_points = 4;
-        s.skill_progress.energia = 35; // paga 10 + 15 e para antes dos 20
+        s.skill_progress.energia = 35; // pays 10 + 15 and stops before 20
         while rx.try_recv().is_ok() {}
 
         w.on_message(sid, ClientMessage::AllocStatPoint { stat: 0 });
@@ -212,7 +212,7 @@ mod testes {
         assert_eq!(s.skill_progress.energia, 10, "segundo ponto custa 15");
         assert!(s.skills_dirty && s.stat_points_dirty && w.save_pending);
 
-        // Terceiro custa 20 e so' ha' 10: nada muda e o cliente e' avisado.
+        // The third costs 20 and there are only 10: nothing changes and the client is told.
         while rx.try_recv().is_ok() {}
         w.on_message(sid, ClientMessage::AllocStatPoint { stat: 1 });
         let s = &w.sessions[&sid];
@@ -227,7 +227,7 @@ mod testes {
         }
         assert!(avisou, "recusa por Energia tem que chegar ao cliente");
 
-        // Redistribuir devolve os pontos, nunca a Energia.
+        // Redistributing gives the points back, never the Energy.
         w.on_message(sid, ClientMessage::ResetStats);
         let s = &w.sessions[&sid];
         assert_eq!(s.unspent_points, 4);
@@ -253,7 +253,7 @@ mod testes {
         }
         assert!(sucesso);
 
-        // Tier IV -> V: sem nivel/tomo nao consome nada.
+        // Tier IV -> V: with no level/tome it consumes nothing.
         let s = w.sessions.get_mut(&sid).unwrap();
         s.skill_progress.tiers[0] = 4;
         let antes = s.skill_progress.clone();

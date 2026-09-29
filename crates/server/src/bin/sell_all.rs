@@ -1,7 +1,7 @@
-//! One-off: coloca TODOS os items ativos no shop_id=1 (Klaus). Idempotente —
-//! reinsere sem duplicar; também garante buy_price não-NULL pra todos.
+//! One-off: puts ALL active items in shop_id=1 (Klaus). Idempotent —
+//! reinserts without duplicating; also ensures a non-NULL buy_price for all.
 //!
-//! Pra items sem buy_price setado, usa `sell_price * 2` como default.
+//! For items with no buy_price set, uses `sell_price * 2` as the default.
 
 use anyhow::Result;
 use sqlx::postgres::PgPoolOptions;
@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
         .connect(&database_url)
         .await?;
 
-    // 1. Garante buy_price em todos os items ativos. Se NULL, usa sell × 2.
+    // 1. Ensure buy_price on every active item. If NULL, use sell x 2.
     let updated = sqlx::query(
         "UPDATE items SET buy_price = GREATEST(sell_price * 2, 1)
          WHERE active = TRUE AND buy_price IS NULL",
@@ -26,13 +26,13 @@ async fn main() -> Result<()> {
     .await?;
     tracing::info!("buy_price backfilled on {} items", updated.rows_affected());
 
-    // 2. Lista todos itens ativos.
+    // 2. List every active item.
     let items: Vec<(i32,)> = sqlx::query_as("SELECT id FROM items WHERE active = TRUE ORDER BY id")
         .fetch_all(&pool)
         .await?;
 
-    // 3. Insere no shop_id=1 (Klaus). ON CONFLICT DO NOTHING (já existe).
-    // sort_order = posição na lista atual + index.
+    // 3. Insert into shop_id=1 (Klaus). ON CONFLICT DO NOTHING (already there).
+    // sort_order = position in the current list + index.
     let max_order: Option<i32> =
         sqlx::query_scalar("SELECT MAX(sort_order) FROM vendor_shop_items WHERE shop_id = 1")
             .fetch_one(&pool)
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // 4. Bumpa economy_version pra forçar hot-reload no game server.
+    // 4. Bump economy_version to force a hot-reload on the game server.
     let v: i64 = sqlx::query_scalar(
         "UPDATE economy_version SET version = version + 1, updated_at = NOW()
          WHERE id = 1 RETURNING version",

@@ -1,10 +1,10 @@
-//! A barra de itens do personagem (MIR4): quatro espacos, cada um com o
-//! consumivel, o AUTO e o limiar. Quem USA e' o cliente; aqui so' se valida o
-//! que ele manda e se guarda (JSON em `characters.barra_json`).
+//! The character's item bar (MIR4): four slots, each with its consumable, its
+//! AUTO and its threshold. The CLIENT is what uses it; here we only validate
+//! what it sends and store it (JSON in `characters.barra_json`).
 use shared::constants::item_id as it;
 use shared::protocol::{EspacoDaBarra, ESPACOS_DA_BARRA};
 
-/// O que pode ir na barra: consumivel que o `UseItem` sabe usar.
+/// What may go on the bar: a consumable that `UseItem` knows how to use.
 pub fn cabe_na_barra(id: u16) -> bool {
     [
         it::HEALTH_POTION,
@@ -19,8 +19,8 @@ pub fn cabe_na_barra(id: u16) -> bool {
     .contains(&id)
 }
 
-/// Limpa o que o cliente mandou: no maximo `ESPACOS_DA_BARRA` espacos, item
-/// fora da lista vira espaco vazio, limiar entre 5 e 95.
+/// Cleans what the client sent: at most `ESPACOS_DA_BARRA` slots, an item
+/// outside the list becomes an empty slot, threshold between 5 and 95.
 pub fn valida(espacos: &[EspacoDaBarra]) -> Vec<EspacoDaBarra> {
     espacos
         .iter()
@@ -43,7 +43,7 @@ pub fn para_json(barra: &[EspacoDaBarra]) -> String {
     serde_json::to_string(barra).unwrap_or_default()
 }
 
-/// Vazio ou estragado vira barra vazia: o cliente cai na padrao.
+/// Empty or corrupt becomes an empty bar: the client falls back to the default.
 pub fn de_json(s: &str) -> Vec<EspacoDaBarra> {
     if s.is_empty() {
         return Vec::new();

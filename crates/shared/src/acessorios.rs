@@ -1,4 +1,4 @@
-//! Acessórios de companheiros: bônus de utilidade, sem atributos de combate.
+//! Companion accessories: utility bonuses, with no combat attributes.
 use crate::{item_id, Equipment};
 
 pub const PET_INICIO: u16 = 520;

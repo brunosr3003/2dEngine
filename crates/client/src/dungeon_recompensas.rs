@@ -1,4 +1,4 @@
-//! Prévia das recompensas e progresso por estágio, dentro do menu de dungeons.
+//! Preview of the rewards and progress per stage, inside the dungeon menu.
 use crate::{dungeon_ui::Contexto, hud_estilo as e, rolagem::Rolagem};
 use macroquad::prelude::*;
 use shared::{dungeon as dg, item_id};

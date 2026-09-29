@@ -1,4 +1,4 @@
-//! Efeitos no espaco 3D: corte, disparo e impacto seguem a arma e o alvo.
+//! Effects in 3D space: slash, shot and impact follow the weapon and the target.
 use macroquad::material::{
     gl_use_default_material, gl_use_material, load_material, Material, MaterialParams,
 };
@@ -12,8 +12,8 @@ pub fn material() -> Material {
     material_com_depth(false)
 }
 
-/// O backend OpenGL da miniquad só ativa GL_DEPTH_TEST com depth_write.
-/// Auras persistentes precisam da oclusão do corpo e do equipamento.
+/// miniquad's OpenGL backend only enables GL_DEPTH_TEST with depth_write.
+/// Persistent auras need occlusion from the body and the equipment.
 pub fn material_com_oclusao() -> Material {
     material_com_depth(true)
 }
@@ -62,7 +62,7 @@ fn alfa(mut c: Color, a: f32) -> Color {
     c
 }
 
-/// Volume luminoso suave: tres discos cruzados com queda radial de opacidade.
+/// Soft luminous volume: three crossed discs with radial opacity falloff.
 fn halo(p: Vec3, raio: f32, cor: Color) {
     if raio < 0.005 || cor.a < 0.005 {
         return;
@@ -178,7 +178,7 @@ fn corte(p: Vec3, frente: Vec3, raio: f32, inclinacao: f32, t: f32, cor: Color) 
     }
 }
 
-/// Fita afilada, com nucleo claro e bordas transparentes.
+/// A tapered ribbon, with a bright core and transparent edges.
 pub fn fita(pontos: &[Vec3], largura: f32, cor: Color) {
     if pontos.len() < 2 {
         return;
@@ -258,7 +258,7 @@ fn brilho(p: Vec3, tamanho: f32, cor: Color) {
 }
 
 fn barril(p: Vec3, giro: f32) {
-    // Madeira facetada e duas cintas; volume real, com perspectiva e oclusao.
+    // Faceted wood and two bands; real volume, with perspective and occlusion.
     for i in 0..12 {
         let a = i as f32 * TAU / 12.0 + giro;
         let b = (i + 1) as f32 * TAU / 12.0 + giro;
@@ -292,7 +292,7 @@ pub fn desenha(c: &Cena, material: &Material) {
         .unwrap_or(c.frente);
     let lado = Vec3::Y.cross(frente);
     let u = (c.t / c.atraso.max(0.01)).clamp(0.0, 1.0);
-    // Madeira opaca primeiro; so a chama e os rastros usam soma de luz.
+    // Opaque wood first; only the flame and the trails use additive light.
     if c.id == 9 && !c.impacto {
         let v = ((u - 0.45) / 0.55).clamp(0.0, 1.0);
         let p = if u < 0.45 {
@@ -322,7 +322,7 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
         _ => violeta,
     };
     if !c.impacto {
-        // Toda skill tem carga visivel desde o inicio.
+        // Every skill has a visible wind-up from the start.
         for &mao in &c.maos {
             halo(mao, 0.32 + u * 0.55, alfa(cor, 0.3 + u * 0.5));
             brilho(mao, 0.18 + u * 0.22, alfa(WHITE, u * 0.75));

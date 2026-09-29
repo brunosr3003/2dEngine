@@ -46,7 +46,7 @@ impl GameWorld {
         tag.level = 20;
         tag.is_boss = true;
         tag.boss_name = Some("Guardiao de Treino".into());
-        // Fica visivel perto do login, mas so inicia a luta quando provocado.
+        // Stays visible near login, but only starts the fight when provoked.
         tag.detect_range = 4.0;
         tag.wander_timer = f32::MAX;
         tag.wander_waypoint = pos;

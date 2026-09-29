@@ -1,7 +1,7 @@
-//! One-off: bruno char L100 + todas as 8 profs L100 + 100 SP.
-//! Usado pra testar skills sem grinding. Idempotente.
+//! One-off: bruno char L100 + all 8 profs L100 + 100 SP. Used to test skills
+//! without grinding. Idempotent.
 //!
-//! Uso: cargo run --bin set_max_bruno
+//! Usage: cargo run --bin set_max_bruno
 
 use anyhow::Result;
 use sqlx::postgres::PgPoolOptions;
@@ -20,11 +20,11 @@ async fn main() -> Result<()> {
         .connect(&database_url)
         .await?;
 
-    // Char L100: cumulative xp = 100 × (99·100·199)/6 = 32,835,000.
-    // Adicionamos 1M de margem.
+    // Char L100: cumulative xp = 100 x (99·100·199)/6 = 32,835,000.
+    // We add 1M of margin.
     let char_xp: i64 = 33_835_000;
 
-    // Prof L100 cumulative = 50 × (1+2+...+99) = 50 × 4950 = 247_500.
+    // Prof L100 cumulative = 50 x (1+2+...+99) = 50 x 4950 = 247_500.
     let prof_xp: i64 = 250_000;
 
     sqlx::query(
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     .execute(&pool)
     .await?;
 
-    // 8 proficiências (Sword=0, Staff=1, Dagger=2, Bow=3, Wand=4, Unarmed=5, Axe=6, Spear=7).
+    // 8 proficiencies (Sword=0, Staff=1, Dagger=2, Bow=3, Wand=4, Unarmed=5, Axe=6, Spear=7).
     for prof_kind in 0..8i32 {
         sqlx::query(
             "INSERT INTO proficiencies (character_name, prof_kind, xp)
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         .await?;
     }
 
-    // Limpa skills aprendidas pra começar do zero (100 SP frescos).
+    // Clears learned skills to start from zero (100 fresh SP).
     sqlx::query("DELETE FROM player_skills WHERE character_name = 'bruno'")
         .execute(&pool)
         .await?;

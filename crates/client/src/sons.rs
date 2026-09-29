@@ -1,4 +1,4 @@
-//! Efeitos CC0 embutidos: mesmo pacote no desktop e no iPhone.
+//! Embedded CC0 effects: the same pack on desktop and on iPhone.
 use macroquad::{
     audio::{load_sound_from_bytes, play_sound, stop_sound, PlaySoundParams, Sound},
     prelude::*,
@@ -152,8 +152,8 @@ pub fn mundo(s: Som, pos: Vec2, ouvinte: Option<Vec2>, proprio: bool) {
         reproduzir(s, ganho(p.distance(pos), proprio), proprio);
     }
 }
-/// Mobs envolvidos no combate local têm reserva própria por efeito e
-/// volume audível; continuam atenuados pela distância, inclusive ao morrer.
+/// Mobs involved in local combat get their own reserve per effect and an
+/// audible volume; they are still attenuated by distance, including on death.
 pub fn mob(s: Som, pos: Vec2, ouvinte: Option<Vec2>, envolvido: bool) {
     if let Some(p) = ouvinte {
         let distancia = p.distance(pos);
@@ -169,7 +169,7 @@ pub fn ataque_mob(kind: u16) -> Som {
         _ => Som::MobAtaque,
     }
 }
-/// ID estável do catálogo do servidor; cada fase usa seu próprio arquivo.
+/// Stable id from the server's catalogue; each phase uses its own file.
 fn par_skill(id: u32) -> Option<(Som, Som)> {
     Some(match id {
         1 => (Som::Skill1Cast, Som::Skill1Impact),
@@ -220,8 +220,8 @@ fn reproduzir(s: Som, ganho: f32, prioridade: bool) {
         if a.volume <= 0. || agora - a.ultimo[i] < intervalo || a.sons[i].is_none() {
             return;
         }
-        // Reserva quatro vozes para o próprio jogador. Toda voz é parada
-        // antes de ser removida: o limite não depende da duração do arquivo.
+        // Reserves four voices for the player themselves. Every voice is stopped
+        // before being removed: the limit does not depend on the file's duration.
         let mut n = 0;
         while n < a.vozes.len() {
             if agora - a.vozes[n].1 >= 1.5 || a.vozes[n].0 == i {
@@ -261,7 +261,7 @@ fn reproduzir(s: Som, ganho: f32, prioridade: bool) {
         a.vozes.push((i, agora, prioridade));
     });
 }
-// Retorna a voz a substituir ou recusa sons externos quando a reserva lota.
+// Returns the voice to replace, or refuses external sounds when the reserve fills.
 fn vaga(vozes: &[(usize, f64, bool)], prioridade: bool) -> Result<Option<usize>, ()> {
     if !prioridade && vozes.iter().filter(|v| !v.2).count() >= 2 {
         return Err(());
@@ -276,7 +276,7 @@ fn vaga(vozes: &[(usize, f64, bool)], prioridade: bool) -> Result<Option<usize>,
         .map(Some)
         .ok_or(())
 }
-/// Controle acessível nas duas versões do painel Interface.
+/// Control available in both versions of the Interface panel.
 pub fn controle(r: Rect) {
     let v = AUDIO.with(|a| a.borrow().as_ref().map_or(0., |a| a.volume));
     let texto = if v == 0. {

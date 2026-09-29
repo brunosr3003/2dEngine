@@ -20,8 +20,8 @@ pub struct Ui {
 }
 
 impl Ui {
-    /// O resultado ocupa a entrada até ser fechado. O toque que fecha o
-    /// painel não pode atravessá-lo e também virar clique no chão.
+    /// The result holds the entrance until it is closed. The touch that closes
+    /// the panel must not pass through it and also become a click on the ground.
     pub fn captura_entrada(&self) -> bool {
         self.atual.as_ref().is_some_and(|r| get_time() <= r.ate)
     }

@@ -1,7 +1,7 @@
-//! Mede o custo de um tick no wire. `cargo run --bin wire_size`.
+//! Measures the cost of one tick on the wire. `cargo run --bin wire_size`.
 //!
-//! Existe pra a decisao de formato ser tomada com numero, nao com intuicao:
-//! e' o consumo de dado movel por jogador que decide se o jogo roda no celular.
+//! It exists so the format decision is made with a number, not with intuition:
+//! it is the mobile data cost per player that decides whether the game runs on a phone.
 
 use shared::protocol::WorldSnapshot;
 use shared::{EntityId, EntityMeta, EntityState, EntityTag};
@@ -44,7 +44,7 @@ fn main() {
     );
 
     for n in [30u32, 100, 300, 1000] {
-        // Tick de regime: todo mundo ja entrou, so' o estado se repete.
+        // Steady-state tick: everyone has already joined, only the state repeats.
         let regime = WorldSnapshot {
             tick: 12345,
             server_time_ms: 1_700_000_000_000,
@@ -54,7 +54,7 @@ fn main() {
             removed: Vec::new(),
             acertos: Vec::new(),
         };
-        // Pior caso: todo mundo entrando de uma vez (troca de mapa, teleporte).
+        // Worst case: everyone joining at once (map change, teleport).
         let entrada = WorldSnapshot {
             entered: (0..n).map(meta).collect(),
             states: (0..n).map(state).collect(),

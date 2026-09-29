@@ -1,7 +1,7 @@
-//!  História: os capítulos, as crônicas e as falas da campanha.
+//! Story: the chapters, the chronicles and the campaign's lines.
 
 pub const VERBETES: &[(&str, &str)] = &[
-    // ───────────────── os lugares que a bússola diz (frases curtas) ─────────────────
+    // ───────────────── the places the compass names (short phrases) ─────────────────
     ("a praça", "the square"),
     ("o lugar", "the place"),
     ("o porto", "the port"),
@@ -9,7 +9,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("a ponta do cais", "the end of the quay"),
     ("a costa distante", "the distant coast"),
     ("a saída da cidade", "the way out of the city"),
-    // ──────────────────────── os títulos dos passos da história ────────────────────────
+    // ──────────────────────── the titles of the story steps ────────────────────────
     ("Mãos firmes", "Steady hands"),
     ("Siga a dica", "Follow the hint"),
     ("Ar rarefeito", "Thin air"),
@@ -146,7 +146,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("O Mestre mandou você? Então é o náufrago do farol.", "The Master sent you? Then you're the castaway from the lighthouse."),
     ("Os Morganeers querem o farol. Derrote 40 inimigos.", "The Morganeers want the lighthouse. Defeat 40 enemies."),
     ("Arqueiros dos Morganeers vigiam o farol. Derrote 8.", "Morganeer archers are watching the lighthouse. Defeat 8."),
-    // ─────────────────── as falas: o que os NPCs dizem em cada passo ───────────────────
+    // ─────────────────── the lines: what the NPCs say at each step ───────────────────
     ("O Ermo fica ao sul, depois do mar de areia molhada.", "The Waste lies to the south, past the sea of wet sand."),
     ("Leve o vidro ao Ferreiro. Dizem que corta tempestade.", "Take the glass to the Blacksmith. They say it cuts through storms."),
     ("Você salvou nosso farol. Esta capa é por minha conta.", "You saved our lighthouse. This cloak is on me."),

@@ -1,4 +1,4 @@
-//! Gera anexos de teste; não acessa banco nem envia correio.
+//! Generates test attachments; touches neither database nor mail.
 fn main() {
     let mut cartas = Vec::new();
     for (grau, cor) in [(2,"Verde"),(3,"Azul"),(4,"Roxo"),(5,"Laranja")] {

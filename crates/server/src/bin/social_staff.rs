@@ -1,4 +1,4 @@
-//! Gestao local de permissoes. DATABASE_URL obrigatoria; nunca imprime segredos.
+//! Local permission management. DATABASE_URL required; never prints secrets.
 use anyhow::{bail, Result};
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -1,9 +1,9 @@
-//! NPC que da' missao E tem uma funcao (Loja, Forja, Viajar, Banco): tocar
-//! nele pergunta o que o jogador quer. Antes a oferta de missao vinha na
-//! frente e a funcao abria atras dela — quem so' queria o banco aceitava a
-//! missao sem querer.
+//! An NPC that gives a quest AND has a function (Shop, Forge, Travel, Bank):
+//! touching them asks what the player wants. Before, the quest offer came
+//! first and the function opened behind it — someone who only wanted the bank
+//! accepted the quest by mistake.
 //!
-//! O servidor manda `EscolhaNoNpc`; a resposta e' `EscolherNoNpc`.
+//! The server sends `EscolhaNoNpc`; the reply is `EscolherNoNpc`.
 
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
@@ -20,7 +20,7 @@ struct Pergunta {
 #[derive(Debug, Default)]
 pub struct EscolhaNpc {
     aberta: Option<Pergunta>,
-    /// Abriu com o dedo na tela: o toque que abriu nao escolhe nada.
+    /// Opened with a finger on the screen: the touch that opened it chooses nothing.
     espera_soltar: bool,
 }
 
@@ -57,7 +57,7 @@ impl EscolhaNpc {
         self.aberta() && Self::painel().contains(Vec2::from(mouse_position()))
     }
 
-    /// Desenha; devolve a escolha feita (e fecha).
+    /// Draws; returns the choice made (and closes).
     pub fn desenha(&mut self) -> Option<ClientMessage> {
         self.aberta.as_ref()?;
         estilo::no_painel(Self::escala(), || self.desenha_na_escala())

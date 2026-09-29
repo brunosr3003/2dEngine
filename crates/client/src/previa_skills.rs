@@ -1,4 +1,4 @@
-//! Previa local sem servidor: MMO_PREVIA_SKILLS=1, espaco pausa, setas escolhem.
+//! Local preview with no server: MMO_PREVIA_SKILLS=1, space pauses, arrows choose.
 use crate::{habilidades_vfx, render3d, vox::VoxCache, world::World};
 use macroquad::material::{gl_use_default_material, gl_use_material};
 use macroquad::prelude::*;
@@ -38,7 +38,7 @@ pub async fn abrir(vox: &VoxCache) {
     }
     mundo.apply(metas, estados, &[]);
     mundo.self_id = Some(shared::EntityId(1));
-    // Minimapa da ilha de verdade na previa do HUD; o ultimo quadro sai com ele fechado.
+    // The real island's minimap in the HUD preview; the last frame comes out with it closed.
     let mut mapa = crate::mapa::Mapa::para(shared::terreno::def_da_zona("ilha_inicial"));
     let solido = render3d::material_solido();
     let luz = habilidades_vfx::material();

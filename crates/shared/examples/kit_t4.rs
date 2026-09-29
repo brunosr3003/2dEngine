@@ -1,4 +1,4 @@
-//! Gera um conjunto de teste T4 +10 para katana; não envia correio.
+//! Generates a T4 +10 test set for the katana; does not send mail.
 fn main() {
     let anexos: Vec<_> = [401,405,408,411,412,413,414].into_iter().map(|id| {
         let mut inst = shared::items::ItemInstance::roll_em(

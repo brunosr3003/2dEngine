@@ -10,14 +10,14 @@ async fn main() -> Result<()> {
         .connect(&url)
         .await?;
 
-    // Frost Nova (1046): pre-cast 2s (player imovel) + 3s rain (player free).
-    // Meteor (1045): cast 3s = rain inteiro com player imovel.
+    // Frost Nova (1046): 2s pre-cast (player immobile) + 3s rain (player free).
+    // Meteor (1045): 3s cast = the whole rain with the player immobile.
     let updated = sqlx::query("UPDATE skills SET cast_time_s = 2.0 WHERE id = 1046")
         .execute(&pool)
         .await?;
     println!("frost nova updated: {}", updated.rows_affected());
 
-    // Smoke Bomb (1038): nuvem 5s com DOT + envenenado. Atualiza damage/scaling.
+    // Smoke Bomb (1038): 5s cloud with DOT + poisoned. Updates damage/scaling.
     let updated = sqlx::query(
         "UPDATE skills SET base_damage=5, scaling_dex=0.2, per_rank_dmg_pct=0.10,
             description='Radius 3; nuvem 5s, dano AoE/s + envenenado nos alvos dentro.'
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     .await?;
     println!("smoke bomb updated: {}", updated.rows_affected());
 
-    // Riposte → Leap Strike (1001): trocou tipo. AoE r2 cone 6 tiles + stun.
+    // Riposte -> Leap Strike (1001): changed type. AoE r2 cone 6 tiles + stun.
     let updated = sqlx::query(
         "UPDATE skills SET name='Leap Strike', target_type='aoe_circle',
             cost_stamina=25, cooldown_s=8.0, range_tiles=6.0, radius_tiles=2.0,

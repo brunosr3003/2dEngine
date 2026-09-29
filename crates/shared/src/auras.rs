@@ -1,10 +1,10 @@
-//! Aparência de equipamentos: oito bytes, sem transmitir atributos ou rolls.
+//! Equipment appearance: eight bytes, transmitting no attributes or rolls.
 use crate::Equipment;
 pub const SLOTS: usize = 8;
 pub const MONTARIA: usize = 7;
-/// O pet tem entidade própria: usa o primeiro byte da sua própria meta.
+/// The pet has its own entity: it uses the first byte of its own meta.
 pub const PET: usize = 0;
-/// Arma, mão secundária, armadura, brinco, colar, bracelete, cinto e montaria.
+/// Weapon, offhand, armor, earring, necklace, bracelet, belt and mount.
 pub fn equipamento(e: &Equipment) -> u64 {
     let pecas = [
         (e.weapon, &e.weapon_inst), (e.offhand, &e.offhand_inst),
@@ -19,7 +19,7 @@ pub fn equipamento(e: &Equipment) -> u64 {
         };
         bits | ((byte as u64) << (slot * 8))
     });
-    // A cor da montaria mora no item_id; montarias antigas podem não ter instância.
+    // The mount's color lives in the item_id; old mounts may have no instance.
     let montaria = e.montaria.and_then(crate::montarias::de_item)
         .map_or(0, |(_, grau)| byte_animal(grau,e.montaria_inst.as_ref()));
     bits | (u64::from(montaria) << (MONTARIA*8))
@@ -41,7 +41,7 @@ pub fn peca(bits: u64, slot: usize) -> Option<(u8, u8, u8)> {
 fn patamar(refino: u8) -> u8 {
     match refino { 0..=4 => 0, 5..=6 => 1, 7..=9 => 2, _ => 3 }
 }
-/// O menor efeito de um tier supera o maior efeito do anterior.
+/// The smallest effect of a tier beats the largest effect of the previous one.
 pub fn intensidade(tier: u8, refino: u8) -> f32 {
     [0.65, 1.15, 1.8, 2.6][tier.clamp(1,4) as usize - 1]
         * [1.0, 1.08, 1.15, 1.22][patamar(refino) as usize]

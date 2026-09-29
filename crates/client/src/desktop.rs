@@ -1,4 +1,4 @@
-//! Controles de teclado e mouse, compartilhados por macOS, Windows e Linux.
+//! Keyboard and mouse controls, shared by macOS, Windows and Linux.
 use macroquad::prelude::*;
 
 pub const PULO: KeyCode = KeyCode::R;
@@ -35,8 +35,8 @@ fn direcao(frente: bool, tras: bool, esquerda: bool, direita: bool) -> Vec2 {
     .normalize_or_zero()
 }
 
-/// Um gesto pertence a quem recebeu o aperto. Arrastar de um botão da UI
-/// para o mundo não vira câmera; abrir um painel cancela até soltar.
+/// A gesture belongs to whoever received the press. Dragging from a UI button
+/// into the world does not become camera; opening a panel cancels until release.
 #[derive(Default)]
 pub struct ArrastoCamera {
     segurando: bool,
