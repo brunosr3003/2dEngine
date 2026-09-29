@@ -148,6 +148,8 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     let mut novas = 0u64;
     let mut todas = shared::receitas::receitas_de_equipamento();
     todas.push(shared::receitas::receita_do_selo());
+    // As chaves de Porão: uma por dungeon física, madeira e aço.
+    todas.extend(shared::receitas::receitas_de_chave_de_porao());
     for r in todas {
         novas += sqlx::query(
             "INSERT INTO craft_recipes (id, name, category, tier, inputs, \

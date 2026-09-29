@@ -360,6 +360,49 @@ pub fn receita_do_selo() -> CraftRecipeNet {
     }
 }
 
+/// A primeira receita de chave de Porão. `RECEITA_SELO` é 1900, e o
+/// equipamento vai de 1000 a 1804 (`PRIMEIRO_ID + faixa*100 + peça`), então
+/// 1910 em diante está livre e longe dos dois.
+pub const RECEITA_CHAVE_BASE: u16 = 1910;
+
+/// Uma receita por Porão: madeira e aço, nas quantidades que `porao` calcula.
+///
+/// Sai do catálogo de dungeons e não de uma lista à mão, pelo mesmo motivo que
+/// o item da chave sai: Porão novo é receita nova sozinha, e um Porão sem
+/// receita seria uma porta que ninguém consegue abrir nunca.
+///
+/// O id acompanha o ID DO CONTEÚDO, e não a ordem da lista — a mesma armadilha
+/// que a chave já levou (`porao::chave_de`).
+pub fn receitas_de_chave_de_porao() -> Vec<CraftRecipeNet> {
+    crate::dungeon::CONTEUDOS
+        .iter()
+        .filter(|c| c.tipo == crate::dungeon::Tipo::Porao)
+        .filter_map(|c| {
+            let chave = crate::porao::chave_de(c)?;
+            let r = crate::porao::receita_de(c)?;
+            Some(CraftRecipeNet {
+                id: RECEITA_CHAVE_BASE + c.id,
+                name: format!("{} Key", c.nome),
+                category: categoria::MATERIAL,
+                station: 0,
+                tier: crate::porao::cor_do_nivel(c.nivel_min),
+                inputs: vec![
+                    [r.madeira as u32, r.madeira_qtd],
+                    [r.material as u32, r.material_qtd],
+                ],
+                output_item_id: chave,
+                output_qty: 1,
+                output_item_level: 0,
+                // A chave não tem atributo pra rolar: ou abre a porta ou não.
+                roll_instance: false,
+                // O nível da dungeon, e não o da faixa: fabricar a chave de um
+                // Porão que ainda não se pode entrar seria material no lixo.
+                nivel_min: c.nivel_min as u16,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -449,5 +492,40 @@ mod testes {
             .iter()
             .filter(|r| r.nivel_min <= 20)
             .all(|r| tier_from_ilvl(r.output_item_level) <= 2));
+    }
+
+    /// TODO PORÃO TEM RECEITA, COM ID QUE NÃO BATE EM NADA.
+    ///
+    /// Uma porta sem receita é uma dungeon que ninguém abre — o item da chave
+    /// existiria no catálogo e não haveria como fabricá-lo.
+    #[test]
+    fn toda_chave_de_porao_tem_receita_e_o_id_nao_colide() {
+        let chaves = receitas_de_chave_de_porao();
+        let poroes: Vec<_> = crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == crate::dungeon::Tipo::Porao)
+            .collect();
+        assert_eq!(chaves.len(), poroes.len(), "sobrou Porão sem receita");
+
+        let mut todos: Vec<u16> = receitas_de_equipamento().iter().map(|r| r.id).collect();
+        todos.push(receita_do_selo().id);
+        todos.extend(chaves.iter().map(|r| r.id));
+        let antes = todos.len();
+        todos.sort();
+        todos.dedup();
+        assert_eq!(antes, todos.len(), "duas receitas com o mesmo id");
+
+        for (r, c) in chaves.iter().zip(&poroes) {
+            assert_eq!(r.output_item_id, crate::porao::chave_de(c).unwrap());
+            assert_eq!(r.output_qty, 1);
+            assert_eq!(r.inputs.len(), 2, "{}: madeira e aço, e mais nada", r.name);
+            assert!(
+                r.inputs.iter().all(|[_, q]| *q > 0),
+                "{}: ingrediente de quantidade zero",
+                r.name
+            );
+            // Quem não pode ENTRAR não deve conseguir FABRICAR.
+            assert_eq!(r.nivel_min as u32, c.nivel_min, "{}", r.name);
+        }
     }
 }
