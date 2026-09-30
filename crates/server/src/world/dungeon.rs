@@ -1604,12 +1604,15 @@ impl GameWorld {
                     self.instancias[idx].aviso_em = 0.0;
                 } else if !todos_caidos {
                     let limpo = self.instancias[idx].vivos.iter().all(|e| !self.dg_vivo(*e));
-                    // A planned room opens its gate when its WARDEN falls (the
-                    // first mob of the room); the rest of the pack may stay.
-                    let guardiao_caiu = self.instancias[idx].planta.is_some()
+                    // A planned room opens its gate once it is FULLY CLEARED —
+                    // the Warden and its whole pack. The owner, 30/09/2026:
+                    // "make each room need full clear" (the first version
+                    // opened on the Warden alone and let the pack stay).
+                    let sala_limpa = self.instancias[idx].planta.is_some()
                         && andar < c.andares
-                        && self.instancias[idx].vivos.first().is_some_and(|e| !self.dg_vivo(*e));
-                    if guardiao_caiu {
+                        && limpo
+                        && !self.instancias[idx].vivos.is_empty();
+                    if sala_limpa {
                         let vivos = std::mem::take(&mut self.instancias[idx].vivos);
                         let (ficam, mortos): (Vec<Entity>, Vec<Entity>) =
                             vivos.into_iter().partition(|e| self.dg_vivo(*e));
@@ -1618,9 +1621,9 @@ impl GameWorld {
                         self.instancias[idx].andar += 1;
                         self.dg_povoar_andar(idx);
                         let texto = if andar + 1 >= c.andares {
-                            "The Warden fell. The way to the boss is open."
+                            "Room cleared. The way to the boss is open."
                         } else {
-                            "The Warden fell. A gate opens."
+                            "Room cleared. A gate opens."
                         };
                         for sid in &presentes {
                             self.dg_texto(*sid, true, texto);
@@ -2292,8 +2295,8 @@ mod testes {
     }
 
     /// DOWN THE DOOR, INTO THE PLAN: a character landing on the Arena with a
-    /// Porão pending starts the run in the plan's entrance room, and the
-    /// Warden's death — not the whole pack's — opens the next gate.
+    /// Porão pending starts the run in the plan's entrance room, and only a
+    /// FULLY cleared room opens the next gate.
     #[test]
     fn quem_desce_a_porta_comeca_na_planta_e_o_guardiao_abre_o_portao() {
         crate::economy::init_vazia_para_testes();
@@ -2350,13 +2353,20 @@ mod testes {
         }
         let n = i.vivos.len();
         assert!(n >= 2, "the room needs a pack, not just its Warden");
-        // Kill ONLY the Warden: the gate opens, the rest stay as leftovers.
-        let guardiao = i.vivos[0];
-        w.ecs.get::<&mut EnemyTag>(guardiao).unwrap().dead = true;
+        // Kill ONLY the Warden: the gate stays shut — every room needs a
+        // full clear.
+        let pack: Vec<Entity> = i.vivos.clone();
+        w.ecs.get::<&mut EnemyTag>(pack[0]).unwrap().dead = true;
+        w.dg_tick_instancia(0);
+        assert_eq!(w.instancias[0].andar, 0, "the gate opened with the pack still alive");
+        // The whole pack down: now it opens.
+        for m in &pack {
+            w.ecs.get::<&mut EnemyTag>(*m).unwrap().dead = true;
+        }
         w.dg_tick_instancia(0);
         let i = &w.instancias[0];
-        assert_eq!(i.andar, 1, "the Warden fell and the gate didn't open");
-        assert_eq!(i.restos.len(), n - 1, "the rest of the pack should stay behind");
+        assert_eq!(i.andar, 1, "the room was cleared and the gate didn't open");
+        assert!(i.restos.is_empty(), "nothing should be left behind in a cleared room");
         let sala = planta.sala_da_etapa(1).unwrap();
         for m in &i.vivos {
             let p = w.ecs.get::<&Position>(*m).unwrap().0;
