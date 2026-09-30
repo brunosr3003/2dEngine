@@ -1,3 +1,9 @@
+30/09/2026 — Anti-aliasing nas configurações
+
+Menu → Interface agora tem uma linha de ANTI-ALIASING: Desligado, 2x, 4x ou 8x. Ele suaviza os serrilhados nas bordas dos blocos, cercas e personagens. No computador vem em 4x; no celular vem desligado (pesa mais na bateria). A escolha fica salva no aparelho e vale a partir da próxima vez que o jogo abrir. Se a placa de vídeo não aguentar o nível escolhido, o jogo abre sem anti-aliasing em vez de não abrir.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
 30/09/2026 — Clicar em "Enter the portal" não anda mais
 
 Tocar no botão do aviso do Porão também contava como um clique no chão atrás dele: o personagem andava, saía de perto do portal e a entrada era cancelada. Agora o aviso segura o clique, e durante a animação de entrada nenhum clique move o personagem.

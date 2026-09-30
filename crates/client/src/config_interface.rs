@@ -26,9 +26,38 @@ impl Sombras {
     }
 }
 
+/// MSAA sample counts on offer (1 = off).
+pub const OPCOES_AA: [i32; 4] = [1, 2, 4, 8];
+
+/// The saved anti-aliasing choice. MSAA is picked when the window is
+/// created, so `window_conf` reads this and a change applies on the next launch.
+pub fn antialias_salvo() -> i32 {
+    let padrao = if cfg!(any(target_os = "ios", target_os = "android")) {
+        1
+    } else {
+        4
+    };
+    crate::lembranca::caminho()
+        .and_then(|p| std::fs::read_to_string(p.with_file_name("antialias.prefs")).ok())
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|n| OPCOES_AA.contains(n))
+        .unwrap_or(padrao)
+}
+
+fn nome_aa(n: i32) -> String {
+    if n <= 1 {
+        "Off".to_string()
+    } else {
+        format!("{n}x")
+    }
+}
+
 pub struct ConfigInterface {
     pub aberto: bool,
     pub sombras: Sombras,
+    pub antialias: i32,
+    /// What the window was opened with; differs from `antialias` until restart.
+    antialias_no_inicio: i32,
 }
 
 impl Default for ConfigInterface {
@@ -40,9 +69,12 @@ impl Default for ConfigInterface {
                 "2" => Sombras::Bonitas,
                 _ => Sombras::Leves,
             });
+        let antialias = antialias_salvo();
         Self {
             aberto: false,
             sombras,
+            antialias,
+            antialias_no_inicio: antialias,
         }
     }
 }
@@ -74,6 +106,47 @@ impl ConfigInterface {
         }
     }
 
+    fn define_antialias(&mut self, n: i32) {
+        self.antialias = n;
+        if let Some(p) = crate::lembranca::caminho() {
+            let _ = std::fs::write(p.with_file_name("antialias.prefs"), n.to_string());
+        }
+    }
+
+    /// The anti-aliasing chips, shared by both layouts. Only saves: the
+    /// window keeps its sample count until the game restarts.
+    fn chips_aa(&self, x: f32, y: f32, w: f32, h: f32, m: Vec2) -> Vec<(Rect, i32)> {
+        let f = estilo::fator_texto();
+        let vao = 6.0 * f;
+        let n = OPCOES_AA.len() as f32;
+        let cw = (w - vao * (n - 1.0)) / n;
+        OPCOES_AA
+            .iter()
+            .enumerate()
+            .map(|(i, &aa)| {
+                let b = Rect::new(x + i as f32 * (cw + vao), y, cw, h);
+                let marcado = aa == self.antialias;
+                estilo::cartao(b, b.contains(m), marcado);
+                estilo::texto_centro(
+                    b.center().x,
+                    b.center().y + 5.0 * f,
+                    &nome_aa(aa),
+                    13,
+                    if marcado { estilo::OURO } else { estilo::TEXTO },
+                );
+                (b, aa)
+            })
+            .collect()
+    }
+
+    fn rotulo_aa(&self) -> &'static str {
+        if self.antialias == self.antialias_no_inicio {
+            "Anti-aliasing"
+        } else {
+            "Anti-aliasing (restart to apply)"
+        }
+    }
+
     pub fn abrir(&mut self) {
         self.aberto = true;
     }
@@ -88,13 +161,14 @@ impl ConfigInterface {
         let f = estilo::fator_texto();
         let seguro = hud_layout::tela_segura();
         if seguro.h < 500.0 * f {
-            let k = ((seguro.h - 16.0) / 320.0).min(f);
+            let k = ((seguro.h - 16.0) / 352.0).min(f);
             return estilo::no_painel(k, || self.desenha_compacto(atual, economia_auto));
         }
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
-            // 574 and not 500: the language row went in under the shadows.
-            (574.0 * f).min(seguro.h - 16.0),
+            // 574 and not 500: the language row went in under the shadows;
+            // 664 for the anti-aliasing row under the language.
+            (664.0 * f).min(seguro.h - 16.0),
         );
         let r = Rect::new(
             seguro.center().x - w * 0.5,
@@ -297,6 +371,10 @@ impl ConfigInterface {
             estilo::SUAVE,
         );
 
+        let ya = yi + 92.0 * f;
+        estilo::texto(r.x + 18.0 * f, ya, self.rotulo_aa(), 14, estilo::SUAVE);
+        let aa = self.chips_aa(r.x + 18.0 * f, ya + 10.0 * f, r.w - 36.0 * f, 42.0 * f, m);
+
         estilo::texto(
             r.x + 18.0 * f,
             r.y + r.h - 18.0 * f,
@@ -309,6 +387,10 @@ impl ConfigInterface {
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
+        }
+        if let Some(&(_, n)) = aa.iter().find(|(b, _)| b.contains(m)) {
+            self.define_antialias(n);
+            return None;
         }
         if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| b.contains(m)) {
             return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
@@ -339,9 +421,9 @@ impl ConfigInterface {
         let w = (760.0 * f).min(seguro.w - 16.0);
         let r = Rect::new(
             seguro.center().x - w * 0.5,
-            seguro.center().y - 160.0 * f,
+            seguro.center().y - 176.0 * f,
             w,
-            320.0 * f,
+            352.0 * f,
         );
         estilo::painel(r);
         estilo::texto(
@@ -512,9 +594,11 @@ impl ConfigInterface {
                 (b, lang)
             })
             .collect();
+        estilo::texto(rx, r.y + 263.0 * f, self.rotulo_aa(), 12, estilo::SUAVE);
+        let aa = self.chips_aa(rx, r.y + 271.0 * f, col, 32.0 * f, m);
         estilo::texto(
             rx,
-            r.y + 301.0 * f,
+            r.y + 333.0 * f,
             "The choice is saved on this device.",
             12,
             estilo::SUAVE,
@@ -524,6 +608,10 @@ impl ConfigInterface {
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
+        }
+        if let Some(&(_, n)) = aa.iter().find(|(b, _)| b.contains(m)) {
+            self.define_antialias(n);
+            return None;
         }
         if let Some(&(_, modo)) = sombras.iter().find(|(b, _)| b.contains(m)) {
             return (modo != self.sombras).then_some(Mudanca::Sombras(modo));

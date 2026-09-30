@@ -56,7 +56,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "menu"] {
+        for cena in ["exploracao", "combate", "bolsa", "menu", "interface"] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -159,6 +159,11 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                     menu.abrir();
                     menu.desenha(&crate::menu::Contexto { nome: "Navegante", nivel:70,
                         poder:Some(24850), arma:"Katana", saldos:&[("Gold",148250)], selos:&[] });
+                }
+                if cena == "interface" {
+                    let mut ui = crate::config_interface::ConfigInterface::default();
+                    ui.abrir();
+                    ui.desenha(1.6, 5);
                 }
                 unsafe { get_internal_gl().flush() };
                 rt.texture

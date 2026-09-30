@@ -173,6 +173,7 @@ pub unsafe fn create_egl_context(
     alpha: bool,
     sample_count: i32,
 ) -> Result<(EGLContext, EGLConfig, EGLDisplay), EglError> {
+    let nativo = display;
     let display = (egl.eglGetDisplay)(display as _);
     if display.is_null() {
         // == EGL_NO_DISPLAY
@@ -206,6 +207,11 @@ pub unsafe fn create_egl_context(
         32,
         &mut cfg_count as *mut _ as *mut _,
     );
+    // Tempest: MSAA is a player setting; a GPU without that sample count
+    // must still open the window, just without anti-aliasing.
+    if cfg_count == 0 && sample_count > 1 {
+        return create_egl_context(egl, nativo, alpha, 1);
+    }
     assert!(cfg_count > 0);
     assert!(cfg_count <= 32);
 
