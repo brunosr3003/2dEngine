@@ -91,7 +91,7 @@ pub async fn plantas(solido: &macroquad::material::Material) {
         let quadros = [
             (
                 format!("planta{}-mapa", p.conteudo),
-                vec3(a.x + 20.0, chao + 95.0, a.y + 70.0),
+                vec3(a.x + 30.0, chao + 105.0, a.y + 95.0),
                 vec3(a.x, chao, a.y),
             ),
             (

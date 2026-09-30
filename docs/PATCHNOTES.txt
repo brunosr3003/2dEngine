@@ -1,3 +1,11 @@
+30/09/2026 — Cada Porão é uma ilha
+
+A ilha enorme de gramado e flores em volta dos Porões acabou. Agora cada Porão é a sua própria ilha no meio do mar: a caverna é um rochedo, o castelo e o porão de tijolos são fortalezas sobre a pedra, o Casco Congelado é um bloco de gelo com pontas e a Caravana Soterrada é um morro de arenito em camadas — com costa de pedra descendo até a água, sem flor nenhuma.
+
+Por dentro, menos parede reta e mais irregularidade: as salas das cavernas, do gelo e da tumba têm bordas tortas, as paredes têm topo recortado, musgo e pedras manchadas, e o castelo tem trechos desmoronados.
+
+Atualização obrigatória: o protocolo subiu para 164.
+
 30/09/2026 — Porões de verdade: cavernas, castelo e tumba feitos de blocos
 
 Os Porões deixaram de ser um caminho pintado em cima da grama. Agora cada um é ESCAVADO no terreno, com chão e paredes de blocos de verdade — e as auras e os avisos de ataque de chefe voltam a aparecer por cima do chão, como em qualquer lugar.

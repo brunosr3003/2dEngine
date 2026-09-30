@@ -1261,16 +1261,12 @@ pub fn planta_da_coluna(
     } else {
         1.0
     };
-    // In a Porão, flowers and ferns grow only on a cave's grassy hilltop.
+    // Nothing grows on a Porão's island (`planta`) — the owner: "i dont want
+    // flowers and such".
     if ger.e_arena() {
         let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
-        if let Some(pl) = crate::planta::complexo_em(p) {
-            // Past this cellar's rock the plain grows as always.
-            if pl.bloco(p, 0).is_some()
-                && (pl.tema != crate::planta::Tema::Caverna || !pl.no_topo(p))
-            {
-                return None;
-            }
+        if crate::planta::complexo_em(p).is_some_and(|pl| pl.bloco(p, 0).is_some()) {
+            return None;
         }
     }
     // The oasis shore grows the Bosque's flowers and ferns, not desert stalks.

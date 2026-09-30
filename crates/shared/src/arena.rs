@@ -57,11 +57,11 @@ pub const ZONA: &str = "dungeon";
 /// grande". Estava dimensionada pra quatro sítios espalhados numa planície
 /// larga; quatro sítios a 70 u de distância cabem num platô bem menor.
 ///
-/// GREW AGAIN on 30/09/2026, to 640 (320 u): the five Porões are carved into
-/// the islet now (`planta`), on a ring at 200 u, each in its own rock mass,
-/// and the islet needs the plain to stand them on. The middle stays the Gruta
-/// floors' flat ground, exactly as before.
-pub const RAIO_BLOCOS: i32 = 640;
+/// The ZONE grew on 30/09/2026, to 600 blocks (300 u) — the islet did not.
+/// The five Porões are islands of their own now (`planta`), out in the sea on
+/// a ring at 200 u, and the zone's grid has to reach them. The Gruta islet in
+/// the middle is the same size it always was.
+pub const RAIO_BLOCOS: i32 = 600;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///
@@ -88,7 +88,7 @@ pub const ALTURA: f32 = 16.0;
 ///
 /// Desenhar resolve por construção. 90 u de raio plano bastam pros quatro
 /// sítios a 70 u — `cabem_os_quatro_sitios_do_rodizio` confere.
-pub const RAIO_PLANO: f32 = 285.0;
+pub const RAIO_PLANO: f32 = 62.0;
 
 /// Onde o chão acaba, em unidades. Entre ele e `RAIO_PLANO` desce a rampa.
 ///
@@ -97,7 +97,7 @@ pub const RAIO_PLANO: f32 = 285.0;
 /// então o piso dele transborda. Terra firme bem além do platô é o que impede
 /// a luta de acontecer em cima do mar.
 /// `o_andar_inteiro_cai_em_terra_firme` é quem confere.
-pub const RAIO_TERRA: f32 = 315.0;
+pub const RAIO_TERRA: f32 = 92.0;
 
 /// O que há FORA da ilhota, em índice de bloco. Fundo, pra ler como mar.
 pub const NIVEL_FUNDO: i32 = -64;
@@ -117,17 +117,18 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
         bz as f32 * crate::terreno::BLOCO,
     );
     let d = (x * x + z * z).sqrt();
-    if d >= RAIO_TERRA {
-        return NIVEL_FUNDO;
-    }
-    // THE PORÕES are carved into the plain (`planta`): rock, castle and
-    // tomb standing on it, the halls dug into them.
-    if d <= RAIO_PLANO {
+    // THE PORÕES are islands of their own, out in the sea (`planta`): the
+    // halls dug into rock, ice, sand or castle walls, a shore around them.
+    // BEFORE the sea test below, which would drown them all.
+    if d > RAIO_TERRA {
         let chao = (ALTURA / crate::terreno::BLOCO).round() as i32 - 1;
         let p = glam::Vec2::new(x, z);
         if let Some(b) = crate::planta::complexo_em(p).and_then(|pl| pl.bloco(p, chao)) {
             return b;
         }
+    }
+    if d >= RAIO_TERRA {
+        return NIVEL_FUNDO;
     }
     let h = if d <= RAIO_PLANO {
         ALTURA
@@ -293,6 +294,28 @@ mod testes {
             "a ilhota só oferece {} sítio(s): {sitios:?}",
             sitios.len()
         );
+    }
+
+    /// EVERY PORÃO IS REALLY THERE, through the islet's real generator: dry
+    /// floor in each entrance hall at the floor's height, and open sea between
+    /// the Porão islands and the Gruta islet.
+    ///
+    /// The plan's own relief test calls `Planta::bloco` directly, and passed
+    /// while this function returned open sea before ever asking the plans —
+    /// every Porão drowned, and only the preview showed it.
+    #[test]
+    fn todo_porao_existe_no_relevo_da_arena() {
+        let ilha = crate::terreno::Ilha::da_ilha(&DEF);
+        let chao = ALTURA;
+        for p in &crate::planta::PLANTAS {
+            let e = p.centro(p.entrada());
+            assert!(!ilha.agua(e.x, e.y), "plan {}: the entrance is under water", p.conteudo);
+            let h = ilha.altura(e.x, e.y);
+            assert!((h - chao).abs() < 0.01, "plan {}: entrance floor at {h}, expected {chao}", p.conteudo);
+            // Halfway to the Gruta islet: sea.
+            let meio = p.ancora * 0.62;
+            assert!(ilha.agua(meio.x, meio.y), "plan {}: no sea between it and the Gruta islet", p.conteudo);
+        }
     }
 
     /// A ZONA NÃO COLIDE COM NENHUMA OUTRA.

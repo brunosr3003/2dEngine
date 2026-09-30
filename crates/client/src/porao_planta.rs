@@ -34,16 +34,18 @@ impl Desenho {
         // in from the wall by more than a cave's rock bumps reach, or the
         // post stands inside the rock.
         let mut tochas = Vec::new();
-        for s in p.salas {
+        for (i, s) in p.salas.iter().enumerate() {
             let passos = if s.raio >= 10.0 { 8 } else { 4 };
             let centro = mq(p.ancora + s.centro);
             for k in 0..passos {
                 let a = std::f32::consts::FRAC_PI_4 + k as f32 * std::f32::consts::TAU / passos as f32;
                 let dir = vec2(a.cos(), a.sin());
-                if p.livre(g(centro + dir * (s.raio + 1.0)), 0.0, u8::MAX) {
+                // The room's edge in this direction: caves wobble (`raio_em`).
+                let borda = p.raio_em(i, g(centro + dir));
+                if p.livre(g(centro + dir * (borda + 1.0)), 0.0, u8::MAX) {
                     continue; // a corridor mouth
                 }
-                tochas.push(centro + dir * (s.raio - 1.3));
+                tochas.push(centro + dir * (borda - 1.6));
             }
         }
         Self {
