@@ -56,6 +56,139 @@ thread_local! {
     /// Escala do painel sendo desenhado agora (`no_painel`): enquanto ele
     /// desenha, `fator_texto` devolve ela — texto e medida crescem juntos.
     static ESCALA_DO_PAINEL: std::cell::Cell<Option<f32>> = const { std::cell::Cell::new(None) };
+    /// Drawing ON PARCHMENT (`no_pergaminho`): light text turns to ink and
+    /// dark fills to parchment tones. `CRU` suspends it for what keeps its
+    /// own material on the page (a wooden button and its label).
+    static PERGAMINHO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CRU: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+// ─────────────────────────────── parchment ───────────────────────────────
+
+/// The page, and the inks written on it. Quest and dialogue windows are
+/// READ, so they are parchment: dark ink on a warm page, the one place the
+/// HUD breaks from wood (owner, 30/09/2026: "do the parchment for quest and
+/// dialogue windows").
+pub const PERGAMINHO_COR: Color = Color::new(0.88, 0.81, 0.65, 0.98);
+pub const PERGAMINHO_CLARO: Color = Color::new(0.93, 0.87, 0.72, 0.98);
+pub const PERGAMINHO_ESCURO: Color = Color::new(0.79, 0.70, 0.52, 0.98);
+pub const TINTA: Color = Color::new(0.21, 0.14, 0.08, 1.0);
+pub const TINTA_SUAVE: Color = Color::new(0.42, 0.32, 0.21, 1.0);
+/// Rubric red-brown: titles and highlights, as a scribe would.
+pub const TINTA_TITULO: Color = Color::new(0.50, 0.16, 0.08, 1.0);
+pub const TINTA_LINHA: Color = Color::new(0.36, 0.24, 0.13, 0.55);
+
+/// Is this drawing on parchment right now?
+pub fn em_pergaminho() -> bool {
+    PERGAMINHO.with(|p| p.get()) && !CRU.with(|c| c.get())
+}
+
+/// Draws `corpo` on parchment: every text, fill and border inside takes the
+/// page's palette (`tinta`, `papel`) without the window having to know.
+pub fn no_pergaminho<T>(corpo: impl FnOnce() -> T) -> T {
+    let antes = PERGAMINHO.with(|p| p.replace(true));
+    let r = corpo();
+    PERGAMINHO.with(|p| p.set(antes));
+    r
+}
+
+/// Suspends the parchment palette for `corpo`: what keeps its own material
+/// on the page — a label drawn on a wooden button, by the window itself.
+pub fn sem_pergaminho<T>(corpo: impl FnOnce() -> T) -> T {
+    cru(corpo)
+}
+
+/// Suspends the parchment palette for `corpo` (a wooden button on the page).
+fn cru<T>(corpo: impl FnOnce() -> T) -> T {
+    let antes = CRU.with(|c| c.replace(true));
+    let r = corpo();
+    CRU.with(|c| c.set(antes));
+    r
+}
+
+fn perto_de(a: Color, b: Color) -> bool {
+    (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs() < 0.10
+}
+
+/// A text colour for the page: the neutral lights become inks, a coloured
+/// light (green gain, red loss) keeps its hue but darkens enough to read.
+fn tinta(c: Color) -> Color {
+    if !em_pergaminho() {
+        return c;
+    }
+    let a = c.a;
+    let com = |t: Color| Color::new(t.r, t.g, t.b, a);
+    if perto_de(c, TEXTO) || (c.r > 0.85 && c.g > 0.85 && c.b > 0.8) {
+        com(TINTA)
+    } else if perto_de(c, SUAVE) {
+        com(TINTA_SUAVE)
+    } else if perto_de(c, OURO) || perto_de(c, ACENTO) {
+        com(TINTA_TITULO)
+    } else if luminancia(c) > 0.45 {
+        Color::new(c.r * 0.5, c.g * 0.5, c.b * 0.5, a)
+    } else {
+        c
+    }
+}
+
+/// A fill for the page: the dark UI fills (wood, recesses) become parchment
+/// shades, darker where the wood was darker. Shadows (faint black) and
+/// coloured fills are left alone.
+fn papel(c: Color) -> Color {
+    if !em_pergaminho() || c.a < 0.5 || luminancia(c) > 0.3 {
+        return c;
+    }
+    let t = (luminancia(c) / 0.2).clamp(0.0, 1.0);
+    let p = misturar(PERGAMINHO_ESCURO, PERGAMINHO_CLARO, t);
+    Color::new(p.r, p.g, p.b, c.a.min(0.9))
+}
+
+/// A border for the page: bronze and faint lines become brown ink lines.
+fn filete(c: Color) -> Color {
+    if !em_pergaminho() {
+        return c;
+    }
+    Color::new(TINTA_LINHA.r, TINTA_LINHA.g, TINTA_LINHA.b, (c.a * 0.9).max(0.25))
+}
+
+/// A sheet of parchment: warm page, edges browned with age, faint fibres,
+/// and a wooden roller at the top and bottom — a scroll.
+pub fn pergaminho(r: Rect) {
+    sombra(r, RAIO, 1.1);
+    // Rollers first, wider than the page.
+    for y in [r.y - 5.0, r.y + r.h - 5.0] {
+        let rolo = Rect::new(r.x - 8.0, y, r.w + 16.0, 10.0);
+        ret_gradiente(rolo, 4.0, Color::new(0.36, 0.23, 0.12, 1.0), Color::new(0.18, 0.11, 0.06, 1.0));
+        for x in [rolo.x + 3.0, rolo.x + rolo.w - 3.0] {
+            draw_circle(x, y + 5.0, 5.5, Color::new(0.52, 0.36, 0.18, 1.0));
+            draw_circle(x, y + 5.0, 3.5, BORDA_FORTE);
+        }
+    }
+    let pagina = Rect::new(r.x, r.y + 4.0, r.w, r.h - 8.0);
+    ret_gradiente(pagina, RAIO_PEQUENO, PERGAMINHO_CLARO, PERGAMINHO_COR);
+    // Aged edges: bands darkening toward the rim.
+    for k in 0..5 {
+        let d = k as f32 * 3.0;
+        borda_arredondada_cru(
+            Rect::new(pagina.x + d, pagina.y + d, pagina.w - d * 2.0, pagina.h - d * 2.0),
+            RAIO_PEQUENO,
+            3.0,
+            Color::new(0.45, 0.30, 0.14, 0.16 - k as f32 * 0.03),
+        );
+    }
+    // Fibres.
+    let mut semente = (r.x as i32).wrapping_mul(2_654_435) ^ (r.y as i32).wrapping_mul(40_503);
+    for _ in 0..((r.w * r.h) / 1800.0).min(160.0) as i32 {
+        semente = semente.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        let fx = ((semente >> 8) & 0xffff) as f32 / 65_535.0;
+        semente = semente.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        let fy = ((semente >> 8) & 0xffff) as f32 / 65_535.0;
+        let x = pagina.x + 8.0 + fx * (pagina.w - 16.0);
+        let y = pagina.y + 8.0 + fy * (pagina.h - 16.0);
+        let l = 3.0 + (semente & 7) as f32;
+        draw_line(x, y, x + l, y + 0.6, 1.0, Color::new(0.45, 0.32, 0.18, 0.07));
+    }
+    borda_arredondada_cru(pagina, RAIO_PEQUENO, 1.0, Color::new(0.36, 0.24, 0.12, 0.6));
 }
 
 /// A escala de um painel que a 100% mede `base_w` x `base_h`.
@@ -121,7 +254,9 @@ fn tam(tamanho: u16) -> u16 {
 /// entrada; aqui a segunda passada nao encontra verbete e nao faz nada.
 fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     let s = &shared::idioma::tr(s);
-    if usa_titulo(tamanho, cor) {
+    let titulo = usa_titulo(tamanho, cor);
+    let cor = tinta(cor);
+    if titulo {
         titulo_fonte(|f| {
             draw_text_ex(
                 s,
@@ -481,6 +616,7 @@ pub fn ret_gradiente(r: Rect, raio: f32, topo: Color, base: Color) {
     if r.w <= 0.0 || r.h <= 0.0 {
         return;
     }
+    let (topo, base) = (papel(topo), papel(base));
     let pts = contorno_arredondado(r, raio, lados(raio));
     let cor_em = |y: f32| misturar(topo, base, (y - r.y) / r.h.max(1.0));
     let mut vertices = Vec::with_capacity(pts.len() + 1);
@@ -507,6 +643,11 @@ pub fn ret_arredondado(r: Rect, raio: f32, cor: Color) {
 
 /// Borda de espessura `esp` por dentro do retangulo, como um anel.
 pub fn borda_arredondada(r: Rect, raio: f32, esp: f32, cor: Color) {
+    borda_arredondada_cru(r, raio, esp, filete(cor));
+}
+
+/// The same ring, in exactly the colour given (parchment's own edges).
+fn borda_arredondada_cru(r: Rect, raio: f32, esp: f32, cor: Color) {
     if r.w <= esp * 2.0 || r.h <= esp * 2.0 {
         return;
     }
@@ -661,6 +802,12 @@ pub fn estado_de(r: Rect, desabilitado: bool, ativo: bool) -> Estado {
 /// the double frame of a fitted board — and bronze studs on the corners of
 /// the larger ones.
 pub fn painel(r: Rect) {
+    if em_pergaminho() {
+        // A box drawn on the page: a slightly darker inset with an ink rule.
+        ret_arredondado(r, RAIO_PEQUENO, alfa(PERGAMINHO_ESCURO, 0.55));
+        borda_arredondada_cru(r, RAIO_PEQUENO, 1.0, TINTA_LINHA);
+        return;
+    }
     sombra(r, RAIO, 1.0);
     ret_gradiente(r, RAIO, FUNDO_ALTO, FUNDO);
     veios(r);
@@ -744,6 +891,14 @@ pub fn painel_destaque(r: Rect, cor: Color) {
 /// The chosen one gets a burnished rim; the hovered one warms up.
 pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
     let h = anima(chave(r, 1), if sobre || ativo { 1.0 } else { 0.0 });
+    if em_pergaminho() {
+        // On the page: a pressed-in patch, a rubric rim when chosen.
+        ret_arredondado(r, RAIO_PEQUENO, alfa(misturar(PERGAMINHO_ESCURO, PERGAMINHO_COR, h * 0.5), 0.75));
+        draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.0, Color::new(0.30, 0.20, 0.10, 0.25));
+        let borda = if ativo { TINTA_TITULO } else { alfa(TINTA_LINHA, 0.35 + 0.4 * h) };
+        borda_arredondada_cru(r, RAIO_PEQUENO, if ativo { 2.0 } else { 1.0 }, borda);
+        return;
+    }
     ret_gradiente(
         r,
         RAIO_PEQUENO,
@@ -775,7 +930,14 @@ fn fonte_do_controle(r: Rect, rotulo: &str, preferido: u16) -> u16 {
 }
 
 /// Botao com rotulo. `primario` pinta de acento; o resto e' vidro.
+///
+/// On parchment it stays a wooden plate with a light label: a button is an
+/// object on the page, not writing on it.
 pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
+    if em_pergaminho() {
+        cru(|| botao(r, rotulo, e, primario));
+        return;
+    }
     let h = anima(
         chave(r, 2),
         match e {
@@ -942,6 +1104,12 @@ pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
 /// um brilho de baixo pra cima, e realce no hover/selecao.
 pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
     let h = anima(chave(r, 5), if sobre { 1.0 } else { 0.0 });
+    if em_pergaminho() {
+        // Items keep a dark well even on the page: their icons are drawn
+        // for a dark ground.
+        cru(|| slot(r, raridade, sobre, selecionado));
+        return;
+    }
     ret_gradiente(r, RAIO_PEQUENO, FUNDO_BAIXO, alfa(clarear(FUNDO_BAIXO, 0.05), 0.95));
     draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.5));
     if let Some(c) = raridade {

@@ -30,7 +30,7 @@ impl AutoResumo {
         if !self.ativo || self.concluidas.iter().any(|c| c.id == d.id) { return; }
         let mut partes = Vec::new();
         if d.reward_xp > 0 { partes.push(format!("{} XP", d.reward_xp)); }
-        if d.reward_cobre > 0 { partes.push(format!("{} cobre", d.reward_cobre)); }
+        if d.reward_cobre > 0 { partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre())); }
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
             if id != 0 && qtd > 0 {
                 partes.push(format!("{} {}", qtd,
@@ -104,7 +104,7 @@ impl AutoResumo {
         }
         let mut premios = Vec::new();
         if self.xp > 0 { premios.push(format!("{} XP", self.xp)); }
-        if self.cobre > 0 { premios.push(format!("{} cobre", self.cobre)); }
+        if self.cobre > 0 { premios.push(format!("{} {}", self.cobre, shared::idioma::cobre())); }
         for (&id, &qtd) in &self.itens_de_missao {
             premios.push(format!("{} {}", qtd,
                 nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))));

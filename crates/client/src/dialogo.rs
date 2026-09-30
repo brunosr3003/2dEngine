@@ -179,7 +179,12 @@ impl Dialogo {
             return Resultado::Nada;
         }
         let p = Self::painel();
-        estilo::painel(p);
+        // Read, not operated: a page (`estilo::pergaminho`).
+        estilo::pergaminho(p);
+        estilo::no_pergaminho(|| self.desenha_pagina(p))
+    }
+
+    fn desenha_pagina(&mut self, p: Rect) -> Resultado {
         estilo::texto_ajustado(
             &self.quem,
             p.x + 16.0,
@@ -212,7 +217,7 @@ impl Dialogo {
             p.x + p.w - 12.0,
             p.y + 42.0,
             1.0,
-            estilo::BORDA,
+            estilo::TINTA_LINHA,
         );
         for (k, linha) in crate::missoes::quebra(&self.falas[self.i], p.w - 32.0, 17, 3)
             .iter()

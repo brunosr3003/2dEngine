@@ -359,7 +359,7 @@ pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
         partes.push(format!("{}x {nome}", q.reward_item2_qty));
     }
     if q.reward_cobre > 0 {
-        partes.push(format!("{} cobre", q.reward_cobre));
+        partes.push(format!("{} {}", q.reward_cobre, shared::idioma::cobre()));
     }
     if q.reward_xp > 0 {
         partes.push(format!("{} XP", q.reward_xp));
@@ -589,9 +589,14 @@ impl Missoes {
     }
 
     fn desenha_na_escala(&mut self, nomes: &HashMap<u16, String>, tem: Tem) -> Vec<ClientMessage> {
+        // The quest giver's window is READ: a page (`estilo::pergaminho`).
+        estilo::pergaminho(self.painel());
+        estilo::no_pergaminho(|| self.desenha_pagina(nomes, tem))
+    }
+
+    fn desenha_pagina(&mut self, nomes: &HashMap<u16, String>, tem: Tem) -> Vec<ClientMessage> {
         let p = self.painel();
         let mut saida = Vec::new();
-        estilo::painel(p);
         estilo::texto_ajustado(
             &self.quem,
             p.x + u(16.0),
@@ -681,7 +686,7 @@ impl Missoes {
             let dica = if self.npc.is_some() {
                 "No active quest."
             } else {
-                "Nenhuma missão ativa. Abra Menu › Missões para pegar várias."
+                "No active quest. Open Menu › Quests to take several."
             };
             estilo::texto_ajustado(dica, p.x + u(16.0), y + u(22.0), texto_w, 15, estilo::SUAVE);
         }

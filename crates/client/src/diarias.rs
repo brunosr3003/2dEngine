@@ -71,7 +71,7 @@ pub fn tem_pendente(c: &Contexto) -> bool {
 pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     let mut partes = Vec::new();
     if d.reward_cobre > 0 {
-        partes.push(format!("{} cobre", d.reward_cobre));
+        partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre()));
     }
     if d.reward_xp > 0 {
         partes.push(format!("{} XP", d.reward_xp));
@@ -462,7 +462,7 @@ mod tests {
         nomes.insert(d.reward_item, "Item".to_string());
         let r = recompensa(d, &nomes);
         if d.reward_cobre > 0 {
-            assert!(r.contains("cobre"), "{r}");
+            assert!(r.contains(shared::idioma::cobre()), "{r}");
         }
         if d.reward_item2 != 0 {
             assert!(r.contains("Experience Potion"), "{r}");

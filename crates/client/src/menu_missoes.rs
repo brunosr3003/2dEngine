@@ -104,7 +104,7 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
         partes.push(format!("{} XP", d.reward_xp));
     }
     if d.reward_cobre > 0 {
-        partes.push(format!("{} cobre", d.reward_cobre));
+        partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre()));
     }
     if d.reward_faction_points > 0 {
         partes.push(format!("{} faction pts", d.reward_faction_points));
@@ -889,9 +889,14 @@ impl MenuMissoes {
         if !self.aberto {
             return None;
         }
+        // The quest book is READ: a page (`estilo::pergaminho`).
+        estilo::pergaminho(Self::painel());
+        estilo::no_pergaminho(|| self.desenha_pagina(c))
+    }
+
+    fn desenha_pagina(&mut self, c: &Contexto) -> Option<Clique> {
         let f = estilo::fator_texto();
         let p = Self::painel();
-        estilo::painel(p);
         let lateral = (150.0 * f).min(p.w * 0.24);
         let conteudo_x = p.x + lateral + 16.0;
         let conteudo_w = p.x + p.w - conteudo_x - 12.0;
@@ -985,7 +990,10 @@ impl MenuMissoes {
                 self.rolagem.zera();
             }
             let nome = mapa.map_or("All".to_string(), nome_da_zona);
-            estilo::texto_ajustado(&nome, r.x + 8.0, r.y + r.h * 0.68, r.w - 16.0, 15, estilo::TEXTO);
+            // On a wooden button: light, not ink (`sem_pergaminho`).
+            estilo::sem_pergaminho(|| {
+                estilo::texto_ajustado(&nome, r.x + 8.0, r.y + r.h * 0.68, r.w - 16.0, 15, estilo::TEXTO)
+            });
         }
 
         // ── a lista da aba ──
@@ -1183,7 +1191,7 @@ impl MenuMissoes {
                 } else if !auto {
                     "Details"
                 } else {
-                    "Ir"
+                    "Go"
                 };
                 let _ = crate::ui::botao(ir, rotulo, true);
                 if tocou(ir) {
@@ -1264,7 +1272,7 @@ impl MenuMissoes {
             estilo::texto(
                 rod.x,
                 rod.y + 26.0 * f,
-                &format!("Fila: {n} de {FILA_MAX} · bloqueada é pulada"),
+                &format!("Queue: {n} of {FILA_MAX} · locked ones are skipped"),
                 14,
                 estilo::SUAVE,
             );

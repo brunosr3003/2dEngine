@@ -745,3 +745,13 @@ mod testes {
         assert!(modelos > 200, "poucos modelos: {modelos}");
     }
 }
+
+/// The copper coin's name in the current language, for lines ASSEMBLED from
+/// pieces ("3x Potion · 30 copper · 40 XP") that the dictionary can't match
+/// as a whole. Those lines used to say "cobre" in the English game.
+pub fn cobre() -> &'static str {
+    match atual() {
+        Idioma::Pt => "cobre",
+        Idioma::En => "copper",
+    }
+}

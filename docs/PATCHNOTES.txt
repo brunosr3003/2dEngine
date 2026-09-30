@@ -1,3 +1,11 @@
+30/09/2026 — Missões e conversas em pergaminho
+
+As janelas de LER agora são pergaminho: a conversa com os NPCs, a janela do Mestre de Missões e o livro de missões viraram folhas envelhecidas com rolos de madeira em cima e embaixo, texto em tinta escura e títulos em vermelho, como um escriba escreveria. Os botões continuam de madeira, pra se destacar na folha.
+
+Também: mais textos que apareciam em português no jogo em inglês foram corrigidos — as recompensas agora dizem "copper" em vez de "cobre", o botão "Ir" virou "Go" e a linha da fila e o aviso de "nenhuma missão ativa" estão em inglês (e continuam em português no jogo em português).
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 30/09/2026 — Interface nova: madeira, bronze e letras de pedra
 
 A interface ganhou cara de jogo de fantasia. Os painéis agora são tábuas de madeira escura com moldura de bronze e tachas nos cantos; botões e espaços da bolsa parecem entalhados na madeira; os botões do topo e da barra de itens são plaquinhas com borda de bronze; e os títulos das janelas (MENU, BOLSA, INTERFACE...) usam uma fonte de letras gravadas.

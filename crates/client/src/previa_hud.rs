@@ -56,7 +56,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim"] {
+        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim", "dialogo", "oferta", "livro"] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -159,6 +159,43 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                     menu.abrir();
                     menu.desenha(&crate::menu::Contexto { nome: "Navegante", nivel:70,
                         poder:Some(24850), arma:"Katana", saldos:&[("Gold",148250)], selos:&[] });
+                }
+                if cena == "dialogo" {
+                    let mut d = crate::dialogo::Dialogo::default();
+                    d.abrir(
+                        "Mestre de Missões",
+                        "Lobos na estrada",
+                        &["Os lobos desceram das colinas e atacam quem passa pela estrada do porto. Traga paz de volta a essa trilha."],
+                        crate::dialogo::Fim::Oferta { quest_id: 501 },
+                        "120 XP · 300 copper".into(),
+                    );
+                    d.desenha();
+                }
+                if cena == "oferta" || cena == "livro" {
+                    use shared::quests::{quest_by_id, quest_status, QuestNet};
+                    let q = |id: u16, st: u8, pr: u32| QuestNet::from_def(quest_by_id(id).unwrap(), st, pr);
+                    let nomes = std::collections::HashMap::new();
+                    let tem = |_: u16| 0u32;
+                    if cena == "oferta" {
+                        let mut m = crate::missoes::Missoes::default();
+                        m.abre_oferta(None, "Mestre de Missões".into(), vec![q(501, quest_status::ACTIVE, 0), q(502, quest_status::ACTIVE, 0)]);
+                        let _ = m.desenha(&nomes, &tem);
+                    } else {
+                        let log = vec![q(501, quest_status::ACTIVE, 3), q(502, quest_status::READY, 1)];
+                        let entregues = std::collections::HashMap::new();
+                        let mut livro = crate::menu_missoes::MenuMissoes::default();
+                        livro.abrir();
+                        let _ = livro.desenha(&crate::menu_missoes::Contexto {
+                            log: &log,
+                            entregues: &entregues,
+                            nivel: 12,
+                            faccao: 0,
+                            zona: Some("ilha_inicial"),
+                            agora_unix: 1_790_000_000,
+                            tem: &tem,
+                            nomes: &nomes,
+                        });
+                    }
                 }
                 if cena == "interface" || cena == "interface-fim" {
                     let mut ui = crate::config_interface::ConfigInterface::default();
