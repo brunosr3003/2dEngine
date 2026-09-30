@@ -2,6 +2,8 @@
 
 Com os Porões maiores, a horda da sala seguinte aparece longe demais para ser vista quando o portão abre — e o auto dungeon, que andava "até o inimigo mais perto", ficava parado na sala já limpa. Agora, sem inimigo à vista, ele vai sozinho até a sala da vez (e até a do chefe no fim), e volta a lutar quando a horda aparece.
 
+O personagem também não trava mais na boca do corredor, onde fica o portão: ali o corredor encontra a sala redonda num canto, e o movimento não sabia contornar esse canto — parava, e parecia estar empurrando o portão. Agora ele desliza pela quina e segue.
+
 E o aviso "A gate is shut that way" com o portão já aberto também acabou: quando o destino fica atrás de um portão fechado, dentro da pedra ou fora do mapa, o personagem agora anda até o ponto alcançável mais perto dele, em vez de não andar.
 
 Não é atualização obrigatória — o protocolo continua o 165.

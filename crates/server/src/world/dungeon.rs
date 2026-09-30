@@ -2416,6 +2416,147 @@ mod testes {
         );
     }
 
+    /// A WHOLE PORÃO RUN, PLAYED, for every cellar: a player who does what
+    /// the dungeon auto does — walk (by the server's own route) to the nearest
+    /// living enemy it can see, or to the room of the step when it sees none,
+    /// and kill what it reaches — must clear every room and the boss.
+    ///
+    /// The owner, 30/09/2026, with the auto on: "the problem remain, the main
+    /// issue is to A* go throug where is a gate". Unit tests of the plan
+    /// passed; this plays the real tick (route follower, physics, gates,
+    /// spawns) end to end.
+    #[test]
+    fn uma_corrida_inteira_em_cada_porao() {
+        crate::economy::init_vazia_para_testes();
+        for porao in dg::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let planta = shared::planta::da(porao.id).unwrap();
+            let mut w = GameWorld::new(HashMap::new());
+            w.zona = shared::arena::ZONA.to_string();
+            w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+            let sid = SessionId(([127, 0, 0, 1], 19890).into());
+            let (tx, _rx) = mpsc::unbounded_channel();
+            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            let e = w.ecs.spawn((
+                NetId(EntityId(960)),
+                Position(shared::arena::CHEGADA),
+                Velocity(Vec2::ZERO),
+                EntityKind::Player,
+                Health { current: 100_000, max: 100_000 },
+                shared::Solido,
+            ));
+            {
+                let s = w.sessions.get_mut(&sid).unwrap();
+                s.logged_in = true;
+                s.entity = Some(e);
+                s.entity_id = EntityId(960);
+                s.xp = shared::xp_for_level(porao.nivel_min + 10);
+                s.stats.hp_max = 100_000;
+                s.stats.attack_damage = 100_000;
+                s.stats.defense = 100_000;
+                // A geared player doesn't stagger at every hit; the test's
+                // bare stats did, and stood stun-locked by ranged mobs.
+                s.stats.poise_max = 100_000;
+                s.poise_current = 100_000.0;
+            }
+            w.poroes_a_comecar.push((sid, porao.id));
+            w.dg_poroes_que_chegaram();
+            assert!(!w.instancias.is_empty(), "{}: no run", porao.nome);
+            let dt = 1.0 / 30.0;
+            let mut t = 0.0f32;
+            let mut ultimo_pedido = -1.0f32;
+            let mut venceu = false;
+            let mut rastro = Vec::new();
+            while t < 900.0 {
+                let Some(i) = w.instancias.first() else { break };
+                if matches!(i.estado, EstadoDg::Concluida { .. }) {
+                    venceu = true;
+                    break;
+                }
+                let andar = i.andar;
+                let eu = w.ecs.get::<&Position>(e).unwrap().0;
+                // What the client sees: enemies of this run within 24 u.
+                let inst = i.id;
+                let mut vistos: Vec<(Entity, Vec2)> = w
+                    .ecs
+                    .query::<(&Position, &EnemyTag, &Instancia)>()
+                    .iter()
+                    .filter(|(_, (_, t, ii))| ii.0 == inst && !t.dead)
+                    .map(|(en, (p, _, _))| (en, p.0))
+                    .filter(|(_, p)| p.distance(eu) <= shared::AOI_RADIUS)
+                    .collect();
+                vistos.sort_by(|a, b| a.1.distance(eu).total_cmp(&b.1.distance(eu)));
+                // Kill what is within reach (the fight itself isn't what's
+                // being tested).
+                for (en, p) in &vistos {
+                    // About a melee reach: the real player is hitting back
+                    // (a player who only takes hits is staggered in place).
+                    if p.distance(eu) <= 3.5 {
+                        if let Ok(mut tg) = w.ecs.get::<&mut EnemyTag>(*en) {
+                            tg.dead = true;
+                        }
+                    }
+                }
+                if t - ultimo_pedido >= 1.0 {
+                    ultimo_pedido = t;
+                    let alvo = vistos
+                        .first()
+                        .map(|v| v.1)
+                        .or_else(|| {
+                            planta
+                                .sala_da_etapa(andar)
+                                .map(|s| planta.centro(s))
+                                .filter(|c| c.distance(eu) > 3.0)
+                        });
+                    if let Some(a) = alvo {
+                        w.sessions.get_mut(&sid).unwrap().rota_pedida_em = -100.0;
+                        w.handle_mover_para(sid, a);
+                    }
+                    rastro.push((t, andar, eu, vistos.len()));
+                }
+                // The client sends a frame every tick; with no stick input,
+                // the server walks the route (`rota`).
+                let seq = (t / dt) as u32 + 1;
+                w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+                    seq,
+                    tick: seq,
+                    move_dir: Vec2::ZERO,
+                    aim: Vec2::X,
+                    buttons: 0,
+                });
+                w.step(dt);
+                t += dt;
+            }
+            if !venceu {
+                for r in rastro.iter().rev().take(12) {
+                    eprintln!("{}: t={:.0} andar={} eu={:?} vistos={}", porao.nome, r.0, r.1, r.2, r.3);
+                }
+                {
+                    let eu = w.ecs.get::<&Position>(e).unwrap().0;
+                    let s = &w.sessions[&sid];
+                    let pts: Vec<Vec2> = s.rota.pontos().collect();
+                    eprintln!("rota {:?} destino {:?} travado={}", pts, s.rota.destino(), s.rota.travado());
+                    let ilha = w.ilha.as_ref().unwrap();
+                    for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                        let v = Vec2::new(dx, dz) * 5.0;
+                        let q = ilha.mover_com_degrau(eu, v, 1.0 / 30.0, ENTITY_RADIUS, shared::terreno::DEGRAU_BLOCOS);
+                        eprintln!("terreno {dx},{dz}: {:?} -> {:?} (altura aqui {:.2}, la' {:.2})", eu, q, ilha.altura(eu.x, eu.y), ilha.altura(eu.x + dx * 0.6, eu.y + dz * 0.6));
+                    }
+                }
+                let i = &w.instancias[0];
+                let vivos: Vec<Vec2> = i
+                    .vivos
+                    .iter()
+                    .filter(|m| w.dg_vivo(**m))
+                    .filter_map(|m| w.ecs.get::<&Position>(*m).ok().map(|p| p.0))
+                    .collect();
+                panic!(
+                    "{}: stuck at step {} of {} — living mobs at {vivos:?}",
+                    porao.nome, i.andar, porao.andares
+                );
+            }
+        }
+    }
+
     fn sala_da_primeira(p: &shared::planta::Planta) -> usize {
         p.sala_da_etapa(0).unwrap()
     }

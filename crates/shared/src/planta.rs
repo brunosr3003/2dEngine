@@ -401,23 +401,48 @@ impl Planta {
 
     /// One step of movement against the walls: `de` wants to go to `para`.
     ///
-    /// Free: goes. Blocked: slides to the closest walkable point, as long as
-    /// that isn't a jump (a step can't carry a body through a wall). Already
-    /// outside (a teleport, a spawn): comes back in.
+    /// Free: goes. Blocked: slides — first onto the closest walkable point,
+    /// then, if that isn't progress, along the wall at growing angles (the
+    /// terrain's own `mover_com_degrau` does the same against a trunk).
+    /// Already outside (a teleport, a spawn): comes back in.
+    ///
+    /// The angled tries are what gets a body round the INSIDE corner where a
+    /// corridor meets a round room. Projecting alone stopped it dead there:
+    /// the closest walkable point to a step across the corner is the body's
+    /// own spot. With the dungeon auto that was a player frozen at the
+    /// corridor mouth — where the gate stands — found by
+    /// `uma_corrida_inteira_em_cada_porao`.
     pub fn mover(&self, de: Vec2, para: Vec2, raio: f32, andar: u8) -> Vec2 {
         if self.livre(para, raio, andar) {
             return para;
         }
-        if !self.livre(de, raio + 0.01, andar) && !self.livre(de, raio, andar) {
+        if !self.livre(de, raio, andar) {
             return self.mais_perto(de, raio, andar);
         }
-        let deslizou = self.mais_perto(para, raio, andar);
-        let passo = de.distance(para);
-        if deslizou.distance(de) <= passo + 0.05 {
-            deslizou
-        } else {
-            de
+        let v = para - de;
+        let passo = v.length();
+        if passo < 1e-6 {
+            return de;
         }
+        let deslizou = self.mais_perto(para, raio, andar);
+        if deslizou.distance(de) <= passo + 0.05
+            && (deslizou - de).dot(v) > passo * passo * 0.2
+            && self.livre(deslizou, raio, andar)
+        {
+            return deslizou;
+        }
+        for graus in [20.0f32, 40.0, 60.0, 80.0] {
+            for sinal in [1.0f32, -1.0] {
+                let a = (graus * sinal).to_radians();
+                let (s, c) = a.sin_cos();
+                let dir = Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c);
+                let q = de + dir * c;
+                if self.livre(q, raio, andar) {
+                    return q;
+                }
+            }
+        }
+        de
     }
 
     /// The rooms a point is in (a point in a corridor mouth is in two shapes).
@@ -532,8 +557,32 @@ impl Planta {
             s = antes;
         }
         salas.reverse();
-        let mut rota: Vec<Vec2> = salas.iter().map(|&s| self.centro(s)).collect();
-        rota.push(para);
+        let mut pontos: Vec<Vec2> = salas.iter().map(|&s| self.centro(s)).collect();
+        pontos.push(para);
+        // STRING-PULLING: skip every waypoint a straight, clear line reaches
+        // past. Without it the route began at the centre of the room the body
+        // is ALREADY in — behind it, often — and the dungeon auto, which asks
+        // for a new route every second, walked back to that centre every
+        // second and never got through the corridor: it looked like pushing
+        // at the gate forever. Found by `uma_corrida_inteira_em_cada_porao`.
+        // Sampled every 0.1 u, with a hair of clearance: the inside corner
+        // where a corridor meets a room is a sliver a coarser check misses.
+        let limpo = |a: Vec2, b: Vec2| {
+            let passos = (a.distance(b) / 0.1).ceil().max(1.0) as usize;
+            (0..=passos).all(|k| self.livre(a.lerp(b, k as f32 / passos as f32), r + 0.05, andar))
+        };
+        let mut rota = Vec::new();
+        let mut atual = de;
+        let mut i = 0;
+        while i < pontos.len() {
+            let mut j = pontos.len() - 1;
+            while j > i && !limpo(atual, pontos[j]) {
+                j -= 1;
+            }
+            rota.push(pontos[j]);
+            atual = pontos[j];
+            i = j + 1;
+        }
         Some(rota)
     }
 
