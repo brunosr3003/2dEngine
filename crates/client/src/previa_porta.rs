@@ -43,7 +43,7 @@ pub async fn abrir(solido: &macroquad::material::Material) {
             set_camera(&cam);
             draw_plane(Vec3::ZERO, vec2(14.0, 14.0), None, Color::from_rgba(52, 78, 42, 255));
             macroquad::material::gl_use_material(solido);
-            crate::render3d::desenha_porta_do_porao(Vec3::ZERO, perto);
+            crate::render3d::desenha_porta_do_porao(Vec3::ZERO, 5, perto);
             macroquad::material::gl_use_default_material();
             // Uma caixa do tamanho de gente, pra a porta ter escala.
             draw_cube(vec3(2.4, 0.9, 0.6), vec3(0.6, 1.8, 0.35), None, GRAY);

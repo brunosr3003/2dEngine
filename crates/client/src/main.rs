@@ -5700,11 +5700,21 @@ impl Jogo {
             let eu = self.world.self_pos();
             let portas = self.porao.portas(&self.zona_atual).to_vec();
             if let Some(terreno) = &self.terreno {
-                for (_, pos) in portas {
+                for (conteudo, pos) in portas {
                     let perto = eu
                         .is_some_and(|e| e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA);
                     let y = terreno.altura(pos.x, pos.y);
-                    render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), perto);
+                    render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), conteudo, perto);
+                }
+                // Stepping in: the light wraps the character before the trip.
+                if let (Some((conteudo, progresso)), Some(e)) = (self.porao.entrando(), eu) {
+                    let y = terreno.altura(e.x, e.y);
+                    render3d::desenha_entrada_no_portal(
+                        vec3(e.x, y, e.y),
+                        render3d::cor_do_portal(conteudo),
+                        progresso,
+                        get_time() as f32,
+                    );
                 }
             }
         }

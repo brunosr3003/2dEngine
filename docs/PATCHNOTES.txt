@@ -1,3 +1,18 @@
+30/09/2026 — Portais: os Porões agora ficam na natureza
+
+As portas de pedra dos Porões viraram PORTAIS: um anel de pedra com runas que acendem em sequência, um núcleo de luz girando e faíscas subindo, cada um na cor do seu Porão. De perto, tudo gira mais rápido e brilha mais — e entrar tem animação: a luz envolve o personagem antes da viagem.
+
+E eles saíram da porta da cidade. Cada portal está num lugar marcante da sua ilha, a uma caminhada da cidade:
+• Porão do Naufrágio — na costa do Bosque.
+• Porão do Contrabandista — no morro mais alto do Bosque.
+• Casco Congelado — na costa da Geleira.
+• Caravana Soterrada — ao lado do Oásis, no Ermo.
+• Cofre do Trovão — no fim da trilha do Planalto.
+
+Continuam no mapa e no "Ir para". O aviso do Porão na tela agora só aparece quando você já está bem perto do portal.
+
+Atualização obrigatória: o protocolo subiu para 166.
+
 30/09/2026 — Auto dungeon não empaca mais entre as salas
 
 Com os Porões maiores, a horda da sala seguinte aparece longe demais para ser vista quando o portão abre — e o auto dungeon, que andava "até o inimigo mais perto", ficava parado na sala já limpa. Agora, sem inimigo à vista, ele vai sozinho até a sala da vez (e até a do chefe no fim), e volta a lutar quando a horda aparece.

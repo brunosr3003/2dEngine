@@ -235,7 +235,7 @@ impl GameWorld {
             self.dg_texto(
                 sid,
                 false,
-                format!("{} has its door on another island.", c.nome),
+                format!("{} has its portal on another island.", c.nome),
             );
             return;
         }
@@ -253,7 +253,7 @@ impl GameWorld {
         let onde = self.ecs.get::<&Position>(e).map(|p| p.0).ok();
         let Some(onde) = onde else { return };
         if onde.distance(porta) > shared::porao::ALCANCE_DA_PORTA {
-            self.dg_texto(sid, false, format!("Get closer to the {} door.", c.nome));
+            self.dg_texto(sid, false, format!("Get closer to the {} portal.", c.nome));
             return;
         }
         let Some(chave) = shared::porao::chave_de(c) else {
@@ -600,8 +600,8 @@ impl GameWorld {
             Pedido::EntrarSolo { conteudo } => {
                 let onde = dg::conteudo(conteudo)
                     .filter(|c| c.tipo == Tipo::Porao)
-                    .map(|c| format!("{} is now entered at its door, on the island.", c.nome))
-                    .unwrap_or_else(|| "This cellar is now entered at its door.".into());
+                    .map(|c| format!("{} is now entered through its portal, on the island.", c.nome))
+                    .unwrap_or_else(|| "This cellar is now entered through its portal.".into());
                 self.dg_texto(sid, false, onde);
                 return;
             }

@@ -487,7 +487,7 @@ impl DungeonUi {
             .partition(|ce| dg::conteudo(ce.id).unwrap().tipo == Tipo::Porao);
         let mut linhas: Vec<(Option<&str>, Option<&dg::ConteudoEstado>)> = Vec::new();
         if !poroes.is_empty() {
-            linhas.push((Some("CELLARS · at their door"), None));
+            linhas.push((Some("CELLARS · through their portal"), None));
             linhas.extend(poroes.iter().map(|ce| (None, Some(*ce))));
         }
         if !grutas.is_empty() {
@@ -696,7 +696,7 @@ impl DungeonUi {
             // precisa saber pra onde ele foi, senão o conteúdo simplesmente
             // desapareceu do jogo do ponto de vista de quem joga.
             Tipo::Porao => {
-                estilo::texto(dir.x, y, "Entered at its door, on the island.", 14, estilo::TEXTO);
+                estilo::texto(dir.x, y, "Entered through its portal, on the island.", 14, estilo::TEXTO);
                 y += 18.0 * f;
                 estilo::texto(
                     dir.x,
@@ -768,7 +768,7 @@ impl DungeonUi {
         // Este bloco é "você está fora da Arena, e a dungeon começa lá". Vale
         // pra Gruta. O Porão é o contrário: ele começa na ILHA, na porta, e o
         // jogador está exatamente onde tem que estar. Sem esta exceção o botão
-        // "Go to the door" nunca era desenhado — ficava no `match` lá embaixo,
+        // "Go to the portal" nunca era desenhado — ficava no `match` lá embaixo,
         // atrás deste `return` —, e a tela dizia "vá até a Arena" pra uma
         // dungeon que não fica na Arena. O dono: "the go to the door doesnt
         // exist at all". Não existia mesmo: era inalcançável.
@@ -823,7 +823,7 @@ impl DungeonUi {
             // have a go to, because you need to go to where the dungeun is".
             Tipo::Porao => {
                 let aqui = def.zona == c.zona;
-                let rotulo = if aqui { "Go to the door" } else { "On another island" };
+                let rotulo = if aqui { "Go to the portal" } else { "On another island" };
                 if botao(Rect::new(dir.x, y, bw * 1.4, 40.0 * f), rotulo, aberto && aqui, true)
                     && aqui
                 {
@@ -840,7 +840,7 @@ impl DungeonUi {
                     estilo::texto(
                         dir.x,
                         y + 56.0 * f,
-                        &format!("Its door is on {onde}."),
+                        &format!("Its portal is on {onde}."),
                         13,
                         estilo::SUAVE,
                     );
@@ -1786,7 +1786,7 @@ mod testes {
 /// Prévia do PAINEL (`MMO_PREVIA_DUNGEON_PAINEL=1`; PNGs em `MMO_PREVIA_SAIDA`).
 ///
 /// O caso que importa é o jogador NA ILHA (`na_arena = Some(false)`) com um
-/// Porão selecionado: é aí que o "Go to the door" tem que aparecer, e foi aí
+/// Porão selecionado: é aí que o "Go to the portal" tem que aparecer, e foi aí
 /// que ele não aparecia — ficava atrás de um `return` do bloco "vá até a
 /// Arena". A prévia de recompensas, que já existia, roda com `na_arena =
 /// Some(true)` e por isso nunca mostrou o defeito.

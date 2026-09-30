@@ -1255,42 +1255,136 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
     }
 }
 
-/// A PORTA DO PORÃO: dois batentes de pedra, uma verga e o vão escuro.
+/// A PORÃO's entrance: a PORTAL. It was a stone door until 30/09/2026 — the
+/// owner: "instead of dungeun gates to enter i want portals, whit animation and
+/// visual effects".
 ///
-/// Existe porque sem ela a dungeon física não é física: `porao_ui` avisa a 26
-/// unidades, mas quem nunca chegasse a 26 de uma porta nunca saberia que
-/// existe uma. Um conteúdo que só aparece pra quem já sabe onde ele está não
-/// está no cenário, está num menu com passos extras.
-///
-/// Desenhada com cubos, como o baú logo abaixo, e não com malha estática: são
-/// cinco portas no jogo inteiro, uma por ilha, e nenhuma delas se move.
-///
-/// `perto` acende: de longe é pedra parada, de perto o vão brilha e o anel
-/// pulsa — é o mesmo "isto aqui é interagível" que o baú já diz.
-pub fn desenha_porta_do_porao(p: Vec3, perto: bool) {
-    let t = get_time() as f32;
-    let pedra = Color::from_rgba(104, 106, 118, 255);
-    let pedra_escura = Color::from_rgba(72, 74, 84, 255);
-    // Os dois batentes.
-    for dx in [-0.9f32, 0.9] {
-        draw_cube(p + vec3(dx, 1.1, 0.0), vec3(0.42, 2.2, 0.5), None, pedra);
+/// Drawn with cubes (this runs with the solid material on, where a
+/// `draw_line_3d` draws nothing), five in the whole game, one per landmark.
+/// `perto` (within opening range) speeds everything up and brightens it: the
+/// same "this is interactive" the chest says.
+pub fn desenha_porta_do_porao(p: Vec3, conteudo: u16, perto: bool) {
+    desenha_portal(p, cor_do_portal(conteudo), perto, get_time() as f32);
+}
+
+/// The portal's colour: the Porão's theme (`shared::planta::Tema`), so the
+/// portal already says what is on the other side.
+pub fn cor_do_portal(conteudo: u16) -> Color {
+    use shared::planta::Tema;
+    match shared::planta::da(conteudo).map(|p| p.tema) {
+        Some(Tema::Caverna) => Color::from_rgba(70, 220, 190, 255),
+        Some(Tema::Tijolo) => Color::from_rgba(240, 170, 70, 255),
+        Some(Tema::Gelo) => Color::from_rgba(120, 200, 255, 255),
+        Some(Tema::Arenito) => Color::from_rgba(255, 140, 60, 255),
+        Some(Tema::Castelo) => Color::from_rgba(170, 110, 255, 255),
+        None => Color::from_rgba(200, 160, 255, 255),
     }
-    // A verga, atravessada em cima.
-    draw_cube(p + vec3(0.0, 2.32, 0.0), vec3(2.3, 0.44, 0.58), None, pedra_escura);
-    // O vão: escuro sempre, aceso quando dá pra abrir.
-    let vao = if perto {
-        let a = 0.45 + 0.25 * (t * 2.2).sin();
-        Color::new(0.95, 0.76, 0.35, a)
-    } else {
-        Color::new(0.05, 0.05, 0.08, 0.95)
-    };
-    draw_cube(p + vec3(0.0, 1.0, -0.12), vec3(1.38, 2.0, 0.12), None, vao);
-    // Dois degraus na frente, pra a porta assentar no chão em vez de flutuar.
-    draw_cube(p + vec3(0.0, 0.08, 0.62), vec3(2.0, 0.16, 0.5), None, pedra_escura);
-    // SEM ANEL NO CHÃO, e isso foi tentado. Um `draw_line_3d` aqui não
-    // desenha nada: esta função roda com o material SÓLIDO ligado, e a linha
-    // não passa por ele. Ficou visível na prévia — ou melhor, não ficou. Quem
-    // avisa que dá pra abrir é o vão aceso, que já basta e custa um cubo.
+}
+
+/// A stone platform, a standing ring of stone with runes lighting up in turn,
+/// a swirling core of light, and sparks rising around it.
+pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
+    use std::f32::consts::TAU;
+    let pedra = Color::from_rgba(92, 94, 106, 255);
+    let pedra_escura = Color::from_rgba(62, 64, 74, 255);
+    let (vel, brilho) = if perto { (2.4, 1.0) } else { (1.0, 0.7) };
+    let com = |a: f32| Color::new(cor.r, cor.g, cor.b, a);
+    // The platform: a ring of flagstones and a step.
+    draw_cube(p + vec3(0.0, 0.1, 0.0), vec3(3.6, 0.2, 1.6), None, pedra_escura);
+    for k in 0..14 {
+        let a = k as f32 / 14.0 * TAU;
+        let q = p + vec3(a.cos() * 1.9, 0.14, a.sin() * 0.95);
+        draw_cube(q, vec3(0.62, 0.28, 0.5), None, if k % 2 == 0 { pedra } else { pedra_escura });
+    }
+    // The glow pooled on the platform.
+    let pulso = 0.5 + 0.5 * (t * 2.0 * vel).sin();
+    draw_cube(p + vec3(0.0, 0.25, 0.0), vec3(2.6, 0.03, 1.0), None, com(0.25 + 0.2 * pulso * brilho));
+    // The standing ring, facing the camera (in the XY plane): stone blocks,
+    // every third a rune that lights up as the light runs round.
+    let centro = p + vec3(0.0, 1.85, 0.0);
+    let n = 22;
+    for k in 0..n {
+        let a = k as f32 / n as f32 * TAU;
+        let q = centro + vec3(a.cos() * 1.45, a.sin() * 1.45, 0.0);
+        let runa = k % 3 == 0;
+        let aceso = runa && (t * 1.6 * vel - a / TAU * 3.0).rem_euclid(1.0) < 0.25;
+        let c = if aceso {
+            com(1.0)
+        } else if runa {
+            Color::new(cor.r * 0.45, cor.g * 0.45, cor.b * 0.45, 1.0)
+        } else {
+            pedra
+        };
+        draw_cube(q, vec3(0.44, 0.44, 0.5), None, c);
+    }
+    // The core: layers of light, and a spiral of motes turning inward.
+    for k in 0..4 {
+        let r = 1.15 - k as f32 * 0.26;
+        let a = (0.10 + 0.07 * k as f32) * brilho * (0.8 + 0.2 * pulso);
+        draw_cube(centro, vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02), None, com(a));
+    }
+    let motes = if perto { 36 } else { 24 };
+    for k in 0..motes {
+        let f = k as f32 / motes as f32;
+        let fase = (f + t * 0.35 * vel).rem_euclid(1.0);
+        let raio = 1.2 * (1.0 - fase);
+        let a = f * TAU * 3.0 + t * 2.2 * vel + fase * 4.0;
+        let q = centro + vec3(a.cos() * raio, a.sin() * raio, 0.06);
+        let lado = 0.07 + 0.1 * (1.0 - fase);
+        let branco = fase * 0.6;
+        draw_cube(
+            q,
+            vec3(lado, lado, lado),
+            None,
+            Color::new(
+                cor.r + (1.0 - cor.r) * branco,
+                cor.g + (1.0 - cor.g) * branco,
+                cor.b + (1.0 - cor.b) * branco,
+                0.9 * brilho,
+            ),
+        );
+    }
+    // Sparks rising round the platform.
+    let faiscas = if perto { 16 } else { 10 };
+    for k in 0..faiscas {
+        let f = k as f32 / faiscas as f32;
+        let subida = (t * 0.45 * vel + f * 1.7).rem_euclid(1.0);
+        let a = f * TAU + t * 0.5;
+        let q = p + vec3(a.cos() * 1.8, 0.3 + subida * 3.4, a.sin() * 0.8);
+        let lado = 0.09 * (1.0 - subida) + 0.03;
+        draw_cube(q, vec3(lado, lado, lado), None, com((1.0 - subida) * brilho));
+    }
+}
+
+/// ENTERING a portal: light spiralling up around the character, faster and
+/// tighter as `progresso` (0..1) runs out, before the trip.
+pub fn desenha_entrada_no_portal(p: Vec3, cor: Color, progresso: f32, t: f32) {
+    use std::f32::consts::TAU;
+    let n = 40;
+    for k in 0..n {
+        let f = k as f32 / n as f32;
+        let subida = (f + t * (0.8 + 2.0 * progresso)).rem_euclid(1.0);
+        let raio = 1.4 * (1.0 - progresso * 0.8) * (1.0 - subida * 0.4);
+        let a = f * TAU * 4.0 + t * (4.0 + 10.0 * progresso);
+        let q = p + vec3(a.cos() * raio, subida * 2.6, a.sin() * raio);
+        let lado = 0.08 + 0.08 * progresso;
+        let branco = progresso * 0.7;
+        draw_cube(
+            q,
+            vec3(lado, lado, lado),
+            None,
+            Color::new(
+                cor.r + (1.0 - cor.r) * branco,
+                cor.g + (1.0 - cor.g) * branco,
+                cor.b + (1.0 - cor.b) * branco,
+                0.9,
+            ),
+        );
+    }
+    // A column of light closing in on the body.
+    let a = 0.15 + 0.5 * progresso;
+    let lado = 1.6 * (1.0 - progresso * 0.7);
+    draw_cube(p + vec3(0.0, 1.3, 0.0), vec3(lado, 2.6, lado), None, Color::new(cor.r, cor.g, cor.b, a));
 }
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.

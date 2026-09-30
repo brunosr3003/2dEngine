@@ -209,6 +209,94 @@ pub fn porta_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
     if c.tipo != Tipo::Porao {
         return None;
     }
+    marco_de(c, ger).or_else(|| perto_da_cidade(c, ger))
+}
+
+/// Where the portal stands OUT IN THE WILD: a landmark that fits the Porão.
+///
+/// The owner, 30/09/2026, choosing among three: portals "out in the wild",
+/// far from town, "each at a landmark spot of its island". Until then every
+/// door stood 56-120 u from the town square — one step out of town.
+///
+/// * a shipwreck and a frozen hull lie on the COAST;
+/// * the smugglers hide on the island's HIGHEST hill;
+/// * the sunken caravan is beside the Ermo's OASIS;
+/// * the thunder vault is at the FAR END of the Planalto's trail.
+///
+/// Deterministic (same island, same spot) and the same on both sides, which
+/// share the `Gerador`.
+fn marco_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
+    let cidade = ger.cidade()?.centro();
+    match c.id {
+        // The Ermo's oasis: on its dry ground, past the grove.
+        4 => {
+            let o = ger.oasis()?;
+            (0..24).find_map(|k| {
+                let a = k as f32 * std::f32::consts::TAU / 24.0;
+                (0..6).find_map(|n| {
+                    let p = o.centro
+                        + Vec2::new(a.cos(), a.sin()) * (crate::oasis::RAIO_VERDE + 4.0 + n as f32 * 3.0);
+                    (firme(ger, p) && plano(ger, p)).then_some(p)
+                })
+            })
+        }
+        // The far end of the Planalto's trail: its last region.
+        5 => {
+            let fim = ger.planalto()?.regioes.last()?.centro;
+            (0..10).find_map(|n| {
+                (0..16).find_map(|k| {
+                    let a = k as f32 * std::f32::consts::TAU / 16.0;
+                    let p = fim + Vec2::new(a.cos(), a.sin()) * (n as f32 * 4.0);
+                    (firme(ger, p) && plano(ger, p)).then_some(p)
+                })
+            })
+        }
+        // The highest dry, flat-enough spot on a ring out of town.
+        2 => candidatos(cidade)
+            .filter(|p| firme(ger, *p) && plano(ger, *p))
+            .max_by(|a, b| ger.altura(a.x, a.y).total_cmp(&ger.altura(b.x, b.y))),
+        // A coast: dry and flat here, the sea within a few steps.
+        1 | 3 => {
+            let perto_do_mar = |p: Vec2| {
+                (0..8).any(|k| {
+                    let a = k as f32 * std::f32::consts::FRAC_PI_4;
+                    let q = p + Vec2::new(a.cos(), a.sin()) * 9.0;
+                    ger.altura(q.x, q.y) <= crate::terreno::NIVEL_DO_MAR
+                })
+            };
+            // Away from the port: a portal on the quay is in town again.
+            let porto = ger.porto().map(|p| p.centro);
+            candidatos(cidade)
+                .filter(|p| porto.is_none_or(|q| q.distance(*p) > 120.0))
+                .find(|p| firme(ger, *p) && plano(ger, *p) && perto_do_mar(*p))
+        }
+        _ => None,
+    }
+}
+
+/// Points on rings 200-350 u out of town, in a fixed order.
+fn candidatos(cidade: Vec2) -> impl Iterator<Item = Vec2> {
+    (0..7).flat_map(move |n| {
+        let d = 200.0 + n as f32 * 25.0;
+        (0..48).map(move |k| {
+            let a = 0.3 + k as f32 * std::f32::consts::TAU / 48.0;
+            cidade + Vec2::new(a.cos(), a.sin()) * d
+        })
+    })
+}
+
+/// Flat enough to stand a portal on: no more than a block of difference
+/// across it.
+fn plano(ger: &crate::terreno::Gerador, p: Vec2) -> bool {
+    let h = ger.altura(p.x, p.y);
+    [Vec2::new(2.0, 0.0), Vec2::new(-2.0, 0.0), Vec2::new(0.0, 2.0), Vec2::new(0.0, -2.0)]
+        .iter()
+        .all(|d| (ger.altura(p.x + d.x, p.y + d.y) - h).abs() <= crate::terreno::BLOCO + 0.01)
+}
+
+/// The old placement, near town: the fallback when an island has no landmark
+/// of the kind (a test island, a missing oasis).
+fn perto_da_cidade(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
     let cidade = ger.cidade()?.centro();
     let i = crate::dungeon::CONTEUDOS
         .iter()
@@ -739,6 +827,61 @@ mod testes {
                 r.madeira_qtd,
                 r.material_qtd
             );
+        }
+    }
+
+    /// THE PORTALS STAND OUT IN THE WILD, AND A PLAYER CAN WALK TO THEM:
+    /// far from town, apart from each other, and on the other end of a route
+    /// the server itself finds — a landmark on an unreachable cliff would be
+    /// a Porão nobody enters.
+    #[test]
+    fn os_portais_ficam_na_natureza_e_se_chega_andando() {
+        for def in crate::terreno::ARQUIPELAGO {
+            let ilha = crate::terreno::Ilha::da_ilha(&def);
+            let ger = crate::terreno::Gerador::da_ilha(&def);
+            let Some(cidade) = ger.cidade().map(|c| c.centro()) else { continue };
+            let portas = portas_da_zona(def.zona, &ger);
+            for (id, p) in &portas {
+                let nome = crate::dungeon::conteudo(*id).map_or("?", |c| c.nome);
+                // Out of town: a walk, not a step.
+                assert!(
+                    p.distance(cidade) >= 150.0,
+                    "{}: {nome} is {:.0} u from town",
+                    def.zona,
+                    p.distance(cidade)
+                );
+                // And a walk that EXISTS: the server's own route from town.
+                let rota = ilha.caminho(cidade, *p, 40_000);
+                assert!(
+                    rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(*p) < 6.0),
+                    "{}: no walking route from town to {nome} at {p:?}",
+                    def.zona
+                );
+            }
+            for (i, a) in portas.iter().enumerate() {
+                for b in portas.iter().skip(i + 1) {
+                    assert!(a.1.distance(b.1) >= 100.0, "{}: two portals side by side", def.zona);
+                }
+            }
+        }
+    }
+
+    /// Where each portal landed, for the owner to read.
+    #[test]
+    fn mostra_onde_fica_cada_portal() {
+        for def in crate::terreno::ARQUIPELAGO {
+            let ger = crate::terreno::Gerador::da_ilha(&def);
+            let cidade = ger.cidade().map(|c| c.centro()).unwrap_or_default();
+            for (id, p) in portas_da_zona(def.zona, &ger) {
+                println!(
+                    "{:<14} {:<20} {:?}  {:>4.0} u from town, height {:.1}",
+                    def.zona,
+                    crate::dungeon::conteudo(id).map_or("?", |c| c.nome),
+                    p,
+                    p.distance(cidade),
+                    ger.altura(p.x, p.y)
+                );
+            }
         }
     }
 

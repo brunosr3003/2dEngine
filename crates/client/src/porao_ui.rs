@@ -24,13 +24,18 @@ use shared::protocol::ClientMessage;
 
 use crate::hud_estilo as estilo;
 
-/// A que distância a tarja aparece.
+/// How close the banner starts showing.
 ///
-/// Bem maior que `shared::porao::ALCANCE_DA_PORTA` (4 u, o de abrir): a porta
-/// precisa se anunciar de longe o bastante pra o jogador saber que ela existe,
-/// senão uma dungeon inteira fica invisível no meio da ilha. Chegar perto é o
-/// que libera o botão.
-pub const ALCANCE_DO_AVISO: f32 = 26.0;
+/// Was 26 u. The owner, 30/09/2026: the menu "should start showing when the
+/// player is closer". The portal is its own announcement now — a lit,
+/// swirling ring is seen from far off (`render3d::desenha_portal`) and it's on
+/// the map — so the banner no longer has to shout from across a field; it
+/// comes up a few steps out, just before the opening range (4 u).
+pub const ALCANCE_DO_AVISO: f32 = 9.0;
+
+/// How long stepping into a portal takes, in seconds: the swirl around the
+/// character plays, then the trip. Short enough not to feel like a wait.
+pub const ENTRADA_S: f64 = 0.9;
 
 /// O que mostrar agora, se houver porta por perto.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,7 +63,7 @@ impl Aviso {
         } else if !self.na_porta {
             "Get closer".into()
         } else {
-            "Open".into()
+            "Enter the portal".into()
         }
     }
 }
@@ -110,6 +115,9 @@ pub fn aviso_de(
 #[derive(Default)]
 pub struct PoraoUi {
     aviso: Option<Aviso>,
+    /// Stepping into a portal: (content, when it started). The request goes
+    /// out when the swirl has played (`ENTRADA_S`).
+    entrando: Option<(u16, f64)>,
     /// As portas desta zona, achadas uma vez. A busca sonda até 192 pontos no
     /// relevo — barato ao trocar de ilha, caro a 60 quadros por segundo.
     cache: Option<(String, Vec<(u16, Vec2)>)>,
@@ -137,6 +145,12 @@ impl PoraoUi {
         &self.cache.as_ref().unwrap().1
     }
 
+    /// Stepping into a portal right now: (content, 0..1 progress).
+    pub fn entrando(&self) -> Option<(u16, f32)> {
+        let (c, desde) = self.entrando?;
+        Some((c, ((get_time() - desde) / ENTRADA_S).clamp(0.0, 1.0) as f32))
+    }
+
     pub fn desenha(
         &mut self,
         zona: &str,
@@ -145,6 +159,33 @@ impl PoraoUi {
     ) -> Option<ClientMessage> {
         let portas = self.portas(zona).to_vec();
         self.aviso = aviso_de(&portas, eu, tem_chave);
+        // THE STEP IN: the swirl plays (drawn in the world, `main`), the
+        // screen washes over in the portal's colour, then the request goes.
+        // Walking away mid-swirl calls it off.
+        if let Some((conteudo, desde)) = self.entrando {
+            let progresso = ((get_time() - desde) / ENTRADA_S) as f32;
+            let ainda_perto = self.aviso.as_ref().is_some_and(|a| a.conteudo == conteudo && a.na_porta);
+            if !ainda_perto {
+                self.entrando = None;
+            } else {
+                let cor = crate::render3d::cor_do_portal(conteudo);
+                let a = (progresso * progresso).clamp(0.0, 1.0) * 0.85;
+                let tela = crate::hud_layout::tela_segura();
+                draw_rectangle(0.0, 0.0, screen_width().max(tela.w), screen_height().max(tela.h), Color::new(
+                    cor.r + (1.0 - cor.r) * progresso.min(1.0) * 0.6,
+                    cor.g + (1.0 - cor.g) * progresso.min(1.0) * 0.6,
+                    cor.b + (1.0 - cor.b) * progresso.min(1.0) * 0.6,
+                    a,
+                ));
+                if progresso >= 1.0 {
+                    self.entrando = None;
+                    return Some(ClientMessage::Dungeon {
+                        pedido: Pedido::AbrirPorao { conteudo },
+                    });
+                }
+                return None;
+            }
+        }
         let a = self.aviso.clone()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -202,11 +243,8 @@ impl PoraoUi {
             if pode { estilo::OURO } else { estilo::SUAVE },
         );
         if pode && crate::foco::clique() && botao.contains(m) {
-            return Some(ClientMessage::Dungeon {
-                pedido: Pedido::AbrirPorao {
-                    conteudo: a.conteudo,
-                },
-            });
+            // Not the request yet: the step in plays first.
+            self.entrando = Some((a.conteudo, get_time()));
         }
         None
     }
@@ -277,7 +315,14 @@ mod testes {
 
         let na_porta = aviso_de(&portas, Some(porta), &tem).unwrap();
         assert!(na_porta.pode_abrir());
-        assert_eq!(na_porta.recado(), "Open");
+        assert_eq!(na_porta.recado(), "Enter the portal");
+
+        // And no longer from across a field: 26 u out, where the old banner
+        // still showed, it doesn't.
+        assert!(
+            aviso_de(&portas, Some(porta + Vec2::new(26.0, 0.0)), &tem).is_none(),
+            "the banner still shows from 26 u away"
+        );
     }
 
     /// SEM CHAVE, A TARJA DIZ QUAL CHAVE — e o botão não abre.
