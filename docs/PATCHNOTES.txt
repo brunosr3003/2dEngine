@@ -1,3 +1,9 @@
+30/09/2026 — Auto dungeon não empaca mais entre as salas
+
+Com os Porões maiores, a horda da sala seguinte aparece longe demais para ser vista quando o portão abre — e o auto dungeon, que andava "até o inimigo mais perto", ficava parado na sala já limpa. Agora, sem inimigo à vista, ele vai sozinho até a sala da vez (e até a do chefe no fim), e volta a lutar quando a horda aparece.
+
+Não é atualização obrigatória — o protocolo continua o 165.
+
 30/09/2026 — Porões maiores, hordas maiores, paredes mais baixas
 
 Os Porões ficaram 50% maiores, e cada sala agora tem uma HORDA: 8, 11 e 14 inimigos nas três salas (antes eram 3, 4 e 5), mais o chefe. Como tem muito mais para lutar e andar, o tempo limite do Porão subiu de 10 para 15 minutos (o desafio de terminar rápido acompanha: metade do tempo).

@@ -41,6 +41,22 @@ pub const PERTO_DO_BAU: f32 = 2.5;
 /// Wait after opening the chest, so the result shows before leaving.
 pub const SAIR_APOS_BAU_S: f64 = 4.0;
 
+/// Where to walk when NO enemy is in sight, in a planned Porão
+/// (`shared::planta`): the room of the step the run is on — the boss room at
+/// the end.
+///
+/// The client only knows what is within `AOI_RADIUS` (24 u), and in the
+/// bigger cellars the next room's horde spawns farther than that when its
+/// gate opens. "Walk to the nearest enemy" then had no enemy to walk to, and
+/// auto stood in the cleared room forever — "the auto quest in dungeun isnt
+/// work very well". The room is always known: it comes from the plan and the
+/// step the server sends.
+pub fn sala_da_vez(conteudo: u16, andar: u8) -> Option<Vec2> {
+    let p = shared::planta::da(conteudo)?;
+    let c = p.centro(p.sala_da_etapa(andar)?);
+    Some(Vec2::new(c.x, c.y))
+}
+
 pub fn decide(e: Estado, eu: Vec2, bau_aberto_ha_s: Option<f64>) -> Passo {
     if e.caido {
         return if e.reviver_pronto {
@@ -71,6 +87,26 @@ pub fn decide(e: Estado, eu: Vec2, bau_aberto_ha_s: Option<f64>) -> Passo {
 mod testes {
     use super::*;
     use macroquad::prelude::vec2;
+
+    /// WITH NOTHING IN SIGHT, AUTO KNOWS WHERE THE NEXT FIGHT IS: every step
+    /// of every Porão has a room to walk to, and the last step is the boss's.
+    #[test]
+    fn sem_inimigo_a_vista_vai_para_a_sala_da_vez() {
+        for p in &shared::planta::PLANTAS {
+            for andar in 0..=p.lutas() {
+                let alvo = sala_da_vez(p.conteudo, andar)
+                    .unwrap_or_else(|| panic!("plan {} step {andar}: nowhere to go", p.conteudo));
+                // Reachable once that step's gate is open.
+                let e = p.centro(p.entrada());
+                assert!(
+                    p.caminho(e, ::glam::Vec2::new(alvo.x, alvo.y), andar).is_some(),
+                    "plan {} step {andar}: the room isn't reachable",
+                    p.conteudo
+                );
+            }
+        }
+        assert!(sala_da_vez(999, 0).is_none(), "a non-Porão has no plan");
+    }
 
     #[test]
     fn a_ordem_de_um_jogador() {

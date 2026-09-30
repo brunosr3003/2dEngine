@@ -4780,7 +4780,14 @@ impl Jogo {
                         })
                         .map(|e| e.render_pos)
                         .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
-                    if let Some(p) = perto {
+                    // Nothing in sight: the next horde may be past the view
+                    // range — walk to the room of the step the run is on.
+                    let rumo = perto.or_else(|| {
+                        let (conteudo, andar) = self.dungeon.em_curso()?;
+                        auto_dungeon::sala_da_vez(conteudo, andar)
+                            .filter(|c| c.distance(eu) > 3.0)
+                    });
+                    if let Some(p) = rumo {
                         self.auto_dungeon_envio = agora;
                         self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
                     }
