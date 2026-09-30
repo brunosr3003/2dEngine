@@ -651,6 +651,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PORAO").is_ok() {
+        porao_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PORTA").is_ok() {
         previa_porta::abrir(&render3d::material_solido()).await;
         return;
@@ -4250,12 +4255,14 @@ impl Jogo {
                 energia,
                 raio,
                 centro,
+                evitar,
             } => {
                 self.envia(ClientMessage::PedirNoDeColeta {
                     tipos,
                     energia,
                     raio,
                     centro: [centro.x, centro.y],
+                    evitar,
                 });
             }
             // Veio do mapa ("Ir" numa regiao): so' aquele tipo, em volta dela.

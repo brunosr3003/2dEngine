@@ -275,6 +275,11 @@ pub enum ClientMessage {
         energia: bool,
         raio: f32,
         centro: [f32; 2],
+        /// Columns to skip: nodes the character got stuck on the way to. Without
+        /// this the server answers the SAME nearest node every time, and the
+        /// auto walks back into the same corner forever (29/09/2026: "when the
+        /// resourc gets fiish, he try to find another but it get stuck").
+        evitar: Vec<u32>,
     },
     /// Coletar o no' desta coluna. O servidor valida alcance, tipo e
     /// esgotamento e responde com `ColetaEstado`.

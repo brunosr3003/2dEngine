@@ -148,8 +148,22 @@ impl PoraoUi {
         let a = self.aviso.clone()?;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let w = 300.0 * f;
-        let h = 74.0 * f;
+        // Os DESAFIOS desta hora, na porta, ANTES de entrar — o mesmo sorteio
+        // que o servidor faz na entrada (`shared::desafio::da_hora`).
+        let agora = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let desafios: Vec<String> = shared::dungeon::conteudo(a.conteudo)
+            .filter(|c| shared::desafio::tem_desafio(c))
+            .map(|c| {
+                shared::desafio::da_hora(c, agora)
+                    .iter()
+                    .map(|d| d.texto(c))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let w = 340.0 * f;
+        let h = (74.0 + 20.0 * desafios.len() as f32 + if desafios.is_empty() { 0.0 } else { 8.0 }) * f;
         // Em cima do rodapé e no meio: é onde o olho já procura o que fazer
         // agora, e não disputa com a barra de vida nem com o rastreador.
         let r = Rect::new(
@@ -166,8 +180,18 @@ impl PoraoUi {
             17,
             if a.pode_abrir() { estilo::OURO } else { estilo::TEXTO },
         );
+        for (i, t) in desafios.iter().enumerate() {
+            estilo::texto(
+                r.x + 16.0 * f,
+                r.y + 50.0 * f + i as f32 * 20.0 * f,
+                &format!("› {t}  +{:.0}%", shared::desafio::BONUS_POR_DESAFIO * 100.0),
+                13,
+                estilo::SUAVE,
+            );
+        }
         let m = Vec2::from(mouse_position());
-        let botao = Rect::new(r.x + 12.0 * f, r.y + 36.0 * f, r.w - 24.0 * f, 28.0 * f);
+        let topo_botao = r.y + r.h - 38.0 * f;
+        let botao = Rect::new(r.x + 12.0 * f, topo_botao, r.w - 24.0 * f, 28.0 * f);
         let pode = a.pode_abrir();
         estilo::cartao(botao, pode && botao.contains(m), pode);
         estilo::texto_centro(
@@ -187,6 +211,32 @@ impl PoraoUi {
         None
     }
 
+}
+
+/// Prévia da tarja da porta (`MMO_PREVIA_PORAO=1`; PNGs em `MMO_PREVIA_SAIDA`):
+/// na porta com e sem a chave, com os desafios da hora.
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let saida =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-porao-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let zona = "ilha_inicial";
+    let portas = portas_da_zona(zona);
+    let (_, porta) = portas[0];
+    for (nome, tem) in [("porta-com-chave", true), ("porta-sem-chave", false)] {
+        let mut ui = PoraoUi::default();
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+            ui.desenha(zona, Some(porta), &move |_| tem);
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
 }
 
 #[cfg(test)]

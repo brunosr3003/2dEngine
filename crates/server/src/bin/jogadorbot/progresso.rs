@@ -334,6 +334,7 @@ async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyh
                 energia: true,
                 raio: 80.0,
                 centro: [eu.pos.x, eu.pos.y],
+                evitar: Vec::new(),
             })?)
             .await?;
             eu.pedidos_de_no += 1;

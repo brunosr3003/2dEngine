@@ -982,12 +982,16 @@ pub fn rolar_bau(
 /// Ouro do bau de conclusao: pela faixa do estagio e pelo tipo. Ajudante (quem
 /// ja' venceu esta semana) leva menos, como nas marcas.
 pub fn ouro_do_bau(tipo: Tipo, nivel: u32, ajudante: bool) -> u32 {
-    let base = match tipo {
-        Tipo::Porao => 150,
-        Tipo::Gruta => 400,
-        _ => 600,
+    // O Porão sobe menos por nível desde 29/09/2026: a chave ficou ~3x mais
+    // barata e o dono pediu "less gold aquire but same others drops". O ouro
+    // por hora fica onde estava (ver `porao::a_torneira_do_porao_fica_dentro_do_combinado`);
+    // cobre, marcas, material e peça não mudam.
+    let (base, por_nivel) = match tipo {
+        Tipo::Porao => (160, 12),
+        Tipo::Gruta => (400, 25),
+        _ => (600, 25),
     };
-    let bruto = base + nivel * 25;
+    let bruto = base + nivel * por_nivel;
     if ajudante {
         bruto * 6 / 10
     } else {

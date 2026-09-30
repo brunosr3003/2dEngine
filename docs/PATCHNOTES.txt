@@ -1,3 +1,15 @@
+29/09/2026 — Desafios no Porão, chaves mais baratas e auto coleta que não empaca
+
+DESAFIOS. Cada Porão agora mostra na porta dois desafios da hora — terminar em menos da metade do tempo, nunca cair abaixo de 50% de vida, não beber poção, ninguém cair, não usar dash. Cada desafio cumprido aumenta o baú em 20% (ouro, cobre, marcas e material). Falhar um desafio não encerra a corrida: só perde o bônus dele. Os desafios mudam a cada hora.
+
+CHAVES ~3x MAIS BARATAS. A chave do Cofre do Trovão pedia 1187 madeiras e 543 aços — agora pede 402 e 184. A do Porão do Naufrágio caiu de 216 + 115 para 78 + 42. Em troca, o ouro do baú do Porão diminuiu, pra o ouro por hora continuar o mesmo; cobre, marcas, material e equipamento não mudaram.
+
+AUTO COLETA. Quando o personagem travava a caminho de um recurso, a auto coleta pedia "outro" e recebia o mesmo, e ficava presa ali pra sempre. Agora o recurso onde travou é pulado por um tempo, e a ida tem prazo mesmo se o corpo continuar se mexendo.
+
+NPCs. O ícone em cima da cabeça ficou só em quem tem serviço: Alquimista (loja), Ferreiro (forja), Banqueiro, Capitão do Porto e Mestre de Missões. Quem só dá missão continua com o "!" de missão.
+
+Atualização obrigatória: o protocolo subiu para 161.
+
 29/09/2026 — Madeira sobe de tier na Oficina
 
 Na aba MATERIALS da Oficina agora dá pra subir o tier da madeira, do mesmo jeito que os outros materiais: 10 Madeiras de um tier, com cobre, darksteel e Pó Cintilante, viram 1 Madeira do tier de cima — sempre dá certo. É o caminho de quem tem sobra de madeira baixa e quer a de cima sem viajar até a ilha dela.

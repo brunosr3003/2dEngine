@@ -15,6 +15,7 @@ pub mod combinar;
 pub mod components;
 pub mod constants;
 pub mod construcao;
+pub mod desafio;
 pub mod dungeon;
 pub mod porao;
 pub mod ladder;

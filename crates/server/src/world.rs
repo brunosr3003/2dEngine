@@ -17,6 +17,8 @@ use std::collections::HashMap;
 /// de MMO entre 2 e 5 Hz. O `+ id` no modulo espalha as decisoes entre os
 /// ticks pra nao concentrar tudo no mesmo quadro.
 const AI_DECISAO_TICKS: u32 = 6;
+/// How many "skip these nodes" the auto-gather request may carry.
+const EVITAR_MAX: usize = 16;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
@@ -1982,6 +1984,11 @@ pub struct Session {
     pub allocated_points: [u32; shared::STAT_COUNT],
     /// Marca que precisa enviar StatPointsUpdate no proximo tick.
     pub stat_points_dirty: bool,
+    /// Poções bebidas e dashes feitos desde que a sessão entrou. Só servem pra
+    /// medir os DESAFIOS do Porão (`shared::desafio`): a instância guarda o
+    /// valor na entrada e compara no baú. Não se salvam.
+    pub pocoes_bebidas: u32,
+    pub dashes_feitos: u32,
     /// Subiu de nivel e a PLACA dos outros ainda nao sabe.
     ///
     /// A placa em cima da cabeca le' `EntityMeta::nivel`, e a meta sai UMA VEZ,
@@ -7392,6 +7399,8 @@ impl GameWorld {
                 allocated_points: [0; shared::STAT_COUNT],
                 stat_points_dirty: false,
                 nivel_mudou: false,
+                pocoes_bebidas: 0,
+                dashes_feitos: 0,
                 last_level: 1,
                 mp_current: 0.0,
                 mp_last_sent: 0,
@@ -7930,8 +7939,9 @@ impl GameWorld {
                 energia,
                 raio,
                 centro,
+                evitar,
             } => {
-                self.handle_no_de_coleta(id, tipos, energia, raio, Vec2::new(centro[0], centro[1]));
+                self.handle_no_de_coleta(id, tipos, energia, raio, Vec2::new(centro[0], centro[1]), &evitar);
             }
             ClientMessage::ColetarNo { coluna } => {
                 self.handle_coletar_no(id, coluna);
@@ -9966,6 +9976,7 @@ impl GameWorld {
                 };
                 session.dash_until = self.sim_time_s + shared::DASH_DURATION;
                 session.dash_dir = dash_dir;
+                session.dashes_feitos = session.dashes_feitos.saturating_add(1);
                 // SPD reduz dash cooldown via dash_cd_mult (independente do
                 // speed_mult de movimento). Final cd = DASH_COOLDOWN / mult.
                 // Cooldown comeca a contar a partir do FIM do dash — isso e
@@ -16219,7 +16230,7 @@ impl GameWorld {
     /// Quem confere o alcance e' a auto coleta, ao chegar.
     fn spot_de_coleta_longe(&self, eu: Vec2, aceita: &dyn Fn(u8) -> bool) -> Option<(Vec2, usize)> {
         use shared::terreno::TipoDeEstorvo;
-        if let Some((_, onde, _, _)) = self.no_de_coleta_em(eu, eu, 200.0, aceita) {
+        if let Some((_, onde, _, _)) = self.no_de_coleta_em(eu, eu, 200.0, &[], aceita) {
             return Some((onde, 1));
         }
         let ilha = self.ilha.as_ref()?;
@@ -16299,7 +16310,7 @@ impl GameWorld {
         } else {
             eu
         };
-        let no = self.no_de_coleta_em(eu, busca, 60.0, &|t| t == tipo);
+        let no = self.no_de_coleta_em(eu, busca, 60.0, &[], &|t| t == tipo);
         self.envia_no_de_coleta(sid, no);
     }
 
@@ -18867,6 +18878,9 @@ impl GameWorld {
                     // Grupo em recarga: recusa SEM gastar (a recarga e' sempre
                     // maior que a cura, entao nunca ha' duas curas do grupo).
                     let r = session.pocoes.beber(&cura, agora, cheio);
+                    if r.is_ok() {
+                        session.pocoes_bebidas = session.pocoes_bebidas.saturating_add(1);
+                    }
                     if let Ok(na_hora) = r {
                         match g {
                             Grupo::Vida => {}
@@ -19184,7 +19198,10 @@ impl GameWorld {
         energia: bool,
         raio: f32,
         centro: Vec2,
+        evitar: &[u32],
     ) {
+        // A client can't make the search heavier by sending a long list.
+        let evitar = &evitar[..evitar.len().min(EVITAR_MAX)];
         let Some(eu) = self.pos_do_jogador(sid) else {
             return;
         };
@@ -19199,7 +19216,7 @@ impl GameWorld {
         } else {
             eu
         };
-        let no = self.no_de_coleta_em(eu, busca, raio, &|t| {
+        let no = self.no_de_coleta_em(eu, busca, raio, evitar, &|t| {
             (t == 5 && energia) || (t < 5 && crate::coleta::aceita(&tipos, t))
         });
         self.envia_no_de_coleta(sid, no);
@@ -19220,12 +19237,13 @@ impl GameWorld {
         eu: Vec2,
         busca: Vec2,
         raio: f32,
+        evitar: &[u32],
         aceita: &dyn Fn(u8) -> bool,
     ) -> Option<(u32, Vec2, Vec2, u8)> {
         let ilha = self.ilha.as_ref()?;
         let mut achados = Vec::new();
         ilha.coletaveis_em(busca, raio, &mut achados);
-        achados.retain(|c| !self.esgotado(c.coluna) && aceita(c.tier));
+        achados.retain(|c| !self.esgotado(c.coluna) && aceita(c.tier) && !evitar.contains(&c.coluna));
         achados.sort_by(|a, b| {
             a.centro
                 .distance_squared(eu)

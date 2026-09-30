@@ -174,6 +174,25 @@ async fn seed_equipamento(pool: &PgPool) -> anyhow::Result<()> {
     if novas > 0 {
         tracing::info!("[recipes] {novas} gear recipes seeded");
     }
+    // As chaves de Porão são 100% derivadas do código (`porao::receita_de`),
+    // então o código MANDA: o seed acima não alcança receita já semeada, e o
+    // custo da chave caiu ~3x em 29/09/2026 ("1187 woods + 543 steel ... its
+    // too much"). Sem isto a produção continuaria pedindo o custo velho.
+    let mut chaves = 0u64;
+    for r in shared::receitas::receitas_de_chave_de_porao() {
+        let inputs = serde_json::to_value(&r.inputs)?;
+        chaves += sqlx::query(
+            "UPDATE craft_recipes SET inputs = $2 WHERE id = $1 AND inputs IS DISTINCT FROM $2",
+        )
+        .bind(r.id as i32)
+        .bind(&inputs)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    }
+    if chaves > 0 {
+        tracing::info!("[recipes] {chaves} Porão key recipes brought to the code's cost");
+    }
     // Nivel minimo alinhado com as faixas da chave. So' mexe em quem ainda
     // esta' num valor ANTIGO conhecido: ajuste manual fica.
     //

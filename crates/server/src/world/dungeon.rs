@@ -39,6 +39,11 @@ pub struct MembroDg {
     pub ajudante: bool,
     pub saiu: bool,
     pub abriu_bau: bool,
+    /// Contadores da sessão NA ENTRADA; o baú compara com os de agora.
+    pub pocoes_na_entrada: u32,
+    pub dashes_na_entrada: u32,
+    /// A menor fração de vida vista na instância (amostrada no tick).
+    pub vida_min: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +71,9 @@ pub struct InstanciaDg {
     /// O wipe atual ja' recomecou o andar: so' conta de novo depois que alguem
     /// levantar.
     pub wipe_tratado: bool,
+    /// Os DESAFIOS desta corrida (`shared::desafio`), sorteados pela hora da
+    /// entrada — os mesmos que a tarja da porta mostrava. Vazio fora do Porão.
+    pub desafios: Vec<shared::desafio::Desafio>,
 }
 
 fn env_f32(nome: &str, padrao: f32) -> f32 {
@@ -889,6 +897,9 @@ impl GameWorld {
                 ajudante,
                 saiu: false,
                 abriu_bau: false,
+                pocoes_na_entrada: s.pocoes_bebidas,
+                dashes_na_entrada: s.dashes_feitos,
+                vida_min: 1.0,
             });
             let _ = self.ecs.insert_one(e, Instancia(id));
             let volta = Vec2::new((i as f32 * 1.3).cos(), (i as f32 * 1.3).sin()) * 3.0;
@@ -924,6 +935,11 @@ impl GameWorld {
             aviso_em: 0.0,
             wipes: 0,
             wipe_tratado: false,
+            desafios: if shared::desafio::tem_desafio(c) {
+                shared::desafio::da_hora(c, unix_agora()).to_vec()
+            } else {
+                Vec::new()
+            },
         });
         let idx = self.instancias.len() - 1;
         self.dg_povoar_andar(idx);
@@ -1308,6 +1324,26 @@ impl GameWorld {
             self.dg_fechar(idx);
             return;
         }
+        // DESAFIO "vida alta": a menor vida de cada um, amostrada a cada tick
+        // enquanto a corrida anda. Amostrar aqui, e não em cada ponto de dano,
+        // é o que pega TODA fonte de dano sem caçar os lugares que ferem.
+        if matches!(self.instancias[idx].estado, EstadoDg::Andando) {
+            let vidas: Vec<(usize, f32)> = self.instancias[idx]
+                .membros
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| !m.saiu)
+                .filter_map(|(i, m)| {
+                    let e = self.sessions.get(&m.sid)?.entity?;
+                    let h = self.ecs.get::<&Health>(e).ok()?;
+                    Some((i, h.current.max(0) as f32 / h.max.max(1) as f32))
+                })
+                .collect();
+            for (i, v) in vidas {
+                let m = &mut self.instancias[idx].membros[i];
+                m.vida_min = m.vida_min.min(v);
+            }
+        }
         let Some(c) = dg::conteudo(self.instancias[idx].conteudo) else {
             return;
         };
@@ -1661,6 +1697,8 @@ impl GameWorld {
         }
         m.abriu_bau = true;
         let ajudante = m.ajudante;
+        let (pocoes0, dashes0, vida_min, mortes) =
+            (m.pocoes_na_entrada, m.dashes_na_entrada, m.vida_min, m.mortes);
         let tempo_s = (em - inicio).max(0.0) as u32;
         let bonus = dg::bonus_tempo(tempo_s, (limite - inicio).max(1.0) as u32);
         let quando = unix_agora();
@@ -1672,7 +1710,32 @@ impl GameWorld {
             return;
         }
         let mut rng = || fastrand::f32();
-        let bau = dg::rolar_bau(c, estagio, ajudante, bonus, &mut rng);
+        let mut bau = dg::rolar_bau(c, estagio, ajudante, bonus, &mut rng);
+        // OS DESAFIOS: cada um cumprido soma `BONUS_POR_DESAFIO` ao que é
+        // CONTÁVEL no baú — ouro, cobre, marcas e material. Peça de
+        // equipamento não multiplica: dobrar a quantidade de uma espada não
+        // quer dizer nada, e a raridade dela é outra conversa.
+        let placar = shared::desafio::Placar {
+            segundos: tempo_s as f32,
+            vida_min,
+            pocoes: s.pocoes_bebidas.saturating_sub(pocoes0),
+            mortes,
+            dashes: s.dashes_feitos.saturating_sub(dashes0),
+        };
+        let desafios = self.instancias[idx].desafios.clone();
+        let feitos: Vec<(shared::desafio::Desafio, bool)> =
+            desafios.iter().map(|d| (*d, d.cumpriu(c, &placar))).collect();
+        let n_ok = feitos.iter().filter(|(_, ok)| *ok).count();
+        let mult = shared::desafio::multiplicador(n_ok);
+        if n_ok > 0 {
+            for p in bau.itens.iter_mut().filter(|p| p.peca.is_none()) {
+                p.qtd = ((p.qtd as f32) * mult).round() as u32;
+            }
+            bau.marcas = ((bau.marcas as f32) * mult).round() as u32;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         let mut itens = Vec::new();
         let mut no_correio = 0u8;
         let mut premios: Vec<(u16, u32, Option<shared::ItemInstance>)> = bau
@@ -1704,6 +1767,21 @@ impl GameWorld {
             bau.marcas,
             no_correio
         );
+        if !feitos.is_empty() {
+            let linhas: Vec<String> = feitos
+                .iter()
+                // Texto puro: a fonte do jogo não tem ✔/✘ (viraram caixinhas
+                // vazias na prévia da porta, com a estrela).
+                .map(|(d, ok)| format!("{} ({})", d.texto(c), if *ok { "done" } else { "missed" }))
+                .collect();
+            let bonus = if n_ok > 0 {
+                format!(" — chest +{:.0}%", (mult - 1.0) * 100.0)
+            } else {
+                String::new()
+            };
+            self.dg_texto(sid, n_ok > 0, format!("Challenges: {}{bonus}", linhas.join(" · ")));
+            crate::telemetria::conta("porao_desafios", format!("{conteudo}:{n_ok}"), 1);
+        }
         self.dg_avisar(
             sid,
             Aviso::Bau {

@@ -91,7 +91,7 @@ pub fn madeira_do_nivel(nivel: u32) -> u16 {
 ///
 /// Sobe com o nível porque foi o pedido — "increasing the amount of wood
 /// necessary to do it" — e porque o Porão de nível alto paga mais por baú
-/// (`dungeon::ouro_do_bau` é 150 + 25·nível): se o custo não subisse junto, a
+/// (`dungeon::ouro_do_bau` é 160 + 12·nível): se o custo não subisse junto, a
 /// chave mais barata do jogo abriria a porta mais lucrativa.
 pub fn madeira_qtd(nivel: u32) -> u32 {
     let t = segundos_alvo(nivel) * REPARTE_MADEIRA;
@@ -110,12 +110,12 @@ pub fn madeira_qtd(nivel: u32) -> u32 {
 /// Escrevendo o TEMPO, o custo continua verdadeiro quando o rendimento do nó
 /// mudar: a receita se ajusta sozinha.
 ///
-/// A escada (3 min no nível 6, 11 min no 50) é a que o dono escolheu em
-/// 29/09/2026, entre quatro formas de segurar a torneira: "keys cost ~4x,
-/// chest gold UNCHANGED". O Porão passa a ser um laço de quem coleta — junta
-/// um tanto, entra uma vez.
+/// A escada foi de 3 a 11 minutos (nível 6 a 50) e caiu pra ~1 a ~4 no mesmo
+/// dia, 29/09/2026 — o dono: "1187 woods + 543 steel and both epic, its too
+/// much". O ouro do baú do Porão desceu junto (`dungeon::ouro_do_bau`) pra o
+/// ouro por hora ficar onde estava: "less gold aquire but same others drops".
 pub fn segundos_alvo(nivel: u32) -> f32 {
-    180.0 + 10.9 * (nivel.max(6) - 6) as f32
+    65.0 + 3.6 * (nivel.max(6) - 6) as f32
 }
 
 /// Quanto do tempo da chave é madeira; o resto é aço.
@@ -404,7 +404,7 @@ mod testes {
     ///
     /// Sem cota diária, a receita é o único freio do que o Porão despeja na
     /// economia. Se o custo não subisse com o nível, a porta que paga
-    /// `150 + 25·nível` de ouro sairia pelo preço da que paga menos, e o jogo
+    /// `160 + 12·nível` de ouro sairia pelo preço da que paga menos, e o jogo
     /// inteiro farmaria só a última.
     #[test]
     fn a_chave_encarece_com_o_nivel_do_porao() {
@@ -572,14 +572,12 @@ mod testes {
                 "{}: a chave custa só {coleta:.0}s de coleta",
                 c.nome
             );
-            // 2. NEM PODE SER UMA PAREDE. O teto era 600s e subiu pra 720 em
-            //    29/09/2026, quando o dono escolheu a forma "keys cost ~4x,
-            //    chest gold UNCHANGED" entre as quatro que seguravam a
-            //    torneira. Nessa forma a coleta DOMINA de propósito — 11
-            //    minutos juntando pros 6 de dungeon no topo da escada —, e um
-            //    teto de 10 minutos proibiria a própria decisão.
+            // 2. NEM PODE SER UMA PAREDE. Chegou a 720s (11 minutos de
+            //    coleta no topo) e o dono achou demais no mesmo dia: "its too
+            //    much". Cinco minutos é o teto agora — a chave não pode custar
+            //    mais tempo que a própria corrida.
             assert!(
-                coleta <= 720.0,
+                coleta <= 300.0,
                 "{}: a chave custa {coleta:.0}s de coleta, virou parede",
                 c.nome
             );
@@ -622,6 +620,30 @@ mod testes {
             maior <= 6_000.0,
             "o Porão está despejando {maior:.0} ouro por hora"
         );
+    }
+
+    /// A TORNEIRA COM DESAFIOS: o pior caso também tem teto.
+    ///
+    /// Os desafios (`desafio`) pagam +20% cada, e o `Rapido` ainda encurta a
+    /// corrida pra metade do limite — então o pior caso é os dois cumpridos na
+    /// corrida mais curta. É um aumento de verdade sobre a torneira base, e
+    /// fica medido aqui em vez de escondido: o teto sem desafio (6.000/h,
+    /// acima) segura o jogador comum; este segura quem joga tudo perfeito.
+    #[test]
+    fn a_torneira_com_os_dois_desafios_tambem_tem_teto() {
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let ouro = crate::dungeon::ouro_do_bau(c.tipo, c.nivel_min, false) as f32
+                * crate::desafio::multiplicador(crate::desafio::POR_CORRIDA);
+            let ciclo = segundos_de_coleta(c.nivel_min)
+                + c.limite_s as f32 * crate::desafio::FRACAO_DO_RAPIDO;
+            let por_hora = ouro * 3600.0 / ciclo;
+            println!("{:<20} pior caso com desafios: {por_hora:.0} ouro/h", c.nome);
+            assert!(
+                por_hora <= 7_500.0,
+                "{}: {por_hora:.0} ouro/h com os dois desafios",
+                c.nome
+            );
+        }
     }
 
     /// A tabela que o dono lê pra decidir se o custo está certo.

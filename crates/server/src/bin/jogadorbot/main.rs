@@ -1782,6 +1782,7 @@ async fn decide(
                     energia,
                     raio: 80.0,
                     centro: [eu.pos.x, eu.pos.y],
+                    evitar: Vec::new(),
                 })?)
                 .await?;
                 // Registrado porque um pedido que nunca vira nó é um bot
@@ -2126,6 +2127,7 @@ async fn decide(
                             energia: quer == alvo::QUALQUER,
                             raio: 40.0,
                             centro: [eu.pos.x, eu.pos.y],
+                            evitar: Vec::new(),
                         })?)
                         .await?;
                         // PEDIR NÃO É RECEBER, e sem nó por perto o servidor

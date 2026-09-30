@@ -20,6 +20,21 @@ const APOS_FALHA_S: f64 = 6.0;
 const APOS_RECUSA_S: f64 = 1.5;
 /// The travel ended far from the point: send again after this.
 const RELIGA_S: f64 = 1.5;
+/// A node the character got stuck on is skipped for this long.
+const EVITA_S: f64 = 90.0;
+/// At most this many skipped nodes (the server caps it too).
+const EVITA_MAX: usize = 12;
+/// Walking to a node for longer than this (plus twice the straight-line walk)
+/// without arriving: give up on it.
+///
+/// Catches what `parado` can't: a body that keeps moving but never gets there
+/// (sliding back and forth along a wall, a route around water that loops).
+const INDO_MAX_S: f64 = 25.0;
+
+/// The deadline to reach a node `dist` away.
+fn prazo_de_ida(dist: f32) -> f64 {
+    INDO_MAX_S + 2.0 * (dist / shared::PLAYER_SPEED) as f64
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Acao {
@@ -30,6 +45,8 @@ pub enum Acao {
         energia: bool,
         raio: f32,
         centro: Vec2,
+        /// Nodes it got stuck on: the server skips them.
+        evitar: Vec<u32>,
     },
     /// Pedir o no' de UM tipo em volta de um ponto (o "Ir" do mapa).
     PedirNoDoTipo {
@@ -77,6 +94,12 @@ pub struct AutoColeta {
     /// kills the creature and goes back to gathering. Saved in the preferences;
     /// on by default.
     pub defender: bool,
+    /// (column, until when): nodes it got stuck on. The server always answers
+    /// the NEAREST node — without this, "look for another" after getting stuck
+    /// got the same one back and walked into the same corner forever.
+    evitar: Vec<(u32, f64)>,
+    /// Until when the walk to the current node may take.
+    indo_ate: f64,
 }
 
 impl Default for AutoColeta {
@@ -96,6 +119,8 @@ impl Default for AutoColeta {
             falhas: 0,
             bolsa_cheia: false,
             defender: true,
+            evitar: Vec::new(),
+            indo_ate: f64::MAX,
         }
     }
 }
@@ -153,6 +178,20 @@ impl AutoColeta {
         self.desde = f64::MIN;
         self.confirmou = false;
         self.falhas = 0;
+        self.evitar.clear();
+    }
+
+    /// Skips the current node for a while and looks for another.
+    fn desiste_do_alvo(&mut self, agora: f64) {
+        if let Some((coluna, ..)) = self.alvo.take() {
+            self.evitar.retain(|&(c, _)| c != coluna);
+            if self.evitar.len() >= EVITA_MAX {
+                self.evitar.remove(0);
+            }
+            self.evitar.push((coluna, agora + EVITA_S));
+        }
+        self.parado.zera(agora);
+        self.etapa = Etapa::Procurar;
     }
 
     /// Goes back to looking for a node from scratch, keeping where it was
@@ -187,6 +226,8 @@ impl AutoColeta {
                 self.alvo = Some(n);
                 self.falhas = 0;
                 self.etapa = Etapa::Indo;
+                self.indo_ate = f64::MAX;
+                self.parado.zera(agora);
                 Acao::Ir(n.1)
             }
             None => {
@@ -223,6 +264,12 @@ impl AutoColeta {
             };
             if !self.confirmou {
                 self.desde = agora - (APOS_FALHA_S - APOS_RECUSA_S);
+                // Refused at the node (out of reach from where it stands):
+                // asking again would get the same node back.
+                if let Some((coluna, ..)) = self.alvo {
+                    self.evitar.retain(|&(c, _)| c != coluna);
+                    self.evitar.push((coluna, agora + EVITA_S));
+                }
             }
             self.alvo = None;
             self.confirmou = false;
@@ -239,6 +286,7 @@ impl AutoColeta {
             Etapa::Procurar => {
                 self.etapa = Etapa::Esperando;
                 self.desde = agora;
+                self.evitar.retain(|&(_, ate)| ate > agora);
                 match self.filtro {
                     Some((tipo, perto)) => Acao::PedirNoDoTipo { tipo, perto },
                     None => Acao::PedirNo {
@@ -246,6 +294,7 @@ impl AutoColeta {
                         energia: self.energia_efetiva(),
                         raio: self.raio,
                         centro,
+                        evitar: self.evitar.iter().map(|&(c, _)| c).collect(),
                     },
                 }
             }
@@ -282,14 +331,23 @@ impl AutoColeta {
                 // reached gathering range.
                 //
                 // The same defect, word for word, as `auto_missao.rs`. See `parado.rs`.
+                if self.indo_ate == f64::MAX {
+                    // The first frame of the trip knows where the body is.
+                    self.indo_ate = agora + prazo_de_ida(eu.distance(onde));
+                }
                 let travado = self.parado.travado(agora);
+                if agora > self.indo_ate {
+                    // Moving but never arriving: this node is not working either.
+                    self.desiste_do_alvo(agora);
+                    return self.passo(eu, agora, viajando);
+                }
                 if (!viajando || travado) && agora - self.desde >= RELIGA_S {
                     self.desde = agora;
                     if travado {
-                        self.parado.zera(agora);
                         // Genuinely still: the node may be behind the trunk. Looks for ANOTHER
-                        // instead of insisting on the same one.
-                        self.etapa = Etapa::Procurar;
+                        // instead of insisting on the same one — and tells the server to
+                        // skip this one, or it answers the same nearest node again.
+                        self.desiste_do_alvo(agora);
                         return self.passo(eu, agora, viajando);
                     }
                     return Acao::Ir(onde);
@@ -473,7 +531,8 @@ mod tests {
                 tipos: [false, true, true, false, false],
                 energia: true,
                 raio: 40.0,
-                centro: Vec2::ZERO
+                centro: Vec2::ZERO,
+                evitar: vec![],
             }
         );
         assert_eq!(
@@ -652,5 +711,55 @@ mod tests {
             );
             t += 0.5;
         }
+    }
+
+    /// STUCK ON A NODE, THE NEXT ASK SKIPS IT.
+    ///
+    /// The owner: "when the resourc gets fiish, he try to find another but it
+    /// get stuck sometimes". Getting stuck made the auto ask for "another"
+    /// node, and the server — which always answers the nearest — gave the same
+    /// one back. Now the stuck node goes in `evitar`, and the trip has a
+    /// deadline even when the body keeps moving.
+    #[test]
+    fn travado_no_no_pede_outro_sem_ele() {
+        let mut a = AutoColeta::default();
+        a.ligar(Vec2::ZERO, 0.0);
+        let _ = a.passo(Vec2::ZERO, 0.0, false);
+        let _ = a.no_recebido(Some((42, vec2(30.0, 0.0), vec2(31.0, 0.0), 0)), 0.1);
+        let mut t = 0.2;
+        let pedido = loop {
+            assert!(t < 10.0, "parado e nunca pediu outro no'");
+            match a.passo(Vec2::ZERO, t, true) {
+                Acao::PedirNo { evitar, .. } => break evitar,
+                _ => t += 0.2,
+            }
+        };
+        assert_eq!(pedido, vec![42], "pediu outro sem dizer qual evitar");
+
+        // Moving but never arriving: gives up at the deadline, and skips it too.
+        let mut b = AutoColeta::default();
+        b.ligar(Vec2::ZERO, 0.0);
+        let _ = b.passo(Vec2::ZERO, 0.0, false);
+        let _ = b.no_recebido(Some((9, vec2(30.0, 0.0), vec2(31.0, 0.0), 0)), 0.1);
+        let mut t = 0.2;
+        let mut x = 0.0f32;
+        let pedido = loop {
+            assert!(t < prazo_de_ida(30.0) + 2.0, "andou pra sempre sem desistir");
+            // Back and forth along a wall: moves, never arrives.
+            x = if x > 0.0 { 0.0 } else { 3.0 };
+            match b.passo(vec2(x, 0.0), t, true) {
+                Acao::PedirNo { evitar, .. } => break evitar,
+                _ => t += 0.5,
+            }
+        };
+        assert_eq!(pedido, vec![9]);
+
+        // The skip expires: the node can come back later.
+        let _ = b.no_recebido(None, t);
+        let _ = b.passo(Vec2::ZERO, t + EVITA_S + 10.0, false);
+        assert!(matches!(
+            b.passo(Vec2::ZERO, t + EVITA_S + 20.0, false),
+            Acao::PedirNo { ref evitar, .. } if evitar.is_empty()
+        ));
     }
 }

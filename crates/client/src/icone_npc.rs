@@ -23,7 +23,16 @@ pub enum Icone {
 /// Beyond this the icon disappears (it only clutters).
 const ALCANCE: f32 = 40.0;
 
-/// The icon for the NPC's role; `None` for someone with no trade (a resident).
+/// The icon for the NPC's role; `None` for someone the player can't USE.
+///
+/// Only roles with a real service keep an icon: the Alchemist's shop, the
+/// Blacksmith's forge, the Banker, the Harbour Captain's travel and the Quest
+/// Master. The Tavern, Tailor, Cartographer, Trainer, weapon/armour sellers and
+/// the like only hand out quests — and the quest "!"/"?" already marks those.
+/// The owner, 29/09/2026: "take out the npc icons for npcs that have no
+/// interaction whit player only quests". This list mirrors the server's
+/// `World::funcao_do_npc`; a role that gains a service there gets its icon back
+/// here.
 pub fn do_papel(papel: u8) -> Option<Icone> {
     use shared::item_id as it;
     let p = |x: Papel| x as u8 == papel;
@@ -31,26 +40,12 @@ pub fn do_papel(papel: u8) -> Option<Icone> {
         Icone::Item(it::HEALTH_POTION)
     } else if p(Papel::Ferreiro) {
         Icone::Ui("forja")
-    } else if p(Papel::Armas) || p(Papel::Armaduras) {
-        Icone::Item(it::ARMADURA_MEDIA)
-    } else if p(Papel::Alfaiate) {
-        Icone::Item(it::MANTO_DO_GUERREIRO)
-    } else if p(Papel::Taberna) {
-        Icone::Ui("caneca")
-    } else if p(Papel::Treinador) {
-        Icone::Ui("habilidades")
-    } else if p(Papel::Identificador) {
-        Icone::Ui("encantar")
-    } else if p(Papel::Cartografo) {
-        Icone::Ui("mapa")
     } else if p(Papel::Deposito) {
         Icone::Ui("banco")
     } else if p(Papel::Estaleiro) {
         Icone::Mapa("porto")
     } else if p(Papel::Missoes) {
         Icone::Ui("missoes")
-    } else if p(Papel::Itens) || p(Papel::Mercador) {
-        Icone::Ui("lojas")
     } else {
         return None;
     })
@@ -120,23 +115,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn todo_npc_da_vila_tem_icone_e_morador_nao() {
+    fn so_npc_com_servico_tem_icone() {
         for p in [
             Papel::Alquimista,
             Papel::Ferreiro,
-            Papel::Armaduras,
-            Papel::Taberna,
-            Papel::Alfaiate,
-            Papel::Treinador,
-            Papel::Identificador,
-            Papel::Cartografo,
             Papel::Deposito,
             Papel::Estaleiro,
             Papel::Missoes,
         ] {
             assert!(do_papel(p as u8).is_some(), "{p:?} sem icone");
         }
-        assert_eq!(do_papel(Papel::Casa as u8), None);
-        assert_eq!(do_papel(Papel::Deposito as u8), Some(Icone::Ui("banco")));
+        for p in [
+            Papel::Casa,
+            Papel::Armas,
+            Papel::Armaduras,
+            Papel::Itens,
+            Papel::Identificador,
+            Papel::Treinador,
+            Papel::Cartografo,
+            Papel::Taberna,
+            Papel::Alfaiate,
+            Papel::Mercador,
+        ] {
+            assert_eq!(do_papel(p as u8), None, "{p:?} so' da' missao e tem icone");
+        }
     }
 }
