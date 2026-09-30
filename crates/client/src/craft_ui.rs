@@ -30,12 +30,31 @@ const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 const VERMELHO: Color = Color::new(0.90, 0.40, 0.34, 1.0);
 
 /// Abas, na ordem do painel.
-const ABAS: [u8; 4] = [
+const ABAS: [u8; 5] = [
     categoria::ARMA,
     categoria::SECUNDARIA,
     categoria::ARMADURA,
     categoria::ACESSORIO,
+    CAT_CHAVES,
 ];
+
+/// A aba das CHAVES DE PORÃO. Não é uma categoria do banco: as receitas das
+/// chaves foram semeadas como `MATERIAL` (e o seed é ON CONFLICT DO NOTHING,
+/// então mudar a categoria no código não chegaria ao banco). A aba escolhe as
+/// receitas pelo que elas PRODUZEM — `porao::porao_da_chave`.
+///
+/// Existe porque as chaves ficaram três versões sem aparecer em lugar nenhum:
+/// o Craft só listava as quatro categorias de equipamento, e o dono
+/// perguntou "onde tá os crafts das chaves de dg".
+const CAT_CHAVES: u8 = 250;
+
+fn rotulo_da_aba(c: u8) -> &'static str {
+    if c == CAT_CHAVES {
+        "Dungeon keys"
+    } else {
+        nome_da_categoria(c)
+    }
+}
 
 /// As abas de oficina, depois das categorias.
 const ABA_MATERIAIS: usize = ABAS.len();
@@ -301,8 +320,14 @@ impl Craft {
     /// As receitas da aba atual, em ordem de nivel e nome.
     pub fn da_aba(&self) -> Vec<&CraftRecipeNet> {
         let cat = ABAS[self.aba.min(ABAS.len() - 1)];
-        let mut v: Vec<&CraftRecipeNet> =
-            self.receitas.iter().filter(|r| r.category == cat).collect();
+        let mut v: Vec<&CraftRecipeNet> = if cat == CAT_CHAVES {
+            self.receitas
+                .iter()
+                .filter(|r| shared::porao::porao_da_chave(r.output_item_id).is_some())
+                .collect()
+        } else {
+            self.receitas.iter().filter(|r| r.category == cat).collect()
+        };
         v.sort_by_key(|r| (r.nivel_min, r.tier, r.id));
         v
     }
@@ -345,6 +370,7 @@ impl Craft {
             ABA_MATERIAIS => "10 materiais + cobre, darksteel e pó criam 1 da cor seguinte",
             ABA_APRIMORAR => "duas peças iguais sobem o tier; duas Tier IV +8 sobem a cor",
             ABA_COMBINAR => "chaves, pets e montarias: 5 para tentar a cor seguinte",
+            i if ABAS.get(i) == Some(&CAT_CHAVES) => "madeira + aço: a chave abre a porta do Porão na ilha dele",
             _ => "chave + materiais da cor + darksteel + cobre",
         };
         estilo::texto(p.x + u(90.0), p.y + u(31.0), dica, 13, estilo::SUAVE);
@@ -372,7 +398,7 @@ impl Craft {
             Vec::new()
         } else {
             ABAS.iter()
-                .map(|&c| nome_da_categoria(c))
+                .map(|&c| rotulo_da_aba(c))
                 .chain(["Materials", "Upgrade", "Combine"])
                 .collect()
         };
@@ -652,6 +678,7 @@ pub async fn previa() {
         mat(item_id::STEEL, 45),
         mat(item_id::DARKSTEEL, 1_800),
         mat(item_id::GLITTERING_POWDER, 3),
+        mat(item_id::WOOD_T1, 120),
     ];
     let mut nomes = HashMap::new();
     for (id, n) in [
@@ -665,13 +692,25 @@ pub async fn previa() {
         (item_id::na_cor(item_id::STEEL, 2), "Green Steel"),
         (item_id::DARKSTEEL, "Darksteel"),
         (item_id::GLITTERING_POWDER, "Shimmering Dust"),
+        (item_id::WOOD_T1, "Wood T1"),
+        (item_id::WOOD_T2, "Wood T2"),
+        (item_id::WOOD_T3, "Wood T3"),
+        (item_id::na_cor(item_id::STEEL, 3), "Blue Steel"),
+        (item_id::na_cor(item_id::STEEL, 4), "Purple Steel"),
     ] {
         nomes.insert(id, n.to_string());
     }
+    for r in shared::receitas::receitas_de_chave_de_porao() {
+        nomes.insert(r.output_item_id, r.name.clone());
+    }
     let mut c = Craft::default();
     c.abrir();
-    for (aba, nome) in [(ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
+    // As receitas vêm do servidor; na prévia, as mesmas que ele semeia.
+    c.receitas = shared::receitas::receitas_de_chave_de_porao();
+    let aba_chaves = ABAS.iter().position(|&x| x == CAT_CHAVES).unwrap();
+    for (aba, nome) in [(aba_chaves, "chaves"), (ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
         c.aba = aba;
+        c.sel = None;
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
