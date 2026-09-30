@@ -1,6 +1,6 @@
 30/09/2026 — Sem bolinhas na frente dos textos
 
-Tiramos as bolinhas coloridas que ficavam na frente dos textos: nos filtros do mapa, na lista "Ir para", na lista de ilhas do mapa-mundi, no ping, na lista do grupo da dungeon e nos painéis da Ilha Mágica. A informação continua — pela cor do próprio texto ou do botão.
+Tiramos as bolinhas coloridas que ficavam na frente dos textos: nos filtros do mapa, na lista "Ir para", na lista de ilhas do mapa-mundi, no ping, na lista do grupo da dungeon, nos painéis da Ilha Mágica, na faixa do AUTO COLETA / AUTO COMBATE (agora é a borda que pulsa) e nas opções de PvP da configuração do combate (a escolhida ganha a borda dourada). A informação continua — pela cor do próprio texto ou do botão.
 
 O mapa também ficou em inglês no jogo em inglês ("Go", "show ›", a dica do topo), e continua em português no jogo em português.
 

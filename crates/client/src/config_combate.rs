@@ -199,17 +199,17 @@ impl ConfigCombate {
             .enumerate()
         {
             let linha = Rect::new(r.x + 18.0, y0 + 10.0 + k as f32 * 30.0, r.w - 36.0, 26.0);
-            let bolinha = Vec2::new(linha.x + 10.0, linha.y + 13.0);
-            draw_circle_lines(bolinha.x, bolinha.y, 9.0, 2.0, estilo::OURO);
-            if *pvp == v {
-                draw_circle(bolinha.x, bolinha.y, 5.0, estilo::AUTO);
-            }
+            // A selectable row, not a radio dot in front of the words (owner,
+            // 30/09/2026: "take out the lil ball ... and everywhere else"):
+            // the chosen one gets the burnished rim.
+            let escolhido = *pvp == v;
+            estilo::cartao(linha, linha.contains(m), escolhido);
             estilo::texto(
-                linha.x + 32.0,
+                linha.x + 10.0,
                 linha.y + 18.0,
                 nome_do_pvp(v),
                 14,
-                estilo::TEXTO,
+                if escolhido { estilo::OURO } else { estilo::TEXTO },
             );
             if clicou && linha.contains(m) && *pvp != v {
                 *pvp = v;

@@ -751,18 +751,14 @@ pub fn desenha_faixa(z: &Zonas, texto: &str, cor: Color) {
     let w = (estilo::medir_forte(texto, 14) + 52.0).clamp(z.faixa.w * 0.5, z.faixa.w.max(240.0));
     let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y, w, z.faixa.h);
     let raio = r.h * 0.5;
-    // Pilula: vidro escuro, borda na cor do estado e um ponto pulsando.
+    // A plaque in the state's colour. No pulsing dot before the words (owner,
+    // 30/09/2026: "take out the lil ball in auto gather auto combat"): the
+    // rim breathes instead, so it still reads as "running".
+    let pulso = 0.45 + 0.35 * (get_time() as f32 * 3.0).sin();
     estilo::sombra(r, raio, 1.0);
     estilo::ret_gradiente(r, raio, estilo::FUNDO_ALTO, estilo::FUNDO);
-    estilo::borda_arredondada(r, raio, 1.0, estilo::alfa(cor, 0.45));
-    let pulso = 0.6 + 0.4 * (get_time() as f32 * 3.0).sin();
-    draw_circle(
-        r.x + raio + 2.0,
-        r.center().y,
-        4.0,
-        estilo::alfa(cor, pulso),
-    );
-    estilo::texto_centro_forte(r.center().x + 6.0, r.y + r.h * 0.5 + 5.0, texto, 14, cor);
+    estilo::borda_arredondada(r, raio, 1.5, estilo::alfa(cor, pulso));
+    estilo::texto_centro_forte(r.center().x, r.y + r.h * 0.5 + 5.0, texto, 14, cor);
 }
 
 /// Mundo escurecido atras de painel grande (Menu, Bolsa, Mapa, Craft…).
