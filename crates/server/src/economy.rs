@@ -666,7 +666,13 @@ pub fn fontes_de_itens(
             );
         }
     }
-    if let Some(tabela) = cfg.farm_loot_tables.get(&("Tree".to_string(), 1)) {
+    // Árvore dá a madeira do nível do lugar (`porao::tier_da_arvore`), então
+    // T2 a T4 também SAEM de árvore — antes este catálogo só olhava o tier 1,
+    // e o "de onde vem" da Madeira T2+ ficava mudo.
+    for tier in 1..=4u8 {
+        let Some(tabela) = cfg.farm_loot_tables.get(&("Tree".to_string(), tier)) else {
+            continue;
+        };
         for e in tabela.iter().filter(|e| e.chance > 0.0) {
             junta(
                 &mut por_item,

@@ -19447,7 +19447,15 @@ impl GameWorld {
         // O tier do MATERIAL nao e' o tier da pedra: a pedra roxa entrega
         // sobretudo cinza, e nao entrega roxo nenhum. Ver `RENDIMENTO_DA_PEDRA`.
         let tier_material = if c.tier == 0 {
-            1
+            // A madeira do NÍVEL do lugar (`porao::tier_da_arvore`): Bosque T1,
+            // Geleira T2, Ermo T3, Planalto T3→T4 pela trilha. Era 1 fixo.
+            shared::terreno::def_da_zona(&self.zona).map_or(1, |def| {
+                shared::porao::tier_da_arvore(
+                    def,
+                    self.ilha.as_ref().and_then(|i| i.planalto()),
+                    c.centro,
+                )
+            })
         } else {
             // `lcg` ANTES do `lcg_f32`: o `lcg_f32` so' le' os bits altos da
             // semente, e `tick * 0xDEADBEEF` nunca passa de ~2^43 — sem

@@ -1,3 +1,11 @@
+29/09/2026 — Madeira de tier alto nas árvores
+
+Até agora toda árvore do jogo dava Madeira T1, em qualquer ilha — a Madeira T2, T3 e T4 praticamente não existia, e as chaves dos Porões mais fundos não tinham de onde sair. Agora a árvore dá a madeira do NÍVEL do lugar onde cresce:
+
+Bosque — Madeira T1. Geleira — Madeira T2. Ermo — Madeira T3. Planalto da Tormenta — Madeira T3 no começo da trilha e Madeira T4 no fundo (Forja Partida e Olho da Tempestade).
+
+Madeira de tier alto também rende mais por golpe e dá mais cobre.
+
 29/09/2026 — As chaves de Porão agora se fabricam
 
 As receitas das chaves existiam, mas não apareciam em lugar nenhum da Oficina — só havia abas de equipamento. Agora o Craft tem a aba CHAVES DE DUNGEON, com as cinco chaves: escolha a do Porão, veja quanto de madeira e aço você tem, e fabrique.

@@ -297,6 +297,29 @@ pub fn segundos_de_coleta(nivel: u32) -> f32 {
     madeira + pedra
 }
 
+/// O TIER DA MADEIRA QUE UMA ÁRVORE DÁ, pelo nível do lugar onde ela cresce.
+///
+/// Até 29/09/2026 TODA árvore do jogo dava Madeira T1 (`coletar_plantado`
+/// fixava `tier_material = 1` pro tronco), em qualquer ilha. A tabela de loot
+/// já tinha as linhas de T2 a T4 pra árvore, e nada as sorteava — então as
+/// chaves de Porão que pedem Madeira T2/T3 (Frozen Hull, Sunken Caravan,
+/// Thunder Vault) não se fabricavam com madeira de árvore. O dono: "now you
+/// need to create the next tiers of trees".
+///
+/// A regra é a MESMA de `tier_da_madeira`, aplicada ao nível do LUGAR: a faixa
+/// da ilha (`DefIlha::nivel`), ou, no Planalto, a da região da trilha em que a
+/// árvore está — que é o único lugar do jogo com nível 51+, e por isso o único
+/// com Madeira T4. Bosque dá T1, Geleira T2, Ermo T3, e o Planalto T3 no começo
+/// da trilha e T4 no fundo dela.
+pub fn tier_da_arvore(
+    def: &crate::terreno::DefIlha,
+    planalto: Option<&crate::planalto::Plano>,
+    p: Vec2,
+) -> u8 {
+    let (a, b) = planalto.map_or(def.nivel, |pl| pl.faixa(p));
+    tier_da_madeira((a + b) / 2)
+}
+
 /// Quanto um nó de coleta daquele tier rende POR CICLO, em média.
 ///
 /// ⚠️ ESTE NÚMERO CORRIGE UM ERRO. A primeira versão do modelo supunha UM item
@@ -726,6 +749,42 @@ mod testes {
                 // E firme na volta toda, pra não nascer pendurada na beirada.
                 assert!(firme(&ger, p), "{}: porta na beirada", def.zona);
             }
+        }
+    }
+
+    /// CADA ILHA DÁ A MADEIRA DO SEU NÍVEL, e toda chave tem de onde tirar a
+    /// dela.
+    #[test]
+    fn cada_ilha_da_a_madeira_do_seu_nivel_e_toda_chave_acha_madeira() {
+        use crate::terreno::{def_da_zona, Gerador};
+        let tier = |zona: &str| {
+            let def = def_da_zona(zona).unwrap();
+            let ger = Gerador::da_ilha(def);
+            let cidade = ger.cidade().map(|c| c.centro()).unwrap_or_default();
+            tier_da_arvore(def, ger.planalto(), cidade)
+        };
+        assert_eq!(tier("ilha_inicial"), 1, "Bosque");
+        assert_eq!(tier("ilha_gelo"), 2, "Geleira");
+        assert_eq!(tier("ilha_deserto"), 3, "Ermo");
+        // No Planalto o tier sobe pela trilha: o fundo tem que dar T4.
+        let def = def_da_zona("ilha_planalto").unwrap();
+        let ger = Gerador::da_ilha(def);
+        let pl = ger.planalto().expect("o Planalto tem trilha");
+        let tiers: Vec<u8> = pl.regioes.iter().map(|r| tier_da_arvore(def, Some(pl), r.centro)).collect();
+        assert_eq!(tiers.first(), Some(&3), "começo da trilha: {tiers:?}");
+        assert_eq!(tiers.last(), Some(&4), "fundo da trilha: {tiers:?}");
+
+        // E toda chave pede uma madeira que alguma árvore do jogo dá.
+        let mut da: std::collections::HashSet<u16> = std::collections::HashSet::new();
+        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto"] {
+            da.insert(item_id::WOOD_T1 + (tier(z) - 1) as u16);
+        }
+        for t in &tiers {
+            da.insert(item_id::WOOD_T1 + (*t - 1) as u16);
+        }
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let m = receita_de(c).unwrap().madeira;
+            assert!(da.contains(&m), "{}: pede madeira {m} que nenhuma árvore dá", c.nome);
         }
     }
 }
