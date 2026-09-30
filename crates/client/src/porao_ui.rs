@@ -118,6 +118,9 @@ pub struct PoraoUi {
     /// Stepping into a portal: (content, when it started). The request goes
     /// out when the swirl has played (`ENTRADA_S`).
     entrando: Option<(u16, f64)>,
+    /// Where the banner was last drawn: a click on it is the banner's, not a
+    /// "walk here" on the ground behind it.
+    retangulo: Option<Rect>,
     /// As portas desta zona, achadas uma vez. A busca sonda até 192 pontos no
     /// relevo — barato ao trocar de ilha, caro a 60 quadros por segundo.
     cache: Option<(String, Vec<(u16, Vec2)>)>,
@@ -145,6 +148,14 @@ impl PoraoUi {
         &self.cache.as_ref().unwrap().1
     }
 
+    /// Does the banner take this click? Over the banner, yes — and during the
+    /// step into a portal, every click: the owner, 30/09/2026, clicked "Enter"
+    /// and the click also walked the character (`ui_pega_em` didn't know the
+    /// banner), which walked away from the portal and called the entry off.
+    pub fn pega_mouse(&self, m: Vec2) -> bool {
+        self.entrando.is_some() || self.retangulo.is_some_and(|r| r.contains(m))
+    }
+
     /// Stepping into a portal right now: (content, 0..1 progress).
     pub fn entrando(&self) -> Option<(u16, f32)> {
         let (c, desde) = self.entrando?;
@@ -159,6 +170,7 @@ impl PoraoUi {
     ) -> Option<ClientMessage> {
         let portas = self.portas(zona).to_vec();
         self.aviso = aviso_de(&portas, eu, tem_chave);
+        self.retangulo = None;
         // THE STEP IN: the swirl plays (drawn in the world, `main`), the
         // screen washes over in the portal's colour, then the request goes.
         // Walking away mid-swirl calls it off.
@@ -214,6 +226,7 @@ impl PoraoUi {
             h,
         );
         estilo::painel(r);
+        self.retangulo = Some(r);
         estilo::texto_centro(
             r.center().x,
             r.y + 26.0 * f,

@@ -1,3 +1,9 @@
+30/09/2026 — Clicar em "Enter the portal" não anda mais
+
+Tocar no botão do aviso do Porão também contava como um clique no chão atrás dele: o personagem andava, saía de perto do portal e a entrada era cancelada. Agora o aviso segura o clique, e durante a animação de entrada nenhum clique move o personagem.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
 30/09/2026 — Portais: os Porões agora ficam na natureza
 
 As portas de pedra dos Porões viraram PORTAIS: um anel de pedra com runas que acendem em sequência, um núcleo de luz girando e faíscas subindo, cada um na cor do seu Porão. De perto, tudo gira mais rápido e brilha mais — e entrar tem animação: a luz envolve o personagem antes da viagem.
