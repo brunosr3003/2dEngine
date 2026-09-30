@@ -43,10 +43,17 @@ use glam::Vec2;
 
 /// How far a cave's room edge wobbles in or out, in units.
 pub const RUIDO_DA_SALA: f32 = 1.5;
+/// The most a cave's rock bumps reach into a hall (`saliencia`), in units.
+pub const SALIENCIA_MAX: f32 = 1.0;
+/// How far the carved FLOOR runs past where a body may stand, in units. The
+/// client sets a body on the highest block within its radius; with the
+/// floor ending exactly at the collision edge, a wall block sat under the
+/// body's side and the character was drawn on top of the wall.
+const FOLGA_DO_CHAO: f32 = 0.6;
 
 /// How far from the islet's middle the plans stand: past the Gruta floors
 /// (sites near the middle, a 55 u floor around each) with room to spare.
-pub const ANEL: f32 = 200.0;
+pub const ANEL: f32 = 222.0;
 
 /// How the cellar looks. Its walls, floor and the shape of its rock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,10 +114,15 @@ pub struct Planta {
     pub corredores: &'static [Corredor],
 }
 
+/// Every plan below is drawn at 2/3 of its size and scaled up by this. The
+/// owner, 30/09/2026: "make it bigger and more mobs larger hordes" — a
+/// bigger horde needs a bigger room to fight it in.
+pub const ESCALA: f32 = 1.5;
+
 const fn sala(x: f32, y: f32, raio: f32, papel: Papel) -> Sala {
     Sala {
-        centro: Vec2::new(x, y),
-        raio,
+        centro: Vec2::new(x * ESCALA, y * ESCALA),
+        raio: raio * ESCALA,
         papel,
     }
 }
@@ -128,7 +140,7 @@ pub const PLANTAS: [Planta; 5] = [
     // the cellar isn't a single line.
     Planta {
         conteudo: 1,
-        ancora: Vec2::new(0.0, 200.0),
+        ancora: Vec2::new(0.0, 222.0),
         tema: Tema::Caverna,
         salas: &[
             sala(0.0, -40.0, 6.0, Entrada),  // 0
@@ -153,7 +165,7 @@ pub const PLANTAS: [Planta; 5] = [
     // stash room behind it.
     Planta {
         conteudo: 2,
-        ancora: Vec2::new(-190.2, 61.8),
+        ancora: Vec2::new(-211.1, 68.6),
         tema: Tema::Tijolo,
         salas: &[
             sala(0.0, -38.0, 6.0, Entrada),   // 0
@@ -177,7 +189,7 @@ pub const PLANTAS: [Planta; 5] = [
     // cabins off the middle deck, and the boss below the stern.
     Planta {
         conteudo: 3,
-        ancora: Vec2::new(-117.6, -161.8),
+        ancora: Vec2::new(-130.5, -179.6),
         tema: Tema::Gelo,
         salas: &[
             sala(-42.0, 0.0, 6.0, Entrada), // 0: the bow
@@ -201,7 +213,7 @@ pub const PLANTAS: [Planta; 5] = [
     // buried in the sand, with an L-shaped dead end off the second room.
     Planta {
         conteudo: 4,
-        ancora: Vec2::new(117.6, -161.8),
+        ancora: Vec2::new(130.5, -179.6),
         tema: Tema::Arenito,
         salas: &[
             sala(-30.0, -34.0, 6.0, Entrada), // 0
@@ -225,7 +237,7 @@ pub const PLANTAS: [Planta; 5] = [
     // then the long corridor north to the vault itself.
     Planta {
         conteudo: 5,
-        ancora: Vec2::new(190.2, 61.8),
+        ancora: Vec2::new(211.1, 68.6),
         tema: Tema::Castelo,
         salas: &[
             sala(0.0, -44.0, 6.0, Entrada),   // 0
@@ -335,7 +347,14 @@ impl Planta {
     }
 
     /// Can a body of radius `raio` stand at `p` (world) at this step?
+    ///
+    /// The cave's rock bumps (`saliencia`) count: a body stops at the rock's
+    /// face, not at the hall's ideal edge behind it. Before 30/09/2026 they
+    /// didn't, and a body could stand with the rock under its side — the
+    /// client, which sets the body on the highest block under it, drew the
+    /// character climbing the wall.
     pub fn livre(&self, p: Vec2, raio: f32, andar: u8) -> bool {
+        let raio = raio + self.saliencia(p);
         self.salas
             .iter()
             .enumerate()
@@ -365,7 +384,7 @@ impl Planta {
             // A hair inside: exactly on the edge, float error calls it outside.
             // The noisy radius is taken in the direction of `p`, and the room
             // is star-shaped, so the clamped point is inside.
-            let folga = (self.raio_em(i, p) - raio - 1e-3).max(0.0);
+            let folga = (self.raio_em(i, p) - raio - SALIENCIA_MAX - 1e-3).max(0.0);
             pesa(c + (p - c).clamp_length_max(folga));
         }
         for c in self.corredores {
@@ -374,7 +393,7 @@ impl Planta {
             }
             let (a, b) = self.pontas(c);
             let eixo = no_segmento(p, a, b);
-            let folga = (LARGURA * 0.5 - raio - 1e-3).max(0.0);
+            let folga = (LARGURA * 0.5 - raio - SALIENCIA_MAX - 1e-3).max(0.0);
             pesa(eixo + (p - eixo).clamp_length_max(folga));
         }
         melhor
@@ -545,10 +564,11 @@ impl Planta {
 
 // ───────────────────────────── the carved relief ─────────────────────────────
 
-/// Wall height above the floor, in blocks: 5 u. Far past any step or jump —
-/// the terrain alone holds a body in — and tall enough to read as a wall
-/// from the game's camera.
-pub const PAREDE_BLOCOS: i32 = 10;
+/// Wall height above the floor, in blocks: 2 u. The owner, 30/09/2026: "the
+/// wall is too big it should be 3 or 4 steps". The walls don't have to hold
+/// anyone in — the plan's collision (`livre`) does that — they have to read
+/// as walls without hiding the fight.
+pub const PAREDE_BLOCOS: i32 = 4;
 /// The farthest the rock reaches out from a hall, in units (a cave's hill at
 /// its thickest). Bounds `complexo_em`.
 const MASSA: f32 = 14.0;
@@ -599,7 +619,7 @@ impl Planta {
         if self.construido() {
             0.0
         } else {
-            1.2 * onda(p.x, p.y, 1.3)
+            SALIENCIA_MAX * onda(p.x, p.y, 1.3)
         }
     }
 
@@ -629,7 +649,7 @@ impl Planta {
     /// carved version stood the cellars on a 300 u plain of grass and flowers.
     pub fn bloco(&self, p: Vec2, chao: i32) -> Option<i32> {
         let fundo = self.profundidade(p);
-        if fundo >= self.saliencia(p) {
+        if fundo >= self.saliencia(p) - FOLGA_DO_CHAO {
             return Some(chao);
         }
         let fora = -fundo; // how far into the rock, from the hall
@@ -642,7 +662,7 @@ impl Planta {
             // The shore: from the foot of the wall down into the water, over
             // broken rock.
             let t = crate::terreno::suave((fora - espessura) / praia);
-            let topo = if self.construido() { chao - 1 } else { chao + 3 };
+            let topo = if self.construido() { chao - 1 } else { chao + 1 };
             let fundo_do_mar = -4;
             let degrau = ((onda(p.x * 1.7, p.y * 1.7, 1.0) - 0.5) * 3.0) as i32;
             return Some((topo as f32 + (fundo_do_mar - topo) as f32 * t).round() as i32 + degrau);
@@ -653,35 +673,35 @@ impl Planta {
         match self.tema {
             // Jagged rock: a rolling top with a finer, sharper one on it.
             Tema::Caverna => {
-                alto += (onda(p.x + 40.0, p.y - 17.0, 0.6) * 8.0 + fino * 5.0) as i32;
+                alto += (onda(p.x + 40.0, p.y - 17.0, 0.6) * 1.5 + fino * 1.5) as i32;
             }
             // Ice: mostly smooth, with spikes breaking through.
             Tema::Gelo => {
-                alto += (onda(p.x + 40.0, p.y - 17.0, 0.6) * 5.0) as i32;
-                if fino > 0.72 {
-                    alto += ((fino - 0.72) * 30.0) as i32;
+                alto += (onda(p.x + 40.0, p.y - 17.0, 0.6) * 1.5) as i32;
+                if fino > 0.74 {
+                    alto += ((fino - 0.74) * 12.0) as i32;
                 }
             }
             // Sandstone: strata, two blocks at a time.
             Tema::Arenito => {
-                alto += ((onda(p.x + 40.0, p.y - 17.0, 0.5) * 9.0) as i32 / 2) * 2;
+                alto += ((onda(p.x + 40.0, p.y - 17.0, 0.5) * 3.9) as i32 / 2) * 2;
             }
             // A castle that has seen sieges: collapsed stretches, and
             // battlements only where the wall still stands whole.
             Tema::Castelo => {
                 let ruina = onda(p.x * 0.6 - 21.0, p.y * 0.6 + 5.0, 0.8);
                 if ruina < 0.34 {
-                    alto -= 2 + (fino * 3.0) as i32;
+                    alto -= 1;
                 } else if fora > espessura - 0.9 && (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0 {
-                    alto += 3;
+                    alto += 1;
                 }
             }
             // Brick: uneven courses along the top, and a buttress every so
             // often standing a little taller.
             Tema::Tijolo => {
-                alto += (fino * 2.5) as i32;
+                alto += (fino * 1.5) as i32;
                 if (bx.div_euclid(3) + bz.div_euclid(3)).rem_euclid(5) == 0 && fora > espessura - 1.0 {
-                    alto += 2;
+                    alto += 1;
                 }
             }
         }
@@ -689,7 +709,7 @@ impl Planta {
         // with a knife.
         if !self.construido() {
             let encosta = espessura - fora;
-            let pe = chao + 3;
+            let pe = chao + 1;
             if encosta < 3.5 {
                 alto = pe + ((alto - pe) as f32 * (encosta / 3.5)).round() as i32;
             }
@@ -711,7 +731,7 @@ impl Planta {
         let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
         let n = onda(p.x, p.y, 2.0);
         let fundo = self.profundidade(p);
-        if fundo >= self.saliencia(p) {
+        if fundo >= self.saliencia(p) - FOLGA_DO_CHAO {
             return Some(match self.tema {
                 // Dark wet stone, lighter where the rock shows through.
                 Tema::Caverna => if n > 0.64 { M::Rocha } else { M::RochaEscura },
@@ -730,7 +750,9 @@ impl Planta {
             });
         }
         Some(match self.tema {
-            Tema::Caverna => if n > 0.62 { M::Rocha } else { M::RochaEscura },
+            // Moss on the rock's top: from above, the halls (grey stone) have
+            // to read apart from the walls around them.
+            Tema::Caverna => if n > 0.66 { M::Rocha } else { M::GramaEscura },
             Tema::Tijolo => if n > 0.7 { M::GramaEscura } else { M::CalcadaEscura },
             Tema::Gelo => if n > 0.7 { M::Gelo } else { M::Neve },
             Tema::Arenito => if n > 0.62 { M::Arenito } else { M::Areia },
@@ -899,19 +921,27 @@ mod testes {
                         j += 0.01;
                         continue;
                     };
-                    // A body standing here (walkable, clear of a cave's bumps
-                    // by its own radius and the bump's full reach) has floor.
-                    if p.livre(q, R + 0.95, u8::MAX) {
-                        assert_eq!(b, chao, "plan {}: no floor at walkable {q:?}", p.conteudo);
+                    // A body standing here has floor under ALL of it — every
+                    // point the client samples for its height.
+                    if p.livre(q, R, u8::MAX) {
+                        for (dx, dz) in [(R, 0.0), (-R, 0.0), (0.0, R), (0.0, -R), (0.0, 0.0)] {
+                            let pe = q + Vec2::new(dx, dz);
+                            assert_eq!(
+                                p.bloco(pe, chao),
+                                Some(chao),
+                                "plan {}: a body at {q:?} has wall under {pe:?}",
+                                p.conteudo
+                            );
+                        }
                     }
-                    // Just outside the shape (past a body, short of the
-                    // mass's sloping outer rim): wall, tall.
-                    let fundo = p.profundidade(q);
-                    if (-2.0..-1.0).contains(&fundo) {
-                        // Tall enough that no jump clears it — even where a
-                        // castle wall has half collapsed.
+                    // Just outside the rock's face (past the floor's margin,
+                    // short of the mass's sloping outer rim): wall.
+                    let fundo = p.profundidade(q) - p.saliencia(q);
+                    if (-2.0..-(FOLGA_DO_CHAO + 0.4)).contains(&fundo) {
+                        // At least three steps, even where a castle wall has
+                        // half collapsed.
                         assert!(
-                            b >= chao + crate::terreno::PULO_BLOCOS + 2,
+                            b >= chao + 3,
                             "plan {}: the wall at {q:?} is {} blocks",
                             p.conteudo,
                             b - chao
@@ -1049,7 +1079,9 @@ mod testes {
         // The edge in the direction it stopped (rooms wobble: `raio_em`).
         let borda = p.raio_em(1, q);
         assert!(q.distance(c) <= borda, "went through the wall: {q:?}");
-        assert!(q.distance(c) > borda - 1.0, "didn't reach the wall: {q:?}");
+        // It stops at the rock's FACE, which a cave's bumps push in by up to
+        // `SALIENCIA_MAX` from the room's edge.
+        assert!(q.distance(c) > borda - 1.0 - SALIENCIA_MAX, "didn't reach the wall: {q:?}");
         // A shut gate: walking west from room 1 into the gate to room 2 stops.
         let mut q = c;
         for _ in 0..400 {

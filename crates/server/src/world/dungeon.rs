@@ -1140,17 +1140,22 @@ impl GameWorld {
             let bioma = shared::terreno::def_da_zona(c.zona)
                 .map(|def| def.bioma)
                 .unwrap_or_else(|| self.bioma_da_zona());
-            for i in 0..dg::inimigos_do_andar(c, andar) {
-                let ang = i as f32 * std::f32::consts::TAU / dg::inimigos_do_andar(c, andar) as f32;
-                let longe = if com_planta {
-                    // Inside the room, clear of its wall.
-                    if i == 0 {
-                        0.0
-                    } else {
-                        raio_da_sala * (0.45 + 0.2 * (i % 2) as f32)
-                    }
+            let n_mobs = dg::inimigos_do_andar(c, andar);
+            for i in 0..n_mobs {
+                let (ang, longe) = if com_planta {
+                    // A HORDE spread over the room: the Warden in the middle,
+                    // the pack on a sunflower spiral out to 3/4 of the radius
+                    // (clear of the wall and its rock bumps).
+                    let t = (i as f32 / n_mobs.max(1) as f32).sqrt();
+                    (
+                        i as f32 * 2.399_963,
+                        if i == 0 { 0.0 } else { raio_da_sala * (0.25 + 0.5 * t) },
+                    )
                 } else {
-                    10.0 + (i % 3) as f32 * 4.0
+                    (
+                        i as f32 * std::f32::consts::TAU / n_mobs as f32,
+                        10.0 + (i % 3) as f32 * 4.0,
+                    )
                 };
                 let pos = centro + Vec2::new(ang.cos(), ang.sin()) * longe;
                 let kind = crate::economy::kind_para_nivel(

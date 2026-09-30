@@ -57,11 +57,11 @@ pub const ZONA: &str = "dungeon";
 /// grande". Estava dimensionada pra quatro sítios espalhados numa planície
 /// larga; quatro sítios a 70 u de distância cabem num platô bem menor.
 ///
-/// The ZONE grew on 30/09/2026, to 600 blocks (300 u) — the islet did not.
+/// The ZONE grew on 30/09/2026, to 700 blocks (350 u) — the islet did not.
 /// The five Porões are islands of their own now (`planta`), out in the sea on
-/// a ring at 200 u, and the zone's grid has to reach them. The Gruta islet in
+/// a ring at 222 u, and the zone's grid has to reach them. The Gruta islet in
 /// the middle is the same size it always was.
-pub const RAIO_BLOCOS: i32 = 600;
+pub const RAIO_BLOCOS: i32 = 700;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///

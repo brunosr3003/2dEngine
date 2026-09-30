@@ -1,3 +1,11 @@
+30/09/2026 — Porões maiores, hordas maiores, paredes mais baixas
+
+Os Porões ficaram 50% maiores, e cada sala agora tem uma HORDA: 8, 11 e 14 inimigos nas três salas (antes eram 3, 4 e 5), mais o chefe. Como tem muito mais para lutar e andar, o tempo limite do Porão subiu de 10 para 15 minutos (o desafio de terminar rápido acompanha: metade do tempo).
+
+As paredes baixaram para uns 4 degraus: continuam fechando o caminho, mas não escondem mais a luta. E o personagem não "sobe" mais na parede quando encosta nela — o chão da sala agora vai até a pedra, e a colisão segue as saliências da rocha.
+
+Atualização obrigatória: o protocolo subiu para 165.
+
 30/09/2026 — Cada Porão é uma ilha
 
 A ilha enorme de gramado e flores em volta dos Porões acabou. Agora cada Porão é a sua própria ilha no meio do mar: a caverna é um rochedo, o castelo e o porão de tijolos são fortalezas sobre a pedra, o Casco Congelado é um bloco de gelo com pontas e a Caravana Soterrada é um morro de arenito em camadas — com costa de pedra descendo até a água, sem flor nenhuma.

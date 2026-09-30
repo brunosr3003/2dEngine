@@ -66,7 +66,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         zona: "ilha_inicial",
         nivel_min: 6,
         grupo_max: 1,
-        limite_s: 600,
+        limite_s: 900,
         andares: 3,
         chefe: 11,
         disponivel: true,
@@ -78,7 +78,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         zona: "ilha_inicial",
         nivel_min: 14,
         grupo_max: 1,
-        limite_s: 600,
+        limite_s: 900,
         andares: 3,
         chefe: 12,
         disponivel: true,
@@ -90,7 +90,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         zona: "ilha_gelo",
         nivel_min: 24,
         grupo_max: 1,
-        limite_s: 600,
+        limite_s: 900,
         andares: 3,
         chefe: 13,
         disponivel: true,
@@ -109,7 +109,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         zona: "ilha_deserto",
         nivel_min: 34,
         grupo_max: 1,
-        limite_s: 600,
+        limite_s: 900,
         andares: 3,
         // O Arqueiro do Ermo era o único chefe do catálogo sem conteúdo
         // nenhum, e é do deserto.
@@ -123,7 +123,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         zona: "ilha_planalto",
         nivel_min: 50,
         grupo_max: 1,
-        limite_s: 600,
+        limite_s: 900,
         andares: 3,
         chefe: 18,
         disponivel: true,
@@ -376,9 +376,10 @@ pub fn escala_do_chefe(c: &Conteudo, membros: usize) -> (f32, f32) {
 /// Quantos inimigos o andar `andar` (0-based) tem.
 pub fn inimigos_do_andar(c: &Conteudo, andar: u8) -> u8 {
     match c.tipo {
-        // Three rooms since the floor plans (`planta`): 3 + 4 + 5 = 12, the same
-        // twelve the two old floors had (5 + 7).
-        Tipo::Porao => 3 + andar,
+        // HORDES. Three rooms since the floor plans (`planta`), and the owner
+        // asked for "more mobs larger hordes" on 30/09/2026: 8 + 11 + 14 = 33
+        // (it was 3 + 4 + 5). The rooms grew 1.5x to hold them.
+        Tipo::Porao => 8 + andar * 3,
         _ => 7 + andar * 2,
     }
 }
