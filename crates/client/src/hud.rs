@@ -84,8 +84,12 @@ pub fn desenha_fps(z: &Zonas) {
     let x = z.economia.x + 2.0 * s;
     let y = z.economia.y - 8.0 * s;
     // Sombra primeiro: o número cai por cima de terreno claro e escuro.
-    estilo::texto(x + 1.0, y + 1.0, &texto, 13, estilo::alfa(estilo::FUNDO, 0.85));
-    estilo::texto(x, y, &texto, 13, fps::cor(f));
+    // Quiet unless it's a problem: a dim line normally, its warning colour
+    // only when the frame rate drops. A bright gold readout on the HUD read
+    // as a developer overlay.
+    let cor = if f < 25.0 { fps::cor(f) } else { estilo::alfa(estilo::SUAVE, 0.6) };
+    estilo::texto(x + 1.0, y + 1.0, &texto, 11, estilo::alfa(estilo::FUNDO, 0.7));
+    estilo::texto(x, y, &texto, 11, cor);
 }
 
 /// O que o servidor contou sobre este canal (`ServerMessage::InfoCanal`).
@@ -431,7 +435,7 @@ pub fn draw_topo(
     let mut tooltip = None;
     for (i, r) in z.icones.iter().enumerate() {
         let sobre = r.contains(m);
-        estilo::cartao(*r, sobre, false);
+        estilo::placa(*r, sobre);
         pictograma(
             pictos[i],
             r.center(),
@@ -450,7 +454,7 @@ pub fn draw_topo(
     }
     let r = z.menu;
     let sobre = r.contains(m);
-    estilo::cartao(r, sobre, false);
+    estilo::placa(r, sobre);
     let cor = if sobre { estilo::ACENTO } else { estilo::TEXTO };
     pictograma(4, vec2(r.center().x, r.y + r.h * 0.38), r.h * 0.26, cor);
     estilo::texto_centro_forte(r.center().x, r.y + r.h * 0.88, "MENU", 10, cor);
@@ -672,7 +676,15 @@ pub fn draw_rapidos(
     let mut tooltip = None;
     for i in 0..4 {
         let r = rects[i];
-        estilo::slot(r, None, r.contains(m), false);
+        // A plaque with the slot set into it: a frame on the world, a
+        // recess for the item.
+        estilo::placa(r, r.contains(m));
+        estilo::slot(
+            Rect::new(r.x + 3.0, r.y + 3.0, r.w - 6.0, r.h - 6.0),
+            None,
+            r.contains(m),
+            false,
+        );
         if itens[i] == 0 {
             if !crate::icones_ui::ui("mais", r.center(), r.w * 0.40, estilo::SUAVE) {
                 estilo::texto_centro(r.center().x, r.center().y + 8.0, "+", 22, estilo::SUAVE);
@@ -890,8 +902,11 @@ pub fn draw_ficha(
             None,
         );
         estilo::texto(bx, r.y + 102.0 * k, "STAMINA", fonte(10.0, k), estilo::SUAVE);
+        // After the word, whatever its width in this language and scale:
+        // a fixed 46 ran "STAMINA180/240" together.
+        let apos = estilo::medir("STAMINA", fonte(10.0, k)) + 5.0 * k;
         estilo::texto(
-            bx + 46.0 * k,
+            bx + apos,
             r.y + 102.0 * k,
             &format!("{vigor}/{vigor_max}"),
             fonte(11.0, k),

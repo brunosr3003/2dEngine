@@ -879,13 +879,16 @@ impl Missoes {
                 20.0 * s,
             );
             if !principal {
-                estilo::texto_centro(
-                    alfinete.center().x,
-                    alfinete.center().y + 5.0 * s,
-                    "*",
-                    if fixada { 16 } else { 14 },
-                    if fixada { estilo::OURO } else { estilo::SUAVE },
-                );
+                // A pin, not an asterisk: a small bronze diamond, lit when
+                // the quest is pinned.
+                let c = alfinete.center();
+                let r = if fixada { 5.0 } else { 4.0 } * s;
+                if fixada {
+                    draw_poly(c.x, c.y, 4, r, 0.0, estilo::OURO);
+                    draw_circle(c.x - 1.0 * s, c.y - 1.0 * s, 1.0 * s, Color::new(1.0, 0.95, 0.8, 0.9));
+                } else {
+                    draw_poly_lines(c.x, c.y, 4, r, 0.0, 1.2 * s, estilo::alfa(estilo::SUAVE, 0.8));
+                }
             }
             if linha.contains(mouse) {
                 draw_rectangle(

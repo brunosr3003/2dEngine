@@ -276,7 +276,7 @@ impl ConfigInterface {
         estilo::texto(
             r.x + 18.0 * f,
             agora.y + agora.h + 26.0 * f,
-            "Entrar sozinho sem tocar na tela por",
+            "Turn on by itself after idling for",
             12,
             estilo::SUAVE,
         );
@@ -347,7 +347,7 @@ impl ConfigInterface {
         estilo::texto(
             r.x + 18.0 * f,
             ys + 70.0 * f,
-            "Bonitas: luz de fim de tarde e sombras do cenário.",
+            "Pretty: late-afternoon light and scenery shadows.",
             11,
             estilo::SUAVE,
         );
@@ -391,7 +391,7 @@ impl ConfigInterface {
         estilo::texto(
             r.x + 18.0 * f,
             yi + 70.0 * f,
-            "Frase sem tradução aparece em português.",
+            "Untranslated lines show in Portuguese.",
             11,
             estilo::SUAVE,
         );
@@ -403,7 +403,7 @@ impl ConfigInterface {
         estilo::texto(
             r.x + 18.0 * f,
             r.y + r.h - 18.0 * f,
-            "Muda na hora e fica salvo no personagem.",
+            "Changes apply at once and are saved on your character.",
             12,
             estilo::SUAVE,
         );

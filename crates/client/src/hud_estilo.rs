@@ -1,7 +1,13 @@
-//! Sistema de design da interface: tokens, primitivas arredondadas e
-//! componentes. Todo desenho de UI passa por aqui pra o jogo inteiro ter uma
-//! cara so' — escura, translucida, com profundidade sutil e cantos macios, no
-//! molde de MMO mobile moderno.
+//! Sistema de design da interface: tokens, primitivas e componentes. Todo
+//! desenho de UI passa por aqui pra o jogo inteiro ter uma cara so'.
+//!
+//! THE LOOK IS FANTASY MMO, since 30/09/2026. It was dark translucent glass
+//! with soft pill corners and gold text on everything — the owner: "review
+//! hud to dont look this much AI made", then picked the direction: panels as
+//! MATERIALS of the world (dark carved wood, bronze trim with corner studs),
+//! recessed tiles for slots and buttons, a serif display face (Cinzel) for
+//! titles. The generic tells it removes: every box weighing the same, soft
+//! rounded glass, one accent colour doing every job.
 //!
 //! A macroquad nao tem retangulo arredondado. Aqui ele e' UMA malha (leque a
 //! partir do centro) por forma: sem sobreposicao de pecas, entao cor
@@ -17,6 +23,7 @@ use std::f32::consts::{PI, TAU};
 // thread-local depois que a janela/contexto OpenGL ja foi encerrado.
 static FONTE: std::sync::OnceLock<Font> = std::sync::OnceLock::new();
 static FONTE_FORTE: std::sync::OnceLock<Font> = std::sync::OnceLock::new();
+static FONTE_TITULO: std::sync::OnceLock<Font> = std::sync::OnceLock::new();
 
 fn carrega(bytes: &[u8]) -> Font {
     let mut f = load_ttf_font_from_bytes(bytes).expect("HUD font");
@@ -114,6 +121,22 @@ fn tam(tamanho: u16) -> u16 {
 /// entrada; aqui a segunda passada nao encontra verbete e nao faz nada.
 fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     let s = &shared::idioma::tr(s);
+    if usa_titulo(tamanho, cor) {
+        titulo_fonte(|f| {
+            draw_text_ex(
+                s,
+                x,
+                y,
+                TextParams {
+                    font: Some(f),
+                    font_size: tam(tamanho),
+                    color: cor,
+                    ..Default::default()
+                },
+            );
+        });
+        return;
+    }
     fonte(forte, |f| {
         draw_text_ex(
             s,
@@ -127,6 +150,35 @@ fn desenha_texto(forte: bool, x: f32, y: f32, s: &str, tamanho: u16, cor: Color)
             },
         );
     });
+}
+
+/// Cinzel (SIL OFL, assets/fonts/LICENSE-Cinzel.txt): the display face,
+/// Roman inscriptional capitals. Titles only — body text stays Noto, which
+/// reads at small sizes.
+fn titulo_fonte<T>(f: impl FnOnce(&Font) -> T) -> T {
+    f(FONTE_TITULO.get_or_init(|| carrega(include_bytes!("../../../assets/fonts/Cinzel.ttf"))))
+}
+
+/// A TITLE is big text in the gold/bronze accent: window names, section
+/// heads, the boss's name. Decided here, in one place, so every panel's
+/// heading takes the display face without touching 700 call sites.
+fn usa_titulo(tamanho: u16, cor: Color) -> bool {
+    let perto = |a: Color, b: Color| {
+        (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs() < 0.08
+    };
+    tamanho >= 18 && (perto(cor, OURO) || perto(cor, ACENTO))
+}
+
+/// The width text will actually take, in the face it will be drawn with.
+fn largura(s: &str, tamanho: u16, forte: bool, cor: Color) -> f32 {
+    if usa_titulo(tamanho, cor) {
+        let s = &shared::idioma::tr(s);
+        titulo_fonte(|f| measure_text(s, Some(f), tam(tamanho), 1.0).width)
+    } else if forte {
+        medir_forte(s, tamanho)
+    } else {
+        medir(s, tamanho)
+    }
 }
 
 pub fn medir(s: &str, tamanho: u16) -> f32 {
@@ -265,10 +317,10 @@ pub fn texto_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
     desenha_texto(true, x, y, s, tamanho, cor);
 }
 pub fn texto_centro(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
-    texto(x - medir(s, tamanho) * 0.5, y, s, tamanho, cor);
+    texto(x - largura(s, tamanho, false, cor) * 0.5, y, s, tamanho, cor);
 }
 pub fn texto_centro_forte(x: f32, y: f32, s: &str, tamanho: u16, cor: Color) {
-    texto_forte(x - medir_forte(s, tamanho) * 0.5, y, s, tamanho, cor);
+    texto_forte(x - largura(s, tamanho, true, cor) * 0.5, y, s, tamanho, cor);
 }
 
 /// Texto com sombra curta embaixo: le em cima do mundo (chao claro, neve).
@@ -300,31 +352,34 @@ pub fn texto_ajustado(s: &str, x: f32, y: f32, largura: f32, tamanho: u16, cor: 
 // ─────────────────────────────── tokens ──────────────────────────────
 
 /// Superficie de painel: azul-ardosia escuro, translucido.
-pub const FUNDO: Color = Color::new(0.047, 0.063, 0.078, 0.96);
-/// Topo do gradiente do painel e cartoes elevados.
-pub const FUNDO_ALTO: Color = Color::new(0.082, 0.102, 0.118, 0.98);
-/// Trilhos e areas rebaixadas (fundo de barra, slot vazio).
-pub const FUNDO_BAIXO: Color = Color::new(0.027, 0.039, 0.051, 0.96);
-/// Borda de 1 px quase invisivel: separa sem desenhar caixa.
-pub const BORDA: Color = Color::new(0.70, 0.76, 0.77, 0.14);
-pub const BORDA_FORTE: Color = Color::new(0.78, 0.81, 0.78, 0.32);
-/// O filete claro no topo que da' a sensacao de vidro.
-pub const BRILHO: Color = Color::new(1.0, 0.96, 0.86, 0.045);
-/// Dourado: raridade, chefe, destaque de valor.
-pub const OURO: Color = Color::new(0.87, 0.75, 0.52, 1.0);
-/// Acento principal (selecao, hover, links).
-pub const ACENTO: Color = Color::new(0.89, 0.79, 0.59, 1.0);
-pub const TEXTO: Color = Color::new(0.95, 0.94, 0.89, 1.0);
-pub const SUAVE: Color = Color::new(0.68, 0.74, 0.76, 1.0);
+pub const FUNDO: Color = Color::new(0.110, 0.078, 0.055, 0.97);
+/// Dark carved wood, lit from above.
+pub const FUNDO_ALTO: Color = Color::new(0.170, 0.120, 0.082, 0.98);
+/// The recess: slots, tracks, inset tiles.
+pub const FUNDO_BAIXO: Color = Color::new(0.066, 0.047, 0.034, 0.97);
+/// Bronze trim: faint for inner lines, strong for the frame itself.
+pub const BORDA: Color = Color::new(0.62, 0.45, 0.25, 0.34);
+pub const BORDA_FORTE: Color = Color::new(0.80, 0.60, 0.33, 0.88);
+/// Warm catch-light on a raised edge.
+pub const BRILHO: Color = Color::new(1.0, 0.86, 0.62, 0.07);
+/// The accent: burnished gold. Kept for what matters — titles, the chosen
+/// option, a value to read — and not for every label.
+pub const OURO: Color = Color::new(0.91, 0.75, 0.46, 1.0);
+pub const ACENTO: Color = Color::new(0.94, 0.79, 0.51, 1.0);
+/// Text on wood: warm parchment white, and a quieter tan for secondary lines.
+pub const TEXTO: Color = Color::new(0.95, 0.91, 0.82, 1.0);
+pub const SUAVE: Color = Color::new(0.75, 0.67, 0.55, 1.0);
 pub const AUTO: Color = Color::new(0.37, 0.94, 0.76, 1.0);
 pub const VERMELHO: Color = Color::new(0.95, 0.36, 0.36, 1.0);
 pub const VERDE: Color = Color::new(0.42, 0.88, 0.52, 1.0);
 pub const AZUL: Color = Color::new(0.38, 0.64, 1.0, 1.0);
 pub const SOMBRA: Color = Color::new(0.0, 0.0, 0.0, 0.34);
 
-pub const RAIO: f32 = 8.0;
-pub const RAIO_PEQUENO: f32 = 5.0;
-pub const RAIO_GRANDE: f32 = 10.0;
+/// Carved, not moulded: corners barely eased. Soft pill corners were one of
+/// the "generic app" tells.
+pub const RAIO: f32 = 3.0;
+pub const RAIO_PEQUENO: f32 = 2.0;
+pub const RAIO_GRANDE: f32 = 4.0;
 pub const ESPACO: f32 = 8.0;
 
 /// Escala tipografica.
@@ -599,13 +654,81 @@ pub fn estado_de(r: Rect, desabilitado: bool, ativo: bool) -> Estado {
     )
 }
 
-/// Painel padrao: sombra macia, vidro escuro em gradiente, filete de brilho e
-/// borda de 1 px quase invisivel.
+/// The standard panel: a board of dark carved wood in a bronze frame.
+///
+/// Wood grain (faint horizontal streaks, fixed per panel so they don't
+/// crawl), a strong bronze outer rim, a faint inner line three pixels in —
+/// the double frame of a fitted board — and bronze studs on the corners of
+/// the larger ones.
 pub fn painel(r: Rect) {
     sombra(r, RAIO, 1.0);
     ret_gradiente(r, RAIO, FUNDO_ALTO, FUNDO);
-    borda_arredondada(r, RAIO, 1.0, BORDA);
+    veios(r);
+    borda_arredondada(r, RAIO, 2.0, BORDA_FORTE);
+    if r.w > 40.0 && r.h > 30.0 {
+        let dentro = Rect::new(r.x + 4.0, r.y + 4.0, r.w - 8.0, r.h - 8.0);
+        borda_arredondada(dentro, RAIO_PEQUENO, 1.0, BORDA);
+    }
     brilho_topo(r, RAIO);
+    if r.w > 140.0 && r.h > 70.0 {
+        for (x, y) in [(r.x, r.y), (r.x + r.w, r.y), (r.x, r.y + r.h), (r.x + r.w, r.y + r.h)] {
+            tacha(vec2(x, y));
+        }
+    }
+}
+
+/// Wood grain: faint streaks across the board, darker and lighter by turns.
+/// Seeded by the panel's position so the grain stays put frame to frame.
+fn veios(r: Rect) {
+    if r.h < 14.0 || r.w < 24.0 {
+        return;
+    }
+    let mut semente = (r.x as i32).wrapping_mul(73_856_093) ^ (r.y as i32).wrapping_mul(19_349_663);
+    let mut y = r.y + 5.0;
+    let mut k = 0;
+    while y < r.y + r.h - 4.0 {
+        semente = semente.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        let desvio = ((semente >> 16) & 0xff) as f32 / 255.0;
+        // Faint, and uneven in spacing and length: grain, not scanlines.
+        let cor = if k % 3 == 0 {
+            Color::new(1.0, 0.82, 0.58, 0.012 + 0.012 * desvio)
+        } else {
+            Color::new(0.0, 0.0, 0.0, 0.035 + 0.035 * desvio)
+        };
+        let recuo = 6.0 + desvio * r.w * 0.35;
+        let fim = r.x + r.w - 6.0 - ((semente >> 8) & 0xff) as f32 / 255.0 * r.w * 0.3;
+        if fim > r.x + recuo + 10.0 {
+            draw_line(r.x + recuo, y, fim, y, 1.0, cor);
+        }
+        y += 5.0 + desvio * 11.0;
+        k += 1;
+    }
+}
+
+/// A small RAISED plaque for a button that stands on the world, not inside a
+/// panel (the top bar, the quick slots): wood lit from above with a bronze
+/// rim. A recessed tile there read as a dark hole in the ground.
+pub fn placa(r: Rect, sobre: bool) {
+    let h = anima(chave(r, 6), if sobre { 1.0 } else { 0.0 });
+    sombra(r, RAIO_PEQUENO, 0.9);
+    ret_gradiente(
+        r,
+        RAIO_PEQUENO,
+        misturar(clarear(FUNDO_ALTO, 0.05), clarear(FUNDO_ALTO, 0.13), h),
+        FUNDO,
+    );
+    draw_line(r.x + 2.0, r.y + 1.5, r.x + r.w - 2.0, r.y + 1.5, 1.0, Color::new(1.0, 0.86, 0.62, 0.14));
+    draw_line(r.x + 2.0, r.y + r.h - 1.0, r.x + r.w - 2.0, r.y + r.h - 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.45));
+    borda_arredondada(r, RAIO_PEQUENO, 1.5, misturar(alfa(BORDA_FORTE, 0.7), BORDA_FORTE, h));
+}
+
+/// A bronze stud on a frame's corner: a small diamond with a lit face.
+pub fn tacha(c: Vec2) {
+    let r = 5.0;
+    draw_poly(c.x, c.y + 1.0, 4, r + 1.0, 0.0, Color::new(0.0, 0.0, 0.0, 0.45));
+    draw_poly(c.x, c.y, 4, r, 0.0, Color::new(0.52, 0.36, 0.18, 1.0));
+    draw_poly(c.x, c.y, 4, r - 1.5, 0.0, BORDA_FORTE);
+    draw_circle(c.x - 1.0, c.y - 1.0, 1.2, Color::new(1.0, 0.9, 0.7, 0.8));
 }
 
 /// Painel com filete colorido no topo (janelas principais, chefe, raridade).
@@ -616,22 +739,31 @@ pub fn painel_destaque(r: Rect, cor: Color) {
         1.0, alfa(cor, 0.38));
 }
 
-/// Cartao dentro de painel (item de lista, ladrilho de menu).
+/// A tile set INTO the board (list row, menu tile, option): recessed — dark
+/// at the top where the lip shades it, a catch-light along the bottom edge.
+/// The chosen one gets a burnished rim; the hovered one warms up.
 pub fn cartao(r: Rect, sobre: bool, ativo: bool) {
     let h = anima(chave(r, 1), if sobre || ativo { 1.0 } else { 0.0 });
     ret_gradiente(
         r,
-        RAIO_PEQUENO + 2.0,
-        misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.10), h),
-        FUNDO,
+        RAIO_PEQUENO,
+        FUNDO_BAIXO,
+        misturar(FUNDO, clarear(FUNDO_ALTO, 0.06), h),
     );
-    let borda = if ativo {
-        alfa(ACENTO, 0.75)
+    // The lip's shadow on top, the catch-light at the bottom: inset.
+    draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.45));
+    draw_line(r.x + 2.0, r.y + r.h - 1.0, r.x + r.w - 2.0, r.y + r.h - 1.0, 1.0, BRILHO);
+    if ativo {
+        borda_arredondada(r, RAIO_PEQUENO, 2.0, alfa(ACENTO, 0.9));
+        borda_arredondada(
+            Rect::new(r.x + 3.0, r.y + 3.0, r.w - 6.0, r.h - 6.0),
+            RAIO_PEQUENO,
+            1.0,
+            alfa(ACENTO, 0.22),
+        );
     } else {
-        misturar(BORDA, BORDA_FORTE, h)
-    };
-    borda_arredondada(r, RAIO_PEQUENO + 2.0, 1.0, borda);
-    brilho_topo(r, RAIO_PEQUENO + 2.0);
+        borda_arredondada(r, RAIO_PEQUENO, 1.0, misturar(BORDA, BORDA_FORTE, h));
+    }
 }
 
 // Measure the translated label against its existing rectangle. This changes
@@ -653,14 +785,15 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
         },
     );
     let desab = e == Estado::Desabilitado;
+    // A RAISED plate: the primary one is bronze, the rest wood.
     let base = if primario {
         misturar(
-            Color::new(0.24, 0.22, 0.16, 0.98),
-            Color::new(0.34, 0.30, 0.21, 1.0),
+            Color::new(0.40, 0.27, 0.13, 0.98),
+            Color::new(0.52, 0.36, 0.17, 1.0),
             h,
         )
     } else {
-        misturar(FUNDO_ALTO, clarear(FUNDO_ALTO, 0.12), h)
+        misturar(clarear(FUNDO_ALTO, 0.03), clarear(FUNDO_ALTO, 0.12), h)
     };
     let base = if desab { alfa(FUNDO_ALTO, 0.6) } else { base };
     let desce = if e == Estado::Pressionado { 1.0 } else { 0.0 };
@@ -668,18 +801,20 @@ pub fn botao(r: Rect, rotulo: &str, e: Estado, primario: bool) {
     if !desab {
         sombra(rr, RAIO_PEQUENO + 2.0, 0.6);
     }
-    ret_gradiente(rr, RAIO_PEQUENO + 2.0, clarear(base, 0.025), base);
+    ret_gradiente(rr, RAIO_PEQUENO, clarear(base, 0.05), clarear(base, -0.04));
+    // Raised: light along the top edge, shade along the bottom.
+    draw_line(rr.x + 2.0, rr.y + 1.5, rr.x + rr.w - 2.0, rr.y + 1.5, 1.0, Color::new(1.0, 0.86, 0.62, 0.16));
+    draw_line(rr.x + 2.0, rr.y + rr.h - 1.0, rr.x + rr.w - 2.0, rr.y + rr.h - 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.4));
     borda_arredondada(
         rr,
-        RAIO_PEQUENO + 2.0,
-        1.0,
+        RAIO_PEQUENO,
+        if primario { 2.0 } else { 1.0 },
         if primario {
-            alfa(ACENTO, 0.35 + 0.35 * h)
+            alfa(BORDA_FORTE, 0.75 + 0.25 * h)
         } else {
-            misturar(BORDA, BORDA_FORTE, h)
+            misturar(BORDA, BORDA_FORTE, 0.4 + 0.6 * h)
         },
     );
-    brilho_topo(rr, RAIO_PEQUENO + 2.0);
     let t = fonte_do_controle(r, rotulo, tam::CORPO);
     let cor = if desab { alfa(SUAVE, 0.6) } else { TEXTO };
     texto_centro_forte(
@@ -807,12 +942,8 @@ pub fn barra(r: Rect, f: f32, fantasma: f32, cor: Color, rotulo: Option<&str>) {
 /// um brilho de baixo pra cima, e realce no hover/selecao.
 pub fn slot(r: Rect, raridade: Option<Color>, sobre: bool, selecionado: bool) {
     let h = anima(chave(r, 5), if sobre { 1.0 } else { 0.0 });
-    ret_gradiente(
-        r,
-        RAIO_PEQUENO + 1.0,
-        alfa(clarear(FUNDO_BAIXO, 0.05), 0.95),
-        FUNDO_BAIXO,
-    );
+    ret_gradiente(r, RAIO_PEQUENO, FUNDO_BAIXO, alfa(clarear(FUNDO_BAIXO, 0.05), 0.95));
+    draw_line(r.x + 2.0, r.y + 1.0, r.x + r.w - 2.0, r.y + 1.0, 1.5, Color::new(0.0, 0.0, 0.0, 0.5));
     if let Some(c) = raridade {
         ret_gradiente(
             Rect::new(r.x, r.y + r.h * 0.35, r.w, r.h * 0.65),

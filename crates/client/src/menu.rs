@@ -414,7 +414,19 @@ impl Menu {
                         estilo::TEXTO
                     };
                     icone_do_item(l.0, vec2(r.center().x, r.y + r.h * 0.42), r.w * 0.22, cor);
-                    estilo::texto_ajustado(l.1, r.x + 4.0, r.y + r.h - 7.0, r.w - 8.0, 12, cor);
+                    // The whole word, smaller if it must: "Appear…", "Dunge…",
+                    // "Gatheri…" on a third of the tiles read as unfinished.
+                    // Shrinks to 9 before it cuts.
+                    let rotulo = shared::idioma::tr(l.1);
+                    let mut t = 12u16;
+                    while t > 9 && estilo::medir(&rotulo, t) > r.w - 8.0 {
+                        t -= 1;
+                    }
+                    if estilo::medir(&rotulo, t) <= r.w - 8.0 {
+                        estilo::texto_centro(r.center().x, r.y + r.h - 7.0, &rotulo, t, cor);
+                    } else {
+                        estilo::texto_ajustado(&rotulo, r.x + 4.0, r.y + r.h - 7.0, r.w - 8.0, t, cor);
+                    }
                     if travado {
                         cadeado(vec2(r.x + r.w - 11.0, r.y + 12.0), 6.0);
                         if sobre {
