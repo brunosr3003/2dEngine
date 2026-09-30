@@ -1724,7 +1724,7 @@ impl Mapa {
         }
         chips.push(("Village".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
         for (rotulo, ligado, cor, id) in &chips {
-            let w = estilo::medir(rotulo, 13) + u(24.0);
+            let w = estilo::medir(rotulo, 13) + u(18.0);
             if x + w > lat.x + lat.w - u(10.0) {
                 x = lat.x + u(12.0);
                 y += u(27.0);
@@ -1738,18 +1738,11 @@ impl Mapa {
                 1.0,
                 Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
             );
-            draw_circle(
-                c.x + u(9.0),
-                c.y + u(11.0),
-                u(3.5),
-                if *ligado {
-                    *cor
-                } else {
-                    Color::new(cor.r, cor.g, cor.b, 0.3)
-                },
-            );
+            // No dot before the word: the chip's own tint and rim already say
+            // which colour on the map it switches. The owner, 30/09/2026:
+            // "take out the lil balls in front of texts".
             estilo::texto(
-                c.x + u(16.0),
+                c.x + u(9.0),
                 c.y + u(16.0),
                 rotulo,
                 13,
@@ -1803,10 +1796,10 @@ impl Mapa {
             if !visivel(ly) {
                 return;
             }
-            draw_circle(area.x + u(10.0), ly + u(13.0), u(4.0), cor);
+            let _ = cor;
             estilo::texto_ajustado(
                 rotulo,
-                area.x + u(20.0),
+                area.x + u(6.0),
                 ly + u(12.0),
                 area.w - u(80.0),
                 13,
@@ -1814,7 +1807,7 @@ impl Mapa {
             );
             estilo::texto_ajustado(
                 &detalhe,
-                area.x + u(20.0),
+                area.x + u(6.0),
                 ly + u(24.0),
                 area.w - u(80.0),
                 11,
@@ -1822,7 +1815,7 @@ impl Mapa {
             );
             let b = Rect::new(area.x + area.w - u(64.0), ly + u(2.0), u(46.0), u(22.0));
             if let Some(a) = alvo {
-                let _ = crate::ui::botao(b, "Ir", true);
+                let _ = crate::ui::botao(b, "Go", true);
                 if clique.is_some_and(|c| b.contains(c) && area.contains(c)) {
                     *saida = Some(Entrada::Ir(a));
                 }
@@ -1856,14 +1849,14 @@ impl Mapa {
         let mut alterna_npcs = false;
         if visivel(ly) {
             let acao = if self.npcs_abertos {
-                "ocultar"
+                "hide"
             } else {
-                "ver ›"
+                "show ›"
             };
             estilo::texto(
                 area.x + u(6.0),
                 ly + u(18.0),
-                &format!("NPCs ({n_npcs}) · {acao}"),
+                &format!("NPCs ({n_npcs}) · {}", shared::idioma::tr(acao)),
                 13,
                 estilo::OURO,
             );
@@ -2772,10 +2765,11 @@ impl Mapa {
             }
             // O ponto verde e' o que se le' antes do texto: ele responde
             // "da' pra ir agora?" sem ninguem precisar ler a linha.
+            // The line under the name carries the "can go now" colour; the
+            // dot in front of it was the same news twice.
             let cor = if vivo { estilo::VERDE } else { estilo::SUAVE };
-            draw_circle(lat.x + u(20.0), y - u(4.0), u(4.0), cor);
-            estilo::texto(lat.x + u(32.0), y, &nome, 14, estilo::TEXTO);
-            estilo::texto(lat.x + u(32.0), y + u(16.0), &onde, 12, cor);
+            estilo::texto(lat.x + u(14.0), y, &nome, 14, estilo::TEXTO);
+            estilo::texto(lat.x + u(14.0), y + u(16.0), &onde, 12, cor);
             y += u(40.0);
         }
         None
@@ -2807,7 +2801,7 @@ impl Mapa {
         // cresce pra direita; com nome longo os dois se escreviam por cima. O
         // nome da ilha diz onde voce esta' e a dica repete um atalho — quando
         // so' um cabe, fica o nome.
-        let dica = "clique: viajar · zona/recurso: ir · Esc fecha";
+        let dica = "click: travel · zone/node: go · Esc closes";
         let x_dica = r.x + r.w - u(36.0) - estilo::medir(dica, 13);
         if x_dica > mundo.x + mundo.w + u(12.0) + estilo::medir(nome, 17) + u(10.0) {
             estilo::texto(x_dica, r.y - u(14.0), dica, 13, estilo::SUAVE);

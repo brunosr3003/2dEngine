@@ -185,16 +185,17 @@ pub fn draw_hud(
         12,
         estilo::SUAVE,
     );
-    draw_circle(r.x + r.w - 70.0, r.y + r.h * 0.5 - 4.0, 3.0, rede.cor_ms());
+    // The ping in its own colour (green/yellow/red), with no dot in front:
+    // the number coloured says the same thing.
     estilo::texto(
         r.x + r.w - 62.0,
         r.y + r.h * 0.5,
         &format!("{:.0} ms", rede.ms),
         12,
-        estilo::SUAVE,
+        rede.cor_ms(),
     );
     if sobre {
-        estilo::texto(r.x + r.w - 62.0, r.y + r.h * 0.84, "mapa", 11, estilo::OURO);
+        estilo::texto(r.x + r.w - 62.0, r.y + r.h * 0.84, "map", 11, estilo::OURO);
     }
 
     // AVISOS: texto solto que some sozinho, sem caixa. O painel de chat saiu

@@ -388,10 +388,10 @@ impl MagicaUi {
         let f = estilo::fator_texto();
         draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.0, 0.0, 0.0, 0.55));
         draw_rectangle(r.x, r.y, 3.0 * f, r.h, cor);
-        // O disco antes do texto: a cor sozinha num fundo escuro é fraca, e é
-        // ela que se lê de canto de olho no meio da briga.
-        draw_circle(r.x + 14.0 * f, r.y + r.h * 0.5, 4.0 * f, cor);
-        estilo::texto(r.x + 24.0 * f, r.y + r.h * 0.5 + 5.0 * f, texto, 13, cor);
+        // The coloured bar on the left edge carries the state; no dot before
+        // the word (owner, 30/09/2026: "take out the lil balls in front of
+        // texts").
+        estilo::texto(r.x + 12.0 * f, r.y + r.h * 0.5 + 5.0 * f, texto, 13, cor);
     }
 
     pub fn desenha_hud(&mut self, agora_unix: i64) -> Option<PedidoMagica> {
@@ -448,11 +448,8 @@ impl MagicaUi {
             ),
             None => ("Bridge", "no bonus".to_string(), SUAVE),
         };
-        // O ponto da cor, colado no nome: um rótulo colorido some no fundo
-        // escuro; um disco cheio não.
-        let cx = p.ilhota.x + 5.0 * f;
-        draw_circle(cx, p.ilhota.y + 11.0 * f, 4.0 * f, c);
-        let nx = cx + 9.0 * f;
+        // The name in its bonus colour, with no dot in front of it.
+        let nx = p.ilhota.x + 2.0 * f;
         estilo::texto_ajustado(
             nome,
             nx,
@@ -780,12 +777,11 @@ impl MagicaUi {
             let c = cor_do_bonus(i.bonus);
             let cx = x + (k % 2) as f32 * col;
             let cy = topo + (k / 2) as f32 * passo + 12.0 * f;
-            draw_circle(cx + 4.0 * f, cy - 4.0 * f, 3.5 * f, c);
             let v = format!("×{:.1}", i.bonus.multiplicador());
             let tv = estilo::medir(&v, 13);
             estilo::texto_ajustado(
                 i.bonus.nome(),
-                cx + 14.0 * f,
+                cx + 2.0 * f,
                 cy,
                 col - tv - 24.0 * f,
                 13,

@@ -1057,7 +1057,7 @@ impl DungeonUi {
             estilo::texto(
                 dir.x + 8.0 * f,
                 y + 14.0 * f,
-                &format!("• {}{coroa}", m.nome),
+                &format!("{}{coroa}", m.nome),
                 14,
                 estilo::TEXTO,
             );
@@ -1185,7 +1185,7 @@ impl DungeonUi {
             estilo::texto(
                 r.x + 24.0 * f,
                 r.y + 84.0 * f + i as f32 * 22.0 * f,
-                &format!("• {}", m.nome),
+                &m.nome,
                 14,
                 estilo::TEXTO,
             );

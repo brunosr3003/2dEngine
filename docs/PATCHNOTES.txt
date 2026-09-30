@@ -1,3 +1,11 @@
+30/09/2026 — Sem bolinhas na frente dos textos
+
+Tiramos as bolinhas coloridas que ficavam na frente dos textos: nos filtros do mapa, na lista "Ir para", na lista de ilhas do mapa-mundi, no ping, na lista do grupo da dungeon e nos painéis da Ilha Mágica. A informação continua — pela cor do próprio texto ou do botão.
+
+O mapa também ficou em inglês no jogo em inglês ("Go", "show ›", a dica do topo), e continua em português no jogo em português.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 30/09/2026 — Missões e conversas em pergaminho
 
 As janelas de LER agora são pergaminho: a conversa com os NPCs, a janela do Mestre de Missões e o livro de missões viraram folhas envelhecidas com rolos de madeira em cima e embaixo, texto em tinta escura e títulos em vermelho, como um escriba escreveria. Os botões continuam de madeira, pra se destacar na folha.
