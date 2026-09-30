@@ -1,3 +1,9 @@
+30/09/2026 — A tela de Interface rola
+
+Em telas mais baixas (ou com o HUD grande), a janela de Interface ficava maior que a tela e as opções de baixo — como o Anti-aliasing — sumiam. Agora o conteúdo rola: roda do mouse, arrastar com o dedo ou pela barra à direita. O título, o som e o X ficam sempre à vista.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
 30/09/2026 — Anti-aliasing nas configurações
 
 Menu → Interface agora tem uma linha de ANTI-ALIASING: Desligado, 2x, 4x ou 8x. Ele suaviza os serrilhados nas bordas dos blocos, cercas e personagens. No computador vem em 4x; no celular vem desligado (pesa mais na bateria). A escolha fica salva no aparelho e vale a partir da próxima vez que o jogo abrir. Se a placa de vídeo não aguentar o nível escolhido, o jogo abre sem anti-aliasing em vez de não abrir.

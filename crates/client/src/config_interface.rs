@@ -58,6 +58,8 @@ pub struct ConfigInterface {
     pub antialias: i32,
     /// What the window was opened with; differs from `antialias` until restart.
     antialias_no_inicio: i32,
+    /// The tall layout scrolls when it doesn't fit the screen.
+    rolagem: crate::rolagem::Rolagem,
 }
 
 impl Default for ConfigInterface {
@@ -75,6 +77,7 @@ impl Default for ConfigInterface {
             sombras,
             antialias,
             antialias_no_inicio: antialias,
+            rolagem: Default::default(),
         }
     }
 }
@@ -149,10 +152,18 @@ impl ConfigInterface {
 
     pub fn abrir(&mut self) {
         self.aberto = true;
+        self.rolagem.zera();
     }
 
     pub fn fechar(&mut self) {
         self.aberto = false;
+    }
+
+    /// For the HUD preview: the content scrolled all the way down (the draw
+    /// clamps it to the real end).
+    #[cfg(debug_assertions)]
+    pub fn rolar_ao_fim(&mut self) {
+        self.rolagem.pos = f32::MAX / 4.0;
     }
 
     /// Desenha e trata o clique.
@@ -164,11 +175,12 @@ impl ConfigInterface {
             let k = ((seguro.h - 16.0) / 352.0).min(f);
             return estilo::no_painel(k, || self.desenha_compacto(atual, economia_auto));
         }
+        // 574 and not 500: the language row went in under the shadows; 664
+        // for the anti-aliasing row under the language.
+        let conteudo_h = 664.0 * f;
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
-            // 574 and not 500: the language row went in under the shadows;
-            // 664 for the anti-aliasing row under the language.
-            (664.0 * f).min(seguro.h - 16.0),
+            conteudo_h.min(seguro.h - 16.0),
         );
         let r = Rect::new(
             seguro.center().x - w * 0.5,
@@ -199,6 +211,19 @@ impl ConfigInterface {
             self.fechar();
             return None;
         }
+        // THE CONTENT SCROLLS under the fixed title bar. The owner, 30/09/2026,
+        // on a Mac at 160%: the panel was taller than the screen and the
+        // anti-aliasing row, at the bottom, simply wasn't there — "this hud
+        // needs a scrollbar". Wheel, drag and a bar, like every other list
+        // (`rolagem`). A tap on a control counts when the finger lifts without
+        // dragging, so a drag that starts on a button scrolls instead.
+        let topo = 46.0 * f;
+        let area = Rect::new(r.x, r.y + topo, r.w, r.h - topo - 4.0 * f);
+        let total = conteudo_h - topo;
+        let toque = self.rolagem.quadro(area, total, 60.0 * f);
+        let em = |b: Rect| toque.is_some_and(|p| b.contains(p) && area.contains(p));
+        let r = Rect::new(r.x, r.y - self.rolagem.pos, r.w, conteudo_h);
+        crate::rolagem::recortar(Some(area));
         estilo::texto(
             r.x + 18.0 * f,
             r.y + 70.0 * f,
@@ -382,31 +407,33 @@ impl ConfigInterface {
             12,
             estilo::SUAVE,
         );
-        if !clicou {
+        crate::rolagem::recortar(None);
+        self.rolagem.desenha(area, total);
+        if toque.is_none() {
             return None;
         }
-        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
+        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| em(*b)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
         }
-        if let Some(&(_, n)) = aa.iter().find(|(b, _)| b.contains(m)) {
+        if let Some(&(_, n)) = aa.iter().find(|(b, _)| em(*b)) {
             self.define_antialias(n);
             return None;
         }
-        if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| b.contains(m)) {
+        if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| em(*b)) {
             return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
         }
-        if agora.contains(m) {
+        if em(agora) {
             self.fechar();
             return Some(Mudanca::EconomiaAgora);
         }
-        if let Some(&(_, min)) = chips.iter().find(|(c, _)| c.contains(m)) {
+        if let Some(&(_, min)) = chips.iter().find(|(c, _)| em(*c)) {
             return (min != economia_auto).then_some(Mudanca::EconomiaAuto(min));
         }
-        let nova = if menos.contains(m) {
+        let nova = if em(menos) {
             ajusta(atual, -1)
-        } else if mais.contains(m) {
+        } else if em(mais) {
             ajusta(atual, 1)
-        } else if botao_padrao.contains(m) {
+        } else if em(botao_padrao) {
             padrao
         } else {
             return None;

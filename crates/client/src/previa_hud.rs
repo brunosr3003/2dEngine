@@ -41,7 +41,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
             .map(|d| shared::quests::QuestNet::from_def(d, shared::quests::quest_status::ACTIVE, 3))
             .collect(),
     );
-    for (w, h) in [(1920, 1080), (1280, 720), (960, 540)] {
+    for (w, h) in [(1920, 1080), (1440, 900), (1280, 720), (960, 540)] {
         request_new_screen_size(w as f32, h as f32);
         for _ in 0..3 {
             next_frame().await;
@@ -56,7 +56,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "menu", "interface"] {
+        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim"] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -160,9 +160,12 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                     menu.desenha(&crate::menu::Contexto { nome: "Navegante", nivel:70,
                         poder:Some(24850), arma:"Katana", saldos:&[("Gold",148250)], selos:&[] });
                 }
-                if cena == "interface" {
+                if cena == "interface" || cena == "interface-fim" {
                     let mut ui = crate::config_interface::ConfigInterface::default();
                     ui.abrir();
+                    if cena == "interface-fim" {
+                        ui.rolar_ao_fim();
+                    }
                     ui.desenha(1.6, 5);
                 }
                 unsafe { get_internal_gl().flush() };
