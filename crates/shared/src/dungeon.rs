@@ -67,7 +67,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nivel_min: 6,
         grupo_max: 1,
         limite_s: 600,
-        andares: 2,
+        andares: 3,
         chefe: 11,
         disponivel: true,
     },
@@ -79,7 +79,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nivel_min: 14,
         grupo_max: 1,
         limite_s: 600,
-        andares: 2,
+        andares: 3,
         chefe: 12,
         disponivel: true,
     },
@@ -91,7 +91,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nivel_min: 24,
         grupo_max: 1,
         limite_s: 600,
-        andares: 2,
+        andares: 3,
         chefe: 13,
         disponivel: true,
     },
@@ -110,7 +110,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nivel_min: 34,
         grupo_max: 1,
         limite_s: 600,
-        andares: 2,
+        andares: 3,
         // O Arqueiro do Ermo era o único chefe do catálogo sem conteúdo
         // nenhum, e é do deserto.
         chefe: 16,
@@ -124,7 +124,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nivel_min: 50,
         grupo_max: 1,
         limite_s: 600,
-        andares: 2,
+        andares: 3,
         chefe: 18,
         disponivel: true,
     },
@@ -376,7 +376,9 @@ pub fn escala_do_chefe(c: &Conteudo, membros: usize) -> (f32, f32) {
 /// Quantos inimigos o andar `andar` (0-based) tem.
 pub fn inimigos_do_andar(c: &Conteudo, andar: u8) -> u8 {
     match c.tipo {
-        Tipo::Porao => 5 + andar * 2,
+        // Three rooms since the floor plans (`planta`): 3 + 4 + 5 = 12, the same
+        // twelve the two old floors had (5 + 7).
+        Tipo::Porao => 3 + andar,
         _ => 7 + andar * 2,
     }
 }
@@ -539,6 +541,11 @@ pub struct DadosDungeon {
     /// nova, porque coluna nova e' quatro edicoes de UPSERT — e uma que se
     /// esquece derruba o save inteiro sem avisar. Vazio = volta pro Bosque.
     pub arena_volta: String,
+    /// The Porão whose key was just used at its door: the run starts when the
+    /// character lands on the Arena (`planta`). Here for the same reason as
+    /// `arena_volta` — the session that used the key dies in the handoff.
+    /// 0 = none.
+    pub porao_pendente: u16,
 }
 
 pub const BAUS_LEMBRADOS: usize = 64;

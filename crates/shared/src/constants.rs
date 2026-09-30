@@ -110,7 +110,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// na síntese da aba Materials (`combinar::receitas`). A tabela de combinar é
 /// compartilhada: o cliente 159 não oferece a síntese de madeira que o servidor
 /// 160 aceita. O corte foi pedido pelo dono ("change protocol and restart").
-pub const PROTOCOL_VERSION: u16 = 161;
+pub const PROTOCOL_VERSION: u16 = 162;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

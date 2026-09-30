@@ -43,6 +43,7 @@ mod porao_ui;
 // profundidade, que no iOS some.
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_porta;
+mod porao_planta;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_hud;
 mod hud_estilo;
@@ -465,6 +466,8 @@ struct Jogo {
     montar_auto_em: f64,
     /// Dungeons: janela, fila, pronto-check, instancia e resultado.
     dungeon: dungeon_ui::DungeonUi,
+    /// Porão floor plans, built once each (`porao_planta`).
+    plantas: porao_planta::Cache,
     recompensas: recompensas_ui::Ui,
     /// "Onde obter" (`onde_obter.rs`).
     onde_obter: onde_obter::OndeObter,
@@ -641,6 +644,10 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_OASIS").is_ok() {
+        terreno::previa_do_oasis().await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_PLANALTO").is_ok() {
         terreno::previa_do_planalto().await;
         return;
@@ -653,6 +660,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PORAO").is_ok() {
         porao_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PLANTA").is_ok() {
+        previa_porta::plantas(&render3d::material_solido()).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -902,6 +914,7 @@ async fn main() {
         montaria_skin: None,
         montar_auto_em: -99.0,
         dungeon: dungeon_ui::DungeonUi::default(),
+        plantas: porao_planta::Cache::default(),
         recompensas: recompensas_ui::Ui::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
@@ -5684,6 +5697,19 @@ impl Jogo {
                         .is_some_and(|e| e.distance(pos) <= shared::porao::ALCANCE_DA_PORTA);
                     let y = terreno.altura(pos.x, pos.y);
                     render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), perto);
+                }
+            }
+        }
+        // THE PORÃO FLOOR PLAN: walls, floor, torches and shut gates — only
+        // inside a planned run, and only on the Arena, where plans live.
+        if self.zona_atual == shared::arena::ZONA {
+            if let (Some((conteudo, andar)), Some(terreno)) =
+                (self.dungeon.em_curso(), &self.terreno)
+            {
+                if let Some(p) = shared::planta::da(conteudo) {
+                    let a = shared::planta::ANCORA;
+                    let y = terreno.altura(a.x, a.y);
+                    self.plantas.de(p).desenha(p, y, andar);
                 }
             }
         }

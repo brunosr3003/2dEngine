@@ -2130,3 +2130,59 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
         next_frame().await;
     }
 }
+
+/// Preview of the Ermo's OASIS (`MMO_PREVIA_OASIS=1`; PNGs in
+/// `MMO_PREVIA_SAIDA`): close and far, and the island map with it on.
+pub async fn previa_do_oasis() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-oasis".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let def = shared::terreno::def_da_zona(shared::oasis::ZONA).unwrap();
+    let g = shared::terreno::Gerador::da_ilha(def);
+    let o = g.oasis().expect("the Ermo has an oasis");
+    let mut t = Terreno::novo(def);
+    let solido = crate::render3d::material_solido();
+    let centro = vec2(o.centro.x, o.centro.y);
+    for (nome, distancia) in [("oasis-perto", 55.0f32), ("oasis-longe", 130.0)] {
+        let chao = g.altura(o.centro.x, o.centro.y);
+        t.atualiza(centro, 16, 4000);
+        for _ in 0..3 {
+            let cam = Camera3D {
+                position: vec3(centro.x + distancia * 0.35, chao + distancia * 0.7, centro.y + distancia),
+                target: vec3(centro.x, chao, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+    let mut mapa = crate::mapa::Mapa::para(Some(def));
+    mapa.abrir();
+    let mundo = crate::world::World::default();
+    for _ in 0..120 {
+        mapa.acompanhar();
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 24, 34, 255));
+        mapa.desenha_grande(&mundo, 40, &crate::mundo_ui::Mundo::default(), 0);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    crate::render3d::camera_padrao();
+    clear_background(Color::from_rgba(18, 24, 34, 255));
+    mapa.desenha_grande(&mundo, 40, &crate::mundo_ui::Mundo::default(), 0);
+    unsafe { get_internal_gl().flush() };
+    rt.texture.get_texture_data().export_png(&format!("{saida}/oasis-mapa.png"));
+}

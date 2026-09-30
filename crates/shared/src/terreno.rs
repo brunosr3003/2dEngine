@@ -1164,7 +1164,13 @@ pub fn arvore_da_coluna(
     } else {
         1.0
     };
-    let prob = densidade_de_arvore(bioma) * 0.0025 * rala; // coluna = 0,25 m²
+    // THE OASIS GROVE: the one thick wood of the Ermo (`oasis`).
+    let bosque = ger.oasis().is_some_and(|o| o.no_bosque(bx, bz));
+    let prob = if bosque {
+        crate::oasis::DENSIDADE_DO_BOSQUE * 0.0025
+    } else {
+        densidade_de_arvore(bioma) * 0.0025 * rala // coluna = 0,25 m²
+    };
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
     if (h1 >> 8) as f32 / (1u32 << 24) as f32 >= prob || agua || ger.na_cidade(bx, bz) {
@@ -1195,7 +1201,11 @@ pub fn arvore_da_coluna(
         return None;
     }
     Some(ArvorePlantada {
-        especie: especie_de_arvore(bioma, (h2 >> 20) as f32 / 4096.0),
+        // Green trees at the oasis, not the dead ones of the dunes.
+        especie: especie_de_arvore(
+            if bosque { Bioma::Floresta } else { bioma },
+            (h2 >> 20) as f32 / 4096.0,
+        ),
         // Desvio dentro da coluna: sem ele as arvores nascem todas no centro
         // do bloco e o bosque vira grade.
         centro: glam::Vec2::new(
@@ -1242,6 +1252,12 @@ pub fn planta_da_coluna(
         2.0
     } else {
         1.0
+    };
+    // The oasis shore grows the Bosque's flowers and ferns, not desert stalks.
+    let bioma = if ger.oasis().is_some_and(|o| o.no_verde(bx, bz)) {
+        Bioma::Floresta
+    } else {
+        bioma
     };
     let prob = densidade_de_planta(bioma) * 0.0025 * rala;
     let g0 = (bx as u32).wrapping_mul(1_597_334_677) ^ (bz as u32).wrapping_mul(2_246_822_519);
@@ -1763,6 +1779,8 @@ pub struct Gerador {
     planalto: std::sync::OnceLock<Option<crate::planalto::Plano>>,
     /// Zona de relevo DESENHADO, se for uma. `None` = o Perlin de sempre.
     desenhado: Option<RelevoDesenhado>,
+    /// The Ermo's oasis (`oasis`): a pond and a grove, dug into the dunes.
+    oasis: Option<crate::oasis::Oasis>,
 }
 
 /// As zonas cujo relevo e' desenhado a mao, e nao sorteado.
@@ -2243,6 +2261,7 @@ impl Gerador {
             vila: std::sync::OnceLock::new(),
             planalto: std::sync::OnceLock::new(),
             desenhado: None,
+            oasis: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2283,6 +2302,7 @@ impl Gerador {
             vila: std::sync::OnceLock::new(),
             planalto: std::sync::OnceLock::new(),
             desenhado: None,
+            oasis: None,
         };
         g.cidade = g.achar_cidade();
         g.porto = g.achar_porto(g.cidade);
@@ -2335,7 +2355,64 @@ impl Gerador {
                 }
             }
         }
+        if def.zona == crate::oasis::ZONA {
+            // Searched ONCE per process: the search costs ~25 ms, and a
+            // `Gerador` of the Ermo is built on every Porão door and map open.
+            // Only one island has an oasis, so one answer covers them all.
+            static OASIS: std::sync::OnceLock<Option<crate::oasis::Oasis>> =
+                std::sync::OnceLock::new();
+            g.oasis = *OASIS.get_or_init(|| g.achar_oasis());
+        }
         g
+    }
+
+    /// The Ermo's oasis, if this island has one.
+    pub fn oasis(&self) -> Option<crate::oasis::Oasis> {
+        self.oasis
+    }
+
+    /// Where the oasis goes: a dry, gentle spot a walk away from town — 200 to
+    /// 420 u from the city, clear of the port. Searched once, at boot, with the
+    /// same ground test the city uses (`avaliar_sitio`: no water on the site,
+    /// not too steep), and the flattest candidate wins. Deterministic: the
+    /// server and every client land on the same spot.
+    fn achar_oasis(&self) -> Option<crate::oasis::Oasis> {
+        let cidade = self.cidade?.centro();
+        let mut melhor: Option<(f32, glam::Vec2)> = None;
+        for anel in 0..12 {
+            let dist = 200.0 + anel as f32 * 20.0;
+            for k in 0..32 {
+                let a = k as f32 / 32.0 * std::f32::consts::TAU;
+                let c = cidade + glam::Vec2::new(a.cos(), a.sin()) * dist;
+                if self.porto.is_some_and(|p| p.centro.distance(c) < 150.0) {
+                    continue;
+                }
+                let Some((var, _)) = self.avaliar_sitio(c.x / BLOCO, c.y / BLOCO) else {
+                    continue;
+                };
+                // Not on an ore ridge or an Energy field: those are clearings
+                // kept for their resource, and they'd keep the grove out (the
+                // first oasis landed on one and grew a single tree).
+                let (cbx, cbz) = ((c.x / BLOCO) as i32, (c.y / BLOCO) as i32);
+                let r = (crate::oasis::RAIO_VERDE / BLOCO) as i32;
+                let limpo = (-r..=r).step_by(4).all(|dz| {
+                    (-r..=r).step_by(4).all(|dx| {
+                        let (bx, bz) = (cbx + dx, cbz + dz);
+                        self.zona_de_coleta(bx, bz, self.bloco_cru(bx, bz))
+                            .is_none_or(|t| t == 0)
+                    })
+                });
+                if !limpo {
+                    continue;
+                }
+                // Flat first; between two flat ones, the closer to town.
+                let nota = var + dist * 0.002;
+                if melhor.is_none_or(|(n, _)| nota < n) {
+                    melhor = Some((nota, c));
+                }
+            }
+        }
+        melhor.map(|(_, centro)| crate::oasis::Oasis { centro })
     }
 
     /// Indice do bloco de topo na coluna `(bx, bz)`, em blocos a partir do
@@ -2368,8 +2445,12 @@ impl Gerador {
             Some(c) => c.aplainar(bx, bz, cru),
             None => cru,
         };
-        match &self.porto {
+        let b = match &self.porto {
             Some(p) => p.aplainar(bx, bz, b),
+            None => b,
+        };
+        match &self.oasis {
+            Some(o) => o.moldar(bx, bz, b),
             None => b,
         }
     }
@@ -2410,6 +2491,21 @@ impl Gerador {
         // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
         // apaga a unica leitura de relevo que o jogo da' sem texto.
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
+        // The oasis: wet sand at the water, then grass — the only green in
+        // the Ermo, which is the point.
+        if let Some(o) = &self.oasis {
+            if o.na_beira(bx, bz) {
+                return Some(Material::AreiaMolhada);
+            }
+            if o.no_verde(bx, bz) {
+                let h = (bx as u32).wrapping_mul(2_654_435_761) ^ (bz as u32).wrapping_mul(40_503);
+                return Some(match h % 5 {
+                    0 => Material::GramaEscura,
+                    1 => Material::GramaClara,
+                    _ => Material::Grama,
+                });
+            }
+        }
         if !self.na_cidade(bx, bz) {
             return None;
         }
@@ -2914,7 +3010,8 @@ const MAGICA: [u8; 4] = *b"TALT";
 // (`DefIlha::rumo_do_porto`), entao o porto MUDOU DE LUGAR e o relevo do
 // patio com ele. Cache velho traria a ilha antiga com o porto novo desenhado
 // por cima.
-const VERSAO: u16 = 8;
+// 9 (30/09/2026): the Ermo's oasis digs a pond into the dunes (`oasis`).
+const VERSAO: u16 = 9;
 
 impl Ilha {
     pub fn planalto(&self) -> Option<&crate::planalto::Plano> { self.ger.planalto() }

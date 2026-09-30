@@ -16,6 +16,8 @@ pub mod components;
 pub mod constants;
 pub mod construcao;
 pub mod desafio;
+pub mod planta;
+pub mod oasis;
 pub mod dungeon;
 pub mod porao;
 pub mod ladder;

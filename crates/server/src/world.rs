@@ -2163,6 +2163,9 @@ pub struct Session {
     /// Onde estava antes de entrar: volta pra ca' e e' a posicao salva
     /// enquanto estiver dentro (queda no meio nao prende ninguem na arena).
     pub retorno_da_dungeon: Option<Vec2>,
+    /// On the Arena: the Porão this session came in through the door of.
+    /// Leaving the run takes it back out in front of that door.
+    pub porao_de_volta: Option<u16>,
     /// Montarias e skins da CONTA (banco central, `crate::loja`).
     /// As posses ja' chegaram do central nesta sessao.
     pub loja_carregada: bool,
@@ -2514,6 +2517,9 @@ pub struct GameWorld {
     /// Desde quando cada sessão está parada no saguão da Arena, sem dungeon
     /// e sem fila. Ver `tick_saguao`.
     pub saguao_desde: std::collections::HashMap<SessionId, f32>,
+    /// Arrived on the Arena through a Porão door: the run starts on the next
+    /// tick (the login has to finish first).
+    pub poroes_a_comecar: Vec<(SessionId, u16)>,
     pub spawn_zones: Vec<ServerSpawnZone>,
     /// Areas dedicadas de boss spawn — independente das spawn_zones, 1 boss
     /// por area, respawn timer separado.
@@ -3009,6 +3015,7 @@ impl GameWorld {
             next_party_id: 1,
             decorations,
             saguao_desde: Default::default(),
+            poroes_a_comecar: Vec::new(),
             spawn_zones: Vec::new(),
             boss_areas: Vec::new(),
             safe_zones: Vec::new(),
@@ -3203,6 +3210,7 @@ impl GameWorld {
             next_party_id: 1,
             decorations: Vec::new(),
             saguao_desde: Default::default(),
+            poroes_a_comecar: Vec::new(),
             spawn_zones: Vec::new(),
             boss_areas: Vec::new(),
             safe_zones: Vec::new(),
@@ -5747,6 +5755,24 @@ impl GameWorld {
             self.avisa_missao(sid, "Too far to walk from here.".into());
             return;
         }
+        // Inside a planned Porão the walls are the plan's, which the island's
+        // A* doesn't know: the route goes room to room through open gates.
+        let planta = self.sessions.get(&sid).and_then(|s| {
+            let i = self.instancias.iter().find(|i| i.id == s.instancia && s.instancia != 0)?;
+            Some((i.planta?, i.andar))
+        });
+        if let Some((p, andar)) = planta {
+            let Some(rota) = p.caminho(pos_atual, destino, andar) else {
+                self.avisa_missao(sid, "A gate is shut that way.".into());
+                return;
+            };
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.rota = shared::terreno::SeguidorDeRota::nova(rota, destino);
+                s.rota_geracao = s.rota_geracao.wrapping_add(1);
+                s.travado_desde = None;
+            }
+            return;
+        }
         let Some(ilha) = self.ilha_da_sessao(sid) else {
             return;
         };
@@ -6326,6 +6352,10 @@ impl GameWorld {
             s.preferencias = crate::preferencias::de_json(&row.preferencias_json);
             s.dungeon = serde_json::from_str(&row.dungeon_json).unwrap_or_default();
             s.conta_dungeon = serde_json::from_str(&row.conta_dungeon_json).unwrap_or_default();
+            // Came down a Porão door: the run starts here, on the Arena.
+            if shared::arena::e_arena(&self.zona) && s.dungeon.porao_pendente != 0 {
+                self.poroes_a_comecar.push((sid, s.dungeon.porao_pendente));
+            }
             // Instancia: 0 e' "no mundo". Na COLONIA ela sai do NOME do
             // personagem (docs/COLONIA.md) — a sessao que pediu a viagem
             // morreu no handoff, entao quem chega aqui tem que se achar
@@ -7513,6 +7543,7 @@ impl GameWorld {
                 correio_em_voo: false,
                 instancia: 0,
                 retorno_da_dungeon: None,
+                porao_de_volta: None,
                 loja_carregada: false,
                 montado: false,
                 montaria_firmeza: shared::loja::FIRMEZA_MAX,
@@ -11122,6 +11153,13 @@ impl GameWorld {
                 )
             })
             .collect();
+        // The WALLS of a planned Porão (`shared::planta`): per instance, the
+        // plan and the step it is on (the step decides which gates are shut).
+        let planta_da_inst: std::collections::HashMap<u32, (&'static shared::planta::Planta, u8)> =
+            self.instancias
+                .iter()
+                .filter_map(|i| Some((i.id, (i.planta?, i.andar))))
+                .collect();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
         // diferentes nao se empurram nem se bloqueiam.
@@ -11156,14 +11194,15 @@ impl GameWorld {
                 .and_then(|i| raio_da_inst.get(&i.0))
                 .and_then(|r| self.colonias.get(r))
                 .or(self.ilha.as_ref());
-            corpos.push((
-                e,
-                match terreno {
-                    Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
-                    None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
-                },
-                mobilidade,
-            ));
+            let movido = match terreno {
+                Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
+                None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
+            };
+            let movido = match inst.and_then(|i| planta_da_inst.get(&i.0)) {
+                Some((p, andar)) => p.mover(pos.0, movido, ENTITY_RADIUS, *andar),
+                None => movido,
+            };
+            corpos.push((e, movido, mobilidade));
         }
         let mut circulos: Vec<(Vec2, f32, f32)> = corpos
             .iter()
@@ -11211,6 +11250,16 @@ impl GameWorld {
             let p = match &self.ilha {
                 Some(i) if !i.cabe(*movido, *p, ENTITY_RADIUS) => *movido,
                 _ => *p,
+            };
+            // Nor pushed through a Porão wall.
+            let p = match self
+                .ecs
+                .get::<&dungeon::Instancia>(*e)
+                .ok()
+                .and_then(|i| planta_da_inst.get(&i.0))
+            {
+                Some((planta, andar)) if !planta.livre(p, ENTITY_RADIUS, *andar) => *movido,
+                _ => p,
             };
             if let Ok(mut pos) = self.ecs.get::<&mut Position>(*e) {
                 pos.0 = p;

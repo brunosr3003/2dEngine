@@ -2170,6 +2170,11 @@ impl Mapa {
         if let Some(p) = self.porto {
             v.push(("Port", vec2(p.centro.x, p.centro.y), p.raio.max(8.0)));
         }
+        // "Go" to the oasis lands on its dry shore, not in the pond.
+        if let Some(o) = self.ger.as_ref().and_then(|g| g.oasis()) {
+            let margem = shared::oasis::RAIO_MARGEM - 1.5;
+            v.push(("Oasis", vec2(o.centro.x + margem, o.centro.y), 4.0));
+        }
         // As portas de Porão, com o mesmo "Ir" da praça e do cais. O raio é o
         // de abrir a porta: o "Ir" para onde o botão de abrir já acende.
         for (nome, p) in &self.portas {
@@ -3005,6 +3010,19 @@ impl Mapa {
             draw_line(a.x, a.y, b.x, b.y, u(3.0), COR_PREDIO);
             ancora(q, u(7.0), COR_PORTO);
             estilo::texto_centro(q.x, q.y - u(14.0), "Port", 14, COR_PORTO);
+        }
+        // The Ermo's oasis: the one thick wood of the desert, worth marking.
+        if let Some(o) = self.ger.as_ref().and_then(|g| g.oasis()) {
+            let verde = Color::from_rgba(120, 214, 110, 255);
+            let q = ponto(vec2(o.centro.x, o.centro.y));
+            draw_circle_lines(
+                q.x,
+                q.y,
+                (shared::oasis::RAIO_VERDE * escala).max(u(6.0)),
+                u(2.0),
+                verde,
+            );
+            estilo::texto_centro(q.x, q.y - u(14.0), "Oasis", 14, verde);
         }
         for (i, (nome, p)) in self.portas.iter().enumerate() {
             porta_no_mapa(ponto(*p), u(7.0), nome, 14, i % 2 == 0);

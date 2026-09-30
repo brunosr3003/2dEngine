@@ -357,6 +357,12 @@ impl DungeonUi {
         Vec::new()
     }
 
+    /// The run in progress, if any: (content, step). The Porão floor plan is
+    /// drawn from this — its gates open with the step.
+    pub fn em_curso(&self) -> Option<(u16, u8)> {
+        self.inst.as_ref().map(|i| (i.conteudo, if i.concluida { u8::MAX } else { i.andar }))
+    }
+
     /// Texto curto pro chat (o que acabou de acontecer), se houver.
     pub fn texto_pro_chat(a: &Aviso) -> Option<String> {
         match a {

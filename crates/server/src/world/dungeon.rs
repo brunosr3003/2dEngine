@@ -31,6 +31,21 @@ const FECHA_DEPOIS_DE_VENCER_S: f32 = dg::FECHA_DEPOIS_DE_VENCER_S;
 const FECHA_DEPOIS_DE_FALHAR_S: f32 = 8.0;
 /// Distancia maxima pra abrir o bau com toque.
 const ALCANCE_DO_BAU: f32 = 8.0;
+/// The Warden of a planned room: tougher than its pack, far from a semi-boss.
+/// It is the one kill the gate asks for, so it has to be a fight — but every
+/// room has one, so it can't be the Gruta's 4x.
+const GUARDIAO_VIDA: f32 = 2.5;
+const GUARDIAO_DANO: f32 = 1.2;
+
+/// Which mob of a room is special.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Elite {
+    Nao,
+    /// The Gruta's middle floor.
+    SemiChefe,
+    /// Opens the gate of a planned room (`shared::planta`).
+    Guardiao,
+}
 
 pub struct MembroDg {
     pub sid: SessionId,
@@ -74,6 +89,14 @@ pub struct InstanciaDg {
     /// Os DESAFIOS desta corrida (`shared::desafio`), sorteados pela hora da
     /// entrada — os mesmos que a tarja da porta mostrava. Vazio fora do Porão.
     pub desafios: Vec<shared::desafio::Desafio>,
+    /// The floor plan this run walks (`shared::planta`): walls, gates and one
+    /// room per step. `None` = the old open floors (Gruta, or a Porão started
+    /// off the Arena).
+    pub planta: Option<&'static shared::planta::Planta>,
+    /// Mobs of rooms already opened that nobody killed. Opening the gate only
+    /// needs the Warden; the rest stay where they are, and go when the run
+    /// closes.
+    pub restos: Vec<Entity>,
 }
 
 fn env_f32(nome: &str, padrao: f32) -> f32 {
@@ -236,17 +259,99 @@ impl GameWorld {
         let Some(chave) = shared::porao::chave_de(c) else {
             return;
         };
+        let descer = shared::planta::da(conteudo).is_some() && !self.na_arena();
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        if !tirar_item(&mut s.inventory, chave, 1) {
+        if !tem_item(&s.inventory, chave) {
             let nome = shared::porao::nome_da_chave(chave).unwrap_or_else(|| "key".into());
             self.dg_texto(sid, false, format!("You need a {nome} to open this."));
             return;
         }
+        // DOWN THE STAIRS: the cellar is on the Arena islet, where the floor
+        // plan has flat, empty ground to stand on (`shared::planta`). The run
+        // starts when the character lands there (`porao_pendente`).
+        //
+        // The key is taken only once the trip is under way: with the Arena
+        // down, the door says so and the key stays in the bag.
+        if descer {
+            s.dungeon.porao_pendente = conteudo;
+            self.save_pending = true;
+            let aviso = format!("You go down into the {}.", c.nome);
+            if !self.entrar_na_arena_com(sid, &aviso) {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.dungeon.porao_pendente = 0;
+                }
+                self.dg_texto(sid, false, "The cellar can't be reached right now. Try again in a moment.");
+                return;
+            }
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        tirar_item(&mut s.inventory, chave, 1);
         s.inventory_dirty = true;
         crate::telemetria::conta("porao_chave_usada", format!("{conteudo}"), 1);
-        self.dg_comecar(conteudo, 1, vec![sid]);
+        if s.dungeon.porao_pendente == 0 {
+            self.dg_comecar(conteudo, 1, vec![sid]);
+        }
+    }
+
+    /// Starts the Porão runs of whoever just landed on the Arena through a
+    /// door. On the tick after the login, not inside it: the login is still
+    /// assembling the session when it notices.
+    fn dg_poroes_que_chegaram(&mut self) {
+        if self.poroes_a_comecar.is_empty() {
+            return;
+        }
+        for (sid, conteudo) in std::mem::take(&mut self.poroes_a_comecar) {
+            let Some(s) = self.sessions.get_mut(&sid) else {
+                continue;
+            };
+            if !s.logged_in || s.entity.is_none() {
+                self.poroes_a_comecar.push((sid, conteudo));
+                continue;
+            }
+            s.dungeon.porao_pendente = 0;
+            s.porao_de_volta = Some(conteudo);
+            self.save_pending = true;
+            let antes = self.instancias.len();
+            self.dg_comecar(conteudo, 1, vec![sid]);
+            if self.instancias.len() == antes {
+                // Refused on arrival (it shouldn't: the door checked the same
+                // things). The key comes back, and so does the character.
+                if let (Some(s), Some(chave)) = (
+                    self.sessions.get_mut(&sid),
+                    dg::conteudo(conteudo).and_then(shared::porao::chave_de),
+                ) {
+                    if !super::add_to_inventory(&mut s.inventory, chave, 1, None) {
+                        s.dungeon.postar(chave, 1, None, 0, unix_agora());
+                    }
+                    s.inventory_dirty = true;
+                }
+                self.dg_voltar_pra_porta(sid, "The cellar refused you; your key is back.");
+            }
+        }
+    }
+
+    /// Back up the stairs: to the island of the Porão, in front of its door.
+    fn dg_voltar_pra_porta(&mut self, sid: SessionId, aviso: &str) {
+        let Some(conteudo) = self.sessions.get_mut(&sid).and_then(|s| s.porao_de_volta.take()) else {
+            self.sair_da_arena(sid, aviso);
+            return;
+        };
+        let Some((c, def)) = dg::conteudo(conteudo)
+            .and_then(|c| Some((c, shared::terreno::def_da_zona(c.zona)?)))
+        else {
+            self.sair_da_arena(sid, aviso);
+            return;
+        };
+        let ger = shared::terreno::Gerador::da_ilha(def);
+        let chegada = shared::porao::porta_de(c, &ger)
+            .map(|p| p + Vec2::new(0.0, 2.0))
+            .or_else(|| ger.cidade().map(|c| c.centro()))
+            .unwrap_or(Vec2::ZERO);
+        self.mandar_para_zona(sid, def.zona, chegada, Some(aviso), Some(def.nome));
     }
 
     /// Onde fica a porta deste Porão nesta zona.
@@ -378,8 +483,20 @@ impl GameWorld {
     /// por isso a zona de origem é guardada ANTES da viagem. Sem isso, sair
     /// seria um chute — o mesmo cuidado que a Ilha Mágica já tem.
     fn entrar_na_arena(&mut self, sid: SessionId) {
+        // A INSTRUÇÃO DE VOLTA VAI JUNTO COM A IDA. Quem chega aqui não
+        // tem barco nem portal, e descobrir sozinho onde fica a saída não
+        // é parte do jogo.
+        self.entrar_na_arena_com(
+            sid,
+            "Você entra na Arena. Para voltar, abra Dungeons e toque em Sair.",
+        );
+    }
+
+    /// The trip to the Arena, with the line shown on the way. `false` = the
+    /// Arena is down and nobody went anywhere.
+    fn entrar_na_arena_com(&mut self, sid: SessionId, aviso: &str) -> bool {
         if self.na_arena() {
-            return;
+            return false;
         }
         let volta = self.zona.clone();
         if let Some(s) = self.sessions.get_mut(&sid) {
@@ -391,12 +508,9 @@ impl GameWorld {
             sid,
             shared::arena::ZONA,
             chegada,
-            // A INSTRUÇÃO DE VOLTA VAI JUNTO COM A IDA. Quem chega aqui não
-            // tem barco nem portal, e descobrir sozinho onde fica a saída não
-            // é parte do jogo.
-            Some("Você entra na Arena. Para voltar, abra Dungeons e toque em Sair."),
+            Some(aviso),
             Some(shared::arena::DEF.nome),
-        );
+        )
     }
 
     /// Volta pra zona de onde entrou.
@@ -844,6 +958,10 @@ impl GameWorld {
             return;
         }
         let arena = self.dg_arena();
+        // The floor plan needs the Arena's flat, empty top; anywhere else the
+        // run falls back to the open floors.
+        let planta = shared::planta::da(conteudo).filter(|_| self.na_arena());
+        let inicio = planta.map_or(arena[0], |p| p.ponto_de_volta(0));
         self.prox_instancia += 1;
         let id = self.prox_instancia;
         let uid = (now_ms() << 12) ^ id as u64;
@@ -903,7 +1021,7 @@ impl GameWorld {
             });
             let _ = self.ecs.insert_one(e, Instancia(id));
             let volta = Vec2::new((i as f32 * 1.3).cos(), (i as f32 * 1.3).sin()) * 3.0;
-            self.dg_teleportar(*sid, arena[0] + volta);
+            self.dg_teleportar(*sid, inicio + volta);
         }
         let ev = validos
             .iter()
@@ -940,6 +1058,8 @@ impl GameWorld {
             } else {
                 Vec::new()
             },
+            planta,
+            restos: Vec::new(),
         });
         let idx = self.instancias.len() - 1;
         self.dg_povoar_andar(idx);
@@ -976,7 +1096,16 @@ impl GameWorld {
         let velhos = std::mem::take(&mut self.instancias[idx].vivos);
         self.dg_despawn(velhos);
         let arena = self.dg_arena();
-        let centro = arena[(andar as usize).min(arena.len() - 1)];
+        // With a floor plan, the step's mobs live in the step's ROOM: they
+        // spawn inside it and are leashed to it.
+        let sala = self.instancias[idx]
+            .planta
+            .and_then(|p| Some((p, p.sala_da_etapa(andar)?)));
+        let (centro, raio_da_sala) = match sala {
+            Some((p, i)) => (p.centro(i), p.salas[i].raio),
+            None => (arena[(andar as usize).min(arena.len() - 1)], RAIO_DO_ANDAR),
+        };
+        let com_planta = sala.is_some();
         let nivel = dg::nivel_do_estagio(c, estagio);
         let vida = dg::vida_por_grupo(c, n) * mult_vida_teste();
         let dano = mult_dano_teste();
@@ -986,7 +1115,11 @@ impl GameWorld {
                 let (v, d) = dg::escala_do_chefe(c, n);
                 (v * mult_vida_teste(), d * dano)
             };
-            let pos = self.chao_livre(centro + Vec2::new(0.0, 14.0));
+            let pos = if com_planta {
+                centro
+            } else {
+                self.chao_livre(centro + Vec2::new(0.0, 14.0))
+            };
             if let Some(e) = self.nascer_chefe_nivel(c.chefe, pos, nivel) {
                 if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
                     h.max = ((h.max as f32) * vida).round().max(1.0) as i32;
@@ -1009,14 +1142,34 @@ impl GameWorld {
                 .unwrap_or_else(|| self.bioma_da_zona());
             for i in 0..dg::inimigos_do_andar(c, andar) {
                 let ang = i as f32 * std::f32::consts::TAU / dg::inimigos_do_andar(c, andar) as f32;
-                let pos = centro + Vec2::new(ang.cos(), ang.sin()) * (10.0 + (i % 3) as f32 * 4.0);
+                let longe = if com_planta {
+                    // Inside the room, clear of its wall.
+                    if i == 0 {
+                        0.0
+                    } else {
+                        raio_da_sala * (0.45 + 0.2 * (i % 2) as f32)
+                    }
+                } else {
+                    10.0 + (i % 3) as f32 * 4.0
+                };
+                let pos = centro + Vec2::new(ang.cos(), ang.sin()) * longe;
                 let kind = crate::economy::kind_para_nivel(
                     bioma,
                     nivel,
                     uid ^ ((andar as u64) << 8) ^ i as u64,
                 );
-                let semi = dg::tem_semi_chefe(c, andar) && i == 0;
-                vivos.push(self.dg_nascer_mob(id, kind, pos, centro, nivel, vida, dano, semi));
+                // The first mob of a planned room is its WARDEN: the one whose
+                // death opens the gate. The Gruta's middle floor keeps its
+                // semi-boss.
+                let elite = if dg::tem_semi_chefe(c, andar) && i == 0 {
+                    Elite::SemiChefe
+                } else if com_planta && i == 0 {
+                    Elite::Guardiao
+                } else {
+                    Elite::Nao
+                };
+                let coleira = if com_planta { raio_da_sala + 4.0 } else { RAIO_DO_ANDAR * 0.7 };
+                vivos.push(self.dg_nascer_mob(id, kind, pos, centro, coleira, nivel, vida, dano, elite));
             }
         }
         self.instancias[idx].vivos = vivos;
@@ -1029,18 +1182,24 @@ impl GameWorld {
         kind: u16,
         pos: Vec2,
         ancora: Vec2,
+        coleira: f32,
         nivel: u32,
         vida: f32,
         dano: f32,
-        semi: bool,
+        elite: Elite,
     ) -> Entity {
+        let semi = elite == Elite::SemiChefe;
         let pos = self.chao_livre(pos);
-        let (mut tag, _) = self.build_enemy_tag(kind, ancora, RAIO_DO_ANDAR * 0.7, pos);
+        let (mut tag, _) = self.build_enemy_tag(kind, ancora, coleira, pos);
         tag.nivel_da_faixa = nivel;
         tag.level = nivel;
         tag.detect_range = tag.detect_range.max(30.0);
         let (hp, d) = vida_e_dano_do_mob(tag.stats.hp_max, tag.stats.attack_damage, nivel);
-        let (fv, fd) = if semi { (4.0, 1.5) } else { (1.0, 1.0) };
+        let (fv, fd) = match elite {
+            Elite::SemiChefe => (4.0, 1.5),
+            Elite::Guardiao => (GUARDIAO_VIDA, GUARDIAO_DANO),
+            Elite::Nao => (1.0, 1.0),
+        };
         let hp = ((hp as f32) * vida * fv).round().max(1.0) as i32;
         tag.stats.hp_max = hp;
         tag.stats.attack_damage = ((d as f32) * dano * fd).round().max(0.0) as i32;
@@ -1049,6 +1208,11 @@ impl GameWorld {
             tag.boss_name = Some("Guardian of the Cavern".into());
             tag.size_scale *= 1.4;
             tag.xp_reward *= 3;
+        }
+        if elite == Elite::Guardiao {
+            tag.boss_name = Some("Warden".into());
+            tag.size_scale *= 1.25;
+            tag.xp_reward *= 2;
         }
         let net = self.alloc_entity_id();
         let body = self.spawn_entity_body(pos);
@@ -1119,9 +1283,18 @@ impl GameWorld {
         else {
             return;
         };
+        let planta = self
+            .instancias
+            .iter()
+            .find(|i| i.id == inst)
+            .and_then(|i| i.planta);
         let arena = self.dg_arena();
         self.dg_levantar(sid);
-        self.dg_teleportar(sid, arena[(andar as usize).min(arena.len() - 1)]);
+        let volta = match planta {
+            Some(p) => p.ponto_de_volta(andar),
+            None => arena[(andar as usize).min(arena.len() - 1)],
+        };
+        self.dg_teleportar(sid, volta);
     }
 
     fn dg_levantar(&mut self, sid: SessionId) {
@@ -1158,6 +1331,13 @@ impl GameWorld {
         }
         if let Some(e) = e {
             let _ = self.ecs.remove_one::<Instancia>(e);
+        }
+        // Came in through a Porão door: out the same door, on its island.
+        if self.na_arena() && self.sessions.get(&sid).is_some_and(|s| s.porao_de_volta.is_some()) {
+            self.dg_avisar(sid, Aviso::Saiu);
+            self.dg_voltar_pra_porta(sid, "You climb back out of the cellar.");
+            self.save_pending = true;
+            return;
         }
         let destino = retorno.unwrap_or_else(|| self.porto());
         self.dg_teleportar(sid, destino);
@@ -1282,6 +1462,7 @@ impl GameWorld {
     }
 
     pub(super) fn tick_dungeons(&mut self) {
+        self.dg_poroes_que_chegaram();
         self.tick_saguao();
         let agora = self.sim_time_s;
         if self.tick % 15 == 0 {
@@ -1363,8 +1544,25 @@ impl GameWorld {
                     self.dg_terminar(idx, false);
                     return;
                 }
+                // With a plan, the walls hold everyone in (the physics). A
+                // teleport can still drop someone outside: back in.
+                if let Some(p) = self.instancias[idx].planta {
+                    for sid in &presentes {
+                        let fora = self
+                            .sessions
+                            .get(sid)
+                            .and_then(|s| s.entity)
+                            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|q| q.0))
+                            .filter(|q| !p.livre(*q, ENTITY_RADIUS, andar));
+                        if let Some(q) = fora {
+                            let dentro = p.mais_perto(q, ENTITY_RADIUS, andar);
+                            self.dg_teleportar(*sid, dentro);
+                        }
+                    }
+                }
                 // Longe demais do andar: volta pro centro dele.
-                for sid in &presentes {
+                let sem_planta = self.instancias[idx].planta.is_none();
+                for sid in presentes.iter().filter(|_| sem_planta) {
                     let longe = self.sessions.get(sid).and_then(|s| s.entity).and_then(|e| {
                         self.ecs
                             .get::<&Position>(e)
@@ -1406,7 +1604,29 @@ impl GameWorld {
                     self.instancias[idx].aviso_em = 0.0;
                 } else if !todos_caidos {
                     let limpo = self.instancias[idx].vivos.iter().all(|e| !self.dg_vivo(*e));
-                    if limpo && !self.instancias[idx].vivos.is_empty() {
+                    // A planned room opens its gate when its WARDEN falls (the
+                    // first mob of the room); the rest of the pack may stay.
+                    let guardiao_caiu = self.instancias[idx].planta.is_some()
+                        && andar < c.andares
+                        && self.instancias[idx].vivos.first().is_some_and(|e| !self.dg_vivo(*e));
+                    if guardiao_caiu {
+                        let vivos = std::mem::take(&mut self.instancias[idx].vivos);
+                        let (ficam, mortos): (Vec<Entity>, Vec<Entity>) =
+                            vivos.into_iter().partition(|e| self.dg_vivo(*e));
+                        self.instancias[idx].restos.extend(ficam);
+                        self.dg_despawn(mortos);
+                        self.instancias[idx].andar += 1;
+                        self.dg_povoar_andar(idx);
+                        let texto = if andar + 1 >= c.andares {
+                            "The Warden fell. The way to the boss is open."
+                        } else {
+                            "The Warden fell. A gate opens."
+                        };
+                        for sid in &presentes {
+                            self.dg_texto(*sid, true, texto);
+                        }
+                        tracing::info!("[dungeon] instancia {id}: portao {} aberto", andar + 1);
+                    } else if limpo && !self.instancias[idx].vivos.is_empty() {
                         if andar < c.andares {
                             self.instancias[idx].andar += 1;
                             let proximo = arena[((andar + 1) as usize).min(arena.len() - 1)];
@@ -1853,6 +2073,7 @@ impl GameWorld {
         }
         let inst = self.instancias.remove(idx);
         let mut sobra = inst.vivos;
+        sobra.extend(inst.restos);
         if let Some((b, _)) = inst.bau {
             sobra.push(b);
         }
@@ -2048,19 +2269,140 @@ mod testes {
         );
         assert_eq!(w.sessions[&sid].instancia, 0, "entrou sem chave");
 
-        // Na porta e com a chave: entra, e a chave some da bolsa.
+        // At the door with the key, but the Arena (where the cellar is) is
+        // down — this test world has no directory: nobody goes anywhere, and
+        // the key stays in the bag.
         w.sessions.get_mut(&sid).unwrap().inventory[0] = shared::InventorySlot {
             item_id: chave,
             qty: 1,
             instance: None,
         };
         w.dg_abrir_porao(sid, porao.id);
-        let s = &w.sessions[&sid];
-        assert!(s.instancia != 0, "com chave na porta tinha que entrar");
         assert!(
-            s.inventory.iter().all(|i| i.item_id != chave || i.qty == 0),
-            "a chave não foi gasta"
+            recado(&mut rx).contains("can't be reached"),
+            "with the Arena down the door has to say so"
         );
+        let s = &w.sessions[&sid];
+        assert_eq!(s.instancia, 0);
+        assert_eq!(s.dungeon.porao_pendente, 0, "left a run pending that will never start");
+        assert!(
+            s.inventory.iter().any(|i| i.item_id == chave && i.qty == 1),
+            "the key was spent on a trip that didn't happen"
+        );
+    }
+
+    /// DOWN THE DOOR, INTO THE PLAN: a character landing on the Arena with a
+    /// Porão pending starts the run in the plan's entrance room, and the
+    /// Warden's death — not the whole pack's — opens the next gate.
+    #[test]
+    fn quem_desce_a_porta_comeca_na_planta_e_o_guardiao_abre_o_portao() {
+        crate::economy::init_vazia_para_testes();
+        let porao = dg::CONTEUDOS
+            .iter()
+            .find(|c| c.tipo == Tipo::Porao)
+            .expect("um porão no catálogo");
+        let planta = shared::planta::da(porao.id).expect("the Porão has a plan");
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::arena::ZONA.to_string();
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+        let sid = SessionId(([127, 0, 0, 1], 19884).into());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((
+            NetId(EntityId(951)),
+            Position(shared::arena::CHEGADA),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+        ));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.xp = shared::xp_for_level(porao.nivel_min + 10);
+            s.stats.hp_max = 100_000;
+            s.stats.attack_damage = 100_000;
+            s.stats.defense = 100_000;
+            s.dungeon.porao_pendente = porao.id;
+        }
+        // What the login does on the Arena, then the next tick.
+        w.poroes_a_comecar.push((sid, porao.id));
+        w.dg_poroes_que_chegaram();
+        let s = &w.sessions[&sid];
+        assert!(s.instancia != 0, "landed with a Porão pending and no run started");
+        assert_eq!(s.dungeon.porao_pendente, 0, "the pending run would start again");
+        assert_eq!(s.porao_de_volta, Some(porao.id), "wouldn't know which door to leave by");
+        let i = &w.instancias[0];
+        assert!(i.planta.is_some(), "a Porão on the Arena runs on its plan");
+        let onde = w.ecs.get::<&Position>(e).unwrap().0;
+        assert!(
+            onde.distance(planta.centro(planta.entrada())) <= planta.salas[planta.entrada()].raio,
+            "started outside the entrance room: {onde:?}"
+        );
+        // The first room's mobs are inside the first room.
+        let sala = planta.sala_da_etapa(0).unwrap();
+        for m in &i.vivos {
+            let p = w.ecs.get::<&Position>(*m).unwrap().0;
+            assert!(
+                p.distance(planta.centro(sala)) <= planta.salas[sala].raio,
+                "a mob of step 0 spawned outside its room: {p:?}"
+            );
+        }
+        let n = i.vivos.len();
+        assert!(n >= 2, "the room needs a pack, not just its Warden");
+        // Kill ONLY the Warden: the gate opens, the rest stay as leftovers.
+        let guardiao = i.vivos[0];
+        w.ecs.get::<&mut EnemyTag>(guardiao).unwrap().dead = true;
+        w.dg_tick_instancia(0);
+        let i = &w.instancias[0];
+        assert_eq!(i.andar, 1, "the Warden fell and the gate didn't open");
+        assert_eq!(i.restos.len(), n - 1, "the rest of the pack should stay behind");
+        let sala = planta.sala_da_etapa(1).unwrap();
+        for m in &i.vivos {
+            let p = w.ecs.get::<&Position>(*m).unwrap().0;
+            assert!(
+                p.distance(planta.centro(sala)) <= planta.salas[sala].raio,
+                "a mob of step 1 spawned outside its room"
+            );
+        }
+
+        // THE WALL HOLDS, through the real tick: back in the entrance room,
+        // walking into its far wall for five seconds goes nowhere past it.
+        let _ = w.ecs.insert_one(e, shared::Solido);
+        let entrada = planta.centro(planta.entrada());
+        w.ecs.get::<&mut Position>(e).unwrap().0 = entrada;
+        // The entrance is the dead end of the plan: its only corridor leads
+        // to the first room, so walking straight AWAY from that is a wall.
+        let saida = planta.centro(sala_da_primeira(planta));
+        let contra = (entrada - saida).normalize();
+        for k in 0..150u32 {
+            w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+                seq: k + 1,
+                tick: k,
+                move_dir: contra,
+                aim: contra,
+                buttons: 0,
+            });
+            w.step(1.0 / 30.0);
+        }
+        let onde = w.ecs.get::<&Position>(e).unwrap().0;
+        let andar = w.instancias[0].andar;
+        assert!(
+            planta.livre(onde, ENTITY_RADIUS, andar),
+            "walked out of the cellar: {onde:?}"
+        );
+        assert!(
+            onde.distance(entrada) <= planta.salas[planta.entrada()].raio,
+            "went through the entrance room's wall: {onde:?}"
+        );
+        assert!(
+            onde.distance(entrada) > planta.salas[planta.entrada()].raio - 1.5,
+            "didn't even walk to the wall ({onde:?}): the test measured nothing"
+        );
+    }
+
+    fn sala_da_primeira(p: &shared::planta::Planta) -> usize {
+        p.sala_da_etapa(0).unwrap()
     }
 
     #[test]

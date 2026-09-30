@@ -1,0 +1,685 @@
+//! PORÃO FLOOR PLANS: hand-designed cellars with rooms, corridors and gates.
+//!
+//! The owner, 29/09/2026: "a cool designed island whit paths to go through and
+//! you need to kill one mob to unlock a new area". Chosen afterwards: layouts
+//! hand-designed per dungeon.
+//!
+//! ## Shape
+//!
+//! A plan is ROOMS (discs) joined by CORRIDORS (straight, axis-aligned strips
+//! between two room centres). Walkable = inside a room, or inside an OPEN
+//! corridor. Everything else is wall. Axis-aligned because the client draws the
+//! walls as boxes, and a box can't be rotated.
+//!
+//! ## Progress
+//!
+//! Each fighting room has an `etapa` (the dungeon's `andar`): 0, 1, ... and the
+//! boss room is `andares`. A corridor with `abre = k` is shut by an iron gate
+//! until the run reaches `andar >= k` — i.e. until the Warden of the room of
+//! step `k - 1` falls. `abre = 0` is always open (entrance, side alcoves).
+//!
+//! ## Where it lives
+//!
+//! Every Porão runs on the Arena islet (`arena`), whose middle is flat and
+//! empty: no trees, no water, no rocks cutting through a corridor. The plan is
+//! written around `(0, 0)` and anchored at `ANCORA`. Instances don't see each
+//! other, so every Porão run uses the same spot.
+//!
+//! Collision, pathing and drawing all read THIS data: the server enforces the
+//! walls, the client draws them, and neither can disagree with the other.
+
+use glam::Vec2;
+
+/// Where every plan is anchored on the Arena islet.
+pub const ANCORA: Vec2 = crate::arena::CHEGADA;
+
+/// Corridor width, in world units. Five: room to fight in, and to be passed by
+/// a mob without getting stuck on it.
+pub const LARGURA: f32 = 5.0;
+
+/// A room.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sala {
+    pub centro: Vec2,
+    pub raio: f32,
+    pub papel: Papel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Papel {
+    /// Where the run starts and where the fallen come back. No mobs.
+    Entrada,
+    /// A fight: the mobs of step `n`, one of them the Warden.
+    Luta(u8),
+    /// The boss.
+    Chefe,
+    /// A dead end with nothing in it: the cellar isn't just a straight line.
+    Recanto,
+}
+
+/// A corridor between rooms `a` and `b` (indices into `salas`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Corredor {
+    pub a: usize,
+    pub b: usize,
+    /// Open once the run reaches this `andar`. 0 = always open.
+    pub abre: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Planta {
+    /// Content id of the Porão this is the plan of.
+    pub conteudo: u16,
+    pub salas: &'static [Sala],
+    pub corredores: &'static [Corredor],
+}
+
+const fn sala(x: f32, y: f32, raio: f32, papel: Papel) -> Sala {
+    Sala {
+        centro: Vec2::new(x, y),
+        raio,
+        papel,
+    }
+}
+
+const fn cor(a: usize, b: usize, abre: u8) -> Corredor {
+    Corredor { a, b, abre }
+}
+
+use Papel::*;
+
+/// The five plans. Every Porão has three fights and a boss (`andares = 3`).
+pub const PLANTAS: [Planta; 5] = [
+    // SHIPWRECK CELLAR — a serpentine: up, west, north, then east to the boss.
+    // The alcove east of the first room is the hold of the wreck: empty, but
+    // the cellar isn't a single line.
+    Planta {
+        conteudo: 1,
+        salas: &[
+            sala(0.0, -40.0, 6.0, Entrada),  // 0
+            sala(0.0, -20.0, 9.0, Luta(0)),  // 1
+            sala(-26.0, -20.0, 8.0, Luta(1)), // 2
+            sala(-26.0, 6.0, 9.0, Luta(2)),  // 3
+            sala(-26.0, 28.0, 4.0, Recanto), // 4: the bend before the boss
+            sala(4.0, 28.0, 11.0, Chefe),    // 5
+            sala(24.0, -20.0, 6.0, Recanto), // 6: the hold
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 1),
+            cor(2, 3, 2),
+            cor(3, 4, 3),
+            cor(4, 5, 0),
+            cor(1, 6, 0),
+        ],
+    },
+    // SMUGGLER'S CELLAR — a hub. West first, then east, then north to the
+    // boss: you keep coming back through the same hall. Each wing has a
+    // stash room behind it.
+    Planta {
+        conteudo: 2,
+        salas: &[
+            sala(0.0, -38.0, 6.0, Entrada),   // 0
+            sala(0.0, -14.0, 10.0, Luta(0)),  // 1: the hall
+            sala(-28.0, -14.0, 8.0, Luta(1)), // 2: west wing
+            sala(28.0, -14.0, 8.0, Luta(2)),  // 3: east wing
+            sala(0.0, 22.0, 12.0, Chefe),     // 4
+            sala(-28.0, 12.0, 6.0, Recanto),  // 5: west stash
+            sala(28.0, 12.0, 6.0, Recanto),   // 6: east stash
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 1),
+            cor(1, 3, 2),
+            cor(1, 4, 3),
+            cor(2, 5, 0),
+            cor(3, 6, 0),
+        ],
+    },
+    // FROZEN HULL — the length of a ship: bow to stern in a straight line,
+    // cabins off the middle deck, and the boss below the stern.
+    Planta {
+        conteudo: 3,
+        salas: &[
+            sala(-42.0, 0.0, 6.0, Entrada), // 0: the bow
+            sala(-22.0, 0.0, 9.0, Luta(0)), // 1
+            sala(0.0, 0.0, 9.0, Luta(1)),   // 2: middle deck
+            sala(22.0, 0.0, 9.0, Luta(2)),  // 3
+            sala(22.0, 26.0, 11.0, Chefe),  // 4: below the stern
+            sala(0.0, 20.0, 6.0, Recanto),  // 5: port cabin
+            sala(0.0, -20.0, 6.0, Recanto), // 6: starboard cabin
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 1),
+            cor(2, 3, 2),
+            cor(3, 4, 3),
+            cor(2, 5, 0),
+            cor(2, 6, 0),
+        ],
+    },
+    // SUNKEN CARAVAN — tunnels that turn at every room, like a caravan route
+    // buried in the sand, with an L-shaped dead end off the second room.
+    Planta {
+        conteudo: 4,
+        salas: &[
+            sala(-30.0, -34.0, 6.0, Entrada), // 0
+            sala(-30.0, -8.0, 9.0, Luta(0)),  // 1
+            sala(-4.0, -8.0, 9.0, Luta(1)),   // 2
+            sala(-4.0, 20.0, 9.0, Luta(2)),   // 3
+            sala(26.0, 20.0, 11.0, Chefe),    // 4
+            sala(20.0, -8.0, 5.0, Recanto),   // 5: the bend of the dead end
+            sala(20.0, -30.0, 6.0, Recanto),  // 6: its end
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 1),
+            cor(2, 3, 2),
+            cor(3, 4, 3),
+            cor(2, 5, 0),
+            cor(5, 6, 0),
+        ],
+    },
+    // THUNDER VAULT — a cross. The antechamber opens west, then east, and only
+    // then the long corridor north to the vault itself.
+    Planta {
+        conteudo: 5,
+        salas: &[
+            sala(0.0, -44.0, 6.0, Entrada),   // 0
+            sala(0.0, -24.0, 9.0, Luta(0)),   // 1: antechamber
+            sala(-26.0, -24.0, 8.0, Luta(1)), // 2
+            sala(26.0, -24.0, 8.0, Luta(2)),  // 3
+            sala(0.0, 16.0, 14.0, Chefe),     // 4: the vault
+            sala(-26.0, 0.0, 6.0, Recanto),   // 5
+            sala(26.0, 0.0, 6.0, Recanto),    // 6
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 1),
+            cor(1, 3, 2),
+            cor(1, 4, 3),
+            cor(2, 5, 0),
+            cor(3, 6, 0),
+        ],
+    },
+];
+
+/// The plan of this Porão, if it has one.
+pub fn da(conteudo: u16) -> Option<&'static Planta> {
+    PLANTAS.iter().find(|p| p.conteudo == conteudo)
+}
+
+/// Closest point of segment `a`-`b` to `p`.
+fn no_segmento(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+    a + ab * t
+}
+
+impl Planta {
+    /// The room of step `andar` (the boss room once `andar` reaches the end).
+    pub fn sala_da_etapa(&self, andar: u8) -> Option<usize> {
+        self.salas
+            .iter()
+            .position(|s| s.papel == Luta(andar))
+            .or_else(|| {
+                (andar >= self.lutas())
+                    .then(|| self.salas.iter().position(|s| s.papel == Chefe))
+                    .flatten()
+            })
+    }
+
+    /// How many fighting rooms (the content's `andares`).
+    pub fn lutas(&self) -> u8 {
+        self.salas
+            .iter()
+            .filter(|s| matches!(s.papel, Luta(_)))
+            .count() as u8
+    }
+
+    pub fn entrada(&self) -> usize {
+        self.salas
+            .iter()
+            .position(|s| s.papel == Entrada)
+            .unwrap_or(0)
+    }
+
+    /// World position of a room's centre.
+    pub fn centro(&self, sala: usize) -> Vec2 {
+        ANCORA + self.salas[sala].centro
+    }
+
+    /// Where the run starts, and where the fallen get up: the entrance room
+    /// for the first fight, the room of the step BEFORE for the others — the
+    /// last room already cleared, one gate away from the fight.
+    pub fn ponto_de_volta(&self, andar: u8) -> Vec2 {
+        if andar == 0 {
+            return self.centro(self.entrada());
+        }
+        self.sala_da_etapa(andar - 1)
+            .map_or(self.centro(self.entrada()), |s| self.centro(s))
+    }
+
+    fn corredor_aberto(&self, c: &Corredor, andar: u8) -> bool {
+        andar >= c.abre
+    }
+
+    /// The two ends of a corridor, in world coordinates.
+    pub fn pontas(&self, c: &Corredor) -> (Vec2, Vec2) {
+        (self.centro(c.a), self.centro(c.b))
+    }
+
+    /// Can a body of radius `raio` stand at `p` (world) at this step?
+    pub fn livre(&self, p: Vec2, raio: f32, andar: u8) -> bool {
+        self.salas
+            .iter()
+            .any(|s| (ANCORA + s.centro).distance(p) <= s.raio - raio)
+            || self.corredores.iter().any(|c| {
+                if !self.corredor_aberto(c, andar) {
+                    return false;
+                }
+                let (a, b) = self.pontas(c);
+                no_segmento(p, a, b).distance(p) <= LARGURA * 0.5 - raio
+            })
+    }
+
+    /// The walkable point closest to `p`.
+    pub fn mais_perto(&self, p: Vec2, raio: f32, andar: u8) -> Vec2 {
+        let mut melhor = self.centro(self.entrada());
+        let mut dist = f32::MAX;
+        let mut pesa = |q: Vec2| {
+            let d = q.distance_squared(p);
+            if d < dist {
+                dist = d;
+                melhor = q;
+            }
+        };
+        for s in self.salas {
+            let c = ANCORA + s.centro;
+            // A hair inside: exactly on the edge, float error calls it outside.
+            let folga = (s.raio - raio - 1e-3).max(0.0);
+            pesa(c + (p - c).clamp_length_max(folga));
+        }
+        for c in self.corredores {
+            if !self.corredor_aberto(c, andar) {
+                continue;
+            }
+            let (a, b) = self.pontas(c);
+            let eixo = no_segmento(p, a, b);
+            let folga = (LARGURA * 0.5 - raio - 1e-3).max(0.0);
+            pesa(eixo + (p - eixo).clamp_length_max(folga));
+        }
+        melhor
+    }
+
+    /// One step of movement against the walls: `de` wants to go to `para`.
+    ///
+    /// Free: goes. Blocked: slides to the closest walkable point, as long as
+    /// that isn't a jump (a step can't carry a body through a wall). Already
+    /// outside (a teleport, a spawn): comes back in.
+    pub fn mover(&self, de: Vec2, para: Vec2, raio: f32, andar: u8) -> Vec2 {
+        if self.livre(para, raio, andar) {
+            return para;
+        }
+        if !self.livre(de, raio + 0.01, andar) && !self.livre(de, raio, andar) {
+            return self.mais_perto(de, raio, andar);
+        }
+        let deslizou = self.mais_perto(para, raio, andar);
+        let passo = de.distance(para);
+        if deslizou.distance(de) <= passo + 0.05 {
+            deslizou
+        } else {
+            de
+        }
+    }
+
+    /// The rooms a point is in (a point in a corridor mouth is in two shapes).
+    fn salas_de(&self, p: Vec2, andar: u8) -> Vec<usize> {
+        let mut v: Vec<usize> = self
+            .salas
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| (ANCORA + s.centro).distance(p) <= s.raio)
+            .map(|(i, _)| i)
+            .collect();
+        if v.is_empty() {
+            // In a corridor: both ends are reachable along it.
+            for c in self.corredores {
+                if !self.corredor_aberto(c, andar) {
+                    continue;
+                }
+                let (a, b) = self.pontas(c);
+                if no_segmento(p, a, b).distance(p) <= LARGURA * 0.5 {
+                    v.push(c.a);
+                    v.push(c.b);
+                }
+            }
+        }
+        v
+    }
+
+    /// A walking route from `de` to `para` through open corridors: the room
+    /// centres in between, then the destination. `None` when a gate is in the
+    /// way — there's no path yet, and walking into the gate isn't one.
+    ///
+    /// Every leg is straight inside one convex shape (a disc, or a strip whose
+    /// axis runs between two room centres), so the route never touches a wall.
+    pub fn caminho(&self, de: Vec2, para: Vec2, andar: u8) -> Option<Vec<Vec2>> {
+        let para = if self.livre(para, crate::constants::ENTITY_RADIUS, andar) {
+            para
+        } else {
+            self.mais_perto(para, crate::constants::ENTITY_RADIUS, andar)
+        };
+        let origens = self.salas_de(de, andar);
+        let destinos = self.salas_de(para, andar);
+        if origens.is_empty() || destinos.is_empty() {
+            return None;
+        }
+        if origens.iter().any(|o| destinos.contains(o)) {
+            return Some(vec![para]);
+        }
+        // Breadth-first over rooms: the plans are small and the corridors all
+        // cost about the same.
+        let n = self.salas.len();
+        let mut veio: Vec<Option<usize>> = vec![None; n];
+        let mut visto = vec![false; n];
+        let mut fila = std::collections::VecDeque::new();
+        for &o in &origens {
+            visto[o] = true;
+            fila.push_back(o);
+        }
+        let mut achou = None;
+        while let Some(s) = fila.pop_front() {
+            if destinos.contains(&s) {
+                achou = Some(s);
+                break;
+            }
+            for c in self.corredores {
+                if !self.corredor_aberto(c, andar) {
+                    continue;
+                }
+                let outra = if c.a == s {
+                    c.b
+                } else if c.b == s {
+                    c.a
+                } else {
+                    continue;
+                };
+                if !visto[outra] {
+                    visto[outra] = true;
+                    veio[outra] = Some(s);
+                    fila.push_back(outra);
+                }
+            }
+        }
+        let mut s = achou?;
+        let mut salas = vec![s];
+        while let Some(antes) = veio[s] {
+            salas.push(antes);
+            s = antes;
+        }
+        salas.reverse();
+        let mut rota: Vec<Vec2> = salas.iter().map(|&s| self.centro(s)).collect();
+        rota.push(para);
+        Some(rota)
+    }
+
+    /// The gates still shut at this step: (where, facing along the corridor).
+    /// Each sits at the mouth of the corridor, on the side of the room the run
+    /// is coming from.
+    pub fn portoes_fechados(&self, andar: u8) -> Vec<(Vec2, Vec2)> {
+        self.corredores
+            .iter()
+            .filter(|c| !self.corredor_aberto(c, andar))
+            .map(|c| {
+                // The gate faces the side you arrive from: the room of the
+                // earlier step (the entrance counts as the earliest).
+                let ordem = |i: usize| match self.salas[i].papel {
+                    Entrada => -1i32,
+                    Luta(n) => n as i32,
+                    Chefe => 99,
+                    Recanto => 50,
+                };
+                let (de, para) = if ordem(c.a) <= ordem(c.b) {
+                    (c.a, c.b)
+                } else {
+                    (c.b, c.a)
+                };
+                let (a, b) = (self.centro(de), self.centro(para));
+                let dir = (b - a).normalize_or_zero();
+                (a + dir * (self.salas[de].raio + 0.4), dir)
+            })
+            .collect()
+    }
+
+    /// The farthest walkable point from the anchor: what must fit on the
+    /// islet's flat top.
+    pub fn alcance(&self) -> f32 {
+        let salas = self
+            .salas
+            .iter()
+            .map(|s| s.centro.length() + s.raio)
+            .fold(0.0f32, f32::max);
+        let corredores = self
+            .corredores
+            .iter()
+            .map(|c| {
+                self.salas[c.a]
+                    .centro
+                    .length()
+                    .max(self.salas[c.b].centro.length())
+                    + LARGURA * 0.5
+            })
+            .fold(0.0f32, f32::max);
+        salas.max(corredores)
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use crate::constants::ENTITY_RADIUS as R;
+
+    /// EVERY PORÃO HAS A PLAN, AND THE PLAN AGREES WITH THE CONTENT.
+    #[test]
+    fn todo_porao_tem_planta_e_ela_bate_com_o_conteudo() {
+        for c in crate::dungeon::CONTEUDOS
+            .iter()
+            .filter(|c| c.tipo == crate::dungeon::Tipo::Porao)
+        {
+            let p = da(c.id).unwrap_or_else(|| panic!("{} has no plan", c.nome));
+            assert_eq!(
+                p.lutas(),
+                c.andares,
+                "{}: the plan has {} fights and the content {} floors",
+                c.nome,
+                p.lutas(),
+                c.andares
+            );
+            for n in 0..c.andares {
+                assert!(p.sala_da_etapa(n).is_some(), "{}: no room for step {n}", c.nome);
+            }
+            assert!(
+                p.salas.iter().filter(|s| s.papel == Chefe).count() == 1,
+                "{}: one boss room",
+                c.nome
+            );
+            assert!(
+                p.salas.iter().filter(|s| s.papel == Entrada).count() == 1,
+                "{}: one entrance",
+                c.nome
+            );
+        }
+    }
+
+    /// CORRIDORS ARE STRAIGHT ALONG AN AXIS — the client draws walls as boxes.
+    #[test]
+    fn todo_corredor_e_reto_num_eixo() {
+        for p in &PLANTAS {
+            for c in p.corredores {
+                let (a, b) = (p.salas[c.a].centro, p.salas[c.b].centro);
+                assert!(
+                    a.x == b.x || a.y == b.y,
+                    "plan {}: corridor {}-{} is diagonal",
+                    p.conteudo,
+                    c.a,
+                    c.b
+                );
+            }
+        }
+    }
+
+    /// THE WHOLE CELLAR FITS ON THE ISLET'S FLAT TOP, with room to spare for
+    /// the walls around it.
+    #[test]
+    fn a_planta_cabe_no_plato_da_ilhota() {
+        for p in &PLANTAS {
+            let alcance = p.alcance();
+            assert!(
+                alcance + 3.0 <= crate::arena::RAIO_PLANO,
+                "plan {} reaches {alcance:.1} u; the flat top is {}",
+                p.conteudo,
+                crate::arena::RAIO_PLANO
+            );
+        }
+    }
+
+    /// THE GATES DO THEIR JOB: at the start the boss is unreachable, and once
+    /// every step is done, the route runs from the entrance to the boss.
+    ///
+    /// And the order is the one designed: each gate opens the next fighting
+    /// room and no other — skipping a room is not a shortcut the plan offers.
+    #[test]
+    fn os_portoes_seguram_a_ordem_das_salas() {
+        for p in &PLANTAS {
+            let entrada = p.centro(p.entrada());
+            let chefe = p.centro(p.sala_da_etapa(p.lutas()).unwrap());
+            assert!(
+                p.caminho(entrada, chefe, 0).is_none(),
+                "plan {}: the boss is reachable at the start",
+                p.conteudo
+            );
+            for andar in 0..=p.lutas() {
+                let alvo = p.centro(p.sala_da_etapa(andar).unwrap());
+                assert!(
+                    p.caminho(entrada, alvo, andar).is_some(),
+                    "plan {}: step {andar}'s room unreachable at step {andar}",
+                    p.conteudo
+                );
+                if let Some(depois) = p.sala_da_etapa(andar + 1) {
+                    if andar < p.lutas() {
+                        assert!(
+                            p.caminho(entrada, p.centro(depois), andar).is_none(),
+                            "plan {}: step {}'s room reachable before its gate",
+                            p.conteudo,
+                            andar + 1
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// EVERY LEG OF A ROUTE IS WALKABLE — sampled along its length. A route
+    /// that clips a wall would leave the body sliding on it forever.
+    #[test]
+    fn a_rota_nunca_raspa_na_parede() {
+        for p in &PLANTAS {
+            let fim = p.lutas();
+            for (i, a) in p.salas.iter().enumerate() {
+                for (j, b) in p.salas.iter().enumerate() {
+                    if i == j {
+                        continue;
+                    }
+                    let de = ANCORA + a.centro + Vec2::new(a.raio * 0.5, 0.0);
+                    let para = ANCORA + b.centro - Vec2::new(0.0, b.raio * 0.5);
+                    let rota = p.caminho(de, para, fim).expect("all open at the end");
+                    let mut antes = de;
+                    for ponto in rota {
+                        for k in 0..=40 {
+                            let q = antes.lerp(ponto, k as f32 / 40.0);
+                            assert!(
+                                p.livre(q, R, fim),
+                                "plan {}: route {i}->{j} clips a wall at {q:?}",
+                                p.conteudo
+                            );
+                        }
+                        antes = ponto;
+                    }
+                }
+            }
+        }
+    }
+
+    /// NO TWO SHAPES TOUCH UNLESS A CORRIDOR JOINS THEM. Otherwise a wall
+    /// thinner than a body separates two rooms — or none does, and the gate
+    /// is decoration.
+    #[test]
+    fn paredes_separam_o_que_nao_e_ligado() {
+        for p in &PLANTAS {
+            for (i, a) in p.salas.iter().enumerate() {
+                for (j, b) in p.salas.iter().enumerate().skip(i + 1) {
+                    let ligadas = p
+                        .corredores
+                        .iter()
+                        .any(|c| (c.a == i && c.b == j) || (c.a == j && c.b == i));
+                    if ligadas {
+                        continue;
+                    }
+                    let folga = a.centro.distance(b.centro) - a.raio - b.raio;
+                    assert!(
+                        folga >= 3.0,
+                        "plan {}: rooms {i} and {j} are {folga:.1} u apart",
+                        p.conteudo
+                    );
+                }
+                for (k, c) in p.corredores.iter().enumerate() {
+                    if c.a == i || c.b == i {
+                        continue;
+                    }
+                    let (x, y) = (p.salas[c.a].centro, p.salas[c.b].centro);
+                    let folga = no_segmento(a.centro, x, y).distance(a.centro)
+                        - a.raio
+                        - LARGURA * 0.5;
+                    assert!(
+                        folga >= 3.0,
+                        "plan {}: room {i} is {folga:.1} u from corridor {k}",
+                        p.conteudo
+                    );
+                }
+            }
+        }
+    }
+
+    /// MOVING INTO A WALL SLIDES ALONG IT, AND NEVER THROUGH IT.
+    #[test]
+    fn andar_contra_a_parede_desliza_e_nao_atravessa() {
+        let p = da(1).unwrap();
+        let c = p.centro(1);
+        let raio = p.salas[1].raio;
+        // Walking north from the room centre (no corridor that way): stops at
+        // the wall, never beyond, sliding a little sideways as it pushes.
+        let mut q = c;
+        for _ in 0..400 {
+            q = p.mover(q, q + Vec2::new(0.03, 0.15), R, 0);
+            assert!(p.livre(q, R, 0), "left the walkable area at {q:?}");
+        }
+        assert!(q.distance(c) <= raio, "went through the wall: {q:?}");
+        assert!(q.distance(c) > raio - 1.0, "didn't reach the wall: {q:?}");
+        // A shut gate: walking west from room 1 into the gate to room 2 stops.
+        let mut q = c;
+        for _ in 0..400 {
+            q = p.mover(q, q - Vec2::new(0.15, 0.0), R, 0);
+        }
+        assert!(q.x > c.x - raio, "walked through the shut gate: {q:?}");
+        // The same walk at step 1 (gate open) gets through.
+        let mut q = c;
+        for _ in 0..400 {
+            q = p.mover(q, q - Vec2::new(0.15, 0.0), R, 1);
+        }
+        assert!(q.x < c.x - raio - 5.0, "the open gate didn't let through: {q:?}");
+        // Thrown outside (teleport): comes back in.
+        let fora = ANCORA + Vec2::new(60.0, 60.0);
+        assert!(p.livre(p.mover(fora, fora, R, 0), R, 0));
+    }
+}
