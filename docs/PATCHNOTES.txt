@@ -4,7 +4,7 @@ PORÕES REDESENHADOS. Usar a chave na porta agora leva você PORÃO ABAIXO: cada
 
 As plantas: o Porão do Naufrágio é uma serpente, o do Contrabandista um salão com duas alas, o Casco Congelado vai da proa à popa, a Caravana Soterrada vira a cada sala, e o Cofre do Trovão é uma cruz com o cofre no fim do corredor longo.
 
-OÁSIS NO ERMO. No meio do deserto agora há um oásis: uma lagoa com margem de grama, flores e um bosque denso — a única mata do Ermo, com Madeira T3. Está marcado no mapa da ilha como "Oasis" e aparece no "Ir para".
+OÁSIS NO ERMO. No meio do deserto agora há um oásis: uma lagoa com margem de grama, flores e um bosque denso — a única mata do Ermo, com Madeira T3. Fica perto do centro da ilha, marcado no mapa como "Oasis", e aparece no "Ir para".
 
 Atualização obrigatória: o protocolo subiu para 162.
 

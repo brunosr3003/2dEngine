@@ -2133,6 +2133,7 @@ pub async fn previa_da_colonia(solido: &macroquad::material::Material, vox: &cra
 
 /// Preview of the Ermo's OASIS (`MMO_PREVIA_OASIS=1`; PNGs in
 /// `MMO_PREVIA_SAIDA`): close and far, and the island map with it on.
+#[cfg(debug_assertions)]
 pub async fn previa_do_oasis() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-oasis".into());
     std::fs::create_dir_all(&saida).unwrap();

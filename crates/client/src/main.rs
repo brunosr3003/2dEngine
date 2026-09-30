@@ -648,6 +648,7 @@ async fn main() {
         terreno::previa_do_oasis().await;
         return;
     }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PLANALTO").is_ok() {
         terreno::previa_do_planalto().await;
         return;
