@@ -1,3 +1,9 @@
+29/09/2026 — As chaves de Porão agora se fabricam
+
+As receitas das chaves existiam, mas não apareciam em lugar nenhum da Oficina — só havia abas de equipamento. Agora o Craft tem a aba CHAVES DE DUNGEON, com as cinco chaves: escolha a do Porão, veja quanto de madeira e aço você tem, e fabrique.
+
+Não é atualização obrigatória — o protocolo continua o 159. Mas sem ela a aba não aparece.
+
 29/09/2026 — "Passo dos Ventos"
 
 O trecho da trilha do Planalto que se chamava "Monastery of the Winds" — o mesmo nome de uma das Grutas — agora se chama PASSO DOS VENTOS. No mapa ele parecia uma dungeon, e não é: é um pedaço da trilha, como os vizinhos. A Gruta do Mosteiro continua no painel de dungeons, igual.
