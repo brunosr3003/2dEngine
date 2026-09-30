@@ -1,3 +1,18 @@
+30/09/2026 — Porões de verdade: cavernas, castelo e tumba feitos de blocos
+
+Os Porões deixaram de ser um caminho pintado em cima da grama. Agora cada um é ESCAVADO no terreno, com chão e paredes de blocos de verdade — e as auras e os avisos de ataque de chefe voltam a aparecer por cima do chão, como em qualquer lugar.
+
+Cada Porão ganhou sua cara, numa ilha de dungeons maior:
+• Porão do Naufrágio — uma caverna escavada num morro de pedra coberto de grama e flores, chão de pedra escura.
+• Porão do Contrabandista — um porão de tijolos, com paredes em fiadas e piso de lajotas.
+• Casco Congelado — paredes de gelo e chão de neve.
+• Caravana Soterrada — uma tumba de arenito no meio da areia.
+• Cofre do Trovão — um castelo de pedra com ameias no alto das muralhas.
+
+As salas, os portões e a regra continuam: cada sala precisa ser LIMPA por inteiro (o Guardião e o bando todo) para o portão da próxima abrir.
+
+Atualização obrigatória: o protocolo subiu para 163.
+
 30/09/2026 — Porões com salas, paredes e portões; e um oásis no Ermo
 
 PORÕES REDESENHADOS. Usar a chave na porta agora leva você PORÃO ABAIXO: cada um dos cinco Porões tem sua própria planta desenhada à mão — salas ligadas por corredores, com paredes de pedra, tochas e portões de ferro. Cada sala de luta tem um GUARDIÃO (Warden): derrote-o e o portão da próxima sala se abre. O resto do bando pode ficar para trás, mas continua lá. São três salas e depois o chefe. Também há recantos vazios fora do caminho principal. Quem cai volta na última sala já liberada. Ao terminar (ou sair), você sobe de volta pela mesma porta, na ilha do Porão.

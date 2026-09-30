@@ -56,7 +56,12 @@ pub const ZONA: &str = "dungeon";
 /// ENCOLHEU de 420 a pedido do dono: "a arena de dungeon tá desnecessariamente
 /// grande". Estava dimensionada pra quatro sítios espalhados numa planície
 /// larga; quatro sítios a 70 u de distância cabem num platô bem menor.
-pub const RAIO_BLOCOS: i32 = 200;
+///
+/// GREW AGAIN on 30/09/2026, to 640 (320 u): the five Porões are carved into
+/// the islet now (`planta`), on a ring at 200 u, each in its own rock mass,
+/// and the islet needs the plain to stand them on. The middle stays the Gruta
+/// floors' flat ground, exactly as before.
+pub const RAIO_BLOCOS: i32 = 640;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///
@@ -83,7 +88,7 @@ pub const ALTURA: f32 = 16.0;
 ///
 /// Desenhar resolve por construção. 90 u de raio plano bastam pros quatro
 /// sítios a 70 u — `cabem_os_quatro_sitios_do_rodizio` confere.
-pub const RAIO_PLANO: f32 = 62.0;
+pub const RAIO_PLANO: f32 = 285.0;
 
 /// Onde o chão acaba, em unidades. Entre ele e `RAIO_PLANO` desce a rampa.
 ///
@@ -92,7 +97,7 @@ pub const RAIO_PLANO: f32 = 62.0;
 /// então o piso dele transborda. Terra firme bem além do platô é o que impede
 /// a luta de acontecer em cima do mar.
 /// `o_andar_inteiro_cai_em_terra_firme` é quem confere.
-pub const RAIO_TERRA: f32 = 92.0;
+pub const RAIO_TERRA: f32 = 315.0;
 
 /// O que há FORA da ilhota, em índice de bloco. Fundo, pra ler como mar.
 pub const NIVEL_FUNDO: i32 = -64;
@@ -114,6 +119,15 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     let d = (x * x + z * z).sqrt();
     if d >= RAIO_TERRA {
         return NIVEL_FUNDO;
+    }
+    // THE PORÕES are carved into the plain (`planta`): rock, castle and
+    // tomb standing on it, the halls dug into them.
+    if d <= RAIO_PLANO {
+        let chao = (ALTURA / crate::terreno::BLOCO).round() as i32 - 1;
+        let p = glam::Vec2::new(x, z);
+        if let Some(b) = crate::planta::complexo_em(p).and_then(|pl| pl.bloco(p, chao)) {
+            return b;
+        }
     }
     let h = if d <= RAIO_PLANO {
         ALTURA

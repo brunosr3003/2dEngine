@@ -792,13 +792,23 @@ impl Terreno {
                     // Desce a parede em FAIXAS do mesmo material: grama no
                     // primeiro bloco, terra ate' o terceiro, rocha no resto.
                     // Sem isso um barranco de dez blocos sai de uma cor so'.
+                    // A Porão's walls on the Arena are its own stone, in
+                    // courses (`planta::Planta::pedra`), not the islet's soil.
+                    let (gx, gz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                    let porao = if self.ger.e_arena() {
+                        shared::planta::complexo_em(::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO))
+                    } else {
+                        None
+                    };
+                    let faixa = |prof: i32| match porao {
+                        Some(pl) => pl.pedra(gx, gz, prof),
+                        None => material_de_profundidade(self.bioma_visual, topo_mat, topo, prof),
+                    };
                     let mut b = h;
                     while b > piso {
-                        let mat = material_de_profundidade(self.bioma_visual, topo_mat, topo, h - b);
+                        let mat = faixa(h - b);
                         let mut fim = b;
-                        while fim > piso
-                            && material_de_profundidade(self.bioma_visual, topo_mat, topo, h - fim) == mat
-                        {
+                        while fim > piso && faixa(h - fim) == mat {
                             fim -= 1;
                         }
                         let y1 = (b + 1) as f32 * BLOCO;

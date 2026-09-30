@@ -5708,8 +5708,9 @@ impl Jogo {
                 (self.dungeon.em_curso(), &self.terreno)
             {
                 if let Some(p) = shared::planta::da(conteudo) {
-                    let a = shared::planta::ANCORA;
-                    let y = terreno.altura(a.x, a.y);
+                    // The floor's height: the entrance hall is floor.
+                    let e = p.centro(p.entrada());
+                    let y = terreno.altura(e.x, e.y);
                     self.plantas.de(p).desenha(p, y, andar);
                 }
             }

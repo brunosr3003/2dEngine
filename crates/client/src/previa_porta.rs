@@ -57,9 +57,8 @@ pub async fn abrir(solido: &macroquad::material::Material) {
 
 
 /// Preview of the Porão FLOOR PLANS (`MMO_PREVIA_PLANTA=1`; PNGs in
-/// `MMO_PREVIA_SAIDA`): each plan from high above (the whole map) and from the
-/// game's camera at the entrance, gates shut; and the first plan again with
-/// every gate open, to see the difference.
+/// `MMO_PREVIA_SAIDA`): each cellar carved into the Arena's real terrain, from
+/// high above and from the game's camera, gates shut.
 #[cfg(debug_assertions)]
 pub async fn plantas(solido: &macroquad::material::Material) {
     let saida =
@@ -67,70 +66,67 @@ pub async fn plantas(solido: &macroquad::material::Material) {
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
     let rt = macroquad::texture::render_target_ex(
-        screen_width() as u32,
-        screen_height() as u32,
+        1280,
+        800,
         macroquad::texture::RenderTargetParams { depth: true, sample_count: 1 },
     );
     rt.texture.set_filter(FilterMode::Linear);
     crate::render3d::define_alvo(Some(rt.clone()));
+    let mut t = crate::terreno::Terreno::novo(&shared::arena::DEF);
     let mut cache = crate::porao_planta::Cache::default();
-    let mut quadros: Vec<(String, u16, u8, Camera3D, Vec2)> = Vec::new();
     for p in &shared::planta::PLANTAS {
-        let alto = Camera3D {
-            position: vec3(0.0, 105.0, 42.0),
-            target: vec3(0.0, 0.0, 0.0),
-            up: Vec3::Y,
-            fovy: 0.9,
-            render_target: crate::render3d::alvo(),
-            ..Default::default()
-        };
+        // The islet re-themes to the Porão's island, as in game.
+        if let Some(b) = shared::dungeon::conteudo(p.conteudo)
+            .and_then(|c| shared::terreno::def_da_zona(c.zona))
+            .map(|d| d.bioma)
+        {
+            t.tema_da_dungeon(b);
+        }
+        let a = vec2(p.ancora.x, p.ancora.y);
+        t.atualiza(a, 16, 6000);
         let e = p.centro(p.entrada());
-        let s = p.centro(p.sala_da_etapa(0).unwrap());
-        let eu = vec2(e.x + (s.x - e.x) * 0.55, e.y + (s.y - e.y) * 0.55);
-        // The game's camera: behind the character (south, +z) and above, at
-        // about the default tilt.
-        let jogo = Camera3D {
-            position: vec3(eu.x, 11.0, eu.y + 13.0),
-            target: vec3(eu.x, 0.8, eu.y),
-            up: Vec3::Y,
-            fovy: 0.9,
-            render_target: crate::render3d::alvo(),
-            ..Default::default()
-        };
-        quadros.push((format!("planta{}-mapa", p.conteudo), p.conteudo, 0, alto, eu));
-        quadros.push((format!("planta{}-jogo", p.conteudo), p.conteudo, 0, jogo, eu));
-    }
-    if let Some((_, _, _, cam, eu)) = quadros.first() {
-        let cam = Camera3D {
-            position: cam.position,
-            target: cam.target,
-            up: cam.up,
-            fovy: cam.fovy,
-            render_target: crate::render3d::alvo(),
-            ..Default::default()
-        };
-        let eu = *eu;
-        quadros.push(("planta1-mapa-aberta".into(), 1, u8::MAX, cam, eu));
-    }
-    for (nome, conteudo, andar, cam, eu) in quadros {
-        let p = shared::planta::da(conteudo).unwrap();
-        for _ in 0..2 {
-            crate::render3d::camera_padrao();
-            clear_background(Color::new(0.06, 0.07, 0.08, 1.0));
-            set_camera(&cam);
-            draw_plane(Vec3::ZERO, vec2(140.0, 140.0), None, Color::from_rgba(52, 78, 42, 255));
-            macroquad::material::gl_use_material(solido);
-            cache.de(p).desenha(p, 0.0, andar);
-            macroquad::material::gl_use_default_material();
-            // A character-sized box where the player would stand, and a
-            // Warden-sized one in the middle of the first room, for scale.
-            draw_cube(vec3(eu.x, 0.9, eu.y), vec3(0.7, 1.8, 0.4), None, Color::from_rgba(80, 140, 230, 255));
-            let s = p.centro(p.sala_da_etapa(0).unwrap());
-            draw_cube(vec3(s.x, 1.1, s.y), vec3(1.0, 2.2, 1.0), None, Color::from_rgba(200, 60, 60, 255));
-            crate::render3d::camera_padrao();
-            unsafe { macroquad::window::get_internal_gl().flush() };
-            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
-            next_frame().await;
+        let s0 = p.centro(p.sala_da_etapa(0).unwrap());
+        let eu = vec2(e.x + (s0.x - e.x) * 0.6, e.y + (s0.y - e.y) * 0.6);
+        let chao = t.altura(e.x, e.y);
+        let quadros = [
+            (
+                format!("planta{}-mapa", p.conteudo),
+                vec3(a.x + 20.0, chao + 95.0, a.y + 70.0),
+                vec3(a.x, chao, a.y),
+            ),
+            (
+                format!("planta{}-jogo", p.conteudo),
+                vec3(eu.x, chao + 11.0, eu.y + 13.0),
+                vec3(eu.x, chao + 0.8, eu.y),
+            ),
+        ];
+        for (nome, olho, alvo) in quadros {
+            for _ in 0..3 {
+                let cam = Camera3D {
+                    position: olho,
+                    target: alvo,
+                    up: Vec3::Y,
+                    fovy: 0.9,
+                    aspect: Some(1.6),
+                    render_target: crate::render3d::alvo(),
+                    ..Default::default()
+                };
+                crate::render3d::camera_padrao();
+                clear_background(Color::from_rgba(150, 186, 214, 255));
+                set_camera(&cam);
+                macroquad::material::gl_use_material(solido);
+                t.desenha(&cam, Vec3::ZERO, 0.0);
+                t.desenha_sombras(&cam);
+                cache.de(p).desenha(p, chao, 0);
+                // Someone for scale, where the player would stand.
+                draw_cube(vec3(eu.x, chao + 0.9, eu.y), vec3(0.7, 1.8, 0.4), None, Color::from_rgba(80, 140, 230, 255));
+                crate::agua::desenha(&t, &cam, 0.0);
+                macroquad::material::gl_use_default_material();
+                crate::render3d::camera_padrao();
+                unsafe { macroquad::window::get_internal_gl().flush() };
+                rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+                next_frame().await;
+            }
         }
     }
 }

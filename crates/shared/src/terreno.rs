@@ -1164,6 +1164,14 @@ pub fn arvore_da_coluna(
     } else {
         1.0
     };
+    // No trees in or on a Porão (`planta`): a trunk on the rim would lean
+    // over the hall. Past its rock, the plain grows as always.
+    if ger.e_arena() {
+        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+        if crate::planta::complexo_em(p).is_some_and(|pl| pl.bloco(p, 0).is_some()) {
+            return None;
+        }
+    }
     // THE OASIS GROVE: the one thick wood of the Ermo (`oasis`).
     let bosque = ger.oasis().is_some_and(|o| o.no_bosque(bx, bz));
     let prob = if bosque {
@@ -1253,6 +1261,18 @@ pub fn planta_da_coluna(
     } else {
         1.0
     };
+    // In a Porão, flowers and ferns grow only on a cave's grassy hilltop.
+    if ger.e_arena() {
+        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+        if let Some(pl) = crate::planta::complexo_em(p) {
+            // Past this cellar's rock the plain grows as always.
+            if pl.bloco(p, 0).is_some()
+                && (pl.tema != crate::planta::Tema::Caverna || !pl.no_topo(p))
+            {
+                return None;
+            }
+        }
+    }
     // The oasis shore grows the Bosque's flowers and ferns, not desert stalks.
     let bioma = if ger.oasis().is_some_and(|o| o.no_verde(bx, bz)) {
         Bioma::Floresta
@@ -2491,6 +2511,15 @@ impl Gerador {
         // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
         // apaga a unica leitura de relevo que o jogo da' sem texto.
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
+        // A Porão's halls and walls on the Arena (`planta`).
+        if self.e_arena() {
+            let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+            if let Some(pl) = crate::planta::complexo_em(p) {
+                if pl.bloco(p, 0).is_some() {
+                    return pl.pintura(p);
+                }
+            }
+        }
         // The oasis: wet sand at the water, then grass — the only green in
         // the Ermo, which is the point.
         if let Some(o) = &self.oasis {
@@ -3011,7 +3040,8 @@ const MAGICA: [u8; 4] = *b"TALT";
 // patio com ele. Cache velho traria a ilha antiga com o porto novo desenhado
 // por cima.
 // 9 (30/09/2026): the Ermo's oasis digs a pond into the dunes (`oasis`).
-const VERSAO: u16 = 9;
+// 10 (30/09/2026): the Porões are carved into a larger Arena (`planta`).
+const VERSAO: u16 = 10;
 
 impl Ilha {
     pub fn planalto(&self) -> Option<&crate::planalto::Plano> { self.ger.planalto() }

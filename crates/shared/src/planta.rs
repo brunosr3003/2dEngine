@@ -20,18 +20,45 @@
 //!
 //! ## Where it lives
 //!
-//! Every Porão runs on the Arena islet (`arena`), whose middle is flat and
-//! empty: no trees, no water, no rocks cutting through a corridor. The plan is
-//! written around `(0, 0)` and anchored at `ANCORA`. Instances don't see each
-//! other, so every Porão run uses the same spot.
+//! Every Porão is CARVED into the Arena islet (`arena`): a mass of rock (or a
+//! castle, a brick cellar, an ice hull, a sandstone tomb — its `Tema`) standing
+//! on the islet's plain, with the rooms and corridors dug into it. The walls
+//! are real terrain blocks, and the floor is real ground: what the player walks
+//! on is what effects are drawn on.
 //!
-//! Collision, pathing and drawing all read THIS data: the server enforces the
-//! walls, the client draws them, and neither can disagree with the other.
+//! The owner, 30/09/2026, after the first version (a path of stone slabs laid
+//! over the islet's grass): "the floor looks like just paint instead of real
+//! blocks ... this island is verry poor ... i though in be something more
+//! organic and visualy beauty ... like a real dungeun or castle".
+//!
+//! Each plan has its own spot on a ring around the islet's middle (`ancora`),
+//! so the five never overlap; the Gruta floors keep the middle. Instances
+//! don't see each other, so two runs of the same Porão share its halls.
+//!
+//! The relief (`bloco`), the ground paint and the wall stone all come from
+//! here, through the `Gerador` both sides share; the plan's own collision
+//! (`livre`) still holds the gates, which aren't terrain.
 
 use glam::Vec2;
 
-/// Where every plan is anchored on the Arena islet.
-pub const ANCORA: Vec2 = crate::arena::CHEGADA;
+/// How far from the islet's middle the plans stand: past the Gruta floors
+/// (sites near the middle, a 55 u floor around each) with room to spare.
+pub const ANEL: f32 = 200.0;
+
+/// How the cellar looks. Its walls, floor and the shape of its rock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tema {
+    /// A wet sea cave: dark rock, uneven walls.
+    Caverna,
+    /// A smuggler's cellar: brick walls in courses, flagstone floor.
+    Tijolo,
+    /// The frozen hull: ice walls, snow on the floor.
+    Gelo,
+    /// A tomb in the sand: sandstone.
+    Arenito,
+    /// A castle vault: dressed stone, battlements on the wall tops.
+    Castelo,
+}
 
 /// Corridor width, in world units. Five: room to fight in, and to be passed by
 /// a mob without getting stuck on it.
@@ -70,6 +97,9 @@ pub struct Corredor {
 pub struct Planta {
     /// Content id of the Porão this is the plan of.
     pub conteudo: u16,
+    /// Where on the Arena islet the plan's `(0, 0)` stands.
+    pub ancora: Vec2,
+    pub tema: Tema,
     pub salas: &'static [Sala],
     pub corredores: &'static [Corredor],
 }
@@ -95,6 +125,8 @@ pub const PLANTAS: [Planta; 5] = [
     // the cellar isn't a single line.
     Planta {
         conteudo: 1,
+        ancora: Vec2::new(0.0, 200.0),
+        tema: Tema::Caverna,
         salas: &[
             sala(0.0, -40.0, 6.0, Entrada),  // 0
             sala(0.0, -20.0, 9.0, Luta(0)),  // 1
@@ -118,6 +150,8 @@ pub const PLANTAS: [Planta; 5] = [
     // stash room behind it.
     Planta {
         conteudo: 2,
+        ancora: Vec2::new(-190.2, 61.8),
+        tema: Tema::Tijolo,
         salas: &[
             sala(0.0, -38.0, 6.0, Entrada),   // 0
             sala(0.0, -14.0, 10.0, Luta(0)),  // 1: the hall
@@ -140,6 +174,8 @@ pub const PLANTAS: [Planta; 5] = [
     // cabins off the middle deck, and the boss below the stern.
     Planta {
         conteudo: 3,
+        ancora: Vec2::new(-117.6, -161.8),
+        tema: Tema::Gelo,
         salas: &[
             sala(-42.0, 0.0, 6.0, Entrada), // 0: the bow
             sala(-22.0, 0.0, 9.0, Luta(0)), // 1
@@ -162,6 +198,8 @@ pub const PLANTAS: [Planta; 5] = [
     // buried in the sand, with an L-shaped dead end off the second room.
     Planta {
         conteudo: 4,
+        ancora: Vec2::new(117.6, -161.8),
+        tema: Tema::Arenito,
         salas: &[
             sala(-30.0, -34.0, 6.0, Entrada), // 0
             sala(-30.0, -8.0, 9.0, Luta(0)),  // 1
@@ -184,6 +222,8 @@ pub const PLANTAS: [Planta; 5] = [
     // then the long corridor north to the vault itself.
     Planta {
         conteudo: 5,
+        ancora: Vec2::new(190.2, 61.8),
+        tema: Tema::Castelo,
         salas: &[
             sala(0.0, -44.0, 6.0, Entrada),   // 0
             sala(0.0, -24.0, 9.0, Luta(0)),   // 1: antechamber
@@ -246,7 +286,7 @@ impl Planta {
 
     /// World position of a room's centre.
     pub fn centro(&self, sala: usize) -> Vec2 {
-        ANCORA + self.salas[sala].centro
+        self.ancora + self.salas[sala].centro
     }
 
     /// Where the run starts, and where the fallen get up: the entrance room
@@ -273,7 +313,7 @@ impl Planta {
     pub fn livre(&self, p: Vec2, raio: f32, andar: u8) -> bool {
         self.salas
             .iter()
-            .any(|s| (ANCORA + s.centro).distance(p) <= s.raio - raio)
+            .any(|s| (self.ancora + s.centro).distance(p) <= s.raio - raio)
             || self.corredores.iter().any(|c| {
                 if !self.corredor_aberto(c, andar) {
                     return false;
@@ -295,7 +335,7 @@ impl Planta {
             }
         };
         for s in self.salas {
-            let c = ANCORA + s.centro;
+            let c = self.ancora + s.centro;
             // A hair inside: exactly on the edge, float error calls it outside.
             let folga = (s.raio - raio - 1e-3).max(0.0);
             pesa(c + (p - c).clamp_length_max(folga));
@@ -339,7 +379,7 @@ impl Planta {
             .salas
             .iter()
             .enumerate()
-            .filter(|(_, s)| (ANCORA + s.centro).distance(p) <= s.raio)
+            .filter(|(_, s)| (self.ancora + s.centro).distance(p) <= s.raio)
             .map(|(i, _)| i)
             .collect();
         if v.is_empty() {
@@ -475,6 +515,174 @@ impl Planta {
     }
 }
 
+// ───────────────────────────── the carved relief ─────────────────────────────
+
+/// Wall height above the floor, in blocks: 5 u. Far past any step or jump —
+/// the terrain alone holds a body in — and tall enough to read as a wall
+/// from the game's camera.
+pub const PAREDE_BLOCOS: i32 = 10;
+/// The farthest the rock reaches out from a hall, in units (a cave's hill at
+/// its thickest). Bounds `complexo_em`.
+const MASSA: f32 = 14.0;
+
+/// The plan whose rock covers `p`, if any. Cheap: one distance per plan.
+pub fn complexo_em(p: Vec2) -> Option<&'static Planta> {
+    PLANTAS
+        .iter()
+        .find(|pl| p.distance(pl.ancora) <= pl.alcance() + MASSA + 1.0)
+}
+
+/// Smooth pseudo-noise in 0..1 from two sines. Enough for a wall that isn't
+/// a compass line; cheap enough to run per column on both sides.
+fn onda(x: f32, z: f32, k: f32) -> f32 {
+    let a = (x * 0.23 * k + 1.7 * (z * 0.11 * k).sin()).sin();
+    let b = (z * 0.19 * k + 1.3 * (x * 0.13 * k).sin()).sin();
+    0.5 + 0.25 * (a + b)
+}
+
+fn coluna(p: Vec2) -> (i32, i32) {
+    (
+        (p.x / crate::terreno::BLOCO).round() as i32,
+        (p.y / crate::terreno::BLOCO).round() as i32,
+    )
+}
+
+impl Planta {
+    /// How deep inside the walkable area `p` is (negative = outside), all
+    /// gates open: the SHAPE of the cellar, in units.
+    pub fn profundidade(&self, p: Vec2) -> f32 {
+        let salas = self
+            .salas
+            .iter()
+            .map(|s| s.raio - (self.ancora + s.centro).distance(p));
+        let corredores = self.corredores.iter().map(|c| {
+            let (a, b) = self.pontas(c);
+            LARGURA * 0.5 - no_segmento(p, a, b).distance(p)
+        });
+        salas.chain(corredores).fold(f32::MIN, f32::max)
+    }
+
+    /// Rock pushed into the hall at this column, in units: the uneven face of
+    /// a cave. Built walls are straight.
+    fn saliencia(&self, p: Vec2) -> f32 {
+        if self.construido() {
+            0.0
+        } else {
+            0.9 * onda(p.x, p.y, 1.0)
+        }
+    }
+
+    /// A castle or a brick cellar is BUILT: thin walls hugging the halls. The
+    /// others are dug into a hill of rock, ice or sand.
+    fn construido(&self) -> bool {
+        matches!(self.tema, Tema::Castelo | Tema::Tijolo)
+    }
+
+    /// How thick the rock (or the wall) is at `p`, in units, measured out
+    /// from the hall. The outline follows the halls, so from outside the
+    /// cellar reads as its own shape — not a disc.
+    fn espessura(&self, p: Vec2) -> f32 {
+        match self.tema {
+            Tema::Castelo => 2.5,
+            Tema::Tijolo => 3.0,
+            _ => 6.0 + 7.5 * onda(p.x * 0.8 + 11.0, p.y * 0.8, 0.45),
+        }
+    }
+
+    /// The top block of the column at `p` (world units), given the plain's
+    /// block `chao`. `None` = not part of this cellar.
+    pub fn bloco(&self, p: Vec2, chao: i32) -> Option<i32> {
+        let fundo = self.profundidade(p);
+        if fundo >= self.saliencia(p) {
+            return Some(chao);
+        }
+        let fora = -fundo; // how far into the rock, from the hall
+        let espessura = self.espessura(p);
+        if fora > espessura {
+            return None;
+        }
+        let mut alto = chao + PAREDE_BLOCOS;
+        match self.tema {
+            // Battlements on the OUTER rim: the castle's silhouette.
+            Tema::Castelo => {
+                let (bx, bz) = coluna(p);
+                if fora > espessura - 0.9 && (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0 {
+                    alto += 3;
+                }
+            }
+            Tema::Tijolo => {}
+            // A hill: its top rolls, and its outer side slopes down to the
+            // plain instead of being cut with a knife.
+            _ => {
+                alto += (onda(p.x + 40.0, p.y - 17.0, 0.6) * 7.0) as i32;
+                let encosta = espessura - fora;
+                if encosta < 3.5 {
+                    alto = chao + ((alto - chao) as f32 * (encosta / 3.5)).round() as i32;
+                }
+            }
+        }
+        Some(alto.max(chao))
+    }
+
+    /// Paint for the top of the column: the hall's floor, or the top of the
+    /// rock — moss and grass on a cave's hill, snow on ice, sand on a tomb,
+    /// stone on built walls.
+    pub fn pintura(&self, p: Vec2) -> Option<crate::terreno::Material> {
+        use crate::terreno::Material as M;
+        let (bx, bz) = coluna(p);
+        let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
+        let n = onda(p.x, p.y, 2.0);
+        if self.profundidade(p) >= self.saliencia(p) {
+            return Some(match self.tema {
+                // Dark wet stone, lighter where the rock shows through.
+                Tema::Caverna => if n > 0.64 { M::Rocha } else { M::RochaEscura },
+                Tema::Tijolo => if xadrez { M::Calcada } else { M::CalcadaEscura },
+                Tema::Gelo => if n > 0.6 { M::Gelo } else { M::Neve },
+                Tema::Arenito => if xadrez { M::Arenito } else { M::Areia },
+                Tema::Castelo => if xadrez { M::CalcadaEscura } else { M::Calcada },
+            });
+        }
+        Some(match self.tema {
+            Tema::Caverna => if n > 0.7 { M::Rocha } else if n > 0.45 { M::GramaEscura } else { M::Grama },
+            Tema::Tijolo => M::CalcadaEscura,
+            Tema::Gelo => if n > 0.7 { M::Gelo } else { M::Neve },
+            Tema::Arenito => if n > 0.62 { M::Arenito } else { M::Areia },
+            Tema::Castelo => M::Calcada,
+        })
+    }
+
+    /// Is `p` on top of the rock (not a hall, not the plain)? Plants grow
+    /// there on a cave's hill.
+    pub fn no_topo(&self, p: Vec2) -> bool {
+        let fundo = self.profundidade(p);
+        fundo < self.saliencia(p) - 0.8 && -fundo <= self.espessura(p) - 1.0
+    }
+
+    /// The stone of the wall face at column `(bx, bz)`, `prof` blocks under
+    /// its top: brick courses and dressed stone alternate by row; a cave's
+    /// hill keeps a band of soil under its grass.
+    pub fn pedra(&self, bx: i32, bz: i32, prof: i32) -> crate::terreno::Material {
+        use crate::terreno::Material as M;
+        match self.tema {
+            Tema::Caverna => {
+                if prof == 0 {
+                    M::GramaEscura
+                } else if prof < 3 {
+                    M::Terra
+                } else if (bx + bz + prof) % 5 == 0 {
+                    M::Rocha
+                } else {
+                    M::RochaEscura
+                }
+            }
+            Tema::Tijolo => if prof % 2 == 0 { M::CalcadaEscura } else { M::Terra },
+            Tema::Gelo => if prof % 3 == 2 { M::Neve } else { M::Gelo },
+            Tema::Arenito => if prof % 3 == 1 { M::Areia } else { M::Arenito },
+            Tema::Castelo => if prof % 2 == 0 { M::Rocha } else { M::RochaEscura },
+        }
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -529,18 +737,76 @@ mod testes {
         }
     }
 
-    /// THE WHOLE CELLAR FITS ON THE ISLET'S FLAT TOP, with room to spare for
-    /// the walls around it.
+    /// THE CELLARS STAND APART, CLEAR OF THE GRUTA FLOORS, AND ON DRY LAND.
     #[test]
-    fn a_planta_cabe_no_plato_da_ilhota() {
-        for p in &PLANTAS {
-            let alcance = p.alcance();
+    fn os_poroes_nao_se_encostam_e_cabem_na_ilhota() {
+        let massa = |p: &Planta| p.alcance() + MASSA;
+        for (i, a) in PLANTAS.iter().enumerate() {
+            // The Gruta floors: sites near the middle, a 55 u floor each.
             assert!(
-                alcance + 3.0 <= crate::arena::RAIO_PLANO,
-                "plan {} reaches {alcance:.1} u; the flat top is {}",
-                p.conteudo,
-                crate::arena::RAIO_PLANO
+                a.ancora.length() - massa(a) >= 62.0 + 55.0,
+                "plan {} reaches into the Gruta floors",
+                a.conteudo
             );
+            assert!(
+                a.ancora.length() + massa(a) + 5.0 <= crate::arena::RAIO_PLANO,
+                "plan {} hangs off the islet's plain: anchor {:?}, reach {:.1}",
+                a.conteudo,
+                a.ancora,
+                massa(a)
+            );
+            for b in PLANTAS.iter().skip(i + 1) {
+                assert!(
+                    a.ancora.distance(b.ancora) >= massa(a) + massa(b) + 10.0,
+                    "plans {} and {} touch",
+                    a.conteudo,
+                    b.conteudo
+                );
+            }
+        }
+    }
+
+    /// THE CARVED RELIEF AGREES WITH THE PLAN: every point a body may stand on
+    /// is FLOOR, and a wall is a wall — the terrain never lets a body out where
+    /// the plan says rock.
+    #[test]
+    fn o_relevo_escavado_bate_com_a_planta() {
+        let chao = 31;
+        for p in &PLANTAS {
+            let alcance = p.alcance() + 3.0;
+            let mut paredes = 0;
+            let mut k = 0.0f32;
+            while k < 1.0 {
+                let mut j = 0.0f32;
+                while j < 1.0 {
+                    let q = p.ancora + Vec2::new((k - 0.5) * 2.0 * alcance, (j - 0.5) * 2.0 * alcance);
+                    let Some(b) = p.bloco(q, chao) else {
+                        assert!(!p.livre(q, 0.0, u8::MAX), "plan {}: walkable {q:?} outside the mass", p.conteudo);
+                        j += 0.01;
+                        continue;
+                    };
+                    // A body standing here (walkable, clear of a cave's bumps
+                    // by its own radius and the bump's full reach) has floor.
+                    if p.livre(q, R + 0.95, u8::MAX) {
+                        assert_eq!(b, chao, "plan {}: no floor at walkable {q:?}", p.conteudo);
+                    }
+                    // Just outside the shape (past a body, short of the
+                    // mass's sloping outer rim): wall, tall.
+                    let fundo = p.profundidade(q);
+                    if (-2.0..-1.0).contains(&fundo) {
+                        assert!(
+                            b >= chao + PAREDE_BLOCOS - 1,
+                            "plan {}: the wall at {q:?} is {} blocks",
+                            p.conteudo,
+                            b - chao
+                        );
+                        paredes += 1;
+                    }
+                    j += 0.01;
+                }
+                k += 0.01;
+            }
+            assert!(paredes > 100, "plan {}: no walls measured", p.conteudo);
         }
     }
 
@@ -591,8 +857,8 @@ mod testes {
                     if i == j {
                         continue;
                     }
-                    let de = ANCORA + a.centro + Vec2::new(a.raio * 0.5, 0.0);
-                    let para = ANCORA + b.centro - Vec2::new(0.0, b.raio * 0.5);
+                    let de = p.ancora + a.centro + Vec2::new(a.raio * 0.5, 0.0);
+                    let para = p.ancora + b.centro - Vec2::new(0.0, b.raio * 0.5);
                     let rota = p.caminho(de, para, fim).expect("all open at the end");
                     let mut antes = de;
                     for ponto in rota {
@@ -679,7 +945,7 @@ mod testes {
         }
         assert!(q.x < c.x - raio - 5.0, "the open gate didn't let through: {q:?}");
         // Thrown outside (teleport): comes back in.
-        let fora = ANCORA + Vec2::new(60.0, 60.0);
+        let fora = p.ancora + Vec2::new(60.0, 60.0);
         assert!(p.livre(p.mover(fora, fora, R, 0), R, 0));
     }
 }
