@@ -107,6 +107,28 @@ pub fn receitas() -> Vec<ReceitaDeCombinar> {
             });
         }
     }
+    // MADEIRA: a mesma síntese dos materiais — dez de um tier, com cobre,
+    // darksteel e Pó, viram um do tier de cima, garantido. O dono, depois das
+    // árvores de tier alto: "also need to have this craft item style like
+    // using the powder + x itens tier anterior".
+    //
+    // A árvore do lugar é a fonte PRINCIPAL (`porao::tier_da_arvore`); isto é
+    // o caminho de quem tem sobra de madeira baixa e quer a de cima sem viajar.
+    // Os ids WOOD_T1..T4 são contíguos, como as quatro cores de um material.
+    for cor in 1..=3u8 {
+        let (cobre, darksteel, po) = custo_da_sintese(cor);
+        v.push(ReceitaDeCombinar {
+            entrada: item_id::WOOD_T1 + (cor - 1) as u16,
+            qtd: MATERIAL_POR_SINTESE,
+            saida: item_id::WOOD_T1 + cor as u16,
+            chance: 100,
+            cobre,
+            darksteel,
+            po,
+            cor,
+            chave: false,
+        });
+    }
     // MONTARIAS e PETS: mesma regra. A `saida` aqui e' so' o representante da
     // familia — quem sorteia de verdade e' `sorteia_saida`, no servidor.
     for &base in &item_id::MONTARIAS {
@@ -247,9 +269,10 @@ mod testes {
     #[test]
     fn cada_item_sobe_por_um_caminho_so_e_nunca_vira_ele_mesmo() {
         let v = receitas();
-        // 4 chaves x 4 degraus; UMA ladder de montaria e UMA de pet, de 4
-        // degraus cada (a cor E' a criatura desde 20/09/2026).
-        assert_eq!(v.len(), 4 * 4 + 8 * 3 + 4 + 4);
+        // 4 chaves x 4 degraus; 8 materiais x 3; madeira T1→T4 em 3 degraus
+        // (29/09/2026); UMA ladder de montaria e UMA de pet, de 4 degraus cada
+        // (a cor E' a criatura desde 20/09/2026).
+        assert_eq!(v.len(), 4 * 4 + 8 * 3 + 3 + 4 + 4);
         for (i, a) in v.iter().enumerate() {
             assert_ne!(a.entrada, a.saida);
             assert!(v[i + 1..].iter().all(|b| b.entrada != a.entrada));
@@ -296,5 +319,19 @@ mod testes {
             _ => 0,
         };
         assert_eq!(vezes_possiveis(&chifre, &com_cobre), 2);
+    }
+
+    /// MADEIRA SOBE DE TIER NA SÍNTESE, como os materiais.
+    #[test]
+    fn dez_madeiras_de_um_tier_viram_uma_do_tier_de_cima() {
+        for t in 0..3u16 {
+            let r = receita(item_id::WOOD_T1 + t).expect("madeira tem síntese");
+            assert_eq!(r.saida, item_id::WOOD_T1 + t + 1);
+            assert_eq!(r.qtd, MATERIAL_POR_SINTESE);
+            assert_eq!(r.chance, 100, "síntese é garantida, não aposta");
+            assert!(r.po > 0, "a síntese pede Pó");
+            assert_eq!(saidas_possiveis(&r), vec![r.saida], "sai a madeira de cima, sem sorteio");
+        }
+        assert!(receita(item_id::WOOD_T4).is_none(), "T4 é o topo");
     }
 }

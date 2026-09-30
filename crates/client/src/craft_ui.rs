@@ -708,7 +708,7 @@ pub async fn previa() {
     // As receitas vêm do servidor; na prévia, as mesmas que ele semeia.
     c.receitas = shared::receitas::receitas_de_chave_de_porao();
     let aba_chaves = ABAS.iter().position(|&x| x == CAT_CHAVES).unwrap();
-    for (aba, nome) in [(aba_chaves, "chaves"), (ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
+    for (aba, nome) in [(aba_chaves, "chaves"), (ABA_MATERIAIS, "materiais"), (ABA_APRIMORAR, "aprimorar"), (ABA_COMBINAR, "combinar")] {
         c.aba = aba;
         c.sel = None;
         for _ in 0..3 {

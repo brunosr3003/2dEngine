@@ -1,3 +1,9 @@
+29/09/2026 — Madeira sobe de tier na Oficina
+
+Na aba MATERIALS da Oficina agora dá pra subir o tier da madeira, do mesmo jeito que os outros materiais: 10 Madeiras de um tier, com cobre, darksteel e Pó Cintilante, viram 1 Madeira do tier de cima — sempre dá certo. É o caminho de quem tem sobra de madeira baixa e quer a de cima sem viajar até a ilha dela.
+
+Atualização obrigatória: o protocolo subiu para 160.
+
 29/09/2026 — Madeira de tier alto nas árvores
 
 Até agora toda árvore do jogo dava Madeira T1, em qualquer ilha — a Madeira T2, T3 e T4 praticamente não existia, e as chaves dos Porões mais fundos não tinham de onde sair. Agora a árvore dá a madeira do NÍVEL do lugar onde cresce:

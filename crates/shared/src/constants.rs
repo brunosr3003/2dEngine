@@ -106,7 +106,11 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// Terceiro corte no mesmo dia (157 pelo HUD, 158 pelas portas). Os dois
 /// primeiros foram "seria bom todo mundo ter"; este e' "o conteudo nao
 /// funciona sem". A diferenca importa, e e' o criterio pro quarto.
-pub const PROTOCOL_VERSION: u16 = 159;
+/// 160 (29/09/2026): árvores dão a madeira do nível do lugar e a madeira entrou
+/// na síntese da aba Materials (`combinar::receitas`). A tabela de combinar é
+/// compartilhada: o cliente 159 não oferece a síntese de madeira que o servidor
+/// 160 aceita. O corte foi pedido pelo dono ("change protocol and restart").
+pub const PROTOCOL_VERSION: u16 = 160;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
