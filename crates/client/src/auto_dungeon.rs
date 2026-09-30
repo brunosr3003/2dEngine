@@ -99,7 +99,7 @@ mod testes {
                 // Reachable once that step's gate is open.
                 let e = p.centro(p.entrada());
                 assert!(
-                    p.caminho(e, ::glam::Vec2::new(alvo.x, alvo.y), andar).is_some(),
+                    p.alcanca(e, ::glam::Vec2::new(alvo.x, alvo.y), andar),
                     "plan {} step {andar}: the room isn't reachable",
                     p.conteudo
                 );

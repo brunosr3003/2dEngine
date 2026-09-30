@@ -5762,10 +5762,12 @@ impl GameWorld {
             Some((i.planta?, i.andar))
         });
         if let Some((p, andar)) = planta {
-            let Some(rota) = p.caminho(pos_atual, destino, andar) else {
-                self.avisa_missao(sid, "A gate is shut that way.".into());
-                return;
-            };
+            // A destination behind a gate or in the rock routes to the
+            // closest reachable point (`Planta::caminho`); `None` only when the
+            // body itself is off the plan — then it walks back in.
+            let rota = p
+                .caminho(pos_atual, destino, andar)
+                .unwrap_or_else(|| vec![p.mais_perto(pos_atual, ENTITY_RADIUS, andar)]);
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.rota = shared::terreno::SeguidorDeRota::nova(rota, destino);
                 s.rota_geracao = s.rota_geracao.wrapping_add(1);

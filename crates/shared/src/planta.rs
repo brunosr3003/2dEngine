@@ -446,27 +446,28 @@ impl Planta {
     }
 
     /// A walking route from `de` to `para` through open corridors: the room
-    /// centres in between, then the destination. `None` when a gate is in the
-    /// way — there's no path yet, and walking into the gate isn't one.
+    /// centres in between, then the destination.
     ///
-    /// Every leg is straight inside one convex shape (a disc, or a strip whose
-    /// axis runs between two room centres), so the route never touches a wall.
+    /// A destination that can't be reached — behind a shut gate, inside the
+    /// rock, off the plan — does NOT refuse the walk: the route goes to the
+    /// reachable point closest to it. The owner, 30/09/2026, with the dungeon
+    /// auto on: "the message is a gate is shut that way, but there is no
+    /// longer a gate". The first version projected the destination onto the
+    /// nearest room of the WHOLE plan, open or not, and when that room was
+    /// behind a gate the walk was refused — with the way the player wanted
+    /// wide open. `None` only when `de` itself is off the plan.
+    ///
+    /// Every leg is straight inside one convex-enough shape (a star-shaped
+    /// room around its centre, or a strip whose axis runs between two room
+    /// centres), so the route never touches a wall.
     pub fn caminho(&self, de: Vec2, para: Vec2, andar: u8) -> Option<Vec<Vec2>> {
-        let para = if self.livre(para, crate::constants::ENTITY_RADIUS, andar) {
-            para
-        } else {
-            self.mais_perto(para, crate::constants::ENTITY_RADIUS, andar)
-        };
+        let r = crate::constants::ENTITY_RADIUS;
         let origens = self.salas_de(de, andar);
-        let destinos = self.salas_de(para, andar);
-        if origens.is_empty() || destinos.is_empty() {
+        if origens.is_empty() {
             return None;
         }
-        if origens.iter().any(|o| destinos.contains(o)) {
-            return Some(vec![para]);
-        }
-        // Breadth-first over rooms: the plans are small and the corridors all
-        // cost about the same.
+        // Every room reachable from here, and how (breadth-first: the plans
+        // are small and the corridors all cost about the same).
         let n = self.salas.len();
         let mut veio: Vec<Option<usize>> = vec![None; n];
         let mut visto = vec![false; n];
@@ -475,12 +476,7 @@ impl Planta {
             visto[o] = true;
             fila.push_back(o);
         }
-        let mut achou = None;
         while let Some(s) = fila.pop_front() {
-            if destinos.contains(&s) {
-                achou = Some(s);
-                break;
-            }
             for c in self.corredores {
                 if !self.corredor_aberto(c, andar) {
                     continue;
@@ -499,7 +495,37 @@ impl Planta {
                 }
             }
         }
-        let mut s = achou?;
+        // The destination, brought into what is reachable.
+        let alcancavel = |q: Vec2| self.salas_de(q, andar).iter().any(|&s| visto[s]);
+        let (para, alvo) = if self.livre(para, r, andar) && alcancavel(para) {
+            let alvo = *self.salas_de(para, andar).iter().find(|&&s| visto[s])?;
+            (para, alvo)
+        } else {
+            // The reachable room whose floor comes closest to it.
+            let (alvo, q) = (0..n)
+                .filter(|&s| visto[s])
+                .map(|s| {
+                    let c = self.centro(s);
+                    let folga = (self.raio_em(s, para) - r - SALIENCIA_MAX - 1e-3).max(0.0);
+                    (s, c + (para - c).clamp_length_max(folga))
+                })
+                .min_by(|a, b| a.1.distance_squared(para).total_cmp(&b.1.distance_squared(para)))?;
+            (q, alvo)
+        };
+        // Straight there when it's the same room and nothing is in the way;
+        // otherwise room centre to room centre. A straight line from a
+        // corridor into a room, or across a cave room's dents, can clip the
+        // wall; a leg to a room's centre never does.
+        let reto = |a: Vec2, b: Vec2| {
+            (0..=24).all(|k| self.livre(a.lerp(b, k as f32 / 24.0), 0.0, andar))
+        };
+        let dentro: Vec<usize> = (0..n)
+            .filter(|&i| self.centro(i).distance(de) <= self.raio_em(i, de))
+            .collect();
+        if dentro.contains(&alvo) && reto(de, para) {
+            return Some(vec![para]);
+        }
+        let mut s = alvo;
         let mut salas = vec![s];
         while let Some(antes) = veio[s] {
             salas.push(antes);
@@ -509,6 +535,14 @@ impl Planta {
         let mut rota: Vec<Vec2> = salas.iter().map(|&s| self.centro(s)).collect();
         rota.push(para);
         Some(rota)
+    }
+
+    /// Does the route from `de` actually END at `para` (and not at the
+    /// reachable point closest to it)?
+    pub fn alcanca(&self, de: Vec2, para: Vec2, andar: u8) -> bool {
+        self.caminho(de, para, andar)
+            .and_then(|r| r.last().copied())
+            .is_some_and(|f| f.distance(para) < 0.01)
     }
 
     /// The gates still shut at this step: (where, facing along the corridor).
@@ -967,21 +1001,21 @@ mod testes {
             let entrada = p.centro(p.entrada());
             let chefe = p.centro(p.sala_da_etapa(p.lutas()).unwrap());
             assert!(
-                p.caminho(entrada, chefe, 0).is_none(),
+                !p.alcanca(entrada, chefe, 0),
                 "plan {}: the boss is reachable at the start",
                 p.conteudo
             );
             for andar in 0..=p.lutas() {
                 let alvo = p.centro(p.sala_da_etapa(andar).unwrap());
                 assert!(
-                    p.caminho(entrada, alvo, andar).is_some(),
+                    p.alcanca(entrada, alvo, andar),
                     "plan {}: step {andar}'s room unreachable at step {andar}",
                     p.conteudo
                 );
                 if let Some(depois) = p.sala_da_etapa(andar + 1) {
                     if andar < p.lutas() {
                         assert!(
-                            p.caminho(entrada, p.centro(depois), andar).is_none(),
+                            !p.alcanca(entrada, p.centro(depois), andar),
                             "plan {}: step {}'s room reachable before its gate",
                             p.conteudo,
                             andar + 1
@@ -1097,5 +1131,57 @@ mod testes {
         // Thrown outside (teleport): comes back in.
         let fora = p.ancora + Vec2::new(60.0, 60.0);
         assert!(p.livre(p.mover(fora, fora, R, 0), R, 0));
+    }
+}
+#[cfg(test)]
+mod testes_da_rota {
+    use super::*;
+    use crate::constants::ENTITY_RADIUS as R;
+
+    /// ANY DESTINATION GETS A ROUTE, and the route stays on the floor: behind
+    /// a shut gate, inside the rock, off the plan — the walk goes to the
+    /// reachable point closest to it instead of being refused. Fuzzed over
+    /// every plan and step, from every reachable spot.
+    #[test]
+    fn qualquer_destino_tem_rota_e_ela_nao_raspa_na_parede() {
+        let mut semente = 12_345u64;
+        let mut sorteio = || {
+            semente = semente
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((semente >> 33) as f32) / (1u64 << 31) as f32
+        };
+        for p in &PLANTAS {
+            let a = p.alcance() + 20.0;
+            for andar in 0..=p.lutas() {
+                let entrada = p.centro(p.entrada());
+                let mut origens = Vec::new();
+                while origens.len() < 60 {
+                    let q = p.ancora + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
+                    if p.livre(q, R, andar) && p.alcanca(entrada, q, andar) {
+                        origens.push(q);
+                    }
+                }
+                for (k, de) in origens.iter().enumerate() {
+                    // Anywhere at all, walkable or not.
+                    let para = p.ancora + Vec2::new((sorteio() - 0.5) * 2.0 * a, (sorteio() - 0.5) * 2.0 * a);
+                    let rota = p
+                        .caminho(*de, para, andar)
+                        .unwrap_or_else(|| panic!("plan {} step {andar}: no route from {de:?} ({k})", p.conteudo));
+                    let mut antes = *de;
+                    for ponto in rota {
+                        for t in 0..=20 {
+                            let q = antes.lerp(ponto, t as f32 / 20.0);
+                            assert!(
+                                p.livre(q, 0.0, andar),
+                                "plan {} step {andar}: route {de:?} -> {para:?} leaves the floor at {q:?}",
+                                p.conteudo
+                            );
+                        }
+                        antes = ponto;
+                    }
+                }
+            }
+        }
     }
 }
