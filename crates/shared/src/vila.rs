@@ -126,9 +126,15 @@ pub fn montar(ger: &Gerador) -> Vila {
     montar_postos(ger, &mut vila);
     if let Some(pl) = ger.planalto() {
         for (i,r) in pl.regioes.iter().enumerate() {
-            let tipo = match i { 4 => TipoProp::FarolTormenta, 2 => TipoProp::CristalTormenta, _ => TipoProp::RuinaTormenta };
+            // The lighthouse and the crystal stay. The three storm RUINS were
+            // square walls of black stone that read as little castles on the
+            // map, and the owner asked for them out (30/09/2026) — the one
+            // castle on this island is Last Refuge's (`planalto::muralha`).
+            let tipo = match i { 4 => Some(TipoProp::FarolTormenta), 2 => Some(TipoProp::CristalTormenta), _ => None };
             let p = r.centro + Vec2::new(22.0,-22.0);
-            vila.props.push(PropPosto { tipo, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+            if let Some(tipo) = tipo {
+                vila.props.push(PropPosto { tipo, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });
+            }
             if i == 1 || i == 3 {
                 let p = r.centro + Vec2::new(-10.0,-12.0);
                 vila.props.push(PropPosto { tipo: TipoProp::Portal, seed: ger.semente, pos: Vec3::new(p.x,ger.altura(p.x,p.y),p.y), yaw_q: 0 });

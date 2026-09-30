@@ -1,3 +1,11 @@
+30/09/2026 — O Último Abrigo virou castelo
+
+A cidade do Planalto da Tormenta agora é um CASTELO: uma muralha de pedra com ameias cerca a cidade inteira, com torres redondas ao longo dela e um portão em cada estrada — um para o porto, outro para a trilha — cada portão guardado por duas torres.
+
+E as três ruínas de pedra negra espalhadas pela trilha, que pareciam castelinhos no meio do caminho, foram removidas. O farol e o cristal continuam.
+
+Atualização obrigatória: o protocolo subiu para 167.
+
 30/09/2026 — A tela de Interface rola
 
 Em telas mais baixas (ou com o HUD grande), a janela de Interface ficava maior que a tela e as opções de baixo — como o Anti-aliasing — sumiam. Agora o conteúdo rola: roda do mouse, arrastar com o dedo ou pela barra à direita. O título, o som e o X ficam sempre à vista.

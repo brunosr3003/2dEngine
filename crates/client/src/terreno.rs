@@ -800,8 +800,25 @@ impl Terreno {
                     } else {
                         None
                     };
+                    // Last Refuge's castle walls: dressed stone in courses.
+                    let castelo = self.ger.planalto().is_some_and(|pl| {
+                        pl.parte_da_muralha(::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO))
+                            .is_some()
+                    });
                     let faixa = |prof: i32| match porao {
                         Some(pl) => pl.pedra(gx, gz, prof),
+                        None if castelo => {
+                            let h = (gx as u32).wrapping_mul(73_856_093)
+                                ^ (gz as u32).wrapping_mul(19_349_663)
+                                ^ (prof as u32).wrapping_mul(83_492_791);
+                            if (h >> 7) % 100 < 8 {
+                                Material::GramaEscura
+                            } else if prof % 2 == 0 {
+                                Material::Rocha
+                            } else {
+                                Material::RochaEscura
+                            }
+                        }
                         None => material_de_profundidade(self.bioma_visual, topo_mat, topo, prof),
                     };
                     let mut b = h;

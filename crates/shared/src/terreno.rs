@@ -2465,6 +2465,11 @@ impl Gerador {
             Some(p) => p.aplainar(bx, bz, b),
             None => b,
         };
+        // The castle of Last Refuge stands on the finished ground (`planalto`).
+        let b = match self.planalto() {
+            Some(pl) => pl.muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), b),
+            None => b,
+        };
         match &self.oasis {
             Some(o) => o.moldar(bx, bz, b),
             None => b,
@@ -2507,6 +2512,14 @@ impl Gerador {
         // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
         // apaga a unica leitura de relevo que o jogo da' sem texto.
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
+        // The castle's wall walk and tower tops: dressed stone.
+        if let Some(parte) = self.planalto().and_then(|p| p.parte_da_muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))) {
+            let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
+            return Some(match parte {
+                crate::planalto::Muro::Torre { .. } => if xadrez { Material::CalcadaEscura } else { Material::Rocha },
+                crate::planalto::Muro::Cortina { .. } => if xadrez { Material::Calcada } else { Material::CalcadaEscura },
+            });
+        }
         // A Porão's halls and walls on the Arena (`planta`).
         if self.e_arena() {
             let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
@@ -3037,7 +3050,8 @@ const MAGICA: [u8; 4] = *b"TALT";
 // por cima.
 // 9 (30/09/2026): the Ermo's oasis digs a pond into the dunes (`oasis`).
 // 10 (30/09/2026): the Porões are carved into a larger Arena (`planta`).
-const VERSAO: u16 = 10;
+// 11 (30/09/2026): the castle walls of Last Refuge (`planalto::muralha`).
+const VERSAO: u16 = 11;
 
 impl Ilha {
     pub fn planalto(&self) -> Option<&crate::planalto::Plano> { self.ger.planalto() }
@@ -5922,7 +5936,13 @@ mod testes {
                 }
             }
             println!("{}: {saidas} de 16 direcoes saem andando", d.zona);
-            assert!(saidas >= 6, "{}: so' {saidas} saidas da cidade", d.zona);
+            // Last Refuge is a CASTLE (`planalto::muralha`): its wall is the
+            // point, and the ways out are its gates — one per road, proved to
+            // lead to the port and the trail by
+            // `o_ultimo_abrigo_e_um_castelo_com_saida_em_toda_estrada`. The
+            // ramp rule this test guards is for the open towns.
+            let minimo = if ger.planalto().is_some() { 2 } else { 6 };
+            assert!(saidas >= minimo, "{}: so' {saidas} saidas da cidade", d.zona);
         }
     }
 
