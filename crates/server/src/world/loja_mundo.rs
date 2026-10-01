@@ -190,9 +190,11 @@ impl GameWorld {
                                         cat::item_de_pet(id).map(|x| x.item_id)
                                     }
                                     // A SKIN chega como item; usar e' que
-                                    // destrava (`world::usar_skin`). O id do
-                                    // produto E' o id do item.
-                                    Produto::Skin(id) => Some(id),
+                                    // destrava (`world::usar_skin`). The bag
+                                    // item has its own id for outfits
+                                    // (`aparencia::item_da_skin`): 483 is a
+                                    // Porão key now.
+                                    Produto::Skin(id) => Some(shared::aparencia::item_da_skin(id)),
                                     _ => None,
                                 };
                                 // O PASSE VAI EM LOTE: o pacote entrega N

@@ -74,6 +74,37 @@ pub const CHAPEUS: [(&str, &str); 8] = [
     ("touca", "Cap"),
 ];
 
+/// The BAG ITEM of an outfit skin starts here, apart from the wardrobe id.
+///
+/// Outfits were ids 480-483 both in the wardrobe and as bag items — and the
+/// Porão keys took 480 + dungeon id on 29/09/2026 (`porao::CHAVE_BASE`).
+/// Item 483 stopped being Storm Captain and became the Frozen Hull Key: a
+/// Storm Captain bought on 27/09 sat in the bag as a key, and the owner
+/// never got the outfit. The wardrobe keeps 480+ (characters' saved looks
+/// stay valid); only what goes in the bag moves to 540+, which is free.
+/// Hats (500-507) never collided and keep their ids as items.
+pub const ITEM_ROUPA_BASE: u16 = 540;
+
+/// The bag item that unlocks wardrobe skin `skin`.
+pub fn item_da_skin(skin: u16) -> u16 {
+    if (ROUPA_BASE..ROUPA_BASE + ROUPAS.len() as u16).contains(&skin) {
+        ITEM_ROUPA_BASE + (skin - ROUPA_BASE)
+    } else {
+        skin
+    }
+}
+
+/// The wardrobe skin a bag item unlocks. `None` = not a skin item — notably
+/// the Porão keys 481-485, which share numbers with the wardrobe outfits.
+pub fn skin_do_item(item: u16) -> Option<u16> {
+    if (ITEM_ROUPA_BASE..ITEM_ROUPA_BASE + ROUPAS.len() as u16).contains(&item) {
+        return Some(ROUPA_BASE + (item - ITEM_ROUPA_BASE));
+    }
+    (CHAPEU_BASE..CHAPEU_BASE + CHAPEUS.len() as u16)
+        .contains(&item)
+        .then_some(item)
+}
+
 /// O arquivo da skin de roupa deste id. `None` = id que nao e' roupa.
 pub fn arquivo_da_roupa(id: u16) -> Option<&'static str> {
     if id < ROUPA_BASE {
@@ -359,3 +390,28 @@ mod testes_das_skins {
         assert!(CHAPEU_BASE > ROUPA_BASE);
     }
 }
+
+#[cfg(test)]
+mod testes_do_item_da_skin {
+    use super::*;
+
+    /// No skin item shares a number with a Porão key, and every skin item
+    /// goes back to its own wardrobe skin.
+    #[test]
+    fn item_de_skin_nunca_e_chave_de_porao() {
+        let chaves: Vec<u16> = crate::dungeon::CONTEUDOS
+            .iter()
+            .filter_map(crate::porao::chave_de)
+            .collect();
+        for skin in a_venda() {
+            let item = item_da_skin(skin);
+            assert!(!chaves.contains(&item), "skin {skin} sells as item {item}, a Porão key");
+            assert_eq!(skin_do_item(item), Some(skin));
+        }
+        for chave in chaves {
+            assert_eq!(skin_do_item(chave), None, "key {chave} would unlock a skin");
+        }
+        assert_eq!(item_da_skin(ROUPA_BASE + 3), ITEM_ROUPA_BASE + 3, "Storm Captain");
+    }
+}
+

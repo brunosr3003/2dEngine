@@ -18794,7 +18794,10 @@ impl GameWorld {
             .and_then(|s| s.inventory.get(slot_idx))
             .filter(|s| s.qty > 0)
             .map(|s| s.item_id)
-            .filter(|id| shared::aparencia::nome_da_skin(*id).is_some());
+            // Item -> wardrobe skin. NOT `nome_da_skin(item)`: that read the
+            // Porão keys 481-485 as outfits, and using a Frozen Hull Key
+            // from the bag unlocked Storm Captain and ate the key.
+            .and_then(shared::aparencia::skin_do_item);
         if let Some(id) = skin {
             self.usar_skin(sid, slot_idx, id);
             return;

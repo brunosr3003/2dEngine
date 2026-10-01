@@ -207,6 +207,10 @@ enum Tipo {
     /// 0 vida, 1 mana, 2 vigor.
     Pocao(u8),
     Pergaminho,
+    /// An appearance skin: using it unlocks it in the wardrobe
+    /// (`aparencia::skin_do_item`). There was no way to use one before
+    /// 01/10/2026 — a bought Storm Captain could only sit in the bag.
+    Skin,
     /// Ração de Pet.
     RacaoPet,
     /// Skill de pet, ou o Removedor.
@@ -242,6 +246,7 @@ fn tipo(id: u16) -> Tipo {
         {
             Tipo::Pergaminho
         }
+        x if shared::aparencia::skin_do_item(x).is_some() => Tipo::Skin,
         x if x == item_id::RACAO_DE_PET => Tipo::RacaoPet,
         x if x == item_id::REMOVEDOR_DE_SKILL_PET || item_id::e_skill_de_pet(x) => Tipo::SkillPet,
         _ => Tipo::Material,
@@ -492,7 +497,7 @@ impl Bolsa {
             Sel::Equip(slot) => Some(Acao::Desequipar(slot)),
             Sel::Inv(i) => match tipo(self.peca(s)?.id) {
                 Tipo::Arma(_) | Tipo::Slot(_) => Some(Acao::Equipar(i)),
-                Tipo::Pocao(_) | Tipo::Pergaminho => Some(Acao::Usar(i)),
+                Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::Skin => Some(Acao::Usar(i)),
                 _ => None,
             },
         }
@@ -1330,6 +1335,7 @@ impl Bolsa {
             Sel::Inv(_) => match t {
                 Tipo::Arma(_) | Tipo::Slot(_) => opcoes.push(("Equip", 0)),
                 Tipo::Pocao(_) | Tipo::Pergaminho => opcoes.push(("Use", 0)),
+                Tipo::Skin => opcoes.push(("Unlock", 0)),
                 _ => {}
             },
         }
@@ -1948,7 +1954,7 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             draw_circle(c.x + s * 0.8, c.y, s * 0.35, k(0.78, 0.6, 0.38));
             draw_circle_lines(c.x + s * 0.8, c.y, s * 0.2, s * 0.05, k(0.52, 0.34, 0.2));
         }
-        Tipo::Material => {
+        Tipo::Material | Tipo::Skin => {
             // pedra lapidada, na cor do material (sai do id: estavel entre
             // sessoes, e materiais vizinhos na tabela ficam diferentes)
             const TONS: [(f32, f32, f32); 8] = [

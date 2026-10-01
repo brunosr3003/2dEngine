@@ -576,6 +576,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Attempt {}", "Tentativa {}"),
     ("Give up", "Desistir"),
     ("Dodge", "Esquiva"),
+    ("Unlock", "Desbloquear"),
     ("Reconnected.", "Reconectado."),
     ("On another island", "Em outra ilha"),
     ("COMPLETION CHEST", "BAÚ DE CONCLUSÃO"),

@@ -2871,9 +2871,12 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // Nao empilham alem de 1: cada uma destrava uma vez, e duas na bolsa
     // sugeririam que a segunda vale alguma coisa.
     let mut seed = seed.to_vec();
+    // Outfits seed under their BAG item id (`aparencia::item_da_skin`), not
+    // the wardrobe id: 481-485 are the Porão keys, seeded right below, and
+    // the key rows silently took the outfits' names.
     for (i, (_, nome)) in shared::aparencia::ROUPAS.iter().enumerate() {
         seed.push(S {
-            id: (shared::aparencia::ROUPA_BASE + i as u16) as i32,
+            id: shared::aparencia::item_da_skin(shared::aparencia::ROUPA_BASE + i as u16) as i32,
             name: nome,
             sell: 0,
             buy: None,
