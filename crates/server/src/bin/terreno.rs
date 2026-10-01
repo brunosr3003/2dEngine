@@ -19,6 +19,10 @@ fn main() {
         varre();
         return;
     }
+    if args.iter().any(|a| a == "--rotas") {
+        rotas(&args);
+        return;
+    }
     if args.iter().any(|a| a == "--simula") {
         simula(&args);
         return;
@@ -254,8 +258,76 @@ fn alcance(args: &[String]) {
 /// ```sh
 /// cargo run --release --bin terreno -- --simula --de 44,-39 --para 57,93
 /// ```
-fn simula(args: &[String]) {
+/// What happened to one route followed the way the server follows it.
+struct Seguida {
+    chegou: bool,
+    fim: glam::Vec2,
+    pulos: u32,
+    rotas: u32,
+    /// Since when the body has not moved more than one unit.
+    parado_desde: f32,
+    tempo: f32,
+}
+
+/// Follows `de` -> `para` on `ilha` exactly like `world.rs` does: A* from
+/// the server, re-planned when stuck, the automatic jump asked to
+/// `precisa_pular`, and the jump arc raising the step like the server.
+fn seguir(ilha: &Ilha, de: glam::Vec2, para: glam::Vec2, montado: bool) -> Seguida {
     use shared::terreno::{SeguidorDeRota, DEGRAU_BLOCOS, PULO_BLOCOS};
+    let dt = 1.0f32 / 30.0;
+    let vel = shared::loja::velocidade_de_andar(
+        shared::PLAYER_SPEED,
+        montado.then_some(shared::loja::VEL_MONTADO),
+        1.0,
+    );
+    let r = shared::ENTITY_RADIUS;
+    let mut seg = SeguidorDeRota::nova(Vec::new(), para);
+    let mut p = de;
+    let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) = (0.0f32, -1.0f32, 0.0f32, -1.0f32);
+    let (mut pulos, mut rotas) = (0, 0);
+    let mut preso_desde = (p, 0.0f32);
+    while agora < 90.0 {
+        if p.distance(para) < 2.0 {
+            break;
+        }
+        // Rota: sem rota ou travada, pede de novo (intervalo do servidor).
+        if (seg.vazia() || seg.travado()) && agora - ultima_rota >= 0.2 {
+            ultima_rota = agora;
+            rotas += 1;
+            seg = match ilha.caminho(p, para, 6_000) {
+                Some(rt) => SeguidorDeRota::nova(rt, para),
+                None => SeguidorDeRota::nova(Vec::new(), para),
+            };
+        }
+        // Same as the server: jumping is not "stuck" (`aguenta`).
+        if agora < pronto {
+            seg.aguenta();
+        }
+        let dir = seg.direcao(p).unwrap_or(glam::Vec2::ZERO);
+        if dir.length_squared() > 0.01
+            && ilha.precisa_pular(p, dir.normalize_or_zero() * vel, dt, r)
+            && agora >= pronto
+        {
+            pulo_ate = agora + shared::PULO_DURACAO;
+            pronto = pulo_ate + shared::PULO_ESPERA;
+            pulos += 1;
+        }
+        let degrau = if agora < pulo_ate {
+            let t = shared::PULO_DURACAO - (pulo_ate - agora);
+            ((shared::altura_do_pulo(t) / BLOCO).floor() as i32).clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
+        } else {
+            DEGRAU_BLOCOS
+        };
+        p = ilha.mover_com_degrau(p, dir * vel, dt, r, degrau);
+        if p.distance(preso_desde.0) > 1.0 {
+            preso_desde = (p, agora);
+        }
+        agora += dt;
+    }
+    Seguida { chegou: p.distance(para) < 2.0, fim: p, pulos, rotas, parado_desde: preso_desde.1, tempo: agora }
+}
+
+fn simula(args: &[String]) {
     let ponto = |nome: &str| -> glam::Vec2 {
         let i = args.iter().position(|a| a == nome).expect(nome);
         let v: Vec<f32> = args[i + 1]
@@ -265,62 +337,75 @@ fn simula(args: &[String]) {
         glam::Vec2::new(v[0], v[1])
     };
     let (de, para) = (ponto("--de"), ponto("--para"));
-    let d = &ARQUIPELAGO[0];
+    let qual = args
+        .iter()
+        .position(|a| a == "--ilha")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    let d = &ARQUIPELAGO[qual];
     let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
     for montado in [false, true] {
-        let dt = 1.0f32 / 30.0;
-        let vel = shared::loja::velocidade_de_andar(
-            shared::PLAYER_SPEED,
-            montado.then_some(shared::loja::VEL_MONTADO),
-            1.0,
-        );
-        let r = shared::ENTITY_RADIUS;
-        let mut seg = SeguidorDeRota::nova(Vec::new(), para);
-        let mut p = de;
-        let (mut agora, mut pulo_ate, mut pronto, mut ultima_rota) =
-            (0.0f32, -1.0f32, 0.0f32, -1.0f32);
-        let (mut pulos, mut rotas) = (0, 0);
-        let mut preso_desde = (p, 0.0f32);
-        while agora < 90.0 {
-            if p.distance(para) < 2.0 {
-                break;
-            }
-            // Rota: sem rota ou travada, pede de novo (intervalo do servidor).
-            if (seg.vazia() || seg.travado()) && agora - ultima_rota >= 0.2 {
-                ultima_rota = agora;
-                rotas += 1;
-                seg = match ilha.caminho(p, para, 6_000) {
-                    Some(rt) => SeguidorDeRota::nova(rt, para),
-                    None => SeguidorDeRota::nova(Vec::new(), para),
-                };
-            }
-            let dir = seg.direcao(p).unwrap_or(glam::Vec2::ZERO);
-            if dir.length_squared() > 0.01
-                && ilha.precisa_pular(p, dir.normalize_or_zero() * vel, dt, r)
-                && agora >= pronto
-            {
-                pulo_ate = agora + shared::PULO_DURACAO;
-                pronto = pulo_ate + shared::PULO_ESPERA;
-                pulos += 1;
-            }
-            let degrau = if agora < pulo_ate {
-                let t = shared::PULO_DURACAO - (pulo_ate - agora);
-                ((shared::altura_do_pulo(t) / BLOCO).floor() as i32)
-                    .clamp(DEGRAU_BLOCOS, PULO_BLOCOS)
-            } else {
-                DEGRAU_BLOCOS
-            };
-            p = ilha.mover_com_degrau(p, dir * vel, dt, r, degrau);
-            if p.distance(preso_desde.0) > 1.0 {
-                preso_desde = (p, agora);
-            }
-            agora += dt;
-        }
+        let s = seguir(&ilha, de, para, montado);
         println!(
-            "{}: parou a {:.1} do destino em {:.0},{:.0} (altura {:.1}) depois de {:.1}s, {pulos} pulos, {rotas} rotas; parado desde {:.1}s",
+            "{}: parou a {:.1} do destino em {:.0},{:.0} (altura {:.1}) depois de {:.1}s, {} pulos, {} rotas; parado desde {:.1}s",
             if montado { "montado" } else { "a pe'  " },
-            p.distance(para), p.x, p.y, ilha.altura(p.x, p.y), agora, preso_desde.1
+            s.fim.distance(para), s.fim.x, s.fim.y, ilha.altura(s.fim.x, s.fim.y), s.tempo, s.pulos, s.rotas, s.parado_desde
         );
+    }
+}
+
+/// Random routes on every island, followed like the server follows them.
+/// Counts the ones the A* says are reachable (the path ends at the target)
+/// but the body never gets to: the "it doesn't jump when it should" report.
+///
+///   cargo run --release --bin terreno -- --rotas 200
+fn rotas(args: &[String]) {
+    let n: usize = args
+        .iter()
+        .position(|a| a == "--rotas")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    for (qual, d) in ARQUIPELAGO.iter().enumerate() {
+        let ilha = Ilha::gerar(d.semente, d.raio_blocos, d.bioma, ESCALA_ALTURA);
+        let meio = ilha.lado as f32 * BLOCO * 0.5;
+        let mut semente = 0x5EED_u64 ^ qual as u64;
+        let mut rnd = || {
+            semente = semente.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((semente >> 33) as f32) / (u32::MAX >> 1) as f32
+        };
+        let (mut testadas, mut falhas) = (0, Vec::new());
+        let mut tentativas = 0;
+        while testadas < n && tentativas < n * 50 {
+            tentativas += 1;
+            let de = glam::Vec2::new((rnd() * 2.0 - 1.0) * meio * 0.8, (rnd() * 2.0 - 1.0) * meio * 0.8);
+            let ang = rnd() * std::f32::consts::TAU;
+            let para = de + glam::Vec2::new(ang.cos(), ang.sin()) * (30.0 + rnd() * 90.0);
+            if ilha.agua(de.x, de.y) || ilha.agua(para.x, para.y) || ilha.ocupado(de, shared::ENTITY_RADIUS) {
+                continue;
+            }
+            // Only routes the A* finishes: the follower is what is on trial.
+            let Some(rt) = ilha.caminho(de, para, 6_000) else { continue };
+            if rt.last().map_or(true, |f| f.distance(para) > 2.5) {
+                continue;
+            }
+            testadas += 1;
+            for montado in [false, true] {
+                let s = seguir(&ilha, de, para, montado);
+                if !s.chegou {
+                    falhas.push((de, para, montado, s));
+                }
+            }
+        }
+        println!("{} ({}): {} rotas, {} falhas (a pe' e montado)", d.nome, d.zona, testadas, falhas.len());
+        for (de, para, montado, s) in falhas.iter().take(8) {
+            println!(
+                "   --ilha {qual} --de {:.1},{:.1} --para {:.1},{:.1} {} -> parou a {:.1} em {:.1},{:.1}, {} pulos, {} rotas, parado desde {:.0}s",
+                de.x, de.y, para.x, para.y, if *montado { "montado" } else { "a pe'" },
+                s.fim.distance(*para), s.fim.x, s.fim.y, s.pulos, s.rotas, s.parado_desde
+            );
+        }
     }
 }
 

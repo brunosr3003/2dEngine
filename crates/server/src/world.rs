@@ -9630,6 +9630,11 @@ impl GameWorld {
                 .unwrap_or(Vec2::ZERO);
             let mut veio_da_rota = false;
             if frame.move_dir.length_squared() <= 0.01 && !session.rota.vazia() {
+                // Mid-jump or in the jump cooldown is the climb working, not
+                // the route failing (`SeguidorDeRota::aguenta`).
+                if self.sim_time_s < session.pulo_pronto_em {
+                    session.rota.aguenta();
+                }
                 if let Some(dir) = session.rota.direcao(aqui) {
                     frame.move_dir = dir;
                     veio_da_rota = true;

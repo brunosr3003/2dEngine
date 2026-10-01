@@ -4500,12 +4500,23 @@ impl Ilha {
         for i in 1..=n {
             let t = i as f32 / n as f32;
             let p = de + (para - de) * t;
+            // Every lane climbs FROM THE CENTRE, the way `borda_livre` moves
+            // the body: it compares the leading edge with the column under
+            // the body's centre. Measuring each lane against its own
+            // previous sample let a shoulder on a sideways slope climb
+            // 2 -> 3 -> 6 in legal steps while the body, standing on 2, met
+            // a 4-block wall at the shoulder: the route went into a corner
+            // no jump clears, and the follower stood there asking for the
+            // same route (`terreno --rotas`, 01/10/2026).
+            let (cx, cz) = self.coluna(anterior.x, anterior.y);
+            let base = self.bloco(cx, cz);
             for lado in [glam::Vec2::ZERO, perp, -perp] {
-                let sobe = self.subida(
-                    (anterior.x + lado.x, anterior.y + lado.y),
-                    (p.x + lado.x, p.y + lado.y),
-                );
-                if !sobe.is_some_and(|s| s <= degrau) {
+                let q = p + lado;
+                if self.agua(q.x, q.y) {
+                    return false;
+                }
+                let (qx, qz) = self.coluna(q.x, q.y);
+                if self.bloco(qx, qz) - base > degrau {
                     return false;
                 }
             }
@@ -4842,6 +4853,19 @@ impl SeguidorDeRota {
     /// outro, e quem sabe achar caminho e' o A*.
     pub fn travado(&self) -> bool {
         self.travado
+    }
+
+    /// The body is jumping, or waiting out the jump cooldown: this tick is
+    /// not "no progress". Call it before `direcao` on those ticks.
+    ///
+    /// Without it a staircase of 3-block steps never got climbed: pressed
+    /// against each step waiting for the next jump, the follower ran out of
+    /// `PACIENCIA` mid-climb, the new route — planned from that half-way
+    /// spot — started by walking back down to its cell's point, and the
+    /// body climbed, gave up and walked down forever (`terreno --rotas`,
+    /// 01/10/2026: 97 jumps, never arrived).
+    pub fn aguenta(&mut self) {
+        self.sem_avanco = 0;
     }
 
     /// Direcao pro proximo ponto, ou `None` quando a rota acabou.
