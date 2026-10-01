@@ -651,6 +651,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_SOMBRAS").is_ok() {
+        terreno::previa_das_sombras().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_GRAFICOS").is_ok() {
         terreno::previa_dos_graficos().await;
         return;

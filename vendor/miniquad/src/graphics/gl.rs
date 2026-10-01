@@ -1310,10 +1310,17 @@ impl RenderingBackend for GlContext {
                 glEnable(GL_SCISSOR_TEST);
             }
 
-            if pipeline.params.depth_write {
+            // Tempest patch: depth TEST and depth WRITE are separate. Upstream
+            // enabled the test only together with the write, so a pipeline
+            // that tests without writing (blended ground shadows) drew
+            // through hills and trees. The mask is reset in `clear`.
+            if pipeline.params.depth_write
+                || pipeline.params.depth_test != Comparison::Always
+            {
                 unsafe {
                     glEnable(GL_DEPTH_TEST);
-                    glDepthFunc(pipeline.params.depth_test.into())
+                    glDepthFunc(pipeline.params.depth_test.into());
+                    glDepthMask(pipeline.params.depth_write as _);
                 }
             } else {
                 unsafe {
@@ -1615,6 +1622,9 @@ impl RenderingBackend for GlContext {
         if let Some(v) = depth {
             bits |= GL_DEPTH_BUFFER_BIT;
             unsafe {
+                // A test-only pipeline leaves the mask off, and glClear
+                // respects the mask: without this the depth would never clear.
+                glDepthMask(1);
                 glClearDepthf(v);
             }
         }

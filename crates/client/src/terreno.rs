@@ -1351,6 +1351,69 @@ pub async fn previa_das_ilhas_magicas() {
     }
 }
 
+/// MMO_PREVIA_SOMBRAS: Pretty tree shadows from the island's peaks, through
+/// the game camera. Each shot is drawn twice (terrain alone, then terrain plus
+/// shadows) so the difference shows exactly where shadows landed. The render
+/// target has a 16-bit depth buffer, so `perto` 2.56 stands in for a desktop
+/// screen's 24 bits at the game's 0.01 near plane; 0.01 is a 16-bit phone.
+#[cfg(debug_assertions)]
+pub async fn previa_das_sombras() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-sombras".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let solido = crate::render3d::material_solido();
+    let def = &shared::terreno::ARQUIPELAGO[0];
+    let mut t = Terreno::novo(def);
+    // The highest columns, at least 40 u apart.
+    let mut picos: Vec<(f32, Vec2)> = Vec::new();
+    let mut todos: Vec<(f32, Vec2)> = Vec::new();
+    for z in (-150..150).step_by(3) {
+        for x in (-150..150).step_by(3) {
+            let p = vec2(x as f32, z as f32);
+            todos.push((t.altura(p.x, p.y), p));
+        }
+    }
+    todos.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (h, p) in todos {
+        if picos.len() < 3 && picos.iter().all(|(_, q)| q.distance(p) > 40.0) {
+            picos.push((h, p));
+        }
+    }
+    for (k, (h, centro)) in picos.iter().enumerate() {
+        t.atualiza(*centro, 5, 2000);
+        for (j, yaw) in [0.0f32, 1.6, 3.2, 4.7].into_iter().enumerate() {
+            for perto in [2.56f32, 0.01] {
+                let pitch = crate::render3d::pitch_padrao();
+                let mut cam = crate::render3d::camera(*centro, *h, yaw, 1.0, pitch);
+                cam.render_target = Some(rt.clone());
+                cam.aspect = Some(1.6);
+                cam.z_near = perto;
+                for com_sombra in [false, true] {
+                    for _ in 0..2 {
+                        set_camera(&cam);
+                        clear_background(Color::from_rgba(150, 186, 214, 255));
+                        macroquad::material::gl_use_material(&solido);
+                        t.desenha(&cam, Vec3::ZERO, 0.0);
+                        if com_sombra {
+                            t.desenha_sombras(&cam);
+                        }
+                        macroquad::material::gl_use_default_material();
+                        unsafe { get_internal_gl().flush() };
+                        rt.texture.get_texture_data().export_png(&format!(
+                            "{saida}/pico{k}-yaw{j}-near{perto}-{}.png",
+                            if com_sombra { "com" } else { "sem" }
+                        ));
+                        next_frame().await;
+                    }
+                }
+            }
+        }
+        println!("[shadow preview] peak {k} at ({:.0},{:.0}) height {h:.1}", centro.x, centro.y);
+    }
+}
+
 /// MMO_PREVIA_GRAFICOS: the starting island through the GAME camera, zoomed
 /// out at the lowest tilt each view distance allows, and at each grass density.
 #[cfg(debug_assertions)]

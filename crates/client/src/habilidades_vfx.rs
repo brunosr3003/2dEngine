@@ -12,12 +12,14 @@ pub fn material() -> Material {
     material_com_depth(false)
 }
 
-/// miniquad's OpenGL backend only enables GL_DEPTH_TEST with depth_write.
 /// Persistent auras need occlusion from the body and the equipment.
 pub fn material_com_oclusao() -> Material {
     material_com_depth(true)
 }
 
+/// Without depth write the glow is not depth-tested either: it draws over
+/// everything, as it always has. (The vendored miniquad now tests depth
+/// whenever the pipeline asks for it, so the "no test" has to be explicit.)
 fn material_com_depth(depth_write: bool) -> Material {
     load_material(ShaderSource::Glsl {
         vertex: r#"#version 100
@@ -29,7 +31,8 @@ fn material_com_depth(depth_write: bool) -> Material {
             varying lowp vec4 cor;
             void main() { if (cor.a <= 0.001) discard; gl_FragColor = cor; }"#,
     }, MaterialParams { pipeline_params: PipelineParams {
-        depth_test: Comparison::LessOrEqual, depth_write,
+        depth_test: if depth_write { Comparison::LessOrEqual } else { Comparison::Always },
+        depth_write,
         color_blend: Some(BlendState::new(Equation::Add, BlendFactor::Value(BlendValue::SourceAlpha), BlendFactor::One)),
         ..Default::default()
     }, ..Default::default() }).expect("emissive material for skills")
