@@ -4760,6 +4760,7 @@ impl Jogo {
             self.habilidades.cancela_arrasto();
         }
         let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
+        self.habilidades.wis = self.bolsa.stats.as_ref().map_or(0, |s| s.wis);
         let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
             return;
         };

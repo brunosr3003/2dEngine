@@ -64,13 +64,13 @@ fn dano_evoluido(base: i32, tier: u8, skill_id: u32) -> i32 {
         return 0;
     }
     let mut mult = shared::skills::multiplicador_do_tier(tier);
-    if tier >= 5 && matches!(skill_id, 1 | 6 | 7) {
+    if tier >= 5 && matches!(skill_id, 1 | 6 | 7 | 10) {
         mult += 0.08;
     }
     if tier >= 8 && matches!(skill_id, 5 | 7 | 9 | 12) {
         mult += 0.08;
     }
-    if tier >= 10 && matches!(skill_id, 1 | 2 | 4 | 5 | 6 | 8 | 9 | 12) {
+    if tier >= 10 && matches!(skill_id, 1 | 2 | 4 | 5 | 6 | 8 | 9 | 10 | 12) {
         mult += 0.12;
     }
     (base as f32 * mult).round().max(1.0) as i32
@@ -80,14 +80,13 @@ fn cura_evoluida(base: i32, tier: u8, skill_id: u32) -> i32 {
     if base <= 0 {
         return 0;
     }
+    // Life Drain (10) heals through its lifesteal (`roubo_do_dreno`), not a
+    // `cura` of its own: only Aura is left here.
     let mut mult = shared::skills::multiplicador_do_tier(tier);
-    if tier >= 5 && skill_id == 10 {
+    if tier >= 8 && skill_id == 11 {
         mult += 0.10;
     }
-    if tier >= 8 && matches!(skill_id, 10 | 11) {
-        mult += 0.10;
-    }
-    if tier >= 10 && matches!(skill_id, 10 | 11) {
+    if tier >= 10 && skill_id == 11 {
         mult += 0.15;
     }
     (base as f32 * mult).round().max(1.0) as i32
@@ -234,7 +233,9 @@ impl GameWorld {
         self.desmontar(sid);
         let s = self.sessions.get_mut(&sid).unwrap();
         s.mp_current -= skill.custo_mp as f32;
-        s.skill_cds.insert(skill_id, agora + skill.espera_s);
+        // INT shortens it a little, with a floor (`skills::espera_efetiva`).
+        let espera = shared::skills::espera_efetiva(skill.espera_s, s.stats.wis);
+        s.skill_cds.insert(skill_id, agora + espera);
         s.casting_until = agora + skill.trava_s();
         s.casting_skill_id = skill_id;
         s.casting_started_at_s = agora;
@@ -470,6 +471,17 @@ impl GameWorld {
                 from_player: true,
                 knockback: if skill.id == 7 && tier >= 8 { 0.7 } else { 0.0 },
             });
+            // LIFE DRAIN: the bolt heals whoever cast it for a share of the
+            // damage it carries. Same instant as the hit, so it cannot heal
+            // without the cast having landed.
+            if skill.id == 10 {
+                self.pending_heals.push(PendingHeal {
+                    target_net: dono,
+                    amount: ((dano as f32) * shared::skills::roubo_do_dreno(tier))
+                        .round()
+                        .max(1.0) as i32,
+                });
+            }
             return;
         }
         for (net, pos) in self.alvos_da_habilidade(dono, de, dir, alvo, skill) {
@@ -689,10 +701,26 @@ mod testes {
             assert!(w.pending_habilidades.is_empty());
             match skill.id {
                 3 => assert!(w.sessions[&sid].muralha_ate > w.sim_time_s),
-                10 | 11 => assert!(w
+                11 => assert!(w
                     .pending_heals
                     .iter()
                     .any(|h| h.target_net == dono && h.amount == skill.cura)),
+                // Life Drain: the hit on the target AND the lifesteal on the
+                // caster, in the same impact.
+                10 => {
+                    let golpe = w
+                        .pending_skill_hits
+                        .iter()
+                        .find(|h| h.target_net == EntityId(999))
+                        .expect("Life Drain sem alvo");
+                    let roubo = ((golpe.damage as f32) * shared::skills::roubo_do_dreno(1))
+                        .round()
+                        .max(1.0) as i32;
+                    assert!(w
+                        .pending_heals
+                        .iter()
+                        .any(|h| h.target_net == dono && h.amount == roubo));
+                }
                 _ => {
                     let s = &w.sessions[&sid];
                     let esperado = skill.dano_efetivo(

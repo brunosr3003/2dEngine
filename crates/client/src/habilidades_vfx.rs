@@ -321,7 +321,8 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
         1..=3 => ouro,
         4..=6 => azul,
         7..=9 => ORANGE,
-        10 | 11 => verde,
+        10 => Color::new(0.92, 0.12, 0.30, 1.0),
+        11 => verde,
         _ => violeta,
     };
     if !c.impacto {
@@ -546,8 +547,35 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
             onda(c.alvo, c.raio.max(3.0), t, ORANGE);
             faiscas(peito, t, ORANGE, 2.8, 38);
         }
-        10 | 11 => {
-            let r = if c.id == 10 { 1.0 } else { c.raio.max(3.0) };
+        // LIFE DRAIN: a crimson thread pulled from the target back to the
+        // caster, life flowing along it, and the heal landing on the caster.
+        // It used to be Blessing's seal, which drew a heal and no hit.
+        10 => {
+            let carmesim = Color::new(0.92, 0.12, 0.30, 1.0);
+            let eu = c.de + Vec3::Y * 1.1;
+            let fio: Vec<_> = (0..=20)
+                .map(|i| {
+                    let u = i as f32 / 20.0;
+                    peito.lerp(eu, u)
+                        + vec3(
+                            (u * 9.0 + t * 14.0).sin() * 0.15,
+                            (u * std::f32::consts::PI).sin() * 0.45,
+                            (u * 7.0 + t * 11.0).cos() * 0.15,
+                        )
+                })
+                .collect();
+            energia(&fio, 0.12, alfa(carmesim, fade));
+            brilho(peito, 0.7 * fade, alfa(carmesim, fade));
+            faiscas(peito, t, carmesim, 1.6, 20);
+            for i in 0..6 {
+                let u = (t * 1.6 + i as f32 / 6.0).fract();
+                brilho(peito.lerp(eu, u), 0.18 * fade, alfa(carmesim, fade));
+            }
+            halo(eu, 1.2, alfa(verde, fade * 0.5));
+            selo(c.de + Vec3::Y * 0.09, 0.8, t * 0.35, alfa(verde, fade * 0.8));
+        }
+        11 => {
+            let r = c.raio.max(3.0);
             selo(
                 c.de + Vec3::Y * 0.09,
                 r * (0.65 + 0.35 * (t * 6.0).min(1.0)),

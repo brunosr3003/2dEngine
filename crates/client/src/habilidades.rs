@@ -13,6 +13,9 @@ use std::collections::{HashMap, HashSet};
 #[derive(Default)]
 pub struct Habilidades {
     pub catalogo: Vec<Skill>,
+    /// The player's `wis`, for the cooldown INT shortens
+    /// (`skills::espera_efetiva`). `main` keeps it current.
+    pub wis: i32,
     recargas: HashMap<u32, f64>,
     ocupada_ate: f64,
     pendente_ate: f64,
@@ -120,12 +123,12 @@ mod tests {
         c.distancia_alvo = None;
         assert_eq!(h.proximo_auto(c, 10.0), None);
         c.vida_baixa = true;
-        assert_eq!(h.proximo_auto(c, 10.0), Some(10));
-        h.tentar_apos.insert(10, 12.5);
+        // Aura (11) is the mage's only heal since Life Drain (10) took
+        // Blessing's slot; the drain needs a target, and there is none.
         assert_eq!(h.proximo_auto(c, 10.0), Some(11));
         h.tentar_apos.insert(11, 12.5);
         assert_eq!(h.proximo_auto(c, 10.0), None);
-        assert_eq!(h.proximo_auto(c, 13.0), Some(10));
+        assert_eq!(h.proximo_auto(c, 13.0), Some(11));
         c.conjunto = Conjunto::EspadaEscudo;
         c.vida_baixa = false;
         assert_eq!(h.proximo_auto(c, 13.0), None);
@@ -145,7 +148,7 @@ mod tests {
         c.vida_baixa = true;
         // This is the path `usar_habilidade` takes with power-saving mode on: it
         // reads neither gesture nor key, and still casts.
-        assert_eq!(h.pedido_automatico(c, 10.0), Some(10), "a cura tem que sair");
+        assert_eq!(h.pedido_automatico(c, 10.0), Some(11), "a cura tem que sair");
         // And it charges the same wait as the normal path, so a black screen does
         // not become a machine gun of requests.
         assert_eq!(h.pedido_automatico(c, 10.0), None, "sem respeitar a espera");
@@ -474,7 +477,8 @@ impl Habilidades {
                 }
             }
             if cd > 0.0 {
-                let f = (cd as f32 / s.espera_s.max(0.01)).min(1.0);
+                let espera = shared::skills::espera_efetiva(s.espera_s, self.wis);
+                let f = (cd as f32 / espera.max(0.01)).min(1.0);
                 estilo::setor(c, raio - 3.0, f, Color::new(0.0, 0.0, 0.0, 0.62));
                 estilo::arco(
                     c,
@@ -571,7 +575,7 @@ impl Habilidades {
                         "Lv {}  ·  {} MP  ·  {:.0}s  ·  {}  ·  pra cima: AUTO · pra baixo: manual",
                         s.nivel_necessario(),
                         s.custo_mp,
-                        s.espera_s,
+                        shared::skills::espera_efetiva(s.espera_s, self.wis),
                         if auto { "AUTO" } else { "MANUAL" }
                     ),
                     13,

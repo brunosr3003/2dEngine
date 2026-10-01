@@ -10,7 +10,7 @@ use crate::hud_estilo as estilo;
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
     ("FOR", "+1 attack · +2 health"),
     ("DES", "+1 dexterity · crit/attack"),
-    ("INT", "+1 magic damage · +2 mana"),
+    ("INT", "+1 magic damage · +2 mana · -0.1% skill cooldown"),
     ("VIT", "+5 health · regeneration"),
     ("SPD", "+2 vigor · regeneração · recarga do Dash"),
     ("RES", "+1 defence · block"),

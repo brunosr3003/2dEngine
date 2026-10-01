@@ -715,7 +715,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Waiting for the server…", "Aguardando servidor…"),
     ("+5 health · regeneration", "+5 vida · regeneração"),
     ("Energy: {} · point −{}", "Energia: {} · ponto −{}"),
-    ("+1 magic damage · +2 mana", "+1 dano mágico · +2 mana"),
+    ("+1 magic damage · +2 mana · -0.1% skill cooldown", "+1 dano mágico · +2 mana · -0,1% de recarga das habilidades"),
     ("XP to the next level: {}", "XP para o próximo nível: {}"),
     ("+1 dexterity · crit/attack", "+1 destreza · crítico/ataque"),
     ("Tap again to confirm", "Toque novamente para confirmar"),

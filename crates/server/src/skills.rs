@@ -94,6 +94,33 @@ async fn semear(pool: &PgPool) -> anyhow::Result<()> {
         .await?;
     }
     tracing::info!("skills: 12 do playtest semeadas");
+    // Blessing (10) became LIFE DRAIN on 01/10/2026. The seed above never
+    // reaches a row that already exists, so the databases in production keep
+    // the old self-heal until this runs. Only a row that still holds the old
+    // Blessing numbers changes: an admin's tweak stays. NOT by name: the
+    // production rows carry the Portuguese name ("Bênção").
+    if let Some(dreno) = shared::skills::playtest().into_iter().find(|s| s.id == 10) {
+        let mudou = sqlx::query(
+            "UPDATE skills SET nome = $1, forma = $2, custo_mp = $3, espera_s = $4,
+                    conjuracao_s = $5, dano = $6, cura = $7, alcance = $8, raio = $9
+              WHERE id = 10 AND forma = 'em_si' AND dano = 0 AND cura = 40",
+        )
+        .bind(&dreno.nome)
+        .bind(dreno.forma.chave())
+        .bind(dreno.custo_mp)
+        .bind(dreno.espera_s)
+        .bind(dreno.conjuracao_s)
+        .bind(dreno.dano)
+        .bind(dreno.cura)
+        .bind(dreno.alcance)
+        .bind(dreno.raio)
+        .execute(pool)
+        .await?
+        .rows_affected();
+        if mudou > 0 {
+            tracing::info!("skills: Blessing (10) is now Life Drain");
+        }
+    }
     Ok(())
 }
 

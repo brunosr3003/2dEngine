@@ -435,7 +435,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
             if let Some(i) = escolhida {
                 let s = &skills[i];
                 mp -= s.custo_mp as f32;
-                pronta_em[i] = t + s.espera_s;
+                pronta_em[i] = t + shared::skills::espera_efetiva(s.espera_s, stats.wis);
                 ultimo_auto = s.id;
                 // O servidor trava o jogador ate' `impacto_em() + RECUPERACAO_S`
                 // (`world/habilidades.rs`: `casting_until`), e enquanto trava o
@@ -562,8 +562,14 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                         o.provocado_ate = o.provocado_ate.max(t + crate::world::PROVOCACAO_S);
                     }
                     if d <= raio {
-                        o.hp -= dano_mitigado_por_subtracao(
-                            s.dano_efetivo(stats.attack_damage, cd_base), o.defesa);
+                        let bruto = s.dano_efetivo(stats.attack_damage, cd_base);
+                        o.hp -= dano_mitigado_por_subtracao(bruto, o.defesa);
+                        // Life Drain heals the caster, like `efeito_habilidade`.
+                        if s.id == 10 {
+                            *hp = (*hp
+                                + ((bruto as f32) * shared::skills::roubo_do_dreno(1)).round() as i32)
+                                .min(hp_max);
+                        }
                         if o.hp <= 0 {
                             abateu(o, t, &mut r, alvo_kind);
                         }
@@ -1376,7 +1382,7 @@ pub(crate) fn duelar(
             if let Some(i) = escolhida {
                 let s = &skills[i];
                 mp -= s.custo_mp as f32;
-                pronta_em[i] = t + s.espera_s;
+                pronta_em[i] = t + shared::skills::espera_efetiva(s.espera_s, stats.wis);
                 ultimo_auto = s.id;
                 // Mesma janela do servidor que a luta de zona usa acima.
                 ocupado_ate = t + s.trava_s();
@@ -1474,8 +1480,12 @@ pub(crate) fn duelar(
                 thirst_until = thirst_until.max(t + shared::KATANA_THIRST_S);
             }
             if s.dano > 0 {
-                hp_chefe -= dano_mitigado_por_subtracao(
-                    s.dano_efetivo(stats.attack_damage, cd_base), def_chefe);
+                let bruto = s.dano_efetivo(stats.attack_damage, cd_base);
+                hp_chefe -= dano_mitigado_por_subtracao(bruto, def_chefe);
+                if s.id == 10 {
+                    hp = (hp + ((bruto as f32) * shared::skills::roubo_do_dreno(1)).round() as i32)
+                        .min(hp_max);
+                }
             }
         }
         if hp_chefe <= 0 {

@@ -395,6 +395,40 @@ pub fn tier_romano(tier: u8) -> &'static str {
     R[(tier.clamp(1, TIER_MAX) - 1) as usize]
 }
 
+/// How much of Life Drain's (10) damage comes back as healing, by tier: the
+/// lifesteal IS the skill's heal. The tier V..X awakenings (`despertar`)
+/// promise these numbers.
+///
+/// 30% and not the 50% first tried: `balanceamento::metas_dos_chefes` caught
+/// the mage at 50% beating the Archer of the Waste and the Elder Colossus
+/// STANDING STILL (21-23% HP left), and standing still must lose to every
+/// boss. 45% still won one; 40% is the edge, so even tier X stops there.
+pub fn roubo_do_dreno(tier: u8) -> f32 {
+    match tier {
+        10.. => 0.40,
+        8..=9 => 0.35,
+        _ => 0.30,
+    }
+}
+
+/// INT shortens skill cooldowns a little: this much per point of `wis` above
+/// the base character's.
+pub const INT_REDUCAO_DE_RECARGA_POR_PONTO: f32 = 0.001;
+/// ...up to this much (an all-INT build reaches it around 200 INT)...
+pub const INT_REDUCAO_DE_RECARGA_MAX: f32 = 0.20;
+/// ...and no cooldown drops below this. A skill whose base cooldown is
+/// already shorter keeps its own.
+pub const RECARGA_MINIMA_S: f32 = 4.0;
+
+/// The cooldown a character with `wis` really waits. The owner asked INT to
+/// shorten cooldowns "but not much", with a floor: the dash already gets
+/// shorter with SPD, and skills on a 2 s loop would be a different game.
+pub fn espera_efetiva(espera_s: f32, wis: i32) -> f32 {
+    let acima = (wis - crate::base_player_stats().wis).max(0) as f32;
+    let corte = (acima * INT_REDUCAO_DE_RECARGA_POR_PONTO).min(INT_REDUCAO_DE_RECARGA_MAX);
+    (espera_s * (1.0 - corte)).max(espera_s.min(RECARGA_MINIMA_S))
+}
+
 /// Texto curto dos três despertares. A regra correspondente mora no servidor,
 /// mas o texto é compartilhado para a tela nunca prometer outra coisa.
 pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
@@ -426,9 +460,9 @@ pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
         (9, 5) => "Bigger explosion",
         (9, 8) => "Stronger explosion",
         (9, 10) => "Devastating blaze",
-        (10, 5) => "Stronger healing",
-        (10, 8) => "Extra recovery",
-        (10, 10) => "Maximum healing",
+        (10, 5) => "Stronger drain",
+        (10, 8) => "Steals 35% of the damage",
+        (10, 10) => "Steals 40% and hits harder",
         (11, 5) => "Wider aura",
         (11, 8) => "Wider area and stronger healing",
         (11, 10) => "Maximum healing pulse",
@@ -622,7 +656,7 @@ impl Skill {
             7 => "Dispara um tiro poderoso no alvo selecionado.",
             8 => "Rajada em leque voltada para o alvo selecionado.",
             9 => "Arremessa um barril que explode no alvo.",
-            10 => "Restores your own health.",
+            10 => "A bolt that drains the target and heals you for 30% of the damage dealt.",
             11 => "Heals you and allies around you.",
             12 => "Impacto mágico no alvo e nos inimigos próximos.",
             _ => "",
@@ -911,18 +945,24 @@ pub fn playtest() -> Vec<Skill> {
             9, "Barrel", "pistolas", 3, "circulo", 24, 16.0, 0.0, 50, 0, 8.0, 3.0,
         ),
         // ── anel magico: cura e magia ──
+        //
+        // LIFE DRAIN (01/10/2026) took Blessing's slot. The owner: the mage
+        // had two heals and one attack, and nothing to hit with until level
+        // 10. Now: one area heal (Aura), one damage + heal (this), one
+        // damage (Judgement). A bolt like True Shot (weight 30, range 10);
+        // the heal is `roubo_do_dreno` of the damage, applied by the server.
         (
             10,
-            "Blessing",
+            "Life Drain",
             "anel_magico",
             1,
-            "em_si",
-            14,
-            10.0,
+            "projetil",
+            12,
+            8.0,
             0.0,
+            30,
             0,
-            40,
-            0.0,
+            10.0,
             0.0,
         ),
         (
@@ -1003,7 +1043,7 @@ mod testes_da_trava {
         };
         // SOLTAM: o barril arremessado, os projéteis e a bênção que cai em
         // você no impacto.
-        for n in ["Barrel", "True Shot", "Cutting Wind", "Blessing", "Aura", "Judgement"] {
+        for n in ["Barrel", "True Shot", "Cutting Wind", "Life Drain", "Aura", "Judgement"] {
             let s = por_nome(n);
             assert!(s.sai_da_mao(), "'{n}' devia soltar o corpo");
             assert_eq!(
@@ -1087,7 +1127,7 @@ mod testes_da_trava {
                 .find(|s| s.nome == n)
                 .unwrap_or_else(|| panic!("skill '{n}' sumiu"))
         };
-        for (n, teto) in [("Barrel", 0.5), ("Aura", 0.4), ("Blessing", 0.6)] {
+        for (n, teto) in [("Barrel", 0.5), ("Aura", 0.4), ("Life Drain", 0.6)] {
             let s = por_nome(n);
             assert!(
                 s.trava_s() <= teto,
@@ -1095,5 +1135,46 @@ mod testes_da_trava {
                 s.trava_s()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_mago_e_da_int {
+    use super::*;
+
+    fn skill(id: u32) -> Skill {
+        playtest().into_iter().find(|s| s.id == id).unwrap()
+    }
+
+    /// The mage: one area heal, one damage + heal, one damage — and the
+    /// damage + heal is there from level 1.
+    #[test]
+    fn o_mago_tem_cura_dreno_e_dano() {
+        let mago: Vec<Skill> = playtest()
+            .into_iter()
+            .filter(|s| s.conjunto == Conjunto::AnelMagico)
+            .collect();
+        assert_eq!(mago.len(), 3);
+        let dreno = skill(10);
+        assert_eq!(dreno.ordem, 1, "the drain unlocks with the ring");
+        assert!(dreno.dano > 0 && dreno.cura == 0 && dreno.forma == Forma::Projetil);
+        assert!(skill(11).cura > 0 && skill(11).dano == 0, "Aura stays the area heal");
+        assert!(skill(12).dano > 0 && skill(12).cura == 0, "Judgement stays damage");
+        assert!(roubo_do_dreno(1) < roubo_do_dreno(8) && roubo_do_dreno(8) < roubo_do_dreno(10));
+    }
+
+    /// INT shortens cooldowns a LITTLE: 0.1% a point, 20% at most, never
+    /// under 4 s — and a skill already under 4 s keeps its own.
+    #[test]
+    fn int_encurta_pouco_com_teto_e_piso() {
+        let base = crate::base_player_stats().wis;
+        assert_eq!(espera_efetiva(18.0, base), 18.0, "no INT, no change");
+        assert_eq!(espera_efetiva(18.0, 0), 18.0, "below base never lengthens");
+        let cem = espera_efetiva(18.0, base + 100);
+        assert!((cem - 16.2).abs() < 1e-4, "100 INT = -10%: {cem}");
+        assert!((espera_efetiva(18.0, base + 5_000) - 14.4).abs() < 1e-4, "cap: -20%");
+        assert_eq!(espera_efetiva(4.5, base + 5_000), 4.0, "floor at 4 s");
+        assert_eq!(espera_efetiva(4.0, base + 5_000), 4.0, "True Shot keeps 4 s");
+        assert_eq!(espera_efetiva(2.0, base + 5_000), 2.0, "under the floor keeps its own");
     }
 }
