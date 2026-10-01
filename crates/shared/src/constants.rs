@@ -110,7 +110,12 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// na síntese da aba Materials (`combinar::receitas`). A tabela de combinar é
 /// compartilhada: o cliente 159 não oferece a síntese de madeira que o servidor
 /// 160 aceita. O corte foi pedido pelo dono ("change protocol and restart").
-pub const PROTOCOL_VERSION: u16 = 167;
+/// 168 (01/10/2026): asked by the owner with the 2026100106 desktop build
+/// (real look and gear auras in the bag portrait and Appearance screen, and
+/// the Shipwreck Cellar key steps in the quest menu). No message changed;
+/// it is a forced update, desktop only — Android and iOS stay on 167 and are
+/// refused until their apps are rebuilt.
+pub const PROTOCOL_VERSION: u16 = 168;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

@@ -1,3 +1,9 @@
+01/10/2026 — Seu personagem de verdade na bolsa e na Aparência
+
+O retrato da bolsa mostrava sempre um boneco padrão, com o chapéu padrão. Agora ele veste o seu personagem como os outros jogadores te veem: rosto, cabelo, cores, roupa ou skin, e a arma na mão. E as auras dos equipamentos aparecem nele — a cor pela raridade de cada peça, mais forte quanto maior o tier. A tela de Aparência também passou a mostrar essas auras enquanto você prova as roupas.
+
+Atualização obrigatória — o protocolo passa a ser o 168. No celular, o jogo só volta a entrar depois da próxima atualização do app.
+
 01/10/2026 — A chave do Porão do Naufrágio entra na história
 
 O Porão do Naufrágio virou uma porta trancada, e a história mandava você até ela sem chave. Agora, entre o Mirante e o Porão, há três passos novos: derrube 6 árvores, quebre 6 pedras e crie a Chave do Porão do Naufrágio no Craft. Os dois primeiros já entregam toda a madeira e o Aço que a chave pede, então ninguém fica travado. O passo do Porão também explica o caminho: com a chave na bolsa, use "Ir para o portal".
