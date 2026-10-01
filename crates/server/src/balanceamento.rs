@@ -884,12 +884,12 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
     let (cidade, zonas) = bosque();
     // A simulacao percorre a MESMA jornada que o jogador: o forte entra na
     // lista a partir de `FORTE_NA_MISSAO_NIVEL`, igual `zona_de_mob`.
-    let monta_zonas = |nivel: u32| -> Vec<(Vec2, u32, u32)> {
+    let monta_zonas = |nivel: u32| -> Vec<(Vec2, u32, u32, bool)> {
         zonas
             .zonas
             .iter()
             .filter(|z| !z.forte || nivel >= crate::world::FORTE_NA_MISSAO_NIVEL)
-            .map(|z| (z.centro, z.lv_min, z.lv_max))
+            .map(|z| (z.centro, z.lv_min, z.lv_max, z.forte))
             .collect()
     };
     // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
@@ -964,7 +964,7 @@ pub(crate) fn jornada(conjunto: Conjunto, com_pocoes: bool) -> Jornada {
             }
         };
         let tuplas = monta_zonas(nivel);
-        let Some(centro) = crate::quests::zona_do_bicho(&tuplas, &comuns, &alvos, *cidade, nivel)
+        let Some(centro) = crate::quests::zona_do_bicho_com_forte(&tuplas, &comuns, &alvos, *cidade, nivel)
         else {
             panic!("{nome}: no zone");
         };
@@ -2133,12 +2133,12 @@ mod testes_das_zonas {
     // jogo diferente.
     let comuns: Vec<u16> =
         crate::economy::kinds_do_bioma(shared::terreno::Bioma::Floresta).to_vec();
-        let lista = |nivel: u32| -> Vec<(glam::Vec2, u32, u32)> {
+        let lista = |nivel: u32| -> Vec<(glam::Vec2, u32, u32, bool)> {
             zonas
                 .zonas
                 .iter()
                 .filter(|z| !z.forte || nivel >= FORTE_NA_MISSAO_NIVEL)
-                .map(|z| (z.centro, z.lv_min, z.lv_max))
+                .map(|z| (z.centro, z.lv_min, z.lv_max, z.forte))
                 .collect()
         };
         let e_forte = |c: glam::Vec2| {
@@ -2153,7 +2153,7 @@ mod testes_das_zonas {
             let zs = lista(nivel);
             for alvo in 0..7u16 {
                 if let Some(c) =
-                    crate::quests::zona_do_bicho(&zs, &comuns, &[alvo], *cidade, nivel)
+                    crate::quests::zona_do_bicho_com_forte(&zs, &comuns, &[alvo], *cidade, nivel)
                 {
                     assert!(!e_forte(c), "nivel {nivel} mandou pro forte");
                 }
@@ -2166,7 +2166,7 @@ mod testes_das_zonas {
             let zs = lista(nivel);
             for alvo in 0..7u16 {
                 if let Some(c) =
-                    crate::quests::zona_do_bicho(&zs, &comuns, &[alvo], *cidade, nivel)
+                    crate::quests::zona_do_bicho_com_forte(&zs, &comuns, &[alvo], *cidade, nivel)
                 {
                     foi |= e_forte(c);
                 }

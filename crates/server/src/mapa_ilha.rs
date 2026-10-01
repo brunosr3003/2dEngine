@@ -144,8 +144,9 @@ mod testes {
     fn bichos_da_zona_batem_com_a_auto_missao() {
         let kinds: Vec<u16> = (0..8).collect();
         let b = bichos_da_zona(&kinds, 1, 3);
-        // Nivel 1..3: niveis 1 e 2 so' sorteiam o kind 0, nivel 3 sorteia 0 e 1.
-        assert_eq!(b, vec![(0, 83), (1, 17)]);
+        // Nivel 1..3: niveis 1 e 2 so' sorteiam o kind 0; nivel 3 sorteia 0 e
+        // 1, e o 1 — o recem-chegado — vale dobrado (`sorteio_do_nivel`).
+        assert_eq!(b, vec![(0, 78), (1, 22)]);
         for (k, pct) in &b {
             let c = crate::quests::chance_do_kind(&kinds, *k, 1, 3);
             assert_eq!(*pct, (c * 100.0).round() as u8);

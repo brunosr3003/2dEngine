@@ -509,9 +509,12 @@ pub fn chance_do_kind(kinds: &[u16], kind: u16, lv_min: u32, lv_max: u32) -> f32
     }
     let mut soma = 0.0;
     for n in lv_min..=lv_max {
-        let teto = ((n as usize / 3) + 1).min(kinds.len());
+        // The same draw as the spawn (`economy::sorteio_do_nivel`).
+        let (teto, dobra) = crate::economy::sorteio_do_nivel(kinds.len(), n);
         if i < teto {
-            soma += 1.0 / teto as f32;
+            let fatias = (teto + dobra as usize) as f32;
+            let peso = if dobra && i == teto - 1 { 2.0 } else { 1.0 };
+            soma += peso / fatias;
         }
     }
     soma / (lv_max - lv_min + 1) as f32
@@ -531,7 +534,29 @@ pub fn zona_do_bicho(
     eu: glam::Vec2,
     nivel: u32,
 ) -> Option<glam::Vec2> {
-    let chance = |z: &(glam::Vec2, u32, u32)| {
+    let com_forte: Vec<_> = zonas.iter().map(|z| (z.0, z.1, z.2, false)).collect();
+    zona_do_bicho_com_forte(&com_forte, kinds, alvos, eu, nivel)
+}
+
+/// How much closer a FORT counts when picking where to hunt: a fort 1/0.6 =
+/// 1.67x as far as an ordinary zone still wins. The owner asked on 20/09/2026
+/// that kill quests lead "to the spot with more mobs to kill" — twice the
+/// density, half the time. Until 01/10/2026 the comment promised it and the
+/// code sorted by distance only: a fort won when it happened to be the
+/// nearest, and stopped winning when the newest-species weight
+/// (`economy::sorteio_do_nivel`) let closer zones qualify. Not unconditional:
+/// a fort across the island still loses to the zone next door.
+pub const FORTE_ENCURTA: f32 = 0.6;
+
+/// `zona_do_bicho` with each zone tagged as fort or not (`.3`).
+pub fn zona_do_bicho_com_forte(
+    zonas: &[(glam::Vec2, u32, u32, bool)],
+    kinds: &[u16],
+    alvos: &[u16],
+    eu: glam::Vec2,
+    nivel: u32,
+) -> Option<glam::Vec2> {
+    let chance = |z: &(glam::Vec2, u32, u32, bool)| {
         if alvos.is_empty() {
             1.0
         } else {
@@ -541,11 +566,11 @@ pub fn zona_do_bicho(
                 .fold(0.0, f32::max)
         }
     };
-    let perto = |v: &mut Vec<&(glam::Vec2, u32, u32)>| {
-        v.sort_by(|a, b| {
-            a.0.distance_squared(eu)
-                .total_cmp(&b.0.distance_squared(eu))
-        });
+    let longe = |z: &(glam::Vec2, u32, u32, bool)| {
+        z.0.distance(eu) * if z.3 { FORTE_ENCURTA } else { 1.0 }
+    };
+    let perto = |v: &mut Vec<&(glam::Vec2, u32, u32, bool)>| {
+        v.sort_by(|a, b| longe(a).total_cmp(&longe(b)));
         v.first().map(|z| z.0)
     };
     let mut boas: Vec<_> = zonas
@@ -910,9 +935,10 @@ mod testes {
         let kinds = [0u16, 1, 2, 3];
         assert_eq!(chance_do_kind(&kinds, 0, 1, 2), 1.0, "nivel 1-2 so' lobo");
         assert_eq!(chance_do_kind(&kinds, 1, 1, 2), 0.0);
+        // 3-5: lobo ou urso, e o urso — recem-chegado — vale dobrado.
         assert!(
-            (chance_do_kind(&kinds, 1, 3, 5) - 0.5).abs() < 1e-6,
-            "3-5: lobo ou urso"
+            (chance_do_kind(&kinds, 1, 3, 5) - 2.0 / 3.0).abs() < 1e-6,
+            "3-5: lobo ou urso, urso dobrado"
         );
         assert_eq!(chance_do_kind(&kinds, 9, 1, 15), 0.0, "kind que nao existe");
     }

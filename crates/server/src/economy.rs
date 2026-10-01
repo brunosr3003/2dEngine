@@ -1503,9 +1503,31 @@ pub(crate) fn kind_para_nivel_em(comuns: &[u16], nivel: u32, semente: u64) -> u1
     if comuns.is_empty() {
         return 0;
     }
-    // Ate' onde a escolha vai: um bicho novo a cada tres niveis.
-    let teto = ((nivel as usize / 3) + 1).min(comuns.len());
-    comuns[(semente as usize) % teto]
+    let (teto, dobra) = sorteio_do_nivel(comuns.len(), nivel);
+    let fatias = teto + dobra as usize;
+    let r = (semente as usize) % fatias;
+    // The extra slice is the newest species: it shows up twice as often.
+    comuns[r.min(teto - 1)]
+}
+
+/// How a zone of level `nivel` draws from a bestiary of `n` species: the
+/// first `teto` are in (a new one every three levels), and `dobra` says the
+/// last of them — the species JUST unlocked at this level — counts twice.
+///
+/// The double weight exists because the newest species was the rarest thing
+/// in the very zones that introduce it: the Bosque's owlbear only appears in
+/// the level-15 zones, as 1 mob in 6, and the owner could barely find five for
+/// "What came down from the ice". Doubled, it is 2 in 7. Once every species
+/// is unlocked (most zones of the higher islands), the draw is uniform again:
+/// doubling there would make the island's STRONGEST mob twice as common
+/// everywhere. `quests::chance_do_kind` reads the same rule.
+pub(crate) fn sorteio_do_nivel(n: usize, nivel: u32) -> (usize, bool) {
+    if n == 0 {
+        return (0, false);
+    }
+    let bruto = nivel as usize / 3 + 1;
+    let teto = bruto.min(n);
+    (teto, teto > 1 && bruto <= n)
 }
 
 /// Uma linha da tabela de mobs semeada no banco (`persistence`). Mora aqui

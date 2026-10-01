@@ -16304,13 +16304,15 @@ impl GameWorld {
                 .min_by(|a, b| a.pos.distance_squared(eu).total_cmp(&b.pos.distance_squared(eu)))
                 .map(|s| s.pos));
             if let Some(p) = ponto {
-                candidatos.push((min > nivel + 3, mob.is_none(), chance < 0.15, p));
+                // The fort's preference (`quests::FORTE_ENCURTA`): it counts
+                // as closer than it is.
+                let longe = p.distance(eu) * if z.forte { crate::quests::FORTE_ENCURTA } else { 1.0 };
+                candidatos.push((min > nivel + 3, mob.is_none(), chance < 0.15, longe, p));
             }
         }
         candidatos.into_iter().min_by(|a, b| {
-            (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2))
-                .then_with(|| a.3.distance_squared(eu).total_cmp(&b.3.distance_squared(eu)))
-        }).map(|c| c.3)
+            (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2)).then_with(|| a.3.total_cmp(&b.3))
+        }).map(|c| c.4)
     }
 
     /// Melhor spot de coleta perto de `eu`: onde ha' mais pedra/tronco VIVO no
