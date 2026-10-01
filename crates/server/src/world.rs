@@ -11984,6 +11984,38 @@ impl GameWorld {
                 }
             }
 
+            // ── Esquiva da pistola (`shared::combat::chance_de_esquiva`) ──
+            // A mob's melee swing or shot can miss a DEX pistol outright. Not
+            // a skill hit: boss telegraphs come as skills, and those are a
+            // hand-dodge. The hit still goes out with damage 0, so the client
+            // shows "Dodge" and the attacker still turns to its target.
+            if !attacker_is_player
+                && matches!(attack_info, AttackInfo::Melee { .. } | AttackInfo::Projectile { .. })
+            {
+                let agora_esquiva = self.sim_time_s;
+                let esquivou = self
+                    .sessions
+                    .values_mut()
+                    .find(|s| s.entity_id == target_id)
+                    .is_some_and(|s| {
+                        let chance = shared::combat::chance_de_esquiva(
+                            s.equipment.weapon.unwrap_or(0),
+                            s.allocated_points[shared::stat_idx::DES],
+                        );
+                        let sim = chance > 0.0 && fastrand::f32() < chance;
+                        if sim {
+                            s.last_combat_at_s = agora_esquiva;
+                        }
+                        sim
+                    });
+                if esquivou {
+                    self.damage_this_tick.entry(target_id).or_insert(0);
+                    self.hit_this_tick.insert(target_id, hurt_dir);
+                    self.attacker_this_tick.insert(target_id, attacker_id);
+                    continue;
+                }
+            }
+
             // ── Defesa ativa do alvo (player) ────────────────────────────────
             // (1) Parry: edge-press de PRIMARY ou SECONDARY dentro de PARRY_WINDOW_S
             //     → anula o dano + drena custo de parry (escala c/ RES) + staggera atacante.

@@ -24,6 +24,30 @@ pub fn basic_attack_damage(stats: &PlayerStats, weapon_id: u16, allocated_int: u
     stats.attack_damage.saturating_add(bonus).max(1)
 }
 
+/// Chance per allocated DEX point that a PISTOL wielder avoids a mob's hit.
+pub const ESQUIVA_POR_DES: f32 = 0.005;
+/// The most a pistol wielder ever dodges.
+pub const ESQUIVA_MAXIMA: f32 = 0.25;
+
+/// How likely this character is to DODGE a mob's basic hit (melee or
+/// projectile) outright: no damage, no stagger, no knockback.
+///
+/// Pistols only, from the DEX the player put in themselves. The owner: an
+/// all-DEX pistol is "too fragile" early and could not clear the level-14
+/// Porão — the class with the least health and no way to recover mid-fight.
+/// A wider range was tried first: any range over 9 made it kill bosses under
+/// the 60 s floor (it was already the fastest killer). Dodging touches the
+/// damage taken, not the damage dealt.
+///
+/// NEVER the telegraphed boss attacks: those arrive as skill hits and are
+/// dodged by moving, by hand.
+pub fn chance_de_esquiva(weapon_id: u16, des_alocada: u32) -> f32 {
+    if weapon_id != crate::constants::item_id::PISTOLAS {
+        return 0.0;
+    }
+    (des_alocada as f32 * ESQUIVA_POR_DES).min(ESQUIVA_MAXIMA)
+}
+
 /// Final stamina cost for a block, scaled by the target's
 /// `defense_stamina_cost_mult` (RES reduces it). Capped by `STAMINA_COST_MULT_MIN`.
 pub fn block_stamina_cost(stats: &PlayerStats) -> f32 {
@@ -134,5 +158,22 @@ mod tests {
     fn try_block_active_fails_without_stamina() {
         let s = base_player_stats();
         assert_eq!(try_block_active(&s, 5.0, 50), None);
+    }
+}
+
+#[cfg(test)]
+mod testes_da_esquiva {
+    use super::*;
+    use crate::constants::item_id;
+
+    /// Pistols only, grows with allocated DEX, stops at the cap.
+    #[test]
+    fn so_a_pistola_esquiva_e_com_teto() {
+        assert_eq!(chance_de_esquiva(item_id::KATANA, 200), 0.0);
+        assert_eq!(chance_de_esquiva(item_id::ANEL_MAGICO, 200), 0.0);
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 0), 0.0);
+        let quinze = chance_de_esquiva(item_id::PISTOLAS, 42); // all-DEX, level 15
+        assert!((0.15..=ESQUIVA_MAXIMA).contains(&quinze), "{quinze}");
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000), ESQUIVA_MAXIMA);
     }
 }

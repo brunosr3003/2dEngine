@@ -284,14 +284,20 @@ pub fn desenha(world: &World, vista: &Vista) {
             let base = if ef.critico { 30.0 } else { 23.0 };
             let tam = base * pula;
             let alfa = if u < 0.6 { 1.0 } else { 1.0 - (u - 0.6) / 0.4 };
-            let cor = if ef.eu {
+            // A pistol's DODGE comes as damage 0 (`combat::chance_de_esquiva`).
+            let esquiva = ef.dano == 0;
+            let cor = if esquiva {
+                Color::new(0.62, 0.86, 1.0, alfa)
+            } else if ef.eu {
                 Color::new(1.0, 0.32, 0.28, alfa)
             } else if ef.critico {
                 Color::new(1.0, 0.62, 0.18, alfa)
             } else {
                 Color::new(1.0, 0.95, 0.78, alfa)
             };
-            let txt = if ef.critico {
+            let txt = if esquiva {
+                shared::idioma::tr("Dodge").into_owned()
+            } else if ef.critico {
                 format!("{}!", ef.dano)
             } else {
                 ef.dano.to_string()

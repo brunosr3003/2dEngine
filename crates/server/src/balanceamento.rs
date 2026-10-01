@@ -317,6 +317,11 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
     } = l;
     let mut ultimo_dano = -1e9f32;
     let arma = arma_do(conjunto);
+    // The pistol's DODGE (`combat::chance_de_esquiva`), from the DEX the
+    // reference build allocates. Applied as a running count — every time it
+    // passes 1 a bite misses — so the check is the expected rate, not a dice.
+    let esquiva = shared::combat::chance_de_esquiva(arma, build_do_nivel(conjunto, nivel).1[shared::stat_idx::DES]);
+    let mut esquivas = 0.0f32;
     let a_distancia = conjunto.a_distancia();
     let alcance = if a_distancia {
         shared::RANGED_ATTACK_RANGE
@@ -693,6 +698,11 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 continue;
             }
             if m.def.kite.is_none() && m.pos.distance(eu) > m.def.rng + shared::HIT_TARGET_RADIUS {
+                continue;
+            }
+            esquivas += esquiva;
+            if esquivas >= 1.0 {
+                esquivas -= 1.0;
                 continue;
             }
             let mut dmg = dano_com_reducao(m.dano, stats.defense, stats.damage_reduction_pct);
@@ -1252,6 +1262,10 @@ pub(crate) fn duelar(
     let (equip, alloc, profs, xp) = build_do_nivel(conjunto, nivel);
     let stats = effective_stats(&equip, &alloc, &profs, xp);
     let arma = arma_do(conjunto);
+    // Dodge applies to the boss's COMMON hits only: the telegraphs are a
+    // hand-dodge (`combat::chance_de_esquiva`).
+    let esquiva = shared::combat::chance_de_esquiva(arma, alloc[shared::stat_idx::DES]);
+    let mut esquivas = 0.0f32;
     let a_distancia = conjunto.a_distancia();
     let alcance = if a_distancia {
         shared::RANGED_ATTACK_RANGE
@@ -1576,6 +1590,11 @@ pub(crate) fn duelar(
             mordidas.swap_remove(i);
             if base.kite.is_none() && chefe.distance(eu) > alcance_chefe + shared::HIT_TARGET_RADIUS
             {
+                continue;
+            }
+            esquivas += esquiva;
+            if esquivas >= 1.0 {
+                esquivas -= 1.0;
                 continue;
             }
             let mut dmg = dano_com_reducao(dano_chefe, stats.defense, reducao);

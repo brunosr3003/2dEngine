@@ -256,6 +256,25 @@ impl World {
     pub fn acertos(&mut self, lista: &[shared::protocol::Acerto], agora: f64) {
         for a in lista {
             let eu = self.self_id == Some(a.alvo);
+            // A DODGE (damage 0): the number says "Dodge", and there is no
+            // pain, no hurt sound and no flinch — nothing landed.
+            if a.dano == 0 {
+                let onde = self.ents.get(&a.alvo).map(|e| e.render_pos);
+                if let (Some(p), Some(at)) = (onde, self.ents.get_mut(&a.atacante)) {
+                    at.mira = Some((p, 0.6));
+                }
+                let h = (a.alvo.0 as u64 ^ (self.efeitos.len() as u64).wrapping_mul(0x9E37_79B9))
+                    .wrapping_mul(2_654_435_761);
+                self.efeitos.push(Efeito {
+                    alvo: a.alvo,
+                    dano: 0,
+                    critico: false,
+                    eu,
+                    t: 0.0,
+                    semente: (h % 1000) as f32 / 1000.0,
+                });
+                continue;
+            }
             if let Some(e) = self.ents.get(&a.alvo) {
                 let som = if eu {crate::sons::Som::Dor} else if a.critico {crate::sons::Som::Critico} else if a.alvo.0 % 2 == 0 {crate::sons::Som::Acerto} else {crate::sons::Som::Acerto2};
                 crate::sons::mundo(som,e.render_pos,self.self_pos(),eu || self.self_id == Some(a.atacante));
