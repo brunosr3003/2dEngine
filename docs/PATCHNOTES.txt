@@ -1,3 +1,15 @@
+01/10/2026 — Dreno Vital, INT nas recargas e a pistola mais resistente
+
+Mago: a Bênção deu lugar ao Dreno Vital, já no nível 1 — um disparo mágico que causa dano no alvo e te cura com 30% do dano causado (35% no tier VIII, 40% no tier X). A Aura continua sendo a cura em área e o Julgamento o dano em área. Agora o mago tem com o que atacar desde o começo.
+
+INT: cada ponto reduz um pouco a recarga das habilidades (0,1% por ponto, até 20%), em qualquer arma, e nenhuma recarga fica abaixo de 4 segundos. A barra de habilidades já mostra o tempo reduzido.
+
+Pistola: cada ponto de DES agora também dá +1 de vida máxima. A pistola já tinha o maior dano; o que faltava para fazer dungeon sozinho era aguentar.
+
+Armadura leve: a DES da peça mais que dobrou (de 2–6 para 6–12). As peças que você já tem se ajustam ao entrar no jogo.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
 01/10/2026 — Seu personagem de verdade na bolsa e na Aparência
 
 O retrato da bolsa mostrava sempre um boneco padrão, com o chapéu padrão. Agora ele veste o seu personagem como os outros jogadores te veem: rosto, cabelo, cores, roupa ou skin, e a arma na mão. E as auras dos equipamentos aparecem nele — a cor pela raridade de cada peça, mais forte quanto maior o tier. A tela de Aparência também passou a mostrar essas auras enquanto você prova as roupas.
