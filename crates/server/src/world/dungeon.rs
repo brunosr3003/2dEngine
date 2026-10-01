@@ -1106,6 +1106,7 @@ impl GameWorld {
             None => (arena[(andar as usize).min(arena.len() - 1)], RAIO_DO_ANDAR),
         };
         let com_planta = sala.is_some();
+        let chao = sala.map(|(p, _)| (p, andar));
         let nivel = dg::nivel_do_estagio(c, estagio);
         let vida = dg::vida_por_grupo(c, n) * mult_vida_teste();
         let dano = mult_dano_teste();
@@ -1115,11 +1116,9 @@ impl GameWorld {
                 let (v, d) = dg::escala_do_chefe(c, n);
                 (v * mult_vida_teste(), d * dano)
             };
-            let pos = if com_planta {
-                centro
-            } else {
-                self.chao_livre(centro + Vec2::new(0.0, 14.0))
-            };
+            let quer = if com_planta { centro } else { centro + Vec2::new(0.0, 14.0) };
+            let corpo = ENTITY_RADIUS * shared::bosses::chefe(c.chefe).map_or(1.0, |b| b.escala);
+            let pos = self.dg_chao_do_mob(quer, centro, corpo, chao);
             if let Some(e) = self.nascer_chefe_nivel(c.chefe, pos, nivel) {
                 if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
                     h.max = ((h.max as f32) * vida).round().max(1.0) as i32;
@@ -1174,10 +1173,51 @@ impl GameWorld {
                     Elite::Nao
                 };
                 let coleira = if com_planta { raio_da_sala + 4.0 } else { RAIO_DO_ANDAR * 0.7 };
+                let escala = match elite {
+                    Elite::SemiChefe => 1.4,
+                    Elite::Guardiao => 1.25,
+                    Elite::Nao => 1.0,
+                };
+                let corpo = ENTITY_RADIUS * crate::economy::enemy_size_scale(kind) * escala;
+                let pos = self.dg_chao_do_mob(pos, centro, corpo, chao);
                 vivos.push(self.dg_nascer_mob(id, kind, pos, centro, coleira, nivel, vida, dano, elite));
             }
         }
         self.instancias[idx].vivos = vivos;
+    }
+
+    /// Where a dungeon mob (or boss) of body radius `corpo` may stand, as
+    /// close to `quer` as the floor allows.
+    ///
+    /// Before 01/10/2026 every spawn went through `chao_livre`, which only
+    /// moves a point off water and obstacles. In a Porão that ignored the
+    /// floor plan — the spiral reaches 3/4 of the room's IDEAL radius, and the
+    /// noisy edge and the cave's rock bumps come in further than that — so a
+    /// mob could start inside the wall. In a Cavern the site is flat only 9 u
+    /// around its centre (`dg_arena`) while the ring reaches 18 u, so mobs
+    /// landed on ledges and cliff tops the party could not walk to.
+    pub(super) fn dg_chao_do_mob(
+        &self,
+        quer: Vec2,
+        centro: Vec2,
+        corpo: f32,
+        planta: Option<(&'static shared::planta::Planta, u8)>,
+    ) -> Vec2 {
+        if let Some((p, andar)) = planta {
+            return if p.livre(quer, corpo, andar) { quer } else { p.mais_perto(quer, corpo, andar) };
+        }
+        let Some(ilha) = self.ilha.as_ref() else {
+            return quer;
+        };
+        // Pulled in toward the centre — the flat site — until it is ground the
+        // fight can walk to.
+        for k in 0..=10 {
+            let q = quer.lerp(centro, k as f32 / 10.0);
+            if a_pe(ilha, centro, q, corpo) {
+                return q;
+            }
+        }
+        centro
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1194,7 +1234,6 @@ impl GameWorld {
         elite: Elite,
     ) -> Entity {
         let semi = elite == Elite::SemiChefe;
-        let pos = self.chao_livre(pos);
         let (mut tag, _) = self.build_enemy_tag(kind, ancora, coleira, pos);
         tag.nivel_da_faixa = nivel;
         tag.level = nivel;
@@ -2162,9 +2201,115 @@ impl GameWorld {
     }
 }
 
+/// Can a body of radius `corpo` stand at `para`, and get there from `de` on
+/// foot? Walking climbs one block at a time (`DEGRAU_BLOCOS`): a ledge two
+/// blocks up is a jump the AI never makes, and from up there a mob neither
+/// reaches the party nor gets reached. The footing must be level too — the
+/// body stands on the highest block under it.
+pub(super) fn a_pe(ilha: &shared::terreno::Ilha, de: Vec2, para: Vec2, corpo: f32) -> bool {
+    use shared::terreno::{BLOCO, DEGRAU_BLOCOS};
+    if ilha.agua(para.x, para.y) || !ilha.sem_estorvo(para, corpo) {
+        return false;
+    }
+    let bloco = |q: Vec2| {
+        let (x, z) = ilha.coluna(q.x, q.y);
+        ilha.bloco(x, z)
+    };
+    let passos = (de.distance(para) / (BLOCO * 0.5)).ceil().max(1.0) as i32;
+    let mut antes = bloco(de);
+    for s in 1..=passos {
+        let q = de.lerp(para, s as f32 / passos as f32);
+        let b = bloco(q);
+        if (b - antes).abs() > DEGRAU_BLOCOS || ilha.agua(q.x, q.y) {
+            return false;
+        }
+        antes = b;
+    }
+    let (cx, cz) = ilha.coluna(para.x, para.y);
+    ilha.sitio_plano(cx, cz, (corpo / BLOCO).ceil() as i32)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Every Cavern mob and boss stands on ground the party can walk to.
+    ///
+    /// Reported by the owner on 01/10/2026: "some mobs in the normal dungeon
+    /// are spawning in non walkable areas". The floor's site is flat only
+    /// around its centre, and the ring of mobs reaches past it. Runs on the
+    /// real Arena relief, every floor site, every slot of a full floor.
+    #[test]
+    fn cavern_mobs_spawn_on_walkable_ground() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::arena::ZONA.to_string();
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+        let sitios = w.dg_arena();
+        assert!(!sitios.is_empty(), "the Arena has floor sites");
+        let n = 12;
+        let (mut antes_ruins, mut total) = (0, 0);
+        for centro in sitios {
+            let mut quer: Vec<Vec2> = (0..n)
+                .map(|i| {
+                    let ang = i as f32 * std::f32::consts::TAU / n as f32;
+                    centro + Vec2::new(ang.cos(), ang.sin()) * (10.0 + (i % 3) as f32 * 4.0)
+                })
+                .collect();
+            quer.push(centro + Vec2::new(0.0, 14.0)); // the boss
+            for q in quer {
+                let ilha = w.ilha.as_ref().unwrap();
+                total += 1;
+                if !a_pe(ilha, centro, q, ENTITY_RADIUS) {
+                    antes_ruins += 1;
+                }
+                let p = w.dg_chao_do_mob(q, centro, ENTITY_RADIUS * 1.4, None);
+                assert!(
+                    a_pe(ilha, centro, p, ENTITY_RADIUS * 1.4),
+                    "{p:?} (asked {q:?}, floor {centro:?}) is not walkable"
+                );
+                assert!(p.distance(centro) <= RAIO_DO_ANDAR * 0.7, "outside the leash");
+            }
+        }
+        println!("raw ring slots off walkable ground: {antes_ruins} of {total}");
+    }
+
+    /// In a Porão every mob starts inside the floor plan, clear of the walls
+    /// and the cave's rock bumps.
+    #[test]
+    fn porao_mobs_spawn_inside_the_room() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::arena::ZONA.to_string();
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+        let (mut fora, mut antigo_fora, mut total) = (0, 0, 0);
+        for c in dg::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let Some(p) = shared::planta::da(c.id) else { continue };
+            for andar in 0..=c.andares {
+                let Some(sala) = p.sala_da_etapa(andar) else { continue };
+                let (centro, raio) = (p.centro(sala), p.salas[sala].raio);
+                let n = dg::inimigos_do_andar(c, andar).max(12);
+                for i in 0..n {
+                    let t = (i as f32 / n as f32).sqrt();
+                    let longe = if i == 0 { 0.0 } else { raio * (0.25 + 0.5 * t) };
+                    let ang = i as f32 * 2.399_963;
+                    let q = centro + Vec2::new(ang.cos(), ang.sin()) * longe;
+                    let corpo = ENTITY_RADIUS * 1.4;
+                    total += 1;
+                    if !p.livre(q, corpo, andar) {
+                        fora += 1;
+                    }
+                    // What the spawn did before 01/10/2026.
+                    if !p.livre(w.chao_livre(q), ENTITY_RADIUS, andar) {
+                        antigo_fora += 1;
+                    }
+                    let pos = w.dg_chao_do_mob(q, centro, corpo, Some((p, andar)));
+                    assert!(p.livre(pos, corpo, andar), "{}: floor {andar}, {pos:?} in the wall", c.nome);
+                }
+            }
+        }
+        println!("of {total} slots: {fora} raw in the wall, {antigo_fora} in the wall after chao_livre");
+    }
 
     #[test]
     fn menu_recompensas_preserva_estagio_e_reseta_apenas_a_semana() {
