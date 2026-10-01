@@ -1,3 +1,16 @@
+30/09/2026 — Configurações de gráficos
+
+Nova tela em Menu › Sistema › Gráficos, com predefinições Baixo, Médio, Alto e Ultra (o Alto é o jogo exatamente como era):
+
+- Distância de visão: Perto, Normal, Longe e Muito longe (este só no PC). Mais longe carrega mais ilha e deixa a câmera deitar mais rumo ao horizonte; Perto pesa menos no celular.
+- Grama e arbustos: Pouca, Média ou Cheia. Árvores, pedras e tudo que é sólido sempre aparecem.
+- Limite de quadros: 30, 60 ou sem limite — 30 economiza bateria no celular.
+- Mar: calmo ou com ondas.
+- Efeitos de habilidade dos outros jogadores: mostrar ou esconder. Os seus e os ataques de monstros e chefes sempre aparecem.
+- Sombras e anti-aliasing saíram da tela de Interface e vieram pra cá.
+
+A escolha fica salva no aparelho. Não é atualização obrigatória — o protocolo continua o 167.
+
 30/09/2026 — Sem bolinhas na frente dos textos
 
 Tiramos as bolinhas coloridas que ficavam na frente dos textos: nos filtros do mapa, na lista "Ir para", na lista de ilhas do mapa-mundi, no ping, na lista do grupo da dungeon, nos painéis da Ilha Mágica, na faixa do AUTO COLETA / AUTO COMBATE (agora é a borda que pulsa) e nas opções de PvP da configuração do combate (a escolhida ganha a borda dourada). A informação continua — pela cor do próprio texto ou do botão.

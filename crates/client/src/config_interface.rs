@@ -1,5 +1,6 @@
-//! Menu → Sistema → Interface: o tamanho da interface (HUD e textos) e o modo
-//! economia de energia. No celular a tela e' densa e 100% fica miudo, entao o
+//! Menu → Sistema → Interface: o tamanho da interface (HUD e textos), o modo
+//! economia de energia e o idioma. (Shadows and anti-aliasing live in the
+//! Graphics panel, `config_graficos`.) No celular a tela e' densa e 100% fica miudo, entao o
 //! padrao e' 160%. Muda na hora e salva nas preferencias do personagem.
 use macroquad::prelude::*;
 
@@ -9,77 +10,11 @@ use crate::hud_layout;
 
 pub const PASSO: f32 = 0.1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Sombras {
-    Desligadas,
-    Leves,
-    Bonitas,
-}
-
-impl Sombras {
-    pub fn valor(self) -> &'static str {
-        match self {
-            Self::Desligadas => "0",
-            Self::Leves => "1",
-            Self::Bonitas => "2",
-        }
-    }
-}
-
-/// MSAA sample counts on offer (1 = off).
-pub const OPCOES_AA: [i32; 4] = [1, 2, 4, 8];
-
-/// The saved anti-aliasing choice. MSAA is picked when the window is
-/// created, so `window_conf` reads this and a change applies on the next launch.
-pub fn antialias_salvo() -> i32 {
-    let padrao = if cfg!(any(target_os = "ios", target_os = "android")) {
-        1
-    } else {
-        4
-    };
-    crate::lembranca::caminho()
-        .and_then(|p| std::fs::read_to_string(p.with_file_name("antialias.prefs")).ok())
-        .and_then(|v| v.trim().parse().ok())
-        .filter(|n| OPCOES_AA.contains(n))
-        .unwrap_or(padrao)
-}
-
-fn nome_aa(n: i32) -> String {
-    if n <= 1 {
-        "Off".to_string()
-    } else {
-        format!("{n}x")
-    }
-}
-
+#[derive(Default)]
 pub struct ConfigInterface {
     pub aberto: bool,
-    pub sombras: Sombras,
-    pub antialias: i32,
-    /// What the window was opened with; differs from `antialias` until restart.
-    antialias_no_inicio: i32,
     /// The tall layout scrolls when it doesn't fit the screen.
     rolagem: crate::rolagem::Rolagem,
-}
-
-impl Default for ConfigInterface {
-    fn default() -> Self {
-        let sombras = crate::lembranca::caminho()
-            .and_then(|p| std::fs::read_to_string(p.with_file_name("sombras.prefs")).ok())
-            .map_or(Sombras::Leves, |v| match v.trim() {
-                "0" => Sombras::Desligadas,
-                "2" => Sombras::Bonitas,
-                _ => Sombras::Leves,
-            });
-        let antialias = antialias_salvo();
-        Self {
-            aberto: false,
-            sombras,
-            antialias,
-            antialias_no_inicio: antialias,
-            rolagem: Default::default(),
-        }
-    }
 }
 
 /// What changed this frame.
@@ -89,7 +24,6 @@ pub enum Mudanca {
     /// Minutes idle before entering power-saving mode on its own (0 = never).
     EconomiaAuto(u16),
     EconomiaAgora,
-    Sombras(Sombras),
     /// O idioma da interface. Vale na hora e fica salvo no APARELHO — ver
     /// `lembranca::Prefs::idioma`.
     Idioma(shared::idioma::Idioma),
@@ -102,54 +36,6 @@ pub fn ajusta(escala: f32, passos: i32) -> f32 {
 }
 
 impl ConfigInterface {
-    pub fn define_sombras(&mut self, sombras: Sombras) {
-        self.sombras = sombras;
-        if let Some(p) = crate::lembranca::caminho() {
-            let _ = std::fs::write(p.with_file_name("sombras.prefs"), sombras.valor());
-        }
-    }
-
-    fn define_antialias(&mut self, n: i32) {
-        self.antialias = n;
-        if let Some(p) = crate::lembranca::caminho() {
-            let _ = std::fs::write(p.with_file_name("antialias.prefs"), n.to_string());
-        }
-    }
-
-    /// The anti-aliasing chips, shared by both layouts. Only saves: the
-    /// window keeps its sample count until the game restarts.
-    fn chips_aa(&self, x: f32, y: f32, w: f32, h: f32, m: Vec2) -> Vec<(Rect, i32)> {
-        let f = estilo::fator_texto();
-        let vao = 6.0 * f;
-        let n = OPCOES_AA.len() as f32;
-        let cw = (w - vao * (n - 1.0)) / n;
-        OPCOES_AA
-            .iter()
-            .enumerate()
-            .map(|(i, &aa)| {
-                let b = Rect::new(x + i as f32 * (cw + vao), y, cw, h);
-                let marcado = aa == self.antialias;
-                estilo::cartao(b, b.contains(m), marcado);
-                estilo::texto_centro(
-                    b.center().x,
-                    b.center().y + 5.0 * f,
-                    &nome_aa(aa),
-                    13,
-                    if marcado { estilo::OURO } else { estilo::TEXTO },
-                );
-                (b, aa)
-            })
-            .collect()
-    }
-
-    fn rotulo_aa(&self) -> &'static str {
-        if self.antialias == self.antialias_no_inicio {
-            "Anti-aliasing"
-        } else {
-            "Anti-aliasing (restart to apply)"
-        }
-    }
-
     pub fn abrir(&mut self) {
         self.aberto = true;
         self.rolagem.zera();
@@ -175,9 +61,9 @@ impl ConfigInterface {
             let k = ((seguro.h - 16.0) / 352.0).min(f);
             return estilo::no_painel(k, || self.desenha_compacto(atual, economia_auto));
         }
-        // 574 and not 500: the language row went in under the shadows; 664
-        // for the anti-aliasing row under the language.
-        let conteudo_h = 664.0 * f;
+        // 482: size, battery saver and language. Shadows and anti-aliasing
+        // moved to their own Graphics panel (`config_graficos`).
+        let conteudo_h = 482.0 * f;
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
             conteudo_h.min(seguro.h - 16.0),
@@ -311,53 +197,12 @@ impl ConfigInterface {
             );
         }
 
-        let ys = yc + 56.0 * f;
-        estilo::texto(r.x + 18.0 * f, ys, "Shadows", 14, estilo::SUAVE);
-        let largura = (r.w - 52.0 * f) / 3.0;
-        let opcoes = [
-            (Sombras::Desligadas, "Off"),
-            (Sombras::Leves, "Light"),
-            (Sombras::Bonitas, "Pretty"),
-        ];
-        let botoes: Vec<_> = opcoes
-            .iter()
-            .enumerate()
-            .map(|(i, &(modo, nome))| {
-                let b = Rect::new(
-                    r.x + 18.0 * f + i as f32 * (largura + 8.0 * f),
-                    ys + 10.0 * f,
-                    largura,
-                    42.0 * f,
-                );
-                estilo::cartao(b, b.contains(m), self.sombras == modo);
-                estilo::texto_centro(
-                    b.center().x,
-                    b.center().y + 6.0 * f,
-                    nome,
-                    14,
-                    if self.sombras == modo {
-                        estilo::OURO
-                    } else {
-                        estilo::TEXTO
-                    },
-                );
-                (b, modo)
-            })
-            .collect();
-        estilo::texto(
-            r.x + 18.0 * f,
-            ys + 70.0 * f,
-            "Pretty: late-afternoon light and scenery shadows.",
-            11,
-            estilo::SUAVE,
-        );
-
         // ── idioma ──
         //
         // It lives here, and not on a screen of its own, because someone looking
         // for language looks in options — and because the row is the same as the
         // shadows one: two exclusive choices, one ticked.
-        let yi = ys + 92.0 * f;
+        let yi = yc + 56.0 * f;
         estilo::texto(r.x + 18.0 * f, yi, "Game language", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
         let li = (r.w - 44.0 * f) / 2.0;
@@ -396,9 +241,6 @@ impl ConfigInterface {
             estilo::SUAVE,
         );
 
-        let ya = yi + 92.0 * f;
-        estilo::texto(r.x + 18.0 * f, ya, self.rotulo_aa(), 14, estilo::SUAVE);
-        let aa = self.chips_aa(r.x + 18.0 * f, ya + 10.0 * f, r.w - 36.0 * f, 42.0 * f, m);
 
         estilo::texto(
             r.x + 18.0 * f,
@@ -414,13 +256,6 @@ impl ConfigInterface {
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| em(*b)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
-        }
-        if let Some(&(_, n)) = aa.iter().find(|(b, _)| em(*b)) {
-            self.define_antialias(n);
-            return None;
-        }
-        if let Some(&(_, modo)) = botoes.iter().find(|(b, _)| em(*b)) {
-            return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
         }
         if em(agora) {
             self.fechar();
@@ -555,57 +390,16 @@ impl ConfigInterface {
                 (b, min)
             })
             .collect();
-        estilo::texto(rx, r.y + 61.0 * f, "Shadows", 14, estilo::SUAVE);
-        let nomes = [
-            (Sombras::Desligadas, "Off"),
-            (Sombras::Leves, "Light"),
-            (Sombras::Bonitas, "Pretty"),
-        ];
-        let sw = (col - 12.0 * f) / 3.0;
-        let sombras: Vec<_> = nomes
-            .iter()
-            .enumerate()
-            .map(|(i, &(modo, nome))| {
-                let b = Rect::new(rx + i as f32 * (sw + 6.0 * f), r.y + 75.0 * f, sw, 42.0 * f);
-                estilo::cartao(b, b.contains(m), modo == self.sombras);
-                estilo::texto_centro(
-                    b.center().x,
-                    b.center().y + 6.0 * f,
-                    nome,
-                    13,
-                    if modo == self.sombras {
-                        estilo::OURO
-                    } else {
-                        estilo::TEXTO
-                    },
-                );
-                (b, modo)
-            })
-            .collect();
-        estilo::texto(
-            rx,
-            r.y + 151.0 * f,
-            "Pretty: late-afternoon sun",
-            13,
-            estilo::SUAVE,
-        );
-        estilo::texto(
-            rx,
-            r.y + 173.0 * f,
-            "and soft shadows from the scenery.",
-            13,
-            estilo::SUAVE,
-        );
         // The language in the compact layout too: without this, a phone held
         // upright with a short screen would have no way to change language.
-        estilo::texto(rx, r.y + 194.0 * f, "Language", 14, estilo::SUAVE);
+        estilo::texto(rx, r.y + 61.0 * f, "Language", 14, estilo::SUAVE);
         let atual_idioma = shared::idioma::atual();
         let iw = (col - 6.0 * f) / 2.0;
         let idiomas: Vec<_> = shared::idioma::Idioma::TODAS
             .iter()
             .enumerate()
             .map(|(i, &lang)| {
-                let b = Rect::new(rx + i as f32 * (iw + 6.0 * f), r.y + 204.0 * f, iw, 38.0 * f);
+                let b = Rect::new(rx + i as f32 * (iw + 6.0 * f), r.y + 75.0 * f, iw, 42.0 * f);
                 estilo::cartao(b, b.contains(m), lang == atual_idioma);
                 estilo::texto_centro(
                     b.center().x,
@@ -621,8 +415,6 @@ impl ConfigInterface {
                 (b, lang)
             })
             .collect();
-        estilo::texto(rx, r.y + 263.0 * f, self.rotulo_aa(), 12, estilo::SUAVE);
-        let aa = self.chips_aa(rx, r.y + 271.0 * f, col, 32.0 * f, m);
         estilo::texto(
             rx,
             r.y + 333.0 * f,
@@ -635,13 +427,6 @@ impl ConfigInterface {
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
-        }
-        if let Some(&(_, n)) = aa.iter().find(|(b, _)| b.contains(m)) {
-            self.define_antialias(n);
-            return None;
-        }
-        if let Some(&(_, modo)) = sombras.iter().find(|(b, _)| b.contains(m)) {
-            return (modo != self.sombras).then_some(Mudanca::Sombras(modo));
         }
         if agora.contains(m) {
             self.fechar();

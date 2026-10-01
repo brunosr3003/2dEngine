@@ -56,7 +56,7 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim", "dialogo", "oferta", "livro"] {
+        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim", "graficos", "graficos-fim", "dialogo", "oferta", "livro"] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -204,6 +204,14 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                         ui.rolar_ao_fim();
                     }
                     ui.desenha(1.6, 5);
+                }
+                if cena == "graficos" || cena == "graficos-fim" {
+                    let mut ui = crate::config_graficos::ConfigGraficos::default();
+                    ui.abrir();
+                    if cena == "graficos-fim" {
+                        ui.rolar_ao_fim();
+                    }
+                    ui.desenha();
                 }
                 unsafe { get_internal_gl().flush() };
                 rt.texture

@@ -64,6 +64,8 @@ pub enum Item {
     /// O que coletar e o raio do AUTO COLETA (toque: sem botao direito).
     Coleta,
     Configuracoes,
+    /// View distance, shadows, frame cap… (`config_graficos`).
+    Graficos,
     TrocarPersonagem,
     Sair,
 }
@@ -162,6 +164,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
         &[
             (Item::BarraItens, "Bar", None),
             (Item::Configuracoes, "Interface", None),
+            (Item::Graficos, "Graphics", None),
             (Item::TrocarPersonagem, "Switch", Some("Coming soon")),
             (Item::Sair, "Leave", None),
         ],
@@ -505,6 +508,7 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::BarraItens => "barra_itens",
         Item::Coleta => "coleta",
         Item::Configuracoes => "configuracoes",
+        Item::Graficos => "graficos",
         Item::TrocarPersonagem => "trocar_personagem",
         Item::Sair => "sair",
     }
@@ -605,6 +609,7 @@ mod tests {
             Item::BarraItens,
             Item::Coleta,
             Item::Configuracoes,
+            Item::Graficos,
             Item::Sair,
         ];
         for (_, itens) in GRUPOS.iter() {

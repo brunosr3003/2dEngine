@@ -41,6 +41,7 @@ pub const USADOS_UI: &[&str] = &[
     "menu",
     "engrenagem",
     "configuracoes",
+    "graficos",
     "cadeado",
     "atacar",
     "auto_combate",

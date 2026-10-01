@@ -597,8 +597,18 @@ impl Habilidades {
         let luz = self
             .luz
             .get_or_insert_with(crate::habilidades_vfx::material);
+        let outros = crate::config_graficos::efeitos_dos_outros();
         for e in &self.efeitos {
             let dono = world.ents.get(&e.dono);
+            // Graphics can hide OTHER PLAYERS' skills. Mine always show, and a
+            // monster's always do: its attack is something to read, not dodge
+            // blind.
+            if !outros
+                && Some(e.dono) != world.self_id
+                && dono.is_some_and(|d| d.meta.tag == shared::EntityTag::Player)
+            {
+                continue;
+            }
             let pos = dono.map_or(e.de, |p| p.render_pos);
             let alvo = e
                 .alvo_eid

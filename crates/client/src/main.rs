@@ -83,6 +83,7 @@ mod colonia_ui;
 mod config_barra;
 mod config_coleta;
 mod config_combate;
+mod config_graficos;
 mod config_interface;
 mod confirmar;
 mod construcoes;
@@ -274,6 +275,7 @@ struct Jogo {
     /// Toque longo no AUTO COMBATE abre a configuração. Ver `toque`.
     toque_combate: toque::ToqueLongo,
     config_interface: config_interface::ConfigInterface,
+    config_graficos: config_graficos::ConfigGraficos,
     /// A barrinha "Coletando · tipo · N s".
     coleta_hud: coleta_hud::BarraDeColeta,
     /// Clique numa pedra/tronco: (coluna, centro, raio) — anda e coleta ao chegar.
@@ -649,6 +651,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_GRAFICOS").is_ok() {
+        terreno::previa_dos_graficos().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PLANALTO").is_ok() {
         terreno::previa_do_planalto().await;
         return;
@@ -823,6 +830,7 @@ async fn main() {
         config_combate: Default::default(),
         toque_combate: toque::ToqueLongo::default(),
         config_interface: Default::default(),
+        config_graficos: Default::default(),
         coleta_hud: Default::default(),
         coleta_pendente: None,
         coleta_auto_estava: false,
@@ -947,6 +955,11 @@ async fn main() {
         jogo.vox.atende_um_pendente(render3d::VOXEL).await;
         // Modo economia: o quadro cai pra `economia::FPS`.
         jogo.economia.segurar_quadro();
+        // The Graphics frame-rate cap. Battery saver's own, lower one wins
+        // while it is on.
+        if !jogo.economia.ativa {
+            config_graficos::segurar_quadro();
+        }
         next_frame().await;
     }
 }
@@ -976,7 +989,7 @@ fn window_conf() -> Conf {
     conf.platform.linux_wm_class = "tempest";
     // MSAA: the scene draws straight to the window framebuffer, and without
     // it the voxel edges and fences come out jagged. Menu → Interface.
-    conf.sample_count = config_interface::antialias_salvo();
+    conf.sample_count = config_graficos::antialias_salvo();
     // Celular: tela cheia na resolucao nativa. A orientacao (paisagem) vem do
     // pacote: Info.plist (scripts/build-ios.sh) ou o manifest do APK
     // ([package.metadata.android] do crates/client/Cargo.toml).
@@ -1393,11 +1406,16 @@ impl Jogo {
             let carregando = self.carregando_desde.is_some();
             if let Some(t) = self.terreno.as_mut().filter(|_| !eco_ativa) {
                 let centro = self.world.self_pos().unwrap_or(Vec2::ZERO);
-                // Raio 4 cobre 128 unidades — mais que a camera alcanca. O
+                // The radius is the Graphics view distance (5 by default,
+                // 80 units — more than the camera reaches at its band). O
                 // orcamento de 3 por quadro existe pra o mundo aparecer em
                 // duas piscadas em vez de travar meio segundo. Atras da tela
                 // de carregando ninguem ve' a trava: gera muito mais.
-                t.atualiza(centro, 5, if carregando { 40 } else { 4 });
+                t.atualiza(
+                    centro,
+                    config_graficos::raio_terreno(),
+                    if carregando { 40 } else { 4 },
+                );
             }
             self.acompanhar_carregando();
         }
@@ -3049,6 +3067,7 @@ impl Jogo {
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
+            || self.config_graficos.aberto
             || self.onde_obter.aberto()
             || self.dungeon.aberto
             || self.presenca.aberto
@@ -3384,6 +3403,7 @@ impl Jogo {
         self.config_coleta.fechar();
         self.config_combate.fechar();
         self.config_interface.fechar();
+        self.config_graficos.fechar();
         self.menu.fechar();
         self.onde_obter.fechar();
         self.voltar_ao_menu = false;
@@ -3543,6 +3563,7 @@ impl Jogo {
             Item::BarraItens => self.config_barra.abrir(None),
             Item::Coleta => self.config_coleta.abrir(),
             Item::Configuracoes => self.config_interface.abrir(),
+            Item::Graficos => self.config_graficos.abrir(),
             Item::Sair => {
                 self.voltar_ao_menu = false;
                 self.sair();
@@ -3565,6 +3586,9 @@ impl Jogo {
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
         let fechou_painel = if self.config_interface.aberto {
             self.config_interface.fechar();
+            true
+        } else if self.config_graficos.aberto {
+            self.config_graficos.fechar();
             true
         } else if self.config_combate.aberto {
             self.config_combate.fechar();
@@ -5591,8 +5615,8 @@ impl Jogo {
             &f,
         );
         set_camera(&vista.cam);
-        let modo_sombras = self.config_interface.sombras;
-        let luz_dia = if modo_sombras == config_interface::Sombras::Bonitas {
+        let modo_sombras = self.config_graficos.sombras;
+        let luz_dia = if modo_sombras == config_graficos::Sombras::Bonitas {
             1.0
         } else {
             0.0
@@ -5631,7 +5655,7 @@ impl Jogo {
                     .map(|p| vec3(p.x, t.altura(p.x, p.y), p.y));
                 self.construcoes
                     .desenha(&vista.cam, jogador, recorte, corte_z);
-                if modo_sombras == config_interface::Sombras::Bonitas {
+                if modo_sombras == config_graficos::Sombras::Bonitas {
                     t.desenha_sombras(&vista.cam);
                 }
                 // Pra onde esta' indo: tracejado rente ao chao, no mesmo passe.
@@ -6179,8 +6203,12 @@ impl Jogo {
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
+            || self.config_graficos.aberto
         {
             hud_layout::escurece(0.55);
+        }
+        if self.config_graficos.aberto {
+            self.config_graficos.desenha();
         }
         if self.config_interface.aberto {
             // Vale no quadro seguinte e vai pro servidor pelas preferencias.
@@ -6193,9 +6221,6 @@ impl Jogo {
                     self.economia.auto_min = Some(min)
                 }
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
-                Some(config_interface::Mudanca::Sombras(modo)) => {
-                    self.config_interface.define_sombras(modo)
-                }
                 // TROCA NA HORA: o proximo quadro ja' desenha na lingua nova,
                 // porque a traducao acontece ao desenhar. Nada recarrega, nada
                 // reconecta — e o que estiver na tela muda junto.

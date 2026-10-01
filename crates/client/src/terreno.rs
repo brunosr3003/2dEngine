@@ -81,6 +81,21 @@ struct Pedaco {
     /// assada: e' desenhado quadro a quadro, com a luz subindo
     /// (`energia_vfx`). Assado, ele era uma pedra parada.
     energias: Vec<Vec3>,
+    /// The Graphics ground-cover percent this chunk was baked with. When the
+    /// setting changes, `atualiza` rebuilds the chunks that disagree.
+    forracao: u8,
+}
+
+/// Whether the ground plant on column `(bx, bz)` survives a `pct` percent
+/// density. A fixed hash, not a random draw: the same bush stays (or goes)
+/// every time the chunk is rebuilt, and Sparse is a subset of Medium.
+fn planta_fica(bx: i32, bz: i32, pct: u8) -> bool {
+    if pct >= 100 {
+        return true;
+    }
+    let h = (bx as u32).wrapping_mul(0x9E37_79B1) ^ (bz as u32).wrapping_mul(0x85EB_CA77);
+    let h = (h ^ (h >> 15)).wrapping_mul(0x2C1B_3C6D);
+    ((h >> 16) % 100) < pct as u32
 }
 
 /// O pedaco `(cx, cz)` cai no cone da camera? O mesmo teste pro chao e pro
@@ -389,10 +404,29 @@ impl Terreno {
             }
         }
         faltando.sort_unstable();
+        let mut sobra = orcamento;
         for (_, cx, cz) in faltando.into_iter().take(orcamento) {
             let p = self.constroi(cx, cz);
             self.pedacos.insert((cx, cz), p);
             self.gerados += 1;
+            sobra -= 1;
+        }
+        // The ground cover changed in Graphics: rebuild in place, nearest
+        // first, with what is left of the budget. Swapping chunk by chunk
+        // never opens a hole, where dropping them all would.
+        if sobra > 0 {
+            let forracao = crate::config_graficos::forracao();
+            let mut velhos: Vec<(i32, i32, i32)> = self
+                .pedacos
+                .iter()
+                .filter(|(_, p)| p.forracao != forracao)
+                .map(|(&(cx, cz), _)| ((cx - ccx).pow(2) + (cz - ccz).pow(2), cx, cz))
+                .collect();
+            velhos.sort_unstable();
+            for (_, cx, cz) in velhos.into_iter().take(sobra) {
+                let p = self.constroi(cx, cz);
+                self.pedacos.insert((cx, cz), p);
+            }
         }
     }
 
@@ -537,6 +571,7 @@ impl Terreno {
     /// viradas pra baixo (a copa vista por baixo). Misturar as duas fazia o
     /// teste acusar como defeito o que e' a arvore fazendo o certo.
     fn constroi_com(&self, cx: i32, cz: i32, vegetacao: bool) -> Pedaco {
+        let forracao = crate::config_graficos::forracao();
         let n = CHUNK as usize;
         // Uma coluna de borda de cada lado: a parede lateral precisa saber a
         // altura do vizinho, e sem a borda cada pedaco desenharia um muro
@@ -1065,6 +1100,14 @@ impl Terreno {
                     ) else {
                         continue;
                     };
+                    // Graphics thins only what the body walks through: a
+                    // plant the server treats as an obstacle stays, or it
+                    // would become an invisible wall.
+                    if shared::terreno::raio_de_planta(pl.especie).is_none()
+                        && !planta_fica(bx, bz, forracao)
+                    {
+                        continue;
+                    }
                     // Onde ha' minerio a forracao nao entra — a mesma regra de
                     // `estorvos_da_coluna`. Matacao de cenario colado na pedra
                     // esconde justamente o que o jogador precisa enxergar.
@@ -1130,6 +1173,7 @@ impl Terreno {
                 .map(MalhaEstatica::nova)
                 .collect(),
             energias,
+            forracao,
         }
     }
 
@@ -1303,6 +1347,49 @@ pub async fn previa_das_ilhas_magicas() {
                 .get_texture_data()
                 .export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
+        }
+    }
+}
+
+/// MMO_PREVIA_GRAFICOS: the starting island through the GAME camera, zoomed
+/// out at the lowest tilt each view distance allows, and at each grass density.
+#[cfg(debug_assertions)]
+pub async fn previa_dos_graficos() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-graficos".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let solido = crate::render3d::material_solido();
+    let def = &shared::terreno::ARQUIPELAGO[0];
+    let centro = vec2(20.0, 30.0);
+    for (nome, raio, forracao, zoom) in [
+        ("perto", 3, 100, crate::render3d::ZOOM_MAX),
+        ("normal", 5, 100, crate::render3d::ZOOM_MAX),
+        ("muito-longe", 9, 100, crate::render3d::ZOOM_MAX),
+        ("grama-cheia", 5, 100, crate::render3d::ZOOM_MIN),
+        ("grama-pouca", 5, 30, crate::render3d::ZOOM_MIN),
+    ] {
+        crate::config_graficos::define_para_previa(raio, forracao);
+        // A fresh terrain per shot: every chunk baked at this density.
+        let mut t = Terreno::novo(def);
+        t.atualiza(centro, raio, 2000);
+        let chao = t.altura(centro.x, centro.y);
+        let pitch = crate::render3d::pitch_min_para(zoom);
+        let mut cam = crate::render3d::camera(centro, chao, 0.6, zoom, pitch);
+        cam.render_target = Some(rt.clone());
+        cam.aspect = Some(1.6);
+        for _ in 0..3 {
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            let n = t.desenha(&cam, Vec3::ZERO, 0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+            println!("[graphics preview] {nome}: radius {raio}, cover {forracao}%, pitch {:.1}°, {n} chunks drawn", pitch.to_degrees());
         }
     }
 }

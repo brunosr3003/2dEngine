@@ -62,9 +62,57 @@ pub const PITCH_MIN_LONGE: f32 = 0.593_412; // 34°
 /// sin(pitch)`. Deitar e afastar sao a mesma vontade de ver mais longe, e as
 /// duas no maximo mostram a borda do mundo carregado.
 pub fn pitch_min_para(zoom: f32) -> f32 {
+    pitch_min_com_raio(zoom, crate::config_graficos::raio_terreno())
+}
+
+/// The floor as measured, for the default 5-chunk world.
+fn piso_medido(zoom: f32) -> f32 {
     let z = zoom.clamp(ZOOM_MIN, ZOOM_MAX);
     let t = (z - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
     PITCH_MIN + (PITCH_MIN_LONGE - PITCH_MIN) * t
+}
+
+/// Vertical field of view of the game camera (`Camera3D::default`).
+const FOVY_PADRAO: f32 = 0.785_398; // 45°
+
+/// How far from the eye the TOP edge of the screen meets flat ground — the
+/// "topo da tela alcanca" column of the table above, as a formula.
+fn alcance_do_topo(zoom: f32, pitch: f32) -> f32 {
+    let altura = cam_dist() * zoom.clamp(ZOOM_MIN, ZOOM_MAX) * pitch.sin();
+    let abaixo = pitch - FOVY_PADRAO * 0.5;
+    if abaixo <= 1e-3 {
+        f32::INFINITY
+    } else {
+        altura / abaixo.tan()
+    }
+}
+
+/// The floor for a world loaded `raio` chunks out (Graphics → View distance).
+///
+/// At the default radius it is the measured floor, untouched. Elsewhere the
+/// top of the screen may reach as far, in proportion, as it does at the
+/// default: a bigger world lets the camera lie lower toward the horizon, a
+/// smaller one stands it up so the edge never shows.
+pub fn pitch_min_com_raio(zoom: f32, raio: i32) -> f32 {
+    let base = piso_medido(zoom);
+    let padrao = crate::config_graficos::RAIO_PADRAO;
+    if raio == padrao {
+        return base;
+    }
+    let alvo = alcance_do_topo(zoom, base) * (raio as f32 + 0.5) / (padrao as f32 + 0.5);
+    // The reach falls as the camera stands up: bisect for where it meets the
+    // target. The bottom stays above half the field of view, where the top
+    // of the screen would be looking at the horizon itself.
+    let (mut baixo, mut alto) = (FOVY_PADRAO * 0.5 + 0.03, PITCH_MAX - 0.3);
+    for _ in 0..40 {
+        let meio = (baixo + alto) * 0.5;
+        if alcance_do_topo(zoom, meio) > alvo {
+            baixo = meio;
+        } else {
+            alto = meio;
+        }
+    }
+    alto
 }
 
 /// A inclinacao que o zoom PEDE, antes do ajuste manual.
@@ -312,6 +360,37 @@ mod testes_camera {
                 "piso caiu de {anterior} pra {p} no zoom {z}"
             );
             anterior = p;
+        }
+    }
+
+    /// The formula has to reproduce the measured table, or scaling it for
+    /// the other view distances would scale the wrong thing.
+    #[test]
+    fn o_alcance_bate_com_a_tabela_medida() {
+        for (zoom, graus, medido) in [
+            (0.55f32, 26.0f32, 68.0f32),
+            (0.55, 27.0, 55.0),
+            (1.5, 34.0, 71.0),
+            (1.5, 42.0, 49.0),
+        ] {
+            let a = alcance_do_topo(zoom, graus.to_radians());
+            assert!((a - medido).abs() < 2.0, "zoom {zoom} a {graus}°: {a} vs {medido}");
+        }
+    }
+
+    /// More world, lower camera — and never past what that world covers.
+    #[test]
+    fn mais_distancia_deita_mais() {
+        for k in 0..=10 {
+            let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
+            let pisos: Vec<f32> = [3, 5, 7, 9].iter().map(|&r| pitch_min_com_raio(z, r)).collect();
+            assert!(pisos.windows(2).all(|w| w[0] > w[1]), "zoom {z}: {pisos:?}");
+            assert!((pisos[1] - piso_medido(z)).abs() < 1e-6, "o padrao mudou");
+            for (r, p) in [3, 5, 7, 9].iter().zip(&pisos) {
+                let mundo = (*r as f32 + 0.5) * 16.0;
+                assert!(alcance_do_topo(z, *p) < mundo, "raio {r}, zoom {z}: ve' a borda");
+                assert!(*p < PITCH_MAX - 0.25, "raio {r}, zoom {z}: sem banda");
+            }
         }
     }
 
@@ -1494,7 +1573,7 @@ pub fn draw_entities(
         vox,
         target,
         vista,
-        crate::config_interface::Sombras::Leves,
+        crate::config_graficos::Sombras::Leves,
     );
 }
 
@@ -1503,10 +1582,10 @@ pub fn draw_entities_com_sombras(
     vox: &VoxCache,
     target: Option<shared::EntityId>,
     vista: &Vista,
-    sombras: crate::config_interface::Sombras,
+    sombras: crate::config_graficos::Sombras,
 ) {
     let order: Vec<_> = world.draw_order().to_vec();
-    if sombras != crate::config_interface::Sombras::Desligadas {
+    if sombras != crate::config_graficos::Sombras::Desligadas {
         desenha_sombras(world, &order, vista, sombras);
     }
     // Os rastros sao transparentes: vao depois de tudo que e' solido, senao
@@ -1661,7 +1740,7 @@ fn desenha_sombras(
     world: &World,
     order: &[shared::EntityId],
     vista: &Vista,
-    modo: crate::config_interface::Sombras,
+    modo: crate::config_graficos::Sombras,
 ) {
     const LADOS: usize = 12;
     const LIMITE: usize = 1800;
@@ -1689,7 +1768,7 @@ fn desenha_sombras(
             0.55
         } * escala;
         let lobos: &[(f32, f32, f32, f32, u8)] =
-            if modo == crate::config_interface::Sombras::Bonitas {
+            if modo == crate::config_graficos::Sombras::Bonitas {
                 &[(0.0, 0.0, 1.0, 0.72, 80), (0.8, -0.46, 1.55, 0.92, 65)]
             } else {
                 &[(0.12, 0.08, 1.0, 0.72, 72)]

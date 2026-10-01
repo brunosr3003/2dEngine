@@ -242,13 +242,26 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
     malhas
 }
 
+/// Where the horizon ring starts for a terrain radius of `raio` chunks: 84 u
+/// at the default 5, one chunk (16 u) in or out per step. Started any farther
+/// than the chunks end, the Near view distance would show a gap of sky.
+fn inicio_do_horizonte(raio: i32) -> f32 {
+    84.0 + (raio - crate::config_graficos::RAIO_PADRAO) as f32 * CHUNK_U
+}
+
+const CHUNK_U: f32 = CHUNK as f32 * BLOCO;
+
 /// A ring of ocean from the end of the chunks to the horizon, fading into the sky.
-fn horizonte(centro: Vec2) -> Vec<Mesh> {
-    const RAIOS: [f32; 8] = [84.0, 110.0, 150.0, 210.0, 300.0, 430.0, 600.0, 800.0];
+fn horizonte(centro: Vec2, raio: i32) -> Vec<Mesh> {
+    const FORA: [f32; 7] = [110.0, 150.0, 210.0, 300.0, 430.0, 600.0, 800.0];
     const LADOS: usize = 48;
+    let inicio = inicio_do_horizonte(raio);
+    let raios: Vec<f32> = std::iter::once(inicio)
+        .chain(FORA.into_iter().filter(|&r| r > inicio + 16.0))
+        .collect();
     let fundo = cor_da_agua(PROFUNDO * 2.0);
     let cor_em = |r: f32| {
-        let t = suave((r - RAIOS[0]) / (RAIOS[RAIOS.len() - 1] - RAIOS[0]));
+        let t = suave((r - raios[0]) / (raios[raios.len() - 1] - raios[0]));
         let mut c = [0u8; 4];
         for i in 0..3 {
             c[i] = (fundo[i] as f32 + (CEU[i] - fundo[i] as f32) * t).round() as u8;
@@ -257,7 +270,7 @@ fn horizonte(centro: Vec2) -> Vec<Mesh> {
         c
     };
     let (mut malhas, mut verts, mut idx) = (Vec::new(), Vec::new(), Vec::new());
-    for w in RAIOS.windows(2) {
+    for w in raios.windows(2) {
         let (r0, r1) = (w[0], w[1]);
         for k in 0..LADOS {
             if idx.len() + 6 > MAX_QUADS * 6 {
@@ -393,7 +406,7 @@ void main() {
 }"#;
 
 thread_local! {
-    static HORIZONTE: RefCell<Option<((i32, i32), Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
+    static HORIZONTE: RefCell<Option<((i32, i32, i32), Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
 }
 
 /// The sea's pipeline state (no face culling: the wave turns the quad).
@@ -420,11 +433,14 @@ pub(crate) fn params_agua() -> PipelineParams {
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     if t.sem_oceano() { return; }
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
-    let ondas = if ONDAS { 1.0f32 } else { 0.0 };
-    // The ring follows the camera's target, rebuilt only when it moves 32 u.
+    let ondas = if ONDAS && crate::config_graficos::ondas() { 1.0f32 } else { 0.0 };
+    // The ring follows the camera's target, rebuilt only when it moves 32 u
+    // or the view distance changes.
+    let raio = crate::config_graficos::raio_terreno();
     let chave = (
         (cam.target.x / 32.0).round() as i32,
         (cam.target.z / 32.0).round() as i32,
+        raio,
     );
     HORIZONTE.with(|h| {
         let mut h = h.borrow_mut();
@@ -432,7 +448,7 @@ pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
             let centro = vec2(chave.0 as f32 * 32.0, chave.1 as f32 * 32.0);
             *h = Some((
                 chave,
-                horizonte(centro)
+                horizonte(centro, raio)
                     .into_iter()
                     .map(MalhaEstatica::nova)
                     .collect(),
@@ -553,7 +569,7 @@ mod testes {
             }
         }
         let tempo = t0.elapsed();
-        let anel = horizonte(vec2(0.0, 0.0));
+        let anel = horizonte(vec2(0.0, 0.0), crate::config_graficos::RAIO_PADRAO);
         let anel_idx: usize = anel.iter().map(|m| m.indices.len()).sum();
         assert!(anel.iter().all(|m| m.indices.len() <= MAX_QUADS * 6));
         println!(
