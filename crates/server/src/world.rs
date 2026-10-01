@@ -5157,6 +5157,28 @@ impl GameWorld {
         });
     }
 
+    /// Is the in-memory copy of `nome` newer than the database?
+    ///
+    /// Only if THIS process saved it a moment ago — and only if that save
+    /// kept the character HERE. A copy saved with another zone is the save
+    /// of someone LEAVING: whatever happened after is in the database, and
+    /// the other process wrote it. Trusting it sent the player straight
+    /// back where they came from: leaving a dungeon and re-entering within
+    /// 30 s bounced the client between the island and the Arena about once
+    /// a second, 24 times in 26 s, until the window ran out (the owner:
+    /// "when I just do a dungeon, when I enter again it takes so long").
+    fn copia_fresca(&self, nome: &str) -> bool {
+        let recente = self
+            .salvo_aqui_em
+            .get(nome)
+            .is_some_and(|t| self.sim_time_s - t < 30.0);
+        copia_e_fresca(
+            recente,
+            self.characters.get(nome).and_then(|r| r.zona.as_deref()),
+            &self.zona,
+        )
+    }
+
     /// Chegou a lista do banco: atualiza o cache (menos o que ESTE processo
     /// gravou ha' pouco, que e' mais novo) e manda a lista.
     pub fn on_chars_da_conta(
@@ -5166,10 +5188,7 @@ impl GameWorld {
         rows: Vec<crate::persistence::CharacterRow>,
     ) {
         for r in rows {
-            let fresca = self
-                .salvo_aqui_em
-                .get(&r.name)
-                .is_some_and(|t| self.sim_time_s - t < 30.0);
+            let fresca = self.copia_fresca(&r.name);
             if !fresca {
                 self.characters.insert(r.name.clone(), r);
             }
@@ -8588,10 +8607,7 @@ impl GameWorld {
         // pouco. Ela e' carregada uma vez, quando o processo sobe: quem jogou
         // noutro canal ou zona depois disso entrava aqui com posicao e
         // inventario velhos — e o save seguinte gravava o velho POR CIMA.
-        let fresca = self
-            .salvo_aqui_em
-            .get(&name)
-            .is_some_and(|t| self.sim_time_s - t < 30.0);
+        let fresca = self.copia_fresca(&name);
         let row = match self
             .characters
             .get(&name)
@@ -20202,6 +20218,28 @@ const DES_DA_PISTOLA_DEN: i32 = 4;
 /// Health does not shorten the fight, and the stand-still pistol still loses
 /// every boss in 14-18 s, so this one could be the full point.
 const VIDA_POR_DES_DA_PISTOLA_A_CADA: i32 = 1;
+
+/// `GameWorld::copia_fresca`'s rule, pure: a copy is newer than the
+/// database only if this process saved it recently AND saved it as staying
+/// here. `None` (no zone recorded) counts as here.
+pub(crate) fn copia_e_fresca(recente: bool, zona_da_copia: Option<&str>, zona_aqui: &str) -> bool {
+    recente && zona_da_copia.is_none_or(|z| z == zona_aqui)
+}
+
+#[cfg(test)]
+mod testes_da_copia_fresca {
+    use super::copia_e_fresca;
+
+    /// Left this process for another zone: never trusted, however recent.
+    /// That copy is what bounced the player between island and Arena.
+    #[test]
+    fn copia_de_quem_saiu_nunca_e_fresca() {
+        assert!(!copia_e_fresca(true, Some("ilha_inicial"), "dungeon"));
+        assert!(copia_e_fresca(true, Some("dungeon"), "dungeon"));
+        assert!(copia_e_fresca(true, None, "dungeon"));
+        assert!(!copia_e_fresca(false, Some("dungeon"), "dungeon"), "old copy");
+    }
+}
 
 pub(crate) fn effective_stats(
     equip: &shared::Equipment,
