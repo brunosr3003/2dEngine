@@ -1,3 +1,13 @@
+01/10/2026 — Esquiva da pistola e subidas no caminho automático
+
+Pistola: cada ponto de DES dá 0,5% de chance de esquivar golpes e tiros dos inimigos, até 25%. Golpe esquivado não causa dano, não te faz tropeçar nem te empurra, e aparece como "Esquiva". Os ataques telegrafados dos chefes (as áreas marcadas no chão) continuam precisando ser desviados andando.
+
+Caminho automático: o personagem não fica mais travado em quinas que nem pulando ele passaria, e não desiste mais no meio de uma escada de degraus altos — ele pula de degrau em degrau até o alto.
+
+Dungeon: ao sair, você volta para o portal por onde entrou, e não para a cidade.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
 01/10/2026 — O jogo reconecta sozinho
 
 Se a internet cair por um instante, o celular suspender o jogo ou o servidor reiniciar, o jogo não te joga mais na tela de erro. Aparece "Conexão perdida — reconectando…" e ele tenta voltar sozinho por até 5 minutos; quando consegue, você volta direto para o mesmo personagem, no mundo, sem escolher servidor nem fazer login de novo. Se preferir, toque em Desistir para voltar à lista de servidores.
