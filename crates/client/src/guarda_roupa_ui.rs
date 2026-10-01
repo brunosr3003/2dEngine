@@ -66,7 +66,7 @@ impl GuardaRoupaUi {
     }
 
     /// Desenha. Devolve a mensagem quando o jogador aplica.
-    pub fn desenha(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16) -> Option<shared::protocol::ClientMessage> {
+    pub fn desenha(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16, auras: u64) -> Option<shared::protocol::ClientMessage> {
         if !self.aberto {
             return None;
         }
@@ -74,10 +74,10 @@ impl GuardaRoupaUi {
         let f = estilo::escala_do_painel(840.0, 500.0)
             .min(((s.w - 16.0) / 840.0).max(0.85))
             .min(((s.h - 16.0) / 500.0).max(0.85));
-        estilo::no_painel(f, || self.na_escala(vox, solido, arma))
+        estilo::no_painel(f, || self.na_escala(vox, solido, arma, auras))
     }
 
-    fn na_escala(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16) -> Option<shared::protocol::ClientMessage> {
+    fn na_escala(&mut self, vox: &crate::vox::VoxCache, solido: &Material, arma: u16, auras: u64) -> Option<shared::protocol::ClientMessage> {
         use shared::aparencia as ap;
         let mut a = self.provando?;
         let f = estilo::fator_texto();
@@ -231,7 +231,7 @@ impl GuardaRoupaUi {
                 self.mouse_anterior = Some(m);
             }
         } else { self.mouse_anterior = None; }
-        if !crate::render3d::vitrine_aparencia(vox, a, arma, area, self.giro, solido) {
+        if !crate::render3d::vitrine_aparencia(vox, a, arma, auras, area, self.giro, solido) {
             estilo::texto_centro(area.center().x, area.center().y,
                 "Loading character…", 12, estilo::SUAVE);
         }
@@ -315,7 +315,7 @@ pub async fn previa(vox: &mut crate::vox::VoxCache) {
             for _ in 0..4 {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-                u.desenha(vox, &solido, shared::item_id::KATANA);
+                u.desenha(vox, &solido, shared::item_id::KATANA, (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (1 << 3)) << (s * 8))));
                 unsafe { get_internal_gl().flush() };
                 rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-aparencia-{w}-{nome}.png"));
                 next_frame().await;

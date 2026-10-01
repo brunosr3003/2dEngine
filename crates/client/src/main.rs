@@ -3342,6 +3342,15 @@ impl Jogo {
             || self.porao.pega_mouse(m)
     }
 
+    /// The player's packed look as the server last sent it: what the world
+    /// draws for this character (0, the default look, before the first meta).
+    fn minha_aparencia(&self) -> u32 {
+        self.world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .map_or(0, |e| e.meta.aparencia)
+    }
+
     /// The skill set of the equipped weapon — the same rule the skill bar uses.
     fn conjunto_equipado(&self) -> shared::skills::Conjunto {
         shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0))
@@ -6596,6 +6605,7 @@ impl Jogo {
         let pedido_da_bolsa = if onde {
             None
         } else {
+            self.bolsa.aparencia = self.minha_aparencia();
             self.bolsa
                 .desenha(&self.vox, &self.solido, self.craft.receitas_atuais())
         };
@@ -6819,7 +6829,8 @@ impl Jogo {
                 self.banco.abrir(cofre);
             }
         }
-        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0)) {
+        let auras = shared::auras::equipamento(&self.bolsa.equip);
+        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0), auras) {
             self.envia(msg);
         }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);

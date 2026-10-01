@@ -2783,6 +2783,7 @@ pub fn vitrine_aparencia(
     vox: &VoxCache,
     aparencia: shared::aparencia::Aparencia,
     arma: u16,
+    auras: u64,
     r: Rect,
     yaw: f32,
     solido: &Material,
@@ -2815,10 +2816,28 @@ pub fn vitrine_aparencia(
         },
     });
     pose.armado &= arma != 0;
-    desenha_rig(Mat4::from_rotation_y(yaw), &pose, &veste, vox, None);
+    desenha_rig_com_auras(Mat4::from_rotation_y(yaw), &pose, &veste, vox, auras);
     gl_use_default_material();
     camera_padrao();
     true
+}
+
+/// The character as the WORLD draws it: the body, then the auras of the
+/// equipped pieces (`shared::auras::equipamento`), flushed under the camera
+/// that is set right now. The inventory portrait and the Appearance screen
+/// draw through here, so neither can drift from what other players see.
+pub fn desenha_rig_com_auras(
+    base: Mat4,
+    pose: &crate::rig::Pose,
+    veste: &Vestimenta,
+    vox: &VoxCache,
+    auras: u64,
+) {
+    let (mats, armas) = desenha_rig(base, pose, veste, vox, None);
+    if auras != 0 {
+        crate::auras::personagem(auras, &mats, &armas, vox, 0.0, 0, pose.ferramenta.is_some(), false);
+        crate::auras::desenha();
+    }
 }
 
 /// A montaria parada num palco, girando em `yaw`: a vitrine da Loja.

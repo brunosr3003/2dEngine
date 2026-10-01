@@ -1067,7 +1067,7 @@ impl LojaTp {
             let nome = shared::aparencia::nome_da_skin(*id).unwrap_or("Skin");
             let prev = Rect::new(r.x + 8.0 * k, r.y + 8.0 * k, r.w - 16.0 * k,
                 (r.h - 112.0 * k).max(20.0));
-            crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(*id), self.arma,
+            crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(*id), self.arma, 0,
                 prev, 0.18 + (get_time() as f32 * 0.4).sin() * 0.25, solido);
             estilo::texto_ajustado(
                 nome,
@@ -1845,7 +1845,7 @@ impl LojaTp {
                     crate::invocacao_ui::icone_pergaminho_de(item_id, prev.center(), prev.w * 0.58);
                 } else if let Produto::Skin(id) = pr {
                     self.giro += get_frame_time().min(0.1) * 0.6;
-                    crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma,
+                    crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma, 0,
                         Rect::new(prev.x + 4.0 * k, prev.y + 4.0 * k,
                             prev.w - 8.0 * k, prev.h - 8.0 * k), self.giro, solido);
                 } else if let Produto::ItemDePet(id) = pr {

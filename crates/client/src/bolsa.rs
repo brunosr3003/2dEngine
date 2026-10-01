@@ -101,6 +101,9 @@ pub struct Bolsa {
     pub aberta: bool,
     pub slots: Vec<InventorySlot>,
     pub equip: shared::Equipment,
+    /// The player's packed look (`EntityMeta::aparencia`), set by `main`
+    /// before drawing: the portrait wears what the world shows.
+    pub aparencia: u32,
     pub stats: Option<PlayerStats>,
     /// Nome de cada item (`ServerMessage::ItemsConfig`).
     pub nomes: HashMap<u16, String>,
@@ -143,6 +146,7 @@ impl Default for Bolsa {
             aberta: false,
             slots: Vec::new(),
             equip: Default::default(),
+            aparencia: 0,
             stats: None,
             nomes: HashMap::new(),
             ouro: 0,
@@ -912,9 +916,17 @@ impl Bolsa {
         };
         let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
         let pose = crate::rig::pose(&entrada);
-        let mut veste = render3d::Vestimenta::nua(corpo);
-        veste.cabelo = vox.rig(render3d::RIG_CHAPEU);
-        render3d::desenha_rig(base, &pose, &veste, vox, None);
+        // The REAL look — face, hair, colours, outfit/skin — and the auras of
+        // the equipped pieces, like the world draws this player. It used to
+        // be the bare default body with the default hat, so a skin or a blue
+        // weapon never showed here.
+        let veste = render3d::vestimenta_de(vox, self.aparencia).unwrap_or_else(|| {
+            let mut v = render3d::Vestimenta::nua(corpo);
+            v.cabelo = vox.rig(render3d::RIG_CHAPEU);
+            v
+        });
+        let auras = shared::auras::equipamento(&self.equip);
+        render3d::desenha_rig_com_auras(base, &pose, &veste, vox, auras);
         gl_use_default_material();
         render3d::camera_padrao();
         // a plataforma dourada do MIR4, em 2D por cima do pe'

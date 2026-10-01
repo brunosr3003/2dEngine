@@ -17,6 +17,25 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
     bolsa.ouro = 148_250;
     bolsa.energia = 12_840;
     bolsa.stats = Some(shared::base_player_stats());
+    // A non-default look and gear with auras: the portrait has to wear both,
+    // like the world draws the player (it used to be the bare default body).
+    bolsa.aparencia = shared::aparencia::Aparencia {
+        rosto: 2,
+        cabelo: 1,
+        cor_cabelo: 2,
+        pele: 2,
+        roupa: shared::aparencia::ROUPA_BASE + 3,
+    }
+    .empacota();
+    let peca = |grau: u8, tier: u8| {
+        let mut i = shared::ItemInstance::vazia_de_grau(grau);
+        i.tier = tier;
+        Some(i)
+    };
+    bolsa.equip.weapon = Some(shared::item_id::KATANA);
+    bolsa.equip.weapon_inst = peca(3, 3);
+    bolsa.equip.armor = Some(221);
+    bolsa.equip.armor_inst = peca(4, 2);
     for (i, id) in [
         shared::item_id::KATANA,
         shared::item_id::PISTOLAS,
