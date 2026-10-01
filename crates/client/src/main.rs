@@ -23,6 +23,7 @@ mod dungeon_ui;
 mod dungeon_recompensas;
 mod nivel_ui;
 mod recompensas_ui;
+mod reconexao;
 mod efeitos;
 mod energia_vfx;
 mod entrada;
@@ -226,6 +227,9 @@ struct Jogo {
     selecionado: usize,
     /// Personagem em jogo, pra reentrar sozinho depois de trocar de zona.
     personagem_atual: Option<String>,
+    /// The connection dropped mid-game and the client is trying to come
+    /// back by itself (`reconexao`). `None` = connected, or gave up.
+    reconexao: Option<reconexao::Reconexao>,
     // ── mundo ──
     net: Option<Net>,
     /// Terreno voxel gerado da semente. `None` nas zonas antigas de tile —
@@ -809,6 +813,7 @@ async fn main() {
         selecao_personagem: personagens::Personagens::default(),
         selecionado: 0,
         personagem_atual: std::env::var("MMO_CHAR").ok().filter(|v| !v.is_empty()),
+        reconexao: None,
         net: None,
         terreno: None,
         vox,
@@ -1255,6 +1260,7 @@ impl Jogo {
         self.passo_teclado_virtual();
         self.receber_lista();
         self.pump_rede();
+        self.acompanhar_reconexao();
         // Jogando, a tela nao apaga sozinha: o automatico segue sem toque.
         let quer_acesa = matches!(self.tela, Tela::Jogando);
         if quer_acesa != self.tela_acesa {
@@ -1514,6 +1520,27 @@ impl Jogo {
         self.tela = Tela::Conectando;
     }
 
+    /// Drives the reconnect: the next attempt when its wait is over, the
+    /// error screen once `reconexao::DESISTE_APOS_S` has passed.
+    fn acompanhar_reconexao(&mut self) {
+        let agora = get_time();
+        let Some(r) = self.reconexao.as_mut() else {
+            return;
+        };
+        if r.esgotou(agora) {
+            let motivo = format!("connection lost: {}", r.motivo);
+            self.reconexao = None;
+            self.net = None;
+            self.tela = Tela::Erro(motivo);
+            return;
+        }
+        if self.net.is_none() && self.host.is_some() && r.hora_de_tentar(agora) {
+            r.tentou(agora);
+            println!("[reconexao] tentativa {}", r.tentativas);
+            self.conectar();
+        }
+    }
+
     fn envia(&self, msg: ClientMessage) {
         if let Some(n) = &self.net {
             n.send(msg);
@@ -1531,7 +1558,35 @@ impl Jogo {
                     protocol_version: shared::PROTOCOL_VERSION,
                     client_version: env!("CARGO_PKG_VERSION").to_string(),
                 }),
-                NetEvent::Disconnected(por_que) => self.tela = Tela::Erro(por_que),
+                NetEvent::Disconnected(por_que) => {
+                    // DROPPED MID-GAME: try to come back instead of throwing
+                    // the player at the error screen (`reconexao`). A kick or
+                    // a refused login already put the error up, so it is not
+                    // `Jogando` any more and goes straight through.
+                    let jogando = matches!(self.tela, Tela::Jogando);
+                    let reentrando = matches!(self.tela, Tela::Conectando)
+                        && (self.reconexao.is_some()
+                            || (self.ja_entrou && self.personagem_atual.is_some()));
+                    if reconexao::deve_reconectar(jogando, reentrando, &por_que) {
+                        if self.personagem_atual.is_none() {
+                            self.personagem_atual = self
+                                .personagens
+                                .get(self.selecionado)
+                                .map(|p| p.name.clone());
+                        }
+                        match self.reconexao.as_mut() {
+                            Some(r) => r.motivo = por_que,
+                            None => {
+                                println!("[reconexao] conexao caiu: {por_que}");
+                                self.reconexao = Some(reconexao::Reconexao::nova(get_time(), por_que));
+                            }
+                        }
+                        self.net = None;
+                        self.tela = Tela::Conectando;
+                    } else {
+                        self.tela = Tela::Erro(por_que);
+                    }
+                }
                 NetEvent::Message(msg) => self.on_message(*msg),
             }
             // Preserva o motivo do Kick: o fechamento do socket logo depois
@@ -1645,6 +1700,10 @@ impl Jogo {
                 self.tela = Tela::Fila { posicao, total };
             }
             ServerMessage::LoginOk { .. } => {
+                if let Some(r) = self.reconexao.take() {
+                    println!("[reconexao] voltou na tentativa {}", r.tentativas);
+                    self.chat.push("Reconnected.".into());
+                }
                 self.tela = Tela::Jogando;
                 self.comecar_carregando();
                 // Caminho do teste automatizado (como o `MMO_CHAR`): entra
@@ -5573,8 +5632,25 @@ impl Jogo {
             Tela::Personagens => self.tela_personagens(),
             Tela::Conectando => {
                 ui::fundo();
-                let r = ui::painel(420.0, 160.0, "");
-                ui::texto_centro(r.x + r.w * 0.5, r.y + 50.0, "conectando...", 22, ui::OURO);
+                match self.reconexao.as_ref().map(|r| r.tentativas) {
+                    None => {
+                        let r = ui::painel(420.0, 160.0, "");
+                        ui::texto_centro(r.x + r.w * 0.5, r.y + 50.0, "conectando...", 22, ui::OURO);
+                    }
+                    Some(tentativas) => {
+                        let r = ui::painel(520.0, 220.0, "");
+                        ui::texto_centro(r.x + r.w * 0.5, r.y + 50.0, "Connection lost — reconnecting…", 22, ui::OURO);
+                        if tentativas > 0 {
+                            ui::texto_centro(r.x + r.w * 0.5, r.y + 88.0, &format!("Attempt {tentativas}"), 16, crate::hud_estilo::SUAVE);
+                        }
+                        if ui::botao(Rect::new(r.x + r.w * 0.5 - 80.0, r.y + 130.0, 160.0, 44.0), "Give up", true) {
+                            self.reconexao = None;
+                            self.net = None;
+                            self.busca = Some(api::buscar_canais());
+                            self.tela = Tela::Servidores;
+                        }
+                    }
+                }
             }
             Tela::Fila { posicao, total } => {
                 let (p, t) = (*posicao, *total);
