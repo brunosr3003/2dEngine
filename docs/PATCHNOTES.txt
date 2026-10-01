@@ -1,3 +1,9 @@
+01/10/2026 — Habilidades abrem na sua arma
+
+A tela de Habilidades agora abre direto na aba da arma que você está usando: quem joga de Pistolas Gêmeas ou Anel Mágico não precisa mais trocar de aba toda vez pra ver as próprias habilidades. As outras abas continuam a um clique.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 01/10/2026 — Fechar a recompensa não te leva mais pro mapa
 
 Com o mapa aberto, fechar a janela de recompensa no X fazia o personagem viajar até o ponto do mapa que ficava atrás do X. O clique que fecha a recompensa (e também a janela de nível e as de confirmação) agora fica só com ela: o mapa e o minimapa não recebem nada enquanto ela está na tela.
