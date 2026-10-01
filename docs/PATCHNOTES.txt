@@ -1,3 +1,17 @@
+01/10/2026 — Cada ilha com os seus monstros
+
+Nenhum monstro comum aparece mais em duas ilhas. Os Morganeers seguem a história de ilha em ilha, mas agora com a roupa de cada lugar, e os bichos ganharam versões próprias:
+
+- Geleira: Arqueiro e Mago Casaco-de-Gelo, Owlbear da Neve.
+- Ermo: Saqueador das Dunas, Arqueiro das Areias, Mago do Sol.
+- Planalto: Lince do Penhasco, Arqueiro do Penhasco, Urso das Cavernas, Mago da Tormenta e Owlbear da Tormenta.
+
+Eles lutam como os de sempre e contam nas mesmas missões: "Arqueiros da nevasca" conta o Arqueiro Casaco-de-Gelo. O loot acompanha a ilha — mais cobre e poções maiores nas ilhas mais altas. O Owlbear da Tormenta também conserta a missão "As feras do vento", que mandava caçar owlbears no Planalto, onde não havia nenhum.
+
+No bestiário, os inimigos de gente apareciam só como uma espada e um escudo flutuando; agora aparece o corpo inteiro.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 01/10/2026 — Névoa no horizonte e distância Extrema
 
 A borda do mundo não aparece mais: tudo vai sumindo numa névoa da cor do céu conforme chega ao limite do que está carregado — chão, árvores, monstros e o mar. A névoa acompanha a distância de visão escolhida em Gráficos.
