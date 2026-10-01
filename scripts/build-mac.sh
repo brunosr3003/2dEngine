@@ -77,27 +77,35 @@ if [[ -n "$id_devid" ]]; then
         --sign "$id_devid" "$app"
     codesign --verify --deep --strict --verbose=2 "$app"
     plutil -lint "$app/Contents/Info.plist"
-    # A Apple recebe um zip; o ticket volta pro .app, nao pro zip — por isso
-    # o zip final e' feito DEPOIS do staple.
-    ditto -c -k --sequesterRsrc --keepParent "$app" "$out/notarizar.zip"
-    ENV_FILE="${TEMPEST_ENV:-$HOME/MMORPG/.env}"
-    # shellcheck disable=SC1090
-    [ -f "$ENV_FILE" ] && source "$ENV_FILE"
-    chave="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID:-}.p8"
-    if [[ -f "$chave" ]]; then
-        xcrun notarytool submit "$out/notarizar.zip" \
-            --key "$chave" --key-id "$ASC_API_KEY_ID" \
-            --issuer "$ASC_API_ISSUER_ID" --wait
+    if [[ "${TEMPEST_SKIP_NOTARIZATION:-}" == 1 ]]; then
+        # Escape hatch for when Apple's notary service refuses the account
+        # (e.g. an expired developer agreement): ship signed but NOT
+        # notarized. Browser downloads will need System Settings > Privacy &
+        # Security > Open Anyway, or `xattr -cr`, on the player's side.
+        echo 'WARNING: TEMPEST_SKIP_NOTARIZATION=1 — signed with Developer ID, NOT notarized.' >&2
     else
-        xcrun notarytool submit "$out/notarizar.zip" \
-            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" --wait
+        # A Apple recebe um zip; o ticket volta pro .app, nao pro zip — por isso
+        # o zip final e' feito DEPOIS do staple.
+        ditto -c -k --sequesterRsrc --keepParent "$app" "$out/notarizar.zip"
+        ENV_FILE="${TEMPEST_ENV:-$HOME/MMORPG/.env}"
+        # shellcheck disable=SC1090
+        [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+        chave="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_API_KEY_ID:-}.p8"
+        if [[ -f "$chave" ]]; then
+            xcrun notarytool submit "$out/notarizar.zip" \
+                --key "$chave" --key-id "$ASC_API_KEY_ID" \
+                --issuer "$ASC_API_ISSUER_ID" --wait
+        else
+            xcrun notarytool submit "$out/notarizar.zip" \
+                --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" --wait
+        fi
+        xcrun stapler staple "$app"
+        rm -f "$out/notarizar.zip"
+        # A prova real: e' isto que o Gatekeeper responde na maquina de quem baixa.
+        spctl --assess --type execute --verbose=2 "$app"
+        echo "NOTARIZADO e grampeado — abre sem xattr e sem aviso."
     fi
-    xcrun stapler staple "$app"
-    rm -f "$out/notarizar.zip"
-    # A prova real: e' isto que o Gatekeeper responde na maquina de quem baixa.
-    spctl --assess --type execute --verbose=2 "$app"
-    echo "NOTARIZADO e grampeado — abre sem xattr e sem aviso."
 else
     codesign --force --deep --sign - "$app"
     codesign --verify --deep --strict "$app"
