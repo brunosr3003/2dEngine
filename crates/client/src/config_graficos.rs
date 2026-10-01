@@ -53,11 +53,12 @@ pub fn antialias_salvo() -> i32 {
 /// the camera band was measured against — see `render3d::PITCH_MIN`).
 pub const RAIO_PADRAO: i32 = 5;
 /// View distance: (chunk radius, name). A 16 u chunk each; 5 is the old
-/// fixed radius. Very far is desktop only — 361 chunks of mesh is ~400 MB.
+/// fixed radius. Mesh grows with the square: ~130 MB at 5, ~400 MB at 9,
+/// ~680 MB at 12 — so Extreme is desktop only.
 const DISTANCIAS: &[(i32, &str)] = if MOBILE {
-    &[(3, "Near"), (5, "Normal"), (7, "Far")]
-} else {
     &[(3, "Near"), (5, "Normal"), (7, "Far"), (9, "Very far")]
+} else {
+    &[(3, "Near"), (5, "Normal"), (7, "Far"), (9, "Very far"), (12, "Extreme")]
 };
 /// Ground cover kept, in percent: (value, name). Trees are not here: a tree
 /// blocks the path and is gathered, so it is gameplay, not decoration.
@@ -74,6 +75,17 @@ static EFEITOS_DOS_OUTROS: AtomicBool = AtomicBool::new(true);
 /// How many chunks around the player are kept loaded.
 pub fn raio_terreno() -> i32 {
     RAIO.load(Ordering::Relaxed)
+}
+
+/// The distance fog around the player for the current view distance: (where
+/// it starts, where it is solid sky), in world units from the player.
+///
+/// The loaded square ends `(raio + 0.5)` chunks out along each axis; the fog
+/// is solid half a chunk before that, so neither the square's edge nor its
+/// corners ever show. It starts at 60% of the way, a haze rather than a wall.
+pub fn neblina() -> (f32, f32) {
+    let fim = raio_terreno() as f32 * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
+    (fim * 0.6, fim)
 }
 
 /// Percent of the ground cover (grass, bushes, flowers) that is baked.
@@ -347,7 +359,7 @@ impl ConfigGraficos {
                 titulo: "View distance",
                 opcoes: DISTANCIAS.iter().map(|d| d.1).collect(),
                 marcada: DISTANCIAS.iter().position(|d| d.0 == self.raio),
-                dica: Some("Farther lets the camera tilt toward the horizon."),
+                dica: Some("Fog hides the edge. Farther lets the camera tilt lower."),
             },
             Linha {
                 titulo: "Shadows",

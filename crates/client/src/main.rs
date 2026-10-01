@@ -5628,6 +5628,13 @@ impl Jogo {
         };
         self.solido.set_uniform("LuzDia", luz_dia);
         gpu_estatica::define_luz_dia(luz_dia);
+        // Distance fog: centred where the terrain is loaded around (the
+        // player), solid sky before the edge of what is loaded.
+        let (inicio, fim) = config_graficos::neblina();
+        let em_volta = self.world.self_pos().unwrap_or(Vec2::ZERO);
+        gpu_estatica::define_neblina(em_volta, inicio, fim);
+        self.solido
+            .set_uniform("Neblina", vec4(em_volta.x, em_volta.y, inicio, fim));
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
@@ -5768,6 +5775,10 @@ impl Jogo {
         }
         self.solido.set_uniform("LuzDia", 0.0f32);
         gpu_estatica::define_luz_dia(0.0);
+        // Off again before the panels: the colony model and the previews
+        // draw with the same shader and must not fog.
+        self.solido.set_uniform("Neblina", Vec4::ZERO);
+        gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
         gl_use_default_material();
         self.habilidades.desenha_efeitos(&self.world, &vista);
         set_default_camera();

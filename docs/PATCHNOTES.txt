@@ -1,3 +1,11 @@
+01/10/2026 — Névoa no horizonte e distância Extrema
+
+A borda do mundo não aparece mais: tudo vai sumindo numa névoa da cor do céu conforme chega ao limite do que está carregado — chão, árvores, monstros e o mar. A névoa acompanha a distância de visão escolhida em Gráficos.
+
+E dá pra ver mais longe: no PC entrou a distância "Extrema", e no celular a "Muito longe". A predefinição Ultra usa a maior do aparelho.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 30/09/2026 — Sombras não atravessam mais o morro
 
 Com as sombras em "Bonitas", a sombra das árvores aparecia por cima de tudo: dava pra ver a sombra de uma árvore que estava atrás do morro, e ela escurecia até a copa de árvores na frente. Agora a sombra só aparece no chão que está à vista.

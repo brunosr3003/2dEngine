@@ -383,10 +383,10 @@ mod testes_camera {
     fn mais_distancia_deita_mais() {
         for k in 0..=10 {
             let z = ZOOM_MIN + (ZOOM_MAX - ZOOM_MIN) * k as f32 / 10.0;
-            let pisos: Vec<f32> = [3, 5, 7, 9].iter().map(|&r| pitch_min_com_raio(z, r)).collect();
+            let pisos: Vec<f32> = [3, 5, 7, 9, 12].iter().map(|&r| pitch_min_com_raio(z, r)).collect();
             assert!(pisos.windows(2).all(|w| w[0] > w[1]), "zoom {z}: {pisos:?}");
             assert!((pisos[1] - piso_medido(z)).abs() < 1e-6, "o padrao mudou");
-            for (r, p) in [3, 5, 7, 9].iter().zip(&pisos) {
+            for (r, p) in [3, 5, 7, 9, 12].iter().zip(&pisos) {
                 let mundo = (*r as f32 + 0.5) * 16.0;
                 assert!(alcance_do_topo(z, *p) < mundo, "raio {r}, zoom {z}: ve' a borda");
                 assert!(*p < PITCH_MAX - 0.25, "raio {r}, zoom {z}: sem banda");
@@ -946,6 +946,8 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     // 1 = esta' geometria pode virar furo; 0 = passa batido. Vem no
     // `normal.x`, que este shader nao usa pra mais nada.
     varying lowp float recortavel;
+    // World position, for the distance fog.
+    varying highp vec3 mundo;
 
     uniform mat4 Model;
     uniform mat4 Projection;
@@ -972,6 +974,7 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     uniform vec4 PeleClaro;   uniform vec4 PeleEsc;
 
     void main() {
+        mundo = (Model * vec4(position, 1)).xyz;
         gl_Position = Projection * Model * vec4(position, 1);
         color = color0 / 255.0;
 
@@ -1006,10 +1009,14 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     varying lowp vec4 color;
     varying lowp vec2 uv;
     varying lowp float recortavel;
+    varying highp vec3 mundo;
 
     uniform sampler2D Texture;
     uniform highp vec3 Recorte;
     uniform highp float RecorteZ;
+    // Distance fog: xy = centre (world x, z), z = where it starts, w = where
+    // it is solid sky. w <= 0 turns it off (panels, previews).
+    uniform highp vec4 Neblina;
 
     void main() {
         if (recortavel > 0.5 && Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
@@ -1036,6 +1043,11 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
             }
         }
         gl_FragColor = color * texture2D(Texture, uv);
+        if (Neblina.w > 0.0) {
+            highp float d = distance(mundo.xz, Neblina.xy);
+            lowp float f = smoothstep(Neblina.z, Neblina.w, d);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.588, 0.729, 0.839), f);
+        }
     }"#;
 
 /// Estado de pipeline do mundo: descarte de face de costas, profundidade e
@@ -1088,6 +1100,7 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("CabeloEsc", UniformType::Float4),
                 UniformDesc::new("PeleClaro", UniformType::Float4),
                 UniformDesc::new("PeleEsc", UniformType::Float4),
+                UniformDesc::new("Neblina", UniformType::Float4),
             ],
             pipeline_params: params_solido(),
             ..Default::default()

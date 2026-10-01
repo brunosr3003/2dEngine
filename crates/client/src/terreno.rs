@@ -1430,6 +1430,7 @@ pub async fn previa_dos_graficos() {
         ("perto", 3, 100, crate::render3d::ZOOM_MAX),
         ("normal", 5, 100, crate::render3d::ZOOM_MAX),
         ("muito-longe", 9, 100, crate::render3d::ZOOM_MAX),
+        ("extremo", 12, 100, crate::render3d::ZOOM_MAX),
         ("grama-cheia", 5, 100, crate::render3d::ZOOM_MIN),
         ("grama-pouca", 5, 30, crate::render3d::ZOOM_MIN),
     ] {
@@ -1442,6 +1443,8 @@ pub async fn previa_dos_graficos() {
         let mut cam = crate::render3d::camera(centro, chao, 0.6, zoom, pitch);
         cam.render_target = Some(rt.clone());
         cam.aspect = Some(1.6);
+        let (inicio, fim) = crate::config_graficos::neblina();
+        crate::gpu_estatica::define_neblina(centro, inicio, fim);
         for _ in 0..3 {
             set_camera(&cam);
             clear_background(Color::from_rgba(150, 186, 214, 255));

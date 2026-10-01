@@ -127,6 +127,7 @@ struct UniformesSolido {
     tinta: [f32; 4],
     luz_dia: f32,
     faixas: Faixas,
+    neblina: [f32; 4],
 }
 
 /// As cores das faixas de paleta, por DRAW.
@@ -171,6 +172,7 @@ struct UniformesAgua {
     model: Mat4,
     tempo: f32,
     ondas: f32,
+    neblina: [f32; 4],
 }
 
 struct Programas {
@@ -183,6 +185,8 @@ struct Programas {
 thread_local! {
     static PROGRAMAS: RefCell<Option<Programas>> = const { RefCell::new(None) };
     static LUZ_DIA: Cell<f32> = const { Cell::new(0.0) };
+    /// The distance fog for what is drawn now (`define_neblina`).
+    static NEBLINA: Cell<[f32; 4]> = const { Cell::new([0.0; 4]) };
     /// Buffers das malhas de voxel (`VoxCache`), pela posicao dos vertices na
     /// memoria. O cache de vox carrega uma vez e nunca solta nem troca malha,
     /// entao o endereco e' estavel durante o jogo inteiro.
@@ -192,6 +196,16 @@ thread_local! {
 
 pub fn define_luz_dia(valor: f32) {
     LUZ_DIA.with(|l| l.set(valor));
+}
+
+/// Distance fog for everything drawn after this: `centro` (world x, z), from
+/// `inicio` to solid sky at `fim`. `fim` 0 turns it off.
+pub fn define_neblina(centro: macroquad::math::Vec2, inicio: f32, fim: f32) {
+    NEBLINA.with(|n| n.set([centro.x, centro.y, inicio, fim]));
+}
+
+pub fn neblina() -> [f32; 4] {
+    NEBLINA.with(|n| n.get())
 }
 
 fn atributos() -> [VertexAttribute; 4] {
@@ -233,6 +247,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("CabeloEsc", UniformType::Float4),
                 ("PeleClaro", UniformType::Float4),
                 ("PeleEsc", UniformType::Float4),
+                ("Neblina", UniformType::Float4),
             ]),
         )
         .expect("world shader (gpu)");
@@ -245,6 +260,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
             meta(&[
                 ("Tempo", UniformType::Float1),
                 ("Ondas", UniformType::Float1),
+                ("Neblina", UniformType::Float4),
             ]),
         )
         .expect("water shader (gpu)");
@@ -314,6 +330,7 @@ pub fn desenha_com_modelo<'a>(
                     // O lote de malha ESTATICA (terreno, vegetacao) nunca
                     // tinge por faixa: ela e' do personagem.
                     faixas: Faixas::default(),
+                    neblina: neblina(),
                 }));
             }
             Programa::Sombra => {
@@ -326,6 +343,7 @@ pub fn desenha_com_modelo<'a>(
                     tinta: [0.0; 4],
                     luz_dia: 0.0,
                     faixas: Faixas::default(),
+                    neblina: neblina(),
                 }));
             }
             Programa::Agua { tempo, ondas } => {
@@ -335,6 +353,7 @@ pub fn desenha_com_modelo<'a>(
                     model: modelo,
                     tempo,
                     ondas,
+                    neblina: neblina(),
                 }));
             }
         }
@@ -432,6 +451,7 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             tinta,
             luz_dia: LUZ_DIA.with(|l| l.get()),
             faixas,
+            neblina: neblina(),
         }));
         ctx.apply_bindings(&Bindings {
             vertex_buffers: vec![vb],

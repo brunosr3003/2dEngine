@@ -56,6 +56,10 @@ impl IlhasAereas {
         // Three models share the buffers; only the matrix changes per cloud.
         // Continuous circular motion avoids popping back in at the edge.
         let tempo = get_time() as f32;
+        // The clouds live hundreds of units out on purpose: the distance fog
+        // would erase them, so it is off while they draw.
+        let neblina = crate::gpu_estatica::neblina();
+        crate::gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
         for k in 0..30 {
             let a = k as f32 * 2.39996 + tempo * 0.001;
             let r = 80.0 + (k as f32 / 30.0) * 650.0;
@@ -75,5 +79,6 @@ impl IlhasAereas {
                 modelo,
             );
         }
+        crate::gpu_estatica::define_neblina(vec2(neblina[0], neblina[1]), neblina[2], neblina[3]);
     }
 }

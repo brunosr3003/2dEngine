@@ -393,6 +393,8 @@ varying lowp float onda;
 
 uniform sampler2D Texture;
 uniform AGUA_PRECISAO float Tempo;
+// The world's distance fog (see `render3d::SOLIDO_FRAGMENTO`).
+uniform highp vec4 Neblina;
 
 void main() {
     vec3 c = cor.rgb;
@@ -402,7 +404,15 @@ void main() {
     c = mix(c, vec3(0.93, 0.97, 1.0), f);
     // No fake glint: the moving bright patches read as white blobs in playtest.
     // Color by depth and foam at the shore are enough.
-    gl_FragColor = vec4(c, max(cor.a, f * 0.9));
+    float a = max(cor.a, f * 0.9);
+    if (Neblina.w > 0.0) {
+        // Fogged water turns opaque sky: past the fog the horizon ring is
+        // just sky, and the edge of the loaded sea never shows.
+        float k = smoothstep(Neblina.z, Neblina.w, distance(mundo.xz, Neblina.xy));
+        c = mix(c, vec3(0.588, 0.729, 0.839), k);
+        a = mix(a, 1.0, k);
+    }
+    gl_FragColor = vec4(c, a);
 }"#;
 
 thread_local! {
