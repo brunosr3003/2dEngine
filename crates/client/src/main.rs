@@ -2481,7 +2481,7 @@ impl Jogo {
                             }
                             t::EVOLUIR_SKILL => {
                                 self.fecha_paineis();
-                                self.evolucao_skills.abrir();
+                                self.evolucao_skills.abrir(self.conjunto_equipado());
                             }
                             _ => {}
                         }
@@ -3342,6 +3342,11 @@ impl Jogo {
             || self.porao.pega_mouse(m)
     }
 
+    /// The skill set of the equipped weapon — the same rule the skill bar uses.
+    fn conjunto_equipado(&self) -> shared::skills::Conjunto {
+        shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0))
+    }
+
     /// O proprio personagem esta' montado (flag do servidor)?
     /// Tem montaria EQUIPADA? E' o slot da bolsa que decide (docs/MONTARIAS.md).
     fn tem_montaria(&self) -> bool {
@@ -3502,7 +3507,7 @@ impl Jogo {
                 });
             }
             Item::Forja => self.forja.abrir(),
-            Item::Habilidades => self.evolucao_skills.abrir(),
+            Item::Habilidades => self.evolucao_skills.abrir(self.conjunto_equipado()),
             Item::Mapa if self.mapa.tem_ilha() => self.mapa.abrir(),
             Item::Mobs => self.mobs_ui.abrir(),
             Item::Mapa => {

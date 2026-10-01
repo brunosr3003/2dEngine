@@ -18,8 +18,15 @@ pub struct EvolucaoSkills {
 }
 
 impl EvolucaoSkills {
-    pub fn abrir(&mut self) {
+    /// Opens on the tab of the EQUIPPED weapon: the skills the player can use
+    /// right now. The other tabs stay one click away.
+    pub fn abrir(&mut self, arma: Conjunto) {
         self.aberto = true;
+        let aba = Conjunto::TODOS.iter().position(|c| *c == arma).unwrap_or(0);
+        if aba != self.conjunto {
+            self.conjunto = aba;
+            self.selecionada = None;
+        }
     }
 
     pub fn fechar(&mut self) {
@@ -419,7 +426,9 @@ pub async fn previa() {
     let rt = render_target(screen_width() as u32, screen_height() as u32);
     crate::render3d::define_alvo(Some(rt.clone()));
     let mut ui = EvolucaoSkills::default();
-    ui.abrir();
+    // Not the first tab, so the capture shows the panel opening on the
+    // equipped weapon's skills.
+    ui.abrir(Conjunto::Pistolas);
     ui.progresso.energia = 35_000;
     ui.progresso.tiers[0] = 4;
     ui.progresso.tomos[0] = [3, 1, 0];
