@@ -62,7 +62,8 @@ pub mod objective_kind {
     /// Quebrar N corpos de coleta. `obj_target`: 0 qualquer, 1 pedra, 2 arvore.
     /// Conta o ATO de coletar, nao o item — e' diaria de area.
     pub const GATHER: u8 = 8;
-    /// Criar N equipamentos no painel de Craft. `obj_target` 0 = qualquer.
+    /// Criar N no painel de Craft. `obj_target` 0 = qualquer equipamento;
+    /// outro valor = ESTE item_id (`conta_craft`).
     pub const CRAFT: u8 = 9;
     /// Tentar refinar N vezes na Forja (sucesso ou nao).
     pub const REFINE: u8 = 10;
@@ -180,6 +181,13 @@ pub mod tutorial {
 }
 
 /// `obj_target` de GATHER.
+/// Does crafting `feito` count for a CRAFT objective aimed at `alvo`?
+/// 0 is "any piece" (every daily and the first armour); any other value is
+/// the one item the step asks for.
+pub fn conta_craft(alvo: u16, feito: u16) -> bool {
+    alvo == 0 || alvo == feito
+}
+
 pub mod alvo_de_coleta {
     pub const QUALQUER: u16 = 0;
     pub const PEDRA: u16 = 1;
@@ -1709,5 +1717,21 @@ mod testes_do_tutorial_travado {
                 "o tutorial {a} não tem instrução — foi acrescentado sem passar por aqui?"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_craft_com_alvo {
+    use super::*;
+
+    /// A craft step aimed at an item counts only that item; 0 keeps counting
+    /// any piece, which is what every daily and the first armour use.
+    #[test]
+    fn so_o_item_pedido_conta() {
+        let chave = crate::historia::CHAVE_DO_NAUFRAGIO;
+        assert!(conta_craft(chave, chave));
+        assert!(!conta_craft(chave, chave + 1), "another Cellar's key");
+        assert!(!conta_craft(chave, 221), "a piece of armour");
+        assert!(conta_craft(0, 221) && conta_craft(0, chave));
     }
 }

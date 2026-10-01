@@ -11,6 +11,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("the way out of the city", "a saída da cidade"),
     // ──────────────────────── the titles of the story steps ────────────────────────
     ("Steady hands", "Mãos firmes"),
+    ("Wood for the cellar key", "Madeira para a chave do porão"),
+    ("Steel for the cellar key", "Aço para a chave do porão"),
+    ("The Shipwreck Cellar Key", "A Chave do Porão do Naufrágio"),
     ("Follow the hint", "Siga a dica"),
     ("Thin air", "Ar rarefeito"),
     ("Skystone", "Pedra do céu"),
@@ -220,6 +223,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("The Harbour Captain will take you to the Waste, where the third lighthouse was buried.", "O Capitão do Porto leva você ao Ermo, onde o terceiro farol foi soterrado."),
     ("The Trainer knows the footwork of those who fight inside the wind. Learn it from him.", "O Treinador conhece o passo de quem luta dentro do vento. Aprenda com ele."),
     ("The bears came down from the slopes chasing the smell of thunder. Defeat 4 bears.", "Os ursos desceram das encostas atrás do cheiro de trovão. Derrote 4 ursos."),
+    ("The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Fell 6 trees — the woodcutters make up whatever wood you're missing.", "A escotilha do porão está trancada com um cadeado dos Morganeers, e só gira com uma chave feita pra ele. A chave se faz no Craft, com madeira e Aço cinza. Derrube 6 árvores — os lenhadores completam a madeira que faltar."),
+    ("Now the metal: break 6 stones in any vein — Steel comes out of the stone. The miners make up whatever the key still asks for.", "Agora o metal: quebre 6 pedras em qualquer veio — o Aço sai da pedra. Os mineiros completam o que a chave ainda pedir."),
+    ("You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", "Você tem a madeira e o Aço. Abra Menu › Craft e crie a Chave do Porão do Naufrágio. Ela abre a escotilha do naufrágio, e a porta fica com ela: uma chave, uma entrada."),
     ("Take the copper as well. With what you've gathered, that's an armour. Go to Craft.", "Tome o cobre também. Com o que você juntou, já dá uma armadura. Vá ao Craft."),
     ("The lighthouse here is under the dunes, and Morgan's mages dig day and night.", "O farol daqui está debaixo das dunas, e os magos de Morgan cavam dia e noite."),
     ("Another one only a boss will give up: the one in the Shipwreck Cellar carries a key in his pocket.", "Outro só arrancando de chefe: o do Porão do Naufrágio carrega chave no bolso."),
@@ -360,8 +366,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "The thunder left blue crystals across the terrain: that's Energy, it takes no space in your bag, and it's what pays for your attribute points. Tap the step and the path to a vein opens on its own — gather enough to spend everything the first few levels gave you.",
     ),
     (
-        "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.",
-        "From the lookout you saw the hull. The Morganeers have made the cellar a hideout, and whoever rules down there carries a key in his pocket — a dungeon boss drops keys far more often than a field boss. Tap the step (or Dungeons, in the Menu) and clear the Shipwreck Cellar. Solo is enough.",
+        "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.",
+        "From the lookout you saw the hull. The Morganeers have made the cellar a hideout, and whoever rules down there carries a key in his pocket — a dungeon boss drops keys far more often than a field boss. With the cellar key in your bag, tap the step (or Dungeons, in the Menu), use \"Go to the portal\" and clear the Shipwreck Cellar. Solo is enough.",
     ),
     (
         "Cada ponto de atributo custa Energia — a mesma dos cristais azuis do relevo. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma: FOR bate mais forte, DES acerta mais, INT move a magia. Se faltar Energia, quebre um cristal e volte.",

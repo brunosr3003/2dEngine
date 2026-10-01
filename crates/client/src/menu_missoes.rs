@@ -614,7 +614,10 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
 fn caminho_manual(d: &QuestDef) -> String {
     use shared::quests::objective_kind as obj;
     match d.obj_kind {
-        obj::CRAFT => format!("Menu › Craft: create {} piece(s) of gear", d.obj_count),
+        obj::CRAFT => match shared::porao::nome_da_chave(d.obj_target) {
+            Some(chave) => format!("Menu › Craft: create the {chave}"),
+            None => format!("Menu › Craft: create {} piece(s) of gear", d.obj_count),
+        },
         obj::REFINE => format!("Menu › Forge: try refining {} time(s)", d.obj_count),
         obj::DUNGEON => {
             let onde = if d.obj_target == 0 { "any dungeon".to_string() }

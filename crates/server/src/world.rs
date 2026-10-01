@@ -14405,7 +14405,12 @@ impl GameWorld {
             crate::telemetria::conta("selo_craftado", "", 1);
         }
         self.resultado_do_craft(sid, recipe_id, Ok(craft_output_id));
-        self.quest_on_evento(sid, shared::quests::objective_kind::CRAFT, 1);
+        // `obj_target` 0 = any piece; otherwise THIS item (the story's Cellar
+        // key step): a craft step that took any armour would let the player
+        // walk to the door without the key it was teaching.
+        self.quest_on_evento_se(sid, shared::quests::objective_kind::CRAFT, 1, &|d| {
+            shared::quests::conta_craft(d.obj_target, craft_output_id)
+        });
 
         // Tutorial: o GATILHO da quest 903 ("Forge your Weapon") é o ATO de craftar
         // uma ARMA — checa pelo slot Weapon (os ids craftados são T1 migrados,

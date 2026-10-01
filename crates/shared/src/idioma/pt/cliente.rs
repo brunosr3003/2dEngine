@@ -571,6 +571,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("OUT OF TIME", "TEMPO ESGOTADO"),
     ("Party of up to {}", "Grupo de até {}"),
     ("Go to the Arena", "Ir para a Arena"),
+    ("Go to the portal", "Ir para o portal"),
+    ("On another island", "Em outra ilha"),
     ("COMPLETION CHEST", "BAÚ DE CONCLUSÃO"),
     ("Dungeon: {texto}", "Dungeon: {texto}"),
     ("Party found", "Grupo encontrado"),
@@ -1277,6 +1279,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("PvP combat: defeat {} rival(s)", "Combate PvP: derrote {} rival(is)"),
     ("Map: find and open the chest named", "Mapa: encontre e abra o baú indicado"),
     ("Menu › Craft: create {} piece(s) of gear", "Menu › Craft: crie {} equipamento(s)"),
+    ("Menu › Craft: create the {}", "Menu › Craft: crie a {}"),
     ("Menu › Forge: try refining {} time(s)", "Menu › Forja: tente refinar {} vez(es)"),
     ("Nothing in progress. Check Available.", "Nada em andamento. Veja as Disponíveis."),
     (

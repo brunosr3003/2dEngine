@@ -447,6 +447,17 @@ const fn viajar(
 
 const VERDE: u16 = item_id::na_cor(item_id::STEEL, 2);
 const AZUL: u16 = item_id::na_cor(item_id::STEEL, 3);
+const CINZA: u16 = item_id::na_cor(item_id::STEEL, 1);
+
+/// The Shipwreck Cellar (content 1) key: `porao::chave_de`, written out
+/// because a `const` table cannot call it. A test pins the two together.
+pub const CHAVE_DO_NAUFRAGIO: u16 = crate::porao::CHAVE_BASE + 1;
+/// The Cellar key steps (gather wood, gather Steel, craft), inserted before
+/// the Cellar run (710). Free ids outside the tutorial range, like the
+/// Planalto's 855-859: the main line keeps its 700, 701, 702... sequence.
+pub const PASSOS_DA_CHAVE_DO_PORAO: std::ops::RangeInclusive<u16> = 834..=836;
+/// The last of them: crafting the key.
+pub const PASSO_DA_CHAVE_DO_PORAO: u16 = 836;
 
 /// Os passos escritos, em ordem. Ids seguidos a partir de `PRIMEIRO_ID`.
 pub const PASSOS: &[QuestDef] = &[
@@ -489,7 +500,25 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(708, "Bears on the slope", "The bears came down from the slopes chasing the smell of thunder. Defeat 4 bears.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
     tutorial(794, "The map shows the way", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá. Ao concluir, abra o Pergaminho de Invocação: Montaria na bolsa, equipe a montaria e use o botão Montar para viajar mais rápido.", tut::MAPA_IR, 60, 1_500, item_id::PERGAMINHO_INVOCA_MONTARIA, 1),
     ir(709, "The lookout of the Grove", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
-    dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Toque no passo (ou em Dungeons, no Menu) e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
+    // THE CELLAR KEY. Since 29/09/2026 a Porão is a door that only opens with
+    // a crafted key (`shared::porao`), and the story sent the player to the
+    // door with no word about it. The owner: "this mission need to have a
+    // previous mission ... craft the dungeon cellar key, which includes
+    // gather the materials and craft the key".
+    //
+    // The two gathering steps PAY the whole recipe (78 wood, 42 grey Steel):
+    // the armour craft (707) may have eaten every material the player had,
+    // and a story step that waits on unannounced farming is a wall.
+    // `os_passos_da_chave_pagam_a_receita` measures it against the real
+    // recipe. Ids 834-836 (`PASSOS_DA_CHAVE_DO_PORAO`), inserted without
+    // renumbering.
+    coletar_com(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Fell 6 trees — the woodcutters make up whatever wood you're missing.", alvo_de_coleta::ARVORE, 6, 80, 2_000, item_id::WOOD_T1, 78, item_id::XP_POTION, 1),
+    coletar_com(835, "Steel for the cellar key", "Now the metal: break 6 stones in any vein — Steel comes out of the stone. The miners make up whatever the key still asks for.", alvo_de_coleta::PEDRA, 6, 80, 2_000, CINZA, 42, item_id::XP_POTION, 1),
+    QuestDef {
+        obj_target: CHAVE_DO_NAUFRAGIO,
+        ..criar(PASSO_DA_CHAVE_DO_PORAO, "The Shipwreck Cellar Key", "You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", 100, 3_000)
+    },
+    dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
     refinar(711, "Fire in the forge", "A weak piece won't survive the storm. Try refining a piece at the Forge.", 1, 150, 20_000),
     cacar(712, "Morgan's gunmen", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
     ir(713, "The port road", "The Peacemain guard the port. Follow the road to the quay yard.", ponto::PORTO, 150, 37_500),
@@ -1031,6 +1060,8 @@ mod testes {
                 );
             } else if (855..=859).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
+            } else if PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id) {
+                assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
             } else {
                 // Os de sempre seguem 700, 701, 702... com tutorial no meio.
                 assert_eq!(d.id, escrito, "passo fora de ordem");
@@ -1064,17 +1095,21 @@ mod testes {
             // O capitulo I carrega onze tutoriais alem da historia, e e' por
             // isso que ele e' o maior. Os outros tres seguem entre 12 e 20 —
             // se algum deles chegar perto de 30, o teto nao e' o problema.
+            //
+            // 35 and 23 since 01/10/2026: the three Cellar key steps
+            // (`PASSOS_DA_CHAVE_DO_PORAO`), which the owner asked for and
+            // which only make sense right before the first Porão.
             let so_historia = passos_do_capitulo(c)
                 .iter()
                 .filter(|d| d.obj_kind != objective_kind::TUTORIAL)
                 .count();
             assert!(
-                (12..=32).contains(&n),
+                (12..=35).contains(&n),
                 "{}: {n} passos ({so_historia} de historia)",
                 c.nome
             );
             assert!(
-                so_historia <= 22,
+                so_historia <= 23,
                 "{}: {so_historia} passos de HISTORIA — o capitulo ficou longo                  de verdade, e nao so' cheio de tutorial",
                 c.nome
             );
@@ -1365,6 +1400,55 @@ mod testes {
     /// ou renumerar a historia, o passo de criar volta a pedir algo que o
     /// jogador nao tem como fazer — e isso nao aparece em lugar nenhum ate'
     /// alguem travar no meio do capitulo I. Este teste cai primeiro.
+    /// The Cellar is a locked door (`shared::porao`). The step right before
+    /// it crafts THAT key, and the crafted item is the one the door asks for.
+    #[test]
+    fn a_chave_do_porao_vem_antes_do_porao() {
+        let porao = crate::dungeon::conteudo(1).unwrap();
+        assert_eq!(crate::porao::chave_de(porao), Some(CHAVE_DO_NAUFRAGIO));
+        let craft = def_da_historia(PASSO_DA_CHAVE_DO_PORAO).unwrap();
+        assert_eq!(craft.obj_kind, objective_kind::CRAFT);
+        assert_eq!(craft.obj_target, CHAVE_DO_NAUFRAGIO);
+        let seguinte = indice(PASSO_DA_CHAVE_DO_PORAO)
+            .and_then(|i| id_do_passo(i + 1))
+            .and_then(def_da_historia)
+            .unwrap();
+        assert_eq!(
+            (seguinte.obj_kind, seguinte.obj_target),
+            (objective_kind::DUNGEON, porao.id),
+            "the key step stopped being right before the Shipwreck Cellar"
+        );
+        // The recipe can be crafted when the story asks for it.
+        let receita = crate::receitas::receitas_de_chave_de_porao()
+            .into_iter()
+            .find(|r| r.output_item_id == CHAVE_DO_NAUFRAGIO)
+            .unwrap();
+        assert!(receita.nivel_min as u32 <= porao.nivel_min);
+    }
+
+    /// The steps between the first armour and the Cellar key PAY the whole
+    /// key recipe. The armour craft may have eaten every material; counting
+    /// what came before it would hide a wall.
+    #[test]
+    fn os_passos_da_chave_pagam_a_receita() {
+        let r = crate::porao::receita_de(crate::dungeon::conteudo(1).unwrap()).unwrap();
+        let de = indice(PASSO_DO_CRAFT).unwrap() as usize + 1;
+        let ate = indice(PASSO_DA_CHAVE_DO_PORAO).unwrap() as usize;
+        let mut ganho: HashMap<u16, u32> = HashMap::new();
+        for d in &PASSOS[de..ate] {
+            for (item, qtd) in [
+                (d.reward_item, d.reward_item_qty),
+                (d.reward_item2, d.reward_item2_qty),
+            ] {
+                *ganho.entry(item).or_default() += qtd as u32;
+            }
+        }
+        for (item, qtd) in [(r.madeira, r.madeira_qtd), (r.material, r.material_qtd)] {
+            let tem = ganho.get(&item).copied().unwrap_or(0);
+            assert!(tem >= qtd, "the story pays {tem} of {item}, the Cellar key asks {qtd}");
+        }
+    }
+
     #[test]
     fn a_chave_vem_no_passo_antes_do_craft() {
         let craft = def_da_historia(PASSO_DO_CRAFT).unwrap();
