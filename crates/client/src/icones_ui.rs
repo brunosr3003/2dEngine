@@ -219,7 +219,8 @@ pub fn skill(id: u32, c: Vec2, lado: f32, alfa: f32) -> bool {
 
 /// The map marker for each creature in the table (`economy::KINDS_INICIAIS`).
 pub fn nome_do_bicho(kind: u16) -> &'static str {
-    match kind {
+    // An island variant wears its species' marker.
+    match shared::bestiary::species_of(kind) {
         0 | 7 => "lobo",
         1 => "urso",
         2 => "pistoleiro",

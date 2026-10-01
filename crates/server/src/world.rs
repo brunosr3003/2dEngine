@@ -3941,7 +3941,7 @@ impl GameWorld {
             locomotor_speed: d.speed,
             kite_dist: d.kite_dist,
             proj_count: d.proj_count,
-            proj_kind: if kind == 4 { 1 } else { 0 },
+            proj_kind: if shared::bestiary::species_of(kind) == 4 { 1 } else { 0 },
             is_melee: corpo_a_corpo,
             size_scale: d.size_scale,
             xp_reward: d.xp_reward,
@@ -16152,7 +16152,9 @@ impl GameWorld {
                 let alvos: Vec<u16> = if def.obj_target == 0 {
                     Vec::new()
                 } else {
-                    vec![def.obj_target - 1]
+                    // The species and its island variants: an archer quest
+                    // on the Glacier points at the Frostcoat Archers.
+                    shared::bestiary::kinds_of_species(def.obj_target - 1)
                 };
                 self.zona_de_mob(&alvos, eu, nivel)
                     .map(|p| (destino_tipo::COMBATE, p, MOB_ZONA_RAIO_UN * 0.5, None))

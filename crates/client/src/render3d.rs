@@ -1239,7 +1239,12 @@ fn model_for(tag: shared::EntityTag, boss: bool, kind: u16) -> Option<&'static s
 /// O modelo de cada tipo de mob (`enemy_kinds.kind`). Quem MORDE e' bicho,
 /// quem ATIRA e' gente — ver docs/PERSONAGEM.md.
 pub fn modelo_do_mob(kind: u16) -> &'static str {
-    match kind {
+    // Human island variants have their own whole model; a beast variant falls
+    // back to its species' (its own mesh is in `bicho::modelo_de_kind`).
+    if let Some(nome) = rig_de_gente(kind).filter(|_| shared::bestiary::variant(kind).is_some()) {
+        return nome.trim_start_matches("humanoides/");
+    }
+    match shared::bestiary::species_of(kind) {
         1 => "urso",
         2 => "pistoleiro",
         3 => "tigre",
@@ -1293,7 +1298,20 @@ pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
 }
 
 /// Modelos de gente, desenhados na escala do corpo.
-pub const MODELOS_DE_GENTE: [&str; 4] = ["player", "pistoleiro", "mago", "arqueiro"];
+pub const MODELOS_DE_GENTE: [&str; 11] = [
+    "player",
+    "pistoleiro",
+    "mago",
+    "arqueiro",
+    // Island variants (`RIGS_DE_GENTE`).
+    "frost_archer",
+    "frost_mage",
+    "dune_raider",
+    "sand_archer",
+    "sun_mage",
+    "cliff_archer",
+    "storm_mage",
+];
 
 /// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
 pub const MODELOS_DE_NPC: [&str; 15] = [
@@ -1567,12 +1585,26 @@ fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
     {
         return None;
     }
-    match shared::bosses::kind_do_corpo(e.meta.kind) {
-        2 => Some("humanoides/pistoleiro"),
-        4 => Some("humanoides/mago"),
-        6 => Some("humanoides/arqueiro"),
-        _ => None,
-    }
+    rig_de_gente(shared::bosses::kind_do_corpo(e.meta.kind))
+}
+
+/// The rig file of each human mob (`tools/voxrender/humanoides.py`): the
+/// three Morganeers and their island variants (`shared::bestiary`).
+pub const RIGS_DE_GENTE: [(u16, &str); 10] = [
+    (2, "humanoides/pistoleiro"),
+    (4, "humanoides/mago"),
+    (6, "humanoides/arqueiro"),
+    (30, "humanoides/frost_archer"),
+    (31, "humanoides/frost_mage"),
+    (33, "humanoides/dune_raider"),
+    (34, "humanoides/sand_archer"),
+    (35, "humanoides/sun_mage"),
+    (37, "humanoides/cliff_archer"),
+    (39, "humanoides/storm_mage"),
+];
+
+pub fn rig_de_gente(kind: u16) -> Option<&'static str> {
+    RIGS_DE_GENTE.iter().find(|(k, _)| *k == kind).map(|(_, n)| *n)
 }
 
 pub fn draw_entities(
@@ -2043,7 +2075,7 @@ fn desenha_personagem(
     }
     let humanoide = rig_do_humanoide(e).is_some();
     if humanoide {
-        entrada.combate.conjunto = if shared::bosses::kind_do_corpo(e.meta.kind) == 4 {
+        entrada.combate.conjunto = if shared::bestiary::species_of(shared::bosses::kind_do_corpo(e.meta.kind)) == 4 {
             3
         } else {
             2
@@ -2097,7 +2129,7 @@ fn desenha_personagem(
     if e.skill.is_some_and(|(id, _, _)| id == 9) {
         pose.na_mao = false;
     }
-    if humanoide && e.meta.kind == 6 {
+    if humanoide && shared::bestiary::species_of(e.meta.kind) == 6 {
         crate::rig::aplica_arqueiro(&mut pose, entrada.combate.golpe.map(|(_, t)| t));
     }
     e.molas.segue(&mut pose, get_frame_time());
@@ -2196,7 +2228,7 @@ fn desenha_personagem(
             e.emissores[i] = m.transform_point3(vec3(0.0, 2.5 * VOXEL, 9.5 * VOXEL));
         }
     }
-    if humanoide && e.meta.kind == 6 {
+    if humanoide && shared::bestiary::species_of(e.meta.kind) == 6 {
         let maos = crate::rig::palmas(&mats, VOXEL);
         let centro = maos[1];
         let frente = vec3(e.yaw.sin(), 0.0, e.yaw.cos());
@@ -2898,13 +2930,17 @@ pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
         camera_padrao();
         true
     } else {
-        let nome = if chefe {
+        // People go on their rig file (`RIGS_DE_GENTE`). The whole model
+        // (`modelo_do_mob`) has no named parts, and loaded as a rig it drew
+        // only the hand-held weapon.
+        let corpo = if chefe {
             match shared::bosses::chefe(kind).map(|c| c.corpo) {
-                Some(shared::bosses::Corpo::Gente(k)) => modelo_do_mob(k),
-                Some(shared::bosses::Corpo::Pirata) => "pistoleiro",
-                _ => modelo_do_mob(kind),
+                Some(shared::bosses::Corpo::Gente(k)) => k,
+                Some(shared::bosses::Corpo::Pirata) => 2,
+                _ => kind,
             }
-        } else { modelo_do_mob(kind) };
+        } else { kind };
+        let nome = rig_de_gente(corpo).unwrap_or_else(|| modelo_do_mob(corpo));
         vitrine_rig(vox, nome, r, yaw, solido)
     }
 }

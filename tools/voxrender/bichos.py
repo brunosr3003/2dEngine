@@ -60,6 +60,12 @@ BICHOS = [
     # ver `PELAGENS`.
     ("urso_polar",   "bear",        2600),
     ("tigre_branco", "tiger",       2600),
+    # Island variants (`shared::bestiary`): the species' mesh in the island's
+    # coat, swapped by palette index like the white ones.
+    ("snow_owlbear",  "owlbear",    2600),   # Glacier
+    ("storm_owlbear", "owlbear",    2600),   # Plateau
+    ("crag_lynx",     "tiger",      2600),   # Plateau
+    ("cave_bear",     "bear",       2600),   # Plateau
 ]
 
 # ── A PELAGEM: trocar a COR DA PELE, indice a indice ──
@@ -102,6 +108,41 @@ PELAGENS = {
         5: (243, 247, 252),
         7: (250, 252, 255),   # barriga e rosto, branco puro
         9: (240, 244, 250),   # o focinho
+    },
+    # Indices read from zone14's owlbear: 1,2,3 = the feather ramp (dark to
+    # light) · 4,5 = face and beak · 7 = the eye · 9 = claws · 10 = mouth.
+    # Snow Owlbear: a cold grey-white ramp; beak, eye and claws untouched.
+    "snow_owlbear": {
+        1: (112, 124, 144),
+        2: (172, 184, 204),
+        3: (220, 228, 240),
+        4: (194, 184, 168),
+        5: (236, 228, 214),
+    },
+    # Storm Owlbear: slate and indigo, and an eye that glows like the storm.
+    "storm_owlbear": {
+        1: (28, 30, 48),
+        2: (54, 58, 90),
+        3: (92, 98, 138),
+        4: (142, 150, 178),
+        5: (198, 206, 226),
+        7: (120, 220, 255),
+    },
+    # Crag Lynx: the tiger's orange becomes rock dust; the stripe stays dark,
+    # which on grey reads as a lynx and not as a pale tiger.
+    "crag_lynx": {
+        4: (150, 132, 108),
+        5: (184, 166, 140),
+        7: (230, 224, 212),
+        9: (214, 202, 180),
+    },
+    # Cave Bear: near-black fur, a dull muzzle instead of the gold one.
+    "cave_bear": {
+        2: (26, 24, 26),
+        3: (46, 42, 44),
+        4: (72, 66, 66),
+        5: (102, 94, 90),
+        9: (160, 142, 114),
     },
 }
 

@@ -5,6 +5,7 @@
 
 pub mod armazem;
 pub mod auras;
+pub mod bestiary;
 pub mod bosses;
 pub mod chaves;
 pub mod combat;

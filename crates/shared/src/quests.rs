@@ -440,6 +440,9 @@ pub const ALVO_QUALQUER_CHEFE: u16 = 1_000;
 pub fn kill_conta(obj_target: u16, kind: u16) -> bool {
     obj_target == 0
         || alvo_de_mob(kind) == obj_target
+        // An island variant counts for its species: "Defeat 8 archers" on the
+        // Glacier is the Frostcoat Archer (`bestiary`).
+        || alvo_de_mob(crate::bestiary::species_of(kind)) == obj_target
         || (obj_target == ALVO_QUALQUER_CHEFE && crate::bosses::e_chefe(kind))
 }
 

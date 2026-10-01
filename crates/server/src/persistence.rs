@@ -3207,7 +3207,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // usa struct local pra clareza.
     // A tabela mora em `economy::KINDS_INICIAIS`: o simulador de balanceamento
     // le' os mesmos numeros.
-    let kinds = &crate::economy::KINDS_INICIAIS;
+    let kinds = crate::economy::todos_os_kinds();
     for e in kinds {
         sqlx::query(
             "INSERT INTO enemy_kinds (kind, name, hp_max, speed, attack_damage, attack_cooldown, \

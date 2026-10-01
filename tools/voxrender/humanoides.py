@@ -100,6 +100,42 @@ MOBS = {
         paleta(BRANCO=(92, 134, 70), CINZA=(66, 102, 52), PRETO=(84, 62, 40),
                CARVAO=(66, 48, 30), BOTA=(60, 40, 24), FAIXA=(124, 84, 40)),
         lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, arco),
+    # ── Island variants (`shared::bestiary`) ──
+    # Same body, same weapon as their species; the outfit says the island.
+    # Glacier: fur-lined white and ice blue, pale wool hood.
+    "frost_archer": (
+        paleta(BRANCO=(214, 226, 238), CINZA=(150, 176, 204), PRETO=(92, 104, 122),
+               CARVAO=(70, 80, 96), BOTA=(58, 64, 76), FAIXA=(96, 150, 210)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.BRANCO)}, arco),
+    "frost_mage": (
+        paleta(BRANCO=(120, 170, 222), CINZA=(70, 118, 178), PRETO=(44, 76, 128),
+               CARVAO=(34, 58, 100), BOTA=(40, 52, 76), FAIXA=(226, 240, 252),
+               CAB0=(232, 236, 242), CAB1=(212, 218, 228), CAB2=(184, 192, 206), CAB3=(150, 160, 178)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, dict),
+    # Waste: sand linen and sun-bleached leather.
+    "dune_raider": (
+        paleta(BRANCO=(222, 196, 146), CINZA=(186, 150, 98), PRETO=(120, 86, 50),
+               CARVAO=(92, 64, 38), BOTA=(78, 54, 32), FAIXA=(214, 120, 40)),
+        lambda: {**cabeca_sem_tapa(), **bandana(P.BRANCO)}, pistola),
+    "sand_archer": (
+        paleta(BRANCO=(206, 170, 110), CINZA=(168, 128, 76), PRETO=(110, 78, 46),
+               CARVAO=(86, 60, 34), BOTA=(72, 50, 30), FAIXA=(150, 54, 40)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, arco),
+    "sun_mage": (
+        paleta(BRANCO=(222, 150, 50), CINZA=(186, 96, 34), PRETO=(130, 56, 28),
+               CARVAO=(100, 42, 22), BOTA=(84, 44, 26), FAIXA=(250, 214, 92),
+               CAB0=(60, 44, 34), CAB1=(48, 36, 28), CAB2=(38, 28, 22), CAB3=(28, 20, 16)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, dict),
+    # Plateau: slate grey and moss, storm violet for the mage.
+    "cliff_archer": (
+        paleta(BRANCO=(132, 140, 136), CINZA=(96, 106, 100), PRETO=(70, 66, 58),
+               CARVAO=(54, 50, 44), BOTA=(46, 40, 34), FAIXA=(110, 142, 70)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, arco),
+    "storm_mage": (
+        paleta(BRANCO=(70, 74, 120), CINZA=(48, 50, 92), PRETO=(32, 32, 64),
+               CARVAO=(24, 24, 50), BOTA=(30, 30, 46), FAIXA=(150, 220, 255),
+               CAB0=(222, 222, 226), CAB1=(200, 200, 206), CAB2=(170, 170, 178), CAB3=(140, 140, 150)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, dict),
 }
 
 if __name__ == "__main__":

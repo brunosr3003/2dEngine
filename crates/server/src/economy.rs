@@ -1510,6 +1510,7 @@ pub(crate) fn kind_para_nivel_em(comuns: &[u16], nivel: u32, semente: u64) -> u1
 
 /// Uma linha da tabela de mobs semeada no banco (`persistence`). Mora aqui
 /// pra o simulador de balanceamento ler os MESMOS numeros.
+#[derive(Clone)]
 pub(crate) struct KindInicial {
     pub kind: i32,
     pub name: &'static str,
@@ -1826,12 +1827,20 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // `balanceamento::metas_do_inicio` esta' calibrado contra exatamente
         // estes sete.
         Floresta => &[0, 1, 2, 3, 4, 5, 6],
-        // Geleira: a fauna do gelo, e nada de caranguejo.
-        Gelo => &[12, 6, 11, 4, 10, 5],
-        // Ermo: os insetos do deserto e os bandidos.
-        Deserto => &[2, 13, 6, 4, 14],
-        // Planalto: o que aguenta a altitude, e a criatura de pedra.
-        Montanha => &[3, 6, 1, 4, 15],
+        // Since 01/10/2026 no common mob spawns on two islands: the
+        // Morganeers and the beasts the Bosque shares come in island variants
+        // (`shared::bestiary`), each in the slot of its species, so the draw
+        // by level is the one it was.
+        //
+        // Glacier: White Tiger, Frostcoat Archer, White Bear, Frostcoat Mage,
+        // Walrus, Snow Owlbear.
+        Gelo => &[12, 30, 11, 31, 10, 32],
+        // Waste: Dune Raider, Scarab, Sand Archer, Sun Mage, Scarab Queen.
+        Deserto => &[33, 13, 34, 35, 14],
+        // Plateau: Crag Lynx, Cliff Archer, Cave Bear, Storm Mage, Storm
+        // Owlbear, Rockback. The owlbear is new: quest 766 hunts owlbears
+        // here, and none spawned.
+        Montanha => &[36, 37, 38, 39, 40, 15],
     }
 }
 
@@ -1847,7 +1856,7 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
         // Deserto e montanha nao tem praia de verdade; se houver, o bicho
         // comum mais fraco da ilha serve.
         Deserto => &[13],
-        Montanha => &[3],
+        Montanha => &[36],
     }
 }
 
@@ -1860,7 +1869,26 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
 ///
 /// Quem tem um kind na mao usa isto. Quem tem um indice, indexa.
 pub(crate) fn kind_inicial(kind: u16) -> Option<&'static KindInicial> {
-    KINDS_INICIAIS.iter().find(|k| k.kind as u16 == kind)
+    todos_os_kinds().iter().find(|k| k.kind as u16 == kind)
+}
+
+/// Every row seeded into `enemy_kinds`: `KINDS_INICIAIS` plus the island
+/// variants (`shared::bestiary::VARIANTS`). A variant is its species' row
+/// under its own kind and name — same numbers, so the ladder and the balance
+/// sim see the mob they already measure.
+pub(crate) fn todos_os_kinds() -> &'static [KindInicial] {
+    static TODOS: std::sync::OnceLock<Vec<KindInicial>> = std::sync::OnceLock::new();
+    TODOS.get_or_init(|| {
+        let mut v = KINDS_INICIAIS.to_vec();
+        for var in shared::bestiary::VARIANTS {
+            let base = KINDS_INICIAIS
+                .iter()
+                .find(|k| k.kind as u16 == var.species)
+                .unwrap_or_else(|| panic!("{}: species {} has no row", var.name, var.species));
+            v.push(KindInicial { kind: var.kind as i32, name: var.name, ..base.clone() });
+        }
+        v
+    })
 }
 
 impl KindInicial {
@@ -2115,6 +2143,44 @@ mod testes_do_bestiario {
         }
     }
 
+    /// No common mob spawns on two islands — the owner's request on
+    /// 01/10/2026: "each map have their own unique mobs". The Morganeers
+    /// follow the story from island to island as VARIANTS (`shared::bestiary`),
+    /// not as the same mob.
+    #[test]
+    fn no_mob_spawns_on_two_islands() {
+        let ilhas: Vec<(&str, Vec<u16>)> = ARQUIPELAGO
+            .iter()
+            .map(|d| {
+                let mut ks: Vec<u16> = kinds_do_bioma(d.bioma).to_vec();
+                ks.extend_from_slice(kinds_de_praia_do_bioma(d.bioma));
+                (d.nome, ks)
+            })
+            .collect();
+        for (i, (na, a)) in ilhas.iter().enumerate() {
+            for (nb, b) in &ilhas[i + 1..] {
+                for k in a.iter().filter(|k| b.contains(k)) {
+                    panic!("{} spawns on both {na} and {nb}", def(*k).name);
+                }
+            }
+        }
+    }
+
+    /// A variant has its species' numbers: it changes the look, not the fight.
+    #[test]
+    fn variants_fight_like_their_species() {
+        for v in shared::bestiary::VARIANTS {
+            let (a, b) = (def(v.kind), def(v.species));
+            assert_eq!(a.name, v.name);
+            assert_eq!(
+                (a.hp, a.dmg, a.def, a.xp, a.rng.to_bits(), a.kite, a.proj),
+                (b.hp, b.dmg, b.def, b.xp, b.rng.to_bits(), b.kite, b.proj),
+                "{}",
+                v.name
+            );
+        }
+    }
+
     /// Caranguejo NA GELEIRA, nunca mais. Este teste tem nome de piada e
     /// motivo serio: foi o exemplo que o dono deu, e e' o mais barato de
     /// verificar — bicho de praia quente em ilha de gelo.
@@ -2182,6 +2248,11 @@ mod testes_do_porte_dos_novos {
                 let m = kind_inicial(*k).expect("known kind");
                 if bosque.iter().any(|b| b.kind == m.kind) {
                     continue; // ja' calibrado
+                }
+                // An island variant carries its species' numbers
+                // (`variants_fight_like_their_species`): calibrated as well.
+                if shared::bestiary::variant(*k).is_some() {
+                    continue;
                 }
                 let dentro = |v: f32, lo: f32, hi: f32, nome: &str| {
                     assert!(

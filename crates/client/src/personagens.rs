@@ -1414,7 +1414,9 @@ mod tests {
                     || (p.file_name().is_some_and(|n| n == "terreno.rs")
                         && fonte.contains("MMO_PREVIA_COLONIA"))
                     || (p.file_name().is_some_and(|n| n == "previa_porta.rs")
-                        && fonte.contains("MMO_PREVIA_PORTA"));
+                        && fonte.contains("MMO_PREVIA_PORTA"))
+                    || (p.file_name().is_some_and(|n| n == "previa_bestiary.rs")
+                        && fonte.contains("MMO_PREVIA_BESTIARY"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(

@@ -162,7 +162,7 @@ pub fn mob(s: Som, pos: Vec2, ouvinte: Option<Vec2>, envolvido: bool) {
     }
 }
 pub fn ataque_mob(kind: u16) -> Som {
-    match shared::bosses::kind_do_corpo(kind) {
+    match shared::bestiary::species_of(shared::bosses::kind_do_corpo(kind)) {
         2 => Som::MobDisparo,
         6 => Som::MobFlecha,
         4 => Som::MobMagia,

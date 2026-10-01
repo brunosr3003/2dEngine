@@ -656,7 +656,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                         m.preso_ate = impacto;
                         mordidas.push((impacto, idx));
                     } else {
-                        let solta = t + if m.def.kind == 4 {
+                        let solta = t + if shared::bestiary::species_of(m.def.kind as u16) == 4 {
                             shared::MAGIC_FIRE_DELAY
                         } else {
                             shared::BOW_FIRE_DELAY

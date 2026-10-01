@@ -241,8 +241,8 @@ impl AutoCombate {
             .map(|(_, e)| e)
             .filter(|e| e.render_pos.distance(eu) <= BUSCA)
             .min_by(|a, b| {
-                missao.is_some_and(|k| a.meta.kind != k)
-                    .cmp(&missao.is_some_and(|k| b.meta.kind != k)).then_with(||
+                let fora = |kind: u16| missao.is_some_and(|k| shared::bestiary::species_of(kind) != k);
+                fora(a.meta.kind).cmp(&fora(b.meta.kind)).then_with(||
                     a.render_pos.distance_squared(eu).total_cmp(&b.render_pos.distance_squared(eu)))
             })?.render_pos;
         self.caca_em = agora;
@@ -334,7 +334,7 @@ impl AutoCombate {
                     .agressores
                     .get(id)
                     .is_some_and(|t| agora - t < AGRESSOR_S),
-                da_missao: missao.is_some_and(|k| e.meta.kind == k),
+                da_missao: missao.is_some_and(|k| shared::bestiary::species_of(e.meta.kind) == k),
             })
             .collect();
         let escolhido = escolhe_alvo(&cands, &self.ordem, self.pvp);

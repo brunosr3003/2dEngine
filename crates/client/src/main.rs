@@ -43,6 +43,7 @@ mod porao_ui;
 // profundidade, que no iOS some.
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_porta;
+mod previa_bestiary;
 mod porao_planta;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_hud;
@@ -543,11 +544,7 @@ async fn main() {
     // desenho cai no modelo inteiro de antes.
     vox.load_rig(render3d::RIG_CORPO, render3d::VOXEL, rig::pivo)
         .await;
-    for nome in [
-        "humanoides/pistoleiro",
-        "humanoides/mago",
-        "humanoides/arqueiro",
-    ] {
+    for (_, nome) in render3d::RIGS_DE_GENTE {
         vox.load_rig(nome, render3d::VOXEL, rig::pivo).await;
     }
     // Um corpo por oficio (tools/voxrender/npcs.py). Sem o arquivo, o NPC cai
@@ -623,6 +620,11 @@ async fn main() {
     }
     if std::env::var("MMO_PREVIA_SKILLS").is_ok() {
         previa_skills::abrir(&vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_BESTIARY").is_ok() {
+        previa_bestiary::previa(&mut vox, &render3d::material_solido()).await;
         return;
     }
     #[cfg(debug_assertions)]

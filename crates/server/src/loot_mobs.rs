@@ -80,6 +80,59 @@ pub const BASE_ILHAS: &[(i32, u16, i32, i32, f32)] = &[
     (15, GLITTERING_POWDER, 1, 1, 0.04),
 ];
 
+/// The ISLAND VARIANTS (kinds 30-40, `shared::bestiary`). Each keeps its
+/// species' materials — the archer still drops fragments, the mage still
+/// drops stones — with the copper and the potions of its island's tier, next
+/// to the island creatures above. Until now the Morganeers on the Glacier,
+/// the Waste and the Plateau dropped Bosque loot.
+pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
+    // Glacier
+    (30, COPPER, 24, 58, 1.0), // Frostcoat Archer
+    (30, ILLUMINATING_FRAGMENT, 1, 3, 0.22),
+    (30, STEEL, 2, 4, 0.22),
+    (30, STAMINA_POTION, 1, 1, 0.10),
+    (31, COPPER, 28, 64, 1.0), // Frostcoat Mage
+    (31, DARK_HEART_STONE, 1, 3, 0.22),
+    (31, ANIMA_STONE, 1, 3, 0.22),
+    (31, GREATER_MANA, 1, 1, 0.10),
+    (32, COPPER, 40, 90, 1.0), // Snow Owlbear
+    (32, PLATINUM, 2, 4, 0.26),
+    (32, EXORCISM_BAUBLE, 1, 3, 0.18),
+    (32, GREATER_HEAL, 1, 1, 0.12),
+    // Waste
+    (33, COPPER, 26, 60, 1.0), // Dune Raider
+    (33, STEEL, 2, 4, 0.26),
+    (33, MOON_SHADOW_STONE, 1, 3, 0.16),
+    (33, STAMINA_POTION, 1, 1, 0.10),
+    (34, COPPER, 26, 60, 1.0), // Sand Archer
+    (34, ILLUMINATING_FRAGMENT, 1, 3, 0.24),
+    (34, STEEL, 2, 4, 0.22),
+    (34, STAMINA_POTION, 1, 1, 0.10),
+    (35, COPPER, 32, 72, 1.0), // Sun Mage
+    (35, DARK_HEART_STONE, 1, 3, 0.24),
+    (35, ANIMA_STONE, 1, 3, 0.24),
+    (35, GREATER_MANA, 1, 1, 0.12),
+    // Plateau
+    (36, COPPER, 60, 140, 1.0), // Crag Lynx
+    (36, QUINTESSENCE, 2, 4, 0.26),
+    (36, GREATER_MANA, 1, 1, 0.10),
+    (37, COPPER, 60, 140, 1.0), // Cliff Archer
+    (37, ILLUMINATING_FRAGMENT, 2, 4, 0.26),
+    (37, DARKSTEEL, 2, 5, 0.24),
+    (37, STAMINA_POTION, 1, 1, 0.10),
+    (38, COPPER, 75, 170, 1.0), // Cave Bear
+    (38, DARKSTEEL, 2, 6, 0.30),
+    (38, GREATER_HEAL, 1, 1, 0.12),
+    (39, COPPER, 70, 160, 1.0), // Storm Mage
+    (39, DARK_HEART_STONE, 2, 4, 0.26),
+    (39, ANIMA_STONE, 2, 4, 0.26),
+    (39, GREATER_MANA, 1, 1, 0.12),
+    (40, COPPER, 85, 190, 1.0), // Storm Owlbear
+    (40, PLATINUM, 2, 5, 0.28),
+    (40, EXORCISM_BAUBLE, 1, 3, 0.20),
+    (40, GREATER_HEAL, 1, 1, 0.12),
+];
+
 /// Migrates only the mobs' economy, once, inside a transaction.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -142,6 +195,25 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         tracing::info!(
             "Per-island bestiary seeded; {kinds} sea kinds and {orfaos} loot rows removed"
         );
+    }
+    // The island variants (`BASE_VARIANTES`): once, after their kinds are
+    // seeded. Deletes nothing — the kinds are new.
+    let variantes = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('variantes_por_ilha_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if variantes {
+        for &(kind, item, min, max, chance) in BASE_VARIANTES {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Island variant loot seeded");
     }
     // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
     // they come off every mob and every stone, in every color. A new database
@@ -268,6 +340,7 @@ mod testes {
             BASE.iter()
                 .chain(BASE_PRAIA)
                 .chain(BASE_ILHAS)
+                .chain(BASE_VARIANTES)
                 .any(|(kk, ..)| *kk as u16 == k)
         };
         for d in ARQUIPELAGO.iter() {
@@ -289,7 +362,7 @@ mod testes {
     /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES] {
             let kinds: std::collections::BTreeSet<i32> =
                 tabela.iter().map(|(k, ..)| *k).collect();
             for k in kinds {
@@ -307,7 +380,7 @@ mod testes {
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES] {
             for (k, item, ..) in tabela {
                 assert!(
                     !chaves.contains(item),

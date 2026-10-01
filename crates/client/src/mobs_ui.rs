@@ -225,3 +225,4 @@ mod testes {
         assert_eq!(ui.registros[0].vida, 600);
     }
 }
+

@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Each creature that walks in pieces: the file
 /// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
-pub const BICHOS: [(&str, f32); 17] = [
+pub const BICHOS: [(&str, f32); 21] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -65,6 +65,12 @@ pub const BICHOS: [(&str, f32); 17] = [
     // the same creature in another coat, and not another species.
     ("bichos/urso_polar", 1.3),
     ("bichos/tigre_branco", 0.95),
+    // Island variants (`shared::bestiary`): the species' mesh in the island's
+    // coat (`bichos.py: PELAGENS`), at the species' height.
+    ("bichos/snow_owlbear", 1.5),
+    ("bichos/storm_owlbear", 1.5),
+    ("bichos/crag_lynx", 0.95),
+    ("bichos/cave_bear", 1.3),
 ];
 
 /// This mob's creature, if it is a creature. People (gunner, mage, archer)
@@ -148,6 +154,11 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         13 => "bichos/escaravelho",
         14 => "bichos/escaravelho_rainha",
         15 => "bichos/rochoso",
+        // Island variants (`shared::bestiary`).
+        32 => "bichos/snow_owlbear",
+        36 => "bichos/crag_lynx",
+        38 => "bichos/cave_bear",
+        40 => "bichos/storm_owlbear",
         _ => return None,
     })
 }
@@ -1072,7 +1083,7 @@ mod tests {
     /// com o pelo, e tigre branco sem listra preta e' um gato.
     #[test]
     fn os_brancos_tem_modelo_proprio() {
-        for (branco, normal) in [(11u16, 1u16), (12, 3)] {
+        for (branco, normal) in [(11u16, 1u16), (12, 3), (32, 5), (36, 3), (38, 1), (40, 5)] {
             let b = modelo_de_kind(branco).unwrap();
             let n = modelo_de_kind(normal).unwrap();
             assert_ne!(b, n, "o kind {branco} ainda usa a malha do {normal}");
