@@ -499,8 +499,16 @@ impl GameWorld {
             return false;
         }
         let volta = self.zona.clone();
+        // Where they stand right now: the door of the Porão they opened, or
+        // wherever they asked for the Arena. That is where they come back.
+        let aqui = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.entity)
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
         if let Some(s) = self.sessions.get_mut(&sid) {
             s.dungeon.arena_volta = volta;
+            s.dungeon.arena_volta_pos = aqui.map(|p| [p.x, p.y]);
         }
         self.save_pending = true;
         let chegada = self.chegada_da_arena();
@@ -532,11 +540,27 @@ impl GameWorld {
         let Some(def) = shared::terreno::def_da_zona(&volta) else {
             return;
         };
-        let chegada = shared::terreno::Gerador::da_ilha(def)
-            .cidade()
-            .map(|c| c.centro())
+        // Back to the spot they left from (the Porão door), and only without
+        // one — an old save — to the city.
+        let chegada = s
+            .dungeon
+            .arena_volta_pos
+            .map(|[x, z]| Vec2::new(x, z))
+            .or_else(|| shared::terreno::Gerador::da_ilha(def).cidade().map(|c| c.centro()))
             .unwrap_or(Vec2::ZERO);
-        self.mandar_para_zona(sid, def.zona, chegada, Some(aviso), Some(def.nome));
+        if self.mandar_para_zona(sid, def.zona, chegada, Some(aviso), Some(def.nome)) {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.dungeon.arena_volta_pos = None;
+            }
+        }
+    }
+
+    /// This character is already on the way to another zone this tick
+    /// (`mandar_para_zona` ran). A second trip would overwrite the first.
+    fn ja_de_saida(&self, sid: SessionId) -> bool {
+        self.sessions
+            .get(&sid)
+            .is_some_and(|s| self.zona_de_saida.contains_key(&s.name))
     }
 
     /// Onde se chega na Arena: o chão seco mais perto do meio.
@@ -696,7 +720,10 @@ impl GameWorld {
                 // Um toque encerra a instância e retorna à ilha de origem.
                 // dg_sair preserva a entrega do saque antes da troca de zona.
                 self.dg_sair(sid);
-                if self.na_arena() {
+                // `dg_sair` may already have sent them out of the Porão door.
+                // Sending them again here put them in the city instead: the
+                // second trip overwrote the first.
+                if self.na_arena() && !self.ja_de_saida(sid) {
                     self.sair_da_arena(sid, "You leave the Arena.");
                 }
                 return;
@@ -2442,6 +2469,58 @@ mod testes {
             s.inventory.iter().any(|i| i.item_id == chave && i.qty == 1),
             "the key was spent on a trip that didn't happen"
         );
+    }
+
+    /// OUT WHERE YOU CAME IN. The owner: finishing a dungeon sent the player
+    /// to the city of the map, and it "should return to the dungeon portal
+    /// where he enters". The spot is remembered on the way in, in the saved
+    /// dungeon data (it has to survive the zone handoff), and leaving the
+    /// Arena lands there — not in the city.
+    #[test]
+    fn sair_da_arena_volta_pro_ponto_de_onde_entrou() {
+        crate::economy::init_vazia_para_testes();
+        let bosque = shared::terreno::ARQUIPELAGO[0].zona;
+        let porta = Vec2::new(123.0, -45.0);
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = bosque.to_string();
+        w.diretorio = Some(crate::canais::Diretorio::para_teste(&[shared::arena::ZONA, bosque]));
+        let sid = SessionId(([127, 0, 0, 1], 19885).into());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((
+            NetId(EntityId(952)),
+            Position(porta),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+        ));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.name = "Volta".into();
+        }
+        assert!(w.entrar_na_arena_com(sid, "down"));
+        let d = &w.sessions[&sid].dungeon;
+        assert_eq!(d.arena_volta, bosque);
+        assert_eq!(d.arena_volta_pos, Some([porta.x, porta.y]), "the door spot was not remembered");
+
+        // The same character, now on the Arena process (what the handoff
+        // carries is the saved dungeon data).
+        w.zona = shared::arena::ZONA.to_string();
+        w.zona_de_saida.clear();
+        w.ecs.get::<&mut Position>(e).unwrap().0 = shared::arena::CHEGADA;
+        w.sair_da_arena(sid, "up");
+        let onde = w.ecs.get::<&Position>(e).unwrap().0;
+        assert_eq!(onde, porta, "came out somewhere else than where they went in");
+        let cidade = shared::terreno::Gerador::da_ilha(shared::terreno::def_da_zona(bosque).unwrap())
+            .cidade()
+            .map(|c| c.centro());
+        assert_ne!(Some(onde), cidade, "landed in the city");
+        assert!(w.sessions[&sid].dungeon.arena_volta_pos.is_none(), "the spot must be used once");
+        // Already on the way out: a second trip is refused, so it can't
+        // overwrite the first (the Leave button's double send).
+        assert!(w.ja_de_saida(sid));
     }
 
     /// DOWN THE DOOR, INTO THE PLAN: a character landing on the Arena with a

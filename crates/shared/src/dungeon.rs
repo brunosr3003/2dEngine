@@ -542,6 +542,13 @@ pub struct DadosDungeon {
     /// nova, porque coluna nova e' quatro edicoes de UPSERT — e uma que se
     /// esquece derruba o save inteiro sem avisar. Vazio = volta pro Bosque.
     pub arena_volta: String,
+    /// WHERE on `arena_volta` the character stood when they left for the
+    /// Arena: in front of the Porão door they used, or wherever they opened
+    /// the Dungeons panel. Leaving the Arena lands here, not in the city —
+    /// the owner: finishing a dungeon "should return to the dungeon portal
+    /// where he enters". In this JSON for the same handoff reason as
+    /// `arena_volta`. `None` (older saves) = the city, as before.
+    pub arena_volta_pos: Option<[f32; 2]>,
     /// The Porão whose key was just used at its door: the run starts when the
     /// character lands on the Arena (`planta`). Here for the same reason as
     /// `arena_volta` — the session that used the key dies in the handoff.
