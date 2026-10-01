@@ -1,3 +1,9 @@
+01/10/2026 — O jogo reconecta sozinho
+
+Se a internet cair por um instante, o celular suspender o jogo ou o servidor reiniciar, o jogo não te joga mais na tela de erro. Aparece "Conexão perdida — reconectando…" e ele tenta voltar sozinho por até 5 minutos; quando consegue, você volta direto para o mesmo personagem, no mundo, sem escolher servidor nem fazer login de novo. Se preferir, toque em Desistir para voltar à lista de servidores.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
 01/10/2026 — Dreno Vital, INT nas recargas e a pistola mais resistente
 
 Mago: a Bênção deu lugar ao Dreno Vital, já no nível 1 — um disparo mágico que causa dano no alvo e te cura com 30% do dano causado (35% no tier VIII, 40% no tier X). A Aura continua sendo a cura em área e o Julgamento o dano em área. Agora o mago tem com o que atacar desde o começo.
