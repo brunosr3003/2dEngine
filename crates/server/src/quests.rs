@@ -426,7 +426,17 @@ pub fn avancar_kill_com_chefe(
                 && (def.obj_target == 0
                     || (def.obj_target == quests::ALVO_QUALQUER_CHEFE && e_chefe)
                     || (def.obj_target != quests::ALVO_QUALQUER_CHEFE
-                        && mob_kind.is_some_and(|k| quests::alvo_de_mob(k) == def.obj_target)))
+                        && mob_kind.is_some_and(|k| {
+                            // An island VARIANT counts for its species: the
+                            // Glacier's Frostcoat Archer is an archer for
+                            // "Defeat 8 archers" (`bestiary::species_of`).
+                            // Comparing the raw kind made every variant kill
+                            // count for nothing on the Glacier, Waste and
+                            // Plateau since the variants (01/10/2026).
+                            quests::alvo_de_mob(k) == def.obj_target
+                                || quests::alvo_de_mob(shared::bestiary::species_of(k))
+                                    == def.obj_target
+                        })))
         } else if def.obj_kind == quests::objective_kind::PVP_KILL {
             pvp_victim_faction
                 .map(|vf| vf != def.faction)
@@ -813,6 +823,29 @@ mod testes {
         assert!(!pode_aceitar(def(501), 1, 0, &pronta, 0));
         let entregue = [cq(501, TURNED_IN, 1)];
         assert!(!pode_aceitar(def(501), 1, 0, &entregue, 0), "nao repetivel");
+    }
+
+    /// A variant kill counts for its species' quest, and not for another's.
+    #[test]
+    fn variante_conta_pra_especie() {
+        let arqueiro = quests::mob_kind::ARQUEIRO;
+        let gelo = shared::bestiary::kinds_of_species(arqueiro)
+            .into_iter()
+            .find(|k| *k != arqueiro)
+            .expect("the archer has an island variant");
+        let alvo = quests::alvo_de_mob(arqueiro);
+        let q = quests::QUESTS
+            .iter()
+            .chain(shared::historia::PASSOS.iter())
+            .find(|d| d.obj_kind == quests::objective_kind::KILL && d.obj_target == alvo)
+            .expect("an archer kill quest");
+        let mut a = vec![cq(q.id, ACTIVE, 0)];
+        assert_eq!(avancar_kill(&mut a, Some(gelo), None).len(), 1, "the variant did not count");
+        let mago = shared::bestiary::kinds_of_species(quests::mob_kind::MAGO)
+            .into_iter()
+            .find(|k| *k != quests::mob_kind::MAGO)
+            .unwrap();
+        assert!(avancar_kill(&mut a, Some(mago), None).is_empty(), "a mage variant counted for archers");
     }
 
     #[test]
@@ -1480,5 +1513,39 @@ mod testes_do_passo_fantasma {
                 "o passo atual deixou de ser o {id}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_alvo_existe {
+    use shared::quests::{self, objective_kind, ALVO_QUALQUER_CHEFE};
+
+    /// EVERY KILL QUEST'S TARGET SPAWNS ON ITS ISLAND — as itself or as one
+    /// of its island variants (`bestiary`). The island variants (01/10/2026)
+    /// changed what each island spawns, and the owner suspected quests were
+    /// "sending me to kill mobs that don't exist anymore". This walks the
+    /// real catalogues (side quests and the written story), not a list here.
+    #[test]
+    fn todo_alvo_de_caca_nasce_na_ilha_da_missao() {
+        let todas = quests::QUESTS.iter().chain(shared::historia::PASSOS.iter());
+        let mut faltam = Vec::new();
+        for d in todas {
+            if d.obj_kind != objective_kind::KILL || d.obj_target == 0 || d.obj_target == ALVO_QUALQUER_CHEFE {
+                continue;
+            }
+            let Some(zona) = quests::zona_da_missao(d.id) else { continue };
+            let Some(def) = shared::terreno::def_da_zona(zona) else { continue };
+            let especie = d.obj_target - 1;
+            let nasce = crate::economy::kinds_do_bioma(def.bioma)
+                .iter()
+                .chain(crate::economy::kinds_de_praia_do_bioma(def.bioma))
+                .any(|k| shared::bestiary::species_of(*k) == especie)
+                // A field boss of that island (511-513 hunt the Bosque's).
+                || shared::bosses::chefe(especie).is_some_and(|c| c.zona == zona);
+            if !nasce {
+                faltam.push(format!("{} \"{}\" on {zona}: species {especie} never spawns there", d.id, d.title));
+            }
+        }
+        assert!(faltam.is_empty(), "{} kill quest(s) without their mob:\n{}", faltam.len(), faltam.join("\n"));
     }
 }

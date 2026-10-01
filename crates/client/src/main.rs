@@ -5024,7 +5024,14 @@ impl Jogo {
                     && q.obj_kind == shared::quests::objective_kind::KILL
                     && self.auto_missao.quest.is_none_or(|id| q.id == id)
             })
-            .map(|q| q.obj_target);
+            // `obj_target` is `alvo_de_mob(kind)` = kind + 1; 0 is "any mob"
+            // and ALVO_QUALQUER_CHEFE "any boss" — no species to prefer. It
+            // was passed raw since 24/09/2026: a wolf quest made the AUTO
+            // chase bears, and an "any mob" quest hunted only wolves.
+            .and_then(|q| {
+                (q.obj_target != 0 && q.obj_target != shared::quests::ALVO_QUALQUER_CHEFE)
+                    .then(|| q.obj_target - 1)
+            });
         let novo = self
             .auto_combate
             .escolher(&self.world, self.alvo, agora, missao_kind);
