@@ -10,6 +10,8 @@ Eles lutam como os de sempre e contam nas mesmas missões: "Arqueiros da nevasca
 
 No bestiário, os inimigos de gente apareciam só como uma espada e um escudo flutuando; agora aparece o corpo inteiro.
 
+Os servidores já estão com os monstros novos: quem não atualizar vê os novos como lobos.
+
 Não é atualização obrigatória — o protocolo continua o 167.
 
 01/10/2026 — Névoa no horizonte e distância Extrema
