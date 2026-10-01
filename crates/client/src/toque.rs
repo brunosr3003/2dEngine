@@ -92,10 +92,51 @@ impl ToqueLongo {
     }
 }
 
+/// Does this press still belong to a modal popup?
+///
+/// `antes` is last frame's answer. A press that STARTS while the popup is up
+/// is the popup's until the button comes back up — release frame included.
+/// The popup's X closes it on press, and anything that clicks on release
+/// (the big map) would otherwise get the second half of that click.
+pub fn press_do_modal(antes: bool, modal: bool, apertou: bool, segura: bool, soltou: bool) -> bool {
+    if modal && apertou {
+        true
+    } else if !segura && !soltou {
+        false
+    } else {
+        antes
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
     use macroquad::prelude::vec2;
+
+    /// The reward popup's X: press closes the popup, the release that comes
+    /// frames later must not reach the map behind it.
+    #[test]
+    fn o_soltar_do_x_do_popup_nao_vaza_pro_mapa() {
+        // Press on the X, popup still up this frame.
+        let mut d = press_do_modal(false, true, true, true, false);
+        assert!(d);
+        // Popup closed on that press; button still held.
+        d = press_do_modal(d, false, false, true, false);
+        assert!(d);
+        // Release frame: still the popup's — this is where the map clicked.
+        d = press_do_modal(d, false, false, false, true);
+        assert!(d);
+        // Next frame: free again.
+        d = press_do_modal(d, false, false, false, false);
+        assert!(!d);
+        // A trackpad tap (press and release in one frame) on the popup.
+        d = press_do_modal(false, true, true, false, true);
+        assert!(d);
+        assert!(!press_do_modal(d, false, false, false, false));
+        // A press with no popup is never swallowed.
+        assert!(!press_do_modal(false, false, true, true, false));
+        assert!(!press_do_modal(false, false, false, false, true));
+    }
 
     #[test]
     fn segurar_parado_abre_uma_vez_e_nao_vira_clique() {

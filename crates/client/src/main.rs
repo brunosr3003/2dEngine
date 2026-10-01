@@ -409,6 +409,10 @@ struct Jogo {
     /// Um painel tratado ANTES dos dedos (o mapa) consumiu o toque deste
     /// quadro: o dedo e' da interface ate' soltar.
     toque_consumido: bool,
+    /// The left button went down while a modal popup (rewards, level up,
+    /// confirm) owned the input: the press belongs to the popup until the
+    /// button is released, even if the popup closed on that same press.
+    clique_de_modal: bool,
     /// Ids dos dedos na tela no quadro anterior (ver `ler_toques`).
     dedos_anteriores: Vec<u64>,
     /// `get_time` do ultimo quadro com dedo na tela.
@@ -899,6 +903,7 @@ async fn main() {
         toque_acao: gesto_camera::Acao::Nada,
         toque_ativo: false,
         toque_consumido: false,
+        clique_de_modal: false,
         dedos_anteriores: Vec::new(),
         ultimo_toque: f64::NEG_INFINITY,
         camera_suave: camera_suave::CameraSuave::default(),
@@ -1293,9 +1298,24 @@ impl Jogo {
             let eco = self.economia.bloqueia_entrada(agora);
             let eco_ativa = self.economia.ativa;
             let ui_pega = self.ui_pega_mouse();
+            // A modal popup owns the click, and so does the rest of that
+            // press. The rewards X closes the popup on PRESS, but the big map
+            // clicks on RELEASE: with the popup already gone, the release fell
+            // through to the map behind it and the player travelled there.
+            let modal = self.recompensas.captura_entrada()
+                || self.nivel_ui.captura_entrada()
+                || self.confirmar.is_some();
+            self.clique_de_modal = toque::press_do_modal(
+                self.clique_de_modal,
+                modal,
+                is_mouse_button_pressed(MouseButton::Left),
+                is_mouse_button_down(MouseButton::Left),
+                is_mouse_button_released(MouseButton::Left),
+            );
+            let mapa_livre = !modal && !self.clique_de_modal;
             // Mapa e minimapa so' recebem clique quando estao a' mostra.
             let mapa_aberto = self.mapa.aberto;
-            if !eco && (self.mapa.aberto || !self.painel_grande()) {
+            if !eco && mapa_livre && (self.mapa.aberto || !self.painel_grande()) {
                 match self.mapa.entrada(self.world.self_pos()) {
                     Some(mapa::Entrada::Viajar(destino)) => {
                         self.iniciar_viagem(destino);
