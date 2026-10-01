@@ -717,7 +717,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Energy: {} · point −{}", "Energia: {} · ponto −{}"),
     ("+1 magic damage · +2 mana · -0.1% skill cooldown", "+1 dano mágico · +2 mana · -0,1% de recarga das habilidades"),
     ("XP to the next level: {}", "XP para o próximo nível: {}"),
-    ("+1 dexterity · crit/attack", "+1 destreza · crítico/ataque"),
+    ("+1 dexterity · crit/attack · pistol: +1 health", "+1 destreza · crítico/ataque · pistola: +1 de vida"),
     ("Tap again to confirm", "Toque novamente para confirmar"),
     ("Bonuses active with the equipped weapon", "Bônus ativos com a arma equipada"),
     ("Waiting for attributes from the server…", "Aguardando atributos do servidor…"),

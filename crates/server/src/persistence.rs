@@ -3302,6 +3302,20 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         }
         tracing::info!("escada_armaduras_v1: armour defence narrowed");
     }
+    // armadura_leve_destreza_v1: the light armour's DEX went from 2-6 to 6-12
+    // (`items::item_template`). The seed above skips rows with an icon, and
+    // this one has one. Only a row still on the old range changes: an
+    // admin's tweak stays. Owned pieces pick it up at login (`fixar_*`).
+    let leve_des = sqlx::query("INSERT INTO economy_migrations(name) VALUES ('armadura_leve_destreza_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected() > 0;
+    if leve_des {
+        let mudou = sqlx::query("UPDATE items SET dex_min = 6, dex_max = 12 WHERE id = $1 AND dex_min = 2 AND dex_max = 6")
+            .bind(shared::item_id::ARMADURA_LEVE as i32)
+            .execute(pool)
+            .await?
+            .rows_affected();
+        tracing::info!("armadura_leve_destreza_v1: light armour DEX 6-12 ({mudou} row)");
+    }
     // M26: os oito tipos antigos (Grunt, Tank, Ranger, Ninja, Berserker...)
     // saem do jogo. O `INSERT ... DO NOTHING` acima nao renomeia linha que ja'
     // existe, entao quem ja' tinha banco ficaria com os nomes velhos. So' mexe

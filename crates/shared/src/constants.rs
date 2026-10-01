@@ -1554,7 +1554,7 @@ pub const fn item_bonus(item_id: u16) -> EquipBonus {
         item_id::BAINHA => b(0, 0, 3, 5, 0, 0),
         item_id::COLDRE => b(0, 0, 3, 5, 0, 0),
         item_id::MANTO_DO_MAGO => b(0, 45, 0, 0, 5, 0),
-        item_id::ARMADURA_LEVE => b(25, 0, 0, 4, 0, 2),
+        item_id::ARMADURA_LEVE => b(25, 0, 0, 9, 0, 2),
         item_id::ARMADURA_MEDIA => b(45, 0, 0, 0, 0, 6),
         item_id::ARMADURA_PESADA => b(90, 0, 0, 0, 0, 12),
         item_id::BRINCO => b(0, 0, 3, 4, 0, 0),

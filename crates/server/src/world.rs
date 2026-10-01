@@ -20152,6 +20152,20 @@ pub(crate) fn emprestados_pelo_equipamento(
     e
 }
 
+/// The pistol's share of DEX as attack: `dex * NUM / DEN`.
+///
+/// Still 1/4. On 01/10/2026 the owner asked for "both, smaller doses" — more
+/// health and more damage from DEX — and 2/7 was tried: the pistol killed
+/// four bosses in 55-58 s, under the 60 s floor of `metas_dos_chefes`. It is
+/// already the fastest killer, so the damage dose is the light armour's
+/// bigger DEX roll (`items::item_template`) going through this share.
+const DES_DA_PISTOLA_NUM: i32 = 1;
+const DES_DA_PISTOLA_DEN: i32 = 4;
+/// One max-HP point for the pistol every this many allocated DEX points.
+/// Health does not shorten the fight, and the stand-still pistol still loses
+/// every boss in 14-18 s, so this one could be the full point.
+const VIDA_POR_DES_DA_PISTOLA_A_CADA: i32 = 1;
+
 pub(crate) fn effective_stats(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
@@ -20323,8 +20337,18 @@ pub(crate) fn effective_stats(
             //
             // Medido com `nivel/1` tambem — ai as lutas caem pra 57 s, abaixo
             // do piso de 60, e o guarda reprova. Metade e' o ponto.
-            s.attack_damage += s.dex / 4 + (char_lvl as i32 / 3).min(12);
+            s.attack_damage += s.dex * DES_DA_PISTOLA_NUM / DES_DA_PISTOLA_DEN
+                + (char_lvl as i32 / 3).min(12);
             s.attack_speed_mult += 0.25;
+            // DEX KEEPS THE GUNNER ALIVE TOO (01/10/2026). The owner: a DEX
+            // pistol "just can't solo a dungeon" unless it goes STR, and the
+            // katana always can. The boss simulation showed why: the DEX
+            // pistol already out-damages the katana but ends the fight at
+            // ~50% HP against its ~95% — the gap is health, not damage. STR
+            // gives +2 HP a point to everyone; for the pistol, every
+            // allocated DEX point now gives a
+            // little, plus the slightly bigger attack share above.
+            s.hp_max += allocated[shared::stat_idx::DES] as i32 / VIDA_POR_DES_DA_PISTOLA_A_CADA;
         }
         // katana: fast cut. Dexterity from the pieces still pays; allocated
         // STRENGTH does NOT pay twice. It already yields +1 attack per point

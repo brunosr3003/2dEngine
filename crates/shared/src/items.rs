@@ -181,10 +181,18 @@ pub fn item_template(item_id: u16) -> ItemTemplate {
         // a 1,85x da media punha o escudeiro no piso contra todo mob comum, e
         // a leve a 0,4x deixava o atirador tomando o dobro do esperado. O
         // banco espelha isto pela migracao `escada_armaduras_v1`. ===
+        // LIGHT: DEX 6-12 since 01/10/2026 (it was 2-6). The owner: "today
+        // only heavy armor is a nice choice". DEX on the PIECE feeds the
+        // pistol's and the katana's attack and leaves the ring alone; lent
+        // DEX POINTS were tried first and moved the mage's attack speed,
+        // which killed it in a level-45 fort in the simulator. 8-14 put the
+        // pistol under the 60 s boss floor; 6-12 is the edge
+        // (`balanceamento::metas_dos_chefes`). Mirrored in the database by
+        // `armadura_leve_destreza_v1`.
         ARMADURA_LEVE => ItemTemplate {
             hp_max: r(15, 35),
             defense: r(3, 6),
-            dex: r(2, 6),
+            dex: r(6, 12),
             ..Default::default()
         },
         ARMADURA_MEDIA => ItemTemplate {
