@@ -1,3 +1,9 @@
+01/10/2026 — Fechar a recompensa não te leva mais pro mapa
+
+Com o mapa aberto, fechar a janela de recompensa no X fazia o personagem viajar até o ponto do mapa que ficava atrás do X. O clique que fecha a recompensa (e também a janela de nível e as de confirmação) agora fica só com ela: o mapa e o minimapa não recebem nada enquanto ela está na tela.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
 01/10/2026 — Cada ilha com os seus monstros
 
 Nenhum monstro comum aparece mais em duas ilhas. Os Morganeers seguem a história de ilha em ilha, mas agora com a roupa de cada lugar, e os bichos ganharam versões próprias:
