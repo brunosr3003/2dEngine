@@ -140,7 +140,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// Colossus kinds 47-49).
 /// 179 (02/10/2026): an exclusive themed cavern per Magic Island tier
 /// (dungeons 30-35, boss kinds 50-55).
-pub const PROTOCOL_VERSION: u16 = 179;
+/// 180 (02/10/2026): Skyreach's cloud rim moves from the paths to the
+/// islands' edges (terrain).
+pub const PROTOCOL_VERSION: u16 = 180;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

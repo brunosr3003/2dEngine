@@ -1,3 +1,9 @@
+02/10/2026 — Skyreach: a borda das ilhas agora aparece
+
+Os caminhos de nuvem voltaram a ser como antes, sem a borda. A parede invisível era na beira das ILHAS: agora cada ilha tem uma mureta de pedra branca na borda, que se abre onde um caminho de nuvem chega.
+
+Atualização obrigatória — o protocolo passa para o 180. Por enquanto só computador e Android.
+
 02/10/2026 — Uma dungeon exclusiva em cada degrau da Ilha Mágica
 
 Cada degrau da Ilha Mágica ganhou a sua própria caverna, com tema e chefe próprios, e ela só se entra pela ilha daquele degrau:

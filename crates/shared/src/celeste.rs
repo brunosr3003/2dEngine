@@ -23,10 +23,10 @@ use glam::Vec2;
 
 pub const ZONA: &str = "ilha_celeste";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 2;
-/// The cloud bank along each edge of a path: how wide (units) and how high
+pub const REVISAO: u32 = 3;
+/// The marble kerb round each island's edge: how wide (units) and how high
 /// (blocks) — high enough to read as a wall, not a step.
-const BORDA_DA_PONTE: f32 = 1.2;
+const BORDA_DA_ILHA: f32 = 1.2;
 const BORDA_BLOCOS: i32 = 3;
 /// Planting seed: the relief does not depend on it, the vegetation does.
 pub const SEMENTE: i32 = 0x5C1E_A7E0;
@@ -199,6 +199,21 @@ pub fn tem_recurso(q: Vec2) -> bool {
     plato_em(q).is_some_and(|(_, p)| p.nivel.0 > 0 && p.raio <= 36.0)
 }
 
+/// Is `q` on the kerb round an island's edge? Past the edge is the void,
+/// which blocks like a wall but draws as open sky — the owner walked into "an
+/// invisible wall" at the islands' borders. The kerb is the same barrier,
+/// seen; it opens where a cloud path lands.
+pub fn na_borda(q: Vec2) -> bool {
+    let Some((_, p)) = plato_em(q) else {
+        return false;
+    };
+    let d = q - p.centro;
+    let falta = raio_na_direcao(p, d.y.atan2(d.x)) - d.length();
+    falta < BORDA_DA_ILHA
+        && d.length_squared() > (p.raio * 0.78).powi(2)
+        && !ponte_em(q).is_some_and(|(dist, _)| dist <= meia_largura(q) + 1.5)
+}
+
 /// Is `q` on a cloud path (and not on an island)? Vegetation stays off, and
 /// the ground there is cloud.
 pub fn na_ponte(q: Vec2) -> bool {
@@ -299,7 +314,8 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
         let d = q - p.centro;
         let t = (d.length() / raio_na_direcao(p, d.y.atan2(d.x))).clamp(0.0, 1.0);
         let h = p.altura + relevo(q, p, t);
-        return (h / BLOCO).round() as i32 - 1 + pilar(q, p).max(colunata(q, p, i));
+        let borda = if na_borda(q) { BORDA_BLOCOS } else { 0 };
+        return (h / BLOCO).round() as i32 - 1 + pilar(q, p).max(colunata(q, p, i)).max(borda);
     }
     if let Some((dist, h)) = ponte_em(q) {
         let meia = meia_largura(q);
@@ -307,12 +323,7 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
             // A soft swell across the deck, highest in the middle: a cloud,
             // not a plank. One block at most, so it never blocks a step.
             let inchaco = if dist < meia * 0.45 { 1 } else { 0 };
-            // THE RIM: a bank of cloud along both edges. Past the deck is the
-            // void, which blocks like a wall but draws as open sky — the owner
-            // walked into "an invisible wall" along the paths. The bank is
-            // the same barrier, seen.
-            let borda = if dist > meia - BORDA_DA_PONTE { BORDA_BLOCOS } else { 0 };
-            return (h / BLOCO).round() as i32 - 1 + inchaco.max(borda);
+            return (h / BLOCO).round() as i32 - 1 + inchaco;
         }
     }
     NIVEL_FUNDO
