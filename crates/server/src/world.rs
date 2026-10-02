@@ -5292,6 +5292,12 @@ impl GameWorld {
                     .unwrap_or(0),
                 weapon_id: r.equipment.weapon,
                 faction: r.faction,
+                skins: r
+                    .guarda_roupa
+                    .as_ref()
+                    .map(|g| g.aparencia.empacota_skins())
+                    .unwrap_or(0),
+                auras: shared::auras::equipamento(&r.equipment),
             })
             .collect();
         // Whitelist de armas iniciais — filtrada por items.active. Mantem em

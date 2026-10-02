@@ -133,7 +133,22 @@ const REPARTE_MADEIRA: f32 = 0.6;
 /// `STEEL` é uma das bases que TÊM as quatro cores (300-303), que é o que o
 /// pedido precisa: "increasing ... the material tier".
 pub fn material_do_nivel(nivel: u32) -> u16 {
-    item_id::na_cor(item_id::STEEL, cor_do_nivel(nivel))
+    item_id::na_cor(item_id::STEEL, cor_do_material(nivel))
+}
+
+/// The steel color a key ASKS for: the level's color, capped at blue.
+///
+/// Purple material never drops — the purple stone yields more blue, not
+/// purple (`constants::RENDIMENTO_DA_PEDRA`) — so a purple-steel key could
+/// only be made by crafting the steel up, millions of Darksteel per key for
+/// the Thunder Vault and the Seraph Reliquary (the owner, 02/10/2026: "5
+/// millions of darksteel per dungeon is too much ... it cannot be dropped,
+/// just crafted"). Blue drops from blue and purple stones; the amount still
+/// grows with the level (`material_qtd`).
+pub const COR_MAX_DO_MATERIAL: u8 = 3;
+
+pub fn cor_do_material(nivel: u32) -> u8 {
+    cor_do_nivel(nivel).min(COR_MAX_DO_MATERIAL)
 }
 
 /// A cor do aço pedido, 1 a 4, pelo nível do conteúdo.
@@ -159,10 +174,22 @@ pub fn cor_do_nivel(nivel: u32) -> u8 {
 /// por hora que o de baixo, e ninguém olharia pros outros. O `n²` é o que
 /// segura isso; ver `a_torneira_do_porao_fica_dentro_do_combinado`.
 pub fn material_qtd(nivel: u32) -> u32 {
-    let tier = cor_do_nivel(nivel).clamp(1, 4);
+    let tier = cor_do_material(nivel).clamp(1, 4);
     let t = segundos_alvo(nivel) * (1.0 - REPARTE_MADEIRA);
-    (t / crate::constants::COLETA_CICLO_PEDRA_S[tier as usize] * rende_por_ciclo(tier)).round()
-        as u32
+    let base = t / crate::constants::COLETA_CICLO_PEDRA_S[tier as usize] * rende_por_ciclo(tier);
+    (base * escassez(nivel)).round() as u32
+}
+
+/// Where the key's steel is capped at blue (`COR_MAX_DO_MATERIAL`), more of
+/// it: +5% per level past 34, so a high cellar with high rewards is not
+/// opened as cheaply as the blue one (the owner: "adjust the amount of blue
+/// steel ... so it is not too easy to enter high level dungeons").
+pub fn escassez(nivel: u32) -> f32 {
+    if cor_do_nivel(nivel) > cor_do_material(nivel) {
+        1.0 + nivel.saturating_sub(34) as f32 * 0.05
+    } else {
+        1.0
+    }
 }
 
 /// A receita da chave deste Porão.
@@ -470,6 +497,23 @@ pub fn ouro_por_hora(c: &Conteudo) -> f32 {
 
 #[cfg(test)]
 mod testes {
+
+    /// EVERY key asks for a material that DROPS: steel up to blue. Purple
+    /// steel only comes from crafting, and a purple key cost millions of
+    /// Darksteel.
+    #[test]
+    fn toda_chave_pede_material_que_cai() {
+        for c in crate::dungeon::CONTEUDOS.iter().filter(|c| c.tipo == Tipo::Porao) {
+            let r = receita_de(c).unwrap();
+            assert!(
+                (item_id::na_cor(item_id::STEEL, 1)..=item_id::na_cor(item_id::STEEL, 3)).contains(&r.material),
+                "{} asks for steel {} — purple never drops",
+                c.nome,
+                r.material
+            );
+            println!("{} ({}): {}x wood {}, {}x steel {}", c.nome, c.nivel_min, r.madeira_qtd, r.madeira, r.material_qtd, r.material);
+        }
+    }
     use super::*;
 
     /// TODO PORÃO TEM PORTA, CHAVE E RECEITA — e nenhum outro tipo tem.
@@ -675,9 +719,14 @@ mod testes {
             //    coleta no topo) e o dono achou demais no mesmo dia: "its too
             //    much". Cinco minutos é o teto agora — a chave não pode custar
             //    mais tempo que a própria corrida.
+            //    Past level 50 the ceiling rises 10 s a level (450 s at 65):
+            //    the owner asked on 02/10/2026 for high cellars with high
+            //    rewards not to open "too easy" once their key steel was
+            //    capped at blue (`escassez`). Up to 50 it stays at 300.
+            let teto = 300.0 + 10.0 * c.nivel_min.saturating_sub(50) as f32;
             assert!(
-                coleta <= 300.0,
-                "{}: a chave custa {coleta:.0}s de coleta, virou parede",
+                coleta <= teto,
+                "{}: a chave custa {coleta:.0}s de coleta (teto {teto:.0}), virou parede",
                 c.nome
             );
         }

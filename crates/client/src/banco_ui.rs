@@ -245,33 +245,13 @@ fn lado(
     saida
 }
 
-/// One cell: background, icon, the border in the piece's color and the quantity.
+/// One cell: the bag's own (`bolsa::celula_do_slot`) — color of the grade,
+/// tier in roman, +N and the quantity. The chest used to draw a simpler one
+/// with only a colored border, and the owner missed rarity, tier and refine.
 fn celula(c: Rect, s: Option<&InventorySlot>, palco: Option<(&crate::vox::VoxCache, &Material)>) {
-    estilo::ret_arredondado(c, u(6.0), Color::new(0.13, 0.12, 0.15, 1.0));
-    let Some(s) = s else {
-        return;
-    };
-    crate::bolsa::icone_do_item_com(
-        Rect::new(c.x + c.w * 0.1, c.y + c.h * 0.1, c.w * 0.8, c.h * 0.8),
-        s.item_id,
-        1.0,
-        palco,
-    );
-    if let Some(i) = s.instance {
-        let h = shared::items::tier_color_hex(i.grau()).trim_start_matches('#');
-        let v = u32::from_str_radix(h, 16).unwrap_or(0xbf_bf_bf);
-        let cor = Color::from_rgba((v >> 16) as u8, (v >> 8) as u8, v as u8, 230);
-        estilo::borda_arredondada(c, u(6.0), 2.0, cor);
-    }
-    if s.qty > 1 {
-        let q = crate::bolsa::curta(s.qty);
-        estilo::texto_forte(
-            c.x + c.w - estilo::medir_forte(&q, 12) - u(4.0),
-            c.y + c.h - u(4.0),
-            &q,
-            12,
-            estilo::TEXTO,
-        );
+    match s {
+        Some(s) => crate::bolsa::celula_do_slot(c, s, palco),
+        None => estilo::ret_arredondado(c, u(6.0), Color::new(0.13, 0.12, 0.15, 1.0)),
     }
 }
 

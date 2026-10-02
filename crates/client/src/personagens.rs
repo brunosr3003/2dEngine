@@ -247,7 +247,8 @@ impl Personagens {
         let conjunto = Conjunto::da_arma(self.arma.unwrap_or(0));
 
         // ── esquerda: o personagem, e embaixo dele o nome e o botao ──────────
-        self.desenha_retrato(l.retrato, l.rodape_retrato, conjunto, vox, solido);
+        let visual = (self.aparencia.empacota(), 0, 0);
+        self.desenha_retrato(l.retrato, l.rodape_retrato, conjunto, visual, vox, solido);
         let cx = l.retrato.x + l.retrato.w * 0.5;
         ui::texto_centro(
             cx,
@@ -706,7 +707,9 @@ impl Personagens {
         if let Some(c) = chars.get(*selecionado) {
             let conjunto = Conjunto::da_arma(c.weapon_id.unwrap_or(0));
             let hero = Rect::new(r.x + r.w + 20.0, 128.0, w - r.x - r.w - 48.0, h - 218.0);
-            self.desenha_retrato(hero, 84.0, conjunto, vox, solido);
+            // THIS character's look, skins and auras — it drew the creation
+            // screen's appearance for every character on the list.
+            self.desenha_retrato(hero, 84.0, conjunto, (c.aparencia, c.skins, c.auras), vox, solido);
             let cx = hero.x + hero.w * 0.5;
             ui::texto_centro(cx, hero.y + hero.h - 57.0, &c.name, 30, ui::TEXTO);
             ui::texto_centro(
@@ -812,6 +815,8 @@ impl Personagens {
         r: Rect,
         rodape: f32,
         conjunto: Conjunto,
+        // (packed appearance, skins, auras)
+        visual: (u32, u64, u64),
         vox: &VoxCache,
         solido: &Material,
     ) {
@@ -934,9 +939,10 @@ impl Personagens {
             Mat4::from_rotation_y(self.giro + 0.18 + (get_time() as f32 * 0.35).sin() * 0.10);
         // O retrato mostra a APARÊNCIA escolhida: é o que faz os seletores
         // ao lado significarem alguma coisa.
-        let veste = render3d::vestimenta_de(vox, self.aparencia.empacota())
+        let mut veste = render3d::vestimenta_de(vox, visual.0)
             .unwrap_or_else(|| render3d::Vestimenta::nua(corpo));
-        render3d::desenha_rig(base, &pose, &veste, vox, None);
+        veste.skins = visual.1;
+        render3d::desenha_rig_com_auras(base, &pose, &veste, vox, visual.2);
         gl_use_default_material();
         self.camera_ui();
     }
@@ -1322,7 +1328,28 @@ pub async fn previa(vox: &VoxCache) {
         aparencia: 0,
         weapon_id: Some(c.arma()),
         faction: Default::default(),
+        skins: 0,
+        auras: 0,
     });
+    // The first one dressed: an outfit, a hat and legendary +12 gear, so the
+    // select screen's portrait shows its OWN look and glow.
+    let mut chars = chars;
+    {
+        use shared::aparencia as ap;
+        let mut a = ap::Aparencia::default();
+        a.roupa = ap::ROUPA_BASE + 4;
+        a.cabelo = ap::cabelo_do_chapeu(ap::CHAPEU_BASE + 8).unwrap_or(0);
+        chars[0].aparencia = a.empacota();
+        let mut eq = shared::Equipment::default();
+        let mut i = shared::items::ItemInstance::vazia_de_grau(5);
+        i.tier = 4;
+        i.refinement = 12;
+        eq.weapon = Some(Conjunto::Katana.arma());
+        eq.weapon_inst = Some(i);
+        eq.armor = Some(406);
+        eq.armor_inst = Some(i);
+        chars[0].auras = shared::auras::equipamento(&eq);
+    }
     let armas = Conjunto::TODOS.map(|c| c.arma());
     let mut sel = 0;
     tela.recebeu_lista(&chars, &armas, &mut sel);
@@ -1579,6 +1606,8 @@ mod tests {
             weapon_id: Some(armas[0]),
             aparencia: 0,
             faction: Default::default(),
+            skins: 0,
+            auras: 0,
         });
         p.recebeu_lista(&chars, &armas, &mut sel);
         assert_eq!(sel, 1);

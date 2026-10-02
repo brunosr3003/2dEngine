@@ -1670,6 +1670,13 @@ pub struct CharacterListEntry {
     /// Facção do char (cliente mostra cor/badge no card de seleção).
     #[serde(default)]
     pub faction: crate::Faction,
+    /// Weapon and mount skins (`Aparencia::empacota_skins`) and the auras of
+    /// the equipped pieces (`auras::equipamento`): the select screen draws the
+    /// character as the world does (protocol 182).
+    #[serde(default)]
+    pub skins: u64,
+    #[serde(default)]
+    pub auras: u64,
 }
 
 /// Entrada do basket de vendas dentro de um ShopTrade.

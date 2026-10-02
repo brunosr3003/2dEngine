@@ -1539,6 +1539,22 @@ pub(crate) fn celula_avulsa(
     );
 }
 
+/// The bag's cell for a slot held elsewhere (the storage chest): the same
+/// tier in roman, +N and color — the chest drew its own and showed neither.
+pub(crate) fn celula_do_slot(r: Rect, s: &InventorySlot, palco: Option<(&VoxCache, &Material)>) {
+    celula(
+        r,
+        Some(Peca {
+            id: s.item_id,
+            qty: s.qty,
+            inst: s.instance,
+        }),
+        false,
+        None,
+        palco,
+    );
+}
+
 /// Uma celula de item: fundo na cor do grau, o icone, o tier em romano no
 /// canto de cima, o refino do outro lado e a quantidade embaixo. `vazio` e' o
 /// slot de equipamento sem nada: aparece a silhueta apagada do que vai ali.

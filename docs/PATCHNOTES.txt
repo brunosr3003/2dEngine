@@ -1,3 +1,13 @@
+02/10/2026 — Chaves sem aço roxo, baú com tier e refino, e a seleção de personagem certa
+
+As chaves dos Porões de nível 35 para cima pediam aço ROXO, que não cai em lugar nenhum — só dava para fabricar, a milhões de Darksteel. Agora toda chave pede no máximo aço AZUL, que cai das pedras azuis e roxas. Para os Porões altos não ficarem fáceis demais, a quantidade sobe com o nível: o Cofre do Trovão pede 311 aços azuis e o Relicário Serafim 548.
+
+O baú (Banco) agora mostra cada item como a bolsa: a cor da raridade, o tier em romano e o +refino.
+
+A tela de seleção de personagem desenhava todo personagem com a aparência da tela de criação. Agora cada um aparece com a própria roupa, chapéu, skins e a aura do equipamento.
+
+Atualização obrigatória — o protocolo passa para o 182. Por enquanto só computador e Android.
+
 02/10/2026 — Skyreach: o buraco no penhasco embaixo dos caminhos
 
 A mureta branca na borda das ilhas saiu: Skyreach voltou a ser como era. O defeito de verdade era outro: onde um caminho de nuvem chega numa ilha, o penhasco embaixo do caminho não era desenhado, e pelo buraco se via o "miolo" bege da ilha. Agora o penhasco desce inteiro por baixo do caminho.
