@@ -130,7 +130,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 174 (02/10/2026): the Plateau's 50-60 half — the Tempest Spire (dungeon
 /// 18), the Thunderhide Behemoth and the Herald of the Tempest (boss kinds 22
 /// and 23).
-pub const PROTOCOL_VERSION: u16 = 174;
+/// 175 (02/10/2026): Skyreach's cloud paths gain a cloud rim (terrain; client
+/// and server must agree on the heights) and its town a Harbour Captain.
+pub const PROTOCOL_VERSION: u16 = 175;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

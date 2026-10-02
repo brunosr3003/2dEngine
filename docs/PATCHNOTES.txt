@@ -1,3 +1,11 @@
+02/10/2026 — Skyreach: Capitão do Porto e bordas das nuvens
+
+Skyreach ganhou um Capitão do Porto na praça da cidade. Antes não havia nenhum, e quem subia não conseguia voltar para as outras ilhas.
+
+Os caminhos de nuvem entre as ilhas agora têm uma borda de nuvem dos dois lados. Antes a beirada bloqueava como uma parede invisível; agora dá para ver onde ela está.
+
+Atualização obrigatória — o protocolo passa para o 175. Por enquanto só computador e Android.
+
 02/10/2026 — Morte no PvP não tira mais itens, e missões de qualquer ilha
 
 Morrer no PvP não faz mais perder a bolsa nem o equipamento. Antes tudo caía no chão (e sem o refino), e nem quem venceu conseguia pegar.

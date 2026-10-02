@@ -23,7 +23,11 @@ use glam::Vec2;
 
 pub const ZONA: &str = "ilha_celeste";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 1;
+pub const REVISAO: u32 = 2;
+/// The cloud bank along each edge of a path: how wide (units) and how high
+/// (blocks) — high enough to read as a wall, not a step.
+const BORDA_DA_PONTE: f32 = 1.2;
+const BORDA_BLOCOS: i32 = 3;
 /// Planting seed: the relief does not depend on it, the vegetation does.
 pub const SEMENTE: i32 = 0x5C1E_A7E0;
 /// Zone radius in BLOCKS: the whole layout plus a margin of sky.
@@ -303,7 +307,12 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
             // A soft swell across the deck, highest in the middle: a cloud,
             // not a plank. One block at most, so it never blocks a step.
             let inchaco = if dist < meia * 0.45 { 1 } else { 0 };
-            return (h / BLOCO).round() as i32 - 1 + inchaco;
+            // THE RIM: a bank of cloud along both edges. Past the deck is the
+            // void, which blocks like a wall but draws as open sky — the owner
+            // walked into "an invisible wall" along the paths. The bank is
+            // the same barrier, seen.
+            let borda = if dist > meia - BORDA_DA_PONTE { BORDA_BLOCOS } else { 0 };
+            return (h / BLOCO).round() as i32 - 1 + inchaco.max(borda);
         }
     }
     NIVEL_FUNDO
