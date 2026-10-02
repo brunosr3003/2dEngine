@@ -124,9 +124,14 @@ pub enum BlocoCasa {
     Peixe,
     Corda,
     Lenha,
+    // ── Skyreach (`celeste`), at the END: the discriminant is stored ──
+    MarmoreCasa,
+    MarmoreBase,
+    OuroCasa,
+    TelhaCeleste,
 }
 
-const TODOS_OS_BLOCOS: [BlocoCasa; 45] = [
+const TODOS_OS_BLOCOS: [BlocoCasa; 49] = [
     BlocoCasa::Ar,
     BlocoCasa::PedraBase,
     BlocoCasa::Reboco,
@@ -172,6 +177,10 @@ const TODOS_OS_BLOCOS: [BlocoCasa; 45] = [
     BlocoCasa::Peixe,
     BlocoCasa::Corda,
     BlocoCasa::Lenha,
+    BlocoCasa::MarmoreCasa,
+    BlocoCasa::MarmoreBase,
+    BlocoCasa::OuroCasa,
+    BlocoCasa::TelhaCeleste,
 ];
 
 impl BlocoCasa {
@@ -228,6 +237,31 @@ impl BlocoCasa {
             Peixe => [176, 192, 204],
             Corda => [198, 172, 122],
             Lenha => [140, 98, 58],
+            MarmoreCasa => [244, 240, 230],
+            MarmoreBase => [214, 208, 196],
+            OuroCasa => [232, 190, 82],
+            TelhaCeleste => [118, 166, 226],
+        }
+    }
+
+    /// The same block in Skyreach's angelic dress: white marble walls, gold
+    /// where the timber was, azure roofs, gold and blue paint. Only the
+    /// colour changes — solidity, doors and collision stay the same.
+    pub fn celeste(self) -> Self {
+        use BlocoCasa::*;
+        match self {
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => MarmoreCasa,
+            PedraBase | PedraNegra | NegroBorda => MarmoreBase,
+            // Gold only on the frame beams; boards become marble, or whole
+            // walls turned gold.
+            Viga | Corda => OuroCasa,
+            Tabua | Lenha => MarmoreBase,
+            Telha | TelhaEscura | Palha | Ardosia => TelhaCeleste,
+            PinturaVermelha | PinturaVerde | PinturaAmarela | PanoRubro => OuroCasa,
+            PinturaAzul | Toldo | ToldoVerde | ToldoRoxo => ToldoAzul,
+            ToldoAmbar | ToldoPergaminho => OuroCasa,
+            Flor | FlorRoxa | FlorLaranja => FlorBranca,
+            outro => outro,
         }
     }
 
@@ -392,6 +426,18 @@ pub struct Voxels {
     pub nz: i32,
     dados: Vec<u8>,
 }
+
+impl Voxels {
+    /// Every block repainted with `f` (`BlocoCasa::celeste`).
+    pub fn repintar(&mut self, f: impl Fn(BlocoCasa) -> BlocoCasa) {
+        for b in self.dados.iter_mut() {
+            if let Some(m) = BlocoCasa::de_u8(*b) {
+                *b = f(m) as u8;
+            }
+        }
+    }
+}
+
 
 impl Voxels {
     pub fn novo(x0: i32, y0: i32, z0: i32, nx: i32, ny: i32, nz: i32) -> Self {

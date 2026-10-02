@@ -263,14 +263,24 @@ impl Construcoes {
 pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
     let ger = Gerador::da_ilha(def);
     let vila = ger.vila();
+    // Skyreach's town is angelic: marble, gold and azure
+    // (`BlocoCasa::celeste`). Colour only, so the server's collision, which
+    // never reads colour, is untouched.
+    let angelical = shared::celeste::e_celeste(def.zona);
+    let vestir = |mut c: Construcao| {
+        if angelical {
+            c.v.repintar(BlocoCasa::celeste);
+        }
+        c
+    };
     let mut saida = Vec::with_capacity(vila.predios.len() + vila.props.len());
     for p in &vila.predios {
-        saida.push(assar(&p.construcao(), p.pos, p.yaw_q, p.chao));
+        saida.push(assar(&vestir(p.construcao()), p.pos, p.yaw_q, p.chao));
     }
     let props = vila
         .props
         .iter()
-        .map(|p| assar(&p.construcao(), p.pos, p.yaw_q, p.pos.y))
+        .map(|p| assar(&vestir(p.construcao()), p.pos, p.yaw_q, p.pos.y))
         .collect();
     saida.extend(juntar_por_regiao(props, 12.0));
     saida
