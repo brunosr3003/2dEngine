@@ -1863,6 +1863,9 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // Owlbear, Rockback. The owlbear is new: quest 766 hunts owlbears
         // here, and none spawned.
         Montanha => &[36, 37, 38, 39, 40, 15],
+        // Skyreach: placeholder until its winged bestiary exists — the
+        // Plateau's fauna, so the zone has something to fight in previews.
+        Celeste => &[36, 37, 38, 39, 40, 15],
     }
 }
 
@@ -1879,6 +1882,7 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
         // comum mais fraco da ilha serve.
         Deserto => &[13],
         Montanha => &[36],
+        Celeste => &[36],
     }
 }
 

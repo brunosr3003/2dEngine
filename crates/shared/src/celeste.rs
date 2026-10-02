@@ -187,6 +187,12 @@ fn ponte_em(q: Vec2) -> Option<(f32, f32)> {
     melhor
 }
 
+/// Do resource nodes (stone, ore, Energy) grow at `q`? Only on the small
+/// islets — the resource islands; hunting islands and the town stay clear.
+pub fn tem_recurso(q: Vec2) -> bool {
+    plato_em(q).is_some_and(|(_, p)| p.nivel.0 > 0 && p.raio <= 36.0)
+}
+
 /// Is `q` on a cloud path (and not on an island)? Vegetation stays off, and
 /// the ground there is cloud.
 pub fn na_ponte(q: Vec2) -> bool {
@@ -312,7 +318,7 @@ pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     nome: "Skyreach",
     semente: SEMENTE,
     raio_blocos: RAIO_BLOCOS,
-    bioma: crate::terreno::Bioma::Floresta,
+    bioma: crate::terreno::Bioma::Celeste,
     centro: [2600.0, -1400.0],
     nivel: (50, 60),
 };

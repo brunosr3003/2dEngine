@@ -121,6 +121,8 @@ pub fn arvore(especie: Arvore, variante: u32) -> Modelo {
     let mut r = Rng::nova(variante ^ (especie as u32) * 7919);
     let v = match especie {
         Arvore::Copada => copada(&mut r),
+        Arvore::Sagrada => sagrada(&mut r),
+        Arvore::Salgueiro => salgueiro(&mut r),
         Arvore::Betula => betula(&mut r),
         Arvore::Pinheiro => pinheiro(&mut r),
         Arvore::Seca => seca(&mut r),
@@ -175,6 +177,101 @@ fn copada(r: &mut Rng) -> Volume {
     }
     for (bx, by, bz, br) in pontas {
         bolha(&mut v, r, bx, by, bz, br, br as f32 * 0.82, folha_de_copa);
+    }
+    v
+}
+
+/// SACRED TREE (sky biome): taller and wider than any forest tree — a white
+/// trunk two voxels thick, branches spreading in a crown, and blossom clouds
+/// of gold and white with a few pale leaves, so the canopy is not one flat
+/// yellow ball. At the forest tree's size it read as a mushroom.
+fn sagrada(r: &mut Rng) -> Volume {
+    let h_tronco = r.i(18, 24);
+    let raio = r.i(7, 9);
+    let topo = h_tronco + raio + 3;
+    let lado = raio * 2;
+    let mut v = Volume::novo([-lado, 0, -lado], [lado * 2 + 1, topo + 3, lado * 2 + 1]);
+    let (lx, lz) = (r.sinal() * 0.8, r.sinal() * 0.6);
+    for iy in 0..=h_tronco {
+        let t = iy as f32 / h_tronco as f32;
+        let (dx, dz) = ((lx * t).round() as i32, (lz * t).round() as i32);
+        // Flared at the foot: roots that read from the game camera.
+        let pe = if iy < 3 { 1 } else { 0 };
+        for ix in -pe..=1 + pe {
+            for iz in -pe..=1 + pe {
+                v.poe(ix + dx, iy, iz + dz, Material::TroncoBranco);
+            }
+        }
+    }
+    let (cx, cz) = (lx.round() as i32, lz.round() as i32);
+    let folha = |r: &mut Rng| {
+        let k = r.proximo() % 100;
+        if k < 50 {
+            Material::FolhaDourada
+        } else if k < 82 {
+            Material::PetalaBranca
+        } else {
+            Material::FolhaCeleste
+        }
+    };
+    let mut pontas = vec![(cx, h_tronco + raio / 2, cz, raio)];
+    let galhos = r.i(4, 6);
+    let giro0 = r.f() * std::f32::consts::TAU;
+    for g in 0..galhos {
+        let ang = giro0 + g as f32 * std::f32::consts::TAU / galhos as f32 + r.sinal() * 0.3;
+        let comp = r.i(raio, raio + 3);
+        let base_y = h_tronco - r.i(2, 5);
+        let (dx, dz) = (ang.sin(), ang.cos());
+        let (mut px, mut py, mut pz) = (cx, base_y, cz);
+        for s in 1..=comp {
+            px = cx + (dx * s as f32).round() as i32;
+            pz = cz + (dz * s as f32).round() as i32;
+            py = base_y + (s as f32 * 0.6).round() as i32;
+            v.poe(px, py, pz, Material::TroncoBranco);
+            v.poe(px, py - 1, pz, Material::TroncoBranco);
+        }
+        pontas.push((px, py + 1, pz, r.i(raio - 3, raio - 1).max(3)));
+    }
+    for (bx, by, bz, br) in pontas {
+        bolha(&mut v, r, bx, by, bz, br, br as f32 * 0.7, folha);
+    }
+    v
+}
+
+/// HALO WILLOW (sky biome): a white trunk, a wide dome of pale pink and white,
+/// and strands hanging from the rim of the dome almost to the ground — the
+/// silhouette is the species.
+fn salgueiro(r: &mut Rng) -> Volume {
+    let h = r.i(14, 18);
+    let raio = r.i(6, 8);
+    let lado = raio + 2;
+    let mut v = Volume::novo([-lado, 0, -lado], [lado * 2 + 1, h + raio + 3, lado * 2 + 1]);
+    let (lx, lz) = (r.sinal() * 0.6, r.sinal() * 0.6);
+    for iy in 0..=h {
+        let t = iy as f32 / h as f32;
+        let (dx, dz) = ((lx * t).round() as i32, (lz * t).round() as i32);
+        for (ox, oz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            v.poe(dx + ox, iy, dz + oz, Material::TroncoBranco);
+        }
+    }
+    let (cx, cz) = (lx.round() as i32, lz.round() as i32);
+    let folha = |r: &mut Rng| if r.proximo() % 100 < 64 { Material::PetalaRosa } else { Material::PetalaBranca };
+    // The dome: flattened, so the strands hang from a wide rim.
+    bolha(&mut v, r, cx, h, cz, raio, raio as f32 * 0.55, folha);
+    // The strands: from points on the rim, straight down, of varying length.
+    let fios = r.i(14, 22);
+    for k in 0..fios {
+        let a = k as f32 / fios as f32 * std::f32::consts::TAU + r.f() * 0.3;
+        let rr = raio as f32 * (0.75 + r.f() * 0.25);
+        let (fx, fz) = (cx + (a.sin() * rr).round() as i32, cz + (a.cos() * rr).round() as i32);
+        let comp = r.i(h / 3, h * 2 / 3);
+        for d in 0..comp {
+            let y = h - 1 - d;
+            if y < 2 {
+                break;
+            }
+            v.poe(fx, y, fz, folha(r));
+        }
     }
     v
 }
@@ -369,8 +466,79 @@ pub fn planta(especie: Planta, variante: u32) -> Modelo {
         Planta::Pedra => pedra(&mut r),
         Planta::Toco => toco(&mut r),
         Planta::Talo => talo(&mut r),
+        Planta::Lirio => lirio(&mut r),
+        Planta::Pena => pena(&mut r),
+        Planta::CristalCeu => cristal_ceu(&mut r),
     };
     malha(&v)
+}
+
+/// LILY (sky biome): a few tall stems, each ending in a white cup of petals
+/// around a gold heart.
+fn lirio(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(3, 10);
+    for _ in 0..r.i(2, 4) {
+        let (ix, iz) = (r.i(-2, 2), r.i(-2, 2));
+        let h = r.i(4, 7);
+        for iy in 0..h {
+            v.poe(ix, iy, iz, Material::Folha);
+        }
+        // The cup: a ring of white around a gold centre, and one more white
+        // layer above, opening out.
+        v.poe(ix, h, iz, Material::FolhaDourada);
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            v.poe(ix + dx, h, iz + dz, Material::PetalaBranca);
+            v.poe(ix + dx * 2, h + 1, iz + dz * 2, Material::PetalaBranca);
+        }
+    }
+    v
+}
+
+/// FEATHER PLUME (sky biome): a pale stalk curving over, widening into a
+/// feather at the top.
+fn pena(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(4, 14);
+    for _ in 0..r.i(1, 3) {
+        let (ix, iz) = (r.i(-1, 1), r.i(-1, 1));
+        let h = r.i(8, 12);
+        let (dx, dz) = if r.proximo() % 2 == 0 { (1, 0) } else { (0, 1) };
+        let s = r.sinal() as i32;
+        for iy in 0..h {
+            // Bends over in the top third.
+            let curva = if iy > h * 2 / 3 { (iy - h * 2 / 3) / 2 } else { 0 };
+            let (x, z) = (ix + dx * curva * s, iz + dz * curva * s);
+            let alto = iy > h / 2;
+            v.poe(x, iy, z, if alto { Material::PetalaBranca } else { Material::FolhaCeleste });
+            if alto {
+                // The vane: one voxel to each side across the bend.
+                v.poe(x + dz, iy, z + dx, Material::PetalaBranca);
+                v.poe(x - dz, iy, z - dx, Material::Marmore);
+            }
+        }
+    }
+    v
+}
+
+/// SKY CRYSTAL (sky biome): a cluster of pale blue prisms leaning out from a
+/// marble base. Blocks the way like a stone (`raio_de_planta`).
+fn cristal_ceu(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(3, 12);
+    for (dx, dz) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+        v.poe(dx, 0, dz, Material::Marmore);
+    }
+    for k in 0..r.i(3, 5) {
+        let (bx, bz) = (r.i(-1, 1), r.i(-1, 1));
+        let h = r.i(4, 9) - k;
+        let (ix, iz) = (r.sinal() as i32, r.sinal() as i32);
+        for iy in 1..=h.max(2) {
+            let incl = iy / 4;
+            v.poe(bx + ix * incl, iy, bz + iz * incl, Material::CristalCeu);
+            if iy < h - 1 {
+                v.poe(bx + ix * incl + 1, iy, bz + iz * incl, Material::CristalCeu);
+            }
+        }
+    }
+    v
 }
 
 fn caixa_vazia(raio: i32, alt: i32) -> Volume {

@@ -145,10 +145,11 @@ fn raiz(p: &shared::celeste::Plato) -> (Vec<MalhaEstatica>, Mat4, Vec2) {
         }
     }
     let mut palette = [[0u8; 4]; 256];
-    palette[1] = [104, 80, 56, 255];
-    palette[2] = [128, 120, 110, 255];
-    palette[3] = [104, 98, 92, 255];
-    palette[4] = [82, 78, 76, 255];
+    // Marble, like the sky islands' cliffs, deepening into blue-grey stone.
+    palette[1] = [228, 222, 206, 255];
+    palette[2] = [200, 194, 182, 255];
+    palette[3] = [170, 168, 166, 255];
+    palette[4] = [142, 146, 156, 255];
     let model = crate::vox::VoxModel { size: [n, n, nz], cells, palette };
     let malhas = crate::vox::mesh_na_origem(&model, S, [meio, meio, 0.0])
         .into_iter()

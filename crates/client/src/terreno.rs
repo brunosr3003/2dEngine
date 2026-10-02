@@ -225,6 +225,8 @@ impl Terreno {
             Arvore::Betula,
             Arvore::Pinheiro,
             Arvore::Seca,
+            Arvore::Sagrada,
+            Arvore::Salgueiro,
         ] {
             for k in 0..VARIANTES {
                 t.arvores
@@ -239,6 +241,9 @@ impl Terreno {
             Planta::Pedra,
             Planta::Toco,
             Planta::Talo,
+            Planta::Lirio,
+            Planta::Pena,
+            Planta::CristalCeu,
         ] {
             for k in 0..VARIANTES {
                 t.plantas
@@ -272,7 +277,7 @@ impl Terreno {
                 Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
                 Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
                 Bioma::Montanha => Material::Rocha,
-                Bioma::Floresta => material_variado(self.bioma_visual, altura, declive, false, mancha),
+                Bioma::Floresta | Bioma::Celeste => material_variado(self.bioma_visual, altura, declive, false, mancha),
             };
         }
         material_variado(self.bioma_visual, altura, declive, agua, mancha)

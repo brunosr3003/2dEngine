@@ -203,6 +203,10 @@ pub enum Bioma {
     Gelo,
     Deserto,
     Montanha,
+    /// Skyreach (`celeste`): soft gold-green meadows, marble cliffs, white
+    /// trees with gold and blossom canopies. The owner: "everything needs to
+    /// be more angelical".
+    Celeste,
 }
 
 /// Os numeros que o bioma muda no relevo.
@@ -280,6 +284,16 @@ impl Bioma {
                 // tudo.
                 terraco_blocos: 3,
                 terraco_forca: 0.85,
+            },
+            // The sky islands are drawn (`celeste`), not rolled: this only
+            // matters for code that asks every biome for a profile.
+            Bioma::Celeste => PerfilDeRelevo {
+                planicie: (5.0, 4.0),
+                colina: (8.0, 15.0),
+                serra: (12.0, 30.0),
+                corte: [0.42, 0.52, 0.66, 0.78],
+                terraco_blocos: 3,
+                terraco_forca: 0.92,
             },
         }
     }
@@ -596,6 +610,15 @@ pub enum Material {
     /// islands, and its shaded underside.
     Nuvem,
     NuvemSombra,
+    /// The sky biome's palette (`Bioma::Celeste`).
+    GramaCeleste,
+    Marmore,
+    MarmoreSombra,
+    TroncoBranco,
+    FolhaDourada,
+    FolhaCeleste,
+    PetalaRosa,
+    CristalCeu,
 }
 
 impl Material {
@@ -606,7 +629,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 31] = [
+    pub const TODOS: [Material; 39] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -638,6 +661,14 @@ impl Material {
         Material::GramaCuidada,
         Material::Nuvem,
         Material::NuvemSombra,
+        Material::GramaCeleste,
+        Material::Marmore,
+        Material::MarmoreSombra,
+        Material::TroncoBranco,
+        Material::FolhaDourada,
+        Material::FolhaCeleste,
+        Material::PetalaRosa,
+        Material::CristalCeu,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -665,6 +696,14 @@ impl Material {
             Material::PetalaBranca => (240, 242, 248),
             Material::Nuvem => (244, 247, 252),
             Material::NuvemSombra => (206, 216, 232),
+            Material::GramaCeleste => (168, 210, 134),
+            Material::Marmore => (236, 230, 214),
+            Material::MarmoreSombra => (200, 192, 176),
+            Material::TroncoBranco => (238, 234, 224),
+            Material::FolhaDourada => (246, 214, 112),
+            Material::FolhaCeleste => (196, 236, 196),
+            Material::PetalaRosa => (246, 186, 214),
+            Material::CristalCeu => (150, 214, 252),
             Material::Folha => (74, 138, 58),
             Material::FolhaEscura => (48, 104, 52),
             Material::FolhaSeca => (140, 138, 70),
@@ -757,7 +796,10 @@ pub fn material_variado(
         // Cinza (ou arenito) marca ONDE NAO SE SOBE: o degrau passou do pulo.
         // Nao e' decoracao — e' a regra de movimento pintada no chao, e o
         // jogador aprende a ler o mapa sem nenhum texto.
-        return if bioma == Bioma::Deserto {
+        return if bioma == Bioma::Celeste {
+            // The sky islands' ruins and cliffs are marble, not grey rock.
+            Material::Marmore
+        } else if bioma == Bioma::Deserto {
             Material::Arenito
         } else {
             Material::Rocha
@@ -801,6 +843,15 @@ pub fn material_variado(
                 Material::Rocha
             }
         }
+        // The sky meadows: grass everywhere the island is (its tops stay in
+        // a narrow band), marble where it gets steep (handled above).
+        Bioma::Celeste => {
+            if mancha < 0.06 {
+                Material::FolhaCeleste
+            } else {
+                Material::GramaCeleste
+            }
+        }
         // A grama para na metade da altura: o que sobra e' paredao. Ilha de
         // rocha com vale verde no pe', que e' o que uma serra e' vista de
         // baixo.
@@ -830,6 +881,10 @@ pub fn material_variado(
 /// O subsolo tambem muda com o clima: areia com terra marrom logo abaixo e'
 /// praia, nao deserto; um bloco de profundidade ja' denuncia.
 pub fn material_de_profundidade(bioma: Bioma, topo: Material, altura: f32, prof: i32) -> Material {
+    // The sky islands' cliffs are marble in courses, never brown earth.
+    if bioma == Bioma::Celeste {
+        return if prof == 0 { topo } else if prof % 3 == 0 { Material::MarmoreSombra } else { Material::Marmore };
+    }
     if prof >= 3 {
         return Material::Rocha;
     }
@@ -896,6 +951,13 @@ pub enum Arvore {
     Pinheiro,
     /// Sem folha: o que sobrou de quando aquilo ali era outra coisa.
     Seca,
+    // New species go at the END: the discriminant indexes the client's model
+    // table and seeds each tree's shape, so inserting above would reshape
+    // every forest in the game.
+    /// Sky biome: white trunk, gold and white blossom canopy.
+    Sagrada,
+    /// Sky biome: white trunk, pale canopy with strands hanging down.
+    Salgueiro,
 }
 
 /// Forracao: o que cobre o chao entre as arvores.
@@ -918,6 +980,12 @@ pub enum Planta {
     Toco,
     /// Talo alto e palido de campo aberto.
     Talo,
+    /// Sky biome: a white lily with a gold heart.
+    Lirio,
+    /// Sky biome: a tall, pale, curved plume.
+    Pena,
+    /// Sky biome: a cluster of blue sky crystal (blocks the way, like a stone).
+    CristalCeu,
 }
 
 /// Plantas por 100 m². Varias vezes a densidade de arvore — planta e' pequena
@@ -937,6 +1005,8 @@ pub fn densidade_de_planta(bioma: Bioma) -> f32 {
         // E nela o que forra e' PEDRA: cordilheira forrada de flor seria serra
         // com nome bonito.
         Bioma::Montanha => 5.5,
+        // A meadow: dense, so the lilies and plumes carry the look.
+        Bioma::Celeste => 7.0,
     }
 }
 
@@ -992,6 +1062,20 @@ pub fn especie_de_planta(bioma: Bioma, f: f32) -> Planta {
                 Planta::Arbusto
             }
         }
+        // White and gold flowers and pale plumes; crystal instead of stone.
+        Bioma::Celeste => {
+            if f < 0.30 {
+                Planta::Lirio
+            } else if f < 0.52 {
+                Planta::Pena
+            } else if f < 0.74 {
+                Planta::Moita
+            } else if f < 0.90 {
+                Planta::Flor
+            } else {
+                Planta::CristalCeu
+            }
+        }
     }
 }
 
@@ -1009,6 +1093,9 @@ pub fn densidade_de_arvore(bioma: Bioma) -> f32 {
         Bioma::Deserto => 0.05,
         // Mata nos vales e paredao pelado em cima: a media fica no meio.
         Bioma::Montanha => 0.7,
+        // Groves, not a forest: enough that the white trees carry the look,
+        // sparse enough that each stands out against the meadow.
+        Bioma::Celeste => 1.0,
     }
 }
 
@@ -1049,6 +1136,13 @@ pub fn especie_de_arvore(bioma: Bioma, f: f32) -> Arvore {
                 Arvore::Seca
             }
         }
+        Bioma::Celeste => {
+            if f < 0.62 {
+                Arvore::Sagrada
+            } else {
+                Arvore::Salgueiro
+            }
+        }
     }
 }
 
@@ -1073,6 +1167,8 @@ pub fn solo_vivo(m: Material) -> bool {
             | Material::Terra
             | Material::Areia
             | Material::Neve
+            | Material::GramaCeleste
+            | Material::FolhaCeleste
     )
 }
 
@@ -1107,7 +1203,7 @@ pub struct PlantaPlantada {
 /// o cliente conhece.
 pub fn raio_de_tronco(a: Arvore) -> f32 {
     match a {
-        Arvore::Copada => 0.38,
+        Arvore::Copada | Arvore::Sagrada | Arvore::Salgueiro => 0.38,
         // Um voxel de tronco da' 0,125 de raio. Ficaria fino a ponto de
         // parecer poste invisivel, entao arredonda pra cima: melhor barrar um
         // dedo antes que deixar o corpo entrar dentro da madeira.
@@ -1126,7 +1222,10 @@ pub fn raio_de_planta(p: Planta) -> Option<f32> {
         Planta::Pedra => Some(0.62),
         // Toco: 2 a 3 voxels.
         Planta::Toco => Some(0.5),
-        Planta::Moita | Planta::Flor | Planta::Arbusto | Planta::Samambaia | Planta::Talo => None,
+        // A crystal cluster blocks like a stone of its size.
+        Planta::CristalCeu => Some(0.5),
+        Planta::Moita | Planta::Flor | Planta::Arbusto | Planta::Samambaia | Planta::Talo
+        | Planta::Lirio | Planta::Pena => None,
     }
 }
 
@@ -1504,6 +1603,15 @@ fn recurso_montanha_da_coluna(
     // árvore". Minério é o estorvo mais gordo que existe e não tem o que fazer
     // num saguão onde ninguém coleta.
     if ger.e_arena() {
+        return None;
+    }
+    // Nothing on a bridge or a cloud path (a node there closes the way), and
+    // on Skyreach only the resource islets carry nodes: by height alone every
+    // island top passed the threshold and the hunting islands were strewn
+    // with rocks.
+    if ger.na_ponte_magica(bx, bz)
+        || (ger.e_celeste() && !crate::celeste::tem_recurso(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+    {
         return None;
     }
     if agua || ger.na_cidade(bx, bz) {
