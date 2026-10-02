@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 19] = [
+pub const CHEFES: [Chefe; 20] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -838,6 +838,23 @@ pub const CHEFES: [Chefe; 19] = [
             h("Choir of Light", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 9.0, 8.0, 0, 1.4),
             h("Verdict", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.0, 18.0, 0, 1.2),
             h("Wrath of the Sky", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 16.0, 12.0, 1, 0.8),
+        ],
+    },
+    // STORMKEEP's Warlord (`forte`), in the keep's arena. Last in the list:
+    // `da_zona` sorts by level, and at 60 he must come after the Archmage
+    // so the Plateau's boss spots line up ([2, 3, 4] then the keep).
+    Chefe {
+        kind: 24,
+        nome: "Warlord of Stormkeep",
+        corpo: Corpo::Gente(33),
+        escala: 2.0,
+        zona: "ilha_planalto",
+        nivel: 60,
+        habilidades: &[
+            h("Thrown Axe", Circulo { raio: 4.2 }, NoAlvo, 1.8, 2.8, 8.0, 18.0, 0, 1.0),
+            h("War Banner", Circulo { raio: 4.8 }, NoAlvo, 1.8, 3.0, 9.0, 18.0, 0, 1.2),
+            h("Shield Charge", Linha { comprimento: 20.0, largura: 3.0 }, AFrente, 1.3, 2.6, 8.0, 20.0, 0, 1.4),
+            h("Storm of Blades", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
         ],
     },
 ];

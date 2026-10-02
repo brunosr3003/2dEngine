@@ -2,7 +2,7 @@
 use crate::terreno::{Cidade, SitioPorto};
 use glam::Vec2;
 pub const ZONA: &str = "ilha_planalto";
-pub const REVISAO: u32 = 1;
+pub const REVISAO: u32 = 2;
 pub const NOMES: [&str; 5] = [
     "Encostas dos Sentinelas",
     // Era "Monastery of the Winds", o MESMO nome da Gruta 13. No mapa o trecho
@@ -41,6 +41,37 @@ pub const TORRE_RAIO: f32 = 3.5;
 /// 4-unit grid and for a crowd.
 pub const PORTAO_FOLGA: f32 = 3.0;
 
+// ── Stormkeep: the open-field castle in the Plateau's empty south ──
+/// The owner, 02/10/2026: "the south of the planalto is kind of empty ... an
+/// open map dungeon, a big castle with a lot of mobs and a bigger area for a
+/// boss". Mobs 50-60, the Warlord 60 in the keep, and his chests.
+pub const FORTE_NOME: &str = "Stormkeep";
+pub const FORTE_NIVEIS: (u32, u32) = (50, 60);
+/// How far south of the Passo-Forja line the keep stands, in units.
+const FORTE_DESVIO: f32 = 240.0;
+/// Flat core and ramp end of the castle's plateau.
+pub const FORTE_RAIO_PLATO: f32 = 66.0;
+pub const FORTE_RAIO: f32 = 100.0;
+/// The outer curtain (inner face) and the keep wall round the boss arena.
+pub const FORTE_MURO_RAIO: f32 = 56.0;
+pub const FORTE_PATIO_RAIO: f32 = 24.0;
+pub const FORTE_ESPESSURA: f32 = 3.0;
+pub const FORTE_TORRE_RAIO: f32 = 4.5;
+pub const FORTE_MURO_BLOCOS: i32 = 14;
+pub const FORTE_TORRE_BLOCOS: i32 = 22;
+/// Where the outer courtyard's hordes stand, from the centre.
+pub const FORTE_RAIO_HORDAS: f32 = 40.0;
+
+/// The castle of the south: its centre, floor and towers.
+#[derive(Clone, Debug)]
+pub struct Forte {
+    pub centro: Vec2,
+    pub nivel_chao: f32,
+    /// Unit vector from the centre towards the gate (the road in).
+    pub portao: Vec2,
+    pub torres: Vec<Vec2>,
+}
+
 /// A piece of the castle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Muro {
@@ -70,6 +101,8 @@ pub struct Plano {
     /// The castle's towers, found once (`achar_torres`): the search walks the
     /// whole ring, and the relief asks per column.
     pub torres: Vec<Vec2>,
+    /// Stormkeep, the castle of the south.
+    pub forte: Forte,
 }
 impl Plano {
     pub fn novo(cidade: Cidade, porto: Option<SitioPorto>) -> Self {
@@ -111,14 +144,102 @@ impl Plano {
             ha: regioes[1].nivel_chao,
             hb: regioes[3].nivel_chao,
         });
+        // STORMKEEP: south of the Passo-Forja line, on its own plateau. The
+        // road climbs from the Passo to the foot of the ramp at the castle's
+        // floor level, then runs flat through both gates to the keep.
+        let centro_forte = (regioes[1].centro + regioes[3].centro) * 0.5 - lado * FORTE_DESVIO;
+        let nivel_forte = regioes[1].nivel_chao + 10.0;
+        let portao = (regioes[1].centro - centro_forte).try_normalize().unwrap_or(Vec2::NEG_Y);
+        let pe = centro_forte + portao * FORTE_RAIO;
+        estradas.push(Estrada { a: regioes[1].centro, b: pe, ha: regioes[1].nivel_chao, hb: nivel_forte });
+        estradas.push(Estrada { a: pe, b: centro_forte, ha: nivel_forte, hb: nivel_forte });
         let mut plano = Self {
             cidade,
             regioes,
             estradas,
             torres: Vec::new(),
+            forte: Forte { centro: centro_forte, nivel_chao: nivel_forte, portao, torres: Vec::new() },
         };
         plano.torres = plano.achar_torres();
+        plano.forte.torres = plano.achar_torres_do_forte();
         plano
+    }
+
+    /// Distance from Stormkeep's centre.
+    pub fn d_forte(&self, p: Vec2) -> f32 {
+        self.forte.centro.distance(p)
+    }
+
+    /// Inside Stormkeep's outer wall (or on it)?
+    pub fn no_forte(&self, p: Vec2) -> bool {
+        self.d_forte(p) < FORTE_MURO_RAIO + FORTE_ESPESSURA + FORTE_TORRE_RAIO
+    }
+
+    /// The centres of the hordes in the outer courtyard: a ring between the
+    /// two walls, clear of the road that runs from the gate to the keep.
+    pub fn hordas_do_forte(&self) -> Vec<Vec2> {
+        let f = &self.forte;
+        let base = f.portao.y.atan2(f.portao.x);
+        (0..10)
+            .map(|k| base + (k as f32 + 0.5) / 10.0 * std::f32::consts::TAU)
+            .filter(|a| {
+                let da = (a - base).rem_euclid(std::f32::consts::TAU);
+                da.min(std::f32::consts::TAU - da) > 0.45
+            })
+            .map(|a| f.centro + Vec2::new(a.cos(), a.sin()) * FORTE_RAIO_HORDAS)
+            .collect()
+    }
+
+    /// Stormkeep's towers: a pair at each gate of each ring, one every 30
+    /// degrees on the curtain and every 60 on the keep wall.
+    fn achar_torres_do_forte(&self) -> Vec<Vec2> {
+        let f = &self.forte;
+        let base = f.portao.y.atan2(f.portao.x);
+        let mut torres = Vec::new();
+        for (raio, passos) in [(FORTE_MURO_RAIO, 12), (FORTE_PATIO_RAIO, 6)] {
+            let meio = raio + FORTE_ESPESSURA * 0.5;
+            let no_anel = |a: f32| f.centro + Vec2::new(a.cos(), a.sin()) * meio;
+            let meia_boca = (ESTRADA + PORTAO_FOLGA + FORTE_TORRE_RAIO) / meio;
+            torres.push(no_anel(base - meia_boca));
+            torres.push(no_anel(base + meia_boca));
+            for k in 0..passos {
+                let a = base + (k as f32 + 0.5) / passos as f32 * std::f32::consts::TAU;
+                let da = (a - base).rem_euclid(std::f32::consts::TAU);
+                if da.min(std::f32::consts::TAU - da) > meia_boca * 2.0 {
+                    torres.push(no_anel(a));
+                }
+            }
+        }
+        torres
+    }
+
+    /// Which part of Stormkeep stands at `p`, if any.
+    pub fn parte_do_forte(&self, p: Vec2) -> Option<Muro> {
+        let d = self.d_forte(p);
+        if d > FORTE_MURO_RAIO + FORTE_ESPESSURA + FORTE_TORRE_RAIO + 1.0 {
+            return None;
+        }
+        let (bx, bz) = (
+            (p.x / crate::terreno::BLOCO).round() as i32,
+            (p.y / crate::terreno::BLOCO).round() as i32,
+        );
+        let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
+        for t in &self.forte.torres {
+            let dt = t.distance(p);
+            if dt <= FORTE_TORRE_RAIO {
+                return Some(Muro::Torre { ameia: dt > FORTE_TORRE_RAIO - 1.0 && xadrez });
+            }
+        }
+        if self.distancia_estrada(p) < ESTRADA + PORTAO_FOLGA {
+            return None;
+        }
+        for raio in [FORTE_MURO_RAIO, FORTE_PATIO_RAIO] {
+            if (raio..=raio + FORTE_ESPESSURA).contains(&d) {
+                let meio = raio + FORTE_ESPESSURA * 0.5;
+                return Some(Muro::Cortina { ameia: d > meio + FORTE_ESPESSURA * 0.25 && xadrez });
+            }
+        }
+        None
     }
     pub fn regiao(&self, p: Vec2) -> usize {
         self.regioes
@@ -133,6 +254,9 @@ impl Plano {
             .0
     }
     pub fn faixa(&self, p: Vec2) -> (u32, u32) {
+        if self.no_forte(p) {
+            return FORTE_NIVEIS;
+        }
         NIVEIS[self.regiao(p)]
     }
     pub fn distancia_estrada(&self, p: Vec2) -> f32 {
@@ -142,7 +266,9 @@ impl Plano {
             .fold(f32::INFINITY, f32::min)
     }
     pub fn sem_obstaculo(&self, p: Vec2) -> bool {
-        self.distancia_estrada(p) < ESTRADA + 5.0
+        // Stormkeep's grounds are cleared: no trees or rocks in a castle.
+        self.d_forte(p) < FORTE_MURO_RAIO + FORTE_ESPESSURA + 8.0
+            || self.distancia_estrada(p) < ESTRADA + 5.0
             || self.regioes.iter().any(|r| {
                 r.centro.distance(p) < 14.0
                     || (r.centro + Vec2::new(22., -22.)).distance(p) < 10.0
@@ -187,6 +313,12 @@ impl Plano {
                 * fora;
             h += (r.nivel_chao - h) * t;
         }
+        // Stormkeep's plateau, over whatever region is nearest.
+        let d = self.d_forte(p);
+        if d < FORTE_RAIO {
+            let t = 1.0 - Self::suave(((d - FORTE_RAIO_PLATO) / (FORTE_RAIO - FORTE_RAIO_PLATO)).clamp(0.0, 1.0));
+            h += (self.forte.nivel_chao - h) * t;
+        }
         if let Some((d, alvo)) = self
             .estradas
             .iter()
@@ -210,15 +342,24 @@ impl Plano {
     /// Runs AFTER the town square is flattened (`Gerador::bloco_em`), so the
     /// wall stands on the finished ground.
     pub fn muralha(&self, p: Vec2, b: i32) -> i32 {
-        match self.parte_da_muralha(p) {
+        match self.parte_da_cidade(p) {
             Some(Muro::Cortina { ameia }) => b + MURO_BLOCOS + if ameia { 2 } else { 0 },
             Some(Muro::Torre { ameia }) => b + TORRE_BLOCOS + if ameia { 2 } else { 0 },
-            None => b,
+            None => match self.parte_do_forte(p) {
+                Some(Muro::Cortina { ameia }) => b + FORTE_MURO_BLOCOS + if ameia { 2 } else { 0 },
+                Some(Muro::Torre { ameia }) => b + FORTE_TORRE_BLOCOS + if ameia { 2 } else { 0 },
+                None => b,
+            },
         }
     }
 
-    /// Which part of the castle stands at `p`, if any.
+    /// Which part of either castle stands at `p`, if any.
     pub fn parte_da_muralha(&self, p: Vec2) -> Option<Muro> {
+        self.parte_da_cidade(p).or_else(|| self.parte_do_forte(p))
+    }
+
+    /// Which part of Last Refuge's castle stands at `p`, if any.
+    fn parte_da_cidade(&self, p: Vec2) -> Option<Muro> {
         let c = self.cidade.centro();
         let d = c.distance(p);
         if !(MURO_RAIO - TORRE_RAIO - 1.0..=MURO_RAIO + MURO_ESPESSURA + TORRE_RAIO + 1.0).contains(&d) {
@@ -355,6 +496,41 @@ mod tests {
         assert!(!p.bonus_coleta(c + Vec2::splat(100.), 0));
         assert_eq!(p.campo(1800).unwrap().0, 3);
         assert!(p.campo(1799).is_none());
+    }
+
+    /// STORMKEEP: a castle on its own plateau in the south, walls standing
+    /// round both rings, and a walk from the Passo through both gates into
+    /// the boss arena. Its hordes stand in the outer courtyard, off the walls.
+    #[test]
+    fn stormkeep_tem_muralha_portoes_e_arena_alcancavel() {
+        let def = crate::terreno::def_da_zona(ZONA).expect("the Planalto exists");
+        let ger = crate::terreno::Gerador::da_ilha(def);
+        let pl = ger.planalto().expect("the Planalto has its plan");
+        let f = &pl.forte;
+        assert!(f.centro.length() + FORTE_RAIO < def.raio_m(), "Stormkeep off the island: {:?}", f.centro);
+        for raio in [FORTE_MURO_RAIO, FORTE_PATIO_RAIO] {
+            let meio = raio + FORTE_ESPESSURA * 0.5;
+            let mut de_pe = 0;
+            for k in 0..360 {
+                let a = k as f32 / 360.0 * std::f32::consts::TAU;
+                let q = f.centro + Vec2::new(a.cos(), a.sin()) * meio;
+                if ger.altura(q.x, q.y) >= f.nivel_chao * BLOCO + 5.0 {
+                    de_pe += 1;
+                }
+            }
+            assert!(de_pe > 300, "ring {raio}: only {de_pe}/360 of it has a wall");
+        }
+        for h in pl.hordas_do_forte() {
+            assert!(pl.parte_da_muralha(h).is_none(), "a horde on the wall at {h:?}");
+            assert_eq!(pl.faixa(h), FORTE_NIVEIS);
+        }
+        assert!(pl.hordas_do_forte().len() >= 8);
+        let ilha = crate::terreno::Ilha::da_ilha(def);
+        let rota = ilha.caminho(pl.regioes[1].centro, f.centro, 80_000);
+        assert!(
+            rota.as_ref().and_then(|r| r.last()).is_some_and(|p| p.distance(f.centro) < 8.0),
+            "no walk from the Passo into Stormkeep's arena"
+        );
     }
 
     /// LAST REFUGE IS A CASTLE: a wall round most of the town, towers on it,

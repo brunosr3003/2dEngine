@@ -221,6 +221,7 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Combine: {} {} attempt {}, {}% chance, {} copper. Failing consumes the {}.",
     ),
     ("Gathering · {} · {:.1} s", "Coletando · {} · {:.1} s"),
+    ("Opening · {} · {:.1} s", "Abrindo · {} · {:.1} s"),
     ("Bag full — gathering paused", "Bolsa cheia — coleta pausada"),
     // ────────────────────────────── cliente: a colônia ──────────────────────────────
     ("Harvest", "Colher"),

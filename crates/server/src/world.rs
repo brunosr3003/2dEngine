@@ -103,6 +103,7 @@ pub(crate) mod magica;
 pub(crate) use chefes::itens_do_chefe;
 pub(crate) mod dungeon;
 mod evolucao_skills;
+pub(crate) mod forte;
 mod loja_mundo;
 mod mercado_mundo;
 mod oficina;
@@ -675,6 +676,10 @@ pub const FORTE_A_CADA: usize = 7;
 /// mobs continuarem caber depois de o espacamento tirar metade dos sitios:
 /// so' as diagonais da grade valem agora, e em raio 24 sobrariam ~25 vagas.
 pub const FORTE_RAIO_UN: f32 = 28.0;
+/// Stormkeep's courtyard hordes: radius, slot spacing and mobs per horde.
+pub const FORTE_HORDA_RAIO_UN: f32 = 13.0;
+pub const FORTE_HORDA_PASSO_UN: f32 = 4.5;
+pub const FORTE_HORDA_MOBS: usize = 10;
 /// Espacamento entre inimigos dentro do forte.
 ///
 /// **De 4 pra 7 em 27/09/2026** (docs/ESCADA.md, "o simulador media uma horda
@@ -1387,6 +1392,36 @@ pub(crate) fn zonas_comuns_da_ilha(
             });
         }
     }
+    // STORMKEEP's hordes (`planalto::Forte`): a ring of them in the outer
+    // courtyard, 50-60, about ten each. The castle is cleared of the general
+    // sites (`sem_spawn`), so these are its whole garrison.
+    if let Some(pl) = ilha.planalto() {
+        for c in pl.hordas_do_forte() {
+            let mut slots = Vec::new();
+            for gy in -3..=3 {
+                for gx in -3..=3 {
+                    let p = c + Vec2::new(gx as f32, gy as f32) * FORTE_HORDA_PASSO_UN;
+                    let d = pl.d_forte(p);
+                    if p.distance(c) <= FORTE_HORDA_RAIO_UN
+                        && d > shared::planalto::FORTE_PATIO_RAIO + shared::planalto::FORTE_ESPESSURA + 4.0
+                        && d < shared::planalto::FORTE_MURO_RAIO - 3.0
+                        && pl.parte_da_muralha(p).is_none()
+                        && pl.distancia_estrada(p) > shared::planalto::ESTRADA + 2.0
+                        && !ilha.agua(p.x, p.y)
+                    {
+                        slots.push(p);
+                    }
+                }
+            }
+            slots.truncate(FORTE_HORDA_MOBS);
+            if slots.len() >= 3 {
+                let indice = r.centros.len();
+                r.centros.push(c);
+                let (lv_min, lv_max) = shared::planalto::FORTE_NIVEIS;
+                r.zonas.push(ZonaComum { indice, centro: c, lv_min, lv_max, slots, raio: FORTE_HORDA_RAIO_UN, forte: false });
+            }
+        }
+    }
     // As hordas acima são pontos de caça, não a população de todo o mapa.
     // Preenche o chão entre elas com grupos pequenos. Usa os mesmos sítios
     // validados: sem cabanas, cidade, porto ou ilhotas desconectadas.
@@ -1811,6 +1846,8 @@ pub struct Session {
     pub coleta_progresso: f32,
     /// No' sendo coletado agora (coleta por no'). `None` = nao coleta.
     pub coleta_no: Option<ColetaDeNo>,
+    /// Opening one of Stormkeep's chests (`forte`).
+    pub abrindo_bau: Option<forte::AberturaDeBau>,
     /// Recargas e curas das pocoes de recurso, por grupo (`shared::pocoes`).
     pub pocoes: shared::pocoes::EstadoDePocoes,
     /// Resto fracionario da cura de vida da pocao (HP e' inteiro).
@@ -7442,6 +7479,7 @@ impl GameWorld {
                 logged_in: false,
                 coleta_progresso: 0.0,
                 coleta_no: None,
+                abrindo_bau: None,
                 pocoes: Default::default(),
                 pocao_hp_resto: 0.0,
                 auth_in_flight: false,
@@ -9320,6 +9358,7 @@ impl GameWorld {
         // Coleta automatica: na ilha sai das pedras plantadas no relevo, no
         // mapa de arquivo sai dos nos postos a mao.
         self.tick_coleta();
+        self.tick_forte();
         self.tick_pedras();
         if !self.farm_nodes.is_empty() {
             self.tick_farm_respawn();
@@ -12508,6 +12547,13 @@ impl GameWorld {
                     },
                     1,
                 );
+            }
+            // Stormkeep's Warlord drops his chests where he falls.
+            if kind_id == shared::forte::SENHOR_DO_FORTE
+                && self.inst_do_saque == 0
+                && self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss)
+            {
+                self.forte_largar_baus(pos);
             }
             // Rastrear se era o boss
             if self.boss_entity == Some(e) {
@@ -17537,6 +17583,10 @@ impl GameWorld {
             if self.dg_abrir_bau(sid, EntityId(eid as u32)) {
                 return;
             }
+            // One of Stormkeep's chests: ten seconds of standing still.
+            if self.forte_tocar_bau(sid, EntityId(eid as u32)) {
+                return;
+            }
         }
         let Some(session) = self.sessions.get(&sid) else {
             return;
@@ -22297,7 +22347,11 @@ mod testes_planalto {
         }
         for z in &comuns.zonas {
             assert_eq!((z.lv_min,z.lv_max),pl.faixa(z.centro));
-            assert!(z.slots.iter().all(|p| !pl.sem_spawn(*p)), "mob na estrada");
+            // Stormkeep's garrison stands where the general spawns may not
+            // (the castle is cleared for them); its hordes are checked below.
+            if !pl.no_forte(z.centro) {
+                assert!(z.slots.iter().all(|p| !pl.sem_spawn(*p)), "mob na estrada");
+            }
         }
         for i in [2,3] {
             let mut recursos = Vec::new();
@@ -22315,8 +22369,20 @@ mod testes_planalto {
             assert!(!z.slots.is_empty(), "campo {id} sem inimigos");
             assert!(!z.active);
         }
-        assert_eq!(w.vagas_de_chefe.len(),3);
+        assert_eq!(w.vagas_de_chefe.len(),4);
         for (ch,i) in w.vagas_de_chefe.iter().zip([2,3,4]) { assert_eq!(pl.regiao(ch.pos),i); }
+        // Stormkeep's Warlord stands in the keep's arena.
+        let senhor = &w.vagas_de_chefe[3];
+        assert_eq!(senhor.kind, shared::forte::SENHOR_DO_FORTE);
+        assert!(pl.d_forte(senhor.pos) < shared::planalto::FORTE_PATIO_RAIO, "the Warlord is not in the keep");
+        // And the castle's hordes, 50-60, in the outer courtyard.
+        let hordas: Vec<_> = comuns.zonas.iter().filter(|z| pl.no_forte(z.centro)).collect();
+        assert!(hordas.len() >= 8, "only {} hordes in Stormkeep", hordas.len());
+        for z in hordas {
+            assert_eq!((z.lv_min, z.lv_max), shared::planalto::FORTE_NIVEIS);
+            assert!(z.slots.len() >= 6, "a Stormkeep horde with {} slots", z.slots.len());
+            assert!(z.slots.iter().all(|p| pl.d_forte(*p) > shared::planalto::FORTE_PATIO_RAIO + 4.0), "a mob inside the keep");
+        }
     }
 
     /// The story's named-boss steps (891 Owlbear, 892 Behemoth, 894 Archmage)

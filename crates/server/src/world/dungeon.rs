@@ -167,7 +167,7 @@ impl GameWorld {
         }
     }
 
-    fn dg_texto(&self, sid: SessionId, ok: bool, texto: impl Into<String>) {
+    pub(super) fn dg_texto(&self, sid: SessionId, ok: bool, texto: impl Into<String>) {
         self.dg_avisar(
             sid,
             Aviso::Texto {
@@ -1926,7 +1926,7 @@ impl GameWorld {
         self.save_pending = true;
     }
 
-    fn dg_rolar_peca(p: &dg::Premio) -> Option<shared::ItemInstance> {
+    pub(super) fn dg_rolar_peca(p: &dg::Premio) -> Option<shared::ItemInstance> {
         let (_, ilvl) = p.peca?;
         let tpl = crate::economy::item_template_of(p.item_id);
         shared::ItemInstance::roll_with_template(tpl, ilvl, || fastrand::f32()).map(|mut i| {

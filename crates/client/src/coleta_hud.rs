@@ -33,7 +33,7 @@ impl BarraDeColeta {
             *self = Self::default();
             return;
         }
-        if !pausado && progresso < 0.1 { crate::sons::tocar(if tipo == 0 {crate::sons::Som::Machado} else {crate::sons::Som::Picareta}); }
+        if !pausado && progresso < 0.1 && tipo < shared::forte::TIPO_COLETA { crate::sons::tocar(if tipo == 0 {crate::sons::Som::Machado} else {crate::sons::Som::Picareta}); }
         *self = Self {
             tipo: Some(tipo),
             intervalo: intervalo_s,
@@ -97,8 +97,9 @@ impl BarraDeColeta {
             );
             return;
         }
+        let verbo = if tipo > shared::forte::TIPO_COLETA { "Opening" } else { "Gathering" };
         let texto = format!(
-            "Gathering · {} · {:.1} s",
+            "{verbo} · {} · {:.1} s",
             shared::nome_do_no(tipo),
             self.restante_s(agora)
         )

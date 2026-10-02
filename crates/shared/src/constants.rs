@@ -132,7 +132,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// and 23).
 /// 175 (02/10/2026): Skyreach's cloud paths gain a cloud rim (terrain; client
 /// and server must agree on the heights) and its town a Harbour Captain.
-pub const PROTOCOL_VERSION: u16 = 175;
+/// 176 (02/10/2026): Stormkeep, the open-field castle in the Plateau's south —
+/// terrain, the Warlord (boss kind 24) and his chests (`forte`, roles 121-123).
+pub const PROTOCOL_VERSION: u16 = 176;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -1718,6 +1720,7 @@ pub fn nome_do_no(tier: u8) -> &'static str {
         3 => "Blue stone",
         4 => "Purple stone",
         5 => "Energy",
+        t if t > crate::forte::TIPO_COLETA => crate::forte::nome_da_cor(t - crate::forte::TIPO_COLETA),
         _ => "Node",
     }
 }

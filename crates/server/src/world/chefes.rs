@@ -347,7 +347,11 @@ impl GameWorld {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
                 candidatos.iter().copied().filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
                     .min_by(|a,b| a.distance_squared(alvo).total_cmp(&b.distance_squared(alvo)))
-            }).collect()
+            })
+            // Then Stormkeep's Warlord (60, last in `da_zona`): in the keep's
+            // arena, a little past its middle from the gate.
+            .chain(std::iter::once(pl.forte.centro - pl.forte.portao * 8.0))
+            .collect()
         } else {
             sitios_de_chefe(&candidatos, self.porto_da_ilha, &seguras, chefes.len())
         };

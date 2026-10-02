@@ -2683,6 +2683,14 @@ impl Gerador {
                 crate::planalto::Muro::Cortina { .. } => if xadrez { Material::Calcada } else { Material::CalcadaEscura },
             });
         }
+        // Stormkeep's courtyards: flagstones inside the curtain.
+        if let Some(pl) = self.planalto() {
+            let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+            if pl.d_forte(p) < crate::planalto::FORTE_MURO_RAIO {
+                let xadrez = (bx.div_euclid(3) + bz.div_euclid(3)) % 2 == 0;
+                return Some(if xadrez { Material::Calcada } else { Material::CalcadaEscura });
+            }
+        }
         // A Porão's halls and walls on the Arena (`planta`).
         if self.e_arena() {
             let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);

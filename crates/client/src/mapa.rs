@@ -2894,6 +2894,16 @@ impl Mapa {
                 let q = ponto(vec2(c.centro().x,c.centro().y));
                 estilo::texto_centro(q.x,q.y-u(22.0),"Último Abrigo",13,estilo::OURO);
             } }
+            // Stormkeep: the castle ring and its name, with the band.
+            {
+                let f = &pl.forte;
+                let q = ponto(vec2(f.centro.x, f.centro.y));
+                draw_circle_lines(q.x, q.y, shared::planalto::FORTE_MURO_RAIO * escala, u(2.0), estilo::OURO);
+                let (a, b) = shared::planalto::FORTE_NIVEIS;
+                let nome = format!("{} · {}–{}", shared::idioma::tr(shared::planalto::FORTE_NOME), a, b);
+                estilo::texto_centro(q.x + 1.0, q.y + 1.0, &nome, 13, BLACK);
+                estilo::texto_centro(q.x, q.y, &nome, 13, estilo::OURO);
+            }
             if let Some((_,c)) = pl.campo(agora_unix) {
                 let q = ponto(vec2(c.x,c.y));
                 draw_circle_lines(q.x,q.y,32.0*escala,u(2.0),SKYBLUE);

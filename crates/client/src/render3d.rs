@@ -1499,10 +1499,21 @@ pub fn desenha_entrada_no_portal(p: Vec3, cor: Color, progresso: f32, t: f32) {
 
 /// O bau da dungeon: madeira, faixas de ouro e um anel que pulsa no chao.
 fn desenha_bau(p: Vec3) {
+    desenha_bau_de_cor(p, None);
+}
+
+/// The chest, with its bands and glow in the color of a Stormkeep chest
+/// (`shared::forte`, 2 green .. 4 purple); `None` = the dungeon's gold one.
+fn desenha_bau_de_cor(p: Vec3, cor: Option<u8>) {
     let t = get_time() as f32;
     let madeira = Color::from_rgba(122, 78, 40, 255);
     let escura = Color::from_rgba(86, 52, 26, 255);
-    let ouro = Color::from_rgba(236, 190, 84, 255);
+    let ouro = match cor {
+        Some(2) => Color::from_rgba(96, 200, 96, 255),
+        Some(3) => Color::from_rgba(80, 150, 240, 255),
+        Some(4) => Color::from_rgba(186, 104, 240, 255),
+        _ => Color::from_rgba(236, 190, 84, 255),
+    };
     draw_cube(
         p + vec3(0.0, 0.38, 0.0),
         vec3(1.2, 0.76, 0.8),
@@ -1528,7 +1539,7 @@ fn desenha_bau(p: Vec3) {
     draw_ring(
         p,
         0.95 + 0.08 * (t * 3.0).sin(),
-        Color::new(0.95, 0.78, 0.35, a),
+        Color::new(ouro.r, ouro.g, ouro.b, a),
     );
 }
 
@@ -1674,6 +1685,10 @@ pub fn draw_entities_com_sombras(
             // Bau de conclusao da dungeon: caixa com tampa e fecho, pulsando.
             if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU {
                 desenha_bau(p);
+                continue;
+            }
+            if let Some(cor) = shared::forte::cor_do_papel(shared::npc_papel_de_kind(e.meta.kind)) {
+                desenha_bau_de_cor(p, Some(cor));
                 continue;
             }
             let nome = rig_do_npc(shared::npc_papel_de_kind(e.meta.kind), e.meta.id.0 as u64);

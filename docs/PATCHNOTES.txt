@@ -1,3 +1,13 @@
+02/10/2026 — Fortaleza da Tormenta, o castelo do sul do Planalto
+
+O sul do Planalto ganhou uma masmorra a céu aberto: a Fortaleza da Tormenta (Stormkeep), um castelo grande com duas muralhas e torres, num platô próprio. A estrada sai do Passo dos Ventos e entra pelos dois portões.
+
+O pátio entre as muralhas é guardado por hordas de monstros do nível 50 ao 60. No meio, atrás da muralha interna, fica a arena do chefe: o Senhor da Fortaleza da Tormenta, nível 60.
+
+Quando ele cai, solta de 1 a 3 baús no chão, cada um verde, azul ou roxo, sorteado separadamente. Para abrir um baú, fique parado ao lado dele por 10 segundos, como numa coleta; quem terminar primeiro leva o conteúdo. O baú dá recompensa de dungeon de nível 56: o verde rende como o estágio 1, o azul como o estágio 2 e o roxo como o estágio 3. Baú que ninguém abrir some depois de 5 minutos.
+
+Atualização obrigatória — o protocolo passa para o 176. Por enquanto só computador e Android.
+
 02/10/2026 — Skyreach: Capitão do Porto e bordas das nuvens
 
 Skyreach ganhou um Capitão do Porto na praça da cidade. Antes não havia nenhum, e quem subia não conseguia voltar para as outras ilhas.

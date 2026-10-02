@@ -1611,6 +1611,7 @@ pub async fn previa_do_planalto() {
     for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
     let solido = crate::render3d::material_solido();
     let vistas = std::iter::once(("abrigo".to_string(),g.cidade().unwrap().centro()))
+        .chain(std::iter::once(("forte".to_string(),pl.forte.centro)))
         .chain(pl.regioes.iter().enumerate().map(|(i,r)|(format!("regiao-{i}"),r.centro)));
     for (nome,c) in vistas {
         let centro = vec2(c.x,c.y);
