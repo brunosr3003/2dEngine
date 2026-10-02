@@ -20560,6 +20560,15 @@ pub(crate) fn effective_stats(
         s.attack_speed_mult -= (shared::ATTACK_SPEED_PCT_PER_DES - shared::ATTACK_SPEED_PCT_PER_DES_ALEM)
             * (des - shared::ATTACK_SPEED_JOELHO) as f32;
     }
+    // And it is the PISTOL's stat: other weapons get part of its speed and
+    // crit (`DES_FORA_DA_PISTOLA`).
+    if equip.weapon != Some(shared::item_id::PISTOLAS) && des > 0 {
+        let vel = shared::ATTACK_SPEED_PCT_PER_DES * des.min(shared::ATTACK_SPEED_JOELHO) as f32
+            + shared::ATTACK_SPEED_PCT_PER_DES_ALEM * des.saturating_sub(shared::ATTACK_SPEED_JOELHO) as f32;
+        let corte = 1.0 - shared::DES_FORA_DA_PISTOLA;
+        s.attack_speed_mult -= vel * corte;
+        s.crit_chance -= shared::CRIT_CHANCE_PER_DES * des as f32 * corte;
+    }
 
     // Os degraus de VIT/25 e RES/30 (+5% de reducao cada) sairam em 27/09:
     // eram porcentagem fixa de qualquer golpe, o mesmo defeito da defesa
@@ -20682,7 +20691,11 @@ pub(crate) fn effective_stats(
         // stat. The katana's sustained damage sits below the pistol's on
         // purpose: what it has is the OPENER and the EXECUTE, not the grind.
         shared::item_id::KATANA => {
-            s.attack_damage += s.dex / 5;
+            // The PIECES' dexterity, as the note above says: allocated DEX
+            // points are the pistol's (`DES_FORA_DA_PISTOLA`), and counting
+            // them here made all-DEX beat all-STR on the katana.
+            let des_alocada = allocated[shared::stat_idx::DES] as i32;
+            s.attack_damage += (s.dex - des_alocada).max(0) / 5;
             s.attack_speed_mult += 0.10;
         }
         _ => {}

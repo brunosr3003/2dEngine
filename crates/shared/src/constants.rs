@@ -1242,6 +1242,12 @@ pub const ATTACK_SPEED_PCT_PER_DES: f32 = 0.015;
 pub const ATTACK_SPEED_JOELHO: u32 = 60;
 pub const ATTACK_SPEED_PCT_PER_DES_ALEM: f32 = 0.005;
 
+/// DEX is the PISTOL's stat: for every other weapon its attack speed and
+/// crit count this much (02/10/2026, the owner: "for the other classes make
+/// DEX increase the damage less than for the pistol" — all-DEX was beating
+/// all-STR on the sword and the katana, and all-INT on the ring).
+pub const DES_FORA_DA_PISTOLA: f32 = 0.3;
+
 /// Stamina maxima adicional por ponto em SPD (somada ao base 100).
 pub const STAMINA_MAX_PER_SPD: i32 = 2;
 

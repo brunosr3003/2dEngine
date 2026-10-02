@@ -2804,6 +2804,38 @@ mod metas_da_escada {
     /// mobs is no longer a free ride. A level 51 pistol on level 60 mobs
     /// kills them clearly slower and takes clearly more than on its own
     /// level — it used to clear them at 86% health in the same time.
+    /// DEX is the pistol's main stat; for the other weapons their own stat
+    /// (STR, INT for the ring) beats all-DEX at every level.
+    #[test]
+    fn des_e_o_atributo_da_pistola() {
+        crate::economy::init_vazia_para_testes();
+        let dps = |st: &shared::PlayerStats| {
+            st.attack_damage as f32 * st.attack_speed_mult * (1.0 + st.crit_chance.min(1.0) * (shared::CRIT_DAMAGE_MULT - 1.0))
+        };
+        for nivel in [30u32, 51, 80, 100] {
+            for c in Conjunto::TODOS {
+                let (e, a0, p, x) = build_do_nivel(c, nivel);
+                let pontos: u32 = a0.iter().sum();
+                let tudo = |idx: usize| {
+                    let mut a = [0u32; shared::STAT_COUNT];
+                    a[idx] = pontos;
+                    dps(&effective_stats(&e, &a, &p, x))
+                };
+                let des = tudo(shared::stat_idx::DES);
+                let proprio = match c {
+                    Conjunto::Pistolas => tudo(shared::stat_idx::FOR),
+                    Conjunto::AnelMagico => tudo(shared::stat_idx::INT),
+                    _ => tudo(shared::stat_idx::FOR),
+                };
+                if c == Conjunto::Pistolas {
+                    assert!(des > proprio, "nv{nivel} pistol: all-DEX {des:.0} <= all-STR {proprio:.0}");
+                } else {
+                    assert!(proprio > des, "nv{nivel} {c:?}: own stat {proprio:.0} <= all-DEX {des:.0}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn mob_muito_acima_do_nivel_custa_caro() {
         crate::economy::init_vazia_para_testes();
