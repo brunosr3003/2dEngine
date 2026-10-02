@@ -122,6 +122,20 @@ pub fn montar(ger: &Gerador) -> Vila {
     }
     if let Some(p) = ger.porto() {
         montar_porto(ger, &p, &mut vila);
+    } else if let Some(c) = ger.cidade().filter(|_| ger.semente == crate::celeste::SEMENTE) {
+        // SKYREACH HAS NO PORT, and the Harbour Captain only stood on one: no
+        // Captain, no travel, and whoever sailed up could not leave (the
+        // owner: "how do I leave the sky islands?"). He keeps the town square,
+        // in the gap between the shop doors, facing the middle.
+        let pos = c.centro() + Vec2::new(-4.8, -3.6);
+        vila.npcs.push(NpcDaVila {
+            papel: Papel::Estaleiro,
+            nome: Papel::Estaleiro.nome(),
+            pos,
+            yaw: yaw_de(c.centro() - pos),
+            loja: None,
+            giver: None,
+        });
     }
     montar_postos(ger, &mut vila);
     if let Some(pl) = ger.planalto() {
@@ -1589,6 +1603,30 @@ mod testes {
             agora += dt;
         }
         p
+    }
+
+    /// EVERY island has a Harbour Captain, reachable on foot from its town
+    /// square: travel only starts next to him. Skyreach has no port, and
+    /// without this whoever sailed up could not leave.
+    #[test]
+    fn toda_ilha_tem_capitao_alcancavel() {
+        for d in ARQUIPELAGO.iter() {
+            let ilha = crate::terreno::Ilha::da_ilha(d);
+            let cap = ilha
+                .vila()
+                .npcs
+                .iter()
+                .find(|n| n.papel == Papel::Estaleiro)
+                .unwrap_or_else(|| panic!("{}: no Harbour Captain", d.zona));
+            let praca = ilha.cidade().expect("a town").centro() + Vec2::new(0.0, 4.0);
+            let rota = ilha.caminho(praca, cap.pos, 40_000);
+            assert!(
+                rota.as_ref().and_then(|r| r.last()).is_some_and(|f| f.distance(cap.pos) < crate::viagem::PERTO_DO_CAPITAO),
+                "{}: the Captain at {:?} cannot be reached from the square",
+                d.zona,
+                cap.pos
+            );
+        }
     }
 
     #[test]
