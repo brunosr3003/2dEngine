@@ -610,7 +610,7 @@ async fn main() {
 
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_HUD").is_ok() {
-        previa_hud::abrir(&vox).await;
+        previa_hud::abrir(&mut vox).await;
         return;
     }
     if std::env::var("MMO_PREVIA_NOVIDADES").is_ok() {

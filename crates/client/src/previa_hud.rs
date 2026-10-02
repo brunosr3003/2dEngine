@@ -3,7 +3,7 @@
 use crate::hud;
 use macroquad::prelude::*;
 
-pub async fn abrir(vox: &crate::vox::VoxCache) {
+pub async fn abrir(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-hud".into());
     std::fs::create_dir_all(&saida).unwrap();
     let fundo = match std::env::var("MMO_PREVIA_HUD_FUNDO") {
@@ -40,6 +40,8 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
         shared::item_id::KATANA,
         shared::item_id::PISTOLAS,
         shared::item_id::COPPER,
+        // A skin item: its icon is the character wearing it (`icones::vitrine_skin`).
+        shared::aparencia::item_da_skin(shared::aparencia::ROUPA_BASE + 3),
     ]
     .into_iter()
     .enumerate()
@@ -237,6 +239,8 @@ pub async fn abrir(vox: &crate::vox::VoxCache) {
                     .get_texture_data()
                     .export_png(&format!("{saida}/{cena}-{w}.png"));
                 next_frame().await;
+                // Lazy outfits (a skin item's icon) load one per frame, like the game.
+                vox.atende_um_pendente(crate::render3d::VOXEL).await;
             }
         }
     }

@@ -102,6 +102,7 @@ pub fn icone_com_3d(
         let giro = get_time() as f32 * 0.5 + item_id as f32 * 0.7;
         crate::render3d::vitrine_pet(vox, item_id, desenho, giro, solido)
             || crate::render3d::vitrine_montaria(vox, item_id, desenho, giro, solido)
+            || vitrine_skin(vox, item_id, desenho, giro, solido)
     });
     if !bicho_3d {
         desenha(item_id, desenho, 1.0);
@@ -112,6 +113,30 @@ pub fn icone_com_3d(
         let w = crate::hud_estilo::medir_forte(&t, tam);
         crate::hud_estilo::texto_sombra(r.x + r.w - w - 4.0, r.y + r.h - 4.0, &t, tam, WHITE, true);
     }
+}
+
+/// A SKIN item as the character wearing it, turning like a pet or a mount.
+/// It had no icon at all: the flat set has nothing for skins, and a bought
+/// Storm Captain sat in the bag as an empty square. The look is the default
+/// one with only the skin changed — the outfit on the body, or the hat in
+/// the hair slot (`aparencia::cabelo_do_chapeu`).
+pub(crate) fn vitrine_skin(
+    vox: &crate::vox::VoxCache,
+    item_id: u16,
+    r: Rect,
+    giro: f32,
+    solido: &macroquad::material::Material,
+) -> bool {
+    use shared::aparencia as ap;
+    let Some(skin) = ap::skin_do_item(item_id) else {
+        return false;
+    };
+    let mut a = ap::Aparencia::default();
+    match ap::cabelo_do_chapeu(skin) {
+        Some(cabelo) => a.cabelo = cabelo,
+        None => a.roupa = skin,
+    }
+    crate::render3d::vitrine_aparencia_icone(vox, a, r, giro, solido)
 }
 
 #[cfg(test)]

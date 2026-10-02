@@ -2779,6 +2779,44 @@ fn desenha_montaria(
 
 /// Personagem no painel de aparência, pelo mesmo caminho de viewport das
 /// vitrines: funciona também no OpenGL ES, sem framebuffer de profundidade.
+/// A look as a small ICON (a skin item in the bag): closer than
+/// `vitrine_aparencia`, framed on the body, no platform — at the panel's
+/// framing the figure was a speck in a bag slot.
+pub fn vitrine_aparencia_icone(
+    vox: &VoxCache,
+    aparencia: shared::aparencia::Aparencia,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    let Some(veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let cam = Camera3D {
+        position: vec3(0.0, 1.1, 3.3),
+        target: vec3(0.0, 0.9, 0.0),
+        up: Vec3::Y,
+        fovy: 38f32.to_radians(),
+        aspect: Some(vp.2 as f32 / vp.3 as f32),
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    gl_use_material(solido);
+    solido.set_uniform("Crop", Vec3::ZERO);
+    let mut pose = crate::rig::pose(&crate::rig::Entrada {
+        fase: 0.0, andar: 0.0, correr: 0.0, tempo: get_time() as f32,
+        ar: 0.0, degrau: [0.0, 0.0],
+        combate: crate::rig::Combate::default(),
+    });
+    pose.armado = false;
+    desenha_rig_com_auras(Mat4::from_rotation_y(yaw), &pose, &veste, vox, 0);
+    gl_use_default_material();
+    camera_padrao();
+    true
+}
+
 pub fn vitrine_aparencia(
     vox: &VoxCache,
     aparencia: shared::aparencia::Aparencia,

@@ -1683,6 +1683,7 @@ fn icone_de_bicho(r: Rect, id: u16, palco: Option<(&VoxCache, &Material)>) -> bo
     let giro = get_time() as f32 * 0.5 + id as f32 * 0.7;
     crate::render3d::vitrine_pet(vox, id, r, giro, solido)
         || crate::render3d::vitrine_montaria(vox, id, r, giro, solido)
+        || crate::icones::vitrine_skin(vox, id, r, giro, solido)
 }
 
 /// O icone de um item, desenhado por categoria. Nao ha arte de icone ainda:
