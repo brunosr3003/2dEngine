@@ -402,12 +402,14 @@ pub async fn previa(vox: &mut crate::vox::VoxCache) {
             ("girado", Aparencia { rosto: 1, cabelo: 1, cor_cabelo: 3, pele: 1,
                 roupa: ap::ROUPA_BASE + 1, ..Default::default() }, 2.4),
             // Katana set: Stormcaller is skin 4, stored as 4 + 1.
-            ("arma", Aparencia { armas: [0, 5, 0], ..Default::default() }, 0.6),
+            ("arma", Aparencia { armas: [0, 5, 0, 0], ..Default::default() }, 0.6),
             ("montaria", Aparencia { montaria: 2, ..Default::default() }, 0.7),
+            // Magic ring set: Solar Ring is skin 12, stored as 12 + 1.
+            ("anel", Aparencia { armas: [0, 0, 0, 13], ..Default::default() }, 0.0),
         ] {
             u.provando = Some(a);
             u.vitrine = match nome {
-                "arma" => Vitrine::Arma,
+                "arma" | "anel" => Vitrine::Arma,
                 "montaria" => Vitrine::Montaria,
                 _ => Vitrine::Personagem,
             };
@@ -416,7 +418,7 @@ pub async fn previa(vox: &mut crate::vox::VoxCache) {
             for _ in 0..4 {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
-                u.desenha(vox, &solido, shared::item_id::KATANA, (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (1 << 3)) << (s * 8))),
+                u.desenha(vox, &solido, if nome == "anel" { shared::item_id::ANEL_MAGICO } else { shared::item_id::KATANA }, (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (1 << 3)) << (s * 8))),
                     Some(shared::item_id::MONTARIA_BASE + 4));
                 unsafe { get_internal_gl().flush() };
                 rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-aparencia-{w}-{nome}.png"));
@@ -518,7 +520,7 @@ mod testes {
     fn toda_skin_de_arma_e_montaria_tem_arquivo() {
         use shared::aparencia as ap;
         let existe = |rel: String| std::path::Path::new(&format!("../../assets/vox/{rel}.vox")).exists();
-        for s in ap::SKINS_DE_ARMA {
+        for s in ap::SKINS_DE_ARMA.iter().filter(|s| s.conjunto != 3) {
             let pecas = match s.conjunto { 0 => ["espada", "escudo"], 1 => ["katana", "bainha"], _ => ["pistola", "coldre"] };
             for p in pecas {
                 assert!(existe(format!("personagem/{p}_{}", s.sufixo)), "{p}_{} missing", s.sufixo);

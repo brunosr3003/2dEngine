@@ -118,7 +118,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 169 (01/10/2026): weapon and mount skins. `Aparencia` gained `armas` and
 /// `montaria`, and `EntityMeta` gained `skins` — postcard is positional, so
 /// both change the wire.
-pub const PROTOCOL_VERSION: u16 = 169;
+/// 170 (02/10/2026): magic ring skins. `Aparencia::armas` grew to 4 slots
+/// and `EntityMeta::skins` to u64 (four weapon sets plus the mount).
+pub const PROTOCOL_VERSION: u16 = 170;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

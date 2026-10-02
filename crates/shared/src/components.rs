@@ -514,7 +514,7 @@ pub struct EntityMeta {
     /// Weapon and mount skins (`aparencia::Aparencia::empacota_skins`).
     /// Zero = default models.
     #[serde(default)]
-    pub skins: u32,
+    pub skins: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

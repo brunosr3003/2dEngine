@@ -1041,7 +1041,7 @@ impl LojaTp {
                 0
             }
         };
-        let aw = (area.w / 4.0).min(160.0 * k);
+        let aw = ((area.w - 18.0 * k) / 4.0).min(160.0 * k.max(1.0));
         let ah = 34.0 * k;
         for (i, rotulo) in CATEGORIAS.iter().enumerate() {
             let r = Rect::new(area.x + i as f32 * (aw + 6.0 * k), area.y, aw, ah);
@@ -1109,7 +1109,8 @@ impl LojaTp {
                     2 => match ap::skin_de_arma(*id).map(|s| s.conjunto) {
                         Some(0) => "Sword and shield skin",
                         Some(1) => "Katana skin",
-                        _ => "Pistols skin",
+                        Some(2) => "Pistols skin",
+                        _ => "Magic ring skin",
                     },
                     _ => "Coat for any mount",
                 },

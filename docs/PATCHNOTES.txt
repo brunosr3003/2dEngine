@@ -1,3 +1,9 @@
+02/10/2026 — Skins de anel
+
+O Anel Mágico também ganhou skins: Anel de Brasa, Anel de Gelo, Anel Verdejante, Anel Solar e Anel do Vazio. Cada um muda a cor do brilho nas mãos, do círculo mágico e do orbe que o anel dispara — o Solar e o de Gelo ainda põem raios no círculo, e o Verdejante e o do Vazio um segundo anel por dentro. Na Loja, aba Aparência → Armas; para usar, Guarda-roupa → Weapon com o anel equipado.
+
+Atualização obrigatória — o protocolo passa para o 170. Por enquanto só computador e Android.
+
 01/10/2026 — Chapéus e roupas novos, skins de arma e de montaria
 
 Chapéus: os oito chapéus grátis foram refeitos e agora têm cor (antes saíam todos pretos). Chegaram seis novos: Chapéu de Palha (grátis), Chapéu de Capitão, Elmo de Cavaleiro, Elmo de Chifres, Turbante e Coroa.

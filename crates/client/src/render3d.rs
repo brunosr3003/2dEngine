@@ -1771,8 +1771,8 @@ pub fn draw_entities_com_sombras(
         match b {
             Brilho::Fita(f) => desenha_fita(f, agora),
             Brilho::Clarao(p, u) => desenha_clarao(*p, *u),
-            Brilho::Circulo(pulso, t) => desenha_circulo(*pulso, *t),
-            Brilho::Mao(p, forca, t) => desenha_mao(*p, *forca, *t),
+            Brilho::Circulo(pulso, t, tema) => desenha_circulo(*pulso, *t, tema),
+            Brilho::Mao(p, forca, t, tema) => desenha_mao(*p, *forca, *t, tema),
         }
     }
     // Lascas e faiscas da coleta: um pool so', avancado uma vez por quadro.
@@ -2308,7 +2308,7 @@ fn desenha_personagem(
             let pulsos = crate::rig::pulsos(&mats, VOXEL);
             let quais: &[usize] = if passo == 1 { &[0, 1] } else { &[0] };
             for &i in quais {
-                brilhos.push(Brilho::Circulo(pulsos[i], t));
+                brilhos.push(Brilho::Circulo(pulsos[i], t, tema_do_anel(veste.skins)));
             }
         }
     }
@@ -2321,7 +2321,7 @@ fn desenha_personagem(
         });
         let forca = 0.55 + 0.45 * e.sacada.clamp(0.0, 1.0) + 0.8 * pico;
         for (i, p) in crate::rig::palmas(&mats, VOXEL).iter().enumerate() {
-            brilhos.push(Brilho::Mao(*p, forca, agora + i as f32 * 1.7));
+            brilhos.push(Brilho::Mao(*p, forca, agora + i as f32 * 1.7, tema_do_anel(veste.skins)));
         }
     }
     brilhos
@@ -2331,16 +2331,13 @@ fn desenha_personagem(
 /// e tres faiscas orbitando. O nucleo vai PRIMEIRO: o halo por cima dele o
 /// deixa passar; na ordem contraria o halo escreveria profundidade na frente
 /// e o nucleo sumiria.
-fn desenha_mao(p: Vec3, forca: f32, t: f32) {
+fn desenha_mao(p: Vec3, forca: f32, t: f32, tema: &TemaDoAnel) {
     let pulso = 1.0 + 0.15 * (t * 6.0).sin();
     let alfa = |x: f32| (x * forca.min(1.0)).clamp(0.0, 255.0) as u8;
-    octaedro(
-        p,
-        0.045 * pulso * forca.max(0.6),
-        [255, 240, 255, alfa(255.0)],
-    );
-    octaedro(p, 0.10 * pulso * forca, [205, 150, 255, alfa(120.0)]);
-    octaedro(p, 0.19 * pulso * forca, [170, 110, 255, alfa(45.0)]);
+    let c = |rgb: [u8; 3], a: u8| [rgb[0], rgb[1], rgb[2], a];
+    octaedro(p, 0.045 * pulso * forca.max(0.6), c(tema.nucleo, alfa(255.0)));
+    octaedro(p, 0.10 * pulso * forca, c(tema.halo, alfa(120.0)));
+    octaedro(p, 0.19 * pulso * forca, c(tema.halo_fora, alfa(45.0)));
     for k in 0..3 {
         let ang = t * 4.0 + k as f32 * 2.094;
         let q = p + vec3(
@@ -2348,7 +2345,7 @@ fn desenha_mao(p: Vec3, forca: f32, t: f32) {
             (t * 3.0 + k as f32).sin() * 0.06,
             ang.sin() * 0.16,
         ) * forca.max(0.7);
-        octaedro(q, 0.02, [235, 210, 255, alfa(220.0)]);
+        octaedro(q, 0.02, c(tema.faisca, alfa(220.0)));
     }
 }
 
@@ -2359,9 +2356,50 @@ pub enum Brilho {
     /// Posicao e 0..1 da vida do clarao.
     Clarao(Vec3, f32),
     /// O pulso e o instante do golpe.
-    Circulo(Mat4, f32),
+    Circulo(Mat4, f32, TemaDoAnel),
     /// O brilho do anel na mao: onde, com que forca e a fase do pulso.
-    Mao(Vec3, f32, f32),
+    Mao(Vec3, f32, f32, TemaDoAnel),
+}
+
+/// The colours of the magic ring — its skin. The ring has no model (from
+/// above it would be one voxel): what shows is the glow on the hands and the
+/// circle at the wrist, so a ring skin is those, plus spokes or an inner ring
+/// to change the circle's shape and not only its colour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TemaDoAnel {
+    pub nucleo: [u8; 3],
+    pub halo: [u8; 3],
+    pub halo_fora: [u8; 3],
+    pub faisca: [u8; 3],
+    pub circulo: [u8; 3],
+    pub onda: [u8; 3],
+    /// Spokes across the circle (0 = none).
+    pub raios: u8,
+    /// A second, smaller ring inside the circle.
+    pub interno: bool,
+}
+
+/// The default violet, then one theme per ring skin (`SKINS_DE_ARMA`,
+/// conjunto 3, by `sufixo`).
+pub fn tema_do_anel(skins: u64) -> TemaDoAnel {
+    let a = shared::aparencia::Aparencia::default().com_skins(skins);
+    let t = |nucleo, halo, halo_fora, faisca, circulo, onda, raios, interno| TemaDoAnel {
+        nucleo, halo, halo_fora, faisca, circulo, onda, raios, interno,
+    };
+    match shared::aparencia::sufixo_da_arma(&a, 3) {
+        Some("brasa") => t([255, 246, 220], [255, 150, 60], [230, 70, 30], [255, 210, 120],
+            [255, 120, 40], [255, 180, 80], 0, false),
+        Some("gelo") => t([240, 252, 255], [140, 220, 255], [80, 170, 240], [220, 246, 255],
+            [120, 210, 255], [190, 240, 255], 6, false),
+        Some("verdejante") => t([240, 255, 230], [140, 230, 110], [60, 170, 80], [210, 255, 170],
+            [110, 220, 100], [180, 250, 150], 0, true),
+        Some("solar") => t([255, 255, 235], [255, 220, 90], [240, 170, 40], [255, 240, 170],
+            [255, 200, 60], [255, 230, 140], 12, false),
+        Some("vazio") => t([70, 24, 100], [200, 60, 255], [90, 20, 160], [255, 120, 255],
+            [150, 40, 230], [230, 100, 255], 4, true),
+        _ => t([255, 240, 255], [205, 150, 255], [170, 110, 255], [235, 210, 255],
+            [190, 130, 255], [215, 170, 255], 0, false),
+    }
 }
 
 /// Malha transparente das duas faces (o descarte de face de costas esta'
@@ -2435,20 +2473,27 @@ fn faixa_circular(m: Mat4, y: f32, raio: f32, largura: f32, cor: [u8; 4]) {
 /// O anel magico: o circulo aceso em volta do pulso enquanto o golpe arma, e
 /// no impacto um segundo circulo SAI da mao pra frente, crescendo e sumindo —
 /// o golpe projetado atraves do anel (docs/PERSONAGEM.md).
-fn desenha_circulo(pulso: Mat4, t: f32) {
+fn desenha_circulo(pulso: Mat4, t: f32, tema: &TemaDoAnel) {
     let imp = crate::rig::IMPACTO;
     let aceso = if t < imp {
         t / imp
     } else {
         (1.0 - (t - imp) / 0.25).max(0.0)
     };
-    faixa_circular(
-        pulso,
-        0.0,
-        7.0 * VOXEL,
-        2.0 * VOXEL,
-        [190, 130, 255, (aceso * 230.0) as u8],
-    );
+    let c = |rgb: [u8; 3], a: f32| [rgb[0], rgb[1], rgb[2], a.clamp(0.0, 255.0) as u8];
+    faixa_circular(pulso, 0.0, 7.0 * VOXEL, 2.0 * VOXEL, c(tema.circulo, aceso * 230.0));
+    if tema.interno {
+        faixa_circular(pulso, 0.0, 3.6 * VOXEL, 1.0 * VOXEL, c(tema.onda, aceso * 210.0));
+    }
+    // Spokes: thin quads from the inner edge out past the ring, turning.
+    for k in 0..tema.raios {
+        let ang = k as f32 / tema.raios as f32 * std::f32::consts::TAU + t * 1.5;
+        let (dir, lado) = (vec3(ang.cos(), 0.0, ang.sin()), vec3(-ang.sin(), 0.0, ang.cos()));
+        let (r0, r1, w) = (2.5 * VOXEL, 9.5 * VOXEL, 0.35 * VOXEL);
+        let q = [dir * r0 - lado * w, dir * r1 - lado * w * 0.3, dir * r1 + lado * w * 0.3, dir * r0 + lado * w];
+        let cor = c(tema.onda, aceso * 200.0);
+        dupla(q.iter().map(|p| vtx(pulso.transform_point3(*p), cor)).collect(), vec![[0, 1, 2], [0, 2, 3]]);
+    }
     if t > imp {
         let u = ((t - imp) / 0.22).min(1.0);
         faixa_circular(
@@ -2456,7 +2501,7 @@ fn desenha_circulo(pulso: Mat4, t: f32) {
             -(3.0 + 18.0 * u) * VOXEL,
             (7.0 + 12.0 * u) * VOXEL,
             (2.2 * (1.0 - u) + 0.5) * VOXEL,
-            [215, 170, 255, ((1.0 - u) * 200.0) as u8],
+            c(tema.onda, (1.0 - u) * 200.0),
         );
     }
 }
@@ -2503,8 +2548,10 @@ fn desenha_projetil(e: &crate::world::Ent, p: Vec3) {
             );
         }
     } else if e.meta.kind == 1 {
-        octaedro(alto, 0.15, [205, 150, 255, 255]);
-        octaedro(alto, 0.27, [170, 110, 255, 90]);
+        // A player's orb carries the caster's skins: the ring skin colours it.
+        let t = tema_do_anel(e.meta.skins);
+        octaedro(alto, 0.15, [t.halo[0], t.halo[1], t.halo[2], 255]);
+        octaedro(alto, 0.27, [t.halo_fora[0], t.halo_fora[1], t.halo_fora[2], 90]);
     } else {
         octaedro(alto, 0.06, [255, 244, 200, 255]);
         let lado = dir.cross(Vec3::Y).normalize_or_zero() * 0.035;
@@ -2543,7 +2590,7 @@ pub struct Vestimenta<'a> {
     pub cor_cabelo: Option<[[f32; 3]; 2]>,
     pub tier: Option<[[f32; 3]; 2]>,
     /// Weapon and mount skins (`Aparencia::empacota_skins`). 0 = defaults.
-    pub skins: u32,
+    pub skins: u64,
 }
 
 impl<'a> Vestimenta<'a> {
@@ -2609,7 +2656,7 @@ pub fn desenha_rig(
 /// The weapon model in the skin worn for its set, once loaded; until then
 /// (and with no skin) the default one. Same grip marker, so the hands and
 /// the sheath fit the same.
-pub fn arma_vestida<'v>(vox: &'v VoxCache, nome: &str, skins: u32) -> Option<&'v Vec<Mesh>> {
+pub fn arma_vestida<'v>(vox: &'v VoxCache, nome: &str, skins: u64) -> Option<&'v Vec<Mesh>> {
     let conjunto = match nome {
         "espada" | "escudo" => 0,
         "katana" | "bainha" => 1,
@@ -2627,7 +2674,7 @@ pub fn arma_vestida<'v>(vox: &'v VoxCache, nome: &str, skins: u32) -> Option<&'v
 pub fn bicho_da_montaria<'v>(
     vox: &'v VoxCache,
     especie: &shared::montarias::Especie,
-    skins: u32,
+    skins: u64,
 ) -> Option<&'v crate::bicho::Bicho> {
     let a = shared::aparencia::Aparencia::default().com_skins(skins);
     shared::aparencia::sufixo_da_montaria(&a)
@@ -2898,6 +2945,47 @@ pub fn vitrine_aparencia(
     true
 }
 
+/// A RING skin: its magic circle facing the camera, cycling through the
+/// cast (lights up, flashes, the wave goes out), with the hand's glow in the
+/// middle. The ring has no model, so this is what it looks like.
+pub fn vitrine_anel(skin: u16, r: Rect, yaw: f32) -> bool {
+    use shared::aparencia as ap;
+    let Some(s) = ap::skin_de_arma(skin).filter(|s| s.conjunto == 3) else { return false; };
+    let mut a = ap::Aparencia::default();
+    a.armas[3] = (skin - ap::ARMA_SKIN_BASE + 1) as u8;
+    let _ = s;
+    let tema = tema_do_anel(a.empacota_skins());
+    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let aspecto = vp.2 as f32 / vp.3 as f32;
+    let meia = 12.0 * VOXEL * (1.0 / aspecto).max(1.0);
+    let fovy = 30f32.to_radians();
+    let cam = Camera3D {
+        position: vec3(0.0, 0.0, meia / (fovy * 0.5).tan()),
+        target: Vec3::ZERO,
+        up: Vec3::Y,
+        fovy,
+        aspect: Some(aspecto),
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    gl_use_default_material();
+    let agora = get_time() as f32;
+    // The circle's plane is the wrist's XZ; stood up to face the camera,
+    // tilted a little so it reads as a ring and not a flat sticker.
+    let pulso = Mat4::from_rotation_y(yaw * 0.3)
+        * Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2 - 0.35)
+        * Mat4::from_translation(vec3(0.0, 3.0 * VOXEL, 0.0));
+    let ciclo = (agora * 0.7).fract() * (crate::rig::IMPACTO + 0.12);
+    let t = ciclo.max(crate::rig::IMPACTO * 0.6);
+    desenha_circulo(pulso, t, &tema);
+    desenha_mao(Vec3::ZERO, 1.0, agora, &tema);
+    camera_padrao();
+    true
+}
+
 /// Any wardrobe skin in a small frame: outfits and hats on `base` (the
 /// viewer's own look, or the default), a weapon skin up close, a mount coat
 /// on `montaria` (a mount item). The shop card, the shop detail and the bag
@@ -2933,6 +3021,9 @@ pub fn vitrine_de_skin(
 /// card, the bag icon and the wardrobe show. `false` = not loaded yet.
 pub fn vitrine_arma(vox: &VoxCache, skin: u16, r: Rect, yaw: f32, solido: &Material) -> bool {
     let Some(s) = shared::aparencia::skin_de_arma(skin) else { return false; };
+    if s.conjunto == 3 {
+        return vitrine_anel(skin, r, yaw);
+    }
     let pecas = match s.conjunto {
         0 => ["espada", "escudo"],
         1 => ["katana", "bainha"],
@@ -3044,7 +3135,7 @@ pub fn vitrine_montaria(
 pub fn vitrine_montaria_com_skins(
     vox: &crate::vox::VoxCache,
     item_id: u16,
-    skins: u32,
+    skins: u64,
     r: Rect,
     yaw: f32,
     solido: &Material,

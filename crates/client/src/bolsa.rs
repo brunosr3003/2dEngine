@@ -105,7 +105,7 @@ pub struct Bolsa {
     /// before drawing: the portrait wears what the world shows.
     pub aparencia: u32,
     /// Weapon and mount skins (`EntityMeta::skins`), for the same portrait.
-    pub skins: u32,
+    pub skins: u64,
     pub stats: Option<PlayerStats>,
     /// Nome de cada item (`ServerMessage::ItemsConfig`).
     pub nomes: HashMap<u16, String>,

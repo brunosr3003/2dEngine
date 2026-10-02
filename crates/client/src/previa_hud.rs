@@ -29,7 +29,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
     }
     .empacota();
     // The katana in the Stormcaller skin (index 4, stored + 1).
-    bolsa.skins = shared::aparencia::Aparencia { armas: [0, 5, 0], ..Default::default() }.empacota_skins();
+    bolsa.skins = shared::aparencia::Aparencia { armas: [0, 5, 0, 0], ..Default::default() }.empacota_skins();
     let peca = |grau: u8, tier: u8| {
         let mut i = shared::ItemInstance::vazia_de_grau(grau);
         i.tier = tier;

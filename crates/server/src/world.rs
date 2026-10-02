@@ -13364,7 +13364,7 @@ impl GameWorld {
             auras_de.insert(net.0,pet.auras);
         }
 
-        let aparencia_de: HashMap<EntityId, (u32, u32)> = self
+        let aparencia_de: HashMap<EntityId, (u32, u64)> = self
             .sessions
             .values()
             .filter(|s| s.logged_in)
@@ -13561,7 +13561,11 @@ impl GameWorld {
                         // So' jogador tem aparencia; o resto manda zero, que
                         // e' o corpo de sempre.
                         aparencia: aparencia_de.get(&net.0).map_or(0, |a| a.0),
-                        skins: aparencia_de.get(&net.0).map_or(0, |a| a.1),
+                        // A player's magic orb carries its owner's skins: the
+                        // client colours it with the ring skin.
+                        skins: aparencia_de
+                            .get(&projtag.filter(|p| p.from_player).map_or(net.0, |p| p.owner))
+                            .map_or(0, |a| a.1),
                     };
                     let mut state = EntityState::quantize(
                         net.0,

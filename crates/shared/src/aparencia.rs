@@ -95,9 +95,10 @@ pub const ARMA_SKIN_BASE: u16 = 600;
 /// The first MOUNT skin id (wardrobe and item). 620-639.
 pub const MONTARIA_SKIN_BASE: u16 = 620;
 
-/// Weapon sets that draw a model and so can wear a skin: sword and shield,
-/// katana, pistols (`skills::Conjunto` 0-2). The magic ring draws none.
-pub const CONJUNTOS_COM_SKIN: usize = 3;
+/// Weapon sets that can wear a skin: sword and shield, katana, pistols and
+/// the magic ring (`skills::Conjunto` 0-3). The ring has no model: its skin
+/// recolours the glow on the hands and the magic circle.
+pub const CONJUNTOS_COM_SKIN: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkinDeArma {
@@ -105,14 +106,15 @@ pub struct SkinDeArma {
     /// `bainha_<s>`, `pistola_<s>` + `coldre_<s>` (`tools/voxrender/armas.py`).
     pub sufixo: &'static str,
     pub nome: &'static str,
-    /// `skills::Conjunto` as u8 (0 sword and shield, 1 katana, 2 pistols).
+    /// `skills::Conjunto` as u8 (0 sword and shield, 1 katana, 2 pistols,
+    /// 3 magic ring — no file, the client picks the glow by `sufixo`).
     pub conjunto: u8,
     pub preco: u64,
 }
 
 /// Append only: the position is the id. All paid — the owner: "there will be
 /// no free weapon or mount skin".
-pub const SKINS_DE_ARMA: [SkinDeArma; 9] = [
+pub const SKINS_DE_ARMA: [SkinDeArma; 14] = [
     SkinDeArma { sufixo: "solar", nome: "Sunforged", conjunto: 0, preco: 400 },
     SkinDeArma { sufixo: "abissal", nome: "Abyssal", conjunto: 0, preco: 400 },
     SkinDeArma { sufixo: "real", nome: "Royal Guard", conjunto: 0, preco: 600 },
@@ -122,6 +124,11 @@ pub const SKINS_DE_ARMA: [SkinDeArma; 9] = [
     SkinDeArma { sufixo: "dourada", nome: "Gilded Pistols", conjunto: 2, preco: 400 },
     SkinDeArma { sufixo: "coral", nome: "Reef Pistols", conjunto: 2, preco: 400 },
     SkinDeArma { sufixo: "relampago", nome: "Thunder Pistols", conjunto: 2, preco: 600 },
+    SkinDeArma { sufixo: "brasa", nome: "Ember Ring", conjunto: 3, preco: 400 },
+    SkinDeArma { sufixo: "gelo", nome: "Frost Ring", conjunto: 3, preco: 400 },
+    SkinDeArma { sufixo: "verdejante", nome: "Verdant Ring", conjunto: 3, preco: 400 },
+    SkinDeArma { sufixo: "solar", nome: "Solar Ring", conjunto: 3, preco: 600 },
+    SkinDeArma { sufixo: "vazio", nome: "Void Ring", conjunto: 3, preco: 600 },
 ];
 
 /// Mount skins: a coat for WHATEVER mount is ridden, swapped by palette index
@@ -392,17 +399,20 @@ impl Aparencia {
     /// Weapon and mount skins for the wire (`EntityMeta::skins`): one byte per
     /// weapon set, then the mount. Apart from `empacota`, whose 32 bits are
     /// nearly full and which keys the body mesh cache.
-    pub fn empacota_skins(&self) -> u32 {
-        self.armas[0] as u32
-            | (self.armas[1] as u32) << 8
-            | (self.armas[2] as u32) << 16
-            | (self.montaria as u32) << 24
+    pub fn empacota_skins(&self) -> u64 {
+        let mut v = (self.montaria as u64) << (8 * CONJUNTOS_COM_SKIN);
+        for (c, i) in self.armas.iter().enumerate() {
+            v |= (*i as u64) << (8 * c);
+        }
+        v
     }
 
     /// `self` with the skins of `empacota_skins` put back.
-    pub fn com_skins(mut self, v: u32) -> Self {
-        self.armas = [v as u8, (v >> 8) as u8, (v >> 16) as u8];
-        self.montaria = (v >> 24) as u8;
+    pub fn com_skins(mut self, v: u64) -> Self {
+        for c in 0..CONJUNTOS_COM_SKIN {
+            self.armas[c] = (v >> (8 * c)) as u8;
+        }
+        self.montaria = (v >> (8 * CONJUNTOS_COM_SKIN)) as u8;
         self
     }
 
@@ -584,8 +594,10 @@ mod testes_das_skins {
         assert!(ARMA_SKIN_BASE + SKINS_DE_ARMA.len() as u16 <= MONTARIA_SKIN_BASE);
         assert!(ITEM_ROUPA_BASE + ROUPAS.len() as u16 <= ARMA_SKIN_BASE);
         // Sakura (katana) on the sword slot is cut; on the katana slot it stays.
-        let errada = Aparencia { armas: [4, 4, 0], montaria: 2, ..Default::default() }.saneada();
-        assert_eq!(errada.armas, [0, 4, 0]);
+        let errada = Aparencia { armas: [4, 4, 0, 4], montaria: 2, ..Default::default() }.saneada();
+        assert_eq!(errada.armas, [0, 4, 0, 0]);
+        let anel = Aparencia { armas: [0, 0, 0, 10], ..Default::default() }.saneada();
+        assert_eq!(sufixo_da_arma(&anel, 3), Some("brasa"), "Ember Ring on the ring slot");
         assert_eq!(sufixo_da_arma(&errada, 1), Some("sakura"));
         assert_eq!(sufixo_da_montaria(&errada), Some("obsidiana"));
         assert_eq!(errada.skins_extras(), vec![ARMA_SKIN_BASE + 3, MONTARIA_SKIN_BASE + 1]);
