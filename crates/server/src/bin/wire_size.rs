@@ -7,7 +7,7 @@ use shared::protocol::WorldSnapshot;
 use shared::{EntityId, EntityMeta, EntityState, EntityTag};
 
 fn meta(i: u32) -> EntityMeta {
-    EntityMeta {
+    EntityMeta { skins: 0,
         pk: Default::default(),
         auras: 0,
         id: EntityId(1000 + i),

@@ -29,6 +29,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import molde_corpo as M        # noqa: E402
 import npcs as N               # noqa: E402
+import chapeus as C            # noqa: E402
 
 RAIZ = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 DEST = os.path.join(RAIZ, "assets", "vox", "personagem")
@@ -158,12 +159,60 @@ def grava(pasta, nome, objeto, voxels, paleta):
 # A pele (maos, pescoco) fica na faixa 249-252 pra o tom escolhido continuar
 # valendo: uma roupa que assasse a cor da mao daria mao branca em personagem
 # de pele escura.
+#
+# Each outfit carries its OWN colours (the third field). They all used to be
+# written with the bare `N.paleta()`, where the cloth entries (CAMISA, DET,
+# CHAPEU...) are (0, 0, 0): every outfit came out black. The order and file
+# names match `shared::aparencia::ROUPAS`.
 ROUPAS = [
-    ("aventureiro", {"colete": True}),
-    ("mercenario", {"casaco": True, "ombreiras": True}),
-    ("andarilho", {"tunica": True, "capa": True}),
-    # A paga: casaco, ombreiras, peitoral e capa — a mais carregada das quatro.
-    ("capitao", {"casaco": True, "ombreiras": True, "peitoral": True, "capa": True}),
+    ("aventureiro", {"colete": True, "manga_arregacada": True},
+     {N.CAMISA: (226, 214, 182), N.CAMISA_ESC: (196, 182, 150), N.MANGA: (226, 214, 182),
+      N.MANGA_ESC: (196, 182, 150), N.CALCA: (98, 78, 58), N.CALCA_ESC: (76, 60, 44),
+      N.BOTA: (112, 74, 44), N.CINTO: (70, 46, 30), N.DET: (126, 88, 52)}),
+    ("mercenario", {"casaco": True, "ombreiras": True, "luvas": True},
+     {N.CAMISA: (150, 148, 144), N.CAMISA_ESC: (120, 118, 114), N.MANGA: (128, 40, 36),
+      N.MANGA_ESC: (98, 30, 28), N.CALCA: (60, 58, 62), N.CALCA_ESC: (44, 42, 46),
+      N.BOTA: (40, 34, 32), N.CINTO: (58, 40, 30), N.DET: (128, 40, 36), N.DET2: (84, 26, 24)}),
+    ("andarilho", {"tunica": True, "capa": True, "bolsa": True},
+     {N.CAMISA: (172, 160, 116), N.CAMISA_ESC: (146, 134, 94), N.MANGA: (172, 160, 116),
+      N.MANGA_ESC: (146, 134, 94), N.CALCA: (110, 92, 66), N.CALCA_ESC: (88, 72, 50),
+      N.BOTA: (96, 66, 42), N.CINTO: (76, 52, 34), N.CHAPEU: (92, 110, 88),
+      N.CHAPEU_ESC: (68, 82, 64), N.DET: (120, 86, 54), N.DET2: (90, 62, 38)}),
+    ("capitao", {"casaco": True, "ombreiras": True, "peitoral": True, "capa": True},
+     {N.CAMISA: (236, 234, 226), N.CAMISA_ESC: (206, 204, 196), N.MANGA: (36, 52, 98),
+      N.MANGA_ESC: (26, 38, 74), N.CALCA: (30, 40, 72), N.CALCA_ESC: (22, 30, 56),
+      N.BOTA: (30, 26, 28), N.CINTO: (40, 30, 26), N.DET: (36, 52, 98), N.DET2: (214, 176, 72),
+      N.CHAPEU: (150, 30, 40), N.CHAPEU_ESC: (110, 20, 30)}),
+    ("marinheiro", {"listras": True, "lenco_pescoco": True, "manga_arregacada": True},
+     {N.CAMISA: (240, 240, 236), N.CAMISA_ESC: (44, 66, 130), N.MANGA: (240, 240, 236),
+      N.MANGA_ESC: (210, 210, 206), N.CALCA: (186, 166, 124), N.CALCA_ESC: (156, 138, 100),
+      N.BOTA: (70, 50, 36), N.CINTO: (60, 44, 32), N.DET: (190, 44, 44)}),
+    ("explorador", {"bolsa": True, "pergaminho_cinto": True, "manga_arregacada": True, "luvas": True},
+     {N.CAMISA: (196, 176, 124), N.CAMISA_ESC: (166, 148, 100), N.MANGA: (196, 176, 124),
+      N.MANGA_ESC: (166, 148, 100), N.CALCA: (104, 100, 64), N.CALCA_ESC: (82, 78, 48),
+      N.BOTA: (104, 70, 44), N.CINTO: (82, 56, 36), N.DET: (130, 90, 56), N.DET2: (98, 66, 40)}),
+    ("corsario", {"casaco": True, "lenco_pescoco": True},
+     {N.CAMISA: (44, 40, 46), N.CAMISA_ESC: (32, 28, 34), N.MANGA: (156, 30, 42),
+      N.MANGA_ESC: (118, 22, 32), N.CALCA: (36, 32, 38), N.CALCA_ESC: (26, 22, 28),
+      N.BOTA: (34, 28, 28), N.CINTO: (120, 82, 40), N.DET: (156, 30, 42), N.DET2: (226, 184, 72)}),
+    ("arcanista", {"capa": True, "saia": True, "livro_cinto": True, "fita": True, "frascos": True},
+     {N.CAMISA: (98, 66, 164), N.CAMISA_ESC: (76, 50, 132), N.MANGA: (98, 66, 164),
+      N.MANGA_ESC: (76, 50, 132), N.CALCA: (74, 46, 126), N.CALCA_ESC: (56, 34, 98),
+      N.BOTA: (52, 40, 60), N.CINTO: (60, 40, 30), N.DET: (226, 190, 80), N.DET2: (140, 36, 50),
+      N.CHAPEU: (60, 36, 110), N.CHAPEU_ESC: (42, 24, 80),
+      N.VIDRO1: (90, 200, 230), N.VIDRO2: (220, 90, 200), N.VIDRO3: (120, 220, 110)}),
+    ("cavaleiro", {"peitoral": True, "cota": True, "ombreiras": True, "capa": True, "luvas": True},
+     {N.CAMISA: (52, 76, 150), N.CAMISA_ESC: (40, 58, 118), N.MANGA: (140, 146, 158),
+      N.MANGA_ESC: (110, 116, 128), N.CALCA: (120, 124, 134), N.CALCA_ESC: (96, 100, 110),
+      N.BOTA: (150, 156, 168), N.CINTO: (70, 50, 34), N.DET: (226, 190, 80), N.DET2: (150, 156, 168),
+      N.CHAPEU: (44, 66, 140), N.CHAPEU_ESC: (30, 46, 104),
+      N.METAL: (196, 202, 212), N.METAL_ESC: (140, 146, 158)}),
+    ("nomade", {"tunica": True, "capa": True, "lenco_pescoco": True, "bolsa": True, "listras": True,
+                "saia": True},
+     {N.CAMISA: (228, 208, 164), N.CAMISA_ESC: (176, 96, 52), N.MANGA: (228, 208, 164),
+      N.MANGA_ESC: (200, 178, 134), N.CALCA: (192, 160, 112), N.CALCA_ESC: (164, 132, 88),
+      N.BOTA: (140, 100, 62), N.CINTO: (120, 60, 36), N.DET: (204, 96, 44), N.DET2: (150, 70, 34),
+      N.CHAPEU: (214, 184, 134), N.CHAPEU_ESC: (180, 150, 104)}),
 ]
 
 
@@ -207,12 +256,13 @@ def main():
     # MESMA malha da cabeca, onde sobrepor nao custa nada. Separados, o que
     # afunda no cranio tem que sair.
     uma_cabeca = next(iter(cabecas.values()))
-    for nome, fn in N.CHAPEUS.items():
-        v = sem_cabeca(fn(), uma_cabeca)
+    for nome, fn in C.CHAPEUS.items():
+        v, cores = fn()
+        v = sem_cabeca(v, uma_cabeca)
         confere_sem_sobreposicao(cabecas, v, f"chapeus/{nome}")
-        grava("chapeus", nome, "cabelo", v, p)
+        grava("chapeus", nome, "cabelo", v, {**p, **cores})
     # As roupas: um arquivo com as NOVE pecas do corpo (a cabeca vem do rosto).
-    for nome, o in ROUPAS:
+    for nome, o, cores in ROUPAS:
         pecas = roupa(o)
         for k, v in pecas.items():
             fora = [q for q in v if not (0 <= q[0] < M.W and 0 <= q[1] < M.D and 0 <= q[2] < M.H)]
@@ -221,7 +271,7 @@ def main():
         d = os.path.join(DEST, "skins")
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f"{nome}.vox"), "wb") as f:
-            f.write(M.arquivo_cena(list(pecas.items()), paleta=p, camada="corpo"))
+            f.write(M.arquivo_cena(list(pecas.items()), paleta={**p, **cores}, camada="corpo"))
         print(f"skins/{nome}.vox: {len(pecas)} pecas, {sum(len(v) for v in pecas.values())} voxels")
 
 

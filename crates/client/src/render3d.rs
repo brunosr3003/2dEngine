@@ -1701,11 +1701,12 @@ pub fn draw_entities_com_sombras(
             if let Some(corpo) = vox.rig(RIG_CORPO) {
                 // A APARÊNCIA veio na meta (`EntityMeta::aparencia`). Zero é
                 // o corpo de sempre, que é o que NPC manda.
-                let veste = vestimenta_de(vox, e.meta.aparencia).unwrap_or_else(|| {
+                let mut veste = vestimenta_de(vox, e.meta.aparencia).unwrap_or_else(|| {
                     let mut v = Vestimenta::nua(corpo);
                     v.cabelo = vox.rig(RIG_CHAPEU);
                     v
                 });
+                veste.skins = e.meta.skins;
                 brilhos.extend(desenha_personagem(
                     e,
                     &veste,
@@ -2062,7 +2063,7 @@ fn desenha_personagem(
         && e.morte.is_none()
     {
         shared::montarias::de_item(e.meta.kind)
-            .and_then(|(esp, grau)| vox.bicho(esp.bicho).map(|b| (esp, grau, b)))
+            .and_then(|(esp, grau)| bicho_da_montaria(vox, esp, e.meta.skins).map(|b| (esp, grau, b)))
     } else {
         None
     };
@@ -2541,6 +2542,8 @@ pub struct Vestimenta<'a> {
     pub pele: Option<[[f32; 3]; 2]>,
     pub cor_cabelo: Option<[[f32; 3]; 2]>,
     pub tier: Option<[[f32; 3]; 2]>,
+    /// Weapon and mount skins (`Aparencia::empacota_skins`). 0 = defaults.
+    pub skins: u32,
 }
 
 impl<'a> Vestimenta<'a> {
@@ -2554,6 +2557,7 @@ impl<'a> Vestimenta<'a> {
             pele: None,
             cor_cabelo: None,
             tier: None,
+            skins: 0,
         }
     }
 
@@ -2595,11 +2599,43 @@ pub fn desenha_rig(
     // se veste junto (bainha, coldres).
     let armas = crate::rig::armas(pose, &mats, VOXEL);
     for (nome, mat) in &armas {
-        for m in vox.arma(nome).into_iter().flatten() {
+        for m in arma_vestida(vox, nome, veste.skins).into_iter().flatten() {
             draw_mesh_mat(m, mat);
         }
     }
     (mats, armas)
+}
+
+/// The weapon model in the skin worn for its set, once loaded; until then
+/// (and with no skin) the default one. Same grip marker, so the hands and
+/// the sheath fit the same.
+pub fn arma_vestida<'v>(vox: &'v VoxCache, nome: &str, skins: u32) -> Option<&'v Vec<Mesh>> {
+    let conjunto = match nome {
+        "espada" | "escudo" => 0,
+        "katana" | "bainha" => 1,
+        "pistola" | "coldre" => 2,
+        _ => return vox.arma(nome),
+    };
+    let a = shared::aparencia::Aparencia::default().com_skins(skins);
+    shared::aparencia::sufixo_da_arma(&a, conjunto)
+        .and_then(|s| vox.arma_ou_pede(&format!("{nome}_{s}")))
+        .or_else(|| vox.arma(nome))
+}
+
+/// The mount's creature in the coat worn (`SKINS_DE_MONTARIA`), once loaded;
+/// until then the species' own.
+pub fn bicho_da_montaria<'v>(
+    vox: &'v VoxCache,
+    especie: &shared::montarias::Especie,
+    skins: u32,
+) -> Option<&'v crate::bicho::Bicho> {
+    let a = shared::aparencia::Aparencia::default().com_skins(skins);
+    shared::aparencia::sufixo_da_montaria(&a)
+        .and_then(|s| {
+            let altura = crate::bicho::BICHOS.iter().find(|(n, _)| *n == especie.bicho)?.1;
+            vox.bicho_ou_pede(&format!("{}_{s}", especie.bicho), altura)
+        })
+        .or_else(|| vox.bicho(especie.bicho))
 }
 
 /// O rastro da lamina: uma fita entre a base e a ponta de cada amostra, que
@@ -2789,7 +2825,8 @@ pub fn vitrine_aparencia_icone(
     yaw: f32,
     solido: &Material,
 ) -> bool {
-    let Some(veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    veste.skins = aparencia.empacota_skins();
     let Some(vp) = viewport_na_tela(r) else { return false; };
     let cam = Camera3D {
         position: vec3(0.0, 1.1, 3.3),
@@ -2826,7 +2863,8 @@ pub fn vitrine_aparencia(
     yaw: f32,
     solido: &Material,
 ) -> bool {
-    let Some(veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    let Some(mut veste) = vestimenta_de(vox, aparencia.empacota()) else { return false; };
+    veste.skins = aparencia.empacota_skins();
     let Some(vp) = viewport_na_tela(r) else { return false; };
     let aspecto = vp.2 as f32 / vp.3 as f32;
     let cam = Camera3D {
@@ -2855,6 +2893,115 @@ pub fn vitrine_aparencia(
     });
     pose.armado &= arma != 0;
     desenha_rig_com_auras(Mat4::from_rotation_y(yaw), &pose, &veste, vox, auras);
+    gl_use_default_material();
+    camera_padrao();
+    true
+}
+
+/// Any wardrobe skin in a small frame: outfits and hats on `base` (the
+/// viewer's own look, or the default), a weapon skin up close, a mount coat
+/// on `montaria` (a mount item). The shop card, the shop detail and the bag
+/// icon all show skins through here.
+pub fn vitrine_de_skin(
+    vox: &VoxCache,
+    skin: u16,
+    base: shared::aparencia::Aparencia,
+    montaria: u16,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
+    use shared::aparencia as ap;
+    if ap::skin_de_arma(skin).is_some() {
+        return vitrine_arma(vox, skin, r, yaw, solido);
+    }
+    if ap::skin_de_montaria(skin).is_some() {
+        let a = ap::Aparencia { montaria: (skin - ap::MONTARIA_SKIN_BASE + 1) as u8, ..Default::default() };
+        return vitrine_montaria_com_skins(vox, montaria, a.empacota_skins(), r, yaw, solido);
+    }
+    let mut a = base;
+    match ap::cabelo_do_chapeu(skin) {
+        Some(cabelo) => a.cabelo = cabelo,
+        None => a.roupa = skin,
+    }
+    vitrine_aparencia_icone(vox, a, r, yaw, solido)
+}
+
+/// A WEAPON SKIN up close: its two pieces (sword and shield, katana and
+/// sheath, pistol and holster) standing side by side, each turning on its own
+/// axis. On the character the weapon is a few pixels; this is what the shop
+/// card, the bag icon and the wardrobe show. `false` = not loaded yet.
+pub fn vitrine_arma(vox: &VoxCache, skin: u16, r: Rect, yaw: f32, solido: &Material) -> bool {
+    let Some(s) = shared::aparencia::skin_de_arma(skin) else { return false; };
+    let pecas = match s.conjunto {
+        0 => ["espada", "escudo"],
+        1 => ["katana", "bainha"],
+        _ => ["pistola", "coldre"],
+    };
+    let mut a = shared::aparencia::Aparencia::default();
+    a.armas[s.conjunto as usize] = (skin - shared::aparencia::ARMA_SKIN_BASE + 1) as u8;
+    let skins = a.empacota_skins();
+    let nome = |p: &str| format!("{p}_{}", s.sufixo);
+    // Only the skin's own meshes: the default model standing in would
+    // show the wrong weapon on a card that sells this one.
+    let malhas: Vec<(&str, &Vec<Mesh>)> = pecas
+        .iter()
+        .filter_map(|p| arma_vestida(vox, p, skins).filter(|_| vox.arma(&nome(p)).is_some()).map(|m| (*p, m)))
+        .collect();
+    if malhas.len() < pecas.len() {
+        return false;
+    }
+    let Some(vp) = viewport_na_tela(r) else { return false; };
+    // Blade along voxel +Y = world +Z; stood up, it points to +Y. The shield
+    // turns a quarter more so its painted face looks at the camera.
+    let em_pe = Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+    let caixas: Vec<(Mat4, Vec3, Vec3)> = malhas
+        .iter()
+        .map(|(p, ms)| {
+            let giro = if *p == "escudo" { Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_2) } else { Mat4::IDENTITY };
+            let m = giro * em_pe;
+            let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+            for v in ms.iter().flat_map(|x| &x.vertices) {
+                let q = m.transform_point3(v.position);
+                lo = lo.min(q);
+                hi = hi.max(q);
+            }
+            (m, lo, hi)
+        })
+        .collect();
+    let vao = 0.12;
+    let larguras: Vec<f32> = caixas.iter().map(|(_, lo, hi)| (hi.x - lo.x).max(hi.z - lo.z)).collect();
+    let total = larguras.iter().sum::<f32>() + vao * (larguras.len() as f32 - 1.0);
+    let altura = caixas.iter().map(|(_, lo, hi)| hi.y - lo.y).fold(0.0, f32::max);
+    let aspecto = vp.2 as f32 / vp.3 as f32;
+    let meia = (altura * 0.5).max(total * 0.5 / aspecto) * 1.18;
+    let fovy = 30f32.to_radians();
+    let cam = Camera3D {
+        position: vec3(0.0, 0.0, meia / (fovy * 0.5).tan()),
+        target: Vec3::ZERO,
+        up: Vec3::Y,
+        fovy,
+        aspect: Some(aspecto),
+        viewport: Some(vp),
+        render_target: alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    limpa_so_profundidade();
+    gl_use_material(solido);
+    solido.set_uniform("Crop", Vec3::ZERO);
+    let mut x = -total * 0.5;
+    for ((_, ms), ((m, lo, hi), w)) in malhas.iter().zip(caixas.iter().zip(&larguras)) {
+        let centro = (*lo + *hi) * 0.5;
+        let mat = Mat4::from_translation(vec3(x + w * 0.5, 0.0, 0.0))
+            * Mat4::from_rotation_y(yaw)
+            * Mat4::from_translation(-centro)
+            * *m;
+        for malha in ms.iter() {
+            draw_mesh_mat(malha, &mat);
+        }
+        x += w + vao;
+    }
     gl_use_default_material();
     camera_padrao();
     true
@@ -2889,10 +3036,23 @@ pub fn vitrine_montaria(
     yaw: f32,
     solido: &Material,
 ) -> bool {
+    vitrine_montaria_com_skins(vox, item_id, 0, r, yaw, solido)
+}
+
+/// `vitrine_montaria` wearing a mount skin (`Aparencia::empacota_skins`):
+/// the shop card and the wardrobe preview of a coat.
+pub fn vitrine_montaria_com_skins(
+    vox: &crate::vox::VoxCache,
+    item_id: u16,
+    skins: u32,
+    r: Rect,
+    yaw: f32,
+    solido: &Material,
+) -> bool {
     let Some((especie, grau)) = shared::montarias::de_item(item_id) else {
         return false;
     };
-    let Some(b) = vox.bicho(especie.bicho) else {
+    let Some(b) = bicho_da_montaria(vox, especie, skins) else {
         return false;
     };
     if r.w < 8.0 || r.h < 8.0 {

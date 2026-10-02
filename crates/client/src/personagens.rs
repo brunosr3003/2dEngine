@@ -1001,19 +1001,27 @@ impl Personagens {
         ui::texto(x, y, "APPEARANCE", 13, ui::OURO);
         let mut y = y + 8.0;
         // (rótulo, quantas opções, índice atual)
-        // Cabelo + "no hair" + os CHAPÉUS, que são grátis e já vêm
-        // destravados — não há por que escondê-los de quem está criando.
-        let cabelos = ap::CABELOS + 1 + ap::CHAPEUS.len() as u8;
-        // Roupa: o padrão mais as grátis. As pagas ficam pra loja.
-        let roupas = ap::ROUPAS_GRATIS as u8 + 1;
-        let atual_roupa = if self.aparencia.roupa >= ap::ROUPA_BASE {
-            (self.aparencia.roupa - ap::ROUPA_BASE + 1) as u8
-        } else {
-            0
+        // Hair + "no hair" + the FREE hats; the paid ones are for the shop.
+        // The free hats are not contiguous, so the row walks a list.
+        let chapeus = ap::chapeus_gratis();
+        let cabelos = ap::CABELOS + 1 + chapeus.len() as u8;
+        let atual_cabelo = match ap::chapeu_do_cabelo(self.aparencia.cabelo) {
+            Some(c) => chapeus
+                .iter()
+                .position(|x| *x == c)
+                .map_or(0, |i| ap::CABELOS + 1 + i as u8),
+            None => self.aparencia.cabelo,
         };
+        // Outfit: the default plus the free ones.
+        let gratis = ap::roupas_gratis();
+        let roupas = gratis.len() as u8 + 1;
+        let atual_roupa = gratis
+            .iter()
+            .position(|r| *r == self.aparencia.roupa)
+            .map_or(0, |i| i as u8 + 1);
         let linhas: [(&str, u8, u8); 5] = [
             ("Face", ap::ROSTOS, self.aparencia.rosto),
-            ("Hair", cabelos, self.aparencia.cabelo),
+            ("Hair", cabelos, atual_cabelo),
             (
                 "Cor",
                 ap::CORES_DE_CABELO.len() as u8,
@@ -1042,14 +1050,17 @@ impl Personagens {
             }
             let nome = match i {
                 1 if *atual == ap::CABELOS => "no hair".to_string(),
-                1 if *atual > ap::CABELOS => ap::chapeu_do_cabelo(*atual)
-                    .and_then(ap::nome_da_skin)
+                1 if *atual > ap::CABELOS => chapeus
+                    .get((*atual - ap::CABELOS - 1) as usize)
+                    .and_then(|c| ap::nome_da_skin(*c))
                     .unwrap_or("no hair")
                     .to_string(),
                 2 => ap::CORES_DE_CABELO[(*atual as usize).min(5)].to_string(),
                 3 => ap::TONS_DE_PELE[(*atual as usize).min(3)].to_string(),
                 4 if *atual == 0 => "default".to_string(),
-                4 => ap::nome_da_skin(ap::ROUPA_BASE + *atual as u16 - 1)
+                4 => gratis
+                    .get(*atual as usize - 1)
+                    .and_then(|r| ap::nome_da_skin(*r))
                     .unwrap_or("default")
                     .to_string(),
                 _ => format!("{} {}", rotulo, atual + 1),
@@ -1059,12 +1070,18 @@ impl Personagens {
             y += alt + 6.0;
         }
         self.aparencia.rosto = escolhas[0];
-        self.aparencia.cabelo = escolhas[1];
+        self.aparencia.cabelo = match escolhas[1] {
+            k if k > ap::CABELOS => chapeus
+                .get((k - ap::CABELOS - 1) as usize)
+                .and_then(|c| ap::cabelo_do_chapeu(*c))
+                .unwrap_or(0),
+            k => k,
+        };
         self.aparencia.cor_cabelo = escolhas[2];
         self.aparencia.pele = escolhas[3];
         self.aparencia.roupa = match escolhas[4] {
             0 => 0,
-            k => ap::ROUPA_BASE + k as u16 - 1,
+            k => gratis[k as usize - 1],
         };
         y
     }
@@ -1331,6 +1348,13 @@ pub async fn previa(vox: &VoxCache) {
             if cena > 0 {
                 tela.arma = Some(armas[cena - 1]);
                 tela.nome = "NovoHeroi".into();
+                // A free outfit and a free hat that come AFTER paid ones in
+                // the tables: the rows list them by price, not position.
+                use shared::aparencia as ap;
+                tela.aparencia.roupa = ap::ROUPA_BASE + 4;
+                tela.aparencia.cabelo = ap::cabelo_do_chapeu(ap::CHAPEU_BASE + 8).unwrap_or(0);
+                // The last scene shows the Appearance tab.
+                tela.aba = (cena == 4) as u8;
             }
         }
         let _ = tela.desenha(&chars, &armas, &mut sel, teclado.digitado(), vox, &solido);

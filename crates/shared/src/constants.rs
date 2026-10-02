@@ -115,7 +115,10 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// the Shipwreck Cellar key steps in the quest menu). No message changed;
 /// it is a forced update, desktop only — Android and iOS stay on 167 and are
 /// refused until their apps are rebuilt.
-pub const PROTOCOL_VERSION: u16 = 168;
+/// 169 (01/10/2026): weapon and mount skins. `Aparencia` gained `armas` and
+/// `montaria`, and `EntityMeta` gained `skins` — postcard is positional, so
+/// both change the wire.
+pub const PROTOCOL_VERSION: u16 = 169;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

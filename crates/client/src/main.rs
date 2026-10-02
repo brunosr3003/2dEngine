@@ -6690,6 +6690,9 @@ impl Jogo {
             None
         } else {
             self.bolsa.aparencia = self.minha_aparencia();
+            self.bolsa.skins = self.world.self_id
+                .and_then(|id| self.world.ents.get(&id))
+                .map_or(0, |e| e.meta.skins);
             self.bolsa
                 .desenha(&self.vox, &self.solido, self.craft.receitas_atuais())
         };
@@ -6914,7 +6917,7 @@ impl Jogo {
             }
         }
         let auras = shared::auras::equipamento(&self.bolsa.equip);
-        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0), auras) {
+        if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0), auras, self.bolsa.equip.montaria) {
             self.envia(msg);
         }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);

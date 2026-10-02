@@ -79,6 +79,8 @@ pub struct LojaTp {
     giro: f32,
     aparencia: shared::aparencia::Aparencia,
     arma: u16,
+    /// Appearance tab category: 0 outfits, 1 hats, 2 weapons, 3 mount coats.
+    filtro_skin: u8,
     arrasto: Option<f32>,
     /// Comemoracao de compra: texto esperando o primeiro quadro, depois
     /// (inicio, texto).
@@ -1025,7 +1027,32 @@ impl LojaTp {
     }
 
     fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, vox: &VoxCache, solido: &Material) {
-        let venda = shared::aparencia::a_venda();
+        use shared::aparencia as ap;
+        // Categories: 25 skins in one grid made cards too small to read.
+        const CATEGORIAS: [&str; 4] = ["Outfits", "Hats", "Weapons", "Mount coats"];
+        let categoria = |id: u16| {
+            if ap::skin_de_arma(id).is_some() {
+                2
+            } else if ap::skin_de_montaria(id).is_some() {
+                3
+            } else if ap::cabelo_do_chapeu(id).is_some() {
+                1
+            } else {
+                0
+            }
+        };
+        let aw = (area.w / 4.0).min(160.0 * k);
+        let ah = 34.0 * k;
+        for (i, rotulo) in CATEGORIAS.iter().enumerate() {
+            let r = Rect::new(area.x + i as f32 * (aw + 6.0 * k), area.y, aw, ah);
+            let sobre = !modal && r.contains(m);
+            estilo::aba(r, rotulo, self.filtro_skin as usize == i, sobre);
+            if livre && sobre {
+                self.filtro_skin = i as u8;
+            }
+        }
+        let area = Rect::new(area.x, area.y + ah + 8.0 * k, area.w, area.h - ah - 8.0 * k);
+        let venda: Vec<u16> = ap::a_venda().into_iter().filter(|id| categoria(*id) == self.filtro_skin).collect();
         if venda.is_empty() {
             estilo::texto_centro(
                 area.center().x,
@@ -1065,41 +1092,37 @@ impl LojaTp {
                 estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5),
             );
             let nome = shared::aparencia::nome_da_skin(*id).unwrap_or("Skin");
-            let prev = Rect::new(r.x + 8.0 * k, r.y + 8.0 * k, r.w - 16.0 * k,
-                (r.h - 112.0 * k).max(20.0));
-            crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(*id), self.arma, 0,
+            // The figure takes a tall column on the left: a strip above the
+            // text left it about 45 px high, too small to tell outfits apart.
+            let prev = Rect::new(r.x + 6.0 * k, r.y + 6.0 * k, r.w * 0.38, r.h - 12.0 * k);
+            crate::render3d::vitrine_de_skin(vox, *id, self.aparencia, shared::item_id::MONTARIA_BASE + 4,
                 prev, 0.18 + (get_time() as f32 * 0.4).sin() * 0.25, solido);
+            let tx = prev.x + prev.w + 6.0 * k;
+            let tw = r.x + r.w - 10.0 * k - tx;
+            let passo = (r.h / 5.0).min(34.0 * k);
+            let y0 = r.center().y - passo * 1.6;
+            estilo::texto_ajustado(nome, tx, y0, tw, ts(16.0, k), estilo::TEXTO);
             estilo::texto_ajustado(
-                nome,
-                r.x + 10.0 * k,
-                r.y + r.h - 88.0 * k,
-                r.w - 20.0 * k,
-                ts(16.0, k),
-                estilo::TEXTO,
-            );
-            estilo::texto_ajustado(
-                if *id >= shared::aparencia::CHAPEU_BASE {
-                    "Chapéu · fica no guarda-roupa deste personagem"
-                } else {
-                    "Roupa completa · fica no guarda-roupa deste personagem"
+                match categoria(*id) {
+                    0 => "Full outfit",
+                    1 => "Hat",
+                    2 => match ap::skin_de_arma(*id).map(|s| s.conjunto) {
+                        Some(0) => "Sword and shield skin",
+                        Some(1) => "Katana skin",
+                        _ => "Pistols skin",
+                    },
+                    _ => "Coat for any mount",
                 },
-                r.x + 10.0 * k,
-                r.y + r.h - 65.0 * k,
-                r.w - 20.0 * k,
+                tx,
+                y0 + passo,
+                tw,
                 ts(12.0, k),
                 estilo::alfa(LILAS, 0.95),
             );
-            estilo::texto_centro(r.center().x, r.y + r.h - 43.0 * k,
-                "Tap to view and buy", ts(12.0, k), estilo::TEXTO);
+            estilo::texto_ajustado("Tap to view and buy", tx, y0 + passo * 2.0, tw, ts(12.0, k),
+                estilo::TEXTO);
             if let Some(preco) = shared::aparencia::preco_da_skin(*id) {
-                let t = milhar(preco);
-                estilo::valor_tp(
-                    r.center().x - estilo::largura_tp_texto(&t, ts(17.0, k), true) * 0.5,
-                    r.y + r.h - 16.0 * k,
-                    preco,
-                    ts(17.0, k),
-                    OURO_CLARO,
-                );
+                estilo::valor_tp(tx, y0 + passo * 3.1, preco, ts(17.0, k), OURO_CLARO);
             }
             if !self.em_voo && livre && sobre {
                 self.confirma = Some(Confirma::Item(Produto::Skin(*id)));
@@ -1845,9 +1868,17 @@ impl LojaTp {
                     crate::invocacao_ui::icone_pergaminho_de(item_id, prev.center(), prev.w * 0.58);
                 } else if let Produto::Skin(id) = pr {
                     self.giro += get_frame_time().min(0.1) * 0.6;
-                    crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma, 0,
-                        Rect::new(prev.x + 4.0 * k, prev.y + 4.0 * k,
-                            prev.w - 8.0 * k, prev.h - 8.0 * k), self.giro, solido);
+                    let r = Rect::new(prev.x + 4.0 * k, prev.y + 4.0 * k,
+                        prev.w - 8.0 * k, prev.h - 8.0 * k);
+                    let extra = shared::aparencia::skin_de_arma(id).is_some()
+                        || shared::aparencia::skin_de_montaria(id).is_some();
+                    if extra {
+                        crate::render3d::vitrine_de_skin(vox, id, self.aparencia,
+                            shared::item_id::MONTARIA_BASE + 4, r, self.giro, solido);
+                    } else {
+                        crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma, 0,
+                            r, self.giro, solido);
+                    }
                 } else if let Produto::ItemDePet(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
                     if let Some(x) = cat::item_de_pet(id) {
@@ -2141,7 +2172,7 @@ impl LojaTp {
 // ─────────────────────────────── previa offscreen ───────────────────────────────
 
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
-pub async fn captura_aparencia(vox: &VoxCache, solido: &Material, w: u32) {
+pub async fn captura_aparencia(vox: &mut VoxCache, solido: &Material, w: u32) {
     let mut loja = LojaTp::default();
     loja.abrir();
     loja.receber(AvisoLoja::Estado(EstadoLoja {
@@ -2151,9 +2182,21 @@ pub async fn captura_aparencia(vox: &VoxCache, solido: &Material, w: u32) {
         rosto: 2, cabelo: 1, cor_cabelo: 2, pele: 2, ..Default::default()
     }, shared::item_id::KATANA);
     loja.aba = 2;
-    for (nome, conf) in [("catalogo", None), ("confirmacao", Some(Confirma::Item(Produto::Skin(shared::aparencia::ROUPA_BASE + 3))))] {
+    use shared::aparencia as ap;
+    let skin = |id| Some(Confirma::Item(Produto::Skin(id)));
+    for (nome, filtro, conf) in [
+        ("catalogo", 0, None),
+        ("catalogo-chapeus", 1, None),
+        ("catalogo-armas", 2, None),
+        ("catalogo-montarias", 3, None),
+        ("confirmacao", 0, skin(ap::ROUPA_BASE + 3)),
+        ("confirmacao-arma", 2, skin(ap::ARMA_SKIN_BASE + 5)),
+        ("confirmacao-montaria", 3, skin(ap::MONTARIA_SKIN_BASE + 3)),
+    ] {
         loja.confirma = conf;
-        for _ in 0..3 {
+        loja.filtro_skin = filtro;
+        // Weapon and mount skin models load lazily, one per frame.
+        for _ in 0..12 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
             loja.desenha(vox, solido);
@@ -2161,6 +2204,7 @@ pub async fn captura_aparencia(vox: &VoxCache, solido: &Material, w: u32) {
             crate::render3d::alvo().unwrap().texture.get_texture_data()
                 .export_png(&format!("/tmp/tempest-aparencia-{w}-loja-{nome}.png"));
             next_frame().await;
+            vox.atende_um_pendente(crate::render3d::VOXEL).await;
         }
     }
 }
@@ -2321,7 +2365,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
         ),
     ];
     for (id, tag, kind, p, flags) in elenco {
-        metas.push(EntityMeta {
+        metas.push(EntityMeta { skins: 0,
             pk: Default::default(),
             auras: 0,
             id: EntityId(id),

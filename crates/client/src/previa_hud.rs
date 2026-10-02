@@ -25,8 +25,11 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
         cor_cabelo: 2,
         pele: 2,
         roupa: shared::aparencia::ROUPA_BASE + 3,
+        ..Default::default()
     }
     .empacota();
+    // The katana in the Stormcaller skin (index 4, stored + 1).
+    bolsa.skins = shared::aparencia::Aparencia { armas: [0, 5, 0], ..Default::default() }.empacota_skins();
     let peca = |grau: u8, tier: u8| {
         let mut i = shared::ItemInstance::vazia_de_grau(grau);
         i.tier = tier;
@@ -42,6 +45,8 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
         shared::item_id::COPPER,
         // A skin item: its icon is the character wearing it (`icones::vitrine_skin`).
         shared::aparencia::item_da_skin(shared::aparencia::ROUPA_BASE + 3),
+        shared::aparencia::ARMA_SKIN_BASE + 4,
+        shared::aparencia::MONTARIA_SKIN_BASE + 1,
     ]
     .into_iter()
     .enumerate()
@@ -86,7 +91,9 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                 },
                 0.0,
             );
-            for _ in 0..3 {
+            // The bag waits longer: skin models (outfit, weapon, coat) load
+            // one per frame.
+            for _ in 0..if cena == "bolsa" { 10 } else { 3 } {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.24, 0.31, 0.28, 1.0));
                 if let Some(t) = &fundo {

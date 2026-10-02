@@ -527,6 +527,9 @@ pub struct VoxCache {
     /// Rigs pedidos pelo desenho e ainda não carregados (`rig_ou_pede`).
     /// `RefCell` porque o desenho só tem `&VoxCache`.
     pendentes: std::cell::RefCell<Vec<String>>,
+    /// Skin models already tried, found or not (`arma_ou_pede`,
+    /// `bicho_ou_pede`): a missing file is asked for once, not every frame.
+    tentados: std::collections::HashSet<String>,
     meshes: HashMap<String, Vec<Mesh>>,
     /// Arquivos de PECAS: nome do arquivo -> nome da peca -> malhas em volta
     /// do pivo da peca.
@@ -627,6 +630,37 @@ impl VoxCache {
     /// As pecas ja' carregadas de um arquivo de rig.
     pub fn arma(&self, name: &str) -> Option<&Vec<Mesh>> {
         self.armas.get(name)
+    }
+
+    /// Como `arma`, mas anota a falta pra o laco principal carregar (skins
+    /// de arma: carregar todas no boot pesaria em quem nunca as ve').
+    pub fn arma_ou_pede(&self, name: &str) -> Option<&Vec<Mesh>> {
+        if let Some(m) = self.armas.get(name) {
+            return Some(m);
+        }
+        self.pede(format!("arma:{name}"));
+        None
+    }
+
+    /// Como `bicho`, mas anota a falta (skins de montaria), com a altura em
+    /// que o bicho base carrega.
+    pub fn bicho_ou_pede(&self, name: &str, altura: f32) -> Option<&crate::bicho::Bicho> {
+        if let Some(b) = self.bichos.get(name) {
+            return Some(b);
+        }
+        self.pede(format!("bicho:{altura}:{name}"));
+        None
+    }
+
+    fn pede(&self, chave: String) {
+        if self.tentados.contains(&chave) {
+            return;
+        }
+        if let Ok(mut p) = self.pendentes.try_borrow_mut() {
+            if !p.contains(&chave) {
+                p.push(chave);
+            }
+        }
     }
 
     /// Carrega `personagem/<nome>.vox` como ARMA: acha o voxel marcador (255)
@@ -801,6 +835,19 @@ impl VoxCache {
         }) else {
             return false;
         };
+        // Weapon and mount skins share the queue, tagged by kind.
+        if let Some(arma) = nome.strip_prefix("arma:") {
+            self.load_arma(arma, scale).await;
+            self.tentados.insert(nome);
+            return true;
+        }
+        if let Some(resto) = nome.strip_prefix("bicho:") {
+            if let Some((altura, arquivo)) = resto.split_once(':') {
+                self.load_bicho(arquivo, altura.parse().unwrap_or(1.0)).await;
+            }
+            self.tentados.insert(nome);
+            return true;
+        }
         // Mesmo que o arquivo não exista: marca como visto pra não pedir de
         // novo a cada quadro. Um rig vazio desenha o corpo padrão.
         self.load_rig(&nome, scale, crate::rig::pivo).await;

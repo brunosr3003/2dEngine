@@ -2933,6 +2933,37 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             wis: (0, 0),
         });
     }
+    // Weapon and mount skins: the bag item id is the wardrobe id, like hats.
+    let extras = shared::aparencia::SKINS_DE_ARMA
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (shared::aparencia::ARMA_SKIN_BASE + i as u16, a.nome))
+        .chain(
+            shared::aparencia::SKINS_DE_MONTARIA
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (shared::aparencia::MONTARIA_SKIN_BASE + i as u16, m.1)),
+        );
+    for (id, nome) in extras {
+        seed.push(S {
+            id: id as i32,
+            name: nome,
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 1,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        });
+    }
     for (i, (_, nome)) in shared::aparencia::CHAPEUS.iter().enumerate() {
         seed.push(S {
             id: (shared::aparencia::CHAPEU_BASE + i as u16) as i32,

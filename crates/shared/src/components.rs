@@ -511,6 +511,10 @@ pub struct EntityMeta {
     /// (`loja_mundo::atualizar_montaria_vista`).
     #[serde(default)]
     pub aparencia: u32,
+    /// Weapon and mount skins (`aparencia::Aparencia::empacota_skins`).
+    /// Zero = default models.
+    #[serde(default)]
+    pub skins: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

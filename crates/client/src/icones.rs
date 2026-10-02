@@ -131,12 +131,10 @@ pub(crate) fn vitrine_skin(
     let Some(skin) = ap::skin_do_item(item_id) else {
         return false;
     };
-    let mut a = ap::Aparencia::default();
-    match ap::cabelo_do_chapeu(skin) {
-        Some(cabelo) => a.cabelo = cabelo,
-        None => a.roupa = skin,
-    }
-    crate::render3d::vitrine_aparencia_icone(vox, a, r, giro, solido)
+    // A mount coat shows on the dragon: the coat is the point, and the
+    // biggest creature carries it best in a bag slot.
+    crate::render3d::vitrine_de_skin(vox, skin, ap::Aparencia::default(),
+        shared::item_id::MONTARIA_BASE + 4, r, giro, solido)
 }
 
 #[cfg(test)]

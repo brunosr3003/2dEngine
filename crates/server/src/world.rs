@@ -8381,6 +8381,19 @@ impl GameWorld {
                 nova.cabelo = s.guarda_roupa.aparencia.cabelo;
             }
         }
+        // Weapon and mount skins: the same rule, each one on its own.
+        let atual = s.guarda_roupa.aparencia;
+        for c in 0..shared::aparencia::CONJUNTOS_COM_SKIN {
+            let i = nova.armas[c];
+            if i != 0 && !s.guarda_roupa.tem(shared::aparencia::ARMA_SKIN_BASE + i as u16 - 1) {
+                nova.armas[c] = atual.armas[c];
+            }
+        }
+        if nova.montaria != 0
+            && !s.guarda_roupa.tem(shared::aparencia::MONTARIA_SKIN_BASE + nova.montaria as u16 - 1)
+        {
+            nova.montaria = atual.montaria;
+        }
         if s.guarda_roupa.aparencia == nova {
             return;
         }
@@ -8818,7 +8831,7 @@ impl GameWorld {
         // ja' deixa escolher roupa e chapeu, e o guarda-roupa tem que
         // concordar com o que foi escolhido la'.
         let visual_for_db = shared::aparencia::GuardaRoupa {
-            aparencia: aparencia.saneada(),
+            aparencia: aparencia.so_gratis(),
             desbloqueadas: shared::aparencia::gratuitas(),
         };
         let name_for_db = name.clone();
@@ -13351,11 +13364,14 @@ impl GameWorld {
             auras_de.insert(net.0,pet.auras);
         }
 
-        let aparencia_de: HashMap<EntityId, u32> = self
+        let aparencia_de: HashMap<EntityId, (u32, u32)> = self
             .sessions
             .values()
             .filter(|s| s.logged_in)
-            .map(|s| (s.entity_id, s.guarda_roupa.aparencia.empacota()))
+            .map(|s| {
+                let a = &s.guarda_roupa.aparencia;
+                (s.entity_id, (a.empacota(), a.empacota_skins()))
+            })
             .collect();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
@@ -13544,7 +13560,8 @@ impl GameWorld {
                         },
                         // So' jogador tem aparencia; o resto manda zero, que
                         // e' o corpo de sempre.
-                        aparencia: aparencia_de.get(&net.0).copied().unwrap_or(0),
+                        aparencia: aparencia_de.get(&net.0).map_or(0, |a| a.0),
+                        skins: aparencia_de.get(&net.0).map_or(0, |a| a.1),
                     };
                     let mut state = EntityState::quantize(
                         net.0,

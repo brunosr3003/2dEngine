@@ -13,7 +13,7 @@ Medidas e convencoes em `docs/ARTE_DO_PERSONAGEM.md`, secao "Skins de arma":
 
 Estas sao as skins PADRAO. Uso:  python3 tools/voxrender/armas.py
 """
-import os, sys
+import math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from voxsimplify import escrever_vox  # noqa: E402
 import molde_corpo as M  # noqa: E402
@@ -274,6 +274,155 @@ def arco():
     return v, (3, 3, 26)
 
 
+# ── WEAPON SKINS (`shared::aparencia::SKINS_DE_ARMA`) ──
+#
+# Each skin = the default shapes, a palette of its own and a few voxels that
+# change the silhouette (serrations, coils, a sun boss). The grip marker and
+# the canvas stay where the default has them: the hands, the sheath and the
+# holster were fitted to those, and a skin must fit the same. The tier trim
+# (241-244) stays too — the colour of the equipped item's tier still shows.
+EXTRA1, EXTRA2, EXTRA3 = 30, 31, 32
+
+
+def paleta_com(troca):
+    antigas = dict(cores)
+    cores.update(troca)
+    p = paleta()
+    cores.clear(); cores.update(antigas)
+    return p
+
+
+def espada_skin(estilo):
+    v, tam = espada()
+    if estilo == "abissal":
+        for y in range(9, 22, 3):                         # serrated edges
+            v[(1, y, 1)] = ACO_FIO
+            v[(1, y, 5)] = ACO_FIO
+    if estilo == "solar":
+        v[(0, 6, 3)] = EXTRA1; v[(2, 6, 3)] = EXTRA1      # sun stone in the guard
+        v[(1, 7, 3)] = EXTRA1
+    if estilo == "real":
+        v[(1, 6, 0)] = EXTRA1; v[(1, 6, 6)] = EXTRA1      # gems at the guard's tips
+        v[(0, 3, 3)] = EXTRA2; v[(2, 3, 3)] = EXTRA2      # gold grip ring
+    return v, tam
+
+
+def escudo_skin(estilo):
+    v, tam = escudo()
+    c = 6.5
+    for (x, y, z), cor in list(v.items()):
+        if x != 0 or cor in (T[0], T[1]):
+            continue
+        d = ((y - c) ** 2 + (z - c) ** 2) ** 0.5
+        if estilo == "solar":
+            if d <= 1.6:
+                v[(x, y, z)] = EXTRA1                     # the sun
+            else:
+                raio = int((math.atan2(z - c, y - c) + math.pi) / (math.pi / 6)) % 2
+                v[(x, y, z)] = PINTURA_CLARA if raio else PINTURA
+        elif estilo == "abissal":
+            if d <= 1.2:
+                v[(x, y, z)] = EXTRA1                     # the pupil
+            elif 2.2 <= d <= 3.3:
+                v[(x, y, z)] = EXTRA2                     # the glowing iris
+            else:
+                v[(x, y, z)] = PINTURA
+        elif estilo == "real":
+            if abs(y - c) <= 0.6 or abs(z - c) <= 0.6:
+                v[(x, y, z)] = EXTRA1                     # gold cross
+            else:
+                v[(x, y, z)] = PINTURA if (y < c) == (z < c) else PINTURA_CLARA
+    return v, tam
+
+
+def katana_skin(estilo):
+    v, tam = katana()
+    if estilo == "tempestade":
+        for y in range(10, 27):                           # lightning along the flat
+            if y % 4 in (0, 1):
+                v[(1, y, 1 + (1 if y >= 22 else 0) + (y // 2) % 2 * 0)] = EXTRA1
+    if estilo == "lua":
+        for y in (9, 10):
+            v[(1, y, 1)] = EXTRA1                         # red habaki
+    return v, tam
+
+
+def bainha_skin(estilo):
+    v, tam = bainha()
+    for (x, y, z), cor in list(v.items()):
+        if cor not in (LACA, LACA_ESC):
+            continue
+        if estilo == "sakura":
+            v[(x, y, z)] = LACA_ESC if (y * 7 + z * 3 + x * 5) % 9 == 0 else LACA     # petals
+        elif estilo == "tempestade":
+            v[(x, y, z)] = LACA_ESC if (y + z * 2) % 7 == 0 else LACA               # streaks
+        elif estilo == "lua":
+            lua = 9 <= y <= 14 and x == 0 and (y, z) not in ((11, 1), (12, 1), (11, 2), (12, 2))
+            v[(x, y, z)] = LACA_ESC if lua and (y in (9, 14) or z != 1) else LACA   # crescent
+    return v, tam
+
+
+def pistola_skin(estilo):
+    v, tam = pistola()
+    if estilo == "relampago":
+        for y in (5, 7, 9):
+            v[(1, y, 4)] = EXTRA1; v[(1, y, 5)] = EXTRA1  # coils on the barrel
+    if estilo == "dourada":
+        v[(1, 6, 5)] = EXTRA1; v[(1, 8, 5)] = EXTRA1      # engraving
+    if estilo == "coral":
+        v[(1, 1, 3)] = EXTRA1; v[(1, 0, 1)] = EXTRA1      # pearl inlay
+    return v, tam
+
+
+def coldre_skin(estilo):
+    v, tam = coldre()
+    if estilo == "relampago":
+        for z in range(1, 5):
+            v[(1, 5, z)] = EXTRA1
+    return v, tam
+
+
+SKINS = {
+    # sword and shield
+    "solar": ([("espada", espada_skin), ("escudo", escudo_skin)], {
+        ACO: (240, 198, 76), ACO_ESC: (196, 136, 40), ACO_FIO: (255, 246, 204),
+        COURO: (150, 44, 32), COURO_ESC: (110, 30, 22),
+        PINTURA: (226, 132, 36), PINTURA_CLARA: (255, 214, 96), EXTRA1: (255, 250, 220)}),
+    "abissal": ([("espada", espada_skin), ("escudo", escudo_skin)], {
+        ACO: (66, 38, 96), ACO_ESC: (32, 18, 50), ACO_FIO: (96, 244, 222),
+        COURO: (34, 30, 44), COURO_ESC: (22, 20, 30),
+        PINTURA: (34, 22, 52), EXTRA1: (10, 8, 14), EXTRA2: (96, 244, 222)}),
+    "real": ([("espada", espada_skin), ("escudo", escudo_skin)], {
+        ACO: (224, 230, 240), ACO_ESC: (44, 74, 176), ACO_FIO: (250, 252, 255),
+        COURO: (40, 62, 146), COURO_ESC: (28, 44, 108),
+        PINTURA: (40, 66, 160), PINTURA_CLARA: (236, 236, 240),
+        EXTRA1: (232, 190, 70), EXTRA2: (232, 190, 70)}),
+    # katana
+    "sakura": ([("katana", katana_skin), ("bainha", bainha_skin)], {
+        PRETO: (224, 120, 160), BRANCO: (250, 244, 246), ACO_FIO: (255, 226, 236), ACO_ESC: (206, 204, 218),
+        LACA: (246, 238, 238), LACA_ESC: (236, 140, 176)}),
+    "tempestade": ([("katana", katana_skin), ("bainha", bainha_skin)], {
+        PRETO: (22, 32, 74), BRANCO: (84, 204, 255), ACO_FIO: (176, 232, 255), ACO_ESC: (42, 62, 114),
+        LACA: (24, 34, 82), LACA_ESC: (70, 190, 250), EXTRA1: (130, 230, 255)}),
+    "lua": ([("katana", katana_skin), ("bainha", bainha_skin)], {
+        PRETO: (24, 22, 26), BRANCO: (180, 24, 34), ACO_FIO: (226, 40, 48), ACO_ESC: (26, 24, 30),
+        LACA: (20, 18, 22), LACA_ESC: (200, 26, 36), EXTRA1: (200, 26, 36)}),
+    # pistols
+    "dourada": ([("pistola", pistola_skin), ("coldre", coldre_skin)], {
+        ACO: (244, 204, 84), ACO_ESC: (200, 150, 52), FERRO: (120, 90, 30),
+        MADEIRA_ESC2: (236, 226, 200), LATAO: (255, 236, 150),
+        COURO: (124, 32, 32), COURO_ESC: (92, 22, 22), EXTRA1: (255, 250, 210)}),
+    "coral": ([("pistola", pistola_skin), ("coldre", coldre_skin)], {
+        ACO: (70, 180, 176), ACO_ESC: (34, 116, 124), FERRO: (20, 70, 80),
+        MADEIRA_ESC2: (232, 104, 92), LATAO: (244, 242, 232),
+        COURO: (40, 82, 124), COURO_ESC: (28, 58, 92), EXTRA1: (250, 248, 240)}),
+    "relampago": ([("pistola", pistola_skin), ("coldre", coldre_skin)], {
+        ACO: (56, 60, 74), ACO_ESC: (32, 34, 44), FERRO: (90, 220, 255),
+        MADEIRA_ESC2: (30, 30, 36), LATAO: (90, 220, 255),
+        COURO: (28, 28, 32), COURO_ESC: (18, 18, 22), EXTRA1: (110, 230, 255)}),
+}
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "personagem")
@@ -287,3 +436,9 @@ if __name__ == "__main__":
         vox, tam = gera()  # a picareta troca a cor da cabeca na paleta antes
         escrever_vox(os.path.join(pasta, f"{nome}.vox"), vox, tam, paleta())
         print(f"{nome}.vox: {len(vox)} voxels, tela {tam[0]}x{tam[1]}x{tam[2]}")
+    for sufixo, (pecas, troca) in SKINS.items():
+        p = paleta_com(troca)
+        for base, gera in pecas:
+            vox, tam = gera(sufixo)
+            escrever_vox(os.path.join(pasta, f"{base}_{sufixo}.vox"), vox, tam, p)
+            print(f"{base}_{sufixo}.vox: {len(vox)} voxels")

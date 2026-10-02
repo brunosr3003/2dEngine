@@ -48,22 +48,28 @@ pub const CHAPEU_BASE: u16 = 500;
 
 /// As roupas, na ordem dos ids (`ROUPA_BASE + i`). O nome e' o arquivo em
 /// `assets/vox/personagem/skins/`.
-pub const ROUPAS: [(&str, &str); 4] = [
+/// Append only: the position is the id, saved in every character's look.
+pub const ROUPAS: [(&str, &str); 10] = [
     ("aventureiro", "Adventurer"),
     ("mercenario", "Mercenary"),
     ("andarilho", "Wanderer"),
-    // A primeira PAGA. As três de cima são as "variações mais simples de
-    // graça" que o dono pediu; esta existe pra a corrente da loja ser
-    // demonstrável ponta a ponta — comprar, usar, destravar, vestir.
     ("capitao", "Storm Captain"),
+    ("marinheiro", "Deckhand"),
+    ("explorador", "Explorer"),
+    ("corsario", "Corsair"),
+    ("arcanista", "Arcanist"),
+    ("cavaleiro", "Knight"),
+    ("nomade", "Dune Nomad"),
 ];
 
-/// Quantas roupas nascem destravadas. As de índice maior são da loja.
-pub const ROUPAS_GRATIS: usize = 3;
+/// Price in TP of each outfit, same order as `ROUPAS`. 0 = free: unlocked
+/// from the first login and offered on the creation screen.
+pub const PRECO_DAS_ROUPAS: [u64; ROUPAS.len()] = [0, 0, 0, 300, 0, 0, 300, 300, 500, 300];
 
 /// Os chapeus, na ordem dos ids (`CHAPEU_BASE + i`), em
 /// `assets/vox/personagem/chapeus/`.
-pub const CHAPEUS: [(&str, &str); 8] = [
+/// Append only, and at most 20: items 520+ are pet and mount accessories.
+pub const CHAPEUS: [(&str, &str); 14] = [
     ("capuz", "Hood"),
     ("pontudo", "Pointed Hat"),
     ("tricornio", "Tricorne"),
@@ -72,7 +78,87 @@ pub const CHAPEUS: [(&str, &str); 8] = [
     ("lenco", "Bandana"),
     ("faixa", "Headband"),
     ("touca", "Cap"),
+    ("palha", "Straw Hat"),
+    ("capitao", "Captain's Hat"),
+    ("elmo", "Knight Helm"),
+    ("chifres", "Horned Helm"),
+    ("turbante", "Turban"),
+    ("coroa", "Crown"),
 ];
+
+/// Price in TP of each hat, same order as `CHAPEUS`. 0 = free.
+pub const PRECO_DOS_CHAPEUS: [u64; CHAPEUS.len()] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 300, 300, 200, 500];
+
+/// The first WEAPON skin id. Wardrobe id and bag item id are the same, as
+/// with hats. 600-619.
+pub const ARMA_SKIN_BASE: u16 = 600;
+/// The first MOUNT skin id (wardrobe and item). 620-639.
+pub const MONTARIA_SKIN_BASE: u16 = 620;
+
+/// Weapon sets that draw a model and so can wear a skin: sword and shield,
+/// katana, pistols (`skills::Conjunto` 0-2). The magic ring draws none.
+pub const CONJUNTOS_COM_SKIN: usize = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SkinDeArma {
+    /// File suffix: `espada_<s>.vox` + `escudo_<s>.vox`, `katana_<s>` +
+    /// `bainha_<s>`, `pistola_<s>` + `coldre_<s>` (`tools/voxrender/armas.py`).
+    pub sufixo: &'static str,
+    pub nome: &'static str,
+    /// `skills::Conjunto` as u8 (0 sword and shield, 1 katana, 2 pistols).
+    pub conjunto: u8,
+    pub preco: u64,
+}
+
+/// Append only: the position is the id. All paid — the owner: "there will be
+/// no free weapon or mount skin".
+pub const SKINS_DE_ARMA: [SkinDeArma; 9] = [
+    SkinDeArma { sufixo: "solar", nome: "Sunforged", conjunto: 0, preco: 400 },
+    SkinDeArma { sufixo: "abissal", nome: "Abyssal", conjunto: 0, preco: 400 },
+    SkinDeArma { sufixo: "real", nome: "Royal Guard", conjunto: 0, preco: 600 },
+    SkinDeArma { sufixo: "sakura", nome: "Sakura", conjunto: 1, preco: 400 },
+    SkinDeArma { sufixo: "tempestade", nome: "Stormcaller", conjunto: 1, preco: 400 },
+    SkinDeArma { sufixo: "lua", nome: "Crimson Moon", conjunto: 1, preco: 600 },
+    SkinDeArma { sufixo: "dourada", nome: "Gilded Pistols", conjunto: 2, preco: 400 },
+    SkinDeArma { sufixo: "coral", nome: "Reef Pistols", conjunto: 2, preco: 400 },
+    SkinDeArma { sufixo: "relampago", nome: "Thunder Pistols", conjunto: 2, preco: 600 },
+];
+
+/// Mount skins: a coat for WHATEVER mount is ridden, swapped by palette index
+/// per species (`tools/voxrender/bichos.py: PELES_DE_MONTARIA`), file
+/// `bichos/<species>_<sufixo>.vox`. (sufixo, name, price). Append only.
+pub const SKINS_DE_MONTARIA: [(&str, &str, u64); 5] = [
+    ("dourada", "Gilded Coat", 500),
+    ("obsidiana", "Obsidian Coat", 500),
+    ("gelida", "Frostborn Coat", 500),
+    ("brasa", "Emberhide Coat", 500),
+    ("espectral", "Spectral Coat", 700),
+];
+
+/// The weapon skin with this id.
+pub fn skin_de_arma(id: u16) -> Option<&'static SkinDeArma> {
+    SKINS_DE_ARMA.get(id.checked_sub(ARMA_SKIN_BASE)? as usize)
+}
+
+/// The mount skin with this id: (sufixo, name, price).
+pub fn skin_de_montaria(id: u16) -> Option<&'static (&'static str, &'static str, u64)> {
+    if id >= MONTARIA_SKIN_BASE + SKINS_DE_MONTARIA.len() as u16 {
+        return None;
+    }
+    SKINS_DE_MONTARIA.get(id.checked_sub(MONTARIA_SKIN_BASE)? as usize)
+}
+
+/// The file suffix of the weapon skin worn on set `conjunto`, if any.
+pub fn sufixo_da_arma(a: &Aparencia, conjunto: u8) -> Option<&'static str> {
+    let i = *a.armas.get(conjunto as usize)?;
+    let s = SKINS_DE_ARMA.get(i.checked_sub(1)? as usize)?;
+    (s.conjunto == conjunto).then_some(s.sufixo)
+}
+
+/// The file suffix of the mount skin worn, if any.
+pub fn sufixo_da_montaria(a: &Aparencia) -> Option<&'static str> {
+    SKINS_DE_MONTARIA.get(a.montaria.checked_sub(1)? as usize).map(|m| m.0)
+}
 
 /// The BAG ITEM of an outfit skin starts here, apart from the wardrobe id.
 ///
@@ -100,9 +186,8 @@ pub fn skin_do_item(item: u16) -> Option<u16> {
     if (ITEM_ROUPA_BASE..ITEM_ROUPA_BASE + ROUPAS.len() as u16).contains(&item) {
         return Some(ROUPA_BASE + (item - ITEM_ROUPA_BASE));
     }
-    (CHAPEU_BASE..CHAPEU_BASE + CHAPEUS.len() as u16)
-        .contains(&item)
-        .then_some(item)
+    let chapeu = (CHAPEU_BASE..CHAPEU_BASE + CHAPEUS.len() as u16).contains(&item);
+    (chapeu || skin_de_arma(item).is_some() || skin_de_montaria(item).is_some()).then_some(item)
 }
 
 /// O arquivo da skin de roupa deste id. `None` = id que nao e' roupa.
@@ -115,6 +200,12 @@ pub fn arquivo_da_roupa(id: u16) -> Option<&'static str> {
 
 /// O nome bonito de uma skin, de roupa ou de chapeu.
 pub fn nome_da_skin(id: u16) -> Option<&'static str> {
+    if let Some(a) = skin_de_arma(id) {
+        return Some(a.nome);
+    }
+    if let Some(m) = skin_de_montaria(id) {
+        return Some(m.1);
+    }
     if id >= CHAPEU_BASE {
         return CHAPEUS.get((id - CHAPEU_BASE) as usize).map(|c| c.1);
     }
@@ -136,41 +227,58 @@ pub fn cabelo_do_chapeu(id: u16) -> Option<u8> {
 
 /// As skins que a LOJA vende: as que existem e nao sao gratis.
 pub fn a_venda() -> Vec<u16> {
-    (0..ROUPAS.len() as u16)
-        .map(|i| ROUPA_BASE + i)
-        .chain((0..CHAPEUS.len() as u16).map(|i| CHAPEU_BASE + i))
-        .filter(|id| !gratuita(*id))
-        .collect()
+    todas().filter(|id| !gratuita(*id)).collect()
 }
 
-/// O preco em TP de uma skin. `None` = nao e' skin.
-///
-/// As TRES primeiras roupas e os chapeus sao GRATIS — o dono pediu "tres
-/// variacoes mais simples de graca, depois criamos coisas mais legais pagas".
-/// Elas nascem destravadas e nao aparecem na loja; a tabela existe pra quando
-/// as pagas chegarem, sem obra nova.
-pub fn preco_da_skin(id: u16) -> Option<u64> {
-    if !gratuita(id) && nome_da_skin(id).is_some() {
-        return Some(PRECO_PADRAO_TP);
+/// The table price of a skin, 0 included. `None` = not a skin.
+fn preco_da_tabela(id: u16) -> Option<u64> {
+    if let Some(a) = skin_de_arma(id) {
+        return Some(a.preco);
+    }
+    if let Some(m) = skin_de_montaria(id) {
+        return Some(m.2);
+    }
+    if id >= CHAPEU_BASE {
+        return PRECO_DOS_CHAPEUS.get((id - CHAPEU_BASE) as usize).copied();
+    }
+    if id >= ROUPA_BASE {
+        return PRECO_DAS_ROUPAS.get((id - ROUPA_BASE) as usize).copied();
     }
     None
 }
 
-/// Quanto custa uma skin paga, em TP.
-pub const PRECO_PADRAO_TP: u64 = 300;
+/// O preco em TP de uma skin a venda. `None` = gratis ou nao e' skin.
+pub fn preco_da_skin(id: u16) -> Option<u64> {
+    preco_da_tabela(id).filter(|p| *p > 0)
+}
 
-/// A skin ja' nasce destravada? As tres roupas e os oito chapeus de hoje sim.
+/// A skin ja' nasce destravada? (price 0 in the table)
 pub fn gratuita(id: u16) -> bool {
-    (ROUPA_BASE..ROUPA_BASE + ROUPAS_GRATIS as u16).contains(&id)
-        || (CHAPEU_BASE..CHAPEU_BASE + CHAPEUS.len() as u16).contains(&id)
+    preco_da_tabela(id) == Some(0)
 }
 
 /// As skins que todo personagem tem desde o primeiro login.
 pub fn gratuitas() -> Vec<u16> {
-    (0..ROUPAS_GRATIS as u16)
+    todas().filter(|id| gratuita(*id)).collect()
+}
+
+/// Every wardrobe skin id, outfits then hats.
+fn todas() -> impl Iterator<Item = u16> {
+    (0..ROUPAS.len() as u16)
         .map(|i| ROUPA_BASE + i)
         .chain((0..CHAPEUS.len() as u16).map(|i| CHAPEU_BASE + i))
-        .collect()
+        .chain((0..SKINS_DE_ARMA.len() as u16).map(|i| ARMA_SKIN_BASE + i))
+        .chain((0..SKINS_DE_MONTARIA.len() as u16).map(|i| MONTARIA_SKIN_BASE + i))
+}
+
+/// The free outfits, in id order — what the creation screen offers.
+pub fn roupas_gratis() -> Vec<u16> {
+    (0..ROUPAS.len() as u16).map(|i| ROUPA_BASE + i).filter(|id| gratuita(*id)).collect()
+}
+
+/// The free hats, in id order.
+pub fn chapeus_gratis() -> Vec<u16> {
+    (0..CHAPEUS.len() as u16).map(|i| CHAPEU_BASE + i).filter(|id| gratuita(*id)).collect()
 }
 
 /// O caminho inverso: que chapeu este indice de `cabelo` representa.
@@ -193,6 +301,12 @@ pub struct Aparencia {
     pub pele: u8,
     /// Id da skin de roupa. 0 = o corpo padrão.
     pub roupa: u16,
+    /// The weapon skin per weapon set (sword and shield, katana, pistols):
+    /// index + 1 into `SKINS_DE_ARMA`, 0 = the default model. One per set,
+    /// so switching weapons keeps each choice.
+    pub armas: [u8; CONJUNTOS_COM_SKIN],
+    /// The mount skin: index + 1 into `SKINS_DE_MONTARIA`, 0 = none.
+    pub montaria: u8,
 }
 
 impl Default for Aparencia {
@@ -203,6 +317,8 @@ impl Default for Aparencia {
             cor_cabelo: 0,
             pele: 0,
             roupa: 0,
+            armas: [0; CONJUNTOS_COM_SKIN],
+            montaria: 0,
         }
     }
 }
@@ -211,21 +327,27 @@ impl Aparencia {
     /// Empacota pro fio. Valor fora da faixa é CORTADO, não recusado: o
     /// desenho tem que continuar acontecendo, e um rosto inválido virando o
     /// rosto 0 é melhor que um personagem invisível.
+    /// `cabelo` had 4 bits (3-6), which held 3 hairs + "no hair" + 12 hats.
+    /// Its high bits ride on the spare bits 25-26, so a value packed before
+    /// the change (high bits zero) still reads the same.
     pub fn empacota(&self) -> u32 {
+        let cabelo = self.cabelo.min(63) as u32;
         (self.rosto.min(7) as u32)
-            | ((self.cabelo.min(15) as u32) << 3)
+            | ((cabelo & 0b1111) << 3)
             | ((self.cor_cabelo.min(7) as u32) << 7)
             | ((self.pele.min(7) as u32) << 10)
             | ((self.roupa.min(4095) as u32) << 13)
+            | ((cabelo >> 4) << 25)
     }
 
     pub fn desempacota(v: u32) -> Self {
         Self {
             rosto: (v & 0b111) as u8,
-            cabelo: ((v >> 3) & 0b1111) as u8,
+            cabelo: (((v >> 3) & 0b1111) | (((v >> 25) & 0b11) << 4)) as u8,
             cor_cabelo: ((v >> 7) & 0b111) as u8,
             pele: ((v >> 10) & 0b111) as u8,
             roupa: ((v >> 13) & 0xFFF) as u16,
+            ..Default::default()
         }
     }
 
@@ -247,7 +369,56 @@ impl Aparencia {
         if self.pele as usize >= TONS_DE_PELE.len() {
             self.pele = 0;
         }
+        // A weapon skin only on the set it was made for.
+        for c in 0..CONJUNTOS_COM_SKIN {
+            if self.armas[c] != 0 && sufixo_da_arma(&self, c as u8).is_none() {
+                self.armas[c] = 0;
+            }
+        }
+        if self.montaria as usize > SKINS_DE_MONTARIA.len() {
+            self.montaria = 0;
+        }
         self
+    }
+
+    /// The wardrobe ids of the weapon and mount skins worn — what the
+    /// server checks against the unlocked ones.
+    pub fn skins_extras(&self) -> Vec<u16> {
+        let armas = self.armas.iter().filter(|i| **i != 0).map(|i| ARMA_SKIN_BASE + *i as u16 - 1);
+        let montaria = (self.montaria != 0).then(|| MONTARIA_SKIN_BASE + self.montaria as u16 - 1);
+        armas.chain(montaria).collect()
+    }
+
+    /// Weapon and mount skins for the wire (`EntityMeta::skins`): one byte per
+    /// weapon set, then the mount. Apart from `empacota`, whose 32 bits are
+    /// nearly full and which keys the body mesh cache.
+    pub fn empacota_skins(&self) -> u32 {
+        self.armas[0] as u32
+            | (self.armas[1] as u32) << 8
+            | (self.armas[2] as u32) << 16
+            | (self.montaria as u32) << 24
+    }
+
+    /// `self` with the skins of `empacota_skins` put back.
+    pub fn com_skins(mut self, v: u32) -> Self {
+        self.armas = [v as u8, (v >> 8) as u8, (v >> 16) as u8];
+        self.montaria = (v >> 24) as u8;
+        self
+    }
+
+    /// `saneada`, and only FREE skins: a new character owns nothing else yet,
+    /// so a paid outfit or hat sent at creation would be worn without buying.
+    pub fn so_gratis(self) -> Self {
+        let mut a = self.saneada();
+        if a.roupa != 0 && !gratuita(a.roupa) {
+            a.roupa = 0;
+        }
+        if chapeu_do_cabelo(a.cabelo).is_some_and(|c| !gratuita(c)) {
+            a.cabelo = 0;
+        }
+        a.armas = [0; CONJUNTOS_COM_SKIN];
+        a.montaria = 0;
+        a
     }
 }
 
@@ -292,9 +463,11 @@ mod testes {
     #[test]
     fn empacota_e_desempacota_sem_perder_nada() {
         for a in [
-            Aparencia { rosto: 7, cabelo: 15, cor_cabelo: 7, pele: 7, roupa: 4095 },
-            Aparencia { rosto: 2, cabelo: 1, cor_cabelo: 5, pele: 3, roupa: 480 },
-            Aparencia { rosto: 0, cabelo: 0, cor_cabelo: 0, pele: 0, roupa: 1 },
+            Aparencia { rosto: 7, cabelo: 15, cor_cabelo: 7, pele: 7, roupa: 4095, ..Default::default() },
+            Aparencia { rosto: 7, cabelo: 63, cor_cabelo: 7, pele: 7, roupa: 4095, ..Default::default() },
+            Aparencia { rosto: 1, cabelo: CABELOS + CHAPEUS.len() as u8, cor_cabelo: 0, pele: 0, roupa: 0, ..Default::default() },
+            Aparencia { rosto: 2, cabelo: 1, cor_cabelo: 5, pele: 3, roupa: 480, ..Default::default() },
+            Aparencia { rosto: 0, cabelo: 0, cor_cabelo: 0, pele: 0, roupa: 1, ..Default::default() },
         ] {
             assert_eq!(Aparencia::desempacota(a.empacota()), a, "{a:?}");
         }
@@ -317,7 +490,7 @@ mod testes {
     /// personagem que não desenha.
     #[test]
     fn valor_absurdo_vira_o_padrao_em_vez_de_sumir() {
-        let a = Aparencia { rosto: 200, cabelo: 200, cor_cabelo: 200, pele: 200, roupa: 9999 };
+        let a = Aparencia { rosto: 200, cabelo: 200, cor_cabelo: 200, pele: 200, roupa: 9999, ..Default::default() };
         let s = a.saneada();
         assert!(s.rosto < ROSTOS && (s.cor_cabelo as usize) < CORES_DE_CABELO.len());
         assert!((s.pele as usize) < TONS_DE_PELE.len());
@@ -360,11 +533,65 @@ mod testes_das_skins {
             assert!(c > CABELOS, "o chapéu {id} caiu na faixa dos cabelos");
             assert_eq!(chapeu_do_cabelo(c), Some(id));
         }
-        // E o campo comporta todos: 4 bits = 16, contra 3 cabelos + 1 + 8.
+        // And the packed field holds them all: 6 bits (4 + the spare 25-26).
         let ultimo = cabelo_do_chapeu(CHAPEU_BASE + CHAPEUS.len() as u16 - 1).unwrap();
-        assert!(ultimo <= 15, "o último chapéu ({ultimo}) não cabe em 4 bits");
+        assert!(ultimo <= 63, "the last hat ({ultimo}) does not fit in 6 bits");
         let a = Aparencia { cabelo: ultimo, ..Default::default() };
         assert_eq!(Aparencia::desempacota(a.empacota()).cabelo, ultimo);
+    }
+
+    /// Prices follow the table: 0 is free (unlocked, not sold), the rest is
+    /// sold at its own price. The creation screen offers only the free ones.
+    #[test]
+    fn preco_por_item_separa_gratis_de_pago() {
+        assert!(gratuita(ROUPA_BASE));
+        assert_eq!(preco_da_skin(ROUPA_BASE), None);
+        assert_eq!(preco_da_skin(ROUPA_BASE + 3), Some(300), "Storm Captain");
+        assert!(gratuita(ROUPA_BASE + 4), "a free outfit after a paid one");
+        assert!(roupas_gratis().contains(&(ROUPA_BASE + 4)));
+        assert!(!roupas_gratis().contains(&(ROUPA_BASE + 3)));
+        assert_eq!(
+            a_venda().len() + gratuitas().len(),
+            ROUPAS.len() + CHAPEUS.len() + SKINS_DE_ARMA.len() + SKINS_DE_MONTARIA.len()
+        );
+        assert!(CHAPEU_BASE + CHAPEUS.len() as u16 <= 520, "520+ are accessories");
+        assert!(ITEM_ROUPA_BASE + ROUPAS.len() as u16 <= 600);
+        let pago = chapeu_do_cabelo(CABELOS + 1 + 13).unwrap();
+        assert!(!gratuita(pago), "Crown");
+        let criado = Aparencia { roupa: ROUPA_BASE + 8, cabelo: CABELOS + 1 + 13, ..Default::default() }
+            .so_gratis();
+        assert_eq!((criado.roupa, criado.cabelo), (0, 0), "no paid skin at creation");
+        let livre = Aparencia { roupa: ROUPA_BASE + 4, cabelo: CABELOS + 1 + 8, ..Default::default() };
+        assert_eq!(livre.so_gratis(), livre);
+    }
+
+    /// Weapon and mount skins: all paid, each an item of its own that never
+    /// lands on a hat, an accessory (520+) or an outfit item (540+), and only
+    /// worn on the set it was made for.
+    #[test]
+    fn skins_de_arma_e_montaria() {
+        for i in 0..SKINS_DE_ARMA.len() as u16 {
+            let id = ARMA_SKIN_BASE + i;
+            assert!(!gratuita(id) && preco_da_skin(id).is_some(), "weapon skin {id} free");
+            assert_eq!(skin_do_item(item_da_skin(id)), Some(id));
+            assert!((SKINS_DE_ARMA[i as usize].conjunto as usize) < CONJUNTOS_COM_SKIN);
+        }
+        for i in 0..SKINS_DE_MONTARIA.len() as u16 {
+            let id = MONTARIA_SKIN_BASE + i;
+            assert!(!gratuita(id) && preco_da_skin(id).is_some(), "mount skin {id} free");
+            assert_eq!(skin_do_item(id), Some(id));
+        }
+        assert!(ARMA_SKIN_BASE + SKINS_DE_ARMA.len() as u16 <= MONTARIA_SKIN_BASE);
+        assert!(ITEM_ROUPA_BASE + ROUPAS.len() as u16 <= ARMA_SKIN_BASE);
+        // Sakura (katana) on the sword slot is cut; on the katana slot it stays.
+        let errada = Aparencia { armas: [4, 4, 0], montaria: 2, ..Default::default() }.saneada();
+        assert_eq!(errada.armas, [0, 4, 0]);
+        assert_eq!(sufixo_da_arma(&errada, 1), Some("sakura"));
+        assert_eq!(sufixo_da_montaria(&errada), Some("obsidiana"));
+        assert_eq!(errada.skins_extras(), vec![ARMA_SKIN_BASE + 3, MONTARIA_SKIN_BASE + 1]);
+        let ida = Aparencia::default().com_skins(errada.empacota_skins());
+        assert_eq!((ida.armas, ida.montaria), (errada.armas, errada.montaria));
+        assert_eq!(Aparencia { montaria: 99, ..Default::default() }.saneada().montaria, 0);
     }
 
     /// Toda roupa da tabela tem arquivo, e nenhum id fora dela inventa um.

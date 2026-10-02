@@ -225,10 +225,71 @@ def monta(saida, prefixo, orcamento, pelagem=None):
           + ", ".join(f"{n}={len(v)}" for n, v in finais))
 
 
+# ── MOUNT SKINS: a coat for every mount species ──
+#
+# `shared::aparencia::SKINS_DE_MONTARIA`. Same rule as `PELAGENS`: swap the
+# FUR indices and leave eyes, nose, mouth, claws and horns alone — never a
+# tint over the whole mesh. Here one coat has to fit five species, so each
+# species names its roles (fur ramp, secondary, stripe) and each coat gives
+# two colours per role: the role's indices are ordered by how light they are
+# in the original and spread along the coat's ramp, so the model keeps its
+# own shading.
+#
+# Indices read from the zone14 models (voxel counts in parentheses):
+#   deer        3,4 brown fur · 8 cream belly/antler · 10 antler tips
+#   wolf        1,2,3,4 slate fur · 6 pale chest
+#   tiger       4,5 orange fur · 7 white belly/face · 1 the stripe
+#   hippogriff  1,2,3 feather body · 4,11 white head feathers
+#   dragon      1,2,3,4 red scales · 5,6,7,12 gold belly
+PAPEIS_DE_MONTARIA = {
+    "cervo":     {"pelo": [3, 4], "detalhe": [8, 10]},
+    "lobo":      {"pelo": [1, 2, 3, 4], "detalhe": [6]},
+    "tigre":     {"pelo": [4, 5], "detalhe": [7], "listra": [1]},
+    "hipogrifo": {"pelo": [1, 2, 3], "detalhe": [4, 11]},
+    "dragao":    {"pelo": [1, 2, 3, 4], "detalhe": [5, 6, 7, 12]},
+}
+# (sufixo) -> role -> (dark, light). Order and names match the Rust table.
+PELES_DE_MONTARIA = {
+    "dourada":   {"pelo": ((122, 84, 22), (250, 212, 96)), "detalhe": ((236, 226, 196), (255, 250, 236)),
+                  "listra": ((96, 62, 18), (96, 62, 18))},
+    "obsidiana": {"pelo": ((14, 12, 18), (66, 60, 80)), "detalhe": ((120, 60, 200), (196, 136, 255)),
+                  "listra": ((150, 80, 230), (150, 80, 230))},
+    "gelida":    {"pelo": ((104, 140, 186), (232, 244, 255)), "detalhe": ((70, 160, 230), (170, 226, 255)),
+                  "listra": ((40, 90, 160), (40, 90, 160))},
+    "brasa":     {"pelo": ((96, 20, 10), (246, 100, 30)), "detalhe": ((255, 170, 40), (255, 228, 120)),
+                  "listra": ((30, 10, 8), (30, 10, 8))},
+    "espectral": {"pelo": ((26, 80, 84), (150, 244, 222)), "detalhe": ((206, 255, 248), (255, 255, 255)),
+                  "listra": ((12, 50, 62), (12, 50, 62))},
+}
+
+
+def pelagem_da_skin(paleta, papeis, pele):
+    """The palette swap of one coat on one species."""
+    troca = {}
+    for papel, indices in papeis.items():
+        escuro, claro = pele[papel]
+        lum = lambda i: sum(c * w for c, w in zip(paleta[i][:3], (0.3, 0.59, 0.11)))
+        ordem = sorted(indices, key=lum)
+        for k, i in enumerate(ordem):
+            t = k / (len(ordem) - 1) if len(ordem) > 1 else 0.6
+            troca[i] = tuple(round(a + (b - a) * t) for a, b in zip(escuro, claro))
+    return troca
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "bichos")
     os.makedirs(pasta, exist_ok=True)
-    for nome, prefixo, orcamento in BICHOS:
+    # `--skins`: only the mount coats, leaving every species file untouched.
+    so_skins = "--skins" in sys.argv
+    for nome, prefixo, orcamento in ([] if so_skins else BICHOS):
         monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento,
               PELAGENS.get(nome))
+    for nome, prefixo, orcamento in BICHOS:
+        papeis = PAPEIS_DE_MONTARIA.get(nome)
+        if not papeis:
+            continue
+        _, paleta = carrega(prefixo)
+        for sufixo, pele in PELES_DE_MONTARIA.items():
+            monta(os.path.join(pasta, f"{nome}_{sufixo}.vox"), prefixo, orcamento,
+                  pelagem_da_skin(paleta, papeis, pele))

@@ -772,6 +772,7 @@ fn aparencia_de(nome: &str) -> shared::aparencia::Aparencia {
         pele: ((semente / 13) % shared::aparencia::TONS_DE_PELE.len() as u64) as u8,
         // Roupa 0 = o corpo padrão: skin paga não se ganha de graça nem pra bot.
         roupa: 0,
+        ..Default::default()
     }
     .saneada()
 }

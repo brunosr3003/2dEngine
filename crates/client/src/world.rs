@@ -246,6 +246,7 @@ impl World {
         if let Some(e) = self.self_id.and_then(|id| self.ents.get_mut(&id)) {
             e.meta.auras = shared::auras::equipamento(equipamento);
             e.meta.aparencia = aparencia.empacota();
+            e.meta.skins = aparencia.empacota_skins();
         }
     }
 
@@ -768,7 +769,7 @@ mod testes {
             let mut w = World::default();
             w.sincroniza_visual_local(&equipamento, salva);
             for (id, flags) in [(EntityId(1), ent_flags::SELF), (EntityId(2), 0)] {
-                w.apply(vec![EntityMeta {
+                w.apply(vec![EntityMeta { skins: 0,
                     pk: Default::default(), auras: 0, id, tag: EntityTag::Player,
                     name: None, hp_max: 100, faction: None, kind: 0, nivel: 1,
                     desafio: None, aparencia: 0,
@@ -797,7 +798,7 @@ mod testes {
         let mut w = World::default();
         for (id, flags) in [(EntityId(1), 0u8), (EntityId(2), ent_flags::SELF)] {
             w.apply(
-                vec![EntityMeta {
+                vec![EntityMeta { skins: 0,
                     pk: Default::default(),
                     auras: 0,
                     id,
@@ -854,7 +855,7 @@ mod testes {
             st
         };
         w.apply(
-            vec![EntityMeta {
+            vec![EntityMeta { skins: 0,
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -912,7 +913,7 @@ mod testes {
             (EntityId(2), EntityTag::Player, [16, 48]),
         ] {
             w.apply(
-                vec![EntityMeta {
+                vec![EntityMeta { skins: 0,
                     pk: Default::default(),
                     auras: 0,
                     id,
@@ -977,7 +978,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta {
+            vec![EntityMeta { skins: 0,
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1081,7 +1082,7 @@ mod testes {
             rumo: 0,
         };
         w.apply(
-            vec![EntityMeta {
+            vec![EntityMeta { skins: 0,
                 pk: Default::default(),
                 auras: 0,
                 id,
@@ -1174,7 +1175,7 @@ mod testes {
         let mut w = World::default();
         let id = shared::EntityId(1);
         w.apply(
-            vec![EntityMeta {
+            vec![EntityMeta { skins: 0,
                 pk: Default::default(),
                 auras: 0,
                 id,

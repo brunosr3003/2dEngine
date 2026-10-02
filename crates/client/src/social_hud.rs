@@ -397,7 +397,7 @@ pub async fn previa() {
         for (i, nome) in nomes.iter().take(3).enumerate() {
             let id = EntityId(i as u32 + 1);
             world.apply(
-                vec![shared::EntityMeta {
+                vec![shared::EntityMeta { skins: 0,
                     pk: Default::default(),
                     auras: 0,
                     id,
