@@ -5276,8 +5276,7 @@ pub const ARQUIPELAGO: [DefIlha; 5] = [
         raio_blocos: 1600,
         bioma: Bioma::Montanha,
         centro: [-3600.0, 0.0],
-        // 40-50 since Skyreach took 50-60 (owner, 02/10/2026).
-        nivel: (40, 50),
+        nivel: (40, 60),
     },
     // Skyreach: drawn sky islands, no port (`celeste`). Index 4.
     crate::celeste::DEF,

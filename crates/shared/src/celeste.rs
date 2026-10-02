@@ -1,5 +1,5 @@
-//! SKYREACH (`ilha_celeste`): the level 50-60 island, a ruined city in the
-//! sky.
+//! SKYREACH (`ilha_celeste`): the level 60-80 island, a ruined city in the
+//! sky, after the Plateau (40-60).
 //!
 //! The owner chose to split the Plateau (40-50) and give 50-60 an island of
 //! its own, themed as a sky city. The terrain is a heightmap — one top block
@@ -56,25 +56,25 @@ const fn plato(nome: &'static str, x: f32, y: f32, raio: f32, altura: f32, nivel
 /// band grass turns to bare rock and snow.
 pub const PLATOS: [Plato; 15] = [
     plato("Cloudharbor", 0.0, 0.0, 62.0, 14.0, (0, 0)),
-    // 50-52, west
-    plato("Lantern Isle", -150.0, -60.0, 40.0, 15.0, (50, 51)),
-    plato("Feather Rise", -230.0, 40.0, 46.0, 16.0, (51, 52)),
-    plato("Dewdrop Isle", -130.0, 110.0, 30.0, 15.0, (50, 52)),
-    // 52-55, south
-    plato("Choir Steps", -210.0, 200.0, 44.0, 17.0, (52, 53)),
-    plato("Forge of the Titan", -90.0, 270.0, 54.0, 18.0, (53, 55)),
-    plato("Halo Garden", 30.0, 190.0, 36.0, 17.0, (52, 54)),
-    // 54-57, south-east
-    plato("Bellspire", 130.0, 300.0, 48.0, 19.0, (54, 55)),
-    plato("Storm Gardens", 270.0, 240.0, 58.0, 19.0, (55, 57)),
-    plato("Prism Isle", 200.0, 110.0, 32.0, 18.0, (54, 56)),
-    // 57-60, north-east
-    plato("Seraph Watch", 320.0, 60.0, 46.0, 20.0, (57, 58)),
-    plato("Throne of the Sky", 380.0, -90.0, 64.0, 21.0, (58, 60)),
-    plato("Aurora Islet", 230.0, -110.0, 30.0, 20.0, (57, 59)),
+    // 60-64, west
+    plato("Lantern Isle", -150.0, -60.0, 40.0, 15.0, (60, 62)),
+    plato("Feather Rise", -230.0, 40.0, 46.0, 16.0, (62, 64)),
+    plato("Dewdrop Isle", -130.0, 110.0, 30.0, 15.0, (60, 64)),
+    // 64-68, south
+    plato("Choir Steps", -210.0, 200.0, 44.0, 17.0, (64, 66)),
+    plato("Hall of Wings", -90.0, 270.0, 54.0, 18.0, (66, 68)),
+    plato("Halo Garden", 30.0, 190.0, 36.0, 17.0, (64, 68)),
+    // 68-74, south-east
+    plato("Bellspire", 130.0, 300.0, 48.0, 19.0, (68, 71)),
+    plato("Storm Gardens", 270.0, 240.0, 58.0, 19.0, (71, 74)),
+    plato("Prism Isle", 200.0, 110.0, 32.0, 18.0, (68, 74)),
+    // 74-80, north-east
+    plato("Seraph Watch", 320.0, 60.0, 46.0, 20.0, (74, 77)),
+    plato("Throne of the Sky", 380.0, -90.0, 64.0, 21.0, (77, 80)),
+    plato("Aurora Islet", 230.0, -110.0, 30.0, 20.0, (74, 80)),
     // north of the town
-    plato("Rookery", -30.0, -170.0, 34.0, 15.0, (50, 53)),
-    plato("Shardfall", 110.0, -150.0, 36.0, 16.0, (52, 56)),
+    plato("Rookery", -30.0, -170.0, 34.0, 15.0, (60, 66)),
+    plato("Shardfall", 110.0, -150.0, 36.0, 16.0, (64, 72)),
 ];
 
 /// The cloud paths. A main road climbs the bands (0-1-2-4-5-7-8-10-11) and
@@ -331,7 +331,7 @@ pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     raio_blocos: RAIO_BLOCOS,
     bioma: crate::terreno::Bioma::Celeste,
     centro: [-2900.0, -2700.0],
-    nivel: (50, 60),
+    nivel: (60, 80),
 };
 
 #[cfg(test)]

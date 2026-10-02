@@ -133,31 +133,31 @@ pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
     (40, GREATER_HEAL, 1, 1, 0.12),
 ];
 
-/// Skyreach's winged ones (kinds 41-46), about 1.3x their Plateau cousins for
-/// levels 50-60. Their own list and their own migration marker:
-/// `variantes_por_ilha_v1` already ran on the live databases, so rows added
+/// Skyreach's winged ones (kinds 41-46), about 1.6x their Plateau cousins for
+/// levels 60-80 (v2 replaces the 50-60 rows v1 seeded). Their own list and
+/// their own migration marker: `variantes_por_ilha_v1` already ran on the live databases, so rows added
 /// to `BASE_VARIANTES` would never reach them.
 pub const BASE_VARIANTES_CELESTE: &[(i32, u16, i32, i32, f32)] = &[
-    (41, COPPER, 80, 180, 1.0), // Seraph Lynx
-    (41, QUINTESSENCE, 2, 5, 0.28),
+    (41, COPPER, 100, 225, 1.0), // Seraph Lynx
+    (41, QUINTESSENCE, 3, 7, 0.28),
     (41, GREATER_MANA, 1, 1, 0.10),
-    (42, COPPER, 80, 180, 1.0), // Seraph Archer
-    (42, ILLUMINATING_FRAGMENT, 2, 5, 0.26),
-    (42, DARKSTEEL, 3, 6, 0.26),
+    (42, COPPER, 100, 225, 1.0), // Seraph Archer
+    (42, ILLUMINATING_FRAGMENT, 3, 7, 0.26),
+    (42, DARKSTEEL, 4, 8, 0.26),
     (42, STAMINA_POTION, 1, 1, 0.10),
-    (43, COPPER, 95, 215, 1.0), // Seraph Bear
-    (43, DARKSTEEL, 3, 7, 0.30),
+    (43, COPPER, 120, 270, 1.0), // Seraph Bear
+    (43, DARKSTEEL, 4, 9, 0.30),
     (43, GREATER_HEAL, 1, 1, 0.12),
-    (44, COPPER, 90, 200, 1.0), // Seraph Mage
-    (44, DARK_HEART_STONE, 2, 5, 0.26),
-    (44, ANIMA_STONE, 2, 5, 0.26),
+    (44, COPPER, 110, 250, 1.0), // Seraph Mage
+    (44, DARK_HEART_STONE, 3, 7, 0.26),
+    (44, ANIMA_STONE, 3, 7, 0.26),
     (44, GREATER_MANA, 1, 1, 0.12),
-    (45, COPPER, 105, 240, 1.0), // Seraph Owlbear
-    (45, PLATINUM, 3, 6, 0.28),
-    (45, EXORCISM_BAUBLE, 1, 3, 0.22),
+    (45, COPPER, 130, 300, 1.0), // Seraph Owlbear
+    (45, PLATINUM, 4, 8, 0.28),
+    (45, EXORCISM_BAUBLE, 2, 5, 0.22),
     (45, GREATER_HEAL, 1, 1, 0.12),
-    (46, COPPER, 70, 160, 1.0), // Seraph Wolf
-    (46, STEEL, 2, 5, 0.24),
+    (46, COPPER, 90, 200, 1.0), // Seraph Wolf
+    (46, STEEL, 3, 7, 0.24),
     (46, GREATER_HEAL, 1, 1, 0.10),
 ];
 
@@ -259,6 +259,26 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!("Skyreach variant loot seeded");
+    }
+    let celeste_v2 = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('variantes_celeste_v2') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if celeste_v2 && !celeste {
+        sqlx::query("DELETE FROM loot_drops WHERE enemy_kind BETWEEN 41 AND 46")
+            .execute(&mut *tx)
+            .await?;
+        for &(kind, item, min, max, chance) in BASE_VARIANTES_CELESTE {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Skyreach variant loot rescaled for 60-80");
     }
     // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
     // they come off every mob and every stone, in every color. A new database

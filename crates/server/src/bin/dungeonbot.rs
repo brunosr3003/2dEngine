@@ -309,7 +309,7 @@ async fn bot(
                             }
                             if let Some(e) = ents.get_mut(&st.id) {
                                 e.pos = st.pos_f32();
-                                e.hp = st.hp;
+                                e.hp = st.hp.min(u16::MAX as u32) as u16;
                             }
                         }
                         for id in snapshot.removed {

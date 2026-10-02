@@ -13556,7 +13556,7 @@ impl GameWorld {
                         id: net.0,
                         tag,
                         name,
-                        hp_max: hp.map(|h| h.max.max(0) as u16).unwrap_or(0),
+                        hp_max: hp.map(|h| h.max.max(0) as u32).unwrap_or(0),
                         faction: None,
                         nivel: etag
                             .map(|t| t.level as u16)
@@ -16625,7 +16625,7 @@ impl GameWorld {
                 ..shared::base_player_stats()
             };
             mobs.push(shared::protocol::MobNoCatalogo {
-                kind, nivel, nome: d.name, vida: vida.clamp(0, u16::MAX as i32) as u16,
+                kind, nivel, nome: d.name, vida: vida.max(0) as u32,
                 chefe: false, desafio: shared::desafio_do_mob(&stats, nivel as u32, false),
             });
         }
@@ -16639,7 +16639,7 @@ impl GameWorld {
             };
             mobs.push(shared::protocol::MobNoCatalogo {
                 kind: chefe.kind, nivel: chefe.nivel, nome: chefe.nome.clone(),
-                vida: vida.clamp(0, u16::MAX as i32) as u16,
+                vida: vida.max(0) as u32,
                 chefe: true, desafio: shared::desafio_do_mob(&stats, chefe.nivel as u32, true),
             });
         }
@@ -22342,10 +22342,8 @@ mod testes_planalto {
             assert!(!z.slots.is_empty(), "campo {id} sem inimigos");
             assert!(!z.active);
         }
-        // One field boss since the split: the Archmage went to Skyreach, and
-        // the Primeval Owlbear stands in the top region.
-        assert_eq!(w.vagas_de_chefe.len(),1);
-        assert_eq!(pl.regiao(w.vagas_de_chefe[0].pos),4);
+        assert_eq!(w.vagas_de_chefe.len(),2);
+        for (ch,i) in w.vagas_de_chefe.iter().zip([2,4]) { assert_eq!(pl.regiao(ch.pos),i); }
     }
 }
 
@@ -22355,7 +22353,7 @@ mod testes_celeste {
 
     /// SKYREACH IS HUNTABLE THE WAY IT WAS DRAWN: every hunting island has a
     /// zone at its own level band; the town's island and the cloud paths have
-    /// none; the field boss stands on the Throne of the Sky.
+    /// none; the field bosses stand in the Storm Gardens and on the Throne.
     #[test]
     fn skyreach_caca_por_ilha_e_o_chefe_fica_no_trono() {
         use shared::celeste::{plato_em, PLATOS};
@@ -22371,12 +22369,13 @@ mod testes_celeste {
             assert_eq!((z.lv_min, z.lv_max), (p.nivel.0 as u32, p.nivel.1 as u32), "{}", PLATOS[i].nome);
         }
         // The level bands that hunting covers reach the top of the island.
-        assert!(comuns.zonas.iter().any(|z| z.lv_max == 60), "nothing to hunt at 60");
+        assert!(comuns.zonas.iter().any(|z| z.lv_max == 80), "nothing to hunt at 80");
         let mut w = GameWorld::new(HashMap::new());
         w.zona = shared::celeste::ZONA.into();
         w.ilha = Some(ilha);
         w.povoar_ilha(chegada);
-        assert_eq!(w.vagas_de_chefe.len(), 1);
-        assert_eq!(plato_em(w.vagas_de_chefe[0].pos).map(|(i, _)| i), Some(11), "the Archmage is not on the throne");
+        assert_eq!(w.vagas_de_chefe.len(), 2);
+        assert_eq!(plato_em(w.vagas_de_chefe[0].pos).map(|(i, _)| i), Some(8), "the Colossus is not in the gardens");
+        assert_eq!(plato_em(w.vagas_de_chefe[1].pos).map(|(i, _)| i), Some(11), "the Archon is not on the throne");
     }
 }

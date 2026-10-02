@@ -936,7 +936,7 @@ async fn recebe(
                         eu.andando_para = None;
                         t.registra(ev(nome, eu, "renasceu", true, String::new()));
                     }
-                    eu.hp = s.hp;
+                    eu.hp = s.hp.min(u16::MAX as u32) as u16;
                 }
             }
             // BEBER É REFLEXO, NÃO DECISÃO.

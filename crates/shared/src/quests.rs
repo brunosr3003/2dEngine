@@ -315,6 +315,7 @@ pub fn zona_da_missao(id: u16) -> Option<&'static str> {
         610..=619 => Some("ilha_gelo"),
         620..=629 | 840..=854 => Some("ilha_deserto"),
         630..=639 | 860..=864 => Some("ilha_planalto"),
+        640..=649 | 865..=869 => Some("ilha_celeste"),
         _ => None,
     }
 }
@@ -1307,6 +1308,18 @@ pub const QUESTS: &[QuestDef] = &[
     QuestDef { id: 861, title: "Pedra para o farol", desc: "Quebre 20 pedras do Planalto. O campo de tempestade marcado no mapa melhora a coleta quando está ativo.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20, reward_cobre: 1_000, reward_xp: 50_000, reward_item: item_id::na_cor(item_id::STEEL, 3), reward_item_qty: 8, min_level: 40, repeatable: true, cooldown_secs: 600, ..mestre() },
     diaria(862, "O sino do Mosteiro", "Vença o Mosteiro dos Ventos.", objective_kind::DUNGEON, 13, 1, 3_000, 180_000, item_id::GREATER_HEAL, 8, 40, false, false),
     diaria(863, "O fogo da Forja", "Vença a Forja do Titã.", objective_kind::DUNGEON, 14, 1, 4_000, 260_000, item_id::GREATER_HEAL, 10, 50, false, false),
+    // --- Skyreach (ilha_celeste, 60-80) ---
+    diaria(641, "Quarry of the day", "Break 40 rocks on the sky islands.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 40, 1_900, 3_800, item_id::GREATER_HEAL, 6, 60, true, false),
+    diaria(642, "Hunt of the day", "Defeat 70 winged beasts on the island.", objective_kind::KILL, 0, 70, 2_300, 5_100, item_id::GREATER_HEAL, 6, 60, true, false),
+    diaria(643, "To work", "Create 1 piece of gear in Craft (the HUD button).", objective_kind::CRAFT, 0, 1, 1_540, 3_070, item_id::GREATER_MANA, 5, 60, false, false),
+    diaria(644, "Hot forge", "Try refining a piece once at the Forge (the HUD button or the Blacksmith).", objective_kind::REFINE, 0, 1, 1_540, 3_070, item_id::GREATER_MANA, 5, 60, false, false),
+    diaria(646, "Cellar of the day", "Complete a dungeon (Cellar or Cavern).", objective_kind::DUNGEON, 0, 1, 3_200, 6_400, 0, 0, 60, false, false),
+    diaria(648, "Boss of the day", "Defeat a field boss on the island (the map shows where).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 6_400, 64_000, item_id::GREATER_HEAL, 8, 70, true, false),
+    QuestDef { id: 865, title: "Wardens of the Clouds", desc: "Defeat 40 winged ones on Skyreach and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 1_900, reward_xp: 110_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5, min_level: 60, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 866, title: "Stone for the bells", desc: "Break 25 rocks on the sky islands. The Bellspire needs new stone.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25, reward_cobre: 1_600, reward_xp: 90_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 8, min_level: 60, repeatable: true, cooldown_secs: 600, ..mestre() },
+    diaria(867, "Relics of the Reliquary", "Clear the Seraph Reliquary.", objective_kind::DUNGEON, 6, 1, 5_000, 320_000, item_id::GREATER_HEAL, 10, 65, false, false),
+    diaria(868, "The silent choir", "Clear the Cathedral of Clouds.", objective_kind::DUNGEON, 16, 1, 6_000, 420_000, item_id::GREATER_HEAL, 12, 70, false, false),
+    diaria(869, "Above the storm", "Clear the Pegasus Aerie.", objective_kind::DUNGEON, 17, 1, 7_000, 540_000, item_id::GREATER_HEAL, 14, 75, false, false),
 
     // ===================== BOARD (quadro da cidade) — DIÁRIAS =====================
     QuestDef { id: 101, title: "Timberman", desc: "The board asks for wood for the city's works.",

@@ -335,17 +335,15 @@ impl GameWorld {
                 .take(chefes.len())
                 .collect()
         } else if shared::celeste::e_celeste(&self.zona) {
-            // Skyreach: by the ruined temple of the Throne of the Sky, then the
-            // Storm Gardens — drawn islands, not a heuristic's pick.
-            [11usize, 8]
+            // Skyreach: the Storm Gardens, then the Throne of the Sky (bosses
+            // come weakest first) — drawn islands, not a heuristic's pick.
+            [8usize, 11]
                 .iter()
                 .map(|&i| shared::celeste::PLATOS[i].centro + Vec2::new(-14.0, 10.0))
                 .take(chefes.len())
                 .collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
-            // The top region first: with one boss left (the Archmage moved to
-            // Skyreach) it stands by the Eye of the Storm, the 48-50 region.
-            [4usize, 2].iter().filter_map(|i| {
+            [2usize, 4].iter().filter_map(|i| {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
                 candidatos.iter().copied().filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
                     .min_by(|a,b| a.distance_squared(alvo).total_cmp(&b.distance_squared(alvo)))

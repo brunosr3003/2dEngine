@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 15] = [
+pub const CHEFES: [Chefe; 17] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -592,8 +592,7 @@ pub const CHEFES: [Chefe; 15] = [
         corpo: Corpo::Bicho(5),
         escala: 2.0,
         zona: "ilha_planalto",
-        // 48 since the Plateau became 40-50 (Skyreach took 50-60).
-        nivel: 48,
+        nivel: 52,
         habilidades: &[
             h(
                 "Double Swipe",
@@ -641,8 +640,7 @@ pub const CHEFES: [Chefe; 15] = [
         nome: "Archmage of the Tempest",
         corpo: Corpo::Gente(4),
         escala: 1.7,
-        // Skyreach's Throne of the Sky since the split (02/10/2026).
-        zona: "ilha_celeste",
+        zona: "ilha_planalto",
         nivel: 60,
         habilidades: &[
             h(
@@ -740,7 +738,7 @@ pub const CHEFES: [Chefe; 15] = [
         corpo: Corpo::Bicho(45),
         escala: 2.0,
         zona: "ilha_celeste",
-        nivel: 57,
+        nivel: 65,
         habilidades: &[
             h("Hallowed Slam", Cone { raio: 7.0, abertura: 0.9 }, AFrente, 1.3, 2.4, 5.0, 7.0, 0, 1.0),
             h("Wing Gust", Anel { interno: 2.0, externo: 8.5 }, EmSi, 1.5, 2.1, 7.5, 8.5, 0, 1.6),
@@ -755,7 +753,7 @@ pub const CHEFES: [Chefe; 15] = [
         corpo: Corpo::Gente(44),
         escala: 1.7,
         zona: "ilha_celeste",
-        nivel: 56,
+        nivel: 70,
         habilidades: &[
             h("Radiant Lance", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
             h("Halo Burst", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
@@ -772,14 +770,47 @@ pub const CHEFES: [Chefe; 15] = [
         corpo: Corpo::Bicho(41),
         escala: 1.6,
         zona: "ilha_celeste",
-        nivel: 58,
+        nivel: 75,
         habilidades: &[
             h("Thunder Charge", Linha { comprimento: 18.0, largura: 3.0 }, AFrente, 1.2, 3.0, 7.0, 18.0, 0, 1.6),
             h("Hoof Storm", Circulo { raio: 4.5 }, EmSi, 1.8, 2.6, 7.0, 4.5, 0, 1.2),
             h("Sky Strike", Circulo { raio: 6.0 }, NoAlvo, 2.0, 3.4, 13.0, 16.0, 1, 1.4),
         ],
     },
+    // ── Skyreach's field bosses ──
+    // The Storm Gardens: a winged bear grown huge on lightning-fed flowers.
+    Chefe {
+        kind: 28,
+        nome: "Gilded Colossus",
+        corpo: Corpo::Bicho(43),
+        escala: 2.4,
+        zona: "ilha_celeste",
+        nivel: 72,
+        habilidades: &[
+            h("Crushing Paw", Cone { raio: 6.5, abertura: 0.9 }, AFrente, 1.3, 2.6, 6.0, 6.5, 0, 1.2),
+            h("Gilded Roar", Anel { interno: 2.0, externo: 8.0 }, EmSi, 1.5, 2.2, 8.0, 8.0, 0, 1.6),
+            h("Wing Slam", Linha { comprimento: 16.0, largura: 3.0 }, AFrente, 1.3, 2.4, 8.0, 16.0, 0, 1.2),
+            h("Thunderbloom", Circulo { raio: 5.6 }, NoAlvo, 2.0, 3.0, 12.0, 14.0, 1, 1.4),
+        ],
+    },
+    // The Throne of the Sky: the seraph who still claims the city.
+    Chefe {
+        kind: 29,
+        nome: "Seraph Archon",
+        corpo: Corpo::Gente(44),
+        escala: 1.9,
+        zona: "ilha_celeste",
+        nivel: 80,
+        habilidades: &[
+            h("Spear of Dawn", Linha { comprimento: 24.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 24.0, 0, 0.8),
+            h("Choir of Light", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 9.0, 8.0, 0, 1.4),
+            h("Verdict", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.0, 18.0, 0, 1.2),
+            h("Wrath of the Sky", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 16.0, 12.0, 1, 0.8),
+        ],
+    },
 ];
+
+// (Skyreach's field bosses are right below the dungeon ones.)
 
 /// Bosses that only appear at the end of a dungeon, never in the field:
 /// `da_zona` leaves them out, or Skyreach would grow three more field bosses.
@@ -1180,7 +1211,9 @@ mod testes {
                 "{}: nivel fora da ilha",
                 c.nome
             );
-            assert!(vida(c.nivel) <= 60_000);
+            // The cap was 60 000 while health went on the wire as u16; since
+            // protocol 172 it is u32, and this only guards against a runaway.
+            assert!(vida(c.nivel) <= 200_000, "{}: vida {}", c.nome, vida(c.nivel));
         }
         assert!(da_zona("ilha_inicial").len() >= 2);
         for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA] {

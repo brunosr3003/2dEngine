@@ -1071,7 +1071,7 @@ pub fn draw_exp(z: &Zonas, ficha: &Ficha, nivel: u32) {
 
 /// O alvo, no alto e ao centro: nivel, nome, a vida em barra larga e o X que
 /// limpa a selecao. Devolve `true` no quadro em que o X foi clicado.
-pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u16, hp_max: u16, chefe: bool) -> bool {
+pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u32, hp_max: u32, chefe: bool) -> bool {
     let r = z.alvo;
     let k = r.h / 69.0;
     let cor = if chefe {

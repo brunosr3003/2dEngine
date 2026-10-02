@@ -1513,7 +1513,7 @@ pub struct MobNoCatalogo {
     pub kind: u16,
     pub nivel: u16,
     pub nome: String,
-    pub vida: u16,
+    pub vida: u32,
     pub chefe: bool,
     pub desafio: crate::DesafioMob,
 }

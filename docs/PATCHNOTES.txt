@@ -1,14 +1,20 @@
 02/10/2026 — Skyreach, a ilha acima da tempestade
 
-Nova ilha para os níveis 50 a 60: Skyreach, um arquipélago de ilhas flutuantes ligadas por caminhos de nuvens, com campos dourados, templos de mármore e árvores sagradas. Ela abre depois de "Alcance o nível 50": embarque com o Capitão do Porto.
+Nova ilha para os níveis 60 a 80: Skyreach, um arquipélago de ilhas flutuantes ligadas por caminhos de nuvens, com campos dourados, templos de mármore e árvores sagradas. Cada ilha tem a sua faixa de nível, das Lanternas (60) ao Trono do Céu (80). Ela abre no fim do capítulo IV da história ("Rumo a Skyreach"): embarque com o Capitão do Porto.
 
-Os monstros de lá têm asas: Lobo, Lince, Urso, Owlbear, Arqueiro e Mago Serafins. O Arquimago da Tempestade agora guarda o Trono do Céu.
+Os monstros de lá têm asas: Lobo, Lince, Urso, Owlbear, Arqueiro e Mago Serafins, com loot à altura do nível.
 
-Três dungeons novas: o Relicário Serafim (porão solo, nível 55, com o Guardião do Relicário), a Catedral das Nuvens (caverna, 56, com o Serafim Caído) e o Ninho do Pégaso (caverna, 58, com o Pégaso da Tormenta). A Forja do Titã mudou-se para Skyreach.
+Capítulo V da história, "A Cidade Acima da Tempestade", do 60 ao 80.
 
-O Planalto da Tormenta agora vai do nível 40 ao 50. O Cofre do Trovão passou para o nível 45 e a Coruja-Urso Primordial para o 48. O fim do capítulo IV da história leva a Skyreach, e o capítulo V acontece lá.
+Três dungeons novas: o Relicário Serafim (porão solo, nível 65, com o Guardião do Relicário), a Catedral das Nuvens (caverna, 70, com o Serafim Caído) e o Ninho do Pégaso (caverna, 75, com o Pégaso da Tormenta).
 
-Atualização obrigatória — o protocolo passa para o 172. Por enquanto só computador e Android.
+Dois chefes de campo novos: o Colosso Dourado (72) e o Arconte Serafim (80).
+
+Missões novas no Mestre de Skyreach: diárias da ilha, os contratos Guardiões das Nuvens e Pedra para os sinos (a cada dez minutos) e uma missão para cada dungeon nova.
+
+O Planalto da Tormenta continua do 40 ao 60.
+
+Atualização obrigatória — o protocolo passa para o 173. Por enquanto só computador e Android.
 
 02/10/2026 — Auto missão explica por que parou
 

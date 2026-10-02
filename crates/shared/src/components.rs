@@ -490,7 +490,10 @@ pub struct EntityMeta {
     pub id: EntityId,
     pub tag: EntityTag,
     pub name: Option<String>,
-    pub hp_max: u16,
+    /// u32 since protocol 172: Skyreach's bosses (level 72-80) pass 65 535.
+    /// Postcard writes integers as varints, so values that fit u16 cost the
+    /// same bytes as before.
+    pub hp_max: u32,
     pub faction: Option<Faction>,
     /// Qual mob da tabela (`enemy_kinds.kind`) — e' por ele que o cliente
     /// escolhe o MODELO. No SAQUE, e' o tier do item (1-4; 0 = ouro/pocao,
@@ -717,7 +720,8 @@ pub struct EntityState {
     /// Velocidade em 1/8 de tile/s, saturada. O cliente usa pra girar o
     /// modelo e decidir se anda — nao precisa de precisao.
     pub vel: [i8; 2],
-    pub hp: u16,
+    /// u32 like `EntityMeta::hp_max` (protocol 172).
+    pub hp: u32,
     /// Ver `ent_flags`.
     pub flags: u8,
     /// O que o corpo esta' fazendo — ver `acao`.
@@ -813,7 +817,7 @@ impl EntityState {
             id,
             pos: [q(pos.x), q(pos.y)],
             vel: [qv(vel.x), qv(vel.y)],
-            hp: hp.max(0) as u16,
+            hp: hp.max(0) as u32,
             flags,
             acao: 0,
             rumo: 0,

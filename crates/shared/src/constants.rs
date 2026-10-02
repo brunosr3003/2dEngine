@@ -123,10 +123,11 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 171 (02/10/2026): asked by the owner with the 2026100114 build (auto quest
 /// explains why it stopped). No message changed; a forced update, desktop and
 /// Android.
-/// 172 (02/10/2026): Skyreach, the fifth island (levels 50-60), and the
-/// Plateau split to 40-50 — new zone, new mob kinds, bosses and dungeons, and
-/// the cellar plans re-anchored on the dungeon islet.
-pub const PROTOCOL_VERSION: u16 = 172;
+/// 172 (02/10/2026): Skyreach, the fifth island — new zone, new mob kinds,
+/// bosses and dungeons, and the cellar plans re-anchored on the dungeon islet.
+/// 173 (02/10/2026): Skyreach moves to levels 60-80 and entity health goes
+/// u16 -> u32 on the wire (boss health passes 65535 past level 79).
+pub const PROTOCOL_VERSION: u16 = 173;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

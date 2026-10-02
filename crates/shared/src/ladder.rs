@@ -384,8 +384,13 @@ pub const BOSS_STRIKES: f32 = 250.0;
 
 pub fn boss_health(level: u32) -> i32 {
     let golpe = damage(attack(level), boss_defense(level)) as f32;
-    // The wire sends boss health as u16.
-    ((BOSS_STRIKES * golpe).round() as i32).min(u16::MAX as i32)
+    // The wire sends health as u32 since protocol 172 (it was u16, which
+    // capped bosses at level 79).
+    // Past 60 the pistol kit's damage outgrows the strike count (the boss
+    // sims dropped under the 60 s floor at 65..80), so each level above 60
+    // adds 1.2% of health.
+    let alem = level.saturating_sub(60) as f32 * 0.012;
+    (BOSS_STRIKES * golpe * (1.0 + alem)).round() as i32
 }
 
 pub fn boss_defense(level: u32) -> i32 {
@@ -518,6 +523,8 @@ mod testes {
         }
     }
 
+    const CHAR_LEVEL_CAP_TESTE: u32 = crate::constants::CHAR_LEVEL_CAP;
+
     #[test]
     fn o_chefe_bate_mais_e_segura_mais_que_o_comum() {
         for n in [12u32, 30, 60] {
@@ -528,8 +535,10 @@ mod testes {
             assert!(boss_defense(n) > comum.defense);
             assert!(boss_health(n) > 20 * comum.health);
         }
-        assert!(boss_health(60) < u16::MAX as i32, "cabe no u16 do fio");
-        assert_eq!(boss_health(200), u16::MAX as i32, "e nunca estoura");
+        // Health is u32 on the wire since protocol 172: a level-80 boss
+        // (Skyreach) has its real health, not the old u16 ceiling.
+        assert!(boss_health(80) > u16::MAX as i32, "level 80 passes the old u16 cap");
+        assert!(boss_health(CHAR_LEVEL_CAP_TESTE) < i32::MAX / 4, "and never overflows");
     }
 
     /// In the first levels the mob pierces less: the freshly created character has no armor.

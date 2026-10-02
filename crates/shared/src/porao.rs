@@ -942,14 +942,13 @@ mod testes {
         assert_eq!(tier("ilha_inicial"), 1, "Bosque");
         assert_eq!(tier("ilha_gelo"), 2, "Geleira");
         assert_eq!(tier("ilha_deserto"), 3, "Ermo");
-        // On the Plateau the tier climbs along the trail. Since the split
-        // (40-50) it stays T3; T4 comes from Skyreach (50-60).
+        // No Planalto o tier sobe pela trilha: o fundo tem que dar T4.
         let def = def_da_zona("ilha_planalto").unwrap();
         let ger = Gerador::da_ilha(def);
         let pl = ger.planalto().expect("o Planalto tem trilha");
         let tiers: Vec<u8> = pl.regioes.iter().map(|r| tier_da_arvore(def, Some(pl), r.centro)).collect();
         assert_eq!(tiers.first(), Some(&3), "começo da trilha: {tiers:?}");
-        assert_eq!(tiers.last(), Some(&3), "fundo da trilha: {tiers:?}");
+        assert_eq!(tiers.last(), Some(&4), "fundo da trilha: {tiers:?}");
         assert_eq!(tier(crate::celeste::ZONA), 4, "Skyreach");
 
         // E toda chave pede uma madeira que alguma árvore do jogo dá.

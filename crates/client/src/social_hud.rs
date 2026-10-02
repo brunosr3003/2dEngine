@@ -414,7 +414,7 @@ pub async fn previa() {
                     id,
                     pos: [16, 16],
                     vel: [0, 0],
-                    hp: 1000 - i as u16 * 300,
+                    hp: 1000 - i as u32 * 300,
                     flags: if i == 0 { shared::ent_flags::SELF } else { 0 },
                     acao: 0,
                     rumo: 0,

@@ -629,7 +629,7 @@ impl Malha {
 }
 
 /// "Fase 2" abaixo de metade da vida (a mesma regra do servidor).
-pub fn texto_de_fase(hp: u16, hp_max: u16) -> &'static str {
+pub fn texto_de_fase(hp: u32, hp_max: u32) -> &'static str {
     if shared::bosses::fase(hp as i32, hp_max as i32) >= 1 {
         "PHASE 2"
     } else {
@@ -638,7 +638,7 @@ pub fn texto_de_fase(hp: u16, hp_max: u16) -> &'static str {
 }
 
 /// Chefe vivo, perto e em luta (vida abaixo do maximo): (nome, nivel, hp, max).
-pub fn chefe_perto(world: &crate::world::World, eu: Vec2) -> Option<(String, u16, u16, u16)> {
+pub fn chefe_perto(world: &crate::world::World, eu: Vec2) -> Option<(String, u16, u32, u32)> {
     world
         .ents
         .values()
@@ -684,7 +684,7 @@ thread_local! {
 }
 
 /// Barra de chefe no lugar do painel de alvo, quando o chefe nao e' o alvo.
-pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u16, hp_max: u16) {
+pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u32, hp_max: u32) {
     use crate::hud_estilo as estilo;
     let f = (hp as f32 / hp_max.max(1) as f32).clamp(0.0, 1.0);
     let chave = nome.bytes().fold(nivel as u64 ^ 0x9E37, |h, b| {
@@ -792,7 +792,7 @@ pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u16, hp_ma
 }
 
 /// Rotulo de fase por cima do painel de alvo, quando o alvo e' chefe.
-pub fn rotulo_de_fase(slot: Rect, hp: u16, hp_max: u16) {
+pub fn rotulo_de_fase(slot: Rect, hp: u32, hp_max: u32) {
     use crate::hud_estilo as estilo;
     estilo::texto(
         slot.x + slot.w - 150.0,

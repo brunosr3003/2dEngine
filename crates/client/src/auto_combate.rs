@@ -19,7 +19,7 @@ const VOLTA_PARADO_S: f64 = 0.4;
 
 pub struct AutoCombate {
     pub centro: Option<Vec2>,
-    observado: Option<(EntityId, f32, u16, f64)>,
+    observado: Option<(EntityId, f32, u32, f64)>,
     ignorados: HashMap<EntityId, f64>,
     /// Walking under your own steam (keyboard or a click on the ground). Walking
     /// does NOT switch AUTO off: the area follows the character. The aim keeps

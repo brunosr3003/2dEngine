@@ -12,7 +12,7 @@ struct Registro {
     kind: u16,
     nivel: u16,
     nome: String,
-    vida: u16,
+    vida: u32,
     chefe: bool,
     desafio: shared::DesafioMob,
 }
