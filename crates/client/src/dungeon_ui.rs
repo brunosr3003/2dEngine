@@ -1787,14 +1787,6 @@ mod testes {
     }
 }
 
-#[cfg(debug_assertions)]
-/// Prévia do PAINEL (`MMO_PREVIA_DUNGEON_PAINEL=1`; PNGs em `MMO_PREVIA_SAIDA`).
-///
-/// O caso que importa é o jogador NA ILHA (`na_arena = Some(false)`) com um
-/// Porão selecionado: é aí que o "Go to the portal" tem que aparecer, e foi aí
-/// que ele não aparecia — ficava atrás de um `return` do bloco "vá até a
-/// Arena". A prévia de recompensas, que já existia, roda com `na_arena =
-/// Some(true)` e por isso nunca mostrou o defeito.
 /// The Magic Island tier a dungeon is exclusive to, when the player is on
 /// another island (`None` = it opens from here).
 fn exclusiva_de(def: &dg::Conteudo, zona: &str) -> Option<&'static str> {
@@ -1803,6 +1795,14 @@ fn exclusiva_de(def: &dg::Conteudo, zona: &str) -> Option<&'static str> {
         .map(|n| n.nome)
 }
 
+#[cfg(debug_assertions)]
+/// Prévia do PAINEL (`MMO_PREVIA_DUNGEON_PAINEL=1`; PNGs em `MMO_PREVIA_SAIDA`).
+///
+/// O caso que importa é o jogador NA ILHA (`na_arena = Some(false)`) com um
+/// Porão selecionado: é aí que o "Go to the portal" tem que aparecer, e foi aí
+/// que ele não aparecia — ficava atrás de um `return` do bloco "vá até a
+/// Arena". A prévia de recompensas, que já existia, roda com `na_arena =
+/// Some(true)` e por isso nunca mostrou o defeito.
 #[cfg(debug_assertions)]
 pub async fn previa_painel() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-painel".into());

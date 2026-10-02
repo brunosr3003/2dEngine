@@ -9,7 +9,7 @@ IV — Pináculo dos Ecos (60), com o Soberano dos Ecos.
 V — Forja Celestial (70), com o Titã Coração-de-Forja.
 VI — Trono da Eternidade (77), com o Soberano Eterno.
 
-No painel de Dungeons elas aparecem para todos, mas fora da ilha certa o botão fica apagado com "Só pela Ilha Mágica …".
+No painel de Dungeons elas aparecem para todos, mas fora da ilha certa o botão fica apagado com "Só pela Ilha Mágica …". Dentro da Arena, vale a ilha de onde você veio.
 
 Atualização obrigatória — o protocolo passa para o 179. Por enquanto só computador e Android.
 
