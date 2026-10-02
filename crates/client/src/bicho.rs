@@ -128,6 +128,10 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
             // small one scaled up — up close the scaled one's voxels are coarse.
             // The scale is corrected in `fator_do_modelo_de_chefe`.
             Some(Corpo::Bicho(7)) | Some(Corpo::Bicho(0)) | None => Some(BICHOS[4]),
+            // The Storm Pegasus moves like the lynx and looks like a pegasus.
+            Some(_) if kind == shared::bosses::PEGASUS => {
+                BICHOS.iter().copied().find(|(n, _)| *n == "bichos/pegasus_stag")
+            }
             Some(Corpo::Bicho(k)) => do_mob(tag, k, false).or(Some(BICHOS[4])),
             Some(_) => None,
         };

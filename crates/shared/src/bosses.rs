@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 12] = [
+pub const CHEFES: [Chefe; 15] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -730,7 +730,63 @@ pub const CHEFES: [Chefe; 12] = [
     // níveis ACIMA do topo da faixa, que é o que separa chefe de mob.
     colosso(20, 1, 36),
     colosso(21, 2, 51),
+    // ── Skyreach's dungeon bosses (`SO_DE_DUNGEON`) ──
+    // The Seraph Reliquary: a winged owlbear of white and gold that guards
+    // the relics with its whole weight. (On the bear's body the pistol fight
+    // ended in 58 s: the bear preset is softer than the owlbear's.)
+    Chefe {
+        kind: 25,
+        nome: "Reliquary Warden",
+        corpo: Corpo::Bicho(45),
+        escala: 2.0,
+        zona: "ilha_celeste",
+        nivel: 57,
+        habilidades: &[
+            h("Hallowed Slam", Cone { raio: 7.0, abertura: 0.9 }, AFrente, 1.3, 2.4, 5.0, 7.0, 0, 1.0),
+            h("Wing Gust", Anel { interno: 2.0, externo: 8.5 }, EmSi, 1.5, 2.1, 7.5, 8.5, 0, 1.6),
+            h("Radiant Wingbeat", Linha { comprimento: 16.0, largura: 3.0 }, AFrente, 1.3, 2.4, 8.0, 16.0, 0, 1.2),
+            h("Falling Relic", Circulo { raio: 5.6 }, NoAlvo, 2.0, 3.0, 12.0, 14.0, 1, 1.4),
+        ],
+    },
+    // The Cathedral of Clouds: a seraph who turned on the city.
+    Chefe {
+        kind: 26,
+        nome: "Fallen Seraph",
+        corpo: Corpo::Gente(44),
+        escala: 1.7,
+        zona: "ilha_celeste",
+        nivel: 56,
+        habilidades: &[
+            h("Radiant Lance", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Halo Burst", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Judgement", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("Wings of Ash", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
+    // The Pegasus Aerie: the herd's storm-born leader. The server moves it
+    // like the lynx (a quadruped that charges); the client draws the
+    // pegasus stag (`client::bicho::do_mob`).
+    Chefe {
+        kind: 27,
+        nome: "Storm Pegasus",
+        corpo: Corpo::Bicho(41),
+        escala: 1.6,
+        zona: "ilha_celeste",
+        nivel: 58,
+        habilidades: &[
+            h("Thunder Charge", Linha { comprimento: 18.0, largura: 3.0 }, AFrente, 1.2, 3.0, 7.0, 18.0, 0, 1.6),
+            h("Hoof Storm", Circulo { raio: 4.5 }, EmSi, 1.8, 2.6, 7.0, 4.5, 0, 1.2),
+            h("Sky Strike", Circulo { raio: 6.0 }, NoAlvo, 2.0, 3.4, 13.0, 16.0, 1, 1.4),
+        ],
+    },
 ];
+
+/// Bosses that only appear at the end of a dungeon, never in the field:
+/// `da_zona` leaves them out, or Skyreach would grow three more field bosses.
+pub const SO_DE_DUNGEON: &[u16] = &[25, 26, 27];
+
+/// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
+pub const PEGASUS: u16 = 27;
 
 /// Maximo de habilidades por chefe (o estado de recarga e' um array).
 pub const MAX_HABILIDADES: usize = 4;
@@ -745,7 +801,10 @@ pub fn e_chefe(kind: u16) -> bool {
 
 /// Os chefes de uma ilha, do mais fraco pro mais forte.
 pub fn da_zona(zona: &str) -> Vec<&'static Chefe> {
-    let mut v: Vec<&'static Chefe> = CHEFES.iter().filter(|c| c.zona == zona).collect();
+    let mut v: Vec<&'static Chefe> = CHEFES
+        .iter()
+        .filter(|c| c.zona == zona && !SO_DE_DUNGEON.contains(&c.kind))
+        .collect();
     v.sort_by_key(|c| c.nivel);
     v
 }

@@ -1809,7 +1809,7 @@ pub async fn previa_painel() {
     };
     // (nome, selecionado, zona do jogador): Porão na própria ilha, Porão de
     // outra ilha, e Gruta — pra provar que o caminho da Gruta não mudou.
-    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial")] {
+    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial"), ("celeste-porao", 6, "ilha_celeste"), ("celeste-gruta", 16, "ilha_celeste")] {
         let contexto = Contexto { nomes: &nomes, palco: None, ouro: 1000, eu: "brunji", zona };
         let mut d = DungeonUi::default();
         d.aberto = true;

@@ -129,8 +129,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         chefe: 18,
         disponivel: true,
     },
-    // Skyreach's cellar (02/10/2026). The boss is the Archmage until the
-    // Reliquary Warden exists.
+    // Skyreach's cellar (02/10/2026).
     Conteudo {
         id: 6,
         nome: "Seraph Reliquary",
@@ -140,7 +139,7 @@ pub const CONTEUDOS: &[Conteudo] = &[
         grupo_max: 1,
         limite_s: 900,
         andares: 3,
-        chefe: 18,
+        chefe: 25,
         disponivel: true,
     },
     Conteudo {
@@ -202,6 +201,31 @@ pub const CONTEUDOS: &[Conteudo] = &[
         limite_s: 1500,
         andares: 3,
         chefe: 18,
+        disponivel: true,
+    },
+    // Skyreach's two new caverns (02/10/2026).
+    Conteudo {
+        id: 16,
+        nome: "Cathedral of Clouds",
+        tipo: Tipo::Gruta,
+        zona: "ilha_celeste",
+        nivel_min: 56,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 26,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 17,
+        nome: "Pegasus Aerie",
+        tipo: Tipo::Gruta,
+        zona: "ilha_celeste",
+        nivel_min: 58,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 27,
         disponivel: true,
     },
     Conteudo {
