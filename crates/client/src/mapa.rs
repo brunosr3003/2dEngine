@@ -703,6 +703,8 @@ fn cor_de_terra(bioma: Bioma, h: f32, pico: f32) -> [f32; 3] {
         Bioma::Deserto => ([0.72, 0.56, 0.32], [0.89, 0.78, 0.55]),
         Bioma::Montanha => ([0.33, 0.42, 0.28], [0.58, 0.62, 0.45]),
         Bioma::Celeste => ([0.52, 0.72, 0.44], [0.80, 0.86, 0.62]),
+        // Kōgen-tō at night: dark streets, the towers lighter as they rise.
+        Bioma::Neon => ([0.16, 0.17, 0.22], [0.55, 0.58, 0.68]),
     };
     let (rocha, neve) = ([0.50, 0.48, 0.45], [0.93, 0.95, 0.97]);
     let t = (h / pico).clamp(0.0, 1.0);

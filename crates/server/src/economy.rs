@@ -1892,6 +1892,9 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // Skyreach: the winged ones. Seraph Wolf, Lynx, Archer, Bear, Mage,
         // Owlbear — the same slot order as their species elsewhere.
         Celeste => &[46, 41, 42, 43, 44, 45],
+        // Kōgen-tō: Skyreach's until the robots are made (step 2 of the
+        // island's plan).
+        Neon => &[46, 41, 42, 43, 44, 45],
     }
 }
 
@@ -1909,7 +1912,7 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
         Deserto => &[13],
         Montanha => &[36],
         // No sea, no beach: the weakest of the island.
-        Celeste => &[46],
+        Celeste | Neon => &[46],
     }
 }
 

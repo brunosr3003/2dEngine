@@ -9,6 +9,7 @@ pub mod bestiary;
 pub mod bosses;
 pub mod chaves;
 pub mod forte;
+pub mod kogen;
 pub mod combat;
 pub mod aparencia;
 pub mod arena;

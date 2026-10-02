@@ -277,7 +277,7 @@ impl Terreno {
                 Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
                 Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
                 Bioma::Montanha => Material::Rocha,
-                Bioma::Floresta | Bioma::Celeste => material_variado(self.bioma_visual, altura, declive, false, mancha),
+                Bioma::Floresta | Bioma::Celeste | Bioma::Neon => material_variado(self.bioma_visual, altura, declive, false, mancha),
             };
         }
         material_variado(self.bioma_visual, altura, declive, agua, mancha)
@@ -875,7 +875,13 @@ impl Terreno {
                             .is_some()
                     });
                     let nuvem = self.ger.material_desenhado(gx, gz) == Some(Material::Nuvem);
+                    // Kōgen-tō's buildings: storeys of wall and window bands.
+                    let q_kogen = ::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO);
+                    let predio = self.ger.e_kogen()
+                        && !self.ger.na_cidade(gx, gz)
+                        && matches!(shared::kogen::chao_em(q_kogen), shared::kogen::Chao::Predio { .. });
                     let faixa = |prof: i32| match porao {
+                        _ if predio => shared::kogen::fachada(q_kogen, gx, gz, prof, h - shared::kogen::NIVEL_CHAO),
                         // A cloud path's edge: white on top, shaded below.
                         _ if nuvem => if prof == 0 { Material::Nuvem } else { Material::NuvemSombra },
                         Some(pl) => pl.pedra(gx, gz, prof),
@@ -2595,5 +2601,76 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
         rt.texture.get_texture_data().export_png(&format!("{saida}/baus.png"));
         next_frame().await;
     }
+    crate::render3d::define_alvo(None);
+}
+
+
+/// MMO_PREVIA_KOGEN: Kōgen-tō (`shared::kogen`), the city grid — the hub,
+/// a Neon District street, downtown, an aerial view and the map — into
+/// /tmp/tempest-kogen (or MMO_PREVIA_SAIDA).
+#[cfg(debug_assertions)]
+pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-kogen".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let def = &shared::kogen::DEF;
+    let g = shared::terreno::Gerador::da_ilha(def);
+    let mut t = Terreno::novo(def);
+    let mut casas = crate::construcoes::Construcoes::para(Some(def));
+    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    let solido = crate::render3d::material_solido();
+    let hub = shared::kogen::centro_da_cidade();
+    let marco = |m: shared::kogen::Marco| { let c = m.centro(); (c.x, c.y) };
+    use shared::kogen::Marco as Mc;
+    // (name, centre, camera distance, camera height factor)
+    let vistas: Vec<(&str, (f32, f32), f32, f32)> = vec![
+        ("praca", (0.0, 0.0), 110.0, 0.35),
+        ("skytree", marco(Mc::Skytree), 200.0, 0.55),
+        ("nova-york", marco(Mc::Chrysler), 220.0, 0.45),
+        ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
+        ("casulo-cruzamento", marco(Mc::Casulo), 110.0, 0.45),
+        ("hub", (hub.x, hub.y), 120.0, 0.65),
+        ("aerea", (0.0, 0.0), 700.0, 0.85),
+    ];
+    for (nome, (cx, cy), distancia, alto) in vistas {
+        let centro = vec2(cx, cy);
+        let chao = g.altura(cx, cy).min(shared::kogen::NIVEL_CHAO as f32 * shared::terreno::BLOCO + 2.0);
+        t.atualiza(centro, if distancia > 400.0 { 40 } else { 18 }, 6000);
+        for _ in 0..3 {
+            let cam = Camera3D {
+                position: vec3(centro.x + distancia * 0.45, chao + distancia * alto, centro.y + distancia),
+                target: vec3(centro.x, chao, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            casas.desenha(&cam, None, Vec3::ZERO, 0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+    let mut mapa = crate::mapa::Mapa::para(Some(def));
+    mapa.abrir();
+    let mundo = crate::world::World::default();
+    for _ in 0..120 {
+        mapa.acompanhar();
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 24, 34, 255));
+        mapa.desenha_grande(&mundo, 85, &crate::mundo_ui::Mundo::default(), 0);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
     crate::render3d::define_alvo(None);
 }

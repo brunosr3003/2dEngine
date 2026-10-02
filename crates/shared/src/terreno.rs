@@ -207,6 +207,9 @@ pub enum Bioma {
     /// trees with gold and blossom canopies. The owner: "everything needs to
     /// be more angelical".
     Celeste,
+    /// Kōgen-tō (`kogen`): a futuristic city at night — asphalt, concrete,
+    /// glass. Its colours come from the painted ground, not the relief.
+    Neon,
 }
 
 /// Os numeros que o bioma muda no relevo.
@@ -287,7 +290,7 @@ impl Bioma {
             },
             // The sky islands are drawn (`celeste`), not rolled: this only
             // matters for code that asks every biome for a profile.
-            Bioma::Celeste => PerfilDeRelevo {
+            Bioma::Celeste | Bioma::Neon => PerfilDeRelevo {
                 planicie: (5.0, 4.0),
                 colina: (8.0, 15.0),
                 serra: (12.0, 30.0),
@@ -619,6 +622,17 @@ pub enum Material {
     FolhaCeleste,
     PetalaRosa,
     CristalCeu,
+    /// Kōgen-tō's city (`kogen`): asphalt and its paint, concrete, glass, lit
+    /// windows and neon.
+    Asfalto,
+    FaixaDePista,
+    Concreto,
+    ConcretoEscuro,
+    Vidro,
+    JanelaAcesa,
+    NeonRosa,
+    NeonCiano,
+    NeonAmarelo,
 }
 
 impl Material {
@@ -629,7 +643,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 39] = [
+    pub const TODOS: [Material; 48] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -669,6 +683,15 @@ impl Material {
         Material::FolhaCeleste,
         Material::PetalaRosa,
         Material::CristalCeu,
+        Material::Asfalto,
+        Material::FaixaDePista,
+        Material::Concreto,
+        Material::ConcretoEscuro,
+        Material::Vidro,
+        Material::JanelaAcesa,
+        Material::NeonRosa,
+        Material::NeonCiano,
+        Material::NeonAmarelo,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -695,6 +718,15 @@ impl Material {
             Material::PetalaRoxa => (152, 104, 200),
             Material::PetalaBranca => (240, 242, 248),
             Material::Nuvem => (244, 247, 252),
+            Material::Asfalto => (46, 48, 56),
+            Material::FaixaDePista => (236, 214, 120),
+            Material::Concreto => (122, 124, 132),
+            Material::ConcretoEscuro => (78, 80, 92),
+            Material::Vidro => (52, 74, 108),
+            Material::JanelaAcesa => (252, 214, 140),
+            Material::NeonRosa => (255, 70, 180),
+            Material::NeonCiano => (60, 230, 255),
+            Material::NeonAmarelo => (255, 226, 70),
             Material::NuvemSombra => (206, 216, 232),
             Material::GramaCeleste => (168, 210, 134),
             Material::Marmore => (236, 230, 214),
@@ -845,7 +877,7 @@ pub fn material_variado(
         }
         // The sky meadows: grass everywhere the island is (its tops stay in
         // a narrow band), marble where it gets steep (handled above).
-        Bioma::Celeste => {
+        Bioma::Celeste | Bioma::Neon => {
             if mancha < 0.06 {
                 Material::FolhaCeleste
             } else {
@@ -1007,6 +1039,8 @@ pub fn densidade_de_planta(bioma: Bioma) -> f32 {
         Bioma::Montanha => 5.5,
         // A meadow: dense, so the lilies and plumes carry the look.
         Bioma::Celeste => 7.0,
+        // Kōgen-tō: parks only (`kogen::so_no_parque`).
+        Bioma::Neon => 3.0,
     }
 }
 
@@ -1017,7 +1051,7 @@ pub fn densidade_de_planta(bioma: Bioma) -> f32 {
 /// justamente pela ausencia.
 pub fn especie_de_planta(bioma: Bioma, f: f32) -> Planta {
     match bioma {
-        Bioma::Floresta => {
+        Bioma::Floresta | Bioma::Neon => {
             if f < 0.28 {
                 Planta::Moita
             }
@@ -1096,13 +1130,14 @@ pub fn densidade_de_arvore(bioma: Bioma) -> f32 {
         // Groves, not a forest: enough that the white trees carry the look,
         // sparse enough that each stands out against the meadow.
         Bioma::Celeste => 1.0,
+        Bioma::Neon => 0.8,
     }
 }
 
 /// A especie que sai deste sorteio. `f` e' 0..1.
 pub fn especie_de_arvore(bioma: Bioma, f: f32) -> Arvore {
     match bioma {
-        Bioma::Floresta => {
+        Bioma::Floresta | Bioma::Neon => {
             if f < 0.62 {
                 Arvore::Copada
             } else if f < 0.88 {
@@ -1247,6 +1282,10 @@ pub fn arvore_da_coluna(
     if ger.na_ponte_magica(bx, bz) {
         return None;
     }
+    // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
+    if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+        return None;
+    }
     // Na maquete, METADE das arvores. Elas voltam em porte logo abaixo.
     // Na Ilha Magica, um TERCO: ela e' de passagem, e o que ela da' por no'
     // ja' vale o dobro.
@@ -1349,6 +1388,10 @@ pub fn planta_da_coluna(
 ) -> Option<PlantaPlantada> {
     // NADA NA PONTE: pedra de forracao tambem barra passagem.
     if ger.na_ponte_magica(bx, bz) {
+        return None;
+    }
+    // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
+    if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
         return None;
     }
     // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
@@ -1611,6 +1654,7 @@ fn recurso_montanha_da_coluna(
     // with rocks.
     if ger.na_ponte_magica(bx, bz)
         || (ger.e_celeste() && !crate::celeste::tem_recurso(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        || (ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
     {
         return None;
     }
@@ -1928,6 +1972,9 @@ enum RelevoDesenhado {
     /// Skyreach's plateaus and bridges over the cloud sea
     /// (`celeste::bloco_da_coluna`). Town on the arrival plateau, no port.
     Celeste,
+    /// Kōgen-tō's city grid (`kogen::bloco_da_coluna`). Town in the Docks,
+    /// no port (the flying bus from Skyreach is the way in).
+    Kogen,
     /// A ilhota de praia da colonia (`colonia::bloco_da_coluna`). A praca
     /// entra POR CIMA, pelo `aplainar` de sempre.
     Colonia,
@@ -2316,6 +2363,11 @@ impl Gerador {
         matches!(self.desenhado, Some(RelevoDesenhado::Celeste))
     }
 
+    /// Kōgen-tō's city grid (`kogen`).
+    pub fn e_kogen(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Kogen))
+    }
+
     /// Islands in the sky (Magic Island, Skyreach): no sea, the gaps are a
     /// drop to the cloud floor.
     pub fn e_aerea(&self) -> bool {
@@ -2340,6 +2392,24 @@ impl Gerador {
         let (bx, bz) = ((c.x / BLOCO) as i32, (c.y / BLOCO) as i32);
         let nivel = g.bloco_em(bx, bz);
         g.cidade = Some(Cidade::nova(c.x, c.y, nivel));
+        g
+    }
+
+    /// KŌGEN-TŌ: the drawn city grid, the town in the Docks, no port
+    /// (`kogen`). One constructor for client and server.
+    pub fn da_ilha_kogen() -> Self {
+        let mut g = Self::novo(
+            crate::kogen::SEMENTE,
+            crate::kogen::RAIO_BLOCOS,
+            crate::kogen::DEF.bioma,
+            ESCALA_ALTURA,
+        );
+        g.desenhado = Some(RelevoDesenhado::Kogen);
+        g.cidade = None;
+        g.porto = None;
+        g.oasis = None;
+        let c = crate::kogen::centro_da_cidade();
+        g.cidade = Some(Cidade::nova(c.x, c.y, crate::kogen::NIVEL_CHAO));
         g
     }
 
@@ -2460,6 +2530,9 @@ impl Gerador {
         }
         if crate::celeste::e_celeste(def.zona) {
             return Self::da_ilha_celeste();
+        }
+        if crate::kogen::e_kogen(def.zona) {
+            return Self::da_ilha_kogen();
         }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
@@ -2617,6 +2690,7 @@ impl Gerador {
             // normal".
             Some(RelevoDesenhado::Colonia) => crate::colonia::bloco_da_coluna(bx, bz),
             Some(RelevoDesenhado::Celeste) => crate::celeste::bloco_da_coluna(bx, bz),
+            Some(RelevoDesenhado::Kogen) => crate::kogen::bloco_da_coluna(bx, bz),
             _ => self.bloco_cru(bx, bz),
         };
         let cru = self.planalto().map_or(cru, |p| p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru));
@@ -2674,6 +2748,10 @@ impl Gerador {
         // xadrez marrom por cima, e quebrava a regra que docs/MUNDO.md registra:
         // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
         // apaga a unica leitura de relevo que o jogo da' sem texto.
+        // Kōgen-tō paints its whole city: asphalt, sidewalks, plazas, roofs.
+        if self.e_kogen() && !self.na_cidade(bx, bz) {
+            return crate::kogen::pintura(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
+        }
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
         // The castle's wall walk and tower tops: dressed stone.
         if let Some(parte) = self.planalto().and_then(|p| p.parte_da_muralha(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))) {
@@ -3380,6 +3458,8 @@ impl Ilha {
             format!("-plantas{}", crate::planta::REVISAO)
         } else if crate::celeste::e_celeste(def.zona) {
             format!("-celeste{}", crate::celeste::REVISAO)
+        } else if crate::kogen::e_kogen(def.zona) {
+            format!("-kogen{}", crate::kogen::REVISAO)
         } else {
             String::new()
         };
@@ -5356,6 +5436,9 @@ mod testes_da_ilha_magica {
 }
 
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
+    if crate::kogen::e_kogen(zona) {
+        return Some(&crate::kogen::DEF);
+    }
     if crate::celeste::e_celeste(zona) {
         return Some(&crate::celeste::DEF);
     }

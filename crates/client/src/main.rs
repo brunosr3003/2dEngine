@@ -716,6 +716,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_KOGEN").is_ok() {
+        terreno::previa_kogen(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_BAUS").is_ok() {
         terreno::previa_baus(&mut vox).await;
         return;
