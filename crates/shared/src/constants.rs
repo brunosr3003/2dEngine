@@ -1234,7 +1234,13 @@ pub const CRIT_CHANCE_PER_DES: f32 = 0.0017;
 
 /// Velocidade de ataque adicional por ponto em DES (somada a 1.0).
 /// Aplicada como divisor no cooldown — 1.5 = ataques 50% mais rapidos.
-pub const ATTACK_SPEED_PCT_PER_DES: f32 = 0.015; // +1.5% por ponto
+/// Full rate up to `ATTACK_SPEED_JOELHO` DEX points, then
+/// `ATTACK_SPEED_PCT_PER_DES_ALEM` (02/10/2026, instead of a ceiling): the
+/// ladder's builds keep their speed, and stacking slows down — a level 51
+/// pistol with all 150 points in DEX ran +225%, now +135%.
+pub const ATTACK_SPEED_PCT_PER_DES: f32 = 0.015;
+pub const ATTACK_SPEED_JOELHO: u32 = 60;
+pub const ATTACK_SPEED_PCT_PER_DES_ALEM: f32 = 0.005;
 
 /// Stamina maxima adicional por ponto em SPD (somada ao base 100).
 pub const STAMINA_MAX_PER_SPD: i32 = 2;
@@ -1249,11 +1255,7 @@ pub const HP_REGEN_PER_VIT: f32 = 0.2;
 /// slower crit chance above.
 pub const CRIT_DAMAGE_MULT: f32 = 1.3;
 
-/// The attack speed BONUS ceiling (`attack_speed_mult` at most 1 + this),
-/// 02/10/2026: a level 51 pistol with all 150 points in DEX ran +225% attack
-/// speed — over twice the damage the ladder expects — and tanked level 60
-/// mobs. Crit has no ceiling: it grows slowly instead (`CRIT_CHANCE_PER_DES`).
-pub const ATTACK_SPEED_BONUS_MAX: f32 = 1.0;
+
 
 /// Defesa adicional por ponto em RES (somada ao base 0).
 pub const DEFENSE_PER_RES: i32 = 1;

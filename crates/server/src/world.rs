@@ -20554,6 +20554,13 @@ pub(crate) fn effective_stats(
         s.dash_cd_mult += b.dash_cd_reduction_pct * pts as f32;
     }
 
+    // DEX's attack speed slows past the knee (`ATTACK_SPEED_JOELHO`).
+    let des = allocated.get(shared::stat_idx::DES).copied().unwrap_or(0);
+    if des > shared::ATTACK_SPEED_JOELHO {
+        s.attack_speed_mult -= (shared::ATTACK_SPEED_PCT_PER_DES - shared::ATTACK_SPEED_PCT_PER_DES_ALEM)
+            * (des - shared::ATTACK_SPEED_JOELHO) as f32;
+    }
+
     // Os degraus de VIT/25 e RES/30 (+5% de reducao cada) sairam em 27/09:
     // eram porcentagem fixa de qualquer golpe, o mesmo defeito da defesa
     // antiga (docs/ESCADA.md). VIT continua dando vida e RES defesa; a
@@ -20702,7 +20709,6 @@ pub(crate) fn effective_stats(
     s.defense_stamina_cost_mult = s
         .defense_stamina_cost_mult
         .max(shared::STAMINA_COST_MULT_MIN);
-    s.attack_speed_mult = s.attack_speed_mult.min(1.0 + shared::ATTACK_SPEED_BONUS_MAX);
     s
 }
 
