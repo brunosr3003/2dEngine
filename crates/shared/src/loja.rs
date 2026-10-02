@@ -165,6 +165,28 @@ pub const PERGAMINHOS_MONTARIA: [PergaminhoMontaria; 1] = [PergaminhoMontaria {
     preco_tp: 500,
 }];
 
+/// Plain items sold for TP (`Produto::Item`), delivered to the bag.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ItemDaLoja {
+    pub id: u16,
+    pub item_id: u16,
+    pub nome: &'static str,
+    pub descricao: &'static str,
+    pub preco_tp: u64,
+}
+
+pub const ITENS_DA_LOJA: [ItemDaLoja; 1] = [ItemDaLoja {
+    id: 1,
+    item_id: crate::item_id::AMULETO_DE_PROTECAO,
+    nome: "Ward Charm",
+    descricao: "Refining to +6..+9, a failure spends the charm and the piece survives.",
+    preco_tp: 150,
+}];
+
+pub fn item_da_loja(id: u16) -> Option<&'static ItemDaLoja> {
+    ITENS_DA_LOJA.iter().find(|x| x.id == id)
+}
+
 pub fn pergaminho_montaria(id: u16) -> Option<&'static PergaminhoMontaria> {
     PERGAMINHOS_MONTARIA.iter().find(|p| p.id == id)
 }
@@ -506,6 +528,9 @@ pub enum Produto {
     /// `Skin`, e um cliente antigo comprando uma skin receberia um passe.
     /// Variante nova entra no fim, sempre.
     PasseMagico(u16),
+    /// A plain item from `ITENS_DA_LOJA` (the Ward Charm). At the END, like
+    /// every new variant: postcard is positional.
+    Item(u16),
 }
 
 impl Produto {
@@ -522,6 +547,7 @@ impl Produto {
             Produto::ItemDePet(i) => format!("item-pet:{i}"),
             Produto::PasseMagico(i) => format!("passe-magico:{i}"),
             Produto::Skin(i) => format!("skin:{i}"),
+            Produto::Item(i) => format!("item:{i}"),
         }
     }
 
@@ -539,6 +565,7 @@ impl Produto {
             "pergaminho-pet" => Produto::PergaminhoPet(id),
             "item-pet" => Produto::ItemDePet(id),
             "skin" => Produto::Skin(id),
+            "item" => Produto::Item(id),
             _ => return None,
         };
         p.existe().then_some(p)
@@ -556,6 +583,7 @@ impl Produto {
             Produto::ItemDePet(i) => item_de_pet(i).is_some(),
             Produto::PasseMagico(i) => passe(i).is_some(),
             Produto::Skin(i) => crate::aparencia::nome_da_skin(i).is_some(),
+            Produto::Item(i) => item_da_loja(i).is_some(),
         }
     }
 
@@ -579,6 +607,7 @@ impl Produto {
             Produto::ItemDePet(i) => item_de_pet(i).map_or("?".into(), |p| p.nome.to_string()),
             Produto::PasseMagico(i) => passe(i).map_or("?".into(), |p| p.nome.to_string()),
             Produto::Skin(i) => crate::aparencia::nome_da_skin(i).unwrap_or("?").to_string(),
+            Produto::Item(i) => item_da_loja(i).map_or("?".into(), |x| x.nome.to_string()),
         }
     }
 
@@ -595,6 +624,7 @@ impl Produto {
             Produto::ItemDePet(i) => item_de_pet(i).map(|p| p.preco_tp),
             Produto::PasseMagico(i) => passe(i).map(|p| p.preco_tp),
             Produto::Skin(i) => crate::aparencia::preco_da_skin(i),
+            Produto::Item(i) => item_da_loja(i).map(|x| x.preco_tp),
         }
     }
 }
@@ -1178,6 +1208,7 @@ mod tests {
             (7, Produto::ItemDePet(1)),
             (8, Produto::Skin(1)),
             (9, Produto::PasseMagico(1)),
+            (10, Produto::Item(1)),
         ];
         for (indice, pr) in esperado {
             let bytes = postcard::to_allocvec(pr).expect("codifica");

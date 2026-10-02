@@ -2605,6 +2605,27 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        // Ward Charm: from the TP shop; a refine to +6..+9 that would
+        // destroy the piece spends one instead (`craft::refinar`). `sell: 0`:
+        // bought with real money, it must not turn into NPC gold.
+        S {
+            id: item_id::AMULETO_DE_PROTECAO as i32,
+            name: "Ward Charm",
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 99,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         S {
             id: item_id::MOEDA_MAGICA as i32,
             name: "Magic Coin",

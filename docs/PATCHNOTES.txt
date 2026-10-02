@@ -1,4 +1,8 @@
-02/10/2026 — Skins de anel
+02/10/2026 — Amuleto de Proteção, skins de anel e o refino arriscado
+
+Amuleto de Proteção (Ward Charm): novo na Loja, aba Materiais, por 150 TP. Com ele na bolsa, um refino de +6 a +9 que falharia e destruiria a peça gasta o amuleto no lugar — a peça fica no nível em que estava. Ele só é gasto quando salva a peça; se o refino der certo, ele continua na bolsa. Do +10 em diante a aposta continua valendo.
+
+Refino arriscado: a pergunta "Refine anyway?" do +6 em diante piscava e sumia antes de dar para tocar. Agora ela fica aberta esperando a resposta.
 
 O Anel Mágico também ganhou skins: Anel de Brasa, Anel de Gelo, Anel Verdejante, Anel Solar e Anel do Vazio. Cada um muda a cor do brilho nas mãos, do círculo mágico e do orbe que o anel dispara — o Solar e o de Gelo ainda põem raios no círculo, e o Verdejante e o do Vazio um segundo anel por dentro. Na Loja, aba Aparência → Armas; para usar, Guarda-roupa → Weapon com o anel equipado.
 

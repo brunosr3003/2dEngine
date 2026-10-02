@@ -184,7 +184,12 @@ fn botoes_da_confirmacao(r: Rect, f: f32) -> (Rect, Rect) {
 ///
 /// A chance aparece NOS DOIS SENTIDOS: "30% de subir" e "70% de destruir" são
 /// o mesmo número, e é o segundo que pesa na hora de decidir.
-fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
+///
+/// `ouve`: false on the frame the question opens. The tap that pressed
+/// "Refine (risky)" is still this frame's click, and it lands outside the
+/// window — which reads as "cancel": the question flashed for one frame and
+/// closed before anyone could answer.
+fn confirma_refino(nome: &str, i: &Info, ouve: bool) -> Option<bool> {
     let f = estilo::fator_texto();
     let seguro = crate::hud_layout::tela_segura();
     let r = janela_da_confirmacao(seguro, f);
@@ -193,7 +198,8 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
     let x = r.x + 24.0 * f;
     estilo::texto_forte(x, r.y + 42.0 * f, "Refine anyway?", 20, VERMELHO);
     estilo::texto_ajustado(
-        &format!("{nome} +{} → +{}", i.nivel, i.nivel + 1),
+        // "›", not "→": the UI font has no arrow glyph (it drew a box).
+        &format!("{nome} +{} › +{}", i.nivel, i.nivel + 1),
         x,
         r.y + 80.0 * f,
         r.w - 48.0 * f,
@@ -240,7 +246,7 @@ fn confirma_refino(nome: &str, i: &Info) -> Option<bool> {
         16,
         VERMELHO,
     );
-    if !crate::foco::clique() {
+    if !ouve || !crate::foco::clique() {
         return None;
     }
     if sim.contains(m) {
@@ -263,6 +269,10 @@ pub fn texto_do_resultado(res: u8, nivel: u8, nome: &str, motivo: &str) -> (Stri
             AMARELO,
         ),
         resultado::DESTRUIU => (format!("It failed and {nome} was destroyed."), VERMELHO),
+        resultado::PROTEGIDO => (
+            format!("It failed — the Ward Charm broke instead. {nome} stays +{nivel}."),
+            AMARELO,
+        ),
         _ => (
             if motivo.is_empty() {
                 "Refining wasn't possible.".to_string()
@@ -509,6 +519,7 @@ impl Forja {
             p.h - u(64.0),
         );
         let mut pedido = None;
+        let mut abriu_agora = false;
         if let Some((alvo, id, inst)) = lista.iter().find(|(a, _, _)| Some(*a) == self.sel) {
             let i = info(inst);
             crate::bolsa::icone_do_item_com(Rect::new(d.x, d.y, u(64.0), u(64.0)), *id, 1.0, palco);
@@ -588,7 +599,30 @@ impl Forja {
                 )) {
                     self.onde_obter = Some(item_id::COPPER);
                 }
-                if i.risco {
+                // A Ward Charm in the bag covers +6..+9: the attempt is no
+                // longer a bet on the piece, so no red line and no question.
+                let amuletos = tem(slots, item_id::AMULETO_DE_PROTECAO);
+                let protegido = i.risco && amuletos > 0 && forja::protegivel(i.nivel + 1);
+                let i = Info { risco: i.risco && !protegido, ..i };
+                if protegido {
+                    estilo::texto_ajustado(
+                        &format!("Protected: a fail spends 1 Ward Charm ({amuletos} left)"),
+                        d.x,
+                        y + u(116.0),
+                        d.w,
+                        15,
+                        VERDE,
+                    );
+                } else if i.risco && forja::protegivel(i.nivel + 1) {
+                    estilo::texto_ajustado(
+                        "A fail DESTROYS it. A Ward Charm saves it.",
+                        d.x,
+                        y + u(116.0),
+                        d.w,
+                        14,
+                        VERMELHO,
+                    );
+                } else if i.risco {
                     estilo::texto(
                         d.x,
                         y + u(116.0),
@@ -636,7 +670,9 @@ impl Forja {
                     } else {
                         "Refine"
                     },
-                    tem_tudo,
+                    // Not while the question is open: the tap on "Yes" would
+                    // also press this button underneath and reopen it.
+                    tem_tudo && self.confirmar.is_none(),
                 ) {
                     // ARRISCADO PERGUNTA. Seguro vai direto — pedir "tem
                     // certeza?" para uma falha que só come material seria
@@ -644,6 +680,7 @@ impl Forja {
                     // que importa não seria lida também.
                     if i.risco {
                         self.confirmar = Some((*alvo, *id, *inst));
+                        abriu_agora = true;
                     } else {
                         pedido = Some(ClientMessage::Refinar { alvo: *alvo });
                     }
@@ -658,7 +695,7 @@ impl Forja {
         // A pergunta vem POR CIMA de tudo, e é a última coisa desenhada: ela
         // tem que receber o toque antes de qualquer botão do painel.
         if let Some((alvo, id, inst)) = self.confirmar {
-            match confirma_refino(&nome(id), &info(&inst)) {
+            match confirma_refino(&nome(id), &info(&inst), !abriu_agora) {
                 Some(true) => {
                     self.confirmar = None;
                     pedido = Some(ClientMessage::Refinar { alvo });
@@ -669,6 +706,43 @@ impl Forja {
         }
         pedido
     }
+}
+
+/// MMO_PREVIA_FORJA: a +5 katana selected, without and with Ward Charms in
+/// the bag, then the risky question open. PNGs in /tmp/tempest-forja-*.png.
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+pub async fn previa() {
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let mut katana = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
+    katana.refinement = 5;
+    let mat = |id, qty| InventorySlot { item_id: id, qty, instance: None };
+    let base = vec![
+        InventorySlot { item_id: item_id::KATANA, qty: 1, instance: Some(katana) },
+        mat(item_id::DARKSTEEL, 50_000),
+        mat(item_id::COPPER, 50_000),
+    ];
+    let mut com = base.clone();
+    com.push(mat(item_id::AMULETO_DE_PROTECAO, 3));
+    let nomes = HashMap::from([(item_id::KATANA, "Katana".to_string())]);
+    for (cena, slots, pergunta) in [("risco", &base, false), ("protegido", &com, false), ("pergunta", &base, true)] {
+        let mut f = Forja::default();
+        f.aberto = true;
+        f.sel = Some(AlvoDaForja::Bolsa(0));
+        if pergunta {
+            f.confirmar = Some((AlvoDaForja::Bolsa(0), item_id::KATANA, katana));
+        }
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.1, 0.12, 1.0));
+            let _ = f.desenha(slots, &Equipment::default(), &nomes, 0.0, None);
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("/tmp/tempest-forja-{cena}.png"));
+            next_frame().await;
+        }
+    }
+    crate::render3d::define_alvo(None);
 }
 
 #[cfg(test)]

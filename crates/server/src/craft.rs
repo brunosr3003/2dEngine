@@ -159,6 +159,14 @@ pub fn refinar(inst: &mut ItemInstance, inv: &mut [InventorySlot], sorte: u8) ->
             (resultado::SUBIU, n)
         }
         forja::Refino::Falhou(n) => (resultado::FALHOU, n),
+        // A Ward Charm in the bag takes the hit up to +9: spent only when it
+        // actually saves the piece, never on a success.
+        forja::Refino::Destruiu
+            if forja::protegivel(nivel + 1) && tem(inv, item_id::AMULETO_DE_PROTECAO) > 0 =>
+        {
+            consumir(inv, item_id::AMULETO_DE_PROTECAO, 1);
+            (resultado::PROTEGIDO, nivel)
+        }
         forja::Refino::Destruiu => (resultado::DESTRUIU, 0),
         forja::Refino::NoTopo => (resultado::NO_TOPO, nivel),
     }
@@ -578,6 +586,33 @@ mod testes {
             "+6 destruiu {}",
             f(destruiu6)
         );
+    }
+
+    /// A Ward Charm saves the piece on a destroying failure up to +9, and is
+    /// spent only then: never on a success, never above +9.
+    #[test]
+    fn amuleto_de_protecao_salva_a_peca_ate_o_nove() {
+        let mut p = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
+        let (ds, cu) = custo_do_refino(&p);
+        let rica = |amuletos| bolsa(&[(item_id::DARKSTEEL, ds * 10), (item_id::COPPER, cu * 10),
+            (item_id::AMULETO_DE_PROTECAO, amuletos)]);
+        // +8 -> +9 fails (sorte 99): the charm breaks, the piece stays +8.
+        p.refinement = 8;
+        let mut inv = rica(2);
+        assert_eq!(refinar(&mut p, &mut inv, 99), (resultado::PROTEGIDO, 8));
+        assert_eq!((p.refinement, tem(&inv, item_id::AMULETO_DE_PROTECAO)), (8, 1));
+        // A success leaves the charm alone.
+        p.refinement = 5;
+        assert_eq!(refinar(&mut p, &mut inv, 0), (resultado::SUBIU, 6));
+        assert_eq!(tem(&inv, item_id::AMULETO_DE_PROTECAO), 1);
+        // +9 -> +10 is not covered: the piece goes.
+        p.refinement = 9;
+        assert_eq!(refinar(&mut p, &mut inv, 99).0, resultado::DESTRUIU);
+        assert_eq!(tem(&inv, item_id::AMULETO_DE_PROTECAO), 1);
+        // Without a charm, +6 destroys as before.
+        p.refinement = 5;
+        let mut sem = rica(0);
+        assert_eq!(refinar(&mut p, &mut sem, 99).0, resultado::DESTRUIU);
     }
 
     #[test]

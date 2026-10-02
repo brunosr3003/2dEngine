@@ -737,10 +737,19 @@ impl LojaTp {
     fn materiais(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let bau = &cat::BAUS_CRAFT[0];
         let vao = 12.0 * k;
-        let w = ((area.w - vao * 3.0) / 4.0).min(390.0 * k);
-        let total = w * 4.0 + vao * 3.0;
+        // Five columns: the Ward Charm joined the four scrolls.
+        let w = ((area.w - vao * 4.0) / 5.0).min(390.0 * k);
+        let total = w * 5.0 + vao * 4.0;
         let x0 = area.center().x - total * 0.5;
         let alto = area.h - 16.0 * k;
+        self.amuleto_de_protecao(
+            Rect::new(x0 + (w + vao) * 4.0, area.y + 8.0 * k, w, alto),
+            k,
+            m,
+            livre,
+            modal,
+            agora,
+        );
         self.pergaminho_de_pet(
             Rect::new(x0 + (w + vao) * 2.0, area.y + 8.0 * k, w, alto),
             k,
@@ -794,7 +803,7 @@ impl LojaTp {
             ts(14.0, k),
             estilo::alfa(LILAS, 0.95),
         );
-        let nomes = ["Grey 55%", "Green 28%", "Blue 12%", "Purple 5%"];
+        let nomes = ["55%", "28%", "12%", "5%"];
         let cores = [
             Color::from_rgba(180, 186, 198, 255),
             Color::from_rgba(88, 220, 125, 255),
@@ -1327,6 +1336,48 @@ impl LojaTp {
 
     /// O Pergaminho de Invocação: Pet. Especie e grau saem no ABRIR, entao o
     /// cartao mostra a chance de cada cor, como o de chaves e o de tomos.
+    /// The Ward Charm card (`cat::ITENS_DA_LOJA`): what it does in one line,
+    /// up to which level, and the price.
+    fn amuleto_de_protecao(&mut self, r: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
+        let it = &cat::ITENS_DA_LOJA[0];
+        let azul = Color::from_rgba(120, 180, 255, 255);
+        let sobre = !modal && r.contains(m);
+        estilo::sombra(r, 22.0 * k, 1.0);
+        estilo::ret_gradiente(r, 22.0 * k, Color::new(0.12, 0.20, 0.40, 0.98), Color::new(0.03, 0.05, 0.13, 0.98));
+        estilo::borda_arredondada(r, 22.0 * k, 1.5 * k.max(0.8),
+            estilo::alfa(if sobre { OURO_CLARO } else { azul }, 0.60));
+        faiscas(r, agora, 18, k, 307);
+        let arte = vec2(r.center().x, r.y + r.h * 0.27);
+        brilho_radial(arte, r.h * 0.20, azul, 0.30);
+        let l = r.h * 0.30;
+        crate::icones::desenha(it.item_id, Rect::new(arte.x - l * 0.5, arte.y - l * 0.5, l, l), 1.0);
+        estilo::texto_centro_forte(r.center().x, r.y + r.h * 0.47, it.nome, ts(22.0, k), estilo::TEXTO);
+        // Centred lines, shrunk to the card when it is narrow (phone).
+        let linha = |t: &str, y: f32, tam: f32, cor: Color| {
+            let largura = r.w - 20.0 * k;
+            let w = estilo::medir(t, ts(tam, k)).min(largura);
+            estilo::texto_ajustado(t, r.center().x - w * 0.5, y, largura, ts(tam, k), cor);
+        };
+        linha("No break up to +9", r.y + r.h * 0.53, 14.0, estilo::alfa(azul, 0.95));
+        linha("A failed +6..+9 refine spends", r.y + r.h * 0.62, 12.0, estilo::TEXTO);
+        linha("the charm, not the piece.", r.y + r.h * 0.62 + 18.0 * k, 12.0, estilo::TEXTO);
+        estilo::valor_tp(
+            r.center().x - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(23.0, k), true) * 0.5,
+            r.y + r.h - 88.0 * k,
+            it.preco_tp,
+            ts(23.0, k),
+            OURO_CLARO,
+        );
+        let bw = (216.0 * k).min(r.w - 16.0 * k);
+        let bt = Rect::new(r.center().x - bw * 0.5, r.y + r.h - 62.0 * k, bw, 48.0 * k);
+        botao_ouro(bt, if self.em_voo { "PLEASE WAIT…" } else { "BUY CHARM" }, !self.em_voo,
+            !modal && bt.contains(m), k, agora);
+        if !self.em_voo && livre && bt.contains(m) {
+            self.confirma = Some(Confirma::Item(Produto::Item(it.id)));
+            self.lote = 1;
+        }
+    }
+
     fn pergaminho_de_pet(
         &mut self,
         r: Rect,
@@ -1848,6 +1899,7 @@ impl LojaTp {
                     | Produto::PergaminhoPet(_)
                     | Produto::ItemDePet(_)
                     | Produto::PasseMagico(_)
+                    | Produto::Item(_)
                     | Produto::Skin(_) => 0,
                 };
                 if matches!(
@@ -1879,6 +1931,16 @@ impl LojaTp {
                     } else {
                         crate::render3d::vitrine_aparencia(vox, self.aparencia_da_skin(id), self.arma, 0,
                             r, self.giro, solido);
+                    }
+                } else if let Produto::Item(id) = pr {
+                    brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
+                    if let Some(x) = cat::item_da_loja(id) {
+                        let l = prev.w * 0.55;
+                        crate::bolsa::icone_do_item(
+                            Rect::new(prev.center().x - l * 0.5, prev.center().y - l * 0.5, l, l),
+                            x.item_id,
+                            1.0,
+                        );
                     }
                 } else if let Produto::ItemDePet(id) = pr {
                     brilho_radial(prev.center(), prev.w * 0.42, OURO_CLARO, 0.32);
@@ -1955,6 +2017,9 @@ impl LojaTp {
                     }
                     Produto::ItemDePet(id) => {
                         cat::item_de_pet(id).map_or(String::new(), |x| x.descricao.to_string())
+                    }
+                    Produto::Item(id) => {
+                        cat::item_da_loja(id).map_or(String::new(), |x| x.descricao.to_string())
                     }
                 };
                 estilo::texto_ajustado(&pr.nome(), x, y, largura, ts(22.0, k), estilo::TEXTO);

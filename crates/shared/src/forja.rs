@@ -172,6 +172,17 @@ pub const REFINO_MAX: u8 = 12;
 /// vira decisao.
 pub const REFINO_SEGURO: u8 = 5;
 
+/// The last level a Ward Charm protects (`item_id::AMULETO_DE_PROTECAO`).
+/// The owner: "take out the chance of the item breaking until +9".
+pub const PROTECAO_ATE: u8 = 9;
+
+/// Can a Ward Charm save the piece on a refine to `alvo`? Only where failing
+/// destroys (above `REFINO_SEGURO`) and up to `PROTECAO_ATE`: +10 to +12
+/// stay a real gamble.
+pub fn protegivel(alvo: u8) -> bool {
+    alvo > REFINO_SEGURO && alvo <= PROTECAO_ATE
+}
+
 /// Chance de CHEGAR ao nivel `alvo`, em porcentagem.
 ///
 /// ```text
@@ -241,6 +252,9 @@ pub mod resultado {
     pub const NO_TOPO: u8 = 3;
     pub const SEM_MATERIAL: u8 = 4;
     pub const INVALIDO: u8 = 5;
+    /// Failed where it would destroy, but a Ward Charm took the hit: the
+    /// piece keeps its level and one charm is gone.
+    pub const PROTEGIDO: u8 = 6;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -15208,12 +15208,13 @@ impl GameWorld {
         };
         let tentou = matches!(
             res,
-            resultado::SUBIU | resultado::FALHOU | resultado::DESTRUIU
+            resultado::SUBIU | resultado::FALHOU | resultado::DESTRUIU | resultado::PROTEGIDO
         );
         let nome_res = match res {
             resultado::SUBIU => "subiu",
             resultado::FALHOU => "falhou",
             resultado::DESTRUIU => "destruiu",
+            resultado::PROTEGIDO => "protegido",
             resultado::NO_TOPO => "no_topo",
             resultado::SEM_MATERIAL => "sem_material",
             _ => "invalido",

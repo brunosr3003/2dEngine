@@ -493,6 +493,7 @@ pub async fn comprar_item(
                 | Produto::PergaminhoPet(_)
                 | Produto::ItemDePet(_)
                 | Produto::PasseMagico(_)
+                | Produto::Item(_)
         ) {
             format!("{quantos}{} entregue na bolsa!{abatido}", produto.nome())
         } else if matches!(produto, Produto::Moeda(_) | Produto::Energia(_)) {

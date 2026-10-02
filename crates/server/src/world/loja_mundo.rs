@@ -195,6 +195,7 @@ impl GameWorld {
                                     // (`aparencia::item_da_skin`): 483 is a
                                     // Porão key now.
                                     Produto::Skin(id) => Some(shared::aparencia::item_da_skin(id)),
+                                    Produto::Item(id) => cat::item_da_loja(id).map(|x| x.item_id),
                                     _ => None,
                                 };
                                 // O PASSE VAI EM LOTE: o pacote entrega N
