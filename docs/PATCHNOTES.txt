@@ -1,3 +1,9 @@
+01/10/2026 — Ícone 3D das skins
+
+As skins na bolsa agora aparecem como o personagem vestindo a roupa (ou o chapéu), girando devagar, como os pets e as montarias. Antes elas ficavam num quadrado vazio.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
 01/10/2026 — Missões de caça nas outras ilhas e skins da loja
 
 Missões de caça: na Geleira, no Ermo e no Planalto os monstros com a roupa da ilha (Arqueiro Casaco-de-Gelo, Mago do Sol, Owlbear da Tormenta…) não contavam para as missões que pediam aquele tipo de monstro. Agora contam. E o combate automático, numa missão de caça, passa a procurar o monstro certo — antes ele ia atrás do tipo vizinho da lista (numa missão de lobos, caçava ursos).
