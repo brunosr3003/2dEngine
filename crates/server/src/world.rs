@@ -16378,11 +16378,13 @@ impl GameWorld {
                     .map(|p| (destino_tipo::COMBATE, p, MOB_ZONA_RAIO_UN * 0.5, None))
             }
             objective_kind::COLLECT | objective_kind::DELIVER => {
+                // A mob of THIS island that drops it; if none does (Darksteel
+                // on the Bosque falls from Plateau mobs and from rocks), the
+                // rocks and trees below — it used to give up here.
                 let kinds = crate::economy::kinds_que_dropam(def.obj_target);
-                if !kinds.is_empty() {
-                    return self
-                        .zona_de_mob(&kinds, eu, nivel)
-                        .map(|p| (destino_tipo::COMBATE, p, MOB_ZONA_RAIO_UN * 0.5, None));
+                let de_mob = if kinds.is_empty() { None } else { self.zona_de_mob(&kinds, eu, nivel) };
+                if let Some(p) = de_mob {
+                    return Some((destino_tipo::COMBATE, p, MOB_ZONA_RAIO_UN * 0.5, None));
                 }
                 let (tronco, pedra) = crate::economy::coleta_fornece(def.obj_target);
                 if !tronco && !pedra {
@@ -22375,6 +22377,57 @@ mod testes_planalto {
             let vaga = w.vagas_de_chefe.iter().find(|v| v.kind == kind).unwrap();
             assert_eq!(pos, vaga.pos, "{id} does not lead to boss {kind}");
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_destino_das_missoes {
+    use super::*;
+
+    /// EVERY quest with an island (side quests and the written story), on
+    /// its own island: active and ready, the auto quest must have somewhere
+    /// to go. The owner hit "I don't know where the objective is" on the
+    /// Primeval Owlbear step, a named boss without a mob zone.
+    #[test]
+    #[ignore = "builds all five islands and seeds the shared economy cache with real drops; run with --ignored"]
+    fn toda_missao_tem_destino_na_sua_ilha() {
+        use shared::quests::{objective_kind, quest_status};
+        crate::economy::init_vazia_para_testes();
+        crate::economy::por_loot_do_seed_para_testes();
+        // "Coming soon" quests cannot be taken.
+        let todas: Vec<&shared::quests::QuestDef> = shared::quests::QUESTS
+            .iter()
+            .chain(shared::historia::PASSOS.iter())
+            .filter(|d| !d.em_breve)
+            .collect();
+        let mut faltam = Vec::new();
+        for def in shared::terreno::ARQUIPELAGO.iter() {
+            let ilha = shared::terreno::Ilha::da_ilha(def);
+            let origem = ilha.porto().map(|p| p.centro).or_else(|| ilha.cidade().map(|c| c.centro())).unwrap();
+            let mut w = GameWorld::new(HashMap::new());
+            w.zona = def.zona.into();
+            w.ilha = Some(ilha);
+            w.povoar_ilha(origem);
+            for d in todas.iter().filter(|d| shared::quests::zona_da_missao(d.id) == Some(def.zona)) {
+                if d.obj_kind == objective_kind::LUGAR {
+                    w.ponto_da_historia(d.obj_target);
+                }
+                let nivel = d.min_level.max(def.nivel.1);
+                let estados: &[u8] = if d.source == shared::quests::quest_source::HISTORIA {
+                    &[quest_status::ACTIVE]
+                } else {
+                    &[quest_status::ACTIVE, quest_status::READY]
+                };
+                for &st in estados {
+                    let cq = crate::quests::CharQuest { quest_id: d.id, status: st, progress: 0, cooldown_until: 0 };
+                    if w.destino_da_missao(d, &cq, 0, nivel, origem, false).is_none() {
+                        faltam.push(format!("{} \"{}\" on {} ({})", d.id, d.title, def.zona,
+                            if st == quest_status::READY { "turn-in" } else { "objective" }));
+                    }
+                }
+            }
+        }
+        assert!(faltam.is_empty(), "{} quest(s) without a destination:\n{}", faltam.len(), faltam.join("\n"));
     }
 }
 

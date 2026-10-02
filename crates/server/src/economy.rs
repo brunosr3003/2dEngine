@@ -314,6 +314,32 @@ pub(crate) fn init_vazia_para_testes() {
     let _ = ECONOMY.set(Arc::new(RwLock::new(EconomyConfig::default())));
 }
 
+/// Seeds the test cache with the drop tables the database is seeded with:
+/// every mob table in `loot_mobs` and the Rock rows of `linhas_da_pedra`.
+#[cfg(test)]
+pub(crate) fn por_loot_do_seed_para_testes() {
+    let mut c = cell().write();
+    use crate::loot_mobs::*;
+    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
+        for &(kind, item_id, min, max, chance) in t {
+            c.loot_tables.entry(kind as u16).or_default().push(LootEntry {
+                item_id,
+                qty_min: min as u32,
+                qty_max: max as u32,
+                chance,
+            });
+        }
+    }
+    for (tier, item_id, min, max, chance) in linhas_da_pedra() {
+        c.farm_loot_tables.entry(("Rock".into(), tier)).or_default().push(LootEntry {
+            item_id,
+            qty_min: min as u32,
+            qty_max: max as u32,
+            chance,
+        });
+    }
+}
+
 /// Poe um item no cache dos testes (o que o banco daria em producao).
 #[cfg(test)]
 pub(crate) fn por_item_para_testes(id: u16, stack_max: u32, template: ItemTemplate) {
