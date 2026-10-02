@@ -199,13 +199,17 @@ impl Terreno {
     }
 
     fn do_gerador(ger: Gerador, bioma: shared::terreno::Bioma) -> Self {
-        let aerea = ger.e_magica();
+        let aerea = ger.e_aerea();
+        let celeste = ger.e_celeste();
         let mut t = Self {
             ger,
             bioma,
             bioma_visual: bioma,
             sem_mar: aerea,
-            ilhas_aereas: aerea.then(crate::ilhas_aereas::IlhasAereas::nova),
+            ilhas_aereas: aerea.then(|| {
+                let nuvens = crate::ilhas_aereas::IlhasAereas::nova();
+                if celeste { nuvens.com_raizes_celestes() } else { nuvens }
+            }),
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
@@ -455,7 +459,14 @@ impl Terreno {
     /// `recorte`/`recorte_z`: o furo que deixa ver o jogador (ver
     /// `render3d::recorte_do_jogador`); zero desliga.
     pub fn desenha(&self, cam: &Camera3D, recorte: Vec3, recorte_z: f32) -> usize {
-        if let Some(cenario) = &self.ilhas_aereas { cenario.desenha(); }
+        if let Some(cenario) = &self.ilhas_aereas {
+            // A plateau's root draws only with the ground on top of it: far
+            // plateaus outside the generated chunks showed as bare discs.
+            cenario.desenha(&|x, z| {
+                let b = |v: f32| (v / shared::terreno::BLOCO).floor() as i32;
+                self.pedacos.contains_key(&(b(x).div_euclid(CHUNK), b(z).div_euclid(CHUNK)))
+            });
+        }
         let visiveis: Vec<&Pedaco> = self
             .pedacos
             .iter()
@@ -1458,6 +1469,75 @@ pub async fn previa_dos_graficos() {
             println!("[graphics preview] {nome}: radius {raio}, cover {forracao}%, pitch {:.1}°, {n} chunks drawn", pitch.to_degrees());
         }
     }
+}
+
+/// MMO_PREVIA_CELESTE: Skyreach (`shared::celeste`), one view per plateau,
+/// two wide views across the bridges and the minimap, in
+/// /tmp/tempest-celeste (or MMO_PREVIA_SAIDA).
+#[cfg(debug_assertions)]
+pub async fn previa_celeste() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-celeste".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let def = &shared::celeste::DEF;
+    let g = shared::terreno::Gerador::da_ilha(def);
+    let mut t = Terreno::novo(def);
+    let mut casas = crate::construcoes::Construcoes::para(Some(def));
+    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    let solido = crate::render3d::material_solido();
+    let p = &shared::celeste::PLATOS;
+    // Shared's glam is another version than the client's: carry plain floats.
+    let meio = |i: usize, j: usize| ((p[i].centro.x + p[j].centro.x) * 0.5, (p[i].centro.y + p[j].centro.y) * 0.5);
+    let mut vistas: Vec<(String, (f32, f32), f32)> = p
+        .iter()
+        .enumerate()
+        .map(|(i, pl)| (format!("plato-{i}"), (pl.centro.x, pl.centro.y), 170.0))
+        .collect();
+    vistas.push(("ponte-0-1".into(), meio(0, 1), 210.0));
+    vistas.push(("ponte-3-4".into(), meio(3, 4), 230.0));
+    vistas.push(("aerea".into(), (0.0, 60.0), 620.0));
+    for (nome, (cx, cy), distancia) in vistas {
+        let c = vec2(cx, cy);
+        let centro = c;
+        let chao = g.altura(c.x, c.y).max(12.0);
+        t.atualiza(centro, if distancia > 400.0 { 40 } else { 16 }, 4000);
+        for _ in 0..3 {
+            let cam = Camera3D {
+                position: vec3(centro.x + distancia * 0.45, chao + distancia * 0.65, centro.y + distancia),
+                target: vec3(centro.x, chao, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            clear_background(Color::from_rgba(150, 186, 214, 255));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            casas.desenha(&cam, None, Vec3::ZERO, 0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+    let mut mapa = crate::mapa::Mapa::para(Some(def));
+    mapa.abrir();
+    let mundo = crate::world::World::default();
+    for _ in 0..120 {
+        mapa.acompanhar();
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 24, 34, 255));
+        mapa.desenha_grande(&mundo, 55, &crate::mundo_ui::Mundo::default(), 0);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
+    crate::render3d::define_alvo(None);
 }
 
 #[cfg(debug_assertions)]

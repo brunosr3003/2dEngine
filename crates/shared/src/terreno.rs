@@ -1809,6 +1809,9 @@ pub struct Gerador {
 enum RelevoDesenhado {
     /// Ilhotas e pontes (`magica::bloco_da_coluna`). Sem cidade e sem porto.
     Magica,
+    /// Skyreach's plateaus and bridges over the cloud sea
+    /// (`celeste::bloco_da_coluna`). Town on the arrival plateau, no port.
+    Celeste,
     /// A ilhota de praia da colonia (`colonia::bloco_da_coluna`). A praca
     /// entra POR CIMA, pelo `aplainar` de sempre.
     Colonia,
@@ -2178,10 +2181,43 @@ impl Gerador {
     /// qualquer estorvo no meio dela a fecha — o A* deixa de achar passagem e
     /// só dá pra atravessar andando na mão.
     pub fn na_ponte_magica(&self, bx: i32, bz: i32) -> bool {
-        if !matches!(self.desenhado, Some(RelevoDesenhado::Magica)) {
-            return false;
+        let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
+        match self.desenhado {
+            Some(RelevoDesenhado::Magica) => crate::magica::na_ponte(p),
+            Some(RelevoDesenhado::Celeste) => crate::celeste::na_ponte(p),
+            _ => false,
         }
-        crate::magica::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO))
+    }
+
+    pub fn e_celeste(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Celeste))
+    }
+
+    /// Islands in the sky (Magic Island, Skyreach): no sea, the gaps are a
+    /// drop to the cloud floor.
+    pub fn e_aerea(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Magica | RelevoDesenhado::Celeste))
+    }
+
+    /// SKYREACH: the drawn plateaus and bridges, the town on the arrival
+    /// plateau, no port (`celeste`). One constructor for client and server,
+    /// like `da_colonia`: two loose `novo` calls would be two reliefs.
+    pub fn da_ilha_celeste() -> Self {
+        let mut g = Self::novo(
+            crate::celeste::SEMENTE,
+            crate::celeste::RAIO_BLOCOS,
+            crate::celeste::DEF.bioma,
+            ESCALA_ALTURA,
+        );
+        g.desenhado = Some(RelevoDesenhado::Celeste);
+        g.cidade = None;
+        g.porto = None;
+        g.oasis = None;
+        let c = crate::celeste::PLATOS[0].centro;
+        let (bx, bz) = ((c.x / BLOCO) as i32, (c.y / BLOCO) as i32);
+        let nivel = g.bloco_em(bx, bz);
+        g.cidade = Some(Cidade::nova(c.x, c.y, nivel));
+        g
     }
 
     pub fn da_colonia(plato: f32) -> Self {
@@ -2298,6 +2334,9 @@ impl Gerador {
         }
         if crate::arena::e_arena(def.zona) {
             return Self::da_arena();
+        }
+        if crate::celeste::e_celeste(def.zona) {
+            return Self::da_ilha_celeste();
         }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
@@ -2454,6 +2493,7 @@ impl Gerador {
             // "sempre ter um terreno aplanado nas construcoes igual no mundo
             // normal".
             Some(RelevoDesenhado::Colonia) => crate::colonia::bloco_da_coluna(bx, bz),
+            Some(RelevoDesenhado::Celeste) => crate::celeste::bloco_da_coluna(bx, bz),
             _ => self.bloco_cru(bx, bz),
         };
         let cru = self.planalto().map_or(cru, |p| p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru));
@@ -5169,6 +5209,9 @@ mod testes_da_ilha_magica {
 }
 
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
+    if crate::celeste::e_celeste(zona) {
+        return Some(&crate::celeste::DEF);
+    }
     // A ILHA MAGICA entra aqui, e nao no `ARQUIPELAGO`.
     //
     // Nao e' degrau de progressao (a historia, a faixa de nivel das ilhas e o

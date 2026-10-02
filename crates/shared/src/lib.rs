@@ -12,6 +12,7 @@ pub mod combat;
 pub mod aparencia;
 pub mod arena;
 pub mod colonia;
+pub mod celeste;
 pub mod combinar;
 pub mod components;
 pub mod constants;

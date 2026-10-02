@@ -715,6 +715,11 @@ async fn main() {
         evolucao_skills::previa().await;
         return;
     }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_CELESTE").is_ok() {
+        terreno::previa_celeste().await;
+        return;
+    }
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_FORJA").is_ok() {
         forja_ui::previa().await;
