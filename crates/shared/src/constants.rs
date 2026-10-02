@@ -138,7 +138,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// drops chests.
 /// 178 (02/10/2026): Magic Island tiers IV-VI (zones ilha_magica_4..6,
 /// Colossus kinds 47-49).
-pub const PROTOCOL_VERSION: u16 = 178;
+/// 179 (02/10/2026): an exclusive themed cavern per Magic Island tier
+/// (dungeons 30-35, boss kinds 50-55).
+pub const PROTOCOL_VERSION: u16 = 179;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

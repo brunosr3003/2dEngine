@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 23] = [
+pub const CHEFES: [Chefe; 29] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -861,13 +861,98 @@ pub const CHEFES: [Chefe; 23] = [
             h("Storm of Blades", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
         ],
     },
+    // ── The Magic Island's dungeon bosses (`SO_DE_DUNGEON`) ──
+    Chefe {
+        kind: 50,
+        nome: "Arcane Warden",
+        corpo: Corpo::Gente(31),
+        escala: 1.8,
+        zona: "ilha_magica",
+        nivel: 23,
+        habilidades: &[
+            h("Arcane Lance", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Rune Ring", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Glyph Burst", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("Unbound Sigil", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 51,
+        nome: "Keeper of Tomes",
+        corpo: Corpo::Gente(35),
+        escala: 1.8,
+        zona: "ilha_magica_2",
+        nivel: 33,
+        habilidades: &[
+            h("Ink Lash", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Turning Pages", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Falling Shelf", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("The Last Chapter", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 52,
+        nome: "The Mirrorbound",
+        corpo: Corpo::Gente(39),
+        escala: 1.8,
+        zona: "ilha_magica_3",
+        nivel: 48,
+        habilidades: &[
+            h("Glass Ray", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Shatter Ring", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Mirror Shard", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("Hall of Reflections", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 53,
+        nome: "Echo Sovereign",
+        corpo: Corpo::Gente(44),
+        escala: 1.9,
+        zona: "ilha_magica_4",
+        nivel: 63,
+        habilidades: &[
+            h("Resonant Spear", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Echo Ring", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Thunder Chime", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("Choir of Echoes", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 54,
+        nome: "Forgeheart Titan",
+        corpo: Corpo::Bicho(43),
+        escala: 2.4,
+        zona: "ilha_magica_5",
+        nivel: 73,
+        habilidades: &[
+            h("Anvil Swipe", Cone { raio: 6.5, abertura: 0.9 }, AFrente, 1.3, 2.6, 6.0, 6.5, 0, 1.2),
+            h("Molten Drop", Circulo { raio: 4.5 }, NoAlvo, 1.8, 3.0, 9.0, 18.0, 0, 1.2),
+            h("Furnace Charge", Linha { comprimento: 20.0, largura: 3.0 }, AFrente, 1.3, 2.4, 7.0, 20.0, 0, 1.2),
+            h("Starfall Hammer", Circulo { raio: 5.6 }, NoAlvo, 2.0, 3.0, 12.0, 14.0, 1, 1.4),
+        ],
+    },
+    Chefe {
+        kind: 55,
+        nome: "Eternal Sovereign",
+        corpo: Corpo::Gente(4),
+        escala: 2.0,
+        zona: "ilha_magica_6",
+        nivel: 80,
+        habilidades: &[
+            h("Lance of Ages", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Halo of Time", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Verdict of Eternity", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("The Endless Night", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
 ];
 
 // (Skyreach's field bosses are right below the dungeon ones.)
 
 /// Bosses that only appear at the end of a dungeon, never in the field:
 /// `da_zona` leaves them out, or their islands would grow more field bosses.
-pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27];
+pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55];
 
 /// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
 pub const PEGASUS: u16 = 27;

@@ -211,6 +211,14 @@ impl GameWorld {
         if s.downed {
             return Some("Get up first.".into());
         }
+        // A Magic Island tier's dungeon is ITS OWN: only entered from that
+        // tier. In the Arena (entering solo or from the queue) it is the
+        // island the player came from (`arena_volta`).
+        let de_onde = if shared::arena::e_arena(&self.zona) { s.dungeon.arena_volta.as_str() } else { self.zona.as_str() };
+        if shared::magica::e_magica(c.zona) && c.zona != de_onde {
+            let ilha = shared::magica::nivel_da_zona(c.zona).map_or("its Magic Island", |n| n.nome);
+            return Some(format!("{} is only entered from {ilha}.", c.nome));
+        }
         let (nivel, poder) = self.dg_nivel_e_poder(sid);
         let tem_selo = tem_item(&s.inventory, shared::item_id::SELO_TEMPESTADE);
         dg::cadeado(c, estagio, nivel, poder, s.dungeon.liberado(c.id), tem_selo).map(|x| x.texto())

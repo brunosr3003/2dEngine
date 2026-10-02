@@ -787,7 +787,12 @@ impl DungeonUi {
                 13,
                 estilo::SUAVE,
             );
-            let aberto = cadeado.is_none() && def.disponivel;
+            // A Magic Island tier's own dungeon opens only from that tier.
+            let so_de = exclusiva_de(def, c.zona);
+            if let Some(ilha) = so_de {
+                estilo::texto(dir.x, y + 170.0 * f, &format!("Only from {ilha}."), 14, estilo::SUAVE);
+            }
+            let aberto = cadeado.is_none() && def.disponivel && so_de.is_none();
             // Só a Gruta chega aqui (o Porão saiu no `if` acima, a Caçada
             // está trancada).
             if def.tipo == Tipo::Gruta
@@ -1790,6 +1795,14 @@ mod testes {
 /// que ele não aparecia — ficava atrás de um `return` do bloco "vá até a
 /// Arena". A prévia de recompensas, que já existia, roda com `na_arena =
 /// Some(true)` e por isso nunca mostrou o defeito.
+/// The Magic Island tier a dungeon is exclusive to, when the player is on
+/// another island (`None` = it opens from here).
+fn exclusiva_de(def: &dg::Conteudo, zona: &str) -> Option<&'static str> {
+    shared::magica::nivel_da_zona(def.zona)
+        .filter(|_| def.zona != zona && !shared::arena::e_arena(zona))
+        .map(|n| n.nome)
+}
+
 #[cfg(debug_assertions)]
 pub async fn previa_painel() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-dungeon-painel".into());
@@ -1809,7 +1822,7 @@ pub async fn previa_painel() {
     };
     // (nome, selecionado, zona do jogador): Porão na própria ilha, Porão de
     // outra ilha, e Gruta — pra provar que o caminho da Gruta não mudou.
-    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial"), ("celeste-porao", 6, "ilha_celeste"), ("celeste-gruta", 16, "ilha_celeste"), ("planalto-pinaculo", 18, "ilha_planalto")] {
+    for (nome, sel, zona) in [("porao-na-ilha", 1u16, "ilha_inicial"), ("porao-outra-ilha", 3, "ilha_inicial"), ("gruta", 10, "ilha_inicial"), ("celeste-porao", 6, "ilha_celeste"), ("celeste-gruta", 16, "ilha_celeste"), ("planalto-pinaculo", 18, "ilha_planalto"), ("magica4-aqui", 33, "ilha_magica_4"), ("magica4-fora", 33, "ilha_planalto")] {
         let contexto = Contexto { nomes: &nomes, palco: None, ouro: 1000, eu: "brunji", zona };
         let mut d = DungeonUi::default();
         d.aberto = true;

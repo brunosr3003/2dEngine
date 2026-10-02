@@ -1237,6 +1237,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Locked", "Bloqueadas"),
     ("How to level", "Como subir"),
     ("On {}", "Na ilha {}"),
+    ("Only from {}.", "Só pela {}."),
+    ("{} is only entered from {}.", "{} só se entra pela {}."),
     ("Only for {}", "Só para {}"),
     ("Complete: {}", "Conclua: {}"),
     ("Side quests", "Secundárias"),

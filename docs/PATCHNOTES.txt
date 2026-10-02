@@ -1,3 +1,18 @@
+02/10/2026 — Uma dungeon exclusiva em cada degrau da Ilha Mágica
+
+Cada degrau da Ilha Mágica ganhou a sua própria caverna, com tema e chefe próprios, e ela só se entra pela ilha daquele degrau:
+
+I — Gruta Arcana (nível 20), com o Guardião Arcano.
+II — Biblioteca Submersa (30), com o Guardião dos Tomos.
+III — Labirinto dos Espelhos (45), com O Preso no Espelho.
+IV — Pináculo dos Ecos (60), com o Soberano dos Ecos.
+V — Forja Celestial (70), com o Titã Coração-de-Forja.
+VI — Trono da Eternidade (77), com o Soberano Eterno.
+
+No painel de Dungeons elas aparecem para todos, mas fora da ilha certa o botão fica apagado com "Só pela Ilha Mágica …".
+
+Atualização obrigatória — o protocolo passa para o 179. Por enquanto só computador e Android.
+
 02/10/2026 — Ilha Mágica até o nível 80
 
 A Ilha Mágica ganhou três degraus novos: IV (entra no nível 60, monstros 60-63), V (entra no 70, monstros 70-73) e VI (entra no 77, monstros 77-80). Cada um tem o seu Colosso: o Ancião (66), o Titã (76) e o Eterno (80). O painel da ilha agora mostra os seis degraus.
