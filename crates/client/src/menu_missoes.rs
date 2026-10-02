@@ -112,6 +112,12 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     partes.join("  ·  ")
 }
 
+/// The island name when `d` lives on another one than `zona` (the card
+/// starts with "On <island> · ").
+fn em_outra_ilha(d: &QuestDef, zona: Option<&str>) -> Option<String> {
+    zona_da_missao(d.id).filter(|z| Some(*z) != zona).map(nome_da_zona)
+}
+
 fn nome_da_zona(z: &str) -> String {
     shared::terreno::def_da_zona(z).map_or_else(|| z.to_string(), |d| d.nome.to_string())
 }
@@ -146,10 +152,12 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
     if d.em_breve {
         motivos.push("Coming soon".to_string());
     }
-    match zona_da_missao(d.id) {
-        Some(z) if Some(z) != c.zona => motivos.push(format!("On {}", nome_da_zona(z))),
-        None => motivos.push("Unavailable in this version".to_string()),
-        _ => {}
+    // ANOTHER ISLAND IS NOT A LOCK. The server takes the quest from any
+    // island and the auto quest sails there; the card says where
+    // (`em_outra_ilha`). The owner saw every other island's quest under
+    // "Locked" and read it as unreachable.
+    if zona_da_missao(d.id).is_none() {
+        motivos.push("Unavailable in this version".to_string());
     }
     if d.min_level > c.nivel {
         motivos.push(format!("Requires level {}", d.min_level));
@@ -547,12 +555,13 @@ pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
         || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
 }
 
-const MAPAS: [Option<&str>; 5] = [
+const MAPAS: [Option<&str>; 6] = [
     None,
     Some("ilha_inicial"),
     Some("ilha_gelo"),
     Some("ilha_deserto"),
     Some("ilha_planalto"),
+    Some("ilha_celeste"),
 ];
 
 fn cabe_no_mapa(l: &Linha, r: &Resumo, mapa: Option<&str>) -> bool {
@@ -1020,10 +1029,12 @@ impl MenuMissoes {
             conteudo_w,
             (fim_lista - topo_lista).max(40.0),
         );
-        let da_aba: Vec<&(Linha, Resumo)> = todas
+        let mut da_aba: Vec<&(Linha, Resumo)> = todas
             .iter()
             .filter(|(l, r)| aba_de(r) == aba && cabe_no_tipo(l, self.tipo) && cabe_no_mapa(l, r, self.mapa))
             .collect();
+        // This island's first: the others are a voyage away.
+        da_aba.sort_by_key(|(_, r)| r.atual.is_some_and(|d| em_outra_ilha(d, c.zona).is_some()));
         // O QUE O "MARCAR TODAS" ALCANÇA: o que está na tela e dá pra marcar.
         //
         // Mesma condição da caixinha de cada cartão (`clicavel` + ter passo
@@ -1117,8 +1128,21 @@ impl MenuMissoes {
             };
             estilo::texto_ajustado(&passo, tx, card.y + 43.0 * f, largura, 13, estilo::SUAVE);
             if let Some(d) = r.atual {
+                let mut linha = frase(d, &r.estado);
+                if !matches!(r.estado, Estado::Concluida | Estado::Bloqueada(_)) {
+                    if let Some(ilha) = em_outra_ilha(d, c.zona) {
+                        // Each half translated on its own: the dictionary
+                        // matches whole phrases, and the joined one has none.
+                        // The island FIRST: the card cuts the end of the line.
+                        linha = format!(
+                            "{} · {}",
+                            shared::idioma::tr(&format!("On {ilha}")),
+                            shared::idioma::tr(&linha)
+                        );
+                    }
+                }
                 estilo::texto_ajustado(
-                    &frase(d, &r.estado),
+                    &linha,
                     tx,
                     card.y + 63.0 * f,
                     largura,
@@ -1335,6 +1359,46 @@ pub(crate) fn cadeado(c: Vec2, s: f32, cor: Color) {
 pub(crate) static NOMES_DE_TESTE: std::sync::LazyLock<HashMap<u16, String>> =
     std::sync::LazyLock::new(HashMap::new);
 
+/// Preview of the quest menu (`MMO_PREVIA_MENU_MISSOES=1`; PNGs in
+/// `MMO_PREVIA_SAIDA`): a level 30 player on the Glacier, so other islands'
+/// quests show as available "on <island>" and the map list ends in Skyreach.
+#[cfg(debug_assertions)]
+pub async fn previa_menu() {
+    use macroquad::prelude::*;
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-menu-missoes".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let rt = render_target(1920, 1080);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(1.6);
+    let nomes: HashMap<u16, String> = HashMap::new();
+    let entregues: HashMap<u16, i64> = HashMap::new();
+    let nada = |_: u16| 0u32;
+    let c = Contexto {
+        log: &[],
+        entregues: &entregues,
+        nivel: 30,
+        faccao: faction_id::PEACEMAIN,
+        zona: Some("ilha_gelo"),
+        agora_unix: 1_000,
+        tem: &nada,
+        nomes: &nomes,
+    };
+    for (nome, aba, mapa) in [("disponiveis", Aba::Disponiveis, None), ("travadas", Aba::Bloqueadas, None), ("ermo", Aba::Disponiveis, Some("ilha_deserto"))] {
+        let mut m = MenuMissoes::default();
+        m.abrir();
+        m.aba = Some(aba);
+        m.mapa = mapa;
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+            m.desenha(&c);
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1384,12 +1448,12 @@ mod tests {
             }
             outro => panic!("{outro:?}"),
         }
-        // Outra ilha: bloqueia dizendo onde.
+        // Another island is NOT a lock (the server takes it from anywhere and
+        // the auto quest sails there); the card says where.
         let fora = ctx(&[], &vazio, 1, Some("ilha_gelo"));
-        assert_eq!(
-            estado(d501, &fora),
-            Estado::Bloqueada(vec!["On Bosque".into()])
-        );
+        assert_eq!(estado(d501, &fora), Estado::Disponivel);
+        assert_eq!(em_outra_ilha(d501, Some("ilha_gelo")).as_deref(), Some("Bosque"));
+        assert_eq!(em_outra_ilha(d501, Some("ilha_inicial")), None);
     }
 
     #[test]

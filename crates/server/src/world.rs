@@ -12038,13 +12038,13 @@ impl GameWorld {
             }
 
             // ── Esquiva da pistola (`shared::combat::chance_de_esquiva`) ──
-            // A mob's melee swing or shot can miss a DEX pistol outright. Not
+            // A melee swing or shot can miss a DEX pistol outright. Not
             // a skill hit: boss telegraphs come as skills, and those are a
             // hand-dodge. The hit still goes out with damage 0, so the client
             // shows "Dodge" and the attacker still turns to its target.
-            if !attacker_is_player
-                && matches!(attack_info, AttackInfo::Melee { .. } | AttackInfo::Projectile { .. })
-            {
+            // PvP too (02/10/2026): a player's basic swing or shot rolls the
+            // same chance — the owner: "is DEX dodge given in PvP? it should".
+            if matches!(attack_info, AttackInfo::Melee { .. } | AttackInfo::Projectile { .. }) {
                 let agora_esquiva = self.sim_time_s;
                 let esquivou = self
                     .sessions
@@ -12862,54 +12862,14 @@ impl GameWorld {
         // Aplica mortes reais acumuladas (downed_hp zerou por player).
         let deaths: Vec<(Entity, EntityId)> = std::mem::take(&mut pending_real_death);
         for (entity, eid) in deaths {
-            // Captura pos + inventario + equip antes de despawn pra dropar.
-            let death_pos = self
-                .ecs
-                .get::<&Position>(entity)
-                .map(|p| p.0)
-                .unwrap_or(Vec2::ZERO);
-            let mut drops: Vec<(u16, u32)> = Vec::new();
-            for session in self.sessions.values_mut() {
-                if session.entity_id == eid {
-                    // Drop todos os slots de inventario com qty>0
-                    for slot in &session.inventory {
-                        if slot.qty > 0 {
-                            drops.push((slot.item_id, slot.qty));
-                        }
-                    }
-                    // Drop equipamento tambem
-                    for slot in shared::EquipSlot::TODOS {
-                        if let Some(iid) = session.equipment.get(slot) {
-                            drops.push((iid, 1));
-                        }
-                    }
-                    // Limpa inv + equip do player morto
-                    for slot in &mut session.inventory {
-                        *slot = shared::InventorySlot::default();
-                    }
-                    session.equipment = shared::Equipment::default();
-                    session.stats = effective_stats(
-                        &session.equipment,
-                        &session.allocated_points,
-                        &session.proficiencies,
-                        session.xp,
-                    );
-                    session.inventory_dirty = true;
-                    session.stats_dirty = true;
-                    break;
-                }
-            }
-
+            // A PvP DEATH COSTS NO ITEMS (02/10/2026). This used to be full
+            // loot: the bag and the equipment emptied and scattered on the
+            // ground as (item, qty) — refine and every per-item roll lost, and
+            // the killer could not pick them up either. The owner: "I died in
+            // PvP and lost all my items, that must not happen".
             self.free_entity_body(entity);
             let _ = self.ecs.despawn(entity);
             self.removed_this_tick.push(eid);
-
-            if !drops.is_empty() {
-                let seed = lcg(self.tick as u64 ^ eid.0 as u64 ^ 0xDEAD_DEAD);
-                // Player death: drops do inv+equip espalhados; kind=0 (sem
-                // override de loot_item_level — usa item_level base).
-                self.spawn_loot_drops(death_pos, &drops, seed, 3.0, 0);
-            }
 
             // Libera carry se o morto estava sendo carregado ou carregando
             let (was_carried_by, was_carrying) = self
@@ -12943,9 +12903,8 @@ impl GameWorld {
                     session.carrying = None;
                     session.carried_by = None;
                     tracing::info!(
-                        "{} MORREU (barra downed zerou) — {} itens dropados, respawn em {}s",
+                        "{} MORREU (barra downed zerou) — respawn em {}s",
                         session.name,
-                        drops.len(),
                         RESPAWN_DELAY
                     );
                     break;
@@ -14569,10 +14528,12 @@ impl GameWorld {
         qtd: u32,
         conta: &dyn Fn(&shared::quests::QuestDef) -> bool,
     ) {
+        let zona = self.zona.clone();
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let mudou = crate::quests::avancar_evento(&mut s.quests, kind, conta, qtd);
+        let aqui = |d: &shared::quests::QuestDef| conta(d) && crate::quests::conta_nesta_ilha(d, &zona);
+        let mudou = crate::quests::avancar_evento(&mut s.quests, kind, &aqui, qtd);
         if mudou.is_empty() {
             return;
         }
@@ -15883,10 +15844,11 @@ impl GameWorld {
     /// Interagiu com um NPC da vila de `papel`: as missoes "fale com" dele
     /// ficam prontas pra entregar.
     fn quest_on_talk(&mut self, sid: SessionId, papel: u16) {
+        let zona = self.zona.clone();
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let mudou = crate::quests::avancar_conversa(&mut s.quests, papel);
+        let mudou = crate::quests::avancar_conversa_na_ilha(&mut s.quests, papel, Some(&zona));
         if mudou.is_empty() {
             return;
         }
@@ -16911,9 +16873,9 @@ impl GameWorld {
         let level = shared::level_of_xp_with_mult(s.xp, xpmult);
         let fac = Self::faction_qid(s.faction);
         // A mesma regra da oferta: nivel, faccao, cadeia, estado e cooldown.
-        if !crate::quests::na_zona(def, &self.zona) {
-            return;
-        }
+        // The ISLAND is not one of them any more: a quest of another island
+        // is taken from the menu and the auto quest sails there; its world
+        // objective only counts on its island (`quests::conta_nesta_ilha`).
         if !crate::quests::pode_aceitar(def, level, fac, &s.quests, now) {
             return;
         }
@@ -17107,6 +17069,7 @@ impl GameWorld {
         mob_kind: Option<u16>,
         e_chefe: bool,
     ) {
+        let zona = self.zona.clone();
         let (handle, updates) = {
             let Some(s) = self
                 .sessions
@@ -17115,8 +17078,8 @@ impl GameWorld {
             else {
                 return;
             };
-            let updates = crate::quests::avancar_kill_com_chefe(
-                &mut s.quests, mob_kind, pvp_victim_faction, e_chefe,
+            let updates = crate::quests::avancar_kill_na_ilha(
+                &mut s.quests, mob_kind, pvp_victim_faction, e_chefe, Some(&zona),
             );
             if updates.is_empty() {
                 return;

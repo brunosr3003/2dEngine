@@ -1,3 +1,13 @@
+02/10/2026 — Morte no PvP não tira mais itens, e missões de qualquer ilha
+
+Morrer no PvP não faz mais perder a bolsa nem o equipamento. Antes tudo caía no chão (e sem o refino), e nem quem venceu conseguia pegar.
+
+A esquiva da pistola (Destreza) agora também vale contra o ataque básico de outros jogadores no PvP, como já valia contra monstros.
+
+Missões de outras ilhas não aparecem mais como "Travadas": elas ficam em "Disponíveis", com "Na ilha …" no começo da linha, e podem ser pegas de qualquer lugar. A auto missão embarca até a ilha certa. A caça, a coleta e as conversas delas só contam na ilha da missão. As missões da ilha onde você está aparecem primeiro, e Skyreach entrou na lista de mapas.
+
+A auto missão também acha os chefes de campo das missões (como o Owlbear Primevo) e leva até uma pedra quando nenhum monstro da ilha solta o item pedido.
+
 02/10/2026 — O Planalto do 50 ao 60
 
 A metade de cima do Planalto da Tormenta ganhou conteúdo próprio.

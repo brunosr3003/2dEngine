@@ -751,6 +751,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_MENU_MISSOES").is_ok() {
+        menu_missoes::previa_menu().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_DUNGEON_PAINEL").is_ok() {
         dungeon_ui::previa_painel().await;
         return;

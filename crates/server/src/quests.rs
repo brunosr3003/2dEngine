@@ -194,6 +194,18 @@ pub fn na_zona(d: &QuestDef, zona: &str) -> bool {
     quests::zona_da_missao(d.id).is_none_or(|z| z == zona)
 }
 
+/// Does an act HERE count for `d`? Side quests can be taken from any island
+/// (the menu, "like MIR4"), but their objective in the world — hunting,
+/// gathering, talking, exploring — is that island's: a Glacier archer quest
+/// does not fill up with Bosque archers. Items (COLLECT/DELIVER), craft,
+/// forge and dungeon count anywhere, and the story keeps its own flow.
+pub fn conta_nesta_ilha(d: &QuestDef, zona: &str) -> bool {
+    use quests::objective_kind as o;
+    d.source == quests::quest_source::HISTORIA
+        || !matches!(d.obj_kind, o::KILL | o::GATHER | o::TALK | o::EXPLORE)
+        || na_zona(d, zona)
+}
+
 /// Mudanças de uma missão: (quest_id, progresso, status).
 pub type Mudancas = Vec<(u16, u32, u8)>;
 
@@ -413,6 +425,17 @@ pub fn avancar_kill_com_chefe(
     pvp_victim_faction: Option<u8>,
     e_chefe: bool,
 ) -> Mudancas {
+    avancar_kill_na_ilha(active, mob_kind, pvp_victim_faction, e_chefe, None)
+}
+
+/// `avancar_kill_com_chefe` on island `zona` (`conta_nesta_ilha`).
+pub fn avancar_kill_na_ilha(
+    active: &mut [CharQuest],
+    mob_kind: Option<u16>,
+    pvp_victim_faction: Option<u8>,
+    e_chefe: bool,
+    zona: Option<&str>,
+) -> Mudancas {
     let mut mudou = Vec::new();
     for c in active.iter_mut() {
         if c.status != quests::quest_status::ACTIVE {
@@ -421,6 +444,9 @@ pub fn avancar_kill_com_chefe(
         let Some(def) = quests::quest_by_id(c.quest_id) else {
             continue;
         };
+        if zona.is_some_and(|z| !conta_nesta_ilha(def, z)) {
+            continue;
+        }
         let hit = if def.obj_kind == quests::objective_kind::KILL {
             pvp_victim_faction.is_none()
                 && (def.obj_target == 0
@@ -458,6 +484,11 @@ pub fn avancar_kill_com_chefe(
 
 /// Conversou com o NPC da vila de `papel`: as TALK dele ficam prontas.
 pub fn avancar_conversa(active: &mut [CharQuest], papel: u16) -> Mudancas {
+    avancar_conversa_na_ilha(active, papel, None)
+}
+
+/// `avancar_conversa` on island `zona` (`conta_nesta_ilha`).
+pub fn avancar_conversa_na_ilha(active: &mut [CharQuest], papel: u16, zona: Option<&str>) -> Mudancas {
     let mut mudou = Vec::new();
     for c in active.iter_mut() {
         if c.status != quests::quest_status::ACTIVE {
@@ -466,6 +497,9 @@ pub fn avancar_conversa(active: &mut [CharQuest], papel: u16) -> Mudancas {
         let Some(def) = quests::quest_by_id(c.quest_id) else {
             continue;
         };
+        if zona.is_some_and(|z| !conta_nesta_ilha(def, z)) {
+            continue;
+        }
         if def.obj_kind != quests::objective_kind::TALK || def.obj_target != papel {
             continue;
         }
@@ -798,6 +832,24 @@ mod testes {
     /// Personagem salvo antes dos tutoriais: marcador no indice velho (11) e
     /// o passo 711 em andamento. O marcador se realinha ao 711 e nada de
     /// passo fantasma entra no diario.
+    /// A side quest taken from another island: its hunt only counts on its
+    /// island; items, craft and dungeons count anywhere.
+    #[test]
+    fn caca_de_outra_ilha_so_conta_na_ilha_dela() {
+        // 810+: the Glacier's chain; 503 (COLLECT copper) is the Bosque's.
+        let caca = quests::QUESTS
+            .iter()
+            .find(|d| quests::zona_da_missao(d.id) == Some("ilha_gelo") && d.obj_kind == quests::objective_kind::KILL && d.obj_target != 0 && d.obj_target != quests::ALVO_QUALQUER_CHEFE)
+            .expect("a Glacier hunt");
+        assert!(conta_nesta_ilha(caca, "ilha_gelo"));
+        assert!(!conta_nesta_ilha(caca, "ilha_inicial"));
+        let mut a = vec![cq(caca.id, ACTIVE, 0)];
+        let kind = caca.obj_target - 1;
+        assert!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_inicial")).is_empty());
+        assert_eq!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_gelo")).len(), 1);
+        assert!(conta_nesta_ilha(def(503), "ilha_gelo"), "items count anywhere");
+    }
+
     #[test]
     fn marcador_velho_se_realinha_ao_passo_em_andamento() {
         let mut a = vec![
