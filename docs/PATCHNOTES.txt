@@ -1,3 +1,9 @@
+02/10/2026 — Auto missão explica por que parou
+
+Quando a auto missão não acha o caminho, ela agora diz o motivo em vez de só "não sei onde fica o objetivo": a missão é de outra ilha (e com quem embarcar), já está pronta e deve ser entregue a alguém de outra ilha, o bicho ou o item não existe nesta ilha (e em quais ilhas existe), ou os recursos estão esgotados no momento. As mensagens da auto missão também passaram a aparecer em inglês para quem joga em inglês.
+
+Não é atualização obrigatória — o protocolo continua o 170.
+
 02/10/2026 — Amuleto de Proteção, skins de anel e o refino arriscado
 
 Amuleto de Proteção (Ward Charm): novo na Loja, aba Materiais, por 150 TP. Com ele na bolsa, um refino de +6 a +9 que falharia e destruiria a peça gasta o amuleto no lugar — a peça fica no nível em que estava. Ele só é gasto quando salva a peça; se o refino der certo, ele continua na bolsa. Do +10 em diante a aposta continua valendo.
