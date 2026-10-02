@@ -194,6 +194,21 @@ impl NivelMagico {
     }
 }
 
+/// Whose creatures roam this tier: those of the island of its level — the
+/// Glacier's at I, the Waste's at II, the Plateau's at III, Skyreach's winged
+/// ones from IV up. It was the Bosque's wolves and crabs on every tier, at
+/// level 80 too (the owner, 02/10/2026: "put the mobs of that current level
+/// in that island, just to have some variety").
+pub fn bioma_dos_mobs(z: &str) -> Option<crate::terreno::Bioma> {
+    use crate::terreno::Bioma::*;
+    nivel_da_zona(z).map(|n| match n.mob.0 {
+        0..=27 => Gelo,
+        28..=39 => Deserto,
+        40..=59 => Montanha,
+        _ => Celeste,
+    })
+}
+
 /// O degrau desta zona.
 pub fn nivel_da_zona(z: &str) -> Option<&'static NivelMagico> {
     NIVEIS.iter().find(|n| n.zona == z)
@@ -957,6 +972,14 @@ pub fn indice_do_bonus_em(p: Vec2) -> u8 {
 
 #[cfg(test)]
 mod testes {
+
+    #[test]
+    fn cada_degrau_tem_os_bichos_do_seu_nivel() {
+        use crate::terreno::Bioma::*;
+        let b: Vec<_> = NIVEIS.iter().map(|n| bioma_dos_mobs(n.zona).unwrap()).collect();
+        assert_eq!(b, vec![Gelo, Deserto, Montanha, Celeste, Celeste, Celeste]);
+        assert_eq!(bioma_dos_mobs("ilha_inicial"), None);
+    }
     use super::*;
 
     #[test]

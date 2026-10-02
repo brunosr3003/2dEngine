@@ -11998,6 +11998,38 @@ impl GameWorld {
             // (escudo, peso) vem por cima (`shared::ladder`).
             let mut dmg = dano_mitigado(dmg, target_defense, target_dmg_reduction_pct);
 
+            // THE LEVEL GAP (`shared::combat::degraus_acima`): a mob well above
+            // the player takes less from him and deals him more.
+            {
+                let xpm = crate::economy::xp_multiplier();
+                let nivel_de = |id: EntityId, w: &GameWorld| {
+                    w.sessions
+                        .values()
+                        .find(|s| s.entity_id == id)
+                        .map(|s| shared::level_of_xp_with_mult(s.xp, xpm))
+                };
+                let mult = if attacker_is_player {
+                    match (nivel_de(attacker_id, self), self.ecs.get::<&EnemyTag>(entity).ok().map(|t| t.level)) {
+                        (Some(eu), Some(mob)) => shared::combat::mult_dano_contra_mob(eu, mob),
+                        _ => 1.0,
+                    }
+                } else {
+                    let mob = self
+                        .ecs
+                        .query::<(&NetId, &EnemyTag)>()
+                        .iter()
+                        .find(|(_, (n, _))| n.0 == attacker_id)
+                        .map(|(_, (_, t))| t.level);
+                    match (nivel_de(target_id, self), mob) {
+                        (Some(eu), Some(mob)) => shared::combat::mult_dano_do_mob(eu, mob),
+                        _ => 1.0,
+                    }
+                };
+                if mult != 1.0 {
+                    dmg = ((dmg as f32) * mult).round().max(1.0) as i32;
+                }
+            }
+
             // Boss bloqueando (AI PvP): -75% de dano + flash de parry no
             // snapshot (feedback visual de "blocked!"). Também alimenta o
             // contador de hits recentes que dispara o block reativo.
@@ -14967,6 +14999,11 @@ impl GameWorld {
     /// Floresta: e' o bestiario de partida, e o unico que o simulador de
     /// balanceamento cobre.
     pub(crate) fn bioma_da_zona(&self) -> shared::terreno::Bioma {
+        // The Magic Island's tiers spawn the creatures of their level
+        // (`magica::bioma_dos_mobs`), not the Bosque's of its relief.
+        if let Some(b) = shared::magica::bioma_dos_mobs(&self.zona) {
+            return b;
+        }
         shared::terreno::def_da_zona(&self.zona)
             .map(|d| d.bioma)
             .unwrap_or(shared::terreno::Bioma::Floresta)

@@ -41,6 +41,35 @@ pub const ESQUIVA_MAXIMA: f32 = 0.25;
 ///
 /// NEVER the telegraphed boss attacks: those arrive as skill hits and are
 /// dodged by moving, by hand.
+// ───────────────────────────── the level gap ─────────────────────────────
+
+/// A mob ABOVE you is dangerous. The ladder grows player and mob almost in
+/// step, so ten levels changed almost nothing: a level 51 pistol cleared
+/// level 70 mobs at 82% health (02/10/2026, the owner: "he is able to kill
+/// and level on level 60 mobs, should it happen?"). Past `GAP_LIVRE` levels
+/// above you, each level costs `DANO_DADO_POR_NIVEL` of the damage you deal
+/// and adds `DANO_RECEBIDO_POR_NIVEL` to what it deals you, up to `GAP_MAX`.
+/// A mob at or below your level is unchanged.
+pub const GAP_LIVRE: u32 = 3;
+pub const GAP_MAX: u32 = 10;
+pub const DANO_DADO_POR_NIVEL: f32 = 0.04;
+pub const DANO_RECEBIDO_POR_NIVEL: f32 = 0.06;
+
+/// How many penalised levels the mob is above the player.
+pub fn degraus_acima(nivel_jogador: u32, nivel_mob: u32) -> u32 {
+    nivel_mob.saturating_sub(nivel_jogador).saturating_sub(GAP_LIVRE).min(GAP_MAX)
+}
+
+/// Multiplier on the player's damage against a mob of `nivel_mob`.
+pub fn mult_dano_contra_mob(nivel_jogador: u32, nivel_mob: u32) -> f32 {
+    1.0 - DANO_DADO_POR_NIVEL * degraus_acima(nivel_jogador, nivel_mob) as f32
+}
+
+/// Multiplier on a mob of `nivel_mob`'s damage against the player.
+pub fn mult_dano_do_mob(nivel_jogador: u32, nivel_mob: u32) -> f32 {
+    1.0 + DANO_RECEBIDO_POR_NIVEL * degraus_acima(nivel_jogador, nivel_mob) as f32
+}
+
 pub fn chance_de_esquiva(weapon_id: u16, des_alocada: u32) -> f32 {
     if weapon_id != crate::constants::item_id::PISTOLAS {
         return 0.0;
@@ -98,6 +127,16 @@ pub fn try_parry_active(stats: &PlayerStats, target_stamina: f32) -> Option<(f32
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn mob_acima_do_nivel_doi_mais_e_apanha_menos() {
+        assert_eq!(mult_dano_contra_mob(51, 51), 1.0);
+        assert_eq!(mult_dano_do_mob(51, 54), 1.0, "three levels above are free");
+        assert!((mult_dano_contra_mob(51, 60) - 0.76).abs() < 1e-5);
+        assert!((mult_dano_do_mob(51, 60) - 1.36).abs() < 1e-5);
+        assert!((mult_dano_contra_mob(40, 80) - 0.60).abs() < 1e-5, "capped at ten levels");
+        assert_eq!(mult_dano_do_mob(60, 40), 1.0, "a lower mob is unchanged");
+    }
     use super::*;
     use crate::components::base_player_stats;
 

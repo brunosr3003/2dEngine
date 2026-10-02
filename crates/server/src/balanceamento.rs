@@ -301,6 +301,15 @@ pub(crate) fn simular(conjunto: Conjunto, nivel: u32, pocao: bool) -> Resultado 
 
 /// O jogador com AUTO COMBATE numa zona ate' a `parada`, o limite de tempo ou
 /// cair. `hp` entra e sai (a vida passa de uma luta pra outra).
+/// The level gap, as the server applies it (`shared::combat::degraus_acima`).
+fn gap_dado(dmg: i32, eu: u32, mob: u32) -> i32 {
+    ((dmg as f32) * shared::combat::mult_dano_contra_mob(eu, mob)).round().max(1.0) as i32
+}
+
+fn gap_recebido(dmg: i32, eu: u32, mob: u32) -> i32 {
+    ((dmg as f32) * shared::combat::mult_dano_do_mob(eu, mob)).round().max(1.0) as i32
+}
+
 fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
     let Luta {
         conjunto,
@@ -511,7 +520,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 }
                 bruto = ((bruto as f32) * mult).round().max(1.0) as i32;
             }
-            let dmg = dano_mitigado_por_subtracao(bruto, m.defesa);
+            let dmg = gap_dado(dano_mitigado_por_subtracao(bruto, m.defesa), nivel, m.nivel);
             // ...and it only steals life inside the THIRST window Danca opens.
             if conjunto == Conjunto::Katana && thirst_until > t {
                 *hp = (*hp
@@ -568,7 +577,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                     }
                     if d <= raio {
                         let bruto = s.dano_efetivo(stats.attack_damage, cd_base);
-                        o.hp -= dano_mitigado_por_subtracao(bruto, o.defesa);
+                        o.hp -= gap_dado(dano_mitigado_por_subtracao(bruto, o.defesa), nivel, o.nivel);
                         // Life Drain heals the caster, like `efeito_habilidade`.
                         if s.id == 10 {
                             *hp = (*hp
@@ -705,7 +714,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 esquivas -= 1.0;
                 continue;
             }
-            let mut dmg = dano_com_reducao(m.dano, stats.defense, stats.damage_reduction_pct);
+            let mut dmg = gap_recebido(dano_com_reducao(m.dano, stats.defense, stats.damage_reduction_pct), nivel, m.nivel);
             if muralha_ate > t {
                 dmg = ((dmg as f32) * 0.5).round().max(1.0) as i32;
             }
@@ -2571,6 +2580,11 @@ mod metas_da_escada {
     }
 
     pub(super) fn medir(quem: Quem, c: Conjunto, nivel: u32, lugar: Lugar, pocao: bool) -> Medida {
+        medir_contra(quem, c, nivel, nivel, lugar, pocao)
+    }
+
+    /// `medir` with the mobs at `nivel_mob` instead of the player's level.
+    pub(super) fn medir_contra(quem: Quem, c: Conjunto, nivel: u32, nivel_mob: u32, lugar: Lugar, pocao: bool) -> Medida {
         let stats = build(quem, c, nivel);
         let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
             .into_iter()
@@ -2582,7 +2596,7 @@ mod metas_da_escada {
             .into_iter()
             .enumerate()
             .map(|(i, v)| {
-                let lv = nivel + (i as u32 % 3);
+                let lv = nivel_mob + (i as u32 % 3);
                 let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
                 let mut m = Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), v, lv);
                 if lugar == Lugar::Ilhota && i % 5 == 0 {
@@ -2616,7 +2630,7 @@ mod metas_da_escada {
                 stats: &stats,
                 skills: &skills,
                 mobs,
-                sorteio: Some((nivel, nivel + 2)),
+                sorteio: Some((nivel_mob, nivel_mob + 2)),
                 centro: entrada,
                 inicio: entrada,
                 chegada: entrada,
@@ -2784,6 +2798,20 @@ mod metas_da_escada {
             }
         }
         assert!(falhas.is_empty(), "\n{}", falhas.join("\n"));
+    }
+
+    /// THE LEVEL GAP (`shared::combat::degraus_acima`): nine levels below the
+    /// mobs is no longer a free ride. A level 51 pistol on level 60 mobs
+    /// kills them clearly slower and takes clearly more than on its own
+    /// level — it used to clear them at 86% health in the same time.
+    #[test]
+    fn mob_muito_acima_do_nivel_custa_caro() {
+        crate::economy::init_vazia_para_testes();
+        let c = Conjunto::Pistolas;
+        let igual = medir_contra(Quem::NaFaixa, c, 51, 51, Lugar::Zona, false);
+        let acima = medir_contra(Quem::NaFaixa, c, 51, 60, Lugar::Zona, false);
+        assert!(acima.por_abate >= igual.por_abate * 1.5, "51 vs 60 kills in {:.2}s against {:.2}s", acima.por_abate, igual.por_abate);
+        assert!(acima.dano_por_mob >= igual.dano_por_mob * 2.0, "51 vs 60 takes {:.0} a mob against {:.0}", acima.dano_por_mob, igual.dano_por_mob);
     }
 
     /// As metas por lugar e perfil. Sem pocao, salvo onde diz.
