@@ -66,9 +66,47 @@ def arco():
     for z in range(11, 30): a[(8, 13, z)] = CORDA                   # corda
     return a
 
-def pecas(cabeca):
+# ── Skyreach: wings and halo (the owner: "even the mobs need some wings") ──
+ASA, ASA_SOMBRA, ASA_OURO, HALO = 40, 41, 42, 43
+CORES_CELESTES = {ASA: (250, 251, 255), ASA_SOMBRA: (214, 222, 238), ASA_OURO: (236, 196, 92),
+                  HALO: (255, 226, 120)}
+
+
+def asas():
+    """Folded wings on the back, in the torso piece so they move with the
+    body: from the shoulder blades (behind the torso, y 6-7) out to each side
+    and up past the head, the lower edge stepping down in feathers."""
+    a = {}
+    for lado in (-1, 1):
+        raiz = 15.5 + lado * 2.5
+        for k in range(0, 13):
+            x = int(raiz + lado * k)
+            if not (0 <= x <= 31):
+                continue
+            # The upper edge rises to a peak two thirds out, then falls to the
+            # tip; the lower edge comes up in steps — the primaries.
+            topo = 32 + min(k, 8) * 1.5 - max(0, k - 8) * 1.2
+            base = 26 - k * 0.5 if k < 9 else 22 + (k - 9) * 2.5
+            for z in range(int(base), int(topo) + 1):
+                c = ASA_OURO if z == int(topo) else (ASA_SOMBRA if (z - int(base)) % 4 == 0 else ASA)
+                a[(x, 7, z)] = c
+                if k < 7:
+                    a[(x, 6, z)] = ASA_SOMBRA
+    return a
+
+
+def halo():
+    """A gold ring floating above the head (head top is z 41)."""
+    return {(x, y, 45): HALO for x in range(12, 20) for y in range(8, 16)
+            if x in (12, 19) or y in (8, 15)}
+
+
+def pecas(cabeca, aladas=False):
+    torso = P.torso()
+    if aladas:
+        torso.update(asas())
     return [
-        ("cabeca", cabeca), ("torso", P.torso()),
+        ("cabeca", cabeca), ("torso", torso),
         ("braco_d", P.braco(21, 24)), ("antebraco_d", P.antebraco(21, 24)),
         ("braco_e", P.braco(7, 10)),  ("antebraco_e", P.antebraco(7, 10)),
         ("coxa_d", P.coxa(16, 19)),   ("canela_d", P.canela(16, 19)),
@@ -136,13 +174,28 @@ MOBS = {
                CARVAO=(24, 24, 50), BOTA=(30, 30, 46), FAIXA=(150, 220, 255),
                CAB0=(222, 222, 226), CAB1=(200, 200, 206), CAB2=(170, 170, 178), CAB3=(140, 140, 150)),
         lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, dict),
+    # Skyreach: white and gold robes, a sky-blue sash, a halo; the wings come
+    # from `ALADOS` below.
+    "seraph_archer": (
+        {**paleta(BRANCO=(242, 240, 232), CINZA=(212, 206, 194), PRETO=(226, 220, 204),
+                  CARVAO=(196, 188, 170), BOTA=(214, 172, 70), FAIXA=(120, 180, 240)), **CORES_CELESTES},
+        lambda: {**cabeca_sem_tapa(), **halo()}, arco),
+    "seraph_mage": (
+        {**paleta(BRANCO=(236, 240, 250), CINZA=(150, 190, 236), PRETO=(222, 226, 236),
+                  CARVAO=(190, 196, 210), BOTA=(214, 172, 70), FAIXA=(255, 226, 120),
+                  CAB0=(244, 236, 210), CAB1=(226, 214, 180), CAB2=(200, 186, 150), CAB3=(170, 156, 120)),
+         **CORES_CELESTES},
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA), **halo()}, dict),
 }
+
+# Which mobs carry wings on the back.
+ALADOS = {"seraph_archer", "seraph_mage"}
 
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     rig = os.path.join(raiz, "assets", "vox", "humanoides"); os.makedirs(rig, exist_ok=True)
     for nome, (pal, cab, arma) in MOBS.items():
-        ps = pecas(cab())
+        ps = pecas(cab(), nome in ALADOS)
         open(os.path.join(rig, f"{nome}.vox"), "wb").write(M.arquivo_cena(ps, pal, camada=nome))
         plano = ps + [("arma", arma())]
         open(os.path.join(raiz, "assets", "vox", f"{nome}.vox"), "wb").write(M.arquivo_plano(plano, pal))

@@ -717,7 +717,7 @@ async fn main() {
     }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_CELESTE").is_ok() {
-        terreno::previa_celeste(&vox).await;
+        terreno::previa_celeste(&mut vox).await;
         return;
     }
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]

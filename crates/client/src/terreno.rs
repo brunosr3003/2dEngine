@@ -1489,7 +1489,7 @@ pub async fn previa_dos_graficos() {
 /// two wide views across the bridges and the minimap, in
 /// /tmp/tempest-celeste (or MMO_PREVIA_SAIDA).
 #[cfg(debug_assertions)]
-pub async fn previa_celeste(vox: &crate::vox::VoxCache) {
+pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-celeste".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
@@ -1551,21 +1551,27 @@ pub async fn previa_celeste(vox: &crate::vox::VoxCache) {
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
     // The winged creatures, side by side, two angles each.
-    let bichos = ["bichos/seraph_wolf", "bichos/seraph_lynx", "bichos/seraph_bear", "bichos/seraph_owlbear", "bichos/pegasus_stag"];
-    for _ in 0..3 {
+    let bichos = ["bichos/seraph_wolf", "bichos/seraph_lynx", "bichos/seraph_bear", "bichos/seraph_owlbear",
+        "bichos/pegasus_stag", "humanoides/seraph_archer", "humanoides/seraph_mage"];
+    for _ in 0..8 {
         crate::render3d::camera_padrao();
         clear_background(Color::from_rgba(150, 186, 214, 255));
         let w = 1280.0 / bichos.len() as f32;
         for (k, nome) in bichos.iter().enumerate() {
             for (j, yaw) in [0.7f32, 2.6].into_iter().enumerate() {
                 let r = Rect::new(k as f32 * w, 40.0 + j as f32 * 380.0, w, 360.0);
-                crate::render3d::vitrine_bicho(vox, nome, r, yaw, &solido);
+                if nome.starts_with("humanoides/") {
+                    crate::render3d::vitrine_rig(vox, nome, r, yaw * 0.6, &solido);
+                } else {
+                    crate::render3d::vitrine_bicho(vox, nome, r, yaw, &solido);
+                }
             }
             crate::render3d::camera_padrao();
             draw_text(nome.trim_start_matches("bichos/"), k as f32 * w + 10.0, 28.0, 24.0, WHITE);
         }
         unsafe { get_internal_gl().flush() };
         next_frame().await;
+        vox.atende_um_pendente(crate::render3d::VOXEL).await;
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/bichos.png"));
     crate::render3d::define_alvo(None);
