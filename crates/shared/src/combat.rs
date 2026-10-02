@@ -50,10 +50,14 @@ pub const ESQUIVA_MAXIMA: f32 = 0.25;
 /// above you, each level costs `DANO_DADO_POR_NIVEL` of the damage you deal
 /// and adds `DANO_RECEBIDO_POR_NIVEL` to what it deals you, up to `GAP_MAX`.
 /// A mob at or below your level is unchanged.
-pub const GAP_LIVRE: u32 = 3;
+///
+/// Tightened the same day (3 free, 4%/6% → 1 free, 7%/12%): the owner said a
+/// level 51 player "stays tanking level 60 mobs easily" with the first cut,
+/// and asked for one free level only.
+pub const GAP_LIVRE: u32 = 1;
 pub const GAP_MAX: u32 = 10;
-pub const DANO_DADO_POR_NIVEL: f32 = 0.04;
-pub const DANO_RECEBIDO_POR_NIVEL: f32 = 0.06;
+pub const DANO_DADO_POR_NIVEL: f32 = 0.07;
+pub const DANO_RECEBIDO_POR_NIVEL: f32 = 0.12;
 
 /// How many penalised levels the mob is above the player.
 pub fn degraus_acima(nivel_jogador: u32, nivel_mob: u32) -> u32 {
@@ -131,10 +135,10 @@ mod tests {
     #[test]
     fn mob_acima_do_nivel_doi_mais_e_apanha_menos() {
         assert_eq!(mult_dano_contra_mob(51, 51), 1.0);
-        assert_eq!(mult_dano_do_mob(51, 54), 1.0, "three levels above are free");
-        assert!((mult_dano_contra_mob(51, 60) - 0.76).abs() < 1e-5);
-        assert!((mult_dano_do_mob(51, 60) - 1.36).abs() < 1e-5);
-        assert!((mult_dano_contra_mob(40, 80) - 0.60).abs() < 1e-5, "capped at ten levels");
+        assert_eq!(mult_dano_do_mob(51, 52), 1.0, "one level above is free");
+        assert!((mult_dano_contra_mob(51, 60) - 0.44).abs() < 1e-5);
+        assert!((mult_dano_do_mob(51, 60) - 1.96).abs() < 1e-5);
+        assert!((mult_dano_contra_mob(40, 80) - 0.30).abs() < 1e-5, "capped at ten levels");
         assert_eq!(mult_dano_do_mob(60, 40), 1.0, "a lower mob is unchanged");
     }
     use super::*;

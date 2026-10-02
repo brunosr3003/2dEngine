@@ -1244,6 +1244,15 @@ pub const HP_REGEN_PER_VIT: f32 = 0.2;
 /// Multiplicador de dano em hit critico.
 pub const CRIT_DAMAGE_MULT: f32 = 1.5;
 
+/// CEILINGS on what stacking one stat buys (02/10/2026). DEX had none: a
+/// level 51 pistol with all 150 points in DEX ran 80% crit and +225% attack
+/// speed — over twice the damage the ladder expects (it assumes a third of
+/// the points in the main stat) — and tanked level 60 mobs. Past the
+/// ceilings DEX still gives dodge and its flat stats.
+pub const CRIT_CHANCE_MAX: f32 = 0.40;
+/// The attack speed BONUS ceiling (`attack_speed_mult` at most 1 + this).
+pub const ATTACK_SPEED_BONUS_MAX: f32 = 1.0;
+
 /// Defesa adicional por ponto em RES (somada ao base 0).
 pub const DEFENSE_PER_RES: i32 = 1;
 

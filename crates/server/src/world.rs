@@ -20691,6 +20691,8 @@ pub(crate) fn effective_stats(
     s.defense_stamina_cost_mult = s
         .defense_stamina_cost_mult
         .max(shared::STAMINA_COST_MULT_MIN);
+    s.crit_chance = s.crit_chance.min(shared::CRIT_CHANCE_MAX);
+    s.attack_speed_mult = s.attack_speed_mult.min(1.0 + shared::ATTACK_SPEED_BONUS_MAX);
     s
 }
 
