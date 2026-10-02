@@ -196,8 +196,8 @@ def carrega(prefixo):
     return pecas, paleta
 
 
-def monta(saida, prefixo, orcamento, pelagem=None):
-    pecas, paleta = carrega(prefixo)
+def monta(saida, prefixo, orcamento, pelagem=None, pecas_paleta=None):
+    pecas, paleta = pecas_paleta or carrega(prefixo)
     fator = 1
     while True:
         reduzidas = [(n, reduzir(m, fator)) for n, m in pecas]
@@ -276,10 +276,111 @@ def pelagem_da_skin(paleta, papeis, pele):
     return troca
 
 
+# ── WINGED (Skyreach): the hippogriff's wings on another species ──
+#
+# The owner wants Skyreach's mobs angelic, "even the mobs need some wings".
+# The rig already flaps any piece named `asa_d`/`asa_e` (`client::bicho`,
+# `Junta::Asa`), so a winged creature is the species' own pieces plus the
+# hippogriff's two wings, seated on its back at the same RELATIVE place
+# (outside the body's side, from its top up) and scaled by body length.
+#
+# The wings use the hippogriff's palette indices, which mean other colours in
+# the target's palette, so they are recoloured into four free slots: white
+# and pale feathers, gold at the darkest (the hippogriff's orange) indices.
+
+class _Modelo:
+    def __init__(self, voxels):
+        self.voxels = voxels
+
+
+def _caixa(voxels):
+    ks = list(voxels)
+    return [min(k[i] for k in ks) for i in range(3)], [max(k[i] for k in ks) for i in range(3)]
+
+
+ASA_CORES = [(206, 214, 230), (230, 236, 246), (250, 251, 255), (236, 196, 92)]
+
+
+def alado(prefixo):
+    """The species' pieces and palette, with white-and-gold wings added."""
+    pecas, paleta = carrega(prefixo)
+    hip, hpal = carrega("hippogriff")
+    hip = dict(hip)
+    corpo = dict(pecas)["tronco"].voxels
+    (tlo, thi), (hlo, hhi) = _caixa(corpo), _caixa(hip["tronco"].voxels)
+    s = (thi[1] - tlo[1]) / (hhi[1] - hlo[1])
+    usados = {c for _, m in pecas for c in m.voxels.values()}
+    livres = [i for i in range(250, 100, -1) if i not in usados][:4]
+    # Hippogriff wing indices by how light they are; the orange ones (5, 6,
+    # 10 in its palette) become gold.
+    lum = lambda i: sum(c * w for c, w in zip(hpal[i][:3], (0.3, 0.59, 0.11)))
+    def cor(i):
+        r, g, b = hpal[i][:3]
+        if r > 200 and g < 200 and b < 120:
+            return livres[3]
+        l = lum(i)
+        return livres[0] if l < 110 else livres[1] if l < 200 else livres[2]
+    for lado in ("asa_d", "asa_e"):
+        asa = hip[lado].voxels
+        alo, ahi = _caixa(asa)
+        direita = lado == "asa_d"
+        # The target box of the scaled wing, then each target voxel maps back
+        # to the nearest source voxel (no holes when scaling up).
+        # The wing root sits at the hippogriff's own spacing from the centre
+        # line, scaled — capped at the body's half width. Seated at the outer
+        # edge, a wide body (the owlbear) held its wings far out in the air.
+        tcx, hcx = (tlo[0] + thi[0]) / 2, (hlo[0] + hhi[0]) / 2
+        base = min((thi[0] - tlo[0]) / 2, (hhi[0] - hlo[0]) / 2 * s)
+        hbase = (hhi[0] - hlo[0]) / 2
+        def para_alvo(x, y, z):
+            rx = (x - hcx - hbase) if direita else (hcx - hbase - x)
+            nx = tcx + base + rx * s if direita else tcx - base - rx * s
+            return nx, tlo[1] + (y - hlo[1]) * s, thi[2] + (z - hhi[2]) * s
+        cantos = [para_alvo(x, y, z) for x in (alo[0], ahi[0]) for y in (alo[1], ahi[1]) for z in (alo[2], ahi[2])]
+        mn = [int(min(c[i] for c in cantos)) for i in range(3)]
+        mx = [int(max(c[i] for c in cantos)) + 1 for i in range(3)]
+        nova = {}
+        for X in range(mn[0], mx[0] + 1):
+            rx = (X - tcx - base) / s if direita else (tcx - base - X) / s
+            x = round(hcx + hbase + rx) if direita else round(hcx - hbase - rx)
+            for Y in range(mn[1], mx[1] + 1):
+                y = round(hlo[1] + (Y - tlo[1]) / s)
+                for Z in range(mn[2], mx[2] + 1):
+                    z = round(hhi[2] + (Z - thi[2]) / s)
+                    c = asa.get((x, y, z))
+                    if c:
+                        nova[(X, Y, Z)] = cor(c)
+        pecas.append((lado, _Modelo(nova)))
+    paleta = list(paleta)
+    for i, rgb in zip(livres, ASA_CORES):
+        paleta[i] = (*rgb, 255)
+    return pecas, paleta
+
+
+# (file, species prefix, face budget, coat roles). The coat is "seraph":
+# ivory to white fur, gold details.
+BICHOS_ALADOS = [
+    ("seraph_wolf", "wolf", 5200, {"pelo": [1, 2, 3, 4], "detalhe": [6]}),
+    ("seraph_lynx", "tiger", 4200, {"pelo": [4, 5], "detalhe": [7], "listra": [1]}),
+    ("seraph_bear", "bear", 4600, {"pelo": [2, 3, 4, 5], "detalhe": [9]}),
+    ("seraph_owlbear", "owlbear", 5200, {"pelo": [1, 2, 3], "detalhe": [4, 5]}),
+    ("pegasus_stag", "deer", 4200, {"pelo": [3, 4], "detalhe": [8, 10]}),
+]
+PELE_SERAFICA = {"pelo": ((214, 206, 192), (252, 250, 244)), "detalhe": ((222, 172, 66), (250, 218, 128)),
+                 "listra": ((204, 154, 56), (204, 154, 56))}
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "bichos")
     os.makedirs(pasta, exist_ok=True)
+    # `--alados`: only Skyreach's winged creatures.
+    if "--alados" in sys.argv:
+        for nome, prefixo, orcamento, papeis in BICHOS_ALADOS:
+            pecas, paleta = alado(prefixo)
+            monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento,
+                  pelagem_da_skin(paleta, papeis, PELE_SERAFICA), (pecas, paleta))
+        sys.exit(0)
     # `--skins`: only the mount coats, leaving every species file untouched.
     so_skins = "--skins" in sys.argv
     for nome, prefixo, orcamento in ([] if so_skins else BICHOS):

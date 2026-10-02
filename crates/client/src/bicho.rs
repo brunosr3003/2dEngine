@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Each creature that walks in pieces: the file
 /// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
-pub const BICHOS: [(&str, f32); 21] = [
+pub const BICHOS: [(&str, f32); 26] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -71,6 +71,14 @@ pub const BICHOS: [(&str, f32); 21] = [
     ("bichos/storm_owlbear", 1.5),
     ("bichos/crag_lynx", 0.95),
     ("bichos/cave_bear", 1.3),
+    // Skyreach's winged creatures (`bichos.py: BICHOS_ALADOS`): the
+    // species with the hippogriff's wings. The height is the whole model's,
+    // wings raised, so it is above the species' own.
+    ("bichos/seraph_wolf", 1.7),
+    ("bichos/seraph_lynx", 1.5),
+    ("bichos/seraph_bear", 2.0),
+    ("bichos/seraph_owlbear", 2.3),
+    ("bichos/pegasus_stag", 2.3),
 ];
 
 /// This mob's creature, if it is a creature. People (gunner, mage, archer)

@@ -717,7 +717,7 @@ async fn main() {
     }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_CELESTE").is_ok() {
-        terreno::previa_celeste().await;
+        terreno::previa_celeste(&vox).await;
         return;
     }
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
@@ -1905,6 +1905,15 @@ impl Jogo {
                 }
             }
             ServerMessage::Chat { from, text } => {
+                // System lines are translated BEFORE the "SYS: " prefix: with
+                // it, the whole line matches no dictionary entry and reaches
+                // the screen in whatever language the server wrote it.
+                // Player chat goes as typed.
+                let text = if from == "SYS" {
+                    shared::idioma::tr(&text).into_owned()
+                } else {
+                    text
+                };
                 self.chat.push(format!("{from}: {text}"));
             }
             // O que a bolsa mostra. O servidor manda tudo no login e de novo a
@@ -4488,7 +4497,7 @@ impl Jogo {
                     .map(|d| d.nome.clone())
                     .unwrap_or_default();
                 self.chat
-                    .push(format!("Auto missão: embarcando para {nome}."));
+                    .push(format!("Auto quest: setting sail for {nome}."));
                 // Guardado ANTES de `conectar` limpar tudo: e' o que faz o auto
                 // voltar a conduzir ao desembarcar.
                 self.retomar_auto_missao = self.auto_missao.quest;
@@ -4520,7 +4529,7 @@ impl Jogo {
         }
         if self.missoes.log.iter().any(|q| q.id == quest) {
             self.retomar_auto_missao = None;
-            self.chat.push("Auto missão: desembarcou, retomando.".into());
+            self.chat.push("Auto quest: landed, resuming.".into());
             self.iniciar_auto_missao(quest);
         }
     }
@@ -4607,7 +4616,7 @@ impl Jogo {
             None => {
                 self.auto_missao.parar();
                 self.chat
-                    .push("Auto missão: só restam passos que são seus.".into());
+                    .push("Auto quest: only steps that are yours to do are left.".into());
             }
         }
     }

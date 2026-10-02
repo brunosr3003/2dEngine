@@ -3222,6 +3222,21 @@ pub fn vitrine_pet(
     true
 }
 
+/// A creature by its file (`bicho::BICHOS`), on a stage: previews of models
+/// not yet tied to a mob kind.
+pub fn vitrine_bicho(vox: &crate::vox::VoxCache, nome: &str, r: Rect, yaw: f32, solido: &Material) -> bool {
+    let Some(b) = vox.bicho(nome) else { return false; };
+    let Some(vp) = viewport_na_tela(r) else { return false; };
+    let cam = camera_da_vitrine(b, 1.0, 1.35, vp);
+    set_camera(&cam);
+    limpa_so_profundidade();
+    macroquad::material::gl_use_material(solido);
+    desenha_bicho_montaria(b, 1.0, None, Vec3::ZERO, yaw, 0.0, 0.0, get_time() as f32, 1.0);
+    macroquad::material::gl_use_default_material();
+    camera_padrao();
+    true
+}
+
 /// Modelo real do inimigo no bestiário, usando a mesma malha do mundo.
 pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
     r: Rect, yaw: f32, solido: &Material) -> bool {
