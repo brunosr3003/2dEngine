@@ -746,7 +746,10 @@ impl Terreno {
                     .max()
                     .unwrap_or(0);
                 let manchinha = self.ger.mancha(cx * CHUNK + ix, cz * CHUNK + iz);
-                let mat = self.material_do_tema(y, declive, a, manchinha);
+                let mat = self
+                    .ger
+                    .material_desenhado(cx * CHUNK + ix, cz * CHUNK + iz)
+                    .unwrap_or_else(|| self.material_do_tema(y, declive, a, manchinha));
                 let mat = match t0 {
                     // Grama cuidada so' onde ja' era grama: na Geleira a
                     // cidade continua branca.
@@ -823,9 +826,12 @@ impl Terreno {
                     }
                     // O pe' da parede para na linha d'agua: penhasco na costa
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
-                    let piso = if self.ger.e_magica() && eh_agua(ix + dx, iz + dz) {
+                    let piso = if self.ger.e_aerea() && eh_agua(ix + dx, iz + dz) {
                         let ponte = self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
-                        hv.max(if ponte { h - 2 } else { 7 })
+                        // Bridges and cloud paths are thin decks. Skyreach's
+                        // islands keep their cliff down to the sea line, where
+                        // the rock root hanging below takes over.
+                        hv.max(if ponte { h - 2 } else if self.ger.e_magica() { 7 } else { -2 })
                     } else { hv.max(((NIVEL_DO_MAR / BLOCO) as i32) - 2) };
                     let topo_mat = self.material_do_tema(
                         topo,
@@ -851,7 +857,10 @@ impl Terreno {
                         pl.parte_da_muralha(::glam::Vec2::new(gx as f32 * BLOCO, gz as f32 * BLOCO))
                             .is_some()
                     });
+                    let nuvem = self.ger.material_desenhado(gx, gz) == Some(Material::Nuvem);
                     let faixa = |prof: i32| match porao {
+                        // A cloud path's edge: white on top, shaded below.
+                        _ if nuvem => if prof == 0 { Material::Nuvem } else { Material::NuvemSombra },
                         Some(pl) => pl.pedra(gx, gz, prof),
                         None if castelo => {
                             let h = (gx as u32).wrapping_mul(73_856_093)
@@ -1490,14 +1499,13 @@ pub async fn previa_celeste() {
     let p = &shared::celeste::PLATOS;
     // Shared's glam is another version than the client's: carry plain floats.
     let meio = |i: usize, j: usize| ((p[i].centro.x + p[j].centro.x) * 0.5, (p[i].centro.y + p[j].centro.y) * 0.5);
-    let mut vistas: Vec<(String, (f32, f32), f32)> = p
+    let mut vistas: Vec<(String, (f32, f32), f32)> = [0usize, 2, 5, 8, 11]
         .iter()
-        .enumerate()
-        .map(|(i, pl)| (format!("plato-{i}"), (pl.centro.x, pl.centro.y), 170.0))
+        .map(|&i| (format!("plato-{i}"), (p[i].centro.x, p[i].centro.y), 140.0))
         .collect();
-    vistas.push(("ponte-0-1".into(), meio(0, 1), 210.0));
-    vistas.push(("ponte-3-4".into(), meio(3, 4), 230.0));
-    vistas.push(("aerea".into(), (0.0, 60.0), 620.0));
+    vistas.push(("ponte-0-1".into(), meio(0, 1), 150.0));
+    vistas.push(("ponte-5-7".into(), meio(5, 7), 170.0));
+    vistas.push(("aerea".into(), (90.0, 70.0), 640.0));
     for (nome, (cx, cy), distancia) in vistas {
         let c = vec2(cx, cy);
         let centro = c;

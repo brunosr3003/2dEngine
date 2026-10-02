@@ -592,6 +592,10 @@ pub enum Material {
     CalcadaEscura,
     Caminho,
     GramaCuidada,
+    /// Skyreach's cloud paths (`celeste`): the deck players walk on between
+    /// islands, and its shaded underside.
+    Nuvem,
+    NuvemSombra,
 }
 
 impl Material {
@@ -602,7 +606,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 29] = [
+    pub const TODOS: [Material; 31] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -632,6 +636,8 @@ impl Material {
         Material::CalcadaEscura,
         Material::Caminho,
         Material::GramaCuidada,
+        Material::Nuvem,
+        Material::NuvemSombra,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -657,6 +663,8 @@ impl Material {
             Material::PetalaAmarela => (238, 202, 86),
             Material::PetalaRoxa => (152, 104, 200),
             Material::PetalaBranca => (240, 242, 248),
+            Material::Nuvem => (244, 247, 252),
+            Material::NuvemSombra => (206, 216, 232),
             Material::Folha => (74, 138, 58),
             Material::FolhaEscura => (48, 104, 52),
             Material::FolhaSeca => (140, 138, 70),
@@ -2187,6 +2195,13 @@ impl Gerador {
             Some(RelevoDesenhado::Celeste) => crate::celeste::na_ponte(p),
             _ => false,
         }
+    }
+
+    /// A material fixed by a DRAWN map at this column, over whatever height
+    /// and biome would give: Skyreach's cloud paths are cloud.
+    pub fn material_desenhado(&self, bx: i32, bz: i32) -> Option<Material> {
+        (self.e_celeste() && crate::celeste::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+            .then_some(Material::Nuvem)
     }
 
     pub fn e_celeste(&self) -> bool {

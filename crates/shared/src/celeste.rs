@@ -13,11 +13,11 @@
 //! map, and `bloco_da_coluna` is its only source, called by client and server
 //! alike so they cannot disagree on where the ground is.
 //!
-//! Layout: the arrival plateau with the town in the middle, then one plateau
-//! per level band, each a step higher than the last, chained by bridges that
-//! climb gently between them (the walk rule is 1 block per column, 1.0 u/u;
-//! every bridge here stays under 0.15 u/u). Two small resource islets hang
-//! off the chain.
+//! Layout (owner, 02/10/2026): "instead of a big island, several small and
+//! medium islands connected through clouds". Fifteen islands spread over
+//! the four level bands, the town island in the middle, joined by CLOUD
+//! PATHS: curving, puffy, white, a thin deck rather than a stone bridge.
+//! Every path climbs gently (the walk rule is 1 block per column).
 
 use glam::Vec2;
 
@@ -28,9 +28,9 @@ pub const SEMENTE: i32 = 0x5C1E_A7E0;
 pub const RAIO_BLOCOS: i32 = 1200;
 /// The floor under the cliffs, below sea level: a wall, drawn as clouds.
 pub const NIVEL_FUNDO: i32 = -10;
-/// Half width of a bridge, in units. 8 u across: two A* cells (4 u), so
-/// auto-walk finds the way, and still a choke point for fights.
-pub const MEIA_PONTE: f32 = 4.0;
+/// Half width of a cloud path, in units, before its puffs: 11 u across, a
+/// bit under three A* cells (4 u), so auto-walk always finds the way.
+pub const MEIA_PONTE: f32 = 5.5;
 
 /// One plateau: a flat-topped mesa with a ragged rim.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,24 +48,40 @@ const fn plato(nome: &'static str, x: f32, y: f32, raio: f32, altura: f32, nivel
     Plato { nome, centro: Vec2::new(x, y), raio, altura, nivel }
 }
 
-/// The plateaus. Index 0 is the arrival with the town; 1-4 climb through the
-/// level bands; 5-6 are the resource islets. Tops stay within 14-21 u (grass ends at 24 u, minus the swells): the
-/// ground's material goes by absolute height, and above that band the
-/// plateaus turned to bare rock and then snow. ORDER IS THE ID: bridges and,
-/// later, spawn tables point at these indices.
-pub const PLATOS: [Plato; 7] = [
-    plato("Cloudharbor", 0.0, 0.0, 78.0, 14.0, (0, 0)),
-    plato("Windmill Terraces", -235.0, -125.0, 95.0, 16.0, (50, 52)),
-    plato("Forge of the Titan", -300.0, 175.0, 90.0, 18.0, (52, 55)),
-    plato("Storm Gardens", 40.0, 305.0, 100.0, 20.0, (54, 57)),
-    plato("Throne of the Sky", 305.0, 120.0, 105.0, 21.0, (57, 60)),
-    plato("Shardfall Islet", 215.0, -205.0, 52.0, 17.0, (52, 56)),
-    plato("Rookery Islet", -60.0, -330.0, 48.0, 15.0, (50, 53)),
+/// The islands. Index 0 is the arrival with the town. ORDER IS THE ID:
+/// paths and, later, spawn tables point at these indices. Tops stay within
+/// 14-21 u: the ground's material goes by absolute height, and above that
+/// band grass turns to bare rock and snow.
+pub const PLATOS: [Plato; 15] = [
+    plato("Cloudharbor", 0.0, 0.0, 62.0, 14.0, (0, 0)),
+    // 50-52, west
+    plato("Lantern Isle", -150.0, -60.0, 40.0, 15.0, (50, 51)),
+    plato("Feather Rise", -230.0, 40.0, 46.0, 16.0, (51, 52)),
+    plato("Dewdrop Isle", -130.0, 110.0, 30.0, 15.0, (50, 52)),
+    // 52-55, south
+    plato("Choir Steps", -210.0, 200.0, 44.0, 17.0, (52, 53)),
+    plato("Forge of the Titan", -90.0, 270.0, 54.0, 18.0, (53, 55)),
+    plato("Halo Garden", 30.0, 190.0, 36.0, 17.0, (52, 54)),
+    // 54-57, south-east
+    plato("Bellspire", 130.0, 300.0, 48.0, 19.0, (54, 55)),
+    plato("Storm Gardens", 270.0, 240.0, 58.0, 19.0, (55, 57)),
+    plato("Prism Isle", 200.0, 110.0, 32.0, 18.0, (54, 56)),
+    // 57-60, north-east
+    plato("Seraph Watch", 320.0, 60.0, 46.0, 20.0, (57, 58)),
+    plato("Throne of the Sky", 380.0, -90.0, 64.0, 21.0, (58, 60)),
+    plato("Aurora Islet", 230.0, -110.0, 30.0, 20.0, (57, 59)),
+    // north of the town
+    plato("Rookery", -30.0, -170.0, 34.0, 15.0, (50, 53)),
+    plato("Shardfall", 110.0, -150.0, 36.0, 16.0, (52, 56)),
 ];
 
-/// Which plateaus a bridge joins. Progression is a chain (0-1-2-3-4) with
-/// the islets on the side; the throne is reached only through the gardens.
-pub const PONTES: [(usize, usize); 6] = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (1, 6)];
+/// The cloud paths. A main road climbs the bands (0-1-2-4-5-7-8-10-11) and
+/// side paths reach the small islands and close a few loops.
+pub const PONTES: [(usize, usize); 20] = [
+    (0, 1), (1, 2), (2, 4), (4, 5), (5, 7), (7, 8), (8, 10), (10, 11),
+    (2, 3), (3, 6), (5, 6), (6, 9), (8, 9), (9, 10),
+    (0, 13), (13, 1), (0, 14), (14, 12), (12, 11), (12, 10),
+];
 
 /// The rim radius of `p` in direction `ang`: three harmonics, the same recipe
 /// as the Magic Island's islets (two read as a clover).
@@ -93,38 +109,93 @@ pub fn plato_em(q: Vec2) -> Option<(usize, &'static Plato)> {
     })
 }
 
-/// The point where the bridge from `a` toward `b` leaves `a`'s rim.
+/// The point where the path from `a` toward `b` leaves `a`'s rim.
 fn borda(a: &Plato, b: &Plato) -> Vec2 {
     let dir = (b.centro - a.centro).normalize();
     a.centro + dir * raio_na_direcao(a, dir.y.atan2(dir.x)) * 0.97
 }
 
-/// Distance to the nearest bridge and the deck height there, in units.
+/// One cloud path, precomputed: a curve sampled as a polyline, with the deck
+/// height at each sample and its bounding box for a cheap rejection.
+struct Caminho {
+    pontos: Vec<(Vec2, f32)>,
+    min: Vec2,
+    max: Vec2,
+}
+
+const AMOSTRAS: usize = 32;
+/// Widest a path gets with its puffs, for the bounding box.
+const LARGURA_MAX: f32 = MEIA_PONTE + 3.0;
+
+fn caminhos() -> &'static [Caminho] {
+    static C: std::sync::OnceLock<Vec<Caminho>> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        PONTES
+            .iter()
+            .enumerate()
+            .map(|(k, &(i, j))| {
+                let (a, b) = (&PLATOS[i], &PLATOS[j]);
+                let (pa, pb) = (borda(a, b), borda(b, a));
+                // The curve: a quadratic Bezier pushed sideways by a fifth of
+                // its length, alternating side, so paths drift like clouds
+                // instead of running ruler-straight.
+                let lado = Vec2::new(-(pb - pa).y, (pb - pa).x).normalize();
+                let sinal = if k % 2 == 0 { 1.0 } else { -1.0 };
+                let ctrl = (pa + pb) * 0.5 + lado * pa.distance(pb) * 0.2 * sinal;
+                let pontos: Vec<(Vec2, f32)> = (0..=AMOSTRAS)
+                    .map(|n| {
+                        let t = n as f32 / AMOSTRAS as f32;
+                        let q = pa * (1.0 - t) * (1.0 - t) + ctrl * 2.0 * t * (1.0 - t) + pb * t * t;
+                        let s = t * t * (3.0 - 2.0 * t);
+                        (q, a.altura + (b.altura - a.altura) * s)
+                    })
+                    .collect();
+                let (mut min, mut max) = (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN));
+                for (q, _) in &pontos {
+                    min = min.min(*q);
+                    max = max.max(*q);
+                }
+                Caminho { pontos, min: min - Vec2::splat(LARGURA_MAX), max: max + Vec2::splat(LARGURA_MAX) }
+            })
+            .collect()
+    })
+}
+
+/// The puffy half width of a path at `q`: the base plus slow bulges, so the
+/// edge reads as cloud and not as a kerb.
+fn meia_largura(q: Vec2) -> f32 {
+    MEIA_PONTE + 1.6 * (q.x * 0.11 + 0.7).sin() * (q.y * 0.13 - 0.3).cos() + 0.9 * (q.x * 0.31 - q.y * 0.27).sin()
+}
+
+/// Distance to the nearest cloud path and the deck height there, in units.
 fn ponte_em(q: Vec2) -> Option<(f32, f32)> {
-    PONTES
-        .iter()
-        .map(|&(i, j)| {
-            let (a, b) = (&PLATOS[i], &PLATOS[j]);
-            let (pa, pb) = (borda(a, b), borda(b, a));
-            let ab = pb - pa;
-            let t = ((q - pa).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
-            let dist = (pa + ab * t).distance(q);
-            // Smoothstep, so the deck meets each rim level instead of kinking.
-            let s = t * t * (3.0 - 2.0 * t);
-            (dist, a.altura + (b.altura - a.altura) * s)
-        })
-        .min_by(|x, y| x.0.total_cmp(&y.0))
+    let mut melhor: Option<(f32, f32)> = None;
+    for c in caminhos() {
+        if q.x < c.min.x || q.y < c.min.y || q.x > c.max.x || q.y > c.max.y {
+            continue;
+        }
+        for w in c.pontos.windows(2) {
+            let ((a, ha), (b, hb)) = (w[0], w[1]);
+            let ab = b - a;
+            let t = ((q - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0);
+            let d = (a + ab * t).distance(q);
+            if melhor.is_none_or(|(m, _)| d < m) {
+                melhor = Some((d, ha + (hb - ha) * t));
+            }
+        }
+    }
+    melhor
 }
 
-/// Is `q` on a bridge (and not on a plateau)? Vegetation stays off bridges:
-/// a tree in an 8 u deck closes it for auto-walk.
+/// Is `q` on a cloud path (and not on an island)? Vegetation stays off, and
+/// the ground there is cloud.
 pub fn na_ponte(q: Vec2) -> bool {
-    plato_em(q).is_none() && ponte_em(q).is_some_and(|(d, _)| d <= MEIA_PONTE)
+    plato_em(q).is_none() && ponte_em(q).is_some_and(|(d, _)| d <= meia_largura(q))
 }
 
-/// Is `q` walkable ground (plateau or bridge)?
+/// Is `q` walkable ground (island or cloud path)?
 pub fn e_chao(q: Vec2) -> bool {
-    plato_em(q).is_some() || ponte_em(q).is_some_and(|(d, _)| d <= MEIA_PONTE)
+    plato_em(q).is_some() || ponte_em(q).is_some_and(|(d, _)| d <= meia_largura(q))
 }
 
 /// Small deterministic hash in 0..1, for the ruins' layout.
@@ -141,7 +212,7 @@ fn hash(x: i32, y: i32) -> f32 {
 /// footprint of the temple the city was built around. The town plateau has
 /// none: the town stands there. Extra height in blocks.
 fn colunata(q: Vec2, p: &Plato, i: usize) -> i32 {
-    if p.nivel.0 == 0 {
+    if p.nivel.0 == 0 || p.raio < 44.0 {
         return 0;
     }
     const COLUNAS: usize = 12;
@@ -219,11 +290,12 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
         return (h / BLOCO).round() as i32 - 1 + pilar(q, p).max(colunata(q, p, i));
     }
     if let Some((dist, h)) = ponte_em(q) {
-        if dist <= MEIA_PONTE {
-            let topo = (h / BLOCO).round() as i32 - 1;
-            // A one-block curb along each edge: it reads as a bridge from the
-            // game camera, and one block is still a step, never a wall.
-            return if dist > MEIA_PONTE - BLOCO { topo + 1 } else { topo };
+        let meia = meia_largura(q);
+        if dist <= meia {
+            // A soft swell across the deck, highest in the middle: a cloud,
+            // not a plank. One block at most, so it never blocks a step.
+            let inchaco = if dist < meia * 0.45 { 1 } else { 0 };
+            return (h / BLOCO).round() as i32 - 1 + inchaco;
         }
     }
     NIVEL_FUNDO
@@ -250,23 +322,31 @@ mod testes {
     use super::*;
     use crate::terreno::BLOCO;
 
-    /// Every bridge is walkable: the deck never climbs more than a block per
-    /// column, and both ends meet their plateau at a step, not a wall.
+    /// Every cloud path is walkable: from inside one island, along the
+    /// curve, into the other, the ground never drops into the void and never
+    /// changes by more than a block between neighbouring columns.
     #[test]
     fn toda_ponte_e_caminhavel() {
-        for &(i, j) in &PONTES {
-            let (a, b) = (&PLATOS[i], &PLATOS[j]);
-            let (pa, pb) = (borda(a, b), borda(b, a));
-            let n = (pa.distance(pb) / BLOCO) as i32;
-            let mut ant = None;
-            for k in 0..=n + 8 {
-                let q = pa + (pb - pa).normalize() * ((k - 4) as f32 * BLOCO);
-                let b = bloco_da_coluna((q.x / BLOCO).round() as i32, (q.y / BLOCO).round() as i32);
-                assert!(b > 0, "bridge {i}-{j} drops into the void at step {k}");
-                if let Some(x) = ant {
-                    assert!((b - x as i32).abs() <= 1, "bridge {i}-{j} jumps {x} -> {b} at step {k}");
+        for (k, c) in caminhos().iter().enumerate() {
+            let (i, j) = PONTES[k];
+            let mut rota = vec![PLATOS[i].centro.lerp(c.pontos[0].0, 0.85)];
+            rota.extend(c.pontos.iter().map(|(q, _)| *q));
+            rota.push(PLATOS[j].centro.lerp(c.pontos[AMOSTRAS].0, 0.85));
+            let mut ant: Option<(i32, i32, i32)> = None;
+            for w in rota.windows(2) {
+                let passos = (w[0].distance(w[1]) / (BLOCO * 0.5)).ceil() as i32;
+                for n in 0..=passos {
+                    let q = w[0].lerp(w[1], n as f32 / passos as f32);
+                    let (bx, bz) = ((q.x / BLOCO).round() as i32, (q.y / BLOCO).round() as i32);
+                    let b = bloco_da_coluna(bx, bz);
+                    assert!(b > 0, "path {i}-{j} drops into the void at {q}");
+                    if let Some((x, z, h)) = ant {
+                        if (x, z) != (bx, bz) {
+                            assert!((b - h).abs() <= 1, "path {i}-{j} jumps {h} -> {b} at {q}");
+                        }
+                    }
+                    ant = Some((bx, bz, b));
                 }
-                ant = Some(b);
             }
         }
     }
