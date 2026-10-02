@@ -20591,6 +20591,17 @@ pub(crate) fn effective_stats(
         }
     }
 
+    // GEAR CRIT (`items::crit_da_peca`): the seven gear slots, not pets or
+    // mounts.
+    {
+        use shared::EquipSlot as E;
+        for slot in [E::Weapon, E::Offhand, E::Armor, E::Earring, E::Necklace, E::Bracelet, E::Belt] {
+            if let Some(i) = equip.get_inst(slot) {
+                s.crit_chance += shared::items::crit_da_peca(&i);
+            }
+        }
+    }
+
     // Scaling da proficiencia da arma EQUIPADA.
     let weapon_id = equip.weapon.unwrap_or(0);
     let prof = shared::skills::Conjunto::da_arma(weapon_id);
@@ -20691,7 +20702,6 @@ pub(crate) fn effective_stats(
     s.defense_stamina_cost_mult = s
         .defense_stamina_cost_mult
         .max(shared::STAMINA_COST_MULT_MIN);
-    s.crit_chance = s.crit_chance.min(shared::CRIT_CHANCE_MAX);
     s.attack_speed_mult = s.attack_speed_mult.min(1.0 + shared::ATTACK_SPEED_BONUS_MAX);
     s
 }

@@ -1226,7 +1226,11 @@ pub const MOVE_SPEED_PCT_PER_SPD: f32 = 0.0;
 pub const DASH_CD_REDUCTION_PER_SPD: f32 = 0.065; // +6.5%/ponto (100 SPD→0.2s, 200→~0.1s)
 
 /// Chance de crit adicionada por ponto em DES (somada a 0.0).
-pub const CRIT_CHANCE_PER_DES: f32 = 0.005; // +0.5% por ponto
+/// 0.5% → 0.17% on 02/10/2026: high crit is for level 100 in full legendary
+/// Tier IV +12 (the owner: "more difficult to get, like level 100 ... and full
+/// item T4 +12, and crit does less damage also"). ~297 points (level 100) all
+/// in DEX give ~50%; the gear (`items::crit_da_peca`) the other ~30%.
+pub const CRIT_CHANCE_PER_DES: f32 = 0.0017;
 
 /// Velocidade de ataque adicional por ponto em DES (somada a 1.0).
 /// Aplicada como divisor no cooldown — 1.5 = ataques 50% mais rapidos.
@@ -1241,16 +1245,14 @@ pub const STAMINA_REGEN_PER_SPD: f32 = 1.25; // regen escala forte c/ SPD → da
 /// HP regenerado/seg adicionado por ponto em VIT.
 pub const HP_REGEN_PER_VIT: f32 = 0.2;
 
-/// Multiplicador de dano em hit critico.
-pub const CRIT_DAMAGE_MULT: f32 = 1.5;
+/// Multiplicador de dano em hit critico. 1.5 → 1.3 on 02/10/2026, with the
+/// slower crit chance above.
+pub const CRIT_DAMAGE_MULT: f32 = 1.3;
 
-/// CEILINGS on what stacking one stat buys (02/10/2026). DEX had none: a
-/// level 51 pistol with all 150 points in DEX ran 80% crit and +225% attack
-/// speed — over twice the damage the ladder expects (it assumes a third of
-/// the points in the main stat) — and tanked level 60 mobs. Past the
-/// ceilings DEX still gives dodge and its flat stats.
-pub const CRIT_CHANCE_MAX: f32 = 0.40;
-/// The attack speed BONUS ceiling (`attack_speed_mult` at most 1 + this).
+/// The attack speed BONUS ceiling (`attack_speed_mult` at most 1 + this),
+/// 02/10/2026: a level 51 pistol with all 150 points in DEX ran +225% attack
+/// speed — over twice the damage the ladder expects — and tanked level 60
+/// mobs. Crit has no ceiling: it grows slowly instead (`CRIT_CHANCE_PER_DES`).
 pub const ATTACK_SPEED_BONUS_MAX: f32 = 1.0;
 
 /// Defesa adicional por ponto em RES (somada ao base 0).

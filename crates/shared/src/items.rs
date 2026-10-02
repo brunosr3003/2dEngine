@@ -817,6 +817,18 @@ impl ItemInstance {
     }
 }
 
+/// The crit a GEAR piece gives (weapon, offhand, armour and the four
+/// accessories — not pets or mounts): up to `CRIT_POR_PECA` for a legendary
+/// Tier IV +12, scaling with color and tier (1..20 steps) and refine (half at
+/// +0, whole at +12). Seven such pieces make ~30%.
+pub const CRIT_POR_PECA: f32 = 0.043;
+
+pub fn crit_da_peca(i: &ItemInstance) -> f32 {
+    let degrau = ((i.grau() as f32 - 1.0) * 4.0 + i.tier() as f32) / 20.0;
+    let refino = 0.5 + 0.5 * (i.refinement.min(12) as f32 / 12.0);
+    CRIT_POR_PECA * degrau * refino
+}
+
 /// O que multiplica cada atributo do template numa peca (docs/ESCADA.md).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Escala {
@@ -892,6 +904,22 @@ pub fn sockets_for_tier(tier: u8) -> u8 {
 
 #[cfg(test)]
 mod testes_do_refino {
+
+    /// ~80% crit takes level 100 AND a full legendary Tier IV +12 set.
+    #[test]
+    fn crit_alto_so_no_nivel_100_com_set_lendario() {
+        let mut i = ItemInstance::vazia_de_grau(5);
+        i.tier = 4;
+        i.refinement = 12;
+        let set = 7.0 * crit_da_peca(&i);
+        let pontos = 297.0 * crate::constants::CRIT_CHANCE_PER_DES;
+        assert!((0.78..=0.83).contains(&(set + pontos)), "{:.2}", set + pontos);
+        let mut roxo = ItemInstance::vazia_de_grau(4);
+        roxo.tier = 4;
+        roxo.refinement = 4;
+        let nivel_51 = 7.0 * crit_da_peca(&roxo) + 150.0 * crate::constants::CRIT_CHANCE_PER_DES;
+        assert!(nivel_51 < 0.45, "a level 51 in purple +4 has {:.2}", nivel_51);
+    }
     use super::*;
 
     #[test]
