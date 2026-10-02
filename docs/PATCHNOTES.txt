@@ -1,3 +1,9 @@
+02/10/2026 — Skyreach: o buraco no penhasco embaixo dos caminhos
+
+A mureta branca na borda das ilhas saiu: Skyreach voltou a ser como era. O defeito de verdade era outro: onde um caminho de nuvem chega numa ilha, o penhasco embaixo do caminho não era desenhado, e pelo buraco se via o "miolo" bege da ilha. Agora o penhasco desce inteiro por baixo do caminho.
+
+Atualização obrigatória — o protocolo passa para o 181. Por enquanto só computador e Android.
+
 02/10/2026 — Skyreach: a borda das ilhas agora aparece
 
 Os caminhos de nuvem voltaram a ser como antes, sem a borda. A parede invisível era na beira das ILHAS: agora cada ilha tem uma mureta de pedra branca na borda, que se abre onde um caminho de nuvem chega.

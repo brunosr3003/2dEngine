@@ -826,12 +826,24 @@ impl Terreno {
                 let z1 = z0 + BLOCO;
                 for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
                     let hv = em(ix + dx, iz + dz);
-                    if hv >= h {
+                    // WHERE A DECK LANDS ON AN ISLAND. A bridge or cloud path
+                    // is a thin deck as high as the island it reaches, so by
+                    // the height rule the island's cliff under it was never
+                    // drawn — and through the hole you saw the inside of the
+                    // island (the owner's screenshot: "the pale beige wedge
+                    // under the island"). Next to a deck, the island's cliff
+                    // goes all the way down, from under the deck.
+                    let deck_ao_lado = self.ger.e_aerea()
+                        && self.ger.na_ponte_magica(cx * CHUNK + ix + dx, cz * CHUNK + iz + dz)
+                        && !self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
+                    if hv >= h && !deck_ao_lado {
                         continue;
                     }
                     // O pe' da parede para na linha d'agua: penhasco na costa
                     // desceria ate' o fundo do talude, geometria que ninguem ve'.
-                    let piso = if self.ger.e_aerea() && eh_agua(ix + dx, iz + dz) {
+                    let piso = if deck_ao_lado {
+                        if self.ger.e_magica() { 7 } else { -2 }
+                    } else if self.ger.e_aerea() && eh_agua(ix + dx, iz + dz) {
                         let ponte = self.ger.na_ponte_magica(cx * CHUNK + ix, cz * CHUNK + iz);
                         // Bridges and cloud paths are thin decks. Skyreach's
                         // islands keep their cliff down to the sea line, where
@@ -881,7 +893,9 @@ impl Terreno {
                         }
                         None => material_de_profundidade(self.bioma_visual, topo_mat, topo, prof),
                     };
-                    let mut b = h;
+                    // Under a deck the face starts below it (the deck is two
+                    // blocks thick), not at the island's top.
+                    let mut b = if deck_ao_lado { h.min(hv - 2) } else { h };
                     while b > piso {
                         let mat = faixa(h - b);
                         let mut fim = b;
@@ -1511,15 +1525,43 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
     vistas.push(("ponte-0-1".into(), meio(0, 1), 150.0));
     vistas.push(("ponte-5-7".into(), meio(5, 7), 170.0));
     vistas.push(("aerea".into(), (90.0, 70.0), 640.0));
+    // Where the path from island 0 lands on island 1, seen from the side and
+    // a little below: the cliff must close under the deck (the owner's
+    // "pale beige wedge").
+    vistas.push(("pouso-0-1".into(), meio(0, 1), -1.0));
     for (nome, (cx, cy), distancia) in vistas {
         let c = vec2(cx, cy);
         let centro = c;
         let chao = g.altura(c.x, c.y).max(12.0);
         t.atualiza(centro, if distancia > 400.0 { 40 } else { 16 }, 4000);
+        let (pos, alvo) = if distancia < 0.0 {
+            let (a, b) = (vec2(p[0].centro.x, p[0].centro.y), vec2(p[1].centro.x, p[1].centro.y));
+            // The landing: the first column of path, scanning a ring round
+            // island 1 just past its radius.
+            let mut borda = b + (a - b).normalize() * p[1].raio;
+            'achar: for k in 0..720 {
+                let ang = k as f32 / 720.0 * std::f32::consts::TAU;
+                for rr in [1.02f32, 1.06, 1.10] {
+                    let q = b + vec2(ang.cos(), ang.sin()) * p[1].raio * rr;
+                    let (bx, bz) = ((q.x / shared::terreno::BLOCO).round() as i32, (q.y / shared::terreno::BLOCO).round() as i32);
+                    if g.na_ponte_magica(bx, bz) {
+                        borda = q;
+                        break 'achar;
+                    }
+                }
+            }
+            let dir = (borda - b).normalize();
+            let h = g.altura(borda.x, borda.y);
+            let lado = vec2(-dir.y, dir.x);
+            t.atualiza(borda, 16, 4000);
+            (vec3(borda.x + lado.x * 22.0 + dir.x * 14.0, h - 7.0, borda.y + lado.y * 22.0 + dir.y * 14.0), vec3(borda.x - dir.x * 2.0, h - 4.0, borda.y - dir.y * 2.0))
+        } else {
+            (vec3(centro.x + distancia * 0.45, chao + distancia * 0.65, centro.y + distancia), vec3(centro.x, chao, centro.y))
+        };
         for _ in 0..3 {
             let cam = Camera3D {
-                position: vec3(centro.x + distancia * 0.45, chao + distancia * 0.65, centro.y + distancia),
-                target: vec3(centro.x, chao, centro.y),
+                position: pos,
+                target: alvo,
                 up: Vec3::Y,
                 render_target: Some(rt.clone()),
                 aspect: Some(1.6),

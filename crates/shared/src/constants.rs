@@ -142,7 +142,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// (dungeons 30-35, boss kinds 50-55).
 /// 180 (02/10/2026): Skyreach's cloud rim moves from the paths to the
 /// islands' edges (terrain).
-pub const PROTOCOL_VERSION: u16 = 180;
+/// 181 (02/10/2026): Skyreach's island kerb comes out again (terrain back to
+/// 179's), and the cliff is drawn under a deck where it lands.
+pub const PROTOCOL_VERSION: u16 = 181;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

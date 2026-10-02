@@ -2683,10 +2683,6 @@ impl Gerador {
                 crate::planalto::Muro::Cortina { .. } => if xadrez { Material::Calcada } else { Material::CalcadaEscura },
             });
         }
-        // Skyreach's island kerbs: white stone, so the edge reads as a wall.
-        if self.e_celeste() && crate::celeste::na_borda(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
-            return Some(if (bx + bz).rem_euclid(2) == 0 { Material::Calcada } else { Material::Nuvem });
-        }
         // Stormkeep's courtyards: flagstones inside the curtain.
         if let Some(pl) = self.planalto() {
             let p = glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
