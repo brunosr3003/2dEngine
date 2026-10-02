@@ -16344,7 +16344,15 @@ impl GameWorld {
             objective_kind::KILL => {
                 // Missao de CHEFE: vai ate' a vaga dele (o vivo mais perto; se
                 // nenhum estiver vivo, a vaga mais perto, pra esperar la').
-                let quer_chefe = def.obj_target == shared::quests::ALVO_QUALQUER_CHEFE;
+                // A NAMED boss too (the Primeval Owlbear, the Archmage): its
+                // species never has a mob zone, so `zona_de_mob` found
+                // nothing and the auto quest said it didn't know where to go.
+                let quer_chefe = def.obj_target == shared::quests::ALVO_QUALQUER_CHEFE
+                    || (def.obj_target != 0
+                        && self
+                            .vagas_de_chefe
+                            .iter()
+                            .any(|v| shared::quests::kill_conta(def.obj_target, v.kind)));
                 if quer_chefe {
                     let vagas = self
                         .vagas_de_chefe
@@ -22344,6 +22352,29 @@ mod testes_planalto {
         }
         assert_eq!(w.vagas_de_chefe.len(),3);
         for (ch,i) in w.vagas_de_chefe.iter().zip([2,3,4]) { assert_eq!(pl.regiao(ch.pos),i); }
+    }
+
+    /// The story's named-boss steps (891 Owlbear, 892 Behemoth, 894 Archmage)
+    /// lead the auto quest to that boss's spot. They used to answer "I don't
+    /// know where the objective is": a boss species has no mob zone.
+    #[test]
+    fn missao_de_chefe_nomeado_leva_a_vaga_dele() {
+        crate::economy::init_vazia_para_testes();
+        let def = &shared::terreno::ARQUIPELAGO[3];
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let origem = ilha.porto().unwrap().centro;
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::planalto::ZONA.into();
+        w.ilha = Some(ilha);
+        w.povoar_ilha(origem);
+        for (id, kind) in [(891u16, 17u16), (892, 22), (894, 18)] {
+            let d = shared::quests::quest_by_id(id).unwrap();
+            let cq = crate::quests::CharQuest { quest_id: id, status: shared::quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 };
+            let (tipo, pos, _, _) = w.destino_da_missao(d, &cq, 0, 60, origem, false).unwrap_or_else(|| panic!("{id}: no destination"));
+            assert_eq!(tipo, shared::quests::destino_tipo::COMBATE);
+            let vaga = w.vagas_de_chefe.iter().find(|v| v.kind == kind).unwrap();
+            assert_eq!(pos, vaga.pos, "{id} does not lead to boss {kind}");
+        }
     }
 }
 
