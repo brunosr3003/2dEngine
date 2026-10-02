@@ -68,29 +68,27 @@ async fn main() -> Result<()> {
     .await?
     .context("no staff character to sign the letter (social_staff is empty)")?;
 
-    let anexos: Vec<Anexo> = (0..qtd)
-        .map(|_| {
-            let mut i = ItemInstance::vazia_de_grau(grau);
-            i.tier = tier;
-            i.refinement = refino;
-            i.afinidade = Some(shared::pets::rolar_afinidade(fastrand::f32(), fastrand::f32()));
-            Anexo { item_id: id, qtd: 1, instance: Some(i) }
-        })
-        .collect();
-
-    // Idempotent per day and arguments, like `enviar_chaves`.
+    // ONE LETTER PER CREATURE: a letter cannot carry the same item twice
+    // (`social::anexos_validos`), and three pets are three of the same id.
     let dia = shared::dungeon::dia((std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs()) as i64);
-    let envio = format!("bichos-{nome}-{tipo}-{grau}-{qtd}-{tier}-{refino}-{dia}").to_lowercase();
-    let pedido = Pedido::EnviarOficial {
-        envio,
-        para: Some(nome.clone()),
-        assunto: format!("{nome_do} for testing"),
-        texto: format!("{qtd}x {nome_do}, Tier {tier}, +{refino}, for testing. Claim it into your bag."),
-        anexos,
-    };
-    let n = correio::enviar(&pool, &autor, conta, &pedido).await?;
-    println!("sent to {n} recipient(s) ({nome}), signed by {autor}: {qtd}x {nome_do} T{tier} +{refino}");
+    for k in 1..=qtd {
+        let mut i = ItemInstance::vazia_de_grau(grau);
+        i.tier = tier;
+        i.refinement = refino;
+        i.afinidade = Some(shared::pets::rolar_afinidade(fastrand::f32(), fastrand::f32()));
+        // Idempotent per day and arguments, like `enviar_chaves`.
+        let envio = format!("bichos-{nome}-{tipo}-{grau}-{qtd}-{tier}-{refino}-{dia}-{k}").to_lowercase();
+        let pedido = Pedido::EnviarOficial {
+            envio,
+            para: Some(nome.clone()),
+            assunto: format!("{nome_do} for testing ({k}/{qtd})"),
+            texto: format!("{nome_do}, Tier {tier}, +{refino}, for testing. Claim it into your bag."),
+            anexos: vec![Anexo { item_id: id, qtd: 1, instance: Some(i) }],
+        };
+        let n = correio::enviar(&pool, &autor, conta, &pedido).await?;
+        println!("{k}/{qtd} sent to {n} recipient(s) ({nome}), signed by {autor}: {nome_do} T{tier} +{refino}");
+    }
     Ok(())
 }
