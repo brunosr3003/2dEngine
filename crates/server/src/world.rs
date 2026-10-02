@@ -14837,7 +14837,7 @@ impl GameWorld {
                 .get(&sid)
                 .map(|s| shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()));
             if nivel.is_some_and(|n| n < 20) {
-                self.avisa_missao(sid, "Alcance o nível 20 antes de embarcar para a Geleira. Faça as missões secundárias do Bosque.".into());
+                self.avisa_missao(sid, "Reach level 20 before sailing for the Glacier. Do the side quests in the Grove.".into());
                 return false;
             }
         }
@@ -15989,7 +15989,7 @@ impl GameWorld {
                 let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
                 self.avisa_missao(
                     sid,
-                    format!("História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto."),
+                    format!("Story: this step happens on {ilha}. Set sail with the Harbour Captain."),
                 );
                 if !self.destino_no_capitao(sid, quest_id) {
                     nenhum(self);
@@ -16027,8 +16027,14 @@ impl GameWorld {
         // A falta de Energia é medida AQUI, onde a sessão está à mão, e
         // passada adiante: `destino_da_missao` não tem o `sid`.
         let sem_energia = self.sem_energia_pro_passo(sid);
-        let destino =
-            cq.and_then(|cq| self.destino_da_missao(def, &cq, tem, nivel, eu, sem_energia));
+        let destino = cq
+            .as_ref()
+            .and_then(|cq| self.destino_da_missao(def, cq, tem, nivel, eu, sem_energia));
+        if destino.is_none() {
+            if let Some(motivo) = cq.as_ref().and_then(|cq| self.motivo_sem_destino(def, cq, tem)) {
+                self.avisa_missao(sid, motivo);
+            }
+        }
         let (tipo, pos, raio, npc_eid) = destino.unwrap_or((destino_tipo::NENHUM, eu, 0.0, None));
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::QuestDestino {
@@ -16038,6 +16044,106 @@ impl GameWorld {
                 raio,
                 npc_eid,
             });
+        }
+    }
+
+    /// Why the auto quest found nowhere to go, in words the player can act
+    /// on. "I don't know where the objective is" alone left the player stuck:
+    /// the usual cause is a quest from another island, a creature or NPC that
+    /// lives elsewhere, or nodes exhausted for the moment. `None` = no better
+    /// explanation than the client's generic one.
+    fn motivo_sem_destino(
+        &self,
+        def: &shared::quests::QuestDef,
+        cq: &crate::quests::CharQuest,
+        tem: u32,
+    ) -> Option<String> {
+        use shared::quests::{objective_kind, quest_status};
+        let ilha_de = |z: &'static str| shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
+        let titulo = def.title;
+        // Islands (other than this one) where any of `kinds` spawns.
+        let ilhas_com = |kinds: &[u16]| -> String {
+            shared::terreno::ARQUIPELAGO
+                .iter()
+                .filter(|d| d.zona != self.zona)
+                .filter(|d| {
+                    crate::economy::kinds_do_bioma(d.bioma)
+                        .iter()
+                        .chain(crate::economy::kinds_de_praia_do_bioma(d.bioma))
+                        .any(|k| kinds.contains(k))
+                })
+                .map(|d| d.nome)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        // A quest that belongs to another island: everything else follows from it.
+        if let Some(z) = shared::quests::zona_da_missao(def.id).filter(|z| *z != self.zona) {
+            return Some(format!(
+                "\"{titulo}\" belongs to the island {ilha}. Sail there with the Harbour Captain to continue it.",
+                ilha = ilha_de(z)
+            ));
+        }
+        let coleta =
+            def.obj_kind == objective_kind::COLLECT || def.obj_kind == objective_kind::DELIVER;
+        if cq.status == quest_status::READY || (coleta && tem >= def.obj_count) {
+            let quem = shared::quests::quem_da(def).unwrap_or("whoever gave it");
+            return Some(format!(
+                "\"{titulo}\" is done: hand it in to {quem}, who is not on this island."
+            ));
+        }
+        match def.obj_kind {
+            objective_kind::TALK => {
+                let quem = shared::quests::PAPEIS_DE_CONVERSA
+                    .iter()
+                    .find(|p| **p as u16 == def.obj_target)
+                    .map(|p| p.nome())?;
+                Some(format!(
+                    "\"{titulo}\": {quem} does not live on this island. Look for them in another island's village."
+                ))
+            }
+            objective_kind::KILL if def.obj_target == shared::quests::ALVO_QUALQUER_CHEFE => {
+                Some(format!(
+                    "\"{titulo}\": no boss of this kind lives on this island. Check the map on the other islands."
+                ))
+            }
+            objective_kind::KILL if def.obj_target != 0 => {
+                let kinds = shared::bestiary::kinds_of_species(def.obj_target - 1);
+                let bicho = crate::economy::enemy_def(def.obj_target - 1).name;
+                let onde = ilhas_com(&kinds);
+                Some(if onde.is_empty() {
+                    format!("\"{titulo}\": no {bicho} lives on this island.")
+                } else {
+                    format!("\"{titulo}\": no {bicho} lives on this island. Found on: {onde}.")
+                })
+            }
+            objective_kind::COLLECT | objective_kind::DELIVER => {
+                let item = crate::economy::nome_do_item(def.obj_target);
+                let kinds = crate::economy::kinds_que_dropam(def.obj_target);
+                if !kinds.is_empty() {
+                    let onde = ilhas_com(&kinds);
+                    return Some(if onde.is_empty() {
+                        format!("\"{titulo}\": nothing on this island drops {item}.")
+                    } else {
+                        format!("\"{titulo}\": nothing on this island drops {item}. Hunt on: {onde}.")
+                    });
+                }
+                let (tronco, pedra) = crate::economy::coleta_fornece(def.obj_target);
+                if tronco || pedra {
+                    return Some(format!(
+                        "\"{titulo}\": every node that gives {item} is exhausted right now. Wait a little for them to grow back."
+                    ));
+                }
+                Some(format!(
+                    "\"{titulo}\": {item} cannot be hunted or gathered on this island."
+                ))
+            }
+            objective_kind::GATHER => Some(format!(
+                "\"{titulo}\": every node on this island is exhausted right now. Wait a little for them to grow back."
+            )),
+            objective_kind::LUGAR => Some(format!(
+                "\"{titulo}\": that place is not on this island."
+            )),
+            _ => None,
         }
     }
 

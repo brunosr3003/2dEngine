@@ -157,7 +157,7 @@ impl AutoMissao {
             let nome = std::mem::take(&mut self.nome);
             self.parar();
             return Some(format!(
-                "Auto missão: não sei onde fica o objetivo de \"{nome}\" nesta ilha."
+                "Auto quest: I don't know where the objective of \"{nome}\" is on this island."
             ));
         }
         if tipo == destino_tipo::TRAVA {
@@ -221,7 +221,7 @@ impl AutoMissao {
             return vec![
                 Acao::PararAutos,
                 Acao::Aviso(format!(
-                    "Auto missão encerrada: \"{nome}\" não está mais ativa."
+                    "Auto quest stopped: \"{nome}\" is no longer active."
                 )),
             ];
         }
@@ -343,7 +343,7 @@ impl AutoMissao {
                 if c.agora - self.desde > ESPERA_PROXIMA_S {
                     self.parar();
                     saida.push(Acao::Aviso(
-                        "Auto missão: o Mestre não tem missão nova agora.".into(),
+                        "Auto quest: the Master has no new quest right now.".into(),
                     ));
                 }
             }

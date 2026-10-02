@@ -295,12 +295,64 @@ pub const VERBETES: &[(&str, &str)] = &[
         "The Teleport Scroll has been withdrawn. Use your mount and the map's routes.",
     ),
     (
-        "História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
-        "Story: this step happens on {ilha}. Set sail with the Harbour Captain.",
+        "\"{titulo}\" belongs to the island {ilha}. Sail there with the Harbour Captain to continue it.",
+        "\"{titulo}\" é da ilha {ilha}. Embarque com o Capitão do Porto para continuar.",
     ),
     (
-        "Alcance o nível 20 antes de embarcar para a Geleira. Faça as missões secundárias do Bosque.",
+        "\"{titulo}\" is done: hand it in to {quem}, who is not on this island.",
+        "\"{titulo}\" está pronta: entregue a {quem}, que não está nesta ilha.",
+    ),
+    (
+        "\"{titulo}\": {quem} does not live on this island. Look for them in another island's village.",
+        "\"{titulo}\": {quem} não mora nesta ilha. Procure na vila de outra ilha.",
+    ),
+    (
+        "\"{titulo}\": no boss of this kind lives on this island. Check the map on the other islands.",
+        "\"{titulo}\": nenhum chefe desse tipo vive nesta ilha. Confira o mapa das outras ilhas.",
+    ),
+    (
+        "\"{titulo}\": no {bicho} lives on this island.",
+        "\"{titulo}\": nenhum {bicho} vive nesta ilha.",
+    ),
+    (
+        "\"{titulo}\": no {bicho} lives on this island. Found on: {onde}.",
+        "\"{titulo}\": nenhum {bicho} vive nesta ilha. Encontrado em: {onde}.",
+    ),
+    (
+        "\"{titulo}\": nothing on this island drops {item}.",
+        "\"{titulo}\": nada nesta ilha dropa {item}.",
+    ),
+    (
+        "\"{titulo}\": nothing on this island drops {item}. Hunt on: {onde}.",
+        "\"{titulo}\": nada nesta ilha dropa {item}. Cace em: {onde}.",
+    ),
+    (
+        "\"{titulo}\": every node that gives {item} is exhausted right now. Wait a little for them to grow back.",
+        "\"{titulo}\": todo recurso que dá {item} está esgotado agora. Espere um pouco até renascerem.",
+    ),
+    (
+        "\"{titulo}\": {item} cannot be hunted or gathered on this island.",
+        "\"{titulo}\": {item} não se caça nem se coleta nesta ilha.",
+    ),
+    (
+        "\"{titulo}\": every node on this island is exhausted right now. Wait a little for them to grow back.",
+        "\"{titulo}\": todos os recursos desta ilha estão esgotados agora. Espere um pouco até renascerem.",
+    ),
+    (
+        "\"{titulo}\": that place is not on this island.",
+        "\"{titulo}\": esse lugar não fica nesta ilha.",
+    ),
+    (
+        "whoever gave it",
+        "quem a deu",
+    ),
+    (
+        "Story: this step happens on {ilha}. Set sail with the Harbour Captain.",
+        "História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
+    ),
+    (
         "Reach level 20 before sailing for the Glacier. Do the side quests in the Grove.",
+        "Alcance o nível 20 antes de embarcar para a Geleira. Faça as missões secundárias do Bosque.",
     ),
     (
         "Otimo! Aqui, leva esse material. Vai na estacao de craft e forja a arma T1 que voce quiser.",

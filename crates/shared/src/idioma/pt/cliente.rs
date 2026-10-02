@@ -63,16 +63,16 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("looking for another node", "procurando outro recurso"),
     ("Story: {nome} to continue.", "História: {nome} para continuar."),
     (
-        "Auto missão: o Mestre não tem missão nova agora.",
         "Auto quest: the Master has no new quest right now.",
+        "Auto missão: o Mestre não tem missão nova agora.",
     ),
     (
-        "Auto missão encerrada: \"{nome}\" não está mais ativa.",
         "Auto quest stopped: \"{nome}\" is no longer active.",
+        "Auto missão encerrada: \"{nome}\" não está mais ativa.",
     ),
     (
-        "Auto missão: não sei onde fica o objetivo de \"{nome}\" nesta ilha.",
         "Auto quest: I don't know where the objective of \"{nome}\" is on this island.",
+        "Auto missão: não sei onde fica o objetivo de \"{nome}\" nesta ilha.",
     ),
     // auto_resumo.rs
     ("item {id}", "item {id}"),
@@ -1081,6 +1081,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Map: only on the islands.", "Mapa: só nas ilhas."),
     ("I forgot my password", "esqueci minha senha"),
     ("Auto quest paused.", "Auto missão pausada."),
+    ("Auto quest: setting sail for {nome}.", "Auto missão: embarcando para {nome}."),
+    ("Auto quest: landed, resuming.", "Auto missão: desembarcou, retomando."),
     ("{} · {}/{} · Ready!", "{} · {}/{} · Pronta!"),
     ("Heading to the bank: {nome}", "Indo ao banco: {nome}"),
     ("I couldn't find the NPC here.", "Não achei o NPC aqui."),
@@ -1113,8 +1115,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Quest: craft a piece of gear in Craft.", "Missão: crie um equipamento no Craft."),
     ("Quest: try refining a piece at the Forge.", "Missão: tente refinar uma peça na Forja."),
     (
-        "Auto missão: só restam passos que são seus.",
         "Auto quest: only steps that are yours to do are left.",
+        "Auto missão: só restam passos que são seus.",
     ),
     (
         "Fila terminada: {f} feita(s), {pl} pulada(s).",
