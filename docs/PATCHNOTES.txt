@@ -1,3 +1,15 @@
+01/10/2026 — Chapéus e roupas novos, skins de arma e de montaria
+
+Chapéus: os oito chapéus grátis foram refeitos e agora têm cor (antes saíam todos pretos). Chegaram seis novos: Chapéu de Palha (grátis), Chapéu de Capitão, Elmo de Cavaleiro, Elmo de Chifres, Turbante e Coroa.
+
+Roupas: todas ganharam cores próprias e chegaram seis novas — Marujo e Explorador (grátis), Corsário, Arcanista, Cavaleiro e Nômade das Dunas.
+
+Skins de arma: três visuais para espada e escudo, três para a katana e três para as pistolas. Skins de montaria: cinco pelagens (Dourada, Obsidiana, Gélida, Brasa e Espectral) que valem para qualquer montaria. Tudo na Loja, aba Aparência, agora separada em Roupas, Chapéus, Armas e Montarias.
+
+Guarda-roupa: novas linhas "Weapon" e "Mount coat"; a prévia mostra a arma ou a montaria quando você mexe nelas.
+
+Atualização obrigatória — o protocolo passa para o 169. Por enquanto só computador e Android; o iPhone volta assim que a Apple liberar.
+
 01/10/2026 — Ícone 3D das skins
 
 As skins na bolsa agora aparecem como o personagem vestindo a roupa (ou o chapéu), girando devagar, como os pets e as montarias. Antes elas ficavam num quadrado vazio.
