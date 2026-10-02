@@ -2,7 +2,7 @@
 use crate::terreno::{Cidade, SitioPorto};
 use glam::Vec2;
 pub const ZONA: &str = "ilha_planalto";
-pub const REVISAO: u32 = 2;
+pub const REVISAO: u32 = 3;
 pub const NOMES: [&str; 5] = [
     "Encostas dos Sentinelas",
     // Era "Monastery of the Winds", o MESMO nome da Gruta 13. No mapa o trecho
@@ -59,8 +59,35 @@ pub const FORTE_ESPESSURA: f32 = 3.0;
 pub const FORTE_TORRE_RAIO: f32 = 4.5;
 pub const FORTE_MURO_BLOCOS: i32 = 14;
 pub const FORTE_TORRE_BLOCOS: i32 = 22;
-/// Where the outer courtyard's hordes stand, from the centre.
-pub const FORTE_RAIO_HORDAS: f32 = 40.0;
+/// The middle ring: between the curtain and the keep, its gate on the FAR
+/// side from the other two — the owner asked for the castle to be "more
+/// labyrinthine" (02/10/2026), so the way to the Warlord goes round twice.
+pub const FORTE_MEIO_RAIO: f32 = 40.0;
+
+/// The castle's corridors, as (inner face, outer face) radii: the outer one
+/// between the middle ring and the curtain, the inner one between the keep
+/// wall and the middle ring.
+pub const FORTE_CORREDORES: [(f32, f32); 2] = [
+    (FORTE_MEIO_RAIO + FORTE_ESPESSURA, FORTE_MURO_RAIO),
+    (FORTE_PATIO_RAIO + FORTE_ESPESSURA, FORTE_MEIO_RAIO),
+];
+
+/// The radial walls that make the maze: (angle from the gate, from radius,
+/// to radius). One per corridor seals it whole — the way round goes the
+/// long side, past a dead end of hordes — and the others leave a 6 u gap at
+/// alternating ends, so the path snakes.
+pub const FORTE_DIVISORIAS: [(f32, f32, f32); 8] = [
+    // outer corridor (43..56): sealed just past the gate, then a zigzag
+    (-0.32, 43.0, 56.0),
+    (0.90, 43.0, 50.0),
+    (1.55, 49.0, 56.0),
+    (2.25, 43.0, 50.0),
+    // inner corridor (27..40): from the middle gate (pi) down to the keep's (0)
+    (std::f32::consts::PI + 0.40, 27.0, 40.0),
+    (2.30, 27.0, 34.0),
+    (1.55, 33.0, 40.0),
+    (0.80, 27.0, 34.0),
+];
 
 /// The castle of the south: its centre, floor and towers.
 #[derive(Clone, Debug)]
@@ -152,7 +179,9 @@ impl Plano {
         let portao = (regioes[1].centro - centro_forte).try_normalize().unwrap_or(Vec2::NEG_Y);
         let pe = centro_forte + portao * FORTE_RAIO;
         estradas.push(Estrada { a: regioes[1].centro, b: pe, ha: regioes[1].nivel_chao, hb: nivel_forte });
-        estradas.push(Estrada { a: pe, b: centro_forte, ha: nivel_forte, hb: nivel_forte });
+        // Only to the curtain's gate: inside is the maze, not a road.
+        let portao_ext = centro_forte + portao * (FORTE_MURO_RAIO - 1.0);
+        estradas.push(Estrada { a: pe, b: portao_ext, ha: nivel_forte, hb: nivel_forte });
         let mut plano = Self {
             cidade,
             regioes,
@@ -175,38 +204,66 @@ impl Plano {
         self.d_forte(p) < FORTE_MURO_RAIO + FORTE_ESPESSURA + FORTE_TORRE_RAIO
     }
 
-    /// The centres of the hordes in the outer courtyard: a ring between the
-    /// two walls, clear of the road that runs from the gate to the keep.
+    /// The angle of `p` round Stormkeep, measured from the gate (0..TAU).
+    fn angulo_no_forte(&self, p: Vec2) -> f32 {
+        let f = &self.forte;
+        let d = p - f.centro;
+        (d.y.atan2(d.x) - f.portao.y.atan2(f.portao.x)).rem_euclid(std::f32::consts::TAU)
+    }
+
+    /// The rings, each with its gate's angle from the main gate: curtain at
+    /// 0 (the road), middle at pi (the far side), keep at 0 again.
+    fn aneis_do_forte() -> [(f32, f32); 3] {
+        [(FORTE_MURO_RAIO, 0.0), (FORTE_MEIO_RAIO, std::f32::consts::PI), (FORTE_PATIO_RAIO, 0.0)]
+    }
+
+    /// Half the angular width of a gate in a ring of `raio`.
+    fn meia_boca(raio: f32) -> f32 {
+        (ESTRADA + PORTAO_FOLGA) / (raio + FORTE_ESPESSURA * 0.5)
+    }
+
+    /// The centres of the garrison's hordes: along the middle of both
+    /// corridors, off the radial walls.
     pub fn hordas_do_forte(&self) -> Vec<Vec2> {
         let f = &self.forte;
         let base = f.portao.y.atan2(f.portao.x);
-        (0..10)
-            .map(|k| base + (k as f32 + 0.5) / 10.0 * std::f32::consts::TAU)
-            .filter(|a| {
-                let da = (a - base).rem_euclid(std::f32::consts::TAU);
-                da.min(std::f32::consts::TAU - da) > 0.45
-            })
-            .map(|a| f.centro + Vec2::new(a.cos(), a.sin()) * FORTE_RAIO_HORDAS)
-            .collect()
+        let mut v = Vec::new();
+        for (k, (a, b)) in FORTE_CORREDORES.iter().enumerate() {
+            let r = (a + b) * 0.5;
+            let n = if k == 0 { 9 } else { 6 };
+            for i in 0..n {
+                let ang = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
+                let longe = FORTE_DIVISORIAS.iter().all(|(d, _, _)| {
+                    let da = (ang - d).rem_euclid(std::f32::consts::TAU);
+                    da.min(std::f32::consts::TAU - da) * r > 6.0
+                });
+                if longe {
+                    v.push(f.centro + Vec2::new((base + ang).cos(), (base + ang).sin()) * r);
+                }
+            }
+        }
+        v
     }
 
-    /// Stormkeep's towers: a pair at each gate of each ring, one every 30
-    /// degrees on the curtain and every 60 on the keep wall.
+    /// Stormkeep's towers: a pair at every gate, one every 30 degrees round
+    /// the curtain and every 60 round the keep, and one at the foot of each
+    /// radial wall.
     fn achar_torres_do_forte(&self) -> Vec<Vec2> {
         let f = &self.forte;
         let base = f.portao.y.atan2(f.portao.x);
+        let polar = |a: f32, r: f32| f.centro + Vec2::new((base + a).cos(), (base + a).sin()) * r;
         let mut torres = Vec::new();
-        for (raio, passos) in [(FORTE_MURO_RAIO, 12), (FORTE_PATIO_RAIO, 6)] {
+        for (raio, g) in Self::aneis_do_forte() {
             let meio = raio + FORTE_ESPESSURA * 0.5;
-            let no_anel = |a: f32| f.centro + Vec2::new(a.cos(), a.sin()) * meio;
-            let meia_boca = (ESTRADA + PORTAO_FOLGA + FORTE_TORRE_RAIO) / meio;
-            torres.push(no_anel(base - meia_boca));
-            torres.push(no_anel(base + meia_boca));
+            let boca = Self::meia_boca(raio) + FORTE_TORRE_RAIO / meio;
+            torres.push(polar(g - boca, meio));
+            torres.push(polar(g + boca, meio));
+            let passos = if raio == FORTE_MURO_RAIO { 12 } else if raio == FORTE_PATIO_RAIO { 6 } else { 0 };
             for k in 0..passos {
-                let a = base + (k as f32 + 0.5) / passos as f32 * std::f32::consts::TAU;
-                let da = (a - base).rem_euclid(std::f32::consts::TAU);
-                if da.min(std::f32::consts::TAU - da) > meia_boca * 2.0 {
-                    torres.push(no_anel(a));
+                let a = (k as f32 + 0.5) / passos as f32 * std::f32::consts::TAU;
+                let da = (a - g).rem_euclid(std::f32::consts::TAU);
+                if da.min(std::f32::consts::TAU - da) > boca * 2.0 {
+                    torres.push(polar(a, meio));
                 }
             }
         }
@@ -230,13 +287,22 @@ impl Plano {
                 return Some(Muro::Torre { ameia: dt > FORTE_TORRE_RAIO - 1.0 && xadrez });
             }
         }
-        if self.distancia_estrada(p) < ESTRADA + PORTAO_FOLGA {
-            return None;
-        }
-        for raio in [FORTE_MURO_RAIO, FORTE_PATIO_RAIO] {
+        let ang = self.angulo_no_forte(p);
+        for (raio, g) in Self::aneis_do_forte() {
             if (raio..=raio + FORTE_ESPESSURA).contains(&d) {
+                let da = (ang - g).rem_euclid(std::f32::consts::TAU);
+                if da.min(std::f32::consts::TAU - da) <= Self::meia_boca(raio) {
+                    return None; // the gate
+                }
                 let meio = raio + FORTE_ESPESSURA * 0.5;
                 return Some(Muro::Cortina { ameia: d > meio + FORTE_ESPESSURA * 0.25 && xadrez });
+            }
+        }
+        // The maze's radial walls.
+        for (a, r0, r1) in FORTE_DIVISORIAS {
+            let da = ang - a;
+            if (r0..=r1).contains(&d) && da.cos() > 0.0 && (d * da.sin()).abs() <= FORTE_ESPESSURA * 0.5 {
+                return Some(Muro::Cortina { ameia: xadrez });
             }
         }
         None
@@ -508,7 +574,7 @@ mod tests {
         let pl = ger.planalto().expect("the Planalto has its plan");
         let f = &pl.forte;
         assert!(f.centro.length() + FORTE_RAIO < def.raio_m(), "Stormkeep off the island: {:?}", f.centro);
-        for raio in [FORTE_MURO_RAIO, FORTE_PATIO_RAIO] {
+        for raio in [FORTE_MURO_RAIO, FORTE_MEIO_RAIO, FORTE_PATIO_RAIO] {
             let meio = raio + FORTE_ESPESSURA * 0.5;
             let mut de_pe = 0;
             for k in 0..360 {
@@ -526,11 +592,18 @@ mod tests {
         }
         assert!(pl.hordas_do_forte().len() >= 8);
         let ilha = crate::terreno::Ilha::da_ilha(def);
-        let rota = ilha.caminho(pl.regioes[1].centro, f.centro, 80_000);
-        assert!(
-            rota.as_ref().and_then(|r| r.last()).is_some_and(|p| p.distance(f.centro) < 8.0),
-            "no walk from the Passo into Stormkeep's arena"
-        );
+        // From just outside the curtain's gate to the Warlord: through the
+        // maze, and it WINDS — the owner asked for a labyrinth.
+        let porta = f.centro + f.portao * (FORTE_MURO_RAIO + 8.0);
+        let rota = ilha.caminho(porta, f.centro, 400_000).expect("no walk through Stormkeep's maze");
+        assert!(rota.last().is_some_and(|p| p.distance(f.centro) < 8.0), "the maze does not reach the arena");
+        let mut comprimento = porta.distance(rota[0]);
+        for w in rota.windows(2) {
+            comprimento += w[0].distance(w[1]);
+        }
+        assert!(comprimento > 4.0 * (FORTE_MURO_RAIO + 8.0), "the way in is only {comprimento:.0} u: not a maze");
+        let rota = ilha.caminho(pl.regioes[1].centro, porta, 80_000);
+        assert!(rota.is_some(), "no road from the Passo to Stormkeep's gate");
     }
 
     /// LAST REFUGE IS A CASTLE: a wall round most of the town, towers on it,

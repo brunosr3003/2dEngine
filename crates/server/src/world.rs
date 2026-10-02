@@ -678,8 +678,8 @@ pub const FORTE_A_CADA: usize = 7;
 pub const FORTE_RAIO_UN: f32 = 28.0;
 /// Stormkeep's courtyard hordes: radius, slot spacing and mobs per horde.
 pub const FORTE_HORDA_RAIO_UN: f32 = 13.0;
-pub const FORTE_HORDA_PASSO_UN: f32 = 4.5;
-pub const FORTE_HORDA_MOBS: usize = 10;
+pub const FORTE_HORDA_PASSO_UN: f32 = 3.5;
+pub const FORTE_HORDA_MOBS: usize = 7;
 /// Espacamento entre inimigos dentro do forte.
 ///
 /// **De 4 pra 7 em 27/09/2026** (docs/ESCADA.md, "o simulador media uma horda
@@ -1397,14 +1397,20 @@ pub(crate) fn zonas_comuns_da_ilha(
     // sites (`sem_spawn`), so these are its whole garrison.
     if let Some(pl) = ilha.planalto() {
         for c in pl.hordas_do_forte() {
+            // Each horde stays in ITS corridor of the maze: a slot past the
+            // ring wall would spawn a mob on the other side of it.
+            let dc = pl.d_forte(c);
+            let Some(&(c0, c1)) = shared::planalto::FORTE_CORREDORES.iter().find(|(a, b)| (*a..=*b).contains(&dc)) else {
+                continue;
+            };
             let mut slots = Vec::new();
             for gy in -3..=3 {
                 for gx in -3..=3 {
                     let p = c + Vec2::new(gx as f32, gy as f32) * FORTE_HORDA_PASSO_UN;
                     let d = pl.d_forte(p);
                     if p.distance(c) <= FORTE_HORDA_RAIO_UN
-                        && d > shared::planalto::FORTE_PATIO_RAIO + shared::planalto::FORTE_ESPESSURA + 4.0
-                        && d < shared::planalto::FORTE_MURO_RAIO - 3.0
+                        && d > c0 + 2.0
+                        && d < c1 - 2.0
                         && pl.parte_da_muralha(p).is_none()
                         && pl.distancia_estrada(p) > shared::planalto::ESTRADA + 2.0
                         && !ilha.agua(p.x, p.y)
@@ -12548,12 +12554,14 @@ impl GameWorld {
                     1,
                 );
             }
-            // Stormkeep's Warlord drops his chests where he falls.
-            if kind_id == shared::forte::SENHOR_DO_FORTE
-                && self.inst_do_saque == 0
+            // EVERY field boss drops his chests where he falls (Stormkeep's
+            // Warlord first, then the owner: "the magic island and others need
+            // to be this kind of chest too"). Dungeon bosses keep their chest.
+            if self.inst_do_saque == 0
+                && shared::bosses::chefe(kind_id).is_some()
                 && self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss)
             {
-                self.forte_largar_baus(pos);
+                self.forte_largar_baus(pos, shared::forte::conteudo_do_chefe(kind_id));
             }
             // Rastrear se era o boss
             if self.boss_entity == Some(e) {
@@ -21908,7 +21916,11 @@ mod testes_da_ilha_magica_lotada {
             let zonas = zonas_comuns_da_ilha(&ilha, def, origem);
             assert!(zonas.zonas.len() >= 10, "{} ficou com só {} zonas de mobs",
                 def.zona, zonas.zonas.len());
-            assert!(zonas.zonas.iter().flat_map(|z| &z.slots).all(|p| terra.contem(*p)),
+            // Stormkeep's garrison is inside a walled maze the coarse flood
+            // fill cannot thread; the castle has its own walk-in test
+            // (`planalto::stormkeep_tem_muralha_portoes_e_arena_alcancavel`).
+            let no_forte = |p: &Vec2| ilha.planalto().is_some_and(|pl| pl.no_forte(*p));
+            assert!(zonas.zonas.iter().flat_map(|z| &z.slots).filter(|p| !no_forte(p)).all(|p| terra.contem(*p)),
                 "{} tem mob em ilhota sem acesso", def.zona);
         }
     }
@@ -22380,7 +22392,7 @@ mod testes_planalto {
         assert!(hordas.len() >= 8, "only {} hordes in Stormkeep", hordas.len());
         for z in hordas {
             assert_eq!((z.lv_min, z.lv_max), shared::planalto::FORTE_NIVEIS);
-            assert!(z.slots.len() >= 6, "a Stormkeep horde with {} slots", z.slots.len());
+            assert!(z.slots.len() >= 4, "a Stormkeep horde with {} slots", z.slots.len());
             assert!(z.slots.iter().all(|p| pl.d_forte(*p) > shared::planalto::FORTE_PATIO_RAIO + 4.0), "a mob inside the keep");
         }
     }

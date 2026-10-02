@@ -15,6 +15,8 @@ use shared::forte;
 pub struct BauDoForte {
     pub cor: u8,
     pub some_em: f32,
+    /// The dungeon whose chest table it rolls (`forte::conteudo_do_chefe`).
+    pub conteudo: u16,
 }
 
 /// A player opening a chest: which one, since when, and from where.
@@ -26,8 +28,9 @@ pub struct AberturaDeBau {
 }
 
 impl GameWorld {
-    /// The Warlord fell at `onde`: one to three chests round the spot.
-    pub(super) fn forte_largar_baus(&mut self, onde: Vec2) {
+    /// A field boss fell at `onde`: one to three chests round the spot, of
+    /// the table of dungeon `conteudo`.
+    pub(super) fn forte_largar_baus(&mut self, onde: Vec2, conteudo: u16) {
         let n = forte::quantos(fastrand::f32());
         for k in 0..n {
             let cor = forte::cor(fastrand::f32());
@@ -47,11 +50,12 @@ impl GameWorld {
                 BauDoForte {
                     cor,
                     some_em: self.sim_time_s + forte::DURA_S,
+                    conteudo,
                 },
             ));
             crate::telemetria::conta("forte_bau", cor, 1);
         }
-        tracing::info!("[forte] the Warlord fell: {n} chest(s)");
+        tracing::info!("[forte] a field boss fell: {n} chest(s) of dungeon {conteudo}");
     }
 
     /// A touch on `eid` (`Interact`). `true` = it was a castle chest.
@@ -131,9 +135,9 @@ impl GameWorld {
                 .query::<(&NetId, &Position, &BauDoForte)>()
                 .iter()
                 .find(|(_, (n, _, _))| n.0 == a.bau)
-                .map(|(e, (_, p, b))| (e, p.0, b.cor));
+                .map(|(e, (_, p, b))| (e, p.0, b.cor, b.conteudo));
             let eu = self.pos_do_jogador(sid);
-            let Some((e, p, cor)) = bau else {
+            let Some((e, p, cor, conteudo)) = bau else {
                 // Someone else finished first, or it timed out.
                 self.forte_parar(sid);
                 continue;
@@ -149,13 +153,13 @@ impl GameWorld {
             self.removed_this_tick.push(a.bau);
             let _ = self.ecs.despawn(e);
             self.forte_parar(sid);
-            self.forte_dar_bau(sid, cor);
+            self.forte_dar_bau(sid, cor, conteudo);
         }
     }
 
     /// Rolls and hands over a chest of `cor`. What does not fit goes to the mail.
-    fn forte_dar_bau(&mut self, sid: SessionId, cor: u8) {
-        let Some(c) = dg::conteudo(forte::CONTEUDO_DO_BAU) else {
+    fn forte_dar_bau(&mut self, sid: SessionId, cor: u8, conteudo: u16) {
+        let Some(c) = dg::conteudo(conteudo) else {
             return;
         };
         let mut rng = || fastrand::f32();
@@ -215,7 +219,7 @@ mod testes {
     fn bau_do_forte_abre_em_dez_segundos_e_so_um_leva() {
         crate::economy::init_vazia_para_testes();
         let mut w = GameWorld::new(HashMap::new());
-        w.forte_largar_baus(Vec2::new(10.0, 10.0));
+        w.forte_largar_baus(Vec2::new(10.0, 10.0), forte::CONTEUDO_DO_BAU);
         let baus: Vec<(EntityId, Vec2)> = w
             .ecs
             .query::<(&NetId, &Position, &BauDoForte)>()

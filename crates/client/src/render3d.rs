@@ -1506,41 +1506,45 @@ fn desenha_bau(p: Vec3) {
 /// (`shared::forte`, 2 green .. 4 purple); `None` = the dungeon's gold one.
 fn desenha_bau_de_cor(p: Vec3, cor: Option<u8>) {
     let t = get_time() as f32;
-    let madeira = Color::from_rgba(122, 78, 40, 255);
-    let escura = Color::from_rgba(86, 52, 26, 255);
-    let ouro = match cor {
+    let madeira = Color::from_rgba(132, 86, 44, 255);
+    let escura = Color::from_rgba(92, 56, 28, 255);
+    let metal = match cor {
         Some(2) => Color::from_rgba(96, 200, 96, 255),
         Some(3) => Color::from_rgba(80, 150, 240, 255),
         Some(4) => Color::from_rgba(186, 104, 240, 255),
         _ => Color::from_rgba(236, 190, 84, 255),
     };
-    draw_cube(
-        p + vec3(0.0, 0.38, 0.0),
-        vec3(1.2, 0.76, 0.8),
-        None,
-        madeira,
-    );
-    draw_cube(
-        p + vec3(0.0, 0.86, 0.0),
-        vec3(1.26, 0.24, 0.86),
-        None,
-        escura,
-    );
-    for dx in [-0.42, 0.42] {
-        draw_cube(p + vec3(dx, 0.5, 0.0), vec3(0.1, 0.98, 0.84), None, ouro);
+    // Every piece sits ON or OUTSIDE the box's faces — a band drawn inside
+    // the wood z-fights and reads as broken (the owner: "the chest visual is
+    // bugged").
+    const L: f32 = 1.2; // width (x)
+    const P: f32 = 0.8; // depth (z)
+    const A: f32 = 0.7; // body height
+    const E: f32 = 0.03; // how far a band stands out
+    draw_cube(p + vec3(0.0, A * 0.5, 0.0), vec3(L, A, P), None, madeira);
+    // The lid: a wider slab on top, then a narrower crown.
+    draw_cube(p + vec3(0.0, A + 0.08, 0.0), vec3(L + 0.08, 0.16, P + 0.08), None, escura);
+    draw_cube(p + vec3(0.0, A + 0.22, 0.0), vec3(L - 0.1, 0.12, P - 0.16), None, escura);
+    // Two bands over the whole chest, standing out of every face.
+    for dx in [-0.38f32, 0.38] {
+        draw_cube(p + vec3(dx, A * 0.5, 0.0), vec3(0.12, A + E, P + 2.0 * E), None, metal);
+        draw_cube(p + vec3(dx, A + 0.08, 0.0), vec3(0.12, 0.16 + 2.0 * E, P + 0.08 + 2.0 * E), None, metal);
+        draw_cube(p + vec3(dx, A + 0.22, 0.0), vec3(0.12, 0.12 + 2.0 * E, P - 0.16 + 2.0 * E), None, metal);
     }
-    draw_cube(
-        p + vec3(0.0, 0.66, 0.42),
-        vec3(0.18, 0.22, 0.06),
-        None,
-        ouro,
-    );
+    // The lock plate, on the front face.
+    draw_cube(p + vec3(0.0, A - 0.1, P * 0.5 + E), vec3(0.22, 0.26, 0.04), None, metal);
+    draw_cube(p + vec3(0.0, A - 0.16, P * 0.5 + 2.0 * E), vec3(0.08, 0.1, 0.03), None, escura);
+    // The ring on the ground and a faint beam: seen from across the arena.
     let a = 0.55 + 0.35 * (t * 3.0).sin();
-    draw_ring(
-        p,
-        0.95 + 0.08 * (t * 3.0).sin(),
-        Color::new(ouro.r, ouro.g, ouro.b, a),
-    );
+    draw_ring(p, 1.0 + 0.08 * (t * 3.0).sin(), Color::new(metal.r, metal.g, metal.b, a));
+    if cor.is_some() {
+        draw_cube(
+            p + vec3(0.0, 2.6, 0.0),
+            vec3(0.18, 3.6, 0.18),
+            None,
+            Color::new(metal.r, metal.g, metal.b, 0.22 + 0.1 * (t * 2.0).sin()),
+        );
+    }
 }
 
 /// Escala de desenho do corpo: 1 pro bicho comum, o fator do CHEFE pra ele, e
@@ -4529,3 +4533,4 @@ mod testes_da_maquete {
         }
     }
 }
+

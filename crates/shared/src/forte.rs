@@ -1,4 +1,4 @@
-//! STORMKEEP's chests: the open-field castle in the Plateau's south
+//! FIELD BOSS CHESTS, born with STORMKEEP — the open-field castle in the Plateau's south
 //! (`planalto::Forte`). Its Warlord drops one to three chests where he
 //! falls, each green, blue or purple; opening one takes `ABRIR_S` seconds of
 //! standing still, like gathering, and whoever finishes it takes the loot.
@@ -11,6 +11,23 @@
 pub const SENHOR_DO_FORTE: u16 = 24;
 /// The dungeon whose chest table the castle's chests roll (the Tempest Spire, 56).
 pub const CONTEUDO_DO_BAU: u16 = 18;
+/// The dungeon whose chest table a field boss's chests roll: Stormkeep's
+/// Warlord rolls the Tempest Spire's (56); every other field boss the
+/// highest dungeon at or below his level (the owner: "in the magic island
+/// and others need to be this kind of chest too").
+pub fn conteudo_do_chefe(kind: u16) -> u16 {
+    if kind == SENHOR_DO_FORTE {
+        return CONTEUDO_DO_BAU;
+    }
+    let nivel = crate::bosses::chefe(kind).map_or(1, |c| c.nivel);
+    let disponiveis = || crate::dungeon::CONTEUDOS.iter().filter(|c| c.disponivel);
+    disponiveis()
+        .filter(|c| c.nivel_min <= nivel)
+        .max_by_key(|c| c.nivel_min)
+        .or_else(|| disponiveis().min_by_key(|c| c.nivel_min))
+        .map_or(CONTEUDO_DO_BAU, |c| c.id)
+}
+
 /// Seconds of standing at the chest to open it.
 pub const ABRIR_S: f32 = 10.0;
 /// How close the opener has to stay (units), and how far they may shuffle.
@@ -101,5 +118,12 @@ mod testes {
         let c = crate::dungeon::conteudo(CONTEUDO_DO_BAU).expect("the Tempest Spire");
         assert_eq!(c.nivel_min, 56, "the castle's chests roll a level 56 table");
         assert!(crate::bosses::chefe(SENHOR_DO_FORTE).is_some_and(|b| b.nivel == 60 && b.zona == crate::planalto::ZONA));
+        // Every field boss rolls a dungeon at or below his level (or the
+        // lowest, below them all).
+        for b in crate::bosses::CHEFES.iter() {
+            let c = crate::dungeon::conteudo(conteudo_do_chefe(b.kind)).expect("a dungeon");
+            assert!(c.disponivel, "{} rolls a locked dungeon", b.nome);
+            assert!(c.nivel_min <= b.nivel.max(6), "{} ({}) rolls {} ({})", b.nome, b.nivel, c.nome, c.nivel_min);
+        }
     }
 }

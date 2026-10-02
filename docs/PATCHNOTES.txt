@@ -1,3 +1,13 @@
+02/10/2026 — A Fortaleza virou labirinto, e todo chefe de campo solta baús
+
+A Fortaleza da Tormenta agora é um labirinto: ganhou uma terceira muralha no meio, com o portão do lado oposto ao da entrada, e paredes em zigue-zague nos corredores. Para chegar ao Senhor da Fortaleza é preciso dar a volta no castelo duas vezes; um dos lados de cada corredor é um beco sem saída cheio de monstros. As hordas agora ficam dentro dos corredores.
+
+Todo chefe de campo (os das ilhas, os da Ilha Mágica e o da Fortaleza) solta de 1 a 3 baús verdes, azuis ou roxos quando cai, além do saque de sempre. O baú se abre do mesmo jeito: 10 segundos parado ao lado, e quem terminar leva. O conteúdo é o baú da dungeon de nível mais próximo do nível do chefe.
+
+O baú ganhou visual novo: as faixas de metal não piscam mais, a tampa assenta direito e um feixe de luz da cor do baú mostra onde ele está de longe.
+
+Atualização obrigatória — o protocolo passa para o 177. Por enquanto só computador e Android.
+
 02/10/2026 — Fortaleza da Tormenta, o castelo do sul do Planalto
 
 O sul do Planalto ganhou uma masmorra a céu aberto: a Fortaleza da Tormenta (Stormkeep), um castelo grande com duas muralhas e torres, num platô próprio. A estrada sai do Passo dos Ventos e entra pelos dois portões.

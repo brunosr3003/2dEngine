@@ -134,7 +134,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// and server must agree on the heights) and its town a Harbour Captain.
 /// 176 (02/10/2026): Stormkeep, the open-field castle in the Plateau's south —
 /// terrain, the Warlord (boss kind 24) and his chests (`forte`, roles 121-123).
-pub const PROTOCOL_VERSION: u16 = 176;
+/// 177 (02/10/2026): Stormkeep becomes a maze (terrain) and every field boss
+/// drops chests.
+pub const PROTOCOL_VERSION: u16 = 177;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

@@ -2496,3 +2496,62 @@ pub async fn previa_do_oasis() {
     unsafe { get_internal_gl().flush() };
     rt.texture.get_texture_data().export_png(&format!("{saida}/oasis-mapa.png"));
 }
+
+/// Preview of the chests (`MMO_PREVIA_BAUS=1`; PNG in `MMO_PREVIA_SAIDA`): the
+/// dungeon's and Stormkeep's three, through the real entity pass.
+#[cfg(debug_assertions)]
+pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-baus".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    let mut world = crate::world::World::default();
+    let papeis = [shared::dungeon::PAPEL_BAU, shared::forte::PAPEL_VERDE, shared::forte::PAPEL_AZUL, shared::forte::PAPEL_ROXO];
+    let metas: Vec<shared::EntityMeta> = papeis
+        .iter()
+        .enumerate()
+        .map(|(k, p)| shared::EntityMeta {
+            pk: Default::default(),
+            auras: 0,
+            id: shared::EntityId(100 + k as u32),
+            tag: shared::EntityTag::Npc,
+            name: Some(format!("chest {p}")),
+            hp_max: 1,
+            faction: None,
+            kind: shared::npc_kind(None, *p),
+            nivel: 0,
+            desafio: None,
+            aparencia: 0,
+            skins: 0,
+        })
+        .collect();
+    let states: Vec<shared::EntityState> = (0..4)
+        .map(|k| shared::EntityState {
+            id: shared::EntityId(100 + k as u32),
+            pos: [((k as f32 * 2.5) * shared::POS_SCALE) as i16, 0],
+            vel: [0, 0],
+            hp: 1,
+            flags: 0,
+            acao: 0,
+            rumo: 0,
+        })
+        .collect();
+    world.apply(metas, states, &[]);
+    let chao = |_: f32, _: f32| 0.0f32;
+    let solido = crate::render3d::material_solido();
+    for _ in 0..6 {
+        world.tick(0.016, &chao);
+        let mut vista = crate::render3d::Vista::nova(Vec2::new(3.75, 0.0), 0.6, 9.0, 0.5, 0.0, &chao);
+        vista.cam.render_target = Some(rt.clone());
+        set_camera(&vista.cam);
+        clear_background(Color::from_rgba(150, 186, 214, 255));
+        draw_plane(vec3(3.75, 0.0, 0.0), vec2(12.0, 8.0), None, Color::from_rgba(110, 140, 90, 255));
+        gl_use_material(&solido);
+        crate::render3d::draw_entities(&mut world, vox, None, &vista);
+        gl_use_default_material();
+        unsafe { get_internal_gl().flush() };
+        rt.texture.get_texture_data().export_png(&format!("{saida}/baus.png"));
+        next_frame().await;
+    }
+    crate::render3d::define_alvo(None);
+}
