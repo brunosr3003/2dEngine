@@ -715,12 +715,12 @@ async fn main() {
         evolucao_skills::previa().await;
         return;
     }
-    #[cfg(debug_assertions)]
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_FORJA").is_ok() {
         forja_ui::previa().await;
         return;
     }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_OFICINA").is_ok() {
         craft_ui::previa().await;
         return;
