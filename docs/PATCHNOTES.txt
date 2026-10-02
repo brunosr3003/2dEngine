@@ -1,3 +1,15 @@
+02/10/2026 — Skyreach, a ilha acima da tempestade
+
+Nova ilha para os níveis 50 a 60: Skyreach, um arquipélago de ilhas flutuantes ligadas por caminhos de nuvens, com campos dourados, templos de mármore e árvores sagradas. Ela abre depois de "Alcance o nível 50": embarque com o Capitão do Porto.
+
+Os monstros de lá têm asas: Lobo, Lince, Urso, Owlbear, Arqueiro e Mago Serafins. O Arquimago da Tempestade agora guarda o Trono do Céu.
+
+Três dungeons novas: o Relicário Serafim (porão solo, nível 55, com o Guardião do Relicário), a Catedral das Nuvens (caverna, 56, com o Serafim Caído) e o Ninho do Pégaso (caverna, 58, com o Pégaso da Tormenta). A Forja do Titã mudou-se para Skyreach.
+
+O Planalto da Tormenta agora vai do nível 40 ao 50. O Cofre do Trovão passou para o nível 45 e a Coruja-Urso Primordial para o 48. O fim do capítulo IV da história leva a Skyreach, e o capítulo V acontece lá.
+
+Atualização obrigatória — o protocolo passa para o 172. Por enquanto só computador e Android.
+
 02/10/2026 — Auto missão explica por que parou
 
 Quando a auto missão não acha o caminho, ela agora diz o motivo em vez de só "não sei onde fica o objetivo": a missão é de outra ilha (e com quem embarcar), já está pronta e deve ser entregue a alguém de outra ilha, o bicho ou o item não existe nesta ilha (e em quais ilhas existe), ou os recursos estão esgotados no momento. As mensagens da auto missão também passaram a aparecer em inglês para quem joga em inglês.

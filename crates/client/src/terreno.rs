@@ -1550,6 +1550,17 @@ pub async fn previa_celeste(vox: &mut crate::vox::VoxCache) {
         next_frame().await;
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
+    // The World tab: the fifth island on the archipelago map.
+    mapa.no_mundo = true;
+    for _ in 0..10 {
+        mapa.acompanhar();
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 24, 34, 255));
+        mapa.desenha_grande(&mundo, 55, &crate::mundo_ui::Mundo::default(), 0);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    rt.texture.get_texture_data().export_png(&format!("{saida}/mundo.png"));
     // The winged creatures, side by side, two angles each.
     let bichos = ["bichos/seraph_wolf", "bichos/seraph_lynx", "bichos/seraph_bear", "bichos/seraph_owlbear",
         "bichos/pegasus_stag", "humanoides/seraph_archer", "humanoides/seraph_mage"];

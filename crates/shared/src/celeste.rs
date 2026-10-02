@@ -330,7 +330,7 @@ pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
     semente: SEMENTE,
     raio_blocos: RAIO_BLOCOS,
     bioma: crate::terreno::Bioma::Celeste,
-    centro: [2600.0, -1400.0],
+    centro: [-2900.0, -2700.0],
     nivel: (50, 60),
 };
 
