@@ -145,6 +145,31 @@ pub const NIVEIS: &[NivelMagico] = &[
         mob: (45, 48),
         nome_do_chefe: "Elder Colossus of the Magic Island",
     },
+    // The owner, 02/10/2026: "do more tiers of magic island until lvl 80".
+    NivelMagico {
+        grau: 4,
+        zona: "ilha_magica_4",
+        nome: "Magic Island IV",
+        exige_nivel: 60,
+        mob: (60, 63),
+        nome_do_chefe: "Ancient Colossus of the Magic Island",
+    },
+    NivelMagico {
+        grau: 5,
+        zona: "ilha_magica_5",
+        nome: "Magic Island V",
+        exige_nivel: 70,
+        mob: (70, 73),
+        nome_do_chefe: "Titan Colossus of the Magic Island",
+    },
+    NivelMagico {
+        grau: 6,
+        zona: "ilha_magica_6",
+        nome: "Magic Island VI",
+        exige_nivel: 77,
+        mob: (77, 80),
+        nome_do_chefe: "Eternal Colossus of the Magic Island",
+    },
 ];
 
 impl NivelMagico {

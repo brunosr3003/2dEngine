@@ -1,3 +1,9 @@
+02/10/2026 — Ilha Mágica até o nível 80
+
+A Ilha Mágica ganhou três degraus novos: IV (entra no nível 60, monstros 60-63), V (entra no 70, monstros 70-73) e VI (entra no 77, monstros 77-80). Cada um tem o seu Colosso: o Ancião (66), o Titã (76) e o Eterno (80). O painel da ilha agora mostra os seis degraus.
+
+Atualização obrigatória — o protocolo passa para o 178. Por enquanto só computador e Android.
+
 02/10/2026 — A Fortaleza virou labirinto, e todo chefe de campo solta baús
 
 A Fortaleza da Tormenta agora é um labirinto: ganhou uma terceira muralha no meio, com o portão do lado oposto ao da entrada, e paredes em zigue-zague nos corredores. Para chegar ao Senhor da Fortaleza é preciso dar a volta no castelo duas vezes; um dos lados de cada corredor é um beco sem saída cheio de monstros. As hordas agora ficam dentro dos corredores.

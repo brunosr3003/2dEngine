@@ -298,17 +298,20 @@ impl MagicaUi {
     /// Fora do desenho pra poder ser medida. A primeira versão desta faixa
     /// saiu com os rótulos sobrepostos no emulador, e medida escrita à mão
     /// nesta tela já pôs o "Enter" fora da janela uma vez.
-    pub(crate) fn faixa_dos_degraus(rod: Rect, f: f32) -> (f32, [Rect; 3]) {
+    pub(crate) fn faixa_dos_degraus(rod: Rect, f: f32) -> (f32, Vec<Rect>) {
         // 34 em pixels CRUS no mínimo: `area_de_toque` cresce o alvo até o
         // dedo, mas com teto (+14). Num `f` pequeno, 34 × 0,8 = 27 e nem com
         // o crescimento chega aos 44 pt da Apple — o teste pegou em f=0,8.
         let alto = (34.0 * f).max(34.0);
         let y = rod.y - 104.0 * f;
         let folga = 8.0 * f;
-        let larg = (rod.w - folga * 2.0) / 3.0;
+        // One button per tier (`magica::NIVEIS`): it was a fixed three, and
+        // the fourth tier crashed the panel on an out-of-bounds index.
+        let n = shared::magica::NIVEIS.len();
+        let larg = (rod.w - folga * (n as f32 - 1.0)) / n as f32;
         (
             y + alto + 15.0 * f,
-            [0, 1, 2].map(|k| Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)),
+            (0..n).map(|k| Rect::new(rod.x + k as f32 * (larg + folga), y, larg, alto)).collect(),
         )
     }
 
@@ -573,7 +576,7 @@ impl MagicaUi {
                 if grau == nv.grau {
                     estilo::ret_arredondado(fila[k], 6.0, estilo::alfa(estilo::OURO, 0.22));
                 }
-                const ROMANO: [&str; 3] = ["I", "II", "III"];
+                const ROMANO: [&str; 6] = ["I", "II", "III", "IV", "V", "VI"];
                 if ui::botao(fila[k], ROMANO[k], liberado) && liberado {
                     self.grau = nv.grau;
                 }
@@ -661,7 +664,7 @@ impl MagicaUi {
                 if nv.grau == grau {
                     estilo::ret_arredondado(r, 6.0, estilo::alfa(estilo::OURO, 0.22));
                 }
-                const ROMANO: [&str; 3] = ["I", "II", "III"];
+                const ROMANO: [&str; 6] = ["I", "II", "III", "IV", "V", "VI"];
                 if ui::botao(r, ROMANO[k], liberado) && liberado {
                     self.grau = nv.grau;
                 }
@@ -855,7 +858,9 @@ mod testes {
         for (w, f) in [(460.0f32, 1.0f32), (360.0, 1.4), (300.0, 2.2), (620.0, 0.8)] {
             let rod = Rect::new(20.0, 400.0, w, 40.0 * f);
             let (linha, fila) = MagicaUi::faixa_dos_degraus(rod, f);
-            for i in 0..3 {
+            let n = fila.len();
+            assert_eq!(n, shared::magica::NIVEIS.len());
+            for i in 0..n {
                 assert!(
                     fila[i].x >= rod.x - 0.01 && fila[i].x + fila[i].w <= rod.x + rod.w + 0.01,
                     "{w}x{f}: degrau {i} vaza a faixa"
@@ -864,7 +869,7 @@ mod testes {
                     crate::ui::area_de_toque(fila[i]).h >= 44.0,
                     "{w}x{f}: degrau {i} é menor que um dedo"
                 );
-                for j in i + 1..3 {
+                for j in i + 1..n {
                     assert!(
                         fila[i].x + fila[i].w <= fila[j].x + 0.01,
                         "{w}x{f}: degrau {i} encosta no {j}"

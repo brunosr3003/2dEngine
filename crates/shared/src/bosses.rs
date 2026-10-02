@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 20] = [
+pub const CHEFES: [Chefe; 23] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -728,6 +728,10 @@ pub const CHEFES: [Chefe; 20] = [
     // níveis ACIMA do topo da faixa, que é o que separa chefe de mob.
     colosso(20, 1, 36),
     colosso(21, 2, 51),
+    // Tiers IV-VI (levels 60-80). Kinds past the mob kinds (30-46).
+    colosso(47, 3, 66),
+    colosso(48, 4, 76),
+    colosso(49, 5, 80),
     // ── The Plateau's 50-60 half (02/10/2026) ──
     // Between the Owlbear (52) and the Archmage (60) there was no boss at
     // all: a field boss on the Vale of Thunder's island, and the Tempest

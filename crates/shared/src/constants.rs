@@ -136,7 +136,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// terrain, the Warlord (boss kind 24) and his chests (`forte`, roles 121-123).
 /// 177 (02/10/2026): Stormkeep becomes a maze (terrain) and every field boss
 /// drops chests.
-pub const PROTOCOL_VERSION: u16 = 177;
+/// 178 (02/10/2026): Magic Island tiers IV-VI (zones ilha_magica_4..6,
+/// Colossus kinds 47-49).
+pub const PROTOCOL_VERSION: u16 = 178;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
