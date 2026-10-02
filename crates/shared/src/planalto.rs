@@ -13,7 +13,9 @@ pub const NOMES: [&str; 5] = [
     "Forja Partida",
     "Olho da Tempestade",
 ];
-pub const NIVEIS: [(u32, u32); 5] = [(40, 44), (44, 49), (48, 53), (52, 57), (57, 60)];
+/// 40-50 since Skyreach took 50-60 (02/10/2026); it was 40-60 in five
+/// bands of about four levels.
+pub const NIVEIS: [(u32, u32); 5] = [(40, 42), (42, 44), (44, 46), (46, 48), (48, 50)];
 pub const PONTO_BASE: u16 = 40;
 /// How far the region reaches: the end of the ramp.
 pub const RAIO: f32 = 78.0;

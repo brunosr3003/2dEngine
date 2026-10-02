@@ -36,6 +36,7 @@ pub const FIRST_VARIANT_KIND: u16 = 30;
 
 /// Archetype kinds, as in `quests::mob_kind`.
 mod species {
+    pub const WOLF: u16 = 0;
     pub const BEAR: u16 = 1;
     pub const GUNMAN: u16 = 2;
     pub const TIGER: u16 = 3;
@@ -62,6 +63,13 @@ pub const VARIANTS: &[Variant] = &[
     // the Plateau, and until this variant no owlbear spawned there: the quest
     // map had nowhere to point.
     Variant { kind: 40, species: species::OWLBEAR, name: "Storm Owlbear", zone: "ilha_planalto" },
+    // Skyreach: the winged ones (white and gold, hippogriff wings).
+    Variant { kind: 41, species: species::TIGER, name: "Seraph Lynx", zone: "ilha_celeste" },
+    Variant { kind: 42, species: species::ARCHER, name: "Seraph Archer", zone: "ilha_celeste" },
+    Variant { kind: 43, species: species::BEAR, name: "Seraph Bear", zone: "ilha_celeste" },
+    Variant { kind: 44, species: species::MAGE, name: "Seraph Mage", zone: "ilha_celeste" },
+    Variant { kind: 45, species: species::OWLBEAR, name: "Seraph Owlbear", zone: "ilha_celeste" },
+    Variant { kind: 46, species: species::WOLF, name: "Seraph Wolf", zone: "ilha_celeste" },
 ];
 
 pub fn variant(kind: u16) -> Option<&'static Variant> {
@@ -101,7 +109,7 @@ mod tests {
         assert_eq!(species_of(30), species::ARCHER);
         assert_eq!(species_of(6), species::ARCHER);
         assert_eq!(species_of(13), 13);
-        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37]);
+        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37, 42]);
     }
 
     #[test]

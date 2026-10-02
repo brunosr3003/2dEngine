@@ -133,6 +133,34 @@ pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
     (40, GREATER_HEAL, 1, 1, 0.12),
 ];
 
+/// Skyreach's winged ones (kinds 41-46), about 1.3x their Plateau cousins for
+/// levels 50-60. Their own list and their own migration marker:
+/// `variantes_por_ilha_v1` already ran on the live databases, so rows added
+/// to `BASE_VARIANTES` would never reach them.
+pub const BASE_VARIANTES_CELESTE: &[(i32, u16, i32, i32, f32)] = &[
+    (41, COPPER, 80, 180, 1.0), // Seraph Lynx
+    (41, QUINTESSENCE, 2, 5, 0.28),
+    (41, GREATER_MANA, 1, 1, 0.10),
+    (42, COPPER, 80, 180, 1.0), // Seraph Archer
+    (42, ILLUMINATING_FRAGMENT, 2, 5, 0.26),
+    (42, DARKSTEEL, 3, 6, 0.26),
+    (42, STAMINA_POTION, 1, 1, 0.10),
+    (43, COPPER, 95, 215, 1.0), // Seraph Bear
+    (43, DARKSTEEL, 3, 7, 0.30),
+    (43, GREATER_HEAL, 1, 1, 0.12),
+    (44, COPPER, 90, 200, 1.0), // Seraph Mage
+    (44, DARK_HEART_STONE, 2, 5, 0.26),
+    (44, ANIMA_STONE, 2, 5, 0.26),
+    (44, GREATER_MANA, 1, 1, 0.12),
+    (45, COPPER, 105, 240, 1.0), // Seraph Owlbear
+    (45, PLATINUM, 3, 6, 0.28),
+    (45, EXORCISM_BAUBLE, 1, 3, 0.22),
+    (45, GREATER_HEAL, 1, 1, 0.12),
+    (46, COPPER, 70, 160, 1.0), // Seraph Wolf
+    (46, STEEL, 2, 5, 0.24),
+    (46, GREATER_HEAL, 1, 1, 0.10),
+];
+
 /// Migrates only the mobs' economy, once, inside a transaction.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -214,6 +242,23 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!("Island variant loot seeded");
+    }
+    let celeste = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('variantes_celeste_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if celeste {
+        for &(kind, item, min, max, chance) in BASE_VARIANTES_CELESTE {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Skyreach variant loot seeded");
     }
     // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
     // they come off every mob and every stone, in every color. A new database
@@ -341,6 +386,7 @@ mod testes {
                 .chain(BASE_PRAIA)
                 .chain(BASE_ILHAS)
                 .chain(BASE_VARIANTES)
+                .chain(BASE_VARIANTES_CELESTE)
                 .any(|(kk, ..)| *kk as u16 == k)
         };
         for d in ARQUIPELAGO.iter() {
@@ -362,7 +408,7 @@ mod testes {
     /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
             let kinds: std::collections::BTreeSet<i32> =
                 tabela.iter().map(|(k, ..)| *k).collect();
             for k in kinds {
@@ -380,7 +426,7 @@ mod testes {
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
             for (k, item, ..) in tabela {
                 assert!(
                     !chaves.contains(item),

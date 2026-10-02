@@ -22,6 +22,8 @@
 use glam::Vec2;
 
 pub const ZONA: &str = "ilha_celeste";
+/// Bump on any change to the layout: it is in the server's height cache key.
+pub const REVISAO: u32 = 1;
 /// Planting seed: the relief does not depend on it, the vegetation does.
 pub const SEMENTE: i32 = 0x5C1E_A7E0;
 /// Zone radius in BLOCKS: the whole layout plus a margin of sky.
@@ -305,6 +307,15 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
         }
     }
     NIVEL_FUNDO
+}
+
+/// Story place ids for Skyreach (`objective_kind::LUGAR`): `PONTO_BASE + i`
+/// is the centre of island `i` of `PLATOS`. Past the Plateau's 40-44.
+pub const PONTO_BASE: u16 = 60;
+
+/// The world position of story place `p`, if it is one of Skyreach's.
+pub fn ponto(p: u16) -> Option<Vec2> {
+    p.checked_sub(PONTO_BASE).and_then(|i| PLATOS.get(i as usize)).map(|pl| pl.centro)
 }
 
 pub fn e_celeste(zona: &str) -> bool {

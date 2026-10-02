@@ -263,8 +263,13 @@ pub fn ilhas_dos_bichos(comuns: &[u16], praia: &[u16]) -> std::collections::Hash
         };
         m.insert(k, v);
     }
+    // Beach creatures live on every island with a SEA: Skyreach floats over
+    // clouds and has no beach.
     for &k in praia {
-        m.insert(k, (0..ilhas.len() as u8).collect());
+        m.insert(
+            k,
+            (0..ilhas.len() as u8).filter(|i| !shared::celeste::e_celeste(ilhas[*i as usize].zona)).collect(),
+        );
     }
     m
 }
@@ -329,8 +334,18 @@ impl GameWorld {
                 .map(|i| i.centro)
                 .take(chefes.len())
                 .collect()
+        } else if shared::celeste::e_celeste(&self.zona) {
+            // Skyreach: by the ruined temple of the Throne of the Sky, then the
+            // Storm Gardens — drawn islands, not a heuristic's pick.
+            [11usize, 8]
+                .iter()
+                .map(|&i| shared::celeste::PLATOS[i].centro + Vec2::new(-14.0, 10.0))
+                .take(chefes.len())
+                .collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
-            [2usize, 4].iter().filter_map(|i| {
+            // The top region first: with one boss left (the Archmage moved to
+            // Skyreach) it stands by the Eye of the Storm, the 48-50 region.
+            [4usize, 2].iter().filter_map(|i| {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
                 candidatos.iter().copied().filter(|p| pl.regiao(*p) == *i && pl.distancia_estrada(*p) > 28.0)
                     .min_by(|a,b| a.distance_squared(alvo).total_cmp(&b.distance_squared(alvo)))

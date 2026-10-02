@@ -133,8 +133,13 @@ const fn cor(a: usize, b: usize, abre: u8) -> Corredor {
 
 use Papel::*;
 
-/// The five plans. Every Porão has three fights and a boss (`andares = 3`).
-pub const PLANTAS: [Planta; 5] = [
+/// Bump on any change to the plans' layout: it is in the server's height
+/// cache key (`Ilha::carregar_ou_gerar_da_ilha`). 2: re-anchored 60° apart
+/// for the Seraph Reliquary (02/10/2026).
+pub const REVISAO: u32 = 2;
+
+/// The plans. Every Porão has three fights and a boss (`andares = 3`).
+pub const PLANTAS: [Planta; 6] = [
     // SHIPWRECK CELLAR — a serpentine: up, west, north, then east to the boss.
     // The alcove east of the first room is the hold of the wreck: empty, but
     // the cellar isn't a single line.
@@ -165,7 +170,7 @@ pub const PLANTAS: [Planta; 5] = [
     // stash room behind it.
     Planta {
         conteudo: 2,
-        ancora: Vec2::new(-211.1, 68.6),
+        ancora: Vec2::new(-207.8, 120.0),
         tema: Tema::Tijolo,
         salas: &[
             sala(0.0, -38.0, 6.0, Entrada),   // 0
@@ -189,7 +194,7 @@ pub const PLANTAS: [Planta; 5] = [
     // cabins off the middle deck, and the boss below the stern.
     Planta {
         conteudo: 3,
-        ancora: Vec2::new(-130.5, -179.6),
+        ancora: Vec2::new(-207.8, -120.0),
         tema: Tema::Gelo,
         salas: &[
             sala(-42.0, 0.0, 6.0, Entrada), // 0: the bow
@@ -213,7 +218,7 @@ pub const PLANTAS: [Planta; 5] = [
     // buried in the sand, with an L-shaped dead end off the second room.
     Planta {
         conteudo: 4,
-        ancora: Vec2::new(130.5, -179.6),
+        ancora: Vec2::new(207.8, -120.0),
         tema: Tema::Arenito,
         salas: &[
             sala(-30.0, -34.0, 6.0, Entrada), // 0
@@ -237,7 +242,7 @@ pub const PLANTAS: [Planta; 5] = [
     // then the long corridor north to the vault itself.
     Planta {
         conteudo: 5,
-        ancora: Vec2::new(211.1, 68.6),
+        ancora: Vec2::new(207.8, 120.0),
         tema: Tema::Castelo,
         salas: &[
             sala(0.0, -44.0, 6.0, Entrada),   // 0
@@ -255,6 +260,32 @@ pub const PLANTAS: [Planta; 5] = [
             cor(1, 4, 3),
             cor(2, 5, 0),
             cor(3, 6, 0),
+        ],
+    },
+    // SERAPH RELIQUARY (Skyreach) — a temple: the nave runs north from the
+    // door, the aisles hold the first two fights, the crossing the third, and
+    // the relics wait in the apse. The plans now sit 60° apart (they were five
+    // at 72°): the Shipwreck Cellar keeps its old anchor at 222 — at 240 the
+    // player stood a little past its entrance room's edge — the rest are on a
+    // ring of 240.
+    Planta {
+        conteudo: 6,
+        ancora: Vec2::new(-0.0, -240.0),
+        tema: Tema::Castelo,
+        salas: &[
+            sala(0.0, -42.0, 6.0, Entrada),   // 0: the porch
+            sala(0.0, -20.0, 8.0, Recanto),   // 1: the nave
+            sala(-24.0, -20.0, 8.0, Luta(0)), // 2: west aisle
+            sala(24.0, -20.0, 8.0, Luta(1)),  // 3: east aisle
+            sala(0.0, 4.0, 10.0, Luta(2)),    // 4: the crossing
+            sala(0.0, 30.0, 12.0, Chefe),     // 5: the apse
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 0),
+            cor(1, 3, 1),
+            cor(1, 4, 2),
+            cor(4, 5, 3),
         ],
     },
 ];

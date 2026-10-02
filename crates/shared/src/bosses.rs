@@ -592,7 +592,8 @@ pub const CHEFES: [Chefe; 12] = [
         corpo: Corpo::Bicho(5),
         escala: 2.0,
         zona: "ilha_planalto",
-        nivel: 52,
+        // 48 since the Plateau became 40-50 (Skyreach took 50-60).
+        nivel: 48,
         habilidades: &[
             h(
                 "Double Swipe",
@@ -640,7 +641,8 @@ pub const CHEFES: [Chefe; 12] = [
         nome: "Archmage of the Tempest",
         corpo: Corpo::Gente(4),
         escala: 1.7,
-        zona: "ilha_planalto",
+        // Skyreach's Throne of the Sky since the split (02/10/2026).
+        zona: "ilha_celeste",
         nivel: 60,
         habilidades: &[
             h(
@@ -1122,7 +1124,7 @@ mod testes {
             assert!(vida(c.nivel) <= 60_000);
         }
         assert!(da_zona("ilha_inicial").len() >= 2);
-        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto"] {
+        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA] {
             assert!(!da_zona(z).is_empty(), "{z} sem chefe");
         }
         // A ILHA MÁGICA precisa de chefe: a Ilhota do Colosso paga bônus de

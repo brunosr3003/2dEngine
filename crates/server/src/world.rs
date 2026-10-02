@@ -1276,6 +1276,14 @@ pub(crate) fn zonas_comuns_da_ilha(
     // Sitios ja' tomados por uma horda da ilhota. Ver o `magica &&` la' dentro.
     let mut ocupados: Vec<Vec2> = Vec::new();
     for (i, c) in r.centros.iter().enumerate() {
+        // SKYREACH: hunting only on the hunting islands. Not on the town's,
+        // and not on a cloud path, where a horde would close the only way
+        // across.
+        let celeste_nivel = shared::celeste::e_celeste(def.zona)
+            .then(|| shared::celeste::plato_em(*c).map(|(_, p)| p.nivel));
+        if celeste_nivel.is_some_and(|n| n.is_none_or(|n| n.0 == 0)) {
+            continue;
+        }
         // FORTE: um a cada `FORTE_A_CADA` centros. A lista ja' foi embaralhada
         // pela semente da ilha, entao pegar de N em N espalha sozinho — e da'
         // o mesmo mapa em toda subida do servidor.
@@ -1325,6 +1333,11 @@ pub(crate) fn zonas_comuns_da_ilha(
         let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
         let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
         let (lv_min, lv_max) = ilha.planalto().map_or((lv_min, lv_max), |p| p.faixa(*c));
+        // Skyreach: the level band of the island the zone stands on.
+        let (lv_min, lv_max) = match celeste_nivel.flatten() {
+            Some((a, b)) => (a as u32, b as u32),
+            None => (lv_min, lv_max),
+        };
         if def.zona == "ilha_inicial" && lv_min <= 10 && !forte {
             teto = 30;
         }
@@ -1384,6 +1397,13 @@ pub(crate) fn zonas_comuns_da_ilha(
             if ocupados.iter().any(|p| p.distance_squared(*c) <= 36.0 * 36.0) {
                 continue;
             }
+            // Skyreach: the filler groups follow the same rule as the hordes —
+            // hunting islands only, at the island's band.
+            let celeste_nivel = shared::celeste::e_celeste(def.zona)
+                .then(|| shared::celeste::plato_em(*c).map(|(_, p)| p.nivel));
+            if celeste_nivel.is_some_and(|n| n.is_none_or(|n| n.0 == 0)) {
+                continue;
+            }
             let mut slots = vec![*c];
             for p in &sitios {
                 if slots.len() == 3 { break; }
@@ -1399,6 +1419,10 @@ pub(crate) fn zonas_comuns_da_ilha(
             let lv_min = def.nivel.0 + (t * faixa * 0.8) as u32;
             let lv_max = (lv_min + 2 + (t * faixa * 0.2) as u32).min(def.nivel.1);
         let (lv_min, lv_max) = ilha.planalto().map_or((lv_min, lv_max), |p| p.faixa(*c));
+            let (lv_min, lv_max) = match celeste_nivel.flatten() {
+                Some((a, b)) => (a as u32, b as u32),
+                None => (lv_min, lv_max),
+            };
             ocupados.extend(slots.iter().copied());
             let indice = r.centros.len();
             r.centros.push(*c);
@@ -22318,7 +22342,41 @@ mod testes_planalto {
             assert!(!z.slots.is_empty(), "campo {id} sem inimigos");
             assert!(!z.active);
         }
-        assert_eq!(w.vagas_de_chefe.len(),2);
-        for (ch,i) in w.vagas_de_chefe.iter().zip([2,4]) { assert_eq!(pl.regiao(ch.pos),i); }
+        // One field boss since the split: the Archmage went to Skyreach, and
+        // the Primeval Owlbear stands in the top region.
+        assert_eq!(w.vagas_de_chefe.len(),1);
+        assert_eq!(pl.regiao(w.vagas_de_chefe[0].pos),4);
+    }
+}
+
+#[cfg(test)]
+mod testes_celeste {
+    use super::*;
+
+    /// SKYREACH IS HUNTABLE THE WAY IT WAS DRAWN: every hunting island has a
+    /// zone at its own level band; the town's island and the cloud paths have
+    /// none; the field boss stands on the Throne of the Sky.
+    #[test]
+    fn skyreach_caca_por_ilha_e_o_chefe_fica_no_trono() {
+        use shared::celeste::{plato_em, PLATOS};
+        crate::economy::init_vazia_para_testes();
+        let def = &shared::celeste::DEF;
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let chegada = ilha.cidade().unwrap().centro();
+        let comuns = zonas_comuns_da_ilha(&ilha, def, chegada);
+        assert!(!comuns.zonas.is_empty(), "Skyreach has no hunting zone");
+        for z in &comuns.zonas {
+            let (i, p) = plato_em(z.centro).expect("a zone off the islands (on a cloud path)");
+            assert!(p.nivel.0 > 0, "a hunting zone on the town's island");
+            assert_eq!((z.lv_min, z.lv_max), (p.nivel.0 as u32, p.nivel.1 as u32), "{}", PLATOS[i].nome);
+        }
+        // The level bands that hunting covers reach the top of the island.
+        assert!(comuns.zonas.iter().any(|z| z.lv_max == 60), "nothing to hunt at 60");
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::celeste::ZONA.into();
+        w.ilha = Some(ilha);
+        w.povoar_ilha(chegada);
+        assert_eq!(w.vagas_de_chefe.len(), 1);
+        assert_eq!(plato_em(w.vagas_de_chefe[0].pos).map(|(i, _)| i), Some(11), "the Archmage is not on the throne");
     }
 }

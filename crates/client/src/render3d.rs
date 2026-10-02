@@ -1590,7 +1590,7 @@ fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
 
 /// The rig file of each human mob (`tools/voxrender/humanoides.py`): the
 /// three Morganeers and their island variants (`shared::bestiary`).
-pub const RIGS_DE_GENTE: [(u16, &str); 10] = [
+pub const RIGS_DE_GENTE: [(u16, &str); 12] = [
     (2, "humanoides/pistoleiro"),
     (4, "humanoides/mago"),
     (6, "humanoides/arqueiro"),
@@ -1601,6 +1601,8 @@ pub const RIGS_DE_GENTE: [(u16, &str); 10] = [
     (35, "humanoides/sun_mage"),
     (37, "humanoides/cliff_archer"),
     (39, "humanoides/storm_mage"),
+    (42, "humanoides/seraph_archer"),
+    (44, "humanoides/seraph_mage"),
 ];
 
 pub fn rig_de_gente(kind: u16) -> Option<&'static str> {

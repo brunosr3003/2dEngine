@@ -121,7 +121,22 @@ pub const CONTEUDOS: &[Conteudo] = &[
         nome: "Thunder Vault",
         tipo: Tipo::Porao,
         zona: "ilha_planalto",
-        nivel_min: 50,
+        // 45 since the Plateau became 40-50 (Skyreach took 50-60).
+        nivel_min: 45,
+        grupo_max: 1,
+        limite_s: 900,
+        andares: 3,
+        chefe: 18,
+        disponivel: true,
+    },
+    // Skyreach's cellar (02/10/2026). The boss is the Archmage until the
+    // Reliquary Warden exists.
+    Conteudo {
+        id: 6,
+        nome: "Seraph Reliquary",
+        tipo: Tipo::Porao,
+        zona: "ilha_celeste",
+        nivel_min: 55,
         grupo_max: 1,
         limite_s: 900,
         andares: 3,
@@ -180,7 +195,8 @@ pub const CONTEUDOS: &[Conteudo] = &[
         id: 14,
         nome: "Forge of the Titan",
         tipo: Tipo::Gruta,
-        zona: "ilha_planalto",
+        // Moved to Skyreach with the split (02/10/2026).
+        zona: "ilha_celeste",
         nivel_min: 50,
         grupo_max: 5,
         limite_s: 1500,

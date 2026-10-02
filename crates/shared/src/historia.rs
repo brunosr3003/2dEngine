@@ -137,6 +137,15 @@ pub const CAPITULOS: &[Capitulo] = &[
         nome: "IV · The Heart of the Storm",
         ilha: 3,
         primeiro: 753,
+        ultimo: 857,
+    },
+    // Split from IV when Skyreach took levels 50-60 (02/10/2026). Same step
+    // ids and order — the saved marker is an index — only where they send
+    // the player changed.
+    Capitulo {
+        nome: "V · The City Above the Storm",
+        ilha: 4,
+        primeiro: 858,
         ultimo: 769,
     },
 ];
@@ -601,14 +610,27 @@ pub const PASSOS: &[QuestDef] = &[
     criar(760, "Armour for the eye", "Create a new piece in Craft to face the eye of the storm.", 1_800, 26_000),
     refinar(761, "Thunder steel", "Try refining three times at the Forge.", 3, 2_000, 28_000),
     nivel(762, "Reach level 50", 50),
-    ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
-    dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
+    // The end of chapter IV: the way up. It was "A Forja Partida" (go to the
+    // Plateau's ruins) until Skyreach took 50-60; a travel step is what opens
+    // an island, and it has to close its chapter.
+    viajar(857, "Bound for Skyreach", "Above the storm, islands float on the clouds. Set sail with the Harbour Captain for Skyreach.", 4, 2_000, 150_000),
+    // ── Chapter V: Skyreach ──
+    dungeon(858, "The Titan's fire", "The Titan's forge rose with the clouds. Clear the Forge of the Titan from the Dungeons panel to recover the lighthouse metal.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
-    ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
+    ir(764, "The eye on the horizon", "From the edge of Cloudharbor you can see the eye of the storm turning below. Follow the cloud path to Lantern Isle.", crate::celeste::PONTO_BASE + 1, 2_000, 30_000),
     nivel(765, "Reach level 55", 55),
-    cacar(766, "The beasts of the wind", "The beasts from the eye of the storm come down to the Plateau. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
-    ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
-    falar(767, "What lies beyond", "The Cartographer wants to draw what lies beyond the storm.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
+    cacar(766, "The beasts of the wind", "Winged beasts nest among the sky islands. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
+    ir(859, "The Throne of the Sky", "Reach the Throne of the Sky, the highest island. Its guardian waits by the ruined temple; the cloud paths let you explore before facing it.", crate::celeste::PONTO_BASE + 11, 3_000, 250_000),
+    // The Appraiser, not the Cartographer: the Cartographer lives in a port
+    // yard, and Skyreach has no port.
+    falar(767, "What lies beyond", "The Appraiser wants to read the runes of the sky temple before anyone else.", Papel::Identificador, 2_400, 34_000, item_id::GREATER_MANA, 4),
+    // Added with chapter V (a chapter needs 12+ steps). Ids 870-879 are the
+    // chapter's own block: the regular ids must stay consecutive, and these
+    // sit before the level-60 gate, past where any player was (index 81).
+    ir(870, "The cloud road", "Follow the cloud road to the Storm Gardens, where lightning feeds the flowers.", crate::celeste::PONTO_BASE + 8, 2_400, 36_000),
+    cacar(871, "Wings of the storm", "Seraph archers guard the gardens and shoot whoever walks the clouds. Defeat 12.", alvo_de_mob(mob_kind::ARQUEIRO), 12, 2_600, 38_000, item_id::GREATER_HEAL),
+    falar(872, "Fighting on clouds", "The Trainer knows how to keep your footing where the ground is a cloud. Talk to him.", Papel::Treinador, 2_200, 32_000, item_id::GREATER_MANA, 4),
+    dungeon(873, "The Seraph Reliquary", "The seraphs locked their relics under the temple. Clear the Seraph Reliquary from the Dungeons panel.", 6, 3_200, 360_000, item_id::GREATER_HEAL, 10),
     nivel(768, "Reach level 60", 60),
     falar(769, "The Guardian's oath", "All four lighthouses shine. The Quest Master has an oath for you.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
 ];
@@ -938,9 +960,14 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
             "Drink. Tomorrow the wind will blow hard.",
         ],
         767 => &[
-            "Nobody has ever drawn what lies beyond the storm.",
-            "With all four lighthouses lit, perhaps the sea will open.",
-            "When you're ready, the Master is waiting for you.",
+            "These runes are older than the lighthouses.",
+            "They speak of a city that rose above the storm to keep it in check.",
+            "If the seraphs still guard it, the storm has a keeper again.",
+        ],
+        872 => &[
+            "On a cloud the ground gives a little under every step.",
+            "Plant your feet before you strike, and never fight with your back to the edge.",
+            "The paths hold. It's the fear that makes people fall.",
         ],
         769 => &[
             "All four lighthouses shine. You did what no castaway ever has.",
@@ -969,6 +996,9 @@ pub fn ponto_da_historia(
     agua: &dyn Fn(f32, f32) -> bool,
 ) -> Option<glam::Vec2> {
     use glam::Vec2;
+    if let Some(q) = crate::celeste::ponto(p) {
+        return Some(q);
+    }
     let c = cidade?;
     if (crate::planalto::PONTO_BASE..crate::planalto::PONTO_BASE+5).contains(&p) {
         let nivel = (altura(c.x,c.y)/crate::terreno::BLOCO).round() as i32 - 1;
@@ -1058,8 +1088,10 @@ mod testes {
                     "{} na faixa de tutorial",
                     d.id
                 );
-            } else if (855..=859).contains(&d.id) {
+            } else if (855..=857).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
+            } else if (858..=859).contains(&d.id) || (870..=879).contains(&d.id) {
+                assert_eq!(zona_do_passo(d.id), Some(crate::celeste::ZONA));
             } else if PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
             } else {

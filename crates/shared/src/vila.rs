@@ -1593,7 +1593,8 @@ mod testes {
 
     #[test]
     fn numeros_das_quatro_ilhas() {
-        for d in &ARQUIPELAGO {
+        // The sea islands: Skyreach has a town but no port.
+        for d in ARQUIPELAGO.iter().filter(|d| !crate::celeste::e_celeste(d.zona)) {
             let ger = Gerador::da_ilha(d);
             let vila = ger.vila();
             let c = ger.cidade().expect("sem cidade");

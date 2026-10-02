@@ -167,6 +167,11 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         36 => "bichos/crag_lynx",
         38 => "bichos/cave_bear",
         40 => "bichos/storm_owlbear",
+        // Skyreach's winged ones (`bichos.py: BICHOS_ALADOS`).
+        41 => "bichos/seraph_lynx",
+        43 => "bichos/seraph_bear",
+        45 => "bichos/seraph_owlbear",
+        46 => "bichos/seraph_wolf",
         _ => return None,
     })
 }

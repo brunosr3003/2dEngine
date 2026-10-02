@@ -251,6 +251,17 @@ fn marco_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
                 })
             })
         }
+        // Skyreach: on Bellspire, the 54-55 island, beside its colonnade.
+        6 => {
+            let ilha = crate::celeste::PLATOS[7].centro;
+            (0..10).find_map(|n| {
+                (0..16).find_map(|k| {
+                    let a = k as f32 * std::f32::consts::TAU / 16.0;
+                    let p = ilha + Vec2::new(a.cos(), a.sin()) * (6.0 + n as f32 * 3.0);
+                    (firme(ger, p) && plano(ger, p)).then_some(p)
+                })
+            })
+        }
         // The highest dry, flat-enough spot on a ring out of town.
         2 => candidatos(cidade)
             .filter(|p| firme(ger, *p) && plano(ger, *p))
@@ -931,17 +942,19 @@ mod testes {
         assert_eq!(tier("ilha_inicial"), 1, "Bosque");
         assert_eq!(tier("ilha_gelo"), 2, "Geleira");
         assert_eq!(tier("ilha_deserto"), 3, "Ermo");
-        // No Planalto o tier sobe pela trilha: o fundo tem que dar T4.
+        // On the Plateau the tier climbs along the trail. Since the split
+        // (40-50) it stays T3; T4 comes from Skyreach (50-60).
         let def = def_da_zona("ilha_planalto").unwrap();
         let ger = Gerador::da_ilha(def);
         let pl = ger.planalto().expect("o Planalto tem trilha");
         let tiers: Vec<u8> = pl.regioes.iter().map(|r| tier_da_arvore(def, Some(pl), r.centro)).collect();
         assert_eq!(tiers.first(), Some(&3), "começo da trilha: {tiers:?}");
-        assert_eq!(tiers.last(), Some(&4), "fundo da trilha: {tiers:?}");
+        assert_eq!(tiers.last(), Some(&3), "fundo da trilha: {tiers:?}");
+        assert_eq!(tier(crate::celeste::ZONA), 4, "Skyreach");
 
         // E toda chave pede uma madeira que alguma árvore do jogo dá.
         let mut da: std::collections::HashSet<u16> = std::collections::HashSet::new();
-        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto"] {
+        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto", crate::celeste::ZONA] {
             da.insert(item_id::WOOD_T1 + (tier(z) - 1) as u16);
         }
         for t in &tiers {

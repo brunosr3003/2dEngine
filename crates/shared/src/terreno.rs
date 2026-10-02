@@ -3363,7 +3363,18 @@ impl Ilha {
             return Self::da_ilha(def);
         }
 
-        let revisao = if def.zona == crate::planalto::ZONA { format!("-planalto{}", crate::planalto::REVISAO) } else { String::new() };
+        // Drawn maps change shape without changing seed or radius, so their
+        // revision is in the key: a stale cache kept the dungeon islet's
+        // cellar walls where the plans used to be.
+        let revisao = if def.zona == crate::planalto::ZONA {
+            format!("-planalto{}", crate::planalto::REVISAO)
+        } else if crate::arena::e_arena(def.zona) {
+            format!("-plantas{}", crate::planta::REVISAO)
+        } else if crate::celeste::e_celeste(def.zona) {
+            format!("-celeste{}", crate::celeste::REVISAO)
+        } else {
+            String::new()
+        };
         let caminho = format!("{dir}/{}-{}{revisao}.alt", def.semente, def.raio_blocos);
         if let Some(i) = Self::carregar_da_ilha(&caminho, def) {
             return i;
@@ -5209,8 +5220,11 @@ impl DefIlha {
     /// continuar dando cais que se olham. `None` = ilha que nao esta' no
     /// arquipelago (as dos testes), e ai' vale a regra antiga.
     pub fn rumo_do_porto(&self) -> Option<glam::Vec2> {
-        let outras: Vec<&DefIlha> = ARQUIPELAGO.iter().filter(|d| d.zona != self.zona).collect();
-        if outras.len() + 1 != ARQUIPELAGO.len() {
+        // Only the sea islands: Skyreach has no port, and counting it would
+        // turn every existing dock (and move every port village).
+        let do_mar = |d: &&DefIlha| !crate::celeste::e_celeste(d.zona);
+        let outras: Vec<&DefIlha> = ARQUIPELAGO.iter().filter(do_mar).filter(|d| d.zona != self.zona).collect();
+        if outras.len() + 1 != ARQUIPELAGO.iter().filter(do_mar).count() {
             return None;
         }
         let n = outras.len() as f32;
@@ -5227,7 +5241,7 @@ impl DefIlha {
 /// A inicial e a final tem 800 m de raio; as duas do meio, 400. Nao ha' nada
 /// de sagrado nesses numeros — o relevo e' funcao da semente e do raio, entao
 /// mudar o tamanho de uma ilha e' trocar um campo aqui.
-pub const ARQUIPELAGO: [DefIlha; 4] = [
+pub const ARQUIPELAGO: [DefIlha; 5] = [
     DefIlha {
         zona: "ilha_inicial",
         nome: "Bosque",
@@ -5262,8 +5276,11 @@ pub const ARQUIPELAGO: [DefIlha; 4] = [
         raio_blocos: 1600,
         bioma: Bioma::Montanha,
         centro: [-3600.0, 0.0],
-        nivel: (40, 60),
+        // 40-50 since Skyreach took 50-60 (owner, 02/10/2026).
+        nivel: (40, 50),
     },
+    // Skyreach: drawn sky islands, no port (`celeste`). Index 4.
+    crate::celeste::DEF,
 ];
 
 #[cfg(test)]
@@ -6012,7 +6029,8 @@ mod testes {
     #[test]
     fn o_porto_da_no_oceano() {
         let mut falhas = Vec::new();
-        for d in &ARQUIPELAGO {
+        // Skyreach floats over clouds: no sea, no port.
+        for d in ARQUIPELAGO.iter().filter(|d| !crate::celeste::e_celeste(d.zona)) {
             let t0 = std::time::Instant::now();
             let ger = Gerador::da_ilha(d);
             let criar = t0.elapsed();
