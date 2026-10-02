@@ -201,6 +201,19 @@ pub const CONTEUDOS: &[Conteudo] = &[
         chefe: 18,
         disponivel: true,
     },
+    // The Plateau's 50-60 half (02/10/2026): its only dungeons were at 50.
+    Conteudo {
+        id: 18,
+        nome: "Tempest Spire",
+        tipo: Tipo::Gruta,
+        zona: "ilha_planalto",
+        nivel_min: 56,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 23,
+        disponivel: true,
+    },
     // Skyreach's two new caverns (02/10/2026).
     Conteudo {
         id: 16,

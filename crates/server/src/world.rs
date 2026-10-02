@@ -22342,8 +22342,8 @@ mod testes_planalto {
             assert!(!z.slots.is_empty(), "campo {id} sem inimigos");
             assert!(!z.active);
         }
-        assert_eq!(w.vagas_de_chefe.len(),2);
-        for (ch,i) in w.vagas_de_chefe.iter().zip([2,4]) { assert_eq!(pl.regiao(ch.pos),i); }
+        assert_eq!(w.vagas_de_chefe.len(),3);
+        for (ch,i) in w.vagas_de_chefe.iter().zip([2,3,4]) { assert_eq!(pl.regiao(ch.pos),i); }
     }
 }
 

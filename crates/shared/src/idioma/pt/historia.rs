@@ -421,4 +421,15 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("The lighthouses below, the city above. Both shine because of you.", "Os faróis lá embaixo, a cidade lá em cima. Os dois brilham por sua causa."),
     ("Take the keeper's oath: to hold the sky as long as there is wind.", "Faça o juramento do guardião: guardar o céu enquanto houver vento."),
     ("The clouds remember who walked them.", "As nuvens lembram de quem andou nelas."),
+    // The Plateau's 50-60 half (02/10/2026)
+    ("The sealed vault", "O cofre selado"),
+    ("Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", "O relâmpago selou um cofre sob o Planalto. Vença o Cofre do Trovão pelo painel de Dungeons."),
+    ("The Primeval Owlbear", "O Owlbear Primevo"),
+    ("The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", "O owlbear mais antigo do Planalto faz ninho no Vale do Trovão. Derrote-o — o mapa marca onde. Chefe se enfrenta em grupo, e todo mundo perto conta."),
+    ("The Thunderhide Behemoth", "O Behemoth Couro-de-Trovão"),
+    ("A behemoth wrapped in lightning roams the ruins of the Broken Forge. Defeat it — the map marks where.", "Um behemoth envolto em relâmpagos ronda as ruínas da Forja Partida. Derrote-o — o mapa marca onde."),
+    ("The Tempest Spire", "O Pináculo da Tempestade"),
+    ("The storm has a voice: its Herald calls the lightning from a spire above the eye. Clear the Tempest Spire from the Dungeons panel.", "A tempestade tem voz: o Arauto chama os relâmpagos de um pináculo acima do olho. Vença o Pináculo da Tempestade pelo painel de Dungeons."),
+    ("The Archmage of the Tempest", "O Arquimago da Tormenta"),
+    ("The Archmage still holds the field beside the last lighthouse. Defeat him and the storm breaks.", "O Arquimago ainda domina o campo ao lado do último farol. Derrote-o e a tempestade se desfaz."),
 ];

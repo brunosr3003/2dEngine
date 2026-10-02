@@ -1308,6 +1308,9 @@ pub const QUESTS: &[QuestDef] = &[
     QuestDef { id: 861, title: "Pedra para o farol", desc: "Quebre 20 pedras do Planalto. O campo de tempestade marcado no mapa melhora a coleta quando está ativo.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20, reward_cobre: 1_000, reward_xp: 50_000, reward_item: item_id::na_cor(item_id::STEEL, 3), reward_item_qty: 8, min_level: 40, repeatable: true, cooldown_secs: 600, ..mestre() },
     diaria(862, "O sino do Mosteiro", "Vença o Mosteiro dos Ventos.", objective_kind::DUNGEON, 13, 1, 3_000, 180_000, item_id::GREATER_HEAL, 8, 40, false, false),
     diaria(863, "O fogo da Forja", "Vença a Forja do Titã.", objective_kind::DUNGEON, 14, 1, 4_000, 260_000, item_id::GREATER_HEAL, 10, 50, false, false),
+    diaria(864, "Lightning in a vault", "Clear the Thunder Vault.", objective_kind::DUNGEON, 5, 1, 3_500, 220_000, item_id::GREATER_HEAL, 8, 50, false, false),
+    diaria(639, "Silence the Herald", "Clear the Tempest Spire.", objective_kind::DUNGEON, 18, 1, 4_500, 300_000, item_id::GREATER_HEAL, 10, 56, false, false),
+    QuestDef { id: 630, title: "Riders of the Eye", desc: "Defeat 40 beasts on the high Plateau and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 1_500, reward_xp: 85_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5, min_level: 55, repeatable: true, cooldown_secs: 600, ..mestre() },
     // --- Skyreach (ilha_celeste, 60-80) ---
     diaria(641, "Quarry of the day", "Break 40 rocks on the sky islands.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 40, 1_900, 3_800, item_id::GREATER_HEAL, 6, 60, true, false),
     diaria(642, "Hunt of the day", "Defeat 70 winged beasts on the island.", objective_kind::KILL, 0, 70, 2_300, 5_100, item_id::GREATER_HEAL, 6, 60, true, false),

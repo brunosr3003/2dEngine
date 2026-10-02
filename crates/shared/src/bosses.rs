@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 17] = [
+pub const CHEFES: [Chefe; 19] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -728,6 +728,38 @@ pub const CHEFES: [Chefe; 17] = [
     // níveis ACIMA do topo da faixa, que é o que separa chefe de mob.
     colosso(20, 1, 36),
     colosso(21, 2, 51),
+    // ── The Plateau's 50-60 half (02/10/2026) ──
+    // Between the Owlbear (52) and the Archmage (60) there was no boss at
+    // all: a field boss on the Vale of Thunder's island, and the Tempest
+    // Spire's dungeon boss (`SO_DE_DUNGEON`).
+    Chefe {
+        kind: 22,
+        nome: "Thunderhide Behemoth",
+        corpo: Corpo::Bicho(38),
+        escala: 2.3,
+        zona: "ilha_planalto",
+        nivel: 56,
+        habilidades: &[
+            h("Crushing Paw", Cone { raio: 6.5, abertura: 0.9 }, AFrente, 1.3, 2.6, 6.0, 6.5, 0, 1.2),
+            h("Static Burst", Circulo { raio: 4.5 }, NoAlvo, 1.8, 3.0, 9.0, 18.0, 0, 1.2),
+            h("Thunder Charge", Linha { comprimento: 20.0, largura: 3.0 }, AFrente, 1.3, 2.4, 7.0, 20.0, 0, 1.2),
+            h("Skyfall", Circulo { raio: 5.6 }, NoAlvo, 2.0, 3.0, 12.0, 14.0, 1, 1.4),
+        ],
+    },
+    Chefe {
+        kind: 23,
+        nome: "Herald of the Tempest",
+        corpo: Corpo::Gente(39),
+        escala: 1.8,
+        zona: "ilha_planalto",
+        nivel: 57,
+        habilidades: &[
+            h("Chain Lightning", Linha { comprimento: 22.0, largura: 2.2 }, AFrente, 1.2, 2.8, 7.0, 22.0, 0, 0.8),
+            h("Storm Ring", Anel { interno: 2.5, externo: 7.5 }, EmSi, 1.4, 2.6, 9.5, 7.5, 0, 1.4),
+            h("Thunderclap", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 12.5, 18.0, 0, 1.2),
+            h("Eye of the Storm", Anel { interno: 5.0, externo: 11.0 }, EmSi, 2.0, 2.4, 16.0, 11.0, 1, 0.8),
+        ],
+    },
     // ── Skyreach's dungeon bosses (`SO_DE_DUNGEON`) ──
     // The Seraph Reliquary: a winged owlbear of white and gold that guards
     // the relics with its whole weight. (On the bear's body the pistol fight
@@ -813,8 +845,8 @@ pub const CHEFES: [Chefe; 17] = [
 // (Skyreach's field bosses are right below the dungeon ones.)
 
 /// Bosses that only appear at the end of a dungeon, never in the field:
-/// `da_zona` leaves them out, or Skyreach would grow three more field bosses.
-pub const SO_DE_DUNGEON: &[u16] = &[25, 26, 27];
+/// `da_zona` leaves them out, or their islands would grow more field bosses.
+pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27];
 
 /// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
 pub const PEGASUS: u16 = 27;

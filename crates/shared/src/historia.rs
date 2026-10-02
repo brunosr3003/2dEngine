@@ -610,13 +610,19 @@ pub const PASSOS: &[QuestDef] = &[
     nivel(762, "Reach level 50", 50),
     ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
     dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
+    // The 50-60 half (02/10/2026): its own id block (890-899), like 855-859.
+    dungeon(890, "The sealed vault", "Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", 5, 3_000, 300_000, item_id::GREATER_HEAL, 8),
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
+    cacar_com(891, "The Primeval Owlbear", "The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(17), 1, 3_000, 260_000, item_id::GREATER_HEAL, 6, item_id::XP_POTION, 1),
     nivel(765, "Reach level 55", 55),
+    cacar_com(892, "The Thunderhide Behemoth", "A behemoth wrapped in lightning roams the ruins of the Broken Forge. Defeat it — the map marks where.", alvo_de_mob(22), 1, 3_400, 300_000, item_id::GREATER_HEAL, 6, item_id::XP_POTION, 1),
     cacar(766, "The beasts of the wind", "The beasts from the eye of the storm come down to the Plateau. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
+    dungeon(893, "The Tempest Spire", "The storm has a voice: its Herald calls the lightning from a spire above the eye. Clear the Tempest Spire from the Dungeons panel.", 18, 4_000, 420_000, item_id::GREATER_HEAL, 10),
     ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
     falar(767, "What lies beyond", "The Cartographer wants to draw what lies beyond the storm.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
     nivel(768, "Reach level 60", 60),
+    cacar_com(894, "The Archmage of the Tempest", "The Archmage still holds the field beside the last lighthouse. Defeat him and the storm breaks.", alvo_de_mob(18), 1, 4_500, 450_000, item_id::GREATER_HEAL, 8, item_id::XP_POTION, 2),
     falar(769, "The Guardian's oath", "All four lighthouses shine. The Quest Master has an oath for you.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
     // ── The way up: Skyreach (levels 60-80, 02/10/2026) ──
     // A travel step closes its chapter, so it ends chapter IV. Chapter V has
@@ -1111,7 +1117,7 @@ mod testes {
                     "{} na faixa de tutorial",
                     d.id
                 );
-            } else if (855..=859).contains(&d.id) || d.id == 870 {
+            } else if (855..=859).contains(&d.id) || (890..=899).contains(&d.id) || d.id == 870 {
                 assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
             } else if (871..=889).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::celeste::ZONA));
@@ -1154,6 +1160,10 @@ mod testes {
             // 35 and 23 since 01/10/2026: the three Cellar key steps
             // (`PASSOS_DA_CHAVE_DO_PORAO`), which the owner asked for and
             // which only make sense right before the first Porão.
+            //
+            // 28 since 02/10/2026: chapter IV spans twenty levels (40-60), and
+            // the owner asked for its 50-60 half to have content of its own —
+            // the Thunder Vault, the Tempest Spire and three field bosses.
             let so_historia = passos_do_capitulo(c)
                 .iter()
                 .filter(|d| d.obj_kind != objective_kind::TUTORIAL)
@@ -1164,7 +1174,7 @@ mod testes {
                 c.nome
             );
             assert!(
-                so_historia <= 23,
+                so_historia <= 28,
                 "{}: {so_historia} passos de HISTORIA — o capitulo ficou longo                  de verdade, e nao so' cheio de tutorial",
                 c.nome
             );
@@ -1348,7 +1358,8 @@ mod testes {
                     objective_kind::KILL if d.obj_target != 0 => {
                         let kind = d.obj_target - 1;
                         assert!(
-                            (kind as u32) < def.nivel.1 / 3 + 1,
+                            (kind as u32) < def.nivel.1 / 3 + 1
+                                || crate::bosses::da_zona(def.zona).iter().any(|c| c.kind == kind),
                             "{id}: kind {kind} nao nasce ate' o nivel {}",
                             def.nivel.1
                         );
