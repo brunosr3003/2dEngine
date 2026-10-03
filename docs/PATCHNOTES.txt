@@ -1,6 +1,8 @@
-03/10/2026 — Mapa com ícones e filtros
+03/10/2026 — Mapa com ícones e filtros, e o trânsito de Kōgen-tō
 
 O mapa de todas as ilhas ganhou ícones: cada filtro e cada linha do "Ir para" tem o seu (chefe, dungeon, NPC, viagem, cidade, cada bicho, madeira e pedra).
+
+Kōgen-tō: o trânsito agora é uma frota fixa de carros que roda a cidade inteira o tempo todo — seguem pelas avenidas, viram nas curvas com suavidade e não aparecem nem somem do nada.
 
 Filtros novos, todos ligados de início: Chefes, Dungeons, NPCs e Viagem. O Capitão do Porto e o Professor do Ônibus Celeste aparecem com a âncora e o nome, e a lista ganhou uma seção de Chefes com o nível e o botão "Ir".
 
