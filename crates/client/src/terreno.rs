@@ -550,6 +550,28 @@ impl Terreno {
     /// refina por bisseccao. Nao ha' malha pra intersectar — o campo de
     /// altura responde em O(1), entao vinte amostras custam menos que montar
     /// uma estrutura de colisao.
+    /// `onde_o_raio_bate`, telling the floor too: on Kōgen-tō a ray that
+    /// meets an expressway deck before the street lands on the deck.
+    pub fn onde_o_raio_bate_no_andar(&self, origem: Vec3, dir: Vec3, alcance: f32) -> Option<(Vec2, u8)> {
+        if self.ger.e_kogen() {
+            let passo = 0.25;
+            let mut t = 0.0f32;
+            while t < alcance {
+                t += passo;
+                let p = origem + dir * t;
+                if let Some(h) = deck_altura(p.x, p.z) {
+                    if p.y <= h + 0.05 && p.y >= h - 1.2 {
+                        return Some((vec2(p.x, p.z), shared::terreno::CAMADA_DECK));
+                    }
+                }
+                if p.y <= self.altura(p.x, p.z) {
+                    break;
+                }
+            }
+        }
+        self.onde_o_raio_bate(origem, dir, alcance).map(|p| (p, shared::terreno::CAMADA_CHAO))
+    }
+
     pub fn onde_o_raio_bate(&self, origem: Vec3, dir: Vec3, alcance: f32) -> Option<Vec2> {
         let passo = 0.6;
         let mut t = 0.0f32;

@@ -2708,13 +2708,16 @@ impl Jogo {
                 let destino = if alvo.is_none() {
                     terreno.and_then(|t| {
                         let (o, d) = vista.raio(vec2(mx, my));
-                        t.onde_o_raio_bate(o, d, 260.0)
+                        t.onde_o_raio_bate_no_andar(o, d, 260.0)
                     })
                 } else {
                     None
                 };
                 (alvo, destino)
             };
+            // The floor the tap landed on (Kōgen-tō's expressway deck).
+            let camada_do_toque = escolhido.1.map_or(0, |d| d.1);
+            let escolhido = (escolhido.0, escolhido.1.map(|d| d.0));
             // So' bicho e gente viram alvo. Clicar no saque e' ir BUSCAR (ele
             // e' pego por proximidade); clicar em NPC nao mira ninguem.
             let tag = escolhido
@@ -2767,6 +2770,11 @@ impl Jogo {
                             z: onde.y,
                         });
                     }
+                    _ if camada_do_toque != 0 => self.envia(ClientMessage::MoverParaCamada {
+                        x: p.x,
+                        z: p.y,
+                        camada: camada_do_toque,
+                    }),
                     _ => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
                 }
             }
