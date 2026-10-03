@@ -763,3 +763,114 @@ mod tests {
         ));
     }
 }
+
+/// BOSS CHESTS IN AUTO GATHER (`shared::forte`): a field boss's chest inside
+/// the gathering radius comes first. The character walks to it, opens it —
+/// the same touch a player gives — and stands still the ten seconds it takes;
+/// then gathering resumes. Whoever finishes first still takes the chest.
+#[derive(Default)]
+pub struct BauDoAuto {
+    alvo: Option<shared::EntityId>,
+    /// When it touched the chest (`None` = still walking).
+    tocou_em: Option<f64>,
+    /// When it last asked to walk, and since when it has been after this one.
+    pediu_em: f64,
+    desde: f64,
+    /// Chests it gave up on (could not reach / never opened).
+    desistiu: Vec<shared::EntityId>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AcaoBau {
+    /// No chest: gather as usual.
+    Nada,
+    /// Busy with a chest, nothing to send this frame.
+    Esperar,
+    Ir(Vec2),
+    Abrir(shared::EntityId),
+    /// The chest is done (opened or gone): gathering picks up again.
+    Terminou,
+}
+
+/// Close enough to open (`forte::ALCANCE` with a margin).
+const PERTO_DO_BAU: f32 = shared::forte::ALCANCE - 0.8;
+/// Giving up on a chest it cannot get to or open.
+const BAU_MAX_S: f64 = 45.0;
+
+impl BauDoAuto {
+    /// One frame. `baus`: the chests in the gathering radius (id, where).
+    pub fn passo(&mut self, eu: Vec2, baus: &[(shared::EntityId, Vec2)], agora: f64) -> AcaoBau {
+        if let Some(id) = self.alvo {
+            if !baus.iter().any(|(b, _)| *b == id) {
+                // Opened (by us or by someone else) or vanished.
+                self.alvo = None;
+                self.tocou_em = None;
+                return AcaoBau::Terminou;
+            }
+            if agora - self.desde > BAU_MAX_S {
+                self.desistiu.push(id);
+                self.alvo = None;
+                self.tocou_em = None;
+                return AcaoBau::Terminou;
+            }
+        }
+        if self.alvo.is_none() {
+            let perto = baus
+                .iter()
+                .filter(|(b, _)| !self.desistiu.contains(b))
+                .min_by(|a, b| eu.distance_squared(a.1).total_cmp(&eu.distance_squared(b.1)));
+            let Some((id, _)) = perto else {
+                return AcaoBau::Nada;
+            };
+            self.alvo = Some(*id);
+            self.tocou_em = None;
+            self.desde = agora;
+            self.pediu_em = f64::MIN;
+        }
+        let id = self.alvo.unwrap();
+        let onde = baus.iter().find(|(b, _)| *b == id).map(|(_, p)| *p).unwrap();
+        if eu.distance(onde) > PERTO_DO_BAU {
+            self.tocou_em = None;
+            if agora - self.pediu_em >= RELIGA_S {
+                self.pediu_em = agora;
+                return AcaoBau::Ir(onde + (eu - onde).normalize_or_zero() * 1.2);
+            }
+            return AcaoBau::Esperar;
+        }
+        // At the chest: touch it, then stand still. If the bar never came
+        // (or broke), touch again after the opening time and a breath.
+        match self.tocou_em {
+            Some(t) if agora - t < shared::forte::ABRIR_S as f64 + 3.0 => AcaoBau::Esperar,
+            _ => {
+                self.tocou_em = Some(agora);
+                AcaoBau::Abrir(id)
+            }
+        }
+    }
+
+    pub fn ocupado(&self) -> bool {
+        self.alvo.is_some()
+    }
+
+    pub fn parar(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+mod testes_do_bau {
+    use super::*;
+
+    /// Walks to the chest, touches it once, waits, and lets go when it is gone.
+    #[test]
+    fn vai_abre_espera_e_solta() {
+        let mut b = BauDoAuto::default();
+        let id = shared::EntityId(7);
+        let bau = vec2(10.0, 0.0);
+        assert!(matches!(b.passo(Vec2::ZERO, &[(id, bau)], 0.0), AcaoBau::Ir(_)));
+        assert_eq!(b.passo(vec2(9.0, 0.0), &[(id, bau)], 1.0), AcaoBau::Abrir(id));
+        assert_eq!(b.passo(vec2(9.0, 0.0), &[(id, bau)], 5.0), AcaoBau::Esperar);
+        assert_eq!(b.passo(vec2(9.0, 0.0), &[], 11.0), AcaoBau::Terminou);
+        assert_eq!(b.passo(vec2(9.0, 0.0), &[], 12.0), AcaoBau::Nada);
+    }
+}

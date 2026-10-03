@@ -306,6 +306,8 @@ struct Jogo {
     auto_dungeon_bau_em: Option<f64>,
     /// X: fica coletando no melhor spot perto.
     auto_coleta: auto_coleta::AutoColeta,
+    /// Field-boss chests opened in auto gather.
+    bau_do_auto: auto_coleta::BauDoAuto,
     /// Toque longo no AUTO COLETA e na barra de itens: o que no PC e' o botao
     /// direito (configuracao), no toque e' segurar.
     toque_coleta: toque::ToqueLongo,
@@ -886,6 +888,7 @@ async fn main() {
         defesa_da_coleta: None,
         auto_dungeon_bau_em: None,
         auto_coleta: auto_coleta::AutoColeta::default(),
+        bau_do_auto: auto_coleta::BauDoAuto::default(),
         toque_coleta: toque::ToqueLongo::default(),
         toque_barra: toque::ToqueLongo::default(),
         dialogo: dialogo::Dialogo::default(),
@@ -4429,6 +4432,9 @@ impl Jogo {
         }
         if !self.auto_coleta.ativo() {
             self.defesa_da_coleta = None;
+            if self.bau_do_auto.ocupado() {
+                self.bau_do_auto.parar();
+            }
             return;
         }
         let Some(eu) = self.world.self_pos() else {
@@ -4436,6 +4442,39 @@ impl Jogo {
         };
         if self.defender_a_coleta(agora) {
             return;
+        }
+        // A field boss's chest in the gathering radius comes first.
+        let centro = self.auto_coleta.centro.unwrap_or(eu);
+        let raio = self.auto_coleta.raio.max(20.0);
+        let baus: Vec<(shared::EntityId, Vec2)> = self
+            .world
+            .ents
+            .iter()
+            .filter(|(_, e)| {
+                e.meta.tag == shared::EntityTag::Npc
+                    && (shared::forte::PAPEL_VERDE..=shared::forte::PAPEL_VERDE + 2)
+                        .contains(&shared::npc_papel_de_kind(e.meta.kind))
+                    && (e.render_pos.distance(centro) <= raio || e.render_pos.distance(eu) <= raio)
+            })
+            .map(|(id, e)| (*id, e.render_pos))
+            .collect();
+        match self.bau_do_auto.passo(eu, &baus, agora) {
+            auto_coleta::AcaoBau::Nada => {}
+            auto_coleta::AcaoBau::Esperar => return,
+            auto_coleta::AcaoBau::Ir(p) => {
+                self.mapa.viagem.iniciar(p, agora);
+                return;
+            }
+            auto_coleta::AcaoBau::Abrir(id) => {
+                self.mapa.viagem.cancelar();
+                self.envia(ClientMessage::PararRota);
+                self.envia(ClientMessage::Interact { target_eid: Some(id.0 as u64) });
+                return;
+            }
+            auto_coleta::AcaoBau::Terminou => {
+                self.auto_coleta.retomar();
+                return;
+            }
         }
         match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
             auto_coleta::Acao::PedirNo {
