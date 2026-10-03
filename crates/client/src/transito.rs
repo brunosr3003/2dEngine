@@ -104,13 +104,49 @@ fn le_caminhos() -> Vec<Caminho> {
             pontos.push(vec2(x, z));
             i += 4;
         }
-        let mut acumulado = vec![0.0];
+        // CUT where the road is not a road: the baked map only knows the
+        // OSM buildings, and the landmarks (the Tocho, the Cocoon, the 109)
+        // stand over some avenues — the cars drove through them. Every unit
+        // of the line is checked on the centre and on both lanes against the
+        // real ground (`kogen::chao_em`); a stretch that hits a building or
+        // the sea splits the path. On the deck only the deck itself counts.
+        let elevado = tipo == 2;
+        let livre = |q: Vec2| {
+            let g = ::glam::Vec2::new(q.x, q.y);
+            if elevado {
+                return shared::kogen::deck_em(g).is_some();
+            }
+            !matches!(shared::kogen::chao_em(g), shared::kogen::Chao::Predio { .. } | shared::kogen::Chao::Mar)
+        };
+        let mut trecho: Vec<Vec2> = Vec::new();
+        let mut fecha = |trecho: &mut Vec<Vec2>, caminhos: &mut Vec<Caminho>| {
+            let pts = std::mem::take(trecho);
+            let mut acumulado = vec![0.0];
+            for w in pts.windows(2) {
+                acumulado.push(acumulado.last().unwrap() + w[0].distance(w[1]));
+            }
+            if pts.len() >= 2 && *acumulado.last().unwrap() > 6.0 {
+                caminhos.push(Caminho { elevado, pontos: pts, acumulado, seguintes: [Vec::new(), Vec::new()] });
+            }
+        };
         for w in pontos.windows(2) {
-            acumulado.push(acumulado.last().unwrap() + w[0].distance(w[1]));
+            let (a, b) = (w[0], w[1]);
+            let l = a.distance(b);
+            let d = (b - a).normalize_or_zero();
+            let lado = vec2(d.y, -d.x) * FAIXA;
+            let passos = (l.ceil() as usize).max(1);
+            for k in 0..=passos {
+                let q = a + (b - a) * (k as f32 / passos as f32);
+                if livre(q) && livre(q + lado) && livre(q - lado) {
+                    if trecho.last().is_none_or(|u| u.distance(q) > 0.01) {
+                        trecho.push(q);
+                    }
+                } else {
+                    fecha(&mut trecho, &mut caminhos);
+                }
+            }
         }
-        if pontos.len() >= 2 && *acumulado.last().unwrap() > 4.0 {
-            caminhos.push(Caminho { elevado: tipo == 2, pontos, acumulado, seguintes: [Vec::new(), Vec::new()] });
-        }
+        fecha(&mut trecho, &mut caminhos);
     }
     // Join the ends: each end lists the paths of the same level that start
     // or end within `EMENDA` of it.

@@ -1770,7 +1770,12 @@ impl Mapa {
             16,
             estilo::OURO,
         );
-        let (mut x, mut y) = (lat.x + u(12.0), lat.y + u(38.0));
+        // ONE scrolling panel: the filters and the "Go to" list scroll
+        // together under a single bar. The chips used to sit above the list
+        // and never scrolled — with an island's worth of creatures they ran
+        // off the panel (the owner: "the map filters still without scroll
+        // bar").
+        let area = Rect::new(lat.x + u(6.0), lat.y + u(36.0), lat.w - u(12.0), lat.h - u(44.0));
         let c = self.camadas;
         let mut chips: Vec<(String, bool, Color, Chip, Ico)> = vec![
             ("Bosses".into(), c.chefes, Color::new(1.0, 0.72, 0.25, 1.0), Chip::Chefes, Ico::Atlas("chefe")),
@@ -1802,51 +1807,6 @@ impl Mapa {
                 ico_do_tipo(t),
             ));
         }
-        for (rotulo, ligado, cor, id, ico) in &chips {
-            let w = estilo::medir(rotulo, 13) + u(36.0);
-            if x + w > lat.x + lat.w - u(10.0) {
-                x = lat.x + u(12.0);
-                y += u(27.0);
-            }
-            let c = Rect::new(x, y, w, u(22.0));
-            let alfa = if *ligado { 0.26 } else { 0.0 };
-            estilo::ret_arredondado(c, c.h * 0.5, Color::new(cor.r, cor.g, cor.b, alfa));
-            estilo::borda_arredondada(
-                c,
-                c.h * 0.5,
-                1.0,
-                Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
-            );
-            // No dot before the word: the chip's own tint and rim already say
-            // which colour on the map it switches. The owner, 30/09/2026:
-            // "take out the lil balls in front of texts".
-            desenha_ico(*ico, vec2(c.x + u(14.0), c.y + c.h * 0.5), u(16.0), if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.45) });
-            estilo::texto(
-                c.x + u(26.0),
-                c.y + u(16.0),
-                rotulo,
-                13,
-                if *ligado {
-                    estilo::TEXTO
-                } else {
-                    estilo::SUAVE
-                },
-            );
-            if clique && c.contains(mouse) {
-                toggle = Some(*id);
-            }
-            x += w + u(6.0);
-        }
-
-        // ── ir para ──
-        y += u(44.0);
-        estilo::texto(lat.x + u(14.0), y, "Go to", 16, estilo::OURO);
-        let area = Rect::new(
-            lat.x + u(6.0),
-            y + u(8.0),
-            lat.w - u(12.0),
-            lat.y + lat.h - (y + u(16.0)),
-        );
         let eu = eu.unwrap_or(Vec2::ZERO);
         let bichos = info.bichos();
         let tipos = info.tipos();
@@ -1866,13 +1826,56 @@ impl Mapa {
             .iter()
             .map(|ch| (ch.nome.clone(), ch.nivel as u32, vec2(ch.centro[0], ch.centro[1]), if ch.vivo { String::new() } else { " · dead".into() }))
             .collect();
+        // The chips' layout (wrapping rows), measured before drawing: the
+        // scroll needs the whole height.
+        let mut layout: Vec<Rect> = Vec::with_capacity(chips.len());
+        {
+            let (mut x, mut y) = (area.x + u(6.0), 0.0f32);
+            for (rotulo, ..) in &chips {
+                let w = estilo::medir(rotulo, 13) + u(36.0);
+                if x + w > area.x + area.w - u(16.0) {
+                    x = area.x + u(6.0);
+                    y += u(27.0);
+                }
+                layout.push(Rect::new(x, y, w, u(22.0)));
+                x += w + u(6.0);
+            }
+        }
+        let altura_chips = layout.last().map_or(0.0, |r| r.y + r.h) + u(10.0);
         let linhas_chefes = if chefes.is_empty() { 0 } else { 1 + chefes.len() };
-        let total = (4 + vilas.len() + linhas_chefes + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
+        let total = altura_chips
+            + u(34.0)
+            + (4 + vilas.len() + linhas_chefes + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
         let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
-        let mut ly = area.y - self.rolagem_lateral.pos;
-        let visivel = |yy: f32| yy + u(LINHA_IR) > area.y && yy < area.y + area.h;
+        let topo = area.y - self.rolagem_lateral.pos;
         crate::rolagem::recortar(Some(area));
+        for ((rotulo, ligado, cor, id, ico), r) in chips.iter().zip(&layout) {
+            let c = Rect::new(r.x, topo + r.y, r.w, r.h);
+            if c.y + c.h < area.y || c.y > area.y + area.h {
+                continue;
+            }
+            let alfa = if *ligado { 0.26 } else { 0.0 };
+            estilo::ret_arredondado(c, c.h * 0.5, Color::new(cor.r, cor.g, cor.b, alfa));
+            estilo::borda_arredondada(
+                c,
+                c.h * 0.5,
+                1.0,
+                Color::new(cor.r, cor.g, cor.b, if *ligado { 0.85 } else { 0.30 }),
+            );
+            desenha_ico(*ico, vec2(c.x + u(14.0), c.y + c.h * 0.5), u(16.0), if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.45) });
+            estilo::texto(c.x + u(26.0), c.y + u(16.0), rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
+            if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
+                toggle = Some(*id);
+            }
+        }
+        // ── ir para ──
+        let y_ir = topo + altura_chips + u(22.0);
+        if y_ir > area.y && y_ir - u(16.0) < area.y + area.h {
+            estilo::texto(lat.x + u(14.0), y_ir, "Go to", 16, estilo::OURO);
+        }
+        let mut ly = topo + altura_chips + u(34.0);
+        let visivel = |yy: f32| yy + u(LINHA_IR) > area.y && yy < area.y + area.h;
         let mut linha = |rotulo: &str,
                          detalhe: String,
                          cor: Color,
