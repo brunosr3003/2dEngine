@@ -12225,6 +12225,20 @@ impl GameWorld {
                 }
             }
 
+            // A BOSS'S TELEGRAPHED STRIKE is a hand-dodge: it hits whoever is
+            // still inside, and only stepping out (or a dash/leap through it)
+            // saves. Poise, parry and block used to swallow it — the number
+            // flew, the HP stayed (the owner: "the damage shows like 1200 but
+            // the hp don't drop"). `shared::bosses::RESISTENCIA_NO_TELEGRAFICO`
+            // already said nothing mitigates it; the boss sims assume so.
+            let telegrafico = !attacker_is_player
+                && matches!(attack_info, AttackInfo::Skill)
+                && self
+                    .ecs
+                    .query::<(&NetId, &EnemyTag)>()
+                    .iter()
+                    .any(|(_, (n, t))| n.0 == attacker_id && t.is_boss);
+
             // ── Defesa ativa do alvo (player) ────────────────────────────────
             // (1) Parry: edge-press de PRIMARY ou SECONDARY dentro de PARRY_WINDOW_S
             //     → anula o dano + drena custo de parry (escala c/ RES) + staggera atacante.
@@ -12246,8 +12260,8 @@ impl GameWorld {
                 let block_cost = shared::combat::block_stamina_cost(&target.stats);
                 // Master's Counter (1007): durante 2s, qualquer hit recebido
                 // e auto-parryado independente de timing/stamina (sem cost).
-                let counter_active = target.counter_stance_until > now_s;
-                let normal_parry = !target.montado && in_parry_window && target.stamina_current >= parry_cost;
+                let counter_active = target.counter_stance_until > now_s && !telegrafico;
+                let normal_parry = !target.montado && in_parry_window && target.stamina_current >= parry_cost && !telegrafico;
                 if counter_active || normal_parry {
                     if normal_parry {
                         target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
@@ -12259,7 +12273,7 @@ impl GameWorld {
                     parried = true;
                     // dmg sera lido pelo counter handler abaixo (precisa do
                     // valor original pra reflexo de projectile). Zerado depois.
-                } else if target.defending && target.stamina_current >= block_cost {
+                } else if target.defending && target.stamina_current >= block_cost && !telegrafico {
                     target.stamina_current = (target.stamina_current - block_cost).max(0.0);
                     dmg = shared::combat::apply_block_damage(&target.stats, dmg);
                 }
@@ -12412,6 +12426,9 @@ impl GameWorld {
                     // Dash/leap = iframe puro: absorve sem custo (janelas curtas).
                     target.last_combat_at_s = now_s_poise;
                     absorbed_by_poise = true;
+                } else if telegrafico {
+                    // Straight to the HP (see `telegrafico` above).
+                    target.last_combat_at_s = now_s_poise;
                 } else if target.defending && target.defending_poise_buffer > 0.0 && dmg > 0 {
                     // Defending: drena o buffer de poise (escalado por lvl+escudo)
                     // + stamina por hit. Reducao de damage por defense + bonus
@@ -21435,6 +21452,59 @@ fn auto_arrange_slots(slots: &mut Vec<shared::InventorySlot>) {
 #[cfg(test)]
 mod impacto_tests {
     use super::*;
+
+    /// A BOSS'S TELEGRAPHED STRIKE reaches the HP: poise does not swallow
+    /// it (the owner saw "1200" fly and the HP stay). A normal mob's skill
+    /// hit is still poise's to absorb.
+    #[test]
+    fn telegrafico_de_chefe_passa_pela_postura() {
+        crate::economy::init_vazia_para_testes();
+        for chefe in [true, false] {
+            let mut w = GameWorld::new(HashMap::new());
+            w.map = shared::mapfile::MapFile::new("postura", 80, 80).to_world_map();
+            w.safe_zones.clear();
+            let origem = Vec2::splat(30.0);
+            let sid = SessionId("127.0.0.1:47001".parse().unwrap());
+            let (tx, _rx) = mpsc::unbounded_channel();
+            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            let id = {
+                let s = w.sessions.get_mut(&sid).unwrap();
+                s.logged_in = true;
+                s.poise_current = 10_000.0;
+                s.entity_id
+            };
+            let alvo = w.ecs.spawn((NetId(id), Position(origem + Vec2::X * 2.0), Velocity(Vec2::ZERO),
+                EntityKind::Player, Health { current: 1000, max: 1000 }));
+            w.sessions.get_mut(&sid).unwrap().entity = Some(alvo);
+            w.place_enemy(origem, 0, 0.0);
+            let mob = w
+                .ecs
+                .query_mut::<(&NetId, &mut EnemyTag)>()
+                .into_iter()
+                .map(|(_, (n, t))| {
+                    t.is_boss = chefe;
+                    n.0
+                })
+                .next()
+                .unwrap();
+            w.pending_skill_hits.push(PendingSkillHit {
+                target_net: id,
+                damage: 300,
+                attacker_net: mob,
+                hurt_dir: Vec2::X,
+                is_crit: false,
+                from_player: false,
+                knockback: 0.0,
+            });
+            w.step(shared::TICK_DT);
+            let hp = w.ecs.get::<&Health>(alvo).unwrap().current;
+            if chefe {
+                assert!(hp < 1000, "the boss's telegraph left the HP at {hp}: poise swallowed it");
+            } else {
+                assert_eq!(hp, 1000, "a mob's skill hit should still be poise's to absorb");
+            }
+        }
+    }
 
     #[test]
     fn projetil_de_mob_viaja_e_causa_dano_uma_vez() {
