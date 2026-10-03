@@ -1,3 +1,25 @@
+03/10/2026 — Kōgen-tō: a cidade que nunca dorme (nível 80 a 100)
+
+A última ilha chegou. Kōgen-tō é Shinjuku e Shibuya de verdade — cada rua, trilho, parque e prédio onde ele está em Tóquio — transformados em ilha, sempre à noite, com neon, janelas acesas e carros nas avenidas.
+
+Como chegar: só por Skyreach. Na praça de Cloudharbor, o Professor do Ônibus Celeste (de cabelo branco e bigode) leva você no ônibus voador pendurado num balão. Lá, o mesmo professor leva de volta a qualquer ilha.
+
+Seis distritos, do sul ao norte: as Docas (80-83), Shibuya (83-86), a Floresta do Santuário Meiji (86-90), Kabukicho (90-94), as torres de Nishi-Shinjuku (94-97) e o Tocho (97-100).
+
+Os viadutos da via expressa se andam em cima E embaixo: suba pelas rampas, ande entre as grades, ou passe por baixo pela rua. Toque no viaduto e o personagem sobe sozinho.
+
+Sete robôs novos: Mech Hound, Gunner Bot, Volt Panther, Laser Sentry, Iron Bear, Tesla Unit e Dynamo Owlbear.
+
+Três chefes gigantes de campo, cada um na sua praça: Titan Mk-I (85) em Shibuya, Neon Kaiju (92) em Kabukicho e Overseer Unit (100) diante do Tocho.
+
+Três dungeons: a Robot Foundry (Porão, 85, portal em Shibuya), a Undercity Line (90) e a Kōgen Tower (95) — seis andares de hordas e o soberano no telhado.
+
+Capítulo VI da história, "A cidade que nunca dorme", do 85 ao 100.
+
+Dados do mapa © colaboradores do OpenStreetMap.
+
+Atualização obrigatória — o protocolo passa para o 184. Por enquanto só computador e Android.
+
 03/10/2026 — Desmantelar itens lendários
 
 Os itens LENDÁRIOS (laranja) não mostravam a opção Desmantelar na bolsa — e o servidor também recusava. A janela de receitas que o desmantelar procura deixava a quinta cor de fora. Agora toda peça com atributos, da cinza à lendária, pode ser desmantelada e devolve parte dos materiais.
