@@ -1,3 +1,9 @@
+03/10/2026 — Coleta automática abre baús e viagem direto pelo mapa-mundi
+
+A coleta automática agora abre os baús dos chefes de campo: com um baú dentro do raio da coleta, o personagem vai até ele, abre e fica parado os dez segundos; depois volta a coletar. Quem terminar primeiro continua levando o baú. O pet voltou a só pegar os itens do chão.
+
+Clicar numa ilha no mapa-mundi agora leva até o Capitão do Porto (ou o Professor do Ônibus Celeste) e embarca sozinho ao chegar, sem abrir o menu. Para Kōgen-tō fora de Skyreach o menu continua abrindo: primeiro é preciso ir a Skyreach.
+
 03/10/2026 — Luzes de Kōgen-tō, o mapa-mundi novo e o pet que abre baús
 
 Kōgen-tō ganhou luz de verdade: postes ao longo de todas as ruas e letreiros neon verticais nas fachadas das lojas, em rosa, ciano e amarelo. Postes, letreiros e as lanternas da avenida agora iluminam o chão, as paredes e os personagens em volta deles, com um brilho suave. Os letreiros zumbem, e alguns piscam.
