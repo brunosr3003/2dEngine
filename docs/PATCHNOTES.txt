@@ -1,3 +1,9 @@
+03/10/2026 — Mapa com ícones e filtros
+
+O mapa de todas as ilhas ganhou ícones: cada filtro e cada linha do "Ir para" tem o seu (chefe, dungeon, NPC, viagem, cidade, cada bicho, madeira e pedra).
+
+Filtros novos, todos ligados de início: Chefes, Dungeons, NPCs e Viagem. O Capitão do Porto e o Professor do Ônibus Celeste aparecem com a âncora e o nome, e a lista ganhou uma seção de Chefes com o nível e o botão "Ir".
+
 03/10/2026 — Kōgen-tō na escala dos personagens
 
 Os prédios de Kōgen-tō estavam pequenos demais perto dos personagens e dos robôs. Agora toda a cidade tem o dobro da altura: casas mais altas que o personagem, torres de Nishi-Shinjuku com mais de cem metros de jogo, o Tocho, a Torre de Tóquio, o Casulo e o 109 maiores, e os viadutos mais altos.
