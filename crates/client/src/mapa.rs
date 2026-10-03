@@ -931,20 +931,52 @@ fn gerar_imagem(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) 
 
 /// So' o relevo, sem nada construido em cima.
 fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma) -> Vec<u8> {
-    let raio = raio_blocos as f32 * BLOCO;
-    let pico = ger.pico().max(1.0);
-    let mut hs = vec![0f32; LADO * LADO];
-    for j in 0..LADO {
-        let z = -raio + (j as f32 + 0.5) / LADO as f32 * 2.0 * raio;
-        for i in 0..LADO {
-            let x = -raio + (i as f32 + 0.5) / LADO as f32 * 2.0 * raio;
-            hs[j * LADO + i] = ger.altura(x, z);
+    gerar_terreno_em(ger, raio_blocos, bioma, LADO)
+}
+
+/// The island's own map, `lado` pixels across, for the WORLD map
+/// (`mundo_ui`): the same terrain colours, with the sea fading out from the
+/// shallows so the island sits on the world map's ocean, which is this map's
+/// deep water. Runs off the frame.
+pub fn miniatura_da_ilha(def: &'static DefIlha, lado: usize) -> Vec<u8> {
+    let ger = Gerador::da_ilha(def);
+    let mut rgba = gerar_terreno_em(&ger, def.raio_blocos, def.bioma, lado);
+    let raio = def.raio_blocos as f32 * BLOCO;
+    for j in 0..lado {
+        let z = -raio + (j as f32 + 0.5) / lado as f32 * 2.0 * raio;
+        for i in 0..lado {
+            let x = -raio + (i as f32 + 0.5) / lado as f32 * 2.0 * raio;
+            let h = ger.altura(x, z);
+            if h <= NIVEL_DO_MAR {
+                let a = (1.0 + (h - NIVEL_DO_MAR) / 0.8).clamp(0.0, 1.0);
+                rgba[(j * lado + i) * 4 + 3] = (a * 255.0) as u8;
+            }
         }
     }
-    let mut rgba = vec![255u8; LADO * LADO * 4];
-    for j in 0..LADO {
-        for i in 0..LADO {
-            let h = hs[j * LADO + i];
+    rgba
+}
+
+/// The world map's ocean: this map's deep water.
+pub fn cor_do_mar_fundo() -> Color {
+    let c = cor_da_agua(NIVEL_DO_MAR - 6.0);
+    Color::new(c[0], c[1], c[2], 1.0)
+}
+
+fn gerar_terreno_em(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma, lado: usize) -> Vec<u8> {
+    let raio = raio_blocos as f32 * BLOCO;
+    let pico = ger.pico().max(1.0);
+    let mut hs = vec![0f32; lado * lado];
+    for j in 0..lado {
+        let z = -raio + (j as f32 + 0.5) / lado as f32 * 2.0 * raio;
+        for i in 0..lado {
+            let x = -raio + (i as f32 + 0.5) / lado as f32 * 2.0 * raio;
+            hs[j * lado + i] = ger.altura(x, z);
+        }
+    }
+    let mut rgba = vec![255u8; lado * lado * 4];
+    for j in 0..lado {
+        for i in 0..lado {
+            let h = hs[j * lado + i];
             let c = if h <= NIVEL_DO_MAR {
                 cor_da_agua(h)
             } else {
@@ -952,7 +984,7 @@ fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma)
                 // clareia, mais alto sombreia. E' o que faz o relevo ler — por
                 // isso bate mais forte do que batia (era 0,18 e quase nao
                 // aparecia).
-                let viz = hs[j.saturating_sub(1) * LADO + i.saturating_sub(1)];
+                let viz = hs[j.saturating_sub(1) * lado + i.saturating_sub(1)];
                 let luz = (1.0 + (h - viz) * 0.42).clamp(0.55, 1.45);
                 let cor = cor_de_terra(bioma, h, pico).map(|v| v * luz);
                 // Contorno de costa: a primeira faixa acima do mar escurece, pra
@@ -960,7 +992,7 @@ fn gerar_terreno(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bioma)
                 let costa = ((h - NIVEL_DO_MAR) / 0.6).clamp(0.0, 1.0);
                 misturar([0.16, 0.26, 0.30], cor, costa)
             };
-            let k = (j * LADO + i) * 4;
+            let k = (j * lado + i) * 4;
             for (n, v) in c.iter().enumerate() {
                 rgba[k + n] = (v.clamp(0.0, 1.0) * 255.0) as u8;
             }
@@ -1252,6 +1284,26 @@ pub async fn previa() {
             next_frame().await;
         }
     }
+    // The WORLD tab, from Skyreach (Kōgen-tō goes by bus): the islands'
+    // pictures come off a thread, so give it time.
+    let mut m = Mapa::para(shared::terreno::def_da_zona("ilha_celeste"));
+    for _ in 0..600 {
+        m.acompanhar();
+        if m.tex.is_some() {
+            break;
+        }
+        next_frame().await;
+    }
+    m.aberto = true;
+    m.no_mundo = true;
+    for _ in 0..240 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+        m.desenha_grande(&world, 20, &mundo, 1_789_000_000);
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+    }
+    rt.texture.get_texture_data().export_png(&format!("{saida}/mapa-mundo.png"));
 }
 
 /// O marcador de uma porta de Porão no mapa.
@@ -2805,9 +2857,19 @@ impl Mapa {
             let m = Vec2::from(mouse_position());
             let r = Self::grande_rect();
             if self.no_mundo {
-                self.desenha_grande_mundo(mundo, agora_unix);
+                let clicada = self.desenha_grande_mundo(mundo, agora_unix);
                 self.desenha_abas(r);
-                return self.lateral_do_mundo(r, mundo, agora_unix);
+                let lateral = self.lateral_do_mundo(r, mundo, agora_unix);
+                // A click on an island: off to whoever takes you there; on
+                // this island, back to its own map.
+                if let Some(d) = clicada {
+                    if self.zona() == Some(d.zona) {
+                        self.no_mundo = false;
+                        return lateral;
+                    }
+                    return self.quem_leva_para(d).map(Entrada::Ir).or(lateral);
+                }
+                return lateral;
             }
             self.desenha_grande_mapa(world, agora_unix);
             self.desenha_abas(r);
@@ -2838,8 +2900,29 @@ impl Mapa {
         }
     }
 
+    /// Who takes you from this island to `destino`, as a "Go to": the Sky
+    /// Bus Professor for Kōgen-tō from Skyreach and for anywhere from
+    /// Kōgen-tō (`viagem::rota_permitida`), the Port Captain otherwise.
+    fn quem_leva_para(&self, destino: &'static DefIlha) -> Option<Alvo> {
+        use shared::construcao::Papel;
+        let aqui = self.zona()?;
+        let idx = shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == destino.zona)?;
+        let de_onibus = shared::viagem::rota_permitida(aqui, idx, true);
+        let papel = if de_onibus || shared::kogen::e_kogen(aqui) { Papel::Motorista } else { Papel::Estaleiro };
+        let npc = self.ger.as_ref()?.vila().npcs.iter().find(|n| n.papel == papel).map(|n| vec2(n.pos.x, n.pos.y))?;
+        let quem = if papel == Papel::Motorista { "Sky Bus Professor" } else { "Port Captain" };
+        let rotulo = if de_onibus || shared::viagem::rota_permitida(aqui, idx, false) {
+            format!("{quem} · to {}", destino.nome)
+        } else {
+            // Kōgen-tō from anywhere but Skyreach: the captain takes you on
+            // the first leg.
+            format!("{quem} · {} is reached from Skyreach", destino.nome)
+        };
+        Some(Alvo { objetivo: Objetivo::Npc, pos: npc, raio: 0.0, rotulo })
+    }
+
     /// O MAPA-MUNDI no lugar do mapa da ilha (`mundo_ui`).
-    fn desenha_grande_mundo(&self, mundo: &crate::mundo_ui::Mundo, agora_unix: i64) {
+    fn desenha_grande_mundo(&self, mundo: &crate::mundo_ui::Mundo, agora_unix: i64) -> Option<&'static DefIlha> {
         let (sw, sh) = (screen_width(), screen_height());
         draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.0, 0.0, 0.0, 0.45));
         let r = Self::grande_rect();
@@ -2850,7 +2933,7 @@ impl Mapa {
             r.h + u(46.0),
         ));
         estilo::texto_forte(r.x, r.y - u(14.0), "World", 17, estilo::OURO);
-        let dica = "bosses from every island · Esc closes";
+        let dica = "click an island to travel · Esc closes";
         estilo::texto(
             r.x + r.w - u(36.0) - estilo::medir(dica, 13),
             r.y - u(14.0),
@@ -2862,7 +2945,7 @@ impl Mapa {
         if !crate::icones_ui::ui("fechar", f.center(), f.w.min(f.h) * 0.55, estilo::TEXTO) {
             estilo::texto_centro(f.x + f.w * 0.5, f.y + u(19.0), "x", 18, estilo::TEXTO);
         }
-        crate::mundo_ui::desenha(mundo, r, self.zona(), agora_unix, u);
+        crate::mundo_ui::desenha(mundo, r, self.zona(), agora_unix, u)
     }
 
     /// O painel lateral do mapa-mundi: os chefes do realm, ordenados por

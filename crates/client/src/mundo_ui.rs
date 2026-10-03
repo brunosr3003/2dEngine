@@ -83,10 +83,52 @@ pub fn caixa_do_arquipelago() -> (Vec2, f32) {
     (centro, meia.max(1.0))
 }
 
+/// Pixels across an island's picture on the world map.
+const LADO_DA_MINIATURA: usize = 192;
+
+thread_local! {
+    /// The islands' pictures (`mapa::miniatura_da_ilha`), by `ARQUIPELAGO`
+    /// index: made once, on a thread, the first time the world map opens.
+    static MINIATURAS: std::cell::RefCell<Miniaturas> = std::cell::RefCell::new(Miniaturas::default());
+}
+
+#[derive(Default)]
+struct Miniaturas {
+    tex: Vec<Option<Texture2D>>,
+    rx: Option<std::sync::mpsc::Receiver<(usize, Vec<u8>)>>,
+}
+
+impl Miniaturas {
+    /// Starts the thread on first use and uploads what has arrived (GL only
+    /// on the main thread).
+    fn acompanhar(&mut self) {
+        if self.tex.is_empty() {
+            self.tex = vec![None; ARQUIPELAGO.len()];
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                for (i, d) in ARQUIPELAGO.iter().enumerate() {
+                    if tx.send((i, crate::mapa::miniatura_da_ilha(d, LADO_DA_MINIATURA))).is_err() {
+                        return;
+                    }
+                }
+            });
+            self.rx = Some(rx);
+        }
+        if let Some(rx) = &self.rx {
+            while let Ok((i, rgba)) = rx.try_recv() {
+                let t = Texture2D::from_rgba8(LADO_DA_MINIATURA as u16, LADO_DA_MINIATURA as u16, &rgba);
+                t.set_filter(FilterMode::Linear);
+                self.tex[i] = Some(t);
+            }
+        }
+    }
+}
+
 /// Desenha o mapa-mundi dentro de `r`. `zona_atual` ganha destaque.
 ///
-/// Devolve a zona clicada, se houver — o painel de cima decide o que fazer
-/// com ela (hoje, nada: viajar continua sendo com o Capitao).
+/// Each island is drawn as ITS OWN MAP (the island tab's terrain, small) on
+/// that map's deep sea. Devolve a ilha clicada: the panel above sends the
+/// player to whoever takes them there (the Port Captain or the Sky Bus).
 pub fn desenha(
     mundo: &Mundo,
     r: Rect,
@@ -95,7 +137,7 @@ pub fn desenha(
     u: impl Fn(f32) -> f32,
 ) -> Option<&'static DefIlha> {
     let (centro, meia) = caixa_do_arquipelago();
-    let escala = r.w / (2.0 * meia);
+    let escala = r.w.min(r.h) / (2.0 * meia);
     let ponto = |p: Vec2| {
         vec2(
             r.x + r.w * 0.5 + (p.x - centro.x) * escala,
@@ -104,62 +146,77 @@ pub fn desenha(
     };
     let m = Vec2::from(mouse_position());
     let clicou = crate::foco::clique();
-    draw_rectangle(r.x, r.y, r.w, r.h, COR_OCEANO);
+    draw_rectangle(r.x, r.y, r.w, r.h, crate::mapa::cor_do_mar_fundo());
     malha_do_oceano(r, u(1.0));
+    MINIATURAS.with(|t| t.borrow_mut().acompanhar());
+
+    // Ilha fora do ar fica APAGADA. Nao e' decoracao: e' a diferenca entre
+    // "o chefe de la' esta' vivo" e "ninguem sabe o que ha' la'".
+    let opacidade = |d: &DefIlha| if mundo.da_zona(d.zona).is_none_or(|i| i.no_ar) { 1.0 } else { 0.45 };
+    let lugar = |d: &DefIlha| (ponto(vec2(d.centro[0], d.centro[1])), (d.raio_m() * escala).max(u(10.0)));
+
+    // Every island's picture first, then the names, rings and crowns on top:
+    // a big island's picture must not cover a neighbour's name.
+    for (idx, d) in ARQUIPELAGO.iter().enumerate() {
+        let (c, raio) = lugar(d);
+        let a = opacidade(d);
+        let desenhou = MINIATURAS.with(|t| {
+            let t = t.borrow();
+            let Some(Some(tex)) = t.tex.get(idx) else { return false };
+            draw_texture_ex(
+                tex,
+                c.x - raio,
+                c.y - raio,
+                Color::new(1.0, 1.0, 1.0, a),
+                DrawTextureParams { dest_size: Some(vec2(raio * 2.0, raio * 2.0)), ..Default::default() },
+            );
+            true
+        });
+        if !desenhou {
+            draw_circle(c.x, c.y, raio * 0.7, Color::new(0.30, 0.42, 0.26, 0.5 * a));
+        }
+    }
 
     let mut escolhida = None;
     for d in ARQUIPELAGO.iter() {
-        let c = ponto(vec2(d.centro[0], d.centro[1]));
-        let raio = (d.raio_m() * escala).max(u(10.0));
+        let (c, raio) = lugar(d);
+        let a = opacidade(d);
         let aqui = zona_atual == Some(d.zona);
         let info = mundo.da_zona(d.zona);
-        let no_ar = info.is_none_or(|i| i.no_ar);
-        // Ilha fora do ar fica APAGADA. Nao e' decoracao: e' a diferenca
-        // entre "o chefe de la' esta' vivo" e "ninguem sabe o que ha' la'".
-        let a = if no_ar { 1.0 } else { 0.45 };
-        let terra = Color::new(0.30, 0.42, 0.26, a);
-        draw_circle(c.x, c.y, raio, terra);
-        draw_circle_lines(
-            c.x,
-            c.y,
-            raio,
-            u(if aqui { 3.0 } else { 1.5 }),
-            if aqui {
-                estilo::OURO
-            } else {
-                Color::new(0.62, 0.72, 0.55, a)
-            },
-        );
-        if aqui {
+        let sob = c.distance(m) <= raio * 0.8 && r.contains(m);
+        if aqui || sob {
             draw_circle_lines(
                 c.x,
                 c.y,
-                raio + u(5.0),
-                u(1.0),
-                Color::new(0.97, 0.79, 0.44, 0.5),
+                raio * 0.9,
+                u(if aqui { 2.5 } else { 1.5 }),
+                if aqui { estilo::OURO } else { Color::new(1.0, 1.0, 1.0, 0.6) },
             );
         }
-        // Nome e faixa de nivel.
+        // Nome e faixa de nivel, on a dark band so it reads over any coast.
         let titulo = if aqui {
             format!("{} · you are here", d.nome)
-        } else if no_ar {
-            format!("{} · Nv {}–{}", d.nome, d.nivel.0, d.nivel.1)
+        } else if a == 1.0 {
+            format!("{} · Lv {}–{}", d.nome, d.nivel.0, d.nivel.1)
         } else {
             format!("{} · offline", d.nome)
         };
-        estilo::texto_centro(
-            c.x,
-            c.y - raio - u(8.0),
-            &titulo,
-            13,
-            if aqui { estilo::OURO } else { estilo::TEXTO },
-        );
+        let y = c.y - raio * 0.9 - u(10.0);
+        let w = estilo::medir(&titulo, 13) + u(14.0);
+        draw_rectangle(c.x - w * 0.5, y - u(12.0), w, u(18.0), Color::new(0.04, 0.07, 0.12, 0.72));
+        estilo::texto_centro(c.x, y, &titulo, 13, if aqui { estilo::OURO } else { estilo::TEXTO });
+        if sob && !aqui {
+            let dica = "click to travel";
+            let yd = c.y + raio * 0.9 + u(14.0);
+            estilo::texto_centro(c.x + 1.0, yd + 1.0, dica, 12, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(c.x, yd, dica, 12, estilo::OURO);
+        }
         // Os chefes, em volta do centro da ilha.
         let chefes = info.map(|i| i.chefes.as_slice()).unwrap_or(&[]);
         for (k, ch) in chefes.iter().enumerate() {
             let ang = -std::f32::consts::FRAC_PI_2
                 + k as f32 * std::f32::consts::TAU / chefes.len().max(1) as f32;
-            let q = c + vec2(ang.cos(), ang.sin()) * raio * 0.52;
+            let q = c + vec2(ang.cos(), ang.sin()) * raio * 0.45;
             let falta = falta_pra_voltar(ch, agora_unix);
             let cor = match falta {
                 None => Color::new(1.0, 0.72, 0.25, a),
@@ -169,26 +226,18 @@ pub fn desenha(
                 crate::telegrafico::desenha_coroa(q, u(6.0));
             }
             let rotulo = match falta {
-                None => "vivo".to_string(),
+                None => "alive".to_string(),
                 Some(s) => conta_regressiva(s),
             };
-            estilo::texto_centro(
-                q.x + 1.0,
-                q.y + u(19.0),
-                &rotulo,
-                11,
-                Color::new(0.0, 0.0, 0.0, 0.85),
-            );
+            estilo::texto_centro(q.x + 1.0, q.y + u(19.0), &rotulo, 11, Color::new(0.0, 0.0, 0.0, 0.85));
             estilo::texto_centro(q.x, q.y + u(18.0), &rotulo, 11, cor);
         }
-        if clicou && c.distance(m) <= raio {
+        if clicou && sob {
             escolhida = Some(d);
         }
     }
     escolhida
 }
-
-const COR_OCEANO: Color = Color::new(0.07, 0.13, 0.22, 1.0);
 
 /// Linhas de longitude/latitude bem fracas: dao escala ao oceano vazio e
 /// custam oito `draw_line`.
