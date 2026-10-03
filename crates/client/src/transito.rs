@@ -4,9 +4,9 @@
 //!
 //! The paths are the centre lines of the avenues and of the Shuto deck,
 //! baked from OpenStreetMap with the map (`tools/kogen-osm/rasterizar.py`,
-//! `assets/kogen_ruas.bin`). A car drives one path end to end on its lane,
-//! then a new one starts near the player: the traffic always surrounds
-//! whoever is watching, and costs a few dozen matrices a frame.
+//! `assets/kogen_ruas.bin`), joined at their ends. A fixed fleet drives the
+//! whole network all the time — on through junctions, mostly straight on,
+//! U-turning at dead ends — and only the cars near the camera are drawn.
 //!
 //! At night (`render3d::noite`) the bright, saturated headlights and
 //! taillights glow, like the neon.
@@ -16,19 +16,20 @@ use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
 use shared::terreno::BLOCO;
 
-/// How many cars drive round the player at once.
-const CARROS: usize = 40;
-/// Cars START in a ring round the player, out of the near view (`RAIO_MIN`
-/// to `RAIO`), and leave past `RAIO_FORA`: popping into sight right beside
-/// the player is what read as flickering.
-const RAIO_MIN: f32 = 45.0;
-const RAIO: f32 = 80.0;
-const RAIO_FORA: f32 = 100.0;
+/// The FLEET: this many cars drive the whole city, all the time. They are
+/// born once, spread over every avenue, and never vanish — the owner asked
+/// for "fewer and constant driving in the city instead of disappearing".
+const CARROS: usize = 48;
+/// Only the cars this close to the camera are drawn (the rest keep driving).
+const RAIO_VISTO: f32 = 150.0;
+/// How fast a car turns its body, in radians per second: it eases round a
+/// bend instead of snapping at every vertex of the OSM line.
+const GIRO: f32 = 3.0;
 /// Two path ends this close are the same junction (OSM cuts every avenue
 /// into short ways: a car that died at each way's end vanished mid-street).
 const EMENDA: f32 = 3.0;
 /// Speed, in units per second (a city's pace next to a player's 5).
-const VELOCIDADE: (f32, f32) = (7.0, 12.0);
+const VELOCIDADE: (f32, f32) = (5.0, 8.0);
 /// The lane's offset from the centre line, in units (drive on the left, as
 /// in Tokyo).
 const FAIXA: f32 = 1.6;
@@ -65,6 +66,10 @@ struct Carro {
     sentido: f32,
     velocidade: f32,
     modelo: usize,
+    /// The body's heading, eased towards the road's (`GIRO`).
+    yaw: f32,
+    /// Where it was drawn last frame (the lane offset eases too).
+    pos: Option<Vec2>,
 }
 
 pub struct Transito {
@@ -188,7 +193,19 @@ impl Transito {
             [60, 200, 220, 255],
         ];
         let modelos = cores.iter().map(|c| vec![MalhaEstatica::nova(malha_do_carro(*c))]).collect();
-        Self { caminhos: le_caminhos(), carros: Vec::new(), modelos, semente: 0x5EED_CA25 }
+        let mut t = Self { caminhos: le_caminhos(), carros: Vec::new(), modelos, semente: 0x5EED_CA25 };
+        // The fleet, spread over the whole network, weighted by length.
+        if !t.caminhos.is_empty() {
+            for _ in 0..CARROS {
+                let k = t.caminho_ao_acaso();
+                let s = t.sorteio() * t.caminhos[k].comprimento();
+                let sentido = if t.sorteio() < 0.5 { 1.0 } else { -1.0 };
+                let velocidade = VELOCIDADE.0 + (VELOCIDADE.1 - VELOCIDADE.0) * t.sorteio();
+                let modelo = (t.sorteio() * t.modelos.len() as f32) as usize % t.modelos.len();
+                t.carros.push(Carro { caminho: k, s, sentido, velocidade, modelo, yaw: 0.0, pos: None });
+            }
+        }
+        t
     }
 
     /// The middle of the longest ground avenue (for the previews).
@@ -204,51 +221,50 @@ impl Transito {
         (self.semente >> 8) as f32 / (1u32 << 24) as f32
     }
 
-    /// A new car on a path that passes near `perto`, or `None`.
-    fn novo_carro(&mut self, perto: Vec2) -> Option<Carro> {
-        for _ in 0..24 {
-            let k = (self.sorteio() * self.caminhos.len() as f32) as usize % self.caminhos.len().max(1);
-            let total = self.caminhos.get(k)?.comprimento();
-            let s = self.sorteio() * total;
-            let (p, _) = self.caminhos[k].em(s);
-            let d = p.distance(perto);
-            if !(RAIO_MIN..=RAIO).contains(&d) {
-                continue;
+    /// A path at random, long ones more likely (the cars spread by road).
+    fn caminho_ao_acaso(&mut self) -> usize {
+        let total: f32 = self.caminhos.iter().map(|c| c.comprimento()).sum();
+        let mut alvo = self.sorteio() * total;
+        for (i, c) in self.caminhos.iter().enumerate() {
+            alvo -= c.comprimento();
+            if alvo <= 0.0 {
+                return i;
             }
-            let sentido = if self.sorteio() < 0.5 { 1.0 } else { -1.0 };
-            let velocidade = VELOCIDADE.0 + (VELOCIDADE.1 - VELOCIDADE.0) * self.sorteio();
-            let modelo = (self.sorteio() * self.modelos.len() as f32) as usize % self.modelos.len();
-            return Some(Carro { caminho: k, s, sentido, velocidade, modelo });
         }
-        None
+        self.caminhos.len() - 1
     }
 
-    /// Moves the cars and draws them. `chao(x, z)` is the street's height.
+    /// Moves every car and draws the ones near `perto`. `chao(x, z)` is the
+    /// street's height.
     pub fn desenha(&mut self, perto: Vec2, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
         if self.caminhos.is_empty() {
             return;
         }
-        // Advance. At a path's end the car turns into a path that continues
-        // there (or U-turns at a dead end); only a car far from the player
-        // gives its place.
-        let mut i = 0;
-        while i < self.carros.len() {
-            let mut sorte = self.sorteio();
+        for i in 0..self.carros.len() {
+            let sorte = self.sorteio();
             let c = &mut self.carros[i];
             c.s += c.sentido * c.velocidade * dt;
+            // At a path's end: on into the path that goes on the STRAIGHTEST
+            // (mostly — now and then a turn), or a U-turn at a dead end.
             for _ in 0..4 {
                 let cam = &self.caminhos[c.caminho];
                 let fim = cam.comprimento();
                 let lado = if c.s > fim { 1 } else if c.s < 0.0 { 0 } else { break };
                 let sobra = if lado == 1 { c.s - fim } else { -c.s };
+                let rumo = cam.em(if lado == 1 { fim } else { 0.0 }).1 * c.sentido;
                 let opcoes = &cam.seguintes[lado];
                 if opcoes.is_empty() {
                     c.sentido = -c.sentido;
                     c.s = if lado == 1 { fim - sobra } else { sobra };
                     continue;
                 }
-                let (j, no_inicio) = opcoes[(sorte * opcoes.len() as f32) as usize % opcoes.len()];
-                sorte = (sorte * 7.31).fract();
+                let saida = |&(j, no_inicio): &(usize, bool)| {
+                    let o = &self.caminhos[j];
+                    let d = if no_inicio { o.em(0.0).1 } else { -o.em(o.comprimento()).1 };
+                    d.dot(rumo)
+                };
+                let reta = opcoes.iter().copied().max_by(|a, b| saida(a).total_cmp(&saida(b))).unwrap();
+                let (j, no_inicio) = if sorte < 0.75 { reta } else { opcoes[(sorte * 97.0) as usize % opcoes.len()] };
                 c.caminho = j;
                 if no_inicio {
                     c.sentido = 1.0;
@@ -260,36 +276,41 @@ impl Transito {
             }
             let cam = &self.caminhos[c.caminho];
             c.s = c.s.clamp(0.0, cam.comprimento());
-            if cam.em(c.s).0.distance(perto) > RAIO_FORA {
-                self.carros.swap_remove(i);
-            } else {
-                i += 1;
-            }
-        }
-        let mut tentativas = 0;
-        while self.carros.len() < CARROS && tentativas < CARROS {
-            tentativas += 1;
-            if let Some(c) = self.novo_carro(perto) {
-                self.carros.push(c);
-            }
-        }
-        for c in &self.carros {
-            let cam = &self.caminhos[c.caminho];
             let (p, dir) = cam.em(c.s);
             let dir = dir * c.sentido;
             // Drive on the left: the lane is to the left of the direction.
-            let esquerda = vec2(dir.y, -dir.x);
-            let q = p + esquerda * FAIXA;
+            let alvo = p + vec2(dir.y, -dir.x) * FAIXA;
+            // Ease the body round bends, and the lane across junctions.
+            let yaw_alvo = (-dir.y).atan2(dir.x);
+            let mut dy = (yaw_alvo - c.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            if c.pos.is_none() {
+                dy = yaw_alvo - c.yaw;
+            }
+            c.yaw += dy.clamp(-GIRO * dt, GIRO * dt);
+            if c.pos.is_none() || dy.abs() > 2.5 {
+                c.yaw = yaw_alvo;
+            }
+            let q = match c.pos {
+                Some(antes) if antes.distance(alvo) < 6.0 => antes.lerp(alvo, (dt * 8.0).min(1.0)),
+                _ => alvo,
+            };
+            c.pos = Some(q);
+        }
+        for c in &self.carros {
+            let Some(q) = c.pos else { continue };
+            if q.distance(perto) > RAIO_VISTO {
+                continue;
+            }
+            let cam = &self.caminhos[c.caminho];
+            let (p, _) = cam.em(c.s);
             // On the deck the height comes from the CENTRE line: the lane
-            // offset can fall past a narrow deck's edge, and the car blinked
-            // between the deck and the street below.
+            // offset can fall past a narrow deck's edge.
             let y = if cam.elevado {
                 crate::terreno::deck_altura(p.x, p.y).or_else(|| crate::terreno::deck_altura(q.x, q.y)).unwrap_or_else(|| chao(p.x, p.y))
             } else {
                 chao(p.x, p.y)
             };
-            let yaw = (-dir.y).atan2(dir.x);
-            let modelo = Mat4::from_translation(vec3(q.x, y, q.y)) * Mat4::from_rotation_y(yaw);
+            let modelo = Mat4::from_translation(vec3(q.x, y, q.y)) * Mat4::from_rotation_y(c.yaw);
             crate::gpu_estatica::desenha_com_modelo(
                 Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 },
                 self.modelos[c.modelo].iter(),
