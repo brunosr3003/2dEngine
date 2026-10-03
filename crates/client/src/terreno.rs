@@ -132,6 +132,9 @@ pub struct Terreno {
     /// plano do nível do mar em volta da ilha virava uma mesa.
     sem_mar: bool,
     ilhas_aereas: Option<crate::ilhas_aereas::IlhasAereas>,
+    /// Kōgen-tō's decorative cars (`transito`). In a cell: they move as
+    /// they draw, and drawing takes `&self`.
+    transito: Option<std::cell::RefCell<crate::transito::Transito>>,
     bioma: Bioma,
     /// Aparencia do solo da arena, escolhida pelo conteudo da dungeon.
     bioma_visual: Bioma,
@@ -201,7 +204,9 @@ impl Terreno {
     fn do_gerador(ger: Gerador, bioma: shared::terreno::Bioma) -> Self {
         let aerea = ger.e_aerea();
         let celeste = ger.e_celeste();
+        let kogen = ger.e_kogen();
         let mut t = Self {
+            transito: kogen.then(|| std::cell::RefCell::new(crate::transito::Transito::novo())),
             ger,
             bioma,
             bioma_visual: bioma,
@@ -493,6 +498,10 @@ impl Terreno {
             crate::gpu_estatica::Programa::Solido { recorte, recorte_z },
             visiveis.iter().flat_map(|p| p.malhas.iter()),
         );
+        if let Some(t) = &self.transito {
+            let perto = vec2(cam.target.x, cam.target.z);
+            t.borrow_mut().desenha(perto, get_frame_time().min(0.1), &|x, z| self.altura(x, z));
+        }
         if let Some(pl) = self.ger.planalto() {
             let agora = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0,|d| d.as_secs() as i64);
             if let Some((_,c)) = pl.campo(agora) {
@@ -2760,6 +2769,7 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
         ("expressa", { let c = { let v = shared::kogen::de_latlon(35.6838, 139.6905); perto_de_deck(vec2(v.x, v.y), 12) }; (c.x, c.y) }, 70.0, 0.45),
+        ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
         ("rampa", { let c = { let v = shared::kogen::de_latlon(35.6600, 139.7000); perto_de_deck(vec2(v.x, v.y), 1) }; (c.x, c.y) }, 50.0, 0.5),
         ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
         ("aerea-norte", (0.0, -300.0), 500.0, 0.8),

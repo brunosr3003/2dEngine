@@ -123,6 +123,7 @@ mod rig;
 mod telegrafico;
 mod terreno;
 mod ilhas_aereas;
+mod transito;
 mod toque;
 mod ui;
 mod vegetacao;

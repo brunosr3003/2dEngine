@@ -339,6 +339,39 @@ def main():
         f.write(b"KOG2" + struct.pack("<iiII", X0, Z0, W, H))
         f.write(zlib.compress(tipo_d.tobytes() + A.tobytes() + E.tobytes() + D.tobytes(), 9))
 
+    # 9. The traffic's paths (`client::transito`): the centre lines of the
+    # avenues on the ground and of the elevated expressway, clipped to the
+    # land. Format: b"KRUA", u32 count, then per path u8 kind (1 avenue,
+    # 2 deck), u16 n, n x (i16 x, i16 z) in cells round (0, 0).
+    def na_terra(c, r):
+        ci, ri = int(round(c)), int(round(r))
+        return 0 <= ci < W and 0 <= ri < H and T[ri, ci] not in (MAR, ORLA_T)
+    caminhos = []
+    for el in vias:
+        t = el["tags"]
+        h = t["highway"]
+        if t.get("tunnel") in ("yes", "building_passage") or t.get("layer", "0").startswith("-"):
+            continue
+        elevada = h.startswith("motorway") and t.get("bridge") == "yes"
+        if not elevada and h.split("_")[0] not in ("trunk", "primary", "secondary", "motorway"):
+            continue
+        atual = []
+        for c, r in anel(el["geometry"]):
+            if na_terra(c, r):
+                atual.append((int(round(c + X0)), int(round(r + Z0))))
+            else:
+                if len(atual) > 1:
+                    caminhos.append((2 if elevada else 1, atual))
+                atual = []
+        if len(atual) > 1:
+            caminhos.append((2 if elevada else 1, atual))
+    with open(saida.replace("kogen_mapa.bin", "kogen_ruas.bin"), "wb") as f:
+        f.write(b"KRUA" + struct.pack("<I", len(caminhos)))
+        for tipo_c, pts in caminhos:
+            f.write(struct.pack("<BH", tipo_c, len(pts)))
+            for x, z in pts:
+                f.write(struct.pack("<hh", x, z))
+
     if len(sys.argv) > 3:
         cores = np.array([
             (20, 30, 60), (150, 150, 150), (60, 60, 70), (80, 80, 92), (230, 200, 40), (240, 240, 240),
