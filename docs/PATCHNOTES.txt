@@ -1,3 +1,15 @@
+03/10/2026 — A Torre Neon: a dungeon de mapa de Kōgen-tō
+
+Na costa noroeste de Kōgen-tō, perto do Tocho, ergue-se a Torre Neon: uma rampa em espiral de seis voltas em torno de um núcleo, subindo até um terraço redondo no topo. Sempre aberta, níveis 94 a 100.
+
+Cada meia volta tem um patamar plano com uma horda — nível 94 no pé da torre até 99 perto do topo. Em cada volta, um Sentinela da Torre de elite guarda um patamar: muito mais vida e dano, deixa um baú verde ao cair e volta depois de cinco minutos.
+
+A grade da borda externa pode ser pulada: cai-se exatamente uma volta, nunca mais.
+
+No terraço espera o Dragão Mecânico Celeste (nível 100): varredura de cauda, sopro de fogo neon em linha, rajada das asas em anel e, na segunda fase, o mergulho no alvo. Deixa baús onde cai, como os outros chefes de campo.
+
+O mapa marca a torre com o nome e a faixa de nível, e o "Ir para" leva ao pé da rampa. O capítulo VI ganhou dois passos: chegar à Torre Neon e derrotar o Dragão Mecânico Celeste.
+
 03/10/2026 — O chão da cidade de Kōgen-tō e a postura
 
 O chão da cidade das Docas em Kōgen-tō agora combina com o resto da ilha: piso escuro com as linhas neon, no lugar da praça verde das outras ilhas.
