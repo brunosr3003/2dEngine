@@ -2773,6 +2773,8 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         ("expressa", { let c = perto_de_deck(vec2(145.0, 120.0), 12); (c.x, c.y) }, 70.0, 0.45),
         ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
         ("rampa", { let c = perto_de_deck(vec2(200.0, 163.0), 1); (c.x, c.y) }, 50.0, 0.5),
+        ("luzes-rua", perto_de_luz(vec2(0.0, 250.0)), 26.0, 0.55),
+        ("luzes-kabukicho", perto_de_luz({ let a = shared::kogen::arenas()[1]; vec2(a.x, a.y - 40.0) }), 40.0, 0.6),
         ("torre-neon", { let c = shared::kogen::ESPIRAL_CENTRO; (c.x, c.y) }, 190.0, 0.55),
         ("torre-neon-rampa", { let c = shared::kogen::paradas_da_espiral()[3].0; (c.x, c.y) }, 34.0, 0.6),
         ("torre-neon-topo", { let c = shared::kogen::topo_da_espiral(); (c.x, c.y) }, 60.0, 0.7),
@@ -2804,11 +2806,13 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
             crate::gpu_estatica::define_luz_dia(-1.0);
             crate::gpu_estatica::define_neblina(centro, -(distancia * 2.5), distancia * 6.0);
             solido.set_uniform("Neblina", vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0));
+            crate::luzes::preparar(true, centro, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_material(&solido);
             t.desenha(&cam, Vec3::ZERO, 0.0);
             t.desenha_sombras(&cam);
             casas.desenha(&cam, None, Vec3::ZERO, 0.0);
             crate::agua::desenha(&t, &cam, 0.0);
+            crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
             rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
@@ -2861,6 +2865,19 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/robos.png"));
     crate::render3d::define_alvo(None);
+}
+
+/// The street lamp nearest `q` (for the previews).
+fn perto_de_luz(q: Vec2) -> (f32, f32) {
+    shared::kogen::luzes()
+        .iter()
+        .filter(|l| l.tipo == shared::kogen::TipoDeLuz::Poste)
+        .min_by(|a, b| {
+            let da = (a.pos.x - q.x).powi(2) + (a.pos.y - q.y).powi(2);
+            let db = (b.pos.x - q.x).powi(2) + (b.pos.y - q.y).powi(2);
+            da.total_cmp(&db)
+        })
+        .map_or((q.x, q.y), |l| (l.pos.x, l.pos.y))
 }
 
 /// The top of Kōgen-tō's expressway deck over `(x, z)`, in units, if any.

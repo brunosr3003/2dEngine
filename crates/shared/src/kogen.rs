@@ -1082,6 +1082,184 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
     }
 }
 
+// ─────────────────────────────── the lights ───────────────────────────────
+//
+// What lights the night city: STREET LAMPS on the sidewalks along every
+// street, NEON SIGN PANELS hung on the shop fronts, and the boulevard's
+// lanterns. Each is a prop (`vila`) AND a light (`client::luzes`): the client
+// lights the ground and walls round the nearest ones.
+
+/// What kind of light.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TipoDeLuz {
+    /// A street lamp: a post with an arm over the street.
+    Poste,
+    /// A vertical neon sign panel on a shop front.
+    Letreiro,
+    /// A paper lantern on the boulevard's median.
+    Lanterna,
+}
+
+/// One light of the city.
+#[derive(Debug, Clone, Copy)]
+pub struct LuzDaCidade {
+    pub tipo: TipoDeLuz,
+    /// Where it stands (the post's foot, the sign's spot on the sidewalk).
+    pub pos: Vec2,
+    /// Which way it faces: the street (lamp's arm, sign's face), quarter turns.
+    pub yaw_q: u8,
+    /// Where the light itself is, in units above the street, and off the
+    /// foot towards `yaw_q`.
+    pub alto: f32,
+    pub frente: f32,
+    /// Its colour (0..1) and how far it reaches (units).
+    pub cor: [f32; 3],
+    pub raio: f32,
+    /// Picks the look (sign colours and glyphs).
+    pub seed: i32,
+}
+
+impl LuzDaCidade {
+    /// The light's centre (world x, height above the street, world z).
+    pub fn centro(&self) -> (Vec2, f32) {
+        let d = match self.yaw_q % 4 {
+            0 => Vec2::new(0.0, 1.0),
+            1 => Vec2::new(1.0, 0.0),
+            2 => Vec2::new(0.0, -1.0),
+            _ => Vec2::new(-1.0, 0.0),
+        };
+        (self.pos + d * self.frente, self.alto)
+    }
+}
+
+/// The quarter turn that faces `d`.
+fn quarto_de(d: Vec2) -> u8 {
+    if d.y.abs() >= d.x.abs() {
+        if d.y >= 0.0 { 0 } else { 2 }
+    } else if d.x >= 0.0 {
+        1
+    } else {
+        3
+    }
+}
+
+const LAMPADA: [f32; 3] = [0.75, 0.9, 1.0];
+const SINAIS: [[f32; 3]; 3] = [[1.0, 0.27, 0.7], [0.24, 0.9, 1.0], [1.0, 0.85, 0.4]];
+
+/// Where a light can't stand: the spire, the arenas, the town, the deck's
+/// shadow and the landmarks' plazas.
+fn sem_luz(q: Vec2) -> bool {
+    q.distance(ESPIRAL_CENTRO) < ESPIRAL_RAIO + ESPIRAL_PATIO
+        || arenas().iter().any(|a| a.distance(q) < RAIO_ARENA + 4.0)
+        || q.distance(centro_da_cidade()) < crate::terreno::Cidade::RAIO + 6.0
+        || sob_o_deck(q)
+        || q.distance(cruzamento()) < RAIO_DO_CRUZAMENTO
+}
+
+/// The boulevard's median props: (where, seed, a lantern? else a sakura).
+pub fn canteiro_do_boulevard() -> Vec<(Vec2, i32, bool)> {
+    let livre = |p: Vec2| {
+        chao_em(p) == Chao::Parque && deck_em(p).is_none() && arenas().iter().all(|a| a.distance(p) > RAIO_ARENA + 6.0)
+    };
+    let mut v = Vec::new();
+    let mut z = AVENIDA_DO_CAIS - 10.0;
+    let mut i = 0;
+    while z > -COSTA_B {
+        let p = Vec2::new(boulevard_x(z), z);
+        if livre(p) {
+            v.push((p, i, i % 3 == 2));
+        }
+        z -= 14.0;
+        i += 1;
+    }
+    v
+}
+
+/// Every light of the city (made once).
+pub fn luzes() -> &'static [LuzDaCidade] {
+    static LUZES: std::sync::OnceLock<Vec<LuzDaCidade>> = std::sync::OnceLock::new();
+    LUZES.get_or_init(gerar_luzes)
+}
+
+fn gerar_luzes() -> Vec<LuzDaCidade> {
+    let mut v: Vec<LuzDaCidade> = Vec::new();
+    let longe = |v: &[LuzDaCidade], q: Vec2, tipo: TipoDeLuz, d: f32| {
+        v.iter().filter(|l| l.tipo == tipo).all(|l| l.pos.distance(q) >= d)
+    };
+    let e_rua = |q: Vec2| matches!(chao_em(q), Chao::Rua { .. });
+    let lados = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y];
+    // A coarse grid; each sample snaps to the nearest sidewalk by a street
+    // (a lamp) or by a shop front (a sign).
+    let passo = 9.0;
+    let mut z = -COSTA_B;
+    let mut k = 0i32;
+    while z < COSTA_B {
+        let mut x = -COSTA_A;
+        while x < COSTA_A {
+            k += 1;
+            let alvo = Vec2::new(x, z);
+            x += passo;
+            if fora(alvo) >= 0.9 || sem_luz(alvo) {
+                continue;
+            }
+            // The nearest sidewalk within a few units.
+            let mut achado = None;
+            'busca: for r in 0..5 {
+                for i in 0..12 {
+                    let a = i as f32 / 12.0 * std::f32::consts::TAU;
+                    let q = alvo + Vec2::new(a.cos(), a.sin()) * r as f32;
+                    if chao_em(q) == Chao::Calcada && !sem_luz(q) && deck_em(q).is_none() {
+                        achado = Some(q);
+                        break 'busca;
+                    }
+                }
+            }
+            let Some(q) = achado else { continue };
+            let rua = lados.iter().copied().find(|d| e_rua(q + *d * 1.8));
+            let predio = lados.iter().copied().find(|d| {
+                matches!(chao_em(q + *d * 1.5), Chao::Predio { altura, estilo } if (6..=40).contains(&altura) && !matches!(estilo, Estilo::Marco(_) | Estilo::Espiral))
+            });
+            let h = hash(k, 77);
+            match (rua, predio) {
+                // A lamp by the street, one every ~22 units.
+                (Some(d), _) if longe(&v, q, TipoDeLuz::Poste, 22.0) => v.push(LuzDaCidade {
+                    tipo: TipoDeLuz::Poste,
+                    pos: q,
+                    yaw_q: quarto_de(d),
+                    alto: 5.4,
+                    frente: 1.25,
+                    cor: LAMPADA,
+                    raio: 13.0,
+                    seed: k,
+                }),
+                // A sign on a shop front, facing out of it.
+                (_, Some(d)) if h < 0.75 && longe(&v, q, TipoDeLuz::Letreiro, 11.0) => {
+                    let cor = SINAIS[(h * 30.0) as usize % 3];
+                    v.push(LuzDaCidade {
+                        tipo: TipoDeLuz::Letreiro,
+                        pos: q,
+                        yaw_q: quarto_de(-d),
+                        alto: 5.2,
+                        frente: 1.25,
+                        cor,
+                        raio: 10.0,
+                        seed: k,
+                    })
+                }
+                _ => {}
+            }
+        }
+        z += passo;
+    }
+    for (p, seed, lanterna) in canteiro_do_boulevard() {
+        if lanterna {
+            let cor = if seed.rem_euclid(2) == 0 { SINAIS[0] } else { SINAIS[1] };
+            v.push(LuzDaCidade { tipo: TipoDeLuz::Lanterna, pos: p, yaw_q: 0, alto: 5.6, frente: 0.0, cor, raio: 8.0, seed });
+        }
+    }
+    v
+}
+
 /// Trees, plants and gathering nodes grow ONLY in parks (not on the
 /// boulevard's median, where the sakura props stand): on a street a rock
 /// closes the way, and nothing grows on a roof.
@@ -1402,5 +1580,25 @@ mod testes_de_rota {
         let topo = topo_da_espiral() + Vec2::new(4.0, 0.0);
         let fim = ilha.caminho(pe_da_espiral(), topo, 400_000).and_then(|r| r.last().copied());
         assert!(fim.is_some_and(|f| f.distance(topo) < 1.5), "the route up the spire stops at {fim:?}");
+    }
+}
+
+#[cfg(test)]
+mod testes_de_luz {
+    use super::*;
+
+    /// The night city is lit: lamps along the streets, signs on the shop
+    /// fronts, the boulevard's lanterns, none in the street itself.
+    #[test]
+    fn a_cidade_tem_postes_e_letreiros() {
+        let l = luzes();
+        let n = |t: TipoDeLuz| l.iter().filter(|x| x.tipo == t).count();
+        eprintln!("lamps {} signs {} lanterns {}", n(TipoDeLuz::Poste), n(TipoDeLuz::Letreiro), n(TipoDeLuz::Lanterna));
+        assert!(n(TipoDeLuz::Poste) > 200, "too few street lamps");
+        assert!(n(TipoDeLuz::Letreiro) > 150, "too few signs");
+        assert!(n(TipoDeLuz::Lanterna) > 10);
+        for x in l {
+            assert_eq!(chao_em(x.pos) == Chao::Calcada, x.tipo != TipoDeLuz::Lanterna, "{:?} off the sidewalk at {}", x.tipo, x.pos);
+        }
     }
 }

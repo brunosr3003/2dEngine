@@ -36,6 +36,7 @@ mod foco;
 mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
+mod luzes;
 mod habilidades;
 mod habilidades_input;
 mod hud;
@@ -5806,6 +5807,13 @@ impl Jogo {
         gpu_estatica::define_neblina(em_volta, inicio, fim);
         self.solido
             .set_uniform("Neblina", vec4(em_volta.x, em_volta.y, inicio, fim));
+        // The neon city's lamps and signs light what is round them (night =
+        // Kōgen-tō).
+        {
+            let terreno = self.terreno.as_ref();
+            let alvo = vec2(vista.cam.target.x, vista.cam.target.z);
+            luzes::preparar(noite, alvo, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
+        }
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
@@ -5944,6 +5952,12 @@ impl Jogo {
                 }
             }
         }
+        if noite {
+            let terreno = self.terreno.as_ref();
+            luzes::desenha_halos(&vista.cam, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
+            gl_use_material(&self.solido);
+        }
+        luzes::preparar(false, Vec2::ZERO, &|_, _| 0.0);
         self.solido.set_uniform("LuzDia", 0.0f32);
         gpu_estatica::define_luz_dia(0.0);
         // Off again before the panels: the colony model and the previews

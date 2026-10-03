@@ -948,6 +948,9 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     varying lowp float recortavel;
     // World position, for the distance fog.
     varying highp vec3 mundo;
+    // The voxel's own colour before night darkens it: what the city's
+    // lights (`LuzPos`) light up.
+    varying lowp vec3 base;
 
     uniform mat4 Model;
     uniform mat4 Projection;
@@ -992,6 +995,7 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
         }
 
         color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
+        base = color.rgb;
         if (LuzDia < -0.5) {
             // NIGHT (Kōgen-tō, always): everything sinks into a cold dark
             // blue — except what is bright AND saturated (neon, lit windows,
@@ -1021,8 +1025,14 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     varying lowp vec2 uv;
     varying lowp float recortavel;
     varying highp vec3 mundo;
+    varying lowp vec3 base;
 
     uniform sampler2D Texture;
+    // THE CITY'S LIGHTS (`luzes`): up to 16 point lights near the camera.
+    // LuzPos.xyz = where (world), .w = reach (0 ends the list); LuzCor.rgb
+    // = colour, .a = strength. Night only: by day the list is empty.
+    uniform highp vec4 LuzPos[16];
+    uniform lowp vec4 LuzCor[16];
     uniform highp vec3 Recorte;
     uniform highp float RecorteZ;
     // Distance fog: xy = centre (world x, z), z = where it starts, w = where
@@ -1054,6 +1064,17 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
             }
         }
         gl_FragColor = color * texture2D(Texture, uv);
+        if (LuzPos[0].w > 0.0) {
+            lowp vec3 soma = vec3(0.0);
+            for (int i = 0; i < 16; i++) {
+                highp float r = LuzPos[i].w;
+                if (r <= 0.0) break;
+                highp vec3 d = mundo - LuzPos[i].xyz;
+                highp float t = clamp(1.0 - dot(d, d) / (r * r), 0.0, 1.0);
+                soma += LuzCor[i].rgb * (t * t * LuzCor[i].a);
+            }
+            gl_FragColor.rgb += base * soma * texture2D(Texture, uv).rgb;
+        }
         if (Neblina.w > 0.0) {
             // A NEGATIVE start means night: the fog is the night sky.
             highp float d = distance(mundo.xz, Neblina.xy);
@@ -1114,6 +1135,8 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("PeleClaro", UniformType::Float4),
                 UniformDesc::new("PeleEsc", UniformType::Float4),
                 UniformDesc::new("Neblina", UniformType::Float4),
+                UniformDesc::new("LuzPos", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
+                UniformDesc::new("LuzCor", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
             ],
             pipeline_params: params_solido(),
             ..Default::default()

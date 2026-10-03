@@ -128,6 +128,31 @@ struct UniformesSolido {
     luz_dia: f32,
     faixas: Faixas,
     neblina: [f32; 4],
+    luz_pos: [[f32; 4]; MAX_LUZES],
+    luz_cor: [[f32; 4]; MAX_LUZES],
+}
+
+/// How many point lights the world shader takes (`render3d::SOLIDO_FRAGMENTO`
+/// loops over 16: keep them equal).
+pub const MAX_LUZES: usize = 16;
+
+/// The lights for what is drawn now (`define_luzes`): positions+reach and
+/// colours+strength. An empty first slot turns lighting off.
+type Luzes = ([[f32; 4]; MAX_LUZES], [[f32; 4]; MAX_LUZES]);
+
+/// The point lights for everything drawn after this (`luzes`): (world
+/// position, reach, colour, strength). Past `MAX_LUZES` is dropped.
+pub fn define_luzes(luzes: &[(Vec3, f32, [f32; 3], f32)]) {
+    let mut l: Luzes = ([[0.0; 4]; MAX_LUZES], [[0.0; 4]; MAX_LUZES]);
+    for (i, (p, r, c, f)) in luzes.iter().take(MAX_LUZES).enumerate() {
+        l.0[i] = [p.x, p.y, p.z, *r];
+        l.1[i] = [c[0], c[1], c[2], *f];
+    }
+    LUZES.with(|x| x.set(l));
+}
+
+fn luzes() -> Luzes {
+    LUZES.with(|x| x.get())
 }
 
 /// As cores das faixas de paleta, por DRAW.
@@ -187,6 +212,7 @@ thread_local! {
     static LUZ_DIA: Cell<f32> = const { Cell::new(0.0) };
     /// The distance fog for what is drawn now (`define_neblina`).
     static NEBLINA: Cell<[f32; 4]> = const { Cell::new([0.0; 4]) };
+    static LUZES: Cell<Luzes> = const { Cell::new(([[0.0; 4]; MAX_LUZES], [[0.0; 4]; MAX_LUZES])) };
     /// Buffers das malhas de voxel (`VoxCache`), pela posicao dos vertices na
     /// memoria. O cache de vox carrega uma vez e nunca solta nem troca malha,
     /// entao o endereco e' estavel durante o jogo inteiro.
@@ -224,7 +250,11 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
             UniformDesc::new("Projection", UniformType::Mat4),
             UniformDesc::new("Model", UniformType::Mat4),
         ];
-        uniforms.extend(extras.iter().map(|(n, t)| UniformDesc::new(n, *t)));
+        // "Name[]" = an array of `MAX_LUZES`.
+        uniforms.extend(extras.iter().map(|(n, t)| match n.strip_suffix("[]") {
+            Some(n) => UniformDesc::new(n, *t).array(MAX_LUZES),
+            None => UniformDesc::new(n, *t),
+        }));
         ShaderMeta {
             images: vec!["Texture".to_string()],
             uniforms: UniformBlockLayout { uniforms },
@@ -248,6 +278,8 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("PeleClaro", UniformType::Float4),
                 ("PeleEsc", UniformType::Float4),
                 ("Neblina", UniformType::Float4),
+                ("LuzPos[]", UniformType::Float4),
+                ("LuzCor[]", UniformType::Float4),
             ]),
         )
         .expect("world shader (gpu)");
@@ -331,6 +363,8 @@ pub fn desenha_com_modelo<'a>(
                     // tinge por faixa: ela e' do personagem.
                     faixas: Faixas::default(),
                     neblina: neblina(),
+                    luz_pos: luzes().0,
+                    luz_cor: luzes().1,
                 }));
             }
             Programa::Sombra => {
@@ -344,6 +378,8 @@ pub fn desenha_com_modelo<'a>(
                     luz_dia: 0.0,
                     faixas: Faixas::default(),
                     neblina: neblina(),
+                    luz_pos: [[0.0; 4]; MAX_LUZES],
+                    luz_cor: [[0.0; 4]; MAX_LUZES],
                 }));
             }
             Programa::Agua { tempo, ondas } => {
@@ -452,6 +488,8 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             luz_dia: LUZ_DIA.with(|l| l.get()),
             faixas,
             neblina: neblina(),
+            luz_pos: luzes().0,
+            luz_cor: luzes().1,
         }));
         ctx.apply_bindings(&Bindings {
             vertex_buffers: vec![vb],

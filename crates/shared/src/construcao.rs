@@ -452,6 +452,10 @@ pub enum TipoProp {
     Lanterna,
     /// Kōgen-tō: a glowing sakura tree on the boulevard's median.
     Sakura,
+    /// Kōgen-tō: a street lamp, its arm over the street (`kogen::luzes`).
+    Poste,
+    /// Kōgen-tō: a vertical neon sign sticking out of a shop front.
+    Letreiro,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -639,6 +643,8 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::OnibusVoador => onibus_voador(),
         TipoProp::Torii => torii(),
         TipoProp::Lanterna => lanterna(seed),
+        TipoProp::Poste => poste(seed),
+        TipoProp::Letreiro => letreiro(seed),
         TipoProp::Sakura => sakura(seed),
     }
 }
@@ -2257,6 +2263,54 @@ fn lanterna(seed: i32) -> Construcao {
         }
     }
     let mut c = prop(TipoProp::Lanterna, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A street lamp: a dark post, an arm reaching out over the street (local
+/// +z) and a glowing head under a cap.
+fn poste(_seed: i32) -> Construcao {
+    let mut v = Voxels::novo(-2, 0, -2, 5, 24, 9);
+    for y in 0..22 {
+        v.set(0, y, 0, BlocoCasa::Metal);
+    }
+    for z in 0..6 {
+        v.set(0, 21, z, BlocoCasa::Metal);
+    }
+    for x in -1..=1 {
+        for z in 4..=6 {
+            v.set(x, 22, z, BlocoCasa::NegroBorda);
+            v.set(x, 20, z, BlocoCasa::Lume);
+        }
+    }
+    let mut c = prop(TipoProp::Poste, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A blade sign: a tall panel sticking out of a shop front (local +z), its
+/// face lit with glyph strokes in one neon colour on a dark board.
+fn letreiro(seed: i32) -> Construcao {
+    let mut r = Rng::novo(semente(seed, 53, 211));
+    let mut v = Voxels::novo(-1, 0, 0, 3, 34, 10);
+    let cor = match seed.rem_euclid(3) {
+        0 => BlocoCasa::NeonRosaCasa,
+        1 => BlocoCasa::NeonCianoCasa,
+        _ => BlocoCasa::Lume,
+    };
+    for y in 9..33 {
+        for z in 1..9 {
+            let borda = y == 9 || y == 32 || z == 1 || z == 8;
+            // Glyph strokes: a few bars per "character", every four rows.
+            let traco = !borda && ((y - 10) % 5 != 4) && z != 2 && z != 7 && r.int(0, 10) < 6;
+            let b = if borda { cor } else if traco { cor } else { BlocoCasa::NegroBorda };
+            v.set(0, y, z, b);
+        }
+    }
+    // The bracket into the wall.
+    v.set(0, 32, 0, BlocoCasa::Metal);
+    v.set(0, 10, 0, BlocoCasa::Metal);
+    let mut c = prop(TipoProp::Letreiro, v);
     c.escala = 0.25;
     c
 }
