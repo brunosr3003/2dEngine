@@ -2760,8 +2760,10 @@ impl Gerador {
         // xadrez marrom por cima, e quebrava a regra que docs/MUNDO.md registra:
         // **cinza e' onde nao se sobe**. Pintar de cinza o chao em que se anda
         // apaga a unica leitura de relevo que o jogo da' sem texto.
-        // Kōgen-tō paints its whole city: asphalt, sidewalks, plazas, roofs.
-        if self.e_kogen() && !self.na_cidade(bx, bz) {
+        // Kōgen-tō paints its whole city: asphalt, sidewalks, plazas, roofs —
+        // the hub town too (the owner: its floor should match the island's,
+        // not the other islands' green square).
+        if self.e_kogen() {
             return crate::kogen::pintura(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
         }
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
