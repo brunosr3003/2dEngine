@@ -29,9 +29,6 @@ pub struct PetTag {
     pub alvo: Option<EntityId>,
     /// (saque, ate' quando ignorar) — bolsa cheia na ultima tentativa.
     pub desistencias: Vec<(EntityId, f32)>,
-    /// The field-boss chest (`forte::BauDoForte`) it is opening for its
-    /// owner, and since when it has stood at it (`f32::MAX` = on its way).
-    pub bau: Option<(EntityId, f32)>,
 }
 
 fn posicao_de_seguir(slot: shared::EquipSlot) -> Vec2 {
@@ -144,7 +141,6 @@ impl GameWorld {
                 auras: 0,
                 alvo: None,
                 desistencias: Vec::new(),
-                bau: None,
             },
         ));
         if instancia != 0 {
@@ -198,15 +194,6 @@ impl GameWorld {
             .map(|(e, (net, pos, l, i))| (e, net.0, pos.0, *l, i.map_or(0, |i| i.0)))
             .collect();
 
-        // Field-boss chests on the ground (world only: dungeons keep theirs).
-        let baus: Vec<(EntityId, Vec2)> = self
-            .ecs
-            .query::<(&NetId, &Position, &super::forte::BauDoForte)>()
-            .without::<&dungeon::Instancia>()
-            .iter()
-            .map(|(_, (n, p, _))| (n.0, p.0))
-            .collect();
-
         // (pet, dono, novo alvo, nova pos, nova vel, saque pego)
         struct Passo {
             pet: Entity,
@@ -214,8 +201,6 @@ impl GameWorld {
             pos: Vec2,
             vel: Vec2,
             pega: Option<(Entity, EntityId, SessionId, LootTag)>,
-            bau: Option<(EntityId, f32)>,
-            abre: Option<(EntityId, SessionId)>,
         }
         let mut passos: Vec<Passo> = Vec::new();
         // Um saque so' pode ser prometido a um pet por tick.
@@ -291,29 +276,6 @@ impl GameWorld {
             if let Some(id) = alvo {
                 prometidos.push(id);
             }
-            // AUTO LOOT OPENS CHESTS TOO: with nothing to fetch, the pet goes to
-            // the nearest field-boss chest in range and stands at it for
-            // `forte::ABRIR_S`, the same wait a player has; whoever finishes
-            // first still takes it.
-            let bau_alvo = if alvo.is_none() && instancia == 0 && !fora_da_coleira {
-                tag.bau
-                    .map(|(id, _)| id)
-                    .filter(|id| baus.iter().any(|(b, p)| b == id && dono_pos.distance(*p) <= raio))
-                    .or_else(|| {
-                        baus.iter()
-                            .filter(|(b, p)| dono_pos.distance(*p) <= raio && !prometidos.contains(b))
-                            .min_by(|a, b| dono_pos.distance_squared(a.1).total_cmp(&dono_pos.distance_squared(b.1)))
-                            .map(|(b, _)| *b)
-                    })
-                    .filter(|b| !prometidos.contains(b))
-            } else {
-                None
-            };
-            let bau_pos = bau_alvo.and_then(|b| baus.iter().find(|(id, _)| *id == b).map(|(_, p)| *p));
-            if let Some(b) = bau_alvo {
-                prometidos.push(b);
-            }
-            let destino = destino.or(bau_pos);
 
             let mira = destino.unwrap_or_else(|| dono_pos + posicao_de_seguir(tag.slot));
 
@@ -351,33 +313,16 @@ impl GameWorld {
                         .map(|(e, eid, _, l, _)| (*e, *eid, tag.dono, *l))
                 });
 
-            // At the chest: the clock starts; ten seconds later it opens.
-            let bau = bau_alvo.zip(bau_pos).map(|(b, p)| {
-                let perto = nova_pos.distance(p) <= super::forte::ALCANCE_DO_PET;
-                let desde = match tag.bau {
-                    Some((id, d)) if id == b && d != f32::MAX && perto => d,
-                    _ if perto => agora,
-                    _ => f32::MAX,
-                };
-                (b, desde)
-            });
-            let abre = bau
-                .filter(|(_, d)| *d != f32::MAX && agora - *d >= shared::forte::ABRIR_S)
-                .map(|(b, _)| (b, tag.dono));
-
             passos.push(Passo {
                 pet,
                 alvo,
                 pos: nova_pos,
                 vel,
                 pega,
-                bau: if abre.is_some() { None } else { bau },
-                abre,
             });
         }
 
         let mut pegos: Vec<(Entity, EntityId)> = Vec::new();
-        let mut abertos: Vec<(EntityId, SessionId)> = Vec::new();
         let mut hp_max: Vec<(Entity, i32)> = Vec::new();
         let mut cheias: Vec<(Entity, EntityId)> = Vec::new();
         for p in passos {
@@ -403,11 +348,7 @@ impl GameWorld {
                     }
                 }
             }
-            if let Some((b, dono)) = p.abre {
-                abertos.push((b, dono));
-            }
             if let Ok(mut tag) = self.ecs.get::<&mut PetTag>(p.pet) {
-                tag.bau = p.bau;
                 tag.alvo = alvo;
                 tag.desistencias.retain(|(_, ate)| *ate > agora);
             }
@@ -426,20 +367,6 @@ impl GameWorld {
         for (e, eid) in pegos {
             let _ = self.ecs.despawn(e);
             self.removed_this_tick.push(eid);
-        }
-        for (bau, dono) in abertos {
-            let achado = self
-                .ecs
-                .query::<(&NetId, &super::forte::BauDoForte)>()
-                .iter()
-                .find(|(_, (n, _))| n.0 == bau)
-                .map(|(e, (_, b))| (e, b.cor, b.conteudo));
-            if let Some((e, cor, conteudo)) = achado {
-                let _ = self.ecs.despawn(e);
-                self.removed_this_tick.push(bau);
-                crate::telemetria::conta("pet_abriu_bau", cor, 1);
-                self.forte_dar_bau(dono, cor, conteudo);
-            }
         }
     }
 }
@@ -550,34 +477,6 @@ mod testes {
             .iter()
             .map(|(_, (net, p, _))| (net.0, p.0))
             .next()
-    }
-
-    /// AUTO LOOT OPENS CHESTS: with a field-boss chest in range and nothing
-    /// else to fetch, the pet walks to it, stands there `ABRIR_S` and the
-    /// chest's loot lands with the owner — not a moment sooner.
-    #[test]
-    fn o_pet_abre_o_bau_do_chefe_pro_dono() {
-        let (mut w, sid) = mundo();
-        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 3);
-        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
-        w.sincroniza_pets();
-        w.forte_largar_n_baus(Vec2::new(3.0, 0.0), shared::forte::CONTEUDO_DO_BAU, &[2]);
-        let tem_bau = |w: &GameWorld| w.ecs.query::<&super::super::forte::BauDoForte>().iter().count();
-        assert_eq!(tem_bau(&w), 1);
-        let dt = 1.0 / 30.0;
-        let mut aberto_em = None;
-        for k in 0..(20.0 / dt) as u32 {
-            w.sim_time_s += dt;
-            w.tick_pets(dt);
-            if tem_bau(&w) == 0 {
-                aberto_em = Some(k as f32 * dt);
-                break;
-            }
-        }
-        let t = aberto_em.expect("the pet never opened the chest");
-        assert!(t >= shared::forte::ABRIR_S, "opened in {t:.1}s, sooner than a player can");
-        let s = &w.sessions[&sid];
-        assert!(s.inventory.iter().any(|x| x.qty > 0) || !s.dungeon.correio.is_empty(), "the owner got nothing");
     }
 
     /// SEGUINDO O DONO, o pet reporta a velocidade com que anda de verdade.

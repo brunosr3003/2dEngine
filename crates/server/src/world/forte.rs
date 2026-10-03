@@ -27,9 +27,6 @@ pub struct AberturaDeBau {
     pub de: Vec2,
 }
 
-/// How close a pet stands to open a chest for its owner (units).
-pub const ALCANCE_DO_PET: f32 = 1.2;
-
 impl GameWorld {
     /// A field boss fell at `onde`: one to three chests round the spot, of
     /// the table of dungeon `conteudo`.
@@ -166,7 +163,7 @@ impl GameWorld {
     }
 
     /// Rolls and hands over a chest of `cor`. What does not fit goes to the mail.
-    pub(super) fn forte_dar_bau(&mut self, sid: SessionId, cor: u8, conteudo: u16) {
+    fn forte_dar_bau(&mut self, sid: SessionId, cor: u8, conteudo: u16) {
         let Some(c) = dg::conteudo(conteudo) else {
             return;
         };
