@@ -1,3 +1,17 @@
+02/10/2026 — Diferença de nível, crítico e velocidade de ataque
+
+Bater em monstro muito acima do seu nível agora custa caro: até 3 níveis acima não muda nada; dali para cima, cada nível a mais tira dano seu e aumenta o dano que você recebe.
+
+O crítico ficou sem teto, mas mais difícil de juntar: a DES dá menos crítico por ponto e o resto vem do equipamento — crítico alto é coisa de nível 100 com equipamento T4 +12. Cada crítico também bate um pouco menos forte.
+
+A velocidade de ataque também não tem teto: a DES continua acelerando, só que cada vez mais devagar depois de 60 pontos.
+
+A DES é o atributo principal da pistola. Nas outras armas ela dá 30% da velocidade e do crítico que dá na pistola — uma katana com 20 a 40% de DES ainda vale a pena.
+
+Cada degrau da Ilha Mágica agora tem também os monstros do nível dele.
+
+Por baixo dos panos: começou a construção de Kōgen-tō, a ilha de nível 80 a 100. Ela ainda não tem acesso.
+
 02/10/2026 — Chaves sem aço roxo, baú com tier e refino, e a seleção de personagem certa
 
 As chaves dos Porões de nível 35 para cima pediam aço ROXO, que não cai em lugar nenhum — só dava para fabricar, a milhões de Darksteel. Agora toda chave pede no máximo aço AZUL, que cai das pedras azuis e roxas. Para os Porões altos não ficarem fáceis demais, a quantidade sobe com o nível: o Cofre do Trovão pede 311 aços azuis e o Relicário Serafim 548.
