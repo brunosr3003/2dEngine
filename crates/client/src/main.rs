@@ -4700,6 +4700,9 @@ impl Jogo {
                     None => self.chat.push("I couldn't find the NPC here.".into()),
                 }
             }
+            // The world map's click: at the captain (or the bus), off we go.
+            // The server still checks the route and the distance.
+            ir_para::Acao::Embarcar(ilha) => self.envia(ClientMessage::Viajar { ilha }),
             ir_para::Acao::Aviso(s) => self.chat.push(s),
         }
     }

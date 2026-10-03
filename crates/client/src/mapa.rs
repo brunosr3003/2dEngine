@@ -2911,14 +2911,14 @@ impl Mapa {
         let papel = if de_onibus || shared::kogen::e_kogen(aqui) { Papel::Motorista } else { Papel::Estaleiro };
         let npc = self.ger.as_ref()?.vila().npcs.iter().find(|n| n.papel == papel).map(|n| vec2(n.pos.x, n.pos.y))?;
         let quem = if papel == Papel::Motorista { "Sky Bus Professor" } else { "Port Captain" };
-        let rotulo = if de_onibus || shared::viagem::rota_permitida(aqui, idx, false) {
-            format!("{quem} · to {}", destino.nome)
+        // A route that exists boards on arrival; Kōgen-tō from anywhere but
+        // Skyreach opens the captain's menu (the first leg is the player's).
+        let (objetivo, rotulo) = if de_onibus || shared::viagem::rota_permitida(aqui, idx, false) {
+            (Objetivo::Embarcar(idx as u8), format!("{quem} · to {}", destino.nome))
         } else {
-            // Kōgen-tō from anywhere but Skyreach: the captain takes you on
-            // the first leg.
-            format!("{quem} · {} is reached from Skyreach", destino.nome)
+            (Objetivo::Npc, format!("{quem} · {} is reached from Skyreach", destino.nome))
         };
-        Some(Alvo { objetivo: Objetivo::Npc, pos: npc, raio: 0.0, rotulo })
+        Some(Alvo { objetivo, pos: npc, raio: 0.0, rotulo })
     }
 
     /// O MAPA-MUNDI no lugar do mapa da ilha (`mundo_ui`).

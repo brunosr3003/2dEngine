@@ -25,6 +25,9 @@ pub enum Objetivo {
     Coleta(u8),
     /// An NPC: talk to them on arrival.
     Npc,
+    /// The Port Captain or the Sky Bus: on arrival, set off for island
+    /// `ARQUIPELAGO[i]` (the world map's click).
+    Embarcar(u8),
     /// Just get there (a boss far above the level: nothing switches on by itself).
     Lugar,
 }
@@ -45,6 +48,8 @@ pub enum Acao {
     LigarColeta(u8, Vec2),
     /// Talk to whichever NPC is near this point.
     FalarPerto(Vec2),
+    /// Arrived at whoever travels: board for this island.
+    Embarcar(u8),
     Aviso(String),
 }
 
@@ -83,7 +88,7 @@ impl IrPara {
 
     fn alcance(a: &Alvo) -> f32 {
         match a.objetivo {
-            Objetivo::Npc => PERTO_DO_NPC,
+            Objetivo::Npc | Objetivo::Embarcar(_) => PERTO_DO_NPC,
             _ => a.raio.clamp(3.0, CHEGOU_MAX),
         }
     }
@@ -97,6 +102,7 @@ impl IrPara {
                 Objetivo::Combate => Acao::LigarCombate(a.pos),
                 Objetivo::Coleta(t) => Acao::LigarColeta(t, a.pos),
                 Objetivo::Npc => Acao::FalarPerto(a.pos),
+                Objetivo::Embarcar(i) => Acao::Embarcar(i),
                 Objetivo::Lugar => Acao::Aviso(format!("Arrived: {}.", a.rotulo)),
             };
             self.parar();
@@ -132,7 +138,7 @@ impl IrPara {
         }
         // NPC: stop beside them, not on top.
         let destino = match a.objetivo {
-            Objetivo::Npc => a.pos + (eu - a.pos).normalize_or_zero() * 2.0,
+            Objetivo::Npc | Objetivo::Embarcar(_) => a.pos + (eu - a.pos).normalize_or_zero() * 2.0,
             _ => a.pos,
         };
         Some(Acao::Viajar(destino))
