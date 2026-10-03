@@ -2854,6 +2854,14 @@ impl Mapa {
                 estilo::SUAVE,
             ),
         }
+        // Kōgen-tō is real Shinjuku + Shibuya from OpenStreetMap: the ODbL
+        // asks for the credit wherever the map is shown.
+        if self.def.is_some_and(|d| shared::kogen::e_kogen(d.zona)) {
+            let credito = "Map data © OpenStreetMap contributors";
+            let w = estilo::medir(credito, 12) + u(12.0);
+            draw_rectangle(r.x + r.w - w, r.y + r.h - u(20.0), w, u(20.0), Color::new(0.0, 0.0, 0.0, 0.55));
+            estilo::texto(r.x + r.w - w + u(6.0), r.y + r.h - u(6.0), credito, 12, estilo::SUAVE);
+        }
         // O ZOOM encolhe o raio VISTO e desloca o mundo pro foco. Uma conta
         // so' — `ponto` e `escala` saem dela, e tudo o que o mapa desenha
         // passa por `ponto`.
