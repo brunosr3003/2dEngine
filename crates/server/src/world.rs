@@ -12426,46 +12426,18 @@ impl GameWorld {
                     // Dash/leap = iframe puro: absorve sem custo (janelas curtas).
                     target.last_combat_at_s = now_s_poise;
                     absorbed_by_poise = true;
-                } else if telegrafico {
-                    // Straight to the HP (see `telegrafico` above).
-                    target.last_combat_at_s = now_s_poise;
-                } else if target.defending && target.defending_poise_buffer > 0.0 && dmg > 0 {
-                    // Defending: drena o buffer de poise (escalado por lvl+escudo)
-                    // + stamina por hit. Reducao de damage por defense + bonus
-                    // de block. Quando buffer zera, defending cancela e proximo
-                    // hit cai no caminho de poise normal / HP+stagger.
-                    let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
-                    let block_bonus = 0.4;
-                    let total_resist = (def_resist + block_bonus).min(0.95);
-                    let poise_dmg = ((dmg as f32) * (1.0 - total_resist)).max(1.0);
-                    target.defending_poise_buffer =
-                        (target.defending_poise_buffer - poise_dmg).max(0.0);
-                    let block_cost = shared::combat::block_stamina_cost(&target.stats);
-                    target.stamina_current = (target.stamina_current - block_cost).max(0.0);
-                    target.last_combat_at_s = now_s_poise;
-                    absorbed_by_poise = true;
-                    // Buffer zerou → defending falha; proximo hit nao usa essa branch
-                    if target.defending_poise_buffer <= 0.0 {
-                        target.defending = false;
-                    }
-                } else if target.poise_current > 0.0 && dmg > 0 {
-                    let def_resist = (target.stats.defense as f32 * 0.04).min(0.8);
-                    let total_resist = def_resist.min(0.95);
-                    let poise_dmg = ((dmg as f32) * (1.0 - total_resist)).max(1.0);
-                    target.poise_current = (target.poise_current - poise_dmg).max(0.0);
-                    target.last_combat_at_s = now_s_poise;
-                    absorbed_by_poise = true;
-                } else if target.poise_current <= 0.0 {
-                    // Poise quebrado — hits chegam no HP, mas ainda registra
-                    // combat pra evitar regen prematuro.
+                } else if dmg > 0 {
+                    // POISE IS GONE (the owner, 03/10/2026: "take out poise of
+                    // the game"): no bar soaks hits any more — every hit that
+                    // lands reaches the HP. Only a dash or leap (above) is
+                    // still a dodge.
                     target.last_combat_at_s = now_s_poise;
                 }
             }
             if absorbed_by_poise {
-                // Display de dano segue (numero floating mostra absorbed) +
-                // facing direction. Mas SKIP HP drain + stagger.
-                let prev_dmg = self.damage_this_tick.get(&target_id).copied().unwrap_or(0);
-                self.damage_this_tick.insert(target_id, prev_dmg + dmg);
+                // A dash or leap through the hit: no damage, so the number
+                // says 0 (a dodge), not the damage that never landed.
+                self.damage_this_tick.entry(target_id).or_insert(0);
                 self.hit_this_tick.insert(target_id, hurt_dir);
                 self.attacker_this_tick.insert(target_id, attacker_id);
                 continue;
@@ -21453,9 +21425,9 @@ fn auto_arrange_slots(slots: &mut Vec<shared::InventorySlot>) {
 mod impacto_tests {
     use super::*;
 
-    /// A BOSS'S TELEGRAPHED STRIKE reaches the HP: poise does not swallow
-    /// it (the owner saw "1200" fly and the HP stay). A normal mob's skill
-    /// hit is still poise's to absorb.
+    /// Every hit that lands reaches the HP — a boss's telegraph and a mob's
+    /// skill alike: poise used to swallow them (the owner saw "1200" fly and
+    /// the HP stay), and on 03/10/2026 he took poise out of the game.
     #[test]
     fn telegrafico_de_chefe_passa_pela_postura() {
         crate::economy::init_vazia_para_testes();
@@ -21498,11 +21470,8 @@ mod impacto_tests {
             });
             w.step(shared::TICK_DT);
             let hp = w.ecs.get::<&Health>(alvo).unwrap().current;
-            if chefe {
-                assert!(hp < 1000, "the boss's telegraph left the HP at {hp}: poise swallowed it");
-            } else {
-                assert_eq!(hp, 1000, "a mob's skill hit should still be poise's to absorb");
-            }
+            // Poise is gone: every hit that lands reaches the HP.
+            assert!(hp < 1000, "a hit (boss: {chefe}) left the HP at {hp}: something swallowed it");
         }
     }
 
