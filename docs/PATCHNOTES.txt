@@ -1,3 +1,11 @@
+03/10/2026 — Desmantelar itens lendários
+
+Os itens LENDÁRIOS (laranja) não mostravam a opção Desmantelar na bolsa — e o servidor também recusava. A janela de receitas que o desmantelar procura deixava a quinta cor de fora. Agora toda peça com atributos, da cinza à lendária, pode ser desmantelada e devolve parte dos materiais.
+
+Por baixo dos panos: Kōgen-tō, a ilha de nível 80 a 100, segue em construção (Shinjuku e Shibuya de verdade, viadutos andáveis, robôs, cidade sempre à noite). Ela ainda não tem acesso.
+
+Atualização obrigatória — o protocolo passa para o 183. Por enquanto só computador e Android.
+
 02/10/2026 — Diferença de nível, crítico e velocidade de ataque
 
 Bater em monstro muito acima do seu nível agora custa caro: até 3 níveis acima não muda nada; dali para cima, cada nível a mais tira dano seu e aumenta o dano que você recebe.
