@@ -24,6 +24,11 @@ use crate::protocol::CraftRecipeNet;
 
 /// Primeiro id das receitas de equipamento. Abaixo disto: barcos e legado.
 pub const PRIMEIRO_ID: u16 = 1000;
+/// One past the last equipment recipe id: every colour (`FAIXAS`) has its
+/// hundred. Salvage looks recipes up in `PRIMEIRO_ID..FIM_DOS_IDS`; it was a
+/// hard-coded `PRIMEIRO_ID + 400`, which left out the fifth colour — no
+/// legendary piece could be salvaged.
+pub const FIM_DOS_IDS: u16 = PRIMEIRO_ID + FAIXAS.len() as u16 * 100;
 
 /// `CraftRecipeNet::category`.
 pub mod categoria {
@@ -527,5 +532,15 @@ mod testes {
             // Quem não pode ENTRAR não deve conseguir FABRICAR.
             assert_eq!(r.nivel_min as u32, c.nivel_min, "{}", r.name);
         }
+    }
+
+    /// Every equipment recipe — legendary ones included — is inside the
+    /// salvage window.
+    #[test]
+    fn toda_receita_de_equipamento_se_desmantela() {
+        for r in receitas_de_equipamento() {
+            assert!(r.id >= PRIMEIRO_ID && r.id < FIM_DOS_IDS, "{} ({}) out of salvage", r.name, r.id);
+        }
+        assert!(receitas_de_equipamento().iter().any(|r| r.tier == 5), "no legendary recipe");
     }
 }

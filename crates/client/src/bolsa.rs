@@ -1513,7 +1513,7 @@ fn receita_do_item<'a>(
             && r.output_qty == 1
             && r.tier == grau
             && r.id >= shared::receitas::PRIMEIRO_ID
-            && r.id < shared::receitas::PRIMEIRO_ID + 400
+            && r.id < shared::receitas::FIM_DOS_IDS
     })
 }
 

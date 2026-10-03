@@ -14519,7 +14519,7 @@ impl GameWorld {
                 && r.output_qty == 1
                 && r.tier == inst.grau()
                 && r.id >= shared::receitas::PRIMEIRO_ID
-                && r.id < shared::receitas::PRIMEIRO_ID + 400
+                && r.id < shared::receitas::FIM_DOS_IDS
         });
         let Some(receita) = receita else {
             self.send_chat_to(
