@@ -1,3 +1,11 @@
+03/10/2026 — Luzes de Kōgen-tō, o mapa-mundi novo e o pet que abre baús
+
+Kōgen-tō ganhou luz de verdade: postes ao longo de todas as ruas e letreiros neon verticais nas fachadas das lojas, em rosa, ciano e amarelo. Postes, letreiros e as lanternas da avenida agora iluminam o chão, as paredes e os personagens em volta deles, com um brilho suave. Os letreiros zumbem, e alguns piscam.
+
+O mapa-mundi foi refeito: cada ilha aparece com o próprio mapa, no mesmo mar do mapa da ilha. Clicar numa ilha leva você até quem faz a viagem — o Capitão do Porto, ou o Professor do Ônibus Celeste para Kōgen-tō a partir de Skyreach (e de Kōgen-tō para qualquer ilha).
+
+A coleta automática do pet agora abre os baús dos chefes de campo: sem nada para pegar, o pet vai até o baú mais próximo dentro do alcance e o abre para você. Ele espera os mesmos dez segundos de um jogador, e quem terminar primeiro continua levando o baú.
+
 03/10/2026 — A Torre Neon: a dungeon de mapa de Kōgen-tō
 
 Na costa noroeste de Kōgen-tō, perto do Tocho, ergue-se a Torre Neon: uma rampa em espiral de seis voltas em torno de um núcleo, subindo até um terraço redondo no topo. Sempre aberta, níveis 94 a 100.
