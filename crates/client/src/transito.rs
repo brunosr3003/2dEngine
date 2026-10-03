@@ -2,9 +2,8 @@
 //! elevated expressway. Client only — the server never hears of them, they
 //! block nobody, and each client sees its own.
 //!
-//! The paths are the centre lines of the avenues and of the Shuto deck,
-//! baked from OpenStreetMap with the map (`tools/kogen-osm/rasterizar.py`,
-//! `assets/kogen_ruas.bin`), joined at their ends. A fixed fleet drives the
+//! The paths are the centre lines of the boulevards and of the ring road
+//! (`shared::kogen::caminhos_de_transito`), joined at their ends. A fixed fleet drives the
 //! whole network all the time — on through junctions, mostly straight on,
 //! U-turning at dead ends — and only the cars near the camera are drawn.
 //!
@@ -32,11 +31,14 @@ const EMENDA: f32 = 3.0;
 const VELOCIDADE: (f32, f32) = (5.0, 8.0);
 /// The lane's offset from the centre line, in units (drive on the left, as
 /// in Tokyo).
+#[allow(dead_code)]
 const FAIXA: f32 = 1.6;
 
 struct Caminho {
     /// On the expressway deck (height from the deck) or on the street.
     elevado: bool,
+    /// The lane's offset from the centre line, in units.
+    faixa: f32,
     pontos: Vec<Vec2>,
     /// Running length at each point.
     acumulado: Vec<f32>,
@@ -80,37 +82,11 @@ pub struct Transito {
 }
 
 fn le_caminhos() -> Vec<Caminho> {
-    let b: &[u8] = include_bytes!("../../../assets/kogen_ruas.bin");
-    if b.len() < 8 || &b[0..4] != b"KRUA" {
-        return Vec::new();
-    }
-    let n = u32::from_le_bytes([b[4], b[5], b[6], b[7]]) as usize;
-    let mut i = 8;
-    let mut caminhos = Vec::with_capacity(n);
-    for _ in 0..n {
-        if i + 3 > b.len() {
-            break;
-        }
-        let tipo = b[i];
-        let m = u16::from_le_bytes([b[i + 1], b[i + 2]]) as usize;
-        i += 3;
-        let mut pontos = Vec::with_capacity(m);
-        for _ in 0..m {
-            if i + 4 > b.len() {
-                break;
-            }
-            let x = i16::from_le_bytes([b[i], b[i + 1]]) as f32 * BLOCO;
-            let z = i16::from_le_bytes([b[i + 2], b[i + 3]]) as f32 * BLOCO;
-            pontos.push(vec2(x, z));
-            i += 4;
-        }
-        // CUT where the road is not a road: the baked map only knows the
-        // OSM buildings, and the landmarks (the Tocho, the Cocoon, the 109)
-        // stand over some avenues — the cars drove through them. Every unit
-        // of the line is checked on the centre and on both lanes against the
-        // real ground (`kogen::chao_em`); a stretch that hits a building or
-        // the sea splits the path. On the deck only the deck itself counts.
-        let elevado = tipo == 2;
+    let mut caminhos = Vec::new();
+    for (elevado, faixa, pts) in shared::kogen::caminhos_de_transito() {
+        let pontos: Vec<Vec2> = pts.iter().map(|p| vec2(p.x, p.y)).collect();
+        // CUT where the road is not a road (a landmark or plaza building
+        // standing over it): checked every unit on the centre and both lanes.
         let livre = |q: Vec2| {
             let g = ::glam::Vec2::new(q.x, q.y);
             if elevado {
@@ -119,22 +95,21 @@ fn le_caminhos() -> Vec<Caminho> {
             !matches!(shared::kogen::chao_em(g), shared::kogen::Chao::Predio { .. } | shared::kogen::Chao::Mar)
         };
         let mut trecho: Vec<Vec2> = Vec::new();
-        let mut fecha = |trecho: &mut Vec<Vec2>, caminhos: &mut Vec<Caminho>| {
+        let fecha = |trecho: &mut Vec<Vec2>, caminhos: &mut Vec<Caminho>| {
             let pts = std::mem::take(trecho);
             let mut acumulado = vec![0.0];
             for w in pts.windows(2) {
                 acumulado.push(acumulado.last().unwrap() + w[0].distance(w[1]));
             }
             if pts.len() >= 2 && *acumulado.last().unwrap() > 6.0 {
-                caminhos.push(Caminho { elevado, pontos: pts, acumulado, seguintes: [Vec::new(), Vec::new()] });
+                caminhos.push(Caminho { elevado, faixa, pontos: pts, acumulado, seguintes: [Vec::new(), Vec::new()] });
             }
         };
         for w in pontos.windows(2) {
             let (a, b) = (w[0], w[1]);
-            let l = a.distance(b);
             let d = (b - a).normalize_or_zero();
-            let lado = vec2(d.y, -d.x) * FAIXA;
-            let passos = (l.ceil() as usize).max(1);
+            let lado = vec2(d.y, -d.x) * faixa;
+            let passos = (a.distance(b).ceil() as usize).max(1);
             for k in 0..=passos {
                 let q = a + (b - a) * (k as f32 / passos as f32);
                 if livre(q) && livre(q + lado) && livre(q - lado) {
@@ -315,7 +290,7 @@ impl Transito {
             let (p, dir) = cam.em(c.s);
             let dir = dir * c.sentido;
             // Drive on the left: the lane is to the left of the direction.
-            let alvo = p + vec2(dir.y, -dir.x) * FAIXA;
+            let alvo = p + vec2(dir.y, -dir.x) * cam.faixa;
             // Ease the body round bends, and the lane across junctions.
             let yaw_alvo = (-dir.y).atan2(dir.x);
             let mut dy = (yaw_alvo - c.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;

@@ -292,23 +292,8 @@ fn marco_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
                 })
             })
         }
-        // Kōgen-tō: the Foundry's portal in Shibuya, by the station.
-        7 => {
-            // On a STREET: the real city's blocks close courtyards that no
-            // street reaches, and a portal in one is a Porão nobody enters.
-            let alvo = crate::kogen::de_latlon(35.6612, 139.6990);
-            let na_rua = |p: Vec2| {
-                matches!(crate::kogen::chao_em(p), crate::kogen::Chao::Rua { .. } | crate::kogen::Chao::Calcada)
-                    && crate::kogen::deck_em(p).is_none()
-            };
-            (0..14).find_map(|n| {
-                (0..16).find_map(|k| {
-                    let a = k as f32 * std::f32::consts::TAU / 16.0;
-                    let p = alvo + Vec2::new(a.cos(), a.sin()) * (n as f32 * 3.0);
-                    (na_rua(p) && firme(ger, p) && plano(ger, p)).then_some(p)
-                })
-            })
-        }
+        // Kōgen-tō: the Foundry's portal on a market street (`kogen`).
+        7 => Some(crate::kogen::portal_da_fundicao()),
         // The highest dry, flat-enough spot on a ring out of town.
         2 => candidatos(cidade)
             .filter(|p| firme(ger, *p) && plano(ger, *p))

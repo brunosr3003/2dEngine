@@ -170,6 +170,32 @@ pub fn montar(ger: &Gerador) -> Vila {
             giver: None,
         });
     }
+    // KŌGEN-TŌ's boulevard: glowing sakura and lanterns down its median,
+    // torii gates spanning it through the Shrine Forest. Decoration only:
+    // none of them blocks the way (`prop_barra`).
+    if ger.semente == crate::kogen::SEMENTE {
+        use crate::kogen as k;
+        let livre = |p: Vec2| {
+            k::chao_em(p) == k::Chao::Parque
+                && k::deck_em(p).is_none()
+                && k::arenas().iter().all(|a| a.distance(p) > k::RAIO_ARENA + 6.0)
+        };
+        let mut z = k::AVENIDA_DO_CAIS - 10.0;
+        let mut i = 0;
+        while z > -k::COSTA_B {
+            let p = Vec2::new(k::boulevard_x(z), z);
+            if livre(p) {
+                let tipo = if i % 3 == 2 { TipoProp::Lanterna } else { TipoProp::Sakura };
+                vila.props.push(PropPosto { tipo, seed: i, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: 0 });
+            }
+            z -= 14.0;
+            i += 1;
+        }
+        for z in [45.0f32, 90.0, 135.0, 180.0, 225.0] {
+            let p = Vec2::new(k::boulevard_x(z), z);
+            vila.props.push(PropPosto { tipo: TipoProp::Torii, seed: 0, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: 0 });
+        }
+    }
     montar_postos(ger, &mut vila);
     if let Some(pl) = ger.planalto() {
         for (i,r) in pl.regioes.iter().enumerate() {

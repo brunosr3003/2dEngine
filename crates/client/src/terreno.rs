@@ -2762,16 +2762,17 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     // (name, centre, camera distance, camera height factor)
     let vistas: Vec<(&str, (f32, f32), f32, f32)> = vec![
         ("shibuya-cruzamento", { let c = shared::kogen::cruzamento(); (c.x, c.y) }, 90.0, 1.1),
-        ("skytree-floresta", marco(Mc::Skytree), 220.0, 0.55),
+        ("pagoda-floresta", marco(Mc::Pagoda), 120.0, 0.55),
+        ("spire", marco(Mc::Skytree), 220.0, 0.55),
         ("tocho", marco(Mc::Prefeitura), 180.0, 0.5),
         ("nishi-shinjuku", marco(Mc::Casulo), 160.0, 0.45),
-        ("kabukicho", { let c = shared::kogen::de_latlon(35.6935, 139.7020); (c.x, c.y) }, 120.0, 0.5),
+        ("kabukicho", { let c = shared::kogen::arenas()[1]; (c.x, c.y) }, 120.0, 0.5),
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
         ("onibus", (hub.x + 30.0, hub.y), 28.0, 0.45),
-        ("expressa", { let c = { let v = shared::kogen::de_latlon(35.6838, 139.6905); perto_de_deck(vec2(v.x, v.y), 12) }; (c.x, c.y) }, 70.0, 0.45),
+        ("expressa", { let c = perto_de_deck(vec2(145.0, 120.0), 12); (c.x, c.y) }, 70.0, 0.45),
         ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
-        ("rampa", { let c = { let v = shared::kogen::de_latlon(35.6600, 139.7000); perto_de_deck(vec2(v.x, v.y), 1) }; (c.x, c.y) }, 50.0, 0.5),
+        ("rampa", { let c = perto_de_deck(vec2(200.0, 163.0), 1); (c.x, c.y) }, 50.0, 0.5),
         ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
         ("aerea-norte", (0.0, -300.0), 500.0, 0.8),
     ];

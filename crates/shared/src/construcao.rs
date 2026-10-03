@@ -446,6 +446,12 @@ pub enum TipoProp {
     /// Kōgen-tō's FLYING BUS, parked by its driver in Skyreach and in
     /// Kōgen-tō: a blue bus hanging under a striped hot-air balloon.
     OnibusVoador,
+    /// Kōgen-tō: a torii gate spanning the boulevard in the Shrine Forest.
+    Torii,
+    /// Kōgen-tō: a neon paper lantern on a post, on the boulevard's median.
+    Lanterna,
+    /// Kōgen-tō: a glowing sakura tree on the boulevard's median.
+    Sakura,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -631,6 +637,9 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::Barquinho => barquinho(seed),
         TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => marco_tormenta(tipo),
         TipoProp::OnibusVoador => onibus_voador(),
+        TipoProp::Torii => torii(),
+        TipoProp::Lanterna => lanterna(seed),
+        TipoProp::Sakura => sakura(seed),
     }
 }
 
@@ -2174,6 +2183,106 @@ fn onibus_voador() -> Construcao {
         }
     }
     let mut c = prop(TipoProp::OnibusVoador, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A torii gate as wide as the boulevard with its sidewalks (about 30
+/// units): two red pillars, the lower beam between them, the black top beam
+/// with upturned ends. Kōgen-tō's dress (`BlocoCasa::neon`) lights the red.
+fn torii() -> Construcao {
+    // 0.25 units a voxel: 120 wide, 64 tall.
+    let mut v = Voxels::novo(-66, 0, -4, 133, 66, 9);
+    for x in [-56i32, 56] {
+        for dx in -3..=3 {
+            for dz in -3..=3 {
+                if dx * dx + dz * dz <= 10 {
+                    for y in 0..56 {
+                        v.set(x + dx, y, dz, BlocoCasa::PinturaVermelha);
+                    }
+                }
+            }
+        }
+        for y in 0..3 {
+            for dx in -4..=4 {
+                for dz in -4..=4 {
+                    v.set(x + dx, y, dz, BlocoCasa::NegroBorda);
+                }
+            }
+        }
+    }
+    // The lower beam (nuki).
+    for x in -60..=60 {
+        for y in 44..=47 {
+            for z in -2..=2 {
+                v.set(x, y, z, BlocoCasa::PinturaVermelha);
+            }
+        }
+    }
+    // The top beam (kasagi), its ends curling up.
+    for x in -66..=66i32 {
+        let sobe = ((x.abs() - 50).max(0) as f32 / 4.0) as i32;
+        for y in 56 + sobe..=60 + sobe {
+            for z in -3..=3 {
+                v.set(x, y.min(65), z, if y >= 59 + sobe { BlocoCasa::NegroBorda } else { BlocoCasa::PinturaVermelha });
+            }
+        }
+    }
+    // The plaque in the middle.
+    for y in 48..=55 {
+        for x in -4..=4 {
+            v.set(x, y, 0, BlocoCasa::NegroBorda);
+        }
+    }
+    let mut c = prop(TipoProp::Torii, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A paper lantern on a dark post: the lantern glows (pink or cyan).
+fn lanterna(seed: i32) -> Construcao {
+    let mut v = Voxels::novo(-4, 0, -4, 9, 28, 9);
+    for y in 0..18 {
+        v.set(0, y, 0, BlocoCasa::Metal);
+    }
+    let cor = if seed.rem_euclid(2) == 0 { BlocoCasa::NeonRosaCasa } else { BlocoCasa::NeonCianoCasa };
+    for y in 18..27 {
+        let r = if y == 18 || y == 26 { 2 } else { 3 };
+        for x in -r..=r {
+            for z in -r..=r {
+                if x * x + z * z <= r * r + 1 {
+                    v.set(x, y, z, if y == 18 || y == 26 { BlocoCasa::NegroBorda } else { cor });
+                }
+            }
+        }
+    }
+    let mut c = prop(TipoProp::Lanterna, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A sakura in bloom: a dark trunk and a round crown of glowing pink and
+/// white blossom.
+fn sakura(seed: i32) -> Construcao {
+    let mut r = Rng::novo(semente(seed, 41, 977));
+    let mut v = Voxels::novo(-13, 0, -13, 27, 34, 27);
+    for y in 0..14 {
+        for (x, z) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            v.set(x, y, z, BlocoCasa::Lenha);
+        }
+    }
+    for y in 10..33 {
+        for x in -12..=12i32 {
+            for z in -12..=12i32 {
+                let d = ((x * x + z * z) as f32 / 144.0 + ((y - 21) as f32 / 11.0).powi(2)).sqrt();
+                if d <= 1.0 && r.int(0, 10) < 7 {
+                    let b = if r.int(0, 10) < 3 { BlocoCasa::FlorBranca } else { BlocoCasa::NeonRosaCasa };
+                    v.set(x, y, z, b);
+                }
+            }
+        }
+    }
+    let mut c = prop(TipoProp::Sakura, v);
     c.escala = 0.25;
     c
 }
