@@ -22,7 +22,7 @@ use glam::Vec2;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 2;
+pub const REVISAO: u32 = 3;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
@@ -130,11 +130,66 @@ pub fn centro_do_lote(q: Vec2) -> Vec2 {
     Vec2::new(cx as f32 * QUADRA + lx + (QUADRA - lx) * 0.5, cz as f32 * QUADRA + lz + (QUADRA - lz) * 0.5)
 }
 
-/// The Shibuya-style scramble crossing, in the Neon District: the street
-/// corner next to the Cocoon Tower.
+// ─────────────────────────── the organic streets ───────────────────────────
+//
+// The owner, on the second preview: "too much square ... the streets, it is
+// not very organic". Tokyo is not a grid: its streets bend, rings loop round
+// the centre (the Yamanote) and avenues run out from it. So the grid is
+// WARPED by a smooth wave — strongly in the Tokyo districts, lightly in
+// Corporate Heights and round the square, which keep a New York grid — and
+// three RING roads and five RADIAL avenues are laid over it.
+
+/// The ring roads' radii, in units, and the half width of rings and radials.
+pub const ANEIS: [f32; 3] = [205.0, 335.0, 465.0];
+pub const MEIA_ANEL: f32 = 6.5;
+
+/// The radial avenues run along the district borders: their directions.
+fn radiais() -> [Vec2; 5] {
+    std::array::from_fn(|k| {
+        let a = ANGULO_DOCAS - (36.0 + 72.0 * k as f32).to_radians();
+        Vec2::new(a.cos(), a.sin())
+    })
+}
+
+/// How strongly the grid bends at `q`: little in Corporate Heights (the New
+/// York grid) and round the square, a lot elsewhere.
+fn amplitude_da_torcao(q: Vec2) -> f32 {
+    let ang = q.y.atan2(q.x);
+    let corporativo = std::f32::consts::PI * 162.0 / 180.0;
+    let mut d = (ang - corporativo).rem_euclid(std::f32::consts::TAU);
+    d = d.min(std::f32::consts::TAU - d).to_degrees();
+    let ny = (1.0 - ((d - 25.0) / 20.0).clamp(0.0, 1.0)).max(1.0 - ((q.length() - RAIO_CENTRO) / 60.0).clamp(0.0, 1.0));
+    16.0 + (3.0 - 16.0) * ny
+}
+
+/// The point of the (straight) grid that `q` falls on: the warp.
+fn torcer(q: Vec2) -> Vec2 {
+    let a = amplitude_da_torcao(q);
+    q + a * Vec2::new(
+        (q.y * 0.012 + 1.3).sin() + 0.45 * (q.y * 0.027 - 0.4).sin(),
+        (q.x * 0.011 - 0.7).sin() + 0.45 * (q.x * 0.025 + 2.1).sin(),
+    )
+}
+
+/// How far `q` is from the nearest ring road or radial avenue (its centre line).
+fn ao_arterial(q: Vec2) -> f32 {
+    let r = q.length();
+    let mut d = ANEIS.iter().map(|a| (r - a).abs()).fold(f32::MAX, f32::min);
+    if r > RAIO_CENTRO {
+        for dir in radiais() {
+            let ao_longo = q.dot(dir);
+            if ao_longo > 0.0 {
+                d = d.min((q - dir * ao_longo).length());
+            }
+        }
+    }
+    d
+}
+
+/// The Shibuya-style scramble crossing: where the radial avenue between the
+/// Industrial Ring and the Neon District meets the middle ring road.
 pub fn cruzamento() -> Vec2 {
-    let ((cx, cz), _) = celula(Marco::Casulo.centro());
-    Vec2::new(cx as f32 * QUADRA, cz as f32 * QUADRA) + Vec2::splat(largura_da_rua(cx).max(largura_da_rua(cz)) * 0.5)
+    radiais()[2] * ANEIS[1]
 }
 
 // ─────────────────────────────── the landmarks ───────────────────────────────
@@ -205,8 +260,9 @@ impl Marco {
             Marco::UmWtc => centro_do_lote(Vec2::new(-400.0, 60.0)),
             Marco::Flatiron => u * -205.0 + Vec2::new(-u.y, u.x) * (BROADWAY_MEIA + 7.0),
             Marco::TorreDeToquio => centro_do_lote(Vec2::new(110.0, 320.0)),
-            Marco::Casulo => centro_do_lote(Vec2::new(-176.0, -243.0)),
-            Marco::Cilindro109 => centro_do_lote(Vec2::new(285.0, 93.0)),
+            // Shibuya: the Cocoon and 109 face the scramble crossing.
+            Marco::Casulo => cruzamento() + Vec2::new(-30.0, 26.0),
+            Marco::Cilindro109 => cruzamento() + Vec2::new(26.0, 24.0),
         }
     }
 
@@ -552,17 +608,46 @@ pub fn chao_em(q: Vec2) -> Chao {
         let faixa = s < 0.4 && t.rem_euclid(6.0) < 3.0;
         return Chao::Rua { avenida: true, faixa, zebra: false };
     }
-    let ((cx, cz), local) = celula(q);
+    // Every landmark stands in its own plaza: no street runs into it.
+    if Marco::TODOS.iter().any(|m| (q - m.centro()).length() < m.alcance() + 5.0) {
+        return Chao::Praca;
+    }
+    // The scramble: zebra stripes over the whole crossing.
+    let zebra = (q - cruzamento()).length() < MEIA_ANEL * 2.2
+        && ((q.x + q.y).rem_euclid(2.4) < 1.0 || (q.x - q.y).rem_euclid(2.4) < 1.0);
+    // The ring roads and the radial avenues.
+    let ang = q.y.atan2(q.x);
+    for raio in ANEIS {
+        let d = (r - raio).abs();
+        if d <= MEIA_ANEL {
+            let faixa = d < 0.4 && (ang * raio).rem_euclid(6.0) < 3.0;
+            return Chao::Rua { avenida: true, faixa: faixa && !zebra, zebra };
+        }
+    }
+    if r > RAIO_CENTRO {
+        for dir in radiais() {
+            let ao_longo = q.dot(dir);
+            let lado = (q - dir * ao_longo).length();
+            if ao_longo > 0.0 && lado <= MEIA_ANEL {
+                let faixa = lado < 0.4 && ao_longo.rem_euclid(6.0) < 3.0;
+                return Chao::Rua { avenida: true, faixa: faixa && !zebra, zebra };
+            }
+        }
+    }
+    // Sidewalks along the rings and radials, like along any street.
+    if ao_arterial(q) <= MEIA_ANEL + CALCADA {
+        return Chao::Calcada;
+    }
+    // The grid, bent (`torcer`).
+    let g = torcer(q);
+    let ((cx, cz), local) = celula(g);
     let (lx, lz) = (largura_da_rua(cx), largura_da_rua(cz));
     if local.x < lx || local.y < lz {
         let avenida = (local.x < lx && lx > RUA) || (local.y < lz && lz > RUA);
         let faixa = avenida
-            && ((local.x < lx && (local.x - lx * 0.5).abs() < 0.4 && (q.y.rem_euclid(6.0)) < 3.0)
-                || (local.y < lz && (local.y - lz * 0.5).abs() < 0.4 && (q.x.rem_euclid(6.0)) < 3.0));
-        // The scramble: diagonal zebra stripes over the whole crossing.
-        let zebra = (q - cruzamento()).length() < 13.0
-            && ((q.x + q.y).rem_euclid(2.4) < 1.0 || (q.x - q.y).rem_euclid(2.4) < 1.0);
-        return Chao::Rua { avenida, faixa: faixa && !zebra, zebra };
+            && ((local.x < lx && (local.x - lx * 0.5).abs() < 0.4 && (g.y.rem_euclid(6.0)) < 3.0)
+                || (local.y < lz && (local.y - lz * 0.5).abs() < 0.4 && (g.x.rem_euclid(6.0)) < 3.0));
+        return Chao::Rua { avenida, faixa, zebra: false };
     }
     // Inside the lot: sidewalk ring, then the lot itself.
     let dentro = Vec2::new(local.x - lx, local.y - lz);
@@ -577,6 +662,11 @@ pub fn chao_em(q: Vec2) -> Chao {
     let lote = dentro - Vec2::splat(CALCADA);
     let tam = tamanho - Vec2::splat(2.0 * CALCADA);
     let centro = Vec2::new(cx as f32 * QUADRA + lx, cz as f32 * QUADRA + lz) + Vec2::splat(CALCADA) + tam * 0.5;
+    // A lot that a ring or radial cuts through is a plaza by the avenue: a
+    // building there would be a sliver of wall.
+    if ao_arterial(q + (centro - g)) < QUADRA * 0.42 {
+        return Chao::Praca;
+    }
     match predio_no_lote(cx, cz, d, lote, tam, centro) {
         Some((altura, estilo)) => Chao::Predio { altura, estilo },
         None => Chao::Praca,
