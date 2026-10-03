@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 29] = [
+pub const CHEFES: [Chefe; 35] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -844,6 +844,97 @@ pub const CHEFES: [Chefe; 29] = [
             h("Wrath of the Sky", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 16.0, 12.0, 1, 0.8),
         ],
     },
+    // ── Kōgen-tō's field bosses: the giant robots, one per arena plaza
+    // (`kogen::ARENAS`), weakest first. ──
+    // Shibuya: a construction mech gone feral, an Iron Bear three times over.
+    Chefe {
+        kind: 63,
+        nome: "Titan Mk-I",
+        corpo: Corpo::Bicho(60),
+        escala: 2.8,
+        zona: "ilha_kogen",
+        nivel: 85,
+        habilidades: &[
+            h("Hydraulic Paw", Cone { raio: 6.5, abertura: 0.9 }, AFrente, 1.3, 2.6, 6.0, 6.5, 0, 1.2),
+            h("Shockwave", Anel { interno: 2.0, externo: 8.0 }, EmSi, 1.5, 2.2, 8.0, 8.0, 0, 1.6),
+            h("Rocket Charge", Linha { comprimento: 16.0, largura: 3.0 }, AFrente, 1.3, 2.4, 8.0, 16.0, 0, 1.2),
+            h("Orbital Strike", Circulo { raio: 5.6 }, NoAlvo, 2.0, 3.0, 12.0, 14.0, 1, 1.4),
+        ],
+    },
+    // Kabukicho: under the neon, the kaiju the signs were advertising.
+    Chefe {
+        kind: 64,
+        nome: "Neon Kaiju",
+        corpo: Corpo::Bicho(62),
+        escala: 3.0,
+        zona: "ilha_kogen",
+        nivel: 92,
+        habilidades: &[
+            h("Tail Sweep", Cone { raio: 7.0, abertura: 1.1 }, AFrente, 1.4, 2.6, 8.5, 7.0, 0, 1.4),
+            h("Neon Breath", Linha { comprimento: 22.0, largura: 2.6 }, AFrente, 1.3, 2.8, 10.0, 22.0, 0, 0.8),
+            h("Ground Pound", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.2, 14.0, 16.0, 0, 1.2),
+            h("Kaiju Roar", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 19.0, 12.0, 1, 0.8),
+        ],
+    },
+    // The Tocho: the city's own overseer, a Tesla Unit grown to a tower's
+    // guardian. The top of the island.
+    Chefe {
+        kind: 65,
+        nome: "Overseer Unit",
+        corpo: Corpo::Gente(61),
+        escala: 2.2,
+        zona: "ilha_kogen",
+        nivel: 100,
+        habilidades: &[
+            h("Rail Beam", Linha { comprimento: 24.0, largura: 2.2 }, AFrente, 1.2, 2.8, 9.5, 24.0, 0, 0.8),
+            h("Tesla Coil", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 12.0, 8.0, 0, 1.4),
+            h("Drone Strike", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 15.0, 18.0, 0, 1.2),
+            h("System Purge", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
+    // ── Kōgen-tō's dungeon bosses (`SO_DE_DUNGEON`) ──
+    Chefe {
+        kind: 66,
+        nome: "Foundry Mainframe",
+        corpo: Corpo::Gente(57),
+        escala: 2.0,
+        zona: "ilha_kogen",
+        nivel: 88,
+        habilidades: &[
+            h("Rivet Volley", Circulo { raio: 4.5 }, NoAlvo, 1.8, 2.8, 9.5, 18.0, 0, 1.0),
+            h("Press Slam", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 12.0, 8.0, 0, 1.4),
+            h("Conveyor Rush", Linha { comprimento: 20.0, largura: 3.0 }, AFrente, 1.3, 2.6, 10.0, 20.0, 0, 1.4),
+            h("Meltdown", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 19.0, 12.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 67,
+        nome: "Subway Leviathan",
+        corpo: Corpo::Bicho(58),
+        escala: 2.6,
+        zona: "ilha_kogen",
+        nivel: 93,
+        habilidades: &[
+            h("Third Rail", Linha { comprimento: 22.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 22.0, 0, 1.4),
+            h("Coil Snap", Cone { raio: 7.0, abertura: 1.0 }, AFrente, 1.4, 2.6, 8.5, 7.0, 0, 1.2),
+            h("Tunnel Collapse", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.2, 14.0, 16.0, 0, 1.2),
+            h("Blackout", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 19.0, 12.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 68,
+        nome: "Tower Sovereign",
+        corpo: Corpo::Gente(61),
+        escala: 2.3,
+        zona: "ilha_kogen",
+        nivel: 99,
+        habilidades: &[
+            h("Skyline Beam", Linha { comprimento: 24.0, largura: 2.2 }, AFrente, 1.2, 2.8, 9.5, 24.0, 0, 0.8),
+            h("Lightning Rod", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 12.0, 8.0, 0, 1.4),
+            h("Helipad Strike", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 15.0, 18.0, 0, 1.2),
+            h("Rooftop Storm", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
     // STORMKEEP's Warlord (`forte`), in the keep's arena. Last in the list:
     // `da_zona` sorts by level, and at 60 he must come after the Archmage
     // so the Plateau's boss spots line up ([2, 3, 4] then the keep).
@@ -952,7 +1043,7 @@ pub const CHEFES: [Chefe; 29] = [
 
 /// Bosses that only appear at the end of a dungeon, never in the field:
 /// `da_zona` leaves them out, or their islands would grow more field bosses.
-pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55];
+pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55, 66, 67, 68];
 
 /// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
 pub const PEGASUS: u16 = 27;
@@ -1354,7 +1445,7 @@ mod testes {
             assert!(vida(c.nivel) <= 200_000, "{}: vida {}", c.nome, vida(c.nivel));
         }
         assert!(da_zona("ilha_inicial").len() >= 2);
-        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA] {
+        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA, crate::kogen::ZONA] {
             assert!(!da_zona(z).is_empty(), "{z} sem chefe");
         }
         // A ILHA MÁGICA precisa de chefe: a Ilhota do Colosso paga bônus de

@@ -302,6 +302,10 @@ pub enum Papel {
     Alquimista,
     /// O Mestre de Missoes: fica na praca, e nao numa porta.
     Missoes,
+    /// Kōgen-tō's flying-bus driver (the professor): in Skyreach's square
+    /// he is the only way to Kōgen-tō; in Kōgen-tō's he flies anywhere.
+    /// Last, so every other role keeps its number on the wire.
+    Motorista,
 }
 
 impl Papel {
@@ -373,6 +377,7 @@ impl Papel {
             Naufrago => "Castaway",
             Alquimista => "Alchemist",
             Missoes => "Quest Master",
+            Motorista => "Sky Bus Professor",
         }
     }
 }
@@ -404,6 +409,9 @@ pub enum TipoProp {
     FarolTormenta,
     RuinaTormenta,
     CristalTormenta,
+    /// Kōgen-tō's FLYING BUS, parked by its driver in Skyreach and in
+    /// Kōgen-tō: a blue bus hanging under a striped hot-air balloon.
+    OnibusVoador,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -588,6 +596,7 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::Boia => boia(),
         TipoProp::Barquinho => barquinho(seed),
         TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => marco_tormenta(tipo),
+        TipoProp::OnibusVoador => onibus_voador(),
     }
 }
 
@@ -2072,6 +2081,67 @@ fn barquinho(seed: i32) -> Construcao {
         v.set(x, 4, w + 1, BlocoCasa::Viga);
     }
     prop(TipoProp::Barquinho, v)
+}
+
+/// The flying bus: a blue bus (white roof, a row of windows, yellow lamps)
+/// hovering on its wheels, roped to a red, white and blue hot-air balloon.
+fn onibus_voador() -> Construcao {
+    let mut v = Voxels::novo(-14, 0, -13, 29, 53, 27);
+    for x in -12..=12i32 {
+        for y in 4..=13i32 {
+            for z in -5..=5i32 {
+                let casca = x.abs() == 12 || y == 4 || y == 13 || z.abs() == 5;
+                if !casca {
+                    continue;
+                }
+                let bloco = if y == 13 {
+                    BlocoCasa::Pano
+                } else if y <= 5 {
+                    BlocoCasa::Metal
+                } else if x == 12 && (6..=7).contains(&y) && z.abs() == 4 {
+                    BlocoCasa::PinturaAmarela
+                } else if (9..=11).contains(&y) && (x == 12 || (z.abs() == 5 && x.rem_euclid(3) != 0 && x.abs() < 11)) {
+                    BlocoCasa::Janela
+                } else {
+                    BlocoCasa::PinturaAzul
+                };
+                v.set(x, y, z, bloco);
+            }
+        }
+    }
+    for (wx, wz) in [(-8, -5), (-8, 5), (8, -5), (8, 5)] {
+        for x in wx - 1..=wx + 1 {
+            for y in 2..=4 {
+                v.set(x, y, wz, BlocoCasa::NegroBorda);
+            }
+        }
+    }
+    // Ropes from the roof's corners up to the balloon's mouth.
+    for (cx, cz) in [(-10, -4), (-10, 4), (10, -4), (10, 4)] {
+        for y in 14..=27 {
+            let t = (y - 14) as f32 / 13.0;
+            let x = (cx as f32 * (1.0 - t * 0.55)).round() as i32;
+            let z = (cz as f32 * (1.0 - t * 0.2)).round() as i32;
+            v.set(x, y, z, BlocoCasa::Corda);
+        }
+    }
+    // The balloon, striped by angle.
+    for y in 25..=52 {
+        for x in -12..=12i32 {
+            for z in -12..=12i32 {
+                let e = (x * x + z * z) as f32 / 144.0 + ((y - 39) as f32 / 13.5).powi(2);
+                if !(0.80..=1.0).contains(&e) {
+                    continue;
+                }
+                let faixa = (((z as f32).atan2(x as f32) + std::f32::consts::PI) / std::f32::consts::TAU * 9.0) as i32 % 3;
+                let bloco = [BlocoCasa::PinturaVermelha, BlocoCasa::Pano, BlocoCasa::PinturaAzul][faixa as usize];
+                v.set(x, y, z, bloco);
+            }
+        }
+    }
+    let mut c = prop(TipoProp::OnibusVoador, v);
+    c.escala = 0.25;
+    c
 }
 
 #[cfg(test)]

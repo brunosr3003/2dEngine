@@ -268,7 +268,7 @@ pub fn ilhas_dos_bichos(comuns: &[u16], praia: &[u16]) -> std::collections::Hash
     for &k in praia {
         m.insert(
             k,
-            (0..ilhas.len() as u8).filter(|i| !shared::celeste::e_celeste(ilhas[*i as usize].zona)).collect(),
+            (0..ilhas.len() as u8).filter(|i| shared::terreno::tem_porto(ilhas[*i as usize].zona)).collect(),
         );
     }
     m
@@ -342,6 +342,9 @@ impl GameWorld {
                 .map(|&i| shared::celeste::PLATOS[i].centro + Vec2::new(-14.0, 10.0))
                 .take(chefes.len())
                 .collect()
+        } else if shared::kogen::e_kogen(&self.zona) {
+            // Kōgen-tō: each giant robot in its cleared plaza.
+            shared::kogen::arenas().into_iter().take(chefes.len()).collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
             [2usize, 3, 4].iter().filter_map(|i| {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);

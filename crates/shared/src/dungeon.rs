@@ -289,6 +289,45 @@ pub const CONTEUDOS: &[Conteudo] = &[
         chefe: 55,
         disponivel: true,
     },
+    // Kōgen-tō (03/10/2026): the Foundry under Shibuya, the old subway
+    // line under the city, and the TOWER — six floors of hordes, its
+    // sovereign on the roof.
+    Conteudo {
+        id: 7,
+        nome: "Robot Foundry",
+        tipo: Tipo::Porao,
+        zona: "ilha_kogen",
+        nivel_min: 85,
+        grupo_max: 1,
+        limite_s: 900,
+        andares: 3,
+        chefe: 66,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 8,
+        nome: "Undercity Line",
+        tipo: Tipo::Gruta,
+        zona: "ilha_kogen",
+        nivel_min: 90,
+        grupo_max: 5,
+        limite_s: 1500,
+        andares: 3,
+        chefe: 67,
+        disponivel: true,
+    },
+    Conteudo {
+        id: 9,
+        nome: "Kōgen Tower",
+        tipo: Tipo::Gruta,
+        zona: "ilha_kogen",
+        nivel_min: 95,
+        grupo_max: 5,
+        limite_s: 2100,
+        andares: 6,
+        chefe: 68,
+        disponivel: true,
+    },
     // Skyreach's two new caverns (02/10/2026).
     Conteudo {
         id: 16,

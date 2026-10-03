@@ -73,16 +73,36 @@ pub fn liberada(ilha: usize, indice_da_historia: Option<u32>) -> bool {
     }
 }
 
+/// Who takes you where. Kōgen-tō is reached ONLY by the flying bus from
+/// Skyreach (the owner, 02/10/2026); Skyreach's bus goes nowhere else, and
+/// Kōgen-tō's bus flies to any island. Captains never sail to Kōgen-tō.
+pub fn rota_permitida(zona_atual: &str, destino: usize, de_onibus: bool) -> bool {
+    let Some(d) = ARQUIPELAGO.get(destino) else {
+        return false;
+    };
+    let para_kogen = crate::kogen::e_kogen(d.zona);
+    if de_onibus {
+        if crate::celeste::e_celeste(zona_atual) {
+            return para_kogen;
+        }
+        return crate::kogen::e_kogen(zona_atual);
+    }
+    !para_kogen
+}
+
 /// O menu inteiro: uma linha por ilha do arquipelago. `no_ar(zona)` diz se ha'
-/// canal daquela ilha rodando.
+/// canal daquela ilha rodando. `de_onibus`: opened by the flying-bus driver
+/// (`rota_permitida` decides which lines show).
 pub fn destinos(
     zona_atual: &str,
     indice_da_historia: Option<u32>,
     no_ar: &dyn Fn(&str) -> bool,
+    de_onibus: bool,
 ) -> Vec<Destino> {
     ARQUIPELAGO
         .iter()
         .enumerate()
+        .filter(|(i, d)| d.zona == zona_atual || rota_permitida(zona_atual, *i, de_onibus))
         .map(|(i, d)| {
             let estado = if d.zona == zona_atual {
                 estado::AQUI
@@ -135,12 +155,29 @@ mod testes {
     fn menu_marca_onde_estou_e_o_que_esta_fora_do_ar() {
         let (p, _) = passo_que_libera(1).unwrap();
         let so_bosque_e_gelo = |z: &str| z == "ilha_inicial" || z == "ilha_gelo";
-        let m = destinos("ilha_gelo", Some(p + 3), &so_bosque_e_gelo);
-        assert_eq!(m.len(), ARQUIPELAGO.len());
+        let m = destinos("ilha_gelo", Some(p + 3), &so_bosque_e_gelo, false);
+        assert_eq!(m.len(), ARQUIPELAGO.len() - 1, "a captain never lists Kōgen-tō");
         assert_eq!(m[0].estado, estado::LIBERADA, "da' pra voltar ao Bosque");
         assert_eq!(m[1].estado, estado::AQUI);
         assert_eq!(m[2].estado, estado::BLOQUEADA);
         let sem_bosque = |z: &str| z == "ilha_gelo";
-        assert_eq!(destinos("ilha_gelo", Some(p), &sem_bosque)[0].estado, estado::FORA_DO_AR);
+        assert_eq!(destinos("ilha_gelo", Some(p), &sem_bosque, false)[0].estado, estado::FORA_DO_AR);
+    }
+
+    /// Kōgen-tō only by the bus from Skyreach; captains never list it.
+    #[test]
+    fn kogen_so_pelo_onibus_de_skyreach() {
+        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
+        let celeste = ARQUIPELAGO.iter().position(|d| crate::celeste::e_celeste(d.zona)).unwrap();
+        let no_ar = |_: &str| true;
+        for d in ARQUIPELAGO.iter() {
+            assert!(!destinos(d.zona, Some(10_000), &no_ar, false).iter().any(|x| x.ilha as usize == kogen && d.zona != crate::kogen::ZONA),
+                "a captain in {} lists Kōgen-tō", d.zona);
+        }
+        let do_onibus = destinos(crate::celeste::ZONA, Some(10_000), &no_ar, true);
+        assert!(do_onibus.iter().any(|x| x.ilha as usize == kogen));
+        assert!(do_onibus.iter().all(|x| x.ilha as usize == kogen || x.ilha as usize == celeste));
+        assert!(rota_permitida(crate::kogen::ZONA, 0, true), "Kōgen-tō's bus flies anywhere");
+        assert!(!rota_permitida("ilha_inicial", kogen, true), "no bus from the Bosque");
     }
 }

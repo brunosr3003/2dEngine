@@ -51,11 +51,10 @@ pub const PULO_BLOCOS: i32 = 3;
 /// 03/10/2026: "walkable everywhere").
 pub const CAMADA_CHAO: u8 = 0;
 pub const CAMADA_DECK: u8 = 1;
-/// Headroom under a deck, in blocks above the street. Lower than this (the
-/// foot of a ramp) there is no room to pass: the street meets a wall.
+/// Headroom under a deck, in blocks above the street. Up to this (the foot
+/// of a ramp) there is no room to pass under: the ramp is the ground there.
 pub const VAO_LIVRE: i32 = 5;
-/// A column under a ramp too low to walk under, as a height: a wall.
-const PAREDE_DO_VAO: i32 = 4000;
+
 
 /// Quanto um trecho que so' se vence PULANDO custa a mais no A*, em milesimos
 /// de celula.
@@ -4236,20 +4235,18 @@ impl Ilha {
     /// On the deck: the deck where there is one, the ground where there is
     /// not (a ramp's end steps off onto the street; the rails are the drop,
     /// see `borda_livre_na`). On the ground: the ground — except under a
-    /// ramp too low to walk under, which is a wall.
+    /// ramp too low to walk under, where the ground IS the ramp: its sides
+    /// are steps like any kerb, and standing on it is being on the deck
+    /// (`camada_em`). It was a wall, and a body moving one axis at a time
+    /// zigzagged past the one-block foot into the wall and stuck there,
+    /// while the A* — sampling the straight line — said the way was open.
     pub fn bloco_na(&self, ix: i32, iz: i32, camada: u8) -> i32 {
         let chao = self.bloco(ix, iz);
         match self.deck_bloco(ix, iz) {
             None => chao,
             Some(d) if camada == CAMADA_DECK => d,
-            Some(d) => {
-                let vao = d - chao;
-                if vao > DEGRAU_BLOCOS && vao <= VAO_LIVRE {
-                    PAREDE_DO_VAO
-                } else {
-                    chao
-                }
-            }
+            Some(d) if d - chao <= VAO_LIVRE => d,
+            Some(_) => chao,
         }
     }
 
@@ -4263,11 +4260,11 @@ impl Ilha {
     /// The floor a body is on after arriving at `p` from floor `camada`:
     /// off the deck's end it is on the street; on the street, a deck within
     /// a step (a ramp's foot) takes it up.
-    pub fn camada_em(&self, p: glam::Vec2, camada: u8, degrau: i32) -> u8 {
+    pub fn camada_em(&self, p: glam::Vec2, camada: u8, _degrau: i32) -> u8 {
         let (ix, iz) = self.coluna(p.x, p.y);
         match (camada, self.deck_bloco(ix, iz)) {
             (CAMADA_DECK, None) => CAMADA_CHAO,
-            (CAMADA_CHAO, Some(d)) if d - self.bloco(ix, iz) <= degrau.min(DEGRAU_BLOCOS) => CAMADA_DECK,
+            (CAMADA_CHAO, Some(d)) if d - self.bloco(ix, iz) <= VAO_LIVRE => CAMADA_DECK,
             (c, _) => c,
         }
     }
@@ -4293,6 +4290,24 @@ impl Ilha {
             self.mover_com_degrau(pos, vel, dt, raio, degrau)
         };
         (p, self.camada_em(p, camada, degrau))
+    }
+
+    /// `precisa_pular` on floor `camada` (the route follower's auto-jump on
+    /// Kōgen-tō: onto a ramp's side, along the deck).
+    pub fn precisa_pular_na(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32, camada: u8) -> bool {
+        if !self.tem_deck() {
+            return self.precisa_pular(pos, vel, dt, raio);
+        }
+        let passo = vel.length() * dt;
+        if passo < 1e-4 {
+            return false;
+        }
+        let andando = pos.distance(self.mover_na_camada(pos, vel, dt, raio, DEGRAU_BLOCOS, camada).0);
+        if andando > passo * 0.5 {
+            return false;
+        }
+        let pulando = pos.distance(self.mover_na_camada(pos, vel, dt, raio, PULO_BLOCOS, camada).0);
+        pulando > andando * 2.0 + 1e-4
     }
 
     /// Walking on a deck: no trees, no houses — only the surface and the
@@ -4441,8 +4456,7 @@ impl Ilha {
                     self.ponto_no_deck(cru)
                 } else {
                     let p = self.ponto_livre_perto(cru, crate::constants::ENTITY_RADIUS);
-                    let (ix, iz) = self.coluna(p.x, p.y);
-                    (self.bloco_na(ix, iz, CAMADA_CHAO) < PAREDE_DO_VAO && !self.agua(p.x, p.y)).then_some(p)
+                    (!self.agua(p.x, p.y)).then_some(p)
                 }
             })
         };
@@ -5692,7 +5706,7 @@ impl DefIlha {
     pub fn rumo_do_porto(&self) -> Option<glam::Vec2> {
         // Only the sea islands: Skyreach has no port, and counting it would
         // turn every existing dock (and move every port village).
-        let do_mar = |d: &&DefIlha| !crate::celeste::e_celeste(d.zona);
+        let do_mar = |d: &&DefIlha| tem_porto(d.zona);
         let outras: Vec<&DefIlha> = ARQUIPELAGO.iter().filter(do_mar).filter(|d| d.zona != self.zona).collect();
         if outras.len() + 1 != ARQUIPELAGO.iter().filter(do_mar).count() {
             return None;
@@ -5711,7 +5725,7 @@ impl DefIlha {
 /// A inicial e a final tem 800 m de raio; as duas do meio, 400. Nao ha' nada
 /// de sagrado nesses numeros — o relevo e' funcao da semente e do raio, entao
 /// mudar o tamanho de uma ilha e' trocar um campo aqui.
-pub const ARQUIPELAGO: [DefIlha; 5] = [
+pub const ARQUIPELAGO: [DefIlha; 6] = [
     DefIlha {
         zona: "ilha_inicial",
         nome: "Bosque",
@@ -5750,6 +5764,9 @@ pub const ARQUIPELAGO: [DefIlha; 5] = [
     },
     // Skyreach: drawn sky islands, no port (`celeste`). Index 4.
     crate::celeste::DEF,
+    // Kōgen-tō: real Shinjuku + Shibuya, reached only by the flying bus
+    // from Skyreach (`kogen`). Index 5.
+    crate::kogen::DEF,
 ];
 
 #[cfg(test)]
@@ -5815,6 +5832,12 @@ mod testes_da_ilha_magica {
             );
         }
     }
+}
+
+/// Is the island reached by SEA, with a port? Skyreach floats over the
+/// clouds and Kōgen-tō is reached only by the flying bus: neither has one.
+pub fn tem_porto(zona: &str) -> bool {
+    !crate::celeste::e_celeste(zona) && !crate::kogen::e_kogen(zona)
 }
 
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
@@ -6502,7 +6525,7 @@ mod testes {
     fn o_porto_da_no_oceano() {
         let mut falhas = Vec::new();
         // Skyreach floats over clouds: no sea, no port.
-        for d in ARQUIPELAGO.iter().filter(|d| !crate::celeste::e_celeste(d.zona)) {
+        for d in ARQUIPELAGO.iter().filter(|d| tem_porto(d.zona)) {
             let t0 = std::time::Instant::now();
             let ger = Gerador::da_ilha(d);
             let criar = t0.elapsed();

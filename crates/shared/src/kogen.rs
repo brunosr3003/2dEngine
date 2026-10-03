@@ -27,7 +27,7 @@ use std::sync::OnceLock;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 6;
+pub const REVISAO: u32 = 9;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
@@ -86,6 +86,55 @@ pub const DISTRITOS: [Distrito; 6] = [
 /// the south shore.
 pub fn centro_da_cidade() -> Vec2 {
     Vec2::new(0.0, 572.0)
+}
+
+/// The giant robots' arenas (`bosses`, kinds 63-65), weakest first: a
+/// cleared plaza in Shibuya, in Kabukicho by the real Godzilla head, and in
+/// front of the Tocho. Every building inside `RAIO_ARENA` gives way.
+pub fn arenas() -> [Vec2; 3] {
+    [de_latlon(35.6628, 139.6978), de_latlon(35.6950, 139.7022), de_latlon(35.6888, 139.6942)]
+}
+pub const RAIO_ARENA: f32 = 20.0;
+
+/// Story place ids for Kōgen-tō (`objective_kind::LUGAR`): `PONTO_BASE + i`.
+pub const PONTO_BASE: u16 = 80;
+pub const NOMES_DOS_PONTOS: [&str; 8] = [
+    "the Docks square",
+    "the Shibuya crossing",
+    "the Meiji Shrine forest",
+    "Kabukicho",
+    "the Nishi-Shinjuku towers",
+    "the Tocho plaza",
+    "Titan Mk-I's plaza",
+    "the Neon Kaiju's plaza",
+];
+
+/// The street nearest `alvo` (story places must be walkable).
+fn rua_perto(alvo: Vec2) -> Vec2 {
+    (0..60)
+        .flat_map(|r| (0..16).map(move |k| (r, k)))
+        .map(|(r, k)| {
+            let a = k as f32 / 16.0 * std::f32::consts::TAU;
+            alvo + Vec2::new(a.cos(), a.sin()) * r as f32
+        })
+        .find(|p| matches!(chao_em(*p), Chao::Rua { .. } | Chao::Praca | Chao::Calcada) && deck_em(*p).is_none())
+        .unwrap_or(alvo)
+}
+
+/// Where story place `p` is, if it is one of Kōgen-tō's.
+pub fn ponto(p: u16) -> Option<Vec2> {
+    let i = p.checked_sub(PONTO_BASE)?;
+    Some(match i {
+        0 => centro_da_cidade(),
+        1 => rua_perto(cruzamento()),
+        2 => rua_perto(de_latlon(35.6764, 139.6993)),
+        3 => rua_perto(de_latlon(35.6945, 139.7030)),
+        4 => rua_perto(Marco::Casulo.centro() + Vec2::new(0.0, Marco::Casulo.alcance() + 6.0)),
+        5 => arenas()[2],
+        6 => arenas()[0],
+        7 => arenas()[1],
+        _ => return None,
+    })
 }
 
 /// The Shibuya scramble crossing (where it really is).
@@ -514,6 +563,15 @@ pub fn chao_em(q: Vec2) -> Chao {
     if let Some((m, h)) = marco_em(q) {
         return Chao::Predio { altura: h, estilo: Estilo::Marco(m) };
     }
+    // The hub town's circle is the town's: no Docks warehouse or chimney
+    // pokes through its plaza.
+    if q.distance(centro_da_cidade()) < crate::terreno::Cidade::RAIO + 4.0 {
+        return Chao::Praca;
+    }
+    // The giant robots' arenas: open plazas to dodge in.
+    if arenas().iter().any(|a| a.distance(q) < RAIO_ARENA) {
+        return Chao::Praca;
+    }
     // Every landmark stands in its own plaza: the real buildings round it
     // give way.
     if Marco::TODOS.iter().any(|m| (q - m.centro()).length() < m.alcance() + 4.0) {
@@ -749,6 +807,19 @@ mod testes {
         assert!(matches!(chao_em(cruzamento()), Chao::Rua { .. }), "the crossing is a street");
     }
 
+    /// Each giant robot's arena is open ground in the district of its level.
+    #[test]
+    fn as_arenas_estao_nos_distritos_dos_chefes() {
+        let chefes = crate::bosses::da_zona(ZONA);
+        assert_eq!(chefes.len(), 3);
+        for (a, c) in arenas().iter().zip(chefes) {
+            let d = distrito_em(*a);
+            let (lo, hi) = DISTRITOS[d].nivel;
+            assert!(c.nivel >= lo && c.nivel <= hi, "{} (level {}) stands in {}", c.nome, c.nivel, DISTRITOS[d].nome);
+            assert_eq!(chao_em(*a), Chao::Praca, "{}'s arena is not open", c.nome);
+        }
+    }
+
     /// The Shuto expressway is baked as a deck over the streets.
     #[test]
     fn a_expressa_tem_deck() {
@@ -775,14 +846,22 @@ mod testes {
         let ilha = Ilha::da_ilha(&DEF);
         let dt = 1.0 / 30.0;
         // Walks a body towards `alvo` for up to `s` seconds.
+        // Walks a body towards `alvo`, jumping when the route follower would
+        // (`precisa_pular_na`), for up to `s` seconds.
         let andar = |de: Vec2, cam: u8, alvo: Vec2, s: f32| -> (Vec2, u8) {
             let (mut p, mut c) = (de, cam);
+            let mut pulo = 0.0f32;
             for _ in 0..(s / dt) as u32 {
                 let dir = (alvo - p).normalize_or_zero();
                 if p.distance(alvo) < 0.3 {
                     break;
                 }
-                (p, c) = ilha.mover_na_camada(p, dir * V, dt, R, DEGRAU_BLOCOS, c);
+                if pulo <= 0.0 && ilha.precisa_pular_na(p, dir * V, dt, R, c) {
+                    pulo = crate::constants::PULO_DURACAO;
+                }
+                let degrau = if pulo > 0.0 { crate::terreno::PULO_BLOCOS } else { DEGRAU_BLOCOS };
+                pulo -= dt;
+                (p, c) = ilha.mover_na_camada(p, dir * V, dt, R, degrau, c);
             }
             (p, c)
         };
@@ -855,5 +934,38 @@ mod testes {
         }
         assert_eq!(c, CAMADA_DECK, "followed the route but ended on the street at {p} (route {} points)", rota.len());
         assert!(p.distance(alto) < 2.0, "followed the route but stopped at {p}, short of {alto}");
+    }
+}
+
+#[cfg(test)]
+mod testes_de_rota {
+    use super::*;
+
+    /// FROM THE BUS STOP TO EVERY DISTRICT ON FOOT: the server's own A*
+    /// reaches a street in each of the six. The real lanes were 1.5 units
+    /// wide and the routes died in Shibuya; streets are game-wide now.
+    #[test]
+    fn da_cidade_se_anda_a_todo_distrito() {
+        let ilha = crate::terreno::Ilha::da_ilha(&DEF);
+        let c = ilha.cidade().unwrap().centro();
+        let alvos = [
+            ("Shibuya", de_latlon(35.6600, 139.7000)),
+            ("Harajuku", de_latlon(35.6702, 139.7027)),
+            ("Kabukicho", de_latlon(35.6945, 139.7030)),
+            ("Nishi-Shinjuku", de_latlon(35.6930, 139.6950)),
+            ("Tocho", arenas()[2]),
+        ];
+        for (nome, alvo) in alvos {
+            let rua = (0..40)
+                .flat_map(|r| (0..16).map(move |k| (r, k)))
+                .map(|(r, k)| {
+                    let a = k as f32 / 16.0 * std::f32::consts::TAU;
+                    alvo + Vec2::new(a.cos(), a.sin()) * r as f32
+                })
+                .find(|p| matches!(chao_em(*p), Chao::Rua { .. }) && deck_em(*p).is_none())
+                .expect("no street near the target");
+            let fim = ilha.caminho(c, rua, 60_000).and_then(|r| r.last().copied());
+            assert!(fim.is_some_and(|f| f.distance(rua) < 1.5), "{nome}: the route from town stops at {fim:?}, short of {rua}");
+        }
     }
 }

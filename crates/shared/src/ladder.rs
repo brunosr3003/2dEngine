@@ -389,7 +389,10 @@ pub fn boss_health(level: u32) -> i32 {
     // Past 60 the pistol kit's damage outgrows the strike count (the boss
     // sims dropped under the 60 s floor at 65..80), so each level above 60
     // adds 1.2% of health.
-    let alem = level.saturating_sub(60) as f32 * 0.012;
+    // Capped at 80 and easing off past 85: Kōgen-tō's giant robots (85-100)
+    // ran sword and shield past the 240 s ceiling with the straight 1.2%
+    // (267 s at 92, 282 s at 100); the pistol stays well above the 60 s floor.
+    let alem = (level.saturating_sub(60).min(20) as f32 * 0.012 - level.saturating_sub(85) as f32 * 0.004).max(0.0);
     (BOSS_STRIKES * golpe * (1.0 + alem)).round() as i32
 }
 

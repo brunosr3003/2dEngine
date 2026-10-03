@@ -61,7 +61,7 @@ pub const ZONA: &str = "dungeon";
 /// The five Porões are islands of their own now (`planta`), out in the sea on
 /// a ring at 222 u, and the zone's grid has to reach them. The Gruta islet in
 /// the middle is the same size it always was.
-pub const RAIO_BLOCOS: i32 = 700;
+pub const RAIO_BLOCOS: i32 = 1000;
 
 /// Semente fixa: a ilhota é a mesma toda vez, em todo realm.
 ///

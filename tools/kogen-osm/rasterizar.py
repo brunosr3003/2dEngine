@@ -89,12 +89,17 @@ def hash01(i):
     return (i * 2246822519 & 0xFFFFFFFF) / 0xFFFFFFFF
 
 
+# Street width in metres by OSM class — GAME widths, not Tokyo's: at 4 m a
+# unit a real 6 m lane is 1.5 units, narrower than the A* cell (4 u), and the
+# routes died in Shibuya's lanes. Streets are carved AFTER the buildings, so
+# a widened street trims the blocks beside it.
 LARGURA_M = {
-    "motorway": 18, "trunk": 24, "primary": 22, "secondary": 16, "tertiary": 12,
-    "motorway_link": 9, "trunk_link": 9, "primary_link": 9, "secondary_link": 8, "tertiary_link": 8,
-    "residential": 6, "unclassified": 6, "living_street": 5, "service": 4,
-    "pedestrian": 6, "footway": 3, "steps": 3, "path": 2.5,
+    "motorway": 18, "trunk": 24, "primary": 22, "secondary": 18, "tertiary": 14,
+    "motorway_link": 10, "trunk_link": 10, "primary_link": 10, "secondary_link": 10, "tertiary_link": 10,
+    "residential": 12, "unclassified": 12, "living_street": 10, "service": 8,
+    "pedestrian": 8, "footway": 6, "steps": 6, "path": 6,
 }
+CALCADA_M = 3.0
 
 
 def px(m):
@@ -179,36 +184,6 @@ def main():
                 if len(a) >= 3:
                     dt.polygon(a, fill=k)
 
-    # 2. Streets (sidewalk band first), narrow to wide; then rails.
-    vias = [el for el in els if el.get("tags", {}).get("highway") in LARGURA_M and "geometry" in el]
-    vias.sort(key=lambda el: LARGURA_M[el["tags"]["highway"]])
-    faixas = []
-    for el in vias:
-        t = el["tags"]
-        if t.get("tunnel") in ("yes", "building_passage") or t.get("layer", "0").startswith("-") or t.get("indoor") == "yes":
-            continue
-        h = t["highway"]
-        if h.startswith("motorway") and t.get("bridge") == "yes":
-            continue  # elevated: on the deck layer
-        pts = anel(el["geometry"])
-        w = px(LARGURA_M[h])
-        if h in ("footway", "steps", "path", "pedestrian"):
-            dt.line(pts, fill=CALCADA, width=w, joint="curve")
-            continue
-        larga = h.split("_")[0] in ("motorway", "trunk", "primary", "secondary")
-        dt.line(pts, fill=CALCADA, width=w + 2 * px(2.5), joint="curve")
-        dt.line(pts, fill=AVENIDA if larga else RUA, width=w, joint="curve")
-        if larga and not h.endswith("link"):
-            faixas.append(pts)
-    for pts in faixas:
-        for traco in tracejado(pts):
-            dt.line(traco, fill=FAIXA, width=1)
-    for el in els:
-        t = el.get("tags", {})
-        if t.get("railway") in ("rail", "light_rail") and t.get("tunnel") != "yes" and "geometry" in el \
-                and not t.get("layer", "0").startswith("-"):
-            dt.line(anel(el["geometry"]), fill=TRILHO, width=px(6))
-
     # 3. Buildings, low to tall.
     predios = []
     for el in els:
@@ -236,6 +211,40 @@ def main():
             dt.polygon(a, fill=PREDIO)
             da.polygon(a, fill=blocos)
             de.polygon(a, fill=estilo(d, blocos, el["tags"], el["id"], perto))
+
+    # 3b. Streets (sidewalk band first), narrow to wide, carved through the
+    # blocks; then rails. Carving erases the building heights under them.
+    vias = [el for el in els if el.get("tags", {}).get("highway") in LARGURA_M and "geometry" in el]
+    vias.sort(key=lambda el: LARGURA_M[el["tags"]["highway"]])
+    faixas = []
+    for el in vias:
+        t = el["tags"]
+        if t.get("tunnel") in ("yes", "building_passage") or t.get("layer", "0").startswith("-") or t.get("indoor") == "yes":
+            continue
+        h = t["highway"]
+        if h.startswith("motorway") and t.get("bridge") == "yes":
+            continue  # elevated: on the deck layer
+        pts = anel(el["geometry"])
+        w = px(LARGURA_M[h])
+        if h in ("footway", "steps", "path", "pedestrian"):
+            dt.line(pts, fill=CALCADA, width=w, joint="curve")
+            da.line(pts, fill=0, width=w, joint="curve")
+            continue
+        larga = h.split("_")[0] in ("motorway", "trunk", "primary", "secondary")
+        dt.line(pts, fill=CALCADA, width=w + 2 * px(CALCADA_M), joint="curve")
+        da.line(pts, fill=0, width=w + 2 * px(CALCADA_M), joint="curve")
+        de.line(pts, fill=0, width=w + 2 * px(CALCADA_M), joint="curve")
+        dt.line(pts, fill=AVENIDA if larga else RUA, width=w, joint="curve")
+        if larga and not h.endswith("link"):
+            faixas.append(pts)
+    for pts in faixas:
+        for traco in tracejado(pts):
+            dt.line(traco, fill=FAIXA, width=1)
+    for el in els:
+        t = el.get("tags", {})
+        if t.get("railway") in ("rail", "light_rail") and t.get("tunnel") != "yes" and "geometry" in el \
+                and not t.get("layer", "0").startswith("-"):
+            dt.line(anel(el["geometry"]), fill=TRILHO, width=px(6))
 
     # 4. The elevated expressways (Shuto): the deck layer, height in blocks above the street.
     deck = Image.new("I", (W, H), 0)

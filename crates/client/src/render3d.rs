@@ -1349,7 +1349,7 @@ pub const MODELOS_DE_GENTE: [&str; 14] = [
 ];
 
 /// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
-pub const MODELOS_DE_NPC: [&str; 15] = [
+pub const MODELOS_DE_NPC: [&str; 16] = [
     "npcs/alquimista",
     "npcs/ferreiro",
     "npcs/armeiro",
@@ -1365,6 +1365,7 @@ pub const MODELOS_DE_NPC: [&str; 15] = [
     "npcs/aldeao_1",
     "npcs/aldeao_2",
     "npcs/aldeao_3",
+    "npcs/motorista",
 ];
 
 /// `Papel::Missoes`: o proximo depois de `Alquimista` no enum do shared.
@@ -1396,6 +1397,7 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
         p if p == P::Estaleiro as u8 => "npcs/capitao",
         p if p == P::Itens as u8 || p == P::Mercador as u8 => "npcs/mercador",
         PAPEL_MISSOES => "npcs/mestre_missoes",
+        p if p == P::Motorista as u8 => "npcs/motorista",
         _ => ALDEOES[(id % ALDEOES.len() as u64) as usize],
     }
 }

@@ -136,10 +136,10 @@ use Papel::*;
 /// Bump on any change to the plans' layout: it is in the server's height
 /// cache key (`Ilha::carregar_ou_gerar_da_ilha`). 2: re-anchored 60° apart
 /// for the Seraph Reliquary (02/10/2026).
-pub const REVISAO: u32 = 2;
+pub const REVISAO: u32 = 3;
 
 /// The plans. Every Porão has three fights and a boss (`andares = 3`).
-pub const PLANTAS: [Planta; 6] = [
+pub const PLANTAS: [Planta; 7] = [
     // SHIPWRECK CELLAR — a serpentine: up, west, north, then east to the boss.
     // The alcove east of the first room is the hold of the wreck: empty, but
     // the cellar isn't a single line.
@@ -285,6 +285,30 @@ pub const PLANTAS: [Planta; 6] = [
             cor(1, 2, 0),
             cor(1, 3, 1),
             cor(1, 4, 2),
+            cor(4, 5, 3),
+        ],
+    },
+    // ROBOT FOUNDRY (Kōgen-tō) — a factory floor: the loading dock, then the
+    // assembly line running east in three bays, and the mainframe's hall at
+    // the line's end. On an outer ring, 30° between the Shipwreck Cellar and
+    // the Smugglers' plan (the islet grew for it: `arena::RAIO_BLOCOS`).
+    Planta {
+        conteudo: 7,
+        ancora: Vec2::new(190.0, 329.1),
+        tema: Tema::Tijolo,
+        salas: &[
+            sala(-36.0, 0.0, 6.0, Entrada),  // 0: the loading dock
+            sala(-16.0, 0.0, 8.0, Luta(0)),  // 1: the first bay
+            sala(-16.0, -22.0, 7.0, Recanto), // 2: the parts store
+            sala(6.0, 0.0, 8.0, Luta(1)),    // 3: the second bay
+            sala(28.0, 0.0, 9.0, Luta(2)),   // 4: the third bay
+            sala(28.0, 26.0, 12.0, Chefe),   // 5: the mainframe's hall
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 0),
+            cor(1, 3, 1),
+            cor(3, 4, 2),
             cor(4, 5, 3),
         ],
     },

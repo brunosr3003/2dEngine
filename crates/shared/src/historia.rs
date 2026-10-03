@@ -99,6 +99,7 @@ pub mod ponto {
             MIRANTE => "the lookout",
             COSTA => "the distant coast",
             40..=44 => crate::planalto::NOMES[(p-40) as usize],
+            80..=87 => crate::kogen::NOMES_DOS_PONTOS[(p - 80) as usize],
             _ => "the place",
         }
     }
@@ -144,7 +145,14 @@ pub const CAPITULOS: &[Capitulo] = &[
         nome: "V · The City Above the Storm",
         ilha: 4,
         primeiro: 871,
-        ultimo: 887,
+        ultimo: 888,
+    },
+    // Kōgen-tō, levels 80-100 (03/10/2026): the flying bus out of Skyreach.
+    Capitulo {
+        nome: "VI · The City That Never Sleeps",
+        ilha: 5,
+        primeiro: 950,
+        ultimo: 973,
     },
 ];
 
@@ -645,6 +653,33 @@ pub const PASSOS: &[QuestDef] = &[
     falar(885, "The runes of the throne", "The Appraiser wants to read the runes of the sky temple before anyone else.", Papel::Identificador, 8_000, 420_000, item_id::GREATER_MANA, 6),
     nivel(886, "Reach level 80", 80),
     falar(887, "The keeper's oath", "The city above the storm has a keeper again. The Quest Master has an oath for you.", Papel::Missoes, 12_000, 600_000, item_id::GREATER_HEAL, 10),
+    // ── Kōgen-tō (levels 80-100, 03/10/2026) ──
+    // The travel step closes chapter V; chapter VI has its own block (950-973).
+    viajar(888, "Bound for Kōgen-tō", "Past the storm's edge a city glows all night over the sea. Only the Sky Bus flies there: talk to the Sky Bus Professor in Cloudharbor's square.", 5, 12_000, 700_000),
+    falar(950, "The city that never sleeps", "Neon, rain and machines. Kōgen-tō's Quest Master waits in the Docks square.", Papel::Missoes, 12_000, 900_000, item_id::GREATER_HEAL, 10),
+    ir(951, "The scramble", "Walk north into Shibuya, to the crossing where every street meets.", crate::kogen::PONTO_BASE + 1, 12_000, 950_000),
+    cacar(952, "Hounds of steel", "Mech Hounds patrol the streets in packs. Defeat 25 hounds.", alvo_de_mob(mob_kind::LOBO), 25, 13_000, 1_100_000, item_id::GREATER_HEAL),
+    dungeon(953, "The Robot Foundry", "The machines are built under Shibuya. Take the Foundry's portal by the station and shut the line down.", 7, 18_000, 2_200_000, item_id::GREATER_HEAL, 15),
+    nivel(954, "Reach level 85", 85),
+    cacar_com(955, "Titan Mk-I", "A construction titan has gone feral in a Shibuya plaza. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(63), 1, 20_000, 2_600_000, item_id::GREATER_HEAL, 10, item_id::XP_POTION, 2),
+    ir(956, "The shrine forest", "Past Harajuku the Meiji Shrine forest is dark and full of nests. Go there.", crate::kogen::PONTO_BASE + 2, 14_000, 1_300_000),
+    cacar(957, "Volt Panthers", "Panthers of copper and lightning hunt between the trees. Defeat 25 panthers.", alvo_de_mob(mob_kind::TIGRE), 25, 15_000, 1_500_000, item_id::GREATER_HEAL),
+    falar(958, "Fighting machines", "Robots don't flinch. The Trainer knows where to hit them. Talk to him.", Papel::Treinador, 15_000, 1_400_000, item_id::GREATER_MANA, 10),
+    nivel(959, "Reach level 88", 88),
+    dungeon(960, "The Undercity Line", "Something lives in the old subway under the city. Clear the Undercity Line from the Dungeons panel.", 8, 22_000, 3_000_000, item_id::GREATER_HEAL, 15),
+    ir(961, "Kabukicho", "North, into the neon alleys of Kabukicho, where every sign is lit and nobody sleeps.", crate::kogen::PONTO_BASE + 3, 16_000, 1_700_000),
+    cacar(962, "Laser Sentries", "Sentries guard the alleys and shoot whoever walks them. Defeat 25 sentries.", alvo_de_mob(mob_kind::ARQUEIRO), 25, 17_000, 1_900_000, item_id::GREATER_HEAL),
+    nivel(963, "Reach level 92", 92),
+    cacar_com(964, "The Neon Kaiju", "Under the neon the kaiju the signs advertised has woken. Defeat it in its plaza — the map marks where.", alvo_de_mob(64), 1, 24_000, 3_400_000, item_id::GREATER_HEAL, 12, item_id::XP_POTION, 3),
+    ir(965, "The towers", "West of the station the Nishi-Shinjuku towers rise into the clouds. Walk to the Cocoon Tower.", crate::kogen::PONTO_BASE + 4, 18_000, 2_100_000),
+    cacar(966, "Tesla Units", "The towers' guards throw lightning. Defeat 25 Tesla Units.", alvo_de_mob(mob_kind::MAGO), 25, 19_000, 2_300_000, item_id::GREATER_HEAL),
+    nivel(967, "Reach level 95", 95),
+    dungeon(968, "The Kōgen Tower", "Six floors of machines between you and the roof. Climb the Kōgen Tower from the Dungeons panel; the sovereign waits on top.", 9, 30_000, 4_200_000, item_id::GREATER_HEAL, 20),
+    ir(969, "The Tocho", "Every robot answers to something in the Tocho plaza. Go there.", crate::kogen::PONTO_BASE + 5, 20_000, 2_600_000),
+    nivel(970, "Reach level 98", 98),
+    cacar(971, "The last patrol", "The Overseer's guard holds the towers. Defeat 40 machines of any kind.", 0, 40, 22_000, 2_800_000, item_id::GREATER_HEAL),
+    cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 5),
+    falar(973, "The last oath", "The city that never sleeps is quiet. The Quest Master has one last oath for you.", Papel::Missoes, 50_000, 8_000_000, item_id::GREATER_HEAL, 20),
 ];
 
 // ─────────────────────────── consultas ───────────────────────────
@@ -764,8 +799,9 @@ fn cronica(k: u32) -> Option<QuestDef> {
     let gold = 3_000u32.saturating_add(600u32.saturating_mul(c));
     let xp = 40_000u64.saturating_add(8_000u64.saturating_mul(c as u64));
     // After the written story's last gate: 60 until Skyreach's chapter V
-    // took the story to 80 (02/10/2026).
-    let trava = 80u64 + 5 * n as u64;
+    // took the story to 80 (02/10/2026), and Kōgen-tō's chapter VI to 98
+    // (03/10/2026) — so the chronicles start at the cap.
+    let trava = 95u64 + 5 * n as u64;
     let escolhe = |v: &[&'static str]| v[(c as usize) % v.len()];
     let def = match j {
         0 => {
@@ -998,6 +1034,26 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
             "Take the keeper's oath: to hold the sky as long as there is wind.",
             "The clouds remember who walked them.",
         ],
+        888 => &[
+            "Kōgen-tō? Ha! Nobody goes there by boat, the sea is wrong around it.",
+            "But my bus flies. Balloon, engine, a little science — mostly the science.",
+            "Climb aboard. Hold on to something. Not the steering wheel.",
+        ],
+        950 => &[
+            "You came on the Professor's bus? Then you're braver than you look.",
+            "This city never sleeps. The machines that built it never stopped building — and now they hunt.",
+            "Start in Shibuya. Every street meets at the crossing, and so does every patrol.",
+        ],
+        958 => &[
+            "A robot doesn't flinch, doesn't bleed and doesn't get tired.",
+            "So hit the joints and the core, and never trade blows with a titan.",
+            "When the ground lights up, move. That's all the warning a machine gives.",
+        ],
+        973 => &[
+            "The Overseer is silent. For the first time, the city is dark.",
+            "Lighthouses below, a city above the storm, and now the city that never slept.",
+            "Take the last oath: to keep the lights on for those who still live here.",
+        ],
         769 => &[
             "All four lighthouses shine. You did what no castaway ever has.",
             "But the storm does not die: it sleeps and it wakes.",
@@ -1026,6 +1082,9 @@ pub fn ponto_da_historia(
 ) -> Option<glam::Vec2> {
     use glam::Vec2;
     if let Some(q) = crate::celeste::ponto(p) {
+        return Some(q);
+    }
+    if let Some(q) = crate::kogen::ponto(p) {
         return Some(q);
     }
     let c = cidade?;
@@ -1121,6 +1180,8 @@ mod testes {
                 assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
             } else if (871..=889).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::celeste::ZONA));
+            } else if (950..=979).contains(&d.id) {
+                assert_eq!(zona_do_passo(d.id), Some(crate::kogen::ZONA));
             } else if PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
             } else {

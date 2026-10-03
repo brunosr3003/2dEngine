@@ -137,6 +137,30 @@ pub fn montar(ger: &Gerador) -> Vila {
             giver: None,
         });
     }
+    // THE FLYING BUS (Kōgen-tō): its driver, the professor, keeps the square
+    // of Skyreach (the only way in) and of Kōgen-tō (the way out), on the
+    // other side of the shop doors from the Captain.
+    if let Some(c) = ger
+        .cidade()
+        .filter(|_| ger.semente == crate::celeste::SEMENTE || ger.semente == crate::kogen::SEMENTE)
+    {
+        let pos = c.centro() + Vec2::new(4.8, -3.6);
+        let onibus = c.centro() + Vec2::new(11.0, -9.0);
+        vila.props.push(PropPosto {
+            tipo: TipoProp::OnibusVoador,
+            seed: ger.semente,
+            pos: Vec3::new(onibus.x, ger.altura(onibus.x, onibus.y), onibus.y),
+            yaw_q: 0,
+        });
+        vila.npcs.push(NpcDaVila {
+            papel: Papel::Motorista,
+            nome: Papel::Motorista.nome(),
+            pos,
+            yaw: yaw_de(c.centro() - pos),
+            loja: None,
+            giver: None,
+        });
+    }
     montar_postos(ger, &mut vila);
     if let Some(pl) = ger.planalto() {
         for (i,r) in pl.regioes.iter().enumerate() {
@@ -773,6 +797,7 @@ pub fn prop_barra(t: TipoProp) -> bool {
             | TipoProp::Barraca
             | TipoProp::Carroca
             | TipoProp::Portal
+            | TipoProp::OnibusVoador
             | TipoProp::FarolTormenta
             | TipoProp::RuinaTormenta
             | TipoProp::CristalTormenta
@@ -1616,7 +1641,7 @@ mod testes {
                 .vila()
                 .npcs
                 .iter()
-                .find(|n| n.papel == Papel::Estaleiro)
+                .find(|n| n.papel == Papel::Estaleiro || (crate::kogen::e_kogen(d.zona) && n.papel == Papel::Motorista))
                 .unwrap_or_else(|| panic!("{}: no Harbour Captain", d.zona));
             let praca = ilha.cidade().expect("a town").centro() + Vec2::new(0.0, 4.0);
             let rota = ilha.caminho(praca, cap.pos, 40_000);
@@ -1632,7 +1657,7 @@ mod testes {
     #[test]
     fn numeros_das_quatro_ilhas() {
         // The sea islands: Skyreach has a town but no port.
-        for d in ARQUIPELAGO.iter().filter(|d| !crate::celeste::e_celeste(d.zona)) {
+        for d in ARQUIPELAGO.iter().filter(|d| crate::terreno::tem_porto(d.zona)) {
             let ger = Gerador::da_ilha(d);
             let vila = ger.vila();
             let c = ger.cidade().expect("sem cidade");

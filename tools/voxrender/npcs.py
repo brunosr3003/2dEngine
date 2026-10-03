@@ -72,6 +72,19 @@ def cabeca(o):
     else:
         h.update(cx(12, 19, 8, 8, 35, 37, CAB[2]))             # coroa de cabelo baixa
         h[(15, 9, 41)] = PELE[0]; h[(16, 10, 41)] = PELE[0]     # brilho da careca
+    if o.get("cabelo_selvagem"):
+        # Wild white hair standing out on every side, in tufts — the
+        # professor who drives the flying bus (Kōgen-tō).
+        for z in range(36, 45):
+            for x in range(10, 22):
+                for y in range(6, 15):
+                    dentro = 12 <= x <= 19 and 8 <= y <= 15 and z <= 41
+                    frente = y >= 13 and z <= 40
+                    if dentro or frente:
+                        continue
+                    borda = min(x - 10, 21 - x, y - 6, 44 - z)
+                    if borda >= 2 or (x * 7 + y * 13 + z * 5) % 3 != 0:
+                        h[(x, y, z)] = CAB[0] if (x + y + z) % 2 else CAB[1]
     if o.get("coque"):
         h.update(cx(14, 17, 6, 7, 38, 41, CAB[1])); h.update(cx(15, 16, 5, 5, 39, 40, CAB[2]))
     if o.get("trancas"):
@@ -103,6 +116,9 @@ def cabeca(o):
     elif o.get("bigode"):
         for x in range(13, 19): h[(x, F, 36)] = CAB[1]
         h[(12, F, 35)] = CAB[1]; h[(19, F, 35)] = CAB[1]
+        if o.get("bigode_farto"):
+            for x in range(12, 20): h[(x, 16, 36)] = CAB[0]
+            for x in range(13, 19): h[(x, 16, 35)] = CAB[1]
     if o.get("oculos"):
         for x in range(12, 20): h[(x, 16, 38)] = METAL_ESC
         for x in (13, 14, 17, 18): h[(x, 16, 38)] = LENTE
@@ -512,6 +528,14 @@ NPCS = {
                CAMISA=(200, 170, 110), CAMISA_ESC=(166, 138, 86), CALCA=(90, 60, 40), CALCA_ESC=(68, 44, 28),
                BOTA=(60, 42, 28), CINTO=(60, 40, 26), MANGA=(200, 170, 110), MANGA_ESC=(166, 138, 86),
                CHAPEU=(60, 40, 70), CHAPEU_ESC=(44, 28, 52), DET=(120, 40, 40), DET2=(232, 188, 60))),
+    # Kōgen-tō's flying-bus driver, in Skyreach and in the Docks: the
+    # professor — wild white hair, a bushy moustache, a brown tweed jacket.
+    "motorista": (
+        dict(cabelo_selvagem=True, bigode=True, bigode_farto=True, rugas=True, casaco=True, lenco_pescoco=True),
+        paleta("clara", "branco",
+               CAMISA=(232, 228, 214), CAMISA_ESC=(196, 192, 180), CALCA=(96, 80, 62), CALCA_ESC=(74, 62, 48),
+               BOTA=(52, 38, 28), CINTO=(60, 40, 26), MANGA=(132, 104, 72), MANGA_ESC=(104, 80, 54),
+               DET=(132, 104, 72), DET2=(150, 40, 40))),
     # Aldeoes: roupa simples, cada um de uma cor e de um jeito.
     "aldeao_1": (
         dict(manga_arregacada=True, mao_e="cesta"),
