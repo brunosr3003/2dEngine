@@ -267,9 +267,14 @@ pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
     // (`BlocoCasa::celeste`). Colour only, so the server's collision, which
     // never reads colour, is untouched.
     let angelical = shared::celeste::e_celeste(def.zona);
+    // Kōgen-tō's town is the island's: concrete, glass and neon.
+    let neon = shared::kogen::e_kogen(def.zona);
     let vestir = |mut c: Construcao| {
         if angelical {
             c.v.repintar(BlocoCasa::celeste);
+        }
+        if neon {
+            c.v.repintar(BlocoCasa::neon);
         }
         c
     };

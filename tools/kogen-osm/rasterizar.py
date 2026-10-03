@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw
 METROS_POR_UNIDADE = 4.0        # 4 m of Tokyo per game unit
 BLOCO = 0.5                     # units per cell
 METROS_POR_CELULA = METROS_POR_UNIDADE * BLOCO
-BLOCOS_POR_METRO = 0.5          # a 200 m tower stands 100 blocks tall
+BLOCOS_POR_METRO = 1.0          # a 200 m tower stands 200 blocks tall (the owner: buildings too small next to a character)
 LAT0, LON0 = 35.6754, 139.7000  # the cell (0, 0)
 M_POR_GRAU_LAT = 110_540.0
 M_POR_GRAU_LON = 111_320.0 * math.cos(math.radians(LAT0))
@@ -144,7 +144,7 @@ def estilo(d, blocos, tags, ident, perto_do_cruzamento):
     r = hash01(ident + 7)
     if perto_do_cruzamento or (d == 3 and r < 0.5) or (d == 1 and r < 0.3):
         return LETREIROS
-    if blocos >= 60:
+    if blocos >= 120:
         return VIDRO if r < 0.75 else BRANCO
     if d == 1:
         return TIJOLO if r < 0.6 else BRANCO
@@ -199,7 +199,7 @@ def main():
     predios.sort(key=lambda x: x[0])
     cx, cz = para_celula(*CRUZAMENTO)
     for h, el in predios:
-        blocos = max(2, min(250, round(h * BLOCOS_POR_METRO)))
+        blocos = max(4, min(255, round(h * BLOCOS_POR_METRO)))
         for a in aneis_externos(el):
             if len(a) < 3:
                 continue
@@ -250,7 +250,7 @@ def main():
     deck = Image.new("I", (W, H), 0)
     dd = ImageDraw.Draw(deck)
     pontes = [el for el in vias if el["tags"]["highway"].startswith("motorway") and el["tags"].get("bridge") == "yes"]
-    nivel_de = lambda t: 14 + 6 * max(0, int(t.get("layer", "1")) - 1)
+    nivel_de = lambda t: 16 + 6 * max(0, int(t.get("layer", "1")) - 1)
     for el in pontes:
         t = el["tags"]
         dd.line(anel(el["geometry"]), fill=nivel_de(t), width=px(LARGURA_M[t["highway"]]), joint="curve")
@@ -263,7 +263,7 @@ def main():
         g = el["geometry"]
         for p in (g[0], g[-1]):
             pontas[chave(p)] = pontas.get(chave(p), 0) + 1
-    M_POR_BLOCO_DE_RAMPA = 6.0
+    M_POR_BLOCO_DE_RAMPA = 5.0
     rampas = 0
     for el in pontes:
         t = el["tags"]

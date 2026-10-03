@@ -27,7 +27,7 @@ use std::sync::OnceLock;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 9;
+pub const REVISAO: u32 = 10;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
@@ -332,11 +332,11 @@ impl Marco {
                     return None;
                 }
                 if r <= 1.0 {
-                    300
+                    480
                 } else if r <= 3.0 {
-                    260
+                    420
                 } else {
-                    (250.0 * (1.0 - (r - 3.0) / 10.0).powf(1.4)) as i32 + 6
+                    (400.0 * (1.0 - (r - 3.0) / 10.0).powf(1.4)) as i32 + 10
                 }
             }
             Marco::Prefeitura => {
@@ -346,13 +346,13 @@ impl Marco {
                 let torre = |cx: f32| (p.x - cx).abs() <= 4.5 && az <= 5.5;
                 let topo = |cx: f32| (p.x - cx).abs() <= 2.5 && az <= 3.5;
                 if topo(-8.5) || topo(8.5) {
-                    124
+                    243
                 } else if torre(-8.5) || torre(8.5) {
-                    104
+                    200
                 } else if ax <= 4.0 && az <= 7.0 {
-                    70
+                    140
                 } else {
-                    30
+                    60
                 }
             }
             Marco::TorreDeToquio => {
@@ -360,9 +360,9 @@ impl Marco {
                     return None;
                 }
                 if m <= 0.6 {
-                    190
+                    333
                 } else {
-                    (160.0 * (1.0 - m / 11.0).powf(1.8)) as i32 + 4
+                    (290.0 * (1.0 - m / 11.0).powf(1.8)) as i32 + 8
                 }
             }
             Marco::Casulo => {
@@ -371,13 +371,13 @@ impl Marco {
                 if e > 1.0 {
                     return None;
                 }
-                (130.0 * (1.0 - e.powf(2.2)).sqrt()) as i32 + 4
+                (200.0 * (1.0 - e.powf(2.2)).sqrt()) as i32 + 8
             }
             Marco::Cilindro109 => {
                 if (p - Vec2::new(4.0, -4.0)).length() <= 2.6 {
-                    44
+                    80
                 } else if r <= 6.5 {
-                    32
+                    60
                 } else {
                     return None;
                 }
@@ -477,7 +477,7 @@ fn largura_da_rua(i: i32) -> f32 {
 /// `tam`, or `None` for open ground.
 fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Estilo)> {
     let t = hash(cx * 3 + 11, cz * 5 - 3);
-    let h = 6 + (8.0 * t * t) as i32;
+    let h = 12 + (16.0 * t * t) as i32;
     let r = hash(cx + 17, cz + 29);
     let forma = if r < 0.4 {
         Forma::Conteineres
@@ -497,19 +497,19 @@ fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Es
     let canto = tam * Vec2::new(0.32, -0.32);
     Some(match forma {
         Forma::Caixa => (h, estilo),
-        Forma::Podio => (if f <= 0.6 { h + 10 } else { (h / 2).max(5) }, estilo),
+        Forma::Podio => (if f <= 0.6 { h + 20 } else { (h / 2).max(10) }, estilo),
         Forma::ArmazemComChamine => {
             if (p - canto).length() < 1.6 {
-                (44 + (hash(cx, cz) * 20.0) as i32, Estilo::Chamine)
+                (88 + (hash(cx, cz) * 40.0) as i32, Estilo::Chamine)
             } else {
-                (h.min(12), estilo)
+                (h.min(24), estilo)
             }
         }
         Forma::Gasometro => {
             if raio > 0.9 {
                 return None;
             }
-            (14 + (hash(cx, cz + 3) * 10.0) as i32, Estilo::Gasometro)
+            (28 + (hash(cx, cz + 3) * 20.0) as i32, Estilo::Gasometro)
         }
         Forma::Conteineres => {
             // Rows of 6 x 2.5 u containers with 1 u gaps, stacked 1-3 high.
@@ -520,7 +520,7 @@ fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Es
             }
             let pilha = 1 + (hash(cx * 31 + i, cz * 17 + j) * 3.0) as i32;
             let cor = (hash(cx * 13 + i, cz * 7 + j) * 5.0) as u8;
-            (pilha * 5, Estilo::Conteiner(cor))
+            (pilha * 6, Estilo::Conteiner(cor))
         }
     })
 }
@@ -639,7 +639,7 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
             _ => {
                 // A neon rim round the roof, by district — on the billboard
                 // blocks and the towers only: on every low roof it was noise.
-                if estilo != Estilo::Letreiros && altura < 40 {
+                if estilo != Estilo::Letreiros && altura < 80 {
                     return Some(M::ConcretoEscuro);
                 }
                 let borda = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
@@ -679,7 +679,7 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
         Estilo::Letreiros => {
             // SCREENS on the lower floors — framed panels of 10 x 6 blocks in
             // neon colours — and dark office glass with lit windows above.
-            let telas_ate = (topo / 2).clamp(6, 36);
+            let telas_ate = (topo / 2).clamp(8, 60);
             if alto > telas_ate {
                 return if janela { lit(0.3) } else { M::Vidro };
             }
@@ -696,13 +696,13 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
                 _ => M::Nuvem,
             }
         }
-        Estilo::Conteiner(c) => if prof % 5 == 0 { M::ConcretoEscuro } else { cor_do_conteiner(c) },
+        Estilo::Conteiner(c) => if prof % 6 == 0 { M::ConcretoEscuro } else { cor_do_conteiner(c) },
         Estilo::Chamine => if (alto / 6) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
         Estilo::Gasometro => if (gx + gz).rem_euclid(4) == 0 { M::ConcretoEscuro } else { M::Concreto },
         Estilo::Marco(m) => match m {
             Marco::Skytree => if (gx + gz + prof).rem_euclid(3) == 0 { M::Concreto } else { M::Nuvem },
             Marco::Prefeitura => if janela && (gx + gz).rem_euclid(2) == 0 { lit(0.6) } else { M::ConcretoEscuro },
-            Marco::TorreDeToquio => if (alto / 10) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
+            Marco::TorreDeToquio => if (alto / 18) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
             Marco::Casulo => {
                 if (gx + alto).rem_euclid(5) == 0 || (gz - alto).rem_euclid(5) == 0 { M::Nuvem } else { lit(0.3) }
             }
@@ -916,7 +916,14 @@ mod testes {
             }
         }
         let alto = alto.expect("no tall deck found");
-        for dir in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
+        // Only towards an EDGE (the deck ends within a few units that way):
+        // along the deck a body may walk to a ramp and down it, legitimately.
+        let bordas: Vec<Vec2> = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
+            .into_iter()
+            .filter(|d| (1..=8).any(|k| deck_em(alto + *d * k as f32).is_none()))
+            .collect();
+        assert!(!bordas.is_empty(), "no edge near the tall deck at {alto}");
+        for dir in bordas {
             let (p, c) = andar(alto, CAMADA_DECK, alto + dir * 40.0, 10.0);
             assert_eq!(c, CAMADA_DECK, "fell off the deck walking {dir} from {alto} (at {p})");
             assert!(deck_em(p).is_some(), "walked off the deck's edge {dir} from {alto} to {p}");

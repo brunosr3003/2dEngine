@@ -17,14 +17,21 @@ use macroquad::prelude::*;
 use shared::terreno::BLOCO;
 
 /// How many cars drive round the player at once.
-const CARROS: usize = 44;
-/// How far from the player a car may start, in units.
+const CARROS: usize = 40;
+/// Cars START in a ring round the player, out of the near view (`RAIO_MIN`
+/// to `RAIO`), and leave past `RAIO_FORA`: popping into sight right beside
+/// the player is what read as flickering.
+const RAIO_MIN: f32 = 45.0;
 const RAIO: f32 = 80.0;
+const RAIO_FORA: f32 = 100.0;
+/// Two path ends this close are the same junction (OSM cuts every avenue
+/// into short ways: a car that died at each way's end vanished mid-street).
+const EMENDA: f32 = 3.0;
 /// Speed, in units per second (a city's pace next to a player's 5).
 const VELOCIDADE: (f32, f32) = (7.0, 12.0);
 /// The lane's offset from the centre line, in units (drive on the left, as
 /// in Tokyo).
-const FAIXA: f32 = 1.4;
+const FAIXA: f32 = 1.6;
 
 struct Caminho {
     /// On the expressway deck (height from the deck) or on the street.
@@ -32,6 +39,8 @@ struct Caminho {
     pontos: Vec<Vec2>,
     /// Running length at each point.
     acumulado: Vec<f32>,
+    /// The paths that continue from each end: (path, joined at ITS start).
+    seguintes: [Vec<(usize, bool)>; 2],
 }
 
 impl Caminho {
@@ -94,8 +103,28 @@ fn le_caminhos() -> Vec<Caminho> {
         for w in pontos.windows(2) {
             acumulado.push(acumulado.last().unwrap() + w[0].distance(w[1]));
         }
-        if pontos.len() >= 2 && *acumulado.last().unwrap() > 12.0 {
-            caminhos.push(Caminho { elevado: tipo == 2, pontos, acumulado });
+        if pontos.len() >= 2 && *acumulado.last().unwrap() > 4.0 {
+            caminhos.push(Caminho { elevado: tipo == 2, pontos, acumulado, seguintes: [Vec::new(), Vec::new()] });
+        }
+    }
+    // Join the ends: each end lists the paths of the same level that start
+    // or end within `EMENDA` of it.
+    let pontas: Vec<[Vec2; 2]> = caminhos.iter().map(|c| [c.pontos[0], *c.pontos.last().unwrap()]).collect();
+    for i in 0..caminhos.len() {
+        for lado in 0..2 {
+            let p = pontas[i][lado];
+            let mut v = Vec::new();
+            for (j, pj) in pontas.iter().enumerate() {
+                if j == i || caminhos[j].elevado != caminhos[i].elevado {
+                    continue;
+                }
+                if pj[0].distance(p) < EMENDA {
+                    v.push((j, true));
+                } else if pj[1].distance(p) < EMENDA {
+                    v.push((j, false));
+                }
+            }
+            caminhos[i].seguintes[lado] = v;
         }
     }
     caminhos
@@ -128,18 +157,20 @@ fn malha_do_carro(cor: [u8; 4]) -> Mesh {
             idx.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
         }
     };
-    let (c, l, a) = (1.2f32, 0.55f32, 0.42f32); // half length, half width, body height
-    caixa(vec3(-c, 0.12, -l), vec3(c, a, l), cor);
-    caixa(vec3(-c * 0.45, a, -l * 0.85), vec3(c * 0.5, a + 0.34, l * 0.85), [40, 52, 76, 255]);
+    // A car at the CHARACTER's scale (the owner: wrong size): about as long
+    // as two and a half characters are tall, a cabin at shoulder height.
+    let (c, l, a) = (2.1f32, 0.9f32, 0.75f32); // half length, half width, body height
+    caixa(vec3(-c, 0.22, -l), vec3(c, a, l), cor);
+    caixa(vec3(-c * 0.45, a, -l * 0.85), vec3(c * 0.5, a + 0.55, l * 0.85), [40, 52, 76, 255]);
     // Headlights (pale yellow, saturated enough to glow) and taillights (red).
-    for z in [-l * 0.7, l * 0.55] {
-        caixa(vec3(c, 0.22, z), vec3(c + 0.06, 0.34, z + 0.15), [255, 232, 120, 255]);
-        caixa(vec3(-c - 0.06, 0.22, z), vec3(-c, 0.34, z + 0.15), [255, 40, 40, 255]);
+    for z in [-l * 0.75, l * 0.45] {
+        caixa(vec3(c, 0.4, z), vec3(c + 0.08, 0.58, z + 0.28), [255, 232, 120, 255]);
+        caixa(vec3(-c - 0.08, 0.4, z), vec3(-c, 0.58, z + 0.28), [255, 40, 40, 255]);
     }
     // Wheels.
-    for x in [-c * 0.6, c * 0.6] {
-        for z in [-l - 0.02, l - 0.1] {
-            caixa(vec3(x - 0.18, 0.0, z), vec3(x + 0.18, 0.24, z + 0.12), [20, 20, 24, 255]);
+    for x in [-c * 0.62, c * 0.62] {
+        for z in [-l - 0.03, l - 0.17] {
+            caixa(vec3(x - 0.32, 0.0, z), vec3(x + 0.32, 0.42, z + 0.2), [20, 20, 24, 255]);
         }
     }
     Mesh { vertices: verts, indices: idx, texture: None }
@@ -180,7 +211,8 @@ impl Transito {
             let total = self.caminhos.get(k)?.comprimento();
             let s = self.sorteio() * total;
             let (p, _) = self.caminhos[k].em(s);
-            if p.distance(perto) > RAIO {
+            let d = p.distance(perto);
+            if !(RAIO_MIN..=RAIO).contains(&d) {
                 continue;
             }
             let sentido = if self.sorteio() < 0.5 { 1.0 } else { -1.0 };
@@ -196,14 +228,39 @@ impl Transito {
         if self.caminhos.is_empty() {
             return;
         }
-        // Advance; a car past its path's end or too far away gives its place.
+        // Advance. At a path's end the car turns into a path that continues
+        // there (or U-turns at a dead end); only a car far from the player
+        // gives its place.
         let mut i = 0;
         while i < self.carros.len() {
+            let mut sorte = self.sorteio();
             let c = &mut self.carros[i];
             c.s += c.sentido * c.velocidade * dt;
+            for _ in 0..4 {
+                let cam = &self.caminhos[c.caminho];
+                let fim = cam.comprimento();
+                let lado = if c.s > fim { 1 } else if c.s < 0.0 { 0 } else { break };
+                let sobra = if lado == 1 { c.s - fim } else { -c.s };
+                let opcoes = &cam.seguintes[lado];
+                if opcoes.is_empty() {
+                    c.sentido = -c.sentido;
+                    c.s = if lado == 1 { fim - sobra } else { sobra };
+                    continue;
+                }
+                let (j, no_inicio) = opcoes[(sorte * opcoes.len() as f32) as usize % opcoes.len()];
+                sorte = (sorte * 7.31).fract();
+                c.caminho = j;
+                if no_inicio {
+                    c.sentido = 1.0;
+                    c.s = sobra;
+                } else {
+                    c.sentido = -1.0;
+                    c.s = self.caminhos[j].comprimento() - sobra;
+                }
+            }
             let cam = &self.caminhos[c.caminho];
-            let fora = c.s < 0.0 || c.s > cam.comprimento() || cam.em(c.s).0.distance(perto) > RAIO * 1.4;
-            if fora {
+            c.s = c.s.clamp(0.0, cam.comprimento());
+            if cam.em(c.s).0.distance(perto) > RAIO_FORA {
                 self.carros.swap_remove(i);
             } else {
                 i += 1;
@@ -223,10 +280,13 @@ impl Transito {
             // Drive on the left: the lane is to the left of the direction.
             let esquerda = vec2(dir.y, -dir.x);
             let q = p + esquerda * FAIXA;
+            // On the deck the height comes from the CENTRE line: the lane
+            // offset can fall past a narrow deck's edge, and the car blinked
+            // between the deck and the street below.
             let y = if cam.elevado {
-                crate::terreno::deck_altura(q.x, q.y).or_else(|| crate::terreno::deck_altura(p.x, p.y)).unwrap_or_else(|| chao(q.x, q.y))
+                crate::terreno::deck_altura(p.x, p.y).or_else(|| crate::terreno::deck_altura(q.x, q.y)).unwrap_or_else(|| chao(p.x, p.y))
             } else {
-                chao(q.x, q.y)
+                chao(p.x, p.y)
             };
             let yaw = (-dir.y).atan2(dir.x);
             let modelo = Mat4::from_translation(vec3(q.x, y, q.y)) * Mat4::from_rotation_y(yaw);

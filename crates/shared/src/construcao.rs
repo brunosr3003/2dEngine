@@ -129,9 +129,15 @@ pub enum BlocoCasa {
     MarmoreBase,
     OuroCasa,
     TelhaCeleste,
+    // ── Kōgen-tō (`neon`), at the END for the same reason ──
+    ConcretoCasa,
+    ConcretoEscuroCasa,
+    VidroCasa,
+    NeonRosaCasa,
+    NeonCianoCasa,
 }
 
-const TODOS_OS_BLOCOS: [BlocoCasa; 49] = [
+const TODOS_OS_BLOCOS: [BlocoCasa; 54] = [
     BlocoCasa::Ar,
     BlocoCasa::PedraBase,
     BlocoCasa::Reboco,
@@ -181,6 +187,11 @@ const TODOS_OS_BLOCOS: [BlocoCasa; 49] = [
     BlocoCasa::MarmoreBase,
     BlocoCasa::OuroCasa,
     BlocoCasa::TelhaCeleste,
+    BlocoCasa::ConcretoCasa,
+    BlocoCasa::ConcretoEscuroCasa,
+    BlocoCasa::VidroCasa,
+    BlocoCasa::NeonRosaCasa,
+    BlocoCasa::NeonCianoCasa,
 ];
 
 impl BlocoCasa {
@@ -241,6 +252,29 @@ impl BlocoCasa {
             MarmoreBase => [214, 208, 196],
             OuroCasa => [232, 190, 82],
             TelhaCeleste => [118, 166, 226],
+            ConcretoCasa => [150, 154, 164],
+            ConcretoEscuroCasa => [66, 70, 82],
+            VidroCasa => [58, 92, 156],
+            NeonRosaCasa => [255, 70, 180],
+            NeonCianoCasa => [60, 230, 255],
+        }
+    }
+
+    /// The same block in Kōgen-tō's dress: concrete walls, dark metal where
+    /// the timber was, flat dark roofs, blue glass, and the paint and awnings
+    /// turned to neon. The owner: the town "should have the island theme",
+    /// not the other islands' timber and tile. Only the colour changes.
+    pub fn neon(self) -> Self {
+        use BlocoCasa::*;
+        match self {
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano | MarmoreCasa => ConcretoCasa,
+            PedraBase | PedraNegra | NegroBorda | MarmoreBase => ConcretoEscuroCasa,
+            Viga | Tabua | Lenha | Corda | OuroCasa => Metal,
+            Telha | TelhaEscura | Palha | Ardosia | TelhaCeleste => ConcretoEscuroCasa,
+            Janela => VidroCasa,
+            PinturaVermelha | PinturaAmarela | PanoRubro | Toldo | ToldoAmbar => NeonRosaCasa,
+            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => NeonCianoCasa,
+            outro => outro,
         }
     }
 
@@ -267,7 +301,7 @@ impl BlocoCasa {
 
     /// Chama: desenha sem sombreamento.
     pub fn brilha(self) -> bool {
-        matches!(self, BlocoCasa::Lume | BlocoCasa::LumeVerde)
+        matches!(self, BlocoCasa::Lume | BlocoCasa::LumeVerde | BlocoCasa::NeonRosaCasa | BlocoCasa::NeonCianoCasa)
     }
 }
 
