@@ -402,7 +402,73 @@ enum Chip {
     Bicho(u16),
     Recurso(u8),
     Vila,
+    Chefes,
+    Portais,
+    Npcs,
+    Viagem,
 }
+
+/// The map's other layers, beside the saved filters: bosses, dungeon
+/// portals, NPCs and travel (captains and the Sky Bus). All on: they are
+/// what a player looks for; the owner asked for filters to hide them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Camadas {
+    pub chefes: bool,
+    pub portais: bool,
+    pub npcs: bool,
+    pub viagem: bool,
+}
+
+impl Default for Camadas {
+    fn default() -> Self {
+        Self { chefes: true, portais: true, npcs: true, viagem: true }
+    }
+}
+
+/// An icon on a chip, a list row or the map: one of the map atlas's, or the
+/// dungeon portal's drawing.
+#[derive(Clone, Copy)]
+enum Ico {
+    Atlas(&'static str),
+    Porta,
+}
+
+fn desenha_ico(i: Ico, c: Vec2, lado: f32, cor: Color) {
+    match i {
+        Ico::Atlas(n) => {
+            if !crate::icones_ui::mapa(n, c, lado, cor, 0.0) {
+                draw_circle(c.x, c.y, lado * 0.3, cor);
+            }
+        }
+        Ico::Porta => icone_da_porta(ICONE_PORTA, c, lado * 0.42),
+    }
+}
+
+/// A creature's icon by its species (variants and robots share it).
+fn ico_do_bicho(k: u16) -> Ico {
+    Ico::Atlas(match shared::bestiary::species_of(k) {
+        1 => "urso",
+        2 => "pistoleiro",
+        3 => "tigre",
+        4 => "mago",
+        5 => "owlbear",
+        6 => "arqueiro",
+        8 | 9 => "caranguejo",
+        _ => "lobo",
+    })
+}
+
+fn ico_do_tipo(t: u8) -> Ico {
+    Ico::Atlas(if t == 0 { "madeira" } else { "pedra" })
+}
+
+/// The NPCs who take you to another island (shown by the Travel layer).
+fn leva_a_outra_ilha(nome: &str) -> bool {
+    nome == shared::construcao::Papel::Estaleiro.nome() || nome == shared::construcao::Papel::Motorista.nome()
+}
+
+const COR_VIAGEM: Color = Color::new(0.45, 0.80, 1.0, 1.0);
+const COR_PORTAL: Color = Color::new(0.72, 0.45, 1.0, 1.0);
 
 /// Largura do painel de filtros e "Go to" ao lado do mapa grande.
 const LARGURA_LATERAL: f32 = 260.0;
@@ -1057,6 +1123,7 @@ pub struct Mapa {
     portas: Vec<(&'static str, Vec2)>,
     /// A secao NPCs do "Go to" aberta (fechada por padrao: e' lista longa).
     npcs_abertos: bool,
+    pub camadas: Camadas,
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
     pub filtros: Filtros,
@@ -1127,6 +1194,7 @@ impl Default for Mapa {
             mestre: None,
             npcs: Vec::new(),
             npcs_abertos: false,
+            camadas: Camadas::default(),
             info: None,
             filtros: Filtros::default(),
             no_mundo: false,
@@ -1154,7 +1222,7 @@ pub async fn previa() {
     crate::hud_layout::define_escala_ui(1.6);
     let world = crate::world::World::default();
     let mundo = crate::mundo_ui::Mundo::default();
-    for zona in ["ilha_inicial", "ilha_deserto"] {
+    for zona in ["ilha_inicial", "ilha_deserto", "ilha_celeste", "ilha_kogen"] {
         let def = shared::terreno::def_da_zona(zona).expect("zona");
         let mut m = Mapa::para(Some(def));
         // A textura nasce numa thread; espera ela chegar.
@@ -1703,14 +1771,22 @@ impl Mapa {
             estilo::OURO,
         );
         let (mut x, mut y) = (lat.x + u(12.0), lat.y + u(38.0));
-        let mut chips: Vec<(String, bool, Color, Chip)> =
-            vec![("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs)];
+        let c = self.camadas;
+        let mut chips: Vec<(String, bool, Color, Chip, Ico)> = vec![
+            ("Bosses".into(), c.chefes, Color::new(1.0, 0.72, 0.25, 1.0), Chip::Chefes, Ico::Atlas("chefe")),
+            ("Dungeons".into(), c.portais, COR_PORTAL, Chip::Portais, Ico::Porta),
+            ("NPCs".into(), c.npcs, COR_NPC, Chip::Npcs, Ico::Atlas("npc")),
+            ("Travel".into(), c.viagem, COR_VIAGEM, Chip::Viagem, Ico::Atlas("porto")),
+            ("Village".into(), self.filtros.vila, estilo::OURO, Chip::Vila, Ico::Atlas("cidade")),
+            ("Mobs".into(), self.filtros.mobs, COR_MOB, Chip::Mobs, Ico::Atlas("lobo")),
+        ];
         for k in info.bichos() {
             chips.push((
                 info.nome(k),
                 !self.filtros.bichos_ocultos.contains(&k),
                 cor_do_bicho(k),
                 Chip::Bicho(k),
+                ico_do_bicho(k),
             ));
         }
         for t in 0..6u8 {
@@ -1723,11 +1799,11 @@ impl Mapa {
                 },
                 cor_do_tipo(t),
                 Chip::Recurso(t),
+                ico_do_tipo(t),
             ));
         }
-        chips.push(("Village".into(), self.filtros.vila, estilo::OURO, Chip::Vila));
-        for (rotulo, ligado, cor, id) in &chips {
-            let w = estilo::medir(rotulo, 13) + u(18.0);
+        for (rotulo, ligado, cor, id, ico) in &chips {
+            let w = estilo::medir(rotulo, 13) + u(36.0);
             if x + w > lat.x + lat.w - u(10.0) {
                 x = lat.x + u(12.0);
                 y += u(27.0);
@@ -1744,8 +1820,9 @@ impl Mapa {
             // No dot before the word: the chip's own tint and rim already say
             // which colour on the map it switches. The owner, 30/09/2026:
             // "take out the lil balls in front of texts".
+            desenha_ico(*ico, vec2(c.x + u(14.0), c.y + c.h * 0.5), u(16.0), if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.45) });
             estilo::texto(
-                c.x + u(9.0),
+                c.x + u(26.0),
                 c.y + u(16.0),
                 rotulo,
                 13,
@@ -1783,8 +1860,14 @@ impl Mapa {
         // mesmo botão "Ir" — antes elas só existiam como desenho no mapa, e
         // chegar nelas exigia adivinhar onde tocar.
         let vilas = self.vilas_da_ilha();
-        let total =
-            (4 + vilas.len() + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
+        let portas = self.portas.clone();
+        let chefes: Vec<(String, u32, Vec2, String)> = info
+            .chefes
+            .iter()
+            .map(|ch| (ch.nome.clone(), ch.nivel as u32, vec2(ch.centro[0], ch.centro[1]), if ch.vivo { String::new() } else { " · dead".into() }))
+            .collect();
+        let linhas_chefes = if chefes.is_empty() { 0 } else { 1 + chefes.len() };
+        let total = (4 + vilas.len() + linhas_chefes + bichos.len() + tipos.len() + npcs.len()) as f32 * u(LINHA_IR);
         // Rola arrastando, pela roda ou pela barra; o "Ir" vale no SOLTAR.
         let clique = self.rolagem_lateral.quadro(area, total, u(LINHA_IR));
         let mut ly = area.y - self.rolagem_lateral.pos;
@@ -1793,26 +1876,27 @@ impl Mapa {
         let mut linha = |rotulo: &str,
                          detalhe: String,
                          cor: Color,
+                         ico: Ico,
                          alvo: Option<Alvo>,
                          ly: f32,
                          saida: &mut Option<Entrada>| {
             if !visivel(ly) {
                 return;
             }
-            let _ = cor;
+            desenha_ico(ico, vec2(area.x + u(14.0), ly + u(13.0)), u(20.0), cor);
             estilo::texto_ajustado(
                 rotulo,
-                area.x + u(6.0),
+                area.x + u(28.0),
                 ly + u(12.0),
-                area.w - u(80.0),
+                area.w - u(102.0),
                 13,
                 estilo::TEXTO,
             );
             estilo::texto_ajustado(
                 &detalhe,
-                area.x + u(6.0),
+                area.x + u(28.0),
                 ly + u(24.0),
-                area.w - u(80.0),
+                area.w - u(102.0),
                 11,
                 estilo::SUAVE,
             );
@@ -1837,15 +1921,45 @@ impl Mapa {
                 raio: *raio,
                 rotulo: nome.to_string(),
             };
+            let portal = portas.iter().any(|(n, _)| n == nome);
+            let (cor, ico) = if portal {
+                (COR_PORTAL, Ico::Porta)
+            } else if nome.contains("Port") || nome.contains("Cais") {
+                (COR_VIAGEM, Ico::Atlas("porto"))
+            } else {
+                (estilo::OURO, Ico::Atlas("cidade"))
+            };
             linha(
                 nome,
                 format!("{:.0} m", p.distance(eu)),
-                estilo::OURO,
+                cor,
+                ico,
                 Some(alvo),
                 ly,
                 &mut saida,
             );
             ly += u(LINHA_IR);
+        }
+        // BOSSES: where the crowns are, with the level and when the dead
+        // ones come back.
+        if !chefes.is_empty() {
+            if visivel(ly) {
+                estilo::texto(area.x + u(6.0), ly + u(18.0), "Bosses", 13, estilo::SUAVE);
+            }
+            ly += u(LINHA_IR);
+            for (nome, nivel_c, p, detalhe_vivo) in &chefes {
+                let alvo = Alvo { objetivo: Objetivo::Combate, pos: *p, raio: 8.0, rotulo: nome.clone() };
+                linha(
+                    nome,
+                    format!("Lv {nivel_c} · {:.0} m{detalhe_vivo}", p.distance(eu)),
+                    Color::new(1.0, 0.72, 0.25, 1.0),
+                    Ico::Atlas("chefe"),
+                    Some(alvo),
+                    ly,
+                    &mut saida,
+                );
+                ly += u(LINHA_IR);
+            }
         }
         // NPCs: fechados por padrao (a lista e' longa); tocar no titulo abre.
         let titulo_npcs = Rect::new(area.x, ly, area.w - u(14.0), u(LINHA_IR));
@@ -1873,10 +1987,16 @@ impl Mapa {
                 raio: 0.0,
                 rotulo: nome.clone(),
             };
+            let (cor, ico) = if leva_a_outra_ilha(nome) {
+                (COR_VIAGEM, Ico::Atlas("porto"))
+            } else {
+                (COR_NPC, Ico::Atlas("npc"))
+            };
             linha(
                 nome,
                 format!("{:.0} m", p.distance(eu)),
-                COR_NPC,
+                cor,
+                ico,
                 Some(alvo),
                 ly,
                 &mut saida,
@@ -1902,7 +2022,7 @@ impl Mapa {
                 raio: z.raio,
                 rotulo: nome.clone(),
             });
-            linha(&nome, detalhe, cor_do_bicho(*k), alvo, ly, &mut saida);
+            linha(&nome, detalhe, cor_do_bicho(*k), ico_do_bicho(*k), alvo, ly, &mut saida);
             ly += u(LINHA_IR);
         }
         if visivel(ly) {
@@ -1928,6 +2048,7 @@ impl Mapa {
                 nome_do_tipo(*t),
                 detalhe,
                 cor_do_tipo(*t),
+                ico_do_tipo(*t),
                 alvo,
                 ly,
                 &mut saida,
@@ -1954,6 +2075,10 @@ impl Mapa {
                 }
             }
             Some(Chip::Vila) => self.filtros.vila = !self.filtros.vila,
+            Some(Chip::Chefes) => self.camadas.chefes = !self.camadas.chefes,
+            Some(Chip::Portais) => self.camadas.portais = !self.camadas.portais,
+            Some(Chip::Npcs) => self.camadas.npcs = !self.camadas.npcs,
+            Some(Chip::Viagem) => self.camadas.viagem = !self.camadas.viagem,
             None => {}
         }
         saida
@@ -2449,7 +2574,7 @@ impl Mapa {
                     }
                 }
             }
-            for ch in &info.chefes {
+            for ch in info.chefes.iter().filter(|_| self.camadas.chefes) {
                 let q = ponto(vec2(ch.centro[0], ch.centro[1]));
                 if visivel(q) {
                     let ouro = Color::new(1.0, 0.72, 0.25, if ch.vivo { 1.0 } else { 0.45 });
@@ -3039,14 +3164,23 @@ impl Mapa {
             );
             estilo::texto_centro(q.x, q.y - u(14.0), "Oasis", 14, verde);
         }
-        for (i, (nome, p)) in self.portas.iter().enumerate() {
-            porta_no_mapa(ponto(*p), u(7.0), nome, 14, i % 2 == 0);
+        if self.camadas.portais {
+            for (i, (nome, p)) in self.portas.iter().enumerate() {
+                porta_no_mapa(ponto(*p), u(7.0), nome, 14, i % 2 == 0);
+            }
         }
-        // NPCs da vila, com o filtro Vila (o `world` so' tem os de perto).
+        // NPCs da vila (o `world` so' tem os de perto), with the NPCs layer.
+        // Those who take you to another island — the Captain, the Sky Bus
+        // Professor — are the Travel layer's, with the port icon and a name.
         // Tocar leva ate' ele; a lista do "Go to" tem todos, sempre.
-        if self.filtros.vila {
-            for (_, p) in &self.npcs {
-                let q = ponto(*p);
+        for (nome, p) in &self.npcs {
+            let q = ponto(*p);
+            if leva_a_outra_ilha(nome) {
+                if self.camadas.viagem {
+                    desenha_ico(Ico::Atlas("porto"), q, u(22.0), COR_VIAGEM);
+                    estilo::texto_centro(q.x, q.y + u(20.0), nome, 12, COR_VIAGEM);
+                }
+            } else if self.camadas.npcs {
                 if !crate::icones_ui::mapa("npc", q, u(14.0), COR_NPC, 0.0) {
                     draw_circle(q.x, q.y, u(3.5), COR_NPC);
                 }
