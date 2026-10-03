@@ -2768,6 +2768,7 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         ("kabukicho", { let c = shared::kogen::de_latlon(35.6935, 139.7020); (c.x, c.y) }, 120.0, 0.5),
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
+        ("onibus", (hub.x + 30.0, hub.y), 28.0, 0.45),
         ("expressa", { let c = { let v = shared::kogen::de_latlon(35.6838, 139.6905); perto_de_deck(vec2(v.x, v.y), 12) }; (c.x, c.y) }, 70.0, 0.45),
         ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
         ("rampa", { let c = { let v = shared::kogen::de_latlon(35.6600, 139.7000); perto_de_deck(vec2(v.x, v.y), 1) }; (c.x, c.y) }, 50.0, 0.5),

@@ -137,15 +137,16 @@ pub fn montar(ger: &Gerador) -> Vila {
             giver: None,
         });
     }
-    // THE FLYING BUS (Kōgen-tō): its driver, the professor, keeps the square
-    // of Skyreach (the only way in) and of Kōgen-tō (the way out), on the
-    // other side of the shop doors from the Captain.
+    // THE FLYING BUS (Kōgen-tō): its driver, the professor, stands on the
+    // lawn east of the shop ring in Skyreach (the only way in) and in
+    // Kōgen-tō (the way out), the bus parked beside him — in the square the
+    // balloon went through a shop's roof.
     if let Some(c) = ger
         .cidade()
         .filter(|_| ger.semente == crate::celeste::SEMENTE || ger.semente == crate::kogen::SEMENTE)
     {
-        let pos = c.centro() + Vec2::new(4.8, -3.6);
-        let onibus = c.centro() + Vec2::new(11.0, -9.0);
+        let pos = c.centro() + Vec2::new(27.0, -4.0);
+        let onibus = c.centro() + Vec2::new(33.0, 0.0);
         vila.props.push(PropPosto {
             tipo: TipoProp::OnibusVoador,
             seed: ger.semente,
@@ -1651,6 +1652,21 @@ mod testes {
                 d.zona,
                 cap.pos
             );
+        }
+    }
+
+    /// The Sky Bus Professor stands where a player walks to him from the
+    /// square, in Skyreach and in Kōgen-tō.
+    #[test]
+    fn o_professor_do_onibus_se_alcanca() {
+        for d in [crate::celeste::DEF, crate::kogen::DEF] {
+            let ilha = crate::terreno::Ilha::da_ilha(&d);
+            let prof = ilha.vila().npcs.iter().find(|n| n.papel == Papel::Motorista).cloned()
+                .unwrap_or_else(|| panic!("{}: no Sky Bus Professor", d.zona));
+            let praca = ilha.cidade().unwrap().centro() + Vec2::new(0.0, 4.0);
+            let fim = ilha.caminho(praca, prof.pos, 40_000).and_then(|r| r.last().copied());
+            assert!(fim.is_some_and(|f| f.distance(prof.pos) < crate::viagem::PERTO_DO_CAPITAO),
+                "{}: the professor at {:?} cannot be reached", d.zona, prof.pos);
         }
     }
 
