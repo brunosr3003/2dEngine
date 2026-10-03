@@ -16117,11 +16117,25 @@ impl GameWorld {
     /// ilha (passo de viagem, ou passo que acontece noutra ilha). `false` =
     /// ilha sem Capitao.
     fn destino_no_capitao(&self, sid: SessionId, quest_id: u16) -> bool {
+        // Who takes the player there: the Sky Bus Professor for Kōgen-tō
+        // from Skyreach (captains never fly there) and for anywhere from
+        // Kōgen-tō; the Harbour Captain otherwise. The auto quest walked to
+        // the Captain, who refused, and the step went round in circles.
+        let kogen = shared::terreno::ARQUIPELAGO.iter().position(|d| shared::kogen::e_kogen(d.zona));
+        let rumo_kogen = shared::quests::quest_by_id(quest_id).is_some_and(|d| {
+            (d.obj_kind == shared::quests::objective_kind::VIAGEM && Some(d.obj_target as usize) == kogen)
+                || shared::quests::zona_da_missao(quest_id).is_some_and(shared::kogen::e_kogen)
+        });
+        let papel = if shared::kogen::e_kogen(&self.zona) || (rumo_kogen && shared::celeste::e_celeste(&self.zona)) {
+            shared::construcao::Papel::Motorista
+        } else {
+            shared::construcao::Papel::Estaleiro
+        };
         let Some(p) = self.ilha.as_ref().and_then(|ilha| {
             ilha.vila()
                 .npcs
                 .iter()
-                .find(|n| n.papel == shared::construcao::Papel::Estaleiro)
+                .find(|n| n.papel == papel)
                 .map(|n| n.pos)
         }) else {
             return false;
@@ -16181,10 +16195,14 @@ impl GameWorld {
                 // Passo de outra ilha: o caminho comeca no Capitao do Porto,
                 // que leva a qualquer ilha liberada (`shared::viagem`).
                 let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
-                self.avisa_missao(
-                    sid,
-                    format!("Story: this step happens on {ilha}. Set sail with the Harbour Captain."),
-                );
+                let aviso = if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
+                    format!("Story: this step happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.")
+                } else if shared::kogen::e_kogen(z) {
+                    format!("Story: this step happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.")
+                } else {
+                    format!("Story: this step happens on {ilha}. Set sail with the Harbour Captain.")
+                };
+                self.avisa_missao(sid, aviso);
                 if !self.destino_no_capitao(sid, quest_id) {
                     nenhum(self);
                 }

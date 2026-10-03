@@ -137,16 +137,24 @@ pub fn montar(ger: &Gerador) -> Vila {
             giver: None,
         });
     }
-    // THE FLYING BUS (Kōgen-tō): its driver, the professor, stands on the
-    // lawn east of the shop ring in Skyreach (the only way in) and in
-    // Kōgen-tō (the way out), the bus parked beside him — in the square the
-    // balloon went through a shop's roof.
-    if let Some(c) = ger
-        .cidade()
-        .filter(|_| ger.semente == crate::celeste::SEMENTE || ger.semente == crate::kogen::SEMENTE)
-    {
-        let pos = c.centro() + Vec2::new(27.0, -4.0);
-        let onibus = c.centro() + Vec2::new(33.0, 0.0);
+    // THE FLYING BUS (Kōgen-tō): its driver, the professor, with the bus
+    // parked beside him. In Skyreach he waits on the THRONE OF THE SKY, the
+    // highest island, where chapter V ends — the owner wanted him apart from
+    // the Captain and the town, in his own corner of the map — opposite the
+    // Archon's spot. In Kōgen-tō he waits on the Docks lawn east of the
+    // shops (the way out).
+    let lugar_do_onibus = if ger.semente == crate::celeste::SEMENTE {
+        let trono = crate::celeste::PLATOS[11].centro;
+        Some((trono, Vec2::new(22.0, -22.0), Vec2::new(30.0, -30.0)))
+    } else if ger.semente == crate::kogen::SEMENTE {
+        ger.cidade().map(|c| (c.centro(), Vec2::new(27.0, -4.0), Vec2::new(33.0, 0.0)))
+    } else {
+        None
+    };
+    if let Some((centro, a, b)) = lugar_do_onibus {
+        let c = centro;
+        let pos = c + a;
+        let onibus = c + b;
         vila.props.push(PropPosto {
             tipo: TipoProp::OnibusVoador,
             seed: ger.semente,
@@ -157,7 +165,7 @@ pub fn montar(ger: &Gerador) -> Vila {
             papel: Papel::Motorista,
             nome: Papel::Motorista.nome(),
             pos,
-            yaw: yaw_de(c.centro() - pos),
+            yaw: yaw_de(c - pos),
             loja: None,
             giver: None,
         });
@@ -1663,7 +1671,11 @@ mod testes {
             let ilha = crate::terreno::Ilha::da_ilha(&d);
             let prof = ilha.vila().npcs.iter().find(|n| n.papel == Papel::Motorista).cloned()
                 .unwrap_or_else(|| panic!("{}: no Sky Bus Professor", d.zona));
-            let praca = ilha.cidade().unwrap().centro() + Vec2::new(0.0, 4.0);
+            let praca = if crate::celeste::e_celeste(d.zona) {
+                crate::celeste::PLATOS[11].centro
+            } else {
+                ilha.cidade().unwrap().centro() + Vec2::new(0.0, 4.0)
+            };
             let fim = ilha.caminho(praca, prof.pos, 40_000).and_then(|r| r.last().copied());
             assert!(fim.is_some_and(|f| f.distance(prof.pos) < crate::viagem::PERTO_DO_CAPITAO),
                 "{}: the professor at {:?} cannot be reached", d.zona, prof.pos);
