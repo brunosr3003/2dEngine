@@ -992,8 +992,19 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
         }
 
         color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
-        // Sol baixo de fim de tarde: cor quente sobre a luz de face ja' assada.
-        color.rgb *= mix(vec3(1.0), vec3(1.13, 1.04, 0.82), LuzDia);
+        if (LuzDia < -0.5) {
+            // NIGHT (Kōgen-tō, always): everything sinks into a cold dark
+            // blue — except what is bright AND saturated (neon, lit windows,
+            // screens), which glows. No emissive channel: the colour itself
+            // says what is a light.
+            lowp float hi = max(color.r, max(color.g, color.b));
+            lowp float lo = min(color.r, min(color.g, color.b));
+            lowp float luz = smoothstep(0.33, 0.58, hi - lo) * smoothstep(0.55, 0.85, hi);
+            color.rgb = mix(color.rgb * vec3(0.30, 0.34, 0.52), color.rgb * 1.2, luz);
+        } else {
+            // Sol baixo de fim de tarde: cor quente sobre a luz de face ja' assada.
+            color.rgb *= mix(vec3(1.0), vec3(1.13, 1.04, 0.82), LuzDia);
+        }
         uv = texcoord;
         recortavel = normal.x;
     }"#;
@@ -1044,9 +1055,11 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
         }
         gl_FragColor = color * texture2D(Texture, uv);
         if (Neblina.w > 0.0) {
+            // A NEGATIVE start means night: the fog is the night sky.
             highp float d = distance(mundo.xz, Neblina.xy);
-            lowp float f = smoothstep(Neblina.z, Neblina.w, d);
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.588, 0.729, 0.839), f);
+            lowp float f = smoothstep(abs(Neblina.z), Neblina.w, d);
+            lowp vec3 ceu = Neblina.z < 0.0 ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, ceu, f);
         }
     }"#;
 
@@ -1109,10 +1122,29 @@ pub fn material_solido() -> Material {
     .expect("world shader")
 }
 
+thread_local! {
+    /// Kōgen-tō is always night (`define_noite`).
+    static NOITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the world is drawn at night (Kōgen-tō, always).
+pub fn define_noite(noite: bool) {
+    NOITE.with(|n| n.set(noite));
+}
+
+pub fn noite() -> bool {
+    NOITE.with(|n| n.get())
+}
+
 pub fn clear() {
     // Ceu, e nao quase-preto. O fundo aparece em todo horizonte e em todo vao
     // do relevo; escuro ele le' como buraco na malha — foi exatamente o que me
     // fez cacar bug de geometria por um bom tempo.
+    // At night the sky is the fog's night blue, never black: the same reason.
+    if noite() {
+        clear_background(Color::from_rgba(8, 10, 24, 255));
+        return;
+    }
     clear_background(Color::from_rgba(150, 186, 214, 255));
 }
 

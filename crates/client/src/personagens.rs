@@ -155,6 +155,7 @@ impl Personagens {
         if self.saida_previa.is_none() {
             // Mesmo ceu do jogo: o que sobrar de vao no horizonte le' como ceu,
             // e nao como buraco escuro na malha.
+            render3d::define_noite(false);
             render3d::clear();
             self.desenha_mundo(solido);
             self.camera_ui();

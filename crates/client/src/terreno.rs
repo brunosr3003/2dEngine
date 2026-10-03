@@ -2741,6 +2741,7 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
     crate::render3d::define_alvo(Some(rt.clone()));
     let def = &shared::kogen::DEF;
+    crate::render3d::define_noite(true);
     let g = shared::terreno::Gerador::da_ilha(def);
     let mut t = Terreno::novo(def);
     let mut casas = crate::construcoes::Construcoes::para(Some(def));
@@ -2777,7 +2778,11 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
                 ..Default::default()
             };
             set_camera(&cam);
-            clear_background(Color::from_rgba(150, 186, 214, 255));
+            crate::render3d::clear();
+            solido.set_uniform("LuzDia", -1.0f32);
+            crate::gpu_estatica::define_luz_dia(-1.0);
+            crate::gpu_estatica::define_neblina(centro, -(distancia * 2.5), distancia * 6.0);
+            solido.set_uniform("Neblina", vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0));
             macroquad::material::gl_use_material(&solido);
             t.desenha(&cam, Vec3::ZERO, 0.0);
             t.desenha_sombras(&cam);

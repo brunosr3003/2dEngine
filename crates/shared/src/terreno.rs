@@ -734,7 +734,7 @@ impl Material {
             Material::Concreto => (122, 124, 132),
             Material::ConcretoEscuro => (78, 80, 92),
             Material::Vidro => (52, 74, 108),
-            Material::JanelaAcesa => (252, 214, 140),
+            Material::JanelaAcesa => (255, 204, 92),
             Material::NeonRosa => (255, 70, 180),
             Material::NeonCiano => (60, 230, 255),
             Material::NeonAmarelo => (255, 226, 70),

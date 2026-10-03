@@ -405,11 +405,16 @@ void main() {
     // No fake glint: the moving bright patches read as white blobs in playtest.
     // Color by depth and foam at the shore are enough.
     float a = max(cor.a, f * 0.9);
+    // A negative fog start means night (`render3d::SOLIDO_FRAGMENTO`).
+    bool noite = Neblina.z < 0.0;
+    if (noite) {
+        c *= vec3(0.22, 0.27, 0.42);
+    }
     if (Neblina.w > 0.0) {
         // Fogged water turns opaque sky: past the fog the horizon ring is
         // just sky, and the edge of the loaded sea never shows.
-        float k = smoothstep(Neblina.z, Neblina.w, distance(mundo.xz, Neblina.xy));
-        c = mix(c, vec3(0.588, 0.729, 0.839), k);
+        float k = smoothstep(abs(Neblina.z), Neblina.w, distance(mundo.xz, Neblina.xy));
+        c = mix(c, noite ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839), k);
         a = mix(a, 1.0, k);
     }
     gl_FragColor = vec4(c, a);

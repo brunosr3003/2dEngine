@@ -1811,6 +1811,7 @@ impl Jogo {
                 // arquivo de tiles nem um byte de rede entram nisso.
                 self.zona_atual = map_name.clone();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
+                render3d::define_noite(shared::kogen::e_kogen(&map_name));
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
                 let filtros = std::mem::take(&mut self.mapa.filtros);
@@ -5783,7 +5784,12 @@ impl Jogo {
         );
         set_camera(&vista.cam);
         let modo_sombras = self.config_graficos.sombras;
-        let luz_dia = if modo_sombras == config_graficos::Sombras::Bonitas {
+        // Kōgen-tō is always night: -1 in the late-sun slot tells the world
+        // shader so (`render3d::SOLIDO_VERTICE`).
+        let noite = render3d::noite();
+        let luz_dia = if noite {
+            -1.0
+        } else if modo_sombras == config_graficos::Sombras::Bonitas {
             1.0
         } else {
             0.0
@@ -5791,8 +5797,10 @@ impl Jogo {
         self.solido.set_uniform("LuzDia", luz_dia);
         gpu_estatica::define_luz_dia(luz_dia);
         // Distance fog: centred where the terrain is loaded around (the
-        // player), solid sky before the edge of what is loaded.
+        // player), solid sky before the edge of what is loaded. A negative
+        // start is night's fog (the night sky).
         let (inicio, fim) = config_graficos::neblina();
+        let inicio = if noite { -inicio.max(0.01) } else { inicio };
         let em_volta = self.world.self_pos().unwrap_or(Vec2::ZERO);
         gpu_estatica::define_neblina(em_volta, inicio, fim);
         self.solido
