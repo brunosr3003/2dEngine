@@ -1,3 +1,9 @@
+03/10/2026 — O chão da cidade de Kōgen-tō e a postura
+
+O chão da cidade das Docas em Kōgen-tō agora combina com o resto da ilha: piso escuro com as linhas neon, no lugar da praça verde das outras ilhas.
+
+A postura (poise) saiu do jogo: nenhum golpe é mais absorvido por ela — todo golpe que acerta tira vida. Os golpes telegrafados dos chefes também não podem mais ser aparados nem bloqueados: só sair da área ou passar com investida/salto salva. Golpe esquivado com investida ou salto mostra 0.
+
 03/10/2026 — Kōgen-tō redesenhada: a cidade neon de fantasia
 
 Kōgen-tō deixou de ser o mapa real de Shinjuku e Shibuya, que ficou apertado demais e escondia o personagem entre os prédios. Agora é uma cidade neon de fantasia, desenhada para a câmera de cima:
