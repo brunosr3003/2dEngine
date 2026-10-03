@@ -2175,6 +2175,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "glam 0.29.3",
+ "miniz_oxide",
  "postcard",
  "serde",
  "serde_json",

@@ -2626,13 +2626,15 @@ pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
     use shared::kogen::Marco as Mc;
     // (name, centre, camera distance, camera height factor)
     let vistas: Vec<(&str, (f32, f32), f32, f32)> = vec![
-        ("praca", (0.0, 0.0), 110.0, 0.35),
-        ("skytree", marco(Mc::Skytree), 200.0, 0.55),
-        ("nova-york", marco(Mc::Chrysler), 220.0, 0.45),
+        ("shibuya-cruzamento", { let c = shared::kogen::cruzamento(); (c.x, c.y) }, 90.0, 1.1),
+        ("skytree-floresta", marco(Mc::Skytree), 220.0, 0.55),
+        ("tocho", marco(Mc::Prefeitura), 180.0, 0.5),
+        ("nishi-shinjuku", marco(Mc::Casulo), 160.0, 0.45),
+        ("kabukicho", { let c = shared::kogen::de_latlon(35.6935, 139.7020); (c.x, c.y) }, 120.0, 0.5),
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
-        ("casulo-cruzamento", marco(Mc::Casulo), 110.0, 0.45),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
-        ("aerea", (0.0, 0.0), 700.0, 0.85),
+        ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
+        ("aerea-norte", (0.0, -300.0), 500.0, 0.8),
     ];
     for (nome, (cx, cy), distancia, alto) in vistas {
         let centro = vec2(cx, cy);

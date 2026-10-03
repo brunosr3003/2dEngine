@@ -14,3 +14,4 @@ postcard.workspace = true
 glam.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+miniz_oxide = "0.8"

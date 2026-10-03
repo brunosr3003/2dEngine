@@ -2,105 +2,202 @@
 //! night, reached only from Skyreach by a flying bus.
 //!
 //! The owner, 02/10/2026: "a futuristic island ... like Tokyo but in island
-//! format ... robots, giant robot bosses, electrical and mechanical animals,
-//! much light, roads, cars, high buildings". Always night, six districts.
-//! Then, on the first preview: "everything is practically the same ... copy
-//! famous buildings of Tokyo and New York in voxel style, I want something
-//! like a Times Square in the centre".
+//! format ... robots, giant robot bosses ... much light, roads, cars, high
+//! buildings". Always night, six districts. On the previews the drawn grid
+//! was "too much square ... not very organic", and on 03/10/2026 he asked for
+//! a real city instead: Kōgen-tō is **real Shinjuku + Shibuya**, baked from
+//! OpenStreetMap (© OpenStreetMap contributors, ODbL) by
+//! `tools/kogen-osm/rasterizar.py` into `assets/kogen_mapa.bin` — every
+//! street, rail line, park and building footprint where it really is, 4 m of
+//! Tokyo to a game unit, half a block of height per metre.
 //!
-//! The terrain is a heightmap — one top block per column — so a building is
-//! a SOLID block of columns that you walk round, like Stormkeep's walls: the
-//! streets are the gaps. A silhouette can only narrow going up (setbacks,
-//! tapers, spires), which suits the landmarks: Empire State, Chrysler, One
-//! World Trade, the Flatiron, the Tokyo Metropolitan Government's twin
-//! towers, Tokyo Tower, the Skytree, the Cocoon Tower, Shibuya's 109.
+//! The districts run SOUTH to NORTH as the levels rise: the Docks (a drawn
+//! waterfront where the bus lands), Shibuya, the Meiji Shrine forest,
+//! Kabukicho, the Nishi-Shinjuku towers and the Tocho.
 //!
-//! The layout is drawn, not rolled: `chao_em` / `bloco_da_coluna` are its
-//! only source, called by client and server alike.
+//! The terrain is a heightmap — one top block per column — so a building is a
+//! SOLID block of columns that you walk round. The Shuto expressways' decks
+//! are baked as their own layer (walking on them is a later step).
+//!
+//! `chao_em` / `bloco_da_coluna` are the layout's only source, called by
+//! client and server alike.
 
 use glam::Vec2;
+use std::sync::OnceLock;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 3;
+pub const REVISAO: u32 = 4;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
-pub const RAIO_BLOCOS: i32 = 1300;
+pub const RAIO_BLOCOS: i32 = 1400;
 /// The city's ground, in blocks (sea level is 0).
 pub const NIVEL_CHAO: i32 = 20;
 /// The sea floor past the shore, in blocks.
 pub const NIVEL_FUNDO: i32 = -6;
 
-/// One grid cell, in units: the street plus the lot.
-pub const QUADRA: f32 = 40.0;
-/// A street's width, in units: two A* cells.
-pub const RUA: f32 = 8.0;
-/// An avenue's width, in units, every `AVENIDA_A_CADA` cells.
-pub const AVENIDA: f32 = 14.0;
-pub const AVENIDA_A_CADA: i32 = 3;
-/// The sidewalk ring inside each lot, in units.
-pub const CALCADA: f32 = 2.5;
+// ── the projection (mirror of tools/kogen-osm/rasterizar.py) ──
+/// Metres of Tokyo per game unit.
+pub const METROS_POR_UNIDADE: f32 = 4.0;
+/// The point of Tokyo at the island's origin.
+pub const LAT0: f64 = 35.6754;
+pub const LON0: f64 = 139.7000;
+const M_POR_GRAU_LAT: f64 = 110_540.0;
 
-/// The coast's mean radius, in units.
-pub const RAIO_COSTA: f32 = 560.0;
-/// The Central Spire's district radius, in units.
-pub const RAIO_CENTRO: f32 = 140.0;
-
-/// "Broadway": the diagonal boulevard across the grid, through the centre.
-pub const BROADWAY_ANGULO_GRAUS: f32 = -18.0;
-pub const BROADWAY_MEIA: f32 = 7.0;
-/// The bowtie ("Kōgen Square", the Times Square of the island): from -this
-/// to +this along Broadway, narrow at the knot and wide at both ends.
-pub const PRACA_COMPRIMENTO: f32 = 70.0;
-
-fn broadway() -> Vec2 {
-    let a = BROADWAY_ANGULO_GRAUS.to_radians();
-    Vec2::new(a.cos(), a.sin())
+/// Where a point of Tokyo falls on the island, in units (+z is south).
+pub fn de_latlon(lat: f64, lon: f64) -> Vec2 {
+    let m_por_grau_lon = 111_320.0 * LAT0.to_radians().cos();
+    let x = (lon - LON0) * m_por_grau_lon;
+    let z = -(lat - LAT0) * M_POR_GRAU_LAT;
+    Vec2::new(x as f32, z as f32) / METROS_POR_UNIDADE
 }
 
-/// A district: its name, its level band and how tall it builds.
+/// The Docks start this far south, in units (row 1030 of the bake).
+pub const DOCAS_DE: f32 = 515.0;
+
+// ── the Docks' drawn grid (the only part not from the map) ──
+/// One grid cell, in units: the street plus the lot.
+pub const QUADRA: f32 = 40.0;
+pub const RUA: f32 = 8.0;
+pub const AVENIDA: f32 = 14.0;
+pub const AVENIDA_A_CADA: i32 = 3;
+pub const CALCADA: f32 = 2.5;
+
+/// A district: its name, its level band.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Distrito {
     pub nome: &'static str,
     pub nivel: (u32, u32),
-    /// Building height range, in blocks above the street.
-    pub altura: (i32, i32),
-    /// Fraction of lots left open (plazas and parks: where the robots roam).
-    pub abertos: f32,
 }
 
-/// The six districts. Index 0 is the arrival (the hub town). ORDER IS THE ID.
+/// The six districts, south to north. Index 0 is the arrival (the hub town).
+/// ORDER IS THE ID (it is baked into the map).
 pub const DISTRITOS: [Distrito; 6] = [
-    Distrito { nome: "Harbor Docks", nivel: (80, 83), altura: (6, 14), abertos: 0.42 },
-    Distrito { nome: "Market Streets", nivel: (83, 86), altura: (8, 22), abertos: 0.38 },
-    Distrito { nome: "Industrial Ring", nivel: (86, 90), altura: (8, 20), abertos: 0.40 },
-    Distrito { nome: "Neon District", nivel: (90, 94), altura: (24, 64), abertos: 0.34 },
-    Distrito { nome: "Corporate Heights", nivel: (94, 97), altura: (40, 96), abertos: 0.32 },
-    Distrito { nome: "Central Spire", nivel: (97, 100), altura: (50, 110), abertos: 0.30 },
+    Distrito { nome: "Harbor Docks", nivel: (80, 83) },
+    Distrito { nome: "Shibuya Crossing", nivel: (83, 86) },
+    Distrito { nome: "Shrine Forest", nivel: (86, 90) },
+    Distrito { nome: "Kabukicho Neon", nivel: (90, 94) },
+    Distrito { nome: "Nishi-Shinjuku Towers", nivel: (94, 97) },
+    Distrito { nome: "Tocho Spire", nivel: (97, 100) },
 ];
 
-/// The Docks sector is centred on the south (+z); the outer districts follow
-/// round the island (east, north-east, north-west, west of the map).
-const ANGULO_DOCAS: f32 = std::f32::consts::FRAC_PI_2;
-
-/// Where the hub town sits: the Docks, near the south shore.
+/// Where the hub town sits: in the Docks, between the waterfront avenue and
+/// the south shore.
 pub fn centro_da_cidade() -> Vec2 {
-    Vec2::new(0.0, RAIO_COSTA * 0.72)
+    Vec2::new(0.0, 572.0)
 }
 
-/// The coast's radius in direction `ang` (a ragged shore, never a circle).
-pub fn raio_da_costa(ang: f32) -> f32 {
-    RAIO_COSTA * (1.0 + 0.07 * (ang * 3.0 + 0.4).sin() + 0.05 * (ang * 5.0 - 1.1).sin() + 0.03 * (ang * 11.0).sin())
+/// The Shibuya scramble crossing (where it really is).
+pub fn cruzamento() -> Vec2 {
+    de_latlon(35.65950, 139.70050)
 }
 
-/// Which district `q` is in.
-pub fn distrito_em(q: Vec2) -> usize {
-    if q.length() < RAIO_CENTRO {
-        return 5;
+// ─────────────────────────────── the baked map ───────────────────────────────
+
+/// A cell's kind, as baked (mirror of the rasterizer's).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum Tipo {
+    Mar = 0,
+    Orla,
+    Rua,
+    Avenida,
+    Faixa,
+    Zebra,
+    Calcada,
+    Praca,
+    Parque,
+    Bosque,
+    Trilho,
+    Predio,
+    Docas,
+}
+
+impl Tipo {
+    fn de(b: u8) -> Tipo {
+        match b {
+            1 => Tipo::Orla,
+            2 => Tipo::Rua,
+            3 => Tipo::Avenida,
+            4 => Tipo::Faixa,
+            5 => Tipo::Zebra,
+            6 => Tipo::Calcada,
+            7 => Tipo::Praca,
+            8 => Tipo::Parque,
+            9 => Tipo::Bosque,
+            10 => Tipo::Trilho,
+            11 => Tipo::Predio,
+            12 => Tipo::Docas,
+            _ => Tipo::Mar,
+        }
     }
-    let a = (ANGULO_DOCAS - q.y.atan2(q.x)).rem_euclid(std::f32::consts::TAU);
-    ((a + std::f32::consts::TAU / 10.0) / (std::f32::consts::TAU / 5.0)) as usize % 5
+}
+
+/// One baked cell.
+#[derive(Debug, Clone, Copy)]
+struct Celula {
+    tipo: Tipo,
+    distrito: u8,
+    /// A building's roof above the street, or the shore's height, in blocks.
+    altura: u8,
+    estilo: u8,
+    /// The expressway deck above the street here, in blocks (0 = none).
+    deck: u8,
+}
+
+struct Mapa {
+    x0: i32,
+    z0: i32,
+    w: i32,
+    h: i32,
+    planos: Vec<u8>,
+}
+
+static MAPA_BRUTO: &[u8] = include_bytes!("../../../assets/kogen_mapa.bin");
+
+fn mapa() -> &'static Mapa {
+    static M: OnceLock<Mapa> = OnceLock::new();
+    M.get_or_init(|| {
+        let b = MAPA_BRUTO;
+        assert_eq!(&b[0..4], b"KOG2", "kogen_mapa.bin: wrong format");
+        let i32_em = |i: usize| i32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
+        let (x0, z0, w, h) = (i32_em(4), i32_em(8), i32_em(12), i32_em(16));
+        let planos = miniz_oxide::inflate::decompress_to_vec_zlib(&b[20..]).expect("kogen_mapa.bin: corrupt");
+        assert_eq!(planos.len(), (w * h * 4) as usize, "kogen_mapa.bin: wrong size");
+        Mapa { x0, z0, w, h, planos }
+    })
+}
+
+/// The baked cell under `q`; `None` past the baked window (open sea).
+fn celula_em(q: Vec2) -> Option<Celula> {
+    use crate::terreno::BLOCO;
+    let m = mapa();
+    let c = (q.x / BLOCO).floor() as i32 - m.x0;
+    let r = (q.y / BLOCO).floor() as i32 - m.z0;
+    if c < 0 || r < 0 || c >= m.w || r >= m.h {
+        return None;
+    }
+    let n = (m.w * m.h) as usize;
+    let i = (r * m.w + c) as usize;
+    let t = m.planos[i];
+    Some(Celula {
+        tipo: Tipo::de(t & 0x0F),
+        distrito: (t >> 4).min(5),
+        altura: m.planos[n + i],
+        estilo: m.planos[2 * n + i],
+        deck: m.planos[3 * n + i],
+    })
+}
+
+/// Which district `q` is in (0 at sea).
+pub fn distrito_em(q: Vec2) -> usize {
+    celula_em(q).map_or(0, |c| c.distrito as usize)
+}
+
+/// The Shuto expressway deck over `q`, in blocks above the street.
+pub fn deck_em(q: Vec2) -> Option<i32> {
+    celula_em(q).and_then(|c| (c.deck > 0).then_some(c.deck as i32))
 }
 
 fn hash(x: i32, y: i32) -> f32 {
@@ -111,158 +208,44 @@ fn hash(x: i32, y: i32) -> f32 {
     (h & 0xFFFF) as f32 / 65_535.0
 }
 
-/// The grid cell of `q`, and where inside it `q` is (0..QUADRA on each axis).
-fn celula(q: Vec2) -> ((i32, i32), Vec2) {
-    let cx = (q.x / QUADRA).floor() as i32;
-    let cz = (q.y / QUADRA).floor() as i32;
-    ((cx, cz), q - Vec2::new(cx as f32, cz as f32) * QUADRA)
-}
-
-/// The street width on the edge of cell index `i` (an avenue every few).
-fn largura_da_rua(i: i32) -> f32 {
-    if i.rem_euclid(AVENIDA_A_CADA) == 0 { AVENIDA } else { RUA }
-}
-
-/// The centre of the lot of the cell containing `q`.
-pub fn centro_do_lote(q: Vec2) -> Vec2 {
-    let ((cx, cz), _) = celula(q);
-    let (lx, lz) = (largura_da_rua(cx), largura_da_rua(cz));
-    Vec2::new(cx as f32 * QUADRA + lx + (QUADRA - lx) * 0.5, cz as f32 * QUADRA + lz + (QUADRA - lz) * 0.5)
-}
-
-// ─────────────────────────── the organic streets ───────────────────────────
-//
-// The owner, on the second preview: "too much square ... the streets, it is
-// not very organic". Tokyo is not a grid: its streets bend, rings loop round
-// the centre (the Yamanote) and avenues run out from it. So the grid is
-// WARPED by a smooth wave — strongly in the Tokyo districts, lightly in
-// Corporate Heights and round the square, which keep a New York grid — and
-// three RING roads and five RADIAL avenues are laid over it.
-
-/// The ring roads' radii, in units, and the half width of rings and radials.
-pub const ANEIS: [f32; 3] = [205.0, 335.0, 465.0];
-pub const MEIA_ANEL: f32 = 6.5;
-
-/// The radial avenues run along the district borders: their directions.
-fn radiais() -> [Vec2; 5] {
-    std::array::from_fn(|k| {
-        let a = ANGULO_DOCAS - (36.0 + 72.0 * k as f32).to_radians();
-        Vec2::new(a.cos(), a.sin())
-    })
-}
-
-/// How strongly the grid bends at `q`: little in Corporate Heights (the New
-/// York grid) and round the square, a lot elsewhere.
-fn amplitude_da_torcao(q: Vec2) -> f32 {
-    let ang = q.y.atan2(q.x);
-    let corporativo = std::f32::consts::PI * 162.0 / 180.0;
-    let mut d = (ang - corporativo).rem_euclid(std::f32::consts::TAU);
-    d = d.min(std::f32::consts::TAU - d).to_degrees();
-    let ny = (1.0 - ((d - 25.0) / 20.0).clamp(0.0, 1.0)).max(1.0 - ((q.length() - RAIO_CENTRO) / 60.0).clamp(0.0, 1.0));
-    16.0 + (3.0 - 16.0) * ny
-}
-
-/// The point of the (straight) grid that `q` falls on: the warp.
-fn torcer(q: Vec2) -> Vec2 {
-    let a = amplitude_da_torcao(q);
-    q + a * Vec2::new(
-        (q.y * 0.012 + 1.3).sin() + 0.45 * (q.y * 0.027 - 0.4).sin(),
-        (q.x * 0.011 - 0.7).sin() + 0.45 * (q.x * 0.025 + 2.1).sin(),
-    )
-}
-
-/// How far `q` is from the nearest ring road or radial avenue (its centre line).
-fn ao_arterial(q: Vec2) -> f32 {
-    let r = q.length();
-    let mut d = ANEIS.iter().map(|a| (r - a).abs()).fold(f32::MAX, f32::min);
-    if r > RAIO_CENTRO {
-        for dir in radiais() {
-            let ao_longo = q.dot(dir);
-            if ao_longo > 0.0 {
-                d = d.min((q - dir * ao_longo).length());
-            }
-        }
-    }
-    d
-}
-
-/// The Shibuya-style scramble crossing: where the radial avenue between the
-/// Industrial Ring and the Neon District meets the middle ring road.
-pub fn cruzamento() -> Vec2 {
-    radiais()[2] * ANEIS[1]
-}
-
 // ─────────────────────────────── the landmarks ───────────────────────────────
 
 /// A famous building, copied in voxels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Marco {
-    /// Tokyo Skytree: the tallest thing on the island, at the centre.
+    /// Tokyo Skytree: the tallest thing on the island, beside Yoyogi Park.
     Skytree,
-    /// One Times Square: the slim tower of screens at the square's end.
-    UmaKogen,
-    /// Empire State: setbacks, a crown and a mast.
-    Empire,
-    /// Chrysler: a stepped crown of arches and a needle.
-    Chrysler,
-    /// Tokyo Metropolitan Government Building: twin towers on a podium.
+    /// Tokyo Metropolitan Government Building: twin towers on a podium —
+    /// where it really is, and the top district's heart.
     Prefeitura,
-    /// One World Trade Center: a tapering square tower and a spire.
-    UmWtc,
-    /// The Flatiron: a wedge beside Broadway.
-    Flatiron,
     /// Tokyo Tower: red and white, tapering, in the Docks.
     TorreDeToquio,
-    /// Mode Gakuen Cocoon Tower: an egg with a white lattice.
+    /// Mode Gakuen Cocoon Tower: an egg with a white lattice (real spot).
     Casulo,
-    /// Shibuya 109: the silver cylinder at a corner.
+    /// Shibuya 109: the silver cylinder at its corner (real spot).
     Cilindro109,
 }
 
 impl Marco {
-    pub const TODOS: [Marco; 10] = [
-        Marco::Skytree,
-        Marco::UmaKogen,
-        Marco::Empire,
-        Marco::Chrysler,
-        Marco::Prefeitura,
-        Marco::UmWtc,
-        Marco::Flatiron,
-        Marco::TorreDeToquio,
-        Marco::Casulo,
-        Marco::Cilindro109,
-    ];
+    pub const TODOS: [Marco; 5] = [Marco::Skytree, Marco::Prefeitura, Marco::TorreDeToquio, Marco::Casulo, Marco::Cilindro109];
 
     pub fn nome(self) -> &'static str {
         match self {
             Marco::Skytree => "Kōgen Skytree",
-            Marco::UmaKogen => "One Kōgen",
-            Marco::Empire => "Empire Tower",
-            Marco::Chrysler => "Crown Building",
-            Marco::Prefeitura => "Twin Hall",
-            Marco::UmWtc => "Freedom Spire",
-            Marco::Flatiron => "Flatiron",
+            Marco::Prefeitura => "Tocho Twin Hall",
             Marco::TorreDeToquio => "Harbor Tower",
             Marco::Casulo => "Cocoon Tower",
             Marco::Cilindro109 => "Shibuya 109",
         }
     }
 
-    /// Where it stands (its lot's centre, or a point beside Broadway).
     pub fn centro(self) -> Vec2 {
-        let u = broadway();
         match self {
-            Marco::Skytree => centro_do_lote(Vec2::new(10.0, -110.0)),
-            Marco::UmaKogen => u * -(PRACA_COMPRIMENTO + 12.0),
-            Marco::Empire => centro_do_lote(Vec2::new(-314.0, 102.0)),
-            Marco::Chrysler => centro_do_lote(Vec2::new(-270.0, 20.0)),
-            Marco::Prefeitura => centro_do_lote(Vec2::new(-330.0, 190.0)),
-            Marco::UmWtc => centro_do_lote(Vec2::new(-400.0, 60.0)),
-            Marco::Flatiron => u * -205.0 + Vec2::new(-u.y, u.x) * (BROADWAY_MEIA + 7.0),
-            Marco::TorreDeToquio => centro_do_lote(Vec2::new(110.0, 320.0)),
-            // Shibuya: the Cocoon and 109 face the scramble crossing.
-            Marco::Casulo => cruzamento() + Vec2::new(-30.0, 26.0),
-            Marco::Cilindro109 => cruzamento() + Vec2::new(26.0, 24.0),
+            Marco::Skytree => de_latlon(35.6690, 139.6975),
+            Marco::Prefeitura => de_latlon(35.68955, 139.69175),
+            Marco::TorreDeToquio => Vec2::new(-150.0, 580.0),
+            Marco::Casulo => de_latlon(35.69160, 139.69670),
+            Marco::Cilindro109 => de_latlon(35.65955, 139.69870),
         }
     }
 
@@ -271,6 +254,7 @@ impl Marco {
         match self {
             Marco::Skytree => 14.0,
             Marco::Prefeitura => 18.0,
+            Marco::Cilindro109 => 10.0,
             _ => 16.0,
         }
     }
@@ -281,7 +265,6 @@ impl Marco {
         let (ax, az) = (p.x.abs(), p.y.abs());
         let m = ax.max(az);
         let r = p.length();
-        let caixa = |hx: f32, hz: f32| ax <= hx && az <= hz;
         let h = match self {
             Marco::Skytree => {
                 // Round, tapering from r 13 to r 3, a crown of decks and a needle.
@@ -296,46 +279,8 @@ impl Marco {
                     (250.0 * (1.0 - (r - 3.0) / 10.0).powf(1.4)) as i32 + 6
                 }
             }
-            Marco::UmaKogen => {
-                if !caixa(6.0, 5.0) {
-                    return None;
-                }
-                if caixa(1.0, 1.0) { 112 } else { 96 }
-            }
-            Marco::Empire => {
-                if !caixa(12.0, 9.0) {
-                    return None;
-                }
-                if caixa(0.6, 0.6) {
-                    196
-                } else if caixa(1.5, 1.5) {
-                    176
-                } else if caixa(3.5, 3.0) {
-                    158
-                } else if caixa(6.0, 4.5) {
-                    146
-                } else if caixa(9.0, 7.0) {
-                    110
-                } else {
-                    20
-                }
-            }
-            Marco::Chrysler => {
-                if !caixa(11.0, 11.0) {
-                    return None;
-                }
-                if m <= 0.6 {
-                    188
-                } else if m <= 8.0 {
-                    // The crown: arches stepping in every block and a half.
-                    let degrau = ((8.0 - m) / 1.4).floor() as i32;
-                    120 + degrau * 7
-                } else {
-                    24
-                }
-            }
             Marco::Prefeitura => {
-                if !caixa(15.0, 10.0) {
+                if !(ax <= 15.0 && az <= 10.0) {
                     return None;
                 }
                 let torre = |cx: f32| (p.x - cx).abs() <= 4.5 && az <= 5.5;
@@ -349,33 +294,6 @@ impl Marco {
                 } else {
                     30
                 }
-            }
-            Marco::UmWtc => {
-                if !caixa(11.0, 11.0) {
-                    return None;
-                }
-                if m <= 0.6 {
-                    250
-                } else if m <= 4.0 {
-                    176
-                } else {
-                    // Tapering from the base square to the top square.
-                    (24.0 + 152.0 * (11.0 - m) / 7.0) as i32
-                }
-            }
-            Marco::Flatiron => {
-                // A wedge, its point towards the square, along Broadway.
-                let u = broadway();
-                let t = p.dot(u);
-                let s = p.dot(Vec2::new(-u.y, u.x));
-                if !(-10.0..=10.0).contains(&t) {
-                    return None;
-                }
-                let largura = 6.0 * (t + 10.0) / 20.0;
-                if s.abs() > largura {
-                    return None;
-                }
-                if s.abs() > largura - 0.6 { 50 } else { 48 }
             }
             Marco::TorreDeToquio => {
                 if m > 11.0 {
@@ -396,10 +314,10 @@ impl Marco {
                 (130.0 * (1.0 - e.powf(2.2)).sqrt()) as i32 + 4
             }
             Marco::Cilindro109 => {
-                if (p - Vec2::new(5.5, -5.5)).length() <= 3.5 {
-                    48
-                } else if r <= 9.0 {
-                    34
+                if (p - Vec2::new(4.0, -4.0)).length() <= 2.6 {
+                    44
+                } else if r <= 6.5 {
+                    32
                 } else {
                     return None;
                 }
@@ -429,15 +347,28 @@ pub enum Estilo {
     Vidro,
     Tijolo,
     Branco,
-    /// Neon billboards: round the square and here and there in the Neon District.
+    /// Neon billboards: round the Shibuya crossing and all over Kabukicho.
     Letreiros,
     /// Shipping containers in the Docks' yards, by colour.
     Conteiner(u8),
-    /// A factory chimney (red and white bands) in the Industrial Ring.
+    /// A factory chimney (red and white bands) in the Docks.
     Chamine,
-    /// A gas holder (a ribbed cylinder) in the Industrial Ring.
+    /// A gas holder (a ribbed cylinder) in the Docks.
     Gasometro,
     Marco(Marco),
+}
+
+impl Estilo {
+    /// The baked palette byte (mirror of the rasterizer's order).
+    fn de(b: u8) -> Estilo {
+        match b {
+            1 => Estilo::Vidro,
+            2 => Estilo::Tijolo,
+            3 => Estilo::Branco,
+            4 => Estilo::Letreiros,
+            _ => Estilo::Concreto,
+        }
+    }
 }
 
 /// What stands on a piece of the city.
@@ -445,130 +376,81 @@ pub enum Estilo {
 pub enum Chao {
     /// The sea, past the shore.
     Mar,
-    /// The sea wall band at the shore.
-    Orla,
+    /// The shore band, sloping down to the water: its height in blocks.
+    Orla(i32),
     /// A street; `avenida` for the wide ones, `faixa` on a lane marking,
     /// `zebra` on a crosswalk stripe of the scramble.
     Rua { avenida: bool, faixa: bool, zebra: bool },
-    /// The sidewalk round a lot.
+    /// The sidewalk, a footpath or a pedestrian street.
     Calcada,
-    /// An open lot: a paved plaza.
+    /// Open paved ground: plazas, car parks, the gaps between buildings.
     Praca,
-    /// An open lot: a park.
+    /// A park or garden.
     Parque,
-    /// Kōgen Square, the bowtie on Broadway.
-    Largo,
+    /// A rail line or rail yard.
+    Trilho,
     /// A building, its roof `altura` blocks above the street.
     Predio { altura: i32, estilo: Estilo },
 }
 
-/// A building's SHAPE inside its lot (the generic ones; landmarks have their own).
+/// A building's SHAPE inside its lot, in the Docks' drawn grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Forma {
     Caixa,
-    /// A podium the whole lot, a tower on part of it.
     Podio,
-    /// Three setbacks, the "wedding cake".
-    Bolo,
-    /// Twin towers on a low podium.
-    Gemeas,
-    /// A round tower.
-    Redonda,
-    /// A slim tower on a small podium.
-    Fina,
-    /// A low warehouse with a tall chimney in a corner.
     ArmazemComChamine,
-    /// A gas holder.
     Gasometro,
-    /// A yard of container stacks.
     Conteineres,
 }
 
-/// The shape, palette and height of the generic building in cell (cx, cz).
-fn projeto(cx: i32, cz: i32, d: usize, centro_do_lote: Vec2) -> (Forma, Estilo, i32) {
-    let dist = DISTRITOS[d];
-    let t = hash(cx * 3 + 11, cz * 5 - 3);
-    let altura = dist.altura.0 + ((dist.altura.1 - dist.altura.0) as f32 * t * t) as i32;
-    let h = hash(cx + 17, cz + 29);
-    let paleta = hash(cx - 5, cz + 13);
-    let forma = match d {
-        0 => if h < 0.45 { Forma::Conteineres } else if h < 0.8 { Forma::Caixa } else { Forma::Podio },
-        1 => if h < 0.35 { Forma::Caixa } else if h < 0.6 { Forma::Podio } else if h < 0.8 { Forma::Bolo } else { Forma::Redonda },
-        2 => if h < 0.35 { Forma::ArmazemComChamine } else if h < 0.55 { Forma::Gasometro } else { Forma::Caixa },
-        3 => if h < 0.3 { Forma::Fina } else if h < 0.55 { Forma::Podio } else if h < 0.8 { Forma::Bolo } else { Forma::Redonda },
-        4 => if h < 0.3 { Forma::Podio } else if h < 0.5 { Forma::Gemeas } else if h < 0.7 { Forma::Fina } else if h < 0.85 { Forma::Redonda } else { Forma::Bolo },
-        _ => if h < 0.35 { Forma::Bolo } else if h < 0.65 { Forma::Podio } else { Forma::Fina },
-    };
-    // Round the square, every building carries billboards.
-    let na_praca = centro_do_lote.length() < RAIO_CENTRO;
-    let estilo = match forma {
-        Forma::Conteineres => Estilo::Conteiner(0),
-        Forma::Gasometro => Estilo::Gasometro,
-        _ if na_praca => Estilo::Letreiros,
-        _ => match d {
-            0 => if paleta < 0.5 { Estilo::Tijolo } else { Estilo::Concreto },
-            1 => if paleta < 0.55 { Estilo::Tijolo } else if paleta < 0.8 { Estilo::Branco } else { Estilo::Letreiros },
-            2 => Estilo::Concreto,
-            3 => if paleta < 0.4 { Estilo::Letreiros } else if paleta < 0.75 { Estilo::Vidro } else { Estilo::Concreto },
-            4 => if paleta < 0.6 { Estilo::Vidro } else if paleta < 0.85 { Estilo::Branco } else { Estilo::Concreto },
-            _ => if paleta < 0.5 { Estilo::Vidro } else { Estilo::Branco },
-        },
-    };
-    (forma, estilo, altura)
+fn celula_da_quadra(q: Vec2) -> ((i32, i32), Vec2) {
+    let cx = (q.x / QUADRA).floor() as i32;
+    let cz = (q.y / QUADRA).floor() as i32;
+    ((cx, cz), q - Vec2::new(cx as f32, cz as f32) * QUADRA)
 }
 
-/// The height (and look) of the generic building at `local` in its lot of
-/// size `tam` (the area inside the sidewalk), or `None` for open ground.
-fn predio_no_lote(cx: i32, cz: i32, d: usize, local: Vec2, tam: Vec2, centro_do_lote: Vec2) -> Option<(i32, Estilo)> {
-    let (forma, estilo, h) = projeto(cx, cz, d, centro_do_lote);
-    let p = local - tam * 0.5;
-    let (fx, fz) = (p.x.abs() / (tam.x * 0.5), p.y.abs() / (tam.y * 0.5));
-    let f = fx.max(fz);
-    let r = p.length() / (tam.x.min(tam.y) * 0.5);
-    let canto = tam * Vec2::new(0.32, -0.32);
-    let extra = |h: i32| -> i32 {
-        // A rooftop antenna on tall ones, a water tank on low ones.
-        if h > 30 && hash(cx, cz + 99) < 0.4 && p.length() < 0.8 {
-            h + 18
-        } else if h <= 30 && hash(cx + 7, cz) < 0.5 && (p - tam * 0.22).length() < 2.0 {
-            h + 4
-        } else {
-            h
-        }
+fn largura_da_rua(i: i32) -> f32 {
+    if i.rem_euclid(AVENIDA_A_CADA) == 0 { AVENIDA } else { RUA }
+}
+
+/// The height (and look) of the Docks building at `local` in its lot of size
+/// `tam`, or `None` for open ground.
+fn predio_das_docas(cx: i32, cz: i32, local: Vec2, tam: Vec2) -> Option<(i32, Estilo)> {
+    let t = hash(cx * 3 + 11, cz * 5 - 3);
+    let h = 6 + (8.0 * t * t) as i32;
+    let r = hash(cx + 17, cz + 29);
+    let forma = if r < 0.4 {
+        Forma::Conteineres
+    } else if r < 0.6 {
+        Forma::ArmazemComChamine
+    } else if r < 0.72 {
+        Forma::Gasometro
+    } else if r < 0.88 {
+        Forma::Caixa
+    } else {
+        Forma::Podio
     };
-    let alt = match forma {
-        Forma::Caixa => extra(h),
-        Forma::Podio => if f <= 0.6 { extra(h) } else { (h / 4).max(6) },
-        Forma::Bolo => {
-            if f <= 0.45 {
-                extra(h)
-            } else if f <= 0.72 {
-                h * 7 / 10
-            } else {
-                h * 4 / 10
-            }
-        }
-        Forma::Gemeas => {
-            let torre = (fx - 0.55).abs() <= 0.3 && fz <= 0.55;
-            if torre { extra(h) } else { 8 }
-        }
-        Forma::Redonda => if r <= 0.85 { extra(h) } else { return None },
-        Forma::Fina => {
-            if f <= 0.4 {
-                extra(h)
-            } else if f <= 0.7 {
-                10
-            } else {
-                return None;
-            }
-        }
+    let estilo = if hash(cx - 5, cz + 13) < 0.5 { Estilo::Tijolo } else { Estilo::Concreto };
+    let p = local - tam * 0.5;
+    let f = (p.x.abs() / (tam.x * 0.5)).max(p.y.abs() / (tam.y * 0.5));
+    let raio = p.length() / (tam.x.min(tam.y) * 0.5);
+    let canto = tam * Vec2::new(0.32, -0.32);
+    Some(match forma {
+        Forma::Caixa => (h, estilo),
+        Forma::Podio => (if f <= 0.6 { h + 10 } else { (h / 2).max(5) }, estilo),
         Forma::ArmazemComChamine => {
             if (p - canto).length() < 1.6 {
-                return Some((44 + (hash(cx, cz) * 20.0) as i32, Estilo::Chamine));
+                (44 + (hash(cx, cz) * 20.0) as i32, Estilo::Chamine)
+            } else {
+                (h.min(12), estilo)
             }
-            h.min(12)
         }
-        Forma::Gasometro => if r <= 0.9 { 14 + (hash(cx, cz + 3) * 10.0) as i32 } else { return None },
+        Forma::Gasometro => {
+            if raio > 0.9 {
+                return None;
+            }
+            (14 + (hash(cx, cz + 3) * 10.0) as i32, Estilo::Gasometro)
+        }
         Forma::Conteineres => {
             // Rows of 6 x 2.5 u containers with 1 u gaps, stacked 1-3 high.
             let (i, j) = ((local.x / 7.0).floor() as i32, (local.y / 3.5).floor() as i32);
@@ -578,98 +460,65 @@ fn predio_no_lote(cx: i32, cz: i32, d: usize, local: Vec2, tam: Vec2, centro_do_
             }
             let pilha = 1 + (hash(cx * 31 + i, cz * 17 + j) * 3.0) as i32;
             let cor = (hash(cx * 13 + i, cz * 7 + j) * 5.0) as u8;
-            return Some((pilha * 5, Estilo::Conteiner(cor)));
+            (pilha * 5, Estilo::Conteiner(cor))
         }
-    };
-    Some((alt, estilo))
+    })
 }
 
-/// What is at `q`.
-pub fn chao_em(q: Vec2) -> Chao {
-    let r = q.length();
-    let costa = raio_da_costa(q.y.atan2(q.x));
-    if r > costa {
-        return Chao::Mar;
-    }
-    if r > costa - 10.0 {
-        return Chao::Orla;
-    }
-    if let Some((m, h)) = marco_em(q) {
-        return Chao::Predio { altura: h, estilo: Estilo::Marco(m) };
-    }
-    // Broadway and its bowtie square.
-    let u = broadway();
-    let t = q.dot(u);
-    let s = q.dot(Vec2::new(-u.y, u.x)).abs();
-    if t.abs() <= PRACA_COMPRIMENTO && s <= BROADWAY_MEIA + t.abs() * 0.45 {
-        return Chao::Largo;
-    }
-    if s <= BROADWAY_MEIA {
-        let faixa = s < 0.4 && t.rem_euclid(6.0) < 3.0;
-        return Chao::Rua { avenida: true, faixa, zebra: false };
-    }
-    // Every landmark stands in its own plaza: no street runs into it.
-    if Marco::TODOS.iter().any(|m| (q - m.centro()).length() < m.alcance() + 5.0) {
-        return Chao::Praca;
-    }
-    // The scramble: zebra stripes over the whole crossing.
-    let zebra = (q - cruzamento()).length() < MEIA_ANEL * 2.2
-        && ((q.x + q.y).rem_euclid(2.4) < 1.0 || (q.x - q.y).rem_euclid(2.4) < 1.0);
-    // The ring roads and the radial avenues.
-    let ang = q.y.atan2(q.x);
-    for raio in ANEIS {
-        let d = (r - raio).abs();
-        if d <= MEIA_ANEL {
-            let faixa = d < 0.4 && (ang * raio).rem_euclid(6.0) < 3.0;
-            return Chao::Rua { avenida: true, faixa: faixa && !zebra, zebra };
-        }
-    }
-    if r > RAIO_CENTRO {
-        for dir in radiais() {
-            let ao_longo = q.dot(dir);
-            let lado = (q - dir * ao_longo).length();
-            if ao_longo > 0.0 && lado <= MEIA_ANEL {
-                let faixa = lado < 0.4 && ao_longo.rem_euclid(6.0) < 3.0;
-                return Chao::Rua { avenida: true, faixa: faixa && !zebra, zebra };
-            }
-        }
-    }
-    // Sidewalks along the rings and radials, like along any street.
-    if ao_arterial(q) <= MEIA_ANEL + CALCADA {
-        return Chao::Calcada;
-    }
-    // The grid, bent (`torcer`).
-    let g = torcer(q);
-    let ((cx, cz), local) = celula(g);
+/// The Docks: a drawn grid of warehouses, container yards and gas holders.
+fn docas_em(q: Vec2) -> Chao {
+    let ((cx, cz), local) = celula_da_quadra(q);
     let (lx, lz) = (largura_da_rua(cx), largura_da_rua(cz));
     if local.x < lx || local.y < lz {
         let avenida = (local.x < lx && lx > RUA) || (local.y < lz && lz > RUA);
         let faixa = avenida
-            && ((local.x < lx && (local.x - lx * 0.5).abs() < 0.4 && (g.y.rem_euclid(6.0)) < 3.0)
-                || (local.y < lz && (local.y - lz * 0.5).abs() < 0.4 && (g.x.rem_euclid(6.0)) < 3.0));
+            && ((local.x < lx && (local.x - lx * 0.5).abs() < 0.4 && q.y.rem_euclid(6.0) < 3.0)
+                || (local.y < lz && (local.y - lz * 0.5).abs() < 0.4 && q.x.rem_euclid(6.0) < 3.0));
         return Chao::Rua { avenida, faixa, zebra: false };
     }
-    // Inside the lot: sidewalk ring, then the lot itself.
     let dentro = Vec2::new(local.x - lx, local.y - lz);
     let tamanho = Vec2::new(QUADRA - lx, QUADRA - lz);
     if dentro.x < CALCADA || dentro.y < CALCADA || dentro.x > tamanho.x - CALCADA || dentro.y > tamanho.y - CALCADA {
         return Chao::Calcada;
     }
-    let d = distrito_em(q);
-    if hash(cx, cz) < DISTRITOS[d].abertos {
-        return if hash(cx + 101, cz - 77) < 0.5 { Chao::Praca } else { Chao::Parque };
-    }
-    let lote = dentro - Vec2::splat(CALCADA);
-    let tam = tamanho - Vec2::splat(2.0 * CALCADA);
-    let centro = Vec2::new(cx as f32 * QUADRA + lx, cz as f32 * QUADRA + lz) + Vec2::splat(CALCADA) + tam * 0.5;
-    // A lot that a ring or radial cuts through is a plaza by the avenue: a
-    // building there would be a sliver of wall.
-    if ao_arterial(q + (centro - g)) < QUADRA * 0.42 {
+    if hash(cx, cz) < 0.3 {
         return Chao::Praca;
     }
-    match predio_no_lote(cx, cz, d, lote, tam, centro) {
+    match predio_das_docas(cx, cz, dentro - Vec2::splat(CALCADA), tamanho - Vec2::splat(2.0 * CALCADA)) {
         Some((altura, estilo)) => Chao::Predio { altura, estilo },
         None => Chao::Praca,
+    }
+}
+
+/// What is at `q`.
+pub fn chao_em(q: Vec2) -> Chao {
+    let Some(c) = celula_em(q) else {
+        return Chao::Mar;
+    };
+    match c.tipo {
+        Tipo::Mar => return Chao::Mar,
+        Tipo::Orla => return Chao::Orla(c.altura as i32),
+        _ => {}
+    }
+    if let Some((m, h)) = marco_em(q) {
+        return Chao::Predio { altura: h, estilo: Estilo::Marco(m) };
+    }
+    // Every landmark stands in its own plaza: the real buildings round it
+    // give way.
+    if Marco::TODOS.iter().any(|m| (q - m.centro()).length() < m.alcance() + 4.0) {
+        return Chao::Praca;
+    }
+    match c.tipo {
+        Tipo::Rua => Chao::Rua { avenida: false, faixa: false, zebra: false },
+        Tipo::Avenida => Chao::Rua { avenida: true, faixa: false, zebra: false },
+        Tipo::Faixa => Chao::Rua { avenida: true, faixa: true, zebra: false },
+        Tipo::Zebra => Chao::Rua { avenida: true, faixa: false, zebra: true },
+        Tipo::Calcada => Chao::Calcada,
+        Tipo::Parque | Tipo::Bosque => Chao::Parque,
+        Tipo::Trilho => Chao::Trilho,
+        Tipo::Predio => Chao::Predio { altura: c.altura as i32, estilo: Estilo::de(c.estilo) },
+        Tipo::Docas => docas_em(q),
+        Tipo::Praca | Tipo::Mar | Tipo::Orla => Chao::Praca,
     }
 }
 
@@ -679,12 +528,7 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     let q = Vec2::new(bx as f32, bz as f32) * BLOCO;
     match chao_em(q) {
         Chao::Mar => NIVEL_FUNDO,
-        // The shore slopes from the city down to the water in ten units.
-        Chao::Orla => {
-            let costa = raio_da_costa(q.y.atan2(q.x));
-            let t = ((costa - q.length()) / 10.0).clamp(0.0, 1.0);
-            (1.0 + (NIVEL_CHAO - 1) as f32 * t).round() as i32
-        }
+        Chao::Orla(h) => h.clamp(1, NIVEL_CHAO),
         Chao::Predio { altura, .. } => NIVEL_CHAO + altura,
         _ => NIVEL_CHAO,
     }
@@ -710,29 +554,25 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
     let quadriculado = |passo: f32| ((q.x / passo).floor() as i32 + (q.y / passo).floor() as i32).rem_euclid(2) == 0;
     Some(match chao_em(q) {
         Chao::Mar => return None,
-        Chao::Orla => M::Concreto,
+        Chao::Orla(_) => M::Concreto,
         Chao::Rua { zebra: true, .. } => M::Nuvem,
         Chao::Rua { faixa: true, .. } => M::FaixaDePista,
         Chao::Rua { .. } => M::Asfalto,
         Chao::Calcada => if quadriculado(1.5) { M::Concreto } else { M::ConcretoEscuro },
         Chao::Praca => if quadriculado(2.0) { M::Concreto } else { M::ConcretoEscuro },
-        // The square: dark paving with glowing lines every few units.
-        Chao::Largo => {
-            if q.x.rem_euclid(8.0) < 0.5 || q.y.rem_euclid(8.0) < 0.5 {
-                M::NeonCiano
-            } else if quadriculado(2.0) {
-                M::ConcretoEscuro
-            } else {
-                M::Asfalto
-            }
-        }
+        // Ballast with two dark rails every few units.
+        Chao::Trilho => if q.x.rem_euclid(3.0) < 0.5 || q.y.rem_euclid(3.0) < 0.5 { M::Concreto } else { M::ConcretoEscuro },
         Chao::Parque => return None,
-        Chao::Predio { estilo, .. } => match estilo {
+        Chao::Predio { estilo, altura } => match estilo {
             Estilo::Conteiner(c) => cor_do_conteiner(c),
             Estilo::Marco(Marco::TorreDeToquio) | Estilo::Chamine => M::PetalaVermelha,
             Estilo::Marco(Marco::Skytree | Marco::Casulo) => M::Nuvem,
-            Estilo::Marco(Marco::UmaKogen) => M::NeonRosa,
             _ => {
+                // A neon rim round the roof, by district — on the billboard
+                // blocks and the towers only: on every low roof it was noise.
+                if estilo != Estilo::Letreiros && altura < 40 {
+                    return Some(M::ConcretoEscuro);
+                }
                 let borda = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
                     .iter()
                     .any(|d| !matches!(chao_em(q + *d * 1.0), Chao::Predio { .. }));
@@ -767,11 +607,10 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
         Estilo::Vidro => if janela || prof % 8 != 0 { lit(0.25) } else { M::ConcretoEscuro },
         Estilo::Tijolo => if janela && (gx + gz).rem_euclid(3) != 0 { lit(0.5) } else { M::Arenito },
         Estilo::Branco => if janela { lit(0.35) } else { M::Calcada },
-        Estilo::Letreiros | Estilo::Marco(Marco::UmaKogen) => {
-            // Times Square: SCREENS on the lower floors — framed panels of
-            // 10 x 6 blocks in neon colours — and dark office glass with lit
-            // windows above. One Kōgen is screens all the way up.
-            let telas_ate = if estilo == Estilo::Marco(Marco::UmaKogen) { topo } else { (topo / 2).min(36) };
+        Estilo::Letreiros => {
+            // SCREENS on the lower floors — framed panels of 10 x 6 blocks in
+            // neon colours — and dark office glass with lit windows above.
+            let telas_ate = (topo / 2).clamp(6, 36);
             if alto > telas_ate {
                 return if janela { lit(0.3) } else { M::Vidro };
             }
@@ -793,34 +632,12 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
         Estilo::Gasometro => if (gx + gz).rem_euclid(4) == 0 { M::ConcretoEscuro } else { M::Concreto },
         Estilo::Marco(m) => match m {
             Marco::Skytree => if (gx + gz + prof).rem_euclid(3) == 0 { M::Concreto } else { M::Nuvem },
-            Marco::Empire => {
-                if topo > 170 {
-                    M::Nuvem
-                } else if (gx + gz).rem_euclid(3) == 0 && janela {
-                    M::JanelaAcesa
-                } else {
-                    M::Concreto
-                }
-            }
-            Marco::Chrysler => {
-                if topo > 120 && prof < 9 {
-                    // The crown: silver arches with triangular windows.
-                    if (gx + gz + prof).rem_euclid(4) == 0 { M::JanelaAcesa } else { M::Nuvem }
-                } else if janela {
-                    lit(0.5)
-                } else {
-                    M::Calcada
-                }
-            }
             Marco::Prefeitura => if janela && (gx + gz).rem_euclid(2) == 0 { lit(0.6) } else { M::ConcretoEscuro },
-            Marco::UmWtc => if (gx - gz).rem_euclid(6) == 0 { M::Nuvem } else { lit(0.2) },
-            Marco::Flatiron => if janela { lit(0.55) } else { M::Arenito },
             Marco::TorreDeToquio => if (alto / 10) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
             Marco::Casulo => {
                 if (gx + alto).rem_euclid(5) == 0 || (gz - alto).rem_euclid(5) == 0 { M::Nuvem } else { lit(0.3) }
             }
             Marco::Cilindro109 => if prof < 4 { M::NeonRosa } else if janela { M::JanelaAcesa } else { M::Concreto },
-            Marco::UmaKogen => M::NeonRosa,
         },
     }
 }
@@ -856,23 +673,23 @@ pub const DEF: crate::terreno::DefIlha = crate::terreno::DefIlha {
 mod testes {
     use super::*;
 
-    /// Six districts on the island, each with streets and open lots to hunt
-    /// on, Kōgen Square at the centre, and the hub town on dry ground.
+    /// Six districts, each with streets, open ground and buildings, and the
+    /// hub town on dry ground in the Docks.
     #[test]
     fn seis_distritos_ruas_e_lotes_abertos() {
         let mut ruas = [0u32; 6];
         let mut abertos = [0u32; 6];
         let mut predios = [0u32; 6];
-        let passo = 4.0;
-        let mut x = -RAIO_COSTA;
-        while x < RAIO_COSTA {
-            let mut z = -RAIO_COSTA;
-            while z < RAIO_COSTA {
+        let passo = 3.0;
+        let mut x = -340.0;
+        while x < 340.0 {
+            let mut z = -650.0;
+            while z < 650.0 {
                 let q = Vec2::new(x, z);
                 let d = distrito_em(q);
                 match chao_em(q) {
                     Chao::Rua { .. } => ruas[d] += 1,
-                    Chao::Praca | Chao::Parque | Chao::Largo => abertos[d] += 1,
+                    Chao::Praca | Chao::Parque | Chao::Calcada => abertos[d] += 1,
                     Chao::Predio { .. } => predios[d] += 1,
                     _ => {}
                 }
@@ -882,13 +699,11 @@ mod testes {
         }
         for d in 0..6 {
             assert!(ruas[d] > 100, "{}: {} street samples", DISTRITOS[d].nome, ruas[d]);
-            assert!(abertos[d] > 100, "{}: {} open lot samples", DISTRITOS[d].nome, abertos[d]);
+            assert!(abertos[d] > 100, "{}: {} open samples", DISTRITOS[d].nome, abertos[d]);
             assert!(predios[d] > 100, "{}: {} building samples", DISTRITOS[d].nome, predios[d]);
         }
-        assert_eq!(distrito_em(Vec2::ZERO), 5);
         assert_eq!(distrito_em(centro_da_cidade()), 0, "the hub is in the Docks");
-        assert!(chao_em(centro_da_cidade()) != Chao::Mar);
-        assert_eq!(chao_em(Vec2::ZERO), Chao::Largo, "Kōgen Square is the centre");
+        assert!(!matches!(chao_em(centro_da_cidade()), Chao::Mar | Chao::Orla(_)));
     }
 
     /// Every landmark stands where it says, on land, in one piece, and the
@@ -910,13 +725,32 @@ mod testes {
         }
     }
 
-    /// Going round the island, the outer districts come in level order.
+    /// Going north, the districts come in level order, and the real places
+    /// land in theirs.
     #[test]
-    fn distritos_em_ordem_de_nivel() {
-        for (d, ang) in [(0usize, 90.0f32), (1, 18.0), (2, -54.0), (3, -126.0), (4, 162.0)] {
-            let a = ang.to_radians();
-            let q = Vec2::new(a.cos(), a.sin()) * 350.0;
-            assert_eq!(distrito_em(q), d, "angle {ang}");
+    fn distritos_do_sul_ao_norte() {
+        assert_eq!(distrito_em(centro_da_cidade()), 0);
+        assert_eq!(distrito_em(cruzamento()), 1, "the scramble is in Shibuya");
+        assert_eq!(distrito_em(de_latlon(35.6764, 139.6993)), 2, "Meiji Shrine is in the forest");
+        assert_eq!(distrito_em(de_latlon(35.6945, 139.7030)), 3, "Kabukicho is neon");
+        assert_eq!(distrito_em(de_latlon(35.6930, 139.6950)), 4, "the towers are west of the station");
+        assert_eq!(distrito_em(Marco::Prefeitura.centro()), 5);
+        assert!(matches!(chao_em(cruzamento()), Chao::Rua { .. }), "the crossing is a street");
+    }
+
+    /// The Shuto expressway is baked as a deck over the streets.
+    #[test]
+    fn a_expressa_tem_deck() {
+        let mut n = 0;
+        let mut x = -340.0;
+        while x < 340.0 {
+            let mut z = -650.0;
+            while z < 650.0 {
+                n += deck_em(Vec2::new(x, z)).is_some() as u32;
+                z += 2.0;
+            }
+            x += 2.0;
         }
+        assert!(n > 500, "only {n} deck samples");
     }
 }

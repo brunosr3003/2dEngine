@@ -1,0 +1,13 @@
+[out:json][timeout:300];
+(
+  way["building"](35.6560,139.6860,35.6990,139.7140);
+  relation["building"](35.6560,139.6860,35.6990,139.7140);
+  way["highway"](35.6560,139.6860,35.6990,139.7140);
+  way["railway"~"rail|subway|light_rail"](35.6560,139.6860,35.6990,139.7140);
+  way["leisure"~"park|garden"](35.6560,139.6860,35.6990,139.7140);
+  relation["leisure"~"park|garden"](35.6560,139.6860,35.6990,139.7140);
+  way["landuse"~"forest|grass|railway|religious"](35.6560,139.6860,35.6990,139.7140);
+  relation["landuse"~"forest|grass|railway|religious"](35.6560,139.6860,35.6990,139.7140);
+  way["natural"~"wood|water"](35.6560,139.6860,35.6990,139.7140);
+);
+out geom tags;
