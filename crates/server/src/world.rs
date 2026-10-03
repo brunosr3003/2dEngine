@@ -104,6 +104,7 @@ pub(crate) use chefes::itens_do_chefe;
 pub(crate) mod dungeon;
 mod evolucao_skills;
 pub(crate) mod forte;
+mod espiral;
 mod loja_mundo;
 mod mercado_mundo;
 mod oficina;
@@ -321,6 +322,9 @@ pub struct EnemyTag {
     pub is_boss: bool,
     /// Variante rara dos mobs comuns da Ilha Magica I (1 em cada 5 slots).
     pub magica_forte: bool,
+    /// A Neon Spire ELITE guard (`kogen::paradas_da_espiral`): one a lap,
+    /// tougher, slow to come back, a chest where it falls.
+    pub elite_da_espiral: bool,
     /// sim_time absoluto ate quando o enemy esta sendo empurrado por
     /// knockback. Enquanto > now, vel forcada = knockback_vel.
     pub knockback_until: f32,
@@ -680,6 +684,11 @@ pub const FORTE_RAIO_UN: f32 = 28.0;
 pub const FORTE_HORDA_RAIO_UN: f32 = 13.0;
 pub const FORTE_HORDA_PASSO_UN: f32 = 3.5;
 pub const FORTE_HORDA_MOBS: usize = 7;
+/// The Neon Spire's hordes: mobs a landing and their spacing (units).
+const ESPIRAL_HORDA_MOBS: usize = 7;
+const ESPIRAL_HORDA_PASSO_UN: f32 = 3.0;
+/// Seconds before a Neon Spire elite comes back.
+const ELITE_DA_ESPIRAL_VOLTA_S: f32 = 300.0;
 /// Espacamento entre inimigos dentro do forte.
 ///
 /// **De 4 pra 7 em 27/09/2026** (docs/ESCADA.md, "o simulador media uma horda
@@ -1196,6 +1205,10 @@ pub(crate) fn zonas_comuns_da_ilha(
     }
     sitios.retain(|s| !perto_de_posto(*s, &postos));
     if let Some(p) = ilha.planalto() { sitios.retain(|s| !p.sem_spawn(*s)); }
+    // The Neon Spire keeps its own garrison (below).
+    if shared::kogen::e_kogen(def.zona) {
+        sitios.retain(|s| s.distance(shared::kogen::ESPIRAL_CENTRO) > shared::kogen::ESPIRAL_RAIO + 6.0);
+    }
     let mut r = ZonasComuns {
         sitios: sitios.len(),
         centros: Vec::new(),
@@ -1432,6 +1445,30 @@ pub(crate) fn zonas_comuns_da_ilha(
                 let (lv_min, lv_max) = shared::planalto::FORTE_NIVEIS;
                 r.zonas.push(ZonaComum { indice, centro: c, lv_min, lv_max, slots, raio: FORTE_HORDA_RAIO_UN, forte: false });
             }
+        }
+    }
+    // THE NEON SPIRE's hordes: one on every landing of the ramp, 94 at the
+    // foot to 99 under the roof. On an elite's landing the FIRST slot is the
+    // landing's centre: that is where the elite stands (`e_elite_da_espiral`).
+    if shared::kogen::e_kogen(def.zona) {
+        for (c, nivel, _) in shared::kogen::paradas_da_espiral() {
+            let Some((h, _)) = shared::kogen::espiral_em(c) else { continue };
+            let mut slots = vec![c];
+            for gx in -3..=3 {
+                for gy in -1..=1 {
+                    let p = c + Vec2::new(gx as f32, gy as f32) * ESPIRAL_HORDA_PASSO_UN;
+                    let no_patamar = [Vec2::ZERO, Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
+                        .iter()
+                        .all(|d| shared::kogen::espiral_em(p + *d) == Some((h, false)));
+                    if p != c && no_patamar {
+                        slots.push(p);
+                    }
+                }
+            }
+            slots.truncate(ESPIRAL_HORDA_MOBS);
+            let indice = r.centros.len();
+            r.centros.push(c);
+            r.zonas.push(ZonaComum { indice, centro: c, lv_min: nivel, lv_max: nivel, slots, raio: 12.0, forte: false });
         }
     }
     // As hordas acima são pontos de caça, não a população de todo o mapa.
@@ -3728,6 +3765,7 @@ impl GameWorld {
                 let _ = self.ecs.despawn(e);
                 self.removed_this_tick.push(eid);
             }
+            let agora = self.sim_time_s;
             for z in self.spawn_zones.iter_mut() {
                 if !sleep_set.contains(&z.id) {
                     continue;
@@ -3735,7 +3773,11 @@ impl GameWorld {
                 z.active = false;
                 for slot in z.slots.iter_mut() {
                     slot.occupant = None;
-                    slot.respawn_at = 0.0;
+                    // A long timer (a Neon Spire elite's) survives the nap:
+                    // leaving and coming back must not bring it back early.
+                    if slot.respawn_at <= agora + 30.0 {
+                        slot.respawn_at = 0.0;
+                    }
                 }
                 z.level_range_live = 0;
                 if let Some((_, _, c)) = z.level_range {
@@ -3922,7 +3964,11 @@ impl GameWorld {
                     let forte = self.zona == shared::magica::ZONA
                         && ps.slot_idx != u32::MAX
                         && (ps.zone_id + ps.slot_idx) % 5 == 0;
-                    self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind, forte)
+                    let eid = self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind, forte);
+                    if ps.slot_idx == 0 && self.e_elite_da_espiral(ps.zone_id) {
+                        self.tornar_elite_da_espiral(eid);
+                    }
+                    eid
                 }
                 None => {
                     self.place_enemy_in_zone(ps.pos, ps.kind, ps.zone_id);
@@ -4026,6 +4072,7 @@ impl GameWorld {
             xp_reward: d.xp_reward,
             is_boss: false,
             magica_forte: false,
+            elite_da_espiral: false,
             knockback_until: 0.0,
             knockback_vel: Vec2::ZERO,
             stamina_current: 0.0,
@@ -12698,6 +12745,9 @@ impl GameWorld {
                         }
                         zone.respawn_queue.push((ready_at, zkind));
                     }
+                }
+                if self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.elite_da_espiral) {
+                    self.elite_da_espiral_caiu(pos, zid, slot_idx);
                 }
             }
             // Marca cadáver — entidade segue na cena pra cliente exibir pose
@@ -22792,6 +22842,9 @@ mod testes_kogen {
         let comuns = zonas_comuns_da_ilha(&ilha, def, chegada);
         let mut por_distrito = [0u32; 6];
         for z in &comuns.zonas {
+            if z.centro.distance(shared::kogen::ESPIRAL_CENTRO) < shared::kogen::ESPIRAL_RAIO {
+                continue; // the Neon Spire has its own levels
+            }
             let d = distrito_em(z.centro);
             por_distrito[d] += 1;
             assert_eq!(Some((z.lv_min, z.lv_max)), faixa_em(z.centro), "a zone off its district's band in {}", DISTRITOS[d].nome);
@@ -22800,5 +22853,29 @@ mod testes_kogen {
             assert!(*n > 0, "no hunting zone in {}", DISTRITOS[d].nome);
         }
         assert!(comuns.zonas.iter().any(|z| z.lv_max == 100), "nothing to hunt at 100");
+    }
+
+    /// THE NEON SPIRE'S GARRISON: a horde on each of its twelve landings,
+    /// 94 to 99 going up, every mob ON the ramp (not the rail, not the lap
+    /// below), and nothing else spawns on the spire.
+    #[test]
+    fn a_espiral_tem_hordas_nos_patamares() {
+        use shared::kogen::{espiral_em, paradas_da_espiral, ESPIRAL_CENTRO, ESPIRAL_RAIO};
+        crate::economy::init_vazia_para_testes();
+        let def = &shared::kogen::DEF;
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let comuns = zonas_comuns_da_ilha(&ilha, def, ilha.cidade().unwrap().centro());
+        let na_espiral: Vec<_> = comuns.zonas.iter().filter(|z| z.centro.distance(ESPIRAL_CENTRO) < ESPIRAL_RAIO + 6.0).collect();
+        assert_eq!(na_espiral.len(), paradas_da_espiral().len(), "a zone that is not a landing's on the spire");
+        for (c, nivel, _) in paradas_da_espiral() {
+            let z = na_espiral.iter().find(|z| z.centro == c).expect("a landing without a horde");
+            assert_eq!((z.lv_min, z.lv_max), (nivel, nivel));
+            assert_eq!(z.slots[0], c, "the elite's slot is the landing's centre");
+            assert!(z.slots.len() >= 5, "a thin horde at {c}: {}", z.slots.len());
+            let h = espiral_em(c).unwrap();
+            for s in &z.slots {
+                assert_eq!(espiral_em(*s), Some(h), "a mob off the landing at {s}");
+            }
+        }
     }
 }

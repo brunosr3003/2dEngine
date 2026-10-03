@@ -470,6 +470,9 @@ fn leva_a_outra_ilha(nome: &str) -> bool {
 const COR_VIAGEM: Color = Color::new(0.45, 0.80, 1.0, 1.0);
 const COR_PORTAL: Color = Color::new(0.72, 0.45, 1.0, 1.0);
 
+/// The Neon Spire's name on the map and in "Go to".
+const NOME_DA_ESPIRAL: &str = "Neon Spire · 94–100";
+
 /// Largura do painel de filtros e "Go to" ao lado do mapa grande.
 const LARGURA_LATERAL: f32 = 260.0;
 const LINHA_IR: f32 = 26.0;
@@ -2304,6 +2307,11 @@ impl Mapa {
         for (nome, p) in &self.portas {
             v.push((nome, *p, shared::porao::ALCANCE_DA_PORTA));
         }
+        // Kōgen-tō's Neon Spire: "Go" lands at the foot of its ramp.
+        if self.def.is_some_and(|d| shared::kogen::e_kogen(d.zona)) {
+            let p = shared::kogen::pe_da_espiral();
+            v.push((NOME_DA_ESPIRAL, vec2(p.x, p.y), 4.0));
+        }
         v
     }
 
@@ -3000,6 +3008,14 @@ impl Mapa {
         // O recorte fecha ANTES dos botões de zoom, que ficam por cima do
         // desenho de propósito e têm que continuar aparecendo.
         crate::rolagem::recortar(Some(r));
+        // Kōgen-tō's Neon Spire: its footprint and its name, with the band.
+        if self.def.is_some_and(|d| shared::kogen::e_kogen(d.zona)) {
+            let c = shared::kogen::ESPIRAL_CENTRO;
+            let q = ponto(vec2(c.x, c.y));
+            draw_circle_lines(q.x, q.y, shared::kogen::ESPIRAL_RAIO * escala, u(2.0), estilo::OURO);
+            estilo::texto_centro(q.x + 1.0, q.y - u(13.0), NOME_DA_ESPIRAL, 13, BLACK);
+            estilo::texto_centro(q.x, q.y - u(14.0), NOME_DA_ESPIRAL, 13, estilo::OURO);
+        }
         if let Some(pl) = self.ger.as_ref().and_then(|g| g.planalto()) {
             for e in &pl.estradas {
                 let a = ponto(vec2(e.a.x,e.a.y)); let b = ponto(vec2(e.b.x,e.b.y));

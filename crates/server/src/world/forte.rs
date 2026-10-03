@@ -31,9 +31,14 @@ impl GameWorld {
     /// A field boss fell at `onde`: one to three chests round the spot, of
     /// the table of dungeon `conteudo`.
     pub(super) fn forte_largar_baus(&mut self, onde: Vec2, conteudo: u16) {
-        let n = forte::quantos(fastrand::f32());
-        for k in 0..n {
-            let cor = forte::cor(fastrand::f32());
+        let cores: Vec<u8> = (0..forte::quantos(fastrand::f32())).map(|_| forte::cor(fastrand::f32())).collect();
+        self.forte_largar_n_baus(onde, conteudo, &cores);
+    }
+
+    /// Chests of these colours round `onde`, of the table of dungeon `conteudo`.
+    pub(super) fn forte_largar_n_baus(&mut self, onde: Vec2, conteudo: u16, cores: &[u8]) {
+        let n = cores.len();
+        for (k, &cor) in cores.iter().enumerate() {
             let a = k as f32 / n as f32 * std::f32::consts::TAU + 0.6;
             let p = self.chao_livre(onde + Vec2::new(a.cos(), a.sin()) * 2.5);
             let eid = self.alloc_entity_id();

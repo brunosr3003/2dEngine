@@ -343,8 +343,13 @@ impl GameWorld {
                 .take(chefes.len())
                 .collect()
         } else if shared::kogen::e_kogen(&self.zona) {
-            // Kōgen-tō: each giant robot in its cleared plaza.
-            shared::kogen::arenas().into_iter().take(chefes.len()).collect()
+            // Kōgen-tō: each giant robot in its cleared plaza, then the Sky
+            // Dragon Mech (100, last in `da_zona`) on the Neon Spire's roof.
+            shared::kogen::arenas()
+                .into_iter()
+                .chain(std::iter::once(shared::kogen::topo_da_espiral()))
+                .take(chefes.len())
+                .collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
             [2usize, 3, 4].iter().filter_map(|i| {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);
@@ -408,6 +413,11 @@ impl GameWorld {
         tag.detect_range = 14.0;
         tag.xp_reward = cat::xp(nivel);
         tag.size_scale = c.escala;
+        // The Sky Dragon Mech stays on the Neon Spire's roof: twice the leash
+        // (where it turns home) is still inside the roof's edge.
+        if kind == cat::DRAGAO_DA_ESPIRAL {
+            tag.leash_max = (shared::kogen::espiral_raio_do_topo() - 2.0) * 0.5;
+        }
         tag.attack_range = tag.attack_range.max(2.4);
         // Golpe comum nao se esquiva: cadencia de chefe, nao a do bicho.
         tag.attack_cooldown_base = tag.attack_cooldown_base.max(cat::CADENCIA_COMUM_S);

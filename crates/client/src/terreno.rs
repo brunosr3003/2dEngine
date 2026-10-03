@@ -2773,12 +2773,21 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         ("expressa", { let c = perto_de_deck(vec2(145.0, 120.0), 12); (c.x, c.y) }, 70.0, 0.45),
         ("transito", { let v = crate::transito::Transito::novo().meio_de_avenida().unwrap_or_default(); (v.x, v.y) }, 30.0, 0.6),
         ("rampa", { let c = perto_de_deck(vec2(200.0, 163.0), 1); (c.x, c.y) }, 50.0, 0.5),
+        ("torre-neon", { let c = shared::kogen::ESPIRAL_CENTRO; (c.x, c.y) }, 190.0, 0.55),
+        ("torre-neon-rampa", { let c = shared::kogen::paradas_da_espiral()[3].0; (c.x, c.y) }, 34.0, 0.6),
+        ("torre-neon-topo", { let c = shared::kogen::topo_da_espiral(); (c.x, c.y) }, 60.0, 0.7),
         ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
         ("aerea-norte", (0.0, -300.0), 500.0, 0.8),
     ];
+    // MMO_PREVIA_VISTAS=a,b renders only those.
+    let so: Option<Vec<String>> = std::env::var("MMO_PREVIA_VISTAS").ok().map(|v| v.split(',').map(String::from).collect());
     for (nome, (cx, cy), distancia, alto) in vistas {
+        if so.as_ref().is_some_and(|s| !s.iter().any(|n| n == nome)) {
+            continue;
+        }
         let centro = vec2(cx, cy);
-        let chao = g.altura(cx, cy).min(shared::kogen::NIVEL_CHAO as f32 * shared::terreno::BLOCO + 2.0);
+        let rente = shared::kogen::NIVEL_CHAO as f32 * shared::terreno::BLOCO + 2.0;
+        let chao = if nome.starts_with("torre-neon-") { g.altura(cx, cy) } else { g.altura(cx, cy).min(rente) };
         t.atualiza(centro, if distancia > 400.0 { 40 } else { 18 }, 6000);
         for _ in 0..3 {
             let cam = Camera3D {
@@ -2820,7 +2829,7 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
     // The robots, side by side, two angles each.
     let robos = ["bichos/mech_hound", "humanoides/gunner_bot", "bichos/volt_panther", "humanoides/laser_sentry",
-        "bichos/iron_bear", "humanoides/tesla_unit", "bichos/dynamo_owlbear"];
+        "bichos/iron_bear", "humanoides/tesla_unit", "bichos/dynamo_owlbear", "bichos/mech_dragon"];
     for (_, nome) in crate::render3d::RIGS_DE_GENTE.iter().filter(|(k, _)| (57..=61).contains(k)) {
         vox.load_rig(nome, crate::render3d::VOXEL, crate::rig::pivo).await;
     }
@@ -2828,6 +2837,8 @@ pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
         vox.load_na_altura(nome, *altura).await;
     }
     let solido = crate::render3d::material_solido();
+    // The lineup in daylight: the colours are what is being checked.
+    crate::render3d::define_noite(false);
     for _ in 0..8 {
         crate::render3d::camera_padrao();
         clear_background(Color::from_rgba(18, 22, 36, 255));

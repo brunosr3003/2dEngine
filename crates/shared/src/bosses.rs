@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 35] = [
+pub const CHEFES: [Chefe; 36] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -935,6 +935,24 @@ pub const CHEFES: [Chefe; 35] = [
             h("Rooftop Storm", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
         ],
     },
+    // THE NEON SPIRE's boss, on its roof (`kogen::topo_da_espiral`): a war
+    // machine built as a dragon. After the Overseer in the list: both are
+    // 100, and `da_zona`'s sort keeps the order, so the arenas line up and
+    // the dragon takes the roof.
+    Chefe {
+        kind: DRAGAO_DA_ESPIRAL,
+        nome: "Sky Dragon Mech",
+        corpo: Corpo::Bicho(60),
+        escala: 2.6,
+        zona: "ilha_kogen",
+        nivel: 100,
+        habilidades: &[
+            h("Tail Sweep", Cone { raio: 7.5, abertura: 1.2 }, AFrente, 1.4, 2.6, 9.0, 7.5, 0, 1.4),
+            h("Neon Fire Breath", Linha { comprimento: 22.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 22.0, 0, 0.8),
+            h("Wing Gust", Anel { interno: 3.0, externo: 10.0 }, EmSi, 1.5, 2.6, 12.0, 10.0, 0, 1.4),
+            h("Dive Bomb", Circulo { raio: 6.0 }, NoAlvo, 2.0, 3.4, 15.0, 18.0, 1, 1.2),
+        ],
+    },
     // STORMKEEP's Warlord (`forte`), in the keep's arena. Last in the list:
     // `da_zona` sorts by level, and at 60 he must come after the Archmage
     // so the Plateau's boss spots line up ([2, 3, 4] then the keep).
@@ -1047,6 +1065,10 @@ pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55, 66, 
 
 /// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
 pub const PEGASUS: u16 = 27;
+
+/// The Sky Dragon Mech: its body preset is the Iron Bear (melee), its model
+/// the mech dragon.
+pub const DRAGAO_DA_ESPIRAL: u16 = 69;
 
 /// Maximo de habilidades por chefe (o estado de recarga e' um array).
 pub const MAX_HABILIDADES: usize = 4;

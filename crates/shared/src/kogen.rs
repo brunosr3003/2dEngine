@@ -31,7 +31,7 @@ use glam::Vec2;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 12;
+pub const REVISAO: u32 = 13;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
@@ -142,7 +142,7 @@ pub fn portal_da_fundicao() -> Vec2 {
 
 /// Story place ids for Kōgen-tō (`objective_kind::LUGAR`): `PONTO_BASE + i`.
 pub const PONTO_BASE: u16 = 80;
-pub const NOMES_DOS_PONTOS: [&str; 8] = [
+pub const NOMES_DOS_PONTOS: [&str; 9] = [
     "the Docks square",
     "the Shibuya crossing",
     "the Shrine Forest",
@@ -151,6 +151,7 @@ pub const NOMES_DOS_PONTOS: [&str; 8] = [
     "the Tocho plaza",
     "Titan Mk-I's plaza",
     "the Neon Kaiju's plaza",
+    "the foot of the Neon Spire",
 ];
 
 /// The street nearest `alvo` (story places must be walkable).
@@ -177,6 +178,7 @@ pub fn ponto(p: u16) -> Option<Vec2> {
         5 => arenas()[2],
         6 => arenas()[0],
         7 => arenas()[1],
+        8 => pe_da_espiral(),
         _ => return None,
     })
 }
@@ -420,6 +422,114 @@ fn marco_em(q: Vec2) -> Option<(Marco, i32)> {
     })
 }
 
+// ─────────────────────────────── the Neon Spire ───────────────────────────────
+//
+// THE SPIRE CLIMB: a map dungeon on the north-west coast. A ramp winds
+// inward round a solid core, rising a storey a lap, up to a round roof where
+// the Sky Dragon Mech waits. All of it is ground (one top block per column):
+// a lap's inner wall is the next lap's outer face, and a low rail runs along
+// every outer edge (low enough to hop over and drop ONE lap).
+
+/// The spire's centre.
+pub const ESPIRAL_CENTRO: Vec2 = Vec2::new(-165.0, -460.0);
+/// Its footprint's radius (the outer edge of the first lap).
+pub const ESPIRAL_RAIO: f32 = 70.0;
+/// Laps of ramp before the roof.
+pub const ESPIRAL_VOLTAS: u32 = 6;
+/// The width of one lap (ramp plus rail), in units.
+const ESPIRAL_FAIXA: f32 = 7.5;
+/// Blocks risen per lap.
+pub const ESPIRAL_SUBIDA: i32 = 20;
+/// The rail: its width in units and how far it stands above the ramp
+/// (`PULO_BLOCOS`: it can be jumped, on purpose).
+const ESPIRAL_GRADE: f32 = 0.75;
+const ESPIRAL_GRADE_ALTA: i32 = crate::terreno::PULO_BLOCOS;
+/// The open ground kept round the foot.
+const ESPIRAL_PATIO: f32 = 12.0;
+/// The share of every half lap that is a flat LANDING (where hordes stand).
+const PATAMAR: f32 = 0.3;
+
+/// The roof's height above the street, in blocks.
+pub fn espiral_topo() -> i32 {
+    ESPIRAL_VOLTAS as i32 * ESPIRAL_SUBIDA
+}
+
+/// The roof's radius (all of it is roof from here in).
+pub fn espiral_raio_do_topo() -> f32 {
+    ESPIRAL_RAIO - (ESPIRAL_VOLTAS + 1) as f32 * ESPIRAL_FAIXA
+}
+
+/// Turns climbed `u` → blocks above the street: flat landings at the start of
+/// every half lap, the ramp between them.
+fn subida_da_espiral(u: f32) -> i32 {
+    let meia = u * 2.0;
+    let i = meia.floor();
+    let t = meia - i;
+    let g = if t < PATAMAR { 0.0 } else { (t - PATAMAR) / (1.0 - PATAMAR) };
+    ((i + g) * 0.5 * ESPIRAL_SUBIDA as f32).round() as i32
+}
+
+/// Where `q` falls on the spiral: (turns climbed, lap, share across the lap
+/// from its outer edge). `None` off the footprint. Laps at or past
+/// `ESPIRAL_VOLTAS` are roof.
+fn na_espiral(q: Vec2) -> Option<(f32, i32, f32)> {
+    let p = q - ESPIRAL_CENTRO;
+    let r = p.length();
+    if r > ESPIRAL_RAIO {
+        return None;
+    }
+    let giro = p.y.atan2(p.x).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+    let s = (ESPIRAL_RAIO - r) / ESPIRAL_FAIXA;
+    let volta = (s - giro).floor() as i32;
+    if volta < 0 {
+        return None;
+    }
+    Some((volta as f32 + giro, volta, s - giro - volta as f32))
+}
+
+/// The spire at `q`: its top, in blocks above the street, and whether it is
+/// the rail. `None` off it.
+pub fn espiral_em(q: Vec2) -> Option<(i32, bool)> {
+    let (u, volta, atraves) = na_espiral(q)?;
+    if volta >= ESPIRAL_VOLTAS as i32 {
+        return Some((espiral_topo(), false));
+    }
+    let h = subida_da_espiral(u);
+    // The rail, on the outer edge; not where the first lap leaves the street.
+    let grade = atraves * ESPIRAL_FAIXA < ESPIRAL_GRADE && u > 0.15;
+    Some(if grade { (h + ESPIRAL_GRADE_ALTA, true) } else { (h, false) })
+}
+
+/// A point on the ramp: `u` turns climbed, in the middle of the walk.
+pub fn ponto_da_espiral(u: f32) -> Vec2 {
+    let giro = u.fract() * std::f32::consts::TAU;
+    let r = ESPIRAL_RAIO - (u + 0.5) * ESPIRAL_FAIXA - ESPIRAL_GRADE * 0.5;
+    ESPIRAL_CENTRO + Vec2::new(giro.cos(), giro.sin()) * r
+}
+
+/// The spire's foot, where the ramp leaves the street (`u` = 0).
+pub fn pe_da_espiral() -> Vec2 {
+    ponto_da_espiral(0.02) + Vec2::new(0.0, -6.0)
+}
+
+/// What stands on the spire's landings: (where, level, elite). A horde on
+/// every landing, from level 94 at the foot to 99 under the roof, and one
+/// ELITE guard a lap, halfway round it.
+pub fn paradas_da_espiral() -> Vec<(Vec2, u32, bool)> {
+    let mut v = Vec::new();
+    for k in 0..ESPIRAL_VOLTAS * 2 {
+        let u = (k as f32 + PATAMAR * 0.5) * 0.5;
+        let nivel = 94 + k * 6 / (ESPIRAL_VOLTAS * 2);
+        v.push((ponto_da_espiral(u), nivel, k % 2 == 1));
+    }
+    v
+}
+
+/// The roof's centre (the Sky Dragon Mech's arena).
+pub fn topo_da_espiral() -> Vec2 {
+    ESPIRAL_CENTRO
+}
+
 // ─────────────────────────────── the city ───────────────────────────────
 
 /// A building's look: its facade palette, or a landmark.
@@ -438,6 +548,8 @@ pub enum Estilo {
     /// A gas holder (a ribbed cylinder) in the Docks.
     Gasometro,
     Marco(Marco),
+    /// The Neon Spire's ramp, core and rail.
+    Espiral,
 }
 
 /// What stands on a piece of the city.
@@ -635,6 +747,12 @@ pub fn chao_em(q: Vec2) -> Chao {
     }
     if let Some((m, h)) = marco_em(q) {
         return Chao::Predio { altura: h, estilo: Estilo::Marco(m) };
+    }
+    if let Some((h, _)) = espiral_em(q) {
+        return if h > 0 { Chao::Predio { altura: h, estilo: Estilo::Espiral } } else { Chao::Praca };
+    }
+    if q.distance(ESPIRAL_CENTRO) < ESPIRAL_RAIO + ESPIRAL_PATIO {
+        return Chao::Praca;
     }
     // Open ground: the town's circle, the arenas, the landmarks' plazas.
     if q.distance(centro_da_cidade()) < crate::terreno::Cidade::RAIO + 4.0 {
@@ -834,6 +952,7 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
             Estilo::Marco(Marco::TorreDeToquio) | Estilo::Chamine => M::PetalaVermelha,
             Estilo::Marco(Marco::Skytree | Marco::Casulo) => M::Nuvem,
             Estilo::Marco(Marco::Pagoda) => M::NeonRosa,
+            Estilo::Espiral => return Some(pintura_da_espiral(q)),
             _ => {
                 let borda = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
                     .iter()
@@ -854,6 +973,39 @@ pub fn pintura(q: Vec2) -> Option<crate::terreno::Material> {
             }
         },
     })
+}
+
+/// The spire's floor: a glowing rail, a cyan line along the ramp's inner
+/// edge, the landings striped, and rings on the roof.
+fn pintura_da_espiral(q: Vec2) -> crate::terreno::Material {
+    use crate::terreno::Material as M;
+    let Some((u, volta, atraves)) = na_espiral(q) else { return M::ConcretoEscuro };
+    if volta >= ESPIRAL_VOLTAS as i32 {
+        let r = q.distance(ESPIRAL_CENTRO);
+        return if r.rem_euclid(6.0) < 0.5 || r > espiral_raio_do_topo() + ESPIRAL_FAIXA - 1.0 {
+            M::NeonRosa
+        } else if r < 3.0 {
+            M::NeonCiano
+        } else {
+            M::ConcretoEscuro
+        };
+    }
+    let largura = atraves * ESPIRAL_FAIXA;
+    if largura < ESPIRAL_GRADE {
+        return M::NeonRosa;
+    }
+    if largura > ESPIRAL_FAIXA - 0.6 {
+        return M::NeonCiano;
+    }
+    let patamar = (u * 2.0).fract() < PATAMAR;
+    if patamar && (u * 200.0).rem_euclid(4.0) < 1.0 {
+        return M::NeonAmarelo;
+    }
+    // A dashed line down the middle of the ramp.
+    if (largura - ESPIRAL_FAIXA * 0.5).abs() < 0.3 && (u * 120.0).rem_euclid(2.0) < 1.0 {
+        return M::FaixaDePista;
+    }
+    M::Asfalto
 }
 
 /// The facade of a building at depth `prof` blocks below the roof of a
@@ -896,6 +1048,18 @@ pub fn fachada(q: Vec2, gx: i32, gz: i32, prof: i32, topo: i32) -> crate::terren
         Estilo::Conteiner(c) => if prof % 5 == 0 { M::ConcretoEscuro } else { cor_do_conteiner(c) },
         Estilo::Chamine => if (alto / 8) % 2 == 0 { M::PetalaVermelha } else { M::Nuvem },
         Estilo::Gasometro => if (gx + gz).rem_euclid(4) == 0 { M::ConcretoEscuro } else { M::Concreto },
+        // The spire: dark plating, a cyan band every lap-storey, pink seams.
+        Estilo::Espiral => {
+            if alto.rem_euclid(ESPIRAL_SUBIDA) >= ESPIRAL_SUBIDA - 2 {
+                M::NeonCiano
+            } else if (gx + gz).rem_euclid(12) == 0 {
+                M::NeonRosa
+            } else if alto.rem_euclid(5) == 0 {
+                M::Concreto
+            } else {
+                M::ConcretoEscuro
+            }
+        }
         Estilo::Marco(m) => match m {
             Marco::Skytree => if (gx + gz + prof).rem_euclid(3) == 0 { M::NeonCiano } else { M::Nuvem },
             Marco::Prefeitura => if janela && (gx + gz).rem_euclid(2) == 0 { lit(0.6) } else { M::ConcretoEscuro },
@@ -998,7 +1162,7 @@ mod testes {
                     let na_rua = [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y]
                         .iter()
                         .any(|d| matches!(chao_em(q + *d * 1.5), Chao::Calcada | Chao::Rua { .. }));
-                    let excecao = matches!(estilo, Estilo::Marco(_)) || ate_a_costa(q) < 60.0;
+                    let excecao = matches!(estilo, Estilo::Marco(_) | Estilo::Espiral) || ate_a_costa(q) < 60.0;
                     if na_rua && !excecao {
                         assert!(altura <= 36, "a {altura}-block building on a street at {q}");
                     }
@@ -1066,7 +1230,11 @@ mod testes {
     #[test]
     fn as_arenas_estao_nos_distritos_dos_chefes() {
         let chefes = crate::bosses::da_zona(ZONA);
-        assert_eq!(chefes.len(), 3);
+        assert_eq!(chefes.len(), 4);
+        // The last is the Sky Dragon Mech, on the Neon Spire's roof
+        // (`server::chefes` chains it after the arenas).
+        assert_eq!(chefes[3].kind, crate::bosses::DRAGAO_DA_ESPIRAL);
+        assert_eq!(espiral_em(topo_da_espiral()), Some((espiral_topo(), false)));
         for (a, c) in arenas().iter().zip(chefes) {
             let d = distrito_em(*a);
             let (lo, hi) = DISTRITOS[d].nivel;
@@ -1126,6 +1294,80 @@ mod testes {
         assert_eq!(c, CAMADA_DECK, "followed the route but ended on the street at {p}");
         assert!(p.distance(alvo) < 2.5, "followed the route but stopped at {p}, short of {alvo}");
     }
+
+    /// THE SPIRE: the ramp climbs from the street to the roof without a
+    /// jump, every landing is flat, the roof is below the Kōgen Spire, and
+    /// the hordes stand on the ramp, rising in level, an elite every lap.
+    #[test]
+    fn a_espiral_sobe_ate_o_topo() {
+        use crate::constants::{ENTITY_RADIUS as R, PLAYER_SPEED as V};
+        use crate::terreno::{Ilha, CAMADA_CHAO, DEGRAU_BLOCOS};
+        let ilha = Ilha::da_ilha(&DEF);
+        let dt = 1.0 / 30.0;
+        let (mut p, c) = (pe_da_espiral(), CAMADA_CHAO);
+        assert_eq!(ilha.altura(p.x, p.y), ilha.altura(rua_perto(p).x, rua_perto(p).y), "the foot is not at street level");
+        let mut u = 0.0;
+        while u < ESPIRAL_VOLTAS as f32 + 0.3 {
+            let alvo = if u < ESPIRAL_VOLTAS as f32 { ponto_da_espiral(u) } else { topo_da_espiral() };
+            for _ in 0..(8.0 / dt) as u32 {
+                if p.distance(alvo) < 0.4 {
+                    break;
+                }
+                let dir = (alvo - p).normalize_or_zero();
+                (p, _) = ilha.mover_na_camada(p, dir * V, dt, R, DEGRAU_BLOCOS, c);
+            }
+            assert!(p.distance(alvo) < 1.0, "stuck on the ramp at {p} (u {u:.2}), short of {alvo}");
+            u += 0.01;
+        }
+        let rua = rua_perto(pe_da_espiral());
+        let topo = ilha.altura(rua.x, rua.y) + crate::terreno::BLOCO * espiral_topo() as f32;
+        assert!((ilha.altura(p.x, p.y) - topo).abs() < 0.01, "walked up but stands at {} not {topo}", ilha.altura(p.x, p.y));
+        assert!(espiral_topo() < 400, "the spire must stay under the Kōgen Spire");
+        assert!(espiral_raio_do_topo() >= 16.0, "the roof is too small for a boss: {}", espiral_raio_do_topo());
+        let paradas = paradas_da_espiral();
+        assert_eq!(paradas.iter().filter(|p| p.2).count(), ESPIRAL_VOLTAS as usize, "an elite a lap");
+        for w in paradas.windows(2) {
+            assert!(w[1].1 >= w[0].1 && (94..=99).contains(&w[1].1), "levels must rise 94..99: {:?}", paradas);
+        }
+        for (q, _, _) in &paradas {
+            let (h, grade) = espiral_em(*q).expect("a horde off the spire");
+            assert!(!grade, "a horde on the rail at {q}");
+            for d in [Vec2::X, Vec2::Y, -Vec2::X, -Vec2::Y] {
+                assert_eq!(espiral_em(*q + d * 1.5).map(|e| e.0), Some(h), "the landing at {q} is not flat");
+            }
+        }
+    }
+
+    /// THE RAIL HOLDS: walking straight off the ramp stops at the rail; with
+    /// a jump the body hops it and drops ONE lap, never more.
+    #[test]
+    fn a_grade_da_espiral_segura() {
+        use crate::constants::{ENTITY_RADIUS as R, PLAYER_SPEED as V};
+        use crate::terreno::{Ilha, CAMADA_CHAO, DEGRAU_BLOCOS, PULO_BLOCOS};
+        let ilha = Ilha::da_ilha(&DEF);
+        let dt = 1.0 / 30.0;
+        for u in [1.4, 2.6, 3.3, 4.8, 5.5] {
+            let de = ponto_da_espiral(u);
+            let fora = (de - ESPIRAL_CENTRO).normalize();
+            let h0 = ilha.altura(de.x, de.y);
+            let mut p = de;
+            for _ in 0..(3.0 / dt) as u32 {
+                (p, _) = ilha.mover_na_camada(p, fora * V, dt, R, DEGRAU_BLOCOS, CAMADA_CHAO);
+            }
+            assert!((ilha.altura(p.x, p.y) - h0).abs() < 0.6, "walked off the ramp at u {u}: {de} → {p}");
+            // One hop: stop once the body has dropped.
+            let mut p = de;
+            for _ in 0..(3.0 / dt) as u32 {
+                (p, _) = ilha.mover_na_camada(p, fora * V, dt, R, PULO_BLOCOS, CAMADA_CHAO);
+                if h0 - ilha.altura(p.x, p.y) > 2.0 {
+                    break;
+                }
+            }
+            let queda = (h0 - ilha.altura(p.x, p.y)) / crate::terreno::BLOCO;
+            let lap = ESPIRAL_SUBIDA as f32;
+            assert!(queda > lap * 0.5 && queda < lap * 1.5, "jumping the rail at u {u} dropped {queda} blocks");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1144,11 +1386,21 @@ mod testes_de_rota {
             ("Kabukicho", arenas()[1]),
             ("the towers", Marco::Casulo.centro() + Vec2::new(0.0, 25.0)),
             ("the Tocho", arenas()[2]),
+            ("the Neon Spire", pe_da_espiral()),
         ];
         for (nome, alvo) in alvos {
             let rua = rua_perto(alvo);
             let fim = ilha.caminho(c, rua, 60_000).and_then(|r| r.last().copied());
             assert!(fim.is_some_and(|f| f.distance(rua) < 1.5), "{nome}: the route from town stops at {fim:?}, short of {rua}");
         }
+    }
+
+    /// The A* climbs the whole spire: from its foot to the roof.
+    #[test]
+    fn a_espiral_se_roteia_ate_o_topo() {
+        let ilha = crate::terreno::Ilha::da_ilha(&DEF);
+        let topo = topo_da_espiral() + Vec2::new(4.0, 0.0);
+        let fim = ilha.caminho(pe_da_espiral(), topo, 400_000).and_then(|r| r.last().copied());
+        assert!(fim.is_some_and(|f| f.distance(topo) < 1.5), "the route up the spire stops at {fim:?}");
     }
 }

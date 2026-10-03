@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Each creature that walks in pieces: the file
 /// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
-pub const BICHOS: [(&str, f32); 30] = [
+pub const BICHOS: [(&str, f32); 31] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -85,6 +85,8 @@ pub const BICHOS: [(&str, f32); 30] = [
     ("bichos/volt_panther", 1.0),
     ("bichos/iron_bear", 1.4),
     ("bichos/dynamo_owlbear", 1.6),
+    // The Neon Spire's boss: the dragon in plate, at the dragon's height.
+    ("bichos/mech_dragon", 2.4),
 ];
 
 /// This mob's creature, if it is a creature. People (gunner, mage, archer)
@@ -137,6 +139,10 @@ pub fn do_mob(tag: shared::EntityTag, kind: u16, boss: bool) -> Option<(&'static
             // The Storm Pegasus moves like the lynx and looks like a pegasus.
             Some(_) if kind == shared::bosses::PEGASUS => {
                 BICHOS.iter().copied().find(|(n, _)| *n == "bichos/pegasus_stag")
+            }
+            // The Sky Dragon Mech fights as the Iron Bear and looks like a dragon.
+            Some(_) if kind == shared::bosses::DRAGAO_DA_ESPIRAL => {
+                BICHOS.iter().copied().find(|(n, _)| *n == "bichos/mech_dragon")
             }
             Some(Corpo::Bicho(k)) => do_mob(tag, k, false).or(Some(BICHOS[4])),
             Some(_) => None,

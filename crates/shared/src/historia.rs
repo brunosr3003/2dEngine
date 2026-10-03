@@ -99,7 +99,7 @@ pub mod ponto {
             MIRANTE => "the lookout",
             COSTA => "the distant coast",
             40..=44 => crate::planalto::NOMES[(p-40) as usize],
-            80..=87 => crate::kogen::NOMES_DOS_PONTOS[(p - 80) as usize],
+            80..=88 => crate::kogen::NOMES_DOS_PONTOS[(p - 80) as usize],
             _ => "the place",
         }
     }
@@ -677,6 +677,9 @@ pub const PASSOS: &[QuestDef] = &[
     dungeon(968, "The Kōgen Tower", "Six floors of machines between you and the roof. Climb the Kōgen Tower from the Dungeons panel; the sovereign waits on top.", 9, 30_000, 4_200_000, item_id::GREATER_HEAL, 20),
     ir(969, "The Tocho", "Every robot answers to something in the Tocho plaza. Go there.", crate::kogen::PONTO_BASE + 5, 20_000, 2_600_000),
     nivel(970, "Reach level 98", 98),
+    // The Neon Spire (`kogen::paradas_da_espiral`): the map's own dungeon.
+    ir(974, "The Neon Spire", "On the north-west shore a spire winds up into the clouds, its ramp crawling with machines. Walk to its foot.", crate::kogen::PONTO_BASE + 8, 22_000, 2_700_000),
+    cacar_com(975, "The Sky Dragon Mech", "Climb the Neon Spire past the guard on every lap — or drop a lap if it goes wrong — and defeat the dragon on its roof. It drops chests where it falls.", alvo_de_mob(crate::bosses::DRAGAO_DA_ESPIRAL), 1, 36_000, 5_000_000, item_id::GREATER_HEAL, 15, item_id::XP_POTION, 4),
     cacar(971, "The last patrol", "The Overseer's guard holds the towers. Defeat 40 machines of any kind.", 0, 40, 22_000, 2_800_000, item_id::GREATER_HEAL),
     cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 5),
     falar(973, "The last oath", "The city that never sleeps is quiet. The Quest Master has one last oath for you.", Papel::Missoes, 50_000, 8_000_000, item_id::GREATER_HEAL, 20),

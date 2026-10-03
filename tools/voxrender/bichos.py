@@ -435,6 +435,9 @@ BICHOS_ROBO = [
     ("volt_panther", "tiger", 3200, {"pelo": [4, 5], "detalhe": [7], "listra": [1]}, [3]),
     ("iron_bear", "bear", 3200, {"pelo": [2, 3, 4, 5], "detalhe": [9]}, [6]),
     ("dynamo_owlbear", "owlbear", 3400, {"pelo": [1, 2, 3], "detalhe": [4, 5]}, [7]),
+    # The Neon Spire's boss, the Sky Dragon Mech: the dragon in plate, its
+    # gold belly turned to neon, the wing membranes left dark.
+    ("mech_dragon", "dragon", 4200, {"pelo": [1, 2, 3, 4], "detalhe": [5, 6]}, [7, 12]),
 ]
 
 
