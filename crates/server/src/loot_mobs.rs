@@ -161,6 +161,34 @@ pub const BASE_VARIANTES_CELESTE: &[(i32, u16, i32, i32, f32)] = &[
     (46, GREATER_HEAL, 1, 1, 0.10),
 ];
 
+/// Kōgen-tō's robots (kinds 56-62), about 1.5x their Skyreach cousins for
+/// levels 80-100. Their own list and migration marker, like Skyreach's.
+pub const BASE_VARIANTES_KOGEN: &[(i32, u16, i32, i32, f32)] = &[
+    (56, COPPER, 135, 300, 1.0), // Mech Hound
+    (56, STEEL, 5, 10, 0.26),
+    (56, GREATER_HEAL, 1, 1, 0.10),
+    (57, COPPER, 150, 330, 1.0), // Gunner Bot
+    (57, DARKSTEEL, 6, 12, 0.28),
+    (57, STAMINA_POTION, 1, 1, 0.10),
+    (58, COPPER, 150, 340, 1.0), // Volt Panther
+    (58, QUINTESSENCE, 5, 10, 0.28),
+    (58, GREATER_MANA, 1, 1, 0.10),
+    (59, COPPER, 150, 340, 1.0), // Laser Sentry
+    (59, ILLUMINATING_FRAGMENT, 5, 10, 0.26),
+    (59, DARKSTEEL, 6, 12, 0.26),
+    (60, COPPER, 180, 400, 1.0), // Iron Bear
+    (60, DARKSTEEL, 6, 13, 0.30),
+    (60, GREATER_HEAL, 1, 1, 0.12),
+    (61, COPPER, 165, 370, 1.0), // Tesla Unit
+    (61, DARK_HEART_STONE, 5, 10, 0.26),
+    (61, ANIMA_STONE, 5, 10, 0.26),
+    (61, GREATER_MANA, 1, 1, 0.12),
+    (62, COPPER, 195, 450, 1.0), // Dynamo Owlbear
+    (62, PLATINUM, 6, 12, 0.28),
+    (62, EXORCISM_BAUBLE, 3, 7, 0.22),
+    (62, GREATER_HEAL, 1, 1, 0.12),
+];
+
 /// Migrates only the mobs' economy, once, inside a transaction.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -279,6 +307,23 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .execute(&mut *tx)
             .await?;
         tracing::info!("Skyreach variant loot rescaled for 60-80");
+    }
+    let kogen = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('variantes_kogen_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if kogen {
+        for &(kind, item, min, max, chance) in BASE_VARIANTES_KOGEN {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Kōgen-tō robot loot seeded");
     }
     // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
     // they come off every mob and every stone, in every color. A new database
@@ -407,6 +452,7 @@ mod testes {
                 .chain(BASE_ILHAS)
                 .chain(BASE_VARIANTES)
                 .chain(BASE_VARIANTES_CELESTE)
+                .chain(BASE_VARIANTES_KOGEN)
                 .any(|(kk, ..)| *kk as u16 == k)
         };
         for d in ARQUIPELAGO.iter() {
@@ -428,7 +474,7 @@ mod testes {
     /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
             let kinds: std::collections::BTreeSet<i32> =
                 tabela.iter().map(|(k, ..)| *k).collect();
             for k in kinds {
@@ -446,7 +492,7 @@ mod testes {
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
             for (k, item, ..) in tabela {
                 assert!(
                     !chaves.contains(item),

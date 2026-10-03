@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Each creature that walks in pieces: the file
 /// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
-pub const BICHOS: [(&str, f32); 26] = [
+pub const BICHOS: [(&str, f32); 30] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -79,6 +79,12 @@ pub const BICHOS: [(&str, f32); 26] = [
     ("bichos/seraph_bear", 2.0),
     ("bichos/seraph_owlbear", 2.3),
     ("bichos/pegasus_stag", 2.3),
+    // Kōgen-tō's robots (`bichos.py: BICHOS_ROBO`): the species' mesh in
+    // gunmetal, at the species' height.
+    ("bichos/mech_hound", 0.95),
+    ("bichos/volt_panther", 1.0),
+    ("bichos/iron_bear", 1.4),
+    ("bichos/dynamo_owlbear", 1.6),
 ];
 
 /// This mob's creature, if it is a creature. People (gunner, mage, archer)
@@ -176,6 +182,11 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         43 => "bichos/seraph_bear",
         45 => "bichos/seraph_owlbear",
         46 => "bichos/seraph_wolf",
+        // Kōgen-tō's robots.
+        56 => "bichos/mech_hound",
+        58 => "bichos/volt_panther",
+        60 => "bichos/iron_bear",
+        62 => "bichos/dynamo_owlbear",
         _ => return None,
     })
 }

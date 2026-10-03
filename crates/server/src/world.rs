@@ -1343,6 +1343,12 @@ pub(crate) fn zonas_comuns_da_ilha(
             Some((a, b)) => (a as u32, b as u32),
             None => (lv_min, lv_max),
         };
+        // Kōgen-tō: the band of the district the zone stands in (south to
+        // north, 80 to 100), not the distance from the bus stop.
+        let (lv_min, lv_max) = match shared::kogen::e_kogen(def.zona).then(|| shared::kogen::faixa_em(*c)).flatten() {
+            Some((a, b)) => (a, b),
+            None => (lv_min, lv_max),
+        };
         if def.zona == "ilha_inicial" && lv_min <= 10 && !forte {
             teto = 30;
         }
@@ -1462,6 +1468,10 @@ pub(crate) fn zonas_comuns_da_ilha(
         let (lv_min, lv_max) = ilha.planalto().map_or((lv_min, lv_max), |p| p.faixa(*c));
             let (lv_min, lv_max) = match celeste_nivel.flatten() {
                 Some((a, b)) => (a as u32, b as u32),
+                None => (lv_min, lv_max),
+            };
+            let (lv_min, lv_max) = match shared::kogen::e_kogen(def.zona).then(|| shared::kogen::faixa_em(*c)).flatten() {
+                Some((a, b)) => (a, b),
                 None => (lv_min, lv_max),
             };
             ocupados.extend(slots.iter().copied());
@@ -22665,5 +22675,33 @@ mod testes_celeste {
         assert_eq!(w.vagas_de_chefe.len(), 2);
         assert_eq!(plato_em(w.vagas_de_chefe[0].pos).map(|(i, _)| i), Some(8), "the Colossus is not in the gardens");
         assert_eq!(plato_em(w.vagas_de_chefe[1].pos).map(|(i, _)| i), Some(11), "the Archon is not on the throne");
+    }
+}
+
+#[cfg(test)]
+mod testes_kogen {
+    use super::*;
+
+    /// KŌGEN-TŌ IS HUNTED BY DISTRICT: every one of the six has zones at its
+    /// own band, the bands climb from the Docks to the Tocho, and level 100
+    /// has something to hunt.
+    #[test]
+    fn kogen_caca_por_distrito() {
+        use shared::kogen::{distrito_em, faixa_em, DISTRITOS};
+        crate::economy::init_vazia_para_testes();
+        let def = &shared::kogen::DEF;
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let chegada = ilha.cidade().unwrap().centro();
+        let comuns = zonas_comuns_da_ilha(&ilha, def, chegada);
+        let mut por_distrito = [0u32; 6];
+        for z in &comuns.zonas {
+            let d = distrito_em(z.centro);
+            por_distrito[d] += 1;
+            assert_eq!(Some((z.lv_min, z.lv_max)), faixa_em(z.centro), "a zone off its district's band in {}", DISTRITOS[d].nome);
+        }
+        for (d, n) in por_distrito.iter().enumerate() {
+            assert!(*n > 0, "no hunting zone in {}", DISTRITOS[d].nome);
+        }
+        assert!(comuns.zonas.iter().any(|z| z.lv_max == 100), "nothing to hunt at 100");
     }
 }

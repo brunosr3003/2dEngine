@@ -188,6 +188,68 @@ MOBS = {
         lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA), **halo()}, dict),
 }
 
+# ── Kōgen-tō: the robots ──
+# Same rig and weapons; a gunmetal body, a helmet shell with a glowing visor
+# and an antenna instead of a face, and neon where the sash was.
+NEON, VISOR, ANTENA = 44, 45, 46
+CORES_ROBO = {NEON: (60, 230, 255), VISOR: (255, 60, 170), ANTENA: (226, 230, 240)}
+
+
+def capacete():
+    """A robot head: a shell one voxel bigger than the head, closed in front,
+    a visor band across the eyes and an antenna with a lit tip."""
+    c = {}
+    for (x, y, z), _ in cx(11, 20, 7, 16, 33, 42, 0).items():
+        dentro = 12 <= x <= 19 and 8 <= y <= 15 and z <= 41
+        if not dentro:
+            c[(x, y, z)] = P.CARVAO
+    for x in range(12, 20):
+        for z in (37, 38):
+            c[(x, 16, z)] = VISOR
+    for z in range(43, 47):
+        c[(16, 11, z)] = ANTENA
+    c[(16, 11, 47)] = NEON
+    return c
+
+
+def paleta_robo(aco, escuro, faixa):
+    p = paleta(BRANCO=aco, CINZA=escuro, PRETO=(36, 40, 50), CARVAO=(28, 30, 38), BOTA=(22, 24, 30), FAIXA=faixa)
+    for i in P.PELE:
+        p[i] = (150, 156, 168)  # hands and neck: bare metal
+    p.update(CORES_ROBO)
+    p[ARMA_METAL] = (70, 74, 86)
+    p[ARMA_MADEIRA] = (40, 44, 54)
+    p[CORDA] = (60, 230, 255)  # the energy bow's string
+    return p
+
+
+MOBS.update({
+    "gunner_bot": (paleta_robo((120, 126, 140), (84, 90, 104), (255, 170, 40)), capacete, pistola),
+    "laser_sentry": (paleta_robo((96, 104, 122), (66, 72, 88), (60, 230, 255)), capacete, arco),
+    "tesla_unit": (paleta_robo((70, 78, 120), (48, 54, 92), (150, 120, 255)), capacete, dict),
+})
+
+# The robots' torso: a glowing core on the chest, plate seams, and shoulder
+# plates that stand out over the arms.
+ROBOS = {"gunner_bot", "laser_sentry", "tesla_unit"}
+
+
+def torso_robo(torso):
+    t = dict(torso)
+    for (x, y, z), c in list(t.items()):
+        if z in (22, 27) and y in (8, 14):
+            t[(x, y, z)] = P.CARVAO          # plate seams round the body
+    for x in (14, 15, 16, 17):
+        for z in (27, 28, 29):
+            t[(x, 15, z)] = NEON if 15 <= x <= 16 and z == 28 else P.CINZA  # the chest core
+    for (x0, x1) in ((8, 11), (20, 23)):
+        for x in range(x0, x1 + 1):
+            for y in range(8, 15):
+                t[(x, y, 33)] = P.CINZA       # shoulder plates
+                t[(x, y, 32)] = P.CINZA if x in (x0, x1) or y in (8, 14) else t.get((x, y, 32), P.CINZA)
+    return t
+
+
 # Which mobs carry wings on the back.
 ALADOS = {"seraph_archer", "seraph_mage"}
 
@@ -196,6 +258,8 @@ if __name__ == "__main__":
     rig = os.path.join(raiz, "assets", "vox", "humanoides"); os.makedirs(rig, exist_ok=True)
     for nome, (pal, cab, arma) in MOBS.items():
         ps = pecas(cab(), nome in ALADOS)
+        if nome in ROBOS:
+            ps = [(n, torso_robo(v) if n == "torso" else v) for n, v in ps]
         open(os.path.join(rig, f"{nome}.vox"), "wb").write(M.arquivo_cena(ps, pal, camada=nome))
         plano = ps + [("arma", arma())]
         open(os.path.join(raiz, "assets", "vox", f"{nome}.vox"), "wb").write(M.arquivo_plano(plano, pal))

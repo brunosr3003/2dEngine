@@ -2734,7 +2734,7 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
 /// a Neon District street, downtown, an aerial view and the map — into
 /// /tmp/tempest-kogen (or MMO_PREVIA_SAIDA).
 #[cfg(debug_assertions)]
-pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
+pub async fn previa_kogen(vox: &mut crate::vox::VoxCache) {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-kogen".into());
     std::fs::create_dir_all(&saida).unwrap();
     next_frame().await;
@@ -2801,6 +2801,37 @@ pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
         next_frame().await;
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
+    // The robots, side by side, two angles each.
+    let robos = ["bichos/mech_hound", "humanoides/gunner_bot", "bichos/volt_panther", "humanoides/laser_sentry",
+        "bichos/iron_bear", "humanoides/tesla_unit", "bichos/dynamo_owlbear"];
+    for (_, nome) in crate::render3d::RIGS_DE_GENTE.iter().filter(|(k, _)| (57..=61).contains(k)) {
+        vox.load_rig(nome, crate::render3d::VOXEL, crate::rig::pivo).await;
+    }
+    for (nome, altura) in crate::bicho::BICHOS.iter().filter(|(n, _)| robos.contains(n)) {
+        vox.load_na_altura(nome, *altura).await;
+    }
+    let solido = crate::render3d::material_solido();
+    for _ in 0..8 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::from_rgba(18, 22, 36, 255));
+        let w = 1280.0 / robos.len() as f32;
+        for (k, nome) in robos.iter().enumerate() {
+            for (j, yaw) in [0.7f32, 2.6].into_iter().enumerate() {
+                let r = Rect::new(k as f32 * w, 40.0 + j as f32 * 380.0, w, 360.0);
+                if nome.starts_with("humanoides/") {
+                    crate::render3d::vitrine_rig(vox, nome, r, yaw * 0.6, &solido);
+                } else {
+                    crate::render3d::vitrine_bicho(vox, nome, r, yaw, &solido);
+                }
+            }
+            crate::render3d::camera_padrao();
+            draw_text(nome.split('/').last().unwrap_or(nome), k as f32 * w + 6.0, 28.0, 22.0, WHITE);
+        }
+        unsafe { get_internal_gl().flush() };
+        next_frame().await;
+        vox.atende_um_pendente(crate::render3d::VOXEL).await;
+    }
+    rt.texture.get_texture_data().export_png(&format!("{saida}/robos.png"));
     crate::render3d::define_alvo(None);
 }
 

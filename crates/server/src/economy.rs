@@ -320,7 +320,7 @@ pub(crate) fn init_vazia_para_testes() {
 pub(crate) fn por_loot_do_seed_para_testes() {
     let mut c = cell().write();
     use crate::loot_mobs::*;
-    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE] {
+    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
         for &(kind, item_id, min, max, chance) in t {
             c.loot_tables.entry(kind as u16).or_default().push(LootEntry {
                 item_id,
@@ -1892,9 +1892,10 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // Skyreach: the winged ones. Seraph Wolf, Lynx, Archer, Bear, Mage,
         // Owlbear — the same slot order as their species elsewhere.
         Celeste => &[46, 41, 42, 43, 44, 45],
-        // Kōgen-tō: Skyreach's until the robots are made (step 2 of the
-        // island's plan).
-        Neon => &[46, 41, 42, 43, 44, 45],
+        // Kōgen-tō: the robots. Mech Hound, Gunner Bot, Volt Panther, Laser
+        // Sentry, Iron Bear, Tesla Unit, Dynamo Owlbear — the same slot
+        // order as their species elsewhere.
+        Neon => &[56, 57, 58, 59, 60, 61, 62],
     }
 }
 
@@ -1912,7 +1913,9 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
         Deserto => &[13],
         Montanha => &[36],
         // No sea, no beach: the weakest of the island.
-        Celeste | Neon => &[46],
+        Celeste => &[46],
+        // Kōgen-tō's shore is a sea wall: the hound patrols it.
+        Neon => &[56],
     }
 }
 

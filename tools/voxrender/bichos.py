@@ -196,7 +196,7 @@ def carrega(prefixo):
     return pecas, paleta
 
 
-def monta(saida, prefixo, orcamento, pelagem=None, pecas_paleta=None):
+def monta(saida, prefixo, orcamento, pelagem=None, pecas_paleta=None, pintar=None):
     pecas, paleta = pecas_paleta or carrega(prefixo)
     fator = 1
     while True:
@@ -210,6 +210,10 @@ def monta(saida, prefixo, orcamento, pelagem=None, pecas_paleta=None):
     tam = [max(k[i] for k in tudo) - lo[i] + 1 for i in range(3)]
     finais = [(n, {(x - lo[0], y - lo[1], z - lo[2]): c for (x, y, z), c in v.items()})
               for n, v in reduzidas if v]
+    # Painting by position (the robots' seams) happens on the REDUCED voxels:
+    # a one-voxel line drawn before the reduction is averaged away.
+    if pintar:
+        finais = [(n, pintar(n, v)) for n, v in finais]
 
     # a tela do molde vira a deste bicho
     molde_corpo.W, molde_corpo.D, molde_corpo.H = tam
@@ -370,10 +374,80 @@ PELE_SERAFICA = {"pelo": ((214, 206, 192), (252, 250, 244)), "detalhe": ((222, 1
                  "listra": ((204, 154, 56), (204, 154, 56))}
 
 
+# ── ROBOTS (Kōgen-tō): the species' mesh in gunmetal, plated and lit ──
+#
+# A grey animal is not a robot. Three things make it read as a machine: the
+# coat becomes a steel ramp (by the same palette roles as the mount skins),
+# PLATE SEAMS cut the body every few voxels in a dark line, and NEON strips
+# run along its sides; the eyes glow. The seams and strips are painted by
+# voxel position, in free palette slots, so the geometry stays the species'.
+ROBO_PELE = {"pelo": ((52, 56, 66), (176, 184, 198)), "detalhe": ((40, 200, 240), (120, 240, 255)),
+             "listra": ((30, 32, 40), (30, 32, 40))}
+ROBO_CORES = [(24, 26, 32), (60, 230, 255), (255, 60, 170)]  # seam, neon, eye
+
+
+def robo(prefixo, papeis, olhos):
+    """The species' pieces and palette, as a robot."""
+    pecas, paleta = carrega(prefixo)
+    usados = {c for _, m in pecas for c in m.voxels.values()}
+    livres = [i for i in range(250, 100, -1) if i not in usados][:3]
+    paleta = list(paleta)
+    troca = pelagem_da_skin(paleta, papeis, ROBO_PELE)
+    for i, rgb in troca.items():
+        paleta[i] = (*rgb, 255)
+    for i in olhos:
+        paleta[i] = (*ROBO_CORES[2], 255)
+    # What is left of flesh — red mouths, pink noses, warm muzzles — would
+    # read as an animal: reds glow pink, warm skin turns to dark metal.
+    papel = {i for v in papeis.values() for i in v} | set(olhos)
+    for i in usados - papel:
+        r, g, b = paleta[i][:3]
+        if r > 140 and g < 110:
+            paleta[i] = (*ROBO_CORES[2], 255)
+        elif r > g + 20 and r > b + 30:
+            paleta[i] = (70, 74, 86, 255)
+    for i, rgb in zip(livres, ROBO_CORES):
+        paleta[i] = (*rgb, 255)
+    costura, neon = livres[0], livres[1]
+    pelo = set(papeis.get("pelo", []))
+    vizinhos = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
+
+    def pintar(nome, vs):
+        if nome not in ("tronco", "cabeca", "pescoco", "cauda"):
+            return vs
+        vs = dict(vs)
+        xs = [k[0] for k in vs]
+        meio, largura = (min(xs) + max(xs)) / 2, max(xs) - min(xs)
+        for (x, y, z), c in list(vs.items()):
+            if c not in pelo or all((x + d[0], y + d[1], z + d[2]) in vs for d in vizinhos):
+                continue
+            if y % 4 == 0:
+                vs[(x, y, z)] = costura   # a plate seam across the body
+            elif nome == "tronco" and abs(x - meio) >= largura * 0.38 and z % 3 == 1:
+                vs[(x, y, z)] = neon      # neon strips on the flanks
+        return vs
+    return pecas, paleta, pintar
+
+
+# (file, species prefix, face budget, coat roles, eye indices)
+BICHOS_ROBO = [
+    ("mech_hound", "wolf", 3200, {"pelo": [1, 2, 3, 4], "detalhe": [6]}, [5]),
+    ("volt_panther", "tiger", 3200, {"pelo": [4, 5], "detalhe": [7], "listra": [1]}, [3]),
+    ("iron_bear", "bear", 3200, {"pelo": [2, 3, 4, 5], "detalhe": [9]}, [6]),
+    ("dynamo_owlbear", "owlbear", 3400, {"pelo": [1, 2, 3], "detalhe": [4, 5]}, [7]),
+]
+
+
 if __name__ == "__main__":
     raiz = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     pasta = os.path.join(raiz, "assets", "vox", "bichos")
     os.makedirs(pasta, exist_ok=True)
+    # `--robos`: only Kōgen-tō's robots.
+    if "--robos" in sys.argv:
+        for nome, prefixo, orcamento, papeis, olhos in BICHOS_ROBO:
+            pecas, paleta, pintar = robo(prefixo, papeis, olhos)
+            monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento, None, (pecas, paleta), pintar)
+        sys.exit(0)
     # `--alados`: only Skyreach's winged creatures.
     if "--alados" in sys.argv:
         for nome, prefixo, orcamento, papeis in BICHOS_ALADOS:

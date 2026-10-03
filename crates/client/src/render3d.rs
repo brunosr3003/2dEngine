@@ -1298,7 +1298,7 @@ pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
 }
 
 /// Modelos de gente, desenhados na escala do corpo.
-pub const MODELOS_DE_GENTE: [&str; 11] = [
+pub const MODELOS_DE_GENTE: [&str; 14] = [
     "player",
     "pistoleiro",
     "mago",
@@ -1311,6 +1311,9 @@ pub const MODELOS_DE_GENTE: [&str; 11] = [
     "sun_mage",
     "cliff_archer",
     "storm_mage",
+    "gunner_bot",
+    "laser_sentry",
+    "tesla_unit",
 ];
 
 /// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
@@ -1605,7 +1608,7 @@ fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
 
 /// The rig file of each human mob (`tools/voxrender/humanoides.py`): the
 /// three Morganeers and their island variants (`shared::bestiary`).
-pub const RIGS_DE_GENTE: [(u16, &str); 12] = [
+pub const RIGS_DE_GENTE: [(u16, &str); 15] = [
     (2, "humanoides/pistoleiro"),
     (4, "humanoides/mago"),
     (6, "humanoides/arqueiro"),
@@ -1618,6 +1621,10 @@ pub const RIGS_DE_GENTE: [(u16, &str); 12] = [
     (39, "humanoides/storm_mage"),
     (42, "humanoides/seraph_archer"),
     (44, "humanoides/seraph_mage"),
+    // Kōgen-tō's robots (`humanoides.py: capacete`).
+    (57, "humanoides/gunner_bot"),
+    (59, "humanoides/laser_sentry"),
+    (61, "humanoides/tesla_unit"),
 ];
 
 pub fn rig_de_gente(kind: u16) -> Option<&'static str> {

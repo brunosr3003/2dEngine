@@ -70,6 +70,15 @@ pub const VARIANTS: &[Variant] = &[
     Variant { kind: 44, species: species::MAGE, name: "Seraph Mage", zone: "ilha_celeste" },
     Variant { kind: 45, species: species::OWLBEAR, name: "Seraph Owlbear", zone: "ilha_celeste" },
     Variant { kind: 46, species: species::WOLF, name: "Seraph Wolf", zone: "ilha_celeste" },
+    // Kōgen-tō: the robots (gunmetal, plate seams, neon; `bichos.py:
+    // BICHOS_ROBO`, `humanoides.py: capacete`). Kinds 47-55 are bosses.
+    Variant { kind: 56, species: species::WOLF, name: "Mech Hound", zone: "ilha_kogen" },
+    Variant { kind: 57, species: species::GUNMAN, name: "Gunner Bot", zone: "ilha_kogen" },
+    Variant { kind: 58, species: species::TIGER, name: "Volt Panther", zone: "ilha_kogen" },
+    Variant { kind: 59, species: species::ARCHER, name: "Laser Sentry", zone: "ilha_kogen" },
+    Variant { kind: 60, species: species::BEAR, name: "Iron Bear", zone: "ilha_kogen" },
+    Variant { kind: 61, species: species::MAGE, name: "Tesla Unit", zone: "ilha_kogen" },
+    Variant { kind: 62, species: species::OWLBEAR, name: "Dynamo Owlbear", zone: "ilha_kogen" },
 ];
 
 pub fn variant(kind: u16) -> Option<&'static Variant> {
@@ -109,7 +118,7 @@ mod tests {
         assert_eq!(species_of(30), species::ARCHER);
         assert_eq!(species_of(6), species::ARCHER);
         assert_eq!(species_of(13), 13);
-        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37, 42]);
+        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37, 42, 59]);
     }
 
     #[test]
