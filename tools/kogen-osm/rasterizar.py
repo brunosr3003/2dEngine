@@ -33,7 +33,7 @@ M_POR_GRAU_LON = 111_320.0 * math.cos(math.radians(LAT0))
 X0, Z0, W, H = -660, -1300, 1320, 2600
 
 # ── the island (mirror of kogen.rs) ──
-COSTA_A, COSTA_B, COSTA_P = 620.0, 1270.0, 4.0  # superellipse half-axes, in cells
+COSTA_A, COSTA_B, COSTA_P = 585.0, 1270.0, 3.2  # superellipse half-axes, in cells
 ORLA = 20                                       # cells of shore slope
 NIVEL_CHAO = 20
 DOCAS_DE = 1030                                 # the Docks: rows south of this
@@ -240,11 +240,52 @@ def main():
     # 4. The elevated expressways (Shuto): the deck layer, height in blocks above the street.
     deck = Image.new("I", (W, H), 0)
     dd = ImageDraw.Draw(deck)
-    for el in vias:
+    pontes = [el for el in vias if el["tags"]["highway"].startswith("motorway") and el["tags"].get("bridge") == "yes"]
+    nivel_de = lambda t: 14 + 6 * max(0, int(t.get("layer", "1")) - 1)
+    for el in pontes:
         t = el["tags"]
-        if t["highway"].startswith("motorway") and t.get("bridge") == "yes":
-            nivel = 14 + 6 * max(0, int(t.get("layer", "1")) - 1)
-            dd.line(anel(el["geometry"]), fill=nivel, width=px(LARGURA_M[t["highway"]]), joint="curve")
+        dd.line(anel(el["geometry"]), fill=nivel_de(t), width=px(LARGURA_M[t["highway"]]), joint="curve")
+    # RAMPS: an elevated way's end that joins no other elevated way is where
+    # it comes down to the street. The last stretch slopes down to one
+    # block (`VAO_LIVRE` and the step rule in terreno.rs do the rest).
+    chave = lambda p: (round(p["lat"], 7), round(p["lon"], 7))
+    pontas = {}
+    for el in pontes:
+        g = el["geometry"]
+        for p in (g[0], g[-1]):
+            pontas[chave(p)] = pontas.get(chave(p), 0) + 1
+    M_POR_BLOCO_DE_RAMPA = 6.0
+    rampas = 0
+    for el in pontes:
+        t = el["tags"]
+        g = el["geometry"]
+        nivel = nivel_de(t)
+        w = px(LARGURA_M[t["highway"]])
+        for pts in (g, g[::-1]):
+            if pontas[chave(pts[0])] != 1:
+                continue
+            rampas += 1
+            cel = anel(pts)
+            comprimento = nivel * M_POR_BLOCO_DE_RAMPA / METROS_POR_CELULA  # in cells
+            s = 0.0
+            for (x0, y0), (x1, y1) in zip(cel, cel[1:]):
+                L = math.hypot(x1 - x0, y1 - y0)
+                k = max(1, int(L))
+                for i in range(k):
+                    a, b = i / k, (i + 1) / k
+                    meio = s + L * (a + b) / 2
+                    if meio > comprimento:
+                        break
+                    h = max(1, round(nivel * meio / comprimento))
+                    pa = (x0 + (x1 - x0) * a, y0 + (y1 - y0) * a)
+                    pb = (x0 + (x1 - x0) * b, y0 + (y1 - y0) * b)
+                    dd.line([pa, pb], fill=h, width=w)
+                    # Round caps: piece by piece, a bend would leave a notch.
+                    r = w / 2
+                    dd.ellipse([pb[0] - r, pb[1] - r, pb[0] + r, pb[1] + r], fill=h)
+                s += L
+                if s > comprimento:
+                    break
 
     T = np.array(tipo, dtype=np.uint8)
     A = np.array(alt, dtype=np.int32).clip(0, 255).astype(np.uint8)
@@ -269,7 +310,9 @@ def main():
     # 7. The coast: a superellipse with a ragged edge; a sloping shore band.
     x = cc + X0
     ang = np.arctan2(z, x)
-    ruido = 1.0 + 0.025 * np.sin(ang * 7 + 0.3) + 0.015 * np.sin(ang * 13 - 1.0) + 0.01 * np.sin(ang * 29)
+    # Bays and capes: low harmonics for the big shape, high ones for the rag.
+    ruido = (1.0 + 0.045 * np.sin(ang * 5 + 0.3) + 0.035 * np.sin(ang * 9 - 1.0) + 0.02 * np.sin(ang * 17 + 2.0)
+             + 0.012 * np.sin(ang * 37))
     s = ((np.abs(x) / COSTA_A) ** COSTA_P + (np.abs(z) / COSTA_B) ** COSTA_P) ** (1 / COSTA_P) / ruido
     r = np.hypot(x, z)
     ate_a_costa = r * (1 / np.maximum(s, 1e-6) - 1)  # cells to the shore, along the ray
@@ -309,7 +352,7 @@ def main():
         tons = np.array([(0, 0, 0), (40, 0, 0), (0, 40, 0), (40, 0, 40), (0, 0, 50), (50, 40, 0)], np.float32)
         img[~mar] += tons[dist[~mar]] * 0.6
         Image.fromarray(img.clip(0, 255).astype(np.uint8)).save(sys.argv[3])
-    print(f"{len(predios)} buildings; {int((T == PREDIO).sum())} building cells; {int((D > 0).sum())} deck cells;"
+    print(f"{rampas} ramps; {len(predios)} buildings; {int((T == PREDIO).sum())} building cells; {int((D > 0).sum())} deck cells;"
           f" tallest {int(A[T == PREDIO].max())} blocks; {W}x{H} cells")
 
 

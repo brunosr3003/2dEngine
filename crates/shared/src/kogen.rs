@@ -27,7 +27,7 @@ use std::sync::OnceLock;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 4;
+pub const REVISAO: u32 = 5;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.
@@ -198,6 +198,17 @@ pub fn distrito_em(q: Vec2) -> usize {
 /// The Shuto expressway deck over `q`, in blocks above the street.
 pub fn deck_em(q: Vec2) -> Option<i32> {
     celula_em(q).and_then(|c| (c.deck > 0).then_some(c.deck as i32))
+}
+
+/// The deck's top block over column `(bx, bz)`, if an expressway passes
+/// overhead (`terreno::Ilha`'s second floor).
+pub fn deck_da_coluna(bx: i32, bz: i32) -> Option<i32> {
+    use crate::terreno::BLOCO;
+    let q = Vec2::new(bx as f32, bz as f32) * BLOCO;
+    if marco_em(q).is_some() {
+        return None;
+    }
+    deck_em(q).map(|h| NIVEL_CHAO + h)
 }
 
 fn hash(x: i32, y: i32) -> f32 {
@@ -752,5 +763,97 @@ mod testes {
             x += 2.0;
         }
         assert!(n > 500, "only {n} deck samples");
+    }
+
+    /// The expressway is walkable on top AND underneath: up a real ramp from
+    /// the street onto the deck, along it between the rails, under it on
+    /// the street, and the A* finds the way up.
+    #[test]
+    fn a_expressa_se_anda_em_cima_e_embaixo() {
+        use crate::constants::{ENTITY_RADIUS as R, PLAYER_SPEED as V};
+        use crate::terreno::{Ilha, BLOCO, CAMADA_CHAO, CAMADA_DECK, DEGRAU_BLOCOS};
+        let ilha = Ilha::da_ilha(&DEF);
+        let dt = 1.0 / 30.0;
+        // Walks a body towards `alvo` for up to `s` seconds.
+        let andar = |de: Vec2, cam: u8, alvo: Vec2, s: f32| -> (Vec2, u8) {
+            let (mut p, mut c) = (de, cam);
+            for _ in 0..(s / dt) as u32 {
+                let dir = (alvo - p).normalize_or_zero();
+                if p.distance(alvo) < 0.3 {
+                    break;
+                }
+                (p, c) = ilha.mover_na_camada(p, dir * V, dt, R, DEGRAU_BLOCOS, c);
+            }
+            (p, c)
+        };
+        // Find a ramp's foot (a 1-block deck) and the top of that ramp.
+        let mut pe = None;
+        'busca: for bz in (-1250..1000).step_by(2) {
+            for bx in (-640..640).step_by(2) {
+                if deck_da_coluna(bx, bz) == Some(NIVEL_CHAO + 1) {
+                    let q = Vec2::new(bx as f32, bz as f32) * BLOCO;
+                    // The way up: the neighbour 6 u away with the tallest deck.
+                    let topo = (0..16)
+                        .map(|k| {
+                            let a = k as f32 / 16.0 * std::f32::consts::TAU;
+                            q + Vec2::new(a.cos(), a.sin()) * 6.0
+                        })
+                        .filter_map(|v| deck_em(v).map(|h| (h, v)))
+                        .max_by_key(|(h, _)| *h);
+                    // The street below the foot, the way down.
+                    let rua = (0..16)
+                        .map(|k| {
+                            let a = k as f32 / 16.0 * std::f32::consts::TAU;
+                            q + Vec2::new(a.cos(), a.sin()) * 3.0
+                        })
+                        .find(|v| deck_em(*v).is_none() && matches!(chao_em(*v), Chao::Rua { .. }));
+                    if let (Some((h, t)), Some(r)) = (topo, rua) {
+                        if h >= 3 {
+                            pe = Some((r, q, t));
+                            break 'busca;
+                        }
+                    }
+                }
+            }
+        }
+        let (rua, pe, subida) = pe.expect("no ramp foot found next to a street");
+        let (p, c) = andar(rua, CAMADA_CHAO, pe, 4.0);
+        assert!(p.distance(pe) < 1.0, "could not reach the ramp's foot from the street: stopped at {p} (foot {pe})");
+        let (p, c) = andar(p, c, subida, 6.0);
+        assert_eq!(c, CAMADA_DECK, "walked up the ramp but is not on the deck (at {p})");
+        assert!(ilha.altura_na(p.x, p.y, c) > ilha.altura(p.x, p.y) + 1.0, "on the ramp but not above the street");
+
+        // The rails: from the middle of a tall deck, walking sideways stops.
+        let mut alto = None;
+        'alto: for bz in (-1250..1000).step_by(3) {
+            for bx in (-640..640).step_by(3) {
+                if deck_da_coluna(bx, bz).is_some_and(|d| d >= NIVEL_CHAO + 12) {
+                    let q = Vec2::new(bx as f32, bz as f32) * BLOCO;
+                    if [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y].iter().all(|o| deck_em(q + *o * 1.5).is_some()) {
+                        alto = Some(q);
+                        break 'alto;
+                    }
+                }
+            }
+        }
+        let alto = alto.expect("no tall deck found");
+        for dir in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
+            let (p, c) = andar(alto, CAMADA_DECK, alto + dir * 40.0, 10.0);
+            assert_eq!(c, CAMADA_DECK, "fell off the deck walking {dir} from {alto} (at {p})");
+            assert!(deck_em(p).is_some(), "walked off the deck's edge {dir} from {alto} to {p}");
+        }
+        // Under it: on the street, the same spot is the street's height.
+        assert_eq!(ilha.altura_na(alto.x, alto.y, CAMADA_CHAO), ilha.altura(alto.x, alto.y));
+
+        // A* from the street onto the deck, followed by the body.
+        let rota = ilha
+            .caminho_na_camada(rua + (rua - pe).normalize_or_zero() * 4.0, CAMADA_CHAO, alto, CAMADA_DECK, 20_000, &[])
+            .expect("no route from the street onto the deck");
+        let (mut p, mut c) = (rua + (rua - pe).normalize_or_zero() * 4.0, CAMADA_CHAO);
+        for alvo in &rota {
+            (p, c) = andar(p, c, *alvo, 20.0);
+        }
+        assert_eq!(c, CAMADA_DECK, "followed the route but ended on the street at {p} (route {} points)", rota.len());
+        assert!(p.distance(alto) < 2.0, "followed the route but stopped at {p}, short of {alto}");
     }
 }

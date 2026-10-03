@@ -20,6 +20,11 @@ pub struct Position(pub Vec2);
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Velocity(pub Vec2);
 
+/// The floor a body walks on (`terreno::CAMADA_*`): Kōgen-tō's expressway
+/// decks are a second one. Players only; everyone else is on the ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Camada(pub u8);
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Health {
     pub current: i32,
@@ -733,6 +738,9 @@ pub struct EntityState {
     /// coletando, atacando ou mirando, o boneco ficava olhando pro ultimo
     /// passo. Um byte, e so' muda quando o corpo vira — nao pesa no delta.
     pub rumo: u8,
+    /// The floor it stands on (`terreno::CAMADA_*`): on Kōgen-tō's
+    /// expressway deck the client draws it up there (protocol 183).
+    pub camada: u8,
 }
 
 /// Passos da volta no `EntityState::rumo` (0 fica pra "sem rumo").
@@ -821,6 +829,7 @@ impl EntityState {
             flags,
             acao: 0,
             rumo: 0,
+            camada: 0,
         }
     }
 }

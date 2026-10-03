@@ -46,6 +46,17 @@ pub const DEGRAU_BLOCOS: i32 = 1;
 /// parede e o relevo lia como corredor.
 pub const PULO_BLOCOS: i32 = 3;
 
+/// The two floors a body can walk on. Only Kōgen-tō has the second: the
+/// Shuto expressway decks, walkable on top AND underneath (the owner,
+/// 03/10/2026: "walkable everywhere").
+pub const CAMADA_CHAO: u8 = 0;
+pub const CAMADA_DECK: u8 = 1;
+/// Headroom under a deck, in blocks above the street. Lower than this (the
+/// foot of a ramp) there is no room to pass: the street meets a wall.
+pub const VAO_LIVRE: i32 = 5;
+/// A column under a ramp too low to walk under, as a height: a wall.
+const PAREDE_DO_VAO: i32 = 4000;
+
 /// Quanto um trecho que so' se vence PULANDO custa a mais no A*, em milesimos
 /// de celula.
 ///
@@ -4197,6 +4208,375 @@ impl Ilha {
         p
     }
 
+    // ── the second floor (Kōgen-tō's expressway decks) ──────────────────
+
+    /// Does this island have a second floor at all?
+    pub fn tem_deck(&self) -> bool {
+        self.ger.e_kogen()
+    }
+
+    /// The deck's top block over a column, if any.
+    pub fn deck_bloco(&self, ix: i32, iz: i32) -> Option<i32> {
+        if !self.tem_deck() {
+            return None;
+        }
+        crate::kogen::deck_da_coluna(ix - self.raio_blocos, iz - self.raio_blocos)
+    }
+
+    /// The deck's top over a world point, in units, if any.
+    pub fn deck_em(&self, x: f32, z: f32) -> Option<f32> {
+        let (ix, iz) = self.coluna(x, z);
+        self.deck_bloco(ix, iz).map(|b| (b + 1) as f32 * BLOCO)
+    }
+
+    /// The walking surface of a column on floor `camada`, in blocks.
+    ///
+    /// On the deck: the deck where there is one, the ground where there is
+    /// not (a ramp's end steps off onto the street; the rails are the drop,
+    /// see `borda_livre_na`). On the ground: the ground — except under a
+    /// ramp too low to walk under, which is a wall.
+    pub fn bloco_na(&self, ix: i32, iz: i32, camada: u8) -> i32 {
+        let chao = self.bloco(ix, iz);
+        match self.deck_bloco(ix, iz) {
+            None => chao,
+            Some(d) if camada == CAMADA_DECK => d,
+            Some(d) => {
+                let vao = d - chao;
+                if vao > DEGRAU_BLOCOS && vao <= VAO_LIVRE {
+                    PAREDE_DO_VAO
+                } else {
+                    chao
+                }
+            }
+        }
+    }
+
+    /// The height a body on floor `camada` stands at, in units.
+    pub fn altura_na(&self, x: f32, z: f32, camada: u8) -> f32 {
+        let (ix, iz) = self.coluna(x, z);
+        let b = if camada == CAMADA_DECK { self.deck_bloco(ix, iz).unwrap_or(self.bloco(ix, iz)) } else { self.bloco(ix, iz) };
+        (b + 1) as f32 * BLOCO
+    }
+
+    /// The floor a body is on after arriving at `p` from floor `camada`:
+    /// off the deck's end it is on the street; on the street, a deck within
+    /// a step (a ramp's foot) takes it up.
+    pub fn camada_em(&self, p: glam::Vec2, camada: u8, degrau: i32) -> u8 {
+        let (ix, iz) = self.coluna(p.x, p.y);
+        match (camada, self.deck_bloco(ix, iz)) {
+            (CAMADA_DECK, None) => CAMADA_CHAO,
+            (CAMADA_CHAO, Some(d)) if d - self.bloco(ix, iz) <= degrau.min(DEGRAU_BLOCOS) => CAMADA_DECK,
+            (c, _) => c,
+        }
+    }
+
+    /// `mover_com_degrau` on floor `camada`: where the body ends and on
+    /// which floor. Islands without decks are the ground, as always.
+    pub fn mover_na_camada(
+        &self,
+        pos: glam::Vec2,
+        vel: glam::Vec2,
+        dt: f32,
+        raio: f32,
+        degrau: i32,
+        camada: u8,
+    ) -> (glam::Vec2, u8) {
+        if !self.tem_deck() {
+            return (self.mover_com_degrau(pos, vel, dt, raio, degrau), CAMADA_CHAO);
+        }
+        let camada = self.camada_em(pos, camada, degrau);
+        let p = if camada == CAMADA_DECK {
+            self.mover_no_deck(pos, vel, dt, raio, degrau)
+        } else {
+            self.mover_com_degrau(pos, vel, dt, raio, degrau)
+        };
+        (p, self.camada_em(p, camada, degrau))
+    }
+
+    /// Walking on a deck: no trees, no houses — only the surface and the
+    /// rails. Short steps, one axis at a time, like `mover_com_degrau`.
+    fn mover_no_deck(&self, pos: glam::Vec2, vel: glam::Vec2, dt: f32, raio: f32, degrau: i32) -> glam::Vec2 {
+        const PASSO_MAX: f32 = 0.15;
+        let n = ((vel * dt).length() / PASSO_MAX).ceil().clamp(1.0, 8.0) as u32;
+        let v = vel * dt / n as f32;
+        let mut p = pos;
+        let mut camada = CAMADA_DECK;
+        for _ in 0..n {
+            for eixo in [glam::Vec2::new(v.x, 0.0), glam::Vec2::new(0.0, v.y)] {
+                if eixo == glam::Vec2::ZERO {
+                    continue;
+                }
+                let alvo = p + eixo;
+                if self.borda_livre_na(p, alvo, raio, eixo.normalize(), degrau, camada) {
+                    p = alvo;
+                }
+            }
+            camada = self.camada_em(p, camada, degrau);
+            if camada == CAMADA_CHAO {
+                break; // stepped off the ramp's end: the rest is the street's
+            }
+        }
+        p
+    }
+
+    /// `borda_livre` on floor `camada`. On the deck, going DOWN more than
+    /// a step is refused too: that is the guard rail.
+    fn borda_livre_na(
+        &self,
+        de: glam::Vec2,
+        para: glam::Vec2,
+        raio: f32,
+        dir: glam::Vec2,
+        degrau: i32,
+        camada: u8,
+    ) -> bool {
+        let (ax, az) = self.coluna(de.x, de.y);
+        let base = self.bloco_na(ax, az, camada);
+        let perp = glam::Vec2::new(-dir.y, dir.x);
+        for k in [-0.7f32, 0.0, 0.7] {
+            let ponto = para + dir * raio + perp * (raio * k);
+            let (ix, iz) = self.coluna(ponto.x, ponto.y);
+            let h = self.bloco_na(ix, iz, camada);
+            if (h + 1) as f32 * BLOCO <= NIVEL_DO_MAR || h - base > degrau {
+                return false;
+            }
+            if camada == CAMADA_DECK && base - h > degrau {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// `trecho_livre` across floors: walks the segment sample by sample,
+    /// switching floor where the body would (`camada_em`). The floor it
+    /// arrives on, or `None` if the way is blocked.
+    pub fn trecho_na_camada(&self, de: glam::Vec2, para: glam::Vec2, degrau: i32, camada: u8) -> Option<u8> {
+        if !self.tem_deck() {
+            return self.trecho_livre(de, para, degrau).then_some(CAMADA_CHAO);
+        }
+        let mut camada = self.camada_em(de, camada, degrau);
+        if camada == CAMADA_CHAO && !self.trecho_sem_estorvo(de, para, crate::constants::ENTITY_RADIUS) {
+            return None;
+        }
+        let n = ((de.distance(para) / BLOCO).ceil() as i32).max(1);
+        let dir = (para - de).normalize_or_zero();
+        let perp = glam::Vec2::new(-dir.y, dir.x) * (crate::constants::ENTITY_RADIUS * 1.15);
+        let mut anterior = de;
+        for i in 1..=n {
+            let p = de + (para - de) * (i as f32 / n as f32);
+            let (cx, cz) = self.coluna(anterior.x, anterior.y);
+            let base = self.bloco_na(cx, cz, camada);
+            for lado in [glam::Vec2::ZERO, perp, -perp] {
+                let q = p + lado;
+                let (qx, qz) = self.coluna(q.x, q.y);
+                let h = self.bloco_na(qx, qz, camada);
+                if (h + 1) as f32 * BLOCO <= NIVEL_DO_MAR || h - base > degrau {
+                    return None;
+                }
+                if camada == CAMADA_DECK && base - h > degrau {
+                    return None;
+                }
+            }
+            camada = self.camada_em(p, camada, degrau);
+            anterior = p;
+        }
+        Some(camada)
+    }
+
+    /// The point of an A* cell on the deck: the deck column nearest the
+    /// cell's centre with room for a body round it. `None` = no deck here.
+    fn ponto_no_deck(&self, cru: glam::Vec2) -> Option<glam::Vec2> {
+        let alcance = BLOCO * PASSO_CAMINHO as f32 * 0.75;
+        let passos = (alcance / BLOCO) as i32;
+        let folga = crate::constants::ENTITY_RADIUS + BLOCO;
+        let mut melhor: Option<(f32, glam::Vec2)> = None;
+        for dz in -passos..=passos {
+            for dx in -passos..=passos {
+                let q = cru + glam::Vec2::new(dx as f32, dz as f32) * BLOCO;
+                let d = q.distance(cru);
+                if melhor.is_some_and(|(m, _)| d >= m) {
+                    continue;
+                }
+                let tem = |p: glam::Vec2| {
+                    let (ix, iz) = self.coluna(p.x, p.y);
+                    self.deck_bloco(ix, iz)
+                };
+                let Some(h) = tem(q) else { continue };
+                let largo = [glam::Vec2::X, -glam::Vec2::X, glam::Vec2::Y, -glam::Vec2::Y]
+                    .iter()
+                    .all(|o| tem(q + *o * folga).is_some_and(|v| (v - h).abs() <= DEGRAU_BLOCOS));
+                if largo {
+                    melhor = Some((d, q));
+                }
+            }
+        }
+        melhor.map(|(_, q)| q)
+    }
+
+    /// A* over BOTH floors (`caminho_evitando` with a floor in the node).
+    /// Islands without decks use the one-floor search, unchanged.
+    pub fn caminho_na_camada(
+        &self,
+        de: glam::Vec2,
+        camada_de: u8,
+        para: glam::Vec2,
+        camada_para: u8,
+        orcamento: usize,
+        evitar: &[glam::Vec2],
+    ) -> Option<Vec<glam::Vec2>> {
+        use std::collections::{BinaryHeap, HashMap};
+        if !self.tem_deck() || (camada_de == CAMADA_CHAO && camada_para == CAMADA_CHAO && !self.perto_de_deck(de, para)) {
+            return self.caminho_evitando(de, para, orcamento, evitar);
+        }
+        let lado = BLOCO * PASSO_CAMINHO as f32;
+        let cel = |p: glam::Vec2| ((p.x / lado).round() as i32, (p.y / lado).round() as i32);
+        type Chave = (i32, i32, u8);
+        let mut pontos: HashMap<Chave, Option<glam::Vec2>> = HashMap::new();
+        let mut ponto = |c: Chave| -> Option<glam::Vec2> {
+            *pontos.entry(c).or_insert_with(|| {
+                let cru = glam::Vec2::new(c.0 as f32, c.1 as f32) * lado;
+                if c.2 == CAMADA_DECK {
+                    self.ponto_no_deck(cru)
+                } else {
+                    let p = self.ponto_livre_perto(cru, crate::constants::ENTITY_RADIUS);
+                    let (ix, iz) = self.coluna(p.x, p.y);
+                    (self.bloco_na(ix, iz, CAMADA_CHAO) < PAREDE_DO_VAO && !self.agua(p.x, p.y)).then_some(p)
+                }
+            })
+        };
+        // The straight line first: most clicks need no search.
+        if self.trecho_na_camada(de, para, PULO_BLOCOS, camada_de) == Some(camada_para) {
+            return Some(vec![para]);
+        }
+        // The door into the graph: the nearest cell the body reaches.
+        let contendo = cel(de);
+        let mut inicio: Option<(f32, Chave)> = None;
+        for r in 0..=3i32 {
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    if dx.abs() != r && dz.abs() != r {
+                        continue;
+                    }
+                    for cam in [CAMADA_CHAO, CAMADA_DECK] {
+                        let c = (contendo.0 + dx, contendo.1 + dz, cam);
+                        let Some(p) = ponto(c) else { continue };
+                        let d = de.distance(p);
+                        if inicio.is_some_and(|(m, _)| d >= m) {
+                            continue;
+                        }
+                        if self.trecho_na_camada(de, p, PULO_BLOCOS, camada_de) == Some(cam) {
+                            inicio = Some((d, c));
+                        }
+                    }
+                }
+            }
+            if inicio.is_some() && r >= 1 {
+                break;
+            }
+        }
+        let (_, inicio) = inicio?;
+        let fc = cel(para);
+        let fim: Chave = (fc.0, fc.1, camada_para);
+        #[derive(PartialEq, Eq)]
+        struct No(i64, Chave);
+        impl Ord for No {
+            fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+                self.0.cmp(&o.0)
+            }
+        }
+        impl PartialOrd for No {
+            fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(o))
+            }
+        }
+        let h = |c: Chave| -> i64 {
+            let (dx, dz) = ((c.0 - fim.0).abs() as i64, (c.1 - fim.1).abs() as i64);
+            let (mi, ma) = (dx.min(dz), dx.max(dz));
+            (mi * 1414 + (ma - mi) * 1000) * 13 / 10
+        };
+        let mut aberto = BinaryHeap::new();
+        let mut custo: HashMap<Chave, i64> = HashMap::new();
+        let mut veio: HashMap<Chave, Chave> = HashMap::new();
+        aberto.push(No(-h(inicio), inicio));
+        custo.insert(inicio, 0);
+        let mut melhor = (inicio, h(inicio));
+        let mut expandidos = 0usize;
+        while let Some(No(_, atual)) = aberto.pop() {
+            if atual == fim {
+                melhor = (atual, 0);
+                break;
+            }
+            expandidos += 1;
+            if expandidos > orcamento {
+                break;
+            }
+            let g = custo[&atual];
+            let Some(pa) = ponto(atual) else { continue };
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                for cam in [CAMADA_CHAO, CAMADA_DECK] {
+                    let viz = (atual.0 + dx, atual.1 + dz, cam);
+                    let Some(pv) = ponto(viz) else { continue };
+                    if cam == CAMADA_CHAO && viz != fim && self.ocupado(pv, crate::constants::ENTITY_RADIUS) {
+                        continue;
+                    }
+                    let base = if dx != 0 && dz != 0 { 1414 } else { 1000 };
+                    let passo = if self.trecho_na_camada(pa, pv, DEGRAU_BLOCOS, atual.2) == Some(cam) {
+                        base
+                    } else if self.trecho_na_camada(pa, pv, PULO_BLOCOS, atual.2) == Some(cam) {
+                        base + CUSTO_DO_PULO
+                    } else {
+                        continue;
+                    };
+                    let pedagio = evitar.iter().filter(|e| e.distance(pv) < RAIO_DO_DESVIO).count() as i64 * CUSTO_DO_DESVIO;
+                    let novo = g + passo + pedagio;
+                    if custo.get(&viz).is_some_and(|&c| c <= novo) {
+                        continue;
+                    }
+                    custo.insert(viz, novo);
+                    veio.insert(viz, atual);
+                    let hv = h(viz);
+                    if hv < melhor.1 {
+                        melhor = (viz, hv);
+                    }
+                    aberto.push(No(-(novo + hv), viz));
+                }
+            }
+        }
+        let mut rota = vec![melhor.0];
+        let mut c = melhor.0;
+        while let Some(&p) = veio.get(&c) {
+            rota.push(p);
+            c = p;
+            if rota.len() > 4096 {
+                break;
+            }
+        }
+        if rota.len() <= 1 && melhor.0 != fim && melhor.0 == inicio {
+            return None;
+        }
+        rota.reverse();
+        let mut saida: Vec<glam::Vec2> = rota.iter().filter_map(|c| ponto(*c)).collect();
+        if melhor.0 == fim {
+            let ultimo = *saida.last().unwrap_or(&de);
+            if self.trecho_na_camada(ultimo, para, PULO_BLOCOS, fim.2) == Some(camada_para) {
+                saida.push(para);
+            }
+        }
+        Some(saida)
+    }
+
+    /// Is there a deck anywhere near the way from `a` to `b`? (Ground-only
+    /// trips far from the expressway keep the one-floor search.)
+    fn perto_de_deck(&self, a: glam::Vec2, b: glam::Vec2) -> bool {
+        let n = ((a.distance(b) / 8.0).ceil() as i32).max(1);
+        (0..=n).any(|i| {
+            let p = a + (b - a) * (i as f32 / n as f32);
+            [glam::Vec2::ZERO, glam::Vec2::new(12.0, 0.0), glam::Vec2::new(-12.0, 0.0), glam::Vec2::new(0.0, 12.0), glam::Vec2::new(0.0, -12.0)]
+                .iter()
+                .any(|o| self.deck_em(p.x + o.x, p.y + o.y).is_some())
+        })
+    }
+
     /// A BORDA DA FRENTE cabe, vindo de `de`?
     ///
     /// So' a borda no sentido do movimento, e nao o corpo inteiro. Testar os
@@ -4216,12 +4596,12 @@ impl Ilha {
         degrau: i32,
     ) -> bool {
         let (ax, az) = self.coluna(de.x, de.y);
-        let base = self.bloco(ax, az);
+        let base = self.bloco_na(ax, az, CAMADA_CHAO);
         let perp = glam::Vec2::new(-dir.y, dir.x);
         for k in [-0.7f32, 0.0, 0.7] {
             let ponto = para + dir * raio + perp * (raio * k);
             let (ix, iz) = self.coluna(ponto.x, ponto.y);
-            let h = self.bloco(ix, iz);
+            let h = self.bloco_na(ix, iz, CAMADA_CHAO);
             if (h + 1) as f32 * BLOCO <= NIVEL_DO_MAR {
                 return false;
             }
@@ -4771,14 +5151,14 @@ impl Ilha {
             // no jump clears, and the follower stood there asking for the
             // same route (`terreno --rotas`, 01/10/2026).
             let (cx, cz) = self.coluna(anterior.x, anterior.y);
-            let base = self.bloco(cx, cz);
+            let base = self.bloco_na(cx, cz, CAMADA_CHAO);
             for lado in [glam::Vec2::ZERO, perp, -perp] {
                 let q = p + lado;
                 if self.agua(q.x, q.y) {
                     return false;
                 }
                 let (qx, qz) = self.coluna(q.x, q.y);
-                if self.bloco(qx, qz) - base > degrau {
+                if self.bloco_na(qx, qz, CAMADA_CHAO) - base > degrau {
                     return false;
                 }
             }

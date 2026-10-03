@@ -418,6 +418,7 @@ pub async fn previa() {
                     flags: if i == 0 { shared::ent_flags::SELF } else { 0 },
                     acao: 0,
                     rumo: 0,
+                    camada: 0,
                 }],
                 &[],
             );

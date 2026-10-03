@@ -1799,6 +1799,8 @@ pub struct Session {
     /// Pontos que a próxima rota desta sessão vai evitar. Ver
     /// `Ilha::caminho_evitando`.
     pub desvios: Vec<Vec2>,
+    /// The floor the current walk is headed for (`MoverParaCamada`).
+    pub destino_camada: u8,
     /// O último bônus da Ilha Mágica que esta sessão JÁ SOUBE.
     ///
     /// 254 = nunca soube de nada. Existe porque o estado da ilha só era
@@ -5879,7 +5881,17 @@ impl GameWorld {
             .get(&sid)
             .map(|s| s.desvios.clone())
             .unwrap_or_default();
-        let Some(rota) = ilha.caminho_evitando(pos_atual, destino, ROTA_ORCAMENTO, &desvios) else {
+        // Kōgen-tō: the route crosses floors (`caminho_na_camada`); every
+        // other island is one floor and takes the one-floor search.
+        let (camada_atual, camada_destino) = self
+            .sessions
+            .get(&sid)
+            .map(|s| {
+                let atual = s.entity.and_then(|e| self.ecs.get::<&shared::Camada>(e).ok().map(|c| c.0)).unwrap_or(0);
+                (atual, s.destino_camada)
+            })
+            .unwrap_or((0, 0));
+        let Some(rota) = ilha.caminho_na_camada(pos_atual, camada_atual, destino, camada_destino, ROTA_ORCAMENTO, &desvios) else {
             // Nunca calado: o jogador toca, nada acontece, e ele nao tem como
             // saber se o jogo travou ou se nao ha' caminho. Foi assim que o
             // limite de 220 u passou meses invisivel.
@@ -7471,6 +7483,7 @@ impl GameWorld {
             Session {
                 travado_desde: None,
                 desvios: Vec::new(),
+                destino_camada: 0,
                 sessao_nova: None,
                 magica_bonus_visto: 254,
                 handle,
@@ -7760,6 +7773,10 @@ impl GameWorld {
     }
 
     pub fn on_message(&mut self, id: SessionId, msg: ClientMessage) {
+        let msg_camada = match &msg {
+            ClientMessage::MoverParaCamada { camada, .. } => Some(*camada),
+            _ => None,
+        };
         match msg {
             ClientMessage::Handshake {
                 protocol_version, ..
@@ -7892,13 +7909,18 @@ impl GameWorld {
                     s.pending_input = Some(frame);
                 }
             }
-            ClientMessage::MoverPara { x, z } => {
+            ClientMessage::MoverPara { x, z } | ClientMessage::MoverParaCamada { x, z, .. } => {
+                let camada = match msg_camada {
+                    Some(c) if c <= shared::terreno::CAMADA_DECK => c,
+                    _ => shared::terreno::CAMADA_CHAO,
+                };
                 // DESTINO NOVO, HISTÓRIA NOVA. Os desvios são a memória de
                 // onde esta viagem emperrou; mantê-los entre viagens faria o
                 // jogador pagar hoje por uma quina de ontem.
                 if let Some(s) = self.sessions.get_mut(&id) {
                     s.desvios.clear();
                     s.travado_desde = None;
+                    s.destino_camada = camada;
                 }
                 self.handle_mover_para(id, Vec2::new(x, z));
             }
@@ -11275,17 +11297,26 @@ impl GameWorld {
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
         // diferentes nao se empurram nem se bloqueiam.
         let mut inst_do_corpo: Vec<u32> = Vec::new();
-        for (e, (pos, vel, _, inst)) in self
+        // Kōgen-tō's second floor: the floor each player walks on, and the
+        // floor each one ends the tick on (written back below).
+        let mut camada_do_corpo: Vec<u8> = Vec::new();
+        let mut camadas_novas: Vec<(Entity, u8)> = Vec::new();
+        for (e, (pos, vel, _, inst, camada)) in self
             .ecs
             .query::<(
                 &Position,
                 &Velocity,
                 &shared::Solido,
                 Option<&dungeon::Instancia>,
+                Option<&shared::Camada>,
             )>()
             .iter()
         {
-            inst_do_corpo.push(inst.map_or(0, |i| i.0));
+            let camada = camada.map_or(shared::terreno::CAMADA_CHAO, |c| c.0);
+            camada_do_corpo.push(camada);
+            // Bodies on different floors neither push nor block each other:
+            // the floor rides in the instance key's top bits.
+            inst_do_corpo.push(inst.map_or(0, |i| i.0) | ((camada as u32) << 30));
             let mobilidade = if self.ecs.get::<&PlayerTag>(e).is_ok() {
                 0.0
             } else {
@@ -11305,7 +11336,17 @@ impl GameWorld {
                 .and_then(|i| raio_da_inst.get(&i.0))
                 .and_then(|r| self.colonias.get(r))
                 .or(self.ilha.as_ref());
+            let jogador = mobilidade == 0.0;
             let movido = match terreno {
+                // Players walk both floors; mobs stay on the street (the
+                // ramps' feet are walls to them, like to anyone below).
+                Some(i) if jogador && i.tem_deck() => {
+                    let (p, c) = i.mover_na_camada(pos.0, vel.0, dt, ENTITY_RADIUS, degrau, camada);
+                    if c != camada {
+                        camadas_novas.push((e, c));
+                    }
+                    p
+                }
                 Some(i) => i.mover_com_degrau(pos.0, vel.0, dt, ENTITY_RADIUS, degrau),
                 None => self.map.move_and_slide(pos.0, vel.0, dt, ENTITY_RADIUS),
             };
@@ -11354,11 +11395,18 @@ impl GameWorld {
             }
         }
 
-        for ((e, movido, _), (p, _, _)) in corpos.iter().zip(circulos.iter()) {
+        for (k, ((e, movido, _), (p, _, _))) in corpos.iter().zip(circulos.iter()).enumerate() {
             // O empurrao entre corpos nao olha a arvore. Quem seria empurrado
             // pra DENTRO de um tronco fica onde o proprio passo o deixou —
             // senao a matilha, se acotovelando, enfiava lobo na arvore.
+            // On the deck there are no trees — but there are rails: a push
+            // must not shove a body off the deck's edge.
+            let no_deck = camada_do_corpo[k] == shared::terreno::CAMADA_DECK
+                || camadas_novas.iter().any(|(x, c)| x == e && *c == shared::terreno::CAMADA_DECK);
             let p = match &self.ilha {
+                Some(i) if no_deck => {
+                    if i.deck_em(p.x, p.y).is_some() { *p } else { *movido }
+                }
                 Some(i) if !i.cabe(*movido, *p, ENTITY_RADIUS) => *movido,
                 _ => *p,
             };
@@ -11376,6 +11424,17 @@ impl GameWorld {
                 pos.0 = p;
             }
         }
+        for (e, c) in camadas_novas {
+            let _ = self.ecs.insert_one(e, shared::Camada(c));
+        }
+        let no_deck: Vec<Vec2> = self
+            .ecs
+            .query::<(&Position, &shared::Camada)>()
+            .iter()
+            .filter(|(_, (_, c))| c.0 == shared::terreno::CAMADA_DECK)
+            .map(|(_, (p, _))| p.0)
+            .collect();
+        CORPOS_NO_DECK.with(|v| *v.borrow_mut() = no_deck);
 
         // Projéteis não têm Solido: precisam de integração própria, sem o
         // deslizamento/empurrão dos corpos. Sem isso ficavam na origem até
@@ -13546,12 +13605,13 @@ impl GameWorld {
                 Option<&LootTag>,
                 Option<&ProjTag>,
                 Option<&NpcDaVilaTag>,
+                Option<&shared::Camada>,
             )>()
             .iter()
             .map(
                 |(
                     _,
-                    (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag, projtag, vila_tag),
+                    (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag, projtag, vila_tag, camada),
                 )| {
                     let tag = match kind {
                         EntityKind::Player => shared::EntityTag::Player,
@@ -13650,6 +13710,7 @@ impl GameWorld {
                         flags,
                     );
                     state.acao = acao_de.get(&net.0).copied().unwrap_or(0);
+                    state.camada = camada.map_or(0, |c| c.0);
                     state.rumo = crate::rumo::escolhe(
                         pos.0,
                         mira_de.get(&net.0).copied(),
@@ -20851,12 +20912,37 @@ fn lcg_f32(seed: u64) -> f32 {
 /// grade dele tudo e' WALL. Como a ilha mora em coordenada negativa, a
 /// visada pelo tile dava falso pra qualquer par a mais de 2 u — nenhum mob
 /// via jogador nenhum, e nenhum saia do lugar.
+thread_local! {
+    /// Where the bodies standing on Kōgen-tō's expressway deck are, this
+    /// tick (`GameWorld::step`). Line of sight takes positions, not bodies,
+    /// so the floor rides here: refreshed every tick, empty off Kōgen-tō.
+    static CORPOS_NO_DECK: std::cell::RefCell<Vec<Vec2>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Is a body standing on a deck at `p`?
+fn no_deck(p: Vec2) -> bool {
+    CORPOS_NO_DECK.with(|v| v.borrow().iter().any(|q| q.distance_squared(p) < 0.04))
+}
+
+/// Two points on different floors never see each other (the deck is
+/// between them); two on the deck always do (no relief up there). `None` =
+/// both on the ground, the relief decides.
+fn entre_andares(a: Vec2, b: Vec2) -> Option<bool> {
+    match (no_deck(a), no_deck(b)) {
+        (false, false) => None,
+        (x, y) => Some(x == y),
+    }
+}
+
 fn visada(
     ilha: Option<&shared::terreno::Ilha>,
     map: &shared::world_gen::WorldMap,
     a: Vec2,
     b: Vec2,
 ) -> bool {
+    if let Some(r) = entre_andares(a, b) {
+        return r;
+    }
     match ilha {
         Some(i) => i.visada(a, b),
         None => map.has_line_of_sight(a, b),
@@ -20872,6 +20958,9 @@ fn visada_de_tiro(
     a: Vec2,
     b: Vec2,
 ) -> bool {
+    if let Some(r) = entre_andares(a, b) {
+        return r;
+    }
     match ilha {
         Some(i) => i.visada_de_tiro(a, b),
         None => map.has_line_of_sight(a, b),

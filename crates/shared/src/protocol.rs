@@ -454,6 +454,13 @@ pub enum ClientMessage {
     /// Para imediatamente a rota automatica de aproximacao do alvo.
     /// Anexada no fim para preservar os indices postcard anteriores.
     PararRota,
+    /// `MoverPara` to a point on a given floor (`terreno::CAMADA_*`): a tap
+    /// on Kōgen-tō's expressway deck walks up the ramp to it (protocol 183).
+    MoverParaCamada {
+        x: f32,
+        z: f32,
+        camada: u8,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

@@ -345,6 +345,7 @@ impl World {
                 flags: 0,
                 acao: 0,
                 rumo: 0,
+                camada: 0,
             };
             // NPC de porta vem com o rumo no `kind`: nasce olhando pra fora e,
             // parado, o tick nao mexe no yaw.
@@ -484,7 +485,7 @@ impl World {
 
     /// `chao` da' a altura de apoio: e' o mesmo campo de altura que o servidor
     /// usa pra colisao, entao a entidade pisa exatamente onde ela pisa la'.
-    pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32) -> f32) {
+    pub fn tick(&mut self, dt: f32, chao: &dyn Fn(f32, f32, u8) -> f32) {
         let posicoes: HashMap<_, _> = self
             .ents
             .iter()
@@ -572,7 +573,7 @@ impl World {
             // Agora e' uma so': no ar, integra a gravidade; no chao, segue o
             // apoio. A gravidade e o impulso vem de `shared`, os mesmos que o
             // servidor usa pra decidir que degrau o pulo vence.
-            let apoio = chao(ent.render_pos.x, ent.render_pos.y);
+            let apoio = chao(ent.render_pos.x, ent.render_pos.y, ent.state.camada);
             // ── DEGRAU ANTECIPADO ──
             //
             // Quem decide a posicao e' o servidor, e ele poe o corpo em cima
@@ -593,7 +594,7 @@ impl World {
                 // mais cedo; parado, nao ha' o que antecipar.
                 let olhada = indo.length() * (DEGRAU_VISIVEL / SUBIDA) * ANTECIPACAO;
                 let frente = ent.render_pos + indo.normalize() * olhada;
-                let a = chao(frente.x, frente.y);
+                let a = chao(frente.x, frente.y, ent.state.camada);
                 if a > apoio && a - apoio <= DEGRAU_VISIVEL {
                     a
                 } else {
@@ -774,7 +775,7 @@ mod testes {
                     name: None, hp_max: 100, faction: None, kind: 0, nivel: 1,
                     desafio: None, aparencia: 0,
                 }], vec![EntityState {
-                    id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0,
+                    id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0, camada: 0,
                 }], &[]);
             }
             w.sincroniza_visual_local(&equipamento, salva);
@@ -819,18 +820,19 @@ mod testes {
                     flags,
                     acao: 0,
                     rumo: shared::rumo_de_yaw(q),
+                    camada: 0,
                 }],
                 &[],
             );
         }
-        w.tick(1.0 / 60.0, &|_, _| 0.0);
+        w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         let um_quadro = w.ents[&EntityId(1)].yaw;
         assert!(
             um_quadro > 0.0 && um_quadro < q * 0.9,
             "vira suave, nao de estalo: {um_quadro}"
         );
         for _ in 0..120 {
-            w.tick(1.0 / 60.0, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         assert!(
             (w.ents[&EntityId(1)].yaw - q).abs() < 0.05,
@@ -872,7 +874,7 @@ mod testes {
             &[],
         );
         for _ in 0..30 {
-            w.tick(1.0 / 60.0, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         assert!(
             !std::mem::take(&mut w.salto_do_eu),
@@ -880,18 +882,18 @@ mod testes {
         );
         // Um passo: suave.
         w.apply(vec![], vec![estado(2.0)], &[]);
-        w.tick(1.0 / 60.0, &|_, _| 0.0);
+        w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         assert!(
             w.ents[&id].render_pos.x < 1.9 && !w.salto_do_eu,
             "passo curto desliza"
         );
         // Teleporte: direto, no chao do lugar novo.
         for _ in 0..60 {
-            w.tick(1.0 / 60.0, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         w.apply(vec![], vec![estado(300.0)], &[]);
         assert!(w.salto_do_eu, "teleporte do proprio avisa o carregando");
-        w.tick(1.0 / 60.0, &|_, _| 12.0);
+        w.tick(1.0 / 60.0, &|_, _, _| 12.0);
         let e = &w.ents[&id];
         assert!(
             (e.render_pos.x - 300.0).abs() < 0.1,
@@ -934,13 +936,14 @@ mod testes {
                     flags: 0,
                     acao: 0,
                     rumo: 0,
+                    camada: 0,
                 }],
                 &[],
             );
         }
         w.ents.get_mut(&EntityId(1)).unwrap().ataque_mob = Some((Some(EntityId(2)), 0.0, 0.46));
         for _ in 0..26 {
-            w.tick(1.0 / 60.0, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         assert!(
             w.ents[&EntityId(1)].yaw.abs() < 0.01,
@@ -949,7 +952,7 @@ mod testes {
         w.ents.get_mut(&EntityId(2)).unwrap().render_pos = vec2(3.0, 1.0);
         w.ents.get_mut(&EntityId(2)).unwrap().state.pos = [48, 16];
         for _ in 0..16 {
-            w.tick(1.0 / 60.0, &|_, _| 0.0);
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
         }
         assert!((w.ents[&EntityId(1)].yaw - std::f32::consts::FRAC_PI_2).abs() < 0.02);
     }
@@ -999,6 +1002,7 @@ mod testes {
                 flags: ent_flags::SELF,
                 acao: 0,
                 rumo: 0,
+                camada: 0,
             }],
             &[],
         );
@@ -1025,10 +1029,11 @@ mod testes {
                     flags,
                     acao: 0,
                     rumo: 0,
+                    camada: 0,
                 }],
                 &[],
             );
-            w.tick(dt, &chao);
+            w.tick(dt, &|x, z, _| chao(x, z));
             alturas.push(w.ents[&id].render_y);
             t += dt;
         }
@@ -1080,6 +1085,7 @@ mod testes {
             flags: ent_flags::SELF,
             acao: 0,
             rumo: 0,
+            camada: 0,
         };
         w.apply(
             vec![EntityMeta { skins: 0,
@@ -1098,7 +1104,7 @@ mod testes {
             vec![estado(0.0)],
             &[],
         );
-        w.tick(dt, &chao);
+        w.tick(dt, &|x, z, _| chao(x, z));
 
         let mut x = 0.0f32;
         let (mut afundou, mut flutuou, mut maior_passo) = (0.0f32, 0.0f32, 0.0f32);
@@ -1106,7 +1112,7 @@ mod testes {
             x += vel * dt;
             w.apply(Vec::new(), vec![estado(x)], &[]);
             let antes = w.ents[&id].render_y;
-            w.tick(dt, &chao);
+            w.tick(dt, &|x, z, _| chao(x, z));
             let e = &w.ents[&id];
             let solo = chao(e.render_pos.x, e.render_pos.y);
             afundou = afundou.max(solo - e.render_y);
@@ -1196,6 +1202,7 @@ mod testes {
                 flags: ent_flags::SELF,
                 acao: 0,
                 rumo: 0,
+                camada: 0,
             }],
             &[],
         );
@@ -1204,7 +1211,7 @@ mod testes {
         let mut t = 0.0f32;
         while t < PULO_DURACAO + PULO_ESPERA {
             w.pular_local(); // martelando a tecla
-            w.tick(dt, &chao);
+            w.tick(dt, &|x, z, _| chao(x, z));
             alturas.push(w.ents[&id].render_y);
             t += dt;
         }

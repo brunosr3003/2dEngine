@@ -202,7 +202,7 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     let solido = crate::render3d::material_solido();
     let rt = render_target(1280, 800);
     for frame in 0..90 {
-        world.tick(1.0/60.0, &|_,_|0.0);
+        world.tick(1.0/60.0, &|_, _, _| 0.0);
         for e in world.ents.values_mut() { e.sacada=1.0; e.yaw=0.3; }
         let mut vista = crate::render3d::Vista::nova(Vec2::ZERO,0.0,0.0,0.8,0.0,&|_,_|0.0);
         vista.cam.position = vec3(0.0,4.3,-9.0); vista.cam.target=vec3(0.0,0.9,0.0);
@@ -248,7 +248,7 @@ pub async fn previa_animais(vox: &crate::vox::VoxCache) {
         world.apply(metas,estados,&[]);
         let rt=render_target(1280,800);
         for frame in 0..60 {
-            world.tick(1./60.,&|_,_|0.);
+            world.tick(1./60., &|_, _, _| 0.);
             for e in world.ents.values_mut() { e.yaw=0.4; }
             let mut vista=crate::render3d::Vista::nova(Vec2::ZERO,0.,0.,0.8,0.,&|_,_|0.);
             vista.cam.position=if montaria {vec3(0.,6.,-16.)} else {vec3(0.,2.8,-6.5)};

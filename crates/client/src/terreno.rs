@@ -391,6 +391,17 @@ impl Terreno {
         maior
     }
 
+    /// `altura_apoio` for a body on floor `camada`: on Kōgen-tō's
+    /// expressway deck, the deck under it (the street is far below).
+    pub fn altura_apoio_na(&self, x: f32, z: f32, raio: f32, camada: u8) -> f32 {
+        if camada == shared::terreno::CAMADA_DECK && self.ger.e_kogen() {
+            if let Some(h) = deck_altura(x, z) {
+                return h;
+            }
+        }
+        self.altura_apoio(x, z, raio)
+    }
+
     /// Gera o que falta em volta do jogador e descarta o que ficou longe.
     ///
     /// `orcamento` limita quantos pedacos nascem por quadro: gerar os 49 de
@@ -1192,6 +1203,97 @@ impl Terreno {
                         &mut malhas,
                         MAX_QUADS,
                     );
+                }
+            }
+        }
+
+        // ── Kōgen-tō's expressway decks ──────────────────────────────────
+        // The second floor (`shared::terreno::CAMADA_DECK`): an asphalt
+        // deck two blocks thick over the street, concrete rails on its
+        // edges, pillars down to the street, and step faces along the
+        // ramps. In the terrain mesh, so the cutaway that opens a cliff
+        // between the camera and the player opens the deck too.
+        if self.ger.e_kogen() {
+            let deck = |gx: i32, gz: i32| shared::kogen::deck_da_coluna(gx, gz);
+            for iz in 0..n as i32 {
+                for ix in 0..n as i32 {
+                    let (gx, gz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                    let Some(d) = deck(gx, gz) else { continue };
+                    let chao = self.ger.bloco_em(gx, gz);
+                    let x0 = gx as f32 * BLOCO - BLOCO * 0.5;
+                    let z0 = gz as f32 * BLOCO - BLOCO * 0.5;
+                    let (x1, z1) = (x0 + BLOCO, z0 + BLOCO);
+                    let topo = (d + 1) as f32 * BLOCO;
+                    let fundo = ((d - 1).max(chao + 1) + 0) as f32 * BLOCO;
+                    quad(&mut verts, &mut idx, &mut malhas,
+                        [vec3(x0, topo, z0), vec3(x1, topo, z0), vec3(x1, topo, z1), vec3(x0, topo, z1)],
+                        Vec3::Y, self.cor(Material::Asfalto, gx, gz, d, 1.0, 1.0));
+                    if fundo > (chao + 1) as f32 * BLOCO + 0.01 {
+                        quad(&mut verts, &mut idx, &mut malhas,
+                            [vec3(x0, fundo, z0), vec3(x0, fundo, z1), vec3(x1, fundo, z1), vec3(x1, fundo, z0)],
+                            -Vec3::Y, self.cor(Material::ConcretoEscuro, gx, gz, d, 0.55, 1.0));
+                    }
+                    for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                        let viz = deck(gx + dx, gz + dz);
+                        let nrm = vec3(dx as f32, 0.0, dz as f32);
+                        // The face on this column's edge towards (dx, dz).
+                        let face = |y0: f32, y1: f32, recuo: f32| -> [Vec3; 4] {
+                            let (ex, ez) = (gx as f32 * BLOCO + dx as f32 * (BLOCO * 0.5 - recuo), gz as f32 * BLOCO + dz as f32 * (BLOCO * 0.5 - recuo));
+                            if dx != 0 {
+                                [vec3(ex, y0, z0), vec3(ex, y0, z1), vec3(ex, y1, z1), vec3(ex, y1, z0)]
+                            } else {
+                                [vec3(x0, y0, ez), vec3(x1, y0, ez), vec3(x1, y1, ez), vec3(x0, y1, ez)]
+                            }
+                        };
+                        match viz {
+                            // Along the deck: a step face up to a higher neighbour's top is the neighbour's job.
+                            Some(v) if (v - d).abs() <= 1 => {
+                                if v < d {
+                                    let y0 = (v + 1) as f32 * BLOCO;
+                                    quad(&mut verts, &mut idx, &mut malhas, face(y0, topo, 0.0), nrm,
+                                        self.cor(Material::Concreto, gx, gz, d, 0.8, 1.0));
+                                }
+                            }
+                            // The edge: the deck's side and a rail one block tall.
+                            _ => {
+                                let base = viz.map_or(fundo, |v| ((v + 1) as f32 * BLOCO).max(fundo));
+                                quad(&mut verts, &mut idx, &mut malhas, face(base, topo + BLOCO, 0.0), nrm,
+                                    self.cor(Material::Concreto, gx, gz, d, 0.75, 1.0));
+                                quad(&mut verts, &mut idx, &mut malhas, face(topo, topo + BLOCO, 0.12), -nrm,
+                                    self.cor(Material::Concreto, gx, gz, d, 0.9, 1.0));
+                                // The rail's top, with a neon strip every few columns.
+                                let (ax, az) = (gx as f32 * BLOCO + dx as f32 * BLOCO * 0.5, gz as f32 * BLOCO + dz as f32 * BLOCO * 0.5);
+                                let (bx, bz) = (ax - dx as f32 * 0.12, az - dz as f32 * 0.12);
+                                let y = topo + BLOCO;
+                                let pts = if dx != 0 {
+                                    [vec3(ax.min(bx), y, z0), vec3(ax.max(bx), y, z0), vec3(ax.max(bx), y, z1), vec3(ax.min(bx), y, z1)]
+                                } else {
+                                    [vec3(x0, y, az.min(bz)), vec3(x1, y, az.min(bz)), vec3(x1, y, az.max(bz)), vec3(x0, y, az.max(bz))]
+                                };
+                                let neon = if (gx + gz).rem_euclid(6) < 3 { Material::NeonCiano } else { Material::Concreto };
+                                quad(&mut verts, &mut idx, &mut malhas, pts, Vec3::Y, self.cor(neon, gx, gz, d, 1.0, 1.0));
+                            }
+                        }
+                    }
+                    // A pillar every five units, where the deck is wide and high.
+                    let alto = d - chao > shared::terreno::VAO_LIVRE;
+                    if alto && gx.rem_euclid(10) == 0 && gz.rem_euclid(10) == 0
+                        && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|(a, b)| deck(gx + a, gz + b).is_some())
+                    {
+                        let y0 = (chao + 1) as f32 * BLOCO;
+                        let r = BLOCO * 0.5;
+                        let (px, pz) = (gx as f32 * BLOCO, gz as f32 * BLOCO);
+                        for (dx, dz) in [(1.0f32, 0.0f32), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                            let (ex, ez) = (px + dx * r, pz + dz * r);
+                            let pts = if dx != 0.0 {
+                                [vec3(ex, y0, pz - r), vec3(ex, y0, pz + r), vec3(ex, fundo, pz + r), vec3(ex, fundo, pz - r)]
+                            } else {
+                                [vec3(px - r, y0, ez), vec3(px + r, y0, ez), vec3(px + r, fundo, ez), vec3(px - r, fundo, ez)]
+                            };
+                            quad(&mut verts, &mut idx, &mut malhas, pts, vec3(dx, 0.0, dz),
+                                self.cor(Material::Concreto, gx, gz, chao, 0.7, 1.0));
+                        }
+                    }
                 }
             }
         }
@@ -2582,13 +2684,14 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
             flags: 0,
             acao: 0,
             rumo: 0,
+            camada: 0,
         })
         .collect();
     world.apply(metas, states, &[]);
     let chao = |_: f32, _: f32| 0.0f32;
     let solido = crate::render3d::material_solido();
     for _ in 0..6 {
-        world.tick(0.016, &chao);
+        world.tick(0.016, &|x, z, _| chao(x, z));
         let mut vista = crate::render3d::Vista::nova(Vec2::new(3.75, 0.0), 0.6, 9.0, 0.5, 0.0, &chao);
         vista.cam.render_target = Some(rt.clone());
         set_camera(&vista.cam);
@@ -2633,6 +2736,8 @@ pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
         ("kabukicho", { let c = shared::kogen::de_latlon(35.6935, 139.7020); (c.x, c.y) }, 120.0, 0.5),
         ("torre-de-toquio", marco(Mc::TorreDeToquio), 130.0, 0.4),
         ("hub", (hub.x, hub.y), 120.0, 0.65),
+        ("expressa", { let c = { let v = shared::kogen::de_latlon(35.6838, 139.6905); perto_de_deck(vec2(v.x, v.y), 12) }; (c.x, c.y) }, 70.0, 0.45),
+        ("rampa", { let c = { let v = shared::kogen::de_latlon(35.6600, 139.7000); perto_de_deck(vec2(v.x, v.y), 1) }; (c.x, c.y) }, 50.0, 0.5),
         ("aerea-sul", (0.0, 300.0), 500.0, 0.8),
         ("aerea-norte", (0.0, -300.0), 500.0, 0.8),
     ];
@@ -2675,4 +2780,29 @@ pub async fn previa_kogen(_vox: &mut crate::vox::VoxCache) {
     }
     rt.texture.get_texture_data().export_png(&format!("{saida}/mapa.png"));
     crate::render3d::define_alvo(None);
+}
+
+/// The top of Kōgen-tō's expressway deck over `(x, z)`, in units, if any.
+pub fn deck_altura(x: f32, z: f32) -> Option<f32> {
+    let (bx, bz) = ((x / BLOCO).round() as i32, (z / BLOCO).round() as i32);
+    shared::kogen::deck_da_coluna(bx, bz).map(|b| (b + 1) as f32 * BLOCO)
+}
+
+/// The nearest column to `q` with an expressway deck at least `minimo`
+/// blocks above the street (for the previews).
+fn perto_de_deck(q: Vec2, minimo: i32) -> Vec2 {
+    let (bx, bz) = ((q.x / BLOCO).round() as i32, (q.y / BLOCO).round() as i32);
+    for r in 0..400 {
+        for i in -r..=r {
+            for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                let (x, z) = (bx + dx, bz + dz);
+                if shared::kogen::deck_da_coluna(x, z).is_some_and(|d| d - shared::kogen::NIVEL_CHAO >= minimo
+                    && (minimo > 1 || d - shared::kogen::NIVEL_CHAO == 1))
+                {
+                    return vec2(x as f32, z as f32) * BLOCO;
+                }
+            }
+        }
+    }
+    q
 }

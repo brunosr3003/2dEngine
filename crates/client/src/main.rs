@@ -1299,8 +1299,8 @@ impl Jogo {
             self.habilidades.acompanhar_alvos(&mut self.world);
             {
                 let terreno = self.terreno.as_ref();
-                self.world.tick(get_frame_time(), &|x, z| {
-                    terreno.map_or(0.0, |t| t.altura_apoio(x, z, shared::ENTITY_RADIUS))
+                self.world.tick(get_frame_time(), &|x, z, camada| {
+                    terreno.map_or(0.0, |t| t.altura_apoio_na(x, z, shared::ENTITY_RADIUS, camada))
                 });
             }
             self.subiu_de_nivel.passo(get_frame_time());
