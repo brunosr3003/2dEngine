@@ -27,7 +27,7 @@ use std::sync::OnceLock;
 
 pub const ZONA: &str = "ilha_kogen";
 /// Bump on any change to the layout: it is in the server's height cache key.
-pub const REVISAO: u32 = 5;
+pub const REVISAO: u32 = 6;
 /// Planting seed: the relief does not depend on it, the decoration does.
 pub const SEMENTE: i32 = 0x0C06_E170;
 /// Zone radius in BLOCKS: the island plus a margin of sea.

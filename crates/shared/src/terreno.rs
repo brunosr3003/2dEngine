@@ -2419,8 +2419,10 @@ impl Gerador {
         g.cidade = None;
         g.porto = None;
         g.oasis = None;
+        // `Cidade::nova` takes BLOCKS: in units the town sat at half the
+        // distance, out in Shibuya.
         let c = crate::kogen::centro_da_cidade();
-        g.cidade = Some(Cidade::nova(c.x, c.y, crate::kogen::NIVEL_CHAO));
+        g.cidade = Some(Cidade::nova(c.x / BLOCO, c.y / BLOCO, crate::kogen::NIVEL_CHAO));
         g
     }
 
