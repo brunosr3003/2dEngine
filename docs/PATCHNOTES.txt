@@ -2,7 +2,7 @@
 
 Os modelos marinhos foram refeitos como arquivos voxel, usando o mesmo renderizador dos outros personagens e animais. Tubarões ganharam focinho, guelras e nadadeiras em blocos; sereias e tritões têm rosto, cabelo, armadura e cauda; polvos e a Hidra também foram refeitos em voxel. As caudas continuam animadas para nadar.
 
-As baleias agora têm cerca de 17 metros de comprimento, com corpo volumoso, grandes nadadeiras, cauda horizontal e respiradouro. As baleias que cruzam o alto do mapa são ainda maiores. Os novos corais decorativos também passaram a usar cubos.
+As baleias agora têm cerca de 17 metros de comprimento, com corpo volumoso, grandes nadadeiras, cauda horizontal e respiradouro. As baleias que cruzam o alto do mapa são ainda maiores. Os novos corais decorativos também passaram a usar cubos. As prévias do bestiário e a altura dos nomes acompanham os novos modelos.
 
 04/10/2026 — Abyssia viva, dungeons temáticas e progressão sem limite
 

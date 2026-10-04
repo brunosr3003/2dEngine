@@ -18,6 +18,7 @@ const VIDA_DO_NUMERO: f32 = 0.95;
 const VIDA_DA_FAISCA: f32 = 0.2;
 
 fn altura_de(e: &crate::world::Ent) -> f32 {
+    if let Some(height)=crate::marinhos::altura_ent(e) {return height;}
     let boss = e.state.flags & shared::ent_flags::BOSS != 0;
     if boss && e.meta.tag == shared::EntityTag::Enemy {
         // O chefe e' desenhado em escala: a placa e o numero vao pra cabeca dele.

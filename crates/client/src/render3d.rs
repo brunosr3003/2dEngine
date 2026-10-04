@@ -796,7 +796,7 @@ impl<'a> Vista<'a> {
     /// Onde se MIRA na entidade: meio corpo acima dos pes. Clicar nos pes
     /// obriga o jogador a acertar a sombra, nao o bicho.
     pub fn mira_de(&self, e: &crate::world::Ent) -> Vec3 {
-        self.pos_de(e) + vec3(0.0, 0.5, 0.0)
+        self.pos_de(e) + vec3(0.0, crate::marinhos::altura_ent(e).map_or(0.5,|h|h*0.5), 0.0)
     }
 
     pub fn na_tela(&self, p: Vec3) -> Option<Vec2> {
@@ -1670,6 +1670,7 @@ pub(crate) fn escala_de_chefe(e: &crate::world::Ent) -> f32 {
 
 /// Altura do corpo na tela (u), pra sombra, aura, placa e poeira.
 pub(crate) fn altura_de_chefe(e: &crate::world::Ent) -> f32 {
+    if let Some(height)=crate::marinhos::altura_ent(e) {return height;}
     crate::bicho::do_mob(e.meta.tag, e.meta.kind, true)
         .or_else(|| crate::bicho::do_pet(e.meta.tag, e.meta.kind))
         .map_or(1.95, |(_, a)| a)
@@ -3390,6 +3391,18 @@ pub fn vitrine_bicho(vox: &crate::vox::VoxCache, nome: &str, r: Rect, yaw: f32, 
 /// Modelo real do inimigo no bestiário, usando a mesma malha do mundo.
 pub fn vitrine_mob(vox: &crate::vox::VoxCache, kind: u16, chefe: bool,
     r: Rect, yaw: f32, solido: &Material) -> bool {
+    if let Some((kind,scale))=crate::marinhos::corpo(kind,chefe) {
+        let Some(vp)=viewport_na_tela(r) else {return false;};
+        let d=crate::marinhos::dimensions(kind)*scale;
+        let aspect=vp.2 as f32/vp.3.max(1)as f32;
+        let size=d.y.max(d.x.max(d.z)/aspect.max(0.6));
+        let cam=Camera3D {position:vec3(size*0.7,size*0.7,size*2.5),target:vec3(0.,d.y*0.5+0.85,0.),up:Vec3::Y,fovy:30f32.to_radians(),aspect:Some(aspect),viewport:Some(vp),render_target:alvo(),..Default::default()};
+        set_camera(&cam);limpa_so_profundidade();
+        macroquad::material::gl_use_material(solido);
+        crate::marinhos::desenha(kind,Vec3::ZERO,yaw,kind as u64,scale);
+        macroquad::material::gl_use_default_material();camera_padrao();
+        return true;
+    }
     if let Some((nome, _)) = crate::bicho::do_mob(shared::EntityTag::Enemy, kind, chefe) {
         let Some(b) = vox.bicho(nome) else { return false; };
         let Some(vp) = viewport_na_tela(r) else { return false; };

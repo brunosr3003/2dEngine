@@ -36,6 +36,8 @@ struct Model {
     tail: Vec<MalhaEstatica>,
     horizontal: bool,
     pivot: Vec3,
+    top: f32,
+    dimensions: Vec3,
 }
 fn asset(kind: u16) -> &'static [u8] {
     match kind {
@@ -76,9 +78,16 @@ fn model(kind: u16) -> Model {
     ) * s;
     let mut body = Vec::new();
     let mut tail = Vec::new();
+    let mut lo = [usize::MAX; 3];
+    let mut hi = [0; 3];
     for (name, part) in
         crate::vox::parse_nomeado(asset(kind)).expect("validated marine voxel asset")
     {
+        let (a, b) = part.bounds();
+        for i in 0..3 {
+            lo[i] = lo[i].min(a[i]);
+            hi[i] = hi[i].max(b[i]);
+        }
         let o = if name == "tail" { tail_origin } else { origin };
         let meshes = crate::vox::mesh_na_origem(&part, s, o)
             .into_iter()
@@ -94,9 +103,53 @@ fn model(kind: u16) -> Model {
         tail,
         horizontal: matches!(kind, 90 | 71 | 73 | 75 | 91 | 92),
         pivot,
+        top: (hi[2] as f32 + 1. - 16.) * s,
+        dimensions: vec3(
+            (hi[0] - lo[0] + 1) as f32,
+            (hi[2] - lo[2] + 1) as f32,
+            (hi[1] - lo[1] + 1) as f32,
+        ) * s,
     }
 }
 thread_local! {static MODELS:RefCell<std::collections::HashMap<u16,Model>>=RefCell::new(std::collections::HashMap::new());}
+pub fn corpo(kind: u16, boss: bool) -> Option<(u16, f32)> {
+    let (kind, scale) = if boss {
+        let c = shared::bosses::chefe(kind)?;
+        let k = match c.corpo {
+            shared::bosses::Corpo::Bicho(k) | shared::bosses::Corpo::Gente(k) => k,
+            _ => return None,
+        };
+        (k, c.escala)
+    } else {
+        (kind, 1.)
+    };
+    matches!(kind, 70 | 71 | 72 | 73 | 75 | 76 | 90 | 91 | 92 | 93).then_some((kind, scale))
+}
+pub fn dimensions(kind: u16) -> Vec3 {
+    MODELS.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry(kind)
+            .or_insert_with(|| model(kind))
+            .dimensions
+    })
+}
+pub fn altura_ent(e: &crate::world::Ent) -> Option<f32> {
+    if e.meta.tag != shared::EntityTag::Enemy {
+        return None;
+    }
+    let (kind, scale) = corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)?;
+    Some(
+        MODELS.with(|cache| {
+            cache
+                .borrow_mut()
+                .entry(kind)
+                .or_insert_with(|| model(kind))
+                .top
+        }) * scale
+            + if kind == 90 { 2. } else { 0.85 },
+    )
+}
 pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
     if !matches!(kind, 70 | 71 | 72 | 73 | 75 | 76 | 90 | 91 | 92 | 93) {
         return false;
