@@ -59,6 +59,7 @@ pub struct Pose {
     pub dead: f32,
     pub breath: bool,
     pub direction: Vec3,
+    pub attack: Option<crate::chefe_anim::Golpe>,
     pub body: crate::chefe_anim::Ajuste,
 }
 fn smooth(x: f32) -> f32 {
@@ -68,7 +69,7 @@ fn smooth(x: f32) -> f32 {
 pub fn pose(e: &crate::world::Ent, now: f64) -> Pose {
     let mut p = Pose {
         walk: e.andar,
-        phase: e.fase * 0.375,
+        phase: e.fase * 0.75,
         recoil: e.ferido.map_or(0., |t| (1. - t / 0.3).clamp(0., 1.)),
         dead: e.morte.map_or(0., |t| smooth(t / 1.2)),
         ..Default::default()
@@ -78,26 +79,13 @@ pub fn pose(e: &crate::world::Ent, now: f64) -> Pose {
         return p;
     }
     if let Some(c) = e.carga_chefe.as_ref() {
-        p.body = crate::chefe_anim::ajuste(c, now).unwrap_or_default();
-        p.direction = vec3(c.dir.x, 0., c.dir.y);
-        p.breath = c.golpe == crate::chefe_anim::Golpe::Investida
-            && crate::marinhos::corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)
-                .is_some_and(|(kind, _)| kind == 93);
-        if p.breath {
-            // The line attack is venom breath, so the Hydra stays at its origin.
-            p.body.desloca = 0.;
-            p.body.avanca *= 0.25;
-            p.body.pitch *= 0.25;
-        }
-        match crate::chefe_anim::tempo(c, now) {
-            crate::chefe_anim::Tempo::Prepara(u) => p.wind = smooth(u),
-            crate::chefe_anim::Tempo::Golpe(u) => {
-                p.wind = 1. - smooth(u);
-                p.strike = (u * std::f32::consts::PI).sin();
-            }
-            crate::chefe_anim::Tempo::Recupera(u) => p.strike = (1. - smooth(u)) * 0.25,
-            _ => {}
-        }
+        charged_pose(
+            &mut p,
+            c,
+            now,
+            crate::marinhos::corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)
+                .is_some_and(|(kind, _)| kind == 93),
+        );
     } else {
         let (time, impact) = e.ataque_mob.map_or((e.golpe, 0.46), |(_, t, i)| (t, i));
         if time < impact {
@@ -107,6 +95,53 @@ pub fn pose(e: &crate::world::Ent, now: f64) -> Pose {
         }
     }
     p
+}
+pub fn charged_pose(p: &mut Pose, c: &crate::chefe_anim::Carga, now: f64, is_hydra: bool) {
+    p.body = crate::chefe_anim::ajuste(c, now).unwrap_or_default();
+    p.direction = vec3(c.dir.x, 0., c.dir.y);
+    p.attack = Some(c.golpe);
+    p.breath = is_hydra && c.golpe == crate::chefe_anim::Golpe::Investida;
+    if p.breath {
+        // The line attack is venom breath, so the Hydra stays at its origin.
+        p.body.desloca = 0.;
+        p.body.avanca *= 0.25;
+        p.body.pitch *= 0.25;
+    }
+    match crate::chefe_anim::tempo(c, now) {
+        crate::chefe_anim::Tempo::Prepara(u) => p.wind = smooth(u),
+        crate::chefe_anim::Tempo::Golpe(u) => {
+            p.wind = 1. - smooth(u);
+            p.strike = (u * std::f32::consts::PI).sin();
+        }
+        crate::chefe_anim::Tempo::Recupera(u) => p.strike = (1. - smooth(u)) * 0.25,
+        _ => {}
+    }
+}
+/// The five chains use different idle phases, but obey the same impact clock.
+fn gestures(pose: Pose, i: usize, t: f32) -> (f32, f32, f32, f32) {
+    use crate::chefe_anim::Golpe;
+    let alive = 1. - pose.dead;
+    let wave = t * 0.7 + i as f32 * 1.7;
+    let (retract, thrust, head) = match pose.attack {
+        Some(Golpe::Investida) => (-0.14, -0.08, -0.10),
+        Some(Golpe::Giro) => (0.14, 0.10, 0.08),
+        Some(Golpe::Salto | Golpe::Pisao) => (0.24, 0.28, 0.22),
+        _ => (-0.26, 0.38, 0.38),
+    };
+    let yaw = wave.sin() * 0.10 * alive;
+    let pitch =
+        wave.cos() * 0.055 * alive + pose.wind * retract + pose.strike * thrust + pose.dead * 0.45;
+    let hp =
+        (t * 0.95 + i as f32 * 2.1).sin() * 0.065 * alive - pose.wind * 0.16 + pose.strike * head;
+    let open = if pose.breath {
+        pose.wind * 0.8 + pose.strike * 0.9
+    } else if matches!(pose.attack, Some(Golpe::Giro | Golpe::Salto | Golpe::Pisao)) {
+        pose.wind * 0.25
+    } else {
+        pose.wind * 0.95 - pose.strike * 0.9
+    };
+    let jaw = (0.045 * alive + open).clamp(0., 0.95) + pose.dead * 0.25;
+    (yaw, pitch, hp, jaw)
 }
 fn around(p: Vec3, q: Quat) -> Mat4 {
     Mat4::from_translation(p) * Mat4::from_quat(q) * Mat4::from_translation(-p)
@@ -123,7 +158,9 @@ fn neck_pivot(index: usize) -> Vec3 {
 pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
     let t = get_time() as f32;
     let alive = 1. - pose.dead;
-    let bob = (t * 1.3 + seed as f32 % 17.).sin() * 0.018 * alive;
+    let walk = (pose.walk * 2.).clamp(0., 1.) * alive;
+    let bob =
+        (t * 1.3 + seed as f32 % 17.).sin() * 0.02 * alive + (pose.phase * 2.).cos() * 0.015 * walk;
     let h = HEIGHT * scale;
     let forward = Quat::from_rotation_y(yaw) * Vec3::Z;
     let position = p
@@ -131,8 +168,10 @@ pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
         + forward * (h * (pose.body.avanca + pose.strike * 0.04 - pose.recoil * 0.025))
         + pose.direction.normalize_or(forward) * pose.body.desloca;
     let rotation = Quat::from_rotation_y(yaw + pose.body.giro)
-        * Quat::from_rotation_x(pose.body.pitch + pose.recoil * 0.07)
-        * Quat::from_rotation_z(pose.dead * 1.1);
+        * Quat::from_rotation_x(
+            pose.body.pitch + pose.recoil * 0.12 + pose.phase.cos() * 0.025 * walk,
+        )
+        * Quat::from_rotation_z(pose.dead * 1.1 + pose.phase.sin() * 0.035 * walk);
     let root = Mat4::from_scale_rotation_translation(
         vec3(scale, scale * (1. - pose.body.agacha), scale),
         rotation,
@@ -142,11 +181,7 @@ pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
         let mut cache = cache.borrow_mut();
         let rig = cache.get_or_insert_with(load);
         let necks: [Mat4; 5] = std::array::from_fn(|i| {
-            let wave = t * 0.7 + i as f32 * 1.7;
-            let yaw = wave.sin() * 0.045 * alive;
-            let pitch = wave.cos() * 0.025 * alive - pose.wind * 0.12
-                + pose.strike * 0.22
-                + pose.dead * 0.45;
+            let (yaw, pitch, _, _) = gestures(pose, i, t);
             around(
                 neck_pivot(i),
                 Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch),
@@ -174,27 +209,21 @@ pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
                         .iter()
                         .find(|p| p.name == format!("head_{}", i + 1))
                         .unwrap();
-                    let hp = (t * 0.95 + i as f32 * 2.1).sin() * 0.035 * alive - pose.wind * 0.1
-                        + pose.strike * 0.3;
+                    let (_, _, hp, jaw) = gestures(pose, i, t);
                     local = necks[i] * around(head.pivot, Quat::from_rotation_x(hp));
                     if part.name.starts_with("jaw") {
-                        let open = if pose.breath {
-                            pose.wind * 0.65 + pose.strike * 0.8
-                        } else {
-                            pose.wind * 0.8 - pose.strike * 0.65
-                        };
-                        let jaw = (0.045 * alive + open).clamp(0., 0.95) + pose.dead * 0.25;
                         local *= around(part.pivot, Quat::from_rotation_x(jaw));
                         if pose.breath && pose.strike > 0.15 && alive > 0.9 {
                             let mouth = (root * local).transform_point3(part.mouth);
-                            for k in 0..5 {
-                                let f = (t * 2.5 + k as f32 * 0.19).fract();
+                            for k in 0..10 {
+                                let f = (t * 2.5 + k as f32 * 0.097).fract();
                                 let q = mouth
-                                    + forward * (f * 6. * pose.strike)
-                                    + vec3((f * 9. + i as f32).sin() * 0.12, -f * 0.35, 0.);
+                                    + pose.direction.normalize_or(forward)
+                                        * (f * 16. * pose.strike)
+                                    + vec3((f * 9. + i as f32).sin() * 0.16, -f * 0.35, 0.);
                                 draw_cube(
                                     q,
-                                    Vec3::splat(0.11 + (1. - f) * 0.1),
+                                    Vec3::splat((0.07 + (1. - f) * 0.08) * scale),
                                     None,
                                     Color::from_rgba(87, 235, 107, 255),
                                 );
@@ -213,8 +242,8 @@ pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
                 let diagonal =
                     part.name.ends_with("front_right") || part.name.ends_with("back_left");
                 let phase = pose.phase + if diagonal { 0. } else { std::f32::consts::PI };
-                let stride = phase.sin() * 0.13 * pose.walk;
-                let lift = phase.cos().max(0.) * 0.1 * pose.walk;
+                let stride = phase.sin() * 0.30 * walk;
+                let lift = phase.cos().max(0.) * 0.16 * walk;
                 local = Mat4::from_translation(vec3(0., lift, stride));
             }
             crate::gpu_estatica::desenha_com_modelo(program, part.mesh.iter(), root * local);
@@ -224,6 +253,32 @@ pub fn draw(p: Vec3, yaw: f32, seed: u64, scale: f32, pose: Pose) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn jaws_snap_for_bites_but_remain_open_for_venom_and_heads_follow_the_attack() {
+        use crate::chefe_anim::Golpe;
+        for i in 0..5 {
+            let wind = Pose {
+                wind: 1.,
+                ..Default::default()
+            };
+            let bite = Pose {
+                strike: 1.,
+                ..Default::default()
+            };
+            let breath = Pose {
+                strike: 1.,
+                breath: true,
+                attack: Some(Golpe::Investida),
+                ..Default::default()
+            };
+            let (_, back, _, open) = gestures(wind, i, 0.);
+            let (_, forward, _, closed) = gestures(bite, i, 0.);
+            assert!(open > 0.8 && closed < 0.1);
+            assert!(forward - back > 0.6);
+            assert!(gestures(breath, i, 0.).3 > 0.8);
+            assert_ne!(gestures(breath, i, 0.), gestures(bite, i, 0.));
+        }
+    }
     #[test]
     fn original_hydra_has_all_five_articulated_chains_and_paws() {
         let parts = crate::vox::parse_nomeado(DATA).unwrap();

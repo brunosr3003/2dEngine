@@ -1,3 +1,9 @@
+04/10/2026 — Hidra volta a caminhar e ataques mais visíveis
+
+A Hidra estava herdando velocidade zero por não ter um preset de monstro comum no banco. Agora tem velocidade, alcance de mordida e detecção próprios: persegue o jogador, para durante a preparação do telegráfico e volta a caminhar entre ataques.
+
+As cinco cabeças ganharam movimentos de preparação e mordida mais amplos, com mandíbulas que fecham no golpe. Sopro venenoso, giro e salto agora usam poses diferentes. As patas têm passadas maiores, o corpo acompanha a caminhada e o sopro tem um rastro mais longo e visível.
+
 04/10/2026 — Hidra original de Zone14 e animações de combate
 
 A Hidra do Santuário Submerso agora usa o modelo voxel original de Zone14, com suas cores, cinco cabeças, pescoços, mandíbulas, quatro patas e cauda. As cabeças respiram e se movem independentemente; as mandíbulas abrem na preparação e fecham nas mordidas. O sopro venenoso sai das cinco bocas. A caminhada move as patas em pares diagonais.

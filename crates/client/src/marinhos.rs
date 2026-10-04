@@ -469,6 +469,44 @@ pub async fn previa() {
             .export_png(&format!("{output}/{name}.png"));
         next_frame().await;
     }
+    let charge = crate::chefe_anim::Carga {
+        golpe: crate::chefe_anim::Golpe::Varrida,
+        dir: Vec2::Y,
+        alcance: 0.,
+        inicio: 0.,
+        carga_s: 1.6,
+        impacto: None,
+    };
+    for frame in 0..32 {
+        let cam = Camera3D {
+            position: vec3(12., 10., 20.),
+            target: vec3(0., 3.5, 0.),
+            up: Vec3::Y,
+            render_target: Some(rt.clone()),
+            aspect: Some(1.6),
+            ..Default::default()
+        };
+        set_camera(&cam);
+        clear_background(Color::from_rgba(75, 93, 108, 255));
+        macroquad::material::gl_use_material(&material);
+        draw_cube(
+            vec3(0., -0.2, 0.),
+            vec3(40., 0.3, 40.),
+            None,
+            Color::from_rgba(127, 139, 144, 255),
+        );
+        let mut pose = crate::hidra::Pose::default();
+        crate::hidra::charged_pose(&mut pose, &charge, frame as f64 * 0.09, true);
+        crate::hidra::draw(Vec3::ZERO, 0., 93, 2.8, pose);
+        macroquad::material::gl_use_default_material();
+        unsafe {
+            get_internal_gl().flush();
+        }
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{output}/hydra-attack-{frame:02}.png"));
+        next_frame().await;
+    }
     crate::render3d::define_alvo(None);
 }
 #[cfg(test)]

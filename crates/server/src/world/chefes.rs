@@ -422,6 +422,16 @@ impl GameWorld {
             tag.leash_max = (shared::kogen::espiral_raio_do_topo() - 2.0) * 0.5;
         }
         tag.attack_range = tag.attack_range.max(2.4);
+        if kind == 93 {
+            // Hydra is a boss-only rig, not a common enemy preset. The absent
+            // DB row used to leave its inherited locomotor speed at zero.
+            tag.locomotor_speed = 2.6;
+            tag.attack_range = 5.2;
+            tag.detect_range = 28.0;
+            tag.kite_dist = None;
+            tag.is_melee = true;
+        }
+
         // Golpe comum nao se esquiva: cadencia de chefe, nao a do bicho.
         tag.attack_cooldown_base = tag.attack_cooldown_base.max(cat::CADENCIA_COMUM_S);
         // Sem a guarda de 75% da IA antiga: chefe telegrafado se vence
@@ -712,6 +722,39 @@ impl GameWorld {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn hydra_chases_without_a_common_enemy_preset_and_pauses_only_to_charge() {
+        crate::economy::init_vazia_para_testes();
+        let mut w = GameWorld::new(HashMap::new());
+        w.map = shared::mapfile::MapFile::new("hydra-movement", 100, 100).to_world_map();
+        w.safe_zones.clear();
+        let origin = Vec2::splat(40.);
+        let target = origin + Vec2::X * 18.;
+        w.ecs.spawn((NetId(EntityId(901)), Position(target), EntityKind::Player,
+            PlayerTag { name: "hydra-target".into(), player_id: PlayerId(901), attack_anim_pending: None, combo_step_pending: None }, Health { current: 10000, max: 10000 }));
+        let hydra = w.nascer_chefe(93, origin).unwrap();
+        {
+            let mut tag = w.ecs.get::<&mut EnemyTag>(hydra).unwrap();
+            tag.spawn_grace_until = 0.;
+            assert!(tag.locomotor_speed > 2.);
+        }
+        w.ecs.get::<&mut ChefeVivo>(hydra).unwrap().livre_em = 10.;
+        for _ in 0..30 { w.step(shared::TICK_DT); }
+        let moved = w.ecs.get::<&Position>(hydra).unwrap().0;
+        assert!(moved.distance(origin) > 1., "Hydra must walk toward its target");
+        assert!(moved.distance(target) < origin.distance(target));
+        w.ecs.get::<&mut ChefeVivo>(hydra).unwrap().livre_em = 0.;
+        w.step(shared::TICK_DT);
+        assert!(w.ecs.get::<&ChefeVivo>(hydra).unwrap().carga.is_some());
+        let charging = w.ecs.get::<&Position>(hydra).unwrap().0;
+        for _ in 0..10 { w.step(shared::TICK_DT); }
+        assert_eq!(w.ecs.get::<&Position>(hydra).unwrap().0, charging,
+            "telegraph remains planted so its hit area is honest");
+        for _ in 0..100 { w.step(shared::TICK_DT); }
+        assert!(w.ecs.get::<&Position>(hydra).unwrap().0.distance(charging) > 1.,
+            "Hydra must resume moving after the charge");
+    }
 
     #[test]
     fn sitios_longe_da_cidade_e_uns_dos_outros() {
