@@ -26,7 +26,7 @@ pub fn escala(sw: f32, sh: f32) -> f32 {
 /// Faixa da escala da interface (Menu → Sistema → Interface): multiplica o
 /// HUD e todo texto que passa pelo `hud_estilo`.
 pub const ESCALA_UI_MIN: f32 = 0.8;
-pub const ESCALA_UI_MAX: f32 = 1.6;
+pub const ESCALA_UI_MAX: f32 = 2.0;
 
 /// Escala padrao de 160%; a preferencia manual salva continua valendo.
 pub fn escala_ui_padrao() -> f32 { 1.6 }

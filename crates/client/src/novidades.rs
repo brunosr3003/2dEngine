@@ -96,11 +96,18 @@ impl Novidades {
                 self.scroll = (self.scroll + 100.0).min(max);
             }
         }
+        let continuar = Rect::new(r.right() - 166.0, r.bottom() - 62.0, 142.0, 44.0);
+        // Read the finger itself: a quick iOS tap can start and end between
+        // frames, and must not depend on the simulated mouse position.
+        let toque_continuar = touches().iter().any(|t| {
+            matches!(t.phase, TouchPhase::Started | TouchPhase::Ended)
+                && continuar.contains(t.position)
+        });
         if ui::botao(
-            Rect::new(r.right() - 166.0, r.bottom() - 56.0, 142.0, 34.0),
+            continuar,
             "Continue",
             true,
-        ) || is_key_pressed(KeyCode::Escape)
+        ) || toque_continuar || is_key_pressed(KeyCode::Escape)
         {
             self.aberta = false;
             self.arrasto = None;
