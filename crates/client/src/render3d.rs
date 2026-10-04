@@ -1788,21 +1788,7 @@ pub fn draw_entities_com_sombras(
                 get_frame_time(),
             );
         }
-        if !boss && e.meta.tag == shared::EntityTag::Enemy
-            && crate::marinhos::desenha(e.meta.kind, p, e.yaw, e.meta.id.0 as u64, 1.0) {
-            continue;
-        }
-        if boss && e.meta.tag == shared::EntityTag::Enemy {
-            if let Some(c) = shared::bosses::chefe(e.meta.kind) {
-                let kind = match c.corpo {
-                    shared::bosses::Corpo::Bicho(k) | shared::bosses::Corpo::Gente(k) => Some(k),
-                    _ => None,
-                };
-                if kind.is_some_and(|kind| crate::marinhos::desenha(kind, p, e.yaw, e.meta.id.0 as u64, c.escala)) {
-                    continue;
-                }
-            }
-        }
+        if crate::marinhos::desenha_ent(e, p) { continue; }
         if abismo() && e.meta.tag == shared::EntityTag::Npc
             && shared::npc_papel_de_kind(e.meta.kind) == shared::construcao::Papel::Casa as u8 {
             crate::marinhos::desenha(if e.meta.id.0 % 2 == 0 {91} else {71}, p, e.yaw, e.meta.id.0 as u64, 1.0);

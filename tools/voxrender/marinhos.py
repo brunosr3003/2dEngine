@@ -121,23 +121,10 @@ def octopus():
             if j%4==0:tail[x,y,z-r]=12
     return body,tail
 
-def hydra():
-    _,tail=fish(70)
-    body={}
-    solid(body,(36,65,16),(20,24,8),lambda x,y,z:3 if z<12 else 6 if (x+y)%7==0 else 7)
-    for i in range(5):
-        x=20+i*8;top=43+(i%2)*6
-        for z in range(18,top):solid(body,(x,76+(z-18)//4,z),(3,3,2),7)
-        solid(body,(x,91,top),(4,10,4),6)
-        box(body,x-3,x+3,95,101,top-2,top-2,4)
-        for side in [-1,1]:body[x+side*3,96,top+2]=5
-        for z in range(top+3,top+8):box(body,x-1,x+1,87,89,z,z,10)
-    return body,tail
-
 if __name__=='__main__':
     out=Path(__file__).resolve().parents[2]/'assets/vox/marinhos';out.mkdir(parents=True,exist_ok=True)
-    for kind in [70,71,72,73,75,76,90,91,92,93]:
-        parts=merfolk(kind) if kind in [71,73,75,91,92] else octopus() if kind==76 else hydra() if kind==93 else fish(kind)
+    for kind in [70,71,72,73,75,76,90,91,92]:
+        parts=merfolk(kind) if kind in [71,73,75,91,92] else octopus() if kind==76 else fish(kind)
         for part in parts:
             assert all(0<=x<72 and 0<=y<128 and 0<=z<64 for x,y,z in part)
         (out/f'{kind}.vox').write_bytes(vox.arquivo_cena(list(zip(['body','tail'],parts)),PALETTE,camada=f'marine_{kind}'))

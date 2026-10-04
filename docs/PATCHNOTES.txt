@@ -1,3 +1,9 @@
+04/10/2026 — Hidra original de Zone14 e animações de combate
+
+A Hidra do Santuário Submerso agora usa o modelo voxel original de Zone14, com suas cores, cinco cabeças, pescoços, mandíbulas, quatro patas e cauda. As cabeças respiram e se movem independentemente; as mandíbulas abrem na preparação e fecham nas mordidas. O sopro venenoso sai das cinco bocas. A caminhada move as patas em pares diagonais.
+
+Os movimentos acompanham a preparação, o impacto e a recuperação dos ataques enviados pelo servidor, incluindo o giro da cauda e o salto. A Hidra e os outros monstros marinhos também reagem aos golpes recebidos e têm animação de queda ao morrer.
+
 04/10/2026 — Criaturas marinhas voxel e baleias gigantes
 
 Os modelos marinhos foram refeitos como arquivos voxel, usando o mesmo renderizador dos outros personagens e animais. Tubarões ganharam focinho, guelras e nadadeiras em blocos; sereias e tritões têm rosto, cabelo, armadura e cauda; polvos e a Hidra também foram refeitos em voxel. As caudas continuam animadas para nadar.

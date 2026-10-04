@@ -40,6 +40,7 @@ mod gpu_estatica;
 mod luzes;
 mod abismo;
 mod marinhos;
+mod hidra;
 mod habilidades;
 mod habilidades_input;
 mod hud;

@@ -50,7 +50,6 @@ fn asset(kind: u16) -> &'static [u8] {
         90 => include_bytes!("../../../assets/vox/marinhos/90.vox"),
         91 => include_bytes!("../../../assets/vox/marinhos/91.vox"),
         92 => include_bytes!("../../../assets/vox/marinhos/92.vox"),
-        93 => include_bytes!("../../../assets/vox/marinhos/93.vox"),
         _ => unreachable!("not a marine kind"),
     }
 }
@@ -58,7 +57,6 @@ fn voxel_size(kind: u16) -> f32 {
     match kind {
         90 => 0.18,
         71 | 73 | 75 | 91 | 92 => 0.045,
-        93 => 0.06,
         _ => 0.055,
     }
 }
@@ -126,6 +124,9 @@ pub fn corpo(kind: u16, boss: bool) -> Option<(u16, f32)> {
     matches!(kind, 70 | 71 | 72 | 73 | 75 | 76 | 90 | 91 | 92 | 93).then_some((kind, scale))
 }
 pub fn dimensions(kind: u16) -> Vec3 {
+    if kind == 93 {
+        return Vec3::splat(crate::hidra::HEIGHT);
+    }
     MODELS.with(|cache| {
         cache
             .borrow_mut()
@@ -139,6 +140,9 @@ pub fn altura_ent(e: &crate::world::Ent) -> Option<f32> {
         return None;
     }
     let (kind, scale) = corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)?;
+    if kind == 93 {
+        return Some(crate::hidra::HEIGHT * scale);
+    }
     Some(
         MODELS.with(|cache| {
             cache
@@ -150,20 +154,62 @@ pub fn altura_ent(e: &crate::world::Ent) -> Option<f32> {
             + if kind == 90 { 2. } else { 0.85 },
     )
 }
+pub fn desenha_ent(e: &crate::world::Ent, p: Vec3) -> bool {
+    if e.meta.tag != shared::EntityTag::Enemy {
+        return false;
+    }
+    let Some((kind, scale)) = corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)
+    else {
+        return false;
+    };
+    desenha_pose(
+        kind,
+        p,
+        e.yaw,
+        e.meta.id.0 as u64,
+        scale,
+        crate::hidra::pose(e, get_time()),
+    )
+}
 pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
+    desenha_pose(kind, p, yaw, seed, scale, Default::default())
+}
+fn desenha_pose(
+    kind: u16,
+    p: Vec3,
+    yaw: f32,
+    seed: u64,
+    scale: f32,
+    pose: crate::hidra::Pose,
+) -> bool {
+    if kind == 93 {
+        crate::hidra::draw(p, yaw, seed, scale, pose);
+        return true;
+    }
     if !matches!(kind, 70 | 71 | 72 | 73 | 75 | 76 | 90 | 91 | 92 | 93) {
         return false;
     }
     let t = get_time() as f32;
     let phase = t * 3.5 + (seed % 113) as f32;
-    let position = p + vec3(
-        0.,
-        (if kind == 90 { 2.0 } else { 0.85 }) + phase.sin() * 0.09,
-        0.,
-    );
+    let alive = 1. - pose.dead;
+    let forward = Quat::from_rotation_y(yaw) * Vec3::Z;
+    let position = p
+        + Vec3::Y
+            * ((if kind == 90 { 2.0 } else { 0.85 }) * alive
+                + phase.sin() * 0.09 * alive
+                + pose.body.sobe
+                + pose.body.voa)
+        + forward
+            * (scale
+                * (pose.body.avanca - pose.wind * 0.12 + pose.strike * 0.35 - pose.recoil * 0.12))
+        + pose.direction.normalize_or(forward) * pose.body.desloca;
     let transform = Mat4::from_scale_rotation_translation(
         Vec3::splat(scale),
-        Quat::from_rotation_y(yaw),
+        Quat::from_rotation_y(yaw + pose.body.giro)
+            * Quat::from_rotation_x(
+                pose.body.pitch - pose.wind * 0.08 + pose.strike * 0.18 + pose.recoil * 0.16,
+            )
+            * Quat::from_rotation_z(pose.dead * 1.35),
         position,
     );
     MODELS.with(|cache| {
@@ -174,7 +220,7 @@ pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
             recorte_z: 0.,
         };
         crate::gpu_estatica::desenha_com_modelo(program, m.body.iter(), transform);
-        let angle = phase.sin() * 0.25;
+        let angle = phase.sin() * (0.18 + pose.walk * 0.15 + pose.strike * 0.25) * alive;
         let rotation = if m.horizontal {
             Quat::from_rotation_x(angle)
         } else {
@@ -357,6 +403,72 @@ pub async fn previa() {
             .export_png(&format!("{output}/{kind}.png"));
         next_frame().await;
     }
+    for (name, pose) in [
+        (
+            "hydra-windup",
+            crate::hidra::Pose {
+                wind: 1.,
+                ..Default::default()
+            },
+        ),
+        (
+            "hydra-bite",
+            crate::hidra::Pose {
+                strike: 1.,
+                ..Default::default()
+            },
+        ),
+        (
+            "hydra-venom",
+            crate::hidra::Pose {
+                strike: 1.,
+                breath: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "hydra-walk",
+            crate::hidra::Pose {
+                walk: 1.,
+                phase: 1.,
+                ..Default::default()
+            },
+        ),
+        (
+            "hydra-death",
+            crate::hidra::Pose {
+                dead: 1.,
+                ..Default::default()
+            },
+        ),
+    ] {
+        let cam = Camera3D {
+            position: vec3(5., 4., 8.),
+            target: vec3(0., 1.3, 0.),
+            up: Vec3::Y,
+            render_target: Some(rt.clone()),
+            aspect: Some(1.6),
+            ..Default::default()
+        };
+        set_camera(&cam);
+        clear_background(Color::from_rgba(75, 93, 108, 255));
+        macroquad::material::gl_use_material(&material);
+        draw_cube(
+            vec3(0., -0.2, 0.),
+            vec3(40., 0.3, 40.),
+            None,
+            Color::from_rgba(127, 139, 144, 255),
+        );
+        crate::hidra::draw(Vec3::ZERO, 0., 93, 1., pose);
+        macroquad::material::gl_use_default_material();
+        unsafe {
+            get_internal_gl().flush();
+        }
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{output}/{name}.png"));
+        next_frame().await;
+    }
     crate::render3d::define_alvo(None);
 }
 #[cfg(test)]
@@ -364,7 +476,7 @@ mod tests {
     use super::*;
     #[test]
     fn marine_assets_are_voxel_rigs_with_separate_swimming_tails() {
-        for kind in [70, 71, 72, 73, 75, 76, 90, 91, 92, 93] {
+        for kind in [70, 71, 72, 73, 75, 76, 90, 91, 92] {
             let parts = crate::vox::parse_nomeado(asset(kind)).unwrap();
             assert_eq!(parts.len(), 2);
             assert!(parts.iter().any(|(n, _)| n == "body"));
