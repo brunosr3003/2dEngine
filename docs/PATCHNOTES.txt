@@ -1,3 +1,11 @@
+04/10/2026 — Efeitos das habilidades crescem com o tier
+
+Cada despertar de habilidade agora aparece no efeito, para todos que estão vendo. No tier 5 o golpe ganha um núcleo branco mais forte e um anel branco que corre pela área; no tier 8, uma segunda onda de choque e o dobro de faíscas; no tier 10, uma coroa dourada: um selo girando no chão, uma coluna de luz e orbes ao redor do golpe. As mãos também brilham mais na preparação.
+
+Os efeitos agora são desenhados no tamanho real da habilidade no seu tier: quando um despertar aumenta o raio, o círculo mostrado aumenta junto. O atordoamento do Salto mostra estrelas girando sobre a queda enquanto dura.
+
+Esta versão é obrigatória: versões antigas do jogo não conectam mais.
+
 04/10/2026 — Salto de verdade
 
 O Salto da espada e escudo agora é um pulo de verdade: o personagem inteiro sai do chão num arco mais alto que o pulo normal e cai sobre o alvo, e é na queda que o golpe acerta. Antes ele parecia um avanço rente ao chão.

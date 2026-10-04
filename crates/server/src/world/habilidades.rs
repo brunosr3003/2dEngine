@@ -40,23 +40,10 @@ fn valida(
     Ok(())
 }
 
-/// Geometria dos despertares, fixada no início da conjuração.
-fn skill_ajustada(mut skill: Skill, tier: u8) -> Skill {
-    if tier >= 5 {
-        match skill.id {
-            2 | 4 | 6 | 8 => skill.alcance *= 1.15,
-            5 | 9 | 11 | 12 => skill.raio *= 1.20,
-            _ => {}
-        }
-    }
-    if tier >= 8 {
-        match skill.id {
-            4 | 6 => skill.alcance *= 1.15,
-            5 | 9 | 11 | 12 => skill.raio *= 1.10,
-            _ => {}
-        }
-    }
-    skill
+/// Geometria dos despertares, fixada no início da conjuração (shared, so the
+/// client draws the same size).
+fn skill_ajustada(skill: Skill, tier: u8) -> Skill {
+    shared::skills::ajustada_ao_tier(skill, tier)
 }
 
 fn dano_evoluido(base: i32, tier: u8, skill_id: u32) -> i32 {
@@ -273,6 +260,7 @@ impl GameWorld {
                 target_eid: Some(alvo_eid),
                 caster_eid: Some(dono),
                 chain_points: None,
+                tier,
             });
         }
     }
@@ -386,6 +374,7 @@ impl GameWorld {
                     caster_eid: h.dono,
                     caster_pos: origem,
                     target_pos: alvo,
+                    tier: h.tier,
                 });
             }
         }

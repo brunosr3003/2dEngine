@@ -11255,6 +11255,7 @@ impl GameWorld {
                 target_eid: None,
                 caster_eid: Some(owner_eid),
                 chain_points: None,
+                tier: 1,
             };
             for s in self.sessions.values() {
                 if s.logged_in {
@@ -11315,6 +11316,7 @@ impl GameWorld {
                 target_eid: None,
                 caster_eid: Some(owner_eid),
                 chain_points: None,
+                tier: 1,
             };
             for s in self.sessions.values() {
                 if s.logged_in {

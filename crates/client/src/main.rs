@@ -2343,13 +2343,14 @@ impl Jogo {
                 caster_pos,
                 target_pos,
                 target_eid,
+                tier,
                 ..
             } => {
                 let de = vec2(caster_pos.x, caster_pos.y);
                 sons::skill(skill_id, false, de, self.world.self_pos(), self.world.self_id == Some(id));
                 let alvo = vec2(target_pos.x, target_pos.y);
                 self.habilidades
-                    .efeito(skill_id, id, de, alvo, target_eid, false);
+                    .efeito(skill_id, id, de, alvo, target_eid, false, tier);
                 if let (Some(e), Some(s)) = (
                     self.world.ents.get_mut(&id),
                     self.habilidades.catalogo.iter().find(|s| s.id == skill_id),
@@ -2376,6 +2377,7 @@ impl Jogo {
                 caster_eid,
                 caster_pos,
                 target_pos,
+                tier,
             } => {
                 sons::skill(skill_id, true, vec2(target_pos.x,target_pos.y), self.world.self_pos(), self.world.self_id == Some(caster_eid));
                 // MY Danca landed: the same instant the server opens the
@@ -2390,6 +2392,7 @@ impl Jogo {
                     vec2(target_pos.x, target_pos.y),
                     None,
                     true,
+                    tier,
                 );
             }
             ServerMessage::SkillCastCancel {

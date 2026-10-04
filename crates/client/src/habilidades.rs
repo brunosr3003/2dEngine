@@ -64,6 +64,9 @@ struct Efeito {
     alvo_eid: Option<EntityId>,
     inicio: f64,
     impacto: bool,
+    /// The caster's tier of the skill (the server sends it): the effect
+    /// grows at the awakenings.
+    tier: u8,
 }
 
 /// O slot `slot` (0 = skill 1) no arco em volta do ATACAR. Ver `hud_layout`.
@@ -374,6 +377,7 @@ impl Habilidades {
         alvo: Vec2,
         alvo_eid: Option<EntityId>,
         impacto: bool,
+        tier: u8,
     ) {
         let Some(skill) = self.catalogo.iter().find(|s| s.id == id).cloned() else {
             return;
@@ -390,6 +394,7 @@ impl Habilidades {
             alvo_eid,
             inicio: get_time(),
             impacto,
+            tier,
         });
     }
 
@@ -590,7 +595,7 @@ impl Habilidades {
         self.efeitos.retain(|e| {
             agora - e.inicio
                 < if e.impacto {
-                    crate::habilidades_vfx::duracao(e.skill.id) as f64
+                    crate::habilidades_vfx::duracao_no_tier(e.skill.id, e.tier) as f64
                 } else {
                     e.skill.impacto_em() as f64 + 0.5
                 }
@@ -634,7 +639,9 @@ impl Habilidades {
                     t: (agora - e.inicio) as f32,
                     impacto: e.impacto,
                     atraso: e.skill.impacto_em(),
-                    raio: e.skill.raio,
+                    // At the awakened size: the server widens it by tier.
+                    raio: shared::skills::ajustada_ao_tier(e.skill.clone(), e.tier).raio,
+                    tier: e.tier,
                     frente: dono.map_or(Vec3::Z, |d| vec3(d.yaw.sin(), 0.0, d.yaw.cos())),
                 },
                 luz,

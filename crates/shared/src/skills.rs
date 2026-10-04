@@ -431,6 +431,36 @@ pub fn espera_efetiva(espera_s: f32, wis: i32) -> f32 {
 
 /// Texto curto dos três despertares. A regra correspondente mora no servidor,
 /// mas o texto é compartilhado para a tela nunca prometer outra coisa.
+/// The skill's geometry at `tier`: the awakenings that reach further or wider
+/// (server and client agree on it — the effect is drawn at the real size).
+pub fn ajustada_ao_tier(mut skill: Skill, tier: u8) -> Skill {
+    if tier >= 5 {
+        match skill.id {
+            2 | 4 | 6 | 8 => skill.alcance *= 1.15,
+            5 | 9 | 11 | 12 => skill.raio *= 1.20,
+            _ => {}
+        }
+    }
+    if tier >= 8 {
+        match skill.id {
+            4 | 6 => skill.alcance *= 1.15,
+            5 | 9 | 11 | 12 => skill.raio *= 1.10,
+            _ => {}
+        }
+    }
+    skill
+}
+
+/// The awakening the effect shows: 0 before tier 5, then 1 (5), 2 (8), 3 (10).
+pub fn grau_do_efeito(tier: u8) -> u8 {
+    match tier {
+        10.. => 3,
+        8..=9 => 2,
+        5..=7 => 1,
+        _ => 0,
+    }
+}
+
 pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
     match (skill_id, tier) {
         (1, 5) => "The landing stuns for 1 s",

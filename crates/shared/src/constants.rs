@@ -147,7 +147,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 182 (02/10/2026): the character list carries skins and auras.
 /// 186 (04/10/2026): forced update for the sword and shield's Leap and the
 /// progression rework — clients without them must not stay on.
-pub const PROTOCOL_VERSION: u16 = 186;
+/// 187 (04/10/2026): SkillCastFx and SkillImpactFx carry the caster's tier,
+/// so every client draws the awakened effect.
+pub const PROTOCOL_VERSION: u16 = 187;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

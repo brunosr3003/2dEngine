@@ -802,6 +802,9 @@ pub enum ServerMessage {
         /// adicional. None se a skill nao tem chain.
         #[serde(default)]
         chain_points: Option<Vec<[f32; 2]>>,
+        /// The caster's tier of this skill (1..10): the effect grows at the
+        /// awakenings (5, 8, 10) — for everyone watching, not just its owner.
+        tier: u8,
     },
     /// Cast foi cancelado (player se moveu durante o cast). Cliente despawna
     /// gizmos/VFX em andamento associados ao caster_eid. Tambem para qualquer
@@ -980,6 +983,8 @@ pub enum ServerMessage {
         caster_pos: glam::Vec2,
         #[serde(with = "crate::vec2_arr")]
         target_pos: glam::Vec2,
+        /// The caster's tier of this skill (see `SkillCastFx::tier`).
+        tier: u8,
     },
     /// Alvo e tempo do ataque de um mob; locomocao nao determina sua mira.
     MobAttackFx {

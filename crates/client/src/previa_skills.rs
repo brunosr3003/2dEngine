@@ -1,4 +1,5 @@
 //! Local preview with no server: MMO_PREVIA_SKILLS=1, space pauses, arrows choose.
+//! MMO_PREVIA_TIER=<1..10> draws the effects at that tier (the awakenings).
 use crate::{habilidades_vfx, render3d, vox::VoxCache, world::World};
 use macroquad::material::{gl_use_default_material, gl_use_material};
 use macroquad::prelude::*;
@@ -54,6 +55,7 @@ pub async fn abrir(vox: &VoxCache) {
     let mut escolha = 0usize;
     let mut pausa = false;
     let automatico = std::env::var("MMO_PREVIA_EXPORTAR").is_ok();
+    let tier: u8 = std::env::var("MMO_PREVIA_TIER").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
     let previa_hud = std::env::var("MMO_PREVIA_HUD").is_ok();
     let mut habilidades = crate::habilidades::Habilidades::default();
     habilidades.catalogo = catalogo.clone();
@@ -156,8 +158,9 @@ pub async fn abrir(vox: &VoxCache) {
                 },
                 impacto: t >= skill.impacto_em(),
                 atraso: skill.impacto_em(),
-                raio: skill.raio,
+                raio: shared::skills::ajustada_ao_tier(skill.clone(), tier).raio,
                 frente: Vec3::Z,
+                tier,
             },
             &luz,
         );
@@ -266,7 +269,7 @@ pub async fn abrir(vox: &VoxCache) {
                     get_internal_gl().flush();
                 }
                 alvo_render.texture.get_texture_data().export_png(&format!(
-                    "/tmp/2dengine-{}-{:02}.png",
+                    "/tmp/2dengine-{}-{:02}-t{tier}.png",
                     if previa_hud { "hud" } else { "skill" },
                     escolha + 1
                 ));

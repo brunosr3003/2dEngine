@@ -38,6 +38,17 @@ fn material_com_depth(depth_write: bool) -> Material {
     }, ..Default::default() }).expect("emissive material for skills")
 }
 
+/// How long the impact effect lives at `tier`: Leap's stun stars stay as
+/// long as the stun (1 s from tier 5, 1.5 s from tier 8).
+pub fn duracao_no_tier(id: u32, tier: u8) -> f32 {
+    let atordoa = match (id, tier) {
+        (1, 8..) => 1.5,
+        (1, 5..) => 1.0,
+        _ => 0.0,
+    };
+    duracao(id).max(atordoa + 0.15)
+}
+
 pub fn duracao(id: u32) -> f32 {
     match id {
         3 => 5.0,
@@ -58,6 +69,8 @@ pub struct Cena {
     pub atraso: f32,
     pub raio: f32,
     pub frente: Vec3,
+    /// The caster's tier of the skill (1..10).
+    pub tier: u8,
 }
 
 fn alfa(mut c: Color, a: f32) -> Color {
@@ -327,9 +340,15 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
     };
     if !c.impacto {
         // Every skill has a visible wind-up from the start.
+        // The wind-up already shows the awakening: bigger, hotter hands,
+        // gold sparks at tier 10.
+        let g = shared::skills::grau_do_efeito(c.tier) as f32;
         for &mao in &c.maos {
-            halo(mao, 0.32 + u * 0.55, alfa(cor, 0.3 + u * 0.5));
-            brilho(mao, 0.18 + u * 0.22, alfa(WHITE, u * 0.75));
+            halo(mao, (0.32 + u * 0.55) * (1.0 + 0.25 * g), alfa(cor, 0.3 + u * 0.5));
+            brilho(mao, (0.18 + u * 0.22) * (1.0 + 0.2 * g), alfa(WHITE, u * 0.75));
+            if g >= 3.0 {
+                faiscas(mao, (u * 0.3) % 0.2, OURO_DO_DESPERTAR, 0.5, 6);
+            }
         }
         match c.id {
             1 => {
@@ -638,5 +657,77 @@ fn desenha_luz(c: &Cena, frente: Vec3, lado: Vec3, u: f32) {
             faiscas(peito, t, violeta, 2.5, 32);
         }
         _ => {}
+    }
+    despertar(c, peito, cor, t, fade);
+}
+
+/// Gold of the tier-10 crown (the legendary grade's warm gold).
+const OURO_DO_DESPERTAR: Color = Color::new(1.0, 0.82, 0.30, 1.0);
+
+/// THE AWAKENING LAYER, over every skill's impact. The owner (04/10/2026):
+/// each tier that brings real power must show in the effect. The steps are
+/// the awakenings themselves (`skills::despertar`, tiers 5, 8 and 10):
+///
+///   * 5 — a white-hot core and a wider halo in the skill's colour;
+///   * 8 — a second shockwave and twice the sparks;
+///   * 10 — a gold crown: a turning seal on the ground, a pillar of light and
+///     orbs circling the hit.
+///
+/// It sits ON TOP of the skill's own effect, so each skill keeps its shape
+/// and grows with its owner. Leap's stun (tier 5+) gets its stars here too.
+fn despertar(c: &Cena, peito: Vec3, cor: Color, t: f32, fade: f32) {
+    let g = shared::skills::grau_do_efeito(c.tier);
+    // LEAP'S STUN: stars circling over the landing for as long as it lasts.
+    if c.id == 1 && c.tier >= 5 {
+        let dura = if c.tier >= 8 { 1.5 } else { 1.0 };
+        let vida = (1.0 - t / dura).clamp(0.0, 1.0);
+        if vida > 0.0 {
+            for i in 0..6 {
+                let a = i as f32 * TAU / 6.0 + t * 4.0;
+                let p = c.alvo + vec3(a.cos() * 0.9, 2.15 + (t * 6.0 + i as f32).sin() * 0.08, a.sin() * 0.9);
+                brilho(p, 0.17 * vida, alfa(YELLOW, vida));
+                halo(p, 0.28, alfa(OURO_DO_DESPERTAR, vida * 0.6));
+            }
+        }
+    }
+    if g == 0 {
+        return;
+    }
+    let g = g as f32;
+    let raio = c.raio.max(2.0);
+    // 5: the core burns white, the halo widens, and a white ring runs out
+    // across the area — the first awakening has to read at a glance.
+    brilho(peito, (0.75 + 0.25 * g) * fade, alfa(WHITE, fade * 0.9));
+    halo(peito, 1.5 + 0.45 * g, alfa(cor, fade * 0.55));
+    onda(c.alvo, raio * 1.1, t, alfa(WHITE, 0.75));
+    faiscas(peito, t + 0.03, cor, 1.4 + 0.2 * g, 10);
+    // 8: a second, wider shockwave a beat later, and twice the sparks.
+    if g >= 2.0 {
+        let clara = Color::new(
+            cor.r + (1.0 - cor.r) * 0.5,
+            cor.g + (1.0 - cor.g) * 0.5,
+            cor.b + (1.0 - cor.b) * 0.5,
+            1.0,
+        );
+        if t > 0.08 {
+            onda(c.alvo, raio * 1.35, t - 0.08, alfa(clara, 0.85));
+        }
+        faiscas(peito, t, WHITE, 1.6 + 0.3 * g, 14 * g as usize);
+    }
+    // 10: the gold crown.
+    if g >= 3.0 {
+        selo(c.alvo + Vec3::Y * 0.11, raio * 1.15, t * 0.6, alfa(OURO_DO_DESPERTAR, fade));
+        let coluna = (1.0 - t / 0.7).clamp(0.0, 1.0);
+        energia(
+            &[c.alvo + Vec3::Y * 0.2, c.alvo + Vec3::Y * 2.5, c.alvo + Vec3::Y * 5.5],
+            0.32 * coluna,
+            alfa(OURO_DO_DESPERTAR, coluna),
+        );
+        for i in 0..8 {
+            let a = i as f32 * TAU / 8.0 + t * 2.4;
+            let p = peito + vec3(a.cos() * 1.4, (t * 3.0 + i as f32).sin() * 0.35, a.sin() * 1.4);
+            brilho(p, 0.2 * fade, alfa(OURO_DO_DESPERTAR, fade));
+        }
+        faiscas(peito, t, OURO_DO_DESPERTAR, 2.4, 24);
     }
 }
