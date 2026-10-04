@@ -1,3 +1,19 @@
+04/10/2026 — Nova progressão até o nível 120
+
+Subir de nível ficou mais longo e sempre mais difícil a cada faixa: cada nível leva mais tempo que o anterior. Caçar é o principal caminho; a história principal passa a dar cerca de 12% da experiência de cada faixa de níveis a partir do nível 22, e as missões secundárias entre 10% e 20%. Os capítulos I e II continuam como eram.
+
+Os monstros comuns ficaram mais resistentes: levam mais golpes para cair, crescendo até o nível 80, mas cada golpe deles dói proporcionalmente menos — a luta dura mais sem ficar mais mortal. Um monstro que está apanhando não desiste mais da perseguição nem volta para casa curado no meio da luta. A experiência por abate foi recalculada nível a nível.
+
+Os contratos do Mestre de Missões pagam agora um bônus sobre os abates que pedem, e as diárias de cada ilha somam um valor fixo por dia. O valor de experiência mostrado em cada missão é o que ela realmente paga.
+
+04/10/2026 — Missões secundárias em todas as ilhas
+
+Kōgen-tō e Abyssia ganharam o conjunto completo de missões do Mestre: seis diárias, uma diária para cada dungeon da ilha, um contrato de caça e um de pedreira a cada dez minutos, e uma cadeia de seis caçadas. Skyreach ganhou uma cadeia de seis caçadas, e o Bosque, a Geleira e o Ermo ganharam um contrato de caça.
+
+04/10/2026 — Espada e escudo: Salto e Golpe Largo
+
+A primeira habilidade da espada e escudo agora é o Salto: o personagem pula até o alvo e atinge todos os inimigos ao redor de onde cai. No tier 5 a queda atordoa por 1 segundo, e no tier 8 por 1,5 segundo (nunca chefes). O Golpe Largo agora corta em meia-lua, com mais alcance e mais dano.
+
 04/10/2026 — Capacete de bolha de Abyssia em 3D
 
 A bolha na cabeça agora é um capacete de vidro em três dimensões, com transparência suave, reflexo discreto e aro em blocos no pescoço. O brilho forte que cobria o rosto foi removido. O vidro se ajusta ao cabelo ou chapéu escolhido e fecha junto ao aro.
