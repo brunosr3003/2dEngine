@@ -2766,6 +2766,23 @@ mod metas_da_escada {
         )
     }
 
+    /// The endgame zone, for a look: kill time, damage per mob and survival
+    /// at 90-119 for every set, on the level and refined.
+    /// `cargo test --release -p server --bin server tabela_do_fim -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn tabela_do_fim() {
+        crate::economy::init_vazia_para_testes();
+        for nivel in [90u32, 100, 110, 116, 119] {
+            for quem in [Quem::NaFaixa, Quem::Refinado] {
+                for c in Conjunto::TODOS {
+                    let m = medir(quem, c, nivel, Lugar::Zona, true);
+                    println!("{}", linha(quem, c, nivel, Lugar::Zona, true, &m));
+                }
+            }
+        }
+    }
+
     /// A tabela inteira, pra olhar: `cargo test -p server --bin server
     /// tabela_da_escada -- --nocapture --ignored`.
     #[test]

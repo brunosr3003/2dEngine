@@ -274,17 +274,29 @@ pub fn mob_net_damage(level: u32) -> f32 {
 pub const STRIKES_PER_MOB: f32 = 3.0;
 
 /// Blows at `level`, counting the endgame health ramp: `STRIKES_PER_MOB` + 1
-/// at level 1, rising on a straight line to twice `STRIKES_PER_MOB` at 80 and
-/// held there. From 80 `endgame_multipliers` doubles the health by 120 on its
-/// own, so this shrinks as that grows and the total stays at six blows —
-/// what the endgame ramp alone reached at 120. Stacking both left the melee
-/// sets at minutes per mob past 100. The owner (04/10/2026): mobs need more
-/// health, harder to kill — not deadlier.
+/// at level 1, rising on a straight line to twice `STRIKES_PER_MOB` at 80,
+/// and from there on to `ENDGAME_STRIKES` at 120. `endgame_multipliers`
+/// already doubles the health between 80 and 120, so this divides by it and
+/// the TOTAL is what the line says. The owner (04/10/2026): mobs need more
+/// health and leveling has to keep getting harder; at 116 in full T4 +5 the
+/// flat six blows past 80 died "super fast".
 pub fn strikes_per_mob(level: u32) -> f32 {
-    let t = (level.clamp(1, 80) - 1) as f32 / 79.0;
-    let alvo = (STRIKES_PER_MOB + 1.0) + (STRIKES_PER_MOB - 1.0) * t;
+    let alvo = if level <= 80 {
+        let t = (level.max(1) - 1) as f32 / 79.0;
+        (STRIKES_PER_MOB + 1.0) + (STRIKES_PER_MOB - 1.0) * t
+    } else {
+        let t = (level.min(120) - 80) as f32 / 40.0;
+        2.0 * STRIKES_PER_MOB + (ENDGAME_STRIKES - 2.0 * STRIKES_PER_MOB) * t
+    };
     alvo / endgame_multipliers(level).0
 }
+
+/// How much the bite has climbed by 120 over the plain spread (x3 there);
+/// a quarter of that at 90, a ninth at 80.
+pub const ENDGAME_NET_CLIMB: f32 = 2.0;
+
+/// Total blows of a profile 1.0 mob at 120.
+pub const ENDGAME_STRIKES: f32 = 8.0;
 
 /// Fraction of the expected attack that a profile 1.0 defense mob holds back.
 /// Whoever is on the ladder delivers the rest.
@@ -361,10 +373,24 @@ pub fn pierceable(level: u32) -> f32 {
 ///   "pierces" is the same for every species at the level; personality scales
 ///   only what is left. Without this a 2.8x owlbear would have 2.8x the whole
 ///   attack and would go through any armor.
-/// How much of `mob_net_damage` a common mob deals per hit at `level`: the
-/// three-blow ladder's fight spread over `strikes_per_mob` blows.
+/// How much of `mob_net_damage` a common mob deals per hit at `level`: up to
+/// 60 the three-blow ladder's fight spread over `strikes_per_mob` blows
+/// (harder to kill, not deadlier); from 60 a smooth climb on top of it
+/// (`ENDGAME_NET_CLIMB`).
 pub fn net_scale(level: u32) -> f32 {
-    STRIKES_PER_MOB / strikes_per_mob(level)
+    // The three-blow fight spread over `strikes_per_mob` blows, times a
+    // gentle climb from 60 on: (level - 60) / 60 squared, so each level
+    // bites a little more than the last and there is no step anywhere. The
+    // owner (04/10/2026): at 116 in full T4 +5 mobs were "taking 41", too
+    // weak — but "I don't want a real gap between mobs, it should increase
+    // slowly but increase". Up to 60, the range the guards measure, it is
+    // the plain spread.
+    // Over the TOTAL blows, endgame health included: `strikes_per_mob`
+    // alone divides that health back out.
+    let total = strikes_per_mob(level) * endgame_multipliers(level).0;
+    let base = STRIKES_PER_MOB / total.max(1.0);
+    let s = (level.clamp(60, 120) - 60) as f32 / 60.0;
+    base * (1.0 + ENDGAME_NET_CLIMB * s * s)
 }
 
 /// Late regions demand stronger enemies even against matching gear.
