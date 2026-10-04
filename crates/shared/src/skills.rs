@@ -525,7 +525,10 @@ impl Skill {
     pub fn impacto_em(&self) -> f32 {
         self.conjuracao_s.max(0.0)
             + match self.id {
-                1 => 0.52,
+                // LEAP: the body is in the air until the impact. 0.52 was a
+                // hop the eye read as a dash (owner, 04/10/2026); 0.70 under
+                // the game's gravity peaks at ~2.4 u, above a normal jump.
+                1 => 0.70,
                 // GOLPE LARGO: 0,48 -> 0,36. Com a recuperação ele prendia
                 // 0,84 s PLANTADO, e o teste de teto o achou sozinho — a mesma
                 // queixa que o dono fez do Barril, numa classe que ele não

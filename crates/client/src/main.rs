@@ -2355,6 +2355,14 @@ impl Jogo {
                     self.habilidades.catalogo.iter().find(|s| s.id == skill_id),
                 ) {
                     e.skill = Some((skill_id, 0.0, s.impacto_em()));
+                    // LEAP (1): a real jump — the whole body on the jump's
+                    // gravity arc, launched so it lands at the impact, when
+                    // the server moves it there and hits. The pose alone
+                    // could only bend the legs, and it read as a dash.
+                    if s.e_salto() {
+                        e.vel_y = shared::gravidade() * s.impacto_em() * 0.5;
+                        e.voando = true;
+                    }
                     e.combo = None;
                     e.combo_ant = None;
                     e.sacada = 1.0;

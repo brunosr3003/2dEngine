@@ -1,3 +1,7 @@
+04/10/2026 — Salto de verdade
+
+O Salto da espada e escudo agora é um pulo de verdade: o personagem inteiro sai do chão num arco mais alto que o pulo normal e cai sobre o alvo, e é na queda que o golpe acerta. Antes ele parecia um avanço rente ao chão.
+
 04/10/2026 — Atualização obrigatória
 
 Esta versão é obrigatória: versões antigas do jogo não conectam mais. Ela garante que todos estejam com o Salto e o novo Golpe Largo da espada e escudo e com a nova progressão.

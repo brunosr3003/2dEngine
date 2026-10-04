@@ -1397,9 +1397,6 @@ fn guarda_viva(est: &Estilo, e: &Entrada) -> Chave {
     c
 }
 
-/// Altura do pulo do Salto (skill 1 da espada e escudo), em voxels.
-const SALTO_PICO: f32 = 10.0;
-
 /// Cada habilidade tem antecipacao, impacto e retorno proprios; o relogio
 /// vem do mesmo catalogo que agenda o efeito no servidor.
 fn chave_da_skill(est: &Estilo, id: u32, t: f32, impacto: f32) -> Chave {
@@ -1411,8 +1408,8 @@ fn chave_da_skill(est: &Estilo, id: u32, t: f32, impacto: f32) -> Chave {
     match id {
         1 => {
             // SALTO: agacha com o escudo firme, a espada sobe no voo e desce
-            // com o corpo na queda — o arco do pulo vem depois, em
-            // `SALTO_PICO`, por cima da mistura.
+            // com o corpo na queda. O ARCO e' o do pulo de verdade
+            // (`main.rs`, SkillCastFx): o corpo inteiro sai do chao.
             prep.e = br(-0.12, 1.05, 1.4);
             prep.d = br(-0.6, 0.65, 1.5);
             prep.inclina = 0.2;
@@ -1558,18 +1555,6 @@ fn chave_da_skill(est: &Estilo, id: u32, t: f32, impacto: f32) -> Chave {
         _ => return est.guarda,
     }
     let prepara = (impacto - 0.14).max(0.06);
-    if id == 1 && t < impacto {
-        // O arco do Salto: agacha no primeiro quinto, sobe e cai no impacto,
-        // que e' quando o servidor aplica o golpe da queda.
-        let decola = impacto * 0.2;
-        if t < decola {
-            return mistura(&est.guarda, &prep, suave(t / decola));
-        }
-        let u = ((t - decola) / (impacto - decola)).clamp(0.0, 1.0);
-        let mut c = mistura(&prep, &hit, suave(u));
-        c.agacha += SALTO_PICO * (std::f32::consts::PI * u).sin();
-        return c;
-    }
     if t < prepara {
         mistura(&est.guarda, &prep, suave((t / prepara).clamp(0.0, 1.0)))
     } else if t < impacto {
