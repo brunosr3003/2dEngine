@@ -294,6 +294,8 @@ fn marco_de(c: &Conteudo, ger: &crate::terreno::Gerador) -> Option<Vec2> {
         }
         // Kōgen-tō: the Foundry's portal on a market street (`kogen`).
         7 => Some(crate::kogen::portal_da_fundicao()),
+        // Abyssia: the Sunken Galleon's portal by the graveyard's biggest wreck.
+        19 => Some(crate::abissal::portal_do_galeao()),
         // The highest dry, flat-enough spot on a ring out of town.
         2 => candidatos(cidade)
             .filter(|p| firme(ger, *p) && plano(ger, *p))

@@ -37,7 +37,7 @@ const VEL_DE_TROTE: f32 = 5.0;
 
 /// Each creature that walks in pieces: the file
 /// (`tools/voxrender/bichos.py`) and the on-screen height, in world units.
-pub const BICHOS: [(&str, f32); 31] = [
+pub const BICHOS: [(&str, f32); 35] = [
     ("bichos/lobo_pequeno", 0.9),
     ("bichos/urso", 1.3),
     ("bichos/tigre", 0.95),
@@ -85,6 +85,11 @@ pub const BICHOS: [(&str, f32); 31] = [
     ("bichos/volt_panther", 1.0),
     ("bichos/iron_bear", 1.4),
     ("bichos/dynamo_owlbear", 1.6),
+    // Abyssia's sea creatures.
+    ("bichos/reef_shark", 0.95),
+    ("bichos/tiger_eel", 0.95),
+    ("bichos/giant_crab", 1.3),
+    ("bichos/coral_behemoth", 1.5),
     // The Neon Spire's boss: the dragon in plate, at the dragon's height.
     ("bichos/mech_dragon", 2.4),
 ];
@@ -193,6 +198,10 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         58 => "bichos/volt_panther",
         60 => "bichos/iron_bear",
         62 => "bichos/dynamo_owlbear",
+        70 => "bichos/reef_shark",
+        72 => "bichos/tiger_eel",
+        74 => "bichos/giant_crab",
+        76 => "bichos/coral_behemoth",
         _ => return None,
     })
 }

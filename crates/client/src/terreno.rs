@@ -232,6 +232,8 @@ impl Terreno {
             Arvore::Seca,
             Arvore::Sagrada,
             Arvore::Salgueiro,
+            Arvore::Alga,
+            Arvore::Coral,
         ] {
             for k in 0..VARIANTES {
                 t.arvores
@@ -249,6 +251,9 @@ impl Terreno {
             Planta::Lirio,
             Planta::Pena,
             Planta::CristalCeu,
+            Planta::Anemona,
+            Planta::Leque,
+            Planta::Concha,
         ] {
             for k in 0..VARIANTES {
                 t.plantas
@@ -282,7 +287,7 @@ impl Terreno {
                 Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
                 Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
                 Bioma::Montanha => Material::Rocha,
-                Bioma::Floresta | Bioma::Celeste | Bioma::Neon => material_variado(self.bioma_visual, altura, declive, false, mancha),
+                Bioma::Floresta | Bioma::Celeste | Bioma::Neon | Bioma::Abissal => material_variado(self.bioma_visual, altura, declive, false, mancha),
             };
         }
         material_variado(self.bioma_visual, altura, declive, agua, mancha)
@@ -922,8 +927,11 @@ impl Terreno {
                     let predio = self.ger.e_kogen()
                         && !self.ger.na_cidade(gx, gz)
                         && matches!(shared::kogen::chao_em(q_kogen), shared::kogen::Chao::Predio { .. });
+                    // Abyssia's Coral Palace and its pillar.
+                    let palacio = self.ger.e_abissal() && shared::abissal::e_palacio(q_kogen);
                     let faixa = |prof: i32| match porao {
                         _ if predio => shared::kogen::fachada(q_kogen, gx, gz, prof, h - shared::kogen::NIVEL_CHAO),
+                        _ if palacio => shared::abissal::fachada(q_kogen, gx, gz, h - prof - shared::abissal::NIVEL_CHAO),
                         // A cloud path's edge: white on top, shaded below.
                         _ if nuvem => if prof == 0 { Material::Nuvem } else { Material::NuvemSombra },
                         Some(pl) => pl.pedra(gx, gz, prof),
@@ -2738,6 +2746,68 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
     crate::render3d::define_alvo(None);
 }
 
+
+/// MMO_PREVIA_ABISSAL: the bubble kingdom and each hunting ring.
+#[cfg(debug_assertions)]
+pub async fn previa_abissal() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-abissal".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::render3d::define_noite(true);
+    crate::render3d::define_abismo(true);
+    let def = &shared::abissal::DEF;
+    let mut t = Terreno::novo(def);
+    let mut casas = crate::construcoes::Construcoes::para(Some(def));
+    for _ in 0..600 { casas.acompanhar(); if casas.prontas() { break; } next_frame().await; }
+    let solido = crate::render3d::material_solido();
+    let ponto = |p: ::glam::Vec2| vec2(p.x, p.y);
+    let vistas = [
+        ("reino", ponto(shared::abissal::centro_da_cidade()), 175.0, 0.75),
+        ("palacio", ponto(shared::abissal::PALACIO), 85.0, 0.75),
+        ("doca", ponto(shared::abissal::doca_do_submarino()), 70.0, 0.55),
+        ("kelp", ponto(shared::abissal::ponto(91).unwrap()), 85.0, 0.55),
+        ("naufragios", ponto(shared::abissal::ponto(92).unwrap()), 110.0, 0.6),
+        ("fossa", ponto(shared::abissal::ponto(93).unwrap()), 100.0, 0.55),
+        ("borda", ponto(shared::abissal::ponto(94).unwrap()), 110.0, 0.55),
+        ("aerea", vec2(0.0, 0.0), 500.0, 0.8),
+    ];
+    for (nome, centro, distancia, alto) in vistas {
+        t.atualiza(centro, if distancia > 400.0 { 40 } else { 18 }, 6000);
+        for _ in 0..3 {
+            let chao = t.altura(centro.x, centro.y);
+            let cam = Camera3D {
+                position: vec3(centro.x + distancia * 0.45, chao + distancia * alto, centro.y + distancia),
+                target: vec3(centro.x, chao, centro.y),
+                up: Vec3::Y,
+                render_target: Some(rt.clone()),
+                aspect: Some(1.6),
+                ..Default::default()
+            };
+            set_camera(&cam);
+            crate::render3d::clear();
+            solido.set_uniform("LuzDia", -2.0f32);
+            crate::gpu_estatica::define_luz_dia(-2.0);
+            crate::gpu_estatica::define_neblina(centro, -(distancia * 2.5), distancia * 6.0);
+            solido.set_uniform("Neblina", vec4(centro.x, centro.y, -(distancia * 2.5), distancia * 6.0));
+            crate::luzes::preparar(true, centro, &|x, z| t.altura(x, z));
+            macroquad::material::gl_use_material(&solido);
+            t.desenha(&cam, Vec3::ZERO, 0.0);
+            t.desenha_sombras(&cam);
+            casas.desenha(&cam, None, Vec3::ZERO, 0.0);
+            crate::agua::desenha(&t, &cam, 0.0);
+            crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
+            crate::abismo::desenha(&cam, None, &|x, z| t.altura(x, z));
+            macroquad::material::gl_use_default_material();
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
+    }
+    crate::render3d::define_alvo(None);
+    crate::render3d::define_abismo(false);
+}
 
 /// MMO_PREVIA_KOGEN: Kōgen-tō (`shared::kogen`), the city grid — the hub,
 /// a Neon District street, downtown, an aerial view and the map — into

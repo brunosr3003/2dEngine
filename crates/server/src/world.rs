@@ -1205,6 +1205,10 @@ pub(crate) fn zonas_comuns_da_ilha(
     }
     sitios.retain(|s| !perto_de_posto(*s, &postos));
     if let Some(p) = ilha.planalto() { sitios.retain(|s| !p.sem_spawn(*s)); }
+    // Abyssia's bubble is the kingdom: nothing hunts in it.
+    if shared::abissal::e_abissal(def.zona) {
+        sitios.retain(|s| s.length() > shared::abissal::BOLHA_RAIO + 10.0 && shared::abissal::faixa_em(*s).is_some());
+    }
     // The Neon Spire keeps its own garrison (below).
     if shared::kogen::e_kogen(def.zona) {
         sitios.retain(|s| s.distance(shared::kogen::ESPIRAL_CENTRO) > shared::kogen::ESPIRAL_RAIO + 6.0);
@@ -1362,6 +1366,11 @@ pub(crate) fn zonas_comuns_da_ilha(
             Some((a, b)) => (a, b),
             None => (lv_min, lv_max),
         };
+        // Abyssia: the band of the ring the zone stands in.
+        let (lv_min, lv_max) = match shared::abissal::e_abissal(def.zona).then(|| shared::abissal::faixa_em(*c)).flatten() {
+            Some((a, b)) => (a, b),
+            None => (lv_min, lv_max),
+        };
         if def.zona == "ilha_inicial" && lv_min <= 10 && !forte {
             teto = 30;
         }
@@ -1508,6 +1517,10 @@ pub(crate) fn zonas_comuns_da_ilha(
                 None => (lv_min, lv_max),
             };
             let (lv_min, lv_max) = match shared::kogen::e_kogen(def.zona).then(|| shared::kogen::faixa_em(*c)).flatten() {
+                Some((a, b)) => (a, b),
+                None => (lv_min, lv_max),
+            };
+            let (lv_min, lv_max) = match shared::abissal::e_abissal(def.zona).then(|| shared::abissal::faixa_em(*c)).flatten() {
                 Some((a, b)) => (a, b),
                 None => (lv_min, lv_max),
             };
@@ -14999,7 +15012,7 @@ impl GameWorld {
 
     /// Terminou a conversa com o Capitao do Porto num passo de VIAGEM: embarca
     /// pra ilha do passo, se houver canal dela no ar.
-    fn viagem_da_historia(&mut self, sid: SessionId, de_onibus: bool) {
+    fn viagem_da_historia(&mut self, sid: SessionId, meio: shared::viagem::Meio) {
         use shared::quests::{objective_kind, quest_status};
         let Some(s) = self.sessions.get(&sid) else {
             return;
@@ -15015,7 +15028,7 @@ impl GameWorld {
         else {
             return;
         };
-        if !shared::viagem::rota_permitida(&self.zona, def.obj_target as usize, de_onibus) {
+        if !shared::viagem::rota_permitida(&self.zona, def.obj_target as usize, meio) {
             return;
         }
         self.embarcar(sid, def.obj_target as usize);
@@ -15134,23 +15147,21 @@ impl GameWorld {
         self.quem_viaja_perto(sid).is_some()
     }
 
-    /// Who is near to travel with: `Some(false)` the Harbour Captain,
-    /// `Some(true)` the flying-bus driver (`viagem::rota_permitida`).
-    pub(crate) fn quem_viaja_perto(&self, sid: SessionId) -> Option<bool> {
+    /// Who is near to travel with (the nearest of them): the Harbour
+    /// Captain, the flying-bus driver or the submarine captain
+    /// (`viagem::rota_permitida`).
+    pub(crate) fn quem_viaja_perto(&self, sid: SessionId) -> Option<shared::viagem::Meio> {
         let eu = self.pos_do_jogador(sid)?;
-        let capitao = shared::construcao::Papel::Estaleiro as u8;
-        let motorista = shared::construcao::Papel::Motorista as u8;
-        let mut achado = None;
-        for (_, (p, t)) in self.ecs.query::<(&Position, &NpcDaVilaTag)>().iter() {
-            let papel = shared::npc_papel_de_kind(t.rumo);
-            if (papel == capitao || papel == motorista) && p.0.distance(eu) <= shared::viagem::PERTO_DO_CAPITAO {
-                achado = Some(papel == motorista);
-                if papel == motorista {
-                    break;
-                }
-            }
-        }
-        achado
+        self.ecs
+            .query::<(&Position, &NpcDaVilaTag)>()
+            .iter()
+            .filter_map(|(_, (p, t))| {
+                let meio = shared::viagem::Meio::do_papel(shared::npc_papel_de_kind(t.rumo))?;
+                let d = p.0.distance(eu);
+                (d <= shared::viagem::PERTO_DO_CAPITAO).then_some((d, meio))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, m)| m)
     }
 
     /// Perto de quem guarda o banco: o Banqueiro da vila (ou o cofre antigo,
@@ -15262,23 +15273,23 @@ impl GameWorld {
         self.ecs
             .get::<&NpcDaVilaTag>(e)
             .map(|t| {
-                let p = shared::npc_papel_de_kind(t.rumo);
-                p == shared::construcao::Papel::Estaleiro as u8 || p == shared::construcao::Papel::Motorista as u8
+                shared::viagem::Meio::do_papel(shared::npc_papel_de_kind(t.rumo)).is_some()
             })
             .unwrap_or(false)
     }
 
-    /// The entity is the flying-bus driver?
-    fn e_motorista(&self, e: hecs::Entity) -> bool {
+    /// How the entity takes you (captain, bus, submarine), if it does.
+    fn meio_do_npc(&self, e: hecs::Entity) -> shared::viagem::Meio {
         self.ecs
             .get::<&NpcDaVilaTag>(e)
-            .map(|t| shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Motorista as u8)
-            .unwrap_or(false)
+            .ok()
+            .and_then(|t| shared::viagem::Meio::do_papel(shared::npc_papel_de_kind(t.rumo)))
+            .unwrap_or(shared::viagem::Meio::Capitao)
     }
 
     /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
     /// "Travel", com toda ilha e se da' pra ir.
-    fn abrir_menu_viagem(&self, sid: SessionId, de_onibus: bool) {
+    fn abrir_menu_viagem(&self, sid: SessionId, meio: shared::viagem::Meio) {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
@@ -15290,7 +15301,7 @@ impl GameWorld {
                     .as_ref()
                     .is_some_and(|d| d.melhor(z).is_some())
         };
-        let mut destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, de_onibus);
+        let mut destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         if self.zona == "ilha_inicial" && nivel < 20 {
             if let Some(geleira) = destinos.iter_mut().find(|d| d.ilha == 1) {
@@ -15321,7 +15332,7 @@ impl GameWorld {
             return;
         };
         let _ = eu;
-        let Some(de_onibus) = self.quem_viaja_perto(sid) else {
+        let Some(meio) = self.quem_viaja_perto(sid) else {
             self.avisa_missao(
                 sid,
                 "Fale com o Capitão do Porto, no cais, para embarcar.".into(),
@@ -15332,9 +15343,13 @@ impl GameWorld {
         let Some(dest) = shared::terreno::ARQUIPELAGO.get(i) else {
             return;
         };
-        if !shared::viagem::rota_permitida(&self.zona, i, de_onibus) {
-            let aviso = if shared::kogen::e_kogen(dest.zona) {
+        if !shared::viagem::rota_permitida(&self.zona, i, meio) {
+            let aviso = if shared::abissal::e_abissal(dest.zona) {
+                "Only the Submarine Captain on Kōgen-tō's docks dives to Abyssia."
+            } else if shared::kogen::e_kogen(dest.zona) {
                 "Only the Sky Bus Professor in Skyreach flies to Kōgen-tō."
+            } else if meio == shared::viagem::Meio::Submarino {
+                "From here the submarine only dives to Abyssia."
             } else {
                 "The Sky Bus only flies to Kōgen-tō from here."
             };
@@ -16136,9 +16151,15 @@ impl GameWorld {
             self.avisa_missao(sid, "Get closer to talk.".into());
             return;
         }
-        // The flying-bus driver: the story's trip to Kōgen-tō leaves here.
+        // The flying-bus driver and the submarine captain: the story's trips
+        // to Kōgen-tō and to Abyssia leave here.
         if nome == shared::construcao::Papel::Motorista.nome() {
-            self.viagem_da_historia(sid, true);
+            self.viagem_da_historia(sid, shared::viagem::Meio::Onibus);
+            self.send_quest_givers(sid);
+            return;
+        }
+        if nome == shared::construcao::Papel::Submarino.nome() {
+            self.viagem_da_historia(sid, shared::viagem::Meio::Submarino);
             self.send_quest_givers(sid);
             return;
         }
@@ -16147,7 +16168,7 @@ impl GameWorld {
         };
         self.quest_on_talk(sid, papel);
         if papel == shared::construcao::Papel::Estaleiro as u16 {
-            self.viagem_da_historia(sid, false);
+            self.viagem_da_historia(sid, shared::viagem::Meio::Capitao);
         }
         self.send_quest_givers(sid);
     }
@@ -16160,16 +16181,23 @@ impl GameWorld {
         // from Skyreach (captains never fly there) and for anywhere from
         // Kōgen-tō; the Harbour Captain otherwise. The auto quest walked to
         // the Captain, who refused, and the step went round in circles.
-        let kogen = shared::terreno::ARQUIPELAGO.iter().position(|d| shared::kogen::e_kogen(d.zona));
-        let rumo_kogen = shared::quests::quest_by_id(quest_id).is_some_and(|d| {
-            (d.obj_kind == shared::quests::objective_kind::VIAGEM && Some(d.obj_target as usize) == kogen)
-                || shared::quests::zona_da_missao(quest_id).is_some_and(shared::kogen::e_kogen)
+        // Abyssia: the Submarine Captain (from Kōgen-tō, and back from it).
+        let destino = shared::quests::quest_by_id(quest_id).and_then(|d| {
+            if d.obj_kind == shared::quests::objective_kind::VIAGEM {
+                Some(d.obj_target as usize)
+            } else {
+                let z = shared::quests::zona_da_missao(quest_id)?;
+                shared::terreno::ARQUIPELAGO.iter().position(|a| a.zona == z)
+            }
         });
-        let papel = if shared::kogen::e_kogen(&self.zona) || (rumo_kogen && shared::celeste::e_celeste(&self.zona)) {
-            shared::construcao::Papel::Motorista
-        } else {
-            shared::construcao::Papel::Estaleiro
-        };
+        let papel = destino
+            .and_then(|i| shared::viagem::meio_para(&self.zona, i))
+            .map(|m| m.papel())
+            .unwrap_or(if shared::kogen::e_kogen(&self.zona) {
+                shared::construcao::Papel::Motorista
+            } else {
+                shared::construcao::Papel::Estaleiro
+            });
         let Some(p) = self.ilha.as_ref().and_then(|ilha| {
             ilha.vila()
                 .npcs
@@ -16234,7 +16262,11 @@ impl GameWorld {
                 // Passo de outra ilha: o caminho comeca no Capitao do Porto,
                 // que leva a qualquer ilha liberada (`shared::viagem`).
                 let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
-                let aviso = if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
+                let aviso = if shared::abissal::e_abissal(z) && shared::kogen::e_kogen(&self.zona) {
+                    format!("Story: this step happens in {ilha}. The Submarine Captain dives there from the Docks.")
+                } else if shared::abissal::e_abissal(z) {
+                    format!("Story: this step happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.")
+                } else if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
                     format!("Story: this step happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.")
                 } else if shared::kogen::e_kogen(z) {
                     format!("Story: this step happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.")
@@ -18042,7 +18074,7 @@ impl GameWorld {
                 // O Capitao do Porto leva a qualquer ilha que a historia ja'
                 // liberou — ir e voltar (`shared::viagem`).
                 if self.e_capitao(entity) && !self.tutorial_mode && !self.dungeon_mode {
-                    self.abrir_menu_viagem(sid, self.e_motorista(entity));
+                    self.abrir_menu_viagem(sid, self.meio_do_npc(entity));
                 }
                 // O Banqueiro guarda o banco (docs/BANCO.md).
                 if self.e_estivador(entity) {

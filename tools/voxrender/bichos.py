@@ -66,6 +66,11 @@ BICHOS = [
     ("storm_owlbear", "owlbear",    2600),   # Plateau
     ("crag_lynx",     "tiger",      2600),   # Plateau
     ("cave_bear",     "bear",       2600),   # Plateau
+    # Abyssia: distinct sea-coloured bodies for the four beast species.
+    ("reef_shark",    "wolf",       2600),
+    ("tiger_eel",     "tiger",      2600),
+    ("giant_crab",    "bear",       2600),
+    ("coral_behemoth", "owlbear",   2600),
 ]
 
 # ── A PELAGEM: trocar a COR DA PELE, indice a indice ──
@@ -144,6 +149,10 @@ PELAGENS = {
         5: (102, 94, 90),
         9: (160, 142, 114),
     },
+    "reef_shark": {1: (22, 52, 72), 2: (38, 88, 108), 3: (60, 128, 146), 4: (104, 176, 184), 6: (176, 224, 222)},
+    "tiger_eel": {4: (32, 104, 100), 5: (68, 172, 154), 7: (150, 224, 194), 9: (202, 236, 208)},
+    "giant_crab": {2: (82, 28, 42), 3: (140, 48, 62), 4: (194, 78, 84), 5: (238, 132, 110), 9: (250, 200, 152)},
+    "coral_behemoth": {1: (44, 48, 92), 2: (94, 70, 132), 3: (166, 100, 162), 4: (232, 144, 174), 5: (252, 190, 196), 7: (112, 236, 244)},
 }
 
 # arquivo do zone14 -> nome da peca no jogo (ver `bicho::junta_de`)
@@ -450,6 +459,11 @@ if __name__ == "__main__":
         for nome, prefixo, orcamento, papeis, olhos in BICHOS_ROBO:
             pecas, paleta, pintar = robo(prefixo, papeis, olhos)
             monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento, None, (pecas, paleta), pintar)
+        sys.exit(0)
+    if "--abissal" in sys.argv:
+        for nome, prefixo, orcamento in BICHOS:
+            if nome in {"reef_shark", "tiger_eel", "giant_crab", "coral_behemoth"}:
+                monta(os.path.join(pasta, f"{nome}.vox"), prefixo, orcamento, PELAGENS[nome])
         sys.exit(0)
     # `--alados`: only Skyreach's winged creatures.
     if "--alados" in sys.argv:

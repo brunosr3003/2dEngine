@@ -269,12 +269,17 @@ pub fn assar_vila(def: &DefIlha) -> Vec<Assada> {
     let angelical = shared::celeste::e_celeste(def.zona);
     // Kōgen-tō's town is the island's: concrete, glass and neon.
     let neon = shared::kogen::e_kogen(def.zona);
+    // Abyssia's town is the kingdom's: shell white, coral and glow.
+    let coral = shared::abissal::e_abissal(def.zona);
     let vestir = |mut c: Construcao| {
         if angelical {
             c.v.repintar(BlocoCasa::celeste);
         }
         if neon {
             c.v.repintar(BlocoCasa::neon);
+        }
+        if coral {
+            c.v.repintar(BlocoCasa::coral);
         }
         c
     };

@@ -189,6 +189,34 @@ pub const BASE_VARIANTES_KOGEN: &[(i32, u16, i32, i32, f32)] = &[
     (62, GREATER_HEAL, 1, 1, 0.12),
 ];
 
+/// Abyssia's sea creatures (kinds 70-76), about 1.35x Kōgen-tō's robots for
+/// levels 100-120. Their own list and migration marker.
+pub const BASE_VARIANTES_ABISSAL: &[(i32, u16, i32, i32, f32)] = &[
+    (70, COPPER, 180, 400, 1.0), // Reef Shark
+    (70, STEEL, 7, 13, 0.26),
+    (70, GREATER_HEAL, 1, 1, 0.10),
+    (71, COPPER, 200, 440, 1.0), // Drowned Pirate
+    (71, DARKSTEEL, 8, 16, 0.28),
+    (71, STAMINA_POTION, 1, 1, 0.10),
+    (72, COPPER, 200, 450, 1.0), // Tiger Eel
+    (72, QUINTESSENCE, 7, 13, 0.28),
+    (72, GREATER_MANA, 1, 1, 0.10),
+    (73, COPPER, 200, 450, 1.0), // Fish-Man Harpooner
+    (73, ILLUMINATING_FRAGMENT, 7, 13, 0.26),
+    (73, DARKSTEEL, 8, 16, 0.26),
+    (74, COPPER, 240, 540, 1.0), // Giant Crab
+    (74, DARKSTEEL, 8, 17, 0.30),
+    (74, GREATER_HEAL, 1, 1, 0.12),
+    (75, COPPER, 220, 500, 1.0), // Merfolk Mage
+    (75, DARK_HEART_STONE, 7, 13, 0.26),
+    (75, ANIMA_STONE, 7, 13, 0.26),
+    (75, GREATER_MANA, 1, 1, 0.12),
+    (76, COPPER, 260, 600, 1.0), // Coral Behemoth
+    (76, PLATINUM, 8, 16, 0.28),
+    (76, EXORCISM_BAUBLE, 4, 9, 0.22),
+    (76, GREATER_HEAL, 1, 1, 0.12),
+];
+
 /// Migrates only the mobs' economy, once, inside a transaction.
 pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
@@ -325,6 +353,23 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
             .await?;
         tracing::info!("Kōgen-tō robot loot seeded");
     }
+    let abissal = sqlx::query(
+        "INSERT INTO economy_migrations(name) VALUES ('variantes_abissal_v1') ON CONFLICT DO NOTHING",
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected()
+        > 0;
+    if abissal {
+        for &(kind, item, min, max, chance) in BASE_VARIANTES_ABISSAL {
+            sqlx::query("INSERT INTO loot_drops(enemy_kind,item_id,qty_min,qty_max,chance) SELECT $1,$2,$3,$4,$5 WHERE EXISTS(SELECT 1 FROM enemy_kinds WHERE kind=$1)")
+                .bind(kind).bind(item as i32).bind(min).bind(max).bind(chance).execute(&mut *tx).await?;
+        }
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Abyssia sea creature loot seeded");
+    }
     // Craft keys (Scale, Claw, Horn, Hide) from bosses and dungeon/raid only:
     // they come off every mob and every stone, in every color. A new database
     // is born without them (BASE and `linhas_da_pedra` have no keys).
@@ -453,6 +498,7 @@ mod testes {
                 .chain(BASE_VARIANTES)
                 .chain(BASE_VARIANTES_CELESTE)
                 .chain(BASE_VARIANTES_KOGEN)
+                .chain(BASE_VARIANTES_ABISSAL)
                 .any(|(kk, ..)| *kk as u16 == k)
         };
         for d in ARQUIPELAGO.iter() {
@@ -474,7 +520,7 @@ mod testes {
     /// the whole island look broken.
     #[test]
     fn todo_bicho_paga_cobre_sempre() {
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
             let kinds: std::collections::BTreeSet<i32> =
                 tabela.iter().map(|(k, ..)| *k).collect();
             for k in kinds {
@@ -492,7 +538,7 @@ mod testes {
     #[test]
     fn nenhum_mob_da_chave() {
         let chaves = shared::item_id::todas_as_chaves();
-        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
+        for tabela in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
             for (k, item, ..) in tabela {
                 assert!(
                     !chaves.contains(item),

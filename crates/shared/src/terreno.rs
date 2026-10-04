@@ -220,6 +220,9 @@ pub enum Bioma {
     /// Kōgen-tō (`kogen`): a futuristic city at night — asphalt, concrete,
     /// glass. Its colours come from the painted ground, not the relief.
     Neon,
+    /// Abyssia (`abissal`): the sea floor round a bubble kingdom — sand,
+    /// dark rock, kelp and coral. Its colours come from the painted ground.
+    Abissal,
 }
 
 /// Os numeros que o bioma muda no relevo.
@@ -300,7 +303,7 @@ impl Bioma {
             },
             // The sky islands are drawn (`celeste`), not rolled: this only
             // matters for code that asks every biome for a profile.
-            Bioma::Celeste | Bioma::Neon => PerfilDeRelevo {
+            Bioma::Celeste | Bioma::Neon | Bioma::Abissal => PerfilDeRelevo {
                 planicie: (5.0, 4.0),
                 colina: (8.0, 15.0),
                 serra: (12.0, 30.0),
@@ -643,6 +646,15 @@ pub enum Material {
     NeonRosa,
     NeonCiano,
     NeonAmarelo,
+    // Abyssia (`abissal`).
+    /// Kelp-covered floor and the kelp's fronds.
+    Alga,
+    /// Sea-floor sand (pale, cold).
+    AreiaFunda,
+    /// The deep's dark rock.
+    RochaAbissal,
+    /// Coral: pink-orange, glowing a little.
+    Coral,
 }
 
 impl Material {
@@ -653,7 +665,7 @@ impl Material {
     /// `Tronco` (discriminante 11) cair fora dela, e todo tronco e toda folha
     /// da vegetacao viraram voxel INVISIVEL — solido pra colisao de face,
     /// vazio pra malha. O mundo ficou coberto de pedra e mais nada.
-    pub const TODOS: [Material; 48] = [
+    pub const TODOS: [Material; 52] = [
         Material::Agua,
         Material::AreiaMolhada,
         Material::Areia,
@@ -702,6 +714,10 @@ impl Material {
         Material::NeonRosa,
         Material::NeonCiano,
         Material::NeonAmarelo,
+        Material::Alga,
+        Material::AreiaFunda,
+        Material::RochaAbissal,
+        Material::Coral,
     ];
 
     pub fn de_u8(v: u8) -> Option<Material> {
@@ -737,6 +753,10 @@ impl Material {
             Material::NeonRosa => (255, 70, 180),
             Material::NeonCiano => (60, 230, 255),
             Material::NeonAmarelo => (255, 226, 70),
+            Material::Alga => (64, 120, 74),
+            Material::AreiaFunda => (176, 184, 168),
+            Material::RochaAbissal => (70, 78, 92),
+            Material::Coral => (255, 122, 96),
             Material::NuvemSombra => (206, 216, 232),
             Material::GramaCeleste => (168, 210, 134),
             Material::Marmore => (236, 230, 214),
@@ -894,6 +914,9 @@ pub fn material_variado(
                 Material::GramaCeleste
             }
         }
+        // The real look is the paint (`abissal::pintura`); this is what the
+        // vegetation reads, and kelp counts as living ground.
+        Bioma::Abissal => Material::Alga,
         // A grama para na metade da altura: o que sobra e' paredao. Ilha de
         // rocha com vale verde no pe', que e' o que uma serra e' vista de
         // baixo.
@@ -1000,6 +1023,10 @@ pub enum Arvore {
     Sagrada,
     /// Sky biome: white trunk, pale canopy with strands hanging down.
     Salgueiro,
+    /// Abyssia: a tall kelp stalk with fronds and air bladders.
+    Alga,
+    /// Abyssia: a branching coral tree with glowing tips.
+    Coral,
 }
 
 /// Forracao: o que cobre o chao entre as arvores.
@@ -1028,6 +1055,12 @@ pub enum Planta {
     Pena,
     /// Sky biome: a cluster of blue sky crystal (blocks the way, like a stone).
     CristalCeu,
+    /// Abyssia: a glowing anemone.
+    Anemona,
+    /// Abyssia: a fan coral.
+    Leque,
+    /// Abyssia: a big spiral shell (blocks the way, like a stone).
+    Concha,
 }
 
 /// Plantas por 100 m². Varias vezes a densidade de arvore — planta e' pequena
@@ -1051,6 +1084,8 @@ pub fn densidade_de_planta(bioma: Bioma) -> f32 {
         Bioma::Celeste => 7.0,
         // Kōgen-tō: parks only (`kogen::so_no_parque`).
         Bioma::Neon => 3.0,
+        // Abyssia: anemones, sea fans and shells on the open floor.
+        Bioma::Abissal => 4.0,
     }
 }
 
@@ -1120,6 +1155,20 @@ pub fn especie_de_planta(bioma: Bioma, f: f32) -> Planta {
                 Planta::CristalCeu
             }
         }
+        // Abyssia: glowing anemones, sea fans, shells and stones.
+        Bioma::Abissal => {
+            if f < 0.34 {
+                Planta::Anemona
+            } else if f < 0.66 {
+                Planta::Leque
+            } else if f < 0.86 {
+                Planta::Moita
+            } else if f < 0.95 {
+                Planta::Pedra
+            } else {
+                Planta::Concha
+            }
+        }
     }
 }
 
@@ -1141,6 +1190,8 @@ pub fn densidade_de_arvore(bioma: Bioma) -> f32 {
         // sparse enough that each stands out against the meadow.
         Bioma::Celeste => 1.0,
         Bioma::Neon => 0.8,
+        // Abyssia: by ring (`abissal::densidade_em`), times this.
+        Bioma::Abissal => 1.0,
     }
 }
 
@@ -1188,6 +1239,14 @@ pub fn especie_de_arvore(bioma: Bioma, f: f32) -> Arvore {
                 Arvore::Salgueiro
             }
         }
+        // Abyssia picks by ring (`abissal::arvore_em`); this is the fallback.
+        Bioma::Abissal => {
+            if f < 0.5 {
+                Arvore::Alga
+            } else {
+                Arvore::Coral
+            }
+        }
     }
 }
 
@@ -1214,6 +1273,7 @@ pub fn solo_vivo(m: Material) -> bool {
             | Material::Neve
             | Material::GramaCeleste
             | Material::FolhaCeleste
+            | Material::Alga
     )
 }
 
@@ -1253,6 +1313,9 @@ pub fn raio_de_tronco(a: Arvore) -> f32 {
         // parecer poste invisivel, entao arredonda pra cima: melhor barrar um
         // dedo antes que deixar o corpo entrar dentro da madeira.
         Arvore::Betula | Arvore::Pinheiro | Arvore::Seca => 0.18,
+        // Kelp is a thin stalk; coral a stout base.
+        Arvore::Alga => 0.18,
+        Arvore::Coral => 0.38,
     }
 }
 
@@ -1269,8 +1332,10 @@ pub fn raio_de_planta(p: Planta) -> Option<f32> {
         Planta::Toco => Some(0.5),
         // A crystal cluster blocks like a stone of its size.
         Planta::CristalCeu => Some(0.5),
+        // A big shell blocks like a stone.
+        Planta::Concha => Some(0.5),
         Planta::Moita | Planta::Flor | Planta::Arbusto | Planta::Samambaia | Planta::Talo
-        | Planta::Lirio | Planta::Pena => None,
+        | Planta::Lirio | Planta::Pena | Planta::Anemona | Planta::Leque => None,
     }
 }
 
@@ -1294,6 +1359,11 @@ pub fn arvore_da_coluna(
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
     if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+        return None;
+    }
+    // Abyssia: kelp and coral by ring, none in the kingdom (`abissal`).
+    let abissal = ger.e_abissal().then(|| glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
+    if abissal.is_some_and(|q| crate::abissal::densidade_em(q) <= 0.0) {
         return None;
     }
     // Na maquete, METADE das arvores. Elas voltam em porte logo abaixo.
@@ -1333,7 +1403,7 @@ pub fn arvore_da_coluna(
     let prob = if bosque {
         crate::oasis::DENSIDADE_DO_BOSQUE * 0.0025
     } else {
-        densidade_de_arvore(bioma) * 0.0025 * rala // coluna = 0,25 m²
+        densidade_de_arvore(bioma) * 0.0025 * rala * abissal.map_or(1.0, crate::abissal::densidade_em) // coluna = 0,25 m²
     };
     let h0 = (bx as u32).wrapping_mul(374_761_393) ^ (bz as u32).wrapping_mul(668_265_263);
     let h1 = h0.wrapping_mul(1_274_126_177);
@@ -1364,12 +1434,14 @@ pub fn arvore_da_coluna(
     if ger.zona_de_coleta(bx, bz, topo).is_some_and(|tipo| tipo != 0) {
         return None;
     }
-    Some(ArvorePlantada {
+    let f = (h2 >> 20) as f32 / 4096.0;
+    let especie = match abissal {
+        Some(q) => crate::abissal::arvore_em(q, f)?,
         // Green trees at the oasis, not the dead ones of the dunes.
-        especie: especie_de_arvore(
-            if bosque { Bioma::Floresta } else { bioma },
-            (h2 >> 20) as f32 / 4096.0,
-        ),
+        None => especie_de_arvore(if bosque { Bioma::Floresta } else { bioma }, f),
+    };
+    Some(ArvorePlantada {
+        especie,
         // Desvio dentro da coluna: sem ele as arvores nascem todas no centro
         // do bloco e o bosque vira grade.
         centro: glam::Vec2::new(
@@ -1402,6 +1474,9 @@ pub fn planta_da_coluna(
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
     if ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
+        return None;
+    }
+    if ger.e_abissal() && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) {
         return None;
     }
     // UM QUARTO das plantas na maquete. A forracao e' o que mais suja: sao
@@ -1665,6 +1740,7 @@ fn recurso_montanha_da_coluna(
     if ger.na_ponte_magica(bx, bz)
         || (ger.e_celeste() && !crate::celeste::tem_recurso(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
         || (ger.e_kogen() && !crate::kogen::so_no_parque(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
+        || (ger.e_abissal() && !crate::abissal::planta_livre(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
     {
         return None;
     }
@@ -1985,6 +2061,9 @@ enum RelevoDesenhado {
     /// Kōgen-tō's city grid (`kogen::bloco_da_coluna`). Town in the Docks,
     /// no port (the flying bus from Skyreach is the way in).
     Kogen,
+    /// Abyssia's sea floor (`abissal::bloco_da_coluna`). Town in the bubble,
+    /// no port (the submarine from Kōgen-tō is the way in).
+    Abissal,
     /// A ilhota de praia da colonia (`colonia::bloco_da_coluna`). A praca
     /// entra POR CIMA, pelo `aplainar` de sempre.
     Colonia,
@@ -2378,6 +2457,11 @@ impl Gerador {
         matches!(self.desenhado, Some(RelevoDesenhado::Kogen))
     }
 
+    /// Abyssia's sea floor (`abissal`).
+    pub fn e_abissal(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Abissal))
+    }
+
     /// Islands in the sky (Magic Island, Skyreach): no sea, the gaps are a
     /// drop to the cloud floor.
     pub fn e_aerea(&self) -> bool {
@@ -2422,6 +2506,24 @@ impl Gerador {
         // distance, out in Shibuya.
         let c = crate::kogen::centro_da_cidade();
         g.cidade = Some(Cidade::nova(c.x / BLOCO, c.y / BLOCO, crate::kogen::NIVEL_CHAO));
+        g
+    }
+
+    /// ABYSSIA: the drawn sea floor, the town in the bubble, no port
+    /// (`abissal`). One constructor for client and server.
+    pub fn da_ilha_abissal() -> Self {
+        let mut g = Self::novo(
+            crate::abissal::SEMENTE,
+            crate::abissal::RAIO_BLOCOS,
+            crate::abissal::DEF.bioma,
+            ESCALA_ALTURA,
+        );
+        g.desenhado = Some(RelevoDesenhado::Abissal);
+        g.cidade = None;
+        g.porto = None;
+        g.oasis = None;
+        let c = crate::abissal::centro_da_cidade();
+        g.cidade = Some(Cidade::nova(c.x / BLOCO, c.y / BLOCO, crate::abissal::NIVEL_CHAO));
         g
     }
 
@@ -2545,6 +2647,9 @@ impl Gerador {
         }
         if crate::kogen::e_kogen(def.zona) {
             return Self::da_ilha_kogen();
+        }
+        if crate::abissal::e_abissal(def.zona) {
+            return Self::da_ilha_abissal();
         }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
@@ -2703,6 +2808,7 @@ impl Gerador {
             Some(RelevoDesenhado::Colonia) => crate::colonia::bloco_da_coluna(bx, bz),
             Some(RelevoDesenhado::Celeste) => crate::celeste::bloco_da_coluna(bx, bz),
             Some(RelevoDesenhado::Kogen) => crate::kogen::bloco_da_coluna(bx, bz),
+            Some(RelevoDesenhado::Abissal) => crate::abissal::bloco_da_coluna(bx, bz),
             _ => self.bloco_cru(bx, bz),
         };
         let cru = self.planalto().map_or(cru, |p| p.bloco(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO), cru));
@@ -2765,6 +2871,9 @@ impl Gerador {
         // not the other islands' green square).
         if self.e_kogen() {
             return crate::kogen::pintura(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
+        }
+        if self.e_abissal() {
+            return crate::abissal::pintura(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO));
         }
         if self.planalto().is_some_and(|p| p.distancia_estrada(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)) < crate::planalto::ESTRADA) { return Some(Material::RochaEscura); }
         // The castle's wall walk and tower tops: dressed stone.
@@ -3474,6 +3583,8 @@ impl Ilha {
             format!("-celeste{}", crate::celeste::REVISAO)
         } else if crate::kogen::e_kogen(def.zona) {
             format!("-kogen{}", crate::kogen::REVISAO)
+        } else if crate::abissal::e_abissal(def.zona) {
+            format!("-abissal{}", crate::abissal::REVISAO)
         } else {
             String::new()
         };
@@ -5727,7 +5838,7 @@ impl DefIlha {
 /// A inicial e a final tem 800 m de raio; as duas do meio, 400. Nao ha' nada
 /// de sagrado nesses numeros — o relevo e' funcao da semente e do raio, entao
 /// mudar o tamanho de uma ilha e' trocar um campo aqui.
-pub const ARQUIPELAGO: [DefIlha; 6] = [
+pub const ARQUIPELAGO: [DefIlha; 7] = [
     DefIlha {
         zona: "ilha_inicial",
         nome: "Bosque",
@@ -5769,6 +5880,9 @@ pub const ARQUIPELAGO: [DefIlha; 6] = [
     // Kōgen-tō: real Shinjuku + Shibuya, reached only by the flying bus
     // from Skyreach (`kogen`). Index 5.
     crate::kogen::DEF,
+    // Abyssia, levels 100-120 (03/10/2026): the bubble kingdom on the sea
+    // floor, only by submarine from Kōgen-tō (`abissal`). Index 6.
+    crate::abissal::DEF,
 ];
 
 #[cfg(test)]
@@ -5839,12 +5953,15 @@ mod testes_da_ilha_magica {
 /// Is the island reached by SEA, with a port? Skyreach floats over the
 /// clouds and Kōgen-tō is reached only by the flying bus: neither has one.
 pub fn tem_porto(zona: &str) -> bool {
-    !crate::celeste::e_celeste(zona) && !crate::kogen::e_kogen(zona)
+    !crate::celeste::e_celeste(zona) && !crate::kogen::e_kogen(zona) && !crate::abissal::e_abissal(zona)
 }
 
 pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
     if crate::kogen::e_kogen(zona) {
         return Some(&crate::kogen::DEF);
+    }
+    if crate::abissal::e_abissal(zona) {
+        return Some(&crate::abissal::DEF);
     }
     if crate::celeste::e_celeste(zona) {
         return Some(&crate::celeste::DEF);

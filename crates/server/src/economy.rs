@@ -320,7 +320,7 @@ pub(crate) fn init_vazia_para_testes() {
 pub(crate) fn por_loot_do_seed_para_testes() {
     let mut c = cell().write();
     use crate::loot_mobs::*;
-    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN] {
+    for t in [BASE, BASE_PRAIA, BASE_ILHAS, BASE_VARIANTES, BASE_VARIANTES_CELESTE, BASE_VARIANTES_KOGEN, BASE_VARIANTES_ABISSAL] {
         for &(kind, item_id, min, max, chance) in t {
             c.loot_tables.entry(kind as u16).or_default().push(LootEntry {
                 item_id,
@@ -1896,6 +1896,10 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // Sentry, Iron Bear, Tesla Unit, Dynamo Owlbear — the same slot
         // order as their species elsewhere.
         Neon => &[56, 57, 58, 59, 60, 61, 62],
+        // Abyssia: Reef Shark, Drowned Pirate, Tiger Eel, Fish-Man
+        // Harpooner, Giant Crab, Merfolk Mage, Coral Behemoth — the same
+        // slot order as their species elsewhere.
+        Abissal => &[70, 71, 72, 73, 74, 75, 76],
     }
 }
 
@@ -1916,6 +1920,8 @@ pub fn kinds_de_praia_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] 
         Celeste => &[46],
         // Kōgen-tō's shore is a sea wall: the hound patrols it.
         Neon => &[56],
+        // Abyssia's cove: the shark.
+        Abissal => &[70],
     }
 }
 

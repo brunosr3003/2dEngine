@@ -278,6 +278,22 @@ impl BlocoCasa {
         }
     }
 
+    /// The same block in Abyssia's dress: shell-white walls, coral and pearl
+    /// trims, teal roofs, glowing paint. Only the colour changes.
+    pub fn coral(self) -> Self {
+        use BlocoCasa::*;
+        match self {
+            Reboco | RebocoOcre | RebocoRosa | RebocoAzul | RebocoVerde | Papel | Pano => MarmoreCasa,
+            PedraBase | PedraNegra | NegroBorda => ConcretoEscuroCasa,
+            Viga | Tabua | Lenha | Corda => RebocoRosa,
+            Telha | TelhaEscura | Palha | Ardosia | TelhaCeleste => VidroCasa,
+            Janela => NeonCianoCasa,
+            PinturaVermelha | PinturaAmarela | PanoRubro | Toldo | ToldoAmbar => NeonRosaCasa,
+            PinturaAzul | PinturaVerde | ToldoAzul | ToldoVerde | ToldoRoxo | ToldoPergaminho => NeonCianoCasa,
+            outro => outro,
+        }
+    }
+
     /// The same block in Skyreach's angelic dress: white marble walls, gold
     /// where the timber was, azure roofs, gold and blue paint. Only the
     /// colour changes — solidity, doors and collision stay the same.
@@ -340,6 +356,9 @@ pub enum Papel {
     /// he is the only way to Kōgen-tō; in Kōgen-tō's he flies anywhere.
     /// Last, so every other role keeps its number on the wire.
     Motorista,
+    /// Abyssia's submarine captain: on Kōgen-tō's docks he is the only way
+    /// down to the bubble kingdom; in Abyssia's he sails anywhere.
+    Submarino,
 }
 
 impl Papel {
@@ -412,6 +431,7 @@ impl Papel {
             Alquimista => "Alchemist",
             Missoes => "Quest Master",
             Motorista => "Sky Bus Professor",
+            Submarino => "Submarine Captain",
         }
     }
 }
@@ -456,6 +476,12 @@ pub enum TipoProp {
     Poste,
     /// Kōgen-tō: a vertical neon sign sticking out of a shop front.
     Letreiro,
+    /// Abyssia's SUBMARINE, at its berth in Kōgen-tō's Docks and in the
+    /// bubble kingdom: a round brass-and-teal hull, a conning tower, lit
+    /// portholes and a propeller.
+    Submarino,
+    /// Abyssia: a sunken ship on the sea floor, listing, its mast broken.
+    Naufragio,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -641,6 +667,8 @@ pub fn gerar_prop(tipo: TipoProp, seed: i32) -> Construcao {
         TipoProp::Barquinho => barquinho(seed),
         TipoProp::FarolTormenta | TipoProp::RuinaTormenta | TipoProp::CristalTormenta => marco_tormenta(tipo),
         TipoProp::OnibusVoador => onibus_voador(),
+        TipoProp::Submarino => submarino(),
+        TipoProp::Naufragio => naufragio(seed),
         TipoProp::Torii => torii(),
         TipoProp::Lanterna => lanterna(seed),
         TipoProp::Poste => poste(seed),
@@ -2263,6 +2291,100 @@ fn lanterna(seed: i32) -> Construcao {
         }
     }
     let mut c = prop(TipoProp::Lanterna, v);
+    c.escala = 0.25;
+    c
+}
+
+/// Abyssia's submarine: a capsule hull along x, a conning tower with a
+/// periscope, glowing portholes along both sides, a propeller at the stern.
+fn submarino() -> Construcao {
+    let mut v = Voxels::novo(-20, 0, -8, 41, 26, 17);
+    for x in -18..=18i32 {
+        // The hull narrows to round ends.
+        let r = if x.abs() > 13 { 6 - (x.abs() - 13) } else { 6 };
+        for y in 0..=12i32 {
+            for z in -7..=7i32 {
+                let dy = y - 6;
+                if dy * dy + z * z > r * r {
+                    continue;
+                }
+                let casca = dy * dy + z * z > (r - 1) * (r - 1) || x.abs() >= 17;
+                if !casca {
+                    continue;
+                }
+                let bloco = if z.abs() >= r - 1 && dy == 1 && x % 4 == 0 && x.abs() < 14 {
+                    BlocoCasa::Lume
+                } else if dy <= -4 {
+                    BlocoCasa::ConcretoEscuroCasa
+                } else if (x + 18) % 9 == 0 {
+                    BlocoCasa::OuroCasa
+                } else {
+                    BlocoCasa::NeonCianoCasa
+                };
+                v.set(x, y + 1, z, bloco);
+            }
+        }
+    }
+    // The conning tower and periscope.
+    for x in -4..=3i32 {
+        for y in 12..=17i32 {
+            for z in -2..=2i32 {
+                if x.abs() == 4 || x == 3 || z.abs() == 2 || y == 17 {
+                    v.set(x, y, z, if y == 15 && z.abs() == 2 { BlocoCasa::Lume } else { BlocoCasa::OuroCasa });
+                }
+            }
+        }
+    }
+    for y in 18..=23 {
+        v.set(-2, y, 0, BlocoCasa::Metal);
+    }
+    v.set(-1, 23, 0, BlocoCasa::Metal);
+    // The propeller.
+    for k in -3..=3i32 {
+        v.set(19, 7 + k, 0, BlocoCasa::Metal);
+        v.set(19, 7, k, BlocoCasa::Metal);
+    }
+    let mut c = prop(TipoProp::Submarino, v);
+    c.escala = 0.25;
+    c
+}
+
+/// A sunken ship: a plank hull listing to one side, holes in it, the mast
+/// snapped halfway with a rag of sail.
+fn naufragio(seed: i32) -> Construcao {
+    let mut r = Rng::novo(semente(seed, 67, 401));
+    let mut v = Voxels::novo(-26, 0, -12, 53, 40, 25);
+    let inclina = if seed.rem_euclid(2) == 0 { 1 } else { -1 };
+    for x in -24..=24i32 {
+        let meia = if x.abs() > 18 { 9 - (x.abs() - 18) } else { 9 };
+        for y in 0..=10i32 {
+            let largura = (meia * (y + 4) / 14).max(2);
+            for z in -largura..=largura {
+                let casca = z.abs() == largura || y == 0 || x.abs() == 24;
+                if !casca || r.int(0, 10) < 2 {
+                    continue;
+                }
+                let yy = y + (z * inclina) / 3 + 1;
+                if yy < 0 {
+                    continue;
+                }
+                let b = if y == 10 { BlocoCasa::Viga } else if (y + x) % 5 == 0 { BlocoCasa::Lenha } else { BlocoCasa::Tabua };
+                v.set(x, yy, z, b);
+            }
+        }
+    }
+    let mastro = r.int(14, 24);
+    for y in 10..10 + mastro {
+        v.set(-2, y, (y - 10) * inclina / 6, BlocoCasa::Viga);
+    }
+    for y in 16..(10 + mastro).min(30) {
+        for z in 1..5 {
+            if r.int(0, 10) < 6 {
+                v.set(-1, y, z * inclina + (y - 10) * inclina / 6, BlocoCasa::Pano);
+            }
+        }
+    }
+    let mut c = prop(TipoProp::Naufragio, v);
     c.escala = 0.25;
     c
 }

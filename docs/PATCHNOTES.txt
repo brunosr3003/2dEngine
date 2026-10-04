@@ -1,3 +1,11 @@
+03/10/2026 — Abyssia: o reino sob o mar (nível 100 a 120)
+
+Abyssia chegou: um reino dentro de uma bolha no fundo do mar, cercado pela Floresta de Algas, o Cemitério de Naufrágios, a Fossa das Lanternas e a Borda do Abismo. Há um Palácio de Coral, enseada, doca de submarino, corais luminosos, cardumes e iluminação azul-esverdeada.
+
+Todos os personagens usam automaticamente um capacete de bolha transparente em Abyssia, inclusive dentro do reino. Não é equipamento e não há medidor de oxigênio.
+
+O Capitão do Submarino nas docas de Kōgen-tō leva a Abyssia; de lá, o submarino retorna a qualquer ilha. O Capítulo VII liga a viagem às caçadas, quatro chefes de campo e três masmorras: Galeão Afundado, Cofres do Palácio de Coral e O Abismo. As sete criaturas da região têm aparência própria.
+
 03/10/2026 — Coleta automática abre baús e viagem direto pelo mapa-mundi
 
 A coleta automática agora abre os baús dos chefes de campo: com um baú dentro do raio da coleta, o personagem vai até ele, abre e fica parado os dez segundos; depois volta a coletar. Quem terminar primeiro continua levando o baú. O pet voltou a só pegar os itens do chão.

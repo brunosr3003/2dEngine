@@ -73,36 +73,83 @@ pub fn liberada(ilha: usize, indice_da_historia: Option<u32>) -> bool {
     }
 }
 
+/// Who takes you to another island.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Meio {
+    /// The Harbour Captain, on every island with a port.
+    Capitao,
+    /// The Sky Bus Professor (Skyreach and Kōgen-tō).
+    Onibus,
+    /// The Submarine Captain (Kōgen-tō and Abyssia).
+    Submarino,
+}
+
+impl Meio {
+    /// The NPC role that travels this way.
+    pub fn papel(self) -> crate::construcao::Papel {
+        use crate::construcao::Papel;
+        match self {
+            Meio::Capitao => Papel::Estaleiro,
+            Meio::Onibus => Papel::Motorista,
+            Meio::Submarino => Papel::Submarino,
+        }
+    }
+
+    /// The way an NPC of role `papel` (the wire's `u8`) travels, if it does.
+    pub fn do_papel(papel: u8) -> Option<Meio> {
+        [Meio::Capitao, Meio::Onibus, Meio::Submarino].into_iter().find(|m| m.papel() as u8 == papel)
+    }
+}
+
 /// Who takes you where. Kōgen-tō is reached ONLY by the flying bus from
 /// Skyreach (the owner, 02/10/2026); Skyreach's bus goes nowhere else, and
-/// Kōgen-tō's bus flies to any island. Captains never sail to Kōgen-tō.
-pub fn rota_permitida(zona_atual: &str, destino: usize, de_onibus: bool) -> bool {
+/// Kōgen-tō's bus flies to any island but the deep. Abyssia is reached ONLY
+/// by the submarine from Kōgen-tō, and Abyssia's submarine sails anywhere.
+/// Captains sail to neither.
+pub fn rota_permitida(zona_atual: &str, destino: usize, meio: Meio) -> bool {
     let Some(d) = ARQUIPELAGO.get(destino) else {
         return false;
     };
     let para_kogen = crate::kogen::e_kogen(d.zona);
-    if de_onibus {
-        if crate::celeste::e_celeste(zona_atual) {
-            return para_kogen;
+    let para_abissal = crate::abissal::e_abissal(d.zona);
+    match meio {
+        Meio::Capitao => !para_kogen && !para_abissal,
+        Meio::Onibus => {
+            if crate::celeste::e_celeste(zona_atual) {
+                para_kogen
+            } else {
+                crate::kogen::e_kogen(zona_atual) && !para_abissal
+            }
         }
-        return crate::kogen::e_kogen(zona_atual);
+        Meio::Submarino => {
+            if crate::kogen::e_kogen(zona_atual) {
+                para_abissal
+            } else {
+                crate::abissal::e_abissal(zona_atual)
+            }
+        }
     }
-    !para_kogen
+}
+
+/// Who to look for on `zona_atual` to get to `destino`: the first way that
+/// is allowed (`None` = no direct route from here).
+pub fn meio_para(zona_atual: &str, destino: usize) -> Option<Meio> {
+    [Meio::Submarino, Meio::Onibus, Meio::Capitao].into_iter().find(|m| rota_permitida(zona_atual, destino, *m))
 }
 
 /// O menu inteiro: uma linha por ilha do arquipelago. `no_ar(zona)` diz se ha'
-/// canal daquela ilha rodando. `de_onibus`: opened by the flying-bus driver
-/// (`rota_permitida` decides which lines show).
+/// canal daquela ilha rodando. `meio`: who opened it (`rota_permitida`
+/// decides which lines show).
 pub fn destinos(
     zona_atual: &str,
     indice_da_historia: Option<u32>,
     no_ar: &dyn Fn(&str) -> bool,
-    de_onibus: bool,
+    meio: Meio,
 ) -> Vec<Destino> {
     ARQUIPELAGO
         .iter()
         .enumerate()
-        .filter(|(i, d)| d.zona == zona_atual || rota_permitida(zona_atual, *i, de_onibus))
+        .filter(|(i, d)| d.zona == zona_atual || rota_permitida(zona_atual, *i, meio))
         .map(|(i, d)| {
             let estado = if d.zona == zona_atual {
                 estado::AQUI
@@ -155,13 +202,13 @@ mod testes {
     fn menu_marca_onde_estou_e_o_que_esta_fora_do_ar() {
         let (p, _) = passo_que_libera(1).unwrap();
         let so_bosque_e_gelo = |z: &str| z == "ilha_inicial" || z == "ilha_gelo";
-        let m = destinos("ilha_gelo", Some(p + 3), &so_bosque_e_gelo, false);
-        assert_eq!(m.len(), ARQUIPELAGO.len() - 1, "a captain never lists Kōgen-tō");
+        let m = destinos("ilha_gelo", Some(p + 3), &so_bosque_e_gelo, Meio::Capitao);
+        assert_eq!(m.len(), ARQUIPELAGO.len() - 2, "a captain never lists Kōgen-tō or Abyssia");
         assert_eq!(m[0].estado, estado::LIBERADA, "da' pra voltar ao Bosque");
         assert_eq!(m[1].estado, estado::AQUI);
         assert_eq!(m[2].estado, estado::BLOQUEADA);
         let sem_bosque = |z: &str| z == "ilha_gelo";
-        assert_eq!(destinos("ilha_gelo", Some(p), &sem_bosque, false)[0].estado, estado::FORA_DO_AR);
+        assert_eq!(destinos("ilha_gelo", Some(p), &sem_bosque, Meio::Capitao)[0].estado, estado::FORA_DO_AR);
     }
 
     /// Kōgen-tō only by the bus from Skyreach; captains never list it.
@@ -171,13 +218,33 @@ mod testes {
         let celeste = ARQUIPELAGO.iter().position(|d| crate::celeste::e_celeste(d.zona)).unwrap();
         let no_ar = |_: &str| true;
         for d in ARQUIPELAGO.iter() {
-            assert!(!destinos(d.zona, Some(10_000), &no_ar, false).iter().any(|x| x.ilha as usize == kogen && d.zona != crate::kogen::ZONA),
+            assert!(!destinos(d.zona, Some(10_000), &no_ar, Meio::Capitao).iter().any(|x| x.ilha as usize == kogen && d.zona != crate::kogen::ZONA),
                 "a captain in {} lists Kōgen-tō", d.zona);
         }
-        let do_onibus = destinos(crate::celeste::ZONA, Some(10_000), &no_ar, true);
+        let do_onibus = destinos(crate::celeste::ZONA, Some(10_000), &no_ar, Meio::Onibus);
         assert!(do_onibus.iter().any(|x| x.ilha as usize == kogen));
         assert!(do_onibus.iter().all(|x| x.ilha as usize == kogen || x.ilha as usize == celeste));
-        assert!(rota_permitida(crate::kogen::ZONA, 0, true), "Kōgen-tō's bus flies anywhere");
-        assert!(!rota_permitida("ilha_inicial", kogen, true), "no bus from the Bosque");
+        assert!(rota_permitida(crate::kogen::ZONA, 0, Meio::Onibus), "Kōgen-tō's bus flies anywhere");
+        assert!(!rota_permitida("ilha_inicial", kogen, Meio::Onibus), "no bus from the Bosque");
+    }
+
+    /// Abyssia only by the submarine from Kōgen-tō; its submarine sails
+    /// anywhere; no captain, no bus goes down.
+    #[test]
+    fn abissal_so_pelo_submarino_de_kogen() {
+        let abissal = ARQUIPELAGO.iter().position(|d| crate::abissal::e_abissal(d.zona)).unwrap();
+        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
+        assert!(rota_permitida(crate::kogen::ZONA, abissal, Meio::Submarino));
+        assert!(!rota_permitida(crate::kogen::ZONA, abissal, Meio::Onibus), "the bus does not dive");
+        assert!(!rota_permitida(crate::kogen::ZONA, 0, Meio::Submarino), "Kōgen-tō's submarine only dives");
+        for (i, d) in ARQUIPELAGO.iter().enumerate() {
+            if i != abissal {
+                assert!(!rota_permitida(d.zona, abissal, Meio::Capitao));
+                assert!(rota_permitida(crate::abissal::ZONA, i, Meio::Submarino), "Abyssia's submarine to {}", d.zona);
+            }
+        }
+        assert_eq!(meio_para(crate::kogen::ZONA, abissal), Some(Meio::Submarino));
+        assert_eq!(meio_para(crate::abissal::ZONA, kogen), Some(Meio::Submarino));
+        assert_eq!(meio_para("ilha_inicial", abissal), None);
     }
 }

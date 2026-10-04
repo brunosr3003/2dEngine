@@ -136,10 +136,10 @@ use Papel::*;
 /// Bump on any change to the plans' layout: it is in the server's height
 /// cache key (`Ilha::carregar_ou_gerar_da_ilha`). 2: re-anchored 60° apart
 /// for the Seraph Reliquary (02/10/2026).
-pub const REVISAO: u32 = 3;
+pub const REVISAO: u32 = 4;
 
 /// The plans. Every Porão has three fights and a boss (`andares = 3`).
-pub const PLANTAS: [Planta; 7] = [
+pub const PLANTAS: [Planta; 8] = [
     // SHIPWRECK CELLAR — a serpentine: up, west, north, then east to the boss.
     // The alcove east of the first room is the hold of the wreck: empty, but
     // the cellar isn't a single line.
@@ -303,6 +303,30 @@ pub const PLANTAS: [Planta; 7] = [
             sala(6.0, 0.0, 8.0, Luta(1)),    // 3: the second bay
             sala(28.0, 0.0, 9.0, Luta(2)),   // 4: the third bay
             sala(28.0, 26.0, 12.0, Chefe),   // 5: the mainframe's hall
+        ],
+        corredores: &[
+            cor(0, 1, 0),
+            cor(1, 2, 0),
+            cor(1, 3, 1),
+            cor(3, 4, 2),
+            cor(4, 5, 3),
+        ],
+    },
+    // SUNKEN GALLEON (Abyssia) — the ship's length: the gun deck, the
+    // captain's cabin aside, the hold in two flooded halves, and the
+    // admiral's quarters at the stern. On the outer ring at 120°, mirroring
+    // the Robot Foundry.
+    Planta {
+        conteudo: 19,
+        ancora: Vec2::new(-190.0, 329.1),
+        tema: Tema::Caverna,
+        salas: &[
+            sala(36.0, 0.0, 6.0, Entrada),   // 0: the breach in the hull
+            sala(16.0, 0.0, 8.0, Luta(0)),   // 1: the gun deck
+            sala(16.0, -22.0, 7.0, Recanto), // 2: the captain's cabin
+            sala(-6.0, 0.0, 8.0, Luta(1)),   // 3: the forward hold
+            sala(-28.0, 0.0, 9.0, Luta(2)),  // 4: the aft hold
+            sala(-28.0, 26.0, 12.0, Chefe),  // 5: the admiral's quarters
         ],
         corredores: &[
             cor(0, 1, 0),

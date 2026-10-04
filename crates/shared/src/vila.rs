@@ -143,6 +143,42 @@ pub fn montar(ger: &Gerador) -> Vila {
     // the Captain and the town, in his own corner of the map — opposite the
     // Archon's spot. In Kōgen-tō he waits on the Docks lawn east of the
     // shops (the way out).
+    // THE SUBMARINE (Abyssia): its captain and the boat at its berth — on
+    // Kōgen-tō's Docks lawn west of the shops (the bus is east), and at the
+    // bubble kingdom's dock.
+    let lugar_do_submarino = if ger.semente == crate::kogen::SEMENTE {
+        ger.cidade().map(|c| (c.centro() + Vec2::new(-27.0, -4.0), c.centro() + Vec2::new(-36.0, 2.0)))
+    } else if ger.semente == crate::abissal::SEMENTE {
+        let d = crate::abissal::doca_do_submarino();
+        Some((d + Vec2::new(6.0, -6.0), d))
+    } else {
+        None
+    };
+    if let Some((pos, barco)) = lugar_do_submarino {
+        vila.props.push(PropPosto {
+            tipo: TipoProp::Submarino,
+            seed: ger.semente,
+            pos: Vec3::new(barco.x, ger.altura(barco.x, barco.y), barco.y),
+            yaw_q: 0,
+        });
+        vila.npcs.push(NpcDaVila {
+            papel: Papel::Submarino,
+            nome: Papel::Submarino.nome(),
+            pos,
+            yaw: yaw_de(barco - pos),
+            loja: None,
+            giver: None,
+        });
+    }
+    // ABYSSIA's floor: the kingdom's shell lanterns and the graveyard's wrecks.
+    if ger.semente == crate::abissal::SEMENTE {
+        for l in crate::abissal::luzes().iter().filter(|l| !l.agua_viva) {
+            vila.props.push(PropPosto { tipo: TipoProp::Lanterna, seed: l.seed, pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y), yaw_q: 0 });
+        }
+        for (p, rumo, seed) in crate::abissal::naufragios() {
+            vila.props.push(PropPosto { tipo: TipoProp::Naufragio, seed: *seed, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: *rumo });
+        }
+    }
     let lugar_do_onibus = if ger.semente == crate::celeste::SEMENTE {
         let trono = crate::celeste::PLATOS[11].centro;
         Some((trono, Vec2::new(22.0, -22.0), Vec2::new(30.0, -30.0)))
@@ -830,6 +866,8 @@ pub fn prop_barra(t: TipoProp) -> bool {
             | TipoProp::Carroca
             | TipoProp::Portal
             | TipoProp::OnibusVoador
+            | TipoProp::Submarino
+            | TipoProp::Naufragio
             | TipoProp::FarolTormenta
             | TipoProp::RuinaTormenta
             | TipoProp::CristalTormenta

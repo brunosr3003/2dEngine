@@ -464,7 +464,9 @@ fn ico_do_tipo(t: u8) -> Ico {
 
 /// The NPCs who take you to another island (shown by the Travel layer).
 fn leva_a_outra_ilha(nome: &str) -> bool {
-    nome == shared::construcao::Papel::Estaleiro.nome() || nome == shared::construcao::Papel::Motorista.nome()
+    nome == shared::construcao::Papel::Estaleiro.nome()
+        || nome == shared::construcao::Papel::Motorista.nome()
+        || nome == shared::construcao::Papel::Submarino.nome()
 }
 
 const COR_VIAGEM: Color = Color::new(0.45, 0.80, 1.0, 1.0);
@@ -774,6 +776,7 @@ fn cor_de_terra(bioma: Bioma, h: f32, pico: f32) -> [f32; 3] {
         Bioma::Celeste => ([0.52, 0.72, 0.44], [0.80, 0.86, 0.62]),
         // Kōgen-tō at night: dark streets, the towers lighter as they rise.
         Bioma::Neon => ([0.16, 0.17, 0.22], [0.55, 0.58, 0.68]),
+        Bioma::Abissal => ([0.30, 0.36, 0.38], [0.66, 0.72, 0.70]),
     };
     let (rocha, neve) = ([0.50, 0.48, 0.45], [0.93, 0.95, 0.97]);
     let t = (h / pico).clamp(0.0, 1.0);
@@ -2900,23 +2903,27 @@ impl Mapa {
         }
     }
 
-    /// Who takes you from this island to `destino`, as a "Go to": the Sky
-    /// Bus Professor for Kōgen-tō from Skyreach and for anywhere from
-    /// Kōgen-tō (`viagem::rota_permitida`), the Port Captain otherwise.
+    /// Who takes you from this island to `destino`, as a "Go to": whoever
+    /// has a route there (`viagem::meio_para`) — the Port Captain, the Sky
+    /// Bus Professor or the Submarine Captain.
     fn quem_leva_para(&self, destino: &'static DefIlha) -> Option<Alvo> {
         use shared::construcao::Papel;
+        use shared::viagem::Meio;
         let aqui = self.zona()?;
         let idx = shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == destino.zona)?;
-        let de_onibus = shared::viagem::rota_permitida(aqui, idx, true);
-        let papel = if de_onibus || shared::kogen::e_kogen(aqui) { Papel::Motorista } else { Papel::Estaleiro };
+        let direto = shared::viagem::meio_para(aqui, idx);
+        // No direct route (Kōgen-tō or Abyssia from far away): the first
+        // leg's NPC, whose menu shows where they do go.
+        let meio = direto.unwrap_or(if shared::kogen::e_kogen(aqui) { Meio::Onibus } else { Meio::Capitao });
+        let papel = meio.papel();
         let npc = self.ger.as_ref()?.vila().npcs.iter().find(|n| n.papel == papel).map(|n| vec2(n.pos.x, n.pos.y))?;
-        let quem = if papel == Papel::Motorista { "Sky Bus Professor" } else { "Port Captain" };
-        // A route that exists boards on arrival; Kōgen-tō from anywhere but
-        // Skyreach opens the captain's menu (the first leg is the player's).
-        let (objetivo, rotulo) = if de_onibus || shared::viagem::rota_permitida(aqui, idx, false) {
-            (Objetivo::Embarcar(idx as u8), format!("{quem} · to {}", destino.nome))
-        } else {
-            (Objetivo::Npc, format!("{quem} · {} is reached from Skyreach", destino.nome))
+        let quem = Papel::nome(papel);
+        let (objetivo, rotulo) = match direto {
+            Some(_) => (Objetivo::Embarcar(idx as u8), format!("{quem} · to {}", destino.nome)),
+            None if shared::abissal::e_abissal(destino.zona) => {
+                (Objetivo::Npc, format!("{quem} · {} is reached from Kōgen-tō", destino.nome))
+            }
+            None => (Objetivo::Npc, format!("{quem} · {} is reached from Skyreach", destino.nome)),
         };
         Some(Alvo { objetivo, pos: npc, raio: 0.0, rotulo })
     }

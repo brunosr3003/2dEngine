@@ -43,6 +43,24 @@ fn centro(l: &LuzDaCidade, chao: &dyn Fn(f32, f32) -> f32) -> Vec3 {
     vec3(p.x, chao(l.pos.x, l.pos.y) + alto, p.y)
 }
 
+/// Abyssia's lights now (`shared::abissal::luzes`): (where, reach, colour,
+/// strength, jellyfish?) within `alcance` of `alvo`. Jellyfish bob.
+fn do_fundo(alvo: Vec2, alcance: f32, chao: &dyn Fn(f32, f32) -> f32, t: f32) -> Vec<(f32, Vec3, f32, [f32; 3], f32, bool)> {
+    shared::abissal::luzes()
+        .iter()
+        .filter_map(|l| {
+            let d2 = (l.pos.x - alvo.x).powi(2) + (l.pos.y - alvo.y).powi(2);
+            if d2 > alcance * alcance {
+                return None;
+            }
+            let bob = if l.agua_viva { 0.6 * (t * 0.7 + l.seed as f32 * 1.3).sin() } else { 0.0 };
+            let p = vec3(l.pos.x, chao(l.pos.x, l.pos.y) + l.alto + bob, l.pos.y);
+            let forca = if l.agua_viva { 1.1 + 0.25 * (t * 1.6 + l.seed as f32).sin() } else { 1.5 };
+            Some((d2, p, l.raio, l.cor, forca, l.agua_viva))
+        })
+        .collect()
+}
+
 /// Sends the nearest lights to the shader. `ligado` false (day, another
 /// island) turns them off.
 pub fn preparar(ligado: bool, alvo: Vec2, chao: &dyn Fn(f32, f32) -> f32) {
@@ -51,6 +69,14 @@ pub fn preparar(ligado: bool, alvo: Vec2, chao: &dyn Fn(f32, f32) -> f32) {
         return;
     }
     let t = get_time() as f32;
+    if crate::render3d::abismo() {
+        let mut perto = do_fundo(alvo, ALCANCE, chao, t);
+        perto.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let luzes: Vec<(Vec3, f32, [f32; 3], f32)> =
+            perto.iter().take(crate::gpu_estatica::MAX_LUZES).map(|l| (l.1, l.2, l.3, l.4)).collect();
+        crate::gpu_estatica::define_luzes(&luzes);
+        return;
+    }
     let mut perto: Vec<(f32, &LuzDaCidade)> = shared::kogen::luzes()
         .iter()
         .map(|l| (dist2(l, alvo), l))
@@ -133,7 +159,25 @@ pub fn desenha_halos(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
     let t = get_time() as f32;
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-    for l in shared::kogen::luzes() {
+    if crate::render3d::abismo() {
+        for (_, p, _, cor, f, agua_viva) in do_fundo(alvo, ALCANCE_DO_HALO, chao, t) {
+            let c = |a: f32| Color::new(cor[0], cor[1], cor[2], a * f.min(1.0));
+            if agua_viva {
+                // A jellyfish: a bright bell and a soft glow round it.
+                halo(&mut vertices, &mut indices, p, 1.8, c(0.18), dir, cima);
+                halo(&mut vertices, &mut indices, p, 0.55, c(0.7), dir, cima);
+                for k in 0..3 {
+                    let off = (dir * (k as f32 - 1.0) * 0.18) - Vec3::Y * 0.5;
+                    halo(&mut vertices, &mut indices, p + off, 0.22, c(0.45), dir, cima);
+                    halo(&mut vertices, &mut indices, p + off - Vec3::Y * 0.4, 0.16, c(0.3), dir, cima);
+                }
+            } else {
+                halo(&mut vertices, &mut indices, p, 2.4, c(0.22), dir, cima);
+                halo(&mut vertices, &mut indices, p, 0.7, c(0.55), dir, cima);
+            }
+        }
+    }
+    for l in shared::kogen::luzes().iter().filter(|_| !crate::render3d::abismo()) {
         if dist2(l, alvo) > ALCANCE_DO_HALO * ALCANCE_DO_HALO {
             continue;
         }

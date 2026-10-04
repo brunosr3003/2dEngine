@@ -37,6 +37,7 @@ mod forja_ui;
 mod ganhos;
 mod gpu_estatica;
 mod luzes;
+mod abismo;
 mod habilidades;
 mod habilidades_input;
 mod hud;
@@ -722,6 +723,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_KOGEN").is_ok() {
         terreno::previa_kogen(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ABISSAL").is_ok() {
+        terreno::previa_abissal().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1816,7 +1822,8 @@ impl Jogo {
                 // arquivo de tiles nem um byte de rede entram nisso.
                 self.zona_atual = map_name.clone();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
-                render3d::define_noite(shared::kogen::e_kogen(&map_name));
+                render3d::define_noite(shared::kogen::e_kogen(&map_name) || shared::abissal::e_abissal(&map_name));
+                render3d::define_abismo(shared::abissal::e_abissal(&map_name));
                 // Mapa novo pra ilha nova; a viagem da ilha anterior morre junto.
                 // Os filtros do mapa valem a sessao: sobrevivem a ilha nova.
                 let filtros = std::mem::take(&mut self.mapa.filtros);
@@ -5831,13 +5838,7 @@ impl Jogo {
         // Kōgen-tō is always night: -1 in the late-sun slot tells the world
         // shader so (`render3d::SOLIDO_VERTICE`).
         let noite = render3d::noite();
-        let luz_dia = if noite {
-            -1.0
-        } else if modo_sombras == config_graficos::Sombras::Bonitas {
-            1.0
-        } else {
-            0.0
-        };
+        let luz_dia = render3d::luz_dia(if modo_sombras == config_graficos::Sombras::Bonitas { 1.0 } else { 0.0 });
         self.solido.set_uniform("LuzDia", luz_dia);
         gpu_estatica::define_luz_dia(luz_dia);
         // Distance fog: centred where the terrain is loaded around (the
@@ -5997,6 +5998,10 @@ impl Jogo {
         if noite {
             let terreno = self.terreno.as_ref();
             luzes::desenha_halos(&vista.cam, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
+            // Abyssia: the bubble, rays, motes, fish and everyone's helmet.
+            if render3d::abismo() {
+                abismo::desenha(&vista.cam, Some(&self.world), &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
+            }
             gl_use_material(&self.solido);
         }
         luzes::preparar(false, Vec2::ZERO, &|_, _| 0.0);

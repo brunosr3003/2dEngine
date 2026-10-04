@@ -100,6 +100,7 @@ pub mod ponto {
             COSTA => "the distant coast",
             40..=44 => crate::planalto::NOMES[(p-40) as usize],
             80..=88 => crate::kogen::NOMES_DOS_PONTOS[(p - 80) as usize],
+            90..=95 => crate::abissal::NOMES_DOS_PONTOS[(p - 90) as usize],
             _ => "the place",
         }
     }
@@ -152,7 +153,13 @@ pub const CAPITULOS: &[Capitulo] = &[
         nome: "VI · The City That Never Sleeps",
         ilha: 5,
         primeiro: 950,
-        ultimo: 973,
+        ultimo: 980,
+    },
+    Capitulo {
+        nome: "VII · The Kingdom Beneath the Sea",
+        ilha: 6,
+        primeiro: 981,
+        ultimo: 999,
     },
 ];
 
@@ -683,6 +690,27 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(971, "The last patrol", "The Overseer's guard holds the towers. Defeat 40 machines of any kind.", 0, 40, 22_000, 2_800_000, item_id::GREATER_HEAL),
     cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 5),
     falar(973, "The last oath", "The city that never sleeps is quiet. The Quest Master has one last oath for you.", Papel::Missoes, 50_000, 8_000_000, item_id::GREATER_HEAL, 20),
+    // Abyssia: the submarine departs from Kōgen-tō's docks.
+    viajar(980, "Dive to Abyssia", "Speak to the Submarine Captain at Kōgen-tō's docks and descend to the bubble kingdom.", 6, 24_000, 3_000_000),
+    falar(981, "The kingdom below", "Speak to Abyssia's Quest Master in the kingdom square.", Papel::Missoes, 25_000, 3_200_000, item_id::GREATER_HEAL, 12),
+    ir(982, "The kelp forest", "Leave the bubble and follow the seafloor path into the Kelp Forest.", crate::abissal::PONTO_BASE + 1, 26_000, 3_400_000),
+    cacar(983, "Reef predators", "Defeat 25 Reef Sharks in the Kelp Forest.", alvo_de_mob(70), 25, 28_000, 3_600_000, item_id::GREATER_HEAL),
+    nivel(984, "Reach level 105", 105),
+    cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, item_id::XP_POTION, 3),
+    dungeon(986, "The Sunken Galleon", "Enter the wreck's portal and clear the Sunken Galleon.", 19, 38_000, 4_500_000, item_id::GREATER_HEAL, 15),
+    ir(987, "The shipwreck graveyard", "Follow the path to the Shipwreck Graveyard.", crate::abissal::PONTO_BASE + 2, 30_000, 3_800_000),
+    cacar(988, "The drowned crew", "Defeat 30 Drowned Pirates among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
+    nivel(989, "Reach level 110", 110),
+    dungeon(990, "Coral Palace Vaults", "Return to the kingdom and clear the Coral Palace Vaults.", 21, 45_000, 5_000_000, item_id::GREATER_HEAL, 18),
+    ir(991, "The lantern trench", "Walk out to the Lantern Trench, where the seafloor falls away.", crate::abissal::PONTO_BASE + 3, 36_000, 4_300_000),
+    cacar(992, "Light in the dark", "Defeat 30 Merfolk Mages in the trench.", alvo_de_mob(75), 30, 40_000, 4_700_000, item_id::GREATER_HEAL),
+    cacar_com(993, "The Kraken", "Defeat the Kraken in its trench arena.", alvo_de_mob(crate::bosses::CARANGUEJO_TITA), 1, 52_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 4),
+    nivel(994, "Reach level 115", 115),
+    ir(995, "The abyss rim", "Reach the Abyss Rim beyond the trench.", crate::abissal::PONTO_BASE + 4, 42_000, 5_100_000),
+    cacar_com(996, "The ghost captain", "Defeat the Ghost Pirate Captain at the great wreck.", alvo_de_mob(79), 1, 58_000, 6_500_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 4),
+    dungeon(997, "The Abyss", "Descend through every floor of The Abyss dungeon.", 22, 65_000, 7_000_000, item_id::GREATER_HEAL, 20),
+    nivel(998, "Reach level 120", 120),
+    cacar_com(999, "The Abyssal Leviathan", "Defeat the Leviathan at the outer rim and return to the kingdom.", alvo_de_mob(crate::bosses::LEVIATA), 1, 80_000, 10_000_000, item_id::GREATER_HEAL, 25, item_id::XP_POTION, 5),
 ];
 
 // ─────────────────────────── consultas ───────────────────────────
@@ -804,7 +832,7 @@ fn cronica(k: u32) -> Option<QuestDef> {
     // After the written story's last gate: 60 until Skyreach's chapter V
     // took the story to 80 (02/10/2026), and Kōgen-tō's chapter VI to 98
     // (03/10/2026) — so the chronicles start at the cap.
-    let trava = 95u64 + 5 * n as u64;
+    let trava = 120u64 + 5 * n as u64;
     let escolhe = |v: &[&'static str]| v[(c as usize) % v.len()];
     let def = match j {
         0 => {
@@ -1057,6 +1085,11 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
             "Lighthouses below, a city above the storm, and now the city that never slept.",
             "Take the last oath: to keep the lights on for those who still live here.",
         ],
+        981 => &[
+            "The sea above us is held back by the kingdom's bubble.",
+            "Beyond it the kelp forest leads to wrecks, the trench and the rim.",
+            "Keep your bubble helmet on and follow the lights home.",
+        ],
         769 => &[
             "All four lighthouses shine. You did what no castaway ever has.",
             "But the storm does not die: it sleeps and it wakes.",
@@ -1088,6 +1121,9 @@ pub fn ponto_da_historia(
         return Some(q);
     }
     if let Some(q) = crate::kogen::ponto(p) {
+        return Some(q);
+    }
+    if let Some(q) = crate::abissal::ponto(p) {
         return Some(q);
     }
     let c = cidade?;
@@ -1183,8 +1219,10 @@ mod testes {
                 assert_eq!(zona_do_passo(d.id), Some(crate::planalto::ZONA));
             } else if (871..=889).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::celeste::ZONA));
-            } else if (950..=979).contains(&d.id) {
+            } else if (950..=980).contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some(crate::kogen::ZONA));
+            } else if (981..=999).contains(&d.id) {
+                assert_eq!(zona_do_passo(d.id), Some(crate::abissal::ZONA));
             } else if PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
             } else {
@@ -1414,15 +1452,20 @@ mod testes {
                         );
                     }
                     objective_kind::VIAGEM => {
-                        assert!(
-                            papeis.contains(&(Papel::Estaleiro as u16)),
-                            "{id}: sem Capitao do Porto"
-                        );
+                        let papel = if crate::abissal::e_abissal(ARQUIPELAGO[d.obj_target as usize].zona) {
+                            Papel::Submarino
+                        } else if crate::kogen::e_kogen(ARQUIPELAGO[d.obj_target as usize].zona) {
+                            Papel::Motorista
+                        } else {
+                            Papel::Estaleiro
+                        };
+                        assert!(papeis.contains(&(papel as u16)), "{id}: sem transporte {papel:?}");
                     }
                     objective_kind::KILL if d.obj_target != 0 => {
                         let kind = d.obj_target - 1;
                         assert!(
                             (kind as u32) < def.nivel.1 / 3 + 1
+                                || crate::bestiary::VARIANTS.iter().any(|v| v.kind == kind && v.zone == def.zona)
                                 || crate::bosses::da_zona(def.zona).iter().any(|c| c.kind == kind),
                             "{id}: kind {kind} nao nasce ate' o nivel {}",
                             def.nivel.1
@@ -1696,7 +1739,12 @@ mod testes {
             .map(|d| d.obj_count)
             .max()
             .unwrap();
-        assert!(cronica(PASSOS_POR_CRONICA - 1).unwrap().obj_count > ultima_escrita);
+        let primeira = cronica(PASSOS_POR_CRONICA - 1).unwrap();
+        if ultima_escrita >= crate::constants::CHAR_LEVEL_CAP {
+            assert_eq!(primeira.obj_kind, objective_kind::KILL);
+        } else {
+            assert!(primeira.obj_count > ultima_escrita);
+        }
         assert_eq!(nome_do_capitulo(0), CAPITULOS[0].nome);
         assert!(nome_do_capitulo(n + 7).contains("· 2"));
         // Missoes de area pagam Pocao de Experiencia.

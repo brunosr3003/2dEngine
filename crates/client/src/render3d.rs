@@ -996,7 +996,14 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
 
         color.rgb = mix(color.rgb, Tinta.rgb, Tinta.a);
         base = color.rgb;
-        if (LuzDia < -0.5) {
+        if (LuzDia < -1.5) {
+            // THE DEEP (Abyssia): everything sinks into a blue-green murk —
+            // except what glows (coral, jellyfish, lanterns), which stays.
+            lowp float hi = max(color.r, max(color.g, color.b));
+            lowp float lo = min(color.r, min(color.g, color.b));
+            lowp float luz = smoothstep(0.33, 0.58, hi - lo) * smoothstep(0.55, 0.85, hi);
+            color.rgb = mix(color.rgb * vec3(0.28, 0.52, 0.60) + vec3(0.0, 0.03, 0.05), color.rgb * 1.2, luz);
+        } else if (LuzDia < -0.5) {
             // NIGHT (Kōgen-tō, always): everything sinks into a cold dark
             // blue — except what is bright AND saturated (neon, lit windows,
             // screens), which glows. No emissive channel: the colour itself
@@ -1033,6 +1040,8 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     // = colour, .a = strength. Night only: by day the list is empty.
     uniform highp vec4 LuzPos[16];
     uniform lowp vec4 LuzCor[16];
+    // -2 = the deep (its fog is sea, not night sky); see the vertex shader.
+    uniform highp float LuzDia;
     uniform highp vec3 Recorte;
     uniform highp float RecorteZ;
     // Distance fog: xy = centre (world x, z), z = where it starts, w = where
@@ -1079,7 +1088,8 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
             // A NEGATIVE start means night: the fog is the night sky.
             highp float d = distance(mundo.xz, Neblina.xy);
             lowp float f = smoothstep(abs(Neblina.z), Neblina.w, d);
-            lowp vec3 ceu = Neblina.z < 0.0 ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839);
+            lowp vec3 ceu = LuzDia < -1.5 ? vec3(0.016, 0.10, 0.13)
+                : (Neblina.z < 0.0 ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839));
             gl_FragColor.rgb = mix(gl_FragColor.rgb, ceu, f);
         }
     }"#;
@@ -1148,6 +1158,30 @@ pub fn material_solido() -> Material {
 thread_local! {
     /// Kōgen-tō is always night (`define_noite`).
     static NOITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Abyssia is always the deep (`define_abismo`).
+    static ABISMO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the world is drawn under the sea (Abyssia, always). Implies night
+/// (`noite`) for everything that only asks whether lights are on.
+pub fn define_abismo(abismo: bool) {
+    ABISMO.with(|n| n.set(abismo));
+}
+
+pub fn abismo() -> bool {
+    ABISMO.with(|n| n.get())
+}
+
+/// The world shader's `LuzDia` for the current mood: -2 the deep, -1 night,
+/// else `dia` (0 or 1, the late sun).
+pub fn luz_dia(dia: f32) -> f32 {
+    if abismo() {
+        -2.0
+    } else if noite() {
+        -1.0
+    } else {
+        dia
+    }
 }
 
 /// Whether the world is drawn at night (Kōgen-tō, always).
@@ -1164,6 +1198,10 @@ pub fn clear() {
     // do relevo; escuro ele le' como buraco na malha — foi exatamente o que me
     // fez cacar bug de geometria por um bom tempo.
     // At night the sky is the fog's night blue, never black: the same reason.
+    if abismo() {
+        clear_background(Color::from_rgba(4, 25, 33, 255));
+        return;
+    }
     if noite() {
         clear_background(Color::from_rgba(8, 10, 24, 255));
         return;
@@ -1353,7 +1391,7 @@ pub fn variantes_do_saque() -> Vec<(&'static str, [[u8; 3]; 4])> {
 }
 
 /// Modelos de gente, desenhados na escala do corpo.
-pub const MODELOS_DE_GENTE: [&str; 14] = [
+pub const MODELOS_DE_GENTE: [&str; 17] = [
     "player",
     "pistoleiro",
     "mago",
@@ -1369,6 +1407,9 @@ pub const MODELOS_DE_GENTE: [&str; 14] = [
     "gunner_bot",
     "laser_sentry",
     "tesla_unit",
+    "drowned_pirate",
+    "fishman_harpooner",
+    "merfolk_mage",
 ];
 
 /// Os NPCs da vila, um rig de dez pecas por oficio (`tools/voxrender/npcs.py`).
@@ -1421,6 +1462,7 @@ pub fn rig_do_npc(papel: u8, id: u64) -> &'static str {
         p if p == P::Itens as u8 || p == P::Mercador as u8 => "npcs/mercador",
         PAPEL_MISSOES => "npcs/mestre_missoes",
         p if p == P::Motorista as u8 => "npcs/motorista",
+        p if p == P::Submarino as u8 => "npcs/capitao",
         _ => ALDEOES[(id % ALDEOES.len() as u64) as usize],
     }
 }
@@ -1665,7 +1707,7 @@ fn rig_do_humanoide(e: &crate::world::Ent) -> Option<&'static str> {
 
 /// The rig file of each human mob (`tools/voxrender/humanoides.py`): the
 /// three Morganeers and their island variants (`shared::bestiary`).
-pub const RIGS_DE_GENTE: [(u16, &str); 15] = [
+pub const RIGS_DE_GENTE: [(u16, &str); 18] = [
     (2, "humanoides/pistoleiro"),
     (4, "humanoides/mago"),
     (6, "humanoides/arqueiro"),
@@ -1682,6 +1724,9 @@ pub const RIGS_DE_GENTE: [(u16, &str); 15] = [
     (57, "humanoides/gunner_bot"),
     (59, "humanoides/laser_sentry"),
     (61, "humanoides/tesla_unit"),
+    (71, "humanoides/drowned_pirate"),
+    (73, "humanoides/fishman_harpooner"),
+    (75, "humanoides/merfolk_mage"),
 ];
 
 pub fn rig_de_gente(kind: u16) -> Option<&'static str> {
@@ -4597,4 +4642,3 @@ mod testes_da_maquete {
         }
     }
 }
-

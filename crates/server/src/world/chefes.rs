@@ -350,6 +350,9 @@ impl GameWorld {
                 .chain(std::iter::once(shared::kogen::topo_da_espiral()))
                 .take(chefes.len())
                 .collect()
+        } else if shared::abissal::e_abissal(&self.zona) {
+            // Abyssia: each sea boss in its cleared arena, weakest first.
+            shared::abissal::arenas().into_iter().take(chefes.len()).collect()
         } else if let Some(pl) = self.ilha.as_ref().and_then(|i| i.planalto()) {
             [2usize, 3, 4].iter().filter_map(|i| {
                 let alvo = pl.regioes[*i].centro + Vec2::new(-38.0,25.0);

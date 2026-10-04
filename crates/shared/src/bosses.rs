@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 36] = [
+pub const CHEFES: [Chefe; 43] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -953,6 +953,110 @@ pub const CHEFES: [Chefe; 36] = [
             h("Dive Bomb", Circulo { raio: 6.0 }, NoAlvo, 2.0, 3.4, 15.0, 18.0, 1, 1.2),
         ],
     },
+    // ── Abyssia's field bosses (`abissal::arenas`), weakest first ──
+    // The Kelp Forest's edge: a sea predator as long as a street.
+    Chefe {
+        kind: REI_DO_MAR,
+        nome: "Sea King",
+        corpo: Corpo::Bicho(70),
+        escala: 3.0,
+        zona: "ilha_abissal",
+        nivel: 105,
+        habilidades: &[
+            h("Tail Crash", Cone { raio: 7.5, abertura: 1.1 }, AFrente, 1.4, 2.6, 9.0, 7.5, 0, 1.4),
+            h("Tidal Breath", Linha { comprimento: 22.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 22.0, 0, 0.8),
+            h("Whirlpool", Anel { interno: 3.0, externo: 10.0 }, EmSi, 1.5, 2.6, 12.0, 10.0, 0, 1.4),
+            h("Breach", Circulo { raio: 6.0 }, NoAlvo, 2.0, 3.4, 15.0, 18.0, 1, 1.2),
+        ],
+    },
+    // The Lantern Trench: the Kraken breaks the floor around its den.
+    Chefe {
+        kind: CARANGUEJO_TITA,
+        nome: "Kraken",
+        corpo: Corpo::Bicho(76),
+        escala: 3.2,
+        zona: "ilha_abissal",
+        nivel: 112,
+        habilidades: &[
+            h("Pincer Sweep", Cone { raio: 7.0, abertura: 1.3 }, AFrente, 1.4, 2.6, 8.5, 7.0, 0, 1.4),
+            h("Shell Slam", Anel { interno: 2.5, externo: 8.5 }, EmSi, 1.5, 2.6, 12.0, 8.5, 0, 1.4),
+            h("Bubble Volley", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.2, 14.0, 18.0, 0, 1.2),
+            h("Trench Quake", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
+    // The Abyss Rim: the captain of a ghost ship that never stopped sailing.
+    Chefe {
+        kind: 79,
+        nome: "Ghost Pirate Captain",
+        corpo: Corpo::Pirata,
+        escala: 2.2,
+        zona: "ilha_abissal",
+        nivel: 116,
+        habilidades: &[
+            h("Cutlass Arc", Cone { raio: 6.5, abertura: 1.2 }, AFrente, 1.3, 2.4, 8.0, 6.5, 0, 1.2),
+            h("Broadside", Linha { comprimento: 24.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 24.0, 0, 0.8),
+            h("Anchor Drop", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 15.0, 18.0, 0, 1.2),
+            h("Drowned Crew", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
+    // The top of the island: the leviathan that keeps the abyss.
+    Chefe {
+        kind: LEVIATA,
+        nome: "Abyssal Leviathan",
+        corpo: Corpo::Bicho(72),
+        escala: 3.3,
+        zona: "ilha_abissal",
+        nivel: 120,
+        habilidades: &[
+            h("Maw", Cone { raio: 8.0, abertura: 1.0 }, AFrente, 1.4, 2.6, 9.5, 8.0, 0, 1.4),
+            h("Abyssal Beam", Linha { comprimento: 26.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 26.0, 0, 0.8),
+            h("Pressure Wave", Anel { interno: 3.0, externo: 11.0 }, EmSi, 1.5, 2.6, 12.0, 11.0, 0, 1.4),
+            h("Deep Strike", Circulo { raio: 6.5 }, NoAlvo, 2.0, 3.4, 15.0, 18.0, 1, 1.2),
+        ],
+    },
+    // ── Abyssia's dungeon bosses (`SO_DE_DUNGEON`) ──
+    Chefe {
+        kind: 81,
+        nome: "The Drowned Admiral",
+        corpo: Corpo::Pirata,
+        escala: 2.0,
+        zona: "ilha_abissal",
+        nivel: 102,
+        habilidades: &[
+            h("Grapeshot", Circulo { raio: 4.5 }, NoAlvo, 1.8, 2.8, 9.5, 18.0, 0, 1.0),
+            h("Keelhaul", Linha { comprimento: 20.0, largura: 3.0 }, AFrente, 1.3, 2.6, 10.0, 20.0, 0, 1.4),
+            h("Sabre Storm", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 12.0, 8.0, 0, 1.4),
+            h("Sinking Ship", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 19.0, 12.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: 82,
+        nome: "Royal Guard Captain",
+        corpo: Corpo::Gente(73),
+        escala: 2.2,
+        zona: "ilha_abissal",
+        nivel: 110,
+        habilidades: &[
+            h("Trident Thrust", Linha { comprimento: 18.0, largura: 2.4 }, AFrente, 1.2, 2.6, 9.5, 18.0, 0, 0.8),
+            h("Coral Wall", Anel { interno: 2.5, externo: 8.0 }, EmSi, 1.4, 2.6, 12.0, 8.0, 0, 1.4),
+            h("Harpoon Rain", Circulo { raio: 5.5 }, NoAlvo, 1.9, 3.4, 15.0, 18.0, 0, 1.2),
+            h("Royal Decree", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
+    Chefe {
+        kind: SER_DAS_PROFUNDEZAS,
+        nome: "The Deep One",
+        corpo: Corpo::Bicho(76),
+        escala: 3.0,
+        zona: "ilha_abissal",
+        nivel: 118,
+        habilidades: &[
+            h("Ink Cloud", Circulo { raio: 6.0 }, NoAlvo, 1.9, 3.2, 14.0, 18.0, 0, 1.2),
+            h("Tentacle Lash", Cone { raio: 7.5, abertura: 1.2 }, AFrente, 1.4, 2.6, 9.0, 7.5, 0, 1.4),
+            h("Abyss Gaze", Linha { comprimento: 24.0, largura: 2.6 }, AFrente, 1.3, 2.8, 10.0, 24.0, 0, 0.8),
+            h("The Dark Below", Anel { interno: 5.0, externo: 12.0 }, EmSi, 2.0, 2.4, 20.0, 12.0, 1, 0.8),
+        ],
+    },
     // STORMKEEP's Warlord (`forte`), in the keep's arena. Last in the list:
     // `da_zona` sorts by level, and at 60 he must come after the Archmage
     // so the Plateau's boss spots line up ([2, 3, 4] then the keep).
@@ -1061,7 +1165,7 @@ pub const CHEFES: [Chefe; 36] = [
 
 /// Bosses that only appear at the end of a dungeon, never in the field:
 /// `da_zona` leaves them out, or their islands would grow more field bosses.
-pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55, 66, 67, 68];
+pub const SO_DE_DUNGEON: &[u16] = &[23, 25, 26, 27, 50, 51, 52, 53, 54, 55, 66, 67, 68, 81, 82, 83];
 
 /// The Storm Pegasus: its body preset is the lynx, its model the pegasus stag.
 pub const PEGASUS: u16 = 27;
@@ -1069,6 +1173,13 @@ pub const PEGASUS: u16 = 27;
 /// The Sky Dragon Mech: its body preset is the Iron Bear (melee), its model
 /// the mech dragon.
 pub const DRAGAO_DA_ESPIRAL: u16 = 69;
+
+/// Abyssia's beast bosses: they fight as the Iron Bear and look like
+/// themselves (`client::bicho`).
+pub const REI_DO_MAR: u16 = 77;
+pub const CARANGUEJO_TITA: u16 = 78;
+pub const LEVIATA: u16 = 80;
+pub const SER_DAS_PROFUNDEZAS: u16 = 83;
 
 /// Maximo de habilidades por chefe (o estado de recarga e' um array).
 pub const MAX_HABILIDADES: usize = 4;
@@ -1467,7 +1578,7 @@ mod testes {
             assert!(vida(c.nivel) <= 200_000, "{}: vida {}", c.nome, vida(c.nivel));
         }
         assert!(da_zona("ilha_inicial").len() >= 2);
-        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA, crate::kogen::ZONA] {
+        for z in ["ilha_gelo", "ilha_deserto", "ilha_planalto", crate::celeste::ZONA, crate::kogen::ZONA, crate::abissal::ZONA] {
             assert!(!da_zona(z).is_empty(), "{z} sem chefe");
         }
         // A ILHA MÁGICA precisa de chefe: a Ilhota do Colosso paga bônus de

@@ -126,6 +126,8 @@ pub fn arvore(especie: Arvore, variante: u32) -> Modelo {
         Arvore::Betula => betula(&mut r),
         Arvore::Pinheiro => pinheiro(&mut r),
         Arvore::Seca => seca(&mut r),
+        Arvore::Alga => alga(&mut r),
+        Arvore::Coral => coral(&mut r),
     };
     malha(&v)
 }
@@ -469,6 +471,9 @@ pub fn planta(especie: Planta, variante: u32) -> Modelo {
         Planta::Lirio => lirio(&mut r),
         Planta::Pena => pena(&mut r),
         Planta::CristalCeu => cristal_ceu(&mut r),
+        Planta::Anemona => anemona(&mut r),
+        Planta::Leque => leque(&mut r),
+        Planta::Concha => concha(&mut r),
     };
     malha(&v)
 }
@@ -535,6 +540,115 @@ fn cristal_ceu(r: &mut Rng) -> Volume {
             v.poe(bx + ix * incl, iy, bz + iz * incl, Material::CristalCeu);
             if iy < h - 1 {
                 v.poe(bx + ix * incl + 1, iy, bz + iz * incl, Material::CristalCeu);
+            }
+        }
+    }
+    v
+}
+
+// ─────────────────────────────── Abyssia ───────────────────────────────
+
+/// KELP: a tall stalk swaying in an S, fronds off alternate sides and a few
+/// gold air bladders.
+fn alga(r: &mut Rng) -> Volume {
+    let h = r.i(22, 32);
+    let mut v = Volume::novo([-5, 0, -5], [11, h + 2, 11]);
+    let (fx, fz) = (r.sinal() * 1.6, r.sinal() * 1.2);
+    let fase = r.i(0, 6) as f32;
+    for iy in 0..h {
+        let t = iy as f32 / h as f32;
+        let x = (fx * (t * 5.0 + fase).sin()).round() as i32;
+        let z = (fz * (t * 4.0 + fase * 0.7).cos()).round() as i32;
+        v.poe(x, iy, z, Material::Alga);
+        if iy > 3 && iy % 3 == 0 {
+            let lado = if (iy / 3) % 2 == 0 { 1 } else { -1 };
+            for k in 1..=r.i(2, 3) {
+                v.poe(x + lado * k, iy + k / 2, z, Material::Alga);
+            }
+            if r.i(0, 4) == 0 {
+                v.poe(x - lado, iy, z, Material::FolhaDourada);
+            }
+        }
+    }
+    v
+}
+
+/// CORAL: a stout base branching upwards, every branch tipped with glow.
+fn coral(r: &mut Rng) -> Volume {
+    let mut v = Volume::novo([-7, 0, -7], [15, 20, 15]);
+    for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+        for iy in 0..3 {
+            v.poe(dx, iy, dz, Material::Coral);
+        }
+    }
+    let ponta = match r.i(0, 2) {
+        0 => Material::NeonRosa,
+        1 => Material::NeonCiano,
+        _ => Material::NeonAmarelo,
+    };
+    for _ in 0..r.i(4, 7) {
+        let (mut x, mut y, mut z) = (r.i(0, 1), 3, r.i(0, 1));
+        let (dx, dz) = (r.i(-1, 1), r.i(-1, 1));
+        for passo in 0..r.i(6, 12) {
+            v.poe(x, y, z, Material::Coral);
+            y += 1;
+            if passo % 2 == 1 {
+                x = (x + dx).clamp(-6, 6);
+                z = (z + dz).clamp(-6, 6);
+            }
+        }
+        v.poe(x, y, z, ponta);
+    }
+    v
+}
+
+/// ANEMONE: a purple foot and glowing pink tentacles.
+fn anemona(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(3, 8);
+    for (dx, dz) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+        v.poe(dx, 0, dz, Material::PetalaRoxa);
+        v.poe(dx, 1, dz, Material::PetalaRoxa);
+    }
+    for _ in 0..r.i(6, 10) {
+        let (ix, iz) = (r.i(-2, 2), r.i(-2, 2));
+        let h = r.i(2, 4);
+        for iy in 2..2 + h {
+            v.poe(ix, iy, iz, Material::PetalaRosa);
+        }
+        v.poe(ix, 2 + h, iz, Material::NeonRosa);
+    }
+    v
+}
+
+/// SEA FAN: a flat lattice of coral on one plane.
+fn leque(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(5, 12);
+    let ao_longo_de_x = r.i(0, 1) == 0;
+    let cor = if r.i(0, 1) == 0 { Material::Coral } else { Material::PetalaRoxa };
+    for iy in 0..r.i(7, 10) {
+        let largura = (iy / 2 + 1).min(5);
+        for k in -largura..=largura {
+            if (k + iy) % 2 == 0 || k.abs() == largura || iy < 2 {
+                let (x, z) = if ao_longo_de_x { (k, 0) } else { (0, k) };
+                v.poe(x, iy, z, cor);
+            }
+        }
+    }
+    v
+}
+
+/// A BIG SHELL: a spiral of pale pink rings narrowing upwards.
+fn concha(r: &mut Rng) -> Volume {
+    let mut v = caixa_vazia(4, 9);
+    let altura = r.i(5, 7);
+    for iy in 0..altura {
+        let raio = (4 - iy * 4 / altura).max(1);
+        for x in -raio..=raio {
+            for z in -raio..=raio {
+                if x * x + z * z <= raio * raio {
+                    let m = if (iy + (x + z).abs()) % 3 == 0 { Material::PetalaRosa } else { Material::Marmore };
+                    v.poe(x, iy, z, m);
+                }
             }
         }
     }

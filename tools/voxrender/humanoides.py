@@ -227,6 +227,19 @@ MOBS.update({
     "gunner_bot": (paleta_robo((120, 126, 140), (84, 90, 104), (255, 170, 40)), capacete, pistola),
     "laser_sentry": (paleta_robo((96, 104, 122), (66, 72, 88), (60, 230, 255)), capacete, arco),
     "tesla_unit": (paleta_robo((70, 78, 120), (48, 54, 92), (150, 120, 255)), capacete, dict),
+    # Abyssia: sea-worn uniforms and luminous coral accents.
+    "drowned_pirate": (
+        paleta(BRANCO=(72, 114, 126), CINZA=(48, 82, 96), PRETO=(34, 58, 70),
+               CARVAO=(26, 44, 56), BOTA=(28, 42, 48), FAIXA=(134, 208, 194)),
+        lambda: {**cabeca_sem_tapa(), **bandana(P.FAIXA)}, pistola),
+    "fishman_harpooner": (
+        paleta(BRANCO=(76, 156, 158), CINZA=(44, 112, 126), PRETO=(30, 74, 92),
+               CARVAO=(22, 56, 72), BOTA=(32, 74, 78), FAIXA=(248, 164, 116)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, arco),
+    "merfolk_mage": (
+        paleta(BRANCO=(124, 132, 190), CINZA=(74, 88, 152), PRETO=(42, 56, 110),
+               CARVAO=(32, 40, 82), BOTA=(32, 48, 86), FAIXA=(98, 238, 218)),
+        lambda: {**cabeca_sem_tapa(), **capuz(P.CINZA)}, dict),
 })
 
 # The robots' torso: a glowing core on the chest, plate seams, and shoulder
