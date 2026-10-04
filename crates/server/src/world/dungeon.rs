@@ -1772,6 +1772,10 @@ impl GameWorld {
                 c.andares,
                 !matches!(i.estado, EstadoDg::Andando),
             );
+            let centro = match self.instancias[idx].planta {
+                Some(p) => p.sala_da_etapa(andar).map_or(p.ponto_de_volta(andar), |s| p.centro(s)),
+                None => self.dg_arena()[(andar as usize).min(3)],
+            };
             for sid in presentes {
                 let reviver_em_s = self
                     .sessions
@@ -1790,6 +1794,7 @@ impl GameWorld {
                         reviver_em_s,
                         membros: membros.clone(),
                         concluida,
+                        centro: [centro.x, centro.y],
                     },
                 );
             }

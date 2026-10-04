@@ -5762,6 +5762,9 @@ impl GameWorld {
                 Vec2::splat(SitioPorto::RAIO * 2.0),
             ));
         }
+        if shared::abissal::e_abissal(&self.zona) {
+            for p in shared::abissal::POVOADOS {self.safe_zones.push((p.centro-Vec2::splat(shared::abissal::RAIO_POVOADO),Vec2::splat(shared::abissal::RAIO_POVOADO*2.0)));}
+        }
         for npc in vila.npcs.iter().filter(|npc| npc.giver.is_some()) {
             let centro = npc.pos;
             self.safe_zones
@@ -6222,9 +6225,9 @@ impl GameWorld {
             saved_fame,
             saved_aura,
             saved_profs,
-            saved_unspent,
+            mut saved_unspent,
             saved_alloc,
-            saved_sp_earned,
+            mut saved_sp_earned,
             saved_sp_spent,
             saved_skill_progress,
             saved_colonia,
@@ -6317,6 +6320,15 @@ impl GameWorld {
                     return;
                 }
             }
+        }
+        // Recover level rewards for XP earned while the old level-100 cap
+        // was active. Allocations, spent SP and admin bonuses are preserved.
+        let nivel_salvo = shared::level_of_xp_with_mult(saved_xp, crate::economy::xp_multiplier());
+        if nivel_salvo > 100 {
+            let esperado = nivel_salvo.saturating_sub(1).saturating_mul(shared::POINTS_PER_LEVEL);
+            let total = saved_alloc.iter().fold(saved_unspent, |n, p| n.saturating_add(*p));
+            saved_unspent = saved_unspent.saturating_add(esperado.saturating_sub(total));
+            saved_sp_earned = saved_sp_earned.max(nivel_salvo.saturating_sub(1).saturating_mul(shared::SP_PER_LEVEL));
         }
         // Stats efetivos considerando equipamento salvo + pontos + profs.
         let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, saved_xp);
@@ -8448,7 +8460,7 @@ impl GameWorld {
                 session.stat_points_dirty = true;
             }
             shared::protocol::AdminAction::SetLevel { level } => {
-                let lvl = level.clamp(1, shared::CHAR_LEVEL_CAP);
+                let lvl = level.max(1);
                 session.xp = shared::xp_for_level_with_mult(lvl, crate::economy::xp_multiplier());
                 let lvl_gained = lvl.saturating_sub(1);
                 session.unspent_points = lvl_gained * shared::POINTS_PER_LEVEL;
@@ -8492,7 +8504,7 @@ impl GameWorld {
                     "UPDATE characters SET unspent_points=unspent_points+$1 WHERE name=$2")
                     .bind(amount as i32).bind(&name).execute(&pool).await,
                 SetLevel { level } => {
-                    let lvl = level.clamp(1, shared::CHAR_LEVEL_CAP);
+                    let lvl = level.max(1);
                     let xp = shared::xp_for_level_with_mult(lvl, mult);
                     let g = lvl.saturating_sub(1);
                     sqlx::query("UPDATE characters SET xp=$1, unspent_points=$2, \

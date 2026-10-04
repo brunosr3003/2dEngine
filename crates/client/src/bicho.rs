@@ -200,7 +200,7 @@ pub fn modelo_de_kind(kind: u16) -> Option<&'static str> {
         62 => "bichos/dynamo_owlbear",
         70 => "bichos/reef_shark",
         72 => "bichos/tiger_eel",
-        74 => "bichos/giant_crab",
+        74 => "bichos/caranguejo_rei",
         76 => "bichos/coral_behemoth",
         _ => return None,
     })

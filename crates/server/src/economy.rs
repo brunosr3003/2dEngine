@@ -1899,7 +1899,7 @@ pub fn kinds_do_bioma(bioma: shared::terreno::Bioma) -> &'static [u16] {
         // Abyssia: Reef Shark, Drowned Pirate, Tiger Eel, Fish-Man
         // Harpooner, Giant Crab, Merfolk Mage, Coral Behemoth — the same
         // slot order as their species elsewhere.
-        Abissal => &[70, 71, 72, 73, 74, 75, 76],
+        Abissal => &[70, 71, 72, 73, 74, 75, 76, 90, 91, 92],
     }
 }
 

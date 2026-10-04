@@ -53,6 +53,7 @@ struct Inst {
     reviver_em_s: Option<u16>,
     membros: Vec<dg::MembroDaInstancia>,
     concluida: bool,
+    centro: [f32; 2],
 }
 
 struct Resultado {
@@ -270,6 +271,7 @@ impl DungeonUi {
                 reviver_em_s,
                 membros,
                 concluida,
+                centro,
             } => {
                 self.entrada_pendente = None;
                 self.mostrar_saida_arena = false;
@@ -291,6 +293,7 @@ impl DungeonUi {
                     reviver_em_s,
                     membros,
                     concluida,
+                    centro,
                 });
             }
             Aviso::Resultado {
@@ -360,6 +363,10 @@ impl DungeonUi {
 
     /// The run in progress, if any: (content, step). The Porão floor plan is
     /// drawn from this — its gates open with the step.
+    pub fn cenario(&self) -> Option<(u16, u8, Vec2)> {
+        self.inst.as_ref().map(|i| (i.conteudo, i.andar, vec2(i.centro[0], i.centro[1])))
+    }
+
     pub fn em_curso(&self) -> Option<(u16, u8)> {
         self.inst.as_ref().map(|i| (i.conteudo, if i.concluida { u8::MAX } else { i.andar }))
     }
@@ -1668,6 +1675,7 @@ mod testes {
                 reviver_em_s: None,
                 membros: vec![],
                 concluida: false,
+                centro: [0.0, 0.0],
             },
             1.0,
         );

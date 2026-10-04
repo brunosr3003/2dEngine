@@ -20,6 +20,7 @@ mod bolsa;
 mod colecao;
 mod craft_ui;
 mod dungeon_ui;
+mod dungeon_cenario;
 mod dungeon_recompensas;
 mod nivel_ui;
 mod recompensas_ui;
@@ -38,6 +39,7 @@ mod ganhos;
 mod gpu_estatica;
 mod luzes;
 mod abismo;
+mod marinhos;
 mod habilidades;
 mod habilidades_input;
 mod hud;
@@ -484,6 +486,7 @@ struct Jogo {
     dungeon: dungeon_ui::DungeonUi,
     /// Porão floor plans, built once each (`porao_planta`).
     plantas: porao_planta::Cache,
+    cenario_dungeon: dungeon_cenario::Cache,
     recompensas: recompensas_ui::Ui,
     /// "Onde obter" (`onde_obter.rs`).
     onde_obter: onde_obter::OndeObter,
@@ -776,6 +779,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_DUNGEON_CENARIO").is_ok() {
+        dungeon_cenario::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_DUNGEON_PAINEL").is_ok() {
         dungeon_ui::previa_painel().await;
         return;
@@ -977,6 +985,7 @@ async fn main() {
         montar_auto_em: -99.0,
         dungeon: dungeon_ui::DungeonUi::default(),
         plantas: porao_planta::Cache::default(),
+        cenario_dungeon: dungeon_cenario::Cache::default(),
         recompensas: recompensas_ui::Ui::default(),
         onde_obter: onde_obter::OndeObter::default(),
         tela_acesa: false,
@@ -2014,11 +2023,11 @@ impl Jogo {
                                     .and_then(|c| shared::terreno::def_da_zona(c.zona))
                                     .map(|def| def.bioma)
                                 {
-                                    terreno.tema_da_dungeon(bioma);
+                                    terreno.tema_da_dungeon(bioma, Some(*conteudo));
                                 }
                             }
                             shared::dungeon::Aviso::Saiu => {
-                                terreno.tema_da_dungeon(shared::terreno::Bioma::Floresta);
+                                terreno.tema_da_dungeon(shared::terreno::Bioma::Floresta, None);
                             }
                             _ => {}
                         }
@@ -5857,6 +5866,12 @@ impl Jogo {
             let alvo = vec2(vista.cam.target.x, vista.cam.target.z);
             luzes::preparar(noite, alvo, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
         }
+        if self.zona_atual == shared::arena::ZONA {
+            if let (Some((id, andar, centro)), Some(t)) = (self.dungeon.cenario(), &self.terreno) {
+                self.cenario_dungeon.preparar(id, andar, centro, &|x,z| t.altura(x,z));
+                self.cenario_dungeon.luzes();
+            } else { self.cenario_dungeon.limpar(); }
+        } else { self.cenario_dungeon.limpar(); }
         // Tudo que e' mundo — chao, vegetacao, bichos — vai com descarte de
         // face de costas. O HUD volta pro material padrao no fim, porque ele
         // e' 2D e nao tem lado de tras.
@@ -5935,6 +5950,7 @@ impl Jogo {
                 }
             }
         }
+        self.cenario_dungeon.desenha();
         // A MESMA vista da mira: desenho e clique nao tem como divergir
         // porque nao existe a segunda conta.
         // O furo vale so' pro CENARIO. Bicho nao e' obstaculo: ele e' o que

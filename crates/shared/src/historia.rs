@@ -699,7 +699,7 @@ pub const PASSOS: &[QuestDef] = &[
     cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, item_id::XP_POTION, 3),
     dungeon(986, "The Sunken Galleon", "Enter the wreck's portal and clear the Sunken Galleon.", 19, 38_000, 4_500_000, item_id::GREATER_HEAL, 15),
     ir(987, "The shipwreck graveyard", "Follow the path to the Shipwreck Graveyard.", crate::abissal::PONTO_BASE + 2, 30_000, 3_800_000),
-    cacar(988, "The drowned crew", "Defeat 30 Drowned Pirates among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
+    cacar(988, "The drowned crew", "Defeat 30 Triton Guards among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
     nivel(989, "Reach level 110", 110),
     dungeon(990, "Coral Palace Vaults", "Return to the kingdom and clear the Coral Palace Vaults.", 21, 45_000, 5_000_000, item_id::GREATER_HEAL, 18),
     ir(991, "The lantern trench", "Walk out to the Lantern Trench, where the seafloor falls away.", crate::abissal::PONTO_BASE + 3, 36_000, 4_300_000),
@@ -905,7 +905,7 @@ fn cronica(k: u32) -> Option<QuestDef> {
             }
         }
         _ => {
-            if trava <= crate::constants::CHAR_LEVEL_CAP as u64 {
+            if trava <= u32::MAX as u64 {
                 QuestDef {
                     title: leak(format!("Chronicle {n} · Reach level {trava}")),
                     ..nivel(id, "", trava as u32)
@@ -1725,7 +1725,7 @@ mod testes {
             let d = cronica(k).unwrap();
             if d.obj_kind == objective_kind::NIVEL {
                 assert!(
-                    d.obj_count <= crate::constants::CHAR_LEVEL_CAP,
+                    d.obj_count <= u32::MAX,
                     "trava {} acima do teto",
                     d.obj_count
                 );
@@ -1740,7 +1740,7 @@ mod testes {
             .max()
             .unwrap();
         let primeira = cronica(PASSOS_POR_CRONICA - 1).unwrap();
-        if ultima_escrita >= crate::constants::CHAR_LEVEL_CAP {
+        if ultima_escrita >= u32::MAX {
             assert_eq!(primeira.obj_kind, objective_kind::KILL);
         } else {
             assert!(primeira.obj_count > ultima_escrita);

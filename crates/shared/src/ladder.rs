@@ -348,16 +348,23 @@ pub fn pierceable(level: u32) -> f32 {
 ///   "pierces" is the same for every species at the level; personality scales
 ///   only what is left. Without this a 2.8x owlbear would have 2.8x the whole
 ///   attack and would go through any armor.
+/// Late regions demand stronger enemies even against matching gear.
+/// Smooth ramp: at 100 +50% health/+25% net damage, at 120 +100%/+50%.
+pub fn endgame_multipliers(level:u32)->(f32,f32,f32) {
+    let steps=level.saturating_sub(80).min(40) as f32;
+    (1.0+steps*0.025,1.0+steps*0.0125,steps*0.0015)
+}
 pub fn mob(p: &Profile, level: u32) -> Mob {
     let a = attack(level) as f32;
     let golpe_esperado = a * (1.0 - MOB_DEFENSE);
+    let (vida,dano,armadura)=endgame_multipliers(level);
     Mob {
-        health: (STRIKES_PER_MOB * golpe_esperado * p.health).round().max(1.0) as i32,
+        health: (STRIKES_PER_MOB * golpe_esperado * p.health * vida).round().max(1.0) as i32,
         attack: (pierceable(level)
-            + mob_net_damage(level) * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING))
+            + mob_net_damage(level) * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING) * dano)
             .round()
             .max(1.0) as i32,
-        defense: (a * p.defense).round().max(0.0) as i32,
+        defense: (a * (p.defense + armadura).min(0.60)).round().max(0.0) as i32,
     }
 }
 
@@ -526,7 +533,7 @@ mod testes {
         }
     }
 
-    const CHAR_LEVEL_CAP_TESTE: u32 = crate::constants::CHAR_LEVEL_CAP;
+    const NIVEL_CONTEUDO_TESTE: u32 = 120;
 
     #[test]
     fn o_chefe_bate_mais_e_segura_mais_que_o_comum() {
@@ -541,7 +548,7 @@ mod testes {
         // Health is u32 on the wire since protocol 172: a level-80 boss
         // (Skyreach) has its real health, not the old u16 ceiling.
         assert!(boss_health(80) > u16::MAX as i32, "level 80 passes the old u16 cap");
-        assert!(boss_health(CHAR_LEVEL_CAP_TESTE) < i32::MAX / 4, "and never overflows");
+        assert!(boss_health(NIVEL_CONTEUDO_TESTE) < i32::MAX / 4, "and never overflows");
     }
 
     /// In the first levels the mob pierces less: the freshly created character has no armor.
@@ -554,5 +561,22 @@ mod testes {
         assert!(toma(3) < toma(6) && toma(6) < toma(12));
         assert_eq!(pierceable(EARLY_RAMP), defense(EARLY_RAMP) as f32);
         assert_eq!(pierceable(60), defense(60) as f32);
+    }
+}
+
+#[cfg(test)]
+mod endgame_tests {
+    use super::*;
+    #[test]
+    fn late_maps_raise_health_damage_and_defense_smoothly() {
+        assert_eq!(endgame_multipliers(79),(1.,1.,0.));
+        assert_eq!(endgame_multipliers(80),(1.,1.,0.));
+        let p=Profile::novo(1.,1.,0.);
+        for n in [80,90,100,110,120] {
+            let m=mob(&p,n);let next=mob(&p,n+1);
+            assert!(next.health>m.health && next.attack>=m.attack && next.defense>=m.defense);
+        }
+        assert_eq!(endgame_multipliers(100).0,1.5);
+        assert_eq!(endgame_multipliers(120).0,2.0);
     }
 }

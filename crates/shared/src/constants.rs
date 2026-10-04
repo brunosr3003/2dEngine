@@ -145,7 +145,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 181 (02/10/2026): Skyreach's island kerb comes out again (terrain back to
 /// 179's), and the cliff is drawn under a deck where it lands.
 /// 182 (02/10/2026): the character list carries skins and auras.
-pub const PROTOCOL_VERSION: u16 = 184;
+pub const PROTOCOL_VERSION: u16 = 185;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -416,29 +416,35 @@ pub const DOWNED_HP_MAX: i32 = 100;
 /// `shared::skills::Conjunto as usize`.
 pub const PROF_COUNT: usize = 4;
 
-/// Acima de 50, cada nivel pede 12% mais pratica que o anterior. A curva
-/// antiga ate' 50 fica intacta; o teto alto nao e' uma meta de temporada.
-pub const PROFICIENCY_LEVEL_CAP: u32 = 200;
-
+/// Practice gets 12% harder per level after 50, then 25% after 100.
+/// There is no gameplay proficiency cap; thresholds saturate at XP storage.
+const fn proficiency_next_cost(level: u32, previous: u64) -> u64 {
+    if level <= 50 { return level as u64 * 50; }
+    let rate = if level > 100 { 125u128 } else { 112u128 };
+    let next = (previous as u128 * rate + 99) / 100;
+    if next > u64::MAX as u128 { u64::MAX } else { next as u64 }
+}
 pub const fn proficiency_xp_for_level(level: u32) -> u64 {
     let mut xp = 0u64;
     let mut lvl = 1u32;
     let mut need = 50u64;
-    while lvl < level && lvl < PROFICIENCY_LEVEL_CAP {
+    while lvl < level {
         xp = xp.saturating_add(need);
+        if xp == u64::MAX { return xp; }
         lvl += 1;
-        need = if lvl > 50 {
-            need.saturating_mul(112).saturating_add(99) / 100
-        } else {
-            (lvl as u64) * 50
-        };
+        need = proficiency_next_cost(lvl, need);
     }
     xp
 }
-
 pub const fn proficiency_xp_to_next(level: u32) -> u64 {
-    proficiency_xp_for_level(level.saturating_add(1))
-        .saturating_sub(proficiency_xp_for_level(level))
+    let mut lvl = 1u32;
+    let mut need = 50u64;
+    while lvl < level {
+        lvl += 1;
+        need = proficiency_next_cost(lvl, need);
+        if need == u64::MAX { return need; }
+    }
+    need
 }
 
 /// A morte tira 10% do custo do nivel atual; pode derrubar proficiencia.
@@ -461,18 +467,11 @@ pub const fn proficiency_loss_on_death(xp: u64) -> u64 {
 pub const fn proficiency_level(prof_xp: u64) -> u32 {
     let mut lvl = 1u32;
     let mut need = 50u64;
-    let mut rem = prof_xp;
-    while rem >= need {
-        rem -= need;
+    let mut remaining = prof_xp;
+    while remaining >= need {
+        remaining -= need;
         lvl += 1;
-        if lvl >= PROFICIENCY_LEVEL_CAP {
-            break;
-        }
-        need = if lvl > 50 {
-            need.saturating_mul(112).saturating_add(99) / 100
-        } else {
-            (lvl as u64) * 50
-        };
+        need = proficiency_next_cost(lvl, need);
     }
     lvl
 }
@@ -516,10 +515,6 @@ pub const BOSS_SPREAD_RAD: f32 = 1.0; // ~57 graus
 /// Tempo de respawn do boss em segundos.
 pub const BOSS_RESPAWN_DELAY: f32 = 120.0;
 
-/// Cap máximo de level do personagem. Acima disso, XP continua acumulando
-/// mas `level_of_xp` clamp no valor; nenhum SP/stat point novo é gerado.
-pub const CHAR_LEVEL_CAP: u32 = 100;
-
 /// Multiplier default da curva de XP. Configuravel em runtime via `server_config`
 /// table — server le no startup e envia pro client no `HandshakeAck`. Mudar
 /// pra evento de XP duplicado: UPDATE server_config + restart server.
@@ -528,30 +523,25 @@ pub const DEFAULT_XP_MULTIPLIER: u64 = 500;
 /// Retorna o level derivado a partir da XP acumulada com multiplier custom.
 /// Use `level_of_xp` pra default. Curva: cada subida custa `lvl² × mult` xp.
 pub const fn level_of_xp_with_mult(xp: u64, mult: u64) -> u32 {
-    let mut lvl = 1u32;
-    let mut need = mult;
-    let mut remaining = xp;
-    while remaining >= need {
-        remaining -= need;
-        lvl += 1;
-        if lvl >= CHAR_LEVEL_CAP {
-            return CHAR_LEVEL_CAP;
-        }
-        need = (lvl as u64) * (lvl as u64) * mult;
+    let multiplier = if mult == 0 { 1 } else { mult };
+    let budget = (xp / multiplier) as u128;
+    let mut low = 1u32;
+    let mut high = u32::MAX;
+    while low < high {
+        let mid = low + ((high as u64 - low as u64 + 1) / 2) as u32;
+        let n = mid as u128 - 1;
+        let sum = n * (n + 1) * (2 * n + 1) / 6;
+        if sum <= budget { low = mid; } else { high = mid - 1; }
     }
-    lvl
+    low
 }
 
-/// XP cumulativa necessaria pra atingir `level` com multiplier custom.
-/// Sum-of-squares × mult.
+/// Cumulative XP, with no gameplay level cap. Saturates at storage capacity.
 pub const fn xp_for_level_with_mult(level: u32, mult: u64) -> u64 {
-    let mut sum = 0u64;
-    let mut l = 1u32;
-    while l < level {
-        sum += (l as u64) * (l as u64) * mult;
-        l += 1;
-    }
-    sum
+    let n = level.saturating_sub(1) as u128;
+    let multiplier = if mult == 0 { 1 } else { mult };
+    let sum = (n * (n + 1) * (2 * n + 1) / 6).saturating_mul(multiplier as u128);
+    if sum > u64::MAX as u128 { u64::MAX } else { sum as u64 }
 }
 
 /// Default — server overwrites via DB-loaded mult em runtime, client recebe via
@@ -1979,5 +1969,48 @@ mod testes_atributos {
         assert_eq!(custo_energia_de_varios(10, 2), 60 + 65);
         // Um level-up inteiro (3 pontos) no comeco cabe em 3 coletas da ilha 1.
         assert!(custo_energia_de_varios(0, POINTS_PER_LEVEL) <= 3 * 12 + 9);
+    }
+}
+
+#[cfg(test)]
+mod unlimited_character_levels {
+    use super::*;
+    #[test]
+    fn thresholds_remain_exact_beyond_100() {
+        for mult in [1, 500, 1500] {
+            for level in [2, 50, 100, 101, 120, 1000, 10000] {
+                let xp = xp_for_level_with_mult(level, mult);
+                assert_eq!(level_of_xp_with_mult(xp, mult), level);
+                assert_eq!(level_of_xp_with_mult(xp - 1, mult), level - 1);
+            }
+        }
+    }
+    #[test]
+    fn extreme_xp_and_multipliers_do_not_overflow() {
+        for mult in [0, 1, 500, u64::MAX] {
+            let level = level_of_xp_with_mult(u64::MAX, mult);
+            assert!(level >= 2);
+            assert!(xp_for_level_with_mult(level, mult) <= u64::MAX);
+        }
+        assert_eq!(xp_for_level_with_mult(u32::MAX, u64::MAX), u64::MAX);
+    }
+}
+
+#[cfg(test)]
+mod unlimited_proficiencies {
+    use super::*;
+    #[test]
+    fn post_100_is_extremely_hard_but_not_capped() {
+        assert!(proficiency_xp_to_next(110) > proficiency_xp_to_next(100) * 8);
+        assert!(proficiency_xp_to_next(150) > proficiency_xp_to_next(100) * 50_000);
+        for n in [100, 101, 120, 150, 200, 201, 220] {
+            let xp=proficiency_xp_for_level(n);
+            assert!(xp<u64::MAX);
+            assert_eq!(proficiency_level(xp),n);
+            assert_eq!(proficiency_level(xp-1),n-1);
+        }
+        assert!(proficiency_level(u64::MAX)>200);
+        assert_eq!(proficiency_xp_for_level(u32::MAX),u64::MAX);
+        assert!(proficiency_xp_to_next(proficiency_level(u64::MAX))>0);
     }
 }

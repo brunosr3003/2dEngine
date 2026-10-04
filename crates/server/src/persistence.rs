@@ -3291,6 +3291,19 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     }
+    // Rename only the original Abyssia defaults; keep custom admin names.
+    for (kind, old, new) in [
+        (71, "Drowned Pirate", "Triton Guard"),
+        (73, "Fish-Man Harpooner", "Triton Harpooner"),
+        (75, "Merfolk Mage", "Siren Witch"),
+        (76, "Coral Behemoth", "Coral Octopus"),
+    ] {
+        sqlx::query("UPDATE enemy_kinds SET name = $3 WHERE kind = $1 AND name = $2")
+            .bind(kind).bind(old).bind(new).execute(pool).await?;
+    }
+    // Giant Crab now uses the real crab archetype. Preserve custom tuning.
+    sqlx::query("UPDATE enemy_kinds SET hp_max = 220, speed = 1.5, attack_damage = 15, attack_cooldown = 2.4, attack_range = 1.9, xp_reward = 60, defense = 10, size_scale = 1.0 WHERE kind = 74 AND hp_max = 280 AND attack_damage = 18 AND defense = 8")
+        .execute(pool).await?;
     // Ajuste do Ermo em bancos ja existentes. Preserva qualquer balanceamento
     // feito pelo administrador se a linha nao tiver os valores antigos.
     sqlx::query(

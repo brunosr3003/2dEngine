@@ -1417,6 +1417,8 @@ pub enum Aviso {
         reviver_em_s: Option<u16>,
         membros: Vec<MembroDaInstancia>,
         concluida: bool,
+        /// Authoritative centre of this floor, used by thematic scenery.
+        centro: [f32; 2],
     },
     Resultado {
         conteudo: u16,
@@ -1823,6 +1825,7 @@ mod testes {
                 vivo: false,
             }],
             concluida: false,
+            centro: [0.0, 0.0],
         };
         let b = postcard::to_allocvec(&a).unwrap();
         assert_eq!(postcard::from_bytes::<Aviso>(&b).unwrap(), a);

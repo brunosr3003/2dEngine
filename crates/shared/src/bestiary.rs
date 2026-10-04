@@ -81,12 +81,15 @@ pub const VARIANTS: &[Variant] = &[
     Variant { kind: 62, species: species::OWLBEAR, name: "Dynamo Owlbear", zone: "ilha_kogen" },
     // Abyssia: the deep (`abissal`). Kinds 63-69 are bosses.
     Variant { kind: 70, species: species::WOLF, name: "Reef Shark", zone: "ilha_abissal" },
-    Variant { kind: 71, species: species::GUNMAN, name: "Drowned Pirate", zone: "ilha_abissal" },
+    Variant { kind: 71, species: species::GUNMAN, name: "Triton Guard", zone: "ilha_abissal" },
     Variant { kind: 72, species: species::TIGER, name: "Tiger Eel", zone: "ilha_abissal" },
-    Variant { kind: 73, species: species::ARCHER, name: "Fish-Man Harpooner", zone: "ilha_abissal" },
-    Variant { kind: 74, species: species::BEAR, name: "Giant Crab", zone: "ilha_abissal" },
-    Variant { kind: 75, species: species::MAGE, name: "Merfolk Mage", zone: "ilha_abissal" },
-    Variant { kind: 76, species: species::OWLBEAR, name: "Coral Behemoth", zone: "ilha_abissal" },
+    Variant { kind: 73, species: species::ARCHER, name: "Triton Harpooner", zone: "ilha_abissal" },
+    Variant { kind: 74, species: 9, name: "Giant Crab", zone: "ilha_abissal" },
+    Variant { kind: 75, species: species::MAGE, name: "Siren Witch", zone: "ilha_abissal" },
+    Variant { kind: 76, species: species::OWLBEAR, name: "Coral Octopus", zone: "ilha_abissal" },
+    Variant { kind: 90, species: species::BEAR, name: "Abyssal Whale", zone: "ilha_abissal" },
+    Variant { kind: 91, species: species::ARCHER, name: "Mermaid Sentinel", zone: "ilha_abissal" },
+    Variant { kind: 92, species: species::GUNMAN, name: "Triton Skirmisher", zone: "ilha_abissal" },
 ];
 
 pub fn variant(kind: u16) -> Option<&'static Variant> {
@@ -126,7 +129,7 @@ mod tests {
         assert_eq!(species_of(30), species::ARCHER);
         assert_eq!(species_of(6), species::ARCHER);
         assert_eq!(species_of(13), 13);
-        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37, 42, 59, 73]);
+        assert_eq!(kinds_of_species(species::ARCHER), vec![6, 30, 34, 37, 42, 59, 73, 91]);
     }
 
     #[test]

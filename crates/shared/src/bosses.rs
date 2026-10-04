@@ -245,7 +245,7 @@ const HABILIDADES_DO_COLOSSO: &[Habilidade] = &[
             ),
 ];
 
-pub const CHEFES: [Chefe; 43] = [
+pub const CHEFES: [Chefe; 44] = [
     Chefe {
         kind: 10,
         nome: "Alpha Wolf of the Glade",
@@ -1012,6 +1012,21 @@ pub const CHEFES: [Chefe; 43] = [
             h("Abyssal Beam", Linha { comprimento: 26.0, largura: 3.0 }, AFrente, 1.3, 2.8, 10.0, 26.0, 0, 0.8),
             h("Pressure Wave", Anel { interno: 3.0, externo: 11.0 }, EmSi, 1.5, 2.6, 12.0, 11.0, 0, 1.4),
             h("Deep Strike", Circulo { raio: 6.5 }, NoAlvo, 2.0, 3.4, 15.0, 18.0, 1, 1.2),
+        ],
+    },
+    // Open-world sanctuary: freely reachable, with the field-boss respawn.
+    Chefe {
+        kind: 93,
+        nome: "Hydra of the Sunken Sanctuary",
+        corpo: Corpo::Bicho(93),
+        escala: 2.8,
+        zona: "ilha_abissal",
+        nivel: 118,
+        habilidades: &[
+            h("Fivefold Bite", Cone { raio: 8.0, abertura: 1.5 }, AFrente, 1.6, 2.8, 10.0, 8.0, 0, 1.4),
+            h("Venom Breath", Linha { comprimento: 24.0, largura: 4.0 }, AFrente, 1.8, 3.0, 13.0, 24.0, 0, 0.8),
+            h("Coiling Tails", Anel { interno: 3.0, externo: 11.0 }, EmSi, 1.6, 2.8, 14.0, 11.0, 0, 1.4),
+            h("Sanctuary Collapse", Circulo { raio: 7.0 }, NoAlvo, 2.0, 3.6, 20.0, 20.0, 1, 1.2),
         ],
     },
     // ── Abyssia's dungeon bosses (`SO_DE_DUNGEON`) ──

@@ -55,7 +55,7 @@ fn do_fundo(alvo: Vec2, alcance: f32, chao: &dyn Fn(f32, f32) -> f32, t: f32) ->
             }
             let bob = if l.agua_viva { 0.6 * (t * 0.7 + l.seed as f32 * 1.3).sin() } else { 0.0 };
             let p = vec3(l.pos.x, chao(l.pos.x, l.pos.y) + l.alto + bob, l.pos.y);
-            let forca = if l.agua_viva { 1.1 + 0.25 * (t * 1.6 + l.seed as f32).sin() } else { 1.5 };
+            let forca = if l.agua_viva { 1.1 + 0.25 * (t * 1.6 + l.seed as f32).sin() } else if l.coral { 0.65 } else { 1.25 };
             Some((d2, p, l.raio, l.cor, forca, l.agua_viva))
         })
         .collect()

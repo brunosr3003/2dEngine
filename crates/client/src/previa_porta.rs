@@ -80,7 +80,7 @@ pub async fn plantas(solido: &macroquad::material::Material) {
             .and_then(|c| shared::terreno::def_da_zona(c.zona))
             .map(|d| d.bioma)
         {
-            t.tema_da_dungeon(b);
+            t.tema_da_dungeon(b, Some(p.conteudo));
         }
         let a = vec2(p.ancora.x, p.ancora.y);
         t.atualiza(a, 16, 6000);

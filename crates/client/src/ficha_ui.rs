@@ -507,16 +507,6 @@ impl FichaUi {
                 16,
                 estilo::OURO,
             );
-            if nivel >= shared::PROFICIENCY_LEVEL_CAP {
-                estilo::texto(
-                    linha.x + 12.0 * f,
-                    linha.y + 52.0 * f,
-                    "Maximum level",
-                    12,
-                    estilo::VERDE,
-                );
-                continue;
-            }
             let base = shared::proficiency_xp_for_level(nivel);
             let precisa = shared::proficiency_xp_to_next(nivel);
             let atual = xp.saturating_sub(base).min(precisa);

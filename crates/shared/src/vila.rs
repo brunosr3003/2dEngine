@@ -172,8 +172,27 @@ pub fn montar(ger: &Gerador) -> Vila {
     }
     // ABYSSIA's floor: the kingdom's shell lanterns and the graveyard's wrecks.
     if ger.semente == crate::abissal::SEMENTE {
-        for l in crate::abissal::luzes().iter().filter(|l| !l.agua_viva) {
+        for l in crate::abissal::luzes().iter().filter(|l| !l.agua_viva && !l.coral) {
             vila.props.push(PropPosto { tipo: TipoProp::Lanterna, seed: l.seed, pos: Vec3::new(l.pos.x, ger.altura(l.pos.x, l.pos.y), l.pos.y), yaw_q: 0 });
+        }
+        for (i,povoado) in crate::abissal::POVOADOS.iter().enumerate() {
+            let centro=povoado.centro;
+            vila.pracas.push((centro,crate::abissal::RAIO_POVOADO));
+            vila.caminhos.push((Vec2::ZERO,centro));
+            for k in 0..6 {
+                let a=k as f32*std::f32::consts::TAU/6.0;
+                let q=centro+Vec2::new(a.cos(),a.sin())*16.0;
+                let papel=match k {0=>Papel::Alquimista,3=>Papel::Deposito,_=>Papel::Casa};
+                let seed=ger.semente.wrapping_add((i*6+k) as i32);
+                let predio=Predio {tipo:if k%2==0 {TipoCasa::Cabana}else{TipoCasa::Casebre},papel,seed,pos:Vec3::new(q.x,ger.altura(q.x,q.y),q.y),yaw_q:((k+2)%4) as u8,chao:ger.altura(q.x,q.y)};
+                if let Some(npc)=npc_da_porta(&predio) {vila.npcs.push(npc);}
+                vila.predios.push(predio);
+            }
+            for k in 0..3 {
+                let q=centro+Vec2::new(k as f32*3.0-3.0,3.0);
+                vila.npcs.push(NpcDaVila {papel:Papel::Casa,nome:match k {0=>"Pearl Diver",1=>"Coral Gardener",_=>"Triton Watchman"},pos:q,yaw:k as f32,loja:None,giver:None});
+                vila.props.push(PropPosto {tipo:if k==0 {TipoProp::Barraca}else{TipoProp::Rede},seed:k as i32+80,pos:Vec3::new(q.x+2.0,ger.altura(q.x,q.y),q.y+6.0),yaw_q:0});
+            }
         }
         for (p, rumo, seed) in crate::abissal::naufragios() {
             vila.props.push(PropPosto { tipo: TipoProp::Naufragio, seed: *seed, pos: Vec3::new(p.x, ger.altura(p.x, p.y), p.y), yaw_q: *rumo });
@@ -1711,7 +1730,9 @@ mod testes {
                 .vila()
                 .npcs
                 .iter()
-                .find(|n| n.papel == Papel::Estaleiro || (crate::kogen::e_kogen(d.zona) && n.papel == Papel::Motorista))
+                .find(|n| n.papel == Papel::Estaleiro
+                    || (crate::kogen::e_kogen(d.zona) && n.papel == Papel::Motorista)
+                    || (crate::abissal::e_abissal(d.zona) && n.papel == Papel::Submarino))
                 .unwrap_or_else(|| panic!("{}: no Harbour Captain", d.zona));
             let praca = ilha.cidade().expect("a town").centro() + Vec2::new(0.0, 4.0);
             let rota = ilha.caminho(praca, cap.pos, 40_000);

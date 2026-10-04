@@ -1755,7 +1755,7 @@ fn recurso_montanha_da_coluna(
         MINERIO_LIMIAR
     };
     let campo_planalto = ger.planalto().is_some_and(|p| [2,3].iter().any(|i| p.centro_campo(*i).distance(glam::Vec2::new(bx as f32, bz as f32) * BLOCO) <= 32.0));
-    if y < pico * limiar && !campo_planalto {
+    if y < pico * limiar && !campo_planalto && !(energia && ger.e_abissal() && ger.campo_de_energia(bx,bz)) {
         return None;
     }
 
@@ -3238,6 +3238,7 @@ impl Gerador {
     /// responde por si: a grade global tem celula de 300 blocos e foi feita
     /// pra ilha de 1,6 km, e numa de 280 u ela cai onde cai.
     pub fn campo_de_energia(&self, bx: i32, bz: i32) -> bool {
+        if self.e_abissal() {return crate::abissal::campo_energia(glam::Vec2::new(bx as f32,bz as f32)*BLOCO);}
         if let Some(p) = self.planalto() {
             let q = glam::Vec2::new(bx as f32,bz as f32) * BLOCO;
             if p.centro_campo(2).distance(q) <= 32.0 { return true; }

@@ -138,6 +138,7 @@ pub struct Terreno {
     bioma: Bioma,
     /// Aparencia do solo da arena, escolhida pelo conteudo da dungeon.
     bioma_visual: Bioma,
+    dungeon_visual: Option<u16>,
     /// Modelos de vegetacao assados uma vez por especie e variante. Instanciar
     /// e' copiar vertice com offset — a macroquad nao tem transform por malha,
     /// entao gerar de novo por planta seria refazer o volume milhares de vezes.
@@ -210,6 +211,7 @@ impl Terreno {
             ger,
             bioma,
             bioma_visual: bioma,
+            dungeon_visual: None,
             sem_mar: aerea,
             ilhas_aereas: aerea.then(|| {
                 let nuvens = crate::ilhas_aereas::IlhasAereas::nova();
@@ -274,15 +276,19 @@ impl Terreno {
 
     /// A arena compartilha a mesma geometria e colisao entre dungeons; so'
     /// o solo muda para acompanhar a ilha do conteudo ativo.
-    pub fn tema_da_dungeon(&mut self, bioma: Bioma) {
-        if self.ger.e_arena() && self.bioma_visual != bioma {
+    pub fn tema_da_dungeon(&mut self, bioma: Bioma, conteudo: Option<u16>) {
+        if self.ger.e_arena() && (self.bioma_visual != bioma || self.dungeon_visual != conteudo) {
             self.bioma_visual = bioma;
+            self.dungeon_visual = conteudo;
             self.pedacos.clear();
         }
     }
 
     fn material_do_tema(&self, altura: f32, declive: i32, agua: bool, mancha: f32) -> Material {
         if self.ger.e_arena() && !agua {
+            if let Some(mat) = self.dungeon_visual.and_then(|id| crate::dungeon_cenario::piso(id, mancha)) {
+                return mat;
+            }
             return match self.bioma_visual {
                 Bioma::Gelo => if mancha > 0.82 { Material::Gelo } else { Material::Neve },
                 Bioma::Deserto => if mancha > 0.86 { Material::Arenito } else { Material::Areia },
@@ -2771,6 +2777,9 @@ pub async fn previa_abissal() {
         ("naufragios", ponto(shared::abissal::ponto(92).unwrap()), 110.0, 0.6),
         ("fossa", ponto(shared::abissal::ponto(93).unwrap()), 100.0, 0.55),
         ("borda", ponto(shared::abissal::ponto(94).unwrap()), 110.0, 0.55),
+        ("povoado", ponto(shared::abissal::POVOADOS[0].centro), 45.0, 0.7),
+        ("energia", ponto(shared::abissal::CAMPOS_ENERGIA[0]), 35.0, 0.65),
+        ("hydra", ponto(shared::abissal::arenas()[3]), 60.0, 0.65),
         ("aerea", vec2(0.0, 0.0), 500.0, 0.8),
     ];
     for (nome, centro, distancia, alto) in vistas {
@@ -2796,6 +2805,12 @@ pub async fn previa_abissal() {
             t.desenha(&cam, Vec3::ZERO, 0.0);
             t.desenha_sombras(&cam);
             casas.desenha(&cam, None, Vec3::ZERO, 0.0);
+            if nome == "energia" {
+                for (i,kind) in [70,72,75,76,90,91,92].iter().enumerate() {
+                    crate::marinhos::desenha(*kind,vec3(centro.x-12.+i as f32*4.,chao+0.5,centro.y),0.4,i as u64,1.0);
+                }
+            }
+            if nome == "hydra" {crate::marinhos::desenha(93,vec3(centro.x,chao,centro.y),0.4,93,2.8);}
             crate::agua::desenha(&t, &cam, 0.0);
             crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
             crate::abismo::desenha(&cam, None, &|x, z| t.altura(x, z));

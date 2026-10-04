@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-pub const BUILD: u64 = 2026100140;
+pub const BUILD: u64 = 2026100141;
 const SITE: &str = "https://mmo.brunji.com.br/#downloads";
 
 pub fn protocolo_incompativel(mensagem: &str) -> bool {

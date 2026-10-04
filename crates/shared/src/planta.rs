@@ -893,6 +893,14 @@ impl Planta {
         let xadrez = (bx.div_euclid(2) + bz.div_euclid(2)) % 2 == 0;
         let n = onda(p.x, p.y, 2.0);
         let fundo = self.profundidade(p);
+        // Construction materials continue across decks and surrounding walls.
+        match self.conteudo {
+            1 | 19 => return Some(if xadrez { M::Tronco } else { M::Terra }),
+            2 => return Some(if xadrez { M::CalcadaEscura } else { M::Tronco }),
+            6 => return Some(if xadrez { M::Marmore } else { M::MarmoreSombra }),
+            7 => return Some(if xadrez { M::ConcretoEscuro } else { M::Concreto }),
+            _ => {}
+        }
         if fundo >= self.saliencia(p) - FOLGA_DO_CHAO {
             return Some(match self.tema {
                 // Dark wet stone, lighter where the rock shows through.
@@ -934,6 +942,12 @@ impl Planta {
     /// hill keeps a band of soil under its grass.
     pub fn pedra(&self, bx: i32, bz: i32, prof: i32) -> crate::terreno::Material {
         use crate::terreno::Material as M;
+        match self.conteudo {
+            1 | 2 | 19 => return if prof % 4 == 0 { M::Terra } else { M::Tronco },
+            6 => return if prof % 3 == 0 { M::MarmoreSombra } else { M::Marmore },
+            7 => return if prof % 4 == 0 { M::Concreto } else { M::ConcretoEscuro },
+            _ => {}
+        }
         // A stable per-block roll: moss, cracks and stained stones scattered
         // over the face instead of clean stripes.
         let h = (bx as u32)

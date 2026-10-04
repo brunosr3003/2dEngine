@@ -1,3 +1,15 @@
+04/10/2026 — Abyssia viva, dungeons temáticas e progressão sem limite
+
+Abyssia ficou mais clara e ganhou jardins de corais luminosos. Três pequenos povoados têm moradores, vendedores de poções e bancos. Tubarões, enguias e baleias nadam com caudas animadas; sereias, tritões e polvos têm corpos marinhos, e os caranguejos usam o modelo de caranguejo. Baleias tranquilas também cruzam o alto do fundo do mar.
+
+Quatro campos de Pedras de Energia agora ficam no leito de Abyssia, em terrenos planos e sem monstros. A exigência de altura de montanha que impedia os depósitos nessa ilha foi corrigida.
+
+A Hidra de cinco cabeças guarda o Santuário Submerso, uma área aberta de Abyssia, no nível 118. Cada uma das 28 dungeons ganhou materiais, estruturas, objetos, luzes e atmosfera próprios: porões de navios, bibliotecas, forjas, túmulos, palácios de coral e outros cenários.
+
+O nível do personagem não para mais em 100. As proficiências também não têm limite: a curva difícil depois de 50 foi mantida, e depois de 100 o custo de cada nível cresce 25%, tornando o avanço extremamente difícil. Personagens que já acumularam experiência acima de 100 recebem os pontos de atributos e de habilidades correspondentes ao entrar.
+
+Os monstros dos mapas de nível 80 a 120 ficaram progressivamente mais resistentes e perigosos. No nível 100 têm 50% mais vida e 25% mais dano após a defesa; no nível 120, 100% mais vida e 50% mais dano, além de mais defesa.
+
 03/10/2026 — Minimapa com visão ampla por padrão
 
 O minimapa agora começa no menor zoom, mostrando a maior área disponível. O zoom escolhido e salvo pelo jogador continua valendo.

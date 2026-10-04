@@ -258,6 +258,7 @@ fn material() -> Material {
 
 /// Everything above, for one frame. Draw after the world, with its camera.
 pub fn desenha(cam: &Camera3D, world: Option<&World>, chao: &dyn Fn(f32, f32) -> f32) {
+    crate::marinhos::cenario(cam, chao);
     let t = get_time() as f32;
     let chao_y = shared::abissal::NIVEL_CHAO as f32 * shared::terreno::BLOCO;
     let mut l = Lote::default();
