@@ -2,6 +2,8 @@
 
 O Capitão do Submarino em Kōgen-tō e Abyssia agora tem um ícone de viagem acima da cabeça, assim como o Professor do Ônibus Celeste. Fica mais fácil reconhecer quem leva você para outra ilha.
 
+A mensagem inicial agora reaproveita o texto já organizado e processa o botão Continuar antes de desenhar as notas, evitando recalcular todo o histórico a cada quadro.
+
 03/10/2026 — Interface até 200% e toque na mensagem inicial
 
 A escala da interface agora pode chegar a 200% no menu Sistema → Interface. O botão Continuar da mensagem inicial ganhou uma área maior e aceita o toque diretamente no iOS, inclusive toques rápidos.

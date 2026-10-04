@@ -8,6 +8,8 @@ pub struct Novidades {
     aberta: bool,
     scroll: f32,
     arrasto: Option<f32>,
+    layout: Option<(f32, f32, shared::idioma::Idioma)>,
+    linhas: Vec<String>,
 }
 
 fn arquivo_lido() -> Option<std::path::PathBuf> {
@@ -21,6 +23,8 @@ impl Default for Novidades {
             aberta: lidas.as_deref() != Some(NOTAS),
             scroll: 0.0,
             arrasto: None,
+            layout: None,
+            linhas: Vec::new(),
         }
     }
 }
@@ -44,6 +48,27 @@ impl Novidades {
             h,
         );
         estilo::painel_destaque(r, ui::OURO);
+        let continuar = Rect::new(r.right() - 166.0, r.bottom() - 62.0, 142.0, 44.0);
+        // Read the finger itself: a quick iOS tap can start and end between
+        // frames, and must not depend on the simulated mouse position.
+        let toque_continuar = touches().iter().any(|t| {
+            matches!(t.phase, TouchPhase::Started | TouchPhase::Ended)
+                && continuar.contains(t.position)
+        });
+        if ui::botao(
+            continuar,
+            "Continue",
+            true,
+        ) || toque_continuar || is_key_pressed(KeyCode::Escape)
+        {
+            self.aberta = false;
+            self.arrasto = None;
+            if let Some(p) = arquivo_lido() {
+                std::thread::spawn(move || { let _ = std::fs::write(p, NOTAS); });
+            }
+            return true;
+        }
+
         estilo::texto(r.x + 24.0, r.y + 34.0, "WHAT'S NEW IN TEMPEST", 20, ui::OURO);
         let mut notas = NOTAS.lines();
         estilo::texto(
@@ -54,9 +79,14 @@ impl Novidades {
             ui::APOIO,
         );
         let corpo = Rect::new(r.x + 24.0, r.y + 82.0, r.w - 48.0, r.h - 154.0);
-        let linhas = quebra(&notas.collect::<Vec<_>>().join("\n"), corpo.w, &|s| {
-            estilo::medir(s, 15)
-        });
+        let layout = (corpo.w, estilo::fator_texto(), shared::idioma::atual());
+        if self.layout != Some(layout) {
+            self.linhas = quebra(&notas.collect::<Vec<_>>().join("\n"), corpo.w, &|s| {
+                estilo::medir(s, 15)
+            });
+            self.layout = Some(layout);
+        }
+        let linhas = &self.linhas;
         let max = (linhas.len() as f32 * 25.0 - corpo.h).max(0.0);
         let mouse = Vec2::from(mouse_position());
         if corpo.contains(mouse) {
@@ -96,25 +126,6 @@ impl Novidades {
                 self.scroll = (self.scroll + 100.0).min(max);
             }
         }
-        let continuar = Rect::new(r.right() - 166.0, r.bottom() - 62.0, 142.0, 44.0);
-        // Read the finger itself: a quick iOS tap can start and end between
-        // frames, and must not depend on the simulated mouse position.
-        let toque_continuar = touches().iter().any(|t| {
-            matches!(t.phase, TouchPhase::Started | TouchPhase::Ended)
-                && continuar.contains(t.position)
-        });
-        if ui::botao(
-            continuar,
-            "Continue",
-            true,
-        ) || toque_continuar || is_key_pressed(KeyCode::Escape)
-        {
-            self.aberta = false;
-            self.arrasto = None;
-            if let Some(p) = arquivo_lido() {
-                let _ = std::fs::write(p, NOTAS);
-            }
-        }
         true
     }
 }
@@ -152,6 +163,8 @@ pub async fn previa() {
         aberta: true,
         scroll: 0.0,
         arrasto: None,
+        layout: None,
+        linhas: Vec::new(),
     };
     let alvo = render_target(screen_width() as u32, screen_height() as u32);
     let camera = Camera2D {
