@@ -121,6 +121,37 @@ async fn semear(pool: &PgPool) -> anyhow::Result<()> {
             tracing::info!("skills: Blessing (10) is now Life Drain");
         }
     }
+    // The sword and shield's kit (04/10/2026): Charge (1) became LEAP and
+    // Wide Strike (2) a stronger half-circle. Same rule as Life Drain: only
+    // a row still holding the old numbers changes, so an admin's tweak
+    // stays. Without this the live game kept "Investida" and the 35 cone.
+    for (id, velha) in [
+        (1u32, "forma = 'linha' AND dano = 25 AND raio = 1"),
+        (2u32, "forma = 'cone' AND alcance = 3.5 AND dano IN (35, 41)"),
+    ] {
+        let Some(nova) = shared::skills::playtest().into_iter().find(|s| s.id == id) else { continue };
+        let mudou = sqlx::query(&format!(
+            "UPDATE skills SET nome = $1, forma = $2, custo_mp = $3, espera_s = $4,
+                    conjuracao_s = $5, dano = $6, cura = $7, alcance = $8, raio = $9
+              WHERE id = $10 AND {velha}"
+        ))
+        .bind(&nova.nome)
+        .bind(nova.forma.chave())
+        .bind(nova.custo_mp)
+        .bind(nova.espera_s)
+        .bind(nova.conjuracao_s)
+        .bind(nova.dano)
+        .bind(nova.cura)
+        .bind(nova.alcance)
+        .bind(nova.raio)
+        .bind(id as i32)
+        .execute(pool)
+        .await?
+        .rows_affected();
+        if mudou > 0 {
+            tracing::info!("skills: #{id} is now {}", nova.nome);
+        }
+    }
     Ok(())
 }
 
