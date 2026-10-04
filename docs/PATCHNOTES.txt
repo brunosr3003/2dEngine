@@ -8,7 +8,7 @@ Os contratos do Mestre de Missões pagam agora um bônus sobre os abates que ped
 
 04/10/2026 — Missões secundárias em todas as ilhas
 
-Kōgen-tō e Abyssia ganharam o conjunto completo de missões do Mestre: seis diárias, uma diária para cada dungeon da ilha, um contrato de caça e um de pedreira a cada dez minutos, e uma cadeia de seis caçadas. Skyreach ganhou uma cadeia de seis caçadas, e o Bosque, a Geleira e o Ermo ganharam um contrato de caça.
+Kōgen-tō e Abyssia ganharam o conjunto completo de missões do Mestre: seis diárias, uma diária para cada dungeon da ilha, um contrato de caça e um de pedreira a cada dez minutos, e uma cadeia de seis caçadas. Skyreach ganhou uma cadeia de seis caçadas, e o Bosque, a Geleira e o Ermo ganharam um contrato de caça. O menu de missões agora lista Kōgen-tō e Abyssia entre os mapas.
 
 04/10/2026 — Espada e escudo: Salto e Golpe Largo
 

@@ -555,13 +555,15 @@ pub fn cabe_no_tipo(l: &Linha, t: Tipo) -> bool {
         || (t == Tipo::Secundarias && tipo_de(l) == Tipo::Moradores)
 }
 
-const MAPAS: [Option<&str>; 6] = [
+const MAPAS: [Option<&str>; 8] = [
     None,
     Some("ilha_inicial"),
     Some("ilha_gelo"),
     Some("ilha_deserto"),
     Some("ilha_planalto"),
     Some("ilha_celeste"),
+    Some("ilha_kogen"),
+    Some("ilha_abissal"),
 ];
 
 fn cabe_no_mapa(l: &Linha, r: &Resumo, mapa: Option<&str>) -> bool {
