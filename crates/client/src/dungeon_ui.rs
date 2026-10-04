@@ -78,6 +78,7 @@ pub struct DungeonUi {
     salas: Option<Vec<dg::SalaNet>>,
     completar_pela_fila: bool,
     ver_recompensas: bool,
+    rolagem_conteudos: crate::rolagem::Rolagem,
     rolagem_recompensas: crate::rolagem::Rolagem,
     pronto: Option<ProntoAberto>,
     inst: Option<Inst>,
@@ -494,13 +495,21 @@ impl DungeonUi {
             linhas.push((Some("CAVERNS · from here"), None));
             linhas.extend(grutas.iter().map(|ce| (None, Some(*ce))));
         }
-        let alt = ((esq.h / linhas.len().max(1) as f32).min(62.0 * f)).max(30.0 * f);
+        let alt = 62.0 * f;
+        let total = linhas.len() as f32 * alt;
+        let toque = self.rolagem_conteudos.quadro(esq, total, alt);
+        let largura = esq.w - if total > esq.h { 26.0 * f } else { 0.0 };
+        crate::rolagem::recortar(Some(esq));
         let mut novo_sel = None;
         for (i, (titulo, ce)) in linhas.iter().enumerate() {
+            let y = esq.y + i as f32 * alt - self.rolagem_conteudos.pos;
+            if y + alt <= esq.y || y >= esq.bottom() {
+                continue;
+            }
             if let Some(t) = titulo {
                 estilo::texto(
                     esq.x + 4.0 * f,
-                    esq.y + i as f32 * alt + alt * 0.66,
+                    y + alt * 0.66,
                     t,
                     11,
                     estilo::SUAVE,
@@ -511,8 +520,8 @@ impl DungeonUi {
             let Some(def) = dg::conteudo(ce.id) else {
                 continue;
             };
-            let r = Rect::new(esq.x, esq.y + i as f32 * alt, esq.w, alt - 4.0 * f);
-            let sobre = r.contains(m);
+            let r = Rect::new(esq.x, y, largura, alt - 4.0 * f);
+            let sobre = esq.contains(m) && r.contains(m) && !self.rolagem_conteudos.arrastando();
             estilo::cartao(r, sobre, self.sel == ce.id);
             let travado = !def.disponivel || ce.cadeados.first().is_some_and(|x| x.is_some());
             let cor = if travado {
@@ -542,10 +551,12 @@ impl DungeonUi {
                 11,
                 estilo::SUAVE,
             );
-            if sobre && clicou {
+            if toque.is_some_and(|p| esq.contains(p) && r.contains(p)) {
                 novo_sel = Some(ce.id);
             }
         }
+        crate::rolagem::recortar(None);
+        self.rolagem_conteudos.desenha(esq, total);
         if let Some(id) = novo_sel {
             self.sel = id;
             self.rolagem_recompensas.zera();

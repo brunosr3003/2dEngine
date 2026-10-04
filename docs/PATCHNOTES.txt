@@ -2,6 +2,8 @@
 
 O minimapa agora começa no menor zoom, mostrando a maior área disponível. O zoom escolhido e salvo pelo jogador continua valendo.
 
+O menu de dungeons agora tem uma barra de rolagem na lista, com suporte à roda do mouse e arrasto no celular. As linhas mantêm tamanho legível e todas as dungeons ficam acessíveis.
+
 03/10/2026 — Ícones de viagem em Kōgen-tō e Abyssia
 
 O Capitão do Submarino em Kōgen-tō e Abyssia agora tem um ícone de viagem acima da cabeça, assim como o Professor do Ônibus Celeste. Fica mais fácil reconhecer quem leva você para outra ilha.
