@@ -3066,3 +3066,233 @@ mod calibracao_da_escada {
         }
     }
 }
+
+/// HOW LONG EACH TEN LEVELS TAKE, per weapon set, 1 to 120 on the regular
+/// islands (no Magic Island). A tool, not a guard: it only prints.
+///
+/// The model is the player who follows the story and grinds when it gates:
+///
+///   * grind rate per level: this simulator on AUTO in a regular zone of that
+///     level (18 mobs, the island's bestiary, mobs at level..level+2), the
+///     build of the level (`build_do_nivel`), unlimited potions, 60 kills —
+///     total time INCLUDING walking and waiting for respawns;
+///   * the story (`historia`, written chapters then chronicles) in order:
+///     level gates grind, hunts cost kills at the current rate (and pay their
+///     kills' XP), dungeons cost half their time limit, the rest a fixed
+///     walking/talking cost; then the step's XP reward;
+///   * no dailies (80..980 XP, nothing next to the curve), no XP potion, no
+///     accessory bonus, no party, no deaths.
+///
+/// The per-kill time is the PARKED player's by default (AUTO on, waiting for
+/// respawns: AUTO only sees 24 units, so most of the clock is idle). With
+/// `TEMPO_ATIVO=1` it is the fighting-and-walking time only: the hunter who
+/// always has a fresh mob. The truth sits between the two. `TEMPO_DIAG=1`
+/// prints both per level.
+///
+///   cargo test --release -p server --bin server tempo_de_nivel -- --ignored --nocapture
+#[cfg(test)]
+mod tempo_de_nivel {
+    use super::*;
+    use shared::quests::objective_kind as ok;
+    use shared::terreno::Bioma;
+
+    const TETO: u32 = 120;
+
+    fn bioma(nivel: u32) -> Bioma {
+        match nivel {
+            0..=14 => Bioma::Floresta,
+            15..=27 => Bioma::Gelo,
+            28..=39 => Bioma::Deserto,
+            40..=59 => Bioma::Montanha,
+            60..=79 => Bioma::Celeste,
+            80..=99 => Bioma::Neon,
+            _ => Bioma::Abissal,
+        }
+    }
+
+    /// (seconds per kill, XP per kill) grinding at `nivel`, and whether the
+    /// player stayed alive.
+    fn ritmo(c: Conjunto, nivel: u32) -> (f32, f32, bool) {
+        let (equip, alloc, profs, xp) = build_do_nivel(c, nivel);
+        let stats = effective_stats(&equip, &alloc, &profs, xp);
+        let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
+            .into_iter()
+            .filter(|s| s.conjunto == c && s.destravada(nivel))
+            .collect();
+        let comuns = crate::economy::kinds_do_bioma(bioma(nivel)).to_vec();
+        let mut xp_total = 0.0f64;
+        let mobs: Vec<Mob> = vagas()
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let lv = nivel + (i as u32 % 3);
+                let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
+                Mob::novo(crate::economy::kind_inicial(k).expect("known kind"), v, lv)
+            })
+            .collect();
+        // Average XP of the zone's slots at their own level (the server's
+        // `xp_do_mob`): the kills cycle through the slots.
+        for m in &mobs {
+            xp_total += crate::world::xp_do_mob(m.def.xp as u64, m.nivel) as f64;
+        }
+        let xp_medio = (xp_total / mobs.len() as f64) as f32;
+        // AUTO switched on at the zone's edge, as the ladder guard arrives.
+        // (Starting in the middle spawns all 18 on top of the player at once,
+        // which no real arrival does.)
+        let borda = crate::world::MOB_ZONA_RAIO_UN + 6.0;
+        let entrada = Vec2::new(-borda, 0.0);
+        let mut hp = stats.hp_max;
+        let mut bolsa = Pocoes::Infinitas;
+        let s = lutar(
+            Luta {
+                conjunto: c,
+                nivel,
+                stats: &stats,
+                skills: &skills,
+                mobs,
+                sorteio: Some((nivel, nivel + 2)),
+                centro: entrada,
+                inicio: entrada,
+                chegada: entrada,
+                parada: Parada::Abates(120),
+                limite_s: 3600.0,
+            },
+            &mut hp,
+            &mut bolsa,
+        );
+        let k = s.abates.max(1) as f32;
+        if std::env::var("TEMPO_DIAG").is_ok() {
+            println!("    diag {c:?} nv{nivel}: {} kills in {:.0}s total, {:.0}s fighting/walking", s.abates, s.t, s.em_luta);
+        }
+        let por_abate = if std::env::var("TEMPO_ATIVO").is_ok() { s.em_luta / k } else { s.t / k };
+        (por_abate, xp_medio, s.vivo && s.abates >= 120)
+    }
+
+    struct Linha {
+        /// Seconds to reach each level (index = level).
+        chegou: Vec<f64>,
+        xp_quest: Vec<u64>,
+        xp_mob: Vec<u64>,
+        mortes_no_sim: Vec<u32>,
+    }
+
+    fn percorrer(c: Conjunto) -> Linha {
+        let mult = crate::economy::xp_multiplier();
+        let ritmos: Vec<(f32, f32, bool)> = (0..=TETO).map(|n| ritmo(c, n.max(1))).collect();
+        let mut l = Linha {
+            chegou: vec![0.0; TETO as usize + 1],
+            xp_quest: vec![0; TETO as usize + 1],
+            xp_mob: vec![0; TETO as usize + 1],
+            mortes_no_sim: Vec::new(),
+        };
+        for (n, r) in ritmos.iter().enumerate().skip(1) {
+            if !r.2 {
+                l.mortes_no_sim.push(n as u32);
+            }
+        }
+        let mut xp: u64 = 0;
+        let mut t: f64 = 0.0;
+        let mut nivel = 1u32;
+        // Marks the time of every level crossed since the last call.
+        let marca = |xp: u64, t: f64, nivel: &mut u32, l: &mut Linha| {
+            let novo = shared::level_of_xp_with_mult(xp, mult).min(TETO);
+            while *nivel < novo {
+                *nivel += 1;
+                l.chegou[*nivel as usize] = t;
+            }
+        };
+        // Kills at the current level's rate, crossing levels as they come.
+        let cacar = |abates: f64, xp: &mut u64, t: &mut f64, nivel: &mut u32, l: &mut Linha| {
+            let mut falta = abates;
+            while falta > 0.0 && *nivel < TETO {
+                let (s, x, _) = ritmos[*nivel as usize];
+                let ate_subir = shared::xp_for_level_with_mult(*nivel + 1, mult).saturating_sub(*xp) as f64;
+                let k = (ate_subir / x as f64).ceil().max(1.0).min(falta);
+                *t += k * s as f64;
+                let ganho = (k * x as f64) as u64;
+                *xp += ganho;
+                l.xp_mob[*nivel as usize] += ganho;
+                falta -= k;
+                marca(*xp, *t, nivel, l);
+            }
+        };
+        let mut i = 0u32;
+        while nivel < TETO {
+            let Some(id) = shared::historia::id_do_passo(i) else { break };
+            let Some(q) = shared::historia::def_da_historia(id) else { break };
+            i += 1;
+            match q.obj_kind {
+                ok::NIVEL => {
+                    let alvo = q.obj_count.min(TETO);
+                    while nivel < alvo {
+                        let (s, x, _) = ritmos[nivel as usize];
+                        let falta = shared::xp_for_level_with_mult(nivel + 1, mult).saturating_sub(xp) as f64;
+                        cacar((falta / x as f64).ceil().max(1.0), &mut xp, &mut t, &mut nivel, &mut l);
+                        let _ = s;
+                    }
+                }
+                ok::KILL => cacar(q.obj_count as f64, &mut xp, &mut t, &mut nivel, &mut l),
+                ok::DUNGEON | ok::RAID => {
+                    let lim = shared::dungeon::conteudo(q.obj_target).map_or(900, |d| d.limite_s);
+                    t += lim as f64 * 0.5;
+                }
+                ok::VIAGEM => t += 240.0,
+                ok::LUGAR | ok::EXPLORE => t += 90.0,
+                ok::COLLECT | ok::GATHER => t += 30.0 + 6.0 * q.obj_count as f64,
+                _ => t += 45.0,
+            }
+            xp += q.reward_xp;
+            l.xp_quest[nivel as usize] += q.reward_xp;
+            marca(xp, t, &mut nivel, &mut l);
+        }
+        // Story over (or capped): grind the rest.
+        while nivel < TETO {
+            let (_, x, _) = ritmos[nivel as usize];
+            let falta = shared::xp_for_level_with_mult(nivel + 1, mult).saturating_sub(xp) as f64;
+            cacar((falta / x as f64).ceil().max(1.0), &mut xp, &mut t, &mut nivel, &mut l);
+        }
+        println!("  {c:?}: story steps walked {i}");
+        l
+    }
+
+    fn hm(s: f64) -> String {
+        let m = (s / 60.0).round() as u64;
+        format!("{:>3}h{:02}", m / 60, m % 60)
+    }
+
+    #[test]
+    #[ignore]
+    fn tabela_do_tempo_de_nivel() {
+        crate::economy::init_vazia_para_testes();
+        let mult = crate::economy::xp_multiplier();
+        println!("xp multiplier {mult}; 1->120 = {} xp", shared::xp_for_level_with_mult(TETO, mult));
+        println!("\n== grind rate (s/kill, xp/kill) at sample levels");
+        for c in Conjunto::TODOS {
+            print!("  {c:<13?}");
+            for n in [5u32, 15, 30, 45, 60, 75, 90, 105, 119] {
+                let (s, x, vivo) = ritmo(c, n);
+                print!(" | nv{n} {s:4.1}s {x:6.0}xp{}", if vivo { "" } else { " DEAD" });
+            }
+            println!();
+        }
+        let linhas: Vec<(Conjunto, Linha)> = Conjunto::TODOS.iter().map(|&c| (c, percorrer(c))).collect();
+        println!("\n== hours per 10 levels (cumulative in brackets); quest share of the band's XP");
+        for (c, l) in &linhas {
+            println!("  {c:?}  (sim deaths at levels {:?})", l.mortes_no_sim);
+            let mut a = 1usize;
+            while a < TETO as usize {
+                let b = if a == 1 { 10 } else { (a + 10).min(TETO as usize) };
+                let dt = l.chegou[b] - l.chegou[a];
+                let q: u64 = l.xp_quest[a..b].iter().sum();
+                let m: u64 = l.xp_mob[a..b].iter().sum();
+                println!(
+                    "    {a:>3}-{b:<3} {}  [{}]  quests {:>3.0}%",
+                    hm(dt),
+                    hm(l.chegou[b]),
+                    100.0 * q as f64 / (q + m).max(1) as f64
+                );
+                a = b;
+            }
+        }
+    }
+}
