@@ -1226,7 +1226,7 @@ impl Default for Mapa {
             porto: None,
             tex: None,
             aberto: false,
-            alcance_mini: 90.0,
+            alcance_mini: ALCANCE_MAX,
             viagem: Viagem::default(),
             rota: Vec::new(),
             mestre: None,

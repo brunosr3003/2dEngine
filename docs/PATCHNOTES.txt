@@ -1,3 +1,7 @@
+03/10/2026 — Minimapa com visão ampla por padrão
+
+O minimapa agora começa no menor zoom, mostrando a maior área disponível. O zoom escolhido e salvo pelo jogador continua valendo.
+
 03/10/2026 — Ícones de viagem em Kōgen-tō e Abyssia
 
 O Capitão do Submarino em Kōgen-tō e Abyssia agora tem um ícone de viagem acima da cabeça, assim como o Professor do Ônibus Celeste. Fica mais fácil reconhecer quem leva você para outra ilha.
