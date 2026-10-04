@@ -310,12 +310,14 @@ pub fn zona_da_missao(id: u16) -> Option<&'static str> {
         return crate::historia::zona_do_passo(id);
     }
     match id {
-        500..=609 => Some("ilha_inicial"),
-        810..=833 => Some("ilha_gelo"),
+        500..=609 | 912 => Some("ilha_inicial"),
+        810..=833 | 913 => Some("ilha_gelo"),
         610..=619 => Some("ilha_gelo"),
-        620..=629 | 840..=854 => Some("ilha_deserto"),
+        620..=629 | 840..=854 | 914 => Some("ilha_deserto"),
         630..=639 | 860..=864 => Some("ilha_planalto"),
-        640..=649 | 865..=869 => Some("ilha_celeste"),
+        640..=649 | 865..=869 | 906..=911 => Some("ilha_celeste"),
+        650..=669 => Some("ilha_kogen"),
+        670..=689 => Some("ilha_abissal"),
         _ => None,
     }
 }
@@ -1323,6 +1325,59 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(867, "Relics of the Reliquary", "Clear the Seraph Reliquary.", objective_kind::DUNGEON, 6, 1, 5_000, 320_000, item_id::GREATER_HEAL, 10, 65, false, false),
     diaria(868, "The silent choir", "Clear the Cathedral of Clouds.", objective_kind::DUNGEON, 16, 1, 6_000, 420_000, item_id::GREATER_HEAL, 12, 70, false, false),
     diaria(869, "Above the storm", "Clear the Pegasus Aerie.", objective_kind::DUNGEON, 17, 1, 7_000, 540_000, item_id::GREATER_HEAL, 14, 75, false, false),
+    // --- Contracts for the first three islands (04/10/2026): 10-40 had no
+    // repeatable side work, so the side share there sat at 5-7%.
+    QuestDef { id: 912, title: "Woodland patrol", desc: "Defeat 30 beasts in the Bosque and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30, reward_cobre: 300, reward_xp: 12_000, reward_item: item_id::HEALTH_POTION, reward_item_qty: 5, min_level: 10, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 913, title: "Ice patrol", desc: "Defeat 30 beasts on the Glacier and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30, reward_cobre: 500, reward_xp: 20_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3, min_level: 15, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 914, title: "Dune patrol", desc: "Defeat 30 beasts in the Waste and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30, reward_cobre: 800, reward_xp: 35_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4, min_level: 28, repeatable: true, cooldown_secs: 600, ..mestre() },
+    // --- Skyreach one-offs (04/10/2026): the island only had contracts and
+    // dailies, so 60-80 sat at 8% side XP.
+    QuestDef { id: 906, title: "Wolves of the meadow", desc: "Seraph Wolves harry the cloud meadows. Defeat 20.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(0), obj_count: 20, reward_cobre: 2_400, reward_xp: 24_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 6, min_level: 60, ..mestre() },
+    QuestDef { id: 907, title: "Lynx on the cliffs", desc: "Seraph Lynxes stalk the marble cliffs. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 15, reward_cobre: 2_700, reward_xp: 27_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 6, requires: 906, min_level: 63, ..mestre() },
+    QuestDef { id: 908, title: "Arrows from above", desc: "Seraph Archers shoot at the cloud roads. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(6), obj_count: 15, reward_cobre: 3_000, reward_xp: 30_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2, requires: 907, min_level: 67, ..mestre() },
+    QuestDef { id: 909, title: "The bear of the bells", desc: "Seraph Bears block the way to the Bellspire. Defeat 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(1), obj_count: 12, reward_cobre: 3_300, reward_xp: 33_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 8, requires: 908, min_level: 70, ..mestre() },
+    QuestDef { id: 910, title: "Spells in the wind", desc: "Seraph Mages bend the storm. Defeat 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(4), obj_count: 12, reward_cobre: 3_600, reward_xp: 36_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2, requires: 909, min_level: 74, ..mestre() },
+    QuestDef { id: 911, title: "The owlbear of the throne", desc: "Seraph Owlbears nest below the Throne of the Sky. Defeat 6.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 6, reward_cobre: 4_000, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 10, requires: 910, min_level: 77, ..mestre() },
+    // --- Kōgen-tō (ilha_kogen, 80-100) --- side missions (04/10/2026): the
+    // island had none, so 80-100 leveled on the story alone. The XP written
+    // here is a WEIGHT; `progressao::xp_da_quest` pays it. Hunt targets are
+    // SPECIES (`alvo_de_mob(species)`): the island's variant counts for its
+    // species (`kill_conta`), as the story's hunts do.
+    diaria(650, "Quarry of the day", "Break 45 rocks in the city's rubble.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 45, 2_600, 4_400, item_id::GREATER_HEAL, 7, 80, true, false),
+    diaria(651, "Hunt of the day", "Defeat 80 machines on the island.", objective_kind::KILL, 0, 80, 3_100, 5_900, item_id::GREATER_HEAL, 7, 80, true, false),
+    diaria(652, "To work", "Create 1 piece of gear in Craft (the HUD button).", objective_kind::CRAFT, 0, 1, 2_100, 3_500, item_id::GREATER_MANA, 6, 80, false, false),
+    diaria(653, "Hot forge", "Try refining a piece once at the Forge (the HUD button or the Blacksmith).", objective_kind::REFINE, 0, 1, 2_100, 3_500, item_id::GREATER_MANA, 6, 80, false, false),
+    diaria(654, "Cellar of the day", "Complete a dungeon (Cellar or Cavern).", objective_kind::DUNGEON, 0, 1, 4_300, 7_400, 0, 0, 80, false, false),
+    diaria(655, "Boss of the day", "Defeat a field boss on the island (the map shows where).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 8_600, 74_000, item_id::GREATER_HEAL, 9, 85, true, false),
+    diaria(656, "Gears of the Foundry", "Clear the Robot Foundry.", objective_kind::DUNGEON, 7, 1, 8_000, 600_000, item_id::GREATER_HEAL, 15, 85, false, false),
+    diaria(657, "The last train", "Clear the Undercity Line.", objective_kind::DUNGEON, 8, 1, 9_000, 680_000, item_id::GREATER_HEAL, 16, 90, false, false),
+    diaria(658, "Top of the Tower", "Clear the Kōgen Tower.", objective_kind::DUNGEON, 9, 1, 10_000, 760_000, item_id::GREATER_HEAL, 18, 95, false, false),
+    QuestDef { id: 659, title: "Scrap patrol", desc: "Defeat 40 machines on Kōgen-tō and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 2_400, reward_xp: 130_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 6, min_level: 80, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 660, title: "Stone for the grid", desc: "Break 25 rocks on Kōgen-tō. The city's grid needs new footings.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25, reward_cobre: 2_000, reward_xp: 105_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 10, min_level: 80, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 661, title: "Hounds on the docks", desc: "Mech Hounds are loose on the Harbor Docks. Put down 20 of them.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(0), obj_count: 20, reward_cobre: 4_000, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 8, min_level: 80, ..mestre() },
+    QuestDef { id: 662, title: "Panther sightings", desc: "Volt Panthers stalk the crossing. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 15, reward_cobre: 4_400, reward_xp: 44_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 8, requires: 661, min_level: 84, ..mestre() },
+    QuestDef { id: 663, title: "The sentry grid", desc: "Laser Sentries lock down the streets. Destroy 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(6), obj_count: 15, reward_cobre: 4_800, reward_xp: 48_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2, requires: 662, min_level: 88, ..mestre() },
+    QuestDef { id: 664, title: "Coils in the neon", desc: "Tesla Units overload the Kabukicho lights. Destroy 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(4), obj_count: 12, reward_cobre: 5_200, reward_xp: 52_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 10, requires: 663, min_level: 91, ..mestre() },
+    QuestDef { id: 665, title: "Iron in the towers", desc: "Iron Bears guard the tower district. Defeat 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(1), obj_count: 12, reward_cobre: 5_600, reward_xp: 56_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3, requires: 664, min_level: 94, ..mestre() },
+    QuestDef { id: 666, title: "The Dynamo beast", desc: "Dynamo Owlbears feed on the Tocho's power. Defeat 6.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 6, reward_cobre: 6_000, reward_xp: 60_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 12, requires: 665, min_level: 97, ..mestre() },
+    // --- Abyssia (ilha_abissal, 100-120) --- the same set, the deepest one.
+    diaria(670, "Quarry of the day", "Break 50 rocks on the sea floor.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 50, 3_300, 5_200, item_id::GREATER_HEAL, 8, 100, true, false),
+    diaria(671, "Hunt of the day", "Defeat 90 sea creatures on the island.", objective_kind::KILL, 0, 90, 3_900, 6_900, item_id::GREATER_HEAL, 8, 100, true, false),
+    diaria(672, "To work", "Create 1 piece of gear in Craft (the HUD button).", objective_kind::CRAFT, 0, 1, 2_700, 4_100, item_id::GREATER_MANA, 7, 100, false, false),
+    diaria(673, "Hot forge", "Try refining a piece once at the Forge (the HUD button or the Blacksmith).", objective_kind::REFINE, 0, 1, 2_700, 4_100, item_id::GREATER_MANA, 7, 100, false, false),
+    diaria(674, "Cellar of the day", "Complete a dungeon (Cellar or Cavern).", objective_kind::DUNGEON, 0, 1, 5_400, 8_600, 0, 0, 100, false, false),
+    diaria(675, "Boss of the day", "Defeat a field boss on the island (the map shows where).", objective_kind::KILL, ALVO_QUALQUER_CHEFE, 1, 10_800, 86_000, item_id::GREATER_HEAL, 10, 105, true, false),
+    diaria(676, "The drowned hold", "Clear the Sunken Galleon.", objective_kind::DUNGEON, 19, 1, 11_000, 840_000, item_id::GREATER_HEAL, 18, 102, false, false),
+    diaria(677, "Vaults of coral", "Clear the Coral Palace Vaults.", objective_kind::DUNGEON, 21, 1, 12_500, 920_000, item_id::GREATER_HEAL, 20, 110, false, false),
+    diaria(678, "Into the dark", "Clear The Abyss.", objective_kind::DUNGEON, 22, 1, 14_000, 1_000_000, item_id::GREATER_HEAL, 22, 118, false, false),
+    QuestDef { id: 679, title: "Reef watch", desc: "Defeat 40 sea creatures around Abyssia and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 3_000, reward_xp: 150_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 7, min_level: 100, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 680, title: "Stone for the bubble", desc: "Break 25 rocks on the sea floor. The kingdom's dome needs shoring up.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25, reward_cobre: 2_500, reward_xp: 120_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 12, min_level: 100, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 681, title: "Teeth in the kelp", desc: "Reef Sharks circle the Kelp Forest. Defeat 20.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(0), obj_count: 20, reward_cobre: 5_500, reward_xp: 64_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 12, min_level: 100, ..mestre() },
+    QuestDef { id: 682, title: "Eels in the wrecks", desc: "Tiger Eels nest in the Shipwreck Graveyard. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 15, reward_cobre: 6_000, reward_xp: 68_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3, requires: 681, min_level: 104, ..mestre() },
+    QuestDef { id: 683, title: "Claws on the sand", desc: "Giant Crabs block the seafloor path. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(9), obj_count: 15, reward_cobre: 6_500, reward_xp: 72_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 14, requires: 682, min_level: 108, ..mestre() },
+    QuestDef { id: 684, title: "Songs in the trench", desc: "Siren Witches lure divers into the Lantern Trench. Silence 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(4), obj_count: 12, reward_cobre: 7_000, reward_xp: 76_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 4, requires: 683, min_level: 111, ..mestre() },
+    QuestDef { id: 685, title: "Ink in the water", desc: "Coral Octopuses foul the kingdom's water. Defeat 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 12, reward_cobre: 7_500, reward_xp: 80_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 16, requires: 684, min_level: 114, ..mestre() },
+    QuestDef { id: 686, title: "The whale's song", desc: "Abyssal Whales roam the rim of the Abyss. Defeat 3.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(1), obj_count: 3, reward_cobre: 8_000, reward_xp: 84_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 5, requires: 685, min_level: 117, ..mestre() },
 
     // ===================== BOARD (quadro da cidade) — DIÁRIAS =====================
     QuestDef { id: 101, title: "Timberman", desc: "The board asks for wood for the city's works.",
