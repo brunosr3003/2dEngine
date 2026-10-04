@@ -73,8 +73,8 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     if d.reward_cobre > 0 {
         partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre()));
     }
-    if d.reward_xp > 0 {
-        partes.push(format!("{} XP", d.reward_xp));
+    if shared::progressao::xp_da_quest(&d) > 0 {
+        partes.push(format!("{} XP", shared::progressao::xp_da_quest(&d)));
     }
     for (id, qtd) in [
         (d.reward_item, d.reward_item_qty),

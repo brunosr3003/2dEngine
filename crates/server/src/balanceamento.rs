@@ -405,6 +405,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
         if alvo.is_some_and(|a| !mobs[a].vivo) {
             alvo = None;
         }
+
         if chegou && alvo.is_none() {
             alvo = mobs
                 .iter()
@@ -507,6 +508,9 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 }
             }
             let m = &mut mobs[a];
+            // Being hit keeps it in the fight (world: the struck mob's
+            // `aggro_timer` resets).
+            m.aggro_timer = 0.0;
             // The katana OPENS and CLOSES (world: `KATANA_OPENER_MULT`). It
             // multiplies before mitigation, exactly as the server does.
             let mut bruto = shared::basic_attack_damage(stats, arma, 0);
@@ -578,6 +582,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                     if d <= raio {
                         let bruto = s.dano_efetivo(stats.attack_damage, cd_base);
                         o.hp -= gap_dado(dano_mitigado_por_subtracao(bruto, o.defesa), nivel, o.nivel);
+                        o.aggro_timer = 0.0;
                         // Life Drain heals the caster, like `efeito_habilidade`.
                         if s.id == 10 {
                             *hp = (*hp
@@ -1167,18 +1172,52 @@ pub(crate) fn build_do_nivel(
     [u64; shared::PROF_COUNT],
     u64,
 ) {
-    use shared::item_id::*;
     use shared::stat_idx;
-    let nivel = nivel.clamp(1, 100);
-    let pontos = shared::POINTS_PER_LEVEL * (nivel - 1);
-    let mut alloc = [0u32; shared::STAT_COUNT];
     let principal = match conjunto {
         Conjunto::EspadaEscudo | Conjunto::Katana => stat_idx::FOR,
         Conjunto::Pistolas => stat_idx::DES,
         Conjunto::AnelMagico => stat_idx::INT,
     };
-    alloc[principal] = pontos / 3;
-    alloc[stat_idx::VIT] = pontos - pontos / 3;
+    build_com_pontos(conjunto, nivel.clamp(1, 100), principal, 1.0 / 3.0)
+}
+
+/// The DAMAGE build of the level, up to 120: `fracao` of the points in
+/// `principal`, the rest in VIT (the owner, 04/10/2026: ring INT, sword and
+/// shield FOR, pistols DES, the katana whichever kills faster — as far as
+/// the character survives; all-in with no VIT dies on AUTO). The
+/// leveling-time table uses it; the guards keep the 1/3 + VIT reference.
+pub(crate) fn build_cheio(
+    conjunto: Conjunto,
+    nivel: u32,
+    principal: usize,
+    fracao: f32,
+) -> (
+    shared::Equipment,
+    [u32; shared::STAT_COUNT],
+    [u64; shared::PROF_COUNT],
+    u64,
+) {
+    build_com_pontos(conjunto, nivel.clamp(1, 120), principal, fracao)
+}
+
+fn build_com_pontos(
+    conjunto: Conjunto,
+    nivel: u32,
+    principal: usize,
+    fracao: f32,
+) -> (
+    shared::Equipment,
+    [u32; shared::STAT_COUNT],
+    [u64; shared::PROF_COUNT],
+    u64,
+) {
+    use shared::item_id::*;
+    use shared::stat_idx;
+    let pontos = shared::POINTS_PER_LEVEL * (nivel - 1);
+    let mut alloc = [0u32; shared::STAT_COUNT];
+    let no_principal = (pontos as f32 * fracao) as u32;
+    alloc[principal] = no_principal;
+    alloc[stat_idx::VIT] = pontos - no_principal;
     let mut profs = [0u64; shared::PROF_COUNT];
     profs[conjunto as usize] = shared::proficiency_xp_for_level(nivel);
     let xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
@@ -2335,9 +2374,11 @@ mod testes_do_nivel_do_mob {
     fn xp_sobe_com_o_nivel_da_zona() {
         use crate::world::xp_do_mob;
         assert_eq!(xp_do_mob(30, 1), 30, "nivel 1 e' a tabela");
-        assert_eq!(xp_do_mob(30, 6), 45);
-        assert_eq!(xp_do_mob(30, 12), 63);
-        assert!(xp_do_mob(30, 12) > xp_do_mob(30, 6));
+        // The factor is per level (`progressao::FATOR_DO_MOB`): it can dip
+        // where an island's mobs are worth more, but it climbs overall.
+        assert!(xp_do_mob(30, 12) >= xp_do_mob(30, 1));
+        assert!(xp_do_mob(30, 60) > xp_do_mob(30, 12));
+        assert!(xp_do_mob(30, 119) > xp_do_mob(30, 60));
     }
 }
 
@@ -2991,7 +3032,10 @@ mod metas_da_escada {
                     floor(Conjunto::Pistolas),
                     floor(Conjunto::AnelMagico),
                 );
-                if shield < katana.max(pistol).max(ring) {
+                // Same tolerance as the katana check: with the mob's damage
+                // spread over more blows (`ladder::net_scale`) every floor sits
+                // near the top, and a point of noise is not an order.
+                if shield + FLOOR_TOLERANCE < katana.max(pistol).max(ring) {
                     failures.push(format!(
                         "nv{level} {place:?}: the shield ({:.0}%) is not the highest floor \
                          (katana {:.0}%, pistol {:.0}%, ring {:.0}%)",
@@ -3113,7 +3157,33 @@ mod tempo_de_nivel {
     /// (seconds per kill, XP per kill) grinding at `nivel`, and whether the
     /// player stayed alive.
     fn ritmo(c: Conjunto, nivel: u32) -> (f32, f32, bool) {
-        let (equip, alloc, profs, xp) = build_do_nivel(c, nivel);
+        use shared::stat_idx;
+        let opcoes: &[usize] = match c {
+            Conjunto::EspadaEscudo => &[stat_idx::FOR],
+            Conjunto::Katana => &[stat_idx::FOR, stat_idx::DES],
+            Conjunto::Pistolas => &[stat_idx::DES],
+            Conjunto::AnelMagico => &[stat_idx::INT],
+        };
+        // As much in the damage stat as still survives the zone (all-in with
+        // no VIT dies standing on AUTO); the katana tries FOR and DES and
+        // keeps the faster.
+        let mut melhor: Option<(f32, f32, bool)> = None;
+        for &p in opcoes {
+            for fracao in [1.0f32, 0.9, 0.8, 2.0 / 3.0, 0.5, 1.0 / 3.0] {
+                let r = ritmo_com(c, nivel, p, fracao);
+                if r.2 || fracao <= 0.34 {
+                    if melhor.is_none_or(|m| (!r.2, r.0) < (!m.2, m.0)) {
+                        melhor = Some(r);
+                    }
+                    break;
+                }
+            }
+        }
+        melhor.unwrap()
+    }
+
+    fn ritmo_com(c: Conjunto, nivel: u32, principal: usize, fracao: f32) -> (f32, f32, bool) {
+        let (equip, alloc, profs, xp) = build_cheio(c, nivel, principal, fracao);
         let stats = effective_stats(&equip, &alloc, &profs, xp);
         let skills: Vec<shared::skills::Skill> = shared::skills::playtest()
             .into_iter()
@@ -3162,10 +3232,33 @@ mod tempo_de_nivel {
         );
         let k = s.abates.max(1) as f32;
         if std::env::var("TEMPO_DIAG").is_ok() {
-            println!("    diag {c:?} nv{nivel}: {} kills in {:.0}s total, {:.0}s fighting/walking", s.abates, s.t, s.em_luta);
+            println!("    diag {c:?}/{principal}/{fracao:.2} nv{nivel}: {} kills in {:.0}s total, {:.0}s fighting/walking, alive {}", s.abates, s.t, s.em_luta, s.vivo);
         }
         let por_abate = if std::env::var("TEMPO_ATIVO").is_ok() { s.em_luta / k } else { s.t / k };
         (por_abate, xp_medio, s.vivo && s.abates >= 120)
+    }
+
+    /// Hours a day the player plays: the dailies pay once a day.
+    const HORAS_POR_DIA: f64 = 3.0;
+
+    /// Side XP while grinding at `nivel`, as a fraction of the kill's own XP:
+    /// a kill contract on top of the kills (when one exists at the level)
+    /// plus the island's dailies spread over a day's play.
+    fn bonus_lateral(nivel: u32, s_por_abate: f32) -> f32 {
+        use shared::quests::objective_kind as ok;
+        let qs = shared::quests::QUESTS;
+        let contrato = qs.iter().any(|q| {
+            q.repeatable && !q.daily && q.cooldown_secs > 0 && q.obj_kind == ok::KILL && q.min_level <= nivel
+        });
+        let mut b = if contrato { shared::progressao::BONUS_DO_CONTRATO } else { 0.0 };
+        if qs.iter().any(|q| q.daily && q.min_level.max(1) <= nivel) {
+            let mult = shared::DEFAULT_XP_MULTIPLIER;
+            let custo = (shared::xp_for_level_with_mult(nivel + 1, mult) - shared::xp_for_level_with_mult(nivel, mult)) as f32;
+            let por_segundo = shared::progressao::DIARIAS_POR_DIA * custo / (HORAS_POR_DIA as f32 * 3600.0);
+            let x = crate::world::xp_do_mob(70, nivel) as f32;
+            b += por_segundo * s_por_abate / x;
+        }
+        b
     }
 
     struct Linha {
@@ -3173,6 +3266,8 @@ mod tempo_de_nivel {
         chegou: Vec<f64>,
         xp_quest: Vec<u64>,
         xp_mob: Vec<u64>,
+        /// Side missions: one-offs, contracts and dailies.
+        xp_lateral: Vec<u64>,
         mortes_no_sim: Vec<u32>,
     }
 
@@ -3183,6 +3278,7 @@ mod tempo_de_nivel {
             chegou: vec![0.0; TETO as usize + 1],
             xp_quest: vec![0; TETO as usize + 1],
             xp_mob: vec![0; TETO as usize + 1],
+            xp_lateral: vec![0; TETO as usize + 1],
             mortes_no_sim: Vec::new(),
         };
         for (n, r) in ritmos.iter().enumerate().skip(1) {
@@ -3205,19 +3301,35 @@ mod tempo_de_nivel {
         let cacar = |abates: f64, xp: &mut u64, t: &mut f64, nivel: &mut u32, l: &mut Linha| {
             let mut falta = abates;
             while falta > 0.0 && *nivel < TETO {
-                let (s, x, _) = ritmos[*nivel as usize];
+                let (s, x0, _) = ritmos[*nivel as usize];
+                let x = x0 * (1.0 + bonus_lateral(*nivel, s));
                 let ate_subir = shared::xp_for_level_with_mult(*nivel + 1, mult).saturating_sub(*xp) as f64;
                 let k = (ate_subir / x as f64).ceil().max(1.0).min(falta);
                 *t += k * s as f64;
                 let ganho = (k * x as f64) as u64;
+                let do_mob = (k * x0 as f64) as u64;
                 *xp += ganho;
-                l.xp_mob[*nivel as usize] += ganho;
+                l.xp_mob[*nivel as usize] += do_mob;
+                l.xp_lateral[*nivel as usize] += ganho - do_mob;
                 falta -= k;
                 marca(*xp, *t, nivel, l);
             }
         };
         let mut i = 0u32;
+        let mut unicas_feitas = std::collections::HashSet::new();
         while nivel < TETO {
+            // One-off side missions open at their level: done on the way.
+            for q in shared::quests::QUESTS.iter().filter(|q| {
+                !q.repeatable && !q.daily && !shared::historia::e_da_historia(q.id) && q.min_level <= nivel
+            }) {
+                if unicas_feitas.insert(q.id) {
+                    let x = shared::progressao::xp_da_quest(q);
+                    t += 120.0;
+                    xp += x;
+                    l.xp_lateral[nivel as usize] += x;
+                }
+            }
+            marca(xp, t, &mut nivel, &mut l);
             let Some(id) = shared::historia::id_do_passo(i) else { break };
             let Some(q) = shared::historia::def_da_historia(id) else { break };
             i += 1;
@@ -3241,8 +3353,13 @@ mod tempo_de_nivel {
                 ok::COLLECT | ok::GATHER => t += 30.0 + 6.0 * q.obj_count as f64,
                 _ => t += 45.0,
             }
-            xp += q.reward_xp;
-            l.xp_quest[nivel as usize] += q.reward_xp;
+            let recompensa = shared::progressao::xp_da_quest(q);
+            xp += recompensa;
+            l.xp_quest[nivel as usize] += recompensa;
+            if std::env::var("TEMPO_HISTORIA").is_ok() && c == Conjunto::Katana && q.reward_xp > 0 && nivel >= 55 {
+                let custo = shared::xp_for_level_with_mult(nivel + 1, mult) - shared::xp_for_level_with_mult(nivel, mult);
+                println!("    story nv{nivel:<3} {:>5} {:<42} {:>9} xp = {:.2} levels", q.id, q.title, q.reward_xp, q.reward_xp as f64 / custo as f64);
+            }
             marca(xp, t, &mut nivel, &mut l);
         }
         // Story over (or capped): grind the rest.
@@ -3258,6 +3375,76 @@ mod tempo_de_nivel {
     fn hm(s: f64) -> String {
         let m = (s / 60.0).round() as u64;
         format!("{:>3}h{:02}", m / 60, m % 60)
+    }
+
+    /// The kill-XP factor each level needs so the BEST case (pistols, always
+    /// fighting) spends `progressao::HORAS_DA_FAIXA` per band with mobs giving
+    /// `progressao::PARCELA_DOS_MOBS` of the XP. Prints the factor at every
+    /// fifth level, to paste into `progressao::FATOR_DO_MOB`.
+    #[test]
+    #[ignore]
+    fn calibrar_xp_do_mob() {
+        crate::economy::init_vazia_para_testes();
+        let mult = shared::DEFAULT_XP_MULTIPLIER;
+        let mut v = vec!["0.0".to_string()];
+        for n in 1..=TETO {
+            // kills x s/kill = the level's seconds, with
+            // kills = share x cost / (factor x base): solve for the factor.
+            let (s, _, _) = ritmo_ativo(Conjunto::Pistolas, n);
+            let custo = (shared::xp_for_level_with_mult(n + 1, mult) - shared::xp_for_level_with_mult(n, mult)) as f64;
+            let f = shared::progressao::PARCELA_DOS_MOBS as f64 * custo * s as f64
+                / (shared::progressao::segundos_do_nivel(n) as f64 * base_media(n) as f64);
+            // Floor 1.0: the first levels may go faster than the line (a
+            // wolf paying 3 XP reads as a bug), and stay increasing because
+            // the curve's cost grows as n^2.
+            v.push(format!("{:.3}", f.max(1.0)));
+        }
+        let saida = format!("[{}]\n", v.join(", "));
+        std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/../shared/src/progressao_fator.in"), &saida).unwrap();
+        print!("{saida}");
+    }
+
+    fn ritmo_ativo(c: Conjunto, n: u32) -> (f32, f32, bool) {
+        std::env::set_var("TEMPO_ATIVO", "1");
+        ritmo(c, n)
+    }
+
+    /// Mean base XP (the table's, before the level factor) of a zone's slots.
+    fn base_media(nivel: u32) -> f32 {
+        let comuns = crate::economy::kinds_do_bioma(bioma(nivel)).to_vec();
+        let v: Vec<f32> = vagas()
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let lv = nivel + (i as u32 % 3);
+                let k = kind_para_nivel_em(&comuns, lv, (i as u64).wrapping_mul(2_654_435_761) >> 7);
+                crate::economy::kind_inicial(k).expect("known kind").xp as f32
+            })
+            .collect();
+        v.iter().sum::<f32>() / v.len() as f32
+    }
+
+    /// Side missions (not story, not daily) per ten-level band: count and XP.
+    #[test]
+    #[ignore]
+    fn missoes_secundarias_por_faixa() {
+        let mut faixas = std::collections::BTreeMap::<u32, (u32, u64, u32, u64)>::new();
+        for q in shared::quests::QUESTS {
+            if shared::historia::e_da_historia(q.id) {
+                continue;
+            }
+            let f = faixas.entry(q.min_level / 10 * 10).or_default();
+            if q.daily || q.repeatable {
+                f.2 += 1;
+                f.3 += q.reward_xp;
+            } else {
+                f.0 += 1;
+                f.1 += q.reward_xp;
+            }
+        }
+        for (f, (n, xp, nd, xpd)) in faixas {
+            println!("  min_level {f:>3}-{:<3}: {n:>3} one-off ({xp:>9} xp) | {nd:>3} daily/repeatable ({xpd:>7} xp each round)", f + 9);
+        }
     }
 
     #[test]
@@ -3276,7 +3463,15 @@ mod tempo_de_nivel {
             println!();
         }
         let linhas: Vec<(Conjunto, Linha)> = Conjunto::TODOS.iter().map(|&c| (c, percorrer(c))).collect();
-        println!("\n== hours per 10 levels (cumulative in brackets); quest share of the band's XP");
+        println!("\n== levels that took LESS than the one before (should be none)");
+        for (c, l) in &linhas {
+            let quedas: Vec<String> = (2..TETO as usize)
+                .filter(|&n| l.chegou[n + 1] - l.chegou[n] < (l.chegou[n] - l.chegou[n - 1]) * 0.98)
+                .map(|n| format!("{n}"))
+                .collect();
+            println!("  {c:?}: {}", if quedas.is_empty() { "none".into() } else { quedas.join(" ") });
+        }
+        println!("\n== hours per 10 levels (cumulative in brackets); story / side share of the band's XP");
         for (c, l) in &linhas {
             println!("  {c:?}  (sim deaths at levels {:?})", l.mortes_no_sim);
             let mut a = 1usize;
@@ -3285,11 +3480,14 @@ mod tempo_de_nivel {
                 let dt = l.chegou[b] - l.chegou[a];
                 let q: u64 = l.xp_quest[a..b].iter().sum();
                 let m: u64 = l.xp_mob[a..b].iter().sum();
+                let la: u64 = l.xp_lateral[a..b].iter().sum();
+                let tot = (q + m + la).max(1) as f64;
                 println!(
-                    "    {a:>3}-{b:<3} {}  [{}]  quests {:>3.0}%",
+                    "    {a:>3}-{b:<3} {}  [{}]  story {:>3.0}%  side {:>3.0}%",
                     hm(dt),
                     hm(l.chegou[b]),
-                    100.0 * q as f64 / (q + m).max(1) as f64
+                    100.0 * q as f64 / tot,
+                    100.0 * la as f64 / tot
                 );
                 a = b;
             }

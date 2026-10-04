@@ -597,7 +597,7 @@ impl QuestNet {
             obj_pos: glam::Vec2::new(d.obj_x, d.obj_y),
             obj_radius: d.obj_radius,
             reward_cobre: d.reward_cobre,
-            reward_xp: d.reward_xp,
+            reward_xp: crate::progressao::xp_da_quest(d),
             reward_item: d.reward_item,
             reward_item_qty: d.reward_item_qty,
             reward_faction_points: d.reward_faction_points,

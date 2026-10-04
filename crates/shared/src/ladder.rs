@@ -273,6 +273,19 @@ pub fn mob_net_damage(level: u32) -> f32 {
 /// the mage without killing it.
 pub const STRIKES_PER_MOB: f32 = 3.0;
 
+/// Blows at `level`, counting the endgame health ramp: `STRIKES_PER_MOB` + 1
+/// at level 1, rising on a straight line to twice `STRIKES_PER_MOB` at 80 and
+/// held there. From 80 `endgame_multipliers` doubles the health by 120 on its
+/// own, so this shrinks as that grows and the total stays at six blows —
+/// what the endgame ramp alone reached at 120. Stacking both left the melee
+/// sets at minutes per mob past 100. The owner (04/10/2026): mobs need more
+/// health, harder to kill — not deadlier.
+pub fn strikes_per_mob(level: u32) -> f32 {
+    let t = (level.clamp(1, 80) - 1) as f32 / 79.0;
+    let alvo = (STRIKES_PER_MOB + 1.0) + (STRIKES_PER_MOB - 1.0) * t;
+    alvo / endgame_multipliers(level).0
+}
+
 /// Fraction of the expected attack that a profile 1.0 defense mob holds back.
 /// Whoever is on the ladder delivers the rest.
 pub const MOB_DEFENSE: f32 = 0.15;
@@ -348,20 +361,33 @@ pub fn pierceable(level: u32) -> f32 {
 ///   "pierces" is the same for every species at the level; personality scales
 ///   only what is left. Without this a 2.8x owlbear would have 2.8x the whole
 ///   attack and would go through any armor.
+/// How much of `mob_net_damage` a common mob deals per hit at `level`: the
+/// three-blow ladder's fight spread over `strikes_per_mob` blows.
+pub fn net_scale(level: u32) -> f32 {
+    STRIKES_PER_MOB / strikes_per_mob(level)
+}
+
 /// Late regions demand stronger enemies even against matching gear.
 /// Smooth ramp: at 100 +50% health/+25% net damage, at 120 +100%/+50%.
 pub fn endgame_multipliers(level:u32)->(f32,f32,f32) {
     let steps=level.saturating_sub(80).min(40) as f32;
     (1.0+steps*0.025,1.0+steps*0.0125,steps*0.0015)
 }
+///
+/// Since 04/10/2026 the health takes `strikes_per_mob` blows and the NET
+/// damage is scaled down by as much (`net_scale`): harder to kill, not
+/// deadlier — what a mob takes from the player over a whole fight stays what
+/// it was with three blows. Longer fights at full damage killed the katana in
+/// the forts and the melee sets past 80.
 pub fn mob(p: &Profile, level: u32) -> Mob {
+    let net_scale = net_scale(level);
     let a = attack(level) as f32;
     let golpe_esperado = a * (1.0 - MOB_DEFENSE);
     let (vida,dano,armadura)=endgame_multipliers(level);
     Mob {
-        health: (STRIKES_PER_MOB * golpe_esperado * p.health * vida).round().max(1.0) as i32,
+        health: (strikes_per_mob(level) * golpe_esperado * p.health * vida).round().max(1.0) as i32,
         attack: (pierceable(level)
-            + mob_net_damage(level) * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING) * dano)
+            + mob_net_damage(level) * net_scale * (1.0 + (p.attack - 1.0) * ATTACK_FLATTENING) * dano)
             .round()
             .max(1.0) as i32,
         defense: (a * (p.defense + armadura).min(0.60)).round().max(0.0) as i32,
@@ -490,11 +516,12 @@ mod testes {
         for n in [12u32, 20, 30, 40, 50, 60] {
             let m = mob(&Profile::novo(1.0, 1.0, 0.0), n);
             // The expected one takes exactly the net (after the ramp).
-            assert_eq!(damage(m.attack, defense(n)), mob_net_damage(n).round() as i32, "nível {n}");
-            // And kills in STRIKES_PER_MOB blows against defense 1.0.
+            let liquido = (mob_net_damage(n) * net_scale(n)).round() as i32;
+            assert!((damage(m.attack, defense(n)) - liquido).abs() <= 1, "nível {n}");
+            // And kills in `strikes_per_mob` blows against defense 1.0.
             let def_um = (attack(n) as f32 * MOB_DEFENSE).round() as i32;
             let strikes = (m.health as f32 / damage(attack(n), def_um) as f32).ceil();
-            assert!((strikes - STRIKES_PER_MOB).abs() <= 1.0, "nível {n}: {strikes} strikes");
+            assert!((strikes - strikes_per_mob(n)).abs() <= 1.0, "nível {n}: {strikes} strikes");
         }
         // The profile comes from the table as it always was.
         let urso = Profile::relativo_ao_lobo(280, 18, 8);

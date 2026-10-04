@@ -100,8 +100,8 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     }
     // O cartão tem uma só linha e corta o final. Os itens precisam aparecer
     // antes de XP/cobre para não esconder recompensas como o pergaminho de pet.
-    if d.reward_xp > 0 {
-        partes.push(format!("{} XP", d.reward_xp));
+    if shared::progressao::xp_da_quest(&d) > 0 {
+        partes.push(format!("{} XP", shared::progressao::xp_da_quest(&d)));
     }
     if d.reward_cobre > 0 {
         partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre()));

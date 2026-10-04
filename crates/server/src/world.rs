@@ -897,7 +897,9 @@ pub(crate) fn deteccao_do_nivel(detect_range: f32, nivel: u32) -> f32 {
 /// vem do KIND (a tabela), mas caçar longe da cidade tem que pagar mais que
 /// caçar no quintal dela.
 pub(crate) fn xp_do_mob(base: u64, nivel: u32) -> u64 {
-    (base as f32 * (1.0 + 0.10 * nivel.saturating_sub(1) as f32)).round() as u64
+    // The factor per level comes from `progressao` (calibrated so each level
+    // takes longer than the last, ~200 h to 120 in the best case).
+    shared::progressao::xp_do_abate(base, nivel)
 }
 
 /// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu:
@@ -12618,6 +12620,18 @@ impl GameWorld {
                     }
                 }
             }
+            // A mob being HIT is in the fight: its give-up timer (5 s
+            // chasing without landing a blow, then home at full health)
+            // starts over. With the tougher mobs (04/10/2026) a pack queued
+            // behind the front line reset mid-fight and healed off the area
+            // damage. Bosses keep their own 30 s.
+            if attacker_is_player {
+                if let Ok(mut t) = self.ecs.get::<&mut EnemyTag>(entity) {
+                    if !t.is_boss {
+                        t.aggro_timer = 0.0;
+                    }
+                }
+            }
             // Também marca pra snapshot deste tick (cliente lê e seta facing).
             self.hit_this_tick.insert(target_id, hurt_dir);
             // Marca crit pra mostrar floating number diferenciado no cliente.
@@ -14986,11 +15000,11 @@ impl GameWorld {
                     s.inventory_dirty = true;
                 }
             }
-            if feito.reward_xp > 0 {
+            if shared::progressao::xp_da_quest(feito) > 0 {
                 // A XP da historia e' escrita na curva padrao (e' ela que leva o
                 // nivel do capitulo I): acompanha o multiplicador do servidor.
                 s.grant_xp(
-                    feito.reward_xp.saturating_mul(xpmult)
+                    shared::progressao::xp_da_quest(feito).saturating_mul(xpmult)
                         / shared::constants::DEFAULT_XP_MULTIPLIER,
                 );
             }
@@ -17320,8 +17334,9 @@ impl GameWorld {
             );
             s.inventory_dirty = true;
         }
-        if def.reward_xp > 0 {
-            s.grant_xp(def.reward_xp);
+        let xp = shared::progressao::xp_da_quest(def);
+        if xp > 0 {
+            s.grant_xp(xp);
         }
         if def.reward_faction_points > 0 {
             s.faction_points = s.faction_points.saturating_add(def.reward_faction_points);
@@ -17664,7 +17679,7 @@ impl GameWorld {
             .map(|d| d.obj_count)
             .unwrap_or(1);
         let reward_xp = shared::quests::quest_by_id(qid)
-            .map(|d| d.reward_xp)
+            .map(shared::progressao::xp_da_quest)
             .unwrap_or(0);
         if let Some(s) = self.sessions.get_mut(&sid) {
             if let Some(c) = s.quests.iter_mut().find(|c| c.quest_id == qid) {
@@ -18133,8 +18148,9 @@ impl GameWorld {
         if def.reward_cobre > 0 {
             Self::pagar_em_cobre(s, def.reward_cobre, "bau_do_tesouro");
         }
-        if def.reward_xp > 0 {
-            s.grant_xp(def.reward_xp);
+        let xp = shared::progressao::xp_da_quest(def);
+        if xp > 0 {
+            s.grant_xp(xp);
         }
         if def.reward_faction_points > 0 {
             s.faction_points = s.faction_points.saturating_add(def.reward_faction_points);

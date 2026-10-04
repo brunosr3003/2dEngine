@@ -552,7 +552,7 @@ pub fn desafio_do_mob(s: &PlayerStats, nivel: u32, chefe: bool) -> DesafioMob {
     use crate::ladder;
     let defesa = s.defense.max(0);
     let ataque = s.attack_damage.max(0);
-    let golpes = if chefe { ladder::BOSS_STRIKES } else { ladder::STRIKES_PER_MOB };
+    let golpes = if chefe { ladder::BOSS_STRIKES } else { ladder::strikes_per_mob(nivel) };
     let recomendado_ataque = ((s.hp_max.max(1) as f32 / golpes).ceil() as i32 + defesa)
         .max(ladder::attack(nivel));
     let liquido = ladder::mob_net_damage(nivel).round() as i32;

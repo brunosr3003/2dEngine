@@ -29,7 +29,7 @@ impl AutoResumo {
     pub fn concluir(&mut self, d: &shared::quests::QuestDef, nomes: &HashMap<u16, String>) {
         if !self.ativo || self.concluidas.iter().any(|c| c.id == d.id) { return; }
         let mut partes = Vec::new();
-        if d.reward_xp > 0 { partes.push(format!("{} XP", d.reward_xp)); }
+        if shared::progressao::xp_da_quest(&d) > 0 { partes.push(format!("{} XP", shared::progressao::xp_da_quest(&d))); }
         if d.reward_cobre > 0 { partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre())); }
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
             if id != 0 && qtd > 0 {
@@ -39,7 +39,7 @@ impl AutoResumo {
         }
         self.concluidas.push(Concluida { id: d.id, nome: d.title.into(),
             premio: if partes.is_empty() { "No reward".into() } else { partes.join(" · ") } });
-        self.xp = self.xp.saturating_add(d.reward_xp);
+        self.xp = self.xp.saturating_add(shared::progressao::xp_da_quest(&d));
         self.cobre = self.cobre.saturating_add(d.reward_cobre as u64);
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
             if id != 0 && qtd > 0 { *self.itens_de_missao.entry(id).or_default() += qtd as u64; }
@@ -153,7 +153,7 @@ mod tests {
         r.concluir(d, &HashMap::new());
         r.concluir(d, &HashMap::new());
         assert_eq!(r.concluidas.len(), 1);
-        assert_eq!(r.xp, d.reward_xp);
+        assert_eq!(r.xp, shared::progressao::xp_da_quest(&d));
         assert_eq!(r.cobre, d.reward_cobre as u64);
     }
 }
