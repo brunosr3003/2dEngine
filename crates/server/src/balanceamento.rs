@@ -40,6 +40,19 @@ use shared::ladder::{damage as dano_mitigado_por_subtracao, damage_with_reductio
 const DT: f32 = 1.0 / 30.0;
 /// Raio da busca de alvo do AUTO COMBATE (client `auto_combate::RAIO`).
 const RAIO_DO_AUTO: f32 = 24.0;
+/// How far the client's AUTO goes after a creature when its area is empty
+/// (client `auto_combate::BUSCA`).
+const BUSCA_DO_AUTO: f32 = 110.0;
+
+thread_local! {
+    /// The client's full AUTO: the area follows the character past its
+    /// radius and, when empty, AUTO hunts up to `BUSCA_DO_AUTO`. The
+    /// leveling-time table turns it on (it wants the real pace); the guards
+    /// keep the fixed area they were tuned against — with the hunt, a ring
+    /// walks from a fort's edge into the camp, which is today's client too,
+    /// but retuning the guards for it is its own job.
+    static AUTO_REAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 /// Leash das zonas por faixa (`place_enemy_in_zone_with_build`).
 const LEASH: f32 = 12.0;
 const RESPAWN_S: f32 = 20.0;
@@ -318,7 +331,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
         skills,
         mut mobs,
         sorteio,
-        centro,
+        mut centro,
         inicio,
         chegada,
         parada,
@@ -405,6 +418,12 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
         if alvo.is_some_and(|a| !mobs[a].vivo) {
             alvo = None;
         }
+        // The client re-anchors AUTO on the player once they are past its
+        // radius (`auto_combate.rs`, RAIO + 4): the Leap carries the body
+        // that far.
+        if AUTO_REAL.get() && chegou && eu.distance(centro) > RAIO_DO_AUTO + 4.0 {
+            centro = eu;
+        }
 
         if chegou && alvo.is_none() {
             alvo = mobs
@@ -417,6 +436,23 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                 })
                 .min_by(|a, b| a.1.pos.distance(eu).total_cmp(&b.1.pos.distance(eu)))
                 .map(|(i, _)| i);
+            // Nothing around the anchor: the client's AUTO HUNTS — it moves
+            // the area onto the character and walks to the nearest live
+            // creature up to `BUSCA_DO_AUTO` (`auto_combate::caca`). Without
+            // this the simulated player stood idle after a Leap next to mobs
+            // just outside the old area, which the game never does.
+            if alvo.is_none() && AUTO_REAL.get() {
+                let perto = mobs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| m.vivo && !m.voltando && m.pos.distance(eu) <= BUSCA_DO_AUTO)
+                    .min_by(|a, b| a.1.pos.distance(eu).total_cmp(&b.1.pos.distance(eu)))
+                    .map(|(i, _)| i);
+                if perto.is_some() {
+                    centro = eu;
+                    alvo = perto;
+                }
+            }
         }
         if alvo.is_some() {
             r.em_luta += DT;
@@ -569,8 +605,27 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                     continue;
                 };
                 let centro_da_skill = mobs[a].pos;
+                // LEAP (1): the body lands next to the target, as the server
+                // moves it (`habilidades.rs`, 0.8 short of the target). Only
+                // with the client's full AUTO: the guards' fixed area never
+                // moved the body for the Charge either.
+                if s.id == 1 && AUTO_REAL.get() {
+                    eu = centro_da_skill - (centro_da_skill - eu).normalize_or_zero() * 0.8;
+                }
                 let raio_matilha = crate::world::matilha_raio_do_nivel(mobs[a].nivel);
                 let raio = s.raio.max(0.01);
+                // CONES (Wide Strike, Volley) hit what is in front of the
+                // caster within reach, as `habilidades::dentro_da_forma` does:
+                // Wide Strike a half-circle, the rest 120 degrees. The other
+                // shapes hit a circle around the target.
+                let rumo = (centro_da_skill - eu).normalize_or_zero();
+                let abertura = if s.id == 2 { 0.0 } else { 0.5 };
+                let no_cone = |p: Vec2| {
+                    let d = p - eu;
+                    d.length() <= s.alcance
+                        && (d.length_squared() < 0.0001 || d.normalize_or_zero().dot(rumo) >= abertura)
+                };
+                let e_cone = s.forma == shared::skills::Forma::Cone;
                 for o in mobs.iter_mut() {
                     if !o.vivo {
                         continue;
@@ -579,7 +634,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
                     if d <= raio_matilha && !o.voltando {
                         o.provocado_ate = o.provocado_ate.max(t + crate::world::PROVOCACAO_S);
                     }
-                    if d <= raio {
+                    if if e_cone { no_cone(o.pos) } else { d <= raio } {
                         let bruto = s.dano_efetivo(stats.attack_damage, cd_base);
                         o.hp -= gap_dado(dano_mitigado_por_subtracao(bruto, o.defesa), nivel, o.nivel);
                         o.aggro_timer = 0.0;
@@ -3183,6 +3238,7 @@ mod tempo_de_nivel {
     }
 
     fn ritmo_com(c: Conjunto, nivel: u32, principal: usize, fracao: f32) -> (f32, f32, bool) {
+        AUTO_REAL.set(true);
         let (equip, alloc, profs, xp) = build_cheio(c, nivel, principal, fracao);
         let stats = effective_stats(&equip, &alloc, &profs, xp);
         let skills: Vec<shared::skills::Skill> = shared::skills::playtest()

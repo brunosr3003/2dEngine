@@ -433,8 +433,8 @@ pub fn espera_efetiva(espera_s: f32, wis: i32) -> f32 {
 /// mas o texto é compartilhado para a tela nunca prometer outra coisa.
 pub fn despertar(skill_id: u32, tier: u8) -> &'static str {
     match (skill_id, tier) {
-        (1, 5) => "Stronger impact",
-        (1, 8) => "Shield for 2 s after the charge",
+        (1, 5) => "The landing stuns for 1 s",
+        (1, 8) => "Stun 1.5 s and shield for 2 s after landing",
         (1, 10) => "Wider final strike",
         (2, 5) => "Longer cone",
         (2, 8) => "Stronger slash",
@@ -577,13 +577,20 @@ impl Skill {
     /// varrer o cano; ali a recuperação é a própria animação, e tirá-la seria
     /// tirar o peso do golpe. A linha é essa: o que sai da mão liberta, o que
     /// é movimento do corpo não.
+    /// The sword and shield's Leap: a circle at range, but the body travels
+    /// there (the server moves it like a walk), so it is a body gesture.
+    pub fn e_salto(&self) -> bool {
+        self.id == 1
+    }
+
     pub fn sai_da_mao(&self) -> bool {
         match self.forma {
             // O tiro já está viajando.
             Forma::Projetil => true,
             // Arremessada a distância (Barril, Aura, Julgamento). Com alcance
             // zero o círculo é em volta de si (Dança), e aí é gesto de corpo.
-            Forma::Circulo => self.alcance > 0.0,
+            // O Salto (1) também: o círculo é onde o CORPO cai.
+            Forma::Circulo => self.alcance > 0.0 && !self.e_salto(),
             // A bênção cai em você no instante do impacto.
             Forma::EmSi => self.cura > 0,
             // Gesto do corpo: o avanço do Saque, a varrida da Rajada.
@@ -647,8 +654,8 @@ impl Skill {
 
     pub fn descricao(&self) -> &'static str {
         match self.id {
-            1 => "Avança até o alvo e atinge inimigos no caminho.",
-            2 => "Corte amplo voltado para o alvo selecionado.",
+            1 => "Salta até o alvo e atinge os inimigos ao redor de onde cai.",
+            2 => "Corte em meia-lua voltado para o alvo selecionado.",
             3 => "Reduz o dano recebido em 50% por 5 segundos.",
             4 => "Saca a katana e corta em linha até o alvo.",
             5 => "Atinge o alvo e os inimigos ao redor, e rouba 25% do dano dos seus golpes por 3 segundos.",
@@ -853,19 +860,23 @@ mod testes {
 pub fn playtest() -> Vec<Skill> {
     let linhas: [(u32, &str, &str, u8, &str, i32, f32, f32, i32, i32, f32, f32); 12] = [
         // ── espada e escudo: segurar a linha ──
+        // LEAP (04/10/2026, the owner): was Charge, a dash that hit along
+        // the line. Now the body jumps to the target and the LANDING hits
+        // everything around it — and from tier 5 stuns it. Same reach and
+        // cooldown; 25 -> 32 because the circle is the whole point.
         (
             1,
-            "Charge",
+            "Leap",
             "espada_escudo",
             1,
-            "linha",
+            "circulo",
             10,
             8.0,
             0.0,
-            25,
+            32,
             0,
             6.0,
-            1.0,
+            3.0,
         ),
         (
             2,
@@ -879,9 +890,12 @@ pub fn playtest() -> Vec<Skill> {
             // 41: compensa a antecipação encurtada (ver `impacto_em`). O
             // número do catálogo é PESO RELATIVO — o dano final sai de
             // `dano_efetivo`, que multiplica pelo básico deslocado.
-            41,
+            // 41 -> 55 and 3.5 -> 4.5 with a half-circle instead of the
+            // 120-degree cone (`habilidades::dentro_da_forma`): the owner
+            // wanted the sword's area to hit harder (04/10/2026).
+            55,
             0,
-            3.5,
+            4.5,
             0.0,
         ),
         (
@@ -1091,7 +1105,7 @@ mod testes_da_trava {
     fn quem_fica_plantado_nao_prende_mais_que_um_segundo() {
         const TETO: f32 = 1.0;
         for s in playtest() {
-            if s.forma == Forma::Linha {
+            if s.forma == Forma::Linha || s.e_salto() {
                 continue;
             }
             assert!(
@@ -1103,7 +1117,7 @@ mod testes_da_trava {
         }
         let pior = playtest()
             .into_iter()
-            .filter(|s| s.forma != Forma::Linha)
+            .filter(|s| s.forma != Forma::Linha && !s.e_salto())
             .max_by(|a, b| a.trava_s().total_cmp(&b.trava_s()))
             .expect("catálogo vazio");
         assert_eq!(pior.nome, "Dance", "o pior caso plantado mudou de dono");

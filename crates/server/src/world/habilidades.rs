@@ -336,7 +336,8 @@ impl GameWorld {
                 }
             };
             if h.skill.id == 1 {
-                // Investida passa pela mesma colisao do caminhar, sem atravessar paredes.
+                // O Salto (ex-Investida) passa pela mesma colisao do caminhar,
+                // sem atravessar paredes; o cliente desenha o arco.
                 let t = ((self.sim_time_s - h.inicio) / (h.impacto - h.inicio)).clamp(0.0, 1.0);
                 let destino = h.alvo
                     - (h.alvo - h.de).normalize_or_zero() * 0.8_f32.min(h.de.distance(h.alvo));
@@ -484,7 +485,19 @@ impl GameWorld {
             }
             return;
         }
-        for (net, pos) in self.alvos_da_habilidade(dono, de, dir, alvo, skill) {
+        let alvos = self.alvos_da_habilidade(dono, de, dir, alvo, skill);
+        // LEAP (1): the landing stuns from tier 5 (1 s), 1.5 s from tier 8.
+        // Never a boss: a stun-lock would turn the telegraphs off.
+        if skill.id == 1 && tier >= 5 {
+            let ate = self.sim_time_s + if tier >= 8 { 1.5 } else { 1.0 };
+            let atingidos: std::collections::HashSet<EntityId> = alvos.iter().map(|a| a.0).collect();
+            for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
+                if atingidos.contains(&net.0) && !tag.is_boss && tag.stunned_until < ate {
+                    tag.stunned_until = ate;
+                }
+            }
+        }
+        for (net, pos) in alvos {
             if skill.dano > 0 {
                 self.pending_skill_hits.push(PendingSkillHit {
                     target_net: net,
@@ -587,8 +600,10 @@ fn dentro_da_forma(skill: &Skill, de: Vec2, dir: Vec2, alvo: Vec2, pos: Vec2) ->
     let d = pos - de;
     match skill.forma {
         Forma::Cone => {
+            // Wide Strike (2) is a half-circle; the other cones keep 120 degrees.
+            let abertura = if skill.id == 2 { 0.0 } else { 0.5 };
             d.length() <= skill.alcance
-                && (d.length_squared() < 0.0001 || d.normalize_or_zero().dot(dir) >= 0.5)
+                && (d.length_squared() < 0.0001 || d.normalize_or_zero().dot(dir) >= abertura)
         }
         Forma::Circulo => pos.distance(alvo) <= skill.raio,
         Forma::Linha => {
