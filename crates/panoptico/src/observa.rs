@@ -50,7 +50,7 @@ pub fn para_segundos(v: i64) -> i64 {
     }
 }
 
-async fn multiplicador_de_xp(pool: &PgPool) -> u64 {
+pub async fn multiplicador_de_xp(pool: &PgPool) -> u64 {
     uma(
         pool,
         "SELECT value FROM server_config WHERE key = 'xp_multiplier'",

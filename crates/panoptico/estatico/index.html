@@ -114,6 +114,11 @@
   .escolha { display: flex; gap: 8px; align-items: center; padding: 4px 8px; cursor: pointer; }
   .escolha.sel, .escolha:hover { background: #1e2a38; }
   .escolha .en { color: var(--fraco); font-size: 11px; white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--linha); position: sticky; top: 0; background: var(--painel); }
+  .chip { background: #1b222b; border: 1px solid var(--linha); color: var(--fraco); border-radius: 10px; padding: 1px 8px; font: inherit; font-size: 11px; cursor: pointer; }
+  .chip.on { color: var(--texto); border-color: var(--jogador); }
+  .anexo select, select.campo, textarea.campo { background: #0d1014; border: 1px solid var(--linha); color: var(--texto); padding: 5px 6px; font: inherit; border-radius: 3px; }
+  .escolha .cat { color: var(--fraco); font-size: 10px; }
   .escolha .id { margin-left: auto; color: var(--fraco); font-size: 11px; }
   button.acao { background: #1e2a38; color: var(--texto); border: 1px solid #3d4a5a; padding: 5px 10px; font: inherit; border-radius: 3px; cursor: pointer; }
   button.acao:hover { background: #26364a; }
@@ -320,20 +325,24 @@
   <div class="grade">
     <div>
       <h2>Quem assina</h2>
-      <label class="f">personagem <input id="co-autor" placeholder="curandinho"></label>
-      <p class="nota">Precisa ter cargo em <code>social_staff</code>
-        (<code>cargo run --bin social_staff NOME admin</code>). É o nome que
-        vai no registro.</p>
+      <label class="f">personagem <select id="co-autor" class="campo"></select></label>
+      <p class="nota">Só aparece quem tem cargo em <code>social_staff</code>.</p>
       <h2>Para quem</h2>
-      <label class="f">personagem <input id="co-para" placeholder="vazio = todos"></label>
+      <label class="f"><input type="radio" name="co-modo" value="um" checked> um personagem</label>
+      <label class="f"><input type="radio" name="co-modo" value="todos"> <b class="ruim">todos</b> os personagens</label>
+      <div class="anexo" id="co-para-linha">
+        <input id="co-para" placeholder="buscar personagem" autocomplete="off" style="width:260px">
+        <span id="co-para-ok" class="nota" style="padding:0"></span>
+        <div class="escolhas" id="co-para-lista" hidden style="left:14px"></div>
+      </div>
     </div>
     <div>
       <h2>A carta</h2>
-      <label class="f">identificador <input id="co-envio" placeholder="teste-pets-001"></label>
-      <p class="nota">8 a 100 caracteres, letras/números/hífen. Reenviar o
-        mesmo não duplica.</p>
-      <label class="f">assunto <input id="co-assunto" maxlength="60"></label>
-      <label class="f">texto <textarea id="co-texto" rows="4" maxlength="1000"></textarea></label>
+      <label class="f">identificador <input id="co-envio" class="campo" style="width:230px">
+        <button class="acao" id="co-envio-novo" type="button">novo</button></label>
+      <p class="nota">Gerado sozinho; reenviar o mesmo não duplica.</p>
+      <label class="f">assunto <input id="co-assunto" class="campo" maxlength="60" value="Presente da equipe"></label>
+      <label class="f">texto <textarea id="co-texto" class="campo" rows="4" maxlength="1000"></textarea></label>
     </div>
   </div>
   <h2>Anexos (até 8)</h2>
@@ -1262,13 +1271,14 @@ function busca() {
 let coAnexos = [];
 // Item catalog (PT name from the game's dictionary + DB name + icon from the
 // client's atlas). Search ignores accents and case, over PT, EN or the id.
-let coCatalogo = null;
-const normaliza = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+let coCatalogo = null, coCat = 'tudo', coParaOk = null;
+const normaliza = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 async function carregaCatalogo() {
   if (coCatalogo) return coCatalogo;
   const d = await (await fetch('api/catalogo')).json();
-  d.itens.forEach(it => { it.busca = normaliza(`${it.pt} ${it.nome} ${it.id}`); });
+  d.itens.forEach(it => { it.busca = normaliza(`${it.pt} ${it.nome} ${it.id} ${it.cat}`); });
   d.porId = new Map(d.itens.map(it => [it.id, it]));
+  d.cats = ['tudo', ...new Set(d.itens.map(it => it.cat))];
   return (coCatalogo = d);
 }
 function icone(it, classe = '') {
@@ -1278,52 +1288,134 @@ function icone(it, classe = '') {
   const x = (it.celula % c.colunas) * px, y = Math.floor(it.celula / c.colunas) * px;
   return `<span class="ico ${classe}" style="background-image:url(api/icones.png);background-size:${c.largura * k}px ${c.altura * k}px;background-position:-${x}px -${y}px"></span>`;
 }
-function rotulo(it) { return it.pt; }
 function buscaItens(texto) {
   const q = normaliza(texto);
-  if (!q) return coCatalogo.itens.slice(0, 40);
+  const daCat = coCatalogo.itens.filter(it => coCat === 'tudo' || it.cat === coCat);
+  if (!q) return daCat;
   const termos = q.split(/\s+/);
   const exato = /^\d+$/.test(q) ? coCatalogo.porId.get(Number(q)) : null;
-  const r = coCatalogo.itens.filter(it => it !== exato && termos.every(t => it.busca.includes(t)));
-  return (exato ? [exato, ...r] : r).slice(0, 40);
+  const r = daCat.filter(it => it !== exato && termos.every(t => it.busca.includes(t)));
+  return exato ? [exato, ...r] : r;
 }
+const ROMANO = ['', 'I', 'II', 'III', 'IV'];
+const novoEnvio = () => {
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  return `painel-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+};
+let coMontado = false;
 async function montaCorreio() {
   // The tab's 20 s refresh calls this again: redrawing would steal focus
   // from someone typing mid-search.
-  if (document.getElementById('co-anexos').childElementCount) return;
-  if (!coAnexos.length) coAnexos = [{ item_id: '', qtd: 1 }];
-  try { await carregaCatalogo(); } catch (e) {
-    document.getElementById('co-resultado').textContent = 'catalogo de itens falhou: ' + e;
+  if (coMontado) return;
+  try {
+    await carregaCatalogo();
+    const staff = await (await fetch('api/staff')).json();
+    document.getElementById('co-autor').innerHTML = staff.map(s =>
+      `<option value="${esc(s.nome)}">${esc(s.nome)} (${esc(s.cargo)})</option>`).join('')
+      || '<option value="">ninguém em social_staff</option>';
+  } catch (e) {
+    document.getElementById('co-resultado').textContent = 'carregar falhou: ' + e;
     return;
   }
+  coMontado = true;
+  document.getElementById('co-envio').value = novoEnvio();
+  if (!coAnexos.length) coAnexos = [{ item_id: '', qtd: 1 }];
+  montaPara();
   desenhaAnexos();
 }
+document.getElementById('co-envio-novo').onclick = () => { document.getElementById('co-envio').value = novoEnvio(); };
+
+// ── recipient: search the characters, so a typo can't go unnoticed ──
+function montaPara() {
+  const inp = document.getElementById('co-para'), lista = document.getElementById('co-para-lista');
+  const ok = document.getElementById('co-para-ok'), linha = document.getElementById('co-para-linha');
+  let achados = [], sel = 0, pedido = 0;
+  const marca = p => {
+    coParaOk = p;
+    ok.innerHTML = p ? `<span class="bom">✓</span> nível ${p.nivel}${p.zona ? ' · ' + esc(p.zona) : ''}` : (inp.value.trim() ? '<span class="ruim">escolha da lista</span>' : '');
+  };
+  const desenha = () => {
+    lista.innerHTML = achados.map((p, k) =>
+      `<div class="escolha${k === sel ? ' sel' : ''}" data-k="${k}"><span>${esc(p.nome)}</span>
+         <span class="id">nível ${p.nivel}${p.zona ? ' · ' + esc(p.zona) : ''}</span></div>`).join('') || '<div class="vazio">ninguém</div>';
+    lista.hidden = false;
+  };
+  const busca = async () => {
+    const q = inp.value.trim(), n = ++pedido;
+    if (!q) { achados = []; lista.hidden = true; marca(null); return; }
+    const r = await (await fetch('api/personagens?q=' + encodeURIComponent(q))).json();
+    if (n !== pedido) return;
+    achados = r; sel = 0;
+    marca(r.find(p => p.nome.toLowerCase() === q.toLowerCase()) || null);
+    desenha();
+  };
+  const escolhe = p => { inp.value = p.nome; marca(p); lista.hidden = true; };
+  inp.oninput = busca;
+  inp.onfocus = () => { if (inp.value.trim()) busca(); };
+  inp.onkeydown = e => {
+    if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, achados.length - 1); desenha(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); desenha(); e.preventDefault(); }
+    else if (e.key === 'Enter' && achados[sel]) { escolhe(achados[sel]); e.preventDefault(); }
+    else if (e.key === 'Escape') inp.blur();
+  };
+  lista.onmousedown = e => {
+    const d = e.target.closest('.escolha');
+    if (d) { e.preventDefault(); escolhe(achados[Number(d.dataset.k)]); }
+  };
+  inp.onblur = () => { lista.hidden = true; };
+  document.querySelectorAll('input[name=co-modo]').forEach(r => {
+    r.onchange = () => { linha.style.display = modoTodos() ? 'none' : ''; };
+  });
+}
+const modoTodos = () => document.querySelector('input[name=co-modo]:checked').value === 'todos';
+
+// ── attachments ──
 function desenhaAnexos() {
   const el = document.getElementById('co-anexos');
   el.innerHTML = '';
   coAnexos.forEach((a, i) => {
     const it = coCatalogo.porId.get(Number(a.item_id));
+    const equip = it && it.equip;
+    if (equip) { a.qtd = 1; a.grau ??= 1; a.tier ??= 1; a.refino ??= 0; a.vinculado ??= false; }
     const l = document.createElement('div');
     l.className = 'anexo';
+    const graus = coCatalogo.graus.map((g, k) =>
+      `<option value="${k + 1}" style="color:${g.cor}"${a.grau === k + 1 ? ' selected' : ''}>${esc(g.nome)}</option>`).join('');
+    const tiers = [1, 2, 3, 4].slice(0, coCatalogo.tier_max).map(t =>
+      `<option value="${t}"${a.tier === t ? ' selected' : ''}>Tier ${ROMANO[t]}</option>`).join('');
+    const refinos = Array.from({ length: coCatalogo.refino_max + 1 }, (_, r) =>
+      `<option value="${r}"${a.refino === r ? ' selected' : ''}>+${r}</option>`).join('');
     l.innerHTML = `${icone(it)}
-      <input placeholder="buscar item (nome ou id)" style="width:300px">
-      <input value="${esc(String(a.qtd))}" placeholder="qtd" style="width:80px">
-      <span class="nota" style="padding:0">${it ? `#${it.id}${it.pt !== it.nome ? ` · ${esc(it.nome)}` : ''} · pilha ${it.pilha}` : ''}</span>
-      <button class="acao" style="padding:2px 10px">x</button>
+      <input class="co-busca" placeholder="buscar item (nome, id ou categoria)" style="width:280px">
+      ${equip
+        ? `<select class="co-grau" style="color:${coCatalogo.graus[a.grau - 1].cor}">${graus}</select>
+           <select class="co-tier">${tiers}</select>
+           <select class="co-refino">${refinos}</select>
+           <label class="nota" style="padding:0"><input type="checkbox" class="co-vinc"${a.vinculado ? ' checked' : ''}> vinculado</label>`
+        : `<input class="co-qtd" value="${esc(String(a.qtd))}" placeholder="qtd" style="width:80px">
+           ${it ? [1, 10, 100, it.pilha].filter((v, k, arr) => v <= Math.max(it.pilha, 1) && arr.indexOf(v) === k)
+               .map(v => `<button class="chip co-q" data-v="${v}" type="button">${v}</button>`).join('') : ''}`}
+      <span class="nota" style="padding:0">${it ? `#${it.id} · ${esc(it.cat)}${it.pt !== it.nome ? ` · ${esc(it.nome)}` : ''}` : ''}</span>
+      <button class="acao co-tira" style="padding:2px 10px">x</button>
       <div class="escolhas" hidden></div>`;
-    const [busca, qtd] = l.querySelectorAll('input');
-    const tira = l.querySelector('button');
+    const busca = l.querySelector('.co-busca');
     const lista = l.querySelector('.escolhas');
-    busca.value = it ? rotulo(it) : '';
+    busca.value = it ? it.pt : '';
     let achados = [], sel = 0;
-    const escolhe = x => { coAnexos[i].item_id = x.id; desenhaAnexos(); };
+    const escolhe = x => {
+      coAnexos[i] = { item_id: x.id, qtd: x.equip ? 1 : (coAnexos[i].qtd || 1) };
+      desenhaAnexos();
+    };
     const mostra = () => {
-      achados = buscaItens(busca.value === (it && rotulo(it)) ? '' : busca.value);
+      achados = buscaItens(busca.value === (it && it.pt) ? '' : busca.value);
       sel = Math.min(sel, Math.max(0, achados.length - 1));
-      lista.innerHTML = achados.map((x, k) =>
+      const chips = coCatalogo.cats.map(c =>
+        `<button type="button" class="chip${c === coCat ? ' on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
+      lista.innerHTML = `<div class="chips">${chips}</div>` + (achados.map((x, k) =>
         `<div class="escolha${k === sel ? ' sel' : ''}" data-k="${k}">${icone(x, 'p')}
-           <span>${esc(x.pt)}${x.pt !== x.nome ? ` <span class="en">${esc(x.nome)}</span>` : ''}</span>
-           <span class="id">#${x.id}</span></div>`).join('') || '<div class="vazio">nada</div>';
+           <span>${esc(x.pt)}${x.pt !== x.nome ? ` <span class="en">${esc(x.nome)}</span>` : ''}
+             <div class="cat">${esc(x.cat)}</div></span>
+           <span class="id">#${x.id}</span></div>`).join('') || '<div class="vazio">nada</div>');
       lista.hidden = false;
       lista.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
     };
@@ -1337,12 +1429,24 @@ function desenhaAnexos() {
     };
     // mousedown fires before blur: the click picks before the list hides.
     lista.onmousedown = e => {
+      e.preventDefault();
+      const c = e.target.closest('[data-cat]');
+      if (c) { coCat = c.dataset.cat; sel = 0; mostra(); return; }
       const d = e.target.closest('.escolha');
-      if (d) { e.preventDefault(); escolhe(achados[Number(d.dataset.k)]); }
+      if (d) escolhe(achados[Number(d.dataset.k)]);
     };
-    busca.onblur = () => { lista.hidden = true; busca.value = it ? rotulo(it) : ''; };
-    qtd.oninput = () => { coAnexos[i].qtd = qtd.value; };
-    tira.onclick = () => { coAnexos.splice(i, 1); desenhaAnexos(); };
+    busca.onblur = () => { lista.hidden = true; busca.value = it ? it.pt : ''; };
+    const q = l.querySelector('.co-qtd');
+    if (q) q.oninput = () => { coAnexos[i].qtd = q.value; };
+    l.querySelectorAll('.co-q').forEach(b => { b.onclick = () => { coAnexos[i].qtd = Number(b.dataset.v); q.value = b.dataset.v; }; });
+    const g = l.querySelector('.co-grau');
+    if (g) {
+      g.onchange = () => { coAnexos[i].grau = Number(g.value); desenhaAnexos(); };
+      l.querySelector('.co-tier').onchange = e => { coAnexos[i].tier = Number(e.target.value); };
+      l.querySelector('.co-refino').onchange = e => { coAnexos[i].refino = Number(e.target.value); };
+      l.querySelector('.co-vinc').onchange = e => { coAnexos[i].vinculado = e.target.checked; };
+    }
+    l.querySelector('.co-tira').onclick = () => { coAnexos.splice(i, 1); if (!coAnexos.length) coAnexos.push({ item_id: '', qtd: 1 }); desenhaAnexos(); };
     el.appendChild(l);
   });
 }
@@ -1351,18 +1455,30 @@ document.getElementById('co-mais').onclick = () => {
 };
 document.getElementById('co-enviar').onclick = async () => {
   const r = document.getElementById('co-resultado');
+  const todos = modoTodos();
+  if (!todos && !coParaOk) { r.textContent = 'escolha o personagem na lista (ou marque "todos")'; return; }
+  const anexos = coAnexos.filter(a => String(a.item_id).trim() !== '').map(a => {
+    const it = coCatalogo.porId.get(Number(a.item_id));
+    return it.equip
+      ? { item_id: it.id, qtd: 1, grau: a.grau, tier: a.tier, refino: a.refino, vinculado: a.vinculado }
+      : { item_id: it.id, qtd: Number(a.qtd) || 1 };
+  });
   const corpo = {
-    autor: document.getElementById('co-autor').value.trim(),
+    autor: document.getElementById('co-autor').value,
     envio: document.getElementById('co-envio').value.trim(),
-    para: document.getElementById('co-para').value.trim(),
+    para: todos ? null : coParaOk.nome,
     assunto: document.getElementById('co-assunto').value,
     texto: document.getElementById('co-texto').value,
-    anexos: coAnexos
-      .filter(a => String(a.item_id).trim() !== '')
-      .map(a => ({ item_id: Number(a.item_id), qtd: Number(a.qtd) || 1 })),
+    anexos,
   };
-  const quem = corpo.para ? corpo.para : 'TODOS os personagens';
-  if (!confirm(`Enviar para ${quem}? ${corpo.anexos.length} anexo(s). Fica registrado e nao da' pra desfazer.`)) return;
+  const resumo = anexos.map(a => {
+    const it = coCatalogo.porId.get(a.item_id);
+    return a.grau
+      ? `  1x ${it.pt} — ${coCatalogo.graus[a.grau - 1].nome} Tier ${ROMANO[a.tier]} +${a.refino}${a.vinculado ? ' (vinculado)' : ''}`
+      : `  ${a.qtd}x ${it.pt}`;
+  }).join('\n') || '  (sem anexo)';
+  const quem = todos ? 'TODOS os personagens' : corpo.para;
+  if (!confirm(`Enviar para ${quem}, assinado por ${corpo.autor}?\n\n${resumo}\n\nFica registrado e não dá pra desfazer.`)) return;
   r.textContent = 'enviando...';
   try {
     const resp = await fetch('api/correio', {
@@ -1371,9 +1487,10 @@ document.getElementById('co-enviar').onclick = async () => {
       body: JSON.stringify(corpo),
     });
     const d = await resp.json();
-    r.textContent = d.ok
-      ? `entregue a ${d.destinatarios} personagem(ns)`
-      : `recusado: ${d.erro}`;
+    if (d.ok) {
+      r.innerHTML = `<span class="bom">entregue a ${d.destinatarios} personagem(ns)</span> · ${esc(corpo.envio)}`;
+      document.getElementById('co-envio').value = novoEnvio();
+    } else r.innerHTML = `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
   } catch (e) {
     r.textContent = 'falhou: ' + e;
   }

@@ -153,6 +153,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/infra"), get(infra))
         .route(&p("/api/correio"), post(correio))
         .route(&p("/api/catalogo"), get(catalogo))
+        .route(&p("/api/staff"), get(staff))
+        .route(&p("/api/personagens"), get(personagens))
         .route(&p("/api/icones.png"), get(icones_png));
     if !auth.prefixo.is_empty() {
         // "/panoptico" sem barra: a pagina usa caminhos relativos e precisa da barra.
@@ -492,23 +494,34 @@ async fn correio(
     let Some(conta) = conta else {
         return erro_do_correio(format!("personagem '{}' nao encontrado", c.autor));
     };
+    // Equipment with a chosen color gets its instance here; everything else
+    // goes BARE on purpose (a pet/mount rolls its own affinity on delivery,
+    // and bare equipment becomes Common Tier I, `craft::instancia_inicial`).
+    // An instance does not stack, so one row = one piece.
+    let mut anexos = Vec::with_capacity(c.anexos.len());
+    for a in &c.anexos {
+        let instance = match instancia_do_anexo(&st.pool, a).await {
+            Ok(i) => i,
+            Err(e) => return erro_do_correio(e),
+        };
+        if instance.is_some() && a.qtd != 1 {
+            return erro_do_correio(format!(
+                "item {}: equipamento com cor vai 1 por linha (pediu {})",
+                a.item_id, a.qtd
+            ));
+        }
+        anexos.push(shared::social::Anexo {
+            item_id: a.item_id,
+            qtd: a.qtd,
+            instance,
+        });
+    }
     let pedido = shared::social::Pedido::EnviarOficial {
         envio: c.envio,
         para: c.para.filter(|p| !p.trim().is_empty()),
         assunto: c.assunto,
         texto: c.texto,
-        anexos: c
-            .anexos
-            .into_iter()
-            .map(|a| shared::social::Anexo {
-                item_id: a.item_id,
-                qtd: a.qtd,
-                // O painel manda item PELADO de proposito: ele nao rola
-                // instancia, e um equipamento sem ela nasce Comum Tier I no
-                // primeiro login (`craft::instancia_inicial`).
-                instance: None,
-            })
-            .collect(),
+        anexos,
     };
     match correio::enviar(&st.pool, &c.autor, conta, &pedido).await {
         Ok(n) => (
@@ -560,17 +573,170 @@ async fn catalogo(State(st): State<Estado>) -> impl IntoResponse {
                 "pt": tr_em(Idioma::Pt, &nome),
                 "pilha": pilha,
                 "slot": slot,
+                "cat": categoria(id as u16, slot.as_deref(), &nome),
+                "equip": e_peca(id as u16, slot.as_deref()),
                 "celula": celula,
             })
         })
         .collect();
     axum::Json(serde_json::json!({
+        "refino_max": shared::forja::REFINO_MAX,
+        "graus": shared::forja::Grau::TODOS.iter().map(|g| serde_json::json!({
+            "nome": tr_em(Idioma::Pt, g.nome()),
+            "cor": shared::items::tier_color_hex(*g as u8),
+        })).collect::<Vec<_>>(),
+        "tier_max": shared::forja::TIER_MAX,
         "lado": icones_indice::LADO,
         "colunas": icones_indice::COLUNAS,
         "largura": icones_indice::LARGURA,
         "altura": icones_indice::ALTURA,
         "itens": itens,
     }))
+}
+
+/// The picker's filter chip. Uses the game's own lookups where they exist
+/// (keys, cosmetics, wallet currencies); the rest is the item id bands of the
+/// catalog (potions 2..11 and 350..352, pet scrolls/skills 360..366 and 445..457).
+fn categoria(id: u16, slot: Option<&str>, nome: &str) -> &'static str {
+    match slot {
+        Some("pet") => return "pet",
+        Some("montaria") => return "montaria",
+        Some("barco") => return "barco",
+        Some(s) if s.starts_with("acessorio") => return "acessório",
+        _ => {}
+    }
+    if shared::equip_slot_of(id).is_some() {
+        return "equipamento";
+    }
+    if shared::porao::porao_da_chave(id).is_some() || nome.contains("Chest") {
+        return "chave e baú";
+    }
+    if shared::aparencia::skin_do_item(id).is_some() || (480..=624).contains(&id) {
+        return "aparência";
+    }
+    if shared::armazem::e_moeda(id) || matches!(id, 1 | 357 | 358 | 466 | 475) {
+        return "moeda e passe";
+    }
+    if matches!(id, 2..=11 | 350..=352 | 560) {
+        return "consumível";
+    }
+    if matches!(id, 360..=366 | 445..=457) {
+        return "pergaminho e skill";
+    }
+    "material"
+}
+
+/// Gear that takes a color/tier/refine. Pets and mounts also answer
+/// `equip_slot_of`, but their instance is the creature (rolled on delivery),
+/// so the DB slot rules them out first.
+fn e_peca(id: u16, slot: Option<&str>) -> bool {
+    categoria(id, slot, "") == "equipamento"
+}
+
+/// Characters that can sign official mail (`social_staff`), for the author
+/// dropdown. `correio::enviar` matches the name EXACTLY, so the panel must
+/// send it as stored.
+async fn staff(State(st): State<Estado>) -> impl IntoResponse {
+    let nomes: Vec<(String, String)> = sqlx::query_as(
+        "SELECT c.name, s.cargo FROM characters c JOIN social_staff s ON s.account_id = c.account_id ORDER BY c.name",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    axum::Json(
+        nomes
+            .into_iter()
+            .map(|(nome, cargo)| serde_json::json!({ "nome": nome, "cargo": cargo }))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Recipient autocomplete: names containing `q`, case-insensitive. A typo in
+/// the recipient is the mail tool's commonest failure ("lokiin" vs "Lokiiin").
+async fn personagens(
+    State(st): State<Estado>,
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let busca = q.get("q").map(|s| s.trim()).unwrap_or("");
+    if busca.is_empty() {
+        return axum::Json(Vec::<serde_json::Value>::new());
+    }
+    let padrao = format!("%{}%", busca.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+    let nomes: Vec<(String, i64, Option<String>)> = sqlx::query_as(
+        "SELECT name, xp, zona FROM characters WHERE account_id IS NOT NULL AND name ILIKE $1 \
+         ORDER BY (lower(name) = lower($2)) DESC, length(name), name LIMIT 15",
+    )
+    .bind(&padrao)
+    .bind(busca)
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let mult = observa::multiplicador_de_xp(&st.pool).await;
+    axum::Json(
+        nomes
+            .into_iter()
+            .map(|(nome, xp, zona)| {
+                let nivel = shared::level_of_xp_with_mult(xp.max(0) as u64, mult);
+                serde_json::json!({ "nome": nome, "nivel": nivel, "zona": zona })
+            })
+            .collect(),
+    )
+}
+
+/// The instance of a piece sent with a chosen color/tier/refine: the same one
+/// the Forge's craft makes (`ItemInstance::roll_em` at the color's item level,
+/// fixed stats from the DB template). Not equipment, or no color given =
+/// `None` (the item goes bare, as before).
+async fn instancia_do_anexo(
+    pool: &sqlx::PgPool,
+    a: &CorreioAnexo,
+) -> Result<Option<shared::items::ItemInstance>, String> {
+    use shared::items::{ItemInstance, ItemTemplate, StatRange};
+    let Some(grau) = a.grau else { return Ok(None) };
+    let slot: Option<String> = sqlx::query_scalar("SELECT equip_slot FROM items WHERE id = $1")
+        .bind(a.item_id as i32)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("banco: {e}"))?
+        .flatten();
+    if !e_peca(a.item_id, slot.as_deref()) {
+        return Ok(None);
+    }
+    let r: Option<(i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32, i32)> = sqlx::query_as(
+        "SELECT hp_min, hp_max, mp_min, mp_max, atk_min, atk_max, def_min, def_max, dex_min, dex_max, wis_min, wis_max \
+         FROM items WHERE id = $1",
+    )
+    .bind(a.item_id as i32)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("banco: {e}"))?;
+    let Some(r) = r else { return Ok(None) };
+    let tpl = ItemTemplate {
+        hp_max: StatRange::new(r.0, r.1),
+        mp_max: StatRange::new(r.2, r.3),
+        attack_damage: StatRange::new(r.4, r.5),
+        defense: StatRange::new(r.6, r.7),
+        dex: StatRange::new(r.8, r.9),
+        wis: StatRange::new(r.10, r.11),
+    };
+    let grau = grau.clamp(1, 5);
+    let Some(mut inst) = ItemInstance::roll_em(
+        tpl,
+        shared::forja::nivel_de_item_da_cor(grau),
+        grau,
+        a.tier.unwrap_or(1),
+        fastrand_zero,
+    ) else {
+        return Ok(None);
+    };
+    inst.refinement = a.refino.unwrap_or(0).min(shared::forja::REFINO_MAX);
+    inst.vinculado = a.vinculado;
+    Ok(Some(inst))
+}
+
+/// `roll_em` keeps an RNG parameter for its callers but no longer uses it.
+fn fastrand_zero() -> f32 {
+    0.0
 }
 
 fn erro_do_correio(texto: String) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
@@ -599,6 +765,16 @@ struct CorreioPedido {
 struct CorreioAnexo {
     item_id: u16,
     qtd: u32,
+    /// Equipment only: color 1..5, tier 1..4, refine 0..12, bound. With no
+    /// color the piece goes bare and the server makes it Common Tier I.
+    #[serde(default)]
+    grau: Option<u8>,
+    #[serde(default)]
+    tier: Option<u8>,
+    #[serde(default)]
+    refino: Option<u8>,
+    #[serde(default)]
+    vinculado: bool,
 }
 
 async fn mercado(State(st): State<Estado>) -> impl IntoResponse {
