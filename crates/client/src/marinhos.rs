@@ -1,36 +1,28 @@
-//! Marine bodies have fins and animated tails, with no walking legs.
+//! Marine voxel rigs use the same greedy mesher as the rest of the game.
 use crate::gpu_estatica::{MalhaEstatica, Programa};
-use macroquad::models::{Mesh, Vertex};
+use macroquad::models::Mesh;
 use macroquad::prelude::*;
 use std::cell::RefCell;
 
-fn triangle(m: &mut Mesh, a: Vec3, b: Vec3, c: Vec3, color: Color) {
-    let i = m.vertices.len() as u16;
-    for position in [a, b, c] {
-        m.vertices.push(Vertex {
-            position,
-            uv: Vec2::ZERO,
-            color: color.into(),
-            normal: Vec4::ZERO,
-        });
-    }
-    m.indices
-        .extend_from_slice(&[i, i + 1, i + 2, i + 2, i + 1, i]);
-}
+// Coral ornaments also use discrete cubes, matching the creature assets.
 fn ellipsoid(m: &mut Mesh, p: Vec3, size: Vec3, color: Color) {
-    let point = |j: usize, k: usize| {
-        let lat = -std::f32::consts::FRAC_PI_2 + j as f32 * std::f32::consts::PI / 6.;
-        let lon = k as f32 * std::f32::consts::TAU / 10.;
-        p + vec3(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()) * size
-    };
-    for j in 0..6 {
-        for k in 0..10 {
-            let shade = 0.65 + j as f32 * 0.055;
-            let tint = Color::new(color.r * shade, color.g * shade, color.b * shade, 1.);
-            triangle(m, point(j, k), point(j + 1, k), point(j + 1, k + 1), tint);
-            triangle(m, point(j, k), point(j + 1, k + 1), point(j, k + 1), tint);
+    let step = 0.14;
+    let mut o = crate::dungeon_cenario::Obra::nova();
+    let counts = (size / step).ceil().as_ivec3();
+    for x in -counts.x..=counts.x {
+        for y in -counts.y..=counts.y {
+            for z in -counts.z..=counts.z {
+                let q = vec3(x as f32, y as f32, z as f32) * step;
+                if (q / size).length_squared() <= 1. {
+                    o.caixa(p + q, Vec3::splat(step), color, 0.);
+                }
+            }
         }
     }
+    let offset = m.vertices.len() as u16;
+    m.vertices.extend(o.mesh.vertices);
+    m.indices
+        .extend(o.mesh.indices.into_iter().map(|i| i + offset));
 }
 fn empty() -> Mesh {
     Mesh {
@@ -40,227 +32,67 @@ fn empty() -> Mesh {
     }
 }
 struct Model {
-    body: MalhaEstatica,
-    tail: MalhaEstatica,
+    body: Vec<MalhaEstatica>,
+    tail: Vec<MalhaEstatica>,
     horizontal: bool,
     pivot: Vec3,
 }
+fn asset(kind: u16) -> &'static [u8] {
+    match kind {
+        70 => include_bytes!("../../../assets/vox/marinhos/70.vox"),
+        71 => include_bytes!("../../../assets/vox/marinhos/71.vox"),
+        72 => include_bytes!("../../../assets/vox/marinhos/72.vox"),
+        73 => include_bytes!("../../../assets/vox/marinhos/73.vox"),
+        75 => include_bytes!("../../../assets/vox/marinhos/75.vox"),
+        76 => include_bytes!("../../../assets/vox/marinhos/76.vox"),
+        90 => include_bytes!("../../../assets/vox/marinhos/90.vox"),
+        91 => include_bytes!("../../../assets/vox/marinhos/91.vox"),
+        92 => include_bytes!("../../../assets/vox/marinhos/92.vox"),
+        93 => include_bytes!("../../../assets/vox/marinhos/93.vox"),
+        _ => unreachable!("not a marine kind"),
+    }
+}
+fn voxel_size(kind: u16) -> f32 {
+    match kind {
+        90 => 0.18,
+        71 | 73 | 75 | 91 | 92 => 0.045,
+        93 => 0.06,
+        _ => 0.055,
+    }
+}
 fn model(kind: u16) -> Model {
-    let mut body = empty();
-    let mut tail = empty();
-    let sea = Color::from_rgba(67, 137, 158, 255);
-    let belly = Color::from_rgba(191, 216, 210, 255);
-    let human = matches!(kind, 71 | 73 | 75 | 91 | 92);
-    let whale = kind == 90;
-    let eel = kind == 72;
-    let octopus = kind == 76;
-    let pivot;
-    if octopus {
-        ellipsoid(
-            &mut body,
-            vec3(0., 0.35, 0.),
-            vec3(0.7, 0.85, 0.7),
-            Color::from_rgba(147, 83, 151, 255),
-        );
-        for sign in [-1., 1.] {
-            ellipsoid(
-                &mut body,
-                vec3(sign * 0.35, 0.35, 0.6),
-                Vec3::splat(0.13),
-                belly,
-            );
-        }
-        for i in 0..8 {
-            let a = i as f32 * std::f32::consts::TAU / 8.;
-            let axis = vec3(a.cos(), 0., a.sin());
-            for j in 1..=6 {
-                let f = j as f32 / 6.;
-                ellipsoid(
-                    &mut tail,
-                    axis * (0.3 + f * 1.7) + vec3(0., -0.3 + (f * 3.).sin() * 0.25, 0.),
-                    Vec3::splat(0.25 * (1. - f * 0.7)),
-                    sea,
-                );
-            }
-        }
-        pivot = Vec3::ZERO;
-    } else if human {
-        let siren = matches!(kind, 75 | 91);
-        let skin = if siren {
-            Color::from_rgba(161, 207, 195, 255)
+    let s = voxel_size(kind);
+    let origin = [36., 64., 16.];
+    let tail_origin = match kind {
+        71 | 73 | 75 | 91 | 92 => [36., 60., 26.],
+        76 => origin,
+        90 => [36., 44., 16.],
+        _ => [36., 46., 16.],
+    };
+    let pivot = vec3(
+        tail_origin[0] - origin[0],
+        tail_origin[2] - origin[2],
+        tail_origin[1] - origin[1],
+    ) * s;
+    let mut body = Vec::new();
+    let mut tail = Vec::new();
+    for (name, part) in
+        crate::vox::parse_nomeado(asset(kind)).expect("validated marine voxel asset")
+    {
+        let o = if name == "tail" { tail_origin } else { origin };
+        let meshes = crate::vox::mesh_na_origem(&part, s, o)
+            .into_iter()
+            .map(MalhaEstatica::nova);
+        if name == "tail" {
+            tail.extend(meshes);
         } else {
-            sea
-        };
-        ellipsoid(&mut body, vec3(0., 0.4, 0.), vec3(0.27, 0.4, 0.19), skin);
-        ellipsoid(&mut body, vec3(0., 1., 0.), vec3(0.23, 0.27, 0.23), skin);
-        ellipsoid(&mut body, vec3(-0.37, 0.3, 0.), vec3(0.12, 0.4, 0.12), skin);
-        ellipsoid(&mut body, vec3(0.37, 0.3, 0.), vec3(0.12, 0.4, 0.12), skin);
-        if siren {
-            ellipsoid(
-                &mut body,
-                vec3(0., 1.1, -0.14),
-                vec3(0.28, 0.29, 0.19),
-                Color::from_rgba(104, 54, 146, 255),
-            );
-        } else {
-            let mut weapon = crate::dungeon_cenario::Obra::nova();
-            weapon.caixa(vec3(0.55, 0.4, 0.12), vec3(0.05, 1.8, 0.05), belly, 0.);
-            for x in [-0.15, 0., 0.15] {
-                weapon.caixa(vec3(0.55 + x, 1.35, 0.12), vec3(0.05, 0.4, 0.05), belly, 0.);
-            }
-            let offset = body.vertices.len() as u16;
-            body.vertices.extend(weapon.mesh.vertices);
-            body.indices
-                .extend(weapon.mesh.indices.into_iter().map(|i| i + offset));
-        }
-        pivot = vec3(0., 0., 0.);
-        ellipsoid(
-            &mut tail,
-            vec3(0., -0.35, -0.3),
-            vec3(0.25, 0.35, 0.55),
-            sea,
-        );
-        triangle(
-            &mut tail,
-            vec3(0., -0.4, -0.75),
-            vec3(-0.5, -0.5, -1.25),
-            vec3(0., -0.5, -1.05),
-            sea,
-        );
-        triangle(
-            &mut tail,
-            vec3(0., -0.4, -0.75),
-            vec3(0.5, -0.5, -1.25),
-            vec3(0., -0.5, -1.05),
-            sea,
-        );
-    } else {
-        let length = if whale {
-            2.8
-        } else if eel {
-            1.55
-        } else {
-            1.25
-        };
-        let width = if whale {
-            0.85
-        } else if eel {
-            0.18
-        } else {
-            0.38
-        };
-        let color = if whale {
-            Color::from_rgba(57, 91, 119, 255)
-        } else {
-            sea
-        };
-        ellipsoid(
-            &mut body,
-            Vec3::ZERO,
-            vec3(width, width * 0.85, length),
-            color,
-        );
-        ellipsoid(
-            &mut body,
-            vec3(0., -width * 0.43, length * 0.2),
-            vec3(width * 0.8, width * 0.44, length * 0.76),
-            belly,
-        );
-        for sign in [-1., 1.] {
-            triangle(
-                &mut body,
-                vec3(sign * width * 0.5, 0., 0.2),
-                vec3(sign * width * 3., -0.12, -0.7),
-                vec3(sign * width * 0.6, 0., -0.8),
-                color,
-            );
-            ellipsoid(
-                &mut body,
-                vec3(sign * width * 0.8, width * 0.15, length * 0.7),
-                Vec3::splat(if whale { 0.065 } else { 0.045 }),
-                BLACK,
-            );
-        }
-        if !eel {
-            triangle(
-                &mut body,
-                vec3(0., width * 0.7, 0.1),
-                vec3(0., width * 2.1, -0.35),
-                vec3(0., width * 0.7, -0.8),
-                color,
-            );
-        }
-        if kind == 93 {
-            for i in 0..5 {
-                let x = (i as f32 - 2.) * 0.48;
-                let height = 1.1 + (i % 2) as f32 * 0.5;
-                ellipsoid(
-                    &mut body,
-                    vec3(x, height * 0.5, 0.7),
-                    vec3(0.18, height * 0.65, 0.2),
-                    sea,
-                );
-                ellipsoid(
-                    &mut body,
-                    vec3(x, height, 1.05),
-                    vec3(0.24, 0.22, 0.55),
-                    sea,
-                );
-                for sign in [-1., 1.] {
-                    ellipsoid(
-                        &mut body,
-                        vec3(x + sign * 0.2, height + 0.08, 1.3),
-                        Vec3::splat(0.06),
-                        Color::from_rgba(241, 220, 77, 255),
-                    );
-                }
-                triangle(
-                    &mut body,
-                    vec3(x - 0.2, height + 0.15, 0.7),
-                    vec3(x, height + 0.65, 0.55),
-                    vec3(x + 0.2, height + 0.15, 0.7),
-                    belly,
-                );
-            }
-        }
-        pivot = vec3(0., 0., -length * 0.78);
-        ellipsoid(
-            &mut tail,
-            vec3(0., 0., -length * 0.17),
-            vec3(width * 0.32, width * 0.35, length * 0.38),
-            color,
-        );
-        if whale {
-            for sign in [-1., 1.] {
-                triangle(
-                    &mut tail,
-                    vec3(0., 0., -length * 0.4),
-                    vec3(sign * 1.1, 0., -length * 0.8),
-                    vec3(sign * 0.4, 0., -length * 0.48),
-                    color,
-                );
-            }
-        } else {
-            triangle(
-                &mut tail,
-                vec3(0., 0., -length * 0.35),
-                vec3(0., width * 2., -length * 0.85),
-                vec3(0., 0., -length * 0.65),
-                color,
-            );
-            triangle(
-                &mut tail,
-                vec3(0., 0., -length * 0.35),
-                vec3(0., -width * 1.3, -length * 0.8),
-                vec3(0., 0., -length * 0.65),
-                color,
-            );
+            body.extend(meshes);
         }
     }
     Model {
-        body: MalhaEstatica::nova(body),
-        tail: MalhaEstatica::nova(tail),
-        horizontal: whale || human,
+        body,
+        tail,
+        horizontal: matches!(kind, 90 | 71 | 73 | 75 | 91 | 92),
         pivot,
     }
 }
@@ -271,7 +103,11 @@ pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
     }
     let t = get_time() as f32;
     let phase = t * 3.5 + (seed % 113) as f32;
-    let position = p + vec3(0., 0.85 + phase.sin() * 0.09, 0.);
+    let position = p + vec3(
+        0.,
+        (if kind == 90 { 2.0 } else { 0.85 }) + phase.sin() * 0.09,
+        0.,
+    );
     let transform = Mat4::from_scale_rotation_translation(
         Vec3::splat(scale),
         Quat::from_rotation_y(yaw),
@@ -284,7 +120,7 @@ pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
             recorte: Vec3::ZERO,
             recorte_z: 0.,
         };
-        crate::gpu_estatica::desenha_com_modelo(program, [&m.body], transform);
+        crate::gpu_estatica::desenha_com_modelo(program, m.body.iter(), transform);
         let angle = phase.sin() * 0.25;
         let rotation = if m.horizontal {
             Quat::from_rotation_x(angle)
@@ -293,7 +129,7 @@ pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
         };
         crate::gpu_estatica::desenha_com_modelo(
             program,
-            [&m.tail],
+            m.tail.iter(),
             transform * Mat4::from_translation(m.pivot) * Mat4::from_quat(rotation),
         );
     });
@@ -402,5 +238,96 @@ pub fn cenario(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
             continue;
         }
         desenha(90, vec3(p.x, chao(p.x, p.y) + 12., p.y), -a, i, 1.8);
+    }
+}
+
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let output =
+        std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-marine-voxels".into());
+    std::fs::create_dir_all(&output).unwrap();
+    next_frame().await;
+    let rt = render_target_ex(
+        1280,
+        800,
+        RenderTargetParams {
+            depth: true,
+            sample_count: 1,
+        },
+    );
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::render3d::define_abismo(false);
+    crate::gpu_estatica::define_luz_dia(1.);
+    crate::gpu_estatica::define_neblina(Vec2::ZERO, 0., 0.);
+    let material = crate::render3d::material_solido();
+    material.set_uniform("LuzDia", 1.0f32);
+    for kind in [70, 71, 72, 73, 75, 76, 90, 91, 92, 93] {
+        let distance = if kind == 90 {
+            23.
+        } else if kind == 93 {
+            9.
+        } else {
+            6.
+        };
+        let cam = Camera3D {
+            position: vec3(distance * 0.7, distance * 0.55, distance),
+            target: vec3(0., 1., 0.),
+            up: Vec3::Y,
+            render_target: Some(rt.clone()),
+            aspect: Some(1.6),
+            ..Default::default()
+        };
+        set_camera(&cam);
+        clear_background(Color::from_rgba(75, 93, 108, 255));
+        macroquad::material::gl_use_material(&material);
+        draw_cube(
+            vec3(0., -0.2, 0.),
+            vec3(40., 0.3, 40.),
+            None,
+            Color::from_rgba(127, 139, 144, 255),
+        );
+        desenha(kind, Vec3::ZERO, 0., kind as u64, 1.);
+        if kind == 90 {
+            draw_cube(
+                vec3(-5., 0.9, 5.),
+                vec3(0.6, 1.8, 0.4),
+                None,
+                Color::from_rgba(222, 177, 99, 255),
+            );
+        }
+        macroquad::material::gl_use_default_material();
+        unsafe {
+            get_internal_gl().flush();
+        }
+        rt.texture
+            .get_texture_data()
+            .export_png(&format!("{output}/{kind}.png"));
+        next_frame().await;
+    }
+    crate::render3d::define_alvo(None);
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn marine_assets_are_voxel_rigs_with_separate_swimming_tails() {
+        for kind in [70, 71, 72, 73, 75, 76, 90, 91, 92, 93] {
+            let parts = crate::vox::parse_nomeado(asset(kind)).unwrap();
+            assert_eq!(parts.len(), 2);
+            assert!(parts.iter().any(|(n, _)| n == "body"));
+            assert!(parts.iter().any(|(n, _)| n == "tail"));
+            for (_, part) in parts {
+                let meshes = crate::vox::mesh_na_origem(&part, voxel_size(kind), [36., 64., 16.]);
+                assert!(!meshes.is_empty());
+                for m in meshes {
+                    assert!(m.vertices.iter().all(|v| v.position.is_finite()));
+                    assert!(m.indices.iter().all(|i| (*i as usize) < m.vertices.len()));
+                }
+            }
+        }
+        let parts = crate::vox::parse(asset(90)).unwrap();
+        let min = parts.iter().map(|p| p.bounds().0[1]).min().unwrap();
+        let max = parts.iter().map(|p| p.bounds().1[1]).max().unwrap();
+        assert!((max - min + 1) as f32 * voxel_size(90) > 16.);
     }
 }
