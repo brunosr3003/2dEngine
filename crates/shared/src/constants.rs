@@ -145,7 +145,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 181 (02/10/2026): Skyreach's island kerb comes out again (terrain back to
 /// 179's), and the cliff is drawn under a deck where it lands.
 /// 182 (02/10/2026): the character list carries skins and auras.
-pub const PROTOCOL_VERSION: u16 = 185;
+/// 186 (04/10/2026): forced update for the sword and shield's Leap and the
+/// progression rework — clients without them must not stay on.
+pub const PROTOCOL_VERSION: u16 = 186;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

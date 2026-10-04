@@ -1,3 +1,7 @@
+04/10/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: versões antigas do jogo não conectam mais. Ela garante que todos estejam com o Salto e o novo Golpe Largo da espada e escudo e com a nova progressão.
+
 04/10/2026 — Nova progressão até o nível 120
 
 Subir de nível ficou mais longo e sempre mais difícil a cada faixa: cada nível leva mais tempo que o anterior. Caçar é o principal caminho; a história principal passa a dar cerca de 12% da experiência de cada faixa de níveis a partir do nível 22, e as missões secundárias entre 10% e 20%. Os capítulos I e II continuam como eram.
