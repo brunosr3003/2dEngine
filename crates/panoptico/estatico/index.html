@@ -105,6 +105,16 @@
   canvas.grafico { display: block; margin: 4px 14px; }
   .legenda { padding: 0 14px; font-size: 11px; color: var(--fraco); }
   .legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px -1px 10px; }
+  .anexo { display: flex; gap: 8px; align-items: center; padding: 4px 14px; position: relative; }
+  .anexo input { background: #0d1014; border: 1px solid var(--linha); color: var(--texto); padding: 6px 8px; font: inherit; border-radius: 3px; }
+  .ico { width: 32px; height: 32px; flex: none; border-radius: 3px; background-color: #0d1014; border: 1px solid var(--linha); background-repeat: no-repeat; }
+  .ico.p { width: 24px; height: 24px; }
+  .escolhas { position: absolute; top: 100%; left: 54px; z-index: 5; width: 480px; max-height: 320px; overflow-y: auto;
+    background: var(--painel); border: 1px solid #3d4a5a; border-radius: 3px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+  .escolha { display: flex; gap: 8px; align-items: center; padding: 4px 8px; cursor: pointer; }
+  .escolha.sel, .escolha:hover { background: #1e2a38; }
+  .escolha .en { color: var(--fraco); font-size: 11px; white-space: nowrap; }
+  .escolha .id { margin-left: auto; color: var(--fraco); font-size: 11px; }
   button.acao { background: #1e2a38; color: var(--texto); border: 1px solid #3d4a5a; padding: 5px 10px; font: inherit; border-radius: 3px; cursor: pointer; }
   button.acao:hover { background: #26364a; }
   pre.msg { white-space: pre-wrap; word-break: break-word; margin: 0; text-align: left; font: inherit; }
@@ -327,7 +337,7 @@
     </div>
   </div>
   <h2>Anexos (até 8)</h2>
-  <div class="tabela" id="co-anexos"></div>
+  <div id="co-anexos"></div>
   <button class="aba" id="co-mais" style="width:auto;padding:6px 14px">+ item</button>
   <h2></h2>
   <button class="aba" id="co-enviar" style="width:auto;padding:8px 20px">enviar</button>
@@ -1250,21 +1260,87 @@ function busca() {
 // Os anexos sao linhas que se somam: o servidor aceita ate' 8 itens
 // distintos, ate' 100.000 de cada.
 let coAnexos = [];
-function montaCorreio() {
+// Item catalog (PT name from the game's dictionary + DB name + icon from the
+// client's atlas). Search ignores accents and case, over PT, EN or the id.
+let coCatalogo = null;
+const normaliza = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+async function carregaCatalogo() {
+  if (coCatalogo) return coCatalogo;
+  const d = await (await fetch('api/catalogo')).json();
+  d.itens.forEach(it => { it.busca = normaliza(`${it.pt} ${it.nome} ${it.id}`); });
+  d.porId = new Map(d.itens.map(it => [it.id, it]));
+  return (coCatalogo = d);
+}
+function icone(it, classe = '') {
+  const c = coCatalogo, px = classe ? 24 : 32;
+  if (!it || it.celula == null) return `<span class="ico ${classe}"></span>`;
+  const k = px / c.lado;
+  const x = (it.celula % c.colunas) * px, y = Math.floor(it.celula / c.colunas) * px;
+  return `<span class="ico ${classe}" style="background-image:url(api/icones.png);background-size:${c.largura * k}px ${c.altura * k}px;background-position:-${x}px -${y}px"></span>`;
+}
+function rotulo(it) { return it.pt; }
+function buscaItens(texto) {
+  const q = normaliza(texto);
+  if (!q) return coCatalogo.itens.slice(0, 40);
+  const termos = q.split(/\s+/);
+  const exato = /^\d+$/.test(q) ? coCatalogo.porId.get(Number(q)) : null;
+  const r = coCatalogo.itens.filter(it => it !== exato && termos.every(t => it.busca.includes(t)));
+  return (exato ? [exato, ...r] : r).slice(0, 40);
+}
+async function montaCorreio() {
+  // The tab's 20 s refresh calls this again: redrawing would steal focus
+  // from someone typing mid-search.
+  if (document.getElementById('co-anexos').childElementCount) return;
   if (!coAnexos.length) coAnexos = [{ item_id: '', qtd: 1 }];
+  try { await carregaCatalogo(); } catch (e) {
+    document.getElementById('co-resultado').textContent = 'catalogo de itens falhou: ' + e;
+    return;
+  }
   desenhaAnexos();
 }
 function desenhaAnexos() {
   const el = document.getElementById('co-anexos');
   el.innerHTML = '';
   coAnexos.forEach((a, i) => {
+    const it = coCatalogo.porId.get(Number(a.item_id));
     const l = document.createElement('div');
-    l.className = 'linha';
-    l.innerHTML = `<input value="${a.item_id}" placeholder="item_id" style="width:120px">
-      <input value="${a.qtd}" placeholder="qtd" style="width:100px">
-      <button style="width:auto;padding:2px 10px">x</button>`;
-    const [id, qtd, tira] = l.querySelectorAll('input, button');
-    id.oninput = () => { coAnexos[i].item_id = id.value; };
+    l.className = 'anexo';
+    l.innerHTML = `${icone(it)}
+      <input placeholder="buscar item (nome ou id)" style="width:300px">
+      <input value="${esc(String(a.qtd))}" placeholder="qtd" style="width:80px">
+      <span class="nota" style="padding:0">${it ? `#${it.id}${it.pt !== it.nome ? ` · ${esc(it.nome)}` : ''} · pilha ${it.pilha}` : ''}</span>
+      <button class="acao" style="padding:2px 10px">x</button>
+      <div class="escolhas" hidden></div>`;
+    const [busca, qtd] = l.querySelectorAll('input');
+    const tira = l.querySelector('button');
+    const lista = l.querySelector('.escolhas');
+    busca.value = it ? rotulo(it) : '';
+    let achados = [], sel = 0;
+    const escolhe = x => { coAnexos[i].item_id = x.id; desenhaAnexos(); };
+    const mostra = () => {
+      achados = buscaItens(busca.value === (it && rotulo(it)) ? '' : busca.value);
+      sel = Math.min(sel, Math.max(0, achados.length - 1));
+      lista.innerHTML = achados.map((x, k) =>
+        `<div class="escolha${k === sel ? ' sel' : ''}" data-k="${k}">${icone(x, 'p')}
+           <span>${esc(x.pt)}${x.pt !== x.nome ? ` <span class="en">${esc(x.nome)}</span>` : ''}</span>
+           <span class="id">#${x.id}</span></div>`).join('') || '<div class="vazio">nada</div>';
+      lista.hidden = false;
+      lista.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+    };
+    busca.onfocus = () => { busca.select(); sel = 0; mostra(); };
+    busca.oninput = () => { sel = 0; mostra(); };
+    busca.onkeydown = e => {
+      if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, achados.length - 1); mostra(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); mostra(); e.preventDefault(); }
+      else if (e.key === 'Enter' && achados[sel]) { escolhe(achados[sel]); e.preventDefault(); }
+      else if (e.key === 'Escape') { busca.blur(); }
+    };
+    // mousedown fires before blur: the click picks before the list hides.
+    lista.onmousedown = e => {
+      const d = e.target.closest('.escolha');
+      if (d) { e.preventDefault(); escolhe(achados[Number(d.dataset.k)]); }
+    };
+    busca.onblur = () => { lista.hidden = true; busca.value = it ? rotulo(it) : ''; };
     qtd.oninput = () => { coAnexos[i].qtd = qtd.value; };
     tira.onclick = () => { coAnexos.splice(i, 1); desenhaAnexos(); };
     el.appendChild(l);
