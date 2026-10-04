@@ -42,7 +42,7 @@ pub fn do_papel(papel: u8) -> Option<Icone> {
         Icone::Ui("forja")
     } else if p(Papel::Deposito) {
         Icone::Ui("banco")
-    } else if p(Papel::Estaleiro) {
+    } else if p(Papel::Estaleiro) || p(Papel::Motorista) || p(Papel::Submarino) {
         Icone::Mapa("porto")
     } else if p(Papel::Missoes) {
         Icone::Ui("missoes")
@@ -121,6 +121,8 @@ mod tests {
             Papel::Ferreiro,
             Papel::Deposito,
             Papel::Estaleiro,
+            Papel::Motorista,
+            Papel::Submarino,
             Papel::Missoes,
         ] {
             assert!(do_papel(p as u8).is_some(), "{p:?} sem icone");
