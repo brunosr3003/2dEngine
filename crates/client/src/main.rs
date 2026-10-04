@@ -39,6 +39,7 @@ mod ganhos;
 mod gpu_estatica;
 mod luzes;
 mod abismo;
+mod capacete_abissal;
 mod marinhos;
 mod hidra;
 mod habilidades;
@@ -727,6 +728,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_KOGEN").is_ok() {
         terreno::previa_kogen(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_CAPACETE").is_ok() {
+        capacete_abissal::previa(&vox).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -6022,7 +6028,7 @@ impl Jogo {
             luzes::desenha_halos(&vista.cam, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
             // Abyssia: the bubble, rays, motes, fish and everyone's helmet.
             if render3d::abismo() {
-                abismo::desenha(&vista.cam, Some(&self.world), &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
+                abismo::desenha(&vista.cam, &|x, z| terreno.map_or(0.0, |t| t.altura(x, z)));
             }
             gl_use_material(&self.solido);
         }

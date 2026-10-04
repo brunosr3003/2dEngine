@@ -1,3 +1,9 @@
+04/10/2026 — Capacete de bolha de Abyssia em 3D
+
+A bolha na cabeça agora é um capacete de vidro em três dimensões, com transparência suave, reflexo discreto e aro em blocos no pescoço. O brilho forte que cobria o rosto foi removido. O vidro se ajusta ao cabelo ou chapéu escolhido e fecha junto ao aro.
+
+O capacete acompanha a posição e a rotação reais da cabeça nas animações, incluindo caminhada, combate, salto e montarias. Continua automático para os personagens em Abyssia.
+
 04/10/2026 — Hidra volta a caminhar e ataques mais visíveis
 
 A Hidra estava herdando velocidade zero por não ter um preset de monstro comum no banco. Agora tem velocidade, alcance de mordida e detecção próprios: persegue o jogador, para durante a preparação do telegráfico e volta a caminhar entre ataques.

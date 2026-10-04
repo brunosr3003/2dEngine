@@ -1,5 +1,5 @@
 //! THE DEEP's effects (Abyssia, `shared::abissal`): what makes the sea floor
-//! read as under the sea, all of it additive light drawn after the world:
+//! read as under the sea, with light effects drawn after the world:
 //!
 //! * the BUBBLE over the kingdom: a huge glassy dome, bright at its rim and
 //!   almost clear where you look through it;
@@ -12,7 +12,6 @@
 use macroquad::prelude::*;
 use std::f32::consts::TAU;
 
-use crate::world::World;
 
 /// A soft-edged quad strip and disc builder over one additive mesh.
 #[derive(Default)]
@@ -162,60 +161,6 @@ fn cardumes(l: &mut Lote, cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32, t: f32
     }
 }
 
-/// The bubble helmet round a head at `cabeca`: a glassy sphere, bright at
-/// its rim, a highlight up-left, a ring at the neck, a bubble now and then.
-fn capacete(l: &mut Lote, cam: &Camera3D, cabeca: Vec3, t: f32, seed: f32) {
-    const RAIO: f32 = 0.46;
-    let olho = (cam.position - cabeca).normalize_or_zero();
-    let lado = olho.cross(Vec3::Y).normalize_or_zero();
-    let cima = lado.cross(olho).normalize_or_zero();
-    let vidro = Color::new(0.7, 0.95, 1.0, 1.0);
-    // A disc facing the camera, its alpha rising to the rim.
-    const N: usize = 24;
-    let centro = (cabeca, alfa(vidro, 0.04));
-    for k in 0..N {
-        let a0 = k as f32 / N as f32 * TAU;
-        let a1 = (k + 1) as f32 / N as f32 * TAU;
-        let p = |a: f32, r: f32| cabeca + (lado * a.cos() + cima * a.sin()) * r;
-        l.tri(centro, (p(a0, RAIO * 0.8), alfa(vidro, 0.07)), (p(a1, RAIO * 0.8), alfa(vidro, 0.07)));
-        l.quad(
-            (p(a0, RAIO * 0.8), alfa(vidro, 0.07)),
-            (p(a0, RAIO), alfa(vidro, 0.4)),
-            (p(a1, RAIO), alfa(vidro, 0.4)),
-            (p(a1, RAIO * 0.8), alfa(vidro, 0.07)),
-        );
-    }
-    // The highlight.
-    let brilho = cabeca + (cima * 0.55 - lado * 0.4) * RAIO;
-    let b = Color::new(1.0, 1.0, 1.0, 0.55);
-    l.quad(
-        (brilho - lado * 0.06, alfa(b, 0.0)),
-        (brilho + cima * 0.05, b),
-        (brilho + lado * 0.06, alfa(b, 0.0)),
-        (brilho - cima * 0.05, b),
-    );
-    // The neck ring.
-    let pescoco = cabeca - Vec3::Y * RAIO * 0.85;
-    let anel = Color::new(0.75, 0.8, 0.85, 0.55);
-    for k in 0..N {
-        let a0 = k as f32 / N as f32 * TAU;
-        let a1 = (k + 1) as f32 / N as f32 * TAU;
-        let p = |a: f32, r: f32, dy: f32| pescoco + vec3(a.cos() * r, dy, a.sin() * r);
-        l.quad((p(a0, 0.3, 0.0), anel), (p(a1, 0.3, 0.0), anel), (p(a1, 0.3, 0.05), anel), (p(a0, 0.3, 0.05), anel));
-    }
-    // A bubble rising from the helmet every few seconds.
-    let ciclo = (t * 0.45 + seed).fract();
-    let bolha = cabeca + Vec3::Y * (RAIO + ciclo * 2.2) + lado * (ciclo * 8.0 + seed).sin() * 0.1;
-    let a = 0.5 * (1.0 - ciclo);
-    let r = 0.06 + ciclo * 0.05;
-    for k in 0..8 {
-        let a0 = k as f32 / 8.0 * TAU;
-        let a1 = (k + 1) as f32 / 8.0 * TAU;
-        let p = |ang: f32| bolha + (lado * ang.cos() + cima * ang.sin()) * r;
-        l.tri((bolha, alfa(vidro, a * 0.2)), (p(a0), alfa(vidro, a)), (p(a1), alfa(vidro, a)));
-    }
-}
-
 thread_local! {
     static MATERIAL: std::cell::OnceCell<Material> = const { std::cell::OnceCell::new() };
 }
@@ -257,7 +202,7 @@ fn material() -> Material {
 }
 
 /// Everything above, for one frame. Draw after the world, with its camera.
-pub fn desenha(cam: &Camera3D, world: Option<&World>, chao: &dyn Fn(f32, f32) -> f32) {
+pub fn desenha(cam: &Camera3D, chao: &dyn Fn(f32, f32) -> f32) {
     crate::marinhos::cenario(cam, chao);
     let t = get_time() as f32;
     let chao_y = shared::abissal::NIVEL_CHAO as f32 * shared::terreno::BLOCO;
@@ -268,16 +213,8 @@ pub fn desenha(cam: &Camera3D, world: Option<&World>, chao: &dyn Fn(f32, f32) ->
     }
     particulas(&mut l, cam, chao(cam.target.x, cam.target.z), t);
     cardumes(&mut l, cam, chao, t);
-    if let Some(w) = world {
-        for e in w.ents.values() {
-            if e.meta.tag != shared::EntityTag::Player || e.render_y == f32::MIN {
-                continue;
-            }
-            let cabeca = vec3(e.render_pos.x, e.render_y + 1.48, e.render_pos.y);
-            capacete(&mut l, cam, cabeca, t, (e.meta.id.0 % 97) as f32 * 0.37);
-        }
-    }
     gl_use_material(&material());
     l.desenha();
     gl_use_default_material();
+    crate::capacete_abissal::desenha(cam);
 }

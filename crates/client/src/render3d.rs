@@ -1756,6 +1756,7 @@ pub fn draw_entities_com_sombras(
     vista: &Vista,
     sombras: crate::config_graficos::Sombras,
 ) {
+    crate::capacete_abissal::inicia_frame();
     let order: Vec<_> = world.draw_order().to_vec();
     if sombras != crate::config_graficos::Sombras::Desligadas {
         desenha_sombras(world, &order, vista, sombras);
@@ -2335,6 +2336,12 @@ fn desenha_personagem(
         * Mat4::from_rotation_x(-cai + inclina)
         * Mat4::from_scale(vec3(1.0 + 0.5 * s, 1.0 - s, 1.0 + 0.5 * s));
     let (mats, armas) = desenha_rig(base, &pose, veste, vox, clarao(e, eu));
+    if abismo() && e.meta.tag == shared::EntityTag::Player {
+        crate::capacete_abissal::registra(mats[1],
+            veste.peca("cabeca").map_or(&[], Vec::as_slice),
+            veste.peca("cabelo").map_or(&[], Vec::as_slice));
+    }
+
     if e.meta.tag == shared::EntityTag::Player && e.morte.is_none() {
         crate::auras::personagem(e.meta.auras, &mats, &armas, vox,
             if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0 as u32,

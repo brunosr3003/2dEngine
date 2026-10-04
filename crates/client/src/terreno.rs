@@ -2813,7 +2813,7 @@ pub async fn previa_abissal() {
             if nome == "hydra" {crate::marinhos::desenha(93,vec3(centro.x,chao,centro.y),0.4,93,2.8);}
             crate::agua::desenha(&t, &cam, 0.0);
             crate::luzes::desenha_halos(&cam, &|x, z| t.altura(x, z));
-            crate::abismo::desenha(&cam, None, &|x, z| t.altura(x, z));
+            crate::abismo::desenha(&cam, &|x, z| t.altura(x, z));
             macroquad::material::gl_use_default_material();
             unsafe { get_internal_gl().flush() };
             rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
