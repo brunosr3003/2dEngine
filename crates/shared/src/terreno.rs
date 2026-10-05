@@ -66,6 +66,10 @@ pub const VAO_LIVRE: i32 = 5;
 /// quando a volta sai mais cara.
 pub const CUSTO_DO_PULO: i64 = 1000;
 
+/// Extra room a route point keeps from walls and trunks, beyond the body's
+/// radius, when the cell has it (`caminho_evitando`).
+const FOLGA_DA_ROTA: f32 = 0.3;
+
 /// Lado da celula do A*, em blocos. Oito blocos = quatro unidades.
 ///
 /// Grossa de proposito: a ilha grande tem 10,2 milhoes de colunas e A* nelas
@@ -4896,7 +4900,20 @@ impl Ilha {
             );
             match no_cais(cru) {
                 Some(deck) if !self.ocupado(deck, crate::constants::ENTITY_RADIUS) => deck,
-                _ => self.ponto_livre_perto(cru, crate::constants::ENTITY_RADIUS),
+                _ => {
+                    // ROOM TO SPARE first: a point that only just fits put the
+                    // route 0.05 off a cabin's corner, and the body crept
+                    // along that corner for seconds until the follower gave
+                    // up (Velin, 05/10/2026). Where no roomy point exists (a
+                    // narrow gap), the tight one still serves.
+                    let r = crate::constants::ENTITY_RADIUS;
+                    let folgado = self.ponto_livre_perto(cru, r + FOLGA_DA_ROTA);
+                    if !self.ocupado(folgado, r + FOLGA_DA_ROTA) {
+                        folgado
+                    } else {
+                        self.ponto_livre_perto(cru, r)
+                    }
+                }
             }
         };
         let bruto = |c: (i32, i32)| -> glam::Vec2 {
@@ -6366,7 +6383,7 @@ mod testes {
     /// E' o unico jeito de o teste responder a pergunta que o jogador faz —
     /// "o boneco travou?" — porque cada uma dessas tres pecas passa sozinha e
     /// e' o conjunto que falha.
-    fn simula_ida(i: &Ilha, de: glam::Vec2, para: glam::Vec2) -> glam::Vec2 {
+    pub(crate) fn simula_ida(i: &Ilha, de: glam::Vec2, para: glam::Vec2) -> glam::Vec2 {
         const REFAZ_MAX: u32 = 8;
         let dt = 1.0 / 30.0;
         let vel = 5.0;
@@ -7286,6 +7303,27 @@ mod testes_do_cais {
     /// dono relatou — "o A* não sabe sair disso nem contornar as casas" — não
     /// se reproduz assim, e enquanto não houver um caso concreto o que este
     /// teste garante é só que sair de dentro de um prédio continua possível.
+    /// Velin, stuck behind the Master's cabin on the Bosque (05/10/2026).
+    ///
+    /// Two faults stacked: the route point only just cleared the cabin's
+    /// corner, so the body crept along it until the follower gave up; and
+    /// the re-route took the eaves behind the back wall for "inside the
+    /// cabin" and sent the body to the door on the far side, through the
+    /// wall, forever. From her real spot, walking around the cabin arrives.
+    #[test]
+    fn atras_da_cabana_do_mestre_nao_prende() {
+        let def = ARQUIPELAGO.iter().find(|d| d.zona == "ilha_inicial").unwrap();
+        let ilha = Ilha::da_ilha(def);
+        let de = glam::Vec2::new(115.997, -259.599);
+        // Under the eaves, behind the back wall: outside.
+        assert_eq!(crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(119.95, -260.94)), None);
+        // Inside the room: the door is the way out.
+        assert!(crate::vila::saida_do_predio(ilha.vila(), glam::Vec2::new(117.1, -263.0)).is_some());
+        let para = glam::Vec2::new(116.0, -320.0);
+        let fim = crate::terreno::testes::simula_ida(&ilha, de, para);
+        assert!(fim.distance(para) < 2.0, "stopped at {:.1},{:.1}", fim.x, fim.y);
+    }
+
     #[test]
     fn de_dentro_da_casa_da_pra_sair() {
         // Uma ilha só: montá-la é caro, e o defeito não é de uma em especial.

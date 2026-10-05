@@ -1023,12 +1023,22 @@ fn eixo_x_para(dir: Vec2) -> u8 {
 /// já pronto, e deixá-lo começar dali.
 pub fn saida_do_predio(vila: &Vila, p: Vec2) -> Option<Vec2> {
     for pd in &vila.predios {
-        let dentro = pd
-            .construcao()
-            .caixas_mundo(pd.pos, pd.yaw_q)
-            .iter()
-            .any(|(mn, mx)| p.x >= mn.x && p.x <= mx.x && p.y >= mn.z && p.y <= mx.z);
-        if dentro {
+        // INSIDE = within the WALLS, not under any box of the building. The
+        // roof overhangs the walls: with every box counted, standing behind
+        // the Master's cabin under its eaves read as "inside", the route
+        // started at the door on the far side, through the back wall, and
+        // the body pushed that wall forever (Velin, 05/10/2026). Only the
+        // boxes that block a body (`caixas_solidas`' height band) outline
+        // the room.
+        let mut min = Vec2::splat(f32::MAX);
+        let mut max = Vec2::splat(f32::MIN);
+        for (mn, mx) in pd.construcao().caixas_mundo(pd.pos, pd.yaw_q) {
+            if mn.y - pd.chao < TETO_DA_COLISAO && mx.y - pd.chao > PISO_DA_COLISAO {
+                min = min.min(Vec2::new(mn.x, mn.z));
+                max = max.max(Vec2::new(mx.x, mx.z));
+            }
+        }
+        if p.x > min.x && p.x < max.x && p.y > min.y && p.y < max.y {
             return frente_da_porta(pd);
         }
     }

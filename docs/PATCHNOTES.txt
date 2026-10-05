@@ -4,6 +4,8 @@ Cada arma agora mostra a dificuldade de jogar, em estrelas: Espada e Escudo e An
 
 A criação agora vai em ordem: na aba Arma e Facção o botão de baixo é "Próximo: Aparência", e o nome e o botão Criar personagem ficam só na aba Aparência. Assim ninguém cria o personagem sem ter visto a aparência. Os textos novos da tela também foram traduzidos.
 
+Corrigido o caminho automático que prendia o personagem atrás da cabana do Mestre no Bosque: atrás da parede, sob o beiral do telhado, o jogo achava que você estava dentro da cabana e mandava sair pela porta, atravessando a parede. A rota também passa mais longe das quinas das construções, sem raspar nelas.
+
 05/10/2026 — A história não ocupa vaga de missão
 
 A missão da história em andamento não conta mais no limite de missões ativas, e o limite subiu de 12 para 20 missões secundárias. Antes, com 11 secundárias e a história, nenhuma outra missão podia ser pega.
