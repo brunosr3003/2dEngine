@@ -2,7 +2,7 @@
 
 Cada arma agora mostra a dificuldade de jogar, em estrelas: Espada e Escudo e Anel Mágico têm 1 estrela (fácil), Katana tem 2 (médio) e Pistolas Gêmeas têm 3 (difícil). As estrelas aparecem no cartão de cada arma e, com o nome da dificuldade, embaixo da facção.
 
-A criação agora vai em ordem: na aba Arma e Facção o botão de baixo é "Próximo: Aparência", e o nome e o botão Criar personagem ficam só na aba Aparência. Assim ninguém cria o personagem sem ter visto a aparência.
+A criação agora vai em ordem: na aba Arma e Facção o botão de baixo é "Próximo: Aparência", e o nome e o botão Criar personagem ficam só na aba Aparência. Assim ninguém cria o personagem sem ter visto a aparência. Os textos novos da tela também foram traduzidos.
 
 05/10/2026 — A história não ocupa vaga de missão
 
