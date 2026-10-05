@@ -1,3 +1,9 @@
+05/10/2026 — Calendário de presença mais claro
+
+O calendário foi redesenhado para mostrar com clareza o que você recebe. Cada dia tem um ícone grande, a quantidade em destaque e o nome inteiro do prêmio, sem cortes. O dia de hoje tem a marca HOJE, os dias de bônus (7, 14, 21 e 28) ficam numa coluna mais larga com moldura dourada, e os já resgatados aparecem esmaecidos com um visto verde.
+
+Embaixo, o quadro "Prêmio de hoje" mostra o prêmio do dia com ícone e nome completo ao lado do botão de resgatar; depois de resgatar, ele mostra o próximo prêmio e quanto falta. Os pergaminhos de invocação e o Passe Mágico ganharam ícones próprios.
+
 04/10/2026 — Missões secundárias consertadas e mais simples
 
 Todas as missões secundárias foram revisadas uma a uma: agora todas podem ser feitas na sua ilha, e a auto missão sabe para onde ir em cada uma. As missões de "traga N itens" viraram ações diretas: derrotar feras, derrotar tigres ou corujursos, ou quebrar pedras. As de Kōgen-tō e Abyssia que pediam pedras (que essas ilhas não têm) viraram caçadas.
