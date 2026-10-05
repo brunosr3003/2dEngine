@@ -1347,6 +1347,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("No delivery waiting.", "Nenhuma entrega esperando."),
     ("Nobody selling TP right now.", "Ninguém vendendo TP agora."),
     ("Lowest asking price: {} gold", "Menor preço à venda: {} gold"),
+    ("Recommended: {} gold", "Recomendado: {} gold"),
+    ("Sell all ×{} at {}", "Vender tudo ×{} por {}"),
+    ("Mounts", "Montarias"),
     ("Selling TP unlocks at level {}.", "Vender TP libera no nível {}."),
     ("{presos} bound item(s) left out of the list", "{presos} vinculado(s) fora da lista"),
     (

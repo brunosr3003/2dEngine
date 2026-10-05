@@ -1942,10 +1942,9 @@ impl GameWorld {
     pub(super) fn dg_rolar_peca(p: &dg::Premio) -> Option<shared::ItemInstance> {
         let (_, ilvl) = p.peca?;
         let tpl = crate::economy::item_template_of(p.item_id);
-        shared::ItemInstance::roll_with_template(tpl, ilvl, || fastrand::f32()).map(|mut i| {
-            i.vinculado = true;
-            i
-        })
+        // Not bound any more (05/10/2026): the owner opened the market to
+        // gear, and a chest piece is the gear worth trading.
+        shared::ItemInstance::roll_with_template(tpl, ilvl, || fastrand::f32())
     }
 
     /// Toque no bau (via `Interact`). `true` = era o bau (tratado aqui).

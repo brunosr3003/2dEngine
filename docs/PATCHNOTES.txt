@@ -1,3 +1,11 @@
+05/10/2026 — Preço recomendado no mercado, e equipamentos, pets e montarias à venda
+
+Ao escolher um item para vender, o mercado agora já preenche um preço recomendado, e o botão "Vender tudo" anuncia a pilha inteira por esse preço com um clique. O preço é só uma sugestão: você pode digitar qualquer valor, até 1.
+
+O preço recomendado sai da economia de verdade do servidor: todo o gold que os personagens têm dividido por quantas unidades do item existem no jogo, e é recalculado a cada poucos minutos. Itens que se fazem no Combinar (como o material roxo) nunca custam mais que fazê-los, contando o material, o cobre, o darksteel e o Pó. Equipamentos levam em conta a cor, o tier e o refino, seguindo a escada da forja, e pets levam junto o valor das skills que aprenderam.
+
+Equipamentos de baú de dungeon não são mais vinculados, e os que já eram foram liberados: agora dá para vender equipamentos no mercado. O mercado também ganhou as prateleiras Pets (pets, skills de pet, ração e acessórios) e Montarias (montarias e acessórios).
+
 05/10/2026 — Criação de personagem em dois passos
 
 Cada arma agora mostra a dificuldade de jogar, em estrelas: Espada e Escudo e Anel Mágico têm 1 estrela (fácil), Katana tem 2 (médio) e Pistolas Gêmeas têm 3 (difícil). As estrelas aparecem no cartão de cada arma e, com o nome da dificuldade, embaixo da facção.

@@ -42,13 +42,19 @@ pub enum Categoria {
     Material = 2,
     Consumivel = 3,
     Tp = 4,
+    /// Pets, their skill books, food and accessories.
+    Pet = 5,
+    /// Mounts and their accessories.
+    Montaria = 6,
 }
 
 impl Categoria {
     /// As abas de filtro do Comprar (a TP tem aba propria).
-    pub const FILTROS: [Categoria; 4] = [
+    pub const FILTROS: [Categoria; 6] = [
         Categoria::Todas,
         Categoria::Equipamento,
+        Categoria::Pet,
+        Categoria::Montaria,
         Categoria::Material,
         Categoria::Consumivel,
     ];
@@ -59,6 +65,8 @@ impl Categoria {
             2 => Categoria::Material,
             3 => Categoria::Consumivel,
             4 => Categoria::Tp,
+            5 => Categoria::Pet,
+            6 => Categoria::Montaria,
             _ => Categoria::Todas,
         }
     }
@@ -70,6 +78,8 @@ impl Categoria {
             Categoria::Material => "Material",
             Categoria::Consumivel => "Consumable",
             Categoria::Tp => "TP",
+            Categoria::Pet => "Pets",
+            Categoria::Montaria => "Mounts",
         }
     }
 }
@@ -77,6 +87,16 @@ impl Categoria {
 /// Em que prateleira um item cai.
 pub fn categoria_do_item(item_id: u16, equipavel: bool) -> Categoria {
     use crate::constants::item_id as it;
+    use crate::constants::EquipSlot;
+    // Pets and mounts are equipable too: they get their own shelves first.
+    match crate::constants::equip_slot_of(item_id) {
+        Some(EquipSlot::Pet | EquipSlot::AcessorioPet) => return Categoria::Pet,
+        Some(EquipSlot::Montaria | EquipSlot::AcessorioMontaria) => return Categoria::Montaria,
+        _ => {}
+    }
+    if it::e_skill_de_pet(item_id) || item_id == it::RACAO_DE_PET {
+        return Categoria::Pet;
+    }
     if equipavel {
         Categoria::Equipamento
     } else if crate::pocoes::cura_de(item_id).is_some()
@@ -344,6 +364,24 @@ mod tests {
             taxa(u64::MAX / 10),
             (u64::MAX / 10).saturating_mul(5).div_ceil(100)
         );
+    }
+
+    #[test]
+    fn pets_e_montarias_tem_prateleira_propria() {
+        use crate::constants::item_id as it;
+        let pet = it::pet_no_grau(it::PETS[0], 2);
+        let montaria = it::montaria_no_grau(it::MONTARIAS[0], 3);
+        assert_eq!(categoria_do_item(pet, true), Categoria::Pet);
+        assert_eq!(categoria_do_item(it::SKILL_PET_FARO, false), Categoria::Pet);
+        assert_eq!(categoria_do_item(it::RACAO_DE_PET, false), Categoria::Pet);
+        assert_eq!(categoria_do_item(520, true), Categoria::Pet, "pet accessory");
+        assert_eq!(categoria_do_item(montaria, true), Categoria::Montaria);
+        assert_eq!(categoria_do_item(528, true), Categoria::Montaria, "mount accessory");
+        assert_eq!(categoria_do_item(it::KATANA, true), Categoria::Equipamento);
+        assert_eq!(categoria_do_item(it::STEEL, false), Categoria::Material);
+        for c in Categoria::FILTROS {
+            assert_eq!(Categoria::de_u8(c as u8), c, "the shelf survives the wire");
+        }
     }
 
     #[test]

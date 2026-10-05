@@ -57,6 +57,8 @@ pub struct Mercado {
     pub onde_obter: Option<u16>,
     /// Bound items (`ItemsConfig`): they do not show up to sell.
     pub vinculados: HashSet<u16>,
+    /// The server's recommended prices (`shared::precos`), gold per unit.
+    pub precos: std::collections::HashMap<u16, f64>,
     aba: Aba,
     categoria: u8,
     busca: String,
@@ -318,7 +320,7 @@ impl Mercado {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
         // Categorias.
-        let cw = (a.w * 0.5 / Categoria::FILTROS.len() as f32).min(150.0 * f);
+        let cw = (a.w * 0.6 / Categoria::FILTROS.len() as f32).min(150.0 * f);
         for (i, cat) in Categoria::FILTROS.iter().enumerate() {
             let r = Rect::new(a.x + i as f32 * cw, a.y, cw - 6.0 * f, 38.0 * f);
             let sel = self.categoria == *cat as u8;
@@ -678,8 +680,12 @@ impl Mercado {
             if clique_na_grade.is_some_and(|p| r.contains(p)) {
                 self.venda_slot = Some(*i);
                 self.venda_qtd = 1;
-                if self.venda_preco == 0 {
-                    self.venda_preco = 100;
+                // The recommended price comes filled in; the seller can type
+                // anything over it, 1 included.
+                match shared::precos::recomendado(&self.precos, s.item_id, s.instance.as_ref()) {
+                    Some(r) => self.venda_preco = r,
+                    None if self.venda_preco == 0 => self.venda_preco = 100,
+                    None => {}
                 }
                 // Price reference: what is already on sale for that item.
                 let nome = c.nomes.get(&s.item_id).cloned().unwrap_or_default();
@@ -805,13 +811,28 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
+        // THE RECOMMENDED PRICE: what the realm's gold and stock say this is
+        // worth. A line to read, a button to take it back after typing, and a
+        // one-click "sell it all at that".
+        let recomendado = shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
+        let pode_listar = livre && pode && self.meus.len() < regras::MAX_ANUNCIOS;
+        if let Some(rec) = recomendado {
+            let ry = y + 88.0 * f;
+            estilo::texto(x, ry + 4.0 * f, &format!("Recommended: {} gold", milhar(rec)), 14, estilo::OURO);
+            let usar = Rect::new(x + w - 70.0 * f, ry - 14.0 * f, 70.0 * f, 26.0 * f);
+            if self.venda_preco != rec && botao(usar, "Use", livre, false) {
+                self.venda_preco = rec;
+            }
+        }
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
-        if botao(
-            bt,
-            "List",
-            livre && pode && self.meus.len() < regras::MAX_ANUNCIOS,
-            true,
-        ) {
+        let (bt_listar, bt_tudo) = match recomendado {
+            Some(_) => (
+                Rect::new(bt.x, bt.y, bt.w * 0.34, bt.h),
+                Some(Rect::new(bt.x + bt.w * 0.36, bt.y, bt.w * 0.64, bt.h)),
+            ),
+            None => (bt, None),
+        };
+        if botao(bt_listar, "List", pode_listar, recomendado.is_none()) {
             if let Some(i) = self.venda_slot {
                 saida.push(ClientMessage::MercadoAnunciar {
                     inv_slot: i as u16,
@@ -819,6 +840,19 @@ impl Mercado {
                     preco_unit: self.venda_preco,
                 });
                 self.venda_slot = None;
+            }
+        }
+        if let (Some(r), Some(rec)) = (bt_tudo, recomendado) {
+            let rotulo = format!("Sell all ×{} at {}", slot.qty, milhar(rec));
+            if botao(r, &rotulo, pode_listar, true) {
+                if let Some(i) = self.venda_slot {
+                    saida.push(ClientMessage::MercadoAnunciar {
+                        inv_slot: i as u16,
+                        qtd: slot.qty,
+                        preco_unit: rec,
+                    });
+                    self.venda_slot = None;
+                }
             }
         }
     }
@@ -1391,5 +1425,66 @@ mod tests {
             "a mesma aba nao pede de novo"
         );
         assert_eq!(m.trocar_aba(Aba::Tp).len(), 2);
+    }
+}
+
+/// Preview of the Sell tab with recommended prices (`MMO_PREVIA_MERCADO=1`;
+/// PNGs in `MMO_PREVIA_SAIDA`, default /tmp/tempest-mercado): a Rare IV +7
+/// katana, a pet with a learned skill, a mount and a stack of steel.
+#[cfg(debug_assertions)]
+pub async fn previa(vox: &crate::vox::VoxCache) {
+    use shared::constants::item_id as it;
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-mercado".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let rt = render_target(1920, 1080);
+    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(1.6);
+    let solido = crate::render3d::material_solido();
+    let mut katana = shared::ItemInstance::vazia_de_grau(3);
+    katana.tier = 4;
+    katana.refinement = 7;
+    let pet_id = it::pet_no_grau(it::PETS[0], 2);
+    let mut pet = shared::ItemInstance::vazia_de_grau(2);
+    pet.pet = Some(shared::items::PetData { skills: [it::SKILL_PET_FARO, 0, 0], ..Default::default() });
+    let mut slots = vec![InventorySlot::default(); 12];
+    slots[0] = InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(katana) };
+    slots[1] = InventorySlot { item_id: pet_id, qty: 1, instance: Some(pet) };
+    slots[2] = InventorySlot { item_id: it::montaria_no_grau(it::MONTARIAS[0], 3), qty: 1, instance: None };
+    slots[3] = InventorySlot { item_id: it::na_cor(it::STEEL, 2), qty: 480, instance: None };
+    slots[4] = InventorySlot { item_id: it::COPPER, qty: 250_000, instance: None };
+    let estoque = shared::precos::Estoque {
+        ouro: 227_850,
+        unidades: [
+            (it::COPPER, 8_100_000),
+            (it::DARKSTEEL, 61_000),
+            (it::GLITTERING_POWDER, 1_500),
+            (it::na_cor(it::STEEL, 2), 16_000),
+            (pet_id, 40),
+            (it::SKILL_PET_FARO, 30),
+            (it::montaria_no_grau(it::MONTARIAS[0], 3), 25),
+        ]
+        .into_iter()
+        .collect(),
+        base_em_cobre: [(it::KATANA, 960)].into_iter().collect(),
+    };
+    let mut nomes: HashMap<u16, String> = HashMap::new();
+    for (id, n) in [(it::KATANA, "Katana"), (pet_id, "Wolf Cub"), (it::na_cor(it::STEEL, 2), "Green Steel"), (it::COPPER, "Copper")] {
+        nomes.insert(id, n.into());
+    }
+    let mut m = Mercado { aberto: true, aba: Aba::Vender, precos: shared::precos::calcular(&estoque).mapa(), ..Default::default() };
+    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("comprar", 0)] {
+        m.aba = if nome == "comprar" { Aba::Comprar } else { Aba::Vender };
+        m.venda_slot = Some(slot);
+        m.venda_qtd = 1;
+        m.venda_preco = shared::precos::recomendado(&m.precos, slots[slot].item_id, slots[slot].instance.as_ref()).unwrap_or(100);
+        let c = Contexto { slots: &slots, nomes: &nomes, ouro: 50_000, nivel: 40, digitado: &[], vox, solido: &solido };
+        for _ in 0..3 {
+            crate::render3d::camera_padrao();
+            clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+            let _ = m.desenha(&c, get_time());
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            next_frame().await;
+        }
     }
 }

@@ -3583,6 +3583,47 @@ mod tempo_de_nivel {
         }
     }
 
+    /// The market's price anchor needs two things per level: how fast a
+    /// player kills (`ritmo`, every class) and WHICH mobs they kill there.
+    /// Writes both as CSV to `PRECOS_SAIDA` (default /tmp); the price math
+    /// itself runs against the live tables (loot, NPC prices), which are what
+    /// the game uses.
+    ///
+    ///   PRECOS_SAIDA=dir cargo test --release -p server --bin server ritmo_para_precos -- --ignored
+    #[test]
+    #[ignore]
+    fn ritmo_para_precos() {
+        let saida = std::env::var("PRECOS_SAIDA").unwrap_or_else(|_| "/tmp".into());
+        let mut niveis: Vec<u32> = (1..=120).step_by(5).collect();
+        if *niveis.last().unwrap() != 120 {
+            niveis.push(120);
+        }
+        let mut ritmos = String::from("nivel,conjunto,s_por_abate,vivo\n");
+        let mut kinds = String::from("nivel,kind,peso\n");
+        for &nivel in &niveis {
+            for c in [Conjunto::EspadaEscudo, Conjunto::Katana, Conjunto::Pistolas, Conjunto::AnelMagico] {
+                let (s, _, vivo) = ritmo(c, nivel);
+                ritmos.push_str(&format!("{nivel},{c:?},{s:.3},{vivo}\n"));
+            }
+            // The zone spawns at nivel..nivel+2, each spawn a fresh draw.
+            let comuns = crate::economy::kinds_do_bioma(bioma(nivel)).to_vec();
+            let mut conta: std::collections::BTreeMap<u16, u32> = Default::default();
+            let mut total = 0u32;
+            for lv in nivel..=nivel + 2 {
+                for semente in 0..2000u64 {
+                    let k = kind_para_nivel_em(&comuns, lv, semente.wrapping_mul(2_654_435_761) >> 7);
+                    *conta.entry(k).or_default() += 1;
+                    total += 1;
+                }
+            }
+            for (k, n) in conta {
+                kinds.push_str(&format!("{nivel},{k},{:.5}\n", n as f64 / total as f64));
+            }
+        }
+        std::fs::write(format!("{saida}/ritmos.csv"), ritmos).unwrap();
+        std::fs::write(format!("{saida}/kinds_por_nivel.csv"), kinds).unwrap();
+    }
+
     #[test]
     #[ignore]
     fn tabela_do_tempo_de_nivel() {

@@ -5999,6 +5999,13 @@ impl GameWorld {
     /// As posicoes herdadas (spawn de personagem, zona de mob do mapfile)
     /// foram escolhidas num mapa de tiles plano. Soltas na ilha, muitas caem
     /// no mar. Melhor mover um pouco do que nascer boiando.
+    /// The market's recommended prices to every player in the world.
+    pub fn enviar_precos(&self, t: &shared::precos::TabelaDePrecos) {
+        for s in self.sessions.values().filter(|s| s.logged_in) {
+            let _ = s.handle.to_client.send(ServerMessage::PrecosDoMercado { tabela: t.clone() });
+        }
+    }
+
     /// The character behind a session, for `telemetria::conta_de` ("" when
     /// the session is gone: the count still reaches the global total).
     pub(crate) fn nome_de(&self, sid: SessionId) -> String {
@@ -6745,6 +6752,10 @@ impl GameWorld {
         let _ = handle.to_client.send(ServerMessage::ResourceSources {
             items: chefes::onde_obter_snapshot(),
         });
+        // Recommended market prices (`precos`): the current table.
+        if let (_, Some(t)) = crate::precos::atual() {
+            let _ = handle.to_client.send(ServerMessage::PrecosDoMercado { tabela: (*t).clone() });
+        }
         // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
         self.send_quest_log(sid);
         self.send_quest_givers(sid);

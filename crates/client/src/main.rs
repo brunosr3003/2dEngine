@@ -823,6 +823,11 @@ async fn main() {
     }
     // `option_env!` tambem: no celular nao ha' variavel de ambiente, e o APK
     // de medir desempenho e' compilado com ela ligada.
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_MERCADO").is_ok() {
+        mercado_ui::previa(&vox).await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_PERSONAGENS").is_ok()
         || option_env!("MMO_PREVIA_PERSONAGENS").is_some()
     {
@@ -2015,6 +2020,7 @@ impl Jogo {
                 tp,
             } => self.mercado.meus(anuncios, historico, tp),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
+            ServerMessage::PrecosDoMercado { tabela } => self.mercado.precos = tabela.mapa(),
             ServerMessage::Presenca { aviso } => {
                 if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
                     self.chat.push(t);

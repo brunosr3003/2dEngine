@@ -15,6 +15,7 @@ mod auth;
 mod balanceamento;
 mod barra;
 mod canais;
+mod precos;
 mod coleta;
 mod correio_admin;
 mod craft;
@@ -89,6 +90,8 @@ async fn main() -> Result<()> {
     if let Some(central) = mercado::central() {
         loja::criar_tabelas(&central).await?;
     }
+    // Recommended market prices, recounted from the realm's stock.
+    precos::spawn(pool.clone());
     let populacao = canais::Populacao::default();
     let saude = canais::Saude::default();
     let diretorio = canais::Diretorio::default();

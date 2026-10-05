@@ -821,6 +821,24 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
             .execute(pool)
             .await?;
     }
+    // GEAR GOES TO THE MARKET (05/10/2026). Dungeon chests bound their pieces,
+    // and the Upgrade passed the bond on, so every good piece in the game was
+    // unsellable. The owner opened the market to gear: the pieces already
+    // bound are released once, here, before any character loads.
+    let equip_v1 = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('equipamento_vendavel_v1') ON CONFLICT DO NOTHING")
+        .execute(pool).await?.rows_affected();
+    if equip_v1 > 0 {
+        for tabela in ["inventory", "vault", "equipment"] {
+            let n = sqlx::query(&format!(
+                "UPDATE {tabela} SET instance_data = replace(instance_data, '\"vinculado\":true', '\"vinculado\":false')
+                  WHERE instance_data LIKE '%\"vinculado\":true%'"
+            ))
+            .execute(pool)
+            .await?
+            .rows_affected();
+            tracing::info!("equipamento_vendavel_v1: {n} peça(s) liberada(s) em {tabela}");
+        }
+    }
     // Premio de presenca e' vinculado (docs/CALENDARIO.md): Fortuna e Sorte so'
     // saem de recompensa (diaria e calendario) e nao vao ao mercado.
     let presenca_v1 = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ('presenca_vinculados_v1') ON CONFLICT DO NOTHING")

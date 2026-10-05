@@ -211,6 +211,11 @@ pub async fn run_world_loop(
             // segundos" nao precisa de mais, e expulsar e' handoff — coisa
             // que nao se faz trinta vezes por segundo.
             world.tick_magica();
+            // The market's recommended prices were recounted: everyone gets
+            // the new table.
+            if let Some(t) = crate::precos::novidade() {
+                world.enviar_precos(&t);
+            }
         }
         // Lotacao do canal pro HUD: a cada 5s.
         if save_counter % 150 == 0 {

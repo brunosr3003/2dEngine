@@ -1241,6 +1241,11 @@ pub enum ServerMessage {
         items: Vec<ShopItem>,
         vendor_id: u32,
     },
+    /// The market's recommended prices (`shared::precos`): at login and each
+    /// time the realm's stock is recounted.
+    PrecosDoMercado {
+        tabela: crate::precos::TabelaDePrecos,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

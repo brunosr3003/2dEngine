@@ -39,6 +39,7 @@ pub mod physics;
 pub mod montarias;
 pub mod pets;
 pub mod pocoes;
+pub mod precos;
 pub mod presenca;
 pub mod protocol;
 pub mod progressao;
