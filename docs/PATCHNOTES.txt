@@ -2,7 +2,7 @@
 
 O calendário foi redesenhado para mostrar com clareza o que você recebe. Cada dia tem um ícone grande, a quantidade em destaque e o nome inteiro do prêmio, sem cortes. O dia de hoje tem a marca HOJE, os dias de bônus (7, 14, 21 e 28) ficam numa coluna mais larga com moldura dourada, e os já resgatados aparecem esmaecidos com um visto verde.
 
-Embaixo, o quadro "Prêmio de hoje" mostra o prêmio do dia com ícone e nome completo ao lado do botão de resgatar; depois de resgatar, ele mostra o próximo prêmio e quanto falta. Os pergaminhos de invocação e o Passe Mágico ganharam ícones próprios.
+Embaixo, o quadro "Prêmio de hoje" mostra o prêmio do dia com ícone e nome completo ao lado do botão de resgatar; depois de resgatar, ele mostra o próximo prêmio e quanto falta. Os pergaminhos de invocação e o Passe Mágico ganharam ícones próprios. As diárias que ainda não estão prontas também saíram da lista de diárias da ilha.
 
 04/10/2026 — Missões secundárias consertadas e mais simples
 

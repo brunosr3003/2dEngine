@@ -368,7 +368,9 @@ mod tests {
     #[test]
     fn so_as_diarias_da_ilha_em_ordem() {
         let ids: Vec<u16> = da_ilha(Some("ilha_inicial")).iter().map(|d| d.id).collect();
-        assert_eq!(ids, vec![601, 602, 603, 604, 605, 606, 607, 608]);
+        // 605 and 607 (enchant, chase) are "coming soon": out of the menu
+        // until they can be done (04/10/2026).
+        assert_eq!(ids, vec![601, 602, 603, 604, 606, 608]);
         assert!(da_ilha(None).is_empty(), "fora de ilha nao ha' diaria");
         let gelo = da_ilha(Some("ilha_gelo"));
         assert!(
@@ -395,9 +397,9 @@ mod tests {
 
         // The Hunt (raid) does not exist yet; the dungeon (606) already counts.
         let d607 = quest_by_id(607).unwrap();
-        assert_eq!(
-            estado_da_diaria(d607, &c),
-            Estado::Bloqueada(vec!["Coming soon".into()])
+        assert!(
+            matches!(estado_da_diaria(d607, &c), Estado::Bloqueada(ref m) if m.iter().any(|s| s == "Coming soon")),
+            "a coming-soon daily stays locked (and out of the list)"
         );
         assert_eq!(botao_de(&estado_da_diaria(d607, &c)), None);
         assert_eq!(

@@ -1187,17 +1187,9 @@ mod tests {
             Some("?"),
             "entrega pronta vence missao nova"
         );
-        // Coleta: pronta quando a bolsa tem o bastante.
-        m.define_log(vec![q(503, quest_status::ACTIVE, 0)]);
-        let cobre = |id: u16| {
-            if id == shared::constants::item_id::COPPER {
-                30
-            } else {
-                0
-            }
-        };
-        assert_eq!(m.marcador(&cobre), Some("?"));
-        assert_eq!(progresso(&m.log[0], &cobre), (30, 30));
+        // The "bag already holds enough" case went with the Master's COLLECT
+        // quests (04/10/2026: they became hunts and quarries); READY above
+        // is how every Master quest turns in now.
     }
 
     #[test]

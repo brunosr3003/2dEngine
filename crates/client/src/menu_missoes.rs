@@ -1582,7 +1582,8 @@ mod tests {
         // (30/60/100) e as duas tematicas, pedidas em 22/09/2026 — "missoes
         // para matar mais inimigos que leva pras zonas de maior densidade".
         // 544-547 entregam as chaves de craft do catalogo cinza (24/09/2026).
-        let esperado: Vec<u16> = (501..=547).collect();
+        // The chains in order, then the Bosque's kill contract (912).
+        let esperado: Vec<u16> = (501..=547).chain([912]).collect();
         assert_eq!(&bosque[..], &esperado[..], "so' as cadeias, em ordem");
         assert!(
             todas().iter().all(|d| !d.daily),
@@ -1737,10 +1738,12 @@ mod tests {
     fn diaria_em_breve_bloqueia_e_o_reset_conta_ate_a_meia_noite() {
         let vazio = HashMap::new();
         let c = ctx(&[], &vazio, 50, Some("ilha_inicial"));
-        assert_eq!(
+        // Locked, and since 04/10/2026 also out of every island's list
+        // ("Unavailable in this version" joins the reason).
+        assert!(matches!(
             estado(quest_by_id(607).unwrap(), &c),
-            Estado::Bloqueada(vec!["Coming soon".into()])
-        );
+            Estado::Bloqueada(ref m) if m.iter().any(|s| s == "Coming soon")
+        ));
         assert_eq!(estado(quest_by_id(601).unwrap(), &c), Estado::Disponivel);
         assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "4h 07min");
     }
