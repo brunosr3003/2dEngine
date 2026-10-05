@@ -297,7 +297,12 @@
   <div class="barra-topo">janela <select id="at-horas" class="campo">
     <option value="1">1 h</option><option value="6">6 h</option><option value="24" selected>24 h</option>
     <option value="168">7 dias</option><option value="720">30 dias</option></select>
+    servidor <select id="at-realm" class="campo"><option value="">todos</option></select>
+    personagem <select id="at-personagem" class="campo"><option value="">todos</option></select>
     <span id="at-aviso"></span></div>
+  <h2>Por personagem</h2>
+  <p class="nota">Tempo online e o que cada um trouxe na janela. É a base do preço recomendado do mercado: ouro por hora e itens por hora de quem joga de verdade.</p>
+  <div id="at-personagens"></div>
   <h2>Por hora</h2>
   <canvas id="at-grafico" class="grafico" height="180"></canvas>
   <div class="legenda" id="at-legenda"></div>
@@ -1156,10 +1161,24 @@ const NOME_TIPO = {
   conexao: 'conexões', banda: 'banda (bytes)', save: 'saves', save_ms: 'tempo de save (ms somados)', save_linhas: 'personagens salvos', save_mercado: 'registros do mercado salvos',
   save_atrasado_mercado: 'registros do mercado atrasados', log: 'linhas de aviso/erro',
 };
-document.getElementById('at-horas').addEventListener('change', () => puxaAtividade());
+for (const id of ['at-horas', 'at-realm', 'at-personagem']) document.getElementById(id).addEventListener('change', () => puxaAtividade());
+function opcoes(id, valores, atual) {
+  const el = document.getElementById(id);
+  el.innerHTML = '<option value="">todos</option>' + valores.map(v => `<option value="${esc(v)}"${v === atual ? ' selected' : ''}>${esc(v)}</option>`).join('');
+}
 async function puxaAtividade() {
   const h = document.getElementById('at-horas').value;
-  const d = await api('api/atividade?horas=' + h); if (!d) return;
+  const realm = document.getElementById('at-realm').value;
+  const quem = document.getElementById('at-personagem').value;
+  const d = await api('api/atividade?horas=' + h + '&realm=' + encodeURIComponent(realm) + '&personagem=' + encodeURIComponent(quem)); if (!d) return;
+  opcoes('at-realm', d.realms, realm);
+  opcoes('at-personagem', d.por_personagem.map(p => p.personagem), quem);
+  const hm = x => { const m = Math.round(x * 60); return Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0'); };
+  document.getElementById('at-personagens').innerHTML = d.por_personagem.length
+    ? tabela(['personagem', 'nível', 'online', 'ouro que entrou', 'ouro que saiu', 'ouro / hora', 'itens pegos', 'itens / hora'],
+        d.por_personagem.map(p => [`<b>${esc(p.personagem)}</b>`, p.nivel ?? '', hm(p.horas), num(p.ouro_entrou), num(p.ouro_saiu),
+          num(Math.round(p.ouro_por_hora)), num(p.itens_pegos), p.horas > 0 ? num(Math.round(p.itens_pegos / p.horas)) : '']))
+    : '<div class="vazio">ainda nada por personagem nesta janela (os canais gravam a cada minuto)</div>';
   document.getElementById('at-aviso').innerHTML = d.ligada ? '' : '<span class="ruim">telemetria ainda não existe neste banco: os canais precisam do binário novo</span>';
   const principais = ['kill', 'morte_jogador', 'coleta', 'craft', 'dungeon_entrada', 'missao_entregue'];
   grafico('at-grafico', principais.map((t, i) => ({ nome: NOME_TIPO[t] || t, cor: CORES[i], pontos: d.series[t] || [] })), 'at-legenda');

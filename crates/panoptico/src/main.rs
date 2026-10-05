@@ -796,7 +796,9 @@ async fn atividade(
     State(st): State<Estado>,
     Query(q): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    axum::Json(observa::atividade(&st.pool, horas(&q, 24)).await)
+    let realm = q.get("realm").map(String::as_str).unwrap_or("");
+    let personagem = q.get("personagem").map(String::as_str).unwrap_or("");
+    axum::Json(observa::atividade(&st.pool, horas(&q, 24), realm, personagem).await)
 }
 
 async fn missoes(

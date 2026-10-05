@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Value};
 use sqlx::postgres::PgRow;
+use sqlx::Row;
 use sqlx::PgPool;
 
 use crate::economia::campo;
@@ -580,9 +581,13 @@ pub fn rotulo(
     }
 }
 
-pub async fn atividade(pool: &PgPool, horas: i32) -> Value {
+/// The Activity tab. `realm` narrows to one server (`canal` is
+/// `REALM/CANAL`); `personagem` reads the per-character table instead of the
+/// global one. Both empty = everything, as before.
+pub async fn atividade(pool: &PgPool, horas: i32, realm: &str, personagem: &str) -> Value {
     let horas = horas.clamp(1, 24 * 30);
     let ligada = tem_tabela(pool, "telemetria").await;
+    let por_personagem_ligada = tem_tabela(pool, "telemetria_personagem").await;
     let itens = nomes_de_itens(pool).await;
     let receitas: HashMap<i64, String> = linhas(pool, "SELECT id::bigint, name FROM craft_recipes")
         .await
@@ -594,30 +599,90 @@ pub async fn atividade(pool: &PgPool, horas: i32) -> Value {
         .iter()
         .map(|r| (campo::<i64>(r, 0), campo::<String>(r, 1)))
         .collect();
-    let totais: Vec<Value> = somas(pool, "TRUE", horas)
-        .await
-        .into_iter()
-        .map(|(t, c, v)| {
-            let rot = rotulo(&t, &c, &itens, &receitas, &skills);
-            json!({ "tipo": t, "chave": c, "rotulo": rot, "valor": v })
-        })
-        .collect();
+    // One character reads its own table; everyone reads the global one.
+    let (tabela, quem) = if !personagem.is_empty() && por_personagem_ligada {
+        ("telemetria_personagem", "AND personagem = $3")
+    } else {
+        ("telemetria", "AND $3 = $3")
+    };
+    let filtro = format!(
+        "minuto > NOW() - make_interval(hours => $1) AND ($2 = '' OR canal LIKE $2 || '/%') {quem}"
+    );
+    let mut totais: Vec<Value> = Vec::new();
     let mut series: BTreeMap<String, Vec<[i64; 2]>> = BTreeMap::new();
     if ligada {
-        if let Ok(rs) = sqlx::query(
-            "SELECT tipo, EXTRACT(EPOCH FROM date_trunc('hour', minuto))::bigint, SUM(valor)::bigint FROM telemetria
-              WHERE minuto > NOW() - make_interval(hours => $1) GROUP BY 1, 2 ORDER BY 2",
-        )
-        .bind(horas)
-        .fetch_all(pool)
-        .await
-        {
+        let sql = format!("SELECT tipo, chave, SUM(valor)::bigint FROM {tabela} WHERE {filtro} GROUP BY tipo, chave");
+        match sqlx::query(&sql).bind(horas).bind(realm).bind(personagem).fetch_all(pool).await {
+            Ok(rs) => {
+                for r in rs {
+                    let (t, c, v): (String, String, i64) = (campo(&r, 0), campo(&r, 1), campo(&r, 2));
+                    let rot = rotulo(&t, &c, &itens, &receitas, &skills);
+                    totais.push(json!({ "tipo": t, "chave": c, "rotulo": rot, "valor": v }));
+                }
+            }
+            Err(e) => tracing::warn!("panoptico: atividade: {e}"),
+        }
+        let sql = format!(
+            "SELECT tipo, EXTRACT(EPOCH FROM date_trunc('hour', minuto))::bigint, SUM(valor)::bigint FROM {tabela}
+              WHERE {filtro} GROUP BY 1, 2 ORDER BY 2"
+        );
+        if let Ok(rs) = sqlx::query(&sql).bind(horas).bind(realm).bind(personagem).fetch_all(pool).await {
             for r in rs {
                 series.entry(campo(&r, 0)).or_default().push([campo(&r, 1), campo(&r, 2)]);
             }
         }
     }
-    json!({ "ligada": ligada, "horas": horas, "totais": totais, "series": series })
+    // The selectors: every server and every character seen in the window.
+    let realms: Vec<String> = linhas(
+        pool,
+        "SELECT DISTINCT split_part(canal, '/', 1) FROM telemetria WHERE minuto > NOW() - INTERVAL '30 days' ORDER BY 1",
+    )
+    .await
+    .iter()
+    .map(|r| campo(r, 0))
+    .collect();
+    // PER CHARACTER: play time and what it brought in, the inputs of every
+    // "per hour" the market's price anchors use.
+    let mut por_personagem: Vec<Value> = Vec::new();
+    if por_personagem_ligada {
+        let sql = "SELECT personagem,
+                SUM(valor) FILTER (WHERE tipo = 'online_s')::bigint,
+                SUM(valor) FILTER (WHERE tipo = 'ouro_fonte')::bigint,
+                SUM(valor) FILTER (WHERE tipo = 'ouro_ralo')::bigint,
+                SUM(valor) FILTER (WHERE tipo = 'cobre_fonte')::bigint,
+                SUM(valor) FILTER (WHERE tipo = 'saque_item')::bigint,
+                MAX(chave::int) FILTER (WHERE tipo = 'online_s' AND chave ~ '^[0-9]+$')
+              FROM telemetria_personagem
+             WHERE minuto > NOW() - make_interval(hours => $1) AND ($2 = '' OR canal LIKE $2 || '/%')
+             GROUP BY personagem ORDER BY 2 DESC NULLS LAST";
+        if let Ok(rs) = sqlx::query(sql).bind(horas).bind(realm).fetch_all(pool).await {
+            for r in rs {
+                let online_s: Option<i64> = r.try_get(1).ok().flatten();
+                let ouro: Option<i64> = r.try_get(2).ok().flatten();
+                let horas_j = online_s.unwrap_or(0) as f64 / 3600.0;
+                por_personagem.push(json!({
+                    "personagem": campo::<String>(&r, 0),
+                    "horas": horas_j,
+                    "ouro_entrou": ouro.unwrap_or(0),
+                    "ouro_saiu": r.try_get::<Option<i64>, _>(3).ok().flatten().unwrap_or(0),
+                    "cobre_entrou": r.try_get::<Option<i64>, _>(4).ok().flatten().unwrap_or(0),
+                    "itens_pegos": r.try_get::<Option<i64>, _>(5).ok().flatten().unwrap_or(0),
+                    "nivel": r.try_get::<Option<i32>, _>(6).ok().flatten(),
+                    "ouro_por_hora": if horas_j > 0.0 { ouro.unwrap_or(0) as f64 / horas_j } else { 0.0 },
+                }));
+            }
+        }
+    }
+    json!({
+        "ligada": ligada,
+        "horas": horas,
+        "realm": realm,
+        "personagem": personagem,
+        "realms": realms,
+        "por_personagem": por_personagem,
+        "totais": totais,
+        "series": series,
+    })
 }
 
 // ─────────────────────────────── dungeons ───────────────────────────────

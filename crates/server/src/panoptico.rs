@@ -519,6 +519,14 @@ impl GameWorld {
         let (nos, esgotados) = self.nos_de_coleta();
         medir("nos_de_coleta", nos as f64);
         medir("nos_de_coleta_esgotados", esgotados as f64);
+        // PLAY TIME per character, keyed by level: the denominator of every
+        // "per hour" (gold, items, xp) the market's prices are anchored on.
+        // This runs every 30 s, so each call adds 30 seconds.
+        let mult = crate::economy::xp_multiplier();
+        for s in self.sessions.values().filter(|s| s.logged_in) {
+            let nivel = shared::level_of_xp_with_mult(s.xp, mult);
+            crate::telemetria::conta_de(&s.name, "online_s", nivel, 30);
+        }
     }
 }
 

@@ -27,8 +27,11 @@ use serde::Serialize;
 use sqlx::PgPool;
 
 type Chave = (&'static str, String);
+type ChaveDoPersonagem = (&'static str, String, String);
 
 static CONTADORES: Mutex<Option<HashMap<Chave, i64>>> = Mutex::new(None);
+/// The same counters per character: `(tipo, chave, personagem) -> soma`.
+static POR_PERSONAGEM: Mutex<Option<HashMap<ChaveDoPersonagem, i64>>> = Mutex::new(None);
 static MEDIDAS: Mutex<Option<HashMap<&'static str, f64>>> = Mutex::new(None);
 /// Os ultimos erros, pro retrato ao vivo.
 static ERROS: Mutex<VecDeque<Erro>> = Mutex::new(VecDeque::new());
@@ -63,6 +66,38 @@ pub fn conta(tipo: &'static str, chave: impl ToString, n: i64) {
     *g.get_or_insert_with(HashMap::new)
         .entry((tipo, chave))
         .or_insert(0) += n;
+}
+
+/// `conta`, and the same sum under the character who did it, in
+/// `telemetria_personagem`. The global counter stays the total, so every
+/// existing graph reads as before; the per-character table is what tells real
+/// play from tests (the owner, 05/10/2026: the economy starts over from two
+/// characters and its numbers must be traceable to someone).
+pub fn conta_de(personagem: &str, tipo: &'static str, chave: impl ToString, n: i64) {
+    if n == 0 {
+        return;
+    }
+    let chave = chave.to_string();
+    conta(tipo, &chave, n);
+    if personagem.is_empty() {
+        return;
+    }
+    let mut g = POR_PERSONAGEM.lock();
+    *g.get_or_insert_with(HashMap::new)
+        .entry((tipo, chave, personagem.to_string()))
+        .or_insert(0) += n;
+}
+
+fn drenar_personagens() -> HashMap<ChaveDoPersonagem, i64> {
+    POR_PERSONAGEM.lock().take().unwrap_or_default()
+}
+
+fn devolver_personagens(m: HashMap<ChaveDoPersonagem, i64>) {
+    let mut g = POR_PERSONAGEM.lock();
+    let atual = g.get_or_insert_with(HashMap::new);
+    for (k, v) in m {
+        *atual.entry(k).or_insert(0) += v;
+    }
 }
 
 /// O valor de agora de uma medida (o ultimo vence).
@@ -314,6 +349,24 @@ pub async fn init(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS telemetria_erros_quando ON telemetria_erros (quando)")
         .execute(pool)
         .await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS telemetria_personagem (
+            minuto     TIMESTAMPTZ NOT NULL,
+            canal      TEXT NOT NULL,
+            personagem TEXT NOT NULL,
+            tipo       TEXT NOT NULL,
+            chave      TEXT NOT NULL DEFAULT '',
+            valor      BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (minuto, canal, personagem, tipo, chave)
+        )",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS telemetria_personagem_quem ON telemetria_personagem (personagem, tipo, minuto)",
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -341,9 +394,11 @@ pub fn spawn(pool: PgPool) {
             let contadores = drenar();
             let medidas = drenar_medidas();
             let erros = drenar_erros();
-            if let Err(e) = gravar(&pool, &canal, &contadores, &medidas, &erros).await {
+            let personagens = drenar_personagens();
+            if let Err(e) = gravar(&pool, &canal, &contadores, &medidas, &erros, &personagens).await {
                 devolver(contadores);
                 devolver_erros(erros);
+                devolver_personagens(personagens);
                 // Depois de devolver: o warn passa pela camada, que soma no mapa.
                 tracing::warn!("telemetria: nao gravou ({e}) — tenta de novo no proximo minuto");
                 continue;
@@ -356,6 +411,13 @@ pub fn spawn(pool: PgPool) {
                         .await;
                 let _ = sqlx::query(
                     "DELETE FROM telemetria_medidas WHERE minuto < NOW() - INTERVAL '30 days'",
+                )
+                .execute(&pool)
+                .await;
+                // Per character lives longer: it is the economy's history
+                // (time to earn gold, to get an item), not a health graph.
+                let _ = sqlx::query(
+                    "DELETE FROM telemetria_personagem WHERE minuto < NOW() - INTERVAL '180 days'",
                 )
                 .execute(&pool)
                 .await;
@@ -375,8 +437,9 @@ async fn gravar(
     contadores: &HashMap<Chave, i64>,
     medidas: &HashMap<&'static str, f64>,
     erros: &[Erro],
+    personagens: &HashMap<ChaveDoPersonagem, i64>,
 ) -> anyhow::Result<()> {
-    if contadores.is_empty() && medidas.is_empty() && erros.is_empty() {
+    if contadores.is_empty() && medidas.is_empty() && erros.is_empty() && personagens.is_empty() {
         return Ok(());
     }
     let mut tx = pool.begin().await?;
@@ -430,6 +493,29 @@ async fn gravar(
         .bind(&nivel)
         .bind(&alvo)
         .bind(&msg)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if !personagens.is_empty() {
+        let (mut tipos, mut chaves, mut quem, mut valores) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for ((t, c, p), v) in personagens {
+            tipos.push(t.to_string());
+            chaves.push(c.clone());
+            quem.push(p.clone());
+            valores.push(*v);
+        }
+        sqlx::query(
+            "INSERT INTO telemetria_personagem (minuto, canal, personagem, tipo, chave, valor)
+             SELECT date_trunc('minute', NOW()), $1, p, t, c, v
+               FROM UNNEST($2::text[], $3::text[], $4::text[], $5::bigint[]) AS x(p, t, c, v)
+             ON CONFLICT (minuto, canal, personagem, tipo, chave)
+             DO UPDATE SET valor = telemetria_personagem.valor + EXCLUDED.valor",
+        )
+        .bind(canal)
+        .bind(&quem)
+        .bind(&tipos)
+        .bind(&chaves)
+        .bind(&valores)
         .execute(&mut *tx)
         .await?;
     }

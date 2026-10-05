@@ -183,7 +183,7 @@ impl GameWorld {
         };
         let mut itens = Vec::new();
         for (item, qtd, inst) in premios {
-            crate::telemetria::conta("forte_bau_item", item, qtd as i64);
+            crate::telemetria::conta_de(&s.name, "forte_bau_item", item, qtd as i64);
             itens.push((item, qtd));
             if !add_to_inventory(&mut s.inventory, item, qtd, inst) {
                 s.dungeon.postar(item, qtd, inst, 0, quando);

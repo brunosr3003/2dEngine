@@ -211,7 +211,7 @@ impl GameWorld {
         }
         let categoria =
             regras::categoria_do_item(slot.item_id, crate::economy::item_equipavel(slot.item_id));
-        crate::telemetria::conta("mercado", "anunciar", 1);
+        crate::telemetria::conta_de(&s.name, "mercado", "anunciar", 1);
         responde(
             &quem.to_client,
             true,
@@ -253,8 +253,8 @@ impl GameWorld {
             }
         };
         s.gold -= total;
-        crate::telemetria::conta("mercado", "comprar", 1);
-        crate::telemetria::conta("ouro_ralo", "mercado_compra", total as i64);
+        crate::telemetria::conta_de(&s.name, "mercado", "comprar", 1);
+        crate::telemetria::conta_de(&s.name, "ouro_ralo", "mercado_compra", total as i64);
         responde(
             &quem.to_client,
             true,
@@ -344,8 +344,8 @@ impl GameWorld {
             }
             s.gold = s.gold.saturating_add(c.gold);
             gold += c.gold;
-            crate::telemetria::conta("mercado", "carta_aplicada", 1);
-            crate::telemetria::conta("ouro_fonte", "mercado_carta", c.gold as i64);
+            crate::telemetria::conta_de(&s.name, "mercado", "carta_aplicada", 1);
+            crate::telemetria::conta_de(&s.name, "ouro_fonte", "mercado_carta", c.gold as i64);
             recebidas += 1;
             aplicadas.push(c.id);
         }

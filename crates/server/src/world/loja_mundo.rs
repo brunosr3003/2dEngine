@@ -96,6 +96,7 @@ impl GameWorld {
         let Some(tx_mundo) = self.auth_ctx.as_ref().map(|c| c.tx.clone()) else {
             return;
         };
+        let nome_tel = self.nome_de(sid);
         tokio::spawn(async move {
             match pedido {
                 PedidoLoja::Estado => {}
@@ -112,13 +113,13 @@ impl GameWorld {
                         Ok(r) => {
                             if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
                                 let codigo = Produto::Tp(pacote).codigo();
-                                crate::telemetria::conta("loja_pedido", &codigo, 1);
-                                crate::telemetria::conta(
+                                crate::telemetria::conta_de(&nome_tel, "loja_pedido", &codigo, 1);
+                                crate::telemetria::conta_de(&nome_tel, 
                                     "loja_receita_centavos",
                                     "BRL",
                                     p.centavos as i64,
                                 );
-                                crate::telemetria::conta(
+                                crate::telemetria::conta_de(&nome_tel, 
                                     "loja_tp_vendida",
                                     codigo,
                                     p.total() as i64,
@@ -142,10 +143,10 @@ impl GameWorld {
                         Ok(r) => {
                             if let Resposta::Feito { .. } = &r {
                                 let codigo = produto.codigo();
-                                crate::telemetria::conta("loja_item", &codigo, vezes as i64);
+                                crate::telemetria::conta_de(&nome_tel, "loja_item", &codigo, vezes as i64);
                                 // O gasto medido e' o COBRADO, com desconto —
                                 // senao a telemetria de TP nao fecha com o razao.
-                                crate::telemetria::conta(
+                                crate::telemetria::conta_de(&nome_tel, 
                                     "loja_tp_gasta",
                                     codigo,
                                     cat::preco_do_lote(produto.preco_tp().unwrap_or(0), vezes)
@@ -367,7 +368,7 @@ impl GameWorld {
                     s.inventory_dirty = true;
                 }
                 self.save_pending = true;
-                crate::telemetria::conta("loja_moeda", item_id.to_string(), qtd as i64);
+                crate::telemetria::conta_de(&s.name, "loja_moeda", item_id.to_string(), qtd as i64);
                 let nome = crate::economy::nome_do_item(item_id);
                 resultado(
                     &s.handle.to_client,
@@ -394,7 +395,7 @@ impl GameWorld {
                     progresso: s.skill_progress.clone(),
                 });
                 self.save_pending = true;
-                crate::telemetria::conta("loja_energia", "TP", qtd as i64);
+                crate::telemetria::conta_de(&s.name, "loja_energia", "TP", qtd as i64);
                 resultado(
                     &s.handle.to_client,
                     true,
@@ -510,7 +511,7 @@ impl GameWorld {
                         firmeza: 100, bloqueio_segundos: 0.0,
                     });
                     s.montado_em = agora;
-                    crate::telemetria::conta("montaria", s.montaria_vista.unwrap_or(0), 1);
+                    crate::telemetria::conta_de(&s.name, "montaria", s.montaria_vista.unwrap_or(0), 1);
                 }
             } else if !pode {
                 s.montado = false;

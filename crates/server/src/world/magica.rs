@@ -262,7 +262,7 @@ impl GameWorld {
             return;
         }
         let aviso = format!("You enter {} — {minutos} minutes.", alvo.nome);
-        crate::telemetria::conta("magica_entrada", self.zona.clone(), entradas as i64);
+        crate::telemetria::conta_de(&s.name, "magica_entrada", self.zona.clone(), entradas as i64);
         tracing::info!(
             "{nome}: entra na Ilha Mágica por {minutos} min ({de_graca} de graça, {do_item} passe(s))"
         );

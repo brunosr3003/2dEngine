@@ -30,7 +30,7 @@ impl GameWorld {
             Ok((id, grau, tier)) => {
                 session.inventory_dirty = true;
                 self.save_pending = true;
-                crate::telemetria::conta("aprimorar", format!("{grau}-{tier}"), 1);
+                crate::telemetria::conta_de(&session.name, "aprimorar", format!("{grau}-{tier}"), 1);
                 (true, String::new(), id, grau, tier)
             }
             Err(m) => (false, m, 0, 0, 0),
@@ -84,8 +84,8 @@ impl GameWorld {
             Ok((n, ok)) => {
                 session.inventory_dirty = true;
                 self.save_pending = true;
-                crate::telemetria::conta("combinar", entrada, n as i64);
-                crate::telemetria::conta("combinar_sucesso", entrada, ok as i64);
+                crate::telemetria::conta_de(&session.name, "combinar", entrada, n as i64);
+                crate::telemetria::conta_de(&session.name, "combinar_sucesso", entrada, ok as i64);
                 resposta(n, ok, String::new())
             }
             Err(m) => resposta(0, 0, m),

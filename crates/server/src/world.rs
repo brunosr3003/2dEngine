@@ -2342,8 +2342,8 @@ impl Session {
         let perda = crate::morte::perda_de_xp(self.xp, mult);
         self.xp -= perda;
         crate::morte::registrar(&mut self.mortes, agora, perda);
-        crate::telemetria::conta("morte_jogador", "", 1);
-        crate::telemetria::conta("xp_perdido", "", perda as i64);
+        crate::telemetria::conta_de(&self.name, "morte_jogador", "", 1);
+        crate::telemetria::conta_de(&self.name, "xp_perdido", "", perda as i64);
         let level = shared::level_of_xp_with_mult(self.xp, mult);
         let _ = self
             .handle
@@ -5040,7 +5040,7 @@ impl GameWorld {
         // Gold é currency: vai pro contador, não ocupa inventário.
         if ltag.item_id == shared::item_id::GOLD {
             session.gold = session.gold.saturating_add(ltag.qty as u64);
-            crate::telemetria::conta("ouro_fonte", "saque", ltag.qty as i64);
+            crate::telemetria::conta_de(&session.name, "ouro_fonte", "saque", ltag.qty as i64);
             return Some(None);
         }
         // Senao, inventario normal.
@@ -5051,6 +5051,9 @@ impl GameWorld {
             ltag.instance,
         ) {
             session.inventory_dirty = true;
+            // Who picked up what: with the play time per character, this is
+            // how long an item takes to get (the market's price anchor).
+            crate::telemetria::conta_de(&session.name, "saque_item", ltag.item_id, ltag.qty as i64);
             return Some(None);
         }
         None
@@ -5996,6 +5999,12 @@ impl GameWorld {
     /// As posicoes herdadas (spawn de personagem, zona de mob do mapfile)
     /// foram escolhidas num mapa de tiles plano. Soltas na ilha, muitas caem
     /// no mar. Melhor mover um pouco do que nascer boiando.
+    /// The character behind a session, for `telemetria::conta_de` ("" when
+    /// the session is gone: the count still reaches the global total).
+    pub(crate) fn nome_de(&self, sid: SessionId) -> String {
+        self.sessions.get(&sid).map(|s| s.name.clone()).unwrap_or_default()
+    }
+
     pub fn pousar(&self, p: Vec2) -> Vec2 {
         match &self.ilha {
             Some(i) => i.terra_mais_proxima(p.x, p.y, 400.0),
@@ -8744,13 +8753,13 @@ impl GameWorld {
                 s.recuperacoes_usadas = usadas;
                 s.gold = s.gold.saturating_sub(custo);
                 s.somar_xp(xp);
-                crate::telemetria::conta(
+                crate::telemetria::conta_de(&s.name, 
                     "recuperar_xp",
                     if custo == 0 { "gratis" } else { "pago" },
                     1,
                 );
-                crate::telemetria::conta("xp_recuperado", "", xp as i64);
-                crate::telemetria::conta("ouro_ralo", "recuperar_xp", custo as i64);
+                crate::telemetria::conta_de(&s.name, "xp_recuperado", "", xp as i64);
+                crate::telemetria::conta_de(&s.name, "ouro_ralo", "recuperar_xp", custo as i64);
                 let motivo = if custo == 0 {
                     "Experience recovered (free).".to_string()
                 } else {
@@ -14707,9 +14716,9 @@ impl GameWorld {
         }
         session.inventory_dirty = true;
         self.save_pending = true;
-        crate::telemetria::conta("craft", recipe_id, 1);
+        crate::telemetria::conta_de(&session.name, "craft", recipe_id, 1);
         if selo {
-            crate::telemetria::conta("selo_craftado", "", 1);
+            crate::telemetria::conta_de(&session.name, "selo_craftado", "", 1);
         }
         self.resultado_do_craft(sid, recipe_id, Ok(craft_output_id));
         // `obj_target` 0 = any piece; otherwise THIS item (the story's Cellar
@@ -14752,7 +14761,7 @@ impl GameWorld {
         if !ok {
             // So' o comeco do motivo: "faltam: Aço 12/30" viraria uma chave
             // por quantidade.
-            crate::telemetria::conta(
+            crate::telemetria::conta_de(&s.name, 
                 "craft_falha",
                 motivo.split(':').next().unwrap_or("").trim(),
                 1,
@@ -14851,7 +14860,7 @@ impl GameWorld {
                 text: format!("Bolsa cheia: {qtd} de cobre foi pras Entregas."),
             });
         }
-        crate::telemetria::conta("cobre_fonte", fonte, qtd as i64);
+        crate::telemetria::conta_de(&s.name, "cobre_fonte", fonte, qtd as i64);
     }
 
     /// Entrega a colonia a quem a historia ja' deu — e a' base do passo que
@@ -14992,7 +15001,7 @@ impl GameWorld {
                 continue;
             };
             s.quests_dirty = true;
-            crate::telemetria::conta("missao_historia", feito.id, 1);
+            crate::telemetria::conta_de(&s.name, "missao_historia", feito.id, 1);
             if feito.reward_cobre > 0 {
                 Self::pagar_em_cobre(s, feito.reward_cobre, "missao");
             }
@@ -15279,7 +15288,7 @@ impl GameWorld {
                 if banco { "The bank" } else { "The bag" }
             ),
         });
-        crate::telemetria::conta(
+        crate::telemetria::conta_de(&s.name, 
             if banco {
                 "banco_expandido"
             } else {
@@ -15491,7 +15500,7 @@ impl GameWorld {
             resultado::SEM_MATERIAL => "sem_material",
             _ => "invalido",
         };
-        crate::telemetria::conta(
+        crate::telemetria::conta_de(&s.name, 
             "refino",
             if tentou {
                 format!("{nome_res}:+{nivel}")
@@ -17297,7 +17306,7 @@ impl GameWorld {
         s.quests.retain(|c| c.quest_id != quest_id);
         if s.quests.len() != before {
             s.quests_dirty = true; // save_char reconcilia (deleta linhas ausentes)
-            crate::telemetria::conta("missao_abandonada", quest_id, 1);
+            crate::telemetria::conta_de(&s.name, "missao_abandonada", quest_id, 1);
             let _ = s.handle.to_client.send(ServerMessage::QuestUpdate {
                 quest_id,
                 progress: 0,
@@ -17365,7 +17374,7 @@ impl GameWorld {
             return; // live-track ainda não concluído
         }
         // Recompensas
-        crate::telemetria::conta("missao_entregue", quest_id, 1);
+        crate::telemetria::conta_de(&s.name, "missao_entregue", quest_id, 1);
         if def.reward_cobre > 0 {
             Self::pagar_em_cobre(s, def.reward_cobre, "missao");
         }
@@ -18462,13 +18471,13 @@ impl GameWorld {
             // 2c) Cobra: cobre sai da bolsa, ouro da moeda.
             if com_cobre {
                 crate::craft::consumir(&mut session.inventory, shared::item_id::COPPER, price);
-                crate::telemetria::conta("cobre_ralo", "loja", price as i64);
+                crate::telemetria::conta_de(&session.name, "cobre_ralo", "loja", price as i64);
             } else {
                 session.gold = session.gold.saturating_sub(price as u64);
-                crate::telemetria::conta("ouro_ralo", "loja", price as i64);
+                crate::telemetria::conta_de(&session.name, "ouro_ralo", "loja", price as i64);
             }
             session.inventory_dirty = true;
-            crate::telemetria::conta("loja_compra", item_id, 1);
+            crate::telemetria::conta_de(&session.name, "loja_compra", item_id, 1);
             let _ = session.handle.to_client.send(ServerMessage::Chat {
                 from: "SHOP".into(),
                 text: format!("Bought for {price} {moeda}."),
@@ -18537,8 +18546,8 @@ impl GameWorld {
         match crate::loja_npc::comprar_lote(&mut session.inventory, item, preco, qtd, cap) {
             Ok(total) => {
                 session.inventory_dirty = true;
-                crate::telemetria::conta("cobre_ralo", "loja", total as i64);
-                crate::telemetria::conta("loja_compra", item, qtd as i64);
+                crate::telemetria::conta_de(&session.name, "cobre_ralo", "loja", total as i64);
+                crate::telemetria::conta_de(&session.name, "loja_compra", item, qtd as i64);
                 let texto = format!("You bought {qtd}x {nome} for {total} copper.");
                 let _ = session
                     .handle
@@ -18589,7 +18598,7 @@ impl GameWorld {
         s.inventory = nova;
         s.inventory_dirty = true;
         self.save_pending = true;
-        crate::telemetria::conta("moeda_magica_ralo", item, total as i64);
+        crate::telemetria::conta_de(&s.name, "moeda_magica_ralo", item, total as i64);
         let nome = crate::economy::nome_do_item(item);
         self.send_trade_result(
             sid,
@@ -18649,8 +18658,8 @@ impl GameWorld {
         }
         session.gold = session.gold.saturating_add(price as u64);
         session.inventory_dirty = true;
-        crate::telemetria::conta("ouro_fonte", "venda_npc", price as i64);
-        crate::telemetria::conta("loja_venda", slot.item_id, 1);
+        crate::telemetria::conta_de(&session.name, "ouro_fonte", "venda_npc", price as i64);
+        crate::telemetria::conta_de(&session.name, "loja_venda", slot.item_id, 1);
         let _ = session.handle.to_client.send(ServerMessage::Chat {
             from: "SHOP".into(),
             text: format!("sold item {} for {price} gold", slot.item_id),
@@ -18800,13 +18809,13 @@ impl GameWorld {
         };
         session.inventory = sim;
         if gold_after >= session.gold {
-            crate::telemetria::conta(
+            crate::telemetria::conta_de(&session.name, 
                 "ouro_fonte",
                 "troca_npc",
                 (gold_after - session.gold) as i64,
             );
         } else {
-            crate::telemetria::conta("ouro_ralo", "troca_npc", (session.gold - gold_after) as i64);
+            crate::telemetria::conta_de(&session.name, "ouro_ralo", "troca_npc", (session.gold - gold_after) as i64);
         }
         session.gold = gold_after;
         session.inventory_dirty = true;
@@ -18899,7 +18908,7 @@ impl GameWorld {
                     item_id: chave,
                     cor,
                 });
-                crate::telemetria::conta("invocacao_chave_cor", cor, 1);
+                crate::telemetria::conta_de(&s.name, "invocacao_chave_cor", cor, 1);
             }
         } else if item_id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA {
             // A montaria virou ITEM (docs/MONTARIAS.md): o sorteio e a entrega
@@ -18919,7 +18928,7 @@ impl GameWorld {
                     no_correio += 1;
                 }
                 premios.push(shared::loja::PremioInvocacao::Montaria { item_id: montaria });
-                crate::telemetria::conta(
+                crate::telemetria::conta_de(&s.name, 
                     "invocacao_montaria_grau",
                     shared::montarias::de_item(montaria).map_or(0, |(_, g)| g),
                     1,
@@ -18939,7 +18948,7 @@ impl GameWorld {
                     no_correio += 1;
                 }
                 premios.push(shared::loja::PremioInvocacao::Pet { item_id: pet });
-                crate::telemetria::conta("invocacao_pet_grau", grau, 1);
+                crate::telemetria::conta_de(&s.name, "invocacao_pet_grau", grau, 1);
             }
         } else {
             for _ in 0..total {
@@ -18956,7 +18965,7 @@ impl GameWorld {
                     grau,
                     quantidade: q,
                 });
-                crate::telemetria::conta("invocacao_tomo", format!("{skill_id}-{grau:?}"), 1);
+                crate::telemetria::conta_de(&s.name, "invocacao_tomo", format!("{skill_id}-{grau:?}"), 1);
             }
             s.skills_dirty = true;
             let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
@@ -19358,7 +19367,7 @@ impl GameWorld {
             let Some(player_entity) = session.entity else {
                 return;
             };
-            crate::telemetria::conta("item_usado", slot.item_id, 1);
+            crate::telemetria::conta_de(&session.name, "item_usado", slot.item_id, 1);
 
             // Equipavel: swap entre inventario e slot de equip correspondente.
             if let Some(es) = shared::equip_slot_of(slot.item_id) {
@@ -20053,7 +20062,7 @@ impl GameWorld {
                 });
             }
             self.save_pending = true;
-            crate::telemetria::conta("energia_coletada", self.zona.clone(), qtd as i64);
+            crate::telemetria::conta_de(&self.nome_de(sid), "energia_coletada", self.zona.clone(), qtd as i64);
             if self.na_magica() {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     if add_to_inventory(&mut s.inventory, shared::item_id::MOEDA_MAGICA, 1, None) {
@@ -20308,7 +20317,7 @@ impl GameWorld {
         if let Some(s) = self.sessions.get_mut(&sid) {
             for &(item_id, qty) in drops {
                 add_to_inventory(&mut s.inventory, item_id, qty, None);
-                crate::telemetria::conta("coleta_item", item_id, qty as i64);
+                crate::telemetria::conta_de(&s.name, "coleta_item", item_id, qty as i64);
             }
             if na_magica
                 && add_to_inventory(&mut s.inventory, shared::item_id::MOEDA_MAGICA, 1, None)

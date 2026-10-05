@@ -299,7 +299,7 @@ impl GameWorld {
         };
         tirar_item(&mut s.inventory, chave, 1);
         s.inventory_dirty = true;
-        crate::telemetria::conta("porao_chave_usada", format!("{conteudo}"), 1);
+        crate::telemetria::conta_de(&s.name, "porao_chave_usada", format!("{conteudo}"), 1);
         if s.dungeon.porao_pendente == 0 {
             self.dg_comecar(conteudo, 1, vec![sid]);
         }
@@ -895,8 +895,8 @@ impl GameWorld {
         }
         s.gold -= preco;
         s.dungeon.gruta.comprar();
-        crate::telemetria::conta("dungeon_entrada_comprada", "gruta", 1);
-        crate::telemetria::conta("ouro_ralo", "dungeon_entrada", preco as i64);
+        crate::telemetria::conta_de(&s.name, "dungeon_entrada_comprada", "gruta", 1);
+        crate::telemetria::conta_de(&s.name, "ouro_ralo", "dungeon_entrada", preco as i64);
         self.save_pending = true;
         self.dg_texto(sid, true, format!("Entry bought for {preco} gold."));
     }
@@ -1022,7 +1022,7 @@ impl GameWorld {
                 entradas.atualizar(c.tipo, hoje);
                 !entradas.consumir()
             };
-            crate::telemetria::conta(
+            crate::telemetria::conta_de(&s.name, 
                 "dungeon_entrada",
                 format!(
                     "{conteudo}:{estagio}:{}",
@@ -1031,7 +1031,7 @@ impl GameWorld {
                 1,
             );
             if dg::exige_selo(c, estagio) {
-                crate::telemetria::conta("selo_usado", format!("{conteudo}:{estagio}"), 1);
+                crate::telemetria::conta_de(&s.name, "selo_usado", format!("{conteudo}:{estagio}"), 1);
                 tirar_item(&mut s.inventory, shared::item_id::SELO_TEMPESTADE, 1);
                 s.inventory_dirty = true;
             }
@@ -2053,11 +2053,11 @@ impl GameWorld {
         if bau.marcas > 0 {
             premios.push((shared::item_id::MARCAS_TEMPESTADE, bau.marcas, None));
         }
-        crate::telemetria::conta("dungeon_bau", format!("{conteudo}:{estagio}"), 1);
+        crate::telemetria::conta_de(&s.name, "dungeon_bau", format!("{conteudo}:{estagio}"), 1);
         for (item, qtd, inst) in premios {
-            crate::telemetria::conta("dungeon_bau_item", item, qtd as i64);
+            crate::telemetria::conta_de(&s.name, "dungeon_bau_item", item, qtd as i64);
             if shared::item_id::todas_as_chaves().contains(&item) {
-                crate::telemetria::conta("chave_drop", format!("dungeon:{item}"), qtd as i64);
+                crate::telemetria::conta_de(&s.name, "chave_drop", format!("dungeon:{item}"), qtd as i64);
             }
             itens.push((item, qtd));
             if !add_to_inventory(&mut s.inventory, item, qtd, inst) {
@@ -2087,7 +2087,7 @@ impl GameWorld {
                 String::new()
             };
             self.dg_texto(sid, n_ok > 0, format!("Challenges: {}{bonus}", linhas.join(" · ")));
-            crate::telemetria::conta("porao_desafios", format!("{conteudo}:{n_ok}"), 1);
+            crate::telemetria::conta_de(&self.nome_de(sid), "porao_desafios", format!("{conteudo}:{n_ok}"), 1);
         }
         self.dg_avisar(
             sid,
