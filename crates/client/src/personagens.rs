@@ -268,135 +268,152 @@ impl Personagens {
             );
         }
 
-        // Teclado da tela aberto: ele cobre a metade de baixo, onde o campo mora.
-        // O campo sobe pra logo acima dele, sobre o personagem.
-        let teclado = crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
-        let dy = l.subida_do_nome(teclado, h);
-        let campo = Rect::new(l.nome.x, l.nome.y - dy, l.nome.w, l.nome.h);
-        if dy > 0.0 {
-            draw_rectangle(
-                l.retrato.x - 8.0,
-                campo.y - 28.0,
-                l.retrato.w + 16.0,
-                campo.h + 40.0,
-                Color::new(0.012, 0.018, 0.030, 0.94),
-            );
-            ui::texto(campo.x, campo.y - 10.0, "CHARACTER NAME", 12, ui::OURO);
-        } else if !l.compacto {
-            ui::texto(campo.x, campo.y - 8.0, "NAME", 12, ui::OURO);
-        }
-        if !ocupado {
-            if let Some(p) = apertou_em() {
-                self.foco_nome = campo.contains(p);
-            }
-        }
-        if !ocupado && self.foco_nome {
-            for &c in digitado {
-                if c as u32 == 8 {
-                    self.nome.pop();
-                } else if !c.is_control() && self.nome.chars().count() < 24 {
-                    self.nome.push(c);
-                }
-            }
-            if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
-                self.nome.pop();
-            }
-        }
-        draw_rectangle(campo.x, campo.y, campo.w, campo.h, ui::FUNDO);
-        draw_rectangle_lines(
-            campo.x,
-            campo.y,
-            campo.w,
-            campo.h,
-            if self.foco_nome { 2.0 } else { 1.0 },
-            if self.foco_nome { ui::OURO } else { ui::BORDA },
-        );
-        let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 {
-            "|"
-        } else {
-            ""
-        };
-        let meio = campo.y + campo.h * 0.5 + 6.0;
-        if self.nome.is_empty() && !self.foco_nome {
-            ui::texto_centro(
-                campo.x + campo.w * 0.5,
-                meio,
-                "Tap to choose the name",
-                16,
-                ui::SUAVE,
-            );
-        } else {
-            ui::texto_centro(
-                campo.x + campo.w * 0.5,
-                meio,
-                &format!("{}{cursor}", self.nome),
-                18,
-                ui::TEXTO,
-            );
-        }
-
-        let erro = if self.nome.is_empty() {
-            None
-        } else {
-            valida_nome(&self.nome).err()
-        };
-        let msg = self
-            .mensagem
-            .as_deref()
-            .or(erro)
-            .or(if self.arma.is_none() {
-                Some("Nenhuma arma inicial disponível neste servidor.")
-            } else {
-                None
-            })
-            .or(if self.foco_nome {
-                Some("2 to 24 characters · letters, numbers and _")
-            } else {
-                None
-            });
-        if let Some(msg) = msg {
-            let cor = if erro.is_some() || self.mensagem.is_some() {
-                ui::OURO
-            } else {
-                ui::SUAVE
-            };
+        // The name and the Create button live on the Appearance tab: the
+        // weapon tab only leads there, so nobody creates a character without
+        // having seen the look.
+        if self.aba != 1 {
+            self.foco_nome = false;
             ui::texto_centro(
                 cx,
-                campo.y
-                    - if dy > 0.0 {
-                        30.0
-                    } else if l.compacto {
-                        7.0
-                    } else {
-                        26.0
-                    },
-                msg,
-                13,
-                cor,
+                l.nome.y + l.nome.h * 0.5 + 6.0,
+                "Look and name come next",
+                14,
+                ui::SUAVE,
             );
-        }
-
-        let pode = !ocupado && self.pedido_criacao(armas).is_ok();
-        let rotulo = if ocupado {
-            "Creating the character…"
-        } else if self.nome.trim().is_empty() {
-            "Choose a name"
+            if botao(l.botao, "Next: Appearance", !ocupado && self.arma.is_some(), true) {
+                self.aba = 1;
+            }
         } else {
-            "Create character"
-        };
-        if dy == 0.0 {
-            if botao(l.botao, rotulo, pode, true) {
+            // Teclado da tela aberto: ele cobre a metade de baixo, onde o campo mora.
+            // O campo sobe pra logo acima dele, sobre o personagem.
+            let teclado = crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
+            let dy = l.subida_do_nome(teclado, h);
+            let campo = Rect::new(l.nome.x, l.nome.y - dy, l.nome.w, l.nome.h);
+            if dy > 0.0 {
+                draw_rectangle(
+                    l.retrato.x - 8.0,
+                    campo.y - 28.0,
+                    l.retrato.w + 16.0,
+                    campo.h + 40.0,
+                    Color::new(0.012, 0.018, 0.030, 0.94),
+                );
+                ui::texto(campo.x, campo.y - 10.0, "CHARACTER NAME", 12, ui::OURO);
+            } else if !l.compacto {
+                ui::texto(campo.x, campo.y - 8.0, "NAME", 12, ui::OURO);
+            }
+            if !ocupado {
+                if let Some(p) = apertou_em() {
+                    self.foco_nome = campo.contains(p);
+                }
+            }
+            if !ocupado && self.foco_nome {
+                for &c in digitado {
+                    if c as u32 == 8 {
+                        self.nome.pop();
+                    } else if !c.is_control() && self.nome.chars().count() < 24 {
+                        self.nome.push(c);
+                    }
+                }
+                if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
+                    self.nome.pop();
+                }
+            }
+            draw_rectangle(campo.x, campo.y, campo.w, campo.h, ui::FUNDO);
+            draw_rectangle_lines(
+                campo.x,
+                campo.y,
+                campo.w,
+                campo.h,
+                if self.foco_nome { 2.0 } else { 1.0 },
+                if self.foco_nome { ui::OURO } else { ui::BORDA },
+            );
+            let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 {
+                "|"
+            } else {
+                ""
+            };
+            let meio = campo.y + campo.h * 0.5 + 6.0;
+            if self.nome.is_empty() && !self.foco_nome {
+                ui::texto_centro(
+                    campo.x + campo.w * 0.5,
+                    meio,
+                    "Tap to choose the name",
+                    16,
+                    ui::SUAVE,
+                );
+            } else {
+                ui::texto_centro(
+                    campo.x + campo.w * 0.5,
+                    meio,
+                    &format!("{}{cursor}", self.nome),
+                    18,
+                    ui::TEXTO,
+                );
+            }
+
+            let erro = if self.nome.is_empty() {
+                None
+            } else {
+                valida_nome(&self.nome).err()
+            };
+            let msg = self
+                .mensagem
+                .as_deref()
+                .or(erro)
+                .or(if self.arma.is_none() {
+                    Some("Nenhuma arma inicial disponível neste servidor.")
+                } else {
+                    None
+                })
+                .or(if self.foco_nome {
+                    Some("2 to 24 characters · letters, numbers and _")
+                } else {
+                    None
+                });
+            if let Some(msg) = msg {
+                let cor = if erro.is_some() || self.mensagem.is_some() {
+                    ui::OURO
+                } else {
+                    ui::SUAVE
+                };
+                ui::texto_centro(
+                    cx,
+                    campo.y
+                        - if dy > 0.0 {
+                            30.0
+                        } else if l.compacto {
+                            7.0
+                        } else {
+                            26.0
+                        },
+                    msg,
+                    13,
+                    cor,
+                );
+            }
+
+            let pode = !ocupado && self.pedido_criacao(armas).is_ok();
+            let rotulo = if ocupado {
+                "Creating the character…"
+            } else if self.nome.trim().is_empty() {
+                "Choose a name"
+            } else {
+                "Create character"
+            };
+            if dy == 0.0 {
+                if botao(l.botao, rotulo, pode, true) {
+                    if let Some(a) = self.envia_criacao(armas) {
+                        return Some(a);
+                    }
+                } else if !ocupado && !pode && clicou(l.botao) {
+                    // Botao apagado por falta de nome: leva direto pro campo.
+                    self.foco_nome = true;
+                }
+            }
+            if pode && self.foco_nome && is_key_pressed(KeyCode::Enter) {
                 if let Some(a) = self.envia_criacao(armas) {
                     return Some(a);
                 }
-            } else if !ocupado && !pode && clicou(l.botao) {
-                // Botao apagado por falta de nome: leva direto pro campo.
-                self.foco_nome = true;
-            }
-        }
-        if pode && self.foco_nome && is_key_pressed(KeyCode::Enter) {
-            if let Some(a) = self.envia_criacao(armas) {
-                return Some(a);
             }
         }
 
@@ -476,18 +493,26 @@ impl Personagens {
                 if l.compacto { 14 } else { 15 },
                 if disponivel { ui::TEXTO } else { ui::SUAVE },
             );
-            ui::texto_ajustado(
-                if !disponivel {
-                    "Unavailable"
-                } else {
-                    estilo(*c).0
-                },
-                tx,
-                r.y + r.h * 0.5 + 14.0,
-                r.w - tx + r.x - 6.0,
-                11,
-                ui::SUAVE,
-            );
+            if disponivel {
+                let fim_estrelas = estrelas(tx, r.y + r.h * 0.5 + 10.0, 5.5, dificuldade(*c));
+                ui::texto_ajustado(
+                    estilo(*c).0,
+                    fim_estrelas + 6.0,
+                    r.y + r.h * 0.5 + 14.0,
+                    r.w - fim_estrelas + r.x - 12.0,
+                    11,
+                    ui::SUAVE,
+                );
+            } else {
+                ui::texto_ajustado(
+                    "Unavailable",
+                    tx,
+                    r.y + r.h * 0.5 + 14.0,
+                    r.w - tx + r.x - 6.0,
+                    11,
+                    ui::SUAVE,
+                );
+            }
             if !ocupado && disponivel && clicou(r) {
                 self.arma = Some(c.arma());
                 self.mensagem = None;
@@ -525,6 +550,11 @@ impl Personagens {
             13,
             ui::SUAVE,
         );
+        y += 22.0;
+        let n = dificuldade(conjunto);
+        ui::texto(x, y, "DIFFICULTY", 12, ui::OURO);
+        let ex = estrelas(x + ui::medir("DIFFICULTY", 12) + 10.0, y - 4.0, 6.5, n);
+        ui::texto_ajustado(["", "Easy", "Medium", "Hard"][n as usize], ex + 8.0, y, x + lw - ex - 8.0, 13, ui::SUAVE);
         y += 22.0;
         let fim = painel.y + painel.h - 10.0;
         if y + 14.0 < fim {
@@ -955,6 +985,37 @@ fn nome_faccao(f: Faction) -> &'static str {
         Faction::Morganeers => "Morganeers",
     }
 }
+/// How hard the class is to play, in stars (1-3): the owner's call. The
+/// tanky melee and the healer forgive mistakes; the katana wants timing; the
+/// pistols want spacing on top of it.
+fn dificuldade(c: Conjunto) -> u8 {
+    match c {
+        Conjunto::EspadaEscudo | Conjunto::AnelMagico => 1,
+        Conjunto::Katana => 2,
+        Conjunto::Pistolas => 3,
+    }
+}
+
+/// Three stars from `x`, centred on `y`, the first `cheias` lit. Returns
+/// where they end.
+fn estrelas(x: f32, y: f32, raio: f32, cheias: u8) -> f32 {
+    for i in 0..3u8 {
+        let c = vec2(x + raio + i as f32 * raio * 2.3, y);
+        let cor = if i < cheias { ui::OURO } else { Color::new(0.35, 0.33, 0.30, 1.0) };
+        let p: Vec<Vec2> = (0..10)
+            .map(|k| {
+                let a = -std::f32::consts::FRAC_PI_2 + k as f32 * std::f32::consts::PI / 5.0;
+                let r = if k % 2 == 0 { raio } else { raio * 0.45 };
+                c + vec2(a.cos(), a.sin()) * r
+            })
+            .collect();
+        for k in 0..10 {
+            draw_triangle(c, p[k], p[(k + 1) % 10], cor);
+        }
+    }
+    x + raio * 2.0 + 2.0 * raio * 2.3
+}
+
 fn estilo(c: Conjunto) -> (&'static str, &'static str) {
     match c {
         Conjunto::EspadaEscudo => (
