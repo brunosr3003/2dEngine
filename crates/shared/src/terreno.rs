@@ -4870,6 +4870,21 @@ impl Ilha {
             }
         }
 
+        // ── AND ENDING inside one: go in by the door ──
+        //
+        // Walking to an NPC aims 2 units short of them, on the walker's
+        // side. Coming from BEHIND a cabin that point is inside it, the grid
+        // cannot see the door, and the closest reachable cell was behind the
+        // back wall: Velin stood there for good (05/10/2026). Route to the
+        // front of the door, then the last step in.
+        if let Some(porta) = crate::vila::saida_do_predio(self.vila(), para) {
+            if porta.distance(para) > 0.01 {
+                let mut rota = self.caminho_evitando(de, porta, orcamento, evitar)?;
+                rota.push(para);
+                return Some(rota);
+            }
+        }
+
         let cel = |p: glam::Vec2| -> (i32, i32) {
             (
                 (p.x / (BLOCO * PASSO_CAMINHO as f32)).round() as i32,
@@ -7322,6 +7337,22 @@ mod testes_do_cais {
         let para = glam::Vec2::new(116.0, -320.0);
         let fim = crate::terreno::testes::simula_ida(&ilha, de, para);
         assert!(fim.distance(para) < 2.0, "stopped at {:.1},{:.1}", fim.x, fim.y);
+    }
+
+    /// The live case behind that cabin: walking to the outpost NPC aims 2
+    /// units short of them on the walker's side, which from behind is INSIDE
+    /// the cabin. The route has to go round to the door, and arrive.
+    #[test]
+    fn falar_com_o_npc_da_cabana_vindo_de_tras() {
+        let def = ARQUIPELAGO.iter().find(|d| d.zona == "ilha_inicial").unwrap();
+        let ilha = Ilha::da_ilha(def);
+        let de = glam::Vec2::new(115.82651, -259.52228);
+        let npc = ilha.vila().npcs.iter().find(|n| n.pos.distance(de) < 15.0).expect("the outpost NPC").pos;
+        // `falar_com` in the client.
+        let para = npc + (de - npc).normalize_or_zero() * 2.0;
+        assert!(crate::vila::saida_do_predio(ilha.vila(), para).is_some(), "the aim point is inside the cabin");
+        let fim = crate::terreno::testes::simula_ida(&ilha, de, para);
+        assert!(fim.distance(npc) < 2.5, "stopped at {:.1},{:.1}, {:.1} from the NPC", fim.x, fim.y, fim.distance(npc));
     }
 
     #[test]
