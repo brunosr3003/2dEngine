@@ -19,6 +19,9 @@ use std::collections::HashMap;
 const AI_DECISAO_TICKS: u32 = 6;
 /// How many "skip these nodes" the auto-gather request may carry.
 const EVITAR_MAX: usize = 16;
+/// Side quests a character can carry at once (ACTIVE + READY). The story
+/// step does not count: it is always open and must never block a contract.
+const LIMITE_DE_MISSOES: usize = 20;
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
@@ -17228,13 +17231,17 @@ impl GameWorld {
             .quests
             .iter()
             .filter(|c| {
-                c.status == shared::quests::quest_status::ACTIVE
-                    || c.status == shared::quests::quest_status::READY
+                (c.status == shared::quests::quest_status::ACTIVE
+                    || c.status == shared::quests::quest_status::READY)
+                    // The story step is always open: it never eats a side slot.
+                    && !shared::historia::e_da_historia(c.quest_id)
             })
             .count();
         // A refusal SAYS why: a dead button read as a broken quest.
-        let motivo = if active_count >= 12 && !shared::historia::e_da_historia(quest_id) {
-            Some("You already have 12 quests in progress: finish or abandon one first.".to_string())
+        let motivo = if active_count >= LIMITE_DE_MISSOES && !shared::historia::e_da_historia(quest_id) {
+            Some(format!(
+                "You already have {LIMITE_DE_MISSOES} quests in progress: finish or abandon one first."
+            ))
         } else if !crate::quests::pode_aceitar(def, level, fac, &s.quests, now) {
             Some(crate::quests::por_que_nao_aceita(def, level, fac, &s.quests, now))
         } else {
@@ -23040,6 +23047,31 @@ mod auditoria_das_missoes {
             }
         }
         falhas
+    }
+
+    /// Velin's real rows (05/10/2026): 11 side quests in progress plus the
+    /// story step. The story must not eat a slot, so the patrol is taken.
+    #[test]
+    fn a_historia_nao_ocupa_vaga_de_missao() {
+        let rows = "501,2,1 502,0,0 511,0,0 516,0,0 523,2,3 524,2,2 525,0,0 528,0,0 531,0,0 534,2,1 535,0,0 539,0,0 542,0,0 543,0,0 544,2,30 545,0,0 610,2,20 619,2,20 699,3,51 735,0,26";
+        let (mut w, origem) = mundo("ilha_inicial");
+        let sid = SessionId("127.0.0.1:45679".parse().unwrap());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((Position(origem), EntityKind::Player));
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.logged_in = true;
+        s.entity = Some(e);
+        s.xp = 2_839_785;
+        s.quests = rows
+            .split(' ')
+            .map(|r| {
+                let v: Vec<i64> = r.split(',').map(|x| x.parse().unwrap()).collect();
+                crate::quests::CharQuest { quest_id: v[0] as u16, status: v[1] as u8, progress: v[2] as u32, cooldown_until: if v[1] == 2 { i64::MAX } else { 0 } }
+            })
+            .collect();
+        w.handle_accept_quest(sid, 912);
+        assert!(w.sessions[&sid].quests.iter().any(|c| c.quest_id == 912 && c.status == 0));
     }
 
     /// The guard: every visible side quest can be taken, found and turned

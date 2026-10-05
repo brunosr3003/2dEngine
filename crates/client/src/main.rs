@@ -442,6 +442,8 @@ struct Jogo {
     banda_marca: (f64, u64),
     info: hud::Info,
     chat: avisos::Avisos,
+    /// When the last AcceptQuest went out: the next SYS line is its answer.
+    aceite_pendente: Option<f64>,
     /// Modo economia de energia (`economia.rs`).
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
@@ -975,6 +977,7 @@ async fn main() {
         banda_marca: (0.0, 0),
         info: hud::Info::default(),
         chat: avisos::Avisos::default(),
+        aceite_pendente: None,
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
         viagem: viagem_ui::ViagemUi::default(),
@@ -1963,6 +1966,11 @@ impl Jogo {
                 } else {
                     text
                 };
+                if from == "SYS" && self.aceite_pendente.is_some_and(|t| get_time() - t < 3.0) {
+                    self.aceite_pendente = None;
+                    self.menu_missoes.aviso = Some((text.clone(), get_time() + 6.0));
+                    self.habilidades.aviso(text.clone());
+                }
                 self.chat.push(format!("{from}: {text}"));
             }
             // O que a bolsa mostra. O servidor manda tudo no login e de novo a
@@ -4886,6 +4894,8 @@ impl Jogo {
             // announcing it here claimed quests the server had refused.
             menu_missoes::Clique::Aceitar(id) => {
                 self.envia(ClientMessage::AcceptQuest { quest_id: id });
+                // The answer (accepted, or why not) comes as a SYS line.
+                self.aceite_pendente = Some(get_time());
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
         }

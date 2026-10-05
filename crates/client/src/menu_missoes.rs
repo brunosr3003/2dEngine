@@ -782,6 +782,9 @@ const PASSO: f32 = 26.0;
 #[derive(Default)]
 pub struct MenuMissoes {
     pub aberto: bool,
+    /// The server's answer to the last Accept, shown in the page header
+    /// until it expires: a refusal only in the chat read as a dead button.
+    pub aviso: Option<(String, f64)>,
     rolagem: crate::rolagem::Rolagem,
     /// `None` = escolher na abertura (em andamento, ou disponiveis).
     aba: Option<Aba>,
@@ -905,7 +908,53 @@ impl MenuMissoes {
         }
         // The quest book is READ: a page (`estilo::pergaminho`).
         estilo::pergaminho(Self::painel());
-        estilo::no_pergaminho(|| self.desenha_pagina(c))
+        let clique = estilo::no_pergaminho(|| self.desenha_pagina(c));
+        self.desenha_aviso();
+        clique
+    }
+
+    /// The answer to the last Take, over the foot of the list: the quest's
+    /// name on top, what the server said under it.
+    fn desenha_aviso(&mut self) {
+        let Some((msg, ate)) = &self.aviso else { return };
+        if get_time() >= *ate {
+            self.aviso = None;
+            return;
+        }
+        let msg = shared::idioma::tr(msg).into_owned();
+        let (titulo, motivo) = match msg.split_once(": ") {
+            Some((t, m)) => (t.to_string(), m.to_string()),
+            None => (String::new(), msg.clone()),
+        };
+        let f = estilo::fator_texto();
+        let p = Self::painel();
+        let largura = p.w - 56.0;
+        // The reason wraps (two lines at most): cut short, it hid the "why".
+        let mut linhas: Vec<String> = vec![String::new()];
+        for palavra in motivo.split_whitespace() {
+            let atual = linhas.last_mut().unwrap();
+            let teste = if atual.is_empty() { palavra.to_string() } else { format!("{atual} {palavra}") };
+            if !atual.is_empty() && estilo::medir(&teste, 15) > largura && linhas.len() < 2 {
+                linhas.push(palavra.to_string());
+            } else {
+                *linhas.last_mut().unwrap() = teste;
+            }
+        }
+        let topo = if titulo.is_empty() { 0.0 } else { 26.0 * f };
+        let h = 14.0 * f + topo + linhas.len() as f32 * 24.0 * f;
+        let r = Rect::new(p.x + 14.0, p.y + p.h - 88.0 * f - h, p.w - 28.0, h);
+        estilo::sem_pergaminho(|| {
+            estilo::sombra(r, 8.0, 0.6);
+            estilo::ret_arredondado(r, 8.0, Color::new(0.07, 0.10, 0.14, 0.96));
+            estilo::borda_arredondada(r, 8.0, 1.5, estilo::OURO);
+            if !titulo.is_empty() {
+                estilo::texto_ajustado(&titulo, r.x + 14.0, r.y + 26.0 * f, largura, 17, estilo::OURO);
+            }
+            for (i, l) in linhas.iter().enumerate() {
+                let y = r.y + topo + 26.0 * f + i as f32 * 24.0 * f;
+                estilo::texto_ajustado(l, r.x + 14.0, y, largura, 15, estilo::TEXTO);
+            }
+        });
     }
 
     fn desenha_pagina(&mut self, c: &Contexto) -> Option<Clique> {
@@ -1390,6 +1439,12 @@ pub async fn previa_menu() {
         m.abrir();
         m.aba = Some(aba);
         m.mapa = mapa;
+        if nome == "disponiveis" {
+            m.aviso = Some((
+                "Woodland patrol: You already have 20 quests in progress: finish or abandon one first.".into(),
+                get_time() + 60.0,
+            ));
+        }
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));
