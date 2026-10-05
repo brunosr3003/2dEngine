@@ -1,3 +1,9 @@
+05/10/2026 — Selo de vinculado e o menor preço da mesma peça
+
+Itens vinculados agora mostram um selo de cera com cadeado no canto de baixo do ícone, na bolsa, no armazém, no mercado e nas recompensas: dá para ver de longe o que não pode ser vendido.
+
+Ao vender um equipamento, o mercado mostra as duas referências: o preço recomendado e o menor preço à venda agora da MESMA peça (mesma cor, tier e refino), cada um com seu botão Usar. Um +0 da mesma arma não conta como referência para um +7.
+
 05/10/2026 — Preço recomendado no mercado, e equipamentos, pets e montarias à venda
 
 Ao escolher um item para vender, o mercado agora já preenche um preço recomendado, e o botão "Vender tudo" anuncia a pilha inteira por esse preço com um clique. O preço é só uma sugestão: você pode digitar qualquer valor, até 1.

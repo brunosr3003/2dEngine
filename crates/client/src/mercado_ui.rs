@@ -796,20 +796,32 @@ impl Mercado {
             estilo::OURO,
             f,
         );
-        let menor = self
-            .lista
-            .iter()
-            .filter(|an| an.item_id == slot.item_id && an.tipo == regras::TIPO_ITEM)
-            .map(|an| an.preco_unit)
-            .min();
+        // THE MARKET'S OWN PRICE: the cheapest listing of the same thing. For
+        // gear "the same" is the same colour, tier and refine — a +7 is not
+        // priced by a +0 of the same sword. The search sorts by price, so
+        // the page in hand holds the cheapest.
+        let peca = shared::precos::e_peca_da_forja(slot.item_id);
+        let igual = |an: &&AnuncioNet| {
+            an.item_id == slot.item_id
+                && an.tipo == regras::TIPO_ITEM
+                && (!peca
+                    || match (an.instancia.as_ref(), slot.instance.as_ref()) {
+                        (Some(a), Some(b)) => (a.rarity, a.tier, a.refinement) == (b.rarity, b.tier, b.refinement),
+                        _ => false,
+                    })
+        };
+        let menor = self.lista.iter().filter(igual).map(|an| an.preco_unit).min();
         if let Some(pr) = menor {
-            estilo::texto(
-                x,
-                y + 70.0 * f,
-                &format!("Lowest asking price: {} gold", milhar(pr)),
-                13,
-                estilo::SUAVE,
-            );
+            let rotulo = if peca {
+                format!("Lowest on the market (same piece): {} gold", milhar(pr))
+            } else {
+                format!("Lowest asking price: {} gold", milhar(pr))
+            };
+            estilo::texto(x, y + 112.0 * f, &rotulo, 14, estilo::TEXTO);
+            let usar = Rect::new(x + w - 70.0 * f, y + 94.0 * f, 70.0 * f, 26.0 * f);
+            if self.venda_preco != pr && botao(usar, "Use", livre, false) {
+                self.venda_preco = pr;
+            }
         }
         // THE RECOMMENDED PRICE: what the realm's gold and stock say this is
         // worth. A line to read, a button to take it back after typing, and a
@@ -817,7 +829,7 @@ impl Mercado {
         let recomendado = shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
         let pode_listar = livre && pode && self.meus.len() < regras::MAX_ANUNCIOS;
         if let Some(rec) = recomendado {
-            let ry = y + 88.0 * f;
+            let ry = y + 76.0 * f;
             estilo::texto(x, ry + 4.0 * f, &format!("Recommended: {} gold", milhar(rec)), 14, estilo::OURO);
             let usar = Rect::new(x + w - 70.0 * f, ry - 14.0 * f, 70.0 * f, 26.0 * f);
             if self.venda_preco != rec && botao(usar, "Use", livre, false) {
@@ -1472,6 +1484,25 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         nomes.insert(id, n.into());
     }
     let mut m = Mercado { aberto: true, aba: Aba::Vender, precos: shared::precos::calcular(&estoque).mapa(), ..Default::default() };
+    // On the market: the same Rare IV +7 for less, and a +0 for far less
+    // (which must NOT count as the same piece).
+    let mut zero = katana;
+    zero.refinement = 0;
+    for (inst, preco) in [(katana, 900_000u64), (zero, 40_000)] {
+        m.lista.push(AnuncioNet {
+            id: String::new(),
+            tipo: regras::TIPO_ITEM,
+            item_id: it::KATANA,
+            nome: "Katana".into(),
+            categoria: 1,
+            instancia: Some(inst),
+            qtd: 1,
+            preco_unit: preco,
+            realm: "SA01".into(),
+            vendedor: "Outro".into(),
+            meu: false,
+        });
+    }
     for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("comprar", 0)] {
         m.aba = if nome == "comprar" { Aba::Comprar } else { Aba::Vender };
         m.venda_slot = Some(slot);
@@ -1486,5 +1517,32 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
         }
+    }
+    // The bound seal on the bag's own cells: bound kinds, a bound piece,
+    // and free ones beside them for contrast.
+    crate::icones::define_vinculados([it::XP_POTION, 490]);
+    let mut presa = katana;
+    presa.vinculado = true;
+    let celulas = [
+        InventorySlot { item_id: it::XP_POTION, qty: 3, instance: None },
+        InventorySlot { item_id: 490, qty: 1, instance: None },
+        InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(presa) },
+        InventorySlot { item_id: it::KATANA, qty: 1, instance: Some(katana) },
+        InventorySlot { item_id: it::na_cor(it::STEEL, 2), qty: 480, instance: None },
+    ];
+    for _ in 0..3 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.08, 0.12, 0.16, 1.));
+        for (k, c) in celulas.iter().enumerate() {
+            let r = Rect::new(200.0 + k as f32 * 130.0, 200.0, 110.0, 110.0);
+            crate::bolsa::celula_do_slot(r, c, Some((vox, &solido)));
+        }
+        for (k, c) in celulas.iter().enumerate() {
+            let r = Rect::new(200.0 + k as f32 * 80.0, 380.0, 64.0, 64.0);
+            crate::bolsa::celula_do_slot(r, c, Some((vox, &solido)));
+        }
+        unsafe { get_internal_gl().flush() };
+        rt.texture.get_texture_data().export_png(&format!("{saida}/selo.png"));
+        next_frame().await;
     }
 }

@@ -1994,6 +1994,7 @@ impl Jogo {
             ServerMessage::ItemsConfig { items } => {
                 self.mercado.vinculados =
                     items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
+                crate::icones::define_vinculados(self.mercado.vinculados.iter().copied());
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
                 self.social.nomes = self.bolsa.nomes.clone();
             }

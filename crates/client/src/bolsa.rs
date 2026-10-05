@@ -1606,6 +1606,9 @@ fn celula(
                     ui::OURO_CLARO,
                 );
             }
+            if crate::icones::vinculado(p.id, p.inst.as_ref()) {
+                crate::icones::selo_vinculado(r);
+            }
             if p.qty > 1 {
                 let t = curta(p.qty);
                 let d = crate::hud_estilo::medir_dim(&t, fonte);

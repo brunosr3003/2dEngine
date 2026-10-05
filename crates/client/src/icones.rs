@@ -53,6 +53,49 @@ pub fn celula(item_id: u16) -> Option<Rect> {
 
 /// Draws the atlas icon centered and square inside `r`. Returns `false` if
 /// the item has no icon (the caller draws the substitute).
+/// The item kinds the server marks as bound (`ItemsConfig`), for the seal.
+static VINCULADOS: std::sync::RwLock<Option<std::collections::HashSet<u16>>> = std::sync::RwLock::new(None);
+
+pub fn define_vinculados(ids: impl IntoIterator<Item = u16>) {
+    if let Ok(mut g) = VINCULADOS.write() {
+        *g = Some(ids.into_iter().collect());
+    }
+}
+
+/// Bound: the kind is (chests, scrolls, reward potions), or this very piece.
+pub fn vinculado(item_id: u16, inst: Option<&shared::ItemInstance>) -> bool {
+    inst.is_some_and(|i| i.vinculado)
+        || VINCULADOS
+            .read()
+            .ok()
+            .is_some_and(|g| g.as_ref().is_some_and(|s| s.contains(&item_id)))
+}
+
+/// THE BOUND SEAL, in the cell's bottom-left corner (the other three hold
+/// the tier, the refine and the quantity): a wax seal with a padlock, so a
+/// bound item reads as "this stays with you" before anyone tries to sell it.
+pub fn selo_vinculado(r: Rect) {
+    let raio = (r.w.min(r.h) * 0.15).clamp(5.0, 11.0);
+    let c = vec2(r.x + raio + r.w * 0.05, r.y + r.h - raio - r.h * 0.05);
+    draw_circle(c.x + 1.0, c.y + 1.5, raio, Color::new(0.0, 0.0, 0.0, 0.45));
+    draw_circle(c.x, c.y, raio, Color::new(0.62, 0.10, 0.12, 1.0));
+    draw_circle_lines(c.x, c.y, raio, (raio * 0.16).max(1.0), Color::new(0.95, 0.78, 0.42, 1.0));
+    // The padlock: a shackle arc over a body.
+    let ouro = Color::new(0.98, 0.86, 0.55, 1.0);
+    let corpo_w = raio * 0.95;
+    let corpo_h = raio * 0.68;
+    let corpo = Rect::new(c.x - corpo_w * 0.5, c.y - corpo_h * 0.18, corpo_w, corpo_h);
+    let arco_r = corpo_w * 0.32;
+    let esp = (raio * 0.17).max(1.0);
+    for k in 0..=12 {
+        let a = std::f32::consts::PI * (k as f32 / 12.0);
+        let p = vec2(c.x - a.cos() * arco_r, corpo.y - a.sin() * arco_r * 1.15);
+        draw_circle(p.x, p.y, esp * 0.5, ouro);
+    }
+    draw_rectangle(corpo.x, corpo.y, corpo.w, corpo.h, ouro);
+    draw_circle(c.x, corpo.y + corpo.h * 0.42, corpo_w * 0.12, Color::new(0.62, 0.10, 0.12, 1.0));
+}
+
 pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
     let Some(fonte) = celula(item_id) else {
         return false;
@@ -112,6 +155,9 @@ pub fn icone_com_3d(
         let tam = (r.w * 0.26).clamp(10.0, 16.0) as u16;
         let w = crate::hud_estilo::medir_forte(&t, tam);
         crate::hud_estilo::texto_sombra(r.x + r.w - w - 4.0, r.y + r.h - 4.0, &t, tam, WHITE, true);
+    }
+    if vinculado(item_id, None) {
+        selo_vinculado(r);
     }
 }
 
