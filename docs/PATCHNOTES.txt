@@ -4,6 +4,8 @@ As missões secundárias agora podem ser pegas de qualquer ilha, como o menu já
 
 As diárias agora vencem no reset do jogo, às 04:00, como as dungeons e o calendário — antes venciam à meia-noite UTC (21:00), e uma diária pega à noite sumia e voltava a aparecer como disponível. O salvamento das missões também ficou mais seguro: uma falha não apaga mais o progresso das missões em silêncio.
 
+Missões secundárias de outra ilha agora levam você até lá: a auto missão vai ao Capitão do Porto (ou ao Ônibus Celeste, ou ao Submarino) e avisa em que ilha o objetivo fica, como já fazia com a história. Conversas e missões de itens continuam valendo em qualquer ilha, e as do Mestre podem ser entregues ao Mestre de qualquer ilha.
+
 A janela de missão concluída agora mostra a experiência que a missão realmente dá.
 
 05/10/2026 — Calendário de presença mais claro

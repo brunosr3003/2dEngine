@@ -16260,6 +16260,23 @@ impl GameWorld {
         true
     }
 
+    /// How to reach island `z` from here, for a quest that happens there:
+    /// "<o que> happens on <island>. <who takes you>".
+    fn como_chegar(&self, z: &str, o_que: &str) -> String {
+        let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
+        if shared::abissal::e_abissal(z) && shared::kogen::e_kogen(&self.zona) {
+            format!("{o_que} happens in {ilha}. The Submarine Captain dives there from the Docks.")
+        } else if shared::abissal::e_abissal(z) {
+            format!("{o_que} happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.")
+        } else if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
+            format!("{o_que} happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.")
+        } else if shared::kogen::e_kogen(z) {
+            format!("{o_que} happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.")
+        } else {
+            format!("{o_que} happens on {ilha}. Set sail with the Harbour Captain.")
+        }
+    }
+
     /// Onde fica o objetivo da missao `quest_id` do jogador (auto missao).
     fn handle_quest_destino(&mut self, sid: SessionId, quest_id: u16) {
         use shared::quests::{destino_tipo, quest_status};
@@ -16289,19 +16306,7 @@ impl GameWorld {
             if let Some(z) = shared::quests::zona_da_missao(quest_id).filter(|z| *z != self.zona) {
                 // Passo de outra ilha: o caminho comeca no Capitao do Porto,
                 // que leva a qualquer ilha liberada (`shared::viagem`).
-                let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
-                let aviso = if shared::abissal::e_abissal(z) && shared::kogen::e_kogen(&self.zona) {
-                    format!("Story: this step happens in {ilha}. The Submarine Captain dives there from the Docks.")
-                } else if shared::abissal::e_abissal(z) {
-                    format!("Story: this step happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.")
-                } else if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
-                    format!("Story: this step happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.")
-                } else if shared::kogen::e_kogen(z) {
-                    format!("Story: this step happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.")
-                } else {
-                    format!("Story: this step happens on {ilha}. Set sail with the Harbour Captain.")
-                };
-                self.avisa_missao(sid, aviso);
+                self.avisa_missao(sid, self.como_chegar(z, "Story: this step"));
                 if !self.destino_no_capitao(sid, quest_id) {
                     nenhum(self);
                 }
@@ -16335,6 +16340,26 @@ impl GameWorld {
                 .sum();
             (cq, tem, shared::level_of_xp_with_mult(s.xp, xpmult))
         };
+        // A SIDE QUEST OF ANOTHER ISLAND: the auto quest takes the boat
+        // there, like the story's steps — it used to stop and say it didn't
+        // know where the objective was (owner, 05/10/2026: "I want a way to
+        // get quests from another island"). Only when the island matters:
+        // a hunt, a quarry or a place counts only there, and the turn-in
+        // goes to a giver that may live only there (an outpost). Talking and
+        // items count anywhere, and every island has a Quest Master.
+        if def.source != shared::quests::quest_source::HISTORIA {
+            if let (Some(z), Some(cq)) = (
+                shared::quests::zona_da_missao(quest_id).filter(|z| *z != self.zona),
+                cq.as_ref(),
+            ) {
+                let giver_aqui = !self.npcs_do_giver(def.giver).is_empty();
+                let precisa_ir = crate::quests::precisa_da_ilha(def, cq.status, giver_aqui);
+                if precisa_ir && self.destino_no_capitao(sid, quest_id) {
+                    self.avisa_missao(sid, self.como_chegar(z, &format!("\"{}\"", def.title)));
+                    return;
+                }
+            }
+        }
         // A falta de Energia é medida AQUI, onde a sessão está à mão, e
         // passada adiante: `destino_da_missao` não tem o `sid`.
         let sem_energia = self.sem_energia_pro_passo(sid);

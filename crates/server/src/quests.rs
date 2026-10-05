@@ -167,6 +167,18 @@ pub fn requisito_ok(d: &QuestDef, active: &[CharQuest]) -> bool {
 
 /// Pode aceitar `d` agora? A MESMA regra da oferta: o servidor não aceita o
 /// que não ofereceria — nível, facção, cadeia, estado atual e cooldown.
+/// Does a side quest of ANOTHER island need the player there now? Active:
+/// a hunt, a quarry or a place (they count only on their island). Ready: the
+/// giver has to be met, and `giver_aqui` says whether this island has one.
+pub fn precisa_da_ilha(d: &QuestDef, status: u8, giver_aqui: bool) -> bool {
+    use quests::objective_kind as ok;
+    if status == quests::quest_status::READY {
+        !giver_aqui
+    } else {
+        matches!(d.obj_kind, ok::KILL | ok::GATHER | ok::EXPLORE)
+    }
+}
+
 /// Why `pode_aceitar` said no, in words the player can act on.
 pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQuest], now: i64) -> String {
     use quests::quest_status as st;
@@ -749,6 +761,19 @@ pub fn mais_perto(corpos: &[(glam::Vec2, u8)], eu: glam::Vec2) -> Option<glam::V
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// A Glacier hunt taken on the Bosque sends the auto quest to the boat;
+    /// a talk does not (it counts anywhere); a ready outpost quest goes back
+    /// to its outpost, a ready Master quest is turned in at any Master.
+    #[test]
+    fn missao_de_outra_ilha_leva_ao_barco_quando_precisa() {
+        use quests::quest_status::{ACTIVE, READY};
+        let caca = quests::QUESTS.iter().find(|d| quests::zona_da_missao(d.id) == Some("ilha_gelo") && d.obj_kind == quests::objective_kind::KILL).unwrap();
+        assert!(precisa_da_ilha(caca, ACTIVE, true));
+        assert!(!precisa_da_ilha(quests::quest_by_id(501).unwrap(), ACTIVE, true), "talking counts anywhere");
+        assert!(precisa_da_ilha(caca, READY, false), "the outpost lives there");
+        assert!(!precisa_da_ilha(caca, READY, true), "a Master here takes it");
+    }
 
     /// A refused quest says why (owner, 05/10/2026: quests "available" that
     /// could not be taken, with a dead button).

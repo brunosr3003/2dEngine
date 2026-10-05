@@ -351,6 +351,42 @@ pub const VERBETES: &[(&str, &str)] = &[
         "História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
     ),
     (
+        "Story: this step happens in {ilha}. The Submarine Captain dives there from the Docks.",
+        "História: este passo acontece em {ilha}. O Capitão do Submarino mergulha até lá a partir das Docas.",
+    ),
+    (
+        "\"{titulo}\" happens in {ilha}. The Submarine Captain dives there from the Docks.",
+        "\"{titulo}\" acontece em {ilha}. O Capitão do Submarino mergulha até lá a partir das Docas.",
+    ),
+    (
+        "Story: this step happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.",
+        "História: este passo acontece em {ilha}. Vá a Kōgen-tō e pegue o submarino nas Docas.",
+    ),
+    (
+        "\"{titulo}\" happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.",
+        "\"{titulo}\" acontece em {ilha}. Vá a Kōgen-tō e pegue o submarino nas Docas.",
+    ),
+    (
+        "Story: this step happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.",
+        "História: este passo acontece em {ilha}. O Professor do Ônibus Celeste voa até lá a partir do Trono do Céu.",
+    ),
+    (
+        "\"{titulo}\" happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.",
+        "\"{titulo}\" acontece em {ilha}. O Professor do Ônibus Celeste voa até lá a partir do Trono do Céu.",
+    ),
+    (
+        "Story: this step happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.",
+        "História: este passo acontece em {ilha}. Navegue até Skyreach e pegue o Ônibus Celeste no Trono do Céu.",
+    ),
+    (
+        "\"{titulo}\" happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.",
+        "\"{titulo}\" acontece em {ilha}. Navegue até Skyreach e pegue o Ônibus Celeste no Trono do Céu.",
+    ),
+    (
+        "\"{titulo}\" happens on {ilha}. Set sail with the Harbour Captain.",
+        "\"{titulo}\" acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
+    ),
+    (
         "Reach level 20 before sailing for the Glacier. Do the side quests in the Grove.",
         "Alcance o nível 20 antes de embarcar para a Geleira. Faça as missões secundárias do Bosque.",
     ),
