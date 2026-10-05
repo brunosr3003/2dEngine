@@ -196,13 +196,16 @@ pub fn na_zona(d: &QuestDef, zona: &str) -> bool {
 
 /// Does an act HERE count for `d`? Side quests can be taken from any island
 /// (the menu, "like MIR4"), but their objective in the world — hunting,
-/// gathering, talking, exploring — is that island's: a Glacier archer quest
-/// does not fill up with Bosque archers. Items (COLLECT/DELIVER), craft,
-/// forge and dungeon count anywhere, and the story keeps its own flow.
+/// gathering, exploring — is that island's: a Glacier archer quest does not
+/// fill up with Bosque archers. TALKING counts on any island: every village
+/// has the same people, and the auto quest walks to the local one — counting
+/// only the quest's island looped it on the local Alchemist forever (owner,
+/// 04/10/2026). Items (COLLECT/DELIVER), craft, forge and dungeon count
+/// anywhere, and the story keeps its own flow.
 pub fn conta_nesta_ilha(d: &QuestDef, zona: &str) -> bool {
     use quests::objective_kind as o;
     d.source == quests::quest_source::HISTORIA
-        || !matches!(d.obj_kind, o::KILL | o::GATHER | o::TALK | o::EXPLORE)
+        || !matches!(d.obj_kind, o::KILL | o::GATHER | o::EXPLORE)
         || na_zona(d, zona)
 }
 
@@ -708,6 +711,20 @@ pub fn mais_perto(corpos: &[(glam::Vec2, u8)], eu: glam::Vec2) -> Option<glam::V
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// "Meet the Alchemist" is a Bosque quest; on the Glacier the auto quest
+    /// walks to the Glacier's Alchemist. That talk has to count, or it loops
+    /// on the same dialog forever (owner, 04/10/2026).
+    #[test]
+    fn conversa_conta_em_qualquer_ilha() {
+        let d = quests::quest_by_id(501).unwrap();
+        assert_eq!(quests::zona_da_missao(501), Some("ilha_inicial"));
+        assert!(conta_nesta_ilha(d, "ilha_gelo"));
+        let mut ativas = vec![CharQuest { quest_id: 501, status: quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 }];
+        let mudou = avancar_conversa_na_ilha(&mut ativas, shared::construcao::Papel::Alquimista as u16, Some("ilha_abissal"));
+        assert_eq!(mudou.len(), 1);
+        assert_eq!(ativas[0].status, quests::quest_status::READY);
+    }
     use quests::{quest_status::*, GIVER_MESTRE_DA_ILHA};
 
     #[test]
@@ -836,7 +853,7 @@ mod testes {
     /// island; items, craft and dungeons count anywhere.
     #[test]
     fn caca_de_outra_ilha_so_conta_na_ilha_dela() {
-        // 810+: the Glacier's chain; 503 (COLLECT copper) is the Bosque's.
+        // 810+: the Glacier's chain; 102 (COLLECT steel) is an item quest.
         let caca = quests::QUESTS
             .iter()
             .find(|d| quests::zona_da_missao(d.id) == Some("ilha_gelo") && d.obj_kind == quests::objective_kind::KILL && d.obj_target != 0 && d.obj_target != quests::ALVO_QUALQUER_CHEFE)
@@ -847,7 +864,7 @@ mod testes {
         let kind = caca.obj_target - 1;
         assert!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_inicial")).is_empty());
         assert_eq!(avancar_kill_na_ilha(&mut a, Some(kind), None, false, Some("ilha_gelo")).len(), 1);
-        assert!(conta_nesta_ilha(def(503), "ilha_gelo"), "items count anywhere");
+        assert!(conta_nesta_ilha(def(102), "ilha_gelo"), "items count anywhere");
     }
 
     #[test]
@@ -952,11 +969,13 @@ mod testes {
 
     #[test]
     fn nao_entrega_incompleta() {
-        let coleta = cq(503, ACTIVE, 0);
-        assert!(checar_entrega(def(503), &coleta, 10)
+        // 102 ("Miner", 15 Steel): no island menu offers a COLLECT any more
+        // (04/10/2026, they became hunts and quarries), but the rule stays.
+        let coleta = cq(102, ACTIVE, 0);
+        assert!(checar_entrega(def(102), &coleta, 10)
             .unwrap_err()
-            .contains("20 of"));
-        assert_eq!(checar_entrega(def(503), &coleta, 30), Ok(30));
+            .contains("5 of"));
+        assert_eq!(checar_entrega(def(102), &coleta, 15), Ok(15));
         assert!(
             checar_entrega(def(502), &cq(502, ACTIVE, 5), 0).is_err(),
             "kill pela metade"

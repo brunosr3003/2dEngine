@@ -22941,3 +22941,76 @@ mod testes_kogen {
         }
     }
 }
+
+/// THE SIDE-QUEST AUDIT: every side quest a player can see, on the island
+/// where it lives, asked to the same `destino_da_missao` the auto quest
+/// uses — once active (where is the objective?) and once ready (where do I
+/// turn it in?). The owner (04/10/2026): "a lot of side quests are not
+/// working, some can't be taken and some can't be completed, and most say
+/// they don't know where to find it".
+#[cfg(test)]
+mod auditoria_das_missoes {
+    use super::*;
+    use shared::quests::{quest_status, zona_da_missao, QuestDef, QUESTS};
+
+    fn mundo(zona: &'static str) -> (GameWorld, Vec2) {
+        crate::economy::init_vazia_para_testes();
+        let def = shared::terreno::def_da_zona(zona).expect("island");
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = zona.into();
+        w.ilha = Some(ilha);
+        let origem = w.porto();
+        w.povoar_ilha(origem);
+        (w, origem)
+    }
+
+    pub(super) fn falhas() -> Vec<String> {
+        let mut por_ilha: std::collections::BTreeMap<&'static str, Vec<&'static QuestDef>> = Default::default();
+        for q in QUESTS {
+            if shared::historia::e_da_historia(q.id) {
+                continue;
+            }
+            if let Some(z) = zona_da_missao(q.id) {
+                por_ilha.entry(z).or_default().push(q);
+            }
+        }
+        let mut falhas = Vec::new();
+        for (zona, qs) in por_ilha {
+            let (w, origem) = mundo(zona);
+            for q in qs {
+                if q.em_breve {
+                    falhas.push(format!("{zona} {} '{}': marked coming soon (cannot be done)", q.id, q.title));
+                    continue;
+                }
+                // CAN IT BE TAKEN? Its prerequisite has to be a quest the
+                // player can actually finish: one that exists, shows up in
+                // a menu, and is not a repeatable (those never "complete").
+                if q.requires != 0 {
+                    let ok = shared::quests::quest_by_id(q.requires).is_some_and(|r| {
+                        zona_da_missao(r.id).is_some() && !r.repeatable && !r.daily
+                    }) || shared::historia::e_da_historia(q.requires);
+                    if !ok {
+                        falhas.push(format!("{zona} {} '{}': requires {}, which can't be done", q.id, q.title, q.requires));
+                    }
+                }
+                let nivel = q.min_level.max(1);
+                for (status, quando) in [(quest_status::ACTIVE, "objective"), (quest_status::READY, "turn-in")] {
+                    let cq = crate::quests::CharQuest { quest_id: q.id, status, progress: 0, cooldown_until: 0 };
+                    if w.destino_da_missao(q, &cq, 0, nivel, origem, false).is_none() {
+                        falhas.push(format!("{zona} {} '{}' (kind {}): no {quando}", q.id, q.title, q.obj_kind));
+                    }
+                }
+            }
+        }
+        falhas
+    }
+
+    /// The guard: every visible side quest can be taken, found and turned
+    /// in on its island.
+    #[test]
+    fn toda_missao_secundaria_funciona_na_sua_ilha() {
+        let f = falhas();
+        assert!(f.is_empty(), "{} broken side quest(s):\n{}", f.len(), f.join("\n"));
+    }
+}

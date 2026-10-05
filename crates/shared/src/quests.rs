@@ -309,6 +309,11 @@ pub fn zona_da_missao(id: u16) -> Option<&'static str> {
     if crate::historia::e_da_historia(id) {
         return crate::historia::zona_do_passo(id);
     }
+    // A "coming soon" quest stays out of every island's menu: it cannot be
+    // completed yet, and showing it is a broken promise.
+    if quest_by_id(id).is_some_and(|q| q.em_breve) {
+        return None;
+    }
     match id {
         500..=609 | 912 => Some("ilha_inicial"),
         810..=833 | 913 => Some("ilha_gelo"),
@@ -783,8 +788,8 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 501, ..mestre() },
     QuestDef { id: 503, title: "Copper for the forge",
-        desc: "The Blacksmith needs metal for the village's tools. Bring 30 Copper — every beast on the island carries a little.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::COPPER, obj_count: 30,
+        desc: "The Blacksmith needs metal for the village's tools. Defeat 15 beasts — every one carries a little copper.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
         reward_cobre: 120, reward_xp: 150, reward_item: item_id::MANA_POTION, reward_item_qty: 3,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 502, ..mestre() },
@@ -812,20 +817,20 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 505, ..mestre() },
     QuestDef { id: 507, title: "What the stone keeps",
-        desc: "Inside the rock there's a dark metal that doesn't rust: Darksteel. Every piece asks for 200 of it. Bring 20 so the Blacksmith can judge the quality of the vein here.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::DARKSTEEL, obj_count: 20,
+        desc: "Inside the rock there's a dark metal that doesn't rust: Darksteel. Break 10 rocks so the Blacksmith can judge the quality of the vein here.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 10,
         reward_cobre: 260, reward_xp: 450, reward_item: item_id::STEEL, reward_item_qty: 10,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 506, ..mestre() },
     QuestDef { id: 508, title: "Quintessence",
-        desc: "Rock gives quintessence a drop at a time; tigers give far more. Bring 6 — without it no armour closes.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::QUINTESSENCE, obj_count: 6,
+        desc: "Rock gives quintessence a drop at a time; tigers give far more. Defeat 8 tigers — without it no armour closes.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 8,
         reward_cobre: 320, reward_xp: 600, reward_item: item_id::STEEL, reward_item_qty: 12,
         reward_item2: item_id::GREATER_HEAL, reward_item2_qty: 2,
         requires: 507, min_level: 8, ..mestre() },
     QuestDef { id: 509, title: "The owlbear's charm",
-        desc: "One last piece of the recipe is missing: the charm the owlbears carry tangled in their fur. Bring 6 and the Master opens the village chest — and lets out the cub that's been prowling around the storehouse.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::EXORCISM_BAUBLE, obj_count: 6,
+        desc: "One last piece of the recipe is missing: the charm the owlbears carry tangled in their fur. Defeat 6 owlbears and the Master opens the village chest — and lets out the cub that's been prowling around the storehouse.",
+        obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 6,
         reward_cobre: 400, reward_xp: 900, reward_item: item_id::HIDE, reward_item_qty: 1,
         // O primeiro PET (docs/PETS.md). Todo mundo ganha o cinza pela historia
         // principal: o auto-loot e' mecanica do jogo, nao privilegio de loja.
@@ -941,14 +946,14 @@ pub const QUESTS: &[QuestDef] = &[
         reward_item2: item_id::SORTE_POTION, reward_item2_qty: 1,
         requires: 524, min_level: 10, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 526, title: "Darksteel stock",
-        desc: "The village forge is out of dark metal. Bring 150 Darksteel — it comes out of the rocks.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::DARKSTEEL, obj_count: 150,
+        desc: "The village forge is out of dark metal. Break 25 rocks — the darksteel comes out of them.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25,
         reward_cobre: 900, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 525, min_level: 12, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 527, title: "Steel for the wall",
-        desc: "The village wall needs reinforcing before the next storm. Bring 60 Steel.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 60,
+        desc: "The village wall needs reinforcing before the next storm. Break 20 rocks for the steel.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
         reward_cobre: 1_000, reward_xp: 18_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 10,
         reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 526, min_level: 13, ..de(crate::construcao::Papel::Armaduras) },
@@ -1039,8 +1044,8 @@ pub const QUESTS: &[QuestDef] = &[
     // As 15 receitas cinzas pedem 4 Escamas, 4 Garras, 4 Chifres e 3 Couros.
     // IDs novos deixam a cadeia disponivel a quem concluiu as antigas.
     QuestDef { id: 544, title: "The first scale",
-        desc: "The Blacksmith set aside four Grey Scales: one for each weapon in the workshop. Bring 30 Copper.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::COPPER, obj_count: 30,
+        desc: "The Blacksmith set aside four Grey Scales: one for each weapon in the workshop. Defeat 15 beasts to earn them.",
+        obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
         reward_cobre: 80, reward_xp: 200, reward_item: item_id::SCALE, reward_item_qty: 4,
         min_level: 1, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 545, title: "A claw for the off-hand",
@@ -1168,8 +1173,8 @@ pub const QUESTS: &[QuestDef] = &[
         reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
         requires: 818, min_level: 23, ..posto(205) },
 
-    QuestDef { id: 820, title: "Metal for the shelter", desc: "The Bear Scout needs fifty units of Steel to reinforce the cabin.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 50,
+    QuestDef { id: 820, title: "Metal for the shelter", desc: "The Bear Scout needs steel to reinforce the cabin. Break 20 rocks.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
         reward_cobre: 1_000, reward_xp: 7_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 150,
         min_level: 18, ..posto(206) },
     QuestDef { id: 821, title: "Protective leather", desc: "Bring down ten white bears surrounding the outpost.",
@@ -1235,8 +1240,8 @@ pub const QUESTS: &[QuestDef] = &[
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(13), obj_count: 8,
         reward_cobre: 1_050, reward_xp: 8_500, reward_item: item_id::STEEL, reward_item_qty: 30,
         requires: 840, min_level: 30, ..posto(208) },
-    QuestDef { id: 842, title: "Metal reserve", desc: "Deliver forty units of Steel to repair the cistern.",
-        obj_kind: objective_kind::COLLECT, obj_target: item_id::STEEL, obj_count: 40,
+    QuestDef { id: 842, title: "Metal reserve", desc: "Break 15 rocks: the cistern needs steel for its repair.",
+        obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 15,
         reward_cobre: 1_250, reward_xp: 10_000, reward_item: item_id::DARKSTEEL, reward_item_qty: 120,
         requires: 841, min_level: 31, ..posto(208) },
     QuestDef { id: 843, title: "Water patrol", desc: "Drive twelve enemies off the paths between the cistern and the dunes.",
@@ -1343,7 +1348,7 @@ pub const QUESTS: &[QuestDef] = &[
     // here is a WEIGHT; `progressao::xp_da_quest` pays it. Hunt targets are
     // SPECIES (`alvo_de_mob(species)`): the island's variant counts for its
     // species (`kill_conta`), as the story's hunts do.
-    diaria(650, "Quarry of the day", "Break 45 rocks in the city's rubble.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 45, 2_600, 4_400, item_id::GREATER_HEAL, 7, 80, true, false),
+    diaria(650, "Sentries of the day", "Defeat 25 Laser Sentries on the island.", objective_kind::KILL, alvo_de_mob(6), 25, 2_600, 4_400, item_id::GREATER_HEAL, 7, 80, true, false),
     diaria(651, "Hunt of the day", "Defeat 80 machines on the island.", objective_kind::KILL, 0, 80, 3_100, 5_900, item_id::GREATER_HEAL, 7, 80, true, false),
     diaria(652, "To work", "Create 1 piece of gear in Craft (the HUD button).", objective_kind::CRAFT, 0, 1, 2_100, 3_500, item_id::GREATER_MANA, 6, 80, false, false),
     diaria(653, "Hot forge", "Try refining a piece once at the Forge (the HUD button or the Blacksmith).", objective_kind::REFINE, 0, 1, 2_100, 3_500, item_id::GREATER_MANA, 6, 80, false, false),
@@ -1353,7 +1358,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(657, "The last train", "Clear the Undercity Line.", objective_kind::DUNGEON, 8, 1, 9_000, 680_000, item_id::GREATER_HEAL, 16, 90, false, false),
     diaria(658, "Top of the Tower", "Clear the Kōgen Tower.", objective_kind::DUNGEON, 9, 1, 10_000, 760_000, item_id::GREATER_HEAL, 18, 95, false, false),
     QuestDef { id: 659, title: "Scrap patrol", desc: "Defeat 40 machines on Kōgen-tō and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 2_400, reward_xp: 130_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 6, min_level: 80, repeatable: true, cooldown_secs: 600, ..mestre() },
-    QuestDef { id: 660, title: "Stone for the grid", desc: "Break 25 rocks on Kōgen-tō. The city's grid needs new footings.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25, reward_cobre: 2_000, reward_xp: 105_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 10, min_level: 80, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 660, title: "Sentry sweep", desc: "Defeat 20 Laser Sentries on Kōgen-tō and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(6), obj_count: 20, reward_cobre: 2_000, reward_xp: 105_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 10, min_level: 80, repeatable: true, cooldown_secs: 600, ..mestre() },
     QuestDef { id: 661, title: "Hounds on the docks", desc: "Mech Hounds are loose on the Harbor Docks. Put down 20 of them.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(0), obj_count: 20, reward_cobre: 4_000, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 8, min_level: 80, ..mestre() },
     QuestDef { id: 662, title: "Panther sightings", desc: "Volt Panthers stalk the crossing. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 15, reward_cobre: 4_400, reward_xp: 44_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 8, requires: 661, min_level: 84, ..mestre() },
     QuestDef { id: 663, title: "The sentry grid", desc: "Laser Sentries lock down the streets. Destroy 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(6), obj_count: 15, reward_cobre: 4_800, reward_xp: 48_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2, requires: 662, min_level: 88, ..mestre() },
@@ -1361,7 +1366,7 @@ pub const QUESTS: &[QuestDef] = &[
     QuestDef { id: 665, title: "Iron in the towers", desc: "Iron Bears guard the tower district. Defeat 12.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(1), obj_count: 12, reward_cobre: 5_600, reward_xp: 56_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3, requires: 664, min_level: 94, ..mestre() },
     QuestDef { id: 666, title: "The Dynamo beast", desc: "Dynamo Owlbears feed on the Tocho's power. Defeat 6.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(5), obj_count: 6, reward_cobre: 6_000, reward_xp: 60_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 12, requires: 665, min_level: 97, ..mestre() },
     // --- Abyssia (ilha_abissal, 100-120) --- the same set, the deepest one.
-    diaria(670, "Quarry of the day", "Break 50 rocks on the sea floor.", objective_kind::GATHER, alvo_de_coleta::PEDRA, 50, 3_300, 5_200, item_id::GREATER_HEAL, 8, 100, true, false),
+    diaria(670, "Sharks of the day", "Defeat 30 Reef Sharks on the island.", objective_kind::KILL, alvo_de_mob(0), 30, 3_300, 5_200, item_id::GREATER_HEAL, 8, 100, true, false),
     diaria(671, "Hunt of the day", "Defeat 90 sea creatures on the island.", objective_kind::KILL, 0, 90, 3_900, 6_900, item_id::GREATER_HEAL, 8, 100, true, false),
     diaria(672, "To work", "Create 1 piece of gear in Craft (the HUD button).", objective_kind::CRAFT, 0, 1, 2_700, 4_100, item_id::GREATER_MANA, 7, 100, false, false),
     diaria(673, "Hot forge", "Try refining a piece once at the Forge (the HUD button or the Blacksmith).", objective_kind::REFINE, 0, 1, 2_700, 4_100, item_id::GREATER_MANA, 7, 100, false, false),
@@ -1371,7 +1376,7 @@ pub const QUESTS: &[QuestDef] = &[
     diaria(677, "Vaults of coral", "Clear the Coral Palace Vaults.", objective_kind::DUNGEON, 21, 1, 12_500, 920_000, item_id::GREATER_HEAL, 20, 110, false, false),
     diaria(678, "Into the dark", "Clear The Abyss.", objective_kind::DUNGEON, 22, 1, 14_000, 1_000_000, item_id::GREATER_HEAL, 22, 118, false, false),
     QuestDef { id: 679, title: "Reef watch", desc: "Defeat 40 sea creatures around Abyssia and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 40, reward_cobre: 3_000, reward_xp: 150_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 7, min_level: 100, repeatable: true, cooldown_secs: 600, ..mestre() },
-    QuestDef { id: 680, title: "Stone for the bubble", desc: "Break 25 rocks on the sea floor. The kingdom's dome needs shoring up.", obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25, reward_cobre: 2_500, reward_xp: 120_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 12, min_level: 100, repeatable: true, cooldown_secs: 600, ..mestre() },
+    QuestDef { id: 680, title: "Triton sweep", desc: "Defeat 20 Triton Guards around Abyssia and return to the Master. Contract available every ten minutes.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(2), obj_count: 20, reward_cobre: 2_500, reward_xp: 120_000, reward_item: item_id::na_cor(item_id::STEEL, 4), reward_item_qty: 12, min_level: 100, repeatable: true, cooldown_secs: 600, ..mestre() },
     QuestDef { id: 681, title: "Teeth in the kelp", desc: "Reef Sharks circle the Kelp Forest. Defeat 20.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(0), obj_count: 20, reward_cobre: 5_500, reward_xp: 64_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 12, min_level: 100, ..mestre() },
     QuestDef { id: 682, title: "Eels in the wrecks", desc: "Tiger Eels nest in the Shipwreck Graveyard. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(3), obj_count: 15, reward_cobre: 6_000, reward_xp: 68_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3, requires: 681, min_level: 104, ..mestre() },
     QuestDef { id: 683, title: "Claws on the sand", desc: "Giant Crabs block the seafloor path. Defeat 15.", obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(9), obj_count: 15, reward_cobre: 6_500, reward_xp: 72_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 14, requires: 682, min_level: 108, ..mestre() },
