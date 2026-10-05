@@ -1,3 +1,7 @@
+05/10/2026 — As duas referências de preço em todo item
+
+Ao vender qualquer item no mercado, as duas referências agora aparecem sempre: o preço recomendado e o menor preço à venda no mercado (para equipamentos, da mesma peça), cada uma com seu botão Usar. Quando falta uma, a linha diz o porquê ("ainda sem dados suficientes" ou "ninguém vendendo") em vez de sumir.
+
 05/10/2026 — Selo de vinculado e o menor preço da mesma peça
 
 Itens vinculados agora mostram um selo de cera com cadeado no canto de baixo do ícone, na bolsa, no armazém, no mercado e nas recompensas: dá para ver de longe o que não pode ser vendido.

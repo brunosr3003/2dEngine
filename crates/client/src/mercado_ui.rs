@@ -811,29 +811,36 @@ impl Mercado {
                     })
         };
         let menor = self.lista.iter().filter(igual).map(|an| an.preco_unit).min();
-        if let Some(pr) = menor {
-            let rotulo = if peca {
-                format!("Lowest on the market (same piece): {} gold", milhar(pr))
-            } else {
-                format!("Lowest asking price: {} gold", milhar(pr))
-            };
-            estilo::texto(x, y + 112.0 * f, &rotulo, 14, estilo::TEXTO);
-            let usar = Rect::new(x + w - 70.0 * f, y + 94.0 * f, 70.0 * f, 26.0 * f);
-            if self.venda_preco != pr && botao(usar, "Use", livre, false) {
-                self.venda_preco = pr;
-            }
-        }
-        // THE RECOMMENDED PRICE: what the realm's gold and stock say this is
-        // worth. A line to read, a button to take it back after typing, and a
-        // one-click "sell it all at that".
+        // BOTH REFERENCES, FOR EVERY ITEM: the recommended price and the
+        // market's lowest. A missing one says so instead of vanishing, so the
+        // seller always knows what was looked at.
         let recomendado = shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
         let pode_listar = livre && pode && self.meus.len() < regras::MAX_ANUNCIOS;
-        if let Some(rec) = recomendado {
-            let ry = y + 76.0 * f;
-            estilo::texto(x, ry + 4.0 * f, &format!("Recommended: {} gold", milhar(rec)), 14, estilo::OURO);
-            let usar = Rect::new(x + w - 70.0 * f, ry - 14.0 * f, 70.0 * f, 26.0 * f);
-            if self.venda_preco != rec && botao(usar, "Use", livre, false) {
-                self.venda_preco = rec;
+        let referencias = [
+            (
+                recomendado,
+                "Recommended: {} gold",
+                "Recommended: not enough data yet",
+                estilo::OURO,
+            ),
+            (
+                menor,
+                if peca { "Lowest (same piece): {} gold" } else { "Lowest on the market: {} gold" },
+                "Lowest on the market: nobody is selling this",
+                estilo::TEXTO,
+            ),
+        ];
+        for (k, (valor, com, sem, cor)) in referencias.into_iter().enumerate() {
+            let ry = y + (80.0 + k as f32 * 36.0) * f;
+            match valor {
+                Some(v) => {
+                    estilo::texto_ajustado(&com.replace("{}", &milhar(v)), x, ry, w - 80.0 * f, 14, cor);
+                    let usar = Rect::new(x + w - 70.0 * f, ry - 18.0 * f, 70.0 * f, 26.0 * f);
+                    if self.venda_preco != v && botao(usar, "Use", livre, false) {
+                        self.venda_preco = v;
+                    }
+                }
+                None => estilo::texto_ajustado(sem, x, ry, w, 14, estilo::SUAVE),
             }
         }
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
@@ -1464,6 +1471,7 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
     slots[2] = InventorySlot { item_id: it::montaria_no_grau(it::MONTARIAS[0], 3), qty: 1, instance: None };
     slots[3] = InventorySlot { item_id: it::na_cor(it::STEEL, 2), qty: 480, instance: None };
     slots[4] = InventorySlot { item_id: it::COPPER, qty: 250_000, instance: None };
+    slots[5] = InventorySlot { item_id: it::WOOD_T4, qty: 10, instance: None };
     let estoque = shared::precos::Estoque {
         ouro: 227_850,
         unidades: [
@@ -1503,7 +1511,7 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             meu: false,
         });
     }
-    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("comprar", 0)] {
+    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("comprar", 0)] {
         m.aba = if nome == "comprar" { Aba::Comprar } else { Aba::Vender };
         m.venda_slot = Some(slot);
         m.venda_qtd = 1;
