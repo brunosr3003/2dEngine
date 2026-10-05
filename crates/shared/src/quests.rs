@@ -204,9 +204,15 @@ pub mod alvo_de_coleta {
     }
 }
 
-/// A proxima meia-noite UTC depois de `agora` (unix secs): o reset diario.
+/// The next daily reset after `agora` (unix secs): 04:00 Brasília (07:00
+/// UTC, `dungeon::RESET_UTC_S`), the same turn of the day as the dungeons and
+/// the attendance calendar. It was UTC midnight — 21:00 in Brazil — so a
+/// daily taken in the evening vanished from the log hours before the day the
+/// rest of the game uses (owner, 05/10/2026: "it disappears and returns to
+/// available"). The name stays; the instant moved.
 pub fn proxima_meia_noite(agora: i64) -> i64 {
-    (agora.div_euclid(86_400) + 1) * 86_400
+    let r = crate::dungeon::RESET_UTC_S;
+    ((agora - r).div_euclid(86_400) + 1) * 86_400 + r
 }
 
 /// Missao "de area": matar ou juntar numa zona. Ela paga Pocao de Experiencia.

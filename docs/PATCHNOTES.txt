@@ -1,3 +1,11 @@
+05/10/2026 — Missões que somem e missões que não pegam
+
+As missões secundárias agora podem ser pegas de qualquer ilha, como o menu já prometia; antes, as dos postos avançados só aceitavam se você estivesse na ilha deles, e o botão Pegar não fazia nada. Quando uma missão não pode ser pega, o jogo agora diz o motivo (nível, missão anterior, limite de 12 missões ativas), e "Missão aceita" só aparece quando o servidor confirma.
+
+As diárias agora vencem no reset do jogo, às 04:00, como as dungeons e o calendário — antes venciam à meia-noite UTC (21:00), e uma diária pega à noite sumia e voltava a aparecer como disponível. O salvamento das missões também ficou mais seguro: uma falha não apaga mais o progresso das missões em silêncio.
+
+A janela de missão concluída agora mostra a experiência que a missão realmente dá.
+
 05/10/2026 — Calendário de presença mais claro
 
 O calendário foi redesenhado para mostrar com clareza o que você recebe. Cada dia tem um ícone grande, a quantidade em destaque e o nome inteiro do prêmio, sem cortes. O dia de hoje tem a marca HOJE, os dias de bônus (7, 14, 21 e 28) ficam numa coluna mais larga com moldura dourada, e os já resgatados aparecem esmaecidos com um visto verde.

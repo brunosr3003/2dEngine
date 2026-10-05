@@ -17185,11 +17185,13 @@ impl GameWorld {
             return;
         };
         let xpmult = crate::economy::xp_multiplier();
-        // Missao de quem tem corpo no mundo so' se aceita PERTO dele.
-        if !self.perto_de_quem_atende(sid, def) {
-            return;
-        }
-        let Some(s) = self.sessions.get_mut(&sid) else {
+        // TAKEN FROM ANYWHERE, as the menu says. The giver's NPC used to have
+        // to exist on this island, so an outpost's quest (outposts live on
+        // one island) showed "Take" everywhere else and silently did nothing
+        // (owner, 05/10/2026: "available quests that I just cannot get").
+        // Turning it in still happens at the giver (`perto_de_quem_atende`),
+        // and the objective still counts only on its island.
+        let Some(s) = self.sessions.get(&sid) else {
             return;
         };
         if !s.logged_in {
@@ -17197,13 +17199,6 @@ impl GameWorld {
         }
         let level = shared::level_of_xp_with_mult(s.xp, xpmult);
         let fac = Self::faction_qid(s.faction);
-        // A mesma regra da oferta: nivel, faccao, cadeia, estado e cooldown.
-        // The ISLAND is not one of them any more: a quest of another island
-        // is taken from the menu and the auto quest sails there; its world
-        // objective only counts on its island (`quests::conta_nesta_ilha`).
-        if !crate::quests::pode_aceitar(def, level, fac, &s.quests, now) {
-            return;
-        }
         let active_count = s
             .quests
             .iter()
@@ -17212,9 +17207,21 @@ impl GameWorld {
                     || c.status == shared::quests::quest_status::READY
             })
             .count();
-        if active_count >= 12 {
+        // A refusal SAYS why: a dead button read as a broken quest.
+        let motivo = if active_count >= 12 && !shared::historia::e_da_historia(quest_id) {
+            Some("You already have 12 quests in progress: finish or abandon one first.".to_string())
+        } else if !crate::quests::pode_aceitar(def, level, fac, &s.quests, now) {
+            Some(crate::quests::por_que_nao_aceita(def, level, fac, &s.quests, now))
+        } else {
+            None
+        };
+        if let Some(m) = motivo {
+            self.avisa_missao(sid, format!("{}: {m}", def.title));
             return;
-        } // limite de quests ativas
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
         let st = shared::quests::quest_status::ACTIVE;
         // Diaria ATIVA guarda o fim do dia dela: nao entregue ate' la', expira.
         let fim = if def.daily {
@@ -17239,6 +17246,10 @@ impl GameWorld {
             quest_id,
             progress: 0,
             status: st,
+        });
+        let _ = s.handle.to_client.send(ServerMessage::Chat {
+            from: "SYS".into(),
+            text: format!("Quest accepted: {}.", def.title),
         });
     }
 

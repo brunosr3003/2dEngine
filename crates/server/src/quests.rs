@@ -84,9 +84,16 @@ pub async fn save_char(
         .execute(&mut *tx)
         .await?;
     for q in quests {
+        // The same quest twice in memory used to break the primary key and
+        // roll the WHOLE save back — and the error was thrown away, so the
+        // quests just stopped being saved and came back "available" at the
+        // next login. The last entry wins instead.
         sqlx::query(
             "INSERT INTO character_quests (char_name, quest_id, status, progress, cooldown_until)
-             VALUES ($1,$2,$3,$4,$5)",
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (char_name, quest_id) DO UPDATE SET
+               status = EXCLUDED.status, progress = EXCLUDED.progress,
+               cooldown_until = EXCLUDED.cooldown_until",
         )
         .bind(char_name)
         .bind(q.quest_id as i32)
@@ -160,6 +167,37 @@ pub fn requisito_ok(d: &QuestDef, active: &[CharQuest]) -> bool {
 
 /// Pode aceitar `d` agora? A MESMA regra da oferta: o servidor não aceita o
 /// que não ofereceria — nível, facção, cadeia, estado atual e cooldown.
+/// Why `pode_aceitar` said no, in words the player can act on.
+pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQuest], now: i64) -> String {
+    use quests::quest_status as st;
+    if let Some(c) = active.iter().find(|c| c.quest_id == d.id) {
+        if c.status == st::ACTIVE || c.status == st::READY {
+            return "you already have this quest.".into();
+        }
+        if c.status == st::TURNED_IN && !d.repeatable {
+            return "already completed.".into();
+        }
+        if c.cooldown_until > now {
+            let min = ((c.cooldown_until - now) as f32 / 60.0).ceil() as i64;
+            return format!("available again in {min} min.");
+        }
+    }
+    if d.em_breve {
+        return "coming soon.".into();
+    }
+    if level < d.min_level {
+        return format!("requires level {}.", d.min_level);
+    }
+    if d.faction != 0 && d.faction != faction {
+        return "not for your faction.".into();
+    }
+    if !requisito_ok(d, active) {
+        let t = quests::quest_by_id(d.requires).map_or("the previous quest", |r| r.title);
+        return format!("complete \"{t}\" first.");
+    }
+    "cannot be taken right now.".into()
+}
+
 pub fn pode_aceitar(d: &QuestDef, level: u32, faction: u8, active: &[CharQuest], now: i64) -> bool {
     // Sistema que ainda nao existe: no catalogo, com cadeado, e so'.
     if d.em_breve {
@@ -711,6 +749,19 @@ pub fn mais_perto(corpos: &[(glam::Vec2, u8)], eu: glam::Vec2) -> Option<glam::V
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// A refused quest says why (owner, 05/10/2026: quests "available" that
+    /// could not be taken, with a dead button).
+    #[test]
+    fn recusa_diz_o_motivo() {
+        let d502 = quests::quest_by_id(502).unwrap();
+        assert!(!pode_aceitar(d502, 1, 0, &[], 0));
+        assert!(por_que_nao_aceita(d502, 1, 0, &[], 0).starts_with("complete \""), "502 needs 501");
+        let ativa = [CharQuest { quest_id: 501, status: quests::quest_status::ACTIVE, progress: 0, cooldown_until: 0 }];
+        assert_eq!(por_que_nao_aceita(quests::quest_by_id(501).unwrap(), 1, 0, &ativa, 0), "you already have this quest.");
+        let alto = quests::QUESTS.iter().find(|q| q.min_level > 10 && q.requires == 0 && !q.em_breve && q.faction == 0).unwrap();
+        assert!(por_que_nao_aceita(alto, 1, 0, &[], 0).starts_with("requires level"));
+    }
 
     /// "Meet the Alchemist" is a Bosque quest; on the Glacier the auto quest
     /// walks to the Glacier's Alchemist. That talk has to count, or it loops
@@ -1337,7 +1388,8 @@ mod testes_diarias {
         let dia = 20_000 * 86_400;
         let meio_dia = dia + 43_200;
         let fim = shared::quests::proxima_meia_noite(meio_dia);
-        assert_eq!(fim, dia + 86_400);
+        // The game's reset: 07:00 UTC of the next day (04:00 Brasília).
+        assert_eq!(fim, dia + 86_400 + shared::dungeon::RESET_UTC_S);
         let mut q = vec![
             CharQuest {
                 quest_id: 602,

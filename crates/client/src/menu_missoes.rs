@@ -227,7 +227,7 @@ pub fn pode_iniciar_auto(d: &QuestDef, status: u8) -> bool {
     automatizavel(d) || status == shared::quests::quest_status::READY
 }
 
-/// Quanto falta pro reset das diarias (meia-noite UTC), "5h 07min".
+/// Quanto falta pro reset das diarias (04:00 de Brasilia), "5h 07min".
 pub fn reset_em(agora_unix: i64) -> String {
     let s = shared::quests::proxima_meia_noite(agora_unix) - agora_unix;
     format!("{}h {:02}min", s / 3600, (s % 3600) / 60)
@@ -1745,7 +1745,8 @@ mod tests {
             Estado::Bloqueada(ref m) if m.iter().any(|s| s == "Coming soon")
         ));
         assert_eq!(estado(quest_by_id(601).unwrap(), &c), Estado::Disponivel);
-        assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "4h 07min");
+        // 19:53 UTC: the next reset is 07:00 UTC (04:00 Brasilia).
+        assert_eq!(reset_em(86_400 * 10 + 3_600 * 19 + 60 * 53), "11h 07min");
     }
 }
 #[cfg(test)]

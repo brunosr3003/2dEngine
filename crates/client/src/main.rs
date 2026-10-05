@@ -2440,7 +2440,7 @@ impl Jogo {
                             .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0)
                             .map(|(id, qtd)| (id, qtd as u32)).collect();
                         self.recompensas.mostrar("QUEST COMPLETE".into(), def.title.into(), itens,
-                            def.reward_cobre, def.reward_xp, def.reward_faction_points);
+                            def.reward_cobre, shared::progressao::xp_da_quest(def), def.reward_faction_points);
                     }
                     self.quest_entregues.entry(quest_id).or_insert(0);
                     // O CONTADOR do topo: sobe a cada missao concluida, FIXADA
@@ -4882,11 +4882,10 @@ impl Jogo {
             }
             // Pegar so' aceita. O jogador pode juntar varias missoes e depois
             // escolher Ir ou Fazer tudo.
+            // The server confirms ("Quest accepted: …") or says why not:
+            // announcing it here claimed quests the server had refused.
             menu_missoes::Clique::Aceitar(id) => {
                 self.envia(ClientMessage::AcceptQuest { quest_id: id });
-                if let Some(d) = shared::quests::quest_by_id(id) {
-                    self.chat.push(format!("Quest accepted: {}.", d.title));
-                }
             }
             menu_missoes::Clique::Aviso(s) => self.chat.push(s),
         }

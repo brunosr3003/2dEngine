@@ -4867,7 +4867,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
     tx.commit().await?;
     // Quests + pontos de facção (fora da tx; reconcilia character_quests).
     for row in &batch.rows {
-        let _ = crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await;
+        if let Err(e) = crate::quests::save_char(pool, &row.name, &row.quests, row.faction_points).await {
+            tracing::error!("quests of '{}' not saved: {e:?}", row.name);
+        }
     }
     Ok(())
 }
