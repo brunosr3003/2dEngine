@@ -461,6 +461,12 @@ pub enum ClientMessage {
         z: f32,
         camada: u8,
     },
+    /// Lists `lotes` lots of 1,000 Energy at `preco_unit` gold per lot
+    /// (`mercado::ENERGIA_POR_LOTE`). The Energy leaves the character now.
+    MercadoAnunciarEnergia {
+        lotes: u64,
+        preco_unit: u64,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.

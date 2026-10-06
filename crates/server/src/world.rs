@@ -8357,6 +8357,7 @@ impl GameWorld {
             | ClientMessage::MercadoMeus
             | ClientMessage::MercadoAnunciar { .. }
             | ClientMessage::MercadoAnunciarTp { .. }
+            | ClientMessage::MercadoAnunciarEnergia { .. }
             | ClientMessage::MercadoComprar { .. }
             | ClientMessage::MercadoCancelar { .. }
             | ClientMessage::MercadoEntregas

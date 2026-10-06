@@ -6915,6 +6915,7 @@ impl Jogo {
                 digitado: self.teclado.digitado(),
                 vox: &self.vox,
                 solido: &self.solido,
+                energia: self.bolsa.energia,
             };
             let pedidos = self.mercado.desenha(&ctx, get_time());
             for pedido in pedidos {

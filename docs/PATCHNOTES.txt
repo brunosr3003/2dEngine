@@ -1,3 +1,11 @@
+06/10/2026 — Energia no mercado e preço recomendado dos itens de cash
+
+O mercado ganhou a aba Energia: venda Energia em lotes de 1.000 pelo preço que quiser, e compre a de outros jogadores. A Energia sai de você ao anunciar e chega como Energia em quem compra, pelas Entregas; anúncio cancelado devolve a Energia.
+
+Os itens da loja de cash agora também têm preço recomendado em gold: ração e skills de pet, removedor de skill, pedra de afinidade, amuleto de proteção, pergaminhos, passes da Ilha Mágica, pets, montarias e chaves. O preço é o custo em TP convertido em gold, e o gold por TP segue a mesma regra dos itens (todo o gold do jogo dividido por todo o TP das contas), nunca abaixo do que a loja paga por um TP no Saco de Gold. O que sai de invocação custa o pergaminho dividido pela chance daquele resultado.
+
+A aba TP também mostra as duas referências ao vender TP: o gold por TP recomendado e o menor preço à venda no mercado.
+
 05/10/2026 — As duas referências de preço em todo item
 
 Ao vender qualquer item no mercado, as duas referências agora aparecem sempre: o preço recomendado e o menor preço à venda no mercado (para equipamentos, da mesma peça), cada uma com seu botão Usar. Quando falta uma, a linha diz o porquê ("ainda sem dados suficientes" ou "ninguém vendendo") em vez de sumir.

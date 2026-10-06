@@ -18,7 +18,12 @@
 //!   * a piece of gear is its place on the forge ladder (`forja::custo_total`:
 //!     base pieces for its colour and tier, the refine attempts on top) at the
 //!     price of one Common I piece, which the NPC shop sells for copper;
-//!   * a pet adds the skill books it has learned.
+//!   * a pet adds the skill books it has learned;
+//!   * a CASH item (the TP shop) costs at most its TP price in gold, and gold
+//!     per TP follows the same rule as the items: all the gold there is over
+//!     all the TP the accounts hold — but never under what the shop's own
+//!     Sack of Gold pays for a TP (`OURO_POR_TP_DA_LOJA`). What a summon
+//!     rolls costs the scroll over the chance of that very roll.
 //!
 //! It is only a suggestion: the seller types any price, 1 included.
 
@@ -35,6 +40,79 @@ use crate::items::ItemInstance;
 /// still exist).
 pub const AMOSTRA_MIN: u64 = 20;
 
+/// The table's line for ONE TP, in gold (item 0 is no item).
+pub const ID_DO_TP: u16 = 0;
+
+/// Gold one TP buys at the shop (Sack of Gold): the floor of the TP's price.
+pub fn ouro_por_tp_da_loja() -> f64 {
+    crate::loja::MOEDAS
+        .iter()
+        .filter(|m| m.item_id == item_id::GOLD && m.preco_tp > 0)
+        .map(|m| m.qtd as f64 / m.preco_tp as f64)
+        .fold(0.0, f64::max)
+}
+
+/// What each cash item costs in TP at the shop, the cheapest way. A summon's
+/// outcome costs the scroll over the chance of rolling exactly that.
+pub fn custos_em_tp() -> Vec<(u16, f64)> {
+    use crate::loja;
+    let mut v: Vec<(u16, f64)> = Vec::new();
+    let mut poe = |id: u16, tp: f64| {
+        if tp.is_finite() && tp > 0.0 {
+            match v.iter_mut().find(|(i, _)| *i == id) {
+                Some((_, x)) => *x = x.min(tp),
+                None => v.push((id, tp)),
+            }
+        }
+    };
+    for i in loja::ITENS_DA_LOJA {
+        poe(i.item_id, i.preco_tp as f64);
+    }
+    for i in loja::itens_de_pet() {
+        poe(i.item_id, i.preco_tp as f64);
+    }
+    for m in loja::MOEDAS.iter().filter(|m| m.item_id != item_id::GOLD && m.qtd > 0) {
+        poe(m.item_id, m.preco_tp as f64 / m.qtd as f64);
+    }
+    // Energy, by the lot the market sells it in.
+    for e in loja::ENERGIAS.iter().filter(|e| e.qtd > 0) {
+        poe(item_id::ENERGIA_MIL, e.preco_tp as f64 * crate::mercado::ENERGIA_POR_LOTE as f64 / e.qtd as f64);
+    }
+    for p in loja::PASSES {
+        poe(item_id::PASSE_MAGICO, p.tp_por_passe() as f64);
+    }
+    // The scrolls themselves (the bound ones never reach the market anyway).
+    for b in loja::BAUS_CRAFT {
+        poe(item_id::PERGAMINHO_INVOCA_CHAVE, b.preco_tp as f64);
+        // A key: one of four kinds, in a colour by the scroll's odds.
+        for (k, &chance) in b.chances_cor.iter().enumerate() {
+            for &base in &item_id::CHAVES {
+                poe(item_id::chave_na_cor(base, k as u8 + 1), b.preco_tp as f64 * 4.0 * 100.0 / chance.max(1) as f64);
+            }
+        }
+    }
+    for t in loja::PERGAMINHOS_TOMO {
+        poe(item_id::PERGAMINHO_INVOCA_TOMO, t.preco_tp as f64);
+    }
+    for m in loja::PERGAMINHOS_MONTARIA {
+        poe(item_id::PERGAMINHO_INVOCA_MONTARIA, m.preco_tp as f64);
+        for (k, &chance) in crate::montarias::CHANCES_DO_PERGAMINHO.iter().enumerate() {
+            for &base in &item_id::MONTARIAS {
+                poe(item_id::montaria_no_grau(base, k as u8 + 1), m.preco_tp as f64 * 100.0 / chance.max(1) as f64);
+            }
+        }
+    }
+    for p in loja::PERGAMINHOS_PET {
+        poe(item_id::PERGAMINHO_INVOCA_PET, p.preco_tp as f64);
+        for (k, &chance) in crate::pets::CHANCES_DO_PERGAMINHO.iter().enumerate() {
+            for &base in &item_id::PETS {
+                poe(item_id::pet_no_grau(base, k as u8 + 1), p.preco_tp as f64 * 100.0 / chance.max(1) as f64);
+            }
+        }
+    }
+    v
+}
+
 /// What the realm holds, summed over every character.
 #[derive(Debug, Clone, Default)]
 pub struct Estoque {
@@ -45,6 +123,8 @@ pub struct Estoque {
     /// What an NPC shop charges for a Common I piece of each gear item, in
     /// copper (`items.buy_price`).
     pub base_em_cobre: HashMap<u16, u64>,
+    /// TP every account holds (and on sale).
+    pub tp: u64,
 }
 
 /// Gold per unit, item by item. Fractional on purpose: copper is worth a
@@ -68,6 +148,17 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
             if id != item_id::GOLD && n >= AMOSTRA_MIN {
                 p.insert(id, e.ouro as f64 / n as f64);
             }
+        }
+    }
+    // THE TP: gold per TP like any item (gold over TP held), floored by the
+    // shop's own exchange. Then every cash item is at most its TP in gold.
+    let por_estoque = if e.tp > 0 { e.ouro as f64 / e.tp as f64 } else { 0.0 };
+    let ouro_por_tp = por_estoque.max(ouro_por_tp_da_loja());
+    if ouro_por_tp > 0.0 {
+        p.insert(ID_DO_TP, ouro_por_tp);
+        for (id, tp) in custos_em_tp() {
+            let v = tp * ouro_por_tp;
+            p.entry(id).and_modify(|x| *x = x.min(v)).or_insert(v);
         }
     }
     // THE COMBINE CAPS (and fills): lower colours first, so a green made from
@@ -168,6 +259,7 @@ mod testes {
             ouro,
             unidades: itens.iter().copied().collect(),
             base_em_cobre: HashMap::new(),
+            tp: 0,
         }
     }
 
@@ -216,6 +308,7 @@ mod testes {
     #[test]
     fn a_peca_segue_a_escada_da_forja() {
         let mut e = estoque(1_000_000, &[(item_id::COPPER, 1_000_000)]);
+        e.tp = 1;
         e.base_em_cobre.insert(item_id::KATANA, 1_000);
         let t = calcular(&e).mapa();
         let base = t[&item_id::KATANA];
@@ -229,6 +322,28 @@ mod testes {
         let raro = recomendado(&t, item_id::KATANA, Some(&i)).unwrap();
         assert_eq!(comum, 1_000);
         assert!(raro as f64 > 34_000.0 * base * 0.99, "{raro}");
+    }
+
+    /// Cash items: their TP in gold. Gold per TP is the stock's ratio, never
+    /// under the shop's Sack of Gold; a rare summon costs the scroll over its
+    /// chance.
+    #[test]
+    fn itens_de_cash_valem_o_tp_em_ouro() {
+        let loja = ouro_por_tp_da_loja();
+        assert!((loja - 200.0).abs() < 1e-9, "Sack of Gold: 10,000 for 50 TP");
+        // Little gold per TP in the world: the shop's floor holds.
+        let t = calcular(&Estoque { ouro: 1_000, tp: 1_000, ..Default::default() }).mapa();
+        assert!((t[&ID_DO_TP] - 200.0).abs() < 1e-9);
+        assert!((t[&item_id::RACAO_DE_PET] - 30.0 * 200.0).abs() < 1e-6, "Pet Feed: 30 TP");
+        // Much gold per TP: the stock's ratio rules.
+        let t = calcular(&Estoque { ouro: 1_000_000, tp: 1_000, ..Default::default() }).mapa();
+        assert!((t[&ID_DO_TP] - 1_000.0).abs() < 1e-9);
+        // The orange mount: 500 TP at 1% = 50,000 TP.
+        let laranja = item_id::montaria_no_grau(item_id::MONTARIAS[0], 5);
+        assert!((t[&laranja] - 50_000.0 * 1_000.0).abs() < 1e-3, "{}", t[&laranja]);
+        // A material held in bulk stays at its own (lower) ratio.
+        let t = calcular(&Estoque { ouro: 1_000_000, tp: 1_000, unidades: [(item_id::COPPER, 10_000_000)].into_iter().collect(), ..Default::default() }).mapa();
+        assert!((t[&item_id::COPPER] - 0.1).abs() < 1e-9);
     }
 
     /// A pet is worth its kind plus the books it learned.

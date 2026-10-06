@@ -83,6 +83,15 @@ async fn levantar(pool: &PgPool, central: Option<PgPool>, realm: &str) -> anyhow
         let n: i64 = l.get(1);
         *e.unidades.entry(id as u16).or_default() += n.max(0) as u64;
     }
+    // Energy, counted in the market's lots of 1,000.
+    let energia: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM((skill_progress_json::jsonb->>'energia')::bigint), 0)::bigint FROM characters
+          WHERE skill_progress_json IS NOT NULL AND skill_progress_json <> ''",
+    )
+    .fetch_one(pool)
+    .await?;
+    *e.unidades.entry(shared::item_id::ENERGIA_MIL).or_default() +=
+        energia.max(0) as u64 / shared::mercado::ENERGIA_POR_LOTE;
     let bases = sqlx::query("SELECT id, buy_price FROM items WHERE active AND buy_price IS NOT NULL AND buy_price > 0")
         .fetch_all(pool)
         .await?;
@@ -107,6 +116,27 @@ async fn levantar(pool: &PgPool, central: Option<PgPool>, realm: &str) -> anyhow
             let n: i64 = l.get(1);
             *e.unidades.entry(id as u16).or_default() += n.max(0) as u64;
         }
+        // TP: every account's balance (its latest ledger line) and what is
+        // on sale, for this realm.
+        let tp: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(saldo_depois), 0)::bigint FROM (
+                 SELECT DISTINCT ON (conta) saldo_depois FROM tp_razao
+                  WHERE conta LIKE $1 || ':%' ORDER BY conta, quando DESC, id DESC
+             ) t",
+        )
+        .bind(realm)
+        .fetch_one(&c)
+        .await?;
+        let tp_a_venda: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(qtd_restante), 0)::bigint FROM mercado_anuncios
+              WHERE estado = $1 AND tipo = $2 AND realm = $3",
+        )
+        .bind(shared::mercado::ESTADO_ATIVO as i16)
+        .bind(shared::mercado::TIPO_TP as i16)
+        .bind(realm)
+        .fetch_one(&c)
+        .await?;
+        e.tp = (tp.max(0) + tp_a_venda.max(0)) as u64;
         let cartas = sqlx::query(
             "SELECT item_id, COALESCE(SUM(qtd), 0)::bigint, COALESCE(SUM(gold), 0)::bigint FROM mercado_cartas
               WHERE entregue IS NULL AND realm = $1 GROUP BY item_id",

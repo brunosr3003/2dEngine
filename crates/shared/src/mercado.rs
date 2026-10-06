@@ -23,6 +23,11 @@ pub const MAX_ANUNCIOS: usize = 20;
 pub const POR_PAGINA: usize = 20;
 /// Teto de TP num anuncio so'.
 pub const TP_MAX_POR_ANUNCIO: u64 = 1_000_000;
+/// Energy is sold in lots of this much (one Energy is worth a fraction of a
+/// gold, and the market's price floor is 1).
+pub const ENERGIA_POR_LOTE: u64 = 1_000;
+/// Most lots in one listing.
+pub const LOTES_MAX_POR_ANUNCIO: u64 = 100_000;
 /// Texto de busca: o que passa disto e' cortado.
 pub const BUSCA_MAX_CHARS: usize = 32;
 
@@ -96,6 +101,9 @@ pub fn categoria_do_item(item_id: u16, equipavel: bool) -> Categoria {
     }
     if it::e_skill_de_pet(item_id) || item_id == it::RACAO_DE_PET {
         return Categoria::Pet;
+    }
+    if item_id == it::ENERGIA_MIL {
+        return Categoria::Consumivel;
     }
     if equipavel {
         Categoria::Equipamento
@@ -217,6 +225,20 @@ pub fn pode_anunciar_tp(nivel: u32, qtd: u64, preco_unit: u64) -> Result<u64, Re
         return Err(Recusa::Preco);
     }
     total(qtd, preco_unit).ok_or(Recusa::Preco)
+}
+
+/// Selling Energy: the level gate, enough Energy for the lots, a valid price.
+pub fn pode_anunciar_energia(nivel: u32, energia: u64, lotes: u64, preco_unit: u64) -> Result<u64, Recusa> {
+    if nivel < NIVEL_PARA_VENDER {
+        return Err(Recusa::NivelBaixo);
+    }
+    if lotes == 0 || lotes > LOTES_MAX_POR_ANUNCIO || lotes.saturating_mul(ENERGIA_POR_LOTE) > energia {
+        return Err(Recusa::Quantidade);
+    }
+    if !preco_valido(preco_unit) {
+        return Err(Recusa::Preco);
+    }
+    total(lotes, preco_unit).ok_or(Recusa::Preco)
 }
 
 /// Comprar: devolve o gold que sai agora do comprador.

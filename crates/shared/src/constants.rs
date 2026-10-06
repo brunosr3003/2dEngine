@@ -757,6 +757,10 @@ pub mod item_id {
     pub const PASSE_MAGICO: u16 = 466;
     /// Recompensa garantida de combate e coleta na Ilha Magica.
     pub const MOEDA_MAGICA: u16 = 475;
+    /// A LOT of 1,000 Energy on the market (`mercado::ENERGIA_POR_LOTE`).
+    /// Never sits in a bag: listing takes it from the seller's Energy, and a
+    /// delivery of it goes back into the Energy of whoever receives it.
+    pub const ENERGIA_MIL: u16 = 476;
     pub const ACESSORIO_PET_INICIO: u16 = 520;
     pub const ACESSORIO_MONTARIA_INICIO: u16 = 528;
 

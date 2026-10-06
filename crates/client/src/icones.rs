@@ -97,6 +97,11 @@ pub fn selo_vinculado(r: Rect) {
 }
 
 pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
+    // A lot of Energy on the market: the Energy bolt the HUD already uses.
+    if item_id == shared::item_id::ENERGIA_MIL {
+        crate::hud_estilo::icone_energia(r.center(), r.w.min(r.h) * 0.8);
+        return true;
+    }
     let Some(fonte) = celula(item_id) else {
         return false;
     };
