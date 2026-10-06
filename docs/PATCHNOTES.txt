@@ -1,3 +1,7 @@
+06/10/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: todos passam a usar os botões de venda novos do mercado, que mostram a quantidade e o total antes de anunciar.
+
 06/10/2026 — Botões de venda que dizem o que fazem
 
 Os botões de vender no mercado agora mostram a quantidade e o total. O principal é "Anunciar ×N por X gold" e usa exatamente a quantidade e o preço do formulário. O atalho "Vender tudo ×N por X gold (recomendado)" anuncia a pilha inteira pelo preço recomendado e mostra o total. Antes, o botão dourado "Vender tudo ×N por X" anunciava a pilha inteira mesmo com a quantidade em 1, e o X era o preço de cada unidade, não o total.
