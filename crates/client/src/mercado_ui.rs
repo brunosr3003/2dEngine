@@ -845,14 +845,13 @@ impl Mercado {
             livre,
         );
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
-        let (bt_listar, bt_tudo) = match recomendado {
-            Some(_) => (
-                Rect::new(bt.x, bt.y, bt.w * 0.34, bt.h),
-                Some(Rect::new(bt.x + bt.w * 0.36, bt.y, bt.w * 0.64, bt.h)),
-            ),
-            None => (bt, None),
-        };
-        if botao(bt_listar, "List", pode_listar, recomendado.is_none()) {
+        // THE BUTTONS SAY WHAT THEY DO, total included. The old pair read
+        // "List" (dull) beside "Sell all ×N at X" (gold): sellers who set one
+        // unit pressed the gold one and listed the whole stack, and took X
+        // for the total when it was the price of each.
+        let total_lista = regras::total(self.venda_qtd, self.venda_preco).unwrap_or(0);
+        let rotulo = format!("List ×{} for {} gold", milhar(self.venda_qtd), milhar(total_lista));
+        if botao(bt, &rotulo, pode_listar, true) {
             if let Some(i) = self.venda_slot {
                 saida.push(ClientMessage::MercadoAnunciar {
                     inv_slot: i as u16,
@@ -862,9 +861,15 @@ impl Mercado {
                 self.venda_slot = None;
             }
         }
-        if let (Some(r), Some(rec)) = (bt_tudo, recomendado) {
-            let rotulo = format!("Sell all ×{} at {}", slot.qty, milhar(rec));
-            if botao(r, &rotulo, pode_listar, true) {
+        if let Some(rec) = recomendado {
+            let r = Rect::new(bt.x, bt.y - 52.0 * f, bt.w, 42.0 * f);
+            let total_tudo = regras::total(slot.qty as u64, rec).unwrap_or(0);
+            let rotulo = if slot.qty > 1 {
+                format!("Sell all ×{} for {} gold (recommended)", milhar(slot.qty as u64), milhar(total_tudo))
+            } else {
+                format!("Sell for {} gold (recommended)", milhar(total_tudo))
+            };
+            if botao(r, &rotulo, pode_listar, false) {
                 if let Some(i) = self.venda_slot {
                     saida.push(ClientMessage::MercadoAnunciar {
                         inv_slot: i as u16,
