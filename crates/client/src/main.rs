@@ -4313,6 +4313,14 @@ impl Jogo {
                 na_log: q.is_some(),
                 dialogo_aberto: self.dialogo.aberto,
                 combate_ativo: self.auto_combate.ativo(),
+                combatendo_alvo: self.alvo.and_then(|id| self.world.ents.get(&id))
+                    .is_some_and(|e| e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0
+                        && e.morte.is_none() && q.is_some_and(|q|
+                            if matches!(q.obj_kind, shared::quests::objective_kind::COLLECT | shared::quests::objective_kind::DELIVER) {
+                                true
+                            } else {
+                                shared::quests::kill_conta(q.obj_target, e.meta.kind)
+                            })),
                 coleta_ativa: self.auto_coleta.ativo(),
                 // O PROGRESSO É O SINAL DE VIDA do passo: é por ele que o
                 // auto missão sabe a diferença entre colher e girar no vazio.

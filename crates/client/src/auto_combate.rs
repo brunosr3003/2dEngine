@@ -14,6 +14,10 @@ const BUSCA: f32 = 110.0;
 /// Interval between "go over there" requests during the hunt.
 const PASSO_DA_CACA_S: f64 = 1.2;
 
+pub fn alvo_da_missao(alvo: u16, corpo: u16) -> bool {
+    shared::quests::kill_conta(shared::quests::alvo_de_mob(alvo), corpo)
+}
+
 /// Still for this long after walking by hand, AUTO takes the route back over.
 const VOLTA_PARADO_S: f64 = 0.4;
 
@@ -241,7 +245,7 @@ impl AutoCombate {
             .map(|(_, e)| e)
             .filter(|e| e.render_pos.distance(eu) <= BUSCA)
             .min_by(|a, b| {
-                let fora = |kind: u16| missao.is_some_and(|k| shared::bestiary::species_of(kind) != k);
+                let fora = |kind: u16| missao.is_some_and(|k| !alvo_da_missao(k, kind));
                 fora(a.meta.kind).cmp(&fora(b.meta.kind)).then_with(||
                     a.render_pos.distance_squared(eu).total_cmp(&b.render_pos.distance_squared(eu)))
             })?.render_pos;
@@ -334,7 +338,7 @@ impl AutoCombate {
                     .agressores
                     .get(id)
                     .is_some_and(|t| agora - t < AGRESSOR_S),
-                da_missao: missao.is_some_and(|k| shared::bestiary::species_of(e.meta.kind) == k),
+                da_missao: missao.is_some_and(|k| alvo_da_missao(k, e.meta.kind)),
             })
             .collect();
         let escolhido = escolhe_alvo(&cands, &self.ordem, self.pvp);
@@ -390,6 +394,19 @@ impl AutoCombate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn caca_reconhece_especie_variante_e_chefe_nomeado() {
+        for q in shared::quests::QUESTS.iter().chain(shared::historia::PASSOS.iter()) {
+            if q.obj_kind != shared::quests::objective_kind::KILL || q.obj_target == 0
+                || q.obj_target == shared::quests::ALVO_QUALQUER_CHEFE { continue; }
+            let alvo = q.obj_target - 1;
+            assert!(alvo_da_missao(alvo, alvo), "quest {} ignores its exact target", q.id);
+            for v in shared::bestiary::VARIANTS.iter().filter(|v| v.species == alvo) {
+                assert!(alvo_da_missao(alvo, v.kind), "quest {} ignores variant {}", q.id, v.kind);
+            }
+        }
+        assert!(!alvo_da_missao(70, 71));
+    }
     fn mundo() -> World {
         let mut w = World::default();
         let mut metas = vec![];

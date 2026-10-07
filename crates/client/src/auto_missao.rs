@@ -18,6 +18,7 @@ const REPEDE_S: f64 = 4.0;
 /// Travel ended far from the destination, or auto combat/gathering switched
 /// off: try again after this.
 const RELIGA_S: f64 = 1.0;
+const RELOCALIZA_CACA_S: f64 = 15.0;
 /// Interagiu e nenhum dialogo abriu nesse tempo: pergunta o destino de novo.
 const ESPERA_FALA_S: f64 = 5.0;
 /// Handed in and the Master did not offer the next one in this time: it is over.
@@ -77,6 +78,8 @@ pub struct Ctx {
     pub na_log: bool,
     pub dialogo_aberto: bool,
     pub combate_ativo: bool,
+    /// A living target that counts for this quest is being fought.
+    pub combatendo_alvo: bool,
     pub coleta_ativa: bool,
     /// How much of the objective is done. It is the "it is moving" signal —
     /// without it, an auto that spins harvesting nothing is indistinguishable
@@ -94,6 +97,8 @@ pub struct AutoMissao {
     /// "Nothing is changing" — see `parado.rs`.
     parado: crate::parado::Parado,
     recurso_parou: bool,
+    progresso: u32,
+    caca_rendeu_em: f64,
 }
 
 impl AutoMissao {
@@ -126,6 +131,8 @@ impl AutoMissao {
             desde: agora,
             parado: crate::parado::Parado::default(),
             recurso_parou: false,
+            progresso: 0,
+            caca_rendeu_em: agora,
         };
     }
 
@@ -255,6 +262,8 @@ impl AutoMissao {
                     self.desde = c.agora;
                     match d.tipo {
                         destino_tipo::COMBATE => {
+                            self.progresso = c.progresso;
+                            self.caca_rendeu_em = c.agora;
                             saida.push(Acao::LigarCombate(d.pos));
                             self.etapa = Some(Etapa::Combatendo);
                         }
@@ -304,11 +313,20 @@ impl AutoMissao {
                 }
             }
             Etapa::Combatendo | Etapa::Coletando => {
+                if c.progresso != self.progresso || c.combatendo_alvo {
+                    self.progresso = c.progresso;
+                    self.caca_rendeu_em = c.agora;
+                }
                 let Some(d) = self.destino else {
                     self.pedir_de_novo(c.agora);
                     return saida;
                 };
                 if c.pronta {
+                    saida.push(Acao::PararAutos);
+                    self.pedir_de_novo(c.agora);
+                } else if etapa == Etapa::Combatendo
+                    && c.agora - self.caca_rendeu_em >= RELOCALIZA_CACA_S
+                {
                     saida.push(Acao::PararAutos);
                     self.pedir_de_novo(c.agora);
                 } else if self.recurso_parou || c.agora - self.desde > RELIGA_S {
@@ -511,6 +529,7 @@ mod tests {
             na_log: true,
             dialogo_aberto: false,
             combate_ativo: false,
+            combatendo_alvo: false,
             coleta_ativa: false,
             progresso: 0,
         }
@@ -610,6 +629,7 @@ mod tests {
         assert_eq!(a.etapa(), Some(Etapa::Combatendo));
         let mut c = ctx(vec2(190.0, 0.0), 5.5);
         c.combate_ativo = true;
+        c.combatendo_alvo = true;
         assert!(a.passo(c).is_empty());
         // O auto combate caiu (perseguiu longe demais): religa.
         assert_eq!(
@@ -680,6 +700,22 @@ mod tests {
     }
 
     #[test]
+    fn caca_sem_alvo_reconsulta_o_destino() {
+        let mut a = AutoMissao::default();
+        a.iniciar(502, "Lobos".into(), 0.0);
+        assert_eq!(a.passo(ctx(Vec2::ZERO, 0.0)), vec![Acao::PedirDestino(502)]);
+        a.destino_recebido(502, destino_tipo::COMBATE, Vec2::ZERO, 5.0, None, 0.1);
+        a.passo(ctx(Vec2::ZERO, 0.2));
+        let mut c = ctx(Vec2::ZERO, 10.0);
+        c.combate_ativo = true;
+        assert!(a.passo(c).is_empty());
+        c.agora = 16.0;
+        assert_eq!(a.passo(c), vec![Acao::PararAutos]);
+        assert_eq!(a.etapa(), Some(Etapa::PedirDestino));
+        assert_eq!(a.passo(ctx(Vec2::ZERO, 17.0)), vec![Acao::PedirDestino(502)]);
+    }
+
+    #[test]
     fn combate_mantem_auto_ate_concluir_mesmo_sem_contador_avancar() {
         let mut a = AutoMissao::default();
         a.iniciar(502, "Lobos".into(), 0.0);
@@ -688,6 +724,7 @@ mod tests {
         a.passo(ctx(Vec2::ZERO, 0.2));
         let mut c = ctx(Vec2::ZERO, 7.0);
         c.combate_ativo = true;
+        c.combatendo_alvo = true;
         for t in [7.0, 30.0, 120.0] {
             c.agora = t;
             assert!(a.passo(c).is_empty());

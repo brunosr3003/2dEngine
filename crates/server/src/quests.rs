@@ -847,7 +847,8 @@ mod testes {
         ];
         assert!(ids(&ate_503, 2).is_empty());
         assert_eq!(ids(&ate_503, 3), vec![504]);
-        assert!(available_givers(1, 0, &[], 0, "ilha_inicial").contains(&GIVER_MESTRE_DA_ILHA));
+        assert!(!available_givers(1, 0, &[], 0, "ilha_inicial").contains(&GIVER_MESTRE_DA_ILHA));
+        assert!(available_givers(1, 0, &feita, 0, "ilha_inicial").contains(&GIVER_MESTRE_DA_ILHA));
     }
 
     /// O caso que motivou 511-538: nivel 16, capitulo I acabado, cadeia do
@@ -1687,7 +1688,7 @@ mod testes_do_alvo_existe {
             let nasce = crate::economy::kinds_do_bioma(def.bioma)
                 .iter()
                 .chain(crate::economy::kinds_de_praia_do_bioma(def.bioma))
-                .any(|k| shared::bestiary::species_of(*k) == especie)
+                .any(|k| quests::kill_conta(d.obj_target, *k))
                 // A field boss of that island (511-513 hunt the Bosque's).
                 || shared::bosses::chefe(especie).is_some_and(|c| c.zona == zona);
             if !nasce {
