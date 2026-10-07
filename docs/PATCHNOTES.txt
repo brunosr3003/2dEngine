@@ -1,3 +1,7 @@
+07/10/2026 — Nome da ilha no painel
+
+O painel de localização, abaixo dos botões do menu, mostra o nome da ilha (por exemplo, Bosque) em vez do código interno do mapa (ilha_inicial).
+
 06/10/2026 — Destinos das caçadas
 
 As missões de caça priorizam locais com o alvo vivo. Quando o alvo está em respawn, escolhem a área com maior chance de encontrá-lo. O automático procura outro destino após 15 segundos sem progresso e sem combater o alvo da missão. Caçadas reconhecem tanto a espécie quanto o mob específico da ilha e os chefes nomeados.
