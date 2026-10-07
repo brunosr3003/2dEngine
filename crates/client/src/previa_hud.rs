@@ -132,7 +132,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                     &hud::Info {
                         realm: "Tempest".into(),
                         canal: "Canal 1".into(),
-                        zona: "Ilhas Mágicas".into(),
+                        zona: "ilha_inicial".into(),
                         jogadores: 42,
                         capacidade: 200,
                     },

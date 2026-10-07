@@ -165,11 +165,12 @@ pub fn draw_hud(
     let r = z.area;
     estilo::painel(r);
     let sobre = r.contains(mouse());
-    let zona = if info.zona.is_empty() {
+    let zona = nome_da_zona(if info.zona.is_empty() {
         map.map_or("Exploring", |m| m.name.as_str())
     } else {
         &info.zona
-    };
+    });
+    let zona = zona.as_str();
     let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
     estilo::texto_ajustado(zona, r.x + 12.0, r.y + r.h * 0.45, r.w - 100.0, 18, cor);
     let onde = if info.realm.is_empty() {
@@ -1126,4 +1127,23 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u32, hp_max: u32, chefe:
         "Tab",
     );
     sobre && crate::foco::clique()
+}
+
+/// The island's name for the zone id the server sends ("ilha_inicial" →
+/// its `DefIlha::nome`); an id with no island turns into words.
+fn nome_da_zona(z: &str) -> String {
+    if let Some(d) = shared::terreno::def_da_zona(z) {
+        return d.nome.to_string();
+    }
+    if !z.contains('_') {
+        return z.to_string();
+    }
+    z.split('_')
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let mut c = p.chars();
+            c.next().map_or_else(String::new, |f| f.to_uppercase().chain(c).collect())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
