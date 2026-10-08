@@ -2019,7 +2019,8 @@ impl Jogo {
                 anuncios,
                 historico,
                 tp,
-            } => self.mercado.meus(anuncios, historico, tp),
+                compras_de_vagas,
+            } => self.mercado.meus(anuncios, historico, tp, compras_de_vagas),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
             ServerMessage::PrecosDoMercado { tabela } => self.mercado.precos = tabela.mapa(),
             ServerMessage::Presenca { aviso } => {

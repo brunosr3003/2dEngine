@@ -77,6 +77,8 @@ pub struct Mercado {
     historico: Vec<VendaNet>,
     cartas: Vec<CartaNet>,
     tp: Option<u64>,
+    /// Listing-slot purchases this character made (`regras::max_anuncios`).
+    compras_vagas: u8,
     compra: Option<Compra>,
     venda_slot: Option<usize>,
     venda_qtd: u64,
@@ -200,10 +202,16 @@ impl Mercado {
         }
     }
 
-    pub fn meus(&mut self, anuncios: Vec<AnuncioNet>, historico: Vec<VendaNet>, tp: u64) {
+    pub fn meus(&mut self, anuncios: Vec<AnuncioNet>, historico: Vec<VendaNet>, tp: u64, compras_vagas: u8) {
         self.meus = anuncios;
         self.historico = historico;
         self.tp = Some(tp);
+        self.compras_vagas = compras_vagas;
+    }
+
+    /// Active listings this character may keep.
+    fn max_anuncios(&self) -> usize {
+        regras::max_anuncios(self.compras_vagas)
     }
 
     pub fn entregas(&mut self, cartas: Vec<CartaNet>, tp: u64) {
@@ -730,7 +738,7 @@ impl Mercado {
         let ativos = format!(
             "Active listings {}/{}",
             self.meus.len(),
-            regras::MAX_ANUNCIOS
+            self.max_anuncios()
         );
         estilo::texto(x, y, &ativos, 13, estilo::SUAVE);
         y += 24.0 * f;
@@ -835,7 +843,7 @@ impl Mercado {
         // market's lowest. A missing one says so instead of vanishing, so the
         // seller always knows what was looked at.
         let recomendado = shared::precos::recomendado(&self.precos, slot.item_id, slot.instance.as_ref());
-        let pode_listar = livre && pode && self.meus.len() < regras::MAX_ANUNCIOS;
+        let pode_listar = livre && pode && self.meus.len() < self.max_anuncios();
         referencias(
             &mut self.venda_preco,
             recomendado,
@@ -897,7 +905,7 @@ impl Mercado {
         estilo::texto_forte(
             esq.x,
             esq.y + 14.0 * f,
-            &format!("Active ({}/{})", self.meus.len(), regras::MAX_ANUNCIOS),
+            &format!("Active ({}/{})", self.meus.len(), self.max_anuncios()),
             14,
             estilo::SUAVE,
         );
@@ -936,14 +944,15 @@ impl Mercado {
         );
 
         estilo::painel(dir);
+        let fim_vagas = self.vagas(dir, c, f, livre, saida);
         estilo::texto_forte(
             dir.x + 14.0 * f,
-            dir.y + 26.0 * f,
+            fim_vagas + 26.0 * f,
             "History",
             15,
             estilo::SUAVE,
         );
-        let mut y = dir.y + 52.0 * f;
+        let mut y = fim_vagas + 52.0 * f;
         if self.historico.is_empty() {
             estilo::texto(dir.x + 14.0 * f, y, "Nothing yet.", 14, estilo::SUAVE);
         }
@@ -977,6 +986,50 @@ impl Mercado {
             );
             y += 24.0 * f;
         }
+    }
+
+    /// The listing slots box at the top of `dir`: how many are in use and the
+    /// next +5, in TP or in gold. Returns where the box ends.
+    fn vagas(&self, dir: Rect, c: &Contexto, f: f32, livre: bool, saida: &mut Vec<ClientMessage>) -> f32 {
+        let (x, w) = (dir.x + 14.0 * f, dir.w - 28.0 * f);
+        let mut y = dir.y + 26.0 * f;
+        estilo::texto_forte(x, y, "Listing slots", 15, estilo::SUAVE);
+        let uso = format!("{} / {}", self.meus.len(), self.max_anuncios());
+        estilo::texto_forte(x + w - estilo::medir_forte(&uso, 15), y, &uso, 15, estilo::OURO);
+        y += 14.0 * f;
+        match regras::proxima_vaga(self.compras_vagas) {
+            Some((tp, ouro)) => {
+                estilo::texto_ajustado(
+                    &format!("Buy {} more slots with either:", regras::VAGAS_POR_COMPRA),
+                    x,
+                    y + 12.0 * f,
+                    w,
+                    13,
+                    estilo::SUAVE,
+                );
+                y += 22.0 * f;
+                let compra = self.compras_vagas + 1;
+                let meio = 8.0 * f;
+                let bw = (w - meio) / 2.0;
+                let tem_tp = self.tp.is_some_and(|t| t >= tp);
+                let r_tp = Rect::new(x, y, bw, 36.0 * f);
+                if botao(r_tp, &format!("{} TP", milhar(tp)), livre && tem_tp, false) {
+                    saida.push(ClientMessage::MercadoComprarVagas { compra, com_tp: true });
+                }
+                let r_ouro = Rect::new(x + bw + meio, y, bw, 36.0 * f);
+                if botao(r_ouro, &format!("{} gold", milhar(ouro)), livre && c.ouro >= ouro, false) {
+                    saida.push(ClientMessage::MercadoComprarVagas { compra, com_tp: false });
+                }
+                y += 36.0 * f;
+            }
+            None => {
+                estilo::texto_ajustado("You have every slot there is.", x, y + 12.0 * f, w, 13, estilo::SUAVE);
+                y += 18.0 * f;
+            }
+        }
+        let linha = y + 12.0 * f;
+        draw_line(x, linha, x + w, linha, 1.0, estilo::BORDA);
+        linha
     }
 
     // ─────────────────────────────── Entregas ───────────────────────────────
@@ -1245,7 +1298,7 @@ impl Mercado {
         let pode = livre
             && c.nivel >= regras::NIVEL_PARA_VENDER
             && saldo >= self.tp_qtd
-            && self.meus.len() < regras::MAX_ANUNCIOS;
+            && self.meus.len() < self.max_anuncios();
         if botao(bt, "List TP", pode, true) {
             saida.push(ClientMessage::MercadoAnunciarTp {
                 qtd: self.tp_qtd,
@@ -1357,7 +1410,7 @@ impl Mercado {
         let pode = livre
             && c.nivel >= regras::NIVEL_PARA_VENDER
             && tem_lotes >= self.energia_lotes
-            && self.meus.len() < regras::MAX_ANUNCIOS;
+            && self.meus.len() < self.max_anuncios();
         if botao(bt, "List Energy", pode, true) {
             saida.push(ClientMessage::MercadoAnunciarEnergia {
                 lotes: self.energia_lotes,
@@ -1669,9 +1722,10 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             meu: false,
         });
     }
-    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("racao", 6), ("tp", 0), ("energia", 0), ("comprar", 0)] {
+    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("racao", 6), ("tp", 0), ("energia", 0), ("comprar", 0), ("vagas", 0), ("vagas-cheio", 0)] {
         m.aba = match nome {
             "comprar" => Aba::Comprar,
+            "vagas" | "vagas-cheio" => Aba::Meus,
             "tp" => Aba::Tp,
             "energia" => Aba::Energia,
             _ => Aba::Vender,
@@ -1691,6 +1745,13 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
                 meu: false,
             });
             m.precos.insert(it::ENERGIA_MIL, 34.7);
+        }
+        if nome.starts_with("vagas") {
+            // My listings with one slot purchase made (25 slots), then at the cap.
+            m.tp = Some(1_000);
+            m.compras_vagas = if nome == "vagas" { 1 } else { regras::CUSTO_VAGAS_TP.len() as u8 };
+            m.meus = m.lista.iter().cloned().cycle().take(7).map(|mut an| { an.meu = true; an }).collect();
+            m.historico = vec![VendaNet { nome: "Green Steel".into(), qtd: 40, preco_unit: 120, taxa: 240, liquido: 4_560, quando: 0, vendi: true }];
         }
         if nome == "tp" {
             m.tp = Some(1_000);

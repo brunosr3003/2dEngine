@@ -467,6 +467,13 @@ pub enum ClientMessage {
         lotes: u64,
         preco_unit: u64,
     },
+    /// Buys the next `mercado::VAGAS_POR_COMPRA` listing slots. `compra` is
+    /// the purchase the player saw (1 = the first): a stale one is refused,
+    /// so a double click never pays twice. Paid in TP or in gold.
+    MercadoComprarVagas {
+        compra: u8,
+        com_tp: bool,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1141,6 +1148,8 @@ pub enum ServerMessage {
         anuncios: Vec<crate::mercado::AnuncioNet>,
         historico: Vec<crate::mercado::VendaNet>,
         tp: u64,
+        /// Slot purchases this character made (`mercado::max_anuncios`).
+        compras_de_vagas: u8,
     },
     /// Mercado: entregas esperando e TP da conta.
     MercadoEntregas {

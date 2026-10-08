@@ -1,3 +1,9 @@
+07/10/2026 — Mais vagas no mercado (atualização obrigatória)
+
+Cada personagem começa com 20 vagas de anúncio e agora pode comprar mais 5 por vez, até 50, em Meus anúncios. Cada compra pode ser paga em TP ou em ouro: 100 TP ou 5.000 de ouro na primeira, subindo até 500 TP ou 160.000 de ouro na sexta. Clicar duas vezes não cobra em dobro: o que for pago a mais volta em Entregas.
+
+Esta versão é obrigatória.
+
 07/10/2026 — Nome da ilha no painel
 
 O painel de localização, abaixo dos botões do menu, mostra o nome da ilha (por exemplo, Bosque) em vez do código interno do mapa (ilha_inicial).

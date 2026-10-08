@@ -17,8 +17,25 @@ pub const TAXA_PCT: u64 = 5;
 pub const NIVEL_PARA_VENDER: u32 = 20;
 /// Teto do preco por unidade, em gold.
 pub const PRECO_MAX_UNIT: u64 = 1_000_000_000;
-/// Anuncios ativos por personagem (itens e TP juntos).
+/// Anuncios ativos por personagem (itens e TP juntos), before any bought slots.
 pub const MAX_ANUNCIOS: usize = 20;
+/// Listing slots one purchase adds (`max_anuncios`).
+pub const VAGAS_POR_COMPRA: usize = 5;
+/// The price of each slot purchase, in TP or in gold (the player picks).
+/// Their length is how many purchases a character can make: 20 + 6 × 5 = 50.
+pub const CUSTO_VAGAS_TP: [u64; 6] = [100, 150, 200, 300, 400, 500];
+pub const CUSTO_VAGAS_OURO: [u64; 6] = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000];
+
+/// Active listings allowed after `compras` slot purchases.
+pub fn max_anuncios(compras: u8) -> usize {
+    MAX_ANUNCIOS + VAGAS_POR_COMPRA * (compras as usize).min(CUSTO_VAGAS_TP.len())
+}
+
+/// The price of the next slot purchase, `(tp, gold)`; `None` at the cap.
+pub fn proxima_vaga(compras: u8) -> Option<(u64, u64)> {
+    let i = compras as usize;
+    Some((*CUSTO_VAGAS_TP.get(i)?, *CUSTO_VAGAS_OURO.get(i)?))
+}
 /// Linhas por pagina na busca.
 pub const POR_PAGINA: usize = 20;
 /// Teto de TP num anuncio so'.
@@ -156,6 +173,9 @@ pub enum Recusa {
     Esgotado,
     PrecoMudou,
     ProprioAnuncio,
+    /// The slot purchase the player saw is no longer the next one (bought
+    /// twice, or already at the cap).
+    VagaMudou,
 }
 
 impl Recusa {
@@ -167,7 +187,9 @@ impl Recusa {
             Recusa::Vinculado => "Bound item: it cannot be sold.".into(),
             Recusa::Quantidade => "Invalid quantity.".into(),
             Recusa::Preco => format!("Preço inválido (1 a {PRECO_MAX_UNIT} por unidade)."),
-            Recusa::MuitosAnuncios => format!("Limite de {MAX_ANUNCIOS} anúncios ativos."),
+            Recusa::MuitosAnuncios => {
+                "All your listing slots are in use. Buy more in My listings.".into()
+            }
             Recusa::SemGold => "Not enough gold.".into(),
             Recusa::SemTp => "Not enough TP.".into(),
             Recusa::Indisponivel => {
@@ -179,6 +201,9 @@ impl Recusa {
             Recusa::PrecoMudou => "O preço do anúncio mudou; o gold volta em Entregas.".into(),
             Recusa::ProprioAnuncio => {
                 "Não dá para comprar o próprio anúncio; o gold volta em Entregas.".into()
+            }
+            Recusa::VagaMudou => {
+                "Those listing slots were already bought; anything paid comes back in Deliveries.".into()
             }
         }
     }
@@ -360,6 +385,18 @@ pub struct FiltroNet {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn vagas_compradas_sobem_de_cinco_ate_50() {
+        assert_eq!(max_anuncios(0), 20);
+        assert_eq!(max_anuncios(1), 25);
+        assert_eq!(max_anuncios(6), 50);
+        assert_eq!(max_anuncios(200), 50);
+        assert_eq!(proxima_vaga(0), Some((100, 5_000)));
+        assert_eq!(proxima_vaga(5), Some((500, 160_000)));
+        assert_eq!(proxima_vaga(6), None);
+    }
+
     use super::*;
 
     fn carta(id: &str) -> CartaNet {

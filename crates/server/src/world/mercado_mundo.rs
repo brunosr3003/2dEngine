@@ -132,6 +132,21 @@ impl GameWorld {
             ClientMessage::MercadoAnunciarEnergia { lotes, preco_unit } => {
                 self.mercado_anunciar_energia(sid, quem, lotes, preco_unit);
             }
+            ClientMessage::MercadoComprarVagas { compra, com_tp: true } => {
+                tokio::spawn(async move {
+                    match mercado::comprar_vagas_tp(&central, &quem.realm, &quem.conta, &quem.nome, compra).await {
+                        Ok((ok, texto)) => responde(&quem.to_client, ok, texto),
+                        Err(e) => {
+                            tracing::warn!("mercado: compra de vagas com TP falhou: {e:#}");
+                            responde(&quem.to_client, false, Recusa::Indisponivel.texto());
+                        }
+                    }
+                    enviar_meus(&central, &quem).await;
+                });
+            }
+            ClientMessage::MercadoComprarVagas { compra, com_tp: false } => {
+                self.mercado_comprar_vagas(sid, quem, compra);
+            }
             ClientMessage::MercadoAnunciarTp { qtd, preco_unit } => {
                 if let Err(r) = regras::pode_anunciar_tp(quem.nivel, qtd, preco_unit) {
                     responde(&quem.to_client, false, r.texto());
@@ -270,6 +285,38 @@ impl GameWorld {
             instancia: None,
             qtd: lotes,
             preco_unit,
+        }));
+        self.save_pending = true;
+    }
+
+    /// Slot purchase in gold: the gold leaves NOW and the purchase goes in the
+    /// save queue; the central one adds the slots or returns the gold by letter.
+    fn mercado_comprar_vagas(&mut self, sid: SessionId, quem: Quem, compra: u8) {
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let Some((_, ouro)) = compra.checked_sub(1).and_then(regras::proxima_vaga) else {
+            responde(&quem.to_client, false, Recusa::VagaMudou.texto());
+            return;
+        };
+        if s.gold < ouro {
+            responde(&quem.to_client, false, Recusa::SemGold.texto());
+            return;
+        }
+        s.gold -= ouro;
+        crate::telemetria::conta_de(&s.name, "mercado", "comprar_vagas", 1);
+        crate::telemetria::conta_de(&s.name, "ouro_ralo", "mercado_vagas", ouro as i64);
+        responde(
+            &quem.to_client,
+            true,
+            format!("Buying {} listing slots for {ouro} gold…", regras::VAGAS_POR_COMPRA),
+        );
+        self.mercado_registros.push(Registro::Saida(OpCentral::ComprarVagas {
+            id: mercado::novo_id(),
+            realm: quem.realm,
+            personagem: quem.nome,
+            compra,
+            pago: ouro,
         }));
         self.save_pending = true;
     }
@@ -444,11 +491,12 @@ impl GameWorld {
 
 async fn enviar_meus(central: &sqlx::PgPool, quem: &Quem) {
     match mercado::meus(central, &quem.realm, &quem.nome, &quem.conta).await {
-        Ok((anuncios, historico, tp)) => {
+        Ok((anuncios, historico, tp, compras_de_vagas)) => {
             let _ = quem.to_client.send(ServerMessage::MercadoMeus {
                 anuncios,
                 historico,
                 tp,
+                compras_de_vagas,
             });
         }
         Err(e) => {

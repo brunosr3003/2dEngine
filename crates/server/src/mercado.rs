@@ -197,6 +197,13 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
         )",
         "CREATE INDEX IF NOT EXISTS mercado_vendas_vendedor ON mercado_vendas (vendedor_realm, vendedor, id DESC)",
         "CREATE INDEX IF NOT EXISTS mercado_vendas_comprador ON mercado_vendas (comprador_realm, comprador, id DESC)",
+        // Listing slots a character bought (`regras::max_anuncios`).
+        "CREATE TABLE IF NOT EXISTS mercado_vagas (
+            realm      TEXT     NOT NULL,
+            personagem TEXT     NOT NULL,
+            compras    SMALLINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (realm, personagem)
+        )",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -250,20 +257,31 @@ pub enum OpCentral {
         /// Gold que ja' saiu do comprador.
         pago: u64,
     },
+    /// Slot purchase number `compra` (1 = the first), paid in gold that
+    /// already left the character; a stale one gives the gold back by letter.
+    ComprarVagas {
+        id: String,
+        realm: String,
+        personagem: String,
+        compra: u8,
+        pago: u64,
+    },
 }
 
 impl OpCentral {
     pub fn id(&self) -> &str {
         match self {
-            OpCentral::Anunciar { id, .. } | OpCentral::Comprar { id, .. } => id,
+            OpCentral::Anunciar { id, .. }
+            | OpCentral::Comprar { id, .. }
+            | OpCentral::ComprarVagas { id, .. } => id,
         }
     }
 
     pub fn personagem(&self) -> &str {
         match self {
-            OpCentral::Anunciar { personagem, .. } | OpCentral::Comprar { personagem, .. } => {
-                personagem
-            }
+            OpCentral::Anunciar { personagem, .. }
+            | OpCentral::Comprar { personagem, .. }
+            | OpCentral::ComprarVagas { personagem, .. } => personagem,
         }
     }
 }
@@ -321,6 +339,7 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
     let (realm, tipo) = match op {
         OpCentral::Anunciar { realm, .. } => (realm, "anunciar"),
         OpCentral::Comprar { realm, .. } => (realm, "comprar"),
+        OpCentral::ComprarVagas { realm, .. } => (realm, "vagas"),
     };
     let mut tx = central.begin().await?;
     let novo = sqlx::query("INSERT INTO mercado_operacoes (id, realm, tipo) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING")
@@ -395,6 +414,13 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             )
             .await?
         }
+        OpCentral::ComprarVagas {
+            id,
+            realm,
+            personagem,
+            compra,
+            pago,
+        } => vagas_com_ouro(&mut tx, id, realm, personagem, *compra, *pago).await?,
     };
     sqlx::query("UPDATE mercado_operacoes SET ok = $2, resultado = $3 WHERE id = $1")
         .bind(op.id())
@@ -457,6 +483,112 @@ async fn ativos_de(
     Ok(n.max(0) as usize)
 }
 
+/// Slot purchases `personagem` made (0 = none).
+pub async fn compras_de_vagas<'e>(
+    db: impl sqlx::PgExecutor<'e>,
+    realm: &str,
+    personagem: &str,
+) -> Result<u8> {
+    let n: Option<i16> = sqlx::query_scalar("SELECT compras FROM mercado_vagas WHERE realm = $1 AND personagem = $2")
+        .bind(realm)
+        .bind(personagem)
+        .fetch_optional(db)
+        .await?;
+    Ok(n.unwrap_or(0).clamp(0, u8::MAX as i16) as u8)
+}
+
+/// Takes the per-character listing lock and checks that `compra` is the next
+/// purchase. `Err` is the refusal for the player.
+async fn proxima_compra(
+    tx: &mut Transaction<'_, Postgres>,
+    realm: &str,
+    personagem: &str,
+    compra: u8,
+) -> Result<std::result::Result<(u64, u64), Recusa>> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(format!("anuncios:{realm}:{personagem}"))
+        .execute(&mut **tx)
+        .await?;
+    let feitas = compras_de_vagas(&mut **tx, realm, personagem).await?;
+    Ok(match regras::proxima_vaga(feitas) {
+        Some(custo) if feitas as u16 + 1 == compra as u16 => Ok(custo),
+        _ => Err(Recusa::VagaMudou),
+    })
+}
+
+async fn gravar_compra(tx: &mut Transaction<'_, Postgres>, realm: &str, personagem: &str, compra: u8) -> Result<String> {
+    sqlx::query(
+        "INSERT INTO mercado_vagas (realm, personagem, compras) VALUES ($1, $2, $3)
+         ON CONFLICT (realm, personagem) DO UPDATE SET compras = EXCLUDED.compras",
+    )
+    .bind(realm)
+    .bind(personagem)
+    .bind(compra as i16)
+    .execute(&mut **tx)
+    .await?;
+    Ok(format!(
+        "+{} listing slots: you can now keep {} listings active.",
+        regras::VAGAS_POR_COMPRA,
+        regras::max_anuncios(compra)
+    ))
+}
+
+/// Slot purchase paid in gold (through the outbox): a stale or overpaid
+/// one sends the gold back by letter.
+async fn vagas_com_ouro(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    realm: &str,
+    personagem: &str,
+    compra: u8,
+    pago: u64,
+) -> Result<(bool, String)> {
+    match proxima_compra(tx, realm, personagem, compra).await? {
+        Ok((_, ouro)) if pago >= ouro => {
+            if pago > ouro {
+                carta(tx, &format!("{id}:troco"), realm, personagem, 0, 0, None, pago - ouro, "listing slots: change").await?;
+            }
+            Ok((true, gravar_compra(tx, realm, personagem, compra).await?))
+        }
+        Ok(_) | Err(_) => {
+            carta(tx, &format!("{id}:devolve"), realm, personagem, 0, 0, None, pago, "listing slots: refund").await?;
+            Ok((false, Recusa::VagaMudou.texto()))
+        }
+    }
+}
+
+/// Slot purchase paid in TP: the account's TP and the slots move in one
+/// transaction.
+pub async fn comprar_vagas_tp(
+    central: &PgPool,
+    realm: &str,
+    conta: &str,
+    personagem: &str,
+    compra: u8,
+) -> Result<(bool, String)> {
+    let mut tx = central.begin().await?;
+    let tp = match proxima_compra(&mut tx, realm, personagem, compra).await? {
+        Ok((tp, _)) => tp,
+        Err(r) => return Ok((false, r.texto())),
+    };
+    match razao::mover(
+        &mut tx,
+        conta,
+        -(tp as i64),
+        "market listing slots",
+        Some(&format!("vagas:{realm}:{personagem}:{compra}")),
+    )
+    .await?
+    {
+        razao::Movimento::SemSaldo { .. } => return Ok((false, Recusa::SemTp.texto())),
+        razao::Movimento::JaFeito { .. } => return Ok((false, Recusa::VagaMudou.texto())),
+        razao::Movimento::Feito { .. } => {}
+    }
+    let texto = gravar_compra(&mut tx, realm, personagem, compra).await?;
+    tx.commit().await?;
+    Ok((true, texto))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn anunciar_item(
     tx: &mut Transaction<'_, Postgres>,
@@ -483,7 +615,9 @@ async fn anunciar_item(
         Some(Recusa::Quantidade)
     } else if !regras::preco_valido(preco_unit) {
         Some(Recusa::Preco)
-    } else if ativos_de(tx, realm, personagem).await? >= regras::MAX_ANUNCIOS {
+    } else if ativos_de(tx, realm, personagem).await?
+        >= regras::max_anuncios(compras_de_vagas(&mut **tx, realm, personagem).await?)
+    {
         Some(Recusa::MuitosAnuncios)
     } else {
         None
@@ -755,7 +889,9 @@ pub async fn anunciar_tp(
         .bind(format!("anuncios:{realm}:{personagem}"))
         .execute(&mut *tx)
         .await?;
-    if ativos_de(&mut tx, realm, personagem).await? >= regras::MAX_ANUNCIOS {
+    if ativos_de(&mut tx, realm, personagem).await?
+        >= regras::max_anuncios(compras_de_vagas(&mut *tx, realm, personagem).await?)
+    {
         return Ok((false, Recusa::MuitosAnuncios.texto()));
     }
     let id = novo_id();
@@ -858,7 +994,7 @@ pub async fn meus(
     realm: &str,
     personagem: &str,
     conta: &str,
-) -> Result<(Vec<AnuncioNet>, Vec<VendaNet>, u64)> {
+) -> Result<(Vec<AnuncioNet>, Vec<VendaNet>, u64, u8)> {
     let ativos = sqlx::query(
         "SELECT id, tipo, realm, personagem, item_id, nome, categoria, instancia, qtd_restante, preco_unit
            FROM mercado_anuncios WHERE realm = $1 AND personagem = $2 AND estado = 0 ORDER BY criado DESC",
@@ -891,6 +1027,7 @@ pub async fn meus(
         })
         .collect();
     let tp = razao::saldo(central, conta).await?;
+    let compras = compras_de_vagas(central, realm, personagem).await?;
     Ok((
         ativos
             .iter()
@@ -898,6 +1035,7 @@ pub async fn meus(
             .collect(),
         historico,
         tp,
+        compras,
     ))
 }
 
@@ -1080,6 +1218,53 @@ mod testes {
     fn conta_sem_id_ainda_e_unica_por_personagem() {
         assert_eq!(conta_global("SA01", Some(7), "Ana"), "SA01:7");
         assert_eq!(conta_global("SA01", None, "Ana"), "SA01:personagem:Ana");
+    }
+
+    /// Slot purchases: gold through the outbox, then TP; a stale purchase
+    /// pays nothing (gold back by letter, TP untouched).
+    #[tokio::test]
+    async fn vagas_com_ouro_e_tp_no_postgres() {
+        let Ok(url) = std::env::var("DATABASE_URL_CENTRAL_TESTE") else {
+            eprintln!("DATABASE_URL_CENTRAL_TESTE nao setada: teste de vagas pulado");
+            return;
+        };
+        let central = abrir_central(&url).await.expect("central");
+        let tag = &novo_id()[..10];
+        let (quem, conta) = (format!("vagas_{tag}"), format!("T:{tag}:vagas"));
+        let gold = |compra: u8| OpCentral::ComprarVagas {
+            id: novo_id(),
+            realm: "T".into(),
+            personagem: quem.clone(),
+            compra,
+            pago: regras::CUSTO_VAGAS_OURO[compra as usize - 1],
+        };
+        let r = processar(&central, &gold(1)).await.unwrap();
+        assert!(r.ok, "{}", r.texto);
+        assert_eq!(compras_de_vagas(&central, "T", &quem).await.unwrap(), 1);
+        // The same purchase again (a double click): refused, gold back by letter.
+        let repetida = gold(1);
+        let r = processar(&central, &repetida).await.unwrap();
+        assert!(!r.ok);
+        let devolvido: i64 = sqlx::query_scalar("SELECT gold FROM mercado_cartas WHERE id = $1")
+            .bind(format!("{}:devolve", repetida.id()))
+            .fetch_one(&central)
+            .await
+            .unwrap();
+        assert_eq!(devolvido as u64, regras::CUSTO_VAGAS_OURO[0]);
+        assert_eq!(compras_de_vagas(&central, "T", &quem).await.unwrap(), 1);
+        // TP: none on the account, then enough for purchase 2.
+        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        assert!(!ok);
+        let mut tx = central.begin().await.unwrap();
+        razao::mover(&mut tx, &conta, 1_000, "test credit", None).await.unwrap();
+        tx.commit().await.unwrap();
+        let (ok, texto) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        assert!(ok, "{texto}");
+        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1_000 - regras::CUSTO_VAGAS_TP[1]);
+        assert_eq!(regras::max_anuncios(compras_de_vagas(&central, "T", &quem).await.unwrap()), 30);
+        let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
+        assert!(!ok, "purchase 2 twice must not charge again");
+        assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1_000 - regras::CUSTO_VAGAS_TP[1]);
     }
 
     /// Fluxo inteiro num Postgres descartavel: `DATABASE_URL_CENTRAL_TESTE`.
@@ -1290,7 +1475,7 @@ mod testes {
             90,
             "as 20 que sobraram voltam"
         );
-        let (_, historico, _) = meus(&central, "T", &vend, &conta_v).await.unwrap();
+        let (_, historico, _, _) = meus(&central, "T", &vend, &conta_v).await.unwrap();
         assert_eq!(
             historico
                 .iter()

@@ -289,8 +289,17 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Invalid quantity.", "Quantidade inválida."),
     ("Bound item: it cannot be sold.", "Item vinculado: não pode ser vendido."),
     (
-        "Limite de {MAX_ANUNCIOS} anúncios ativos.",
-        "Limit of {MAX_ANUNCIOS} active listings.",
+        "All your listing slots are in use. Buy more in My listings.",
+        "Todas as suas vagas de anúncio estão em uso. Compre mais em Meus anúncios.",
+    ),
+    (
+        "+{} listing slots: you can now keep {} listings active.",
+        "+{} vagas de anúncio: agora você pode manter {} anúncios ativos.",
+    ),
+    ("Buying {} listing slots for {} gold…", "Comprando {} vagas de anúncio por {} gold…"),
+    (
+        "Those listing slots were already bought; anything paid comes back in Deliveries.",
+        "Essas vagas já foram compradas; o que foi pago volta em Entregas.",
     ),
     (
         "Preço inválido (1 a {PRECO_MAX_UNIT} por unidade).",
