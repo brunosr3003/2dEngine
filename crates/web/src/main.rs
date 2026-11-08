@@ -345,7 +345,7 @@ async fn version() -> Json<VersionRes> {
     // Mobile distribuido via stores — auto-update e gerenciado pelo Play
     // Store / TestFlight, cliente so abre o URL.
     let android = std::env::var("ANDROID_URL").unwrap_or_else(|_| {
-        "https://play.google.com/store/apps/details?id=com.brunji.tempest".to_string()
+        "https://play.google.com/store/apps/details?id=com.niertech.tempest".to_string()
     });
     let testflight = std::env::var("TESTFLIGHT_URL")
         .unwrap_or_else(|_| "https://mmo.brunji.com.br/downloads/ios-testflight.html".to_string());

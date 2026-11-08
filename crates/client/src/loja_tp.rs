@@ -88,6 +88,12 @@ pub struct LojaTp {
     festa: Option<(f64, String)>,
     /// Saldo desenhado: corre ate' o do servidor.
     tp_mostrado: f64,
+    /// (pacote, pedido) de uma compra de TP via Google Play Billing em
+    /// andamento — so' usado no Android. O `ClientMessage::Loja` so' e'
+    /// montado quando `billing_android::poll_result()` traz o
+    /// `purchase_token`, que e' assincrono (a tela de pagamento da Play
+    /// Store e' um overlay fora do nosso controle).
+    pedido_google_play: Option<(u16, String)>,
 }
 
 /// Selo de vitrine da montaria.
@@ -399,6 +405,25 @@ impl LojaTp {
         let mut saida = Vec::new();
         if !self.aberto {
             return saida;
+        }
+        // Resultado assincrono da Play Store (so' chega depois do overlay de
+        // pagamento fechar, por isso aqui no topo, fora do fluxo de clique).
+        #[cfg(target_os = "android")]
+        if let Some(resultado) = crate::billing_android::poll_result() {
+            if let Some((pacote, pedido)) = self.pedido_google_play.take() {
+                if resultado.codigo == 0 && !resultado.purchase_token.is_empty() {
+                    saida.push(ClientMessage::Loja {
+                        pedido: PedidoLoja::ComprarTpGooglePlay {
+                            pacote,
+                            pedido,
+                            purchase_token: resultado.purchase_token,
+                        },
+                    });
+                } else {
+                    self.em_voo = false;
+                    self.ultimo = Some((false, "Purchase canceled".to_string()));
+                }
+            }
         }
         let agora = get_time();
         let dt = get_frame_time().min(0.1);
@@ -2157,6 +2182,18 @@ impl LojaTp {
             }
             let pedido = self.novo_pedido();
             self.em_voo = true;
+            // No Android, pacote de TP vai pro Google Play Billing de
+            // verdade — e' assincrono, o resultado so' chega em
+            // `billing_android::poll_result()` (consumido no topo de
+            // `desenha`). Nas outras plataformas (e no item comprado com
+            // TP, que nunca e' dinheiro de verdade), o fluxo simulado de
+            // sempre continua igual.
+            #[cfg(target_os = "android")]
+            if let Confirma::Tp(pacote) = conf {
+                self.pedido_google_play = Some((pacote, pedido));
+                crate::billing_android::launch_purchase(pacote);
+                return None;
+            }
             return Some(ClientMessage::Loja {
                 pedido: match conf {
                     Confirma::Tp(pacote) => PedidoLoja::ComprarTp { pacote, pedido },

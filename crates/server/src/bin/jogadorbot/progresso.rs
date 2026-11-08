@@ -81,6 +81,9 @@ pub struct Progresso {
     pub plano: Option<Plano>,
     /// Zonas de mob da ilha atual (`MapaDaIlha`).
     pub zonas: Vec<ZonaNoMapa>,
+    pub recursos: Vec<shared::protocol::RegiaoNoMapa>,
+    pub indo_energia: Option<(glam::Vec2, Instant)>,
+    pub energia_seca_ate: Option<Instant>,
     /// Onde o personagem nasceu nesta zona: é a praça, e o cais fica perto.
     pub cidade: Option<glam::Vec2>,
     /// O que está vestido (`StatsUpdate`).
@@ -237,10 +240,9 @@ pub fn destino_pro_nivel(destinos: &[shared::viagem::Destino], nivel: u32) -> Op
         .map(|d| d.ilha)
 }
 
-/// A DECISÃO DA PROGRESSÃO. Devolve `true` se agiu (a decisão acaba aqui).
-pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
+/// Wear earned upgrades and safely refine/craft without waiting for the story to stop.
+pub async fn manutencao(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
     let agora = Instant::now();
-
     // 1. VESTE O QUE É MELHOR. Uma troca por decisão, e nunca duas no mesmo
     // segundo: o `StatsUpdate` com o equipamento novo precisa chegar antes de
     // comparar de novo, senão ele troca a mesma peça duas vezes.
@@ -259,33 +261,6 @@ pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyho
         }
     }
 
-    // 2. ENERGIA pros pontos parados.
-    let custo = shared::custo_energia_do_ponto(eu.prog.alocados.iter().sum());
-    let falta_energia = eu.pontos_livres > 0 && eu.prog.energia < custo;
-    match eu.prog.plano {
-        Some(super::progresso::Plano::Energia { desde }) => {
-            let bastou = !falta_energia;
-            if bastou || agora.duration_since(desde) > PRAZO_DA_ENERGIA {
-                eu.prog.plano = None;
-                eu.no_de_coleta = None;
-                t.registra(ev(nome, eu, "energia_colhida", bastou, format!(
-                    "energia {} (ponto custa {custo})", eu.prog.energia
-                )));
-                return Ok(true);
-            }
-            return colhe_energia(ws, eu, nome, t).await.map(|_| true);
-        }
-        _ if falta_energia && eu.nivel >= 2 => {
-            eu.prog.plano = Some(Plano::Energia { desde: agora });
-            eu.no_de_coleta = None;
-            t.registra(ev(nome, eu, "foi_colher_energia", true, format!(
-                "{} ponto(s) parado(s), energia {} de {custo}", eu.pontos_livres, eu.prog.energia
-            )));
-            return Ok(true);
-        }
-        _ => {}
-    }
-
     // 3 e 4. FORJA: refino e equipamento da faixa, de tempos em tempos.
     let forja_livre = eu.prog.forjou_em.is_none_or(|t| agora.duration_since(t) >= FORJA_A_CADA)
         && eu.prog.forja_seca_ate.is_none_or(|t| agora >= t)
@@ -295,9 +270,48 @@ pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyho
         if refina(ws, eu, nome, t).await? {
             return Ok(true);
         }
-        if fabrica(ws, eu, nome, t).await? {
+        let tem_historia = eu.quests.iter().any(|(id, (_, status))| *status == shared::quests::quest_status::ACTIVE && shared::historia::def_da_historia(*id).is_some());
+        if !tem_historia && fabrica(ws, eu, nome, t).await? {
             return Ok(true);
         }
+    }
+
+    Ok(false)
+}
+
+/// A DECISÃO DA PROGRESSÃO. Devolve `true` se agiu (a decisão acaba aqui).
+pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
+    let agora = Instant::now();
+
+    if manutencao(ws, eu, nome, t).await? { return Ok(true); }
+
+    // 2. ENERGIA pros pontos parados.
+    let custo = shared::custo_energia_do_ponto(eu.prog.alocados.iter().sum());
+    let falta_energia = eu.pontos_livres > 0 && eu.prog.energia < custo;
+    match eu.prog.plano {
+        Some(super::progresso::Plano::Energia { desde }) => {
+            let bastou = !falta_energia;
+            if bastou || agora.duration_since(desde) > PRAZO_DA_ENERGIA {
+                eu.prog.plano = None;
+                eu.no_de_coleta = None;
+                eu.prog.indo_energia = None;
+                if !bastou { eu.prog.energia_seca_ate = Some(agora + FORJA_SECA); }
+                t.registra(ev(nome, eu, "energia_colhida", bastou, format!(
+                    "energia {} (ponto custa {custo})", eu.prog.energia
+                )));
+                return Ok(true);
+            }
+            return colhe_energia(ws, eu, nome, t).await.map(|_| true);
+        }
+        _ if falta_energia && eu.nivel >= 2 && eu.prog.energia_seca_ate.is_none_or(|at| at <= agora) => {
+            eu.prog.plano = Some(Plano::Energia { desde: agora });
+            eu.no_de_coleta = None;
+            t.registra(ev(nome, eu, "foi_colher_energia", true, format!(
+                "{} ponto(s) parado(s), energia {} de {custo}", eu.pontos_livres, eu.prog.energia
+            )));
+            return Ok(true);
+        }
+        _ => {}
     }
 
     // 5. ILHA MÁGICA com as entradas grátis do dia.
@@ -311,6 +325,21 @@ pub async fn progride(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyho
 
 /// Colhe Energia: pede o nó de energia mais perto e vai até ele.
 async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<()> {
+    if eu.no_de_coleta.is_none() {
+        if let Some(regiao) = eu.prog.recursos.iter().filter(|r| r.tipo == 5)
+            .min_by(|a, b| glam::Vec2::from(a.centro).distance_squared(eu.pos)
+                .total_cmp(&glam::Vec2::from(b.centro).distance_squared(eu.pos))) {
+            let centro = glam::Vec2::from(regiao.centro);
+            if eu.pos.distance(centro) > 55.0 {
+                if eu.prog.indo_energia.is_none_or(|(p, at)| p.distance(centro) > 1.0 || at.elapsed() > Duration::from_secs(20)) {
+                    eu.prog.indo_energia = Some((centro, Instant::now()));
+                    ws.send(envia(&ClientMessage::MoverPara { x: centro.x, z: centro.y })?).await?;
+                    t.registra(ev(nome, eu, "foi_ao_campo_de_energia", true, format!("{:.0},{:.0}", centro.x, centro.y)));
+                }
+                return Ok(());
+            }
+        }
+    }
     if eu.colhendo {
         return Ok(());
     }
@@ -318,7 +347,7 @@ async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyh
         Some((coluna, onde)) => {
             let d = eu.pos.distance(onde);
             if d > shared::COLETA_ALCANCE_UN * 0.6 {
-                if !super::empurra_no(eu, onde) {
+                if !super::anda_ao_no(ws, eu, onde).await? {
                     eu.no_de_coleta = None;
                     t.registra(ev(nome, eu, "energia_inalcancavel", false, format!("a {d:.1}u do nó")));
                 }
@@ -341,6 +370,7 @@ async fn colhe_energia(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyh
             if eu.pedidos_de_no >= 8 {
                 eu.pedidos_de_no = 0;
                 eu.prog.plano = None;
+                eu.prog.energia_seca_ate = Some(Instant::now() + FORJA_SECA);
                 t.registra(ev(nome, eu, "sem_energia_por_perto", false, "nada em 80u".into()));
             }
         }
@@ -470,7 +500,7 @@ async fn fabrica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Re
 }
 
 /// Ilha Mágica: pergunta de tempos em tempos e entra com as grátis do dia.
-async fn magica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
+pub async fn magica(ws: &mut Ws, eu: &mut Eu, nome: &str, t: &Trilha) -> anyhow::Result<bool> {
     let agora = Instant::now();
     if eu.nivel < 15 {
         return Ok(false);

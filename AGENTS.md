@@ -7,6 +7,14 @@ scripts; record any blocked platform without announcing that it was published.
 
 Before packaging, update `docs/PATCHNOTES.txt`, bump `BUILD` in
 `crates/client/src/atualizacao.rs` and run `scripts/check-release-notes.py --seal`.
+
+Patch notes shown in game (`docs/PATCHNOTES.txt`, the "What's New in Tempest"
+panel) are ALWAYS in English, never Portuguese, and stay player-facing and
+generic: one entry per update day, short bullets such as new region, new boss,
+new dungeon, new system, balance changes, bug fixes. No internal detail (shaders,
+JNI, protocol numbers, file names). The detailed technical history goes in
+`docs/CHANGELOG.md` (Portuguese, for the team).
+
 Publish the packages before the `downloads/releases.json` manifest. Each platform
 entry must record the `build` that is actually available and its `update_url`.
 Copy the same manifest to `WEB_STATIC/releases.json` on the production API:

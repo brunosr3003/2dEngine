@@ -185,6 +185,14 @@ pub unsafe fn create_egl_context(
     }
 
     let alpha_size = if alpha { 8 } else { 0 };
+    // Tempest: ask for a 24-bit depth buffer. Upstream asked for (and then
+    // preferred exactly) 16 bits; with the camera's 0.01 near plane that is
+    // ~0.6 units of depth error twenty units away, and walls, roofs and the
+    // ground they touch fought over the same pixels (grey blocks along every
+    // building edge on Android only - iOS already gets Format24). 16 bits
+    // stays as the fallback for a GPU that has no 24-bit config.
+    let mut depth_size: u32 = 24;
+    let config: EGLConfig = loop {
     #[rustfmt::skip]
     let cfg_attributes = [
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -192,7 +200,7 @@ pub unsafe fn create_egl_context(
         EGL_GREEN_SIZE, 8,
         EGL_BLUE_SIZE, 8,
         EGL_ALPHA_SIZE, alpha_size,
-        EGL_DEPTH_SIZE, 16,
+        EGL_DEPTH_SIZE, depth_size,
         EGL_STENCIL_SIZE, 0,
         EGL_SAMPLES, sample_count as u32,
         EGL_NONE,
@@ -207,6 +215,10 @@ pub unsafe fn create_egl_context(
         32,
         &mut cfg_count as *mut _ as *mut _,
     );
+    if cfg_count == 0 && depth_size > 16 {
+        depth_size = 16;
+        continue;
+    }
     // Tempest: MSAA is a player setting; a GPU without that sample count
     // must still open the window, just without anti-aliasing.
     if cfg_count == 0 && sample_count > 1 {
@@ -233,7 +245,7 @@ pub unsafe fn create_egl_context(
             && g == 8
             && b == 8
             && (alpha_size == 0 || a == alpha_size as _)
-            && d == 16
+            && d == depth_size as i32
         {
             exact_cfg_found = true;
             config = *c;
@@ -243,6 +255,8 @@ pub unsafe fn create_egl_context(
     if !exact_cfg_found {
         config = available_cfgs[0];
     }
+    break config;
+    };
     let ctx_attributes = [EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE];
     let context = (egl.eglCreateContext)(
         display,

@@ -936,6 +936,11 @@ fn world_to_screen_com(m: &Mat4, p: Vec3, tela: Vec2) -> Option<Vec3> {
 /// O shader e' o mesmo da macroquad. Ele esta' copiado aqui porque o modulo
 /// dela e' privado; se um dia ela expuser, isto vira um `use`.
 pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
+    #if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)
+    #define MUNDO_PRECISAO highp
+    #else
+    #define MUNDO_PRECISAO mediump
+    #endif
     attribute vec3 position;
     attribute vec2 texcoord;
     attribute vec4 color0;
@@ -946,8 +951,12 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     // 1 = esta' geometria pode virar furo; 0 = passa batido. Vem no
     // `normal.x`, que este shader nao usa pra mais nada.
     varying lowp float recortavel;
-    // World position, for the distance fog.
-    varying highp vec3 mundo;
+    // World position, for the distance fog. Same GL_FRAGMENT_PRECISION_HIGH
+    // fallback as `agua::FRAGMENTO`: some phone GPUs have no `highp` in the
+    // fragment stage (GLES2 makes it optional), and a mismatch with what the
+    // fragment shader can actually declare turns into periodic banding in
+    // the distance fog instead of a clean compile error.
+    varying MUNDO_PRECISAO vec3 mundo;
     // The voxel's own colour before night darkens it: what the city's
     // lights (`LuzPos`) light up.
     varying lowp vec3 base;
@@ -957,7 +966,10 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     // Clarao do golpe / corpo escurecido: puxa o rgb pra `Tinta.rgb` na
     // fracao `Tinta.a` (zero = cor do voxel). Antes era recopia na CPU.
     uniform vec4 Tinta;
-    uniform float LuzDia;
+    // Precisao tem que casar com a do fragment shader (mesmo uniform nos
+    // dois estagios): sem o macro aqui, o vertex usa o default highp dele
+    // mesmo quando o fragment cai pra mediump, e a ligacao falha.
+    uniform MUNDO_PRECISAO float LuzDia;
 
     // AS FAIXAS DE PALETA (docs/ARTE_DO_PERSONAGEM.md).
     //
@@ -1028,36 +1040,42 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
 //   RecorteZ    profundidade de janela a partir da qual um fragmento
 //               conta como "na frente do jogador"
 pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
+    #if defined(GL_FRAGMENT_PRECISION_HIGH) || !defined(GL_ES)
+    #define MUNDO_PRECISAO highp
+    #else
+    #define MUNDO_PRECISAO mediump
+    #endif
+    precision MUNDO_PRECISAO float;
     varying lowp vec4 color;
     varying lowp vec2 uv;
     varying lowp float recortavel;
-    varying highp vec3 mundo;
+    varying MUNDO_PRECISAO vec3 mundo;
     varying lowp vec3 base;
 
     uniform sampler2D Texture;
     // THE CITY'S LIGHTS (`luzes`): up to 16 point lights near the camera.
     // LuzPos.xyz = where (world), .w = reach (0 ends the list); LuzCor.rgb
     // = colour, .a = strength. Night only: by day the list is empty.
-    uniform highp vec4 LuzPos[16];
+    uniform vec4 LuzPos[16];
     uniform lowp vec4 LuzCor[16];
     // -2 = the deep (its fog is sea, not night sky); see the vertex shader.
-    uniform highp float LuzDia;
-    uniform highp vec3 Recorte;
-    uniform highp float RecorteZ;
+    uniform MUNDO_PRECISAO float LuzDia;
+    uniform vec3 Recorte;
+    uniform float RecorteZ;
     // Distance fog: xy = centre (world x, z), z = where it starts, w = where
     // it is solid sky. w <= 0 turns it off (panels, previews).
-    uniform highp vec4 Neblina;
+    uniform vec4 Neblina;
 
     void main() {
         if (recortavel > 0.5 && Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
-            highp float d = distance(gl_FragCoord.xy, Recorte.xy) / Recorte.z;
+            float d = distance(gl_FragCoord.xy, Recorte.xy) / Recorte.z;
             if (d < 1.0) {
                 // A borda some com PADRAO DE TELA e nao com transparencia:
                 // recorte transparente exigiria ordenar o mundo de tras pra
                 // frente, e o mundo aqui e' um monte de pedaco em cache. O
                 // pontilhado da a mesma leitura de "esta' sumindo" custando
                 // um `discard`.
-                highp float ruido = fract(sin(dot(
+                float ruido = fract(sin(dot(
                     floor(gl_FragCoord.xy * 0.5),
                     vec2(12.9898, 78.233))) * 43758.5453);
                 // Nao apaga TUDO: deixa uma fracao dos pixels de pe' no meio
@@ -1067,8 +1085,8 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
                 //
                 // Sobrar 10% e' pouco pra atrapalhar a leitura do boneco e o
                 // bastante pra o olho ver o veu.
-                highp float restante = 0.10;
-                highp float fica = mix(restante, 1.0, smoothstep(0.62, 1.0, d));
+                float restante = 0.10;
+                float fica = mix(restante, 1.0, smoothstep(0.62, 1.0, d));
                 if (ruido >= fica) discard;
             }
         }
@@ -1076,17 +1094,17 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
         if (LuzPos[0].w > 0.0) {
             lowp vec3 soma = vec3(0.0);
             for (int i = 0; i < 16; i++) {
-                highp float r = LuzPos[i].w;
+                float r = LuzPos[i].w;
                 if (r <= 0.0) break;
-                highp vec3 d = mundo - LuzPos[i].xyz;
-                highp float t = clamp(1.0 - dot(d, d) / (r * r), 0.0, 1.0);
+                vec3 d = mundo - LuzPos[i].xyz;
+                float t = clamp(1.0 - dot(d, d) / (r * r), 0.0, 1.0);
                 soma += LuzCor[i].rgb * (t * t * LuzCor[i].a);
             }
             gl_FragColor.rgb += base * soma * texture2D(Texture, uv).rgb;
         }
         if (Neblina.w > 0.0) {
             // A NEGATIVE start means night: the fog is the night sky.
-            highp float d = distance(mundo.xz, Neblina.xy);
+            float d = distance(mundo.xz, Neblina.xy);
             lowp float f = smoothstep(abs(Neblina.z), Neblina.w, d);
             lowp vec3 ceu = LuzDia < -1.5 ? vec3(0.016, 0.10, 0.13)
                 : (Neblina.z < 0.0 ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839));

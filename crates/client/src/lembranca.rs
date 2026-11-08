@@ -44,8 +44,9 @@ pub struct Prefs {
 ///
 /// No iOS o `HOME` aponta pra caixa de areia do app e `Documents` sobrevive a
 /// fechar e reabrir — e' o lugar certo. No desktop vale o `XDG_DATA_HOME` e
-/// depois `~/.local/share`. No Android nao ha' caminho garantido sem JNI, e o
-/// `None` daqui e' o que faz o resto degradar em silencio.
+/// depois `~/.local/share`. No Android o caminho vem de
+/// `Activity.getFilesDir()` via JNI (ver `android::pasta_de_arquivos`) —
+/// `None` so' acontece se essa chamada falhar, e o resto degrada em silencio.
 pub(crate) fn caminho() -> Option<PathBuf> {
     #[cfg(target_os = "ios")]
     {
@@ -58,7 +59,9 @@ pub(crate) fn caminho() -> Option<PathBuf> {
     }
     #[cfg(target_os = "android")]
     {
-        return None;
+        let mut p = android::pasta_de_arquivos()?;
+        p.push("tempest.prefs");
+        return Some(p);
     }
     #[cfg(target_os = "windows")]
     {
@@ -262,5 +265,72 @@ mod testes {
             decodifica("\u{0}\nsem igualdade\n=sem chave\n"),
             Prefs::default()
         );
+    }
+}
+
+/// `Activity.getFilesDir()` via JNI — a pasta interna do app, privada a ele
+/// (sobrevive a fechar/reabrir e a atualizacoes; so' some com
+/// desinstalar/"limpar dados"). Cacheado: a pasta nao muda durante a sessao,
+/// e cada chamada custa uma ida e volta na JNI.
+#[cfg(target_os = "android")]
+mod android {
+    use macroquad::miniquad::native::android::{attach_jni_env, ndk_sys, ACTIVITY};
+    use std::ffi::{CStr, CString};
+    use std::os::raw::c_char;
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    pub(super) fn pasta_de_arquivos() -> Option<PathBuf> {
+        static PASTA: OnceLock<Option<PathBuf>> = OnceLock::new();
+        PASTA.get_or_init(|| unsafe { le_pasta_de_arquivos() }).clone()
+    }
+
+    unsafe fn le_pasta_de_arquivos() -> Option<PathBuf> {
+        let env = attach_jni_env();
+
+        let classe = (**env).GetObjectClass.unwrap()(env, ACTIVITY);
+        if classe.is_null() {
+            (**env).ExceptionClear.unwrap()(env);
+            return None;
+        }
+        let nome = CString::new("getFilesDir").unwrap();
+        let sig = CString::new("()Ljava/io/File;").unwrap();
+        let metodo = (**env).GetMethodID.unwrap()(env, classe, nome.as_ptr(), sig.as_ptr());
+        if metodo.is_null() {
+            (**env).ExceptionClear.unwrap()(env);
+            return None;
+        }
+        let arquivo = (**env).CallObjectMethodA.unwrap()(env, ACTIVITY, metodo, std::ptr::null());
+        if arquivo.is_null() {
+            (**env).ExceptionClear.unwrap()(env);
+            return None;
+        }
+
+        let classe_arquivo = (**env).GetObjectClass.unwrap()(env, arquivo);
+        let nome2 = CString::new("getAbsolutePath").unwrap();
+        let sig2 = CString::new("()Ljava/lang/String;").unwrap();
+        let metodo2 =
+            (**env).GetMethodID.unwrap()(env, classe_arquivo, nome2.as_ptr(), sig2.as_ptr());
+        if metodo2.is_null() {
+            (**env).ExceptionClear.unwrap()(env);
+            return None;
+        }
+        let caminho = (**env).CallObjectMethodA.unwrap()(env, arquivo, metodo2, std::ptr::null())
+            as ndk_sys::jstring;
+        if caminho.is_null() {
+            (**env).ExceptionClear.unwrap()(env);
+            return None;
+        }
+
+        let get = (**env).GetStringUTFChars.unwrap();
+        let release = (**env).ReleaseStringUTFChars.unwrap();
+        let mut is_copy: ndk_sys::jboolean = 0;
+        let ptr = get(env, caminho, &mut is_copy);
+        if ptr.is_null() {
+            return None;
+        }
+        let texto = CStr::from_ptr(ptr as *const c_char).to_string_lossy().into_owned();
+        release(env, caminho, ptr);
+        Some(PathBuf::from(texto))
     }
 }

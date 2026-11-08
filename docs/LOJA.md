@@ -167,14 +167,58 @@ cliente ── ComprarTp{pacote, pedido} ──► canal ──► central: loja
 - **Posse é da CONTA** (`loja_posses`, chave `REALM:id_da_conta`, a mesma da
   TP): vale para todos os personagens da conta no realm.
 
-### Provedor simulado (hoje)
+### Provedor simulado (hoje, fora do Android de produção)
 
 `PAGAMENTO_SIMULADO` ligado por padrão (só `=0` desliga): aprova na hora e a
 janela mostra **PAGAMENTO SIMULADO** e "nada é cobrado". A receita que o
 panóptico mostra é simulada. Com `PAGAMENTO_SIMULADO=0` o provedor fica
-`Desligado` e a compra de TP é recusada.
+`Desligado` e a compra de TP é recusada. Isto só vale enquanto o Google Play
+real (abaixo) não estiver configurado — quando está, ele vence.
 
-### Provedor real (a fazer)
+### Google Play (Android, feito)
+
+`loja::Provedor::GooglePlay` — `crates/server/src/loja_google_play.rs`. Em
+vez de aprovar na hora, confere a compra na **Android Publisher API v3**:
+
+```
+cliente (Billing Library) ── purchase_token ──► ComprarTpGooglePlay{pacote, pedido, purchase_token}
+                                                  │
+                            GET .../purchases/products/{product_id}/tokens/{token}
+                                                  │
+                           purchaseState==0 ──► confirmar_pagamento (mesmo caminho idempotente)
+                                                  │
+                            depois do crédito: acknowledge (best-effort)
+```
+
+- **`product_id` nunca vem do cliente**: é `tp_pacote_<pacote.id>`
+  (`id_do_produto`), calculado no servidor. Só o `purchase_token` viaja —
+  um cliente adulterado não tem como mandar o token de um pacote barato pra
+  creditar um caro.
+- **Produtos gerenciados no Play Console** têm que usar exatamente esses
+  ids: `tp_pacote_1` (Punhado), `tp_pacote_2` (Bolsa), `tp_pacote_3` (Baú),
+  `tp_pacote_4` (Tesouro), com os preços da tabela acima.
+- **Autenticação**: conta de serviço do Google Cloud com acesso à
+  Android Publisher API, vinculada no Play Console ("Acesso à API"). O JSON
+  dela fica só no disco do servidor, nunca no repo:
+  - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — caminho do arquivo da chave.
+  - `GOOGLE_PLAY_PACKAGE_NAME` — o `package_name` do app (`com.niertech.tempest`).
+  Sem os dois, `Provedor::do_ambiente()` continua caindo no simulado/desligado
+  — nada muda em dev/teste.
+- **Reconhecimento**: a Google reembolsa sozinha compra não "acknowledged"
+  em até 3 dias. O servidor reconhece **depois** de creditar (nunca antes —
+  reconhecer e falhar o crédito deixaria a compra "paga" sem TP nenhuma),
+  best-effort (loga e segue se falhar). TODO: não há retentativa além do log
+  de warn; falta uma reconciliação periódica pra pedidos `google_play` sem
+  reconhecimento confirmado.
+- Mensagem de rede: `PedidoLoja::ComprarTpGooglePlay{ pacote, pedido,
+  purchase_token }` — variante separada de `ComprarTp` (não um campo a mais
+  nela) pra não quebrar quem já constrói esse literal sem o campo novo.
+- `EstadoLoja.simulado` reflete o provedor **realmente ativo**
+  (`Provedor::do_ambiente() == Provedor::Simulado`), não só a flag
+  `PAGAMENTO_SIMULADO` — com o Google Play configurado o selo "PAGAMENTO
+  SIMULADO" some da janela sozinho.
+
+### Provedor web/PC real (a fazer)
 
 Uma variante nova de `loja::Provedor` (Mercado Pago, Stripe…):
 
@@ -188,8 +232,8 @@ Uma variante nova de `loja::Provedor` (Mercado Pago, Stripe…):
 **App Store**: no iOS, bem digital (TP, montaria, skin) **tem que** ser
 vendido por In-App Purchase. Lá o "provedor" é o StoreKit: o app manda o
 recibo, o servidor confere com a Apple e chama `confirmar_pagamento`. Checkout
-externo (Mercado Pago/Stripe) só vale fora do app iOS (web/PC/Android
-conforme a loja de cada um). Não implementado.
+externo (Mercado Pago/Stripe) só vale fora do app iOS (web/PC conforme a loja
+de cada um; Android já usa o Google Play acima). Não implementado.
 
 ## Tabelas (banco central)
 

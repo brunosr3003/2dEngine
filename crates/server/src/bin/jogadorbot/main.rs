@@ -35,6 +35,7 @@
 //! ```
 
 mod progresso;
+mod caca;
 mod trilha;
 
 use std::collections::HashMap;
@@ -73,6 +74,9 @@ struct Cfg {
     minutos: u64,
     trilha: String,
     prefixo: String,
+    character_name: Option<String>,
+    starting_weapon: Option<u16>,
+    outfit: Option<u16>,
 }
 
 fn cfg() -> Cfg {
@@ -96,6 +100,9 @@ fn cfg() -> Cfg {
             "--prefixo",
             &format!("bot{}", std::process::id() % 10_000),
         ),
+        character_name: std::env::var("BOT_CHARACTER_NAME").ok().filter(|s| !s.trim().is_empty()),
+        starting_weapon: std::env::var("BOT_STARTING_WEAPON").ok().and_then(|s| s.parse().ok()),
+        outfit: std::env::var("BOT_OUTFIT").ok().and_then(|s| s.parse().ok()),
     }
 }
 
@@ -113,12 +120,16 @@ async fn main() -> Result<()> {
     for i in 0..c.n {
         let (host, api, t) = (c.host.clone(), c.api.clone(), t.clone());
         let nome = format!("{}_{i}", c.prefixo);
+        let character_name = c.character_name.clone();
+        let starting_weapon = c.starting_weapon;
+        let outfit = c.outfit;
         tarefas.push(tokio::spawn(async move {
             // Entrada escalonada: `n` bots cadastrando no mesmo instante é uma
             // onda de argon2, e a fila de login existe justamente pra isso não
             // roubar o tick de quem já está dentro.
             tokio::time::sleep(Duration::from_millis(400 * i as u64)).await;
-            if let Err(e) = vive(&host, &api, &nome, ate, &t).await {
+            let cfg = Cfg { host, api, n: 1, minutos: 0, trilha: String::new(), prefixo: String::new(), character_name, starting_weapon, outfit };
+            if let Err(e) = vive(&cfg, &nome, ate, &t).await {
                 t.registra(Evento {
                     bot: &nome,
                     fase: Fase::Desconectado,
@@ -146,6 +157,7 @@ async fn main() -> Result<()> {
 struct Eu {
     nivel: u32,
     xp: i64,
+    outfit: Option<u16>,
     ouro: i64,
     pontos_livres: u32,
     pos: glam::Vec2,
@@ -168,6 +180,7 @@ struct Eu {
     /// nunca começava — `progresso 0` em 40 coletas seguidas, com três bots
     /// parados no nível 1 a corrida inteira.
     no_de_coleta: Option<(u32, glam::Vec2)>,
+    coleta_rota: Option<(glam::Vec2, Instant, glam::Vec2)>,
     /// Está colhendo agora? Enquanto estiver, não se decide outra coisa.
     colhendo: bool,
     /// Desde quando ele está "colhendo", e o progresso de quando começou.
@@ -191,6 +204,9 @@ struct Eu {
     /// atacou UMA vez. Como um cliente de verdade, agora ele lembra.
     conhecidos: HashMap<shared::EntityId, shared::EntityTag>,
     posicoes: HashMap<shared::EntityId, glam::Vec2>,
+    vidas: HashMap<shared::EntityId, u32>,
+    tipos: HashMap<shared::EntityId, u16>,
+    caca: caca::Caca,
     /// A DIREÇÃO QUE O PULSO DEVE MANDAR nos últimos metros.
     ///
     /// O direcional só saía na decisão, uma vez a cada 700 ms — e cada frame
@@ -318,9 +334,10 @@ struct Eu {
     fontes: HashMap<u16, Vec<u8>>,
     /// O que ele foi BUSCAR pra poder fabricar: (missão, item, quanto falta).
     buscando: Option<(u16, u16, u32)>,
-    /// Já pediu pra entrar no Porão nesta vida? Uma vez basta: insistir a
-    /// cada decisão seria uma enxurrada de pedidos na fila.
+    /// Pedido atual do Porão; repetido só após intervalo e resposta anterior.
     pediu_dungeon: bool,
+    ultima_tentativa_dungeon: Option<Instant>,
+    dungeon_conteudo: u16,
     /// Está dentro de uma dungeon agora.
     na_dungeon: bool,
     /// (missão, slot) do refino pedido e ainda sem resposta.
@@ -456,10 +473,11 @@ async fn cadastra(api: &str, nome: &str) -> Result<()> {
 ///
 /// Teto de viagens pra um par de zonas que se empurram não virar um bot que só
 /// viaja.
-async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Result<()> {
+async fn vive(cfg: &Cfg, nome: &str, ate: Instant, t: &Trilha) -> Result<()> {
     const VIAGENS_MAX: u32 = 40;
     let mut eu = Eu::default();
-    let reg = cadastra(api, nome).await;
+    eu.outfit = cfg.outfit;
+    let reg = cadastra(&cfg.api, nome).await;
     t.registra(Evento {
         bot: nome,
         fase: Fase::Cadastrando,
@@ -472,10 +490,10 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
     });
     reg?;
 
-    let mut onde = host.to_string();
+    let mut onde = cfg.host.to_string();
     for viagem in 0..VIAGENS_MAX {
         eu.trocar_para = None;
-        sessao(&onde, nome, ate, t, &mut eu).await?;
+        sessao(&onde, nome, ate, t, &mut eu, cfg).await?;
         let Some(proximo) = eu.trocar_para.take() else {
             return Ok(());
         };
@@ -489,7 +507,7 @@ async fn vive(host: &str, api: &str, nome: &str, ate: Instant, t: &Trilha) -> Re
 }
 
 /// Uma conexão, do handshake até o fim ou até o servidor mandar trocar de zona.
-async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu) -> Result<()> {
+async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu, cfg: &Cfg) -> Result<()> {
     let url = format!("ws://{host}/ws");
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await?;
     ws.send(envia(&ClientMessage::Handshake {
@@ -550,7 +568,7 @@ async fn sessao(host: &str, nome: &str, ate: Instant, t: &Trilha, eu: &mut Eu) -
                     _ => continue,
                 };
                 let Ok(msg) = shared::protocol::decode::<ServerMessage>(&bytes) else { continue };
-                if let Some(nova) = recebe(msg, &mut ws, eu, nome, t, &mut tick).await? {
+                if let Some(nova) = recebe(msg, &mut ws, eu, nome, t, &mut tick, cfg).await? {
                     fase = nova;
                 }
                 // TROCOU DE ZONA: este socket é de outro processo e não vale
@@ -616,6 +634,34 @@ fn empurra_no(eu: &mut Eu, alvo: glam::Vec2) -> bool {
     eu.empurrao = Some((alvo - eu.pos).normalize_or_zero());
     eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
     true
+}
+
+/// Walk around terrain to a resource; use short pulses only for final alignment.
+async fn anda_ao_no(ws: &mut Ws, eu: &mut Eu, alvo: glam::Vec2) -> Result<bool> {
+    let dist = eu.pos.distance(alvo);
+    if dist <= 4.0 {
+        eu.coleta_rota = None;
+        let vale = empurra_no(eu, alvo);
+        if vale {
+            let ms = ((dist - 0.8).max(0.1) / 5.0 * 1000.0).clamp(40.0, 500.0) as u64;
+            eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(ms));
+        }
+        return Ok(vale);
+    }
+    eu.empurrao = None;
+    eu.empurrao_ate = None;
+    if let Some((destino, desde, origem)) = eu.coleta_rota {
+        if destino.distance(alvo) < 1.0 {
+            if desde.elapsed() > Duration::from_secs(15) {
+                if eu.pos.distance(origem) < 1.0 { eu.coleta_rota = None; return Ok(false); }
+                eu.coleta_rota = Some((alvo, Instant::now(), eu.pos));
+            }
+            return Ok(true);
+        }
+    }
+    ws.send(envia(&ClientMessage::MoverPara { x: alvo.x, z: alvo.y })?).await?;
+    eu.coleta_rota = Some((alvo, Instant::now(), eu.pos));
+    Ok(true)
 }
 
 /// A conta do empurrão, sem estado: ainda vale insistir?
@@ -763,7 +809,7 @@ fn saida_do_telegrafico(
 /// cada reinício do serviço, mas se um dia o banco for limpo o mesmo bot
 /// renasce com a mesma cara. Aparência que muda sozinha entre sessões é pior
 /// que aparência repetida — ninguém reconhece ninguém.
-fn aparencia_de(nome: &str) -> shared::aparencia::Aparencia {
+fn aparencia_de(nome: &str, roupa: Option<u16>) -> shared::aparencia::Aparencia {
     let semente = semente_do_nome(nome);
     shared::aparencia::Aparencia {
         rosto: (semente % shared::aparencia::ROSTOS as u64) as u8,
@@ -771,7 +817,10 @@ fn aparencia_de(nome: &str) -> shared::aparencia::Aparencia {
         cor_cabelo: ((semente / 7) % shared::aparencia::CORES_DE_CABELO.len() as u64) as u8,
         pele: ((semente / 13) % shared::aparencia::TONS_DE_PELE.len() as u64) as u8,
         // Roupa 0 = o corpo padrão: skin paga não se ganha de graça nem pra bot.
-        roupa: 0,
+        // saneada() permite as roupas grátis; UpdateVisual valida direitos
+        // desbloqueados. Um outfit pago só é usado se estiver legitimamente
+        // no guarda-roupa do personagem.
+        roupa: roupa.unwrap_or(0),
         ..Default::default()
     }
     .saneada()
@@ -816,6 +865,7 @@ async fn recebe(
     nome: &str,
     t: &Trilha,
     tick: &mut u32,
+    cfg: &Cfg,
 ) -> Result<Option<Fase>> {
     match msg {
         ServerMessage::HandshakeAck { .. } => {
@@ -852,10 +902,12 @@ async fn recebe(
                     // mesma cara. Aparência que muda sozinha entre sessões é
                     // pior que aparência repetida.
                     let semente = semente_do_nome(nome);
-                    let ap = aparencia_de(nome);
+                    let ap = aparencia_de(nome, cfg.outfit);
                     // A CLASSE é a arma inicial, e o bot pegava sempre a
                     // primeira: doze do mesmo estilo de luta.
-                    let arma = if available_weapons.is_empty() {
+                    let arma = if let Some(arma) = cfg.starting_weapon.filter(|w| available_weapons.contains(w)) {
+                        arma
+                    } else if available_weapons.is_empty() {
                         0
                     } else {
                         available_weapons[(semente / 17) as usize % available_weapons.len()]
@@ -865,7 +917,7 @@ async fn recebe(
                         ap.rosto, ap.cabelo, ap.cor_cabelo, ap.pele
                     )));
                     ClientMessage::CreateCharacter {
-                        name: format!("{nome}c"),
+                        name: cfg.character_name.clone().unwrap_or_else(|| format!("{nome}c")),
                         aparencia: ap,
                         starting_weapon: arma,
                         faction: Default::default(),
@@ -900,7 +952,7 @@ async fn recebe(
             // `UpdateVisual` é o guarda-roupa: o servidor valida e reenvia a
             // meta pra quem já enxergava o jogador.
             ws.send(envia(&ClientMessage::UpdateVisual {
-                aparencia: aparencia_de(nome),
+                aparencia: aparencia_de(nome, eu.outfit),
             })?)
             .await?;
             t.registra(ev(nome, eu, "entrou_no_mundo", true, String::new()));
@@ -911,16 +963,20 @@ async fn recebe(
             // O MUNDO SE MANTÉM entre snapshots, como no cliente.
             for m in &snapshot.entered {
                 eu.conhecidos.insert(m.id, m.tag);
+                eu.tipos.insert(m.id, m.kind);
                 if matches!(m.tag, shared::EntityTag::Npc) {
                     eu.prog.npc_kind.insert(m.id, m.kind);
                 }
             }
             for s in &snapshot.states {
                 eu.posicoes.insert(s.id, s.pos_f32());
+                eu.vidas.insert(s.id, s.hp);
             }
             for id in &snapshot.removed {
                 eu.conhecidos.remove(id);
                 eu.posicoes.remove(id);
+                eu.vidas.remove(id);
+                eu.tipos.remove(id);
                 eu.prog.npc_kind.remove(id);
             }
             if let Some(meu) = eu.entidade {
@@ -976,6 +1032,7 @@ async fn recebe(
                 .iter()
                 .filter(|(id, tag)| {
                     Some(**id) != eu.entidade && matches!(tag, shared::EntityTag::Enemy)
+                        && eu.vidas.get(id).copied().unwrap_or(0) > 0
                 })
                 .filter_map(|(id, _)| eu.posicoes.get(id).map(|p| (*id, *p)))
                 .min_by(|a, b| {
@@ -1051,7 +1108,8 @@ async fn recebe(
             eu.hp_max = stats.hp_max.max(0) as u16;
             eu.prog.equip = equipment;
         }
-        ServerMessage::MapaDaIlha { zonas, .. } => {
+        ServerMessage::MapaDaIlha { zonas, recursos, .. } => {
+            eu.prog.recursos = recursos;
             eu.prog.zonas = zonas;
             eu.prog.plano = None;
         }
@@ -1269,7 +1327,7 @@ async fn recebe(
                         } else {
                             eu.tentou_na_arena = true;
                             ws.send(envia(&ClientMessage::Dungeon {
-                                pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: 1 },
+                                pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: eu.dungeon_conteudo.max(1) },
                             })?)
                             .await?;
                         }
@@ -1423,14 +1481,23 @@ async fn recebe(
         ServerMessage::TrocarZona { zona, host } => {
             // Guarda pra onde ir; quem reconecta é o laço de `vive`, que é
             // dono do socket.
-            eu.trocar_para = Some(host.clone());
+            let local = std::env::var("BOT_ZONE_HOSTS_FILE").ok()
+                .and_then(|file| std::fs::read_to_string(file).ok())
+                .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
+                .and_then(|map| map.get(&zona).cloned());
+            eu.trocar_para = Some(local.unwrap_or_else(|| host.clone()));
             // Outra ilha, outro mapa: o que ele sabia daqui não vale lá.
             eu.prog.zonas.clear();
+            eu.prog.recursos.clear();
+            eu.prog.indo_energia = None;
             eu.prog.npc_kind.clear();
             eu.prog.plano = None;
             eu.prog.rondando = None;
             eu.conhecidos.clear();
             eu.posicoes.clear();
+            eu.vidas.clear();
+            eu.tipos.clear();
+            eu.caca = Default::default();
             eu.destino = None;
             eu.andando_para = None;
             eu.no_de_coleta = None;
@@ -1500,6 +1567,27 @@ async fn decide(
         return Ok(());
     }
     eu.desviando_ate = None;
+    // Bounded daily/resource activities must get a turn during a long story chain.
+    if !eu.na_dungeon && !eu.na_arena && !eu.colhendo && eu.buscando.is_none() {
+        if progresso::manutencao(ws, eu, nome, t).await? { return Ok(()); }
+        if eu.nivel >= 15 && progresso::magica(ws, eu, nome, t).await? { return Ok(()); }
+        let intervalo = Duration::from_secs(1800);
+        if eu.hp_max > 0 && eu.hp as f32 / eu.hp_max as f32 >= 0.8
+            && eu.ultima_tentativa_dungeon.is_none_or(|at| at.elapsed() >= intervalo) {
+            if let Some(c) = shared::dungeon::CONTEUDOS.iter()
+                .filter(|c| c.disponivel && c.grupo_max == 1 && c.nivel_min <= eu.nivel)
+                .max_by_key(|c| c.nivel_min) {
+                eu.dungeon_conteudo = c.id;
+                eu.pediu_dungeon = true;
+                eu.tentou_na_arena = false;
+                eu.ultima_tentativa_dungeon = Some(Instant::now());
+                ws.send(envia(&ClientMessage::Dungeon { pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: c.id } })?).await?;
+                t.registra(ev(nome, eu, "pediu_dungeon", true, format!("{} (nível mínimo {})", c.nome, c.nivel_min)));
+                return Ok(());
+            }
+        }
+    }
+
     // 0,5 BALCÃO À MÃO: se passou perto de um NPC e a bolsa está seca de
     // poção, fala com ele. Vendedor abre a loja e o `ShopOpen` abastece.
     //
@@ -1738,7 +1826,7 @@ async fn decide(
             Some((coluna, onde)) => {
                 let d_no = eu.pos.distance(onde);
                 if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
-                    if !empurra_no(eu, onde) {
+                    if !anda_ao_no(ws, eu, onde).await? {
                         // ESTE RAMO ERA MUDO, E O PREÇO FOI ALTO.
                         //
                         // O empurrão avisa quando a distância para de
@@ -1808,6 +1896,9 @@ async fn decide(
     }
     // 5. Com destino: anda até lá e faz o que o tipo pede.
     if let Some(d) = eu.destino {
+        if d.tipo == shared::quests::destino_tipo::COMBATE {
+            return caca::combate(ws, eu, nome, t, d, seq, tick).await;
+        }
         // CHEGOU O BASTANTE conta como chegou.
         //
         // A trilha mostrou o auto-path parando a 5 unidades do NPC e ficando
@@ -1904,7 +1995,7 @@ async fn decide(
             // ARMA O EMPURRÃO e deixa o pulso andar. Mandar UM frame aqui
             // movia 33 ms a cada 700 — na prática, parado.
             eu.empurrao = Some((d.pos - eu.pos).normalize_or_zero());
-            eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(800));
+            eu.empurrao_ate = Some(Instant::now() + Duration::from_millis(((dist - alcance).max(0.2) / 5.0 * 1000.0).clamp(40.0, 700.0) as u64));
             return Ok(());
         }
         eu.empurrao_parado = 0;
@@ -2056,7 +2147,7 @@ async fn decide(
                         // progresso em zero.
                         let d_no = eu.pos.distance(onde);
                         if d_no > shared::COLETA_ALCANCE_UN * 0.6 {
-                            if !empurra_no(eu, onde) {
+                            if !anda_ao_no(ws, eu, onde).await? {
                                 // Não encurta: o nó pode estar do outro lado
                                 // de uma pedra. Larga ESTE nó e peça outro; se
                                 // for a missão inteira que não anda, o
@@ -2312,6 +2403,10 @@ async fn decide(
                 // O `raio` carrega o id do conteúdo (0 = qualquer).
                 let conteudo = if d.raio as u16 == 0 { 1 } else { d.raio as u16 };
                 if !eu.na_dungeon {
+                    eu.dungeon_conteudo = conteudo;
+                    eu.pediu_dungeon = true;
+                    eu.tentou_na_arena = false;
+                    eu.ultima_tentativa_dungeon = Some(Instant::now());
                     ws.send(envia(&ClientMessage::Dungeon {
                         pedido: shared::dungeon::Pedido::EntrarSolo { conteudo },
                     })?)
@@ -2530,20 +2625,6 @@ async fn decide(
     // 8. (O craft de receita sorteada saiu em 27/09: a progressão fabrica a
     // peça da faixa que melhora o vestido, e vai colher o que falta. Tentar
     // receita a esmo só produzia recusa na trilha.)
-    // 9. DUNGEON: o Porão, que entra sozinho, a partir do nível 5.
-    //
-    // Uma vez por vida do bot. Insistir a cada decisão seria uma enxurrada de
-    // pedidos numa fila que é do servidor — o observador não pode virar a
-    // maior carga do que observa.
-    if eu.nivel >= 5 && !eu.pediu_dungeon && !eu.na_dungeon {
-        eu.pediu_dungeon = true;
-        ws.send(envia(&ClientMessage::Dungeon {
-            pedido: shared::dungeon::Pedido::EntrarSolo { conteudo: 1 },
-        })?)
-        .await?;
-        t.registra(ev(nome, eu, "pediu_dungeon", true, "Porão".into()));
-        return Ok(());
-    }
     // 10. Sem mais nada a fazer: bate no inimigo mais perto.
     //
     // MAS SÓ SE ELE ESTIVER AO ALCANCE, e essa linha faltava.

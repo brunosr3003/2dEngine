@@ -1,0 +1,1056 @@
+# Tempest — changelog detalhado (time)
+
+Histórico técnico completo das mudanças do cliente, em português, para o time.
+NÃO é o que o jogador vê: o painel "What's New in Tempest" lê `docs/PATCHNOTES.txt`,
+que fica sempre em inglês e só com atualizações genéricas (região nova, boss novo,
+sistema novo, correções). Toda mudança entra aqui com o detalhe; o resumo para o
+jogador vai no PATCHNOTES.txt.
+
+---
+
+08/11/2026 — Conexão muda congelava o jogo
+
+Às vezes o jogador não andava, os mobs ficavam parados e não havia dano, até sair e entrar. O log do servidor (tempest-prod-campo na mmo-vps) não tinha erro nem tick lento: o servidor seguia normal, o que parava era a entrega no celular. O cliente mandava Ping a cada segundo mas só reconectava quando o sistema declarava o socket morto (`NetEvent::Disconnected`), o que numa rede móvel pode levar minutos. Agora `pump_rede` guarda o instante do último evento do servidor (`ultimo_dado`); jogando, 8 s sem nada viram uma queda comum e passam pela reconexão de sempre (`reconexao`), com o mesmo personagem.
+
+08/11/2026 — Botões do HUD respondiam por baixo das janelas
+
+Comprar qualquer skin na loja pedia pra equipar uma montaria. Os botões de montaria, sprint, dash e pulo eram desenhados fora do `if !painel` do HUD (comentário "sempre na tela") e ANTES das janelas; com a loja aberta ficavam escondidos por baixo dela e continuavam pegando o toque — o botão de compra de uma skin que caía em cima do botão de montaria disparava `alternar_montaria` e a mensagem "equipe uma montaria". Agora os quatro só desenham e respondem sem painel grande aberto (`painel_grande()`); o pulo segurado é solto ao abrir um painel. A bateria do modo economia continua sempre na tela, de propósito.
+
+06/11/2026 — Comprar TP no Android abre a tela do Google Play
+
+No Android, tocar em comprar um pacote de TP não abria nada: o jogo procurava a ponte com o Google Play Billing de um jeito que só funciona na thread principal do Android, e o jogo roda na dele. Agora a ponte é encontrada pelo carregador de classes do próprio app e a tela de pagamento do Google abre normalmente. Versão Android 2026110601.
+
+06/11/2026 — Bordas de casas e paredes no Android
+
+No Android, as bordas de casas, paredes e telhados apareciam como blocos cinzas tremidos em vez de linhas retas, mesmo com sombra e antialiasing desligados; no iPhone ficava perfeito. A causa era a precisão do buffer de profundidade: o motor gráfico pedia 16 bits no Android (o iPhone usa 24), e com isso superfícies que se encostam — parede com chão, telhado com parede — disputavam o mesmo pixel. Agora o Android pede 24 bits, igual ao iPhone, e só volta pra 16 em aparelho que não tiver.
+
+04/11/2026 — Faixas no terreno em aparelhos Android
+
+Em celular de verdade (não no emulador), o chão e a água distantes apareciam cortados por faixas horizontais escuras, repetidas pela tela toda, tanto na seleção de personagem quanto dentro do jogo. A causa era o shader do terreno pedir sempre precisão alta (highp) no fragment shader sem prever que o driver gráfico de alguns celulares (Adreno/Mali) não tem essa precisão disponível ali — a água já tinha essa proteção, o chão não. Agora o chão cai pra precisão média nesses aparelhos, igual a água, e a faixa some.
+
+04/11/2026 — Correções do cliente Android
+
+O app estava travando ao abrir em qualquer aparelho de verdade (o teste interno antigo, versão 5, nunca tinha recebido o fix): faltava um símbolo que a ponte Java/C do motor gráfico chama direto, perdido na migração do empacotamento antigo pro Gradle. A tela de seleção de personagem mostrava um corte visível no chão em alguns aparelhos Android (a câmera baixa dessa tela cortava pedaços de chão distantes por engano); o alcance do chão carregado aumentou e ganhou neblina pra disfarçar a borda. "Lembrar login" e as configurações de gráficos (incluindo antialiasing) também passam a persistir de verdade no Android — antes nunca tinham onde salvar e sempre caíam no padrão.
+
+09/10/2026 — Pacote Android da loja
+
+O cliente Android passa a compilar com o identificador com.niertech.tempest, o mesmo da ficha nova "Tempest Online" na Google Play Store, com targetSdkVersion 36 (exigência atual da loja) e versionCode 2 (o 1 já tinha sido usado numa tentativa de envio). Não muda nada em jogo; é só o empacotamento pra fechar com a listagem da loja.
+
+07/10/2026 — Mais vagas no mercado (atualização obrigatória)
+
+Cada personagem começa com 20 vagas de anúncio e agora pode comprar mais 5 por vez, até 50, em Meus anúncios. Cada compra pode ser paga em TP ou em ouro: 100 TP ou 5.000 de ouro na primeira, subindo até 500 TP ou 160.000 de ouro na sexta. Clicar duas vezes não cobra em dobro: o que for pago a mais volta em Entregas.
+
+Esta versão é obrigatória.
+
+07/10/2026 — Nome da ilha no painel
+
+O painel de localização, abaixo dos botões do menu, mostra o nome da ilha (por exemplo, Bosque) em vez do código interno do mapa (ilha_inicial).
+
+06/10/2026 — Destinos das caçadas
+
+As missões de caça priorizam locais com o alvo vivo. Quando o alvo está em respawn, escolhem a área com maior chance de encontrá-lo. O automático procura outro destino após 15 segundos sem progresso e sem combater o alvo da missão. Caçadas reconhecem tanto a espécie quanto o mob específico da ilha e os chefes nomeados.
+
+06/10/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: todos passam a usar os botões de venda novos do mercado, que mostram a quantidade e o total antes de anunciar.
+
+06/10/2026 — Botões de venda que dizem o que fazem
+
+Os botões de vender no mercado agora mostram a quantidade e o total. O principal é "Anunciar ×N por X gold" e usa exatamente a quantidade e o preço do formulário. O atalho "Vender tudo ×N por X gold (recomendado)" anuncia a pilha inteira pelo preço recomendado e mostra o total. Antes, o botão dourado "Vender tudo ×N por X" anunciava a pilha inteira mesmo com a quantidade em 1, e o X era o preço de cada unidade, não o total.
+
+06/10/2026 — Energia no mercado e preço recomendado dos itens de cash
+
+O mercado ganhou a aba Energia: venda Energia em lotes de 1.000 pelo preço que quiser, e compre a de outros jogadores. A Energia sai de você ao anunciar e chega como Energia em quem compra, pelas Entregas; anúncio cancelado devolve a Energia.
+
+Os itens da loja de cash agora também têm preço recomendado em gold: ração e skills de pet, removedor de skill, pedra de afinidade, amuleto de proteção, pergaminhos, passes da Ilha Mágica, pets, montarias e chaves. O preço é o custo em TP convertido em gold, e o gold por TP segue a mesma regra dos itens (todo o gold do jogo dividido por todo o TP das contas), nunca abaixo do que a loja paga por um TP no Saco de Gold. O que sai de invocação custa o pergaminho dividido pela chance daquele resultado.
+
+A aba TP também mostra as duas referências ao vender TP: o gold por TP recomendado e o menor preço à venda no mercado.
+
+05/10/2026 — As duas referências de preço em todo item
+
+Ao vender qualquer item no mercado, as duas referências agora aparecem sempre: o preço recomendado e o menor preço à venda no mercado (para equipamentos, da mesma peça), cada uma com seu botão Usar. Quando falta uma, a linha diz o porquê ("ainda sem dados suficientes" ou "ninguém vendendo") em vez de sumir.
+
+05/10/2026 — Selo de vinculado e o menor preço da mesma peça
+
+Itens vinculados agora mostram um selo de cera com cadeado no canto de baixo do ícone, na bolsa, no armazém, no mercado e nas recompensas: dá para ver de longe o que não pode ser vendido.
+
+Ao vender um equipamento, o mercado mostra as duas referências: o preço recomendado e o menor preço à venda agora da MESMA peça (mesma cor, tier e refino), cada um com seu botão Usar. Um +0 da mesma arma não conta como referência para um +7.
+
+05/10/2026 — Preço recomendado no mercado, e equipamentos, pets e montarias à venda
+
+Ao escolher um item para vender, o mercado agora já preenche um preço recomendado, e o botão "Vender tudo" anuncia a pilha inteira por esse preço com um clique. O preço é só uma sugestão: você pode digitar qualquer valor, até 1.
+
+O preço recomendado sai da economia de verdade do servidor: todo o gold que os personagens têm dividido por quantas unidades do item existem no jogo, e é recalculado a cada poucos minutos. Itens que se fazem no Combinar (como o material roxo) nunca custam mais que fazê-los, contando o material, o cobre, o darksteel e o Pó. Equipamentos levam em conta a cor, o tier e o refino, seguindo a escada da forja, e pets levam junto o valor das skills que aprenderam.
+
+Equipamentos de baú de dungeon não são mais vinculados, e os que já eram foram liberados: agora dá para vender equipamentos no mercado. O mercado também ganhou as prateleiras Pets (pets, skills de pet, ração e acessórios) e Montarias (montarias e acessórios).
+
+05/10/2026 — Criação de personagem em dois passos
+
+Cada arma agora mostra a dificuldade de jogar, em estrelas: Espada e Escudo e Anel Mágico têm 1 estrela (fácil), Katana tem 2 (médio) e Pistolas Gêmeas têm 3 (difícil). As estrelas aparecem no cartão de cada arma e, com o nome da dificuldade, embaixo da facção.
+
+A criação agora vai em ordem: na aba Arma e Facção o botão de baixo é "Próximo: Aparência", e o nome e o botão Criar personagem ficam só na aba Aparência. Assim ninguém cria o personagem sem ter visto a aparência. Os textos novos da tela também foram traduzidos.
+
+Corrigido o caminho automático que prendia o personagem atrás da cabana do Mestre no Bosque: atrás da parede, sob o beiral do telhado, o jogo achava que você estava dentro da cabana e mandava sair pela porta, atravessando a parede. A rota também passa mais longe das quinas das construções, sem raspar nelas.
+
+05/10/2026 — A história não ocupa vaga de missão
+
+A missão da história em andamento não conta mais no limite de missões ativas, e o limite subiu de 12 para 20 missões secundárias. Antes, com 11 secundárias e a história, nenhuma outra missão podia ser pega.
+
+Quando o servidor recusa uma missão, o motivo agora aparece em destaque dentro do próprio menu de missões, com o nome da missão, e não só no chat: antes, apertar Pegar parecia não fazer nada.
+
+05/10/2026 — Missões que somem e missões que não pegam
+
+As missões secundárias agora podem ser pegas de qualquer ilha, como o menu já prometia; antes, as dos postos avançados só aceitavam se você estivesse na ilha deles, e o botão Pegar não fazia nada. Quando uma missão não pode ser pega, o jogo agora diz o motivo (nível, missão anterior, limite de missões ativas), e "Missão aceita" só aparece quando o servidor confirma.
+
+As diárias agora vencem no reset do jogo, às 04:00, como as dungeons e o calendário — antes venciam à meia-noite UTC (21:00), e uma diária pega à noite sumia e voltava a aparecer como disponível. O salvamento das missões também ficou mais seguro: uma falha não apaga mais o progresso das missões em silêncio.
+
+Missões secundárias de outra ilha agora levam você até lá: a auto missão vai ao Capitão do Porto (ou ao Ônibus Celeste, ou ao Submarino) e avisa em que ilha o objetivo fica, como já fazia com a história. Conversas e missões de itens continuam valendo em qualquer ilha, e as do Mestre podem ser entregues ao Mestre de qualquer ilha.
+
+A janela de missão concluída agora mostra a experiência que a missão realmente dá.
+
+05/10/2026 — Calendário de presença mais claro
+
+O calendário foi redesenhado para mostrar com clareza o que você recebe. Cada dia tem um ícone grande, a quantidade em destaque e o nome inteiro do prêmio, sem cortes. O dia de hoje tem a marca HOJE, os dias de bônus (7, 14, 21 e 28) ficam numa coluna mais larga com moldura dourada, e os já resgatados aparecem esmaecidos com um visto verde.
+
+Embaixo, o quadro "Prêmio de hoje" mostra o prêmio do dia com ícone e nome completo ao lado do botão de resgatar; depois de resgatar, ele mostra o próximo prêmio e quanto falta. Os pergaminhos de invocação e o Passe Mágico ganharam ícones próprios. As diárias que ainda não estão prontas também saíram da lista de diárias da ilha.
+
+04/10/2026 — Missões secundárias consertadas e mais simples
+
+Todas as missões secundárias foram revisadas uma a uma: agora todas podem ser feitas na sua ilha, e a auto missão sabe para onde ir em cada uma. As missões de "traga N itens" viraram ações diretas: derrotar feras, derrotar tigres ou corujursos, ou quebrar pedras. As de Kōgen-tō e Abyssia que pediam pedras (que essas ilhas não têm) viraram caçadas.
+
+Conversar com um morador agora conta em qualquer ilha. Antes, uma missão "fale com o Alquimista" pega em outra ilha fazia a auto missão repetir a conversa sem parar.
+
+As diárias de encantar e de perseguição, que ainda não estão prontas, saíram do menu até ficarem prontas.
+
+04/10/2026 — Efeitos das habilidades crescem com o tier
+
+Cada despertar de habilidade agora aparece no efeito, para todos que estão vendo. No tier 5 o golpe ganha um núcleo branco mais forte e um anel branco que corre pela área; no tier 8, uma segunda onda de choque e o dobro de faíscas; no tier 10, uma coroa dourada: um selo girando no chão, uma coluna de luz e orbes ao redor do golpe. As mãos também brilham mais na preparação.
+
+Os efeitos agora são desenhados no tamanho real da habilidade no seu tier: quando um despertar aumenta o raio, o círculo mostrado aumenta junto. O atordoamento do Salto mostra estrelas girando sobre a queda enquanto dura.
+
+Esta versão é obrigatória: versões antigas do jogo não conectam mais.
+
+04/10/2026 — Salto de verdade
+
+O Salto da espada e escudo agora é um pulo de verdade: o personagem inteiro sai do chão num arco mais alto que o pulo normal e cai sobre o alvo, e é na queda que o golpe acerta. Antes ele parecia um avanço rente ao chão.
+
+04/10/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: versões antigas do jogo não conectam mais. Ela garante que todos estejam com o Salto e o novo Golpe Largo da espada e escudo e com a nova progressão.
+
+04/10/2026 — Nova progressão até o nível 120
+
+Subir de nível ficou mais longo e sempre mais difícil a cada faixa: cada nível leva mais tempo que o anterior. Caçar é o principal caminho; a história principal passa a dar cerca de 12% da experiência de cada faixa de níveis a partir do nível 22, e as missões secundárias entre 10% e 20%. Os capítulos I e II continuam como eram.
+
+Os monstros comuns ficaram mais resistentes: levam mais golpes para cair, crescendo até o nível 80, mas cada golpe deles dói proporcionalmente menos — a luta dura mais sem ficar mais mortal. Um monstro que está apanhando não desiste mais da perseguição nem volta para casa curado no meio da luta. A experiência por abate foi recalculada nível a nível.
+
+Os contratos do Mestre de Missões pagam agora um bônus sobre os abates que pedem, e as diárias de cada ilha somam um valor fixo por dia. O valor de experiência mostrado em cada missão é o que ela realmente paga.
+
+04/10/2026 — Missões secundárias em todas as ilhas
+
+Kōgen-tō e Abyssia ganharam o conjunto completo de missões do Mestre: seis diárias, uma diária para cada dungeon da ilha, um contrato de caça e um de pedreira a cada dez minutos, e uma cadeia de seis caçadas. Skyreach ganhou uma cadeia de seis caçadas, e o Bosque, a Geleira e o Ermo ganharam um contrato de caça. O menu de missões agora lista Kōgen-tō e Abyssia entre os mapas.
+
+04/10/2026 — Espada e escudo: Salto e Golpe Largo
+
+A primeira habilidade da espada e escudo agora é o Salto: o personagem pula até o alvo e atinge todos os inimigos ao redor de onde cai. No tier 5 a queda atordoa por 1 segundo, e no tier 8 por 1,5 segundo (nunca chefes). O Golpe Largo agora corta em meia-lua, com mais alcance e mais dano.
+
+04/10/2026 — Capacete de bolha de Abyssia em 3D
+
+A bolha na cabeça agora é um capacete de vidro em três dimensões, com transparência suave, reflexo discreto e aro em blocos no pescoço. O brilho forte que cobria o rosto foi removido. O vidro se ajusta ao cabelo ou chapéu escolhido e fecha junto ao aro.
+
+O capacete acompanha a posição e a rotação reais da cabeça nas animações, incluindo caminhada, combate, salto e montarias. Continua automático para os personagens em Abyssia.
+
+04/10/2026 — Hidra volta a caminhar e ataques mais visíveis
+
+A Hidra estava herdando velocidade zero por não ter um preset de monstro comum no banco. Agora tem velocidade, alcance de mordida e detecção próprios: persegue o jogador, para durante a preparação do telegráfico e volta a caminhar entre ataques.
+
+As cinco cabeças ganharam movimentos de preparação e mordida mais amplos, com mandíbulas que fecham no golpe. Sopro venenoso, giro e salto agora usam poses diferentes. As patas têm passadas maiores, o corpo acompanha a caminhada e o sopro tem um rastro mais longo e visível.
+
+04/10/2026 — Hidra original de Zone14 e animações de combate
+
+A Hidra do Santuário Submerso agora usa o modelo voxel original de Zone14, com suas cores, cinco cabeças, pescoços, mandíbulas, quatro patas e cauda. As cabeças respiram e se movem independentemente; as mandíbulas abrem na preparação e fecham nas mordidas. O sopro venenoso sai das cinco bocas. A caminhada move as patas em pares diagonais.
+
+Os movimentos acompanham a preparação, o impacto e a recuperação dos ataques enviados pelo servidor, incluindo o giro da cauda e o salto. A Hidra e os outros monstros marinhos também reagem aos golpes recebidos e têm animação de queda ao morrer.
+
+04/10/2026 — Criaturas marinhas voxel e baleias gigantes
+
+Os modelos marinhos foram refeitos como arquivos voxel, usando o mesmo renderizador dos outros personagens e animais. Tubarões ganharam focinho, guelras e nadadeiras em blocos; sereias e tritões têm rosto, cabelo, armadura e cauda; polvos e a Hidra também foram refeitos em voxel. As caudas continuam animadas para nadar.
+
+As baleias agora têm cerca de 17 metros de comprimento, com corpo volumoso, grandes nadadeiras, cauda horizontal e respiradouro. As baleias que cruzam o alto do mapa são ainda maiores. Os novos corais decorativos também passaram a usar cubos. As prévias do bestiário e a altura dos nomes acompanham os novos modelos.
+
+04/10/2026 — Abyssia viva, dungeons temáticas e progressão sem limite
+
+Abyssia ficou mais clara e ganhou jardins de corais luminosos, com luz suave ao redor dos povoados. Três pequenos povoados têm moradores, vendedores de poções e bancos. Tubarões, enguias e baleias nadam com caudas animadas; sereias, tritões e polvos têm corpos marinhos, e os caranguejos usam o modelo de caranguejo. Baleias tranquilas também cruzam o alto do fundo do mar.
+
+Quatro campos de Pedras de Energia agora ficam no leito de Abyssia, em terrenos planos e sem monstros. A exigência de altura de montanha que impedia os depósitos nessa ilha foi corrigida.
+
+A Hidra de cinco cabeças guarda o Santuário Submerso, uma área aberta de Abyssia, no nível 118. Cada uma das 28 dungeons ganhou materiais, estruturas, objetos, luzes e atmosfera próprios: porões de navios, bibliotecas, forjas, túmulos, palácios de coral e outros cenários.
+
+O nível do personagem não para mais em 100. As proficiências também não têm limite: a curva difícil depois de 50 foi mantida, e depois de 100 o custo de cada nível cresce 25%, tornando o avanço extremamente difícil. Personagens que já acumularam experiência acima de 100 recebem os pontos de atributos e de habilidades correspondentes ao entrar.
+
+Os monstros dos mapas de nível 80 a 120 ficaram progressivamente mais resistentes e perigosos. No nível 100 têm 50% mais vida e 25% mais dano após a defesa; no nível 120, 100% mais vida e 50% mais dano, além de mais defesa.
+
+03/10/2026 — Minimapa com visão ampla por padrão
+
+O minimapa agora começa no menor zoom, mostrando a maior área disponível. O zoom escolhido e salvo pelo jogador continua valendo.
+
+O menu de dungeons agora tem uma barra de rolagem na lista, com suporte à roda do mouse e arrasto no celular. As linhas mantêm tamanho legível e todas as dungeons ficam acessíveis.
+
+03/10/2026 — Ícones de viagem em Kōgen-tō e Abyssia
+
+O Capitão do Submarino em Kōgen-tō e Abyssia agora tem um ícone de viagem acima da cabeça, assim como o Professor do Ônibus Celeste. Fica mais fácil reconhecer quem leva você para outra ilha.
+
+A mensagem inicial agora reaproveita o texto já organizado e processa o botão Continuar antes de desenhar as notas, evitando recalcular todo o histórico a cada quadro.
+
+03/10/2026 — Interface até 200% e toque na mensagem inicial
+
+A escala da interface agora pode chegar a 200% no menu Sistema → Interface. O botão Continuar da mensagem inicial ganhou uma área maior e aceita o toque diretamente no iOS, inclusive toques rápidos.
+
+03/10/2026 — Abyssia: o reino sob o mar (nível 100 a 120)
+
+Abyssia chegou: um reino dentro de uma bolha no fundo do mar, cercado pela Floresta de Algas, o Cemitério de Naufrágios, a Fossa das Lanternas e a Borda do Abismo. Há um Palácio de Coral, enseada, doca de submarino, corais luminosos, cardumes e iluminação azul-esverdeada.
+
+Todos os personagens usam automaticamente um capacete de bolha transparente em Abyssia, inclusive dentro do reino. Não é equipamento e não há medidor de oxigênio.
+
+O Capitão do Submarino nas docas de Kōgen-tō leva a Abyssia; de lá, o submarino retorna a qualquer ilha. O Capítulo VII liga a viagem às caçadas, quatro chefes de campo e três masmorras: Galeão Afundado, Cofres do Palácio de Coral e O Abismo. As sete criaturas da região têm aparência própria.
+
+03/10/2026 — Coleta automática abre baús e viagem direto pelo mapa-mundi
+
+A coleta automática agora abre os baús dos chefes de campo: com um baú dentro do raio da coleta, o personagem vai até ele, abre e fica parado os dez segundos; depois volta a coletar. Quem terminar primeiro continua levando o baú. O pet voltou a só pegar os itens do chão.
+
+Clicar numa ilha no mapa-mundi agora leva até o Capitão do Porto (ou o Professor do Ônibus Celeste) e embarca sozinho ao chegar, sem abrir o menu. Para Kōgen-tō fora de Skyreach o menu continua abrindo: primeiro é preciso ir a Skyreach.
+
+03/10/2026 — Luzes de Kōgen-tō, o mapa-mundi novo e o pet que abre baús
+
+Kōgen-tō ganhou luz de verdade: postes ao longo de todas as ruas e letreiros neon verticais nas fachadas das lojas, em rosa, ciano e amarelo. Postes, letreiros e as lanternas da avenida agora iluminam o chão, as paredes e os personagens em volta deles, com um brilho suave. Os letreiros zumbem, e alguns piscam.
+
+O mapa-mundi foi refeito: cada ilha aparece com o próprio mapa, no mesmo mar do mapa da ilha. Clicar numa ilha leva você até quem faz a viagem — o Capitão do Porto, ou o Professor do Ônibus Celeste para Kōgen-tō a partir de Skyreach (e de Kōgen-tō para qualquer ilha).
+
+A coleta automática do pet agora abre os baús dos chefes de campo: sem nada para pegar, o pet vai até o baú mais próximo dentro do alcance e o abre para você. Ele espera os mesmos dez segundos de um jogador, e quem terminar primeiro continua levando o baú.
+
+03/10/2026 — A Torre Neon: a dungeon de mapa de Kōgen-tō
+
+Na costa noroeste de Kōgen-tō, perto do Tocho, ergue-se a Torre Neon: uma rampa em espiral de seis voltas em torno de um núcleo, subindo até um terraço redondo no topo. Sempre aberta, níveis 94 a 100.
+
+Cada meia volta tem um patamar plano com uma horda — nível 94 no pé da torre até 99 perto do topo. Em cada volta, um Sentinela da Torre de elite guarda um patamar: muito mais vida e dano, deixa um baú verde ao cair e volta depois de cinco minutos.
+
+A grade da borda externa pode ser pulada: cai-se exatamente uma volta, nunca mais.
+
+No terraço espera o Dragão Mecânico Celeste (nível 100): varredura de cauda, sopro de fogo neon em linha, rajada das asas em anel e, na segunda fase, o mergulho no alvo. Deixa baús onde cai, como os outros chefes de campo.
+
+O mapa marca a torre com o nome e a faixa de nível, e o "Ir para" leva ao pé da rampa. O capítulo VI ganhou dois passos: chegar à Torre Neon e derrotar o Dragão Mecânico Celeste.
+
+03/10/2026 — O chão da cidade de Kōgen-tō e a postura
+
+O chão da cidade das Docas em Kōgen-tō agora combina com o resto da ilha: piso escuro com as linhas neon, no lugar da praça verde das outras ilhas.
+
+A postura (poise) saiu do jogo: nenhum golpe é mais absorvido por ela — todo golpe que acerta tira vida. Os golpes telegrafados dos chefes também não podem mais ser aparados nem bloqueados: só sair da área ou passar com investida/salto salva. Golpe esquivado com investida ou salto mostra 0.
+
+03/10/2026 — Kōgen-tō redesenhada: a cidade neon de fantasia
+
+Kōgen-tō deixou de ser o mapa real de Shinjuku e Shibuya, que ficou apertado demais e escondia o personagem entre os prédios. Agora é uma cidade neon de fantasia, desenhada para a câmera de cima:
+
+Uma grande avenida atravessa a ilha de sul a norte, com cerejeiras e lanternas brilhando no canteiro do meio. Cinco avenidas transversais e ruas largas formam quarteirões grandes.
+
+Perto das ruas os prédios são baixos — duas a quatro vezes a altura do personagem — com pátios abertos e passagens para entrar neles. Arranha-céus só na borda da ilha e nos marcos.
+
+A Floresta do Santuário virou um parque com um pagode neon de cinco andares e portais torii por cima da avenida. Um anel de viaduto passa por cima do centro da cidade, com quatro rampas — dá para andar em cima e embaixo.
+
+O cruzamento de Shibuya tem as faixas em X, o 109 e telões em volta. O Tocho e a Torre Kōgen ficam na ponta norte.
+
+Os robôs, os chefes gigantes, as dungeons, o capítulo VI e o Ônibus Celeste continuam; os lugares da história foram para os pontos novos.
+
+03/10/2026 — Mapa com ícones e filtros, e o trânsito de Kōgen-tō
+
+O mapa de todas as ilhas ganhou ícones: cada filtro e cada linha do "Ir para" tem o seu (chefe, dungeon, NPC, viagem, cidade, cada bicho, madeira e pedra).
+
+Kōgen-tō: o trânsito agora é uma frota fixa de carros que roda a cidade inteira o tempo todo — seguem pelas avenidas, viram nas curvas com suavidade e não aparecem nem somem do nada.
+
+Filtros novos, todos ligados de início: Chefes, Dungeons, NPCs e Viagem. O Capitão do Porto e o Professor do Ônibus Celeste aparecem com a âncora e o nome, e a lista ganhou uma seção de Chefes com o nível e o botão "Ir".
+
+03/10/2026 — Kōgen-tō na escala dos personagens
+
+Os prédios de Kōgen-tō estavam pequenos demais perto dos personagens e dos robôs. Agora toda a cidade tem o dobro da altura: casas mais altas que o personagem, torres de Nishi-Shinjuku com mais de cem metros de jogo, o Tocho, a Torre de Tóquio, o Casulo e o 109 maiores, e os viadutos mais altos.
+
+Os carros estão do tamanho certo, não somem mais no meio da rua (seguem pelas avenidas e fazem o retorno quando a rua acaba) e não aparecem do nada perto de você.
+
+A cidade das Docas ganhou o tema da ilha: concreto, vidro e neon no lugar da madeira e da telha.
+
+03/10/2026 — O Professor do Ônibus Celeste no Trono do Céu
+
+O passo "Bound for Kōgen-tō" mandava falar com o Capitão do Porto — que não voa para Kōgen-tō — e a missão ficava andando em círculo. Agora o Professor do Ônibus Celeste e o ônibus ficam no TRONO DO CÉU, a ilha mais alta de Skyreach, onde o capítulo V termina, longe do Capitão e da cidade. A missão automática leva até ele, e falar com ele embarca para Kōgen-tō.
+
+Em Kōgen-tō o professor continua no gramado das Docas, a leste das lojas, para levar de volta a qualquer ilha.
+
+03/10/2026 — Kōgen-tō: a cidade que nunca dorme (nível 80 a 100)
+
+A última ilha chegou. Kōgen-tō é Shinjuku e Shibuya de verdade — cada rua, trilho, parque e prédio onde ele está em Tóquio — transformados em ilha, sempre à noite, com neon, janelas acesas e carros nas avenidas.
+
+Como chegar: só por Skyreach. Na praça de Cloudharbor, o Professor do Ônibus Celeste (de cabelo branco e bigode) leva você no ônibus voador pendurado num balão. Lá, o mesmo professor leva de volta a qualquer ilha.
+
+Seis distritos, do sul ao norte: as Docas (80-83), Shibuya (83-86), a Floresta do Santuário Meiji (86-90), Kabukicho (90-94), as torres de Nishi-Shinjuku (94-97) e o Tocho (97-100).
+
+Os viadutos da via expressa se andam em cima E embaixo: suba pelas rampas, ande entre as grades, ou passe por baixo pela rua. Toque no viaduto e o personagem sobe sozinho.
+
+Sete robôs novos: Mech Hound, Gunner Bot, Volt Panther, Laser Sentry, Iron Bear, Tesla Unit e Dynamo Owlbear.
+
+Três chefes gigantes de campo, cada um na sua praça: Titan Mk-I (85) em Shibuya, Neon Kaiju (92) em Kabukicho e Overseer Unit (100) diante do Tocho.
+
+Três dungeons: a Robot Foundry (Porão, 85, portal em Shibuya), a Undercity Line (90) e a Kōgen Tower (95) — seis andares de hordas e o soberano no telhado.
+
+Capítulo VI da história, "A cidade que nunca dorme", do 85 ao 100.
+
+Dados do mapa © colaboradores do OpenStreetMap.
+
+Atualização obrigatória — o protocolo passa para o 184. Por enquanto só computador e Android.
+
+03/10/2026 — Desmantelar itens lendários
+
+Os itens LENDÁRIOS (laranja) não mostravam a opção Desmantelar na bolsa — e o servidor também recusava. A janela de receitas que o desmantelar procura deixava a quinta cor de fora. Agora toda peça com atributos, da cinza à lendária, pode ser desmantelada e devolve parte dos materiais.
+
+Por baixo dos panos: Kōgen-tō, a ilha de nível 80 a 100, segue em construção (Shinjuku e Shibuya de verdade, viadutos andáveis, robôs, cidade sempre à noite). Ela ainda não tem acesso.
+
+Atualização obrigatória — o protocolo passa para o 183. Por enquanto só computador e Android.
+
+02/10/2026 — Diferença de nível, crítico e velocidade de ataque
+
+Bater em monstro muito acima do seu nível agora custa caro: até 3 níveis acima não muda nada; dali para cima, cada nível a mais tira dano seu e aumenta o dano que você recebe.
+
+O crítico ficou sem teto, mas mais difícil de juntar: a DES dá menos crítico por ponto e o resto vem do equipamento — crítico alto é coisa de nível 100 com equipamento T4 +12. Cada crítico também bate um pouco menos forte.
+
+A velocidade de ataque também não tem teto: a DES continua acelerando, só que cada vez mais devagar depois de 60 pontos.
+
+A DES é o atributo principal da pistola. Nas outras armas ela dá 30% da velocidade e do crítico que dá na pistola — uma katana com 20 a 40% de DES ainda vale a pena.
+
+Cada degrau da Ilha Mágica agora tem também os monstros do nível dele.
+
+Por baixo dos panos: começou a construção de Kōgen-tō, a ilha de nível 80 a 100. Ela ainda não tem acesso.
+
+02/10/2026 — Chaves sem aço roxo, baú com tier e refino, e a seleção de personagem certa
+
+As chaves dos Porões de nível 35 para cima pediam aço ROXO, que não cai em lugar nenhum — só dava para fabricar, a milhões de Darksteel. Agora toda chave pede no máximo aço AZUL, que cai das pedras azuis e roxas. Para os Porões altos não ficarem fáceis demais, a quantidade sobe com o nível: o Cofre do Trovão pede 311 aços azuis e o Relicário Serafim 548.
+
+O baú (Banco) agora mostra cada item como a bolsa: a cor da raridade, o tier em romano e o +refino.
+
+A tela de seleção de personagem desenhava todo personagem com a aparência da tela de criação. Agora cada um aparece com a própria roupa, chapéu, skins e a aura do equipamento.
+
+Atualização obrigatória — o protocolo passa para o 182. Por enquanto só computador e Android.
+
+02/10/2026 — Skyreach: o buraco no penhasco embaixo dos caminhos
+
+A mureta branca na borda das ilhas saiu: Skyreach voltou a ser como era. O defeito de verdade era outro: onde um caminho de nuvem chega numa ilha, o penhasco embaixo do caminho não era desenhado, e pelo buraco se via o "miolo" bege da ilha. Agora o penhasco desce inteiro por baixo do caminho.
+
+Atualização obrigatória — o protocolo passa para o 181. Por enquanto só computador e Android.
+
+02/10/2026 — Skyreach: a borda das ilhas agora aparece
+
+Os caminhos de nuvem voltaram a ser como antes, sem a borda. A parede invisível era na beira das ILHAS: agora cada ilha tem uma mureta de pedra branca na borda, que se abre onde um caminho de nuvem chega.
+
+Atualização obrigatória — o protocolo passa para o 180. Por enquanto só computador e Android.
+
+02/10/2026 — Uma dungeon exclusiva em cada degrau da Ilha Mágica
+
+Cada degrau da Ilha Mágica ganhou a sua própria caverna, com tema e chefe próprios, e ela só se entra pela ilha daquele degrau:
+
+I — Gruta Arcana (nível 20), com o Guardião Arcano.
+II — Biblioteca Submersa (30), com o Guardião dos Tomos.
+III — Labirinto dos Espelhos (45), com O Preso no Espelho.
+IV — Pináculo dos Ecos (60), com o Soberano dos Ecos.
+V — Forja Celestial (70), com o Titã Coração-de-Forja.
+VI — Trono da Eternidade (77), com o Soberano Eterno.
+
+No painel de Dungeons elas aparecem para todos, mas fora da ilha certa o botão fica apagado com "Só pela Ilha Mágica …". Dentro da Arena, vale a ilha de onde você veio.
+
+Atualização obrigatória — o protocolo passa para o 179. Por enquanto só computador e Android.
+
+02/10/2026 — Ilha Mágica até o nível 80
+
+A Ilha Mágica ganhou três degraus novos: IV (entra no nível 60, monstros 60-63), V (entra no 70, monstros 70-73) e VI (entra no 77, monstros 77-80). Cada um tem o seu Colosso: o Ancião (66), o Titã (76) e o Eterno (80). O painel da ilha agora mostra os seis degraus.
+
+Atualização obrigatória — o protocolo passa para o 178. Por enquanto só computador e Android.
+
+02/10/2026 — A Fortaleza virou labirinto, e todo chefe de campo solta baús
+
+A Fortaleza da Tormenta agora é um labirinto: ganhou uma terceira muralha no meio, com o portão do lado oposto ao da entrada, e paredes em zigue-zague nos corredores. Para chegar ao Senhor da Fortaleza é preciso dar a volta no castelo duas vezes; um dos lados de cada corredor é um beco sem saída cheio de monstros. As hordas agora ficam dentro dos corredores.
+
+Todo chefe de campo (os das ilhas, os da Ilha Mágica e o da Fortaleza) solta de 1 a 3 baús verdes, azuis ou roxos quando cai, além do saque de sempre. O baú se abre do mesmo jeito: 10 segundos parado ao lado, e quem terminar leva. O conteúdo é o baú da dungeon de nível mais próximo do nível do chefe.
+
+O baú ganhou visual novo: as faixas de metal não piscam mais, a tampa assenta direito e um feixe de luz da cor do baú mostra onde ele está de longe.
+
+Atualização obrigatória — o protocolo passa para o 177. Por enquanto só computador e Android.
+
+02/10/2026 — Fortaleza da Tormenta, o castelo do sul do Planalto
+
+O sul do Planalto ganhou uma masmorra a céu aberto: a Fortaleza da Tormenta (Stormkeep), um castelo grande com duas muralhas e torres, num platô próprio. A estrada sai do Passo dos Ventos e entra pelos dois portões.
+
+O pátio entre as muralhas é guardado por hordas de monstros do nível 50 ao 60. No meio, atrás da muralha interna, fica a arena do chefe: o Senhor da Fortaleza da Tormenta, nível 60.
+
+Quando ele cai, solta de 1 a 3 baús no chão, cada um verde, azul ou roxo, sorteado separadamente. Para abrir um baú, fique parado ao lado dele por 10 segundos, como numa coleta; quem terminar primeiro leva o conteúdo. O baú dá recompensa de dungeon de nível 56: o verde rende como o estágio 1, o azul como o estágio 2 e o roxo como o estágio 3. Baú que ninguém abrir some depois de 5 minutos.
+
+Atualização obrigatória — o protocolo passa para o 176. Por enquanto só computador e Android.
+
+02/10/2026 — Skyreach: Capitão do Porto e bordas das nuvens
+
+Skyreach ganhou um Capitão do Porto na praça da cidade. Antes não havia nenhum, e quem subia não conseguia voltar para as outras ilhas.
+
+Os caminhos de nuvem entre as ilhas agora têm uma borda de nuvem dos dois lados. Antes a beirada bloqueava como uma parede invisível; agora dá para ver onde ela está.
+
+Atualização obrigatória — o protocolo passa para o 175. Por enquanto só computador e Android.
+
+02/10/2026 — Morte no PvP não tira mais itens, e missões de qualquer ilha
+
+Morrer no PvP não faz mais perder a bolsa nem o equipamento. Antes tudo caía no chão (e sem o refino), e nem quem venceu conseguia pegar.
+
+A esquiva da pistola (Destreza) agora também vale contra o ataque básico de outros jogadores no PvP, como já valia contra monstros.
+
+Missões de outras ilhas não aparecem mais como "Travadas": elas ficam em "Disponíveis", com "Na ilha …" no começo da linha, e podem ser pegas de qualquer lugar. A auto missão embarca até a ilha certa. A caça, a coleta e as conversas delas só contam na ilha da missão. As missões da ilha onde você está aparecem primeiro, e Skyreach entrou na lista de mapas.
+
+A auto missão também acha os chefes de campo das missões (como o Owlbear Primevo) e leva até uma pedra quando nenhum monstro da ilha solta o item pedido.
+
+02/10/2026 — O Planalto do 50 ao 60
+
+A metade de cima do Planalto da Tormenta ganhou conteúdo próprio.
+
+Dungeon nova: o Pináculo da Tempestade (caverna, nível 56), com o Arauto da Tempestade no topo.
+
+Chefe de campo novo: o Behemoth Couro-de-Trovão (56), nas ruínas da Forja Partida — entre o Owlbear Primevo (52) e o Arquimago da Tormenta (60), que antes não tinham ninguém no meio.
+
+O capítulo IV da história ficou mais longo do 50 ao 60: vencer o Cofre do Trovão, derrotar o Owlbear Primevo, o Behemoth e o Arquimago, e vencer o Pináculo da Tempestade antes de embarcar para Skyreach. Quem já está no meio do capítulo continua de onde parou.
+
+Missões novas no Mestre do Planalto: uma para o Cofre do Trovão, uma para o Pináculo da Tempestade e o contrato Cavaleiros do Olho (nível 55, a cada dez minutos).
+
+Atualização obrigatória — o protocolo passa para o 174. Por enquanto só computador e Android.
+
+02/10/2026 — Skyreach, a ilha acima da tempestade
+
+Nova ilha para os níveis 60 a 80: Skyreach, um arquipélago de ilhas flutuantes ligadas por caminhos de nuvens, com campos dourados, templos de mármore e árvores sagradas. Cada ilha tem a sua faixa de nível, das Lanternas (60) ao Trono do Céu (80). Ela abre no fim do capítulo IV da história ("Rumo a Skyreach"): embarque com o Capitão do Porto.
+
+Os monstros de lá têm asas: Lobo, Lince, Urso, Owlbear, Arqueiro e Mago Serafins, com loot à altura do nível.
+
+Capítulo V da história, "A Cidade Acima da Tempestade", do 60 ao 80.
+
+Três dungeons novas: o Relicário Serafim (porão solo, nível 65, com o Guardião do Relicário), a Catedral das Nuvens (caverna, 70, com o Serafim Caído) e o Ninho do Pégaso (caverna, 75, com o Pégaso da Tormenta).
+
+Dois chefes de campo novos: o Colosso Dourado (72) e o Arconte Serafim (80).
+
+Missões novas no Mestre de Skyreach: diárias da ilha, os contratos Guardiões das Nuvens e Pedra para os sinos (a cada dez minutos) e uma missão para cada dungeon nova.
+
+O Planalto da Tormenta continua do 40 ao 60.
+
+Atualização obrigatória — o protocolo passa para o 173. Por enquanto só computador e Android.
+
+02/10/2026 — Auto missão explica por que parou
+
+Quando a auto missão não acha o caminho, ela agora diz o motivo em vez de só "não sei onde fica o objetivo": a missão é de outra ilha (e com quem embarcar), já está pronta e deve ser entregue a alguém de outra ilha, o bicho ou o item não existe nesta ilha (e em quais ilhas existe), ou os recursos estão esgotados no momento. As mensagens da auto missão também passaram a aparecer em inglês para quem joga em inglês.
+
+Atualização obrigatória — o protocolo passa para o 171. Por enquanto só computador e Android.
+
+02/10/2026 — Amuleto de Proteção, skins de anel e o refino arriscado
+
+Amuleto de Proteção (Ward Charm): novo na Loja, aba Materiais, por 150 TP. Com ele na bolsa, um refino de +6 a +9 que falharia e destruiria a peça gasta o amuleto no lugar — a peça fica no nível em que estava. Ele só é gasto quando salva a peça; se o refino der certo, ele continua na bolsa. Do +10 em diante a aposta continua valendo.
+
+Refino arriscado: a pergunta "Refine anyway?" do +6 em diante piscava e sumia antes de dar para tocar. Agora ela fica aberta esperando a resposta. E a seta entre os níveis, que aparecia como um quadradinho, voltou.
+
+O Anel Mágico também ganhou skins: Anel de Brasa, Anel de Gelo, Anel Verdejante, Anel Solar e Anel do Vazio. Cada um muda a cor do brilho nas mãos, do círculo mágico e do orbe que o anel dispara — o Solar e o de Gelo ainda põem raios no círculo, e o Verdejante e o do Vazio um segundo anel por dentro. Na Loja, aba Aparência → Armas; para usar, Guarda-roupa → Weapon com o anel equipado.
+
+Atualização obrigatória — o protocolo passa para o 170. Por enquanto só computador e Android.
+
+01/10/2026 — Chapéus e roupas novos, skins de arma e de montaria
+
+Chapéus: os oito chapéus grátis foram refeitos e agora têm cor (antes saíam todos pretos). Chegaram seis novos: Chapéu de Palha (grátis), Chapéu de Capitão, Elmo de Cavaleiro, Elmo de Chifres, Turbante e Coroa.
+
+Roupas: todas ganharam cores próprias e chegaram seis novas — Marujo e Explorador (grátis), Corsário, Arcanista, Cavaleiro e Nômade das Dunas.
+
+Skins de arma: três visuais para espada e escudo, três para a katana e três para as pistolas. Skins de montaria: cinco pelagens (Dourada, Obsidiana, Gélida, Brasa e Espectral) que valem para qualquer montaria. Tudo na Loja, aba Aparência, agora separada em Roupas, Chapéus, Armas e Montarias.
+
+Guarda-roupa: novas linhas "Weapon" e "Mount coat"; a prévia mostra a arma ou a montaria quando você mexe nelas.
+
+Atualização obrigatória — o protocolo passa para o 169. Por enquanto só computador e Android; o iPhone volta assim que a Apple liberar.
+
+01/10/2026 — Ícone 3D das skins
+
+As skins na bolsa agora aparecem como o personagem vestindo a roupa (ou o chapéu), girando devagar, como os pets e as montarias. Antes elas ficavam num quadrado vazio.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
+01/10/2026 — Missões de caça nas outras ilhas e skins da loja
+
+Missões de caça: na Geleira, no Ermo e no Planalto os monstros com a roupa da ilha (Arqueiro Casaco-de-Gelo, Mago do Sol, Owlbear da Tormenta…) não contavam para as missões que pediam aquele tipo de monstro. Agora contam. E o combate automático, numa missão de caça, passa a procurar o monstro certo — antes ele ia atrás do tipo vizinho da lista (numa missão de lobos, caçava ursos).
+
+Skins da loja: a skin comprada agora pode ser desbloqueada direto da bolsa (botão Desbloquear). A Capitão da Tormenta tinha virado, por engano, a Chave do Casco Congelado na bolsa de quem comprou — quem comprou recebeu os TP de volta.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
+01/10/2026 — Esquiva da pistola e subidas no caminho automático
+
+Pistola: cada ponto de DES dá 0,5% de chance de esquivar golpes e tiros dos inimigos, até 25%. Golpe esquivado não causa dano, não te faz tropeçar nem te empurra, e aparece como "Esquiva". Os ataques telegrafados dos chefes (as áreas marcadas no chão) continuam precisando ser desviados andando.
+
+Caminho automático: o personagem não fica mais travado em quinas que nem pulando ele passaria, e não desiste mais no meio de uma escada de degraus altos — ele pula de degrau em degrau até o alto.
+
+Dungeon: ao sair, você volta para o portal por onde entrou, e não para a cidade.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
+01/10/2026 — O jogo reconecta sozinho
+
+Se a internet cair por um instante, o celular suspender o jogo ou o servidor reiniciar, o jogo não te joga mais na tela de erro. Aparece "Conexão perdida — reconectando…" e ele tenta voltar sozinho por até 5 minutos; quando consegue, você volta direto para o mesmo personagem, no mundo, sem escolher servidor nem fazer login de novo. Se preferir, toque em Desistir para voltar à lista de servidores.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
+01/10/2026 — Dreno Vital, INT nas recargas e a pistola mais resistente
+
+Mago: a Bênção deu lugar ao Dreno Vital, já no nível 1 — um disparo mágico que causa dano no alvo e te cura com 30% do dano causado (35% no tier VIII, 40% no tier X). A Aura continua sendo a cura em área e o Julgamento o dano em área. Agora o mago tem com o que atacar desde o começo.
+
+INT: cada ponto reduz um pouco a recarga das habilidades (0,1% por ponto, até 20%), em qualquer arma, e nenhuma recarga fica abaixo de 4 segundos. A barra de habilidades já mostra o tempo reduzido.
+
+Pistola: cada ponto de DES agora também dá +1 de vida máxima. A pistola já tinha o maior dano; o que faltava para fazer dungeon sozinho era aguentar.
+
+Armadura leve: a DES da peça mais que dobrou (de 2–6 para 6–12). As peças que você já tem se ajustam ao entrar no jogo.
+
+Não é atualização obrigatória — o protocolo continua o 168.
+
+01/10/2026 — Seu personagem de verdade na bolsa e na Aparência
+
+O retrato da bolsa mostrava sempre um boneco padrão, com o chapéu padrão. Agora ele veste o seu personagem como os outros jogadores te veem: rosto, cabelo, cores, roupa ou skin, e a arma na mão. E as auras dos equipamentos aparecem nele — a cor pela raridade de cada peça, mais forte quanto maior o tier. A tela de Aparência também passou a mostrar essas auras enquanto você prova as roupas.
+
+Atualização obrigatória — o protocolo passa a ser o 168. No celular, o jogo só volta a entrar depois da próxima atualização do app.
+
+01/10/2026 — A chave do Porão do Naufrágio entra na história
+
+O Porão do Naufrágio virou uma porta trancada, e a história mandava você até ela sem chave. Agora, entre o Mirante e o Porão, há três passos novos: derrube 6 árvores, quebre 6 pedras e crie a Chave do Porão do Naufrágio no Craft. Os dois primeiros já entregam toda a madeira e o Aço que a chave pede, então ninguém fica travado. O passo do Porão também explica o caminho: com a chave na bolsa, use "Ir para o portal".
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+01/10/2026 — Habilidades abrem na sua arma
+
+A tela de Habilidades agora abre direto na aba da arma que você está usando: quem joga de Pistolas Gêmeas ou Anel Mágico não precisa mais trocar de aba toda vez pra ver as próprias habilidades. As outras abas continuam a um clique.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+01/10/2026 — Fechar a recompensa não te leva mais pro mapa
+
+Com o mapa aberto, fechar a janela de recompensa no X fazia o personagem viajar até o ponto do mapa que ficava atrás do X. O clique que fecha a recompensa (e também a janela de nível e as de confirmação) agora fica só com ela: o mapa e o minimapa não recebem nada enquanto ela está na tela.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+01/10/2026 — Cada ilha com os seus monstros
+
+Nenhum monstro comum aparece mais em duas ilhas. Os Morganeers seguem a história de ilha em ilha, mas agora com a roupa de cada lugar, e os bichos ganharam versões próprias:
+
+- Geleira: Arqueiro e Mago Casaco-de-Gelo, Owlbear da Neve.
+- Ermo: Saqueador das Dunas, Arqueiro das Areias, Mago do Sol.
+- Planalto: Lince do Penhasco, Arqueiro do Penhasco, Urso das Cavernas, Mago da Tormenta e Owlbear da Tormenta.
+
+Eles lutam como os de sempre e contam nas mesmas missões: "Arqueiros da nevasca" conta o Arqueiro Casaco-de-Gelo. O loot acompanha a ilha — mais cobre e poções maiores nas ilhas mais altas. O Owlbear da Tormenta também conserta a missão "As feras do vento", que mandava caçar owlbears no Planalto, onde não havia nenhum.
+
+No bestiário, os inimigos de gente apareciam só como uma espada e um escudo flutuando; agora aparece o corpo inteiro.
+
+Os servidores já estão com os monstros novos: quem não atualizar vê os novos como lobos.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+01/10/2026 — Névoa no horizonte e distância Extrema
+
+A borda do mundo não aparece mais: tudo vai sumindo numa névoa da cor do céu conforme chega ao limite do que está carregado — chão, árvores, monstros e o mar. A névoa acompanha a distância de visão escolhida em Gráficos.
+
+E dá pra ver mais longe: no PC entrou a distância "Extrema", e no celular a "Muito longe". A predefinição Ultra usa a maior do aparelho.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — Sombras não atravessam mais o morro
+
+Com as sombras em "Bonitas", a sombra das árvores aparecia por cima de tudo: dava pra ver a sombra de uma árvore que estava atrás do morro, e ela escurecia até a copa de árvores na frente. Agora a sombra só aparece no chão que está à vista.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — Configurações de gráficos
+
+Nova tela em Menu › Sistema › Gráficos, com predefinições Baixo, Médio, Alto e Ultra (o Alto é o jogo exatamente como era):
+
+- Distância de visão: Perto, Normal, Longe e Muito longe (este só no PC). Mais longe carrega mais ilha e deixa a câmera deitar mais rumo ao horizonte; Perto pesa menos no celular.
+- Grama e arbustos: Pouca, Média ou Cheia. Árvores, pedras e tudo que é sólido sempre aparecem.
+- Limite de quadros: 30, 60 ou sem limite — 30 economiza bateria no celular.
+- Mar: calmo ou com ondas.
+- Efeitos de habilidade dos outros jogadores: mostrar ou esconder. Os seus e os ataques de monstros e chefes sempre aparecem.
+- Sombras e anti-aliasing saíram da tela de Interface e vieram pra cá.
+
+A escolha fica salva no aparelho. Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — Sem bolinhas na frente dos textos
+
+Tiramos as bolinhas coloridas que ficavam na frente dos textos: nos filtros do mapa, na lista "Ir para", na lista de ilhas do mapa-mundi, no ping, na lista do grupo da dungeon, nos painéis da Ilha Mágica, na faixa do AUTO COLETA / AUTO COMBATE (agora é a borda que pulsa) e nas opções de PvP da configuração do combate (a escolhida ganha a borda dourada). A informação continua — pela cor do próprio texto ou do botão.
+
+O mapa também ficou em inglês no jogo em inglês ("Go", "show ›", a dica do topo), e continua em português no jogo em português.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — Missões e conversas em pergaminho
+
+As janelas de LER agora são pergaminho: a conversa com os NPCs, a janela do Mestre de Missões e o livro de missões viraram folhas envelhecidas com rolos de madeira em cima e embaixo, texto em tinta escura e títulos em vermelho, como um escriba escreveria. Os botões continuam de madeira, pra se destacar na folha.
+
+Também: mais textos que apareciam em português no jogo em inglês foram corrigidos — as recompensas agora dizem "copper" em vez de "cobre", o botão "Ir" virou "Go" e a linha da fila e o aviso de "nenhuma missão ativa" estão em inglês (e continuam em português no jogo em português).
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — Interface nova: madeira, bronze e letras de pedra
+
+A interface ganhou cara de jogo de fantasia. Os painéis agora são tábuas de madeira escura com moldura de bronze e tachas nos cantos; botões e espaços da bolsa parecem entalhados na madeira; os botões do topo e da barra de itens são plaquinhas com borda de bronze; e os títulos das janelas (MENU, BOLSA, INTERFACE...) usam uma fonte de letras gravadas.
+
+Também: os nomes do Menu não aparecem mais cortados ("Appear...", "Dunge..."), o alfinete das missões virou um losango, o número de FPS ficou discreto, e os textos da tela de Interface que apareciam em português no jogo em inglês foram corrigidos.
+
+Não é atualização obrigatória — o protocolo continua o 167.
+
+30/09/2026 — O Último Abrigo virou castelo
+
+A cidade do Planalto da Tormenta agora é um CASTELO: uma muralha de pedra com ameias cerca a cidade inteira, com torres redondas ao longo dela e um portão em cada estrada — um para o porto, outro para a trilha — cada portão guardado por duas torres.
+
+E as três ruínas de pedra negra espalhadas pela trilha, que pareciam castelinhos no meio do caminho, foram removidas. O farol e o cristal continuam.
+
+Atualização obrigatória: o protocolo subiu para 167.
+
+30/09/2026 — A tela de Interface rola
+
+Em telas mais baixas (ou com o HUD grande), a janela de Interface ficava maior que a tela e as opções de baixo — como o Anti-aliasing — sumiam. Agora o conteúdo rola: roda do mouse, arrastar com o dedo ou pela barra à direita. O título, o som e o X ficam sempre à vista.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
+30/09/2026 — Anti-aliasing nas configurações
+
+Menu → Interface agora tem uma linha de ANTI-ALIASING: Desligado, 2x, 4x ou 8x. Ele suaviza os serrilhados nas bordas dos blocos, cercas e personagens. No computador vem em 4x; no celular vem desligado (pesa mais na bateria). A escolha fica salva no aparelho e vale a partir da próxima vez que o jogo abrir. Se a placa de vídeo não aguentar o nível escolhido, o jogo abre sem anti-aliasing em vez de não abrir.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
+30/09/2026 — Clicar em "Enter the portal" não anda mais
+
+Tocar no botão do aviso do Porão também contava como um clique no chão atrás dele: o personagem andava, saía de perto do portal e a entrada era cancelada. Agora o aviso segura o clique, e durante a animação de entrada nenhum clique move o personagem.
+
+Não é atualização obrigatória — o protocolo continua o 166.
+
+30/09/2026 — Portais: os Porões agora ficam na natureza
+
+As portas de pedra dos Porões viraram PORTAIS: um anel de pedra com runas que acendem em sequência, um núcleo de luz girando e faíscas subindo, cada um na cor do seu Porão. De perto, tudo gira mais rápido e brilha mais — e entrar tem animação: a luz envolve o personagem antes da viagem.
+
+E eles saíram da porta da cidade. Cada portal está num lugar marcante da sua ilha, a uma caminhada da cidade:
+• Porão do Naufrágio — na costa do Bosque.
+• Porão do Contrabandista — no morro mais alto do Bosque.
+• Casco Congelado — na costa da Geleira.
+• Caravana Soterrada — ao lado do Oásis, no Ermo.
+• Cofre do Trovão — no fim da trilha do Planalto.
+
+Continuam no mapa e no "Ir para". O aviso do Porão na tela agora só aparece quando você já está bem perto do portal.
+
+Atualização obrigatória: o protocolo subiu para 166.
+
+30/09/2026 — Auto dungeon não empaca mais entre as salas
+
+Com os Porões maiores, a horda da sala seguinte aparece longe demais para ser vista quando o portão abre — e o auto dungeon, que andava "até o inimigo mais perto", ficava parado na sala já limpa. Agora, sem inimigo à vista, ele vai sozinho até a sala da vez (e até a do chefe no fim), e volta a lutar quando a horda aparece.
+
+O personagem também não trava mais na boca do corredor, onde fica o portão: ali o corredor encontra a sala redonda num canto, e o movimento não sabia contornar esse canto — parava, e parecia estar empurrando o portão. Agora ele desliza pela quina e segue.
+
+E o aviso "A gate is shut that way" com o portão já aberto também acabou: quando o destino fica atrás de um portão fechado, dentro da pedra ou fora do mapa, o personagem agora anda até o ponto alcançável mais perto dele, em vez de não andar.
+
+Não é atualização obrigatória — o protocolo continua o 165.
+
+30/09/2026 — Porões maiores, hordas maiores, paredes mais baixas
+
+Os Porões ficaram 50% maiores, e cada sala agora tem uma HORDA: 8, 11 e 14 inimigos nas três salas (antes eram 3, 4 e 5), mais o chefe. Como tem muito mais para lutar e andar, o tempo limite do Porão subiu de 10 para 15 minutos (o desafio de terminar rápido acompanha: metade do tempo).
+
+As paredes baixaram para uns 4 degraus: continuam fechando o caminho, mas não escondem mais a luta. E o personagem não "sobe" mais na parede quando encosta nela — o chão da sala agora vai até a pedra, e a colisão segue as saliências da rocha.
+
+Atualização obrigatória: o protocolo subiu para 165.
+
+30/09/2026 — Cada Porão é uma ilha
+
+A ilha enorme de gramado e flores em volta dos Porões acabou. Agora cada Porão é a sua própria ilha no meio do mar: a caverna é um rochedo, o castelo e o porão de tijolos são fortalezas sobre a pedra, o Casco Congelado é um bloco de gelo com pontas e a Caravana Soterrada é um morro de arenito em camadas — com costa de pedra descendo até a água, sem flor nenhuma.
+
+Por dentro, menos parede reta e mais irregularidade: as salas das cavernas, do gelo e da tumba têm bordas tortas, as paredes têm topo recortado, musgo e pedras manchadas, e o castelo tem trechos desmoronados.
+
+Atualização obrigatória: o protocolo subiu para 164.
+
+30/09/2026 — Porões de verdade: cavernas, castelo e tumba feitos de blocos
+
+Os Porões deixaram de ser um caminho pintado em cima da grama. Agora cada um é ESCAVADO no terreno, com chão e paredes de blocos de verdade — e as auras e os avisos de ataque de chefe voltam a aparecer por cima do chão, como em qualquer lugar.
+
+Cada Porão ganhou sua cara, numa ilha de dungeons maior:
+• Porão do Naufrágio — uma caverna escavada num morro de pedra coberto de grama e flores, chão de pedra escura.
+• Porão do Contrabandista — um porão de tijolos, com paredes em fiadas e piso de lajotas.
+• Casco Congelado — paredes de gelo e chão de neve.
+• Caravana Soterrada — uma tumba de arenito no meio da areia.
+• Cofre do Trovão — um castelo de pedra com ameias no alto das muralhas.
+
+As salas, os portões e a regra continuam: cada sala precisa ser LIMPA por inteiro (o Guardião e o bando todo) para o portão da próxima abrir.
+
+Atualização obrigatória: o protocolo subiu para 163.
+
+30/09/2026 — Porões com salas, paredes e portões; e um oásis no Ermo
+
+PORÕES REDESENHADOS. Usar a chave na porta agora leva você PORÃO ABAIXO: cada um dos cinco Porões tem sua própria planta desenhada à mão — salas ligadas por corredores, com paredes de pedra, tochas e portões de ferro. Cada sala de luta tem um GUARDIÃO (Warden): derrote-o e o portão da próxima sala se abre. O resto do bando pode ficar para trás, mas continua lá. São três salas e depois o chefe. Também há recantos vazios fora do caminho principal. Quem cai volta na última sala já liberada. Ao terminar (ou sair), você sobe de volta pela mesma porta, na ilha do Porão.
+
+As plantas: o Porão do Naufrágio é uma serpente, o do Contrabandista um salão com duas alas, o Casco Congelado vai da proa à popa, a Caravana Soterrada vira a cada sala, e o Cofre do Trovão é uma cruz com o cofre no fim do corredor longo.
+
+OÁSIS NO ERMO. No meio do deserto agora há um oásis: uma lagoa com margem de grama, flores e um bosque denso — a única mata do Ermo, com Madeira T3. Fica perto do centro da ilha, marcado no mapa como "Oasis", e aparece no "Ir para".
+
+Atualização obrigatória: o protocolo subiu para 162.
+
+29/09/2026 — Desafios no Porão, chaves mais baratas e auto coleta que não empaca
+
+DESAFIOS. Cada Porão agora mostra na porta dois desafios da hora — terminar em menos da metade do tempo, nunca cair abaixo de 50% de vida, não beber poção, ninguém cair, não usar dash. Cada desafio cumprido aumenta o baú em 20% (ouro, cobre, marcas e material). Falhar um desafio não encerra a corrida: só perde o bônus dele. Os desafios mudam a cada hora.
+
+CHAVES ~3x MAIS BARATAS. A chave do Cofre do Trovão pedia 1187 madeiras e 543 aços — agora pede 402 e 184. A do Porão do Naufrágio caiu de 216 + 115 para 78 + 42. Em troca, o ouro do baú do Porão diminuiu, pra o ouro por hora continuar o mesmo; cobre, marcas, material e equipamento não mudaram.
+
+AUTO COLETA. Quando o personagem travava a caminho de um recurso, a auto coleta pedia "outro" e recebia o mesmo, e ficava presa ali pra sempre. Agora o recurso onde travou é pulado por um tempo, e a ida tem prazo mesmo se o corpo continuar se mexendo.
+
+NPCs. O ícone em cima da cabeça ficou só em quem tem serviço: Alquimista (loja), Ferreiro (forja), Banqueiro, Capitão do Porto e Mestre de Missões. Quem só dá missão continua com o "!" de missão.
+
+Atualização obrigatória: o protocolo subiu para 161.
+
+29/09/2026 — Madeira sobe de tier na Oficina
+
+Na aba MATERIALS da Oficina agora dá pra subir o tier da madeira, do mesmo jeito que os outros materiais: 10 Madeiras de um tier, com cobre, darksteel e Pó Cintilante, viram 1 Madeira do tier de cima — sempre dá certo. É o caminho de quem tem sobra de madeira baixa e quer a de cima sem viajar até a ilha dela.
+
+Atualização obrigatória: o protocolo subiu para 160.
+
+29/09/2026 — Madeira de tier alto nas árvores
+
+Até agora toda árvore do jogo dava Madeira T1, em qualquer ilha — a Madeira T2, T3 e T4 praticamente não existia, e as chaves dos Porões mais fundos não tinham de onde sair. Agora a árvore dá a madeira do NÍVEL do lugar onde cresce:
+
+Bosque — Madeira T1. Geleira — Madeira T2. Ermo — Madeira T3. Planalto da Tormenta — Madeira T3 no começo da trilha e Madeira T4 no fundo (Forja Partida e Olho da Tempestade).
+
+Madeira de tier alto também rende mais por golpe e dá mais cobre.
+
+29/09/2026 — As chaves de Porão agora se fabricam
+
+As receitas das chaves existiam, mas não apareciam em lugar nenhum da Oficina — só havia abas de equipamento. Agora o Craft tem a aba CHAVES DE DUNGEON, com as cinco chaves: escolha a do Porão, veja quanto de madeira e aço você tem, e fabrique.
+
+Não é atualização obrigatória — o protocolo continua o 159. Mas sem ela a aba não aparece.
+
+29/09/2026 — "Passo dos Ventos"
+
+O trecho da trilha do Planalto que se chamava "Monastery of the Winds" — o mesmo nome de uma das Grutas — agora se chama PASSO DOS VENTOS. No mapa ele parecia uma dungeon, e não é: é um pedaço da trilha, como os vizinhos. A Gruta do Mosteiro continua no painel de dungeons, igual.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
+29/09/2026 — Mapa do Planalto mais limpo
+
+Saíram os dois botões "Dungeon" que ficavam na trilha do Planalto da Tormenta, embaixo do Mosteiro dos Ventos e da Forja Partida. Eles não levavam a lugar nenhum da ilha — só abriam o painel da Arena. As Grutas continuam no painel de dungeons; no mapa ficam só lugares de verdade, como a porta do Cofre do Trovão.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
+29/09/2026 — Novo ícone do Porão no mapa
+
+O cadeado saiu. As portas de Porão agora aparecem no mapa como uma BOCA DE CAVERNA: anel de pedra, entrada escura e um brilho roxo lá dentro. O roxo não é usado por mais nada no mapa, então dá pra achar a porta de relance, na floresta ou na areia.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
+29/09/2026 — O número da versão na tela
+
+No canto de baixo à esquerda, ao lado do fps, agora aparece o número da build (ex.: 2026092909). É pra acabar com o "baixei a nova e continua igual": o número diz na hora se o jogo que abriu é o que você baixou.
+
+No site, cada botão de download passou a mostrar a versão que entrega, e o link muda a cada versão — o navegador não consegue mais devolver o arquivo antigo.
+
+Não é atualização obrigatória — o protocolo continua o 159.
+
+29/09/2026 — O ícone do Porão no mapa virou um cadeado
+
+O marcador das portas de Porão era um quadradinho dourado com um vão escuro — uma porta vista de cima — que, no tamanho do mapa, não se distinguia de uma casa e quase sumia na areia do Ermo. Agora é um CADEADO, com contorno escuro pra continuar legível em qualquer chão. Ele diz o que a porta é: uma coisa que se abre com chave.
+
+Nada mais mudou. Não é atualização obrigatória — o protocolo continua o 159.
+
+29/09/2026 — As portas do Porão agora se acham, e o lag da tarde
+
+Três consertos, os três de coisas que vocês apontaram.
+
+O LAG DEPOIS DAS 16:00. Era o cliente, não o servidor: a versão das 16:08 regerava a ilha inteira duas vezes por quadro pra desenhar a porta do Porão — 49 ms de trabalho num quadro que tem 16. O jogo caiu pra 15-20 fps em toda plataforma. Isso já saiu na versão das 17:02; o contador de fps novo, no canto de baixo à esquerda, é pra vocês verem por conta própria.
+
+AS PORTAS NO MAPA. Elas estavam lá, mas dentro da lista de NPCs, que nasce fechada — ou seja, ninguém via. Agora cada porta é um marcador próprio, sempre visível, com o nome ao lado, e entra na lista "Go to" da lateral com o botão "Ir" e a distância, do mesmo jeito que a praça e o porto.
+
+O BOTÃO "IR ATÉ A PORTA". Não existia mesmo: ele só era desenhado pra quem estivesse dentro da Arena, justamente o único lugar onde o jogador de Porão não está. Agora, com um Porão selecionado na ilha dele, o botão aparece e leva você até a porta. Se a porta for em outra ilha, ele diz qual.
+
+Não é atualização obrigatória — o protocolo continua o 159 e o servidor não mudou. Mas sem ela as portas continuam escondidas no mapa e o botão continua sem aparecer.
+
+29/09/2026 — As portas do Porão no mapa, e uma que estava no mar
+
+Se você procurou o Porão e não achou, não era você. A porta da Caravana Afundada, no Ermo, tinha nascido dentro do oceano — dois metros abaixo da linha d'água, onde ninguém chega. Ela agora procura chão firme de verdade, e todas as cinco estão em terra.
+
+As portas entraram no MAPA, com nome. Antes só apareciam quando você já estava a 26 metros delas, e uma ilha tem centenas: só se achava tropeçando.
+
+No painel de dungeons, Porão e Gruta viraram duas listas separadas — são coisas diferentes e entravam de jeitos diferentes, mas estavam misturadas como se fossem a mesma. E o botão do Porão não diz mais "Entrar": diz "Ir até a porta", e leva você até lá. Se a porta for em outra ilha, ele diz qual.
+
+E entrou um CONTADOR DE FPS, no canto de baixo à esquerda, acima dos botões. Ele já existia, mas só enquanto você segurasse F3 — o que no celular era o mesmo que não existir. Verde acima de 50, amarelo entre 30 e 50, vermelho abaixo.
+
+Atualização obrigatória, protocolo 159: a posição da porta é calculada pelos dois lados, e quem ficasse na versão antiga continuaria vendo a porta velha — inclusive a que estava na água — e ouvindo "chegue mais perto" sem nunca conseguir abrir.
+
+29/09/2026 — Atualização obrigatória: as portas do Porão
+
+Esta é a mesma novidade da versão anterior — o Porão virou dungeon física, com porta na ilha e chave de craft —, só que agora obrigatória. O protocolo subiu para 158.
+
+O motivo é simples: as portas são desenhadas pelo cliente. Quem ficasse na versão passada andaria por cima de cinco dungeons sem ver nenhuma delas, porque o servidor já está servindo as portas mas a versão antiga não sabe desenhá-las. Em vez de deixar metade dos jogadores sem enxergar o conteúdo, o corte garante que todo mundo veja.
+
+Nada mudou na conversa entre cliente e servidor — nenhuma mensagem, nenhum campo. O número subiu só para forçar a atualização.
+
+Se você já está na 2026092904, atualize mesmo assim: ela também é recusada.
+
+29/09/2026 — O Porão virou uma porta de verdade, com chave de craft
+
+Até aqui o Porão e a Gruta entravam pelo mesmo painel, na Arena, e só se diferenciavam na conta de entradas. Agora são duas coisas separadas.
+
+O Porão saiu do painel. Cada um tem uma PORTA na ilha dele — batentes de pedra e um vão que acende quando você chega perto. Chegue na porta com a chave e entre. O painel ficou só com a Gruta: fila, salas e estágios, que é o que ele sempre soube fazer.
+
+A chave se FABRICA, com madeira e aço. Quanto mais fundo o Porão, mais madeira ela pede e melhor o aço: a do Naufrágio sai com 216 de Madeira T1 e 115 de Aço Cinza; a do Cofre do Trovão, lá no nível 50, pede 1.187 de madeira e 543 de Aço Roxo. Dá pra vender e comprar chave no mercado — quem gosta de coletar abastece quem gosta de entrar.
+
+Em troca, o Porão não tem mais limite nenhum. Nada de 3 recompensas por dia: entra quantas vezes tiver chave, e a recompensa é cheia todas as vezes. A chave passou a ser o único freio.
+
+E agora toda ilha tem um. O Ermo e o Planalto não tinham dungeon física nenhuma — quem passava do nível 30 ficava sem porta pra abrir. Entraram a Caravana Afundada (nível 34, no Ermo) e o Cofre do Trovão (nível 50, no Planalto), e o Casco Congelado subiu do 22 pro 24.
+
+Se você abrir o painel procurando o Porão, ele continua listado — mas agora diz que a entrada é na porta, na ilha. O conteúdo não sumiu, mudou de lugar.
+
+Nada mudou na Gruta, e o protocolo continua o 157 — não é atualização obrigatória. Mas sem o cliente novo as portas não aparecem.
+
+29/09/2026 — A Ilha Mágica e o calendário de presença ficaram legíveis
+
+O painel da Ilha Mágica estava metade em português no meio de um jogo em inglês: "Sete ilhotas por pontes", "Grátis hoje 0/3 · resta 10:00". Eram frases que ficaram escritas em português no código depois que o jogo passou a nascer em inglês, e mais cinco verbetes do dicionário guardados ao contrário. Agora o painel inteiro fala um idioma só — o seu.
+
+O poder recomendado saía como "power 2.708", que em inglês se lê dois e sete décimos. O separador de milhar estava fixo em ponto, do jeito português, em três lugares diferentes do cliente. Agora cada idioma usa a pontuação dele: 2.708 em português, 2,708 em inglês. Vale para todo número grande do jogo — ouro, preço de slot, XP de recuperação.
+
+No calendário de presença nenhum prêmio dava para ler. "Energy ×5…", "Darksteel …", "Mount Su…": o nome era cortado no meio, que é justamente a única coisa que o calendário tem para dizer. A culpa era do formato do cartão, mais alto do que largo — um dia de um prêmio só usava o terço de cima e deixava o resto vazio, enquanto o texto brigava por espaço na horizontal.
+
+Agora o cartão é mais largo que alto, e o nome e a quantidade são escritos em pontas opostas em vez de virarem uma frase só. O número nunca some; quando falta espaço, encurta o nome. "Copper ×25,000" e "Energy ×15,000" aparecem inteiros.
+
+Nada mudou nas regras do jogo, e o protocolo continua o 157 — não é atualização obrigatória.
+
+29/09/2026 — A Ilha Mágica virou uma luta que dá pra aguentar
+
+As ilhotas de combate da Ilha Mágica tinham mobs demais, e não era só a conta: as cinco hordas de cada ilhota se sobrepõem de propósito, e elas estavam nascendo em cima umas das outras — dois grupos ocupando o mesmo pedaço de chão. Uma ilhota chegava a 76 bichos, e uma única pancada acordava 39 deles de uma vez. Não havia classe que segurasse isso.
+
+Agora cada ilhota tem uma horda de 9 no meio e uma de 3 a 6 em cada lado, e duas hordas não dividem mais o mesmo lugar. A pior puxada caiu de 39 bichos para 9. A ilha inteira saiu de 221 bichos para 96, nos três degraus.
+
+A ilhota do Colosso desceu junto. Ela continua com o espaço largo de sempre — é o que deixa chão entre você e o chefe, e desviar dele na mão é a graça —, mas com todo o resto caindo para 9 e 6 ela tinha virado a horda mais cheia da ilha, bem onde isso mais atrapalha.
+
+O nível em cima da cabeça agora acompanha quem sobe de nível. Ele só era enviado uma vez, quando o personagem entrava no seu campo de visão, então se alguém subisse de nível na sua frente o número continuava o antigo até você relogar. Junto foi uma conta errada: com a Poção de Experiência ligada, a plaquinha e a ficha mostravam níveis diferentes pela mesma XP.
+
+O painel da dungeon não fica mais na frente do resto da tela. Ele era desenhado por último e tapava a bolsa, o mercado, as lojas, o painel social e o Menu; agora é o primeiro, e todo o resto passa por cima dele.
+
+Esta atualização é OBRIGATÓRIA: o protocolo subiu para 157. Nada mudou na conversa entre cliente e servidor — o número subiu só para garantir que todo mundo receba a correção do painel da dungeon, que é do lado do cliente.
+
+29/09/2026 — O jogo agora é escrito em inglês, e o português é a tradução
+
+Até aqui o jogo era escrito em português e o inglês era a tradução por cima. Agora é o contrário: o texto nasce em inglês e o português é a tradução. Para quem joga em português nada muda na tela — a mesma frase, no mesmo lugar. O que muda é que o inglês deixa de ter buracos: onde faltava tradução, antes aparecia português no meio da tela em inglês.
+
+Se você joga em inglês, atualize. O servidor passou a mandar os nomes dos itens e dos bichos em inglês, e o cliente antigo não sabe traduzi-los de volta — quem ficar na versão anterior vai ver "Wolf" e "Iron Ore" mesmo com o jogo em português.
+
+Duas contas de número estavam erradas em inglês e foram corrigidas: o preço em reais saía como R$ 1.234.56, com o mesmo ponto valendo milhar e centavo, e os números grandes saíam com ponto no lugar da vírgula. Agora cada idioma usa a pontuação dele — R$ 1.234,56 em português, R$ 1,234.56 em inglês.
+
+O nome das chaves de craft continua concordando em português: Chave Épica e Chave Lendária, e não "Chave Épico".
+
+Nenhuma outra regra do jogo mudou, e o protocolo continua o 156 — não é atualização obrigatória.
+
+28/09/2026 — A katana abre e fecha a luta
+
+A katana não rouba mais vida em todo golpe. Aquele roubo era a defesa inteira da classe, e por isso ela conseguia ser a mais rápida E a mais segura ao mesmo tempo: limpava a horda da Ilha Mágica no nível 60 com 86% de vida, acima da pistola e do anel, e ainda matando mais rápido que os dois.
+
+No lugar dele a katana ganha as pontas da luta. O saque contra um inimigo que ainda não te viu dá 2,5x de dano — aproxime-se por fora do alcance de visão dele e abra a luta com isso. E o golpe em alvo abaixo de 30% de vida dá 1,6x: a katana fecha o que começou.
+
+O roubo de vida voltou como janela da Dança: por 3 segundos depois do corte, seus golpes devolvem 25% do dano. A Dança agora tem um anel vermelho em volta do ícone enquanto a janela está aberta. É a mesma sustentação de antes, mas você escolhe a hora, e ela custa mana e recarga.
+
+Em troca, o dano contínuo da katana caiu: a Força alocada estava pagando duas vezes no ataque, e agora paga uma. As pistolas voltam a ser a maior de dano em alvo único, como sempre foi a intenção.
+
+Nenhuma outra classe mudou, e o protocolo continua o 156 — não é atualização obrigatória.
+
+28/09/2026 — Modo economia não para mais as suas skills
+
+No modo economia de energia o personagem parava de lançar TODAS as skills, inclusive a de cura. Sobravam o ataque básico e a poção — e a poção tem recarga de grupo. Era por isso que se aguentava jogando e se morria com a tela preta, no mesmo lugar e contra os mesmos bichos. O bloqueio de toque da tela preta estava levando a rotação automática junto com o dedo. Agora o AUTO segue lançando: skill de dano e, principalmente, a cura quando a vida cai. O mesmo valia com um painel grande aberto — abrir a bolsa no meio da luta também parava as suas skills, e também está resolvido.
+
+O craft ganhou a faixa LENDÁRIA: 15 receitas novas, uma por peça, liberadas no nível 50. Elas pedem a chave lendária, que cai de chefes e dungeons de nível 50 ou mais, junto com o dobro de material roxo. A peça sai no nível de item 80 — a mesma que o Aprimorar entrega ao subir de cor, então criar e aprimorar dão exatamente a mesma peça. Antes o catálogo parava no Épico e a cor laranja só vinha de baú.
+
+O Aprimorar cobrava o nível errado para subir de cor: pedia 40 para AZUL, 60 para ÉPICA e 80 para LENDÁRIA, os valores antigos. Agora cobra os mesmos do craft — 30, 40 e 50. Quem criava uma peça Rara no nível 30 não conseguia aprimorar para Rara antes do 40.
+
+28/09/2026 — Planalto da Tormenta: níveis 40–60 (protocolo 156)
+
+Atualize o jogo para explorar o Planalto da Tormenta, a quarta ilha. O porto do Último Abrigo conecta-se às Encostas dos Sentinelas, Mosteiro dos Ventos, Vale do Trovão, Forja Partida e Olho da Tempestade por estradas com rampas e um atalho. O mapa mostra nomes, níveis e acesso às duas dungeons.
+
+Novos passos da história levam pelas regiões e pelas dungeons Mosteiro dos Ventos e Forja do Titã. O Mestre oferece dois contratos repetíveis e duas diárias de dungeon. O Owlbear Primevo guarda o Vale; o Arquimago da Tormenta guarda a região do farol.
+
+A cada meia hora, uma tempestade de dez minutos alterna entre os cristais do Vale e o minério da Forja. O campo marcado ganha inimigos extras e rende 50% a mais na coleta. As caçadas comuns continuam disponíveis fora dele. Os inimigos nascem afastados das estradas.
+
+28/09/2026 — Atualização obrigatória: protocolo 155
+
+Atualize o jogo para continuar entrando nos servidores.
+
+A escada de raridade ficou de dez em dez: VERDE no nível 20, AZUL no 30, ÉPICA no 40 e LENDÁRIA no 50. Antes a épica só vinha no 60 e a lendária no 80 — e como o chefe mais alto do jogo é de nível 60, a chave lendária era uma cor que existia e não tinha de onde cair. Agora ela cai.
+
+Vale para os dois lados. As CHAVES de craft seguem a cor da faixa do chefe ou da dungeon, e o BAÚ de dungeon acompanha: o teto de grau da peça desceu junto, e a distribuição de cores subiu uma faixa inteira — o conteúdo de nível 40 a 49 passa a soltar peça Épica, e o de 50 em diante, Lendária.
+
+A tela de recompensa da dungeon é calculada no cliente, e por isso a atualização é obrigatória.
+
+28/09/2026 — Atualização obrigatória: protocolo 154
+
+Atualize o jogo para continuar entrando nos servidores.
+
+As chaves de craft AZUIS (Raro) agora caem de chefes a partir do nível 30, e não mais do 40. A faixa 30–39 ficava sem nada para construir: a chave verde já não servia e a azul ainda não vinha. A faixa verde passou a ser 20–29. A tela de recompensa da dungeon é calculada no cliente, e por isso a atualização é obrigatória.
+
+As missões agora VIAJAM SOZINHAS entre as ilhas. Com a auto missão ligada em um passo que acontece em outra ilha, o personagem caminha até o Capitão do Porto, embarca e retoma a missão sozinho ao desembarcar — antes ele chegava ao cais e parava, esperando você escolher a ilha no menu. Se a ilha ainda não foi liberada pela história, ou se o servidor dela está fora do ar, a auto missão para e diz o motivo.
+
+28/09/2026 — Ícones mais claros e completos
+
+Combinar, Ilha Mágica, Mobs e Presença agora têm ícones próprios. Pets, Aparência e Minha Ilha deixaram de reutilizar ícones de outras funções. Bolsa, Ficha, Montaria, Craft, Pulo, Sprint e Dash ganharam desenhos mais legíveis, com contornos mais leves em todo o HUD. Os botões e suas funções permanecem iguais.
+
+28/09/2026 — Atualização obrigatória: protocolo 153
+
+Atualize o jogo para continuar entrando nos servidores. Esta versão torna obrigatória a atualização com o HUD renovado, a bolsa ajustada para telas menores e as melhorias de legibilidade. Os controles e as regras de combate permanecem iguais.
+
+28/09/2026 — Interface renovada
+
+O HUD ganhou painéis em ardósia escura, textos mais claros e detalhes dourados suaves. Botões, abas, inventário, barras de vida e mana e janelas compartilham um visual mais limpo. Os botões de combate e a moldura do minimapa têm menos contornos.
+
+Corrigidos textos sobrepostos na ficha do HUD e o encaixe da bolsa em telas menores. O custo de mana das habilidades fica legível sobre cenários claros. Os controles, atalhos e regras do jogo continuam iguais.
+
+27/09/2026 — Atualização obrigatória: protocolo 152
+
+Atualize o jogo para continuar entrando nos servidores. O dano mínimo que passa por qualquer defesa foi reajustado, e essa conta também é feita no cliente — versões antigas mostrariam números que o servidor não aplica.
+
+O ajuste: quem está bem defendido agora toma de 4 a 7 por golpe nos monstros da faixa da Ilha Mágica, no lugar dos 3 a 5 da versão anterior e dos 5 a 8 de antes dela. O restante do balanceamento das hordas continua igual — inimigos espalhados nos fortes e nas ilhotas de combate, sem redução no número deles.
+
+27/09/2026 — Hordas mais justas e menos dano por golpe
+
+Os fortes e as ilhotas de combate da Ilha Mágica tinham inimigos nascendo colados uns nos outros, e por isso a horda inteira caía em cima de quem encostava nela. O número de inimigos é o mesmo — eles agora nascem espalhados, então vêm menos de uma vez. Dá para escolher a briga.
+
+O dano mínimo que passa por qualquer defesa caiu: quem está bem defendido toma bem menos por golpe. Antes, defesa alta travava num piso que ainda somava muito quando eram doze bichos ao mesmo tempo.
+
+Vale lembrar que defesa tem limite: chegando no piso, mais defesa não reduz mais nada, e o que segura uma horda é VIDA (VIT). Se você distribuiu os pontos e quer refazer, o botão "Redistribuir grátis" na Ficha devolve todos eles.
+
+27/09/2026 — Bases e nuvens em voxels
+
+As bases das Ilhas Mágicas agora usam os mesmos blocos de meio metro do terreno, com faces quadradas e camadas de rocha em degraus. Os cones facetados e os fragmentos pontudos foram removidos. As nuvens agora usam os modelos voxel do Zone14: formas variadas, luz suave em branco e azul e movimento lento pelo céu. Pontes, recursos e limites de movimento permanecem iguais.
+
+27/09/2026 — Ilhas Mágicas no céu
+
+As ilhotas agora flutuam acima das nuvens, com bases de rocha suspensas, fragmentos no ar e pontes sobre o vazio. O mar deu lugar ao céu.
+
+As ilhotas da Experiência, do Ouro e do Espólio ficaram sem pedras de mineração e sem pedras decorativas, mantendo monstros, flores e vegetação. A ilhota da Pedra continua com seus recursos.
+
+Corrigido o chão invisível fora das ilhas: o servidor usava um contorno antigo em cache, diferente do desenho atual. As bordas agora acompanham o terreno correto e empurrões também respeitam o vazio. Os caminhos entre ilhotas continuam disponíveis. Protocolo 151: atualize o cliente para entrar.
+
+27/09/2026 — Atualização obrigatória: protocolo 150
+
+Atualize o jogo para continuar entrando nos servidores. Esta versão inclui o novo visual das Ilhas Mágicas e a correção do clique que fechava o menu logo após abrir.
+
+27/09/2026 — Ilhas Mágicas renovadas e menu corrigido
+
+As Ilhas Mágicas ganharam campos verdes mais suaves, caminhos de pedra clara ligados às pontes e pequenos detalhes de cor próprios de cada ilhota. A iluminação das encostas ficou mais leve e o chão perdeu o excesso de manchas e pontilhado, deixando recursos e personagens mais fáceis de distinguir.
+
+O desenho é novo, mas as alturas, passagens, recursos, inimigos, bônus e tempo de acesso continuam iguais.
+
+O menu também deixou de fechar imediatamente em alguns cliques ou toques no botão de abrir. O toque que abre o painel agora precisa terminar antes de acionar os botões internos.
+
+27/09/2026 — O jogo em inglês
+
+Idioma no menu
+Menu › Sistema › Interface tem agora a escolha de idioma: Português ou English. A troca vale na hora, sem reiniciar e sem reconectar — o que está na tela muda junto. A escolha fica salva no aparelho, então ela vale também na tela de servidor e na de entrar, antes de qualquer login.
+
+O que está traduzido
+HUD, menus, bolsa, ficha, loja, missões, história, nomes e descrições de item, avisos do servidor e os e-mails da sua conta. São cerca de 2.300 frases. O que ainda não tiver tradução aparece em português, sem erro e sem buraco na tela: falta de verbete nunca quebra nada. Esta tela de Novidades é uma das que continuam em português.
+
+Nada muda pra quem joga em português
+A escolha começa em português e o servidor não mudou de língua: ele continua mandando português, e é o seu jogo que traduz ao desenhar. Por isso os dois idiomas convivem no mesmo servidor, na mesma dungeon e no mesmo grupo.
+
+27/09/2026 — Grupo na caixa das missões
+
+O grupo tinha uma caixa só dele, flutuando ao lado das missões. Agora ele é uma aba: a caixa da esquerda tem Missões e Grupo, e o clique troca entre as duas. Cada membro é uma linha compacta, com o nome e a vida dentro da própria barra, e clicar num deles o seleciona. Sem grupo, a aba vira o convite.
+
+Clicar em Missões deixou de abrir o menu de todas as missões — ele só volta pra aba das missões de agora. A lista completa continua no Menu.
+
+Dentro da dungeon, onde a linha da missão da instância ocupa esse canto, o grupo continua no painel ao lado dela.
+
+27/09/2026 — O relógio da Ilha Mágica saiu da frente
+
+A tarja com o tempo restante, o botão de somar tempo e o de sair da ilha desenhava por cima de todo o resto da interface, inclusive de menus abertos. Agora ela desenha atrás: qualquer painel passa por cima dela, e com um menu grande aberto ela sai da frente por completo — inclusive os botões, que antes ainda pegavam o toque por baixo do menu.
+
+27/09/2026 — Atualização obrigatória
+
+Esta versão é obrigatória: as versões anteriores do jogo não conectam mais. As telas de criação e de refino passaram a mostrar os atributos pela régua nova de equipamento (a escada), e só a versão nova mostra os mesmos números que o servidor aplica. Se o jogo avisar “Atualização necessária”, use o botão para abrir o site e baixar a versão nova.
+
+27/09/2026 — A escada: defesa que subtrai, e equipamento que envelhece
+
+Como o golpe é calculado
+A defesa deixou de ser porcentagem. Agora o dano de um golpe é o ataque de quem bate menos a defesa de quem apanha, com um mínimo de 10% do golpe que sempre passa. Vale nos dois sentidos: contra você e contra os mobs. Um mob mais forte fura mais a mesma armadura, e uma armadura boa segura de verdade um mob fraco. O escudo da espada e o peso da armadura pesada continuam reduzindo em porcentagem, por cima da subtração.
+
+O que se espera em cada nível
+Cada nível tem um ataque, uma defesa e uma vida esperados, e todo mob, chefe e poder recomendado saem dessa régua. O poder recomendado das dungeons e da Ilha Mágica agora é o poder de um personagem equipado com a faixa do nível, então dá para comparar direto com o da sua ficha. Ficar com o equipamento de dez níveis atrás passa a ser sentido: os mobs furam mais e você mata mais devagar.
+
+Itens e refino
+As peças passam a nascer com atributos na escala do nível delas, e as que você já tem foram recalculadas ao entrar. O refino virou +4% dos atributos da peça por nível, sem a parte fixa de antes: +12 vale +48%, o equivalente a uns quinze níveis de adiantamento. A defesa das armaduras leve, média e pesada ficou mais próxima entre si.
+
+Mobs, fortes e Ilha Mágica
+Os mobs de cada nível ganharam vida, ataque e defesa derivados da régua; as espécies mantêm a personalidade de sempre (o urso continua o urso). Nos fortes e nas ilhotas da Ilha Mágica a horda passa a somar de verdade: quem está na faixa precisa de poção e de cuidado ao puxar, o escudeiro é quem segura a horda, e o refino compra a horda. Os mobs comuns da Ilha Mágica deixaram de ser enfraquecidos; os [FORTE] continuam mais fortes. O Ermo perdeu o bônus extra de vida e dano que tinha por cima.
+
+Chefes
+O golpe comum dos chefes passou a doer contra qualquer armadura (o telegrafado continua tirando uma fração da vida de quem fica dentro), e a vida deles agora acompanha a régua do nível, sem teto.
+
+27/09/2026 — Prévia do personagem e das skins
+
+Personagem no menu Aparência
+O menu Aparência agora tem uma prévia 3D do personagem ao lado dos seletores. Rosto, cabelo, chapéu, cor, pele e skin mudam na prévia enquanto você escolhe. Arraste o boneco para girar e conferir outros ângulos. Em telas menores, os seletores rolam mantendo o personagem e o botão Aplicar visíveis. Fechar sem aplicar descarta as mudanças.
+
+Skins da loja
+A aba Aparência da loja e a confirmação de compra mostram a skin em 3D no seu personagem, preservando as outras escolhas de aparência. Você vê como a roupa ou o chapéu ficam antes de confirmar a compra. A skin comprada chega como item na bolsa; use o item para desbloqueá-la no guarda-roupa daquele personagem e depois escolha-a no menu Aparência.
+
+27/09/2026 — Link de atualização na conexão
+
+Versão incompatível e acesso aos downloads
+Quando o servidor recusar a conexão por “protocol mismatch”, o jogo mostra “Atualização necessária” com o botão “Abrir site para atualizar”. Ele abre mmo.brunji.com.br na seção de downloads em qualquer plataforma. O endereço fica visível na tela, inclusive se não for possível abrir o navegador automaticamente. O aviso funciona mesmo se a consulta de atualizações falhar ou se você tiver escolhido “Agora não”, e permanece visível quando a conexão é encerrada.
+
+27/09/2026 — Ataques à distância, recompensas e auras de animais
+
+Dano dos mobs à distância
+Corrigido o movimento dos projéteis no servidor: os tiros podiam aparecer voando, mas permaneciam na origem na simulação e não atingiam o jogador. Flechas e projéteis mágicos agora percorrem a trajetória e aplicam o dano no impacto. A colisão considera o caminho percorrido entre ticks para não perder acertos de tiros rápidos.
+
+Recompensas antes de entrar
+O menu Dungeons ganhou a aba Recompensas. Selecione a dungeon e o estágio para ver os drops possíveis do boss, o baú de conclusão e os bônus da primeira vitória. Os drops do boss vêm do catálogo ativo do servidor. A lista tem ícones e rolagem por mouse ou toque.
+A primeira conclusão mostra se ainda está disponível ou já foi concluída naquele estágio. O bônus semanal mostra se a conta já o recebeu nesta semana. A estreia concede um equipamento aleatório e uma chave; o bônus semanal concede outro equipamento. As recompensas de primeira vitória vão para o Correio ao vencer com entrada/recompensa disponível.
+
+Auras de montarias e pets
+Montarias e os três pets equipados agora têm aura da própria criatura, com a cor da raridade e intensidade de tier/refinamento, como os equipamentos. O efeito acompanha o corpo animado, volta ao entrar no jogo e atualiza sem tirar e recolocar o item. Montarias antigas sem instância também usam a cor correta. Itens comuns continuam sem aura, seguindo a regra dos equipamentos.
+
+27/09/2026 — Grupo, XP e ações de jogadores
+
+XP em grupo
+A XP do abate é dividida igualmente entre os membros conectados na mesma área/instância, a até 25 m de quem derrotou o monstro. Dois participantes dão +10% de XP total (55% para cada um); três dão +20% (40% cada); quatro dão +30% (32,5% cada). O bônus para de crescer em quatro: com cinco participantes, fica +30% no total (26% cada). Sem aliados próximos, você recebe 100%, sem bônus de grupo. Frações finais de XP são descartadas; bônus individuais são aplicados depois.
+Corrigida uma falha que entregava a XP compartilhada apenas ao primeiro membro encontrado. A tabela e as regras aparecem em Menu > Grupo.
+
+Grupo na HUD
+Um painel recolhível ao lado das quests mostra os membros e suas barras de vida. Quem não está visível na mesma área aparece como “Fora de alcance”. Clique em um membro para selecioná-lo ou em “Gerenciar grupo” para abrir os convites e as regras.
+
+Ações do jogador
+Clique na barra de vida do jogador selecionado, no alto da tela, para expandir as opções Adicionar amigo, Seguir jogador e Convidar para grupo. Seguir acompanha o movimento mantendo distância, sem iniciar ataque. Movimento manual, outro destino, Esc ou a saída do jogador da área encerram o acompanhamento.
+
+27/09/2026 — Aparência, skins e atualização
+
+Aparência e skins
+O Menu > Aparência permite escolher rosto, cabelo, cor, pele e skins desbloqueadas. O menu se adapta a telas menores e pode ser rolado. Fechar a prévia sem aplicar restaura sua aparência anterior. Corrigida a seleção de chapéus.
+
+Auras ao entrar
+As auras do seu personagem acompanham os equipamentos recebidos no login, sem precisar tirar e colocar os itens novamente.
+
+Aviso de atualização
+Na entrada, o jogo verifica se há uma versão nova para sua plataforma e mostra “Cliente desatualizado”, com um botão para atualizar. No computador, abre o site; no celular, abre o canal de distribuição disponível. Você pode escolher “Agora não”. Uma falha na consulta não impede o login.
+No iPhone, o botão abre o TestFlight. No Android, enquanto a distribuição for por APK, ele abre o download oficial. A abertura de links no Android também foi implementada.
+O aviso tem uma opção para continuar no login sem atualizar naquele momento.
+
+26/09/2026 — Controles e correções
+
+Controles para computador
+WASD ou setas movem o personagem. Segure o botão direito do mouse e arraste para girar a câmera; use a roda para ajustar o zoom.
+As teclas 1, 2 e 3 usam habilidades, incluindo o teclado numérico. Espaço ataca, R pula e G defende.
+
+Correções gráficas
+Corrigida a falha no shader da água que podia fechar o jogo ao carregar os personagens após o login no Mac. A correção também está nas builds Windows e Android.
+Melhorada a compatibilidade gráfica no Windows quando o driver não oferece todas as funções de desenho em lote.
+
+Novidades na entrada
+Os patch notes agora aparecem na entrada quando há novidades. Você pode reabrir esta lista pelo botão “Novidades” nas telas de servidor e login. A lista tem rolagem para caber em telas menores. As notas também ficam disponíveis sem internet.
+
+Visibilidade de jogadores
+Jogadores da mesma zona e instância passam a ser enviados mesmo longe, sem disputar o limite de visibilidade com mobs e recursos. A mudança depende da atualização do servidor.
+
+Autodefesa no PvP
+Mesmo em modo Pacífico, você pode revidar contra quem te atacou nos últimos 15 segundos, sem ganhar PK points por derrotar esse agressor. Safe zones continuam sem combate.

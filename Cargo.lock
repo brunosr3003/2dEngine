@@ -2123,6 +2123,7 @@ dependencies = [
  "futures-util",
  "glam 0.29.3",
  "hecs",
+ "jsonwebtoken",
  "once_cell",
  "parking_lot",
  "reqwest",

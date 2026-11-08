@@ -15,6 +15,45 @@ fn avisa(to: &mpsc::UnboundedSender<ServerMessage>, aviso: AvisoLoja) {
     let _ = to.send(ServerMessage::Loja { aviso });
 }
 
+/// Compra TP (simulada ou Google Play real, conforme `google_play`), manda o
+/// resultado pro cliente e conta telemetria quando credita. Compartilhado
+/// por `PedidoLoja::ComprarTp` e `PedidoLoja::ComprarTpGooglePlay` — so' o
+/// `google_play` muda entre as duas.
+async fn comprar_tp_e_responder(
+    central: &sqlx::PgPool,
+    conta: &str,
+    nome_tel: &str,
+    to: &mpsc::UnboundedSender<ServerMessage>,
+    pacote: u16,
+    pedido: &str,
+    google_play: Option<banco::GooglePlayCompra<'_>>,
+) {
+    match banco::comprar_tp(
+        central,
+        banco::Provedor::do_ambiente(),
+        conta,
+        pacote,
+        pedido,
+        google_play,
+    )
+    .await
+    {
+        Ok(r) => {
+            if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
+                let codigo = Produto::Tp(pacote).codigo();
+                crate::telemetria::conta_de(nome_tel, "loja_pedido", &codigo, 1);
+                crate::telemetria::conta_de(nome_tel, "loja_receita_centavos", "BRL", p.centavos as i64);
+                crate::telemetria::conta_de(nome_tel, "loja_tp_vendida", codigo, p.total() as i64);
+            }
+            resultado(to, r.ok(), r.texto());
+        }
+        Err(e) => {
+            tracing::warn!("loja: compra de TP falhou: {e:#}");
+            resultado(to, false, "The shop is unavailable right now.");
+        }
+    }
+}
+
 fn resultado(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl Into<String>) {
     avisa(
         to,
@@ -71,7 +110,7 @@ impl GameWorld {
                 &to,
                 AvisoLoja::Estado(EstadoLoja {
                     ligada: false,
-                    simulado: banco::simulado(),
+                    simulado: banco::Provedor::do_ambiente() == banco::Provedor::Simulado,
                     ..Default::default()
                 }),
             );
@@ -80,7 +119,9 @@ impl GameWorld {
         };
         let compra = matches!(
             pedido,
-            PedidoLoja::ComprarTp { .. } | PedidoLoja::ComprarItem { .. }
+            PedidoLoja::ComprarTp { .. }
+                | PedidoLoja::ComprarTpGooglePlay { .. }
+                | PedidoLoja::ComprarItem { .. }
         );
         if compra {
             let agora = self.sim_time_s;
@@ -101,37 +142,25 @@ impl GameWorld {
             match pedido {
                 PedidoLoja::Estado => {}
                 PedidoLoja::ComprarTp { pacote, pedido } => {
-                    match banco::comprar_tp(
-                        &central,
-                        banco::Provedor::do_ambiente(),
-                        &conta,
-                        pacote,
-                        &pedido,
+                    comprar_tp_e_responder(
+                        &central, &conta, &nome_tel, &to, pacote, &pedido, None,
                     )
-                    .await
-                    {
-                        Ok(r) => {
-                            if let (Resposta::Feito { .. }, Some(p)) = (&r, cat::pacote(pacote)) {
-                                let codigo = Produto::Tp(pacote).codigo();
-                                crate::telemetria::conta_de(&nome_tel, "loja_pedido", &codigo, 1);
-                                crate::telemetria::conta_de(&nome_tel, 
-                                    "loja_receita_centavos",
-                                    "BRL",
-                                    p.centavos as i64,
-                                );
-                                crate::telemetria::conta_de(&nome_tel, 
-                                    "loja_tp_vendida",
-                                    codigo,
-                                    p.total() as i64,
-                                );
-                            }
-                            resultado(&to, r.ok(), r.texto());
-                        }
-                        Err(e) => {
-                            tracing::warn!("loja: compra de TP falhou: {e:#}");
-                            resultado(&to, false, "The shop is unavailable right now.");
-                        }
-                    }
+                    .await;
+                }
+                // Mesma compra, aprovada pelo Google Play real (Android) em
+                // vez do provedor simulado — so' o purchase_token muda.
+                PedidoLoja::ComprarTpGooglePlay {
+                    pacote,
+                    pedido,
+                    purchase_token,
+                } => {
+                    let google_play = Some(banco::GooglePlayCompra {
+                        purchase_token: &purchase_token,
+                    });
+                    comprar_tp_e_responder(
+                        &central, &conta, &nome_tel, &to, pacote, &pedido, google_play,
+                    )
+                    .await;
                 }
                 PedidoLoja::ComprarItem {
                     produto,

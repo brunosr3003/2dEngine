@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 export JAVA_HOME="${JAVA_HOME:-$HOME/opt/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 ADB="$ANDROID_HOME/platform-tools/adb"
-APK=target/android-artifacts/release/apk/client.apk
+APK=crates/client/android/app/build/outputs/apk/debug/app-debug.apk
 
 swallow() { hyprctl eval "hl.config({ misc = { enable_swallow = $1 } })" >/dev/null 2>&1; }
 trap 'swallow true' EXIT INT TERM
@@ -99,7 +99,7 @@ if [ "${1:-}" = "--instalar" ]; then
     (
         "$ADB" wait-for-device
         until [ "$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do sleep 2; done
-        "$ADB" install -r "$APK" && "$ADB" shell monkey -p com.brunji.tempest -c android.intent.category.LAUNCHER 1 >/dev/null
+        "$ADB" install -r "$APK" && "$ADB" shell monkey -p com.niertech.tempest -c android.intent.category.LAUNCHER 1 >/dev/null
         sleep 12
         casa_a_rotacao
     ) &

@@ -47,22 +47,33 @@ echo "== pacotes do SDK (o maior e' a imagem de sistema, ~1,5 GB)"
   "platform-tools" \
   "emulator" \
   "platforms;android-34" \
+  "platforms;android-36" \
   "build-tools;34.0.0" \
+  "build-tools;35.0.0" \
   "ndk;25.2.9519653" \
-  "system-images;android-34;google_apis;x86_64"
+  "system-images;android-34;google_apis_playstore;x86_64"
+# android-36 e build-tools 35.0.0 sao pro compileSdk/targetSdk 36 do build
+# Gradle (crates/client/android/) — a propria AGP baixa isso sozinha se
+# faltar, mas deixar explicito aqui evita depender disso numa maquina nova.
 
 AVD="$HOME/.android/avd/tempest.avd"
 if [ ! -d "$AVD" ]; then
-  echo "== AVD tempest (Pixel 6, x86_64, GPU do host, teclado fisico)"
+  # `google_apis_playstore`, nao `google_apis`: a imagem sem "_playstore" tem
+  # um com.android.vending de MENTIRA (versionName 1.8, nao resolve market://
+  # nem loga) — so' serve pra satisfazer o GMS, nao da' pra testar a Play
+  # Store de verdade nela. Descoberto em 09/10/2026 tentando logar um tester
+  # de teste fechado no emulador.
+  echo "== AVD tempest (Pixel 6, x86_64, GPU do host, teclado fisico, Play Store)"
   echo no | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd -n tempest \
-    -k "system-images;android-34;google_apis;x86_64" -d pixel_6 >/dev/null
+    -k "system-images;android-34;google_apis_playstore;x86_64" -d pixel_6 >/dev/null
   # `initialOrientation = landscape` porque o jogo e' paisagem: se o aparelho
   # nascer EM PE', a janela do emulador precisa girar depois — e cada giro
   # RECENTRA a janela, o que a joga pra fora da tela (y negativo). Nascendo
   # deitado nao ha' giro nenhum. Ver docs/BUILD.md.
   sed -i 's/^hw.keyboard=.*/hw.keyboard=yes/; s/^hw.ramSize=.*/hw.ramSize=4096/;
           s/^hw.gpu.enabled=.*/hw.gpu.enabled=yes/; s/^hw.gpu.mode=.*/hw.gpu.mode=host/;
-          s/^hw.initialOrientation=.*/hw.initialOrientation=landscape/' "$AVD/config.ini"
+          s/^hw.initialOrientation=.*/hw.initialOrientation=landscape/;
+          s/^PlayStore.enabled=.*/PlayStore.enabled=yes/' "$AVD/config.ini"
 fi
 
 echo "== pronto"

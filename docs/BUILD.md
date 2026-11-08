@@ -67,7 +67,7 @@ python3 -m http.server 8080 --directory web
 ## Android (APK)
 
 Roda neste PC, sem root: JDK 17 em `~/opt/jdk-17`, SDK em `~/Android/Sdk`
-(NDK 25.2, plataforma 34) e o AVD `tempest` (Pixel 6, x86_64, GPU do host).
+(NDK 25.2, plataformas 34 e 36) e o AVD `tempest` (Pixel 6, x86_64, GPU do host).
 
 ```bash
 scripts/android-sdk-setup.sh           # uma vez: JDK + SDK + NDK + emulador + AVD (~6 GB)
@@ -75,22 +75,50 @@ scripts/run-android-emulator.sh --instalar   # sobe o emulador ao lado do termin
 scripts/build-android.sh --abrir       # build + install + abre no aparelho/emulador conectado
 ```
 
-O APK sai em `target/android-artifacts/release/apk/client.apk`, com arm64
-(celular) e x86_64 (emulador), assinado com a chave de debug. Config em
-`[package.metadata.android]` do `crates/client/Cargo.toml`: pacote
-`com.brunji.tempest`, paisagem, permissão de internet, ícone em
-`crates/client/android/res`, e a pasta `assets/` da raiz como assets do APK.
+**Build via Gradle** (migrado de `cargo-quad-apk` em 03/11/2026, pra' poder
+usar a Play Billing Library — ver docs/LOJA.md): o projeto Android de verdade
+fica em `crates/client/android/` (módulo `app`, `build.gradle.kts`,
+`gradlew`). `scripts/build-android.sh` so' exporta as variáveis do NDK (linker
+e `CC_*`/`AR_*` por alvo, lidas pelas tasks `cargoBuildClientArm64`/
+`cargoBuildClientX86_64` do `app/build.gradle.kts`) e chama
+`./gradlew --no-daemon assembleDebug` — **sempre `--no-daemon`**: um daemon
+reaproveitado manteria o ambiente da primeira chamada, não da atual. O APK
+sai em `crates/client/android/app/build/outputs/apk/debug/app-debug.apk`,
+com `arm64-v8a` (celular) e `x86_64` (emulador), assinado com a chave de
+debug (keystore deste PC com alias `androidebugkey`, apontado na mão em
+`signingConfigs.debug` do `app/build.gradle.kts` porque não é o alias padrão
+`androiddebugkey` que o plugin espera).
 
-Armadilhas já resolvidas (ver comentários nos scripts):
+Config principal: `crates/client/android/app/build.gradle.kts` (pacote
+`com.niertech.tempest`, compileSdk/targetSdk 36, minSdk 24, Billing Library
+7.1.1) e `AndroidManifest.xml` escrito à mão (paisagem, `INTERNET`, e a
+`<queries>` da Play Store que a Billing Library precisa pra bindar o
+serviço). O `[package.metadata.android]` do `crates/client/Cargo.toml`
+**não é mais lido por nada** — é o Gradle quem manda agora; ficou só como
+histórico de quais flags existiam (ícone, orientação, SDK mínima).
 
-- `cargo-quad-apk` 0.1.4 do crates.io embute o Cargo 1.61 e recusa o
-  workspace (`version.workspace`). O script instala a revisão fixada do GitHub.
-- O quad-apk carrega `lib<fim do package_name>.so` (`libtempest.so`), mas
-  gera `libclient.so`. O script renomeia dentro do APK mantendo a compressão
-  de cada entrada (`resources.arsc` tem que ficar sem compressão) e assina de novo.
+O `cdylib` sai do MESMO `src/main.rs` do binário desktop: o crate ganhou um
+`[lib]` com `crate-type = ["cdylib", "rlib"]` apontando pro mesmo path do
+`[[bin]]`. O Android não roda um executável — carrega uma lib compartilhada
+via JNI (`MainActivity.java` chama `System.loadLibrary("client")`) — e os
+símbolos `Java_quad_1native_...` que a Activity invoca vêm do miniquad e do
+`crates/client/src/billing_android.rs`, exportados automaticamente por
+qualquer cdylib que inclua essas dependências (não tem nada de especial no
+`main.rs` em si). Conferir com
+`llvm-nm -D libclient.so | grep Java_` depois de qualquer mudança grande no
+grafo de dependências do cliente.
+
+Armadilhas já resolvidas (ver comentários nos arquivos):
+
 - Android 12+ exige `android:exported` na activity.
 - `.vox` no Android vêm do AssetManager, cuja raiz já é `assets/`: o `vox.rs`
   tira esse prefixo.
+- `cargo rustc --crate-type cdylib` sozinho dá "cannot mix `bin` crate type
+  with others" num crate que só tem `[[bin]]` — por isso o `[lib]` separado,
+  em vez de tentar forçar o crate-type na hora de buildar.
+- O keystore de debug deste PC tem o alias com um "d" faltando
+  (`androidebugkey`); o `signingConfigs.debug` do Gradle aponta pra ele na
+  mão em vez de usar o default do plugin.
 - **O AVD nasce em paisagem** (`hw.initialOrientation = landscape`), porque o
   jogo é paisagem. Se nascesse em pé, a janela mostraria o quadro deitado
   dentro do quadro retrato e o emulador mapearia o toque pela geometria
@@ -228,7 +256,10 @@ macroquad 0.4.16. Isso detecta erros GLSL; não substitui testes em cada driver.
 ### Patch notes obrigatórios nas builds do cliente
 
 Antes de distribuir uma mudança, escreva a data e as novidades para o jogador
-em `docs/PATCHNOTES.txt`. Depois rode `python3 scripts/check-release-notes.py --seal`
+em `docs/PATCHNOTES.txt`. Esse texto é o painel "What's New in Tempest": **sempre em inglês**, nunca
+em português, e genérico para o jogador (uma entrada por dia de atualização, com
+tópicos curtos: região nova, boss novo, dungeon nova, sistema novo, balanceamento,
+correções). O detalhe técnico vai em `docs/CHANGELOG.md`, em português, para o time. Depois rode `python3 scripts/check-release-notes.py --seal`
 e versione o texto e `docs/patchnotes-release.json` junto com o código.
 Os scripts Android, iOS, Mac e Windows bloqueiam o empacotamento se o cliente
 ou os assets mudaram sem notas atualizadas. Rebuild do mesmo código reutiliza

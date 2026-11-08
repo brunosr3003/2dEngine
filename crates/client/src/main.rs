@@ -16,6 +16,8 @@ mod auto_resumo;
 mod avisos;
 mod banco_ui;
 mod bicho;
+#[cfg(target_os = "android")]
+mod billing_android;
 mod bolsa;
 mod colecao;
 mod craft_ui;
@@ -438,6 +440,11 @@ struct Jogo {
     joystick: joystick::Joystick,
     rede: hud::Rede,
     ultimo_ping: f64,
+    /// Instante do ultimo evento que chegou do servidor. O servidor manda o
+    /// mundo ~30x por segundo e responde o Ping a cada segundo: silencio longo
+    /// durante o jogo e' conexao MUDA (rede movel, tunel segurando o socket),
+    /// que o sistema pode levar minutos pra declarar morta. Ver `pump_rede`.
+    ultimo_dado: f64,
     /// Marca da ultima janela de banda: instante e total de bytes.
     banda_marca: (f64, u64),
     info: hud::Info,
@@ -529,6 +536,18 @@ struct Jogo {
     /// → Ilha Mágica.
     dica_da_trava: Option<f64>,
     nivel_ui: nivel_ui::NivelUi,
+}
+
+// O glue Java/C do miniquad pro Android (QuadNative.activityOnCreate) chama
+// `quad_main()` direto via dlsym — nao passa por um executavel `main` normal
+// como nas outras plataformas. `#[macroquad::main]` so' gera um `fn main()`
+// comum; sem este shim o dlopen falha de cara com "cannot locate symbol
+// quad_main" (a ferramenta antiga, cargo-quad-apk, cuidava disso por fora;
+// a migracao pro Gradle puro perdeu esse passo).
+#[cfg(target_os = "android")]
+#[no_mangle]
+unsafe extern "C" fn quad_main() {
+    main();
 }
 
 #[macroquad::main(window_conf)]
@@ -979,6 +998,7 @@ async fn main() {
         joystick: joystick::Joystick::default(),
         rede: hud::Rede::default(),
         ultimo_ping: 0.0,
+        ultimo_dado: 0.0,
         banda_marca: (0.0, 0),
         info: hud::Info::default(),
         chat: avisos::Avisos::default(),
@@ -1581,6 +1601,7 @@ impl Jogo {
         self.rede = hud::Rede::default();
         self.banda_marca = (get_time(), 0);
         self.ultimo_ping = 0.0;
+        self.ultimo_dado = get_time();
         self.net = Some(Net::connect(format!("ws://{host}")));
         self.tela = Tela::Conectando;
     }
@@ -1613,10 +1634,27 @@ impl Jogo {
     }
 
     fn pump_rede(&mut self) {
-        let eventos: Vec<NetEvent> = match &self.net {
+        let mut eventos: Vec<NetEvent> = match &self.net {
             Some(n) => n.poll(),
             None => return,
         };
+        // CONEXAO MUDA: o socket nao fecha, mas nada chega. Os mobs paravam,
+        // o dano sumia e o personagem nao andava ate' o jogador sair e entrar
+        // de novo. Sem nada do servidor por SILENCIO_MAX_S jogando, vira uma
+        // queda comum e passa pelo mesmo caminho de reconexao.
+        const SILENCIO_MAX_S: f64 = 8.0;
+        let agora = get_time();
+        if !eventos.is_empty() {
+            self.ultimo_dado = agora;
+        } else if matches!(self.tela, Tela::Jogando)
+            && agora - self.ultimo_dado > SILENCIO_MAX_S
+        {
+            println!("[reconexao] servidor mudo ha' {:.0} s", agora - self.ultimo_dado);
+            self.ultimo_dado = agora;
+            eventos.push(NetEvent::Disconnected(
+                "no data from the server for a few seconds".into(),
+            ));
+        }
         for ev in eventos {
             match ev {
                 NetEvent::Connected => self.envia(ClientMessage::Handshake {
@@ -6438,8 +6476,12 @@ impl Jogo {
                 None => {}
             }
         }
-        // Montaria: ao lado da bateria, sempre na tela.
-        {
+        // Montaria, sprint, dash e pulo: na tela sempre que NENHUM painel
+        // grande estiver aberto. Eles desenham antes das janelas, entao com a
+        // loja (ou qualquer painel grande) aberta ficavam escondidos por baixo
+        // dela e continuavam pegando o toque: comprar uma skin que caia em
+        // cima do botao de montaria disparava "equipe uma montaria".
+        if !painel {
             let montado = self.eu_montado();
             if montado {
                 self.montarias.montou();
@@ -6448,17 +6490,15 @@ impl Jogo {
             if hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
                 self.alternar_montaria();
             }
-        }
-        if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
-            self.corrida.alternar(self.correndo_auto);
-        }
-        // Dash ocupa o antigo quarto slot do arco; Pulo subiu uma fileira.
-        let dash_restante = (self.dash_recarga.0 - get_time()).max(0.0) as f32;
-        if hud::draw_dash(&z, dash_restante, self.dash_recarga.1) {
-            self.dash_toque = true;
-        }
-        // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
-        {
+            if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
+                self.corrida.alternar(self.correndo_auto);
+            }
+            // Dash ocupa o antigo quarto slot do arco; Pulo subiu uma fileira.
+            let dash_restante = (self.dash_recarga.0 - get_time()).max(0.0) as f32;
+            if hud::draw_dash(&z, dash_restante, self.dash_recarga.1) {
+                self.dash_toque = true;
+            }
+            // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
             let no_ar = self
                 .world
                 .self_id
@@ -6467,6 +6507,9 @@ impl Jogo {
             let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
             self.pulo_toque |= tocou;
             self.pulo_segurando = segurando;
+        } else {
+            // Painel aberto: soltar o pulo segurado, pra nao ficar preso.
+            self.pulo_segurando = false;
         }
         // A bateria do modo economia fica SEMPRE na tela, com ou sem painel.
         if hud::draw_botao_economia(&z) {

@@ -86,6 +86,16 @@ pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+/// Dados da compra do Google Play Billing que o cliente mandou, so' pra
+/// passar pro `Provedor` sem acoplar este modulo ao tipo de rede
+/// (`shared::loja::PedidoLoja`). So' o `purchase_token` — o `product_id` e'
+/// calculado em `loja_google_play::id_do_produto` a partir do `pacote.id`,
+/// nunca confiado do cliente (docs/LOJA.md).
+#[derive(Debug, Clone, Copy)]
+pub struct GooglePlayCompra<'a> {
+    pub purchase_token: &'a str,
+}
+
 /// A montaria virou ITEM de bolsa e a skin deixou de existir
 /// (docs/MONTARIAS.md). Esta migracao apaga as posses antigas e devolve em TP
 /// tudo que foi comprado nelas — a decisao foi comecar do zero no sistema
@@ -140,27 +150,35 @@ async fn migrar_montarias_para_item(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-/// Pagamento simulado (auto-aprovado) ligado? Padrao: SIM, ate' existir um
-/// provedor de verdade. `PAGAMENTO_SIMULADO=0` desliga (e a compra de TP
-/// passa a ser recusada).
+/// Pagamento simulado (auto-aprovado) ligado? Padrao: SIM, exceto quando o
+/// Google Play real esta' configurado (`loja_google_play::configurado`) —
+/// nesse caso `do_ambiente` usa o provedor real e esta flag nem e' olhada.
+/// `PAGAMENTO_SIMULADO=0` desliga (e a compra de TP passa a ser recusada).
 pub fn simulado() -> bool {
     std::env::var("PAGAMENTO_SIMULADO").map_or(true, |v| v.trim() != "0")
 }
 
 /// Quem cobra.
 ///
-/// ONDE ENTRA O PROVEDOR REAL: uma variante nova (ex. `MercadoPago`,
+/// `GooglePlay` confere a compra na Android Publisher API
+/// (`loja_google_play::verificar`) em vez de aprovar na hora — so' entra
+/// quando os env vars da service account estao presentes
+/// (`do_ambiente`), senao' o comportamento de dev/teste nao muda.
+///
+/// ONDE ENTRA O PROVEDOR WEB/PC REAL: uma variante nova (ex. `MercadoPago`,
 /// `Stripe`) cujo `iniciar` cria a cobranca na API dele e devolve
 /// `Pendente { url }` (checkout/Pix). O provedor chama o webhook no `web`
 /// (HTTPS, assinatura conferida), e o webhook chama `confirmar_pagamento` —
 /// que e' idempotente, entao webhook repetido nao credita duas vezes.
 ///
 /// No iOS a App Store exige In-App Purchase pra bem digital: la' o
-/// "provedor" e' o recibo da Apple conferido no servidor (docs/LOJA.md).
+/// "provedor" e' o recibo da Apple conferido no servidor (docs/LOJA.md,
+/// ainda nao implementado).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provedor {
     Simulado,
     Desligado,
+    GooglePlay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,7 +197,9 @@ pub enum Aprovacao {
 
 impl Provedor {
     pub fn do_ambiente() -> Provedor {
-        if simulado() {
+        if crate::loja_google_play::configurado() {
+            Provedor::GooglePlay
+        } else if simulado() {
             Provedor::Simulado
         } else {
             Provedor::Desligado
@@ -190,10 +210,16 @@ impl Provedor {
         match self {
             Provedor::Simulado => "simulado",
             Provedor::Desligado => "desligado",
+            Provedor::GooglePlay => "google_play",
         }
     }
 
-    pub async fn iniciar(&self, pedido: &str, _pacote: &PacoteTp) -> Aprovacao {
+    pub async fn iniciar(
+        &self,
+        pedido: &str,
+        pacote: &PacoteTp,
+        google_play: Option<GooglePlayCompra<'_>>,
+    ) -> Aprovacao {
         match self {
             Provedor::Simulado => Aprovacao::Aprovado {
                 externo: format!("sim-{pedido}"),
@@ -201,6 +227,19 @@ impl Provedor {
             Provedor::Desligado => Aprovacao::Recusado {
                 motivo: "Payment unavailable right now.".into(),
             },
+            Provedor::GooglePlay => {
+                let Some(gp) = google_play else {
+                    return Aprovacao::Recusado {
+                        motivo: "Missing Google Play purchase data.".into(),
+                    };
+                };
+                match crate::loja_google_play::verificar(pacote, gp.purchase_token).await {
+                    Ok(externo) => Aprovacao::Aprovado { externo },
+                    Err(e) => Aprovacao::Recusado {
+                        motivo: e.to_string(),
+                    },
+                }
+            }
         }
     }
 }
@@ -243,13 +282,15 @@ impl Resposta {
     }
 }
 
-/// Compra de pacote de TP com dinheiro.
+/// Compra de pacote de TP com dinheiro. `google_play` so' importa quando
+/// `provedor` e' `Provedor::GooglePlay`; os outros provedores ignoram.
 pub async fn comprar_tp(
     central: &PgPool,
     provedor: Provedor,
     conta: &str,
     pacote_id: u16,
     pedido: &str,
+    google_play: Option<GooglePlayCompra<'_>>,
 ) -> Result<Resposta> {
     if !cat::pedido_valido(pedido) {
         return Ok(Resposta::recusa("Invalid order."));
@@ -288,15 +329,15 @@ pub async fn comprar_tp(
         "recusado" => return Ok(Resposta::recusa("Payment refused.")),
         _ => {}
     }
-    match provedor.iniciar(pedido, pacote).await {
-        Aprovacao::Aprovado { externo } => confirmar_pagamento(central, pedido, &externo).await,
+    let resposta = match provedor.iniciar(pedido, pacote, google_play).await {
+        Aprovacao::Aprovado { externo } => confirmar_pagamento(central, pedido, &externo).await?,
         Aprovacao::Pendente { url } => {
             sqlx::query("UPDATE loja_pedidos SET externo = $2, atualizado_em = NOW() WHERE id = $1 AND status = 'pendente'")
                 .bind(pedido)
                 .bind(&url)
                 .execute(central)
                 .await?;
-            Ok(Resposta::Pendente { url })
+            return Ok(Resposta::Pendente { url });
         }
         Aprovacao::Recusado { motivo } => {
             sqlx::query("UPDATE loja_pedidos SET status = 'recusado', motivo = $2, atualizado_em = NOW() WHERE id = $1 AND status = 'pendente'")
@@ -304,9 +345,23 @@ pub async fn comprar_tp(
                 .bind(&motivo)
                 .execute(central)
                 .await?;
-            Ok(Resposta::recusa(motivo))
+            return Ok(Resposta::recusa(motivo));
+        }
+    };
+    // Reconhece na Google DEPOIS de creditar (nunca antes: reconhecer uma
+    // compra que acabasse nao creditando deixaria o jogador sem TP e a
+    // Google sem saber que precisa reembolsar sozinha). Best-effort: a TP
+    // ja' esta' na conta de qualquer jeito.
+    if let (Provedor::GooglePlay, Some(gp), Resposta::Feito { .. }) =
+        (provedor, google_play, &resposta)
+    {
+        if let Err(e) =
+            crate::loja_google_play::reconhecer_best_effort(pacote.id, gp.purchase_token).await
+        {
+            tracing::warn!("loja: ack da compra Google Play falhou (TP ja' creditada): {e}");
         }
     }
+    Ok(resposta)
 }
 
 /// Pagamento aprovado: credita a TP do pacote. E' o que o webhook de um
@@ -546,7 +601,10 @@ pub async fn estado(central: &PgPool, conta: &str) -> Result<EstadoLoja> {
     .collect();
     Ok(EstadoLoja {
         ligada: true,
-        simulado: simulado(),
+        // `Provedor::do_ambiente`, nao a flag crua: com o Google Play
+        // configurado o provedor real vence o `PAGAMENTO_SIMULADO` default,
+        // e o selo "SIMULATED PAYMENT" do cliente tem que sumir junto.
+        simulado: Provedor::do_ambiente() == Provedor::Simulado,
         tp: razao::saldo(central, conta).await?,
         historico,
     })
@@ -561,11 +619,21 @@ mod tests {
     async fn simulado_aprova_na_hora_e_desligado_recusa() {
         let p = cat::pacote(1).unwrap();
         assert!(matches!(
-            Provedor::Simulado.iniciar("pedido-teste-1", p).await,
+            Provedor::Simulado.iniciar("pedido-teste-1", p, None).await,
             Aprovacao::Aprovado { .. }
         ));
         assert!(matches!(
-            Provedor::Desligado.iniciar("pedido-teste-1", p).await,
+            Provedor::Desligado.iniciar("pedido-teste-1", p, None).await,
+            Aprovacao::Recusado { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn google_play_sem_dados_de_compra_e_recusado() {
+        // Sem o purchase_token do cliente nem bate na rede: recusa de cara.
+        let p = cat::pacote(1).unwrap();
+        assert!(matches!(
+            Provedor::GooglePlay.iniciar("pedido-teste-1", p, None).await,
             Aprovacao::Recusado { .. }
         ));
     }
@@ -584,11 +652,11 @@ mod tests {
         let id = |s: &str| format!("{}-{s}", &tag[..16]);
 
         // Pacote de 550: o mesmo pedido duas vezes (clique duplo / reenvio).
-        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"))
+        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"), None)
             .await
             .unwrap();
         assert!(matches!(r, Resposta::Feito { saldo: 550, .. }), "{r:?}");
-        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"))
+        let r = comprar_tp(&central, Provedor::Simulado, &conta, 2, &id("tp1"), None)
             .await
             .unwrap();
         assert!(matches!(r, Resposta::JaFeito { saldo: 550, .. }), "{r:?}");
@@ -600,8 +668,8 @@ mod tests {
         // Dois canais com o MESMO pedido ao mesmo tempo: um credito so'.
         let tp2 = id("tp2");
         let (a, b) = tokio::join!(
-            comprar_tp(&central, Provedor::Simulado, &conta, 3, &tp2),
-            comprar_tp(&central, Provedor::Simulado, &conta, 3, &tp2),
+            comprar_tp(&central, Provedor::Simulado, &conta, 3, &tp2, None),
+            comprar_tp(&central, Provedor::Simulado, &conta, 3, &tp2, None),
         );
         let (a, b) = (a.unwrap(), b.unwrap());
         assert!(a.ok() && b.ok());
@@ -611,12 +679,12 @@ mod tests {
             "{a:?} {b:?}"
         );
         // Pedido de outra conta com o mesmo id: recusado.
-        let r = comprar_tp(&central, Provedor::Simulado, "T:outra", 2, &id("tp1"))
+        let r = comprar_tp(&central, Provedor::Simulado, "T:outra", 2, &id("tp1"), None)
             .await
             .unwrap();
         assert!(!r.ok());
         // Provedor desligado: recusa e nao credita.
-        let r = comprar_tp(&central, Provedor::Desligado, &conta, 1, &id("tp3"))
+        let r = comprar_tp(&central, Provedor::Desligado, &conta, 1, &id("tp3"), None)
             .await
             .unwrap();
         assert!(!r.ok());

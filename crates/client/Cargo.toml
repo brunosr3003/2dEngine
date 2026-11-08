@@ -8,6 +8,16 @@ license.workspace = true
 name = "client"
 path = "src/main.rs"
 
+# Android nao roda um executavel: o APK carrega uma lib compartilhada via JNI
+# (System.loadLibrary em MainActivity.java). O miniquad exporta os simbolos
+# `Java_...` que a Activity chama a partir de QUALQUER cdylib que o inclua —
+# nao precisa de entrypoint especial aqui, so' compilar o MESMO main.rs como
+# `cdylib` tambem. O `fn main()` normal fica so' ocioso nessa compilacao.
+[lib]
+name = "client"
+path = "src/main.rs"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 # O crate `shared` e' a UNICA fonte do protocolo. Nada de espelhar tipos
 # a mao como o cliente Unity fazia em Protocol.cs — drift de versao
@@ -23,10 +33,11 @@ glam.workspace = true
 # runtime do AssetManager: a pasta `assets/` da raiz vira a raiz dos assets do
 # APK, por isso o `vox.rs` tira o prefixo "assets/" no Android.
 [package.metadata.android]
-package_name = "com.brunji.tempest"
+package_name = "com.niertech.tempest"
 label = "Tempest"
 android_version = 34
-target_sdk_version = 34
+target_sdk_version = 36
+version_code = 2
 min_sdk_version = 24
 # arm64 = celular de verdade; x86_64 = emulador do PC.
 build_targets = ["aarch64-linux-android", "x86_64-linux-android"]

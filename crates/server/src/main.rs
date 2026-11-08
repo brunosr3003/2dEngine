@@ -22,6 +22,7 @@ mod craft;
 mod loja_npc;
 mod economy;
 mod loja;
+mod loja_google_play;
 mod loot_mobs;
 mod mapa_ilha;
 mod mercado;

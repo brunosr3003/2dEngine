@@ -687,6 +687,18 @@ pub enum PedidoLoja {
         pacote: u16,
         pedido: String,
     },
+    /// Mesma compra de `ComprarTp`, mas a aprovacao e' o Google Play Billing
+    /// real (Android): o cliente manda o `purchase_token` que a Billing
+    /// Library devolveu. O servidor calcula o `product_id` esperado a
+    /// partir de `pacote` (nunca confia no que o cliente mandaria) e confere
+    /// na Android Publisher API antes de creditar (docs/LOJA.md). Variante
+    /// separada em vez de um campo a mais em `ComprarTp` pra nao quebrar
+    /// quem ja' constroi esse literal (cliente simulado, bots de teste).
+    ComprarTpGooglePlay {
+        pacote: u16,
+        pedido: String,
+        purchase_token: String,
+    },
     /// Item de TP, `vezes` de uma vez. Tudo na loja e' repetivel, e comprar
     /// dez pergaminhos era tocar dez vezes no mesmo botao e confirmar dez
     /// vezes — pedido do dono em 20/09/2026.

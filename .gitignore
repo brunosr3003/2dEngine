@@ -60,3 +60,9 @@ assets/manaseed_raw/
 # Bytecode do Python (as ferramentas de arte sao scripts, nao pacote)
 __pycache__/
 *.pyc
+
+# Gradle (Android, crates/client/android/)
+crates/client/android/.gradle/
+crates/client/android/build/
+crates/client/android/app/build/
+crates/client/android/app/src/main/jniLibs/

@@ -2,12 +2,17 @@
 # Build Android do cliente Rust (macroquad) -> APK assinado com a chave de debug.
 # Roda NESTE PC. O toolchain fica na home (scripts/android-sdk-setup.sh).
 #
-# O `cargo quad-apk` le' o [package.metadata.android] do crates/client/Cargo.toml
-# (pacote, paisagem, permissao de internet, icone, assets) e gera um .apk com
-# arm64 (celular) e x86_64 (emulador).
+# Migrado de `cargo quad-apk` pra' Gradle em 03/11/2026 (ver docs/BUILD.md):
+# a Play Billing Library so' e' distribuida como AAR com uma arvore de
+# dependencias (androidx, Play Services, datatransport) que o pipeline cru de
+# javac+d8 do quad-apk nao resolvia. O projeto Gradle de verdade fica em
+# crates/client/android/ (modulo `app`). Este script so' exporta as
+# variaveis do NDK que as tasks `cargoBuildClientArm64`/`cargoBuildClientX86_64`
+# do app/build.gradle.kts leem pra' compilar e linkar o `.so` do Rust, e
+# chama o gradlew.
 #
 # Uso:
-#   scripts/build-android.sh              build release
+#   scripts/build-android.sh              build debug
 #   scripts/build-android.sh --instalar   build + adb install no aparelho/emulador conectado
 #   scripts/build-android.sh --abrir      build + install + abre o app
 set -euo pipefail
@@ -23,10 +28,11 @@ python3 scripts/check-water-shaders.py
 export JAVA_HOME="${JAVA_HOME:-$HOME/opt/jdk-17}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 NDK_VERSAO="25.2.9519653"
-export NDK_HOME="${NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VERSAO}"
+export ANDROID_NDK_HOME="${NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VERSAO}"
+NDK_HOME="$ANDROID_NDK_HOME"
 export PATH="$HOME/.cargo/bin:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-PACOTE="com.brunji.tempest"   # = package_name do crates/client/Cargo.toml
+PACOTE="com.niertech.tempest"   # = applicationId do crates/client/android/app/build.gradle.kts
 INSTALAR=0
 ABRIR=0
 while [ $# -gt 0 ]; do
@@ -38,44 +44,26 @@ while [ $# -gt 0 ]; do
 done
 
 [ -d "$NDK_HOME" ] || { echo "ERRO: sem NDK em $NDK_HOME (rode scripts/android-sdk-setup.sh)"; exit 1; }
-# A 0.1.4 do crates.io embute o Cargo 1.61, que nao entende `version.workspace`
-# e recusa o workspace. A do GitHub (Cargo 0.87) funciona: revisao fixada.
-QUAD_APK_REV="d411c8fe1c08339e46d7dc6b40ac04ea5e3a01b6"
-if ! cargo install --list | grep -q "cargo-quad-apk.*$QUAD_APK_REV"; then
-  cargo install --locked --force --git https://github.com/not-fl3/cargo-quad-apk --rev "$QUAD_APK_REV"
-fi
 rustup target add aarch64-linux-android x86_64-linux-android >/dev/null
 
-cargo quad-apk build --release -p client
+# Linker/CC por alvo, pro `cargo build` dentro das tasks do Gradle
+# (app/build.gradle.kts le' essas variaveis do ambiente do PROCESSO que
+# chamou o gradlew — por isso o --no-daemon abaixo: um daemon reaproveitado
+# manteria o ambiente da PRIMEIRA chamada, nao desta).
+NDK_BIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android24-clang"
+export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android24-clang"
+export CC_x86_64_linux_android="$NDK_BIN/x86_64-linux-android24-clang"
+export AR_x86_64_linux_android="$NDK_BIN/llvm-ar"
+export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$NDK_BIN/x86_64-linux-android24-clang"
 
-APK="$ROOT/target/android-artifacts/release/apk/client.apk"
+cd crates/client/android
+./gradlew --no-daemon assembleDebug
+cd "$ROOT"
+
+APK="$ROOT/crates/client/android/app/build/outputs/apk/debug/app-debug.apk"
 [ -f "$APK" ] || { echo "ERRO: APK nao saiu em $APK"; exit 1; }
-
-# O quad-apk nomeia a lib que a MainActivity carrega pelo FIM do package_name
-# (com.brunji.tempest -> System.loadLibrary("tempest")), mas o .so sai com o
-# nome do binario (libclient.so): o app fechava ao abrir com
-# `dlopen failed: library "libtempest.so" not found`. Renomeia dentro do APK e
-# assina de novo (a assinatura cobre os nomes dos arquivos).
-LIB_JAVA="${PACOTE##*.}"
-BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
-BRUTO="$(mktemp --suffix=.apk)"
-python3 - "$APK" "$BRUTO" "$LIB_JAVA" <<'PY'
-import sys, zipfile
-origem, destino, lib = sys.argv[1:]
-with zipfile.ZipFile(origem) as a, zipfile.ZipFile(destino, "w") as b:
-    for e in a.infolist():
-        if e.filename.startswith("META-INF/"):
-            continue  # assinatura velha
-        nome = e.filename
-        if nome.startswith("lib/") and nome.endswith("/libclient.so"):
-            nome = nome[: -len("libclient.so")] + f"lib{lib}.so"
-        # mesma compressao da entrada original: resources.arsc TEM que ficar
-        # sem compressao a partir do targetSdk 30
-        b.writestr(zipfile.ZipInfo(nome, e.date_time), a.read(e), compress_type=e.compress_type)
-PY
-"$BT/zipalign" -f 4 "$BRUTO" "$APK"
-rm -f "$BRUTO"
-"$BT/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android "$APK"
 echo "==> $APK ($(du -h "$APK" | cut -f1))"
 
 if [ "$INSTALAR" = 1 ]; then

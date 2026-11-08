@@ -100,18 +100,20 @@ fn planta_fica(bx: i32, bz: i32, pct: u8) -> bool {
 
 /// O pedaco `(cx, cz)` cai no cone da camera? O mesmo teste pro chao e pro
 /// mar: dois testes seriam dois lugares pro buraco aparecer.
-fn pedaco_visivel(cam: &Camera3D, cx: i32, cz: i32) -> bool {
+///
+/// `centro` vem de `Terreno::centro_do_pedaco`, com a altura REAL do pedaco —
+/// usar `olho.y * 0.5` como aproximacao (versao antiga) funcionava pra camera
+/// de cima do gameplay, mas uma camera baixa e rasante (tela de selecao de
+/// personagem) erra o suficiente pra cortar pedacos de chao distantes: o
+/// disco do horizonte da agua (`agua::horizonte`, sempre desenhado, sem
+/// relacao com este teste) aparecia por baixo como uma linha azul.
+fn pedaco_visivel(cam: &Camera3D, centro: Vec3) -> bool {
     let olho = cam.position;
     let frente = (cam.target - cam.position).normalize();
     // Meia abertura generosa: melhor desenhar um pedaco a mais na borda
     // que abrir um buraco quando o jogador gira depressa.
     let cos_limite = (cam.fovy * 0.5 + 0.55).cos();
     let raio_pedaco = CHUNK as f32 * BLOCO * 0.87; // meia diagonal
-    let centro = vec3(
-        (cx as f32 + 0.5) * CHUNK as f32 * BLOCO,
-        olho.y * 0.5,
-        (cz as f32 + 0.5) * CHUNK as f32 * BLOCO,
-    );
     let d = centro - olho;
     let dist = d.length();
     // Pedaco em cima do olho passa sempre: normalizar vetor curto e'
@@ -383,6 +385,14 @@ impl Terreno {
         self.ger.altura(x, z).max(NIVEL_DO_MAR)
     }
 
+    /// Centro do pedaco `(cx, cz)`, com a altura real do chao ali — pro
+    /// teste de cone em `pedaco_visivel`.
+    fn centro_do_pedaco(&self, cx: i32, cz: i32) -> Vec3 {
+        let x = (cx as f32 + 0.5) * CHUNK as f32 * BLOCO;
+        let z = (cz as f32 + 0.5) * CHUNK as f32 * BLOCO;
+        vec3(x, self.altura(x, z), z)
+    }
+
     /// Altura em que o CORPO se apoia: a coluna mais alta debaixo dele.
     ///
     /// Apoiar na coluna do centro afunda o modelo no degrau. Andando pra cima
@@ -502,7 +512,7 @@ impl Terreno {
         let visiveis: Vec<&Pedaco> = self
             .pedacos
             .iter()
-            .filter(|((cx, cz), _)| pedaco_visivel(cam, *cx, *cz))
+            .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
             .map(|(_, p)| p)
             .collect();
         crate::gpu_estatica::desenha(
@@ -535,7 +545,7 @@ impl Terreno {
             crate::gpu_estatica::Programa::Sombra,
             self.pedacos
                 .iter()
-                .filter(|((cx, cz), _)| pedaco_visivel(cam, *cx, *cz))
+                .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
                 .flat_map(|(_, p)| p.sombras.iter()),
         );
     }
@@ -545,7 +555,7 @@ impl Terreno {
     pub fn energias_visiveis(&self, cam: &Camera3D) -> Vec<Vec3> {
         self.pedacos
             .iter()
-            .filter(|((cx, cz), p)| !p.energias.is_empty() && pedaco_visivel(cam, *cx, *cz))
+            .filter(|((cx, cz), p)| !p.energias.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
             .flat_map(|(_, p)| p.energias.iter().copied())
             .collect()
     }
@@ -559,7 +569,7 @@ impl Terreno {
             crate::gpu_estatica::Programa::Agua { tempo, ondas },
             self.pedacos
                 .iter()
-                .filter(|((cx, cz), p)| !p.agua.is_empty() && pedaco_visivel(cam, *cx, *cz))
+                .filter(|((cx, cz), p)| !p.agua.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
                 .flat_map(|(_, p)| p.agua.iter()),
         );
     }

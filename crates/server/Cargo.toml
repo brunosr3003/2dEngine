@@ -21,8 +21,9 @@ serde.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 anyhow.workspace = true
-# Só o `jogadorbot` usa: ele cria a conta pelo `/api/register`, igual ao jogo.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# jogadorbot usa pra criar conta (/api/register); loja_google_play usa pra
+# falar com a Android Publisher API (json = Response::json/RequestBuilder::json).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 thiserror.workspace = true
 sqlx.workspace = true
 axum.workspace = true
@@ -32,3 +33,5 @@ parking_lot = "0.12"
 fastrand = "2"
 # Hash do token de sessao do login com Google (o banco guarda so' o hash).
 sha2 = "0.10"
+# JWT RS256 da service account do Google Play (loja_google_play).
+jsonwebtoken = "9"

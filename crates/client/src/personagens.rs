@@ -791,9 +791,26 @@ impl Personagens {
         // A vila e' assada numa thread; sem recolher aqui as malhas nunca ficam
         // prontas e nenhuma casa aparece (o jogo faz isso todo quadro, em main).
         f.casas.acompanhar();
-        // O chao chega aos poucos, como no jogo: orcamento por quadro. Raio 11
-        // (176 unidades) cobre o que esta camera enxerga.
-        f.terreno.atualiza(f.centro, 11, 4);
+        // O chao chega aos poucos, como no jogo: orcamento por quadro.
+        //
+        // Raio: a camera fica a 70 unidades do centro, 43 acima do alvo —
+        // ~31.6 graus de inclinacao. O raio de cima do FOV (45 graus) olha so'
+        // ~9 graus abaixo da horizontal, o que alcanca o chao a ~287 unidades
+        // da camera (46 / tan(9 graus)), ou seja ~217 unidades ALEM do centro
+        // do lado oposto a camera — bem mais que um raio antigo de 11 (176
+        // unidades) cobria. Raio 18 (288 unidades) da' margem; a neblina
+        // logo abaixo disfarca a borda do que sobra.
+        f.terreno.atualiza(f.centro, 18, 4);
+        // Neblina pro raio 18: sem ela, mesmo com o cone corrigido, o fim do
+        // chao carregado e' uma borda dura contra o disco do horizonte da
+        // agua (sempre desenhado por baixo, sem ligacao com este raio) — um
+        // "corte" visivel. Mesma formula de `config_graficos::neblina`,
+        // calibrada pro raio real desta tela em vez do raio_terreno() do
+        // gameplay.
+        let fim_neblina = 18.0 * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
+        let inicio_neblina = fim_neblina * 0.6;
+        crate::gpu_estatica::define_neblina(f.centro, inicio_neblina, fim_neblina);
+        solido.set_uniform("Neblina", vec4(f.centro.x, f.centro.y, inicio_neblina, fim_neblina));
         let giro = t * 0.04;
         let chao = f.terreno.altura(f.centro.x, f.centro.y);
         // ~33 graus e LONGE da vila. Perto demais, a casa no caminho da orbita
@@ -952,6 +969,15 @@ impl Personagens {
         }
         gl_use_material(solido);
         solido.set_uniform("Crop", Vec3::ZERO);
+        // O retrato usa espaco LOCAL (boneco perto da origem): se a tela de
+        // ANTES (o gameplay, via `main.rs`) deixou a neblina ligada medindo
+        // distancia a partir da posicao do jogador no MUNDO, ela mede uma
+        // distancia enorme daqui e lava o boneco inteiro pro ceu. Desliga nos
+        // dois lugares: o uniform do `solido` (pedestal/linhas, via macroquad
+        // direto) E o estado global do `gpu_estatica` (o rig em si, via
+        // `desenha_voxel`).
+        solido.set_uniform("Neblina", Vec4::ZERO);
+        crate::gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
         let entrada = crate::rig::Entrada {
             fase: 0.0,
             andar: 0.0,
