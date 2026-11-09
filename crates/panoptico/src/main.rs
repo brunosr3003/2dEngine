@@ -156,6 +156,9 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/avisos"), get(avisos_lista).post(aviso_enviar))
         .route(&p("/api/eventos"), get(eventos_lista).post(evento_criar))
         .route(&p("/api/eventos/cancelar"), post(evento_cancelar))
+        .route(&p("/api/chat"), get(chat_lista))
+        .route(&p("/api/chat/palavras"), post(chat_palavra))
+        .route(&p("/api/chat/acao"), post(chat_acao))
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))
@@ -805,6 +808,219 @@ async fn evento_cancelar(
     {
         Ok(_) => axum::Json(serde_json::json!({ "ok": true })),
         Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
+    }
+}
+
+// ─────────────── global chat moderation (`shared::chat`, `server::chat_global`) ───────────────
+// Everything said is in `chat_historico` (original text, what was shown, the
+// words hit). The staff edits the word list, warns, mutes and bans from here;
+// warnings and bans reach the game at once through the NOTIFY channel, the
+// rest within 5 s.
+
+async fn chat_tabelas(pool: &sqlx::PgPool) {
+    for t in shared::chat::TABELAS {
+        let _ = sqlx::query(t).execute(pool).await;
+    }
+}
+
+async fn chat_lista(
+    State(st): State<Estado>,
+    axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let pool = &*st.pool;
+    chat_tabelas(pool).await;
+    let so = q.get("so").map(String::as_str).unwrap_or("todas");
+    let busca = q.get("q").map(|s| s.trim().to_lowercase()).unwrap_or_default();
+    let filtro = match so {
+        "marcadas" => "AND h.palavras <> ''",
+        "denunciadas" => "AND d.n > 0",
+        _ => "",
+    };
+    let sql = format!(
+        "SELECT h.id, to_char(h.criado AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI:SS'), h.zona, h.nome, h.conta, \
+           h.texto, h.mostrado, h.palavras, h.acao, h.entregue, COALESCE(d.n, 0) \
+         FROM chat_historico h \
+         LEFT JOIN (SELECT msg_id, COUNT(*) AS n FROM chat_denuncias GROUP BY msg_id) d ON d.msg_id = h.id \
+         WHERE ($1 = '' OR lower(h.nome) LIKE '%' || $1 || '%' OR lower(h.texto) LIKE '%' || $1 || '%') {filtro} \
+         ORDER BY h.id DESC LIMIT 300"
+    );
+    let msgs: Vec<(i64, String, String, String, i64, String, String, String, String, bool, i64)> =
+        sqlx::query_as(&sql).bind(&busca).fetch_all(pool).await.unwrap_or_default();
+    let palavras: Vec<(String, String)> = sqlx::query_as("SELECT palavra, acao FROM chat_palavras ORDER BY palavra")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    let silencios: Vec<(i64, String, String, String, String)> = sqlx::query_as(
+        "SELECT conta, nome, to_char(MAX(ate) AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), \
+                string_agg(DISTINCT motivo, ' | '), string_agg(DISTINCT autor, ', ') \
+         FROM chat_silencios WHERE ate > NOW() GROUP BY conta, nome ORDER BY MAX(ate) DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    let banidos: Vec<(i64, String, String, String, String)> = sqlx::query_as(
+        "SELECT conta, nome, motivo, autor, to_char(criado AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI') \
+         FROM banimentos WHERE NOT revogado AND (ate IS NULL OR ate > NOW()) ORDER BY id DESC",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    axum::Json(serde_json::json!({
+        "mensagens": msgs.iter().map(|m| serde_json::json!({
+            "id": m.0, "quando": m.1, "zona": m.2, "nome": m.3, "conta": m.4, "texto": m.5,
+            "mostrado": m.6, "palavras": m.7, "acao": m.8, "entregue": m.9, "denuncias": m.10,
+        })).collect::<Vec<_>>(),
+        "palavras": palavras.iter().map(|(p, a)| serde_json::json!({"palavra": p, "acao": a})).collect::<Vec<_>>(),
+        "silenciados": silencios.iter().map(|s| serde_json::json!({"conta": s.0, "nome": s.1, "ate": s.2, "motivo": s.3, "autor": s.4})).collect::<Vec<_>>(),
+        "banidos": banidos.iter().map(|b| serde_json::json!({"conta": b.0, "nome": b.1, "motivo": b.2, "autor": b.3, "quando": b.4})).collect::<Vec<_>>(),
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct PalavraPedido {
+    palavra: String,
+    /// `censurar` / `alertar` / `silenciar` / `banir`, or `remover`.
+    acao: String,
+}
+
+async fn chat_palavra(
+    State(st): State<Estado>,
+    axum::Json(p): axum::Json<PalavraPedido>,
+) -> impl IntoResponse {
+    let pool = &*st.pool;
+    chat_tabelas(pool).await;
+    let palavra = p.palavra.trim().to_lowercase();
+    if palavra.is_empty() || palavra.chars().count() > 40 {
+        return recusa("palavra vazia ou longa demais");
+    }
+    let r = if p.acao == "remover" {
+        sqlx::query("DELETE FROM chat_palavras WHERE palavra = $1").bind(&palavra).execute(pool).await
+    } else if shared::chat::Acao::de_texto(&p.acao).is_some() {
+        sqlx::query(
+            "INSERT INTO chat_palavras (palavra, acao) VALUES ($1, $2) \
+             ON CONFLICT (palavra) DO UPDATE SET acao = EXCLUDED.acao",
+        )
+        .bind(&palavra)
+        .bind(&p.acao)
+        .execute(pool)
+        .await
+    } else {
+        return recusa("ação inválida");
+    };
+    match r {
+        Ok(_) => (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true }))),
+        Err(e) => recusa(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct AcaoPedido {
+    /// `alertar` / `silenciar` / `dessilenciar` / `banir` / `desbanir`.
+    tipo: String,
+    conta: i64,
+    #[serde(default)]
+    nome: String,
+    #[serde(default)]
+    minutos: i64,
+    #[serde(default)]
+    texto: String,
+    #[serde(default)]
+    autor: String,
+}
+
+async fn chat_notificar(pool: &sqlx::PgPool, n: &shared::chat::Notificacao) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(shared::chat::CANAL_NOTIFY)
+        .bind(serde_json::to_string(n).unwrap_or_default())
+        .execute(pool)
+        .await
+        .map(|_| ())
+}
+
+async fn chat_acao(
+    State(st): State<Estado>,
+    axum::Json(a): axum::Json<AcaoPedido>,
+) -> impl IntoResponse {
+    use shared::chat::Notificacao as N;
+    let pool = &*st.pool;
+    chat_tabelas(pool).await;
+    let autor = if a.autor.trim().is_empty() { "staff".to_string() } else { a.autor.trim().to_string() };
+    let texto = a.texto.trim().to_string();
+    let r: Result<String, String> = match a.tipo.as_str() {
+        "alertar" => {
+            if texto.is_empty() {
+                Err("escreva o aviso".into())
+            } else {
+                chat_notificar(pool, &N::Aviso { conta: a.conta, texto: texto.clone() })
+                    .await
+                    .map(|_| format!("aviso enviado a {}", a.nome))
+                    .map_err(|e| e.to_string())
+            }
+        }
+        "silenciar" => {
+            let min = a.minutos.clamp(1, 60 * 24 * 365) as i32;
+            sqlx::query(
+                "INSERT INTO chat_silencios (conta, nome, ate, motivo, autor) \
+                 VALUES ($1, $2, NOW() + make_interval(mins => $3), $4, $5)",
+            )
+            .bind(a.conta)
+            .bind(&a.nome)
+            .bind(min)
+            .bind(&texto)
+            .bind(&autor)
+            .execute(pool)
+            .await
+            .map(|_| format!("{} silenciado por {min} min", a.nome))
+            .map_err(|e| e.to_string())
+        }
+        "dessilenciar" => sqlx::query("UPDATE chat_silencios SET ate = NOW() WHERE conta = $1 AND ate > NOW()")
+            .bind(a.conta)
+            .execute(pool)
+            .await
+            .map(|_| format!("{} pode falar de novo", a.nome))
+            .map_err(|e| e.to_string()),
+        "banir" => {
+            let ate = (a.minutos > 0).then_some(a.minutos as i32);
+            let ins = sqlx::query(
+                "INSERT INTO banimentos (conta, nome, motivo, autor, ate) \
+                 VALUES ($1, $2, $3, $4, CASE WHEN $5::int IS NULL THEN NULL ELSE NOW() + make_interval(mins => $5::int) END)",
+            )
+            .bind(a.conta)
+            .bind(&a.nome)
+            .bind(&texto)
+            .bind(&autor)
+            .bind(ate)
+            .execute(pool)
+            .await;
+            match ins {
+                Ok(_) => chat_notificar(pool, &N::Expulsar { conta: a.conta, motivo: if texto.is_empty() { "staff".into() } else { texto.clone() } })
+                    .await
+                    .map(|_| format!("{} banido{}", a.nome, ate.map_or(" de vez".to_string(), |m| format!(" por {m} min"))))
+                    .map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            }
+        }
+        "desbanir" => sqlx::query("UPDATE banimentos SET revogado = TRUE WHERE conta = $1 AND NOT revogado")
+            .bind(a.conta)
+            .execute(pool)
+            .await
+            .map(|_| format!("{} desbanido", a.nome))
+            .map_err(|e| e.to_string()),
+        _ => Err("tipo inválido".into()),
+    };
+    match r {
+        Ok(msg) => {
+            let _ = sqlx::query("INSERT INTO chat_acoes (tipo, conta, nome, detalhe, autor) VALUES ($1, $2, $3, $4, $5)")
+                .bind(&a.tipo)
+                .bind(a.conta)
+                .bind(&a.nome)
+                .bind(format!("{} {}", texto, if a.minutos > 0 { format!("({} min)", a.minutos) } else { String::new() }))
+                .bind(&autor)
+                .execute(pool)
+                .await;
+            (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "msg": msg })))
+        }
+        Err(e) => recusa(e),
     }
 }
 

@@ -133,6 +133,7 @@ mod troca_ui;
 mod avaliacao;
 mod aviso_global;
 mod eventos_ui;
+mod chat_ui;
 mod previa_skills;
 mod rastro;
 mod render3d;
@@ -474,6 +475,7 @@ struct Jogo {
     avaliacao: avaliacao::Avaliacao,
     aviso_global: aviso_global::AvisoGlobal,
     eventos: eventos_ui::EventosUi,
+    chat_ui: chat_ui::ChatUi,
     /// Owned-but-unconsumed Google Play purchases re-reported (once).
     billing_recuperado: bool,
     /// Menu "Travel" do Capitao do Porto.
@@ -663,6 +665,11 @@ async fn main() {
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_HUD").is_ok() {
         previa_hud::abrir(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_CHAT").is_ok() {
+        chat_ui::previa().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1042,6 +1049,7 @@ async fn main() {
         avaliacao: avaliacao::Avaliacao::default(),
         aviso_global: Default::default(),
         eventos: Default::default(),
+        chat_ui: Default::default(),
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
@@ -2184,6 +2192,11 @@ impl Jogo {
                     self.menu_missoes.aviso = Some((text.clone(), get_time() + 6.0));
                     self.habilidades.aviso(text.clone());
                 }
+                // The answer to what was just typed (slow down, muted,
+                // report sent) shows in the open chat too.
+                if self.chat_ui.aberto && (from == "System" || from == "SYS") {
+                    self.chat_ui.sistema(text.clone());
+                }
                 self.chat.push(format!("{from}: {text}"));
             }
             // O que a bolsa mostra. O servidor manda tudo no login e de novo a
@@ -2238,6 +2251,12 @@ impl Jogo {
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
+            ServerMessage::ChatGlobal { id, de, texto, staff } => {
+                // Closed panel: the line also passes as a notice.
+                if self.chat_ui.receber(id, de.clone(), texto.clone(), staff) && !self.chat_ui.aberto {
+                    self.chat.push(format!("{de}: {texto}"));
+                }
+            }
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
                 self.aviso_global.receber(texto);
@@ -3490,6 +3509,7 @@ impl Jogo {
             || self.morte.painel
             || self.config_barra.aberto
             || self.eventos.aberto
+            || self.chat_ui.aberto
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
@@ -3847,6 +3867,7 @@ impl Jogo {
         self.morte.painel = false;
         self.config_barra.fechar();
         self.eventos.aberto = false;
+        self.chat_ui.fechar();
         self.config_coleta.fechar();
         self.config_combate.fechar();
         self.config_interface.fechar();
@@ -4058,6 +4079,9 @@ impl Jogo {
             true
         } else if self.config_coleta.aberto {
             self.config_coleta.fechar();
+            true
+        } else if self.chat_ui.aberto {
+            self.chat_ui.fechar();
             true
         } else if self.eventos.aberto {
             self.eventos.aberto = false;
@@ -6498,6 +6522,12 @@ impl Jogo {
                 if self.eventos.selo(z.buffs) {
                     self.eventos.aberto = true;
                 }
+                // Global chat: the balloon, and Enter on a keyboard.
+                if self.chat_ui.botao(z.chat)
+                    || (!self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter))
+                {
+                    self.chat_ui.abrir();
+                }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
                 self.habilidades.barra(
@@ -6808,6 +6838,7 @@ impl Jogo {
             || self.forja.aberto()
             || self.config_barra.aberto
             || self.eventos.aberto
+            || self.chat_ui.aberto
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
@@ -7392,6 +7423,13 @@ impl Jogo {
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
         self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
         self.avaliacao.desenha();
+        {
+            let digitado = self.teclado.digitado().to_vec();
+            let eu = self.personagem_atual.clone().unwrap_or_default();
+            for m in self.chat_ui.desenha(&digitado, &eu) {
+                self.envia(m);
+            }
+        }
         if let Some((kind, nome, chefe)) = self.eventos.desenha() {
             self.fecha_paineis();
             self.mapa.encontrar(kind, nome, chefe);
@@ -7982,7 +8020,7 @@ impl Jogo {
         let precisa = match self.tela {
             Tela::Login | Tela::Cadastro | Tela::EsqueciSenha => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
-            Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco(),
+            Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco() || self.chat_ui.foco(),
             // SEM `_`, e isso é o conserto de verdade.
             //
             // A tela de cadastro nasceu com três campos de texto e caiu no

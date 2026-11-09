@@ -483,6 +483,10 @@ pub enum ClientMessage {
     Troca {
         pedido: crate::troca::PedidoTroca,
     },
+    /// Reports a global chat message (`ServerMessage::ChatGlobal::id`).
+    DenunciarChat {
+        id: i64,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1287,6 +1291,14 @@ pub enum ServerMessage {
     /// time the list changes. The client's Events panel shows it.
     EventosAtivos {
         eventos: Vec<crate::eventos::Evento>,
+    },
+    /// A GLOBAL chat line (`shared::chat`), already filtered. `id` is the
+    /// history row, so the player can report it.
+    ChatGlobal {
+        id: i64,
+        de: String,
+        texto: String,
+        staff: bool,
     },
 }
 

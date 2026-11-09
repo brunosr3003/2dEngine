@@ -213,6 +213,8 @@ pub struct Zonas {
     /// AVISOS: as tres ultimas mensagens, em texto solto logo abaixo do
     /// rastreador. Nao pega toque — a faixa inteira ali e' do joystick.
     pub avisos: Rect,
+    /// The CHAT button (`chat_ui`): right of the notices, a thumb's size.
+    pub chat: Rect,
     /// Onde um dedo pode COMECAR o joystick virtual (metade esquerda de baixo,
     /// ate' antes da faixa central e dos botoes AUTO). Nao e' botao: e' area.
     pub joystick: Rect,
@@ -438,12 +440,15 @@ fn monta(
     } else {
         0.0
     };
-    let avisos = Rect::new(
+    // The CHAT button opens the row, under the quests; the notices follow it.
+    // (On their right it sat under the party panel, which grows downwards.)
+    let chat = Rect::new(
         m,
         rastreador.y + rastreador.h + 8.0 * s + reserva,
-        440.0 * s,
-        68.0 * s,
+        56.0 * s,
+        56.0 * s,
     );
+    let avisos = Rect::new(chat.x + chat.w + 6.0 * s, chat.y, 384.0 * s, 68.0 * s);
     let ca = vec2(sw - 110.0 * s, base - 110.0 * s);
     let ra = 60.0 * s;
     let atacar = Rect::new(ca.x - ra, ca.y - ra, ra * 2.0, ra * 2.0);
@@ -586,6 +591,7 @@ fn monta(
         dash,
         pulo,
         avisos,
+        chat,
         joystick,
         faixa,
         coleta,
@@ -619,6 +625,7 @@ impl Zonas {
             &mut self.dash,
             &mut self.pulo,
             &mut self.avisos,
+            &mut self.chat,
             &mut self.joystick,
             &mut self.faixa,
             &mut self.coleta,
@@ -654,6 +661,7 @@ impl Zonas {
             ("montaria", self.montaria),
             ("sprint", self.sprint),
             ("pulo", self.pulo),
+            ("chat", self.chat),
             ("faixa", self.faixa),
             ("coleta", self.coleta),
             ("atacar", self.atacar),
@@ -711,6 +719,7 @@ impl Zonas {
             self.montaria,
             self.sprint,
             self.pulo,
+            self.chat,
         ]
         .iter()
         .chain(self.icones.iter())

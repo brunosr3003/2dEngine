@@ -140,6 +140,7 @@
     <button class="aba" data-aba="correio">correio</button>
     <button class="aba" data-aba="aviso">aviso global</button>
     <button class="aba" data-aba="eventos">eventos</button>
+    <button class="aba" data-aba="chat">chat</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -447,6 +448,49 @@
   <div id="ev-resultado" class="nota"></div>
   <h2>Eventos</h2>
   <div id="ev-lista"></div>
+</div>
+
+<!-- ─────────────────────────── chat global ─────────────────────────── -->
+<div class="aba-painel" id="aba-chat" hidden>
+  <h2>Chat global</h2>
+  <p class="nota">
+    Tudo que é dito fica guardado aqui, com o texto <b>original</b> (antes do
+    filtro). Linhas em vermelho bateram numa palavra proibida. Avisar e banir
+    chegam ao jogo na hora; silenciar e a lista de palavras, em até 5 s.
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <select id="ch-so" class="campo"><option value="todas">todas</option><option value="marcadas">só marcadas pelo filtro</option><option value="denunciadas">só denunciadas</option></select>
+    <input id="ch-q" class="campo" placeholder="buscar jogador ou texto" style="width:240px">
+    <button class="acao" id="ch-atualizar" type="button">atualizar</button>
+    <label class="f" style="margin:0">assina <input id="ch-autor" class="campo" value="SrBrunji" maxlength="30" style="width:130px"></label>
+  </div>
+  <div id="ch-resultado" class="nota"></div>
+  <div id="ch-msgs" style="max-height:520px;overflow:auto"></div>
+  <div class="grade">
+    <div>
+      <h2>Palavras proibidas</h2>
+      <p class="nota">
+        <b>censurar</b> = vira *** e a mensagem sai ·
+        <b>alertar</b> = censura + aviso para o jogador ·
+        <b>silenciar</b> = não sai + 30 min sem chat ·
+        <b>banir</b> = não sai + conta banida.
+        Pega variações (maiúscula, acento, f.u.c.k, fuuuck, 3→e, @→a…).
+      </p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <input id="ch-palavra" class="campo" placeholder="palavra" style="width:160px">
+        <select id="ch-palavra-acao" class="campo"><option>censurar</option><option>alertar</option><option>silenciar</option><option>banir</option></select>
+        <button class="acao" id="ch-palavra-add" type="button">adicionar</button>
+        <input id="ch-palavra-filtro" class="campo" placeholder="filtrar lista" style="width:140px">
+      </div>
+      <div id="ch-palavras" style="max-height:360px;overflow:auto"></div>
+    </div>
+    <div>
+      <h2>Silenciados</h2>
+      <div id="ch-silenciados"></div>
+      <h2>Banidos</h2>
+      <div id="ch-banidos"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -1745,6 +1789,79 @@ document.getElementById('ev-criar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.eventos = evCarrega;
+
+// ── chat global ──
+let chDados = null;
+async function chAcao(corpo) {
+  corpo.autor = document.getElementById('ch-autor').value;
+  const r = document.getElementById('ch-resultado');
+  try {
+    const d = await (await fetch('api/chat/acao', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo) })).json();
+    r.innerHTML = d.ok ? `<span class="bom">${esc(d.msg)}</span>` : `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+  chCarrega();
+}
+async function chPalavra(palavra, acao) {
+  await fetch('api/chat/palavras', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ palavra, acao }) });
+  chCarrega();
+}
+function chDesenhaPalavras() {
+  if (!chDados) return;
+  const f = document.getElementById('ch-palavra-filtro').value.toLowerCase();
+  document.getElementById('ch-palavras').innerHTML = '<table>' + chDados.palavras.filter(p => !f || p.palavra.includes(f)).map(p =>
+    `<tr><td>${esc(p.palavra)}</td><td><select class="campo" data-chp="${esc(p.palavra)}">${['censurar', 'alertar', 'silenciar', 'banir'].map(a => `<option${a === p.acao ? ' selected' : ''}>${a}</option>`).join('')}</select></td>
+     <td><button class="acao" data-chr="${esc(p.palavra)}">remover</button></td></tr>`).join('') + '</table>';
+  document.querySelectorAll('[data-chp]').forEach(s => s.onchange = () => chPalavra(s.dataset.chp, s.value));
+  document.querySelectorAll('[data-chr]').forEach(b => b.onclick = () => { if (confirm('Remover "' + b.dataset.chr + '"?')) chPalavra(b.dataset.chr, 'remover'); });
+}
+async function chCarrega() {
+  const so = document.getElementById('ch-so').value, q = document.getElementById('ch-q').value;
+  const d = await api('api/chat?so=' + encodeURIComponent(so) + '&q=' + encodeURIComponent(q)); if (!d) return;
+  chDados = d;
+  document.getElementById('ch-msgs').innerHTML = d.mensagens.length ? '<table><tr><th>quando</th><th>ilha</th><th>jogador</th><th>mensagem</th><th></th></tr>' + d.mensagens.map(m => {
+    const marcada = m.palavras !== '';
+    const txt = esc(m.texto) + (m.mostrado !== m.texto ? `<br><span style="color:var(--fraco)">mostrado: ${esc(m.mostrado)}</span>` : '');
+    const tags = (marcada ? ` <span class="ruim">[${esc(m.palavras)} → ${esc(m.acao)}]</span>` : '') + (m.entregue ? '' : ' <span class="ruim">não entregue</span>') + (m.denuncias ? ` <span class="ruim">⚑ ${m.denuncias} denúncia(s)</span>` : '');
+    const dados = `data-conta="${m.conta}" data-nome="${esc(m.nome)}"`;
+    return `<tr style="${marcada || m.denuncias ? 'background:rgba(255,80,80,.08)' : ''}"><td>${esc(m.quando)}</td><td>${esc(m.zona)}</td><td><b>${esc(m.nome)}</b> <span class="tag">#${m.conta}</span></td><td>${txt}${tags}</td>
+      <td style="white-space:nowrap"><button class="acao" data-cha="alertar" ${dados}>avisar</button>
+      <select class="campo" data-chs ${dados}><option value="">silenciar…</option><option value="10">10 min</option><option value="60">1 h</option><option value="1440">24 h</option><option value="10080">7 dias</option></select>
+      <button class="acao" data-cha="banir" ${dados}>banir</button></td></tr>`;
+  }).join('') + '</table>' : '<p class="nota">nenhuma mensagem</p>';
+  document.querySelectorAll('[data-cha]').forEach(b => b.onclick = () => {
+    const conta = +b.dataset.conta, nome = b.dataset.nome;
+    if (b.dataset.cha === 'alertar') {
+      const texto = prompt(`Aviso para ${nome} (aparece na tela dele):`, 'Please keep the chat respectful. Next time you will be muted.');
+      if (texto) chAcao({ tipo: 'alertar', conta, nome, texto });
+    } else {
+      const motivo = prompt(`Banir ${nome}? Motivo (o jogador vê):`, 'offensive language');
+      if (motivo === null) return;
+      const dias = prompt('Por quantos dias? (vazio = para sempre)', '');
+      if (dias === null) return;
+      chAcao({ tipo: 'banir', conta, nome, texto: motivo, minutos: dias ? Math.round(+dias * 1440) : 0 });
+    }
+  });
+  document.querySelectorAll('[data-chs]').forEach(s => s.onchange = () => {
+    if (!s.value) return;
+    chAcao({ tipo: 'silenciar', conta: +s.dataset.conta, nome: s.dataset.nome, minutos: +s.value, texto: 'staff' });
+  });
+  chDesenhaPalavras();
+  document.getElementById('ch-silenciados').innerHTML = d.silenciados.length ? d.silenciados.map(x =>
+    `<div><b>${esc(x.nome)}</b> até ${esc(x.ate)} · ${esc(x.motivo)} (${esc(x.autor)}) <button class="acao" data-chl="${x.conta}" data-nome="${esc(x.nome)}">liberar</button></div>`).join('') : '<p class="nota">ninguém</p>';
+  document.getElementById('ch-banidos').innerHTML = d.banidos.length ? d.banidos.map(x =>
+    `<div><b>${esc(x.nome)}</b> #${x.conta} · ${esc(x.motivo)} (${esc(x.autor)}, ${esc(x.quando)}) <button class="acao" data-chd="${x.conta}" data-nome="${esc(x.nome)}">desbanir</button></div>`).join('') : '<p class="nota">ninguém</p>';
+  document.querySelectorAll('[data-chl]').forEach(b => b.onclick = () => chAcao({ tipo: 'dessilenciar', conta: +b.dataset.chl, nome: b.dataset.nome }));
+  document.querySelectorAll('[data-chd]').forEach(b => b.onclick = () => { if (confirm('Desbanir ' + b.dataset.nome + '?')) chAcao({ tipo: 'desbanir', conta: +b.dataset.chd, nome: b.dataset.nome }); });
+}
+document.getElementById('ch-atualizar').onclick = chCarrega;
+document.getElementById('ch-so').onchange = chCarrega;
+document.getElementById('ch-q').addEventListener('keydown', e => { if (e.key === 'Enter') chCarrega(); });
+document.getElementById('ch-palavra-filtro').addEventListener('input', chDesenhaPalavras);
+document.getElementById('ch-palavra-add').onclick = () => {
+  const p = document.getElementById('ch-palavra').value.trim();
+  if (p) { chPalavra(p, document.getElementById('ch-palavra-acao').value); document.getElementById('ch-palavra').value = ''; }
+};
+PUXA.chat = chCarrega;
 document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
   const min = Math.max(1, parseInt(document.getElementById('av-min').value, 10) || 10);
   const t = b.dataset.av === 'manut'

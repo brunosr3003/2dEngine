@@ -5192,6 +5192,14 @@ impl GameWorld {
             }
         };
 
+        // Banned account (`chat_global`, Panopticon): no way in.
+        if crate::chat_global::banido(success.account_id) {
+            let _ = handle.to_client.send(ServerMessage::LoginDenied {
+                reason: "this account is banned".into(),
+            });
+            return;
+        }
+
         // A SESSAO DE "LEMBRAR DE MIM" fica guardada ate' a lista sair.
         if let (Some(t), Some(s)) = (success.sessao.clone(), self.sessions.get_mut(&sid)) {
             s.sessao_nova = Some(t);
@@ -8010,27 +8018,13 @@ impl GameWorld {
                     s.travado_desde = None;
                 }
             }
-            ClientMessage::Chat { text } => {
-                // No chat commands at all (owner, 09/11/2026: "quero tirar
-                // completamente todos os comandos de chat"): `/despawn` and the
-                // rest answered ANY player. A line starting with "/" is just text.
-                let from = self
-                    .sessions
-                    .get(&id)
-                    .and_then(|s| s.entity)
-                    .and_then(|e| self.ecs.get::<&PlayerTag>(e).ok().map(|p| p.name.clone()))
-                    .unwrap_or_else(|| "?".into());
-                // Tutorial: chat fica restrito à própria lane (isolamento) —
-                // como cada lane tem 1 player, na prática só ecoa pro autor.
-                let sender_slot = self.sessions.get(&id).and_then(|s| s.tutorial_slot);
-                for s in self.sessions.values() {
-                    if self.tutorial_mode && s.tutorial_slot != sender_slot {
-                        continue;
+            ClientMessage::Chat { text } => self.on_chat_global(id, text),
+            ClientMessage::DenunciarChat { id: msg_id } => {
+                if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
+                    if let Some(conta) = s.account_id {
+                        crate::chat_global::denunciar(msg_id, conta, s.name.clone());
+                        self.send_chat_to(id, "Report sent. Thank you!");
                     }
-                    let _ = s.handle.to_client.send(ServerMessage::Chat {
-                        from: from.clone(),
-                        text: text.clone(),
-                    });
                 }
             }
             ClientMessage::Ping { client_time_ms } => {
@@ -23111,5 +23105,88 @@ impl GameWorld {
             crate::eventos_bonus::mult(Tipo::Ouro, &a),
             crate::eventos_bonus::mult(Tipo::Drop, &a),
         )
+    }
+}
+
+impl GameWorld {
+    /// A line typed in the global chat (`crate::chat_global`).
+    fn on_chat_global(&mut self, sid: SessionId, text: String) {
+        use shared::chat::{self, Acao};
+        let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else { return };
+        let (Some(conta), nome) = (s.account_id, s.name.clone()) else { return };
+        if self.tutorial_mode || nome.is_empty() || crate::chat_global::banido(conta) {
+            return;
+        }
+        let texto = chat::limpar(&text);
+        if texto.is_empty() {
+            return;
+        }
+        if let Some(min) = crate::chat_global::silenciado(conta) {
+            self.send_chat_to(sid, &format!("You are muted in the chat for {min} more minutes."));
+            return;
+        }
+        match crate::chat_global::ritmo(conta, &texto) {
+            Err(crate::chat_global::Recusa::Devagar) => {
+                self.send_chat_to(sid, "Slow down: wait a moment before sending another message.");
+                return;
+            }
+            Err(crate::chat_global::Recusa::Repetida) => {
+                self.send_chat_to(sid, "Don't repeat the same message.");
+                return;
+            }
+            Ok(()) => {}
+        }
+        let r = chat::filtrar(&texto, &crate::chat_global::palavras());
+        match r.pior() {
+            Some(Acao::Alertar) => self.send_chat_to(
+                sid,
+                "Warning: watch your language. The chat is logged and repeat offenses lead to a ban.",
+            ),
+            Some(Acao::Silenciar) => self.send_chat_to(
+                sid,
+                &format!("You were muted for {} minutes for your language.", chat::SILENCIO_AUTOMATICO_MIN),
+            ),
+            _ => {}
+        }
+        let e_staff = crate::chat_global::staff(conta);
+        crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff);
+    }
+
+    /// What came through the chat NOTIFY channel.
+    pub fn on_notificacao_chat(&mut self, n: shared::chat::Notificacao) {
+        use shared::chat::Notificacao as N;
+        match n {
+            N::Mensagem { id, de, texto, staff } => {
+                if self.tutorial_mode {
+                    return;
+                }
+                for s in self.sessions.values().filter(|s| s.logged_in) {
+                    let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
+                        id,
+                        de: de.clone(),
+                        texto: texto.clone(),
+                        staff,
+                    });
+                }
+            }
+            N::Aviso { conta, texto } => {
+                for s in self.sessions.values().filter(|s| s.logged_in && s.account_id == Some(conta)) {
+                    let _ = s.handle.to_client.send(ServerMessage::AvisoGlobal {
+                        texto: format!("Warning from the staff: {texto}"),
+                    });
+                    let _ = s.handle.to_client.send(ServerMessage::Chat {
+                        from: "System".into(),
+                        text: format!("Warning from the staff: {texto}"),
+                    });
+                }
+            }
+            N::Expulsar { conta, motivo } => {
+                for s in self.sessions.values().filter(|s| s.account_id == Some(conta)) {
+                    let _ = s.handle.to_client.send(ServerMessage::Kick {
+                        reason: format!("this account was banned ({motivo})"),
+                    });
+                }
+            }
+        }
     }
 }

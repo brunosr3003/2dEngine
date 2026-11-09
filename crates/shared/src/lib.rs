@@ -7,6 +7,7 @@ pub mod armazem;
 pub mod auras;
 pub mod bestiary;
 pub mod bosses;
+pub mod chat;
 pub mod chaves;
 pub mod forte;
 pub mod kogen;
