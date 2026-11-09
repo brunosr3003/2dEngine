@@ -4257,52 +4257,6 @@ impl GameWorld {
         let _ = self.place_enemy_in_zone_with_build(pos, kind, zone_id, kind, false);
     }
 
-    /// Admin: despawna TODOS os enemies (incluindo bosses) e reseta as filas
-    /// pra que spawn zones repopulem imediato no proximo tick. Comando /despawn.
-    fn admin_despawn_all_enemies(&mut self) {
-        let to_despawn: Vec<(Entity, EntityId)> = self
-            .ecs
-            .query::<(&NetId, &EntityKind)>()
-            .iter()
-            .filter_map(|(e, (n, k))| {
-                if matches!(k, EntityKind::Enemy(_)) {
-                    Some((e, n.0))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let count = to_despawn.len();
-        for (e, eid) in to_despawn {
-            let _ = self.ecs.despawn(e);
-            self.removed_this_tick.push(eid);
-        }
-        // Reseta level_range_live + repopula queue pra spawn imediato.
-        for zone in self.spawn_zones.iter_mut() {
-            zone.level_range_live = 0;
-            if let Some((_, _, c)) = zone.level_range {
-                zone.level_range_queue = (0..c).map(|_| 0.0_f32).collect();
-            }
-            // Legacy quotas: reset live + repopular respawn_queue.
-            for (k, lv) in zone.live.iter_mut() {
-                let _ = k;
-                *lv = 0;
-            }
-            zone.respawn_queue.clear();
-            for &(kind, target) in zone.quotas.iter() {
-                for _ in 0..target {
-                    zone.respawn_queue.push((0.0, kind));
-                }
-            }
-        }
-        // Boss areas: forca respawn imediato.
-        for area in self.boss_areas.iter_mut() {
-            area.current_boss = None;
-            area.respawn_at = 0.0;
-        }
-        tracing::info!("admin /despawn: {count} enemies removidos, zones reabastecidas");
-    }
-
     /// Tick boss areas: spawn quando current_boss == None E sim_time >= respawn_at.
     /// Detect morte: se current_boss aponta pra entity que nao existe mais,
     /// reseta pra None + agenda respawn.
@@ -8057,68 +8011,9 @@ impl GameWorld {
                 }
             }
             ClientMessage::Chat { text } => {
-                // Comandos de slash
-                let trimmed = text.trim();
-                if let Some(rest) = trimmed.strip_prefix("/party ") {
-                    let rest = rest.trim();
-                    if let Some(name) = rest.strip_prefix("invite ") {
-                        self.handle_party_invite(id, name.trim().to_string());
-                    } else if rest == "accept" {
-                        self.handle_party_accept(id);
-                    } else if rest == "decline" {
-                        if let Some(s) = self.sessions.get_mut(&id) {
-                            s.party_invite_from = None;
-                        }
-                    } else if rest == "leave" {
-                        self.handle_party_leave(id);
-                    }
-                    return;
-                }
-                if trimmed == "/despawn" {
-                    self.admin_despawn_all_enemies();
-                    self.send_chat_to(
-                        id,
-                        "[Sistema] Todos os mobs despawnados. Spawn zones reabastecendo...",
-                    );
-                    return;
-                }
-                if trimmed == "/who" {
-                    let mult = crate::economy::xp_multiplier();
-                    let mut list: Vec<(String, u32)> = self
-                        .sessions
-                        .values()
-                        .filter(|s| s.logged_in && !s.name.is_empty())
-                        .map(|s| (s.name.clone(), shared::level_of_xp_with_mult(s.xp, mult)))
-                        .collect();
-                    list.sort();
-                    let txt = if list.is_empty() {
-                        "[/who] nobody online".to_string()
-                    } else {
-                        format!(
-                            "[/who] {} online: {}",
-                            list.len(),
-                            list.iter()
-                                .map(|(n, l)| format!("{} (lv{})", n, l))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    };
-                    self.send_chat_to(id, &txt);
-                    return;
-                }
-                if trimmed == "/tutorial" {
-                    // Replay do tutorial: só no mundo aberto. Manda o client
-                    // reconectar no servidor de tutorial.
-                    if !self.tutorial_mode {
-                        if let Some(s) = self.sessions.get(&id) {
-                            let _ = s.handle.to_client.send(ServerMessage::GoToTutorial {
-                                host: String::new(),
-                                path: String::new(),
-                            });
-                        }
-                    }
-                    return;
-                }
+                // No chat commands at all (owner, 09/11/2026: "quero tirar
+                // completamente todos os comandos de chat"): `/despawn` and the
+                // rest answered ANY player. A line starting with "/" is just text.
                 let from = self
                     .sessions
                     .get(&id)
