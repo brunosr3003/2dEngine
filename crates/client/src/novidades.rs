@@ -32,6 +32,12 @@ impl Default for Novidades {
 }
 
 impl Novidades {
+    /// Closes the panel (as if Continue was tapped) — used by the login preview.
+    #[cfg(debug_assertions)]
+    pub fn fechar(&mut self) {
+        self.aberta = false;
+    }
+
     /// True captures this screen: login fields do not get the same click.
     pub fn desenha(&mut self) -> bool {
         if !self.aberta {

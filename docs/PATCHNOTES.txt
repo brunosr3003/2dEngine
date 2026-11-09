@@ -1,6 +1,7 @@
 Nov 9, 2026 — Shop fixes
 
 - New character creation screen: bigger and clearer, with color pickers for hair and skin.
+- New login, sign-up and server screens: bigger, clearer and over the island.
 - Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.
 - Fixed the purchase screen staying on "Waiting for Google Play" after buying.
 

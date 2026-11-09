@@ -1065,9 +1065,42 @@ async fn main() {
         jogo.conectar();
     }
 
+    // PREVIEW of the screens before the world (MMO_PREVIA_LOGIN=<dir>, run
+    // with MMO_WIN=926x428 = the iPhone in landscape, MMO_API=<web>): server
+    // list, login, sign-up and forgot-password, one PNG each, then exits.
+    #[cfg(debug_assertions)]
+    let previa_login = std::env::var("MMO_PREVIA_LOGIN").ok();
+    #[cfg(debug_assertions)]
+    let mut previa_quadro = 0u32;
     loop {
         jogo.passo();
+        #[cfg(debug_assertions)]
+        if previa_login.is_some() {
+            let cena = previa_quadro / 120;
+            jogo.token_login = None;
+            jogo.novidades.fechar();
+            jogo.tela = match cena {
+                0 => Tela::Servidores,
+                1 => Tela::Login,
+                2 => Tela::Cadastro,
+                _ => Tela::EsqueciSenha,
+            };
+            if cena >= 1 && jogo.realm.is_none() {
+                jogo.realm = Some("SA01".into());
+            }
+        }
         jogo.desenhar();
+        #[cfg(debug_assertions)]
+        if let Some(dir) = &previa_login {
+            previa_quadro += 1;
+            if previa_quadro % 120 == 119 {
+                let nome = ["servidores", "login", "cadastro", "esqueci"][(previa_quadro / 120) as usize];
+                get_screen_data().export_png(&format!("{dir}/login-{nome}.png"));
+                if previa_quadro / 120 >= 3 {
+                    return;
+                }
+            }
+        }
         // UM pendente por quadro (skins de roupa que alguem a' vista esta'
         // usando). Um rig custa 2-5 ms de malha; dois por quadro engasgam.
         // A 60 fps isto resolve uma praca cheia de skins distintas em pouco
@@ -1175,50 +1208,119 @@ fn alvo_da_trava(painel_aberto: bool) -> &'static [u16] {
     }
 }
 
-/// Onde cada peça da tela de "I forgot my password" fica.
-///
-/// Ordem: e-mail, enviar, voltar.
-fn layout_do_esqueci(r: Rect) -> [Rect; 3] {
+/// The main action of a pre-game card (gold, bigger text).
+fn botao_principal(r: Rect, rotulo: &str, ativo: bool) -> bool {
+    let sobre = ativo && r.toca(Vec2::from(mouse_position()));
+    let e = hud_estilo::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    hud_estilo::botao(r, "", e, ativo);
+    hud_estilo::texto_centro_forte(
+        r.x + r.w * 0.5,
+        r.y + r.h * 0.5 + 8.0 * hud_estilo::fator_texto(),
+        rotulo,
+        20,
+        if ativo { ui::OURO_CLARO } else { ui::APOIO },
+    );
+    let clicou = ativo && sobre && foco::clique();
+    if clicou {
+        sons::tocar(sons::Som::Clique);
+    }
+    clicou
+}
+
+/// A text link (no box), for the rare paths like "Forgot password?".
+fn link_k(r: Rect, rotulo: &str, k: f32) -> bool {
+    let sobre = r.toca(Vec2::from(mouse_position()));
+    let w = hud_estilo::medir(rotulo, 14);
+    let x = r.x + r.w - w;
+    hud_estilo::texto(x, r.y + r.h * 0.5 + 5.0 * k, rotulo, 14, if sobre { ui::OURO_CLARO } else { ui::OURO });
+    if sobre {
+        draw_line(x, r.y + r.h * 0.5 + 8.0 * k, x + w, r.y + r.h * 0.5 + 8.0 * k, 1.0, ui::OURO);
+    }
+    sobre && foco::clique()
+}
+
+/// The pre-game screens (servers, login, sign-up, forgot password) share ONE
+/// layout: a design canvas of `BASE_INICIAL` scaled to the safe area by `k`
+/// (like the character creation screen), the TEMPEST brand on the left and a
+/// card on the right (owner, 09/11/2026: "the login page is very ugly and
+/// small and has no background").
+const BASE_INICIAL: (f32, f32) = (900.0, 420.0);
+
+#[derive(Debug, Clone, Copy)]
+struct TelaInicial {
+    k: f32,
+    ox: f32,
+    oy: f32,
+}
+
+impl TelaInicial {
+    fn nova(w: f32, h: f32, seguro: [f32; 4]) -> Self {
+        let (aw, ah) = ((w - seguro[1] - seguro[3]).max(1.0), (h - seguro[0] - seguro[2]).max(1.0));
+        let k = (aw / BASE_INICIAL.0).min(ah / BASE_INICIAL.1).clamp(0.5, 2.2);
+        Self {
+            k,
+            ox: seguro[1] + (aw - BASE_INICIAL.0 * k) * 0.5,
+            oy: seguro[0] + (ah - BASE_INICIAL.1 * k) * 0.5,
+        }
+    }
+
+    fn da_tela() -> Self {
+        Self::nova(screen_width(), screen_height(), nativo::area_segura())
+    }
+
+    /// A rect in design units, on screen.
+    fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect::new(self.ox + x * self.k, self.oy + y * self.k, w * self.k, h * self.k)
+    }
+
+    /// The card on the right (its full box).
+    fn cartao(&self) -> Rect {
+        self.r(476.0, 14.0, 412.0, 392.0)
+    }
+
+    /// Where the card's content goes (below its title band).
+    fn conteudo(&self) -> Rect {
+        self.r(490.0, 64.0, 384.0, 336.0)
+    }
+}
+
+/// A piece of a card, in design units relative to the content rect `c`.
+fn peca(c: Rect, k: f32, x: f32, y: f32, w: f32, h: f32) -> Rect {
+    Rect::new(c.x + x * k, c.y + y * k, w * k, h * k)
+}
+
+/// FORGOT PASSWORD: e-mail, send, back.
+fn layout_do_esqueci(c: Rect, k: f32) -> [Rect; 3] {
+    let w = c.w / k;
+    [peca(c, k, 0.0, 44.0, w, 42.0), peca(c, k, 0.0, 100.0, w, 46.0), peca(c, k, 0.0, 156.0, w, 40.0)]
+}
+
+/// SIGN-UP: username, e-mail, password, repeat, create, back.
+fn layout_do_cadastro(c: Rect, k: f32) -> [Rect; 6] {
+    let w = c.w / k;
     [
-        Rect::new(r.x, r.y + 92.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 154.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 208.0, r.w, 44.0),
+        peca(c, k, 0.0, 14.0, w, 38.0),
+        peca(c, k, 0.0, 74.0, w, 38.0),
+        peca(c, k, 0.0, 134.0, w, 38.0),
+        peca(c, k, 0.0, 194.0, w, 38.0),
+        peca(c, k, 0.0, 250.0, w, 38.0),
+        peca(c, k, 0.0, 296.0, w, 38.0),
     ]
 }
 
-/// Onde cada peça da tela de CADASTRO fica.
-///
-/// Ordem: usuário, e-mail, senha, criar, voltar.
-fn layout_do_cadastro(r: Rect) -> [Rect; 6] {
+/// LOGIN: username, password, remember, sign in, "or", Google, create
+/// account, forgot password (a text button on the remember row).
+fn layout_do_login(c: Rect, k: f32) -> [Rect; 8] {
+    let w = c.w / k;
     [
-        Rect::new(r.x, r.y + 52.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 128.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 204.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 280.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 342.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 396.0, r.w, 44.0),
-    ]
-}
-
-/// Onde cada peça da tela de login fica, dado o retângulo do painel.
-///
-/// Ordem: usuário, senha, lembrar, entrar, "ou", google.
-///
-/// Extraída porque as posições eram números soltos no meio do desenho, e
-/// acrescentar UMA linha ("remember me") empurrou três delas. Sem função
-/// não há como conferir que nada encosta em nada a não ser abrindo o jogo — e
-/// deixar de abrir é o que já me fez entregar tela quebrada mais de uma vez
-/// neste projeto.
-fn layout_do_login(r: Rect) -> [Rect; 8] {
-    [
-        Rect::new(r.x, r.y + 46.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 122.0, r.w, 42.0),
-        Rect::new(r.x, r.y + 178.0, r.w, 38.0),
-        Rect::new(r.x, r.y + 224.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 270.0, r.w, 14.0),
-        Rect::new(r.x, r.y + 288.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 338.0, r.w, 44.0),
-        Rect::new(r.x, r.y + 388.0, r.w, 36.0),
+        peca(c, k, 0.0, 18.0, w, 44.0),
+        peca(c, k, 0.0, 88.0, w, 44.0),
+        peca(c, k, 0.0, 140.0, w * 0.52, 32.0),
+        peca(c, k, 0.0, 178.0, w, 46.0),
+        peca(c, k, 0.0, 232.0, w, 12.0),
+        peca(c, k, 0.0, 248.0, w, 38.0),
+        peca(c, k, 0.0, 294.0, w, 38.0),
+        peca(c, k, w * 0.54, 140.0, w * 0.46, 32.0),
     ]
 }
 
@@ -1226,33 +1328,41 @@ fn layout_do_login(r: Rect) -> [Rect; 8] {
 mod testes_do_login {
     use super::*;
 
-    /// Nada encosta em nada, e tudo cabe no painel.
-    ///
-    /// A altura é a constante de `tela_login`; se ela mudar sem o layout
-    /// mudar junto, este teste é quem avisa.
-    #[test]
-    fn a_tela_de_login_nao_se_sobrepoe() {
-        const ALTURA: f32 = 560.0;
-        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
-        let pecas = layout_do_login(r);
-        let nomes = [
-            "username", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci",
-        ];
-        for (i, a) in pecas.iter().enumerate() {
-            assert!(
-                a.y >= r.y && a.y + a.h <= r.y + ALTURA,
-                "{} vaza o painel: {a:?}",
-                nomes[i]
-            );
-            for (j, b) in pecas.iter().enumerate().skip(i + 1) {
+    /// The pre-game screens on the sizes that matter: iPhone (notch and home
+    /// bar), small phones, PC. Every piece inside the card and the screen, and
+    /// no two pieces overlapping.
+    fn confere_cartao(nome_tela: &str, pecas: &dyn Fn(Rect, f32) -> Vec<(&'static str, Rect)>) {
+        for (w, h, seguro) in [
+            (926.0, 428.0, [0.0, 47.0, 21.0, 47.0]),
+            (844.0, 390.0, [0.0, 47.0, 21.0, 47.0]),
+            (667.0, 375.0, [0.0; 4]),
+            (1280.0, 720.0, [0.0; 4]),
+        ] {
+            let t = TelaInicial::nova(w, h, seguro);
+            let card = t.cartao();
+            assert!(card.x >= 0.0 && card.y >= 0.0 && card.x + card.w <= w && card.y + card.h <= h, "{nome_tela} {w}x{h}: card fora da tela");
+            let v = pecas(t.conteudo(), t.k);
+            for (i, (n, a)) in v.iter().enumerate() {
                 assert!(
-                    a.y + a.h <= b.y || b.y + b.h <= a.y,
-                    "{} encosta em {}: {a:?} e {b:?}",
-                    nomes[i],
-                    nomes[j]
+                    a.x >= card.x && a.y >= card.y && a.x + a.w <= card.x + card.w + 0.01 && a.y + a.h <= card.y + card.h + 0.01,
+                    "{nome_tela} {w}x{h}: {n} vaza o card: {a:?}"
                 );
+                for (m, b) in v.iter().skip(i + 1) {
+                    assert!(!a.overlaps(b), "{nome_tela} {w}x{h}: {n} encosta em {m}");
+                }
             }
         }
+    }
+
+    #[test]
+    fn a_tela_de_login_nao_se_sobrepoe() {
+        confere_cartao("login", &|c, k| {
+            let p = layout_do_login(c, k);
+            ["username", "senha", "lembrar", "entrar", "ou", "google", "criar", "esqueci"]
+                .into_iter()
+                .zip(p)
+                .collect()
+        });
     }
 
     /// O destaque da trava sai do menu quando o painel abre.
@@ -1275,27 +1385,16 @@ mod testes_do_login {
         );
     }
 
-    /// A tela de "I forgot my password" também não se sobrepõe.
+    /// A tela de "Forgot password" também não se sobrepõe, e os botões cabem o dedo.
     #[test]
     fn a_tela_de_esqueci_nao_se_sobrepoe() {
-        const ALTURA: f32 = 300.0;
-        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
-        let p = layout_do_esqueci(r);
-        let nomes = ["e-mail", "enviar", "voltar"];
-        for (i, a) in p.iter().enumerate() {
-            assert!(a.y >= r.y && a.y + a.h <= r.y + ALTURA, "{} vaza", nomes[i]);
-            for (j, b) in p.iter().enumerate().skip(i + 1) {
-                assert!(
-                    a.y + a.h <= b.y || b.y + b.h <= a.y,
-                    "{} encosta em {}",
-                    nomes[i],
-                    nomes[j]
-                );
+        confere_cartao("esqueci", &|c, k| {
+            let p = layout_do_esqueci(c, k);
+            for (r, nome) in [(p[1], "enviar"), (p[2], "voltar")] {
+                assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
             }
-        }
-        for (r, nome) in [(p[1], "enviar"), (p[2], "voltar")] {
-            assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
-        }
+            ["e-mail", "enviar", "voltar"].into_iter().zip(p).collect()
+        });
     }
 
     /// A quebra de linha não corta palavra e respeita o limite.
@@ -1314,29 +1413,10 @@ mod testes_do_login {
     /// A tela de cadastro também não se sobrepõe nem vaza.
     #[test]
     fn a_tela_de_cadastro_nao_se_sobrepoe() {
-        const ALTURA: f32 = 496.0;
-        let r = Rect::new(100.0, 60.0, 460.0, ALTURA);
-        let pecas = layout_do_cadastro(r);
-        let nomes = ["username", "e-mail", "senha", "repetir", "criar", "voltar"];
-        for (i, a) in pecas.iter().enumerate() {
-            assert!(
-                a.y >= r.y && a.y + a.h <= r.y + ALTURA,
-                "{} vaza o painel: {a:?}",
-                nomes[i]
-            );
-            for (j, b) in pecas.iter().enumerate().skip(i + 1) {
-                assert!(
-                    a.y + a.h <= b.y || b.y + b.h <= a.y,
-                    "{} encosta em {}",
-                    nomes[i],
-                    nomes[j]
-                );
-            }
-        }
-        // Os dois botões cabem num dedo.
-        for (r, nome) in [(pecas[4], "criar"), (pecas[5], "voltar")] {
-            assert!(ui::area_de_toque(r).h >= 44.0, "{nome} é pequeno demais");
-        }
+        confere_cartao("cadastro", &|c, k| {
+            let p = layout_do_cadastro(c, k);
+            ["username", "e-mail", "senha", "repetir", "criar", "voltar"].into_iter().zip(p).collect()
+        });
     }
 
     /// O que se toca tem o tamanho de um dedo (44 pt da Apple).
@@ -1346,7 +1426,8 @@ mod testes_do_login {
     /// corrigidos. Uma caixinha de marcar de 20 px seria o 56º.
     #[test]
     fn o_que_se_toca_cabe_num_dedo() {
-        let p = layout_do_login(Rect::new(0.0, 0.0, 460.0, 480.0));
+        let t = TelaInicial::nova(926.0, 428.0, [0.0, 47.0, 21.0, 47.0]);
+        let p = layout_do_login(t.conteudo(), t.k);
         for (r, nome) in [
             (p[2], "lembrar"),
             (p[3], "entrar"),
@@ -7387,66 +7468,115 @@ impl Jogo {
         }
     }
 
+    /// Background of every pre-game screen: the island, a soft veil on the
+    /// left for the brand, and the TEMPEST brand itself. Returns the layout.
+    fn fundo_inicial(&mut self) -> TelaInicial {
+        self.selecao_personagem.fundo_do_mundo(&self.solido);
+        let (w, h) = (screen_width(), screen_height());
+        // A veil over the whole island, darker on the brand's side: the
+        // island stays visible and TEMPEST reads on top of it.
+        let escuro = |a: f32| Color::new(0.010, 0.015, 0.026, a);
+        draw_rectangle(0.0, 0.0, w, h, escuro(0.32));
+        // The brand's side: solid up to 40% of the width, then a soft edge
+        // in exact (non-overlapping) slices.
+        let solido = (w * 0.40).floor();
+        draw_rectangle(0.0, 0.0, solido, h, escuro(0.42));
+        let fatias = 16;
+        let borda = w * 0.16;
+        for i in 0..fatias {
+            let x0 = (solido + borda * i as f32 / fatias as f32).floor();
+            let x1 = (solido + borda * (i + 1) as f32 / fatias as f32).floor();
+            draw_rectangle(x0, 0.0, x1 - x0, h, escuro(0.42 * (1.0 - (i as f32 + 0.5) / fatias as f32)));
+        }
+        let t = TelaInicial::da_tela();
+        hud_estilo::no_painel(t.k, || {
+            let cx = t.ox + 226.0 * t.k;
+            let titulo = "TEMPEST";
+            let tw = hud_estilo::medir_forte(titulo, 72);
+            hud_estilo::texto_sombra(cx - tw * 0.5, t.oy + 190.0 * t.k, titulo, 72, ui::OURO, true);
+            hud_estilo::separador(cx - 150.0 * t.k, t.oy + 210.0 * t.k, 300.0 * t.k);
+            hud_estilo::texto_centro(cx, t.oy + 240.0 * t.k, "O N L I N E", 18, ui::OURO_CLARO);
+            hud_estilo::texto_centro(cx, t.oy + 282.0 * t.k, "Islands, storms and treasure await.", 17, hud_estilo::TEXTO);
+        });
+        t
+    }
+
+    /// The card on the right with its title; `dy` lifts it above the
+    /// on-screen keyboard. Returns the content rect.
+    fn cartao_inicial(t: &TelaInicial, titulo: &str, dy: f32) -> Rect {
+        let c = t.cartao();
+        let c = Rect::new(c.x, c.y - dy, c.w, c.h);
+        hud_estilo::painel_destaque(c, ui::OURO);
+        hud_estilo::texto_centro_forte(c.x + c.w * 0.5, c.y + 32.0 * t.k, titulo, 24, ui::OURO);
+        hud_estilo::separador(c.x + 24.0 * t.k, c.y + 42.0 * t.k, c.w - 48.0 * t.k);
+        let ct = t.conteudo();
+        Rect::new(ct.x, ct.y - dy, ct.w, ct.h)
+    }
+
+    /// Text scale of the pre-game screens: a bit above the canvas scale, so
+    /// fields and buttons read easily on a phone.
+    fn fonte_inicial(t: &TelaInicial) -> f32 {
+        t.k * 1.12
+    }
+
     fn tela_servidores(&mut self) {
-        ui::fundo();
+        let t = self.fundo_inicial();
         if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
-        let r = ui::painel(560.0, 460.0, "choose the server");
-        let cx = r.x + r.w * 0.5;
+        hud_estilo::no_painel(Self::fonte_inicial(&t), || self.servidores_na_escala(t));
+    }
 
+    fn servidores_na_escala(&mut self, t: TelaInicial) {
+        let k = t.k;
+        let c = Self::cartao_inicial(&t, "Choose a server", 0.0);
+        let cx = c.x + c.w * 0.5;
         if self.busca.is_some() {
-            ui::texto_centro(cx, r.y + 60.0, "looking for servers...", 20, ui::OURO);
+            ui::texto_centro(cx, c.y + 80.0 * k, "Looking for servers…", 18, ui::OURO);
             return;
         }
         if self.canais.is_empty() {
-            ui::erro(cx, r.y + 50.0, "no server online");
-            ui::texto_centro(
-                cx,
-                r.y + 78.0,
-                "check the web (/api/channels)",
-                16,
-                ui::OURO,
-            );
-            if ui::botao(
-                Rect::new(cx - 80.0, r.y + 110.0, 160.0, 40.0),
-                "search again",
-                true,
-            ) {
+            ui::erro(cx, c.y + 70.0 * k, "No server online right now.");
+            if ui::botao(peca(c, k, 92.0, 110.0, 200.0, 44.0), "Try again", true) {
                 self.busca = Some(api::buscar_canais());
             }
             return;
         }
-
         // So' os SERVIDORES (realms), com a soma de todas as ilhas. A ilha nao
         // se escolhe: e' onde o personagem esta'. Entra-se pela porta da ilha
         // inicial (`api::porta_de_entrada`) e, se o personagem escolhido mora
         // em outra, o servidor manda reconectar la' (`TrocarZona`).
         let mut realms: Vec<(String, u32, u32)> = Vec::new();
-        for c in &self.canais {
-            match realms.iter_mut().find(|(n, _, _)| n == c.realm()) {
+        for canal in &self.canais {
+            match realms.iter_mut().find(|(n, _, _)| n == canal.realm()) {
                 Some(e) => {
-                    e.1 += c.jogadores;
-                    e.2 += c.capacidade;
+                    e.1 += canal.jogadores;
+                    e.2 += canal.capacidade;
                 }
-                None => realms.push((c.realm().to_string(), c.jogadores, c.capacidade)),
+                None => realms.push((canal.realm().to_string(), canal.jogadores, canal.capacidade)),
             }
         }
-        let mut y = r.y + 10.0;
+        ui::texto(c.x, c.y + 12.0 * k, "Tap a server to play", 15, ui::APOIO);
         let mut escolhido = None;
-        for (nome, jog, cap) in &realms {
-            let linha = Rect::new(r.x, y, r.w, 46.0);
-            if ui::linha(linha, nome, &format!("{jog} online"), false) {
+        for (i, (nome, jog, cap)) in realms.iter().enumerate().take(4) {
+            let linha = peca(c, k, 0.0, 26.0 + i as f32 * 70.0, c.w / k, 62.0);
+            let sobre = linha.toca(Vec2::from(mouse_position()));
+            hud_estilo::cartao(linha, sobre, false);
+            hud_estilo::texto_forte(linha.x + 16.0 * k, linha.y + 28.0 * k, nome, 22, hud_estilo::TEXTO);
+            let online = format!("{jog} online");
+            hud_estilo::texto(
+                linha.x + linha.w - 16.0 * k - hud_estilo::medir(&online, 16),
+                linha.y + 28.0 * k,
+                &online,
+                16,
+                ui::OURO_CLARO,
+            );
+            ui::barra(
+                Rect::new(linha.x + 16.0 * k, linha.y + 42.0 * k, linha.w - 32.0 * k, 6.0 * k),
+                if *cap > 0 { *jog as f32 / *cap as f32 } else { 0.0 },
+            );
+            if sobre && foco::clique() {
                 escolhido = Some(nome.clone());
             }
-            ui::barra(
-                Rect::new(r.x + 12.0, y + 34.0, r.w - 24.0, 5.0),
-                if *cap > 0 {
-                    *jog as f32 / *cap as f32
-                } else {
-                    0.0
-                },
-            );
-            y += 54.0;
         }
         if let Some(n) = escolhido {
             if let Some(host) = api::porta_de_entrada(&self.canais, &n) {
@@ -7455,11 +7585,7 @@ impl Jogo {
                 self.tela = Tela::Login;
             }
         }
-        if ui::botao(
-            Rect::new(r.x + r.w - 140.0, r.y + r.h - 44.0, 140.0, 40.0),
-            "atualizar",
-            true,
-        ) {
+        if ui::botao(peca(c, k, c.w / k - 150.0, 294.0, 150.0, 40.0), "Refresh", true) {
             self.busca = Some(api::buscar_canais());
         }
     }
@@ -7471,27 +7597,26 @@ impl Jogo {
     /// transformar esta tela num verificador de quem joga aqui — e o
     /// servidor responde 200 nos dois casos justamente por isso.
     fn tela_esqueci(&mut self) {
-        ui::fundo();
-        const ALTURA: f32 = 300.0;
-        let topo = (screen_height() - ALTURA) * 0.5;
+        let t = self.fundo_inicial();
+        hud_estilo::no_painel(Self::fonte_inicial(&t), || self.esqueci_na_escala(t));
+    }
+
+    fn esqueci_na_escala(&mut self, t: TelaInicial) {
+        let k = t.k;
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        ui::subir_paineis(teclado_virtual::deslocamento(
-            aberto,
-            screen_height(),
-            topo,
-            topo + 134.0,
-        ));
-        let r = ui::painel(460.0, ALTURA, "I forgot my password");
-        ui::subir_paineis(0.0);
-        let cx = r.x + r.w * 0.5;
-        let [ce, cenviar, cvoltar] = layout_do_esqueci(r);
+        let base = t.conteudo();
+        let [ce0, ..] = layout_do_esqueci(base, k);
+        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, ce0.y + ce0.h);
+        let c = Self::cartao_inicial(&t, "Forgot password", dy);
+        let cx = c.x + c.w * 0.5;
+        let [ce, cenviar, cvoltar] = layout_do_esqueci(c, k);
 
         if let Some(rx) = &self.esq_pedido {
             if let Ok(resp) = rx.try_recv() {
                 self.esq_pedido = None;
                 self.esq_recado = Some(match resp {
                     Ok(()) => (
-                        "Se houver uma conta com esse e-mail, o link já saiu.                          Confira a caixa de entrada e o spam."
+                        "If an account uses this e-mail, the link is on its way. Check the inbox and the spam folder."
                             .into(),
                         false,
                     ),
@@ -7500,38 +7625,32 @@ impl Jogo {
             }
         }
         let esperando = self.esq_pedido.is_some();
-
-        ui::texto_centro(cx, r.y + 62.0, "Type the account's e-mail.", 14, ui::APOIO);
+        ui::texto_centro(cx, c.y + 14.0 * k, "Type your account's e-mail.", 15, ui::APOIO);
         let digitado = self.teclado.digitado().to_vec();
         let mut email = std::mem::take(&mut self.esq_email);
-        if ui::campo(ce, "e-mail", &mut email, true, false, &digitado) {
+        if ui::campo(ce, "E-mail", &mut email, true, false, &digitado) {
             self.campo_login_ativo = true;
         }
         self.esq_email = email;
 
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
         let pode = self.esq_email.contains('@') && !esperando;
-        let rotulo = if esperando {
-            "enviando…"
-        } else {
-            "send the link"
-        };
+        let rotulo = if esperando { "Sending…" } else { "Send the link" };
         if (ui::botao(cenviar, rotulo, pode) || (pode && enter)) && pode {
             self.campo_login_ativo = false;
             self.esq_recado = None;
             self.esq_pedido = Some(api::esqueci_a_senha(self.esq_email.trim()));
         }
-        if ui::botao(cvoltar, "voltar", !esperando) {
+        if ui::botao(cvoltar, "Back", !esperando) {
             self.campo_login_ativo = false;
             self.tela = Tela::Login;
         }
         if let Some((m, ruim)) = self.esq_recado.clone() {
             if ruim {
-                ui::erro(cx, r.y + 30.0, &m);
+                ui::erro(cx, cvoltar.y + cvoltar.h + 26.0 * k, &m);
             } else {
-                // Recado longo e de duas linhas: centrado, na cor de apoio.
-                for (i, linha) in quebra_em_linhas(&m, 52).iter().take(2).enumerate() {
-                    ui::texto_centro(cx, r.y + 266.0 + i as f32 * 17.0, linha, 13, ui::OURO);
+                for (i, linha) in quebra_em_linhas(&m, 44).iter().take(3).enumerate() {
+                    ui::texto_centro(cx, cvoltar.y + cvoltar.h + (26.0 + i as f32 * 18.0) * k, linha, 14, ui::OURO);
                 }
             }
         }
@@ -7544,25 +7663,21 @@ impl Jogo {
     /// Google no ar ficou pior, porque passou a haver UM jeito de entrar
     /// sozinho e ele exigia conta Google.
     fn tela_cadastro(&mut self) {
-        ui::fundo();
-        const ALTURA: f32 = 496.0;
-        let topo = (screen_height() - ALTURA) * 0.5;
-        let p = layout_do_cadastro(Rect::new(0.0, 0.0, 1.0, 1.0));
-        let _ = p;
+        let t = self.fundo_inicial();
+        hud_estilo::no_painel(Self::fonte_inicial(&t), || self.cadastro_na_escala(t));
+    }
+
+    fn cadastro_na_escala(&mut self, t: TelaInicial) {
+        let k = t.k;
         // O campo com foco pode ser o terceiro, e é ele que o teclado da tela
         // não pode cobrir.
-        let fundo_campo = topo + 60.0 + 52.0 + self.cad_foco as f32 * 76.0 + 42.0;
+        let base = layout_do_cadastro(t.conteudo(), k);
+        let foco = base[self.cad_foco.min(3)];
         let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        ui::subir_paineis(teclado_virtual::deslocamento(
-            aberto,
-            screen_height(),
-            topo,
-            fundo_campo,
-        ));
-        let r = ui::painel(460.0, ALTURA, "create account");
-        ui::subir_paineis(0.0);
-        let cx = r.x + r.w * 0.5;
-        let [cu, ce, cs, cs2, ccriar, cvoltar] = layout_do_cadastro(r);
+        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
+        let c = Self::cartao_inicial(&t, "Create account", dy);
+        let cx = c.x + c.w * 0.5;
+        let [cu, ce, cs, cs2, ccriar, cvoltar] = layout_do_cadastro(c, k);
 
         // A RESPOSTA do pedido em voo. Lida antes de desenhar pra o recado já
         // aparecer no mesmo quadro em que chega.
@@ -7595,15 +7710,10 @@ impl Jogo {
         let esperando = self.cad_pedido.is_some();
         let digitado = self.teclado.digitado().to_vec();
         let mut campos = [
-            (cu, "username", std::mem::take(&mut self.cad_usuario), false),
-            (ce, "e-mail", std::mem::take(&mut self.cad_email), false),
-            (cs, "senha", std::mem::take(&mut self.cad_senha), true),
-            (
-                cs2,
-                "repeat the password",
-                std::mem::take(&mut self.cad_senha2),
-                true,
-            ),
+            (cu, "Username", std::mem::take(&mut self.cad_usuario), false),
+            (ce, "E-mail", std::mem::take(&mut self.cad_email), false),
+            (cs, "Password", std::mem::take(&mut self.cad_senha), true),
+            (cs2, "Repeat the password", std::mem::take(&mut self.cad_senha2), true),
         ];
         for (i, (rect, rotulo, valor, senha)) in campos.iter_mut().enumerate() {
             if ui::campo(*rect, rotulo, valor, self.cad_foco == i, *senha, &digitado) {
@@ -7644,14 +7754,10 @@ impl Jogo {
             None
         };
         if let Some(m) = motivo {
-            ui::texto_centro(cx, ccriar.y - 10.0, m, 13, ui::APOIO);
+            ui::texto_centro(cx, ccriar.y - 6.0 * k, m, 13, ui::APOIO);
         }
         let pode = motivo.is_none() && !esperando;
-        let rotulo = if esperando {
-            "criando…"
-        } else {
-            "create account"
-        };
+        let rotulo = if esperando { "Creating…" } else { "Create account" };
         if (ui::botao(ccriar, rotulo, pode) || (pode && self.cad_foco == 3 && enter)) && pode {
             self.campo_login_ativo = false;
             self.cad_recado = None;
@@ -7661,22 +7767,22 @@ impl Jogo {
                 &self.cad_senha,
             ));
         }
-        if ui::botao(cvoltar, "voltar", !esperando) {
+        if ui::botao(cvoltar, "Back", !esperando) {
             self.campo_login_ativo = false;
             self.cad_recado = None;
             self.tela = Tela::Login;
         }
         if let Some((m, ruim)) = self.cad_recado.clone() {
             if ruim {
-                ui::erro(cx, r.y + 30.0, &m);
+                ui::erro(cx, c.y - 2.0 * k, &m);
             } else {
-                ui::texto_centro(cx, r.y + 30.0, &m, 14, ui::OURO);
+                ui::texto_centro(cx, c.y - 2.0 * k, &m, 14, ui::OURO);
             }
         }
     }
 
     fn tela_login(&mut self) {
-        ui::fundo();
+        let t = self.fundo_inicial();
         if self.atualizacao.desenha() { return; }
         if self.novidades.desenha() { return; }
         // SESSÃO GUARDADA: entra sozinho, sem mostrar a tela. É isto que faz
@@ -7694,44 +7800,41 @@ impl Jogo {
             self.conectar();
             return;
         }
-        // Cresceu duas vezes: 440 -> 480 pelo "remember me", 480 -> 540
-        // pelo "create account". Cada linha nova empurra o resto, e é por isso
-        // que as posições viraram `layout_do_login` com teste.
-        const ALTURA: f32 = 540.0;
-        // Teclado da tela aberto: o painel sobe o bastante pro campo com foco
-        // (a senha, no pior caso) ficar acima dele.
-        let topo = (screen_height() - ALTURA) * 0.5;
-        let fundo_campo = topo + 60.0 + if self.foco_senha { 164.0 } else { 88.0 };
-        let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
-        ui::subir_paineis(teclado_virtual::deslocamento(
-            aberto,
-            screen_height(),
-            topo,
-            fundo_campo,
-        ));
-        let r = ui::painel(460.0, ALTURA, "entrar");
-        ui::subir_paineis(0.0);
-        let cx = r.x + r.w * 0.5;
-        if let Some(realm) = &self.realm {
-            ui::texto_centro(cx, r.y + 6.0, &format!("server {realm}"), 15, ui::OURO);
-        }
+        hud_estilo::no_painel(Self::fonte_inicial(&t), || self.login_na_escala(t));
+    }
 
-        if let Some(e) = self.erro_login.clone() {
-            ui::erro(cx, r.y + 30.0, &e);
+    fn login_na_escala(&mut self, t: TelaInicial) {
+        let k = t.k;
+        // Teclado da tela aberto: o card sobe o bastante pro campo com foco
+        // (a senha, no pior caso) ficar acima dele.
+        let base = layout_do_login(t.conteudo(), k);
+        let foco = base[if self.foco_senha { 1 } else { 0 }];
+        let aberto = nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto();
+        let dy = teclado_virtual::deslocamento(aberto, screen_height(), t.cartao().y, foco.y + foco.h);
+        let c = Self::cartao_inicial(&t, "Sign in", dy);
+        let cx = c.x + c.w * 0.5;
+        let cartao = t.cartao();
+        // The server, and the way back to the list, in the card's corner.
+        let voltar = Rect::new(cartao.x + 10.0 * k, cartao.y - dy + 10.0 * k, 44.0 * k, 32.0 * k);
+        if ui::botao(voltar, "‹", true) {
+            self.campo_login_ativo = false;
+            self.google.cancelar();
+            self.tela = Tela::Servidores;
+            return;
         }
-        let [cu, cs, clembrar, centrar, cou, cgoogle, ccriar, cesq] = layout_do_login(r);
+        if let Some(realm) = &self.realm {
+            let s = format!("Server {realm}");
+            hud_estilo::texto(cartao.x + cartao.w - 14.0 * k - hud_estilo::medir(&s, 13), cartao.y - dy + 30.0 * k, &s, 13, ui::APOIO);
+        }
+        if let Some(e) = self.erro_login.clone() {
+            ui::erro(cx, c.y + 4.0 * k, &e);
+        }
+        let [cu, cs, clembrar, centrar, cou, cgoogle, ccriar, cesq] = layout_do_login(c, k);
         let mut usuario = std::mem::take(&mut self.usuario);
         let mut senha = std::mem::take(&mut self.senha);
         let digitado = self.teclado.digitado().to_vec();
-        let clicou_u = ui::campo(
-            cu,
-            "username",
-            &mut usuario,
-            !self.foco_senha,
-            false,
-            &digitado,
-        );
-        let clicou_s = ui::campo(cs, "senha", &mut senha, self.foco_senha, true, &digitado);
+        let clicou_u = ui::campo(cu, "Username", &mut usuario, !self.foco_senha, false, &digitado);
+        let clicou_s = ui::campo(cs, "Password", &mut senha, self.foco_senha, true, &digitado);
         self.usuario = usuario;
         self.senha = senha;
         if clicou_u {
@@ -7755,9 +7858,8 @@ impl Jogo {
         if enter && !self.foco_senha {
             self.foco_senha = true;
         } else {
-            let pode =
-                !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
-            let entrar = ui::botao(centrar, "entrar", pode) || (pode && self.foco_senha && enter);
+            let pode = !self.usuario.is_empty() && !self.senha.is_empty() && !self.google.aguardando();
+            let entrar = botao_principal(centrar, "Sign in", pode) || (pode && self.foco_senha && enter);
             if entrar {
                 self.campo_login_ativo = false;
                 self.erro_login = None;
@@ -7767,69 +7869,42 @@ impl Jogo {
         }
         // LEMBRAR DE MIM. Desmarcar apaga a sessão guardada NA HORA, e não só
         // no próximo login: quem desmarca está pedindo pra esquecer agora.
-        if ui::caixa(clembrar, "remember me", &mut self.lembrar) && !self.lembrar {
+        if ui::caixa(clembrar, "Remember me", &mut self.lembrar) && !self.lembrar {
             self.token_login = None;
             crate::lembranca::esquece_a_sessao();
         }
+        // ESQUECI MINHA SENHA: a text link, discreet — the rare path.
+        if link_k(cesq, "Forgot password?", k) {
+            self.campo_login_ativo = false;
+            self.erro_login = None;
+            self.esq_recado = None;
+            self.esq_email.clear();
+            self.tela = Tela::EsqueciSenha;
+        }
         // CRIAR CONTA: o caminho de quem não quer usar o Google.
-        //
-        // Fica ABAIXO do Google de propósito. O `/api/register` sempre
-        // existiu no servidor e nunca teve tela — quem não tinha conta não
-        // tinha como entrar no jogo por conta própria.
-        if ui::botao(ccriar, "create account", true) {
+        if ui::botao(ccriar, "Create account", true) {
             self.campo_login_ativo = false;
             self.erro_login = None;
             self.cad_recado = None;
             self.tela = Tela::Cadastro;
         }
-        // ESQUECI MINHA SENHA. Discreto (texto, não botão cheio): é o caminho
-        // raro, e competir com "entrar" pelo olho só atrapalharia quem lembra.
-        if ui::botao(cesq, "I forgot my password", true) {
-            self.campo_login_ativo = false;
-            self.erro_login = None;
-            self.esq_recado = None;
-            self.esq_email = self.usuario.clone();
-            self.esq_email.clear();
-            self.tela = Tela::EsqueciSenha;
-        }
-
         // Entrar com Google: so' aparece com o servidor configurado.
         if self.google.disponivel() {
-            let rg = cgoogle;
             if self.google.aguardando() {
-                ui::texto_centro(
-                    cx,
-                    rg.y + 16.0,
-                    &self.google.texto().unwrap_or_default(),
-                    16,
-                    ui::OURO_CLARO,
-                );
-                if ui::botao(
-                    Rect::new(cx - 70.0, rg.y + 26.0, 140.0, 32.0),
-                    "cancelar",
-                    true,
-                ) {
+                ui::texto_centro(cx, cgoogle.y + 16.0 * k, &self.google.texto().unwrap_or_default(), 15, ui::OURO_CLARO);
+                if ui::botao(Rect::new(cx - 70.0 * k, cgoogle.y + 22.0 * k, 140.0 * k, 30.0 * k), "Cancel", true) {
                     self.google.cancelar();
                 }
             } else {
-                ui::texto_centro(cx, cou.y + 6.0, "ou", 13, ui::OURO);
-                if ui::botao(rg, "Sign in with Google", true) {
+                ui::texto_centro(cx, cou.y + 10.0 * k, "or", 14, ui::APOIO);
+                if ui::botao(cgoogle, "Sign in with Google", true) {
                     self.campo_login_ativo = false;
                     self.google.iniciar();
                 }
                 if let Some(e) = self.google.texto() {
-                    ui::erro(cx, rg.y + rg.h + 16.0, &e);
+                    ui::erro(cx, cgoogle.y - 4.0 * k, &e);
                 }
             }
-        }
-        if ui::botao(
-            Rect::new(r.x, r.y + r.h - 40.0, 140.0, 36.0),
-            "< voltar",
-            true,
-        ) {
-            self.campo_login_ativo = false;
-            self.google.cancelar();
-            self.tela = Tela::Servidores;
         }
     }
 

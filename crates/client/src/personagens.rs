@@ -752,6 +752,21 @@ impl Personagens {
         gl_use_default_material();
     }
 
+    /// The island behind the pre-game screens (login, sign-up, servers): the
+    /// same night sky and island this screen draws, so the game opens on its
+    /// world and not on a flat gradient.
+    pub fn fundo_do_mundo(&mut self, solido: &Material) {
+        self.camera_ui();
+        if self.saida_previa.is_none() {
+            render3d::define_noite(false);
+            render3d::clear();
+            self.desenha_mundo(solido);
+            self.camera_ui();
+        } else {
+            clear_background(Color::new(0.026, 0.041, 0.063, 1.0));
+        }
+    }
+
     fn camera_ui(&self) {
         if let Some(rt) = &self.saida_previa {
             let mut c =
