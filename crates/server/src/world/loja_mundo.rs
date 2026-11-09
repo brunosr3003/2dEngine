@@ -322,6 +322,15 @@ impl GameWorld {
                     match crate::ofertas::comprar(&central, &conta, &oferta, &produto, &pedido, &purchase_token).await {
                         Ok(crate::ofertas::Compra::Feita(e, _saldo)) => {
                             crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
+                            // The monitoring panel counts sales and revenue
+                            // from these, like a TP pack (the offer used to
+                            // be invisible there). Test purchases apart.
+                            if e.teste {
+                                crate::telemetria::conta_de(&nome_tel, "loja_pedido_teste", format!("oferta:{oferta}"), 1);
+                            } else {
+                                crate::telemetria::conta_de(&nome_tel, "loja_pedido", format!("oferta:{oferta}"), 1);
+                                crate::telemetria::conta_de(&nome_tel, "loja_receita_centavos", "BRL", e.preco_centavos as i64);
+                            }
                             let texto = if e.tp > 0 {
                                 format!("{} unlocked! +{} TP. The items are in your Mail.", e.titulo, e.tp)
                             } else {

@@ -183,6 +183,18 @@ struct ProductPurchase {
     /// 0 = ainda nao reconhecida, 1 = reconhecida.
     #[serde(default)]
     acknowledgement_state: Option<i32>,
+    /// Absent = a real purchase; 0 = TEST (license tester: Google's test card,
+    /// nobody is charged), 1 = promo code, 2 = rewarded.
+    #[serde(default)]
+    purchase_type: Option<i32>,
+}
+
+/// Prefix put on the Google order id of a TEST purchase: it is still
+/// delivered (testers must see the flow working) but never counted as revenue.
+pub const PREFIXO_TESTE: &str = "TESTE:";
+
+pub fn e_teste(externo: &str) -> bool {
+    externo.starts_with(PREFIXO_TESTE)
 }
 
 /// Confere a compra na Android Publisher API. NAO credita nada (isso e'
@@ -227,9 +239,10 @@ fn estado_da_resposta(corpo: &str, purchase_token: &str) -> Result<String, Erro>
     let compra: ProductPurchase = serde_json::from_str(corpo)
         .map_err(|e| Erro::RespostaInvalida(format!("purchase response: {e} ({corpo})")))?;
     match compra.purchase_state {
-        Some(0) => Ok(compra
-            .order_id
-            .unwrap_or_else(|| format!("gp-{purchase_token}"))),
+        Some(0) => {
+            let id = compra.order_id.unwrap_or_else(|| format!("gp-{purchase_token}"));
+            Ok(if compra.purchase_type == Some(0) { format!("{PREFIXO_TESTE}{id}") } else { id })
+        }
         Some(1) => Err(Erro::Recusado("Purchase was canceled.".into())),
         Some(2) => Err(Erro::Recusado("Purchase is still pending.".into())),
         outro => Err(Erro::RespostaInvalida(format!(
@@ -287,6 +300,15 @@ mod tests {
             estado_da_resposta(json, "tok123").unwrap(),
             "GPA.1234".to_string()
         );
+    }
+
+    #[test]
+    fn compra_de_teste_vem_marcada() {
+        let json = r#"{"purchaseState":0,"orderId":"GPA.9","purchaseType":0}"#;
+        let ext = estado_da_resposta(json, "t").unwrap();
+        assert_eq!(ext, "TESTE:GPA.9");
+        assert!(e_teste(&ext));
+        assert!(!e_teste("GPA.9"));
     }
 
     #[test]

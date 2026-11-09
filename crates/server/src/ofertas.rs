@@ -223,6 +223,10 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
 /// ledger when this comes back).
 #[derive(Debug, Default)]
 pub struct Entrega {
+    /// Price charged (cents, same number in BRL/USD) and whether Google said
+    /// it was a TEST purchase (license tester) — for the revenue telemetry.
+    pub preco_centavos: u64,
+    pub teste: bool,
     pub tp: u64,
     pub energia: u64,
     pub itens: Vec<(u16, u32)>,
@@ -378,7 +382,11 @@ pub async fn comprar(
     if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await {
         tracing::warn!("ofertas: consume no Google falhou (ja' entregue): {e}");
     }
-    Ok(Compra::Feita(Entrega { tp, energia, itens, titulo }, saldo))
+    let teste = crate::loja_google_play::e_teste(&externo);
+    Ok(Compra::Feita(
+        Entrega { preco_centavos: preco.max(0) as u64, teste, tp, energia, itens, titulo },
+        saldo,
+    ))
 }
 
 /// One thing a purchase still owes: an item (`item_id`, `qtd`) or energy.
