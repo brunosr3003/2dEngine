@@ -178,6 +178,18 @@ impl Personagens {
             let y = (i as f32 * 89.7) % h;
             draw_circle(x, y, 1.0, Color::new(0.85, 0.73, 0.47, 0.18));
         }
+        // Creating: the screen draws its own header (title, Cancel) at its
+        // own scale (`criacao_na_escala`).
+        if self.criando {
+            if self
+                .aguardando
+                .as_ref()
+                .is_some_and(|(_, t)| get_time() - t > 15.0)
+            {
+                self.mensagem = Some("Waiting for confirmation from the server…".into());
+            }
+            return self.desenha_criacao(armas, digitado, vox, solido);
+        }
         let titulo = if self.criando {
             "Write your own story"
         } else {
@@ -244,277 +256,214 @@ impl Personagens {
         vox: &VoxCache,
         solido: &Material,
     ) -> Option<Acao> {
-        let w = largura_tela();
+        let l = LayoutCriacao::novo(largura_tela(), altura_tela(), crate::nativo::area_segura());
+        // ONE scale for the whole screen: every text size below is in design
+        // units and `no_painel(k)` scales it with the boxes.
+        ui::no_painel(l.k, || self.criacao_na_escala(l, armas, digitado, vox, solido))
+    }
+
+    fn criacao_na_escala(
+        &mut self,
+        l: LayoutCriacao,
+        armas: &[u16],
+        digitado: &[char],
+        vox: &VoxCache,
+        solido: &Material,
+    ) -> Option<Acao> {
+        let k = l.k;
         let h = altura_tela();
-        let l = LayoutCriacao::novo(w, h, crate::nativo::area_segura());
         let ocupado = self.aguardando.is_some();
         let conjunto = Conjunto::da_arma(self.arma.unwrap_or(0));
 
-        // ── esquerda: o personagem, e embaixo dele o nome e o botao ──────────
+        // ── header: title and Cancel ─────────────────────────────────────────
+        ui::texto_forte(l.ox + 12.0 * k, l.oy + 32.0 * k, "Create your hero", 26, ui::TEXTO);
+        if botao_k(l.r(BASE_W - 12.0 - 130.0, 6.0, 130.0, 36.0), "Cancel", 17, k, !ocupado, false)
+            || (!ocupado && is_key_pressed(KeyCode::Escape))
+        {
+            self.mensagem = None;
+            self.foco_nome = false;
+            self.criando = false;
+            return None;
+        }
+
+        // ── left: the character, its weapon, the name and the button ────────
         let visual = (self.aparencia.empacota(), 0, 0);
         self.desenha_retrato(l.retrato, l.rodape_retrato, conjunto, visual, vox, solido);
         let cx = l.retrato.x + l.retrato.w * 0.5;
-        ui::texto_centro(
-            cx,
-            l.retrato.y + l.retrato.h - (l.rodape_retrato - 20.0) * 0.5 - 4.0,
-            conjunto.nome(),
-            if l.compacto { 18 } else { 24 },
-            ui::TEXTO,
-        );
-        if !l.compacto {
-            ui::texto_centro(
-                cx,
-                l.retrato.y + l.retrato.h - 6.0,
-                "Drag the character to rotate",
-                13,
-                ui::SUAVE,
-            );
-        }
+        ui::texto_centro_forte(cx, l.retrato.y + l.retrato.h - 18.0 * k, conjunto.nome(), 22, ui::OURO);
+        ui::texto_centro(cx, l.retrato.y + 14.0 * k, "Drag to rotate", 13, ui::SUAVE);
 
         // The name and the Create button live on the Appearance tab: the
         // weapon tab only leads there, so nobody creates a character without
         // having seen the look.
         if self.aba != 1 {
             self.foco_nome = false;
-            ui::texto_centro(
-                cx,
-                l.nome.y + l.nome.h * 0.5 + 6.0,
-                "Look and name come next",
-                14,
-                ui::SUAVE,
+            // What this weapon plays like, where the name field will be.
+            texto_linhas_ate(
+                estilo(conjunto).1,
+                l.nome.x + 6.0 * k,
+                l.nome.y + 18.0 * k,
+                l.nome.w - 12.0 * k,
+                15,
+                ui::TEXTO,
+                l.botao.y - 4.0 * k,
             );
-            if botao(l.botao, "Next: Appearance", !ocupado && self.arma.is_some(), true) {
+            if botao_k(l.botao, "Next: Appearance  ›", 22, k, !ocupado && self.arma.is_some(), true) {
                 self.aba = 1;
             }
-        } else {
-            // Teclado da tela aberto: ele cobre a metade de baixo, onde o campo mora.
-            // O campo sobe pra logo acima dele, sobre o personagem.
-            let teclado = crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
-            let dy = l.subida_do_nome(teclado, h);
-            let campo = Rect::new(l.nome.x, l.nome.y - dy, l.nome.w, l.nome.h);
-            if dy > 0.0 {
-                draw_rectangle(
-                    l.retrato.x - 8.0,
-                    campo.y - 28.0,
-                    l.retrato.w + 16.0,
-                    campo.h + 40.0,
-                    Color::new(0.012, 0.018, 0.030, 0.94),
-                );
-                ui::texto(campo.x, campo.y - 10.0, "CHARACTER NAME", 12, ui::OURO);
-            } else if !l.compacto {
-                ui::texto(campo.x, campo.y - 8.0, "NAME", 12, ui::OURO);
-            }
-            if !ocupado {
-                if let Some(p) = apertou_em() {
-                    self.foco_nome = campo.toca(p);
-                }
-            }
-            if !ocupado && self.foco_nome {
-                for &c in digitado {
-                    if c as u32 == 8 {
-                        self.nome.pop();
-                    } else if !c.is_control() && self.nome.chars().count() < 24 {
-                        self.nome.push(c);
-                    }
-                }
-                if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
-                    self.nome.pop();
-                }
-            }
-            draw_rectangle(campo.x, campo.y, campo.w, campo.h, ui::FUNDO);
-            draw_rectangle_lines(
-                campo.x,
-                campo.y,
-                campo.w,
-                campo.h,
-                if self.foco_nome { 2.0 } else { 1.0 },
-                if self.foco_nome { ui::OURO } else { ui::BORDA },
-            );
-            let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 {
-                "|"
-            } else {
-                ""
-            };
-            let meio = campo.y + campo.h * 0.5 + 6.0;
-            if self.nome.is_empty() && !self.foco_nome {
-                ui::texto_centro(
-                    campo.x + campo.w * 0.5,
-                    meio,
-                    "Tap to choose the name",
-                    16,
-                    ui::SUAVE,
-                );
-            } else {
-                ui::texto_centro(
-                    campo.x + campo.w * 0.5,
-                    meio,
-                    &format!("{}{cursor}", self.nome),
-                    18,
-                    ui::TEXTO,
-                );
-            }
-
-            let erro = if self.nome.is_empty() {
-                None
-            } else {
-                valida_nome(&self.nome).err()
-            };
-            let msg = self
-                .mensagem
-                .as_deref()
-                .or(erro)
-                .or(if self.arma.is_none() {
-                    Some("Nenhuma arma inicial disponível neste servidor.")
-                } else {
-                    None
-                })
-                .or(if self.foco_nome {
-                    Some("2 to 24 characters · letters, numbers and _")
-                } else {
-                    None
-                });
-            if let Some(msg) = msg {
-                let cor = if erro.is_some() || self.mensagem.is_some() {
-                    ui::OURO
-                } else {
-                    ui::SUAVE
-                };
-                ui::texto_centro(
-                    cx,
-                    campo.y
-                        - if dy > 0.0 {
-                            30.0
-                        } else if l.compacto {
-                            7.0
-                        } else {
-                            26.0
-                        },
-                    msg,
-                    13,
-                    cor,
-                );
-            }
-
-            let pode = !ocupado && self.pedido_criacao(armas).is_ok();
-            let rotulo = if ocupado {
-                "Creating the character…"
-            } else if self.nome.trim().is_empty() {
-                "Choose a name"
-            } else {
-                "Create character"
-            };
-            if dy == 0.0 {
-                if botao(l.botao, rotulo, pode, true) {
-                    if let Some(a) = self.envia_criacao(armas) {
-                        return Some(a);
-                    }
-                } else if !ocupado && !pode && clicou(l.botao) {
-                    // Botao apagado por falta de nome: leva direto pro campo.
-                    self.foco_nome = true;
-                }
-            }
-            if pode && self.foco_nome && is_key_pressed(KeyCode::Enter) {
-                if let Some(a) = self.envia_criacao(armas) {
-                    return Some(a);
-                }
-            }
+        } else if let Some(a) = self.campo_e_botao(&l, armas, digitado, h, ocupado) {
+            return Some(a);
         }
 
-        // ── direita: arma e faccao ───────────────────────────────────────────
-        let painel = l.painel;
-        ui::painel(painel);
-        let x = painel.x + 14.0;
-        let lw = painel.w - 28.0;
-        let card_h = l.card_h;
-        // ── as duas abas ──
+        // ── right: the panel with its two tabs ───────────────────────────────
+        ui::painel(l.painel);
+        let px = 354.0 + 14.0; // design x inside the panel
+        let pw = BASE_W - 354.0 - 12.0 - 28.0;
         for (i, nome) in ["Weapon & Faction", "Appearance"].iter().enumerate() {
-            let r = Rect::new(
-                x + i as f32 * (lw + 8.0) * 0.5,
-                painel.y + 8.0,
-                (lw - 8.0) * 0.5,
-                l.aba_h,
-            );
-            if botao(r, nome, !ocupado, self.aba == i as u8) {
+            let r = l.r(px + i as f32 * (pw + 10.0) * 0.5, 58.0, (pw - 10.0) * 0.5, 44.0);
+            if aba_k(r, nome, k, self.aba == i as u8, !ocupado) {
                 self.aba = i as u8;
             }
         }
         if self.aba == 1 {
-            self.desenha_aparencia(x, painel.y + l.aba_h + 22.0, lw, l.faccao_h, ocupado);
-            return None;
+            self.desenha_aparencia(&l, px, pw, ocupado);
+        } else {
+            self.desenha_arma_e_faccao(&l, px, pw, armas, conjunto, ocupado);
         }
-        ui::texto(x, painel.y + l.aba_h + 30.0, "STARTING WEAPON", 13, ui::OURO);
-        for (i, c) in Conjunto::TODOS.iter().enumerate() {
-            let r = Rect::new(
-                x + (i % 2) as f32 * (lw + 8.0) * 0.5,
-                painel.y + l.aba_h + 40.0 + (i / 2) as f32 * (card_h + 6.0),
-                (lw - 8.0) * 0.5,
-                card_h,
+        None
+    }
+
+    /// The name field and the Create button (Appearance tab).
+    fn campo_e_botao(
+        &mut self,
+        l: &LayoutCriacao,
+        armas: &[u16],
+        digitado: &[char],
+        h: f32,
+        ocupado: bool,
+    ) -> Option<Acao> {
+        let k = l.k;
+        let cx = l.nome.x + l.nome.w * 0.5;
+        // Teclado da tela aberto: ele cobre a metade de baixo, onde o campo mora.
+        // O campo sobe pra logo acima dele, sobre o personagem.
+        let teclado = crate::nativo::TECLADO_NA_TELA && self.foco_no_nome();
+        let dy = l.subida_do_nome(teclado, h);
+        let campo = Rect::new(l.nome.x, l.nome.y - dy, l.nome.w, l.nome.h);
+        if dy > 0.0 {
+            draw_rectangle(
+                l.retrato.x - 8.0,
+                campo.y - 30.0 * k,
+                l.retrato.w + 16.0,
+                campo.h + 40.0 * k,
+                Color::new(0.012, 0.018, 0.030, 0.94),
             );
+        }
+        if !ocupado {
+            if let Some(p) = apertou_em() {
+                self.foco_nome = campo.toca(p);
+            }
+        }
+        if !ocupado && self.foco_nome {
+            for &c in digitado {
+                if c as u32 == 8 {
+                    self.nome.pop();
+                } else if !c.is_control() && self.nome.chars().count() < 24 {
+                    self.nome.push(c);
+                }
+            }
+            if is_key_pressed(KeyCode::Backspace) && !digitado.contains(&'\u{8}') {
+                self.nome.pop();
+            }
+        }
+        ui::cartao(campo, false, self.foco_nome);
+        if self.foco_nome {
+            ui::borda_arredondada(campo, ui::RAIO_PEQUENO, 2.0 * k, ui::OURO);
+        }
+        let cursor = if self.foco_nome && (get_time() * 2.0) as u32 % 2 == 0 { "|" } else { "" };
+        let meio = campo.y + campo.h * 0.5 + 7.0 * k;
+        if self.nome.is_empty() && !self.foco_nome {
+            ui::texto_centro(campo.x + campo.w * 0.5, meio, "Tap to choose your name", 19, ui::SUAVE);
+        } else {
+            ui::texto_centro_forte(campo.x + campo.w * 0.5, meio, &format!("{}{cursor}", self.nome), 22, ui::TEXTO);
+        }
+
+        let erro = if self.nome.is_empty() { None } else { valida_nome(&self.nome).err() };
+        let msg = self
+            .mensagem
+            .as_deref()
+            .or(erro)
+            .or(if self.arma.is_none() { Some("Nenhuma arma inicial disponível neste servidor.") } else { None })
+            .or(if self.foco_nome { Some("2 to 24 characters · letters, numbers and _") } else { None });
+        if let Some(msg) = msg {
+            let cor = if erro.is_some() || self.mensagem.is_some() { ui::OURO } else { ui::SUAVE };
+            ui::texto_centro(cx, campo.y - 8.0 * k, msg, 14, cor);
+        }
+
+        let pode = !ocupado && self.pedido_criacao(armas).is_ok();
+        let rotulo = if ocupado {
+            "Creating the character…"
+        } else if self.nome.trim().is_empty() {
+            "Choose a name"
+        } else {
+            "Create character"
+        };
+        if dy == 0.0 {
+            if botao_k(l.botao, rotulo, 22, k, pode, true) {
+                if let Some(a) = self.envia_criacao(armas) {
+                    return Some(a);
+                }
+            } else if !ocupado && !pode && clicou(l.botao) {
+                // Botao apagado por falta de nome: leva direto pro campo.
+                self.foco_nome = true;
+            }
+        }
+        if pode && self.foco_nome && is_key_pressed(KeyCode::Enter) {
+            if let Some(a) = self.envia_criacao(armas) {
+                return Some(a);
+            }
+        }
+        None
+    }
+
+    /// Weapon & Faction tab, on the design canvas (`px`/`pw`: the panel's
+    /// inner column).
+    fn desenha_arma_e_faccao(
+        &mut self,
+        l: &LayoutCriacao,
+        px: f32,
+        pw: f32,
+        armas: &[u16],
+        conjunto: Conjunto,
+        ocupado: bool,
+    ) {
+        let k = l.k;
+        let sx = |x: f32| l.ox + x * k;
+        let sy = |y: f32| l.oy + y * k;
+        ui::texto_forte(sx(px), sy(128.0), "STARTING WEAPON", 14, ui::OURO);
+        let cw = (pw - 10.0) * 0.5;
+        for (i, c) in Conjunto::TODOS.iter().enumerate() {
+            let r = l.r(px + (i % 2) as f32 * (cw + 10.0), 136.0 + (i / 2) as f32 * 72.0, cw, 64.0);
             let disponivel = armas.contains(&c.arma());
             let ativo = self.arma == Some(c.arma());
-            let cor = ui::cor_skill(*c as u32 * 3 + 1);
-            draw_rectangle(
-                r.x,
-                r.y,
-                r.w,
-                r.h,
-                if ativo {
-                    Color::new(cor.r * 0.11, cor.g * 0.11, cor.b * 0.11, 1.0)
-                } else {
-                    ui::FUNDO
-                },
-            );
-            draw_rectangle_lines(
-                r.x,
-                r.y,
-                r.w,
-                r.h,
-                if ativo { 2.0 } else { 1.0 },
-                if ativo { cor } else { ui::BORDA },
-            );
-            let icone = if l.compacto { 28.0 } else { 34.0 };
-            let ix = r.x + 8.0 + icone * 0.5;
-            if !crate::icones_ui::skill(
-                *c as u32 * 3 + 1,
-                vec2(ix, r.y + r.h * 0.5),
-                icone,
-                if disponivel { 1.0 } else { 0.35 },
-            ) {
-                ui::icone(
-                    *c as u32 * 3 + 1,
-                    vec2(ix, r.y + r.h * 0.5),
-                    icone * 0.5,
-                    if disponivel { cor } else { ui::SUAVE },
-                );
+            let sobre = disponivel && !ocupado && r.toca(Vec2::from(mouse_position()));
+            ui::cartao(r, sobre, ativo);
+            if ativo {
+                ui::borda_arredondada(r, ui::RAIO_PEQUENO, 2.0 * k, ui::cor_skill(*c as u32 * 3 + 1));
             }
-            let tx = r.x + 16.0 + icone;
-            ui::texto_ajustado(
-                c.nome(),
-                tx,
-                r.y + r.h * 0.5 - 2.0,
-                r.w - tx + r.x - 6.0,
-                if l.compacto { 14 } else { 15 },
-                if disponivel { ui::TEXTO } else { ui::SUAVE },
-            );
+            let icone = 40.0 * k;
+            let ic = vec2(r.x + 10.0 * k + icone * 0.5, r.y + r.h * 0.5);
+            let opaco = if disponivel { 1.0 } else { 0.35 };
+            if !crate::icones_ui::skill(*c as u32 * 3 + 1, ic, icone, opaco) {
+                ui::icone(*c as u32 * 3 + 1, ic, icone * 0.5, ui::cor_skill(*c as u32 * 3 + 1));
+            }
+            let tx = r.x + 20.0 * k + icone;
+            let livre = r.x + r.w - tx - 8.0 * k;
+            ui::texto_ajustado(c.nome(), tx, r.y + 27.0 * k, livre, 19, if disponivel { ui::TEXTO } else { ui::SUAVE });
             if disponivel {
-                let fim_estrelas = estrelas(tx, r.y + r.h * 0.5 + 10.0, 5.5, dificuldade(*c));
-                ui::texto_ajustado(
-                    estilo(*c).0,
-                    fim_estrelas + 6.0,
-                    r.y + r.h * 0.5 + 14.0,
-                    r.w - fim_estrelas + r.x - 12.0,
-                    11,
-                    ui::SUAVE,
-                );
+                let fim = estrelas(tx, r.y + 44.0 * k, 6.0 * k, dificuldade(*c));
+                ui::texto_ajustado(estilo(*c).0, fim + 6.0 * k, r.y + 49.0 * k, r.x + r.w - fim - 14.0 * k, 13, ui::SUAVE);
             } else {
-                ui::texto_ajustado(
-                    "Unavailable",
-                    tx,
-                    r.y + r.h * 0.5 + 14.0,
-                    r.w - tx + r.x - 6.0,
-                    11,
-                    ui::SUAVE,
-                );
+                ui::texto_ajustado("Unavailable", tx, r.y + 49.0 * k, livre, 13, ui::SUAVE);
             }
             if !ocupado && disponivel && clicou(r) {
                 self.arma = Some(c.arma());
@@ -522,66 +471,28 @@ impl Personagens {
                 self.giro = 0.0;
             }
         }
-        let fy = painel.y + l.aba_h + 40.0 + 2.0 * (card_h + 6.0) + 14.0;
-        ui::texto(x, fy, "FACTION", 13, ui::OURO);
-        for (i, (f, n)) in [
-            (Faction::Peacemain, "Peacemain"),
-            (Faction::Morganeers, "Morganeers"),
-        ]
-        .iter()
-        .enumerate()
+        ui::texto_forte(sx(px), sy(298.0), "FACTION", 14, ui::OURO);
+        for (i, (f, n)) in [(Faction::Peacemain, "Peacemain"), (Faction::Morganeers, "Morganeers")]
+            .iter()
+            .enumerate()
         {
-            let r = Rect::new(
-                x + i as f32 * (lw + 8.0) * 0.5,
-                fy + 8.0,
-                (lw - 8.0) * 0.5,
-                l.faccao_h,
-            );
-            if botao(r, n, !ocupado, self.faccao == *f) {
+            let r = l.r(px + i as f32 * (cw + 10.0), 306.0, cw, 42.0);
+            if aba_k(r, n, k, self.faccao == *f, !ocupado) {
                 self.faccao = *f;
             }
         }
-        let mut y = fy + 8.0 + l.faccao_h + 18.0;
         ui::texto(
-            x,
-            y,
-            if self.faccao == Faction::Peacemain {
-                "Adventurers and explorers."
-            } else {
-                "Pirates after plunder."
-            },
-            13,
+            sx(px),
+            sy(370.0),
+            if self.faccao == Faction::Peacemain { "Adventurers and explorers." } else { "Pirates after plunder." },
+            15,
             ui::SUAVE,
         );
-        y += 22.0;
         let n = dificuldade(conjunto);
-        ui::texto(x, y, "DIFFICULTY", 12, ui::OURO);
-        let ex = estrelas(x + ui::medir("DIFFICULTY", 12) + 10.0, y - 4.0, 6.5, n);
-        ui::texto_ajustado(["", "Easy", "Medium", "Hard"][n as usize], ex + 8.0, y, x + lw - ex - 8.0, 13, ui::SUAVE);
-        y += 22.0;
-        let fim = painel.y + painel.h - 10.0;
-        if y + 14.0 < fim {
-            y = texto_linhas_ate(estilo(conjunto).1, x, y, lw, 13, ui::TEXTO, fim) + 24.0;
-        }
-        // Skills iniciais so' quando sobra altura (desktop).
-        if y + 44.0 < fim {
-            let skills = shared::skills::playtest();
-            for (i, s) in skills.iter().filter(|s| s.conjunto == conjunto).enumerate() {
-                let sx = x + i as f32 * lw / 3.0;
-                if !crate::icones_ui::skill(s.id, vec2(sx + 14.0, y), 24.0, 1.0) {
-                    ui::icone(s.id, vec2(sx + 14.0, y), 11.0, ui::cor_skill(s.id));
-                }
-                ui::texto(
-                    sx + 31.0,
-                    y + 4.0,
-                    &format!("Lv {}", s.nivel_necessario()),
-                    12,
-                    ui::OURO,
-                );
-                ui::texto_ajustado(&s.nome, sx, y + 24.0, lw / 3.0 - 8.0, 12, ui::TEXTO);
-            }
-        }
-        None
+        let y = sy(394.0);
+        ui::texto_forte(sx(px), y, "DIFFICULTY", 14, ui::OURO);
+        let ex = estrelas(sx(px) + ui::medir_forte("DIFFICULTY", 14) + 10.0 * k, y - 5.0 * k, 7.0 * k, n);
+        ui::texto(ex + 10.0 * k, y, ["", "Easy", "Medium", "Hard"][n as usize], 15, ui::TEXTO);
     }
 
     fn envia_criacao(&mut self, armas: &[u16]) -> Option<Acao> {
@@ -1050,19 +961,19 @@ fn estilo(c: Conjunto) -> (&'static str, &'static str) {
     match c {
         Conjunto::EspadaEscudo => (
             "Defence and pressure",
-            "Lute na linha de frente com investidas, cortes amplos e uma barreira protetora.",
+            "Front-line fighter: charges, wide slashes and a protective barrier.",
         ),
         Conjunto::Katana => (
             "Opens and closes the fight",
-            "Empunhe com as duas mãos: o saque contra quem ainda não te viu dá 2,5x de dano, e o golpe em alvo abaixo de 30% de vida dá 1,6x. Em troca, o dano contínuo é menor que o das pistolas, e a vida só volta na janela da Dança.",
+            "Two-handed burst: big opening hits and finishers on weakened foes.",
         ),
         Conjunto::Pistolas => (
             "Ranged combat",
-            "Mantenha distância com tiros precisos, rajadas e um barril explosivo.",
+            "Keep your distance with precise shots, bursts and an explosive barrel.",
         ),
         Conjunto::AnelMagico => (
             "Magic and support",
-            "Restaure sua vida, cure aliados próximos e invoque um impacto mágico sobre o alvo.",
+            "Heal yourself and nearby allies, and strike foes with magic.",
         ),
     }
 }
@@ -1123,105 +1034,152 @@ impl Personagens {
         };
     }
 
-    /// Os quatro seletores de aparência: rosto, cabelo, cor e pele.
-    ///
-    /// Cada um é `‹ nome ›` — a forma mais barata que existe de escolher
-    /// numa lista curta com o dedo, e que não ocupa a tela com uma grade.
-    /// Devolve o y em que terminou.
-    fn desenha_aparencia(&mut self, x: f32, y: f32, lw: f32, alt: f32, ocupado: bool) -> f32 {
+    /// The APPEARANCE tab: Randomize on top, then one labeled row per part.
+    /// Face, hair and outfit are `‹ value ›` with big arrows; hair colour and
+    /// skin are SWATCHES of the real colours (`render3d::cores_*`), one tap
+    /// each — names like "castanho" said nothing to an English player.
+    fn desenha_aparencia(&mut self, l: &LayoutCriacao, px: f32, pw: f32, ocupado: bool) {
         use shared::aparencia as ap;
-        ui::texto(x, y, "APPEARANCE", 13, ui::OURO);
-        // Randomize: a whole new free look in one tap.
-        let rw = 120.0_f32.min(lw * 0.45);
-        if botao(Rect::new(x + lw - rw, y - 20.0, rw, 28.0), "Randomize", !ocupado, false) {
+        let k = l.k;
+        ui::texto_forte(l.ox + px * k, l.oy + 136.0 * k, "YOUR LOOK", 14, ui::OURO);
+        if botao_k(l.r(px + pw - 160.0, 112.0, 160.0, 38.0), "Randomize", 17, k, !ocupado, false) {
             self.sortear_aparencia();
         }
-        let mut y = y + 8.0;
-        // (rótulo, quantas opções, índice atual)
         // Hair + "no hair" + the FREE hats; the paid ones are for the shop.
-        // The free hats are not contiguous, so the row walks a list.
         let chapeus = ap::chapeus_gratis();
         let cabelos = ap::CABELOS + 1 + chapeus.len() as u8;
         let atual_cabelo = match ap::chapeu_do_cabelo(self.aparencia.cabelo) {
-            Some(c) => chapeus
-                .iter()
-                .position(|x| *x == c)
-                .map_or(0, |i| ap::CABELOS + 1 + i as u8),
+            Some(c) => chapeus.iter().position(|x| *x == c).map_or(0, |i| ap::CABELOS + 1 + i as u8),
             None => self.aparencia.cabelo,
         };
-        // Outfit: the default plus the free ones.
         let gratis = ap::roupas_gratis();
         let roupas = gratis.len() as u8 + 1;
-        let atual_roupa = gratis
-            .iter()
-            .position(|r| *r == self.aparencia.roupa)
-            .map_or(0, |i| i as u8 + 1);
-        let linhas: [(&str, u8, u8); 5] = [
-            ("Face", ap::ROSTOS, self.aparencia.rosto),
-            ("Hair", cabelos, atual_cabelo),
-            (
-                "Cor",
-                ap::CORES_DE_CABELO.len() as u8,
-                self.aparencia.cor_cabelo,
-            ),
-            ("Skin tone", ap::TONS_DE_PELE.len() as u8, self.aparencia.pele),
-            ("Outfit", roupas, atual_roupa),
-        ];
-        // A mesma constante que dimensiona o painel (`altura_da_aparencia`).
-        debug_assert_eq!(linhas.len() as f32, LINHAS_DE_APARENCIA);
-        let mut escolhas = [0u8; 5];
-        for (i, (rotulo, n, atual)) in linhas.iter().enumerate() {
-            let r = Rect::new(x, y, lw, alt);
-            let lado = alt.min(40.0);
-            let mut v = *atual;
-            if botao(Rect::new(r.x, r.y, lado, r.h), "‹", !ocupado, false) {
-                v = (v + n - 1) % n;
-            }
-            if botao(
-                Rect::new(r.x + r.w - lado, r.y, lado, r.h),
-                "›",
-                !ocupado,
-                false,
-            ) {
-                v = (v + 1) % n;
-            }
-            let nome = match i {
-                1 if *atual == ap::CABELOS => "no hair".to_string(),
-                1 if *atual > ap::CABELOS => chapeus
-                    .get((*atual - ap::CABELOS - 1) as usize)
+        let atual_roupa = gratis.iter().position(|r| *r == self.aparencia.roupa).map_or(0, |i| i as u8 + 1);
+        let nome_cabelo = |v: u8| -> String {
+            if v < ap::CABELOS {
+                format!("Style {}", v + 1)
+            } else if v == ap::CABELOS {
+                "No hair".into()
+            } else {
+                chapeus
+                    .get((v - ap::CABELOS - 1) as usize)
                     .and_then(|c| ap::nome_da_skin(*c))
-                    .unwrap_or("no hair")
-                    .to_string(),
-                2 => ap::CORES_DE_CABELO[(*atual as usize).min(5)].to_string(),
-                3 => ap::TONS_DE_PELE[(*atual as usize).min(3)].to_string(),
-                4 if *atual == 0 => "default".to_string(),
-                4 => gratis
-                    .get(*atual as usize - 1)
-                    .and_then(|r| ap::nome_da_skin(*r))
-                    .unwrap_or("default")
-                    .to_string(),
-                _ => format!("{} {}", rotulo, atual + 1),
-            };
-            ui::texto_centro(r.x + r.w * 0.5, r.y + r.h * 0.5 + 5.0, &nome, 14, ui::TEXTO);
-            escolhas[i] = v;
-            y += alt + 6.0;
+                    .unwrap_or("No hair")
+                    .to_string()
+            }
+        };
+        let nome_roupa = |v: u8| -> String {
+            if v == 0 {
+                "Default".into()
+            } else {
+                gratis.get(v as usize - 1).and_then(|r| ap::nome_da_skin(*r)).unwrap_or("Default").to_string()
+            }
+        };
+        let linha_y = |i: usize| 160.0 + i as f32 * 48.0;
+        let rotulo_w = 118.0;
+        let cx = px + rotulo_w;
+        let cw = pw - rotulo_w;
+        // Rows with arrows: (row, label, options, current, name).
+        let mut rosto = self.aparencia.rosto;
+        let mut cabelo = atual_cabelo;
+        let mut roupa = atual_roupa;
+        for (i, rotulo, n, atual, nome) in [
+            (0usize, "FACE", ap::ROSTOS, &mut rosto, format!("Face {}", self.aparencia.rosto + 1)),
+            (1, "HAIR", cabelos, &mut cabelo, nome_cabelo(atual_cabelo)),
+            (4, "OUTFIT", roupas, &mut roupa, nome_roupa(atual_roupa)),
+        ] {
+            let y = linha_y(i);
+            let fundo = l.r(px, y, pw, 42.0);
+            ui::cartao(fundo, false, false);
+            ui::texto_forte(l.ox + (px + 12.0) * k, l.oy + (y + 27.0) * k, rotulo, 14, ui::OURO);
+            if botao_k(l.r(cx, y, 42.0, 42.0), "‹", 24, k, !ocupado, false) {
+                *atual = (*atual + n - 1) % n;
+            }
+            if botao_k(l.r(cx + cw - 42.0, y, 42.0, 42.0), "›", 24, k, !ocupado, false) {
+                *atual = (*atual + 1) % n;
+            }
+            let meio = l.ox + (cx + cw * 0.5) * k;
+            ui::texto_centro_forte(meio, l.oy + (y + 24.0) * k, &nome, 19, ui::TEXTO);
+            ui::texto_centro(meio, l.oy + (y + 38.0) * k, &format!("{} / {n}", *atual + 1), 11, ui::SUAVE);
         }
-        self.aparencia.rosto = escolhas[0];
-        self.aparencia.cabelo = match escolhas[1] {
-            k if k > ap::CABELOS => chapeus
-                .get((k - ap::CABELOS - 1) as usize)
+        // Swatch rows: hair colour and skin tone.
+        let swatches = |i: usize, rotulo: &str, cores: Vec<Color>, atual: u8| -> Option<u8> {
+            let y = linha_y(i);
+            ui::cartao(l.r(px, y, pw, 42.0), false, false);
+            ui::texto_forte(l.ox + (px + 12.0) * k, l.oy + (y + 27.0) * k, rotulo, 14, ui::OURO);
+            let n = cores.len() as f32;
+            let passo = (cw - 12.0) / n;
+            let raio = (passo * 0.5 - 4.0).min(15.0) * k;
+            let mut escolha = None;
+            for (j, cor) in cores.iter().enumerate() {
+                let c = vec2(l.ox + (cx + 6.0 + passo * (j as f32 + 0.5)) * k, l.oy + (y + 21.0) * k);
+                if j as u8 == atual {
+                    draw_circle(c.x, c.y, raio + 4.0 * k, ui::OURO);
+                }
+                draw_circle(c.x, c.y, raio, *cor);
+                draw_circle_lines(c.x, c.y, raio, 1.5 * k, Color::new(0.0, 0.0, 0.0, 0.45));
+                let alvo = Rect::new(c.x - passo * k * 0.5, c.y - 21.0 * k, passo * k, 42.0 * k);
+                if !ocupado && clicou(alvo) {
+                    escolha = Some(j as u8);
+                }
+            }
+            escolha
+        };
+        let cor = |c: [[f32; 3]; 2]| Color::new(c[0][0], c[0][1], c[0][2], 1.0);
+        let cabelos_cor: Vec<Color> = (0..ap::CORES_DE_CABELO.len() as u8).map(|i| cor(render3d::cores_do_cabelo(i))).collect();
+        let peles: Vec<Color> = (0..ap::TONS_DE_PELE.len() as u8).map(|i| cor(render3d::cores_da_pele(i))).collect();
+        if let Some(v) = swatches(2, "HAIR COLOR", cabelos_cor, self.aparencia.cor_cabelo) {
+            self.aparencia.cor_cabelo = v;
+        }
+        if let Some(v) = swatches(3, "SKIN", peles, self.aparencia.pele) {
+            self.aparencia.pele = v;
+        }
+        self.aparencia.rosto = rosto;
+        self.aparencia.cabelo = match cabelo {
+            v if v > ap::CABELOS => chapeus
+                .get((v - ap::CABELOS - 1) as usize)
                 .and_then(|c| ap::cabelo_do_chapeu(*c))
                 .unwrap_or(0),
-            k => k,
+            v => v,
         };
-        self.aparencia.cor_cabelo = escolhas[2];
-        self.aparencia.pele = escolhas[3];
-        self.aparencia.roupa = match escolhas[4] {
+        self.aparencia.roupa = match roupa {
             0 => 0,
-            k => gratis[k as usize - 1],
+            v => gratis[v as usize - 1],
         };
-        y
     }
+}
+
+/// A button of the creation screen, sized in design units (`tam` = text
+/// size, `k` = the screen's scale). Gold when it is the main action.
+fn botao_k(r: Rect, t: &str, tam: u16, k: f32, ativo: bool, primario: bool) -> bool {
+    let sobre = ativo && r.toca(Vec2::from(mouse_position()));
+    let e = ui::estado(sobre, is_mouse_button_down(MouseButton::Left), !ativo, false);
+    ui::botao(r, "", e, primario && ativo);
+    ui::texto_centro_forte(
+        r.x + r.w * 0.5,
+        r.y + r.h * 0.5 + tam as f32 * 0.36 * k,
+        t,
+        tam,
+        if !ativo { ui::SUAVE } else if primario { crate::ui::OURO_CLARO } else { ui::TEXTO },
+    );
+    ativo && clicou(r)
+}
+
+/// A tab / toggle: a card, lit and gold when selected.
+fn aba_k(r: Rect, t: &str, k: f32, selecionada: bool, ativo: bool) -> bool {
+    let sobre = ativo && r.toca(Vec2::from(mouse_position()));
+    ui::cartao(r, sobre, selecionada);
+    if selecionada {
+        ui::borda_arredondada(r, ui::RAIO_PEQUENO, 2.0 * k, ui::OURO);
+    }
+    ui::texto_centro_forte(
+        r.x + r.w * 0.5,
+        r.y + r.h * 0.5 + 7.0 * k,
+        t,
+        18,
+        if selecionada { ui::OURO } else { ui::TEXTO },
+    );
+    ativo && clicou(r)
 }
 
 fn botao(r: Rect, t: &str, ativo: bool, destaque: bool) -> bool {
@@ -1291,9 +1249,22 @@ const ALTURA_COMPACTA: f32 = 560.0;
 /// parou de cobrir as duas ultimas linhas.
 const LINHAS_DE_APARENCIA: f32 = 5.0;
 
+/// Base canvas of the creation screen, in design units. The whole screen —
+/// boxes, text and touch areas — is laid out on it and scaled by ONE factor
+/// `k` to the screen's safe area (owner, 09/11/2026: "the menu is needlessly
+/// small, there is a lot of space left"). On the iPhone (926x428 points) k is
+/// ~0.92; on a 1280x720 PC ~1.4.
+const BASE_W: f32 = 900.0;
+const BASE_H: f32 = 420.0;
+
 #[derive(Debug, Clone, Copy)]
 struct LayoutCriacao {
+    /// Kept for the callers that still branch on small screens.
     compacto: bool,
+    /// Scale of the design canvas and its origin on screen.
+    k: f32,
+    ox: f32,
+    oy: f32,
     /// Personagem 3D (a area inclui `rodape_retrato` embaixo, pro nome da arma).
     retrato: Rect,
     rodape_retrato: f32,
@@ -1311,42 +1282,30 @@ struct LayoutCriacao {
 impl LayoutCriacao {
     /// `seguro` = area segura (topo, esquerda, baixo, direita).
     fn novo(w: f32, h: f32, seguro: [f32; 4]) -> Self {
-        let compacto = h < ALTURA_COMPACTA;
-        let esq = (if compacto { 16.0 } else { 28.0 }) + seguro[1];
-        let dir = w - (if compacto { 16.0 } else { 28.0 }) - seguro[3];
-        let topo = seguro[0] + if compacto { 48.0 } else { 128.0 };
-        let base = h - seguro[2] - if compacto { 10.0 } else { 24.0 };
-        let largura = dir - esq;
-        let col = (largura * if compacto { 0.44 } else { 0.48 }).min(620.0);
-        let botao_h = if compacto { 40.0 } else { 46.0 };
-        let nome_h = if compacto { 38.0 } else { 44.0 };
-        let botao = Rect::new(esq, base - botao_h, col, botao_h);
-        // Com mensagem (erro/dica) entre o personagem e o campo.
-        let nome = Rect::new(esq, botao.y - 8.0 - nome_h, col, nome_h);
-        let rodape = if compacto { 26.0 } else { 60.0 };
-        let retrato = Rect::new(
-            esq,
-            topo,
-            col,
-            (nome.y - if compacto { 20.0 } else { 40.0 } - topo).max(1.0),
-        );
-        let px = esq + col + if compacto { 14.0 } else { 24.0 };
-        let mut l = Self {
-            compacto,
-            retrato,
-            rodape_retrato: rodape,
-            nome,
-            botao,
-            painel: Rect::new(px, topo, dir - px, base - topo),
-            card_h: if compacto { 46.0 } else { 74.0 },
-            faccao_h: if compacto { 30.0 } else { 36.0 },
-            aba_h: if compacto { 28.0 } else { 34.0 },
-        };
-        // Tela grande: o painel acaba onde acaba o conteudo, sem um vao vazio embaixo.
-        if !compacto {
-            l.painel.h = l.painel.h.min(l.fim_do_essencial() + 130.0 - topo);
+        let (aw, ah) = ((w - seguro[1] - seguro[3]).max(1.0), (h - seguro[0] - seguro[2]).max(1.0));
+        let k = (aw / BASE_W).min(ah / BASE_H).clamp(0.5, 2.2);
+        let ox = seguro[1] + (aw - BASE_W * k) * 0.5;
+        let oy = seguro[0] + (ah - BASE_H * k) * 0.5;
+        let r = |x: f32, y: f32, rw: f32, rh: f32| Rect::new(ox + x * k, oy + y * k, rw * k, rh * k);
+        Self {
+            compacto: k < 1.0,
+            k,
+            ox,
+            oy,
+            retrato: r(12.0, 48.0, 330.0, 244.0),
+            rodape_retrato: 36.0 * k,
+            nome: r(12.0, 300.0, 330.0, 48.0),
+            botao: r(12.0, 356.0, 330.0, 52.0),
+            painel: r(354.0, 48.0, BASE_W - 354.0 - 12.0, 360.0),
+            card_h: 64.0 * k,
+            faccao_h: 42.0 * k,
+            aba_h: 44.0 * k,
         }
-        l
+    }
+
+    /// A rect in design units, on screen.
+    fn r(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect::new(self.ox + x * self.k, self.oy + y * self.k, w * self.k, h * self.k)
     }
 
     /// Quanto o campo de nome sobe com o teclado da tela aberto: o bastante pra
@@ -1360,39 +1319,21 @@ impl LayoutCriacao {
         )
     }
 
-    /// Onde termina o que TEM que caber no painel: cartoes de arma, faccao,
-    /// os seletores de APARENCIA e a legenda.
-    ///
-    /// A aparencia entrou aqui em 21/09/2026 e nao estava: o painel e'
-    /// recortado por esta conta, entao as duas ultimas linhas (Pele e Roupa)
-    /// ficavam DESENHADAS FORA do fundo. O numero de linhas vem de uma
-    /// constante compartilhada com quem desenha — duas contagens a mao
-    /// divergem no primeiro seletor novo.
+    /// Onde termina o que TEM que caber no painel: the lowest thing either
+    /// tab draws (both are laid out on the design canvas; see `desenha_criacao`
+    /// and `desenha_aparencia`).
     fn fim_do_essencial(&self) -> f32 {
         self.fim_da_faccao().max(self.fim_da_aparencia())
     }
 
-    /// Onde a aba ARMA & FACCAO termina (cartoes + faccao + legenda).
+    /// Weapon & Faction tab: difficulty line at design y=392.
     fn fim_da_faccao(&self) -> f32 {
-        self.painel.y
-            + self.aba_h
-            + 40.0
-            + 2.0 * (self.card_h + 6.0)
-            + 14.0
-            + 8.0
-            + self.faccao_h
-            + 18.0
-            + 22.0
+        self.oy + 398.0 * self.k
     }
 
-    /// Onde a aba APARENCIA termina.
+    /// Appearance tab: five rows from y=160, 42 tall, 6 apart.
     fn fim_da_aparencia(&self) -> f32 {
-        self.painel.y + self.aba_h + 22.0 + self.altura_da_aparencia()
-    }
-
-    /// Quanto o bloco de aparencia ocupa: o rotulo mais as linhas.
-    fn altura_da_aparencia(&self) -> f32 {
-        8.0 + LINHAS_DE_APARENCIA * (self.faccao_h + 6.0)
+        self.oy + (160.0 + LINHAS_DE_APARENCIA * 48.0 - 6.0) * self.k
     }
 }
 

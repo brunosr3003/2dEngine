@@ -230,7 +230,7 @@ impl SocialHud {
                 Acao::Seguir,
             ),
             ("Invite to party", Acao::Grupo),
-            ("Trade", Acao::Trocar),
+            ("Trade items", Acao::Trocar),
         ]
         .into_iter()
         .enumerate()
