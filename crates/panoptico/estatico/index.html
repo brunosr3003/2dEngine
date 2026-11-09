@@ -381,6 +381,18 @@
     inglês); até 200 caracteres.
   </p>
   <label class="f">assina <input id="av-autor" class="campo" value="Staff" maxlength="30" style="width:160px"></label>
+  <h2>Frases prontas</h2>
+  <p class="nota">Clique para preencher o texto (dá pra editar antes de enviar).</p>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
+    <label class="f" style="margin:0">manutenção em <input id="av-min" type="number" min="1" max="240" value="10" class="campo" style="width:64px"> min</label>
+    <button class="acao" type="button" data-av="manut">manutenção em X min</button>
+    <button class="acao" type="button" data-av="Server restarting now. We'll be back in a few minutes!">reiniciando agora</button>
+    <button class="acao" type="button" data-av="Maintenance finished. Thanks for waiting, have fun!">manutenção acabou</button>
+    <button class="acao" type="button" data-av="A new update is available. Please update the game to keep playing.">atualização disponível</button>
+    <button class="acao" type="button" data-av="Double XP event is live now! Enjoy!">evento XP em dobro</button>
+    <button class="acao" type="button" data-av="The server may lag for a moment. Sorry for the trouble!">instabilidade</button>
+    <button class="acao" type="button" data-av="Thanks for playing Tempest! Don't forget to rate us on the store.">agradecimento</button>
+  </div>
   <label class="f">texto <textarea id="av-texto" class="campo" rows="3" maxlength="200" placeholder="Server maintenance in 10 minutes!"></textarea></label>
   <span id="av-conta" class="nota">0/200</span>
   <h2></h2>
@@ -1618,6 +1630,16 @@ document.getElementById('av-enviar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.aviso = avCarrega;
+document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
+  const min = Math.max(1, parseInt(document.getElementById('av-min').value, 10) || 10);
+  const t = b.dataset.av === 'manut'
+    ? `Server maintenance in ${min} minute${min === 1 ? '' : 's'}. Please finish what you're doing and log out safely.`
+    : b.dataset.av;
+  const ta = document.getElementById('av-texto');
+  ta.value = t;
+  document.getElementById('av-conta').textContent = t.length + '/200';
+  ta.focus();
+});
 
 mostraAba(location.hash.slice(1) || 'mundo');
 </script>
