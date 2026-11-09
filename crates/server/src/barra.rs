@@ -11,7 +11,6 @@ pub fn cabe_na_barra(id: u16) -> bool {
         it::GREATER_HEAL,
         it::MANA_POTION,
         it::GREATER_MANA,
-        it::STAMINA_POTION,
         it::XP_POTION,
         it::FORTUNA_POTION,
         it::SORTE_POTION,

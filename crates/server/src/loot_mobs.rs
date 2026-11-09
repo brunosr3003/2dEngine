@@ -13,7 +13,7 @@ pub const BASE: &[(i32, u16, i32, i32, f32)] = &[
     (2, COPPER, 10, 28, 1.0),
     (2, STEEL, 1, 3, 0.25),
     (2, MOON_SHADOW_STONE, 1, 2, 0.12),
-    (2, STAMINA_POTION, 1, 1, 0.08),
+    (2, HEALTH_POTION, 1, 1, 0.08),
     (3, COPPER, 8, 22, 1.0),
     (3, QUINTESSENCE, 1, 2, 0.20),
     (3, MANA_POTION, 1, 1, 0.08),
@@ -28,7 +28,7 @@ pub const BASE: &[(i32, u16, i32, i32, f32)] = &[
     (6, COPPER, 10, 28, 1.0),
     (6, ILLUMINATING_FRAGMENT, 1, 2, 0.20),
     (6, STEEL, 1, 2, 0.20),
-    (6, STAMINA_POTION, 1, 1, 0.08),
+    (6, HEALTH_POTION, 1, 1, 0.08),
     (7, COPPER, 200, 500, 1.0),
     (7, DARKSTEEL, 5, 12, 0.50),
     (7, GLITTERING_POWDER, 1, 1, 0.05),
@@ -90,7 +90,7 @@ pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
     (30, COPPER, 24, 58, 1.0), // Frostcoat Archer
     (30, ILLUMINATING_FRAGMENT, 1, 3, 0.22),
     (30, STEEL, 2, 4, 0.22),
-    (30, STAMINA_POTION, 1, 1, 0.10),
+    (30, HEALTH_POTION, 1, 1, 0.10),
     (31, COPPER, 28, 64, 1.0), // Frostcoat Mage
     (31, DARK_HEART_STONE, 1, 3, 0.22),
     (31, ANIMA_STONE, 1, 3, 0.22),
@@ -103,11 +103,11 @@ pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
     (33, COPPER, 26, 60, 1.0), // Dune Raider
     (33, STEEL, 2, 4, 0.26),
     (33, MOON_SHADOW_STONE, 1, 3, 0.16),
-    (33, STAMINA_POTION, 1, 1, 0.10),
+    (33, HEALTH_POTION, 1, 1, 0.10),
     (34, COPPER, 26, 60, 1.0), // Sand Archer
     (34, ILLUMINATING_FRAGMENT, 1, 3, 0.24),
     (34, STEEL, 2, 4, 0.22),
-    (34, STAMINA_POTION, 1, 1, 0.10),
+    (34, HEALTH_POTION, 1, 1, 0.10),
     (35, COPPER, 32, 72, 1.0), // Sun Mage
     (35, DARK_HEART_STONE, 1, 3, 0.24),
     (35, ANIMA_STONE, 1, 3, 0.24),
@@ -119,7 +119,7 @@ pub const BASE_VARIANTES: &[(i32, u16, i32, i32, f32)] = &[
     (37, COPPER, 60, 140, 1.0), // Cliff Archer
     (37, ILLUMINATING_FRAGMENT, 2, 4, 0.26),
     (37, DARKSTEEL, 2, 5, 0.24),
-    (37, STAMINA_POTION, 1, 1, 0.10),
+    (37, HEALTH_POTION, 1, 1, 0.10),
     (38, COPPER, 75, 170, 1.0), // Cave Bear
     (38, DARKSTEEL, 2, 6, 0.30),
     (38, GREATER_HEAL, 1, 1, 0.12),
@@ -144,7 +144,7 @@ pub const BASE_VARIANTES_CELESTE: &[(i32, u16, i32, i32, f32)] = &[
     (42, COPPER, 100, 225, 1.0), // Seraph Archer
     (42, ILLUMINATING_FRAGMENT, 3, 7, 0.26),
     (42, DARKSTEEL, 4, 8, 0.26),
-    (42, STAMINA_POTION, 1, 1, 0.10),
+    (42, HEALTH_POTION, 1, 1, 0.10),
     (43, COPPER, 120, 270, 1.0), // Seraph Bear
     (43, DARKSTEEL, 4, 9, 0.30),
     (43, GREATER_HEAL, 1, 1, 0.12),
@@ -169,7 +169,7 @@ pub const BASE_VARIANTES_KOGEN: &[(i32, u16, i32, i32, f32)] = &[
     (56, GREATER_HEAL, 1, 1, 0.10),
     (57, COPPER, 150, 330, 1.0), // Gunner Bot
     (57, DARKSTEEL, 6, 12, 0.28),
-    (57, STAMINA_POTION, 1, 1, 0.10),
+    (57, HEALTH_POTION, 1, 1, 0.10),
     (58, COPPER, 150, 340, 1.0), // Volt Panther
     (58, QUINTESSENCE, 5, 10, 0.28),
     (58, GREATER_MANA, 1, 1, 0.10),
@@ -197,7 +197,7 @@ pub const BASE_VARIANTES_ABISSAL: &[(i32, u16, i32, i32, f32)] = &[
     (70, GREATER_HEAL, 1, 1, 0.10),
     (71, COPPER, 200, 440, 1.0), // Drowned Pirate
     (71, DARKSTEEL, 8, 16, 0.28),
-    (71, STAMINA_POTION, 1, 1, 0.10),
+    (71, HEALTH_POTION, 1, 1, 0.10),
     (72, COPPER, 200, 450, 1.0), // Tiger Eel
     (72, QUINTESSENCE, 7, 13, 0.28),
     (72, GREATER_MANA, 1, 1, 0.10),
@@ -234,6 +234,20 @@ pub async fn migrar(pool: &sqlx::PgPool) -> anyhow::Result<()> {
         sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
             .execute(&mut *tx)
             .await?;
+    }
+    // Stamina is gone (09/11/2026): the Stamina Potion stops dropping and
+    // leaves the vendors. Potions already in bags stay sellable to the NPC.
+    let sem_vigor=sqlx::query("INSERT INTO economy_migrations(name) VALUES ('sem_pocao_de_vigor_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected()>0;
+    if sem_vigor {
+        sqlx::query("DELETE FROM loot_drops WHERE item_id = $1")
+            .bind(STAMINA_POTION as i32).execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = $1")
+            .bind(STAMINA_POTION as i32).execute(&mut *tx).await?;
+        sqlx::query("UPDATE economy_version SET version=version+1 WHERE id=1")
+            .execute(&mut *tx)
+            .await?;
+        tracing::info!("Stamina Potion removed from loot and vendors");
     }
     // Crabs: once, only if the kind already exists (the `enemy_kinds` seed runs
     // first). Deletes nothing: kinds 8 and 9 had no loot.

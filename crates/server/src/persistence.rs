@@ -3474,7 +3474,6 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                     item_id::MANA_POTION,
                     item_id::GREATER_HEAL,
                     item_id::GREATER_MANA,
-                    item_id::STAMINA_POTION,
                     item_id::ESPADA_E_ESCUDO,
                     item_id::KATANA,
                     item_id::PISTOLAS,
@@ -3500,7 +3499,6 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
                     item_id::MANA_POTION,
                     item_id::GREATER_HEAL,
                     item_id::GREATER_MANA,
-                    item_id::STAMINA_POTION,
                 ],
             ),
             (
@@ -3527,7 +3525,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             (
                 6,
                 "Archer",
-                &[item_id::PISTOLAS, item_id::COLDRE, item_id::STAMINA_POTION],
+                &[item_id::PISTOLAS, item_id::COLDRE],
             ),
         ];
         for (sid, name, items) in shops {

@@ -33,12 +33,13 @@ pub enum Desafio {
     SemDash,
 }
 
-pub const TODOS: [Desafio; 5] = [
+/// `SemDash` is out: the dash was removed from the game (09/11/2026), so it
+/// would always pass. The variant stays for old saved runs.
+pub const TODOS: [Desafio; 4] = [
     Desafio::Rapido,
     Desafio::VidaAlta,
     Desafio::SemPocao,
     Desafio::SemMorte,
-    Desafio::SemDash,
 ];
 
 /// Quantos desafios cada corrida sorteia.

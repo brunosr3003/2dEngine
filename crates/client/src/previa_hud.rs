@@ -156,7 +156,6 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                     hud::draw_alvo(&z, "Guardião da ilha", 72, 850, 1200, true);
                 }
                 hud::draw_atacar(&z, cena == "combate");
-                hud::draw_dash(&z, if cena == "combate" { 2.5 } else { 0. }, 5.);
                 hud::draw_pulo(&z, false);
                 hud::draw_sprint(&z, false);
                 hud::draw_botao_montaria(&z, false, None, true);

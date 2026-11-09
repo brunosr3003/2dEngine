@@ -153,7 +153,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 192 (09/11/2026): a paid flash offer carries its Play product; purchases
 /// are delivered through the mail queue.
 /// 193 (09/11/2026): ranking rows carry the character's look (3D preview).
-pub const PROTOCOL_VERSION: u16 = 193;
+/// 194 (09/11/2026): no more stamina, dash, block/parry or SPD (the wire
+/// layout keeps their slots; old clients would still show and send them).
+pub const PROTOCOL_VERSION: u16 = 194;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.
@@ -1214,6 +1216,14 @@ pub mod stat_idx {
     pub const RES: usize = 5;
 }
 
+/// SPD is RETIRED (owner, 09/11/2026: "take off stamina from the game, and
+/// dodge and spd attribute"). Its slot stays — index 4 in the saved arrays,
+/// the protocol and pet affinities — so nothing shifts; it just can't be
+/// raised, rolled or shown, and points already in it are refunded on load.
+pub const fn stat_ativo(i: usize) -> bool {
+    i < STAT_COUNT && i != stat_idx::SPD
+}
+
 /// A sigla de cada atributo, na ordem de `stat_idx`. Existe no `shared`
 /// porque o SERVIDOR precisa dela pra escrever no chat qual afinidade saiu na
 /// Pedra (docs/PETS.md) — o cliente tem a tabela dele, com a descricao junto.
@@ -1404,11 +1414,12 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         crit_chance: 0.0,
         hp_regen: 0.0,
         attack_speed_pct: 0.0,
-        stamina_max: STAMINA_MAX_PER_SPD,
-        stamina_regen: STAMINA_REGEN_PER_SPD,
+        // Retired with stamina and the dash: SPD gives nothing.
+        stamina_max: 0,
+        stamina_regen: 0.0,
         block_reduction_bonus: 0.0,
         stamina_cost_reduction: 0.0,
-        dash_cd_reduction_pct: DASH_CD_REDUCTION_PER_SPD,
+        dash_cd_reduction_pct: 0.0,
     },
     /* RES */
     StatAllocBonus {

@@ -14,8 +14,9 @@ const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
     ("DES", "+1 dexterity · crit/attack · +0.25% dodge · pistol: +1 health, +0.5% dodge"),
     ("INT", "+1 magic damage · +2 mana · -0.1% skill cooldown"),
     ("VIT", "+5 health · regeneration"),
-    ("SPD", "+2 vigor · regeneração · recarga do Dash"),
-    ("RES", "+1 defence · block"),
+    // SPD is retired (not drawn, can't be raised): `shared::stat_ativo`.
+    ("SPD", ""),
+    ("RES", "+1 defence"),
 ];
 
 #[derive(Default)]
@@ -92,7 +93,7 @@ impl FichaUi {
     }
 
     fn pode_alocar(&self, indice: usize) -> bool {
-        indice < STAT_COUNT
+        shared::stat_ativo(indice)
             && self.pontos.is_some_and(|(n, _)| n > 0)
             && self.energia >= self.custo_do_proximo_ponto()
     }
@@ -260,8 +261,13 @@ impl FichaUi {
         // do tutorial travava o toque em todos os outros e so' dava pra subir
         // forca — o dono achou jogando, em 20/09/2026.
         let mut coluna: Option<Rect> = None;
+        let mut linha = 0usize;
         for (i, (sigla, bonus)) in ATRIBUTOS.iter().enumerate() {
-            let y = esq.y + (45.0 + i as f32 * 48.0) * f;
+            if !shared::stat_ativo(i) {
+                continue;
+            }
+            let y = esq.y + (45.0 + linha as f32 * 48.0) * f;
+            linha += 1;
             let r = Rect::new(esq.x + 10.0 * f, y, esq.w - 20.0 * f, 45.0 * f);
             estilo::cartao(r, false, false);
             estilo::texto_forte(r.x + 10.0 * f, r.y + 18.0 * f, sigla, 16, estilo::TEXTO);
@@ -393,14 +399,10 @@ impl FichaUi {
                 ("Atk. speed", format!("{:.2}x", s.attack_speed_mult)),
                 ("Health regen", format!("{:.1}/s", s.hp_regen)),
                 ("Mana regen", format!("{:.1}/s", s.mp_regen)),
-                ("Max stamina", s.stamina_max.to_string()),
-                ("Stamina regen", format!("{:.1}/s", s.stamina_regen)),
-                ("Block", format!("{:.0}%", s.block_dmg_reduction * 100.0)),
                 (
                     "Dmg. red.",
                     format!("{:.0}%", s.damage_reduction_pct * 100.0),
                 ),
-                ("Dash cooldown", format!("{:.2}x", s.dash_cd_mult)),
             ];
             for (i, (rotulo, valor)) in linhas.iter().enumerate() {
                 let col = i / 7;
@@ -562,7 +564,8 @@ mod tests {
         assert!(!ui.pode_alocar(0), "sem snapshot nao pode gastar");
         ui.atualizar_pontos(2, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
         assert_eq!(ui.pontos_disponiveis(), Some(2));
-        assert!((0..shared::STAT_COUNT).all(|i| ui.pode_alocar(i)));
+        assert!((0..shared::STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
+        assert!(!ui.pode_alocar(shared::stat_idx::SPD), "SPD is retired");
         assert!(!ui.pode_alocar(shared::STAT_COUNT));
         ui.atualizar_pontos(0, [1, 2, 3, 4, 5, 6], [0; STAT_COUNT]);
         assert!(!ui.pode_alocar(0));
@@ -648,7 +651,7 @@ mod tests {
             "faltando 1 de Energia nenhum atributo aceita"
         );
         ui.energia = 10;
-        assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
+        assert!((0..STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
         // O preco acompanha o que ja' esta' alocado, igual ao servidor.
         ui.atualizar_pontos(5, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert_eq!(ui.custo_do_proximo_ponto(), 10 + 5 * 10);
@@ -657,7 +660,7 @@ mod tests {
             "10 nao paga 60"
         );
         ui.energia = 60;
-        assert!((0..STAT_COUNT).all(|i| ui.pode_alocar(i)));
+        assert!((0..STAT_COUNT).filter(|&i| shared::stat_ativo(i)).all(|i| ui.pode_alocar(i)));
         // Sem ponto livre nao adianta ter Energia.
         ui.atualizar_pontos(0, [4, 3, 2, 1, 0, 0], [0; STAT_COUNT]);
         assert!((0..STAT_COUNT).all(|i| !ui.pode_alocar(i)));

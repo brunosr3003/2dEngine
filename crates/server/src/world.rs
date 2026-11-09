@@ -5081,7 +5081,7 @@ impl GameWorld {
             return;
         }
         let idx = stat as usize;
-        if idx >= s.allocated_points.len() {
+        if idx >= s.allocated_points.len() || !shared::stat_ativo(idx) {
             return;
         }
         if s.unspent_points == 0 {
@@ -6521,6 +6521,8 @@ impl GameWorld {
             s.skill_progress = saved_skill_progress;
             s.colonia = saved_colonia.clone();
             s.skills_dirty = false; // já enviamos PlayerSkillsUpdate no fim do login
+            // After skill_progress (the Energy refund lands there).
+            reembolsa_spd(s);
             s.vault = saved_vault;
             s.vault_dirty = false;
             s.bolsa_extra = row.bolsa_extra;
@@ -9769,6 +9771,9 @@ impl GameWorld {
                 continue;
             };
             session.last_input_seq = frame.seq;
+            // The DASH is gone (owner, 09/11/2026, with stamina and SPD): an
+            // old client still sends the bit; it does nothing.
+            frame.buttons &= !buttons::DASH;
             // Se esta sendo carregado, posicao vem do carregador — ignora input
             if session.carried_by.is_some() {
                 continue;
@@ -9857,10 +9862,10 @@ impl GameWorld {
             let staggered = self.sim_time_s < session.stagger_until;
             let block_cost_now = shared::combat::block_stamina_cost(&session.stats);
             let was_defending = session.defending;
-            session.defending = (frame.buttons & buttons::SECONDARY != 0)
-                && !session.downed
-                && !staggered
-                && session.stamina_current >= block_cost_now;
+            // Block and parry are gone with stamina (owner, 09/11/2026). The
+            // SECONDARY bit (G) still dismounts, above.
+            let _ = (block_cost_now, staggered);
+            session.defending = false;
             // Edge-press: ao iniciar defesa, recarrega o buffer de poise
             // que defending absorve (escala com lvl + bonus de escudo).
             if session.defending && !was_defending {
@@ -10215,21 +10220,17 @@ impl GameWorld {
             // Sprint: hold Shift (bit SPRINT) → 1.65× a velocidade base, drena
             // stamina por segundo. Bloqueado se stamina vazia, defending,
             // downed ou carrying.
+            // No stamina any more: sprint is unlimited (owner, 09/11/2026).
             let wants_sprint = !session.downed
                 && session.carrying.is_none()
                 && !session.defending
                 && (frame.buttons & buttons::SPRINT != 0)
-                && session.stamina_current > 0.0
                 && dir.length_squared() > 0.01; // só sprinta enquanto mexendo
             let sprint_mult = if wants_sprint {
                 shared::SPRINT_SPEED_MULT
             } else {
                 1.0
             };
-            if wants_sprint {
-                session.stamina_current =
-                    (session.stamina_current - shared::STAMINA_DRAIN_PER_SEC * dt).max(0.0);
-            }
             let base_speed = if session.downed {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
@@ -12377,7 +12378,9 @@ impl GameWorld {
                 // Master's Counter (1007): durante 2s, qualquer hit recebido
                 // e auto-parryado independente de timing/stamina (sem cost).
                 let counter_active = target.counter_stance_until > now_s && !telegrafico;
-                let normal_parry = !target.montado && in_parry_window && target.stamina_current >= parry_cost && !telegrafico;
+                // Timed parry is gone (no stamina); Master's Counter stays.
+                let _ = (in_parry_window, parry_cost);
+                let normal_parry = false;
                 if counter_active || normal_parry {
                     if normal_parry {
                         target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
@@ -12389,7 +12392,7 @@ impl GameWorld {
                     parried = true;
                     // dmg sera lido pelo counter handler abaixo (precisa do
                     // valor original pra reflexo de projectile). Zerado depois.
-                } else if target.defending && target.stamina_current >= block_cost && !telegrafico {
+                } else if target.defending && block_cost >= 0.0 && !telegrafico {
                     target.stamina_current = (target.stamina_current - block_cost).max(0.0);
                     dmg = shared::combat::apply_block_damage(&target.stats, dmg);
                 }
@@ -19532,7 +19535,9 @@ impl GameWorld {
                     let cheio = match g {
                         Grupo::Vida => hp >= hp_max,
                         Grupo::Mana => session.mp_current >= session.stats.mp_max as f32,
-                        Grupo::Vigor => session.stamina_current >= session.stats.stamina_max as f32,
+                        // Stamina is gone: a Stamina Potion is never drunk
+                        // (refused without spending; sell it to the NPC).
+                        Grupo::Vigor => true,
                     };
                     // Grupo em recarga: recusa SEM gastar (a recarga e' sempre
                     // maior que a cura, entao nunca ha' duas curas do grupo).
@@ -23137,4 +23142,27 @@ mod auditoria_das_missoes {
         let f = falhas();
         assert!(f.is_empty(), "{} broken side quest(s):\n{}", f.len(), f.join("\n"));
     }
+}
+
+/// SPD was retired (09/11/2026): the points a character had in it go back as
+/// free points, with the Energy they cost, so re-spending them elsewhere is
+/// free. Runs on every login; a no-op once the slot is empty.
+fn reembolsa_spd(s: &mut Session) {
+    let spd = shared::stat_idx::SPD;
+    let n = s.allocated_points[spd];
+    if n == 0 {
+        return;
+    }
+    let total: u32 = s.allocated_points.iter().sum();
+    let energia: u64 = ((total - n)..total).map(shared::custo_energia_do_ponto).sum();
+    s.allocated_points[spd] = 0;
+    s.unspent_points = s.unspent_points.saturating_add(n);
+    s.skill_progress.energia = s.skill_progress.energia.saturating_add(energia);
+    s.stat_points_dirty = true;
+    s.skills_dirty = true;
+    let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+        progresso: s.skill_progress.clone(),
+    });
+    s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+    tracing::info!("{}: SPD retired, refunded {n} points and {energia} Energy", s.name);
 }

@@ -271,6 +271,10 @@ const FIXOS: [ItemDePet; 3] = [
 pub fn itens_de_pet() -> Vec<ItemDePet> {
     let mut v = FIXOS.to_vec();
     for (i, sk) in crate::pets::todas_as_skills().iter().enumerate() {
+        // The SPD skill is retired; skipping it keeps every other id.
+        if sk.item_id == crate::item_id::SKILL_PET_ATRIBUTO[crate::stat_idx::SPD] {
+            continue;
+        }
         v.push(ItemDePet {
             id: FIXOS.len() as u16 + 1 + i as u16,
             item_id: sk.item_id,

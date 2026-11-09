@@ -386,7 +386,7 @@ pub fn falas(quest_id: u16, m: u8) -> Vec<&'static str> {
         ],
         (501, momento::CONVERSA) => &[
             "The Master sent you? Then you're the newcomer they mentioned.",
-            "Without potions, the woods swallow anyone. Here I sell health, mana and stamina.",
+            "Without potions, the woods swallow anyone. Here I sell health and mana.",
             "Remember this: drink before you fall, not after. Now go back to the Master.",
         ],
         (501, momento::ENTREGA) => &[

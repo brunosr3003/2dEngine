@@ -5,6 +5,11 @@ Nov 9, 2026 — Shop fixes
 - Rankings: tap a player in the top 50 to see their character in 3D.
 - The quest and party panel is bigger, and can be expanded with the + button.
 - New summon animation: scrolls now hatch from a cracking egg, with a burst of light in the color of the best prize.
+- Stamina, the Dash and the SPD attribute were removed. Sprint is now unlimited.
+- Points spent in SPD are refunded, with their Energy, so you can spend them again.
+- Block and timed parry were removed.
+- Stamina Potions no longer drop or sell; the ones you have can be sold to merchants.
+- Each dungeon key now has its own icon.
 - Fixed buttons that overlap (like Auto Collect and its settings) catching the wrong tap.
 - Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.
 - Fixed the purchase screen staying on "Waiting for Google Play" after buying.

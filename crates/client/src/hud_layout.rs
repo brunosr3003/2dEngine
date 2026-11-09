@@ -463,10 +463,11 @@ fn monta(
     });
     // DASH ocupa o quarto slot do arco. O PULO continua perto do polegar, mas
     // sobe uma fileira para os dois movimentos existirem no celular.
+    // The DASH was removed (09/11/2026): the JUMP takes its slot of the arc,
+    // closer to the thumb. `dash` stays as the same box only so the layout
+    // editor's saved positions keep their keys; nothing draws it.
     let dash = skills[3];
-    let rp = 36.0 * s;
-    let cp = dash.center() + vec2(0.0, -94.0 * s);
-    let pulo = Rect::new(cp.x - rp, cp.y - rp, rp * 2.0, rp * 2.0);
+    let pulo = dash;
     // Linha de baixo, a' esquerda do arco: [COLETA][COMBATE][C][8][9][0].
     let direita = sw - 312.0 * s;
     let yb = base - 14.0 * s;
@@ -675,8 +676,9 @@ impl Zonas {
                 *r,
             ));
         }
-        for (i, r) in self.skills.iter().enumerate() {
-            v.push((["skill1", "skill2", "skill3", "dash"][i], *r));
+        // The 4th slot of the arc is the JUMP now (listed as "pulo").
+        for (i, r) in self.skills.iter().enumerate().take(3) {
+            v.push((["skill1", "skill2", "skill3"][i], *r));
         }
         for (i, r) in self.rapidos.iter().enumerate() {
             v.push((["rapido8", "rapido9", "rapido0"][i], *r));

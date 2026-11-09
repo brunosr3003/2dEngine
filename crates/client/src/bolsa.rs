@@ -1242,7 +1242,8 @@ impl Bolsa {
                 Tipo::Pocao(3) => "+30% de XP por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(4) => "+30% de ouro e cobre dos bichos por 1 hora. Beber outra renova a hora.",
                 Tipo::Pocao(5) => "+20% de chance de drop (bichos e coleta) por 1 hora. Beber outra renova a hora.",
-                Tipo::Pocao(_) => "Restores stamina.",
+                // Stamina is gone (09/11/2026): the old potion only sells.
+                Tipo::Pocao(_) => "No longer used. Sell it to a merchant.",
                 Tipo::Pergaminho => "Abra para revelar um prêmio aleatório decidido pelo servidor.",
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
                 _ => "Crafting material.",

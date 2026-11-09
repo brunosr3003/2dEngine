@@ -381,7 +381,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("+50% of the experience the pet gains.", "+50% da experiência que o pet recebe."),
     ("Odd and wise. The pet for the magic weapon.", "Estranho e sábio. O pet da arma mágica."),
     ("A hunter from the start. Strength and dexterity.", "Caçador desde pequeno. Força e destreza."),
-    ("Quick and curious. Dexterity and speed.", "Rápido e curioso. Destreza e velocidade."),
+    ("Quick and curious. Dexterity and strength.", "Rápido e curioso. Destreza e força."),
     (
         "Pequeno, e já sabe disso. O topo da ladder.",
         "Small, and well aware of it. The top of the ladder.",

@@ -68,7 +68,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         bicho: "bichos/cervo",
         escala: 1.22,
         sela_frente: -0.34,
-        afinidade: pesos(&[(stat_idx::SPD, 6), (stat_idx::DES, 4)]),
+        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::VIT, 4)]),
         descricao: "Manso e ligeiro. A primeira montaria de qualquer um.",
     },
     Especie {
@@ -77,7 +77,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         bicho: "bichos/lobo",
         escala: 0.75,
         sela_frente: -0.38,
-        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
+        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::FOR, 4)]),
         descricao: "Leal e ligeiro, criado nas matas do Bosque.",
     },
     Especie {
@@ -95,7 +95,7 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         bicho: "bichos/hipogrifo",
         escala: 1.32,
         sela_frente: -0.30,
-        afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::SPD, 5)]),
+        afinidade: pesos(&[(stat_idx::INT, 5), (stat_idx::DES, 5)]),
         descricao: "Meio águia, meio cavalo. Não anda: quase voa.",
     },
     Especie {

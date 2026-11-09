@@ -369,7 +369,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Remember this: drink before you fall, not after. Now go back to the Master.", "Guarde a lição: bebe antes de cair, não depois. Agora volte ao Mestre."),
     ("Morgan's mages pull lightning from the sky into the lighthouse stones. Defeat 12.", "Magos de Morgan puxam raios do céu para as pedras do farol. Derrote 12."),
     ("The wolves prowl the trails outside the city. Defeat 6 wolves and come back here.", "Os lobos rondam as trilhas fora da cidade. Derrote 6 lobos e volte aqui."),
-    ("Without potions, the woods swallow anyone. Here I sell health, mana and stamina.", "Sem poção, a mata engole qualquer um. Aqui eu vendo vida, mana e fôlego."),
+    ("Without potions, the woods swallow anyone. Here I sell health and mana.", "Sem poção, a mata engole qualquer um. Aqui eu vendo vida e mana."),
     ("The smuggling is back in the cellar under the quay. Clear the Smuggler's Cellar.", "O contrabando voltou à adega sob o cais. Limpe a Adega do Contrabandista."),
     ("A map points to a legendary chest on a distant island. Open it (follow the compass).", "Um mapa aponta um baú lendário numa ilha distante. Abra-o (siga a bússola)."),
     ("Defeat twenty-five creatures on the Glacier before the trail closes again.", "Derrote vinte e cinco criaturas da Geleira antes que a trilha feche de novo."),

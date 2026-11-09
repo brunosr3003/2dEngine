@@ -368,7 +368,7 @@ mod tests {
         assert_eq!(b.espacos[3], EspacoDaBarra::default());
         // Opening from an empty slot leaves it already chosen.
         c.abrir(Some(1));
-        assert!(c.escolhe_item(&mut b, it::STAMINA_POTION));
-        assert_eq!(b.espacos[1].item_id, it::STAMINA_POTION);
+        assert!(c.escolhe_item(&mut b, it::HEALTH_POTION));
+        assert_eq!(b.espacos[1].item_id, it::HEALTH_POTION);
     }
 }

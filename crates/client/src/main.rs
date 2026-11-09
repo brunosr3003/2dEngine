@@ -5976,12 +5976,8 @@ impl Jogo {
         }
         // No celular vem do quarto botao do arco; no PC, Ctrl. O toque e'
         // pulso unico para nao repetir o dash quando o dedo fica apoiado.
-        if std::mem::take(&mut self.dash_toque)
-            || (!self.teclado_bloqueado()
-                && (is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl)))
-        {
-            buttons |= shared::protocol::buttons::DASH;
-        }
+        // The dash was removed (09/11/2026): Ctrl does nothing now.
+        let _ = std::mem::take(&mut self.dash_toque);
         // O arco comeca no quadro da tecla, sem esperar a ida e volta. So' a
         // ANIMACAO: quem decide se o degrau de dois blocos foi vencido e' o
         // servidor, e ele responde antes de o arco chegar ao topo.
@@ -6722,11 +6718,7 @@ impl Jogo {
             if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
                 self.corrida.alternar(self.correndo_auto);
             }
-            // Dash ocupa o antigo quarto slot do arco; Pulo subiu uma fileira.
-            let dash_restante = (self.dash_recarga.0 - get_time()).max(0.0) as f32;
-            if hud::draw_dash(&z, dash_restante, self.dash_recarga.1) {
-                self.dash_toque = true;
-            }
+            // No dash any more (09/11/2026): the jump took its slot.
             // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
             let no_ar = self
                 .world

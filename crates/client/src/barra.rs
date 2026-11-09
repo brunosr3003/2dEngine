@@ -31,7 +31,7 @@ pub fn categoria(id: u16) -> Option<Categoria> {
     match id {
         x if x == it::HEALTH_POTION || x == it::GREATER_HEAL => Some(Categoria::Vida),
         x if x == it::MANA_POTION || x == it::GREATER_MANA => Some(Categoria::Mana),
-        x if x == it::STAMINA_POTION => Some(Categoria::Vigor),
+        // The Stamina Potion is retired with stamina (09/11/2026).
         x if x == it::XP_POTION => Some(Categoria::Experiencia),
         x if x == it::FORTUNA_POTION => Some(Categoria::Fortuna),
         x if x == it::SORTE_POTION => Some(Categoria::Sorte),

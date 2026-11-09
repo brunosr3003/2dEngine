@@ -478,51 +478,7 @@ pub fn draw_topo(
     saida
 }
 
-/// Dash no quarto lugar do arco. E' toque (nao hold): o servidor aplica a
-/// recarga e os i-frames, e SPD reduz o intervalo entre usos.
-pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
-    let r = z.dash;
-    let m = mouse();
-    let sobre = r.toca(m);
-    let c = r.center();
-    let raio = r.w * 0.5;
-    let cor = Color::new(0.35, 0.86, 1.0, 1.0);
-    let pronto = restante <= 0.0;
-    let e = estilo::estado(
-        sobre,
-        is_mouse_button_down(MouseButton::Left),
-        !pronto,
-        false,
-    );
-    estilo::botao_redondo(c, raio, cor, e, pronto);
-    crate::icones_ui::ui("dash", c - vec2(0.0, raio * 0.10), raio * 1.35, cor);
-    estilo::texto_centro_forte(c.x, c.y + raio * 0.70, "DASH", 10, cor);
-    if !pronto {
-        let fracao = (restante / duracao.max(0.01)).clamp(0.0, 1.0);
-        estilo::setor(c, raio - 3.0, fracao, Color::new(0.0, 0.0, 0.0, 0.62));
-        estilo::arco(
-            c,
-            raio - 2.0,
-            -std::f32::consts::FRAC_PI_2,
-            fracao,
-            2.0,
-            estilo::OURO,
-        );
-        let texto = format!("{restante:.1}");
-        estilo::texto_sombra(
-            c.x - estilo::medir_forte(&texto, 22) * 0.5,
-            c.y + 8.0,
-            &texto,
-            22,
-            WHITE,
-            true,
-        );
-    }
-    layout::chip(r, "CTRL");
-    pronto && sobre && crate::foco::clique()
-}
-
-/// O botao de PULO, acima do dash. Devolve `(tocou, segurando)`: o
+/// O botao de PULO, no quarto lugar do arco (era do dash). Devolve `(tocou, segurando)`: o
 /// toque dispara a animacao local e o segurar manda o bit pro servidor — o
 /// mesmo que a tecla R faz no PC, que no celular nao existe.
 pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
@@ -893,33 +849,15 @@ pub fn draw_ficha(
         );
         let mp = ficha.mp.unwrap_or(mp_max);
         barra_de_recurso(
-            Rect::new(bx, r.y + 59.0 * k, bw, 12.0 * k),
+            Rect::new(bx, r.y + 60.0 * k, bw, 15.0 * k),
             mp as f32 / mp_max.max(1) as f32,
             0.0,
             Color::new(0.16, 0.40, 0.69, 1.0),
             Color::new(0.55, 0.80, 1.0, 0.25),
             Some(&format!("{mp} / {mp_max}")),
         );
-        let vigor = ficha.vigor.unwrap_or(vigor_max);
-        barra_de_recurso(
-            Rect::new(bx, r.y + 79.0 * k, bw, 3.0 * k),
-            vigor as f32 / vigor_max.max(1) as f32,
-            0.0,
-            estilo::OURO,
-            estilo::OURO,
-            None,
-        );
-        estilo::texto(bx, r.y + 102.0 * k, "STAMINA", fonte(10.0, k), estilo::SUAVE);
-        // After the word, whatever its width in this language and scale:
-        // a fixed 46 ran "STAMINA180/240" together.
-        let apos = estilo::medir("STAMINA", fonte(10.0, k)) + 5.0 * k;
-        estilo::texto(
-            bx + apos,
-            r.y + 102.0 * k,
-            &format!("{vigor}/{vigor_max}"),
-            fonte(11.0, k),
-            estilo::OURO,
-        );
+        // No stamina bar: stamina was removed from the game (09/11/2026).
+        let _ = vigor_max;
     });
 }
 

@@ -61,8 +61,8 @@ pub const ESPECIES: [Especie; ESPECIE_COUNT] = [
         nome: "Wolf Cub",
         bicho: "bichos/lobo_pequeno",
         escala: 0.778,
-        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::SPD, 4)]),
-        descricao: "Quick and curious. Dexterity and speed.",
+        afinidade: pesos(&[(stat_idx::DES, 6), (stat_idx::FOR, 4)]),
+        descricao: "Quick and curious. Dexterity and strength.",
     },
     Especie {
         grau: 3,
@@ -102,13 +102,25 @@ pub const PESO_SECUNDARIO: u8 = 4;
 /// um item de cash"). A criatura decide o porte e a cor; o que ela EMPRESTA
 /// e' sorte — e sorte que se pode comprar de novo, com a Pedra de Afinidade.
 pub fn rolar_afinidade(r1: f32, r2: f32) -> [u8; 2] {
-    let n = STAT_COUNT as f32;
-    let a = ((r1.clamp(0.0, 0.999_999) * n) as usize).min(STAT_COUNT - 1);
+    // Only the active attributes (SPD was retired, `crate::stat_ativo`).
+    let ativos: Vec<usize> = (0..STAT_COUNT).filter(|&i| crate::stat_ativo(i)).collect();
+    let k = ativos.len();
+    let n = k as f32;
+    let a = ((r1.clamp(0.0, 0.999_999) * n) as usize).min(k - 1);
     // O segundo sorteia entre os N-1 restantes e pula o primeiro: sortear em
     // N e repetir ate' diferir podia nao terminar.
-    let b = ((r2.clamp(0.0, 0.999_999) * (n - 1.0)) as usize).min(STAT_COUNT - 2);
+    let b = ((r2.clamp(0.0, 0.999_999) * (n - 1.0)) as usize).min(k - 2);
     let b = if b >= a { b + 1 } else { b };
-    [a as u8, b as u8]
+    [ativos[a] as u8, ativos[b] as u8]
+}
+
+/// Weights with the retired SPD folded into DEX: a pet or mount rolled
+/// before 09/11/2026 with SPD keeps every point it lends.
+pub fn sem_spd(mut v: [u8; STAT_COUNT]) -> [u8; STAT_COUNT] {
+    let spd = stat_idx::SPD;
+    v[stat_idx::DES] = v[stat_idx::DES].saturating_add(v[spd]);
+    v[spd] = 0;
+    v
 }
 
 /// Os pesos de uma afinidade rolada.
@@ -121,7 +133,7 @@ pub fn pesos_de(afinidade: [u8; 2]) -> [u8; STAT_COUNT] {
     if b < STAT_COUNT && b != a {
         v[b] = PESO_SECUNDARIO;
     }
-    v
+    sem_spd(v)
 }
 
 const fn pesos(pares: &[(usize, u8)]) -> [u8; STAT_COUNT] {
@@ -412,10 +424,15 @@ pub fn todas_as_skills() -> Vec<SkillDePet> {
                 &"DES" => "+4 DEX.",
                 &"INT" => "+4 INT.",
                 &"VIT" => "+4 VIT.",
-                &"SPD" => "+4 SPD.",
+                // Retired with SPD: owned copies now give DEX, and it is
+                // no longer sold (`loja::itens_de_pet`).
+                &"SPD" => "+4 DEX.",
                 _ => "+4 RES.",
             },
-            efeito: Efeito::PontoEm(i, PONTOS_DA_SKILL_DE_ATRIBUTO),
+            efeito: Efeito::PontoEm(
+                if crate::stat_ativo(i) { i } else { stat_idx::DES },
+                PONTOS_DA_SKILL_DE_ATRIBUTO,
+            ),
             preco_tp: 450,
         });
     }
@@ -655,6 +672,7 @@ mod testes {
                     "{r:?} fora da tabela"
                 );
                 assert_ne!(r[0], r[1], "principal e secundario iguais: {r:?}");
+                assert!(crate::stat_ativo(r[0] as usize) && crate::stat_ativo(r[1] as usize), "rolled the retired SPD: {r:?}");
                 let p = pesos_de(r);
                 assert_eq!(
                     p.iter().map(|x| *x as u16).sum::<u16>(),
@@ -668,28 +686,37 @@ mod testes {
         }
         // Todos os pares ordenados possiveis saem — o sorteio nao esquece
         // nenhum atributo.
-        assert_eq!(vistos.len(), STAT_COUNT * (STAT_COUNT - 1));
+        // (SPD is retired: five active attributes.)
+        assert_eq!(vistos.len(), (STAT_COUNT - 1) * (STAT_COUNT - 2));
 
         // E o reparto segue a ROLADA, nao a da criatura.
         let id = item_id::pet_no_grau(item_id::PET_BASE, 5);
         let d = crate::items::PetData::default();
         let fixa = pontos_por_stat(id, &d, None);
-        let rolada = pontos_por_stat(id, &d, Some([stat_idx::RES as u8, stat_idx::SPD as u8]));
+        let rolada = pontos_por_stat(id, &d, Some([stat_idx::RES as u8, stat_idx::INT as u8]));
         assert_eq!(
             rolada.iter().sum::<u32>(),
             fixa.iter().sum::<u32>(),
             "o TOTAL nao muda: a afinidade so' diz ONDE cai"
         );
-        assert!(rolada[stat_idx::RES] > rolada[stat_idx::SPD]);
+        assert!(rolada[stat_idx::RES] > rolada[stat_idx::INT]);
         assert!(
-            rolada[stat_idx::RES] > 0 && rolada[stat_idx::SPD] > 0,
+            rolada[stat_idx::RES] > 0 && rolada[stat_idx::INT] > 0,
             "os dois atributos rolados recebem algo"
         );
         for (i, v) in rolada.iter().enumerate() {
-            if i != stat_idx::RES && i != stat_idx::SPD {
+            if i != stat_idx::RES && i != stat_idx::INT {
                 assert_eq!(*v, 0, "caiu ponto fora da afinidade rolada");
             }
         }
+    }
+
+    #[test]
+    fn afinidade_antiga_com_spd_vai_pra_des_sem_perder_ponto() {
+        let p = pesos_de([stat_idx::SPD as u8, stat_idx::FOR as u8]);
+        assert_eq!(p[stat_idx::SPD], 0);
+        assert_eq!(p[stat_idx::DES], PESO_PRINCIPAL);
+        assert_eq!(p.iter().map(|x| *x as u16).sum::<u16>(), PESO_TOTAL as u16);
     }
 
     /// O id carrega o GRAU, e o grau E' a criatura: cinco ids, cinco bichos
