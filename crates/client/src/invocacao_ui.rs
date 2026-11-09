@@ -1,6 +1,8 @@
 //! Summoning scroll reveal. The prize already arrives decided by the server;
 //! this is presentation only, so closing/skipping never changes the gain.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::material::Material;
 use macroquad::prelude::*;
 use shared::loja::PremioInvocacao;
@@ -465,7 +467,7 @@ impl InvocacaoUi {
                 estilo::estado_de(bt, !pronto, false),
                 pronto,
             );
-            if pronto && crate::foco::clique() && bt.contains(Vec2::from(mouse_position())) {
+            if pronto && crate::foco::clique() && bt.toca(Vec2::from(mouse_position())) {
                 self.fechar();
             }
         }

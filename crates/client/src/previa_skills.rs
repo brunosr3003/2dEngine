@@ -240,7 +240,7 @@ pub async fn abrir(vox: &VoxCache) {
                 None,
                 &|_| String::new(),
             );
-            crate::hud::draw_topo(&z, true, true, true, true);
+            crate::hud::draw_topo(&z, true, true, true, true, true);
             crate::joystick::Joystick::default().desenha(&z);
             mapa.acompanhar();
             crate::hud_layout::define_minimapa_oculto(automatico && escolha == 11);

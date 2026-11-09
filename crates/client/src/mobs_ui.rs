@@ -1,5 +1,7 @@
 //! Bestiary of the areas visited this session. All the combat numbers come
 //! from the server's goal, after the tier's real scaling.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::{hud_estilo as estilo, world::World};
@@ -91,7 +93,7 @@ impl MobsUi {
         estilo::texto_forte(p.x + 18.0, p.y + 31.0, "MOBS", 22, estilo::OURO);
         let x = Rect::new(p.x + p.w - 47.0, p.y + 8.0, 36.0, 34.0);
         estilo::botao(x, "X", estilo::estado_de(x, false, false), false);
-        if clique && x.contains(m) { self.fechar(); return None; }
+        if clique && x.toca(m) { self.fechar(); return None; }
         estilo::texto(p.x + 18.0, p.y + 52.0,
             "Inimigos das áreas visitadas · atributos reais do servidor", 12, estilo::SUAVE);
         let lista = Rect::new(p.x + 12.0, p.y + 64.0, p.w * 0.42, p.h - 76.0);
@@ -112,11 +114,11 @@ impl MobsUi {
             let r = &self.registros[i];
             let area = Rect::new(lista.x + 7.0, lista.y + 8.0 + linha as f32 * 42.0,
                 lista.w - 14.0, 37.0);
-            estilo::cartao(area, area.contains(m), self.selecionado == Some(i));
+            estilo::cartao(area, area.toca(m), self.selecionado == Some(i));
             estilo::texto_ajustado(&format!("{}  Nv. {}", r.nome, r.nivel),
                 area.x + 8.0, area.y + 24.0, area.w - 16.0, 14,
                 if r.chefe { estilo::OURO } else { estilo::TEXTO });
-            if clique && area.contains(m) { self.selecionado = Some(i); }
+            if clique && area.toca(m) { self.selecionado = Some(i); }
         }
         let rodape_y = lista.y + lista.h - 22.0;
         let anterior = Rect::new(lista.x + 8.0, rodape_y - 8.0, 35.0, 27.0);
@@ -125,8 +127,8 @@ impl MobsUi {
         estilo::botao(proximo, ">", estilo::estado_de(proximo, self.pagina >= max_pagina, false), false);
         estilo::texto_centro(lista.center().x, rodape_y + 11.0,
             &format!("{} / {}", self.pagina + 1, max_pagina + 1), 12, estilo::SUAVE);
-        if clique && anterior.contains(m) { self.pagina = self.pagina.saturating_sub(1); }
-        if clique && proximo.contains(m) { self.pagina = (self.pagina + 1).min(max_pagina); }
+        if clique && anterior.toca(m) { self.pagina = self.pagina.saturating_sub(1); }
+        if clique && proximo.toca(m) { self.pagina = (self.pagina + 1).min(max_pagina); }
         let Some(r) = self.selecionado.and_then(|i| self.registros.get(i)) else {
             estilo::texto(detalhe.x + 14.0, detalhe.y + 32.0,
                 "Tap a mob to see the details.", 14, estilo::SUAVE);
@@ -142,7 +144,7 @@ impl MobsUi {
         let ir = Rect::new(detalhe.x + 14.0, detalhe.y + 45.0,
             (detalhe.w * 0.36).max(65.0), 34.0);
         estilo::botao(ir, "Ir", estilo::estado_de(ir, false, false), false);
-        let pedido = (clique && ir.contains(m)).then(|| PedidoIr {
+        let pedido = (clique && ir.toca(m)).then(|| PedidoIr {
             kind: r.kind, nivel: r.nivel, chefe: r.chefe, nome: r.nome.clone(),
         });
         let pecas = pecas_adequadas(equip, &d);

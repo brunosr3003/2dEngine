@@ -1,6 +1,8 @@
 //! Evolution of the twelve skills. The screen only presents costs and sends
 //! requests; Energy, copper, tomes and tier are always checked by the server.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 use shared::skills::{self, Conjunto, GrauTomo, ProgressoDeSkills, Skill};
@@ -97,7 +99,7 @@ impl EvolucaoSkills {
         );
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
-        if clique && fechar.contains(m) {
+        if clique && fechar.toca(m) {
             self.fechar();
             return None;
         }
@@ -143,7 +145,7 @@ impl EvolucaoSkills {
                 estilo::estado_de(r, false, self.conjunto == i),
                 self.conjunto == i,
             );
-            if clique && r.contains(m) {
+            if clique && r.toca(m) {
                 self.conjunto = i;
                 self.selecionada = None;
             }
@@ -158,7 +160,7 @@ impl EvolucaoSkills {
         for (i, skill) in habilidades.iter().enumerate() {
             let y = p.y + (144.0 + i as f32 * 101.0) * f;
             let r = Rect::new(p.x + 20.0 * f, y, 270.0 * f, 88.0 * f);
-            estilo::cartao(r, r.contains(m), self.selecionada == Some(skill.id));
+            estilo::cartao(r, r.toca(m), self.selecionada == Some(skill.id));
             let ic = vec2(r.x + 44.0 * f, r.y + 44.0 * f);
             if !crate::icones_ui::skill(skill.id, ic, 62.0 * f, 1.0) {
                 estilo::icone(skill.id, ic, 25.0 * f, estilo::ACENTO);
@@ -181,7 +183,7 @@ impl EvolucaoSkills {
                 )
             };
             estilo::texto(r.x + 82.0 * f, r.y + 63.0 * f, &estado, 14, estilo::SUAVE);
-            if clique && r.contains(m) {
+            if clique && r.toca(m) {
                 self.selecionada = Some(skill.id);
             }
         }
@@ -333,7 +335,7 @@ impl EvolucaoSkills {
 
         for (i, grau) in GrauTomo::TODOS.iter().enumerate() {
             let r = Rect::new(x + i as f32 * 188.0 * f, y + 270.0 * f, 180.0 * f, 70.0 * f);
-            estilo::cartao(r, r.contains(m), self.tomo_selecionado == i);
+            estilo::cartao(r, r.toca(m), self.tomo_selecionado == i);
             let cor = match grau {
                 GrauTomo::Verde => estilo::VERDE,
                 GrauTomo::Roxo => Color::new(0.75, 0.52, 1.0, 1.0),
@@ -351,7 +353,7 @@ impl EvolucaoSkills {
                 19,
                 estilo::TEXTO,
             );
-            if clique && r.contains(m) {
+            if clique && r.toca(m) {
                 self.tomo_selecionado = i;
             }
         }
@@ -380,7 +382,7 @@ impl EvolucaoSkills {
             estilo::estado_de(fabricar, !fabrica, false),
             fabrica,
         );
-        if clique && fabricar.contains(m) && fabrica {
+        if clique && fabricar.toca(m) && fabrica {
             return Some(ClientMessage::FabricarTomoDeSkill {
                 skill_id: skill.id,
                 grau: grau as u8,
@@ -399,7 +401,7 @@ impl EvolucaoSkills {
             estilo::estado_de(evoluir, !pode, false),
             pode,
         );
-        if clique && evoluir.contains(m) && pode {
+        if clique && evoluir.toca(m) && pode {
             return Some(ClientMessage::EvoluirSkill { skill_id: skill.id });
         }
         if let Some(aviso) = &self.aviso {

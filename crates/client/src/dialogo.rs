@@ -1,6 +1,8 @@
 //! Caixa de dialogo das missoes: falas com "Proximo" e, no fim, o que a
 //! conversa decide — concluir a conversa ("fale com"), receber a recompensa ou
 //! aceitar a missao. Quem aperta e' o jogador; quem valida e' o servidor.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::EntityId;
 
@@ -144,7 +146,7 @@ impl Dialogo {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// A AUTO MISSÃO conduz a conversa sozinha.

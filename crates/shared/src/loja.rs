@@ -716,6 +716,48 @@ pub enum PedidoLoja {
     },
     Montar,
     Desmontar,
+    /// FLASH OFFERS (docs/OFERTAS_RELAMPAGO.md): "which are open for me?".
+    /// The server opens the next one the character's level unlocks (at most
+    /// one per check) and answers `AvisoLoja::OfertasRelampago`. Only a client
+    /// that can actually pay (Android today) sends it, so the hour never runs
+    /// out on a PC that can't buy.
+    OfertasRelampago,
+    /// Buy an open flash offer through Google Play. The server recomputes the
+    /// Play product from the offer row (never trusts the client), checks the
+    /// token, refuses an expired or already bought offer, credits TP + items.
+    ComprarOfertaGooglePlay {
+        oferta: String,
+        pedido: String,
+        purchase_token: String,
+    },
+}
+
+/// One flash offer open for this account, as the client shows it. Everything
+/// comes from the `ofertas_relampago` table — prices and contents change in
+/// the database, not in code.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OfertaRelampago {
+    pub id: String,
+    /// English title; `titulo_pt` when the player picked Portuguese.
+    pub titulo: String,
+    pub titulo_pt: Option<String>,
+    /// Google Play product id (`oferta_099`…), launched by the billing flow.
+    pub produto_play: String,
+    /// Same number in BRL and USD (owner: 1 to 1): 99 = R$ 0,99 / US$ 0.99.
+    pub preco_centavos: u32,
+    /// "Worth" price shown crossed out, if any.
+    pub valor_de_centavos: Option<u32>,
+    /// TP credited. Owner: only the first, cheap offer gives a real amount;
+    /// the bigger ones are ITEMS (craft, darksteel, energy, summons).
+    pub tp: u32,
+    /// Energy added to the skill-progress balance.
+    pub energia: u64,
+    /// (item_id, quantity) delivered to the bag (darksteel, summon scrolls…).
+    pub itens: Vec<(u16, u32)>,
+    /// Seconds left before it closes.
+    pub segundos: u32,
+    /// Opened by THIS check: the client pops it on screen.
+    pub nova: bool,
 }
 
 /// Prêmio já decidido pelo servidor, usado na revelação animada do cliente.
@@ -831,6 +873,8 @@ pub enum AvisoLoja {
     Invocacoes {
         premios: Vec<PremioInvocacao>,
     },
+    /// Open flash offers of this account (may be empty).
+    OfertasRelampago(Vec<OfertaRelampago>),
 }
 
 #[cfg(test)]

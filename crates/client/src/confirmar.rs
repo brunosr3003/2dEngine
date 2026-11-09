@@ -5,6 +5,8 @@
 //! 55 minutes away. Anyone using it on automatic never lands here — the bar
 //! already skips an active buff; this is only for a touch in the bag or the slot.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -81,7 +83,7 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     let cancelar = Rect::new(x, by, bw, bh);
     let usar = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
     let m = Vec2::from(mouse_position());
-    estilo::cartao(cancelar, cancelar.contains(m), false);
+    estilo::cartao(cancelar, cancelar.toca(m), false);
     estilo::texto_centro(
         cancelar.center().x,
         cancelar.center().y + 6.0 * f,
@@ -89,7 +91,7 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
         16,
         estilo::TEXTO,
     );
-    estilo::cartao(usar, usar.contains(m), true);
+    estilo::cartao(usar, usar.toca(m), true);
     estilo::texto_centro_forte(
         usar.center().x,
         usar.center().y + 6.0 * f,
@@ -100,10 +102,10 @@ pub fn desenha(p: Pendente, nome: &str, restante_s: i64) -> Option<bool> {
     if !crate::foco::clique() {
         return None;
     }
-    if usar.contains(m) {
+    if usar.toca(m) {
         return Some(true);
     }
-    if cancelar.contains(m) || !r.contains(m) {
+    if cancelar.toca(m) || !r.toca(m) {
         return Some(false);
     }
     None

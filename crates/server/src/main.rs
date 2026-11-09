@@ -28,6 +28,7 @@ mod mapa_ilha;
 mod mercado;
 mod mercado_razao;
 mod mesa;
+mod ofertas;
 mod morte;
 mod panoptico;
 mod persistence;
@@ -90,6 +91,7 @@ async fn main() -> Result<()> {
     // Loja de cash: pedidos e posses no mesmo banco central.
     if let Some(central) = mercado::central() {
         loja::criar_tabelas(&central).await?;
+        ofertas::criar_tabelas(&central).await?;
     }
     // Recommended market prices, recounted from the realm's stock.
     precos::spawn(pool.clone());

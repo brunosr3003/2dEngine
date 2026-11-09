@@ -1,4 +1,6 @@
 //! Grupo, amigos, cartas e cla: o cliente pede, o servidor valida.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::hud_estilo as e;
 use macroquad::prelude::*;
 use shared::{
@@ -215,7 +217,7 @@ impl Social {
                 r,
                 nome,
                 self.aba == *aba,
-                r.contains(Vec2::from(mouse_position())),
+                r.toca(Vec2::from(mouse_position())),
             );
             let alerta = match aba {
                 Aba::Grupo => self.convite.is_some(),
@@ -226,7 +228,7 @@ impl Social {
             if alerta {
                 e::badge(r);
             }
-            if r.contains(Vec2::from(mouse_position())) && crate::foco::clique() {
+            if r.toca(Vec2::from(mouse_position())) && crate::foco::clique() {
                 self.aba = *aba;
                 self.pagina = 0;
                 self.foco = None;
@@ -778,7 +780,7 @@ impl Social {
                 16,
                 if c.lida { e::TEXTO } else { e::OURO },
             );
-            if r.contains(Vec2::from(mouse_position())) && crate::foco::clique() {
+            if r.toca(Vec2::from(mouse_position())) && crate::foco::clique() {
                 self.carta = Some(c.id);
                 self.carta_pagina = 0;
                 if !c.lida {
@@ -1294,7 +1296,7 @@ fn campo(
     max: usize,
 ) {
     let clicou = crate::foco::clique();
-    if clicou && r.contains(Vec2::from(mouse_position())) {
+    if clicou && r.toca(Vec2::from(mouse_position())) {
         *foco = Some(id);
     } else if clicou && *foco == Some(id) {
         *foco = None;

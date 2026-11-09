@@ -50,8 +50,35 @@ static FILA: Mutex<Vec<ResultadoCompra>> = Mutex::new(Vec::new());
 /// `shared::loja::PACOTES`). So' pede pro Java comecar; o resultado chega
 /// depois, assincrono, em `poll_result`.
 pub fn launch_purchase(pacote_id: u16) {
-    let product_id = format!("tp_pacote_{pacote_id}");
-    unsafe { jni::launch(&product_id) };
+    launch_product(&format!("tp_pacote_{pacote_id}"));
+}
+
+/// Any Play product: TP packs (`tp_pacote_N`) and flash offers (`oferta_*`).
+pub fn launch_product(product_id: &str) {
+    unsafe { jni::chama_estatico("launchPurchase", Some(product_id)) };
+}
+
+/// Re-reports purchases Google still lists as owned (paid, not consumed by
+/// the server yet). Call once after entering the world.
+pub fn recover() {
+    unsafe { jni::chama_estatico("recover", None) };
+}
+
+/// The order id of a Google Play purchase, DERIVED FROM ITS TOKEN: every
+/// re-send of the same purchase (lost reply, `recover` at login) is the same
+/// order, so the server answers "already credited" and consumes it instead of
+/// crediting twice or refusing it.
+pub fn pedido_do_token(token: &str) -> String {
+    fn fnv(dados: &[u8], semente: u64) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325u64 ^ semente;
+        for b in dados {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        h
+    }
+    let b = token.as_bytes();
+    format!("gp-{:016x}{:016x}", fnv(b, 0), fnv(b, 0x9e37_79b9_7f4a_7c15))
 }
 
 /// Chamar uma vez por frame (loop principal) pra saber se alguma compra
@@ -150,10 +177,9 @@ mod jni {
         class as ndk_sys::jclass
     }
 
-    /// Chama `TempestBilling.launchPurchase(ACTIVITY, productId)` no lado
-    /// Java, passando a Activity ja' cacheada pelo miniquad
-    /// (`native::android::ACTIVITY`, preenchida em `activityOnCreate`).
-    pub unsafe fn launch(product_id: &str) {
+    /// `TempestBilling.<metodo>(ACTIVITY[, arg])` on the Java side, with the
+    /// Activity miniquad already cached (`native::android::ACTIVITY`).
+    pub unsafe fn chama_estatico(metodo: &str, arg: Option<&str>) {
         let env = attach_jni_env();
 
         // Not `FindClass`: the game loop runs on a native thread, and there
@@ -164,35 +190,30 @@ mod jni {
         if class.is_null() {
             (**env).ExceptionClear.unwrap()(env);
             macroquad::prelude::error!(
-                "TempestBilling: classe quad_native.TempestBilling nao encontrada no APK \
-                 (billing nao foi empacotado?)"
+                "TempestBilling: classe quad_native.TempestBilling nao encontrada no APK"
             );
             return;
         }
-
-        let method_name = CString::new("launchPurchase").unwrap();
-        let sig = CString::new("(Landroid/app/Activity;Ljava/lang/String;)V").unwrap();
-        let method = (**env).GetStaticMethodID.unwrap()(
-            env,
-            class,
-            method_name.as_ptr(),
-            sig.as_ptr(),
-        );
+        let method_name = CString::new(metodo).unwrap();
+        let sig = if arg.is_some() {
+            c"(Landroid/app/Activity;Ljava/lang/String;)V"
+        } else {
+            c"(Landroid/app/Activity;)V"
+        };
+        let method = (**env).GetStaticMethodID.unwrap()(env, class, method_name.as_ptr(), sig.as_ptr());
         if method.is_null() {
             (**env).ExceptionClear.unwrap()(env);
-            macroquad::prelude::error!("TempestBilling: metodo launchPurchase nao encontrado");
+            macroquad::prelude::error!("TempestBilling: metodo {metodo} nao encontrado");
             return;
         }
-
-        let jproduct = {
-            let c = CString::new(product_id).unwrap();
-            (**env).NewStringUTF.unwrap()(env, c.as_ptr())
-        };
-
-        let args = [
-            ndk_sys::jvalue { l: ACTIVITY },
-            ndk_sys::jvalue { l: jproduct },
-        ];
+        let mut args = vec![ndk_sys::jvalue { l: ACTIVITY }];
+        if let Some(a) = arg {
+            let c = CString::new(a).unwrap_or_default();
+            args.push(ndk_sys::jvalue { l: (**env).NewStringUTF.unwrap()(env, c.as_ptr()) });
+        }
         (**env).CallStaticVoidMethodA.unwrap()(env, class, method, args.as_ptr());
+        if (**env).ExceptionCheck.unwrap()(env) != 0 {
+            (**env).ExceptionClear.unwrap()(env);
+        }
     }
 }

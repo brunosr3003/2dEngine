@@ -1,5 +1,7 @@
 //! Selects only monsters near the point where AUTO was switched on.
 //! Movement, attacks and damage are still validated by the server.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::{hud_estilo as estilo, world::World};
 use macroquad::prelude::*;
 use shared::{EntityId, EntityTag};
@@ -155,7 +157,7 @@ pub fn retangulo() -> Rect {
     crate::hud_layout::atual().auto_combate
 }
 pub fn pega_mouse() -> bool {
-    retangulo().contains(Vec2::from(mouse_position()))
+    retangulo().toca(Vec2::from(mouse_position()))
 }
 
 impl AutoCombate {

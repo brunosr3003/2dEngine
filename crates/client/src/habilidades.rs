@@ -1,4 +1,6 @@
 //! Skill bar and effects confirmed by the server.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::{
     habilidades_input::{Arrasto, Gesto},
     hud_estilo as estilo,
@@ -200,14 +202,14 @@ impl Habilidades {
     /// Does point `p` land on a skill button (or the jump one)? Without looking
     /// at a drag in progress — it is what the joystick asks about the OTHER finger.
     pub fn botao_em(&self, p: Vec2) -> bool {
-        (0..4).any(|i| retangulo(i).contains(p))
+        (0..4).any(|i| retangulo(i).toca(p))
     }
 
     pub fn pega_mouse(&self) -> bool {
         let (x, y) = mouse_position();
         // 0..4: the fourth is the JUMP button, and touching it must not become a
         // click in the world either.
-        self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).contains(vec2(x, y)))
+        self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).toca(vec2(x, y)))
     }
 
     pub fn pedido(&mut self, contexto: Contexto) -> Option<u32> {
@@ -216,7 +218,7 @@ impl Habilidades {
         if crate::foco::clique() {
             if let Some(s) = self.catalogo.iter().find(|s| {
                 s.conjunto == contexto.conjunto
-                    && retangulo(s.ordem.saturating_sub(1) as usize).contains(mouse)
+                    && retangulo(s.ordem.saturating_sub(1) as usize).toca(mouse)
             }) {
                 self.arrasto.pressiona(s.id, mouse);
             }
@@ -445,7 +447,7 @@ impl Habilidades {
             } else {
                 estilo::SUAVE
             };
-            let sobre_botao = r.contains(Vec2::from(mouse_position()));
+            let sobre_botao = r.toca(Vec2::from(mouse_position()));
             let e = estilo::estado(
                 sobre_botao,
                 is_mouse_button_down(MouseButton::Left),
@@ -550,7 +552,7 @@ impl Habilidades {
                 estilo::painel(Rect::new(c.x - 82.0, r.y - 74.0, 164.0, 31.0));
                 estilo::texto_centro(c.x, r.y - 53.0, texto, 15, estilo::AUTO);
                 draw_line(c.x, r.y - 8.0, c.x, r.y - 35.0, 2.0, estilo::AUTO);
-            } else if r.contains(Vec2::from(mouse_position())) && self.arrasto.inicio.is_none() {
+            } else if r.toca(Vec2::from(mouse_position())) && self.arrasto.inicio.is_none() {
                 let w = 380.0_f32.min(screen_width() - 24.0);
                 let x = (r.x + r.w - w).clamp(12.0, screen_width() - w - 12.0);
                 estilo::painel(Rect::new(x, r.y - 122.0, w, 88.0));

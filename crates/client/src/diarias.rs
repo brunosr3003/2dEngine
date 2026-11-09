@@ -7,6 +7,8 @@
 //! 22/09/2026 — the old "Go accept" walked you to the Master (the offer opens
 //! on arrival), "Go" switches on the auto quest and "Go hand in" too — it
 //! already returns to the Master with the objective met.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::quests::{zona_da_missao, QuestDef, QUESTS};
 use std::collections::HashMap;
@@ -169,7 +171,7 @@ impl Diarias {
         // arrastando).
         let clique = self.rolagem.quadro(area, total, u(LINHA));
         let arrastando = self.rolagem.arrastando();
-        let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
+        let tocou = |r: Rect| clique.is_some_and(|c| r.toca(c) && area.toca(c));
         if lista.is_empty() {
             estilo::texto(
                 area.x + u(8.0),
@@ -193,7 +195,7 @@ impl Diarias {
                 continue;
             }
             let e = estado_da_diaria(d, c);
-            let sobre = !arrastando && linha.contains(mouse) && area.contains(mouse);
+            let sobre = !arrastando && linha.toca(mouse) && area.toca(mouse);
             draw_rectangle(
                 linha.x,
                 linha.y,

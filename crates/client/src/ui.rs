@@ -72,30 +72,156 @@ fn dentro(r: Rect, p: Vec2) -> bool {
     p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
 }
 
-/// A ÁREA DE TOQUE de um botão: a caixa dele, crescida até o dedo caber.
+/// Minimum finger target on a touch screen, in millimetres.
 ///
-/// O desenho fica onde o layout pôs; só o alvo cresce. É o conserto de origem
-/// pros 55 botões do cliente que estavam abaixo de `ALVO_DO_DEDO` — o dono:
-/// "os botões de ação estão muito pequenos, eu clico errado toda hora".
+/// Apple's 44 pt and Android's 48 dp are ~7–7.6 mm; we go a bit above them
+/// because this is a game played with the thumb, often on a moving bus.
+pub const ALVO_MM: f32 = 9.0;
+
+/// The MINIMUM TOUCH TARGET in screen pixels, on THIS screen.
 ///
-/// **O crescimento é limitado**, e isso importa: há fileiras de botões
-/// pequenos colados (os cinco ofícios da colônia, o `‹ ›` do rastreador). Um
-/// alvo que crescesse até 44 sem teto invadiria o vizinho, e aí o toque
-/// acertaria o botão errado — trocando um defeito por outro pior, porque o
-/// errado seria invisível. Sete pontos por lado na vertical e quatro na
-/// horizontal levam 28 a 42 e 38 a 44, sem alcançar vizinho que já esteja
-/// visualmente separado.
+/// Phones: `ALVO_MM` measured physically (`densidade::px_por_mm`), so it is
+/// the same 9 mm on a 720p Moto G and on a 3x iPhone. Desktop: the old
+/// `ALVO_DO_DEDO` of 44 px, times the monitor scale. Never below 44.
+pub fn alvo_minimo() -> f32 {
+    #[cfg(test)]
+    {
+        estilo::ALVO_DO_DEDO
+    }
+    #[cfg(not(test))]
+    {
+        let base = estilo::ALVO_DO_DEDO;
+        match crate::densidade::px_por_mm() {
+            Some(px) => (ALVO_MM * px).max(base),
+            None => base * macroquad::miniquad::window::dpi_scale().max(1.0),
+        }
+    }
+}
+
+/// A ÁREA DE TOQUE de um alvo: a caixa dele, crescida até o dedo caber.
+///
+/// O desenho fica onde o layout pôs; só o alvo cresce, centrado, até
+/// `alvo_minimo` nas duas direções. Não tem mais teto: quem impede o alvo
+/// crescido de roubar o toque do vizinho é a arbitragem de `toca` (o toque
+/// na margem vai pro alvo MAIS PERTO, e o toque em cima de um botão é sempre
+/// dele).
 pub fn area_de_toque(r: Rect) -> Rect {
-    let alvo = estilo::ALVO_DO_DEDO;
-    let h = r.h.max(alvo).min(r.h + 14.0);
-    let w = r.w.max(alvo).min(r.w + 8.0);
+    area_com_alvo(r, alvo_minimo())
+}
+
+fn area_com_alvo(r: Rect, alvo: f32) -> Rect {
+    let w = r.w.max(alvo);
+    let h = r.h.max(alvo);
     Rect::new(r.x - (w - r.w) * 0.5, r.y - (h - r.h) * 0.5, w, h)
+}
+
+/// How long a target seen on screen keeps competing for taps. Long enough to
+/// cover code that only tests the rect on the frame of the tap, short enough
+/// that a closed window stops mattering almost at once (and a stale target
+/// only ever takes MARGIN away, never a touch on a real button).
+const VIDA_DO_ALVO_S: f64 = 1.0;
+
+thread_local! {
+    static ALVOS: std::cell::RefCell<Vec<(Rect, f64)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static INICIO: std::time::Instant = std::time::Instant::now();
+}
+
+fn agora_s() -> f64 {
+    INICIO.with(|i| i.elapsed().as_secs_f64())
+}
+
+fn mesmo_ret(a: Rect, b: Rect) -> bool {
+    (a.x - b.x).abs() < 1.0 && (a.y - b.y).abs() < 1.0 && (a.w - b.w).abs() < 1.0 && (a.h - b.h).abs() < 1.0
+}
+
+/// `o` holds `r` whole: a list area around its rows, a panel around its
+/// buttons. A container never competes with what is inside it.
+fn contem_ret(o: Rect, r: Rect) -> bool {
+    o.x <= r.x + 0.5 && o.y <= r.y + 0.5 && o.x + o.w >= r.x + r.w - 0.5 && o.y + o.h >= r.y + r.h - 0.5
+}
+
+fn distancia(r: Rect, p: Vec2) -> f32 {
+    let dx = (r.x - p.x).max(p.x - (r.x + r.w)).max(0.0);
+    let dy = (r.y - p.y).max(p.y - (r.y + r.h)).max(0.0);
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn registra(r: Rect, t: f64) {
+    ALVOS.with(|a| {
+        let mut a = a.borrow_mut();
+        a.retain(|(_, visto)| t - visto <= VIDA_DO_ALVO_S);
+        if let Some(e) = a.iter_mut().find(|(o, _)| mesmo_ret(*o, r)) {
+            e.1 = t;
+        } else if a.len() < 4096 {
+            a.push((r, t));
+        }
+    });
+}
+
+/// THE hit test of the game: does a tap/click at `p` belong to target `r`?
+///
+/// Every clickable thing goes through here (`Rect::toca`), so the minimum
+/// touch size holds for ALL of them — HUD, menus, shops, lists, tabs, close
+/// buttons, arrows, bag slots — on any screen.
+///
+/// - On the drawing itself: always yes.
+/// - In the grown margin (`area_de_toque`): yes, unless another target seen
+///   on screen in the last second is closer to `p` (or has `p` on its own
+///   drawing). Neighbours in a tight row each get the half that is theirs.
+pub fn toca(r: Rect, p: Vec2) -> bool {
+    toca_com_alvo(r, p, alvo_minimo(), agora_s())
+}
+
+fn toca_com_alvo(r: Rect, p: Vec2, alvo: f32, t: f64) -> bool {
+    if !(r.w > 0.0 && r.h > 0.0) {
+        return false;
+    }
+    // Only things the size of a target compete; a whole panel or scroll area
+    // is a container, not a button.
+    if r.w.min(r.h) < alvo * 2.0 {
+        registra(r, t);
+    }
+    if dentro(r, p) {
+        return true;
+    }
+    if r.w >= alvo && r.h >= alvo {
+        return false;
+    }
+    if !dentro(area_com_alvo(r, alvo), p) {
+        return false;
+    }
+    let d = distancia(r, p);
+    ALVOS.with(|a| {
+        a.borrow().iter().all(|&(o, visto)| {
+            if t - visto > VIDA_DO_ALVO_S || mesmo_ret(o, r) || contem_ret(o, r) || contem_ret(r, o) {
+                return true;
+            }
+            if !dentro(area_com_alvo(o, alvo), p) {
+                return true;
+            }
+            let od = distancia(o, p);
+            // Exact tie: a fixed order decides, so exactly one of the two wins.
+            od > d || (od == d && (o.y, o.x) > (r.y, r.x))
+        })
+    })
+}
+
+/// `rect.toca(p)` — the touch-sized replacement for `rect.contains(p)` on
+/// anything the player can click.
+pub trait Toque {
+    fn toca(&self, p: Vec2) -> bool;
+}
+
+impl Toque for Rect {
+    fn toca(&self, p: Vec2) -> bool {
+        toca(*self, p)
+    }
 }
 
 /// Botao. `true` no quadro em que foi clicado.
 pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
     let (mx, my) = mouse_position();
-    let sobre = ativo && dentro(area_de_toque(r), vec2(mx, my));
+    let sobre = ativo && toca(r, vec2(mx, my));
     let e = estilo::estado(
         sobre,
         is_mouse_button_down(MouseButton::Left),
@@ -119,7 +245,7 @@ pub fn botao(r: Rect, rotulo: &str, ativo: bool) -> bool {
 /// Devolve `true` no quadro em que mudou.
 pub fn caixa(r: Rect, rotulo: &str, marcado: &mut bool) -> bool {
     let (mx, my) = mouse_position();
-    let sobre = dentro(area_de_toque(r), vec2(mx, my));
+    let sobre = toca(r, vec2(mx, my));
     let lado = 20.0_f32.min(r.h);
     let q = Rect::new(r.x, r.y + (r.h - lado) * 0.5, lado, lado);
     estilo::ret_gradiente(
@@ -288,53 +414,85 @@ pub fn erro(cx: f32, y: f32, msg: &str) {
 mod testes_do_alvo {
     use super::*;
 
-    /// O ALVO CRESCE até o dedo caber, e PARA antes de invadir o vizinho.
-    ///
-    /// Os dois lados importam. Sem crescer, os 55 botões abaixo de 44 pontos
-    /// continuam errando o toque — foi a queixa do dono. Crescendo sem teto,
-    /// uma fileira de botões colados (os cinco ofícios da colônia) passa a
-    /// acertar o vizinho, que é pior: o erro fica invisível.
+    fn limpa() {
+        ALVOS.with(|a| a.borrow_mut().clear());
+    }
+
+    /// Small target: the touch area reaches the minimum in BOTH directions,
+    /// centred on the drawing — no more 14/8 px cap.
     #[test]
-    fn o_alvo_cresce_ate_o_dedo_e_para_antes_do_vizinho() {
-        let alvo = estilo::ALVO_DO_DEDO;
+    fn o_alvo_cresce_ate_o_minimo_e_fica_centrado() {
+        let alvo = 95.0; // 9 mm on a 270 dpi phone
+        let r = Rect::new(100.0, 100.0, 30.0, 28.0);
+        let a = area_com_alvo(r, alvo);
+        assert_eq!((a.w, a.h), (alvo, alvo));
+        assert!((a.center() - r.center()).length() < 0.01);
+        let g = Rect::new(0.0, 0.0, 300.0, 120.0);
+        let ag = area_com_alvo(g, alvo);
+        assert_eq!((ag.w, ag.h), (g.w, g.h), "big target must not change");
+        // Old rule kept: nothing comes out below 44.
+        assert!(area_de_toque(Rect::new(0.0, 0.0, 150.0, 38.0)).h >= 44.0);
+    }
 
-        // Pequeno demais: cresce, e fica CENTRADO no original.
-        let r = Rect::new(100.0, 100.0, 108.0, 28.0);
-        let a = area_de_toque(r);
-        assert!(a.h > r.h, "não cresceu");
-        assert!(a.h <= r.h + 14.0, "cresceu além do teto: {:.0}", a.h);
-        assert!(
-            (a.center().x - r.center().x).abs() < 0.01
-                && (a.center().y - r.center().y).abs() < 0.01,
-            "o alvo saiu do centro do botão"
-        );
-
-        // Já grande: não muda nada.
-        let g = Rect::new(0.0, 0.0, 120.0, 50.0);
-        let ag = area_de_toque(g);
-        assert_eq!((ag.w, ag.h), (g.w, g.h), "botão grande não devia crescer");
-
-        // FILEIRA COLADA: cinco botões de 62x32 lado a lado, como os ofícios
-        // da colônia. Nenhum alvo pode alcançar o CENTRO do vizinho — se
-        // alcançasse, tocar no meio de um acertaria o outro.
-        let bw = 62.0;
-        let caixas: Vec<Rect> = (0..5)
-            .map(|i| Rect::new(i as f32 * bw, 0.0, bw - 4.0, 32.0))
+    /// A ROW OF TIGHT SLOTS (bag grid, the five colony crafts): every slot
+    /// grows past its neighbours, and still each tap lands on exactly ONE
+    /// slot — the nearest — and a tap on a slot's drawing is always its own.
+    #[test]
+    fn fileira_colada_cada_toque_acerta_um_so() {
+        limpa();
+        let alvo = 95.0;
+        let slots: Vec<Rect> = (0..5)
+            .map(|i| Rect::new(i as f32 * 34.0, 0.0, 31.0, 31.0))
             .collect();
-        for (i, c) in caixas.iter().enumerate() {
-            let a = area_de_toque(*c);
-            for (j, o) in caixas.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
-                assert!(
-                    !dentro(a, o.center()),
-                    "o alvo do botão {i} alcança o centro do {j}"
-                );
-            }
+        let t = 10.0;
+        // One frame of drawing registers them (hover test every frame).
+        for s in &slots {
+            toca_com_alvo(*s, vec2(-999.0, -999.0), alvo, t);
         }
+        // Taps across the row and above/below it, inside the grown margins.
+        for k in 0..60 {
+            let p = vec2(-20.0 + k as f32 * 3.5, if k % 2 == 0 { -25.0 } else { 50.0 });
+            let ganhou: Vec<usize> = (0..5)
+                .filter(|&i| toca_com_alvo(slots[i], p, alvo, t))
+                .collect();
+            assert!(ganhou.len() <= 1, "tap {p:?} hit {ganhou:?}");
+        }
+        // On the drawing of slot 2: slot 2, and only it.
+        let c = slots[2].center();
+        let ganhou: Vec<usize> = (0..5).filter(|&i| toca_com_alvo(slots[i], c, alvo, t)).collect();
+        assert_eq!(ganhou, vec![2]);
+        // Just above slot 3 (in the margin): slot 3 — the nearest.
+        let p = vec2(slots[3].center().x, -20.0);
+        let ganhou: Vec<usize> = (0..5).filter(|&i| toca_com_alvo(slots[i], p, alvo, t)).collect();
+        assert_eq!(ganhou, vec![3]);
+    }
 
-        // E o piso é respeitado onde há espaço: um botão de 38 chega a 44.
-        assert_eq!(area_de_toque(Rect::new(0.0, 0.0, 150.0, 38.0)).h, alvo);
+    /// The scroll area around a list is a CONTAINER: it never steals the
+    /// margin of the small buttons inside it.
+    #[test]
+    fn container_nao_compete_com_o_que_tem_dentro() {
+        limpa();
+        let alvo = 95.0;
+        let lista = Rect::new(0.0, 0.0, 400.0, 150.0);
+        let xis = Rect::new(360.0, 10.0, 24.0, 24.0);
+        let t = 5.0;
+        toca_com_alvo(lista, vec2(-1.0, -1.0), alvo, t);
+        toca_com_alvo(xis, vec2(-1.0, -1.0), alvo, t);
+        // Left of the "x", inside the list: the "x" still gets it.
+        assert!(toca_com_alvo(xis, vec2(330.0, 22.0), alvo, t));
+    }
+
+    /// A target that left the screen stops competing after a second.
+    #[test]
+    fn alvo_velho_deixa_de_competir() {
+        limpa();
+        let alvo = 95.0;
+        let a = Rect::new(0.0, 0.0, 30.0, 30.0);
+        let b = Rect::new(40.0, 0.0, 30.0, 30.0);
+        toca_com_alvo(b, vec2(-1.0, -1.0), alvo, 1.0);
+        // Point between them but closer to b: a loses while b is fresh...
+        assert!(!toca_com_alvo(a, vec2(37.0, 15.0), alvo, 1.2));
+        // ...and wins once b has been gone for over a second.
+        assert!(toca_com_alvo(a, vec2(37.0, 15.0), alvo, 3.0));
     }
 }

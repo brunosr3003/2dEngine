@@ -2,6 +2,8 @@
 //! each stone color) and the search radius from where it was switched on.
 //! Opens with a right click on AUTO GATHER — no key opens it. Saves to the
 //! character's preferences.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -63,7 +65,7 @@ impl ConfigColeta {
         );
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        if clicou && fechar.contains(m) {
+        if clicou && fechar.toca(m) {
             self.fechar();
             return false;
         }
@@ -89,7 +91,7 @@ impl ConfigColeta {
                 15,
                 estilo::TEXTO,
             );
-            if clicou && linha.contains(m) && alterna_tipo(tipos, i) {
+            if clicou && linha.toca(m) && alterna_tipo(tipos, i) {
                 mudou = true;
             }
         }
@@ -112,7 +114,7 @@ impl ConfigColeta {
             15,
             estilo::TEXTO,
         );
-        if clicou && linha_energia.contains(m) {
+        if clicou && linha_energia.toca(m) {
             *energia = !*energia;
             mudou = true;
         }
@@ -132,7 +134,7 @@ impl ConfigColeta {
             estilo::TEXTO,
         );
         for (b, passos) in [(menos, -1), (mais, 1)] {
-            if clicou && b.contains(m) {
+            if clicou && b.toca(m) {
                 let novo = ajusta_raio(*raio, passos);
                 if novo != *raio {
                     *raio = novo;
@@ -160,7 +162,7 @@ impl ConfigColeta {
             15,
             estilo::TEXTO,
         );
-        if clicou && linha.contains(m) {
+        if clicou && linha.toca(m) {
             *defender = !*defender;
             mudou = true;
         }

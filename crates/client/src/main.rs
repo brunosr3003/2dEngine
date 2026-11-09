@@ -8,6 +8,8 @@
 //! Era esse o bug que tirou a producao do ar: web em 63, cliente em 66,
 //! `Protocol.cs` com 1175 linhas espelhadas a mao.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 mod api;
 mod auto_combate;
 mod auto_dungeon;
@@ -98,6 +100,7 @@ mod config_interface;
 mod confirmar;
 mod construcoes;
 mod corrida;
+mod densidade;
 mod dialogo;
 mod diarias;
 mod economia;
@@ -124,6 +127,9 @@ mod parado;
 mod personagens;
 mod preferencias;
 mod presenca_ui;
+mod ofertas_ui;
+mod ranking_ui;
+mod troca_ui;
 mod previa_skills;
 mod rastro;
 mod render3d;
@@ -455,6 +461,14 @@ struct Jogo {
     economia: economia::Economia,
     /// Calendario de presenca (`presenca_ui.rs`).
     presenca: presenca_ui::PresencaUi,
+    /// Flash offers (`ofertas_ui.rs`).
+    ofertas: ofertas_ui::OfertasUi,
+    /// Rankings (`ranking_ui.rs`).
+    ranking: ranking_ui::RankingUi,
+    /// Direct trade (`troca_ui.rs`).
+    troca: troca_ui::TrocaUi,
+    /// Owned-but-unconsumed Google Play purchases re-reported (once).
+    billing_recuperado: bool,
     /// Menu "Travel" do Capitao do Porto.
     viagem: viagem_ui::ViagemUi,
     colonia: colonia_ui::ColoniaUi,
@@ -1005,6 +1019,10 @@ async fn main() {
         aceite_pendente: None,
         economia: economia::Economia::default(),
         presenca: presenca_ui::PresencaUi::default(),
+        ofertas: ofertas_ui::OfertasUi::default(),
+        ranking: ranking_ui::RankingUi::default(),
+        troca: troca_ui::TrocaUi::default(),
+        billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
         magica: magica_ui::MagicaUi::default(),
@@ -1092,6 +1110,13 @@ fn window_conf() -> Conf {
     // MSAA: the scene draws straight to the window framebuffer, and without
     // it the voxel edges and fences come out jagged. Menu → Interface.
     conf.sample_count = config_graficos::antialias_salvo();
+    // Window/taskbar/dock icon while running = the Google Play icon
+    // (tools/icone_app/gerar.py). Without it miniquad shows its own logo.
+    conf.icon = Some(macroquad::miniquad::conf::Icon {
+        small: *include_bytes!("icone_janela/16.rgba"),
+        medium: *include_bytes!("icone_janela/32.rgba"),
+        big: *include_bytes!("icone_janela/64.rgba"),
+    });
     // Celular: tela cheia na resolucao nativa. A orientacao (paisagem) vem do
     // pacote: Info.plist (scripts/build-ios.sh) ou o manifest do APK
     // ([package.metadata.android] do crates/client/Cargo.toml).
@@ -1701,6 +1726,45 @@ impl Jogo {
         }
     }
 
+    /// Google Play results, every frame (not only while the TP shop is open):
+    /// TP packs and flash offers, including purchases recovered at login.
+    /// The order id comes from the purchase token, so any re-send of the same
+    /// purchase is the same order on the server.
+    #[cfg(target_os = "android")]
+    fn despacha_billing(&mut self) {
+        while let Some(r) = billing_android::poll_result() {
+            if r.codigo == -2 {
+                self.chat.push("Purchase pending: it is delivered as soon as Google confirms the payment.".into());
+                self.loja_tp.compra_cancelada();
+                self.ofertas.cancelou();
+                continue;
+            }
+            if r.codigo != 0 || r.purchase_token.is_empty() {
+                self.loja_tp.compra_cancelada();
+                self.ofertas.cancelou();
+                continue;
+            }
+            let pedido = billing_android::pedido_do_token(&r.purchase_token);
+            if let Some(pacote) = r.product_id.strip_prefix("tp_pacote_").and_then(|n| n.parse::<u16>().ok()) {
+                self.envia(ClientMessage::Loja {
+                    pedido: shared::loja::PedidoLoja::ComprarTpGooglePlay {
+                        pacote,
+                        pedido,
+                        purchase_token: r.purchase_token,
+                    },
+                });
+            } else if let Some(oferta) = self.ofertas.oferta_do_produto(&r.product_id) {
+                self.envia(ClientMessage::Loja {
+                    pedido: shared::loja::PedidoLoja::ComprarOfertaGooglePlay {
+                        oferta,
+                        pedido,
+                        purchase_token: r.purchase_token,
+                    },
+                });
+            }
+        }
+    }
+
     fn on_message(&mut self, msg: ServerMessage) {
         match msg {
             ServerMessage::HandshakeAck { xp_multiplier, .. } => {
@@ -2066,6 +2130,12 @@ impl Jogo {
                     self.chat.push(t);
                 }
             }
+            ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
+            ServerMessage::Troca { aviso } => {
+                if let Some(t) = self.troca.receber(aviso) {
+                    self.chat.push(t);
+                }
+            }
             ServerMessage::Loja { aviso } => {
                 self.montarias.receber(&aviso, get_time());
                 if let shared::loja::AvisoLoja::Invocacao { premio } = &aviso {
@@ -2075,6 +2145,11 @@ impl Jogo {
                 if let shared::loja::AvisoLoja::Invocacoes { premios } = &aviso {
                     self.fecha_paineis();
                     self.invocacao.abrir_varias(premios.clone(), get_time());
+                }
+                match &aviso {
+                    shared::loja::AvisoLoja::OfertasRelampago(v) => self.ofertas.receber(v.clone()),
+                    shared::loja::AvisoLoja::Resultado { ok, texto } => self.ofertas.resultado(*ok, texto),
+                    _ => {}
                 }
                 if let Some(t) = self.loja_tp.receber(aviso) {
                     self.chat.push(t);
@@ -2696,10 +2771,21 @@ impl Jogo {
                             // primeira: a missao pede "crie um equipamento", e
                             // cair numa aba onde nada e' possivel e' mandar o
                             // jogador procurar o que a tela ja' sabe.
-                            self.craft
-                                .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel);
-                            self.chat
-                                .push("Quest: craft a piece of gear in Craft.".into());
+                            // A quest that asks for a DUNGEON KEY (the
+                            // Shipwreck Cellar one) opens on the keys tab, on
+                            // that key — not on armour, where "you get lost".
+                            let chave = shared::quests::quest_by_id(quest_id)
+                                .map(|d| d.obj_target)
+                                .filter(|k| shared::porao::porao_da_chave(*k).is_some());
+                            if let Some(k) = chave {
+                                self.craft.abrir_chaves(Some(k));
+                                self.chat.push("Quest: craft the key in Craft › Dungeon keys.".into());
+                            } else {
+                                self.craft
+                                    .abrir_no_que_da(&self.bolsa.slots, self.bolsa.nivel);
+                                self.chat
+                                    .push("Quest: craft a piece of gear in Craft.".into());
+                            }
                         } else {
                             self.craft.fechar();
                             self.forja.abrir();
@@ -3125,7 +3211,7 @@ impl Jogo {
         let f = hud_estilo::fator_texto();
         let seguro = hud_layout::tela_segura();
         let r = Rect::new(seguro.x + seguro.w - 142.0 * f, seguro.y + 8.0 * f, 132.0 * f, 34.0 * f);
-        let sobre = r.contains(Vec2::from(mouse_position()));
+        let sobre = r.toca(Vec2::from(mouse_position()));
         hud_estilo::botao(
             r,
             "Close the tutorial",
@@ -3298,6 +3384,9 @@ impl Jogo {
             || self.onde_obter.aberto()
             || self.dungeon.aberto
             || self.presenca.aberto
+            || self.ofertas.aberto
+            || self.ranking.aberto
+            || self.troca.aberto()
             || self.viagem.aberto()
             || self.colonia.aberto()
             || self.guarda_roupa.aberto
@@ -3431,7 +3520,7 @@ impl Jogo {
         }
         self.social_hud.captura(&hud_layout::atual(), p, self.alvo_jogador().is_some(), self.social.grupo.len())
             || hud_layout::atual().contem(p)
-            || self.botao_teleporte.is_some_and(|r| r.contains(p))
+            || self.botao_teleporte.is_some_and(|r| r.toca(p))
             || self.habilidades.botao_em(p)
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
@@ -3532,7 +3621,7 @@ impl Jogo {
         let z = hud_layout::atual();
         self.social_hud.captura(&z, m, self.alvo_jogador().is_some(), self.social.grupo.len())
             || z.contem(m)
-            || self.botao_teleporte.is_some_and(|r| r.contains(m))
+            || self.botao_teleporte.is_some_and(|r| r.toca(m))
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
             || self.missoes.pega_mouse()
@@ -3631,6 +3720,8 @@ impl Jogo {
         self.social.fechar();
         self.dungeon.fechar();
         self.presenca.fechar();
+        self.ofertas.fechar();
+        self.ranking.fechar();
         self.viagem.fechar();
         self.colonia.fechar();
         self.magica.fechar();
@@ -3766,6 +3857,16 @@ impl Jogo {
             }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
+                    self.envia(pedido);
+                }
+            }
+            Item::Ofertas => {
+                for pedido in self.ofertas.abrir() {
+                    self.envia(pedido);
+                }
+            }
+            Item::Ranking => {
+                for pedido in self.ranking.abrir() {
                     self.envia(pedido);
                 }
             }
@@ -4490,7 +4591,7 @@ impl Jogo {
         // nao no apertar, senao todo toque longo ligaria o AUTO antes de abrir.
         let mouse = Vec2::from(mouse_position());
         let livre = !self.painel_grande();
-        let na_engrenagem = livre && auto_coleta::engrenagem().contains(mouse);
+        let na_engrenagem = livre && auto_coleta::engrenagem().toca(mouse);
         if na_engrenagem && crate::foco::clique() {
             self.fecha_paineis();
             self.config_coleta.abrir();
@@ -4872,6 +4973,7 @@ impl Jogo {
         self.dica_da_trava=None;
         foco::limpar();
         match d.obj_kind {
+            o::CRAFT if shared::porao::porao_da_chave(d.obj_target).is_some()=>self.craft.abrir_chaves(Some(d.obj_target)),
             o::CRAFT=>self.craft.abrir_no_que_da(&self.bolsa.slots,self.bolsa.nivel),
             o::REFINE=>self.forja.abrir(),
             o::DUNGEON=>{for pedido in self.dungeon.abrir_em(d.obj_target) {self.envia(pedido);}},
@@ -5299,6 +5401,7 @@ impl Jogo {
                     }
                     Acao::Amigo => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::Amizade { nome } }),
                     Acao::Grupo => self.envia(ClientMessage::PartyInvite { target_name: nome }),
+                    Acao::Trocar => self.envia(troca_ui::TrocaUi::convidar(nome)),
                     Acao::Seguir => {
                         if self.seguir.alvo == Some(id) { self.parar_seguir(); return; }
                         self.dungeon.auto = false;
@@ -5586,7 +5689,7 @@ impl Jogo {
                 && !consumido
                 // Tutorial com foco: o dedo fora do buraco nao anda.
                 && foco::passa_ponto(p)
-                && (quadrante.contains(p) || z.joystick.contains(p))
+                && (quadrante.toca(p) || z.joystick.toca(p))
                 && !z.contem(p)
                 && !na_ui.contains(&p)
         };
@@ -6198,6 +6301,23 @@ impl Jogo {
                 if let Some(msg) = self.porao.desenha(&zona, eu, &tem) {
                     self.envia(msg);
                 }
+                // Flash offers: a new level may unlock one; and, once per
+                // session, purchases paid but never consumed go to the server
+                // again (it delivers/consumes them, idempotently).
+                if let Some(pedido) = self.ofertas.checar(self.bolsa.nivel) {
+                    self.envia(pedido);
+                }
+                #[cfg(target_os = "android")]
+                if !self.billing_recuperado {
+                    self.billing_recuperado = true;
+                    billing_android::recover();
+                }
+                #[cfg(target_os = "android")]
+                self.despacha_billing();
+                if let Some(chave) = self.porao.pede_craft() {
+                    self.fecha_paineis();
+                    self.craft.abrir_chaves(Some(chave));
+                }
             }
             if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
                 self.envia(ClientMessage::Magica { pedido });
@@ -6295,14 +6415,14 @@ impl Jogo {
                 let rects = hud::rects_rapidos(&z);
                 let mouse = Vec2::from(mouse_position());
                 if is_mouse_button_pressed(MouseButton::Right) {
-                    if let Some(i) = rects.iter().position(|r| r.contains(mouse)) {
+                    if let Some(i) = rects.iter().position(|r| r.toca(mouse)) {
                         self.fecha_paineis();
                         self.config_barra.abrir(Some(i));
                     }
                 }
                 // Botao direito no AUTO COLETA: o que coletar e o raio.
                 if is_mouse_button_pressed(MouseButton::Right)
-                    && auto_coleta::retangulo().contains(mouse)
+                    && auto_coleta::retangulo().toca(mouse)
                 {
                     self.fecha_paineis();
                     self.config_coleta.abrir();
@@ -6311,7 +6431,7 @@ impl Jogo {
                 // configurador; arrastar continua sendo o AUTO.
                 let sob_dedo = rects
                     .iter()
-                    .position(|r| r.contains(mouse))
+                    .position(|r| r.toca(mouse))
                     .map(|i| i as u32);
                 if let toque::Toque::Longo(i) = self.toque_barra.quadro(
                     crate::foco::clique(),
@@ -6444,14 +6564,22 @@ impl Jogo {
             let selo = self.selo_missoes();
             let selo_diarias = self.selo_diarias();
             let selo_presenca = self.presenca.tem_resgate();
+            let selo_ofertas = self.ofertas.ativa();
             let selo_ficha = self.selo_ficha();
             let selo_menu = selo
                 || selo_diarias
                 || selo_presenca
+                || selo_ofertas
                 || selo_ficha
                 || self.selo_skills()
                 || self.selo_pets();
-            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo_menu) {
+            match hud::draw_topo(&z, selo, selo_diarias, selo_presenca, selo_ofertas, selo_menu) {
+                Some(hud::Topo::Ofertas) => {
+                    self.fecha_paineis();
+                    for pedido in self.ofertas.abrir() {
+                        self.envia(pedido);
+                    }
+                }
                 Some(hud::Topo::Presenca) => {
                     self.fecha_paineis();
                     for pedido in self.presenca.abrir() {
@@ -7092,6 +7220,9 @@ impl Jogo {
             if self.selo_pets() {
                 selos.push(menu::Item::Pets);
             }
+            if self.ofertas.ativa() {
+                selos.push(menu::Item::Ofertas);
+            }
             let ctx = menu::Contexto {
                 nome: &nome,
                 nivel,
@@ -7121,6 +7252,15 @@ impl Jogo {
             {
                 self.envia(pedido);
             }
+        }
+        for pedido in self.ofertas.desenha(&self.bolsa.nomes) {
+            self.envia(pedido);
+        }
+        for pedido in self.ranking.desenha() {
+            self.envia(pedido);
+        }
+        for pedido in self.troca.desenha(&self.bolsa.slots, &self.bolsa.nomes, self.bolsa.ouro) {
+            self.envia(pedido);
         }
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.

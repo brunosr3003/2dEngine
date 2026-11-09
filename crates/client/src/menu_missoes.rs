@@ -4,6 +4,8 @@
 //! O estado e' calculado AQUI com o `QuestLog`, o `QuestEstado` (entregues e
 //! faccao) e o nivel; quem valida aceitar e entregar continua sendo o servidor.
 //! Bloqueada mostra o cadeado e, no hover, os pre-requisitos exatos.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::historia;
 use shared::quests::{faction_id, zona_da_missao, QuestDef, QuestNet, QUESTS};
@@ -894,7 +896,7 @@ impl MenuMissoes {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// Desenha o menu e devolve o clique do quadro.
@@ -1121,7 +1123,7 @@ impl MenuMissoes {
         let total: f32 = da_aba.iter().map(|(l, _)| altura(l) + 6.0).sum();
         let clique = self.rolagem.quadro(area, total, CARTAO * f);
         let arrastando = self.rolagem.arrastando();
-        let tocou = |r: Rect| clique.is_some_and(|q| r.contains(q) && area.contains(q));
+        let tocou = |r: Rect| clique.is_some_and(|q| r.toca(q) && area.toca(q));
         let mouse = Vec2::from(mouse_position());
         let mut saida = None;
         let mut alternar: Option<String> = None;
@@ -1155,7 +1157,7 @@ impl MenuMissoes {
                 continue;
             }
             let topo = Rect::new(card.x, card.y, card.w, CARTAO * f);
-            let sobre = !arrastando && topo.contains(mouse) && area.contains(mouse);
+            let sobre = !arrastando && topo.toca(mouse) && area.toca(mouse);
             estilo::ret_arredondado(
                 card,
                 8.0,
@@ -1230,7 +1232,7 @@ impl MenuMissoes {
             let mut marcou = None;
             if let (true, Some(d)) = (clicavel && r.atual.is_some_and(automatizavel), r.atual) {
                 let pos = self.posicao_na_fila(d.id);
-                estilo::cartao(cx, cx.contains(mouse), pos.is_some());
+                estilo::cartao(cx, cx.toca(mouse), pos.is_some());
                 match pos {
                     Some(n) => estilo::texto_centro_forte(
                         cx.center().x,

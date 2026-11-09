@@ -6,6 +6,8 @@
 //! AUTO COMBATE, tres faixas de estado na mesma altura).
 //!
 //! Os numeros sao px a 1920×1080 e multiplicam pela escala.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -191,7 +193,7 @@ pub struct Zonas {
     /// Alvo selecionado: no alto, centrado no vao entre a ficha e a direita.
     pub alvo: Rect,
     /// Bolsa, Missoes, Diarias, Grupo, Avisos, Presenca — a' esquerda do MENU.
-    pub icones: [Rect; 6],
+    pub icones: [Rect; 7],
     pub menu: Rect,
     /// Nome da zona e canal (clique abre o Mapa).
     pub area: Rect,
@@ -381,9 +383,10 @@ fn monta(
     // ── topo direito: icones, MENU, area, minimapa ──
     let menu = Rect::new(sw - m - 64.0 * s, m, 64.0 * s, 48.0 * s);
     let (icone, vao) = (48.0 * s, 8.0 * s);
-    let icones = [0usize, 1, 2, 3, 4, 5].map(|i| {
+    // [0] is Flash offers (always there; red badge while one runs).
+    let icones = [0usize, 1, 2, 3, 4, 5, 6].map(|i| {
         Rect::new(
-            menu.x - 16.0 * s - (6 - i) as f32 * (icone + vao) + vao,
+            menu.x - 16.0 * s - (7 - i) as f32 * (icone + vao) + vao,
             m,
             icone,
             icone,
@@ -661,6 +664,7 @@ impl Zonas {
         for (i, r) in self.icones.iter().enumerate() {
             v.push((
                 [
+                    "icone_ofertas",
                     "icone_bolsa",
                     "icone_missoes",
                     "icone_diarias",
@@ -710,8 +714,8 @@ impl Zonas {
         .chain(self.icones.iter())
         .chain(self.skills.iter())
         .chain(self.rapidos.iter())
-        .any(|r| r.contains(p))
-            || self.alvo_fechar().contains(p)
+        .any(|r| r.toca(p))
+            || self.alvo_fechar().toca(p)
     }
 
     /// Minimapa fechado: o botao redondo que reabre, no canto de cima a'
@@ -1145,7 +1149,7 @@ mod tests {
     fn icone_das_diarias_ao_lado_de_missoes() {
         for (sw, sh) in TELAS {
             let z = zonas(sw, sh);
-            let (missoes, diarias) = (z.icones[1], z.icones[2]);
+            let (missoes, diarias) = (z.icones[2], z.icones[3]);
             assert!(
                 diarias.x > missoes.x + missoes.w,
                 "{sw}×{sh}: diarias a' direita de missoes"

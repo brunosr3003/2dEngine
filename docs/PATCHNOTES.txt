@@ -1,3 +1,15 @@
+Nov 9, 2026 — Rankings, trading and flash offers
+
+- New: Rankings — see the strongest and highest-level players, overall and for each weapon class.
+- New: trade items and gold directly with other players (tap a player › Actions › Trade).
+- New: Flash Offers — special limited-time bundles unlock as you level up (Android).
+- DEX now gives every class a chance to dodge; Twin Pistols dodge even more.
+- Buttons and icons are much easier to tap on phones, on any screen size.
+- The installed game icon now matches the store icon.
+- Character creation: new Randomize button, and every new character starts with a random look.
+- Quests that ask for a dungeon key, and portals that need one, now take you straight to that key in Craft.
+- Outdated versions now go straight to the store to update.
+
 Nov 8, 2026 — Official launch
 
 - Fresh start: the server has been reset for the official launch.

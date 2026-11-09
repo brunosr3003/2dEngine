@@ -12,6 +12,8 @@
 //! A macroquad nao tem retangulo arredondado. Aqui ele e' UMA malha (leque a
 //! partir do centro) por forma: sem sobreposicao de pecas, entao cor
 //! translucida nao escurece nos cantos, e o batcher junta tudo num draw call.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -786,7 +788,7 @@ pub fn estado(sobre: bool, pressionado: bool, desabilitado: bool, ativo: bool) -
 }
 
 pub fn estado_de(r: Rect, desabilitado: bool, ativo: bool) -> Estado {
-    let sobre = r.contains(Vec2::from(mouse_position()));
+    let sobre = r.toca(Vec2::from(mouse_position()));
     estado(
         sobre,
         is_mouse_button_down(MouseButton::Left),

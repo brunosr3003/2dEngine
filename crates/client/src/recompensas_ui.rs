@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -66,7 +68,7 @@ impl Ui {
         }
         let fechar = Rect::new(boxr.x + boxr.w - 42.0 * f, boxr.y + 8.0 * f, 32.0 * f, 32.0 * f);
         let mouse = Vec2::from(mouse_position());
-        let hover = fechar.contains(mouse);
+        let hover = fechar.toca(mouse);
         estilo::botao(fechar, "×", estilo::estado(hover, hover && is_mouse_button_down(MouseButton::Left), false, false), false);
         if hover && crate::foco::clique() { self.atual = None; }
     }

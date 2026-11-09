@@ -474,6 +474,15 @@ pub enum ClientMessage {
         compra: u8,
         com_tp: bool,
     },
+    /// Rankings page (`shared::ranking`). `classe` None = all classes.
+    Ranking {
+        tipo: crate::ranking::TipoRanking,
+        classe: Option<u8>,
+    },
+    /// Direct trade between players (`shared::troca`).
+    Troca {
+        pedido: crate::troca::PedidoTroca,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1260,6 +1269,14 @@ pub enum ServerMessage {
     /// time the realm's stock is recounted.
     PrecosDoMercado {
         tabela: crate::precos::TabelaDePrecos,
+    },
+    /// Answer to `ClientMessage::Ranking`.
+    Ranking {
+        ranking: crate::ranking::Ranking,
+    },
+    /// Direct trade between players (`shared::troca`).
+    Troca {
+        aviso: crate::troca::AvisoTroca,
     },
 }
 

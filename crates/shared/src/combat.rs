@@ -28,11 +28,17 @@ pub fn basic_attack_damage(stats: &PlayerStats, weapon_id: u16, allocated_int: u
 pub const ESQUIVA_POR_DES: f32 = 0.005;
 /// The most a pistol wielder ever dodges.
 pub const ESQUIVA_MAXIMA: f32 = 0.25;
+/// Every other weapon set dodges too, at HALF the pistol's rate and a lower
+/// cap (owner, 08/11/2026: "DEX gives dodge to every class, but Twin Pistols
+/// must get more, to make better use of that dodge").
+pub const ESQUIVA_POR_DES_GERAL: f32 = 0.0025;
+pub const ESQUIVA_MAXIMA_GERAL: f32 = 0.15;
 
 /// How likely this character is to DODGE a mob's basic hit (melee or
 /// projectile) outright: no damage, no stagger, no knockback.
 ///
-/// Pistols only, from the DEX the player put in themselves. The owner: an
+/// Every weapon set dodges from the DEX the player put in themselves; the
+/// pistol twice as much and up to a higher cap. Why the pistol: an
 /// all-DEX pistol is "too fragile" early and could not clear the level-14
 /// Porão — the class with the least health and no way to recover mid-fight.
 /// A wider range was tried first: any range over 9 made it kill bosses under
@@ -74,11 +80,13 @@ pub fn mult_dano_do_mob(nivel_jogador: u32, nivel_mob: u32) -> f32 {
     1.0 + DANO_RECEBIDO_POR_NIVEL * degraus_acima(nivel_jogador, nivel_mob) as f32
 }
 
+/// See the dodge notes above `ESQUIVA_POR_DES`.
 pub fn chance_de_esquiva(weapon_id: u16, des_alocada: u32) -> f32 {
-    if weapon_id != crate::constants::item_id::PISTOLAS {
-        return 0.0;
+    if weapon_id == crate::constants::item_id::PISTOLAS {
+        (des_alocada as f32 * ESQUIVA_POR_DES).min(ESQUIVA_MAXIMA)
+    } else {
+        (des_alocada as f32 * ESQUIVA_POR_DES_GERAL).min(ESQUIVA_MAXIMA_GERAL)
     }
-    (des_alocada as f32 * ESQUIVA_POR_DES).min(ESQUIVA_MAXIMA)
 }
 
 /// Final stamina cost for a block, scaled by the target's
@@ -209,11 +217,17 @@ mod testes_da_esquiva {
     use super::*;
     use crate::constants::item_id;
 
-    /// Pistols only, grows with allocated DEX, stops at the cap.
+    /// Everyone dodges from DEX; the pistol twice as much, with a higher cap.
     #[test]
-    fn so_a_pistola_esquiva_e_com_teto() {
-        assert_eq!(chance_de_esquiva(item_id::KATANA, 200), 0.0);
-        assert_eq!(chance_de_esquiva(item_id::ANEL_MAGICO, 200), 0.0);
+    fn todos_esquivam_e_a_pistola_mais() {
+        for arma in [item_id::KATANA, item_id::ANEL_MAGICO, 0] {
+            assert_eq!(chance_de_esquiva(arma, 0), 0.0);
+            let c = chance_de_esquiva(arma, 40);
+            assert!((c - 0.10).abs() < 1e-6, "{arma}: {c}");
+            assert!(c < chance_de_esquiva(item_id::PISTOLAS, 40), "pistol must dodge more");
+            assert_eq!(chance_de_esquiva(arma, 10_000), ESQUIVA_MAXIMA_GERAL);
+        }
+        assert!(ESQUIVA_MAXIMA_GERAL < ESQUIVA_MAXIMA);
         assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 0), 0.0);
         let quinze = chance_de_esquiva(item_id::PISTOLAS, 42); // all-DEX, level 15
         assert!((0.15..=ESQUIVA_MAXIMA).contains(&quinze), "{quinze}");

@@ -9,6 +9,8 @@
 //! a ROW only counts on release and only if the finger did not move: `quadro`
 //! returns that click, and the list uses it in place of `is_mouse_button_pressed`.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -110,10 +112,10 @@ impl Rolagem {
         e: Entrada,
     ) -> Option<Vec2> {
         let max = maximo(area, total);
-        if area.contains(e.mouse) && e.roda != 0.0 {
+        if area.toca(e.mouse) && e.roda != 0.0 {
             self.pos -= e.roda.signum() * passo_da_roda;
         }
-        if e.apertou && area.contains(e.mouse) {
+        if e.apertou && area.toca(e.mouse) {
             let faixa = Rect::new(
                 area.x + area.w - estilo::u(FAIXA_DA_BARRA),
                 area.y,
@@ -125,7 +127,7 @@ impl Rolagem {
                 pos0: self.pos,
                 inicio: e.mouse,
                 arrastando: false,
-                na_barra: max > 0.0 && faixa.contains(e.mouse),
+                na_barra: max > 0.0 && faixa.toca(e.mouse),
             });
         }
         let mut clique = None;

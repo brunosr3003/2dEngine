@@ -2,6 +2,8 @@
 //! economia de energia e o idioma. (Shadows and anti-aliasing live in the
 //! Graphics panel, `config_graficos`.) No celular a tela e' densa e 100% fica miudo, entao o
 //! padrao e' 160%. Muda na hora e salva nas preferencias do personagem.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::economia;
@@ -93,7 +95,7 @@ impl ConfigInterface {
         );
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        if clicou && fechar.contains(m) {
+        if clicou && fechar.toca(m) {
             self.fechar();
             return None;
         }
@@ -107,7 +109,7 @@ impl ConfigInterface {
         let area = Rect::new(r.x, r.y + topo, r.w, r.h - topo - 4.0 * f);
         let total = conteudo_h - topo;
         let toque = self.rolagem.quadro(area, total, 60.0 * f);
-        let em = |b: Rect| toque.is_some_and(|p| b.contains(p) && area.contains(p));
+        let em = |b: Rect| toque.is_some_and(|p| b.toca(p) && area.toca(p));
         let r = Rect::new(r.x, r.y - self.rolagem.pos, r.w, conteudo_h);
         crate::rolagem::recortar(Some(area));
         estilo::texto(
@@ -182,7 +184,7 @@ impl ConfigInterface {
             .collect();
         for &(c, min) in &chips {
             let marcado = min == economia_auto;
-            estilo::cartao(c, c.contains(m), marcado);
+            estilo::cartao(c, c.toca(m), marcado);
             let t = if min == 0 {
                 "Never".to_string()
             } else {
@@ -216,7 +218,7 @@ impl ConfigInterface {
                     li,
                     42.0 * f,
                 );
-                estilo::cartao(b, b.contains(m), lang == atual_idioma);
+                estilo::cartao(b, b.toca(m), lang == atual_idioma);
                 // Each language's name IN ITS OWN LANGUAGE, and therefore outside the
                 // dictionary: someone looking for English looks for "English".
                 estilo::texto_centro(
@@ -306,7 +308,7 @@ impl ConfigInterface {
         );
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        if clicou && fechar.contains(m) {
+        if clicou && fechar.toca(m) {
             self.fechar();
             return None;
         }
@@ -371,7 +373,7 @@ impl ConfigInterface {
                     cw,
                     32.0 * f,
                 );
-                estilo::cartao(b, b.contains(m), min == economia_auto);
+                estilo::cartao(b, b.toca(m), min == economia_auto);
                 estilo::texto_centro(
                     b.center().x,
                     b.center().y + 5.0 * f,
@@ -400,7 +402,7 @@ impl ConfigInterface {
             .enumerate()
             .map(|(i, &lang)| {
                 let b = Rect::new(rx + i as f32 * (iw + 6.0 * f), r.y + 75.0 * f, iw, 42.0 * f);
-                estilo::cartao(b, b.contains(m), lang == atual_idioma);
+                estilo::cartao(b, b.toca(m), lang == atual_idioma);
                 estilo::texto_centro(
                     b.center().x,
                     b.center().y + 6.0 * f,
@@ -425,21 +427,21 @@ impl ConfigInterface {
         if !clicou {
             return None;
         }
-        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.contains(m)) {
+        if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.toca(m)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
         }
-        if agora.contains(m) {
+        if agora.toca(m) {
             self.fechar();
             return Some(Mudanca::EconomiaAgora);
         }
-        if let Some(&(_, min)) = chips.iter().find(|(b, _)| b.contains(m)) {
+        if let Some(&(_, min)) = chips.iter().find(|(b, _)| b.toca(m)) {
             return (min != economia_auto).then_some(Mudanca::EconomiaAuto(min));
         }
-        let nova = if menos.contains(m) {
+        let nova = if menos.toca(m) {
             ajusta(atual, -1)
-        } else if mais.contains(m) {
+        } else if mais.toca(m) {
             ajusta(atual, 1)
-        } else if padrao.contains(m) {
+        } else if padrao.toca(m) {
             hud_layout::escala_ui_padrao()
         } else {
             return None;

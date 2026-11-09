@@ -7,6 +7,8 @@
 //! Eixos: o mundo e' (x, z), e a camera em yaw 0 olha pra -z. O mapa usa norte
 //! fixo com x pra direita e z pra BAIXO — a vista da camera sem giro —, entao
 //! o que esta' a' esquerda no mundo esta' a' esquerda no mapa.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::hud_estilo::{self as estilo, u};
 use crate::world::World;
 use macroquad::prelude::*;
@@ -1648,7 +1650,7 @@ impl Mapa {
                 .iter()
                 .enumerate()
                 .map(|(i, (_, p))| (i, para_tela(*p - foco, r, raio).distance(m)))
-                .filter(|(_, d)| *d <= 12.0 * k)
+                .filter(|(_, d)| *d <= (12.0 * k).max(crate::ui::alvo_minimo() * 0.5))
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             if let Some((i, _)) = npc {
                 return Some(Marcador::Npc(i));
@@ -1666,7 +1668,7 @@ impl Mapa {
                     para_tela(vec2(g.centro[0], g.centro[1]) - foco, r, raio).distance(m),
                 )
             })
-            .filter(|(_, d)| *d <= 9.0 * k)
+            .filter(|(_, d)| *d <= (9.0 * k).max(crate::ui::alvo_minimo() * 0.5))
             .min_by(|a, b| a.1.total_cmp(&b.1));
         if let Some((i, _)) = regiao {
             return Some(Marcador::Regiao(i));
@@ -1679,7 +1681,7 @@ impl Mapa {
                 (
                     i,
                     para_tela(centro_da_zona(z) - foco, r, raio).distance(m),
-                    (z.raio * escala).max(9.0 * k),
+                    (z.raio * escala).max(9.0 * k).max(crate::ui::alvo_minimo() * 0.5),
                 )
             })
             .filter(|(_, d, rp)| d <= rp)
@@ -1923,7 +1925,7 @@ impl Mapa {
             );
             desenha_ico(*ico, vec2(c.x + u(14.0), c.y + c.h * 0.5), u(16.0), if *ligado { *cor } else { Color::new(cor.r, cor.g, cor.b, 0.45) });
             estilo::texto(c.x + u(26.0), c.y + u(16.0), rotulo, 13, if *ligado { estilo::TEXTO } else { estilo::SUAVE });
-            if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
+            if clique.is_some_and(|p| c.toca(p) && area.toca(p)) {
                 toggle = Some(*id);
             }
         }
@@ -1964,7 +1966,7 @@ impl Mapa {
             let b = Rect::new(area.x + area.w - u(64.0), ly + u(2.0), u(46.0), u(22.0));
             if let Some(a) = alvo {
                 let _ = crate::ui::botao(b, "Go", true);
-                if clique.is_some_and(|c| b.contains(c) && area.contains(c)) {
+                if clique.is_some_and(|c| b.toca(c) && area.toca(c)) {
                     *saida = Some(Entrada::Ir(a));
                 }
             }
@@ -2038,7 +2040,7 @@ impl Mapa {
                 13,
                 estilo::OURO,
             );
-            alterna_npcs = clique.is_some_and(|c| titulo_npcs.contains(c) && area.contains(c));
+            alterna_npcs = clique.is_some_and(|c| titulo_npcs.toca(c) && area.toca(c));
         }
         ly += u(LINHA_IR);
         for (nome, p) in &npcs {
@@ -2178,7 +2180,7 @@ impl Mapa {
         let m = Vec2::from(mouse_position());
         if is_mouse_button_pressed(MouseButton::Left) {
             self.gesto.de = Some(m);
-            self.gesto.no_desenho = r.contains(m);
+            self.gesto.no_desenho = r.toca(m);
             self.gesto.ultimo = m;
             self.gesto.arrastou = false;
             return None;
@@ -2447,7 +2449,7 @@ impl Mapa {
         } else {
             Self::mini_rect()
         };
-        self.tem_ilha() && (self.aberto || mini.contains(m))
+        self.tem_ilha() && (self.aberto || mini.toca(m))
     }
 
     /// Roda e clique. Devolve o que o clique pede: viajar a um ponto, ou ir a
@@ -2471,30 +2473,30 @@ impl Mapa {
             }
             if self.soltou_clicando(r) {
                 // O painel lateral trata os proprios botoes no desenho.
-                if Self::lateral_rect(r).contains(m) {
+                if Self::lateral_rect(r).toca(m) {
                     return None;
                 }
                 // Fora do mapa ou no X: fecha — MENOS na moldura de cima, que
                 // tem as abas Ilha|Mundo. Elas ficam ACIMA do `grande_rect`, e
                 // sem esta excecao tocar em "World" trocava a aba e fechava o
                 // mapa no mesmo quadro: o dono via o mapa sumir.
-                if Self::fechar_rect(r).contains(m)
-                    || (!r.contains(m) && !Self::moldura_rect(r).contains(m))
+                if Self::fechar_rect(r).toca(m)
+                    || (!r.toca(m) && !Self::moldura_rect(r).toca(m))
                 {
                     self.aberto = false;
                     return None;
                 }
-                if Self::moldura_rect(r).contains(m) {
+                if Self::moldura_rect(r).toca(m) {
                     return None;
                 }
                 // ZOOM antes de tudo: os botoes ficam DENTRO do desenho, e
                 // sem isto o toque neles viraria "andar pra la'".
                 let (menos, mais) = Self::zoom_grande_rects(r);
-                if menos.contains(m) {
+                if menos.toca(m) {
                     self.zoom_do_mapa(false);
                     return None;
                 }
-                if mais.contains(m) {
+                if mais.toca(m) {
                     self.zoom_do_mapa(true);
                     return None;
                 }
@@ -2518,7 +2520,7 @@ impl Mapa {
         // personagem), e o botao errava.
         let aperto = apertou_em();
         if crate::hud_layout::minimapa_oculto() {
-            if aperto.is_some_and(|p| Self::reabrir_rect().contains(p)) {
+            if aperto.is_some_and(|p| Self::reabrir_rect().toca(p)) {
                 crate::hud_layout::define_minimapa_oculto(false);
             }
             return None;
@@ -2527,37 +2529,37 @@ impl Mapa {
         // Botoes: o ⤢ abre o Mapa, o de tamanho alterna compacto/expandido
         // (quem guarda e' o `main`, pelas preferencias), − e + dao zoom e o
         // do canto de cima fecha.
-        if let Some(p) = aperto.filter(|p| r.contains(*p)) {
-            if crate::hud_layout::atual().mapa_icone.contains(p) {
+        if let Some(p) = aperto.filter(|p| r.toca(*p)) {
+            if crate::hud_layout::atual().mapa_icone.toca(p) {
                 self.aberto = true;
                 return None;
             }
-            if Self::expandir_rect().contains(p) {
+            if Self::expandir_rect().toca(p) {
                 crate::hud_layout::define_minimapa_expandido(
                     !crate::hud_layout::minimapa_expandido(),
                 );
                 return None;
             }
-            if Self::ocultar_rect().contains(p) {
+            if Self::ocultar_rect().toca(p) {
                 crate::hud_layout::define_minimapa_oculto(true);
                 return None;
             }
-            if Self::zoom_mais_rect().contains(p) {
+            if Self::zoom_mais_rect().toca(p) {
                 self.zoom_minimapa(true);
                 return None;
             }
-            if Self::zoom_menos_rect().contains(p) {
+            if Self::zoom_menos_rect().toca(p) {
                 self.zoom_minimapa(false);
                 return None;
             }
         }
-        if r.contains(m) {
+        if r.toca(m) {
             let (_, roda) = mouse_wheel();
             if roda != 0.0 {
                 self.zoom_minimapa(roda > 0.0);
             }
         }
-        if let Some(p) = aperto.filter(|p| r.contains(*p)) {
+        if let Some(p) = aperto.filter(|p| r.toca(*p)) {
             let eu = eu?;
             // O mapa e' um disco: canto do painel e' moldura, nao viaja. E a
             // conta usa o raio DESENHADO, senao o clique cai a alguns metros
@@ -2577,7 +2579,7 @@ impl Mapa {
         }
         if crate::hud_layout::minimapa_oculto() {
             let b = Self::reabrir_rect();
-            let sobre = b.contains(Vec2::from(mouse_position()));
+            let sobre = b.toca(Vec2::from(mouse_position()));
             let (c, raio) = (b.center(), b.w * 0.5);
             draw_circle(c.x, c.y, raio, estilo::FUNDO_ALTO);
             draw_circle_lines(
@@ -2783,7 +2785,7 @@ impl Mapa {
         }
         let m = Vec2::from(mouse_position());
         let ic = crate::hud_layout::atual().mapa_icone;
-        let sobre = ic.contains(m);
+        let sobre = ic.toca(m);
         botao_da_moldura(ic, sobre);
         let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
         let (a, b, d) = (
@@ -2797,7 +2799,7 @@ impl Mapa {
         draw_line(b.x, b.y, b.x - d, b.y, 1.5, cor);
         draw_line(b.x, b.y, b.x, b.y - d, 1.5, cor);
         let ex = Self::expandir_rect();
-        let sobre_ex = ex.contains(m);
+        let sobre_ex = ex.toca(m);
         botao_da_moldura(ex, sobre_ex);
         glifo_tamanho(
             ex,
@@ -2818,7 +2820,7 @@ impl Mapa {
             ),
             (Self::zoom_mais_rect(), '+', self.alcance_mini > ALCANCE_MIN),
         ] {
-            let sobre = ativo && r.contains(m);
+            let sobre = ativo && r.toca(m);
             botao_da_moldura(r, sobre);
             let cor = if !ativo {
                 apagado
@@ -2878,7 +2880,7 @@ impl Mapa {
             self.desenha_abas(r);
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
-            if r.contains(m) {
+            if r.toca(m) {
                 if let Some(mk) = self.marcador_sob(m, r, self.foco_do_zoom(world.self_pos())) {
                     self.dica(mk, m);
                 }
@@ -2897,7 +2899,7 @@ impl Mapa {
             (mundo, "World", self.no_mundo),
         ] {
             estilo::botao(caixa, rotulo, estilo::estado_de(caixa, false, ativa), ativa);
-            if clicou && caixa.contains(m) {
+            if clicou && caixa.toca(m) {
                 self.no_mundo = rotulo == "World";
             }
         }
@@ -3348,7 +3350,7 @@ impl Mapa {
         }
         // Onde o clique cairia: agua avisa antes de clicar.
         let m = Vec2::from(mouse_position());
-        if r.contains(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio) + foco) {
+        if r.toca(m) && self.tex.is_some() && !self.terra(de_tela(m, r, raio) + foco) {
             estilo::texto_centro(m.x, m.y - u(12.0), "water", 13, estilo::SUAVE);
         }
     }

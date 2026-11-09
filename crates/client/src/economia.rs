@@ -14,6 +14,8 @@
 //!
 //! Toque no preto nao faz nada: nem anda, nem mira, nem desliga o auto. So' o
 //! deslize completo volta.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -210,7 +212,7 @@ impl Economia {
                 lado,
                 lado,
             );
-            estilo::cartao(c, c.contains(m), false);
+            estilo::cartao(c, c.toca(m), false);
             crate::icones::icone_com_3d(*id, c, None, Some(*q), Some((vox, solido)));
             if *q == 1 {
                 estilo::texto_centro_forte(
@@ -230,7 +232,7 @@ impl Economia {
                 11,
                 estilo::SUAVE,
             );
-            if c.contains(m) {
+            if c.toca(m) {
                 dica = Some((c, format!("{nome} ×{}", milhar(*q as u64))));
             }
         }
@@ -244,7 +246,7 @@ impl Economia {
             180.0 * f,
             44.0 * f,
         );
-        estilo::cartao(ok, ok.contains(m), true);
+        estilo::cartao(ok, ok.toca(m), true);
         estilo::texto_centro_forte(
             ok.center().x,
             ok.center().y + 6.0 * f,
@@ -255,7 +257,7 @@ impl Economia {
         if let Some((c, t)) = dica {
             estilo::tooltip(c, &t, false);
         }
-        if crate::foco::clique() && ok.contains(m) {
+        if crate::foco::clique() && ok.toca(m) {
             self.resumo = None;
         }
     }
@@ -451,7 +453,7 @@ impl Economia {
         let m = Vec2::from(mouse_position());
         let bola = trilho.h - 8.0;
         let curso = (trilho.w - bola - 8.0).max(1.0);
-        if crate::foco::clique() && trilho.contains(m) {
+        if crate::foco::clique() && trilho.toca(m) {
             self.arrasto = Some(m.x);
         }
         let progresso = match self.arrasto {

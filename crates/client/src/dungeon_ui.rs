@@ -4,6 +4,8 @@
 //! o bau. Quem decide tudo e' o servidor; aqui so' se mostra e se pede.
 //! Nada abre por tecla: so' toque/clique.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -118,7 +120,7 @@ fn nome_do_conteudo(id: u16) -> &'static str {
 
 fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
     let m = Vec2::from(mouse_position());
-    let sobre = ativo && r.contains(m);
+    let sobre = ativo && r.toca(m);
     estilo::botao(
         r,
         rotulo,
@@ -201,14 +203,14 @@ impl DungeonUi {
         let caido = self.inst.as_ref().is_some_and(|i| i.reviver_em_s.is_some());
         let (faixa, porta, reviver) = Self::rects_da_instancia();
         if self.mostrar_saida_arena && self.na_arena == Some(true)
-            && self.inst.is_none() && Self::saida_arena_rect().contains(m) {
+            && self.inst.is_none() && Self::saida_arena_rect().toca(m) {
             return true;
         }
         self.inst.is_some()
-            && (faixa.contains(m)
-                || porta.contains(m)
-                || Self::missao_rect().contains(m)
-                || (caido && reviver.contains(m)))
+            && (faixa.toca(m)
+                || porta.toca(m)
+                || Self::missao_rect().toca(m)
+                || (caido && reviver.toca(m)))
     }
 
     /// O que o servidor mandou. Devolve pedidos de volta (raro).
@@ -528,7 +530,7 @@ impl DungeonUi {
                 continue;
             };
             let r = Rect::new(esq.x, y, largura, alt - 4.0 * f);
-            let sobre = esq.contains(m) && r.contains(m) && !self.rolagem_conteudos.arrastando();
+            let sobre = esq.toca(m) && r.toca(m) && !self.rolagem_conteudos.arrastando();
             estilo::cartao(r, sobre, self.sel == ce.id);
             let travado = !def.disponivel || ce.cadeados.first().is_some_and(|x| x.is_some());
             let cor = if travado {
@@ -558,7 +560,7 @@ impl DungeonUi {
                 11,
                 estilo::SUAVE,
             );
-            if toque.is_some_and(|p| esq.contains(p) && r.contains(p)) {
+            if toque.is_some_and(|p| esq.toca(p) && r.toca(p)) {
                 novo_sel = Some(ce.id);
             }
         }
@@ -619,7 +621,7 @@ impl DungeonUi {
                     .cadeados
                     .get((e - 1) as usize)
                     .is_some_and(|x| x.is_some());
-                let sobre = r.contains(m);
+                let sobre = r.toca(m);
                 estilo::cartao(r, sobre, self.estagio == e);
                 // Cadeado desenhado: a fonte da HUD nao tem o emoji.
                 let rot = e.to_string();
@@ -980,7 +982,7 @@ impl DungeonUi {
                         13,
                         estilo::TEXTO,
                     );
-                    if toggle.contains(m) && clicou {
+                    if toggle.toca(m) && clicou {
                         self.completar_pela_fila = !self.completar_pela_fila;
                     }
                     y += 38.0 * f;
@@ -1387,7 +1389,7 @@ impl DungeonUi {
         // ── a missao: completar a dungeon no automatico ──
         let missao = Self::missao_rect();
         let fm = crate::hud_layout::atual().s.max(0.5);
-        let sobre = missao.contains(Vec2::from(mouse_position()));
+        let sobre = missao.toca(Vec2::from(mouse_position()));
         let cor = if self.auto {
             estilo::AUTO
         } else {

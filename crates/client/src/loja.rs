@@ -2,6 +2,8 @@
 //! block below says how many to buy (-/+, 1, 10, 50, Max) and what the batch
 //! costs. Price, copper, bag space and range are still validated by the
 //! server (`ShopComprar`, all or nothing).
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::hud_estilo as estilo;
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, ShopItem};
@@ -158,7 +160,7 @@ impl Loja {
 
     /// With the mouse over the panel the click belongs to the shop, not the world.
     pub fn pega_mouse(&self) -> bool {
-        self.aberta() && self.areas().0.contains(Vec2::from(mouse_position()))
+        self.aberta() && self.areas().0.toca(Vec2::from(mouse_position()))
     }
 
     /// Desenha e devolve o pedido de compra do quadro.
@@ -266,7 +268,7 @@ impl Loja {
                 continue;
             }
             let marcada = i == self.sel;
-            let sobre = !arrastando && r.contains(mouse) && lista.contains(mouse);
+            let sobre = !arrastando && r.toca(mouse) && lista.toca(mouse);
             if marcada || sobre {
                 draw_rectangle(
                     r.x,
@@ -308,7 +310,7 @@ impl Loja {
                 15,
                 cor,
             );
-            if toque.is_some_and(|c| r.contains(c) && lista.contains(c)) && i != self.sel {
+            if toque.is_some_and(|c| r.toca(c) && lista.toca(c)) && i != self.sel {
                 self.sel = i;
                 self.qtd = 1;
             }

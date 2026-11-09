@@ -2,6 +2,8 @@
 //! em andamento), o diario (J), o rastreador no canto e o "!"/"?" sobre o
 //! Mestre. Aceitar, progresso e entrega sao do SERVIDOR: aqui so' se mostra e
 //! se pede.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashSet;
 
 use macroquad::prelude::*;
@@ -555,9 +557,9 @@ impl Missoes {
     pub fn pega_mouse(&self) -> bool {
         let m = Vec2::from(mouse_position());
         if self.aberta {
-            self.painel().contains(m)
+            self.painel().toca(m)
         } else {
-            self.rastreador_rect().contains(m)
+            self.rastreador_rect().toca(m)
         }
     }
 
@@ -627,7 +629,7 @@ impl Missoes {
         let area = Rect::new(p.x + u(2.0), p.y + u(48.0), p.w - u(4.0), p.h - u(52.0));
         let total = self.altura() - u(58.0) + u(6.0);
         let clique = self.rolagem.quadro(area, total, u(LINHA_ATIVA));
-        let tocou = |r: Rect| clique.is_some_and(|c| r.contains(c) && area.contains(c));
+        let tocou = |r: Rect| clique.is_some_and(|c| r.toca(c) && area.toca(c));
         let fora = |y: f32, h: f32| y + h < area.y || y > area.y + area.h;
         crate::rolagem::recortar(Some(area));
         let mut y = area.y + u(4.0) - self.rolagem.pos;
@@ -823,7 +825,7 @@ impl Missoes {
             (Rect::new(r.x + meia, r.y, meia, 36.0 * s), "Party", true),
         ] {
             let ativa = grupo == self.aba_grupo;
-            let sobre = caixa.contains(mouse);
+            let sobre = caixa.toca(mouse);
             // O número do grupo na própria aba: é o que faz olhar pra ela.
             let rotulo = if grupo && self.membros_grupo > 0 {
                 format!("{rotulo} · {}", self.membros_grupo)
@@ -895,7 +897,7 @@ impl Missoes {
                     draw_poly_lines(c.x, c.y, 4, r, 0.0, 1.2 * s, estilo::alfa(estilo::SUAVE, 0.8));
                 }
             }
-            if linha.contains(mouse) {
+            if linha.toca(mouse) {
                 draw_rectangle(
                     linha.x,
                     linha.y,
@@ -941,8 +943,8 @@ impl Missoes {
                     estilo::OURO,
                 );
             }
-            if clique && linha.contains(mouse) {
-                saida = Some(if !principal && alfinete.contains(mouse) {
+            if clique && linha.toca(mouse) {
+                saida = Some(if !principal && alfinete.toca(mouse) {
                     NoRastreador::Fixar(q.id)
                 } else {
                     NoRastreador::Missao(q.id)
@@ -966,7 +968,7 @@ impl Missoes {
                     16,
                     if pode { estilo::TEXTO } else { estilo::SUAVE },
                 );
-                if pode && clique && caixa.contains(mouse) {
+                if pode && clique && caixa.toca(mouse) {
                     saida = Some(NoRastreador::Rolar(caixa == desce));
                 }
             }

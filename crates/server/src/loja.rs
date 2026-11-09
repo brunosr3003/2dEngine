@@ -66,6 +66,10 @@ pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {
             atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
         "CREATE INDEX IF NOT EXISTS loja_pedidos_conta ON loja_pedidos (conta, criado_em DESC)",
+        // Hard guarantee behind the check in `confirmar_pagamento`: one Google
+        // order is credited at most once.
+        "CREATE UNIQUE INDEX IF NOT EXISTS loja_pedidos_externo_google
+            ON loja_pedidos (externo) WHERE provedor = 'google_play' AND status = 'creditado'",
         "CREATE TABLE IF NOT EXISTS loja_posses (
             conta    TEXT        NOT NULL,
             produto  TEXT        NOT NULL,
@@ -352,13 +356,14 @@ pub async fn comprar_tp(
     // compra que acabasse nao creditando deixaria o jogador sem TP e a
     // Google sem saber que precisa reembolsar sozinha). Best-effort: a TP
     // ja' esta' na conta de qualquer jeito.
-    if let (Provedor::GooglePlay, Some(gp), Resposta::Feito { .. }) =
+    // Also on JaFeito: a purchase credited before but never consumed (the
+    // old code only acknowledged) gets freed on the next try.
+    if let (Provedor::GooglePlay, Some(gp), Resposta::Feito { .. } | Resposta::JaFeito { .. }) =
         (provedor, google_play, &resposta)
     {
-        if let Err(e) =
-            crate::loja_google_play::reconhecer_best_effort(pacote.id, gp.purchase_token).await
-        {
-            tracing::warn!("loja: ack da compra Google Play falhou (TP ja' creditada): {e}");
+        let produto = crate::loja_google_play::id_do_produto(pacote.id);
+        if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, gp.purchase_token).await {
+            tracing::warn!("loja: consume da compra Google Play falhou (TP ja' creditada): {e}");
         }
     }
     Ok(resposta)
@@ -391,6 +396,25 @@ pub async fn confirmar_pagamento(
     let Some(pacote) = pacote else {
         return Ok(Resposta::recusa("Invalid order."));
     };
+    // ONE Google order credits ONE order: a client re-sending the same
+    // purchase token under a new `pedido` id must not get the TP twice.
+    if status != "creditado" && !externo.is_empty() {
+        let outro: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM loja_pedidos WHERE externo = $1 AND status = 'creditado' AND provedor = 'google_play' AND id <> $2",
+        )
+        .bind(externo)
+        .bind(pedido)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if outro.is_some() {
+            sqlx::query("UPDATE loja_pedidos SET status = 'recusado', motivo = 'duplicate google order', atualizado_em = NOW() WHERE id = $1")
+                .bind(pedido)
+                .execute(&mut *tx)
+                .await?;
+            tx.commit().await?;
+            return Ok(Resposta::recusa("This purchase has already been used."));
+        }
+    }
     if status == "creditado" {
         let saldo = razao::saldo(&mut *tx, &conta).await?;
         tx.commit().await?;

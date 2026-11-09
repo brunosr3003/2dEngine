@@ -113,7 +113,9 @@ mod mercado_mundo;
 mod oficina;
 mod pets;
 mod presenca;
+mod ranking;
 mod social;
+mod troca;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -2632,6 +2634,10 @@ pub struct GameWorld {
     loja_pedido_em: HashMap<SessionId, f32>,
     social_pedido_em: HashMap<SessionId, f32>,
     social_pendentes: HashMap<SessionId, String>,
+    /// Open direct trades, one entry per side (`world/troca.rs`).
+    pub(crate) trocas: HashMap<SessionId, troca::Mesa>,
+    /// Pending trade invites: invited -> (who invited, until sim_time_s).
+    pub(crate) troca_convites: HashMap<SessionId, (SessionId, f32)>,
     /// Timer em segundos desde a ultima tentativa de respawn de inimigo.
     enemy_spawn_timer: f32,
     /// Entidade atual do boss (None se morto/nao spawnado ainda).
@@ -3141,6 +3147,8 @@ impl GameWorld {
             loja_pedido_em: HashMap::new(),
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
+            trocas: HashMap::new(),
+            troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY, // desabilita boss
@@ -3336,6 +3344,8 @@ impl GameWorld {
             loja_pedido_em: HashMap::new(),
             social_pedido_em: HashMap::new(),
             social_pendentes: HashMap::new(),
+            trocas: HashMap::new(),
+            troca_convites: HashMap::new(),
             enemy_spawn_timer: 0.0,
             boss_entity: None,
             boss_respawn_timer: f32::INFINITY,
@@ -7771,6 +7781,8 @@ impl GameWorld {
     }
 
     pub fn on_disconnect(&mut self, id: SessionId) {
+        self.troca_encerra(id, false, "Trade cancelled: the other player left.");
+        self.troca_convites.retain(|k, (de, _)| *k != id && *de != id);
         self.social_pendentes.remove(&id);
         self.social_pedido_em.remove(&id);
         self.dg_desconectou(id);
@@ -8367,6 +8379,8 @@ impl GameWorld {
             ClientMessage::Presenca { pedido } => self.handle_presenca(id, pedido),
             ClientMessage::Loja { pedido } => self.handle_loja(id, pedido),
             ClientMessage::Social { pedido } => self.handle_social(id, pedido),
+            ClientMessage::Ranking { tipo, classe } => self.handle_ranking(id, tipo, classe),
+            ClientMessage::Troca { pedido } => self.handle_troca(id, pedido),
         }
     }
 
@@ -9423,6 +9437,7 @@ impl GameWorld {
     pub fn step(&mut self, dt: f32) {
         self.tick = self.tick.wrapping_add(1);
         self.tick_dungeons();
+        self.troca_vigia();
 
         // Detecta hot-reload da economy (admin editou via web) e re-emite
         // ItemsConfig pra todos os clientes logados — assim nomes/icones

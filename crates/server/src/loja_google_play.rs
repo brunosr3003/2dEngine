@@ -192,8 +192,16 @@ struct ProductPurchase {
 /// (`reconhecer_best_effort`): reconhecer antes e falhar o credito deixaria
 /// uma compra "paga" sem TP nenhuma.
 pub async fn verificar(pacote: &PacoteTp, purchase_token: &str) -> Result<String, Erro> {
+    verificar_produto(&id_do_produto(pacote.id), purchase_token).await
+}
+
+/// `verificar` for any Play product id (TP packs and flash offers). The id
+/// always comes from the SERVER's own data, never from the client.
+pub async fn verificar_produto(product_id: &str, purchase_token: &str) -> Result<String, Erro> {
+    if !token_seguro(purchase_token) || !token_seguro(product_id) {
+        return Err(Erro::Recusado("Invalid purchase.".into()));
+    }
     let nome_do_pacote = nome_do_pacote_env().ok_or(Erro::NaoConfigurado)?;
-    let product_id = id_do_produto(pacote.id);
     let token_acesso = obter_token_acesso().await?;
     let url = format!(
         "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{nome_do_pacote}/purchases/products/{product_id}/tokens/{purchase_token}"
@@ -230,20 +238,26 @@ fn estado_da_resposta(corpo: &str, purchase_token: &str) -> Result<String, Erro>
     }
 }
 
-/// Reconhece a compra na Google (senao' ela reembolsa sozinha em ate' 3
-/// dias). So' chamar DEPOIS do TP creditado — e' best-effort: se falhar,
-/// loga e segue (o jogador ja' recebeu a TP; falta so' avisar a Google).
-///
-/// TODO: nao ha' retentativa se isto falhar (rede caida, token expirado de
-/// novo etc.) alem' do log de warn. Uma fila/los de reconciliacao periodica
-/// revendo `loja_pedidos` com provedor `google_play` sem reconhecimento
-/// confirmado resolveria, mas nao foi feita ainda.
-pub async fn reconhecer_best_effort(pacote_id: u16, purchase_token: &str) -> Result<(), Erro> {
+/// Purchase tokens and product ids go into a URL path: only the characters
+/// Google actually uses (letters, digits, `.`, `_`, `-`).
+fn token_seguro(t: &str) -> bool {
+    !t.is_empty() && t.len() <= 4096 && t.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+
+/// CONSUMES the purchase on Google, AFTER it was credited. Consuming also
+/// acknowledges it (no automatic refund in 3 days) and — what the old
+/// acknowledge-only code missed — frees the product to be bought AGAIN: a TP
+/// pack bought once stayed "owned" forever and Google refused the second
+/// purchase of the same pack. Best-effort: the player already has what they
+/// paid for; a failure only logs.
+pub async fn consumir_best_effort(product_id: &str, purchase_token: &str) -> Result<(), Erro> {
+    if !token_seguro(purchase_token) || !token_seguro(product_id) {
+        return Err(Erro::Recusado("Invalid purchase.".into()));
+    }
     let nome_do_pacote = nome_do_pacote_env().ok_or(Erro::NaoConfigurado)?;
-    let product_id = id_do_produto(pacote_id);
     let token_acesso = obter_token_acesso().await?;
     let url = format!(
-        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{nome_do_pacote}/purchases/products/{product_id}/tokens/{purchase_token}:acknowledge"
+        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{nome_do_pacote}/purchases/products/{product_id}/tokens/{purchase_token}:consume"
     );
     let resp = reqwest::Client::new()
         .post(&url)
@@ -258,7 +272,7 @@ pub async fn reconhecer_best_effort(pacote_id: u16, purchase_token: &str) -> Res
         Ok(())
     } else {
         let corpo = resp.text().await.unwrap_or_default();
-        Err(Erro::Rede(format!("acknowledge failed: {corpo}")))
+        Err(Erro::Rede(format!("consume failed: {corpo}")))
     }
 }
 

@@ -18,6 +18,8 @@
 //! `world::dungeon::dg_abrir_porao`, com a posição saindo da entidade. Se esta
 //! janela mentir, o servidor recusa — e é assim que tem que ser.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::dungeon::{self as dg, Pedido};
 use shared::protocol::ClientMessage;
@@ -59,7 +61,7 @@ impl Aviso {
     /// A linha de baixo: o que falta, ou o convite.
     pub fn recado(&self) -> String {
         if !self.tem_chave {
-            format!("Needs {}", nome_da_chave(self.chave))
+            format!("Needs {} · tap to craft", nome_da_chave(self.chave))
         } else if !self.na_porta {
             "Get closer".into()
         } else {
@@ -124,6 +126,8 @@ pub struct PoraoUi {
     /// As portas desta zona, achadas uma vez. A busca sonda até 192 pontos no
     /// relevo — barato ao trocar de ilha, caro a 60 quadros por segundo.
     cache: Option<(String, Vec<(u16, Vec2)>)>,
+    /// "Needs X key" was tapped: open Craft on that key (`main` takes it).
+    craftar: Option<u16>,
 }
 
 /// As portas desta zona, procurando o chão de verdade. Uma vez por zona.
@@ -153,7 +157,7 @@ impl PoraoUi {
     /// and the click also walked the character (`ui_pega_em` didn't know the
     /// banner), which walked away from the portal and called the entry off.
     pub fn pega_mouse(&self, m: Vec2) -> bool {
-        self.entrando.is_some() || self.retangulo.is_some_and(|r| r.contains(m))
+        self.entrando.is_some() || self.retangulo.is_some_and(|r| r.toca(m))
     }
 
     /// Stepping into a portal right now: (content, 0..1 progress).
@@ -247,7 +251,11 @@ impl PoraoUi {
         let topo_botao = r.y + r.h - 38.0 * f;
         let botao = Rect::new(r.x + 12.0 * f, topo_botao, r.w - 24.0 * f, 28.0 * f);
         let pode = a.pode_abrir();
-        estilo::cartao(botao, pode && botao.contains(m), pode);
+        // Without the key the button is still alive: it opens Craft on that
+        // key (owner, 08/11/2026: "on the portal with need X key, clicking
+        // there could open the key's craft menu").
+        let craftavel = !a.tem_chave;
+        estilo::cartao(botao, (pode || craftavel) && botao.toca(m), pode || craftavel);
         estilo::texto_centro(
             botao.center().x,
             botao.center().y + 5.0 * f,
@@ -255,11 +263,18 @@ impl PoraoUi {
             14,
             if pode { estilo::OURO } else { estilo::SUAVE },
         );
-        if pode && crate::foco::clique() && botao.contains(m) {
+        if pode && crate::foco::clique() && botao.toca(m) {
             // Not the request yet: the step in plays first.
             self.entrando = Some((a.conteudo, get_time()));
+        } else if craftavel && crate::foco::clique() && botao.toca(m) {
+            self.craftar = Some(a.chave);
         }
         None
+    }
+
+    /// The key whose craft the player asked for on the portal, once.
+    pub fn pede_craft(&mut self) -> Option<u16> {
+        self.craftar.take()
     }
 
 }

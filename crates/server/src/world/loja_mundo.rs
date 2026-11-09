@@ -105,6 +105,7 @@ impl GameWorld {
         let to = s.handle.to_client.clone();
         let personagem = s.name.clone();
         let conta = crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
+        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let Some(central) = crate::mercado::central() else {
             avisa(
                 &to,
@@ -122,6 +123,7 @@ impl GameWorld {
             PedidoLoja::ComprarTp { .. }
                 | PedidoLoja::ComprarTpGooglePlay { .. }
                 | PedidoLoja::ComprarItem { .. }
+                | PedidoLoja::ComprarOfertaGooglePlay { .. }
         );
         if compra {
             let agora = self.sim_time_s;
@@ -270,6 +272,58 @@ impl GameWorld {
                     }
                 }
                 PedidoLoja::Montar | PedidoLoja::Desmontar => return,
+                PedidoLoja::OfertasRelampago => {
+                    match crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
+                        Ok(v) => {
+                            if let Some(o) = v.iter().find(|o| o.nova) {
+                                crate::telemetria::conta_de(&nome_tel, "oferta_aberta", &o.id, 1);
+                            }
+                            avisa(&to, AvisoLoja::OfertasRelampago(v));
+                        }
+                        Err(e) => tracing::warn!("ofertas: listar falhou: {e:#}"),
+                    }
+                    // Only the list: no shop state reload on every check.
+                    return;
+                }
+                PedidoLoja::ComprarOfertaGooglePlay { oferta, pedido, purchase_token } => {
+                    match crate::ofertas::comprar(&central, &conta, &oferta, &pedido, &purchase_token).await {
+                        Ok(crate::ofertas::Compra::Feita(e, _saldo)) => {
+                            crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
+                            for (item_id, qtd) in e.itens {
+                                let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Moeda {
+                                    sid,
+                                    personagem: personagem.clone(),
+                                    item_id,
+                                    qtd,
+                                }));
+                            }
+                            if e.energia > 0 {
+                                let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Energia {
+                                    sid,
+                                    personagem: personagem.clone(),
+                                    qtd: e.energia,
+                                }));
+                            }
+                            let texto = if e.tp > 0 {
+                                format!("{} unlocked! +{} TP.", e.titulo, e.tp)
+                            } else {
+                                format!("{} unlocked!", e.titulo)
+                            };
+                            resultado(&to, true, texto);
+                        }
+                        Ok(crate::ofertas::Compra::JaFeita(_)) => {
+                            resultado(&to, true, "This purchase has already been delivered.");
+                        }
+                        Ok(crate::ofertas::Compra::Recusada(t)) => resultado(&to, false, t),
+                        Err(e) => {
+                            tracing::warn!("ofertas: compra falhou: {e:#}");
+                            resultado(&to, false, "The shop is unavailable right now.");
+                        }
+                    }
+                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
+                        avisa(&to, AvisoLoja::OfertasRelampago(v));
+                    }
+                }
             }
             enviar_estado(&central, &conta, &to, &tx_mundo, sid, &personagem).await;
         });

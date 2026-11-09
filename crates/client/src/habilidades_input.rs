@@ -1,4 +1,6 @@
 //! Gesture separated from drawing: releasing a click uses, dragging configures AUTO.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::{Rect, Vec2};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -33,7 +35,7 @@ impl Arrasto {
         let delta = p - de;
         if delta.y.abs() >= 30.0 && delta.y.abs() > delta.x.abs() {
             Some(Gesto::Auto(id, delta.y < 0.0))
-        } else if !self.longe && r.contains(p) {
+        } else if !self.longe && r.toca(p) {
             Some(Gesto::Usar(id))
         } else {
             None

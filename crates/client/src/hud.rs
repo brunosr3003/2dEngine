@@ -6,6 +6,8 @@
 //! lotacao muda o que da' pra fazer ali. Por isso isso fica na tela, nao num
 //! menu.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use std::f32::consts::PI;
 
@@ -164,7 +166,7 @@ pub fn draw_hud(
     desenha_fps(z);
     let r = z.area;
     estilo::painel(r);
-    let sobre = r.contains(mouse());
+    let sobre = r.toca(mouse());
     let zona = nome_da_zona(if info.zona.is_empty() {
         map.map_or("Exploring", |m| m.name.as_str())
     } else {
@@ -267,6 +269,8 @@ pub enum Topo {
     Avisos,
     /// Calendario de presenca.
     Presenca,
+    /// Flash offers: always in the quick bar, red badge while one runs.
+    Ofertas,
     Menu,
 }
 
@@ -283,8 +287,8 @@ pub fn selo(r: Rect) {
 pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
     // Arte do atlas (tools/icones/gerar_icones_ui.py); o vetor abaixo so' se
     // faltar o icone.
-    const NOMES: [&str; 7] = [
-        "bolsa", "missoes", "grupo", "avisos", "menu", "diarias", "presenca",
+    const NOMES: [&str; 8] = [
+        "bolsa", "missoes", "grupo", "avisos", "menu", "diarias", "presenca", "ofertas",
     ];
     if NOMES
         .get(i)
@@ -418,13 +422,15 @@ pub fn draw_topo(
     selo_missoes: bool,
     selo_diarias: bool,
     selo_presenca: bool,
+    selo_ofertas: bool,
     selo_menu: bool,
 ) -> Option<Topo> {
     let m = mouse();
     let clique = crate::foco::clique();
     let mut saida = None;
-    let nomes = ["Bag", "Quests", "Dailies", "Party", "Notices", "Presence"];
+    let nomes = ["Offers", "Bag", "Quests", "Dailies", "Party", "Notices", "Presence"];
     let alvos = [
+        Topo::Ofertas,
         Topo::Bolsa,
         Topo::Missoes,
         Topo::Diarias,
@@ -433,10 +439,10 @@ pub fn draw_topo(
         Topo::Presenca,
     ];
     // Qual pictograma cada icone usa (o 4 e' o do MENU).
-    let pictos = [0usize, 1, 5, 2, 3, 6];
+    let pictos = [7usize, 0, 1, 5, 2, 3, 6];
     let mut tooltip = None;
     for (i, r) in z.icones.iter().enumerate() {
-        let sobre = r.contains(m);
+        let sobre = r.toca(m);
         estilo::placa(*r, sobre);
         pictograma(
             pictos[i],
@@ -444,7 +450,7 @@ pub fn draw_topo(
             r.w * 0.30,
             if sobre { estilo::ACENTO } else { estilo::TEXTO },
         );
-        if (i == 1 && selo_missoes) || (i == 2 && selo_diarias) || (i == 5 && selo_presenca) {
+        if (i == 0 && selo_ofertas) || (i == 2 && selo_missoes) || (i == 3 && selo_diarias) || (i == 6 && selo_presenca) {
             selo(*r);
         }
         if sobre {
@@ -455,7 +461,7 @@ pub fn draw_topo(
         }
     }
     let r = z.menu;
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     estilo::placa(r, sobre);
     let cor = if sobre { estilo::ACENTO } else { estilo::TEXTO };
     pictograma(4, vec2(r.center().x, r.y + r.h * 0.38), r.h * 0.26, cor);
@@ -477,7 +483,7 @@ pub fn draw_topo(
 pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
     let r = z.dash;
     let m = mouse();
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     let c = r.center();
     let raio = r.w * 0.5;
     let cor = Color::new(0.35, 0.86, 1.0, 1.0);
@@ -522,7 +528,7 @@ pub fn draw_dash(z: &Zonas, restante: f32, duracao: f32) -> bool {
 pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
     let r = z.pulo;
     let m = mouse();
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     let segurando = sobre && is_mouse_button_down(MouseButton::Left);
     let c = r.center();
     let raio = r.w * 0.5;
@@ -561,7 +567,7 @@ pub fn draw_pulo(z: &Zonas, no_ar: bool) -> (bool, bool) {
 pub fn draw_botao_economia(z: &Zonas) -> bool {
     let r = z.economia;
     let m = mouse();
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     estilo::cartao(r, sobre, false);
     crate::economia::bateria(
         r.center() - vec2(1.0, 0.0),
@@ -584,7 +590,7 @@ pub fn draw_botao_economia(z: &Zonas) -> bool {
 /// Controle persistente: um toque liga, o próximo desliga.
 pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
     let r = z.sprint;
-    let sobre = r.contains(mouse());
+    let sobre = r.toca(mouse());
     estilo::cartao(r, sobre, ativo);
     let cor = if ativo { estilo::ACENTO } else { estilo::TEXTO };
     crate::icones_ui::ui("sprint", r.center() - vec2(0.0, r.h * 0.10), r.w * 0.75, cor);
@@ -597,7 +603,7 @@ pub fn draw_sprint(z: &Zonas, ativo: bool) -> bool {
 pub fn draw_botao_montaria(z: &Zonas, montado: bool, progresso: Option<f32>, tem: bool) -> bool {
     let r = z.montaria;
     let m = mouse();
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     estilo::cartao(r, sobre, montado);
     let cor = if !tem {
         estilo::alfa(estilo::TEXTO, 0.4)
@@ -680,11 +686,11 @@ pub fn draw_rapidos(
         let r = rects[i];
         // A plaque with the slot set into it: a frame on the world, a
         // recess for the item.
-        estilo::placa(r, r.contains(m));
+        estilo::placa(r, r.toca(m));
         estilo::slot(
             Rect::new(r.x + 3.0, r.y + 3.0, r.w - 6.0, r.h - 6.0),
             None,
-            r.contains(m),
+            r.toca(m),
             false,
         );
         if itens[i] == 0 {
@@ -763,7 +769,7 @@ pub fn draw_rapidos(
                     estilo::AUTO,
                 );
             }
-            None if r.contains(m) => {
+            None if r.toca(m) => {
                 let t = if itens[i] == 0 {
                     "Espaço vazio · clique pra configurar".to_string()
                 } else {
@@ -920,7 +926,7 @@ pub fn draw_ficha(
 /// Um toque alterna o modo; a cor e o texto mostram o estado confirmado pelo servidor.
 pub fn draw_modo_pk(z: &Zonas, pk: shared::PkState) -> bool {
     let r = z.modo_pk;
-    let sobre = r.contains(mouse());
+    let sobre = r.toca(mouse());
     let cor = if pk.hostil { Color::new(0.76, 0.35, 1.0, 1.0) } else { estilo::AUTO };
     estilo::cartao(r, sobre, pk.hostil);
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * z.s, cor);
@@ -973,7 +979,7 @@ pub fn draw_buffs(
         }
         let min = ((ate - agora) as f32 / 60.0).ceil() as i64;
         let r = Rect::new(x, area.y, 40.0 * k, 40.0 * k);
-        estilo::cartao(r, r.contains(mouse()), false);
+        estilo::cartao(r, r.toca(mouse()), false);
         let c = r.center();
         estilo::ret_arredondado(
             Rect::new(c.x - 3.0 * k, c.y - 15.0 * k, 6.0 * k, 8.0 * k),
@@ -983,7 +989,7 @@ pub fn draw_buffs(
         draw_circle(c.x, c.y + 3.0 * k, 11.0 * k, cor);
         estilo::texto_centro(c.x, c.y + 7.0 * k, sigla, fonte(11.0, k), Color::new(0.12, 0.09, 0.02, 1.0));
         estilo::texto_centro(c.x, r.y + r.h + 12.0 * k, &format!("{min}m"), fonte(11.0, k), estilo::OURO);
-        if r.contains(mouse()) {
+        if r.toca(mouse()) {
             dica_ativa = Some((r, format!("{dica} · {min} min")));
         }
         x += 48.0 * k;
@@ -1000,7 +1006,7 @@ pub fn draw_buffs(
             continue;
         }
         let r = Rect::new(x, area.y, 40.0 * k, 40.0 * k);
-        estilo::cartao(r, r.contains(mouse()), false);
+        estilo::cartao(r, r.toca(mouse()), false);
         let c = r.center();
         draw_circle(c.x, c.y, 13.0 * k, cor);
         estilo::texto_centro(c.x, c.y + 5.0 * k, sigla, fonte(12.0, k), Color::new(0.08, 0.06, 0.05, 1.0));
@@ -1011,7 +1017,7 @@ pub fn draw_buffs(
             fonte(11.0, k),
             estilo::OURO,
         );
-        if r.contains(mouse()) {
+        if r.toca(mouse()) {
             dica_ativa = Some((r, format!("{nome} · {:.0} s", s.ceil())));
         }
         x += 48.0 * k;
@@ -1113,7 +1119,7 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u32, hp_max: u32, chefe:
         Some(&format!("{hp} / {hp_max}")),
     );
     let x = z.alvo_fechar();
-    let sobre = x.contains(mouse());
+    let sobre = x.toca(mouse());
     let corx = if sobre { estilo::TEXTO } else { estilo::SUAVE };
     let c = x.center();
     let d = x.w * 0.25;

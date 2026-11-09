@@ -6,6 +6,8 @@
 //! leaving the area ("Waiting for resources…").
 //!
 //! Standing nearby yields nothing: gathering is from the chosen node (docs/COLETA.md).
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -131,7 +133,7 @@ pub fn retangulo() -> Rect {
 }
 
 pub fn pega_mouse() -> bool {
-    retangulo().contains(Vec2::from(mouse_position()))
+    retangulo().toca(Vec2::from(mouse_position()))
 }
 
 /// The cog in the button's corner: opens the configuration with a touch or a
@@ -394,7 +396,7 @@ impl AutoColeta {
         let g = engrenagem_de(r);
         let gc = g.center();
         let gr = g.w * 0.34;
-        let sobre_g = g.contains(Vec2::from(mouse_position()));
+        let sobre_g = g.toca(Vec2::from(mouse_position()));
         let cor_g = if sobre_g {
             estilo::ACENTO
         } else {

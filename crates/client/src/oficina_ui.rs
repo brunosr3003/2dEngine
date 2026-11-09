@@ -7,6 +7,8 @@
 //! `CombinarResultado`); the panel only reads the bag to show what is
 //! possible and not send a request that comes back refused.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -378,7 +380,7 @@ impl Oficina {
                 continue;
             }
             let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
-            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
+            let sobre = !arrastando && linha.toca(mouse) && lista.toca(mouse);
             realce(linha, self.sel_grupo == Some(chave(g)), sobre);
             crate::bolsa::icone_do_item_com(
                 Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)),
@@ -420,7 +422,7 @@ impl Oficina {
                     VERDE,
                 );
             }
-            if clique.is_some_and(|c| linha.contains(c)) {
+            if clique.is_some_and(|c| linha.toca(c)) {
                 self.sel_grupo = Some(chave(g));
             }
         }
@@ -606,7 +608,7 @@ impl Oficina {
                 continue;
             }
             let linha = Rect::new(lista.x, y, lista.w - u(12.0), u(LINHA) - u(3.0));
-            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
+            let sobre = !arrastando && linha.toca(mouse) && lista.toca(mouse);
             realce(linha, self.sel_receita == Some(r.entrada), sobre);
             crate::bolsa::icone_do_item_com(
                 Rect::new(linha.x + u(4.0), linha.y + u(4.0), u(34.0), u(34.0)),
@@ -648,7 +650,7 @@ impl Oficina {
                     VERDE,
                 );
             }
-            if clique.is_some_and(|c| linha.contains(c)) {
+            if clique.is_some_and(|c| linha.toca(c)) {
                 self.sel_receita = Some(r.entrada);
             }
         }

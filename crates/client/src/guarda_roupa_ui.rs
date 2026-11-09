@@ -12,6 +12,8 @@
 //! (`last_sent.remove`), e mandar a cada clique seria uma tempestade de metas
 //! por um jogador mexendo numa seta. Vai no "Apply".
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::aparencia::{Aparencia, GuardaRoupa};
 
@@ -221,10 +223,10 @@ impl GuardaRoupaUi {
             estilo::botao(esq, "‹", estilo::estado_de(esq, *n <= 1, false), false);
             estilo::botao(dir, "›", estilo::estado_de(dir, *n <= 1, false), false);
             if let Some(m) = clique_opcao.filter(|m| opcoes.contains(*m) && *n > 1) {
-                if esq.contains(m) {
+                if esq.toca(m) {
                     v = (v + n - 1) % n;
                 }
-                if dir.contains(m) {
+                if dir.toca(m) {
                     v = (v + 1) % n;
                 }
             }
@@ -292,7 +294,7 @@ impl GuardaRoupaUi {
         estilo::cartao(palco, false, false);
         let area = Rect::new(palco.x + 4.0, palco.y + 4.0,
             palco.w - 8.0, palco.h - 32.0 * f);
-        if is_mouse_button_pressed(MouseButton::Left) && area.contains(m) {
+        if is_mouse_button_pressed(MouseButton::Left) && area.toca(m) {
             self.mouse_anterior = Some(m);
         }
         if is_mouse_button_down(MouseButton::Left) {
@@ -332,11 +334,11 @@ impl GuardaRoupaUi {
         let b = Rect::new(opcoes.x, p.y + p.h - 56.0 * f, opcoes.w, (42.0 * f).max(40.0));
         estilo::botao(b, "Apply", estilo::estado_de(b, !mudou, false), mudou);
         let mut saida = None;
-        if clicou && mudou && b.contains(m) {
+        if clicou && mudou && b.toca(m) {
             saida = Some(shared::protocol::ClientMessage::UpdateVisual { aparencia: a });
             self.vigente = a;
         }
-        if clicou && (fechar.contains(m) || !p.contains(m)) {
+        if clicou && (fechar.toca(m) || !p.toca(m)) {
             // Fechar DESISTE: o que foi experimentado e não aplicado volta.
             self.provando = Some(self.vigente);
             self.aberto = false;

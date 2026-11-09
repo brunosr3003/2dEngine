@@ -20,6 +20,8 @@
 //! retângulo de cada widget, é o que faz "o resto da tela não responde" valer
 //! também pro mundo, pro joystick e pra quem eu esquecesse de converter.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use std::cell::{Cell, RefCell};
 
@@ -175,7 +177,7 @@ pub fn passa(r: Rect) -> bool {
 pub fn passa_ponto(p: Vec2) -> bool {
     match ALVO.with(|a| a.get()) {
         None => true,
-        Some(alvo) => alvo.contains(p),
+        Some(alvo) => alvo.toca(p),
     }
 }
 

@@ -12,6 +12,8 @@
 //! API pro HUD: `abrir()`, `fechar()`, `aberto()`, `pega_mouse()`,
 //! `define_receitas(..)`, `resultado(..)` e `desenha(..) -> Option<ClientMessage>`.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -180,12 +182,35 @@ impl Craft {
         self.aberto = true;
         self.so_combinar = false;
         if let Some(r) = self.receitas.iter().find(|r| r.id == id) {
-            if let Some(i) = ABAS.iter().position(|c| *c == r.category) {
+            // A key recipe is filed as MATERIAL, which is no tab: its tab is
+            // the Dungeon keys one (same rule as `da_aba`).
+            let cat = if shared::porao::porao_da_chave(r.output_item_id).is_some() {
+                CAT_CHAVES
+            } else {
+                r.category
+            };
+            if let Some(i) = ABAS.iter().position(|c| *c == cat) {
                 self.aba = i;
             }
             self.sel = Some(id);
             self.rolagem.zera();
         }
+    }
+
+    /// Opens straight on the DUNGEON KEYS tab, on `chave` when given (the
+    /// recipe that makes it). Owner, 08/11/2026: the Shipwreck Bay quest
+    /// opened Craft on armour and "you get lost"; and tapping a portal's
+    /// "needs X key" should open that key's craft.
+    pub fn abrir_chaves(&mut self, chave: Option<u16>) {
+        self.aberto = true;
+        self.so_combinar = false;
+        if let Some(i) = ABAS.iter().position(|c| *c == CAT_CHAVES) {
+            self.aba = i;
+        }
+        self.sel = chave.and_then(|k| {
+            self.receitas.iter().find(|r| r.output_item_id == k).map(|r| r.id)
+        });
+        self.rolagem.zera();
     }
 
     /// Abre a sintese do material indicada pela lupa de Onde obter.
@@ -314,7 +339,7 @@ impl Craft {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// As receitas da aba atual, em ordem de nivel e nome.
@@ -466,7 +491,7 @@ impl Craft {
                 continue;
             }
             let linha = Rect::new(lista.x, y, lista.w - u(12.0), linha_h - u(3.0));
-            let sobre = !arrastando && linha.contains(mouse) && lista.contains(mouse);
+            let sobre = !arrastando && linha.toca(mouse) && lista.toca(mouse);
             let marcada = self.sel == Some(r.id);
             let a = if marcada {
                 0.14
@@ -518,7 +543,7 @@ impl Craft {
                     VERDE,
                 );
             }
-            if clique.is_some_and(|c| linha.contains(c)) {
+            if clique.is_some_and(|c| linha.toca(c)) {
                 self.sel = Some(r.id);
             }
         }

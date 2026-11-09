@@ -4,6 +4,8 @@
 //! The server decides everything (losing 10% of the level, 3 free recoveries
 //! per day, a gold cost after that — see docs/GAMEPLAY.md, Death). Here we
 //! only show and ask. No key opens or revives: click only.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::{ClientMessage, MorteRecuperavelNet};
 
@@ -201,7 +203,7 @@ impl Morte {
 
 /// Botao simples no estilo do HUD. Devolve `true` no clique.
 fn botao(r: Rect, texto: &str, ativo: bool) -> bool {
-    let sobre = r.contains(Vec2::from(mouse_position()));
+    let sobre = r.toca(Vec2::from(mouse_position()));
     let cor = if !ativo {
         estilo::SUAVE
     } else if sobre {

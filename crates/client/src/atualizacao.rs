@@ -3,8 +3,22 @@ use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-pub const BUILD: u64 = 2026100166;
+pub const BUILD: u64 = 2026100167;
 const SITE: &str = "https://mmo.brunji.com.br/#downloads";
+/// Google Play page of the game: the Play Store APP first (`market://`), the
+/// web page if the phone has no store app.
+const LOJA_ANDROID_APP: &str = "market://details?id=com.niertech.tempest";
+const LOJA_ANDROID_WEB: &str = "https://play.google.com/store/apps/details?id=com.niertech.tempest";
+
+/// Android installs and updates ONLY through Google Play (owner, 08/11/2026:
+/// "when the client changes on Android it should redirect the user to the
+/// store to update the game"). Everyone else: the site's download page.
+fn abrir_atualizacao(url_do_manifesto: Option<&str>) -> bool {
+    if plataforma() == "android" {
+        return crate::nativo::abrir_url(LOJA_ANDROID_APP) || crate::nativo::abrir_url(LOJA_ANDROID_WEB);
+    }
+    crate::nativo::abrir_url(url_do_manifesto.unwrap_or(SITE))
+}
 
 pub fn protocolo_incompativel(mensagem: &str) -> bool {
     mensagem.to_ascii_lowercase().contains("protocol mismatch")
@@ -16,6 +30,8 @@ pub struct Atualizacao {
     aviso: Option<String>,
     dispensado: bool,
     erro: bool,
+    /// Android already sent to the store automatically (once per screen).
+    redirecionado: bool,
 }
 
 impl Default for Atualizacao {
@@ -26,6 +42,7 @@ impl Default for Atualizacao {
             aviso: None,
             dispensado: false,
             erro: false,
+            redirecionado: false,
         }
     }
 }
@@ -70,22 +87,33 @@ fn destino(corpo: &str, plataforma: &str, build: u64) -> Option<String> {
 }
 
 impl Atualizacao {
-    /// Mandatory connection error: works even with no manifest or after
-    /// dismissing the optional notice. In this flow the destination is always the site.
+    /// Mandatory connection error (server on a newer protocol): works even
+    /// with no manifest. Every release bumps the protocol, so this is THE
+    /// update screen — nobody plays on an old version. On Android it opens
+    /// Google Play by itself the first time it shows.
     pub fn desenha_incompativel(&mut self) -> bool {
+        let android = plataforma() == "android";
+        if android && !self.redirecionado {
+            self.redirecionado = true;
+            self.erro = !abrir_atualizacao(None);
+        }
         let r = crate::ui::painel((screen_width() - 24.0).min(560.0), 340.0, "Update required");
         let cx = r.center().x;
         crate::ui::texto_centro(cx, r.y + 20.0,
-            "Your version is incompatible with the server.", 16, crate::ui::OURO);
+            "A new version of Tempest is out.", 16, crate::ui::OURO);
         crate::ui::texto_centro(cx, r.y + 44.0,
-            "Update the game from the site to continue.", 16, crate::ui::OURO);
+            if android { "Update it on Google Play to keep playing." }
+            else { "Update the game from the site to continue." }, 16, crate::ui::OURO);
         if crate::ui::botao(Rect::new(r.x, r.y + 68.0, r.w, 44.0),
-            "Open the site to update", true) {
-            self.erro = !crate::nativo::abrir_url(SITE);
+            if android { "Update on Google Play" } else { "Open the site to update" }, true) {
+            self.erro = !abrir_atualizacao(None);
         }
-        crate::ui::texto_centro(cx, r.y + 138.0, "mmo.brunji.com.br", 16, crate::ui::OURO);
+        crate::ui::texto_centro(cx, r.y + 138.0,
+            if android { "Google Play \u{2192} Tempest Online \u{2192} Update" } else { "mmo.brunji.com.br" },
+            16, crate::ui::OURO);
         if self.erro {
-            crate::ui::erro(cx, r.y + 164.0, "Could not open the browser.");
+            crate::ui::erro(cx, r.y + 164.0,
+                if android { "Could not open Google Play." } else { "Could not open the browser." });
         }
         crate::ui::botao(Rect::new(r.x, r.y + 186.0, r.w, 44.0), "Back", true)
     }
@@ -126,7 +154,14 @@ impl Atualizacao {
             16,
             crate::ui::OURO,
         );
-        let botao = if url.starts_with("https://play.google.com/")
+        let android = plataforma() == "android";
+        if android && !self.redirecionado {
+            self.redirecionado = true;
+            self.erro = !abrir_atualizacao(Some(url));
+        }
+        let botao = if android {
+            "Update on Google Play"
+        } else if url.starts_with("https://play.google.com/")
             || url.starts_with("https://apps.apple.com/")
         {
             "Update in the store"
@@ -142,22 +177,18 @@ impl Atualizacao {
             botao,
             true,
         ) {
-            self.erro = !crate::nativo::abrir_url(url);
+            self.erro = !abrir_atualizacao(Some(url));
         }
         if self.erro {
             crate::ui::erro(
                 r.center().x,
                 r.y + 140.0,
-                "Open mmo.brunji.com.br in your browser.",
+                if android { "Open Google Play and update Tempest Online." }
+                else { "Open mmo.brunji.com.br in your browser." },
             );
         }
-        if crate::ui::botao(
-            Rect::new(r.x + 20.0, r.y + 165.0, r.w - 40.0, 40.0),
-            "Not now",
-            true,
-        ) {
-            self.dispensado = true;
-        }
+        // No "Not now": an old client is not allowed to play (owner,
+        // 08/11/2026: "I don't want users with different versions").
         true
     }
 }
@@ -166,6 +197,7 @@ impl Atualizacao {
 pub async fn previa_incompativel() {
     let mut aviso = Atualizacao {
         busca: None, inicio: Instant::now(), aviso: None, dispensado: true, erro: false,
+        redirecionado: true,
     };
     for (w, h) in [(960, 540), (640, 360)] {
         request_new_screen_size(w as f32, h as f32);

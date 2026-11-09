@@ -1,4 +1,6 @@
 //! Selecao e criacao usam o mesmo contrato de personagens do servidor.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::{hud_estilo as ui, render3d, vox::VoxCache};
 use macroquad::material::{gl_use_default_material, gl_use_material, Material};
 use macroquad::prelude::*;
@@ -96,9 +98,10 @@ impl Personagens {
                 self.criando = false;
                 self.mensagem = Some("Personagem criado. Sua jornada pode começar.".into());
             }
-        } else if chars.is_empty() {
+        } else if chars.is_empty() && !self.criando {
             self.criando = true;
             self.foco_nome = true;
+            self.sortear_aparencia();
         }
         *selecionado = (*selecionado).min(chars.len().saturating_sub(1));
         if !self.arma.is_some_and(|id| conjunto_disponivel(id, armas)) {
@@ -303,7 +306,7 @@ impl Personagens {
             }
             if !ocupado {
                 if let Some(p) = apertou_em() {
-                    self.foco_nome = campo.contains(p);
+                    self.foco_nome = campo.toca(p);
                 }
             }
             if !ocupado && self.foco_nome {
@@ -696,7 +699,7 @@ impl Personagens {
                 12,
                 ui::SUAVE,
             );
-            if clique.is_some_and(|p| card.contains(p) && area.contains(p)) {
+            if clique.is_some_and(|p| card.toca(p) && area.toca(p)) {
                 *selecionado = i;
                 self.giro = 0.0;
                 self.mensagem = None;
@@ -734,6 +737,7 @@ impl Personagens {
             self.mensagem = None;
             self.foco_nome = true;
             self.giro = 0.0;
+            self.sortear_aparencia();
         }
         if let Some(c) = chars.get(*selecionado) {
             let conjunto = Conjunto::da_arma(c.weapon_id.unwrap_or(0));
@@ -872,7 +876,7 @@ impl Personagens {
         // Sem caixa atras do boneco: ele fica de pe' direto na frente da ilha.
         // (Um retangulo escuro translucido aqui escurecia o fundo e ficava feio.)
         let mouse = Vec2::from(mouse_position());
-        if is_mouse_button_down(MouseButton::Left) && r.contains(mouse) {
+        if is_mouse_button_down(MouseButton::Left) && r.toca(mouse) {
             if let Some(antes) = self.mouse_anterior {
                 self.giro += (mouse.x - antes.x) * 0.012;
             }
@@ -1082,9 +1086,43 @@ fn apertou_em() -> Option<Vec2> {
     crate::foco::clique().then(|| Vec2::from(mouse_position()))
 }
 fn clicou(r: Rect) -> bool {
-    apertou_em().is_some_and(|p| r.contains(p))
+    apertou_em().is_some_and(|p| r.toca(p))
 }
 impl Personagens {
+    /// A random FREE look: face, hair (or a free hat), hair colour, skin and
+    /// outfit. Every new character starts randomized, so players don't all
+    /// come out as the same default pirate (owner, 08/11/2026: "always
+    /// randomize at first, that way players will be different").
+    pub fn sortear_aparencia(&mut self) {
+        use shared::aparencia as ap;
+        let mut semente = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0x9e37_79b9, |d| d.as_nanos() as u64)
+            ^ (self as *const Self as u64);
+        let mut dado = |n: usize| -> usize {
+            // xorshift64*: no dependency, good enough for a look.
+            semente ^= semente >> 12;
+            semente ^= semente << 25;
+            semente ^= semente >> 27;
+            (semente.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 33) as usize % n.max(1)
+        };
+        let chapeus = ap::chapeus_gratis();
+        let gratis = ap::roupas_gratis();
+        self.aparencia.rosto = dado(ap::ROSTOS as usize) as u8;
+        // Mostly hair; a free hat now and then.
+        self.aparencia.cabelo = if !chapeus.is_empty() && dado(4) == 0 {
+            ap::cabelo_do_chapeu(chapeus[dado(chapeus.len())]).unwrap_or(0)
+        } else {
+            dado(ap::CABELOS as usize) as u8
+        };
+        self.aparencia.cor_cabelo = dado(ap::CORES_DE_CABELO.len()) as u8;
+        self.aparencia.pele = dado(ap::TONS_DE_PELE.len()) as u8;
+        self.aparencia.roupa = match dado(gratis.len() + 1) {
+            0 => 0,
+            k => gratis[k - 1],
+        };
+    }
+
     /// Os quatro seletores de aparência: rosto, cabelo, cor e pele.
     ///
     /// Cada um é `‹ nome ›` — a forma mais barata que existe de escolher
@@ -1093,6 +1131,11 @@ impl Personagens {
     fn desenha_aparencia(&mut self, x: f32, y: f32, lw: f32, alt: f32, ocupado: bool) -> f32 {
         use shared::aparencia as ap;
         ui::texto(x, y, "APPEARANCE", 13, ui::OURO);
+        // Randomize: a whole new free look in one tap.
+        let rw = 120.0_f32.min(lw * 0.45);
+        if botao(Rect::new(x + lw - rw, y - 20.0, rw, 28.0), "Randomize", !ocupado, false) {
+            self.sortear_aparencia();
+        }
         let mut y = y + 8.0;
         // (rótulo, quantas opções, índice atual)
         // Hair + "no hair" + the FREE hats; the paid ones are for the shop.
@@ -1182,7 +1225,7 @@ impl Personagens {
 }
 
 fn botao(r: Rect, t: &str, ativo: bool, destaque: bool) -> bool {
-    let sobre = ativo && r.contains(Vec2::from(mouse_position()));
+    let sobre = ativo && r.toca(Vec2::from(mouse_position()));
     draw_rectangle(
         r.x,
         r.y,

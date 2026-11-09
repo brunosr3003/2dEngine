@@ -2,6 +2,8 @@
 //! the ones the story has unlocked. The server decides everything
 //! (`shared::viagem`); here we only draw the list it sent.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::viagem::{estado, Destino};
 
@@ -107,7 +109,7 @@ impl ViagemUi {
                     40.0 * f,
                 );
                 estilo::botao(b, "Board", estilo::estado_de(b, false, false), true);
-                if clicou && b.contains(m) {
+                if clicou && b.toca(m) {
                     escolha = Some(Escolha::Ilha(d.ilha));
                 }
             }
@@ -139,11 +141,11 @@ impl ViagemUi {
                 40.0 * f,
             );
             estilo::botao(b, "Ir", estilo::estado_de(b, false, false), true);
-            if clicou && b.contains(m) {
+            if clicou && b.toca(m) {
                 escolha = Some(Escolha::MinhaIlha);
             }
         }
-        if escolha.is_some() || (clicou && (fechar.contains(m) || !p.contains(m))) {
+        if escolha.is_some() || (clicou && (fechar.toca(m) || !p.toca(m))) {
             self.fechar();
         }
         escolha

@@ -10,6 +10,8 @@
 //! Quem decide tudo é o servidor. Aqui só se desenha o estado que ele mandou
 //! e se devolve o pedido que o dedo encostou.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::magica::{AvisoMagica, Bonus, PedidoMagica};
 
@@ -634,7 +636,7 @@ impl MagicaUi {
                     estilo::estado_de(caixa, false, self.entradas == n),
                     self.entradas == n,
                 );
-                if pode && clicou && caixa.contains(m) {
+                if pode && clicou && caixa.toca(m) {
                     self.entradas = n;
                 }
             }
@@ -795,7 +797,7 @@ impl MagicaUi {
 
         // FECHAR: no X, ou tocando FORA. Sem a segunda, uma janela que
         // estoure a tela prende o jogador — e foi o que o dono viu.
-        if clicou && (fechar.contains(m) || !p.contains(m)) {
+        if clicou && (fechar.toca(m) || !p.toca(m)) {
             self.aberto = false;
         }
         if let Some((t, quando)) = &self.aviso {

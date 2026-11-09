@@ -16,6 +16,8 @@
 //! contagem continua andando na tela, e nao ha' como ela discordar do
 //! servidor: os dois olham pro mesmo instante.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::bosses::{conta_regressiva, falta_pra_voltar, IlhaNoMundo};
 use shared::terreno::{DefIlha, ARQUIPELAGO};
@@ -183,7 +185,7 @@ pub fn desenha(
         let a = opacidade(d);
         let aqui = zona_atual == Some(d.zona);
         let info = mundo.da_zona(d.zona);
-        let sob = c.distance(m) <= raio * 0.8 && r.contains(m);
+        let sob = c.distance(m) <= (raio * 0.8).max(crate::ui::alvo_minimo() * 0.5) && r.toca(m);
         if aqui || sob {
             draw_circle_lines(
                 c.x,

@@ -4,6 +4,8 @@
 //! Attendance) and, once per session, on its own at login when there is something to claim.
 //!
 //! Everything that counts is the server's: the window only shows state and asks.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -316,7 +318,7 @@ impl PresencaUi {
             18,
             estilo::TEXTO,
         );
-        if clicou && fechar.contains(m) {
+        if clicou && fechar.toca(m) {
             self.fechar();
             return saida;
         }
@@ -341,7 +343,7 @@ impl PresencaUi {
             for (i, c) in estado.calendarios.iter().enumerate() {
                 let tw = estilo::medir(&c.nome, 14) + 28.0 * f;
                 let r = Rect::new(x, y, tw, 34.0 * f);
-                estilo::cartao(r, r.contains(m), i == self.aba);
+                estilo::cartao(r, r.toca(m), i == self.aba);
                 estilo::texto_centro(
                     r.center().x,
                     r.center().y + 5.0 * f,
@@ -356,7 +358,7 @@ impl PresencaUi {
                 if c.pode_hoje {
                     crate::hud::selo(r);
                 }
-                if clicou && r.contains(m) {
+                if clicou && r.toca(m) {
                     self.aba = i;
                 }
                 x += tw + 8.0 * f;
@@ -399,7 +401,7 @@ impl PresencaUi {
                 if coluna_i == COLUNAS - 1 { cw * LARGURA_DO_BONUS } else { cw },
                 ch,
             );
-            let sobre = r.contains(m);
+            let sobre = r.toca(m);
             let resgatado = (i as u8) < cal.resgatados;
             let hoje = i == proximo && cal.pode_hoje;
             let marco = pr::e_marco(n);
@@ -531,7 +533,7 @@ impl PresencaUi {
             62.0 * f,
         );
         let ativo = cal.pode_hoje;
-        estilo::cartao(bot, ativo && bot.contains(m), ativo);
+        estilo::cartao(bot, ativo && bot.toca(m), ativo);
         if ativo {
             estilo::borda_arredondada(bot, estilo::RAIO_PEQUENO, 2.0, estilo::ACENTO);
         }
@@ -545,7 +547,7 @@ impl PresencaUi {
         if let Some(t) = &self.ultimo {
             estilo::texto_ajustado(t, bot.x, bot.y + bot.h + 18.0 * f, bot.w, 11, estilo::SUAVE);
         }
-        if ativo && clicou && bot.contains(m) {
+        if ativo && clicou && bot.toca(m) {
             saida.push(ClientMessage::Presenca {
                 pedido: PedidoPresenca::Resgatar { calendario: cal.id },
             });

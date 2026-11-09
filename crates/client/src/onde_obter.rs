@@ -16,6 +16,8 @@
 //! ilhas so' existe pela historia, no Capitao do Porto.
 //!
 //! Nada abre por tecla: so' a lupa e o toque.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -434,7 +436,7 @@ impl OndeObter {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto() && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto() && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// Desenha o popup. `Some` no quadro em que um "Ir" foi tocado.
@@ -557,7 +559,7 @@ impl OndeObter {
                         Ir::AbrirDungeons | Ir::AbrirCalendario => "Open",
                     };
                     let _ = crate::ui::botao(b, rotulo, visivel);
-                    if visivel && clique.is_some_and(|c| b.contains(c) && lista.contains(c)) {
+                    if visivel && clique.is_some_and(|c| b.toca(c) && lista.toca(c)) {
                         saida = Some(ir.clone());
                     }
                 }
@@ -594,7 +596,7 @@ impl OndeObter {
 /// toque que o `r` pedir (deixe >= 30 px).
 pub fn botao(r: Rect) -> bool {
     let m = Vec2::from(mouse_position());
-    let sobre = r.contains(m);
+    let sobre = r.toca(m);
     estilo::cartao(r, sobre, false);
     let cor = if sobre { estilo::ACENTO } else { estilo::OURO };
     desenha_lupa(r, cor);
@@ -606,7 +608,7 @@ pub fn botao(r: Rect) -> bool {
 /// acerta. `true` no toque.
 pub fn lupa_no_icone(icone: Rect) -> bool {
     let m = Vec2::from(mouse_position());
-    let sobre = icone.contains(m);
+    let sobre = icone.toca(m);
     let s = (icone.w * 0.42).max(16.0);
     let canto = Rect::new(icone.x + icone.w - s, icone.y, s, s);
     estilo::ret_arredondado(canto, s * 0.25, Color::new(0.0, 0.0, 0.0, 0.55));

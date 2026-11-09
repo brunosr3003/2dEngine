@@ -9,6 +9,8 @@
 //! API pro HUD: `abrir()`, `fechar()`, `aberto()`, `pega_mouse()`,
 //! `resultado(..)` e `desenha(..) -> Option<ClientMessage>`.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::prelude::*;
@@ -230,7 +232,7 @@ fn confirma_refino(nome: &str, i: &Info, ouve: bool) -> Option<bool> {
     let m = Vec2::from(mouse_position());
     // CANCELAR é o botão de destaque, e o "sim" é o apagado: aqui o caminho
     // seguro é o que deve estar debaixo do polegar.
-    estilo::cartao(cancelar, cancelar.contains(m), true);
+    estilo::cartao(cancelar, cancelar.toca(m), true);
     estilo::texto_centro_forte(
         cancelar.center().x,
         cancelar.center().y + 6.0 * f,
@@ -238,7 +240,7 @@ fn confirma_refino(nome: &str, i: &Info, ouve: bool) -> Option<bool> {
         16,
         estilo::OURO,
     );
-    estilo::cartao(sim, sim.contains(m), false);
+    estilo::cartao(sim, sim.toca(m), false);
     estilo::texto_centro(
         sim.center().x,
         sim.center().y + 6.0 * f,
@@ -249,12 +251,12 @@ fn confirma_refino(nome: &str, i: &Info, ouve: bool) -> Option<bool> {
     if !ouve || !crate::foco::clique() {
         return None;
     }
-    if sim.contains(m) {
+    if sim.toca(m) {
         return Some(true);
     }
     // Tocar FORA cancela, como em toda janela do jogo — e aqui isso é a
     // resposta certa por acidente, que é como tem que ser.
-    if cancelar.contains(m) || !r.contains(m) {
+    if cancelar.toca(m) || !r.toca(m) {
         return Some(false);
     }
     None
@@ -370,7 +372,7 @@ impl Forja {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// `RefinoResultado` do servidor.
@@ -507,7 +509,7 @@ impl Forja {
                     estilo::AUTO,
                 );
             }
-            if r.contains(mouse) && clicou {
+            if r.toca(mouse) && clicou {
                 self.sel = Some(*alvo);
             }
         }

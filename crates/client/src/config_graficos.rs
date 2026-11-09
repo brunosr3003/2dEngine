@@ -7,6 +7,8 @@
 //!
 //! Saved per DEVICE, next to the remembered login (`lembranca::caminho`): the
 //! same character on a phone and on a desktop wants different settings.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU16, AtomicU8, Ordering};
 
 use macroquad::prelude::*;
@@ -459,7 +461,7 @@ impl ConfigGraficos {
         let fechar = Rect::new(r.x + r.w - 44.0 * f, r.y + 8.0 * f, 36.0 * f, 36.0 * f);
         estilo::texto_centro(fechar.center().x, fechar.center().y + 7.0 * f, "X", 18, estilo::TEXTO);
         let m = Vec2::from(mouse_position());
-        if crate::foco::clique() && fechar.contains(m) {
+        if crate::foco::clique() && fechar.toca(m) {
             self.fechar();
             return;
         }
@@ -468,7 +470,7 @@ impl ConfigGraficos {
         let area = Rect::new(r.x, r.y + topo * f, r.w, r.h - topo * f - 4.0 * f);
         let total = conteudo_h - topo * f;
         let toque = self.rolagem.quadro(area, total, 60.0 * f);
-        let em = |b: Rect| toque.is_some_and(|p| b.contains(p) && area.contains(p));
+        let em = |b: Rect| toque.is_some_and(|p| b.toca(p) && area.toca(p));
         crate::rolagem::recortar(Some(area));
         let cw = r.w / colunas as f32;
         let mut clicado = None;
@@ -485,7 +487,7 @@ impl ConfigGraficos {
                 for (o, nome) in l.opcoes.iter().enumerate() {
                     let b = Rect::new(x + o as f32 * (bw + vao), y + 10.0 * f, bw, 42.0 * f);
                     let marcado = l.marcada == Some(o);
-                    estilo::cartao(b, b.contains(m), marcado);
+                    estilo::cartao(b, b.toca(m), marcado);
                     estilo::texto_centro(
                         b.center().x,
                         b.center().y + 6.0 * f,

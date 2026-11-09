@@ -5,6 +5,8 @@
 //! em texto (nome, nivel, Poder, arma) e os SALDOS, que no MIR4 moram aqui e
 //! nao no HUD do mundo. A direita, os sistemas por grupo; os que ainda nao
 //! existem mostram cadeado e o motivo no hover.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud::{pictograma, selo};
@@ -37,6 +39,10 @@ pub enum Item {
     Aventuras,
     /// Calendario de presenca.
     Presenca,
+    /// Flash offers (`ofertas_ui.rs`).
+    Ofertas,
+    /// Power and level rankings (`ranking_ui.rs`).
+    Ranking,
     /// A colonia (docs/COLONIA.md): colher e melhorar.
     /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
     GuardaRoupa,
@@ -132,6 +138,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
             (Item::Amigos, "Friends", None),
             (Item::Correio, "Mail", None),
             (Item::Clan, "Clan", None),
+            (Item::Ranking, "Rankings", None),
         ],
     ),
     // "Shop" do Menu e' a loja de CASH (Tempest Points), que ainda nao existe.
@@ -156,6 +163,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
         "EVENT",
         &[
             (Item::Presenca, "Presence", None),
+            (Item::Ofertas, "Offers", None),
             (Item::IlhaMagica, "Magic Island", None),
         ],
     ),
@@ -394,7 +402,7 @@ impl Menu {
                         t,
                         t,
                     );
-                    let sobre = r.contains(m) && dir.contains(m) && !self.rolagem.arrastando();
+                    let sobre = r.toca(m) && dir.toca(m) && !self.rolagem.arrastando();
                     let travado = l.2.is_some();
                     // O foco do tutorial anda ate' aqui: "Menu > Ficha".
                     match l.0 {
@@ -438,7 +446,7 @@ impl Menu {
                     } else if c.selos.contains(&l.0) {
                         selo(r);
                     }
-                    if toque.is_some_and(|p| dir.contains(p) && r.contains(p)) {
+                    if toque.is_some_and(|p| dir.toca(p) && r.toca(p)) {
                         saida = Some(clique_de(l));
                     }
                 }
@@ -495,6 +503,8 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::Mobs => "mobs",
         Item::Aventuras => "aventuras",
         Item::Presenca => "presenca",
+        Item::Ofertas => "ofertas",
+        Item::Ranking => "ranking",
         Item::GuardaRoupa => "guarda_roupa",
         Item::MinhaIlha => "minha_ilha",
         Item::Grupo => "grupo",
@@ -600,6 +610,8 @@ mod tests {
             Item::Mercado,
             Item::Aventuras,
             Item::Presenca,
+            Item::Ofertas,
+            Item::Ranking,
             Item::MinhaIlha,
             Item::IlhaMagica,
             Item::GuardaRoupa,

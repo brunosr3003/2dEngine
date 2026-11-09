@@ -1,4 +1,6 @@
 //! Choice of XP paths when the story expects a minimum level.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -51,7 +53,7 @@ impl NivelUi {
         let card_h = ((usable - 2.0 * gap) / 3.0).max(45.0 * f);
         for (i, (escolha, titulo, dica)) in opcoes.into_iter().enumerate() {
             let c = Rect::new(r.x + 16.0 * f, top + i as f32 * (card_h + gap), r.w - 32.0 * f, card_h);
-            let sobre = c.contains(mouse);
+            let sobre = c.toca(mouse);
             estilo::ret_arredondado(c, 8.0 * f, Color::new(0.18, 0.22, 0.29, if sobre { 0.95 } else { 0.78 }));
             estilo::texto_forte(c.x + 14.0 * f, c.y + 22.0 * f, titulo, 15, estilo::OURO);
             estilo::texto_ajustado(dica, c.x + 14.0 * f, c.y + 42.0 * f, c.w - 26.0 * f, 12, estilo::TEXTO);
@@ -69,7 +71,7 @@ impl NivelUi {
 }
 
 fn botao(r: Rect, texto: &str, mouse: Vec2) -> bool {
-    let sobre = r.contains(mouse);
+    let sobre = r.toca(mouse);
     estilo::botao(r, texto, estilo::estado(sobre, sobre && is_mouse_button_down(MouseButton::Left), false, false), false);
     sobre && crate::foco::clique()
 }

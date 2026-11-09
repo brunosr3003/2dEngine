@@ -10,6 +10,8 @@
 //! A MISSÃO NAO APARECE NA LISTA porque nao e' ajustavel: quem liga o auto no
 //! meio de uma caca quer a caca andando. A tela diz isso em uma linha, pra
 //! ninguem procurar o ajuste que nao existe.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 
 use crate::hud_estilo as estilo;
@@ -106,7 +108,7 @@ impl ConfigCombate {
         );
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        if clicou && fechar.contains(m) {
+        if clicou && fechar.toca(m) {
             self.fechar();
             return false;
         }
@@ -180,12 +182,12 @@ impl ConfigCombate {
                     18,
                     estilo::OURO,
                 );
-                if clicou && seta.contains(m) && sobe(ordem, i) {
+                if clicou && seta.toca(m) && sobe(ordem, i) {
                     mudou = true;
                     continue;
                 }
             }
-            if clicou && linha.contains(m) && !seta.contains(m) && alterna(ordem, cat) {
+            if clicou && linha.toca(m) && !seta.toca(m) && alterna(ordem, cat) {
                 mudou = true;
             }
         }
@@ -203,7 +205,7 @@ impl ConfigCombate {
             // 30/09/2026: "take out the lil ball ... and everywhere else"):
             // the chosen one gets the burnished rim.
             let escolhido = *pvp == v;
-            estilo::cartao(linha, linha.contains(m), escolhido);
+            estilo::cartao(linha, linha.toca(m), escolhido);
             estilo::texto(
                 linha.x + 10.0,
                 linha.y + 18.0,
@@ -211,7 +213,7 @@ impl ConfigCombate {
                 14,
                 if escolhido { estilo::OURO } else { estilo::TEXTO },
             );
-            if clicou && linha.contains(m) && *pvp != v {
+            if clicou && linha.toca(m) && *pvp != v {
                 *pvp = v;
                 mudou = true;
             }

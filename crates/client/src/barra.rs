@@ -5,6 +5,8 @@
 //! that slot's AUTO on, down switches it off. The CLIENT decides WHEN to
 //! drink; the server validates the `UseItem` as always. The configuration
 //! lives on the character, on the server (`SalvarBarra` / `BarraDeItens`).
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::{Rect, Vec2};
 use shared::constants::item_id as it;
 use shared::protocol::{EspacoDaBarra, ESPACOS_DA_BARRA};
@@ -263,7 +265,7 @@ impl Barra {
         soltou: bool,
     ) -> Option<Gesto> {
         if apertou && self.arrasto.inicio.is_none() {
-            if let Some(i) = rects.iter().position(|r| r.contains(mouse)) {
+            if let Some(i) = rects.iter().position(|r| r.toca(mouse)) {
                 self.arrasto.pressiona(i as u32, mouse);
             }
         }

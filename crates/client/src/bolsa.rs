@@ -12,6 +12,8 @@
 //! `InventorySwap` pro primeiro espaco vazio. O que volta e' o
 //! `InventoryUpdate` / `StatsUpdate` de sempre.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::HashMap;
 
 use macroquad::material::{gl_use_default_material, gl_use_material, Material};
@@ -441,7 +443,7 @@ fn mouse() -> Vec2 {
 }
 
 fn clicou_em(r: Rect) -> bool {
-    r.contains(mouse()) && crate::foco::clique()
+    r.toca(mouse()) && crate::foco::clique()
 }
 
 impl Bolsa {
@@ -470,7 +472,7 @@ impl Bolsa {
     /// O mouse esta' em cima da bolsa aberta? Entao o clique e' dela, e nao do
     /// mundo. (Fechada ela nao tem botao proprio: o icone e' do HUD.)
     pub fn pega_o_mouse(&self) -> bool {
-        self.aberta && tela().painel.contains(mouse())
+        self.aberta && tela().painel.toca(mouse())
     }
 
     fn peca(&self, s: Sel) -> Option<Peca> {
@@ -712,7 +714,7 @@ impl Bolsa {
                 .instance
                 .and_then(|inst| inst.level_req)
                 .is_none_or(|nivel| self.nivel >= nivel as u32);
-            crate::hud_estilo::cartao(linha, false, clique.is_some_and(|p| linha.contains(p)));
+            crate::hud_estilo::cartao(linha, false, clique.is_some_and(|p| linha.toca(p)));
             celula(
                 Rect::new(linha.x + u(5.0), linha.y + u(4.0), u(44.0), u(44.0)),
                 Some(Peca {
@@ -742,7 +744,7 @@ impl Bolsa {
                     VERMELHO,
                 );
             }
-            if liberado && clique.is_some_and(|p| linha.contains(p) && area.contains(p)) {
+            if liberado && clique.is_some_and(|p| linha.toca(p) && area.toca(p)) {
                 pedido = Some(ClientMessage::InventorySwap {
                     a: InvSpot::Inv(*i as u16),
                     b: InvSpot::Equip(slot),
@@ -808,7 +810,7 @@ impl Bolsa {
                 let sel = self.sel == Some(Sel::Equip(*slot));
                 celula(c, peca, sel, Some(*slot), Some((vox, solido)));
                 ui::texto_centro(c.x + s * 0.5, c.y + s + u(12.0), rotulo, 12, APAGADO);
-                let livre = bloqueio.map_or(true, |b| !b.contains(mouse()));
+                let livre = bloqueio.map_or(true, |b| !b.toca(mouse()));
                 if livre && clicou_em(c) {
                     if peca.is_some() {
                         clicado = Some(Sel::Equip(*slot));
@@ -971,7 +973,7 @@ impl Bolsa {
         for (k, (aba, rotulo)) in ABAS.iter().enumerate() {
             let a = Rect::new(r.x + k as f32 * (aba_w + u(6.0)), r.y, aba_w, u(32.0));
             let ativa = self.aba == *aba;
-            let sobre = a.contains(mouse());
+            let sobre = a.toca(mouse());
             crate::hud_estilo::aba(a, rotulo, ativa, sobre);
             if clicou_em(a) {
                 self.aba = *aba;
@@ -1029,7 +1031,7 @@ impl Bolsa {
                 None => celula_fora(c),
             }
             if let (Some(i), Some(_)) = (onde, peca) {
-                if clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
+                if clique.is_some_and(|p| c.toca(p) && area.toca(p)) {
                     clicado = Some(Sel::Inv(*i));
                 }
             }
@@ -1575,7 +1577,7 @@ fn celula(
     // teste e em qualquer chamada que nao tenha o cache de modelos a mao.
     palco: Option<(&VoxCache, &Material)>,
 ) {
-    let sobre = r.contains(mouse());
+    let sobre = r.toca(mouse());
     match peca {
         Some(p) => {
             let cor = cor_do_tier(p.grau());

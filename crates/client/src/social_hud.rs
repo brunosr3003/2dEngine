@@ -1,4 +1,6 @@
 //! Ações do alvo e grupo compacto, ao lado do rastreador de missões.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::{hud_estilo as e, hud_layout::Zonas, world::World};
 use macroquad::prelude::*;
 use shared::EntityId;
@@ -22,6 +24,8 @@ pub enum Acao {
     Amigo,
     Seguir,
     Grupo,
+    /// Direct trade (`troca_ui.rs`).
+    Trocar,
     Selecionar(EntityId),
     AbrirGrupo,
 }
@@ -63,7 +67,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             (14.0 * s) as u16,
             e::OURO,
         );
-        return (clicou && r.contains(p)).then_some(Acao::AbrirGrupo);
+        return (clicou && r.toca(p)).then_some(Acao::AbrirGrupo);
     }
     let mostra = membros.len().min(5);
     let altura = ((r.h - rodape.h) / mostra as f32).min(LINHA_GRUPO * s);
@@ -93,7 +97,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             barra.h,
             e::FUNDO_ALTO,
         );
-        if linha.contains(p) {
+        if linha.toca(p) {
             draw_rectangle(
                 barra.x,
                 barra.y,
@@ -113,7 +117,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
                     barra.h,
                     Color::new(0.2, 0.58, 0.36, 1.),
                 );
-                if clicou && linha.contains(p) && Some(*id) != world.self_id {
+                if clicou && linha.toca(p) && Some(*id) != world.self_id {
                     acao = Some(Acao::Selecionar(*id));
                 }
                 format!("{} / {}", ent.state.hp, ent.meta.hp_max)
@@ -146,7 +150,7 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
         (12.0 * s) as u16,
         e::OURO,
     );
-    if clicou && rodape.contains(p) {
+    if clicou && rodape.toca(p) {
         acao = Some(Acao::AbrirGrupo);
     }
     acao
@@ -175,14 +179,14 @@ fn menu_rect(z: &Zonas) -> Rect {
         z.alvo.x,
         z.alvo.y + z.alvo.h + 4.0 * z.s,
         z.alvo.w,
-        126.0 * z.s,
+        168.0 * z.s,
     )
 }
 impl SocialHud {
     pub fn captura(&self, z: &Zonas, p: Vec2, jogador: bool, membros: usize) -> bool {
         self.aberto.is_some()
-            || (jogador && z.alvo.contains(p))
-            || (self.solto && membros > 0 && grupo_rect(z, membros, self.recolhido).contains(p))
+            || (jogador && z.alvo.toca(p))
+            || (self.solto && membros > 0 && grupo_rect(z, membros, self.recolhido).toca(p))
     }
     pub fn alvo(&mut self, z: &Zonas, id: Option<EntityId>, seguindo: bool) -> Option<Acao> {
         if self.aberto != id {
@@ -202,7 +206,7 @@ impl SocialHud {
             (11.0 * z.s) as u16,
             e::OURO,
         );
-        if clicou && z.alvo.contains(p) && !z.alvo_fechar().contains(p) {
+        if clicou && z.alvo.toca(p) && !z.alvo_fechar().toca(p) {
             self.aberto = if self.aberto.is_some() {
                 None
             } else {
@@ -226,12 +230,13 @@ impl SocialHud {
                 Acao::Seguir,
             ),
             ("Invite to party", Acao::Grupo),
+            ("Trade", Acao::Trocar),
         ]
         .into_iter()
         .enumerate()
         {
             let linha = Rect::new(r.x, r.y + i as f32 * 42.0 * z.s, r.w, 42.0 * z.s);
-            if linha.contains(p) {
+            if linha.toca(p) {
                 draw_rectangle(
                     linha.x,
                     linha.y,
@@ -247,7 +252,7 @@ impl SocialHud {
                 (15.0 * z.s) as u16,
                 e::TEXTO,
             );
-            if clicou && linha.contains(p) {
+            if clicou && linha.toca(p) {
                 self.aberto = None;
                 return Some(acao);
             }
@@ -277,7 +282,7 @@ impl SocialHud {
             (14.0 * s) as u16,
             e::OURO,
         );
-        if clicou && Rect::new(r.x, r.y, r.w, 36.0 * s).contains(p) {
+        if clicou && Rect::new(r.x, r.y, r.w, 36.0 * s).toca(p) {
             self.recolhido = !self.recolhido;
             return None;
         }
@@ -329,7 +334,7 @@ impl SocialHud {
                     (10.0 * k).max(9.0) as u16,
                     e::TEXTO,
                 );
-                if clicou && linha.contains(p) && Some(*id) != world.self_id {
+                if clicou && linha.toca(p) && Some(*id) != world.self_id {
                     return Some(Acao::Selecionar(*id));
                 }
             } else {
@@ -350,7 +355,7 @@ impl SocialHud {
             (12.0 * s) as u16,
             e::OURO,
         );
-        if clicou && rodape.contains(p) {
+        if clicou && rodape.toca(p) {
             return Some(Acao::AbrirGrupo);
         }
         None

@@ -3,6 +3,8 @@
 //! Bar), by clicking an empty slot or right-clicking a slot — no key opens it.
 //!
 //! Escolher e' dois cliques: um item da lista e um espaco (ou o contrario).
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::InventorySlot;
 
@@ -116,7 +118,7 @@ impl ConfigBarra {
             16,
             estilo::TEXTO,
         );
-        if clique && x_fechar.contains(m) {
+        if clique && x_fechar.toca(m) {
             self.fechar();
             return false;
         }
@@ -159,7 +161,7 @@ impl ConfigBarra {
                 );
             }
             estilo::texto(caixa.x + 4.0, caixa.y - 1.0, TECLAS[i], 11, estilo::SUAVE);
-            if clique && caixa.contains(m) {
+            if clique && caixa.toca(m) {
                 mudou |= self.escolhe_espaco(barra, i);
             }
             let tx = caixa.x + caixa.w + 12.0;
@@ -197,7 +199,7 @@ impl ConfigBarra {
                 ("AUTO · off", estilo::SUAVE)
             };
             estilo::texto_centro(b_auto.center().x, b_auto.center().y + 5.0, txt, 13, cor);
-            if clique && b_auto.contains(m) {
+            if clique && b_auto.toca(m) {
                 barra.alterna_auto(i);
                 mudou = true;
             }
@@ -229,12 +231,12 @@ impl ConfigBarra {
                         14,
                         estilo::OURO,
                     );
-                    if clique && menos.contains(m) {
+                    if clique && menos.toca(m) {
                         barra.ajustar_limiar(i, -5);
                         mudou = true;
                         self.mexeu_no_limiar = true;
                     }
-                    if clique && mais.contains(m) {
+                    if clique && mais.toca(m) {
                         barra.ajustar_limiar(i, 5);
                         mudou = true;
                         self.mexeu_no_limiar = true;
@@ -257,7 +259,7 @@ impl ConfigBarra {
                 12,
                 estilo::TEXTO,
             );
-            if clique && limpar.contains(m) {
+            if clique && limpar.toca(m) {
                 barra.limpar(i);
                 mudou = true;
             }
@@ -282,7 +284,7 @@ impl ConfigBarra {
         let area = Rect::new(lx, p.y + 102.0, lw, p.h - 112.0);
         let total = lista.len() as f32 * 50.0;
         let toque = self.rolagem.quadro(area, total, 50.0);
-        let tocou = |r: Rect| toque.is_some_and(|c| r.contains(c) && area.contains(c));
+        let tocou = |r: Rect| toque.is_some_and(|c| r.toca(c) && area.toca(c));
         crate::rolagem::recortar(Some(area));
         for (k, (id, q)) in lista.iter().enumerate() {
             let r = Rect::new(

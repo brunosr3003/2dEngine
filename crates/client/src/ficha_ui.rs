@@ -1,6 +1,8 @@
 //! Ficha do personagem: atributos alocados e números finais enviados pelo
 //! servidor. Os botões só enviam pedidos; não calculam nem gastam pontos aqui.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 use shared::{PlayerStats, STAT_COUNT};
@@ -9,7 +11,7 @@ use crate::hud_estilo as estilo;
 
 const ATRIBUTOS: [(&str, &str); STAT_COUNT] = [
     ("FOR", "+1 attack · +2 health"),
-    ("DES", "+1 dexterity · crit/attack · pistol: +1 health, +0.5% dodge"),
+    ("DES", "+1 dexterity · crit/attack · +0.25% dodge · pistol: +1 health, +0.5% dodge"),
     ("INT", "+1 magic damage · +2 mana · -0.1% skill cooldown"),
     ("VIT", "+5 health · regeneration"),
     ("SPD", "+2 vigor · regeneração · recarga do Dash"),
@@ -151,7 +153,7 @@ impl FichaUi {
         );
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
-        if clique && fechar.contains(mouse) {
+        if clique && fechar.toca(mouse) {
             self.fechar();
             return None;
         }
@@ -307,7 +309,7 @@ impl FichaUi {
                 });
             }
             estilo::botao(botao, "+", estilo::estado_de(botao, !pode, false), pode);
-            if clique && botao.contains(mouse) && pode {
+            if clique && botao.toca(mouse) && pode {
                 return Some(ClientMessage::AllocStatPoint { stat: i as u8 });
             }
         }
@@ -347,7 +349,7 @@ impl FichaUi {
             estilo::estado_de(reset, total == 0, false),
             false,
         );
-        if clique && reset.contains(mouse) && total > 0 {
+        if clique && reset.toca(mouse) && total > 0 {
             if self.confirmar_reset {
                 self.confirmar_reset = false;
                 return Some(ClientMessage::ResetStats);
@@ -371,10 +373,10 @@ impl FichaUi {
             estilo::estado_de(aba_profs, false, self.aba_proficiencias),
             false,
         );
-        if clique && aba_status.contains(mouse) {
+        if clique && aba_status.toca(mouse) {
             self.aba_proficiencias = false;
         }
-        if clique && aba_profs.contains(mouse) {
+        if clique && aba_profs.toca(mouse) {
             self.aba_proficiencias = true;
         }
         if self.aba_proficiencias {
@@ -434,7 +436,7 @@ impl FichaUi {
         if let Some(i) = self.prof_selecionada {
             let voltar = Rect::new(dir.x + 10.0 * f, dir.y + 51.0 * f, 92.0 * f, 34.0 * f);
             estilo::botao(voltar, "BACK", estilo::estado_de(voltar, false, false), false);
-            if clique && voltar.contains(mouse) {
+            if clique && voltar.toca(mouse) {
                 self.prof_selecionada = None;
                 return;
             }
@@ -472,7 +474,7 @@ impl FichaUi {
             let y = dir.y + (48.0 + i as f32 * 77.0) * f;
             let linha = Rect::new(dir.x + 10.0 * f, y, dir.w - 20.0 * f, 70.0 * f);
             estilo::cartao(linha, false, false);
-            if clique && linha.contains(mouse) && self.proficiencias.is_some() {
+            if clique && linha.toca(mouse) && self.proficiencias.is_some() {
                 self.prof_selecionada = Some(i);
             }
             let Some(xp) = self.proficiencias.map(|v| v[i]) else {

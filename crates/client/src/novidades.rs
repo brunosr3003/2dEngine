@@ -1,4 +1,6 @@
 //! Notes bundled inside the application itself, available even offline.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::{hud_estilo as estilo, ui};
 use macroquad::prelude::*;
 
@@ -53,7 +55,7 @@ impl Novidades {
         // frames, and must not depend on the simulated mouse position.
         let toque_continuar = touches().iter().any(|t| {
             matches!(t.phase, TouchPhase::Started | TouchPhase::Ended)
-                && continuar.contains(t.position)
+                && continuar.toca(t.position)
         });
         if ui::botao(
             continuar,
@@ -89,7 +91,7 @@ impl Novidades {
         let linhas = &self.linhas;
         let max = (linhas.len() as f32 * 25.0 - corpo.h).max(0.0);
         let mouse = Vec2::from(mouse_position());
-        if corpo.contains(mouse) {
+        if corpo.toca(mouse) {
             self.scroll -= mouse_wheel().1 * 28.0;
             if is_mouse_button_pressed(MouseButton::Left) {
                 self.arrasto = Some(mouse.y);

@@ -158,7 +158,9 @@ scripts/build-ios.sh --skip-upload    # só o .ipa em target/ios/
 O script compila `--target aarch64-apple-ios` (deployment target 15.0), monta
 `target/ios/Payload/Tempest.app` com `assets/vox` (o único asset lido do disco;
 fontes e ícones são `include_bytes!`), gera o `Assets.car` do ícone com `actool`
-a partir de `assets/ios/AppIcon-1024.png` (`python3 tools/ios/gerar_icone.py`),
+a partir de `assets/ios/AppIcon-1024.png` (`python3 tools/icone_app/gerar.py`,
+que gera TODOS os ícones — iOS, Mac, Android, Windows e o da janela — a partir
+do ícone da Google Play em `assets/icone/tempest-loja-512.png`),
 escreve o `Info.plist` (paisagem, tela cheia, `com.brunji.tempest`, versão
 `1.1`, build = `aammddHHMM` UTC), acha o profile de App Store do bundle,
 assina com a identidade "Apple Distribution" do time e envia com `altool`.

@@ -9,6 +9,8 @@
 //! `Combinar`, o mesmo da aba Combinar do Craft — nada aqui é caminho novo de
 //! servidor.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 use shared::InventorySlot;
@@ -109,7 +111,7 @@ impl Colecao {
                 // Um tique dourado no canto: e' a que esta' valendo.
                 estilo::texto_forte(c.x + c.w - 13.0 * f, c.y + 14.0 * f, "•", 20, estilo::OURO);
             }
-            if clique && c.contains(mouse) {
+            if clique && c.toca(mouse) {
                 self.sel = p.slot;
             }
         }
@@ -155,7 +157,7 @@ impl Colecao {
             estilo::estado_de(bt_eq, escolhida.equipada, false),
             !escolhida.equipada,
         );
-        if let (true, Some(slot)) = (clique && bt_eq.contains(mouse), escolhida.slot) {
+        if let (true, Some(slot)) = (clique && bt_eq.toca(mouse), escolhida.slot) {
             return Some(ClientMessage::UseItem { slot: slot as u16 });
         }
 
@@ -197,7 +199,7 @@ impl Colecao {
                     12,
                     estilo::SUAVE,
                 );
-                if clique && pode && bt_co.contains(mouse) {
+                if clique && pode && bt_co.toca(mouse) {
                     return Some(ClientMessage::Combinar {
                         entrada: escolhida.item_id,
                         vezes: 1,

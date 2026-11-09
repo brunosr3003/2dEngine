@@ -5,6 +5,8 @@
 //! the server; the fee maths here is the same function (`shared::mercado`),
 //! only to show before confirming. Everything by touch: quantity and price
 //! are buttons, not typing — only the search uses the keyboard.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::collections::{HashMap, HashSet};
 
 use macroquad::prelude::*;
@@ -292,7 +294,7 @@ impl Mercado {
         let tw = (p.w - 36.0 * f) / ABAS.len() as f32;
         for (i, (aba, rotulo)) in ABAS.iter().enumerate() {
             let r = Rect::new(p.x + 18.0 * f + i as f32 * tw, ty, tw - 4.0 * f, 40.0 * f);
-            let sobre = livre && r.contains(m);
+            let sobre = livre && r.toca(m);
             estilo::aba(r, rotulo, self.aba == *aba, sobre);
             if *aba == Aba::Entregas && !self.cartas.is_empty() {
                 estilo::badge(r);
@@ -352,7 +354,7 @@ impl Mercado {
         for (i, cat) in Categoria::FILTROS.iter().enumerate() {
             let r = Rect::new(a.x + i as f32 * cw, a.y, cw - 6.0 * f, 38.0 * f);
             let sel = self.categoria == *cat as u8;
-            estilo::cartao(r, livre && r.contains(m), sel);
+            estilo::cartao(r, livre && r.toca(m), sel);
             estilo::texto_centro(
                 r.center().x,
                 r.center().y + 5.0 * f,
@@ -360,7 +362,7 @@ impl Mercado {
                 14,
                 if sel { estilo::OURO } else { estilo::TEXTO },
             );
-            if livre && clicou && r.contains(m) && !sel {
+            if livre && clicou && r.toca(m) && !sel {
                 self.categoria = *cat as u8;
                 self.pagina = 0;
                 self.rolagem = 0;
@@ -374,7 +376,7 @@ impl Mercado {
         let digitado: &[char] = if self.foco_busca { c.digitado } else { &[] };
         if crate::ui::campo(campo, "", &mut self.busca, self.foco_busca, false, digitado) && livre {
             self.foco_busca = true;
-        } else if clicou && !campo.contains(m) {
+        } else if clicou && !campo.toca(m) {
             self.foco_busca = false;
         }
         if self.busca.chars().count() > regras::BUSCA_MAX_CHARS {
@@ -697,7 +699,7 @@ impl Mercado {
                 continue;
             }
             let sel = self.venda_slot == Some(*i);
-            estilo::slot(r, None, livre && r.contains(m), sel);
+            estilo::slot(r, None, livre && r.toca(m), sel);
             crate::icones::icone_com_3d(
                 s.item_id,
                 r,
@@ -705,7 +707,7 @@ impl Mercado {
                 Some(s.qty),
                 Some((c.vox, c.solido)),
             );
-            if clique_na_grade.is_some_and(|p| r.contains(p)) {
+            if clique_na_grade.is_some_and(|p| r.toca(p)) {
                 self.venda_slot = Some(*i);
                 self.venda_qtd = 1;
                 // The recommended price comes filled in; the seller can type
@@ -1454,7 +1456,7 @@ fn referencias(
 
 fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
     let m = Vec2::from(mouse_position());
-    let sobre = ativo && r.contains(m);
+    let sobre = ativo && r.toca(m);
     estilo::botao(
         r,
         rotulo,

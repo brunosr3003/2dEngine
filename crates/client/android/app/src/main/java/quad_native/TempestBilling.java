@@ -18,7 +18,6 @@ package quad_native;
 import android.app.Activity;
 import android.util.Log;
 
-import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClientStateListener;
 import com.android.billingclient.api.BillingFlowParams;
@@ -26,66 +25,97 @@ import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.ProductDetails;
 import com.android.billingclient.api.Purchase;
 import com.android.billingclient.api.PendingPurchasesParams;
+import com.android.billingclient.api.PurchasesResponseListener;
 import com.android.billingclient.api.PurchasesUpdatedListener;
 import com.android.billingclient.api.QueryProductDetailsParams;
 import com.android.billingclient.api.QueryProductDetailsResult;
+import com.android.billingclient.api.QueryPurchasesParams;
 
 import java.util.Arrays;
 import java.util.List;
 
+// The SERVER credits and then CONSUMES every purchase (Android Publisher
+// API). This side never acknowledges or consumes anything: doing it here,
+// before the server credited, could leave a paid purchase with nothing
+// delivered. What it does instead is RE-REPORT purchases Google still lists
+// as owned (`recover`): one that was paid but whose credit/consume didn't go
+// through gets sent to the server again, which is idempotent.
 public class TempestBilling {
     private static final String TAG = "TempestBilling";
 
+    /// Codes sent to Rust in `onPurchaseFinished`: 0 = paid, -2 = pending
+    /// (cash/boleto still clearing), anything else = Google's response code.
+    private static final int PAGO = 0;
+    private static final int PENDENTE = -2;
+
     private static BillingClient client;
 
-    /// Dispara a compra de `productId` (ex. "tp_pacote_2", convencao do
-    /// servidor) pra' Activity
-    /// dada. Chamado pelo Rust com a MESMA Activity que o miniquad ja' tem
-    /// em cache (`native::android::ACTIVITY`) — nao criamos nenhuma nova.
+    /// Starts the purchase of `productId` ("tp_pacote_2", "oferta_099"…).
     public static void launchPurchase(final Activity activity, final String productId) {
         // Called from the game's native thread; the BillingClient and its
         // purchase screen belong on the UI thread.
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                launchPurchaseNaUi(activity, productId);
+                comCliente(activity, new Runnable() {
+                    @Override
+                    public void run() {
+                        queryAndLaunch(activity, productId);
+                    }
+                });
             }
         });
     }
 
-    private static void launchPurchaseNaUi(final Activity activity, final String productId) {
+    /// Re-reports every purchase Google still lists as owned (paid but not
+    /// consumed by the server yet). Called once after login.
+    public static void recover(final Activity activity) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                comCliente(activity, new Runnable() {
+                    @Override
+                    public void run() {
+                        consultaPendentes();
+                    }
+                });
+            }
+        });
+    }
+
+    private static void comCliente(final Activity activity, final Runnable pronto) {
         if (client != null && client.isReady()) {
-            queryAndLaunch(activity, productId);
+            pronto.run();
             return;
         }
-
         PurchasesUpdatedListener listener = new PurchasesUpdatedListener() {
             @Override
             public void onPurchasesUpdated(BillingResult billingResult, List<Purchase> purchases) {
-                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK
-                        && purchases != null) {
+                int codigo = billingResult.getResponseCode();
+                if (codigo == BillingClient.BillingResponseCode.OK && purchases != null) {
                     for (Purchase p : purchases) {
                         handlePurchase(p);
                     }
+                } else if (codigo == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
+                    // An earlier purchase of this product was never consumed:
+                    // hand it to the server again, it delivers/consumes it.
+                    onPurchaseFinished("", "", codigo);
+                    consultaPendentes();
                 } else {
-                    // Cancelado, sem rede, ja' possui, etc — sem produto/token
-                    // pra' reportar, so' o codigo de erro do Google.
-                    onPurchaseFinished("", "", billingResult.getResponseCode());
+                    onPurchaseFinished("", "", codigo);
                 }
             }
         };
-
         client = BillingClient.newBuilder(activity)
                 .setListener(listener)
                 .enablePendingPurchases(
                         PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
                 .build();
-
         client.startConnection(new BillingClientStateListener() {
             @Override
             public void onBillingSetupFinished(BillingResult billingResult) {
                 if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                    queryAndLaunch(activity, productId);
+                    pronto.run();
                 } else {
                     Log.w(TAG, "startConnection falhou: " + billingResult.getDebugMessage());
                     onPurchaseFinished("", "", billingResult.getResponseCode());
@@ -95,6 +125,26 @@ public class TempestBilling {
             @Override
             public void onBillingServiceDisconnected() {
                 Log.w(TAG, "BillingClient desconectou");
+            }
+        });
+    }
+
+    private static void consultaPendentes() {
+        QueryPurchasesParams params = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+        client.queryPurchasesAsync(params, new PurchasesResponseListener() {
+            @Override
+            public void onQueryPurchasesResponse(BillingResult billingResult, List<Purchase> purchases) {
+                if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK
+                        || purchases == null) {
+                    return;
+                }
+                for (Purchase p : purchases) {
+                    if (p.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+                        handlePurchase(p);
+                    }
+                }
             }
         });
     }
@@ -116,10 +166,11 @@ public class TempestBilling {
                 if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK
                         || productDetailsList.isEmpty()) {
                     Log.w(TAG, "queryProductDetailsAsync sem resultado pra' " + productId);
-                    onPurchaseFinished(productId, "", billingResult.getResponseCode());
+                    int codigo = billingResult.getResponseCode();
+                    onPurchaseFinished(productId, "",
+                            codigo == BillingClient.BillingResponseCode.OK ? -1 : codigo);
                     return;
                 }
-
                 ProductDetails details = productDetailsList.get(0);
                 BillingFlowParams.ProductDetailsParams pdp =
                         BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -137,28 +188,9 @@ public class TempestBilling {
         List<String> produtos = purchase.getProducts();
         String productId = produtos.isEmpty() ? "" : produtos.get(0);
         String token = purchase.getPurchaseToken();
-
-        onPurchaseFinished(productId, token, purchase.getPurchaseState());
-
-        // Rede de seguranca: o SERVIDOR e' quem credita TP (confere o token
-        // na Android Publisher API) e deveria reconhecer a compra la'. Se
-        // por algum motivo isso nao acontecer, o Google estorna sozinho em
-        // ate' 3 dias — reconhecer aqui tambem e' idempotente e so' evita
-        // esse estorno indevido numa compra que o servidor ja' processou.
-        if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED
-                && !purchase.isAcknowledged()) {
-            AcknowledgePurchaseParams ackParams = AcknowledgePurchaseParams.newBuilder()
-                    .setPurchaseToken(token)
-                    .build();
-            client.acknowledgePurchase(ackParams, new com.android.billingclient.api.AcknowledgePurchaseResponseListener() {
-                @Override
-                public void onAcknowledgePurchaseResponse(BillingResult billingResult) {
-                    if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                        Log.w(TAG, "acknowledgePurchase falhou: " + billingResult.getDebugMessage());
-                    }
-                }
-            });
-        }
+        int estado = purchase.getPurchaseState();
+        onPurchaseFinished(productId, token,
+                estado == Purchase.PurchaseState.PURCHASED ? PAGO : PENDENTE);
     }
 
     // Implementado em Rust: crates/client/src/billing_android.rs

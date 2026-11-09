@@ -9,6 +9,8 @@
 //! O modelo 3D e' desenhado direto na tela num viewport
 //! (`render3d::vitrine_montaria`), que e' o que o iPhone aceita. No maximo
 //! quatro montarias por quadro: o palco e as tres miniaturas.
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use std::f32::consts::TAU;
 
 use macroquad::prelude::*;
@@ -386,6 +388,15 @@ impl LojaTp {
             AvisoLoja::MontariaCombate { .. } => None,
             AvisoLoja::Invocacao { .. } => None,
             AvisoLoja::Invocacoes { .. } => None,
+            AvisoLoja::OfertasRelampago(_) => None,
+        }
+    }
+
+    /// Google Play closed without a purchase of ours.
+    pub fn compra_cancelada(&mut self) {
+        if self.pedido_google_play.take().is_some() {
+            self.em_voo = false;
+            self.ultimo = Some((false, "Purchase canceled".to_string()));
         }
     }
 
@@ -408,23 +419,8 @@ impl LojaTp {
         }
         // Resultado assincrono da Play Store (so' chega depois do overlay de
         // pagamento fechar, por isso aqui no topo, fora do fluxo de clique).
-        #[cfg(target_os = "android")]
-        if let Some(resultado) = crate::billing_android::poll_result() {
-            if let Some((pacote, pedido)) = self.pedido_google_play.take() {
-                if resultado.codigo == 0 && !resultado.purchase_token.is_empty() {
-                    saida.push(ClientMessage::Loja {
-                        pedido: PedidoLoja::ComprarTpGooglePlay {
-                            pacote,
-                            pedido,
-                            purchase_token: resultado.purchase_token,
-                        },
-                    });
-                } else {
-                    self.em_voo = false;
-                    self.ultimo = Some((false, "Purchase canceled".to_string()));
-                }
-            }
-        }
+        // (Google Play results are routed by `main::despacha_billing`, every
+        // frame — this panel may be closed when a recovered purchase comes.)
         let agora = get_time();
         let dt = get_frame_time().min(0.1);
         if let Some(t) = self.festa_pendente.take() {
@@ -599,7 +595,7 @@ impl LojaTp {
             3.0 * k.max(0.7),
             TINTA_BOTAO,
         );
-        if livre && (sobre_mais || capsula.contains(m)) {
+        if livre && (sobre_mais || capsula.toca(m)) {
             self.aba = ABA_TP;
         }
         if estado.simulado {
@@ -635,7 +631,7 @@ impl LojaTp {
             let tw = estilo::medir_forte(nome, tam) + 66.0 * k;
             let r = Rect::new(xa, ya, tw, 44.0 * k);
             let ativa = i == self.aba;
-            let sobre = !modal && r.contains(m);
+            let sobre = !modal && r.toca(m);
             if ativa {
                 estilo::sombra(r, r.h * 0.5, 0.6);
                 estilo::ret_gradiente(r, r.h * 0.5, OURO_CLARO, OURO_ESCURO);
@@ -792,7 +788,7 @@ impl LojaTp {
             agora,
         );
         let r = Rect::new(x0, area.y + 8.0 * k, w, area.h - 16.0 * k);
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(
             r,
@@ -866,18 +862,18 @@ impl LojaTp {
                 "BUY SCROLL"
             },
             ativo,
-            !modal && bt.contains(m),
+            !modal && bt.toca(m),
             k,
             agora,
         );
-        if ativo && livre && bt.contains(m) {
+        if ativo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::BauCraft(bau.id)));
             self.lote = 1;
         }
 
         let tomo = &cat::PERGAMINHOS_TOMO[0];
         let r = Rect::new(x0 + w + vao, area.y + 8.0 * k, w, area.h - 16.0 * k);
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(
             r,
@@ -950,11 +946,11 @@ impl LojaTp {
                 "BUY SCROLL"
             },
             !self.em_voo,
-            !modal && bt.contains(m),
+            !modal && bt.toca(m),
             k,
             agora,
         );
-        if !self.em_voo && livre && bt.contains(m) {
+        if !self.em_voo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoTomo(tomo.id)));
             self.lote = 1;
         }
@@ -980,7 +976,7 @@ impl LojaTp {
                 w,
                 h,
             );
-            let sobre = !modal && r.contains(m);
+            let sobre = !modal && r.toca(m);
             let racao = item.item_id == shared::item_id::RACAO_DE_PET;
             let remove = item.item_id == shared::item_id::REMOVEDOR_DE_SKILL_PET;
             estilo::sombra(r, 18.0 * k, 1.0);
@@ -1079,7 +1075,7 @@ impl LojaTp {
         let ah = 34.0 * k;
         for (i, rotulo) in CATEGORIAS.iter().enumerate() {
             let r = Rect::new(area.x + i as f32 * (aw + 6.0 * k), area.y, aw, ah);
-            let sobre = !modal && r.contains(m);
+            let sobre = !modal && r.toca(m);
             estilo::aba(r, rotulo, self.filtro_skin as usize == i, sobre);
             if livre && sobre {
                 self.filtro_skin = i as u8;
@@ -1111,7 +1107,7 @@ impl LojaTp {
                 w,
                 h,
             );
-            let sobre = !modal && r.contains(m);
+            let sobre = !modal && r.toca(m);
             estilo::sombra(r, 18.0 * k, 1.0);
             estilo::ret_gradiente(
                 r,
@@ -1275,7 +1271,7 @@ impl LojaTp {
         agora: f64,
     ) {
         let perg = &cat::PERGAMINHOS_MONTARIA[0];
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(
             r,
@@ -1349,11 +1345,11 @@ impl LojaTp {
                 "BUY SCROLL"
             },
             !self.em_voo,
-            !modal && bt.contains(m),
+            !modal && bt.toca(m),
             k,
             agora,
         );
-        if !self.em_voo && livre && bt.contains(m) {
+        if !self.em_voo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoMontaria(perg.id)));
             self.lote = 1;
         }
@@ -1366,7 +1362,7 @@ impl LojaTp {
     fn amuleto_de_protecao(&mut self, r: Rect, k: f32, m: Vec2, livre: bool, modal: bool, agora: f64) {
         let it = &cat::ITENS_DA_LOJA[0];
         let azul = Color::from_rgba(120, 180, 255, 255);
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(r, 22.0 * k, Color::new(0.12, 0.20, 0.40, 0.98), Color::new(0.03, 0.05, 0.13, 0.98));
         estilo::borda_arredondada(r, 22.0 * k, 1.5 * k.max(0.8),
@@ -1396,8 +1392,8 @@ impl LojaTp {
         let bw = (216.0 * k).min(r.w - 16.0 * k);
         let bt = Rect::new(r.center().x - bw * 0.5, r.y + r.h - 62.0 * k, bw, 48.0 * k);
         botao_ouro(bt, if self.em_voo { "PLEASE WAIT…" } else { "BUY CHARM" }, !self.em_voo,
-            !modal && bt.contains(m), k, agora);
-        if !self.em_voo && livre && bt.contains(m) {
+            !modal && bt.toca(m), k, agora);
+        if !self.em_voo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::Item(it.id)));
             self.lote = 1;
         }
@@ -1413,7 +1409,7 @@ impl LojaTp {
         agora: f64,
     ) {
         let perg = &cat::PERGAMINHOS_PET[0];
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 22.0 * k, 1.0);
         estilo::ret_gradiente(
             r,
@@ -1488,11 +1484,11 @@ impl LojaTp {
                 "BUY SCROLL"
             },
             !self.em_voo,
-            !modal && bt.contains(m),
+            !modal && bt.toca(m),
             k,
             agora,
         );
-        if !self.em_voo && livre && bt.contains(m) {
+        if !self.em_voo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(Produto::PergaminhoPet(perg.id)));
             self.lote = 1;
         }
@@ -1517,7 +1513,7 @@ impl LojaTp {
         produto: Produto,
         icone: impl FnOnce(Vec2, f32),
     ) {
-        let sobre = !modal && r.contains(m);
+        let sobre = !modal && r.toca(m);
         estilo::sombra(r, 18.0 * k, 1.0);
         estilo::ret_gradiente(r, 18.0 * k, fundo.0, fundo.1);
         estilo::borda_arredondada(
@@ -1559,11 +1555,11 @@ impl LojaTp {
             bt,
             if self.em_voo { "PLEASE WAIT…" } else { "COMPRAR" },
             ativo,
-            !modal && bt.contains(m),
+            !modal && bt.toca(m),
             k,
             agora,
         );
-        if ativo && livre && bt.contains(m) {
+        if ativo && livre && bt.toca(m) {
             self.confirma = Some(Confirma::Item(produto));
             self.lote = 1;
         }
@@ -1663,7 +1659,7 @@ impl LojaTp {
                 cw,
                 ch,
             );
-            let sobre = !modal && r.contains(m);
+            let sobre = !modal && r.toca(m);
             let melhor = selo_do_pacote(pk.id) == Some("BEST VALUE");
             let rc = 18.0 * k;
             if melhor {
@@ -1771,7 +1767,7 @@ impl LojaTp {
                 bt,
                 &cat::preco_brl(pk.centavos),
                 ativo,
-                !modal && bt.contains(m),
+                !modal && bt.toca(m),
                 k,
                 agora + i as f64 * 0.7,
             );
@@ -2061,8 +2057,8 @@ impl LojaTp {
                 let menos = Rect::new(sel.x, sel.y, lado, lado);
                 let mais = Rect::new(sel.x + lado + 8.0 * k, sel.y, lado, lado);
                 for (b, t, liga) in [(menos, "−", lote > 1), (mais, "+", lote < cat::LOTE_MAX)] {
-                    botao_contorno(b, t, liga && b.contains(m), k);
-                    if clicou && liga && b.contains(m) {
+                    botao_contorno(b, t, liga && b.toca(m), k);
+                    if clicou && liga && b.toca(m) {
                         self.lote = if t == "−" { lote - 1 } else { lote + 1 };
                     }
                 }
@@ -2077,8 +2073,8 @@ impl LojaTp {
                 let mut ax = mais.x + lado + 62.0 * k;
                 for n in [1u16, 10, 50] {
                     let b = Rect::new(ax, sel.y + 4.0 * k, 46.0 * k, lado - 8.0 * k);
-                    botao_contorno(b, &format!("{n}x"), b.contains(m), k);
-                    if clicou && b.contains(m) {
+                    botao_contorno(b, &format!("{n}x"), b.toca(m), k);
+                    if clicou && b.toca(m) {
                         self.lote = n;
                     }
                     ax += 52.0 * k;
@@ -2164,17 +2160,17 @@ impl LojaTp {
         let bh = 50.0 * k;
         let cancelar = Rect::new(r.x + 26.0 * k, r.y + r.h - 24.0 * k - bh, bw, bh);
         let confirmar = Rect::new(cancelar.x + bw + 26.0 * k, cancelar.y, bw, bh);
-        botao_contorno(cancelar, "Cancel", cancelar.contains(m), k);
+        botao_contorno(cancelar, "Cancel", cancelar.toca(m), k);
         let rotulo = if insuficiente {
             "BUY TP"
         } else {
             "CONFIRMAR"
         };
-        botao_ouro(confirmar, rotulo, true, confirmar.contains(m), k, agora);
+        botao_ouro(confirmar, rotulo, true, confirmar.toca(m), k, agora);
         if !clicou {
             return None;
         }
-        if confirmar.contains(m) {
+        if confirmar.toca(m) {
             self.confirma = None;
             if insuficiente {
                 self.aba = ABA_TP;
@@ -2205,7 +2201,7 @@ impl LojaTp {
                 },
             });
         }
-        if cancelar.contains(m) || !r.contains(m) {
+        if cancelar.toca(m) || !r.toca(m) {
             self.confirma = None;
         }
         None

@@ -5,6 +5,8 @@
 //!
 //! The server sends `EscolhaNoNpc`; the reply is `EscolherNoNpc`.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 
@@ -54,7 +56,7 @@ impl EscolhaNpc {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberta() && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberta() && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// Draws; returns the choice made (and closes).
@@ -110,11 +112,11 @@ impl EscolhaNpc {
         if !clicou {
             return None;
         }
-        let escolha = if missao.contains(m) {
+        let escolha = if missao.toca(m) {
             Some(true)
-        } else if funcao.contains(m) {
+        } else if funcao.toca(m) {
             Some(false)
-        } else if !p.contains(m) {
+        } else if !p.toca(m) {
             self.fechar();
             return None;
         } else {

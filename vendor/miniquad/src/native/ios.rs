@@ -323,6 +323,11 @@ unsafe fn get_proc_address(name: *const u8) -> Option<unsafe extern "C" fn()> {
     Some(unsafe { std::mem::transmute_copy(&symbol) })
 }
 
+/// `UIScreen.mainScreen.scale` (2.0/3.0 on iPhones), as f32 bits; 0 until the
+/// first frame. Tempest patch: the game turns it into pixels per millimetre to
+/// size touch targets physically (an iPhone point is ~1/160 inch).
+pub static ESCALA_TELA: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 pub fn define_glk_or_mtk_view_dlg(superclass: &Class) -> *const Class {
     let mut decl = ClassDecl::new("QuadViewDlg", superclass).unwrap();
 
@@ -338,6 +343,7 @@ pub fn define_glk_or_mtk_view_dlg(superclass: &Class) -> *const Class {
 
         let (screen_width, screen_height) = if high_dpi {
             let scale: f64 = unsafe { msg_send![main_screen, scale] };
+            ESCALA_TELA.store((scale as f32).to_bits(), std::sync::atomic::Ordering::Relaxed);
 
             (
                 (screen_rect.size.width * scale) as i32,

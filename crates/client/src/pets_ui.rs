@@ -6,6 +6,8 @@
 //! in the bag, which is the same path as the potion; the button here only
 //! sends the request.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::items::PetData;
 use shared::protocol::ClientMessage;
@@ -83,7 +85,7 @@ impl PetsUi {
         estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "PET", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
-        if clique && fechar.contains(mouse) {
+        if clique && fechar.toca(mouse) {
             self.fechar();
             return None;
         }
@@ -105,7 +107,7 @@ impl PetsUi {
                 estilo::estado_de(botao, !ativo, self.selecionado == i),
                 ativo,
             );
-            if clique && ativo && botao.contains(mouse) {
+            if clique && ativo && botao.toca(mouse) {
                 self.selecionado = i;
                 self.skill_slot_escolhido = None;
             }
@@ -227,7 +229,7 @@ impl PetsUi {
             estilo::estado_de(alimentar, racoes == 0, false),
             racoes > 0,
         );
-        if clique && racoes > 0 && alimentar.contains(mouse) {
+        if clique && racoes > 0 && alimentar.toca(mouse) {
             if let Some(i) = bolsa
                 .iter()
                 .position(|s| s.item_id == shared::item_id::RACAO_DE_PET && s.qty > 0)
@@ -352,7 +354,7 @@ impl PetsUi {
                         15,
                         estilo::SUAVE,
                     );
-                    if clique && r.contains(mouse) {
+                    if clique && r.toca(mouse) {
                         self.skill_slot_escolhido = Some(i);
                         self.rolagem_skills.zera();
                         abriu_skill_agora = true;
@@ -440,7 +442,7 @@ impl PetsUi {
             if linha.y + linha.h < area.y || linha.y > area.y + area.h {
                 continue;
             }
-            estilo::cartao(linha, false, toque.is_some_and(|p| linha.contains(p)));
+            estilo::cartao(linha, false, toque.is_some_and(|p| linha.toca(p)));
             estilo::texto_forte(
                 linha.x + 12.0 * f,
                 linha.y + 21.0 * f,
@@ -463,7 +465,7 @@ impl PetsUi {
                 14,
                 estilo::OURO,
             );
-            if toque.is_some_and(|p| linha.contains(p) && area.contains(p)) {
+            if toque.is_some_and(|p| linha.toca(p) && area.toca(p)) {
                 pedido = Some(ClientMessage::PetSkillEquip {
                     item_slot: *item_slot as u16,
                     pet_slot: self.selecionado as u8,

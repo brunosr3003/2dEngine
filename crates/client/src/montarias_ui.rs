@@ -7,6 +7,8 @@
 //! There are no skins any more: **the color is the variation**. The skin
 //! catalogue went entirely.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 
@@ -121,7 +123,7 @@ impl MontariasUi {
         estilo::texto_forte(p.x + 20.0 * f, p.y + 36.0 * f, "MOUNT", 23, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 49.0 * f, p.y + 8.0 * f, 40.0 * f, 40.0 * f);
         estilo::botao(fechar, "X", estilo::estado_de(fechar, false, false), false);
-        if clique && fechar.contains(mouse) {
+        if clique && fechar.toca(mouse) {
             self.fechar();
             return (None, None);
         }
@@ -150,7 +152,7 @@ impl MontariasUi {
                 estilo::estado_de(loja, false, false),
                 true,
             );
-            let acao = (clique && loja.contains(mouse)).then_some(Acao::AbrirLoja);
+            let acao = (clique && loja.toca(mouse)).then_some(Acao::AbrirLoja);
             // The band counts even with nothing equipped: it is what you equip from.
             let faixa = Rect::new(p.x + 18.0 * f, p.y + 220.0 * f, p.w - 36.0 * f, 152.0 * f);
             let msg = self.colecao.desenha(
@@ -277,7 +279,7 @@ impl MontariasUi {
             );
         } else {
             estilo::botao(bt, "MOUNT UP", estilo::estado_de(bt, false, false), true);
-            if clique && bt.contains(mouse) {
+            if clique && bt.toca(mouse) {
                 return (Some(Acao::Montar), msg);
             }
         }

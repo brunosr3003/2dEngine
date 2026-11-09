@@ -5,6 +5,8 @@
 //! Opens when the server sends `VaultOpen` (touching the Banker). Nothing
 //! here decides: the server checks distance, space and gold.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::armazem;
 use shared::protocol::ClientMessage;
@@ -68,7 +70,7 @@ impl Banco {
     }
 
     pub fn pega_mouse(&self) -> bool {
-        self.aberto && Self::painel().contains(Vec2::from(mouse_position()))
+        self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
     }
 
     /// Draws; returns this frame's request.
@@ -223,7 +225,7 @@ fn lado(
         }
         let s = slots.get(i).filter(|s| s.qty > 0);
         celula(c, s, palco);
-        if s.is_some() && clique.is_some_and(|p| c.contains(p) && area.contains(p)) {
+        if s.is_some() && clique.is_some_and(|p| c.toca(p) && area.toca(p)) {
             saida = Some(Toque::Item(i));
         }
     }
@@ -239,7 +241,7 @@ fn lado(
         estilo::estado_de(b, !pode, false),
         pode,
     );
-    if custo.is_some() && crate::foco::clique() && b.contains(Vec2::from(mouse_position())) {
+    if custo.is_some() && crate::foco::clique() && b.toca(Vec2::from(mouse_position())) {
         saida = Some(Toque::Expandir);
     }
     saida

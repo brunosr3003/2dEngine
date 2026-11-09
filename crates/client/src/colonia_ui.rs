@@ -12,6 +12,8 @@
 //! Quem decide tudo e' o servidor (`shared::colonia`): aqui so' se desenha o
 //! estado que ele mandou e se devolve o pedido que o dedo encostou.
 
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use shared::colonia::{eixo, PedidoColonia, EIXOS, NIVEL_MAX};
 
@@ -274,7 +276,7 @@ impl ColoniaUi {
         if pincando {
             self.arrasto = None;
         } else if let Some(q) = apertou_em() {
-            self.arrasto = mr.contains(q).then_some(q);
+            self.arrasto = mr.toca(q).then_some(q);
         }
         if !is_mouse_button_down(MouseButton::Left) && touches().is_empty() {
             self.arrasto = None;
@@ -299,7 +301,7 @@ impl ColoniaUi {
             self.pinca = None;
         }
         let roda = mouse_wheel().1;
-        if roda != 0.0 && mr.contains(m) {
+        if roda != 0.0 && mr.toca(m) {
             self.zoom =
                 (self.zoom * if roda > 0.0 { 1.12 } else { 1.0 / 1.12 }).clamp(ZOOM_MIN, ZOOM_MAX);
         }
@@ -323,7 +325,7 @@ impl ColoniaUi {
         // A rolagem é quem decide o que é clique e o que é arrasto: sem isso,
         // rolar a lista com o dedo contrataria um morador no caminho.
         let clique = self.rolagem.quadro(dir, total, linha_h);
-        let clicou_em = |r: Rect| clique.is_some_and(|c| r.contains(c));
+        let clicou_em = |r: Rect| clique.is_some_and(|c| r.toca(c));
         crate::rolagem::recortar(Some(dir));
         let cx = dir.x;
         let cw = dir.w - 10.0 * f;
@@ -489,7 +491,7 @@ impl ColoniaUi {
                         let bw = 62.0 * f;
                         let n = shared::colonia::Profissao::TODAS.len() as f32;
                         let bx = r.x + r.w - bw * n - 8.0 * f + *i as f32 * bw;
-                        Rect::new(bx, r.y + 20.0 * f, bw - 4.0 * f, 32.0 * f).contains(m)
+                        Rect::new(bx, r.y + 20.0 * f, bw - 4.0 * f, 32.0 * f).toca(m)
                     })
                     .map(|(_, op)| op);
                 if let Some(mostrar) = quem.or(sob_o_dedo) {
@@ -578,7 +580,7 @@ impl ColoniaUi {
         // O X e o clique POR FORA fecham. Fora da rolagem de propósito: ela
         // já resolveu o que é arrasto, e arrastar a lista até passar da borda
         // não pode fechar o painel.
-        if crate::foco::clique() && (fechar.contains(m) || !p.contains(m)) {
+        if crate::foco::clique() && (fechar.toca(m) || !p.toca(m)) {
             self.fechar();
         }
         pedido
