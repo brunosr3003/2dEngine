@@ -24,6 +24,11 @@ pub const CRIAR_TABELA: &str = "CREATE TABLE IF NOT EXISTS avisos_globais (
     criado TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )";
 
+/// Queues a message for this process's players (bonus-event reminders).
+pub fn enfileirar(texto: String) {
+    FILA.lock().push(texto);
+}
+
 /// What arrived since the last tick.
 pub fn tomar() -> Vec<String> {
     std::mem::take(&mut *FILA.lock())

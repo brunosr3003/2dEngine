@@ -12,6 +12,7 @@
 
 mod auth;
 mod avisos_globais;
+mod eventos_bonus;
 #[cfg(test)]
 mod balanceamento;
 mod barra;
@@ -79,6 +80,7 @@ async fn main() -> Result<()> {
     telemetria::init(&pool).await?;
     telemetria::spawn(pool.clone());
     avisos_globais::iniciar(pool.clone()).await?;
+    eventos_bonus::iniciar(pool.clone()).await?;
     // Schema de quests ANTES do load_all (cria character_quests + coluna
     // faction_points em characters, que o load_all lê por personagem).
     quests::init(&pool).await?;

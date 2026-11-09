@@ -139,6 +139,7 @@
     <button class="aba" data-aba="infra">infra</button>
     <button class="aba" data-aba="correio">correio</button>
     <button class="aba" data-aba="aviso">aviso global</button>
+    <button class="aba" data-aba="eventos">eventos</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -400,6 +401,52 @@
   <div id="av-resultado" class="nota"></div>
   <h2>Últimos avisos</h2>
   <div id="av-lista" class="nota"></div>
+</div>
+
+<!-- ─────────────────────────── eventos de bônus ─────────────────────────── -->
+<div class="aba-painel" id="aba-eventos" hidden>
+  <h2>Eventos de bônus</h2>
+  <p class="nota">
+    Vale na hora (em até ~5 s) em todos os canais, sem reiniciar. Ao começar,
+    o jogo manda um <b>aviso global</b> e repete a cada 30 min enquanto durar;
+    o jogador vê tudo que está ativo em <b>Menu › Events</b>. Eventos que pegam
+    o mesmo abate se multiplicam (1.5x para todos + 2x neste mapa = 3x aqui).
+    Vale para o que cai dos abates (XP do abate, chance de drop, ouro/cobre).
+  </p>
+  <div class="grade">
+    <div>
+      <label class="f">bônus <select id="ev-tipo" class="campo">
+        <option value="xp">XP</option><option value="drop">chance de drop</option><option value="ouro">ouro e cobre</option>
+      </select></label>
+      <label class="f">onde <select id="ev-escopo" class="campo">
+        <option value="todos">todo mundo</option><option value="mapa">um mapa</option>
+        <option value="mob">um mob</option><option value="dungeon">dungeon</option><option value="chefe">chefe</option>
+      </select></label>
+      <div id="ev-alvo-linha" hidden>
+        <label class="f">filtro <input id="ev-filtro" class="campo" placeholder="buscar" style="width:200px"></label>
+        <label class="f">alvo <select id="ev-alvo" class="campo" style="max-width:340px"></select></label>
+      </div>
+    </div>
+    <div>
+      <label class="f">multiplicador <input id="ev-mult" type="number" step="0.1" min="1.1" max="10" value="2" class="campo" style="width:80px"> x</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="acao" type="button" data-evm="1.5">1.5x</button><button class="acao" type="button" data-evm="2">2x</button>
+        <button class="acao" type="button" data-evm="3">3x</button>
+      </div>
+      <label class="f">duração <input id="ev-min" type="number" min="1" value="60" class="campo" style="width:80px"> min</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="acao" type="button" data-evd="30">30 min</button><button class="acao" type="button" data-evd="60">1 h</button>
+        <button class="acao" type="button" data-evd="120">2 h</button><button class="acao" type="button" data-evd="360">6 h</button>
+        <button class="acao" type="button" data-evd="1440">24 h</button><button class="acao" type="button" data-evd="2880">48 h</button>
+      </div>
+      <label class="f">assina <input id="ev-autor" class="campo" value="Staff" maxlength="30" style="width:160px"></label>
+    </div>
+  </div>
+  <p id="ev-previa" class="nota" style="font-size:15px"></p>
+  <button class="aba" id="ev-criar" style="width:auto;padding:8px 20px">criar evento</button>
+  <div id="ev-resultado" class="nota"></div>
+  <h2>Eventos</h2>
+  <div id="ev-lista"></div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -1630,6 +1677,74 @@ document.getElementById('av-enviar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.aviso = avCarrega;
+
+// ── eventos de bônus ──
+let evOpcoes = null;
+const EV_TIPO = { xp: 'XP', drop: 'chance de drop', ouro: 'ouro e cobre' };
+const EV_CHAVE = { mapa: 'mapas', mob: 'mobs', dungeon: 'dungeons', chefe: 'chefes' };
+function evAlvos() {
+  const escopo = document.getElementById('ev-escopo').value;
+  const linha = document.getElementById('ev-alvo-linha');
+  linha.hidden = escopo === 'todos';
+  if (escopo === 'todos' || !evOpcoes) { evPrevia(); return; }
+  const f = document.getElementById('ev-filtro').value.toLowerCase();
+  const sel = document.getElementById('ev-alvo');
+  const antes = sel.value;
+  sel.innerHTML = (evOpcoes[EV_CHAVE[escopo]] || [])
+    .filter(o => !f || o.n.toLowerCase().includes(f))
+    .map(o => `<option value="${esc(o.v)}">${esc(o.n)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === antes)) sel.value = antes;
+  evPrevia();
+}
+function evPrevia() {
+  const escopo = document.getElementById('ev-escopo').value;
+  const sel = document.getElementById('ev-alvo');
+  const onde = escopo === 'todos' ? 'para todo mundo' : (sel.selectedOptions[0] ? sel.selectedOptions[0].text : '—');
+  const m = document.getElementById('ev-mult').value;
+  const min = parseInt(document.getElementById('ev-min').value, 10) || 0;
+  const dur = min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ' ' + (min % 60) + ' min' : ''}` : `${min} min`;
+  document.getElementById('ev-previa').innerHTML =
+    `<b>${esc(m)}x ${EV_TIPO[document.getElementById('ev-tipo').value]}</b> · ${esc(onde)} · por <b>${dur}</b>`;
+}
+async function evCarrega() {
+  const d = await api('api/eventos'); if (!d) return;
+  evOpcoes = d.opcoes;
+  evAlvos();
+  document.getElementById('ev-lista').innerHTML = d.eventos.length ? `<table><tr><th>#</th><th>bônus</th><th>onde</th><th>início</th><th>fim</th><th>quem</th><th></th></tr>` +
+    d.eventos.map(e => `<tr><td>${e.id}</td><td><b>${(+e.mult).toFixed(1)}x</b> ${EV_TIPO[e.tipo] || e.tipo}</td>
+      <td>${e.escopo === 'todos' ? 'todo mundo' : esc(e.escopo + ': ' + (e.alvo_nome || e.alvo || 'todos'))}</td>
+      <td>${esc(e.inicio)}</td><td>${esc(e.fim)}</td><td>${esc(e.autor)}</td>
+      <td>${e.ativo ? `<span class="bom">ativo</span> <button class="acao" data-evc="${e.id}">encerrar</button>` : (e.cancelado ? '<span class="ruim">encerrado</span>' : 'acabou')}</td></tr>`).join('') + '</table>'
+    : '<p class="nota">nenhum ainda</p>';
+  document.querySelectorAll('[data-evc]').forEach(b => b.onclick = async () => {
+    if (!confirm('Encerrar o evento #' + b.dataset.evc + ' agora?')) return;
+    await fetch('api/eventos/cancelar', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: +b.dataset.evc }) });
+    evCarrega();
+  });
+}
+['ev-escopo', 'ev-filtro'].forEach(id => document.getElementById(id).addEventListener('input', evAlvos));
+['ev-tipo', 'ev-alvo', 'ev-mult', 'ev-min'].forEach(id => document.getElementById(id).addEventListener('input', evPrevia));
+document.querySelectorAll('[data-evm]').forEach(b => b.onclick = () => { document.getElementById('ev-mult').value = b.dataset.evm; evPrevia(); });
+document.querySelectorAll('[data-evd]').forEach(b => b.onclick = () => { document.getElementById('ev-min').value = b.dataset.evd; evPrevia(); });
+document.getElementById('ev-criar').onclick = async () => {
+  const corpo = {
+    tipo: document.getElementById('ev-tipo').value,
+    escopo: document.getElementById('ev-escopo').value,
+    alvo: document.getElementById('ev-alvo').value || '',
+    mult: parseFloat(document.getElementById('ev-mult').value),
+    minutos: parseInt(document.getElementById('ev-min').value, 10),
+    autor: document.getElementById('ev-autor').value,
+  };
+  const r = document.getElementById('ev-resultado');
+  if (!confirm('Criar agora?\n\n' + document.getElementById('ev-previa').textContent + '\n\nVai junto um aviso global para todos.')) return;
+  r.textContent = 'criando...';
+  try {
+    const d = await (await fetch('api/eventos', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo) })).json();
+    r.innerHTML = d.ok ? `<span class="bom">evento #${d.id} criado</span> · vale em até ~5 s` : `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
+    evCarrega();
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+};
+PUXA.eventos = evCarrega;
 document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
   const min = Math.max(1, parseInt(document.getElementById('av-min').value, 10) || 10);
   const t = b.dataset.av === 'manut'

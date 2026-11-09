@@ -45,6 +45,8 @@ pub enum Item {
     Ranking,
     /// "Rate Tempest" on Google Play (`avaliacao.rs`).
     Avaliar,
+    /// Bonus events active now (`eventos_ui`).
+    Eventos,
     /// A colonia (docs/COLONIA.md): colher e melhorar.
     /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
     GuardaRoupa,
@@ -164,6 +166,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
     (
         "EVENT",
         &[
+            (Item::Eventos, "Events", None),
             (Item::Presenca, "Presence", None),
             (Item::Ofertas, "Offers", None),
             (Item::IlhaMagica, "Magic Island", None),
@@ -509,6 +512,7 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::Ofertas => "ofertas",
         Item::Ranking => "ranking",
         Item::Avaliar => "avaliar",
+        Item::Eventos => "coroa",
         Item::GuardaRoupa => "guarda_roupa",
         Item::MinhaIlha => "minha_ilha",
         Item::Grupo => "grupo",
@@ -617,6 +621,7 @@ mod tests {
             Item::Ofertas,
             Item::Ranking,
             Item::Avaliar,
+            Item::Eventos,
             Item::MinhaIlha,
             Item::IlhaMagica,
             Item::GuardaRoupa,

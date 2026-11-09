@@ -6557,6 +6557,9 @@ impl GameWorld {
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
             });
+            let _ = s.handle.to_client.send(ServerMessage::EventosAtivos {
+                eventos: crate::eventos_bonus::ativos(),
+            });
             s.mortes = crate::morte::de_json(&row.mortes_json);
             s.recuperacoes_dia = row.recuperacoes_dia;
             s.recuperacoes_usadas = row.recuperacoes_usadas.max(0) as u32;
@@ -12864,6 +12867,10 @@ impl GameWorld {
             let (mag_xp, mag_ouro, mag_drop) = kill_credits
                 .get(&eid)
                 .map_or((1.0, 1.0, 1.0), |a| self.mults_de_abate(*a, e_chefe_aqui));
+            // Bonus events from the Panopticon (`shared::eventos`), on top.
+            let (ev_xp, ev_ouro, ev_drop) =
+                self.mults_de_evento(kill_credits.get(&eid).copied(), kind_id, e_chefe_aqui);
+            let (mag_xp, mag_ouro, mag_drop) = (mag_xp * ev_xp, mag_ouro * ev_ouro, mag_drop * ev_drop);
             let drops: Vec<(u16, u32)> = crate::economy::enemy_loot_drops_com_sorte(
                 kind_id,
                 seed,
@@ -23176,5 +23183,38 @@ impl GameWorld {
                 let _ = s.handle.to_client.send(ServerMessage::AvisoGlobal { texto: texto.to_string() });
             }
         }
+    }
+}
+
+static EVENTOS_ENVIADOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+impl GameWorld {
+    /// The active bonus events changed (`crate::eventos_bonus`): tell everyone.
+    pub fn enviar_eventos_se_mudou(&mut self) {
+        let v = crate::eventos_bonus::versao();
+        if EVENTOS_ENVIADOS.swap(v, std::sync::atomic::Ordering::Relaxed) == v {
+            return;
+        }
+        let eventos = crate::eventos_bonus::ativos();
+        for s in self.sessions.values() {
+            if s.logged_in {
+                let _ = s.handle.to_client.send(ServerMessage::EventosAtivos { eventos: eventos.clone() });
+            }
+        }
+    }
+
+    /// The bonus-event multipliers (xp, gold, drop) for a kill by `matador`.
+    fn mults_de_evento(&self, matador: Option<EntityId>, kind: u16, chefe: bool) -> (f32, f32, f32) {
+        use shared::eventos::{Abate, Tipo};
+        let dungeon = matador
+            .and_then(|a| self.sessions.values().find(|s| s.entity_id == a))
+            .and_then(|s| self.instancias.iter().find(|i| i.id == s.instancia))
+            .map(|i| i.conteudo);
+        let a = Abate { zona: &self.zona, kind, dungeon, chefe };
+        (
+            crate::eventos_bonus::mult(Tipo::Xp, &a),
+            crate::eventos_bonus::mult(Tipo::Ouro, &a),
+            crate::eventos_bonus::mult(Tipo::Drop, &a),
+        )
     }
 }

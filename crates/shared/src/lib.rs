@@ -24,6 +24,7 @@ pub mod desafio;
 pub mod planta;
 pub mod oasis;
 pub mod dungeon;
+pub mod eventos;
 pub mod porao;
 pub mod ladder;
 pub mod forja;

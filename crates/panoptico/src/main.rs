@@ -154,6 +154,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/infra"), get(infra))
         .route(&p("/api/correio"), post(correio))
         .route(&p("/api/avisos"), get(avisos_lista).post(aviso_enviar))
+        .route(&p("/api/eventos"), get(eventos_lista).post(evento_criar))
+        .route(&p("/api/eventos/cancelar"), post(evento_cancelar))
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))
@@ -596,6 +598,173 @@ async fn avisos_lista(State(st): State<Estado>) -> impl IntoResponse {
             .map(|(id, texto, autor, quando)| serde_json::json!({ "id": id, "texto": texto, "autor": autor, "quando": quando }))
             .collect::<Vec<_>>(),
     )
+}
+
+// ─────────────── bonus events (`shared::eventos`, `server::eventos_bonus`) ───────────────
+// The panel writes `eventos_bonus`; every game process re-reads the active
+// ones every 5 s, applies them on kills, shows them in the game's Events
+// panel and announces them (at the start and every 30 min).
+
+const CRIAR_EVENTOS: &str = "CREATE TABLE IF NOT EXISTS eventos_bonus (
+    id BIGSERIAL PRIMARY KEY,
+    tipo TEXT NOT NULL,
+    escopo TEXT NOT NULL,
+    alvo TEXT NOT NULL DEFAULT '',
+    alvo_nome TEXT NOT NULL DEFAULT '',
+    mult REAL NOT NULL,
+    inicio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    fim TIMESTAMPTZ NOT NULL,
+    autor TEXT NOT NULL DEFAULT '',
+    cancelado BOOLEAN NOT NULL DEFAULT FALSE
+)";
+
+/// What can be targeted: (value, name) per scope.
+async fn opcoes_de_evento(pool: &sqlx::PgPool) -> serde_json::Value {
+    let mut mapas: Vec<(String, String)> = shared::terreno::ARQUIPELAGO
+        .iter()
+        .map(|d| (d.zona.to_string(), d.nome.to_string()))
+        .collect();
+    mapas.push((shared::magica::ZONA.to_string(), "Magic Island".to_string()));
+    mapas.push(("dungeon".to_string(), "Dungeons (all)".to_string()));
+    let mobs: Vec<(i32, String)> = sqlx::query_as("SELECT kind, name FROM enemy_kinds ORDER BY kind")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    let dungeons: Vec<(u16, &str)> = shared::dungeon::CONTEUDOS.iter().map(|c| (c.id, c.nome)).collect();
+    let chefes: Vec<(u16, &str, &str)> = shared::bosses::CHEFES.iter().map(|c| (c.kind, c.nome, c.zona)).collect();
+    serde_json::json!({
+        "mapas": mapas.iter().map(|(v, n)| serde_json::json!({"v": v, "n": n})).collect::<Vec<_>>(),
+        "mobs": mobs.iter().map(|(v, n)| serde_json::json!({"v": v.to_string(), "n": format!("{n} (#{v})")})).collect::<Vec<_>>(),
+        "dungeons": std::iter::once(serde_json::json!({"v": "", "n": "every dungeon"}))
+            .chain(dungeons.iter().map(|(v, n)| serde_json::json!({"v": v.to_string(), "n": n}))).collect::<Vec<_>>(),
+        "chefes": std::iter::once(serde_json::json!({"v": "", "n": "every boss"}))
+            .chain(chefes.iter().map(|(v, n, z)| serde_json::json!({"v": v.to_string(), "n": format!("{n} · {z}")}))).collect::<Vec<_>>(),
+    })
+}
+
+async fn eventos_lista(State(st): State<Estado>) -> impl IntoResponse {
+    let _ = sqlx::query(CRIAR_EVENTOS).execute(&*st.pool).await;
+    let linhas: Vec<(i64, String, String, String, String, f32, String, String, String, bool, bool)> = sqlx::query_as(
+        "SELECT id, tipo, escopo, alvo, alvo_nome, mult, \
+           to_char(inicio AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), \
+           to_char(fim AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), autor, cancelado, \
+           (NOT cancelado AND fim > NOW()) \
+         FROM eventos_bonus ORDER BY id DESC LIMIT 40",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let lista: Vec<_> = linhas
+        .into_iter()
+        .map(|(id, tipo, escopo, alvo, alvo_nome, mult, inicio, fim, autor, cancelado, ativo)| {
+            serde_json::json!({"id": id, "tipo": tipo, "escopo": escopo, "alvo": alvo, "alvo_nome": alvo_nome,
+                "mult": mult, "inicio": inicio, "fim": fim, "autor": autor, "cancelado": cancelado, "ativo": ativo})
+        })
+        .collect();
+    axum::Json(serde_json::json!({ "eventos": lista, "opcoes": opcoes_de_evento(&st.pool).await }))
+}
+
+#[derive(serde::Deserialize)]
+struct EventoPedido {
+    tipo: String,
+    escopo: String,
+    #[serde(default)]
+    alvo: String,
+    mult: f32,
+    minutos: i64,
+    #[serde(default)]
+    autor: String,
+}
+
+fn recusa(t: impl Into<String>) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    (axum::http::StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({ "ok": false, "erro": t.into() })))
+}
+
+async fn evento_criar(
+    State(st): State<Estado>,
+    axum::Json(e): axum::Json<EventoPedido>,
+) -> impl IntoResponse {
+    use shared::eventos::{Escopo, Tipo};
+    if Tipo::de_texto(&e.tipo).is_none() {
+        return recusa("tipo inválido");
+    }
+    let Some(escopo) = Escopo::de_texto(&e.escopo) else {
+        return recusa("escopo inválido");
+    };
+    if !(1.05..=10.0).contains(&e.mult) {
+        return recusa("multiplicador entre 1.05 e 10");
+    }
+    if !(1..=60 * 24 * 14).contains(&e.minutos) {
+        return recusa("duração entre 1 minuto e 14 dias");
+    }
+    // The target's name for players, from the same lists the panel shows.
+    let op = opcoes_de_evento(&st.pool).await;
+    let alvo = if escopo == Escopo::Todos { String::new() } else { e.alvo.trim().to_string() };
+    let chave = match escopo {
+        Escopo::Todos => None,
+        Escopo::Mapa => Some("mapas"),
+        Escopo::Mob => Some("mobs"),
+        Escopo::Dungeon => Some("dungeons"),
+        Escopo::Chefe => Some("chefes"),
+    };
+    let alvo_nome = match chave {
+        None => String::new(),
+        Some(k) => {
+            let achado = op[k].as_array().and_then(|v| v.iter().find(|o| o["v"].as_str() == Some(alvo.as_str())));
+            let Some(o) = achado else {
+                return recusa("alvo não encontrado");
+            };
+            // Players see the name without the "(#12)" / "· zone" admin tail.
+            let n = o["n"].as_str().unwrap_or("").to_string();
+            n.split(" (#").next().unwrap_or("").split(" · ").next().unwrap_or("").to_string()
+        }
+    };
+    if matches!(escopo, Escopo::Mapa | Escopo::Mob) && alvo.is_empty() {
+        return recusa("escolha o alvo");
+    }
+    let r = async {
+        sqlx::query(CRIAR_EVENTOS).execute(&*st.pool).await?;
+        sqlx::query_scalar::<_, i64>(
+            "INSERT INTO eventos_bonus (tipo, escopo, alvo, alvo_nome, mult, fim, autor) \
+             VALUES ($1, $2, $3, $4, $5, NOW() + make_interval(mins => $6::int), $7) RETURNING id",
+        )
+        .bind(&e.tipo)
+        .bind(&e.escopo)
+        .bind(&alvo)
+        .bind(&alvo_nome)
+        .bind(e.mult)
+        .bind(e.minutos as i32)
+        .bind(e.autor.trim())
+        .fetch_one(&*st.pool)
+        .await
+    }
+    .await;
+    match r {
+        Ok(id) => (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "id": id }))),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
+        ),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CancelarPedido {
+    id: i64,
+}
+
+async fn evento_cancelar(
+    State(st): State<Estado>,
+    axum::Json(c): axum::Json<CancelarPedido>,
+) -> impl IntoResponse {
+    match sqlx::query("UPDATE eventos_bonus SET cancelado = TRUE WHERE id = $1")
+        .bind(c.id)
+        .execute(&*st.pool)
+        .await
+    {
+        Ok(_) => axum::Json(serde_json::json!({ "ok": true })),
+        Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
+    }
 }
 
 /// The CLIENT's item icon atlas, same PNG and same index (generated by

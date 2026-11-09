@@ -132,6 +132,7 @@ mod ranking_ui;
 mod troca_ui;
 mod avaliacao;
 mod aviso_global;
+mod eventos_ui;
 mod previa_skills;
 mod rastro;
 mod render3d;
@@ -472,6 +473,7 @@ struct Jogo {
     /// "Rate Tempest" prompt (`avaliacao.rs`).
     avaliacao: avaliacao::Avaliacao,
     aviso_global: aviso_global::AvisoGlobal,
+    eventos: eventos_ui::EventosUi,
     /// Owned-but-unconsumed Google Play purchases re-reported (once).
     billing_recuperado: bool,
     /// Menu "Travel" do Capitao do Porto.
@@ -661,6 +663,11 @@ async fn main() {
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_HUD").is_ok() {
         previa_hud::abrir(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_EVENTOS").is_ok() {
+        eventos_ui::previa().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1034,6 +1041,7 @@ async fn main() {
         troca: troca_ui::TrocaUi::default(),
         avaliacao: avaliacao::Avaliacao::default(),
         aviso_global: Default::default(),
+        eventos: Default::default(),
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
@@ -2229,6 +2237,7 @@ impl Jogo {
                 }
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
+            ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
                 self.aviso_global.receber(texto);
@@ -3480,6 +3489,7 @@ impl Jogo {
             || self.social.aberto
             || self.morte.painel
             || self.config_barra.aberto
+            || self.eventos.aberto
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
@@ -3836,6 +3846,7 @@ impl Jogo {
         self.montarias.fechar();
         self.morte.painel = false;
         self.config_barra.fechar();
+        self.eventos.aberto = false;
         self.config_coleta.fechar();
         self.config_combate.fechar();
         self.config_interface.fechar();
@@ -3974,6 +3985,7 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
+            Item::Eventos => self.eventos.aberto = true,
             Item::Avaliar => {
                 if !avaliacao::abrir_loja() {
                     self.chat.push("Open Google Play and search for Tempest Online.".into());
@@ -4046,6 +4058,9 @@ impl Jogo {
             true
         } else if self.config_coleta.aberto {
             self.config_coleta.fechar();
+            true
+        } else if self.eventos.aberto {
+            self.eventos.aberto = false;
             true
         } else if self.config_barra.aberto {
             self.config_barra.fechar();
@@ -6480,6 +6495,9 @@ impl Jogo {
                     z.buffs,
                     self.barra.curas(get_time()),
                 );
+                if self.eventos.selo(z.buffs) {
+                    self.eventos.aberto = true;
+                }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
                 self.habilidades.barra(
@@ -6789,6 +6807,7 @@ impl Jogo {
         if self.craft.aberto()
             || self.forja.aberto()
             || self.config_barra.aberto
+            || self.eventos.aberto
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
@@ -7373,6 +7392,7 @@ impl Jogo {
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
         self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
         self.avaliacao.desenha();
+        self.eventos.desenha();
         self.aviso_global.desenha(get_time());
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.

@@ -1283,6 +1283,11 @@ pub enum ServerMessage {
     AvisoGlobal {
         texto: String,
     },
+    /// Every bonus event active now (`shared::eventos`): at login and each
+    /// time the list changes. The client's Events panel shows it.
+    EventosAtivos {
+        eventos: Vec<crate::eventos::Evento>,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
