@@ -92,143 +92,139 @@ impl ConfigBarra {
     }
 
     /// Draws and handles the click. Returns `true` when the bar changed (save).
+    ///
+    /// Redone 09/11/2026 (owner: "the potion and consumable settings menu is
+    /// very ugly, non intuitive, buttons are too small"): a 900×420 canvas
+    /// scaled to the screen like the other redesigned panels, one row per
+    /// slot with finger-sized controls, and a line that always says what to
+    /// tap next.
     pub fn desenha(
         &mut self,
         barra: &mut Barra,
         slots: &[InventorySlot],
         nome: &dyn Fn(u16) -> String,
     ) -> bool {
-        let (sw, sh) = (screen_width(), screen_height());
-        let w = 780.0f32.min(sw - 40.0);
-        let h = 470.0f32.min(sh - 40.0);
-        let p = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
-        estilo::painel(p);
+        let seguro = crate::hud_layout::tela_segura();
+        let k = estilo::escala_do_painel(BASE_W, BASE_H)
+            .min((seguro.w - 8.0) / BASE_W)
+            .min((seguro.h - 8.0) / BASE_H);
+        estilo::no_painel(k, || self.desenha_na_escala(barra, slots, nome, k, seguro))
+    }
+
+    fn desenha_na_escala(
+        &mut self,
+        barra: &mut Barra,
+        slots: &[InventorySlot],
+        nome: &dyn Fn(u16) -> String,
+        k: f32,
+        seguro: Rect,
+    ) -> bool {
+        let o = vec2(seguro.center().x - BASE_W * k * 0.5, seguro.center().y - BASE_H * k * 0.5);
+        let r = |x: f32, y: f32, w: f32, h: f32| Rect::new(o.x + x * k, o.y + y * k, w * k, h * k);
+        crate::hud_layout::escurece(0.5);
+        let p = r(0.0, 0.0, BASE_W, BASE_H);
+        estilo::painel_destaque(p, estilo::OURO);
         let m = Vec2::from(mouse_position());
         let clique = crate::foco::clique();
         let mut mudou = false;
 
-        estilo::texto(p.x + 20.0, p.y + 34.0, "Item bar", 22, estilo::OURO);
-        estilo::texto(p.x + 20.0, p.y + 56.0, "Escolha um item e depois um espaço (ou o contrário). Na tela, arraste o botão pra CIMA pra ligar o AUTO.", 13, estilo::SUAVE);
-        let x_fechar = Rect::new(p.x + p.w - 38.0, p.y + 12.0, 26.0, 26.0);
-        estilo::painel(x_fechar);
-        estilo::texto_centro(
-            x_fechar.center().x,
-            x_fechar.center().y + 6.0,
-            "X",
-            16,
-            estilo::TEXTO,
-        );
+        estilo::texto_forte(p.x + 22.0 * k, p.y + 38.0 * k, "Potion bar", 22, estilo::OURO);
+        // The next step, always spelled out.
+        let (passo, cor_passo) = match (self.espaco_alvo, self.selecionado) {
+            (Some(i), _) => (format!("Now pick a potion from your bag for slot {} ›", TECLAS[i]), estilo::OURO),
+            (None, Some(id)) => (format!("Now tap the slot for {} ‹", nome(id)), estilo::OURO),
+            _ => ("Tap a slot, then a potion from your bag. AUTO drinks it for you.".to_string(), estilo::SUAVE),
+        };
+        estilo::texto_ajustado(&passo, p.x + 22.0 * k, p.y + 62.0 * k, 760.0 * k, 14, cor_passo);
+        let x_fechar = r(BASE_W - 56.0, 10.0, 46.0, 46.0);
+        estilo::botao(x_fechar, "X", estilo::estado_de(x_fechar, false, false), false);
         if clique && x_fechar.toca(m) {
             self.fechar();
             return false;
         }
 
-        // ── espacos ──
-        let col = (p.w * 0.56).min(440.0);
+        // ── the four slots ──
+        let (lx, lw) = (16.0, 604.0);
         for i in 0..ESPACOS {
-            let linha = Rect::new(p.x + 16.0, p.y + 74.0 + i as f32 * 94.0, col - 16.0, 86.0);
+            let y = 78.0 + i as f32 * 83.0;
+            let linha = r(lx, y, lw, 77.0);
             let alvo = self.espaco_alvo == Some(i);
-            estilo::painel(linha);
-            if alvo {
-                draw_rectangle_lines(linha.x, linha.y, linha.w, linha.h, 2.0, estilo::OURO);
-            }
             let esp = barra.espacos[i];
-            let caixa = Rect::new(linha.x + 10.0, linha.y + 11.0, 64.0, 64.0);
+            let esperando = self.selecionado.is_some();
+            estilo::cartao(linha, linha.toca(m), alvo);
+            if alvo || (esperando && linha.toca(m)) {
+                draw_rectangle_lines(linha.x, linha.y, linha.w, linha.h, 3.0 * k, estilo::OURO);
+            }
+            // Slot box with its key.
+            let caixa = r(lx + 10.0, y + 8.0, 61.0, 61.0);
             estilo::painel(caixa);
+            let tecla = r(lx + 4.0, y + 3.0, 24.0, 20.0);
+            draw_rectangle(tecla.x, tecla.y, tecla.w, tecla.h, Color::new(0.08, 0.06, 0.05, 0.9));
+            estilo::texto_centro_forte(tecla.center().x, tecla.center().y + 5.0 * k, TECLAS[i], 13, estilo::OURO);
             if esp.item_id == 0 {
-                if !crate::icones_ui::ui("mais", caixa.center(), 28.0, estilo::SUAVE) {
-                    estilo::texto_centro(
-                        caixa.center().x,
-                        caixa.center().y + 8.0,
-                        "+",
-                        26,
-                        estilo::SUAVE,
-                    );
+                estilo::texto_centro_forte(caixa.center().x, caixa.center().y + 10.0 * k, "+", 30, estilo::SUAVE);
+                estilo::texto(
+                    p.x + (lx + 86.0) * k,
+                    linha.center().y + 6.0 * k,
+                    if alvo { "Pick a potion on the right ›" } else { "Empty · tap to choose a potion" },
+                    16,
+                    if alvo { estilo::OURO } else { estilo::SUAVE },
+                );
+                if clique && linha.toca(m) {
+                    mudou |= self.escolhe_espaco(barra, i);
                 }
-            } else {
-                let q = barra::quantidade(slots, esp.item_id);
-                crate::bolsa::icone_do_item(
-                    Rect::new(caixa.x + 6.0, caixa.y + 6.0, 52.0, 52.0),
-                    esp.item_id,
-                    if q > 0 { 1.0 } else { 0.35 },
-                );
-                estilo::texto(
-                    caixa.x + caixa.w - 20.0,
-                    caixa.y + caixa.h - 4.0,
-                    &q.to_string(),
-                    12,
-                    estilo::TEXTO,
-                );
-            }
-            estilo::texto(caixa.x + 4.0, caixa.y - 1.0, TECLAS[i], 11, estilo::SUAVE);
-            if clique && caixa.toca(m) {
-                mudou |= self.escolhe_espaco(barra, i);
-            }
-            let tx = caixa.x + caixa.w + 12.0;
-            if esp.item_id == 0 {
-                estilo::texto(
-                    tx,
-                    linha.y + 38.0,
-                    if alvo {
-                        "Pick an item from the list ›"
-                    } else {
-                        "Empty"
-                    },
-                    15,
-                    estilo::SUAVE,
-                );
                 continue;
             }
-            estilo::texto(tx, linha.y + 26.0, &nome(esp.item_id), 15, estilo::TEXTO);
-            // Magnifier: where to get more of this consumable.
-            if crate::onde_obter::botao(Rect::new(
-                linha.x + linha.w - 44.0,
-                linha.y + 44.0,
-                34.0,
-                34.0,
-            )) {
-                self.onde_obter = Some(esp.item_id);
-            }
-            let cat = barra::categoria(esp.item_id);
-            // AUTO liga/desliga.
-            let b_auto = Rect::new(tx, linha.y + 38.0, 118.0, 26.0);
-            estilo::painel(b_auto);
-            let (txt, cor) = if esp.auto {
-                ("AUTO · on", estilo::AUTO)
-            } else {
-                ("AUTO · off", estilo::SUAVE)
-            };
-            estilo::texto_centro(b_auto.center().x, b_auto.center().y + 5.0, txt, 13, cor);
+            let q = barra::quantidade(slots, esp.item_id);
+            crate::bolsa::icone_do_item(r(lx + 15.0, y + 13.0, 51.0, 51.0), esp.item_id, if q > 0 { 1.0 } else { 0.35 });
+            // Name and how many are left.
+            let tx = p.x + (lx + 84.0) * k;
+            estilo::texto_ajustado(&nome(esp.item_id), tx, linha.y + 32.0 * k, 158.0 * k, 16, estilo::TEXTO);
+            estilo::texto(
+                tx,
+                linha.y + 56.0 * k,
+                &format!("×{q} in bag"),
+                13,
+                if q > 0 { estilo::SUAVE } else { estilo::VERMELHO },
+            );
+            // AUTO switch.
+            let b_auto = r(lx + 250.0, y + 16.0, 100.0, 46.0);
+            let cor_auto = if esp.auto { estilo::AUTO } else { Color::new(0.20, 0.17, 0.15, 1.0) };
+            draw_rectangle(b_auto.x, b_auto.y, b_auto.w, b_auto.h, estilo::alfa(cor_auto, if esp.auto { 0.85 } else { 1.0 }));
+            draw_rectangle_lines(b_auto.x, b_auto.y, b_auto.w, b_auto.h, 2.0 * k, if esp.auto { estilo::AUTO } else { estilo::SUAVE });
+            let bolinha = if esp.auto { b_auto.x + b_auto.w - 17.0 * k } else { b_auto.x + 17.0 * k };
+            draw_circle(bolinha, b_auto.center().y, 11.0 * k, if esp.auto { WHITE } else { estilo::SUAVE });
+            let tx_auto = if esp.auto { b_auto.x + 40.0 * k } else { b_auto.x + 62.0 * k };
+            estilo::texto_centro_forte(
+                tx_auto,
+                b_auto.center().y + 6.0 * k,
+                if esp.auto { "AUTO" } else { "OFF" },
+                14,
+                if esp.auto { WHITE } else { estilo::SUAVE },
+            );
             if clique && b_auto.toca(m) {
                 barra.alterna_auto(i);
                 mudou = true;
             }
-            // Threshold only for a resource.
+            // Threshold (health/mana) or the rule (buffs).
+            let cat = barra::categoria(esp.item_id);
+            let sx = lx + 362.0;
             if let Some(c) = cat {
                 if c.limiar_padrao().is_some() {
-                    let menos = Rect::new(b_auto.x + b_auto.w + 10.0, b_auto.y, 26.0, 26.0);
-                    let mais = Rect::new(menos.x + 86.0, b_auto.y, 26.0, 26.0);
-                    // The two buttons and the "< N%" between them become ONE tutorial
-                    // target: the step is "touch the %", not "press minus".
+                    estilo::texto(p.x + sx * k, linha.y + 16.0 * k, "Drink below", 11, estilo::SUAVE);
+                    let menos = r(sx, y + 22.0, 46.0, 46.0);
+                    let mais = r(sx + 112.0, y + 22.0, 46.0, 46.0);
                     crate::foco::marca(
                         crate::foco::chave::POCAO_LIMIAR,
                         Rect::new(menos.x, menos.y, mais.x + mais.w - menos.x, menos.h),
                     );
-                    for (r, s) in [(menos, "−"), (mais, "+")] {
-                        estilo::painel(r);
-                        estilo::texto_centro(
-                            r.center().x,
-                            r.center().y + 6.0,
-                            s,
-                            16,
-                            estilo::TEXTO,
-                        );
-                    }
-                    estilo::texto_centro(
-                        menos.x + 56.0,
-                        b_auto.center().y + 5.0,
-                        &format!("< {}%", esp.limiar),
-                        14,
+                    estilo::botao(menos, "−", estilo::estado_de(menos, esp.limiar <= 5, false), false);
+                    estilo::botao(mais, "+", estilo::estado_de(mais, esp.limiar >= 95, false), false);
+                    estilo::texto_centro_forte(
+                        p.x + (sx + 79.0) * k,
+                        menos.center().y + 8.0 * k,
+                        &format!("{}%", esp.limiar),
+                        20,
                         estilo::OURO,
                     );
                     if clique && menos.toca(m) {
@@ -241,86 +237,108 @@ impl ConfigBarra {
                         mudou = true;
                         self.mexeu_no_limiar = true;
                     }
+                } else {
+                    estilo::texto(p.x + sx * k, linha.y + 34.0 * k, "AUTO drinks it when", 12, estilo::SUAVE);
+                    estilo::texto_ajustado(c.regra(), p.x + sx * k, linha.y + 54.0 * k, 158.0 * k, 13, estilo::TEXTO);
                 }
-                estilo::texto(
-                    tx,
-                    linha.y + 80.0,
-                    &format!("AUTO uses at {}", c.regra()),
-                    12,
-                    estilo::SUAVE,
-                );
             }
-            let limpar = Rect::new(linha.x + linha.w - 74.0, linha.y + 10.0, 64.0, 24.0);
-            estilo::painel(limpar);
-            estilo::texto_centro(
-                limpar.center().x,
-                limpar.center().y + 5.0,
-                "Clear",
-                12,
-                estilo::TEXTO,
-            );
+            // Where to get more · clear the slot.
+            let lupa = r(lx + 530.0, y + 16.0, 30.0, 46.0);
+            if crate::onde_obter::botao(Rect::new(lupa.x - 8.0 * k, lupa.y, 38.0 * k, lupa.h)) {
+                self.onde_obter = Some(esp.item_id);
+            }
+            let limpar = r(lx + 566.0, y + 16.0, 34.0, 46.0);
+            estilo::botao(limpar, "×", estilo::estado_de(limpar, false, false), false);
             if clique && limpar.toca(m) {
                 barra.limpar(i);
                 mudou = true;
+            } else if clique && caixa.toca(m) {
+                mudou |= self.escolhe_espaco(barra, i);
             }
         }
 
-        // ── consumiveis da bolsa ──
-        let lx = p.x + col + 12.0;
-        let lw = p.w - col - 28.0;
-        estilo::texto(lx, p.y + 90.0, "Consumables in your bag", 15, estilo::OURO);
+        // ── consumables in the bag ──
+        let (bx, bw) = (632.0, 252.0);
+        estilo::texto_forte(p.x + bx * k, p.y + 98.0 * k, "Your bag", 16, estilo::OURO);
         let lista = consumiveis(slots);
         if lista.is_empty() {
-            estilo::texto(
-                lx,
-                p.y + 120.0,
-                "No consumables in your bag.",
-                13,
-                estilo::SUAVE,
-            );
+            estilo::texto(p.x + bx * k, p.y + 128.0 * k, "No potions in your bag.", 14, estilo::SUAVE);
         }
-        // Scrolls (finger, wheel or bar) instead of cutting off what does not fit.
-        // A touch on the item or the magnifier counts on release.
-        let area = Rect::new(lx, p.y + 102.0, lw, p.h - 112.0);
-        let total = lista.len() as f32 * 50.0;
-        let toque = self.rolagem.quadro(area, total, 50.0);
-        let tocou = |r: Rect| toque.is_some_and(|c| r.toca(c) && area.toca(c));
+        let area = r(bx, 108.0, bw, 300.0);
+        let passo = 58.0 * k;
+        let total = lista.len() as f32 * passo;
+        let toque = self.rolagem.quadro(area, total, passo);
+        let tocou = |rr: Rect| toque.is_some_and(|c| rr.toca(c) && area.toca(c));
         crate::rolagem::recortar(Some(area));
-        for (k, (id, q)) in lista.iter().enumerate() {
-            let r = Rect::new(
-                lx,
-                area.y + k as f32 * 50.0 - self.rolagem.pos,
-                lw - 12.0,
-                44.0,
-            );
-            if r.y + r.h < area.y || r.y > area.y + area.h {
+        for (n, (id, q)) in lista.iter().enumerate() {
+            let it = Rect::new(area.x, area.y + n as f32 * passo - self.rolagem.pos, area.w - 10.0 * k, passo - 6.0 * k);
+            if it.y + it.h < area.y || it.y > area.y + area.h {
                 continue;
             }
-            estilo::painel(r);
-            if self.selecionado == Some(*id) {
-                draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, estilo::OURO);
+            let marcado = self.selecionado == Some(*id);
+            estilo::cartao(it, it.toca(m), marcado);
+            if marcado || (self.espaco_alvo.is_some() && it.toca(m)) {
+                draw_rectangle_lines(it.x, it.y, it.w, it.h, 3.0 * k, estilo::OURO);
             }
-            crate::bolsa::icone_do_item(Rect::new(r.x + 4.0, r.y + 4.0, 36.0, 36.0), *id, 1.0);
-            estilo::texto(r.x + 48.0, r.y + 27.0, &nome(*id), 14, estilo::TEXTO);
-            let lupa = Rect::new(r.x + r.w - 40.0, r.y + 5.0, 34.0, 34.0);
-            let t = format!("×{q}");
-            estilo::texto(
-                lupa.x - estilo::medir(&t, 13) - 8.0,
-                r.y + 27.0,
-                &t,
-                13,
-                estilo::SUAVE,
-            );
+            crate::bolsa::icone_do_item(Rect::new(it.x + 5.0 * k, it.y + 5.0 * k, 42.0 * k, 42.0 * k), *id, 1.0);
+            estilo::texto_ajustado(&nome(*id), it.x + 54.0 * k, it.y + 24.0 * k, it.w - 104.0 * k, 14, estilo::TEXTO);
+            estilo::texto(it.x + 54.0 * k, it.y + 43.0 * k, &format!("×{q}"), 13, estilo::SUAVE);
+            let lupa = Rect::new(it.x + it.w - 46.0 * k, it.y + 4.0 * k, 42.0 * k, it.h - 8.0 * k);
             let _ = crate::onde_obter::botao(lupa);
             if tocou(lupa) {
                 self.onde_obter = Some(*id);
-            } else if tocou(r) {
+            } else if tocou(it) {
                 mudou |= self.escolhe_item(barra, *id);
             }
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
         mudou
+    }
+}
+
+const BASE_W: f32 = 900.0;
+const BASE_H: f32 = 420.0;
+
+/// `MMO_PREVIA_BARRA=1`: the configurator with a filled bar, no server.
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    use shared::constants::item_id as it;
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-barra-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    let slots: Vec<InventorySlot> = [(it::HEALTH_POTION, 34), (it::GREATER_HEAL, 5), (it::MANA_POTION, 12), (it::XP_POTION, 2), (it::SORTE_POTION, 1)]
+        .iter()
+        .map(|&(item_id, qty)| InventorySlot { item_id, qty, instance: None })
+        .collect();
+    let mut b = Barra::default();
+    b.atribuir(0, it::HEALTH_POTION);
+    b.alterna_auto(0);
+    b.atribuir(1, it::MANA_POTION);
+    b.atribuir(2, it::XP_POTION);
+    let nome = |id: u16| match id {
+        x if x == it::HEALTH_POTION => "Health Potion".to_string(),
+        x if x == it::GREATER_HEAL => "Greater Health Potion".to_string(),
+        x if x == it::MANA_POTION => "Mana Potion".to_string(),
+        x if x == it::XP_POTION => "Experience Potion".to_string(),
+        _ => "Luck Potion".to_string(),
+    };
+    for (arquivo, alvo) in [("barra.png", None), ("barra-escolhendo.png", Some(3))] {
+        let mut c = ConfigBarra::default();
+        c.abrir(alvo);
+        for _ in 0..3 {
+            set_camera(&Camera2D {
+                render_target: Some(rt.clone()),
+                ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()))
+            });
+            clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
+            c.desenha(&mut b, &slots, &nome);
+            unsafe { get_internal_gl().flush() };
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{arquivo}"));
+            set_default_camera();
+            next_frame().await;
+        }
     }
 }
 

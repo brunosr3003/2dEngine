@@ -661,6 +661,11 @@ async fn main() {
         previa_hud::abrir(&mut vox).await;
         return;
     }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_BARRA").is_ok() {
+        config_barra::previa().await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_NOVIDADES").is_ok() {
         novidades::previa().await;
         return;
