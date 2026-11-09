@@ -1617,8 +1617,7 @@ document.getElementById('av-enviar').onclick = async () => {
     } else r.innerHTML = `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
-document.querySelector('[data-aba="aviso"]').addEventListener('click', avCarrega);
-if (location.hash === '#aviso') avCarrega();
+PUXA.aviso = avCarrega;
 
 mostraAba(location.hash.slice(1) || 'mundo');
 </script>
