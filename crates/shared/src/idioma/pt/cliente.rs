@@ -862,13 +862,21 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("{} · now x{quantidade}", "{} · agora x{quantidade}"),
     ("{nome} · you own x{quantidade}", "{nome} · você possui x{quantidade}"),
     (
-        "Equipe no slot da montaria: {:.0}% de velocidade montado",
         "Equip in the mount slot: {:.0}% mounted speed",
+        "Equipe no slot da montaria: {:.0}% de velocidade montado",
     ),
     (
-        "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
         "Equip in the pet slot: picks loot up at {:.0} tiles and gives {} points",
+        "Equipe no slot do pet: busca o saque a {:.0} tiles e dá {} pontos",
     ),
+    ("Tap to skip", "Toque para pular"),
+    ("NEW MOUNT!", "NOVA MONTARIA!"),
+    ("NEW PET!", "NOVO PET!"),
+    ("NEW KEY!", "NOVA CHAVE!"),
+    ("NEW TOME!", "NOVO TOMO!"),
+    ("{} · Mount", "{} · Montaria"),
+    ("{} · Pet", "{} · Pet"),
+    ("{} · Key", "{} · Chave"),
     // ────────────────────────────── cliente: ir até lá ──────────────────────────────
     ("Arrived: {}.", "Chegou: {}."),
     ("HEADING · {} · {:.0} m", "INDO · {} · {:.0} m"),
