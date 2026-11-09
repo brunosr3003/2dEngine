@@ -872,91 +872,9 @@ impl Bolsa {
     /// `render3d::viewport_em_pixels`). O depth do mundo nao esconde o boneco
     /// porque a profundidade e' limpa antes dele.
     fn desenha_retrato(&mut self, r: Rect, vox: &VoxCache, solido: &Material) {
-        if r.w < 20.0 || r.h < 20.0 {
-            return;
-        }
-        // um fundo atras, e o chao em que ele pisa
-        draw_rectangle(r.x, r.y, r.w, r.h, crate::hud_estilo::FUNDO_BAIXO);
-        let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
-            ui::texto_centro(
-                r.x + r.w * 0.5,
-                r.y + r.h * 0.5,
-                "vox faltando: personagem/corpo.vox",
-                12,
-                APAGADO,
-            );
-            return;
-        };
-        let Some(vp) = render3d::viewport_na_tela(r) else {
-            ui::texto_centro(
-                r.x + r.w * 0.5,
-                r.y + r.h * 0.5,
-                "No room for the portrait",
-                12,
-                APAGADO,
-            );
-            return;
-        };
-        let cam = Camera3D {
-            position: vec3(0.0, 1.15, 4.6),
-            target: vec3(0.0, 0.92, 0.0),
-            up: Vec3::Y,
-            fovy: 30f32.to_radians(),
-            aspect: Some(vp.2 as f32 / vp.3 as f32),
-            viewport: Some(vp),
-            render_target: render3d::alvo(),
-            ..Default::default()
-        };
-        set_camera(&cam);
-        render3d::limpa_so_profundidade();
-        gl_use_material(solido);
         let conjunto = Conjunto::da_arma(self.equip.weapon.unwrap_or(0)) as u8;
-        let entrada = crate::rig::Entrada {
-            fase: 0.0,
-            andar: 0.0,
-            correr: 0.0,
-            tempo: get_time() as f32,
-            ar: 0.0,
-            degrau: [0.0, 0.0],
-            combate: crate::rig::Combate {
-                conjunto,
-                sacada: 1.0,
-                ..Default::default()
-            },
-        };
-        let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
-        let pose = crate::rig::pose(&entrada);
-        // The REAL look — face, hair, colours, outfit/skin — and the auras of
-        // the equipped pieces, like the world draws this player. It used to
-        // be the bare default body with the default hat, so a skin or a blue
-        // weapon never showed here.
-        let mut veste = render3d::vestimenta_de(vox, self.aparencia).unwrap_or_else(|| {
-            let mut v = render3d::Vestimenta::nua(corpo);
-            v.cabelo = vox.rig(render3d::RIG_CHAPEU);
-            v
-        });
-        veste.skins = self.skins;
         let auras = shared::auras::equipamento(&self.equip);
-        render3d::desenha_rig_com_auras(base, &pose, &veste, vox, auras);
-        gl_use_default_material();
-        render3d::camera_padrao();
-        // a plataforma dourada do MIR4, em 2D por cima do pe'
-        let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
-        draw_ellipse_lines(
-            cx,
-            cy,
-            r.w * 0.30,
-            r.w * 0.06,
-            0.0,
-            1.5,
-            com_alfa(ui::OURO, 0.55),
-        );
-        crate::hud_estilo::borda_arredondada(
-            r,
-            crate::hud_estilo::RAIO_PEQUENO + 2.0,
-            1.0,
-            crate::hud_estilo::BORDA_FORTE,
-        );
+        desenha_boneco(r, vox, solido, self.aparencia, self.skins, auras, conjunto);
     }
 
     // ── a metade dos itens ──
@@ -2005,6 +1923,104 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
 fn VAZIA_A(a: f32) -> Color {
     com_alfa(VAZIA, a.max(0.9))
 }
+
+/// A character's 3D portrait in `r`, turning gently, with its REAL look
+/// (`aparencia`/`skins`, packed) and the glow of its gear (`auras`). The bag
+/// draws the player with it; the rankings, any player of the top.
+pub(crate) fn desenha_boneco(
+r: Rect,
+vox: &VoxCache,
+solido: &Material,
+aparencia: u32,
+skins: u64,
+auras: u64,
+conjunto: u8,
+) {
+    if r.w < 20.0 || r.h < 20.0 {
+        return;
+    }
+    // um fundo atras, e o chao em que ele pisa
+    draw_rectangle(r.x, r.y, r.w, r.h, crate::hud_estilo::FUNDO_BAIXO);
+    let Some(corpo) = vox.rig(render3d::RIG_CORPO) else {
+        ui::texto_centro(
+            r.x + r.w * 0.5,
+            r.y + r.h * 0.5,
+            "vox faltando: personagem/corpo.vox",
+            12,
+            APAGADO,
+        );
+        return;
+    };
+    let Some(vp) = render3d::viewport_na_tela(r) else {
+        ui::texto_centro(
+            r.x + r.w * 0.5,
+            r.y + r.h * 0.5,
+            "No room for the portrait",
+            12,
+            APAGADO,
+        );
+        return;
+    };
+    let cam = Camera3D {
+        position: vec3(0.0, 1.15, 4.6),
+        target: vec3(0.0, 0.92, 0.0),
+        up: Vec3::Y,
+        fovy: 30f32.to_radians(),
+        aspect: Some(vp.2 as f32 / vp.3 as f32),
+        viewport: Some(vp),
+        render_target: render3d::alvo(),
+        ..Default::default()
+    };
+    set_camera(&cam);
+    render3d::limpa_so_profundidade();
+    gl_use_material(solido);
+    let entrada = crate::rig::Entrada {
+        fase: 0.0,
+        andar: 0.0,
+        correr: 0.0,
+        tempo: get_time() as f32,
+        ar: 0.0,
+        degrau: [0.0, 0.0],
+        combate: crate::rig::Combate {
+            conjunto,
+            sacada: 1.0,
+            ..Default::default()
+        },
+    };
+    let base = Mat4::from_rotation_y((get_time() as f32 * 0.5).sin() * 0.9);
+    let pose = crate::rig::pose(&entrada);
+    // The REAL look — face, hair, colours, outfit/skin — and the auras of
+    // the equipped pieces, like the world draws this player. It used to
+    // be the bare default body with the default hat, so a skin or a blue
+    // weapon never showed here.
+    let mut veste = render3d::vestimenta_de(vox, aparencia).unwrap_or_else(|| {
+        let mut v = render3d::Vestimenta::nua(corpo);
+        v.cabelo = vox.rig(render3d::RIG_CHAPEU);
+        v
+    });
+    veste.skins = skins;
+    render3d::desenha_rig_com_auras(base, &pose, &veste, vox, auras);
+    gl_use_default_material();
+    render3d::camera_padrao();
+    // a plataforma dourada do MIR4, em 2D por cima do pe'
+    let (cx, cy) = (r.x + r.w * 0.5, r.y + r.h * 0.90);
+    draw_ellipse_lines(
+        cx,
+        cy,
+        r.w * 0.30,
+        r.w * 0.06,
+        0.0,
+        1.5,
+        com_alfa(ui::OURO, 0.55),
+    );
+    crate::hud_estilo::borda_arredondada(
+        r,
+        crate::hud_estilo::RAIO_PEQUENO + 2.0,
+        1.0,
+        crate::hud_estilo::BORDA_FORTE,
+    );
+}
+
 
 #[cfg(test)]
 mod testes {

@@ -45,6 +45,9 @@ async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRanking>> {
                 nivel: shared::level_of_xp_with_mult(c.xp, mult),
                 poder: shared::dungeon::poder_de_stats(&stats),
                 classe: Conjunto::da_arma(c.equipment.weapon.unwrap_or(0)) as u8,
+                aparencia: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota()).unwrap_or(0),
+                skins: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota_skins()).unwrap_or(0),
+                auras: shared::auras::equipamento(&c.equipment),
                 nome: c.name,
             }
         })
@@ -115,7 +118,7 @@ mod testes {
     use super::*;
 
     fn l(nome: &str, nivel: u32, poder: i32, classe: u8) -> LinhaRanking {
-        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe }
+        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe, aparencia: 0, skins: 0, auras: 0 }
     }
 
     #[test]

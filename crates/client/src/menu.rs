@@ -43,6 +43,8 @@ pub enum Item {
     Ofertas,
     /// Power and level rankings (`ranking_ui.rs`).
     Ranking,
+    /// "Rate Tempest" on Google Play (`avaliacao.rs`).
+    Avaliar,
     /// A colonia (docs/COLONIA.md): colher e melhorar.
     /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
     GuardaRoupa,
@@ -165,6 +167,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
             (Item::Presenca, "Presence", None),
             (Item::Ofertas, "Offers", None),
             (Item::IlhaMagica, "Magic Island", None),
+            (Item::Avaliar, "Rate us", None),
         ],
     ),
     (
@@ -505,6 +508,7 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::Presenca => "presenca",
         Item::Ofertas => "ofertas",
         Item::Ranking => "ranking",
+        Item::Avaliar => "avaliar",
         Item::GuardaRoupa => "guarda_roupa",
         Item::MinhaIlha => "minha_ilha",
         Item::Grupo => "grupo",
@@ -612,6 +616,7 @@ mod tests {
             Item::Presenca,
             Item::Ofertas,
             Item::Ranking,
+            Item::Avaliar,
             Item::MinhaIlha,
             Item::IlhaMagica,
             Item::GuardaRoupa,

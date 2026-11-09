@@ -1,6 +1,7 @@
 //! RANKINGS panel (`shared::ranking`): Power / Level, overall or per class
 //! (the weapon set). Menu › Social › Rankings.
 
+use macroquad::material::Material;
 use macroquad::prelude::*;
 use shared::protocol::ClientMessage;
 use shared::ranking::{LinhaRanking, Ranking, TipoRanking};
@@ -21,6 +22,8 @@ pub struct RankingUi {
     classe: Option<u8>,
     dados: Option<Ranking>,
     rolagem: Rolagem,
+    /// The player whose 3D preview is open (tapped in the list).
+    sel: Option<LinhaRanking>,
 }
 
 fn u(v: f32) -> f32 {
@@ -51,6 +54,7 @@ impl RankingUi {
 
     pub fn fechar(&mut self) {
         self.aberto = false;
+        self.sel = None;
     }
 
     pub fn receber(&mut self, r: Ranking) {
@@ -61,14 +65,14 @@ impl RankingUi {
         }
     }
 
-    pub fn desenha(&mut self) -> Vec<ClientMessage> {
+    pub fn desenha(&mut self, vox: &crate::vox::VoxCache, solido: &Material) -> Vec<ClientMessage> {
         if !self.aberto {
             return Vec::new();
         }
-        estilo::no_painel(estilo::escala_do_painel(820.0, 680.0), || self.desenha_na_escala())
+        estilo::no_painel(estilo::escala_do_painel(820.0, 680.0), || self.desenha_na_escala(vox, solido))
     }
 
-    fn desenha_na_escala(&mut self) -> Vec<ClientMessage> {
+    fn desenha_na_escala(&mut self, vox: &crate::vox::VoxCache, solido: &Material) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
         let seguro = crate::hud_layout::tela_segura();
         let w = u(820.0).min(seguro.w - 16.0);
@@ -116,6 +120,7 @@ impl RankingUi {
         }
         if mudou {
             self.dados = None;
+            self.sel = None;
             self.rolagem.zera();
             saida.push(self.pedido());
         }
@@ -139,7 +144,7 @@ impl RankingUi {
         }
         let linha_h = u(LINHA);
         let total = d.linhas.len() as f32 * linha_h;
-        self.rolagem.quadro(lista, total, linha_h);
+        let toque = if self.sel.is_none() { self.rolagem.quadro(lista, total, linha_h) } else { None };
         let eu = d.eu.as_ref().map(|e| e.nome.clone());
         let desenha_linha = |r: Rect, l: &LinhaRanking, destaque: bool| {
             if destaque {
@@ -169,9 +174,35 @@ impl RankingUi {
                 continue;
             }
             desenha_linha(r, l, eu.as_deref() == Some(l.nome.as_str()));
+            if toque.is_some_and(|p| r.contains(p)) {
+                self.sel = Some(l.clone());
+            }
         }
         crate::rolagem::recortar(None);
         self.rolagem.desenha(lista, total);
+        // The tapped player, in 3D, over the right side of the list.
+        if let Some(l) = self.sel.clone() {
+            let card = Rect::new(lista.x + lista.w * 0.52, lista.y - u(6.0), lista.w * 0.48, lista.h + u(6.0));
+            estilo::painel_destaque(card, estilo::OURO);
+            let fechar = Rect::new(card.x + card.w - u(44.0), card.y + u(6.0), u(38.0), u(38.0));
+            estilo::texto_centro(fechar.center().x, fechar.center().y + u(7.0), "X", 18, estilo::TEXTO);
+            let boneco = Rect::new(card.x + u(12.0), card.y + u(48.0), card.w - u(24.0), card.h - u(150.0));
+            crate::bolsa::desenha_boneco(boneco, vox, solido, l.aparencia, l.skins, l.auras, l.classe);
+            let cx = card.center().x;
+            estilo::texto_centro_forte(cx, card.y + u(34.0), &format!("#{}  {}", l.posicao, l.nome), 19, estilo::OURO);
+            let y = boneco.y + boneco.h + u(30.0);
+            estilo::texto_centro(cx, y, nome_da_classe(l.classe), 15, estilo::SUAVE);
+            estilo::texto_centro_forte(
+                cx,
+                y + u(30.0),
+                &format!("Level {}  ·  Power {}", l.nivel, shared::idioma::milhar(l.poder.max(0) as u64)),
+                17,
+                estilo::TEXTO,
+            );
+            if clicou && (fechar.toca(m) || !card.contains(m)) {
+                self.sel = None;
+            }
+        }
         // The player's own place, always visible at the bottom.
         let rodape = Rect::new(lista.x, p.y + p.h - u(54.0), lista.w - u(12.0), u(40.0));
         match &d.eu {

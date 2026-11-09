@@ -130,6 +130,7 @@ mod presenca_ui;
 mod ofertas_ui;
 mod ranking_ui;
 mod troca_ui;
+mod avaliacao;
 mod previa_skills;
 mod rastro;
 mod render3d;
@@ -467,6 +468,8 @@ struct Jogo {
     ranking: ranking_ui::RankingUi,
     /// Direct trade (`troca_ui.rs`).
     troca: troca_ui::TrocaUi,
+    /// "Rate Tempest" prompt (`avaliacao.rs`).
+    avaliacao: avaliacao::Avaliacao,
     /// Owned-but-unconsumed Google Play purchases re-reported (once).
     billing_recuperado: bool,
     /// Menu "Travel" do Capitao do Porto.
@@ -1022,6 +1025,7 @@ async fn main() {
         ofertas: ofertas_ui::OfertasUi::default(),
         ranking: ranking_ui::RankingUi::default(),
         troca: troca_ui::TrocaUi::default(),
+        avaliacao: avaliacao::Avaliacao::default(),
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
@@ -3473,6 +3477,7 @@ impl Jogo {
             || self.ofertas.aberto
             || self.ranking.aberto
             || self.troca.aberto()
+            || self.avaliacao.aberta
             || self.viagem.aberto()
             || self.colonia.aberto()
             || self.guarda_roupa.aberto
@@ -3954,6 +3959,11 @@ impl Jogo {
             Item::Ranking => {
                 for pedido in self.ranking.abrir() {
                     self.envia(pedido);
+                }
+            }
+            Item::Avaliar => {
+                if !avaliacao::abrir_loja() {
+                    self.chat.push("Open Google Play and search for Tempest Online.".into());
                 }
             }
             Item::LojaTp => {
@@ -6582,6 +6592,10 @@ impl Jogo {
                         // A aba so' troca o conteudo da caixa. Abrir o diario
                         // daqui era o que o dono NAO queria.
                         Some(missoes::NoRastreador::Aba(grupo)) => self.missoes.aba_grupo = grupo,
+                        Some(missoes::NoRastreador::Expandir) => {
+                            self.missoes.rastreador_expandido = !self.missoes.rastreador_expandido;
+                            self.missoes.desloca_rastreador = 0;
+                        }
                         // As setas andam a janela de três.
                         Some(missoes::NoRastreador::Rolar(pra_frente)) => {
                             let d = &mut self.missoes.desloca_rastreador;
@@ -7343,12 +7357,17 @@ impl Jogo {
         for pedido in self.ofertas.desenha(&self.bolsa.nomes) {
             self.envia(pedido);
         }
-        for pedido in self.ranking.desenha() {
+        for pedido in self.ranking.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }
         for pedido in self.troca.desenha(&self.bolsa.slots, &self.bolsa.nomes, self.bolsa.ouro) {
             self.envia(pedido);
         }
+        // "Rate Tempest": counts play time; shows only at a calm moment (no
+        // window open, outside dungeons), then on top of everything.
+        let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
+        self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
+        self.avaliacao.desenha();
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.
         if !self.dialogo.aberto && !crate::foco::clique() {

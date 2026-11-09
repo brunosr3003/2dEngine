@@ -2057,4 +2057,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Repeat the password", "Repita a senha"),
     ("or", "ou"),
     ("If an account uses this e-mail, the link is on its way. Check the inbox and the spam folder.", "Se houver uma conta com esse e-mail, o link já saiu. Confira a caixa de entrada e o spam."),
+    ("Rate us", "Avalie"),
+    ("Rate Tempest", "Avalie o Tempest"),
+    ("Your review on Google Play helps other", "Sua avaliação na Google Play ajuda outros"),
+    ("players find the game. Thank you!", "jogadores a encontrar o jogo. Obrigado!"),
+    ("Rate on Google Play", "Avaliar na Google Play"),
+    ("Later", "Depois"),
+    ("Open Google Play and search for Tempest Online.", "Abra a Google Play e procure por Tempest Online."),
+    ("Level {}  ·  Power {}", "Nível {}  ·  Poder {}"),
 ];

@@ -193,7 +193,12 @@ fn toca_com_alvo(r: Rect, p: Vec2, alvo: f32, t: f64) -> bool {
     let d = distancia(r, p);
     ALVOS.with(|a| {
         a.borrow().iter().all(|&(o, visto)| {
-            if t - visto > VIDA_DO_ALVO_S || mesmo_ret(o, r) || contem_ret(o, r) || contem_ret(r, o) {
+            // A CONTAINER (a list, a panel) never competes with what is inside
+            // it — but a BUTTON with a smaller one in its corner (the
+            // auto-collect cog) does: a tap on the button's drawing is the
+            // button's. Only something much bigger than a finger is a container.
+            let container = contem_ret(o, r) && o.w >= alvo * 3.0 && o.h >= alvo * 1.5;
+            if t - visto > VIDA_DO_ALVO_S || mesmo_ret(o, r) || container || contem_ret(r, o) {
                 return true;
             }
             if !dentro(area_com_alvo(o, alvo), p) {
@@ -480,6 +485,27 @@ mod testes_do_alvo {
         toca_com_alvo(xis, vec2(-1.0, -1.0), alvo, t);
         // Left of the "x", inside the list: the "x" still gets it.
         assert!(toca_com_alvo(xis, vec2(330.0, 22.0), alvo, t));
+    }
+
+    /// A small button in the CORNER of a bigger one (the auto-collect cog):
+    /// a tap on the big button's drawing, next to the cog, is the big
+    /// button's; the cog keeps its own drawing.
+    #[test]
+    fn botao_no_canto_de_outro_nao_rouba_o_toque() {
+        limpa();
+        let alvo = 57.0; // 9 mm in iPhone points
+        let botao = Rect::new(100.0, 100.0, 98.0, 98.0);
+        let cog = Rect::new(100.0 + 98.0 - 31.0, 100.0, 31.0, 31.0);
+        let t = 7.0;
+        toca_com_alvo(botao, vec2(-1.0, -1.0), alvo, t);
+        toca_com_alvo(cog, vec2(-1.0, -1.0), alvo, t);
+        // On the button, a little left of / below the cog.
+        for p in [vec2(150.0, 115.0), vec2(180.0, 145.0), vec2(160.0, 160.0)] {
+            assert!(toca_com_alvo(botao, p, alvo, t), "button lost {p:?}");
+            assert!(!toca_com_alvo(cog, p, alvo, t), "cog stole {p:?}");
+        }
+        // On the cog itself: the cog.
+        assert!(toca_com_alvo(cog, cog.center(), alvo, t));
     }
 
     /// A target that left the screen stops competing after a second.

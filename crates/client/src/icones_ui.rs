@@ -30,7 +30,7 @@ pub const USADOS_LOJA: &[&str] = &["ouro", "tp", "tp_1", "tp_2", "tp_3", "tp_4"]
 /// breaks the test, not the screen.
 pub const USADOS_UI: &[&str] = &[
     "pets", "guarda_roupa", "minha_ilha", "ilha_magica", "combinar",
-    "mobs", "presenca", "ofertas", "ranking", "dash", "sprint", "pulo", "banco",
+    "mobs", "presenca", "ofertas", "ranking", "avaliar", "dash", "sprint", "pulo", "banco",
     "bolsa",
     "missoes",
     "todas_missoes",

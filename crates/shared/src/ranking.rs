@@ -28,6 +28,14 @@ pub struct LinhaRanking {
     pub poder: i32,
     /// `Conjunto as u8`.
     pub classe: u8,
+    /// The character's look (packed `Aparencia` and skins) and the glow of
+    /// its gear: tapping a row shows it in 3D, like the bag's portrait.
+    #[serde(default)]
+    pub aparencia: u32,
+    #[serde(default)]
+    pub skins: u64,
+    #[serde(default)]
+    pub auras: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,7 +70,7 @@ mod testes {
     use super::*;
 
     fn l(nome: &str, nivel: u32, poder: i32) -> LinhaRanking {
-        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe: 0 }
+        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe: 0, aparencia: 0, skins: 0, auras: 0 }
     }
 
     #[test]

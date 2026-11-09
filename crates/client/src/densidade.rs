@@ -8,8 +8,8 @@
 //!
 //! - Android: `DisplayMetrics.xdpi/ydpi` over JNI, checked against the
 //!   `densityDpi` bucket (some phones report a bogus xdpi).
-//! - iOS: `UIScreen.scale` (exposed by our miniquad patch); an iPhone point is
-//!   ~1/160 inch.
+//! - iOS: the game draws in POINTS, ~1/160 inch each (the screen scale only
+//!   matters for pixels, which this never sees).
 //! - Desktop: `None` — a mouse pointer doesn't need it.
 
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -57,7 +57,12 @@ fn medir() -> Option<f32> {
     if b == 0 {
         return None; // first frame not drawn yet; ask again later
     }
-    Some(f32::from_bits(b) * 160.0 / MM_POR_POLEGADA)
+    // The game draws in POINTS on iOS (not pixels): an iPhone point is
+    // ~1/160 inch whatever the screen scale. Multiplying by the scale (as it
+    // did) made the 9 mm target three times too big — a corner cog ended up
+    // covering the whole button under it.
+    let _ = f32::from_bits(b);
+    Some(160.0 / MM_POR_POLEGADA)
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

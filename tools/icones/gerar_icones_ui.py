@@ -265,6 +265,8 @@ HUD = {
                 ("S", linha((46, 20), (38, 36)), 2), ("S", linha((46, 20), (54, 36)), 2),
                 ("F", "M7,36a11,8 0 0 0 22,0Z"), ("F", "M35,36a11,8 0 0 0 22,0Z"),
                 ("F", rrect(21, 49, 22, 6, 3)), ("F", circ(32, 10, 3.5))],
+    # Rate us: a big star.
+    "avaliar": [("F", estrela(32, 32, 26, 11))],
     # Rankings: a three-step podium with a star on top.
     "ranking": [("F", rrect(22, 30, 20, 28, 3)), ("F", rrect(6, 40, 16, 18, 3)), ("F", rrect(42, 46, 16, 12, 3)),
                 ("F", estrela(32, 16, 10, 4.5))],

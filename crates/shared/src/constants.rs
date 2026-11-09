@@ -152,7 +152,8 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 191 (08/11/2026): rankings, flash offers, server-side Google Play consume.
 /// 192 (09/11/2026): a paid flash offer carries its Play product; purchases
 /// are delivered through the mail queue.
-pub const PROTOCOL_VERSION: u16 = 192;
+/// 193 (09/11/2026): ranking rows carry the character's look (3D preview).
+pub const PROTOCOL_VERSION: u16 = 193;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

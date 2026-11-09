@@ -36,7 +36,7 @@ pub enum Acao {
 /// Nome numa linha e barra noutra dava 40 px por membro, e cinco membros não
 /// cabiam no que o layout reserva em tela pequena — o nome vazava pra linha de
 /// baixo. Dentro da barra cabe em 26 e ainda se lê de canto de olho.
-pub const LINHA_GRUPO: f32 = 26.0;
+pub const LINHA_GRUPO: f32 = 34.0;
 
 /// O GRUPO DENTRO DA CAIXA DO RASTREADOR (a aba "Party").
 ///
