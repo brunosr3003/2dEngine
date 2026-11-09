@@ -7,7 +7,7 @@ pub const LADO: u32 = 96;
 pub const COLUNAS: u32 = 10;
 /// Atlas dimensions, in pixels.
 pub const LARGURA: u32 = 960;
-pub const ALTURA: u32 = 1056;
+pub const ALTURA: u32 = 1152;
 /// (item_id, cell), ordered by item_id.
 pub const ICONES: &[(u16, u16)] = &[
     (1, 0),
@@ -112,5 +112,13 @@ pub const ICONES: &[(u16, u16)] = &[
     (462, 99),
     (463, 100),
     (464, 101),
-    (560, 102),
+    (481, 102),
+    (482, 103),
+    (483, 104),
+    (484, 105),
+    (485, 106),
+    (486, 107),
+    (487, 108),
+    (499, 109),
+    (560, 110),
 ];

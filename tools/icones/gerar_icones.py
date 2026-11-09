@@ -712,6 +712,73 @@ def montaria(s, grau):
     s.brilho(20, 30, 3.4, 5, 0.45, -15)
 
 
+# Dungeon (Porão) keys: `porao::CHAVE_BASE` (480) + the content id. They had
+# no icon, so all eight fell back to the same generic drawing in Craft (owner,
+# 09/11/2026: "in the craft menu the dg key still same icons"). Same key
+# shape for all; the gem colour and the emblem in the bow say which dungeon.
+def chave_porao(s, gema, metal, emblema):
+    s.halo(32, 32, 30, gema, 0.38)
+    s.traco("M28,28L53,53", metal, 6.5)
+    s.traco("M48,48L54,42", metal, 4.6)
+    s.traco("M41,41L46,36", metal, 4.6)
+    s.peca(circ(22, 22, 15) + circ(22, 22, 9.5), metal, contorno=2.2)
+    s.peca(circ(22, 22, 9.5), gema, contorno=1.6, sombra=False)
+    emblema(s)
+    s.brilho(15, 14, 3.2, 1.6, 0.75, -40)
+
+
+def _anc(s):
+    s.traco("M22,15L22,28", BRANCO, 1.9)
+    s.traco("M18.5,18L25.5,18", BRANCO, 1.9)
+    s.traco("M16.5,24C17.5,29.5 26.5,29.5 27.5,24", BRANCO, 1.9)
+
+
+def _ossos(s):
+    s.traco("M17.5,17.5L26.5,26.5", BRANCO, 2.0)
+    s.traco("M26.5,17.5L17.5,26.5", BRANCO, 2.0)
+
+
+def _neve(s):
+    s.traco("M22,15L22,29", BRANCO, 1.8)
+    s.traco("M16,18.5L28,25.5", BRANCO, 1.8)
+    s.traco("M16,25.5L28,18.5", BRANCO, 1.8)
+
+
+def _concha(s):
+    s.peca("M15.5,25C15.5,18 28.5,18 28.5,25L22,28.5Z", BRANCO, contorno=1.4, sombra=False, claro=0.2, escuro=0.8)
+    for x in (18.5, 22, 25.5):
+        s.traco("M22,28L%s,20" % x, (120, 110, 100), 0.9, contorno=False, sombra=False)
+
+
+def _raio(s):
+    s.peca("M24.5,14L17,23.5L21.5,23.5L19,30L27.5,20L22.5,20Z", (255, 246, 190), contorno=1.3, sombra=False)
+
+
+def _estrela(s):
+    s.peca(estrela(22, 22.5, 7.5, 3.2, 5), (255, 250, 230), contorno=1.3, sombra=False)
+
+
+def _engrenagem(s):
+    s.peca(estrela(22, 22, 7.8, 6.0, 8, -90) + circ(22, 22, 2.6), (230, 232, 238), contorno=1.3, sombra=False)
+
+
+def _tridente(s):
+    s.traco("M22,16L22,30", BRANCO, 1.8)
+    s.traco("M17.5,16.5L17.5,20.5C17.5,24 26.5,24 26.5,20.5L26.5,16.5", BRANCO, 1.8)
+
+
+CHAVES_PORAO = {
+    1: ((176, 122, 70), ACO, _anc),            # Shipwreck Cellar
+    2: ((196, 56, 60), ACO, _ossos),           # Smuggler's Cellar
+    3: ((120, 200, 255), ACO, _neve),          # Frozen Hull
+    4: ((52, 184, 166), ACO, _concha),         # Sunken Caravan
+    5: ((140, 80, 230), OURO, _raio),          # Thunder Vault
+    6: ((246, 210, 120), OURO, _estrela),      # Seraph Reliquary
+    7: ((236, 120, 44), OURO, _engrenagem),    # Robot Foundry
+    19: ((36, 84, 196), OURO, _tridente),      # Sunken Galleon
+}
+
+
 def catalogo():
     itens = {
         1: ouro,
@@ -769,6 +836,8 @@ def catalogo():
     for g in range(1, 6):
         itens[420 + g - 1] = (lambda gr: lambda s: pet(s, gr))(g)
         itens[460 + g - 1] = (lambda gr: lambda s: montaria(s, gr))(g)
+    for cid, (gema, metal, emblema) in CHAVES_PORAO.items():
+        itens[480 + cid] = (lambda g, m, e: lambda s: chave_porao(s, g, m, e))(gema, metal, emblema)
     return dict(sorted(itens.items()))
 
 
