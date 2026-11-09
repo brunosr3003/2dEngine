@@ -24,8 +24,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 ENV_FILE="${TEMPEST_ENV:-$HOME/MMORPG/.env}"
 [ -f "$ENV_FILE" ] || { echo "ERRO: $ENV_FILE nao existe"; exit 1; }
+# What the caller passed wins over the env file (a TEST build sets its own
+# bundle; the env file has the real one).
+_BUNDLE_PEDIDO="${APP_BUNDLE_ID:-}"
 # shellcheck disable=SC1090
 source "$ENV_FILE"
+[ -n "$_BUNDLE_PEDIDO" ] && APP_BUNDLE_ID="$_BUNDLE_PEDIDO"
 
 VERSAO="1.1"
 BUILD="$(date -u +%y%m%d%H%M)"
@@ -44,7 +48,11 @@ done
 BUNDLE="${APP_BUNDLE_ID:-com.brunji.tempest}"
 TEAM="${APPLE_TEAM_ID:?APPLE_TEAM_ID}"
 MIN_OS="15.0"
-SAIDA="$ROOT/target/ios"
+# IOS_SAIDA/APP_NOME: a TEST build (APP_BUNDLE_ID=com.brunji.tempest.teste,
+# APP_NOME="Tempest TESTE", MMO_API_PADRAO=<test server>) lives apart from the
+# real app — see docs/AMBIENTE_TESTE.md.
+SAIDA="$ROOT/target/${IOS_SAIDA:-ios}"
+APP_NOME="${APP_NOME:-Tempest}"
 APP="$SAIDA/Payload/Tempest.app"
 
 echo "==> Tempest iOS $VERSAO ($BUILD) — $BUNDLE"
@@ -99,8 +107,8 @@ cat > "$PL" <<EOF
   <key>CFBundleExecutable</key><string>Tempest</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Tempest</string>
-  <key>CFBundleDisplayName</key><string>Tempest</string>
+  <key>CFBundleName</key><string>$APP_NOME</string>
+  <key>CFBundleDisplayName</key><string>$APP_NOME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSAO</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
@@ -146,8 +154,18 @@ for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.mobile
     break
   fi
 done
-[ -n "$PROFILE" ] || { echo "ERRO: profile de App Store pra $TEAM.$BUNDLE nao encontrado"; exit 1; }
-cp "$PROFILE" "$APP/embedded.mobileprovision"
+SO_DEV=0
+if [ -z "$PROFILE" ]; then
+  # A test app (its own bundle) has only a DEVELOPMENT profile: fine when it
+  # only goes straight to the iPhone — no App Store signing, no IPA.
+  if [ "$IPHONE" -eq 1 ]; then
+    SO_DEV=1; echo "==> sem profile de App Store: so' instalacao direta (desenvolvimento)"
+  else
+    echo "ERRO: profile de App Store pra $TEAM.$BUNDLE nao encontrado"; exit 1
+  fi
+else
+  cp "$PROFILE" "$APP/embedded.mobileprovision"
+fi
 
 # Por SSH o keychain de login fica TRANCADO ("User interaction is not
 # allowed") e o codesign falha com errSecInternalComponent. Rodando no
@@ -163,6 +181,7 @@ if [ -n "${KEYCHAIN_PASSWORD:-}" ]; then
   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KC" >/dev/null
 fi
 
+if [ "$SO_DEV" -eq 0 ]; then
 IDENT="$(security find-identity -v -p codesigning | awk -v t="($TEAM)" '/Apple Distribution/ && index($0,t){print $2; exit}')"
 [ -n "$IDENT" ] || { echo "ERRO: identidade Apple Distribution do time $TEAM nao encontrada"; exit 1; }
 # A instalacao direta sera' reassinada com o profile de desenvolvimento mais
@@ -180,6 +199,7 @@ codesign --verify --deep --strict "$APP"
 IPA="$SAIDA/Tempest-$VERSAO-$BUILD.ipa"
 (cd "$SAIDA" && zip -qry "$IPA" Payload)
 echo "==> IPA: $IPA ($(du -h "$IPA" | cut -f1))"
+fi
 
 # ── 7. upload ─────────────────────────────────────────────────────────────────
 if [ "$SKIP_UPLOAD" -eq 0 ]; then
