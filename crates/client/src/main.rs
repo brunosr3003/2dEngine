@@ -7392,7 +7392,10 @@ impl Jogo {
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
         self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
         self.avaliacao.desenha();
-        self.eventos.desenha();
+        if let Some((kind, nome, chefe)) = self.eventos.desenha() {
+            self.fecha_paineis();
+            self.mapa.encontrar(kind, nome, chefe);
+        }
         self.aviso_global.desenha(get_time());
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.

@@ -619,7 +619,36 @@ const CRIAR_EVENTOS: &str = "CREATE TABLE IF NOT EXISTS eventos_bonus (
 )";
 
 /// What can be targeted: (value, name) per scope.
-async fn opcoes_de_evento(pool: &sqlx::PgPool) -> serde_json::Value {
+/// Level range of each mob kind as it spawns RIGHT NOW (min–max over every
+/// channel's live snapshot), plus the zones it is in. A mob scales with its
+/// zone, so this is what the staff needs to pick a target.
+async fn niveis_ao_vivo(st: &Estado) -> HashMap<u16, (u32, u32, std::collections::BTreeSet<String>)> {
+    let mut v: HashMap<u16, (u32, u32, std::collections::BTreeSet<String>)> = HashMap::new();
+    for c in canais_com_retrato(st).await {
+        let zona = c["zona"].as_str().unwrap_or("").to_string();
+        let Some(mobs) = c["retrato"]["mobs"].as_array() else { continue };
+        for m in mobs {
+            let (Some(k), Some(n)) = (m["kind"].as_u64(), m["nivel"].as_u64()) else { continue };
+            let e = v.entry(k as u16).or_insert((u32::MAX, 0, Default::default()));
+            e.0 = e.0.min(n as u32);
+            e.1 = e.1.max(n as u32);
+            e.2.insert(zona.clone());
+        }
+    }
+    v
+}
+
+fn nome_da_zona(z: &str) -> String {
+    shared::terreno::ARQUIPELAGO
+        .iter()
+        .find(|d| d.zona == z)
+        .map(|d| d.nome.to_string())
+        .unwrap_or_else(|| if z.starts_with(shared::magica::ZONA) { "Magic Island".into() } else { z.to_string() })
+}
+
+async fn opcoes_de_evento(st: &Estado) -> serde_json::Value {
+    let pool = &*st.pool;
+    let niveis = niveis_ao_vivo(st).await;
     let mut mapas: Vec<(String, String)> = shared::terreno::ARQUIPELAGO
         .iter()
         .map(|d| (d.zona.to_string(), d.nome.to_string()))
@@ -631,14 +660,26 @@ async fn opcoes_de_evento(pool: &sqlx::PgPool) -> serde_json::Value {
         .await
         .unwrap_or_default();
     let dungeons: Vec<(u16, &str)> = shared::dungeon::CONTEUDOS.iter().map(|c| (c.id, c.nome)).collect();
-    let chefes: Vec<(u16, &str, &str)> = shared::bosses::CHEFES.iter().map(|c| (c.kind, c.nome, c.zona)).collect();
+    let chefes: Vec<(u16, &str, String, u32)> = shared::bosses::CHEFES
+        .iter()
+        .map(|c| (c.kind, c.nome, nome_da_zona(c.zona), c.nivel as u32))
+        .collect();
     serde_json::json!({
         "mapas": mapas.iter().map(|(v, n)| serde_json::json!({"v": v, "n": n})).collect::<Vec<_>>(),
-        "mobs": mobs.iter().map(|(v, n)| serde_json::json!({"v": v.to_string(), "n": format!("{n} (#{v})")})).collect::<Vec<_>>(),
+        "mobs": mobs.iter().map(|(v, n)| {
+            let extra = match niveis.get(&(*v as u16)) {
+                Some((a, b, zonas)) => format!(
+                    " · Lv {a}–{b} · {}",
+                    zonas.iter().map(|z| nome_da_zona(z)).collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>().join(", ")
+                ),
+                None => " · not spawned now".to_string(),
+            };
+            serde_json::json!({"v": v.to_string(), "n": format!("{n} (#{v}){extra}")})
+        }).collect::<Vec<_>>(),
         "dungeons": std::iter::once(serde_json::json!({"v": "", "n": "every dungeon"}))
             .chain(dungeons.iter().map(|(v, n)| serde_json::json!({"v": v.to_string(), "n": n}))).collect::<Vec<_>>(),
         "chefes": std::iter::once(serde_json::json!({"v": "", "n": "every boss"}))
-            .chain(chefes.iter().map(|(v, n, z)| serde_json::json!({"v": v.to_string(), "n": format!("{n} · {z}")}))).collect::<Vec<_>>(),
+            .chain(chefes.iter().map(|(v, n, z, lv)| serde_json::json!({"v": v.to_string(), "n": format!("{n} · Lv {lv} · {z}")}))).collect::<Vec<_>>(),
     })
 }
 
@@ -661,7 +702,7 @@ async fn eventos_lista(State(st): State<Estado>) -> impl IntoResponse {
                 "mult": mult, "inicio": inicio, "fim": fim, "autor": autor, "cancelado": cancelado, "ativo": ativo})
         })
         .collect();
-    axum::Json(serde_json::json!({ "eventos": lista, "opcoes": opcoes_de_evento(&st.pool).await }))
+    axum::Json(serde_json::json!({ "eventos": lista, "opcoes": opcoes_de_evento(&st).await }))
 }
 
 #[derive(serde::Deserialize)]
@@ -698,7 +739,7 @@ async fn evento_criar(
         return recusa("duração entre 1 minuto e 14 dias");
     }
     // The target's name for players, from the same lists the panel shows.
-    let op = opcoes_de_evento(&st.pool).await;
+    let op = opcoes_de_evento(&st).await;
     let alvo = if escopo == Escopo::Todos { String::new() } else { e.alvo.trim().to_string() };
     let chave = match escopo {
         Escopo::Todos => None,

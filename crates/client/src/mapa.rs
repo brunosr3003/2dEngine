@@ -1167,6 +1167,11 @@ pub struct Mapa {
     /// Zonas de mob e regioes de recurso (`MapaDaIlha`).
     pub info: Option<InfoDaIlha>,
     pub filtros: Filtros,
+    /// FIND: one mob (or boss) lit up on the big map — every zone where it
+    /// spawns, brighter the higher its share (owner, 09/11/2026: "when a drop
+    /// or xp rate for an individual mob is on, a find button to see where he
+    /// is in the map"). `(kind, name, boss)`.
+    pub destaque: Option<(u16, String, bool)>,
     /// A aba aberta: a ilha onde se esta', ou o arquipelago inteiro.
     pub no_mundo: bool,
     rolagem_lateral: crate::rolagem::Rolagem,
@@ -1237,6 +1242,7 @@ impl Default for Mapa {
             camadas: Camadas::default(),
             info: None,
             filtros: Filtros::default(),
+            destaque: None,
             no_mundo: false,
             rolagem_lateral: Default::default(),
             zoom_grande: 1.0,
@@ -2299,6 +2305,77 @@ impl Mapa {
         }
     }
 
+    /// Opens the island map with `kind` lit up (`destaque`).
+    pub fn encontrar(&mut self, kind: u16, nome: String, chefe: bool) {
+        self.destaque = Some((kind, nome, chefe));
+        self.no_mundo = false;
+        self.abrir();
+    }
+
+    /// The FIND strip on top of the big map: who is lit up, "Go to the best
+    /// spot" and "Clear". Returns the trip when "Go" is tapped.
+    fn faixa_do_destaque(&mut self, r: Rect, world: &World) -> Option<Entrada> {
+        let (_, nome, chefe) = self.destaque.clone()?;
+        let lugares = self.lugares_do_destaque();
+        let faixa = Rect::new(r.x + u(10.0), r.y + u(10.0), r.w - u(20.0), u(50.0));
+        draw_rectangle(faixa.x, faixa.y, faixa.w, faixa.h, Color::new(0.08, 0.06, 0.04, 0.92));
+        draw_rectangle_lines(faixa.x, faixa.y, faixa.w, faixa.h, u(2.0), estilo::OURO);
+        let texto = if lugares.is_empty() {
+            format!("{nome} does not live on this island")
+        } else if chefe {
+            format!("{nome}: the boss spot is marked")
+        } else {
+            format!("{nome}: {} zones · best {}%", lugares.len(), lugares[0].2)
+        };
+        estilo::texto_ajustado(&texto, faixa.x + u(14.0), faixa.y + u(31.0), faixa.w - u(260.0), 16, estilo::OURO);
+        let m = Vec2::from(mouse_position());
+        let clicou = crate::foco::clique();
+        let limpar = Rect::new(faixa.x + faixa.w - u(96.0), faixa.y + u(4.0), u(90.0), u(42.0));
+        estilo::botao(limpar, "Clear", estilo::estado_de(limpar, false, false), false);
+        if clicou && limpar.toca(m) {
+            self.destaque = None;
+            return None;
+        }
+        let (c, raio, _) = *lugares.first()?;
+        let ir = Rect::new(limpar.x - u(136.0), limpar.y, u(130.0), u(42.0));
+        estilo::botao(ir, "Go there", estilo::estado_de(ir, false, false), true);
+        if clicou && ir.toca(m) {
+            let _ = world;
+            return Some(Entrada::Ir(Alvo {
+                objetivo: if chefe { Objetivo::Lugar } else { Objetivo::Combate },
+                pos: c,
+                raio,
+                rotulo: nome,
+            }));
+        }
+        None
+    }
+
+    /// Where the highlighted mob lives here: (centre, radius, share %),
+    /// best first. A boss is its own spot.
+    pub fn lugares_do_destaque(&self) -> Vec<(Vec2, f32, u8)> {
+        let (Some((kind, _, chefe)), Some(info)) = (&self.destaque, &self.info) else {
+            return Vec::new();
+        };
+        let mut v: Vec<(Vec2, f32, u8)> = if *chefe {
+            info.chefes
+                .iter()
+                .filter(|c| c.kind == *kind)
+                .map(|c| (vec2(c.centro[0], c.centro[1]), 10.0, 100))
+                .collect()
+        } else {
+            info.zonas
+                .iter()
+                .filter_map(|z| {
+                    let p = chance_na_zona(z, *kind);
+                    (p > 0).then(|| (centro_da_zona(z), z.raio, p))
+                })
+                .collect()
+        };
+        v.sort_by(|a, b| b.2.cmp(&a.2));
+        v
+    }
+
     /// Canto de cima a' direita, abaixo da area e canal (ver `hud_layout`).
     pub fn mini_rect() -> Rect {
         crate::hud_layout::atual().minimapa
@@ -2878,6 +2955,9 @@ impl Mapa {
             }
             self.desenha_grande_mapa(world, agora_unix);
             self.desenha_abas(r);
+            if let Some(ir) = self.faixa_do_destaque(r, world) {
+                return Some(ir);
+            }
             // Tutorial "abra o mapa e toque num lugar": o alvo e' o mapa todo.
             crate::foco::marca(crate::foco::chave::MAPA_IR, r);
             if r.toca(m) {
@@ -3228,6 +3308,29 @@ impl Mapa {
                     losango(q, u(s + 1.2), Color::new(0.0, 0.0, 0.0, 0.7));
                     losango(q, u(s), cor);
                 }
+            }
+        }
+        // FIND: the highlighted mob's zones on top of everything else.
+        let lugares = self.lugares_do_destaque();
+        if !lugares.is_empty() {
+            let pulso = 0.6 + 0.4 * (get_time() as f32 * 3.0).sin().abs();
+            let melhor = lugares[0].2.max(1) as f32;
+            for (i, (c, raio, pct)) in lugares.iter().enumerate() {
+                let q = ponto(*c);
+                let rp = (raio * escala).max(u(10.0));
+                let forca = (*pct as f32 / melhor).clamp(0.25, 1.0);
+                draw_circle(q.x, q.y, rp, Color::new(1.0, 0.80, 0.25, 0.22 * forca));
+                draw_poly_lines(q.x, q.y, 48, rp + u(2.0), 0.0, u(3.0), estilo::alfa(estilo::OURO, pulso * forca));
+                if i == 0 {
+                    draw_poly_lines(q.x, q.y, 48, rp + u(7.0) + u(4.0) * pulso, 0.0, u(2.0), estilo::alfa(WHITE, 0.6 * pulso));
+                }
+                let t = if self.destaque.as_ref().is_some_and(|d| d.2) {
+                    "Boss".to_string()
+                } else {
+                    format!("{pct}%")
+                };
+                estilo::texto_centro_forte(q.x + 1.0, q.y - rp - u(5.0), &t, 15, Color::new(0.0, 0.0, 0.0, 0.85));
+                estilo::texto_centro_forte(q.x, q.y - rp - u(6.0), &t, 15, estilo::OURO);
             }
         }
         if let Some(ci) = self.cidade.filter(|_| self.filtros.vila) {

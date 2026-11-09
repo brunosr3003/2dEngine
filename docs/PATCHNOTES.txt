@@ -14,6 +14,7 @@ Nov 9, 2026 — Shop fixes
 - Pet and Mount summons are now eggs, each with its own colors.
 - Announcements from the team now appear at the top of the screen for everyone online.
 - New: bonus events (extra XP, drop rate or gold, for everyone, a map, a monster, a dungeon or a boss). See what is active in Menu › Events or tap the gold badge.
+- Events for one monster or boss have a Find button: the map lights up every zone where it lives, with its share, and takes you there.
 - Fixed buttons that overlap (like Auto Collect and its settings) catching the wrong tap.
 - Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.
 - Fixed the purchase screen staying on "Waiting for Google Play" after buying.

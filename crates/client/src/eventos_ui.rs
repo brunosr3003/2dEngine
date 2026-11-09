@@ -69,10 +69,13 @@ impl EventosUi {
         r.toca(Vec2::from(mouse_position())) && crate::foco::clique()
     }
 
-    pub fn desenha(&mut self) {
+    /// Draws the panel. `Some((kind, name, boss))` = "Find" was tapped on a
+    /// one-mob/one-boss event: the caller opens the map with it lit up.
+    pub fn desenha(&mut self) -> Option<(u16, String, bool)> {
         if !self.aberto {
-            return;
+            return None;
         }
+        let mut achar = None;
         let seguro0 = crate::hud_layout::tela_segura();
         let k = estilo::escala_do_painel(620.0, 400.0)
             .min((seguro0.w - 16.0) / 620.0)
@@ -141,9 +144,24 @@ impl EventosUi {
                     Tipo::Ouro => "gold and copper from kills",
                 };
                 estilo::texto(r.x + 116.0 * k, r.y + 54.0 * k, quem, 13, estilo::SUAVE);
+                // FIND: one mob or one boss → show where it lives on the map.
+                let alvo_kind = match e.escopo {
+                    shared::eventos::Escopo::Mob => e.alvo.trim().parse::<u16>().ok().map(|k| (k, false)),
+                    shared::eventos::Escopo::Chefe => e.alvo.trim().parse::<u16>().ok().map(|k| (k, true)),
+                    _ => None,
+                };
+                let mut direita = r.x + r.w - 16.0 * k;
+                if let Some((kind, chefe)) = alvo_kind {
+                    let b = Rect::new(direita - 96.0 * k, r.y + 13.0 * k, 96.0 * k, 44.0 * k);
+                    estilo::botao(b, "Find", estilo::estado_de(b, false, false), true);
+                    if clicou && b.toca(m) {
+                        achar = Some((kind, e.alvo_nome.clone(), chefe));
+                    }
+                    direita = b.x - 12.0 * k;
+                }
                 let resta = format!("{} left", shared::eventos::resta_texto(e.fim_unix - t));
                 let rw = estilo::medir_forte(&resta, 15);
-                estilo::texto_forte(r.x + r.w - rw - 16.0 * k, r.center().y + 6.0 * k, &resta, 15, estilo::OURO);
+                estilo::texto_forte(direita - rw, r.center().y + 6.0 * k, &resta, 15, estilo::OURO);
             }
             if ativos.len() > 4 {
                 estilo::texto_centro(
@@ -155,6 +173,10 @@ impl EventosUi {
                 );
             }
         });
+        if achar.is_some() {
+            self.aberto = false;
+        }
+        achar
     }
 }
 
@@ -205,7 +227,7 @@ pub async fn previa() {
             let z = crate::hud_layout::atual();
             draw_rectangle(z.buffs.x, z.buffs.y, z.buffs.w, z.buffs.h, Color::new(1.0, 1.0, 1.0, 0.06));
             let _ = ui.selo(z.buffs);
-            ui.desenha();
+            let _ = ui.desenha();
             unsafe { get_internal_gl().flush() };
             rt.texture.get_texture_data().export_png(&format!("{saida}/{arquivo}"));
             set_default_camera();
