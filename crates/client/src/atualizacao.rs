@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-pub const BUILD: u64 = 2026100167;
+pub const BUILD: u64 = 2026100168;
 const SITE: &str = "https://mmo.brunji.com.br/#downloads";
 /// Google Play page of the game: the Play Store APP first (`market://`), the
 /// web page if the phone has no store app.

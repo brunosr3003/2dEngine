@@ -150,7 +150,9 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 187 (04/10/2026): SkillCastFx and SkillImpactFx carry the caster's tier,
 /// so every client draws the awakened effect.
 /// 191 (08/11/2026): rankings, flash offers, server-side Google Play consume.
-pub const PROTOCOL_VERSION: u16 = 191;
+/// 192 (09/11/2026): a paid flash offer carries its Play product; purchases
+/// are delivered through the mail queue.
+pub const PROTOCOL_VERSION: u16 = 192;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

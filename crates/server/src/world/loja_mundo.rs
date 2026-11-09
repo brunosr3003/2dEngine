@@ -64,6 +64,36 @@ fn resultado(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl In
     );
 }
 
+/// Claims what the account is still owed for real money and hands it to the
+/// world, which posts it to this character's mail. Runs after every paid
+/// offer and on every shop/offer check (login, level up, shop opened), so a
+/// payment approved late is delivered the next time the player shows up.
+async fn entregar_pendentes(
+    central: &sqlx::PgPool,
+    conta: &str,
+    personagem: &str,
+    sid: SessionId,
+    tx_mundo: &mpsc::UnboundedSender<IncomingMessage>,
+) {
+    match crate::ofertas::reivindicar(central, conta, personagem).await {
+        Ok(entregas) if !entregas.is_empty() => {
+            let ids: Vec<i64> = entregas.iter().map(|e| e.id).collect();
+            if tx_mundo
+                .send(IncomingMessage::Loja(Evento::Entregas {
+                    sid,
+                    personagem: personagem.to_string(),
+                    entregas,
+                }))
+                .is_err()
+            {
+                let _ = crate::ofertas::devolver(central, &ids).await;
+            }
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("ofertas: entregas pendentes falharam: {e:#}"),
+    }
+}
+
 /// Manda o estado da loja (saldo e historico). Nao ha' mais posse: montaria
 /// e skin sairam da loja (docs/MONTARIAS.md).
 async fn enviar_estado(
@@ -142,7 +172,9 @@ impl GameWorld {
         let nome_tel = self.nome_de(sid);
         tokio::spawn(async move {
             match pedido {
-                PedidoLoja::Estado => {}
+                PedidoLoja::Estado => {
+                    entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
+                }
                 PedidoLoja::ComprarTp { pacote, pedido } => {
                     comprar_tp_e_responder(
                         &central, &conta, &nome_tel, &to, pacote, &pedido, None,
@@ -273,6 +305,7 @@ impl GameWorld {
                 }
                 PedidoLoja::Montar | PedidoLoja::Desmontar => return,
                 PedidoLoja::OfertasRelampago => {
+                    entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
                     match crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
                         Ok(v) => {
                             if let Some(o) = v.iter().find(|o| o.nova) {
@@ -285,29 +318,14 @@ impl GameWorld {
                     // Only the list: no shop state reload on every check.
                     return;
                 }
-                PedidoLoja::ComprarOfertaGooglePlay { oferta, pedido, purchase_token } => {
-                    match crate::ofertas::comprar(&central, &conta, &oferta, &pedido, &purchase_token).await {
+                PedidoLoja::ComprarOfertaGooglePlay { oferta, produto, pedido, purchase_token } => {
+                    match crate::ofertas::comprar(&central, &conta, &oferta, &produto, &pedido, &purchase_token).await {
                         Ok(crate::ofertas::Compra::Feita(e, _saldo)) => {
                             crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
-                            for (item_id, qtd) in e.itens {
-                                let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Moeda {
-                                    sid,
-                                    personagem: personagem.clone(),
-                                    item_id,
-                                    qtd,
-                                }));
-                            }
-                            if e.energia > 0 {
-                                let _ = tx_mundo.send(IncomingMessage::Loja(Evento::Energia {
-                                    sid,
-                                    personagem: personagem.clone(),
-                                    qtd: e.energia,
-                                }));
-                            }
                             let texto = if e.tp > 0 {
-                                format!("{} unlocked! +{} TP.", e.titulo, e.tp)
+                                format!("{} unlocked! +{} TP. The items are in your Mail.", e.titulo, e.tp)
                             } else {
-                                format!("{} unlocked!", e.titulo)
+                                format!("{} unlocked! The items are in your Mail.", e.titulo)
                             };
                             resultado(&to, true, texto);
                         }
@@ -320,6 +338,9 @@ impl GameWorld {
                             resultado(&to, false, "The shop is unavailable right now.");
                         }
                     }
+                    // Whatever the answer, deliver what is owed (this purchase,
+                    // or an older one approved late).
+                    entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
                     if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
                         avisa(&to, AvisoLoja::OfertasRelampago(v));
                     }
@@ -458,6 +479,57 @@ impl GameWorld {
                     true,
                     format!("You received {} {nome}!", milhar(qtd as u64)),
                 );
+            }
+            Evento::Entregas { sid, personagem, entregas } => {
+                let ids: Vec<i64> = entregas.iter().map(|e| e.id).collect();
+                let Some(s) = self
+                    .sessions
+                    .get_mut(&sid)
+                    .filter(|s| s.logged_in && s.name == personagem)
+                else {
+                    // Gone between the claim and now: back to the queue.
+                    if let Some(central) = crate::mercado::central() {
+                        tokio::spawn(async move {
+                            let _ = crate::ofertas::devolver(&central, &ids).await;
+                        });
+                    }
+                    return;
+                };
+                let quando = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                let (mut itens, mut energia) = (0u32, 0u64);
+                for e in &entregas {
+                    if e.energia > 0 {
+                        s.skill_progress.energia = s.skill_progress.energia.saturating_add(e.energia);
+                        energia += e.energia;
+                    }
+                    if e.item_id != 0 && e.qtd > 0 {
+                        s.dungeon.postar(e.item_id, e.qtd, None, shared::loja::MOTIVO_CORREIO_LOJA, quando);
+                        itens += 1;
+                    }
+                }
+                if energia > 0 {
+                    s.skills_dirty = true;
+                    let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+                        progresso: s.skill_progress.clone(),
+                    });
+                }
+                tracing::info!("ofertas: {} entregou {itens} itens + {energia} energia no correio", s.name);
+                self.save_pending = true;
+                self.dg_enviar_correio(sid);
+                if let Some(s) = self.sessions.get(&sid) {
+                    resultado(
+                        &s.handle.to_client,
+                        true,
+                        if itens > 0 {
+                            "Your purchase has arrived: open your Mail (Deliveries) to collect it."
+                        } else {
+                            "Your purchase has arrived."
+                        },
+                    );
+                }
             }
             Evento::Energia {
                 sid,

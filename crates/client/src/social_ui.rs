@@ -940,6 +940,7 @@ impl Social {
                 1 => "First win of the week",
                 2 => "First win",
                 shared::presenca::MOTIVO_CORREIO => "Attendance calendar",
+                shared::loja::MOTIVO_CORREIO_LOJA => "Shop purchase",
                 _ => "Bag full",
             };
             e::texto_ajustado(

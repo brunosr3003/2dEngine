@@ -47,6 +47,14 @@ pub enum Evento {
         personagem: String,
         qtd: u64,
     },
+    /// What real-money purchases still owed, already CLAIMED in the central
+    /// DB for this character: items go to the mail (no expiry), energy to
+    /// the balance. If the character is gone, the world un-claims them.
+    Entregas {
+        sid: SessionId,
+        personagem: String,
+        entregas: Vec<crate::ofertas::EntregaPendente>,
+    },
 }
 
 pub async fn criar_tabelas(pool: &PgPool) -> Result<()> {

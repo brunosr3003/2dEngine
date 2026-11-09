@@ -1,3 +1,8 @@
+Nov 9, 2026 — Shop fixes
+
+- Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.
+- Fixed the purchase screen staying on "Waiting for Google Play" after buying.
+
 Nov 9, 2026 — Rankings, trading and flash offers
 
 - New: Rankings — see the strongest and highest-level players, overall and for each weapon class.

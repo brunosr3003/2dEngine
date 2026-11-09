@@ -726,11 +726,20 @@ pub enum PedidoLoja {
     /// Play product from the offer row (never trusts the client), checks the
     /// token, refuses an expired or already bought offer, credits TP + items.
     ComprarOfertaGooglePlay {
+        /// The offer the player tapped; empty when the client no longer knows
+        /// it (a purchase approved late or recovered at login) — the server
+        /// then finds the account's unbought offer on `produto`.
         oferta: String,
+        /// Google Play product id the purchase was made on.
+        produto: String,
         pedido: String,
         purchase_token: String,
     },
 }
+
+/// Mail ("Entregas") origin of anything bought with real money: it waits
+/// there with no expiry date until the player takes it.
+pub const MOTIVO_CORREIO_LOJA: u8 = 4;
 
 /// One flash offer open for this account, as the client shows it. Everything
 /// comes from the `ofertas_relampago` table — prices and contents change in

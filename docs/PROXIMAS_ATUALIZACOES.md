@@ -23,6 +23,14 @@ _Para o Bruno preencher: regiões, bosses, dungeons, sistemas, eventos._
 - [x] **Rankings.** Lista de rank de **poder** e de **nível**, com recorte
       **por classe** e **geral** (e outros recortes que fizerem sentido).
 
+- [ ] **Redesenhar a tela de Ofertas Relâmpago.** Está feia. Tem que ficar
+      bonita, limpa e dar vontade de comprar: arte de destaque por oferta
+      (cartão grande, ícones dos itens em vitrine, brilho/moldura de raridade),
+      o "de R$ X" riscado e o preço em destaque, cronômetro com urgência
+      visual, selo de "economia de N%", botão de comprar chamativo, animação
+      de entrada no popup quando a oferta abre. Seguir o estilo da loja de TP
+      (`loja_tp.rs`, botão dourado). Código atual: `client/src/ofertas_ui.rs`.
+
 ### Entraram na release de 09/11/2026 (protocolo 191)
 - [x] Ofertas relâmpago configuráveis no banco (docs/OFERTAS_RELAMPAGO.md), menu próprio com bolinha vermelha e ícone no menu rápido.
 - [x] Troca direta entre jogadores.

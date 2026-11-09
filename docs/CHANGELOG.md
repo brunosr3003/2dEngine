@@ -8,6 +8,12 @@ jogador vai no PATCHNOTES.txt.
 
 ---
 
+09/11/2026 — Compra sempre entregue (protocolo 192, build 2026100168, Android versionCode 12)
+
+- **"Waiting for Google Play…" infinito**: o despacho dos resultados do Google Play (`despacha_billing`), o `recover` e o `checar` das ofertas estavam dentro do `if !painel` do HUD — com a janela de Ofertas ou a loja de TP abertas (que é justamente quando se compra) o resultado ficava na fila até fechar a janela. Agora rodam todo quadro no mundo. A compra em si já era creditada (o dono recebeu os itens).
+- **Compra paga nunca fica sem entrega** (dono: "nunca pode ficar sem receber… no correio… e sem data de validade"): o que a compra deve (itens e energia) é gravado em `loja_entregas` NA MESMA transação do pedido, no banco central. O mundo reivindica (`ofertas::reivindicar`) e posta no CORREIO do personagem (Entregas, motivo `MOTIVO_CORREIO_LOJA`, sem validade) — nunca direto numa bolsa que pode estar cheia; se o personagem saiu entre a reivindicação e a entrega, volta pra fila (`devolver`). Roda depois de toda compra e em toda checagem de loja/ofertas (login, nível, loja aberta): pagamento aprovado depois (PIX/boleto pendente) é entregue na próxima vez que o jogador aparecer.
+- **Oferta paga não expira**: saiu a tolerância de 30 min; com o token conferido na Google, a oferta é honrada. `ComprarOfertaGooglePlay` agora leva o `produto`; com `oferta` vazia (o cliente não conhece mais a oferta — compra recuperada no login) o servidor acha a oferta não comprada da conta naquele produto. O cliente sempre envia compra de `oferta_*`, mesmo sem a oferta na lista.
+
 09/11/2026 — Release protocolo 191 (build 2026100167, Android versionCode 11)
 
 - **Tamanho mínimo de toque** (`ui::toca`, `Rect::toca`): o alvo de toque de TUDO que é clicável cresce até 9 mm físicos no celular (`densidade.rs`: Android lê `DisplayMetrics.xdpi` via JNI conferido contra `densityDpi`; iOS usa `UIScreen.scale` exposto pelo patch em `vendor/miniquad/src/native/ios.rs`) e 44 px × dpi no desktop. Antes o piso era 44 px CRUS — no Moto G davam ~3 mm. Sem o teto antigo de +14/+8 px: a briga entre vizinhos é resolvida por arbitragem (registro de alvos vistos no último 1 s; toque no desenho é sempre dele, toque na margem vai pro alvo mais perto; container não compete com o que tem dentro). ~340 `contains(mouse)` viraram `toca(mouse)`; marcadores do mapa e ilhas ganharam raio mínimo de meio alvo.

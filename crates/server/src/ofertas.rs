@@ -25,9 +25,6 @@ use sqlx::{PgPool, Row};
 use crate::mercado_razao as razao;
 use shared::loja::OfertaRelampago;
 
-/// How long after closing a paid offer is still honoured: the timer can run
-/// out while the Google Play sheet is open.
-const TOLERANCIA_S: i64 = 30 * 60;
 
 pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     for sql in [
@@ -46,6 +43,24 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
             ativa             BOOLEAN NOT NULL DEFAULT TRUE,
             nota              TEXT
         )",
+        // What a paid purchase still owes the player. Written in the SAME
+        // transaction that records the purchase, so a payment can never end
+        // up without its delivery: the world claims the rows and posts them
+        // to the character's mail (no expiry), never straight into a bag that
+        // may be full (owner, 09/11/2026: "if the player buys anything he can
+        // never be without receiving … in the mail … and no expire date").
+        "CREATE TABLE IF NOT EXISTS loja_entregas (
+            id          BIGSERIAL PRIMARY KEY,
+            conta       TEXT        NOT NULL,
+            pedido      TEXT        NOT NULL,
+            item_id     INTEGER     NOT NULL DEFAULT 0,
+            qtd         BIGINT      NOT NULL DEFAULT 0,
+            energia     BIGINT      NOT NULL DEFAULT 0,
+            criado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            entregue_em TIMESTAMPTZ,
+            personagem  TEXT
+        )",
+        "CREATE INDEX IF NOT EXISTS loja_entregas_pendentes ON loja_entregas (conta) WHERE entregue_em IS NULL",
         "CREATE TABLE IF NOT EXISTS ofertas_relampago_contas (
             conta       TEXT        NOT NULL,
             oferta      TEXT        NOT NULL REFERENCES ofertas_relampago(id),
@@ -221,20 +236,47 @@ pub enum Compra {
 }
 
 /// Buys `oferta` for `conta` with a Google Play `purchase_token`.
+///
+/// A PAID purchase is always honoured: no expiry check (the payment may be
+/// approved hours later — PIX/boleto — or recovered at the next login), and
+/// when the client no longer knows which offer it was (`oferta` empty) the
+/// account's unbought offer on that product is used.
 pub async fn comprar(
     central: &PgPool,
     conta: &str,
     oferta: &str,
+    produto: &str,
     pedido: &str,
     purchase_token: &str,
 ) -> Result<Compra> {
     if !shared::loja::pedido_valido(pedido) || purchase_token.is_empty() || purchase_token.len() > 4096 {
         return Ok(Compra::Recusada("Invalid order.".into()));
     }
+    let achada: Option<String> = if oferta.is_empty() {
+        sqlx::query_scalar(
+            "SELECT c.oferta FROM ofertas_relampago_contas c
+               JOIN ofertas_relampago o ON o.id = c.oferta
+              WHERE c.conta = $1 AND o.produto_play = $2
+                AND (c.comprada_em IS NULL OR c.pedido = $3)
+              ORDER BY (c.pedido = $3) DESC NULLS LAST, c.aberta_em DESC
+              LIMIT 1",
+        )
+        .bind(conta)
+        .bind(produto)
+        .bind(pedido)
+        .fetch_optional(central)
+        .await?
+    } else {
+        Some(oferta.to_string())
+    };
+    let Some(oferta) = achada else {
+        tracing::error!("ofertas: compra paga sem oferta da conta ({conta} {produto} {pedido}) — conferir na Play Console");
+        return Ok(Compra::Recusada("This offer is not available.".into()));
+    };
+    let oferta = oferta.as_str();
     let Some(o) = sqlx::query(
         "SELECT o.produto_play, o.preco_centavos, o.tp, o.energia, o.itens, o.titulo,
-                c.comprada_em IS NOT NULL, c.pedido,
-                EXTRACT(EPOCH FROM (NOW() - c.expira_em))::BIGINT
+                c.comprada_em IS NOT NULL, c.pedido
            FROM ofertas_relampago_contas c
            JOIN ofertas_relampago o ON o.id = c.oferta
           WHERE c.conta = $1 AND c.oferta = $2",
@@ -254,7 +296,6 @@ pub async fn comprar(
     let titulo: String = o.get(5);
     let comprada: bool = o.get(6);
     let pedido_feito: Option<String> = o.get(7);
-    let passou_s: i64 = o.get(8);
     if comprada {
         // Re-sent by the client after a lost reply: same order → already done
         // (and it still needs consuming on Google).
@@ -263,9 +304,6 @@ pub async fn comprar(
             return Ok(Compra::JaFeita(razao::saldo(central, conta).await?));
         }
         return Ok(Compra::Recusada("You already bought this offer.".into()));
-    }
-    if passou_s > TOLERANCIA_S {
-        return Ok(Compra::Recusada("This offer has expired.".into()));
     }
     let externo = match crate::loja_google_play::verificar_produto(&produto, purchase_token).await {
         Ok(x) => x,
@@ -308,6 +346,25 @@ pub async fn comprar(
     .bind(&externo)
     .execute(&mut *tx)
     .await?;
+    // What it owes, in the same transaction: delivered to the mail by the
+    // world (`world/loja_mundo.rs`, `Evento::Entregas`).
+    for (item_id, qtd) in &itens {
+        sqlx::query("INSERT INTO loja_entregas (conta, pedido, item_id, qtd) VALUES ($1, $2, $3, $4)")
+            .bind(conta)
+            .bind(pedido)
+            .bind(*item_id as i32)
+            .bind(*qtd as i64)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if energia > 0 {
+        sqlx::query("INSERT INTO loja_entregas (conta, pedido, energia) VALUES ($1, $2, $3)")
+            .bind(conta)
+            .bind(pedido)
+            .bind(energia as i64)
+            .execute(&mut *tx)
+            .await?;
+    }
     let saldo = if tp > 0 {
         match razao::mover(&mut tx, conta, tp as i64, "loja:oferta", Some(&format!("loja:{pedido}"))).await? {
             razao::Movimento::Feito { saldo }
@@ -322,6 +379,51 @@ pub async fn comprar(
         tracing::warn!("ofertas: consume no Google falhou (ja' entregue): {e}");
     }
     Ok(Compra::Feita(Entrega { tp, energia, itens, titulo }, saldo))
+}
+
+/// One thing a purchase still owes: an item (`item_id`, `qtd`) or energy.
+#[derive(Debug, Clone)]
+pub struct EntregaPendente {
+    pub id: i64,
+    pub item_id: u16,
+    pub qtd: u32,
+    pub energia: u64,
+}
+
+/// CLAIMS everything the account is still owed for `personagem` (marks it
+/// delivered) and returns it. The world posts it to the mail right away; if
+/// the character is gone by then, `devolver` un-claims it for the next login.
+pub async fn reivindicar(central: &PgPool, conta: &str, personagem: &str) -> Result<Vec<EntregaPendente>> {
+    let linhas = sqlx::query(
+        "UPDATE loja_entregas SET entregue_em = NOW(), personagem = $2
+          WHERE conta = $1 AND entregue_em IS NULL
+          RETURNING id, item_id, qtd, energia",
+    )
+    .bind(conta)
+    .bind(personagem)
+    .fetch_all(central)
+    .await?;
+    Ok(linhas
+        .into_iter()
+        .map(|r| EntregaPendente {
+            id: r.get(0),
+            item_id: r.get::<i32, _>(1).clamp(0, u16::MAX as i32) as u16,
+            qtd: r.get::<i64, _>(2).clamp(0, u32::MAX as i64) as u32,
+            energia: r.get::<i64, _>(3).max(0) as u64,
+        })
+        .collect())
+}
+
+/// Un-claims deliveries that could not be posted (the character left).
+pub async fn devolver(central: &PgPool, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query("UPDATE loja_entregas SET entregue_em = NULL, personagem = NULL WHERE id = ANY($1)")
+        .bind(ids)
+        .execute(central)
+        .await?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1753,10 +1753,15 @@ impl Jogo {
                         purchase_token: r.purchase_token,
                     },
                 });
-            } else if let Some(oferta) = self.ofertas.oferta_do_produto(&r.product_id) {
+            } else if r.product_id.starts_with("oferta_") {
+                // ALWAYS sent, even when this client no longer knows the offer
+                // (paid late, recovered at login): the server finds it by the
+                // product and delivers — a paid purchase is never dropped.
+                let oferta = self.ofertas.oferta_do_produto(&r.product_id).unwrap_or_default();
                 self.envia(ClientMessage::Loja {
                     pedido: shared::loja::PedidoLoja::ComprarOfertaGooglePlay {
                         oferta,
+                        produto: r.product_id,
                         pedido,
                         purchase_token: r.purchase_token,
                     },
@@ -6284,6 +6289,20 @@ impl Jogo {
         // A faixa de PvP vale na ilha inteira, e não só com tempo valendo: quem
         // entrou precisa saber a regra antes de apanhar por ela.
         hud_layout::define_faixa_pvp(self.magica.na_ilha());
+        // Google Play results and flash-offer checks run EVERY frame in the
+        // world — not under `!painel`: the purchase happens with the offers
+        // window or the TP shop OPEN, and inside `!painel` the result waited
+        // until the window closed ("Waiting for Google Play…" forever).
+        if let Some(pedido) = self.ofertas.checar(self.bolsa.nivel) {
+            self.envia(pedido);
+        }
+        #[cfg(target_os = "android")]
+        if !self.billing_recuperado {
+            self.billing_recuperado = true;
+            billing_android::recover();
+        }
+        #[cfg(target_os = "android")]
+        self.despacha_billing();
         // Com painel grande aberto ela nem desenha: ficar atrás de uma janela
         // que cobre a tela é ficar invisível, e os botões dela continuariam
         // pegando o clique por baixo dela.
@@ -6301,19 +6320,6 @@ impl Jogo {
                 if let Some(msg) = self.porao.desenha(&zona, eu, &tem) {
                     self.envia(msg);
                 }
-                // Flash offers: a new level may unlock one; and, once per
-                // session, purchases paid but never consumed go to the server
-                // again (it delivers/consumes them, idempotently).
-                if let Some(pedido) = self.ofertas.checar(self.bolsa.nivel) {
-                    self.envia(pedido);
-                }
-                #[cfg(target_os = "android")]
-                if !self.billing_recuperado {
-                    self.billing_recuperado = true;
-                    billing_android::recover();
-                }
-                #[cfg(target_os = "android")]
-                self.despacha_billing();
                 if let Some(chave) = self.porao.pede_craft() {
                     self.fecha_paineis();
                     self.craft.abrir_chaves(Some(chave));

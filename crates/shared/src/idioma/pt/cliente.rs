@@ -2016,4 +2016,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Trade cancelled: the items changed.", "Troca cancelada: os itens mudaram."),
     ("Trade cancelled: not enough gold.", "Troca cancelada: ouro insuficiente."),
     ("Trade cancelled: the other player left.", "Troca cancelada: o outro jogador saiu."),
+    ("Shop purchase", "Compra na loja"),
+    ("Your purchase has arrived: open your Mail (Deliveries) to collect it.", "Sua compra chegou: abra o Correio (Entregas) para pegar."),
+    ("Your purchase has arrived.", "Sua compra chegou."),
 ];
