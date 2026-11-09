@@ -67,6 +67,11 @@ pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
 /// Varies the seal by content: a key, a mount's head or an open book.
 pub fn icone_pergaminho_de(item_id: u16, c: Vec2, lado: f32) {
     use shared::item_id as it;
+    match item_id {
+        it::PERGAMINHO_INVOCA_MONTARIA => return icone_ovo(c, lado, OVO_MONTARIA),
+        it::PERGAMINHO_INVOCA_PET => return icone_ovo(c, lado, OVO_PET),
+        _ => {}
+    }
     let cor = match item_id {
         it::PERGAMINHO_INVOCA_MONTARIA => estilo::OURO,
         it::PERGAMINHO_INVOCA_TOMO => estilo::VERDE,
@@ -390,30 +395,63 @@ impl Ovo {
     }
 }
 
-const CASCA: Color = Color::new(0.97, 0.94, 0.87, 1.0);
-const CASCA_SOMBRA: Color = Color::new(0.80, 0.75, 0.74, 1.0);
+/// The shell colours. The summon scrolls of pets and mounts ARE eggs now
+/// (owner, 09/11/2026: "change the icon for pet summon and mount summon for
+/// eggs, with different colors"), and the reveal hatches the same egg.
+#[derive(Clone, Copy)]
+pub struct CoresOvo {
+    casca: Color,
+    sombra: Color,
+    pinta: Color,
+}
+
+/// Keys, tomes and mixed batches: the pearl egg.
+pub const OVO_PEROLA: CoresOvo = CoresOvo {
+    casca: Color::new(0.97, 0.94, 0.87, 1.0),
+    sombra: Color::new(0.80, 0.75, 0.74, 1.0),
+    pinta: Color::new(0.42, 0.74, 0.80, 1.0),
+};
+/// Mount: warm cream with rust spots.
+pub const OVO_MONTARIA: CoresOvo = CoresOvo {
+    casca: Color::new(0.99, 0.86, 0.60, 1.0),
+    sombra: Color::new(0.86, 0.62, 0.36, 1.0),
+    pinta: Color::new(0.74, 0.34, 0.16, 1.0),
+};
+/// Pet: mint with pink spots.
+pub const OVO_PET: CoresOvo = CoresOvo {
+    casca: Color::new(0.78, 0.96, 0.86, 1.0),
+    sombra: Color::new(0.52, 0.80, 0.68, 1.0),
+    pinta: Color::new(0.98, 0.52, 0.70, 1.0),
+};
+
+/// The egg icon (shop, bag, slots): same drawing as the reveal, still whole.
+pub fn icone_ovo(c: Vec2, lado: f32, cores: CoresOvo) {
+    let ovo = Ovo { rx: lado * 0.30, ry: lado * 0.39 };
+    draw_ellipse(c.x, c.y + ovo.ry * 0.98, ovo.rx * 0.95, ovo.ry * 0.13, 0.0, Color::new(0.0, 0.0, 0.0, 0.30));
+    let xf = move |l: Vec2| c + l;
+    desenha_ovo(&ovo, &xf, lado / 150.0, 0.0, WHITE, 0.0, cores);
+}
 const CASCA_BORDA: Color = Color::new(0.16, 0.11, 0.20, 1.0);
-const PINTA: Color = Color::new(0.42, 0.74, 0.80, 1.0);
 /// Spots: (x, y) as fractions of rx/ry, radius as a fraction of rx.
 const PINTAS: [(f32, f32, f32); 5] =
     [(-0.38, -0.28, 0.20), (0.42, 0.02, 0.15), (-0.12, 0.50, 0.13), (0.22, -0.60, 0.10), (0.50, 0.55, 0.09)];
 
 /// The whole egg, still closed. `xf` maps egg coordinates to the screen.
 #[allow(clippy::too_many_arguments)]
-fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Color, branco: f32) {
+fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Color, branco: f32, cores: CoresOvo) {
     let contorno = ovo.contorno();
     let borda: Vec<Vec2> = contorno.iter().map(|p| xf(*p * 1.06)).collect();
     leque(&borda, CASCA_BORDA);
     let corpo: Vec<Vec2> = contorno.iter().map(|p| xf(*p)).collect();
-    leque(&corpo, CASCA_SOMBRA);
+    leque(&corpo, cores.sombra);
     // Lit part: a smaller egg nudged up-left, the rim left over is the shade.
     let des = vec2(-ovo.rx * 0.07, -ovo.ry * 0.06);
     let lit: Vec<Vec2> = contorno.iter().map(|p| xf(*p * 0.88 + des)).collect();
-    leque(&lit, CASCA);
+    leque(&lit, cores.casca);
     for (x, y, r) in PINTAS {
         let c = xf(vec2(x * ovo.rx, y * ovo.ry));
-        draw_circle(c.x, c.y, r * ovo.rx, PINTA);
-        draw_circle(c.x - r * ovo.rx * 0.25, c.y - r * ovo.rx * 0.25, r * ovo.rx * 0.45, mistura(PINTA, WHITE, 0.35));
+        draw_circle(c.x, c.y, r * ovo.rx, cores.pinta);
+        draw_circle(c.x - r * ovo.rx * 0.25, c.y - r * ovo.rx * 0.25, r * ovo.rx * 0.45, mistura(cores.pinta, WHITE, 0.35));
     }
     let h = xf(vec2(-0.40 * ovo.rx, -0.48 * ovo.ry));
     draw_circle(h.x, h.y, 0.15 * ovo.rx, Color::new(1.0, 1.0, 1.0, 0.75));
@@ -456,9 +494,9 @@ fn desenha_ovo(ovo: &Ovo, xf: &dyn Fn(Vec2) -> Vec2, k: f32, racha: f32, luz: Co
 }
 
 /// One flying half of the shell.
-fn desenha_metade(arco: &[Vec2], pol: &[Vec2], xf: &dyn Fn(Vec2) -> Vec2, k: f32, luz: Color, a: f32) {
+fn desenha_metade(arco: &[Vec2], pol: &[Vec2], xf: &dyn Fn(Vec2) -> Vec2, k: f32, luz: Color, a: f32, cores: CoresOvo) {
     let pts: Vec<Vec2> = pol.iter().map(|p| xf(*p)).collect();
-    leque(&pts, estilo::alfa(CASCA, a));
+    leque(&pts, estilo::alfa(cores.casca, a));
     for w in arco.windows(2) {
         let (p, q) = (xf(w[0]), xf(w[1]));
         draw_line(p.x, p.y, q.x, q.y, 3.0 * k, estilo::alfa(CASCA_BORDA, a));
@@ -592,6 +630,14 @@ fn cena(
     }
 
     let ovo = Ovo { rx: 58.0 * k, ry: 76.0 * k };
+    // The egg of the scroll that was opened.
+    let cores = if premios.iter().all(|p| matches!(p, PremioInvocacao::Pet { .. })) {
+        OVO_PET
+    } else if premios.iter().all(|p| matches!(p, PremioInvocacao::Montaria { .. })) {
+        OVO_MONTARIA
+    } else {
+        OVO_PEROLA
+    };
     let c_ovo = p(450.0, 190.0);
     let mut acao = Acao::Nada;
 
@@ -632,7 +678,7 @@ fn cena(
             let l = vec2(l.x * sx, ovo.ry - (ovo.ry - l.y) * sy);
             base + pivo + gira(l - pivo, rot)
         };
-        desenha_ovo(&ovo, &xf, k, racha, luz, branco);
+        desenha_ovo(&ovo, &xf, k, racha, luz, branco, cores);
         // A puff of sparks each time it cracks.
         for (i, (s, d)) in SACUDIDAS.iter().enumerate() {
             let q = (t - s - d * 0.5) / 0.5;
@@ -664,8 +710,8 @@ fn cena(
             let off_b = vec2(140.0, 60.0 + 200.0 * b * b) * k * e;
             let xf_c = move |l: Vec2| c_ovo + cen_c + off_c + gira(l - cen_c, -1.1 * e);
             let xf_b = move |l: Vec2| c_ovo + cen_b + off_b + gira(l - cen_b, 0.8 * e);
-            desenha_metade(&arco_c, &pol_c, &xf_c, k, luz, a);
-            desenha_metade(&arco_b, &pol_b, &xf_b, k, luz, a);
+            desenha_metade(&arco_c, &pol_c, &xf_c, k, luz, a, cores);
+            desenha_metade(&arco_b, &pol_b, &xf_b, k, luz, a, cores);
         }
         if premios.len() > 1 {
             acao = lote(premios, &infos, vox, solido, b, k, &p, clicou, m, t);
@@ -970,6 +1016,20 @@ pub async fn previa(vox: &VoxCache) {
         ("11-lote-abrindo.png", lote.clone(), 3.0),
         ("12-lote-10-mais-1.png", lote, 5.0),
     ];
+    // The four scroll icons, big and small (shop and bag sizes).
+    for _ in 0..2 {
+        crate::render3d::camera_padrao();
+        clear_background(Color::new(0.16, 0.12, 0.10, 1.0));
+        use shared::item_id as it;
+        let ids = [it::PERGAMINHO_INVOCA_CHAVE, it::PERGAMINHO_INVOCA_TOMO, it::PERGAMINHO_INVOCA_MONTARIA, it::PERGAMINHO_INVOCA_PET];
+        for (i, id) in ids.iter().enumerate() {
+            icone_pergaminho_de(*id, vec2(140.0 + i as f32 * 200.0, 150.0), 150.0);
+            icone_pergaminho_de(*id, vec2(140.0 + i as f32 * 200.0, 320.0), 56.0);
+        }
+        unsafe { get_internal_gl().flush() };
+        rt.texture.get_texture_data().export_png(&format!("{saida}/00-icones.png"));
+        next_frame().await;
+    }
     for (arquivo, premios, tempo) in cenas {
         let agora = get_time();
         let mut ui = InvocacaoUi::default();

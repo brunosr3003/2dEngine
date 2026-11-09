@@ -197,6 +197,9 @@ pub async fn run_world_loop(
             }
         }
 
+        for texto in crate::avisos_globais::tomar() {
+            world.aviso_global(&texto);
+        }
         world.step(TICK_DT);
         world.send_snapshots();
         // Retrato pro panoptico. Sai do laco ja' serializado; quem atende a

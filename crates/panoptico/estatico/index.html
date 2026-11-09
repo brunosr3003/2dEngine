@@ -138,6 +138,7 @@
     <button class="aba" data-aba="missoes">missões</button>
     <button class="aba" data-aba="infra">infra</button>
     <button class="aba" data-aba="correio">correio</button>
+    <button class="aba" data-aba="aviso">aviso global</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -368,6 +369,25 @@
   <h2></h2>
   <button class="aba" id="co-enviar" style="width:auto;padding:8px 20px">enviar</button>
   <div id="co-resultado" class="nota"></div>
+</div>
+
+<!-- ─────────────────────────── aviso global ─────────────────────────── -->
+<div class="aba-painel" id="aba-aviso" hidden>
+  <h2>Aviso global</h2>
+  <p class="nota">
+    Aparece na hora (em até ~3 s) para <b>todo mundo online</b>, em todos os
+    canais: uma faixa grande no topo da tela e uma linha no chat. Não precisa
+    reiniciar nada. Quem entrar depois não vê. Escreva em inglês (o jogo é em
+    inglês); até 200 caracteres.
+  </p>
+  <label class="f">assina <input id="av-autor" class="campo" value="Staff" maxlength="30" style="width:160px"></label>
+  <label class="f">texto <textarea id="av-texto" class="campo" rows="3" maxlength="200" placeholder="Server maintenance in 10 minutes!"></textarea></label>
+  <span id="av-conta" class="nota">0/200</span>
+  <h2></h2>
+  <button class="aba" id="av-enviar" style="width:auto;padding:8px 20px">enviar para todos</button>
+  <div id="av-resultado" class="nota"></div>
+  <h2>Últimos avisos</h2>
+  <div id="av-lista" class="nota"></div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -1565,6 +1585,40 @@ document.getElementById('co-enviar').onclick = async () => {
     r.textContent = 'falhou: ' + e;
   }
 };
+
+// ── aviso global ──
+async function avCarrega() {
+  try {
+    const v = await (await fetch('api/avisos', { cache: 'no-store' })).json();
+    document.getElementById('av-lista').innerHTML = v.length
+      ? v.map(a => `<div>${esc(a.quando)} · <b>${esc(a.autor || '—')}</b>: ${esc(a.texto)}</div>`).join('')
+      : 'nenhum ainda';
+  } catch (e) { document.getElementById('av-lista').textContent = 'falhou: ' + e; }
+}
+document.getElementById('av-texto').oninput = e =>
+  document.getElementById('av-conta').textContent = e.target.value.length + '/200';
+document.getElementById('av-enviar').onclick = async () => {
+  const texto = document.getElementById('av-texto').value.trim();
+  const autor = document.getElementById('av-autor').value.trim();
+  const r = document.getElementById('av-resultado');
+  if (!texto) { r.innerHTML = '<span class="ruim">escreva o aviso</span>'; return; }
+  if (!confirm(`Mostrar para TODOS os jogadores online agora?\n\n${texto}`)) return;
+  r.textContent = 'enviando...';
+  try {
+    const d = await (await fetch('api/avisos', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ texto, autor }),
+    })).json();
+    if (d.ok) {
+      r.innerHTML = '<span class="bom">enviado</span> · aparece em todos os canais em até ~3 s';
+      document.getElementById('av-texto').value = '';
+      document.getElementById('av-conta').textContent = '0/200';
+      avCarrega();
+    } else r.innerHTML = `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+};
+document.querySelector('[data-aba="aviso"]').addEventListener('click', avCarrega);
+if (location.hash === '#aviso') avCarrega();
 
 mostraAba(location.hash.slice(1) || 'mundo');
 </script>

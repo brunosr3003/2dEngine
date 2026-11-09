@@ -11,6 +11,7 @@
 //! entidades. As sessoes se comunicam com o mundo SOMENTE via mpsc.
 
 mod auth;
+mod avisos_globais;
 #[cfg(test)]
 mod balanceamento;
 mod barra;
@@ -77,6 +78,7 @@ async fn main() -> Result<()> {
     // o que acontecer no boot ja' conta.
     telemetria::init(&pool).await?;
     telemetria::spawn(pool.clone());
+    avisos_globais::iniciar(pool.clone()).await?;
     // Schema de quests ANTES do load_all (cria character_quests + coluna
     // faction_points em characters, que o load_all lê por personagem).
     quests::init(&pool).await?;

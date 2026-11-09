@@ -23166,3 +23166,15 @@ fn reembolsa_spd(s: &mut Session) {
     s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
     tracing::info!("{}: SPD retired, refunded {n} points and {energia} Energy", s.name);
 }
+
+impl GameWorld {
+    /// A staff announcement (`crate::avisos_globais`) to everyone logged in
+    /// on this channel.
+    pub fn aviso_global(&mut self, texto: &str) {
+        for s in self.sessions.values() {
+            if s.logged_in {
+                let _ = s.handle.to_client.send(ServerMessage::AvisoGlobal { texto: texto.to_string() });
+            }
+        }
+    }
+}

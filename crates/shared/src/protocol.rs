@@ -1278,6 +1278,11 @@ pub enum ServerMessage {
     Troca {
         aviso: crate::troca::AvisoTroca,
     },
+    /// A staff announcement typed in the Panopticon, sent to everyone online
+    /// (`server::avisos_globais`). The client shows a banner and a chat line.
+    AvisoGlobal {
+        texto: String,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

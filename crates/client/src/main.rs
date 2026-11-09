@@ -131,6 +131,7 @@ mod ofertas_ui;
 mod ranking_ui;
 mod troca_ui;
 mod avaliacao;
+mod aviso_global;
 mod previa_skills;
 mod rastro;
 mod render3d;
@@ -470,6 +471,7 @@ struct Jogo {
     troca: troca_ui::TrocaUi,
     /// "Rate Tempest" prompt (`avaliacao.rs`).
     avaliacao: avaliacao::Avaliacao,
+    aviso_global: aviso_global::AvisoGlobal,
     /// Owned-but-unconsumed Google Play purchases re-reported (once).
     billing_recuperado: bool,
     /// Menu "Travel" do Capitao do Porto.
@@ -1031,6 +1033,7 @@ async fn main() {
         ranking: ranking_ui::RankingUi::default(),
         troca: troca_ui::TrocaUi::default(),
         avaliacao: avaliacao::Avaliacao::default(),
+        aviso_global: Default::default(),
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
@@ -2226,6 +2229,11 @@ impl Jogo {
                 }
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
+            ServerMessage::AvisoGlobal { texto } => {
+                self.chat.push(format!("[Announcement] {texto}"));
+                self.aviso_global.receber(texto);
+                crate::sons::tocar(crate::sons::Som::Clique);
+            }
             ServerMessage::Troca { aviso } => {
                 if let Some(t) = self.troca.receber(aviso) {
                     self.chat.push(t);
@@ -7365,6 +7373,7 @@ impl Jogo {
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
         self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
         self.avaliacao.desenha();
+        self.aviso_global.desenha(get_time());
         // Nao no quadro do toque que fechou o dialogo: o mesmo toque, fora do
         // menu recem-aberto, o fecharia na hora.
         if !self.dialogo.aberto && !crate::foco::clique() {
