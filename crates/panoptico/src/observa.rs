@@ -1317,3 +1317,109 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
         "ultimos": ultimos,
     })
 }
+
+/// FINANCES (Panóptico › financeiro): every real-money order with what the
+/// buyer really paid, the tax, Google's fee and what the developer receives —
+/// from `loja_financeiro`, which the game server fills from Google's Orders
+/// API. Owner, 09/11/2026: "everything bought, revenue, taxes, the Play
+/// Console fee, how much I actually earn".
+///
+/// `PANOPTICO_IMPOSTO_PCT` (default 0): the owner's own income tax on what
+/// Google pays out (Simples, carnê-leão…), applied on top for the "net".
+pub async fn financeiro(realm: &PgPool, central: Option<&PgPool>) -> Value {
+    let Some(c) = central else {
+        return json!({ "ligado": false });
+    };
+    let imposto_pct: f64 = std::env::var("PANOPTICO_IMPOSTO_PCT")
+        .ok()
+        .and_then(|v| v.replace(',', ".").parse().ok())
+        .unwrap_or(0.0);
+    // Account id -> character names (realm DB).
+    let mut nomes: HashMap<i64, Vec<String>> = HashMap::new();
+    for r in linhas(realm, "SELECT account_id, name FROM characters WHERE account_id IS NOT NULL ORDER BY name").await {
+        nomes.entry(campo::<i64>(&r, 0)).or_default().push(campo::<String>(&r, 1));
+    }
+    let pedidos = linhas(
+        c,
+        "SELECT EXTRACT(EPOCH FROM p.criado_em)::bigint, p.conta, p.produto, p.tipo, p.valor,
+                COALESCE(p.externo, ''), f.externo IS NOT NULL,
+                COALESCE(f.pais, ''), COALESCE(f.moeda, ''),
+                COALESCE(f.total_micros, 0), COALESCE(f.imposto_micros, 0), COALESCE(f.receita_micros, 0),
+                COALESCE(f.total_brl_centavos, 0), COALESCE(f.imposto_brl_centavos, 0), COALESCE(f.receita_brl_centavos, 0),
+                COALESCE(f.estado, ''),
+                COALESCE(f.teste, FALSE) OR COALESCE(p.externo, '') LIKE 'TESTE:%'
+           FROM loja_pedidos p
+           LEFT JOIN loja_financeiro f ON f.externo = p.externo
+          WHERE p.tipo IN ('tp', 'oferta') AND p.status = 'creditado' AND p.provedor = 'google_play'
+          ORDER BY p.criado_em DESC LIMIT 500",
+    )
+    .await;
+    let (mut bruto, mut imposto, mut recebe, mut vendas, mut sem_dados, mut testes) = (0i64, 0i64, 0i64, 0i64, 0i64, 0i64);
+    let mut por_moeda: BTreeMap<String, (i64, i64, i64, i64)> = BTreeMap::new();
+    let lista: Vec<Value> = pedidos
+        .iter()
+        .map(|r| {
+            let conta: String = campo(r, 1);
+            let id: i64 = conta.rsplit(':').next().and_then(|s| s.parse().ok()).unwrap_or(-1);
+            let tem: bool = campo(r, 6);
+            let estado: String = campo(r, 15);
+            let teste: bool = campo(r, 16);
+            let (tb, ib, rb): (i64, i64, i64) = (campo(r, 12), campo(r, 13), campo(r, 14));
+            let conta_venda = !teste && tem && estado == "PROCESSED";
+            if teste {
+                testes += 1;
+            } else if !tem {
+                sem_dados += 1;
+            } else if conta_venda {
+                vendas += 1;
+                bruto += tb;
+                imposto += ib;
+                recebe += rb;
+                let e = por_moeda.entry(campo::<String>(r, 8)).or_default();
+                e.0 += 1;
+                e.1 += campo::<i64>(r, 9);
+                e.2 += campo::<i64>(r, 10);
+                e.3 += campo::<i64>(r, 11);
+            }
+            json!({
+                "quando": campo::<i64>(r, 0),
+                "conta": conta,
+                "personagens": nomes.get(&id).cloned().unwrap_or_default(),
+                "produto": campo::<String>(r, 2),
+                "pedido_google": campo::<String>(r, 5).trim_start_matches("TESTE:"),
+                "tem_dados": tem,
+                "pais": campo::<String>(r, 7),
+                "moeda": campo::<String>(r, 8),
+                "total_micros": campo::<i64>(r, 9),
+                "imposto_micros": campo::<i64>(r, 10),
+                "receita_micros": campo::<i64>(r, 11),
+                "total_brl": tb, "imposto_brl": ib, "receita_brl": rb,
+                "taxa_brl": (tb - ib - rb).max(0),
+                "estado": estado,
+                "teste": teste,
+                "conta_na_soma": conta_venda,
+            })
+        })
+        .collect();
+    let taxa_google = (bruto - imposto - recebe).max(0);
+    let imposto_proprio = ((recebe as f64) * imposto_pct / 100.0).round() as i64;
+    let base = (bruto - imposto).max(1);
+    json!({
+        "ligado": true,
+        "resumo": {
+            "vendas": vendas,
+            "faturamento_brl": bruto,
+            "imposto_brl": imposto,
+            "taxa_google_brl": taxa_google,
+            "taxa_google_pct": (taxa_google as f64) * 100.0 / (base as f64),
+            "recebe_brl": recebe,
+            "imposto_proprio_pct": imposto_pct,
+            "imposto_proprio_brl": imposto_proprio,
+            "liquido_brl": recebe - imposto_proprio,
+            "testes": testes,
+            "sem_dados": sem_dados,
+        },
+        "por_moeda": por_moeda.into_iter().map(|(m, (n, t, i, r))| json!([m, n, t, i, r])).collect::<Vec<_>>(),
+        "pedidos": lista,
+    })
+}

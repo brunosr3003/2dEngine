@@ -251,6 +251,29 @@ fn estado_da_resposta(corpo: &str, purchase_token: &str) -> Result<String, Erro>
     }
 }
 
+/// The raw `orders.get` answer for one Google order (what the buyer paid,
+/// tax, the developer's revenue) — read by `financeiro`.
+pub async fn pedido_bruto(order_id: &str) -> Result<String, Erro> {
+    if !token_seguro(order_id) {
+        return Err(Erro::Recusado("Invalid order id.".into()));
+    }
+    let nome_do_pacote = nome_do_pacote_env().ok_or(Erro::NaoConfigurado)?;
+    let token_acesso = obter_token_acesso().await?;
+    let url = format!(
+        "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{nome_do_pacote}/orders/{order_id}"
+    );
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(&token_acesso)
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|e| Erro::Rede(e.to_string()))?;
+    let ok = resp.status().is_success();
+    let corpo = resp.text().await.map_err(|e| Erro::Rede(e.to_string()))?;
+    if ok { Ok(corpo) } else { Err(Erro::Recusado(format!("order lookup failed: {corpo}"))) }
+}
+
 /// Purchase tokens and product ids go into a URL path: only the characters
 /// Google actually uses (letters, digits, `.`, `_`, `-`).
 fn token_seguro(t: &str) -> bool {

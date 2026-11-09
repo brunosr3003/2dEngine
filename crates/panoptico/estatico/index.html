@@ -132,6 +132,7 @@
     <button class="aba" data-aba="economia">economia</button>
     <button class="aba" data-aba="mercado">mercado</button>
     <button class="aba" data-aba="loja">loja</button>
+    <button class="aba" data-aba="financeiro">financeiro</button>
     <button class="aba" data-aba="dungeons">dungeons</button>
     <button class="aba" data-aba="atividade">atividade</button>
     <button class="aba" data-aba="missoes">missões</button>
@@ -271,6 +272,17 @@
   <div id="loja-status"></div>
   <h2>Últimos pedidos</h2>
   <div id="loja-ultimos"></div>
+</div>
+
+<!-- ─────────────────────────── financeiro ─────────────────────────── -->
+<div class="aba-painel" id="aba-financeiro" hidden>
+  <h2>Financeiro — dinheiro de verdade</h2>
+  <div class="cartoes" id="fin-cartoes"></div>
+  <p class="nota" id="fin-nota"></p>
+  <h2>Por moeda</h2>
+  <div id="fin-moedas"></div>
+  <h2>Todos os pedidos</h2>
+  <div id="fin-pedidos"></div>
 </div>
 
 <div class="aba-painel" id="aba-dungeons" hidden>
@@ -806,7 +818,7 @@ window.irPara = (id, x, z) => {
 // ── abas ───────────────────────────────────────────────────────────────
 let abaAtual = 'mundo';
 const PUXA = {
-  jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, loja: puxaLoja, dungeons: puxaDungeons,
+  jogadores: puxaJogadores, economia: puxaEconomia, mercado: puxaMercado, loja: puxaLoja, financeiro: puxaFinanceiro, dungeons: puxaDungeons,
   atividade: puxaAtividade, missoes: puxaMissoes, infra: puxaInfra,
   correio: montaCorreio,
 };
@@ -1071,6 +1083,45 @@ async function puxaLoja() {
     d.status.map(s => [esc(s[0]), esc(s[1]), num(s[2]), s[0] === 'tp' ? reais(s[3]) : num(s[3]) + ' TP']));
   document.getElementById('loja-ultimos').innerHTML = tabela(['conta', 'produto', 'valor', 'status', 'provedor', 'quando'],
     d.ultimos.map(u => [esc(u[0]), esc(u[1]), u[3] === 'TP' ? num(u[2]) + ' TP' : reais(u[2]), esc(u[4]), esc(u[5]), ha(u[6])]), [0, 1]);
+}
+
+// ── financeiro ────────────────────────────────────────────────────────
+const naMoeda = (micros, m) => (m ? m + ' ' : '') + (micros / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function puxaFinanceiro() {
+  const d = await api('api/financeiro'); if (!d) return;
+  if (!d.ligado) { document.getElementById('fin-nota').textContent = 'Banco central não configurado neste painel (DATABASE_URL_CENTRAL).'; return; }
+  const r = d.resumo;
+  cartoes('fin-cartoes', [
+    ['faturamento bruto', reais(r.faturamento_brl), `${num(r.vendas)} vendas · o que os jogadores pagaram`],
+    ['impostos', reais(r.imposto_brl), 'cobrados do comprador e recolhidos pelo Google'],
+    ['taxa do Google Play', reais(r.taxa_google_brl), `${r.taxa_google_pct.toFixed(1).replace('.', ',')}% sobre o preço sem imposto`],
+    ['o Google te repassa', reais(r.recebe_brl), 'antes do seu imposto'],
+    ['seu imposto', reais(r.imposto_proprio_brl), r.imposto_proprio_pct ? `${String(r.imposto_proprio_pct).replace('.', ',')}% (PANOPTICO_IMPOSTO_PCT)` : 'não configurado (PANOPTICO_IMPOSTO_PCT)'],
+    ['você ganha', `<span class="bom">${reais(r.liquido_brl)}</span>`, 'líquido'],
+  ]);
+  const avisos = [];
+  avisos.push('Valores em reais são estimativas pela cotação do dia da compra; o valor exato do repasse sai no relatório financeiro da Play Console.');
+  if (r.taxa_google_pct > 20) avisos.push(`A taxa do Google está em ~${Math.round(r.taxa_google_pct)}%: a de 15% só vale depois de se inscrever no "nível de taxa de serviço de 15%" na Play Console (Configurações › Grupo de contas).`);
+  if (r.testes) avisos.push(`${r.testes} compra(s) de teste (contas de teste de licença) fora da soma: ninguém foi cobrado.`);
+  if (r.sem_dados) avisos.push(`${r.sem_dados} pedido(s) ainda sem dados do Google (atualiza a cada 15 min).`);
+  document.getElementById('fin-nota').textContent = avisos.join(' ');
+  document.getElementById('fin-moedas').innerHTML = tabela(['moeda', 'vendas', 'pago pelos jogadores', 'imposto', 'você recebe'],
+    d.por_moeda.map(m => [esc(m[0]), num(m[1]), naMoeda(m[2], m[0]), naMoeda(m[3], m[0]), naMoeda(m[4], m[0])]), [0]);
+  document.getElementById('fin-pedidos').innerHTML = tabela(
+    ['quando', 'personagem', 'produto', 'país', 'pago', 'imposto', 'taxa Google', 'você recebe', 'em R$', 'estado', 'pedido Google'],
+    d.pedidos.map(p => [
+      ha(p.quando),
+      esc(p.personagens.join(', ') || p.conta),
+      esc(p.produto),
+      esc(p.pais || '—'),
+      p.tem_dados ? naMoeda(p.total_micros, p.moeda) : '—',
+      p.tem_dados ? naMoeda(p.imposto_micros, p.moeda) : '—',
+      p.tem_dados ? reais(p.taxa_brl) : '—',
+      p.tem_dados ? naMoeda(p.receita_micros, p.moeda) : '—',
+      p.tem_dados ? reais(p.receita_brl) : '—',
+      p.teste ? '<span class="tag">teste</span>' : (p.tem_dados ? esc(p.estado.toLowerCase()) : 'aguardando Google'),
+      esc(p.pedido_google),
+    ]), [1, 2, 10]);
 }
 
 // ── dungeons ──────────────────────────────────────────────────────────

@@ -146,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/jogadores"), get(jogadores))
         .route(&p("/api/mercado"), get(mercado))
         .route(&p("/api/loja"), get(loja))
+        .route(&p("/api/financeiro"), get(financeiro))
         .route(&p("/api/dungeons"), get(dungeons))
         .route(&p("/api/atividade"), get(atividade))
         .route(&p("/api/missoes"), get(missoes))
@@ -783,6 +784,10 @@ async fn mercado(State(st): State<Estado>) -> impl IntoResponse {
 
 async fn loja(State(st): State<Estado>) -> impl IntoResponse {
     axum::Json(observa::loja(&st.pool, st.central.as_deref()).await)
+}
+
+async fn financeiro(State(st): State<Estado>) -> impl IntoResponse {
+    axum::Json(observa::financeiro(&st.pool, st.central.as_deref()).await)
 }
 
 async fn dungeons(
