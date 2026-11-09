@@ -1208,11 +1208,15 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     };
     let nome =
         |cod: &str| shared::loja::Produto::de_codigo(cod).map_or(cod.to_string(), |p| p.nome());
+    // Real money = TP packs AND flash offers (owner, 09/11/2026: an offer
+    // bought for real didn't show as a sale), never Google test purchases
+    // (license testers, `TESTE:` order prefix — nobody was charged).
     let receita = uma(
         c,
         "SELECT COALESCE(SUM(valor) FILTER (WHERE atualizado_em > NOW() - INTERVAL '24 hours'), 0)::bigint,
                 COALESCE(SUM(valor), 0)::bigint, COUNT(*)::bigint
-           FROM loja_pedidos WHERE tipo = 'tp' AND status = 'creditado'",
+           FROM loja_pedidos WHERE tipo IN ('tp', 'oferta') AND status = 'creditado'
+            AND COALESCE(externo, '') NOT LIKE 'TESTE:%'",
     )
     .await;
     let tp = uma(
@@ -1250,7 +1254,8 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     let pacotes: Vec<Value> = linhas(
         c,
         "SELECT produto, COUNT(*)::bigint, COALESCE(SUM(valor), 0)::bigint FROM loja_pedidos
-          WHERE tipo = 'tp' AND status = 'creditado' GROUP BY 1 ORDER BY 2 DESC",
+          WHERE tipo IN ('tp', 'oferta') AND status = 'creditado'
+            AND COALESCE(externo, '') NOT LIKE 'TESTE:%' GROUP BY 1 ORDER BY 2 DESC",
     )
     .await
     .iter()
@@ -1265,7 +1270,8 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     let por_hora: Vec<Value> = linhas(
         c,
         "SELECT EXTRACT(EPOCH FROM date_trunc('hour', atualizado_em))::bigint,
-                COALESCE(SUM(valor) FILTER (WHERE tipo = 'tp'), 0)::bigint,
+                COALESCE(SUM(valor) FILTER (WHERE tipo IN ('tp', 'oferta')
+                    AND COALESCE(externo, '') NOT LIKE 'TESTE:%'), 0)::bigint,
                 COUNT(*) FILTER (WHERE tipo = 'item')::bigint
            FROM loja_pedidos
           WHERE atualizado_em > NOW() - INTERVAL '48 hours' AND status IN ('creditado', 'entregue')
@@ -1277,7 +1283,9 @@ pub async fn loja(realm: &PgPool, central: Option<&PgPool>) -> Value {
     .collect();
     let ultimos: Vec<Value> = linhas(
         c,
-        "SELECT conta, produto, valor, moeda, status, provedor, EXTRACT(EPOCH FROM criado_em)::bigint
+        "SELECT conta, produto, valor, moeda, status,
+                provedor || CASE WHEN COALESCE(externo, '') LIKE 'TESTE:%' THEN ' (teste)' ELSE '' END,
+                EXTRACT(EPOCH FROM criado_em)::bigint
            FROM loja_pedidos ORDER BY criado_em DESC LIMIT 30",
     )
     .await
