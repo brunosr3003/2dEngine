@@ -5873,7 +5873,9 @@ impl Jogo {
         // o polegar que encostava ali embaixo virava camera. Fora continuam
         // so' os botoes do HUD e o que a interface pega, conferidos no ponto
         // do DEDO.
-        let quadrante = hud_layout::quadrante_do_joystick();
+        // `z.joystick` already holds the quadrant (and the player's place and
+        // size for it, `hud_custom`).
+        let quadrante = z.joystick;
         let na_ui: Vec<Vec2> = toques
             .iter()
             .filter(|t| t.fase == gesto_camera::Fase::Comecou && self.ui_pega_dedo(t.pos))
@@ -5891,7 +5893,7 @@ impl Jogo {
         };
         let dono = self.joystick.dedo();
         self.joystick
-            .quadro(&toques, joystick::RAIO_BASE * z.s, &pode_comecar);
+            .quadro(&toques, joystick::RAIO_BASE * z.s * hud_custom::tamanho("joystick"), &pode_comecar);
         // O de antes tambem sai: no quadro do soltar o joystick ja' largou o id.
         let resto = joystick::sem_dedos(&toques, &[dono, self.joystick.dedo()]);
         // O HUD e' conferido no ponto do DEDO, nao no do mouse simulado: ele
@@ -6843,8 +6845,11 @@ impl Jogo {
             // Painel aberto: soltar o pulo segurado, pra nao ficar preso.
             self.pulo_segurando = false;
         }
-        // A bateria do modo economia fica SEMPRE na tela, com ou sem painel.
-        if hud::draw_botao_economia(&z) {
+        // A bateria do modo economia fica SEMPRE na tela, com ou sem painel —
+        // except in the HUD editor, where a tap only picks it (owner,
+        // 10/11/2026: "it changes to economy mode, it should not work in
+        // settings mode").
+        if !self.editor_hud.aberto && hud::draw_botao_economia(&z) {
             self.entrar_economia();
         }
         if let Some((texto, cor)) = self.texto_da_faixa() {
@@ -6852,7 +6857,9 @@ impl Jogo {
         }
 
         // Joystick virtual: so' aparece com o dedo na tela.
-        self.joystick.desenha(&hud_layout::atual());
+        if !self.editor_hud.aberto {
+            self.joystick.desenha(&hud_layout::atual());
+        }
         if self.coleta_hud.ativa() {
             self.coleta_hud.desenha(&z, get_time());
         }

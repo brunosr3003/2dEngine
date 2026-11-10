@@ -291,6 +291,14 @@ pub fn atual() -> Zonas {
         _ => {
             let z = zonas_com(sw, sh, mg, ui, grande, tarja, pvp);
             let seguro = Rect::new(mg[1], mg[0], (sw - mg[1] - mg[3]).max(64.0), (sh - mg[0] - mg[2]).max(64.0));
+            // The joystick's whole start zone in ONE rect (the strip plus the
+            // bottom-left quadrant, as `main` used to test them apart), so the
+            // HUD editor shows it and moving it moves all of it.
+            let mut z = z;
+            let q = quadrante_do_joystick_em(seguro, ui);
+            let (x0, y0) = (z.joystick.x.min(q.x), z.joystick.y.min(q.y));
+            let (x1, y1) = ((z.joystick.x + z.joystick.w).max(q.x + q.w), (z.joystick.y + z.joystick.h).max(q.y + q.h));
+            z.joystick = Rect::new(x0, y0, x1 - x0, y1 - y0);
             let z = crate::hud_custom::aplica(z, seguro, &crate::hud_custom::atual());
             c.set(Some((chave, z)));
             z

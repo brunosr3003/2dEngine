@@ -7,7 +7,7 @@ Nov 11, 2026 — Small improvements
 - Chat: taps on a window over the chat no longer reach the chat, and on phones the chat moves to the top while you type so the keyboard does not cover it.
 - Official letters can have paragraphs.
 - New in Offers: rate Tempest on Google Play, post the screenshot on our Discord and get a gift in your Mail.
-- New: customize your HUD in Settings › Interface › Customize HUD. Drag any button to put it anywhere, make each one bigger or smaller, or resize all buttons at once. Saved on your device.
+- New: customize your HUD in Settings › Interface › Customize HUD. Drag any button, the joystick, the quest panel or the minimap anywhere, make each one bigger or smaller, or resize all buttons at once. Saved on your device.
 
 Nov 10, 2026 — Chat, bonus events and egg summons
 

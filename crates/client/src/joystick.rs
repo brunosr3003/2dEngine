@@ -105,7 +105,7 @@ impl Joystick {
     /// joystick's strip, at thumb height (down is where the hand sits).
     pub fn base_em_repouso(z: &crate::hud_layout::Zonas) -> Vec2 {
         let r = z.joystick;
-        let raio = RAIO_BASE * z.s;
+        let raio = RAIO_BASE * z.s * crate::hud_custom::tamanho("joystick");
         vec2(r.x + raio + 16.0 * z.s, r.y + r.h - raio - 16.0 * z.s)
     }
 
@@ -116,7 +116,7 @@ impl Joystick {
         let (r, b) = if segurando {
             (self.raio, self.base)
         } else {
-            (RAIO_BASE * z.s, Self::base_em_repouso(z))
+            (RAIO_BASE * z.s * crate::hud_custom::tamanho("joystick"), Self::base_em_repouso(z))
         };
         if !segurando {
             draw_circle(b.x, b.y, r, estilo::alfa(estilo::FUNDO, 0.28));

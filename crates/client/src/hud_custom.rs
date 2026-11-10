@@ -77,15 +77,29 @@ pub const ITENS: &[(&str, &str, bool)] = &[
     ("icone_avisos", "Notices", true),
     ("icone_presenca", "Presence", true),
     ("minimapa", "Minimap", true),
-    ("area", "Zone name", false),
+    ("joystick", "Joystick", true),
+    ("area", "Zone name", true),
     ("chat", "Chat", false),
     ("ficha", "Character", false),
+    ("rastreador", "Quests / Party", false),
     ("alvo", "Target", false),
 ];
 
 /// Ids that the "all buttons" size touches (the minimap is not a button).
 fn e_botao(id: &str) -> bool {
-    !matches!(id, "minimapa" | "area" | "chat" | "ficha" | "alvo")
+    !matches!(id, "minimapa" | "area" | "chat" | "ficha" | "alvo" | "joystick" | "rastreador")
+}
+
+/// The player's size for one element (1 = the game's). For panels that scale
+/// their own text with it (`hud::draw_area`).
+pub fn tamanho(id: &str) -> f32 {
+    LAYOUT.with(|l| {
+        l.borrow_mut()
+            .get_or_insert_with(carrega)
+            .itens
+            .get(id)
+            .map_or(1.0, |a| a.tamanho)
+    })
 }
 
 pub fn nome(id: &str) -> &'static str {
@@ -250,9 +264,11 @@ pub fn campo<'a>(z: &'a mut Zonas, id: &str) -> Option<&'a mut Rect> {
         "icone_avisos" => &mut z.icones[5],
         "icone_presenca" => &mut z.icones[6],
         "minimapa" => &mut z.minimapa,
+        "joystick" => &mut z.joystick,
         "area" => &mut z.area,
         "chat" => &mut z.chat,
         "ficha" => &mut z.ficha,
+        "rastreador" => &mut z.rastreador,
         "alvo" => &mut z.alvo,
         _ => return None,
     })

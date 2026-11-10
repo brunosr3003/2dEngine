@@ -165,6 +165,10 @@ pub fn draw_hud(
     // a HUD quando ela some (cinemática, tela de morte, painel cheio).
     desenha_fps(z);
     let r = z.area;
+    // The player's own size for this panel (`hud_custom`): the box AND the
+    // text inside grow together.
+    let k = crate::hud_custom::tamanho("area");
+    let sobre = estilo::no_painel(estilo::fator_texto() * k, || {
     estilo::painel(r);
     let sobre = r.toca(mouse());
     let zona = nome_da_zona(if info.zona.is_empty() {
@@ -174,7 +178,7 @@ pub fn draw_hud(
     });
     let zona = zona.as_str();
     let cor = if sobre { estilo::OURO } else { estilo::TEXTO };
-    estilo::texto_ajustado(zona, r.x + 12.0, r.y + r.h * 0.45, r.w - 100.0, 18, cor);
+    estilo::texto_ajustado(zona, r.x + 12.0 * k, r.y + r.h * 0.45, r.w - 100.0 * k, 18, cor);
     let onde = if info.realm.is_empty() {
         "Open world".into()
     } else {
@@ -182,24 +186,26 @@ pub fn draw_hud(
     };
     estilo::texto_ajustado(
         &onde,
-        r.x + 12.0,
+        r.x + 12.0 * k,
         r.y + r.h * 0.84,
-        r.w - 100.0,
+        r.w - 100.0 * k,
         12,
         estilo::SUAVE,
     );
     // The ping in its own colour (green/yellow/red), with no dot in front:
     // the number coloured says the same thing.
     estilo::texto(
-        r.x + r.w - 62.0,
+        r.x + r.w - 62.0 * k,
         r.y + r.h * 0.5,
         &format!("{:.0} ms", rede.ms),
         12,
         rede.cor_ms(),
     );
     if sobre {
-        estilo::texto(r.x + r.w - 62.0, r.y + r.h * 0.84, "map", 11, estilo::OURO);
+        estilo::texto(r.x + r.w - 62.0 * k, r.y + r.h * 0.84, "map", 11, estilo::OURO);
     }
+    sobre
+    });
 
     // AVISOS: texto solto que some sozinho, sem caixa. O painel de chat saiu
     // (pedido do dono) — ele ocupava justamente onde o polegar procura o

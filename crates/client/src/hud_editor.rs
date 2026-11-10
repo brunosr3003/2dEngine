@@ -154,61 +154,62 @@ impl EditorHud {
             estilo::cartao(r, r.toca(m), ativo);
             estilo::texto_centro(r.center().x, r.center().y + 6.0 * f, t, 15, estilo::TEXTO);
         };
-        // Row 1: all buttons, reset all, done.
-        estilo::texto(x0, y1 + lh * 0.62, "All buttons", 14, estilo::SUAVE);
-        let menos_t = Rect::new(x0 + 104.0 * f, y1, bw, lh);
-        let mais_t = Rect::new(menos_t.x + bw + 72.0 * f, y1, bw, lh);
-        botao(menos_t, "-", false);
-        botao(mais_t, "+", false);
-        estilo::texto_centro_forte(
-            (menos_t.x + menos_t.w + mais_t.x) * 0.5,
-            y1 + lh * 0.64,
-            &format!("{:.0}%", self.layout.botoes * 100.0),
-            16,
-            estilo::OURO,
-        );
+        // Row 1: the picked element (what − / + here change), Done.
         let pronto = Rect::new(barra.x + barra.w - 10.0 * f - 110.0 * f, y1, 110.0 * f, lh);
-        let tudo = Rect::new(pronto.x - 8.0 * f - 128.0 * f, y1, 128.0 * f, lh);
-        let mover = Rect::new(tudo.x - 8.0 * f - 104.0 * f, y1, 104.0 * f, lh);
-        let mover = (mover.x > mais_t.x + mais_t.w + 4.0 * f).then_some(mover);
-        if let Some(b) = mover {
-            botao(b, "Move bar", false);
-        }
         botao(pronto, "Done", true);
-        botao(tudo, if self.confirmar_tudo { "Sure?" } else { "Reset all" }, false);
-        // Row 2: the selected element.
         let (menos_s, mais_s, um) = (
-            Rect::new(x0 + 190.0 * f, y2, bw, lh),
-            Rect::new(x0 + 190.0 * f + bw + 72.0 * f, y2, bw, lh),
-            Rect::new(barra.x + barra.w - 10.0 * f - 110.0 * f, y2, 110.0 * f, lh),
+            Rect::new(x0 + 190.0 * f, y1, bw, lh),
+            Rect::new(x0 + 190.0 * f + bw + 72.0 * f, y1, bw, lh),
+            Rect::new(pronto.x - 8.0 * f - 110.0 * f, y1, 110.0 * f, lh),
         );
         match self.sel {
             Some(id) => {
-                estilo::texto(x0, y2 + lh * 0.62, hud_custom::nome(id), 15, estilo::OURO);
+                estilo::texto(x0, y1 + lh * 0.62, hud_custom::nome(id), 15, estilo::OURO);
                 if hud_custom::redimensiona(id) {
                     let k = self.layout.itens.get(id).map_or(1.0, |a| a.tamanho);
                     botao(menos_s, "-", false);
                     botao(mais_s, "+", false);
                     estilo::texto_centro_forte(
                         (menos_s.x + menos_s.w + mais_s.x) * 0.5,
-                        y2 + lh * 0.64,
+                        y1 + lh * 0.64,
                         &format!("{:.0}%", k * 100.0),
                         16,
                         estilo::TEXTO,
                     );
                 } else {
-                    estilo::texto(menos_s.x, y2 + lh * 0.62, "drag to move", 13, estilo::SUAVE);
+                    estilo::texto(menos_s.x, y1 + lh * 0.62, "This one can only be moved", 13, estilo::SUAVE);
                 }
                 botao(um, "Reset", false);
             }
             None => estilo::texto(
                 x0,
-                y2 + lh * 0.62,
+                y1 + lh * 0.62,
                 "Tap a button to pick it, drag it to move it.",
                 14,
                 estilo::SUAVE,
             ),
         }
+        // Row 2: every button at once, move the bar, reset everything.
+        estilo::texto(x0, y2 + lh * 0.62, "All buttons", 14, estilo::SUAVE);
+        let menos_t = Rect::new(x0 + 104.0 * f, y2, bw, lh);
+        let mais_t = Rect::new(menos_t.x + bw + 72.0 * f, y2, bw, lh);
+        botao(menos_t, "-", false);
+        botao(mais_t, "+", false);
+        estilo::texto_centro_forte(
+            (menos_t.x + menos_t.w + mais_t.x) * 0.5,
+            y2 + lh * 0.64,
+            &format!("{:.0}%", self.layout.botoes * 100.0),
+            16,
+            estilo::OURO,
+        );
+        let tudo = Rect::new(barra.x + barra.w - 10.0 * f - 128.0 * f, y2, 128.0 * f, lh);
+        botao(tudo, if self.confirmar_tudo { "Sure?" } else { "Reset all" }, false);
+        let mover = Rect::new(tudo.x - 8.0 * f - 104.0 * f, y2, 104.0 * f, lh);
+        let mover = (mover.x > mais_t.x + mais_t.w + 4.0 * f).then_some(mover);
+        if let Some(b) = mover {
+            botao(b, "Move bar", false);
+        }
+        draw_line(x0, y2 - 5.0 * f, barra.x + barra.w - 10.0 * f, y2 - 5.0 * f, 1.0, Color::new(1.0, 1.0, 1.0, 0.12));
         estilo::texto(
             x0,
             barra.y + barra.h - 8.0 * f,
