@@ -20,6 +20,7 @@ Nov 10, 2026 — Chat, bonus events and egg summons
 - Open windows now always stay in front of the dungeon tracker.
 - Fixed buttons that overlap (like Auto Collect and its settings) catching the wrong tap.
 - Fixed getting stuck in the Arena when a dungeon ended while you were away.
+- The "Rate Tempest" reminder only shows up after you have played for a while.
 
 Nov 9, 2026 — Shop fixes
 
