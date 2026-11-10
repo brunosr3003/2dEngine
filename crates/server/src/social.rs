@@ -137,7 +137,7 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
             assunto,
             texto,
         } => {
-            if !texto_valido(assunto, 1, 60) || !texto_valido(texto, 1, 1000) {
+            if !texto_valido(assunto, 1, 60) || !shared::social::corpo_de_carta_valido(texto, 1, 1000) {
                 bail!("Preencha assunto (até 60) e mensagem (até 1000 caracteres).");
             }
             let para = alvo(&mut tx, eu, para).await?;

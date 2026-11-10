@@ -803,7 +803,24 @@ pub fn estado_de(r: Rect, desabilitado: bool, ativo: bool) -> Estado {
 /// crawl), a strong bronze outer rim, a faint inner line three pixels in —
 /// the double frame of a fitted board — and bronze studs on the corners of
 /// the larger ones.
+thread_local! {
+    /// Every panel drawn since `coberturas_limpar` (the chat box clears it
+    /// when it draws, first thing in the HUD): what covers the chat, so a tap
+    /// on a window over it is not the chat's (owner, 10/11/2026).
+    static COBERTURAS: std::cell::RefCell<Vec<Rect>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+pub fn coberturas_limpar() {
+    COBERTURAS.with(|c| c.borrow_mut().clear());
+}
+
+/// Some panel drawn after the chat covers this point.
+pub fn coberto(p: Vec2) -> bool {
+    COBERTURAS.with(|c| c.borrow().iter().any(|r| r.contains(p)))
+}
+
 pub fn painel(r: Rect) {
+    COBERTURAS.with(|c| c.borrow_mut().push(r));
     if em_pergaminho() {
         // A box drawn on the page: a slightly darker inset with an ink rule.
         ret_arredondado(r, RAIO_PEQUENO, alfa(PERGAMINHO_ESCURO, 0.55));

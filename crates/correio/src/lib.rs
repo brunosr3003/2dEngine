@@ -45,10 +45,17 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
     {
         bail!("Identificador de envio inválido.");
     }
-    if !texto_valido(assunto, 1, 60) || !texto_valido(texto, 1, 1000) || !anexos_validos(anexos) {
-        bail!(
-            "Revise assunto, texto e anexos (até 8 itens distintos, de 1 a 100.000 unidades cada)."
-        );
+    // Say WHICH part is wrong: the one message for everything sent the staff
+    // hunting (it was the line breaks in the text).
+    let texto = &texto.replace("\r\n", "\n");
+    if !texto_valido(assunto, 1, 60) {
+        bail!("Assunto: de 1 a 60 caracteres, numa linha só.");
+    }
+    if !shared::social::corpo_de_carta_valido(texto, 1, 1000) {
+        bail!("Texto: de 1 a 1000 caracteres (quebras de linha podem; outros caracteres de controle não).");
+    }
+    if !anexos_validos(anexos) {
+        bail!("Anexos: até 8 itens distintos, de 1 a 100.000 unidades cada (com cor, 1 por linha).");
     }
     let mut tx = pool.begin().await?;
     // Serialises sends per account (idempotency across channels too).

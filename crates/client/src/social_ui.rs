@@ -1337,6 +1337,11 @@ fn campo(
 fn texto_em_linhas(texto: &str, r: Rect, tam: u16, cor: Color, desloc: usize) -> usize {
     let mut linhas = vec![String::new()];
     for ch in texto.chars() {
+        // A letter's paragraphs (official mail can have line breaks).
+        if ch == '\n' {
+            linhas.push(String::new());
+            continue;
+        }
         let ultima = linhas.last_mut().unwrap();
         if !ultima.is_empty() && e::medir(&format!("{ultima}{ch}"), tam) > r.w {
             linhas.push(ch.to_string());

@@ -162,6 +162,15 @@ pub enum Aviso {
 }
 
 /// Validates before querying the database; limits in characters AND bytes.
+/// The BODY of a letter: like `texto_valido`, but line breaks are allowed
+/// (paragraphs). Names and subjects keep `texto_valido`, where a line break is
+/// a way to fake another line.
+pub fn corpo_de_carta_valido(texto: &str, min: usize, max: usize) -> bool {
+    texto.len() <= max * 4
+        && (min..=max).contains(&texto.trim().chars().count())
+        && !texto.chars().any(|c| c.is_control() && c != '\n')
+}
+
 pub fn texto_valido(texto: &str, min: usize, max: usize) -> bool {
     texto.len() <= max * 4
         && (min..=max).contains(&texto.trim().chars().count())
@@ -188,6 +197,8 @@ mod tests {
         assert!(texto_valido("Clã dos Mares", 3, 24));
         assert!(!texto_valido("   ", 1, 24));
         assert!(!texto_valido("a\nspoof", 1, 24));
+        assert!(corpo_de_carta_valido("Hi!\n\nSee you.", 1, 1000), "a letter has paragraphs");
+        assert!(!corpo_de_carta_valido("bell\u{7}", 1, 1000));
         assert!(!texto_valido(&"á".repeat(25), 1, 24));
     }
     #[test]

@@ -6488,15 +6488,8 @@ impl Jogo {
             // THE CHAT BOX FIRST: everything else in the HUD is drawn after it,
             // so it sits behind them (owner, 09/11/2026: "HUDs in general have
             // to show in front of the chat"). Enter on a keyboard starts typing.
-            if !self.chat_ui.foco() && !self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter) {
-                self.chat_ui.focar();
-            } else {
-                let digitado = self.teclado.digitado().to_vec();
-                let eu_nome = self.personagem_atual.clone().unwrap_or_default();
-                for m in self.chat_ui.caixa(z.chat, &digitado, &eu_nome) {
-                    self.envia(m);
-                }
-            }
+            let eu_nome = self.personagem_atual.clone().unwrap_or_default();
+            self.chat_ui.caixa(z.chat, &eu_nome);
             if hud::draw_hud(
                 &z,
                 &self.info,
@@ -7590,6 +7583,18 @@ impl Jogo {
         if !self.dungeon.na_instancia() {
             if let Some(pedido) = self.morte.desenha(self.bolsa.ouro, agora_unix) {
                 self.envia(pedido);
+            }
+        }
+        // THE CHAT BOX'S INPUT, LAST: every window of this frame is known, so
+        // a tap on one drawn over the box stays with that window. Enter on a
+        // keyboard starts typing.
+        if !self.chat_ui.foco() && !self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter) {
+            self.chat_ui.focar();
+        } else {
+            let digitado = self.teclado.digitado().to_vec();
+            let eu_nome = self.personagem_atual.clone().unwrap_or_default();
+            for m in self.chat_ui.entrada(&digitado, &eu_nome) {
+                self.envia(m);
             }
         }
     }

@@ -55,22 +55,55 @@ pub struct ChatUi {
     enviou_em: f64,
     /// Whisper channel: who the next line goes to.
     alvo: String,
+    /// Where the box was drawn this frame (`caixa`), for `entrada`.
+    ultima: Option<Rect>,
     /// Who may whisper me (`shared::chat::SUSSURRO_*`), remembered here.
     modo_sussurro: Option<u8>,
     /// The setting changed: the caller sends `ModoSussurro`.
     pub modo_mudou: bool,
 }
 
+/// The box's parts, from its rectangle.
+struct Geometria {
+    area: Rect,
+    canal: Rect,
+    campo: Rect,
+    enviar: Rect,
+    lh: f32,
+    fonte: u16,
+}
+
+impl Geometria {
+    fn de(r: Rect, ativo: bool) -> Self {
+        let ih = (r.h * 0.34).clamp(26.0, 46.0).min(r.h * 0.5);
+        let lh = (r.h * 0.20).clamp(15.0, 26.0);
+        let fonte = (lh * 0.74).round().clamp(11.0, 18.0) as u16;
+        let area = Rect::new(r.x, r.y, r.w, r.h - ih - 3.0);
+        let linha_in = Rect::new(r.x, r.y + r.h - ih, r.w, ih);
+        let cw = (r.w * 0.22).clamp(64.0, 110.0);
+        let canal = Rect::new(linha_in.x, linha_in.y, cw, linha_in.h);
+        let sw = if ativo { (r.w * 0.18).clamp(56.0, 96.0) } else { 0.0 };
+        let enviar = Rect::new(linha_in.x + linha_in.w - sw, linha_in.y, sw, linha_in.h);
+        let campo = Rect::new(canal.x + canal.w + 4.0, linha_in.y, linha_in.w - cw - sw - if ativo { 8.0 } else { 4.0 }, linha_in.h);
+        Self { area, canal, campo, enviar, lh, fonte }
+    }
+}
+
 fn arquivo_modo() -> Option<std::path::PathBuf> {
     crate::lembranca::caminho().map(|p| p.with_extension("sussurro"))
 }
+
+/// Gold for chat TEXT, kept away from `estilo::OURO`: from size 18 the HUD
+/// style draws anything close to that gold in the title font (serif, wider),
+/// which ran names into the message on the bigger typing box.
+const OURO_DO_CHAT: Color = Color::new(0.99, 0.83, 0.40, 1.0);
 
 fn cor_do_canal(c: u8) -> Color {
     match c {
         shared::chat::CANAL_ILHA => Color::new(0.45, 0.90, 0.55, 1.0),
         shared::chat::CANAL_GRUPO => Color::new(0.45, 0.75, 1.0, 1.0),
         shared::chat::CANAL_SUSSURRO => Color::new(1.0, 0.55, 0.85, 1.0),
-        _ => estilo::OURO,
+        _ => OURO_DO_CHAT,
     }
 }
 
@@ -235,31 +268,102 @@ impl ChatUi {
         if l.de.eq_ignore_ascii_case(eu) { l.para.clone() } else { l.de.clone() }
     }
 
-    /// THE BOX on the HUD (`Zonas::chat`). Returns what to send.
-    pub fn caixa(&mut self, r: Rect, digitado: &[char], eu: &str) -> Vec<ClientMessage> {
-        let mut saida = Vec::new();
+    /// Where the box sits while typing on a phone: at the TOP, bigger and over
+    /// everything — at the bottom the on-screen keyboard covered it (owner,
+    /// 10/11/2026: "the chat is quite bad to use").
+    fn em_cima(r: Rect) -> Rect {
+        let seguro = crate::hud_layout::tela_segura();
+        let w = (r.w * 1.6).min(seguro.w - 16.0);
+        let h = (r.h * 1.9).min(seguro.h * 0.45);
+        Rect::new(seguro.center().x - w * 0.5, seguro.y + 6.0, w, h)
+    }
+
+    fn digitando_no_celular(&self) -> bool {
+        self.foco && crate::nativo::modo_celular()
+    }
+
+    /// THE BOX, drawn FIRST in the HUD so every other HUD sits in front of it.
+    /// Taps and typing are handled at the end of the frame (`entrada`), once
+    /// every window drawn over it is known.
+    pub fn caixa(&mut self, r: Rect, eu: &str) {
+        estilo::coberturas_limpar();
         if r.w < 40.0 || r.h < 40.0 {
+            self.ultima = None;
+            return;
+        }
+        self.ultima = Some(r);
+        if !self.digitando_no_celular() {
+            self.desenha_caixa(r, eu);
+        }
+    }
+
+    /// End of the frame: the box's taps and typing. A tap on a window drawn
+    /// over the box is that window's, never the chat's.
+    pub fn entrada(&mut self, digitado: &[char], eu: &str) -> Vec<ClientMessage> {
+        let mut saida = Vec::new();
+        let Some(base) = self.ultima.take() else {
+            // The box was not drawn (a big window is open): no keyboard for it.
+            self.foco = false;
+            return saida;
+        };
+        let em_cima = self.digitando_no_celular();
+        let r = if em_cima { Self::em_cima(base) } else { base };
+        if em_cima {
+            self.desenha_caixa(r, eu);
+        }
+        let g = Geometria::de(r, self.foco);
+        let m = Vec2::from(mouse_position());
+        if self.foco && self.digitar(digitado) {
+            saida.extend(self.enviar());
+        }
+        if !crate::foco::clique() {
             return saida;
         }
-        let m = Vec2::from(mouse_position());
-        let clicou = crate::foco::clique();
+        // Over a window: the window's tap (it only takes the keyboard away).
+        if !em_cima && estilo::coberto(m) {
+            self.foco = false;
+            return saida;
+        }
+        if g.canal.toca(m) {
+            self.canal = (self.canal + 1) % 4;
+            self.alvo.clear();
+            self.foco = true;
+        } else if self.foco && g.enviar.toca(m) {
+            saida.extend(self.enviar());
+        } else if g.campo.toca(m) {
+            self.foco = true;
+        } else if g.area.contains(m) {
+            // A whisper line: answer it right here. Any other: the full
+            // history (mute / report / whisper there).
+            let n = ((g.area.h - 2.0) / g.lh).floor().max(1.0) as usize;
+            let de_baixo = ((g.area.y + g.area.h - m.y) / g.lh).floor().max(0.0) as usize;
+            let tocada = self.linhas.iter().rev().take(n).nth(de_baixo).cloned();
+            match tocada {
+                Some(l) if l.canal == shared::chat::CANAL_SUSSURRO && !l.sistema => {
+                    let outro = Self::outro_do_sussurro(&l, eu);
+                    self.sussurrar(&outro);
+                }
+                _ => self.abrir(),
+            }
+        } else if self.foco {
+            self.foco = false;
+        }
+        saida
+    }
+
+    fn desenha_caixa(&self, r: Rect, eu: &str) {
         let ativo = self.foco;
-        // Sizes from the box itself (its height is the HUD scale at work).
-        let ih = (r.h * 0.34).clamp(26.0, 46.0);
-        let lh = (r.h * 0.20).clamp(15.0, 26.0);
-        let fonte = (lh * 0.74).round().clamp(11.0, 18.0) as u16;
-        let area = Rect::new(r.x, r.y, r.w, r.h - ih - 3.0);
-        let linha_in = Rect::new(r.x, r.y + r.h - ih, r.w, ih);
+        let g = Geometria::de(r, ativo);
+        let (area, lh, fonte) = (g.area, g.lh, g.fonte);
         estilo::no_painel(1.0, || {
             // See-through at rest; solid with a gold edge while typing.
-            let fundo = if ativo { 0.72 } else { 0.22 };
+            let fundo = if ativo { 0.78 } else { 0.22 };
             draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.04, 0.03, 0.03, fundo));
             if ativo {
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, estilo::OURO);
             }
             // The last lines, newest at the bottom.
             let n = ((area.h - 2.0) / lh).floor().max(1.0) as usize;
-            let agora = get_time();
             let alfa = if ativo { 1.0 } else { 0.88 };
             let vis: Vec<&Linha> = self.linhas.iter().rev().take(n).collect();
             for (i, l) in vis.iter().enumerate() {
@@ -281,7 +385,7 @@ impl ChatUi {
                         (format!("From {}:", l.de), cor_do_canal(l.canal))
                     }
                 } else if l.staff {
-                    (format!("[Staff] {}:", l.de), estilo::OURO)
+                    (format!("[Staff] {}:", l.de), OURO_DO_CHAT)
                 } else if l.de.eq_ignore_ascii_case(eu) {
                     (format!("{}:", l.de), estilo::VERDE)
                 } else {
@@ -298,14 +402,9 @@ impl ChatUi {
                     t.push('…');
                 }
                 estilo::texto_sombra(x, base, &t, fonte, estilo::alfa(WHITE, alfa), false);
-                let _ = agora;
             }
             // ── channel button · field · send ──
-            let cw = (r.w * 0.22).clamp(64.0, 110.0);
-            let canal_r = Rect::new(linha_in.x, linha_in.y, cw, linha_in.h);
-            let sw_ = if ativo { (r.w * 0.18).clamp(56.0, 96.0) } else { 0.0 };
-            let enviar_r = Rect::new(linha_in.x + linha_in.w - sw_, linha_in.y, sw_, linha_in.h);
-            let campo = Rect::new(canal_r.x + canal_r.w + 4.0, linha_in.y, linha_in.w - cw - sw_ - (if ativo { 8.0 } else { 4.0 }), linha_in.h);
+            let (canal_r, campo, enviar_r) = (g.canal, g.campo, g.enviar);
             let cor = cor_do_canal(self.canal);
             draw_rectangle(canal_r.x, canal_r.y, canal_r.w, canal_r.h, Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.55 }));
             draw_rectangle_lines(canal_r.x, canal_r.y, canal_r.w, canal_r.h, 1.5, estilo::alfa(cor, 0.9));
@@ -344,38 +443,7 @@ impl ChatUi {
                 let pode = !self.texto.trim().is_empty();
                 estilo::botao(enviar_r, "Send", estilo::estado_de(enviar_r, !pode, false), pode);
             }
-            // ── taps ──
-            if ativo && self.digitar(digitado) {
-                saida.extend(self.enviar());
-            }
-            if clicou {
-                if canal_r.toca(m) {
-                    self.canal = (self.canal + 1) % 4;
-                    self.alvo.clear();
-                    self.foco = true;
-                } else if ativo && enviar_r.toca(m) {
-                    saida.extend(self.enviar());
-                } else if campo.toca(m) {
-                    self.foco = true;
-                } else if area.contains(m) {
-                    // A whisper line: answer it right here. Any other: the
-                    // full history (mute / report / whisper there).
-                    let n = ((area.h - 2.0) / lh).floor().max(1.0) as usize;
-                    let de_baixo = ((area.y + area.h - m.y) / lh).floor().max(0.0) as usize;
-                    let tocada = self.linhas.iter().rev().take(n).nth(de_baixo).cloned();
-                    match tocada {
-                        Some(l) if l.canal == shared::chat::CANAL_SUSSURRO && !l.sistema => {
-                            let outro = Self::outro_do_sussurro(&l, eu);
-                            self.sussurrar(&outro);
-                        }
-                        _ => self.abrir(),
-                    }
-                } else if ativo {
-                    self.foco = false;
-                }
-            }
         });
-        saida
     }
 
     /// The panel. Returns what to send to the server.
@@ -461,7 +529,7 @@ impl ChatUi {
                         (format!("From {}:", l.de), cor_do_canal(l.canal))
                     }
                 } else if l.staff {
-                    (format!("[Staff] {}:", l.de), estilo::OURO)
+                    (format!("[Staff] {}:", l.de), OURO_DO_CHAT)
                 } else if l.de.eq_ignore_ascii_case(eu) {
                     (format!("{}:", l.de), estilo::VERDE)
                 } else {
@@ -607,7 +675,8 @@ pub async fn previa() {
                 draw_rectangle(i as f32 * 80.0, 200.0 + (i % 3) as f32 * 30.0, 50.0, 120.0, Color::new(0.45, 0.32, 0.22, 1.0));
             }
             let z = crate::hud_layout::atual();
-            let _ = ui.caixa(z.chat, &[], "Navegante");
+            ui.caixa(z.chat, "Navegante");
+            let _ = ui.entrada(&[], "Navegante");
             let _ = ui.desenha(&[], "Navegante");
             unsafe { get_internal_gl().flush() };
             rt.texture.get_texture_data().export_png(&format!("{saida}/{arquivo}"));
