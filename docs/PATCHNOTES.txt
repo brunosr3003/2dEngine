@@ -2,6 +2,7 @@ Nov 11, 2026 — Small improvements
 
 - The game notices a new version while you are on the login screen.
 - The team can now invite everyone to rate Tempest on Google Play.
+- Dungeon auto play now walks to the next enemy instead of a wrong spot.
 
 Nov 10, 2026 — Chat, bonus events and egg summons
 

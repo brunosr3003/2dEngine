@@ -5359,16 +5359,16 @@ impl Jogo {
                         })
                         .map(|e| e.render_pos)
                         .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
-                    // Nothing in sight: the next horde may be past the view
-                    // range — walk to the room of the step the run is on.
-                    let rumo = perto.or_else(|| {
-                        let (conteudo, andar) = self.dungeon.em_curso()?;
-                        auto_dungeon::sala_da_vez(conteudo, andar)
-                            .filter(|c| c.distance(eu) > 3.0)
-                    });
-                    if let Some(p) = rumo {
-                        self.auto_dungeon_envio = agora;
-                        self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+                    // Nothing in sight: the server knows where the next live
+                    // enemy of the run is (the view is smaller than the
+                    // cellar) and walks there. The old "go to the room of
+                    // the step" guess sent auto to the wrong place.
+                    self.auto_dungeon_envio = agora;
+                    match perto {
+                        Some(p) => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
+                        None => self.envia(ClientMessage::Dungeon {
+                            pedido: shared::dungeon::Pedido::IrAoInimigo,
+                        }),
                     }
                 }
             }

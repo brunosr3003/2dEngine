@@ -740,6 +740,12 @@ impl GameWorld {
                 self.dg_reviver(sid);
                 return;
             }
+            Pedido::IrAoInimigo => {
+                if let Some(p) = self.dg_inimigo_mais_perto(sid) {
+                    self.handle_mover_para(sid, p);
+                }
+                return;
+            }
             Pedido::AbrirBau { eid } => {
                 self.dg_abrir_bau(sid, EntityId(eid as u32));
                 return;
@@ -754,6 +760,22 @@ impl GameWorld {
             }
         }
         self.dg_enviar_estado(sid);
+    }
+
+    /// The nearest live enemy of the player's instance (`Pedido::IrAoInimigo`).
+    pub(crate) fn dg_inimigo_mais_perto(&self, sid: SessionId) -> Option<Vec2> {
+        let s = self.sessions.get(&sid)?;
+        if s.instancia == 0 {
+            return None;
+        }
+        let inst = s.instancia;
+        let eu = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+        self.ecs
+            .query::<(&Position, &EnemyTag, &Instancia)>()
+            .iter()
+            .filter(|(_, (_, t, i))| i.0 == inst && !t.dead)
+            .map(|(_, (p, _, _))| p.0)
+            .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))
     }
 
     fn dg_sala_net(&self, s: &mesa::Sala) -> dg::SalaNet {
@@ -2572,6 +2594,66 @@ mod testes {
         // Already on the way out: a second trip is refused, so it can't
         // overwrite the first (the Leave button's double send).
         assert!(w.ja_de_saida(sid));
+    }
+
+    /// AUTO WITH NOBODY IN SIGHT GOES TO THE NEXT ENEMY (owner, 10/11/2026:
+    /// in the level-14 cellar auto walked to a random, wrong place). The
+    /// server answers with the nearest live enemy of THIS run, and nothing
+    /// once they are all dead.
+    #[test]
+    fn auto_sem_ninguem_a_vista_vai_ao_inimigo_mais_perto_da_instancia() {
+        crate::economy::init_vazia_para_testes();
+        let porao = dg::CONTEUDOS.iter().find(|c| c.tipo == Tipo::Porao).expect("a Porão");
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::arena::ZONA.to_string();
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+        let sid = SessionId(([127, 0, 0, 1], 19891).into());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let e = w.ecs.spawn((
+            NetId(EntityId(961)),
+            Position(shared::arena::CHEGADA),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+        ));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.xp = shared::xp_for_level(porao.nivel_min + 10);
+            s.stats.hp_max = 100_000;
+            s.stats.attack_damage = 100_000;
+            s.stats.defense = 100_000;
+            s.dungeon.porao_pendente = porao.id;
+        }
+        w.poroes_a_comecar.push((sid, porao.id));
+        w.dg_poroes_que_chegaram();
+        let inst = w.sessions[&sid].instancia;
+        assert!(inst != 0, "the run did not start");
+        let eu = w.ecs.get::<&Position>(e).unwrap().0;
+        let vivos: Vec<Vec2> = w
+            .ecs
+            .query::<(&Position, &EnemyTag, &Instancia)>()
+            .iter()
+            .filter(|(_, (_, t, i))| i.0 == inst && !t.dead)
+            .map(|(_, (p, _, _))| p.0)
+            .collect();
+        assert!(!vivos.is_empty(), "the first floor has enemies");
+        let mais_perto = vivos
+            .iter()
+            .copied()
+            .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))
+            .unwrap();
+        assert_eq!(w.dg_inimigo_mais_perto(sid), Some(mais_perto));
+        // All dead: nowhere to send the player.
+        for (_, t) in w.ecs.query_mut::<&mut EnemyTag>() {
+            t.dead = true;
+        }
+        assert_eq!(w.dg_inimigo_mais_perto(sid), None);
+        // Outside a run: nothing either.
+        w.sessions.get_mut(&sid).unwrap().instancia = 0;
+        assert_eq!(w.dg_inimigo_mais_perto(sid), None);
     }
 
     /// DOWN THE DOOR, INTO THE PLAN: a character landing on the Arena with a

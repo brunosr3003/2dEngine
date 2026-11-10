@@ -1319,6 +1319,12 @@ pub enum Pedido {
     IrParaArena,
     /// Volta da Arena pra zona de onde veio.
     SairDaArena,
+    /// AUTO in a dungeon with nobody in sight: the server walks the player to
+    /// the nearest live enemy of THEIR instance, wherever it is on the floor
+    /// (the client only sees `AOI_RADIUS`, smaller than any cellar). Owner,
+    /// 10/11/2026: "instead of taking you to the room, take you to the next
+    /// available enemy" — the room guess sent auto to the wrong place.
+    IrAoInimigo,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
