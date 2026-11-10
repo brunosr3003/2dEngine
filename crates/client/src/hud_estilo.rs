@@ -201,7 +201,7 @@ pub fn pergaminho(r: Rect) {
 /// valendo: o padrao (130%) enche; menos que isso encolhe na mesma proporcao.
 pub fn escala_do_painel(base_w: f32, base_h: f32) -> f32 {
     let f = crate::hud_layout::escala_ui();
-    if !crate::nativo::TECLADO_NA_TELA {
+    if !crate::nativo::modo_celular() {
         return f;
     }
     let s = crate::hud_layout::tela_segura();

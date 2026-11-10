@@ -11,6 +11,22 @@
 /// Does this platform have an on-screen keyboard (and does the panel need to rise)?
 pub const TECLADO_NA_TELA: bool = cfg!(any(target_os = "ios", target_os = "android"));
 
+/// The PHONE layout (panels fill the safe area, phone defaults): on a phone,
+/// or on a desktop debug build run with `MMO_CELULAR=1` — with `MMO_WIN=926x428`
+/// that is the iPhone in landscape on the Mac, notch margins included.
+pub fn modo_celular() -> bool {
+    if TECLADO_NA_TELA {
+        return true;
+    }
+    #[cfg(debug_assertions)]
+    {
+        static SIM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *SIM.get_or_init(|| std::env::var("MMO_CELULAR").is_ok_and(|v| v != "0"))
+    }
+    #[cfg(not(debug_assertions))]
+    false
+}
+
 /// Opens `url` in the system browser. `false` if it could not.
 pub fn abrir_url(url: &str) -> bool {
     #[cfg(target_os = "ios")]
@@ -114,7 +130,13 @@ pub fn area_segura() -> [f32; 4] {
     }
     #[cfg(not(target_os = "ios"))]
     {
-        [0.0; 4]
+        // Simulated iPhone (`MMO_CELULAR=1`): its landscape notch margins, in
+        // points (top, left, bottom, right).
+        if modo_celular() {
+            [0.0, 47.0, 21.0, 47.0]
+        } else {
+            [0.0; 4]
+        }
     }
 }
 

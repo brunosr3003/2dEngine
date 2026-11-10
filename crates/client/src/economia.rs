@@ -36,7 +36,7 @@ const DESLIZE_VALE: f32 = 0.85;
 /// No celular o padrao e' entrar sozinho depois de 5 min parado; no PC, nunca
 /// (a janela preta no meio do teste so' atrapalha).
 pub fn auto_min_padrao() -> u16 {
-    if crate::nativo::TECLADO_NA_TELA {
+    if crate::nativo::modo_celular() {
         5
     } else {
         0
