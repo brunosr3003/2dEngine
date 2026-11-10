@@ -1981,6 +1981,9 @@ impl Jogo {
                 self.tela = Tela::Fila { posicao, total };
             }
             ServerMessage::LoginOk { .. } => {
+                // Who may whisper me, as set on this device.
+                let modo = self.chat_ui.modo_sussurro();
+                self.envia(ClientMessage::ModoSussurro { modo });
                 if let Some(r) = self.reconexao.take() {
                     println!("[reconexao] voltou na tentativa {}", r.tentativas);
                     self.chat.push("Reconnected.".into());
@@ -2251,10 +2254,15 @@ impl Jogo {
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
-            ServerMessage::ChatGlobal { id, canal, de, texto, staff } => {
-                // In the box, and over the speaker's head when they are near.
-                if self.chat_ui.receber(id, canal, de.clone(), texto.clone(), staff) {
+            ServerMessage::ChatGlobal { id, canal, para, de, texto, staff } => {
+                // In the box, and over the speaker's head when they are near
+                // (never a whisper: that one is private).
+                let privado = canal == shared::chat::CANAL_SUSSURRO;
+                if self.chat_ui.receber(id, canal, para, de.clone(), texto.clone(), staff) && !privado {
                     self.world.falas.insert(de.to_lowercase(), (texto, get_time()));
+                }
+                if privado && !de.eq_ignore_ascii_case(self.personagem_atual.as_deref().unwrap_or("")) {
+                    sons::tocar(sons::Som::Clique);
                 }
             }
             ServerMessage::AvisoGlobal { texto } => {
@@ -7443,6 +7451,10 @@ impl Jogo {
             let eu = self.personagem_atual.clone().unwrap_or_default();
             for m in self.chat_ui.desenha(&digitado, &eu) {
                 self.envia(m);
+            }
+            if std::mem::take(&mut self.chat_ui.modo_mudou) {
+                let modo = self.chat_ui.modo_sussurro();
+                self.envia(ClientMessage::ModoSussurro { modo });
             }
         }
         if let Some((kind, nome, chefe)) = self.eventos.desenha() {

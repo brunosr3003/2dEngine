@@ -14,13 +14,33 @@ use serde::{Deserialize, Serialize};
 pub const CANAL_GLOBAL: u8 = 0;
 pub const CANAL_ILHA: u8 = 1;
 pub const CANAL_GRUPO: u8 = 2;
+/// One player to another (whisper / PM), on any island.
+pub const CANAL_SUSSURRO: u8 = 3;
 
 pub fn nome_do_canal(c: u8) -> &'static str {
     match c {
         CANAL_ILHA => "Island",
         CANAL_GRUPO => "Party",
+        CANAL_SUSSURRO => "Whisper",
         _ => "Global",
     }
+}
+
+/// Who may whisper me (a setting of the receiver).
+pub const SUSSURRO_TODOS: u8 = 0;
+pub const SUSSURRO_AMIGOS: u8 = 1;
+pub const SUSSURRO_NINGUEM: u8 = 2;
+
+/// How long the sender waits for the receiver's process to answer before
+/// calling them offline.
+pub const SUSSURRO_ESPERA_S: f64 = 2.5;
+
+/// "@Name message" → (Name, message). The name is the first word after "@".
+pub fn sussurro_no_texto(texto: &str) -> Option<(String, String)> {
+    let t = texto.trim_start().strip_prefix('@')?;
+    let (nome, resto) = t.split_once(char::is_whitespace)?;
+    let resto = resto.trim();
+    (!nome.is_empty() && !resto.is_empty()).then(|| (nome.to_string(), resto.to_string()))
 }
 
 /// Longest message, in characters.
@@ -257,6 +277,7 @@ pub const TABELAS: &[&str] = &[
     )",
     "CREATE INDEX IF NOT EXISTS chat_historico_conta ON chat_historico (conta, id DESC)",
     "ALTER TABLE chat_historico ADD COLUMN IF NOT EXISTS canal TEXT NOT NULL DEFAULT 'global'",
+    "ALTER TABLE chat_historico ADD COLUMN IF NOT EXISTS para TEXT NOT NULL DEFAULT ''",
     "CREATE TABLE IF NOT EXISTS chat_palavras (
         palavra TEXT PRIMARY KEY,
         acao TEXT NOT NULL DEFAULT 'censurar',
@@ -320,6 +341,23 @@ pub enum Notificacao {
         #[serde(default)]
         zona: String,
     },
+    /// A whisper looking for its receiver: the process that has them online
+    /// delivers it and answers with `SussurroResposta`.
+    #[serde(rename = "sussurro")]
+    Sussurro {
+        id: i64,
+        de: String,
+        para: String,
+        texto: String,
+        staff: bool,
+        /// Sender and receiver are friends (checked in the DB before sending).
+        amigos: bool,
+        /// Which process sent it (`server::chat_global::PROCESSO`).
+        origem: u64,
+    },
+    /// The receiver's process: 0 delivered, 1 refused (their setting).
+    #[serde(rename = "sussurro_ok")]
+    SussurroResposta { id: i64, origem: u64, resultado: u8, para: String },
     /// A staff warning for one account.
     #[serde(rename = "aviso")]
     Aviso { conta: i64, texto: String },
@@ -358,6 +396,13 @@ mod testes {
             let r = filtrar(t, &[("ass".into(), Acao::Censurar), ("cunt".into(), Acao::Censurar)]);
             assert_eq!(r.pior(), None, "{t} flagged");
         }
+    }
+
+    #[test]
+    fn arroba_vira_sussurro() {
+        assert_eq!(sussurro_no_texto("@Lyra oi tudo bem"), Some(("Lyra".into(), "oi tudo bem".into())));
+        assert_eq!(sussurro_no_texto("@Lyra"), None);
+        assert_eq!(sussurro_no_texto("oi @Lyra"), None);
     }
 
     #[test]

@@ -8022,8 +8022,20 @@ impl GameWorld {
                     s.travado_desde = None;
                 }
             }
-            ClientMessage::Chat { text } => self.on_chat_global(id, shared::chat::CANAL_GLOBAL, text),
-            ClientMessage::ChatCanal { canal, text } => self.on_chat_global(id, canal, text),
+            ClientMessage::Chat { text } => self.on_chat_global(id, shared::chat::CANAL_GLOBAL, text, None),
+            ClientMessage::ChatCanal { canal, text } => match shared::chat::sussurro_no_texto(&text) {
+                // "@Name message" on any channel is a whisper.
+                Some((para, resto)) => self.on_chat_global(id, shared::chat::CANAL_SUSSURRO, resto, Some(para)),
+                None => self.on_chat_global(id, canal, text, None),
+            },
+            ClientMessage::ChatSussurro { para, text } => {
+                self.on_chat_global(id, shared::chat::CANAL_SUSSURRO, text, Some(para))
+            }
+            ClientMessage::ModoSussurro { modo } => {
+                if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
+                    crate::chat_global::define_modo(&s.name, modo);
+                }
+            }
             ClientMessage::DenunciarChat { id: msg_id } => {
                 if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
                     if let Some(conta) = s.account_id {
@@ -23115,14 +23127,28 @@ impl GameWorld {
 
 impl GameWorld {
     /// A line typed in the global chat (`crate::chat_global`).
-    fn on_chat_global(&mut self, sid: SessionId, canal: u8, text: String) {
+    fn on_chat_global(&mut self, sid: SessionId, canal: u8, text: String, para: Option<String>) {
         use shared::chat::{self, Acao};
         let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else { return };
         let (Some(conta), nome, grupo) = (s.account_id, s.name.clone(), s.party_id) else { return };
-        let canal = canal.min(chat::CANAL_GRUPO);
+        let canal = canal.min(chat::CANAL_SUSSURRO);
         if canal == chat::CANAL_GRUPO && grupo.is_none() {
             self.send_chat_to(sid, "You are not in a party.");
             return;
+        }
+        let para = para.map(|p| p.trim().trim_start_matches('@').to_string()).filter(|p| !p.is_empty());
+        if canal == chat::CANAL_SUSSURRO {
+            match &para {
+                None => {
+                    self.send_chat_to(sid, "Whisper: type the player's name first.");
+                    return;
+                }
+                Some(p) if p.eq_ignore_ascii_case(&nome) => {
+                    self.send_chat_to(sid, "You can't whisper yourself.");
+                    return;
+                }
+                _ => {}
+            }
         }
         if self.tutorial_mode || nome.is_empty() || crate::chat_global::banido(conta) {
             return;
@@ -23159,6 +23185,11 @@ impl GameWorld {
             _ => {}
         }
         let e_staff = crate::chat_global::staff(conta);
+        if canal == chat::CANAL_SUSSURRO {
+            let para = para.unwrap_or_default();
+            crate::chat_global::publicar_sussurro(sid, conta, nome, para, self.zona.clone(), texto, r, e_staff);
+            return;
+        }
         if canal == chat::CANAL_GRUPO {
             // The party lives in this process: delivered here, only logged there.
             if r.pior().is_none_or(|a| a.entrega()) {
@@ -23166,6 +23197,7 @@ impl GameWorld {
                     let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
                         id: 0,
                         canal,
+                        para: String::new(),
                         de: nome.clone(),
                         texto: r.mostrado.clone(),
                         staff: e_staff,
@@ -23190,10 +23222,52 @@ impl GameWorld {
                     let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
                         id,
                         canal,
+                        para: String::new(),
                         de: de.clone(),
                         texto: texto.clone(),
                         staff,
                     });
+                }
+            }
+            N::Sussurro { id, de, para, texto, staff, amigos, origem } => {
+                let Some(s) = self.sessions.values().find(|s| s.logged_in && s.name.eq_ignore_ascii_case(&para)) else {
+                    return; // not online here; another process (or nobody) answers
+                };
+                let modo = crate::chat_global::modo(&s.name);
+                let aceita = staff
+                    || modo == shared::chat::SUSSURRO_TODOS
+                    || (modo == shared::chat::SUSSURRO_AMIGOS && amigos);
+                let nome_real = s.name.clone();
+                if aceita {
+                    let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
+                        id,
+                        canal: shared::chat::CANAL_SUSSURRO,
+                        para: nome_real.clone(),
+                        de,
+                        texto,
+                        staff,
+                    });
+                }
+                crate::chat_global::responder(id, origem, if aceita { 0 } else { 1 }, nome_real);
+            }
+            N::SussurroResposta { id, origem, resultado, para } => {
+                if origem != crate::chat_global::processo() {
+                    return;
+                }
+                let Some((sid, _, texto, _)) = crate::chat_global::resolver(id) else { return };
+                if resultado == 0 {
+                    if let Some(s) = self.sessions.get(&sid) {
+                        let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
+                            id,
+                            canal: shared::chat::CANAL_SUSSURRO,
+                            para,
+                            de: s.name.clone(),
+                            texto,
+                            staff: false,
+                        });
+                    }
+                } else {
+                    self.send_chat_to(sid, &format!("{para} is not accepting whispers right now."));
                 }
             }
             N::Aviso { conta, texto } => {
@@ -23215,5 +23289,12 @@ impl GameWorld {
                 }
             }
         }
+    }
+}
+
+impl GameWorld {
+    /// Nobody had the receiver of a whisper online.
+    pub fn sussurro_sem_resposta(&mut self, sid: SessionId, para: &str) {
+        self.send_chat_to(sid, &format!("{para} is offline (or that name does not exist)."));
     }
 }

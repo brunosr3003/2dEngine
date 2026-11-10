@@ -16,6 +16,7 @@ Nov 9, 2026 — Shop fixes
 - New: bonus events (extra XP, drop rate or gold, for everyone, a map, a monster, a dungeon or a boss). See what is active in Menu › Events or tap the gold badge.
 - Events for one monster or boss have a Find button: the map lights up every zone where it lives, with its share, and takes you there.
 - New: chat always on screen at the bottom: tap to talk and pick the channel (Global, Island or Party). What people say also pops up over their heads. Bad words are filtered, and you can mute or report a player.
+- Whispers: send a private message to any player on any island (Whisper channel, or type @Name message). Choose who may whisper you: everyone, friends or nobody.
 - Open windows now always stay in front of the dungeon tracker.
 - Fixed buttons that overlap (like Auto Collect and its settings) catching the wrong tap.
 - Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.

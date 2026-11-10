@@ -204,6 +204,9 @@ pub async fn run_world_loop(
         for n in crate::chat_global::tomar() {
             world.on_notificacao_chat(n);
         }
+        for (sid, para, _, _) in crate::chat_global::vencidos() {
+            world.sussurro_sem_resposta(sid, &para);
+        }
         world.step(TICK_DT);
         world.send_snapshots();
         // Retrato pro panoptico. Sai do laco ja' serializado; quem atende a

@@ -29,6 +29,8 @@ const LINHA: f32 = 30.0;
 struct Linha {
     id: i64,
     canal: u8,
+    /// Whisper: who it was sent to.
+    para: String,
     de: String,
     texto: String,
     staff: bool,
@@ -51,12 +53,23 @@ pub struct ChatUi {
     canal: u8,
     /// When the player last sent: system answers right after show here too.
     enviou_em: f64,
+    /// Whisper channel: who the next line goes to.
+    alvo: String,
+    /// Who may whisper me (`shared::chat::SUSSURRO_*`), remembered here.
+    modo_sussurro: Option<u8>,
+    /// The setting changed: the caller sends `ModoSussurro`.
+    pub modo_mudou: bool,
+}
+
+fn arquivo_modo() -> Option<std::path::PathBuf> {
+    crate::lembranca::caminho().map(|p| p.with_extension("sussurro"))
 }
 
 fn cor_do_canal(c: u8) -> Color {
     match c {
         shared::chat::CANAL_ILHA => Color::new(0.45, 0.90, 0.55, 1.0),
         shared::chat::CANAL_GRUPO => Color::new(0.45, 0.75, 1.0, 1.0),
+        shared::chat::CANAL_SUSSURRO => Color::new(1.0, 0.55, 0.85, 1.0),
         _ => estilo::OURO,
     }
 }
@@ -65,6 +78,7 @@ fn sigla_do_canal(c: u8) -> &'static str {
     match c {
         shared::chat::CANAL_ILHA => "[I]",
         shared::chat::CANAL_GRUPO => "[P]",
+        shared::chat::CANAL_SUSSURRO => "[W]",
         _ => "[G]",
     }
 }
@@ -93,6 +107,31 @@ impl ChatUi {
     /// The text box has the keyboard (the on-screen keyboard follows this).
     pub fn foco(&self) -> bool {
         self.foco
+    }
+
+    pub fn modo_sussurro(&mut self) -> u8 {
+        *self.modo_sussurro.get_or_insert_with(|| {
+            arquivo_modo()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|t| t.trim().parse().ok())
+                .unwrap_or(shared::chat::SUSSURRO_TODOS)
+        })
+    }
+
+    fn troca_modo_sussurro(&mut self) {
+        let m = (self.modo_sussurro() + 1) % 3;
+        self.modo_sussurro = Some(m);
+        if let Some(p) = arquivo_modo() {
+            let _ = std::fs::write(p, m.to_string());
+        }
+        self.modo_mudou = true;
+    }
+
+    /// Whisper someone: the box switches to the whisper channel, aimed at them.
+    pub fn sussurrar(&mut self, nome: &str) {
+        self.canal = shared::chat::CANAL_SUSSURRO;
+        self.alvo = nome.to_string();
+        self.foco = true;
     }
 
     /// Enter on a keyboard: straight to typing in the box.
@@ -131,18 +170,18 @@ impl ChatUi {
     }
 
     /// A global line. `false` = muted here (the caller shows nothing).
-    pub fn receber(&mut self, id: i64, canal: u8, de: String, texto: String, staff: bool) -> bool {
+    pub fn receber(&mut self, id: i64, canal: u8, para: String, de: String, texto: String, staff: bool) -> bool {
         if !staff && self.silenciados().contains(&de.to_lowercase()) {
             return false;
         }
-        self.guarda(Linha { id, canal, de, texto, staff, sistema: false });
+        self.guarda(Linha { id, canal, para, de, texto, staff, sistema: false });
         true
     }
 
     /// A system answer (slow down, muted, report sent…), shown in the panel too.
     pub fn sistema(&mut self, texto: String) {
         let aberto = self.aberto;
-        self.guarda(Linha { id: 0, canal: 0, de: String::new(), texto, staff: false, sistema: true });
+        self.guarda(Linha { id: 0, canal: 0, para: String::new(), de: String::new(), texto, staff: false, sistema: true });
         if !aberto {
             self.nao_lidas = self.nao_lidas.saturating_sub(1);
         }
@@ -174,7 +213,26 @@ impl ChatUi {
         }
         self.enviou_em = get_time();
         self.no_fim = true;
+        if self.canal == shared::chat::CANAL_SUSSURRO {
+            // No name yet: the first word is the name ("Lyra see you there").
+            if self.alvo.is_empty() {
+                let t2 = t.trim().trim_start_matches('@');
+                let Some((nome, resto)) = t2.split_once(char::is_whitespace) else {
+                    self.texto = t;
+                    self.sistema("Whisper: type the player's name, a space, then the message.".into());
+                    return None;
+                };
+                self.alvo = nome.to_string();
+                return Some(ClientMessage::ChatSussurro { para: self.alvo.clone(), text: resto.trim().to_string() });
+            }
+            return Some(ClientMessage::ChatSussurro { para: self.alvo.clone(), text: t });
+        }
         Some(ClientMessage::ChatCanal { canal: self.canal, text: t })
+    }
+
+    /// The name on a whisper line that is not me: who to answer.
+    fn outro_do_sussurro(l: &Linha, eu: &str) -> String {
+        if l.de.eq_ignore_ascii_case(eu) { l.para.clone() } else { l.de.clone() }
     }
 
     /// THE BOX on the HUD (`Zonas::chat`). Returns what to send.
@@ -216,7 +274,13 @@ impl ChatUi {
                 let cor_tag = estilo::alfa(cor_do_canal(l.canal), alfa);
                 estilo::texto_sombra(x0, base, tag, fonte, cor_tag, true);
                 let mut x = x0 + estilo::medir_forte(tag, fonte) + 4.0;
-                let (nome, cor_nome) = if l.staff {
+                let (nome, cor_nome) = if l.canal == shared::chat::CANAL_SUSSURRO {
+                    if l.de.eq_ignore_ascii_case(eu) {
+                        (format!("To {}:", l.para), cor_do_canal(l.canal))
+                    } else {
+                        (format!("From {}:", l.de), cor_do_canal(l.canal))
+                    }
+                } else if l.staff {
                     (format!("[Staff] {}:", l.de), estilo::OURO)
                 } else if l.de.eq_ignore_ascii_case(eu) {
                     (format!("{}:", l.de), estilo::VERDE)
@@ -246,7 +310,13 @@ impl ChatUi {
             draw_rectangle(canal_r.x, canal_r.y, canal_r.w, canal_r.h, Color::new(0.05, 0.04, 0.03, if ativo { 0.9 } else { 0.55 }));
             draw_rectangle_lines(canal_r.x, canal_r.y, canal_r.w, canal_r.h, 1.5, estilo::alfa(cor, 0.9));
             // Name + a small drawn triangle (the HUD font has no ▾).
-            let nome_c = shared::chat::nome_do_canal(self.canal);
+            let rotulo_w;
+            let nome_c = if self.canal == shared::chat::CANAL_SUSSURRO && !self.alvo.is_empty() {
+                rotulo_w = format!("W: {}", self.alvo);
+                rotulo_w.as_str()
+            } else {
+                shared::chat::nome_do_canal(self.canal)
+            };
             let nw = estilo::medir_forte(nome_c, fonte);
             let tri = fonte as f32 * 0.32;
             let x0c = canal_r.center().x - (nw + tri * 2.6) * 0.5;
@@ -258,7 +328,9 @@ impl ChatUi {
                 draw_rectangle_lines(campo.x, campo.y, campo.w, campo.h, 1.5, estilo::alfa(estilo::OURO, 0.8));
             }
             let ty = campo.center().y + fonte as f32 * 0.38;
-            if self.texto.is_empty() && !ativo {
+            if self.texto.is_empty() && self.canal == shared::chat::CANAL_SUSSURRO && self.alvo.is_empty() {
+                estilo::texto(campo.x + 8.0, ty, "Name, then the message…", fonte, estilo::alfa(estilo::SUAVE, 0.9));
+            } else if self.texto.is_empty() && !ativo {
                 estilo::texto(campo.x + 8.0, ty, "Tap to chat…", fonte, estilo::alfa(estilo::SUAVE, 0.9));
             } else {
                 let cursor = if ativo && (get_time() * 2.0) as i32 % 2 == 0 { "|" } else { "" };
@@ -278,15 +350,26 @@ impl ChatUi {
             }
             if clicou {
                 if canal_r.toca(m) {
-                    self.canal = (self.canal + 1) % 3;
+                    self.canal = (self.canal + 1) % 4;
+                    self.alvo.clear();
                     self.foco = true;
                 } else if ativo && enviar_r.toca(m) {
                     saida.extend(self.enviar());
                 } else if campo.toca(m) {
                     self.foco = true;
                 } else if area.contains(m) {
-                    // The lines: the full history (mute / report there).
-                    self.abrir();
+                    // A whisper line: answer it right here. Any other: the
+                    // full history (mute / report / whisper there).
+                    let n = ((area.h - 2.0) / lh).floor().max(1.0) as usize;
+                    let de_baixo = ((area.y + area.h - m.y) / lh).floor().max(0.0) as usize;
+                    let tocada = self.linhas.iter().rev().take(n).nth(de_baixo).cloned();
+                    match tocada {
+                        Some(l) if l.canal == shared::chat::CANAL_SUSSURRO && !l.sistema => {
+                            let outro = Self::outro_do_sussurro(&l, eu);
+                            self.sussurrar(&outro);
+                        }
+                        _ => self.abrir(),
+                    }
                 } else if ativo {
                     self.foco = false;
                 }
@@ -330,6 +413,17 @@ impl ChatUi {
             self.fechar();
             return saida;
         }
+        // Who may whisper me.
+        let modo_r = r(BASE_W - 290.0, 12.0, 224.0, 42.0);
+        let modo_txt = match self.modo_sussurro() {
+            shared::chat::SUSSURRO_AMIGOS => "Whispers: friends",
+            shared::chat::SUSSURRO_NINGUEM => "Whispers: nobody",
+            _ => "Whispers: everyone",
+        };
+        estilo::botao(modo_r, modo_txt, estilo::estado_de(modo_r, false, false), false);
+        if clicou && modo_r.toca(m) {
+            self.troca_modo_sussurro();
+        }
 
         // ── the conversation ──
         let area = r(16.0, 70.0, BASE_W - 32.0, 282.0);
@@ -360,7 +454,13 @@ impl ChatUi {
                 estilo::texto_forte(linha.x + 10.0 * k, base, tag, 14, cor_do_canal(l.canal));
                 let tw = estilo::medir_forte(tag, 14) + 6.0 * k;
                 let linha = Rect::new(linha.x + tw, linha.y, linha.w - tw, linha.h);
-                let (rotulo, cor) = if l.staff {
+                let (rotulo, cor) = if l.canal == shared::chat::CANAL_SUSSURRO {
+                    if l.de.eq_ignore_ascii_case(eu) {
+                        (format!("To {}:", l.para), cor_do_canal(l.canal))
+                    } else {
+                        (format!("From {}:", l.de), cor_do_canal(l.canal))
+                    }
+                } else if l.staff {
                     (format!("[Staff] {}:", l.de), estilo::OURO)
                 } else if l.de.eq_ignore_ascii_case(eu) {
                     (format!("{}:", l.de), estilo::VERDE)
@@ -386,10 +486,19 @@ impl ChatUi {
 
         // ── actions on the tapped line, or the text box ──
         if let Some(l) = self.selecionada.and_then(|i| self.linhas.get(i)).cloned() {
-            estilo::texto_ajustado(&format!("{}:", l.de), p.x + 22.0 * k, p.y + 392.0 * k, 260.0 * k, 15, estilo::TEXTO);
-            let silenciar = r(300.0, 364.0, 190.0, 46.0);
-            let denunciar = r(500.0, 364.0, 190.0, 46.0);
-            let voltar = r(700.0, 364.0, 184.0, 46.0);
+            estilo::texto_ajustado(&format!("{}:", l.de), p.x + 22.0 * k, p.y + 392.0 * k, 200.0 * k, 15, estilo::TEXTO);
+            let sussurro = r(240.0, 364.0, 150.0, 46.0);
+            let silenciar = r(400.0, 364.0, 170.0, 46.0);
+            let denunciar = r(580.0, 364.0, 150.0, 46.0);
+            let voltar = r(740.0, 364.0, 144.0, 46.0);
+            estilo::botao(sussurro, "Whisper", estilo::estado_de(sussurro, false, false), false);
+            if clicou && sussurro.toca(m) {
+                let outro = if l.canal == shared::chat::CANAL_SUSSURRO { Self::outro_do_sussurro(&l, eu) } else { l.de.clone() };
+                self.selecionada = None;
+                self.aberto = false;
+                self.sussurrar(&outro);
+                return saida;
+            }
             estilo::botao(silenciar, "Mute player", estilo::estado_de(silenciar, false, false), false);
             let ja = self.denunciadas.contains(&l.id);
             estilo::botao(denunciar, if ja { "Reported" } else { "Report" }, estilo::estado_de(denunciar, ja, false), false);
@@ -477,7 +586,7 @@ pub async fn previa() {
     .iter()
     .enumerate()
     {
-        ui.receber(i as i64 + 1, (i % 3) as u8, de.to_string(), t.to_string(), *staff);
+        ui.receber(i as i64 + 1, (i % 4) as u8, if i % 4 == 3 { "Navegante".into() } else { String::new() }, de.to_string(), t.to_string(), *staff);
     }
     for (arquivo, aberto) in [("caixa.png", false), ("caixa-ativa.png", false), ("painel.png", true)] {
         if arquivo == "caixa-ativa.png" {

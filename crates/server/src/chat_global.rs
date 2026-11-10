@@ -18,6 +18,13 @@ use shared::chat::{self, Acao, Notificacao, CANAL_NOTIFY};
 use sqlx::PgPool;
 
 static POOL: OnceLock<PgPool> = OnceLock::new();
+/// This process on the NOTIFY channel (whisper answers come back to it).
+static PROCESSO: OnceLock<u64> = OnceLock::new();
+/// Whispers waiting for the receiver's process: id -> (sender, receiver, text, since).
+type Pendente = (crate::world::SessionId, String, String, f64);
+static PENDENTES: parking_lot::Mutex<Option<HashMap<i64, Pendente>>> = parking_lot::Mutex::new(None);
+/// Who may whisper whom, as set by each player online here (name lower case).
+static MODOS: parking_lot::Mutex<Option<HashMap<String, u8>>> = parking_lot::Mutex::new(None);
 static PALAVRAS: parking_lot::RwLock<Vec<(String, Acao)>> = parking_lot::RwLock::new(Vec::new());
 static SILENCIOS: parking_lot::RwLock<Option<HashMap<i64, i64>>> = parking_lot::RwLock::new(None);
 static BANIDOS: parking_lot::RwLock<Option<HashSet<i64>>> = parking_lot::RwLock::new(None);
@@ -92,6 +99,124 @@ fn ritmo_em(conta: i64, texto: &str, t: f64) -> Result<(), Recusa> {
     e.1 = texto.to_string();
     e.2 = t;
     Ok(())
+}
+
+pub fn processo() -> u64 {
+    *PROCESSO.get_or_init(|| fastrand::u64(1..u64::MAX))
+}
+
+pub fn define_modo(nome: &str, modo: u8) {
+    MODOS.lock().get_or_insert_with(HashMap::new).insert(nome.to_lowercase(), modo.min(chat::SUSSURRO_NINGUEM));
+}
+
+pub fn modo(nome: &str) -> u8 {
+    MODOS.lock().as_ref().and_then(|m| m.get(&nome.to_lowercase()).copied()).unwrap_or(chat::SUSSURRO_TODOS)
+}
+
+/// The answer for a whisper this process sent: who sent it, to whom, the text.
+pub fn resolver(id: i64) -> Option<Pendente> {
+    PENDENTES.lock().as_mut()?.remove(&id)
+}
+
+/// Whispers nobody answered: the receiver is offline (or does not exist).
+pub fn vencidos() -> Vec<Pendente> {
+    let t = agora_s();
+    let mut g = PENDENTES.lock();
+    let Some(m) = g.as_mut() else { return Vec::new() };
+    let ids: Vec<i64> = m.iter().filter(|(_, p)| t - p.3 > chat::SUSSURRO_ESPERA_S).map(|(id, _)| *id).collect();
+    ids.into_iter().filter_map(|id| m.remove(&id)).collect()
+}
+
+/// The receiver's process answers the sender's.
+pub fn responder(id: i64, origem: u64, resultado: u8, para: String) {
+    let Some(pool) = POOL.get().cloned() else { return };
+    tokio::spawn(async move {
+        let _ = notificar(&pool, &Notificacao::SussurroResposta { id, origem, resultado, para }).await;
+    });
+}
+
+/// Saves a whisper and sends it looking for its receiver.
+#[allow(clippy::too_many_arguments)]
+pub fn publicar_sussurro(
+    sid: crate::world::SessionId,
+    conta: i64,
+    nome: String,
+    para: String,
+    zona: String,
+    texto: String,
+    r: chat::Resultado,
+    e_staff: bool,
+) {
+    let pior = r.pior();
+    match pior {
+        Some(Acao::Silenciar) => silenciar_local(conta, chat::SILENCIO_AUTOMATICO_MIN),
+        Some(Acao::Banir) => banir_local(conta),
+        _ => {}
+    }
+    let Some(pool) = POOL.get().cloned() else { return };
+    tokio::spawn(async move {
+        let entregue = pior.is_none_or(|a| a.entrega());
+        let palavras = r.achadas.iter().map(|a| a.0.as_str()).collect::<Vec<_>>().join(", ");
+        let res: anyhow::Result<()> = async {
+            let amigos: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM social_amigos WHERE aceito AND \
+                 ((lower(de) = lower($1) AND lower(para) = lower($2)) OR (lower(de) = lower($2) AND lower(para) = lower($1))))",
+            )
+            .bind(&nome)
+            .bind(&para)
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO chat_historico (conta, nome, zona, texto, mostrado, palavras, acao, entregue, canal, para) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'whisper', $9) RETURNING id",
+            )
+            .bind(conta)
+            .bind(&nome)
+            .bind(&zona)
+            .bind(&texto)
+            .bind(&r.mostrado)
+            .bind(&palavras)
+            .bind(pior.map_or("", |a| a.texto()))
+            .bind(entregue)
+            .bind(&para)
+            .fetch_one(&pool)
+            .await?;
+            if entregue {
+                PENDENTES
+                    .lock()
+                    .get_or_insert_with(HashMap::new)
+                    .insert(id, (sid, para.clone(), r.mostrado.clone(), agora_s()));
+                notificar(
+                    &pool,
+                    &Notificacao::Sussurro {
+                        id,
+                        de: nome.clone(),
+                        para: para.clone(),
+                        texto: r.mostrado.clone(),
+                        staff: e_staff,
+                        amigos,
+                        origem: processo(),
+                    },
+                )
+                .await?;
+            }
+            if pior == Some(Acao::Banir) {
+                sqlx::query("INSERT INTO banimentos (conta, nome, motivo, autor) VALUES ($1, $2, $3, 'auto')")
+                    .bind(conta)
+                    .bind(&nome)
+                    .bind(format!("auto: \"{palavras}\" (whisper #{id})"))
+                    .execute(&pool)
+                    .await?;
+                notificar(&pool, &Notificacao::Expulsar { conta, motivo: "language".into() }).await?;
+            }
+            Ok(())
+        }
+        .await;
+        if let Err(e) = res {
+            tracing::warn!("chat sussurro: {e}");
+        }
+    });
 }
 
 pub fn tomar() -> Vec<Notificacao> {

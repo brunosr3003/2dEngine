@@ -492,6 +492,15 @@ pub enum ClientMessage {
         canal: u8,
         text: String,
     },
+    /// A whisper to one player (`shared::chat::CANAL_SUSSURRO`).
+    ChatSussurro {
+        para: String,
+        text: String,
+    },
+    /// Who may whisper me (`shared::chat::SUSSURRO_*`).
+    ModoSussurro {
+        modo: u8,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1303,6 +1312,8 @@ pub enum ServerMessage {
         id: i64,
         /// `shared::chat::CANAL_*`.
         canal: u8,
+        /// Whisper: who it was sent TO (the sender's own copy says "To X").
+        para: String,
         de: String,
         texto: String,
         staff: bool,
