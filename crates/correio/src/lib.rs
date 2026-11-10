@@ -86,11 +86,19 @@ pub async fn enviar(pool: &PgPool, autor: &str, conta: i64, pedido: &Pedido) -> 
         if !texto_valido(nome, 1, 32) {
             bail!("Nome inválido.");
         }
-        let nomes: Vec<String> =
-            sqlx::query_scalar("SELECT name FROM characters WHERE lower(name)=lower($1) LIMIT 2")
+        // The EXACT name first: one account can hold "F1CARP" and "F1Carp",
+        // and the case-blind match alone called that ambiguous and sent nothing.
+        let exato: Option<String> = sqlx::query_scalar("SELECT name FROM characters WHERE name=$1")
+            .bind(nome.trim())
+            .fetch_optional(&mut *tx)
+            .await?;
+        let nomes: Vec<String> = match exato {
+            Some(n) => vec![n],
+            None => sqlx::query_scalar("SELECT name FROM characters WHERE lower(name)=lower($1) LIMIT 2")
                 .bind(nome.trim())
                 .fetch_all(&mut *tx)
-                .await?;
+                .await?,
+        };
         match nomes.as_slice() {
             [n] => Some(n.clone()),
             _ => bail!("Character not found, or the name is ambiguous."),
