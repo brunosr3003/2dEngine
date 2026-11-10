@@ -389,10 +389,24 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
 
 /// The market changed (`Notificacao::MercadoMudou`): tell every process.
 pub fn mercado_mudou(personagens: Vec<String>) {
-    let Some(pool) = POOL.get().cloned() else { return };
+    let Some(pool) = POOL.get().cloned() else {
+        tracing::warn!("market push: chat pool not ready");
+        return;
+    };
     tokio::spawn(async move {
         let _ = notificar(&pool, &Notificacao::MercadoMudou { personagens }).await;
     });
+}
+
+/// A market operation's answer to its character, on whatever channel they
+/// are (`Notificacao::MercadoAviso`). `false` = the channel is not ready:
+/// the caller answers locally, as before.
+pub fn mercado_aviso(personagem: String, ok: bool, texto: String) -> bool {
+    let Some(pool) = POOL.get().cloned() else { return false };
+    tokio::spawn(async move {
+        let _ = notificar(&pool, &Notificacao::MercadoAviso { personagem, ok, texto }).await;
+    });
+    true
 }
 
 /// A player reports a line (once per line per account).

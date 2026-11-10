@@ -366,6 +366,14 @@ pub enum Notificacao {
     /// (buyer, seller, who cancelled) to check their deliveries.
     #[serde(rename = "mercado")]
     MercadoMudou { personagens: Vec<String> },
+    /// A market operation closed: its answer, for whichever process has the
+    /// character (the relay that processed it may be another channel's).
+    #[serde(rename = "mercado_aviso")]
+    MercadoAviso { personagem: String, ok: bool, texto: String },
+    /// A flash-offer campaign started or ended (Panopticon › ofertas): every
+    /// client asks for its offers again, right now.
+    #[serde(rename = "ofertas")]
+    OfertasMudaram,
     /// Staff asked everyone online to rate the game (Panopticon).
     #[serde(rename = "avaliacao")]
     PedirAvaliacao,

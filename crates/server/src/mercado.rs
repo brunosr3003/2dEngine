@@ -1169,11 +1169,18 @@ pub async fn enviar_saida(
             .execute(realm)
             .await?;
         if r.novo {
-            let _ = tx.send(IncomingMessage::Mercado(Evento::Aviso {
-                personagem: op.personagem().to_string(),
-                ok: r.ok,
-                texto: r.texto,
-            }));
+            // The answer goes to the channel where the character IS: every
+            // channel runs this relay, and the one that won the row may not be
+            // theirs (then the buyer never heard "Bought" and kept a stale list
+            // — owner, 10/11/2026, bought a sold-out listing and got a refund).
+            let quem = op.personagem().to_string();
+            if !crate::chat_global::mercado_aviso(quem.clone(), r.ok, r.texto.clone()) {
+                let _ = tx.send(IncomingMessage::Mercado(Evento::Aviso {
+                    personagem: quem,
+                    ok: r.ok,
+                    texto: r.texto,
+                }));
+            }
         }
         feitas += 1;
     }

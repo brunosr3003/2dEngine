@@ -66,6 +66,10 @@ pub struct Mercado {
     proxima_atualizacao: f64,
     /// Last refresh asked because of a server push (at most one per second).
     ultimo_empurrao: f64,
+    /// Just bought: the Deliveries dot shows right away, before the server's
+    /// list confirms it (owner, 10/11/2026: "the red dot has to appear at the
+    /// moment of the purchase").
+    entrega_ate: f64,
     /// An item's magnifier asked for "Where to get" (main opens the popup).
     pub onde_obter: Option<u16>,
     /// Bound items (`ItemsConfig`): they do not show up to sell.
@@ -154,7 +158,7 @@ impl Mercado {
 
     /// Something waits in the market's Deliveries (the Menu's red dot).
     pub fn tem_entregas(&self) -> bool {
-        !self.cartas.is_empty()
+        !self.cartas.is_empty() || get_time() < self.entrega_ate
     }
 
     /// Opens on the Buy tab and returns what to ask the server.
@@ -677,6 +681,19 @@ impl Mercado {
                 qtd: compra.qtd,
                 preco_unit: an.preco_unit,
             });
+            // The buyer's own screen changes NOW: what was bought leaves the
+            // list (the whole listing when it ran out) and the Deliveries dot
+            // lights. The server's answer then refreshes both; a refusal puts
+            // the real list back.
+            for lista in [&mut self.lista, &mut self.lista_tp] {
+                if let Some(i) = lista.iter().position(|a| a.id == an.id) {
+                    lista[i].qtd = lista[i].qtd.saturating_sub(compra.qtd);
+                    if lista[i].qtd == 0 {
+                        lista.remove(i);
+                    }
+                }
+            }
+            self.entrega_ate = get_time() + 15.0;
             self.compra = None;
         }
     }

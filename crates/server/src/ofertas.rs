@@ -73,6 +73,13 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     ] {
         sqlx::query(sql).execute(central).await?;
     }
+    // CAMPAIGN offers (Panopticon › ofertas): open to EVERY account until
+    // `campanha_ate`, whatever the level, alongside the level offer (owner,
+    // 10/11/2026: "create a flash offer whenever I want and send it now to
+    // everyone"). NULL = an ordinary level offer.
+    sqlx::query("ALTER TABLE ofertas_relampago ADD COLUMN IF NOT EXISTS campanha_ate TIMESTAMPTZ")
+        .execute(central)
+        .await?;
     // Starting catalogue. ON CONFLICT DO NOTHING: once the row exists the
     // database is the truth — a deploy never overwrites what the owner edited.
     // Item ids: 363 pet summon scroll, 361 mount summon scroll, 360 craft key
@@ -172,7 +179,7 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
             "INSERT INTO ofertas_relampago_contas (conta, oferta, expira_em)
              SELECT $1, o.id, NOW() + make_interval(mins => GREATEST(o.duracao_min, 1))
                FROM ofertas_relampago o
-              WHERE o.ativa AND o.nivel <= $2
+              WHERE o.ativa AND o.nivel <= $2 AND o.campanha_ate IS NULL
                 AND NOT EXISTS (SELECT 1 FROM ofertas_relampago_contas c
                                  WHERE c.conta = $1 AND c.oferta = o.id)
               ORDER BY o.nivel, o.id
@@ -184,6 +191,24 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
         .bind(nivel as i32)
         .fetch_optional(central)
         .await?;
+    }
+    // Every running campaign the account has not seen yet: open now, until
+    // the campaign ends (not one at a time — they are the staff's call).
+    let campanhas: Vec<String> = sqlx::query_scalar(
+        "INSERT INTO ofertas_relampago_contas (conta, oferta, expira_em)
+         SELECT $1, o.id, o.campanha_ate
+           FROM ofertas_relampago o
+          WHERE o.ativa AND o.campanha_ate > NOW()
+            AND NOT EXISTS (SELECT 1 FROM ofertas_relampago_contas c
+                             WHERE c.conta = $1 AND c.oferta = o.id)
+         ON CONFLICT DO NOTHING
+         RETURNING oferta",
+    )
+    .bind(conta)
+    .fetch_all(central)
+    .await?;
+    if nova.is_none() {
+        nova = campanhas.into_iter().next();
     }
     let linhas = sqlx::query(
         "SELECT o.id, o.titulo, o.titulo_pt, o.produto_play, o.preco_centavos,

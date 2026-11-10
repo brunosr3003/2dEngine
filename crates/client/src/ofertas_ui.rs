@@ -83,6 +83,11 @@ impl OfertasUi {
         Some(Self::pedido())
     }
 
+    /// `ServerMessage::OfertasMudaram`: ask again on the next frame.
+    pub fn forcar(&mut self) {
+        self.nivel_checado = None;
+    }
+
     pub fn receber(&mut self, v: Vec<OfertaRelampago>) {
         let agora = get_time();
         if v.iter().any(|o| o.nova) {

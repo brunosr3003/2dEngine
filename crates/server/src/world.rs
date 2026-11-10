@@ -23282,9 +23282,20 @@ impl GameWorld {
                 }
             }
             N::MercadoMudou { personagens } => {
+                tracing::info!("market changed ({}): telling {} players", personagens.join(","), self.sessions.values().filter(|s| s.logged_in).count());
                 for s in self.sessions.values().filter(|s| s.logged_in) {
                     let meu = personagens.iter().any(|p| p.eq_ignore_ascii_case(&s.name));
                     let _ = s.handle.to_client.send(ServerMessage::MercadoMudou { meu });
+                }
+            }
+            N::MercadoAviso { personagem, ok, texto } => {
+                if let Some(s) = self.sessions.values().find(|s| s.logged_in && s.name == personagem) {
+                    let _ = s.handle.to_client.send(ServerMessage::MercadoResultado { ok, texto });
+                }
+            }
+            N::OfertasMudaram => {
+                for s in self.sessions.values().filter(|s| s.logged_in) {
+                    let _ = s.handle.to_client.send(ServerMessage::OfertasMudaram);
                 }
             }
             N::PedirAvaliacao => {

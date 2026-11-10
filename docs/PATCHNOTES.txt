@@ -3,7 +3,7 @@ Nov 11, 2026 — Small improvements
 - The game notices a new version while you are on the login screen.
 - The team can now invite everyone to rate Tempest on Google Play.
 - Dungeon auto play now walks to the next enemy instead of a wrong spot.
-- The market updates instantly when something is listed, sold or cancelled, and a red dot shows when you have deliveries.
+- The market updates instantly: what you buy leaves the list at once and the Deliveries dot lights up right away.
 - Chat: taps on a window over the chat no longer reach the chat, and on phones the chat moves to the top while you type so the keyboard does not cover it.
 - Official letters can have paragraphs.
 - New in Offers: rate Tempest on Google Play, post the screenshot on our Discord and get a gift in your Mail.

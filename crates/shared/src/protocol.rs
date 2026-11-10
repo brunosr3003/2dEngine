@@ -1326,6 +1326,8 @@ pub enum ServerMessage {
     MercadoMudou {
         meu: bool,
     },
+    /// A flash-offer campaign started or ended: ask for the offers again now.
+    OfertasMudaram,
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

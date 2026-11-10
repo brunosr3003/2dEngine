@@ -2260,6 +2260,7 @@ impl Jogo {
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
             ServerMessage::PedirAvaliacao => self.avaliacao.pedir(),
+            ServerMessage::OfertasMudaram => self.ofertas.forcar(),
             ServerMessage::MercadoMudou { meu } => {
                 for pedido in self.mercado.mudou(meu, get_time()) {
                     self.envia(pedido);
@@ -6411,6 +6412,14 @@ impl Jogo {
         // ── HUD no molde do MIR4 (docs/HUD.md). Posicoes em `hud_layout`. ──
         let z = hud_layout::atual();
         let painel = self.painel_grande();
+        // THE CHAT BOX FIRST OF ALL: the HUD, the dungeon door prompt and
+        // every window are drawn after it, so they all sit in front of it
+        // (owner, 10/11/2026: "the dungeon entry HUD has to be in front of the
+        // chat, like any other window"). Its taps are handled at the end.
+        if !painel {
+            let eu_nome = self.personagem_atual.clone().unwrap_or_default();
+            self.chat_ui.caixa(z.chat, &eu_nome);
+        }
         let agora_unix = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
@@ -6490,11 +6499,6 @@ impl Jogo {
         }
         // Painel grande aberto: o HUD some, como no MIR4 — fica a EXP e a faixa.
         if !painel {
-            // THE CHAT BOX FIRST: everything else in the HUD is drawn after it,
-            // so it sits behind them (owner, 09/11/2026: "HUDs in general have
-            // to show in front of the chat"). Enter on a keyboard starts typing.
-            let eu_nome = self.personagem_atual.clone().unwrap_or_default();
-            self.chat_ui.caixa(z.chat, &eu_nome);
             if hud::draw_hud(
                 &z,
                 &self.info,
