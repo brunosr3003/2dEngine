@@ -1493,6 +1493,34 @@ impl GameWorld {
     /// nela sem instância, sem fila e sem sala não está esperando nada.
     const SO_DE_PASSAGEM_S: f32 = 45.0;
 
+    /// Logged into the Arena with no run: if they stand far from the lobby,
+    /// their dungeon ended while they were away (disconnect, crash, server
+    /// restart) and they are where its floor USED to be — owner, 09/11/2026:
+    /// "the server restarted while I was in the dungeon and I got stuck in
+    /// the arena". The lobby rule would take them home after 45 s; here it
+    /// fires in ~2 s instead. Someone who came to the lobby on purpose lands
+    /// at the lobby and keeps the normal 45 s.
+    pub(crate) fn dg_ao_logar(&mut self, sid: SessionId) {
+        if !self.na_arena() {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else { return };
+        if s.instancia != 0 || !matches!(self.mesa.onde(chave(sid)), mesa::Onde::Livre) {
+            return;
+        }
+        let Some(pos) = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0)) else {
+            return;
+        };
+        if pos.distance(self.chegada_da_arena()) < Self::LONGE_DO_SAGUAO {
+            return;
+        }
+        let quase = self.sim_time_s - Self::SO_DE_PASSAGEM_S + 2.0;
+        self.saguao_desde.insert(sid, quase);
+    }
+
+    /// Farther than this from the lobby = inside where a dungeon floor was.
+    const LONGE_DO_SAGUAO: f32 = 40.0;
+
     /// Devolve pra casa quem ficou parado no saguão.
     ///
     /// O dono: "eu e vários bots estamos presos lá dentro". E estavam mesmo —
@@ -1521,7 +1549,18 @@ impl GameWorld {
             let desde = *self.saguao_desde.entry(sid).or_insert(agora);
             if agora - desde >= Self::SO_DE_PASSAGEM_S {
                 self.saguao_desde.remove(&sid);
-                self.sair_da_arena(sid, "The Arena is a waypoint: you went back.");
+                let longe = self
+                    .sessions
+                    .get(&sid)
+                    .and_then(|s| s.entity)
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+                    .is_some_and(|p| p.distance(self.chegada_da_arena()) >= Self::LONGE_DO_SAGUAO);
+                let aviso = if longe {
+                    "Your dungeon ended while you were away: you are back where you started it."
+                } else {
+                    "The Arena is a waypoint: you went back."
+                };
+                self.sair_da_arena(sid, aviso);
             }
         }
         // Quem entrou numa dungeon ou na fila zera o relógio.

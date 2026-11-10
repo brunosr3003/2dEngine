@@ -6621,6 +6621,10 @@ impl GameWorld {
             entity_id,
             spawn: [spawn.x, spawn.y],
         });
+        if instancia_pendente == 0 {
+            // A run that ended while they were away: out of the Arena soon.
+            self.dg_ao_logar(sid);
+        }
         let _ = handle.to_client.send(ServerMessage::MapChange {
             map_name: self.zona.clone(),
             width: self.map.width,
