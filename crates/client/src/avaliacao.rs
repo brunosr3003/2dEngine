@@ -24,7 +24,28 @@ use macroquad::prelude::*;
 use crate::ui::Toque as _;
 use crate::hud_estilo as estilo;
 
-const TESTE: bool = option_env!("MMO_API_PADRAO").is_some();
+/// A TEST build points at a server that is not production. The desktop
+/// release scripts also set `MMO_API_PADRAO` — to the production host — so
+/// "set at all" is not the test (it made the Windows/Mac/Linux release builds
+/// count as test builds).
+const TESTE: bool = match option_env!("MMO_API_PADRAO") {
+    Some(h) => !comeca_com(h.as_bytes(), b"mmo.brunji.com.br"),
+    None => false,
+};
+
+const fn comeca_com(s: &[u8], p: &[u8]) -> bool {
+    if s.len() < p.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < p.len() {
+        if s[i] != p[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
 const SEGUNDOS_MIN: f64 = if TESTE { 120.0 } else { 2.0 * 3600.0 };
 const NIVEL_MIN: u32 = if TESTE { 1 } else { 10 };
 const INTERVALO_DIAS: i64 = if TESTE { 0 } else { 7 };

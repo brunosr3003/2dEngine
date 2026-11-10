@@ -22,7 +22,7 @@ shutil.copytree(root / 'assets', app / 'assets', dirs_exist_ok=True)
 for dll in ('libwinpthread-1.dll', 'libgcc_s_seh-1.dll'):
     path = subprocess.check_output(['x86_64-w64-mingw32-gcc', '-print-file-name=' + dll], text=True).strip()
     if pathlib.Path(path).is_file(): shutil.copy2(path, app / dll)
-(app / 'LEIA-ME.txt').write_text('TEMPEST — WINDOWS 64 BITS\n\nExtraia o ZIP inteiro e abra Tempest.exe. Mantenha assets junto do executável.\n\nWASD: mover | Mouse direito + arrastar: câmera | Roda: zoom\n1/2/3: habilidades | Espaço: ataque | R: pular | G: defender\n\nSuporte: https://mmo.brunji.com.br/support.html\n', encoding='utf-8')
+(app / 'LEIA-ME.txt').write_text('TEMPEST — WINDOWS 64 BITS\n\nExtraia o ZIP inteiro e abra Tempest.exe. Mantenha assets junto do executável.\n\nWASD: mover | Mouse direito + arrastar: câmera | Roda: zoom\n1/2/3: habilidades | Espaço: ataque | R: pular | Enter: chat\n\nSuporte: https://mmo.brunji.com.br/support.html\n', encoding='utf-8')
 with zipfile.ZipFile(out / 'MMORPG-Windows.zip', 'w', zipfile.ZIP_DEFLATED) as z:
     for p in sorted(app.rglob('*')):
         if p.is_file(): z.write(p, p.relative_to(out))
