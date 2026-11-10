@@ -23281,6 +23281,11 @@ impl GameWorld {
                     });
                 }
             }
+            N::PedirAvaliacao => {
+                for s in self.sessions.values().filter(|s| s.logged_in) {
+                    let _ = s.handle.to_client.send(ServerMessage::PedirAvaliacao);
+                }
+            }
             N::Expulsar { conta, motivo } => {
                 for s in self.sessions.values().filter(|s| s.account_id == Some(conta)) {
                     let _ = s.handle.to_client.send(ServerMessage::Kick {

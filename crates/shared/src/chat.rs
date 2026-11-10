@@ -361,6 +361,9 @@ pub enum Notificacao {
     /// A staff warning for one account.
     #[serde(rename = "aviso")]
     Aviso { conta: i64, texto: String },
+    /// Staff asked everyone online to rate the game (Panopticon).
+    #[serde(rename = "avaliacao")]
+    PedirAvaliacao,
     /// Banned: drop its sessions now.
     #[serde(rename = "expulsar")]
     Expulsar { conta: i64, motivo: String },

@@ -155,7 +155,8 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 193 (09/11/2026): ranking rows carry the character's look (3D preview).
 /// 194 (09/11/2026): no more stamina, dash, block/parry or SPD (the wire
 /// layout keeps their slots; old clients would still show and send them).
-pub const PROTOCOL_VERSION: u16 = 194;
+/// 195 (10/11/2026): `ServerMessage::PedirAvaliacao` (staff asks for a rating).
+pub const PROTOCOL_VERSION: u16 = 195;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

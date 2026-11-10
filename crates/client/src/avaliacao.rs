@@ -103,6 +103,10 @@ pub struct Avaliacao {
     estado: Estado,
     pub aberta: bool,
     gravado_em: f64,
+    /// The staff asked for it (Panopticon): show at the next calm moment,
+    /// ignoring the play-time threshold and the 7-day gap, never the
+    /// "already rated" or the `VEZES_MAX` cap.
+    pedida: bool,
 }
 
 impl Default for Avaliacao {
@@ -111,7 +115,7 @@ impl Default for Avaliacao {
             .and_then(|p| std::fs::read_to_string(p).ok())
             .map(|t| Estado::de(&t))
             .unwrap_or_default();
-        Self { estado, aberta: false, gravado_em: 0.0 }
+        Self { estado, aberta: false, gravado_em: 0.0, pedida: false }
     }
 }
 
@@ -128,6 +132,13 @@ impl Avaliacao {
         }
     }
 
+    /// `ServerMessage::PedirAvaliacao`.
+    pub fn pedir(&mut self) {
+        if DISPONIVEL && !self.estado.feito && self.estado.vezes < VEZES_MAX {
+            self.pedida = true;
+        }
+    }
+
     /// Once per frame in the world. `calmo` = no window open, not in a
     /// dungeon or fight: the only moments it may appear.
     pub fn passo(&mut self, dt: f32, nivel: u32, calmo: bool) {
@@ -139,7 +150,10 @@ impl Avaliacao {
         if t - self.gravado_em > 60.0 {
             self.grava(t);
         }
-        if !self.aberta && calmo && self.estado.pronto(nivel, agora_unix()) {
+        let pronto = self.estado.pronto(nivel, agora_unix())
+            || (self.pedida && !self.estado.feito && self.estado.vezes < VEZES_MAX);
+        if !self.aberta && calmo && pronto {
+            self.pedida = false;
             self.aberta = true;
             self.estado.vezes += 1;
             self.estado.ultimo_unix = agora_unix();
@@ -213,6 +227,19 @@ mod testes {
         let e = Estado { segundos: 7300.0, vezes: 2, ultimo_unix: 1_800_000_000, feito: true };
         assert_eq!(Estado::de(&e.texto()), e);
         assert_eq!(Estado::de("lixo"), Estado::default());
+    }
+
+    #[test]
+    fn pedido_da_equipe_respeita_quem_ja_avaliou_e_o_limite() {
+        let mut a = Avaliacao { estado: Estado::default(), aberta: false, gravado_em: f64::MAX, pedida: false };
+        a.pedir();
+        assert_eq!(a.pedida, DISPONIVEL, "asked: shows even before the play-time threshold");
+        let mut ja = Avaliacao { estado: Estado { feito: true, ..Default::default() }, aberta: false, gravado_em: f64::MAX, pedida: false };
+        ja.pedir();
+        assert!(!ja.pedida, "already rated: never again");
+        let mut cheio = Avaliacao { estado: Estado { vezes: VEZES_MAX, ..Default::default() }, aberta: false, gravado_em: f64::MAX, pedida: false };
+        cheio.pedir();
+        assert!(!cheio.pedida, "at most VEZES_MAX times");
     }
 
     #[test]

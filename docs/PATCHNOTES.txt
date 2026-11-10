@@ -1,3 +1,8 @@
+Nov 11, 2026 — Small improvements
+
+- The game notices a new version while you are on the login screen.
+- The team can now invite everyone to rate Tempest on Google Play.
+
 Nov 10, 2026 — Chat, bonus events and egg summons
 
 - New: chat always on screen at the bottom: tap to talk and pick the channel (Global, Island or Party). What people say also pops up over their heads. Bad words are filtered, and you can mute or report a player.

@@ -1318,6 +1318,9 @@ pub enum ServerMessage {
         texto: String,
         staff: bool,
     },
+    /// The staff asks for a store rating now (Panopticon): the client shows
+    /// its "Rate Tempest" card at the next calm moment, if it still may.
+    PedirAvaliacao,
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

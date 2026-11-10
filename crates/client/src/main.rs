@@ -2254,6 +2254,7 @@ impl Jogo {
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
+            ServerMessage::PedirAvaliacao => self.avaliacao.pedir(),
             ServerMessage::ChatGlobal { id, canal, para, de, texto, staff } => {
                 // In the box, and over the speaker's head when they are near
                 // (never a whisper: that one is private).

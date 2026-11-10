@@ -159,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/chat"), get(chat_lista))
         .route(&p("/api/chat/palavras"), post(chat_palavra))
         .route(&p("/api/chat/acao"), post(chat_acao))
+        .route(&p("/api/avaliacao"), post(pedir_avaliacao))
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))
@@ -1021,6 +1022,15 @@ async fn chat_acao(
             (axum::http::StatusCode::OK, axum::Json(serde_json::json!({ "ok": true, "msg": msg })))
         }
         Err(e) => recusa(e),
+    }
+}
+
+/// "Ask for a rating now": every online player gets the "Rate Tempest" card
+/// at their next calm moment (the game skips who already rated, and its 3-times cap).
+async fn pedir_avaliacao(State(st): State<Estado>) -> impl IntoResponse {
+    match chat_notificar(&st.pool, &shared::chat::Notificacao::PedirAvaliacao).await {
+        Ok(()) => axum::Json(serde_json::json!({ "ok": true })),
+        Err(e) => axum::Json(serde_json::json!({ "ok": false, "erro": e.to_string() })),
     }
 }
 

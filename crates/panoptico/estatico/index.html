@@ -400,6 +400,15 @@
   <h2></h2>
   <button class="aba" id="av-enviar" style="width:auto;padding:8px 20px">enviar para todos</button>
   <div id="av-resultado" class="nota"></div>
+  <h2>Pedir avaliação na Play Store</h2>
+  <p class="nota">
+    Abre a janela "Rate Tempest" (com o botão que leva à Google Play) para
+    <b>todo mundo online</b>, no próximo momento tranquilo (sem janela aberta,
+    fora de dungeon). Quem já avaliou não vê de novo, e ninguém vê mais de 3
+    vezes no total. Só no Android (no iPhone o app ainda não está na App Store).
+  </p>
+  <button class="aba" id="av-avaliar" style="width:auto;padding:8px 20px">pedir avaliação agora</button>
+  <div id="av-avaliar-resultado" class="nota"></div>
   <h2>Últimos avisos</h2>
   <div id="av-lista" class="nota"></div>
 </div>
@@ -1721,6 +1730,14 @@ document.getElementById('av-enviar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.aviso = avCarrega;
+document.getElementById('av-avaliar').onclick = async () => {
+  const r = document.getElementById('av-avaliar-resultado');
+  if (!confirm('Pedir avaliação na Play Store para TODOS os jogadores online agora?')) return;
+  try {
+    const d = await (await fetch('api/avaliacao', { method: 'POST' })).json();
+    r.innerHTML = d.ok ? '<span class="bom">pedido enviado</span> · aparece no próximo momento tranquilo de cada jogador' : `<span class="ruim">falhou:</span> ${esc(d.erro)}`;
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+};
 
 // ── eventos de bônus ──
 let evOpcoes = null;
