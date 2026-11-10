@@ -838,13 +838,13 @@ async fn chat_lista(
     };
     let sql = format!(
         "SELECT h.id, to_char(h.criado AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI:SS'), h.zona, h.nome, h.conta, \
-           h.texto, h.mostrado, h.palavras, h.acao, h.entregue, COALESCE(d.n, 0) \
+           h.texto, h.mostrado, h.palavras, h.acao, h.entregue, COALESCE(d.n, 0), h.canal \
          FROM chat_historico h \
          LEFT JOIN (SELECT msg_id, COUNT(*) AS n FROM chat_denuncias GROUP BY msg_id) d ON d.msg_id = h.id \
          WHERE ($1 = '' OR lower(h.nome) LIKE '%' || $1 || '%' OR lower(h.texto) LIKE '%' || $1 || '%') {filtro} \
          ORDER BY h.id DESC LIMIT 300"
     );
-    let msgs: Vec<(i64, String, String, String, i64, String, String, String, String, bool, i64)> =
+    let msgs: Vec<(i64, String, String, String, i64, String, String, String, String, bool, i64, String)> =
         sqlx::query_as(&sql).bind(&busca).fetch_all(pool).await.unwrap_or_default();
     let palavras: Vec<(String, String)> = sqlx::query_as("SELECT palavra, acao FROM chat_palavras ORDER BY palavra")
         .fetch_all(pool)
@@ -868,7 +868,7 @@ async fn chat_lista(
     axum::Json(serde_json::json!({
         "mensagens": msgs.iter().map(|m| serde_json::json!({
             "id": m.0, "quando": m.1, "zona": m.2, "nome": m.3, "conta": m.4, "texto": m.5,
-            "mostrado": m.6, "palavras": m.7, "acao": m.8, "entregue": m.9, "denuncias": m.10,
+            "mostrado": m.6, "palavras": m.7, "acao": m.8, "entregue": m.9, "denuncias": m.10, "canal": m.11,
         })).collect::<Vec<_>>(),
         "palavras": palavras.iter().map(|(p, a)| serde_json::json!({"palavra": p, "acao": a})).collect::<Vec<_>>(),
         "silenciados": silencios.iter().map(|s| serde_json::json!({"conta": s.0, "nome": s.1, "ate": s.2, "motivo": s.3, "autor": s.4})).collect::<Vec<_>>(),

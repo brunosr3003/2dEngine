@@ -440,15 +440,12 @@ fn monta(
     } else {
         0.0
     };
-    // The CHAT button opens the row, under the quests; the notices follow it.
-    // (On their right it sat under the party panel, which grows downwards.)
-    let chat = Rect::new(
+    let avisos = Rect::new(
         m,
         rastreador.y + rastreador.h + 8.0 * s + reserva,
-        56.0 * s,
-        56.0 * s,
+        440.0 * s,
+        68.0 * s,
     );
-    let avisos = Rect::new(chat.x + chat.w + 6.0 * s, chat.y, 384.0 * s, 68.0 * s);
     let ca = vec2(sw - 110.0 * s, base - 110.0 * s);
     let ra = 60.0 * s;
     let atacar = Rect::new(ca.x - ra, ca.y - ra, ra * 2.0, ra * 2.0);
@@ -549,6 +546,24 @@ fn monta(
         (jfim - m).min(lado_joy).max(0.0),
         (jbaixo - jtopo).max(0.0),
     );
+
+    // THE CHAT BOX (`chat_ui`), always on screen: the free gap at the bottom
+    // centre — right of the joystick, left of the jump/skills, under the
+    // gather strip, over the AUTO buttons (owner, 09/11/2026: "it can be more
+    // to the centre, at the bottom there is room").
+    let chat = {
+        let x0 = joystick.x + joystick.w + 10.0 * s;
+        let x1 = skills.iter().map(|r| r.x).fold(pulo.x.min(atacar.x), f32::min) - 10.0 * s;
+        let baixo = rapidos
+            .iter()
+            .map(|r| r.y)
+            .fold(auto_coleta.y.min(auto_combate.y).min(pocao.y), f32::min)
+            - 6.0 * s;
+        let topo = coleta.y + coleta.h + 6.0 * s;
+        let w = (x1 - x0).min(470.0 * s).max(0.0);
+        let h = (baixo - topo).min(130.0 * s).max(0.0);
+        Rect::new(x0 + ((x1 - x0) - w).max(0.0) * 0.5, baixo - h, w, h)
+    };
 
     // Minimapa grande: cresce pra baixo, preso a' direita, e PARA antes do arco
     // de skills. O limite nao e' enfeite: sem ele o minimapa cruzaria o arco,
@@ -1214,3 +1229,5 @@ mod testes_do_quadrante {
         }
     }
 }
+
+

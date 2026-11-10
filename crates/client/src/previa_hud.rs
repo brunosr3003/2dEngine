@@ -157,7 +157,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                 }
                 hud::draw_atacar(&z, cena == "combate");
                 hud::draw_pulo(&z, false);
-                let _ = crate::chat_ui::ChatUi::default().botao(z.chat);
+                let _ = crate::chat_ui::ChatUi::default().caixa(z.chat, &[], "");
                 hud::draw_sprint(&z, false);
                 hud::draw_botao_montaria(&z, false, None, true);
                 hud::draw_botao_economia(&z);

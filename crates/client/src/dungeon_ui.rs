@@ -394,9 +394,13 @@ impl DungeonUi {
         }
     }
 
-    pub fn desenha(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
+    /// `coberto`: another window is open over the game — the always-on
+    /// dungeon tracker steps aside (it would sit over it, or take its taps).
+    pub fn desenha(&mut self, c: &Contexto, agora: f64, coberto: bool) -> Vec<ClientMessage> {
         let mut saida = Vec::new();
-        if self.inst.is_some() {
+        if coberto {
+            // Nothing persistent while a window is open.
+        } else if self.inst.is_some() {
             self.desenha_instancia(agora, &mut saida);
         } else if !self.aberto {
             self.desenha_faixa_da_fila(agora, &mut saida);
@@ -1854,7 +1858,7 @@ pub async fn previa_painel() {
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));
-            d.desenha(&contexto, get_time());
+            d.desenha(&contexto, get_time(), false);
             unsafe { get_internal_gl().flush() };
             rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
             next_frame().await;
@@ -1894,7 +1898,7 @@ pub async fn previa_recompensas() {
             for _ in 0..3 {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.08,0.12,0.16,1.));
-                d.desenha(&contexto,get_time());
+                d.desenha(&contexto,get_time(), false);
                 unsafe { get_internal_gl().flush() };
                 rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}-{w}.png"));
                 next_frame().await;

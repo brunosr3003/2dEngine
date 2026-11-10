@@ -10,6 +10,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Chat channels: everyone online, this island only, the party.
+pub const CANAL_GLOBAL: u8 = 0;
+pub const CANAL_ILHA: u8 = 1;
+pub const CANAL_GRUPO: u8 = 2;
+
+pub fn nome_do_canal(c: u8) -> &'static str {
+    match c {
+        CANAL_ILHA => "Island",
+        CANAL_GRUPO => "Party",
+        _ => "Global",
+    }
+}
+
 /// Longest message, in characters.
 pub const MAX_CHARS: usize = 140;
 /// Minimum gap between two messages of the same player.
@@ -243,6 +256,7 @@ pub const TABELAS: &[&str] = &[
         criado TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )",
     "CREATE INDEX IF NOT EXISTS chat_historico_conta ON chat_historico (conta, id DESC)",
+    "ALTER TABLE chat_historico ADD COLUMN IF NOT EXISTS canal TEXT NOT NULL DEFAULT 'global'",
     "CREATE TABLE IF NOT EXISTS chat_palavras (
         palavra TEXT PRIMARY KEY,
         acao TEXT NOT NULL DEFAULT 'censurar',
@@ -295,7 +309,17 @@ pub const CANAL_NOTIFY: &str = "tempest_chat";
 pub enum Notificacao {
     /// A message for everyone online.
     #[serde(rename = "msg")]
-    Mensagem { id: i64, de: String, texto: String, staff: bool },
+    Mensagem {
+        id: i64,
+        de: String,
+        texto: String,
+        staff: bool,
+        #[serde(default)]
+        canal: u8,
+        /// For `CANAL_ILHA`: only processes serving this zone deliver it.
+        #[serde(default)]
+        zona: String,
+    },
     /// A staff warning for one account.
     #[serde(rename = "aviso")]
     Aviso { conta: i64, texto: String },
@@ -344,7 +368,7 @@ mod testes {
 
     #[test]
     fn notificacao_vai_e_volta() {
-        let n = Notificacao::Mensagem { id: 3, de: "Ana".into(), texto: "hi".into(), staff: false };
+        let n = Notificacao::Mensagem { id: 3, de: "Ana".into(), texto: "hi".into(), staff: false, canal: 1, zona: "ilha_gelo".into() };
         let j = serde_json::to_string(&n).unwrap();
         assert!(j.contains("\"t\":\"msg\""));
         assert_eq!(serde_json::from_str::<Notificacao>(&j).unwrap(), n);

@@ -487,6 +487,11 @@ pub enum ClientMessage {
     DenunciarChat {
         id: i64,
     },
+    /// A chat line on a channel (`shared::chat::CANAL_*`).
+    ChatCanal {
+        canal: u8,
+        text: String,
+    },
 }
 
 /// Onde esta' a peca que a forja vai refinar.
@@ -1296,6 +1301,8 @@ pub enum ServerMessage {
     /// history row, so the player can report it.
     ChatGlobal {
         id: i64,
+        /// `shared::chat::CANAL_*`.
+        canal: u8,
         de: String,
         texto: String,
         staff: bool,

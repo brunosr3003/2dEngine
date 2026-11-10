@@ -226,6 +226,55 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             Color::new(0.86, 0.94, 1.0, 0.95)
         };
         texto_contornado(&txt, c.x - largura * 0.5, pl.base_do_nome, tam, cor);
+        // SPEECH BUBBLE: what they just said in the chat, over the name.
+        if let Some((fala, t0)) = world.falas.get(&nome.to_lowercase()) {
+            let idade = (get_time() - t0) as f32;
+            if idade < FALA_S {
+                balao(fala, vec2(c.x, pl.base_do_nome - tam - 6.0), idade);
+            }
+        }
+    }
+}
+
+/// How long a chat line stays over the head.
+const FALA_S: f32 = 6.0;
+
+/// A speech bubble: up to two lines, a tail pointing down at the name, a
+/// quick pop in and a fade at the end.
+fn balao(texto: &str, ponta: Vec2, idade: f32) {
+    let a = (idade / 0.15).min((FALA_S - idade) / 0.6).clamp(0.0, 1.0);
+    let tam = 13u16;
+    let max_w = 210.0;
+    // Up to two lines, cut by words.
+    let mut linhas: Vec<String> = vec![String::new()];
+    for p in texto.split_whitespace() {
+        let tenta = if linhas.last().unwrap().is_empty() { p.to_string() } else { format!("{} {p}", linhas.last().unwrap()) };
+        if crate::hud_estilo::medir(&tenta, tam) <= max_w || linhas.last().unwrap().is_empty() {
+            *linhas.last_mut().unwrap() = tenta;
+        } else if linhas.len() < 2 {
+            linhas.push(p.to_string());
+        } else {
+            linhas.last_mut().unwrap().push('…');
+            break;
+        }
+    }
+    for l in linhas.iter_mut() {
+        while crate::hud_estilo::medir(l, tam) > max_w && l.chars().count() > 2 {
+            l.pop();
+        }
+    }
+    let w = linhas.iter().map(|l| crate::hud_estilo::medir(l, tam)).fold(0.0, f32::max) + 16.0;
+    let h = linhas.len() as f32 * 16.0 + 10.0;
+    let r = Rect::new(ponta.x - w * 0.5, ponta.y - 8.0 - h, w, h);
+    let fundo = Color::new(0.98, 0.96, 0.90, 0.92 * a);
+    draw_rectangle(r.x + 3.0, r.y, r.w - 6.0, r.h, fundo);
+    draw_rectangle(r.x, r.y + 3.0, r.w, r.h - 6.0, fundo);
+    for (cx, cy) in [(r.x + 3.0, r.y + 3.0), (r.x + r.w - 3.0, r.y + 3.0), (r.x + 3.0, r.y + r.h - 3.0), (r.x + r.w - 3.0, r.y + r.h - 3.0)] {
+        draw_circle(cx, cy, 3.0, fundo);
+    }
+    draw_triangle(vec2(ponta.x - 6.0, r.y + r.h), vec2(ponta.x + 6.0, r.y + r.h), vec2(ponta.x, ponta.y - 1.0), fundo);
+    for (i, l) in linhas.iter().enumerate() {
+        crate::hud_estilo::texto(r.x + 8.0, r.y + 18.0 + i as f32 * 16.0, l, tam, Color::new(0.12, 0.09, 0.07, a));
     }
 }
 

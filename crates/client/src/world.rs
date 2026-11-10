@@ -157,6 +157,9 @@ pub struct World {
     pub ents: HashMap<EntityId, Ent>,
     /// Numeros e faiscas em curso (`efeitos`).
     pub efeitos: Vec<Efeito>,
+    /// What each player said last in the chat, by name (lower case):
+    /// `(text, time)`. Drawn as a speech bubble over their head (`efeitos`).
+    pub falas: HashMap<String, (String, f64)>,
     /// 0..1: a borda vermelha de quando o PROPRIO jogador apanha.
     pub dor: f32,
     /// Quem me ACERTOU e quando. Ver `auto_combate::AGRESSOR_S`.

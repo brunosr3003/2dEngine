@@ -1823,7 +1823,7 @@ async function chCarrega() {
     const txt = esc(m.texto) + (m.mostrado !== m.texto ? `<br><span style="color:var(--fraco)">mostrado: ${esc(m.mostrado)}</span>` : '');
     const tags = (marcada ? ` <span class="ruim">[${esc(m.palavras)} → ${esc(m.acao)}]</span>` : '') + (m.entregue ? '' : ' <span class="ruim">não entregue</span>') + (m.denuncias ? ` <span class="ruim">⚑ ${m.denuncias} denúncia(s)</span>` : '');
     const dados = `data-conta="${m.conta}" data-nome="${esc(m.nome)}"`;
-    return `<tr style="${marcada || m.denuncias ? 'background:rgba(255,80,80,.08)' : ''}"><td>${esc(m.quando)}</td><td>${esc(m.zona)}</td><td><b>${esc(m.nome)}</b> <span class="tag">#${m.conta}</span></td><td>${txt}${tags}</td>
+    return `<tr style="${marcada || m.denuncias ? 'background:rgba(255,80,80,.08)' : ''}"><td>${esc(m.quando)}</td><td>${esc(m.zona)} <span class="tag">${esc(m.canal)}</span></td><td><b>${esc(m.nome)}</b> <span class="tag">#${m.conta}</span></td><td>${txt}${tags}</td>
       <td style="white-space:nowrap"><button class="acao" data-cha="alertar" ${dados}>avisar</button>
       <select class="campo" data-chs ${dados}><option value="">silenciar…</option><option value="10">10 min</option><option value="60">1 h</option><option value="1440">24 h</option><option value="10080">7 dias</option></select>
       <button class="acao" data-cha="banir" ${dados}>banir</button></td></tr>`;

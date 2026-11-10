@@ -187,7 +187,9 @@ async fn notificar(pool: &PgPool, n: &Notificacao) -> anyhow::Result<()> {
 
 /// Saves the line (always) and sends it out (when its words allow), then
 /// applies an automatic mute or ban. The world already told the player.
-pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::Resultado, e_staff: bool) {
+/// `canal` = `shared::chat::CANAL_*`. The party channel is delivered by the
+/// world itself (`notificar = false`); this only logs it.
+pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::Resultado, e_staff: bool, canal: u8, notificar_: bool) {
     let pior = r.pior();
     match pior {
         Some(Acao::Silenciar) => silenciar_local(conta, chat::SILENCIO_AUTOMATICO_MIN),
@@ -200,8 +202,8 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
         let palavras = r.achadas.iter().map(|a| a.0.as_str()).collect::<Vec<_>>().join(", ");
         let res: anyhow::Result<()> = async {
             let id: i64 = sqlx::query_scalar(
-                "INSERT INTO chat_historico (conta, nome, zona, texto, mostrado, palavras, acao, entregue) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+                "INSERT INTO chat_historico (conta, nome, zona, texto, mostrado, palavras, acao, entregue, canal) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
             )
             .bind(conta)
             .bind(&nome)
@@ -211,10 +213,20 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
             .bind(&palavras)
             .bind(pior.map_or("", |a| a.texto()))
             .bind(entregue)
+            .bind(match canal {
+                chat::CANAL_ILHA => "ilha",
+                chat::CANAL_GRUPO => "grupo",
+                _ => "global",
+            })
             .fetch_one(&pool)
             .await?;
-            if entregue {
-                notificar(&pool, &Notificacao::Mensagem { id, de: nome.clone(), texto: r.mostrado.clone(), staff: e_staff }).await?;
+            if entregue && notificar_ {
+                let zona_msg = if canal == chat::CANAL_ILHA { zona.clone() } else { String::new() };
+                notificar(
+                    &pool,
+                    &Notificacao::Mensagem { id, de: nome.clone(), texto: r.mostrado.clone(), staff: e_staff, canal, zona: zona_msg },
+                )
+                .await?;
             }
             let motivo = format!("auto: \"{palavras}\" (msg #{id})");
             match pior {

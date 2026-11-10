@@ -8018,7 +8018,8 @@ impl GameWorld {
                     s.travado_desde = None;
                 }
             }
-            ClientMessage::Chat { text } => self.on_chat_global(id, text),
+            ClientMessage::Chat { text } => self.on_chat_global(id, shared::chat::CANAL_GLOBAL, text),
+            ClientMessage::ChatCanal { canal, text } => self.on_chat_global(id, canal, text),
             ClientMessage::DenunciarChat { id: msg_id } => {
                 if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
                     if let Some(conta) = s.account_id {
@@ -23110,10 +23111,15 @@ impl GameWorld {
 
 impl GameWorld {
     /// A line typed in the global chat (`crate::chat_global`).
-    fn on_chat_global(&mut self, sid: SessionId, text: String) {
+    fn on_chat_global(&mut self, sid: SessionId, canal: u8, text: String) {
         use shared::chat::{self, Acao};
         let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else { return };
-        let (Some(conta), nome) = (s.account_id, s.name.clone()) else { return };
+        let (Some(conta), nome, grupo) = (s.account_id, s.name.clone(), s.party_id) else { return };
+        let canal = canal.min(chat::CANAL_GRUPO);
+        if canal == chat::CANAL_GRUPO && grupo.is_none() {
+            self.send_chat_to(sid, "You are not in a party.");
+            return;
+        }
         if self.tutorial_mode || nome.is_empty() || crate::chat_global::banido(conta) {
             return;
         }
@@ -23149,20 +23155,37 @@ impl GameWorld {
             _ => {}
         }
         let e_staff = crate::chat_global::staff(conta);
-        crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff);
+        if canal == chat::CANAL_GRUPO {
+            // The party lives in this process: delivered here, only logged there.
+            if r.pior().is_none_or(|a| a.entrega()) {
+                for s in self.sessions.values().filter(|s| s.logged_in && s.party_id == grupo) {
+                    let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
+                        id: 0,
+                        canal,
+                        de: nome.clone(),
+                        texto: r.mostrado.clone(),
+                        staff: e_staff,
+                    });
+                }
+            }
+            crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff, canal, false);
+        } else {
+            crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff, canal, true);
+        }
     }
 
     /// What came through the chat NOTIFY channel.
     pub fn on_notificacao_chat(&mut self, n: shared::chat::Notificacao) {
         use shared::chat::Notificacao as N;
         match n {
-            N::Mensagem { id, de, texto, staff } => {
-                if self.tutorial_mode {
+            N::Mensagem { id, de, texto, staff, canal, zona } => {
+                if self.tutorial_mode || (canal == shared::chat::CANAL_ILHA && zona != self.zona) {
                     return;
                 }
                 for s in self.sessions.values().filter(|s| s.logged_in) {
                     let _ = s.handle.to_client.send(ServerMessage::ChatGlobal {
                         id,
+                        canal,
                         de: de.clone(),
                         texto: texto.clone(),
                         staff,

@@ -2194,7 +2194,7 @@ impl Jogo {
                 }
                 // The answer to what was just typed (slow down, muted,
                 // report sent) shows in the open chat too.
-                if self.chat_ui.aberto && (from == "System" || from == "SYS") {
+                if (self.chat_ui.aberto || self.chat_ui.acabou_de_enviar()) && (from == "System" || from == "SYS") {
                     self.chat_ui.sistema(text.clone());
                 }
                 self.chat.push(format!("{from}: {text}"));
@@ -2251,10 +2251,10 @@ impl Jogo {
             }
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
-            ServerMessage::ChatGlobal { id, de, texto, staff } => {
-                // Closed panel: the line also passes as a notice.
-                if self.chat_ui.receber(id, de.clone(), texto.clone(), staff) && !self.chat_ui.aberto {
-                    self.chat.push(format!("{de}: {texto}"));
+            ServerMessage::ChatGlobal { id, canal, de, texto, staff } => {
+                // In the box, and over the speaker's head when they are near.
+                if self.chat_ui.receber(id, canal, de.clone(), texto.clone(), staff) {
+                    self.world.falas.insert(de.to_lowercase(), (texto, get_time()));
                 }
             }
             ServerMessage::AvisoGlobal { texto } => {
@@ -3484,6 +3484,7 @@ impl Jogo {
     /// Digitar em painéis e diálogos não pode comandar o personagem.
     fn teclado_bloqueado(&self) -> bool {
         self.painel_grande()
+            || self.chat_ui.foco()
             || self.dialogo.aberto
             || self.confirmar.is_some()
             || self.carregando_desde.is_some()
@@ -4080,7 +4081,7 @@ impl Jogo {
         } else if self.config_coleta.aberto {
             self.config_coleta.fechar();
             true
-        } else if self.chat_ui.aberto {
+        } else if self.chat_ui.aberto || self.chat_ui.foco() {
             self.chat_ui.fechar();
             true
         } else if self.eventos.aberto {
@@ -6522,11 +6523,15 @@ impl Jogo {
                 if self.eventos.selo(z.buffs) {
                     self.eventos.aberto = true;
                 }
-                // Global chat: the balloon, and Enter on a keyboard.
-                if self.chat_ui.botao(z.chat)
-                    || (!self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter))
-                {
-                    self.chat_ui.abrir();
+                // The chat box, always there; Enter on a keyboard starts typing.
+                if !self.chat_ui.foco() && !self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter) {
+                    self.chat_ui.focar();
+                } else {
+                    let digitado = self.teclado.digitado().to_vec();
+                    let eu_nome = self.personagem_atual.clone().unwrap_or_default();
+                    for m in self.chat_ui.caixa(z.chat, &digitado, &eu_nome) {
+                        self.envia(m);
+                    }
                 }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
@@ -6808,6 +6813,46 @@ impl Jogo {
         }
         if eu.is_some() {
             hud::draw_exp(&z, &self.ficha, nivel);
+        }
+        // DUNGEONS: O PRIMEIRO DOS PAINEIS A DESENHAR, LOGO O DE BAIXO.
+        //
+        // Isto ficava depois da bolsa, do mercado, das lojas, do social e do
+        // Menu, e em modo imediato quem desenha depois fica POR CIMA: a janela
+        // da dungeon tapava todos eles. O dono, em 29/09/2026: "dungeon hud is
+        // in front of every other hud, i dont want that, it should be behind".
+        //
+        // Aqui em cima ele e' o primeiro painel do quadro, entao todo o resto
+        // do HUD passa a cobri-lo.
+        //
+        // 09/11/2026, de novo ("o menu de dungeon e de acompanhamento fica em
+        // cima de outros menus"): ele ainda vinha DEPOIS da loja, do craft, da
+        // forja, da ficha, das missoes e do dialogo. Agora vem logo depois do
+        // HUD fixo, antes de QUALQUER janela; e com outra janela aberta o
+        // acompanhamento nem e' desenhado, pra um toque na janela nao cair num
+        // botao dele escondido embaixo.
+        {
+            let coberto = self.painel_grande() && !self.dungeon.aberto;
+            let eu = self.personagem_atual.clone().unwrap_or_default();
+            let ctx = dungeon_ui::Contexto {
+                nomes: &self.bolsa.nomes,
+                palco: Some((&self.vox, &self.solido)),
+                ouro: self.bolsa.ouro,
+                eu: &eu,
+                zona: &self.zona_atual,
+            };
+            for pedido in self.dungeon.desenha(&ctx, get_time(), coberto) {
+                self.envia(pedido);
+            }
+            // "Go to the door": o painel não entra, ele encaminha.
+            if let Some((pos, nome)) = self.dungeon.ir_para_a_porta.take() {
+                self.dungeon.fechar();
+                self.iniciar_ir_para(ir_para::Alvo {
+                    objetivo: ir_para::Objetivo::Lugar,
+                    pos,
+                    raio: shared::porao::ALCANCE_DA_PORTA,
+                    rotulo: nome,
+                });
+            }
         }
         if self.loja.aberta() {
             let nome = self
@@ -7138,38 +7183,6 @@ impl Jogo {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        // DUNGEONS: O PRIMEIRO DOS PAINEIS A DESENHAR, LOGO O DE BAIXO.
-        //
-        // Isto ficava depois da bolsa, do mercado, das lojas, do social e do
-        // Menu, e em modo imediato quem desenha depois fica POR CIMA: a janela
-        // da dungeon tapava todos eles. O dono, em 29/09/2026: "dungeon hud is
-        // in front of every other hud, i dont want that, it should be behind".
-        //
-        // Aqui em cima ele e' o primeiro painel do quadro, entao todo o resto
-        // do HUD passa a cobri-lo.
-        {
-            let eu = self.personagem_atual.clone().unwrap_or_default();
-            let ctx = dungeon_ui::Contexto {
-                nomes: &self.bolsa.nomes,
-                palco: Some((&self.vox, &self.solido)),
-                ouro: self.bolsa.ouro,
-                eu: &eu,
-                zona: &self.zona_atual,
-            };
-            for pedido in self.dungeon.desenha(&ctx, get_time()) {
-                self.envia(pedido);
-            }
-            // "Go to the door": o painel não entra, ele encaminha.
-            if let Some((pos, nome)) = self.dungeon.ir_para_a_porta.take() {
-                self.dungeon.fechar();
-                self.iniciar_ir_para(ir_para::Alvo {
-                    objetivo: ir_para::Objetivo::Lugar,
-                    pos,
-                    raio: shared::porao::ALCANCE_DA_PORTA,
-                    rotulo: nome,
-                });
-            }
-        }
         match self
             .mapa
             .desenha_grande(&self.world, nivel, &self.mundo, agora_unix)
