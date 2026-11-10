@@ -6471,6 +6471,18 @@ impl Jogo {
         }
         // Painel grande aberto: o HUD some, como no MIR4 — fica a EXP e a faixa.
         if !painel {
+            // THE CHAT BOX FIRST: everything else in the HUD is drawn after it,
+            // so it sits behind them (owner, 09/11/2026: "HUDs in general have
+            // to show in front of the chat"). Enter on a keyboard starts typing.
+            if !self.chat_ui.foco() && !self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter) {
+                self.chat_ui.focar();
+            } else {
+                let digitado = self.teclado.digitado().to_vec();
+                let eu_nome = self.personagem_atual.clone().unwrap_or_default();
+                for m in self.chat_ui.caixa(z.chat, &digitado, &eu_nome) {
+                    self.envia(m);
+                }
+            }
             if hud::draw_hud(
                 &z,
                 &self.info,
@@ -6522,16 +6534,6 @@ impl Jogo {
                 );
                 if self.eventos.selo(z.buffs) {
                     self.eventos.aberto = true;
-                }
-                // The chat box, always there; Enter on a keyboard starts typing.
-                if !self.chat_ui.foco() && !self.teclado_bloqueado() && is_key_pressed(KeyCode::Enter) {
-                    self.chat_ui.focar();
-                } else {
-                    let digitado = self.teclado.digitado().to_vec();
-                    let eu_nome = self.personagem_atual.clone().unwrap_or_default();
-                    for m in self.chat_ui.caixa(z.chat, &digitado, &eu_nome) {
-                        self.envia(m);
-                    }
                 }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
