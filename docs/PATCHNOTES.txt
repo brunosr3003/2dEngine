@@ -1,24 +1,28 @@
-Nov 9, 2026 — Shop fixes
+Nov 10, 2026 — Chat, bonus events and egg summons
 
+- New: chat always on screen at the bottom: tap to talk and pick the channel (Global, Island or Party). What people say also pops up over their heads. Bad words are filtered, and you can mute or report a player.
+- Whispers: send a private message to any player on any island (Whisper channel, or type @Name message). Choose who may whisper you: everyone, friends or nobody.
+- New: bonus events (extra XP, drop rate or gold, for everyone, a map, a monster, a dungeon or a boss). See what is active in Menu › Events or tap the gold badge.
+- Events for one monster or boss have a Find button: the map lights up every zone where it lives, with its share, and takes you there.
+- Announcements from the team now appear at the top of the screen for everyone online.
+- New summon animation: scrolls now hatch from a cracking egg, with a burst of light in the color of the best prize.
+- Pet and Mount summons are now eggs, each with its own colors.
 - New character creation screen: bigger and clearer, with color pickers for hair and skin.
 - New login, sign-up and server screens: bigger, clearer and over the island.
 - Rankings: tap a player in the top 50 to see their character in 3D.
 - The quest and party panel is bigger, and can be expanded with the + button.
-- New summon animation: scrolls now hatch from a cracking egg, with a burst of light in the color of the best prize.
+- New potion bar settings: bigger buttons, an AUTO switch and clear steps.
+- Each dungeon key now has its own icon.
 - Stamina, the Dash and the SPD attribute were removed. Sprint is now unlimited.
 - Points spent in SPD are refunded, with their Energy, so you can spend them again.
 - Block and timed parry were removed.
 - Stamina Potions no longer drop or sell; the ones you have can be sold to merchants.
-- Each dungeon key now has its own icon.
-- New potion bar settings: bigger buttons, an AUTO switch and clear steps.
-- Pet and Mount summons are now eggs, each with its own colors.
-- Announcements from the team now appear at the top of the screen for everyone online.
-- New: bonus events (extra XP, drop rate or gold, for everyone, a map, a monster, a dungeon or a boss). See what is active in Menu › Events or tap the gold badge.
-- Events for one monster or boss have a Find button: the map lights up every zone where it lives, with its share, and takes you there.
-- New: chat always on screen at the bottom: tap to talk and pick the channel (Global, Island or Party). What people say also pops up over their heads. Bad words are filtered, and you can mute or report a player.
-- Whispers: send a private message to any player on any island (Whisper channel, or type @Name message). Choose who may whisper you: everyone, friends or nobody.
 - Open windows now always stay in front of the dungeon tracker.
 - Fixed buttons that overlap (like Auto Collect and its settings) catching the wrong tap.
+- Fixed getting stuck in the Arena when a dungeon ended while you were away.
+
+Nov 9, 2026 — Shop fixes
+
 - Purchases are always delivered: if a payment is approved later, the items wait for you in your Mail, with no expiry date.
 - Fixed the purchase screen staying on "Waiting for Google Play" after buying.
 
