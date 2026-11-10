@@ -37,6 +37,7 @@ use axum::routing::{get, post};
 use axum::Form;
 use tokio::sync::RwLock;
 
+mod agendados;
 mod auth;
 mod economia;
 mod mapa;
@@ -133,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
             .build_http(),
     };
 
+    agendados::iniciar(st.pool.clone());
     let p = |c: &str| auth.caminho(c);
     let mut app = axum::Router::new()
         .route(&p("/"), get(pagina))
@@ -160,6 +162,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/chat/palavras"), post(chat_palavra))
         .route(&p("/api/chat/acao"), post(chat_acao))
         .route(&p("/api/avaliacao"), post(pedir_avaliacao))
+        .route(&p("/api/agendados"), get(agendados::lista).post(agendados::salvar))
+        .route(&p("/api/agendados/acao"), post(agendados::acao))
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))

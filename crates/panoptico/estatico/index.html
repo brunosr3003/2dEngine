@@ -139,6 +139,7 @@
     <button class="aba" data-aba="infra">infra</button>
     <button class="aba" data-aba="correio">correio</button>
     <button class="aba" data-aba="aviso">aviso global</button>
+    <button class="aba" data-aba="agendados">agendados</button>
     <button class="aba" data-aba="eventos">eventos</button>
     <button class="aba" data-aba="chat">chat</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
@@ -411,6 +412,48 @@
   <div id="av-avaliar-resultado" class="nota"></div>
   <h2>Últimos avisos</h2>
   <div id="av-lista" class="nota"></div>
+</div>
+
+<!-- ─────────────────────────── avisos agendados ─────────────────────────── -->
+<div class="aba-painel" id="aba-agendados" hidden>
+  <h2>Avisos agendados</h2>
+  <p class="nota">
+    Avisos globais que saem sozinhos: em <b>horários fixos</b> do dia (horário de
+    Brasília, ex.: 12:00, 13:00, 18:30) ou <b>a cada N minutos</b> a partir do
+    início. Saem igual ao "aviso global" (faixa no topo + linha no chat, para
+    quem estiver online). Se o painel estiver fora do ar ou o aviso pausado no
+    horário, ele <b>não</b> sai atrasado: espera o próximo. Escreva em inglês.
+  </p>
+  <input type="hidden" id="ag-id">
+  <label class="f">texto <textarea id="ag-texto" class="campo" rows="2" maxlength="200" placeholder="Thanks for playing Tempest! Don't forget to rate us on the store."></textarea></label>
+  <span id="ag-conta" class="nota">0/200</span>
+  <label class="f">assina <input id="ag-autor" class="campo" value="SrBrunji" maxlength="30" style="width:160px"></label>
+  <label class="f">quando
+    <select id="ag-modo" class="campo" style="width:auto">
+      <option value="horarios">horários fixos</option>
+      <option value="intervalo">a cada N minutos</option>
+    </select>
+  </label>
+  <div id="ag-linha-horarios">
+    <label class="f">horários <input id="ag-horarios" class="campo" placeholder="12:00, 13:00, 18:30" style="width:320px"></label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px">
+      <button class="acao" type="button" data-ag="hora">toda hora cheia</button>
+      <button class="acao" type="button" data-ag="2h">a cada 2 h</button>
+      <button class="acao" type="button" data-ag="pico">horários de pico (12, 18, 20, 22)</button>
+      <button class="acao" type="button" data-ag="limpa">limpar</button>
+    </div>
+  </div>
+  <div id="ag-linha-intervalo" hidden>
+    <label class="f">a cada <input id="ag-min" type="number" min="5" max="10080" value="60" class="campo" style="width:80px"> min (conta a partir do início; sem início, a partir de agora)</label>
+  </div>
+  <label class="f">início (opcional) <input id="ag-inicio" type="datetime-local" class="campo" style="width:auto"></label>
+  <label class="f">fim (opcional) <input id="ag-fim" type="datetime-local" class="campo" style="width:auto"></label>
+  <h2></h2>
+  <button class="aba" id="ag-salvar" style="width:auto;padding:8px 20px">agendar</button>
+  <button class="acao" id="ag-cancelar" type="button" hidden>cancelar edição</button>
+  <div id="ag-resultado" class="nota"></div>
+  <h2>Programados</h2>
+  <div id="ag-lista" class="nota"></div>
 </div>
 
 <!-- ─────────────────────────── eventos de bônus ─────────────────────────── -->
@@ -1738,6 +1781,118 @@ document.getElementById('av-avaliar').onclick = async () => {
     r.innerHTML = d.ok ? '<span class="bom">pedido enviado</span> · aparece no próximo momento tranquilo de cada jogador' : `<span class="ruim">falhou:</span> ${esc(d.erro)}`;
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
+
+// ── avisos agendados ──
+let agDados = [];
+function agModo() {
+  const m = document.getElementById('ag-modo').value;
+  document.getElementById('ag-linha-horarios').hidden = m !== 'horarios';
+  document.getElementById('ag-linha-intervalo').hidden = m !== 'intervalo';
+}
+document.getElementById('ag-modo').onchange = agModo;
+document.getElementById('ag-texto').oninput = e =>
+  document.getElementById('ag-conta').textContent = e.target.value.length + '/200';
+document.querySelectorAll('[data-ag]').forEach(b => b.onclick = () => {
+  const h = n => String(n).padStart(2, '0') + ':00';
+  const v = { hora: [...Array(24).keys()].map(h), '2h': [...Array(12).keys()].map(i => h(i * 2)),
+    pico: [12, 18, 20, 22].map(h), limpa: [] }[b.dataset.ag];
+  document.getElementById('ag-horarios').value = v.join(', ');
+});
+function agLimpaForm() {
+  document.getElementById('ag-id').value = '';
+  document.getElementById('ag-texto').value = '';
+  document.getElementById('ag-conta').textContent = '0/200';
+  document.getElementById('ag-horarios').value = '';
+  document.getElementById('ag-inicio').value = '';
+  document.getElementById('ag-fim').value = '';
+  document.getElementById('ag-salvar').textContent = 'agendar';
+  document.getElementById('ag-cancelar').hidden = true;
+}
+document.getElementById('ag-cancelar').onclick = agLimpaForm;
+function agQuando(a) {
+  if (a.a_cada_min) {
+    const m = a.a_cada_min;
+    return 'a cada ' + (m % 60 ? m + ' min' : (m / 60) + ' h');
+  }
+  const h = a.horarios;
+  return h.length > 8 ? `${h.length} horários/dia (${esc(h.slice(0, 4).join(', '))}, …)` : esc(h.join(', '));
+}
+async function agCarrega() {
+  const el = document.getElementById('ag-lista');
+  try {
+    const d = await (await fetch('api/agendados', { cache: 'no-store' })).json();
+    if (!d.ok) { el.innerHTML = `<span class="ruim">falhou:</span> ${esc(d.erro)}`; return; }
+    agDados = d.agendados;
+    el.innerHTML = agDados.length ? `<table><tr><th>aviso</th><th>quando</th><th>estado</th><th>próximo</th><th>último</th><th>envios</th><th></th></tr>` +
+      agDados.map(a => {
+        const estado = a.acabou ? '<span class="nota">encerrado</span>' : a.ativo ? '<span class="bom">ativo</span>' : '<span class="ruim">pausado</span>';
+        const janela = [a.inicio && 'de ' + a.inicio.replace('T', ' '), a.fim && 'até ' + a.fim.replace('T', ' ')].filter(Boolean).join(' ');
+        return `<tr><td>${esc(a.texto)}<div class="nota">${esc(a.autor || '—')}${janela ? ' · ' + esc(janela) : ''}</div></td>
+          <td>${agQuando(a)}</td><td>${estado}</td><td>${esc(a.proximo || '—')}</td><td>${esc(a.ultimo || '—')}</td><td>${a.envios}</td>
+          <td style="white-space:nowrap">
+            <button class="acao" data-ag-acao="${a.ativo ? 'pausar' : 'ativar'}" data-id="${a.id}">${a.ativo ? 'pausar' : 'ativar'}</button>
+            <button class="acao" data-ag-editar="${a.id}">editar</button>
+            <button class="acao" data-ag-acao="enviar" data-id="${a.id}">enviar agora</button>
+            <button class="acao" data-ag-acao="apagar" data-id="${a.id}">apagar</button>
+          </td></tr>`;
+      }).join('') + '</table>' : 'nada programado ainda';
+    el.querySelectorAll('[data-ag-acao]').forEach(b => b.onclick = () => agAcao(+b.dataset.id, b.dataset.agAcao));
+    el.querySelectorAll('[data-ag-editar]').forEach(b => b.onclick = () => agEditar(+b.dataset.agEditar));
+  } catch (e) { el.textContent = 'falhou: ' + e; }
+}
+function agEditar(id) {
+  const a = agDados.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('ag-id').value = id;
+  document.getElementById('ag-texto').value = a.texto;
+  document.getElementById('ag-conta').textContent = a.texto.length + '/200';
+  document.getElementById('ag-autor').value = a.autor;
+  document.getElementById('ag-modo').value = a.a_cada_min ? 'intervalo' : 'horarios';
+  document.getElementById('ag-horarios').value = a.horarios.join(', ');
+  if (a.a_cada_min) document.getElementById('ag-min').value = a.a_cada_min;
+  document.getElementById('ag-inicio').value = a.inicio || '';
+  document.getElementById('ag-fim').value = a.fim || '';
+  document.getElementById('ag-salvar').textContent = 'salvar alterações';
+  document.getElementById('ag-cancelar').hidden = false;
+  agModo();
+  document.getElementById('ag-texto').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+async function agAcao(id, acao) {
+  const a = agDados.find(x => x.id === id);
+  const r = document.getElementById('ag-resultado');
+  if (acao === 'apagar' && !confirm(`Apagar este agendamento?\n\n${a ? a.texto : ''}`)) return;
+  if (acao === 'enviar' && !confirm(`Mostrar para TODOS os jogadores online agora?\n\n${a ? a.texto : ''}`)) return;
+  try {
+    const d = await (await fetch('api/agendados/acao', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, acao }),
+    })).json();
+    r.innerHTML = d.ok ? `<span class="bom">${{ pausar: 'pausado', ativar: 'ativado', apagar: 'apagado', enviar: 'enviado agora' }[acao]}</span>` : `<span class="ruim">falhou:</span> ${esc(d.erro)}`;
+    agCarrega();
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+}
+document.getElementById('ag-salvar').onclick = async () => {
+  const r = document.getElementById('ag-resultado');
+  const modo = document.getElementById('ag-modo').value;
+  const id = document.getElementById('ag-id').value;
+  const corpo = {
+    id: id ? +id : null,
+    texto: document.getElementById('ag-texto').value.trim(),
+    autor: document.getElementById('ag-autor').value.trim(),
+    horarios: modo === 'horarios' ? document.getElementById('ag-horarios').value.split(/[,;\s]+/).filter(Boolean) : [],
+    a_cada_min: modo === 'intervalo' ? +document.getElementById('ag-min').value : null,
+    inicio: document.getElementById('ag-inicio').value,
+    fim: document.getElementById('ag-fim').value,
+  };
+  if (!corpo.texto) { r.innerHTML = '<span class="ruim">escreva o aviso</span>'; return; }
+  try {
+    const d = await (await fetch('api/agendados', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo),
+    })).json();
+    if (d.ok) { r.innerHTML = `<span class="bom">${id ? 'alterado' : 'agendado'}</span>`; agLimpaForm(); agCarrega(); }
+    else r.innerHTML = `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+};
+PUXA.agendados = agCarrega;
 
 // ── eventos de bônus ──
 let evOpcoes = null;
