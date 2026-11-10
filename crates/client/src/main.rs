@@ -668,6 +668,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_OFERTAS").is_ok() {
+        ofertas_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_CHAT").is_ok() {
         chat_ui::previa().await;
         return;

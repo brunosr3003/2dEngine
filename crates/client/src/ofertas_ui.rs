@@ -157,17 +157,22 @@ impl OfertasUi {
         }
         let agora = get_time();
         self.ofertas.retain(|(_, fim)| *fim > agora - 1.0);
+        // THE "RATE US" PROMOTION, always on top (owner, 10/11/2026: rate on
+        // Google Play, post the screenshot on Discord, get a gift in-game).
+        let promo = Rect::new(x0, p.y + 54.0 * f, p.w - 40.0 * f, 196.0 * f);
+        desenha_promo_avaliacao(promo, f, m, clicou);
+        let topo = promo.y + promo.h + 12.0 * f;
         if !PODE_PAGAR {
-            estilo::texto(x0, p.y + 84.0 * f, "Flash offers are available in the Android app (Google Play).", 15, estilo::SUAVE);
+            estilo::texto(x0, topo + 24.0 * f, "Flash offers are available in the Android app (Google Play).", 15, estilo::SUAVE);
             return saida;
         }
         if self.ofertas.is_empty() {
-            estilo::texto(x0, p.y + 84.0 * f, "No flash offer right now.", 16, estilo::TEXTO);
-            estilo::texto(x0, p.y + 110.0 * f, "Keep leveling up: new offers unlock at higher levels.", 14, estilo::SUAVE);
+            estilo::texto(x0, topo + 24.0 * f, "No flash offer right now.", 16, estilo::TEXTO);
+            estilo::texto(x0, topo + 50.0 * f, "Keep leveling up: new offers unlock at higher levels.", 14, estilo::SUAVE);
             return saida;
         }
         let pt = shared::idioma::atual() == shared::idioma::Idioma::Pt;
-        let mut y = p.y + 60.0 * f;
+        let mut y = topo;
         let alto = ((p.y + p.h - 50.0 * f - y) / self.ofertas.len() as f32).min(400.0 * f);
         let mut comprar: Option<(String, String)> = None;
         for (o, fim) in &self.ofertas {
@@ -247,6 +252,56 @@ impl OfertasUi {
     }
 }
 
+const DISCORD: &str = "https://discord.gg/WpbF3EcVg";
+
+/// The "Rate us & get a gift" card: three steps, the gift with its icons,
+/// and the two buttons (Google Play, Discord). The gift is sent by the staff
+/// by mail once the screenshot is on Discord.
+fn desenha_promo_avaliacao(r: Rect, f: f32, m: Vec2, clicou: bool) {
+    estilo::painel_destaque(r, estilo::VERDE);
+    let x = r.x + 16.0 * f;
+    estilo::texto_forte(x, r.y + 30.0 * f, "Rate us & get a gift!", 19, estilo::VERDE);
+    let passos = [
+        "1. Rate Tempest on Google Play.",
+        "2. Post a screenshot of your review on our Discord.",
+        "3. We send you a gift to your in-game Mail:",
+    ];
+    for (i, t) in passos.iter().enumerate() {
+        estilo::texto(x, r.y + (56.0 + i as f32 * 21.0) * f, t, 14, estilo::TEXTO);
+    }
+    // The gift: 5,000 Darksteel · 5,000 Energy · 1 Mount Summon Scroll.
+    let lado = 28.0 * f;
+    let gy = r.y + 108.0 * f;
+    let mut gx = x + 8.0 * f;
+    let presente: [(Option<u16>, &str); 3] = [
+        (Some(shared::item_id::DARKSTEEL), "5,000 Darksteel"),
+        (None, "5,000 Energy"),
+        (Some(shared::item_id::PERGAMINHO_INVOCA_MONTARIA), "1 Mount Summon Scroll"),
+    ];
+    for (id, t) in presente {
+        match id {
+            Some(id) if id == shared::item_id::PERGAMINHO_INVOCA_MONTARIA => {
+                crate::invocacao_ui::icone_pergaminho_de(id, vec2(gx + lado * 0.5, gy + lado * 0.5), lado)
+            }
+            Some(id) => crate::icones::icone(id, Rect::new(gx, gy, lado, lado), None, None),
+            None => estilo::icone_energia(vec2(gx + lado * 0.5, gy + lado * 0.5), lado * 0.8),
+        }
+        estilo::texto_forte(gx + lado + 6.0 * f, gy + lado * 0.7, t, 14, Color::new(0.99, 0.86, 0.45, 1.0));
+        gx += lado + 14.0 * f + estilo::medir_forte(t, 14);
+    }
+    let bh = 40.0 * f;
+    let by = r.y + r.h - bh - 10.0 * f;
+    let play = Rect::new(r.x + r.w - 2.0 * (190.0 * f) - 26.0 * f, by, 190.0 * f, bh);
+    let discord = Rect::new(r.x + r.w - 190.0 * f - 16.0 * f, by, 190.0 * f, bh);
+    estilo::botao(play, "Rate on Google Play", estilo::estado_de(play, false, false), true);
+    estilo::botao(discord, "Open Discord", estilo::estado_de(discord, false, false), false);
+    if clicou && play.toca(m) {
+        crate::avaliacao::abrir_loja();
+    } else if clicou && discord.toca(m) {
+        crate::nativo::abrir_url(DISCORD);
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -261,5 +316,27 @@ mod testes {
         shared::idioma::definir(shared::idioma::Idioma::En);
         assert_eq!(relogio(3599.0), "59:59");
         assert_eq!(relogio(3600.0), "1:00:00");
+    }
+}
+
+/// `MMO_PREVIA_OFERTAS=1`: the Offers window with the promotion card.
+#[cfg(debug_assertions)]
+pub async fn previa() {
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-ofertas-preview".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    next_frame().await;
+    let rt = render_target(screen_width() as u32, screen_height() as u32);
+    let mut ui = OfertasUi { aberto: true, ..Default::default() };
+    for _ in 0..3 {
+        set_camera(&Camera2D {
+            render_target: Some(rt.clone()),
+            ..Camera2D::from_display_rect(Rect::new(0.0, 0.0, screen_width(), screen_height()))
+        });
+        clear_background(Color::new(0.10, 0.14, 0.12, 1.0));
+        let _ = ui.desenha(&HashMap::new());
+        unsafe { get_internal_gl().flush() };
+        rt.texture.get_texture_data().export_png(&format!("{saida}/ofertas.png"));
+        set_default_camera();
+        next_frame().await;
     }
 }
