@@ -32,7 +32,14 @@ pub struct Atualizacao {
     erro: bool,
     /// Android already sent to the store automatically (once per screen).
     redirecionado: bool,
+    /// When the manifest was last asked for (it is asked again while the
+    /// player sits on the login screens: owner, 10/11/2026 — the game was
+    /// open on login when the release went out and never asked to update).
+    ultima_busca: Instant,
 }
+
+/// How often the login screens ask the manifest again.
+const REBUSCA: Duration = Duration::from_secs(60);
 
 impl Default for Atualizacao {
     fn default() -> Self {
@@ -43,6 +50,7 @@ impl Default for Atualizacao {
             dispensado: false,
             erro: false,
             redirecionado: false,
+            ultima_busca: Instant::now(),
         }
     }
 }
@@ -120,6 +128,12 @@ impl Atualizacao {
 
     /// `true`: the update screen took login's place this frame.
     pub fn desenha(&mut self) -> bool {
+        // Still on login with no notice: ask again now and then, so a release
+        // that went out after the game opened is noticed here too.
+        if self.busca.is_none() && self.aviso.is_none() && self.ultima_busca.elapsed() >= REBUSCA {
+            self.busca = Some(crate::api::buscar_release());
+            self.ultima_busca = Instant::now();
+        }
         if let Some(rx) = &self.busca {
             match rx.try_recv() {
                 Ok(Ok(corpo)) => {
@@ -197,7 +211,7 @@ impl Atualizacao {
 pub async fn previa_incompativel() {
     let mut aviso = Atualizacao {
         busca: None, inicio: Instant::now(), aviso: None, dispensado: true, erro: false,
-        redirecionado: true,
+        redirecionado: true, ultima_busca: Instant::now(),
     };
     for (w, h) in [(960, 540), (640, 360)] {
         request_new_screen_size(w as f32, h as f32);
