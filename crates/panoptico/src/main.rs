@@ -164,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/avaliacao"), post(pedir_avaliacao))
         .route(&p("/api/agendados"), get(agendados::lista).post(agendados::salvar))
         .route(&p("/api/agendados/acao"), post(agendados::acao))
+        .route(&p("/api/hud"), get(agendados::layouts_hud))
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))

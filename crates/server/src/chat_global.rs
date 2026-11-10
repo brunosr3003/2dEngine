@@ -388,6 +388,11 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
 }
 
 /// The market changed (`Notificacao::MercadoMudou`): tell every process.
+/// The realm pool, once the chat has connected (for small writes elsewhere).
+pub fn pool() -> Option<PgPool> {
+    POOL.get().cloned()
+}
+
 pub fn mercado_mudou(personagens: Vec<String>) {
     let Some(pool) = POOL.get().cloned() else {
         tracing::warn!("market push: chat pool not ready");

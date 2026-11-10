@@ -501,6 +501,54 @@ pub enum ClientMessage {
     ModoSussurro {
         modo: u8,
     },
+    /// The HUD layout this player uses on this device (`hud_custom`), sent at
+    /// login and when the HUD editor closes. Kept only to learn what layouts
+    /// people pick (owner, 10/11/2026: "record the layouts players use so we
+    /// can improve our recommended layout"); the device keeps its own copy.
+    LayoutDoHud {
+        layout: LayoutDoHud,
+    },
+}
+
+/// One device's HUD layout, as `hud_custom` keeps it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct LayoutDoHud {
+    /// "android", "ios", "windows", "mac", "linux".
+    pub plataforma: String,
+    /// Screen in px, and the UI scale (Settings › Interface).
+    pub tela_w: u16,
+    pub tela_h: u16,
+    pub escala_ui: f32,
+    /// The "all buttons" size.
+    pub botoes: f32,
+    pub itens: Vec<ItemDoHud>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ItemDoHud {
+    pub id: String,
+    pub tamanho: f32,
+    /// Center as a fraction of the safe area, when the player moved it.
+    pub centro: Option<(f32, f32)>,
+}
+
+impl LayoutDoHud {
+    /// What a client may send: short ids, finite numbers in range, bounded.
+    pub fn validado(mut self) -> Option<Self> {
+        let ok = |v: f32, a: f32, b: f32| v.is_finite() && (a..=b).contains(&v);
+        if self.plataforma.len() > 16 || self.itens.len() > 64
+            || !ok(self.escala_ui, 0.1, 5.0) || !ok(self.botoes, 0.1, 5.0)
+        {
+            return None;
+        }
+        self.itens.retain(|i| {
+            i.id.len() <= 32
+                && i.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                && ok(i.tamanho, 0.1, 5.0)
+                && i.centro.is_none_or(|(x, y)| ok(x, 0.0, 1.0) && ok(y, 0.0, 1.0))
+        });
+        Some(self)
+    }
 }
 
 /// Onde esta' a peca que a forja vai refinar.

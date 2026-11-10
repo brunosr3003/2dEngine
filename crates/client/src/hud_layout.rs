@@ -271,23 +271,27 @@ pub fn quadrante_do_joystick_em(t: Rect, ui: f32) -> Rect {
 /// Com a area segura e a escala escolhida. Chamado varias vezes por quadro:
 /// guarda a ultima resposta (o ajuste abaixo testa sobreposicao).
 pub fn atual() -> Zonas {
-    thread_local!(static MEMO: Cell<Option<([u32; 10], Zonas)>> = const { Cell::new(None) });
+    thread_local!(static MEMO: Cell<Option<([u32; 11], Zonas)>> = const { Cell::new(None) });
     let (sw, sh) = crate::render3d::tela();
     let (mg, ui) = (margens(), escala_ui());
     let grande = minimapa_expandido();
     let tarja = tarja_magica();
     let pvp = faixa_pvp();
-    let mut chave = [0u32; 10];
+    let mut chave = [0u32; 11];
     chave[..7].copy_from_slice(&[sw, sh, mg[0], mg[1], mg[2], mg[3], ui].map(f32::to_bits));
     chave[7] = grande as u32;
     // A tarja ENTRA NA CHAVE: sem isso o memo devolveria o layout de antes de
     // ela subir, e os avisos ficariam embaixo dela até a tela mudar de tamanho.
     chave[8] = tarja as u32;
     chave[9] = pvp as u32;
+    // The player's own layout (`hud_custom`): changes bump the generation.
+    chave[10] = crate::hud_custom::geracao();
     MEMO.with(|c| match c.get() {
         Some((k, z)) if k == chave => z,
         _ => {
             let z = zonas_com(sw, sh, mg, ui, grande, tarja, pvp);
+            let seguro = Rect::new(mg[1], mg[0], (sw - mg[1] - mg[3]).max(64.0), (sh - mg[0] - mg[2]).max(64.0));
+            let z = crate::hud_custom::aplica(z, seguro, &crate::hud_custom::atual());
             c.set(Some((chave, z)));
             z
         }

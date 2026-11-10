@@ -59,6 +59,8 @@ mod porao_planta;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_hud;
 mod hud_estilo;
+mod hud_custom;
+mod hud_editor;
 mod hud_layout;
 mod icone_npc;
 mod icones;
@@ -299,6 +301,7 @@ struct Jogo {
     /// Toque longo no AUTO COMBATE abre a configuração. Ver `toque`.
     toque_combate: toque::ToqueLongo,
     config_interface: config_interface::ConfigInterface,
+    editor_hud: hud_editor::EditorHud,
     config_graficos: config_graficos::ConfigGraficos,
     /// A barrinha "Coletando · tipo · N s".
     coleta_hud: coleta_hud::BarraDeColeta,
@@ -673,6 +676,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_EDITOR_HUD").is_ok() {
+        hud_editor::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_CHAT").is_ok() {
         chat_ui::previa().await;
         return;
@@ -970,6 +978,7 @@ async fn main() {
         config_combate: Default::default(),
         toque_combate: toque::ToqueLongo::default(),
         config_interface: Default::default(),
+        editor_hud: Default::default(),
         config_graficos: Default::default(),
         coleta_hud: Default::default(),
         coleta_pendente: None,
@@ -3534,6 +3543,7 @@ impl Jogo {
             || self.config_coleta.aberto
             || self.config_combate.aberto
             || self.config_interface.aberto
+            || self.editor_hud.aberto
             || self.config_graficos.aberto
             || self.onde_obter.aberto()
             || self.dungeon.aberto
@@ -3892,6 +3902,10 @@ impl Jogo {
         self.config_coleta.fechar();
         self.config_combate.fechar();
         self.config_interface.fechar();
+        if self.editor_hud.aberto {
+            self.editor_hud.fechar();
+            self.envia_layout_hud();
+        }
         self.config_graficos.fechar();
         self.menu.fechar();
         self.onde_obter.fechar();
@@ -4089,7 +4103,11 @@ impl Jogo {
             return true;
         }
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
-        let fechou_painel = if self.config_interface.aberto {
+        let fechou_painel = if self.editor_hud.aberto {
+            self.editor_hud.fechar();
+            self.envia_layout_hud();
+            true
+        } else if self.config_interface.aberto {
             self.config_interface.fechar();
             true
         } else if self.config_graficos.aberto {
@@ -4506,6 +4524,15 @@ impl Jogo {
         }
         let atual = self.preferencias_atuais();
         self.prefs.recebeu(&atual);
+        // Once per login: which layout this player is on (even the default).
+        self.envia_layout_hud();
+    }
+
+    /// Tells the server the HUD layout this device uses (`hud_custom`): only
+    /// recorded, to learn which layouts players pick.
+    fn envia_layout_hud(&mut self) {
+        let layout = hud_custom::para_rede(&hud_custom::atual());
+        self.envia(ClientMessage::LayoutDoHud { layout });
     }
 
     /// O estado de agora, no formato guardado. Numeros em centesimos: a
@@ -6923,6 +6950,7 @@ impl Jogo {
                     self.economia.auto_min = Some(min)
                 }
                 Some(config_interface::Mudanca::EconomiaAgora) => self.entrar_economia(),
+                Some(config_interface::Mudanca::EditarHud) => self.editor_hud.abrir(),
                 // TROCA NA HORA: o proximo quadro ja' desenha na lingua nova,
                 // porque a traducao acontece ao desenhar. Nada recarrega, nada
                 // reconecta — e o que estiver na tela muda junto.
@@ -6937,6 +6965,9 @@ impl Jogo {
                 }
                 None => {}
             }
+        }
+        if self.editor_hud.desenha() {
+            self.envia_layout_hud();
         }
         if self.config_combate.aberto {
             let (mut ordem, mut pvp) = (self.auto_combate.ordem.clone(), self.auto_combate.pvp);

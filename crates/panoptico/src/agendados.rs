@@ -264,3 +264,57 @@ mod testes {
         assert!(normaliza_horarios(&v(&["12h"])).is_err());
     }
 }
+
+// ─────────────── HUD layouts players use (`server::hud_layouts`) ───────────────
+
+/// Summary of `hud_layouts`: per platform and per element.
+pub async fn layouts_hud(State(st): State<Estado>) -> impl IntoResponse {
+    let existe: bool = sqlx::query_scalar("SELECT to_regclass('hud_layouts') IS NOT NULL")
+        .fetch_one(&*st.pool)
+        .await
+        .unwrap_or(false);
+    if !existe {
+        return resposta(true, serde_json::json!({ "plataformas": [], "itens": [], "recentes": [] }));
+    }
+    let plataformas: Vec<(String, i64, i64, f64, f64)> = sqlx::query_as(
+        "SELECT plataforma, COUNT(*), COUNT(*) FILTER (WHERE personalizado), \
+           COALESCE(AVG(botoes) FILTER (WHERE personalizado), 1)::float8, AVG(escala_ui)::float8 \
+         FROM hud_layouts GROUP BY plataforma ORDER BY 2 DESC",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let itens: Vec<(String, String, i64, Option<f64>, i64, Option<f64>, Option<f64>)> = sqlx::query_as(
+        "SELECT h.plataforma, i->>'id', \
+           COUNT(*) FILTER (WHERE (i->>'tamanho')::float8 <> 1), \
+           AVG((i->>'tamanho')::float8) FILTER (WHERE (i->>'tamanho')::float8 <> 1), \
+           COUNT(*) FILTER (WHERE jsonb_typeof(i->'centro') = 'array'), \
+           AVG((i->'centro'->>0)::float8), AVG((i->'centro'->>1)::float8) \
+         FROM hud_layouts h, jsonb_array_elements(h.itens) i \
+         GROUP BY 1, 2 ORDER BY 1, 3 + 5 DESC",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let recentes: Vec<(String, String, i32, i32, f64, bool, i64, String)> = sqlx::query_as(
+        "SELECT personagem, plataforma, tela_w, tela_h, botoes::float8, personalizado, \
+           jsonb_array_length(itens)::bigint, to_char(atualizado AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI') \
+         FROM hud_layouts ORDER BY atualizado DESC LIMIT 30",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    resposta(
+        true,
+        serde_json::json!({
+            "plataformas": plataformas.into_iter().map(|(p, n, pers, botoes, escala)| serde_json::json!({
+                "plataforma": p, "jogadores": n, "personalizados": pers, "botoes": botoes, "escala_ui": escala })).collect::<Vec<_>>(),
+            "itens": itens.into_iter().map(|(p, id, mudaram, tam, moveram, x, y)| serde_json::json!({
+                "plataforma": p, "id": id, "mudaram_tamanho": mudaram, "tamanho_medio": tam,
+                "moveram": moveram, "x": x, "y": y })).collect::<Vec<_>>(),
+            "recentes": recentes.into_iter().map(|(nome, p, w, h, botoes, pers, n, quando)| serde_json::json!({
+                "personagem": nome, "plataforma": p, "tela": format!("{w}×{h}"), "botoes": botoes,
+                "personalizado": pers, "itens": n, "quando": quando })).collect::<Vec<_>>(),
+        }),
+    )
+}

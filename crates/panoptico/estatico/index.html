@@ -142,6 +142,7 @@
     <button class="aba" data-aba="agendados">agendados</button>
     <button class="aba" data-aba="eventos">eventos</button>
     <button class="aba" data-aba="chat">chat</button>
+    <button class="aba" data-aba="hud">hud</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -412,6 +413,23 @@
   <div id="av-avaliar-resultado" class="nota"></div>
   <h2>Últimos avisos</h2>
   <div id="av-lista" class="nota"></div>
+</div>
+
+<!-- ─────────────────────────── layouts do HUD ─────────────────────────── -->
+<div class="aba-painel" id="aba-hud" hidden>
+  <h2>Layouts do HUD dos jogadores</h2>
+  <p class="nota">
+    O que cada jogador usa em Settings › Interface › Customize HUD (último layout
+    por conta e plataforma; chega no login e quando ele fecha o editor). Serve
+    para ajustar o layout padrão: elemento que muita gente aumenta ou move é
+    candidato a mudar no padrão. Posição média em % da tela (0,0 = canto de cima
+    à esquerda).
+  </p>
+  <div id="hud-plat" class="nota"></div>
+  <h2>Por elemento</h2>
+  <div id="hud-itens" class="nota"></div>
+  <h2>Últimos</h2>
+  <div id="hud-recentes" class="nota"></div>
 </div>
 
 <!-- ─────────────────────────── avisos agendados ─────────────────────────── -->
@@ -1893,6 +1911,24 @@ document.getElementById('ag-salvar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.agendados = agCarrega;
+
+// ── layouts do HUD ──
+async function hudCarrega() {
+  try {
+    const d = await (await fetch('api/hud', { cache: 'no-store' })).json();
+    if (!d.ok) { document.getElementById('hud-plat').textContent = 'falhou: ' + d.erro; return; }
+    const pct = v => v == null ? '—' : Math.round(v * 100) + '%';
+    document.getElementById('hud-plat').innerHTML = d.plataformas.length ? '<table><tr><th>plataforma</th><th>jogadores</th><th>personalizaram</th><th>"all buttons" médio</th><th>escala da interface</th></tr>' +
+      d.plataformas.map(p => `<tr><td>${esc(p.plataforma)}</td><td>${p.jogadores}</td><td>${p.personalizados} (${pct(p.personalizados / p.jogadores)})</td><td>${pct(p.botoes)}</td><td>${pct(p.escala_ui)}</td></tr>`).join('') + '</table>'
+      : 'nenhum registro ainda (chega quando um jogador entra com o cliente novo)';
+    document.getElementById('hud-itens').innerHTML = d.itens.length ? '<table><tr><th>plataforma</th><th>elemento</th><th>mudaram tamanho</th><th>tamanho médio</th><th>moveram</th><th>posição média</th></tr>' +
+      d.itens.map(i => `<tr><td>${esc(i.plataforma)}</td><td>${esc(i.id)}</td><td>${i.mudaram_tamanho}</td><td>${pct(i.tamanho_medio)}</td><td>${i.moveram}</td><td>${i.x == null ? '—' : pct(i.x) + ' , ' + pct(i.y)}</td></tr>`).join('') + '</table>'
+      : 'ninguém mudou nenhum elemento ainda';
+    document.getElementById('hud-recentes').innerHTML = d.recentes.length ? '<table><tr><th>quando</th><th>personagem</th><th>plataforma</th><th>tela</th><th>all buttons</th><th>elementos mudados</th></tr>' +
+      d.recentes.map(r => `<tr><td>${esc(r.quando)}</td><td>${esc(r.personagem)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.tela)}</td><td>${pct(r.botoes)}</td><td>${r.personalizado ? r.itens : 'padrão'}</td></tr>`).join('') + '</table>' : '';
+  } catch (e) { document.getElementById('hud-plat').textContent = 'falhou: ' + e; }
+}
+PUXA.hud = hudCarrega;
 
 // ── eventos de bônus ──
 let evOpcoes = null;

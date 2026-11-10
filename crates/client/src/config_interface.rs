@@ -29,6 +29,8 @@ pub enum Mudanca {
     /// O idioma da interface. Vale na hora e fica salvo no APARELHO — ver
     /// `lembranca::Prefs::idioma`.
     Idioma(shared::idioma::Idioma),
+    /// Open the HUD editor (`hud_editor`): move and resize every button.
+    EditarHud,
 }
 
 /// Em passos de 10%, dentro da faixa.
@@ -65,7 +67,7 @@ impl ConfigInterface {
         }
         // 482: size, battery saver and language. Shadows and anti-aliasing
         // moved to their own Graphics panel (`config_graficos`).
-        let conteudo_h = 482.0 * f;
+        let conteudo_h = 548.0 * f;
         let (w, h) = (
             (420.0 * f).min(seguro.w - 16.0),
             conteudo_h.min(seguro.h - 16.0),
@@ -242,6 +244,15 @@ impl ConfigInterface {
             11,
             estilo::SUAVE,
         );
+        let editar = Rect::new(r.x + 18.0 * f, yi + 86.0 * f, r.w - 36.0 * f, 46.0 * f);
+        estilo::cartao(editar, editar.toca(m), true);
+        estilo::texto_centro(
+            editar.center().x,
+            editar.center().y + 6.0 * f,
+            "Customize HUD (move and resize buttons)",
+            15,
+            estilo::OURO,
+        );
 
 
         estilo::texto(
@@ -255,6 +266,10 @@ impl ConfigInterface {
         self.rolagem.desenha(area, total);
         if toque.is_none() {
             return None;
+        }
+        if em(editar) {
+            self.fechar();
+            return Some(Mudanca::EditarHud);
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| em(*b)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));
@@ -424,8 +439,16 @@ impl ConfigInterface {
             12,
             estilo::SUAVE,
         );
+        let editar = Rect::new(rx, r.y + 140.0 * f, col, 52.0 * f);
+        estilo::cartao(editar, editar.toca(m), true);
+        estilo::texto_centro(editar.center().x, editar.center().y - 2.0 * f, "Customize HUD", 15, estilo::OURO);
+        estilo::texto_centro(editar.center().x, editar.center().y + 15.0 * f, "move and resize buttons", 11, estilo::SUAVE);
         if !clicou {
             return None;
+        }
+        if editar.toca(m) {
+            self.fechar();
+            return Some(Mudanca::EditarHud);
         }
         if let Some(&(_, lang)) = idiomas.iter().find(|(b, _)| b.toca(m)) {
             return (lang != atual_idioma).then_some(Mudanca::Idioma(lang));

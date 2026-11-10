@@ -8266,6 +8266,13 @@ impl GameWorld {
             ClientMessage::SalvarPreferencias { prefs } => {
                 self.handle_salvar_preferencias(id, prefs);
             }
+            ClientMessage::LayoutDoHud { layout } => {
+                if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
+                    if let Some(conta) = s.account_id {
+                        crate::hud_layouts::registrar(conta, s.name.clone(), layout);
+                    }
+                }
+            }
             ClientMessage::UpdateVisual { aparencia } => {
                 self.handle_update_visual(id, aparencia);
             }
