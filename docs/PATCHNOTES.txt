@@ -6,6 +6,7 @@ Nov 11, 2026 — Small improvements
 - The market updates instantly when something is listed, sold or cancelled, and a red dot shows when you have deliveries.
 - Chat: taps on a window over the chat no longer reach the chat, and on phones the chat moves to the top while you type so the keyboard does not cover it.
 - Official letters can have paragraphs.
+- New in Offers: rate Tempest on Google Play, post the screenshot on our Discord and get a gift in your Mail.
 
 Nov 10, 2026 — Chat, bonus events and egg summons
 
