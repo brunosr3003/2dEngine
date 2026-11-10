@@ -2255,6 +2255,11 @@ impl Jogo {
             ServerMessage::Ranking { ranking } => self.ranking.receber(ranking),
             ServerMessage::EventosAtivos { eventos } => self.eventos.receber(eventos),
             ServerMessage::PedirAvaliacao => self.avaliacao.pedir(),
+            ServerMessage::MercadoMudou { meu } => {
+                for pedido in self.mercado.mudou(meu, get_time()) {
+                    self.envia(pedido);
+                }
+            }
             ServerMessage::ChatGlobal { id, canal, para, de, texto, staff } => {
                 // In the box, and over the speaker's head when they are near
                 // (never a whisper: that one is private).
@@ -7373,6 +7378,9 @@ impl Jogo {
                 ("Darksteel", tem(shared::constants::item_id::DARKSTEEL)),
             ];
             let mut selos: Vec<menu::Item> = Vec::new();
+            if self.mercado.tem_entregas() {
+                selos.push(menu::Item::Mercado);
+            }
             if self.social.convite.is_some() {
                 selos.push(menu::Item::Grupo);
             }
@@ -7446,6 +7454,10 @@ impl Jogo {
         // window open, outside dungeons), then on top of everything.
         let calmo = !self.painel_grande() && self.mapa.zona() != Some("dungeon");
         self.avaliacao.passo(get_frame_time(), self.bolsa.nivel, calmo);
+        // The market keeps itself fresh (open tab, deliveries for the dots).
+        for pedido in self.mercado.passo(get_time()) {
+            self.envia(pedido);
+        }
         self.avaliacao.desenha();
         {
             let digitado = self.teclado.digitado().to_vec();

@@ -387,6 +387,14 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
     });
 }
 
+/// The market changed (`Notificacao::MercadoMudou`): tell every process.
+pub fn mercado_mudou(personagens: Vec<String>) {
+    let Some(pool) = POOL.get().cloned() else { return };
+    tokio::spawn(async move {
+        let _ = notificar(&pool, &Notificacao::MercadoMudou { personagens }).await;
+    });
+}
+
 /// A player reports a line (once per line per account).
 pub fn denunciar(msg_id: i64, conta: i64, nome: String) {
     let Some(pool) = POOL.get().cloned() else { return };

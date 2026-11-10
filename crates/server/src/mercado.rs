@@ -1148,6 +1148,21 @@ pub async fn enviar_saida(
             }
         };
         let r = processar(central, &op).await?;
+        if r.novo && r.ok {
+            // Instant: every process tells its players the market changed —
+            // the one who did it, and on a purchase the seller too.
+            let mut quem = vec![op.personagem().to_string()];
+            if let OpCentral::Comprar { anuncio, .. } = &op {
+                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>("SELECT personagem FROM mercado_anuncios WHERE id = $1")
+                    .bind(anuncio)
+                    .fetch_optional(central)
+                    .await
+                {
+                    quem.push(v);
+                }
+            }
+            crate::chat_global::mercado_mudou(quem);
+        }
         sqlx::query("UPDATE mercado_saida SET enviada = NOW(), resultado = $2 WHERE id = $1")
             .bind(&id)
             .bind(&r.texto)

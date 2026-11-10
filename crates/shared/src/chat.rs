@@ -361,6 +361,11 @@ pub enum Notificacao {
     /// A staff warning for one account.
     #[serde(rename = "aviso")]
     Aviso { conta: i64, texto: String },
+    /// The market changed (a listing in, a sale, a cancel): every process
+    /// tells its players with the market open to refresh, and the names here
+    /// (buyer, seller, who cancelled) to check their deliveries.
+    #[serde(rename = "mercado")]
+    MercadoMudou { personagens: Vec<String> },
     /// Staff asked everyone online to rate the game (Panopticon).
     #[serde(rename = "avaliacao")]
     PedirAvaliacao,

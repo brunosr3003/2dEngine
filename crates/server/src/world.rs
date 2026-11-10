@@ -23281,6 +23281,12 @@ impl GameWorld {
                     });
                 }
             }
+            N::MercadoMudou { personagens } => {
+                for s in self.sessions.values().filter(|s| s.logged_in) {
+                    let meu = personagens.iter().any(|p| p.eq_ignore_ascii_case(&s.name));
+                    let _ = s.handle.to_client.send(ServerMessage::MercadoMudou { meu });
+                }
+            }
             N::PedirAvaliacao => {
                 for s in self.sessions.values().filter(|s| s.logged_in) {
                     let _ = s.handle.to_client.send(ServerMessage::PedirAvaliacao);

@@ -120,7 +120,12 @@ impl GameWorld {
                 }
                 tokio::spawn(async move {
                     match mercado::cancelar(&central, &quem.realm, &quem.nome, &anuncio).await {
-                        Ok((ok, texto)) => responde(&quem.to_client, ok, texto),
+                        Ok((ok, texto)) => {
+                            if ok {
+                                crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
+                            }
+                            responde(&quem.to_client, ok, texto)
+                        }
                         Err(e) => {
                             tracing::warn!("mercado: cancelar falhou: {e:#}");
                             responde(&quem.to_client, false, Recusa::Indisponivel.texto());

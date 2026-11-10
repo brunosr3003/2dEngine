@@ -59,6 +59,13 @@ struct Compra {
 #[derive(Default)]
 pub struct Mercado {
     pub aberto: bool,
+    /// When to ask the server again by itself (owner, 10/11/2026: "the
+    /// market doesn't update by itself when something comes in or goes out,
+    /// nor the red dot of the deliveries"): the open tab every
+    /// `ATUALIZA_ABERTO_S`, the deliveries every `ATUALIZA_FECHADO_S` while closed.
+    proxima_atualizacao: f64,
+    /// Last refresh asked because of a server push (at most one per second).
+    ultimo_empurrao: f64,
     /// An item's magnifier asked for "Where to get" (main opens the popup).
     pub onde_obter: Option<u16>,
     /// Bound items (`ItemsConfig`): they do not show up to sell.
@@ -104,7 +111,52 @@ fn filtro_tp() -> FiltroNet {
     }
 }
 
+/// The open market refreshes its tab and the deliveries this often.
+const ATUALIZA_ABERTO_S: f64 = 30.0;
+/// Closed, only the deliveries (for the red dots), this often.
+const ATUALIZA_FECHADO_S: f64 = 60.0;
+
 impl Mercado {
+    /// `ServerMessage::MercadoMudou`, pushed the moment a listing comes in,
+    /// sells or is cancelled (owner: "can't it be websocket, to be instant?"):
+    /// refresh what is on screen now; `meu` also checks the deliveries.
+    /// The timed refresh below is only the safety net.
+    pub fn mudou(&mut self, meu: bool, agora: f64) -> Vec<ClientMessage> {
+        if !self.aberto && !meu {
+            return Vec::new();
+        }
+        if agora - self.ultimo_empurrao < 1.0 {
+            self.proxima_atualizacao = self.proxima_atualizacao.min(agora + 1.0);
+            return Vec::new();
+        }
+        self.ultimo_empurrao = agora;
+        self.proxima_atualizacao = f64::MIN;
+        self.passo(agora)
+    }
+
+    /// Once per frame in the world: the safety-net refresh.
+    pub fn passo(&mut self, agora: f64) -> Vec<ClientMessage> {
+        if agora < self.proxima_atualizacao {
+            return Vec::new();
+        }
+        if self.aberto {
+            self.proxima_atualizacao = agora + ATUALIZA_ABERTO_S;
+            let mut v = self.pedidos_da_aba();
+            if self.aba != Aba::Entregas {
+                v.push(ClientMessage::MercadoEntregas);
+            }
+            v
+        } else {
+            self.proxima_atualizacao = agora + ATUALIZA_FECHADO_S;
+            vec![ClientMessage::MercadoEntregas]
+        }
+    }
+
+    /// Something waits in the market's Deliveries (the Menu's red dot).
+    pub fn tem_entregas(&self) -> bool {
+        !self.cartas.is_empty()
+    }
+
     /// Opens on the Buy tab and returns what to ask the server.
     pub fn abrir(&mut self) -> Vec<ClientMessage> {
         self.aberto = true;
@@ -224,8 +276,13 @@ impl Mercado {
     /// Resposta de um pedido: mostra e atualiza a aba aberta.
     pub fn resultado(&mut self, ok: bool, texto: String, agora: f64) -> Vec<ClientMessage> {
         self.aviso = Some((texto, ok, agora));
-        if !self.aberto || !ok {
+        if !ok {
             return Vec::new();
+        }
+        // Closed: a sale closing (your item was bought) leaves a delivery —
+        // ask for the deliveries so the red dot shows without opening.
+        if !self.aberto {
+            return vec![ClientMessage::MercadoEntregas];
         }
         let mut v = self.pedidos_da_aba();
         if self.aba != Aba::Entregas {

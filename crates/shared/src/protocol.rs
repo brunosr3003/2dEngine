@@ -1321,6 +1321,11 @@ pub enum ServerMessage {
     /// The staff asks for a store rating now (Panopticon): the client shows
     /// its "Rate Tempest" card at the next calm moment, if it still may.
     PedirAvaliacao,
+    /// The market changed: refresh what is open; `meu` = this character was
+    /// part of it (bought, sold, cancelled) — check the deliveries too.
+    MercadoMudou {
+        meu: bool,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.
