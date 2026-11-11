@@ -1,4 +1,4 @@
-Nov 11, 2026 — Small improvements
+Nov 11, 2026 — Custom HUD, live market and fixes
 
 - The game notices a new version while you are on the login screen.
 - The team can now invite everyone to rate Tempest on Google Play.
