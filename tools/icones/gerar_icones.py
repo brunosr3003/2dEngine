@@ -303,6 +303,38 @@ def pergaminho(s):
     s.brilho(20, 22, 3, 6, 0.35, 20)
 
 
+def caixa_de_chaves(s):
+    """Pergaminho de Invocar Chave (owner, 11/11/2026): an OPEN chest with a
+    few craft keys peeking out (scale, claws, horn) in different colors,
+    under the blue summon glow."""
+    s.halo(32, 30, 30, (90, 170, 255), 0.45)
+    madeira = (150, 98, 52)
+    # Lid, open and leaning back.
+    s.peca("M12,30L16,12L48,12L52,30Z", mul(madeira, 0.82), contorno=2.2)
+    s.traco(linha((14, 21), (50, 21)), mul(madeira, 0.6), 1.2, contorno=False, sombra=False)
+    # The keys inside, peeking over the rim.
+    escama = mix((70, 150, 150), TIER[3], 0.5)
+    s.peca("M21,40C15,35 13,30 13,26C13,21 17,18 21,18C25,18 29,21 29,26C29,30 27,35 21,40Z", escama, contorno=2.0)
+    s.traco(linha((21, 21), (21, 37)), mul(escama, 0.62), 1.2, contorno=False, sombra=False)
+    for dx in (0, 5):
+        d = "M%s,40C%s,32 %s,24 %s,16C%s,24 %s,32 %s,40Z" % (
+            f(31 + dx), f(31 + dx), f(33 + dx), f(37 + dx), f(36 + dx), f(35 + dx), f(34 + dx))
+        s.peca(d, mix((232, 222, 196), TIER[4], 0.25), contorno=1.6)
+    chifre = mix((224, 206, 172), TIER[2], 0.35)
+    s.traco("M45,40C44,32 46,25 52,19", chifre, 6.0)
+    s.traco("M45,40C44,32 46,25 52,19", mul(chifre, 0.7), 1.0, contorno=False, sombra=False, op=0.6)
+    # Box front, metal bands and lock.
+    s.peca(rrect(9, 32, 46, 24, 3), madeira, contorno=2.4)
+    for x in (16, 48):
+        s.peca(rrect(x - 2.5, 32, 5, 24, 1), ACO, contorno=1.2, sombra=False)
+    s.traco(linha((9, 44), (55, 44)), mul(madeira, 0.62), 1.2, contorno=False, sombra=False)
+    s.peca(rrect(28, 38, 8, 9, 2), OURO, contorno=1.4, sombra=False)
+    s.chapado(circ(32, 42, 1.4), (70, 46, 20))
+    s.faisca(50, 12, 5, (220, 236, 255))
+    s.faisca(10, 20, 3.2, (220, 236, 255))
+    s.brilho(18, 36, 3, 1.6, 0.5, -20)
+
+
 # ─────────────────────────────── madeira, peixe, barco ───────────────────────────────
 
 
@@ -795,6 +827,8 @@ def catalogo():
         358: lambda s: (s.halo(32, 32, 30, (170, 120, 255), 0.5), moeda(s, 32, 32, 22, (140, 96, 220)), s.faisca(44, 18, 6, (230, 210, 255))),
         # Pergaminho de Teleporte (Alquimista, em cobre).
         359: pergaminho,
+        # Pergaminho de Invocar Chave: open chest with craft keys.
+        360: caixa_de_chaves,
         60: lambda s: madeira(s, 1),
         61: lambda s: madeira(s, 2),
         62: lambda s: madeira(s, 3),

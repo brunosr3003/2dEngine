@@ -67,6 +67,13 @@ pub fn icone_pergaminho(c: Vec2, lado: f32, selo: Color) {
 /// Varies the seal by content: a key, a mount's head or an open book.
 pub fn icone_pergaminho_de(item_id: u16, c: Vec2, lado: f32) {
     use shared::item_id as it;
+    // The key summon has an illustrated icon in the item atlas: an open chest
+    // with craft keys (owner, 11/11/2026).
+    if item_id == it::PERGAMINHO_INVOCA_CHAVE
+        && crate::icones::desenha(item_id, Rect::new(c.x - lado * 0.5, c.y - lado * 0.5, lado, lado), 1.0)
+    {
+        return;
+    }
     match item_id {
         it::PERGAMINHO_INVOCA_MONTARIA => return icone_ovo(c, lado, OVO_MONTARIA),
         it::PERGAMINHO_INVOCA_PET => return icone_ovo(c, lado, OVO_PET),
