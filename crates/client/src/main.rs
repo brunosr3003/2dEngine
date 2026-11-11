@@ -1986,7 +1986,14 @@ impl Jogo {
                 self.auto_combate.sem_visada(alvo, agora);
             }
             ServerMessage::Pong { client_time_ms, .. } => {
-                let rtt = agora_ms().saturating_sub(client_time_ms) as f32;
+                // Timed on arrival by the network thread (`net::ULTIMO_RTT_MS`);
+                // computing it here added the frame the message waited for.
+                let medido = net::ULTIMO_RTT_MS.load(std::sync::atomic::Ordering::Relaxed);
+                let rtt = if medido > 0 {
+                    medido as f32
+                } else {
+                    net::relogio_ms().saturating_sub(client_time_ms) as f32
+                };
                 // Media movel: o numero cru pula demais pra ser lido de
                 // relance, e o que interessa e' a tendencia.
                 self.rede.ms = if self.rede.ms <= 0.0 {
@@ -5718,7 +5725,7 @@ impl Jogo {
         if agora - self.ultimo_ping >= 1.0 {
             self.ultimo_ping = agora;
             self.envia(ClientMessage::Ping {
-                client_time_ms: agora_ms(),
+                client_time_ms: net::relogio_ms(),
             });
         }
         // Every 30 s the server logs what the player sees (`server::latencia`):

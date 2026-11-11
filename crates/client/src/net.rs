@@ -158,9 +158,25 @@ fn pump(
     }
 }
 
+/// A clock both threads read (ms since the first call). The `Ping` carries
+/// it and the `Pong` is timed HERE, on arrival — not on the next frame: the
+/// on-screen ping is the network's, not the network's plus a frame or two
+/// (owner, 11/11/2026: "I'm in Minas and my ping sits at 70-90 ms").
+pub fn relogio_ms() -> u64 {
+    static INICIO: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    INICIO.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
+/// The last round trip, timed when the `Pong` arrived (0 = none yet).
+pub static ULTIMO_RTT_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 fn forward(tx_in: &Sender<NetEvent>, bytes: &[u8]) {
     match shared::protocol::decode::<ServerMessage>(bytes) {
         Ok(sm) => {
+            if let ServerMessage::Pong { client_time_ms, .. } = &sm {
+                let rtt = relogio_ms().saturating_sub(*client_time_ms).min(u32::MAX as u64) as u32;
+                ULTIMO_RTT_MS.store(rtt.max(1), Ordering::Relaxed);
+            }
             let _ = tx_in.send(NetEvent::Message(Box::new(sm)));
         }
         // An unknown message does not drop the session: the server may have

@@ -19,6 +19,8 @@ Everything is committed on the release branch; the builds wait for brunjilinux
   character by exact name; account list prunes characters gone from the DB.
 - Latency log (`server::latencia`, table `latencias`, Panopticon tab "rede"): network RTT measured by the
   server (WebSocket ping), the ping the player sees, FPS, platform and real IP (nginx `X-Real-IP`).
+- Honest on-screen ping: the server answers `Ping` in the connection task (no 30 Hz tick wait) and the
+  client times the `Pong` on arrival in the network thread (no frame wait).
 - Protocol 197.
 
 ## Order (as always)

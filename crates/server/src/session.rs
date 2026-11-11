@@ -80,6 +80,23 @@ pub async fn handle_connection(
                     }
                     Some(Ok(msg)) => match msg {
                         Message::Binary(b) => match { banda.recebeu(b.len()); shared::protocol::decode::<ClientMessage>(&b) } {
+                            // PING answered right here, not on the next world
+                            // tick (up to 33 ms at 30 Hz): the on-screen ping
+                            // is the network's.
+                            Ok(ClientMessage::Ping { client_time_ms }) => {
+                                let pong = ServerMessage::Pong {
+                                    client_time_ms,
+                                    server_time_ms: std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map_or(0, |d| d.as_millis() as u64),
+                                };
+                                if let Ok(bytes) = shared::protocol::encode(&pong) {
+                                    banda.enviou(bytes.len());
+                                    if ws.send(Message::Binary(bytes)).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
                             Ok(cm) => { if to_world.send(IncomingMessage::Message(session_id, cm)).is_err() { break; } }
                             Err(e) => tracing::warn!("decode binary from {peer}: {e}"),
                         },
