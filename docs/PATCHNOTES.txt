@@ -1,4 +1,4 @@
-Nov 12, 2026 — Economy update: buy orders, rarer resources and keys
+Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 
 - New in the Market: Buy orders. Post what you want to buy (item, amount and price each); the gold is held and other players can sell to your order. Cancel any time to get the rest of the gold back.
 - Craft resources are rarer and worth trading: Darksteel now comes only from rocks (plus daily rewards and the shop), and monsters drop craft materials less often. Rocks give the same as before.
