@@ -10,6 +10,7 @@ Nov 12, 2026 — Economy update: buy orders, rarer resources and keys
 - Caverns are gone: dungeons are the Porão ones, which cost a key and have no daily limit.
 - New in the Bag: Help tab. See your attack, defense and health against what is expected at your level, which pieces hold you back, and where to hunt and which dungeon to run.
 - Server list: shows how full each server is (green, yellow, red) instead of the player count.
+- The game now measures connection quality (ping and frame rate) so we can find and fix lag faster.
 - Fixed: after a dungeon you could come back as another character of your account.
 - Character names that differ only in capital letters are no longer allowed.
 
