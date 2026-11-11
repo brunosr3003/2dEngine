@@ -5,6 +5,7 @@ Nov 11, 2026 — Small improvements
 - Dungeon auto play now walks to the next enemy instead of a wrong spot.
 - The market updates instantly: what you buy leaves the list at once and the Deliveries dot lights up right away.
 - Chat: taps on a window over the chat no longer reach the chat, and on phones the chat moves to the top while you type so the keyboard does not cover it.
+- Chat: you can now unmute players. Open the chat and tap Muted to see who you muted and unmute them.
 - Official letters can have paragraphs.
 - New in Offers: rate Tempest on Google Play, post the screenshot on our Discord and get a gift in your Mail.
 - New: customize your HUD in Settings › Interface › Customize HUD. Drag any button, the joystick, the quest panel or the minimap anywhere, make each one bigger or smaller, or resize all buttons at once. Saved on your device.

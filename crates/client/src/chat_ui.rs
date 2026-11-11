@@ -61,6 +61,8 @@ pub struct ChatUi {
     modo_sussurro: Option<u8>,
     /// The setting changed: the caller sends `ModoSussurro`.
     pub modo_mudou: bool,
+    /// The panel shows the muted players (with Unmute) instead of the talk.
+    vendo_silenciados: bool,
 }
 
 /// The box's parts, from its rectangle.
@@ -189,6 +191,7 @@ impl ChatUi {
         self.aberto = false;
         self.foco = false;
         self.selecionada = None;
+        self.vendo_silenciados = false;
     }
 
     fn guarda(&mut self, l: Linha) {
@@ -492,6 +495,62 @@ impl ChatUi {
         if clicou && modo_r.toca(m) {
             self.troca_modo_sussurro();
         }
+        // Who I muted, and the way back (owner, 10/11/2026: "make a way to
+        // unmute in the game" — muting had no undo).
+        let n_silenciados = self.silenciados().len();
+        let silenciados_r = r(BASE_W - 450.0, 12.0, 150.0, 42.0);
+        estilo::botao(
+            silenciados_r,
+            &format!("Muted ({n_silenciados})"),
+            estilo::estado_de(silenciados_r, false, self.vendo_silenciados),
+            false,
+        );
+        if clicou && silenciados_r.toca(m) {
+            self.vendo_silenciados = !self.vendo_silenciados;
+            self.selecionada = None;
+            return saida;
+        }
+        if self.vendo_silenciados {
+            let area = r(16.0, 70.0, BASE_W - 32.0, 282.0);
+            draw_rectangle(area.x, area.y, area.w, area.h, Color::new(0.0, 0.0, 0.0, 0.25));
+            let mut nomes: Vec<String> = self.silenciados().iter().cloned().collect();
+            nomes.sort();
+            if nomes.is_empty() {
+                estilo::texto_centro(area.center().x, area.center().y, "You have not muted anyone.", 15, estilo::SUAVE);
+            }
+            let passo = 52.0 * k;
+            let por_coluna = ((area.h - 8.0 * k) / passo).floor().max(1.0) as usize;
+            let col_w = (area.w - 24.0 * k) / 2.0;
+            let mut tirar = None;
+            for (i, nome) in nomes.iter().enumerate().take(por_coluna * 2) {
+                let (c, l) = (i / por_coluna, i % por_coluna);
+                let x = area.x + 8.0 * k + c as f32 * (col_w + 8.0 * k);
+                let y = area.y + 8.0 * k + l as f32 * passo;
+                estilo::texto_ajustado(nome, x + 6.0 * k, y + 30.0 * k, col_w - 150.0 * k, 15, estilo::TEXTO);
+                let b = Rect::new(x + col_w - 136.0 * k, y + 2.0 * k, 130.0 * k, 42.0 * k);
+                estilo::botao(b, "Unmute", estilo::estado_de(b, false, false), false);
+                if clicou && b.toca(m) {
+                    tirar = Some(nome.clone());
+                }
+            }
+            if nomes.len() > por_coluna * 2 {
+                estilo::texto(area.x + 8.0 * k, area.y + area.h - 6.0 * k,
+                    &format!("and {} more: unmute some to see the rest", nomes.len() - por_coluna * 2), 12, estilo::SUAVE);
+            }
+            if let Some(nome) = tirar {
+                self.silenciados().remove(&nome);
+                self.grava_silenciados();
+                self.sistema(format!("You unmuted {nome}. You will see their new messages."));
+            }
+            estilo::texto(p.x + 22.0 * k, p.y + 394.0 * k,
+                "Muted players: only you stop seeing them, on this device.", 13, estilo::SUAVE);
+            let voltar = r(740.0, 364.0, 144.0, 46.0);
+            estilo::botao(voltar, "Back", estilo::estado_de(voltar, false, false), true);
+            if clicou && voltar.toca(m) {
+                self.vendo_silenciados = false;
+            }
+            return saida;
+        }
 
         // ── the conversation ──
         let area = r(16.0, 70.0, BASE_W - 32.0, 282.0);
@@ -656,7 +715,11 @@ pub async fn previa() {
     {
         ui.receber(i as i64 + 1, (i % 4) as u8, if i % 4 == 3 { "Navegante".into() } else { String::new() }, de.to_string(), t.to_string(), *staff);
     }
-    for (arquivo, aberto) in [("caixa.png", false), ("caixa-ativa.png", false), ("painel.png", true)] {
+    for (arquivo, aberto) in [("caixa.png", false), ("caixa-ativa.png", false), ("painel.png", true), ("silenciados.png", true)] {
+        if arquivo == "silenciados.png" {
+            ui.silenciados = Some(["kael", "trollzinho", "spammer99"].iter().map(|s| s.to_string()).collect());
+            ui.vendo_silenciados = true;
+        }
         if arquivo == "caixa-ativa.png" {
             ui.focar();
             ui.texto = "see you at the docks".into();
