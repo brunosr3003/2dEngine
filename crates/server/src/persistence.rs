@@ -4298,7 +4298,9 @@ pub async fn create_character(
         .unwrap_or(0);
     let base = shared::base_player_stats();
     // Insert character row. ON CONFLICT(name) DO NOTHING + check rows_affected
-    // pra detectar nome duplicado.
+    // pra detectar nome duplicado — and a name that differs from an existing
+    // one only in case is taken too (owner, 11/11/2026: "F1CARP" and "F1Carp"
+    // on the same account got swapped coming back from a dungeon).
     // A ZONA vai no INSERT, e nao fica NULL.
     //
     // Sem ela o personagem nascia ONDE O CLIENTE POR ACASO ESTAVA conectado:
@@ -4314,7 +4316,8 @@ pub async fn create_character(
          (name, x, y, hp, max_hp, xp, fame, aura, unspent_points, allocated_points,
           skill_points_earned, skill_points_spent,
           account_id, visual_json, starting_weapon, faction, updated, zona)
-         VALUES ($1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11, $12)
+         SELECT $1, $2, $3, $4, $5, 0, 0, 0, 0, $6, 1, 0, $7, $8, $9, $10, $11, $12
+         WHERE NOT EXISTS (SELECT 1 FROM characters WHERE lower(name) = lower($1))
          ON CONFLICT(name) DO NOTHING",
     )
     .bind(name)
