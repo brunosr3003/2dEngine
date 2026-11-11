@@ -23,6 +23,7 @@ mod bicho;
 mod billing_android;
 mod bolsa;
 mod colecao;
+mod combinar_anim;
 mod craft_ui;
 mod dungeon_ui;
 mod dungeon_cenario;
@@ -831,6 +832,11 @@ async fn main() {
     #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
     if std::env::var("MMO_PREVIA_FORJA").is_ok() {
         forja_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_COMBINAR").is_ok() {
+        craft_ui::previa_combinar().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -2497,6 +2503,7 @@ impl Jogo {
                         oficina_ui::texto_do_resultado(tentativas, sucessos, &saida, &texto)
                     };
                 self.craft.resultado(ok, txt.clone(), get_time());
+                self.craft.combinou(entrada, tentativas, sucessos, get_time());
                 self.chat.push(txt);
             }
             ServerMessage::RefinoResultado {

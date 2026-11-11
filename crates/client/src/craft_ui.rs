@@ -151,6 +151,10 @@ pub struct Craft {
     oficina: crate::oficina_ui::Oficina,
     /// Aberto pela entrada COMBINAR do menu: sem as abas de categoria.
     so_combinar: bool,
+    /// The combine result playing over the panel (`combinar_anim`).
+    combinando: Option<crate::combinar_anim::Animacao>,
+    /// The bag's outputs when Combine was pressed (to show what came out).
+    antes_de_combinar: Option<crate::combinar_anim::Antes>,
 }
 
 impl Craft {
@@ -321,6 +325,27 @@ impl Craft {
         self.aviso = Some((texto, ok, agora));
     }
 
+    /// `CombinarResultado`: plays the combine animation over the panel (only
+    /// when the panel is open and something was actually tried). Call it
+    /// BEFORE the new `GarantiasDeCombinar` is applied — the server sends the
+    /// result first, so the counter here is still the one from before.
+    pub fn combinou(&mut self, entrada: u16, tentativas: u16, sucessos: u16, agora: f64) {
+        let antes = self.antes_de_combinar.take();
+        if !self.aberto || tentativas == 0 {
+            return;
+        }
+        let Some(r) = shared::combinar::receita(entrada) else {
+            return;
+        };
+        let faltam = crate::oficina_ui::faltam_garantia(&r);
+        let a = crate::combinar_anim::Animacao::nova(r, tentativas, sucessos, faltam, antes, agora);
+        // The bottom line shows up once the stage is gone.
+        if let Some(av) = &mut self.aviso {
+            av.2 = agora + a.duracao() as f64;
+        }
+        self.combinando = Some(a);
+    }
+
     /// A escala do painel (no celular ele enche a tela; ver
     /// `hud_estilo::escala_do_painel`).
     fn escala() -> f32 {
@@ -369,9 +394,50 @@ impl Craft {
         if !self.aberto {
             return None;
         }
+        if self.combinando.as_ref().is_some_and(|a| a.acabou(agora)) {
+            self.combinando = None;
+        }
         estilo::no_painel(Self::escala(), || {
-            self.desenha_na_escala(slots, nomes, nivel, agora, palco)
+            // While the combine plays, the panel's body is not drawn (nothing
+            // under the stage takes the tap); it comes back as it fades.
+            let tapado = self.combinando.as_ref().is_some_and(|a| !a.saindo(agora));
+            let pedido = if tapado {
+                self.moldura()
+            } else {
+                self.desenha_na_escala(slots, nomes, nivel, agora, palco)
+            };
+            if let Some(a) = &mut self.combinando {
+                a.desenha(Self::palco_da_animacao(), slots, nomes, agora, palco);
+            }
+            if let Some(ClientMessage::Combinar { entrada, .. }) = &pedido {
+                self.antes_de_combinar = shared::combinar::receita(*entrada)
+                    .map(|r| crate::combinar_anim::Antes::de(&r, slots));
+            }
+            pedido
         })
+    }
+
+    /// The panel's inside, below the title: where the combine plays.
+    fn palco_da_animacao() -> Rect {
+        let p = Self::painel();
+        Rect::new(p.x + u(10.0), p.y + u(46.0), p.w - u(20.0), p.h - u(56.0))
+    }
+
+    /// Frame, title and close button only (under the combine stage).
+    fn moldura(&mut self) -> Option<ClientMessage> {
+        let p = Self::painel();
+        estilo::painel(p);
+        let titulo = if self.so_combinar { "Combine" } else { "Craft" };
+        estilo::texto(p.x + u(18.0), p.y + u(32.0), titulo, 22, estilo::OURO);
+        if crate::ui::botao(
+            Rect::new(p.x + p.w - u(44.0), p.y + u(10.0), u(32.0), u(28.0)),
+            "x",
+            true,
+        ) {
+            self.aberto = false;
+            self.combinando = None;
+        }
+        None
     }
 
     fn desenha_na_escala(
@@ -747,6 +813,105 @@ pub async fn previa() {
             next_frame().await;
         }
     }
+}
+
+/// `MMO_PREVIA_COMBINAR=1`: frames of the combine animation (success, a
+/// batch with the guarantee, fail, material synthesis) at a PC size and a
+/// phone-landscape size, into `MMO_PREVIA_SAIDA` (default
+/// /tmp/tempest-combinar). The phone pass uses the phone's panel scale (0.8,
+/// what `escala_do_painel` gives a 926×428 screen).
+#[cfg(debug_assertions)]
+pub async fn previa_combinar() {
+    use crate::combinar_anim::{Animacao, Antes};
+    use shared::item_id as it;
+    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-combinar".into());
+    std::fs::create_dir_all(&saida).unwrap();
+    let mat = |id: u16, qty: u32| InventorySlot { item_id: id, qty, instance: None };
+    let chave = |b: u16, c: u8| it::chave_na_cor(b, c);
+    let base = vec![
+        mat(chave(it::HORN, 2), 37),
+        mat(it::na_cor(it::STEEL, 1), 120),
+        mat(it::COPPER, 250_000),
+        mat(it::DARKSTEEL, 30_000),
+        mat(it::GLITTERING_POWDER, 40),
+    ];
+    let mut nomes = HashMap::new();
+    for (b, n) in [(it::SCALE, "Scale"), (it::CLAW, "Claw"), (it::HORN, "Horn"), (it::HIDE, "Hide")] {
+        for (c, cor) in [(1, ""), (2, "Green "), (3, "Blue "), (4, "Purple "), (5, "Legendary ")] {
+            nomes.insert(chave(b, c), format!("{cor}{n}"));
+        }
+    }
+    nomes.insert(it::na_cor(it::STEEL, 1), "Steel".into());
+    nomes.insert(it::na_cor(it::STEEL, 2), "Green Steel".into());
+    nomes.insert(it::COPPER, "Copper".into());
+    nomes.insert(it::DARKSTEEL, "Darksteel".into());
+    nomes.insert(it::GLITTERING_POWDER, "Shimmering Dust".into());
+    let horn = shared::combinar::receita(chave(it::HORN, 2)).unwrap();
+    let aco = shared::combinar::receita(it::na_cor(it::STEEL, 1)).unwrap();
+    // (name, recipe, attempts, successes, attempts-to-guarantee before, what lands in the bag)
+    let cenas: Vec<(&str, shared::combinar::ReceitaDeCombinar, u16, u16, Option<u16>, Vec<(u16, u32)>)> = vec![
+        ("sucesso", horn, 1, 1, Some(14), vec![(chave(it::CLAW, 3), 1)]),
+        ("lote", horn, 7, 2, Some(3), vec![(chave(it::SCALE, 3), 1), (chave(it::HORN, 3), 1)]),
+        ("falha", horn, 1, 0, Some(9), vec![]),
+        ("falha-lote", horn, 7, 0, Some(20), vec![]),
+        ("sintese", aco, 1, 1, None, vec![(it::na_cor(it::STEEL, 2), 1)]),
+    ];
+    let fracoes = [0.04, 0.18, 0.32, 0.42, 0.50, 0.62, 0.80, 0.97];
+    for (w, h, esc, tam) in [(1280.0, 720.0, 1.2, "pc"), (926.0, 428.0, 0.8, "cel")] {
+        request_new_screen_size(w, h);
+        // The window takes a few frames to settle (and the panel centres on it).
+        for _ in 0..240 {
+            next_frame().await;
+            if (screen_width() - w).abs() < 1.0 && (screen_height() - h).abs() < 1.0 {
+                break;
+            }
+        }
+        // macOS can hand back a shorter window (title bar): ask for the difference once.
+        if (screen_height() - h).abs() >= 1.0 {
+            request_new_screen_size(w, h + (h - screen_height()));
+            for _ in 0..120 {
+                next_frame().await;
+                if (screen_height() - h).abs() < 1.0 {
+                    break;
+                }
+            }
+        }
+        for _ in 0..3 {
+            next_frame().await;
+        }
+        eprintln!("combinar preview: {tam} at {}x{}", screen_width(), screen_height());
+        crate::hud_layout::define_escala_ui(esc);
+        let rt = render_target(screen_width() as u32, screen_height() as u32);
+        crate::render3d::define_alvo(Some(rt.clone()));
+        for (nome, r, tent, suc, faltam, ganho) in &cenas {
+            let antes = Antes::de(r, &base);
+            let mut depois = base.clone();
+            for &(id, q) in ganho {
+                depois.push(mat(id, q));
+            }
+            let dur = Animacao::nova(*r, *tent, *suc, *faltam, None, 0.0).duracao();
+            for f in fracoes {
+                let mut c = Craft::default();
+                c.abrir_combinacao_do_item(r.entrada);
+                if r.chance == 100 {
+                    c.abrir_material(r.entrada);
+                }
+                let agora = 100.0;
+                c.combinando = Some(Animacao::nova(*r, *tent, *suc, *faltam, Some(antes.clone()), agora - (dur * f) as f64));
+                for _ in 0..2 {
+                    crate::render3d::camera_padrao();
+                    clear_background(Color::new(0.08, 0.12, 0.16, 1.0));
+                    c.desenha(&depois, &nomes, 30, agora, None);
+                    unsafe { get_internal_gl().flush() };
+                    rt.texture
+                        .get_texture_data()
+                        .export_png(&format!("{saida}/{tam}-{nome}-{:02}.png", (f * 100.0).round() as u32));
+                    next_frame().await;
+                }
+            }
+        }
+    }
+    eprintln!("combinar preview: written to {saida}");
 }
 
 #[cfg(test)]

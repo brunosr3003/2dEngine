@@ -11,6 +11,8 @@ Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 - Dungeons: if your connection drops, you have 90 seconds to reconnect and get back into the same run.
 - New in the Bag: Help tab. See your attack, defense and health against what is expected at your level, which pieces hold you back, and where to hunt and which dungeon to run.
 - Server list: shows how full each server is (green, yellow, red) instead of the player count.
+- New icon for the Key Summon Scroll.
+- New Combine animation: your items gather into an orb and reveal the result (tap to skip).
 - The ping shown in game is now your real connection ping (it used to add the server tick and a frame, so it showed higher than it was).
 - The game now measures connection quality (ping and frame rate) so we can find and fix lag faster.
 - Fixed: after a dungeon you could come back as another character of your account.
