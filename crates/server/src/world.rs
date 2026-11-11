@@ -8279,6 +8279,19 @@ impl GameWorld {
             ClientMessage::SalvarPreferencias { prefs } => {
                 self.handle_salvar_preferencias(id, prefs);
             }
+            ClientMessage::Latencia { ms, fps, plataforma } => {
+                if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
+                    crate::latencia::registrar(
+                        id.0,
+                        s.account_id,
+                        s.name.clone(),
+                        crate::telemetria::canal(),
+                        plataforma,
+                        ms as u32,
+                        fps as u32,
+                    );
+                }
+            }
             ClientMessage::LayoutDoHud { layout } => {
                 if let Some(s) = self.sessions.get(&id).filter(|s| s.logged_in) {
                     if let Some(conta) = s.account_id {

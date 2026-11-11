@@ -143,6 +143,7 @@
     <button class="aba" data-aba="eventos">eventos</button>
     <button class="aba" data-aba="chat">chat</button>
     <button class="aba" data-aba="hud">hud</button>
+    <button class="aba" data-aba="rede">rede</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -413,6 +414,22 @@
   <div id="av-avaliar-resultado" class="nota"></div>
   <h2>Últimos avisos</h2>
   <div id="av-lista" class="nota"></div>
+</div>
+
+<!-- ─────────────────────────── latência dos jogadores ─────────────────────────── -->
+<div class="aba-painel" id="aba-rede" hidden>
+  <h2>Latência dos jogadores</h2>
+  <p class="nota">
+    <b>rede</b> = ida e volta medida pelo servidor (ping do WebSocket, só a
+    internet). <b>jogo</b> = o ping que o jogador vê (inclui os quadros do
+    aparelho). <b>fps</b> = quadros por segundo do aparelho. Jogo alto com rede
+    baixa e fps baixo = aparelho lento, não a internet. Amostra "ruim": rede ≥
+    250 ms, jogo ≥ 300 ms ou fps &lt; 20. O IP é o real (via nginx).
+  </p>
+  <h2>Últimas 24 h, por personagem</h2>
+  <div id="rede-resumo" class="nota"></div>
+  <h2>Amostras ruins (mais recentes)</h2>
+  <div id="rede-ruins" class="nota"></div>
 </div>
 
 <!-- ─────────────────────────── layouts do HUD ─────────────────────────── -->
@@ -1929,6 +1946,20 @@ async function hudCarrega() {
   } catch (e) { document.getElementById('hud-plat').textContent = 'falhou: ' + e; }
 }
 PUXA.hud = hudCarrega;
+
+// ── latência ──
+async function redeCarrega() {
+  try {
+    const d = await (await fetch('api/latencias', { cache: 'no-store' })).json();
+    const ms = v => v == null ? '—' : Math.round(v) + ' ms';
+    document.getElementById('rede-resumo').innerHTML = d.resumo.length ? '<table><tr><th>personagem</th><th>plataforma</th><th>IP</th><th>amostras</th><th>rede média / pior</th><th>jogo médio / pior</th><th>fps mínimo</th><th>ruins</th></tr>' +
+      d.resumo.map(r => `<tr><td>${esc(r.personagem)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.ip)}</td><td>${r.amostras}</td><td>${ms(r.rede_media)} / ${ms(r.rede_max)}</td><td>${ms(r.jogo_media)} / ${ms(r.jogo_max)}</td><td>${r.fps_min ?? '—'}</td><td>${r.ruins}</td></tr>`).join('') + '</table>'
+      : 'nenhuma amostra ainda (chega com o cliente novo, a cada 30 s de jogo)';
+    document.getElementById('rede-ruins').innerHTML = d.ruins.length ? '<table><tr><th>quando</th><th>personagem</th><th>canal</th><th>IP</th><th>plataforma</th><th>rede</th><th>jogo</th><th>fps</th></tr>' +
+      d.ruins.map(r => `<tr><td>${esc(r.quando)}</td><td>${esc(r.personagem)}</td><td>${esc(r.canal)}</td><td>${esc(r.ip)}</td><td>${esc(r.plataforma)}</td><td>${ms(r.rede_ms)}</td><td>${ms(r.jogo_ms)}</td><td>${r.fps}</td></tr>`).join('') + '</table>' : 'nenhuma';
+  } catch (e) { document.getElementById('rede-resumo').textContent = 'falhou: ' + e; }
+}
+PUXA.rede = redeCarrega;
 
 // ── eventos de bônus ──
 let evOpcoes = null;

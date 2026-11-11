@@ -17,6 +17,8 @@ Everything is committed on the release branch; the builds wait for brunjilinux
 - Server list shows fullness color instead of player count.
 - Character fixes: case-insensitive unique names at creation; client re-enters the played
   character by exact name; account list prunes characters gone from the DB.
+- Latency log (`server::latencia`, table `latencias`, Panopticon tab "rede"): network RTT measured by the
+  server (WebSocket ping), the ping the player sees, FPS, platform and real IP (nginx `X-Real-IP`).
 - Protocol 197.
 
 ## Order (as always)

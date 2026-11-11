@@ -534,6 +534,14 @@ pub enum ClientMessage {
     },
     /// My open buy orders.
     MercadoMeusPedidos,
+    /// Every 30 s while playing: the ping the player sees (frame to frame),
+    /// the frame rate and the platform, for the latency log
+    /// (`server::latencia`).
+    Latencia {
+        ms: u16,
+        fps: u16,
+        plataforma: String,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.

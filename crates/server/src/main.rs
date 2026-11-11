@@ -14,6 +14,7 @@ mod auth;
 mod avisos_globais;
 mod chat_global;
 mod hud_layouts;
+mod latencia;
 mod eventos_bonus;
 #[cfg(test)]
 mod balanceamento;

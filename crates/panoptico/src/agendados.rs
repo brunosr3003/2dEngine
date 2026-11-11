@@ -318,3 +318,41 @@ pub async fn layouts_hud(State(st): State<Estado>) -> impl IntoResponse {
         }),
     )
 }
+
+// ─────────────── latency log (`server::latencia`) ───────────────
+
+/// Bad samples (latest first) and a 24 h summary per character.
+pub async fn latencias(State(st): State<Estado>) -> impl IntoResponse {
+    let existe: bool = sqlx::query_scalar("SELECT to_regclass('latencias') IS NOT NULL")
+        .fetch_one(&*st.pool)
+        .await
+        .unwrap_or(false);
+    if !existe {
+        return resposta(true, serde_json::json!({ "resumo": [], "ruins": [] }));
+    }
+    let resumo: Vec<(String, String, String, i64, Option<f64>, Option<i32>, f64, i32, Option<i32>, i64)> = sqlx::query_as(
+        "SELECT personagem, max(ip), max(plataforma), count(*), avg(rede_ms)::float8, max(rede_ms), \
+           avg(jogo_ms)::float8, max(jogo_ms), min(NULLIF(fps, 0)), count(*) FILTER (WHERE ruim) \
+         FROM latencias WHERE quando > NOW() - interval '24 hours' GROUP BY personagem ORDER BY 7 DESC",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let ruins: Vec<(String, String, String, String, String, Option<i32>, i32, i32)> = sqlx::query_as(
+        "SELECT to_char(quando AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'), personagem, canal, ip, plataforma, \
+           rede_ms, jogo_ms, fps FROM latencias WHERE ruim ORDER BY id DESC LIMIT 200",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    resposta(
+        true,
+        serde_json::json!({
+            "resumo": resumo.into_iter().map(|(p, ip, plat, n, rede, rede_max, jogo, jogo_max, fps_min, n_ruins)| serde_json::json!({
+                "personagem": p, "ip": ip, "plataforma": plat, "amostras": n, "rede_media": rede, "rede_max": rede_max,
+                "jogo_media": jogo, "jogo_max": jogo_max, "fps_min": fps_min, "ruins": n_ruins })).collect::<Vec<_>>(),
+            "ruins": ruins.into_iter().map(|(q, p, c, ip, plat, rede, jogo, fps)| serde_json::json!({
+                "quando": q, "personagem": p, "canal": c, "ip": ip, "plataforma": plat, "rede_ms": rede, "jogo_ms": jogo, "fps": fps })).collect::<Vec<_>>(),
+        }),
+    )
+}

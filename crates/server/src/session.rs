@@ -18,8 +18,25 @@ pub async fn handle_connection(
     stream.set_nodelay(true)?;
     let mut cfg = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default();
     cfg.accept_unmasked_frames = true;
-    let mut ws = tokio_tungstenite::accept_async_with_config(stream, Some(cfg)).await?;
+    // The player's REAL address: nginx sends it as `X-Real-IP` (every
+    // connection here comes from 127.0.0.1). For the latency log only.
+    let ip_real = std::sync::Arc::new(parking_lot::Mutex::new(None::<String>));
+    let ip_cb = ip_real.clone();
+    let cb = move |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
+                   resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
+        if let Some(v) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            *ip_cb.lock() = Some(v.chars().take(64).collect());
+        }
+        Ok(resp)
+    };
+    let mut ws = tokio_tungstenite::accept_hdr_async_with_config(stream, cb, Some(cfg)).await?;
     tracing::info!("ws accepted from {peer}");
+    let ip = ip_real.lock().clone().unwrap_or_else(|| peer.ip().to_string());
+    crate::latencia::abriu(peer, ip);
+    // A WebSocket ping every 15 s, answered by the client's network thread:
+    // the pure network round trip, without the client's frames.
+    let relogio_inicio = std::time::Instant::now();
+    let mut relogio = tokio::time::interval(std::time::Duration::from_secs(15));
 
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<ServerMessage>();
     let session_id = SessionId(peer);
@@ -32,6 +49,12 @@ pub async fn handle_connection(
 
     loop {
         tokio::select! {
+            _ = relogio.tick() => {
+                let t = relogio_inicio.elapsed().as_millis() as u64;
+                if ws.send(Message::Ping(t.to_le_bytes().to_vec())).await.is_err() {
+                    break;
+                }
+            }
             // Message arriving from the world to send to the client
             Some(server_msg) = rx_out.recv() => {
                 let bytes = match shared::protocol::encode(&server_msg) {
@@ -67,6 +90,13 @@ pub async fn handle_connection(
                         Message::Ping(data) => {
                             let _ = ws.send(Message::Pong(data)).await;
                         }
+                        Message::Pong(data) => {
+                            if let Ok(b) = <[u8; 8]>::try_from(&data[..]) {
+                                let enviado = u64::from_le_bytes(b);
+                                let agora = relogio_inicio.elapsed().as_millis() as u64;
+                                crate::latencia::rede(peer, agora.saturating_sub(enviado) as u32);
+                            }
+                        }
                         Message::Close(_) => break,
                         _ => {}
                     }
@@ -76,6 +106,7 @@ pub async fn handle_connection(
     }
 
     crate::telemetria::fechar_banda(&peer.to_string());
+    crate::latencia::fechou(peer);
     let _ = to_world.send(IncomingMessage::Disconnected(session_id));
     tracing::info!("session {peer} closed");
     Ok(())

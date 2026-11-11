@@ -156,7 +156,7 @@ pub fn para_rede(l: &Layout) -> shared::protocol::LayoutDoHud {
     }
 }
 
-fn plataforma() -> &'static str {
+pub fn plataforma() -> &'static str {
     if cfg!(target_os = "android") {
         "android"
     } else if cfg!(target_os = "ios") {

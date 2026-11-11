@@ -5721,6 +5721,17 @@ impl Jogo {
                 client_time_ms: agora_ms(),
             });
         }
+        // Every 30 s the server logs what the player sees (`server::latencia`):
+        // the frame-to-frame ping, the frame rate and the platform.
+        thread_local!(static ULTIMA_LATENCIA: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) });
+        if self.rede.ms > 0.0 && agora - ULTIMA_LATENCIA.with(|c| c.get()) >= 30.0 {
+            ULTIMA_LATENCIA.with(|c| c.set(agora));
+            self.envia(ClientMessage::Latencia {
+                ms: self.rede.ms.round().clamp(0.0, 60_000.0) as u16,
+                fps: get_fps().clamp(0, 1_000) as u16,
+                plataforma: hud_custom::plataforma().into(),
+            });
+        }
 
         let Some(net) = &self.net else { return };
         let total = net.bytes_in();
