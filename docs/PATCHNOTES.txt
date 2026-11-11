@@ -1,3 +1,8 @@
+Nov 12, 2026 — Fixes
+
+- Fixed: after a dungeon you could come back as another character of your account.
+- Character names that differ only in capital letters are no longer allowed.
+
 Nov 11, 2026 — Custom HUD, live market and fixes
 
 - The game notices a new version while you are on the login screen.

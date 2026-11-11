@@ -1930,8 +1930,11 @@ impl Jogo {
                     idioma: shared::idioma::atual(),
                 });
                 self.personagens = chars;
-                self.personagens
-                    .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                // Ignoring case, then exactly: two names that differ only in
+                // case keep a fixed order.
+                self.personagens.sort_by(|a, b| {
+                    a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.name.cmp(&b.name))
+                });
                 self.armas = available_weapons;
                 self.selecao_personagem.recebeu_lista(
                     &self.personagens,
@@ -1943,7 +1946,8 @@ impl Jogo {
                 // Voltando de uma troca de zona: entra direto no mesmo
                 // personagem, sem passar pela tela de novo.
                 if let Some(nome) = self.personagem_atual.clone() {
-                    if self.personagens.iter().any(|p| p.name == nome) {
+                    if let Some(i) = self.personagens.iter().position(|p| p.name == nome) {
+                        self.selecionado = i;
                         self.envia(ClientMessage::SelectCharacter { name: nome });
                         self.tela = Tela::Conectando;
                         return;
@@ -2058,11 +2062,11 @@ impl Jogo {
                 // caminho de login sozinha e o jogador so' ve uma tela de
                 // carregamento.
                 self.chat.push(format!("heading to {zona}"));
-                self.personagem_atual = self
-                    .personagens
-                    .get(self.selecionado)
-                    .map(|p| p.name.clone())
-                    .or_else(|| self.personagem_atual.clone());
+                // The one being played (by name) first; the list position
+                // only if there is none.
+                self.personagem_atual = self.personagem_atual.clone().or_else(|| {
+                    self.personagens.get(self.selecionado).map(|p| p.name.clone())
+                });
                 self.host = Some(host);
                 self.conectar();
             }
@@ -8141,8 +8145,15 @@ impl Jogo {
         );
         match acao {
             Some(personagens::Acao::Enviar(m)) => {
-                if matches!(m, ClientMessage::SelectCharacter { .. }) {
+                if let ClientMessage::SelectCharacter { name } = &m {
                     self.tela = Tela::Conectando;
+                    // The character is remembered BY NAME from here on: zone
+                    // changes (leaving a dungeon) and reconnects re-enter this
+                    // one. Taking it from the list position picked the other
+                    // character of an account whose names differ only in
+                    // case — the list is sorted ignoring case and the server
+                    // sends it in no fixed order (F1Carp / F1CARP, 11/11/2026).
+                    self.personagem_atual = Some(name.clone());
                 }
                 self.envia(m);
             }
