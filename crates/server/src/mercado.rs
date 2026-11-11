@@ -22,7 +22,7 @@ use anyhow::Result;
 use once_cell::sync::{Lazy, OnceCell};
 use serde::{Deserialize, Serialize};
 use shared::items::ItemInstance;
-use shared::mercado::{self as regras, AnuncioNet, CartaNet, FiltroNet, Recusa, VendaNet};
+use shared::mercado::{self as regras, AnuncioNet, CartaNet, FiltroNet, PedidoNet, Recusa, VendaNet};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use tokio::sync::{mpsc, Notify};
@@ -204,6 +204,25 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
             compras    SMALLINT NOT NULL DEFAULT 0,
             PRIMARY KEY (realm, personagem)
         )",
+        // Buy orders: the gold for `qtd_total` was paid up front and waits
+        // here; `qtd_restante × preco_unit` of it is still in escrow.
+        "CREATE TABLE IF NOT EXISTS mercado_pedidos (
+            id            TEXT PRIMARY KEY,
+            realm         TEXT        NOT NULL,
+            conta         TEXT        NOT NULL,
+            personagem    TEXT        NOT NULL,
+            item_id       INTEGER     NOT NULL,
+            nome          TEXT        NOT NULL,
+            categoria     SMALLINT    NOT NULL,
+            qtd_total     BIGINT      NOT NULL,
+            qtd_restante  BIGINT      NOT NULL CHECK (qtd_restante >= 0),
+            preco_unit    BIGINT      NOT NULL CHECK (preco_unit > 0),
+            estado        SMALLINT    NOT NULL DEFAULT 0,
+            criado        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            atualizado    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+        "CREATE INDEX IF NOT EXISTS mercado_pedidos_busca ON mercado_pedidos (item_id, preco_unit DESC) WHERE estado = 0",
+        "CREATE INDEX IF NOT EXISTS mercado_pedidos_dono ON mercado_pedidos (realm, personagem) WHERE estado = 0",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -266,6 +285,31 @@ pub enum OpCentral {
         compra: u8,
         pago: u64,
     },
+    /// A buy order: `pago` (= qtd × preco_unit) already left the buyer; a
+    /// refused one gives it back by letter.
+    PedirCompra {
+        id: String,
+        realm: String,
+        conta: String,
+        personagem: String,
+        item_id: u16,
+        nome: String,
+        categoria: u8,
+        qtd: u64,
+        preco_unit: u64,
+        pago: u64,
+    },
+    /// `qtd` of `item_id` that already left the seller, sold to `pedido`.
+    /// What the order does not take goes back by letter.
+    VenderAoPedido {
+        id: String,
+        realm: String,
+        conta: String,
+        personagem: String,
+        pedido: String,
+        item_id: u16,
+        qtd: u64,
+    },
 }
 
 impl OpCentral {
@@ -273,7 +317,9 @@ impl OpCentral {
         match self {
             OpCentral::Anunciar { id, .. }
             | OpCentral::Comprar { id, .. }
-            | OpCentral::ComprarVagas { id, .. } => id,
+            | OpCentral::ComprarVagas { id, .. }
+            | OpCentral::PedirCompra { id, .. }
+            | OpCentral::VenderAoPedido { id, .. } => id,
         }
     }
 
@@ -281,7 +327,9 @@ impl OpCentral {
         match self {
             OpCentral::Anunciar { personagem, .. }
             | OpCentral::Comprar { personagem, .. }
-            | OpCentral::ComprarVagas { personagem, .. } => personagem,
+            | OpCentral::ComprarVagas { personagem, .. }
+            | OpCentral::PedirCompra { personagem, .. }
+            | OpCentral::VenderAoPedido { personagem, .. } => personagem,
         }
     }
 }
@@ -340,6 +388,8 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
         OpCentral::Anunciar { realm, .. } => (realm, "anunciar"),
         OpCentral::Comprar { realm, .. } => (realm, "comprar"),
         OpCentral::ComprarVagas { realm, .. } => (realm, "vagas"),
+        OpCentral::PedirCompra { realm, .. } => (realm, "pedir"),
+        OpCentral::VenderAoPedido { realm, .. } => (realm, "vender_pedido"),
     };
     let mut tx = central.begin().await?;
     let novo = sqlx::query("INSERT INTO mercado_operacoes (id, realm, tipo) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING")
@@ -421,6 +471,32 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             compra,
             pago,
         } => vagas_com_ouro(&mut tx, id, realm, personagem, *compra, *pago).await?,
+        OpCentral::PedirCompra {
+            id,
+            realm,
+            conta,
+            personagem,
+            item_id,
+            nome,
+            categoria,
+            qtd,
+            preco_unit,
+            pago,
+        } => {
+            pedir_compra(
+                &mut tx, id, realm, conta, personagem, *item_id, nome, *categoria, *qtd, *preco_unit, *pago,
+            )
+            .await?
+        }
+        OpCentral::VenderAoPedido {
+            id,
+            realm,
+            conta: _,
+            personagem,
+            pedido,
+            item_id,
+            qtd,
+        } => vender_ao_pedido(&mut tx, id, realm, personagem, pedido, *item_id, *qtd).await?,
     };
     sqlx::query("UPDATE mercado_operacoes SET ok = $2, resultado = $3 WHERE id = $1")
         .bind(op.id())
@@ -1087,6 +1163,344 @@ pub async fn saldo_tp(central: &PgPool, conta: &str) -> Result<u64> {
     razao::saldo(central, conta).await
 }
 
+// ─────────────────────────────── buy orders ───────────────────────────────
+
+/// Places a buy order whose gold (`pago`) already left the buyer. Anything
+/// wrong (stale, over the limit, a total that does not match) gives the gold
+/// back by letter.
+#[allow(clippy::too_many_arguments)]
+async fn pedir_compra(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    realm: &str,
+    conta: &str,
+    personagem: &str,
+    item_id: u16,
+    nome: &str,
+    categoria: u8,
+    qtd: u64,
+    preco_unit: u64,
+    pago: u64,
+) -> Result<(bool, String)> {
+    // Per character: two orders at once never pass the limit together.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+        .bind(format!("pedidos:{realm}:{personagem}"))
+        .execute(&mut **tx)
+        .await?;
+    let recusa = if qtd == 0
+        || qtd > regras::QTD_MAX_POR_PEDIDO
+        || item_id == 0
+        || item_id == shared::item_id::PERGAMINHO_TELEPORTE
+    {
+        Some(Recusa::Quantidade)
+    } else if !regras::preco_valido(preco_unit) || regras::total(qtd, preco_unit) != Some(pago) {
+        Some(Recusa::Preco)
+    } else if pedidos_abertos_de(tx, realm, personagem).await? >= regras::MAX_PEDIDOS {
+        Some(Recusa::MuitosPedidos)
+    } else {
+        None
+    };
+    if let Some(r) = recusa {
+        if pago > 0 {
+            carta(
+                tx,
+                &format!("{id}:devolve"),
+                realm,
+                personagem,
+                0,
+                0,
+                None,
+                pago,
+                &format!("Buy order refused: {nome} (gold refunded)"),
+            )
+            .await?;
+        }
+        return Ok((false, format!("{} The gold comes back in Deliveries.", r.texto())));
+    }
+    sqlx::query(
+        "INSERT INTO mercado_pedidos (id, realm, conta, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)",
+    )
+    .bind(id)
+    .bind(realm)
+    .bind(conta)
+    .bind(personagem)
+    .bind(item_id as i32)
+    .bind(nome)
+    .bind(categoria as i16)
+    .bind(qtd as i64)
+    .bind(preco_unit as i64)
+    .execute(&mut **tx)
+    .await?;
+    Ok((
+        true,
+        format!("Buy order placed: {nome} ×{qtd} at {preco_unit} gold each ({pago} gold held)."),
+    ))
+}
+
+async fn pedidos_abertos_de(
+    tx: &mut Transaction<'_, Postgres>,
+    realm: &str,
+    personagem: &str,
+) -> Result<usize> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM mercado_pedidos WHERE realm = $1 AND personagem = $2 AND estado = 0",
+    )
+    .bind(realm)
+    .bind(personagem)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(n.max(0) as usize)
+}
+
+/// Fills an order with `qtd` that already left the seller. The order row is
+/// locked: two sellers at once never fill more than it wants. The buyer gets
+/// the items, the seller the gold (minus the fee) and what the order did not
+/// take — all by letter.
+async fn vender_ao_pedido(
+    tx: &mut Transaction<'_, Postgres>,
+    id: &str,
+    realm: &str,
+    personagem: &str,
+    pedido: &str,
+    item_id: u16,
+    qtd: u64,
+) -> Result<(bool, String)> {
+    let linha = sqlx::query(
+        "SELECT realm, personagem, item_id, nome, qtd_restante, preco_unit, estado
+           FROM mercado_pedidos WHERE id = $1 FOR UPDATE",
+    )
+    .bind(pedido)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let preenchido = match &linha {
+        None => Err(Recusa::PedidoFechado),
+        Some(l) if l.get::<i32, _>("item_id") as u16 != item_id => Err(Recusa::PedidoFechado),
+        Some(l)
+            if l.get::<String, _>("realm") == realm
+                && l.get::<String, _>("personagem") == personagem =>
+        {
+            Err(Recusa::ProprioPedido)
+        }
+        Some(l) => regras::preencher_pedido(
+            l.get::<i64, _>("qtd_restante").max(0) as u64,
+            l.get::<i16, _>("estado") as u8,
+            l.get::<i64, _>("preco_unit").max(0) as u64,
+            qtd,
+        ),
+    };
+    let (l, p) = match (linha, preenchido) {
+        (Some(l), Ok(p)) => (l, p),
+        (_, Err(r)) => {
+            // Everything goes back to the seller.
+            if qtd > 0 && item_id != 0 {
+                carta(
+                    tx,
+                    &format!("{id}:devolve"),
+                    realm,
+                    personagem,
+                    item_id,
+                    qtd,
+                    None,
+                    0,
+                    "The sale to a buy order didn't go through: items returned",
+                )
+                .await?;
+            }
+            return Ok((false, r.texto()));
+        }
+        (None, Ok(_)) => unreachable!("preenchimento sem pedido"),
+    };
+    let nome: String = l.get("nome");
+    let comprador_realm: String = l.get("realm");
+    let comprador: String = l.get("personagem");
+    let preco_unit = l.get::<i64, _>("preco_unit").max(0) as u64;
+    let estado = if p.restante == 0 { regras::PEDIDO_CONCLUIDO } else { regras::PEDIDO_ABERTO };
+    sqlx::query("UPDATE mercado_pedidos SET qtd_restante = $2, estado = $3, atualizado = NOW() WHERE id = $1")
+        .bind(pedido)
+        .bind(p.restante as i64)
+        .bind(estado as i16)
+        .execute(&mut **tx)
+        .await?;
+    carta(
+        tx,
+        &format!("{id}:item"),
+        &comprador_realm,
+        &comprador,
+        item_id,
+        p.vendida,
+        None,
+        0,
+        &format!("Buy order filled: {nome}"),
+    )
+    .await?;
+    if p.liquido > 0 {
+        carta(
+            tx,
+            &format!("{id}:venda"),
+            realm,
+            personagem,
+            0,
+            0,
+            None,
+            p.liquido,
+            &format!("Sold to a buy order: {nome} ×{} (fee {})", p.vendida, p.taxa),
+        )
+        .await?;
+    }
+    if p.devolve > 0 {
+        carta(
+            tx,
+            &format!("{id}:sobra"),
+            realm,
+            personagem,
+            item_id,
+            p.devolve,
+            None,
+            0,
+            &format!("The buy order wanted fewer: {nome} returned"),
+        )
+        .await?;
+    }
+    sqlx::query(
+        "INSERT INTO mercado_vendas (anuncio, tipo, nome, qtd, preco_unit, bruto, taxa, liquido, vendedor_realm, vendedor, comprador_realm, comprador)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+    )
+    .bind(pedido)
+    .bind(regras::TIPO_ITEM as i16)
+    .bind(&nome)
+    .bind(p.vendida as i64)
+    .bind(preco_unit as i64)
+    .bind(p.bruto as i64)
+    .bind(p.taxa as i64)
+    .bind(p.liquido as i64)
+    .bind(realm)
+    .bind(personagem)
+    .bind(&comprador_realm)
+    .bind(&comprador)
+    .execute(&mut **tx)
+    .await?;
+    let mut texto = format!(
+        "Sold {nome} ×{} to a buy order: {} gold in Deliveries.",
+        p.vendida, p.liquido
+    );
+    if p.devolve > 0 {
+        texto.push_str(&format!(" {} returned (the order wanted fewer).", p.devolve));
+    }
+    Ok((true, texto))
+}
+
+/// Cancels one of my buy orders: the gold for what is left comes back by
+/// letter. Nothing left the character, so it is a direct call.
+pub async fn cancelar_pedido(
+    central: &PgPool,
+    realm: &str,
+    personagem: &str,
+    pedido: &str,
+) -> Result<(bool, String)> {
+    let mut tx = central.begin().await?;
+    let Some(l) = sqlx::query(
+        "SELECT nome, qtd_restante, preco_unit, estado FROM mercado_pedidos
+          WHERE id = $1 AND realm = $2 AND personagem = $3 FOR UPDATE",
+    )
+    .bind(pedido)
+    .bind(realm)
+    .bind(personagem)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Ok((false, "Buy order not found.".into()));
+    };
+    if l.get::<i16, _>("estado") as u8 != regras::PEDIDO_ABERTO {
+        return Ok((false, "The buy order is no longer open.".into()));
+    }
+    let restante = l.get::<i64, _>("qtd_restante").max(0) as u64;
+    let preco_unit = l.get::<i64, _>("preco_unit").max(0) as u64;
+    let nome: String = l.get("nome");
+    sqlx::query("UPDATE mercado_pedidos SET estado = $2, qtd_restante = 0, atualizado = NOW() WHERE id = $1")
+        .bind(pedido)
+        .bind(regras::PEDIDO_CANCELADO as i16)
+        .execute(&mut *tx)
+        .await?;
+    let gold = regras::reembolso_do_pedido(restante, preco_unit);
+    if gold > 0 {
+        carta(
+            &mut tx,
+            &format!("{pedido}:cancelado"),
+            realm,
+            personagem,
+            0,
+            0,
+            None,
+            gold,
+            &format!("Buy order cancelled: {nome} (gold refunded)"),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok((true, format!("Buy order cancelled: {gold} gold comes back in Deliveries.")))
+}
+
+fn pedido_de(l: &sqlx::postgres::PgRow, realm: &str, personagem: &str) -> PedidoNet {
+    let r: String = l.get("realm");
+    let p: String = l.get("personagem");
+    PedidoNet {
+        id: l.get("id"),
+        item_id: l.get::<i32, _>("item_id") as u16,
+        nome: l.get("nome"),
+        categoria: l.get::<i16, _>("categoria") as u8,
+        qtd_total: l.get::<i64, _>("qtd_total").max(0) as u64,
+        qtd: l.get::<i64, _>("qtd_restante").max(0) as u64,
+        preco_unit: l.get::<i64, _>("preco_unit").max(0) as u64,
+        meu: r == realm && p == personagem,
+        realm: r,
+        comprador: p,
+    }
+}
+
+/// Open buy orders, best price for the seller first.
+pub async fn buscar_pedidos(
+    central: &PgPool,
+    item_id: Option<u16>,
+    texto: &str,
+    realm: &str,
+    personagem: &str,
+) -> Result<Vec<PedidoNet>> {
+    let texto: String = texto
+        .chars()
+        .filter(|c| !matches!(c, '%' | '_' | '\\'))
+        .take(regras::BUSCA_MAX_CHARS)
+        .collect();
+    let linhas = sqlx::query(
+        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit
+           FROM mercado_pedidos
+          WHERE estado = 0
+            AND ($1 < 0 OR item_id = $1)
+            AND ($2 = '' OR nome ILIKE '%' || $2 || '%')
+          ORDER BY preco_unit DESC, criado ASC
+          LIMIT $3",
+    )
+    .bind(item_id.map_or(-1, |i| i as i32))
+    .bind(texto.trim())
+    .bind(regras::PEDIDOS_POR_BUSCA as i64)
+    .fetch_all(central)
+    .await?;
+    Ok(linhas.iter().map(|l| pedido_de(l, realm, personagem)).collect())
+}
+
+/// My open buy orders.
+pub async fn meus_pedidos(central: &PgPool, realm: &str, personagem: &str) -> Result<Vec<PedidoNet>> {
+    let linhas = sqlx::query(
+        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit
+           FROM mercado_pedidos WHERE realm = $1 AND personagem = $2 AND estado = 0 ORDER BY criado DESC",
+    )
+    .bind(realm)
+    .bind(personagem)
+    .fetch_all(central)
+    .await?;
+    Ok(linhas.iter().map(|l| pedido_de(l, realm, personagem)).collect())
+}
+
 // ─────────────────────────────── relay ───────────────────────────────
 
 /// O que o relay e as consultas devolvem ao loop do mundo.
@@ -1155,6 +1569,15 @@ pub async fn enviar_saida(
             if let OpCentral::Comprar { anuncio, .. } = &op {
                 if let Ok(Some(v)) = sqlx::query_scalar::<_, String>("SELECT personagem FROM mercado_anuncios WHERE id = $1")
                     .bind(anuncio)
+                    .fetch_optional(central)
+                    .await
+                {
+                    quem.push(v);
+                }
+            }
+            if let OpCentral::VenderAoPedido { pedido, .. } = &op {
+                if let Ok(Some(v)) = sqlx::query_scalar::<_, String>("SELECT personagem FROM mercado_pedidos WHERE id = $1")
+                    .bind(pedido)
                     .fetch_optional(central)
                     .await
                 {
@@ -1287,6 +1710,130 @@ mod testes {
         let (ok, _) = comprar_vagas_tp(&central, "T", &conta, &quem, 2).await.unwrap();
         assert!(!ok, "purchase 2 twice must not charge again");
         assert_eq!(razao::saldo(&central, &conta).await.unwrap(), 1_000 - regras::CUSTO_VAGAS_TP[1]);
+    }
+
+    /// Buy orders end to end on a throwaway Postgres
+    /// (`DATABASE_URL_CENTRAL_TESTE`; skipped without it): escrow, partial
+    /// fill, overfill returned, own order refused, cancel refunds the rest.
+    #[tokio::test]
+    async fn pedidos_de_compra_no_postgres() {
+        let Ok(url) = std::env::var("DATABASE_URL_CENTRAL_TESTE") else {
+            eprintln!("DATABASE_URL_CENTRAL_TESTE nao setada: teste de pedidos pulado");
+            return;
+        };
+        let central = abrir_central(&url).await.expect("central");
+        criar_tabelas_do_realm(&central).await.expect("tabelas do realm");
+        let tag = &novo_id()[..10];
+        let (comp, vend) = (format!("pcomp_{tag}"), format!("pvend_{tag}"));
+        let gold_de = |cartas: &[CartaNet]| cartas.iter().map(|c| c.gold).sum::<u64>();
+        let itens_de = |cartas: &[CartaNet], it: u16| {
+            cartas.iter().filter(|c| c.item_id == it).map(|c| c.qtd).sum::<u64>()
+        };
+        let pedido = novo_id();
+        let pedir = OpCentral::PedirCompra {
+            id: pedido.clone(),
+            realm: "T".into(),
+            conta: format!("T:{tag}:c"),
+            personagem: comp.clone(),
+            item_id: 345,
+            nome: format!("Darksteel {tag}"),
+            categoria: regras::Categoria::Material as u8,
+            qtd: 10,
+            preco_unit: 7,
+            pago: 70,
+        };
+        let r = processar(&central, &pedir).await.unwrap();
+        assert!(r.ok, "{}", r.texto);
+        assert!(!processar(&central, &pedir).await.unwrap().novo, "placed once");
+        // A total that does not match the price: refused, gold back.
+        let errado = OpCentral::PedirCompra {
+            id: novo_id(),
+            realm: "T".into(),
+            conta: format!("T:{tag}:c"),
+            personagem: comp.clone(),
+            item_id: 345,
+            nome: format!("Darksteel {tag}"),
+            categoria: 2,
+            qtd: 10,
+            preco_unit: 7,
+            pago: 69,
+        };
+        assert!(!processar(&central, &errado).await.unwrap().ok);
+        assert_eq!(gold_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap()), 69);
+        let lista = buscar_pedidos(&central, Some(345), tag, "T", &vend).await.unwrap();
+        assert_eq!(lista.len(), 1);
+        assert_eq!((lista[0].qtd, lista[0].preco_unit, lista[0].meu), (10, 7, false));
+
+        let vender = |qtd: u64, quem: &str, item_id: u16| OpCentral::VenderAoPedido {
+            id: novo_id(),
+            realm: "T".into(),
+            conta: format!("T:{tag}:v"),
+            personagem: quem.to_string(),
+            pedido: pedido.clone(),
+            item_id,
+            qtd,
+        };
+        // The buyer selling to their own order: refused, items back.
+        let proprio = vender(2, &comp, 345);
+        assert!(!processar(&central, &proprio).await.unwrap().ok);
+        assert_eq!(itens_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap(), 345), 2);
+        // Wrong item: refused, the same item goes back.
+        assert!(!processar(&central, &vender(3, &vend, 60)).await.unwrap().ok);
+        assert_eq!(itens_de(&cartas_pendentes(&central, &central, "T", &vend).await.unwrap(), 60), 3);
+        // 4 sell: 28 gross, 26 to the seller, 4 to the buyer.
+        let quatro = vender(4, &vend, 345);
+        assert!(processar(&central, &quatro).await.unwrap().ok);
+        assert!(!processar(&central, &quatro).await.unwrap().novo, "sold once");
+        // 9 offered, 6 wanted: 6 sell (42 gross, 39 net), 3 come back.
+        assert!(processar(&central, &vender(9, &vend, 345)).await.unwrap().ok);
+        let v = cartas_pendentes(&central, &central, "T", &vend).await.unwrap();
+        assert_eq!(gold_de(&v), 26 + 39);
+        assert_eq!(itens_de(&v, 345), 3);
+        let c = cartas_pendentes(&central, &central, "T", &comp).await.unwrap();
+        assert_eq!(itens_de(&c, 345), 2 + 4 + 6);
+        // Filled: gone from the search, nothing to cancel, one more sale bounces.
+        assert!(buscar_pedidos(&central, Some(345), tag, "T", &vend).await.unwrap().is_empty());
+        assert!(!cancelar_pedido(&central, "T", &comp, &pedido).await.unwrap().0);
+        assert!(!processar(&central, &vender(1, &vend, 345)).await.unwrap().ok);
+        let (_, historico, _, _) = meus(&central, "T", &vend, "x").await.unwrap();
+        assert_eq!(historico.iter().filter(|h| h.vendi).map(|h| h.liquido).sum::<u64>(), 26 + 39);
+
+        // Energy order, part filled then cancelled: the rest's gold comes back.
+        let energia = novo_id();
+        let r = processar(&central, &OpCentral::PedirCompra {
+            id: energia.clone(),
+            realm: "T".into(),
+            conta: format!("T:{tag}:c"),
+            personagem: comp.clone(),
+            item_id: shared::item_id::ENERGIA_MIL,
+            nome: "Energy ×1,000".into(),
+            categoria: 3,
+            qtd: 5,
+            preco_unit: 40,
+            pago: 200,
+        })
+        .await
+        .unwrap();
+        assert!(r.ok, "{}", r.texto);
+        assert_eq!(meus_pedidos(&central, "T", &comp).await.unwrap().len(), 1);
+        let lote = OpCentral::VenderAoPedido {
+            id: novo_id(),
+            realm: "T".into(),
+            conta: format!("T:{tag}:v"),
+            personagem: vend.clone(),
+            pedido: energia.clone(),
+            item_id: shared::item_id::ENERGIA_MIL,
+            qtd: 2,
+        };
+        assert!(processar(&central, &lote).await.unwrap().ok);
+        let antes = gold_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap());
+        assert!(!cancelar_pedido(&central, "T", &vend, &energia).await.unwrap().0, "not theirs");
+        assert!(cancelar_pedido(&central, "T", &comp, &energia).await.unwrap().0);
+        assert!(!cancelar_pedido(&central, "T", &comp, &energia).await.unwrap().0, "once");
+        let c = cartas_pendentes(&central, &central, "T", &comp).await.unwrap();
+        assert_eq!(gold_de(&c) - antes, 3 * 40);
+        assert_eq!(itens_de(&c, shared::item_id::ENERGIA_MIL), 2);
+        assert!(meus_pedidos(&central, "T", &comp).await.unwrap().is_empty());
     }
 
     /// Fluxo inteiro num Postgres descartavel: `DATABASE_URL_CENTRAL_TESTE`.

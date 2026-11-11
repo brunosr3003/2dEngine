@@ -194,8 +194,160 @@ impl GameWorld {
                 }
                 self.mercado_comprar(sid, quem, anuncio, qtd, preco_unit);
             }
+            ClientMessage::MercadoPedirCompra {
+                item_id,
+                qtd,
+                preco_unit,
+            } => self.mercado_pedir_compra(sid, quem, item_id, qtd, preco_unit),
+            ClientMessage::MercadoVenderAoPedido { pedido, item_id, qtd } => {
+                if pedido.is_empty() || pedido.len() > ID_MAX {
+                    return;
+                }
+                self.mercado_vender_ao_pedido(sid, quem, pedido, item_id, qtd);
+            }
+            ClientMessage::MercadoCancelarPedido { pedido } => {
+                if pedido.len() > ID_MAX {
+                    return;
+                }
+                tokio::spawn(async move {
+                    match mercado::cancelar_pedido(&central, &quem.realm, &quem.nome, &pedido).await {
+                        Ok((ok, texto)) => {
+                            if ok {
+                                crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
+                            }
+                            responde(&quem.to_client, ok, texto)
+                        }
+                        Err(e) => {
+                            tracing::warn!("mercado: cancelar pedido falhou: {e:#}");
+                            responde(&quem.to_client, false, Recusa::Indisponivel.texto());
+                        }
+                    }
+                    enviar_meus_pedidos(&central, &quem).await;
+                });
+            }
+            ClientMessage::MercadoBuscarPedidos { item_id, texto } => {
+                tokio::spawn(async move {
+                    match mercado::buscar_pedidos(&central, item_id, &texto, &quem.realm, &quem.nome).await {
+                        Ok(lista) => {
+                            let _ = quem.to_client.send(ServerMessage::MercadoPedidos { lista, meus: false });
+                        }
+                        Err(e) => {
+                            tracing::warn!("mercado: busca de pedidos falhou: {e:#}");
+                            responde(&quem.to_client, false, Recusa::Indisponivel.texto());
+                        }
+                    }
+                });
+            }
+            ClientMessage::MercadoMeusPedidos => {
+                tokio::spawn(async move { enviar_meus_pedidos(&central, &quem).await });
+            }
             _ => {}
         }
+    }
+
+    /// Whether `item_id` may be the subject of a buy order, by the realm's
+    /// item table (`regras::pode_pedir_item`).
+    fn item_pedivel(item_id: u16) -> bool {
+        item_id == shared::item_id::ENERGIA_MIL
+            || regras::pode_pedir_item(
+                item_id,
+                crate::economy::item_equipavel(item_id),
+                crate::economy::item_vinculado(item_id),
+                crate::economy::item_stack_max(item_id),
+            )
+    }
+
+    /// BUY ORDER: the whole `qtd × preco_unit` leaves the buyer NOW (escrow)
+    /// and the order joins the save queue, in the same transaction; the
+    /// central one opens it or gives the gold back by letter.
+    fn mercado_pedir_compra(&mut self, sid: SessionId, quem: Quem, item_id: u16, qtd: u64, preco_unit: u64) {
+        if !Self::item_pedivel(item_id) {
+            responde(&quem.to_client, false, Recusa::NaoPedivel.texto());
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let total = match regras::pode_pedir(s.gold, qtd, preco_unit) {
+            Ok(t) => t,
+            Err(r) => {
+                responde(&quem.to_client, false, r.texto());
+                return;
+            }
+        };
+        s.gold -= total;
+        crate::telemetria::conta_de(&s.name, "mercado", "pedir_compra", 1);
+        crate::telemetria::conta_de(&s.name, "ouro_ralo", "mercado_pedido", total as i64);
+        let nome = nome_para_mercado(item_id);
+        responde(
+            &quem.to_client,
+            true,
+            format!("Buy order sent: {nome} ×{qtd}, {total} gold held. It shows up in instants."),
+        );
+        let categoria = regras::categoria_do_item(item_id, false);
+        self.mercado_registros.push(Registro::Saida(OpCentral::PedirCompra {
+            id: mercado::novo_id(),
+            realm: quem.realm,
+            conta: quem.conta,
+            personagem: quem.nome,
+            item_id,
+            nome,
+            categoria: categoria as u8,
+            qtd,
+            preco_unit,
+            pago: total,
+        }));
+        self.save_pending = true;
+    }
+
+    /// SELLING TO A BUY ORDER: the items leave the bag NOW (Energy lots leave
+    /// the Energy) and the sale joins the save queue; the central one fills
+    /// what the order still wants and returns the rest by letter.
+    fn mercado_vender_ao_pedido(&mut self, sid: SessionId, quem: Quem, pedido: String, item_id: u16, qtd: u64) {
+        let energia = item_id == shared::item_id::ENERGIA_MIL;
+        if !Self::item_pedivel(item_id) {
+            responde(&quem.to_client, false, Recusa::NaoPedivel.texto());
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let tem = if energia {
+            (s.skill_progress.energia / regras::ENERGIA_POR_LOTE).min(regras::LOTES_MAX_POR_ANUNCIO)
+        } else {
+            soltos_na_bolsa(&s.inventory, item_id)
+        };
+        if let Err(r) = regras::pode_vender_ao_pedido(quem.nivel, tem, qtd) {
+            responde(&quem.to_client, false, r.texto());
+            return;
+        }
+        if energia {
+            s.skill_progress.energia -= qtd * regras::ENERGIA_POR_LOTE;
+            s.skills_dirty = true;
+            let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+                progresso: s.skill_progress.clone(),
+            });
+        } else {
+            tirar_soltos(&mut s.inventory, item_id, qtd);
+            s.inventory_dirty = true;
+        }
+        crate::telemetria::conta_de(&s.name, "mercado", "vender_ao_pedido", 1);
+        let nome = nome_para_mercado(item_id);
+        responde(
+            &quem.to_client,
+            true,
+            format!("Sale sent: {nome} ×{qtd} to a buy order. The gold arrives in Deliveries."),
+        );
+        self.mercado_registros.push(Registro::Saida(OpCentral::VenderAoPedido {
+            id: mercado::novo_id(),
+            realm: quem.realm,
+            conta: quem.conta,
+            personagem: quem.nome,
+            pedido,
+            item_id,
+            qtd,
+        }));
+        self.save_pending = true;
     }
 
     /// The item leaves the bag NOW and the operation joins the save queue. Both
@@ -511,6 +663,59 @@ async fn enviar_meus(central: &sqlx::PgPool, quem: &Quem) {
     }
 }
 
+async fn enviar_meus_pedidos(central: &sqlx::PgPool, quem: &Quem) {
+    match mercado::meus_pedidos(central, &quem.realm, &quem.nome).await {
+        Ok(lista) => {
+            let _ = quem.to_client.send(ServerMessage::MercadoPedidos { lista, meus: true });
+        }
+        Err(e) => {
+            tracing::warn!("mercado: meus pedidos falhou: {e:#}");
+            responde(&quem.to_client, false, Recusa::Indisponivel.texto());
+        }
+    }
+}
+
+/// The market's name for an item (Energy lots have none in the item table).
+fn nome_para_mercado(item_id: u16) -> String {
+    if item_id == shared::item_id::ENERGIA_MIL {
+        return "Energy ×1,000".into();
+    }
+    let nome = crate::economy::item_nome(item_id);
+    if nome.is_empty() {
+        format!("Item {item_id}")
+    } else {
+        nome
+    }
+}
+
+/// Units of `item_id` in the bag that a buy order can take: plain stacks
+/// only (no instance, nothing bound).
+fn soltos_na_bolsa(inv: &[shared::InventorySlot], item_id: u16) -> u64 {
+    inv.iter()
+        .filter(|s| s.qty > 0 && s.item_id == item_id && s.instance.is_none())
+        .map(|s| s.qty as u64)
+        .sum()
+}
+
+/// Takes `qtd` plain units of `item_id` out of the bag (the caller checked
+/// `soltos_na_bolsa` first).
+fn tirar_soltos(inv: &mut [shared::InventorySlot], item_id: u16, mut qtd: u64) {
+    for s in inv
+        .iter_mut()
+        .filter(|s| s.qty > 0 && s.item_id == item_id && s.instance.is_none())
+    {
+        let t = (s.qty as u64).min(qtd) as u32;
+        s.qty -= t;
+        qtd -= t as u64;
+        if s.qty == 0 {
+            *s = shared::InventorySlot::default();
+        }
+        if qtd == 0 {
+            break;
+        }
+    }
+}
+
 async fn enviar_entregas(central: &sqlx::PgPool, realm_pool: &sqlx::PgPool, quem: &Quem) {
     let cartas = mercado::cartas_pendentes(central, realm_pool, &quem.realm, &quem.nome).await;
     let tp = mercado::saldo_tp(central, &quem.conta).await;
@@ -577,6 +782,65 @@ mod testes_energia {
         w.mercado_anunciar_energia(sid, q, 1, 40);
         assert_eq!(w.sessions[&sid].skill_progress.energia, 9_000, "level gate");
         assert_eq!(w.mercado_registros.len(), n);
+    }
+
+    /// A buy order takes the whole total out of the gold now; too little gold,
+    /// or an item that can't be ordered, takes nothing.
+    #[test]
+    fn pedido_de_compra_reserva_o_ouro() {
+        let (mut w, sid) = mundo("Caio", 0);
+        let it = shared::item_id::DARKSTEEL;
+        crate::economy::por_item_para_testes(it, 999, shared::items::item_template(it));
+        w.sessions.get_mut(&sid).unwrap().gold = 1_000;
+        let q = quem(&w, sid, 1);
+        w.mercado_pedir_compra(sid, q, it, 10, 90);
+        assert_eq!(w.sessions[&sid].gold, 100, "buying needs no level");
+        assert!(matches!(
+            w.mercado_registros.last(),
+            Some(Registro::Saida(OpCentral::PedirCompra { item_id, qtd: 10, preco_unit: 90, pago: 900, .. })) if *item_id == it
+        ));
+        let n = w.mercado_registros.len();
+        let q = quem(&w, sid, 1);
+        w.mercado_pedir_compra(sid, q, it, 2, 90);
+        assert_eq!(w.sessions[&sid].gold, 100, "not enough gold");
+        let q = quem(&w, sid, 1);
+        w.mercado_pedir_compra(sid, q, shared::item_id::KATANA, 1, 1);
+        assert_eq!(w.sessions[&sid].gold, 100, "gear can't be ordered");
+        assert_eq!(w.mercado_registros.len(), n);
+    }
+
+    /// Selling to an order takes the plain stacks out of the bag (or the
+    /// Energy) now; more than you have takes nothing.
+    #[test]
+    fn vender_ao_pedido_tira_da_bolsa() {
+        let (mut w, sid) = mundo("Duda", 4_200);
+        let it = shared::item_id::DARKSTEEL;
+        crate::economy::por_item_para_testes(it, 999, shared::items::item_template(it));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.inventory[0] = shared::InventorySlot { item_id: it, qty: 5, instance: None };
+            s.inventory[3] = shared::InventorySlot { item_id: it, qty: 7, instance: None };
+        }
+        let q = quem(&w, sid, 30);
+        w.mercado_vender_ao_pedido(sid, q, "p1".into(), it, 13);
+        assert!(w.mercado_registros.is_empty(), "only 12 in the bag");
+        let q = quem(&w, sid, 10);
+        w.mercado_vender_ao_pedido(sid, q, "p1".into(), it, 1);
+        assert!(w.mercado_registros.is_empty(), "level gate");
+        let q = quem(&w, sid, 30);
+        w.mercado_vender_ao_pedido(sid, q, "p1".into(), it, 8);
+        assert_eq!(soltos_na_bolsa(&w.sessions[&sid].inventory, it), 4);
+        assert!(matches!(
+            w.mercado_registros.last(),
+            Some(Registro::Saida(OpCentral::VenderAoPedido { qtd: 8, pedido, .. })) if pedido == "p1"
+        ));
+        let q = quem(&w, sid, 30);
+        w.mercado_vender_ao_pedido(sid, q, "p2".into(), shared::item_id::ENERGIA_MIL, 4);
+        assert_eq!(w.sessions[&sid].skill_progress.energia, 200);
+        let q = quem(&w, sid, 30);
+        w.mercado_vender_ao_pedido(sid, q, "p2".into(), shared::item_id::ENERGIA_MIL, 1);
+        assert_eq!(w.sessions[&sid].skill_progress.energia, 200, "200 is not a lot");
+        assert_eq!(w.mercado_registros.len(), 2);
     }
 
     /// A delivery of Energy lots becomes Energy, never a bag item.

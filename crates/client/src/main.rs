@@ -12,6 +12,7 @@
 use crate::ui::Toque as _;
 mod api;
 mod auto_combate;
+mod ajuda_ui;
 mod auto_dungeon;
 mod auto_missao;
 mod auto_resumo;
@@ -2236,6 +2237,11 @@ impl Jogo {
             ServerMessage::ItemsConfig { items } => {
                 self.mercado.vinculados =
                     items.iter().filter(|i| i.vinculado).map(|i| i.id).collect();
+                self.mercado.equipaveis = items
+                    .iter()
+                    .filter(|i| i.equip_slot.as_deref().is_some_and(|s| !s.is_empty()))
+                    .map(|i| i.id)
+                    .collect();
                 crate::icones::define_vinculados(self.mercado.vinculados.iter().copied());
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
                 self.social.nomes = self.bolsa.nomes.clone();
@@ -2264,6 +2270,7 @@ impl Jogo {
                 compras_de_vagas,
             } => self.mercado.meus(anuncios, historico, tp, compras_de_vagas),
             ServerMessage::MercadoEntregas { cartas, tp } => self.mercado.entregas(cartas, tp),
+            ServerMessage::MercadoPedidos { lista, meus } => self.mercado.pedidos(lista, meus),
             ServerMessage::PrecosDoMercado { tabela } => self.mercado.precos = tabela.mapa(),
             ServerMessage::Presenca { aviso } => {
                 if let Some(t) = self.presenca.receber(aviso, &self.bolsa.nomes) {
@@ -2463,6 +2470,9 @@ impl Jogo {
                     self.fecha_paineis();
                     self.abrir_viagem(destinos);
                 }
+            }
+            ServerMessage::GarantiasDeCombinar { garantias } => {
+                oficina_ui::define_garantias(garantias);
             }
             ServerMessage::CombinarResultado {
                 entrada,
@@ -2787,6 +2797,7 @@ impl Jogo {
                 mobs,
                 chefes,
             } => {
+                ajuda_ui::define_ilha(&zonas, &nomes.iter().cloned().collect());
                 self.mapa.define_info(zonas, recursos, nomes, rendimentos);
                 self.mapa.define_chefes(chefes);
                 self.mobs_ui.catalogo(mobs);
@@ -7744,18 +7755,13 @@ impl Jogo {
             let sobre = linha.toca(Vec2::from(mouse_position()));
             hud_estilo::cartao(linha, sobre, false);
             hud_estilo::texto_forte(linha.x + 16.0 * k, linha.y + 28.0 * k, nome, 22, hud_estilo::TEXTO);
-            let online = format!("{jog} online");
-            hud_estilo::texto(
-                linha.x + linha.w - 16.0 * k - hud_estilo::medir(&online, 16),
-                linha.y + 28.0 * k,
-                &online,
-                16,
-                ui::OURO_CLARO,
-            );
-            ui::barra(
-                Rect::new(linha.x + 16.0 * k, linha.y + 42.0 * k, linha.w - 32.0 * k, 6.0 * k),
-                if *cap > 0 { *jog as f32 / *cap as f32 } else { 0.0 },
-            );
+            // No player count (owner, 11/11/2026): only how full it is, as a
+            // color — green, yellow above 60%, red above 90%.
+            let (rotulo, cor) = lotacao(*jog, *cap);
+            let lw = hud_estilo::medir(rotulo, 16);
+            let x = linha.x + linha.w - 16.0 * k - lw;
+            draw_circle(x - 14.0 * k, linha.y + 22.0 * k, 7.0 * k, cor);
+            hud_estilo::texto(x, linha.y + 28.0 * k, rotulo, 16, cor);
             if sobre && foco::clique() {
                 escolhido = Some(nome.clone());
             }
@@ -8193,3 +8199,30 @@ impl Jogo {
         }
     }
 }
+
+/// How full a server is, for the server list: the label and its color.
+/// Green up to 60%, yellow above 60%, red above 90% (owner, 11/11/2026).
+pub fn lotacao(jogadores: u32, capacidade: u32) -> (&'static str, Color) {
+    let f = if capacidade > 0 { jogadores as f32 / capacidade as f32 } else { 0.0 };
+    if f > 0.90 {
+        ("Full", Color::new(0.92, 0.33, 0.30, 1.0))
+    } else if f > 0.60 {
+        ("Busy", Color::new(0.96, 0.78, 0.30, 1.0))
+    } else {
+        ("Available", Color::new(0.40, 0.85, 0.45, 1.0))
+    }
+}
+
+#[cfg(test)]
+mod testes_lotacao {
+    #[test]
+    fn verde_amarelo_vermelho() {
+        assert_eq!(super::lotacao(0, 200).0, "Available");
+        assert_eq!(super::lotacao(120, 200).0, "Available");
+        assert_eq!(super::lotacao(121, 200).0, "Busy");
+        assert_eq!(super::lotacao(180, 200).0, "Busy");
+        assert_eq!(super::lotacao(181, 200).0, "Full");
+        assert_eq!(super::lotacao(5, 0).0, "Available");
+    }
+}
+

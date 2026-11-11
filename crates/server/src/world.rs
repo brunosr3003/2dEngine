@@ -5306,6 +5306,16 @@ impl GameWorld {
         account_id: i64,
         rows: Vec<crate::persistence::CharacterRow>,
     ) {
+        // The database is the list: a character of this account that is no
+        // longer there (renamed or deleted) leaves the in-memory copy too.
+        // It stayed before, and a renamed character showed up as a ghost
+        // that could not be entered (F1CARP -> F1Carp2, 11/11/2026). An empty
+        // answer can be a failed query, so it never prunes.
+        if !rows.is_empty() {
+            let no_banco: std::collections::HashSet<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+            self.characters
+                .retain(|nome, r| r.account_id != Some(account_id) || no_banco.contains(nome.as_str()));
+        }
         for r in rows {
             let fresca = self.copia_fresca(&r.name);
             if !fresca {
@@ -6584,6 +6594,9 @@ impl GameWorld {
             }
             let _ = s.handle.to_client.send(ServerMessage::Preferencias {
                 prefs: s.preferencias.clone(),
+            });
+            let _ = s.handle.to_client.send(ServerMessage::GarantiasDeCombinar {
+                garantias: s.dungeon.garantias.clone(),
             });
             s.enviar_recuperaveis((now_ms() / 1000) as i64);
             s.poise_current = stats.poise_max as f32;
@@ -8292,7 +8305,12 @@ impl GameWorld {
             | ClientMessage::MercadoComprar { .. }
             | ClientMessage::MercadoCancelar { .. }
             | ClientMessage::MercadoEntregas
-            | ClientMessage::MercadoReceber) => self.handle_mercado(id, m),
+            | ClientMessage::MercadoReceber
+            | ClientMessage::MercadoPedirCompra { .. }
+            | ClientMessage::MercadoVenderAoPedido { .. }
+            | ClientMessage::MercadoCancelarPedido { .. }
+            | ClientMessage::MercadoBuscarPedidos { .. }
+            | ClientMessage::MercadoMeusPedidos) => self.handle_mercado(id, m),
             ClientMessage::Dungeon { pedido } => self.handle_dungeon(id, pedido),
             ClientMessage::Presenca { pedido } => self.handle_presenca(id, pedido),
             ClientMessage::Loja { pedido } => self.handle_loja(id, pedido),
@@ -12837,6 +12855,11 @@ impl GameWorld {
             if let Some(attacker_eid) = kill_credits.get(&eid).copied() {
                 // XP/fame: bosses dao bonus, demais usam xp_reward cacheado
                 // no EnemyTag (procedural por level, level*12+20).
+                let (nivel_do_mob, mob_e_chefe) = self
+                    .ecs
+                    .get::<&EnemyTag>(e)
+                    .ok()
+                    .map_or((0, false), |t| (t.level, t.is_boss));
                 let (xp_reward, fame_reward) = self
                     .ecs
                     .get::<&EnemyTag>(e)
@@ -12926,6 +12949,15 @@ impl GameWorld {
                             }
                         }
                         // XP + level-up + ProgressUpdate via fonte única.
+                        // A monster far below the player gives less XP
+                        // (`combat::fator_xp_por_nivel`); not bosses, not
+                        // inside a dungeon instance.
+                        let share = if mob_e_chefe || killer_instance != 0 {
+                            share
+                        } else {
+                            let nivel = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
+                            (share as f32 * shared::combat::fator_xp_por_nivel(nivel, nivel_do_mob)).round() as u64
+                        };
                         session.grant_xp(share);
                     }
                 }

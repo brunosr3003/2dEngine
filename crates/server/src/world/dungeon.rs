@@ -848,6 +848,7 @@ impl GameWorld {
         let tem_selo = tem_item(&s.inventory, shared::item_id::SELO_TEMPESTADE);
         let conteudos = dg::CONTEUDOS
             .iter()
+            .filter(|c| c.tipo != Tipo::Gruta)
             .map(|c| {
                 let liberado = s.dungeon.liberado(c.id);
                 dg::ConteudoEstado {
@@ -2432,10 +2433,11 @@ mod testes {
             while let Ok(msg) = rx.try_recv() {
                 if let ServerMessage::Dungeon { aviso: Aviso::Estado { conteudos: c, .. } } = msg { conteudos = Some(c); }
             }
-            let c = conteudos.unwrap().into_iter().find(|c| c.id == 10).unwrap();
-            assert_eq!(&c.primeiras_concluidas[..2], &[true,false]);
-            assert_eq!(&c.semanais_recebidas[..2], &[false,!nova_semana]);
-            assert!(c.drops_chefe.contains(&shared::item_id::GOLD));
+            // The Caverns are out of the game (11/11/2026): content 10 is
+            // not in the menu any more, whatever the saved progress says.
+            let conteudos = conteudos.unwrap();
+            assert!(conteudos.iter().all(|c| c.id != 10));
+            assert!(conteudos.iter().any(|c| c.id == 1), "the Porão stays");
         }
     }
 

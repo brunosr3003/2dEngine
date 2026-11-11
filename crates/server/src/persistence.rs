@@ -4586,20 +4586,11 @@ mod testes_da_criacao {
              onde o cliente estiver"
         );
         // As duas metades tem que casar: colunas e VALUES.
-        let colunas = insert
-            .split("VALUES")
-            .next()
-            .unwrap()
-            .matches(',')
-            .count()
-            + 1;
-        let valores = insert
-            .split("VALUES")
-            .nth(1)
-            .expect("INSERT sem VALUES")
-            .matches(',')
-            .count()
-            + 1;
+        // The values come after `SELECT` (the case-insensitive name check is
+        // a WHERE NOT EXISTS) and stop at the WHERE.
+        let (cabeca, resto) = insert.split_once("SELECT").expect("INSERT sem SELECT");
+        let colunas = cabeca.matches(',').count() + 1;
+        let valores = resto.split("WHERE").next().unwrap().matches(',').count() + 1;
         assert_eq!(
             colunas, valores,
             "{colunas} colunas e {valores} valores: o INSERT nao casa, e nada salva"

@@ -82,7 +82,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
         );
         crate::render3d::define_alvo(Some(rt.clone()));
         crate::hud_layout::define_escala_ui(1.6);
-        for cena in ["exploracao", "combate", "bolsa", "menu", "interface", "interface-fim", "graficos", "graficos-fim", "dialogo", "oferta", "livro"] {
+        for cena in ["exploracao", "combate", "bolsa", "ajuda", "menu", "interface", "interface-fim", "graficos", "graficos-fim", "dialogo", "oferta", "livro"] {
             skills.estado(
                 if cena == "combate" {
                     vec![(4, 8.0)]
@@ -93,7 +93,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
             );
             // The bag waits longer: skin models (outfit, weapon, coat) load
             // one per frame.
-            for _ in 0..if cena == "bolsa" { 10 } else { 3 } {
+            for _ in 0..if cena == "bolsa" || cena == "ajuda" { 10 } else { 3 } {
                 crate::render3d::camera_padrao();
                 clear_background(Color::new(0.24, 0.31, 0.28, 1.0));
                 if let Some(t) = &fundo {
@@ -179,7 +179,8 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                     &|_| String::new(),
                 );
                 hud::draw_exp(&z, &ficha, 70);
-                if cena == "bolsa" {
+                if cena == "bolsa" || cena == "ajuda" {
+                    bolsa.previa_ajuda(cena == "ajuda");
                     bolsa.desenha(vox, &solido, &[]);
                 }
                 if cena == "menu" {

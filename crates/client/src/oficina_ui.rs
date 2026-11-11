@@ -21,6 +21,22 @@ use crate::craft_ui::tem;
 use crate::hud_estilo::{self as estilo, u};
 use crate::vox::VoxCache;
 
+thread_local! {
+    /// The combine guarantee counters the server sent (`GarantiasDeCombinar`).
+    static GARANTIAS: std::cell::RefCell<Vec<(u8, u8, u16)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+pub fn define_garantias(v: Vec<(u8, u8, u16)>) {
+    GARANTIAS.with(|g| *g.borrow_mut() = v);
+}
+
+/// Attempts left until the sure one for this recipe, if it has a guarantee.
+pub fn faltam_garantia(r: &ReceitaDeCombinar) -> Option<u16> {
+    let (f, c) = combinar::chave_da_garantia(r)?;
+    let n = GARANTIAS.with(|g| g.borrow().iter().find(|x| x.0 == f && x.1 == c).map_or(0, |x| x.2));
+    Some(combinar::faltam_para_garantia(n))
+}
+
 const LINHA: f32 = 44.0;
 const VERDE: Color = Color::new(0.45, 0.80, 0.42, 1.0);
 const VERMELHO: Color = Color::new(0.90, 0.40, 0.34, 1.0);
@@ -689,6 +705,13 @@ impl Oficina {
         );
         let (chance, cor) = if r.chance >= 100 {
             ("always succeeds".to_string(), VERDE)
+        } else if let Some(n) = faltam_garantia(r) {
+            // Every 25th attempt of the color is sure (`combinar::GARANTIA`).
+            if n == 1 {
+                (format!("{}% per attempt · next one is guaranteed!", r.chance), VERDE)
+            } else {
+                (format!("{}% per attempt · guaranteed in {n} tries", r.chance), AMARELO)
+            }
         } else {
             (format!("{}% per attempt", r.chance), AMARELO)
         };

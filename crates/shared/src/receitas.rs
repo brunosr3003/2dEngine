@@ -437,10 +437,10 @@ mod testes {
     #[test]
     fn a_cor_decide_o_grau_e_o_nivel_sai_da_faixa_da_chave() {
         // A ladder, explicita: 1 cinza · 20 verde · 30 azul · 40 epica ·
-        // 50 lendaria. Se `chaves::FAIXAS` andar, isto anda junto — e se
+        // 70 lendaria (50 -> 70 on 11/11/2026). Se `chaves::FAIXAS` andar, isto anda junto — e se
         // alguem desencostar as duas tabelas, reprova aqui e nao no jogo do
         // dono.
-        for (cor, esperado) in [(1u8, 1u16), (2, 20), (3, 30), (4, 40), (5, 50)] {
+        for (cor, esperado) in [(1u8, 1u16), (2, 20), (3, 30), (4, 40), (5, 70)] {
             assert_eq!(nivel_da_cor(cor), esperado, "cor {cor}");
             assert_eq!(
                 nivel_da_cor(cor) as u32,

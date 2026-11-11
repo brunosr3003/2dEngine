@@ -234,3 +234,34 @@ mod testes_da_esquiva {
         assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000), ESQUIVA_MAXIMA);
     }
 }
+
+/// XP for a monster well BELOW the player (owner, 11/11/2026): up to 5 levels
+/// below, full XP; then -8% per level, never under 20%. Only XP — drops,
+/// gold and materials are untouched. Bosses and dungeons don't use it.
+pub const XP_JANELA_SEM_PENALIDADE: u32 = 5;
+pub const XP_QUEDA_POR_NIVEL: f32 = 0.08;
+pub const XP_PISO: f32 = 0.20;
+
+pub fn fator_xp_por_nivel(nivel_jogador: u32, nivel_mob: u32) -> f32 {
+    let abaixo = nivel_jogador.saturating_sub(nivel_mob);
+    if abaixo <= XP_JANELA_SEM_PENALIDADE {
+        return 1.0;
+    }
+    (1.0 - XP_QUEDA_POR_NIVEL * (abaixo - XP_JANELA_SEM_PENALIDADE) as f32).max(XP_PISO)
+}
+
+#[cfg(test)]
+mod testes_xp_por_nivel {
+    use super::*;
+
+    #[test]
+    fn cheio_ate_cinco_abaixo_depois_cai_ate_o_piso() {
+        assert_eq!(fator_xp_por_nivel(30, 40), 1.0, "mob above: no penalty");
+        assert_eq!(fator_xp_por_nivel(30, 25), 1.0);
+        assert!((fator_xp_por_nivel(30, 24) - 0.92).abs() < 1e-6);
+        assert!((fator_xp_por_nivel(30, 20) - 0.60).abs() < 1e-6);
+        assert_eq!(fator_xp_por_nivel(41, 22), XP_PISO, "Anubis in Geleira 22");
+        assert_eq!(fator_xp_por_nivel(80, 1), XP_PISO);
+    }
+}
+

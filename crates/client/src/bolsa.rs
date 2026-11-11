@@ -78,13 +78,16 @@ enum Aba {
     Equip,
     Consumivel,
     Material,
+    /// Gear against the level and where to go (`ajuda_ui`).
+    Ajuda,
 }
 
-const ABAS: [(Aba, &str); 4] = [
+const ABAS: [(Aba, &str); 5] = [
     (Aba::Tudo, "All"),
     (Aba::Equip, "Gear"),
     (Aba::Consumivel, "Consumable"),
     (Aba::Material, "Material"),
+    (Aba::Ajuda, "Help"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -877,6 +880,12 @@ impl Bolsa {
         desenha_boneco(r, vox, solido, self.aparencia, self.skins, auras, conjunto);
     }
 
+    /// HUD preview: open (or leave) the Help tab.
+    #[cfg(debug_assertions)]
+    pub fn previa_ajuda(&mut self, ajuda: bool) {
+        self.aba = if ajuda { Aba::Ajuda } else { Aba::Tudo };
+    }
+
     // ── a metade dos itens ──
 
     fn desenha_grade(
@@ -887,7 +896,7 @@ impl Bolsa {
     ) -> Option<Acao> {
         let mut acao = None;
         // abas
-        let aba_w = (r.w - 3.0 * u(6.0)) / 4.0;
+        let aba_w = (r.w - (ABAS.len() - 1) as f32 * u(6.0)) / ABAS.len() as f32;
         for (k, (aba, rotulo)) in ABAS.iter().enumerate() {
             let a = Rect::new(r.x + k as f32 * (aba_w + u(6.0)), r.y, aba_w, u(32.0));
             let ativa = self.aba == *aba;
@@ -899,6 +908,11 @@ impl Bolsa {
             }
         }
 
+        if self.aba == Aba::Ajuda {
+            let area = Rect::new(r.x, r.y + u(44.0), r.w, r.h - u(44.0));
+            crate::ajuda_ui::desenha(area, self.nivel, self.stats.as_ref(), &self.equip);
+            return None;
+        }
         // Quais espacos aparecem: em "All", a bolsa inteira na ordem dela; nas
         // outras abas, so' os itens daquela categoria, juntos no comeco.
         let tamanho = self.tamanho();

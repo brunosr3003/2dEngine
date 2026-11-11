@@ -419,6 +419,7 @@ pub fn combinar(
     cap: u32,
     nome: &dyn Fn(u16) -> String,
     sorte: &mut dyn FnMut() -> u8,
+    garantia: Option<&mut u16>,
 ) -> Result<(u16, u16), String> {
     let pode = shared::combinar::vezes_possiveis(r, &|id| tem(inv, id));
     let n = (vezes.max(1) as u32).min(pode);
@@ -456,13 +457,24 @@ pub fn combinar(
     // aparencia de aposta.
     let saidas = shared::combinar::saidas_possiveis(r);
     let mut ganhos: Vec<u16> = Vec::new();
+    // The guarantee every 25th attempt of the color (`combinar::tentar`): the
+    // count only moves when the attempt is really made (paid below).
+    let mut contador = garantia.as_deref().copied().unwrap_or(0);
     for _ in 0..n {
-        if shared::combinar::deu_certo(r, sorte()) {
+        let ok = if garantia.is_some() {
+            shared::combinar::tentar(r, &mut contador, sorte())
+        } else {
+            shared::combinar::deu_certo(r, sorte())
+        };
+        if ok {
             let k = sorte() as usize % saidas.len();
             ganhos.push(saidas[k.min(saidas.len() - 1)]);
         }
     }
     cobra(inv);
+    if let Some(g) = garantia {
+        *g = contador;
+    }
     for id in &ganhos {
         // Cabe: o pior caso (n do mesmo item) coube na simulacao, e itens
         // diferentes ocupam no maximo o mesmo tanto de espacos.
@@ -722,7 +734,7 @@ mod testes {
         // Entao o roteiro e' explicito: <sucesso, escolha, falha, ...>.
         let mut roteiro = [0u8, 0, 50, 0, 0, 50].into_iter();
         let mut sorte = || roteiro.next().unwrap_or(50);
-        let r2 = combinar(&mut inv, &r, 50, 99, &nome, &mut sorte);
+        let r2 = combinar(&mut inv, &r, 50, 99, &nome, &mut sorte, None);
         assert_eq!(r2, Ok((4, 2)), "quatro tentativas, dois sucessos");
         assert_eq!(tem(&inv, item_id::HORN), 3, "cobra as quatro");
         // O que saiu e' da familia das CHAVES, na cor de cima — nao
@@ -733,7 +745,7 @@ mod testes {
             .sum();
         assert_eq!(ganhos, 2, "dois premios, da familia da cor de cima");
         // 3 chifres nao pagam uma tentativa.
-        let e = combinar(&mut inv, &r, 1, 99, &nome, &mut || 0).unwrap_err();
+        let e = combinar(&mut inv, &r, 1, 99, &nome, &mut || 0, None).unwrap_err();
         assert!(e.contains("3/5"), "{e}");
     }
 
@@ -765,7 +777,7 @@ mod testes {
         let copia = foto(&inv);
         // 7 chifres = 1 tentativa, sobra 2: o slot nao libera e nao ha' vazio.
         assert_eq!(
-            combinar(&mut inv, &r, 1, 99, &nome, &mut || 0),
+            combinar(&mut inv, &r, 1, 99, &nome, &mut || 0, None),
             Err("bag full".into())
         );
         assert_eq!(foto(&inv), copia);
@@ -799,7 +811,7 @@ mod testes {
         };
         assert_eq!(tem(&inv, cinza), 5, "com instancia, o pet TEM que contar");
 
-        assert_eq!(combinar(&mut inv, &r, 1, 1, &nome, &mut || 0), Ok((1, 1)));
+        assert_eq!(combinar(&mut inv, &r, 1, 1, &nome, &mut || 0, None), Ok((1, 1)));
         assert_eq!(tem(&inv, cinza), 0, "os cinco entraram na tentativa");
         // O filho sai da FAMILIA na cor de cima, sorteado — nao e' fixo.
         let saidas = shared::combinar::saidas_possiveis(&r);

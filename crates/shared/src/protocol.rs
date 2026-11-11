@@ -508,6 +508,32 @@ pub enum ClientMessage {
     LayoutDoHud {
         layout: LayoutDoHud,
     },
+    /// Market BUY ORDER: "I want `qtd` of `item_id` at `preco_unit` gold
+    /// each". The whole `qtd × preco_unit` leaves the character now (escrow).
+    MercadoPedirCompra {
+        item_id: u16,
+        qtd: u64,
+        preco_unit: u64,
+    },
+    /// Sells `qtd` of `item_id` to buy order `pedido`. The items leave the
+    /// bag now; whatever the order no longer wants comes back by letter.
+    MercadoVenderAoPedido {
+        pedido: String,
+        item_id: u16,
+        qtd: u64,
+    },
+    /// Cancels one of my buy orders: what is left is refunded by letter.
+    MercadoCancelarPedido {
+        pedido: String,
+    },
+    /// Open buy orders, best price first; `item_id` narrows to one item,
+    /// `texto` searches the name.
+    MercadoBuscarPedidos {
+        item_id: Option<u16>,
+        texto: String,
+    },
+    /// My open buy orders.
+    MercadoMeusPedidos,
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1376,6 +1402,17 @@ pub enum ServerMessage {
     },
     /// A flash-offer campaign started or ended: ask for the offers again now.
     OfertasMudaram,
+    /// The combine guarantee counters (`combinar::GARANTIA`): (family, color,
+    /// attempts in the current cycle). At login and after each combine.
+    GarantiasDeCombinar {
+        garantias: Vec<(u8, u8, u16)>,
+    },
+    /// Market buy orders: a search answer (`meus` = false) or my open ones
+    /// (`meus` = true).
+    MercadoPedidos {
+        lista: Vec<crate::mercado::PedidoNet>,
+        meus: bool,
+    },
 }
 
 /// Quantos espacos a barra de itens tem: C, 8, 9 e 0.

@@ -78,10 +78,15 @@ pub const FAIXAS: [FaixaDeChave; 5] = [
         // 80 -> 50. The highest boss in the catalogue is level 60, so the legendary
         // was a color that existed (ids 353-356) and had nowhere to drop FROM. At
         // 50 it starts dropping from the level 50-60 content already in the game.
-        nivel_min: 50,
+        //
+        // 50 -> 70 and much rarer (owner, 11/11/2026): purple covers 40-69 and
+        // a ready legendary is maximum luck. The normal road is combining
+        // purples (`combinar`, with the guarantee every 25 tries). No field boss
+        // is level 70 yet, so for now it only drops from 70+ dungeons.
+        nivel_min: 70,
         cor: 5,
-        chance: 0.01,
-        chance_mundo: 0.003,
+        chance: 0.003,
+        chance_mundo: 0.001,
     },
 ];
 
@@ -132,7 +137,9 @@ mod tests {
             (39, 3),
             (40, 4),
             (49, 4),
-            (50, 5),
+            (50, 4),
+            (69, 4),
+            (70, 5),
             (120, 5),
         ] {
             assert_eq!(faixa(nivel).cor, cor, "nivel {nivel}");

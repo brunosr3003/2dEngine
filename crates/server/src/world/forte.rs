@@ -169,11 +169,18 @@ impl GameWorld {
         };
         let mut rng = || fastrand::f32();
         let bau = dg::rolar_bau(c, forte::estagio(cor), false, false, &mut rng);
+        // The chest's key is the castle's own rule (`forte::chave_do_bau`),
+        // not the dungeon table's.
+        let chaves = shared::item_id::todas_as_chaves();
         let mut premios: Vec<(u16, u32, Option<shared::ItemInstance>)> = bau
             .itens
             .iter()
+            .filter(|p| !chaves.contains(&p.item_id))
             .map(|p| (p.item_id, p.qtd, GameWorld::dg_rolar_peca(p)))
             .collect();
+        if let Some(chave) = forte::chave_do_bau(cor, c.nivel_min, fastrand::f32(), fastrand::f32()) {
+            premios.push((chave, 1, None));
+        }
         if bau.marcas > 0 {
             premios.push((shared::item_id::MARCAS_TEMPESTADE, bau.marcas, None));
         }

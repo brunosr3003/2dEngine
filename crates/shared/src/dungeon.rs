@@ -514,6 +514,14 @@ impl Cadeado {
     }
 }
 
+/// THE CAVERNS ARE OUT OF THE GAME (owner, 11/11/2026: "take the Cavern out,
+/// keep only the Porão, which already costs a key to enter"). Their entries
+/// stay in the catalogue only because field-boss chests roll their tables
+/// (`forte::conteudo_do_chefe`); nobody can see or enter one.
+pub fn no_jogo(c: &Conteudo) -> bool {
+    c.disponivel && c.tipo != Tipo::Gruta
+}
+
 /// O que trava o estagio `e` pra este personagem. `liberado` = maior estagio
 /// ja' vencido (0 = nenhum). Entrada zerada NAO trava: entra como Ajudante.
 pub fn cadeado(
@@ -524,7 +532,7 @@ pub fn cadeado(
     liberado: u8,
     tem_selo: bool,
 ) -> Option<Cadeado> {
-    if !c.disponivel || e == 0 || e > estagios(c) {
+    if !no_jogo(c) || e == 0 || e > estagios(c) {
         return Some(Cadeado::EmBreve);
     }
     let precisa = nivel_do_estagio(c, e);
@@ -720,6 +728,17 @@ impl Entradas {
 
 // ─────────────────────────────── estado salvo ───────────────────────────────
 
+impl DadosDungeon {
+    /// The counter of one combine family and color (created at 0).
+    pub fn garantia(&mut self, familia: u8, cor: u8) -> &mut u16 {
+        if let Some(i) = self.garantias.iter().position(|g| g.0 == familia && g.1 == cor) {
+            return &mut self.garantias[i].2;
+        }
+        self.garantias.push((familia, cor, 0));
+        &mut self.garantias.last_mut().unwrap().2
+    }
+}
+
 /// O que o PERSONAGEM guarda (`characters.dungeon_json`). Vai no mesmo save
 /// da bolsa: bau aberto e item recebido nunca se separam.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -758,6 +777,10 @@ pub struct DadosDungeon {
     /// `arena_volta` — the session that used the key dies in the handoff.
     /// 0 = none.
     pub porao_pendente: u16,
+    /// The combine guarantee counters (`combinar::GARANTIA`): (family, color,
+    /// attempts in the current cycle). In this JSON for the same reason as
+    /// `arena_volta` — no new column.
+    pub garantias: Vec<(u8, u8, u16)>,
 }
 
 pub const BAUS_LEMBRADOS: usize = 64;
@@ -1145,17 +1168,12 @@ pub fn rolar_bau(
         qtd: cobre,
         peca: None,
     });
+    // NO DARKSTEEL in any chest since 11/11/2026: it comes from the rock
+    // only (`crate::escassez`). The roll is kept so the rest of the chest
+    // draws the same random numbers as before.
     let ((ds_lo, ds_hi), (po_chance, po_lo, po_hi)) = darksteel_e_po(nivel);
     let selo = exige_selo(c, estagio);
-    let mut ds = entre(rng(), ds_lo, ds_hi) / if porao { 2 } else { 1 };
-    if selo {
-        ds *= 2;
-    }
-    itens.push(Premio {
-        item_id: item_id::DARKSTEEL,
-        qtd: ds.max(1),
-        peca: None,
-    });
+    let _ = entre(rng(), ds_lo, ds_hi);
     if po_chance > 0.0 && rng() < po_chance {
         let mut po = entre(rng(), po_lo, po_hi);
         if selo {
@@ -1519,7 +1537,11 @@ mod testes {
 
     #[test]
     fn estagios_sobem_dois_niveis_e_liberam_em_ordem() {
-        let c = gruta();
+        // The Caverns are out of the game (`no_jogo`): the stage rules are
+        // checked on a staged content that is not one.
+        assert_eq!(cadeado(gruta(), 1, 99, 1_000_000, 0, false), Some(Cadeado::EmBreve));
+        let em_estagios = Conteudo { tipo: Tipo::Cacada, disponivel: true, ..*gruta() };
+        let c = &em_estagios;
         assert_eq!(estagios(c), 5);
         assert_eq!((nivel_do_estagio(c, 1), nivel_do_estagio(c, 5)), (10, 18));
         let forte = 1_000_000;
@@ -1572,6 +1594,7 @@ mod testes {
         let sessenta = Conteudo {
             nivel_min: 60,
             disponivel: true,
+            tipo: Tipo::Cacada,
             ..*gruta()
         };
         assert!(exige_selo(&sessenta, 5));

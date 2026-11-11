@@ -225,9 +225,71 @@ pub fn deu_certo(r: &ReceitaDeCombinar, sorte: u8) -> bool {
     sorte < r.chance
 }
 
+/// THE GUARANTEE (owner, 11/11/2026, "like MIR4"): every 25th attempt of a
+/// color is a sure success, for keys, pets and mounts. Luck in between does
+/// NOT reset the count — only the guaranteed one starts a new cycle. Material
+/// synthesis is already a sure thing and has no counter.
+pub const GARANTIA: u16 = 25;
+
+/// Which counter a recipe uses: (family, color of what goes in). Family 1 =
+/// keys, 2 = pets, 3 = mounts. `None` = material synthesis (no counter).
+pub fn chave_da_garantia(r: &ReceitaDeCombinar) -> Option<(u8, u8)> {
+    if r.chance >= 100 {
+        return None;
+    }
+    let familia = if r.chave {
+        1
+    } else if item_id::pet_de_id(r.entrada).is_some() {
+        2
+    } else if item_id::montaria_de_id(r.entrada).is_some() {
+        3
+    } else {
+        return None;
+    };
+    Some((familia, r.cor))
+}
+
+/// One attempt with the guarantee: bumps `contador` and tells whether it
+/// succeeded. The 25th attempt always succeeds and restarts the cycle.
+pub fn tentar(r: &ReceitaDeCombinar, contador: &mut u16, sorte: u8) -> bool {
+    *contador += 1;
+    if *contador >= GARANTIA {
+        *contador = 0;
+        return true;
+    }
+    deu_certo(r, sorte)
+}
+
+/// Attempts left until the guaranteed one (1 = the next one is sure).
+pub fn faltam_para_garantia(contador: u16) -> u16 {
+    GARANTIA - contador.min(GARANTIA - 1)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn a_vigesima_quinta_e_garantida_e_a_sorte_nao_zera() {
+        let r = receita(item_id::HORN).unwrap();
+        assert_eq!(chave_da_garantia(&r), Some((1, 1)));
+        let mut c = 0u16;
+        // 24 bad-luck attempts, then the guaranteed one.
+        for _ in 0..24 {
+            assert!(!tentar(&r, &mut c, 99));
+        }
+        assert_eq!(faltam_para_garantia(c), 1);
+        assert!(tentar(&r, &mut c, 99), "the 25th is sure");
+        assert_eq!(c, 0);
+        // A lucky success in the middle does not reset the cycle.
+        for _ in 0..10 {
+            tentar(&r, &mut c, 99);
+        }
+        assert!(tentar(&r, &mut c, 0), "luck");
+        assert_eq!(c, 11, "luck keeps the count");
+        // Material synthesis has no counter.
+        assert_eq!(chave_da_garantia(&receita(item_id::STEEL).unwrap()), None);
+    }
 
     #[test]
     fn cinco_chifres_cinza_tentam_um_verde_a_dez_por_cento() {

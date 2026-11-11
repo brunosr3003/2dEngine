@@ -72,6 +72,8 @@ impl GameWorld {
         };
         let vezes = vezes.clamp(1, shared::combinar::MAX_VEZES);
         let cap = crate::economy::item_stack_max(receita.saida);
+        let chave = shared::combinar::chave_da_garantia(&receita);
+        let mut contador = chave.map(|(f, c)| *session.dungeon.garantia(f, c));
         let r = crate::craft::combinar(
             &mut session.inventory,
             &receita,
@@ -79,7 +81,11 @@ impl GameWorld {
             cap,
             &crate::economy::nome_do_item,
             &mut || fastrand::u8(0..100),
+            contador.as_mut(),
         );
+        if let (Some((f, c)), Some(n)) = (chave, contador) {
+            *session.dungeon.garantia(f, c) = n;
+        }
         let msg = match r {
             Ok((n, ok)) => {
                 session.inventory_dirty = true;
@@ -91,6 +97,8 @@ impl GameWorld {
             Err(m) => resposta(0, 0, m),
         };
         let _ = session.handle.to_client.send(msg);
+        let garantias = session.dungeon.garantias.clone();
+        let _ = session.handle.to_client.send(ServerMessage::GarantiasDeCombinar { garantias });
     }
 }
 
@@ -115,7 +123,11 @@ mod tests {
     fn ultima(rx: &mut mpsc::UnboundedReceiver<ServerMessage>) -> Option<ServerMessage> {
         let mut u = None;
         while let Ok(m) = rx.try_recv() {
-            u = Some(m);
+            // The guarantee counters follow every answer; the answer is what
+            // the tests read.
+            if !matches!(m, ServerMessage::GarantiasDeCombinar { .. }) {
+                u = Some(m);
+            }
         }
         u
     }

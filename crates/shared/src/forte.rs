@@ -28,6 +28,25 @@ pub fn conteudo_do_chefe(kind: u16) -> u16 {
         .map_or(CONTEUDO_DO_BAU, |c| c.id)
 }
 
+/// A craft key in a field-boss chest (owner, 11/11/2026: the chests stop
+/// giving Darksteel and give "a craft key of the place's rarity and level").
+/// Chance by the CHEST's color — green 10%, blue 25%, purple 50% — and the
+/// key's own color is the place's band (`chaves::faixa`), never above purple:
+/// a legendary key is meant to be rare luck or a long combine.
+pub fn chave_do_bau(cor_do_bau: u8, nivel_do_lugar: u32, r_chance: f32, r_qual: f32) -> Option<u16> {
+    let chance = match cor_do_bau {
+        4 => 0.50,
+        3 => 0.25,
+        _ => 0.10,
+    };
+    if r_chance >= chance {
+        return None;
+    }
+    let cor = crate::chaves::faixa(nivel_do_lugar).cor.min(4);
+    let i = ((r_qual.clamp(0.0, 0.999_999) * 4.0) as usize).min(3);
+    Some(crate::item_id::chave_na_cor(crate::item_id::CHAVES[i], cor))
+}
+
 /// Seconds of standing at the chest to open it.
 pub const ABRIR_S: f32 = 10.0;
 /// How close the opener has to stay (units), and how far they may shuffle.
@@ -101,6 +120,23 @@ pub fn estagio(cor: u8) -> u8 {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn chave_do_bau_pela_cor_do_bau_e_nunca_lendaria() {
+        use crate::item_id;
+        // Green 10%, blue 25%, purple 50%.
+        for (cor, chance) in [(2u8, 0.10f32), (3, 0.25), (4, 0.50)] {
+            assert!(chave_do_bau(cor, 30, chance - 0.001, 0.0).is_some());
+            assert!(chave_do_bau(cor, 30, chance + 0.001, 0.0).is_none());
+        }
+        // The key's color is the place's band, capped at purple.
+        let cor_da = |nivel| item_id::cor_de_id(chave_do_bau(4, nivel, 0.0, 0.5).unwrap()).unwrap();
+        assert_eq!(cor_da(10), 1);
+        assert_eq!(cor_da(25), 2);
+        assert_eq!(cor_da(35), 3);
+        assert_eq!(cor_da(56), 4);
+        assert_eq!(cor_da(90), 4, "never legendary");
+    }
 
     #[test]
     fn um_a_tres_baus_de_cores_e_estagios_crescentes() {

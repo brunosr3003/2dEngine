@@ -160,7 +160,16 @@ impl EconomyConfig {
         let Some(table) = table else {
             return Vec::new();
         };
-        roll_entries(table, &self.items, seed, mult)
+        // Craft resources come from the rock (`shared::escassez`): Darksteel
+        // never drops from monsters, the craft materials at a tenth.
+        let table: Vec<LootEntry> = table
+            .iter()
+            .filter_map(|e| {
+                let f = shared::escassez::fator_em_mob(e.item_id);
+                (f > 0.0).then(|| LootEntry { chance: e.chance * f, ..e.clone() })
+            })
+            .collect();
+        roll_entries(&table, &self.items, seed, mult)
             .into_iter()
             .filter(|(id, _)| self.permitido_em_mob(*id))
             .collect()
@@ -172,6 +181,7 @@ impl EconomyConfig {
             .or_else(|| (0..kind).rev().find_map(|k| self.loot_tables.get(&k)))
             .into_iter().flatten()
             .filter(|e| e.chance > 0.0 && e.qty_max > 0 && self.permitido_em_mob(e.item_id))
+            .filter(|e| shared::escassez::fator_em_mob(e.item_id) > 0.0)
             .map(|e| e.item_id).collect()
     }
 
@@ -558,6 +568,7 @@ pub fn kinds_que_dropam(item: u16) -> Vec<u16> {
             **kind != KIND_CHEFE
                 && !KINDS_DE_PRAIA.contains(kind)
                 && t.iter().any(|e| e.item_id == item && e.chance > 0.0)
+                && shared::escassez::fator_em_mob(item) > 0.0
         })
         .map(|(kind, _)| *kind)
         .collect();
@@ -675,6 +686,7 @@ pub fn fontes_de_itens(
         for e in tabela
             .iter()
             .filter(|e| e.chance > 0.0 && cfg.permitido_em_mob(e.item_id))
+            .filter(|e| shared::escassez::fator_em_mob(e.item_id) > 0.0)
         {
             let ilhas = o.ilhas_do_bicho.get(&kind).cloned().unwrap_or_default();
             junta(
@@ -684,7 +696,7 @@ pub fn fontes_de_itens(
                 FonteDeItem::Mob {
                     kind,
                     nome: nome.clone(),
-                    chance: e.chance,
+                    chance: e.chance * shared::escassez::fator_em_mob(e.item_id),
                     qty_min: e.qty_min,
                     qty_max: e.qty_max,
                     ilhas,

@@ -176,6 +176,14 @@ pub enum Recusa {
     /// The slot purchase the player saw is no longer the next one (bought
     /// twice, or already at the cap).
     VagaMudou,
+    /// Buy orders take only stackable, non-gear items without an instance.
+    NaoPedivel,
+    /// `MAX_PEDIDOS` open buy orders already.
+    MuitosPedidos,
+    /// The buy order is gone, filled or cancelled.
+    PedidoFechado,
+    /// Selling to your own buy order.
+    ProprioPedido,
 }
 
 impl Recusa {
@@ -204,6 +212,18 @@ impl Recusa {
             }
             Recusa::VagaMudou => {
                 "Those listing slots were already bought; anything paid comes back in Deliveries.".into()
+            }
+            Recusa::NaoPedivel => {
+                "Buy orders take only stackable items (materials, potions, keys, scrolls, Energy).".into()
+            }
+            Recusa::MuitosPedidos => {
+                format!("You already have {MAX_PEDIDOS} open buy orders. Cancel one first.")
+            }
+            Recusa::PedidoFechado => {
+                "That buy order is already filled or cancelled; your items come back in Deliveries.".into()
+            }
+            Recusa::ProprioPedido => {
+                "You can't sell to your own buy order; your items come back in Deliveries.".into()
             }
         }
     }
@@ -327,6 +347,134 @@ pub fn cartas_a_aplicar<'a>(
         .iter()
         .filter(|c| !ja_aplicadas.contains(&c.id) && vistas.insert(c.id.as_str()))
         .collect()
+}
+
+// ─────────────────────────── buy orders ───────────────────────────
+//
+// "I want N of X at P gold each". The buyer's gold (N × P) leaves the
+// character when the order is placed and waits in escrow on the central
+// database; each seller fills part of it, gets the gold (minus the same fee as
+// a normal sale) and the buyer gets the items, both by letter. Cancelling
+// refunds what is left. Same outbox/letter guarantees as listings.
+
+/// Open buy orders per character.
+pub const MAX_PEDIDOS: usize = 10;
+/// Most units in one buy order.
+pub const QTD_MAX_POR_PEDIDO: u64 = 1_000_000;
+/// Buy orders in one search answer.
+pub const PEDIDOS_POR_BUSCA: usize = 50;
+
+pub const PEDIDO_ABERTO: u8 = 0;
+pub const PEDIDO_CONCLUIDO: u8 = 1;
+pub const PEDIDO_CANCELADO: u8 = 2;
+
+/// Can `item_id` be the subject of a buy order? Only things that stack and
+/// carry no instance: materials, darksteel, keys, scrolls, potions… and the
+/// market's Energy lots. Never gear (pets and mounts are gear), bound items,
+/// or the retired Teleport Scroll.
+pub fn pode_pedir_item(item_id: u16, equipavel: bool, vinculado: bool, stack_max: u32) -> bool {
+    use crate::constants::item_id as it;
+    if item_id == it::ENERGIA_MIL {
+        return true;
+    }
+    item_id != 0
+        && item_id != it::PERGAMINHO_TELEPORTE
+        && !equipavel
+        && crate::constants::equip_slot_of(item_id).is_none()
+        && !vinculado
+        && stack_max > 1
+}
+
+/// Placing an order: the gold that goes into escrow now.
+pub fn pode_pedir(gold: u64, qtd: u64, preco_unit: u64) -> Result<u64, Recusa> {
+    if qtd == 0 || qtd > QTD_MAX_POR_PEDIDO {
+        return Err(Recusa::Quantidade);
+    }
+    if !preco_valido(preco_unit) {
+        return Err(Recusa::Preco);
+    }
+    let t = total(qtd, preco_unit).ok_or(Recusa::Preco)?;
+    if t > gold {
+        return Err(Recusa::SemGold);
+    }
+    Ok(t)
+}
+
+/// Selling `qtd` to an order with `tem` of the item on hand: the level gate
+/// of any sale, and enough of the item.
+pub fn pode_vender_ao_pedido(nivel: u32, tem: u64, qtd: u64) -> Result<(), Recusa> {
+    if nivel < NIVEL_PARA_VENDER {
+        return Err(Recusa::NivelBaixo);
+    }
+    if qtd == 0 || qtd > tem || qtd > QTD_MAX_POR_PEDIDO {
+        return Err(Recusa::Quantidade);
+    }
+    Ok(())
+}
+
+/// The central database filling an order with what a seller offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Preenchimento {
+    /// Units that go to the buyer.
+    pub vendida: u64,
+    /// What the order still wants afterwards.
+    pub restante: u64,
+    /// Units that go back to the seller (the order wanted fewer).
+    pub devolve: u64,
+    pub bruto: u64,
+    pub taxa: u64,
+    /// Gold to the seller.
+    pub liquido: u64,
+}
+
+/// Fills `min(oferecida, restante)`. Unlike a purchase, a partial fill is
+/// fine: whatever the order did not want goes back to the seller.
+pub fn preencher_pedido(
+    restante: u64,
+    estado: u8,
+    preco_unit: u64,
+    oferecida: u64,
+) -> Result<Preenchimento, Recusa> {
+    if estado != PEDIDO_ABERTO || restante == 0 {
+        return Err(Recusa::PedidoFechado);
+    }
+    if oferecida == 0 {
+        return Err(Recusa::Quantidade);
+    }
+    let vendida = oferecida.min(restante);
+    let bruto = total(vendida, preco_unit).ok_or(Recusa::Preco)?;
+    let taxa = taxa(bruto);
+    Ok(Preenchimento {
+        vendida,
+        restante: restante - vendida,
+        devolve: oferecida - vendida,
+        bruto,
+        taxa,
+        liquido: bruto - taxa,
+    })
+}
+
+/// Gold back to the buyer when an order with `restante` units left is
+/// cancelled (it was paid for up front).
+pub fn reembolso_do_pedido(restante: u64, preco_unit: u64) -> u64 {
+    restante.saturating_mul(preco_unit)
+}
+
+/// A buy order as the client sees it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PedidoNet {
+    pub id: String,
+    pub item_id: u16,
+    pub nome: String,
+    pub categoria: u8,
+    pub qtd_total: u64,
+    /// Units the order still wants.
+    pub qtd: u64,
+    pub preco_unit: u64,
+    pub realm: String,
+    pub comprador: String,
+    /// This character's order.
+    pub meu: bool,
 }
 
 // ─────────────────────────────── rede ───────────────────────────────
@@ -521,6 +669,65 @@ mod tests {
         assert_eq!(primeira, vec!["a", "b"]);
         aplicadas.extend(primeira);
         assert!(cartas_a_aplicar(&cartas, &aplicadas).is_empty());
+    }
+
+    #[test]
+    fn pedido_so_de_empilhavel_sem_equipamento() {
+        use crate::constants::item_id as it;
+        assert!(pode_pedir_item(it::DARKSTEEL, false, false, 999));
+        assert!(pode_pedir_item(it::HEALTH_POTION, false, false, 99));
+        assert!(pode_pedir_item(it::ENERGIA_MIL, false, false, 0), "Energy lots always");
+        assert!(!pode_pedir_item(it::KATANA, true, false, 1), "gear");
+        assert!(!pode_pedir_item(it::KATANA, false, false, 99), "gear by its slot");
+        assert!(!pode_pedir_item(it::pet_no_grau(it::PETS[0], 2), false, false, 99), "pets are gear");
+        assert!(!pode_pedir_item(it::DARKSTEEL, false, true, 999), "bound");
+        assert!(!pode_pedir_item(it::DARKSTEEL, false, false, 1), "does not stack");
+        assert!(!pode_pedir_item(it::PERGAMINHO_TELEPORTE, false, false, 99));
+        assert!(!pode_pedir_item(0, false, false, 99));
+    }
+
+    #[test]
+    fn pedir_reserva_o_total() {
+        assert_eq!(pode_pedir(1_000, 10, 100), Ok(1_000));
+        assert_eq!(pode_pedir(999, 10, 100), Err(Recusa::SemGold));
+        assert_eq!(pode_pedir(1_000, 0, 100), Err(Recusa::Quantidade));
+        assert_eq!(pode_pedir(u64::MAX, QTD_MAX_POR_PEDIDO + 1, 1), Err(Recusa::Quantidade));
+        assert_eq!(pode_pedir(1_000, 1, 0), Err(Recusa::Preco));
+        assert_eq!(pode_pedir(u64::MAX, 1, PRECO_MAX_UNIT + 1), Err(Recusa::Preco));
+        assert_eq!(pode_vender_ao_pedido(19, 10, 1), Err(Recusa::NivelBaixo));
+        assert_eq!(pode_vender_ao_pedido(20, 10, 11), Err(Recusa::Quantidade));
+        assert_eq!(pode_vender_ao_pedido(20, 10, 0), Err(Recusa::Quantidade));
+        assert_eq!(pode_vender_ao_pedido(20, 10, 10), Ok(()));
+    }
+
+    #[test]
+    fn preencher_pedido_divide_e_devolve_o_excesso() {
+        // Order wants 10 at 7; a seller offers 4: all 4 sell.
+        let a = preencher_pedido(10, PEDIDO_ABERTO, 7, 4).unwrap();
+        assert_eq!(
+            a,
+            Preenchimento { vendida: 4, restante: 6, devolve: 0, bruto: 28, taxa: 2, liquido: 26 }
+        );
+        // Another offers 9: 6 sell, 3 go back.
+        let b = preencher_pedido(a.restante, PEDIDO_ABERTO, 7, 9).unwrap();
+        assert_eq!((b.vendida, b.restante, b.devolve), (6, 0, 3));
+        assert_eq!(b.bruto, 42);
+        assert_eq!(b.liquido, liquido(42));
+        assert_eq!(a.vendida + b.vendida, 10, "never more than asked");
+        // Escrow adds up: what sellers got + fees burned = what the buyer paid.
+        assert_eq!(a.liquido + a.taxa + b.liquido + b.taxa, 10 * 7);
+        assert_eq!(preencher_pedido(0, PEDIDO_ABERTO, 7, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_CANCELADO, 7, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_CONCLUIDO, 7, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_ABERTO, 7, 0), Err(Recusa::Quantidade));
+    }
+
+    #[test]
+    fn cancelar_pedido_devolve_o_que_sobrou() {
+        let pago = 10 * 7;
+        let f = preencher_pedido(10, PEDIDO_ABERTO, 7, 4).unwrap();
+        assert_eq!(f.bruto + reembolso_do_pedido(f.restante, 7), pago);
+        assert_eq!(reembolso_do_pedido(0, 7), 0);
     }
 
     #[test]
