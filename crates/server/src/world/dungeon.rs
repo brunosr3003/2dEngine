@@ -59,6 +59,41 @@ pub struct MembroDg {
     pub dashes_na_entrada: u32,
     /// A menor fração de vida vista na instância (amostrada no tick).
     pub vida_min: f32,
+    /// The CONNECTION dropped (not a leave): the place is kept for
+    /// `RECONEXAO_DG_S`, and logging the same character in again on this
+    /// process puts them back here (`dg_religar`).
+    pub queda: Option<Queda>,
+    /// Got the victory (record, weekly/first rewards, quest) — `false` only
+    /// for whoever was offline when the boss fell; they get it on the way back.
+    pub vitoria_creditada: bool,
+}
+
+/// How long a member whose connection dropped keeps their place in the run.
+///
+/// Player review, 11/2026: "I lost several dungeon runs due to
+/// disconnections". The client reconnects by itself (`reconexao.rs`) and
+/// re-enters the same character, but the run had already counted them as
+/// gone on the first tick without a session. The clock does NOT stop: the
+/// window only keeps the seat, it is not a pause.
+pub(crate) const RECONEXAO_DG_S: f32 = 90.0;
+
+/// What a dropped member had that lives only in the SESSION (and so dies with
+/// it): enough to put them back exactly as they were.
+#[derive(Debug, Clone, Copy)]
+pub struct Queda {
+    /// `sim_time_s` of the drop.
+    pub em: f32,
+    /// Where they stood, and on which floor/room.
+    pub onde: Option<Vec2>,
+    pub andar: u8,
+    /// Down at the time: the revive wait that was left. Dropping must not
+    /// skip it.
+    pub caido: Option<f32>,
+    pub retorno_da_dungeon: Option<Vec2>,
+    pub porao_de_volta: Option<u16>,
+    /// The session's challenge counters (they start at 0 on a new session).
+    pub pocoes_bebidas: u32,
+    pub dashes_feitos: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1076,6 +1111,8 @@ impl GameWorld {
                 pocoes_na_entrada: s.pocoes_bebidas,
                 dashes_na_entrada: s.dashes_feitos,
                 vida_min: 1.0,
+                queda: None,
+                vitoria_creditada: false,
             });
             let _ = self.ecs.insert_one(e, Instancia(id));
             let volta = Vec2::new((i as f32 * 1.3).cos(), (i as f32 * 1.3).sin()) * 3.0;
@@ -1490,10 +1527,12 @@ impl GameWorld {
         if matches!(self.instancias[idx].estado, EstadoDg::Concluida { .. }) {
             self.dg_dar_bau(idx, sid);
             // Saindo por ultimo: o saque do chao vem junto (ninguem mais pega).
+            // Someone offline in their reconnect window doesn't count: they
+            // may never come back, and the loot would go with the run.
             let outros = self.instancias[idx]
                 .membros
                 .iter()
-                .any(|m| m.sid != sid && !m.saiu);
+                .any(|m| m.sid != sid && !m.saiu && m.queda.is_none());
             if !outros {
                 let id = self.instancias[idx].id;
                 self.dg_recolher(id, &[sid]);
@@ -1631,17 +1670,31 @@ impl GameWorld {
     fn dg_tick_instancia(&mut self, idx: usize) {
         let agora = self.sim_time_s;
         let id = self.instancias[idx].id;
-        // Quem caiu da conexao ou ja' saiu nao volta.
+        // Quem ja' saiu nao volta. Whose CONNECTION dropped
+        // (`dg_desconectou`) keeps the seat for `RECONEXAO_DG_S`, then counts
+        // as gone exactly like before; anyone else without a session in the
+        // run (left by another path) is gone at once.
         for m in self.instancias[idx].membros.iter_mut() {
-            if !m.saiu
-                && !self
-                    .sessions
-                    .get(&m.sid)
-                    .is_some_and(|s| s.logged_in && s.instancia == id)
+            if m.saiu {
+                continue;
+            }
+            if let Some(q) = m.queda {
+                if agora - q.em >= RECONEXAO_DG_S {
+                    m.saiu = true;
+                    m.queda = None;
+                    tracing::info!("[dungeon] instancia {id}: {} nao voltou a tempo", m.nome);
+                }
+                continue;
+            }
+            if !self
+                .sessions
+                .get(&m.sid)
+                .is_some_and(|s| s.logged_in && s.instancia == id)
             {
                 m.saiu = true;
             }
         }
+        // Closes only when nobody is in AND nobody is in the window.
         if self.instancias[idx].membros.iter().all(|m| m.saiu) {
             self.dg_fechar(idx);
             return;
@@ -1654,7 +1707,7 @@ impl GameWorld {
                 .membros
                 .iter()
                 .enumerate()
-                .filter(|(_, m)| !m.saiu)
+                .filter(|(_, m)| !m.saiu && m.queda.is_none())
                 .filter_map(|(i, m)| {
                     let e = self.sessions.get(&m.sid)?.entity?;
                     let h = self.ecs.get::<&Health>(e).ok()?;
@@ -1672,17 +1725,21 @@ impl GameWorld {
         let arena = self.dg_arena();
         let andar = self.instancias[idx].andar;
         let centro = arena[(andar as usize).min(arena.len() - 1)];
-        let presentes: Vec<SessionId> = self.instancias[idx]
-            .membros
-            .iter()
-            .filter(|m| !m.saiu)
-            .map(|m| m.sid)
-            .collect();
+        // Who is actually here: not gone, and not offline in the window.
+        let presentes = self.dg_conectados(idx);
 
         match self.instancias[idx].estado {
             EstadoDg::Andando => {
+                // The clock runs with nobody connected too: the reconnect
+                // window keeps a seat, it doesn't pause the run.
                 if agora >= self.instancias[idx].limite {
                     self.dg_terminar(idx, false);
+                    return;
+                }
+                // Everyone offline (in the window): nothing on the floor
+                // moves on — no wipe for an empty party (`all` of nothing is
+                // true), no gate, no floor change.
+                if presentes.is_empty() {
                     return;
                 }
                 // With a plan, the walls hold everyone in (the physics). A
@@ -1797,7 +1854,13 @@ impl GameWorld {
                         self.dg_dar_bau(idx, sid);
                     }
                 }
-                if agora >= em + FECHA_DEPOIS_DE_VENCER_S {
+                // Someone offline who hasn't had their chest yet: wait for
+                // them (at most the rest of their window).
+                let esperando = self.instancias[idx]
+                    .membros
+                    .iter()
+                    .any(|m| !m.saiu && m.queda.is_some() && !m.abriu_bau);
+                if agora >= em + FECHA_DEPOIS_DE_VENCER_S && !esperando {
                     self.dg_fechar(idx);
                     return;
                 }
@@ -1941,62 +2004,81 @@ impl GameWorld {
         self.instancias[idx].bau = Some((bau, eid));
         tracing::info!("[dungeon] instancia {id}: {} estagio {estagio} vencida em {tempo_s}s (bonus de tempo: {bonus})", c.nome);
         self.instancias[idx].aviso_em = 0.0;
+        // Who is offline in their window gets it when they come back
+        // (`dg_religar`): their session — and the record in it — isn't here.
+        for sid in self.dg_conectados(idx) {
+            self.dg_creditar_vitoria(idx, sid, tempo_s, bonus);
+        }
+        self.save_pending = true;
+    }
+
+    /// The victory of ONE member, once: record, weekly and first-ever
+    /// rewards in the Correio, the quest, and the result screen.
+    fn dg_creditar_vitoria(&mut self, idx: usize, sid: SessionId, tempo_s: u32, bonus: bool) {
+        let (conteudo, estagio) = (self.instancias[idx].conteudo, self.instancias[idx].estagio);
+        let Some(c) = dg::conteudo(conteudo) else {
+            return;
+        };
+        let Some(m) = self.instancias[idx]
+            .membros
+            .iter_mut()
+            .find(|m| m.sid == sid && !m.saiu)
+        else {
+            return;
+        };
+        if m.vitoria_creditada {
+            return;
+        }
+        m.vitoria_creditada = true;
+        let ajudante = m.ajudante;
         let semana = dg::semana(unix_agora());
         let quando = unix_agora();
-        let presentes: Vec<(SessionId, bool)> = self.instancias[idx]
-            .membros
-            .iter()
-            .filter(|m| !m.saiu)
-            .map(|m| (m.sid, m.ajudante))
-            .collect();
-        for (sid, ajudante) in presentes {
-            let mut primeira = false;
-            let mut recompensas_primeira = Vec::new();
-            if let Some(s) = self.sessions.get_mut(&sid) {
-                let de_todas = s.dungeon.registrar_vitoria(conteudo, estagio);
-                s.conta_dungeon.virar(semana);
-                let semanal = !ajudante && s.conta_dungeon.primeira_da_semana(conteudo, estagio);
-                primeira = semanal || de_todas;
-                let mut rng = || fastrand::f32();
-                if semanal {
-                    let p = dg::peca_garantida(c, estagio, &mut rng);
-                    let inst = GameWorld::dg_rolar_peca(&p);
-                    s.dungeon.postar(p.item_id, 1, inst, 1, quando);
-                    recompensas_primeira.push((p.item_id, 1));
-                }
-                if de_todas && !ajudante {
-                    let p = dg::peca_garantida(c, estagio, &mut rng);
-                    let inst = GameWorld::dg_rolar_peca(&p);
-                    s.dungeon.postar(p.item_id, 1, inst, 2, quando);
-                    recompensas_primeira.push((p.item_id, 1));
-                    let nivel = dg::nivel_do_estagio(c, estagio);
-                    let cor = shared::chaves::faixa(nivel).cor;
-                    let base = shared::item_id::CHAVES[fastrand::usize(..4)];
-                    let chave = shared::item_id::chave_na_cor(base, cor);
-                    s.dungeon.postar(chave, 1, None, 2, quando);
-                    recompensas_primeira.push((chave, 1));
-                }
+        let mut primeira = false;
+        let mut recompensas_primeira = Vec::new();
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            let de_todas = s.dungeon.registrar_vitoria(conteudo, estagio);
+            s.conta_dungeon.virar(semana);
+            let semanal = !ajudante && s.conta_dungeon.primeira_da_semana(conteudo, estagio);
+            primeira = semanal || de_todas;
+            let mut rng = || fastrand::f32();
+            if semanal {
+                let p = dg::peca_garantida(c, estagio, &mut rng);
+                let inst = GameWorld::dg_rolar_peca(&p);
+                s.dungeon.postar(p.item_id, 1, inst, 1, quando);
+                recompensas_primeira.push((p.item_id, 1));
             }
-            // Alvo 0 = qualquer dungeon (diarias, 510); a historia nomeia a dela.
-            self.quest_on_evento_se(sid, shared::quests::objective_kind::DUNGEON, 1, &|d| {
-                d.obj_target == 0 || d.obj_target == conteudo
-            });
-            self.dg_avisar(
-                sid,
-                Aviso::Resultado {
-                    conteudo,
-                    estagio,
-                    vitoria: true,
-                    tempo_s,
-                    bonus_tempo: bonus,
-                    primeira_vitoria: primeira,
-                    recompensas_primeira,
-                },
-            );
-            if primeira {
-                self.dg_enviar_correio(sid);
-                self.dg_texto(sid, true, "Primeira vitória! A recompensa está no Correio.");
+            if de_todas && !ajudante {
+                let p = dg::peca_garantida(c, estagio, &mut rng);
+                let inst = GameWorld::dg_rolar_peca(&p);
+                s.dungeon.postar(p.item_id, 1, inst, 2, quando);
+                recompensas_primeira.push((p.item_id, 1));
+                let nivel = dg::nivel_do_estagio(c, estagio);
+                let cor = shared::chaves::faixa(nivel).cor;
+                let base = shared::item_id::CHAVES[fastrand::usize(..4)];
+                let chave = shared::item_id::chave_na_cor(base, cor);
+                s.dungeon.postar(chave, 1, None, 2, quando);
+                recompensas_primeira.push((chave, 1));
             }
+        }
+        // Alvo 0 = qualquer dungeon (diarias, 510); a historia nomeia a dela.
+        self.quest_on_evento_se(sid, shared::quests::objective_kind::DUNGEON, 1, &|d| {
+            d.obj_target == 0 || d.obj_target == conteudo
+        });
+        self.dg_avisar(
+            sid,
+            Aviso::Resultado {
+                conteudo,
+                estagio,
+                vitoria: true,
+                tempo_s,
+                bonus_tempo: bonus,
+                primeira_vitoria: primeira,
+                recompensas_primeira,
+            },
+        );
+        if primeira {
+            self.dg_enviar_correio(sid);
+            self.dg_texto(sid, true, "Primeira vitória! A recompensa está no Correio.");
         }
         self.save_pending = true;
     }
@@ -2209,14 +2291,10 @@ impl GameWorld {
 
     fn dg_fechar(&mut self, idx: usize) {
         {
-            let i = &self.instancias[idx];
-            let presentes: Vec<SessionId> = i
-                .membros
-                .iter()
-                .filter(|m| !m.saiu)
-                .map(|m| m.sid)
-                .collect();
-            let id = i.id;
+            // Only who is connected: a share handed to an offline member
+            // (no session) was skipped and then despawned with the run.
+            let presentes = self.dg_conectados(idx);
+            let id = self.instancias[idx].id;
             self.dg_recolher(id, &presentes);
         }
         let inst = self.instancias.remove(idx);
@@ -2286,10 +2364,181 @@ impl GameWorld {
         self.dg_enviar_correio(sid);
     }
 
-    /// Saiu do jogo: sai da fila/sala/pronto-check (a instancia percebe no tick).
+    /// Saiu do jogo: sai da fila/sala/pronto-check. Inside a run, the seat is
+    /// kept for `RECONEXAO_DG_S` (`Queda`): called from `on_disconnect`
+    /// while the session still exists, so what lives only in it is copied.
     pub(super) fn dg_desconectou(&mut self, sid: SessionId) {
         let ev = self.mesa.remover(chave(sid), self.sim_time_s as f64);
         self.dg_eventos(ev);
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        // Not in a run, or LEAVING by a zone change (`mandar_para_zona`): the
+        // socket closing for the handoff is not a dropped connection.
+        if s.instancia == 0 || !s.logged_in || self.zona_de_saida.contains_key(&s.name) {
+            return;
+        }
+        let inst = s.instancia;
+        let Some(i) = self.instancias.iter().position(|i| i.id == inst) else {
+            return;
+        };
+        let onde = s.entity.and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0));
+        let queda = Queda {
+            em: self.sim_time_s,
+            onde,
+            andar: self.instancias[i].andar,
+            caido: s.downed.then_some(s.downed_heal_timer.max(0.0)),
+            retorno_da_dungeon: s.retorno_da_dungeon,
+            porao_de_volta: s.porao_de_volta,
+            pocoes_bebidas: s.pocoes_bebidas,
+            dashes_feitos: s.dashes_feitos,
+        };
+        let nome = s.name.clone();
+        if let Some(m) = self.instancias[i]
+            .membros
+            .iter_mut()
+            .find(|m| m.sid == sid && !m.saiu)
+        {
+            m.queda = Some(queda);
+            tracing::info!(
+                "[dungeon] instancia {inst}: {nome} caiu da conexao — lugar guardado por {RECONEXAO_DG_S:.0} s"
+            );
+        }
+    }
+
+    /// Left the game ON PURPOSE (or was thrown out): no reconnect window,
+    /// the seat is gone now — what dropping used to mean for everyone.
+    pub(crate) fn dg_largar_de_vez(&mut self, sid: SessionId) {
+        let Some(inst) = self.sessions.get(&sid).map(|s| s.instancia).filter(|i| *i != 0) else {
+            return;
+        };
+        if let Some(m) = self
+            .instancias
+            .iter_mut()
+            .find(|i| i.id == inst)
+            .and_then(|i| i.membros.iter_mut().find(|m| m.sid == sid))
+        {
+            m.saiu = true;
+            m.queda = None;
+        }
+    }
+
+    /// Members actually in the run right now: not gone, and not offline in
+    /// their reconnect window.
+    fn dg_conectados(&self, idx: usize) -> Vec<SessionId> {
+        self.instancias[idx]
+            .membros
+            .iter()
+            .filter(|m| !m.saiu && m.queda.is_none())
+            .map(|m| m.sid)
+            .collect()
+    }
+
+    /// The run `nome` dropped out of and can still go back to, with where
+    /// they land: where they stood if that is still a valid spot on the
+    /// CURRENT floor, otherwise its checkpoint (the room's way-back point,
+    /// or the floor's centre). Read by the login BEFORE it spawns the body,
+    /// so the character appears straight inside.
+    pub(crate) fn dg_religar_destino(&self, nome: &str) -> Option<(u32, Vec2)> {
+        let agora = self.sim_time_s;
+        let (i, m) = self.instancias.iter().find_map(|i| {
+            i.membros
+                .iter()
+                .find(|m| {
+                    m.nome == nome
+                        && !m.saiu
+                        && m.queda.is_some_and(|q| agora - q.em < RECONEXAO_DG_S)
+                })
+                .map(|m| (i, m))
+        })?;
+        let q = m.queda?;
+        let andar = i.andar;
+        let checkpoint = match i.planta {
+            Some(p) => p.ponto_de_volta(andar),
+            None => self
+                .arena_dg
+                .get((andar as usize).min(self.arena_dg.len().saturating_sub(1)))
+                .copied()
+                .unwrap_or_else(|| self.porto()),
+        };
+        let valido = |p: Vec2| match i.planta {
+            Some(pl) => pl.livre(p, ENTITY_RADIUS, andar),
+            None => p.distance(checkpoint) <= RAIO_DO_ANDAR,
+        };
+        let destino = q
+            .onde
+            .filter(|p| q.andar == andar && valido(*p))
+            .unwrap_or(checkpoint);
+        Some((i.id, destino))
+    }
+
+    /// The same character logged in again inside its window: back into the
+    /// SAME run, seat, deaths, challenges and chest intact. Called by the
+    /// login once the session is assembled (entity, name). Returns the
+    /// instance id, or 0 when there is nothing to go back to.
+    pub(crate) fn dg_religar(&mut self, sid: SessionId) -> u32 {
+        let Some(s) = self.sessions.get(&sid) else {
+            return 0;
+        };
+        if !s.logged_in || s.instancia != 0 {
+            return 0;
+        }
+        let Some(e) = s.entity else { return 0 };
+        let nome = s.name.clone();
+        let Some((id, destino)) = self.dg_religar_destino(&nome) else {
+            return 0;
+        };
+        let Some(idx) = self.instancias.iter().position(|i| i.id == id) else {
+            return 0;
+        };
+        let Some(m) = self.instancias[idx]
+            .membros
+            .iter_mut()
+            .find(|m| m.nome == nome && !m.saiu && m.queda.is_some())
+        else {
+            return 0;
+        };
+        let Some(q) = m.queda.take() else { return 0 };
+        let fora_s = self.sim_time_s - q.em;
+        m.sid = sid;
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return 0;
+        };
+        s.instancia = id;
+        s.retorno_da_dungeon = q.retorno_da_dungeon;
+        s.porao_de_volta = q.porao_de_volta;
+        s.pocoes_bebidas = q.pocoes_bebidas;
+        s.dashes_feitos = q.dashes_feitos;
+        // Down when it dropped: down again, with the wait that was left.
+        // (The login stood them up at full health; dropping is not a revive.)
+        let caido = q.caido.map(|falta| {
+            s.downed = true;
+            s.downed_heal_timer = falta;
+            s.downed_hp = shared::DOWNED_HP_MAX;
+        });
+        let _ = self.ecs.insert_one(e, Instancia(id));
+        if caido.is_some() {
+            if let Ok(mut h) = self.ecs.get::<&mut Health>(e) {
+                h.current = 0;
+            }
+            let _ = self.ecs.insert_one(e, Untargetable);
+        }
+        self.dg_teleportar(sid, destino);
+        tracing::info!(
+            "[dungeon] instancia {id}: {nome} voltou depois de {fora_s:.0} s fora"
+        );
+        // Won while they were away: the victory is theirs too.
+        if let EstadoDg::Concluida { em } = self.instancias[idx].estado {
+            let i = &self.instancias[idx];
+            let tempo_s = (em - i.inicio).max(0.0) as u32;
+            let bonus = dg::bonus_tempo(tempo_s, (i.limite - i.inicio).max(1.0) as u32);
+            self.dg_creditar_vitoria(idx, sid, tempo_s, bonus);
+        }
+        // The HUD comes back on the next tick (`Aviso::Instancia`).
+        self.instancias[idx].aviso_em = 0.0;
+        self.dg_texto(sid, true, "Reconnected: you are back in your dungeon run.");
+        self.save_pending = true;
+        id
     }
 
     /// Instancia de uma entidade por NetId (0 = mundo aberto).
@@ -2914,6 +3163,210 @@ mod testes {
                 );
             }
         }
+    }
+
+    // ─────────────────────── reconnect grace ───────────────────────
+
+    /// A world on the Arena with one Porão run of `nomes` (one per member),
+    /// as the door and the landing start it. Returns the sessions.
+    fn corrida_no_porao(nomes: &[&str]) -> (GameWorld, Vec<SessionId>) {
+        crate::economy::init_vazia_para_testes();
+        let porao = dg::CONTEUDOS.iter().find(|c| c.tipo == Tipo::Porao).expect("a Porão");
+        let mut w = GameWorld::new(HashMap::new());
+        w.zona = shared::arena::ZONA.to_string();
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::arena::DEF));
+        let mut sids = Vec::new();
+        for (k, nome) in nomes.iter().enumerate() {
+            let sid = SessionId(([127, 0, 0, 1], 19900 + k as u16).into());
+            let (tx, _rx) = mpsc::unbounded_channel();
+            w.on_connect(SessionHandle { id: sid, to_client: tx });
+            let eid = w.sessions[&sid].entity_id;
+            let e = w.ecs.spawn((
+                NetId(eid),
+                Position(shared::arena::CHEGADA + Vec2::new(k as f32, 0.0)),
+                Velocity(Vec2::ZERO),
+                EntityKind::Player,
+                Health { current: 100, max: 100 },
+            ));
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.name = nome.to_string();
+            s.account_id = Some(700 + k as i64);
+            s.xp = shared::xp_for_level(porao.nivel_min + 10);
+            s.stats.hp_max = 100_000;
+            s.stats.attack_damage = 100_000;
+            s.stats.defense = 100_000;
+            sids.push(sid);
+        }
+        w.dg_comecar(porao.id, 1, sids.clone());
+        assert_eq!(w.instancias.len(), 1, "the run did not start");
+        assert!(sids.iter().all(|s| w.sessions[s].instancia == w.instancias[0].id));
+        (w, sids)
+    }
+
+    /// The connection drops, exactly as the server loop handles it: the save,
+    /// then `on_disconnect`. Returns the row the next login would read.
+    fn cai(w: &mut GameWorld, sid: SessionId) -> crate::persistence::CharacterRow {
+        let row = w.take_character_for_disconnect(&sid).expect("saved");
+        w.on_disconnect(sid);
+        row
+    }
+
+    /// The client's reconnect: new socket, new SessionId, the same character
+    /// picked again by name, through the real login (`spawn_for_char`).
+    fn volta(w: &mut GameWorld, porta: u16, row: crate::persistence::CharacterRow) -> SessionId {
+        let sid = SessionId(([127, 0, 0, 1], porta).into());
+        let (tx, _rx) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: sid, to_client: tx });
+        let success = crate::auth::AuthSuccess {
+            account_id: row.account_id.unwrap_or(0),
+            username: row.name.clone(),
+            class: "warrior".into(),
+            sessao: None,
+        };
+        w.spawn_for_char(sid, success, row);
+        assert!(w.sessions[&sid].logged_in, "the login did not finish");
+        sid
+    }
+
+    /// RECONNECT AT 30 S: back in the SAME run, same seat, the run's state
+    /// and clock untouched. Player review: "I lost several dungeon runs due
+    /// to disconnections".
+    #[test]
+    fn quem_cai_e_volta_em_30_s_volta_pra_mesma_corrida() {
+        let (mut w, sids) = corrida_no_porao(&["Caiu", "Ficou"]);
+        let (a, b) = (sids[0], sids[1]);
+        let id = w.instancias[0].id;
+        let (limite, vivos) = (w.instancias[0].limite, w.instancias[0].vivos.len());
+        w.instancias[0].membros[0].mortes = 2;
+        let row = cai(&mut w, a);
+        assert_eq!(row.zona.as_deref(), Some(shared::arena::ZONA), "saved where the run is");
+        for _ in 0..30 {
+            w.sim_time_s += 1.0;
+            w.dg_tick_instancia(0);
+        }
+        let m = &w.instancias[0].membros[0];
+        assert!(!m.saiu && m.queda.is_some(), "the seat was not kept");
+        let a2 = volta(&mut w, 19950, row);
+        let s = &w.sessions[&a2];
+        assert_eq!(s.instancia, id, "not back in the run");
+        let e = s.entity.unwrap();
+        assert_eq!(w.ecs.get::<&Instancia>(e).map(|i| i.0).ok(), Some(id), "entity outside the run");
+        let i = &w.instancias[0];
+        let m = &i.membros[0];
+        assert_eq!(m.sid, a2);
+        assert!(m.queda.is_none() && !m.saiu);
+        assert_eq!(m.mortes, 2, "deaths reset by dropping");
+        assert_eq!(i.limite, limite, "the clock moved");
+        assert_eq!(i.vivos.len(), vivos);
+        assert!(i.vivos.iter().all(|e| w.dg_vivo(*e)), "the login killed mobs of the run");
+        let onde = w.ecs.get::<&Position>(e).unwrap().0;
+        let p = i.planta.expect("the Porão runs on its plan");
+        assert!(p.livre(onde, ENTITY_RADIUS, i.andar), "came back in a wall: {onde:?}");
+        assert!(s.retorno_da_dungeon.is_some(), "would save the run's floor as their spot");
+        // And it holds: the next ticks keep them in.
+        for _ in 0..5 {
+            w.sim_time_s += 1.0;
+            w.dg_tick_instancia(0);
+        }
+        assert!(!w.instancias[0].membros[0].saiu);
+        assert_eq!(w.dg_conectados(0), vec![a2, b]);
+    }
+
+    /// RECONNECT AT 95 S: too late — gone, exactly as before the window
+    /// existed, and the login is an ordinary one.
+    #[test]
+    fn quem_volta_depois_de_95_s_nao_volta_pra_corrida() {
+        let (mut w, sids) = corrida_no_porao(&["Tarde", "Ficou"]);
+        let row = cai(&mut w, sids[0]);
+        for _ in 0..95 {
+            w.sim_time_s += 1.0;
+            w.dg_tick_instancia(0);
+        }
+        assert!(w.instancias[0].membros[0].saiu, "the window did not end");
+        let a2 = volta(&mut w, 19951, row);
+        assert_eq!(w.sessions[&a2].instancia, 0, "went back into a run after the window");
+        assert_eq!(w.instancias[0].membros[0].sid, sids[0], "took the old seat");
+        let e = w.sessions[&a2].entity.unwrap();
+        assert!(w.ecs.get::<&Instancia>(e).is_err());
+    }
+
+    /// SOLO, THE ONLY MEMBER DROPS: the run waits out the window (it used to
+    /// close on the next tick), without a wipe or a floor change for an
+    /// empty party — and closes once the window is over.
+    #[test]
+    fn corrida_solo_sem_ninguem_nao_fecha_antes_de_90_s() {
+        let (mut w, sids) = corrida_no_porao(&["Sozinho"]);
+        let (andar, wipes) = (w.instancias[0].andar, w.instancias[0].wipes);
+        let _ = cai(&mut w, sids[0]);
+        for _ in 0..89 {
+            w.sim_time_s += 1.0;
+            w.dg_tick_instancia(0);
+            assert_eq!(w.instancias.len(), 1, "closed with the seat still kept");
+        }
+        assert_eq!(w.instancias[0].andar, andar);
+        assert_eq!(w.instancias[0].wipes, wipes, "an empty party counted as a wipe");
+        w.sim_time_s += 2.0;
+        w.dg_tick_instancia(0);
+        assert!(w.instancias.is_empty(), "the run outlived the window");
+    }
+
+    /// WON WHILE OFFLINE: the run waits for their chest, and whoever comes
+    /// back gets the victory and opens their OWN chest, once.
+    #[test]
+    fn quem_volta_depois_da_vitoria_ainda_abre_o_seu_bau() {
+        let (mut w, sids) = corrida_no_porao(&["Volta", "Ficou"]);
+        let row = cai(&mut w, sids[0]);
+        w.sim_time_s += 5.0;
+        w.dg_terminar(0, true);
+        let em = w.sim_time_s;
+        let m = &w.instancias[0].membros;
+        assert!(!m[0].vitoria_creditada && m[1].vitoria_creditada);
+        w.sim_time_s += 20.0;
+        let a2 = volta(&mut w, 19952, row);
+        assert!(w.instancias[0].membros[0].vitoria_creditada, "no victory for the one who came back");
+        // The auto chest goes to the one online; then the other drops
+        // again before opening theirs.
+        w.sim_time_s = em + BAU_ABRE_SOZINHO_S - 1.0;
+        w.dg_tick_instancia(0);
+        let row = cai(&mut w, a2);
+        w.sim_time_s = em + BAU_ABRE_SOZINHO_S + 1.0;
+        w.dg_tick_instancia(0);
+        assert!(w.instancias[0].membros[1].abriu_bau, "the one online got the auto chest");
+        assert!(!w.instancias[0].membros[0].abriu_bau);
+        // Past the closing time: still open, someone's chest is pending.
+        w.sim_time_s = em + FECHA_DEPOIS_DE_VENCER_S + 1.0;
+        w.dg_tick_instancia(0);
+        assert_eq!(w.instancias.len(), 1, "closed without the offline member's chest");
+        let a3 = volta(&mut w, 19953, row);
+        let uid = w.instancias[0].uid;
+        // Opens it by hand; a second time gives nothing.
+        w.dg_dar_bau(0, a3);
+        assert!(w.instancias[0].membros[0].abriu_bau);
+        assert!(!w.sessions.get_mut(&a3).unwrap().dungeon.abrir_bau(uid), "the chest is not on record");
+        let antes = w.sessions[&a3].inventory.clone();
+        w.dg_dar_bau(0, a3);
+        assert_eq!(w.sessions[&a3].inventory, antes, "a second chest");
+        // Everybody had theirs: past the closing time, it closes.
+        w.dg_tick_instancia(0);
+        assert!(w.instancias.is_empty(), "everybody had theirs: it closes");
+    }
+
+    /// LEAVING ON PURPOSE keeps no seat: the leave button, or asking to
+    /// disconnect.
+    #[test]
+    fn quem_sai_de_proposito_nao_guarda_lugar() {
+        let (mut w, sids) = corrida_no_porao(&["Porta", "Pediu", "Ficou"]);
+        w.handle_dungeon(sids[0], Pedido::Sair);
+        w.on_message(sids[1], ClientMessage::RequestDisconnect);
+        w.dg_tick_instancia(0);
+        let m = &w.instancias[0].membros;
+        assert!(m[0].saiu && m[0].queda.is_none());
+        assert!(m[1].saiu && m[1].queda.is_none());
+        assert!(w.dg_religar_destino("Porta").is_none());
+        assert!(w.dg_religar_destino("Pediu").is_none());
+        assert!(!m[2].saiu);
     }
 
     fn sala_da_primeira(p: &shared::planta::Planta) -> usize {

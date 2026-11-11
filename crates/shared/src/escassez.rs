@@ -5,7 +5,7 @@
 //!   Monsters, dungeon chests and the Stormkeep chests no longer give it.
 //! - The eight colored craft materials (Steel, Platinum, Blackheart,
 //!   Moonshadow, Quintessence, Exorcism, Illuminating, Anima), in any color:
-//!   monsters drop them at a tenth of the old chance. Rocks are unchanged.
+//!   monsters drop them at 30% of the old chance. Rocks are unchanged.
 //!
 //! One pure rule used by the loot roll AND by "Where to get", so the screen
 //! never promises a drop that no longer happens.
@@ -23,8 +23,8 @@ pub fn fator_em_mob(item: u16) -> f32 {
     1.0
 }
 
-/// Monsters drop craft materials at 10% of what their table says.
-pub const MATERIAL_EM_MOB: f32 = 0.10;
+/// Monsters drop craft materials at 30% of what their table says (-70%; owner: -90% was too much, merging greys into greens must stay worth it).
+pub const MATERIAL_EM_MOB: f32 = 0.30;
 
 /// One of the eight colored craft materials, in any of its four colors.
 pub fn e_material_de_craft(item: u16) -> bool {

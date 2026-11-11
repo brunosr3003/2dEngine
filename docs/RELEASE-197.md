@@ -6,7 +6,7 @@ Everything is committed on the release branch; the builds wait for brunjilinux
 ## What goes out
 - Market buy orders (`mercado_pedidos` on the central DB, `PedirCompra` / `VenderAoPedido` / cancel).
 - Economy: Darksteel only from rocks (+ login calendar, shop, gifts); monsters drop craft
-  materials at 10% (`shared::escassez`); no Darksteel in dungeon/field-boss chests.
+  materials at 30% (-70%, `shared::escassez`); no Darksteel in dungeon/field-boss chests.
 - Keys: purple 40-69, legendary 70+ (0.3% dungeon, 0.1% world boss); field-boss chest key
   10/25/50% by chest color, area color, max purple (`forte::chave_do_bau`).
 - Combine guarantee every 25th attempt per color for keys, pets and mounts
@@ -21,6 +21,9 @@ Everything is committed on the release branch; the builds wait for brunjilinux
   server (WebSocket ping), the ping the player sees, FPS, platform and real IP (nginx `X-Real-IP`).
 - Honest on-screen ping: the server answers `Ping` in the connection task (no 30 Hz tick wait) and the
   client times the `Pong` on arrival in the network thread (no frame wait).
+- Dungeon reconnect grace: 90 s to come back into the same run (`RECONEXAO_DG_S`).
+- Rate-us hourly notice moved to Panopticon schedules in prod (cron removed) — already live.
+- Panopticon: flash-offer campaigns tab; country column in 'rede' (needs /opt/tempest-prod/geoip/pais.mmdb, already on mmo-vps; test server needs a copy or PANOPTICO_GEOIP).
 - Protocol 197.
 
 ## Order (as always)

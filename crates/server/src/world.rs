@@ -6399,6 +6399,18 @@ impl GameWorld {
                 400.0,
             );
         }
+        // RECONNECT GRACE (`dungeon::RECONEXAO_DG_S`): this character dropped
+        // out of a run on THIS process a moment ago and still has its seat.
+        // The body is born inside the run, not where the save says (the save
+        // keeps the spot from before the run on purpose).
+        let religar = if self.tutorial_mode || self.dungeon_mode {
+            None
+        } else {
+            self.dg_religar_destino(&saved_char_name)
+        };
+        if let Some((_, onde)) = religar {
+            spawn = onde;
+        }
         if self.ilha.is_some() {
             let antes = spawn;
             spawn = self.pousar(spawn);
@@ -6412,10 +6424,15 @@ impl GameWorld {
             }
         }
         // Dá respiro ao jogador: despawna inimigos muito proximos do spawn.
+        //
+        // Never a dungeon's: they belong to a run (its `vivos`), and a dead
+        // one there opens gates. That was true of anyone logging in on the
+        // Arena near a floor, and more so of whoever comes back INTO a run.
         let clear_r_sq: f32 = 6.0 * 6.0;
         let close_enemies: Vec<(Entity, EntityId)> = self
             .ecs
             .query::<(&NetId, &Position, &EnemyTag)>()
+            .without::<&crate::world::dungeon::Instancia>()
             .iter()
             .filter_map(|(e, (net, pos, _))| {
                 if pos.0.distance_squared(spawn) < clear_r_sq {
@@ -6614,6 +6631,11 @@ impl GameWorld {
             let _ = s.handle.to_client.send(ServerMessage::GuardaRoupa {
                 guarda_roupa: s.guarda_roupa.clone(),
             });
+        }
+        if religar.is_some() {
+            // Same run, same seat (sets the session's and the entity's
+            // instance together, like the run's start does).
+            instancia_pendente = self.dg_religar(sid);
         }
         if instancia_pendente != 0 {
             let _ = self
@@ -8253,7 +8275,11 @@ impl GameWorld {
             ClientMessage::DropItem { slot } => {
                 self.handle_drop_item(id, slot);
             }
-            ClientMessage::RequestDisconnect => self.on_disconnect(id),
+            ClientMessage::RequestDisconnect => {
+                // Asked to leave: no reconnect window in a dungeon run.
+                self.dg_largar_de_vez(id);
+                self.on_disconnect(id)
+            }
             ClientMessage::SkillCast { skill_id } => self.handle_skill_cast(id, skill_id),
             ClientMessage::CreateCharacter {
                 name,
@@ -23356,10 +23382,20 @@ impl GameWorld {
                 }
             }
             N::Expulsar { conta, motivo } => {
-                for s in self.sessions.values().filter(|s| s.account_id == Some(conta)) {
-                    let _ = s.handle.to_client.send(ServerMessage::Kick {
-                        reason: format!("this account was banned ({motivo})"),
-                    });
+                let expulsos: Vec<SessionId> = self
+                    .sessions
+                    .iter()
+                    .filter(|(_, s)| s.account_id == Some(conta))
+                    .map(|(sid, _)| *sid)
+                    .collect();
+                for sid in expulsos {
+                    // Thrown out: no seat kept in a dungeon run.
+                    self.dg_largar_de_vez(sid);
+                    if let Some(s) = self.sessions.get(&sid) {
+                        let _ = s.handle.to_client.send(ServerMessage::Kick {
+                            reason: format!("this account was banned ({motivo})"),
+                        });
+                    }
                 }
             }
         }

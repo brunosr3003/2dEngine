@@ -1,13 +1,14 @@
 Nov 12, 2026 — Economy update: buy orders, rarer resources and keys
 
 - New in the Market: Buy orders. Post what you want to buy (item, amount and price each); the gold is held and other players can sell to your order. Cancel any time to get the rest of the gold back.
-- Craft resources are rarer and worth trading: Darksteel now comes only from rocks (plus daily rewards and the shop), and monsters drop craft materials much less often. Rocks give the same as before.
+- Craft resources are rarer and worth trading: Darksteel now comes only from rocks (plus daily rewards and the shop), and monsters drop craft materials less often. Rocks give the same as before.
 - Craft keys: purple is now level 40-69 and legendary 70+. A ready legendary key is very rare luck; the main road is combining.
 - Combine (keys, pets and mounts): every 25th attempt of a color is guaranteed. The counter is shown in the Combine tab and a lucky success does not reset it.
 - Field boss chests no longer give Darksteel: they can give a craft key of the area's color instead (never legendary).
 - Dungeon chests no longer give Darksteel.
 - Monsters far below your level give less XP (more than 5 levels below: -8% per level, at least 20%). Drops are not affected.
 - Caverns are gone: dungeons are the Porão ones, which cost a key and have no daily limit.
+- Dungeons: if your connection drops, you have 90 seconds to reconnect and get back into the same run.
 - New in the Bag: Help tab. See your attack, defense and health against what is expected at your level, which pieces hold you back, and where to hunt and which dungeon to run.
 - Server list: shows how full each server is (green, yellow, red) instead of the player count.
 - The ping shown in game is now your real connection ping (it used to add the server tick and a frame, so it showed higher than it was).
