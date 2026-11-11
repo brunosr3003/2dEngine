@@ -141,6 +141,7 @@
     <button class="aba" data-aba="aviso">aviso global</button>
     <button class="aba" data-aba="agendados">agendados</button>
     <button class="aba" data-aba="eventos">eventos</button>
+    <button class="aba" data-aba="ofertas">ofertas</button>
     <button class="aba" data-aba="chat">chat</button>
     <button class="aba" data-aba="hud">hud</button>
     <button class="aba" data-aba="rede">rede</button>
@@ -424,7 +425,7 @@
     internet). <b>jogo</b> = o ping que o jogador vê (inclui os quadros do
     aparelho). <b>fps</b> = quadros por segundo do aparelho. Jogo alto com rede
     baixa e fps baixo = aparelho lento, não a internet. Amostra "ruim": rede ≥
-    250 ms, jogo ≥ 300 ms ou fps &lt; 20. O IP é o real (via nginx).
+    250 ms, jogo ≥ 300 ms ou fps &lt; 20. O IP é o real (via nginx); o país sai de uma base local (IP Geolocation by DB-IP), sem consulta externa.
   </p>
   <h2>Últimas 24 h, por personagem</h2>
   <div id="rede-resumo" class="nota"></div>
@@ -538,6 +539,49 @@
 </div>
 
 <!-- ─────────────────────────── chat global ─────────────────────────── -->
+<!-- ─────────────────────────── ofertas relâmpago (campanhas) ─────────────────────────── -->
+<div class="aba-painel" id="aba-ofertas" hidden>
+  <h2>Ofertas relâmpago (campanhas)</h2>
+  <p class="nota">
+    Uma oferta paga (Google Play) que abre para <b>todas as contas</b>, em
+    qualquer nível, até o fim da campanha. Quem está online recebe na hora
+    (aparece na tela); quem entrar depois recebe ao entrar, enquanto durar.
+    Uma vez por conta. Só o app Android mostra ofertas (é onde há pagamento).
+    Fica no banco central (<code>ofertas_relampago</code>, coluna
+    <code>campanha_ate</code>), ao lado das ofertas por nível. O título vai em
+    inglês; o português é opcional (quem joga em português vê esse).
+    Itens e energia chegam pelo <b>correio</b> do personagem, o TP vai direto pro saldo.
+  </p>
+  <div class="grade">
+    <div>
+      <label class="f">título (inglês) <input id="of-titulo" class="campo" maxlength="60" placeholder="Weekend Flash Offer"></label>
+      <label class="f">título (português, opcional) <input id="of-titulo-pt" class="campo" maxlength="60" placeholder="Oferta Relâmpago de Fim de Semana"></label>
+      <label class="f">produto na Google Play <select id="of-produto" class="campo" style="width:auto"></select></label>
+      <p class="nota" id="of-preco"></p>
+      <label class="f">preço "de" riscado (opcional, centavos) <input id="of-de" type="number" min="0" class="campo" style="width:110px" placeholder="2990"></label>
+    </div>
+    <div>
+      <label class="f">TP <input id="of-tp" type="number" min="0" max="100000" value="0" class="campo" style="width:110px"></label>
+      <label class="f">energia <input id="of-energia" type="number" min="0" max="10000000" value="0" class="campo" style="width:130px"></label>
+      <label class="f">duração <input id="of-horas" type="number" min="1" max="168" value="24" class="campo" style="width:80px"> h (máx. 168 = 7 dias)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="acao" type="button" data-ofh="1">1 h</button><button class="acao" type="button" data-ofh="3">3 h</button>
+        <button class="acao" type="button" data-ofh="6">6 h</button><button class="acao" type="button" data-ofh="12">12 h</button>
+        <button class="acao" type="button" data-ofh="24">24 h</button><button class="acao" type="button" data-ofh="48">48 h</button>
+        <button class="acao" type="button" data-ofh="72">72 h</button><button class="acao" type="button" data-ofh="168">7 dias</button>
+      </div>
+    </div>
+  </div>
+  <h2>Itens (até 8)</h2>
+  <div id="of-anexos"></div>
+  <button class="aba" id="of-mais" style="width:auto;padding:6px 14px">+ item</button>
+  <p id="of-previa" class="nota" style="font-size:15px"></p>
+  <button class="aba" id="of-enviar" style="width:auto;padding:8px 20px">enviar agora para todos</button>
+  <div id="of-resultado" class="nota"></div>
+  <h2>Campanhas</h2>
+  <div id="of-lista" class="nota"></div>
+</div>
+
 <div class="aba-painel" id="aba-chat" hidden>
   <h2>Chat global</h2>
   <p class="nota">
@@ -1650,12 +1694,19 @@ function montaPara() {
 const modoTodos = () => document.querySelector('input[name=co-modo]:checked').value === 'todos';
 
 // ── attachments ──
-function desenhaAnexos() {
-  const el = document.getElementById('co-anexos');
+// Shared item picker: the mail tab (default) and the offers tab (`ofertas`,
+// no color/tier: a purchase delivers bare items, so equipment goes 1x Common
+// Tier I). `alvo.lista()` is the live array (rows are replaced in place).
+const CO_ALVO = { el: 'co-anexos', lista: () => coAnexos, comCor: true, aoMudar: () => {} };
+function desenhaAnexos(alvo = CO_ALVO) {
+  const el = document.getElementById(alvo.el);
+  const coAnexos = alvo.lista();
+  const redesenha = () => { desenhaAnexos(alvo); alvo.aoMudar(); };
   el.innerHTML = '';
   coAnexos.forEach((a, i) => {
     const it = coCatalogo.porId.get(Number(a.item_id));
-    const equip = it && it.equip;
+    const equip = it && it.equip && alvo.comCor;
+    if (it && it.equip && !alvo.comCor) a.qtd = 1;
     if (equip) { a.qtd = 1; a.grau ??= 1; a.tier ??= 1; a.refino ??= 0; a.vinculado ??= false; }
     const l = document.createElement('div');
     l.className = 'anexo';
@@ -1672,6 +1723,7 @@ function desenhaAnexos() {
            <select class="co-tier">${tiers}</select>
            <select class="co-refino">${refinos}</select>
            <label class="nota" style="padding:0"><input type="checkbox" class="co-vinc"${a.vinculado ? ' checked' : ''}> vinculado</label>`
+        : it && it.equip ? `<span class="nota" style="padding:0">1x (Comum Tier I)</span>`
         : `<input class="co-qtd" value="${esc(String(a.qtd))}" placeholder="qtd" style="width:80px">
            ${it ? [1, 10, 100, it.pilha].filter((v, k, arr) => v <= Math.max(it.pilha, 1) && arr.indexOf(v) === k)
                .map(v => `<button class="chip co-q" data-v="${v}" type="button">${v}</button>`).join('') : ''}`}
@@ -1684,7 +1736,7 @@ function desenhaAnexos() {
     let achados = [], sel = 0;
     const escolhe = x => {
       coAnexos[i] = { item_id: x.id, qtd: x.equip ? 1 : (coAnexos[i].qtd || 1) };
-      desenhaAnexos();
+      redesenha();
     };
     const mostra = () => {
       achados = buscaItens(busca.value === (it && it.pt) ? '' : busca.value);
@@ -1717,16 +1769,16 @@ function desenhaAnexos() {
     };
     busca.onblur = () => { lista.hidden = true; busca.value = it ? it.pt : ''; };
     const q = l.querySelector('.co-qtd');
-    if (q) q.oninput = () => { coAnexos[i].qtd = q.value; };
-    l.querySelectorAll('.co-q').forEach(b => { b.onclick = () => { coAnexos[i].qtd = Number(b.dataset.v); q.value = b.dataset.v; }; });
+    if (q) q.oninput = () => { coAnexos[i].qtd = q.value; alvo.aoMudar(); };
+    l.querySelectorAll('.co-q').forEach(b => { b.onclick = () => { coAnexos[i].qtd = Number(b.dataset.v); q.value = b.dataset.v; alvo.aoMudar(); }; });
     const g = l.querySelector('.co-grau');
     if (g) {
-      g.onchange = () => { coAnexos[i].grau = Number(g.value); desenhaAnexos(); };
+      g.onchange = () => { coAnexos[i].grau = Number(g.value); redesenha(); };
       l.querySelector('.co-tier').onchange = e => { coAnexos[i].tier = Number(e.target.value); };
       l.querySelector('.co-refino').onchange = e => { coAnexos[i].refino = Number(e.target.value); };
       l.querySelector('.co-vinc').onchange = e => { coAnexos[i].vinculado = e.target.checked; };
     }
-    l.querySelector('.co-tira').onclick = () => { coAnexos.splice(i, 1); if (!coAnexos.length) coAnexos.push({ item_id: '', qtd: 1 }); desenhaAnexos(); };
+    l.querySelector('.co-tira').onclick = () => { coAnexos.splice(i, 1); if (!coAnexos.length) coAnexos.push({ item_id: '', qtd: 1 }); redesenha(); };
     el.appendChild(l);
   });
 }
@@ -1952,11 +2004,11 @@ async function redeCarrega() {
   try {
     const d = await (await fetch('api/latencias', { cache: 'no-store' })).json();
     const ms = v => v == null ? '—' : Math.round(v) + ' ms';
-    document.getElementById('rede-resumo').innerHTML = d.resumo.length ? '<table><tr><th>personagem</th><th>plataforma</th><th>IP</th><th>amostras</th><th>rede média / pior</th><th>jogo médio / pior</th><th>fps mínimo</th><th>ruins</th></tr>' +
-      d.resumo.map(r => `<tr><td>${esc(r.personagem)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.ip)}</td><td>${r.amostras}</td><td>${ms(r.rede_media)} / ${ms(r.rede_max)}</td><td>${ms(r.jogo_media)} / ${ms(r.jogo_max)}</td><td>${r.fps_min ?? '—'}</td><td>${r.ruins}</td></tr>`).join('') + '</table>'
+    document.getElementById('rede-resumo').innerHTML = d.resumo.length ? '<table><tr><th>personagem</th><th>plataforma</th><th>país</th><th>IP</th><th>amostras</th><th>rede média / pior</th><th>jogo médio / pior</th><th>fps mínimo</th><th>ruins</th></tr>' +
+      d.resumo.map(r => `<tr><td>${esc(r.personagem)}</td><td>${esc(r.plataforma)}</td><td>${esc(r.pais || '—')}</td><td>${esc(r.ip)}</td><td>${r.amostras}</td><td>${ms(r.rede_media)} / ${ms(r.rede_max)}</td><td>${ms(r.jogo_media)} / ${ms(r.jogo_max)}</td><td>${r.fps_min ?? '—'}</td><td>${r.ruins}</td></tr>`).join('') + '</table>'
       : 'nenhuma amostra ainda (chega com o cliente novo, a cada 30 s de jogo)';
-    document.getElementById('rede-ruins').innerHTML = d.ruins.length ? '<table><tr><th>quando</th><th>personagem</th><th>canal</th><th>IP</th><th>plataforma</th><th>rede</th><th>jogo</th><th>fps</th></tr>' +
-      d.ruins.map(r => `<tr><td>${esc(r.quando)}</td><td>${esc(r.personagem)}</td><td>${esc(r.canal)}</td><td>${esc(r.ip)}</td><td>${esc(r.plataforma)}</td><td>${ms(r.rede_ms)}</td><td>${ms(r.jogo_ms)}</td><td>${r.fps}</td></tr>`).join('') + '</table>' : 'nenhuma';
+    document.getElementById('rede-ruins').innerHTML = d.ruins.length ? '<table><tr><th>quando</th><th>personagem</th><th>canal</th><th>país</th><th>IP</th><th>plataforma</th><th>rede</th><th>jogo</th><th>fps</th></tr>' +
+      d.ruins.map(r => `<tr><td>${esc(r.quando)}</td><td>${esc(r.personagem)}</td><td>${esc(r.canal)}</td><td>${esc(r.pais || '—')}</td><td>${esc(r.ip)}</td><td>${esc(r.plataforma)}</td><td>${ms(r.rede_ms)}</td><td>${ms(r.jogo_ms)}</td><td>${r.fps}</td></tr>`).join('') + '</table>' : 'nenhuma';
   } catch (e) { document.getElementById('rede-resumo').textContent = 'falhou: ' + e; }
 }
 PUXA.rede = redeCarrega;
@@ -2028,6 +2080,114 @@ document.getElementById('ev-criar').onclick = async () => {
   } catch (e) { r.textContent = 'falhou: ' + e; }
 };
 PUXA.eventos = evCarrega;
+
+// ── ofertas relâmpago (campanhas) ──
+let ofAnexos = [{ item_id: '', qtd: 1 }], ofProdutos = [], ofDados = [], ofMontado = false;
+const OF_ALVO = { el: 'of-anexos', lista: () => ofAnexos, comCor: false, aoMudar: () => ofPrevia() };
+const ofReais = c => (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const ofPrecoTxt = c => `R$ ${ofReais(c)} / US$ ${(c / 100).toFixed(2)}`;
+const ofItensTxt = itens => itens.map(i => `${num(i.qtd)}x ${i.pt || i.nome || ('item #' + i.item_id)}`);
+function ofProduto() { return ofProdutos.find(p => p.id === document.getElementById('of-produto').value) || null; }
+function ofItens() {
+  return ofAnexos.filter(a => String(a.item_id).trim() !== '').map(a => {
+    const it = coCatalogo.porId.get(Number(a.item_id));
+    return { item_id: Number(a.item_id), qtd: it && it.equip ? 1 : (Number(a.qtd) || 0), pt: it && it.pt, nome: it && it.nome };
+  });
+}
+function ofPrevia() {
+  const p = ofProduto();
+  document.getElementById('of-preco').innerHTML = p ? `preço: <b>${ofPrecoTxt(p.preco_centavos)}</b> (${p.preco_centavos} centavos, o mesmo número nas duas moedas)` : '';
+  if (!coCatalogo) return;
+  const tp = parseInt(document.getElementById('of-tp').value, 10) || 0;
+  const en = parseInt(document.getElementById('of-energia').value, 10) || 0;
+  const h = parseInt(document.getElementById('of-horas').value, 10) || 0;
+  const de = parseInt(document.getElementById('of-de').value, 10) || 0;
+  const da = [tp > 0 && `${num(tp)} TP`, en > 0 && `${num(en)} energia`, ...ofItensTxt(ofItens())].filter(Boolean);
+  const titulo = document.getElementById('of-titulo').value.trim() || '(sem título)';
+  document.getElementById('of-previa').innerHTML = `O jogador vê <b>${esc(titulo)}</b> por <b>${p ? ofPrecoTxt(p.preco_centavos) : '—'}</b>` +
+    (de && p && de > p.preco_centavos ? ` <s>${ofPrecoTxt(de)}</s>` : '') +
+    ` e recebe: <b>${da.length ? esc(da.join(' + ')) : 'nada (escolha TP, energia ou item)'}</b> · aberta por <b>${h} h</b>`;
+}
+async function ofCarrega() {
+  const el = document.getElementById('of-lista');
+  try {
+    await carregaCatalogo();
+    const d = await (await fetch('api/ofertas', { cache: 'no-store' })).json();
+    if (d.produtos && !ofProdutos.length) {
+      ofProdutos = d.produtos;
+      document.getElementById('of-produto').innerHTML = ofProdutos.map(p =>
+        `<option value="${esc(p.id)}">${esc(p.id)} · ${ofPrecoTxt(p.preco_centavos)}</option>`).join('');
+    }
+    if (!ofMontado) { ofMontado = true; desenhaAnexos(OF_ALVO); }
+    ofPrevia();
+    if (!d.ok) { el.innerHTML = `<span class="ruim">falhou:</span> ${esc(d.erro)}`; return; }
+    ofDados = d.campanhas;
+    el.innerHTML = ofDados.length ? `<table><tr><th>campanha</th><th>preço</th><th>dá</th><th>início</th><th>fim</th><th>contas</th><th>compraram</th><th></th></tr>` +
+      ofDados.map(o => {
+        const da = [o.tp > 0 && `${num(o.tp)} TP`, o.energia > 0 && `${num(o.energia)} energia`, ...ofItensTxt(o.itens)].filter(Boolean).join(' + ');
+        const conv = o.contas ? ` (${pct(o.compradas / o.contas)})` : '';
+        const estado = o.ativa
+          ? `<span class="bom">ativa</span> · falta ${dur(o.segundos)} <button class="acao" data-ofe="${esc(o.id)}">encerrar</button>`
+          : '<span class="nota">encerrada</span>';
+        return `<tr><td><b>${esc(o.titulo)}</b>${o.titulo_pt ? `<div class="nota">${esc(o.titulo_pt)}</div>` : ''}<div class="nota">${esc(o.id)}</div></td>
+          <td>${esc(o.produto)}<div class="nota">${ofPrecoTxt(o.preco_centavos)}${o.valor_de_centavos ? ` · de ${ofPrecoTxt(o.valor_de_centavos)}` : ''}</div></td>
+          <td>${esc(da || '—')}</td><td>${esc(o.inicio || '—')}</td><td>${esc(o.fim || '—')}</td>
+          <td>${num(o.contas)}${o.ativa ? `<div class="nota">${num(o.abertas)} abertas agora</div>` : ''}</td>
+          <td>${num(o.compradas)}${conv}<div class="nota">R$ ${ofReais(o.compradas * o.preco_centavos)}</div></td>
+          <td style="white-space:nowrap">${estado}</td></tr>`;
+      }).join('') + '</table>' : 'nenhuma campanha ainda';
+    el.querySelectorAll('[data-ofe]').forEach(b => b.onclick = () => ofEncerrar(b.dataset.ofe));
+  } catch (e) { el.textContent = 'falhou: ' + e; }
+}
+async function ofEncerrar(id) {
+  const o = ofDados.find(x => x.id === id);
+  const r = document.getElementById('of-resultado');
+  if (!confirm(`Encerrar a campanha agora?\n\n${o ? o.titulo : id}\n\nSome da tela de todo mundo. Quem já pagou recebe do mesmo jeito.`)) return;
+  try {
+    const d = await (await fetch('api/ofertas/encerrar', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+    })).json();
+    r.innerHTML = d.ok ? `<span class="bom">encerrada</span> · ${d.fechadas} oferta(s) aberta(s) fechada(s)${d.avisou ? '' : ' · <span class="ruim">aviso aos online falhou</span>'}`
+      : `<span class="ruim">falhou:</span> ${esc(d.erro)}`;
+    ofCarrega();
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+}
+['of-titulo', 'of-produto', 'of-tp', 'of-energia', 'of-horas', 'of-de'].forEach(id => document.getElementById(id).addEventListener('input', ofPrevia));
+document.querySelectorAll('[data-ofh]').forEach(b => b.onclick = () => { document.getElementById('of-horas').value = b.dataset.ofh; ofPrevia(); });
+document.getElementById('of-mais').onclick = () => {
+  if (ofAnexos.length < 8) { ofAnexos.push({ item_id: '', qtd: 1 }); desenhaAnexos(OF_ALVO); ofPrevia(); }
+};
+document.getElementById('of-enviar').onclick = async () => {
+  const r = document.getElementById('of-resultado');
+  const p = ofProduto();
+  if (!p) { r.innerHTML = '<span class="ruim">escolha o produto</span>'; return; }
+  const itens = ofItens();
+  if (itens.some(i => !(i.qtd >= 1))) { r.innerHTML = '<span class="ruim">quantidade inválida num item</span>'; return; }
+  const de = parseInt(document.getElementById('of-de').value, 10) || 0;
+  const corpo = {
+    titulo: document.getElementById('of-titulo').value.trim(),
+    titulo_pt: document.getElementById('of-titulo-pt').value.trim(),
+    produto: p.id,
+    preco_centavos: p.preco_centavos,
+    valor_de_centavos: de > 0 ? de : null,
+    tp: parseInt(document.getElementById('of-tp').value, 10) || 0,
+    energia: parseInt(document.getElementById('of-energia').value, 10) || 0,
+    itens: itens.map(i => ({ item_id: i.item_id, qtd: i.qtd })),
+    horas: parseInt(document.getElementById('of-horas').value, 10) || 0,
+  };
+  if (!corpo.titulo) { r.innerHTML = '<span class="ruim">escreva o título em inglês</span>'; return; }
+  if (!confirm(`Enviar agora para TODOS os jogadores?\n\n${document.getElementById('of-previa').textContent}\n\nAbre para todas as contas até o fim (uma vez por conta).`)) return;
+  r.textContent = 'enviando...';
+  try {
+    const d = await (await fetch('api/ofertas', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo),
+    })).json();
+    r.innerHTML = d.ok ? `<span class="bom">campanha ${esc(d.id)} no ar até ${esc(d.ate)}</span>${d.avisou ? ' · quem está online vê agora' : ' · <span class="ruim">aviso aos online falhou</span> (veem ao entrar)'}`
+      : `<span class="ruim">recusado:</span> ${esc(d.erro)}`;
+    ofCarrega();
+  } catch (e) { r.textContent = 'falhou: ' + e; }
+};
+PUXA.ofertas = ofCarrega;
 
 // ── chat global ──
 let chDados = null;

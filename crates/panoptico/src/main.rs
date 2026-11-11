@@ -42,6 +42,7 @@ mod auth;
 mod economia;
 mod mapa;
 mod observa;
+mod ofertas;
 
 #[derive(Clone)]
 struct Estado {
@@ -158,6 +159,8 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/avisos"), get(avisos_lista).post(aviso_enviar))
         .route(&p("/api/eventos"), get(eventos_lista).post(evento_criar))
         .route(&p("/api/eventos/cancelar"), post(evento_cancelar))
+        .route(&p("/api/ofertas"), get(ofertas::lista).post(ofertas::criar))
+        .route(&p("/api/ofertas/encerrar"), post(ofertas::encerrar))
         .route(&p("/api/chat"), get(chat_lista))
         .route(&p("/api/chat/palavras"), post(chat_palavra))
         .route(&p("/api/chat/acao"), post(chat_acao))

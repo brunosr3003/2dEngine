@@ -349,10 +349,47 @@ pub async fn latencias(State(st): State<Estado>) -> impl IntoResponse {
         true,
         serde_json::json!({
             "resumo": resumo.into_iter().map(|(p, ip, plat, n, rede, rede_max, jogo, jogo_max, fps_min, n_ruins)| serde_json::json!({
-                "personagem": p, "ip": ip, "plataforma": plat, "amostras": n, "rede_media": rede, "rede_max": rede_max,
+                "personagem": p, "pais": pais_do_ip(&ip), "ip": ip, "plataforma": plat, "amostras": n, "rede_media": rede, "rede_max": rede_max,
                 "jogo_media": jogo, "jogo_max": jogo_max, "fps_min": fps_min, "ruins": n_ruins })).collect::<Vec<_>>(),
             "ruins": ruins.into_iter().map(|(q, p, c, ip, plat, rede, jogo, fps)| serde_json::json!({
-                "quando": q, "personagem": p, "canal": c, "ip": ip, "plataforma": plat, "rede_ms": rede, "jogo_ms": jogo, "fps": fps })).collect::<Vec<_>>(),
+                "quando": q, "personagem": p, "canal": c, "pais": pais_do_ip(&ip), "ip": ip, "plataforma": plat, "rede_ms": rede, "jogo_ms": jogo, "fps": fps })).collect::<Vec<_>>(),
         }),
     )
+}
+
+/// Country (ISO code) of an IP, read from the local DB-IP Country Lite file
+/// (`PANOPTICO_GEOIP`, default /opt/tempest-prod/geoip/pais.mmdb). No file or
+/// no match = "". Attribution required by the licence: "IP Geolocation by DB-IP".
+pub fn pais_do_ip(ip: &str) -> String {
+    static LEITOR: std::sync::OnceLock<Option<maxminddb::Reader<Vec<u8>>>> = std::sync::OnceLock::new();
+    let leitor = LEITOR.get_or_init(|| {
+        let caminho = std::env::var("PANOPTICO_GEOIP").unwrap_or_else(|_| "/opt/tempest-prod/geoip/pais.mmdb".into());
+        match maxminddb::Reader::open_readfile(&caminho) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                tracing::warn!("geoip {caminho}: {e} (country column stays empty)");
+                None
+            }
+        }
+    });
+    let (Some(r), Ok(addr)) = (leitor, ip.parse::<std::net::IpAddr>()) else {
+        return String::new();
+    };
+    r.lookup::<maxminddb::geoip2::Country>(addr)
+        .ok()
+        .and_then(|c| c.country.and_then(|c| c.iso_code).map(str::to_string))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod testes_geoip {
+    /// Needs the real file: `PANOPTICO_GEOIP=/path/pais.mmdb cargo test -p panoptico geoip -- --ignored`.
+    #[test]
+    #[ignore]
+    fn pais_de_ips_conhecidos() {
+        assert_eq!(super::pais_do_ip("8.8.8.8"), "US");
+        assert_eq!(super::pais_do_ip("151.242.25.10"), "BR");
+        assert_eq!(super::pais_do_ip("127.0.0.1"), "");
+        assert_eq!(super::pais_do_ip("not an ip"), "");
+    }
 }
