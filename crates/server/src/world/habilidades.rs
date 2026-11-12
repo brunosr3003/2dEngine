@@ -63,6 +63,20 @@ fn dano_evoluido(base: i32, tier: u8, skill_id: u32) -> i32 {
     (base as f32 * mult).round().max(1.0) as i32
 }
 
+/// Precise Shot (7) at tier X always crits.
+pub(crate) fn sempre_crita(skill_id: u32, tier: u8) -> bool {
+    skill_id == 7 && tier >= 10
+}
+
+/// The damage a skill carries off the caster: `Skill::dano_efetivo` over the
+/// caster's attack and basic cadence, the crit, then the tier. One function
+/// for the live cast (`efeito_habilidade`) and for `crate::pvp_sim`.
+pub(crate) fn dano_da_skill(skill: &Skill, tier: u8, atk: i32, cd_basico: f32, crit: bool) -> i32 {
+    let base = skill.dano_efetivo(atk, cd_basico);
+    let base = if crit { super::golpe_critico(base) } else { base };
+    dano_evoluido(base, tier, skill.id)
+}
+
 fn cura_evoluida(base: i32, tier: u8, skill_id: u32) -> i32 {
     if base <= 0 {
         return 0;
@@ -442,14 +456,9 @@ impl GameWorld {
         // a skill nunca critava e o basico sim — mais um motivo pra ela
         // render menos que o golpe que desliga. Um sorteio por conjuracao,
         // como o basico faz por golpe (todos os alvos levam o mesmo).
-        let crit =
-            (skill.id == 7 && tier >= 10) || (chance_crit > 0.0 && fastrand::f32() < chance_crit);
-        let dano_base = if crit {
-            (skill.dano_efetivo(atk, cd) as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
-        } else {
-            skill.dano_efetivo(atk, cd)
-        };
-        let dano = dano_evoluido(dano_base, tier, skill.id);
+        let crit = sempre_crita(skill.id, tier)
+            || (chance_crit > 0.0 && fastrand::f32() < chance_crit);
+        let dano = dano_da_skill(skill, tier, atk, cd, crit);
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
             self.pending_skill_hits.push(PendingSkillHit {

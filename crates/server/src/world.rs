@@ -101,7 +101,7 @@ pub struct ProjTag {
 mod boss_teste;
 mod chefes;
 pub(crate) mod colonia;
-mod habilidades;
+pub(crate) mod habilidades;
 pub(crate) mod magica;
 pub(crate) use chefes::itens_do_chefe;
 pub(crate) mod dungeon;
@@ -10296,7 +10296,7 @@ impl GameWorld {
                 session.stats.crit_chance > 0.0 && fastrand::f32() < session.stats.crit_chance;
             // A passiva de saque rapido morreu com as passivas.
             let mut dmg_final = if crit {
-                (basic_damage as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+                golpe_critico(basic_damage)
             } else {
                 basic_damage
             };
@@ -10311,8 +10311,7 @@ impl GameWorld {
                     // Hit final — força crit + reset stance.
                     if !crit {
                         crit = true;
-                        dmg_final = (basic_damage as f32 * shared::CRIT_DAMAGE_MULT)
-                            .round() as i32;
+                        dmg_final = golpe_critico(basic_damage);
                     }
                     session.sword_dance_until = 0.0;
                     session.sword_dance_step = 0;
@@ -12141,21 +12140,16 @@ impl GameWorld {
                     .find(|s| s.entity_id == attacker_id)
                     .is_some_and(|s| s.equipment.weapon == Some(shared::item_id::KATANA));
                 if katana {
-                    let mut mult = 1.0f32;
                     // Has not seen anyone yet: the draw lands for free.
-                    if self
+                    let abertura = self
                         .ecs
                         .get::<&EnemyTag>(entity)
-                        .is_ok_and(|t| t.ai_target.is_none())
-                    {
-                        mult *= shared::KATANA_OPENER_MULT;
-                    }
-                    if self.ecs.get::<&Health>(entity).is_ok_and(|h| {
-                        h.max > 0 && (h.current as f32) < h.max as f32 * shared::EXECUTE_HP_THRESHOLD
-                    }) {
-                        mult *= shared::KATANA_EXECUTE_MULT;
-                    }
-                    ((dmg as f32) * mult).round().max(1.0) as i32
+                        .is_ok_and(|t| t.ai_target.is_none());
+                    let execucao = self
+                        .ecs
+                        .get::<&Health>(entity)
+                        .is_ok_and(|h| em_execucao(h.current, h.max));
+                    golpe_da_katana(dmg, abertura, execucao)
                 } else {
                     dmg
                 }
@@ -20715,6 +20709,31 @@ mod testes_colisao_de_instancia {
 /// porcentagem que nao olhava quem batia.
 pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
     shared::ladder::damage_with_reduction(dmg, defesa, reducao)
+}
+
+/// A critical hit: the same multiplier for the basic swing and the skills.
+/// Shared with `crate::pvp_sim`, so the simulator crits like the game does.
+pub(crate) fn golpe_critico(dmg: i32) -> i32 {
+    (dmg as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+}
+
+/// Is a body with this health inside the katana's execute window?
+pub(crate) fn em_execucao(atual: i32, max: i32) -> bool {
+    max > 0 && (atual as f32) < max as f32 * shared::EXECUTE_HP_THRESHOLD
+}
+
+/// The katana's basic strike, before mitigation (`shared::KATANA_OPENER_MULT`,
+/// `shared::KATANA_EXECUTE_MULT`). `abertura` = a mob that has not seen
+/// anyone yet; `execucao` = target under `EXECUTE_HP_THRESHOLD` of its health.
+pub(crate) fn golpe_da_katana(dmg: i32, abertura: bool, execucao: bool) -> i32 {
+    let mut mult = 1.0f32;
+    if abertura {
+        mult *= shared::KATANA_OPENER_MULT;
+    }
+    if execucao {
+        mult *= shared::KATANA_EXECUTE_MULT;
+    }
+    ((dmg as f32) * mult).round().max(1.0) as i32
 }
 
 
