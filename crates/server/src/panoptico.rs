@@ -672,12 +672,37 @@ pub async fn servir(pool: sqlx::PgPool) -> anyhow::Result<()> {
         let la = crate::pvp_sim::Lutador::do_personagem(&ra, &catalogo);
         let lb = crate::pvp_sim::Lutador::do_personagem(&rb, &catalogo);
         let regras = crate::pvp_sim::Regras::propostas_da_query(&q);
-        axum::Json(crate::pvp_sim::avaliar(&la, &lb, regras)).into_response()
+        let opcoes = crate::pvp_sim::OpcoesDoDuelo::da_query(&q);
+        axum::Json(crate::pvp_sim::avaliar_com(&la, &lb, regras, opcoes)).into_response()
+    }
+
+    /// `GET /pvp_round_robin?token=..[&potions=..&hit_stun=..&mc_runs=..]`
+    ///
+    /// The archetype round-robin (`pvp_sim::torneio_padrao`): four level-55
+    /// builds on one power budget, every pair, current rules and the
+    /// proposed multiplier sets. Pure computation, no database.
+    async fn pvp_round_robin(
+        Query(q): Query<std::collections::HashMap<String, String>>,
+    ) -> axum::response::Response {
+        let esperado = std::env::var("MMO_ADMIN_TOKEN").unwrap_or_default();
+        if q.get("token").map(String::as_str) != Some(esperado.as_str()) {
+            return (StatusCode::FORBIDDEN, "token").into_response();
+        }
+        let mut opcoes = crate::pvp_sim::OpcoesDoDuelo::da_query(&q);
+        // 30 duels per request: keep the default Monte Carlo smaller.
+        if !q.contains_key("mc_runs") {
+            opcoes.mc_runs = 100;
+        }
+        match tokio::task::spawn_blocking(move || crate::pvp_sim::torneio_padrao(&opcoes)).await {
+            Ok(t) => axum::Json(t).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("{e}")).into_response(),
+        }
     }
 
     let app = axum::Router::new()
         .route("/estado", get(estado))
         .route("/pvp", get(pvp))
+        .route("/pvp_round_robin", get(pvp_round_robin))
         .with_state(pool);
     let addr: std::net::SocketAddr = bind.parse()?;
     tracing::info!("panoptico ouvindo em http://{addr}/estado");
