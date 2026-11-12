@@ -43,6 +43,7 @@ mod economia;
 mod mapa;
 mod observa;
 mod ofertas;
+mod pvp;
 
 #[derive(Clone)]
 struct Estado {
@@ -172,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/catalogo"), get(catalogo))
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))
+        .route(&p("/api/pvp"), get(pvp::avaliar))
         .route(&p("/api/icones.png"), get(icones_png));
     if !auth.prefixo.is_empty() {
         // "/panoptico" sem barra: a pagina usa caminhos relativos e precisa da barra.
@@ -402,6 +404,29 @@ async fn canais_com_retrato(st: &Estado) -> Vec<serde_json::Value> {
         }
     }
     canais
+}
+
+/// Admin endpoints of the live game units, the dungeon unit first (it is
+/// the one least likely to be busy). For routes any unit answers the same,
+/// like `/pvp`, which reads the realm database.
+async fn paineis_vivos(st: &Estado) -> Vec<String> {
+    let linhas = sqlx::query_as::<_, (String, String)>(
+        "SELECT host, painel FROM channels
+          WHERE updated > NOW() - INTERVAL '15 seconds'
+          ORDER BY (zone = 'dungeon') DESC, id ASC",
+    )
+    .fetch_all(&*st.pool)
+    .await
+    .unwrap_or_default();
+    let mut v: Vec<String> = Vec::new();
+    for (host, publicado) in linhas {
+        if let Some(p) = endereco_do_painel(&publicado, &host, st.host_dos_canais.as_deref()) {
+            if !v.contains(&p) {
+                v.push(p);
+            }
+        }
+    }
+    v
 }
 
 async fn mundo(State(st): State<Estado>) -> impl IntoResponse {

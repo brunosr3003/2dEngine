@@ -145,6 +145,7 @@
     <button class="aba" data-aba="chat">chat</button>
     <button class="aba" data-aba="hud">hud</button>
     <button class="aba" data-aba="rede">rede</button>
+    <button class="aba" data-aba="pvp">pvp</button>
     <form method="post" action="sair" style="flex:1 0 33%;margin:0"><button class="aba" style="width:100%">sair</button></form>
   </div>
   <h2>Canais</h2>
@@ -622,6 +623,51 @@
       <div id="ch-banidos"></div>
     </div>
   </div>
+</div>
+
+<!-- ─────────────────────────── pvp ─────────────────────────── -->
+<div class="aba-painel" id="aba-pvp" hidden>
+  <h2>PvP evaluation</h2>
+  <p class="nota">
+    Pick two characters: the game server loads both from the realm database,
+    builds their stats with the same code a session uses, and simulates the
+    fight both ways with the live damage code. <b>Current</b> is the rule the
+    game runs today; <b>proposed</b> uses the parameters below. The target
+    stands still (no block, heal or movement) — this is the fastest the fight
+    can go.
+  </p>
+  <div class="grade">
+    <div>
+      <h2>Fighter A</h2>
+      <div class="anexo">
+        <input id="pv-a" placeholder="search character" autocomplete="off" style="width:260px">
+        <span id="pv-a-ok" class="nota" style="padding:0"></span>
+        <div class="escolhas" id="pv-a-lista" hidden style="left:14px"></div>
+      </div>
+    </div>
+    <div>
+      <h2>Fighter B</h2>
+      <div class="anexo">
+        <input id="pv-b" placeholder="search character" autocomplete="off" style="width:260px">
+        <span id="pv-b-ok" class="nota" style="padding:0"></span>
+        <div class="escolhas" id="pv-b-lista" hidden style="left:14px"></div>
+      </div>
+    </div>
+  </div>
+  <h2>Proposed rules</h2>
+  <div class="barra-topo">
+    <label>skill mult <input class="campo" id="pv-skill_mult" type="number" step="0.05" min="0" style="width:80px"></label>
+    <label>basic mult <input class="campo" id="pv-basic_mult" type="number" step="0.05" min="0" style="width:80px"></label>
+    <label>cap % of max HP per hit <input class="campo" id="pv-cap_pct" type="number" step="0.05" min="0" max="1" style="width:80px"></label>
+    <label>level penalty / level <input class="campo" id="pv-level_penalty_per_level" type="number" step="0.01" min="0" style="width:80px"></label>
+    <label>free gap (levels) <input class="campo" id="pv-level_free_gap" type="number" step="1" min="0" style="width:70px"></label>
+    <label>level floor <input class="campo" id="pv-level_floor" type="number" step="0.05" min="0" max="1" style="width:80px"></label>
+    <label><input id="pv-katana_execute_pvp" type="checkbox"> katana execute in PvP</label>
+    <button class="acao" id="pv-padrao" type="button">defaults</button>
+    <button class="aba" id="pv-avaliar" style="width:auto;padding:8px 20px">evaluate</button>
+  </div>
+  <p class="nota">Cap 0 = no cap. The level penalty applies only when the attacker is more than “free gap” levels below the target: multiplier = max(floor, 1 − penalty × (gap − free gap)).</p>
+  <div id="pv-resultado"></div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -2271,6 +2317,143 @@ document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
   document.getElementById('av-conta').textContent = t.length + '/200';
   ta.focus();
 });
+
+// ── pvp ──────────────────────────────────────────────────────────────
+const PV_PADRAO = { skill_mult: 0.35, basic_mult: 0.6, cap_pct: 0.35, level_penalty_per_level: 0.08, level_free_gap: 5, level_floor: 0.20, katana_execute_pvp: false };
+const pvEscolhidos = { a: null, b: null };
+let pvMontado = false;
+function pvPadrao() {
+  for (const [k, v] of Object.entries(PV_PADRAO)) {
+    const el = document.getElementById('pv-' + k);
+    if (el.type === 'checkbox') el.checked = v; else el.value = v;
+  }
+}
+function pvPicker(lado) {
+  const inp = document.getElementById('pv-' + lado), lista = document.getElementById('pv-' + lado + '-lista');
+  const ok = document.getElementById('pv-' + lado + '-ok');
+  let achados = [], sel = 0, pedido = 0;
+  const marca = p => {
+    pvEscolhidos[lado] = p;
+    ok.innerHTML = p ? `<span class="bom">✓</span> level ${p.nivel}${p.zona ? ' · ' + esc(p.zona) : ''}` : (inp.value.trim() ? '<span class="ruim">pick from the list</span>' : '');
+  };
+  const desenha = () => {
+    lista.innerHTML = achados.map((p, k) =>
+      `<div class="escolha${k === sel ? ' sel' : ''}" data-k="${k}"><span>${esc(p.nome)}</span>
+         <span class="id">level ${p.nivel}${p.zona ? ' · ' + esc(p.zona) : ''}</span></div>`).join('') || '<div class="vazio">nobody</div>';
+    lista.hidden = false;
+  };
+  const busca = async () => {
+    const q = inp.value.trim(), n = ++pedido;
+    if (!q) { achados = []; lista.hidden = true; marca(null); return; }
+    const r = await api('api/personagens?q=' + encodeURIComponent(q));
+    if (n !== pedido || !r) return;
+    achados = r; sel = 0;
+    marca(r.find(p => p.nome.toLowerCase() === q.toLowerCase()) || null);
+    desenha();
+  };
+  const escolhe = p => { inp.value = p.nome; marca(p); lista.hidden = true; };
+  inp.oninput = busca;
+  inp.onfocus = () => { if (inp.value.trim()) busca(); };
+  inp.onkeydown = e => {
+    if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, achados.length - 1); desenha(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); desenha(); e.preventDefault(); }
+    else if (e.key === 'Enter') { if (!lista.hidden && achados[sel]) escolhe(achados[sel]); else pvAvaliar(); e.preventDefault(); }
+    else if (e.key === 'Escape') inp.blur();
+  };
+  lista.onmousedown = e => {
+    const d = e.target.closest('.escolha');
+    if (d) { e.preventDefault(); escolhe(achados[Number(d.dataset.k)]); }
+  };
+  inp.onblur = () => { lista.hidden = true; };
+}
+function pvMonta() {
+  if (pvMontado) return;
+  pvMontado = true;
+  pvPicker('a'); pvPicker('b'); pvPadrao();
+  document.getElementById('pv-padrao').onclick = pvPadrao;
+  document.getElementById('pv-avaliar').onclick = pvAvaliar;
+  document.querySelectorAll('#aba-pvp .barra-topo input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') pvAvaliar(); }));
+}
+PUXA.pvp = pvMonta;
+
+const pvS = s => s === null || s === undefined ? '<span class="ruim">no kill</span>' : s.toFixed(2) + ' s';
+const pvP = f => (f * 100).toFixed(1) + '%';
+const pvN = n => Number(n).toFixed(n >= 100 || Number.isInteger(n) ? 0 : 1);
+
+async function pvAvaliar() {
+  const out = document.getElementById('pv-resultado');
+  const a = document.getElementById('pv-a').value.trim(), b = document.getElementById('pv-b').value.trim();
+  if (!a || !b) { out.innerHTML = '<p class="nota ruim">Pick both characters.</p>'; return; }
+  const q = new URLSearchParams({ a, b });
+  for (const k of Object.keys(PV_PADRAO)) {
+    const el = document.getElementById('pv-' + k);
+    q.set(k, el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value);
+  }
+  out.innerHTML = '<p class="nota">evaluating…</p>';
+  let r;
+  try {
+    r = await fetch(BASE + 'api/pvp?' + q, { credentials: 'same-origin', cache: 'no-store' });
+  } catch (e) { out.innerHTML = `<p class="nota ruim">${esc(e)}</p>`; return; }
+  if (r.status === 401) { location.href = BASE + 'login'; return; }
+  if (!r.ok) { out.innerHTML = `<p class="nota ruim">${r.status}: ${esc(await r.text())}</p>`; return; }
+  pvDesenha(await r.json());
+}
+
+function pvFicha(f) {
+  const al = f.allocated;
+  const linhas = [
+    ['level', f.level], ['weapon', esc(f.weapon)], ['HP', num(f.hp)], ['MP', `${num(f.mp)} (+${pvN(f.mp_regen)}/s)`],
+    ['basic hit (raw)', num(f.basic_damage)], ['attack', num(f.attack)], ['defense', num(f.defense)],
+    ['crit chance', pvP(f.crit_chance)], ['dodge (basics)', pvP(f.dodge_chance)],
+    ['basic cooldown', `${f.basic_cooldown_s.toFixed(3)} s · ${f.attacks_per_s.toFixed(2)}/s`],
+    ['damage reduction', f.damage_reduction === f.damage_reduction_effective ? pvP(f.damage_reduction) : `${pvP(f.damage_reduction_effective)} (stat ${pvP(f.damage_reduction)}, capped)`],
+    ['points STR/DEX/INT/VIT/RES', `${al.str_}/${al.dex}/${al.int}/${al.vit}/${al.res}`],
+  ];
+  return `<h3>${esc(f.name)}</h3>` + tabela(['', ''], linhas.map(([k, v]) => [k, v])) +
+    '<h3>Gear</h3>' + tabela(['slot', 'item', 'grade', 'tier', 'refine', 'ilvl'],
+      f.gear.map(g => [esc(g.slot), esc(g.item), g.grade, g.tier, '+' + g.refine, g.item_level]), [0, 1]) +
+    '<h3>Skills</h3>' + tabela(['skill', 'tier', 'cooldown', 'lock', 'mp', 'raw', 'raw crit'],
+      f.skills.map(s => [esc(s.name), s.tier, s.cooldown_s.toFixed(1) + ' s', s.lock_s.toFixed(2) + ' s', s.mp_cost, s.raw ? num(s.raw) : '—', s.raw ? num(s.raw_crit) : '—']), [0]);
+}
+
+function pvDuelo(d) {
+  const resumo = [
+    ['target HP', `${num(d.target_hp)} + ${d.downed_hp} downed`],
+    ['level multiplier', d.level_mult.toFixed(2)],
+    ['biggest hit (crit)', `${pvP(d.max_hit_pct)} of HP${d.one_shot ? ' <b class="ruim">ONE-SHOT</b>' : ''}`],
+    ['time to down (expected)', pvS(d.expected.down_s)],
+    ['time to kill (expected)', `<b>${pvS(d.expected.ttk_s)}</b> · ${d.expected.hits} hits, ${d.expected.skills_cast} skills`],
+    ['time to kill (all-crit burst)', `${pvS(d.burst.ttk_s)} · ${d.burst.hits} hits`],
+  ];
+  const acoes = tabela(['action', 'cd', 'raw', 'hit', 'crit', '% HP', '% HP crit', 'expected', 'to down', 'to kill'],
+    d.actions.map(a => [esc(a.action) + (a.hit_execute ? ` <span class="tag">execute ${num(a.hit_execute)}</span>` : ''),
+      a.cooldown_s.toFixed(2) + ' s', `${num(a.raw)} / ${num(a.raw_crit)}`, num(a.hit), num(a.hit_crit),
+      pvP(a.hit_pct), pvP(a.hit_crit_pct), pvN(a.expected), a.hits_to_down, a.hits_to_kill]), [0]);
+  const tl = tabela(['t', 'action', 'damage', 'HP', 'downed'],
+    d.expected.timeline.map(e => [e.t.toFixed(2) + ' s', esc(e.action), pvN(e.damage), pvN(e.hp), pvN(e.downed_hp)]), [1]);
+  return `<h3>${esc(d.attacker)} → ${esc(d.target)}</h3>` + tabela(['', ''], resumo) + acoes +
+    `<details style="padding:0 14px"><summary class="nota" style="cursor:pointer">expected-value timeline</summary>${tl}</details>`;
+}
+
+function pvLado(titulo, l) {
+  const r = l.rules;
+  const regras = r.label === 'current' ? 'live formula: no PvP multiplier, no cap, no level gap, katana execute on'
+    : `basic ×${r.basic_mult} · skill ×${r.skill_mult} · cap ${r.cap_pct ? pvP(r.cap_pct) + ' of max HP' : 'none'} · level −${r.level_penalty_per_level}/lvl past ${r.level_free_gap}, floor ${r.level_floor} · katana execute ${r.katana_execute_pvp ? 'on' : 'off'}`;
+  return `<div><h2>${titulo}</h2><p class="nota">${esc(regras)}</p>` +
+    `<div class="cartoes"><div class="cartao" style="flex:1"><div class="rot">verdict</div><div class="num" style="font-size:15px">${esc(l.verdict)}</div></div></div>` +
+    pvDuelo(l.a_vs_b) + pvDuelo(l.b_vs_a) + '</div>';
+}
+
+function pvDesenha(d) {
+  const ttk = (l, k) => l[k].expected.ttk_s;
+  const cart = (rot, l) => `<div class="cartao"><div class="rot">${rot}</div><div class="num">${pvS(ttk(l, 'a_vs_b'))} / ${pvS(ttk(l, 'b_vs_a'))}</div>
+    <div class="pe">${esc(d.a.name)} → ${esc(d.b.name)} / ${esc(d.b.name)} → ${esc(d.a.name)} · burst ${pvS(l.a_vs_b.burst.ttk_s)} / ${pvS(l.b_vs_a.burst.ttk_s)}</div></div>`;
+  document.getElementById('pv-resultado').innerHTML =
+    `<h2>Time to kill</h2><div class="cartoes">${cart('current', d.current)}${cart('proposed', d.proposed)}</div>` +
+    `<div class="grade">${pvLado('Current rules', d.current)}${pvLado('Proposed rules', d.proposed)}</div>` +
+    `<h2>Fighters</h2><div class="grade"><div>${pvFicha(d.a)}</div><div>${pvFicha(d.b)}</div></div>` +
+    `<h2>What the simulation assumes</h2><ul class="nota" style="padding-left:30px">${d.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+}
 
 mostraAba(location.hash.slice(1) || 'mundo');
 </script>
