@@ -81,14 +81,14 @@ pub const CALENDARIO: [Dia; DIAS] = {
         comum(p(GLITTERING_POWDER, 300)),
         comum(p(DARKSTEEL, 15_000)),
         comum(p(ENERGIA, 15_000)),
-        [p(PERGAMINHO_INVOCA_MONTARIA, 10), p(PERGAMINHO_INVOCA_PET, 10), p(PASSE_MAGICO, 5), NADA],
+        [p(PERGAMINHO_INVOCA_MONTARIA, 10), p(PERGAMINHO_INVOCA_PET, 10), p(PERGAMINHO_INVOCA_CHAVE, 5), NADA],
     ]
 };
 
 pub const PERMITIDOS: &[u16] = &[
     item_id::COPPER, item_id::DARKSTEEL, item_id::GLITTERING_POWDER,
     ENERGIA, item_id::PERGAMINHO_INVOCA_PET, item_id::PERGAMINHO_INVOCA_MONTARIA,
-    item_id::PASSE_MAGICO,
+    item_id::PERGAMINHO_INVOCA_CHAVE,
 ];
 
 pub fn e_marco(dia_da_grade: u8) -> bool {
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(CALENDARIO[2][1], p(ENERGIA, 5_000));
         assert_eq!(CALENDARIO[6][0], p(item_id::PERGAMINHO_INVOCA_PET, 10));
         assert_eq!(CALENDARIO[13][0], p(item_id::PERGAMINHO_INVOCA_MONTARIA, 10));
-        assert_eq!(CALENDARIO[27], [p(item_id::PERGAMINHO_INVOCA_MONTARIA, 10), p(item_id::PERGAMINHO_INVOCA_PET, 10), p(item_id::PASSE_MAGICO, 5), NADA]);
+        assert_eq!(CALENDARIO[27], [p(item_id::PERGAMINHO_INVOCA_MONTARIA, 10), p(item_id::PERGAMINHO_INVOCA_PET, 10), p(item_id::PERGAMINHO_INVOCA_CHAVE, 5), NADA]);
     }
 
     static GRADE_TESTE: [Dia; 3] = [

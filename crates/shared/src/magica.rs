@@ -50,7 +50,6 @@ pub const TROCAS: &[(u16, u32, u32)] = &[
     (crate::item_id::PERGAMINHO_INVOCA_CHAVE, 1, 12_000),
     (crate::item_id::PERGAMINHO_INVOCA_PET, 1, 25_000),
     (crate::item_id::PERGAMINHO_INVOCA_MONTARIA, 1, 50_000),
-    (crate::item_id::PASSE_MAGICO, 1, 5_000),
 ];
 
 pub const LOJA_DE_TROCAS: u32 = 90_475;
@@ -365,7 +364,9 @@ impl Bonus {
     /// numa hora e meia não quebra nada.
     pub fn multiplicador(self) -> f32 {
         match self {
-            Self::Xp => 2.0,
+            // 2.0 -> 1.5 (owner, 12/11/2026: with a potion and the fort it
+            // stacked to ~x4 and a top player did a level every 30 min).
+            Self::Xp => 1.5,
             Self::DropDeMob => 1.75,
             Self::Ouro => 2.0,
             Self::DropDeChefe => 2.0,

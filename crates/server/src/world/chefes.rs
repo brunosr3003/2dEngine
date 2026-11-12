@@ -104,7 +104,6 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
         // mercado, na venda ao NPC e no calendario.
         (GOLD, 120 + n * 20 + (rnd() * 60.0) as u32),
         (COPPER, 200 + n * 25 + (rnd() * 150.0) as u32),
-        (DARKSTEEL, 20 + n * 4),
         (na_cor(STEEL, cor), 3 + n / 6),
         (GREATER_HEAL, 2),
     ];
@@ -122,23 +121,11 @@ pub fn loot_de_chefe(kind: u16, seed: u64) -> Vec<(u16, u32)> {
     {
         v.push((chave, 1));
     }
-    // O PASSE DA ILHA MAGICA (`shared::magica`).
-    //
-    // Chefe de mundo e' a fonte de JOGO dele — a ilha precisa ser alcancavel
-    // sem passar pela loja, senao o evento inteiro e' um anuncio.
-    //
-    // So' a partir do nivel 20 e com chance baixa: o passe vale meia hora de
-    // XP, ouro e drop em dobro, e um que caisse do lobo da clareira seria
-    // farmavel em loop. O chefe da PROPRIA Ilha Magica nao da' passe — a ilha
-    // nao se paga.
-    if n >= 20 && !shared::magica::e_magica(c.zona) && rnd() < CHANCE_DE_PASSE {
-        v.push((PASSE_MAGICO, 1));
-    }
+    // The Magic Island pass no longer drops from bosses: TP shop only
+    // (owner, 12/11/2026).
     v
 }
 
-/// Chance de um chefe de mundo (nivel 20+) largar um Passe da Ilha Magica.
-pub const CHANCE_DE_PASSE: f32 = 0.12;
 
 /// Cor do material bom do chefe pelo nivel dele.
 fn cor_da_faixa(nivel: u32) -> u8 {
@@ -163,7 +150,6 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
         // OURO: chefe e' uma das poucas fontes (docs/ECONOMIA.md).
         (GOLD, 1.0),
         (COPPER, 1.0),
-        (DARKSTEEL, 1.0),
         (na_cor(STEEL, cor), 1.0),
         (GREATER_HEAL, 1.0),
         (na_cor(PLATINUM, cor), 0.6),
@@ -171,11 +157,6 @@ pub fn itens_do_chefe(kind: u16) -> Vec<(u16, f32)> {
     ];
     for base in CHAVES {
         v.push((chave_na_cor(base, chave.cor), chave.chance_mundo / 4.0));
-    }
-    // Tem que andar junto com `loot_de_chefe` — `itens_do_chefe_cobre_o_loot`
-    // e' quem reprova quando os dois se separam.
-    if c.nivel >= 20 && !shared::magica::e_magica(c.zona) {
-        v.push((PASSE_MAGICO, CHANCE_DE_PASSE));
     }
     v
 }
