@@ -35,13 +35,15 @@ pub fn segundos_do_nivel(n: u32) -> f32 {
 /// - 20-49: a straight ramp from 1 up to `RITMO_MAX`;
 /// - 50 on: `RITMO_MAX`.
 ///
-/// With 5.7 the Anubis pace takes ~1,100 h online for 1-100 (six months at
-/// ~6 h a day; a year at ~3 h a day). Paying players go faster through the
+/// The game plays itself (auto), so people stay on 6-12 h a day and farm
+/// about the same per hour; only the hours differ. With 11.5 the Anubis pace
+/// takes ~2,180 h online for 1-100: six months at 12 h a day, a year at 6 h
+/// a day (owner, 12/11/2026; it was 5.7 for a day). Paying players go faster through the
 /// XP potion, the Magic Island islet and bought gear — the divisor is applied
 /// before those bonuses, so they keep their share. The kill factor, quest
 /// shares and the 200 h best case above stay as they are: this is one
 /// divisor at the door, easy to tune.
-pub const RITMO_MAX: f32 = 5.7;
+pub const RITMO_MAX: f32 = 11.5;
 /// Where the ramp starts and where it reaches `RITMO_MAX`.
 pub const RITMO_DE: u32 = 20;
 pub const RITMO_ATE: u32 = 50;
@@ -296,6 +298,6 @@ mod testes_do_ritmo {
         assert_eq!(ritmo(TETO), RITMO_MAX);
         assert_eq!(no_ritmo(0, 60), 0);
         assert_eq!(no_ritmo(1, 60), 1, "never rounds a gain away");
-        assert_eq!(no_ritmo(5_700, 60), 1_000);
+        assert_eq!(no_ritmo(11_500, 60), 1_000);
     }
 }
