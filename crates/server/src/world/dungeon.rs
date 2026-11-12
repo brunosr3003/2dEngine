@@ -2076,8 +2076,11 @@ impl GameWorld {
             }
         }
         // Alvo 0 = qualquer dungeon (diarias, 510); a historia nomeia a dela.
+        // A target that left the game (the Caverns, 197) also takes any
+        // dungeon: ten story steps named a Cavern and nobody could finish them
+        // (Anubis, 12/11/2026, stuck on "O sino dos ventos").
         self.quest_on_evento_se(sid, shared::quests::objective_kind::DUNGEON, 1, &|d| {
-            d.obj_target == 0 || d.obj_target == conteudo
+            shared::dungeon::alvo_aceita(d.obj_target, conteudo)
         });
         self.dg_avisar(
             sid,

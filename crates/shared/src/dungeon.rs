@@ -522,6 +522,29 @@ pub fn no_jogo(c: &Conteudo) -> bool {
     c.disponivel && c.tipo != Tipo::Gruta
 }
 
+/// Does finishing dungeon `feita` count for a quest whose target is `alvo`?
+/// 0 = any dungeon; a target no longer in the game (the Caverns, out since
+/// 197) also takes any, so the story steps that named one can be finished.
+pub fn alvo_aceita(alvo: u16, feita: u16) -> bool {
+    alvo == 0 || alvo == feita || conteudo(alvo).is_none_or(|c| !no_jogo(c))
+}
+
+#[cfg(test)]
+mod testes_do_alvo {
+    use super::*;
+
+    #[test]
+    fn alvo_fora_do_jogo_aceita_qualquer_dungeon() {
+        assert!(alvo_aceita(0, 5));
+        assert!(alvo_aceita(5, 5));
+        assert!(!alvo_aceita(5, 4), "a Cellar still in the game is still named");
+        assert!(alvo_aceita(13, 4), "Monastery of the Winds is a Cavern, out of the game");
+        for c in CONTEUDOS.iter().filter(|c| !no_jogo(c)) {
+            assert!(alvo_aceita(c.id, 1), "{}", c.nome);
+        }
+    }
+}
+
 /// O que trava o estagio `e` pra este personagem. `liberado` = maior estagio
 /// ja' vencido (0 = nenhum). Entrada zerada NAO trava: entra como Ajudante.
 pub fn cadeado(
