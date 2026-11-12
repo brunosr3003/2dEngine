@@ -1118,7 +1118,9 @@ pub fn items_config() -> Vec<shared::protocol::ItemConfigEntry> {
 /// Item vinculado (fora do mercado). Desconhecido conta como vinculado: o
 /// mercado nunca vende o que o jogo nao conhece.
 pub fn item_vinculado(id: u16) -> bool {
-    cell().read().items.get(&id).is_none_or(|i| i.vinculado)
+    // The Magic Island pass is bound: TP shop only, no resale for gold
+    // (owner, 12/11/2026).
+    id == shared::item_id::PASSE_MAGICO || cell().read().items.get(&id).is_none_or(|i| i.vinculado)
 }
 
 /// Nome do item (vazio se desconhecido).
