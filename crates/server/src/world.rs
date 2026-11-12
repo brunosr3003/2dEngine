@@ -356,9 +356,6 @@ pub struct EnemyTag {
     /// Strafe circular em range: direção (±1) e quando flipar.
     pub ai_strafe_sign: f32,
     pub ai_strafe_flip_at: f32,
-    /// Hit bloqueado neste tick → snapshot manda PARRY_FLASH (drenado em
-    /// send_snapshots, mesma mecânica do parry de player).
-    pub parry_flash_pending: bool,
     /// Dash iniciado neste tick → snapshot manda attack_anim=DASH (anim de
     /// jump, igual o dash do player). Drenado em send_snapshots.
     pub dash_anim_pending: bool,
@@ -2159,29 +2156,8 @@ pub struct Session {
     pub bolsa_extra: u8,
     pub banco_extra: u8,
 
-    // ── Defesa ativa (block + parry) ────────────────────────────────────
-    /// True enquanto o player segura RMB. Aplica reducao de dano +
-    /// drain de stamina nos hits, e reduz movement speed.
-    pub defending: bool,
-    /// `sim_time_s` do ultimo edge-press de PRIMARY (LMB). Usado pra detectar
-    /// parry: se um hit chegar dentro de PARRY_WINDOW_S, conta como parry.
-    pub last_press_primary_at: f32,
-    /// `sim_time_s` do ultimo edge-press de SECONDARY (RMB). Mesma logica
-    /// que primary — apertar RMB no timing perfeito tambem da parry.
-    pub last_press_secondary_at: f32,
     /// Mascara de buttons do tick anterior (pra detectar edge transitions).
     pub prev_buttons: u32,
-    /// `sim_time_s` ate quando o player esta em stagger (recebeu parry).
-    /// Enquanto > sim_time, ataque/dash/block sao bloqueados.
-    pub stagger_until: f32,
-    /// Pendente: dispara um attack_anim PARRY_FLASH no proximo snapshot.
-    /// Setado quando esse player parryou um hit recebido.
-    pub parry_flash_pending: bool,
-
-    /// Master's Counter (1007): timer ate quando o player auto-parry
-    /// qualquer hit recebido + dispara contra-ataque livre.
-    pub counter_stance_until: f32,
-
     // Leap Strike (1001) — animacao de pulo: server interpola posicao do
     // caster de leap_start_pos → leap_target durante LEAP_DURATION segundos.
     // Quando termina, aplica AoE damage + stun no leap_target.
@@ -2215,11 +2191,6 @@ pub struct Session {
     pub last_combat_at_s: f32,
     /// Ultimo poise inteiro enviado pro cliente — evita spam de PoiseUpdate.
     pub poise_last_sent: i32,
-    /// Buffer temporario de poise que defending (RMB) absorve. Setado no
-    /// edge-press de RMB via `defending_poise_max()` (escala com char_lvl
-    /// e bonus de escudo). Drena por hit. Quando zera, defending cancela
-    /// e o proximo hit vira HP+stagger normal.
-    pub defending_poise_buffer: f32,
     /// Farm skill levels (persistidos). Influenciam hits_required do cliente
     /// e são enviados via FarmSkillsUpdate no login. Default 1.
 
@@ -4083,7 +4054,6 @@ impl GameWorld {
             ai_block_cd_until: 0.0,
             ai_strafe_sign: 1.0,
             ai_strafe_flip_at: 0.0,
-            parry_flash_pending: false,
             dash_anim_pending: false,
             ai_recent_hits: 0.0,
             boss_name: None,
@@ -7698,13 +7668,7 @@ impl GameWorld {
                 vault_dirty: false,
                 bolsa_extra: 0,
                 banco_extra: 0,
-                defending: false,
-                last_press_primary_at: f32::NEG_INFINITY,
-                last_press_secondary_at: f32::NEG_INFINITY,
                 prev_buttons: 0,
-                stagger_until: 0.0,
-                parry_flash_pending: false,
-                counter_stance_until: 0.0,
                 leap_until: 0.0,
                 leap_start_pos: Vec2::ZERO,
                 leap_target: Vec2::ZERO,
@@ -7715,7 +7679,6 @@ impl GameWorld {
                 harpoon_target_eid: None,
                 harpoon_until: 0.0,
                 poise_current: 50.0, // base padrao; refresh via stats no login
-                defending_poise_buffer: 0.0,
                 last_combat_at_s: 0.0,
                 poise_last_sent: 0,
                 quests: Vec::new(),
@@ -9740,8 +9703,6 @@ impl GameWorld {
                 session.leap_until = 0.0;
                 session.pulo_ate = 0.0;
                 session.hurt_until = 0.0;
-                session.stagger_until = 0.0;
-                session.defending = false;
                 frame.buttons = buttons::DASH;
                 cancelled_cast_owners.push((session.entity_id, skill));
             }
@@ -9759,21 +9720,9 @@ impl GameWorld {
             if in_leap {
                 frame.move_dir = glam::Vec2::ZERO;
             }
-            // Edge-detect dos botoes pra parry window. Press = bit foi 0 no
-            // frame anterior e ficou 1 agora. Salva sim_time pra que o loop
-            // de damage_events compare com PARRY_WINDOW_S.
-            let pressed_primary = (frame.buttons & buttons::PRIMARY != 0)
-                && (session.prev_buttons & buttons::PRIMARY == 0);
-            let pressed_secondary = (frame.buttons & buttons::SECONDARY != 0)
-                && (session.prev_buttons & buttons::SECONDARY == 0);
+            // SECONDARY (G) dismounts.
             if session.montado && frame.buttons & buttons::SECONDARY != 0 {
                 session.montado = false;
-            }
-            if pressed_primary {
-                session.last_press_primary_at = self.sim_time_s;
-            }
-            if pressed_secondary {
-                session.last_press_secondary_at = self.sim_time_s;
             }
             // ── PULO ──
             // Borda de subida, e nao "botao segurado": pulo contínuo enquanto
@@ -9783,31 +9732,12 @@ impl GameWorld {
             if pressed_pulo
                 && self.sim_time_s >= session.pulo_pronto_em
                 && !session.downed
-                && self.sim_time_s >= session.stagger_until
             {
                 session.pulo_ate = self.sim_time_s + shared::PULO_DURACAO;
                 session.pulo_pronto_em =
                     self.sim_time_s + shared::PULO_DURACAO + shared::PULO_ESPERA;
             }
             session.prev_buttons = frame.buttons;
-            // RMB held = defesa ativa. Drena stamina apenas no hit. Disponivel
-            // pra TODAS as armas — quem tem escudo no offhand bloqueia "fisico"
-            // (visual ShieldBash); o resto bloqueia com "escudo de energia"
-            // (visual Push + bolha) replicado pelo cliente. Stat bonuses do
-            // shield (defense+8, hp+75) sao o incentivo pra equipar.
-            let staggered = self.sim_time_s < session.stagger_until;
-            let block_cost_now = shared::combat::block_stamina_cost(&session.stats);
-            let was_defending = session.defending;
-            // Block and parry are gone with stamina (owner, 09/11/2026). The
-            // SECONDARY bit (G) still dismounts, above.
-            let _ = (block_cost_now, staggered);
-            session.defending = false;
-            // Edge-press: ao iniciar defesa, recarrega o buffer de poise
-            // que defending absorve (escala com lvl + bonus de escudo).
-            if session.defending && !was_defending {
-                session.defending_poise_buffer = defending_poise_max(session);
-            }
-
             // Stagger/Downed: ignora movimento e ataques. Player downed fica
             // travado na pose sentada — não pode andar até levantar.
             let in_hurt = session.hurt_until > self.sim_time_s;
@@ -9868,7 +9798,7 @@ impl GameWorld {
                     session.travado_desde = None;
                 }
             }
-            let dir = if in_hurt || session.downed || staggered {
+            let dir = if in_hurt || session.downed {
                 Vec2::ZERO
             } else if frame.move_dir.length_squared() > 1.0 {
                 frame.move_dir.normalize()
@@ -9921,7 +9851,6 @@ impl GameWorld {
                     if ilha.precisa_pular_na(aqui, passo, dt, ENTITY_RADIUS, camada)
                         && self.sim_time_s >= session.pulo_pronto_em
                         && !session.downed
-                        && self.sim_time_s >= session.stagger_until
                     {
                         session.pulo_ate = self.sim_time_s + shared::PULO_DURACAO;
                         session.pulo_pronto_em =
@@ -9946,7 +9875,6 @@ impl GameWorld {
                 let busy = self.ilha.is_some()
                     || in_hurt
                     || session.downed
-                    || staggered
                     || session.leap_until > now_s
                     || now_s < session.dash_until
                     || session.casting_until > now_s
@@ -10073,7 +10001,7 @@ impl GameWorld {
                     );
                 }
             }
-            // Downed/Carregando/Hurt/Dashing/Defending/Staggered: sem ataques
+            // Downed/Carregando/Hurt/Dashing/Casting: sem ataques
             let was_dashing = dash_prioritario || self.sim_time_s < session.dash_until;
             // Preenchida pelo bloco abaixo quando o auto-ataque dispara.
             let mut attack_aim: Option<Vec2> = None;
@@ -10082,8 +10010,6 @@ impl GameWorld {
                 || session.carrying.is_some()
                 || in_hurt
                 || was_dashing
-                || session.defending
-                || staggered
                 || casting
             {
                 false
@@ -10144,12 +10070,11 @@ impl GameWorld {
             // SPD escala speed_mult (1.0 + 0.02×SPD por ponto).
             let spd_scale = session.stats.speed_mult.max(0.1);
             // Sprint: hold Shift (bit SPRINT) → 1.65× a velocidade base, drena
-            // stamina por segundo. Bloqueado se stamina vazia, defending,
+            // stamina por segundo. Bloqueado se stamina vazia,
             // downed ou carrying.
             // No stamina any more: sprint is unlimited (owner, 09/11/2026).
             let wants_sprint = !session.downed
                 && session.carrying.is_none()
-                && !session.defending
                 && (frame.buttons & buttons::SPRINT != 0)
                 && dir.length_squared() > 0.01; // só sprinta enquanto mexendo
             let sprint_mult = if wants_sprint {
@@ -10161,8 +10086,6 @@ impl GameWorld {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
                 PLAYER_SPEED * 0.5 * spd_scale
-            } else if session.defending {
-                PLAYER_SPEED * shared::MOVE_SPEED_DEFENDING_MULT * spd_scale
             } else {
                 // Montado: a mobilidade da montaria E o sprint, que agora
                 // multiplicam (docs/MONTARIAS.md). Esporear gasta o mesmo
@@ -10628,7 +10551,6 @@ impl GameWorld {
                         {
                             enemy.ai_block_until = now_sim + 2.0;
                             enemy.ai_block_cd_until = now_sim + 4.0;
-                            enemy.parry_flash_pending = true; // "raised their shield"
                             vel.0 = to_player * (enemy.locomotor_speed * 0.85);
                             continue;
                         }
@@ -11547,15 +11469,15 @@ impl GameWorld {
         // do alvo dentro dos loops abaixo — boss 2.2× tem hitbox 2.2× maior.
         let hit_target_radius = shared::HIT_TARGET_RADIUS;
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
-        // Tipo de ataque — usado pelo parry handler pra decidir se faz
-        // contra-ataque melee ou refletir projectile.
+        // Tipo de ataque: melee (katana, Thirst, stagger), projectile (esquiva)
+        // ou skill (Life Drain, telegraficos).
         #[derive(Clone, Copy)]
         enum AttackInfo {
-            /// Melee swing — `attacker_pos` pra apontar contra-ataque do parryador.
-            Melee { attacker_pos: Vec2 },
-            /// Projectile — `vel` pra spawn de proj refletido (-vel) + `kind` visual.
-            Projectile { vel: Vec2, kind: u8 },
-            /// Skill hit (line/aoe) — sem refletir (so anula damage no parry).
+            /// Melee swing.
+            Melee,
+            /// Projectile.
+            Projectile,
+            /// Skill hit (line/aoe).
             /// `drain_tier` > 0: a Life Drain bolt of that tier.
             Skill { drain_tier: u8 },
         }
@@ -11657,9 +11579,7 @@ impl GameWorld {
                         sw.from_player,
                         hd,
                         sw.is_crit,
-                        AttackInfo::Melee {
-                            attacker_pos: sw.pos,
-                        },
+                        AttackInfo::Melee,
                         sw.knockback,
                     ));
                 }
@@ -11750,10 +11670,7 @@ impl GameWorld {
                             *pfrom_player,
                             hd,
                             *pcrit,
-                            AttackInfo::Projectile {
-                                vel: *pvel,
-                                kind: *pkind,
-                            },
+                            AttackInfo::Projectile,
                             proj_kb,
                         ));
                     }
@@ -12067,7 +11984,7 @@ impl GameWorld {
             // basic melee strike — the same gate the lifesteal used. Multiplies
             // BEFORE mitigation: a bigger swing cuts through more defence,
             // which is what the ladder's subtraction means.
-            let dmg = if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
+            let dmg = if attacker_is_player && matches!(attack_info, AttackInfo::Melee) {
                 let katana = self
                     .sessions
                     .values()
@@ -12134,7 +12051,6 @@ impl GameWorld {
                     btag.ai_recent_hits += 1.0;
                     if self.sim_time_s < btag.ai_block_until {
                         dmg = ((dmg as f32) * 0.25).round().max(1.0) as i32;
-                        btag.parry_flash_pending = true;
                     }
                     // (Stagger bar REMOVIDA — boss tem hyperarmor permanente,
                     // nunca flincha nem toma stun de quebra. Stun de skill
@@ -12155,7 +12071,7 @@ impl GameWorld {
             // Katana: THIRST (Danca) is the only window in which it steals
             // life again. Outside it the class does not heal itself at all —
             // that is the price of opening and closing the fight this fast.
-            if attacker_is_player && matches!(attack_info, AttackInfo::Melee { .. }) {
+            if attacker_is_player && matches!(attack_info, AttackInfo::Melee) {
                 let thirsty = self
                     .sessions
                     .values()
@@ -12179,7 +12095,7 @@ impl GameWorld {
             // shows "Dodge" and the attacker still turns to its target.
             // PvP too (02/10/2026): a player's basic swing or shot rolls the
             // same chance — the owner: "is DEX dodge given in PvP? it should".
-            if matches!(attack_info, AttackInfo::Melee { .. } | AttackInfo::Projectile { .. }) {
+            if matches!(attack_info, AttackInfo::Melee | AttackInfo::Projectile) {
                 let agora_esquiva = self.sim_time_s;
                 let esquivou = self
                     .sessions
@@ -12206,168 +12122,9 @@ impl GameWorld {
 
             // A BOSS'S TELEGRAPHED STRIKE is a hand-dodge: it hits whoever is
             // still inside, and only stepping out (or a dash/leap through it)
-            // saves. Poise, parry and block used to swallow it — the number
-            // flew, the HP stayed (the owner: "the damage shows like 1200 but
-            // the hp don't drop"). `shared::bosses::RESISTENCIA_NO_TELEGRAFICO`
-            // already said nothing mitigates it; the boss sims assume so.
-            let telegrafico = !attacker_is_player
-                && matches!(attack_info, AttackInfo::Skill { .. })
-                && self
-                    .ecs
-                    .query::<(&NetId, &EnemyTag)>()
-                    .iter()
-                    .any(|(_, (n, t))| n.0 == attacker_id && t.is_boss);
-
-            // ── Defesa ativa do alvo (player) ────────────────────────────────
-            // (1) Parry: edge-press de PRIMARY ou SECONDARY dentro de PARRY_WINDOW_S
-            //     → anula o dano + drena custo de parry (escala c/ RES) + staggera atacante.
-            //     Funciona p/ todas as armas (melee inclui).
-            // (2) Block: apenas armas ranged + RMB held + stamina suficiente
-            //     → reduz dano em block_dmg_reduction (escala c/ RES) + drena custo.
-            //     Melee NAO bloqueia (gateado em session.defending no input loop).
-            let mut parried = false;
-            let now_s = self.sim_time_s;
-            if let Some(target) = self
-                .sessions
-                .values_mut()
-                .find(|s| s.entity_id == target_id)
-            {
-                let in_parry_window = (now_s - target.last_press_primary_at)
-                    <= shared::PARRY_WINDOW_S
-                    || (now_s - target.last_press_secondary_at) <= shared::PARRY_WINDOW_S;
-                let parry_cost = shared::combat::parry_stamina_cost(&target.stats);
-                let block_cost = shared::combat::block_stamina_cost(&target.stats);
-                // Master's Counter (1007): durante 2s, qualquer hit recebido
-                // e auto-parryado independente de timing/stamina (sem cost).
-                let counter_active = target.counter_stance_until > now_s && !telegrafico;
-                // Timed parry is gone (no stamina); Master's Counter stays.
-                let _ = (in_parry_window, parry_cost);
-                let normal_parry = false;
-                if counter_active || normal_parry {
-                    if normal_parry {
-                        target.stamina_current = (target.stamina_current - parry_cost).max(0.0);
-                    }
-                    target.parry_flash_pending = true;
-                    // Consome a janela pra impedir parry sequencial sem novo press.
-                    target.last_press_primary_at = f32::NEG_INFINITY;
-                    target.last_press_secondary_at = f32::NEG_INFINITY;
-                    parried = true;
-                    // dmg sera lido pelo counter handler abaixo (precisa do
-                    // valor original pra reflexo de projectile). Zerado depois.
-                } else if target.defending && block_cost >= 0.0 && !telegrafico {
-                    target.stamina_current = (target.stamina_current - block_cost).max(0.0);
-                    dmg = shared::combat::apply_block_damage(&target.stats, dmg);
-                }
-            }
-
-            // Aplica stagger no atacante em caso de parry — funciona pra
-            // player (Session.stagger_until) e pra enemy (EnemyTag.hurt_until).
-            if parried {
-                let stagger_ts = now_s + shared::PARRY_STAGGER_S;
-                if attacker_is_player {
-                    if let Some(att) = self
-                        .sessions
-                        .values_mut()
-                        .find(|s| s.entity_id == attacker_id)
-                    {
-                        att.stagger_until = stagger_ts;
-                    }
-                } else {
-                    // Atacante eh enemy — encontra a Entity pelo EntityId.
-                    let attacker_entity = self
-                        .ecs
-                        .query::<&NetId>()
-                        .iter()
-                        .find(|(_, n)| n.0 == attacker_id)
-                        .map(|(e, _)| e);
-                    if let Some(ae) = attacker_entity {
-                        if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(ae) {
-                            tag.hurt_until = stagger_ts;
-                        }
-                    }
-                }
-
-                // Counter automatico: melee gera contra-ataque na direcao do
-                // atacante; projectile e' refletido (dir = -vel original).
-                // Pega pos+stats do parryador (target_id == quem parryou).
-                let parryer_data = self
-                    .sessions
-                    .values()
-                    .find(|s| s.entity_id == target_id)
-                    .and_then(|s| {
-                        let entity = s.entity?;
-                        let pos = self.ecs.get::<&Position>(entity).ok()?.0;
-                        Some((pos, s.stats.attack_damage))
-                    });
-                if let Some((parryer_pos, atk_dmg)) = parryer_data {
-                    match attack_info {
-                        AttackInfo::Melee { attacker_pos } => {
-                            let dir = (attacker_pos - parryer_pos)
-                                .try_normalize()
-                                .unwrap_or(Vec2::X);
-                            // Counter swing: 70% do ataque base do parryador,
-                            // dispara como melee swing parryador→atacante.
-                            let counter_dmg = ((atk_dmg as f32) * 0.70).round() as i32;
-                            if let Some(s) = self
-                                .sessions
-                                .values_mut()
-                                .find(|s| s.entity_id == target_id)
-                            {
-                                s.combo_last_attack = now_sim;
-                                s.combo_step = (s.combo_step + 1) % shared::COMBO_STEPS;
-                            }
-                            self.pending_melee.push(MeleeSwing {
-                                attacker_eid: target_id,
-                                pos: parryer_pos,
-                                dir,
-                                damage: counter_dmg.max(1),
-                                is_crit: false,
-                                from_player: true,
-                                knockback: 1.0, // parry counter — empurra
-                                target: None,
-                                max_range: shared::MELEE_RANGE,
-                                impact_at: now_sim + shared::PLAYER_ATTACK_IMPACT_S,
-                            });
-                            tracing::info!(
-                                "parry counter (melee): dmg={} from {} → {}",
-                                counter_dmg,
-                                target_id.0,
-                                attacker_id.0
-                            );
-                        }
-                        AttackInfo::Projectile { vel, kind } => {
-                            // Reflexo: spawn novo projectile na pos do parryador
-                            // com dir oposta (saindo de volta pra direcao do
-                            // atacante). Damage = 100% do dmg recebido.
-                            let reflect_dir = (-vel).try_normalize().unwrap_or(Vec2::X);
-                            let reflect_pos =
-                                parryer_pos + Vec2::new(0.0, shared::PROJ_SPAWN_OFFSET_Y);
-                            self.pending_shots.push(PendingShot {
-                                target: None,
-                                pos: reflect_pos,
-                                dir: reflect_dir,
-                                damage: dmg.max(1),
-                                is_crit: false,
-                                kind,
-                                owner_id: target_id, // parryador agora e' o "dono"
-                                from_player: true,
-                                release_tick: self.tick.wrapping_add(1),
-                            });
-                            tracing::info!(
-                                "parry reflect (proj): kind={} from {} → reflected",
-                                kind,
-                                target_id.0
-                            );
-                        }
-                        AttackInfo::Skill { .. } => {
-                            // Skill hit: so anula damage, sem counter (skills
-                            // costumam ser AoE/instantaneas — refletir e' awkward).
-                        }
-                    }
-                }
-
-                continue; // sem dano nem stagger no alvo
-            }
+            // saves (`shared::bosses::RESISTENCIA_NO_TELEGRAFICO`). Block,
+            // parry and Master's Counter are gone (09/11/2026), so nothing
+            // here mitigates a hit any more.
 
             if downed_targets.contains(&target_id) {
                 // Player ja esta downed. So dano de outro jogador drena a
@@ -12388,13 +12145,11 @@ impl GameWorld {
                 continue;
             }
             // Poise: se alvo eh player com poise > 0, absorve TODO o dano —
-            // sem HP drain, sem stagger, sem hurt anim. Defesa + defending
+            // sem HP drain, sem stagger, sem hurt anim. Defesa
             // reduzem o poise damage. Set last_combat_at pra gate de regen.
             //
-            // Iframe: durante dash/leap/defending o player tem poise automatico.
-            // Hits absorvidos sem custar poise_current. Defending drena stamina
-            // por hit; sem stamina, defending auto-cancela em outro loop, então
-            // iframe acaba naturalmente.
+            // Iframe: durante dash/leap o player tem poise automatico.
+            // Hits absorvidos sem custar poise_current.
             let mut absorbed_by_poise = false;
             let now_s_poise = self.sim_time_s;
             if let Some(target) = self
@@ -12476,7 +12231,7 @@ impl GameWorld {
             // Stagger so' de golpe CORPO A CORPO (ou de mob). Tiro que congela o
             // bicho a cada 0,5 s deixava quem atira de 5 unidades intocavel:
             // o lobo nunca chegava.
-            let trava = !attacker_is_player || matches!(attack_info, AttackInfo::Melee { .. });
+            let trava = !attacker_is_player || matches!(attack_info, AttackInfo::Melee);
             if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(entity) {
                 if trava {
                     tag.hurt_until = hurt_until_ts;
@@ -12487,7 +12242,7 @@ impl GameWorld {
                 // rota A* tinha que alcanca-lo de novo. Skills pesadas ainda
                 // podem empurrar, sem prender o boss no auto-ataque.
                 let kb_immune = tag.is_boss
-                    && (matches!(attack_info, AttackInfo::Melee { .. }) || kb_strength < 1.0);
+                    && (matches!(attack_info, AttackInfo::Melee) || kb_strength < 1.0);
                 if kb_active && !kb_immune {
                     tag.knockback_until = kb_until_ts;
                     tag.knockback_vel = kb_vel;
@@ -13350,29 +13105,10 @@ impl GameWorld {
             }
         }
 
-        // Lookup rapido por entity_id pra popular weapon_id/downed/visual em
-        // snapshots de Player. Sessao não autenticada não entra (logged_in=false).
-        struct PlayerOverlay {
-            weapon_id: Option<u16>,
-            offhand_id: Option<u16>,
-            downed: bool,
-            attack_speed_mult: f32,
-            defending: bool,
-            casting: bool,
-            poise_active: bool,
-        }
-        // Drena parry_flash_pending no mesmo passo — uma vez por tick.
-        let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
-        let mut parry_flash_ids: std::collections::HashSet<EntityId> =
-            std::collections::HashSet::new();
-        // Bosses: drena parry flash (block) e dash anim deste tick.
+        // Bosses: drena a anim de dash deste tick.
         let mut enemy_dash_anim_ids: std::collections::HashSet<EntityId> =
             std::collections::HashSet::new();
         for (_, (net, tag)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag)>() {
-            if tag.parry_flash_pending {
-                tag.parry_flash_pending = false;
-                parry_flash_ids.insert(net.0);
-            }
             if tag.dash_anim_pending {
                 tag.dash_anim_pending = false;
                 enemy_dash_anim_ids.insert(net.0);
@@ -13385,35 +13121,6 @@ impl GameWorld {
             .filter(|s| s.dash_until > now_for_cast)
             .map(|s| s.entity_id)
             .collect();
-        for s in self.sessions.values_mut() {
-            if !s.logged_in {
-                continue;
-            }
-            if s.parry_flash_pending {
-                s.parry_flash_pending = false;
-                parry_flash_ids.insert(s.entity_id);
-            }
-            let casting = s.casting_until > now_for_cast;
-            // poise_active inclui iframes de dash/leap/defending — bubble
-            // dourada durante pulos (Leap Strike, Spear), dash e defesa ativa.
-            let poise_active = s.poise_current > 0.5
-                || s.dash_until > now_for_cast
-                || s.leap_until > now_for_cast
-                || s.defending;
-            player_overlay.insert(
-                s.entity_id,
-                PlayerOverlay {
-                    weapon_id: s.equipment.weapon,
-                    offhand_id: s.equipment.offhand,
-                    downed: s.downed,
-                    attack_speed_mult: s.stats.attack_speed_mult,
-                    defending: s.defending,
-                    casting,
-                    poise_active,
-                },
-            );
-        }
-
         // Coleta enemies com status visuais (poisoned, stunned) pra replicar
         // tints no client. Pre-built maps pra evitar lookup repetido.
         let now_sim_for_status = self.sim_time_s;
@@ -20494,19 +20201,6 @@ fn maybe_unequip_offhand_for_weapon(session: &mut Session, new_weapon: u16) -> b
     true
 }
 
-/// Quanto poise o buffer de defending tem ao iniciar um block. Escala com
-/// char_lvl (30 por 10 lvls) e ganha 1.25x se equipou escudo no offhand.
-fn defending_poise_max(session: &Session) -> f32 {
-    let char_lvl = shared::level_of_xp_with_mult(session.xp, crate::economy::xp_multiplier());
-    let base = 30.0 * ((char_lvl as f32) / 10.0).floor();
-    let shield_mult = if session.equipment.weapon == Some(shared::item_id::ESPADA_E_ESCUDO) {
-        1.25
-    } else {
-        1.0
-    };
-    base * shield_mult
-}
-
 /// Calcula stats efetivos = base + pontos alocados + equip + scaling da
 /// prof da arma equipada.
 /// Intervalo entre ataques basicos do jogador, pela arma e pelos stats.
@@ -20807,8 +20501,6 @@ pub(crate) fn effective_stats(
         s.attack_speed_mult += b.attack_speed_pct * pts as f32;
         s.stamina_max += b.stamina_max * p;
         s.stamina_regen += b.stamina_regen * pts as f32;
-        s.block_dmg_reduction += b.block_reduction_bonus * pts as f32;
-        s.defense_stamina_cost_mult -= b.stamina_cost_reduction * pts as f32;
         s.dash_cd_mult += b.dash_cd_reduction_pct * pts as f32;
     }
 
@@ -20974,12 +20666,6 @@ pub(crate) fn effective_stats(
     s.mp_max = s.mp_max.max(0);
     s.attack_damage = s.attack_damage.max(1);
     s.defense = s.defense.max(0);
-    s.block_dmg_reduction = s
-        .block_dmg_reduction
-        .clamp(0.0, shared::BLOCK_REDUCTION_MAX);
-    s.defense_stamina_cost_mult = s
-        .defense_stamina_cost_mult
-        .max(shared::STAMINA_COST_MULT_MIN);
     s
 }
 

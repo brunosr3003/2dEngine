@@ -23,8 +23,8 @@
 //!   potions, through the helpers the live loop calls (`golpe_na_muralha`,
 //!   `cura_do_dreno`, `cura_evoluida`, `cura_da_sede`, `regen_de_hp`...).
 //!   An expected-value run plus a seeded Monte Carlo (win %, TTK quantiles).
-//!   Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter and block are
-//!   dead code in the live game and are not modeled (`NOTAS_DO_DUELO`).
+//!   Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter and block/parry
+//!   were removed from the live game (12/11/2026), so there is nothing to model.
 //!
 //! `torneio_padrao` runs the four level-55 archetypes (`arquetipos`, one
 //! power budget: `Orcamento`) against each other under every rule set of
@@ -578,7 +578,7 @@ pub struct Avaliacao {
 pub const NOTAS: [&str; 9] = [
     "One-sided runs: the target stands still and does nothing — no Bulwark, heals, regen or hit-stun. The interleaved duel below models those.",
     "One-sided runs ignore Life Drain, Aura, the katana's Thirst lifesteal and HP regen.",
-    "Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter and block/parry are dead code in the live game (nothing sets them since the 12-skill catalogue / the 09/11 stamina removal), so no run models them.",
+    "Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter and block/parry no longer exist in the live game (removed 12/11/2026), so no run models them.",
     "Range, line of sight, travel and mana are respected only as cooldown/lock/impact time and mana pool + regen; both sides are always in range.",
     "Expected-value run: crit as average damage per hit, target dodge (DEX, basics only) as average miss. Burst run: every hit crits, nothing dodged.",
     "Rotation: highest-damage skill off cooldown first; basics in between; casting locks the body (no basics) until the skill's lock time ends.",
@@ -862,7 +862,7 @@ pub const NOTAS_DO_DUELO: [&str; 9] = [
     "Both act on one clock (30 Hz ticks, like the server); the verdict is who empties the other's health AND 100-point downed bar first. Both stand in range; no movement, line of sight or travel time.",
     "Expected run: crits as average damage per hit; DEX dodge as an exact-rate pattern (every 1/p-th basic misses), so hit-stun and Thirst follow the same hits. Monte Carlo: real rolls, seeded, N runs.",
     "Modeled exactly from live code: Bulwark (-50..60% for 5/6/8 s by tier) and the Leap's tier VIII 2 s shield; Life Drain heal (30/35/40% by tier of the damage the bolt dealt — after defence, the PvP multipliers and Bulwark; nothing on the downed bar); Aura self-heal; katana Thirst 25% lifesteal on basics for 3 s after Dance (dodged strikes heal too); HP/MP regen with the x4 resting rule; hit-stun 0.25 s after every landed player hit (no swing, no cast).",
-    "Not in the live game, so not modeled: Hunter's Mark, Sword Dance forced crit, Bloodthirst (attack speed / lifesteal), Master's Counter, block and parry — the fields exist but nothing sets them. Leap's stun only reaches mobs.",
+    "Removed from the live game (12/11/2026), so not modeled: Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter, block and parry. Leap's stun only reaches mobs.",
     "Rotation: Bulwark when off cooldown and health under 90%; Aura under 70% health if the heal fits; then the damage skill with the highest expected damage (Life Drain counts its heal while hurt), but only if it beats the basics its lock displaces; basics in between. Never casts over its own melee swing in wind-up. Mana respected.",
     "AUTO potions (optional): Greater Heal under 60% health, Greater Mana under 40% mana, whenever the group is off cooldown (8 s); no body lock.",
     "Proposed multipliers apply after defence, before Bulwark; the Thirst heal is computed on the hit after both.",

@@ -899,8 +899,6 @@ mod testes_combate_montado {
             s.stats.damage_reduction_pct = 0.0;
             s.stats.hp_regen = 0.0;
             s.poise_current = 0.0;
-            s.last_press_primary_at = f32::NEG_INFINITY;
-            s.last_press_secondary_at = f32::NEG_INFINITY;
         }
         for _ in 0..7 {
             w.pending_skill_hits.push(PendingSkillHit {

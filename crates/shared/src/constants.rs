@@ -1281,46 +1281,6 @@ pub const CRIT_DAMAGE_MULT: f32 = 1.3;
 /// Defesa adicional por ponto em RES (somada ao base 0).
 pub const DEFENSE_PER_RES: i32 = 1;
 
-/// Aumento da fração de dano absorvido por block, por ponto em RES (somado
-/// ao base `BLOCK_DAMAGE_REDUCTION_BASE = 0.6`). Ex.: +0.003 × 100 pontos =
-/// +30% absorvido → 90% total. Capado em `BLOCK_REDUCTION_MAX`.
-pub const BLOCK_REDUCTION_PER_RES: f32 = 0.003;
-
-/// Reducao do multiplicador de custo de stamina por ponto em RES (subtraido
-/// do base 1.0). Aplica em block E parry. Ex.: -0.005 × 100 = -50% → custos
-/// caem pra 50%. Capado em `STAMINA_COST_MULT_MIN`.
-pub const STAMINA_COST_REDUCTION_PER_RES: f32 = 0.005;
-
-/// Custo BASE de stamina ao bloquear um ataque com sucesso. RES reduz via
-/// `defense_stamina_cost_mult`.
-pub const BLOCK_STAMINA_COST: f32 = 25.0;
-
-/// Custo BASE de stamina ao executar um parry com sucesso. RES reduz via
-/// `defense_stamina_cost_mult`.
-pub const PARRY_STAMINA_COST: f32 = 15.0;
-
-/// Fração base de dano absorvido por block (0.0 = sem efeito, 1.0 = anula tudo).
-/// RES soma `BLOCK_REDUCTION_PER_RES` por ponto.
-pub const BLOCK_DAMAGE_REDUCTION_BASE: f32 = 0.6;
-
-/// Cap maximo de absorcao de dano por block (player nunca toma menos que
-/// 5% do dano original quando bloqueia).
-pub const BLOCK_REDUCTION_MAX: f32 = 0.95;
-
-/// Cap minimo do multiplicador de custo de stamina (player nunca paga
-/// menos que 50% do custo base de block/parry).
-pub const STAMINA_COST_MULT_MIN: f32 = 0.5;
-
-/// Janela em segundos durante a qual o atacante fica em stagger apos um parry.
-pub const PARRY_STAGGER_S: f32 = 0.6;
-
-/// Multiplicador de velocidade enquanto o player segura RMB (defesa ativa).
-pub const MOVE_SPEED_DEFENDING_MULT: f32 = 0.4;
-
-/// Janela em segundos apos um press de PRIMARY/SECONDARY pra contar como
-/// tentativa de parry contra um hit incoming. ~250ms em 60fps = 15 frames.
-pub const PARRY_WINDOW_S: f32 = 0.25;
-
 /// Bonus aplicado por 1 ponto em cada stat (6 stats — design FOR/DES/INT/VIT/SPD/RES).
 /// Indices alinhados com `stat_idx::*`.
 ///
@@ -1330,8 +1290,7 @@ pub const PARRY_WINDOW_S: f32 = 0.25;
 /// ponto alocado entra no ataque básico e nas habilidades.
 /// VIT (Vitalidade):   +5 hp_max, +HP_REGEN_PER_VIT hp regen
 /// SPD (Velocidade):   +MOVE_SPEED_PCT_PER_SPD move speed, +STAMINA_MAX_PER_SPD stamina, +STAMINA_REGEN_PER_SPD st regen
-/// RES (Resistencia):  +DEFENSE_PER_RES def, +BLOCK_REDUCTION_PER_RES dmg absorvido em block,
-///                     -STAMINA_COST_REDUCTION_PER_RES no custo de block/parry
+/// RES (Resistencia):  +DEFENSE_PER_RES def
 pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
     /* FOR */
     StatAllocBonus {
@@ -1347,8 +1306,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         attack_speed_pct: 0.0,
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: 0.0,
-        stamina_cost_reduction: 0.0,
         dash_cd_reduction_pct: 0.0,
     },
     /* DES */
@@ -1365,8 +1322,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         attack_speed_pct: ATTACK_SPEED_PCT_PER_DES,
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: 0.0,
-        stamina_cost_reduction: 0.0,
         dash_cd_reduction_pct: 0.0,
     },
     /* INT */
@@ -1383,8 +1338,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         attack_speed_pct: 0.0,
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: 0.0,
-        stamina_cost_reduction: 0.0,
         dash_cd_reduction_pct: 0.0,
     },
     /* VIT */
@@ -1401,8 +1354,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         attack_speed_pct: 0.0,
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: 0.0,
-        stamina_cost_reduction: 0.0,
         dash_cd_reduction_pct: 0.0,
     },
     /* SPD */
@@ -1420,8 +1371,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         // Retired with stamina and the dash: SPD gives nothing.
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: 0.0,
-        stamina_cost_reduction: 0.0,
         dash_cd_reduction_pct: 0.0,
     },
     /* RES */
@@ -1438,8 +1387,6 @@ pub const STAT_POINT_BONUS: [StatAllocBonus; STAT_COUNT] = [
         attack_speed_pct: 0.0,
         stamina_max: 0,
         stamina_regen: 0.0,
-        block_reduction_bonus: BLOCK_REDUCTION_PER_RES,
-        stamina_cost_reduction: STAMINA_COST_REDUCTION_PER_RES,
         dash_cd_reduction_pct: 0.0,
     },
 ];
@@ -1461,10 +1408,6 @@ pub struct StatAllocBonus {
     pub attack_speed_pct: f32,
     pub stamina_max: i32,
     pub stamina_regen: f32,
-    /// Adiciona ao base BLOCK_DAMAGE_REDUCTION_BASE — fração extra absorvida.
-    pub block_reduction_bonus: f32,
-    /// Subtrai do multiplicador de custo de stamina (1.0 = base).
-    pub stamina_cost_reduction: f32,
     /// Adiciona ao bonus % de redução de cooldown do dash. Final mult =
     /// 1.0 + dash_cd_reduction_pct (clampado em [1, X]). Cooldown final =
     /// DASH_COOLDOWN / mult.

@@ -132,13 +132,12 @@ pub struct PlayerStats {
     /// Regen de stamina por seg (base 25 + bonus de SPD).
     #[serde(default = "default_stamina_regen")]
     pub stamina_regen: f32,
-    /// Fração de dano absorvido por block (0.0..BLOCK_REDUCTION_MAX). Base
-    /// `BLOCK_DAMAGE_REDUCTION_BASE = 0.6`. RES soma `BLOCK_REDUCTION_PER_RES`.
-    /// Aplicada apenas quando o player segura RMB com arma ranged.
+    /// Unused legacy (block went with stamina, 09/11/2026): stays at its
+    /// base 0.6 so the postcard layout of `StatsUpdate`/saves is unchanged.
     #[serde(default = "default_block_reduction")]
     pub block_dmg_reduction: f32,
-    /// Multiplicador no custo de stamina de block/parry (1.0 = base, 0.5 cap).
-    /// RES subtrai `STAMINA_COST_REDUCTION_PER_RES` por ponto.
+    /// Unused legacy (block/parry stamina cost): stays at 1.0, kept for the
+    /// wire/save layout.
     #[serde(default = "default_one")]
     pub defense_stamina_cost_mult: f32,
     /// Bonus % no alcance de projeteis de arco (Eagle Eye passive). Aplicado
@@ -844,7 +843,7 @@ pub mod attack_anim {
     pub const ENEMY_SWING: u8 = 3; // Inimigo melee (compat com `attacking`)
     pub const ENEMY_SHOOT: u8 = 4; // Inimigo ranged (Goblin Archer / Mago)
     pub const DASH: u8 = 5; // Dash do player (anim de jump, p1 cols 4-7)
-    pub const PARRY_FLASH: u8 = 6; // Parry sucesso — full ShieldBash swing + flash
+    pub const PARRY_FLASH: u8 = 6; // Unused legacy (parry is gone); wire code kept reserved
     pub const SHIELD_BASH: u8 = 7; // Shield Bash skill (1003) — pONE3 ShieldBash
     pub const TOOL_SWING: u8 = 8; // Rock (mine) e Tree (wood) — p2 rows 0-3
     pub const TOOL_GATHER: u8 = 9; // Flower — p2 rows 4-7

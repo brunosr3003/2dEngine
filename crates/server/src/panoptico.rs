@@ -559,8 +559,6 @@ fn estado_do_jogador(w: &GameWorld, s: &crate::world::Session) -> &'static str {
         "levando"
     } else if s.casting_until > agora {
         "conjurando"
-    } else if s.defending {
-        "defendendo"
     } else if s.target.is_some() {
         "in combat"
     } else if !s.rota.vazia() {

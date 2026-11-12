@@ -211,7 +211,6 @@ impl GameWorld {
             || s.entity.is_none()
             || s.carrying.is_some()
             || s.carried_by.is_some()
-            || agora < s.stagger_until
             || agora < s.hurt_until
             || agora < s.casting_until
             || agora < s.dash_until
@@ -345,7 +344,6 @@ impl GameWorld {
             if !s.logged_in
                 || s.downed
                 || !vivo
-                || self.sim_time_s < s.stagger_until
                 || Conjunto::da_arma(s.equipment.weapon.unwrap_or(0)) != h.skill.conjunto
             {
                 self.cancelar_habilidade(h.sid, h.skill.id);
