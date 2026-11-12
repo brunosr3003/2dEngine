@@ -632,9 +632,11 @@
     Pick two characters: the game server loads both from the realm database,
     builds their stats with the same code a session uses, and simulates the
     fight both ways with the live damage code. <b>Current</b> is the rule the
-    game runs today; <b>proposed</b> uses the parameters below. The target
-    stands still (no block, heal or movement) — this is the fastest the fight
-    can go.
+    game runs today; <b>proposed</b> uses the parameters below. The one-sided
+    runs have the target stand still (no heal, Bulwark or hit-stun) — the
+    fastest the fight can go. The <b>duel with heals &amp; buffs</b> has both
+    act at once on one clock: Bulwark, Life Drain, Aura, the katana's Thirst,
+    regen and the hit-stun, plus a seeded Monte Carlo for the win rate.
   </p>
   <div class="grade">
     <div>
@@ -664,10 +666,21 @@
     <label>level floor <input class="campo" id="pv-level_floor" type="number" step="0.05" min="0" max="1" style="width:80px"></label>
     <label><input id="pv-katana_execute_pvp" type="checkbox"> katana execute in PvP</label>
     <button class="acao" id="pv-padrao" type="button">defaults</button>
+  </div>
+  <h2>Duel with heals &amp; buffs</h2>
+  <div class="barra-topo">
+    <label><input id="pv-duelo" type="checkbox" checked> show the interleaved duel</label>
+    <label><input id="pv-potions" type="checkbox"> AUTO potions (60% HP / 40% MP)</label>
+    <label><input id="pv-hit_stun" type="checkbox" checked> hit-stun (live)</label>
+    <label>Monte Carlo runs <input class="campo" id="pv-mc_runs" type="number" step="50" min="0" max="2000" value="200" style="width:80px"></label>
     <button class="aba" id="pv-avaliar" style="width:auto;padding:8px 20px">evaluate</button>
   </div>
   <p class="nota">Cap 0 = no cap. The level penalty applies only when the attacker is more than “free gap” levels below the target: multiplier = max(floor, 1 − penalty × (gap − free gap)).</p>
   <div id="pv-resultado"></div>
+  <h2>Round-robin of archetypes</h2>
+  <p class="nota">Four level-55 builds on one power budget (same points, gear and skill tiers through the game's stat code), every pair, under the current rules and four proposed skill/basic multiplier sets. Uses the duel options above.</p>
+  <div class="barra-topo"><button class="aba" id="pv-torneio" style="width:auto;padding:8px 20px">run round-robin</button></div>
+  <div id="pv-torneio-resultado"></div>
 </div>
 
 <!-- ─────────────────────────── infra ─────────────────────────── -->
@@ -2319,7 +2332,15 @@ document.querySelectorAll('[data-av]').forEach(b => b.onclick = () => {
 });
 
 // ── pvp ──────────────────────────────────────────────────────────────
-const PV_PADRAO = { skill_mult: 0.35, basic_mult: 0.6, cap_pct: 0.35, level_penalty_per_level: 0.08, level_free_gap: 5, level_floor: 0.20, katana_execute_pvp: false };
+const PV_PADRAO = { skill_mult: 0.35, basic_mult: 0.6, cap_pct: 0, level_penalty_per_level: 0.08, level_free_gap: 5, level_floor: 0.20, katana_execute_pvp: false };
+const PV_DUELO = ['potions', 'hit_stun', 'mc_runs'];
+function pvOpcoes(q) {
+  for (const k of PV_DUELO) {
+    const el = document.getElementById('pv-' + k);
+    q.set(k, el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value);
+  }
+  return q;
+}
 const pvEscolhidos = { a: null, b: null };
 let pvMontado = false;
 function pvPadrao() {
@@ -2372,6 +2393,7 @@ function pvMonta() {
   pvPicker('a'); pvPicker('b'); pvPadrao();
   document.getElementById('pv-padrao').onclick = pvPadrao;
   document.getElementById('pv-avaliar').onclick = pvAvaliar;
+  document.getElementById('pv-torneio').onclick = pvTorneio;
   document.querySelectorAll('#aba-pvp .barra-topo input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') pvAvaliar(); }));
 }
 PUXA.pvp = pvMonta;
@@ -2389,6 +2411,8 @@ async function pvAvaliar() {
     const el = document.getElementById('pv-' + k);
     q.set(k, el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value);
   }
+  pvOpcoes(q);
+  if (!document.getElementById('pv-duelo').checked) q.set('mc_runs', '0');
   out.innerHTML = '<p class="nota">evaluating…</p>';
   let r;
   try {
@@ -2444,13 +2468,65 @@ function pvLado(titulo, l) {
     pvDuelo(l.a_vs_b) + pvDuelo(l.b_vs_a) + '</div>';
 }
 
+function pvLadoDoDuelo(x) {
+  const h = x.heals;
+  return [
+    ['health left', `${num(Math.round(x.hp_final))} / ${num(x.hp_max)} (${pvP(x.hp_final_pct)}) · lowest ${pvP(x.hp_min_pct)}`],
+    ['downed / dead', `${x.downed_s == null ? '—' : x.downed_s.toFixed(2) + ' s'} / ${x.dead_s == null ? '—' : x.dead_s.toFixed(2) + ' s'}`],
+    ['damage dealt', num(Math.round(x.damage_dealt))],
+    ['Bulwark absorbed', num(Math.round(x.bulwark_absorbed))],
+    ['healed', `<b>${num(Math.round(x.heal_total))}</b> · drain ${num(Math.round(h.life_drain))} · aura ${num(Math.round(h.aura))} · thirst ${num(Math.round(h.thirst))} · regen ${num(Math.round(h.regen))} · potions ${num(Math.round(h.potions))}`],
+    ['basics / skills / dodged', `${x.basics} / ${x.skills_cast} / ${x.dodges}`],
+    ['held by hit-stun', x.stunned_s.toFixed(2) + ' s'],
+  ];
+}
+
+function pvIntercalado(titulo, d, na, nb) {
+  const e = d.expected, m = d.monte_carlo;
+  const mc = m ? `<div class="cartao"><div class="rot">Monte Carlo · ${m.runs} runs</div><div class="num">${pvP(m.a_win_pct)} / ${pvP(m.b_win_pct)}</div>
+    <div class="pe">${esc(na)} / ${esc(nb)} wins · draws ${m.draws} · TTK median ${pvS(m.median_ttk_s)} (p10 ${pvS(m.p10_ttk_s)}, p90 ${pvS(m.p90_ttk_s)})</div></div>` : '';
+  const ex = `<div class="cartao" style="flex:1"><div class="rot">expected run</div><div class="num" style="font-size:15px">${esc(d.verdict)}</div></div>`;
+  const tl = tabela(['t', 'by', 'action', 'damage', 'heal', `HP ${na}`, `HP ${nb}`],
+    e.timeline.map(v => [v.t.toFixed(2) + ' s', v.by === 'a' ? esc(na) : esc(nb), esc(v.action), pvN(v.damage), v.heal ? pvN(v.heal) : '', pvN(v.hp_a), pvN(v.hp_b)]), [2]);
+  const lados = pvLadoDoDuelo(e.a).map(([k, v], i) => [k, v, pvLadoDoDuelo(e.b)[i][1]]);
+  return `<div><h3>${titulo}</h3><div class="cartoes">${ex}${mc}</div>` + tabela(['', esc(na), esc(nb)], lados) +
+    `<details style="padding:0 14px"><summary class="nota" style="cursor:pointer">duel timeline</summary>${tl}</details></div>`;
+}
+
+async function pvTorneio() {
+  const out = document.getElementById('pv-torneio-resultado');
+  out.innerHTML = '<p class="nota">running 30 duels…</p>';
+  let r;
+  try {
+    r = await fetch(BASE + 'api/pvp_rr?' + pvOpcoes(new URLSearchParams()), { credentials: 'same-origin', cache: 'no-store' });
+  } catch (e) { out.innerHTML = `<p class="nota ruim">${esc(e)}</p>`; return; }
+  if (r.status === 401) { location.href = BASE + 'login'; return; }
+  if (!r.ok) { out.innerHTML = `<p class="nota ruim">${r.status}: ${esc(await r.text())}</p>`; return; }
+  const t = await r.json(), b = t.budget;
+  const fichas = tabela(['build', 'HP', 'MP', 'attack', 'defense', 'DR', 'crit', 'dodge', 'basic cd', 'regen', 'STR/DEX/INT/VIT'],
+    t.fighters.map(f => [esc(f.name), num(f.hp), num(f.mp), num(f.attack), num(f.defense), pvP(f.damage_reduction_effective), pvP(f.crit_chance), pvP(f.dodge_chance),
+      f.basic_cooldown_s.toFixed(3) + ' s', pvN(f.hp_regen) + '/s', `${f.allocated.str_}/${f.allocated.dex}/${f.allocated.int}/${f.allocated.vit}`]), [0]);
+  const grupos = {};
+  for (const l of t.rows) (grupos[l.rules] = grupos[l.rules] || []).push(l);
+  const pp = x => x == null ? '—' : pvP(x);
+  const tabelas = Object.entries(grupos).map(([regra, ls]) => `<h3>${esc(regra)}</h3>` +
+    tabela(['matchup', 'winner (expected)', 'TTK', 'winner HP', 'HP a / b', 'MC win a / b / draw', 'MC median TTK'],
+      ls.map(l => [`${esc(l.a)} vs ${esc(l.b)}`, esc(l.winner), pvS(l.ttk_s), pp(l.winner_hp_pct), `${pvP(l.a_hp_pct)} / ${pvP(l.b_hp_pct)}`,
+        `${pp(l.a_win_pct)} / ${pp(l.b_win_pct)} / ${pp(l.draw_pct)}`, pvS(l.median_ttk_s)]), [0, 1])).join('');
+  out.innerHTML = `<p class="nota">Budget: level ${b.level}, ${3 * (b.level - 1)} points, all seven pieces grade ${b.grade} tier ${b.tier_in_grade} +${b.refine} at item level ${b.item_level}, skills tier ${b.skill_tier}, proficiency at the level.</p>` +
+    fichas + tabelas;
+}
+
 function pvDesenha(d) {
   const ttk = (l, k) => l[k].expected.ttk_s;
   const cart = (rot, l) => `<div class="cartao"><div class="rot">${rot}</div><div class="num">${pvS(ttk(l, 'a_vs_b'))} / ${pvS(ttk(l, 'b_vs_a'))}</div>
     <div class="pe">${esc(d.a.name)} → ${esc(d.b.name)} / ${esc(d.b.name)} → ${esc(d.a.name)} · burst ${pvS(l.a_vs_b.burst.ttk_s)} / ${pvS(l.b_vs_a.burst.ttk_s)}</div></div>`;
   document.getElementById('pv-resultado').innerHTML =
     `<h2>Time to kill</h2><div class="cartoes">${cart('current', d.current)}${cart('proposed', d.proposed)}</div>` +
-    `<div class="grade">${pvLado('Current rules', d.current)}${pvLado('Proposed rules', d.proposed)}</div>` +
+    (document.getElementById('pv-duelo').checked ?
+      `<h2>Duel with heals &amp; buffs</h2><div class="grade">${pvIntercalado('Current rules', d.duel_current, d.a.name, d.b.name)}${pvIntercalado('Proposed rules', d.duel_proposed, d.a.name, d.b.name)}</div>` +
+      `<details style="padding:0 14px"><summary class="nota" style="cursor:pointer">what the duel models</summary><ul class="nota" style="padding-left:30px">${d.duel_notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : '') +
+    `<h2>One-sided runs (target stands still)</h2><div class="grade">${pvLado('Current rules', d.current)}${pvLado('Proposed rules', d.proposed)}</div>` +
     `<h2>Fighters</h2><div class="grade"><div>${pvFicha(d.a)}</div><div>${pvFicha(d.b)}</div></div>` +
     `<h2>What the simulation assumes</h2><ul class="nota" style="padding-left:30px">${d.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
 }

@@ -174,6 +174,7 @@ async fn main() -> anyhow::Result<()> {
         .route(&p("/api/staff"), get(staff))
         .route(&p("/api/personagens"), get(personagens))
         .route(&p("/api/pvp"), get(pvp::avaliar))
+        .route(&p("/api/pvp_rr"), get(pvp::torneio))
         .route(&p("/api/icones.png"), get(icones_png));
     if !auth.prefixo.is_empty() {
         // "/panoptico" sem barra: a pagina usa caminhos relativos e precisa da barra.
