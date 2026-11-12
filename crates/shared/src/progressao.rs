@@ -25,25 +25,25 @@ pub fn segundos_do_nivel(n: u32) -> f32 {
     SEGUNDOS_POR_NIVEL * n as f32
 }
 
-/// THE PACE on top of the calibrated curve (owner, 12/11/2026): "a normal
-/// player should take a year to reach 100, a tryhard like Anubis about six
-/// months". At launch Anubis did 1-55 in 54 h online, ~1.55x the best case
-/// above: 1-100 in ~215 h, two or three weeks of his play. Every XP a
-/// character gains is divided by `ritmo(level)`:
+/// THE PACE on top of the calibrated curve (owner, 12/11/2026). At launch
+/// Anubis did 1-55 in 54 h online, ~1.55x the best case above: 1-100 in
+/// ~215 h, under three weeks of his play. The owner wants the curve "a bit
+/// longer" and the long game to come from a level reset at 100 (bonus still
+/// to be designed), not from a wall of XP. Every XP a character gains is
+/// divided by `ritmo(level)`:
 ///
 /// - levels 1-19: 1 (the start stays quick);
 /// - 20-49: a straight ramp from 1 up to `RITMO_MAX`;
 /// - 50 on: `RITMO_MAX`.
 ///
-/// The game plays itself (auto), so people stay on 6-12 h a day and farm
-/// about the same per hour; only the hours differ. With 11.5 the Anubis pace
-/// takes ~2,180 h online for 1-100: six months at 12 h a day, a year at 6 h
-/// a day (owner, 12/11/2026; it was 5.7 for a day). Paying players go faster through the
-/// XP potion, the Magic Island islet and bought gear — the divisor is applied
-/// before those bonuses, so they keep their share. The kill factor, quest
-/// shares and the 200 h best case above stay as they are: this is one
-/// divisor at the door, easy to tune.
-pub const RITMO_MAX: f32 = 11.5;
+/// With 2.0 the Anubis pace takes ~400 h online for 1-100 (about a month at
+/// 12 h a day); the Lenda pace ~630 h (about 3.5 months at 6 h a day). It was
+/// 5.7 and then 11.5 for a few hours before the reset idea. Paying players go
+/// faster through the XP potion, the Magic Island islet and bought gear: the
+/// divisor is applied before those bonuses, so they keep their share. The
+/// kill factor, quest shares and the 200 h best case above stay as they are:
+/// this is one divisor at the door, easy to tune.
+pub const RITMO_MAX: f32 = 2.0;
 /// Where the ramp starts and where it reaches `RITMO_MAX`.
 pub const RITMO_DE: u32 = 20;
 pub const RITMO_ATE: u32 = 50;
@@ -298,6 +298,6 @@ mod testes_do_ritmo {
         assert_eq!(ritmo(TETO), RITMO_MAX);
         assert_eq!(no_ritmo(0, 60), 0);
         assert_eq!(no_ritmo(1, 60), 1, "never rounds a gain away");
-        assert_eq!(no_ritmo(11_500, 60), 1_000);
+        assert_eq!(no_ritmo(2_000, 60), 1_000);
     }
 }
