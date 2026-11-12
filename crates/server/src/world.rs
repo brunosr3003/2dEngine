@@ -2330,6 +2330,11 @@ impl Session {
         if amount == 0 {
             return;
         }
+        // The pace (`shared::progressao::ritmo`): every XP is divided by the
+        // player's level divisor BEFORE the bonuses, so potion, islet and
+        // accessories keep their share.
+        let nivel = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
+        let amount = shared::progressao::no_ritmo(amount, nivel);
         // Pocao de Experiencia: o bonus vale pra TODO XP de personagem, e e'
         // aqui que todo XP passa.
         let amount = shared::xp_com_bonus(amount, (now_ms() / 1000) as i64, self.xp_bonus_ate);

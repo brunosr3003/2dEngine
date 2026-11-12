@@ -28,7 +28,11 @@ pub fn perda_de_xp(xp: u64, mult: u64) -> u64 {
     let nivel = level_of_xp_with_mult(xp, mult);
     let piso = xp_for_level_with_mult(nivel, mult);
     let degrau = xp_for_level_with_mult(nivel + 1, mult).saturating_sub(piso);
-    (degrau / 10).min(xp.saturating_sub(piso))
+    // A tenth of the level, in TIME: with XP slowed down by the pace
+    // (`progressao::ritmo`) the step is the same but earning it takes
+    // longer, so the loss shrinks by the same divisor (owner: no heavier death).
+    let perda = shared::progressao::no_ritmo(degrau / 10, nivel);
+    perda.min(xp.saturating_sub(piso))
 }
 
 /// Gold to recover a death once the day's free ones are gone: a floor that

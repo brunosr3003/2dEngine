@@ -25,6 +25,46 @@ pub fn segundos_do_nivel(n: u32) -> f32 {
     SEGUNDOS_POR_NIVEL * n as f32
 }
 
+/// THE PACE on top of the calibrated curve (owner, 12/11/2026): "a normal
+/// player should take a year to reach 100, a tryhard like Anubis about six
+/// months". At launch Anubis did 1-55 in 54 h online, ~1.55x the best case
+/// above: 1-100 in ~215 h, two or three weeks of his play. Every XP a
+/// character gains is divided by `ritmo(level)`:
+///
+/// - levels 1-19: 1 (the start stays quick);
+/// - 20-49: a straight ramp from 1 up to `RITMO_MAX`;
+/// - 50 on: `RITMO_MAX`.
+///
+/// With 5.7 the Anubis pace takes ~1,100 h online for 1-100 (six months at
+/// ~6 h a day; a year at ~3 h a day). Paying players go faster through the
+/// XP potion, the Magic Island islet and bought gear — the divisor is applied
+/// before those bonuses, so they keep their share. The kill factor, quest
+/// shares and the 200 h best case above stay as they are: this is one
+/// divisor at the door, easy to tune.
+pub const RITMO_MAX: f32 = 5.7;
+/// Where the ramp starts and where it reaches `RITMO_MAX`.
+pub const RITMO_DE: u32 = 20;
+pub const RITMO_ATE: u32 = 50;
+
+/// The divisor of every XP gained at `nivel` (>= 1).
+pub fn ritmo(nivel: u32) -> f32 {
+    if nivel < RITMO_DE {
+        1.0
+    } else if nivel >= RITMO_ATE {
+        RITMO_MAX
+    } else {
+        1.0 + (RITMO_MAX - 1.0) * (nivel - RITMO_DE) as f32 / (RITMO_ATE - RITMO_DE) as f32
+    }
+}
+
+/// `xp` gained at `nivel`, after the pace (never 0 when `xp` > 0).
+pub fn no_ritmo(xp: u64, nivel: u32) -> u64 {
+    if xp == 0 {
+        return 0;
+    }
+    ((xp as f64 / ritmo(nivel) as f64).round() as u64).max(1)
+}
+
 /// Share of each band's XP from the main story.
 pub const PARCELA_DA_HISTORIA: f32 = 0.12;
 /// Share from side missions (one-off, contracts and dailies together).
@@ -237,5 +277,25 @@ mod testes {
             let abates = q.obj_count as u64 * xp_do_abate(BASE_TIPICA, q.min_level.max(1));
             assert!(xp_da_quest(q) * 5 < abates, "{} '{}' pays {} for kills worth {abates}", q.id, q.title, xp_da_quest(q));
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_do_ritmo {
+    use super::*;
+
+    #[test]
+    fn ritmo_comeca_em_um_sobe_em_rampa_e_para_no_maximo() {
+        assert_eq!(ritmo(1), 1.0);
+        assert_eq!(ritmo(RITMO_DE - 1), 1.0);
+        assert_eq!(ritmo(RITMO_DE), 1.0);
+        for n in RITMO_DE..RITMO_ATE {
+            assert!(ritmo(n + 1) > ritmo(n), "{n}");
+        }
+        assert_eq!(ritmo(RITMO_ATE), RITMO_MAX);
+        assert_eq!(ritmo(TETO), RITMO_MAX);
+        assert_eq!(no_ritmo(0, 60), 0);
+        assert_eq!(no_ritmo(1, 60), 1, "never rounds a gain away");
+        assert_eq!(no_ritmo(5_700, 60), 1_000);
     }
 }

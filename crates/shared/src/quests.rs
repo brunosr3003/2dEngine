@@ -610,7 +610,10 @@ impl QuestNet {
             obj_pos: glam::Vec2::new(d.obj_x, d.obj_y),
             obj_radius: d.obj_radius,
             reward_cobre: d.reward_cobre,
-            reward_xp: crate::progressao::xp_da_quest(d),
+            // Shown after the pace at the quest's level (the server divides
+            // by the player's level when it pays; they are nearly always the
+            // same band).
+            reward_xp: crate::progressao::no_ritmo(crate::progressao::xp_da_quest(d), d.min_level.max(1)),
             reward_item: d.reward_item,
             reward_item_qty: d.reward_item_qty,
             reward_faction_points: d.reward_faction_points,
