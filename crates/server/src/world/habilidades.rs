@@ -733,21 +733,17 @@ mod testes {
                     .pending_heals
                     .iter()
                     .any(|h| h.target_net == dono && h.amount == skill.cura)),
-                // Life Drain: the hit on the target AND the lifesteal on the
-                // caster, in the same impact.
+                // Life Drain: the bolt carries its tier; the heal is paid in
+                // the damage loop on what lands (`dreno_cura_pelo_dano_que_entrou`),
+                // so nothing is healed at the impact itself.
                 10 => {
                     let golpe = w
                         .pending_skill_hits
                         .iter()
                         .find(|h| h.target_net == EntityId(999))
                         .expect("Life Drain sem alvo");
-                    let roubo = ((golpe.damage as f32) * shared::skills::roubo_do_dreno(1))
-                        .round()
-                        .max(1.0) as i32;
-                    assert!(w
-                        .pending_heals
-                        .iter()
-                        .any(|h| h.target_net == dono && h.amount == roubo));
+                    assert_eq!(golpe.drain_tier, 1);
+                    assert!(!w.pending_heals.iter().any(|h| h.target_net == dono));
                 }
                 _ => {
                     let s = &w.sessions[&sid];
