@@ -20624,20 +20624,30 @@ fn defending_poise_max(session: &Session) -> f32 {
 /// Atk speed (DES + itens) divide o cooldown, com escala por tipo: anel a
 /// 30% (DEX ajuda pouco no conjuro), pistolas a 60%, corpo a corpo cheio.
 /// Bloodthirst (1011): +20% enquanto ativo.
+/// The weapon's basic-attack interval with NO attack-speed bonus. Skill damage
+/// is priced on this (owner, 12/11/2026: "strength = more skill damage,
+/// attack speed = more basic-attack damage"): before, skills divided by the
+/// sped-up interval, so a full-DEX pistol build hit with skills twice as hard
+/// as the design (Anubis: 0.324 s vs 0.65 s) — and the balance simulator
+/// already priced skills on this base interval.
+pub(crate) fn cadencia_base_da_arma(weapon_id: u16) -> f32 {
+    if shared::weapon_is_melee(weapon_id) {
+        ATTACK_COOLDOWN
+    } else {
+        match shared::skills::Conjunto::da_arma(weapon_id) {
+            shared::skills::Conjunto::AnelMagico => CADENCIA_DO_ANEL_S,
+            _ => CADENCIA_DAS_PISTOLAS_S,
+        }
+    }
+}
+
 pub(crate) fn cooldown_do_ataque(
     weapon_id: u16,
     stats: &shared::PlayerStats,
     bloodthirst: bool,
 ) -> f32 {
     let conjunto = shared::skills::Conjunto::da_arma(weapon_id);
-    let base_cd = if shared::weapon_is_melee(weapon_id) {
-        ATTACK_COOLDOWN
-    } else {
-        match conjunto {
-            shared::skills::Conjunto::AnelMagico => CADENCIA_DO_ANEL_S,
-            _ => CADENCIA_DAS_PISTOLAS_S,
-        }
-    };
+    let base_cd = cadencia_base_da_arma(weapon_id);
     let bonus = stats.attack_speed_mult.max(0.5) - 1.0;
     let scale_factor = match conjunto {
         shared::skills::Conjunto::AnelMagico => 0.30,

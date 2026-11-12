@@ -447,7 +447,9 @@ impl GameWorld {
             |s| {
                 (
                     s.stats.attack_damage,
-                    super::cooldown_do_ataque(s.equipment.weapon.unwrap_or(0), &s.stats, false),
+                    // The weapon's BASE interval: attack speed speeds up the
+                    // basic attack, not the skills (`cadencia_base_da_arma`).
+                    super::cadencia_base_da_arma(s.equipment.weapon.unwrap_or(0)),
                     s.stats.crit_chance,
                 )
             },
@@ -738,11 +740,7 @@ mod testes {
                     let s = &w.sessions[&sid];
                     let esperado = skill.dano_efetivo(
                         s.stats.attack_damage,
-                        crate::world::cooldown_do_ataque(
-                            s.equipment.weapon.unwrap_or(0),
-                            &s.stats,
-                            false,
-                        ),
+                        crate::world::cadencia_base_da_arma(s.equipment.weapon.unwrap_or(0)),
                     );
                     // Aqui so' se cobra que o servidor use a formula. Que a
                     // skill VENCA o basico que ela desliga e' outra garantia, e

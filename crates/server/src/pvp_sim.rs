@@ -200,7 +200,9 @@ impl Regras {
             label: "proposed",
             basic_mult: 0.6,
             skill_mult: 0.35,
-            cap_pct: Some(0.35),
+            // Owner, 12/11/2026: no per-hit cap; skills no longer scale with
+            // attack speed, multipliers do the rest.
+            cap_pct: None,
             level_penalty_per_level: 0.08,
             level_free_gap: 5,
             level_floor: 0.20,
@@ -275,7 +277,7 @@ fn bruto(at: &Lutador, acao: Acao, crit: bool, alvo_em_execucao: bool, r: &Regra
         }
         Acao::Skill(i) => {
             let (skill, tier) = &at.skills[i];
-            dano_da_skill(skill, *tier, at.stats.attack_damage, at.cd_basico(), crit)
+            dano_da_skill(skill, *tier, at.stats.attack_damage, crate::world::cadencia_base_da_arma(at.arma), crit)
         }
     }
 }
@@ -836,8 +838,7 @@ mod testes {
         // The proposed defaults turn it into a multi-hit fight.
         let p = &av.proposed.a_vs_b;
         assert!(!p.one_shot);
-        assert!(p.max_hit_pct <= 0.35 + 1e-6);
-        assert!(p.expected.hits >= 5, "{} hits", p.expected.hits);
+        assert!(p.expected.hits >= 3, "{} hits", p.expected.hits);
         assert!(p.expected.ttk_s.unwrap() > d.expected.ttk_s.unwrap() * 2.0);
     }
 
@@ -888,7 +889,7 @@ mod testes {
     fn query_vazia_da_os_padroes_e_parametros_mudam() {
         let r = Regras::propostas_da_query(&HashMap::new());
         assert_eq!(r.skill_mult, 0.35);
-        assert_eq!(r.cap_pct, Some(0.35));
+        assert_eq!(r.cap_pct, None);
         assert!(!r.katana_execute_pvp);
         let q: HashMap<String, String> = [
             ("skill_mult", "0.5"),
