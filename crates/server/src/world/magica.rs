@@ -248,6 +248,9 @@ impl GameWorld {
         let nome = s.name.clone();
         self.save_pending = true;
         if dentro {
+            // Extending from inside counts too (owner, 12/11/2026): Anubis did
+            // 4 h on the island with only 2 recorded entries.
+            crate::telemetria::conta_de(&nome, "magica_extensao", self.zona.clone(), entradas as i64);
             self.abrir_magica(sid);
             let _ = self
                 .sessions
