@@ -187,7 +187,7 @@ fn melhor_troca(eu: &Eu) -> Option<(u16, EquipSlot, i32, i32)> {
             continue;
         }
         // Peça acima do nível o servidor recusa (`level_req`).
-        if s.instance.and_then(|x| x.level_req).is_some_and(|r| r as u32 > eu.nivel) {
+        if s.instance.is_some_and(|x| x.nivel_para_usar() > eu.nivel) {
             continue;
         }
         let novo = poder_da_peca(s.instance.as_ref(), s.item_id);

@@ -14446,8 +14446,8 @@ impl GameWorld {
             //
             // Regra do cliente e regra do servidor tem que ser a mesma, e
             // quem manda e' o servidor: o cliente pode mentir.
-            if let Some(req) = item.instance.and_then(|i| i.level_req) {
-                if char_level_now < req as u32 {
+            if let Some(req) = item.instance.map(|i| i.nivel_para_usar()).filter(|r| *r > 0) {
+                if char_level_now < req {
                     return false;
                 }
             }
@@ -14497,8 +14497,8 @@ impl GameWorld {
                     // Recusar CALADO e' quase tao ruim quanto deixar passar:
                     // o jogador arrasta a peca, ela volta, e ele nao sabe por
                     // que. O nivel e' o unico motivo que ele pode resolver.
-                    if let Some(req) = ia.instance.and_then(|i| i.level_req) {
-                        if char_level_now < req as u32 {
+                    if let Some(req) = ia.instance.map(|i| i.nivel_para_usar()).filter(|r| *r > 0) {
+                        if char_level_now < req {
                             let _ = session.handle.to_client.send(ServerMessage::Chat {
                                 from: "SYS".into(),
                                 text: format!("This piece asks for level {req}."),
@@ -14723,9 +14723,16 @@ impl GameWorld {
         }
         let inst = if recipe.roll_instance {
             let tpl = crate::economy::item_template_of(recipe.output_item_id);
-            shared::ItemInstance::roll_with_template(tpl, recipe.output_item_level, || {
-                fastrand::f32()
-            })
+            // The COLOR comes from the recipe (`tier` 1..5), not from the item
+            // level: with recipe level = item level = use level, a purple
+            // made at 40 would otherwise roll blue (`tier_from_ilvl`).
+            if (1..=5).contains(&recipe.tier) {
+                shared::ItemInstance::roll_em(tpl, recipe.output_item_level, recipe.tier, 1, || fastrand::f32())
+            } else {
+                shared::ItemInstance::roll_with_template(tpl, recipe.output_item_level, || {
+                    fastrand::f32()
+                })
+            }
         } else {
             None
         };

@@ -805,6 +805,21 @@ impl GameWorld {
         }
         let inst = s.instancia;
         let eu = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+        // The CURRENT room first: its pack is `vivos` and the gate only opens
+        // when it is cleared. The nearest enemy of the whole instance can be
+        // behind a closed gate or a wall (owner, 12/11/2026: auto in the level
+        // 6 dungeon walked off to the wrong place again).
+        if let Some(i) = self.instancias.iter().find(|i| i.id == inst) {
+            let da_sala = i
+                .vivos
+                .iter()
+                .filter(|e| self.dg_vivo(**e))
+                .filter_map(|e| self.ecs.get::<&Position>(*e).ok().map(|p| p.0))
+                .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
+            if da_sala.is_some() {
+                return da_sala;
+            }
+        }
         self.ecs
             .query::<(&Position, &EnemyTag, &Instancia)>()
             .iter()

@@ -684,6 +684,17 @@ impl Affix {
 }
 
 impl ItemInstance {
+    /// The level needed to equip this piece: its ITEM LEVEL (above 5). Read
+    /// from `item_level` and not from the stored `level_req`, so pieces made
+    /// before the rule changed (they stored half) obey it too.
+    pub fn nivel_para_usar(&self) -> u32 {
+        if self.item_level > 5 {
+            self.item_level as u32
+        } else {
+            0
+        }
+    }
+
     /// Roll uma instance fresh pra um item_id usando lookup hardcoded
     /// (legacy). Prefira `roll_with_template` em código novo — esse aqui
     /// só sobrevive pra testes/tools que não tem acesso ao economy cache.
@@ -720,11 +731,10 @@ impl ItemInstance {
             rarity: tier, // campo `rarity` guarda a COR (grau 1–5)
             refinement: 0,
             item_level,
-            level_req: if item_level > 5 {
-                Some(item_level / 2)
-            } else {
-                None
-            },
+            // The level to USE a piece is its item level (owner, 12/11/2026:
+            // "recipe level = item level = use level"); it was half of it,
+            // so a level 15 wore level 21 gear.
+            level_req: if item_level > 5 { Some(item_level) } else { None },
             hp_max: 0,
             mp_max: 0,
             attack_damage: 0,

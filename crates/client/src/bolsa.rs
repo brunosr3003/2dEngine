@@ -715,8 +715,7 @@ impl Bolsa {
             }
             let liberado = item
                 .instance
-                .and_then(|inst| inst.level_req)
-                .is_none_or(|nivel| self.nivel >= nivel as u32);
+                .is_none_or(|inst| self.nivel >= inst.nivel_para_usar());
             crate::hud_estilo::cartao(linha, false, clique.is_some_and(|p| linha.toca(p)));
             celula(
                 Rect::new(linha.x + u(5.0), linha.y + u(4.0), u(44.0), u(44.0)),
@@ -738,7 +737,7 @@ impl Bolsa {
                 if liberado { TEXTO } else { APAGADO },
             );
             if !liberado {
-                let req = item.instance.and_then(|inst| inst.level_req).unwrap_or(0);
+                let req = item.instance.map_or(0, |inst| inst.nivel_para_usar());
                 ui::texto(
                     linha.x + linha.w - u(82.0),
                     linha.y + u(30.0),
@@ -1226,7 +1225,7 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
-            if let Some(req) = i.level_req {
+            if let Some(req) = Some(i.nivel_para_usar() as u16).filter(|r| *r > 0) {
                 let falta = (self.nivel as u16) < req && self.nivel > 0;
                 ui::texto(
                     r.x + u(20.0),

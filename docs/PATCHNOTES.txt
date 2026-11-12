@@ -1,3 +1,8 @@
+Nov 13, 2026 — Fixes
+
+- Gear: the level to use a piece is now its item level (a level 21 piece needs level 21). Crafting recipes make items of the recipe level.
+- Dungeons: auto play now goes to the monsters of the current room instead of walking toward ones behind a closed gate.
+
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 
 - New in the Market: Buy orders. Post what you want to buy (item, amount and price each); the gold is held and other players can sell to your order. Cancel any time to get the rest of the gold back.

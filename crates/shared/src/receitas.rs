@@ -114,7 +114,7 @@ pub const FAIXAS: [Faixa; 5] = [
         cor: 2,
         grau: Grau::Fino,
         nivel_min: nivel_da_cor(2),
-        item_level: 18,
+        item_level: nivel_da_cor(2),
         principal: 90,
         secundario: 30,
         darksteel: 1_500,
@@ -124,7 +124,7 @@ pub const FAIXAS: [Faixa; 5] = [
         cor: 3,
         grau: Grau::Raro,
         nivel_min: nivel_da_cor(3),
-        item_level: 35,
+        item_level: nivel_da_cor(3),
         principal: 300,
         secundario: 100,
         darksteel: 8_000,
@@ -134,7 +134,7 @@ pub const FAIXAS: [Faixa; 5] = [
         cor: 4,
         grau: Grau::Epico,
         nivel_min: nivel_da_cor(4),
-        item_level: 60,
+        item_level: nivel_da_cor(4),
         principal: 300,
         secundario: 100,
         darksteel: 60_000,
@@ -152,7 +152,7 @@ pub const FAIXAS: [Faixa; 5] = [
         cor: 5,
         grau: Grau::Lendario,
         nivel_min: nivel_da_cor(5),
-        item_level: 80,
+        item_level: nivel_da_cor(5),
         principal: 600,
         secundario: 200,
         darksteel: 150_000,
@@ -453,12 +453,13 @@ mod testes {
         }
         for r in receitas_de_equipamento() {
             let f = FAIXAS[(r.tier - 1) as usize];
-            assert_eq!(
-                tier_from_ilvl(r.output_item_level),
-                f.grau as u8,
-                "{}",
-                r.name
-            );
+            // The color comes from the recipe tier (the craft rolls it with
+            // `roll_em`), and recipe level = item level = use level
+            // (owner, 12/11/2026); grey stays at item level 5 (no requirement).
+            assert_eq!(r.tier, f.cor, "{}", r.name);
+            if f.cor > 1 {
+                assert_eq!(r.output_item_level, r.nivel_min, "{}: item level != recipe level", r.name);
+            }
             // O nivel de cada cor sai da faixa da CHAVE, nao de um 60 escrito
             // aqui: quando a ladder desceu, este assert reprovava por estar
             // desatualizado e nao por a receita estar errada.
