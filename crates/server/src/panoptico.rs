@@ -603,8 +603,8 @@ pub fn ativo() -> bool {
 }
 
 /// Sobe o servidor de leitura. So' e' chamado quando `PANOPTICO_BIND` existe.
-pub async fn servir() -> anyhow::Result<()> {
-    use axum::extract::Query;
+pub async fn servir(pool: sqlx::PgPool) -> anyhow::Result<()> {
+    use axum::extract::{Query, State};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
     use axum::routing::get;
@@ -638,7 +638,47 @@ pub async fn servir() -> anyhow::Result<()> {
         }
     }
 
-    let app = axum::Router::new().route("/estado", get(estado));
+    /// `GET /pvp?token=..&a=<name>&b=<name>[&skill_mult=..&basic_mult=..
+    /// &cap_pct=..&level_penalty_per_level=..&level_floor=..
+    /// &level_free_gap=..&katana_execute_pvp=true|false]`
+    ///
+    /// The PvP evaluation (`crate::pvp_sim`) of two characters read straight
+    /// from the realm database. Read-only, like the rest of this module.
+    async fn pvp(
+        State(pool): State<sqlx::PgPool>,
+        Query(q): Query<std::collections::HashMap<String, String>>,
+    ) -> axum::response::Response {
+        let esperado = std::env::var("MMO_ADMIN_TOKEN").unwrap_or_default();
+        if q.get("token").map(String::as_str) != Some(esperado.as_str()) {
+            return (StatusCode::FORBIDDEN, "token").into_response();
+        }
+        let nome = |k: &str| q.get(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let (Some(a), Some(b)) = (nome("a"), nome("b")) else {
+            return (StatusCode::BAD_REQUEST, "a and b are required").into_response();
+        };
+        let carrega = |n: String| {
+            let pool = pool.clone();
+            async move { crate::persistence::load_one(&pool, &n).await }
+        };
+        let (ra, rb) = match (carrega(a.clone()).await, carrega(b.clone()).await) {
+            (Ok(Some(x)), Ok(Some(y))) => (x, y),
+            (Ok(None), _) => return (StatusCode::NOT_FOUND, format!("no character {a}")).into_response(),
+            (_, Ok(None)) => return (StatusCode::NOT_FOUND, format!("no character {b}")).into_response(),
+            (Err(e), _) | (_, Err(e)) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, format!("load failed: {e}")).into_response()
+            }
+        };
+        let catalogo = crate::pvp_sim::catalogo();
+        let la = crate::pvp_sim::Lutador::do_personagem(&ra, &catalogo);
+        let lb = crate::pvp_sim::Lutador::do_personagem(&rb, &catalogo);
+        let regras = crate::pvp_sim::Regras::propostas_da_query(&q);
+        axum::Json(crate::pvp_sim::avaliar(&la, &lb, regras)).into_response()
+    }
+
+    let app = axum::Router::new()
+        .route("/estado", get(estado))
+        .route("/pvp", get(pvp))
+        .with_state(pool);
     let addr: std::net::SocketAddr = bind.parse()?;
     tracing::info!("panoptico ouvindo em http://{addr}/estado");
     let escuta = tokio::net::TcpListener::bind(addr).await?;

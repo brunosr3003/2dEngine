@@ -38,6 +38,7 @@ mod ofertas;
 mod morte;
 mod panoptico;
 mod persistence;
+mod pvp_sim;
 mod preferencias;
 mod presenca;
 mod quests;
@@ -123,8 +124,9 @@ async fn main() -> Result<()> {
     // Olho de cima. So' sobe se PANOPTICO_BIND existir — sem ele o processo
     // nao abre porta nenhuma a mais.
     if panoptico::ativo() {
-        tokio::spawn(async {
-            if let Err(e) = panoptico::servir().await {
+        let pool_do_painel = pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = panoptico::servir(pool_do_painel).await {
                 tracing::error!("panoptico went down: {e:#}");
             }
         });
