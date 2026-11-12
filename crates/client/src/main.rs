@@ -5413,30 +5413,18 @@ impl Jogo {
                     self.auto_combate.ligar(eu);
                 }
                 self.auto_combate.centro = Some(eu);
-                // Nenhum no alcance do auto combate: anda ate' o mais perto.
+                // Nenhum no alcance do auto combate: ask the SERVER where the
+                // next enemy is (`Pedido::IrAoInimigo`) — it only knows this
+                // run's live mobs and picks the current room first. Walking
+                // to the nearest enemy the CLIENT sees followed a ghost (an
+                // entity left in the client's world, in the arena's middle):
+                // the plan's route then ended at the entrance wall, again and
+                // again (owner, 12/11/2026, Shipwreck Cellar).
                 if self.alvo.is_none() && pode_enviar {
-                    let perto = self
-                        .world
-                        .ents
-                        .values()
-                        .filter(|e| {
-                            e.meta.tag == shared::EntityTag::Enemy
-                                && e.state.hp > 0
-                                && e.morte.is_none()
-                        })
-                        .map(|e| e.render_pos)
-                        .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)));
-                    // Nothing in sight: the server knows where the next live
-                    // enemy of the run is (the view is smaller than the
-                    // cellar) and walks there. The old "go to the room of
-                    // the step" guess sent auto to the wrong place.
                     self.auto_dungeon_envio = agora;
-                    match perto {
-                        Some(p) => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
-                        None => self.envia(ClientMessage::Dungeon {
-                            pedido: shared::dungeon::Pedido::IrAoInimigo,
-                        }),
-                    }
+                    self.envia(ClientMessage::Dungeon {
+                        pedido: shared::dungeon::Pedido::IrAoInimigo,
+                    });
                 }
             }
             Passo::IrAoBau { perto } if pode_enviar => {

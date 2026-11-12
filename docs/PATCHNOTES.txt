@@ -1,7 +1,7 @@
 Nov 13, 2026 — Fixes
 
 - Gear: the level to use a piece is now its item level (a level 21 piece needs level 21). Crafting recipes make items of the recipe level.
-- Dungeons: auto play now goes to the monsters of the current room instead of walking toward ones behind a closed gate.
+- Dungeons: auto play no longer walks back to the entrance wall after the first group; it always heads to the monsters of the current room.
 
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 
