@@ -77,7 +77,31 @@ pub(crate) fn dano_da_skill(skill: &Skill, tier: u8, atk: i32, cd_basico: f32, c
     dano_evoluido(base, tier, skill.id)
 }
 
-fn cura_evoluida(base: i32, tier: u8, skill_id: u32) -> i32 {
+/// Life Drain's (10) heal on the caster: `roubo_do_dreno` of the damage the
+/// bolt carries (before the target's defence). Shared with `crate::pvp_sim`.
+pub(crate) fn cura_do_dreno(dano: i32, tier: u8) -> i32 {
+    ((dano as f32) * shared::skills::roubo_do_dreno(tier))
+        .round()
+        .max(1.0) as i32
+}
+
+/// How long Bulwark (3) lasts at `tier`. Shared with `crate::pvp_sim`.
+pub(crate) fn duracao_do_baluarte(skill: &Skill, tier: u8) -> f32 {
+    if tier >= 10 {
+        8.0
+    } else if tier >= 5 {
+        6.0
+    } else {
+        skill.duracao_efeito()
+    }
+}
+
+/// Leap (1) from tier VIII shields the caster this long after landing.
+pub(crate) fn escudo_do_salto(tier: u8) -> Option<f32> {
+    (tier >= 8).then_some(2.0)
+}
+
+pub(crate) fn cura_evoluida(base: i32, tier: u8, skill_id: u32) -> i32 {
     if base <= 0 {
         return 0;
     }
@@ -406,14 +430,7 @@ impl GameWorld {
         let dir = (alvo - de).try_normalize().unwrap_or(Vec2::Y);
         if skill.id == 3 {
             if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
-                s.muralha_ate = self.sim_time_s
-                    + if tier >= 10 {
-                        8.0
-                    } else if tier >= 5 {
-                        6.0
-                    } else {
-                        skill.duracao_efeito()
-                    };
+                s.muralha_ate = self.sim_time_s + duracao_do_baluarte(skill, tier);
             }
             return;
         }
@@ -428,9 +445,9 @@ impl GameWorld {
                 s.thirst_until = s.thirst_until.max(until);
             }
         }
-        if skill.id == 1 && tier >= 8 {
+        if let Some(escudo) = escudo_do_salto(tier).filter(|_| skill.id == 1) {
             if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == dono) {
-                s.muralha_ate = s.muralha_ate.max(self.sim_time_s + 2.0);
+                s.muralha_ate = s.muralha_ate.max(self.sim_time_s + escudo);
             }
         }
         if skill.forma == Forma::EmSi {
@@ -478,9 +495,7 @@ impl GameWorld {
             if skill.id == 10 {
                 self.pending_heals.push(PendingHeal {
                     target_net: dono,
-                    amount: ((dano as f32) * shared::skills::roubo_do_dreno(tier))
-                        .round()
-                        .max(1.0) as i32,
+                    amount: cura_do_dreno(dano, tier),
                 });
             }
             return;

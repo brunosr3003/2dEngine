@@ -12222,11 +12222,7 @@ impl GameWorld {
                 .values()
                 .find(|s| s.entity_id == target_id && s.muralha_ate > now_for_buff)
             {
-                const REDUCAO: [f32; 10] = [
-                    0.50, 0.505, 0.51, 0.515, 0.53, 0.535, 0.54, 0.55, 0.555, 0.60,
-                ];
-                let reducao = REDUCAO[(s.skill_progress.tier(3) - 1) as usize];
-                dmg = ((dmg as f32) * (1.0 - reducao)).round().max(1.0) as i32;
+                dmg = golpe_na_muralha(dmg, s.skill_progress.tier(3));
             }
             let mut bt_lifesteal_target: Option<EntityId> = None;
             if attacker_is_player {
@@ -12277,7 +12273,7 @@ impl GameWorld {
                 if thirsty {
                     self.pending_heals.push(PendingHeal {
                         target_net: attacker_id,
-                        amount: ((dmg as f32) * shared::KATANA_THIRST_LIFESTEAL).round().max(1.0) as i32,
+                        amount: cura_da_sede(dmg),
                     });
                 }
             }
@@ -20725,6 +20721,23 @@ pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
 /// Shared with `crate::pvp_sim`, so the simulator crits like the game does.
 pub(crate) fn golpe_critico(dmg: i32) -> i32 {
     (dmg as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+}
+
+/// Share of every hit Bulwark (3) cuts while it is up (`muralha_ate`), by
+/// the Bulwark tier. The Leap's tier VIII shield uses the same table.
+pub(crate) fn reducao_da_muralha(tier: u8) -> f32 {
+    const REDUCAO: [f32; 10] = [0.50, 0.505, 0.51, 0.515, 0.53, 0.535, 0.54, 0.55, 0.555, 0.60];
+    REDUCAO[(tier.clamp(1, 10) - 1) as usize]
+}
+
+/// A hit landing on a body behind Bulwark. Shared with `crate::pvp_sim`.
+pub(crate) fn golpe_na_muralha(dmg: i32, tier: u8) -> i32 {
+    ((dmg as f32) * (1.0 - reducao_da_muralha(tier))).round().max(1.0) as i32
+}
+
+/// The katana's THIRST heal (opened by Dance) for a basic strike of `dmg`.
+pub(crate) fn cura_da_sede(dmg: i32) -> i32 {
+    ((dmg as f32) * shared::KATANA_THIRST_LIFESTEAL).round().max(1.0) as i32
 }
 
 /// Is a body with this health inside the katana's execute window?
