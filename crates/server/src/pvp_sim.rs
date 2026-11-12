@@ -221,10 +221,10 @@ impl Regras {
     pub fn propostas_padrao() -> Regras {
         Regras {
             label: "proposed",
-            basic_mult: 0.6,
-            skill_mult: 0.35,
-            // Owner, 12/11/2026: no per-hit cap; skills no longer scale with
-            // attack speed, multipliers do the rest.
+            // Owner, 12/11/2026: skill x0.10, basic x0.15; no per-hit cap
+            // (skills no longer scale with attack speed, multipliers do the rest).
+            basic_mult: 0.15,
+            skill_mult: 0.10,
             cap_pct: None,
             level_penalty_per_level: 0.08,
             level_free_gap: 5,
@@ -1754,10 +1754,9 @@ pub fn arquetipos(o: &Orcamento) -> Vec<Lutador> {
 pub fn regras_do_torneio() -> Vec<Regras> {
     let mut v = vec![Regras::atuais()];
     for (label, s, b) in [
-        ("skill 0.35 / basic 0.35", 0.35, 0.35),
-        ("skill 0.30 / basic 0.25", 0.30, 0.25),
-        ("skill 0.25 / basic 0.20", 0.25, 0.20),
-        ("skill 0.20 / basic 0.15", 0.20, 0.15),
+        ("skill 0.10 / basic 0.15 (proposed)", 0.10, 0.15),
+        ("skill 0.15 / basic 0.20", 0.15, 0.20),
+        ("skill 0.10 / basic 0.20", 0.10, 0.20),
     ] {
         v.push(Regras {
             label,
@@ -1989,7 +1988,8 @@ mod testes {
     #[test]
     fn query_vazia_da_os_padroes_e_parametros_mudam() {
         let r = Regras::propostas_da_query(&HashMap::new());
-        assert_eq!(r.skill_mult, 0.35);
+        assert_eq!(r.skill_mult, 0.10);
+        assert_eq!(r.basic_mult, 0.15);
         assert_eq!(r.cap_pct, None);
         assert!(!r.katana_execute_pvp);
         let q: HashMap<String, String> = [
@@ -2056,7 +2056,7 @@ mod testes {
         let (pist, anel, espada, katana) = (&l[0], &l[1], &l[2], &l[3]);
         // Under current rules most fights end in one or two skills; the
         // proposed multipliers give the kits time to show.
-        let r = regras_do_torneio()[3];
+        let r = regras_do_torneio()[1];
         let d = duelo_intercalado(espada, katana, &r, &sem_mc()).expected;
         assert!(d.a.bulwark_absorbed > 0.0, "Bulwark never cut a hit: {:?}", d.a);
         assert!(d.a.skills_cast > 0);
