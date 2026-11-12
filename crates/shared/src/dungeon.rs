@@ -931,9 +931,9 @@ pub struct Bau {
 /// the craft and equip". Chave e PECA tinham que contar a mesma historia; com
 /// o teto velho a dungeon de 50 dava chave lendaria e peça so' ate' Rara.
 pub fn teto_de_grau(nivel: u32) -> Grau {
-    if nivel >= 50 {
-        Grau::Lendario
-    } else if nivel >= 40 {
+    // NO LEGENDARY FROM DROPS (owner, 12/11/2026: "legendary impossible to
+    // drop, purple very very rare, almost forcing the craft").
+    if nivel >= 40 {
         Grau::Epico
     } else {
         Grau::Raro
@@ -974,29 +974,34 @@ pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
         // mudava nada, porque a distribuicao nunca dava peso a Epico antes do
         // 60. O Raro puro (a linha de 1000 que morava no 50-59) sai: e' o
         // degrau que a faixa nova ocupa.
+        // From 40 up, PURPLE is very rare (1-5% of the pieces) and there is
+        // no legendary at all (owner, 12/11/2026): the purple and legendary
+        // gear is meant to come from the craft. It used to be up to 35%
+        // purple and 0.5% legendary — a top player wore five purples and a
+        // legendary from field-boss chests by level 55.
         40..=49 => {
             if topo {
-                (0.35, [0, 0, 800, 200, 0])
+                (0.35, [0, 100, 880, 20, 0])
             } else if alto {
-                (0.30, [0, 0, 920, 80, 0])
+                (0.30, [0, 200, 785, 15, 0])
             } else {
-                (0.25, [0, 0, 980, 20, 0])
+                (0.25, [0, 300, 690, 10, 0])
             }
         }
         50..=59 => {
             if topo {
-                (0.35, [0, 0, 400, 595, 5])
+                (0.35, [0, 0, 960, 40, 0])
             } else if alto {
-                (0.30, [0, 0, 650, 350, 0])
+                (0.30, [0, 0, 975, 25, 0])
             } else {
-                (0.25, [0, 0, 850, 150, 0])
+                (0.25, [0, 0, 985, 15, 0])
             }
         }
         _ => {
             if topo {
-                (0.35, [0, 0, 0, 995, 5])
+                (0.35, [0, 0, 950, 50, 0])
             } else {
-                (0.30, [0, 0, 500, 500, 0])
+                (0.30, [0, 0, 970, 30, 0])
             }
         }
     };

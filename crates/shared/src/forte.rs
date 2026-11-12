@@ -16,9 +16,10 @@ pub const CONTEUDO_DO_BAU: u16 = 18;
 /// highest dungeon at or below his level (the owner: "in the magic island
 /// and others need to be this kind of chest too").
 pub fn conteudo_do_chefe(kind: u16) -> u16 {
-    if kind == SENHOR_DO_FORTE {
-        return CONTEUDO_DO_BAU;
-    }
+    // Every field boss, the Warlord included, rolls the table of the highest
+    // dungeon at or below HIS level — the area's level (owner, 12/11/2026:
+    // "the chest follows the area's level"); the Warlord used to roll a fixed
+    // level 56 table.
     let nivel = crate::bosses::chefe(kind).map_or(1, |c| c.nivel);
     let disponiveis = || crate::dungeon::CONTEUDOS.iter().filter(|c| c.disponivel);
     disponiveis()
