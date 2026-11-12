@@ -2178,30 +2178,6 @@ pub struct Session {
     /// Setado quando esse player parryou um hit recebido.
     pub parry_flash_pending: bool,
 
-    // ── Bow passives ─────────────────────────────────────────────────────
-    /// `sim_time_s` da última vez em que o player se moveu (move_dir != 0).
-    /// Usado por Quick Draw (1036): se ficar parado >= 1s, o próximo tiro
-    /// é guaranteed crit.
-    pub last_movement_at_s: f32,
-    /// True após um crit forçado por Quick Draw, falso ao se mover. Garante
-    /// que só a "1ª flecha" após ficar parado é crit (não todas enquanto
-    /// stationary).
-    pub quickdraw_consumed: bool,
-    /// Hunter's Mark (1040): mapa de target_eid → expires_at_sim_time. Hits
-    /// em targets marcados aplicam +20% damage. Hit refresh do mark.
-    pub hunter_marks: HashMap<EntityId, f32>,
-
-    // ── Sword skills state ──────────────────────────────────────────────
-    /// Riposte (1001): timer ate quando o player tem o buff de "+50% dmg"
-    /// do proximo SLASH. Setado quando ele parry-flasha um hit recebido.
-    /// Consumido no proximo swing (zerado depois de aplicar o bonus).
-    pub riposte_until: f32,
-    /// Sword Dance (1005): janela durante a qual swings sao parte do combo
-    /// forçado de 3 hits. Reset quando expira ou completa 3 hits.
-    pub sword_dance_until: f32,
-    /// Step atual do Sword Dance (0..2). Quando == 2, proximo SLASH e
-    /// guaranteed crit (e zera o stance).
-    pub sword_dance_step: u8,
     /// Master's Counter (1007): timer ate quando o player auto-parry
     /// qualquer hit recebido + dispara contra-ataque livre.
     pub counter_stance_until: f32,
@@ -2230,18 +2206,6 @@ pub struct Session {
     pub harpoon_target_eid: Option<EntityId>,
     /// sim_time em que o harpoon expira (limpa state). 5s default.
     pub harpoon_until: f32,
-
-    // Bloodthirst (1011) — buff 4s com +20% atk speed + 10% lifesteal.
-    /// sim_time ate quando o buff esta ativo (0 = inativo).
-    pub bloodthirst_until: f32,
-
-    // Hunter's Mark (1040) — buff 8s + 3 charges com +50% crit + +5%/rank dmg.
-    /// sim_time ate quando o buff esta ativo.
-    pub hunters_mark_until: f32,
-    /// Charges restantes (decrementa em cada hit projetil; expira em 0 ou tempo).
-    pub hunters_mark_charges: u8,
-    /// Rank da skill 1040 aprendida (1..10) pra calcular bonus_dmg += 5%/rank.
-    pub hunters_mark_rank: u8,
 
     // ── Poise ───────────────────────────────────────────────────────────
     /// Barra de poise atual (0..stats.poise_max). Drena com hits, absorve
@@ -7740,12 +7704,6 @@ impl GameWorld {
                 prev_buttons: 0,
                 stagger_until: 0.0,
                 parry_flash_pending: false,
-                last_movement_at_s: 0.0,
-                quickdraw_consumed: false,
-                hunter_marks: HashMap::new(),
-                riposte_until: 0.0,
-                sword_dance_until: 0.0,
-                sword_dance_step: 0,
                 counter_stance_until: 0.0,
                 leap_until: 0.0,
                 leap_start_pos: Vec2::ZERO,
@@ -7756,10 +7714,6 @@ impl GameWorld {
                 climb_cooldown: 0.0,
                 harpoon_target_eid: None,
                 harpoon_until: 0.0,
-                bloodthirst_until: 0.0,
-                hunters_mark_until: 0.0,
-                hunters_mark_charges: 0,
-                hunters_mark_rank: 0,
                 poise_current: 50.0, // base padrao; refresh via stats no login
                 defending_poise_buffer: 0.0,
                 last_combat_at_s: 0.0,
@@ -9976,14 +9930,6 @@ impl GameWorld {
                 }
             }
 
-            // Quick Draw passive: rastreia ultimo movimento. Se mover (dir != 0),
-            // atualiza last_movement_at_s e reseta quickdraw_consumed pra liberar
-            // o crit da proxima "1ª flecha".
-            if dir.length_squared() > 0.001 {
-                session.last_movement_at_s = self.sim_time_s;
-                session.quickdraw_consumed = false;
-            }
-
             // ── Climb-jump: empurrar contra um cliff escalavel por
             // CLIMB_HOLD_TIME dispara um pulo por cima da wall. Reusa o
             // mecanismo de leap (move A→B ignorando colisao + anima via
@@ -10187,9 +10133,7 @@ impl GameWorld {
                 let w = auto_aim.is_some() && session.attack_cooldown <= 0.0 && has_stam;
                 if w {
                     let weapon_id = session.equipment.weapon.unwrap_or(0);
-                    let bloodthirst = session.bloodthirst_until > self.sim_time_s;
-                    session.attack_cooldown =
-                        cooldown_do_ataque(weapon_id, &session.stats, bloodthirst);
+                    session.attack_cooldown = cooldown_do_ataque(weapon_id, &session.stats);
                     session.stamina_current =
                         (session.stamina_current - shared::ATTACK_STAMINA_COST).max(0.0);
                     attack_aim = auto_aim;
@@ -10296,33 +10240,14 @@ impl GameWorld {
             // damage. Roll feito no SOURCE pra gerar exatamente 1 valor de
             // dano por swing — todos os alvos no cone recebem o mesmo
             // (consistente com regras tipo Diablo/RoTMG).
-            let mut crit =
+            let crit =
                 session.stats.crit_chance > 0.0 && fastrand::f32() < session.stats.crit_chance;
             // A passiva de saque rapido morreu com as passivas.
-            let mut dmg_final = if crit {
+            let dmg_final = if crit {
                 golpe_critico(basic_damage)
             } else {
                 basic_damage
             };
-            // (Riposte removida — skill 1001 agora e Leap Strike.)
-            // Sword Dance (1005): se stance ativo, força crit no step final
-            // (terceiro hit). Step 0/1 sao normais; step 2 vira crit + reset.
-            if wants_attack
-                && self.sim_time_s < session.sword_dance_until
-                && shared::weapon_attack_anim(weapon_id) == shared::components::attack_anim::SLASH
-            {
-                if session.sword_dance_step >= 2 {
-                    // Hit final — força crit + reset stance.
-                    if !crit {
-                        crit = true;
-                        dmg_final = golpe_critico(basic_damage);
-                    }
-                    session.sword_dance_until = 0.0;
-                    session.sword_dance_step = 0;
-                } else {
-                    session.sword_dance_step += 1;
-                }
-            }
             // Combo step: incrementa em SLASH (melee), THRUST (Wand/Staff)
             // e SHOOT (Bow). Para caster, o step troca o overlay de spell
             // visual + o ultimo step lança projetil (resto melee cone).
@@ -12219,12 +12144,6 @@ impl GameWorld {
 
             // Iron Will era passiva.
 
-            // Hunter's Mark active (skill 1040): buff 8s + 3 charges.
-            // Cada projetil consome 1 charge + aplica +5%/rank dmg.
-            // Bloodthirst (skill 1011): buff 4s — cura caster por 10% do
-            // dmg em hits (lifesteal).
-            // Coletamos info dos buffs primeiro (evita borrow conflict
-            // com self.pending_heals.push depois).
             let now_for_buff = self.sim_time_s;
             if let Some(s) = self
                 .sessions
@@ -12232,40 +12151,6 @@ impl GameWorld {
                 .find(|s| s.entity_id == target_id && s.muralha_ate > now_for_buff)
             {
                 dmg = golpe_na_muralha(dmg, s.skill_progress.tier(3));
-            }
-            let mut bt_lifesteal_target: Option<EntityId> = None;
-            if attacker_is_player {
-                if let Some(att) = self
-                    .sessions
-                    .values_mut()
-                    .find(|s| s.entity_id == attacker_id)
-                {
-                    // Hunter's Mark
-                    if att.hunters_mark_until > now_for_buff
-                        && att.hunters_mark_charges > 0
-                        && matches!(attack_info, AttackInfo::Projectile { .. })
-                    {
-                        let bonus_pct = 0.05 * att.hunters_mark_rank as f32;
-                        dmg = ((dmg as f32) * (1.0 + bonus_pct)).round() as i32;
-                        att.hunters_mark_charges -= 1;
-                        if att.hunters_mark_charges == 0 {
-                            att.hunters_mark_until = 0.0;
-                        }
-                    }
-                    // Bloodthirst
-                    if att.bloodthirst_until > now_for_buff
-                        && !matches!(attack_info, AttackInfo::Skill { .. })
-                    {
-                        bt_lifesteal_target = Some(att.entity_id);
-                    }
-                }
-            }
-            if let Some(owner_net) = bt_lifesteal_target {
-                let heal = ((dmg as f32) * 0.10).round().max(1.0) as i32;
-                self.pending_heals.push(PendingHeal {
-                    target_net: owner_net,
-                    amount: heal,
-                });
             }
             // Katana: THIRST (Danca) is the only window in which it steals
             // life again. Outside it the class does not heal itself at all —
@@ -13475,7 +13360,6 @@ impl GameWorld {
             defending: bool,
             casting: bool,
             poise_active: bool,
-            buffs_mask: u8,
         }
         // Drena parry_flash_pending no mesmo passo — uma vez por tick.
         let mut player_overlay: HashMap<EntityId, PlayerOverlay> = HashMap::new();
@@ -13516,13 +13400,6 @@ impl GameWorld {
                 || s.dash_until > now_for_cast
                 || s.leap_until > now_for_cast
                 || s.defending;
-            let mut buffs_mask: u8 = 0;
-            if s.bloodthirst_until > now_for_cast {
-                buffs_mask |= shared::components::buffs_mask::BLOODTHIRST;
-            }
-            if s.hunters_mark_until > now_for_cast {
-                buffs_mask |= shared::components::buffs_mask::HUNTERS_MARK;
-            }
             player_overlay.insert(
                 s.entity_id,
                 PlayerOverlay {
@@ -13533,7 +13410,6 @@ impl GameWorld {
                     defending: s.defending,
                     casting,
                     poise_active,
-                    buffs_mask,
                 },
             );
         }
@@ -20640,7 +20516,6 @@ fn defending_poise_max(session: &Session) -> f32 {
 ///
 /// Atk speed (DES + itens) divide o cooldown, com escala por tipo: anel a
 /// 30% (DEX ajuda pouco no conjuro), pistolas a 60%, corpo a corpo cheio.
-/// Bloodthirst (1011): +20% enquanto ativo.
 /// The weapon's basic-attack interval with NO attack-speed bonus. Skill damage
 /// is priced on this (owner, 12/11/2026: "strength = more skill damage,
 /// attack speed = more basic-attack damage"): before, skills divided by the
@@ -20658,11 +20533,7 @@ pub(crate) fn cadencia_base_da_arma(weapon_id: u16) -> f32 {
     }
 }
 
-pub(crate) fn cooldown_do_ataque(
-    weapon_id: u16,
-    stats: &shared::PlayerStats,
-    bloodthirst: bool,
-) -> f32 {
+pub(crate) fn cooldown_do_ataque(weapon_id: u16, stats: &shared::PlayerStats) -> f32 {
     let conjunto = shared::skills::Conjunto::da_arma(weapon_id);
     let base_cd = cadencia_base_da_arma(weapon_id);
     let bonus = stats.attack_speed_mult.max(0.5) - 1.0;
@@ -20671,8 +20542,7 @@ pub(crate) fn cooldown_do_ataque(
         shared::skills::Conjunto::Pistolas => 0.60,
         _ => 1.0,
     };
-    let bt_mult = if bloodthirst { 1.20 } else { 1.0 };
-    base_cd / ((1.0 + bonus * scale_factor).max(0.5) * bt_mult)
+    base_cd / (1.0 + bonus * scale_factor).max(0.5)
 }
 
 /// Dano que sobra depois da resistencia do alvo. Defesa e' % (1,5% por ponto,

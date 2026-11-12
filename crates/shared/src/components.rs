@@ -834,16 +834,6 @@ impl EntityState {
     }
 }
 
-/// Bits do `EntitySnapshot.buffs` — mantém em sync com o cliente C#.
-pub mod buffs_mask {
-    pub const BLOODTHIRST: u8 = 1 << 0;
-    pub const HUNTERS_MARK: u8 = 1 << 1;
-    pub const AURA_TIDE: u8 = 1 << 2;
-    pub const AURA_IGNITION: u8 = 1 << 3;
-    pub const AURA_MIST: u8 = 1 << 4;
-    pub const AURA_TEMPEST: u8 = 1 << 5;
-}
-
 /// Codigo enviado em `EntitySnapshot.attack_anim` pra discriminar qual
 /// animacao o cliente deve tocar no atacante. O server escolhe baseado na
 /// arma equipada.

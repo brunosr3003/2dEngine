@@ -350,7 +350,7 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
     } else {
         shared::MELEE_RANGE
     };
-    let cd_base = cooldown_do_ataque(arma, stats, false);
+    let cd_base = cooldown_do_ataque(arma, stats);
     // A MESMA lista que o jogo sorteia, e nao uma copia escrita aqui.
     // `(0..7)` estava cravado: se o bestiario do Bosque mudasse, o simulador
     // continuaria aprovando o bestiario ANTIGO e reportando verde sobre um
@@ -1375,7 +1375,7 @@ pub(crate) fn duelar(
     } else {
         shared::MELEE_RANGE
     };
-    let cd_base = cooldown_do_ataque(arma, &stats, false);
+    let cd_base = cooldown_do_ataque(arma, &stats);
     let base_kind = match c.corpo {
         cat::Corpo::Bicho(k) | cat::Corpo::Gente(k) => k,
         cat::Corpo::Pirata => 0,
@@ -2462,7 +2462,7 @@ mod dps_por_ponto {
                 let arma = arma_do(conj);
                 let dps = |al: &[u32; shared::STAT_COUNT]| {
                     let s = crate::world::effective_stats(&equip, al, &profs, xp);
-                    let cd = crate::world::cooldown_do_ataque(arma, &s, false);
+                    let cd = crate::world::cooldown_do_ataque(arma, &s);
                     let crit = 1.0
                         + s.crit_chance.min(1.0) * (shared::constants::CRIT_DAMAGE_MULT - 1.0);
                     (s.attack_damage as f32 * crit / cd, s.hp_max)

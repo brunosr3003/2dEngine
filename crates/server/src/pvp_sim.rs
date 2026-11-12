@@ -136,7 +136,7 @@ impl Lutador {
     }
 
     fn cd_basico(&self) -> f32 {
-        cooldown_do_ataque(self.arma, &self.stats, false)
+        cooldown_do_ataque(self.arma, &self.stats)
     }
 
     fn hp_max(&self) -> i32 {
