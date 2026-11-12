@@ -824,7 +824,8 @@ pub fn avaliar_com(a: &Lutador, b: &Lutador, propostas: Regras, op: OpcoesDoDuel
 //   * Bulwark (3) and the Leap's (1) tier VIII shield: `muralha_ate`, cut by
 //     `world::golpe_na_muralha` (Bulwark tier), lasting
 //     `habilidades::duracao_do_baluarte` / `escudo_do_salto`;
-//   * Life Drain (10): `habilidades::cura_do_dreno` of the bolt's raw damage;
+//   * Life Drain (10): `habilidades::cura_do_dreno` of the damage the bolt
+//     dealt (after defence, the rules and Bulwark), paid only on health;
 //   * Aura (11): `habilidades::cura_evoluida` on the caster;
 //   * the katana's Thirst, opened by Dance (5) for `KATANA_THIRST_S`:
 //     `world::cura_da_sede` of every basic strike (even a dodged one — the
@@ -1189,8 +1190,8 @@ impl<'a> Luta<'a> {
         let mut v = (1.0 - c) * n + c * x;
         let (s, tier) = &at.l.skills[k];
         if s.id == 10 {
-            let cura = (1.0 - c) * cura_do_dreno(bruto(at.l, a, false, false, self.r), *tier) as f32
-                + c * cura_do_dreno(bruto(at.l, a, true, false, self.r), *tier) as f32;
+            // The heal is a share of what lands, like the live loop.
+            let cura = (1.0 - c) * cura_do_dreno(n as i32, *tier) as f32 + c * cura_do_dreno(x as i32, *tier) as f32;
             v += cura.min(at.hp_max - at.hp);
         }
         v
@@ -1385,10 +1386,12 @@ impl<'a> Luta<'a> {
                 let (x, x0) = self.final_do_golpe(i, imp.acao, true, t);
                 let d = (1.0 - w) * n as f32 + w * x as f32;
                 self.c[j].absorvido += (1.0 - w) * (n0 - n) as f32 + w * (x0 - x) as f32;
-                if s.id == 10 {
-                    let l = self.c[i].l;
-                    let q = (1.0 - w) * cura_do_dreno(bruto(l, imp.acao, false, false, self.r), tier) as f32
-                        + w * cura_do_dreno(bruto(l, imp.acao, true, false, self.r), tier) as f32;
+                // Life Drain heals a share of the damage that landed (after
+                // defence, the rules and Bulwark), only when it reaches health:
+                // the live loop pays it where HP drops, not on the downed bar.
+                let alvo_de_pe = !self.c[j].caido();
+                if s.id == 10 && alvo_de_pe {
+                    let q = (1.0 - w) * cura_do_dreno(n, tier) as f32 + w * cura_do_dreno(x, tier) as f32;
                     cura = self.c[i].curar(q);
                     self.c[i].curas.life_drain += cura;
                 }
@@ -2060,6 +2063,14 @@ mod testes {
         assert!(d.b.heals.thirst > 0.0, "Thirst never healed: {:?}", d.b.heals);
         let d = duelo_intercalado(anel, pist, &r, &sem_mc()).expected;
         assert!(d.a.heals.life_drain > 0.0, "{:?}", d.a.heals);
+        // Life Drain heals a share of what lands, never more than the damage
+        // the ring dealt (the raw-bolt bug healed 526 for 344 dealt).
+        assert!(
+            d.a.heals.life_drain <= shared::skills::roubo_do_dreno(10) * d.a.damage_dealt + 1.0,
+            "drain {} vs dealt {}",
+            d.a.heals.life_drain,
+            d.a.damage_dealt
+        );
         assert!(d.a.heals.regen > 0.0, "VIT regen: {:?}", d.a.heals);
         assert!(d.a.stunned_s > 0.0, "the pistol's hits stun the ring");
         let d = duelo_intercalado(espada, pist, &r, &sem_mc()).expected;

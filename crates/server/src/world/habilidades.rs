@@ -78,7 +78,9 @@ pub(crate) fn dano_da_skill(skill: &Skill, tier: u8, atk: i32, cd_basico: f32, c
 }
 
 /// Life Drain's (10) heal on the caster: `roubo_do_dreno` of the damage the
-/// bolt carries (before the target's defence). Shared with `crate::pvp_sim`.
+/// bolt actually dealt — after the target's defence, Bulwark and any PvP
+/// multiplier (like the katana's `cura_da_sede`), not the raw bolt.
+/// Shared with `crate::pvp_sim`.
 pub(crate) fn cura_do_dreno(dano: i32, tier: u8) -> i32 {
     ((dano as f32) * shared::skills::roubo_do_dreno(tier))
         .round()
@@ -481,6 +483,7 @@ impl GameWorld {
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
             self.pending_skill_hits.push(PendingSkillHit {
+                drain_tier: if skill.id == 10 { tier.max(1) } else { 0 },
                 target_net: alvo_eid,
                 damage: dano,
                 attacker_net: dono,
@@ -489,15 +492,9 @@ impl GameWorld {
                 from_player: true,
                 knockback: if skill.id == 7 && tier >= 8 { 0.7 } else { 0.0 },
             });
-            // LIFE DRAIN: the bolt heals whoever cast it for a share of the
-            // damage it carries. Same instant as the hit, so it cannot heal
-            // without the cast having landed.
-            if skill.id == 10 {
-                self.pending_heals.push(PendingHeal {
-                    target_net: dono,
-                    amount: cura_do_dreno(dano, tier),
-                });
-            }
+            // LIFE DRAIN: the heal is no longer pushed here — it is a share
+            // of the damage that LANDS (after the target's defence, Bulwark,
+            // the level gap), paid in the damage loop (`drain_tier`).
             return;
         }
         let alvos = self.alvos_da_habilidade(dono, de, dir, alvo, skill);
@@ -515,6 +512,7 @@ impl GameWorld {
         for (net, pos) in alvos {
             if skill.dano > 0 {
                 self.pending_skill_hits.push(PendingSkillHit {
+                    drain_tier: 0,
                     target_net: net,
                     damage: dano,
                     attacker_net: dono,

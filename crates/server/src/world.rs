@@ -194,6 +194,9 @@ struct PendingSkillHit {
     /// Knockback em tiles vindo do SkillDef.knockback (ou hardcoded para
     /// skills que nao consultam DB). Aplicado como -hurt_dir × kb.
     knockback: f32,
+    /// Life Drain (10) tier when this hit is the bolt, else 0: the caster
+    /// heals `cura_do_dreno` of the damage that actually lands.
+    drain_tier: u8,
 }
 
 /// Heal aplicado em players (self/aliado) por skill; processado em step().
@@ -9395,6 +9398,7 @@ impl GameWorld {
             if let Some((tn, tp, _)) = best {
                 let hd = calc_hurt_dir_from_eid(&self.ecs, tn, current_pos);
                 self.pending_skill_hits.push(PendingSkillHit {
+                    drain_tier: 0,
                     target_net: tn,
                     damage: current_dmg,
                     attacker_net: attacker,
@@ -11241,6 +11245,7 @@ impl GameWorld {
             for tn in &enemies {
                 let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, landing);
                 self.pending_skill_hits.push(PendingSkillHit {
+                    drain_tier: 0,
                     target_net: *tn,
                     damage,
                     attacker_net: owner_eid,
@@ -11317,6 +11322,7 @@ impl GameWorld {
             for pn in &players {
                 let hd = calc_hurt_dir_from_eid(&self.ecs, *pn, landing);
                 self.pending_skill_hits.push(PendingSkillHit {
+                    drain_tier: 0,
                     target_net: *pn,
                     damage,
                     attacker_net: owner_eid,
@@ -11625,7 +11631,8 @@ impl GameWorld {
             /// Projectile — `vel` pra spawn de proj refletido (-vel) + `kind` visual.
             Projectile { vel: Vec2, kind: u8 },
             /// Skill hit (line/aoe) — sem refletir (so anula damage no parry).
-            Skill,
+            /// `drain_tier` > 0: a Life Drain bolt of that tier.
+            Skill { drain_tier: u8 },
         }
         // damage: (target_entity, target_net_id, dmg, attacker_net_id,
         //         attacker_is_player, hurt_dir TOWARD attacker, is_crit, info,
@@ -11905,6 +11912,7 @@ impl GameWorld {
                 for tn in &enemies {
                     let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, center);
                     self.pending_skill_hits.push(PendingSkillHit {
+                        drain_tier: 0,
                         target_net: *tn,
                         damage: d.damage,
                         attacker_net: d.owner_eid,
@@ -11920,6 +11928,7 @@ impl GameWorld {
                 for tn in &pvp_players {
                     let hd = calc_hurt_dir_from_eid(&self.ecs, *tn, center);
                     self.pending_skill_hits.push(PendingSkillHit {
+                        drain_tier: 0,
                         target_net: *tn,
                         damage: d.damage,
                         attacker_net: d.owner_eid,
@@ -11987,7 +11996,7 @@ impl GameWorld {
                         h.from_player,
                         h.hurt_dir,
                         h.is_crit,
-                        AttackInfo::Skill,
+                        AttackInfo::Skill { drain_tier: h.drain_tier },
                         h.knockback,
                     ));
                 }
@@ -12053,7 +12062,7 @@ impl GameWorld {
                     true,
                     hurt_dir,
                     false,
-                    AttackInfo::Skill,
+                    AttackInfo::Skill { drain_tier: 0 },
                     0.6,
                 ));
             }
@@ -12245,7 +12254,7 @@ impl GameWorld {
                     }
                     // Bloodthirst
                     if att.bloodthirst_until > now_for_buff
-                        && !matches!(attack_info, AttackInfo::Skill)
+                        && !matches!(attack_info, AttackInfo::Skill { .. })
                     {
                         bt_lifesteal_target = Some(att.entity_id);
                     }
@@ -12317,7 +12326,7 @@ impl GameWorld {
             // the hp don't drop"). `shared::bosses::RESISTENCIA_NO_TELEGRAFICO`
             // already said nothing mitigates it; the boss sims assume so.
             let telegrafico = !attacker_is_player
-                && matches!(attack_info, AttackInfo::Skill)
+                && matches!(attack_info, AttackInfo::Skill { .. })
                 && self
                     .ecs
                     .query::<(&NetId, &EnemyTag)>()
@@ -12465,7 +12474,7 @@ impl GameWorld {
                                 target_id.0
                             );
                         }
-                        AttackInfo::Skill => {
+                        AttackInfo::Skill { .. } => {
                             // Skill hit: so anula damage, sem counter (skills
                             // costumam ser AoE/instantaneas — refletir e' awkward).
                         }
@@ -12540,6 +12549,18 @@ impl GameWorld {
                     if hp.current == 0 && attacker_is_player {
                         kill_credits.insert(target_id, attacker_id);
                     }
+                }
+            }
+            // LIFE DRAIN: the caster heals a share of what this bolt dealt
+            // (final damage, after mitigation; not clamped to the target's
+            // remaining HP, as Thirst). A dodged/iframed, parried or blocked-
+            // by-gating bolt never gets here, so it heals nothing.
+            if let AttackInfo::Skill { drain_tier } = attack_info {
+                if attacker_is_player && drain_tier > 0 && dmg > 0 {
+                    self.pending_heals.push(PendingHeal {
+                        target_net: attacker_id,
+                        amount: habilidades::cura_do_dreno(dmg, drain_tier),
+                    });
                 }
             }
             // Registra dano de enemy → lifesteal de boss aplicado pós-loop.
@@ -21709,6 +21730,7 @@ mod impacto_tests {
                 .next()
                 .unwrap();
             w.pending_skill_hits.push(PendingSkillHit {
+                drain_tier: 0,
                 target_net: id,
                 damage: 300,
                 attacker_net: mob,
@@ -22574,10 +22596,44 @@ mod pk_tests {
     }
 
     fn golpe(w: &mut GameWorld, dano: i32) {
-        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(901), damage: dano,
+        w.pending_skill_hits.push(PendingSkillHit { drain_tier: 0, target_net: EntityId(901), damage: dano,
             attacker_net: EntityId(900), hurt_dir: Vec2::X, is_crit: false,
             from_player: true, knockback: 0.0 });
         w.step(shared::TICK_DT);
+    }
+
+    /// Life Drain heals its share of the damage that LANDS (after the
+    /// target's defence), not of the raw bolt; a bolt the gating stops
+    /// heals nothing.
+    #[test]
+    fn dreno_cura_pelo_dano_que_entrou() {
+        let (mut w, ids, _rx) = mundo();
+        let e0 = w.sessions[&ids[0]].entity.unwrap();
+        let e1 = w.sessions[&ids[1]].entity.unwrap();
+        *w.ecs.get::<&mut Health>(e0).unwrap() = Health { current: 10, max: 1000 };
+        *w.ecs.get::<&mut Health>(e1).unwrap() = Health { current: 1000, max: 1000 };
+        let dreno = |w: &mut GameWorld| {
+            w.pending_skill_hits.push(PendingSkillHit { drain_tier: 9, target_net: EntityId(901), damage: 200,
+                attacker_net: EntityId(900), hurt_dir: Vec2::X, is_crit: false,
+                from_player: true, knockback: 0.0 });
+            w.step(shared::TICK_DT);
+            w.step(shared::TICK_DT); // the heal is queued for the next tick
+        };
+        // Peaceful: no damage, no heal.
+        let w = &mut w;
+        dreno(w);
+        assert_eq!(w.ecs.get::<&Health>(e1).unwrap().current, 1000);
+        assert!(w.ecs.get::<&Health>(e0).unwrap().current <= 11, "healed off a blocked bolt");
+        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[1]).unwrap().stats.defense = 60;
+        let antes = w.ecs.get::<&Health>(e0).unwrap().current;
+        dreno(w);
+        let entrou = 1000 - w.ecs.get::<&Health>(e1).unwrap().current;
+        assert!(entrou > 0 && entrou < 200, "defence should cut the bolt: {entrou}");
+        let cura = w.ecs.get::<&Health>(e0).unwrap().current - antes;
+        let esperado = habilidades::cura_do_dreno(entrou, 9);
+        assert!(cura >= esperado && cura <= esperado + 1, "healed {cura}, expected {esperado} of {entrou}");
+        assert!(cura < habilidades::cura_do_dreno(200, 9));
     }
 
     #[test]
@@ -22649,7 +22705,7 @@ mod pk_tests {
         let (mut w, ids, _rx) = mundo();
         w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
         golpe(&mut w, 1);
-        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(900), damage: 10000,
+        w.pending_skill_hits.push(PendingSkillHit { drain_tier: 0, target_net: EntityId(900), damage: 10000,
             attacker_net: EntityId(901), hurt_dir: Vec2::X, is_crit: false,
             from_player: true, knockback: 0.0 });
         w.step(shared::TICK_DT);
@@ -22815,7 +22871,7 @@ mod xp_grupo_tests {
         tag.spawn_grace_until = 0.0;
         let e = w.ecs.spawn((NetId(EntityId(5000)), Position(p), Velocity(Vec2::ZERO),
             EntityKind::Enemy(0), Health { current: 1, max: 1 }, tag));
-        w.pending_skill_hits.push(PendingSkillHit { target_net: EntityId(5000), damage: 10000,
+        w.pending_skill_hits.push(PendingSkillHit { drain_tier: 0, target_net: EntityId(5000), damage: 10000,
             attacker_net: EntityId(900), hurt_dir: Vec2::X, is_crit: false,
             from_player: true, knockback: 0.0 });
         w.step(shared::TICK_DT);

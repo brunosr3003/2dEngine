@@ -636,6 +636,7 @@ impl GameWorld {
         for (alvo, dano, chefe, centro, empurra) in golpes {
             let hurt_dir = calc_hurt_dir_from_eid(&self.ecs, alvo, centro);
             self.pending_skill_hits.push(PendingSkillHit {
+                drain_tier: 0,
                 target_net: alvo,
                 damage: dano,
                 attacker_net: chefe,

@@ -875,6 +875,7 @@ mod testes_combate_montado {
         w.avancar_montarias();
         w.sessions.get_mut(&sid).unwrap().target = Some(EntityId(905));
         w.pending_skill_hits.push(PendingSkillHit {
+            drain_tier: 0,
             target_net: EntityId(905), attacker_net: EntityId(904),
             damage: 100, hurt_dir: Vec2::X, is_crit: false,
             from_player: true, knockback: 0.0,
@@ -903,6 +904,7 @@ mod testes_combate_montado {
         }
         for _ in 0..7 {
             w.pending_skill_hits.push(PendingSkillHit {
+                drain_tier: 0,
                 target_net: EntityId(904), attacker_net: EntityId(999),
                 damage: 1, hurt_dir: Vec2::X, is_crit: false,
                 from_player: false, knockback: 0.0,
