@@ -22163,21 +22163,15 @@ mod testes_do_nivel_minimo {
     }
 
     #[test]
-    fn peca_acima_do_nivel_e_recusada_e_no_nivel_passa() {
-        let pode = |nivel: u32, req: Option<u16>| match req {
-            Some(r) => nivel >= r as u32,
-            None => true,
-        };
-        // O caso do dono.
-        assert!(!pode(7, Some(30)), "nível 7 não veste peça de 30");
-        // No nível exato veste.
-        assert!(pode(30, Some(30)));
-        assert!(pode(45, Some(30)));
-        // Um abaixo, não.
-        assert!(!pode(29, Some(30)));
-        // Peça sem requisito veste em qualquer nível — é a maioria.
-        assert!(pode(1, None));
+    fn qualquer_nivel_veste_qualquer_peca() {
+        // No level to use gear (owner, 12/11/2026): a level 60 piece, even an
+        // old one that stored a level, equips at any level.
+        let mut p = shared::ItemInstance::roll_for(shared::item_id::KATANA, 60, || 0.5).unwrap();
+        assert_eq!(p.nivel_para_usar(), 0);
+        p.level_req = Some(30);
+        assert_eq!(p.nivel_para_usar(), 0);
     }
+
 }
 
 #[cfg(test)]

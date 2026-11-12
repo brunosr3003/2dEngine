@@ -684,15 +684,12 @@ impl Affix {
 }
 
 impl ItemInstance {
-    /// The level needed to equip this piece: its ITEM LEVEL (above 5). Read
-    /// from `item_level` and not from the stored `level_req`, so pieces made
-    /// before the rule changed (they stored half) obey it too.
+    /// The level needed to equip this piece: none (owner, 12/11/2026). Kept as
+    /// the one place every check reads, so a future rule has one home.
     pub fn nivel_para_usar(&self) -> u32 {
-        if self.item_level > 5 {
-            self.item_level as u32
-        } else {
-            0
-        }
+        // No level to use any piece any more (see `roll_em`); old pieces that
+        // stored a `level_req` are free too.
+        0
     }
 
     /// Roll uma instance fresh pra um item_id usando lookup hardcoded
@@ -731,10 +728,10 @@ impl ItemInstance {
             rarity: tier, // campo `rarity` guarda a COR (grau 1–5)
             refinement: 0,
             item_level,
-            // The level to USE a piece is its item level (owner, 12/11/2026:
-            // "recipe level = item level = use level"); it was half of it,
-            // so a level 15 wore level 21 gear.
-            level_req: if item_level > 5 { Some(item_level) } else { None },
+            // NO LEVEL TO USE a piece (owner, 12/11/2026: "take the level cap
+            // off; I want the items to be hard to MAKE"). The difficulty is in
+            // getting them: rare drops, purple and legendary from the craft.
+            level_req: None,
             hp_max: 0,
             mp_max: 0,
             attack_damage: 0,

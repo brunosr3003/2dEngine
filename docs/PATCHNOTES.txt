@@ -1,6 +1,6 @@
 Nov 13, 2026 — Fixes
 
-- Gear: the level to use a piece is now its item level (a level 21 piece needs level 21). Crafting recipes make items of the recipe level.
+- Gear has no level requirement to equip any more. Crafting recipes make items of the recipe level.
 - Drops: purple gear is now very rare from chests and legendary gear no longer drops at all; craft is the way to the top colors. Field-boss chests follow the area level.
 - Dungeons: auto play no longer walks back to the entrance wall after the first group; it always heads to the monsters of the current room.
 
