@@ -1,11 +1,11 @@
-Nov 13, 2026 — Fixes
-
-- Gear has no level requirement to equip any more. Crafting recipes make items of the recipe level.
-- Drops: purple gear is now very rare from chests and legendary gear no longer drops at all; craft is the way to the top colors. Field-boss chests follow the area level.
-- Dungeons: auto play no longer walks back to the entrance wall after the first group; it always heads to the monsters of the current room.
-
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 
+- Leveling takes longer from level 20 on: from level 50, each level asks about twice the time it used to.
+- Gear has no level requirement to equip any more. Crafting recipes make items of the recipe level.
+- Drops: purple gear is now very rare from chests and legendary gear no longer drops at all; craft is the way to the top colors. Field-boss chests follow the area level.
+- Magic Island: the entry pass is sold only in the TP shop and can no longer be traded or sold on the Market. The XP islet gives x1.5.
+- Fixed: story steps that asked for a Cavern now accept any dungeon.
+- Dungeons: auto play no longer walks back to the entrance wall after the first group; it always heads to the monsters of the current room.
 - New in the Market: Buy orders. Post what you want to buy (item, amount and price each); the gold is held and other players can sell to your order. Cancel any time to get the rest of the gold back.
 - Craft resources are rarer and worth trading: Darksteel now comes only from rocks (plus daily rewards and the shop), and monsters drop craft materials less often. Rocks give the same as before.
 - Craft keys: purple is now level 40-69 and legendary 70+. A ready legendary key is very rare luck; the main road is combining.

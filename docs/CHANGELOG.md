@@ -8,6 +8,12 @@ jogador vai no PATCHNOTES.txt.
 
 ---
 
+12/11/2026 — Release 198 (protocolo 198, build 2026111203, Android versionCode 16)
+
+- **Ritmo de XP** (`shared::progressao::ritmo`): todo XP do personagem é dividido por um fator do nível dele em `grant_xp`, antes dos bônus (poção, ilhota, acessório): 1 até o 19, rampa até 2× do 20 ao 50, 2× do 50 em diante. Perda de XP na morte dividida pelo mesmo fator (`morte::perda_de_xp`). O painel de missões mostra o XP já no ritmo (`QuestNet.reward_xp`). Prepara o reset de nível no 100 (em desenho).
+- **História presa em Gruta**: dez passos da história e duas missões pediam Grutas, fora do jogo desde a 197. `dungeon::alvo_aceita`: alvo fora do jogo aceita qualquer dungeon (Anubis travado em "O sino dos ventos").
+- **197.3 entra no cliente**: sem nível para usar equipamento (`nivel_para_usar` = 0, `level_req: None`), receitas fazem o item no nível da receita, drops (roxo muito raro, lendário só craft, baú de chefe de campo pelo nível do chefe), passe da Ilha Mágica vinculado e só por TP, ilhota de XP 1,5×, auto da dungeon sempre pede o alvo ao servidor.
+
 10/11/2026 — Chat, eventos de bônus e ovos (protocolo 194, build 2026100169, Android versionCode 13)
 
 - **Chat** (`shared::chat`, `server/src/chat_global.rs`, `client/src/chat_ui.rs`): caixa fixa no centro-baixo (`Zonas::chat`, desenhada antes de todo o HUD), semitransparente, em destaque ao digitar; canais Global / Ilha (só a mesma zona) / Grupo (no processo) / Whisper (`@Nome msg`, entre processos com resposta do processo do destinatário e "offline" após 2,5 s; modo todos/amigos/ninguém, amizade conferida em `social_amigos`). Entrega entre canais por `LISTEN/NOTIFY` (`tempest_chat`). Filtro de palavras normalizado (acento, leetspeak, letras repetidas e espaçadas) com ação por palavra: censurar/alertar/silenciar 30 min/banir; anti-spam (2 s, 5 em 30 s, repetição em 60 s, 140 caracteres). Histórico COMPLETO em `chat_historico` (texto original, mostrado, palavras, canal, destinatário), denúncias em `chat_denuncias`, silêncios em `chat_silencios`, banimentos em `banimentos` (login recusado + Kick na hora). Balão de fala acima dos jogadores próximos (não para whisper). Todos os comandos `/` do chat saíram (`/despawn` respondia a qualquer um).
