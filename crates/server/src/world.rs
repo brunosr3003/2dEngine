@@ -22594,10 +22594,21 @@ mod testes_planalto {
     #[test]
     fn sem_mob_perto_do_veio_roxo() {
         let ilha = shared::terreno::Ilha::da_ilha(&shared::terreno::ARQUIPELAGO[3]);
-        let pl = ilha.planalto().unwrap().clone();
+        let origem = ilha.porto().unwrap().centro;
+        // Find a purple vein anywhere on the island.
         let mut perto = Vec::new();
-        ilha.coletaveis_em(pl.centro_campo(3), 32.0, &mut perto);
-        let veio = perto.iter().find(|c| c.tier == 4).expect("Stormfield has purple veins");
+        let mut veio = None;
+        'busca: for gx in -24..=24 {
+            for gz in -24..=24 {
+                let p = origem + Vec2::new(gx as f32 * 64.0, gz as f32 * 64.0);
+                ilha.coletaveis_em(p, 46.0, &mut perto);
+                if let Some(c) = perto.iter().find(|c| c.tier == 4) {
+                    veio = Some(*c);
+                    break 'busca;
+                }
+            }
+        }
+        let veio = veio.expect("the island has purple veins");
         let mut w = GameWorld::new(HashMap::new());
         assert!(!w.perto_de_veio_roxo(veio.centro), "no island, no veins");
         w.ilha = Some(ilha);
