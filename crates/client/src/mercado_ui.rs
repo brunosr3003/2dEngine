@@ -255,8 +255,8 @@ impl Mercado {
     /// Escape: cancels the number being typed (the old value stays); with
     /// nothing typed, closes the market.
     pub fn esc(&mut self) {
-        if self.edicao.ativa() {
-            self.edicao = Edicao::default();
+        if self.edicao.ativa() && !self.edicao.cancelado {
+            self.edicao.cancelado = true;
         } else {
             self.fechar();
         }
@@ -268,10 +268,11 @@ impl Mercado {
         if self.edicao.ativa() && !self.edicao.visto {
             self.edicao = Edicao::default();
         }
-        if let Some((id, fundo)) = self.edicao.pedido.take() {
+        if let Some((id, fundo, original)) = self.edicao.pedido.take() {
             self.sem_foco();
             self.edicao.id = Some(id);
             self.edicao.fundo = fundo;
+            self.edicao.original = original;
         }
         self.edicao.visto = false;
     }
@@ -433,9 +434,11 @@ impl Mercado {
         );
         // A number being typed on a phone: the panel rises so the field sits
         // above the on-screen keyboard (same rule as the character name).
-        // `fundo` was measured last frame, already raised by `subida`.
+        // `fundo` was measured last frame, already raised by `subida`. The
+        // panel fills a phone's screen, so it may rise past the top: while
+        // typing, the field matters more than the header.
         self.subida = if self.edicao.ativa() {
-            crate::teclado_virtual::deslocamento(c.teclado, screen_height(), p.y, self.edicao.fundo + self.subida)
+            crate::teclado_virtual::deslocamento(c.teclado, screen_height(), f32::INFINITY, self.edicao.fundo + self.subida)
         } else {
             0.0
         };
@@ -2193,9 +2196,13 @@ struct Edicao {
     visto: bool,
     /// A tap on a number asks to edit it. It only starts at the end of the
     /// frame, so the one being edited (drawn before or after) commits first.
-    pedido: Option<(&'static str, f32)>,
+    pedido: Option<(&'static str, f32, u64)>,
     /// Bottom of the field on screen (to raise the panel above the keyboard).
     fundo: f32,
+    /// The value before typing: Escape (and an empty field) puts it back.
+    original: u64,
+    /// Escape was pressed: the `seletor` restores `original` and closes.
+    cancelado: bool,
 }
 
 impl Edicao {
@@ -2265,25 +2272,27 @@ fn seletor(
     let m = Vec2::from(mouse_position());
     let clicou = crate::foco::clique();
     // Typing: the field takes the keys first, so "25" + Enter in one frame commits 25.
+    if ed.id == Some(id) && ed.cancelado {
+        *valor = ed.original;
+        *ed = Edicao::default();
+    }
     if ed.id == Some(id) {
         ed.visto = true;
         ed.fundo = meio.y + meio.h;
         let teclas = so_digitos(digitado);
         crate::ui::campo(meio, "", &mut ed.texto, true, false, &teclas);
         ed.texto.truncate(max.max(min).to_string().len());
+        // LIVE: totals and the buttons' labels follow what is being typed.
+        *valor = valor_digitado(&ed.texto, min, max).unwrap_or(ed.original);
         if ed.texto.is_empty() {
             // The old value, faint, while nothing is typed.
-            estilo::texto_centro(meio.center().x, meio.center().y + 6.0 * f, &milhar(*valor), 15, estilo::SUAVE);
+            estilo::texto_centro(meio.center().x, meio.center().y + 6.0 * f, &milhar(ed.original), 15, estilo::SUAVE);
         }
         let enter = is_key_pressed(KeyCode::Enter)
             || is_key_pressed(KeyCode::KpEnter)
             || digitado.iter().any(|ch| *ch == '\r' || *ch == '\n');
         if enter || (clicou && !meio.toca(m)) {
-            if let Some(v) = valor_digitado(&ed.texto, min, max) {
-                *valor = v;
-            }
-            ed.id = None;
-            ed.texto.clear();
+            *ed = Edicao::default();
         }
     }
     let v = *valor;
@@ -2324,7 +2333,7 @@ fn seletor(
         estilo::TEXTO,
     );
     if sobre && clicou {
-        ed.pedido = Some((id, meio.y + meio.h));
+        ed.pedido = Some((id, meio.y + meio.h, *valor));
     }
 }
 
@@ -2367,7 +2376,7 @@ mod tests {
     #[test]
     fn edicao_comeca_no_fim_do_quadro_e_some_sem_o_campo() {
         let mut m = Mercado { aberto: true, foco_busca: true, ..Default::default() };
-        m.edicao.pedido = Some(("venda_qtd", 300.0));
+        m.edicao.pedido = Some(("venda_qtd", 300.0, 7));
         m.fim_da_edicao();
         assert_eq!(m.edicao.id, Some("venda_qtd"));
         assert!(!m.foco_busca, "the search field gives up the keyboard");
@@ -2380,10 +2389,13 @@ mod tests {
         m.fim_da_edicao();
         assert_eq!(m.edicao.id, None);
         assert!(!m.foco_na_busca());
-        // Escape cancels the edit first, then closes.
+        assert_eq!(m.edicao.original, 0, "a dropped edit forgets its value");
+        // Escape cancels the edit first (its seletor puts the value back), then closes.
         m.edicao.id = Some("venda_qtd");
         m.esc();
-        assert!(m.aberto && m.edicao.id.is_none());
+        assert!(m.aberto && m.edicao.cancelado);
+        m.fim_da_edicao();
+        assert!(m.edicao.id.is_none());
         m.esc();
         assert!(!m.aberto);
     }
