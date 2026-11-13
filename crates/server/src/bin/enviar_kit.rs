@@ -108,7 +108,8 @@ async fn main() -> Result<()> {
 
     // The identifier makes the send IDEMPOTENT: running it again with the same
     // arguments does not send twice.
-    let envio = format!("kit-{nome}-{cor}-{tier}-{refino}-{}", kit.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("-")).to_lowercase();
+    let envio = format!("kit-{nome}-{cor}-{tier}-{refino}-{}", kit.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("-")).to_lowercase()
+        + &std::env::var("KIT_SUFIXO").map(|x| format!("-{x}")).unwrap_or_default();
     let pedido = Pedido::EnviarOficial {
         envio,
         para: Some(nome.clone()),
