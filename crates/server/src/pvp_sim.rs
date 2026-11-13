@@ -204,10 +204,26 @@ pub struct Regras {
 }
 
 impl Regras {
-    /// What the live damage loop does in PvP today.
+    /// What the live damage loop does in PvP today: the constants in
+    /// `shared::pk`, which `world.rs` applies through `shared::pk::pvp_dano`.
     pub fn atuais() -> Regras {
+        use shared::pk::*;
         Regras {
             label: "current",
+            basic_mult: PVP_MULT_BASICO,
+            skill_mult: PVP_MULT_SKILL,
+            cap_pct: PVP_TETO,
+            level_penalty_per_level: PVP_NIVEL_PENALIDADE,
+            level_free_gap: PVP_NIVEL_LIVRE,
+            level_floor: PVP_NIVEL_PISO,
+            katana_execute_pvp: PVP_KATANA_EXECUTA,
+        }
+    }
+
+    /// The rules before the PvP balance (12/11/2026), for comparison.
+    pub fn antes_do_balanceamento() -> Regras {
+        Regras {
+            label: "before balance",
             basic_mult: 1.0,
             skill_mult: 1.0,
             cap_pct: None,
@@ -218,19 +234,10 @@ impl Regras {
         }
     }
 
+    /// The proposal column starts from the live rules; the Panopticon's
+    /// query params change it to try other numbers.
     pub fn propostas_padrao() -> Regras {
-        Regras {
-            label: "proposed",
-            // Owner, 12/11/2026: skill x0.10, basic x0.15; no per-hit cap
-            // (skills no longer scale with attack speed, multipliers do the rest).
-            basic_mult: 0.15,
-            skill_mult: 0.10,
-            cap_pct: None,
-            level_penalty_per_level: 0.08,
-            level_free_gap: 5,
-            level_floor: 0.20,
-            katana_execute_pvp: false,
-        }
+        Regras { label: "proposed", ..Regras::atuais() }
     }
 
     /// Proposed rules from query params; anything missing or invalid keeps
@@ -264,12 +271,7 @@ impl Regras {
 
     /// Level-gap multiplier: only when the attacker is BELOW the target.
     pub fn mult_de_nivel(&self, atacante: u32, alvo: u32) -> f32 {
-        let gap = alvo.saturating_sub(atacante);
-        if gap <= self.level_free_gap || self.level_penalty_per_level <= 0.0 {
-            return 1.0;
-        }
-        let m = 1.0 - self.level_penalty_per_level * (gap - self.level_free_gap) as f32;
-        m.max(self.level_floor).min(1.0)
+        shared::pk::pvp_mult_nivel(atacante, alvo, self.level_free_gap, self.level_penalty_per_level, self.level_floor)
     }
 }
 
@@ -1750,11 +1752,11 @@ pub fn arquetipos(o: &Orcamento) -> Vec<Lutador> {
     ]
 }
 
-/// The multiplier sets of the round-robin: current, then skill/basic pairs.
+/// The multiplier sets of the round-robin: before the balance, current
+/// (live), then other skill/basic pairs.
 pub fn regras_do_torneio() -> Vec<Regras> {
-    let mut v = vec![Regras::atuais()];
+    let mut v = vec![Regras::antes_do_balanceamento(), Regras::atuais()];
     for (label, s, b) in [
-        ("skill 0.10 / basic 0.15 (proposed)", 0.10, 0.15),
         ("skill 0.15 / basic 0.20", 0.15, 0.20),
         ("skill 0.10 / basic 0.20", 0.10, 0.20),
     ] {
@@ -1916,13 +1918,25 @@ mod testes {
     fn regras_atuais_sao_a_cadeia_do_jogo() {
         let a = com_stats("A", 30, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
         let b = com_stats("B", 30, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
-        let r = Regras::atuais();
+        let r = Regras::antes_do_balanceamento();
         assert_eq!(golpe(&a, &b, Acao::Basico, false, false, &r), dano_mitigado(300, 50, 0.0));
         assert_eq!(
             golpe(&a, &b, Acao::Basico, true, false, &r),
             dano_mitigado(golpe_critico(300), 50, 0.0)
         );
-        assert_eq!(r.mult_de_nivel(18, 48), 1.0, "no level gap in PvP today");
+        assert_eq!(r.mult_de_nivel(18, 48), 1.0, "no level gap before the balance");
+        // The live rules are `shared::pk`'s, the same function the loop calls.
+        let r = Regras::atuais();
+        assert_eq!(
+            golpe(&a, &b, Acao::Basico, false, false, &r),
+            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, 30, 30)
+        );
+        let baixo = com_stats("C", 20, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
+        assert_eq!(
+            golpe(&baixo, &b, Acao::Basico, false, false, &r),
+            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, 20, 30)
+        );
+        assert_eq!(Regras::propostas_padrao().skill_mult, shared::pk::PVP_MULT_SKILL);
     }
 
     /// Equal levels, glass cannons: under CURRENT rules a skill crit takes
@@ -1932,8 +1946,10 @@ mod testes {
         let a = com_stats("A", 40, shared::item_id::PISTOLAS, 900, 420, 30, 0.35);
         let b = com_stats("B", 40, shared::item_id::PISTOLAS, 900, 420, 30, 0.35);
         let av = avaliar(&a, &b, Regras::propostas_padrao());
-        let d = &av.current.a_vs_b;
+        let antes = lado(&a, &b, Regras::antes_do_balanceamento());
+        let d = &antes.a_vs_b;
         assert!(d.one_shot, "max hit {:.0}% of HP", d.max_hit_pct * 100.0);
+        assert!(!av.current.a_vs_b.one_shot, "the live rules no longer one-shot");
         assert!(d.expected.ttk_s.unwrap() < 2.0, "{:?}", d.expected.ttk_s);
         // The proposed defaults turn it into a multi-hit fight.
         let p = &av.proposed.a_vs_b;
@@ -1962,8 +1978,9 @@ mod testes {
         );
         assert!(p.burst.ttk_s.is_none_or(|t| t > 10.0), "burst {:?}", p.burst.ttk_s);
         assert!(p.expected.ttk_s.is_none_or(|t| t > 15.0), "{:?}", p.expected.ttk_s);
-        // Today it is much faster.
-        let c = &av.current.a_vs_b;
+        // Before the balance it was much faster.
+        let antes = lado(&baixo, &alto, Regras::antes_do_balanceamento());
+        let c = &antes.a_vs_b;
         assert!(c.burst.ttk_s.unwrap() < p.burst.ttk_s.unwrap_or(f32::MAX) / 3.0);
         assert_eq!(av.proposed.winner, "b");
     }
@@ -1972,13 +1989,13 @@ mod testes {
     fn execucao_da_katana_e_a_barra_de_caido() {
         let a = com_stats("K", 30, shared::item_id::KATANA, 1000, 200, 0, 0.0);
         let b = com_stats("T", 30, shared::item_id::ESPADA_E_ESCUDO, 1000, 200, 0, 0.0);
-        let atual = linha(&a, &b, Acao::Basico, &Regras::atuais());
+        let atual = linha(&a, &b, Acao::Basico, &Regras::antes_do_balanceamento());
         assert_eq!(atual.hit, 200);
         assert_eq!(atual.hit_execute, Some(golpe_da_katana(200, false, true)));
         // 4 hits to 200 HP (<30%), the 5th executes; then the Downed bar.
         assert_eq!(atual.hits_to_down, 5);
         assert_eq!(atual.hits_to_kill, 6);
-        let mut sem = Regras::atuais();
+        let mut sem = Regras::antes_do_balanceamento();
         sem.katana_execute_pvp = false;
         let l = linha(&a, &b, Acao::Basico, &sem);
         assert_eq!(l.hit_execute, None);

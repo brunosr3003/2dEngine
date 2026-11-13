@@ -1,6 +1,6 @@
 //! PvP rules in one place: the PK modes, who may hit whom, who pays PK
 //! points for a kill, open-PvP areas, the penalties of a red name (heavier
-//! XP loss on death, decay, gold pardon).
+//! XP loss on death, decay, gold pardon) and the PvP damage balance.
 //!
 //! Every number the owner may want to tune is a `pub const` here. The server
 //! decides with these functions; the client uses the same ones to draw the
@@ -160,6 +160,43 @@ pub fn custo_perdao(nivel: u32) -> u64 {
     PERDAO_OURO_POR_NIVEL * nivel.max(1) as u64
 }
 
+// ─────────────────────────────── PvP damage ───────────────────────────────
+
+/// Multiplier on a mitigated SKILL hit (skills, skill areas, skill bombs) between players.
+pub const PVP_MULT_SKILL: f32 = 0.10;
+/// Multiplier on a mitigated BASIC attack between players.
+pub const PVP_MULT_BASICO: f32 = 0.15;
+/// Levels the attacker may be below the target with no penalty.
+pub const PVP_NIVEL_LIVRE: u32 = 5;
+/// Damage lost per level past `PVP_NIVEL_LIVRE`.
+pub const PVP_NIVEL_PENALIDADE: f32 = 0.08;
+/// The level penalty never goes under this.
+pub const PVP_NIVEL_PISO: f32 = 0.20;
+/// Most of the target's max HP one hit may take (`None` = no cap).
+pub const PVP_TETO: Option<f32> = None;
+/// Katana execute (under 30% HP) against players.
+pub const PVP_KATANA_EXECUTA: bool = false;
+
+/// Level-gap multiplier: only when the attacker is BELOW the target.
+pub fn pvp_mult_nivel(atacante: u32, alvo: u32, livre: u32, por_nivel: f32, piso: f32) -> f32 {
+    let gap = alvo.saturating_sub(atacante);
+    if gap <= livre || por_nivel <= 0.0 {
+        return 1.0;
+    }
+    (1.0 - por_nivel * (gap - livre) as f32).max(piso).min(1.0)
+}
+
+/// A mitigated player-vs-player hit, with the live rules.
+pub fn pvp_dano(mitigado: i32, skill: bool, atacante: u32, alvo: u32) -> i32 {
+    let m = if skill { PVP_MULT_SKILL } else { PVP_MULT_BASICO }
+        * pvp_mult_nivel(atacante, alvo, PVP_NIVEL_LIVRE, PVP_NIVEL_PENALIDADE, PVP_NIVEL_PISO);
+    if m == 1.0 {
+        mitigado
+    } else {
+        ((mitigado as f32) * m).round().max(1.0) as i32
+    }
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
@@ -254,5 +291,18 @@ mod testes {
         assert_eq!(decair(2, 0, 3 * 3600 + 5), (0, 0), "never below zero");
         assert_eq!(custo_perdao(40), 40_000);
         assert_eq!(custo_perdao(0), 1_000);
+    }
+
+    #[test]
+    fn dano_pvp_multiplica_e_pena_por_nivel() {
+        assert_eq!(pvp_dano(1000, true, 30, 30), 100);
+        assert_eq!(pvp_dano(1000, false, 30, 30), 150);
+        assert_eq!(pvp_dano(3, true, 30, 30), 1, "floor of 1");
+        // 10 levels below: 5 free, 5 x 8% = 60%.
+        assert_eq!(pvp_dano(1000, true, 20, 30), 60);
+        // 30 below sits on the floor.
+        assert_eq!(pvp_dano(1000, true, 10, 40), 20);
+        // Above the target: no bonus, no penalty.
+        assert_eq!(pvp_dano(1000, true, 40, 10), 100);
     }
 }

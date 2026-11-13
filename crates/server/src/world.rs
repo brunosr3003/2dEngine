@@ -12155,10 +12155,13 @@ impl GameWorld {
                         .ecs
                         .get::<&EnemyTag>(entity)
                         .is_ok_and(|t| t.ai_target.is_none());
-                    let execucao = self
-                        .ecs
-                        .get::<&Health>(entity)
-                        .is_ok_and(|h| em_execucao(h.current, h.max));
+                    // PvP balance: no execute on players (`shared::pk::PVP_KATANA_EXECUTA`).
+                    let execucao = (shared::pk::PVP_KATANA_EXECUTA
+                        || self.ecs.get::<&PlayerTag>(entity).is_err())
+                        && self
+                            .ecs
+                            .get::<&Health>(entity)
+                            .is_ok_and(|h| em_execucao(h.current, h.max));
                     golpe_da_katana(dmg, abertura, execucao)
                 } else {
                     dmg
@@ -12199,6 +12202,15 @@ impl GameWorld {
                 };
                 if mult != 1.0 {
                     dmg = ((dmg as f32) * mult).round().max(1.0) as i32;
+                }
+                // PvP BALANCE (`shared::pk::pvp_dano`, the same rules the
+                // Panopticon's PvP sim shows as "current"): player skills x0.10,
+                // basics x0.15, and the lower side loses damage past 5 levels.
+                if attacker_is_player && self.ecs.get::<&PlayerTag>(entity).is_ok() {
+                    if let (Some(eu), Some(alvo)) = (nivel_de(attacker_id, self), nivel_de(target_id, self)) {
+                        let skill = matches!(attack_info, AttackInfo::Skill { .. });
+                        dmg = shared::pk::pvp_dano(dmg, skill, eu, alvo);
+                    }
                 }
             }
 
@@ -22383,6 +22395,9 @@ mod pk_tests {
         dreno(w);
         let entrou = 1000 - w.ecs.get::<&Health>(e1).unwrap().current;
         assert!(entrou > 0 && entrou < 200, "defence should cut the bolt: {entrou}");
+        // The PvP balance applies before the heal: the drain heals off the
+        // x0.10 hit, not the mitigated bolt.
+        assert_eq!(entrou, shared::pk::pvp_dano(dano_mitigado(200, 60, 0.0), true, 1, 1));
         let cura = w.ecs.get::<&Health>(e0).unwrap().current - antes;
         let esperado = habilidades::cura_do_dreno(entrou, 9);
         assert!(cura >= esperado && cura <= esperado + 1, "healed {cura}, expected {esperado} of {entrou}");
@@ -22498,6 +22513,36 @@ mod pk_tests {
         w.sessions.get_mut(&ids[0]).unwrap().pk_points = 1;
         w.on_message(ids[0], ClientMessage::PerdoarPk);
         assert_eq!((w.sessions[&ids[0]].pk_points, w.sessions[&ids[0]].gold), (1, 500), "not enough gold");
+    }
+
+    /// The live loop applies the PvP balance: an equal-level skill hit that
+    /// used to take most of the bar now takes a tenth, and the number is the
+    /// one the Panopticon's sim gives with its "current" rules.
+    #[test]
+    fn pvp_balanceamento_no_loop_e_igual_ao_simulador() {
+        let (mut w, ids, _rx) = mundo();
+        modo(&mut w, ids[0], shared::pk::LIVRE);
+        let e1 = w.sessions[&ids[1]].entity.unwrap();
+        *w.ecs.get::<&mut Health>(e1).unwrap() = Health { current: 1000, max: 1000 };
+        w.sessions.get_mut(&ids[1]).unwrap().stats.defense = 0;
+        w.sessions.get_mut(&ids[1]).unwrap().stats.damage_reduction_pct = 0.0;
+        golpe(&mut w, 900);
+        let tirou = 1000 - w.ecs.get::<&Health>(e1).unwrap().current;
+        assert!(!w.sessions[&ids[1]].downed, "no one-shot at equal level");
+        let r = crate::pvp_sim::Regras::atuais();
+        let sim = ((dano_mitigado(900, 0, 0.0) as f32) * r.skill_mult * r.mult_de_nivel(1, 1)).round() as i32;
+        assert_eq!(tirou, sim);
+        assert_eq!(tirou, 90);
+        // 10 levels below the target: 5 free, then -8% a level.
+        let mult = crate::economy::xp_multiplier();
+        w.sessions.get_mut(&ids[1]).unwrap().xp = shared::xp_for_level_with_mult(11, mult);
+        let alvo = shared::level_of_xp_with_mult(w.sessions[&ids[1]].xp, mult);
+        *w.ecs.get::<&mut Health>(e1).unwrap() = Health { current: 1000, max: 1000 };
+        golpe(&mut w, 900);
+        let tirou = 1000 - w.ecs.get::<&Health>(e1).unwrap().current;
+        let sim = ((dano_mitigado(900, 0, 0.0) as f32) * r.skill_mult * r.mult_de_nivel(1, alvo)).round() as i32;
+        assert_eq!(tirou, sim, "level {alvo}");
+        assert!(tirou < 90);
     }
 
     #[test]
