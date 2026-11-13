@@ -693,6 +693,19 @@ fn montar_cidade(ger: &Gerador, c: &Cidade, vila: &mut Vila) {
         giver: None,
     });
 
+    // The PRIME MERCHANT (`shared::prime`): across the well from the
+    // Banker, the same distance, the same gaps to benches and lamps.
+    let ang_prime = ang0 - PI * 0.5;
+    let pos_prime = centro + Vec2::new(ang_prime.cos(), ang_prime.sin()) * MESTRE_DO_POCO;
+    vila.npcs.push(NpcDaVila {
+        papel: Papel::Prime,
+        nome: Papel::Prime.nome(),
+        pos: pos_prime,
+        yaw: yaw_de(centro - pos_prime),
+        loja: None,
+        giver: None,
+    });
+
     decorar_cidade(ger, c, &chao, &lotes[1..], ang0, seed_vila, vila);
 }
 
@@ -1616,6 +1629,17 @@ mod testes {
                     d.zona
                 );
             }
+        }
+    }
+
+    #[test]
+    fn toda_cidade_tem_o_prime_na_praca() {
+        for d in crate::terreno::ARQUIPELAGO.iter() {
+            let ger = Gerador::da_ilha(d);
+            let Some(cidade) = ger.cidade() else { continue };
+            let primes: Vec<_> = ger.vila().npcs.iter().filter(|n| n.papel == Papel::Prime).collect();
+            assert_eq!(primes.len(), 1, "{}", d.zona);
+            assert!(primes[0].pos.distance(cidade.centro()) < 8.0, "{}: Prime far from the square", d.zona);
         }
     }
 

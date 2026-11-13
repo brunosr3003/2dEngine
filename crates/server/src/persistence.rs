@@ -129,6 +129,9 @@ pub struct CharacterRow {
     /// Expansoes compradas da bolsa e do banco (`shared::armazem`).
     pub bolsa_extra: u8,
     pub banco_extra: u8,
+    /// Today's counters (`shared::prime::Diario`): free XP potions of the
+    /// dailies and Prime Merchant purchases. `characters.diario_json`.
+    pub diario_json: String,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -574,6 +577,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     .await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_gratis BIGINT NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await?;
+    // Daily counters: free XP potions and Prime Merchant purchases.
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS diario_json TEXT NOT NULL DEFAULT ''",
     )
     .execute(pool)
     .await?;
@@ -4163,6 +4172,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .into_iter()
         .map(|(n, m, d, u)| (n, (m, d, u)))
         .collect();
+    let diarios: HashMap<String, String> =
+        busca!((String, String), "name, diario_json").into_iter().collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
     let colonia = busca!((String, String), "name, colonia_json");
@@ -4240,6 +4251,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let dungeon_json = dungeon_map.get(&name).cloned().unwrap_or_default();
         let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
+        let diario_json = diarios.get(&name).cloned().unwrap_or_default();
         out.insert(
             name.clone(),
             CharacterRow {
@@ -4291,6 +4303,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 correio_recibos: Vec::new(),
                 bolsa_extra,
                 banco_extra,
+                diario_json,
             },
         );
     }
@@ -4778,6 +4791,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.magica_gratis)
         .execute(&mut *tx)
         .await?;
+        sqlx::query("UPDATE characters SET diario_json = $2 WHERE name = $1")
+            .bind(&row.name).bind(&row.diario_json)
+            .execute(&mut *tx).await?;
         sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3, pk_modo = $4, pk_decai_s = $5 WHERE name = $1")
             .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)
             .bind(row.pk.modo as i16).bind(row.pk_decai_s as i64)

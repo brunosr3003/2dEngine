@@ -82,7 +82,7 @@ pub fn recompensa(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
         (d.reward_item, d.reward_item_qty),
         (d.reward_item2, d.reward_item2_qty),
     ] {
-        if id != 0 && qtd > 0 {
+        if id != 0 && qtd > 0 && crate::pocoes_xp::mostrar(id, d.daily) {
             let nome = nomes
                 .get(&id)
                 .cloned()

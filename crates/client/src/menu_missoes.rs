@@ -97,7 +97,7 @@ pub fn recompensa_de(d: &QuestDef, nomes: &HashMap<u16, String>) -> String {
     if d.reward_item != 0 && d.reward_item_qty > 0 {
         partes.push(format!("{}x {}", d.reward_item_qty, nome(d.reward_item)));
     }
-    if d.reward_item2 != 0 && d.reward_item2_qty > 0 {
+    if d.reward_item2 != 0 && d.reward_item2_qty > 0 && crate::pocoes_xp::mostrar(d.reward_item2, d.daily) {
         partes.push(format!("{}x {}", d.reward_item2_qty, nome(d.reward_item2)));
     }
     // O cartão tem uma só linha e corta o final. Os itens precisam aparecer

@@ -359,6 +359,10 @@ pub enum Papel {
     /// Abyssia's submarine captain: on Kōgen-tō's docks he is the only way
     /// down to the bubble kingdom; in Abyssia's he sails anywhere.
     Submarino,
+    /// The Prime Merchant (`shared::prime`): sells keys, materials, potions
+    /// and Energy for gold at the market price plus a markup. In every town
+    /// square. Last, so every other role keeps its number on the wire.
+    Prime,
 }
 
 impl Papel {
@@ -432,6 +436,7 @@ impl Papel {
             Missoes => "Quest Master",
             Motorista => "Sky Bus Professor",
             Submarino => "Submarine Captain",
+            Prime => "Prime Merchant",
         }
     }
 }

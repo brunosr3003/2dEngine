@@ -378,7 +378,7 @@ pub fn recompensa(q: &QuestNet, nomes: &HashMap<u16, String>) -> String {
             .unwrap_or_else(|| format!("item {}", q.reward_item));
         partes.push(format!("{}x {nome}", q.reward_item_qty));
     }
-    if q.reward_item2 != 0 && q.reward_item2_qty > 0 {
+    if q.reward_item2 != 0 && q.reward_item2_qty > 0 && crate::pocoes_xp::mostrar(q.reward_item2, q.daily) {
         let nome = nomes
             .get(&q.reward_item2)
             .cloned()

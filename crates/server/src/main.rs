@@ -21,6 +21,7 @@ mod balanceamento;
 mod barra;
 mod canais;
 mod precos;
+mod prime;
 mod coleta;
 mod correio_admin;
 mod craft;
