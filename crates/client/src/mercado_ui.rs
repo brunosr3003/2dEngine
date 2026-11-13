@@ -84,6 +84,8 @@ struct Pedidos {
     item: Option<u16>,
     busca_item: String,
     foco_item: bool,
+    /// The item picker's results, scrolled.
+    rolagem_item: crate::rolagem::Rolagem,
     qtd: u64,
     preco: u64,
 }
@@ -136,8 +138,10 @@ pub struct Mercado {
     energia_preco: u64,
     /// (text, ok, when)
     aviso: Option<(String, bool, f64)>,
-    /// Primeira linha visivel da lista da aba.
-    rolagem: usize,
+    /// The open tab's list, scrolled by finger (with glide), wheel and bar.
+    rolagem: crate::rolagem::Rolagem,
+    /// The category tabs, swiped sideways when they do not fit (phones).
+    rolagem_categorias: crate::rolagem::Rolagem,
     rolagem_venda: crate::rolagem::Rolagem,
     pedidos: Pedidos,
     /// The number being typed into a `seletor`, if any.
@@ -215,7 +219,7 @@ impl Mercado {
         self.aba = Aba::Entregas;
         self.compra = None;
         self.foco_busca = false;
-        self.rolagem = 0;
+        self.rolagem.zera();
         self.pedidos_da_aba()
     }
 
@@ -224,7 +228,7 @@ impl Mercado {
         self.busca = texto.to_string();
         self.categoria = Categoria::Todas as u8;
         self.pagina = 0;
-        self.rolagem = 0;
+        self.rolagem.zera();
         self.abrir()
     }
 
@@ -388,7 +392,7 @@ impl Mercado {
             return Vec::new();
         }
         self.aba = aba;
-        self.rolagem = 0;
+        self.rolagem.zera();
         self.rolagem_venda.zera();
         self.sem_foco();
         self.compra = None;
@@ -515,12 +519,34 @@ impl Mercado {
     ) {
         let m = Vec2::from(mouse_position());
         let clicou = crate::foco::clique();
-        // Categorias.
-        let cw = (a.w * 0.6 / Categoria::FILTROS.len() as f32).min(150.0 * f);
+        // Categories. A tab is never narrower than its name: when they do not
+        // fit their strip (a phone), the row swipes sideways.
+        let faixa = Rect::new(a.x, a.y, a.w * 0.6, 38.0 * f);
+        let n = Categoria::FILTROS.len();
+        let maior = Categoria::FILTROS
+            .iter()
+            .map(|c| estilo::medir(c.nome(), 14))
+            .fold(0.0_f32, f32::max);
+        let cw = (faixa.w / n as f32).min(150.0 * f).max(maior + 24.0 * f);
+        let largura = cw * n as f32;
+        let toque_cat = if livre {
+            self.rolagem_categorias
+                .passo_horizontal(faixa, largura, cw, crate::rolagem::Entrada::agora())
+        } else {
+            None
+        };
+        crate::rolagem::recortar(Some(faixa));
+        let arrastando = self.rolagem_categorias.arrastando();
+        let mut escolhida = None;
         for (i, cat) in Categoria::FILTROS.iter().enumerate() {
-            let r = Rect::new(a.x + i as f32 * cw, a.y, cw - 6.0 * f, 38.0 * f);
+            let r = Rect::new(
+                faixa.x + i as f32 * cw - self.rolagem_categorias.pos,
+                a.y,
+                cw - 6.0 * f,
+                38.0 * f,
+            );
             let sel = self.categoria == *cat as u8;
-            estilo::cartao(r, livre && r.toca(m), sel);
+            estilo::cartao(r, livre && !arrastando && r.toca(m) && faixa.toca(m), sel);
             estilo::texto_centro(
                 r.center().x,
                 r.center().y + 5.0 * f,
@@ -528,15 +554,19 @@ impl Mercado {
                 14,
                 if sel { estilo::OURO } else { estilo::TEXTO },
             );
-            if livre && clicou && r.toca(m) && !sel {
-                self.categoria = *cat as u8;
-                self.pagina = 0;
-                self.rolagem = 0;
-                saida.push(self.buscar());
+            if toque_cat.is_some_and(|p| r.toca(p)) && !sel {
+                escolhida = Some(*cat as u8);
             }
         }
+        crate::rolagem::recortar(None);
+        if let Some(cat) = escolhida {
+            self.categoria = cat;
+            self.pagina = 0;
+            self.rolagem.zera();
+            saida.push(self.buscar());
+        }
         // Busca.
-        let xb = a.x + cw * Categoria::FILTROS.len() as f32 + 8.0 * f;
+        let xb = faixa.x + faixa.w.min(largura) + 8.0 * f;
         let bb = Rect::new(a.x + a.w - 104.0 * f, a.y, 104.0 * f, 38.0 * f);
         let campo = Rect::new(xb, a.y, (bb.x - 8.0 * f - xb).max(80.0 * f), 38.0 * f);
         let digitado: &[char] = if self.foco_busca { c.digitado } else { &[] };
@@ -562,7 +592,7 @@ impl Mercado {
                 || c.digitado.iter().any(|ch| *ch == '\r' || *ch == '\n'));
         if botao(bb, "Search", livre, true) || enter {
             self.pagina = 0;
-            self.rolagem = 0;
+            self.rolagem.zera();
             self.foco_busca = false;
             saida.push(self.buscar());
         }
@@ -579,17 +609,13 @@ impl Mercado {
             );
         }
         let alt = 58.0 * f;
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
-        self.rolagem = self.rolagem.min(self.lista.len().saturating_sub(cabem));
+        let toque = abre_lista(&mut self.rolagem, lista, self.lista.len(), alt, livre);
         let mut comprar = None;
         let mut onde = None;
-        for (i, an) in self.lista.iter().enumerate().skip(self.rolagem).take(cabem) {
-            let r = Rect::new(
-                lista.x,
-                lista.y + (i - self.rolagem) as f32 * alt,
-                lista.w,
-                alt - 6.0 * f,
-            );
+        for (i, an) in self.lista.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
             if linha_de_anuncio(
                 r,
                 an,
@@ -598,17 +624,20 @@ impl Mercado {
                 livre,
                 if an.meu { "Yours" } else { "Buy" },
                 !an.meu,
+                toque,
             ) {
                 comprar = Some(an.clone());
             }
             // Touching the item's icon: "Where to get" (TP has none).
-            if an.tipo == regras::TIPO_ITEM
-                && livre
-                && crate::onde_obter::lupa_no_icone(icone_do_anuncio(r, f))
-            {
-                onde = Some(an.item_id);
+            if an.tipo == regras::TIPO_ITEM {
+                let icone = icone_do_anuncio(r, f);
+                let _ = crate::onde_obter::lupa_no_icone(icone);
+                if livre && toque.is_some_and(|p| icone.toca(p)) {
+                    onde = Some(an.item_id);
+                }
             }
         }
+        fecha_lista(&self.rolagem, lista, self.lista.len(), alt);
         if onde.is_some() {
             self.onde_obter = onde;
         }
@@ -618,15 +647,8 @@ impl Mercado {
                 qtd: 1,
             });
         }
-        // Rodape: rolagem e paginas.
+        // Footer: the server's pages (the list itself scrolls).
         let yb = a.y + a.h - 40.0 * f;
-        self.rolar(
-            Rect::new(a.x, yb, 200.0 * f, 38.0 * f),
-            self.lista.len(),
-            cabem,
-            livre,
-            f,
-        );
         let prox = Rect::new(a.x + a.w - 130.0 * f, yb, 130.0 * f, 38.0 * f);
         let ant = Rect::new(prox.x - 138.0 * f, yb, 130.0 * f, 38.0 * f);
         estilo::texto_centro(
@@ -638,7 +660,7 @@ impl Mercado {
         );
         if botao(ant, "‹ Previous", livre && self.pagina > 0, false) {
             self.pagina -= 1;
-            self.rolagem = 0;
+            self.rolagem.zera();
             saida.push(ClientMessage::MercadoBuscar {
                 filtro: self.filtro(),
             });
@@ -646,41 +668,12 @@ impl Mercado {
         }
         if botao(prox, "Next ›", livre && self.tem_mais, false) {
             self.pagina += 1;
-            self.rolagem = 0;
+            self.rolagem.zera();
             saida.push(ClientMessage::MercadoBuscar {
                 filtro: self.filtro(),
             });
             self.ultima_busca_tp = false;
         }
-    }
-
-    /// Arrows up/down when the list does not fit (on a phone there is no mouse wheel).
-    fn rolar(&mut self, r: Rect, total: usize, cabem: usize, livre: bool, f: f32) {
-        let (_, roda) = mouse_wheel();
-        if livre && roda != 0.0 {
-            self.rolagem = if roda < 0.0 {
-                self.rolagem + 1
-            } else {
-                self.rolagem.saturating_sub(1)
-            };
-        }
-        if total <= cabem {
-            return;
-        }
-        let cima = Rect::new(r.x, r.y, 78.0 * f, r.h);
-        let baixo = Rect::new(r.x + 84.0 * f, r.y, 78.0 * f, r.h);
-        if botao(cima, "Up", livre && self.rolagem > 0, false) {
-            self.rolagem = self.rolagem.saturating_sub(cabem.max(2) - 1);
-        }
-        if botao(
-            baixo,
-            "Down",
-            livre && self.rolagem + cabem < total,
-            false,
-        ) {
-            self.rolagem += cabem.max(2) - 1;
-        }
-        self.rolagem = self.rolagem.min(total.saturating_sub(cabem));
     }
 
     fn dialogo_compra(&mut self, c: &Contexto, f: f32, saida: &mut Vec<ClientMessage>) {
@@ -1108,7 +1101,7 @@ impl Mercado {
             estilo::texto_centro(r.center().x, r.center().y + 5.0 * f, rotulo, 14, if sel { estilo::OURO } else { estilo::TEXTO });
             if livre && clicou && r.toca(m) && !sel {
                 self.pedidos.modo = modo;
-                self.rolagem = 0;
+                self.rolagem.zera();
                 saida.extend(self.pedidos_da_aba());
             }
         }
@@ -1131,19 +1124,21 @@ impl Mercado {
                 && (is_key_pressed(KeyCode::Enter) || c.digitado.iter().any(|ch| *ch == '\r' || *ch == '\n'));
             if botao(bb, "Search", livre, true) || enter {
                 self.pedidos.foco_busca = false;
-                self.rolagem = 0;
+                self.rolagem.zera();
                 saida.extend(self.pedidos_da_aba());
             }
         }
         let alt = 58.0 * f;
-        let lista = Rect::new(esq.x, esq.y + 50.0 * f, esq.w, esq.h - 50.0 * f - 46.0 * f);
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
+        let lista = Rect::new(esq.x, esq.y + 50.0 * f, esq.w, esq.h - 50.0 * f);
+        let total = match self.pedidos.modo {
+            ListaDePedidos::Todos => self.pedidos.lista.len(),
+            ListaDePedidos::Meus => self.pedidos.meus.len(),
+        };
+        let toque = abre_lista(&mut self.rolagem, lista, total, alt, livre);
         let mostrar: &[PedidoNet] = match self.pedidos.modo {
             ListaDePedidos::Todos => &self.pedidos.lista,
             ListaDePedidos::Meus => &self.pedidos.meus,
         };
-        let total = mostrar.len();
-        self.rolagem = self.rolagem.min(total.saturating_sub(cabem));
         if mostrar.is_empty() {
             let t = match self.pedidos.modo {
                 ListaDePedidos::Todos => "No open buy order.",
@@ -1152,20 +1147,23 @@ impl Mercado {
             estilo::texto(lista.x + 4.0, lista.y + 30.0 * f, t, 15, estilo::SUAVE);
         }
         let (mut vender, mut cancelar) = (None, None);
-        for (i, pd) in mostrar.iter().enumerate().skip(self.rolagem).take(cabem) {
-            let r = Rect::new(lista.x, lista.y + (i - self.rolagem) as f32 * alt, lista.w, alt - 6.0 * f);
+        for (i, pd) in mostrar.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
             let (rotulo, ativo) = match self.pedidos.modo {
                 ListaDePedidos::Meus => ("Cancel", true),
                 ListaDePedidos::Todos if pd.meu => ("Yours", false),
                 ListaDePedidos::Todos => ("Sell", tenho(c, pd.item_id) > 0),
             };
-            if linha_de_pedido(r, pd, c, f, livre, rotulo, ativo) {
+            if linha_de_pedido(r, pd, c, f, livre, rotulo, ativo, toque) {
                 match self.pedidos.modo {
                     ListaDePedidos::Meus => cancelar = Some(pd.id.clone()),
                     ListaDePedidos::Todos => vender = Some(pd.clone()),
                 }
             }
         }
+        fecha_lista(&self.rolagem, lista, total, alt);
         if let Some(pd) = vender {
             self.sem_foco();
             self.pedidos.venda = Some((pd, 1));
@@ -1173,7 +1171,6 @@ impl Mercado {
         if let Some(pedido) = cancelar {
             saida.push(ClientMessage::MercadoCancelarPedido { pedido });
         }
-        self.rolar(Rect::new(esq.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f), total, cabem, livre, f);
 
         estilo::painel(dir);
         if self.pedidos.venda.is_some() {
@@ -1283,7 +1280,13 @@ impl Mercado {
             y += 14.0 * f;
             let campo = Rect::new(x, y, w, 38.0 * f);
             let digitado: &[char] = if self.pedidos.foco_item { c.digitado } else { &[] };
-            if crate::ui::campo(campo, "Item", &mut self.pedidos.busca_item, self.pedidos.foco_item, false, digitado) && livre {
+            let antes = self.pedidos.busca_item.len();
+            let pediu = crate::ui::campo(campo, "Item", &mut self.pedidos.busca_item, self.pedidos.foco_item, false, digitado);
+            if self.pedidos.busca_item.len() != antes {
+                // A new search starts at the top.
+                self.pedidos.rolagem_item.zera();
+            }
+            if pediu && livre {
                 self.sem_foco();
                 self.pedidos.foco_item = true;
             } else if clicou && !campo.toca(m) {
@@ -1294,26 +1297,34 @@ impl Mercado {
                 estilo::texto(campo.x + 10.0 * f, campo.center().y + 5.0 * f, "Type an item name…", 14, estilo::SUAVE);
             }
             y += 46.0 * f;
-            let achados = catalogo_pedivel(c.nomes, &self.vinculados, &self.equipaveis, &self.pedidos.busca_item, 6);
+            let achados = catalogo_pedivel(c.nomes, &self.vinculados, &self.equipaveis, &self.pedidos.busca_item, MAX_ACHADOS);
             if achados.is_empty() && !self.pedidos.busca_item.trim().is_empty() {
                 estilo::texto(x, y + 20.0 * f, "No orderable item with that name.", 14, estilo::SUAVE);
             }
             let alt = 40.0 * f;
+            let area = Rect::new(x, y, w, (dir.y + dir.h - 8.0 * f - y).max(alt));
+            let toque = abre_lista(&mut self.pedidos.rolagem_item, area, achados.len(), alt, livre);
+            let arrastando = self.pedidos.rolagem_item.arrastando();
+            let mut escolhido = None;
             for (k, (id, nome)) in achados.iter().enumerate() {
-                let r = Rect::new(x, y + k as f32 * alt, w, alt - 4.0 * f);
-                if r.y + r.h > dir.y + dir.h - 8.0 * f {
-                    break;
-                }
-                let sobre = livre && r.toca(m);
+                let Some(mut r) = linha_da_lista(&self.pedidos.rolagem_item, area, k, alt, f) else {
+                    continue;
+                };
+                r.h = alt - 4.0 * f;
+                let sobre = livre && !arrastando && r.toca(m) && area.toca(m);
                 estilo::cartao(r, sobre, false);
                 crate::icones::icone_com_3d(*id, Rect::new(r.x + 4.0 * f, r.y + 2.0 * f, r.h - 4.0 * f, r.h - 4.0 * f), None, None, Some((c.vox, c.solido)));
                 estilo::texto_ajustado(nome, r.x + r.h + 8.0 * f, r.center().y + 5.0 * f, r.w - r.h - 16.0 * f, 14, estilo::TEXTO);
-                if sobre && clicou {
-                    self.pedidos.item = Some(*id);
-                    self.pedidos.foco_item = false;
-                    self.pedidos.qtd = 1;
-                    self.pedidos.preco = recomendado_unit(&self.precos, *id).unwrap_or(self.pedidos.preco.max(1));
+                if toque.is_some_and(|p| r.toca(p)) {
+                    escolhido = Some(*id);
                 }
+            }
+            fecha_lista(&self.pedidos.rolagem_item, area, achados.len(), alt);
+            if let Some(id) = escolhido {
+                self.pedidos.item = Some(id);
+                self.pedidos.foco_item = false;
+                self.pedidos.qtd = 1;
+                self.pedidos.preco = recomendado_unit(&self.precos, id).unwrap_or(self.pedidos.preco.max(1));
             }
             return;
         };
@@ -1395,9 +1406,8 @@ impl Mercado {
             estilo::SUAVE,
         );
         let alt = 58.0 * f;
-        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f - 46.0 * f);
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
-        self.rolagem = self.rolagem.min(self.meus.len().saturating_sub(cabem));
+        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f);
+        let toque = abre_lista(&mut self.rolagem, lista, self.meus.len(), alt, livre);
         if self.meus.is_empty() {
             estilo::texto(
                 lista.x,
@@ -1407,26 +1417,17 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
-        for (i, an) in self.meus.iter().enumerate().skip(self.rolagem).take(cabem) {
-            let r = Rect::new(
-                lista.x,
-                lista.y + (i - self.rolagem) as f32 * alt,
-                lista.w,
-                alt - 6.0 * f,
-            );
-            if linha_de_anuncio(r, an, c, f, livre, "Cancel", true) {
+        for (i, an) in self.meus.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
+            if linha_de_anuncio(r, an, c, f, livre, "Cancel", true, toque) {
                 saida.push(ClientMessage::MercadoCancelar {
                     anuncio: an.id.clone(),
                 });
             }
         }
-        self.rolar(
-            Rect::new(esq.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f),
-            self.meus.len(),
-            cabem,
-            livre,
-            f,
-        );
+        fecha_lista(&self.rolagem, lista, self.meus.len(), alt);
 
         estilo::painel(dir);
         let fim_vagas = self.vagas(dir, c, f, livre, saida);
@@ -1546,9 +1547,8 @@ impl Mercado {
         }
         let alt = 54.0 * f;
         let topo = a.y + 46.0 * f;
-        let lista = Rect::new(a.x, topo, a.w, (a.y + a.h - 46.0 * f - topo).max(alt));
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
-        self.rolagem = self.rolagem.min(self.cartas.len().saturating_sub(cabem));
+        let lista = Rect::new(a.x, topo, a.w, (a.y + a.h - topo).max(alt));
+        let _ = abre_lista(&mut self.rolagem, lista, self.cartas.len(), alt, livre);
         if self.cartas.is_empty() {
             estilo::texto(
                 lista.x,
@@ -1558,19 +1558,10 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
-        for (i, carta) in self
-            .cartas
-            .iter()
-            .enumerate()
-            .skip(self.rolagem)
-            .take(cabem)
-        {
-            let r = Rect::new(
-                lista.x,
-                lista.y + (i - self.rolagem) as f32 * alt,
-                lista.w,
-                alt - 6.0 * f,
-            );
+        for (i, carta) in self.cartas.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
             estilo::cartao(r, false, false);
             let icone = Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f);
             let mut partes = Vec::new();
@@ -1614,13 +1605,7 @@ impl Mercado {
                 estilo::SUAVE,
             );
         }
-        self.rolar(
-            Rect::new(a.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f),
-            self.cartas.len(),
-            cabem,
-            livre,
-            f,
-        );
+        fecha_lista(&self.rolagem, lista, self.cartas.len(), alt);
     }
 
     // ─────────────────────────────── TP ───────────────────────────────
@@ -1643,9 +1628,8 @@ impl Mercado {
             estilo::SUAVE,
         );
         let alt = 58.0 * f;
-        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f - 46.0 * f);
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
-        self.rolagem = self.rolagem.min(self.lista_tp.len().saturating_sub(cabem));
+        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f);
+        let toque = abre_lista(&mut self.rolagem, lista, self.lista_tp.len(), alt, livre);
         if self.lista_tp.is_empty() {
             estilo::texto(
                 lista.x,
@@ -1656,19 +1640,10 @@ impl Mercado {
             );
         }
         let mut comprar = None;
-        for (i, an) in self
-            .lista_tp
-            .iter()
-            .enumerate()
-            .skip(self.rolagem)
-            .take(cabem)
-        {
-            let r = Rect::new(
-                lista.x,
-                lista.y + (i - self.rolagem) as f32 * alt,
-                lista.w,
-                alt - 6.0 * f,
-            );
+        for (i, an) in self.lista_tp.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
             if linha_de_anuncio(
                 r,
                 an,
@@ -1677,23 +1652,18 @@ impl Mercado {
                 livre,
                 if an.meu { "Yours" } else { "Buy" },
                 !an.meu,
+                toque,
             ) {
                 comprar = Some(an.clone());
             }
         }
+        fecha_lista(&self.rolagem, lista, self.lista_tp.len(), alt);
         if let Some(an) = comprar {
             self.compra = Some(Compra {
                 anuncio: an,
                 qtd: 1,
             });
         }
-        self.rolar(
-            Rect::new(esq.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f),
-            self.lista_tp.len(),
-            cabem,
-            livre,
-            f,
-        );
 
         estilo::painel(dir);
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
@@ -1810,29 +1780,30 @@ impl Mercado {
         let dir = Rect::new(a.x + a.w * 0.59, a.y, a.w * 0.41, a.h);
         estilo::texto_forte(esq.x, esq.y + 14.0 * f, "Energy for sale (gold per 1,000)", 14, estilo::SUAVE);
         let alt = 58.0 * f;
-        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f - 46.0 * f);
-        let cabem = ((lista.h / alt).floor() as usize).max(1);
+        let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f);
         let lotes: Vec<AnuncioNet> = self
             .lista
             .iter()
             .filter(|an| an.item_id == shared::item_id::ENERGIA_MIL && an.tipo == regras::TIPO_ITEM)
             .cloned()
             .collect();
-        self.rolagem = self.rolagem.min(lotes.len().saturating_sub(cabem));
+        let toque = abre_lista(&mut self.rolagem, lista, lotes.len(), alt, livre);
         if lotes.is_empty() {
             estilo::texto(lista.x, lista.y + 30.0 * f, "Nobody selling Energy right now.", 15, estilo::SUAVE);
         }
         let mut comprar = None;
-        for (i, an) in lotes.iter().enumerate().skip(self.rolagem).take(cabem) {
-            let r = Rect::new(lista.x, lista.y + (i - self.rolagem) as f32 * alt, lista.w, alt - 6.0 * f);
-            if linha_de_anuncio(r, an, c, f, livre, if an.meu { "Yours" } else { "Buy" }, !an.meu) {
+        for (i, an) in lotes.iter().enumerate() {
+            let Some(r) = linha_da_lista(&self.rolagem, lista, i, alt, f) else {
+                continue;
+            };
+            if linha_de_anuncio(r, an, c, f, livre, if an.meu { "Yours" } else { "Buy" }, !an.meu, toque) {
                 comprar = Some(an.clone());
             }
         }
+        fecha_lista(&self.rolagem, lista, lotes.len(), alt);
         if let Some(an) = comprar {
             self.compra = Some(Compra { anuncio: an, qtd: 1 });
         }
-        self.rolar(Rect::new(esq.x, a.y + a.h - 40.0 * f, 200.0 * f, 38.0 * f), lotes.len(), cabem, livre, f);
 
         estilo::painel(dir);
         let (x, w) = (dir.x + 16.0 * f, dir.w - 32.0 * f);
@@ -2008,7 +1979,9 @@ fn icone_do_anuncio(r: Rect, f: f32) -> Rect {
     Rect::new(r.x + 6.0 * f, r.y + 4.0 * f, r.h - 8.0 * f, r.h - 8.0 * f)
 }
 
-/// A listing row with a button on the right. `true` on the button's click.
+/// A listing row with a button on the right. `true` on the button's tap
+/// (`toque`, the list's tap from `abre_lista`).
+#[allow(clippy::too_many_arguments)]
 fn linha_de_anuncio(
     r: Rect,
     an: &AnuncioNet,
@@ -2017,6 +1990,7 @@ fn linha_de_anuncio(
     livre: bool,
     rotulo: &str,
     ativo: bool,
+    toque: Option<Vec2>,
 ) -> bool {
     estilo::cartao(r, false, an.meu);
     let icone = icone_do_anuncio(r, f);
@@ -2062,7 +2036,61 @@ fn linha_de_anuncio(
         bw,
         38.0 * f,
     );
-    botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancel")
+    botao_na_lista(b, rotulo, livre && ativo, ativo && rotulo != "Cancel", toque)
+}
+
+/// Results the item picker lists (it scrolls; more than fit is fine).
+const MAX_ACHADOS: usize = 60;
+
+/// Room on the right of a scrolled list's rows for its bar.
+fn margem_da_barra(f: f32) -> f32 {
+    20.0 * f
+}
+
+/// Starts one frame of a scrolled list of `n` rows `alt` tall: finger drag
+/// with glide, wheel and bar (`rolagem::Rolagem`), then clips the drawing to
+/// `lista`. Returns the TAP — a release that did not drag — which the rows'
+/// buttons answer instead of the press, so dragging over a button scrolls.
+fn abre_lista(rol: &mut crate::rolagem::Rolagem, lista: Rect, n: usize, alt: f32, livre: bool) -> Option<Vec2> {
+    let toque = if livre { rol.quadro(lista, n as f32 * alt, alt) } else { None };
+    crate::rolagem::recortar(Some(lista));
+    toque
+}
+
+/// Row `i` of a scrolled list on screen, or `None` while it is out of sight.
+fn linha_da_lista(rol: &crate::rolagem::Rolagem, lista: Rect, i: usize, alt: f32, f: f32) -> Option<Rect> {
+    let r = Rect::new(
+        lista.x,
+        lista.y + i as f32 * alt - rol.pos,
+        lista.w - margem_da_barra(f),
+        alt - 6.0 * f,
+    );
+    (r.y + r.h >= lista.y && r.y <= lista.y + lista.h).then_some(r)
+}
+
+/// Ends the list's frame: clipping off, and the bar on top of the rows.
+fn fecha_lista(rol: &crate::rolagem::Rolagem, lista: Rect, n: usize, alt: f32) {
+    crate::rolagem::recortar(None);
+    rol.desenha(lista, n as f32 * alt);
+}
+
+/// A button inside a scrolled list: drawn like `botao`, but it fires on the
+/// list's tap (release without drag), never on the press.
+fn botao_na_lista(r: Rect, rotulo: &str, ativo: bool, primario: bool, toque: Option<Vec2>) -> bool {
+    let m = Vec2::from(mouse_position());
+    let sobre = ativo && r.toca(m);
+    estilo::botao(
+        r,
+        rotulo,
+        estilo::estado(
+            sobre,
+            sobre && is_mouse_button_down(MouseButton::Left),
+            !ativo,
+            false,
+        ),
+        primario,
+    );
+    ativo && toque.is_some_and(|p| r.toca(p))
 }
 
 /// Search text past `BUSCA_MAX_CHARS` is cut.
@@ -2133,7 +2161,9 @@ fn nome_do_pedido(pd: &PedidoNet, c: &Contexto) -> String {
 }
 
 /// A buy order row: item, buyer, units still wanted, price each, a button.
-fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, rotulo: &str, ativo: bool) -> bool {
+/// `toque` = the list's tap (`abre_lista`): the button answers it, not the press.
+#[allow(clippy::too_many_arguments)]
+fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, rotulo: &str, ativo: bool, toque: Option<Vec2>) -> bool {
     estilo::cartao(r, false, pd.meu);
     let icone = icone_do_anuncio(r, f);
     crate::icones::icone_com_3d(pd.item_id, icone, None, None, Some((c.vox, c.solido)));
@@ -2148,7 +2178,7 @@ fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, r
     estilo::texto(xp - 70.0 * f, r.y + 32.0 * f, &qtd, 15, estilo::TEXTO);
     estilo::texto_forte(xp, r.y + 32.0 * f, &preco, 16, estilo::OURO);
     let b = Rect::new(r.x + r.w - bw - 6.0 * f, r.y + (r.h - 38.0 * f) * 0.5, bw, 38.0 * f);
-    botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancel")
+    botao_na_lista(b, rotulo, livre && ativo, ativo && rotulo != "Cancel", toque)
 }
 
 /// A number being typed into a `seletor` (owner, 12/11/2026: "tap the number

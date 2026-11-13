@@ -29,6 +29,10 @@ struct Gesto {
     arrastando: bool,
     /// Caught the bar: the finger moves the thumb, not the content.
     na_barra: bool,
+    /// The finger's y last frame and its speed (px/s, smoothed): what is
+    /// left of it on release becomes the glide (`embalo`).
+    ultimo_y: f32,
+    vel: f32,
 }
 
 #[derive(Debug, Default)]
@@ -36,6 +40,29 @@ pub struct Rolagem {
     /// How much of the content has already passed above, in px.
     pub pos: f32,
     gesto: Option<Gesto>,
+    /// The glide after a flick, in px/s of `pos` (0 = still).
+    vel: f32,
+    /// No bar to grab (a row of tabs swiped sideways, see `passo_horizontal`).
+    pub sem_barra: bool,
+}
+
+/// How fast the glide dies: the speed falls to ~37% every `TAU_DO_EMBALO`
+/// seconds (the same feel as the camera's inertia).
+const TAU_DO_EMBALO: f32 = 0.325;
+/// Below this (px/s) the glide stops.
+const EMBALO_MIN: f32 = 20.0;
+
+/// One frame of glide: the list keeps moving after the finger leaves and
+/// slows down; it stops at either end. Returns the new (pos, vel).
+pub fn embalo(pos: f32, vel: f32, dt: f32, max: f32) -> (f32, f32) {
+    if vel.abs() < EMBALO_MIN || dt <= 0.0 {
+        return (pos.clamp(0.0, max), 0.0);
+    }
+    let novo = pos + vel * dt;
+    if novo <= 0.0 || novo >= max {
+        return (novo.clamp(0.0, max), 0.0);
+    }
+    (novo, vel * (-dt / TAU_DO_EMBALO).exp())
 }
 
 /// What one frame of the list needs to know.
@@ -46,6 +73,8 @@ pub struct Entrada {
     pub segurando: bool,
     pub soltou: bool,
     pub roda: f32,
+    /// Seconds since the last frame (the glide's clock).
+    pub dt: f32,
 }
 
 impl Entrada {
@@ -56,6 +85,7 @@ impl Entrada {
             segurando: is_mouse_button_down(MouseButton::Left),
             soltou: is_mouse_button_released(MouseButton::Left),
             roda: mouse_wheel().1,
+            dt: get_frame_time().min(0.1),
         }
     }
 }
@@ -88,6 +118,7 @@ impl Rolagem {
     pub fn zera(&mut self) {
         self.pos = 0.0;
         self.gesto = None;
+        self.vel = 0.0;
     }
 
     /// A finger is dragging this list (the rows must not light up).
@@ -114,8 +145,13 @@ impl Rolagem {
         let max = maximo(area, total);
         if area.toca(e.mouse) && e.roda != 0.0 {
             self.pos -= e.roda.signum() * passo_da_roda;
+            self.vel = 0.0;
         }
         if e.apertou && area.toca(e.mouse) {
+            // A finger landing stops the glide (and that touch is not a tap
+            // on a row that was still moving).
+            let parou_embalo = self.vel.abs() >= EMBALO_MIN;
+            self.vel = 0.0;
             let faixa = Rect::new(
                 area.x + area.w - estilo::u(FAIXA_DA_BARRA),
                 area.y,
@@ -126,8 +162,10 @@ impl Rolagem {
                 y0: e.mouse.y,
                 pos0: self.pos,
                 inicio: e.mouse,
-                arrastando: false,
-                na_barra: max > 0.0 && faixa.toca(e.mouse),
+                arrastando: parou_embalo,
+                na_barra: !self.sem_barra && max > 0.0 && faixa.toca(e.mouse),
+                ultimo_y: e.mouse.y,
+                vel: 0.0,
             });
         }
         let mut clique = None;
@@ -145,18 +183,46 @@ impl Rolagem {
             } else if g.arrastando {
                 // The content moves WITH the finger: pulling up shows what is below.
                 self.pos = g.pos0 - dy;
+                if e.dt > 0.0 {
+                    let agora = -(e.mouse.y - g.ultimo_y) / e.dt;
+                    g.vel = g.vel * 0.5 + agora * 0.5;
+                }
             }
+            g.ultimo_y = e.mouse.y;
             if e.soltou || !e.segurando {
                 if !g.arrastando && !g.na_barra && e.soltou {
                     clique = Some(e.mouse);
+                }
+                if g.arrastando && !g.na_barra {
+                    self.vel = g.vel;
                 }
                 self.gesto = None;
             } else {
                 self.gesto = Some(g);
             }
         }
+        if self.gesto.is_none() {
+            (self.pos, self.vel) = embalo(self.pos, self.vel, e.dt, max);
+        }
         self.pos = self.pos.clamp(0.0, max);
         clique
+    }
+
+    /// The same gesture SIDEWAYS, for a row that is wider than its strip
+    /// (a row of tabs on a phone): `pos` is how much has passed to the left.
+    /// There is no bar; returns the tap like `passo`.
+    pub fn passo_horizontal(
+        &mut self,
+        area: Rect,
+        total: f32,
+        passo_da_roda: f32,
+        e: Entrada,
+    ) -> Option<Vec2> {
+        self.sem_barra = true;
+        let deitada = Rect::new(area.y, area.x, area.h, area.w);
+        let virar = |v: Vec2| vec2(v.y, v.x);
+        let toque = self.passo(deitada, total, passo_da_roda, Entrada { mouse: virar(e.mouse), ..e });
+        toque.map(virar)
     }
 
     /// The bar, only when there is something to scroll.
@@ -201,6 +267,7 @@ mod tests {
             segurando,
             soltou,
             roda: 0.0,
+            dt: 0.0,
         }
     }
 
@@ -248,6 +315,63 @@ mod tests {
         r.passo(AREA, 1000.0, 40.0, e(t.x + 2.0, 10.0, true, true, false));
         r.passo(AREA, 1000.0, 40.0, e(t.x + 2.0, 1000.0, false, true, false));
         assert_eq!(r.pos, maximo(AREA, 1000.0), "puxou o polegar ate' o fim");
+    }
+
+    #[test]
+    fn embalo_desacelera_e_para_nas_pontas() {
+        // Keeps moving, slower each frame.
+        let (p1, v1) = embalo(100.0, 1000.0, 0.1, 600.0);
+        assert!((p1 - 200.0).abs() < 0.01);
+        assert!(v1 < 1000.0 && v1 > 0.0);
+        // Dies out by itself in well under two seconds.
+        let (mut p, mut v) = (100.0, 2000.0);
+        for _ in 0..120 {
+            (p, v) = embalo(p, v, 1.0 / 60.0, 10_000.0);
+        }
+        assert_eq!(v, 0.0, "the glide stopped");
+        assert!(p > 100.0 && p < 1_000.0);
+        // Hitting an end stops it there.
+        assert_eq!(embalo(590.0, 5000.0, 0.1, 600.0), (600.0, 0.0));
+        assert_eq!(embalo(10.0, -5000.0, 0.1, 600.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn soltar_arrastando_deixa_embalo_e_toque_para() {
+        let quadro = |x: f32, y: f32, apertou, segurando, soltou| {
+            let mut q = e(x, y, apertou, segurando, soltou);
+            q.dt = 1.0 / 60.0;
+            q
+        };
+        let mut r = Rolagem::default();
+        r.passo(AREA, 5000.0, 40.0, quadro(50.0, 300.0, true, true, false));
+        for y in [280.0, 250.0, 220.0] {
+            r.passo(AREA, 5000.0, 40.0, quadro(50.0, y, false, true, false));
+        }
+        r.passo(AREA, 5000.0, 40.0, quadro(50.0, 220.0, false, false, true));
+        let solto = r.pos;
+        r.passo(AREA, 5000.0, 40.0, quadro(50.0, 220.0, false, false, false));
+        assert!(r.pos > solto, "the list kept going after the flick");
+        // A finger landing stops it, and that touch is not a tap on a row.
+        r.passo(AREA, 5000.0, 40.0, quadro(50.0, 100.0, true, true, false));
+        let parado = r.pos;
+        assert_eq!(r.passo(AREA, 5000.0, 40.0, quadro(50.0, 100.0, false, false, true)), None);
+        assert_eq!(r.pos, parado);
+    }
+
+    #[test]
+    fn de_lado_arrasta_no_x_e_toca_no_lugar_certo() {
+        let faixa = Rect::new(0.0, 0.0, 300.0, 40.0);
+        let mut r = Rolagem::default();
+        r.passo_horizontal(faixa, 900.0, 40.0, e(250.0, 20.0, true, true, false));
+        r.passo_horizontal(faixa, 900.0, 40.0, e(150.0, 22.0, false, true, false));
+        assert_eq!(r.pos, 100.0, "swiped left 100, the row moved 100");
+        assert_eq!(r.passo_horizontal(faixa, 900.0, 40.0, e(150.0, 22.0, false, false, true)), None);
+        // A tap near the right end is a tap, never a grab of a bar.
+        r.passo_horizontal(faixa, 900.0, 40.0, e(295.0, 20.0, true, true, false));
+        assert_eq!(
+            r.passo_horizontal(faixa, 900.0, 40.0, e(295.0, 20.0, false, false, true)),
+            Some(vec2(295.0, 20.0))
+        );
     }
 
     #[test]
