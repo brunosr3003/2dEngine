@@ -66,7 +66,15 @@ async fn main() -> Result<()> {
     .fetch_optional(&pool)
     .await?
     .context("personagem não encontrado")?;
-    let kit = kit_da_arma(arma as u16);
+    // KIT_ITEM=<item id> [KIT_QTD=<n>]: only that piece, n copies, instead
+    // of the whole set (owner testing one weapon, 13/11/2026).
+    let kit: Vec<u16> = match std::env::var("KIT_ITEM").ok().and_then(|v| v.parse::<u16>().ok()) {
+        Some(id) => {
+            let n: usize = std::env::var("KIT_QTD").ok().and_then(|v| v.parse().ok()).unwrap_or(1).clamp(1, 20);
+            vec![id; n]
+        }
+        None => kit_da_arma(arma as u16).to_vec(),
+    };
 
     // The sender must be staff. A local tool: it grants and moves on.
     sqlx::query(
@@ -100,7 +108,7 @@ async fn main() -> Result<()> {
 
     // The identifier makes the send IDEMPOTENT: running it again with the same
     // arguments does not send twice.
-    let envio = format!("kit-{nome}-{cor}-{tier}-{refino}").to_lowercase();
+    let envio = format!("kit-{nome}-{cor}-{tier}-{refino}-{}", kit.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("_")).to_lowercase();
     let pedido = Pedido::EnviarOficial {
         envio,
         para: Some(nome.clone()),
