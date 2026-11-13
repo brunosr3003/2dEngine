@@ -566,6 +566,23 @@ pub fn avancar_conversa_na_ilha(active: &mut [CharQuest], papel: u16, zona: Opti
 /// Dá pra entregar? `tem` = quantos do item-alvo o jogador carrega. `Ok(n)` =
 /// entrega consumindo `n` itens (0 pra objetivo que não é item); `Err` = o
 /// motivo, pra dizer ao jogador em vez de ignorar o clique.
+/// How many units of `d.reward_item2` this turn-in pays, and whether the
+/// daily XP potion was withheld because today's cap
+/// (`quests::POCOES_XP_GRATIS_POR_DIA`) was already reached. Only the area
+/// dailies pay XP potions; each pays 1 while the cap lasts.
+pub fn pocoes_xp_a_pagar(d: &QuestDef, diario: &mut shared::prime::Diario, agora_unix: i64) -> (u32, bool) {
+    let qtd = d.reward_item2_qty as u32;
+    if d.reward_item2 != shared::item_id::XP_POTION || qtd == 0 {
+        return (qtd, false);
+    }
+    if !d.daily {
+        // One-off quests no longer pay XP potions (data); never a free extra.
+        return (0, false);
+    }
+    let pagas = diario.pagar_pocoes_xp(shared::dungeon::dia(agora_unix), qtd);
+    (pagas, pagas < qtd)
+}
+
 pub fn checar_entrega(d: &QuestDef, c: &CharQuest, tem: u32) -> Result<u32, String> {
     if c.status == quests::quest_status::TURNED_IN {
         return Err("quest already turned in".into());
@@ -1514,18 +1531,24 @@ mod testes_diarias {
         assert!(!aqui.contains(&615), "em breve oferecida");
     }
 
-    /// Missao de area paga a Pocao de Experiencia; a diaria de criar paga a de
-    /// Fortuna, a de refinar a de Sorte; a de conversa nao paga pocao.
+    /// The area DAILY pays 1 Experience Potion; the one-off chain quests no
+    /// longer do. The craft daily pays Fortune, the refine daily Luck; a talk
+    /// quest pays no potion.
     #[test]
     fn missao_de_area_paga_pocao_de_xp() {
-        for id in [502u16, 503, 504, 601, 602, 611, 632] {
+        for id in [601u16, 602, 611, 632] {
             let d = quest_by_id(id).unwrap();
-            assert!(shared::quests::e_de_area(d));
+            assert!(shared::quests::e_de_area(d) && d.daily);
             assert_eq!(
                 (d.reward_item2, d.reward_item2_qty),
                 (shared::item_id::XP_POTION, 1),
                 "{id}"
             );
+        }
+        for id in [502u16, 503, 504, 533] {
+            let d = quest_by_id(id).unwrap();
+            assert!(!shared::quests::paga_pocao_xp(d), "{id} still pays an XP potion");
+            assert_ne!(d.reward_item, shared::item_id::XP_POTION, "{id}");
         }
         assert_eq!(quest_by_id(501).unwrap().reward_item2, 0);
         let criar = quest_by_id(603).unwrap();
@@ -1538,6 +1561,27 @@ mod testes_diarias {
             (refinar.reward_item2, refinar.reward_item2_qty),
             (shared::item_id::SORTE_POTION, 1)
         );
+    }
+
+    /// At most 3 free XP potions a game day from the dailies: the 4th daily
+    /// pays none (and says so), the next game day pays again.
+    #[test]
+    fn pocao_de_xp_das_diarias_tem_teto_de_3_por_dia() {
+        let mut diario = shared::prime::Diario::default();
+        let hoje = 1_800_000_000i64;
+        let ids = [601u16, 602, 608, 611];
+        let pagos: Vec<(u32, bool)> = ids
+            .iter()
+            .map(|id| pocoes_xp_a_pagar(quest_by_id(*id).unwrap(), &mut diario, hoje))
+            .collect();
+        assert_eq!(pagos, vec![(1, false), (1, false), (1, false), (0, true)]);
+        assert_eq!(diario.pocoes_xp_hoje(shared::dungeon::dia(hoje)), 3);
+        // Next game day: the counter is back.
+        let amanha = hoje + 86_400;
+        assert_eq!(pocoes_xp_a_pagar(quest_by_id(601).unwrap(), &mut diario, amanha), (1, false));
+        // A craft daily pays its Fortune potion and never touches the cap.
+        assert_eq!(pocoes_xp_a_pagar(quest_by_id(603).unwrap(), &mut diario, amanha), (1, false));
+        assert_eq!(diario.pocoes_xp_hoje(shared::dungeon::dia(amanha)), 1);
     }
 
     /// O bonus multiplica, renova sem acumular e expira.

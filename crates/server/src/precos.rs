@@ -50,6 +50,10 @@ pub fn spawn(pool: PgPool) {
                         e.ouro,
                         e.unidades.len()
                     );
+                    let agora = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs() as i64);
+                    crate::prime::registrar(&t, agora, passo);
                     let mut g = TABELA.write();
                     if g.1.as_deref() != Some(&t) {
                         g.0 += 1;
@@ -155,4 +159,12 @@ async fn levantar(pool: &PgPool, central: Option<PgPool>, realm: &str) -> anyhow
         }
     }
     Ok(e)
+}
+
+/// Tests: put a table in place as if the recount had run.
+#[cfg(test)]
+pub(crate) fn definir_para_teste(t: TabelaDePrecos) {
+    let mut g = TABELA.write();
+    g.0 += 1;
+    g.1 = Some(Arc::new(t));
 }

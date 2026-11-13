@@ -113,6 +113,7 @@ mod mercado_mundo;
 mod oficina;
 mod pets;
 mod presenca;
+mod prime;
 mod ranking;
 mod social;
 mod troca;
@@ -2008,6 +2009,9 @@ pub struct Session {
     /// Volatil: se o jogador reconectar, ele ouve os avisos de novo, e ouvir
     /// duas vezes e' melhor que nao ouvir.
     pub magica_avisado: i64,
+    /// Today's counters: free XP potions and Prime purchases
+    /// (`shared::prime::Diario`, `characters.diario_json`).
+    pub diario: shared::prime::Diario,
     /// Mortes com XP recuperavel (ver `morte`). Persistido em `mortes_json`.
     pub mortes: Vec<crate::morte::MorteRecuperavel>,
     /// Dia UTC e recuperacoes gratis ja' usadas nele.
@@ -6485,6 +6489,8 @@ impl GameWorld {
             s.magica_ate = row.magica_ate;
             s.magica_volta = row.magica_volta.clone();
             s.magica_gratis = row.magica_gratis;
+            s.diario = shared::prime::Diario::de_json(&row.diario_json);
+            Self::envia_pocoes_xp_do_dia(s, true);
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
             });
@@ -7614,6 +7620,7 @@ impl GameWorld {
                 magica_volta: String::new(),
                 magica_gratis: 0,
                 magica_avisado: i64::MAX,
+                diario: Default::default(),
                 mortes: Vec::new(),
                 recuperacoes_dia: 0,
                 recuperacoes_usadas: 0,
@@ -8102,6 +8109,7 @@ impl GameWorld {
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
             ClientMessage::Colonia { pedido } => self.handle_colonia(id, pedido),
             ClientMessage::Magica { pedido } => self.handle_magica(id, pedido),
+            ClientMessage::Prime { pedido } => self.handle_prime(id, pedido),
             ClientMessage::Mundo => self.abrir_mapa_mundi(id),
             ClientMessage::ExpandirArmazem { banco } => self.handle_expandir_armazem(id, banco),
             ClientMessage::EscolherNoNpc { npc_eid, missao } => {
@@ -13853,6 +13861,7 @@ impl GameWorld {
             correio_recibos: Vec<crate::correio_admin::Recibo>,
             bolsa_extra: u8,
             banco_extra: u8,
+            diario_json: String,
             skill_progress: shared::skills::ProgressoDeSkills,
             colonia: shared::colonia::DadosColonia,
             guarda_roupa: shared::aparencia::GuardaRoupa,
@@ -13919,6 +13928,7 @@ impl GameWorld {
                 correio_recibos: session.correio_recibos.clone(),
                 bolsa_extra: session.bolsa_extra,
                 banco_extra: session.banco_extra,
+                diario_json: session.diario.para_json(),
                 skill_progress: session.skill_progress.clone(),
                 colonia: session.colonia.clone(),
                 guarda_roupa: session.guarda_roupa.clone(),
@@ -13979,6 +13989,7 @@ impl GameWorld {
                 correio_recibos: e.correio_recibos,
                 bolsa_extra: e.bolsa_extra,
                 banco_extra: e.banco_extra,
+                diario_json: e.diario_json,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -17013,15 +17024,15 @@ impl GameWorld {
         if def.reward_cobre > 0 {
             Self::pagar_em_cobre(s, def.reward_cobre, "missao");
         }
-        // Segunda recompensa: a Pocao de Experiencia das missoes de area.
-        if def.reward_item2 != 0 && def.reward_item2_qty > 0 {
-            add_to_inventory(
-                &mut s.inventory,
-                def.reward_item2,
-                def.reward_item2_qty as u32,
-                None,
-            );
+        // Segunda recompensa: a Pocao de Experiencia das dailies, capped at
+        // 3 a game day (`quests::pocoes_xp_a_pagar`).
+        let (qtd2, sem_pocao) = crate::quests::pocoes_xp_a_pagar(def, &mut s.diario, now);
+        if def.reward_item2 != 0 && qtd2 > 0 {
+            add_to_inventory(&mut s.inventory, def.reward_item2, qtd2, None);
             s.inventory_dirty = true;
+        }
+        if shared::quests::paga_pocao_xp(def) {
+            Self::avisa_pocoes_xp(s, sem_pocao);
         }
         let xp = shared::progressao::xp_da_quest(def);
         if xp > 0 {
@@ -17537,6 +17548,9 @@ impl GameWorld {
         if self.e_estivador(e) {
             return Some("Bank");
         }
+        if self.e_prime(e) {
+            return Some("Exchange");
+        }
         let ferreiro = self.ecs.get::<&NpcDaVilaTag>(e).is_ok_and(|t| {
             shared::npc_papel_de_kind(t.rumo) == shared::construcao::Papel::Ferreiro as u8
         });
@@ -17795,6 +17809,9 @@ impl GameWorld {
                 // O Banqueiro guarda o banco (docs/BANCO.md).
                 if self.e_estivador(entity) {
                     self.abrir_banco(sid);
+                }
+                if self.e_prime(entity) {
+                    self.abrir_prime(sid);
                 }
             }
             Some((_, 8, _, _)) => {
@@ -20113,6 +20130,7 @@ impl GameWorld {
             correio_recibos: session.correio_recibos.clone(),
             bolsa_extra: session.bolsa_extra,
             banco_extra: session.banco_extra,
+            diario_json: session.diario.para_json(),
         };
         self.salvo_aqui_em
             .insert(session.name.clone(), self.sim_time_s);
