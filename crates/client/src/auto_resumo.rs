@@ -32,7 +32,7 @@ impl AutoResumo {
         if shared::progressao::xp_da_quest(&d) > 0 { partes.push(format!("{} XP", shared::progressao::xp_da_quest(&d))); }
         if d.reward_cobre > 0 { partes.push(format!("{} {}", d.reward_cobre, shared::idioma::cobre())); }
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
-            if id != 0 && qtd > 0 {
+            if id != 0 && qtd > 0 && crate::pocoes_xp::paga_na_entrega(id, d.daily) {
                 partes.push(format!("{} {}", qtd,
                     nomes.get(&id).cloned().unwrap_or_else(|| format!("item {id}"))));
             }
@@ -42,7 +42,7 @@ impl AutoResumo {
         self.xp = self.xp.saturating_add(shared::progressao::xp_da_quest(&d));
         self.cobre = self.cobre.saturating_add(d.reward_cobre as u64);
         for (id, qtd) in [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)] {
-            if id != 0 && qtd > 0 { *self.itens_de_missao.entry(id).or_default() += qtd as u64; }
+            if id != 0 && qtd > 0 && crate::pocoes_xp::paga_na_entrega(id, d.daily) { *self.itens_de_missao.entry(id).or_default() += qtd as u64; }
         }
     }
 

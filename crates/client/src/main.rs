@@ -118,6 +118,8 @@ mod lascas;
 mod lembranca;
 mod loja_tp;
 mod magica_ui;
+mod pocoes_xp;
+mod prime_ui;
 mod map;
 mod mapa;
 mod menu_missoes;
@@ -487,6 +489,7 @@ struct Jogo {
     viagem: viagem_ui::ViagemUi,
     colonia: colonia_ui::ColoniaUi,
     magica: magica_ui::MagicaUi,
+    prime: prime_ui::PrimeUi,
     mundo: mundo_ui::Mundo,
     guarda_roupa: guarda_roupa_ui::GuardaRoupaUi,
     subiu_de_nivel: nivel_vfx::SubiuDeNivel,
@@ -1075,6 +1078,7 @@ async fn main() {
         viagem: viagem_ui::ViagemUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
         magica: magica_ui::MagicaUi::default(),
+        prime: prime_ui::PrimeUi::default(),
         mundo: mundo_ui::Mundo::default(),
         guarda_roupa: guarda_roupa_ui::GuardaRoupaUi::default(),
         subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
@@ -2182,6 +2186,18 @@ impl Jogo {
                     A::Recusa(t) => self.chat.push(t),
                 }
             }
+            ServerMessage::Prime { aviso } => {
+                let abriu = matches!(aviso, shared::prime::AvisoPrime::Quadro(_)) && !self.prime.aberto;
+                if abriu {
+                    self.fecha_paineis();
+                }
+                if let Some(t) = self.prime.recebe(aviso, get_time(), &self.bolsa.nomes) {
+                    self.chat.push(t);
+                }
+            }
+            ServerMessage::PocoesXpDoDia { dia, pagas, ultima_paga } => {
+                pocoes_xp::definir(dia, pagas, ultima_paga);
+            }
             ServerMessage::Magica { aviso } => {
                 // Fechar os outros paineis so' quando ele ABRE: dentro da
                 // ilha este aviso chega a cada troca de ilhota, e fechar a
@@ -2754,7 +2770,7 @@ impl Jogo {
                             self.auto_resumo.concluir(def, &self.bolsa.nomes);
                         }
                         let itens = [(def.reward_item, def.reward_item_qty), (def.reward_item2, def.reward_item2_qty)]
-                            .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0)
+                            .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0 && pocoes_xp::paga_na_entrega(*id, def.daily))
                             .map(|(id, qtd)| (id, qtd as u32)).collect();
                         self.recompensas.mostrar("QUEST COMPLETE".into(), def.title.into(), itens,
                             def.reward_cobre, shared::progressao::xp_da_quest(def), def.reward_faction_points);
@@ -3564,6 +3580,7 @@ impl Jogo {
             || self.diarias.aberto
             || self.lojas.aberto
             || self.mercado.aberto
+            || self.prime.aberto
             || self.social.aberto
             || self.morte.painel
             || self.config_barra.aberto
@@ -3911,6 +3928,7 @@ impl Jogo {
         self.diarias.fechar();
         self.lojas.fechar();
         self.mercado.fechar();
+        self.prime.fechar();
         self.social.fechar();
         self.dungeon.fechar();
         self.presenca.fechar();
@@ -4183,6 +4201,9 @@ impl Jogo {
             true
         } else if self.mercado.aberto {
             self.mercado.fechar();
+            true
+        } else if self.prime.aberto {
+            self.prime.fechar();
             true
         } else if self.lojas.aberto {
             self.lojas.fechar();
@@ -7353,6 +7374,19 @@ impl Jogo {
             let pedidos = self.mercado.desenha(&ctx, get_time());
             for pedido in pedidos {
                 self.envia(pedido);
+            }
+        }
+        if self.prime.aberto {
+            let ctx = prime_ui::Contexto {
+                nomes: &self.bolsa.nomes,
+                ouro: self.bolsa.ouro,
+                vox: &self.vox,
+                solido: &self.solido,
+            };
+            let mut pedidos = self.prime.desenha(&ctx, get_time());
+            pedidos.extend(self.prime.passo(get_time()));
+            for pedido in pedidos {
+                self.envia(ClientMessage::Prime { pedido });
             }
         }
         if self.lojas.aberto {
