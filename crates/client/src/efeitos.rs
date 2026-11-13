@@ -211,10 +211,15 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             draw_rectangle_lines(r.x - 2.5, r.y - 2.5, r.w + 5.0, r.h + 5.0, 1.5, ui::OURO);
         }
         let nome = e.meta.name.as_deref().unwrap_or("?");
+        // "[TAG] Name": the server sends the clan tag in `meta.cla`, and the
+        // player's plate is where it has to show (owner, 13/11/2026: "a tag
+        // do clan não está aparecendo do lado do nome"). `nome` stays bare:
+        // the speech bubble below is keyed by the plain name.
+        let rotulo = shared::social::com_tag(&e.meta.cla, nome);
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {nome}", e.meta.nivel)
+            format!("Lv {} {rotulo}", e.meta.nivel)
         } else {
-            nome.to_string()
+            rotulo
         };
         let largura = crate::hud_estilo::medir_forte(&txt, tam as u16);
         // Red name (PK points) first, then the hostile purple: the same
