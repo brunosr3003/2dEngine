@@ -24,7 +24,7 @@ pub async fn abrir(vox: &VoxCache) {
         } else {
             0
         };
-        metas.push(shared::EntityMeta { skins,
+        metas.push(shared::EntityMeta { skins, cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: shared::EntityId(id),

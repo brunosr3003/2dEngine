@@ -1081,7 +1081,7 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u32, hp_max: u32, chefe:
 
 /// The island's name for the zone id the server sends ("ilha_inicial" →
 /// its `DefIlha::nome`); an id with no island turns into words.
-fn nome_da_zona(z: &str) -> String {
+pub(crate) fn nome_da_zona(z: &str) -> String {
     if let Some(d) = shared::terreno::def_da_zona(z) {
         return d.nome.to_string();
     }

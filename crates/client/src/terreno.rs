@@ -2715,7 +2715,7 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
     let metas: Vec<shared::EntityMeta> = papeis
         .iter()
         .enumerate()
-        .map(|(k, p)| shared::EntityMeta {
+        .map(|(k, p)| shared::EntityMeta { cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: shared::EntityId(100 + k as u32),

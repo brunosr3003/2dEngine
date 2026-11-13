@@ -147,7 +147,7 @@ mod tests {
         use shared::components::acao;
         use shared::{EntityId, EntityMeta, EntityState, EntityTag};
         let mut w = crate::world::World::default();
-        let meta = EntityMeta { skins: 0,
+        let meta = EntityMeta { skins: 0, cla: String::new(),
             pk: Default::default(),
             auras: 0,
             id: EntityId(1),

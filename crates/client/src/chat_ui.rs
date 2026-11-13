@@ -35,6 +35,15 @@ struct Linha {
     texto: String,
     staff: bool,
     sistema: bool,
+    /// The sender's clan tag ("" = none).
+    tag: String,
+}
+
+impl Linha {
+    /// "[TAG] Name" for the sender.
+    fn quem(&self) -> String {
+        shared::social::com_tag(&self.tag, &self.de)
+    }
 }
 
 #[derive(Default)]
@@ -206,18 +215,19 @@ impl ChatUi {
     }
 
     /// A global line. `false` = muted here (the caller shows nothing).
-    pub fn receber(&mut self, id: i64, canal: u8, para: String, de: String, texto: String, staff: bool) -> bool {
+    #[allow(clippy::too_many_arguments)]
+    pub fn receber(&mut self, id: i64, canal: u8, para: String, de: String, texto: String, staff: bool, tag: String) -> bool {
         if !staff && self.silenciados().contains(&de.to_lowercase()) {
             return false;
         }
-        self.guarda(Linha { id, canal, para, de, texto, staff, sistema: false });
+        self.guarda(Linha { id, canal, para, de, texto, staff, sistema: false, tag });
         true
     }
 
     /// A system answer (slow down, muted, report sent…), shown in the panel too.
     pub fn sistema(&mut self, texto: String) {
         let aberto = self.aberto;
-        self.guarda(Linha { id: 0, canal: 0, para: String::new(), de: String::new(), texto, staff: false, sistema: true });
+        self.guarda(Linha { id: 0, canal: 0, para: String::new(), de: String::new(), texto, staff: false, sistema: true, tag: String::new() });
         if !aberto {
             self.nao_lidas = self.nao_lidas.saturating_sub(1);
         }
@@ -388,11 +398,11 @@ impl ChatUi {
                         (format!("From {}:", l.de), cor_do_canal(l.canal))
                     }
                 } else if l.staff {
-                    (format!("[Staff] {}:", l.de), OURO_DO_CHAT)
+                    (format!("[Staff] {}:", l.quem()), OURO_DO_CHAT)
                 } else if l.de.eq_ignore_ascii_case(eu) {
-                    (format!("{}:", l.de), estilo::VERDE)
+                    (format!("{}:", l.quem()), estilo::VERDE)
                 } else {
-                    (format!("{}:", l.de), Color::new(0.80, 0.88, 1.0, 1.0))
+                    (format!("{}:", l.quem()), Color::new(0.80, 0.88, 1.0, 1.0))
                 };
                 estilo::texto_sombra(x, base, &nome, fonte, estilo::alfa(cor_nome, alfa), true);
                 x += estilo::medir_forte(&nome, fonte) + 4.0;
@@ -588,11 +598,11 @@ impl ChatUi {
                         (format!("From {}:", l.de), cor_do_canal(l.canal))
                     }
                 } else if l.staff {
-                    (format!("[Staff] {}:", l.de), OURO_DO_CHAT)
+                    (format!("[Staff] {}:", l.quem()), OURO_DO_CHAT)
                 } else if l.de.eq_ignore_ascii_case(eu) {
-                    (format!("{}:", l.de), estilo::VERDE)
+                    (format!("{}:", l.quem()), estilo::VERDE)
                 } else {
-                    (format!("{}:", l.de), Color::new(0.55, 0.78, 1.0, 1.0))
+                    (format!("{}:", l.quem()), Color::new(0.55, 0.78, 1.0, 1.0))
                 };
                 estilo::texto_forte(linha.x + 10.0 * k, base, &rotulo, 14, cor);
                 let w = estilo::medir_forte(&rotulo, 14) + 8.0 * k;
@@ -713,7 +723,7 @@ pub async fn previa() {
     .iter()
     .enumerate()
     {
-        ui.receber(i as i64 + 1, (i % 4) as u8, if i % 4 == 3 { "Navegante".into() } else { String::new() }, de.to_string(), t.to_string(), *staff);
+        ui.receber(i as i64 + 1, (i % 4) as u8, if i % 4 == 3 { "Navegante".into() } else { String::new() }, de.to_string(), t.to_string(), *staff, if i % 3 == 0 { "MAR".into() } else { String::new() });
     }
     for (arquivo, aberto) in [("caixa.png", false), ("caixa-ativa.png", false), ("painel.png", true), ("silenciados.png", true)] {
         if arquivo == "silenciados.png" {

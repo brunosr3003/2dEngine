@@ -85,10 +85,11 @@ fn placas(world: &World, vista: &Vista) {
             draw_rectangle_lines(x - 2.5, y - 2.5, w + 5.0, h + 5.0, 1.5, ui::OURO);
         }
         let nome = e.meta.name.as_deref().unwrap_or("?");
+        let rotulo = shared::social::com_tag(&e.meta.cla, nome);
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {nome}", e.meta.nivel)
+            format!("Lv {} {rotulo}", e.meta.nivel)
         } else {
-            nome.to_string()
+            rotulo
         };
         let tam = if boss {
             18.0

@@ -421,7 +421,7 @@ mod tests {
             (5, EntityTag::Enemy, 30.0, 100),
             (6, EntityTag::Enemy, 2.0, 0),
         ] {
-            metas.push(shared::EntityMeta { skins: 0,
+            metas.push(shared::EntityMeta { skins: 0, cla: String::new(),
                 pk: Default::default(),
                 auras: 0,
                 id: EntityId(id),

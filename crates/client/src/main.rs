@@ -2266,8 +2266,9 @@ impl Jogo {
                 ));
                 self.social.convite = Some((from, get_time() + 60.0));
             }
-            ServerMessage::PartyUpdate { members } => {
+            ServerMessage::PartyUpdate { members, tags } => {
                 self.social.grupo = members;
+                self.social.grupo_tags = tags;
                 self.missoes.membros_grupo = self.social.grupo.len();
                 self.social.convite = None;
             }
@@ -2299,11 +2300,11 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
-            ServerMessage::ChatGlobal { id, canal, para, de, texto, staff } => {
+            ServerMessage::ChatGlobal { id, canal, para, de, texto, staff, tag } => {
                 // In the box, and over the speaker's head when they are near
                 // (never a whisper: that one is private).
                 let privado = canal == shared::chat::CANAL_SUSSURRO;
-                if self.chat_ui.receber(id, canal, para, de.clone(), texto.clone(), staff) && !privado {
+                if self.chat_ui.receber(id, canal, para, de.clone(), texto.clone(), staff, tag) && !privado {
                     self.world.falas.insert(de.to_lowercase(), (texto, get_time()));
                 }
                 if privado && !de.eq_ignore_ascii_case(self.personagem_atual.as_deref().unwrap_or("")) {

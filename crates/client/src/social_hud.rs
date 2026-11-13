@@ -127,8 +127,9 @@ pub fn grupo_no_corpo(r: Rect, membros: &[String], world: &World) -> Option<Acao
             None => "Out of range".to_string(),
         };
         let largura = e::medir(&direita, tam);
+        let rotulo = jogador.map_or_else(|| nome.clone(), |(_, ent)| shared::social::com_tag(&ent.meta.cla, nome));
         e::texto_ajustado(
-            nome,
+            &rotulo,
             barra.x + 5.0 * k,
             base,
             barra.w - largura - 14.0 * k,
@@ -402,7 +403,7 @@ pub async fn previa() {
         for (i, nome) in nomes.iter().take(3).enumerate() {
             let id = EntityId(i as u32 + 1);
             world.apply(
-                vec![shared::EntityMeta { skins: 0,
+                vec![shared::EntityMeta { skins: 0, cla: String::new(),
                     pk: Default::default(),
                     auras: 0,
                     id,
