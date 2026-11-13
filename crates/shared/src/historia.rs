@@ -240,7 +240,7 @@ const fn ir(
     }
 }
 
-/// Caca: missao de area, paga Pocao de Experiencia.
+/// Caca: missao de area. No XP potion: those come from the dailies only.
 #[allow(clippy::too_many_arguments)]
 const fn cacar(
     id: u16,
@@ -258,14 +258,11 @@ const fn cacar(
         obj_count: n,
         reward_item: pocao,
         reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION,
-        reward_item2_qty: 1,
         ..base(id, title, desc, gold, xp)
     }
 }
 
-/// Quebrar pedra: missao de area, paga material da cor da faixa e Pocao de
-/// Experiencia.
+/// Quebrar pedra: missao de area, paga material da cor da faixa.
 #[allow(clippy::too_many_arguments)]
 const fn coletar(
     id: u16,
@@ -283,13 +280,11 @@ const fn coletar(
         obj_count: n,
         reward_item: material,
         reward_item_qty: qtd,
-        reward_item2: item_id::XP_POTION,
-        reward_item2_qty: 1,
         ..base(id, title, desc, gold, xp)
     }
 }
 
-/// Cacar com recompensa escolhida (em vez da pocao + Pocao de Experiencia).
+/// Cacar com recompensa escolhida (instead of the default potion).
 #[allow(clippy::too_many_arguments)]
 const fn cacar_com(
     id: u16,
@@ -500,11 +495,11 @@ pub const PASSOS: &[QuestDef] = &[
     cacar_com(702, "The wolves' trail", "Os lobos enlouqueceram desde que o farol apagou: descem à trilha de dia, coisa que nunca fizeram. Derrote 5 fora da cidade. Os caçadores juntaram berloques que os bichos arrancaram das carroças — são seus.", alvo_de_mob(mob_kind::LOBO), 5, 60, 1_000, item_id::EXORCISM_BAUBLE, 10, item_id::HEALTH_POTION, 5),
     falar(703, "Steady hands", "Você sobreviveu aos lobos. O Treinador da praça quer ver do que é capaz — e guarda quintessência para quem aguenta o tranco.", Papel::Treinador, 40, 2_500, item_id::QUINTESSENCE, 10),
     tutorial(792, "Striking on automatic", "O Treinador mostra: arraste uma skill PARA CIMA e ela passa a ser usada sozinha no combate. Para baixo, volta pro manual.", tut::SKILL_AUTO, 40, 800, item_id::HEALTH_POTION, 3),
-    tutorial(793, "Gathering without effort", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, item_id::XP_POTION, 1),
+    tutorial(793, "Gathering without effort", "A forja come madeira e pedra. Toque em COLETA: o personagem corta e quebra sozinho o que estiver por perto — a engrenagem do botão escolhe o quê.", tut::AUTO_COLETA, 40, 800, 0, 0),
     tutorial_de(796, "The light in the stones", "O trovão deixou cristais azuis no relevo: é Energia, e ela não ocupa espaço na bolsa e é o que paga os seus pontos de atributo. Toque no passo que o caminho até um veio abre sozinho — junte o bastante pra gastar tudo o que os primeiros níveis te deram.", tut::COLETA_ENERGIA, crate::constants::ENERGIA_DO_TUTORIAL, 40, 900, item_id::HEALTH_POTION, 3),
     tutorial(795, "What the level gave you", "Cada ponto de atributo custa Energia — a mesma dos cristais azuis do relevo. Abra Menu › Personagem › Ficha e coloque um ponto no atributo que combina com a sua arma: FOR bate mais forte, DES acerta mais, INT move a magia. Se faltar Energia, quebre um cristal e volte.", tut::PONTO_ATRIBUTO, 20, 400, item_id::HEALTH_POTION, 3),
-    coletar_com(704, "Firewood for the forge", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, item_id::XP_POTION, 1),
-    coletar_com(705, "The singing stone", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, item_id::XP_POTION, 1),
+    coletar_com(704, "Firewood for the forge", "A forja da vila come madeira dia e noite. Derrube 8 árvores — é da árvore que sai toda a madeira da ilha. O Ferreiro paga em Darksteel, o metal escuro que toda peça pede.", alvo_de_coleta::ARVORE, 8, 60, 2_000, item_id::DARKSTEEL, 200, 0, 0),
+    coletar_com(705, "The singing stone", "As pedras da ilha zumbem com o trovão. Quebre 10 pedras em qualquer veio — é da pedra que saem o Aço e o Darksteel de toda peça. A mineradora completa o seu Aço.", alvo_de_coleta::PEDRA, 10, 80, 4_000, item_id::STEEL, 30, 0, 0),
     falar_com_dois(706, "The metal of the storm", "Leve o que ouviu nas pedras ao Ferreiro. Ele sabe o que o metal carrega — e guarda o couro e o cobre que faltam para quem vai forjar.", Papel::Ferreiro, 60, 4_000, item_id::COPPER, 300, item_id::HIDE, 1),
     // O PET SAI DAQUI, e o lugar não é arbitrário.
     //
@@ -534,8 +529,8 @@ pub const PASSOS: &[QuestDef] = &[
     // `os_passos_da_chave_pagam_a_receita` measures it against the real
     // recipe. Ids 834-836 (`PASSOS_DA_CHAVE_DO_PORAO`), inserted without
     // renumbering.
-    coletar_com(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Fell 6 trees — the woodcutters make up whatever wood you're missing.", alvo_de_coleta::ARVORE, 6, 80, 2_000, item_id::WOOD_T1, 78, item_id::XP_POTION, 1),
-    coletar_com(835, "Steel for the cellar key", "Now the metal: break 6 stones in any vein — Steel comes out of the stone. The miners make up whatever the key still asks for.", alvo_de_coleta::PEDRA, 6, 80, 2_000, CINZA, 42, item_id::XP_POTION, 1),
+    coletar_com(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Fell 6 trees — the woodcutters make up whatever wood you're missing.", alvo_de_coleta::ARVORE, 6, 80, 2_000, item_id::WOOD_T1, 78, 0, 0),
+    coletar_com(835, "Steel for the cellar key", "Now the metal: break 6 stones in any vein — Steel comes out of the stone. The miners make up whatever the key still asks for.", alvo_de_coleta::PEDRA, 6, 80, 2_000, CINZA, 42, 0, 0),
     QuestDef {
         obj_target: CHAVE_DO_NAUFRAGIO,
         ..criar(PASSO_DA_CHAVE_DO_PORAO, "The Shipwreck Cellar Key", "You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", 100, 3_000)
@@ -571,12 +566,12 @@ pub const PASSOS: &[QuestDef] = &[
     tutorial(799, "Casa vira vila", "Uma casa sozinha não sustenta ninguém. No painel da ilha, melhore o ASSENTAMENTO: ele abre a primeira casa de ofício.", tut::COLONIA_ASSENTAMENTO, 0, 10_000, item_id::WOOD_T1, 60),
     tutorial(800, "O primeiro morador", "Casa vazia não rende. Na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. Toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
-    tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, item_id::XP_POTION, 1),
+    tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, 0, 0),
     nivel(TRAVA_DO_BARCO, "Reach level 20", 20),
     viajar(719, "Bound for the Glacier", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(720, "Bone-cracking cold", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
-    tutorial(797, "The first waking", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, item_id::XP_POTION, 1),
+    tutorial(797, "The first waking", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, 0, 0),
     falar(721, "Tavern tales", "The one who knows about the Morganeers in the snow is the Innkeeper. Buy his ear.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
     cacar(722, "Owlbear cubs in the snow", "Starving owlbears are attacking the ice trails. Defeat 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
     coletar(723, "Ice that holds thunder", "The Glacier's stone traps lightning. Break 20 rocks.", 20, 300, 2_000, VERDE, 4),
@@ -629,15 +624,15 @@ pub const PASSOS: &[QuestDef] = &[
     dungeon(890, "The sealed vault", "Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", 5, 3_000, 300_000, item_id::GREATER_HEAL, 8),
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
-    cacar_com(891, "The Primeval Owlbear", "The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(17), 1, 3_000, 260_000, item_id::GREATER_HEAL, 6, item_id::XP_POTION, 1),
+    cacar_com(891, "The Primeval Owlbear", "The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(17), 1, 3_000, 260_000, item_id::GREATER_HEAL, 6, 0, 0),
     nivel(765, "Reach level 55", 55),
-    cacar_com(892, "The Thunderhide Behemoth", "A behemoth wrapped in lightning roams the ruins of the Broken Forge. Defeat it — the map marks where.", alvo_de_mob(22), 1, 3_400, 300_000, item_id::GREATER_HEAL, 6, item_id::XP_POTION, 1),
+    cacar_com(892, "The Thunderhide Behemoth", "A behemoth wrapped in lightning roams the ruins of the Broken Forge. Defeat it — the map marks where.", alvo_de_mob(22), 1, 3_400, 300_000, item_id::GREATER_HEAL, 6, 0, 0),
     cacar(766, "The beasts of the wind", "The beasts from the eye of the storm come down to the Plateau. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
     dungeon(893, "The Tempest Spire", "The storm has a voice: its Herald calls the lightning from a spire above the eye. Clear the Tempest Spire from the Dungeons panel.", 18, 4_000, 420_000, item_id::GREATER_HEAL, 10),
     ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
     falar(767, "What lies beyond", "The Cartographer wants to draw what lies beyond the storm.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
     nivel(768, "Reach level 60", 60),
-    cacar_com(894, "The Archmage of the Tempest", "The Archmage still holds the field beside the last lighthouse. Defeat him and the storm breaks.", alvo_de_mob(18), 1, 4_500, 450_000, item_id::GREATER_HEAL, 8, item_id::XP_POTION, 2),
+    cacar_com(894, "The Archmage of the Tempest", "The Archmage still holds the field beside the last lighthouse. Defeat him and the storm breaks.", alvo_de_mob(18), 1, 4_500, 450_000, item_id::GREATER_HEAL, 8, 0, 0),
     falar(769, "The Guardian's oath", "All four lighthouses shine. The Quest Master has an oath for you.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
     // ── The way up: Skyreach (levels 60-80, 02/10/2026) ──
     // A travel step closes its chapter, so it ends chapter IV. Chapter V has
@@ -668,7 +663,7 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(952, "Hounds of steel", "Mech Hounds patrol the streets in packs. Defeat 25 hounds.", alvo_de_mob(mob_kind::LOBO), 25, 13_000, 1_100_000, item_id::GREATER_HEAL),
     dungeon(953, "The Robot Foundry", "The machines are built under Shibuya. Take the Foundry's portal by the station and shut the line down.", 7, 18_000, 2_200_000, item_id::GREATER_HEAL, 15),
     nivel(954, "Reach level 85", 85),
-    cacar_com(955, "Titan Mk-I", "A construction titan has gone feral in a Shibuya plaza. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(63), 1, 20_000, 2_600_000, item_id::GREATER_HEAL, 10, item_id::XP_POTION, 2),
+    cacar_com(955, "Titan Mk-I", "A construction titan has gone feral in a Shibuya plaza. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(63), 1, 20_000, 2_600_000, item_id::GREATER_HEAL, 10, 0, 0),
     ir(956, "The shrine forest", "Past Harajuku the Meiji Shrine forest is dark and full of nests. Go there.", crate::kogen::PONTO_BASE + 2, 14_000, 1_300_000),
     cacar(957, "Volt Panthers", "Panthers of copper and lightning hunt between the trees. Defeat 25 panthers.", alvo_de_mob(mob_kind::TIGRE), 25, 15_000, 1_500_000, item_id::GREATER_HEAL),
     falar(958, "Fighting machines", "Robots don't flinch. The Trainer knows where to hit them. Talk to him.", Papel::Treinador, 15_000, 1_400_000, item_id::GREATER_MANA, 10),
@@ -677,7 +672,7 @@ pub const PASSOS: &[QuestDef] = &[
     ir(961, "Kabukicho", "North, into the neon alleys of Kabukicho, where every sign is lit and nobody sleeps.", crate::kogen::PONTO_BASE + 3, 16_000, 1_700_000),
     cacar(962, "Laser Sentries", "Sentries guard the alleys and shoot whoever walks them. Defeat 25 sentries.", alvo_de_mob(mob_kind::ARQUEIRO), 25, 17_000, 1_900_000, item_id::GREATER_HEAL),
     nivel(963, "Reach level 92", 92),
-    cacar_com(964, "The Neon Kaiju", "Under the neon the kaiju the signs advertised has woken. Defeat it in its plaza — the map marks where.", alvo_de_mob(64), 1, 24_000, 3_400_000, item_id::GREATER_HEAL, 12, item_id::XP_POTION, 3),
+    cacar_com(964, "The Neon Kaiju", "Under the neon the kaiju the signs advertised has woken. Defeat it in its plaza — the map marks where.", alvo_de_mob(64), 1, 24_000, 3_400_000, item_id::GREATER_HEAL, 12, 0, 0),
     ir(965, "The towers", "West of the station the Nishi-Shinjuku towers rise into the clouds. Walk to the Cocoon Tower.", crate::kogen::PONTO_BASE + 4, 18_000, 2_100_000),
     cacar(966, "Tesla Units", "The towers' guards throw lightning. Defeat 25 Tesla Units.", alvo_de_mob(mob_kind::MAGO), 25, 19_000, 2_300_000, item_id::GREATER_HEAL),
     nivel(967, "Reach level 95", 95),
@@ -686,9 +681,9 @@ pub const PASSOS: &[QuestDef] = &[
     nivel(970, "Reach level 98", 98),
     // The Neon Spire (`kogen::paradas_da_espiral`): the map's own dungeon.
     ir(974, "The Neon Spire", "On the north-west shore a spire winds up into the clouds, its ramp crawling with machines. Walk to its foot.", crate::kogen::PONTO_BASE + 8, 22_000, 2_700_000),
-    cacar_com(975, "The Sky Dragon Mech", "Climb the Neon Spire past the guard on every lap — or drop a lap if it goes wrong — and defeat the dragon on its roof. It drops chests where it falls.", alvo_de_mob(crate::bosses::DRAGAO_DA_ESPIRAL), 1, 36_000, 5_000_000, item_id::GREATER_HEAL, 15, item_id::XP_POTION, 4),
+    cacar_com(975, "The Sky Dragon Mech", "Climb the Neon Spire past the guard on every lap — or drop a lap if it goes wrong — and defeat the dragon on its roof. It drops chests where it falls.", alvo_de_mob(crate::bosses::DRAGAO_DA_ESPIRAL), 1, 36_000, 5_000_000, item_id::GREATER_HEAL, 15, 0, 0),
     cacar(971, "The last patrol", "The Overseer's guard holds the towers. Defeat 40 machines of any kind.", 0, 40, 22_000, 2_800_000, item_id::GREATER_HEAL),
-    cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 5),
+    cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, 0, 0),
     falar(973, "The last oath", "The city that never sleeps is quiet. The Quest Master has one last oath for you.", Papel::Missoes, 50_000, 8_000_000, item_id::GREATER_HEAL, 20),
     // Abyssia: the submarine departs from Kōgen-tō's docks.
     viajar(980, "Dive to Abyssia", "Speak to the Submarine Captain at Kōgen-tō's docks and descend to the bubble kingdom.", 6, 24_000, 3_000_000),
@@ -696,7 +691,7 @@ pub const PASSOS: &[QuestDef] = &[
     ir(982, "The kelp forest", "Leave the bubble and follow the seafloor path into the Kelp Forest.", crate::abissal::PONTO_BASE + 1, 26_000, 3_400_000),
     cacar(983, "Reef predators", "Defeat 25 Reef Sharks in the Kelp Forest.", alvo_de_mob(70), 25, 28_000, 3_600_000, item_id::GREATER_HEAL),
     nivel(984, "Reach level 105", 105),
-    cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, item_id::XP_POTION, 3),
+    cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, 0, 0),
     dungeon(986, "The Sunken Galleon", "Enter the wreck's portal and clear the Sunken Galleon.", 19, 38_000, 4_500_000, item_id::GREATER_HEAL, 15),
     ir(987, "The shipwreck graveyard", "Follow the path to the Shipwreck Graveyard.", crate::abissal::PONTO_BASE + 2, 30_000, 3_800_000),
     cacar(988, "The drowned crew", "Defeat 30 Triton Guards among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
@@ -704,13 +699,13 @@ pub const PASSOS: &[QuestDef] = &[
     dungeon(990, "Coral Palace Vaults", "Return to the kingdom and clear the Coral Palace Vaults.", 21, 45_000, 5_000_000, item_id::GREATER_HEAL, 18),
     ir(991, "The lantern trench", "Walk out to the Lantern Trench, where the seafloor falls away.", crate::abissal::PONTO_BASE + 3, 36_000, 4_300_000),
     cacar(992, "Light in the dark", "Defeat 30 Merfolk Mages in the trench.", alvo_de_mob(75), 30, 40_000, 4_700_000, item_id::GREATER_HEAL),
-    cacar_com(993, "The Kraken", "Defeat the Kraken in its trench arena.", alvo_de_mob(crate::bosses::CARANGUEJO_TITA), 1, 52_000, 6_000_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 4),
+    cacar_com(993, "The Kraken", "Defeat the Kraken in its trench arena.", alvo_de_mob(crate::bosses::CARANGUEJO_TITA), 1, 52_000, 6_000_000, item_id::GREATER_HEAL, 20, 0, 0),
     nivel(994, "Reach level 115", 115),
     ir(995, "The abyss rim", "Reach the Abyss Rim beyond the trench.", crate::abissal::PONTO_BASE + 4, 42_000, 5_100_000),
-    cacar_com(996, "The ghost captain", "Defeat the Ghost Pirate Captain at the great wreck.", alvo_de_mob(79), 1, 58_000, 6_500_000, item_id::GREATER_HEAL, 20, item_id::XP_POTION, 4),
+    cacar_com(996, "The ghost captain", "Defeat the Ghost Pirate Captain at the great wreck.", alvo_de_mob(79), 1, 58_000, 6_500_000, item_id::GREATER_HEAL, 20, 0, 0),
     dungeon(997, "The Abyss", "Descend through every floor of The Abyss dungeon.", 22, 65_000, 7_000_000, item_id::GREATER_HEAL, 20),
     nivel(998, "Reach level 120", 120),
-    cacar_com(999, "The Abyssal Leviathan", "Defeat the Leviathan at the outer rim and return to the kingdom.", alvo_de_mob(crate::bosses::LEVIATA), 1, 80_000, 10_000_000, item_id::GREATER_HEAL, 25, item_id::XP_POTION, 5),
+    cacar_com(999, "The Abyssal Leviathan", "Defeat the Leviathan at the outer rim and return to the kingdom.", alvo_de_mob(crate::bosses::LEVIATA), 1, 80_000, 10_000_000, item_id::GREATER_HEAL, 25, 0, 0),
 ];
 
 // ─────────────────────────── consultas ───────────────────────────
@@ -1747,8 +1742,8 @@ mod testes {
         }
         assert_eq!(nome_do_capitulo(0), CAPITULOS[0].nome);
         assert!(nome_do_capitulo(n + 7).contains("· 2"));
-        // Missoes de area pagam Pocao de Experiencia.
-        assert_eq!(cronica(0).unwrap().reward_item2, item_id::XP_POTION);
+        // Free XP potions come from the dailies only (3 a day): the story pays none.
+        assert_ne!(cronica(0).unwrap().reward_item2, item_id::XP_POTION);
         assert_eq!(
             crate::quests::quest_by_id(PRIMEIRO_ID).unwrap().title,
             PASSOS[0].title

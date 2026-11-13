@@ -216,6 +216,18 @@ pub fn proxima_meia_noite(agora: i64) -> i64 {
 }
 
 /// Missao "de area": matar ou juntar numa zona. Ela paga Pocao de Experiencia.
+/// Owner's rule: a character gets at most this many FREE Experience Potions a
+/// game day (`dungeon::dia`), and only from the area DAILIES. Each of those
+/// pays 1; once the cap is reached the daily still pays everything else.
+pub const POCOES_XP_GRATIS_POR_DIA: u32 = 3;
+
+/// Does `d` pay a free Experience Potion (subject to the daily cap)?
+pub fn paga_pocao_xp(d: &QuestDef) -> bool {
+    d.daily
+        && ((d.reward_item2 == item_id::XP_POTION && d.reward_item2_qty > 0)
+            || (d.reward_item == item_id::XP_POTION && d.reward_item_qty > 0))
+}
+
 pub fn e_de_area(d: &QuestDef) -> bool {
     matches!(
         d.obj_kind,
@@ -695,7 +707,9 @@ const fn q() -> QuestDef {
 }
 
 /// Uma DIARIA do Mestre de Missoes: repetivel, volta a meia-noite UTC. As de
-/// area pagam tambem 1 Pocao de Experiencia.
+/// area pagam tambem 1 Pocao de Experiencia — the only free source of them,
+/// capped by the server at `POCOES_XP_GRATIS_POR_DIA` per character per game
+/// day (`server::quests::pocoes_xp_a_pagar`).
 #[allow(clippy::too_many_arguments)]
 const fn diaria(
     id: u16,
@@ -794,19 +808,16 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "The wolves prowl the trails outside the city. Defeat 6 wolves and come back here.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 6,
         reward_cobre: 80, reward_xp: 120, reward_item: item_id::HEALTH_POTION, reward_item_qty: 2,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 501, ..mestre() },
     QuestDef { id: 503, title: "Copper for the forge",
         desc: "The Blacksmith needs metal for the village's tools. Defeat 15 beasts — every one carries a little copper.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 15,
         reward_cobre: 120, reward_xp: 150, reward_item: item_id::MANA_POTION, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 502, ..mestre() },
     QuestDef { id: 504, title: "Bears in the woods",
         desc: "Bears have come down the slope and are frightening the woodcutters. Defeat 3 bears.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 3,
         reward_cobre: 160, reward_xp: 220, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 503, min_level: 3, ..mestre() },
     QuestDef { id: 505, title: "Visit the Port",
         desc: "The Harbour Captain wants to meet whoever protects the island. Follow the road to the quay (M opens the map) and talk to him.",
@@ -823,13 +834,11 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "The quay lost half a pier in the storm and the Captain needs wood. Fell 8 trees — it's the only place wood comes from, and nobody had told you.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 8,
         reward_cobre: 200, reward_xp: 350, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 505, ..mestre() },
     QuestDef { id: 507, title: "What the stone keeps",
         desc: "Inside the rock there's a dark metal that doesn't rust: Darksteel. Break 10 rocks so the Blacksmith can judge the quality of the vein here.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 10,
         reward_cobre: 260, reward_xp: 450, reward_item: item_id::STEEL, reward_item_qty: 10,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 506, ..mestre() },
     QuestDef { id: 508, title: "Quintessence",
         desc: "Rock gives quintessence a drop at a time; tigers give far more. Defeat 8 tigers — without it no armour closes.",
@@ -866,7 +875,6 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "A wolf the size of a horse leads the pack in the glade. Defeat the Alpha Wolf of the Glade — the map marks where he prowls. Bring someone: bosses are fought in a party, and everyone who fights nearby counts.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(10), obj_count: 1,
         reward_cobre: 600, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         min_level: 8, ..posto(203) },
     QuestDef { id: 512, title: "Stormbeard's flag",
         desc: "Captain Stormbeard has landed with his crew and planted a flag on the island. Bring him down and the port breathes again.",
@@ -884,13 +892,11 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "The three bosses of the Grove come back after a while. Defeat 3 field bosses — any of them, as many times as you need.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 3,
         reward_cobre: 2_000, reward_xp: 45_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 513, min_level: 14, ..posto(203) },
     QuestDef { id: 515, title: "The legend of the Grove",
         desc: "The village already tells stories about you. Defeat 5 more field bosses and the legend becomes true.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 5,
         reward_cobre: 3_000, reward_xp: 70_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
         requires: 514, min_level: 15, ..posto(203) },
 
     // B) O bestiario: cada bicho da ilha, na ordem em que ele aparece.
@@ -898,43 +904,36 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "The wolves are multiplying near the village. Defeat 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::LOBO), obj_count: 12,
         reward_cobre: 150, reward_xp: 900, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         min_level: 2, ..posto(202) },
     QuestDef { id: 517, title: "Claws on the trail",
         desc: "The bears have taken the woodcutters' trail. Defeat 10.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::URSO), obj_count: 10,
         reward_cobre: 250, reward_xp: 2_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 4,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 516, min_level: 4, ..posto(202) },
     QuestDef { id: 518, title: "Gunpowder in the woods",
         desc: "Morgan's gunmen are camped in the woods. Defeat 12 and put out their fires.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::PISTOLEIRO), obj_count: 12,
         reward_cobre: 400, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 517, min_level: 7, ..posto(202) },
     QuestDef { id: 519, title: "Stripes on the road",
         desc: "Tigers are hunting on the port road. Defeat 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::TIGRE), obj_count: 12,
         reward_cobre: 600, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 518, min_level: 10, ..posto(202) },
     QuestDef { id: 520, title: "The mages of thunder",
         desc: "Morgan's mages pull lightning from the sky into the lighthouse stones. Defeat 12.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::MAGO), obj_count: 12,
         reward_cobre: 800, reward_xp: 20_000, reward_item: item_id::GREATER_MANA, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 519, min_level: 12, ..posto(202) },
     QuestDef { id: 521, title: "What came down from the ice",
         desc: "Glacier owlbears have crossed the frozen sea and prowl the island's heights. Defeat 5.",
         obj_kind: objective_kind::KILL, obj_target: alvo_de_mob(mob_kind::OWLBEAR), obj_count: 5,
         reward_cobre: 1_200, reward_xp: 40_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 4,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 520, min_level: 15, ..posto(202) },
     QuestDef { id: 522, title: "Trail-clearing",
         desc: "The whole island is still boiling. Defeat 80 beasts of any kind.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 80,
         reward_cobre: 1_500, reward_xp: 45_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 5,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 2,
         requires: 520, min_level: 13, ..posto(202) },
 
     // C) A oficina: refino, craft e o estoque que ele come.
@@ -958,13 +957,11 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "The village forge is out of dark metal. Break 25 rocks — the darksteel comes out of them.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 25,
         reward_cobre: 900, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 2,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 525, min_level: 12, ..de(crate::construcao::Papel::Ferreiro) },
     QuestDef { id: 527, title: "Steel for the wall",
         desc: "The village wall needs reinforcing before the next storm. Break 20 rocks for the steel.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 20,
         reward_cobre: 1_000, reward_xp: 18_000, reward_item: item_id::QUINTESSENCE, reward_item_qty: 10,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 526, min_level: 13, ..de(crate::construcao::Papel::Armaduras) },
 
     // D) Coleta.
@@ -972,19 +969,16 @@ pub const QUESTS: &[QuestDef] = &[
         desc: "Winter is coming and the village wants firewood. Fell 20 trees.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 20,
         reward_cobre: 200, reward_xp: 1_500, reward_item: item_id::HEALTH_POTION, reward_item_qty: 3,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         min_level: 3, ..posto(201) },
     QuestDef { id: 529, title: "Deep vein",
         desc: "The vein on the slope still holds plenty. Break 30 rocks.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::PEDRA, obj_count: 30,
         reward_cobre: 350, reward_xp: 4_500, reward_item: item_id::STEEL, reward_item_qty: 15,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 528, min_level: 6, ..posto(201) },
     QuestDef { id: 530, title: "Calloused hands",
         desc: "Break rock or fell tree: 60 gathers of any kind.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::QUALQUER, obj_count: 60,
         reward_cobre: 700, reward_xp: 15_000, reward_item: item_id::GLITTERING_POWDER, reward_item_qty: 1,
-        reward_item2: item_id::XP_POTION, reward_item2_qty: 1,
         requires: 529, min_level: 11, ..posto(201) },
 
     // E) As duas dungeons da ilha, de novo e de novo.
@@ -1001,7 +995,7 @@ pub const QUESTS: &[QuestDef] = &[
     QuestDef { id: 533, title: "Dungeon rat",
         desc: "Complete 3 dungeons, any of them. Every boss inside can drop a key.",
         obj_kind: objective_kind::DUNGEON, obj_target: 0, obj_count: 3,
-        reward_cobre: 1_800, reward_xp: 50_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
+        reward_cobre: 1_800, reward_xp: 50_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
         reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 2,
         requires: 532, min_level: 14, ..de(crate::construcao::Papel::Missoes) },
 
@@ -1028,13 +1022,13 @@ pub const QUESTS: &[QuestDef] = &[
     QuestDef { id: 540, title: "Clearing the woods",
         desc: "That wasn't enough. Defeat 60 enemies — the zones marked on the map pay more per minute.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 60,
-        reward_cobre: 1_200, reward_xp: 30_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        reward_cobre: 1_200, reward_xp: 30_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 1,
         reward_item2: item_id::GREATER_HEAL, reward_item2_qty: 3,
         requires: 539, min_level: 11, ..de(crate::construcao::Papel::Treinador) },
     QuestDef { id: 541, title: "Heavy hand",
         desc: "The Trainer wants to see stamina: defeat 100 enemies.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 100,
-        reward_cobre: 2_500, reward_xp: 70_000, reward_item: item_id::XP_POTION, reward_item_qty: 2,
+        reward_cobre: 2_500, reward_xp: 70_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 2,
         reward_item2: item_id::GLITTERING_POWDER, reward_item2_qty: 3,
         requires: 540, min_level: 14, ..de(crate::construcao::Papel::Treinador) },
     // A caçada TEMÁTICA: mesma ideia, alvo fechado, pra quem quer o drop
@@ -1154,7 +1148,7 @@ pub const QUESTS: &[QuestDef] = &[
         requires: 811, min_level: 17, ..posto(204) },
     QuestDef { id: 813, title: "Firewood for the watch", desc: "The fire on the coast cannot go out. Fell twelve trees on the Glacier.",
         obj_kind: objective_kind::GATHER, obj_target: alvo_de_coleta::ARVORE, obj_count: 12,
-        reward_cobre: 950, reward_xp: 6_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        reward_cobre: 950, reward_xp: 6_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 1,
         requires: 812, min_level: 18, ..posto(204) },
     QuestDef { id: 814, title: "A guarded coast", desc: "Make one last patrol and defeat twenty enemies on the Glacier.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 20,
@@ -1179,7 +1173,7 @@ pub const QUESTS: &[QuestDef] = &[
         requires: 817, min_level: 21, ..posto(205) },
     QuestDef { id: 819, title: "The forest breathes", desc: "Defeat twenty-five creatures on the Glacier before the trail closes again.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 25,
-        reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        reward_cobre: 1_500, reward_xp: 12_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 1,
         requires: 818, min_level: 23, ..posto(205) },
 
     QuestDef { id: 820, title: "Metal for the shelter", desc: "The Bear Scout needs steel to reinforce the cabin. Break 20 rocks.",
@@ -1217,7 +1211,7 @@ pub const QUESTS: &[QuestDef] = &[
         requires: 826, min_level: 24, ..posto(207) },
     QuestDef { id: 828, title: "The way to the summit", desc: "Drive thirty creatures off the frozen lookout trail.",
         obj_kind: objective_kind::KILL, obj_target: 0, obj_count: 30,
-        reward_cobre: 2_300, reward_xp: 18_000, reward_item: item_id::XP_POTION, reward_item_qty: 1,
+        reward_cobre: 2_300, reward_xp: 18_000, reward_item: item_id::GREATER_HEAL, reward_item_qty: 1,
         requires: 827, min_level: 26, ..posto(207) },
     QuestDef { id: 829, title: "Guardian of the Glacier", desc: "Defeat one last field boss and return to the Explorer's cabin.",
         obj_kind: objective_kind::KILL, obj_target: ALVO_QUALQUER_CHEFE, obj_count: 1,
@@ -1818,5 +1812,30 @@ mod testes_do_craft_com_alvo {
         assert!(!conta_craft(chave, chave + 1), "another Cellar's key");
         assert!(!conta_craft(chave, 221), "a piece of armour");
         assert!(conta_craft(0, 221) && conta_craft(0, chave));
+    }
+}
+
+#[cfg(test)]
+mod testes_da_pocao_de_xp {
+    use super::*;
+
+    /// Free XP potions come from the dailies only: no one-off, side or story
+    /// quest pays one, and every area daily pays exactly 1.
+    #[test]
+    fn so_diarias_pagam_pocao_de_xp() {
+        let historia = (0..crate::historia::total_escritos() + 12)
+            .filter_map(crate::historia::id_do_passo)
+            .filter_map(crate::historia::def_da_historia);
+        for d in QUESTS.iter().chain(historia) {
+            let paga = [(d.reward_item, d.reward_item_qty), (d.reward_item2, d.reward_item2_qty)]
+                .iter()
+                .any(|&(id, q)| id == item_id::XP_POTION && q > 0);
+            assert_eq!(paga, paga_pocao_xp(d), "{} {}", d.id, d.title);
+            if paga {
+                assert!(d.daily, "{} pays an XP potion and is not a daily", d.id);
+                assert_eq!(d.reward_item2_qty, 1, "{}", d.id);
+            }
+        }
+        assert!(QUESTS.iter().filter(|d| paga_pocao_xp(d)).count() >= 3);
     }
 }
