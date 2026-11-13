@@ -684,4 +684,10 @@ pub const VERBETES: &[(&str, &str)] = &[
         "O link vale por 1 hora e só pode ser usado uma vez. Se não foi você,                  pode ignorar — sua senha continua a mesma.",
         "The link is good for 1 hour and can only be used once. If this wasn't you,                  you can ignore it — your password stays the same.",
     ),
+    // ─────────────────────────── clan (12/11/2026) ───────────────────────────
+    ("Clan tag: 2 to 5 characters.", "Tag do clã: 2 a 5 caracteres."),
+    ("Clan tag: letters A-Z and digits 0-9 only.", "Tag do clã: só letras A-Z e dígitos 0-9."),
+    ("That clan tag is not allowed.", "Essa tag de clã não é permitida."),
+    ("Another clan already uses that tag.", "Outro clã já usa essa tag."),
+    ("Your clan rank cannot do that.", "Seu cargo no clã não permite isso."),
 ];

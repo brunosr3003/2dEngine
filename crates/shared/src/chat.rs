@@ -340,6 +340,9 @@ pub enum Notificacao {
         /// For `CANAL_ILHA`: only processes serving this zone deliver it.
         #[serde(default)]
         zona: String,
+        /// The sender's clan tag.
+        #[serde(default)]
+        tag: String,
     },
     /// A whisper looking for its receiver: the process that has them online
     /// delivers it and answers with `SussurroResposta`.
@@ -429,7 +432,7 @@ mod testes {
 
     #[test]
     fn notificacao_vai_e_volta() {
-        let n = Notificacao::Mensagem { id: 3, de: "Ana".into(), texto: "hi".into(), staff: false, canal: 1, zona: "ilha_gelo".into() };
+        let n = Notificacao::Mensagem { id: 3, de: "Ana".into(), texto: "hi".into(), staff: false, canal: 1, zona: "ilha_gelo".into(), tag: "MAR".into() };
         let j = serde_json::to_string(&n).unwrap();
         assert!(j.contains("\"t\":\"msg\""));
         assert_eq!(serde_json::from_str::<Notificacao>(&j).unwrap(), n);

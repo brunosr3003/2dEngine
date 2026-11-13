@@ -969,6 +969,8 @@ pub enum ServerMessage {
     },
     PartyUpdate {
         members: Vec<String>,
+        /// Clan tag of each member, same order ("" = none).
+        tags: Vec<String>,
     },
     /// Pontos de atributo disponiveis + ja alocados em cada stat.
     /// `allocated[i]` = pontos no stat com indice `i` (0=FOR..4=SPD, ver `crate::stat_idx`).
@@ -1399,6 +1401,8 @@ pub enum ServerMessage {
         de: String,
         texto: String,
         staff: bool,
+        /// The sender's clan tag ("" = none or a whisper).
+        tag: String,
     },
     /// The staff asks for a store rating now (Panopticon): the client shows
     /// its "Rate Tempest" card at the next calm moment, if it still may.

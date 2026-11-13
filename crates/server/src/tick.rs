@@ -146,6 +146,7 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Social { sid, nome, avisos }) => {
                     world.on_social(sid, nome, avisos)
                 }
+                Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -187,6 +188,7 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::Social { sid, nome, avisos }) => {
                     world.on_social(sid, nome, avisos)
                 }
+                Ok(IncomingMessage::ClaDosPresentes(v)) => world.on_cla_dos_presentes(v),
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
@@ -230,6 +232,10 @@ pub async fn run_world_loop(
         // Lotacao do canal pro HUD: a cada 5s.
         if save_counter % 150 == 0 {
             world.avisa_info_canal();
+        }
+        // Realm-wide presence (friends / clan "online in any channel").
+        if save_counter % (shared::social::PRESENCA_BATIDA_S as u32 * 30) == 0 {
+            world.bater_presenca(None);
         }
         // Medidas pro panoptico (o valor de agora): a cada 30 s.
         if save_counter % 900 == 0 {

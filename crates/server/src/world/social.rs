@@ -179,6 +179,62 @@ impl GameWorld {
         self.handle_social(sid, Pedido::Estado);
     }
 
+    /// Writes the presence rows of everyone here (or just `so`) and learns
+    /// their clan id/tag back. No SQL on the tick: a task does it.
+    pub fn bater_presenca(&self, so: Option<SessionId>) {
+        let Some(ctx) = &self.auth_ctx else { return };
+        let presentes: Vec<crate::social::Presente> = self
+            .sessions
+            .iter()
+            .filter(|(id, s)| s.logged_in && !s.name.is_empty() && so.is_none_or(|x| x == **id))
+            .map(|(_, s)| crate::social::Presente {
+                nome: s.name.clone(),
+                nivel: shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()) as u16,
+                conjunto: s.equipment.weapon.map_or(shared::social::SEM_CONJUNTO, |w| {
+                    shared::skills::Conjunto::da_arma(w) as u8
+                }),
+            })
+            .collect();
+        if presentes.is_empty() {
+            return;
+        }
+        let (pool, tx) = (ctx.pool.clone(), ctx.tx.clone());
+        let zona = self.zona.clone();
+        let canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
+        tokio::spawn(async move {
+            match crate::social::bater_presenca(&pool, &zona, &canal, &presentes).await {
+                Ok(v) => {
+                    let _ = tx.send(IncomingMessage::ClaDosPresentes(v));
+                }
+                Err(e) => tracing::warn!("presence heartbeat: {e:#}"),
+            }
+        });
+    }
+
+    /// This channel lost the player (logout, handoff, kick).
+    pub(super) fn presenca_saiu(&self, nome: &str) {
+        let Some(ctx) = &self.auth_ctx else { return };
+        if nome.is_empty() {
+            return;
+        }
+        let (pool, nome, zona) = (ctx.pool.clone(), nome.to_string(), self.zona.clone());
+        let canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
+        tokio::spawn(async move {
+            if let Err(e) = crate::social::sair_presenca(&pool, &nome, &zona, &canal).await {
+                tracing::warn!("presence logout: {e:#}");
+            }
+        });
+    }
+
+    pub fn on_cla_dos_presentes(&mut self, v: Vec<(String, i64, String)>) {
+        for (nome, id, tag) in v {
+            if let Some(s) = self.sessions.values_mut().find(|s| s.logged_in && s.name == nome) {
+                s.cla_id = id;
+                s.cla_tag = tag;
+            }
+        }
+    }
+
     pub fn on_social(&mut self, sid: SessionId, nome: String, avisos: Vec<Aviso>) {
         if self.social_pendentes.get(&sid) != Some(&nome) {
             return;
@@ -191,25 +247,39 @@ impl GameWorld {
         else {
             return;
         };
+        let mut meu_cla = None;
         for mut aviso in avisos {
             if let Aviso::Estado(e) = &mut aviso {
-                e.neste_canal = self
-                    .sessions
-                    .values()
-                    .filter(|s| {
-                        s.logged_in
-                            && (e.amigos.contains(&s.name)
-                                || e.cla.as_ref().is_some_and(|c| c.membros.contains(&s.name)))
-                    })
-                    .map(|s| s.name.clone())
+                // Whoever is HERE is online for sure (the table may lag a beat).
+                for c in &mut e.contatos {
+                    if let Some(o) = self.sessions.values().find(|o| o.logged_in && o.name == c.nome) {
+                        c.online = true;
+                        c.zona = self.zona.clone();
+                        c.canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
+                        c.nivel = shared::level_of_xp_with_mult(o.xp, crate::economy::xp_multiplier()) as u16;
+                    }
+                }
+                e.neste_canal = e
+                    .contatos
+                    .iter()
+                    .filter(|c| c.online)
+                    .map(|c| c.nome.clone())
                     .collect();
+                meu_cla = Some(e.cla.as_ref().map_or((0, String::new()), |c| (c.id, c.tag.clone())));
             }
             let _ = s.handle.to_client.send(ServerMessage::Social { aviso });
         }
         if let Some(pid) = s.party_id {
-            let _ = s.handle.to_client.send(ServerMessage::PartyUpdate {
-                members: self.party_members(pid),
-            });
+            let members = self.party_members(pid);
+            let tags = self.party_tags(&members);
+            let _ = s.handle.to_client.send(ServerMessage::PartyUpdate { members, tags });
+        }
+        // My own clan changed (created, joined, new tag): the nameplate follows now.
+        if let Some((id, tag)) = meu_cla {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.cla_id = id;
+                s.cla_tag = tag;
+            }
         }
     }
 }

@@ -522,6 +522,9 @@ pub struct EntityMeta {
     /// Zero = default models.
     #[serde(default)]
     pub skins: u64,
+    /// The player's clan tag ("" = none), drawn as "[TAG] Name".
+    #[serde(default)]
+    pub cla: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -74,6 +74,8 @@ pub enum IncomingMessage {
         nome: String,
         avisos: Vec<shared::social::Aviso>,
     },
+    /// Presence heartbeat answer: (character, clan id, clan tag).
+    ClaDosPresentes(Vec<(String, i64, String)>),
     CorreioEntrega(crate::correio_admin::Entrega),
     CorreioFim {
         sid: SessionId,
@@ -2101,6 +2103,12 @@ pub struct Session {
     /// Direito temporário de revidar, por agressor; nunca persistido.
     agressores: HashMap<EntityId, f32>,
     pk_visto: shared::PkState,
+    /// Clan id (0 = none) and tag, refreshed by the presence heartbeat and
+    /// by this player's own social state (`social::bater_presenca`).
+    pub cla_id: i64,
+    pub cla_tag: String,
+    /// The tag last put on the nameplate; a change forces the meta again.
+    cla_tag_visto: String,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
     pub faction: shared::Faction,
@@ -6717,6 +6725,9 @@ impl GameWorld {
         // Quests ativas + pontos de facção + givers disponíveis (indicador "!").
         self.send_quest_log(sid);
         self.send_quest_givers(sid);
+        // Online for friends and clan on every channel, and the clan tag on
+        // the nameplate, right away instead of at the next heartbeat.
+        self.bater_presenca(Some(sid));
 
         // O cliente pode conservar a janela de dungeon após uma queda de
         // conexão/restart. Sempre que um personagem entra no mundo, a sessão
@@ -7654,6 +7665,9 @@ impl GameWorld {
                 pk_points: 0,
                 agressores: HashMap::new(),
                 pk_visto: Default::default(),
+                cla_id: 0,
+                cla_tag: String::new(),
+                cla_tag_visto: String::new(),
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -7717,6 +7731,9 @@ impl GameWorld {
         self.social_pendentes.remove(&id);
         self.social_pedido_em.remove(&id);
         self.dg_desconectou(id);
+        if let Some(nome) = self.sessions.get(&id).filter(|s| s.logged_in).map(|s| s.name.clone()) {
+            self.presenca_saiu(&nome);
+        }
         if let Some(s) = self.sessions.remove(&id) {
             // Tutorial: libera a lane pra outro player poder usar.
             if let Some(idx) = s.tutorial_slot {
@@ -7761,7 +7778,7 @@ impl GameWorld {
                             let _ = sess
                                 .handle
                                 .to_client
-                                .send(ServerMessage::PartyUpdate { members: vec![] });
+                                .send(ServerMessage::PartyUpdate { members: vec![], tags: vec![] });
                         }
                     }
                 } else {
@@ -13207,10 +13224,18 @@ impl GameWorld {
         let mut alterados = Vec::new();
         let mut auras_de = HashMap::new();
         let mut pk_de = HashMap::new();
+        let mut cla_de: HashMap<EntityId, String> = HashMap::new();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState { hostil: s.pk_mode_on, pontos: s.pk_points };
             pk_de.insert(s.entity_id, pk);
             if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
+            if !s.cla_tag.is_empty() {
+                cla_de.insert(s.entity_id, s.cla_tag.clone());
+            }
+            if s.cla_tag != s.cla_tag_visto {
+                s.cla_tag_visto = s.cla_tag.clone();
+                alterados.push(s.entity_id);
+            }
             let auras = shared::auras::equipamento(&s.equipment);
             auras_de.insert(s.entity_id, auras);
             if auras != s.auras_vistas {
@@ -13428,6 +13453,7 @@ impl GameWorld {
                         skins: aparencia_de
                             .get(&projtag.filter(|p| p.from_player).map_or(net.0, |p| p.owner))
                             .map_or(0, |a| a.1),
+                        cla: if ptag.is_some() { cla_de.get(&net.0).cloned().unwrap_or_default() } else { String::new() },
                     };
                     let mut state = EntityState::quantize(
                         net.0,
@@ -15397,13 +15423,28 @@ impl GameWorld {
         members
     }
 
+    /// Clan tag of each name, same order ("" = none / not here).
+    pub(crate) fn party_tags(&self, members: &[String]) -> Vec<String> {
+        members
+            .iter()
+            .map(|n| {
+                self.sessions
+                    .values()
+                    .find(|s| s.logged_in && &s.name == n)
+                    .map_or_else(String::new, |s| s.cla_tag.clone())
+            })
+            .collect()
+    }
+
     /// Envia PartyUpdate pra todos os membros da party.
     fn broadcast_party_update(&self, pid: u32) {
         let members = self.party_members(pid);
+        let tags = self.party_tags(&members);
         for s in self.sessions.values() {
             if s.party_id == Some(pid) {
                 let _ = s.handle.to_client.send(ServerMessage::PartyUpdate {
                     members: members.clone(),
+                    tags: tags.clone(),
                 });
             }
         }
@@ -15540,7 +15581,7 @@ impl GameWorld {
                 let _ = s
                     .handle
                     .to_client
-                    .send(ServerMessage::PartyUpdate { members: vec![] });
+                    .send(ServerMessage::PartyUpdate { members: vec![], tags: vec![] });
                 p
             }
             None => return,
@@ -15555,7 +15596,7 @@ impl GameWorld {
                         let _ = s
                             .handle
                             .to_client
-                            .send(ServerMessage::PartyUpdate { members: vec![] });
+                            .send(ServerMessage::PartyUpdate { members: vec![], tags: vec![] });
                     }
                 }
             } else {
@@ -22869,6 +22910,7 @@ impl GameWorld {
         use shared::chat::{self, Acao};
         let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else { return };
         let (Some(conta), nome, grupo) = (s.account_id, s.name.clone(), s.party_id) else { return };
+        let tag = s.cla_tag.clone();
         let canal = canal.min(chat::CANAL_SUSSURRO);
         if canal == chat::CANAL_GRUPO && grupo.is_none() {
             self.send_chat_to(sid, "You are not in a party.");
@@ -22939,12 +22981,13 @@ impl GameWorld {
                         de: nome.clone(),
                         texto: r.mostrado.clone(),
                         staff: e_staff,
+                        tag: tag.clone(),
                     });
                 }
             }
-            crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff, canal, false);
+            crate::chat_global::publicar(conta, nome, tag, self.zona.clone(), texto, r, e_staff, canal, false);
         } else {
-            crate::chat_global::publicar(conta, nome, self.zona.clone(), texto, r, e_staff, canal, true);
+            crate::chat_global::publicar(conta, nome, tag, self.zona.clone(), texto, r, e_staff, canal, true);
         }
     }
 
@@ -22952,7 +22995,7 @@ impl GameWorld {
     pub fn on_notificacao_chat(&mut self, n: shared::chat::Notificacao) {
         use shared::chat::Notificacao as N;
         match n {
-            N::Mensagem { id, de, texto, staff, canal, zona } => {
+            N::Mensagem { id, de, texto, staff, canal, zona, tag } => {
                 if self.tutorial_mode || (canal == shared::chat::CANAL_ILHA && zona != self.zona) {
                     return;
                 }
@@ -22964,6 +23007,7 @@ impl GameWorld {
                         de: de.clone(),
                         texto: texto.clone(),
                         staff,
+                        tag: tag.clone(),
                     });
                 }
             }
@@ -22984,6 +23028,7 @@ impl GameWorld {
                         de,
                         texto,
                         staff,
+                        tag: String::new(),
                     });
                 }
                 crate::chat_global::responder(id, origem, if aceita { 0 } else { 1 }, nome_real);
@@ -23002,6 +23047,7 @@ impl GameWorld {
                             de: s.name.clone(),
                             texto,
                             staff: false,
+                            tag: String::new(),
                         });
                     }
                 } else {

@@ -314,7 +314,7 @@ async fn notificar(pool: &PgPool, n: &Notificacao) -> anyhow::Result<()> {
 /// applies an automatic mute or ban. The world already told the player.
 /// `canal` = `shared::chat::CANAL_*`. The party channel is delivered by the
 /// world itself (`notificar = false`); this only logs it.
-pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::Resultado, e_staff: bool, canal: u8, notificar_: bool) {
+pub fn publicar(conta: i64, nome: String, tag: String, zona: String, texto: String, r: chat::Resultado, e_staff: bool, canal: u8, notificar_: bool) {
     let pior = r.pior();
     match pior {
         Some(Acao::Silenciar) => silenciar_local(conta, chat::SILENCIO_AUTOMATICO_MIN),
@@ -349,7 +349,7 @@ pub fn publicar(conta: i64, nome: String, zona: String, texto: String, r: chat::
                 let zona_msg = if canal == chat::CANAL_ILHA { zona.clone() } else { String::new() };
                 notificar(
                     &pool,
-                    &Notificacao::Mensagem { id, de: nome.clone(), texto: r.mostrado.clone(), staff: e_staff, canal, zona: zona_msg },
+                    &Notificacao::Mensagem { id, de: nome.clone(), texto: r.mostrado.clone(), staff: e_staff, canal, zona: zona_msg, tag: tag.clone() },
                 )
                 .await?;
             }
