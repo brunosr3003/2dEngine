@@ -3595,6 +3595,18 @@ impl GameWorld {
         None
     }
 
+    /// How close to a purple rock vein (stone tier 4) a monster may not spawn.
+    pub const SEM_MOB_PERTO_DO_VEIO_ROXO: f32 = 12.0;
+
+    /// Is `pos` within `SEM_MOB_PERTO_DO_VEIO_ROXO` of a purple rock vein?
+    /// Depleted veins count too: they grow back where they were.
+    pub fn perto_de_veio_roxo(&self, pos: Vec2) -> bool {
+        let Some(ilha) = self.ilha.as_ref() else { return false };
+        let mut achados = Vec::new();
+        ilha.coletaveis_em(pos, Self::SEM_MOB_PERTO_DO_VEIO_ROXO, &mut achados);
+        achados.iter().any(|c| c.tier == 4)
+    }
+
     /// True se a posição está dentro de qualquer zona segura. Combate
     /// (dano dado/recebido, swing/shoot do player) é bloqueado nessa zona.
     pub fn in_safe_zone(&self, pos: Vec2) -> bool {
@@ -3927,7 +3939,9 @@ impl GameWorld {
         // Pra slots Poisson: bind eid → slot.occupant + atualiza SpawnedByZone
         // tag pra ter slot_idx correto (death handler usa pra liberar slot).
         for ps in pending {
-            if self.in_safe_zone(ps.pos) {
+            // Owner, 13/11/2026: no monster spawns near a PURPLE rock vein
+            // (`perto_de_veio_roxo`); the slot is retired like a safe-zone one.
+            if self.in_safe_zone(ps.pos) || self.perto_de_veio_roxo(ps.pos) {
                 if ps.slot_idx != u32::MAX {
                     if let Some(zone) = self.spawn_zones.iter_mut().find(|z| z.id == ps.zone_id) {
                         if let Some(slot) = zone.slots.get_mut(ps.slot_idx as usize) {
@@ -22572,6 +22586,38 @@ mod testes_planalto {
             assert_eq!((z.lv_min, z.lv_max), shared::planalto::FORTE_NIVEIS);
             assert!(z.slots.len() >= 4, "a Stormkeep horde with {} slots", z.slots.len());
             assert!(z.slots.iter().all(|p| pl.d_forte(*p) > shared::planalto::FORTE_PATIO_RAIO + 4.0), "a mob inside the keep");
+        }
+    }
+
+    /// No monster spawns within `SEM_MOB_PERTO_DO_VEIO_ROXO` of a purple
+    /// (tier 4) rock vein; other stones and far points are untouched.
+    #[test]
+    fn sem_mob_perto_do_veio_roxo() {
+        let ilha = shared::terreno::Ilha::da_ilha(&shared::terreno::ARQUIPELAGO[3]);
+        let pl = ilha.planalto().unwrap().clone();
+        let mut perto = Vec::new();
+        ilha.coletaveis_em(pl.centro_campo(3), 32.0, &mut perto);
+        let veio = perto.iter().find(|c| c.tier == 4).expect("Stormfield has purple veins");
+        let mut w = GameWorld::new(HashMap::new());
+        assert!(!w.perto_de_veio_roxo(veio.centro), "no island, no veins");
+        w.ilha = Some(ilha);
+        assert!(w.perto_de_veio_roxo(veio.centro));
+        assert!(w.perto_de_veio_roxo(veio.centro + Vec2::new(GameWorld::SEM_MOB_PERTO_DO_VEIO_ROXO - 1.0, 0.0)));
+        // Points around: the answer is "a purple vein within the radius".
+        let ilha = w.ilha.as_ref().unwrap();
+        let mut todos = Vec::new();
+        for dx in [-30.0, -13.0, 13.0, 30.0, 60.0] {
+            let p = veio.centro + Vec2::new(dx, 7.0);
+            ilha.coletaveis_em(p, 80.0, &mut todos);
+            let esperado = todos
+                .iter()
+                .any(|c| c.tier == 4 && c.centro.distance(p) <= GameWorld::SEM_MOB_PERTO_DO_VEIO_ROXO);
+            assert_eq!(w.perto_de_veio_roxo(p), esperado, "at {dx}");
+        }
+        // A stone of another colour alone does not block.
+        if let Some(outra) = perto.iter().find(|c| (1..=3).contains(&c.tier)) {
+            ilha.coletaveis_em(outra.centro, GameWorld::SEM_MOB_PERTO_DO_VEIO_ROXO, &mut todos);
+            assert_eq!(w.perto_de_veio_roxo(outra.centro), todos.iter().any(|c| c.tier == 4));
         }
     }
 
