@@ -1040,6 +1040,27 @@ impl Mercado {
             livre,
         );
         let bt = Rect::new(x, dir.y + dir.h - 58.0 * f, w, 44.0 * f);
+        // The typed price against the recommended one: yellow past half the
+        // alert threshold, red past it (the same red "My listings" shows).
+        if let Some(d) = regras::desvio(self.venda_preco, recomendado) {
+            let cor = if d.abs() > regras::DESVIO_ALERTA {
+                Some(estilo::VERMELHO)
+            } else if d.abs() > regras::DESVIO_ALERTA * 0.5 {
+                Some(estilo::OURO)
+            } else {
+                None
+            };
+            if let Some(cor) = cor {
+                estilo::texto_ajustado(
+                    &format!("Price far from market value ({})", texto_do_desvio(d)),
+                    x,
+                    bt.y - 64.0 * f,
+                    w,
+                    13,
+                    cor,
+                );
+            }
+        }
         // THE BUTTONS SAY WHAT THEY DO, total included. The old pair read
         // "List" (dull) beside "Sell all ×N at X" (gold): sellers who set one
         // unit pressed the gold one and listed the whole stack, and took X
@@ -1409,6 +1430,20 @@ impl Mercado {
             estilo::SUAVE,
         );
         let alt = 58.0 * f;
+        // Listings far from today's recommended price (prices are recounted
+        // every 5 min): red, with "Adjust price"; the header adjusts them all.
+        let ajustes: Vec<Option<(f64, u64)>> = self.meus.iter().map(|an| ajuste_do_anuncio(an, &self.precos)).collect();
+        let longe = ajustes.iter().filter(|a| a.is_some()).count();
+        if longe > 0 {
+            let b = Rect::new(esq.x + esq.w - 150.0 * f, esq.y - 6.0 * f, 150.0 * f, 30.0 * f);
+            if crate::ui::botao(b, &format!("Adjust all ({longe})"), livre) {
+                for (an, aj) in self.meus.iter().zip(&ajustes) {
+                    if let Some((_, rec)) = aj {
+                        saida.push(ClientMessage::MercadoAjustarPreco { anuncio: an.id.clone(), preco_unit: *rec });
+                    }
+                }
+            }
+        }
         let lista = Rect::new(esq.x, esq.y + 26.0 * f, esq.w, esq.h - 26.0 * f);
         let toque = abre_lista(&mut self.rolagem, lista, self.meus.len(), alt, livre);
         if self.meus.is_empty() {
@@ -1428,6 +1463,11 @@ impl Mercado {
                 saida.push(ClientMessage::MercadoCancelar {
                     anuncio: an.id.clone(),
                 });
+            }
+            if let Some((desvio, rec)) = ajustes[i] {
+                if alerta_de_preco(r, desvio, rec, f, livre, toque) {
+                    saida.push(ClientMessage::MercadoAjustarPreco { anuncio: an.id.clone(), preco_unit: rec });
+                }
             }
         }
         fecha_lista(&self.rolagem, lista, self.meus.len(), alt);
@@ -2042,6 +2082,45 @@ fn linha_de_anuncio(
     botao_na_lista(b, rotulo, livre && ativo, ativo && rotulo != "Cancel", toque)
 }
 
+/// (deviation, recommended price) of a listing far from the market value
+/// (`regras::longe_do_mercado`); `None` when it is close or has no price to compare.
+fn ajuste_do_anuncio(an: &AnuncioNet, precos: &std::collections::HashMap<u16, f64>) -> Option<(f64, u64)> {
+    if an.tipo != regras::TIPO_ITEM {
+        return None;
+    }
+    let rec = shared::precos::recomendado(precos, an.item_id, an.instancia.as_ref())?;
+    let rec = rec.clamp(1, regras::PRECO_MAX_UNIT);
+    regras::longe_do_mercado(an.preco_unit, Some(rec)).then(|| (regras::desvio(an.preco_unit, Some(rec)).unwrap_or(0.0), rec))
+}
+
+/// "+80%" / "−60%".
+fn texto_do_desvio(d: f64) -> String {
+    let pct = (d * 100.0).round() as i64;
+    if pct >= 0 { format!("+{pct}%") } else { format!("−{}%", -pct) }
+}
+
+/// The far-from-market warning over a "my listing" row: red rim, the text
+/// on the second line, and an "Adjust price" button left of Cancel. `true`
+/// on the button's tap.
+fn alerta_de_preco(r: Rect, desvio: f64, rec: u64, f: f32, livre: bool, toque: Option<Vec2>) -> bool {
+    estilo::borda_arredondada(r, estilo::RAIO_PEQUENO, 2.0, estilo::VERMELHO);
+    let icone = icone_do_anuncio(r, f);
+    let x = icone.x + icone.w + 10.0 * f;
+    let bw = 116.0 * f;
+    let b = Rect::new(r.x + r.w - 2.0 * bw - 12.0 * f, r.y + (r.h - 38.0 * f) * 0.5, bw, 38.0 * f);
+    // Over the "realm · seller" line, which says nothing on my own listing.
+    draw_rectangle(x - 2.0, r.y + 29.0 * f, (b.x - x - 90.0 * f).max(0.0), 15.0 * f, estilo::FUNDO_BAIXO);
+    estilo::texto_ajustado(
+        &format!("Price far from market value ({}) · market {} gold", texto_do_desvio(desvio), milhar(rec)),
+        x,
+        r.y + 40.0 * f,
+        (b.x - x - 90.0 * f).max(40.0 * f),
+        12,
+        estilo::VERMELHO,
+    );
+    botao_na_lista(b, "Adjust price", livre, true, toque)
+}
+
 /// Results the item picker lists (it scrolls; more than fit is fine).
 const MAX_ACHADOS: usize = 60;
 
@@ -2334,6 +2413,31 @@ fn seletor(
     );
     if sobre && clicou {
         ed.pedido = Some((id, meio.y + meio.h, *valor));
+    }
+}
+
+#[cfg(test)]
+mod testes_do_ajuste {
+    use super::*;
+
+    #[test]
+    fn anuncio_longe_do_mercado_pede_ajuste() {
+        let mut precos = std::collections::HashMap::new();
+        precos.insert(7u16, 100.0);
+        let an = |preco_unit: u64, tipo: u8| AnuncioNet {
+            id: "a".into(), tipo, item_id: 7, nome: "Ore".into(), categoria: 0, instancia: None,
+            qtd: 1, preco_unit, realm: "SA01".into(), vendedor: "Ana".into(), meu: true,
+        };
+        assert_eq!(ajuste_do_anuncio(&an(100, regras::TIPO_ITEM), &precos), None);
+        assert_eq!(ajuste_do_anuncio(&an(150, regras::TIPO_ITEM), &precos), None);
+        let (d, rec) = ajuste_do_anuncio(&an(300, regras::TIPO_ITEM), &precos).unwrap();
+        assert_eq!(rec, 100);
+        assert_eq!(texto_do_desvio(d), "+200%");
+        let (d, _) = ajuste_do_anuncio(&an(20, regras::TIPO_ITEM), &precos).unwrap();
+        assert_eq!(texto_do_desvio(d), "−80%");
+        assert_eq!(ajuste_do_anuncio(&an(300, regras::TIPO_TP), &precos), None, "TP has no recommended price");
+        precos.clear();
+        assert_eq!(ajuste_do_anuncio(&an(300, regras::TIPO_ITEM), &precos), None);
     }
 }
 

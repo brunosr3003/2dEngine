@@ -234,6 +234,41 @@ pub fn preco_valido(preco_unit: u64) -> bool {
     (1..=PRECO_MAX_UNIT).contains(&preco_unit)
 }
 
+/// How far from the recommended price (as a fraction) a listing gets the
+/// "far from market value" warning. 0.50 = more than 50% above or below.
+pub const DESVIO_ALERTA: f64 = 0.50;
+
+/// Signed deviation of `preco` from `recomendado` (+0.8 = 80% above), or
+/// `None` with no recommended price to compare.
+pub fn desvio(preco: u64, recomendado: Option<u64>) -> Option<f64> {
+    let r = recomendado.filter(|r| *r > 0)?;
+    Some(preco as f64 / r as f64 - 1.0)
+}
+
+/// The listing is far enough from the market value to warn.
+pub fn longe_do_mercado(preco: u64, recomendado: Option<u64>) -> bool {
+    desvio(preco, recomendado).is_some_and(|d| d.abs() > DESVIO_ALERTA)
+}
+
+/// Can this listing be repriced to `preco_unit`? (`dono` = it is mine,
+/// `estado` = its `ESTADO_*`). No fee and no escrow change: the items are
+/// already held by the listing.
+pub fn validar_ajuste(dono: bool, estado: u8, preco_atual: u64, preco_unit: u64) -> Result<(), &'static str> {
+    if !dono {
+        return Err("Listing not found.");
+    }
+    if estado != ESTADO_ATIVO {
+        return Err("The listing is no longer active.");
+    }
+    if !preco_valido(preco_unit) {
+        return Err("Invalid price.");
+    }
+    if preco_unit == preco_atual {
+        return Err("The listing already has that price.");
+    }
+    Ok(())
+}
+
 /// Anunciar `qtd` de um slot que tem `no_slot`. O limite de anuncios ativos
 /// e' conferido de novo no central (e' la' que a contagem e' verdadeira).
 pub fn pode_anunciar(
@@ -533,6 +568,23 @@ pub struct FiltroNet {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn longe_do_mercado_e_ajuste_de_preco() {
+        assert_eq!(desvio(150, Some(100)), Some(0.5));
+        assert!(!longe_do_mercado(150, Some(100)), "exactly 50% is not past it");
+        assert!(longe_do_mercado(151, Some(100)));
+        assert!(longe_do_mercado(49, Some(100)));
+        assert!(!longe_do_mercado(50, Some(100)));
+        assert!(!longe_do_mercado(1_000_000, None), "nothing to compare");
+        assert!(!longe_do_mercado(10, Some(0)));
+        assert_eq!(validar_ajuste(false, ESTADO_ATIVO, 10, 20), Err("Listing not found."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO + 1, 10, 20), Err("The listing is no longer active."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, 0), Err("Invalid price."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, PRECO_MAX_UNIT + 1), Err("Invalid price."));
+        assert!(validar_ajuste(true, ESTADO_ATIVO, 10, 10).is_err());
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, 20), Ok(()));
+    }
+
 
     #[test]
     fn vagas_compradas_sobem_de_cinco_ate_50() {

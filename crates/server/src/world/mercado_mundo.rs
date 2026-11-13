@@ -134,6 +134,26 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
+            ClientMessage::MercadoAjustarPreco { anuncio, preco_unit } => {
+                if anuncio.len() > ID_MAX {
+                    return;
+                }
+                tokio::spawn(async move {
+                    match mercado::ajustar_preco(&central, &quem.realm, &quem.nome, &anuncio, preco_unit).await {
+                        Ok((ok, texto)) => {
+                            if ok {
+                                crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
+                            }
+                            responde(&quem.to_client, ok, texto)
+                        }
+                        Err(e) => {
+                            tracing::warn!("mercado: ajustar preco falhou: {e:#}");
+                            responde(&quem.to_client, false, Recusa::Indisponivel.texto());
+                        }
+                    }
+                    enviar_meus(&central, &quem).await;
+                });
+            }
             ClientMessage::MercadoAnunciarEnergia { lotes, preco_unit } => {
                 self.mercado_anunciar_energia(sid, quem, lotes, preco_unit);
             }

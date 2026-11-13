@@ -945,6 +945,46 @@ pub async fn cancelar(
     Ok((true, texto))
 }
 
+/// Reprices an active listing of mine (`regras::validar_ajuste`). No fee and
+/// no escrow change: the items or TP are already held by the listing. Setting
+/// a price is idempotent, so a repeated request needs no operation id.
+pub async fn ajustar_preco(
+    central: &PgPool,
+    realm: &str,
+    personagem: &str,
+    anuncio: &str,
+    preco_unit: u64,
+) -> Result<(bool, String)> {
+    let mut tx = central.begin().await?;
+    let l = sqlx::query(
+        "SELECT estado, preco_unit, nome FROM mercado_anuncios
+          WHERE id = $1 AND realm = $2 AND personagem = $3 FOR UPDATE",
+    )
+    .bind(anuncio)
+    .bind(realm)
+    .bind(personagem)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (estado, atual, nome) = match &l {
+        Some(l) => (
+            l.get::<i16, _>("estado") as u8,
+            l.get::<i64, _>("preco_unit").max(0) as u64,
+            l.get::<String, _>("nome"),
+        ),
+        None => (0, 0, String::new()),
+    };
+    if let Err(e) = regras::validar_ajuste(l.is_some(), estado, atual, preco_unit) {
+        return Ok((false, e.into()));
+    }
+    sqlx::query("UPDATE mercado_anuncios SET preco_unit = $2, atualizado = NOW() WHERE id = $1")
+        .bind(anuncio)
+        .bind(preco_unit as i64)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok((true, format!("New price for {nome}: {} gold each.", shared::idioma::milhar(preco_unit))))
+}
+
 /// Anuncia TP da conta: a TP sai do livro na mesma transacao.
 pub async fn anunciar_tp(
     central: &PgPool,

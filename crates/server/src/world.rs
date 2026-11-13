@@ -8427,6 +8427,7 @@ impl GameWorld {
             | ClientMessage::MercadoComprarVagas { .. }
             | ClientMessage::MercadoComprar { .. }
             | ClientMessage::MercadoCancelar { .. }
+            | ClientMessage::MercadoAjustarPreco { .. }
             | ClientMessage::MercadoEntregas
             | ClientMessage::MercadoReceber
             | ClientMessage::MercadoPedirCompra { .. }

@@ -698,4 +698,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("You have no PK points.", "Você não tem pontos PK."),
     ("You need {} gold to pardon a PK point.", "Você precisa de {} de ouro para perdoar um ponto PK."),
     ("Pardoned 1 PK point for {} gold. PK points: {}.", "1 ponto PK perdoado por {} de ouro. Pontos PK: {}."),
+    ("Invalid price.", "Preço inválido."),
+    ("The listing already has that price.", "O anúncio já tem esse preço."),
+    ("New price for {}: {} gold each.", "Novo preço de {}: {} de ouro cada."),
 ];

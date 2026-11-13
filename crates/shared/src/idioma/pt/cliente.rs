@@ -2168,4 +2168,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("+{}% from PK points: {} XP that cannot be recovered", "+{}% pelos pontos PK: {} de XP que não se recupera"),
     ("Each trained proficiency loses XP on death:", "Cada proficiência treinada perde XP ao morrer:"),
     ("10% of the next level's cost. Its level can drop.", "10% do custo do próximo nível. O nível dela pode cair."),
+    // ─────────────────────────── market reprice (13/11/2026) ───────────────────────────
+    ("Adjust all ({})", "Ajustar todos ({})"),
+    ("Adjust price", "Ajustar preço"),
+    ("Price far from market value ({})", "Preço longe do valor de mercado ({})"),
+    ("Price far from market value ({}) · market {} gold", "Preço longe do valor de mercado ({}) · mercado {} de ouro"),
 ];

@@ -549,6 +549,11 @@ pub enum ClientMessage {
     },
     /// Pays `shared::pk::custo_perdao` gold to remove one PK point.
     PerdoarPk,
+    /// Reprices one of my active market listings (no fee, no escrow change).
+    MercadoAjustarPreco {
+        anuncio: String,
+        preco_unit: u64,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
