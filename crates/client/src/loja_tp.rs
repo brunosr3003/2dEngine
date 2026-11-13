@@ -1379,8 +1379,8 @@ impl LojaTp {
             let w = estilo::medir(t, ts(tam, k)).min(largura);
             estilo::texto_ajustado(t, r.center().x - w * 0.5, y, largura, ts(tam, k), cor);
         };
-        linha("No break up to +9", r.y + r.h * 0.53, 14.0, estilo::alfa(azul, 0.95));
-        linha("A failed +6..+9 refine spends", r.y + r.h * 0.62, 12.0, estilo::TEXTO);
+        linha("No break up to +7", r.y + r.h * 0.53, 14.0, estilo::alfa(azul, 0.95));
+        linha("A failed +6/+7 refine spends", r.y + r.h * 0.62, 12.0, estilo::TEXTO);
         linha("the charm, not the piece.", r.y + r.h * 0.62 + 18.0 * k, 12.0, estilo::TEXTO);
         estilo::valor_tp(
             r.center().x - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(23.0, k), true) * 0.5,

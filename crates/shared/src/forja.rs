@@ -173,11 +173,12 @@ pub const REFINO_MAX: u8 = 12;
 pub const REFINO_SEGURO: u8 = 5;
 
 /// The last level a Ward Charm protects (`item_id::AMULETO_DE_PROTECAO`).
-/// The owner: "take out the chance of the item breaking until +9".
-pub const PROTECAO_ATE: u8 = 9;
+/// The owner: "take out the chance of the item breaking until +9", then
+/// (13/11/2026): protects up to +6 -> +7, the last protected attempt.
+pub const PROTECAO_ATE: u8 = 7;
 
 /// Can a Ward Charm save the piece on a refine to `alvo`? Only where failing
-/// destroys (above `REFINO_SEGURO`) and up to `PROTECAO_ATE`: +10 to +12
+/// destroys (above `REFINO_SEGURO`) and up to `PROTECAO_ATE`: +8 to +12
 /// stay a real gamble.
 pub fn protegivel(alvo: u8) -> bool {
     alvo > REFINO_SEGURO && alvo <= PROTECAO_ATE

@@ -159,7 +159,7 @@ pub fn refinar(inst: &mut ItemInstance, inv: &mut [InventorySlot], sorte: u8) ->
             (resultado::SUBIU, n)
         }
         forja::Refino::Falhou(n) => (resultado::FALHOU, n),
-        // A Ward Charm in the bag takes the hit up to +9: spent only when it
+        // A Ward Charm in the bag takes the hit up to +7: spent only when it
         // actually saves the piece, never on a success.
         forja::Refino::Destruiu
             if forja::protegivel(nivel + 1) && tem(inv, item_id::AMULETO_DE_PROTECAO) > 0 =>
@@ -600,25 +600,25 @@ mod testes {
         );
     }
 
-    /// A Ward Charm saves the piece on a destroying failure up to +9, and is
-    /// spent only then: never on a success, never above +9.
+    /// A Ward Charm saves the piece on a destroying failure up to +7, and is
+    /// spent only then: never on a success, never above +7.
     #[test]
-    fn amuleto_de_protecao_salva_a_peca_ate_o_nove() {
+    fn amuleto_de_protecao_salva_a_peca_ate_o_sete() {
         let mut p = ItemInstance::roll_for(item_id::KATANA, 5, || 0.5).unwrap();
         let (ds, cu) = custo_do_refino(&p);
         let rica = |amuletos| bolsa(&[(item_id::DARKSTEEL, ds * 10), (item_id::COPPER, cu * 10),
             (item_id::AMULETO_DE_PROTECAO, amuletos)]);
-        // +8 -> +9 fails (sorte 99): the charm breaks, the piece stays +8.
-        p.refinement = 8;
+        // +6 -> +7 fails (sorte 99): the charm breaks, the piece stays +6.
+        p.refinement = 6;
         let mut inv = rica(2);
-        assert_eq!(refinar(&mut p, &mut inv, 99), (resultado::PROTEGIDO, 8));
-        assert_eq!((p.refinement, tem(&inv, item_id::AMULETO_DE_PROTECAO)), (8, 1));
+        assert_eq!(refinar(&mut p, &mut inv, 99), (resultado::PROTEGIDO, 6));
+        assert_eq!((p.refinement, tem(&inv, item_id::AMULETO_DE_PROTECAO)), (6, 1));
         // A success leaves the charm alone.
         p.refinement = 5;
         assert_eq!(refinar(&mut p, &mut inv, 0), (resultado::SUBIU, 6));
         assert_eq!(tem(&inv, item_id::AMULETO_DE_PROTECAO), 1);
-        // +9 -> +10 is not covered: the piece goes.
-        p.refinement = 9;
+        // +7 -> +8 is not covered: the piece goes.
+        p.refinement = 7;
         assert_eq!(refinar(&mut p, &mut inv, 99).0, resultado::DESTRUIU);
         assert_eq!(tem(&inv, item_id::AMULETO_DE_PROTECAO), 1);
         // Without a charm, +6 destroys as before.

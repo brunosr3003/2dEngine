@@ -2623,7 +2623,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
-        // Ward Charm: from the TP shop; a refine to +6..+9 that would
+        // Ward Charm: from the TP shop; a refine to +6..+7 that would
         // destroy the piece spends one instead (`craft::refinar`). `sell: 0`:
         // bought with real money, it must not turn into NPC gold.
         S {

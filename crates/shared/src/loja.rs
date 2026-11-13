@@ -179,7 +179,7 @@ pub const ITENS_DA_LOJA: [ItemDaLoja; 1] = [ItemDaLoja {
     id: 1,
     item_id: crate::item_id::AMULETO_DE_PROTECAO,
     nome: "Ward Charm",
-    descricao: "Refining to +6..+9, a failure spends the charm and the piece survives.",
+    descricao: "Refining to +6 or +7, a failure spends the charm and the piece survives.",
     preco_tp: 150,
 }];
 

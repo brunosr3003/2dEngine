@@ -601,7 +601,7 @@ impl Forja {
                 )) {
                     self.onde_obter = Some(item_id::COPPER);
                 }
-                // A Ward Charm in the bag covers +6..+9: the attempt is no
+                // A Ward Charm in the bag covers +6..+7: the attempt is no
                 // longer a bet on the piece, so no red line and no question.
                 let amuletos = tem(slots, item_id::AMULETO_DE_PROTECAO);
                 let protegido = i.risco && amuletos > 0 && forja::protegivel(i.nivel + 1);

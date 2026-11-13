@@ -606,7 +606,7 @@ pub mod item_id {
     pub const ARMADURA_PESADA: u16 = 410;
     pub const BRINCO: u16 = 411;
     pub const AMULETO: u16 = 412;
-    /// Ward Charm: in the bag, a refine to +6..+9 that would destroy the
+    /// Ward Charm: in the bag, a refine to +6..+7 that would destroy the
     /// piece spends the charm instead (`forja::protegivel`). TP shop.
     pub const AMULETO_DE_PROTECAO: u16 = 560;
     pub const BRACELETE: u16 = 413;
