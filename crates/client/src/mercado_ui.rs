@@ -51,6 +51,9 @@ pub struct Contexto<'a> {
     pub solido: &'a macroquad::material::Material,
     /// The character's Energy (the Energy tab sells it in lots of 1,000).
     pub energia: u64,
+    /// The on-screen keyboard is up (phones): a number being typed raises
+    /// the panel above it (`teclado_virtual::deslocamento`).
+    pub teclado: bool,
 }
 
 /// A purchase being confirmed.
@@ -137,6 +140,10 @@ pub struct Mercado {
     rolagem: usize,
     rolagem_venda: crate::rolagem::Rolagem,
     pedidos: Pedidos,
+    /// The number being typed into a `seletor`, if any.
+    edicao: Edicao,
+    /// How far the panel is raised above the on-screen keyboard.
+    subida: f32,
 }
 
 fn filtro_tp() -> FiltroNet {
@@ -231,11 +238,38 @@ impl Mercado {
         self.foco_busca = false;
         self.pedidos.foco_busca = false;
         self.pedidos.foco_item = false;
+        self.edicao = Edicao::default();
     }
 
-    /// The on-screen keyboard opens with a search field focused.
+    /// The on-screen keyboard opens with a search field focused, or a number
+    /// being typed.
     pub fn foco_na_busca(&self) -> bool {
-        self.aberto && (self.foco_busca || self.pedidos.foco_busca || self.pedidos.foco_item)
+        self.aberto
+            && (self.foco_busca || self.pedidos.foco_busca || self.pedidos.foco_item || self.edicao.ativa())
+    }
+
+    /// Escape: cancels the number being typed (the old value stays); with
+    /// nothing typed, closes the market.
+    pub fn esc(&mut self) {
+        if self.edicao.ativa() {
+            self.edicao = Edicao::default();
+        } else {
+            self.fechar();
+        }
+    }
+
+    /// End of the frame: an edit whose field was not drawn is dropped, and a
+    /// tap on a number starts its edit (the search fields lose the keyboard).
+    fn fim_da_edicao(&mut self) {
+        if self.edicao.ativa() && !self.edicao.visto {
+            self.edicao = Edicao::default();
+        }
+        if let Some((id, fundo)) = self.edicao.pedido.take() {
+            self.sem_foco();
+            self.edicao.id = Some(id);
+            self.edicao.fundo = fundo;
+        }
+        self.edicao.visto = false;
     }
 
     fn filtro(&self) -> FiltroNet {
@@ -370,10 +404,16 @@ impl Mercado {
     }
 
     fn desenha_na_escala(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
-        let mut saida = Vec::new();
         if !self.aberto {
-            return saida;
+            return Vec::new();
         }
+        let saida = self.desenha_aberto(c, agora);
+        self.fim_da_edicao();
+        saida
+    }
+
+    fn desenha_aberto(&mut self, c: &Contexto, agora: f64) -> Vec<ClientMessage> {
+        let mut saida = Vec::new();
         crate::hud_layout::escurece(0.55);
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
@@ -381,12 +421,21 @@ impl Mercado {
             (980.0 * f).min(seguro.w - 16.0),
             (660.0 * f).min(seguro.h - 16.0),
         );
-        let p = Rect::new(
+        let mut p = Rect::new(
             seguro.center().x - w * 0.5,
             seguro.center().y - h * 0.5,
             w,
             h,
         );
+        // A number being typed on a phone: the panel rises so the field sits
+        // above the on-screen keyboard (same rule as the character name).
+        // `fundo` was measured last frame, already raised by `subida`.
+        self.subida = if self.edicao.ativa() {
+            crate::teclado_virtual::deslocamento(c.teclado, screen_height(), p.y, self.edicao.fundo + self.subida)
+        } else {
+            0.0
+        };
+        p.y -= self.subida;
         estilo::painel(p);
         estilo::texto(p.x + 18.0 * f, p.y + 34.0 * f, "Market", 22, estilo::OURO);
         let fechar = Rect::new(p.x + p.w - 48.0 * f, p.y + 10.0 * f, 38.0 * f, 34.0 * f);
@@ -645,7 +694,7 @@ impl Mercado {
         );
         let r = Rect::new(
             seguro.center().x - w * 0.5,
-            seguro.center().y - h * 0.5,
+            seguro.center().y - h * 0.5 - self.subida,
             w,
             h,
         );
@@ -695,6 +744,9 @@ impl Mercado {
         y += 88.0 * f;
         let max = an.qtd.max(1);
         seletor(
+            &mut self.edicao,
+            "compra_qtd",
+            c.digitado,
             Rect::new(r.x + 18.0 * f, y, r.w - 36.0 * f, 44.0 * f),
             "Quantity",
             &mut compra.qtd,
@@ -904,6 +956,7 @@ impl Mercado {
             .get(&slot.item_id)
             .cloned()
             .unwrap_or_else(|| format!("Item {}", slot.item_id));
+        let nome = nome_com_degrau(&nome, slot.instance.as_ref());
         estilo::texto_ajustado(&nome, x, y + 8.0 * f, w - 48.0 * f, 18, estilo::TEXTO);
         if livre
             && crate::onde_obter::botao(Rect::new(
@@ -917,6 +970,9 @@ impl Mercado {
         }
         y += 44.0 * f;
         seletor(
+            &mut self.edicao,
+            "venda_qtd",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "Quantity",
             &mut self.venda_qtd,
@@ -927,6 +983,9 @@ impl Mercado {
         );
         y += 66.0 * f;
         seletor(
+            &mut self.edicao,
+            "venda_preco",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "Price per unit (gold)",
             &mut self.venda_preco,
@@ -1155,7 +1214,7 @@ impl Mercado {
         estilo::texto(x, y, &tem_txt, 14, if tem > 0 { estilo::TEXTO } else { estilo::VERMELHO });
         y += 34.0 * f;
         let max = tem.min(pd.qtd).max(1);
-        seletor(Rect::new(x, y, w, 42.0 * f), "Quantity", qtd, 1, max, false, f);
+        seletor(&mut self.edicao, "pedido_venda_qtd", c.digitado, Rect::new(x, y, w, 42.0 * f), "Quantity", qtd, 1, max, false, f);
         y += 60.0 * f;
         let bruto = regras::total(*qtd, pd.preco_unit).unwrap_or(0);
         linha_valor(x, y, w, "Total", &milhar(bruto), estilo::TEXTO, f);
@@ -1271,9 +1330,9 @@ impl Mercado {
         }
         y += 74.0 * f;
         // Quantity by tens too: orders are usually for stacks.
-        seletor(Rect::new(x, y, w, 42.0 * f), "Quantity", &mut self.pedidos.qtd, 1, regras::QTD_MAX_POR_PEDIDO, true, f);
+        seletor(&mut self.edicao, "pedido_qtd", c.digitado, Rect::new(x, y, w, 42.0 * f), "Quantity", &mut self.pedidos.qtd, 1, regras::QTD_MAX_POR_PEDIDO, true, f);
         y += 66.0 * f;
-        seletor(Rect::new(x, y, w, 42.0 * f), "Price each (gold)", &mut self.pedidos.preco, 1, regras::PRECO_MAX_UNIT, true, f);
+        seletor(&mut self.edicao, "pedido_preco", c.digitado, Rect::new(x, y, w, 42.0 * f), "Price each (gold)", &mut self.pedidos.preco, 1, regras::PRECO_MAX_UNIT, true, f);
         y += 60.0 * f;
         let total = regras::total(self.pedidos.qtd, self.pedidos.preco);
         let cabe = total.is_some_and(|t| t <= c.ouro);
@@ -1523,12 +1582,14 @@ impl Mercado {
                     None,
                     Some((c.vox, c.solido)),
                 );
+                let base = c
+                    .nomes
+                    .get(&carta.item_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Item {}", carta.item_id));
                 partes.push(format!(
                     "{} ×{}",
-                    c.nomes
-                        .get(&carta.item_id)
-                        .cloned()
-                        .unwrap_or_else(|| format!("Item {}", carta.item_id)),
+                    nome_com_degrau(&base, carta.instancia.as_ref()),
                     milhar(carta.qtd)
                 ));
             }
@@ -1679,6 +1740,9 @@ impl Mercado {
             self.tp_preco = recomendado.unwrap_or(100);
         }
         seletor(
+            &mut self.edicao,
+            "tp_qtd",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "TP to sell",
             &mut self.tp_qtd,
@@ -1689,6 +1753,9 @@ impl Mercado {
         );
         y += 66.0 * f;
         seletor(
+            &mut self.edicao,
+            "tp_preco",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "Gold per TP",
             &mut self.tp_preco,
@@ -1799,6 +1866,9 @@ impl Mercado {
             self.energia_preco = recomendado.unwrap_or(100);
         }
         seletor(
+            &mut self.edicao,
+            "energia_lotes",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "Lots of 1,000 to sell",
             &mut self.energia_lotes,
@@ -1809,6 +1879,9 @@ impl Mercado {
         );
         y += 66.0 * f;
         seletor(
+            &mut self.edicao,
+            "energia_preco",
+            c.digitado,
             Rect::new(x, y, w, 42.0 * f),
             "Gold per 1,000 Energy",
             &mut self.energia_preco,
@@ -1901,18 +1974,33 @@ fn linha_valor(x: f32, y: f32, w: f32, rotulo: &str, valor: &str, cor: Color, _f
 }
 
 fn nome_do_anuncio(an: &AnuncioNet, c: &Contexto) -> String {
+    nome_do_anuncio_com(an, c.nomes)
+}
+
+fn nome_do_anuncio_com(an: &AnuncioNet, nomes: &HashMap<u16, String>) -> String {
     if an.tipo == regras::TIPO_TP {
         return "Tempest Points".into();
     }
-    let base = c
-        .nomes
+    let base = nomes
         .get(&an.item_id)
         .cloned()
         .unwrap_or_else(|| an.nome.clone());
-    match an.instancia.map(|i| i.refinement).filter(|r| *r > 0) {
-        Some(r) => format!("{base} +{r}"),
-        None => base,
+    nome_com_degrau(&base, an.instancia.as_ref())
+}
+
+/// An item's name as the market shows it: with an instance (gear, pet,
+/// mount) the tier and the refine follow, in the notation of the Workshop
+/// and the bag ("Twin Pistols T II +3"); the colour is already the icon's.
+/// Without an instance (materials, potions) the name stays bare.
+pub fn nome_com_degrau(base: &str, inst: Option<&shared::items::ItemInstance>) -> String {
+    let Some(i) = inst else {
+        return base.to_string();
+    };
+    let mut s = format!("{base} T {}", crate::oficina_ui::romano(i.tier()));
+    if i.refinement > 0 {
+        s.push_str(&format!(" +{}", i.refinement));
     }
+    s
 }
 
 /// The icon's square on a listing row.
@@ -2063,9 +2151,68 @@ fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, r
     botao(b, rotulo, livre && ativo, ativo && rotulo != "Cancel")
 }
 
+/// A number being typed into a `seletor` (owner, 12/11/2026: "tap the number
+/// and type the amount"). One at a time in the whole panel.
+#[derive(Default)]
+struct Edicao {
+    /// The `seletor` being typed into, by its id.
+    id: Option<&'static str>,
+    texto: String,
+    /// The `seletor` was drawn this frame; an edit whose field vanished
+    /// (tab changed, dialog closed) is dropped at the end of the frame.
+    visto: bool,
+    /// A tap on a number asks to edit it. It only starts at the end of the
+    /// frame, so the one being edited (drawn before or after) commits first.
+    pedido: Option<(&'static str, f32)>,
+    /// Bottom of the field on screen (to raise the panel above the keyboard).
+    fundo: f32,
+}
+
+impl Edicao {
+    fn ativa(&self) -> bool {
+        self.id.is_some()
+    }
+}
+
+/// The typed text as a value: digits only, clamped to `[min, max]`. Empty =
+/// `None` (the old value stays). Too many digits for a `u64` is `max`.
+fn valor_digitado(texto: &str, min: u64, max: u64) -> Option<u64> {
+    let digitos: String = texto.chars().filter(char::is_ascii_digit).collect();
+    if digitos.is_empty() {
+        return None;
+    }
+    let v = digitos.parse::<u64>().unwrap_or(u64::MAX);
+    Some(v.clamp(min, max.max(min)))
+}
+
+/// What a number field takes from the keyboard: digits and backspace (8).
+/// Letters, spaces, signs and Enter never reach the text.
+fn so_digitos(digitado: &[char]) -> Vec<char> {
+    digitado
+        .iter()
+        .copied()
+        .filter(|c| c.is_ascii_digit() || *c as u32 == 8)
+        .collect()
+}
+
 /// A number by touch: [Min][-] value [+][Max] for quantity; [/10][-] value
-/// [+][x10] for price (+- moves 10% of the value, at least 1).
-fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bool, f: f32) {
+/// [+][x10] for price (+- moves 10% of the value, at least 1). Tapping the
+/// value types it instead: Enter or a tap elsewhere commits (clamped to
+/// `[min, max]`), Escape cancels (`Mercado::esc`). `id` tells the panel's
+/// seletors apart.
+#[allow(clippy::too_many_arguments)]
+fn seletor(
+    ed: &mut Edicao,
+    id: &'static str,
+    digitado: &[char],
+    r: Rect,
+    rotulo: &str,
+    valor: &mut u64,
+    min: u64,
+    max: u64,
+    preco: bool,
+    f: f32,
+) {
     estilo::texto(r.x, r.y - 6.0 * f, rotulo, 13, estilo::SUAVE);
     let bw = (52.0 * f).min(r.w / 6.0);
     let rotulos = if preco {
@@ -2079,6 +2226,36 @@ fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bo
         Rect::new(r.x + r.w - 2.0 * bw - 4.0 * f, r.y, bw, r.h),
         Rect::new(r.x + r.w - bw, r.y, bw, r.h),
     ];
+    let meio = Rect::new(
+        rects[1].x + bw + 4.0 * f,
+        r.y,
+        (rects[2].x - 4.0 * f) - (rects[1].x + bw + 4.0 * f),
+        r.h,
+    );
+    let m = Vec2::from(mouse_position());
+    let clicou = crate::foco::clique();
+    // Typing: the field takes the keys first, so "25" + Enter in one frame commits 25.
+    if ed.id == Some(id) {
+        ed.visto = true;
+        ed.fundo = meio.y + meio.h;
+        let teclas = so_digitos(digitado);
+        crate::ui::campo(meio, "", &mut ed.texto, true, false, &teclas);
+        ed.texto.truncate(max.max(min).to_string().len());
+        if ed.texto.is_empty() {
+            // The old value, faint, while nothing is typed.
+            estilo::texto_centro(meio.center().x, meio.center().y + 6.0 * f, &milhar(*valor), 15, estilo::SUAVE);
+        }
+        let enter = is_key_pressed(KeyCode::Enter)
+            || is_key_pressed(KeyCode::KpEnter)
+            || digitado.iter().any(|ch| *ch == '\r' || *ch == '\n');
+        if enter || (clicou && !meio.toca(m)) {
+            if let Some(v) = valor_digitado(&ed.texto, min, max) {
+                *valor = v;
+            }
+            ed.id = None;
+            ed.texto.clear();
+        }
+    }
     let v = *valor;
     let passo = (v / 10).max(1);
     for (i, b) in rects.iter().enumerate() {
@@ -2096,13 +2273,18 @@ fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bo
         }
     }
     *valor = (*valor).clamp(min, max.max(min));
-    let meio = Rect::new(
-        rects[1].x + bw + 4.0 * f,
-        r.y,
-        (rects[2].x - 4.0 * f) - (rects[1].x + bw + 4.0 * f),
-        r.h,
-    );
+    if ed.id == Some(id) {
+        return;
+    }
+    let sobre = meio.toca(m);
     estilo::ret_arredondado(meio, estilo::RAIO_PEQUENO, estilo::FUNDO_BAIXO);
+    // The value looks tappable: an outline that lights under the pointer.
+    estilo::borda_arredondada(
+        meio,
+        estilo::RAIO_PEQUENO,
+        1.0,
+        if sobre { estilo::alfa(estilo::ACENTO, 0.85) } else { estilo::BORDA_FORTE },
+    );
     let t = milhar(*valor);
     estilo::texto_centro_forte(
         meio.center().x,
@@ -2111,6 +2293,9 @@ fn seletor(r: Rect, rotulo: &str, valor: &mut u64, min: u64, max: u64, preco: bo
         17,
         estilo::TEXTO,
     );
+    if sobre && clicou {
+        ed.pedido = Some((id, meio.y + meio.h));
+    }
 }
 
 #[cfg(test)]
@@ -2131,6 +2316,71 @@ mod tests {
             vendedor: "Ana".into(),
             meu: false,
         }
+    }
+
+    #[test]
+    fn numero_digitado_so_digitos_e_preso_aos_limites() {
+        assert_eq!(valor_digitado("", 1, 480), None, "nothing typed keeps the old value");
+        assert_eq!(valor_digitado("250", 1, 480), Some(250));
+        assert_eq!(valor_digitado("9999", 1, 480), Some(480), "above max clamps to max");
+        assert_eq!(valor_digitado("0", 1, 480), Some(1), "below min clamps to min");
+        assert_eq!(valor_digitado("007", 1, 480), Some(7));
+        assert_eq!(valor_digitado("99999999999999999999999", 1, u64::MAX), Some(u64::MAX), "overflow is max");
+        assert_eq!(valor_digitado("5", 1, 0), Some(1), "an empty range still gives min");
+        assert_eq!(
+            so_digitos(&['1', 'a', '-', '2', ' ', '\u{8}', '\r', '.', '3']),
+            vec!['1', '2', '\u{8}', '3'],
+            "letters, signs and Enter never reach the text; backspace does"
+        );
+    }
+
+    #[test]
+    fn edicao_comeca_no_fim_do_quadro_e_some_sem_o_campo() {
+        let mut m = Mercado { aberto: true, foco_busca: true, ..Default::default() };
+        m.edicao.pedido = Some(("venda_qtd", 300.0));
+        m.fim_da_edicao();
+        assert_eq!(m.edicao.id, Some("venda_qtd"));
+        assert!(!m.foco_busca, "the search field gives up the keyboard");
+        assert!(m.foco_na_busca(), "a number being typed opens the on-screen keyboard");
+        // Drawn this frame: it stays.
+        m.edicao.visto = true;
+        m.fim_da_edicao();
+        assert_eq!(m.edicao.id, Some("venda_qtd"));
+        // Its field was not drawn (tab changed): dropped.
+        m.fim_da_edicao();
+        assert_eq!(m.edicao.id, None);
+        assert!(!m.foco_na_busca());
+        // Escape cancels the edit first, then closes.
+        m.edicao.id = Some("venda_qtd");
+        m.esc();
+        assert!(m.aberto && m.edicao.id.is_none());
+        m.esc();
+        assert!(!m.aberto);
+    }
+
+    #[test]
+    fn nome_no_mercado_leva_tier_e_refino() {
+        let mut inst = shared::ItemInstance::vazia_de_grau(3);
+        inst.tier = 2;
+        inst.refinement = 3;
+        assert_eq!(nome_com_degrau("Twin Pistols", Some(&inst)), "Twin Pistols T II +3");
+        inst.refinement = 0;
+        inst.tier = 4;
+        assert_eq!(nome_com_degrau("Katana", Some(&inst)), "Katana T IV");
+        inst.tier = 0;
+        assert_eq!(nome_com_degrau("Wolf Cub", Some(&inst)), "Wolf Cub T I", "an old instance reads as tier I");
+        assert_eq!(nome_com_degrau("Copper", None), "Copper", "no instance, no tier");
+        // A listing row and the buy dialog name it through `nome_do_anuncio`.
+        let nomes: HashMap<u16, String> = [(60, "Wood".to_string())].into_iter().collect();
+        let mut an = anuncio(regras::TIPO_ITEM);
+        let mut i = shared::ItemInstance::vazia_de_grau(2);
+        i.tier = 3;
+        i.refinement = 5;
+        an.instancia = Some(i);
+        assert_eq!(nome_do_anuncio_com(&an, &nomes), "Wood T III +5");
+        an.instancia = None;
+        assert_eq!(nome_do_anuncio_com(&an, &nomes), "Wood");
+        assert_eq!(nome_do_anuncio_com(&anuncio(regras::TIPO_TP), &nomes), "Tempest Points");
     }
 
     #[test]
@@ -2278,10 +2528,10 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             meu: false,
         });
     }
-    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("racao", 6), ("tp", 0), ("energia", 0), ("comprar", 0), ("vagas", 0), ("vagas-cheio", 0), ("pedidos", 0)] {
+    for (nome, slot) in [("katana", 0usize), ("pet", 1), ("montaria", 2), ("aco", 3), ("madeira", 5), ("racao", 6), ("tp", 0), ("energia", 0), ("comprar", 0), ("vagas", 0), ("vagas-cheio", 0), ("pedidos", 0), ("compra-digitando", 3), ("compra-teclado", 3), ("venda-digitando", 3)] {
         m.aba = match nome {
             "pedidos" => Aba::Pedidos,
-            "comprar" => Aba::Comprar,
+            "comprar" | "compra-digitando" | "compra-teclado" => Aba::Comprar,
             "vagas" | "vagas-cheio" => Aba::Meus,
             "tp" => Aba::Tp,
             "energia" => Aba::Energia,
@@ -2341,7 +2591,34 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         m.venda_slot = Some(slot);
         m.venda_qtd = 1;
         m.venda_preco = shared::precos::recomendado(&m.precos, slots[slot].item_id, slots[slot].instance.as_ref()).unwrap_or(100);
-        let c = Contexto { slots: &slots, nomes: &nomes, ouro: 50_000, nivel: 40, digitado: &[], vox, solido: &solido, energia: 254_300 };
+        // Typing a number: the buy dialog's quantity (on a stack of 480; with
+        // the phone keyboard up, the dialog rises), and the sell price.
+        m.compra = nome.starts_with("compra-").then(|| Compra {
+            anuncio: AnuncioNet {
+                id: "s".into(),
+                tipo: regras::TIPO_ITEM,
+                item_id: it::na_cor(it::STEEL, 2),
+                nome: "Green Steel".into(),
+                categoria: regras::Categoria::Material as u8,
+                instancia: None,
+                qtd: 480,
+                preco_unit: 120,
+                realm: "SA01".into(),
+                vendedor: "Outro".into(),
+                meu: false,
+            },
+            qtd: 1,
+        });
+        m.edicao = Edicao::default();
+        let (edita, texto) = match nome {
+            "compra-digitando" | "compra-teclado" => (Some("compra_qtd"), "250"),
+            "venda-digitando" => (Some("venda_preco"), "1250"),
+            _ => (None, ""),
+        };
+        m.edicao.id = edita;
+        m.edicao.texto = texto.into();
+        let teclado = nome == "compra-teclado";
+        let c = Contexto { slots: &slots, nomes: &nomes, ouro: 50_000, nivel: 40, digitado: &[], vox, solido: &solido, energia: 254_300, teclado };
         for _ in 0..3 {
             crate::render3d::camera_padrao();
             clear_background(Color::new(0.08, 0.12, 0.16, 1.));

@@ -4188,7 +4188,8 @@ impl Jogo {
             self.social.fechar();
             true
         } else if self.mercado.aberto {
-            self.mercado.fechar();
+            // A number being typed is cancelled first; the next Escape closes.
+            self.mercado.esc();
             true
         } else if self.lojas.aberto {
             self.lojas.fechar();
@@ -7359,6 +7360,7 @@ impl Jogo {
                 vox: &self.vox,
                 solido: &self.solido,
                 energia: self.bolsa.energia,
+                teclado: nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto(),
             };
             let pedidos = self.mercado.desenha(&ctx, get_time());
             for pedido in pedidos {
