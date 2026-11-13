@@ -232,6 +232,35 @@ impl Mercado {
         self.abrir()
     }
 
+    /// From the bag's "Sell": the Sell tab with that slot picked, one unit
+    /// and the recommended price filled in, and the same item searched for
+    /// the price reference.
+    pub fn abrir_vendendo(&mut self, slot: usize, item_id: u16, inst: Option<&shared::ItemInstance>, nome: &str) -> Vec<ClientMessage> {
+        let mut v = self.abrir();
+        v.extend(self.trocar_aba(Aba::Vender));
+        self.venda_slot = Some(slot);
+        self.venda_qtd = 1;
+        self.venda_preco = shared::precos::recomendado(&self.precos, item_id, inst).unwrap_or(self.venda_preco.max(100));
+        self.ultima_busca_tp = false;
+        v.push(ClientMessage::MercadoBuscar {
+            filtro: FiltroNet { categoria: 0, texto: nome.to_string(), pagina: 0 },
+        });
+        v
+    }
+
+    /// From the bag's "Buy order": the Buy orders tab with the new-order form
+    /// on that item.
+    pub fn abrir_pedindo(&mut self, item_id: u16) -> Vec<ClientMessage> {
+        let mut v = self.abrir();
+        v.extend(self.trocar_aba(Aba::Pedidos));
+        self.pedidos.venda = None;
+        self.pedidos.item = Some(item_id);
+        self.pedidos.foco_item = false;
+        self.pedidos.qtd = 1;
+        self.pedidos.preco = recomendado_unit(&self.precos, item_id).unwrap_or(self.pedidos.preco.max(1));
+        v
+    }
+
     pub fn fechar(&mut self) {
         self.aberto = false;
         self.sem_foco();

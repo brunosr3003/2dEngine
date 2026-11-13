@@ -102,6 +102,32 @@ enum Acao {
 }
 
 /// O que o jogador tem, como o servidor contou, e o estado da tela.
+/// "View on market", "Sell" and "Buy order" from an item in the bag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtalhoMercado {
+    Ver(u16),
+    /// Bag slot.
+    Vender(usize),
+    Pedir(u16),
+}
+
+/// Which market shortcuts an item in the bag gets: everything can be looked
+/// up; bound items cannot be sold; buy orders only for what stacks with no
+/// instance (`shared::mercado::pode_pedir_item`).
+pub fn atalhos_de_mercado(item_id: u16, slot: usize, tem_instancia: bool, vinculado: bool) -> Vec<(&'static str, AtalhoMercado)> {
+    if item_id == 0 {
+        return Vec::new();
+    }
+    let mut v = vec![("View on market", AtalhoMercado::Ver(item_id))];
+    if !vinculado {
+        v.push(("Sell", AtalhoMercado::Vender(slot)));
+    }
+    if shared::mercado::pode_pedir_item(item_id, tem_instancia, vinculado, u32::MAX) {
+        v.push(("Buy order", AtalhoMercado::Pedir(item_id)));
+    }
+    v
+}
+
 pub struct Bolsa {
     pub aberta: bool,
     pub slots: Vec<InventorySlot>,
@@ -137,6 +163,11 @@ pub struct Bolsa {
     /// pedagio por uma decisao que ele ja' tomou.
     pub combinar: Option<u16>,
     pub craftar: Option<u16>,
+    /// A market shortcut picked on an item (`AtalhoMercado`); the game opens it.
+    pub mercado: Option<AtalhoMercado>,
+    /// Items the market refuses as bound (`Mercado::vinculados`), kept here
+    /// so the bag only offers what the market will take.
+    pub mercado_vinculados: std::collections::HashSet<u16>,
     pub aprimorar: Option<(u16, u8, u8)>,
     slot_vazio: Option<EquipSlot>,
     rolagem_compativeis: crate::rolagem::Rolagem,
@@ -168,6 +199,8 @@ impl Default for Bolsa {
             refinar: None,
             combinar: None,
             craftar: None,
+            mercado: None,
+            mercado_vinculados: Default::default(),
             aprimorar: None,
             slot_vazio: None,
             rolagem_compativeis: Default::default(),
@@ -1301,6 +1334,14 @@ impl Bolsa {
                 opcoes.push(("Salvage", 6));
             }
         }
+        // Market shortcuts (codes 10+): the market opens from anywhere.
+        let atalhos = match sel {
+            Sel::Inv(i) => atalhos_de_mercado(peca.id, i, peca.inst.is_some(), self.mercado_vinculados.contains(&peca.id)),
+            Sel::Equip(_) => Vec::new(),
+        };
+        for (n, (rotulo, _)) in atalhos.iter().enumerate() {
+            opcoes.push((rotulo, 10 + n as u8));
+        }
         let colunas = 3usize;
         let bw = (r.w - u(32.0) - u(16.0)) / colunas as f32;
         let linhas = opcoes.len().div_ceil(colunas);
@@ -1350,6 +1391,12 @@ impl Bolsa {
                     self.sel = None;
                 }
                 (6, Sel::Inv(i)) => self.desmantelar = Some(i),
+                (c, _) if c >= 10 => {
+                    if let Some((_, a)) = atalhos.get((c - 10) as usize) {
+                        self.mercado = Some(*a);
+                        self.sel = None;
+                    }
+                }
                 _ => {}
             }
         }
@@ -2035,6 +2082,25 @@ conjunto: u8,
     );
 }
 
+
+#[cfg(test)]
+mod testes_atalhos_de_mercado {
+    use super::*;
+
+    #[test]
+    fn atalhos_so_quando_cabem() {
+        let rot = |v: Vec<(&'static str, AtalhoMercado)>| v.into_iter().map(|(r, _)| r).collect::<Vec<_>>();
+        // A material: all three.
+        let minerio = shared::item_id::DARKSTEEL;
+        assert_eq!(rot(atalhos_de_mercado(minerio, 3, false, false)), ["View on market", "Sell", "Buy order"]);
+        assert_eq!(atalhos_de_mercado(minerio, 3, false, false)[1].1, AtalhoMercado::Vender(3));
+        // Gear has an instance: no buy order.
+        assert_eq!(rot(atalhos_de_mercado(shared::item_id::KATANA, 0, true, false)), ["View on market", "Sell"]);
+        // Bound: look only.
+        assert_eq!(rot(atalhos_de_mercado(minerio, 0, false, true)), ["View on market"]);
+        assert!(atalhos_de_mercado(0, 0, false, false).is_empty());
+    }
+}
 
 #[cfg(test)]
 mod testes {

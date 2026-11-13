@@ -2259,6 +2259,7 @@ impl Jogo {
                     .map(|i| i.id)
                     .collect();
                 crate::icones::define_vinculados(self.mercado.vinculados.iter().copied());
+                self.bolsa.mercado_vinculados = self.mercado.vinculados.clone();
                 self.bolsa.nomes = items.into_iter().map(|i| (i.id, i.name)).collect();
                 self.social.nomes = self.bolsa.nomes.clone();
             }
@@ -3974,6 +3975,26 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
+        }
+    }
+
+    /// A market shortcut from the bag (View on market / Sell / Buy order).
+    fn abrir_atalho_do_mercado(&mut self, atalho: bolsa::AtalhoMercado) {
+        self.fecha_paineis();
+        let pedidos = match atalho {
+            bolsa::AtalhoMercado::Ver(item) => {
+                let nome = self.bolsa.nome(item);
+                self.mercado.abrir_buscando(&nome)
+            }
+            bolsa::AtalhoMercado::Vender(slot) => {
+                let Some(s) = self.bolsa.slots.get(slot).copied() else { return };
+                let nome = self.bolsa.nome(s.item_id);
+                self.mercado.abrir_vendendo(slot, s.item_id, s.instance.as_ref(), &nome)
+            }
+            bolsa::AtalhoMercado::Pedir(item) => self.mercado.abrir_pedindo(item),
+        };
+        for p in pedidos {
+            self.envia(p);
         }
     }
 
@@ -7318,6 +7339,9 @@ impl Jogo {
         if let Some(item) = self.bolsa.craftar.take() {
             self.fecha_paineis();
             self.craft.abrir_pelo_item(item);
+        }
+        if let Some(atalho) = self.bolsa.mercado.take() {
+            self.abrir_atalho_do_mercado(atalho);
         }
         if let Some((item, grau, tier)) = self.bolsa.aprimorar.take() {
             self.fecha_paineis();

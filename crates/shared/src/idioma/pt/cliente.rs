@@ -2173,4 +2173,6 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Adjust price", "Ajustar preço"),
     ("Price far from market value ({})", "Preço longe do valor de mercado ({})"),
     ("Price far from market value ({}) · market {} gold", "Preço longe do valor de mercado ({}) · mercado {} de ouro"),
+    ("View on market", "Ver no mercado"),
+    ("Buy order", "Pedido de compra"),
 ];
