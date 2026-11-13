@@ -542,6 +542,10 @@ pub enum ClientMessage {
         fps: u16,
         plataforma: String,
     },
+    /// The Prime Merchant (`shared::prime`): open the board, buy for gold.
+    Prime {
+        pedido: crate::prime::PedidoPrime,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1420,6 +1424,19 @@ pub enum ServerMessage {
     MercadoPedidos {
         lista: Vec<crate::mercado::PedidoNet>,
         meus: bool,
+    },
+    /// The Prime Merchant (`shared::prime`): the board, a refusal, a sale.
+    Prime {
+        aviso: crate::prime::AvisoPrime,
+    },
+    /// Free Experience Potions the dailies already paid this character on
+    /// game day `dia` (cap `quests::POCOES_XP_GRATIS_POR_DIA`). At login and
+    /// BEFORE the `QuestUpdate` of each daily turn-in; `ultima_paga` = that
+    /// turn-in paid its potion (false = the cap had been reached).
+    PocoesXpDoDia {
+        dia: i64,
+        pagas: u32,
+        ultima_paga: bool,
     },
 }
 

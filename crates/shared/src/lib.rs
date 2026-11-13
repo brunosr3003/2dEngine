@@ -45,6 +45,7 @@ pub mod pets;
 pub mod pocoes;
 pub mod precos;
 pub mod presenca;
+pub mod prime;
 pub mod protocol;
 pub mod progressao;
 pub mod quests;
