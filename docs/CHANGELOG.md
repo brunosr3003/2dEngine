@@ -17,6 +17,7 @@ jogador vai no PATCHNOTES.txt.
 - **PvP ao vivo** (e588125): skill ×0.10, básico ×0.15, penalidade por diferença de nível, sem teto por golpe, sem execute da katana em jogador. Simulador `pvp_sim`, `/pvp` no endpoint admin e aba pvp no Panopticon.
 - **Skills pelo intervalo base da arma** (71fd61b): attack speed acelera só o básico. Life Drain cura sobre o dano que entra. Removidos Hunter's Mark, Sword Dance, Bloodthirst, Riposte, Quick Draw, bloqueio/parry e Master's Counter, que eram código morto.
 - **Mercado**: quantidade digitada, tier no nome, rolagem com o dedo, aviso de ±50% do valor de mercado com Adjust price / Adjust all. Atalhos na bolsa.
+- **Troca refeita** (`shared::troca`, `server/world/troca.rs`, `client/troca_ui.rs`): Menu › Direct trade lista os jogadores perto; bolsa inteira (carteira com Darksteel/Cobre por slot), ouro e Energia (`Lado::energia`, contador do personagem); quantidade digitada (mesma edição do mercado); ícones do atlas da bolsa; até 12 itens; qualquer mudança destrava os dois lados; servidor reconfere tudo no confirmar (itens, espaço, vínculo, saldos, distância) e troca de uma vez. `receber_em` separado pra testar sem janela.
 - Ward Charm até +7. Sem spawn a menos de 12 m de veio roxo. Telemetria `magica_extensao`. `enviar_kit` com KIT_ITEM/KIT_QTD/KIT_SUFIXO.
 
 ---

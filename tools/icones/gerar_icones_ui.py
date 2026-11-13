@@ -265,6 +265,9 @@ HUD = {
                 ("S", linha((46, 20), (38, 36)), 2), ("S", linha((46, 20), (54, 36)), 2),
                 ("F", "M7,36a11,8 0 0 0 22,0Z"), ("F", "M35,36a11,8 0 0 0 22,0Z"),
                 ("F", rrect(21, 49, 22, 6, 3)), ("F", circ(32, 10, 3.5))],
+    # Direct trade: two arrows passing each other (give, receive).
+    "troca": [("S", linha((11, 22), (45, 22)), 5), ("F", poly([(41, 11), (55, 22), (41, 33)])),
+              ("S", linha((53, 42), (19, 42)), 5), ("F", poly([(23, 31), (9, 42), (23, 53)]))],
     # Rate us: a big star.
     "avaliar": [("F", estrela(32, 32, 26, 11))],
     # Rankings: a three-step podium with a star on top.

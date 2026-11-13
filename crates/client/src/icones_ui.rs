@@ -65,6 +65,7 @@ pub const USADOS_UI: &[&str] = &[
     "clan",
     "lojas",
     "mercado",
+    "troca",
     "loja_tp",
     "barra_itens",
     "trocar_personagem",

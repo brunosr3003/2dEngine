@@ -69,6 +69,8 @@ pub enum Item {
     /// O banco (leva ao Banqueiro).
     Banco,
     Mercado,
+    /// Direct trade with a player nearby (`troca_ui.rs`).
+    Troca,
     LojaTp,
     BarraItens,
     /// O que coletar e o raio do AUTO COLETA (toque: sem botao direito).
@@ -153,6 +155,7 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
             (Item::LojaTp, "Shop", None),
             (Item::Lojas, "Vendors", None),
             (Item::Mercado, "Market", None),
+            (Item::Troca, "Direct trade", None),
             (Item::Banco, "Bank", None),
         ],
     ),
@@ -522,6 +525,7 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::Lojas => "lojas",
         Item::Banco => "banco",
         Item::Mercado => "mercado",
+        Item::Troca => "troca",
         Item::LojaTp => "loja_tp",
         Item::BarraItens => "barra_itens",
         Item::Coleta => "coleta",
@@ -616,6 +620,7 @@ mod tests {
             Item::Lojas,
             Item::Banco,
             Item::Mercado,
+            Item::Troca,
             Item::Aventuras,
             Item::Presenca,
             Item::Ofertas,

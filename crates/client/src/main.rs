@@ -4147,6 +4147,7 @@ impl Jogo {
                     self.envia(pedido);
                 }
             }
+            Item::Troca => self.troca.abrir(),
             Item::Mercado => {
                 for pedido in self.mercado.abrir() {
                     self.envia(pedido);
@@ -4177,7 +4178,14 @@ impl Jogo {
             return true;
         }
         let do_menu = std::mem::take(&mut self.voltar_ao_menu);
-        let fechou_painel = if self.editor_hud.aberto {
+        let fechou_painel = if self.troca.aberto() {
+            // A number being typed is cancelled first; then the trade is
+            // cancelled (on the server), an invite declined, the picker closed.
+            if let Some(m) = self.troca.esc() {
+                self.envia(m);
+            }
+            true
+        } else if self.editor_hud.aberto {
             self.editor_hud.fechar();
             self.envia_layout_hud();
             true
@@ -5603,6 +5611,27 @@ impl Jogo {
                 self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
             }
         }
+    }
+
+    /// Other players around (alive, named), nearest first: the trade picker.
+    fn jogadores_perto(&self) -> Vec<(String, f32)> {
+        let Some(eu) = self.world.self_pos() else { return Vec::new() };
+        let mut v: Vec<(String, f32)> = self
+            .world
+            .ents
+            .iter()
+            .filter(|(id, e)| {
+                Some(**id) != self.world.self_id && e.meta.tag == shared::EntityTag::Player && e.morte.is_none()
+            })
+            .filter_map(|(_, e)| {
+                let nome = e.meta.name.clone().filter(|n| !n.is_empty())?;
+                let d = e.render_pos.distance(eu);
+                (d <= 40.0).then_some((nome, d))
+            })
+            .collect();
+        v.sort_by(|a, b| a.1.total_cmp(&b.1));
+        v.truncate(30);
+        v
     }
 
     fn alvo_jogador(&self) -> Option<(shared::EntityId, String)> {
@@ -7585,8 +7614,23 @@ impl Jogo {
         for pedido in self.ranking.desenha(&self.vox, &self.solido) {
             self.envia(pedido);
         }
-        for pedido in self.troca.desenha(&self.bolsa.slots, &self.bolsa.nomes, self.bolsa.ouro) {
-            self.envia(pedido);
+        {
+            let perto = self.jogadores_perto();
+            let ctx = troca_ui::Contexto {
+                slots: &self.bolsa.slots,
+                nomes: &self.bolsa.nomes,
+                vinculados: &self.mercado.vinculados,
+                ouro: self.bolsa.ouro,
+                energia: self.bolsa.energia,
+                digitado: self.teclado.digitado(),
+                teclado: nativo::TECLADO_NA_TELA && self.teclado_virtual.aberto(),
+                vox: &self.vox,
+                solido: &self.solido,
+                perto: &perto,
+            };
+            for pedido in self.troca.desenha(&ctx) {
+                self.envia(pedido);
+            }
         }
         // "Rate Tempest": counts play time; shows only at a calm moment (no
         // window open, outside dungeons), then on top of everything.
@@ -8215,7 +8259,9 @@ impl Jogo {
         let precisa = match self.tela {
             Tela::Login | Tela::Cadastro | Tela::EsqueciSenha => self.campo_login_ativo,
             Tela::Personagens => self.selecao_personagem.foco_no_nome(),
-            Tela::Jogando => self.mercado.foco_na_busca() || self.social.foco() || self.chat_ui.foco(),
+            Tela::Jogando => {
+                self.mercado.foco_na_busca() || self.social.foco() || self.chat_ui.foco() || self.troca.digitando()
+            }
             // SEM `_`, e isso é o conserto de verdade.
             //
             // A tela de cadastro nasceu com três campos de texto e caiu no

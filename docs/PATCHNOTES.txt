@@ -8,6 +8,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
 - Bag: View on market, Sell and Buy order shortcuts on items.
+- Trade redone: start it from Menu > Direct trade, every tradable item of your bag (Darksteel and Copper too) plus gold and Energy, typed amounts and item icons. Any change unlocks both sides before confirming.
 - Ward Charm protects refines up to +7.
 - Monsters no longer spawn right next to purple rock veins.
 - Skills follow the weapon's base speed: attack speed now speeds up the basic attack only. Life Drain heals from the damage that lands.
