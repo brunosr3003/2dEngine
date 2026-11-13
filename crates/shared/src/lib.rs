@@ -40,6 +40,7 @@ pub mod magica;
 pub mod mapfile;
 pub mod mercado;
 pub mod physics;
+pub mod pk;
 pub mod montarias;
 pub mod pets;
 pub mod pocoes;

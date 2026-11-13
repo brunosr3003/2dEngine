@@ -32,6 +32,8 @@ pub struct CharacterRow {
     /// Fame: pontuacao de prestigio; ganha matando players/bosses.
     pub fame: u64,
     pub pk: shared::PkState,
+    /// Seconds online towards the next PK point decay.
+    pub pk_decai_s: u32,
     /// Aura/Poise: pontos ganhos SOMENTE em vitorias PvP. Perde ao ser
     /// morto por outro player. Base pra sistema de stagger futuro.
     pub aura: u64,
@@ -404,6 +406,14 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS pk_hostil BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS pk_points BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    // PK modes (12/11/2026): `shared::pk::*`, and the online seconds towards
+    // the next point decay. A character saved Hostile before modes existed
+    // becomes Free (what Hostile was); idempotent since every save after this
+    // writes both columns together.
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS pk_modo SMALLINT NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS pk_decai_s BIGINT NOT NULL DEFAULT 0")
+        .execute(pool).await?;
+    sqlx::query("UPDATE characters SET pk_modo = 1 WHERE pk_hostil AND pk_modo = 0")
         .execute(pool).await?;
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fame BIGINT NOT NULL DEFAULT 0")
         .execute(pool)
@@ -4087,8 +4097,9 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .map(|(n, a, v, g)| (n, (a, v, g.max(0) as u64)))
         .collect();
     // Faction — query separada (TEXT). Parse tolerante; default Peacemain.
-    let pk_map: HashMap<String, (bool, i64)> = busca!((String, bool, i64), "name, pk_hostil, pk_points")
-        .into_iter().map(|(n, h, p)| (n, (h, p))).collect();
+    let pk_map: HashMap<String, (bool, i64, i16, i64)> =
+        busca!((String, bool, i64, i16, i64), "name, pk_hostil, pk_points, pk_modo, pk_decai_s")
+            .into_iter().map(|(n, h, p, m, d)| (n, (h, p, m, d))).collect();
     let faction_rows = busca!((String, String), "name, faction");
     let faction_map: HashMap<String, shared::Faction> = faction_rows
         .into_iter()
@@ -4189,8 +4200,15 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (account_id, visual_json, gold) =
             extras_map.get(&name).cloned().unwrap_or((None, None, 0));
         let faction = faction_map.get(&name).copied().unwrap_or_default();
-        let (hostil, pontos) = pk_map.get(&name).copied().unwrap_or_default();
-        let pk = shared::PkState { hostil, pontos: pontos.clamp(0, u32::MAX as i64) as u32 };
+        let (_, pontos, modo, pk_decai_s) = pk_map.get(&name).copied().unwrap_or_default();
+        let modo = shared::pk::modo_valido(modo.clamp(0, 255) as u8);
+        let pk = shared::PkState {
+            hostil: shared::pk::hostil(modo),
+            pontos: pontos.clamp(0, u32::MAX as i64) as u32,
+            modo,
+            travado: false,
+        };
+        let pk_decai_s = pk_decai_s.clamp(0, u32::MAX as i64) as u32;
         let inv = load_inventory(pool, &name).await?;
         let equip = load_equipment(pool, &name).await?;
         let vault = load_vault(pool, &name).await?;
@@ -4238,6 +4256,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 vault,
                 fame: fame.max(0) as u64,
                 pk,
+                pk_decai_s,
                 aura: aura.max(0) as u64,
                 proficiencies: profs,
                 unspent_points: unspent.max(0) as u32,
@@ -4759,8 +4778,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .bind(row.magica_gratis)
         .execute(&mut *tx)
         .await?;
-        sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3 WHERE name = $1")
+        sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3, pk_modo = $4, pk_decai_s = $5 WHERE name = $1")
             .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)
+            .bind(row.pk.modo as i16).bind(row.pk_decai_s as i64)
             .execute(&mut *tx).await?;
         // A conta vai junto: bau aberto num personagem e a 1ª vitoria semanal
         // da conta nunca se separam.

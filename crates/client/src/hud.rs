@@ -867,18 +867,20 @@ pub fn draw_ficha(
     });
 }
 
-/// Um toque alterna o modo; a cor e o texto mostram o estado confirmado pelo servidor.
+/// The PK card: mode and points in the colour others see on the nameplate
+/// (`pk_ui::cor`). A tap opens the PK panel (`pk_ui`).
 pub fn draw_modo_pk(z: &Zonas, pk: shared::PkState) -> bool {
     let r = z.modo_pk;
     let sobre = r.toca(mouse());
-    let cor = if pk.hostil { Color::new(0.76, 0.35, 1.0, 1.0) } else { estilo::AUTO };
-    estilo::cartao(r, sobre, pk.hostil);
+    let cor = crate::pk_ui::cor(pk);
+    let modo = crate::pk_ui::modo_de(pk);
+    estilo::cartao(r, sobre, shared::pk::hostil(modo));
     draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5 * z.s, cor);
     estilo::texto_centro_forte(r.center().x, r.y + 18.0 * z.s,
-        if pk.hostil { "Hostile" } else { "Peaceful" }, fonte(16.0, z.s), cor);
-    estilo::texto_centro(r.center().x, r.y + 33.0 * z.s,
-        &format!("PK: {}", pk.pontos), fonte(11.0, z.s), estilo::SUAVE);
-    if sobre { dica(r, if pk.hostil { "Tap to go Peaceful" } else { "Tap to switch to Hostile" }); }
+        shared::pk::nome(modo), fonte(16.0, z.s), cor);
+    let linha = if pk.travado { format!("PK: {} · locked", pk.pontos) } else { format!("PK: {}", pk.pontos) };
+    estilo::texto_centro(r.center().x, r.y + 33.0 * z.s, &linha, fonte(11.0, z.s), estilo::SUAVE);
+    if sobre { dica(r, "Tap to choose the PK mode"); }
     sobre && crate::foco::clique()
 }
 

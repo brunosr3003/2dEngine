@@ -912,15 +912,15 @@ mod testes {
             s.entity = Some(e);
             s.entity_id = EntityId(902);
             s.faction = faccao;
-            s.pk_mode_on = false;
+            s.pk_modo = shared::pk::PACIFICO;
         }
-        w.sessions.get_mut(&sid).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&sid).unwrap().pk_modo = shared::pk::LIVRE;
         assert!(
             w.can_damage_player(EntityId(901), EntityId(902)),
             "Hostil pode atacar um alvo Pacífico na Ilha Mágica"
         );
         // Desligar Hostil impede o ataque também fora da ilha.
-        w.sessions.get_mut(&sid).unwrap().pk_mode_on = false;
+        w.sessions.get_mut(&sid).unwrap().pk_modo = shared::pk::PACIFICO;
         w.zona = "ilha_inicial".into();
         assert!(!w.can_damage_player(EntityId(901), EntityId(902)));
     }
@@ -1075,7 +1075,7 @@ mod testes {
         );
 
         // Os dois fora e atacante Hostil: PvP aberto.
-        w.sessions.get_mut(&sid).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&sid).unwrap().pk_modo = shared::pk::LIVRE;
         w.ecs.get::<&mut Position>(e).unwrap().0 = combate;
         assert!(
             w.can_damage_player(EntityId(901), EntityId(903)),

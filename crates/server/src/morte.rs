@@ -35,6 +35,22 @@ pub fn perda_de_xp(xp: u64, mult: u64) -> u64 {
     perda.min(xp.saturating_sub(piso))
 }
 
+/// (recoverable base, extra from PK points) of a death with `pontos` PK
+/// points: the base is `perda_de_xp`; the extra is `shared::pk::fracao_perda`
+/// on top, in the same pace-adjusted terms, still never below the level start.
+pub fn perda_de_xp_pk(xp: u64, mult: u64, pontos: u32) -> (u64, u64) {
+    let base = perda_de_xp(xp, mult);
+    let (_, extra) = shared::pk::fracao_perda(pontos);
+    if extra <= 0.0 {
+        return (base, 0);
+    }
+    let nivel = level_of_xp_with_mult(xp, mult);
+    let piso = xp_for_level_with_mult(nivel, mult);
+    let degrau = xp_for_level_with_mult(nivel + 1, mult).saturating_sub(piso);
+    let extra = shared::progressao::no_ritmo((degrau as f64 * extra as f64).round() as u64, nivel);
+    (base, extra.min(xp.saturating_sub(piso).saturating_sub(base)))
+}
+
 /// Gold to recover a death once the day's free ones are gone: a floor that
 /// grows with the level plus half the XP returned.
 pub fn custo_gold(xp: u64, nivel: u32) -> u64 {
@@ -139,6 +155,28 @@ mod testes {
         assert_eq!(perda_de_xp(piso, MULT), 0);
         assert_eq!(level_of_xp_with_mult(xp - perda_de_xp(xp, MULT), MULT), 5);
         assert_eq!(perda_de_xp(0, MULT), 0);
+    }
+
+    #[test]
+    fn pontos_pk_pesam_na_morte_e_o_extra_nao_e_recuperavel() {
+        let piso = xp_for_level_with_mult(5, MULT);
+        let degrau = xp_for_level_with_mult(6, MULT) - piso;
+        let xp = piso + degrau * 9 / 10;
+        assert_eq!(perda_de_xp_pk(xp, MULT, 0), (degrau / 10, 0));
+        let (base, extra) = perda_de_xp_pk(xp, MULT, 2);
+        assert_eq!(base, degrau / 10);
+        assert_eq!(extra, (degrau as f64 * 0.10).round() as u64, "+5% per point");
+        // 8+ points: 50% in total.
+        let (b, e) = perda_de_xp_pk(xp, MULT, 8);
+        assert_eq!(b + e, (degrau as f64 * 0.5).round() as u64);
+        assert_eq!(perda_de_xp_pk(xp, MULT, 50), perda_de_xp_pk(xp, MULT, 8));
+        // Never below the level start.
+        let (b, e) = perda_de_xp_pk(piso + degrau / 5, MULT, 8);
+        assert_eq!(b + e, degrau / 5);
+        // Only the base goes into the recoverable list.
+        let mut mortes = Vec::new();
+        registrar(&mut mortes, 100, base);
+        assert_eq!(mortes[0].xp, base);
     }
 
     #[test]

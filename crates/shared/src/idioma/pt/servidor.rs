@@ -690,4 +690,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("That clan tag is not allowed.", "Essa tag de clã não é permitida."),
     ("Another clan already uses that tag.", "Outro clã já usa essa tag."),
     ("Your clan rank cannot do that.", "Seu cargo no clã não permite isso."),
+    // ─────────────────────────── PK (12/11/2026) ───────────────────────────
+    ("PK mode is locked to {} in this area.", "O modo PK fica travado em {} nesta área."),
+    ("Open PvP area — PK: {}", "Área de PvP aberto — PK: {}"),
+    ("You left the PvP area — PK: {}", "Você saiu da área de PvP — PK: {}"),
+    ("A PK point faded. PK points: {}.", "Um ponto PK sumiu. Pontos PK: {}."),
+    ("You have no PK points.", "Você não tem pontos PK."),
+    ("You need {} gold to pardon a PK point.", "Você precisa de {} de ouro para perdoar um ponto PK."),
+    ("Pardoned 1 PK point for {} gold. PK points: {}.", "1 ponto PK perdoado por {} de ouro. Pontos PK: {}."),
 ];

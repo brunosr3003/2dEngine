@@ -1248,7 +1248,7 @@ async fn recebe(
             });
             eu.esperando_destino = 0;
         }
-        ServerMessage::Morte { xp_perdido } => {
+        ServerMessage::Morte { xp_perdido, .. } => {
             eu.morto = true;
             t.registra(ev(nome, eu, "morreu", true, format!("-{xp_perdido} xp")));
             ws.send(envia(&ClientMessage::RespawnAtCity)?).await?;

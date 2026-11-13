@@ -1735,11 +1735,110 @@ pub struct PortalTag {
 /// Hostil permite iniciar PvP; autodefesa permite revidar por 15 segundos.
 /// Zonas seguras protegem os dois lados.
 impl GameWorld {
-    fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, pontos_da_vitima: u32) {
-        if self.na_magica() || pontos_da_vitima > 0 || self.pode_revidar(killer, vitima) { return; }
+    /// `vitima_lado` is the victim's PvP side as it was when the blow landed.
+    fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, vitima_lado: shared::pk::Lado) {
+        let revide = self.pode_revidar(killer, vitima);
+        let pontos = shared::pk::pontos_por_abate(&vitima_lado, revide, self.em_pvp_aberto(vitima));
+        if pontos == 0 { return; }
         if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
-            s.pk_points = s.pk_points.saturating_add(1);
+            s.pk_points = s.pk_points.saturating_add(pontos);
         }
+    }
+
+    /// The player's PvP side for `shared::pk::pode_atacar`.
+    pub(crate) fn lado_pk(&self, s: &Session) -> shared::pk::Lado {
+        shared::pk::Lado { modo: s.pk_modo, pontos: s.pk_points, grupo: s.party_id, cla: s.cla_id }
+    }
+
+    /// Is this player standing in an open-PvP area (`shared::pk::zona_pvp_aberto`)?
+    pub(crate) fn em_pvp_aberto(&self, eid: EntityId) -> bool {
+        self.sessions
+            .values()
+            .find(|s| s.entity_id == eid)
+            .and_then(|s| s.entity)
+            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+            .is_some_and(|p| shared::pk::zona_pvp_aberto(&self.zona, p))
+    }
+
+    /// The player picks a PK mode. Refused while an open-PvP area holds it.
+    pub(crate) fn definir_modo_pk(&mut self, sid: SessionId, modo: u8) {
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else { return };
+        let modo = shared::pk::modo_valido(modo);
+        if s.pk_travado {
+            let _ = s.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: format!("PK mode is locked to {} in this area.", shared::pk::nome(s.pk_modo)),
+            });
+            return;
+        }
+        s.pk_escolhido = modo;
+        s.pk_modo = modo;
+    }
+
+    /// Once a second: open-PvP areas force/restore the mode, and PK points
+    /// fade with time online.
+    pub fn tick_pk(&mut self, dt_s: u32) {
+        let zona = self.zona.clone();
+        let dentro: Vec<(SessionId, bool)> = self
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.logged_in)
+            .filter_map(|(sid, s)| {
+                let p = self.ecs.get::<&Position>(s.entity?).ok()?.0;
+                Some((*sid, shared::pk::zona_pvp_aberto(&zona, p)))
+            })
+            .collect();
+        for (sid, dentro) in dentro {
+            let Some(s) = self.sessions.get_mut(&sid) else { continue };
+            let aviso = if dentro && !s.pk_travado {
+                s.pk_travado = true;
+                s.pk_modo = shared::pk::MODO_NA_AREA_ABERTA;
+                Some(format!("Open PvP area — PK: {}", shared::pk::nome(s.pk_modo)))
+            } else if !dentro && s.pk_travado {
+                s.pk_travado = false;
+                s.pk_modo = s.pk_escolhido;
+                Some(format!("You left the PvP area — PK: {}", shared::pk::nome(s.pk_modo)))
+            } else {
+                None
+            };
+            if let Some(text) = aviso {
+                let _ = s.handle.to_client.send(ServerMessage::Chat { from: "SYS".into(), text });
+            }
+            let (pontos, acc) = shared::pk::decair(s.pk_points, s.pk_decai_s, dt_s);
+            if pontos != s.pk_points {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: format!("A PK point faded. PK points: {pontos}."),
+                });
+            }
+            s.pk_points = pontos;
+            s.pk_decai_s = acc;
+        }
+    }
+
+    /// Pays gold to remove one PK point (`shared::pk::custo_perdao`).
+    pub(crate) fn perdoar_pk(&mut self, sid: SessionId) {
+        let mult = crate::economy::xp_multiplier();
+        let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else { return };
+        let texto = if s.pk_points == 0 {
+            "You have no PK points.".to_string()
+        } else {
+            let custo = shared::pk::custo_perdao(shared::level_of_xp_with_mult(s.xp, mult));
+            if s.gold < custo {
+                format!("You need {custo} gold to pardon a PK point.")
+            } else {
+                s.gold -= custo;
+                s.pk_points -= 1;
+                if s.pk_points == 0 {
+                    s.pk_decai_s = 0;
+                }
+                s.inventory_dirty = true;
+                self.save_pending = true;
+                crate::telemetria::conta_de(&s.name, "ouro_perdao_pk", "", custo as i64);
+                format!("Pardoned 1 PK point for {custo} gold. PK points: {}.", s.pk_points)
+            }
+        };
+        let _ = s.handle.to_client.send(ServerMessage::Chat { from: "SYS".into(), text: texto });
     }
 
     fn pode_revidar(&self, defensor: EntityId, agressor: EntityId) -> bool {
@@ -1780,7 +1879,7 @@ impl GameWorld {
                 }
             }
         }
-        att.pk_mode_on || self.pode_revidar(attacker_eid, target_eid)
+        shared::pk::pode_atacar(&self.lado_pk(att), &self.lado_pk(tgt), self.pode_revidar(attacker_eid, target_eid))
     }
 }
 
@@ -2096,10 +2195,17 @@ pub struct Session {
     /// do input), entao `in_hurt` eh false e dir nao eh zerado → 1 tick
     /// nao basta. Resetado quando dir == 0.
     pub cast_movement_ticks: u8,
-    /// Modo Hostil habilita ataques contra jogadores.
-    /// Novos personagens começam no modo Pacífico.
-    pub pk_mode_on: bool,
+    /// The PK mode in force now (`shared::pk::*`): the player's choice, or
+    /// `MODO_NA_AREA_ABERTA` while inside an open-PvP area.
+    pub pk_modo: u8,
+    /// The mode the player picked: the one saved and restored on leaving an
+    /// open-PvP area. New characters start Peaceful.
+    pub pk_escolhido: u8,
+    /// Inside an open-PvP area: `pk_modo` is forced and cannot change.
+    pub pk_travado: bool,
     pub pk_points: u32,
+    /// Seconds online towards the next PK point decay (`shared::pk::decair`).
+    pub pk_decai_s: u32,
     /// Direito temporário de revidar, por agressor; nunca persistido.
     agressores: HashMap<EntityId, f32>,
     pk_visto: shared::PkState,
@@ -2267,6 +2373,16 @@ pub struct Session {
 }
 
 impl Session {
+    /// What gets SAVED: the player's own choice, never a mode an area forced.
+    pub(crate) fn pk_salvo(&self) -> shared::PkState {
+        shared::PkState {
+            hostil: shared::pk::hostil(self.pk_escolhido),
+            pontos: self.pk_points,
+            modo: self.pk_escolhido,
+            travado: false,
+        }
+    }
+
     /// Concede XP ao jogador — FONTE ÚNICA pra toda fonte de XP (combate,
     /// quests, etc). Soma o XP, processa level-up (pontos de status + skill
     /// points, idempotente via `last_level`) e envia `ProgressUpdate` pro
@@ -2292,11 +2408,12 @@ impl Session {
     /// recuperavel e avisa o cliente. So' na TRANSICAO pra caido.
     fn morrer(&mut self, agora: i64) {
         let mult = crate::economy::xp_multiplier();
-        let perda = crate::morte::perda_de_xp(self.xp, mult);
-        self.xp -= perda;
+        // PK points make it heavier; only the base share can be recovered.
+        let (perda, extra) = crate::morte::perda_de_xp_pk(self.xp, mult, self.pk_points);
+        self.xp -= perda + extra;
         crate::morte::registrar(&mut self.mortes, agora, perda);
         crate::telemetria::conta_de(&self.name, "morte_jogador", "", 1);
-        crate::telemetria::conta_de(&self.name, "xp_perdido", "", perda as i64);
+        crate::telemetria::conta_de(&self.name, "xp_perdido", "", (perda + extra) as i64);
         let level = shared::level_of_xp_with_mult(self.xp, mult);
         let _ = self
             .handle
@@ -2305,7 +2422,11 @@ impl Session {
         let _ = self
             .handle
             .to_client
-            .send(ServerMessage::Morte { xp_perdido: perda });
+            .send(ServerMessage::Morte {
+                xp_perdido: perda + extra,
+                xp_pk: extra,
+                pct_pk: if extra > 0 { (shared::pk::fracao_perda(self.pk_points).1 * 100.0).round() as u8 } else { 0 },
+            });
         self.enviar_recuperaveis(agora);
     }
 
@@ -6446,8 +6567,13 @@ impl GameWorld {
             s.gold_last_sent = u64::MAX; // forca envio inicial
             s.fame = saved_fame;
             s.agressores.clear();
-            s.pk_mode_on = row.pk.hostil;
+            s.pk_escolhido = shared::pk::modo_valido(row.pk.modo);
+            s.pk_modo = s.pk_escolhido;
+            // Logging in inside an open-PvP area: `tick_pk` forces it again
+            // within a second, keeping the saved choice to restore.
+            s.pk_travado = false;
             s.pk_points = row.pk.pontos;
+            s.pk_decai_s = row.pk_decai_s;
             s.fame_last_sent = u64::MAX;
             s.aura = saved_aura;
             s.aura_last_sent = u64::MAX;
@@ -7675,8 +7801,11 @@ impl GameWorld {
                 casting_started_at_s: 0.0,
                 casting_impacto_em: 0.0,
                 cast_movement_ticks: 0,
-                pk_mode_on: false,
+                pk_modo: shared::pk::PACIFICO,
+                pk_escolhido: shared::pk::PACIFICO,
+                pk_travado: false,
                 pk_points: 0,
+                pk_decai_s: 0,
                 agressores: HashMap::new(),
                 pk_visto: Default::default(),
                 cla_id: 0,
@@ -8218,12 +8347,11 @@ impl GameWorld {
             ClientMessage::Refinar { alvo } => {
                 self.handle_refinar(id, alvo);
             }
+            ClientMessage::DefinirModoPk { modo } => self.definir_modo_pk(id, modo),
+            ClientMessage::PerdoarPk => self.perdoar_pk(id),
             ClientMessage::TogglePkMode { on } => {
-                if let Some(s) = self.sessions.get_mut(&id) {
-                    if s.logged_in {
-                        s.pk_mode_on = on;
-                    }
-                }
+                // Older on/off switch: on = Free (what "Hostile" always was).
+                self.definir_modo_pk(id, if on { shared::pk::LIVRE } else { shared::pk::PACIFICO });
             }
             ClientMessage::ResetPosition => {
                 self.handle_reset_position(id);
@@ -12758,7 +12886,12 @@ impl GameWorld {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
                     if let Some(killer) = kill_credits.get(&eid).copied() {
-                        mortes_pk.push((killer, eid, session.pk_points));
+                        mortes_pk.push((killer, eid, shared::pk::Lado {
+                            modo: session.pk_modo,
+                            pontos: session.pk_points,
+                            grupo: session.party_id,
+                            cla: session.cla_id,
+                        }));
                     }
                     session.downed = true;
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
@@ -12779,8 +12912,8 @@ impl GameWorld {
                 }
             }
         }
-        for (killer, vitima, pontos_da_vitima) in mortes_pk {
-            self.registrar_morte_pk(killer, vitima, pontos_da_vitima);
+        for (killer, vitima, lado) in mortes_pk {
+            self.registrar_morte_pk(killer, vitima, lado);
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
@@ -13240,7 +13373,12 @@ impl GameWorld {
         let mut pk_de = HashMap::new();
         let mut cla_de: HashMap<EntityId, String> = HashMap::new();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
-            let pk = shared::PkState { hostil: s.pk_mode_on, pontos: s.pk_points };
+            let pk = shared::PkState {
+                hostil: shared::pk::hostil(s.pk_modo),
+                pontos: s.pk_points,
+                modo: s.pk_modo,
+                travado: s.pk_travado,
+            };
             pk_de.insert(s.entity_id, pk);
             if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
             if !s.cla_tag.is_empty() {
@@ -13864,6 +14002,7 @@ impl GameWorld {
             vault: Vec<shared::InventorySlot>,
             fame: u64,
             pk: shared::PkState,
+            pk_decai_s: u32,
             aura: u64,
             proficiencies: [u64; shared::PROF_COUNT],
             unspent_points: u32,
@@ -13928,7 +14067,8 @@ impl GameWorld {
                 equipment: session.equipment,
                 vault: session.vault.clone(),
                 fame: session.fame,
-                pk: shared::PkState { hostil: session.pk_mode_on, pontos: session.pk_points },
+                pk: session.pk_salvo(),
+                pk_decai_s: session.pk_decai_s,
                 aura: session.aura,
                 proficiencies: session.proficiencies,
                 unspent_points: session.unspent_points,
@@ -13985,6 +14125,7 @@ impl GameWorld {
                 vault: e.vault,
                 fame: e.fame,
                 pk: e.pk,
+                pk_decai_s: e.pk_decai_s,
                 aura: e.aura,
                 proficiencies: e.proficiencies,
                 unspent_points: e.unspent_points,
@@ -20133,7 +20274,8 @@ impl GameWorld {
             equipment: session.equipment,
             vault: session.vault.clone(),
             fame: session.fame,
-                pk: shared::PkState { hostil: session.pk_mode_on, pontos: session.pk_points },
+            pk: session.pk_salvo(),
+            pk_decai_s: session.pk_decai_s,
             aura: session.aura,
             proficiencies: session.proficiencies,
             unspent_points: session.unspent_points,
@@ -22235,7 +22377,7 @@ mod pk_tests {
         dreno(w);
         assert_eq!(w.ecs.get::<&Health>(e1).unwrap().current, 1000);
         assert!(w.ecs.get::<&Health>(e0).unwrap().current <= 11, "healed off a blocked bolt");
-        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         w.sessions.get_mut(&ids[1]).unwrap().stats.defense = 60;
         let antes = w.ecs.get::<&Health>(e0).unwrap().current;
         dreno(w);
@@ -22247,12 +22389,123 @@ mod pk_tests {
         assert!(cura < habilidades::cura_do_dreno(200, 9));
     }
 
+    fn modo(w: &mut GameWorld, sid: SessionId, m: u8) {
+        w.on_message(sid, ClientMessage::DefinirModoPk { modo: m });
+    }
+
+    /// The live check follows `shared::pk::pode_atacar`: the attacker's mode
+    /// against same party / same clan.
+    #[test]
+    fn pk_modos_no_mundo_respeitam_grupo_e_cla() {
+        use shared::pk::*;
+        let (mut w, ids, _rx) = mundo();
+        let (a, b) = (EntityId(900), EntityId(901));
+        for (m, grupo, cla) in [(LIVRE, true, true), (GRUPO, false, false), (CLA, true, false), (PACIFICO, false, false)] {
+            modo(&mut w, ids[0], m);
+            for (pid, clan, esperado) in [(Some(5), 0, grupo), (None, 9, cla), (None, 0, m != PACIFICO)] {
+                for sid in ids {
+                    let s = w.sessions.get_mut(&sid).unwrap();
+                    s.party_id = pid;
+                    s.cla_id = clan;
+                }
+                assert_eq!(w.can_damage_player(a, b), esperado, "{} party {pid:?} clan {clan}", nome(m));
+            }
+        }
+    }
+
+    /// A target in a PK mode, or with a red name, is fair game even for a
+    /// Peaceful attacker, and killing them costs no points. Peaceful vs
+    /// Peaceful stays blocked, and the safe zone still wins.
+    #[test]
+    fn pk_pacifico_ataca_hostil_e_vermelho_sem_pontos() {
+        let (mut w, ids, _rx) = mundo();
+        let (a, b) = (EntityId(900), EntityId(901));
+        assert!(!w.can_damage_player(a, b), "peaceful vs peaceful");
+        modo(&mut w, ids[1], shared::pk::CLA);
+        assert!(w.can_damage_player(a, b), "peaceful hits a hostile target");
+        golpe(&mut w, 100_000);
+        assert!(w.sessions[&ids[1]].downed);
+        assert_eq!(w.sessions[&ids[0]].pk_points, 0, "no points for a hostile victim");
+        // A red name with PK off.
+        let (mut w, ids, _rx) = mundo();
+        w.sessions.get_mut(&ids[1]).unwrap().pk_points = 3;
+        assert!(w.can_damage_player(a, b), "red names are free to hit");
+        w.safe_zones = vec![(Vec2::new(9.0, 9.0), Vec2::new(4.0, 4.0))];
+        assert!(!w.can_damage_player(a, b), "safe zone still protects");
+    }
+
+    /// Entering an open-PvP area forces Party and locks it; leaving restores
+    /// the chosen mode; the save only ever holds the chosen one, so logging
+    /// in inside gets Party again with the saved mode to restore.
+    #[test]
+    fn pk_area_aberta_forca_grupo_e_restaura() {
+        use shared::pk::*;
+        let (mut w, ids, mut rx) = mundo();
+        w.zona = "ilha_magica".into();
+        let combate = shared::magica::centros_de_combate()[0];
+        let porto = shared::magica::posto_de_pocoes();
+        let e0 = w.sessions[&ids[0]].entity.unwrap();
+        modo(&mut w, ids[0], LIVRE);
+        w.ecs.get::<&mut Position>(e0).unwrap().0 = combate;
+        w.tick_pk(1);
+        let s = &w.sessions[&ids[0]];
+        assert_eq!((s.pk_modo, s.pk_travado, s.pk_escolhido), (GRUPO, true, LIVRE));
+        let mut avisos = Vec::new();
+        while let Ok(m) = rx.try_recv() {
+            if let ServerMessage::Chat { text, .. } = m { avisos.push(text); }
+        }
+        assert!(avisos.iter().any(|t| t == "Open PvP area — PK: Party"), "{avisos:?}");
+        modo(&mut w, ids[0], PACIFICO);
+        assert_eq!(w.sessions[&ids[0]].pk_modo, GRUPO, "locked inside");
+        assert_eq!(w.sessions[&ids[0]].pk_escolhido, LIVRE);
+        assert_eq!(w.collect_character_rows().iter().find(|r| r.name == "pk0").unwrap().pk.modo, LIVRE, "the forced mode is never saved");
+        // Reconnect inside: the row brings the choice, the area forces again.
+        let row = w.take_character_for_disconnect(&ids[0]).unwrap();
+        assert_eq!(row.pk.modo, LIVRE);
+        let s = w.sessions.get_mut(&ids[0]).unwrap();
+        s.pk_escolhido = row.pk.modo;
+        s.pk_modo = row.pk.modo;
+        s.pk_travado = false;
+        w.tick_pk(1);
+        assert_eq!(w.sessions[&ids[0]].pk_modo, GRUPO);
+        // Leave to the harbour.
+        w.ecs.get::<&mut Position>(e0).unwrap().0 = porto;
+        w.tick_pk(1);
+        let s = &w.sessions[&ids[0]];
+        assert_eq!((s.pk_modo, s.pk_travado), (LIVRE, false));
+        assert!(std::iter::from_fn(|| rx.try_recv().ok()).any(|m| matches!(m, ServerMessage::Chat { text, .. } if text == "You left the PvP area — PK: Free")));
+        // Free again outside: a mode change goes through.
+        modo(&mut w, ids[0], CLA);
+        assert_eq!(w.sessions[&ids[0]].pk_modo, CLA);
+    }
+
+    #[test]
+    fn pk_pontos_decaem_online_e_perdao_custa_ouro() {
+        let (mut w, ids, _rx) = mundo();
+        let s = w.sessions.get_mut(&ids[0]).unwrap();
+        s.pk_points = 2;
+        s.gold = 1_500;
+        w.tick_pk(3599);
+        assert_eq!(w.sessions[&ids[0]].pk_points, 2);
+        w.tick_pk(1);
+        assert_eq!(w.sessions[&ids[0]].pk_points, 1, "one per hour online");
+        assert_eq!(w.collect_character_rows().iter().find(|r| r.name == "pk0").unwrap().pk_decai_s, 0);
+        w.tick_pk(600);
+        assert_eq!(w.collect_character_rows().iter().find(|r| r.name == "pk0").unwrap().pk_decai_s, 600, "saved with the points");
+        // Level 1: 1,000 gold a point.
+        w.on_message(ids[0], ClientMessage::PerdoarPk);
+        assert_eq!((w.sessions[&ids[0]].pk_points, w.sessions[&ids[0]].gold), (0, 500));
+        w.sessions.get_mut(&ids[0]).unwrap().pk_points = 1;
+        w.on_message(ids[0], ClientMessage::PerdoarPk);
+        assert_eq!((w.sessions[&ids[0]].pk_points, w.sessions[&ids[0]].gold), (1, 500), "not enough gold");
+    }
+
     #[test]
     fn pk_pacifico_nao_inicia_basico_nem_gasta_recarga() {
         let (mut w, ids, _rx) = mundo();
         for hostil in [false, true] {
             let s = w.sessions.get_mut(&ids[0]).unwrap();
-            s.pk_mode_on = hostil;
+            s.pk_modo = if hostil { shared::pk::LIVRE } else { shared::pk::PACIFICO };
             s.target = Some(EntityId(901));
             s.stamina_current = 100.0;
             s.pending_input = Some(InputFrame { seq: 1, tick: 1, move_dir: Vec2::ZERO,
@@ -22265,9 +22518,10 @@ mod pk_tests {
     #[test]
     fn pk_pontos_e_modo_entram_no_save_periodico_e_na_saida() {
         let (mut w, ids, _rx) = mundo();
-        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         w.sessions.get_mut(&ids[0]).unwrap().pk_points = 7;
-        let esperado = shared::PkState { hostil: true, pontos: 7 };
+        w.sessions.get_mut(&ids[0]).unwrap().pk_escolhido = shared::pk::LIVRE;
+        let esperado = shared::PkState { hostil: true, pontos: 7, modo: shared::pk::LIVRE, travado: false };
         let rows = w.collect_character_rows();
         assert_eq!(rows.iter().find(|r|r.name == "pk0").unwrap().pk, esperado);
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
@@ -22285,7 +22539,7 @@ mod pk_tests {
         assert_eq!(w.ecs.get::<&Health>(w.sessions[&ids[1]].entity.unwrap()).unwrap().current,100);
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: true });
         assert!(w.can_damage_player(EntityId(900), EntityId(901)));
-        assert!(!w.can_damage_player(EntityId(901), EntityId(900)));
+        assert!(w.can_damage_player(EntityId(901), EntityId(900)), "a hostile player is fair game, even for Peaceful");
         golpe(&mut w, 10);
         assert!(w.ecs.get::<&Health>(w.sessions[&ids[1]].entity.unwrap()).unwrap().current < 100);
         assert_eq!(w.sessions[&ids[0]].pk_points,0);
@@ -22296,10 +22550,10 @@ mod pk_tests {
     #[test]
     fn pk_autodefesa_pacifico_expira_e_nao_isenta_agressor() {
         let (mut w, ids, _rx) = mundo();
-        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         golpe(&mut w, 1);
         assert!(w.can_damage_player(EntityId(901), EntityId(900)));
-        assert!(!w.sessions[&ids[1]].pk_mode_on);
+        assert!(!shared::pk::hostil(w.sessions[&ids[1]].pk_modo));
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });
         assert!(w.can_damage_player(EntityId(901), EntityId(900)), "desligar Hostil não apaga agressão");
         w.registrar_agressao(EntityId(901), EntityId(900));
@@ -22314,7 +22568,7 @@ mod pk_tests {
     #[test]
     fn pk_autodefesa_golpe_fatal_nao_cobra_pontos() {
         let (mut w, ids, _rx) = mundo();
-        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         golpe(&mut w, 1);
         w.pending_skill_hits.push(PendingSkillHit { drain_tier: 0, target_net: EntityId(900), damage: 10000,
             attacker_net: EntityId(901), hurt_dir: Vec2::X, is_crit: false,
@@ -22322,7 +22576,7 @@ mod pk_tests {
         w.step(shared::TICK_DT);
         assert!(w.sessions[&ids[0]].downed);
         assert_eq!(w.sessions[&ids[1]].pk_points, 0);
-        assert!(!w.sessions[&ids[1]].pk_mode_on);
+        assert!(!shared::pk::hostil(w.sessions[&ids[1]].pk_modo));
     }
 
     #[test]
@@ -22331,7 +22585,7 @@ mod pk_tests {
             ("ilha_magica",0,0),("ilha_magica_2",0,0),("ilha_magica_3",0,0)] {
             let (mut w, ids, _rx) = mundo();
             w.zona = zona.into();
-            w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+            w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
             w.sessions.get_mut(&ids[1]).unwrap().pk_points = pontos;
             // Ilhota de combate, longe do porto seguro.
             if w.na_magica() {
@@ -22349,7 +22603,7 @@ mod pk_tests {
     #[test]
     fn pk_safe_zone_protege_os_dois_lados_mesmo_com_pontos() {
         let (mut w, ids, _rx) = mundo();
-        w.sessions.get_mut(&ids[0]).unwrap().pk_mode_on = true;
+        w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         w.sessions.get_mut(&ids[1]).unwrap().pk_points = 2;
         for x in [9.5,10.5] {
             w.safe_zones = vec![(Vec2::new(x,9.5),Vec2::ONE)];

@@ -542,6 +542,13 @@ pub enum ClientMessage {
         fps: u16,
         plataforma: String,
     },
+    /// Picks a PK mode (`shared::pk::PACIFICO` / `LIVRE` / `GRUPO` / `CLA`).
+    /// Refused while an open-PvP area holds the mode.
+    DefinirModoPk {
+        modo: u8,
+    },
+    /// Pays `shared::pk::custo_perdao` gold to remove one PK point.
+    PerdoarPk,
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1219,6 +1226,10 @@ pub enum ServerMessage {
     /// Voce morreu: XP perdido nesta morte (recuperavel por 24 h).
     Morte {
         xp_perdido: u64,
+        /// Of `xp_perdido`, the part PK points added (NOT recoverable).
+        xp_pk: u64,
+        /// That extra share in percent of the level step (5 per point).
+        pct_pk: u8,
     },
     /// Mortes que ainda da' pra recuperar e as recuperacoes gratis de hoje.
     /// Vai no login, ao morrer e depois de recuperar.

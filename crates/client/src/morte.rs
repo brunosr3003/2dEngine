@@ -19,6 +19,9 @@ pub struct Morte {
     pub morto: bool,
     /// XP lost on the last death (0 = none, or already recovered).
     pub xp_perdido: u64,
+    /// Of `xp_perdido`, what PK points added (not recoverable), and its share.
+    pub xp_pk: u64,
+    pub pct_pk: u8,
     pub mortes: Vec<MorteRecuperavelNet>,
     pub gratis: u8,
     /// The "Recover experience" panel opened from the Menu.
@@ -27,9 +30,11 @@ pub struct Morte {
 }
 
 impl Morte {
-    pub fn morreu(&mut self, xp_perdido: u64) {
+    pub fn morreu(&mut self, xp_perdido: u64, xp_pk: u64, pct_pk: u8) {
         self.morto = true;
         self.xp_perdido = xp_perdido;
+        self.xp_pk = xp_pk.min(xp_perdido);
+        self.pct_pk = pct_pk;
         self.aviso = None;
     }
 
@@ -105,17 +110,27 @@ impl Morte {
         estilo::texto_centro(sw * 0.5, caixa.y + 44.0, "YOU WERE DEFEATED", 30, VERMELHO);
         let linha = if self.xp_perdido > 0 {
             format!(
-                "Experiência perdida: {} (recuperável por 24 h)",
-                milhar(self.xp_perdido)
+                "Experience lost: {} ({} recoverable for 24 h)",
+                milhar(self.xp_perdido),
+                milhar(self.xp_perdido - self.xp_pk)
             )
         } else {
-            "Nenhuma experiência a recuperar desta morte.".to_string()
+            "No experience to recover from this death.".to_string()
         };
-        estilo::texto_centro(sw * 0.5, caixa.y + 80.0, &linha, 16, estilo::TEXTO);
+        estilo::texto_centro(sw * 0.5, caixa.y + 72.0, &linha, 16, estilo::TEXTO);
+        if self.xp_pk > 0 {
+            estilo::texto_centro(
+                sw * 0.5,
+                caixa.y + 94.0,
+                &format!("+{}% from PK points: {} XP that cannot be recovered", self.pct_pk, milhar(self.xp_pk)),
+                14,
+                VERMELHO,
+            );
+        }
         estilo::texto_centro(sw * 0.5, caixa.y + 112.0,
-            "Cada proficiência treinada perde XP ao morrer:", 15, VERMELHO);
+            "Each trained proficiency loses XP on death:", 15, VERMELHO);
         estilo::texto_centro(sw * 0.5, caixa.y + 135.0,
-            "10% do custo do próximo nível. Seu nível pode cair.", 14, estilo::TEXTO);
+            "10% of the next level's cost. Its level can drop.", 14, estilo::TEXTO);
         estilo::texto_centro(sw * 0.5, caixa.y + 158.0,
             "Recovering XP does not give proficiency back.", 14, estilo::SUAVE);
         if let Some((t, ok)) = &self.aviso {
@@ -245,7 +260,7 @@ mod testes {
     fn morrer_e_reviver_mudam_a_tela() {
         let mut t = Morte::default();
         assert!(!t.pega_mouse());
-        t.morreu(340);
+        t.morreu(340, 0, 0);
         assert!(t.morto && t.pega_mouse());
         assert_eq!(t.xp_perdido, 340);
         t.resultado(true, "ok".into());

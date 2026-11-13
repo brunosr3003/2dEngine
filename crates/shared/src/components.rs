@@ -452,8 +452,16 @@ pub mod ent_flags {
 /// Modo de combate e penalidade persistente por mortes de jogadores.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PkState {
+    /// `shared::pk::hostil(modo)`: kept for older readers of the flag.
     pub hostil: bool,
     pub pontos: u32,
+    /// `shared::pk::PACIFICO` / `LIVRE` / `GRUPO` / `CLA`.
+    #[serde(default)]
+    pub modo: u8,
+    /// Forced by an open-PvP area (`shared::pk::zona_pvp_aberto`): the player
+    /// cannot change it until they leave.
+    #[serde(default)]
+    pub travado: bool,
 }
 
 /// Precisao da posicao no wire: 1/8 de tile.

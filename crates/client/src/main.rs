@@ -80,6 +80,7 @@ mod auras;
 mod nativo;
 mod oficina_ui;
 mod pets_ui;
+mod pk_ui;
 mod rolagem;
 mod social_ui;
 mod social_hud;
@@ -346,6 +347,7 @@ struct Jogo {
     tremor: (f32, f64),
     /// Tela de morte e "Recover XP".
     morte: morte::Morte,
+    pk_ui: pk_ui::PkUi,
     /// Indo sozinho ha' 1,5 s: corre. `correndo_auto` e' o resultado do quadro.
     corrida: corrida::Corrida,
     correndo_auto: bool,
@@ -1008,6 +1010,7 @@ async fn main() {
         telegrafos: telegrafico::Telegrafos::default(),
         tremor: (0.0, 0.0),
         morte: morte::Morte::default(),
+        pk_ui: pk_ui::PkUi::default(),
         corrida: corrida::Corrida::default(),
         correndo_auto: false,
         ultimo_npc: None,
@@ -2535,9 +2538,10 @@ impl Jogo {
             }
             ServerMessage::BarraDeItens { espacos } => self.barra.do_servidor(&espacos),
             ServerMessage::Preferencias { prefs } => self.aplica_preferencias(prefs),
-            ServerMessage::Morte { xp_perdido } => {
+            ServerMessage::Morte { xp_perdido, xp_pk, pct_pk } => {
                 self.parar_tudo_ao_morrer();
-                self.morte.morreu(xp_perdido);
+                self.pk_ui.aberto = false;
+                self.morte.morreu(xp_perdido, xp_pk, pct_pk);
                 self.economia.morreu();
             }
             ServerMessage::DownedUpdate { active, .. } => {
@@ -3710,6 +3714,7 @@ impl Jogo {
             || self.economia.resumo.is_some()
             || self.painel_grande()
             || self.morte.pega_mouse()
+            || self.pk_ui.aberto
         {
             return true;
         }
@@ -5658,7 +5663,11 @@ impl Jogo {
             return;
         };
         if ele.meta.tag == shared::EntityTag::Player
-            && (!eu.meta.pk.hostil || self.social_hud.pacifico == Some(alvo)) { return; }
+            && (!pk_ui::posso_atacar(
+                &eu.meta,
+                &ele.meta,
+                ele.meta.name.as_ref().is_some_and(|n| self.social.grupo.contains(n)),
+            ) || self.social_hud.pacifico == Some(alvo)) { return; }
         if ele.state.hp == 0 || ele.morte.is_some() {
             if self.aproximando_alvo == Some(alvo) {
                 self.envia(ClientMessage::PararRota);
@@ -6596,7 +6605,7 @@ impl Jogo {
                 let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
                     .map(|e| e.meta.pk).unwrap_or_default();
                 if hud::draw_modo_pk(&z, pk) {
-                    self.envia(ClientMessage::TogglePkMode { on: !pk.hostil });
+                    self.pk_ui.abrir();
                 }
                 hud::draw_buffs(
                     self.bonus_xp_ate,
@@ -7656,6 +7665,16 @@ impl Jogo {
                 .desenha_resumo(&|id| bolsa.nome(id), &self.vox, &self.solido);
         }
         // Dentro da dungeon a derrota e' o "Reviver em N s" dela, sem cidade.
+        // The PK panel, over the HUD (opened from the PK card).
+        if self.pk_ui.aberto {
+            let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+                .map(|e| e.meta.pk).unwrap_or_default();
+            let nivel = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+                .map_or(1, |e| e.meta.nivel.max(1) as u32);
+            if let Some(pedido) = self.pk_ui.desenha(pk, nivel, self.bolsa.ouro) {
+                self.envia(pedido);
+            }
+        }
         if !self.dungeon.na_instancia() {
             if let Some(pedido) = self.morte.desenha(self.bolsa.ouro, agora_unix) {
                 self.envia(pedido);

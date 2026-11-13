@@ -223,6 +223,8 @@ pub async fn run_world_loop(
             // segundos" nao precisa de mais, e expulsar e' handoff — coisa
             // que nao se faz trinta vezes por segundo.
             world.tick_magica();
+            // PK: open-PvP areas force/restore the mode; points fade online.
+            world.tick_pk(1);
             // The market's recommended prices were recounted: everyone gets
             // the new table.
             if let Some(t) = crate::precos::novidade() {
