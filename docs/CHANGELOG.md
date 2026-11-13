@@ -8,6 +8,19 @@ jogador vai no PATCHNOTES.txt.
 
 ---
 
+13/11/2026 — Release 199 (protocolo 199, build 2026111301, Android versionCode 17) — PREPARADA, não está no ar
+
+- **Prime Merchant** (`shared::prime`, `server::prime`, `server/world/prime.rs`, `client/prime_ui.rs`): loja só de ouro na praça de cada vila. Preço = recomendado do mercado (`precos`) +15% (`MARKUP_PCT`), arredondado pra cima. Limite diário por item e por personagem (`LINHAS`): XP Potion 5, Energia 20, Darksteel 50k, chaves cinza→roxa 3, materiais cinza→azul 500. O ouro é destruído (sink). Histórico de 24 pontos (2 h) pro gráfico do quadro. Roxo e Glittering Powder ficam de fora de propósito.
+- **Poção de XP só nas diárias**, com teto de 3 por dia (`client/pocoes_xp.rs` esconde a poção já no teto nos textos de recompensa). Saiu das missões avulsas, secundárias e de história.
+- **Clã** (7f57037, 98e369c): tag [TAG] de 2 a 5 letras, única e com filtro de palavrões, nas placas de nome, no chat e no grupo. Presença no realm inteiro (ilha, canal, visto por último). Cargo oficial. Janela refeita.
+- **PK** (b839a7a): modos Livre/Grupo/Clã/Pacífico. PK ligado ou nome vermelho = alvo livre sem penalidade. Ponto só ao matar Pacífico limpo. Perda de XP 10% + 5% por ponto (teto 50%), só os 10% base recuperáveis. −1 ponto/h online, perdão por 1.000 × nível de ouro por ponto. Ilha Mágica fora do porto: travado em Grupo e sem ponto.
+- **PvP ao vivo** (e588125): skill ×0.10, básico ×0.15, penalidade por diferença de nível, sem teto por golpe, sem execute da katana em jogador. Simulador `pvp_sim`, `/pvp` no endpoint admin e aba pvp no Panopticon.
+- **Skills pelo intervalo base da arma** (71fd61b): attack speed acelera só o básico. Life Drain cura sobre o dano que entra. Removidos Hunter's Mark, Sword Dance, Bloodthirst, Riposte, Quick Draw, bloqueio/parry e Master's Counter, que eram código morto.
+- **Mercado**: quantidade digitada, tier no nome, rolagem com o dedo, aviso de ±50% do valor de mercado com Adjust price / Adjust all. Atalhos na bolsa.
+- Ward Charm até +7. Sem spawn a menos de 12 m de veio roxo. Telemetria `magica_extensao`. `enviar_kit` com KIT_ITEM/KIT_QTD/KIT_SUFIXO.
+
+---
+
 12/11/2026 — Release 198 (protocolo 198, build 2026111203, Android versionCode 16)
 
 - **Ritmo de XP** (`shared::progressao::ritmo`): todo XP do personagem é dividido por um fator do nível dele em `grant_xp`, antes dos bônus (poção, ilhota, acessório): 1 até o 19, rampa até 2× do 20 ao 50, 2× do 50 em diante. Perda de XP na morte dividida pelo mesmo fator (`morte::perda_de_xp`). O painel de missões mostra o XP já no ritmo (`QuestNet.reward_xp`). Prepara o reset de nível no 100 (em desenho).

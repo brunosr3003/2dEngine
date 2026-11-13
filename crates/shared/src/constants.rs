@@ -158,7 +158,7 @@ pub const MAX_PLAYERS_PER_SHARD: usize = 256;
 /// 195 (10/11/2026): `ServerMessage::PedirAvaliacao` (staff asks for a rating).
 /// 196 (10/11/2026): live market/offers pushes and `ClientMessage::LayoutDoHud`.
 /// 197 (11/11/2026): market buy orders, combine guarantee counters, economy rebalance.
-pub const PROTOCOL_VERSION: u16 = 198;
+pub const PROTOCOL_VERSION: u16 = 199;
 
 /// Pocao de Experiencia: +30% de XP de personagem por uma hora de tempo real.
 /// Usar outra com o bonus ativo RENOVA a hora cheia — nao acumula porcentagem.

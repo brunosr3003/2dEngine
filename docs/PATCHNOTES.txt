@@ -1,3 +1,17 @@
+Nov 13, 2026 — Clans, PK modes and the Prime Merchant
+
+- New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
+- XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
+- Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
+- PK modes: Free, Party, Clan and Peaceful. Players with PK on or a red name can be attacked by anyone. PK points only come from killing a clean Peaceful player; they go down by 1 per hour online or can be forgiven for gold. Dying with PK points costs more XP.
+- On the Magic Island, outside the arrival port, PK is locked to Party mode and gives no PK points.
+- PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
+- Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
+- Bag: View on market, Sell and Buy order shortcuts on items.
+- Ward Charm protects refines up to +7.
+- Monsters no longer spawn right next to purple rock veins.
+- Skills follow the weapon's base speed: attack speed now speeds up the basic attack only. Life Drain heals from the damage that lands.
+
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 
 - Leveling takes longer from level 20 on: from level 50, each level asks about twice the time it used to.

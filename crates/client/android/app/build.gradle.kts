@@ -40,8 +40,8 @@ android {
         applicationId = "com.niertech.tempest"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "2026111203"
+        versionCode = 17
+        versionName = "2026111301"
     }
 
     buildTypes {
