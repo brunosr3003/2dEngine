@@ -75,6 +75,7 @@ pub const UI: &[(&str, u16)] = &[
     ("sair", 49),
     ("sprint", 50),
     ("todas_missoes", 51),
+    ("troca", 54),
     ("trocar_personagem", 52),
     ("voltar", 53),
 ];

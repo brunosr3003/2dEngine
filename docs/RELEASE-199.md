@@ -42,6 +42,12 @@ Prod continua na 198 (src 19ad434). Nada foi buildado nem publicado.
 - Aviso vermelho em anúncio ±50% fora do valor de mercado, com **Adjust price / Adjust all**.
 - Atalhos na bolsa: View on market / Sell / Buy order.
 
+### Troca entre jogadores (refeita)
+- Abre por **Menu › Direct trade** (jogadores perto) ou pelo convite.
+- Toda a bolsa negociável, inclusive Darksteel e Cobre, mais ouro e **Energia**. Itens vinculados continuam fora.
+- Quantidade digitada, ícones iguais aos da bolsa e do mercado, até 12 itens na mesa.
+- Qualquer mudança destrava os dois lados. O servidor reconfere tudo no confirmar e troca de uma vez.
+
 ### Outros
 - Ward Charm protege refino só até +7.
 - Nenhum monstro nasce a menos de 12 m de veio roxo.

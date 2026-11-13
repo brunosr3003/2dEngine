@@ -284,9 +284,7 @@ impl Mercado {
     /// Escape: cancels the number being typed (the old value stays); with
     /// nothing typed, closes the market.
     pub fn esc(&mut self) {
-        if self.edicao.ativa() && !self.edicao.cancelado {
-            self.edicao.cancelado = true;
-        } else {
+        if !self.edicao.cancela() {
             self.fechar();
         }
     }
@@ -294,16 +292,12 @@ impl Mercado {
     /// End of the frame: an edit whose field was not drawn is dropped, and a
     /// tap on a number starts its edit (the search fields lose the keyboard).
     fn fim_da_edicao(&mut self) {
-        if self.edicao.ativa() && !self.edicao.visto {
-            self.edicao = Edicao::default();
+        // The search fields lose the keyboard when a number starts typing.
+        if self.edicao.fim_do_quadro() {
+            self.foco_busca = false;
+            self.pedidos.foco_busca = false;
+            self.pedidos.foco_item = false;
         }
-        if let Some((id, fundo, original)) = self.edicao.pedido.take() {
-            self.sem_foco();
-            self.edicao.id = Some(id);
-            self.edicao.fundo = fundo;
-            self.edicao.original = original;
-        }
-        self.edicao.visto = false;
     }
 
     fn filtro(&self) -> FiltroNet {
@@ -1994,7 +1988,7 @@ fn referencias(
     }
 }
 
-fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
+pub(crate) fn botao(r: Rect, rotulo: &str, ativo: bool, primario: bool) -> bool {
     let m = Vec2::from(mouse_position());
     let sobre = ativo && r.toca(m);
     estilo::botao(
@@ -2295,7 +2289,7 @@ fn linha_de_pedido(r: Rect, pd: &PedidoNet, c: &Contexto, f: f32, livre: bool, r
 /// A number being typed into a `seletor` (owner, 12/11/2026: "tap the number
 /// and type the amount"). One at a time in the whole panel.
 #[derive(Default)]
-struct Edicao {
+pub(crate) struct Edicao {
     /// The `seletor` being typed into, by its id.
     id: Option<&'static str>,
     texto: String,
@@ -2314,8 +2308,50 @@ struct Edicao {
 }
 
 impl Edicao {
-    fn ativa(&self) -> bool {
+    pub(crate) fn ativa(&self) -> bool {
         self.id.is_some()
+    }
+
+    /// The `seletor` `id` is being typed into.
+    pub(crate) fn editando(&self, id: &str) -> bool {
+        self.id == Some(id)
+    }
+
+    /// Bottom of the field being typed into (to raise a panel above the
+    /// on-screen keyboard).
+    pub(crate) fn fundo(&self) -> f32 {
+        self.fundo
+    }
+
+    /// Escape while typing: the `seletor` puts the old value back. `false` =
+    /// nothing was being typed (the caller closes its panel instead).
+    pub(crate) fn cancela(&mut self) -> bool {
+        if self.ativa() && !self.cancelado {
+            self.cancelado = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// End of the frame: an edit whose field was not drawn is dropped, and a
+    /// tap on a number starts its edit. `true` = an edit just started (the
+    /// caller's other text fields lose the keyboard).
+    pub(crate) fn fim_do_quadro(&mut self) -> bool {
+        if self.ativa() && !self.visto {
+            *self = Edicao::default();
+        }
+        let comecou = if let Some((id, fundo, original)) = self.pedido.take() {
+            *self = Edicao::default();
+            self.id = Some(id);
+            self.fundo = fundo;
+            self.original = original;
+            true
+        } else {
+            false
+        };
+        self.visto = false;
+        comecou
     }
 }
 
@@ -2346,7 +2382,7 @@ fn so_digitos(digitado: &[char]) -> Vec<char> {
 /// `[min, max]`), Escape cancels (`Mercado::esc`). `id` tells the panel's
 /// seletors apart.
 #[allow(clippy::too_many_arguments)]
-fn seletor(
+pub(crate) fn seletor(
     ed: &mut Edicao,
     id: &'static str,
     digitado: &[char],

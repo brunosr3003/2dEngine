@@ -380,7 +380,6 @@ pub const VERBETES: &[(&str, &str)] = &[
     // Chapter V: Skyreach (levels 60-80).
     ("Bound for Skyreach", "Rumo a Skyreach"),
     ("Above the storm, islands float on the clouds. Set sail with the Harbour Captain for Skyreach.", "Acima da tempestade, ilhas flutuam nas nuvens. Embarque com o Capitão do Porto rumo a Skyreach."),
-    ("Above the storm", "Acima da tempestade"),
     ("Islands on the clouds, and a town of marble. The Quest Master of Cloudharbor wants to see you.", "Ilhas nas nuvens e uma cidade de mármore. O Mestre de Missões de Cloudharbor quer ver você."),
     ("The first cloud path", "O primeiro caminho de nuvens"),
     ("Walk the cloud path to Lantern Isle. Don't look down.", "Siga o caminho de nuvens até a Ilha da Lanterna. Não olhe para baixo."),

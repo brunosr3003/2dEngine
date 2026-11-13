@@ -701,4 +701,10 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Invalid price.", "Preço inválido."),
     ("The listing already has that price.", "O anúncio já tem esse preço."),
     ("New price for {}: {} gold each.", "Novo preço de {}: {} de ouro cada."),
+    // ─────────────────────────── direct trade (13/11/2026) ───────────────────────────
+    ("The table is full.", "A mesa está cheia."),
+    ("Your offer changed: check it and lock again.", "Sua oferta mudou: confira e trave de novo."),
+    ("An offer changed: check it and lock again.", "Uma oferta mudou: confira e trave de novo."),
+    ("Trade cancelled: not enough Energy.", "Troca cancelada: Energia insuficiente."),
+    ("Trade cancelled: {} has no room in the bag.", "Troca cancelada: {} está sem espaço na bolsa."),
 ];

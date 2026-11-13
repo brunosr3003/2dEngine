@@ -478,11 +478,13 @@ impl PresencaUi {
                 let t: Vec<String> = premios.iter().map(|p| texto_do_premio(p, nomes)).collect();
                 dica = Some((
                     r,
-                    format!(
-                        "Day {n}{}: {}",
-                        if marco { " (bonus)" } else { "" },
-                        t.join(" + ")
-                    ),
+                    // One whole phrase per form: two holes side by side
+                    // cannot be translated (`tests/idioma.rs`).
+                    if marco {
+                        format!("Day {n} (bonus): {}", t.join(" + "))
+                    } else {
+                        format!("Day {n}: {}", t.join(" + "))
+                    },
                 ));
             }
         }
