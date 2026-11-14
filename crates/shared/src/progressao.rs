@@ -38,12 +38,18 @@ pub fn segundos_do_nivel(n: u32) -> f32 {
 ///
 /// With 2.0 the Anubis pace takes ~400 h online for 1-100 (about a month at
 /// 12 h a day); the Lenda pace ~630 h (about 3.5 months at 6 h a day). It was
-/// 5.7 and then 11.5 for a few hours before the reset idea. Paying players go
+/// 5.7 and then 11.5 for a few hours before the reset idea.
+///
+/// 14/11/2026: down to 1.25. Six days of prod data: casual players (3-7 h a
+/// day) were 3-5x slower than the best case and spent ~100 days of play on
+/// 30-60, right where the ramp reaches its top; the 20 h/day auto farmers sat
+/// at 5-7 h per level in the 40s-50s. The owner picked 1.25 (best case 1-100
+/// ~170 h, between no divisor at 139 h and the old 2.0 at 259 h). Paying players go
 /// faster through the XP potion, the Magic Island islet and bought gear: the
 /// divisor is applied before those bonuses, so they keep their share. The
 /// kill factor, quest shares and the 200 h best case above stay as they are:
 /// this is one divisor at the door, easy to tune.
-pub const RITMO_MAX: f32 = 2.0;
+pub const RITMO_MAX: f32 = 1.25;
 /// Where the ramp starts and where it reaches `RITMO_MAX`.
 pub const RITMO_DE: u32 = 20;
 pub const RITMO_ATE: u32 = 50;
@@ -298,6 +304,6 @@ mod testes_do_ritmo {
         assert_eq!(ritmo(TETO), RITMO_MAX);
         assert_eq!(no_ritmo(0, 60), 0);
         assert_eq!(no_ritmo(1, 60), 1, "never rounds a gain away");
-        assert_eq!(no_ritmo(2_000, 60), 1_000);
+        assert_eq!(no_ritmo(2_000, 60), 1_600);
     }
 }

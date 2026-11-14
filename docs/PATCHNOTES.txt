@@ -7,6 +7,9 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - On the Magic Island, outside the arrival port, PK is locked to Party mode and gives no PK points.
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
+- Leveling is faster from level 20 on: the XP slowdown added on Nov 12 was eased (from level 50 a level now takes over a third less time than before this update).
+- Weekend event every week: XP x1.5 and drops x1.5 from Saturday 00:00 to Sunday 23:59 (Brasília time, UTC-3).
+- Market lots: sell an amount for a total price, so cheap items can cost less than 1 gold each (1,000 Copper for 3 gold). Buyers take the whole lot or part of it, always paying whole gold; the screen shows how much the same gold buys. Buy orders work the same way.
 - Bag: View on market, Sell and Buy order shortcuts on items.
 - Trade redone: start it from Menu > Direct trade, every tradable item of your bag (Darksteel and Copper too) plus gold and Energy, typed amounts and item icons. Any change unlocks both sides before confirming.
 - Ward Charm protects refines up to +7.
