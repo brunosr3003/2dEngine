@@ -64,12 +64,25 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Listing cancelled: {restante} TP back.",
     ),
     (
-        "Anunciado: {qtd} TP a {preco_unit} gold cada.",
-        "Listed: {qtd} TP at {preco_unit} gold each.",
+        "Anunciado: {qtd} TP por {} gold ({} cada).",
+        "Listed: {qtd} TP for {} gold ({} each).",
     ),
     (
-        "Anunciado: {nome} ×{qtd} a {preco_unit} gold cada.",
-        "Listed: {nome} ×{qtd} at {preco_unit} gold each.",
+        "Anunciado: {nome} ×{qtd} por {} gold ({} cada).",
+        "Listed: {nome} ×{qtd} for {} gold ({} each).",
+    ),
+    ("Market: change from your purchase", "Mercado: troco da sua compra"),
+    (
+        "Buy order placed: {nome} ×{qtd} for {} gold ({} each, held now).",
+        "Pedido de compra feito: {nome} ×{qtd} por {} de ouro ({} cada, reservado agora).",
+    ),
+    (
+        "Too few for this buy order: it would pay less than 1 gold. Sell more; your items come back in Deliveries.",
+        "Pouco demais pra este pedido: pagaria menos de 1 de ouro. Venda mais; seus itens voltam em Entregas.",
+    ),
+    (
+        "Preço inválido (pelo menos 1 gold no total, até {PRECO_MAX_UNIT} por unidade).",
+        "Invalid price (at least 1 gold in total, up to {PRECO_MAX_UNIT} per unit).",
     ),
     (
         "Pergaminho de Teleporte retirado: reembolso em cobre",
@@ -700,7 +713,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Pardoned 1 PK point for {} gold. PK points: {}.", "1 ponto PK perdoado por {} de ouro. Pontos PK: {}."),
     ("Invalid price.", "Preço inválido."),
     ("The listing already has that price.", "O anúncio já tem esse preço."),
-    ("New price for {}: {} gold each.", "Novo preço de {}: {} de ouro cada."),
+    ("New price for {nome}: {} gold for {restante} ({} each).", "Novo preço de {nome}: {} de ouro por {restante} ({} cada)."),
     // ─────────────────────────── direct trade (13/11/2026) ───────────────────────────
     ("The table is full.", "A mesa está cheia."),
     ("Your offer changed: check it and lock again.", "Sua oferta mudou: confira e trave de novo."),

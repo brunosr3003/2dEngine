@@ -330,23 +330,27 @@ pub enum ClientMessage {
     },
     /// Meus anuncios ativos, historico e saldo de TP.
     MercadoMeus,
-    /// Anuncia `qtd` do slot da bolsa a `preco_unit` gold cada. O item sai da
-    /// bolsa na hora e fica em custodia no mercado.
+    /// Anuncia `qtd` do slot da bolsa por `preco_total` gold NO TOTAL (lot
+    /// pricing: the unit price may be a fraction). O item sai da bolsa na
+    /// hora e fica em custodia no mercado.
     MercadoAnunciar {
         inv_slot: u16,
         qtd: u32,
-        preco_unit: u64,
+        preco_total: u64,
     },
-    /// Anuncia TP da conta a `preco_unit` gold cada (TP em custodia).
+    /// Anuncia `qtd` TP da conta por `preco_total` gold no total (TP em
+    /// custodia).
     MercadoAnunciarTp {
         qtd: u64,
-        preco_unit: u64,
+        preco_total: u64,
     },
-    /// Compra `qtd` de um anuncio (item ou TP) ao preco que o cliente viu.
+    /// Compra `qtd` (o lote todo ou parte) de um anuncio, pagando `pago`
+    /// gold: what `AnuncioNet::custo(qtd)` gave on the listing the client
+    /// saw. Costing more now is refused (gold back); less sends change.
     MercadoComprar {
         anuncio: String,
         qtd: u64,
-        preco_unit: u64,
+        pago: u64,
     },
     /// Cancela um anuncio proprio: o que sobrou volta por entrega.
     MercadoCancelar {
@@ -461,11 +465,11 @@ pub enum ClientMessage {
         z: f32,
         camada: u8,
     },
-    /// Lists `lotes` lots of 1,000 Energy at `preco_unit` gold per lot
+    /// Lists `lotes` lots of 1,000 Energy for `preco_total` gold in all
     /// (`mercado::ENERGIA_POR_LOTE`). The Energy leaves the character now.
     MercadoAnunciarEnergia {
         lotes: u64,
-        preco_unit: u64,
+        preco_total: u64,
     },
     /// Buys the next `mercado::VAGAS_POR_COMPRA` listing slots. `compra` is
     /// the purchase the player saw (1 = the first): a stale one is refused,
@@ -508,12 +512,13 @@ pub enum ClientMessage {
     LayoutDoHud {
         layout: LayoutDoHud,
     },
-    /// Market BUY ORDER: "I want `qtd` of `item_id` at `preco_unit` gold
-    /// each". The whole `qtd × preco_unit` leaves the character now (escrow).
+    /// Market BUY ORDER: "I want `qtd` of `item_id` for `preco_total` gold
+    /// in all". That gold leaves the character now (escrow); each seller gets
+    /// `mercado::pagamento_parcial` of it.
     MercadoPedirCompra {
         item_id: u16,
         qtd: u64,
-        preco_unit: u64,
+        preco_total: u64,
     },
     /// Sells `qtd` of `item_id` to buy order `pedido`. The items leave the
     /// bag now; whatever the order no longer wants comes back by letter.
@@ -549,10 +554,11 @@ pub enum ClientMessage {
     },
     /// Pays `shared::pk::custo_perdao` gold to remove one PK point.
     PerdoarPk,
-    /// Reprices one of my active market listings (no fee, no escrow change).
+    /// Reprices one of my active market listings: `preco_total` gold for
+    /// the units still on it (no fee, no escrow change).
     MercadoAjustarPreco {
         anuncio: String,
-        preco_unit: u64,
+        preco_total: u64,
     },
     /// The Prime Merchant (`shared::prime`): open the board, buy for gold.
     Prime {

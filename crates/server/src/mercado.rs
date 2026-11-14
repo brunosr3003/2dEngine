@@ -205,7 +205,7 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
             PRIMARY KEY (realm, personagem)
         )",
         // Buy orders: the gold for `qtd_total` was paid up front and waits
-        // here; `qtd_restante × preco_unit` of it is still in escrow.
+        // here; `gold_restante` of it is still in escrow.
         "CREATE TABLE IF NOT EXISTS mercado_pedidos (
             id            TEXT PRIMARY KEY,
             realm         TEXT        NOT NULL,
@@ -223,6 +223,16 @@ async fn criar_tabelas_centrais(pool: &PgPool) -> Result<()> {
         )",
         "CREATE INDEX IF NOT EXISTS mercado_pedidos_busca ON mercado_pedidos (item_id, preco_unit DESC) WHERE estado = 0",
         "CREATE INDEX IF NOT EXISTS mercado_pedidos_dono ON mercado_pedidos (realm, personagem) WHERE estado = 0",
+        // Lot pricing (13/11/2026): the whole gold still asked (listing) or
+        // held (buy order) for the units left; the unit price is
+        // `gold_restante / qtd_restante`, fractions allowed. `preco_unit`
+        // stays as that price rounded up, for the Panopticon and history.
+        "ALTER TABLE mercado_anuncios ADD COLUMN IF NOT EXISTS gold_restante BIGINT",
+        "UPDATE mercado_anuncios SET gold_restante = qtd_restante * preco_unit WHERE gold_restante IS NULL",
+        "ALTER TABLE mercado_anuncios ALTER COLUMN gold_restante SET NOT NULL",
+        "ALTER TABLE mercado_pedidos ADD COLUMN IF NOT EXISTS gold_restante BIGINT",
+        "UPDATE mercado_pedidos SET gold_restante = qtd_restante * preco_unit WHERE gold_restante IS NULL",
+        "ALTER TABLE mercado_pedidos ALTER COLUMN gold_restante SET NOT NULL",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
@@ -263,6 +273,12 @@ pub enum OpCentral {
         categoria: u8,
         instancia: Option<ItemInstance>,
         qtd: u64,
+        /// Gold asked for all `qtd` (lot pricing, 13/11/2026).
+        #[serde(default)]
+        preco_total: u64,
+        /// Before lot pricing: gold per unit. Only read from an op queued by
+        /// an older realm (`preco_total` = 0), as `qtd × preco_unit`.
+        #[serde(default)]
         preco_unit: u64,
     },
     Comprar {
@@ -272,6 +288,8 @@ pub enum OpCentral {
         personagem: String,
         anuncio: String,
         qtd: u64,
+        /// Before lot pricing; unused (the cost is worked out from `pago`).
+        #[serde(default)]
         preco_unit: u64,
         /// Gold que ja' saiu do comprador.
         pago: u64,
@@ -285,7 +303,7 @@ pub enum OpCentral {
         compra: u8,
         pago: u64,
     },
-    /// A buy order: `pago` (= qtd × preco_unit) already left the buyer; a
+    /// A buy order: `pago` (the order's total) already left the buyer; a
     /// refused one gives it back by letter.
     PedirCompra {
         id: String,
@@ -296,6 +314,8 @@ pub enum OpCentral {
         nome: String,
         categoria: u8,
         qtd: u64,
+        /// Before lot pricing; unused: `pago` IS the order's total.
+        #[serde(default)]
         preco_unit: u64,
         pago: u64,
     },
@@ -424,8 +444,10 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             categoria,
             instancia,
             qtd,
+            preco_total,
             preco_unit,
         } => {
+            let total = if *preco_total > 0 { *preco_total } else { qtd.saturating_mul(*preco_unit) };
             anunciar_item(
                 &mut tx,
                 id,
@@ -437,7 +459,7 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
                 *categoria,
                 instancia,
                 *qtd,
-                *preco_unit,
+                total,
             )
             .await?
         }
@@ -448,7 +470,7 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             personagem,
             anuncio,
             qtd,
-            preco_unit,
+            preco_unit: _,
             pago,
         } => {
             comprar(
@@ -459,7 +481,6 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
                 personagem,
                 anuncio,
                 *qtd,
-                *preco_unit,
                 *pago,
             )
             .await?
@@ -480,11 +501,11 @@ pub async fn processar(central: &PgPool, op: &OpCentral) -> Result<Resultado> {
             nome,
             categoria,
             qtd,
-            preco_unit,
+            preco_unit: _,
             pago,
         } => {
             pedir_compra(
-                &mut tx, id, realm, conta, personagem, *item_id, nome, *categoria, *qtd, *preco_unit, *pago,
+                &mut tx, id, realm, conta, personagem, *item_id, nome, *categoria, *qtd, *pago,
             )
             .await?
         }
@@ -677,7 +698,7 @@ async fn anunciar_item(
     categoria: u8,
     instancia: &Option<ItemInstance>,
     qtd: u64,
-    preco_unit: u64,
+    preco_total: u64,
 ) -> Result<(bool, String)> {
     let inst = instancia
         .as_ref()
@@ -689,7 +710,7 @@ async fn anunciar_item(
         .await?;
     let recusa = if qtd == 0 || item_id == 0 || item_id == shared::item_id::PERGAMINHO_TELEPORTE {
         Some(Recusa::Quantidade)
-    } else if !regras::preco_valido(preco_unit) {
+    } else if !regras::preco_total_valido(qtd, preco_total) {
         Some(Recusa::Preco)
     } else if ativos_de(tx, realm, personagem).await?
         >= regras::max_anuncios(compras_de_vagas(&mut **tx, realm, personagem).await?)
@@ -715,8 +736,8 @@ async fn anunciar_item(
         return Ok((false, format!("{} {nome} comes back in Deliveries.", r.texto())));
     }
     sqlx::query(
-        "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)",
+        "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit, gold_restante)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12)",
     )
     .bind(id)
     .bind(regras::TIPO_ITEM as i16)
@@ -728,13 +749,32 @@ async fn anunciar_item(
     .bind(categoria as i16)
     .bind(inst)
     .bind(qtd as i64)
-    .bind(preco_unit as i64)
+    .bind(unit_arredondado(qtd, preco_total))
+    .bind(preco_total as i64)
     .execute(&mut **tx)
     .await?;
     Ok((
         true,
-        format!("Anunciado: {nome} ×{qtd} a {preco_unit} gold cada."),
+        format!(
+            "Anunciado: {nome} ×{qtd} por {} gold ({} cada).",
+            shared::idioma::milhar(preco_total),
+            fmt_unit(qtd, preco_total)
+        ),
     ))
+}
+
+/// The `preco_unit` column kept beside `gold_restante` since lot pricing:
+/// the unit price rounded up (at least 1), for the Panopticon and history.
+fn unit_arredondado(qtd: u64, gold: u64) -> i64 {
+    if qtd == 0 {
+        return 1;
+    }
+    gold.div_ceil(qtd).max(1).min(i64::MAX as u64) as i64
+}
+
+/// A unit price for a message: whole when it is, else up to 3 decimals.
+fn fmt_unit(qtd: u64, gold: u64) -> String {
+    regras::fmt_unitario(regras::preco_unitario(qtd, gold))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -746,11 +786,10 @@ async fn comprar(
     personagem: &str,
     anuncio: &str,
     qtd: u64,
-    preco_unit: u64,
     pago: u64,
 ) -> Result<(bool, String)> {
     let linha = sqlx::query(
-        "SELECT tipo, realm, personagem, item_id, nome, instancia, qtd_restante, preco_unit, estado
+        "SELECT tipo, realm, personagem, item_id, nome, instancia, qtd_restante, gold_restante, estado
            FROM mercado_anuncios WHERE id = $1 FOR UPDATE",
     )
     .bind(anuncio)
@@ -767,17 +806,10 @@ async fn comprar(
         Some(l) => regras::fechar_compra(
             l.get::<i64, _>("qtd_restante").max(0) as u64,
             l.get::<i16, _>("estado") as u8,
-            l.get::<i64, _>("preco_unit").max(0) as u64,
+            l.get::<i64, _>("gold_restante").max(0) as u64,
             qtd,
-            preco_unit,
-        )
-        .and_then(|f| {
-            if f.bruto == pago {
-                Ok(f)
-            } else {
-                Err(Recusa::PrecoMudou)
-            }
-        }),
+            pago,
+        ),
     };
     let (l, f) = match (linha, fechamento) {
         (Some(l), Ok(f)) => (l, f),
@@ -809,12 +841,16 @@ async fn comprar(
     } else {
         regras::ESTADO_ATIVO
     };
-    sqlx::query("UPDATE mercado_anuncios SET qtd_restante = $2, estado = $3, atualizado = NOW() WHERE id = $1")
-        .bind(anuncio)
-        .bind(f.sobra as i64)
-        .bind(estado as i16)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE mercado_anuncios SET qtd_restante = $2, estado = $3, gold_restante = $4, preco_unit = $5, atualizado = NOW() WHERE id = $1",
+    )
+    .bind(anuncio)
+    .bind(f.sobra as i64)
+    .bind(estado as i16)
+    .bind(f.gold_sobra as i64)
+    .bind(if f.sobra == 0 { unit_arredondado(f.vendida, f.bruto) } else { unit_arredondado(f.sobra, f.gold_sobra) })
+    .execute(&mut **tx)
+    .await?;
     let texto = if tipo == regras::TIPO_TP {
         match razao::mover(
             tx,
@@ -828,6 +864,20 @@ async fn comprar(
             razao::Movimento::Feito { .. } | razao::Movimento::JaFeito { .. } => {}
             razao::Movimento::SemSaldo { .. } => unreachable!("credito nunca fica sem saldo"),
         }
+        if f.troco > 0 {
+            carta(
+                tx,
+                &format!("{id}:troco"),
+                realm,
+                personagem,
+                0,
+                0,
+                None,
+                f.troco,
+                "Market: change from your purchase",
+            )
+            .await?;
+        }
         format!("Comprado: {} TP.", f.vendida)
     } else {
         let inst: Option<String> = l.get("instancia");
@@ -839,7 +889,9 @@ async fn comprar(
             l.get::<i32, _>("item_id") as u16,
             f.vendida,
             inst.as_deref(),
-            0,
+            // The listing got cheaper since the buyer looked: the change
+            // rides with the items.
+            f.troco,
             &format!("Bought on the market: {nome}"),
         )
         .await?;
@@ -867,7 +919,7 @@ async fn comprar(
     .bind(tipo as i16)
     .bind(&nome)
     .bind(f.vendida as i64)
-    .bind(preco_unit as i64)
+    .bind(unit_arredondado(f.vendida, f.bruto))
     .bind(f.bruto as i64)
     .bind(f.taxa as i64)
     .bind(f.liquido as i64)
@@ -907,7 +959,7 @@ pub async fn cancelar(
     }
     let restante = l.get::<i64, _>("qtd_restante").max(0) as u64;
     let nome: String = l.get("nome");
-    sqlx::query("UPDATE mercado_anuncios SET estado = $2, qtd_restante = 0, atualizado = NOW() WHERE id = $1")
+    sqlx::query("UPDATE mercado_anuncios SET estado = $2, qtd_restante = 0, gold_restante = 0, atualizado = NOW() WHERE id = $1")
         .bind(anuncio)
         .bind(regras::ESTADO_CANCELADO as i16)
         .execute(&mut *tx)
@@ -953,11 +1005,11 @@ pub async fn ajustar_preco(
     realm: &str,
     personagem: &str,
     anuncio: &str,
-    preco_unit: u64,
+    preco_total: u64,
 ) -> Result<(bool, String)> {
     let mut tx = central.begin().await?;
     let l = sqlx::query(
-        "SELECT estado, preco_unit, nome FROM mercado_anuncios
+        "SELECT estado, qtd_restante, gold_restante, nome FROM mercado_anuncios
           WHERE id = $1 AND realm = $2 AND personagem = $3 FOR UPDATE",
     )
     .bind(anuncio)
@@ -965,24 +1017,33 @@ pub async fn ajustar_preco(
     .bind(personagem)
     .fetch_optional(&mut *tx)
     .await?;
-    let (estado, atual, nome) = match &l {
+    let (estado, restante, atual, nome) = match &l {
         Some(l) => (
             l.get::<i16, _>("estado") as u8,
-            l.get::<i64, _>("preco_unit").max(0) as u64,
+            l.get::<i64, _>("qtd_restante").max(0) as u64,
+            l.get::<i64, _>("gold_restante").max(0) as u64,
             l.get::<String, _>("nome"),
         ),
-        None => (0, 0, String::new()),
+        None => (0, 0, 0, String::new()),
     };
-    if let Err(e) = regras::validar_ajuste(l.is_some(), estado, atual, preco_unit) {
+    if let Err(e) = regras::validar_ajuste(l.is_some(), estado, restante, atual, preco_total) {
         return Ok((false, e.into()));
     }
-    sqlx::query("UPDATE mercado_anuncios SET preco_unit = $2, atualizado = NOW() WHERE id = $1")
+    sqlx::query("UPDATE mercado_anuncios SET gold_restante = $2, preco_unit = $3, atualizado = NOW() WHERE id = $1")
         .bind(anuncio)
-        .bind(preco_unit as i64)
+        .bind(preco_total as i64)
+        .bind(unit_arredondado(restante, preco_total))
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok((true, format!("New price for {nome}: {} gold each.", shared::idioma::milhar(preco_unit))))
+    Ok((
+        true,
+        format!(
+            "New price for {nome}: {} gold for {restante} ({} each).",
+            shared::idioma::milhar(preco_total),
+            fmt_unit(restante, preco_total)
+        ),
+    ))
 }
 
 /// Anuncia TP da conta: a TP sai do livro na mesma transacao.
@@ -992,12 +1053,12 @@ pub async fn anunciar_tp(
     conta: &str,
     personagem: &str,
     qtd: u64,
-    preco_unit: u64,
+    preco_total: u64,
 ) -> Result<(bool, String)> {
     if qtd == 0 || qtd > regras::TP_MAX_POR_ANUNCIO {
         return Ok((false, Recusa::Quantidade.texto()));
     }
-    if !regras::preco_valido(preco_unit) {
+    if !regras::preco_total_valido(qtd, preco_total) {
         return Ok((false, Recusa::Preco.texto()));
     }
     let mut tx = central.begin().await?;
@@ -1024,8 +1085,8 @@ pub async fn anunciar_tp(
         razao::Movimento::Feito { .. } | razao::Movimento::JaFeito { .. } => {}
     }
     sqlx::query(
-        "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit)
-         VALUES ($1, $2, $3, $4, $5, 0, 'Tempest Points', $6, NULL, $7, $7, $8)",
+        "INSERT INTO mercado_anuncios (id, tipo, realm, conta, personagem, item_id, nome, categoria, instancia, qtd_total, qtd_restante, preco_unit, gold_restante)
+         VALUES ($1, $2, $3, $4, $5, 0, 'Tempest Points', $6, NULL, $7, $7, $8, $9)",
     )
     .bind(&id)
     .bind(regras::TIPO_TP as i16)
@@ -1034,13 +1095,18 @@ pub async fn anunciar_tp(
     .bind(personagem)
     .bind(regras::Categoria::Tp as i16)
     .bind(qtd as i64)
-    .bind(preco_unit as i64)
+    .bind(unit_arredondado(qtd, preco_total))
+    .bind(preco_total as i64)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok((
         true,
-        format!("Anunciado: {qtd} TP a {preco_unit} gold cada."),
+        format!(
+            "Anunciado: {qtd} TP por {} gold ({} cada).",
+            shared::idioma::milhar(preco_total),
+            fmt_unit(qtd, preco_total)
+        ),
     ))
 }
 
@@ -1056,7 +1122,7 @@ fn anuncio_de(l: &sqlx::postgres::PgRow, realm: &str, personagem: &str) -> Anunc
         categoria: l.get::<i16, _>("categoria") as u8,
         instancia: inst.and_then(|s| serde_json::from_str(&s).ok()),
         qtd: l.get::<i64, _>("qtd_restante").max(0) as u64,
-        preco_unit: l.get::<i64, _>("preco_unit").max(0) as u64,
+        preco_total: l.get::<i64, _>("gold_restante").max(0) as u64,
         meu: r == realm && p == personagem,
         realm: r,
         vendedor: p,
@@ -1078,13 +1144,13 @@ pub async fn buscar(
         .collect();
     let pagina = filtro.pagina.min(500) as i64;
     let linhas = sqlx::query(
-        "SELECT id, tipo, realm, personagem, item_id, nome, categoria, instancia, qtd_restante, preco_unit
+        "SELECT id, tipo, realm, personagem, item_id, nome, categoria, instancia, qtd_restante, gold_restante
            FROM mercado_anuncios
           WHERE estado = 0
             AND ($1 = 0 OR categoria = $1)
             AND ($1 = 4 OR categoria <> 4)
             AND ($2 = '' OR nome ILIKE '%' || $2 || '%')
-          ORDER BY preco_unit ASC, criado ASC
+          ORDER BY gold_restante::float8 / GREATEST(qtd_restante, 1) ASC, criado ASC
           LIMIT $3 OFFSET $4",
     )
     .bind(filtro.categoria as i16)
@@ -1112,7 +1178,7 @@ pub async fn meus(
     conta: &str,
 ) -> Result<(Vec<AnuncioNet>, Vec<VendaNet>, u64, u8)> {
     let ativos = sqlx::query(
-        "SELECT id, tipo, realm, personagem, item_id, nome, categoria, instancia, qtd_restante, preco_unit
+        "SELECT id, tipo, realm, personagem, item_id, nome, categoria, instancia, qtd_restante, gold_restante
            FROM mercado_anuncios WHERE realm = $1 AND personagem = $2 AND estado = 0 ORDER BY criado DESC",
     )
     .bind(realm)
@@ -1219,7 +1285,6 @@ async fn pedir_compra(
     nome: &str,
     categoria: u8,
     qtd: u64,
-    preco_unit: u64,
     pago: u64,
 ) -> Result<(bool, String)> {
     // Per character: two orders at once never pass the limit together.
@@ -1233,7 +1298,7 @@ async fn pedir_compra(
         || item_id == shared::item_id::PERGAMINHO_TELEPORTE
     {
         Some(Recusa::Quantidade)
-    } else if !regras::preco_valido(preco_unit) || regras::total(qtd, preco_unit) != Some(pago) {
+    } else if !regras::preco_total_valido(qtd, pago) {
         Some(Recusa::Preco)
     } else if pedidos_abertos_de(tx, realm, personagem).await? >= regras::MAX_PEDIDOS {
         Some(Recusa::MuitosPedidos)
@@ -1258,8 +1323,8 @@ async fn pedir_compra(
         return Ok((false, format!("{} The gold comes back in Deliveries.", r.texto())));
     }
     sqlx::query(
-        "INSERT INTO mercado_pedidos (id, realm, conta, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)",
+        "INSERT INTO mercado_pedidos (id, realm, conta, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit, gold_restante)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10)",
     )
     .bind(id)
     .bind(realm)
@@ -1269,12 +1334,17 @@ async fn pedir_compra(
     .bind(nome)
     .bind(categoria as i16)
     .bind(qtd as i64)
-    .bind(preco_unit as i64)
+    .bind(unit_arredondado(qtd, pago))
+    .bind(pago as i64)
     .execute(&mut **tx)
     .await?;
     Ok((
         true,
-        format!("Buy order placed: {nome} ×{qtd} at {preco_unit} gold each ({pago} gold held)."),
+        format!(
+            "Buy order placed: {nome} ×{qtd} for {} gold ({} each, held now).",
+            shared::idioma::milhar(pago),
+            fmt_unit(qtd, pago)
+        ),
     ))
 }
 
@@ -1307,7 +1377,7 @@ async fn vender_ao_pedido(
     qtd: u64,
 ) -> Result<(bool, String)> {
     let linha = sqlx::query(
-        "SELECT realm, personagem, item_id, nome, qtd_restante, preco_unit, estado
+        "SELECT realm, personagem, item_id, nome, qtd_restante, gold_restante, estado
            FROM mercado_pedidos WHERE id = $1 FOR UPDATE",
     )
     .bind(pedido)
@@ -1325,7 +1395,7 @@ async fn vender_ao_pedido(
         Some(l) => regras::preencher_pedido(
             l.get::<i64, _>("qtd_restante").max(0) as u64,
             l.get::<i16, _>("estado") as u8,
-            l.get::<i64, _>("preco_unit").max(0) as u64,
+            l.get::<i64, _>("gold_restante").max(0) as u64,
             qtd,
         ),
     };
@@ -1354,14 +1424,17 @@ async fn vender_ao_pedido(
     let nome: String = l.get("nome");
     let comprador_realm: String = l.get("realm");
     let comprador: String = l.get("personagem");
-    let preco_unit = l.get::<i64, _>("preco_unit").max(0) as u64;
     let estado = if p.restante == 0 { regras::PEDIDO_CONCLUIDO } else { regras::PEDIDO_ABERTO };
-    sqlx::query("UPDATE mercado_pedidos SET qtd_restante = $2, estado = $3, atualizado = NOW() WHERE id = $1")
-        .bind(pedido)
-        .bind(p.restante as i64)
-        .bind(estado as i16)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE mercado_pedidos SET qtd_restante = $2, estado = $3, gold_restante = $4, preco_unit = $5, atualizado = NOW() WHERE id = $1",
+    )
+    .bind(pedido)
+    .bind(p.restante as i64)
+    .bind(estado as i16)
+    .bind(p.gold_restante as i64)
+    .bind(if p.restante == 0 { unit_arredondado(p.vendida, p.bruto) } else { unit_arredondado(p.restante, p.gold_restante) })
+    .execute(&mut **tx)
+    .await?;
     carta(
         tx,
         &format!("{id}:item"),
@@ -1410,7 +1483,7 @@ async fn vender_ao_pedido(
     .bind(regras::TIPO_ITEM as i16)
     .bind(&nome)
     .bind(p.vendida as i64)
-    .bind(preco_unit as i64)
+    .bind(unit_arredondado(p.vendida, p.bruto))
     .bind(p.bruto as i64)
     .bind(p.taxa as i64)
     .bind(p.liquido as i64)
@@ -1440,7 +1513,7 @@ pub async fn cancelar_pedido(
 ) -> Result<(bool, String)> {
     let mut tx = central.begin().await?;
     let Some(l) = sqlx::query(
-        "SELECT nome, qtd_restante, preco_unit, estado FROM mercado_pedidos
+        "SELECT nome, gold_restante, estado FROM mercado_pedidos
           WHERE id = $1 AND realm = $2 AND personagem = $3 FOR UPDATE",
     )
     .bind(pedido)
@@ -1454,15 +1527,14 @@ pub async fn cancelar_pedido(
     if l.get::<i16, _>("estado") as u8 != regras::PEDIDO_ABERTO {
         return Ok((false, "The buy order is no longer open.".into()));
     }
-    let restante = l.get::<i64, _>("qtd_restante").max(0) as u64;
-    let preco_unit = l.get::<i64, _>("preco_unit").max(0) as u64;
+    let gold_restante = l.get::<i64, _>("gold_restante").max(0) as u64;
     let nome: String = l.get("nome");
-    sqlx::query("UPDATE mercado_pedidos SET estado = $2, qtd_restante = 0, atualizado = NOW() WHERE id = $1")
+    sqlx::query("UPDATE mercado_pedidos SET estado = $2, qtd_restante = 0, gold_restante = 0, atualizado = NOW() WHERE id = $1")
         .bind(pedido)
         .bind(regras::PEDIDO_CANCELADO as i16)
         .execute(&mut *tx)
         .await?;
-    let gold = regras::reembolso_do_pedido(restante, preco_unit);
+    let gold = regras::reembolso_do_pedido(gold_restante);
     if gold > 0 {
         carta(
             &mut tx,
@@ -1491,7 +1563,7 @@ fn pedido_de(l: &sqlx::postgres::PgRow, realm: &str, personagem: &str) -> Pedido
         categoria: l.get::<i16, _>("categoria") as u8,
         qtd_total: l.get::<i64, _>("qtd_total").max(0) as u64,
         qtd: l.get::<i64, _>("qtd_restante").max(0) as u64,
-        preco_unit: l.get::<i64, _>("preco_unit").max(0) as u64,
+        preco_total: l.get::<i64, _>("gold_restante").max(0) as u64,
         meu: r == realm && p == personagem,
         realm: r,
         comprador: p,
@@ -1512,12 +1584,12 @@ pub async fn buscar_pedidos(
         .take(regras::BUSCA_MAX_CHARS)
         .collect();
     let linhas = sqlx::query(
-        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit
+        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, gold_restante
            FROM mercado_pedidos
           WHERE estado = 0
             AND ($1 < 0 OR item_id = $1)
             AND ($2 = '' OR nome ILIKE '%' || $2 || '%')
-          ORDER BY preco_unit DESC, criado ASC
+          ORDER BY gold_restante::float8 / GREATEST(qtd_restante, 1) DESC, criado ASC
           LIMIT $3",
     )
     .bind(item_id.map_or(-1, |i| i as i32))
@@ -1531,7 +1603,7 @@ pub async fn buscar_pedidos(
 /// My open buy orders.
 pub async fn meus_pedidos(central: &PgPool, realm: &str, personagem: &str) -> Result<Vec<PedidoNet>> {
     let linhas = sqlx::query(
-        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, preco_unit
+        "SELECT id, realm, personagem, item_id, nome, categoria, qtd_total, qtd_restante, gold_restante
            FROM mercado_pedidos WHERE realm = $1 AND personagem = $2 AND estado = 0 ORDER BY criado DESC",
     )
     .bind(realm)
@@ -1785,7 +1857,8 @@ mod testes {
         let r = processar(&central, &pedir).await.unwrap();
         assert!(r.ok, "{}", r.texto);
         assert!(!processar(&central, &pedir).await.unwrap().novo, "placed once");
-        // A total that does not match the price: refused, gold back.
+        // A bad order (no quantity): refused, gold back. (Since lot pricing
+        // any whole total is a valid price: 69 for 10 is 6.9 each.)
         let errado = OpCentral::PedirCompra {
             id: novo_id(),
             realm: "T".into(),
@@ -1794,7 +1867,7 @@ mod testes {
             item_id: 345,
             nome: format!("Darksteel {tag}"),
             categoria: 2,
-            qtd: 10,
+            qtd: 0,
             preco_unit: 7,
             pago: 69,
         };
@@ -1802,7 +1875,7 @@ mod testes {
         assert_eq!(gold_de(&cartas_pendentes(&central, &central, "T", &comp).await.unwrap()), 69);
         let lista = buscar_pedidos(&central, Some(345), tag, "T", &vend).await.unwrap();
         assert_eq!(lista.len(), 1);
-        assert_eq!((lista[0].qtd, lista[0].preco_unit, lista[0].meu), (10, 7, false));
+        assert_eq!((lista[0].qtd, lista[0].preco_total, lista[0].meu), (10, 70, false));
 
         let vender = |qtd: u64, quem: &str, item_id: u16| OpCentral::VenderAoPedido {
             id: novo_id(),
@@ -1909,6 +1982,8 @@ mod testes {
             categoria: regras::Categoria::Material as u8,
             instancia: None,
             qtd: 10,
+            // An op queued before lot pricing (no total): read as 10 × 7.
+            preco_total: 0,
             preco_unit: 7,
         };
         let mut t = realm_pool.begin().await.unwrap();
@@ -2043,14 +2118,14 @@ mod testes {
             razao::Movimento::JaFeito { saldo: 100 }
         ));
         assert!(
-            !anunciar_tp(&central, "T", &conta_v, &vend, 101, 5)
+            !anunciar_tp(&central, "T", &conta_v, &vend, 101, 505)
                 .await
                 .unwrap()
                 .0,
             "sem TP bastante"
         );
         assert!(
-            anunciar_tp(&central, "T", &conta_v, &vend, 30, 5)
+            anunciar_tp(&central, "T", &conta_v, &vend, 30, 150)
                 .await
                 .unwrap()
                 .0

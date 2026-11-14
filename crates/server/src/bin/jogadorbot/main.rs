@@ -2585,7 +2585,7 @@ async fn decide(
             ws.send(envia(&ClientMessage::MercadoAnunciar {
                 inv_slot: slot,
                 qtd: q,
-                preco_unit: 10,
+                preco_total: q as u64 * 10,
             })?)
             .await?;
             t.registra(ev(nome, eu, "anunciou", true, format!("item {item} x{q}")));
@@ -2607,15 +2607,16 @@ async fn decide(
         if let Some(a) = eu
             .anuncios
             .iter()
-            .filter(|a| a.preco_unit > 0 && (a.preco_unit as i64) < eu.ouro / 4)
-            .min_by_key(|a| a.preco_unit)
+            .filter_map(|a| Some((a, a.custo(1)?)))
+            .filter(|(_, c)| *c > 0 && (*c as i64) < eu.ouro / 4)
+            .min_by_key(|(_, c)| *c)
         {
-            let (id, preco, item) = (a.id.clone(), a.preco_unit, a.item_id);
+            let (id, preco, item) = (a.0.id.clone(), a.1, a.0.item_id);
             eu.anuncios.clear();
             ws.send(envia(&ClientMessage::MercadoComprar {
                 anuncio: id,
                 qtd: 1,
-                preco_unit: preco,
+                pago: preco,
             })?)
             .await?;
             t.registra(ev(nome, eu, "comprou", true, format!("item {item} por {preco}")));

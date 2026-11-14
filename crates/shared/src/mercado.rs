@@ -160,6 +160,95 @@ pub fn total(qtd: u64, preco_unit: u64) -> Option<u64> {
     qtd.checked_mul(preco_unit)
 }
 
+// ─────────────────────── lot pricing (13/11/2026) ───────────────────────
+//
+// The owner: "quero vender x quantidade desse item com preço total tal, o
+// que dá preço unitário tal" — and the buyer "pode escolher se quer comprar
+// o lote todo ou uma parte dele, mas tem que ser número inteiro de gold".
+//
+// So a listing (and a buy order) carries a TOTAL in whole gold for the units
+// still on it, and the unit price is `total / qtd`, fractions allowed: 1,000
+// Copper for 3 gold is fine. A part costs `ceil(k × gold / units)` of what is
+// LEFT, never less than 1 gold (nothing leaves for free); a part whose cost
+// reaches all the gold left takes the whole rest for that same gold. Every
+// purchase is whole gold and the seller ends with exactly the total asked.
+
+/// Is `preco_total` gold for `qtd` units acceptable? At least 1 gold, at most
+/// `PRECO_MAX_UNIT` per unit.
+pub fn preco_total_valido(qtd: u64, preco_total: u64) -> bool {
+    qtd > 0 && preco_total >= 1 && preco_total <= qtd.saturating_mul(PRECO_MAX_UNIT)
+}
+
+/// The unit price of `preco_total` gold for `qtd` units (fractional).
+pub fn preco_unitario(qtd: u64, preco_total: u64) -> f64 {
+    if qtd == 0 {
+        0.0
+    } else {
+        preco_total as f64 / qtd as f64
+    }
+}
+
+/// A unit price for the screen: "12" when whole (thousands separated), else
+/// up to 3 decimals without trailing zeros ("0.003", "1.5").
+pub fn fmt_unitario(u: f64) -> String {
+    if u.fract() == 0.0 && u < 1e15 {
+        return crate::idioma::milhar(u as u64);
+    }
+    let casas = if u >= 100.0 { 1 } else if u >= 1.0 { 2 } else { 3 };
+    let s = format!("{u:.casas$}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "0" { "<0.001".into() } else { s.into() }
+}
+
+/// Buying `k` units out of a listing with `restante` units left for `gold`
+/// gold: `(units received, whole gold paid)`. The cost is rounded UP and is
+/// at least 1; when it would reach all the gold left (or `k` is the rest),
+/// the buyer gets the whole rest for exactly that gold, so the listing never
+/// keeps units with no gold on them. `None` = not a valid part.
+pub fn compra_parcial(restante: u64, gold: u64, k: u64) -> Option<(u64, u64)> {
+    if k == 0 || k > restante {
+        return None;
+    }
+    if k == restante {
+        return Some((restante, gold));
+    }
+    let c = u64::try_from((k as u128 * gold as u128).div_ceil(restante as u128)).ok()?.max(1);
+    if c >= gold {
+        Some((restante, gold))
+    } else {
+        Some((k, c))
+    }
+}
+
+/// Just the gold of `compra_parcial`.
+pub fn custo_parcial(restante: u64, gold: u64, k: u64) -> Option<u64> {
+    compra_parcial(restante, gold, k).map(|(_, c)| c)
+}
+
+/// The most units `c` gold buys out of what is left (the hint "1 gold buys up
+/// to 333"): the largest `k` whose `compra_parcial` costs no more than `c`.
+pub fn maximo_por(restante: u64, gold: u64, c: u64) -> u64 {
+    if gold == 0 || c >= gold {
+        return restante;
+    }
+    // ceil(k·G/R) <= c  <=>  k <= c·R/G (floor).
+    let k = (c as u128 * restante as u128 / gold as u128) as u64;
+    k.min(restante)
+}
+
+/// What a seller gets for `k` units filled into a buy order with `restante`
+/// units wanted and `gold` in escrow: rounded DOWN (the escrow never runs
+/// short), and the fill that completes the order takes all that is left.
+pub fn pagamento_parcial(restante: u64, gold: u64, k: u64) -> Option<u64> {
+    if k == 0 || k > restante {
+        return None;
+    }
+    if k == restante {
+        return Some(gold);
+    }
+    u64::try_from(k as u128 * gold as u128 / restante as u128).ok()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Recusa {
     NivelBaixo,
@@ -184,6 +273,8 @@ pub enum Recusa {
     PedidoFechado,
     /// Selling to your own buy order.
     ProprioPedido,
+    /// A fill into a buy order worth less than 1 gold.
+    MuitoPouco,
 }
 
 impl Recusa {
@@ -194,7 +285,9 @@ impl Recusa {
             }
             Recusa::Vinculado => "Bound item: it cannot be sold.".into(),
             Recusa::Quantidade => "Invalid quantity.".into(),
-            Recusa::Preco => format!("Preço inválido (1 a {PRECO_MAX_UNIT} por unidade)."),
+            Recusa::Preco => format!(
+                "Preço inválido (pelo menos 1 gold no total, até {PRECO_MAX_UNIT} por unidade)."
+            ),
             Recusa::MuitosAnuncios => {
                 "All your listing slots are in use. Buy more in My listings.".into()
             }
@@ -225,6 +318,9 @@ impl Recusa {
             Recusa::ProprioPedido => {
                 "You can't sell to your own buy order; your items come back in Deliveries.".into()
             }
+            Recusa::MuitoPouco => {
+                "Too few for this buy order: it would pay less than 1 gold. Sell more; your items come back in Deliveries.".into()
+            }
         }
     }
 }
@@ -240,30 +336,37 @@ pub const DESVIO_ALERTA: f64 = 0.50;
 
 /// Signed deviation of `preco` from `recomendado` (+0.8 = 80% above), or
 /// `None` with no recommended price to compare.
-pub fn desvio(preco: u64, recomendado: Option<u64>) -> Option<f64> {
+/// `preco` is a UNIT price, fractional since lot pricing.
+pub fn desvio(preco: f64, recomendado: Option<u64>) -> Option<f64> {
     let r = recomendado.filter(|r| *r > 0)?;
-    Some(preco as f64 / r as f64 - 1.0)
+    Some(preco / r as f64 - 1.0)
 }
 
 /// The listing is far enough from the market value to warn.
-pub fn longe_do_mercado(preco: u64, recomendado: Option<u64>) -> bool {
+pub fn longe_do_mercado(preco: f64, recomendado: Option<u64>) -> bool {
     desvio(preco, recomendado).is_some_and(|d| d.abs() > DESVIO_ALERTA)
 }
 
-/// Can this listing be repriced to `preco_unit`? (`dono` = it is mine,
-/// `estado` = its `ESTADO_*`). No fee and no escrow change: the items are
-/// already held by the listing.
-pub fn validar_ajuste(dono: bool, estado: u8, preco_atual: u64, preco_unit: u64) -> Result<(), &'static str> {
+/// Can this listing be repriced to `novo_total` gold for the `restante`
+/// units still on it? (`dono` = it is mine, `estado` = its `ESTADO_*`). No
+/// fee and no escrow change: the items are already held by the listing.
+pub fn validar_ajuste(
+    dono: bool,
+    estado: u8,
+    restante: u64,
+    total_atual: u64,
+    novo_total: u64,
+) -> Result<(), &'static str> {
     if !dono {
         return Err("Listing not found.");
     }
     if estado != ESTADO_ATIVO {
         return Err("The listing is no longer active.");
     }
-    if !preco_valido(preco_unit) {
+    if !preco_total_valido(restante, novo_total) {
         return Err("Invalid price.");
     }
-    if preco_unit == preco_atual {
+    if novo_total == total_atual {
         return Err("The listing already has that price.");
     }
     Ok(())
@@ -276,7 +379,7 @@ pub fn pode_anunciar(
     vinculado: bool,
     no_slot: u32,
     qtd: u32,
-    preco_unit: u64,
+    preco_total: u64,
 ) -> Result<u64, Recusa> {
     if nivel < NIVEL_PARA_VENDER {
         return Err(Recusa::NivelBaixo);
@@ -287,53 +390,54 @@ pub fn pode_anunciar(
     if qtd == 0 || qtd > no_slot {
         return Err(Recusa::Quantidade);
     }
-    if !preco_valido(preco_unit) {
+    if !preco_total_valido(qtd as u64, preco_total) {
         return Err(Recusa::Preco);
     }
-    total(qtd as u64, preco_unit).ok_or(Recusa::Preco)
+    Ok(preco_total)
 }
 
 /// Anunciar TP: mesmo portao de nivel.
-pub fn pode_anunciar_tp(nivel: u32, qtd: u64, preco_unit: u64) -> Result<u64, Recusa> {
+pub fn pode_anunciar_tp(nivel: u32, qtd: u64, preco_total: u64) -> Result<u64, Recusa> {
     if nivel < NIVEL_PARA_VENDER {
         return Err(Recusa::NivelBaixo);
     }
     if qtd == 0 || qtd > TP_MAX_POR_ANUNCIO {
         return Err(Recusa::Quantidade);
     }
-    if !preco_valido(preco_unit) {
+    if !preco_total_valido(qtd, preco_total) {
         return Err(Recusa::Preco);
     }
-    total(qtd, preco_unit).ok_or(Recusa::Preco)
+    Ok(preco_total)
 }
 
 /// Selling Energy: the level gate, enough Energy for the lots, a valid price.
-pub fn pode_anunciar_energia(nivel: u32, energia: u64, lotes: u64, preco_unit: u64) -> Result<u64, Recusa> {
+pub fn pode_anunciar_energia(nivel: u32, energia: u64, lotes: u64, preco_total: u64) -> Result<u64, Recusa> {
     if nivel < NIVEL_PARA_VENDER {
         return Err(Recusa::NivelBaixo);
     }
     if lotes == 0 || lotes > LOTES_MAX_POR_ANUNCIO || lotes.saturating_mul(ENERGIA_POR_LOTE) > energia {
         return Err(Recusa::Quantidade);
     }
-    if !preco_valido(preco_unit) {
+    if !preco_total_valido(lotes, preco_total) {
         return Err(Recusa::Preco);
     }
-    total(lotes, preco_unit).ok_or(Recusa::Preco)
+    Ok(preco_total)
 }
 
-/// Comprar: devolve o gold que sai agora do comprador.
-pub fn pode_comprar(gold: u64, qtd: u64, preco_unit: u64) -> Result<u64, Recusa> {
+/// Comprar `qtd` paying `pago` (what the client worked out from the listing
+/// it saw, `custo_parcial`): the gold that leaves the buyer now. The central
+/// recomputes the cost; any change comes back with the items.
+pub fn pode_comprar(gold: u64, qtd: u64, pago: u64) -> Result<u64, Recusa> {
     if qtd == 0 {
         return Err(Recusa::Quantidade);
     }
-    if !preco_valido(preco_unit) {
+    if pago == 0 || pago > qtd.saturating_mul(PRECO_MAX_UNIT) {
         return Err(Recusa::Preco);
     }
-    let t = total(qtd, preco_unit).ok_or(Recusa::Preco)?;
-    if t > gold {
+    if pago > gold {
         return Err(Recusa::SemGold);
     }
-    Ok(t)
+    Ok(pago)
 }
 
 /// O central fechando uma compra. Nada de "compra o que sobrou": ou a
@@ -342,32 +446,41 @@ pub fn pode_comprar(gold: u64, qtd: u64, preco_unit: u64) -> Result<u64, Recusa>
 pub struct Fechamento {
     pub vendida: u64,
     pub sobra: u64,
+    /// Gold still asked for the `sobra` units.
+    pub gold_sobra: u64,
     pub bruto: u64,
     pub taxa: u64,
     pub liquido: u64,
+    /// Paid beyond the cost (the listing got cheaper): back to the buyer.
+    pub troco: u64,
 }
 
+/// `gold_anuncio` is the listing's total for its `restante` units; `pago`
+/// is what left the buyer. Costing more than was paid is `PrecoMudou` (the
+/// gold goes back); costing less sends the change with the items.
 pub fn fechar_compra(
     restante: u64,
     estado: u8,
-    preco_anuncio: u64,
+    gold_anuncio: u64,
     pedida: u64,
-    preco_pedido: u64,
+    pago: u64,
 ) -> Result<Fechamento, Recusa> {
     if estado != ESTADO_ATIVO || pedida == 0 || pedida > restante {
         return Err(Recusa::Esgotado);
     }
-    if preco_anuncio != preco_pedido {
+    let (vendida, bruto) = compra_parcial(restante, gold_anuncio, pedida).ok_or(Recusa::Preco)?;
+    if bruto > pago {
         return Err(Recusa::PrecoMudou);
     }
-    let bruto = total(pedida, preco_anuncio).ok_or(Recusa::Preco)?;
     let taxa = taxa(bruto);
     Ok(Fechamento {
-        vendida: pedida,
-        sobra: restante - pedida,
+        vendida,
+        sobra: restante - vendida,
+        gold_sobra: gold_anuncio - bruto,
         bruto,
         taxa,
         liquido: bruto - taxa,
+        troco: pago - bruto,
     })
 }
 
@@ -420,19 +533,19 @@ pub fn pode_pedir_item(item_id: u16, equipavel: bool, vinculado: bool, stack_max
         && stack_max > 1
 }
 
-/// Placing an order: the gold that goes into escrow now.
-pub fn pode_pedir(gold: u64, qtd: u64, preco_unit: u64) -> Result<u64, Recusa> {
+/// Placing an order for `qtd` units at `preco_total` gold in all: the gold
+/// that goes into escrow now.
+pub fn pode_pedir(gold: u64, qtd: u64, preco_total: u64) -> Result<u64, Recusa> {
     if qtd == 0 || qtd > QTD_MAX_POR_PEDIDO {
         return Err(Recusa::Quantidade);
     }
-    if !preco_valido(preco_unit) {
+    if !preco_total_valido(qtd, preco_total) {
         return Err(Recusa::Preco);
     }
-    let t = total(qtd, preco_unit).ok_or(Recusa::Preco)?;
-    if t > gold {
+    if preco_total > gold {
         return Err(Recusa::SemGold);
     }
-    Ok(t)
+    Ok(preco_total)
 }
 
 /// Selling `qtd` to an order with `tem` of the item on hand: the level gate
@@ -454,6 +567,8 @@ pub struct Preenchimento {
     pub vendida: u64,
     /// What the order still wants afterwards.
     pub restante: u64,
+    /// Gold left in escrow for those `restante` units.
+    pub gold_restante: u64,
     /// Units that go back to the seller (the order wanted fewer).
     pub devolve: u64,
     pub bruto: u64,
@@ -462,12 +577,14 @@ pub struct Preenchimento {
     pub liquido: u64,
 }
 
-/// Fills `min(oferecida, restante)`. Unlike a purchase, a partial fill is
-/// fine: whatever the order did not want goes back to the seller.
+/// Fills `min(oferecida, restante)` of an order holding `gold` for its
+/// `restante` units. Unlike a purchase, a partial fill is fine: whatever the
+/// order did not want goes back to the seller. A fill worth less than 1 gold
+/// is refused (`MuitoPouco`): nobody sells for nothing.
 pub fn preencher_pedido(
     restante: u64,
     estado: u8,
-    preco_unit: u64,
+    gold: u64,
     oferecida: u64,
 ) -> Result<Preenchimento, Recusa> {
     if estado != PEDIDO_ABERTO || restante == 0 {
@@ -477,11 +594,15 @@ pub fn preencher_pedido(
         return Err(Recusa::Quantidade);
     }
     let vendida = oferecida.min(restante);
-    let bruto = total(vendida, preco_unit).ok_or(Recusa::Preco)?;
+    let bruto = pagamento_parcial(restante, gold, vendida).ok_or(Recusa::Preco)?;
+    if bruto == 0 {
+        return Err(Recusa::MuitoPouco);
+    }
     let taxa = taxa(bruto);
     Ok(Preenchimento {
         vendida,
         restante: restante - vendida,
+        gold_restante: gold - bruto,
         devolve: oferecida - vendida,
         bruto,
         taxa,
@@ -489,10 +610,10 @@ pub fn preencher_pedido(
     })
 }
 
-/// Gold back to the buyer when an order with `restante` units left is
-/// cancelled (it was paid for up front).
-pub fn reembolso_do_pedido(restante: u64, preco_unit: u64) -> u64 {
-    restante.saturating_mul(preco_unit)
+/// Gold back to the buyer when an order is cancelled: all that is still in
+/// escrow (it was paid for up front).
+pub fn reembolso_do_pedido(gold_restante: u64) -> u64 {
+    gold_restante
 }
 
 /// A buy order as the client sees it.
@@ -505,11 +626,23 @@ pub struct PedidoNet {
     pub qtd_total: u64,
     /// Units the order still wants.
     pub qtd: u64,
-    pub preco_unit: u64,
+    /// Gold still in escrow for those `qtd` units (lot pricing: the unit
+    /// price is `preco_total / qtd`, fractions allowed).
+    pub preco_total: u64,
     pub realm: String,
     pub comprador: String,
     /// This character's order.
     pub meu: bool,
+}
+
+impl PedidoNet {
+    pub fn unitario(&self) -> f64 {
+        preco_unitario(self.qtd, self.preco_total)
+    }
+    /// Gold a seller gets for `k` units now.
+    pub fn pagamento(&self, k: u64) -> Option<u64> {
+        pagamento_parcial(self.qtd, self.preco_total, k)
+    }
 }
 
 // ─────────────────────────────── rede ───────────────────────────────
@@ -526,11 +659,27 @@ pub struct AnuncioNet {
     pub instancia: Option<ItemInstance>,
     /// Quanto ainda esta' a' venda.
     pub qtd: u64,
-    pub preco_unit: u64,
+    /// Gold asked for those `qtd` units (lot pricing: the unit price is
+    /// `preco_total / qtd`, fractions allowed).
+    pub preco_total: u64,
     pub realm: String,
     pub vendedor: String,
     /// Anuncio deste personagem.
     pub meu: bool,
+}
+
+impl AnuncioNet {
+    pub fn unitario(&self) -> f64 {
+        preco_unitario(self.qtd, self.preco_total)
+    }
+    /// Whole gold that buying `k` units costs now (`custo_parcial`).
+    pub fn custo(&self, k: u64) -> Option<u64> {
+        custo_parcial(self.qtd, self.preco_total, k)
+    }
+    /// `(units received, gold)` for asking `k` (`compra_parcial`).
+    pub fn compra(&self, k: u64) -> Option<(u64, u64)> {
+        compra_parcial(self.qtd, self.preco_total, k)
+    }
 }
 
 /// Entrega esperando ser recebida: item, gold ou os dois.
@@ -570,19 +719,75 @@ pub struct FiltroNet {
 mod tests {
     #[test]
     fn longe_do_mercado_e_ajuste_de_preco() {
-        assert_eq!(desvio(150, Some(100)), Some(0.5));
-        assert!(!longe_do_mercado(150, Some(100)), "exactly 50% is not past it");
-        assert!(longe_do_mercado(151, Some(100)));
-        assert!(longe_do_mercado(49, Some(100)));
-        assert!(!longe_do_mercado(50, Some(100)));
-        assert!(!longe_do_mercado(1_000_000, None), "nothing to compare");
-        assert!(!longe_do_mercado(10, Some(0)));
-        assert_eq!(validar_ajuste(false, ESTADO_ATIVO, 10, 20), Err("Listing not found."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO + 1, 10, 20), Err("The listing is no longer active."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, 0), Err("Invalid price."));
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, PRECO_MAX_UNIT + 1), Err("Invalid price."));
-        assert!(validar_ajuste(true, ESTADO_ATIVO, 10, 10).is_err());
-        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 10, 20), Ok(()));
+        assert_eq!(desvio(150.0, Some(100)), Some(0.5));
+        assert!(!longe_do_mercado(150.0, Some(100)), "exactly 50% is not past it");
+        assert!(longe_do_mercado(151.0, Some(100)));
+        assert!(longe_do_mercado(49.0, Some(100)));
+        assert!(!longe_do_mercado(50.0, Some(100)));
+        assert!(!longe_do_mercado(1_000_000.0, None), "nothing to compare");
+        assert!(!longe_do_mercado(10.0, Some(0)));
+        // (dono, estado, units left, current total, new total)
+        assert_eq!(validar_ajuste(false, ESTADO_ATIVO, 1, 10, 20), Err("Listing not found."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO + 1, 1, 10, 20), Err("The listing is no longer active."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 0), Err("Invalid price."));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, PRECO_MAX_UNIT + 1), Err("Invalid price."));
+        assert!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 10).is_err());
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1, 10, 20), Ok(()));
+        assert_eq!(validar_ajuste(true, ESTADO_ATIVO, 1_000, 10, 3), Ok(()), "under 1 gold each is fine");
+    }
+
+    /// The owner's case: 1,000 Copper for 3 gold. Any part costs whole gold
+    /// (rounded up), and however it is bought the seller gets exactly 3.
+    #[test]
+    fn lote_com_preco_unitario_fracionado() {
+        assert!(preco_total_valido(1_000, 3));
+        assert!(!preco_total_valido(1_000, 0), "at least 1 gold");
+        assert!(!preco_total_valido(0, 3));
+        assert_eq!(fmt_unitario(preco_unitario(1_000, 3)), "0.003");
+        assert_eq!(fmt_unitario(preco_unitario(4, 6)), "1.5");
+        assert_eq!(fmt_unitario(preco_unitario(10, 1_200_000)), "120,000");
+        assert_eq!(compra_parcial(1_000, 3, 1_000), Some((1_000, 3)), "the whole lot");
+        assert_eq!(compra_parcial(1_000, 3, 1), Some((1, 1)), "one unit: rounded up to 1 gold");
+        assert_eq!(compra_parcial(1_000, 3, 334), Some((334, 2)));
+        assert_eq!(compra_parcial(1_000, 3, 700), Some((1_000, 3)), "3 gold anyway: the whole rest");
+        assert_eq!(compra_parcial(1_000, 3, 0), None);
+        assert_eq!(compra_parcial(1_000, 3, 1_001), None);
+        assert_eq!(maximo_por(1_000, 3, 1), 333, "1 gold buys up to 333");
+        assert_eq!(compra_parcial(1_000, 3, 333), Some((333, 1)));
+        assert_eq!(maximo_por(1_000, 3, 3), 1_000);
+        // Expensive units: 10 for 70 gold, one unit is 7.
+        assert_eq!(compra_parcial(10, 70, 1), Some((1, 7)));
+        assert_eq!(maximo_por(10, 70, 7), 1);
+        // Bought in pieces, the seller still ends with exactly the total.
+        for partes in [vec![1_000u64], vec![300, 300, 400], vec![1, 999], vec![333, 333, 333, 1], vec![1; 1_000]] {
+            let (mut qtd, mut gold, mut pago) = (1_000u64, 3u64, 0u64);
+            for k in partes {
+                if qtd == 0 {
+                    break;
+                }
+                let f = fechar_compra(qtd, ESTADO_ATIVO, gold, k.min(qtd), u64::MAX).unwrap();
+                assert!(f.bruto >= 1, "nothing leaves for free");
+                assert!(f.sobra == 0 || f.gold_sobra >= 1, "what is left still has gold on it");
+                pago += f.bruto;
+                qtd = f.sobra;
+                gold = f.gold_sobra;
+            }
+            assert_eq!((qtd, gold), (0, 0));
+            assert_eq!(pago, 3, "never more, never less than the asked total");
+        }
+    }
+
+    /// A buy order of 1,000 for 3 gold pays sellers rounding DOWN, and the
+    /// fill that completes it takes all that is left: escrow adds up exactly.
+    #[test]
+    fn pedido_com_preco_unitario_fracionado() {
+        assert_eq!(preencher_pedido(1_000, PEDIDO_ABERTO, 3, 100), Err(Recusa::MuitoPouco), "0.3 gold");
+        let a = preencher_pedido(1_000, PEDIDO_ABERTO, 3, 400).unwrap();
+        assert_eq!((a.bruto, a.restante, a.gold_restante), (1, 600, 2));
+        let b = preencher_pedido(a.restante, PEDIDO_ABERTO, a.gold_restante, 700).unwrap();
+        assert_eq!((b.vendida, b.devolve, b.bruto, b.gold_restante), (600, 100, 2, 0));
+        assert_eq!(a.bruto + b.bruto, 3);
+        assert_eq!(pagamento_parcial(1_000, 3, 1_000), Some(3));
     }
 
 
@@ -650,7 +855,7 @@ mod tests {
             Err(Recusa::NivelBaixo)
         );
         assert_eq!(pode_anunciar(20, true, 10, 1, 100), Err(Recusa::Vinculado));
-        assert_eq!(pode_anunciar(20, false, 10, 3, 100), Ok(300));
+        assert_eq!(pode_anunciar(20, false, 10, 3, 300), Ok(300));
         assert_eq!(pode_anunciar_tp(10, 5, 100), Err(Recusa::NivelBaixo));
     }
 
@@ -663,30 +868,30 @@ mod tests {
             pode_anunciar(30, false, 2, 1, PRECO_MAX_UNIT + 1),
             Err(Recusa::Preco)
         );
-        assert_eq!(
-            pode_comprar(u64::MAX, u64::MAX, PRECO_MAX_UNIT),
-            Err(Recusa::Preco),
-            "estouro recusa"
-        );
-        assert_eq!(pode_comprar(299, 3, 100), Err(Recusa::SemGold));
-        assert_eq!(pode_comprar(300, 3, 100), Ok(300));
+        assert_eq!(pode_anunciar(30, false, 2, 2, 1), Ok(1), "half a gold each");
+        assert_eq!(pode_comprar(1_000, 3, 0), Err(Recusa::Preco));
+        assert_eq!(pode_comprar(299, 3, 300), Err(Recusa::SemGold));
+        assert_eq!(pode_comprar(300, 3, 300), Ok(300));
     }
 
     #[test]
     fn compra_parcial_divide_certo() {
-        let f = fechar_compra(10, ESTADO_ATIVO, 7, 4, 7).unwrap();
+        // 10 at 7 each = 70 in all; 4 bought, paid exactly.
+        let f = fechar_compra(10, ESTADO_ATIVO, 70, 4, 28).unwrap();
         assert_eq!(
             f,
             Fechamento {
                 vendida: 4,
                 sobra: 6,
+                gold_sobra: 42,
                 bruto: 28,
                 taxa: 2,
-                liquido: 26
+                liquido: 26,
+                troco: 0,
             }
         );
-        let f2 = fechar_compra(f.sobra, ESTADO_ATIVO, 7, 6, 7).unwrap();
-        assert_eq!(f2.sobra, 0);
+        let f2 = fechar_compra(f.sobra, ESTADO_ATIVO, f.gold_sobra, 6, 50).unwrap();
+        assert_eq!((f2.sobra, f2.bruto, f2.troco), (0, 42, 8), "the listing got cheaper: change");
         assert_eq!(
             f.vendida + f2.vendida,
             10,
@@ -697,16 +902,17 @@ mod tests {
     #[test]
     fn compra_recusada_nao_fecha_nada() {
         assert_eq!(
-            fechar_compra(3, ESTADO_ATIVO, 7, 4, 7),
+            fechar_compra(3, ESTADO_ATIVO, 21, 4, 28),
             Err(Recusa::Esgotado)
         );
         assert_eq!(
-            fechar_compra(3, ESTADO_CANCELADO, 7, 1, 7),
+            fechar_compra(3, ESTADO_CANCELADO, 21, 1, 7),
             Err(Recusa::Esgotado)
         );
         assert_eq!(
-            fechar_compra(3, ESTADO_ATIVO, 8, 1, 7),
-            Err(Recusa::PrecoMudou)
+            fechar_compra(3, ESTADO_ATIVO, 24, 1, 7),
+            Err(Recusa::PrecoMudou),
+            "now 8 each, paid 7"
         );
     }
 
@@ -740,11 +946,12 @@ mod tests {
 
     #[test]
     fn pedir_reserva_o_total() {
-        assert_eq!(pode_pedir(1_000, 10, 100), Ok(1_000));
-        assert_eq!(pode_pedir(999, 10, 100), Err(Recusa::SemGold));
+        assert_eq!(pode_pedir(1_000, 10, 1_000), Ok(1_000));
+        assert_eq!(pode_pedir(999, 10, 1_000), Err(Recusa::SemGold));
         assert_eq!(pode_pedir(1_000, 0, 100), Err(Recusa::Quantidade));
         assert_eq!(pode_pedir(u64::MAX, QTD_MAX_POR_PEDIDO + 1, 1), Err(Recusa::Quantidade));
         assert_eq!(pode_pedir(1_000, 1, 0), Err(Recusa::Preco));
+        assert_eq!(pode_pedir(1_000, 1_000, 3), Ok(3), "under 1 gold each");
         assert_eq!(pode_pedir(u64::MAX, 1, PRECO_MAX_UNIT + 1), Err(Recusa::Preco));
         assert_eq!(pode_vender_ao_pedido(19, 10, 1), Err(Recusa::NivelBaixo));
         assert_eq!(pode_vender_ao_pedido(20, 10, 11), Err(Recusa::Quantidade));
@@ -754,32 +961,32 @@ mod tests {
 
     #[test]
     fn preencher_pedido_divide_e_devolve_o_excesso() {
-        // Order wants 10 at 7; a seller offers 4: all 4 sell.
-        let a = preencher_pedido(10, PEDIDO_ABERTO, 7, 4).unwrap();
+        // Order wants 10 at 7 (70 held); a seller offers 4: all 4 sell.
+        let a = preencher_pedido(10, PEDIDO_ABERTO, 70, 4).unwrap();
         assert_eq!(
             a,
-            Preenchimento { vendida: 4, restante: 6, devolve: 0, bruto: 28, taxa: 2, liquido: 26 }
+            Preenchimento { vendida: 4, restante: 6, gold_restante: 42, devolve: 0, bruto: 28, taxa: 2, liquido: 26 }
         );
         // Another offers 9: 6 sell, 3 go back.
-        let b = preencher_pedido(a.restante, PEDIDO_ABERTO, 7, 9).unwrap();
+        let b = preencher_pedido(a.restante, PEDIDO_ABERTO, a.gold_restante, 9).unwrap();
         assert_eq!((b.vendida, b.restante, b.devolve), (6, 0, 3));
         assert_eq!(b.bruto, 42);
         assert_eq!(b.liquido, liquido(42));
         assert_eq!(a.vendida + b.vendida, 10, "never more than asked");
         // Escrow adds up: what sellers got + fees burned = what the buyer paid.
         assert_eq!(a.liquido + a.taxa + b.liquido + b.taxa, 10 * 7);
-        assert_eq!(preencher_pedido(0, PEDIDO_ABERTO, 7, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_CANCELADO, 7, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_CONCLUIDO, 7, 1), Err(Recusa::PedidoFechado));
-        assert_eq!(preencher_pedido(5, PEDIDO_ABERTO, 7, 0), Err(Recusa::Quantidade));
+        assert_eq!(preencher_pedido(0, PEDIDO_ABERTO, 0, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_CANCELADO, 35, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_CONCLUIDO, 35, 1), Err(Recusa::PedidoFechado));
+        assert_eq!(preencher_pedido(5, PEDIDO_ABERTO, 35, 0), Err(Recusa::Quantidade));
     }
 
     #[test]
     fn cancelar_pedido_devolve_o_que_sobrou() {
         let pago = 10 * 7;
-        let f = preencher_pedido(10, PEDIDO_ABERTO, 7, 4).unwrap();
-        assert_eq!(f.bruto + reembolso_do_pedido(f.restante, 7), pago);
-        assert_eq!(reembolso_do_pedido(0, 7), 0);
+        let f = preencher_pedido(10, PEDIDO_ABERTO, pago, 4).unwrap();
+        assert_eq!(f.bruto + reembolso_do_pedido(f.gold_restante), pago);
+        assert_eq!(reembolso_do_pedido(0), 0);
     }
 
     #[test]

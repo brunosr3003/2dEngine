@@ -31,6 +31,34 @@ TP em `crates/server/src/mercado_razao.rs`; o lado do loop do mundo em
 
 Venda fechada com o painel fechado avisa no chat.
 
+## Preço por lote (13/11/2026)
+
+O dono: "quero vender x quantidade desse item com preço total tal, o que dá
+preço unitário tal" — e quem compra "pode escolher se quer comprar o lote todo
+ou uma parte dele, mas tem que ser número inteiro de gold". Antes o preço era
+inteiro POR UNIDADE (mínimo 1), e item que vale menos de 1 gold não tinha
+preço certo.
+
+- Anúncio e pedido de compra guardam o TOTAL em gold inteiro das unidades que
+  restam (`gold_restante`); o unitário é `gold_restante / qtd_restante`, com
+  fração (1.000 Copper por 3 gold = 0,003 cada). A busca ordena por ele.
+- Comprar parte: `ceil(k × gold_restante / qtd_restante)`, nunca menos de
+  1 gold (nada sai de graça). Se esse custo já é todo o gold que resta, a
+  pessoa leva o resto inteiro pelo mesmo gold. Quem leva o resto paga
+  exatamente o que resta, então o vendedor recebe exatamente o total pedido
+  (`shared::mercado::compra_parcial`; a tela mostra "N gold compra até X").
+- O cliente manda o gold que viu (`pago`); se o anúncio ficou mais barato, a
+  diferença volta junto com o item (troco na mesma carta); mais caro é
+  `PrecoMudou` e o gold volta.
+- Vender a um pedido paga `floor(k × gold_restante / qtd_restante)` (a
+  custódia nunca fica curta), e quem completa o pedido leva todo o gold que
+  resta. Parte que pagaria 0 gold é recusada (`MuitoPouco`).
+- `preco_unit` continua nas tabelas como o unitário arredondado pra cima (≥1),
+  pro Panopticon e o histórico. Operação antiga na fila (`mercado_saida`) sem
+  `preco_total` é lida como `qtd × preco_unit`.
+- TP e Energia (por lote de 1.000) seguem com o campo "por unidade" na tela —
+  já valem mais de 1 gold —, mas viajam como total igual aos itens.
+
 ## Vinculado
 
 Coluna `items.vinculado` no banco do realm (padrão `false`) e

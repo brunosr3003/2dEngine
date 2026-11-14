@@ -322,7 +322,7 @@ pub async fn mercado(realm: &PgPool, central: Option<&PgPool>) -> Value {
     let ativos: Vec<Value> = linhas(
         c,
         "SELECT tipo::int, COUNT(*)::bigint, COALESCE(SUM(qtd_restante), 0)::bigint,
-                COALESCE(SUM(qtd_restante * preco_unit), 0)::bigint
+                COALESCE(SUM(gold_restante), 0)::bigint
            FROM mercado_anuncios WHERE estado = 0 GROUP BY tipo",
     )
     .await

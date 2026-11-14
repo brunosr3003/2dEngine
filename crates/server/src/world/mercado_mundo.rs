@@ -134,12 +134,12 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
-            ClientMessage::MercadoAjustarPreco { anuncio, preco_unit } => {
+            ClientMessage::MercadoAjustarPreco { anuncio, preco_total } => {
                 if anuncio.len() > ID_MAX {
                     return;
                 }
                 tokio::spawn(async move {
-                    match mercado::ajustar_preco(&central, &quem.realm, &quem.nome, &anuncio, preco_unit).await {
+                    match mercado::ajustar_preco(&central, &quem.realm, &quem.nome, &anuncio, preco_total).await {
                         Ok((ok, texto)) => {
                             if ok {
                                 crate::chat_global::mercado_mudou(vec![quem.nome.clone()]);
@@ -154,8 +154,8 @@ impl GameWorld {
                     enviar_meus(&central, &quem).await;
                 });
             }
-            ClientMessage::MercadoAnunciarEnergia { lotes, preco_unit } => {
-                self.mercado_anunciar_energia(sid, quem, lotes, preco_unit);
+            ClientMessage::MercadoAnunciarEnergia { lotes, preco_total } => {
+                self.mercado_anunciar_energia(sid, quem, lotes, preco_total);
             }
             ClientMessage::MercadoComprarVagas { compra, com_tp: true } => {
                 tokio::spawn(async move {
@@ -172,8 +172,8 @@ impl GameWorld {
             ClientMessage::MercadoComprarVagas { compra, com_tp: false } => {
                 self.mercado_comprar_vagas(sid, quem, compra);
             }
-            ClientMessage::MercadoAnunciarTp { qtd, preco_unit } => {
-                if let Err(r) = regras::pode_anunciar_tp(quem.nivel, qtd, preco_unit) {
+            ClientMessage::MercadoAnunciarTp { qtd, preco_total } => {
+                if let Err(r) = regras::pode_anunciar_tp(quem.nivel, qtd, preco_total) {
                     responde(&quem.to_client, false, r.texto());
                     return;
                 }
@@ -184,7 +184,7 @@ impl GameWorld {
                         &quem.conta,
                         &quem.nome,
                         qtd,
-                        preco_unit,
+                        preco_total,
                     )
                     .await
                     {
@@ -200,25 +200,21 @@ impl GameWorld {
             ClientMessage::MercadoAnunciar {
                 inv_slot,
                 qtd,
-                preco_unit,
+                preco_total,
             } => {
-                self.mercado_anunciar(sid, quem, inv_slot as usize, qtd, preco_unit);
+                self.mercado_anunciar(sid, quem, inv_slot as usize, qtd, preco_total);
             }
-            ClientMessage::MercadoComprar {
-                anuncio,
-                qtd,
-                preco_unit,
-            } => {
+            ClientMessage::MercadoComprar { anuncio, qtd, pago } => {
                 if anuncio.is_empty() || anuncio.len() > ID_MAX {
                     return;
                 }
-                self.mercado_comprar(sid, quem, anuncio, qtd, preco_unit);
+                self.mercado_comprar(sid, quem, anuncio, qtd, pago);
             }
             ClientMessage::MercadoPedirCompra {
                 item_id,
                 qtd,
-                preco_unit,
-            } => self.mercado_pedir_compra(sid, quem, item_id, qtd, preco_unit),
+                preco_total,
+            } => self.mercado_pedir_compra(sid, quem, item_id, qtd, preco_total),
             ClientMessage::MercadoVenderAoPedido { pedido, item_id, qtd } => {
                 if pedido.is_empty() || pedido.len() > ID_MAX {
                     return;
@@ -277,10 +273,10 @@ impl GameWorld {
             )
     }
 
-    /// BUY ORDER: the whole `qtd × preco_unit` leaves the buyer NOW (escrow)
+    /// BUY ORDER: the whole `preco_total` leaves the buyer NOW (escrow)
     /// and the order joins the save queue, in the same transaction; the
     /// central one opens it or gives the gold back by letter.
-    fn mercado_pedir_compra(&mut self, sid: SessionId, quem: Quem, item_id: u16, qtd: u64, preco_unit: u64) {
+    fn mercado_pedir_compra(&mut self, sid: SessionId, quem: Quem, item_id: u16, qtd: u64, preco_total: u64) {
         if !Self::item_pedivel(item_id) {
             responde(&quem.to_client, false, Recusa::NaoPedivel.texto());
             return;
@@ -288,7 +284,7 @@ impl GameWorld {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let total = match regras::pode_pedir(s.gold, qtd, preco_unit) {
+        let total = match regras::pode_pedir(s.gold, qtd, preco_total) {
             Ok(t) => t,
             Err(r) => {
                 responde(&quem.to_client, false, r.texto());
@@ -314,7 +310,7 @@ impl GameWorld {
             nome,
             categoria: categoria as u8,
             qtd,
-            preco_unit,
+            preco_unit: 0,
             pago: total,
         }));
         self.save_pending = true;
@@ -379,7 +375,7 @@ impl GameWorld {
         quem: Quem,
         inv_slot: usize,
         qtd: u32,
-        preco_unit: u64,
+        preco_total: u64,
     ) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
@@ -391,7 +387,7 @@ impl GameWorld {
         // Peca de bau de dungeon vem vinculada na propria instancia.
         let vinculado = crate::economy::item_vinculado(slot.item_id)
             || slot.instance.is_some_and(|i| i.vinculado);
-        if let Err(r) = regras::pode_anunciar(quem.nivel, vinculado, slot.qty, qtd, preco_unit) {
+        if let Err(r) = regras::pode_anunciar(quem.nivel, vinculado, slot.qty, qtd, preco_total) {
             responde(&quem.to_client, false, r.texto());
             return;
         }
@@ -423,7 +419,8 @@ impl GameWorld {
                 categoria: categoria as u8,
                 instancia: slot.instance,
                 qtd: qtd as u64,
-                preco_unit,
+                preco_total,
+                preco_unit: 0,
             }));
         self.save_pending = true;
     }
@@ -432,11 +429,11 @@ impl GameWorld {
     /// (`item_id::ENERGIA_MIL`), and goes out through the same queue as an
     /// item. Whoever receives a delivery of it gets Energy back, not a bag item
     /// (`mercado_aplicar_cartas`), so a cancelled listing returns it too.
-    fn mercado_anunciar_energia(&mut self, sid: SessionId, quem: Quem, lotes: u64, preco_unit: u64) {
+    fn mercado_anunciar_energia(&mut self, sid: SessionId, quem: Quem, lotes: u64, preco_total: u64) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        if let Err(r) = regras::pode_anunciar_energia(quem.nivel, s.skill_progress.energia, lotes, preco_unit) {
+        if let Err(r) = regras::pode_anunciar_energia(quem.nivel, s.skill_progress.energia, lotes, preco_total) {
             responde(&quem.to_client, false, r.texto());
             return;
         }
@@ -461,7 +458,8 @@ impl GameWorld {
             categoria: regras::Categoria::Consumivel as u8,
             instancia: None,
             qtd: lotes,
-            preco_unit,
+            preco_total,
+            preco_unit: 0,
         }));
         self.save_pending = true;
     }
@@ -505,12 +503,12 @@ impl GameWorld {
         quem: Quem,
         anuncio: String,
         qtd: u64,
-        preco_unit: u64,
+        pago: u64,
     ) {
         let Some(s) = self.sessions.get_mut(&sid) else {
             return;
         };
-        let total = match regras::pode_comprar(s.gold, qtd, preco_unit) {
+        let total = match regras::pode_comprar(s.gold, qtd, pago) {
             Ok(t) => t,
             Err(r) => {
                 responde(&quem.to_client, false, r.texto());
@@ -533,7 +531,7 @@ impl GameWorld {
                 personagem: quem.nome,
                 anuncio,
                 qtd,
-                preco_unit,
+                preco_unit: 0,
                 pago: total,
             }));
         self.save_pending = true;
@@ -787,11 +785,11 @@ mod testes_energia {
     fn anunciar_energia_tira_na_hora() {
         let (mut w, sid) = mundo("Ana", 5_500);
         let q = quem(&w, sid, 30);
-        w.mercado_anunciar_energia(sid, q, 5, 40);
+        w.mercado_anunciar_energia(sid, q, 5, 200);
         assert_eq!(w.sessions[&sid].skill_progress.energia, 500);
         assert!(matches!(
             w.mercado_registros.last(),
-            Some(Registro::Saida(OpCentral::Anunciar { item_id, qtd: 5, preco_unit: 40, .. })) if *item_id == shared::item_id::ENERGIA_MIL
+            Some(Registro::Saida(OpCentral::Anunciar { item_id, qtd: 5, preco_total: 200, .. })) if *item_id == shared::item_id::ENERGIA_MIL
         ));
         let n = w.mercado_registros.len();
         let q = quem(&w, sid, 30);
@@ -813,15 +811,15 @@ mod testes_energia {
         crate::economy::por_item_para_testes(it, 999, shared::items::item_template(it));
         w.sessions.get_mut(&sid).unwrap().gold = 1_000;
         let q = quem(&w, sid, 1);
-        w.mercado_pedir_compra(sid, q, it, 10, 90);
+        w.mercado_pedir_compra(sid, q, it, 10, 900);
         assert_eq!(w.sessions[&sid].gold, 100, "buying needs no level");
         assert!(matches!(
             w.mercado_registros.last(),
-            Some(Registro::Saida(OpCentral::PedirCompra { item_id, qtd: 10, preco_unit: 90, pago: 900, .. })) if *item_id == it
+            Some(Registro::Saida(OpCentral::PedirCompra { item_id, qtd: 10, pago: 900, .. })) if *item_id == it
         ));
         let n = w.mercado_registros.len();
         let q = quem(&w, sid, 1);
-        w.mercado_pedir_compra(sid, q, it, 2, 90);
+        w.mercado_pedir_compra(sid, q, it, 2, 180);
         assert_eq!(w.sessions[&sid].gold, 100, "not enough gold");
         let q = quem(&w, sid, 1);
         w.mercado_pedir_compra(sid, q, shared::item_id::KATANA, 1, 1);
