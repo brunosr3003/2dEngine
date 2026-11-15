@@ -2223,4 +2223,5 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Price far from market value ({}) · market {} gold", "Preço longe do valor de mercado ({}) · mercado {} de ouro"),
     ("View on market", "Ver no mercado"),
     ("Buy order", "Pedido de compra"),
+    ("FIRST WIN REWARDS", "RECOMPENSAS DA PRIMEIRA VITÓRIA"),
 ];

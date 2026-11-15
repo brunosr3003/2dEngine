@@ -723,4 +723,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("An offer changed: check it and lock again.", "Uma oferta mudou: confira e trave de novo."),
     ("Trade cancelled: not enough Energy.", "Troca cancelada: Energia insuficiente."),
     ("Trade cancelled: {} has no room in the bag.", "Troca cancelada: {} está sem espaço na bolsa."),
+    ("New level scale! You were level {antes} and are now level {agora}. Grove 1-30, Glacier 30-50, Waste 50-70, Plateau 70-100, and beyond that 100+ by Power. Your strength and progress did not change.", "Nova escala de níveis! Você era nível {antes} e agora é nível {agora}. Bosque 1-30, Geleira 30-50, Ermo 50-70, Planalto 70-100 e, depois disso, 100+ por Poder. Sua força e seu progresso não mudaram."),
+    ("New level scale! You were level {antes} and are now level {agora}, the new cap. Grove 1-30, Glacier 30-50, Waste 50-70, Plateau 70-100, and beyond that 100+ by Power. Your strength and progress did not change.", "Nova escala de níveis! Você era nível {antes} e agora é nível {agora}, o novo teto. Bosque 1-30, Geleira 30-50, Ermo 50-70, Planalto 70-100 e, depois disso, 100+ por Poder. Sua força e seu progresso não mudaram."),
+    ("First win! Your bag was full: the rewards that did not fit went to the Mail.", "Primeira vitória! Sua bolsa estava cheia: as recompensas que não couberam foram para o Correio."),
+    ("First win! The rewards are in your bag.", "Primeira vitória! As recompensas estão na sua bolsa."),
 ];

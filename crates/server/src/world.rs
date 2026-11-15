@@ -900,6 +900,29 @@ pub(crate) fn deteccao_do_nivel(detect_range: f32, nivel: u32) -> f32 {
     detect_range * do_inicio(CURVA_DO_INICIO.deteccao, nivel, 1.0)
 }
 
+/// The once-per-character notice of the new level scale (docs/RESET.md,
+/// "Mundo novo"): the level the character had (the internal one, which is
+/// what the screen showed before) and the one it shows now.
+pub(crate) fn texto_da_nova_escala(xp: u64, mult: u64) -> String {
+    let antes = shared::level_of_xp_with_mult(xp, mult);
+    let agora = shared::progressao::nivel_exibido(xp, mult);
+    // Two whole sentences, not a "{agora}{teto}" glued hole: the
+    // translation matcher needs text between holes.
+    if antes > shared::progressao::NIVEL_MAX {
+        format!(
+            "New level scale! You were level {antes} and are now level {agora}, the new cap. \
+             Grove 1-30, Glacier 30-50, Waste 50-70, Plateau 70-100, and beyond that 100+ by Power. \
+             Your strength and progress did not change."
+        )
+    } else {
+        format!(
+            "New level scale! You were level {antes} and are now level {agora}. \
+             Grove 1-30, Glacier 30-50, Waste 50-70, Plateau 70-100, and beyond that 100+ by Power. \
+             Your strength and progress did not change."
+        )
+    }
+}
+
 /// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu.
 /// XP de um bicho pelo NIVEL da zona: +10% por nivel acima do 1. A dificuldade
 /// vem do KIND (a tabela), mas caçar longe da cidade tem que pagar mais que
@@ -6736,6 +6759,34 @@ impl GameWorld {
                     conta,
                     s.name.clone(),
                 );
+            }
+            // THE NEW LEVEL SCALE, told once per character (owner, 15/11/2026:
+            // "precisa ter uma mensagem na tela ao entrar no personagem, tipo
+            // você era lvl 63 → 100 por causa do novo balanceamento").
+            //
+            // Every character marks it on its first login after the remap
+            // (`migracoes_de_dados`, key `aviso_escala:<name>`); only one that
+            // already had XP sees it — a new character is born on the new
+            // scale and has nothing to be told.
+            if let Some(ctx) = self.auth_ctx.as_ref() {
+                let (pool, to_client, nome, xp) =
+                    (ctx.pool.clone(), s.handle.to_client.clone(), s.name.clone(), s.xp);
+                let mult = crate::economy::xp_multiplier();
+                tokio::spawn(async move {
+                    let novo = sqlx::query(
+                        "INSERT INTO migracoes_de_dados (nome) VALUES ($1) ON CONFLICT DO NOTHING",
+                    )
+                    .bind(format!("aviso_escala:{nome}"))
+                    .execute(&pool)
+                    .await
+                    .map(|r| r.rows_affected() == 1)
+                    .unwrap_or(false);
+                    if novo && xp > 0 {
+                        let _ = to_client.send(ServerMessage::AvisoGlobal {
+                            texto: texto_da_nova_escala(xp, mult),
+                        });
+                    }
+                });
             }
             let _ = s.handle.to_client.send(ServerMessage::Preferencias {
                 prefs: s.preferencias.clone(),
@@ -22389,6 +22440,21 @@ mod testes_da_ilha_magica_lotada {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_da_nova_escala {
+    /// The owner's example: a level 63 sees "63 → 100", a mid one its new
+    /// number, and the cap is called out.
+    #[test]
+    fn aviso_diz_o_nivel_de_antes_e_o_de_agora() {
+        let m = shared::DEFAULT_XP_MULTIPLIER;
+        let t = super::texto_da_nova_escala(shared::xp_for_level_with_mult(63, m), m);
+        assert!(t.contains("You were level 63 and are now level 100, the new cap."), "{t}");
+        let t = super::texto_da_nova_escala(shared::xp_for_level_with_mult(15, m), m);
+        assert!(t.contains("You were level 15 and are now level 30."), "{t}");
+        assert!(t.contains("Plateau 70-100"));
     }
 }
 

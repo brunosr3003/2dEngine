@@ -8,6 +8,8 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
 - New level scale, 1 to 100: the Grove is levels 1-30, the Glacier 30-50, the Waste 50-70 and the Plateau 70-100; everything beyond is the "100+" band, opened by your Power. Monsters keep their strength: only the numbers changed, and your character keeps all its progress.
+- On your first login after this update, a message shows your old and new level.
+- First-win dungeon rewards go straight to your bag; only what does not fit goes to the Mail, and you are told.
 - The Waste has many more monsters, and the Waste and the Plateau have new quests and contracts at the Quest Master.
 - The Magic Island steps now open by Power instead of level.
 - The level cap is now 100. Everything above 100 is the "100+" band, opened by your Power instead of your level.

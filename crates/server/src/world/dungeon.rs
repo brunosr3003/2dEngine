@@ -2050,7 +2050,19 @@ impl GameWorld {
         let quando = unix_agora();
         let mut primeira = false;
         let mut recompensas_primeira = Vec::new();
+        // FIRST-WIN REWARDS GO TO THE BAG (owner, 15/11/2026: "envia eles pro
+        // inventário; se não tiver espaço, aí sim envia pro email com um
+        // aviso"). Only what does not fit is posted to the Mail.
+        let mut no_correio = 0u32;
         if let Some(s) = self.sessions.get_mut(&sid) {
+            let mut entregar = |s: &mut Session, item: u16, inst: Option<shared::ItemInstance>, tipo: u8| {
+                if add_to_inventory(&mut s.inventory, item, 1, inst) {
+                    s.inventory_dirty = true;
+                } else {
+                    s.dungeon.postar(item, 1, inst, tipo, quando);
+                    no_correio += 1;
+                }
+            };
             let de_todas = s.dungeon.registrar_vitoria(conteudo, estagio);
             s.conta_dungeon.virar(semana);
             let semanal = !ajudante && s.conta_dungeon.primeira_da_semana(conteudo, estagio);
@@ -2059,19 +2071,19 @@ impl GameWorld {
             if semanal {
                 let p = dg::peca_garantida(c, estagio, &mut rng);
                 let inst = GameWorld::dg_rolar_peca(&p);
-                s.dungeon.postar(p.item_id, 1, inst, 1, quando);
+                entregar(s, p.item_id, inst, 1);
                 recompensas_primeira.push((p.item_id, 1));
             }
             if de_todas && !ajudante {
                 let p = dg::peca_garantida(c, estagio, &mut rng);
                 let inst = GameWorld::dg_rolar_peca(&p);
-                s.dungeon.postar(p.item_id, 1, inst, 2, quando);
+                entregar(s, p.item_id, inst, 2);
                 recompensas_primeira.push((p.item_id, 1));
                 let nivel = dg::nivel_do_estagio(c, estagio);
                 let cor = shared::chaves::faixa(nivel).cor;
                 let base = shared::item_id::CHAVES[fastrand::usize(..4)];
                 let chave = shared::item_id::chave_na_cor(base, cor);
-                s.dungeon.postar(chave, 1, None, 2, quando);
+                entregar(s, chave, None, 2);
                 recompensas_primeira.push((chave, 1));
             }
         }
@@ -2095,8 +2107,16 @@ impl GameWorld {
             },
         );
         if primeira {
-            self.dg_enviar_correio(sid);
-            self.dg_texto(sid, true, "Primeira vitória! A recompensa está no Correio.");
+            if no_correio > 0 {
+                self.dg_enviar_correio(sid);
+                self.dg_texto(
+                    sid,
+                    false,
+                    "First win! Your bag was full: the rewards that did not fit went to the Mail.",
+                );
+            } else {
+                self.dg_texto(sid, true, "First win! The rewards are in your bag.");
+            }
         }
         self.save_pending = true;
     }

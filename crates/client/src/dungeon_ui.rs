@@ -1577,7 +1577,9 @@ impl DungeonUi {
             ),
         }
         if !r.recompensas_primeira.is_empty() {
-            estilo::texto(caixa.x + 22.0 * f, y, "FIRST WIN · IN YOUR MAIL", 14, estilo::AUTO);
+            // Bag first, Mail only for what did not fit (15/11/2026): the
+            // server's line says where they went.
+            estilo::texto(caixa.x + 22.0 * f, y, "FIRST WIN REWARDS", 14, estilo::AUTO);
             y += 16.0 * f;
             desenha_itens_resultado(c, caixa, y, &r.recompensas_primeira);
         }
