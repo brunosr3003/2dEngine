@@ -11,6 +11,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Dungeon Power requirements now follow how strong real players are at each level: the first stage still lets in anyone of the level, the top stages ask for good gear.
 - No level requirement to craft any recipe or to travel between islands: what matters is your Power and your materials.
 - PvP is balanced by Power instead of level: a much stronger player cannot start a fight with one under half their Power (unless that player chose a PK mode or has a red name), and the weaker side loses damage against a far stronger one.
+- Dungeons and bosses give much more XP: every kill inside a Gruta or Porão gives double XP, and bosses give twice what they used to.
 - Chests of field bosses, Grutas and Porões give Darksteel again and better gear: green pieces at 50%, blue from level 38 content, purple (very rare) from level 64; a better chest gives a lot more Darksteel and materials.
 - Leveling is faster from level 20 on: the XP slowdown added on Nov 12 was eased (from level 50 a level now takes over a third less time than before this update).
 - Weekend event every week: XP x1.5 and drops x1.5 from Saturday 00:00 to Sunday 23:59 (Brasília time, UTC-3).

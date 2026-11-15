@@ -12762,7 +12762,7 @@ impl GameWorld {
                     .ok()
                     .map(|t| {
                         let xp = if t.is_boss {
-                            t.xp_reward * 5
+                            t.xp_reward * shared::progressao::XP_MULT_CHEFE
                         } else {
                             t.xp_reward
                         };
@@ -12824,6 +12824,13 @@ impl GameWorld {
                 // de quem matou, e o mundo de la' cabe num raio menor que o de
                 // compartilhamento — quem dividiu o abate dividiu a ilhota.
                 let share = (share as f32 * mag_xp).round() as u64;
+                // DUNGEON kills pay more (owner, 15/11/2026): the content you
+                // go and play has to beat standing in a field on auto.
+                let share = if killer_instance != 0 {
+                    (share as f32 * shared::progressao::XP_MULT_DUNGEON).round() as u64
+                } else {
+                    share
+                };
                 let fame_share = fame_reward;
                 for session in self.sessions.values_mut() {
                     if recipients.contains(&session.entity_id) && session.logged_in {

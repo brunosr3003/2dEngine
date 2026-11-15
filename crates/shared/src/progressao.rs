@@ -96,6 +96,15 @@ pub const TETO: u32 = 120;
 /// describe mobs above 100.
 pub const NIVEL_MAX: u32 = 100;
 
+/// XP of a BOSS kill (field boss or a dungeon's boss) over the species'
+/// own XP. Was 5 until 15/11/2026; the owner: "dungeon e boss darem mais
+/// XP para compensar fazer" — in an auto game, the content you actually go
+/// and play has to pay more than standing in a field.
+pub const XP_MULT_CHEFE: u64 = 10;
+/// XP of every kill INSIDE a dungeon instance (Gruta, Porão), on top of the
+/// level-penalty exemption it already had. Same reason (15/11/2026).
+pub const XP_MULT_DUNGEON: f32 = 2.0;
+
 /// The XP of exactly level `NIVEL_MAX` under multiplier `mult`: a character
 /// never holds more.
 pub fn xp_maximo(mult: u64) -> u64 {
