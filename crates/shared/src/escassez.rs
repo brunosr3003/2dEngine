@@ -1,8 +1,11 @@
 //! What monsters stop dropping (owner, 11/11/2026): craft resources come from
 //! the ROCK, so they are scarce and the market has something to trade.
 //!
-//! - Darksteel: only from rocks (plus the login calendar, the shop and gifts).
-//!   Monsters, dungeon chests and the Stormkeep chests no longer give it.
+//! - Darksteel: monsters never drop it. It comes from rocks (plus the login
+//!   calendar, the shop and gifts) and, since 14/11/2026, from CHESTS again:
+//!   field bosses, Grutas and Porões, growing with the content's level and
+//!   the chest's color (`dungeon::darksteel_do_bau`, `dungeon::mult_do_bau`)
+//!   — the reward for actually playing, in an auto game (owner).
 //! - The eight colored craft materials (Steel, Platinum, Blackheart,
 //!   Moonshadow, Quintessence, Exorcism, Illuminating, Anima), in any color:
 //!   monsters drop them at 30% of the old chance. Rocks are unchanged.

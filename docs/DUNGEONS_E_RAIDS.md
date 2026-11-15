@@ -685,6 +685,24 @@ pontos    = (valor do papel ÷ mediana do mesmo papel no grupo) × 100 + mecanic
 
 ## 8. Recompensas
 
+### Baús desde 14/11/2026 (vale sobre o resto desta seção)
+
+O dono: "como é um jogo auto, colocar coisas que compensam o jogador a jogar
+de fato". Todo baú de **chefe de campo, Gruta e Porão** segue a mesma conta
+(`shared::dungeon`):
+
+- **Peça:** verde 50% sempre; azul a partir do conteúdo nível 38 (15%, subindo
+  até 25% no 64); roxo a partir do 64 (0,3%, subindo até 0,9% no 100), sempre
+  abaixo de 1%; **lendário nunca**; cinza não sai mais. Baú melhor (estágio /
+  cor) ganha +8% de chance de peça por grau (`bonus_de_peca`). O 38 e o 64
+  são onde o jogador de verdade tem ~6 mil e ~10 mil de poder: o poder real
+  foi lido da produção com `server --poder` (15/11) e roda a ~1,6× a ladder.
+- **Darksteel volta** (era só da pedra desde 11/11): a tabela antiga cheia,
+  cada faixa no meio dela e interpolada a cada nível (`darksteel_do_bau`).
+- **Quantidades pela cor do baú** (`mult_do_bau`): estágio 1 / verde ×1, 2 /
+  azul ×1,6, 3 / roxo ×2,5, 4 ×3,2, 5 ×4 — em Darksteel, pó, material, ouro e
+  cobre. Selo no estágio 5 ainda dobra Darksteel e pó.
+
 ### A regra do usuário, em tabela
 
 **Sem Épico até o nível 50. Épico raro a partir do 60, mais comum no 70+ e no

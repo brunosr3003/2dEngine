@@ -947,93 +947,98 @@ pub struct Bau {
     pub marcas: u32,
 }
 
-/// Teto duro de grau pelo nivel do estagio: Epico so' 40+, Lendario so' 50+.
-///
-/// Era 60 e 80. Desceu em 28/09/2026 junto com `shared::chaves` (epica no 40,
-/// lendaria no 50), a pedido do dono: "epic is lvl 40 and legendary lvl 50 —
-/// the craft and equip". Chave e PECA tinham que contar a mesma historia; com
-/// o teto velho a dungeon de 50 dava chave lendaria e peça so' ate' Rara.
-pub fn teto_de_grau(nivel: u32) -> Grau {
-    // NO LEGENDARY FROM DROPS (owner, 12/11/2026: "legendary impossible to
-    // drop, purple very very rare, almost forcing the craft").
-    if nivel >= 40 {
-        Grau::Epico
+// ─────────────────── chest loot by level (owner, 14/11/2026) ───────────────────
+//
+// "Como é um jogo auto, colocar coisas que compensam o jogador a jogar de
+// fato": the chests of field bosses, Grutas and Porões pay Darksteel again
+// and better gear, all growing with the content's level, and a better chest
+// (its color, or the dungeon stage) pays a lot more and drops a piece a bit
+// more often. Gear: green 50% always; blue from the content around 6k of
+// REAL player power, purple from around 10k, never legendary. The power was
+// read from prod (`server --poder`, 15/11): real players run at ~1.6x the
+// ladder, so 6k is content level ~38 and 10k is ~64.
+
+/// Content level where blue starts (15%), and where it reaches 25%.
+pub const AZUL_DE: u32 = 38;
+/// Content level where purple starts (0.3%); blue is at its top here.
+pub const ROXO_DE: u32 = 64;
+/// Content level where purple reaches its top (0.9%).
+pub const ROXO_ATE: u32 = 100;
+pub const CHANCE_VERDE: f32 = 0.50;
+pub const AZUL_MIN: f32 = 0.15;
+pub const AZUL_MAX: f32 = 0.25;
+pub const ROXO_MIN: f32 = 0.003;
+pub const ROXO_MAX: f32 = 0.009;
+
+fn rampa(n: u32, de: u32, ate: u32, lo: f32, hi: f32) -> f32 {
+    if n <= de {
+        lo
+    } else if n >= ate {
+        hi
     } else {
-        Grau::Raro
+        lo + (hi - lo) * (n - de) as f32 / (ate - de) as f32
     }
 }
 
-/// (chance de peca, distribuicao em ‰ de Comum..Lendario) — docs seção 8.
-pub fn tabela_de_peca(tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
-    let alto = estagio >= 3;
-    let topo = estagio >= 5;
-    let (chance, dist) = match nivel {
-        0..=9 => (0.20, [1000, 0, 0, 0, 0]),
-        10..=19 => {
-            if alto {
-                (0.30, [500, 480, 20, 0, 0])
-            } else {
-                (0.25, [750, 250, 0, 0, 0])
-            }
-        }
-        20..=29 => {
-            if alto {
-                (0.30, [150, 750, 100, 0, 0])
-            } else {
-                (0.25, [550, 420, 30, 0, 0])
-            }
-        }
-        30..=39 => {
-            if alto {
-                (0.30, [0, 550, 450, 0, 0])
-            } else {
-                (0.25, [0, 800, 200, 0, 0])
-            }
-        }
-        // DE 40 PRA CIMA a ladder desceu 20 niveis em 28/09/2026: as FORMAS
-        // que estavam em 60-69, 70-79 e 80+ passaram pra 40-49, 50-59 e 60+,
-        // sem numero novo inventado. E' o que faz "Epico no 40, Lendario no
-        // 50" valer na PECA e nao so' no teto — `teto_de_grau` sozinho nao
-        // mudava nada, porque a distribuicao nunca dava peso a Epico antes do
-        // 60. O Raro puro (a linha de 1000 que morava no 50-59) sai: e' o
-        // degrau que a faixa nova ocupa.
-        // From 40 up, PURPLE is very rare (1-5% of the pieces) and there is
-        // no legendary at all (owner, 12/11/2026): the purple and legendary
-        // gear is meant to come from the craft. It used to be up to 35%
-        // purple and 0.5% legendary — a top player wore five purples and a
-        // legendary from field-boss chests by level 55.
-        40..=49 => {
-            if topo {
-                (0.35, [0, 100, 880, 20, 0])
-            } else if alto {
-                (0.30, [0, 200, 785, 15, 0])
-            } else {
-                (0.25, [0, 300, 690, 10, 0])
-            }
-        }
-        50..=59 => {
-            if topo {
-                (0.35, [0, 0, 960, 40, 0])
-            } else if alto {
-                (0.30, [0, 0, 975, 25, 0])
-            } else {
-                (0.25, [0, 0, 985, 15, 0])
-            }
-        }
-        _ => {
-            if topo {
-                (0.35, [0, 0, 950, 50, 0])
-            } else {
-                (0.30, [0, 0, 970, 30, 0])
-            }
-        }
-    };
-    // O Porao nao tem estagio: a primeira linha da faixa, chance de 20%.
-    if tipo == Tipo::Porao {
-        (0.20, dist)
+/// Chance of a BLUE piece in a chest of content level `nivel` (before the
+/// chest's own bonus).
+pub fn chance_azul(nivel: u32) -> f32 {
+    if nivel < AZUL_DE {
+        0.0
     } else {
-        (chance, dist)
+        rampa(nivel, AZUL_DE, ROXO_DE, AZUL_MIN, AZUL_MAX)
     }
+}
+
+/// Chance of a PURPLE piece (before the chest's own bonus). Always under 1%.
+pub fn chance_roxo(nivel: u32) -> f32 {
+    if nivel < ROXO_DE {
+        0.0
+    } else {
+        rampa(nivel, ROXO_DE, ROXO_ATE, ROXO_MIN, ROXO_MAX)
+    }
+}
+
+/// How much more a better chest gives: the stage (1-5; a field-boss chest is
+/// green 1, blue 2, purple 3). Darksteel, dust, material, gold and copper.
+pub fn mult_do_bau(estagio: u8) -> f32 {
+    match estagio {
+        0 | 1 => 1.0,
+        2 => 1.6,
+        3 => 2.5,
+        4 => 3.2,
+        _ => 4.0,
+    }
+}
+
+/// "Uma taxinha de drop um tico maior de item": +8% piece chance per stage.
+pub fn bonus_de_peca(estagio: u8) -> f32 {
+    1.0 + 0.08 * (estagio.clamp(1, 5) - 1) as f32
+}
+
+/// Hard grade ceiling by the stage's level: green below `AZUL_DE`, blue below
+/// `ROXO_DE`, purple from there. NO LEGENDARY FROM DROPS (owner, 12/11/2026).
+/// The first-win piece (one grade up) respects it too.
+pub fn teto_de_grau(nivel: u32) -> Grau {
+    if nivel >= ROXO_DE {
+        Grau::Epico
+    } else if nivel >= AZUL_DE {
+        Grau::Raro
+    } else {
+        Grau::Fino
+    }
+}
+
+/// (chance of a piece, weights of Common..Legendary). The weights are the
+/// chances themselves (per 100,000), so `rolar_grau` on them gives exactly
+/// green 50%, blue `chance_azul`, purple `chance_roxo` once a piece drops.
+/// Every chest type follows the same table now (the owner: field-boss,
+/// Gruta and Porão chests alike); `tipo` stays for the callers.
+pub fn tabela_de_peca(_tipo: Tipo, nivel: u32, estagio: u8) -> (f32, [u32; 5]) {
+    let (v, a, r) = (CHANCE_VERDE, chance_azul(nivel), chance_roxo(nivel));
+    let peso = |p: f32| (p * 100_000.0).round() as u32;
+    let chance = ((v + a + r) * bonus_de_peca(estagio)).min(1.0);
+    (chance, [0, peso(v), peso(a), peso(r), 0])
 }
 
 /// Rola um grau na distribuicao e corta no teto.
@@ -1137,6 +1142,42 @@ fn darksteel_e_po(nivel: u32) -> ((u32, u32), (f32, u32, u32)) {
     }
 }
 
+/// Darksteel of a chest of content level `nivel`: the old per-band table
+/// (before 11/11/2026), each band's range now at its middle level and
+/// interpolated geometrically between them, so it grows with every level
+/// instead of jumping every ten. 85+ stays at the top band.
+pub fn darksteel_do_bau(nivel: u32) -> (u32, u32) {
+    const MARCOS: [(u32, f32, f32); 9] = [
+        (5, 50.0, 100.0),
+        (15, 150.0, 300.0),
+        (25, 400.0, 800.0),
+        (35, 1_000.0, 2_000.0),
+        (45, 2_500.0, 5_000.0),
+        (55, 6_000.0, 12_000.0),
+        (65, 15_000.0, 25_000.0),
+        (75, 30_000.0, 50_000.0),
+        (85, 60_000.0, 100_000.0),
+    ];
+    let n = nivel.max(1);
+    if n <= MARCOS[0].0 {
+        return (MARCOS[0].1 as u32, MARCOS[0].2 as u32);
+    }
+    for w in MARCOS.windows(2) {
+        let ((a, alo, ahi), (b, blo, bhi)) = (w[0], w[1]);
+        if n <= b {
+            let t = (n - a) as f32 / (b - a) as f32;
+            let geo = |x: f32, y: f32| (x * (y / x).powf(t)).round() as u32;
+            return (geo(alo, blo), geo(ahi, bhi));
+        }
+    }
+    let ult = MARCOS[MARCOS.len() - 1];
+    (ult.1 as u32, ult.2 as u32)
+}
+
+fn escala(qtd: u32, mult: f32) -> u32 {
+    ((qtd as f32 * mult).round() as u32).max(qtd.min(1))
+}
+
 fn entre(r: f32, lo: u32, hi: u32) -> u32 {
     lo + ((r.clamp(0.0, 0.999_999) * (hi - lo + 1) as f32) as u32).min(hi - lo)
 }
@@ -1189,21 +1230,36 @@ pub fn rolar_bau(
 ) -> Bau {
     let nivel = nivel_do_estagio(c, estagio);
     let porao = c.tipo == Tipo::Porao;
+    // A better chest (color / stage) gives a lot more of everything below.
+    let mult = mult_do_bau(estagio);
     let mut itens = Vec::new();
     let cobre = (200 + 30 * nivel) / if porao { 2 } else { 1 };
     itens.push(Premio {
         item_id: item_id::COPPER,
-        qtd: cobre,
+        qtd: escala(cobre, mult),
         peca: None,
     });
-    // NO DARKSTEEL in any chest since 11/11/2026: it comes from the rock
-    // only (`crate::escassez`). The roll is kept so the rest of the chest
-    // draws the same random numbers as before.
-    let ((ds_lo, ds_hi), (po_chance, po_lo, po_hi)) = darksteel_e_po(nivel);
+    // DARKSTEEL IS BACK in the chests (owner, 14/11/2026), the old table in
+    // full, growing with the level (`darksteel_do_bau`) and the chest. It
+    // was rock-only from 11/11 (`crate::escassez`); the chests are the
+    // reward for actually playing a field boss, a Gruta or a Porão.
+    let ((_, _), (po_chance, po_lo, po_hi)) = darksteel_e_po(nivel);
+    let (ds_lo, ds_hi) = darksteel_do_bau(nivel);
     let selo = exige_selo(c, estagio);
-    let _ = entre(rng(), ds_lo, ds_hi);
+    let mut ds = escala(entre(rng(), ds_lo, ds_hi), mult);
+    if selo {
+        ds *= 2;
+    }
+    if ajudante {
+        ds = (ds * 6 / 10).max(1);
+    }
+    itens.push(Premio {
+        item_id: item_id::DARKSTEEL,
+        qtd: ds,
+        peca: None,
+    });
     if po_chance > 0.0 && rng() < po_chance {
-        let mut po = entre(rng(), po_lo, po_hi);
+        let mut po = escala(entre(rng(), po_lo, po_hi), mult);
         if selo {
             po *= 2;
         }
@@ -1217,12 +1273,17 @@ pub fn rolar_bau(
     // da economia corre em cobre — docs/ECONOMIA.md).
     itens.push(Premio {
         item_id: crate::item_id::GOLD,
-        qtd: ouro_do_bau(c.tipo, nivel, ajudante),
+        qtd: escala(ouro_do_bau(c.tipo, nivel, ajudante), mult),
         peca: None,
     });
-    itens.push(rolar_material(nivel, rng, porao));
+    let material = |rng: &mut dyn FnMut() -> f32| {
+        let mut m = rolar_material(nivel, rng, porao);
+        m.qtd = escala(m.qtd, mult);
+        m
+    };
+    itens.push(material(rng));
     if bonus {
-        itens.push(rolar_material(nivel, rng, porao));
+        itens.push(material(rng));
     }
     if !ajudante {
         let (chance, dist) = tabela_de_peca(c.tipo, nivel, estagio);
@@ -1830,6 +1891,56 @@ mod testes {
                 );
             }
         }
+    }
+
+    /// The owner's gear table (14/11/2026): green 50% always, blue from
+    /// content ~38 (15% -> 25% at 64), purple from 64 (0.3% -> 0.9%),
+    /// never legendary; a better chest drops a piece a bit more often.
+    #[test]
+    fn peca_do_bau_verde_sempre_azul_do_38_roxo_do_64() {
+        assert_eq!(chance_azul(AZUL_DE - 1), 0.0);
+        assert_eq!(chance_azul(AZUL_DE), AZUL_MIN);
+        assert_eq!(chance_azul(ROXO_DE), AZUL_MAX);
+        assert_eq!(chance_azul(120), AZUL_MAX);
+        assert_eq!(chance_roxo(ROXO_DE - 1), 0.0);
+        assert_eq!(chance_roxo(ROXO_DE), ROXO_MIN);
+        assert!(chance_roxo(130) < 0.01, "purple always under 1%");
+        for n in [1, 20, 37, 38, 50, 63, 64, 90, 120] {
+            let (chance, dist) = tabela_de_peca(Tipo::Gruta, n, 1);
+            assert_eq!(dist[0], 0, "no grey");
+            assert_eq!(dist[4], 0, "no legendary");
+            assert!((chance - (CHANCE_VERDE + chance_azul(n) + chance_roxo(n))).abs() < 1e-6, "{n}");
+        }
+        assert!(tabela_de_peca(Tipo::Gruta, 50, 5).0 > tabela_de_peca(Tipo::Gruta, 50, 1).0);
+        assert_eq!(teto_de_grau(37), Grau::Fino);
+        assert_eq!(teto_de_grau(38), Grau::Raro);
+        assert_eq!(teto_de_grau(64), Grau::Epico);
+    }
+
+    /// Darksteel is back: the old band table at each band's middle level,
+    /// growing every level; a purple chest gives much more than a blue one.
+    #[test]
+    fn darksteel_volta_e_cresce_com_nivel_e_cor_do_bau() {
+        assert_eq!(darksteel_do_bau(5), (50, 100));
+        assert_eq!(darksteel_do_bau(55), (6_000, 12_000));
+        assert_eq!(darksteel_do_bau(85), (60_000, 100_000));
+        assert_eq!(darksteel_do_bau(120), (60_000, 100_000));
+        let mut antes = darksteel_do_bau(1);
+        for n in 2..=100 {
+            let agora = darksteel_do_bau(n);
+            assert!(agora.0 >= antes.0 && agora.1 >= antes.1, "{n}");
+            antes = agora;
+        }
+        assert!(mult_do_bau(3) > mult_do_bau(2) && mult_do_bau(2) > mult_do_bau(1));
+        let c = gruta();
+        let ds = |estagio: u8, seed: u64| {
+            let mut r = rng(seed);
+            let bau = rolar_bau(c, estagio, false, false, &mut r);
+            bau.itens.iter().filter(|p| p.item_id == item_id::DARKSTEEL).map(|p| p.qtd).sum::<u32>()
+        };
+        let (verde, roxo) = ((0..200).map(|s| ds(1, s)).sum::<u32>(), (0..200).map(|s| ds(3, s)).sum::<u32>());
+        assert!(verde > 0, "every chest has Darksteel again");
+        assert!(roxo as f32 > verde as f32 * 2.0, "purple {roxo} vs green {verde}");
     }
 
     #[test]

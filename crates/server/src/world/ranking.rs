@@ -28,7 +28,7 @@ static PEDIDOS: Mutex<Option<HashMap<SessionId, Instant>>> = Mutex::new(None);
 
 /// Every rankable character of the realm (unordered), with level, power and
 /// class. Staff accounts are left out.
-async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRanking>> {
+pub(crate) async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRanking>> {
     let todos = crate::persistence::load_all(pool).await?;
     let staff: Vec<i64> = sqlx::query_scalar("SELECT account_id FROM social_staff")
         .fetch_all(pool)

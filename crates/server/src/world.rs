@@ -116,7 +116,7 @@ mod oficina;
 mod pets;
 mod presenca;
 mod prime;
-mod ranking;
+pub(crate) mod ranking;
 mod social;
 mod troca;
 use habilidades::HabilidadePendente;

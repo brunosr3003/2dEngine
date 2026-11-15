@@ -77,6 +77,25 @@ async fn main() -> Result<()> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://solar:solar_dev_123@localhost:5432/mmo_dev".to_string());
 
+    // `server --poder`: READ-ONLY dump of every character's level and power,
+    // with the ranking's own maths (`world::ranking::monta` ->
+    // `effective_stats` -> `poder_de_stats`), then exit. Power is not stored
+    // anywhere, and the owner wanted the real numbers to set the chest gear
+    // thresholds by power (14/11/2026). It opens the pool and the economy
+    // cache only: no channel, no port, no background task.
+    if std::env::args().any(|a| a == "--poder") {
+        let pool = persistence::open_pool(&database_url).await?;
+        economy::init(&pool).await?;
+        economy::load_server_config(&pool).await?;
+        let mut linhas = world::ranking::monta(&pool).await?;
+        linhas.sort_by(|a, b| b.poder.cmp(&a.poder));
+        println!("nome\tnivel\tpoder\tclasse");
+        for l in linhas {
+            println!("{}\t{}\t{}\t{}", l.nome, l.nivel, l.poder, l.classe);
+        }
+        return Ok(());
+    }
+
     // Abre Postgres, carrega personagens existentes, sobe task de escrita.
     let pool = persistence::open_pool(&database_url).await?;
     social::init(&pool).await?;
