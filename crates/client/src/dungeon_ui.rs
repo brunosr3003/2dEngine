@@ -143,7 +143,13 @@ fn desenha_itens_resultado(c: &Contexto, caixa: Rect, y: f32, itens: &[(u16, u32
         let iy = y + (i / 5) as f32 * 76.0 * f;
         if iy + 70.0 * f > caixa.y + caixa.h - 90.0 * f { break; }
         crate::icones::icone_com_3d(*id, Rect::new(x + (cw - 46.0 * f) * 0.5, iy, 46.0 * f, 46.0 * f), None, Some(*qtd), c.palco);
-        let nome = c.nomes.get(id).map(String::as_str).unwrap_or("Item");
+        // A chest's Energy travels as `ENERGIA_MIL` with the raw amount
+        // (15/11/2026): it reads "Energy", not "Energy ×1,000".
+        let nome = if *id == shared::item_id::ENERGIA_MIL {
+            "Energy"
+        } else {
+            c.nomes.get(id).map(String::as_str).unwrap_or("Item")
+        };
         let curto = if nome.chars().count() > 15 { format!("{}…", nome.chars().take(14).collect::<String>()) } else { nome.to_string() };
         estilo::texto_centro(x + cw * 0.5, iy + 62.0 * f, &curto, 11, estilo::TEXTO);
     }

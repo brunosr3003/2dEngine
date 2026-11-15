@@ -155,12 +155,14 @@ mod testes {
 
     #[test]
     fn faixa_de_caca_respeita_o_equipamento_e_a_penalidade() {
-        // On the ladder: hunt from 5 below up to the level.
+        // On the ladder: hunt from the no-penalty window below up to the
+        // level (the window is 8 since 15/11/2026; it was 5).
+        let janela = crate::combat::XP_JANELA_SEM_PENALIDADE;
         let n = 30;
-        assert_eq!(faixa_de_caca(n, ladder::power(n)), (25, 30));
+        assert_eq!(faixa_de_caca(n, ladder::power(n)), (n - janela, n));
         // Gear far behind: the top of the range follows the gear, not the level.
         let (baixo, alto) = faixa_de_caca(34, ladder::power(20));
-        assert!(alto <= 22 && alto - baixo == 5, "{baixo}-{alto}");
+        assert!(alto <= 22 && alto - baixo == janela, "{baixo}-{alto}");
         // Never an empty or inverted range.
         let (b, a) = faixa_de_caca(1, 0);
         assert!(b >= 1 && b <= a);

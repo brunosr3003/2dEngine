@@ -23,15 +23,20 @@
 use macroquad::prelude::*;
 
 /// Quanto o efeito inteiro dura, em segundos.
-pub const DURACAO: f32 = 2.2;
+// Bigger since 15/11/2026 (owner: "um negócio mais bacana quando subir de
+// nível"): longer, more sparks, a wider burst and a taller column, a third
+// ring, and the banner pops in with a "LEVEL UP!" over the number.
+pub const DURACAO: f32 = 3.0;
 /// Quantas fagulhas sobem.
-const FAGULHAS: usize = 22;
+const FAGULHAS: usize = 40;
 /// Até onde o anel abre, em unidades.
-const RAIO_MAX: f32 = 3.4;
+const RAIO_MAX: f32 = 4.6;
 /// Altura da coluna.
-const ALTURA: f32 = 5.2;
+const ALTURA: f32 = 7.0;
 /// Até onde a fagulha sobe.
-const SUBIDA: f32 = 4.6;
+const SUBIDA: f32 = 6.0;
+/// Fraction of the effect the banner stays on screen.
+pub const FIM_DA_FAIXA: f32 = 0.75;
 
 /// Ouro aceso: a cor de "conquista" da interface (`hud_estilo::OURO`).
 const OURO: [f32; 3] = [255.0, 208.0, 116.0];
@@ -80,6 +85,7 @@ impl SubiuDeNivel {
         // onda de choque de skill; dois lêem como estouro.
         anel(pe, f);
         anel(pe, (f - 0.22) / (1.0 - 0.22));
+        anel(pe, (f - 0.44) / (1.0 - 0.44));
         coluna(pe, cam.position, f);
         for i in 0..FAGULHAS {
             fagulha(pe, i, f);
@@ -209,7 +215,7 @@ fn fagulha(pe: Vec3, i: usize, f: f32) {
 /// depois do brilho vira aviso esquecido, nao comemoracao.
 pub fn desenha_faixa(e: &SubiuDeNivel, nivel: u32) {
     let Some(f) = e.fase() else { return };
-    let vis = 1.0 - (f / 0.6).clamp(0.0, 1.0);
+    let vis = 1.0 - (f / FIM_DA_FAIXA).clamp(0.0, 1.0);
     if vis <= 0.0 {
         return;
     }
@@ -217,16 +223,27 @@ pub fn desenha_faixa(e: &SubiuDeNivel, nivel: u32) {
     // Sobe um pouco enquanto some: parada, ela lia como elemento fixo do HUD.
     let y = seguro.y + seguro.h * 0.26 - (1.0 - vis) * crate::hud_estilo::u(26.0);
     let a = vis * vis;
+    // POP: it lands bigger and settles in the first 12% (an overshoot reads
+    // as a celebration; a fade-in reads as a notice).
+    let pop = if f < 0.12 { 1.0 + 0.45 * (1.0 - f / 0.12) } else { 1.0 };
+    let tam = (46.0 * pop) as u16;
     let texto = format!("LEVEL {nivel}");
     let cx = seguro.center().x;
+    let cima = y - crate::hud_estilo::u(34.0);
+    crate::hud_estilo::texto_centro_forte(cx + 2.0, cima + 2.0, "LEVEL UP!", 20, Color::new(0.0, 0.0, 0.0, 0.5 * a));
+    crate::hud_estilo::texto_centro_forte(cx, cima, "LEVEL UP!", 20, Color::new(1.0, 0.95, 0.78, a));
+    // A gold glow behind the number: three offset copies, faint.
+    for (dx, dy) in [(-3.0, 0.0), (3.0, 0.0), (0.0, -3.0), (0.0, 3.0)] {
+        crate::hud_estilo::texto_centro_forte(cx + dx, y + dy, &texto, tam, Color::new(1.0, 0.7, 0.2, 0.22 * a));
+    }
     crate::hud_estilo::texto_centro_forte(
         cx + 2.0,
         y + 2.0,
         &texto,
-        34,
+        tam,
         Color::new(0.0, 0.0, 0.0, 0.55 * a),
     );
-    crate::hud_estilo::texto_centro_forte(cx, y, &texto, 34, Color::new(1.0, 0.82, 0.45, a));
+    crate::hud_estilo::texto_centro_forte(cx, y, &texto, tam, Color::new(1.0, 0.82, 0.45, a));
 }
 
 fn suave(t: f32) -> f32 {
@@ -300,7 +317,7 @@ mod testes {
     /// aviso esquecido. Guardado como fracao, que e' o que o desenho usa.
     #[test]
     fn a_faixa_some_antes_da_luz() {
-        const FIM_DA_FAIXA: f32 = 0.6;
+        // (the module's own `FIM_DA_FAIXA`, 0.75 since 15/11/2026)
         assert!(
             FIM_DA_FAIXA < 1.0,
             "a faixa nao pode durar mais que o efeito"

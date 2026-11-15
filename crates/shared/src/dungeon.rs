@@ -1199,12 +1199,38 @@ pub fn darksteel_do_bau(nivel: u32) -> (u32, u32) {
     (ult.1 as u32, ult.2 as u32)
 }
 
+/// A chest's Energy, in gathers at the content's level (`rolar_bau`).
+pub const ENERGIA_POR_BAU: u64 = 10;
+
 fn escala(qtd: u32, mult: f32) -> u32 {
     ((qtd as f32 * mult).round() as u32).max(qtd.min(1))
 }
 
 fn entre(r: f32, lo: u32, hi: u32) -> u32 {
     lo + ((r.clamp(0.0, 0.999_999) * (hi - lo + 1) as f32) as u32).min(hi - lo)
+}
+
+/// Every item a chest can give, for "Where to get" (`FonteDeItem::Bau`):
+/// Darksteel, Energy, dust, gold, copper, the eight craft materials in every
+/// color, the craft keys and the gear pieces.
+pub fn itens_do_bau() -> Vec<u16> {
+    let mut v = vec![
+        item_id::DARKSTEEL,
+        item_id::ENERGIA_MIL,
+        item_id::GLITTERING_POWDER,
+        item_id::GOLD,
+        item_id::COPPER,
+    ];
+    for base in MATERIAIS_DO_BAU {
+        for cor in 1..=5 {
+            v.push(item_id::na_cor(base, cor));
+        }
+    }
+    v.extend(item_id::todas_as_chaves());
+    v.extend(item_id::ESPADA_E_ESCUDO..=item_id::CINTO);
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 const MATERIAIS_DO_BAU: [u16; 8] = [
@@ -1281,6 +1307,15 @@ pub fn rolar_bau(
     itens.push(Premio {
         item_id: item_id::DARKSTEEL,
         qtd: ds,
+        peca: None,
+    });
+    // ENERGY too (owner, 15/11/2026: "baú de boss e dg tem que dropar energia
+    // também"): ten gathers' worth at the content's level, times the chest.
+    // It travels as `ENERGIA_MIL` with `qtd` = raw Energy; the server turns
+    // it into Energy on delivery (`entregar_premio`), never a bag item.
+    itens.push(Premio {
+        item_id: item_id::ENERGIA_MIL,
+        qtd: escala((crate::skills::energia_do_nivel(nivel) * ENERGIA_POR_BAU) as u32, mult),
         peca: None,
     });
     if po_chance > 0.0 && rng() < po_chance {

@@ -118,12 +118,14 @@ mod testes_da_esquiva {
     }
 }
 
-/// XP for a monster well BELOW the player (owner, 11/11/2026): up to 5 levels
-/// below, full XP; then -8% per level, never under 20%. Only XP — drops,
-/// gold and materials are untouched. Bosses and dungeons don't use it.
-pub const XP_JANELA_SEM_PENALIDADE: u32 = 5;
-pub const XP_QUEDA_POR_NIVEL: f32 = 0.08;
-pub const XP_PISO: f32 = 0.20;
+/// XP for a monster well BELOW the player (owner, 11/11/2026; eased
+/// 15/11/2026: "a penalidade por matar mob de nível menor tem que diminuir"):
+/// up to 8 (internal) levels below, full XP; then -5% per level, never under
+/// 40%. It was 5 levels, -8% and a 20% floor. Only XP — drops, gold and
+/// materials are untouched. Bosses and dungeons don't use it.
+pub const XP_JANELA_SEM_PENALIDADE: u32 = 8;
+pub const XP_QUEDA_POR_NIVEL: f32 = 0.05;
+pub const XP_PISO: f32 = 0.40;
 
 pub fn fator_xp_por_nivel(nivel_jogador: u32, nivel_mob: u32) -> f32 {
     let abaixo = nivel_jogador.saturating_sub(nivel_mob);
@@ -138,12 +140,12 @@ mod testes_xp_por_nivel {
     use super::*;
 
     #[test]
-    fn cheio_ate_cinco_abaixo_depois_cai_ate_o_piso() {
+    fn cheio_ate_oito_abaixo_depois_cai_ate_o_piso() {
         assert_eq!(fator_xp_por_nivel(30, 40), 1.0, "mob above: no penalty");
-        assert_eq!(fator_xp_por_nivel(30, 25), 1.0);
-        assert!((fator_xp_por_nivel(30, 24) - 0.92).abs() < 1e-6);
-        assert!((fator_xp_por_nivel(30, 20) - 0.60).abs() < 1e-6);
-        assert_eq!(fator_xp_por_nivel(41, 22), XP_PISO, "Anubis in Geleira 22");
+        assert_eq!(fator_xp_por_nivel(30, 22), 1.0, "8 below: still full");
+        assert!((fator_xp_por_nivel(30, 21) - 0.95).abs() < 1e-6);
+        assert!((fator_xp_por_nivel(30, 15) - 0.65).abs() < 1e-6);
+        assert!((fator_xp_por_nivel(41, 22) - 0.45).abs() < 1e-6, "Anubis in Geleira 22");
         assert_eq!(fator_xp_por_nivel(80, 1), XP_PISO);
     }
 }

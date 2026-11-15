@@ -923,6 +923,14 @@ pub(crate) fn texto_da_nova_escala(xp: u64, mult: u64) -> String {
     }
 }
 
+/// A boss gives up the chase this far from home, in leashes (common mobs: 2).
+pub(crate) const CHEFE_COLEIRA_MULT: f32 = 3.0;
+/// Seconds a boss chases without landing a hit before it gives up (was 30).
+pub(crate) const CHEFE_DESISTE_S: f32 = 60.0;
+/// Share of its max health a boss gets back when it walks home (common mobs
+/// heal in full).
+pub(crate) const CHEFE_CURA_NA_VOLTA: f32 = 0.20;
+
 /// Vida e dano de um mob da tabela (`enemy_kinds`) no nivel em que nasceu.
 /// XP de um bicho pelo NIVEL da zona: +10% por nivel acima do 1. A dificuldade
 /// vem do KIND (a tabela), mas caçar longe da cidade tem que pagar mais que
@@ -6147,6 +6155,22 @@ impl GameWorld {
 
     /// Onde o jogador chega na ilha, renasce e nasce: a CIDADE. Ilha sem
     /// cidade, o chao firme mais perto do centro, como antes.
+    /// The (internal) level of a spot of this island: the island's band by
+    /// the distance from the city — the same rule the hunting zones use
+    /// (`zonas_comuns_da_ilha`), so a rock or an Energy vein pays like the
+    /// monsters around it. A Magic Island step is its mobs' level.
+    pub(crate) fn nivel_do_lugar(&self, p: Vec2) -> u32 {
+        if let Some(n) = shared::magica::nivel_da_zona(&self.zona) {
+            return n.mob.0;
+        }
+        let Some(def) = shared::terreno::ARQUIPELAGO.iter().find(|d| d.zona == self.zona) else {
+            return 1;
+        };
+        let raio = (def.raio_blocos as f32 * shared::terreno::BLOCO).max(1.0);
+        let t = (p.distance(self.porto()) / raio).clamp(0.0, 1.0);
+        def.nivel.0 + (t * def.nivel.1.saturating_sub(def.nivel.0) as f32).round() as u32
+    }
+
     pub fn porto(&self) -> Vec2 {
         match self.ilha.as_ref().and_then(|i| i.cidade()) {
             Some(c) => self.pousar(c.centro()),
@@ -10708,7 +10732,10 @@ impl GameWorld {
             } else {
                 0.0
             };
-            let leash_hard = enemy.leash_max * 2.0;
+            // Bosses give up later (owner, 15/11/2026: "boss de mapa aberto
+            // está voltando a vida, resetando muito fácil, fica um saco
+            // matar"): 3x the leash instead of 2x.
+            let leash_hard = enemy.leash_max * if enemy.is_boss { CHEFE_COLEIRA_MULT } else { 2.0 };
 
             if enemy.leash_max > 0.0 {
                 if enemy.returning_home {
@@ -10752,7 +10779,7 @@ impl GameWorld {
                     // Bosses precisam tolerar janelas longas sem contato:
                     // desviar de uma área/telegráfico não pode curar o chefe.
                     // Mobs comuns mantêm o leash curto de 5s.
-                    let aggro_drop_time = if enemy.is_boss { 30.0 } else { 5.0 };
+                    let aggro_drop_time = if enemy.is_boss { CHEFE_DESISTE_S } else { 5.0 };
                     if enemy.aggro_timer > aggro_drop_time && enemy.leash_max > 0.0 {
                         // Desistiu — volta pra casa.
                         enemy.returning_home = true;
@@ -10999,7 +11026,7 @@ impl GameWorld {
                     // passou do leash duro; mobs comuns conservam o retorno
                     // antecipado para não vagarem pelo mapa.
                     let retorno_dist = if enemy.is_boss {
-                        enemy.leash_max * 2.0
+                        enemy.leash_max * CHEFE_COLEIRA_MULT
                     } else {
                         enemy.leash_max * 0.4
                     };
@@ -11027,7 +11054,7 @@ impl GameWorld {
             } else {
                 // Sem player algum — mesma logic, mas sem chase tracking.
                 let retorno_dist = if enemy.is_boss {
-                    enemy.leash_max * 2.0
+                    enemy.leash_max * CHEFE_COLEIRA_MULT
                 } else {
                     enemy.leash_max * 0.4
                 };
@@ -11075,9 +11102,17 @@ impl GameWorld {
         }
         for e in exited_evade {
             let _ = self.ecs.remove_one::<Untargetable>(e);
-            // Heal ao chegar em casa (estilo WoW Classic).
+            // Heal ao chegar em casa (estilo WoW Classic) — a common mob in
+            // full; a BOSS only `CHEFE_CURA_NA_VOLTA` of its health (owner,
+            // 15/11/2026): a fight that strayed is not lost, and a group that
+            // comes back finds the boss where it left it, give or take.
+            let chefe = self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss);
             if let Ok(mut hp) = self.ecs.get::<&mut Health>(e) {
-                hp.current = hp.max;
+                hp.current = if chefe {
+                    (hp.current + (hp.max as f32 * CHEFE_CURA_NA_VOLTA) as i32).min(hp.max)
+                } else {
+                    hp.max
+                };
             }
             if let Ok(mut tag) = self.ecs.get::<&mut EnemyTag>(e) {
                 tag.attack_cooldown = 0.0;
@@ -20008,7 +20043,9 @@ impl GameWorld {
                 .iter()
                 .position(|d| d.zona == self.zona)
                 .unwrap_or(0);
-            let qtd = shared::skills::energia_por_coleta(ilha);
+            // By the PLACE's level (15/11/2026), not a fixed per-island table.
+            let _ = ilha;
+            let qtd = shared::skills::energia_do_nivel(self.nivel_do_lugar(c.centro));
             // ILHA MAGICA: a Ilhota da Energia dobra o que o veio entrega.
             let bonus = self.sessions.get(&sid).map_or(0.0, |s| shared::acessorios::bonus(&s.equipment).energia);
             let qtd = (qtd as f32 * self.mult_magico(sid, shared::magica::Bonus::Coleta(5)) * (1.0 + bonus) * if tempestade { 1.5 } else { 1.0 }).round()
@@ -20083,6 +20120,13 @@ impl GameWorld {
             }
         }
         if kind == "Rock" {
+            // DARKSTEEL grows with the place's level (owner, 15/11/2026).
+            let fator = shared::skills::fator_darksteel_do_nivel(self.nivel_do_lugar(c.centro));
+            for (id, qtd) in &mut drops {
+                if *id == shared::item_id::DARKSTEEL {
+                    *qtd = ((*qtd as f32) * fator).round().max(1.0) as u32;
+                }
+            }
             let bonus = self.sessions.get(&sid).map_or(shared::acessorios::Bonus::default(), |s| shared::acessorios::bonus(&s.equipment));
             for (id, qtd) in &mut drops {
                 let taxa = if *id == shared::item_id::DARKSTEEL { bonus.darksteel }

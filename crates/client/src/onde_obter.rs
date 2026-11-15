@@ -377,6 +377,12 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             o.ordem = (8, 0);
             o.ir = Some(Ir::AbrirDungeons);
         }
+        FonteDeItem::Bau => {
+            o.titulo = "Chests: field bosses, Grutas and Porões".into();
+            o.detalhe = "More with the content's level and the chest's color".into();
+            o.ordem = (2, 0);
+            o.ir = Some(Ir::AbrirDungeons);
+        }
         FonteDeItem::Calendario { dias } => {
             o.titulo = "Attendance calendar".into();
             let lista: Vec<String> = dias.iter().map(|d| d.to_string()).collect();

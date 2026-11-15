@@ -192,7 +192,7 @@ impl GameWorld {
         for (item, qtd, inst) in premios {
             crate::telemetria::conta_de(&s.name, "forte_bau_item", item, qtd as i64);
             itens.push((item, qtd));
-            if !add_to_inventory(&mut s.inventory, item, qtd, inst) {
+            if !super::dungeon::entregar_premio(s, item, qtd, inst) {
                 s.dungeon.postar(item, qtd, inst, 0, quando);
             }
         }

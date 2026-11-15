@@ -33,7 +33,7 @@ impl BarraDeColeta {
             *self = Self::default();
             return;
         }
-        if !pausado && progresso < 0.1 && tipo < shared::forte::TIPO_COLETA { crate::sons::tocar(if tipo == 0 {crate::sons::Som::Machado} else {crate::sons::Som::Picareta}); }
+        if !pausado && progresso < 0.1 && tipo < shared::forte::TIPO_COLETA { crate::sons::tocar(match tipo { 0 => crate::sons::Som::Machado, 5 => crate::sons::Som::Energia, _ => crate::sons::Som::Picareta }); }
         *self = Self {
             tipo: Some(tipo),
             intervalo: intervalo_s,

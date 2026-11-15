@@ -8,6 +8,12 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
 - New level scale, 1 to 100: the Grove is levels 1-30, the Glacier 30-50, the Waste 50-70 and the Plateau 70-100; everything beyond is the "100+" band, opened by your Power. Monsters keep their strength: only the numbers changed, and your character keeps all its progress.
+- Boss and dungeon chests also give Energy, and Energy veins and rocks give more Energy and Darksteel the higher the level of the place.
+- Killing monsters below your level costs less XP: full XP up to 8 levels below, then -5% per level, never under 40%. The Help tab's hunting range follows it.
+- Field bosses no longer reset so easily: they chase longer, go farther before giving up, and only recover 20% of their health when they walk home.
+- Leveling up has a bigger celebration with its own fanfare, and new sounds for quests, chests, Energy, refining, crafting and the mail.
+- "Where to get" now lists the chests of field bosses, Grutas and Porões for Darksteel, Energy, materials, keys and gear.
+- Fixed: the "Where to get" button on an item card sat on top of the close button.
 - On your first login after this update, a message shows your old and new level.
 - First-win dungeon rewards go straight to your bag; only what does not fit goes to the Mail, and you are told.
 - The Waste has many more monsters, and the Waste and the Plateau have new quests and contracts at the Quest Master.

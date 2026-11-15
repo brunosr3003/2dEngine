@@ -1881,6 +1881,11 @@ pub enum FonteDeItem {
     DungeonRaid,
     /// Calendario de presenca (`shared::presenca`): dias da grade do mes.
     Calendario { dias: Vec<u8> },
+    /// The chests of field bosses, Grutas and Porões (`dungeon::rolar_bau`),
+    /// more with the content's level and the chest's color (owner,
+    /// 15/11/2026: "no find de DS, energia etc. tem que mostrar que são
+    /// coletáveis em boss e porão").
+    Bau,
 }
 
 /// Todas as fontes de um item. Vai no `ResourceSources`.

@@ -509,6 +509,23 @@ pub fn energia_por_coleta(indice_da_ilha: usize) -> u64 {
     [30, 70, 150, 300].get(indice_da_ilha).copied().unwrap_or(30)
 }
 
+/// Energy of one gather at the place's (internal) level (owner, 15/11/2026:
+/// "a coleta de cristal de energia tem que aumentar a quantidade de acordo
+/// com o nível do mapa"). One curve through the old per-island table at each
+/// island's middle level (8 → 30, 22 → ~64, 35 → ~132, 50 → 300) that keeps
+/// growing past the Plateau — the late islands used to fall back to 30.
+pub fn energia_do_nivel(nivel: u32) -> u64 {
+    let n = nivel.max(1) as f64;
+    (30.0 * 10f64.powf((n - 8.0) / 42.0)).round().max(10.0) as u64
+}
+
+/// Darksteel of a rock at the place's (internal) level, over the rock
+/// table's own amount (same request): 1x at level 1, ~3.5x on the Plateau,
+/// growing past it.
+pub fn fator_darksteel_do_nivel(nivel: u32) -> f32 {
+    1.0 + (nivel.max(1) - 1) as f32 / 20.0
+}
+
 /// O `dano` de cada skill do catalogo e' peso relativo, e este e' o meio da
 /// escala: uma skill de `dano` 30 rende o ganho cheio da forma dela.
 pub const DANO_DE_REFERENCIA: f32 = 30.0;

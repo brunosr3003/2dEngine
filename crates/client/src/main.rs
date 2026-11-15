@@ -2380,7 +2380,15 @@ impl Jogo {
                     }
                 }
                 if let shared::dungeon::Aviso::Correio { cartas } = &aviso {
+                    // A letter arrived: the mail's bell (15/11/2026).
+                    if cartas.len() > self.social.correio_dungeon.len() {
+                        crate::sons::tocar(crate::sons::Som::Correio);
+                    }
                     self.social.correio_dungeon = cartas.clone();
+                }
+                // The chest of a dungeon opened.
+                if matches!(aviso, shared::dungeon::Aviso::Bau { .. }) {
+                    crate::sons::tocar(crate::sons::Som::Bau);
                 }
                 if let Some(t) = dungeon_ui::DungeonUi::texto_pro_chat(&aviso) {
                     self.chat.push(t);
@@ -2445,6 +2453,7 @@ impl Jogo {
                 } else {
                     format!("Craft refused: {motivo}")
                 };
+                crate::sons::tocar(if ok { crate::sons::Som::Craft } else { crate::sons::Som::Recusa });
                 self.craft.resultado(ok, txt.clone(), get_time());
                 self.chat.push(txt);
             }
@@ -2534,6 +2543,11 @@ impl Jogo {
                 motivo,
             } => {
                 let nome = self.bolsa.nome(item_id);
+                crate::sons::tocar(if resultado == shared::forja::resultado::SUBIU {
+                    crate::sons::Som::RefinoOk
+                } else {
+                    crate::sons::Som::RefinoFalha
+                });
                 self.forja
                     .resultado(resultado, nivel, &nome, &motivo, get_time());
                 self.chat
@@ -2620,6 +2634,9 @@ impl Jogo {
                     let depois = shared::progressao::nivel_exibido(xp, mult);
                     if depois > antes || level > self.ficha.nivel {
                         self.subiu_de_nivel.dispara();
+                        // Its own fanfare (owner, 15/11/2026: "uma animação e
+                        // um efeito sonoro, um negócio mais bacana").
+                        crate::sons::tocar(crate::sons::Som::SubirNivel);
                     }
                 }
                 self.bolsa.nivel = level;
@@ -2785,6 +2802,7 @@ impl Jogo {
                     if let Some(def) = shared::quests::quest_by_id(quest_id) {
                         if anterior.is_none_or(|(_, antigo)| antigo != status) {
                             self.auto_resumo.concluir(def, &self.bolsa.nomes);
+                            crate::sons::tocar(crate::sons::Som::Missao);
                         }
                         let itens = [(def.reward_item, def.reward_item_qty), (def.reward_item2, def.reward_item2_qty)]
                             .into_iter().filter(|(id, qtd)| *id != 0 && *qtd > 0 && pocoes_xp::paga_na_entrega(*id, def.daily))
@@ -2830,6 +2848,7 @@ impl Jogo {
                 }
             }
             ServerMessage::BossRewards { items } => {
+                crate::sons::tocar(crate::sons::Som::Bau);
                 self.recompensas.mostrar("BOSS DEFEATED".into(), "Loot on the ground · pick the items up".into(), items, 0, 0, 0);
             }
             ServerMessage::QuestEstado { entregues, faccao } => {

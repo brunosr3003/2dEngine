@@ -819,8 +819,10 @@ pub fn fontes_de_itens(
             }
         }
     }
-    for id in shared::item_id::todas_as_chaves() {
-        junta(&mut por_item, cfg, id, FonteDeItem::DungeonRaid);
+    // The chests of field bosses, Grutas and Porões (15/11/2026). It
+    // replaces the keys' old "Dungeon boss (Cavern) · coming soon" line.
+    for id in shared::dungeon::itens_do_bau() {
+        junta(&mut por_item, cfg, id, FonteDeItem::Bau);
     }
     // Calendario de presenca (docs/CALENDARIO.md): os dias em que o item sai.
     for (id, dias) in shared::presenca::itens_com_dias(shared::presenca::EVENTOS) {
@@ -1049,7 +1051,9 @@ mod testes_onde_obter {
                 ..
             }
         )));
-        assert!(escama.contains(&FonteDeItem::DungeonRaid));
+        // The chests of bosses, Grutas and Porões (15/11/2026; it was the
+        // "Dungeon boss (Cavern) · coming soon" line).
+        assert!(escama.contains(&FonteDeItem::Bau));
         assert!(escama
             .iter()
             .all(|x| !matches!(x, FonteDeItem::Mob { .. } | FonteDeItem::Coleta { .. })));

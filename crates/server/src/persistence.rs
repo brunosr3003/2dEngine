@@ -4369,6 +4369,15 @@ pub async fn create_character(
     if res.rows_affected() == 0 {
         return Ok(false);
     }
+    // A character born on the new level scale has nothing to be told: mark
+    // its "new level scale" notice as seen now (world.rs, `aviso_escala`).
+    // Marking it at the first login was not enough: a character made after
+    // the remap but before the notice existed (Luki, 15/11/2026) leveled up
+    // in between and got the notice on its next login.
+    let _ = sqlx::query("INSERT INTO migracoes_de_dados (nome) VALUES ($1) ON CONFLICT DO NOTHING")
+        .bind(format!("aviso_escala:{name}"))
+        .execute(pool)
+        .await;
     // Arma inicial = 0 → personagem nasce SEM arma (o tutorial entrega a T1).
     // Só popula inventário/equip se um id de arma válido foi passado (compat).
     if starting_weapon != 0 {

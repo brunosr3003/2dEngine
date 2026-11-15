@@ -2224,4 +2224,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("View on market", "Ver no mercado"),
     ("Buy order", "Pedido de compra"),
     ("FIRST WIN REWARDS", "RECOMPENSAS DA PRIMEIRA VITÓRIA"),
+    ("LEVEL UP!", "SUBIU DE NÍVEL!"),
+    ("Chests: field bosses, Grutas and Porões", "Baús: chefes de campo, Grutas e Porões"),
+    ("More with the content's level and the chest's color", "Mais com o nível do conteúdo e a cor do baú"),
 ];

@@ -156,6 +156,31 @@ fn limite_teste(c: &dg::Conteudo) -> f32 {
         .unwrap_or(c.limite_s as f32)
 }
 
+/// Hands one chest prize to the character: Energy (`ENERGIA_MIL` with `qtd` =
+/// raw Energy, 15/11/2026) goes straight to the character's Energy, anything
+/// else to the bag. `false` = the bag had no room (the caller mails it).
+pub(super) fn entregar_premio(
+    s: &mut Session,
+    item: u16,
+    qtd: u32,
+    inst: Option<shared::ItemInstance>,
+) -> bool {
+    if item == shared::item_id::ENERGIA_MIL {
+        s.skill_progress.energia = s.skill_progress.energia.saturating_add(qtd as u64);
+        s.skills_dirty = true;
+        let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
+            progresso: s.skill_progress.clone(),
+        });
+        return true;
+    }
+    if add_to_inventory(&mut s.inventory, item, qtd, inst) {
+        s.inventory_dirty = true;
+        true
+    } else {
+        false
+    }
+}
+
 fn unix_agora() -> i64 {
     (now_ms() / 1000) as i64
 }
@@ -2122,6 +2147,10 @@ impl GameWorld {
     }
 
     pub(super) fn dg_rolar_peca(p: &dg::Premio) -> Option<shared::ItemInstance> {
+        Self::dg_rolar_peca_interno(p)
+    }
+
+    fn dg_rolar_peca_interno(p: &dg::Premio) -> Option<shared::ItemInstance> {
         let (_, ilvl) = p.peca?;
         let tpl = crate::economy::item_template_of(p.item_id);
         // Not bound any more (05/10/2026): the owner opened the market to
@@ -2241,7 +2270,7 @@ impl GameWorld {
                 crate::telemetria::conta_de(&s.name, "chave_drop", format!("dungeon:{item}"), qtd as i64);
             }
             itens.push((item, qtd));
-            if !add_to_inventory(&mut s.inventory, item, qtd, inst) {
+            if !entregar_premio(s, item, qtd, inst) {
                 s.dungeon.postar(item, qtd, inst, 0, quando);
                 no_correio += 1;
             }

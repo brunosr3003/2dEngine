@@ -1097,10 +1097,13 @@ impl Bolsa {
             nome
         };
         ui::texto(tx, r.y + u(40.0), &titulo, 22, cor);
+        // LEFT of the card's own close X (`r.w - 42`, 30 wide): it used to sit
+        // at `r.w - 52`, right on top of it (owner, 15/11/2026: "o botão da
+        // lupa está em cima do botão de fechar").
         if !matches!(tipo(peca.id), Tipo::Ouro)
             && crate::onde_obter::botao(Rect::new(
-                r.x + r.w - u(52.0),
-                r.y + u(14.0),
+                r.x + r.w - u(42.0) - u(8.0) - u(38.0),
+                r.y + u(6.0),
                 u(38.0),
                 u(38.0),
             ))

@@ -55,8 +55,18 @@ pub enum Som {
     Skill11Impact,
     Skill12Cast,
     Skill12Impact,
+    // Event sounds (15/11/2026, `assets/audio/eventos`, made by
+    // `scripts/gera-sons-eventos.sh`).
+    SubirNivel,
+    Missao,
+    Bau,
+    Energia,
+    RefinoOk,
+    RefinoFalha,
+    Correio,
+    Craft,
 }
-const SOM_COUNT: usize = Som::Skill12Impact as usize + 1;
+const SOM_COUNT: usize = Som::Craft as usize + 1;
 struct Audio {
     sons: Vec<Option<Sound>>,
     ultimo: [f64; SOM_COUNT],
@@ -119,6 +129,14 @@ pub async fn carregar() {
         som!("skills/11_impact"),
         som!("skills/12_cast"),
         som!("skills/12_impact"),
+        som!("eventos/subir_nivel"),
+        som!("eventos/missao"),
+        som!("eventos/bau"),
+        som!("eventos/energia"),
+        som!("eventos/refino_ok"),
+        som!("eventos/refino_falha"),
+        som!("eventos/correio"),
+        som!("eventos/craft"),
     ];
     debug_assert_eq!(arquivos.len(), SOM_COUNT);
     let mut sons = Vec::new();

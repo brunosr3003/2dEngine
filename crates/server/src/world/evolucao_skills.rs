@@ -321,7 +321,8 @@ mod testes {
         assert!(w.coletar_plantado(sid, cristal));
         assert_eq!(
             w.sessions[&sid].skill_progress.energia,
-            antes + shared::skills::energia_por_coleta(0)
+            // By the place's level since 15/11/2026, not a per-island table.
+            antes + shared::skills::energia_do_nivel(w.nivel_do_lugar(cristal.centro))
         );
         assert!(w.sessions[&sid].inventory.is_empty());
         assert_eq!(w.pedras[&cristal.coluna].coletas, 1);
