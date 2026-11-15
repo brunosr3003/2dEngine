@@ -201,6 +201,9 @@ pub struct Regras {
     pub level_floor: f32,
     /// Katana execute (x`KATANA_EXECUTE_MULT` under 30% HP) against players.
     pub katana_execute_pvp: bool,
+    /// The gap is POWER (`shared::pk::pvp_mult_poder`, the live rule since
+    /// 15/11/2026) instead of level; the `level_*` knobs only matter when off.
+    pub por_poder: bool,
 }
 
 impl Regras {
@@ -217,6 +220,7 @@ impl Regras {
             level_free_gap: PVP_NIVEL_LIVRE,
             level_floor: PVP_NIVEL_PISO,
             katana_execute_pvp: PVP_KATANA_EXECUTA,
+            por_poder: true,
         }
     }
 
@@ -231,6 +235,7 @@ impl Regras {
             level_free_gap: 5,
             level_floor: 1.0,
             katana_execute_pvp: true,
+            por_poder: false,
         }
     }
 
@@ -266,7 +271,23 @@ impl Regras {
         if let Some(v) = q.get("katana_execute_pvp") {
             r.katana_execute_pvp = matches!(v.trim(), "1" | "true" | "on" | "yes");
         }
+        if let Some(v) = q.get("por_poder") {
+            r.por_poder = matches!(v.trim(), "1" | "true" | "on" | "yes");
+        }
         r
+    }
+
+    /// The gap multiplier these rules apply between two fighters: by power
+    /// (the sheet's maths on their stats) or, with `por_poder` off, by level.
+    pub fn mult_do_gap(&self, at: &Lutador, alvo: &Lutador) -> f32 {
+        if self.por_poder {
+            shared::pk::pvp_mult_poder(
+                shared::dungeon::poder_de_stats(&at.stats),
+                shared::dungeon::poder_de_stats(&alvo.stats),
+            )
+        } else {
+            self.mult_de_nivel(at.nivel, alvo.nivel)
+        }
     }
 
     /// Level-gap multiplier: only when the attacker is BELOW the target.
@@ -316,7 +337,7 @@ fn golpe(at: &Lutador, alvo: &Lutador, acao: Acao, crit: bool, execucao: bool, r
     let mult = match acao {
         Acao::Basico => r.basic_mult,
         Acao::Skill(_) => r.skill_mult,
-    } * r.mult_de_nivel(at.nivel, alvo.nivel);
+    } * r.mult_do_gap(at, alvo);
     let d = if mult != 1.0 {
         ((d as f32) * mult).round().max(1.0) as i32
     } else {
@@ -757,7 +778,7 @@ fn duelo(at: &Lutador, alvo: &Lutador, r: &Regras) -> Duelo {
         target: alvo.nome.clone(),
         target_hp: alvo.hp_max(),
         downed_hp: shared::DOWNED_HP_MAX,
-        level_mult: r.mult_de_nivel(at.nivel, alvo.nivel),
+        level_mult: r.mult_do_gap(at, alvo),
         max_hit_pct: max_hit as f32 / alvo.hp_max() as f32,
         one_shot: max_hit >= alvo.hp_max(),
         actions,
@@ -1769,6 +1790,8 @@ pub fn regras_do_torneio() -> Vec<Regras> {
             level_free_gap: 5,
             level_floor: 1.0,
             katana_execute_pvp: false,
+            // The round-robin compares multiplier pairs between equals: no gap.
+            por_poder: false,
         });
     }
     v
@@ -1927,18 +1950,18 @@ mod testes {
         assert_eq!(r.mult_de_nivel(18, 48), 1.0, "no level gap before the balance");
         // The live rules are `shared::pk`'s, the same function the loop calls.
         let r = Regras::atuais();
+        let poder = |l: &Lutador| shared::dungeon::poder_de_stats(&l.stats);
         assert_eq!(
             golpe(&a, &b, Acao::Basico, false, false, &r),
-            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, 30, 30)
+            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, poder(&a), poder(&b))
         );
-        let baixo = com_stats("C", 20, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
-        // The live game moved the gap to POWER (14/11/2026, `pvp_mult_poder`);
-        // the sim still models the old level gap with its own knobs.
-        let m = shared::pk::PVP_MULT_BASICO
-            * shared::pk::pvp_mult_nivel(20, 30, shared::pk::PVP_NIVEL_LIVRE, shared::pk::PVP_NIVEL_PENALIDADE, shared::pk::PVP_NIVEL_PISO);
+        // A far weaker attacker (power, like the live loop since 15/11/2026).
+        let fraco = com_stats("C", 20, shared::item_id::ESPADA_E_ESCUDO, 300, 300, 0, 0.0);
+        let forte = com_stats("D", 30, shared::item_id::ESPADA_E_ESCUDO, 6000, 300, 50, 0.0);
+        assert!(r.mult_do_gap(&fraco, &forte) < 1.0, "{} vs {}", poder(&fraco), poder(&forte));
         assert_eq!(
-            golpe(&baixo, &b, Acao::Basico, false, false, &r),
-            ((dano_mitigado(300, 50, 0.0) as f32) * m).round().max(1.0) as i32
+            golpe(&fraco, &forte, Acao::Basico, false, false, &r),
+            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, poder(&fraco), poder(&forte))
         );
         assert_eq!(Regras::propostas_padrao().skill_mult, shared::pk::PVP_MULT_SKILL);
     }

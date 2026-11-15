@@ -533,6 +533,11 @@ pub struct EntityMeta {
     /// The player's clan tag ("" = none), drawn as "[TAG] Name".
     #[serde(default)]
     pub cla: String,
+    /// A player's power (the sheet's maths, `dungeon::poder_de_stats`); 0 for
+    /// everything else. The client needs it to apply the same PvP power
+    /// protection as the server (`pk::protegido_por_poder`, stage A).
+    #[serde(default)]
+    pub poder: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

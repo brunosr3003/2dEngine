@@ -463,7 +463,27 @@ pub fn poder_de_stats(s: &PlayerStats) -> i32 {
 /// estagio 1 — e no nivel 34 dava 4.300 enquanto qualquer jogador real
 /// tinha o dobro. Porta que ninguem encosta nao e' porta.
 pub fn poder_referencia(nivel: u32) -> i32 {
-    crate::ladder::power(nivel)
+    (crate::ladder::power(nivel) as f32 * fator_real(nivel)).round() as i32
+}
+
+/// How far REAL players run above the ladder at a level (owner, 15/11/2026:
+/// "essa tabela de poder por lvl não faz muito sentido"). Read from prod with
+/// `server --poder`: levels 15-18 sit at ~1x the ladder, geared players from
+/// 25 on at 1.4-2.1x (Anubis 63: 12.8k vs 6.2k). So the reference ramps from
+/// 1.0 at level 20 to 1.6 at 40 and stays there: the stage 1 door (55%) still
+/// lets an ungeared player of the level in, and the top stages ask for gear.
+/// It is what gates the "100+" band (stage A, docs/RESET.md), where the
+/// level no longer does.
+pub const FATOR_REAL_MAX: f32 = 1.6;
+
+pub fn fator_real(nivel: u32) -> f32 {
+    if nivel <= 20 {
+        1.0
+    } else if nivel >= 40 {
+        FATOR_REAL_MAX
+    } else {
+        1.0 + (FATOR_REAL_MAX - 1.0) * (nivel - 20) as f32 / 20.0
+    }
 }
 
 pub fn poder_minimo(c: &Conteudo, e: u8) -> i32 {

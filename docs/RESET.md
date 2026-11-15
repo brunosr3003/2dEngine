@@ -9,7 +9,12 @@ Desenho fechado com o dono em 14/11/2026. Substitui o desenho de 12/11
 (`dungeon::cadeado`, `quests::nivel_pedido`) e passam disso só por poder,
 sem trava de nível em craft (`craft::conferir`, `craft_ui::motivo`) nem em
 viagem (Geleira), PvP por poder (`pk::pvp_mult_poder`,
-`pk::protegido_por_poder`). Etapas B e C: não começadas.
+`pk::protegido_por_poder`). Os três pontos que ficaram de fora também
+(15/11): o poder de referência das dungeons segue o jogador REAL
+(`dungeon::fator_real`, 1,0 até o nível 20 subindo a 1,6 no 40), o
+simulador de PvP do Panopticon usa o gap por poder (`Regras::por_poder`), e o
+poder de cada jogador vai no `EntityMeta.poder` pra o cliente aplicar a mesma
+proteção. Etapas B e C: não começadas.
 
 ## A ideia
 

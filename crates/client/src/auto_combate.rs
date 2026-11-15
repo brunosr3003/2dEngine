@@ -433,6 +433,7 @@ mod tests {
                 nivel: 1,
                 desafio: None,
             aparencia: 0,
+            poder: 0,
             });
             estados.push(shared::EntityState::quantize(
                 EntityId(id),

@@ -415,6 +415,7 @@ pub async fn previa() {
                     nivel: 70,
                     desafio: None,
                     aparencia: 0,
+                    poder: 0,
                 }],
                 vec![shared::EntityState {
                     id,

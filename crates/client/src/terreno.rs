@@ -2728,6 +2728,7 @@ pub async fn previa_baus(vox: &mut crate::vox::VoxCache) {
             desafio: None,
             aparencia: 0,
             skins: 0,
+            poder: 0,
         })
         .collect();
     let states: Vec<shared::EntityState> = (0..4)

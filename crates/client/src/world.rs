@@ -777,6 +777,7 @@ mod testes {
                     pk: Default::default(), auras: 0, id, tag: EntityTag::Player,
                     name: None, hp_max: 100, faction: None, kind: 0, nivel: 1,
                     desafio: None, aparencia: 0,
+                    poder: 0,
                 }], vec![EntityState {
                     id, pos: [16, 16], vel: [0, 0], hp: 100, flags, acao: 0, rumo: 0, camada: 0,
                 }], &[]);
@@ -814,6 +815,7 @@ mod testes {
                     nivel: 1,
                     desafio: None,
             aparencia: 0,
+            poder: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -872,6 +874,7 @@ mod testes {
                 nivel: 1,
                 desafio: None,
             aparencia: 0,
+            poder: 0,
             }],
             vec![estado(1.0)],
             &[],
@@ -930,6 +933,7 @@ mod testes {
                     nivel: 1,
                     desafio: None,
             aparencia: 0,
+            poder: 0,
                 }],
                 vec![EntityState {
                     id,
@@ -996,6 +1000,7 @@ mod testes {
                 nivel: 0,
                 desafio: None,
             aparencia: 0,
+            poder: 0,
             }],
             vec![EntityState {
                 id,
@@ -1103,6 +1108,7 @@ mod testes {
                 nivel: 0,
                 desafio: None,
             aparencia: 0,
+            poder: 0,
             }],
             vec![estado(0.0)],
             &[],
@@ -1196,6 +1202,7 @@ mod testes {
                 nivel: 0,
                 desafio: None,
             aparencia: 0,
+            poder: 0,
             }],
             vec![EntityState {
                 id,

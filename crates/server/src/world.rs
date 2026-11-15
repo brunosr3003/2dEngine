@@ -2225,6 +2225,8 @@ pub struct Session {
     pub cla_tag: String,
     /// The tag last put on the nameplate; a change forces the meta again.
     cla_tag_visto: String,
+    /// Power last sent in this player's meta (re-sent when it changes).
+    poder_visto: i32,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
     pub faction: shared::Faction,
@@ -7830,6 +7832,7 @@ impl GameWorld {
                 cla_id: 0,
                 cla_tag: String::new(),
                 cla_tag_visto: String::new(),
+                poder_visto: 0,
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -13412,6 +13415,7 @@ impl GameWorld {
         let mut auras_de = HashMap::new();
         let mut pk_de = HashMap::new();
         let mut cla_de: HashMap<EntityId, String> = HashMap::new();
+        let mut poder_de: HashMap<EntityId, i32> = HashMap::new();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState {
                 hostil: shared::pk::hostil(s.pk_modo),
@@ -13423,6 +13427,12 @@ impl GameWorld {
             if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
             if !s.cla_tag.is_empty() {
                 cla_de.insert(s.entity_id, s.cla_tag.clone());
+            }
+            let poder = shared::dungeon::poder_de_stats(&s.stats);
+            poder_de.insert(s.entity_id, poder);
+            if poder != s.poder_visto {
+                s.poder_visto = poder;
+                alterados.push(s.entity_id);
             }
             if s.cla_tag != s.cla_tag_visto {
                 s.cla_tag_visto = s.cla_tag.clone();
@@ -13646,6 +13656,7 @@ impl GameWorld {
                             .get(&projtag.filter(|p| p.from_player).map_or(net.0, |p| p.owner))
                             .map_or(0, |a| a.1),
                         cla: if ptag.is_some() { cla_de.get(&net.0).cloned().unwrap_or_default() } else { String::new() },
+                        poder: if ptag.is_some() { poder_de.get(&net.0).copied().unwrap_or(0) } else { 0 },
                     };
                     let mut state = EntityState::quantize(
                         net.0,

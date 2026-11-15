@@ -159,6 +159,7 @@ mod tests {
             nivel: 1,
             desafio: None,
             aparencia: 0,
+            poder: 0,
         };
         let mut st = EntityState::quantize(
             EntityId(1),

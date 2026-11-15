@@ -8,6 +8,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
 - The level cap is now 100. Everything above 100 is the "100+" band, opened by your Power instead of your level.
+- Dungeon Power requirements now follow how strong real players are at each level: the first stage still lets in anyone of the level, the top stages ask for good gear.
 - No level requirement to craft any recipe or to travel between islands: what matters is your Power and your materials.
 - PvP is balanced by Power instead of level: a much stronger player cannot start a fight with one under half their Power (unless that player chose a PK mode or has a red name), and the weaker side loses damage against a far stronger one.
 - Chests of field bosses, Grutas and Porões give Darksteel again and better gear: green pieces at 50%, blue from level 38 content, purple (very rare) from level 64; a better chest gives a lot more Darksteel and materials.
