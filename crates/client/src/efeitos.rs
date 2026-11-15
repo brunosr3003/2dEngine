@@ -216,6 +216,13 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
         // do clan não está aparecendo do lado do nome"). `nome` stays bare:
         // the speech bubble below is keyed by the plain name.
         let rotulo = shared::social::com_tag(&e.meta.cla, nome);
+        // "R3 [TAG] Name": the rebirth count before the name
+        // (`shared::renascimento`, docs/RESET.md).
+        let rotulo = if e.meta.renascimentos > 0 {
+            format!("R{} {rotulo}", e.meta.renascimentos)
+        } else {
+            rotulo
+        };
         let txt = if e.meta.nivel > 0 {
             format!("Lv {} {rotulo}", shared::progressao::texto_de_nivel(e.meta.nivel as u32))
         } else {

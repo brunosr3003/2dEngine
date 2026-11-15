@@ -129,6 +129,7 @@ mod morte;
 mod mundo_ui;
 mod net;
 mod nivel_vfx;
+mod renascimento_vfx;
 mod onde_obter;
 mod parado;
 mod personagens;
@@ -495,6 +496,8 @@ struct Jogo {
     mundo: mundo_ui::Mundo,
     guarda_roupa: guarda_roupa_ui::GuardaRoupaUi,
     subiu_de_nivel: nivel_vfx::SubiuDeNivel,
+    /// The rebirth celebration (`renascimento_vfx`).
+    renasceu: renascimento_vfx::Renasceu,
     /// O banco (Banqueiro da vila).
     banco: banco_ui::Banco,
     /// Banco que chegou com um dialogo aberto: abre quando fechar.
@@ -1085,6 +1088,7 @@ async fn main() {
         mundo: mundo_ui::Mundo::default(),
         guarda_roupa: guarda_roupa_ui::GuardaRoupaUi::default(),
         subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
+        renasceu: renascimento_vfx::Renasceu::default(),
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
         viagem_pendente: None,
@@ -1526,6 +1530,7 @@ impl Jogo {
                 });
             }
             self.subiu_de_nivel.passo(get_frame_time());
+            self.renasceu.passo(get_frame_time());
             self.seguir_altura();
             // Nenhum painel abre por tecla (docs/HUD.md 2.5): so' os icones do
             // HUD e o Menu. O que a interface pega e' medido ANTES da entrada:
@@ -2331,6 +2336,19 @@ impl Jogo {
                     sons::tocar(sons::Som::Clique);
                 }
             }
+            ServerMessage::Renascimento { renascimentos, festa } => {
+                self.ficha_ui.renascimentos = renascimentos;
+                if festa {
+                    self.renasceu.dispara(renascimentos);
+                    // The level-up fanfare plus the chest opening; a milestone
+                    // adds the reward chime.
+                    crate::sons::tocar(crate::sons::Som::SubirNivel);
+                    crate::sons::tocar(crate::sons::Som::Bau);
+                    if shared::renascimento::e_marco(renascimentos) {
+                        crate::sons::tocar(crate::sons::Som::Recompensa);
+                    }
+                }
+            }
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
                 self.aviso_global.receber(texto);
@@ -2353,6 +2371,8 @@ impl Jogo {
                 }
                 match &aviso {
                     shared::loja::AvisoLoja::OfertasRelampago(v) => self.ofertas.receber(v.clone()),
+                    // Test server (simulated payments): offers work on any client.
+                    shared::loja::AvisoLoja::Estado(e) => self.ofertas.definir_simulado(e.ligada && e.simulado),
                     shared::loja::AvisoLoja::Resultado { ok, texto } => self.ofertas.resultado(*ok, texto),
                     _ => {}
                 }
@@ -6462,6 +6482,14 @@ impl Jogo {
                         self.subiu_de_nivel.desenha(vec3(eu.x, y, eu.y), &vista.cam);
                     }
                 }
+                // Reborn: the rebirth's bigger burst, by tier.
+                if self.renasceu.ativo() {
+                    if let Some(eu) = self.world.self_pos() {
+                        let y = t.altura(eu.x, eu.y);
+                        self.renasceu.desenha(vec3(eu.x, y, eu.y), vista.cam.position);
+                        gl_use_material(&self.solido);
+                    }
+                }
                 // Golpe de chefe carregando: onde vai bater, crescendo ate' o impacto.
                 {
                     let altura = |x: f32, z: f32| t.altura(x, z);
@@ -7714,6 +7742,7 @@ impl Jogo {
             self.envia(msg);
         }
         nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel_na_tela(self.ficha.nivel));
+        renascimento_vfx::desenha_faixa(&self.renasceu);
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
         }

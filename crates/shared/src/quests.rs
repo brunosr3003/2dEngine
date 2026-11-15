@@ -90,6 +90,15 @@ pub mod objective_kind {
     /// (`obj_target` = `tutorial::*`). O cliente avisa com
     /// `ClientMessage::Tutorial` quando o jogador faz o gesto.
     pub const TUTORIAL: u8 = 17;
+    /// TER N de `obj_target` (item_id) na bolsa, SEM consumir (15/11/2026).
+    ///
+    /// Existe pelos passos de recurso da chave de Porão: o dono pediu "se já
+    /// tiver os recursos pula pro craft". O COLLECT consome no turn-in, e
+    /// comeria justamente o material que o passo seguinte (o craft da chave)
+    /// precisa. Aqui `progress` = o que a bolsa tem agora (com teto), o
+    /// servidor confere a cada tick (`tick_historia`) — então fecha na hora
+    /// se o jogador já chega com tudo, e anda sozinho conforme a bolsa enche.
+    pub const TER: u8 = 18;
 }
 
 /// As acoes que os passos tutoriais ensinam (`obj_target` de TUTORIAL).

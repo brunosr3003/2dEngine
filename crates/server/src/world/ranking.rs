@@ -39,7 +39,7 @@ pub(crate) async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRankin
         .into_values()
         .filter(|c| !c.account_id.is_some_and(|a| staff.contains(&a)))
         .map(|c| {
-            let stats = effective_stats(&c.equipment, &c.allocated_points, &c.proficiencies, c.xp);
+            let stats = effective_stats_r(&c.equipment, &c.allocated_points, &c.proficiencies, c.xp, c.renascimentos);
             LinhaRanking {
                 posicao: 0,
                 nivel: shared::level_of_xp_with_mult(c.xp, mult),
@@ -48,6 +48,7 @@ pub(crate) async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRankin
                 aparencia: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota()).unwrap_or(0),
                 skins: c.guarda_roupa.as_ref().map(|g| g.aparencia.empacota_skins()).unwrap_or(0),
                 auras: shared::auras::equipamento(&c.equipment),
+                renascimentos: c.renascimentos,
                 nome: c.name,
             }
         })
@@ -118,7 +119,7 @@ mod testes {
     use super::*;
 
     fn l(nome: &str, nivel: u32, poder: i32, classe: u8) -> LinhaRanking {
-        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe, aparencia: 0, skins: 0, auras: 0 }
+        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe, aparencia: 0, skins: 0, auras: 0, renascimentos: 0 }
     }
 
     #[test]

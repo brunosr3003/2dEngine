@@ -1677,6 +1677,19 @@ pub(crate) fn icone_do_item_com(r: Rect, id: u16, a: f32, palco: Option<(&VoxCac
         draw_circle(c.x, c.y, raio * 0.33, Color::new(0.75, 0.42, 1.0, a));
         return;
     }
+    // REBIRTH ESSENCE (`shared::renascimento`): a drop of light, gold rim
+    // round a white-hot core — drawn, like the Magic Coin, not in the atlas.
+    if id == shared::item_id::ESSENCIA_RENASCIMENTO {
+        let c = r.center() + vec2(0.0, r.h * 0.06);
+        let raio = r.w.min(r.h) * 0.27;
+        let ponta = vec2(c.x, c.y - raio * 2.1);
+        draw_circle(c.x, c.y, raio * 1.35, Color::new(1.0, 0.78, 0.30, 0.18 * a));
+        draw_triangle(ponta, vec2(c.x - raio * 0.93, c.y - raio * 0.35), vec2(c.x + raio * 0.93, c.y - raio * 0.35), Color::new(0.98, 0.70, 0.22, a));
+        draw_circle(c.x, c.y, raio, Color::new(0.98, 0.70, 0.22, a));
+        draw_circle(c.x, c.y + raio * 0.08, raio * 0.66, Color::new(1.0, 0.90, 0.55, a));
+        draw_circle(c.x - raio * 0.18, c.y - raio * 0.12, raio * 0.28, Color::new(1.0, 1.0, 0.95, a));
+        return;
+    }
     if icone_de_bicho(r, id, palco) {
         return;
     }

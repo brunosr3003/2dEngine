@@ -613,4 +613,5 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Midnight Wolf", "Lobo da Meia-Noite"),
     ("Training Guardian", "Guardião de Treino"),
     ("Valley of Winds", "Vale dos Ventos"),
+    ("Rebirth Essence", "Essência do Renascimento"),
 ];

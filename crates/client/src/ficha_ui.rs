@@ -32,6 +32,10 @@ pub struct FichaUi {
     proficiencias: Option<[u64; shared::PROF_COUNT]>,
     aba_proficiencias: bool,
     prof_selecionada: Option<usize>,
+    /// This character's rebirths (`ServerMessage::Renascimento`).
+    pub renascimentos: u32,
+    /// The rebirth confirmation window is open.
+    confirmar_renascer: bool,
 }
 
 impl FichaUi {
@@ -42,6 +46,7 @@ impl FichaUi {
     pub fn fechar(&mut self) {
         self.aberta = false;
         self.confirmar_reset = false;
+        self.confirmar_renascer = false;
         self.prof_selecionada = None;
     }
 
@@ -130,6 +135,77 @@ impl FichaUi {
         stats: Option<&PlayerStats>,
         arma_equipada: Option<u16>,
     ) -> Option<ClientMessage> {
+        // The rebirth window sits over the sheet and takes every tap.
+        let modal = self.confirmar_renascer;
+        let pedido = self.desenha_ficha(nome, nivel, xp, mult_xp, stats, arma_equipada, !modal);
+        if modal {
+            return self.desenha_confirmacao_renascer();
+        }
+        pedido
+    }
+
+    /// "Rebirth N?": what resets, what stays, what it gives (docs/RESET.md).
+    fn desenha_confirmacao_renascer(&mut self) -> Option<ClientMessage> {
+        use shared::renascimento as rn;
+        let f = estilo::fator_texto();
+        let seguro = crate::hud_layout::tela_segura();
+        let (w, h) = ((680.0 * f).min(seguro.w - 24.0), (360.0 * f).min(seguro.h - 24.0));
+        let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        crate::hud_layout::escurece(0.5);
+        estilo::painel(r);
+        let n = self.renascimentos + 1;
+        let x = r.x + 24.0 * f;
+        let larg = w - 48.0 * f;
+        estilo::texto_forte(x, r.y + 40.0 * f, &format!("Rebirth {n}?"), 22, estilo::OURO);
+        let mut linhas: Vec<(String, Color)> = vec![
+            ("Resets: back to level 1, and your attribute points (their Energy is refunded).".into(), estilo::VERMELHO),
+            ("Keeps: items and gear, gold, TP, pets, mounts, proficiencies, story, skill tiers.".into(), estilo::TEXTO),
+            (format!("Gains: +5% to every attribute for good (+{}% in total).", rn::bonus_em_pct(n)), estilo::VERDE),
+            (format!("Plus {} Rebirth Essence and the rebirth chest: Darksteel, a crafting key, materials.", rn::essencia_do_renascimento(n)), estilo::VERDE),
+            (format!("Leveling gets slower after each rebirth: XP ÷{:.2}.", rn::divisor_de_renascimento(n)), estilo::SUAVE),
+        ];
+        if let Some(m) = rn::marco_de(n) {
+            linhas.push((format!("This rebirth: {}", shared::idioma::tr(m)), estilo::OURO));
+        }
+        let prox = rn::proximo_marco(n);
+        if let Some(m) = rn::marco_de(prox) {
+            linhas.push((format!("Next milestone: Rebirth {prox} · {}", shared::idioma::tr(m)), estilo::SUAVE));
+        }
+        for (i, (t, cor)) in linhas.iter().enumerate() {
+            estilo::texto_ajustado(t, x, r.y + (82.0 + i as f32 * 30.0) * f, larg, 14, *cor);
+        }
+        let bw = (w - 60.0 * f) * 0.5;
+        let bh = 46.0 * f;
+        let by = r.y + r.h - 22.0 * f - bh;
+        let cancelar = Rect::new(x, by, bw, bh);
+        let renascer = Rect::new(cancelar.x + bw + 12.0 * f, by, bw, bh);
+        estilo::botao(cancelar, "Cancel", estilo::estado_de(cancelar, false, false), false);
+        estilo::botao(renascer, "Be reborn", estilo::estado_de(renascer, false, false), true);
+        if !crate::foco::clique() {
+            return None;
+        }
+        let m = Vec2::from(mouse_position());
+        if renascer.toca(m) {
+            self.confirmar_renascer = false;
+            return Some(ClientMessage::Renascer);
+        }
+        if cancelar.toca(m) || !r.toca(m) {
+            self.confirmar_renascer = false;
+        }
+        None
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn desenha_ficha(
+        &mut self,
+        nome: &str,
+        nivel: u32,
+        xp: u64,
+        mult_xp: u64,
+        stats: Option<&PlayerStats>,
+        arma_equipada: Option<u16>,
+        ativo: bool,
+    ) -> Option<ClientMessage> {
         let f = estilo::fator_texto();
         // O nivel na tela (escala exibida, 15/11/2026): pelo XP; sem XP
         // ainda, o interno convertido.
@@ -151,7 +227,7 @@ impl FichaUi {
         crate::hud_layout::escurece(0.55);
         estilo::painel(p);
         let mouse = Vec2::from(mouse_position());
-        let clique = crate::foco::clique();
+        let clique = crate::foco::clique() && ativo;
 
         estilo::texto_forte(
             p.x + 20.0 * f,
@@ -175,13 +251,33 @@ impl FichaUi {
             19,
             estilo::TEXTO,
         );
+        let r = self.renascimentos;
         estilo::texto(
             p.x + 22.0 * f,
             p.y + 97.0 * f,
-            &format!("Level {}", nivel_tela),
+            &if r > 0 {
+                format!(
+                    "Level {} · Rebirth {} · attributes +{}%",
+                    nivel_tela,
+                    r,
+                    shared::renascimento::bonus_em_pct(r)
+                )
+            } else {
+                format!("Level {}", nivel_tela)
+            },
             15,
-            estilo::SUAVE,
+            if r > 0 { crate::renascimento_vfx::cor_de(r) } else { estilo::SUAVE },
         );
+        // REBIRTH at the cap (`shared::renascimento::pode_renascer`, on the
+        // internal level): opens the confirmation.
+        if shared::renascimento::pode_renascer(nivel) {
+            let b = Rect::new(p.x + p.w - 232.0 * f, p.y + 82.0 * f, 210.0 * f, 26.0 * f);
+            estilo::botao(b, "REBIRTH", estilo::estado_de(b, false, false), true);
+            if clique && b.toca(mouse) {
+                self.confirmar_renascer = true;
+                return None;
+            }
+        }
         let poder = stats.map(crate::bolsa::poder);
         estilo::texto_forte(
             p.x + 545.0 * f,

@@ -173,8 +173,24 @@ pub(super) fn entregar_premio(
         });
         return true;
     }
-    if add_to_inventory(&mut s.inventory, item, qtd, inst) {
+    // All or nothing: `add_to_inventory` can fill part of a stack and still
+    // return false, and the caller then mails the WHOLE amount — the player
+    // got paid twice (found by the rebirth tests, 15/11/2026). Try on a copy
+    // and keep it only if everything fit.
+    if bolsa_tudo_ou_nada(s, item, qtd, inst) {
         s.inventory_dirty = true;
+        true
+    } else {
+        false
+    }
+}
+
+/// Adds `qtd` of `item` to the bag only if ALL of it fits; else the bag is
+/// untouched (the caller mails it).
+pub(super) fn bolsa_tudo_ou_nada(s: &mut Session, item: u16, qtd: u32, inst: Option<shared::ItemInstance>) -> bool {
+    let mut tentativa = s.inventory.clone();
+    if add_to_inventory(&mut tentativa, item, qtd, inst) {
+        s.inventory = tentativa;
         true
     } else {
         false
@@ -1564,6 +1580,10 @@ impl GameWorld {
             self.dg_devolver(sid);
             return;
         };
+        let (conteudo_saida, venceu) = (
+            self.instancias[idx].conteudo,
+            matches!(self.instancias[idx].estado, EstadoDg::Concluida { .. }),
+        );
         if matches!(self.instancias[idx].estado, EstadoDg::Concluida { .. }) {
             self.dg_dar_bau(idx, sid);
             // Saindo por ultimo: o saque do chao vem junto (ninguem mais pega).
@@ -1587,6 +1607,10 @@ impl GameWorld {
         }
         self.dg_devolver(sid);
         self.dg_texto(sid, true, "You left the dungeon.");
+        if !venceu {
+            // Bonus packs: leaving the first Porão without the win.
+            self.oferta_ao_falhar_porao(sid, conteudo_saida);
+        }
     }
 
     /// Quanto tempo se pode ficar na Arena sem estar numa dungeon.
@@ -2006,6 +2030,8 @@ impl GameWorld {
                 .map(|m| m.sid)
                 .collect();
             for sid in presentes {
+                // Bonus packs: out of time in the first Porão.
+                self.oferta_ao_falhar_porao(sid, conteudo);
                 self.dg_avisar(
                     sid,
                     Aviso::Resultado {
@@ -2081,7 +2107,7 @@ impl GameWorld {
         let mut no_correio = 0u32;
         if let Some(s) = self.sessions.get_mut(&sid) {
             let mut entregar = |s: &mut Session, item: u16, inst: Option<shared::ItemInstance>, tipo: u8| {
-                if add_to_inventory(&mut s.inventory, item, 1, inst) {
+                if bolsa_tudo_ou_nada(s, item, 1, inst) {
                     s.inventory_dirty = true;
                 } else {
                     s.dungeon.postar(item, 1, inst, tipo, quando);

@@ -36,7 +36,7 @@ pub async fn abrir(vox: &VoxCache) {
             nivel: 10,
             desafio: None,
             aparencia: 0,
-            poder: 0,
+            poder: 0, renascimentos: 0,
         });
         estados.push(shared::EntityState::quantize(
             shared::EntityId(id),

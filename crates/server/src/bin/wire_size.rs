@@ -19,7 +19,7 @@ fn meta(i: u32) -> EntityMeta {
         nivel: 1,
                 desafio: None,
             aparencia: 0,
-            poder: 0,
+            poder: 0, renascimentos: 0,
             }
 }
 

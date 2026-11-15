@@ -14,7 +14,41 @@ viagem (Geleira), PvP por poder (`pk::pvp_mult_poder`,
 (`dungeon::fator_real`, 1,0 até o nível 20 subindo a 1,6 no 40), o
 simulador de PvP do Panopticon usa o gap por poder (`Regras::por_poder`), e o
 poder de cada jogador vai no `EntityMeta.poder` pra o cliente aplicar a mesma
-proteção. Etapas B e C: não começadas.
+proteção.
+
+**Renascimento, fase 1 — feito (15/11/2026, versão de teste):** regras e
+números em `shared::renascimento` (`pode_renascer`, `divisor_de_renascimento`
+/ `xp_depois_do_divisor` = 1,5^r em `Session::grant_xp` depois do ritmo e antes
+dos bônus, `mult_de_atributos` = 1 + 0,05·r, `essencia_do_renascimento` =
+10·n, `bau_do_renascimento`, `e_marco` / `marcos_ate` / `marco_de` /
+`proximo_marco`, `tier_da_aura` / `intensidade_da_aura`). Coluna
+`characters.renascimentos` (`Session::renascimentos`). Ação
+`ClientMessage::Renascer` → `world/renascimento.rs` `handle_renascer`: só no
+`NIVEL_MAX`, fora de dungeon/tutorial/instância/Arena e não caído; zera XP,
+pontos (a Energia gasta neles volta), SP e as mortes recuperáveis; mantém o
+resto; manda `ProgressUpdate`, `StatPointsUpdate`, `StatsUpdate`,
+`ServerMessage::Renascimento { festa }` e marca `nivel_mudou`. O +5% entra em
+`world::effective_stats_r` (vida, mana, ataque, defesa, destreza e sabedoria
+máximas, no fim da conta; porcentagens, regen, stamina e firmeza não), e
+`effective_stats` = `effective_stats_r(.., 0)`; sessão, ranking
+(`ranking::monta`, `server --poder`) e `pvp_sim::do_personagem` passam o
+número. Prêmios: Essência (item 477 `ESSENCIA_RENASCIMENTO`, vinculada) e o
+baú (Darksteel = topo do baú do nível 60 +50% por renascimento, 1 chave na
+cor — 2 no marco —, 20+5n materiais na cor; cor 2 verde 1–2, 3 azul 3–4, 4
+roxo 5–9, 5 lendária 10+ (material para no roxo)); o que não cabe vai pro
+Correio (motivo 5). Marcos: r2 +1 expansão da bolsa e r7 +1 do banco (+10
+espaços cada, a unidade de `armazem`; se já no máximo, 2× a Essência do
+renascimento), aviso global nos marcos (1, 3, 5, 7, 10 e de 5 em 5 a partir
+do 15) pela tabela `avisos_globais` (chega em todos os canais). Na tela:
+`EntityMeta.renascimentos` ("R3 Nome" na placa), `LinhaRanking.renascimentos`
+(ranking de nível ordena por renascimentos e depois nível), aura de corpo
+inteiro e festa do renascimento em `client/renascimento_vfx.rs` (escala com
+o tier e mais forte nos marcos), botão e confirmação na ficha
+(`ficha_ui`). Ficaram pras próximas fases: árvore de caminhos, loja da
+Essência, ascensão de equipamento, slots 4–6, títulos, cor de nome e skins
+dos marcos (o número de renascimentos basta pra conceder retroativo via
+`marcos_ate`). O divisor e o +5% estão sem calibrar. Etapas B e C (árvore e
+ativas): não começadas.
 
 ## A ideia
 

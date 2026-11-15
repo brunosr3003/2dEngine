@@ -739,6 +739,13 @@ pub enum PedidoLoja {
         pedido: String,
         purchase_token: String,
     },
+    /// Buy an open flash offer on a server with SIMULATED payments (test
+    /// server): approved at once, nobody is charged. Refused anywhere a real
+    /// provider is configured.
+    ComprarOfertaSimulada {
+        oferta: String,
+        pedido: String,
+    },
 }
 
 /// Mail ("Entregas") origin of anything bought with real money: it waits
@@ -771,6 +778,19 @@ pub struct OfertaRelampago {
     pub segundos: u32,
     /// Opened by THIS check: the client pops it on screen.
     pub nova: bool,
+    /// BONUS PACKS (`pacotes_bonus`): gold added to the character.
+    #[serde(default)]
+    pub ouro: u64,
+    /// Gear built for this player when the pack opened (blue, at his
+    /// level): exactly what the purchase delivers.
+    #[serde(default)]
+    pub pecas: Vec<(u16, crate::items::ItemInstance)>,
+    /// (power now, power with the pack's gear on), the sheet's maths.
+    #[serde(default)]
+    pub poder: Option<(i32, i32)>,
+    /// `pacotes_bonus::Gatilho::chave` of a triggered pack, "" otherwise.
+    #[serde(default)]
+    pub gatilho: String,
 }
 
 /// Prêmio já decidido pelo servidor, usado na revelação animada do cliente.

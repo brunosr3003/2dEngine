@@ -727,4 +727,16 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("New level scale! You were level {antes} and are now level {agora}, the new cap. Grove 1-30, Glacier 30-50, Waste 50-70, Plateau 70-100, and beyond that 100+ by Power. Your strength and progress did not change.", "Nova escala de níveis! Você era nível {antes} e agora é nível {agora}, o novo teto. Bosque 1-30, Geleira 30-50, Ermo 50-70, Planalto 70-100 e, depois disso, 100+ por Poder. Sua força e seu progresso não mudaram."),
     ("First win! Your bag was full: the rewards that did not fit went to the Mail.", "Primeira vitória! Sua bolsa estava cheia: as recompensas que não couberam foram para o Correio."),
     ("First win! The rewards are in your bag.", "Primeira vitória! As recompensas estão na sua bolsa."),
+    // ─────────────────────────── rebirth (15/11/2026) ───────────────────────────
+    ("You can only be reborn at level {}.", "Você só pode renascer no nível {}."),
+    ("You cannot be reborn while downed.", "Você não pode renascer caído."),
+    ("You cannot be reborn here.", "Você não pode renascer aqui."),
+    ("Already at the maximum size: {} extra Rebirth Essence instead.", "Já está no tamanho máximo: {} de Essência do Renascimento a mais no lugar."),
+    ("+10 bank slots: your bank now has {} slots.", "+10 espaços no banco: seu banco agora tem {} espaços."),
+    ("+10 bag slots: your bag now has {} slots.", "+10 espaços na bolsa: sua bolsa agora tem {} espaços."),
+    ("Rebirth {}! Back to level 1, with +{}% to every attribute for good.", "Renascimento {}! De volta ao nível 1, com +{}% em todos os atributos para sempre."),
+    ("Rebirth chest: {} Darksteel, {} crafting keys, {} crafting materials and {} Rebirth Essence.", "Baú do renascimento: {} de Darksteel, {} chaves de craft, {} materiais de craft e {} de Essência do Renascimento."),
+    ("Your attribute points were reset: {} Energy refunded.", "Seus pontos de atributo foram zerados: {} de Energia devolvida."),
+    ("Your bag was full: part of the rebirth chest went to the Mail.", "Sua bolsa estava cheia: parte do baú do renascimento foi para o Correio."),
+    ("{} reached Rebirth {}!", "{} chegou ao Renascimento {}!"),
 ];

@@ -111,12 +111,14 @@ mod evolucao_skills;
 pub(crate) mod forte;
 mod espiral;
 mod loja_mundo;
+mod ofertas_mundo;
 mod mercado_mundo;
 mod oficina;
 mod pets;
 mod presenca;
 mod prime;
 pub(crate) mod ranking;
+mod renascimento;
 mod social;
 mod troca;
 use habilidades::HabilidadePendente;
@@ -1202,6 +1204,86 @@ pub(crate) fn densidade_da_ilha(zona: &str) -> (f32, u32) {
     }
 }
 
+/// THE BOSQUE'S SAFE WOOD (15/11/2026).
+///
+/// The owner: "Corrigir aqueles lugares que travam porque tem que pegar
+/// madeira no começo e os mobs não deixam na quest." The first wood steps
+/// (704 "Firewood for the forge", 834 and 920, the cellar keys) come at
+/// levels 2-14, and every flat site of the Bosque outside the city ring gets
+/// a horde or a filler group (`caminhos_do_bosque_tem_mobs_fora_das_hordas`)
+/// — so every tree the auto quest picked stood inside a pack, and a level-2
+/// player died at the trunk.
+///
+/// THE RULE: on the first island, the `LENHA_ARVORES` trees of the grove
+/// closest to the town — the tree nearest the city edge and its nearest
+/// neighbours, reachable from town — keep NO mob slot within
+/// `LENHA_SEM_MOB_UN` (`zonas_comuns_da_ilha` drops those sites, so neither
+/// hordes nor filler groups spawn there), and the auto quest sends every
+/// tree-felling objective there first (`destino_da_missao`, GATHER of trees
+/// and TER of wood). 18 u is twice the 9 u detection range. It was 10 trees
+/// at 30 u for a day: that emptied the start of the Bosque enough to break
+/// `populacao_do_inicio_do_bosque`, `metas_do_inicio` and `o_forte_e_densidade_e_nao_nivel` (15/11/2026); 8 at
+/// 18 u keeps them and still gives the wood steps mob-free trunks.
+///
+/// Only the Bosque: the other islands are reached at level 20+, where a few
+/// wolves around a tree are the game, not a wall.
+pub(crate) const LENHA_ARVORES: usize = 8;
+pub(crate) const LENHA_SEM_MOB_UN: f32 = 18.0;
+
+/// The trees of `LENHA_ARVORES` (empty off the first island). `chega` says
+/// whether a point is reachable from town (`TerraAcessivel`).
+fn lenha_segura_com(
+    ilha: &shared::terreno::Ilha,
+    def: &shared::terreno::DefIlha,
+    chega: &dyn Fn(Vec2) -> bool,
+) -> Vec<shared::terreno::Estorvo> {
+    if def.zona != shared::terreno::ARQUIPELAGO[0].zona {
+        return Vec::new();
+    }
+    let Some(cidade) = ilha.cidade() else {
+        return Vec::new();
+    };
+    let troncos: Vec<shared::terreno::Estorvo> = ilha
+        .todos_os_estorvos()
+        .iter()
+        .copied()
+        .filter(|e| matches!(e.tipo, shared::terreno::TipoDeEstorvo::Tronco))
+        .filter(|e| cidade.distancia(e.centro) > shared::terreno::Cidade::RAIO)
+        .filter(|e| !ilha.agua(e.centro.x, e.centro.y) && chega(e.centro))
+        .collect();
+    let c = cidade.centro();
+    let Some(primeira) = troncos
+        .iter()
+        .map(|e| e.centro)
+        .min_by(|a, b| a.distance_squared(c).total_cmp(&b.distance_squared(c)))
+    else {
+        return Vec::new();
+    };
+    let mut bosque = troncos;
+    bosque.sort_by(|a, b| {
+        a.centro
+            .distance_squared(primeira)
+            .total_cmp(&b.centro.distance_squared(primeira))
+    });
+    bosque.truncate(LENHA_ARVORES);
+    bosque
+}
+
+/// The same, with its own reachability map (the tests and the runtime cache).
+pub(crate) fn lenha_segura(
+    ilha: &shared::terreno::Ilha,
+    def: &shared::terreno::DefIlha,
+) -> Vec<shared::terreno::Estorvo> {
+    if def.zona != shared::terreno::ARQUIPELAGO[0].zona {
+        return Vec::new();
+    }
+    let Some(c) = ilha.cidade() else {
+        return Vec::new();
+    };
+    let terra = TerraAcessivel::nova(ilha, def.raio_blocos, c.centro());
+    lenha_segura_com(ilha, def, &|p| terra.contem(p))
+}
+
 pub(crate) fn zonas_comuns_da_ilha(
     ilha: &shared::terreno::Ilha,
     def: &shared::terreno::DefIlha,
@@ -1263,6 +1345,9 @@ pub(crate) fn zonas_comuns_da_ilha(
         sitios.retain(|s| !p.contem(*s, MOB_LONGE_DA_CIDADE_UN));
     }
     sitios.retain(|s| !perto_de_posto(*s, &postos));
+    // The Bosque's safe wood (`LENHA_SEM_MOB_UN`): no slot near its grove.
+    let lenha = lenha_segura_com(ilha, def, &|p| terra.as_ref().is_none_or(|t| t.contem(p)));
+    sitios.retain(|s| lenha.iter().all(|t| t.centro.distance(*s) > LENHA_SEM_MOB_UN));
     if let Some(p) = ilha.planalto() { sitios.retain(|s| !p.sem_spawn(*s)); }
     // Abyssia's bubble is the kingdom: nothing hunts in it.
     if shared::abissal::e_abissal(def.zona) {
@@ -2276,6 +2361,10 @@ pub struct Session {
     cla_tag_visto: String,
     /// Power last sent in this player's meta (re-sent when it changes).
     poder_visto: i32,
+    /// Rebirths (`shared::renascimento`, `characters.renascimentos`).
+    pub renascimentos: u32,
+    /// The rebirth count last sent in this player's meta.
+    renascimentos_visto: u32,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
     pub faction: shared::Faction,
@@ -2458,6 +2547,10 @@ impl Session {
         // accessories keep their share.
         let nivel = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
         let amount = shared::progressao::no_ritmo(amount, nivel);
+        // REBIRTH: each one makes the next climb heavier (1.5^r,
+        // `shared::renascimento::divisor_de_renascimento`), also before the
+        // bonuses.
+        let amount = shared::renascimento::xp_depois_do_divisor(amount, self.renascimentos);
         // Pocao de Experiencia: o bonus vale pra TODO XP de personagem, e e'
         // aqui que todo XP passa.
         let amount = shared::xp_com_bonus(amount, (now_ms() / 1000) as i64, self.xp_bonus_ate);
@@ -2504,12 +2597,7 @@ impl Session {
             return;
         }
         self.proficiencies_dirty = true;
-        self.stats = effective_stats(
-            &self.equipment,
-            &self.allocated_points,
-            &self.proficiencies,
-            self.xp,
-        );
+        self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
         self.stats_dirty = true;
         let _ = self.handle.to_client.send(ServerMessage::Chat {
             from: "System".to_string(),
@@ -2576,12 +2664,7 @@ impl Session {
             }
         }
         if subiu.is_some() {
-            self.stats = effective_stats(
-                &self.equipment,
-                &self.allocated_points,
-                &self.proficiencies,
-                self.xp,
-            );
+            self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
             self.stats_dirty = true;
         }
         subiu
@@ -2601,12 +2684,7 @@ impl Session {
         inst.pet = Some(d);
         self.equipment
             .set(shared::EquipSlot::Pet, Some(pet), Some(inst));
-        self.stats = effective_stats(
-            &self.equipment,
-            &self.allocated_points,
-            &self.proficiencies,
-            self.xp,
-        );
+        self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
         self.stats_dirty = true;
     }
 
@@ -5142,12 +5220,7 @@ impl GameWorld {
                 session
                     .equipment
                     .set(slot, Some(ltag.item_id), ltag.instance);
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.stats_dirty = true;
                 let hp = session.entity.map(|pe| (pe, session.stats.hp_max));
                 return Some(hp);
@@ -5212,7 +5285,7 @@ impl GameWorld {
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
         s.stats_dirty = true;
         self.save_pending = true;
         // O passo do tutorial fecha AQUI, e nao no toque do "+": so' aqui se
@@ -5247,7 +5320,7 @@ impl GameWorld {
         s.unspent_points = s.unspent_points.saturating_add(total);
         s.allocated_points = [0u32; shared::STAT_COUNT];
         s.stat_points_dirty = true;
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
         s.stats_dirty = true;
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
@@ -6502,7 +6575,7 @@ impl GameWorld {
             saved_sp_earned = saved_sp_earned.max(nivel_salvo.saturating_sub(1).saturating_mul(shared::SP_PER_LEVEL));
         }
         // Stats efetivos considerando equipamento salvo + pontos + profs.
-        let stats = effective_stats(&saved_equip, &saved_alloc, &saved_profs, saved_xp);
+        let stats = effective_stats_r(&saved_equip, &saved_alloc, &saved_profs, saved_xp, row.renascimentos);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max {
@@ -6644,6 +6717,8 @@ impl GameWorld {
             s.player_id = pid;
             s.account_id = Some(success.account_id);
             s.stats = stats;
+            // Before anything below recomputes the stats (`reembolsa_spd`).
+            s.renascimentos = row.renascimentos;
             s.equipment = saved_equip;
             s.xp = saved_xp;
             s.gold = saved_gold;
@@ -6717,6 +6792,10 @@ impl GameWorld {
             s.magica_volta = row.magica_volta.clone();
             s.magica_gratis = row.magica_gratis;
             s.diario = shared::prime::Diario::de_json(&row.diario_json);
+            let _ = s.handle.to_client.send(ServerMessage::Renascimento {
+                renascimentos: s.renascimentos,
+                festa: false,
+            });
             Self::envia_pocoes_xp_do_dia(s, true);
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
@@ -7926,6 +8005,8 @@ impl GameWorld {
                 cla_tag: String::new(),
                 cla_tag_visto: String::new(),
                 poder_visto: 0,
+                renascimentos: 0,
+                renascimentos_visto: 0,
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -8465,6 +8546,7 @@ impl GameWorld {
             }
             ClientMessage::DefinirModoPk { modo } => self.definir_modo_pk(id, modo),
             ClientMessage::PerdoarPk => self.perdoar_pk(id),
+            ClientMessage::Renascer => self.handle_renascer(id),
             ClientMessage::TogglePkMode { on } => {
                 // Older on/off switch: on = Free (what "Hostile" always was).
                 self.definir_modo_pk(id, if on { shared::pk::LIVRE } else { shared::pk::PACIFICO });
@@ -8627,12 +8709,7 @@ impl GameWorld {
             shared::protocol::AdminAction::SpawnTestBoss { .. } => unreachable!(),
             shared::protocol::AdminAction::SetXp { xp } => {
                 session.xp = xp;
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.poise_current = session.stats.poise_max as f32;
             }
             shared::protocol::AdminAction::SetGold { gold } => {
@@ -8685,12 +8762,7 @@ impl GameWorld {
                 session.skill_points_spent = 0;
                 session.allocated_points = [0; shared::STAT_COUNT];
                 session.last_level = lvl;
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.poise_current = session.stats.poise_max as f32;
                 session.stat_points_dirty = true;
                 session.skills_dirty = true;
@@ -12648,7 +12720,7 @@ impl GameWorld {
                         attacker.proficiencies[idx] = attacker.proficiencies[idx].saturating_add(1);
                         attacker.proficiencies_dirty = true;
                         if shared::proficiency_level(attacker.proficiencies[idx]) != anterior {
-                            attacker.stats = effective_stats(&attacker.equipment, &attacker.allocated_points, &attacker.proficiencies, attacker.xp);
+                            attacker.stats = effective_stats_r(&attacker.equipment, &attacker.allocated_points, &attacker.proficiencies, attacker.xp, attacker.renascimentos);
                             attacker.stats_dirty = true;
                         }
                     }
@@ -12950,7 +13022,7 @@ impl GameWorld {
                                     session.proficiencies[idx].saturating_add(10);
                                 session.proficiencies_dirty = true;
                                 if shared::proficiency_level(session.proficiencies[idx]) != anterior {
-                                    session.stats = effective_stats(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp);
+                                    session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                                     session.stats_dirty = true;
                                 }
                             }
@@ -13035,6 +13107,7 @@ impl GameWorld {
             .collect();
         let mut mortes_na_dungeon: Vec<(u32, String)> = Vec::new();
         let mut mortes_pk = Vec::new();
+        let mut caidos_oferta: Vec<EntityId> = Vec::new();
         for (entity, eid) in hp_zero {
             for session in self.sessions.values_mut() {
                 if session.entity_id == eid && !session.downed {
@@ -13048,6 +13121,7 @@ impl GameWorld {
                         }));
                     }
                     session.downed = true;
+                    caidos_oferta.push(eid);
                     session.downed_heal_timer = shared::DOWNED_HEAL_TIME;
                     session.downed_hp = shared::DOWNED_HP_MAX;
                     session.perder_proficiencias_na_morte();
@@ -13071,6 +13145,10 @@ impl GameWorld {
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
+        }
+        // Bonus packs (`world/ofertas_mundo.rs`): a death may pop one.
+        for eid in caidos_oferta {
+            self.oferta_ao_cair(eid);
         }
         // Transfere fame + aura por kill de player ANTES do despawn.
         // Fame: +20 + 50% da vitima; vitima perde 30%.
@@ -13527,6 +13605,7 @@ impl GameWorld {
         let mut pk_de = HashMap::new();
         let mut cla_de: HashMap<EntityId, String> = HashMap::new();
         let mut poder_de: HashMap<EntityId, i32> = HashMap::new();
+        let mut renascimentos_de: HashMap<EntityId, u8> = HashMap::new();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState {
                 hostil: shared::pk::hostil(s.pk_modo),
@@ -13547,6 +13626,13 @@ impl GameWorld {
             }
             if s.cla_tag != s.cla_tag_visto {
                 s.cla_tag_visto = s.cla_tag.clone();
+                alterados.push(s.entity_id);
+            }
+            if s.renascimentos > 0 {
+                renascimentos_de.insert(s.entity_id, s.renascimentos.min(255) as u8);
+            }
+            if s.renascimentos != s.renascimentos_visto {
+                s.renascimentos_visto = s.renascimentos;
                 alterados.push(s.entity_id);
             }
             let auras = shared::auras::equipamento(&s.equipment);
@@ -13768,6 +13854,7 @@ impl GameWorld {
                             .map_or(0, |a| a.1),
                         cla: if ptag.is_some() { cla_de.get(&net.0).cloned().unwrap_or_default() } else { String::new() },
                         poder: if ptag.is_some() { poder_de.get(&net.0).copied().unwrap_or(0) } else { 0 },
+                        renascimentos: if ptag.is_some() { renascimentos_de.get(&net.0).copied().unwrap_or(0) } else { 0 },
                     };
                     let mut state = EntityState::quantize(
                         net.0,
@@ -14195,6 +14282,7 @@ impl GameWorld {
             bolsa_extra: u8,
             banco_extra: u8,
             diario_json: String,
+            renascimentos: u32,
             skill_progress: shared::skills::ProgressoDeSkills,
             colonia: shared::colonia::DadosColonia,
             guarda_roupa: shared::aparencia::GuardaRoupa,
@@ -14263,6 +14351,7 @@ impl GameWorld {
                 bolsa_extra: session.bolsa_extra,
                 banco_extra: session.banco_extra,
                 diario_json: session.diario.para_json(),
+                renascimentos: session.renascimentos,
                 skill_progress: session.skill_progress.clone(),
                 colonia: session.colonia.clone(),
                 guarda_roupa: session.guarda_roupa.clone(),
@@ -14325,6 +14414,7 @@ impl GameWorld {
                 bolsa_extra: e.bolsa_extra,
                 banco_extra: e.banco_extra,
                 diario_json: e.diario_json,
+                renascimentos: e.renascimentos,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -14472,12 +14562,7 @@ impl GameWorld {
                 let new_inst = if ia.qty > 0 { ia.instance } else { None };
                 set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -14510,12 +14595,7 @@ impl GameWorld {
                 let new_inst = if ib.qty > 0 { ib.instance } else { None };
                 set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -14916,6 +14996,15 @@ impl GameWorld {
                         objective_kind::NIVEL => {
                             let nivel = shared::level_of_xp_with_mult(s.xp, xpmult);
                             mudou.extend(crate::quests::checar_trava(&mut s.quests, nivel));
+                        }
+                        // TER (the key's resources): STATE, like the level
+                        // gate — the bag is read every tick, so the step
+                        // closes at once when it opens with the bag full and
+                        // follows the bag while it fills. Nothing is consumed.
+                        objective_kind::TER => {
+                            let inv = &s.inventory;
+                            let tem = |item: u16| crate::craft::tem(inv, item);
+                            mudou.extend(crate::quests::checar_posse(&mut s.quests, &tem));
                         }
                         objective_kind::VIAGEM => {
                             let chegou = shared::terreno::ARQUIPELAGO
@@ -15491,7 +15580,7 @@ impl GameWorld {
                     }
                     // Refino muda o bonus da peca vestida; destruir tira ela.
                     s.stats =
-                        effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+                        effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
                     s.stats_dirty = true;
                 }
             }
@@ -16705,11 +16794,43 @@ impl GameWorld {
                     shared::quests::alvo_de_coleta::ARVORE => Some((true, false)),
                     _ => None,
                 };
+                // Felling trees on the Bosque: the safe grove first
+                // (`LENHA_SEM_MOB_UN`), not whichever trunk stands in a pack.
+                if fontes == Some((true, false)) {
+                    if let Some(p) = self.lenha_segura_livre(eu) {
+                        return Some((destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None));
+                    }
+                }
                 self.spot_de_coleta_longe(eu, &|t| match fontes {
                     Some((tronco, pedra)) => tier_de_fonte(t, tronco, pedra),
                     None => t != TIER_DA_ENERGIA,
                 })
                 .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
+            }
+            // TER (have N of a key material in the bag): go GATHER it. Wood
+            // comes from trees (the Bosque's safe grove first); steel of
+            // colour c from stones of tier c or above (a stone of tier t
+            // yields every colour up to t, `RENDIMENTO_DA_PEDRA`), any stone
+            // if the island has none of those.
+            objective_kind::TER => {
+                use shared::item_id::{na_cor, STEEL, WOOD_T1, WOOD_T4};
+                let madeira = (WOOD_T1..=WOOD_T4).contains(&def.obj_target);
+                let cor = (1..=4u8).find(|c| na_cor(STEEL, *c) == def.obj_target);
+                if madeira {
+                    if let Some(p) = self.lenha_segura_livre(eu) {
+                        return Some((destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None));
+                    }
+                }
+                let aceita = |t: u8| match (madeira, cor) {
+                    (true, _) => t == 0,
+                    (false, Some(c)) => (c..=4).contains(&t),
+                    (false, None) => t != TIER_DA_ENERGIA,
+                };
+                self.spot_de_coleta_longe(eu, &aceita)
+                    .or_else(|| {
+                        cor.and_then(|_| self.spot_de_coleta_longe(eu, &|t| (1..=4).contains(&t)))
+                    })
+                    .map(|(p, _)| (destino_tipo::COLETA, p, shared::COLETA_RAIO_SPOT, None))
             }
             // Criar e refinar nao se faz andando: o cliente abre o painel.
             objective_kind::CRAFT => Some((destino_tipo::PAINEL_CRAFT, eu, 0.0, None)),
@@ -16813,6 +16934,35 @@ impl GameWorld {
     /// alcance tem orcamento de rota curta, entao um veio a meio quilometro
     /// seria recusado mesmo existindo — era o "nao sei onde fica o objetivo".
     /// Quem confere o alcance e' a auto coleta, ao chegar.
+    /// The nearest standing tree of the Bosque's safe grove (`lenha_segura`),
+    /// where the wood objectives go first. `None` off the first island, or
+    /// while every grove tree is felled (then the normal search runs).
+    fn lenha_segura_livre(&self, eu: Vec2) -> Option<Vec2> {
+        use std::sync::{Mutex, OnceLock};
+        static CACHE: OnceLock<Mutex<HashMap<String, Vec<shared::terreno::Estorvo>>>> =
+            OnceLock::new();
+        let ilha = self.ilha.as_ref()?;
+        let def = shared::terreno::def_da_zona(&self.zona)?;
+        if def.zona != shared::terreno::ARQUIPELAGO[0].zona {
+            return None;
+        }
+        let bosque = {
+            let mut c = CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock().ok()?;
+            c.entry(self.zona.clone())
+                .or_insert_with(|| lenha_segura(ilha, def))
+                .clone()
+        };
+        let livre = bosque
+            .iter()
+            .filter(|e| !self.esgotado(e.coluna))
+            .min_by(|a, b| {
+                a.centro
+                    .distance_squared(eu)
+                    .total_cmp(&b.centro.distance_squared(eu))
+            })?;
+        Some(ilha.ponto_livre_perto(livre.centro, ENTITY_RADIUS))
+    }
+
     fn spot_de_coleta_longe(&self, eu: Vec2, aceita: &dyn Fn(u8) -> bool) -> Option<(Vec2, usize)> {
         use shared::terreno::TipoDeEstorvo;
         if let Some((_, onde, _, _)) = self.no_de_coleta_em(eu, eu, 200.0, &[], aceita) {
@@ -18437,12 +18587,7 @@ impl GameWorld {
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
                     session.equipment.set(es, Some(item_id), None);
-                    session.stats = effective_stats(
-                        &session.equipment,
-                        &session.allocated_points,
-                        &session.proficiencies,
-                        session.xp,
-                    );
+                    session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -19021,7 +19166,7 @@ impl GameWorld {
         let nova = shared::pets::rolar_afinidade(fastrand::f32(), fastrand::f32());
         inst.afinidade = Some(nova);
         s.equipment.set(alvo, Some(id), Some(inst));
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
         s.stats_dirty = true;
         s.inventory[slot_idx].qty = s.inventory[slot_idx].qty.saturating_sub(1);
         if s.inventory[slot_idx].qty == 0 {
@@ -19113,7 +19258,7 @@ impl GameWorld {
             s.inventory[item_slot] = shared::InventorySlot::default();
         }
         s.inventory_dirty = true;
-        s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
         s.stats_dirty = true;
         self.save_pending = true;
         self.send_chat_to(
@@ -19228,7 +19373,7 @@ impl GameWorld {
             });
             item.pet = Some(d);
             s.equipment.set(principal, Some(pet), Some(item));
-            s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+            s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
             s.stats_dirty = true;
         }
         self.save_pending = true;
@@ -19419,12 +19564,7 @@ impl GameWorld {
                     },
                     None => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats(
-                    &session.equipment,
-                    &session.allocated_points,
-                    &session.proficiencies,
-                    session.xp,
-                );
+                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (
@@ -20481,6 +20621,7 @@ impl GameWorld {
             bolsa_extra: session.bolsa_extra,
             banco_extra: session.banco_extra,
             diario_json: session.diario.para_json(),
+            renascimentos: session.renascimentos,
         };
         self.salvo_aqui_em
             .insert(session.name.clone(), self.sim_time_s);
@@ -20792,11 +20933,30 @@ mod testes_da_copia_fresca {
     }
 }
 
+/// `effective_stats_r` with no rebirths: the synthetic characters of the
+/// balance suites, the simulators and the tests.
 pub(crate) fn effective_stats(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; shared::PROF_COUNT],
     char_xp: u64,
+) -> shared::PlayerStats {
+    effective_stats_r(equip, allocated, proficiencies, char_xp, 0)
+}
+
+/// A live character's stats, with its `renascimentos` (docs/RESET.md): the
+/// REBIRTH BONUS (`shared::renascimento::mult_de_atributos`, +5% a rebirth,
+/// no cap) multiplies the six attribute-derived numbers at the very end —
+/// max HP, max MP, attack, defense, dexterity and wisdom — after gear,
+/// points, proficiency, weapon rules and armour weight. Percentages (crit,
+/// speeds, damage reduction), regen, stamina and poise stay as they are: a
+/// multiplier on a percentage would compound with every other source.
+pub(crate) fn effective_stats_r(
+    equip: &shared::Equipment,
+    allocated: &[u32; shared::STAT_COUNT],
+    proficiencies: &[u64; shared::PROF_COUNT],
+    char_xp: u64,
+    renascimentos: u32,
 ) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
     let acessorio = shared::acessorios::bonus(equip);
@@ -21028,6 +21188,17 @@ pub(crate) fn effective_stats(
     s.damage_reduction_pct += reducao;
 
     // Passiva nao existe mais: skill que nao aparece na tela nao e' skill.
+
+    if renascimentos > 0 {
+        let k = shared::renascimento::mult_de_atributos(renascimentos);
+        let m = |v: i32| (v as f32 * k).round() as i32;
+        s.hp_max = m(s.hp_max);
+        s.mp_max = m(s.mp_max);
+        s.attack_damage = m(s.attack_damage);
+        s.defense = m(s.defense);
+        s.dex = m(s.dex);
+        s.wis = m(s.wis);
+    }
 
     // Garantir minimos / clamps
     s.hp_max = s.hp_max.max(1);
@@ -22337,6 +22508,43 @@ mod testes_da_ilha_magica_lotada {
         assert!(total >= inicio.len() * 25, "início esvaziado: {total} mobs em {} áreas", inicio.len());
     }
 
+    /// THE BOSQUE'S SAFE WOOD: a level-2 player can finish the wood steps
+    /// (704, 834, 920). The grove next to town has its trees, none of them
+    /// with a mob slot within `LENHA_SEM_MOB_UN`, and it holds the tree
+    /// closest to town — the one a player leaving the square walks to.
+    #[test]
+    fn a_lenha_do_bosque_fica_longe_dos_mobs() {
+        let def = &shared::terreno::ARQUIPELAGO[0];
+        let ilha = shared::terreno::Ilha::da_ilha(def);
+        let cidade = ilha.cidade().unwrap();
+        let origem = cidade.centro();
+        let lenha = lenha_segura(&ilha, def);
+        assert_eq!(lenha.len(), LENHA_ARVORES, "the Bosque grove is short of trees");
+        let zonas = zonas_comuns_da_ilha(&ilha, def, origem);
+        let slots: Vec<Vec2> = zonas.zonas.iter().flat_map(|z| z.slots.iter().copied()).collect();
+        for t in &lenha {
+            let mob = slots.iter().map(|s| s.distance(t.centro)).fold(f32::MAX, f32::min);
+            println!("tree at {:.0} u from town: nearest mob slot {mob:.0} u", t.centro.distance(origem));
+            assert!(mob > LENHA_SEM_MOB_UN, "a mob slot {mob:.0} u from a safe tree");
+            assert!(t.centro.distance(origem) < 160.0, "the safe wood is far from town");
+        }
+        let mais_perto = ilha
+            .todos_os_estorvos()
+            .iter()
+            .filter(|e| matches!(e.tipo, shared::terreno::TipoDeEstorvo::Tronco))
+            .filter(|e| cidade.distancia(e.centro) > shared::terreno::Cidade::RAIO)
+            .min_by(|a, b| a.centro.distance_squared(origem).total_cmp(&b.centro.distance_squared(origem)))
+            .unwrap();
+        assert!(
+            lenha.iter().any(|t| t.coluna == mais_perto.coluna),
+            "the tree closest to town is not in the safe grove"
+        );
+        // Every other island: no grove, the mob layout is untouched.
+        for d in shared::terreno::ARQUIPELAGO.iter().skip(1).take(2) {
+            assert!(lenha_segura(&shared::terreno::Ilha::da_ilha(d), d).is_empty(), "{}", d.zona);
+        }
+    }
+
     #[test]
     fn caminhos_do_bosque_tem_mobs_fora_das_hordas() {
         let def = &shared::terreno::ARQUIPELAGO[0];
@@ -22344,6 +22552,7 @@ mod testes_da_ilha_magica_lotada {
         let origem = ilha.cidade().unwrap().centro();
         let zonas = zonas_comuns_da_ilha(&ilha, def, origem);
         let terra = TerraAcessivel::nova(&ilha, def.raio_blocos, origem);
+        let lenha = lenha_segura(&ilha, def);
         let postos: Vec<_> = ilha.vila().npcs.iter().filter(|n| n.giver.is_some()).map(|n| n.pos).collect();
         let mut verificados = 0;
         for z in (-def.raio_blocos..def.raio_blocos).step_by(12) {
@@ -22352,7 +22561,9 @@ mod testes_da_ilha_magica_lotada {
                 if !ilha.sitio_plano(x + def.raio_blocos, z + def.raio_blocos, 6)
                     || !terra.contem(p) || perto_de_posto(p, &postos)
                     || ilha.cidade().is_some_and(|c| c.distancia(p) <= shared::terreno::Cidade::RAIO + MOB_LONGE_DA_CIDADE_UN)
-                    || ilha.porto().is_some_and(|c| c.contem(p, MOB_LONGE_DA_CIDADE_UN)) { continue; }
+                    || ilha.porto().is_some_and(|c| c.contem(p, MOB_LONGE_DA_CIDADE_UN))
+                    // The safe wood is mob-free on purpose (`LENHA_SEM_MOB_UN`).
+                    || lenha.iter().any(|t| t.centro.distance(p) <= LENHA_SEM_MOB_UN) { continue; }
                 verificados += 1;
                 assert!(zonas.zonas.iter().flat_map(|z| &z.slots).any(|s| s.distance(p) <= 36.01), "trecho vazio em {p:?}");
             }
@@ -23389,7 +23600,7 @@ fn reembolsa_spd(s: &mut Session) {
     let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
         progresso: s.skill_progress.clone(),
     });
-    s.stats = effective_stats(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp);
+    s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
     tracing::info!("{}: SPD retired, refunded {n} points and {energia} Energy", s.name);
 }
 

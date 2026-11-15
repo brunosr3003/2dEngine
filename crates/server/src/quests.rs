@@ -412,6 +412,39 @@ pub fn cumprir_passo(active: &mut [CharQuest], id: u16) -> Mudancas {
     mudou
 }
 
+/// Posse (`objective_kind::TER`): o progresso e' o que a bolsa TEM agora, com
+/// teto; chegou ao pedido, fica pronta. NADA e' consumido — nem aqui nem na
+/// entrega (`checar_entrega` so' consome COLLECT/DELIVER).
+///
+/// E' estado, nao evento, igual `checar_trava`: o servidor chama a cada tick
+/// (`tick_historia`), entao o passo fecha NA HORA quando abre com a bolsa ja'
+/// cheia, e acompanha a bolsa subindo e descendo enquanto nao fecha.
+/// `tem(item)` conta a bolsa (`craft::tem`).
+pub fn checar_posse(active: &mut [CharQuest], tem: &dyn Fn(u16) -> u32) -> Mudancas {
+    let mut mudou = Vec::new();
+    for c in active.iter_mut() {
+        if c.status != quests::quest_status::ACTIVE {
+            continue;
+        }
+        let Some(def) = quests::quest_by_id(c.quest_id) else {
+            continue;
+        };
+        if def.obj_kind != quests::objective_kind::TER {
+            continue;
+        }
+        let p = tem(def.obj_target).min(def.obj_count);
+        if p == c.progress && p < def.obj_count {
+            continue;
+        }
+        c.progress = p;
+        if p >= def.obj_count {
+            c.status = quests::quest_status::READY;
+        }
+        mudou.push((c.quest_id, c.progress, c.status));
+    }
+    mudou
+}
+
 /// Um evento que as missoes "live-track" contam (coletar, criar, refinar...):
 /// avanca `qtd` em toda ATIVA do tipo `kind` cujo alvo `conta` aceitar.
 pub fn avancar_evento(
@@ -1332,6 +1365,40 @@ mod testes_historia {
             checar_trava(&mut q, alvo + 3),
             vec![(id, alvo, quest_status::READY)]
         );
+    }
+
+    /// TER ("have N in the bag"): closes AT ONCE when the bag already holds
+    /// the amount, follows the bag while it does not, and consumes nothing —
+    /// the key craft right after needs that material.
+    #[test]
+    fn posse_fecha_na_hora_e_nao_consome() {
+        let [_, madeira, _, _] = historia::CHAVES_DA_HISTORIA[1];
+        let d = quest_by_id(madeira).unwrap();
+        assert_eq!(d.obj_kind, objective_kind::TER);
+        let ativa = || vec![CharQuest {
+            quest_id: madeira,
+            status: quest_status::ACTIVE,
+            progress: 0,
+            cooldown_until: 0,
+        }];
+        // Already carrying more than asked: READY on the first check.
+        let mut q = ativa();
+        let bolsa = |item: u16| if item == d.obj_target { d.obj_count + 40 } else { 0 };
+        assert_eq!(
+            checar_posse(&mut q, &bolsa),
+            vec![(madeira, d.obj_count, quest_status::READY)]
+        );
+        // Short: progress is the bag, and it is re-sent only on change.
+        let mut q = ativa();
+        let pouco = |_: u16| 10;
+        assert_eq!(checar_posse(&mut q, &pouco), vec![(madeira, 10, quest_status::ACTIVE)]);
+        assert!(checar_posse(&mut q, &pouco).is_empty(), "re-sent without a change");
+        let menos = |_: u16| 4;
+        assert_eq!(checar_posse(&mut q, &menos), vec![(madeira, 4, quest_status::ACTIVE)]);
+        // Never consumed: the turn-in takes nothing from the bag.
+        let pronta = CharQuest { quest_id: madeira, status: quest_status::READY, progress: d.obj_count, cooldown_until: 0 };
+        assert_eq!(checar_entrega(d, &pronta, d.obj_count), Ok(0));
+        assert!(!matches!(d.obj_kind, objective_kind::COLLECT | objective_kind::DELIVER));
     }
 
     /// Indices do epilogo seguem sem fim e com id estavel; o marcador e o

@@ -89,9 +89,9 @@ async fn main() -> Result<()> {
         economy::load_server_config(&pool).await?;
         let mut linhas = world::ranking::monta(&pool).await?;
         linhas.sort_by(|a, b| b.poder.cmp(&a.poder));
-        println!("nome\tnivel\tpoder\tclasse");
+        println!("nome\tnivel\tpoder\tclasse\trenascimentos");
         for l in linhas {
-            println!("{}\t{}\t{}\t{}", l.nome, l.nivel, l.poder, l.classe);
+            println!("{}\t{}\t{}\t{}\t{}", l.nome, l.nivel, l.poder, l.classe, l.renascimentos);
         }
         return Ok(());
     }

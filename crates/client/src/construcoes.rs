@@ -968,7 +968,7 @@ mod tests {
             nivel: 1,
             desafio: None,
             aparencia: 0,
-            poder: 0,
+            poder: 0, renascimentos: 0,
         };
         let estado =
             EntityState::quantize(EntityId(7), ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 1, 0);

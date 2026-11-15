@@ -770,6 +770,10 @@ pub mod item_id {
     /// Never sits in a bag: listing takes it from the seller's Energy, and a
     /// delivery of it goes back into the Energy of whoever receives it.
     pub const ENERGIA_MIL: u16 = 476;
+    /// REBIRTH ESSENCE (`shared::renascimento`): every rebirth pays some
+    /// (`essencia_do_renascimento`). Bound, stackable, bag-only; the currency
+    /// of the Essence shop of a later phase (docs/RESET.md).
+    pub const ESSENCIA_RENASCIMENTO: u16 = 477;
     pub const ACESSORIO_PET_INICIO: u16 = 520;
     pub const ACESSORIO_MONTARIA_INICIO: u16 = 528;
 

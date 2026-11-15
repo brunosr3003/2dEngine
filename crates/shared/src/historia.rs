@@ -363,6 +363,50 @@ const fn criar(id: u16, title: &'static str, desc: &'static str, gold: u32, xp: 
     }
 }
 
+/// Ter `n` de `item` na bolsa (`objective_kind::TER`) — o passo de RECURSO de
+/// uma chave de Porão. Nao consome: quem ja' chega com o material passa na
+/// hora, e o craft seguinte e' que gasta.
+///
+/// A recompensa DEVOLVE o mesmo `n` de `item`, sempre (o construtor forca):
+/// e' o padrao dos passos 834-836, em que a historia paga a receita da chave
+/// da historia. O jogador prova que junta o material, o craft come o que ele
+/// juntou, e ele sai do passo com o mesmo tanto que tinha — nenhum outro gasto
+/// no meio (refino, venda) vira parede antes do craft.
+#[allow(clippy::too_many_arguments)]
+const fn ter(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    item: u16,
+    n: u16,
+    gold: u32,
+    xp: u64,
+) -> QuestDef {
+    QuestDef {
+        obj_kind: objective_kind::TER,
+        obj_target: item,
+        obj_count: n as u32,
+        reward_item: item,
+        reward_item_qty: n,
+        ..base(id, title, desc, gold, xp)
+    }
+}
+
+/// Criar a chave `chave` no Craft: o passo que fecha a preparacao de um Porão.
+const fn criar_chave(
+    id: u16,
+    title: &'static str,
+    desc: &'static str,
+    chave: u16,
+    gold: u32,
+    xp: u64,
+) -> QuestDef {
+    QuestDef {
+        obj_target: chave,
+        ..criar(id, title, desc, gold, xp)
+    }
+}
+
 const fn refinar(
     id: u16,
     title: &'static str,
@@ -476,6 +520,46 @@ pub const PASSOS_DA_CHAVE_DO_PORAO: std::ops::RangeInclusive<u16> = 834..=836;
 /// The last of them: crafting the key.
 pub const PASSO_DA_CHAVE_DO_PORAO: u16 = 836;
 
+/// EVERY STORY PORÃO IS PRECEDED BY ITS KEY (15/11/2026).
+///
+/// The owner: "Na quest de fazer missão tem que ter antes uma quest de pegar
+/// os recursos pra fazer a chave, igual na de upar o lvl: se já tiver os
+/// recursos pula pro craft, mas tem que ter a parte da coleta e craft antes
+/// da parte de ir pra dungeon." Until then only the first Porão (710) had its
+/// key steps; 717, 890, 875, 953 and 986 sent the player to a locked door.
+///
+/// Each row: `[dungeon step, wood step, steel step, craft step]`. The wood
+/// and steel steps are `objective_kind::TER` ("have N in the bag", never
+/// consumed), so whoever already holds the recipe goes straight to the craft.
+/// The ids 920-934 are a free block (like 855-859 and 890-899): inserting by
+/// POSITION keeps every saved step id where it was (`id_do_passo`).
+///
+/// Tests: `todo_porao_da_historia_vem_depois_da_chave` (order, recipe, key)
+/// and `a_tabela_de_chaves_cobre_todo_porao_da_historia` (nothing left out).
+pub const CHAVES_DA_HISTORIA: &[[u16; 4]] = &[
+    [710, 834, 835, PASSO_DA_CHAVE_DO_PORAO],
+    [717, 920, 921, 922],
+    [890, 923, 924, 925],
+    [875, 926, 927, 928],
+    [953, 929, 930, 931],
+    [986, 932, 933, 934],
+];
+
+/// `id` e' um passo de preparo de chave (recurso ou craft)?
+pub fn e_passo_de_chave(id: u16) -> bool {
+    CHAVES_DA_HISTORIA.iter().any(|l| l[1..].contains(&id))
+}
+
+/// The keys and recipes, written out because a `const` table cannot call
+/// `porao::chave_de` / `porao::receita_de`. The test
+/// `todo_porao_da_historia_vem_depois_da_chave` pins every number to the
+/// real recipe: if the recipe changes, the test names the step to fix.
+const CHAVE_DA_ADEGA: u16 = crate::porao::CHAVE_BASE + 2;
+const CHAVE_DO_COFRE: u16 = crate::porao::CHAVE_BASE + 5;
+const CHAVE_DO_RELICARIO: u16 = crate::porao::CHAVE_BASE + 6;
+const CHAVE_DA_FUNDICAO: u16 = crate::porao::CHAVE_BASE + 7;
+const CHAVE_DO_GALEAO: u16 = crate::porao::CHAVE_BASE + 19;
+
 /// Os passos escritos, em ordem. Ids seguidos a partir de `PRIMEIRO_ID`.
 pub const PASSOS: &[QuestDef] = &[
     // ═════════════ I · O Farol do Bosque (Bosque, 1–15) ═════════════
@@ -529,12 +613,14 @@ pub const PASSOS: &[QuestDef] = &[
     // `os_passos_da_chave_pagam_a_receita` measures it against the real
     // recipe. Ids 834-836 (`PASSOS_DA_CHAVE_DO_PORAO`), inserted without
     // renumbering.
-    coletar_com(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Fell 6 trees — the woodcutters make up whatever wood you're missing.", alvo_de_coleta::ARVORE, 6, 80, 2_000, item_id::WOOD_T1, 78, 0, 0),
-    coletar_com(835, "Steel for the cellar key", "Now the metal: break 6 stones in any vein — Steel comes out of the stone. The miners make up whatever the key still asks for.", alvo_de_coleta::PEDRA, 6, 80, 2_000, CINZA, 42, 0, 0),
-    QuestDef {
-        obj_target: CHAVE_DO_NAUFRAGIO,
-        ..criar(PASSO_DA_CHAVE_DO_PORAO, "The Shipwreck Cellar Key", "You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", 100, 3_000)
-    },
+    //
+    // 15/11/2026: 834 and 835 became `ter` ("have N in the bag") instead of
+    // "fell 6 trees" / "break 6 stones" — whoever already holds the recipe
+    // goes straight to the craft (`CHAVES_DA_HISTORIA`). They still pay the
+    // recipe back, so the armour craft eating the materials is no wall.
+    ter(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Have 78 Wood T1 in your bag: fell the trees at the edge of town, where no beast roams. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T1, 78, 80, 2_000),
+    ter(835, "Steel for the cellar key", "Now the metal: have 42 grey Steel in your bag. Break stones in any vein — Steel comes out of the stone. If you already carry it, the step passes at once. The step pays it back when it closes.", CINZA, 42, 80, 2_000),
+    criar_chave(PASSO_DA_CHAVE_DO_PORAO, "The Shipwreck Cellar Key", "You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", CHAVE_DO_NAUFRAGIO, 100, 3_000),
     dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
     refinar(711, "Fire in the forge", "A weak piece won't survive the storm. Try refining a piece at the Forge.", 1, 150, 20_000),
     cacar(712, "Morgan's gunmen", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
@@ -542,6 +628,10 @@ pub const PASSOS: &[QuestDef] = &[
     falar(714, "The Harbour Captain", "The Captain knows why the lighthouses go dark. Talk to him at the port.", Papel::Estaleiro, 200, 57_500, item_id::GREATER_HEAL, 3),
     cacar(715, "Claws on the road to the quay", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
     ir(716, "The quay at dawn", "Go to the end of the quay: the Captain promised to show the island route.", ponto::CAIS, 200, 120_000),
+    // The Smuggler's Cellar key (`CHAVES_DA_HISTORIA`).
+    ter(920, "Wood for the smuggler's key", "The Smuggler's Cellar opens only with its own key, made in Craft from wood and green Steel. Have 113 Wood T1 in your bag: fell trees on the Grove. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T1, 113, 200, 3_000),
+    ter(921, "Steel for the smuggler's key", "Now the metal: have 67 green Steel in your bag. Green comes out of green stones and better ones. If you already carry it, the step passes at once. The step pays it back when it closes.", VERDE, 67, 200, 3_000),
+    criar_chave(922, "The Smuggler's Cellar Key", "Open Menu › Craft and create the Smuggler's Cellar Key. The door under the quay keeps it: one key, one run.", CHAVE_DA_ADEGA, 250, 4_000),
     dungeon(717, "The smuggler's cellar", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 500, 97_500, item_id::GREATER_HEAL, 5),
     // A escritura E' o passo de ABRIR o painel.
     //
@@ -621,6 +711,10 @@ pub const PASSOS: &[QuestDef] = &[
     ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
     dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
     // The 50-60 half (02/10/2026): its own id block (890-899), like 855-859.
+    // The Thunder Vault key first (`CHAVES_DA_HISTORIA`).
+    ter(923, "Wood for the vault key", "The Thunder Vault is a locked door, like every Porão. Its key asks for 402 Wood T3: fell trees along the first stretch of the Plateau's road. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T3, 402, 1_000, 30_000),
+    ter(924, "Steel for the vault key", "Now the metal: have 311 blue Steel in your bag. Blue comes out of blue and purple stones. If you already carry it, the step passes at once. The step pays it back when it closes.", AZUL, 311, 1_000, 30_000),
+    criar_chave(925, "The Thunder Vault Key", "Open Menu › Craft and create the Thunder Vault Key. The vault keeps it: one key, one run.", CHAVE_DO_COFRE, 1_200, 40_000),
     dungeon(890, "The sealed vault", "Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", 5, 3_000, 300_000, item_id::GREATER_HEAL, 8),
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
@@ -642,6 +736,9 @@ pub const PASSOS: &[QuestDef] = &[
     ir(872, "The first cloud path", "Walk the cloud path to Lantern Isle. Don't look down.", crate::celeste::PONTO_BASE + 1, 4_000, 150_000),
     cacar(873, "Wolves with wings", "Seraph wolves hunt along the cloud paths. Defeat 20 wolves.", alvo_de_mob(mob_kind::LOBO), 20, 4_500, 180_000, item_id::GREATER_HEAL),
     nivel(874, "Reach level 100+", 63),
+    ter(926, "Wood for the reliquary key", "The seraphs sealed the Reliquary with a lock of their own. Its key asks for 583 Wood T4: the trees of Skyreach give it. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T4, 583, 2_000, 60_000),
+    ter(927, "Steel for the reliquary key", "Now the metal: have 548 blue Steel in your bag. Blue comes out of blue and purple stones. If you already carry it, the step passes at once. The step pays it back when it closes.", AZUL, 548, 2_000, 60_000),
+    criar_chave(928, "The Seraph Reliquary Key", "Open Menu › Craft and create the Seraph Reliquary Key. The temple keeps it: one key, one run.", CHAVE_DO_RELICARIO, 2_500, 80_000),
     dungeon(875, "The Seraph Reliquary", "The seraphs locked their relics under a temple. Clear the Seraph Reliquary from the Dungeons panel.", 6, 6_000, 700_000, item_id::GREATER_HEAL, 10),
     ir(876, "The cloud road", "Follow the cloud road to the Storm Gardens, where lightning feeds the flowers.", crate::celeste::PONTO_BASE + 8, 5_000, 220_000),
     cacar(877, "Wings of the storm", "Seraph archers guard the gardens and shoot whoever walks the clouds. Defeat 20 archers.", alvo_de_mob(mob_kind::ARQUEIRO), 20, 5_000, 240_000, item_id::GREATER_HEAL),
@@ -661,6 +758,9 @@ pub const PASSOS: &[QuestDef] = &[
     falar(950, "The city that never sleeps", "Neon, rain and machines. Kōgen-tō's Quest Master waits in the Docks square.", Papel::Missoes, 12_000, 900_000, item_id::GREATER_HEAL, 10),
     ir(951, "The scramble", "Walk north into Shibuya, to the crossing where every street meets.", crate::kogen::PONTO_BASE + 1, 12_000, 950_000),
     cacar(952, "Hounds of steel", "Mech Hounds patrol the streets in packs. Defeat 25 hounds.", alvo_de_mob(mob_kind::LOBO), 25, 13_000, 1_100_000, item_id::GREATER_HEAL),
+    ter(929, "Wood for the foundry key", "The Foundry's portal opens with a key, like every Porão. It asks for 734 Wood T4: fell trees in Kōgen-tō's parks. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T4, 734, 6_000, 200_000),
+    ter(930, "Steel for the foundry key", "Now the metal: have 893 blue Steel in your bag. Blue comes out of blue and purple stones. If you already carry it, the step passes at once. The step pays it back when it closes.", AZUL, 893, 6_000, 200_000),
+    criar_chave(931, "The Robot Foundry Key", "Open Menu › Craft and create the Robot Foundry Key. The portal keeps it: one key, one run.", CHAVE_DA_FUNDICAO, 7_000, 250_000),
     dungeon(953, "The Robot Foundry", "The machines are built under Shibuya. Take the Foundry's portal by the station and shut the line down.", 7, 18_000, 2_200_000, item_id::GREATER_HEAL, 15),
     nivel(954, "Reach level 100+", 85),
     cacar_com(955, "Titan Mk-I", "A construction titan has gone feral in a Shibuya plaza. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(63), 1, 20_000, 2_600_000, item_id::GREATER_HEAL, 10, 0, 0),
@@ -692,6 +792,9 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(983, "Reef predators", "Defeat 25 Reef Sharks in the Kelp Forest.", alvo_de_mob(70), 25, 28_000, 3_600_000, item_id::GREATER_HEAL),
     nivel(984, "Reach level 100+", 105),
     cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, 0, 0),
+    ter(932, "Wood for the galleon key", "The wreck's portal is a locked door. Its key asks for 862 Wood T4: fell trees in Abyssia. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T4, 862, 12_000, 400_000),
+    ter(933, "Steel for the galleon key", "Now the metal: have 1049 blue Steel in your bag. Blue comes out of blue and purple stones. If you already carry it, the step passes at once. The step pays it back when it closes.", AZUL, 1049, 12_000, 400_000),
+    criar_chave(934, "The Sunken Galleon Key", "Open Menu › Craft and create the Sunken Galleon Key. The wreck keeps it: one key, one run.", CHAVE_DO_GALEAO, 14_000, 500_000),
     dungeon(986, "The Sunken Galleon", "Enter the wreck's portal and clear the Sunken Galleon.", 19, 38_000, 4_500_000, item_id::GREATER_HEAL, 15),
     ir(987, "The shipwreck graveyard", "Follow the path to the Shipwreck Graveyard.", crate::abissal::PONTO_BASE + 2, 30_000, 3_800_000),
     cacar(988, "The drowned crew", "Defeat 30 Triton Guards among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
@@ -1235,6 +1338,10 @@ mod testes {
                 assert_eq!(zona_do_passo(d.id), Some(crate::abissal::ZONA));
             } else if PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id) {
                 assert_eq!(zona_do_passo(d.id), Some("ilha_inicial"));
+            } else if e_passo_de_chave(d.id) {
+                // A key step lives on the island of the Porão it opens.
+                let porao = CHAVES_DA_HISTORIA.iter().find(|l| l[1..].contains(&d.id)).unwrap()[0];
+                assert_eq!(zona_do_passo(d.id), zona_do_passo(porao), "{}", d.id);
             } else {
                 // Os de sempre seguem 700, 701, 702... com tutorial no meio.
                 assert_eq!(d.id, escrito, "passo fora de ordem");
@@ -1276,9 +1383,18 @@ mod testes {
             // 28 since 02/10/2026: chapter IV spans twenty levels (40-60), and
             // the owner asked for its 50-60 half to have content of its own —
             // the Thunder Vault, the Tempest Spire and three field bosses.
+            //
+            // 15/11/2026: the KEY steps of the later Porões
+            // (`CHAVES_DA_HISTORIA`, three per Porão) count apart, like the
+            // tutorials: they are the preparation the owner asked for before
+            // every door, not more story. The first Porão's (834-836) keep
+            // counting, as they did when the caps were set.
+            let preparo = |d: &&QuestDef| e_passo_de_chave(d.id) && !PASSOS_DA_CHAVE_DO_PORAO.contains(&d.id);
+            let n = n - passos_do_capitulo(c).iter().filter(preparo).count();
             let so_historia = passos_do_capitulo(c)
                 .iter()
                 .filter(|d| d.obj_kind != objective_kind::TUTORIAL)
+                .filter(|d| !preparo(d))
                 .count();
             assert!(
                 (12..=35).contains(&n),
@@ -1629,6 +1745,67 @@ mod testes {
         for (item, qtd) in [(r.madeira, r.madeira_qtd), (r.material, r.material_qtd)] {
             let tem = ganho.get(&item).copied().unwrap_or(0);
             assert!(tem >= qtd, "the story pays {tem} of {item}, the Cellar key asks {qtd}");
+        }
+    }
+
+    /// EVERY story Porão: resource steps for its key recipe, then the craft of
+    /// THAT key, then the door — in that order, nothing in between. The owner
+    /// (15/11/2026): "tem que ter a parte da coleta e craft antes da parte de
+    /// ir pra dungeon".
+    #[test]
+    fn todo_porao_da_historia_vem_depois_da_chave() {
+        let chaves = crate::receitas::receitas_de_chave_de_porao();
+        for &[dg, madeira, aco, craft] in CHAVES_DA_HISTORIA {
+            let i = |id: u16| indice(id).unwrap_or_else(|| panic!("{id} is not a story step"));
+            assert_eq!(
+                (i(madeira) + 1, i(aco) + 1, i(craft) + 1),
+                (i(aco), i(craft), i(dg)),
+                "{dg}: the key steps must be wood, steel, craft, then the door"
+            );
+            let d = def_da_historia(dg).unwrap();
+            assert_eq!(d.obj_kind, objective_kind::DUNGEON, "{dg}");
+            let porao = crate::dungeon::conteudo(d.obj_target).unwrap();
+            let chave = crate::porao::chave_de(porao).expect("a story key step for a door-less dungeon");
+            let r = crate::porao::receita_de(porao).unwrap();
+            let k = def_da_historia(craft).unwrap();
+            assert_eq!((k.obj_kind, k.obj_target), (objective_kind::CRAFT, chave), "{craft} crafts the wrong key for {}", porao.nome);
+            for (id, item, qtd) in [(madeira, r.madeira, r.madeira_qtd), (aco, r.material, r.material_qtd)] {
+                let p = def_da_historia(id).unwrap();
+                assert_eq!(p.obj_kind, objective_kind::TER, "{id} must not consume the key material");
+                assert_eq!(
+                    (p.obj_target, p.obj_count),
+                    (item, qtd),
+                    "{id} ({}) asks for something else than the {} key recipe",
+                    p.title,
+                    porao.nome
+                );
+                // Pays it back (the 834-836 rule) and says the number.
+                assert_eq!((p.reward_item, p.reward_item_qty as u32), (item, qtd), "{id}");
+                assert!(p.desc.contains(&qtd.to_string()), "{id}: the text does not say {qtd}");
+            }
+            let receita = chaves.iter().find(|x| x.output_item_id == chave).expect("key recipe");
+            assert!(receita.nivel_min as u32 <= porao.nivel_min, "{}: key recipe above the door", porao.nome);
+        }
+    }
+
+    /// No story step sends the player to a LOCKED door without the table.
+    #[test]
+    fn a_tabela_de_chaves_cobre_todo_porao_da_historia() {
+        for d in PASSOS.iter().filter(|d| d.obj_kind == objective_kind::DUNGEON) {
+            let porao = crate::dungeon::conteudo(d.obj_target).unwrap();
+            if crate::porao::chave_de(porao).is_some() {
+                assert!(
+                    CHAVES_DA_HISTORIA.iter().any(|l| l[0] == d.id),
+                    "{} ({}) is a locked Porão with no key steps before it",
+                    d.id,
+                    porao.nome
+                );
+            }
+        }
+        for l in CHAVES_DA_HISTORIA {
+            for id in l {
+                assert!(e_da_historia(*id), "{id} in CHAVES_DA_HISTORIA is not a story step");
+            }
         }
     }
 

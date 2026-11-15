@@ -80,6 +80,51 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
     sqlx::query("ALTER TABLE ofertas_relampago ADD COLUMN IF NOT EXISTS campanha_ate TIMESTAMPTZ")
         .execute(central)
         .await?;
+    // BONUS PACKS (`shared::pacotes_bonus`, 15/11/2026): a TRIGGER instead
+    // of a level (`gatilho`: porao_inicial / morte; NULL = level/campaign
+    // offer as before), gold, and gear BUILT for the player when it opens
+    // (`pecas`: arma / conjunto). The built pieces and the power shown are
+    // kept on the account's row, so the purchase delivers what was shown.
+    for sql in [
+        "ALTER TABLE ofertas_relampago ADD COLUMN IF NOT EXISTS gatilho TEXT",
+        "ALTER TABLE ofertas_relampago ADD COLUMN IF NOT EXISTS ouro BIGINT NOT NULL DEFAULT 0",
+        "ALTER TABLE ofertas_relampago ADD COLUMN IF NOT EXISTS pecas TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE ofertas_relampago_contas ADD COLUMN IF NOT EXISTS pecas TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE ofertas_relampago_contas ADD COLUMN IF NOT EXISTS poder_antes INTEGER",
+        "ALTER TABLE ofertas_relampago_contas ADD COLUMN IF NOT EXISTS poder_depois INTEGER",
+        "ALTER TABLE ofertas_relampago_contas ADD COLUMN IF NOT EXISTS personagem TEXT",
+        "ALTER TABLE loja_entregas ADD COLUMN IF NOT EXISTS ouro BIGINT NOT NULL DEFAULT 0",
+        // > 0: `item_id` is a piece of gear built at this item level.
+        "ALTER TABLE loja_entregas ADD COLUMN IF NOT EXISTS ilvl INTEGER NOT NULL DEFAULT 0",
+    ] {
+        sqlx::query(sql).execute(central).await?;
+    }
+    for p in shared::pacotes_bonus::PACOTES_BONUS {
+        sqlx::query(
+            "INSERT INTO ofertas_relampago
+               (id, titulo, titulo_pt, nivel, duracao_min, produto_play, preco_centavos, valor_de_centavos,
+                tp, energia, itens, gatilho, ouro, pecas, nota)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(p.id)
+        .bind(p.titulo)
+        .bind(p.titulo_pt)
+        .bind(p.nivel() as i32)
+        .bind(if p.gatilho.is_some() { shared::pacotes_bonus::DURACAO_MIN } else { 60 })
+        .bind(p.produto_play)
+        .bind(p.preco_centavos as i32)
+        .bind(p.valor_de_centavos as i32)
+        .bind(p.tp() as i32)
+        .bind(p.energia as i64)
+        .bind(p.itens_json())
+        .bind(p.gatilho.map(|g| g.chave()))
+        .bind(p.ouro as i64)
+        .bind(p.pecas.chave())
+        .bind(format!("pacote bonus: {} TP do preco + {} TP de bonus", shared::pacotes_bonus::tp_do_preco(p.preco_centavos), p.tp_bonus))
+        .execute(central)
+        .await?;
+    }
     // Starting catalogue. ON CONFLICT DO NOTHING: once the row exists the
     // database is the truth — a deploy never overwrites what the owner edited.
     // Item ids: 363 pet summon scroll, 361 mount summon scroll, 360 craft key
@@ -165,21 +210,30 @@ fn itens_de(json: &str, oferta: &str) -> Vec<(u16, u32)> {
 /// Opens the next offer this level unlocks (at most ONE per call, the lowest
 /// level first, and only when none is open right now) and returns every offer
 /// still open for the account.
-pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result<Vec<OfertaRelampago>> {
+///
+/// `abrir` false (staff, test bots): only lists, never opens anything new.
+/// A triggered bonus pack open right now does not hold the level offer back
+/// (only another level offer does).
+pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32, abrir: bool) -> Result<Vec<OfertaRelampago>> {
     let mut nova: Option<String> = None;
     let abertas: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ofertas_relampago_contas
-          WHERE conta = $1 AND comprada_em IS NULL AND expira_em > NOW()",
+        "SELECT COUNT(*) FROM ofertas_relampago_contas c
+           JOIN ofertas_relampago o ON o.id = c.oferta
+          WHERE c.conta = $1 AND c.comprada_em IS NULL AND c.expira_em > NOW()
+            AND o.gatilho IS NULL AND o.campanha_ate IS NULL",
     )
     .bind(conta)
     .fetch_one(central)
     .await?;
+    if !abrir {
+        return listar(central, conta, None).await;
+    }
     if abertas == 0 {
         nova = sqlx::query_scalar(
             "INSERT INTO ofertas_relampago_contas (conta, oferta, expira_em)
              SELECT $1, o.id, NOW() + make_interval(mins => GREATEST(o.duracao_min, 1))
                FROM ofertas_relampago o
-              WHERE o.ativa AND o.nivel <= $2 AND o.campanha_ate IS NULL
+              WHERE o.ativa AND o.nivel <= $2 AND o.campanha_ate IS NULL AND o.gatilho IS NULL
                 AND NOT EXISTS (SELECT 1 FROM ofertas_relampago_contas c
                                  WHERE c.conta = $1 AND c.oferta = o.id)
               ORDER BY o.nivel, o.id
@@ -210,10 +264,16 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
     if nova.is_none() {
         nova = campanhas.into_iter().next();
     }
+    listar(central, conta, nova.as_deref()).await
+}
+
+/// Every offer still open for the account; `nova` is flagged to pop.
+pub async fn listar(central: &PgPool, conta: &str, nova: Option<&str>) -> Result<Vec<OfertaRelampago>> {
     let linhas = sqlx::query(
         "SELECT o.id, o.titulo, o.titulo_pt, o.produto_play, o.preco_centavos,
                 o.valor_de_centavos, o.tp, o.energia, o.itens,
-                GREATEST(EXTRACT(EPOCH FROM (c.expira_em - NOW())), 0)::BIGINT
+                GREATEST(EXTRACT(EPOCH FROM (c.expira_em - NOW())), 0)::BIGINT,
+                o.ouro, c.pecas, c.poder_antes, c.poder_depois, COALESCE(o.gatilho, '')
            FROM ofertas_relampago_contas c
            JOIN ofertas_relampago o ON o.id = c.oferta
           WHERE c.conta = $1 AND c.comprada_em IS NULL AND c.expira_em > NOW()
@@ -227,8 +287,13 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
         .map(|r| {
             let id: String = r.get(0);
             let itens: String = r.get(8);
+            let pecas: String = r.get(11);
+            let poder = match (r.get::<Option<i32>, _>(12), r.get::<Option<i32>, _>(13)) {
+                (Some(a), Some(d)) => Some((a, d)),
+                _ => None,
+            };
             OfertaRelampago {
-                nova: nova.as_deref() == Some(id.as_str()),
+                nova: nova == Some(id.as_str()),
                 itens: itens_de(&itens, &id),
                 titulo: r.get(1),
                 titulo_pt: r.get(2),
@@ -238,10 +303,130 @@ pub async fn abrir_e_listar(central: &PgPool, conta: &str, nivel: u32) -> Result
                 tp: r.get::<i32, _>(6).max(0) as u32,
                 energia: r.get::<i64, _>(7).max(0) as u64,
                 segundos: r.get::<i64, _>(9).clamp(0, u32::MAX as i64) as u32,
+                ouro: r.get::<i64, _>(10).max(0) as u64,
+                pecas: pecas_de(&pecas, &id)
+                    .into_iter()
+                    .filter_map(|(item, ilvl)| instancia_da_peca(item, ilvl).map(|i| (item, i)))
+                    .collect(),
+                poder,
+                gatilho: r.get(14),
                 id,
             }
         })
         .collect())
+}
+
+/// `[[item_id, item_level], …]`: the gear a bonus pack built when it opened.
+fn pecas_de(json: &str, oferta: &str) -> Vec<(u16, u16)> {
+    if json.trim().is_empty() {
+        return Vec::new();
+    }
+    match serde_json::from_str::<Vec<(u16, u16)>>(json) {
+        Ok(v) => v.into_iter().filter(|(id, l)| *id != 0 && *l > 0).collect(),
+        Err(e) => {
+            tracing::warn!("ofertas: pecas invalidas na oferta {oferta}: {e} ({json})");
+            Vec::new()
+        }
+    }
+}
+
+/// The piece itself. Gear stats are FIXED by template, grade and item level
+/// (`ItemInstance::fixar`), so the piece rebuilt at delivery is the one shown.
+pub fn instancia_da_peca(item_id: u16, ilvl: u16) -> Option<shared::ItemInstance> {
+    let tpl = crate::economy::item_template_of(item_id);
+    shared::ItemInstance::roll_with_template(tpl, ilvl, || 0.5)
+}
+
+/// One gear option the world built for a trigger: which kind, the pieces
+/// `(item_id, item level)`, and the power now / with them on.
+#[derive(Debug, Clone)]
+pub struct Montagem {
+    pub pecas: shared::pacotes_bonus::Pecas,
+    pub itens: Vec<(u16, u16)>,
+    pub poder_antes: i32,
+    pub poder_depois: i32,
+}
+
+/// TRIGGERED BONUS PACKS: opens the first pack of `gatilhos` (in that order,
+/// then by level) the account never got, that its level reaches and — for a
+/// gear pack — that really makes the character stronger. At most one
+/// triggered pack open at a time, and never two opened closer than
+/// `INTERVALO_ENTRE_GATILHOS_MIN`. Returns the id opened, if any.
+pub async fn disparar(
+    central: &PgPool,
+    conta: &str,
+    personagem: &str,
+    gatilhos: &[shared::pacotes_bonus::Gatilho],
+    nivel: u32,
+    montagens: &[Montagem],
+) -> Result<Option<String>> {
+    use shared::pacotes_bonus as pb;
+    let mut tx = central.begin().await?;
+    // One trigger at a time per account (a death and a leave in the same
+    // second must not open two).
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('ofertas_gatilho:' || $1))")
+        .bind(conta)
+        .execute(&mut *tx)
+        .await?;
+    let ocupado: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM ofertas_relampago_contas c
+                          JOIN ofertas_relampago o ON o.id = c.oferta
+                         WHERE c.conta = $1 AND o.gatilho IS NOT NULL
+                           AND ((c.comprada_em IS NULL AND c.expira_em > NOW())
+                                OR c.aberta_em > NOW() - make_interval(mins => $2)))",
+    )
+    .bind(conta)
+    .bind(pb::INTERVALO_ENTRE_GATILHOS_MIN)
+    .fetch_one(&mut *tx)
+    .await?;
+    if ocupado {
+        return Ok(None);
+    }
+    let chaves: Vec<String> = gatilhos.iter().map(|g| g.chave().to_string()).collect();
+    let candidatas: Vec<(String, String)> = sqlx::query_as(
+        "SELECT o.id, o.pecas FROM ofertas_relampago o
+          WHERE o.ativa AND o.gatilho = ANY($2) AND o.nivel <= $3
+            AND NOT EXISTS (SELECT 1 FROM ofertas_relampago_contas c
+                             WHERE c.conta = $1 AND c.oferta = o.id)
+          ORDER BY array_position($2, o.gatilho), o.nivel, o.id",
+    )
+    .bind(conta)
+    .bind(&chaves)
+    .bind(nivel as i32)
+    .fetch_all(&mut *tx)
+    .await?;
+    for (id, pecas) in candidatas {
+        let tipo = pb::Pecas::de_chave(&pecas);
+        let (json, antes, depois) = if tipo == pb::Pecas::Nenhuma {
+            ("[]".to_string(), None, None)
+        } else {
+            // A gear pack that would not raise the power is not an offer.
+            let Some(m) = montagens.iter().find(|m| m.pecas == tipo && m.poder_depois > m.poder_antes) else {
+                continue;
+            };
+            (serde_json::to_string(&m.itens)?, Some(m.poder_antes), Some(m.poder_depois))
+        };
+        let aberta: Option<String> = sqlx::query_scalar(
+            "INSERT INTO ofertas_relampago_contas (conta, oferta, expira_em, pecas, poder_antes, poder_depois, personagem)
+             SELECT $1, o.id, NOW() + make_interval(mins => GREATEST(o.duracao_min, 1)), $3, $4, $5, $6
+               FROM ofertas_relampago o WHERE o.id = $2
+             ON CONFLICT DO NOTHING
+             RETURNING oferta",
+        )
+        .bind(conta)
+        .bind(&id)
+        .bind(&json)
+        .bind(antes)
+        .bind(depois)
+        .bind(personagem)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if aberta.is_some() {
+            tx.commit().await?;
+            return Ok(aberta);
+        }
+    }
+    Ok(None)
 }
 
 /// What a paid offer hands over in the world (the TP is already in the
@@ -256,6 +441,9 @@ pub struct Entrega {
     pub energia: u64,
     pub itens: Vec<(u16, u32)>,
     pub titulo: String,
+    pub ouro: u64,
+    /// Pieces of gear (bonus packs).
+    pub pecas: u32,
 }
 
 pub enum Compra {
@@ -287,7 +475,7 @@ pub async fn comprar(
                JOIN ofertas_relampago o ON o.id = c.oferta
               WHERE c.conta = $1 AND o.produto_play = $2
                 AND (c.comprada_em IS NULL OR c.pedido = $3)
-              ORDER BY (c.pedido = $3) DESC NULLS LAST, c.aberta_em DESC
+              ORDER BY (c.pedido = $3) DESC NULLS LAST, (c.expira_em > NOW()) DESC, c.aberta_em DESC
               LIMIT 1",
         )
         .bind(conta)
@@ -318,11 +506,6 @@ pub async fn comprar(
         return Ok(Compra::Recusada("This offer is not available.".into()));
     };
     let produto: String = o.get(0);
-    let preco: i32 = o.get(1);
-    let tp = o.get::<i32, _>(2).max(0) as u64;
-    let energia = o.get::<i64, _>(3).max(0) as u64;
-    let itens = itens_de(&o.get::<String, _>(4), oferta);
-    let titulo: String = o.get(5);
     let comprada: bool = o.get(6);
     let pedido_feito: Option<String> = o.get(7);
     if comprada {
@@ -341,11 +524,81 @@ pub async fn comprar(
             return Ok(Compra::Recusada(e.to_string()));
         }
     };
+    let r = creditar(central, conta, oferta, pedido, &externo, "google_play").await?;
+    if let Compra::Feita(..) = &r {
+        if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await {
+            tracing::warn!("ofertas: consume no Google falhou (ja' entregue): {e}");
+        }
+    }
+    Ok(r)
+}
+
+/// Buys an OPEN offer on a server with simulated payments (test server):
+/// approved at once, nobody charged. The caller checks the provider.
+pub async fn comprar_simulado(central: &PgPool, conta: &str, oferta: &str, pedido: &str) -> Result<Compra> {
+    if !shared::loja::pedido_valido(pedido) {
+        return Ok(Compra::Recusada("Invalid order.".into()));
+    }
+    let Some((aberta, comprada, pedido_feito)) = sqlx::query_as::<_, (bool, bool, Option<String>)>(
+        "SELECT c.expira_em > NOW(), c.comprada_em IS NOT NULL, c.pedido
+           FROM ofertas_relampago_contas c WHERE c.conta = $1 AND c.oferta = $2",
+    )
+    .bind(conta)
+    .bind(oferta)
+    .fetch_optional(central)
+    .await?
+    else {
+        return Ok(Compra::Recusada("This offer is not available.".into()));
+    };
+    if comprada {
+        if pedido_feito.as_deref() == Some(pedido) {
+            return Ok(Compra::JaFeita(razao::saldo(central, conta).await?));
+        }
+        return Ok(Compra::Recusada("You already bought this offer.".into()));
+    }
+    if !aberta {
+        return Ok(Compra::Recusada("This offer has expired.".into()));
+    }
+    creditar(central, conta, oferta, pedido, &format!("sim-{pedido}"), "simulado").await
+}
+
+/// Records a paid offer and everything it owes, in ONE transaction: the
+/// order, the account row marked bought, the deliveries (items, Energy, gold,
+/// gear) and the TP. `externo` is the provider's unique order id.
+async fn creditar(
+    central: &PgPool,
+    conta: &str,
+    oferta: &str,
+    pedido: &str,
+    externo: &str,
+    provedor: &str,
+) -> Result<Compra> {
+    let Some(o) = sqlx::query(
+        "SELECT o.preco_centavos, o.tp, o.energia, o.itens, o.titulo, o.ouro, c.pecas
+           FROM ofertas_relampago_contas c
+           JOIN ofertas_relampago o ON o.id = c.oferta
+          WHERE c.conta = $1 AND c.oferta = $2",
+    )
+    .bind(conta)
+    .bind(oferta)
+    .fetch_optional(central)
+    .await?
+    else {
+        return Ok(Compra::Recusada("This offer is not available.".into()));
+    };
+    let preco: i32 = o.get(0);
+    let tp = o.get::<i32, _>(1).max(0) as u64;
+    let energia = o.get::<i64, _>(2).max(0) as u64;
+    let itens = itens_de(&o.get::<String, _>(3), oferta);
+    let titulo: String = o.get(4);
+    let ouro = o.get::<i64, _>(5).max(0) as u64;
+    let pecas = pecas_de(&o.get::<String, _>(6), oferta);
     let mut tx = central.begin().await?;
     let repetido: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM loja_pedidos WHERE provedor = 'google_play' AND externo = $1 AND status = 'creditado'",
+        "SELECT id FROM loja_pedidos WHERE provedor = $2 AND externo = $1 AND status = 'creditado'",
     )
-    .bind(&externo)
+    .bind(externo)
+    .bind(provedor)
     .fetch_optional(&mut *tx)
     .await?;
     if repetido.is_some() {
@@ -366,13 +619,14 @@ pub async fn comprar(
     }
     sqlx::query(
         "INSERT INTO loja_pedidos (id, conta, produto, tipo, valor, moeda, status, provedor, externo)
-         VALUES ($1, $2, $3, 'oferta', $4, 'BRL_CENTAVOS', 'creditado', 'google_play', $5)",
+         VALUES ($1, $2, $3, 'oferta', $4, 'BRL_CENTAVOS', 'creditado', $6, $5)",
     )
     .bind(pedido)
     .bind(conta)
     .bind(format!("oferta:{oferta}"))
     .bind(preco as i64)
-    .bind(&externo)
+    .bind(externo)
+    .bind(provedor)
     .execute(&mut *tx)
     .await?;
     // What it owes, in the same transaction: delivered to the mail by the
@@ -394,6 +648,23 @@ pub async fn comprar(
             .execute(&mut *tx)
             .await?;
     }
+    if ouro > 0 {
+        sqlx::query("INSERT INTO loja_entregas (conta, pedido, ouro) VALUES ($1, $2, $3)")
+            .bind(conta)
+            .bind(pedido)
+            .bind(ouro as i64)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for (item_id, ilvl) in &pecas {
+        sqlx::query("INSERT INTO loja_entregas (conta, pedido, item_id, qtd, ilvl) VALUES ($1, $2, $3, 1, $4)")
+            .bind(conta)
+            .bind(pedido)
+            .bind(*item_id as i32)
+            .bind(*ilvl as i32)
+            .execute(&mut *tx)
+            .await?;
+    }
     let saldo = if tp > 0 {
         match razao::mover(&mut tx, conta, tp as i64, "loja:oferta", Some(&format!("loja:{pedido}"))).await? {
             razao::Movimento::Feito { saldo }
@@ -404,12 +675,9 @@ pub async fn comprar(
         razao::saldo(&mut *tx, conta).await?
     };
     tx.commit().await?;
-    if let Err(e) = crate::loja_google_play::consumir_best_effort(&produto, purchase_token).await {
-        tracing::warn!("ofertas: consume no Google falhou (ja' entregue): {e}");
-    }
-    let teste = crate::loja_google_play::e_teste(&externo);
+    let teste = provedor != "google_play" || crate::loja_google_play::e_teste(externo);
     Ok(Compra::Feita(
-        Entrega { preco_centavos: preco.max(0) as u64, teste, tp, energia, itens, titulo },
+        Entrega { preco_centavos: preco.max(0) as u64, teste, tp, energia, itens, titulo, ouro, pecas: pecas.len() as u32 },
         saldo,
     ))
 }
@@ -421,6 +689,10 @@ pub struct EntregaPendente {
     pub item_id: u16,
     pub qtd: u32,
     pub energia: u64,
+    /// Gold for the character (bonus packs).
+    pub ouro: u64,
+    /// > 0: `item_id` is a piece of gear rebuilt at this item level.
+    pub ilvl: u16,
 }
 
 /// CLAIMS everything the account is still owed for `personagem` (marks it
@@ -430,7 +702,7 @@ pub async fn reivindicar(central: &PgPool, conta: &str, personagem: &str) -> Res
     let linhas = sqlx::query(
         "UPDATE loja_entregas SET entregue_em = NOW(), personagem = $2
           WHERE conta = $1 AND entregue_em IS NULL
-          RETURNING id, item_id, qtd, energia",
+          RETURNING id, item_id, qtd, energia, ouro, ilvl",
     )
     .bind(conta)
     .bind(personagem)
@@ -443,6 +715,8 @@ pub async fn reivindicar(central: &PgPool, conta: &str, personagem: &str) -> Res
             item_id: r.get::<i32, _>(1).clamp(0, u16::MAX as i32) as u16,
             qtd: r.get::<i64, _>(2).clamp(0, u32::MAX as i64) as u32,
             energia: r.get::<i64, _>(3).max(0) as u64,
+            ouro: r.get::<i64, _>(4).max(0) as u64,
+            ilvl: r.get::<i32, _>(5).clamp(0, u16::MAX as i32) as u16,
         })
         .collect())
 }
@@ -470,5 +744,16 @@ mod testes {
             vec![(345, 2000)]
         );
         assert!(itens_de("not json", "x").is_empty());
+    }
+
+    #[test]
+    fn pecas_do_pacote_ida_e_volta_e_azuis() {
+        let v: Vec<(u16, u16)> = vec![(shared::item_id::KATANA, 26), (0, 30), (shared::item_id::CINTO, 0)];
+        let json = serde_json::to_string(&v).unwrap();
+        assert_eq!(pecas_de(&json, "x"), vec![(shared::item_id::KATANA, 26)]);
+        assert!(pecas_de("", "x").is_empty());
+        assert!(pecas_de("[[1,", "x").is_empty());
+        let p = shared::ItemInstance::roll_for(shared::item_id::KATANA, 26, || 0.5).unwrap();
+        assert_eq!(p.rarity, 3, "blue");
     }
 }

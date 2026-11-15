@@ -538,6 +538,11 @@ pub struct EntityMeta {
     /// protection as the server (`pk::protegido_por_poder`, stage A).
     #[serde(default)]
     pub poder: i32,
+    /// A player's rebirth count (`shared::renascimento`), saturated at 255;
+    /// 0 for everything else. Drawn as "R<N>" on the nameplate and as the
+    /// rebirth aura.
+    #[serde(default)]
+    pub renascimentos: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

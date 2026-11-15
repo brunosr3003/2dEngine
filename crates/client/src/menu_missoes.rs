@@ -220,8 +220,10 @@ fn nivel_bloqueado(motivos: &[String]) -> Option<u32> {
 /// A mesma regra governa botão, fila e avanço automático da história.
 pub fn automatizavel(d: &QuestDef) -> bool {
     use shared::quests::objective_kind as obj;
+    // TER (have N of a key material): the server routes to the trees/stones
+    // that give it (`destino_da_missao`), like GATHER.
     matches!(d.obj_kind, obj::COLLECT | obj::KILL | obj::EXPLORE | obj::DELIVER
-        | obj::TRANSPORT | obj::TALK | obj::GATHER | obj::LUGAR | obj::VIAGEM)
+        | obj::TRANSPORT | obj::TALK | obj::GATHER | obj::LUGAR | obj::VIAGEM | obj::TER)
         // Este tutorial é coleta no mundo: o servidor indica o cristal.
         || (d.obj_kind == obj::TUTORIAL
             && d.obj_target == shared::quests::tutorial::COLETA_ENERGIA)
@@ -625,6 +627,12 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
             format!(
                 "Level {feito}/{total} · pick: Magic Island, side quests or hunting in dense areas"
             )
+        }
+        // TER: what to have and what the bag holds — "Have 113 Wood T1 · you: 40".
+        Estado::EmAndamento { feito, total }
+            if d.obj_kind == shared::quests::objective_kind::TER =>
+        {
+            crate::missoes::linha_de_posse(d.obj_target, *total, *feito)
         }
         Estado::EmAndamento { feito, total } if !automatizavel(d) => {
             format!("Manual · {feito}/{total} · {}", caminho_manual(d))
@@ -1570,7 +1578,7 @@ mod tests {
     fn todos_os_passos_da_historia_tem_acao_compativel() {
         use shared::quests::{objective_kind as o, tutorial as t};
         for d in shared::historia::PASSOS {
-            let mundo = matches!(d.obj_kind, o::TALK | o::KILL | o::GATHER | o::LUGAR | o::VIAGEM)
+            let mundo = matches!(d.obj_kind, o::TALK | o::KILL | o::GATHER | o::LUGAR | o::VIAGEM | o::TER)
                 || (d.obj_kind == o::TUTORIAL && d.obj_target == t::COLETA_ENERGIA);
             assert_eq!(automatizavel(d), mundo, "{}: {}", d.id, d.title);
             let clique = clique_de(d, &Estado::EmAndamento { feito: 0, total: d.obj_count });

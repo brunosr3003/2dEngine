@@ -2476,7 +2476,7 @@ async fn previa_mundo(vox: &VoxCache, solido: &Material, prefixo: &str) {
             nivel: 10,
             desafio: None,
             aparencia: 0,
-            poder: 0,
+            poder: 0, renascimentos: 0,
         });
         estados.push(EntityState::quantize(
             EntityId(id),

@@ -444,6 +444,18 @@ pub fn tipos_da_missao(def: &shared::quests::QuestDef) -> ([bool; 5], bool) {
         tutorial::COLETA_ENERGIA | tutorial::PONTO_ATRIBUTO | tutorial::EVOLUIR_SKILL) {
         return ([false; 5], true);
     }
+    // TER (have N of a key material): wood → logs only; steel of colour c →
+    // stones of tier c and up (a stone yields every colour up to its own).
+    if def.obj_kind == objective_kind::TER {
+        use shared::item_id::{na_cor, STEEL, WOOD_T1, WOOD_T4};
+        if (WOOD_T1..=WOOD_T4).contains(&def.obj_target) {
+            return ([true, false, false, false, false], false);
+        }
+        if let Some(c) = (1..=4u8).find(|c| na_cor(STEEL, *c) == def.obj_target) {
+            return (std::array::from_fn(|t| t >= c as usize), false);
+        }
+        return ([true; 5], false);
+    }
     if def.obj_kind != objective_kind::GATHER {
         return ([true; 5], true);
     }

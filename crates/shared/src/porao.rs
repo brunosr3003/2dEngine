@@ -65,6 +65,23 @@ pub fn nome_da_chave(item: u16) -> Option<String> {
     porao_da_chave(item).map(|c| format!("{} Key", c.nome))
 }
 
+/// The name of a key MATERIAL (wood T1-T4, steel of each color), in English,
+/// for the quest text of the story's key steps (`objective_kind::TER`). The
+/// client has no item names of its own until the server sends them; these
+/// are the names `persistence.rs` seeds (keep the two in step).
+pub fn nome_do_material(item: u16) -> Option<&'static str> {
+    const CORES: [&str; 4] = ["Grey Steel", "Green Steel", "Blue Steel", "Purple Steel"];
+    match item {
+        item_id::WOOD_T1 => Some("Wood T1"),
+        item_id::WOOD_T2 => Some("Wood T2"),
+        item_id::WOOD_T3 => Some("Wood T3"),
+        item_id::WOOD_T4 => Some("Wood T4"),
+        _ => (1..=4u8)
+            .find(|c| item_id::na_cor(item_id::STEEL, *c) == item)
+            .map(|c| CORES[c as usize - 1]),
+    }
+}
+
 // ─────────────────────────────── a receita ───────────────────────────────
 
 /// O que uma chave custa.

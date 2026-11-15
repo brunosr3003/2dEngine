@@ -564,6 +564,10 @@ pub enum ClientMessage {
     Prime {
         pedido: crate::prime::PedidoPrime,
     },
+    /// REBIRTH (`shared::renascimento`): at the level cap, back to level 1
+    /// for the permanent bonuses. Refused below the cap, in a dungeon, the
+    /// tutorial or an instance, and while downed.
+    Renascer,
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1463,6 +1467,13 @@ pub enum ServerMessage {
         dia: i64,
         pagas: u32,
         ultima_paga: bool,
+    },
+    /// This character's rebirth count (`shared::renascimento`): at login
+    /// (`festa` = false) and right after a rebirth (`festa` = true: the
+    /// client plays the rebirth celebration).
+    Renascimento {
+        renascimentos: u32,
+        festa: bool,
     },
 }
 

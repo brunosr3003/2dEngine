@@ -54,6 +54,15 @@ async fn comprar_tp_e_responder(
     }
 }
 
+/// "Starter Pack unlocked! +400 TP…" after a paid offer.
+fn texto_da_compra(e: &crate::ofertas::Entrega) -> String {
+    if e.tp > 0 {
+        format!("{} unlocked! +{} TP. The items are on their way.", e.titulo, e.tp)
+    } else {
+        format!("{} unlocked! The items are on their way.", e.titulo)
+    }
+}
+
 fn resultado(to: &mpsc::UnboundedSender<ServerMessage>, ok: bool, texto: impl Into<String>) {
     avisa(
         to,
@@ -136,6 +145,12 @@ impl GameWorld {
         let personagem = s.name.clone();
         let conta = crate::mercado::conta_global(&crate::canais::realm(), s.account_id, &s.name);
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        // Staff and test bots never get a new offer (bonus packs included).
+        let abrir_ofertas = super::ofertas_mundo::recebe_ofertas(s);
+        if matches!(pedido, PedidoLoja::OfertasRelampago) {
+            // Only a client that can pay asks: the triggers may pop for it.
+            super::ofertas_mundo::marcar_pagante(sid, &s.name);
+        }
         let Some(central) = crate::mercado::central() else {
             avisa(
                 &to,
@@ -154,6 +169,7 @@ impl GameWorld {
                 | PedidoLoja::ComprarTpGooglePlay { .. }
                 | PedidoLoja::ComprarItem { .. }
                 | PedidoLoja::ComprarOfertaGooglePlay { .. }
+                | PedidoLoja::ComprarOfertaSimulada { .. }
         );
         if compra {
             let agora = self.sim_time_s;
@@ -306,7 +322,7 @@ impl GameWorld {
                 PedidoLoja::Montar | PedidoLoja::Desmontar => return,
                 PedidoLoja::OfertasRelampago => {
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
-                    match crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
+                    match crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
                         Ok(v) => {
                             if let Some(o) = v.iter().find(|o| o.nova) {
                                 crate::telemetria::conta_de(&nome_tel, "oferta_aberta", &o.id, 1);
@@ -331,12 +347,7 @@ impl GameWorld {
                                 crate::telemetria::conta_de(&nome_tel, "loja_pedido", format!("oferta:{oferta}"), 1);
                                 crate::telemetria::conta_de(&nome_tel, "loja_receita_centavos", "BRL", e.preco_centavos as i64);
                             }
-                            let texto = if e.tp > 0 {
-                                format!("{} unlocked! +{} TP. The items are in your Mail.", e.titulo, e.tp)
-                            } else {
-                                format!("{} unlocked! The items are in your Mail.", e.titulo)
-                            };
-                            resultado(&to, true, texto);
+                            resultado(&to, true, texto_da_compra(&e));
                         }
                         Ok(crate::ofertas::Compra::JaFeita(_)) => {
                             resultado(&to, true, "This purchase has already been delivered.");
@@ -350,7 +361,34 @@ impl GameWorld {
                     // Whatever the answer, deliver what is owed (this purchase,
                     // or an older one approved late).
                     entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
-                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel).await {
+                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
+                        avisa(&to, AvisoLoja::OfertasRelampago(v));
+                    }
+                }
+                // TEST SERVER: the same offer, approved by the simulated
+                // provider (nobody is charged). Refused where a real one runs.
+                PedidoLoja::ComprarOfertaSimulada { oferta, pedido } => {
+                    if banco::Provedor::do_ambiente() != banco::Provedor::Simulado {
+                        resultado(&to, false, "Payment unavailable right now.");
+                    } else {
+                        match crate::ofertas::comprar_simulado(&central, &conta, &oferta, &pedido).await {
+                            Ok(crate::ofertas::Compra::Feita(e, _)) => {
+                                crate::telemetria::conta_de(&nome_tel, "oferta_comprada", &oferta, 1);
+                                crate::telemetria::conta_de(&nome_tel, "loja_pedido_teste", format!("oferta:{oferta}"), 1);
+                                resultado(&to, true, texto_da_compra(&e));
+                            }
+                            Ok(crate::ofertas::Compra::JaFeita(_)) => {
+                                resultado(&to, true, "This purchase has already been delivered.");
+                            }
+                            Ok(crate::ofertas::Compra::Recusada(t)) => resultado(&to, false, t),
+                            Err(e) => {
+                                tracing::warn!("ofertas: compra simulada falhou: {e:#}");
+                                resultado(&to, false, "The shop is unavailable right now.");
+                            }
+                        }
+                    }
+                    entregar_pendentes(&central, &conta, &personagem, sid, &tx_mundo).await;
+                    if let Ok(v) = crate::ofertas::abrir_e_listar(&central, &conta, nivel, abrir_ofertas).await {
                         avisa(&to, AvisoLoja::OfertasRelampago(v));
                     }
                 }
@@ -508,16 +546,34 @@ impl GameWorld {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64;
-                let (mut itens, mut energia) = (0u32, 0u64);
+                let (mut itens, mut energia, mut ouro, mut na_bolsa) = (0u32, 0u64, 0u64, 0u32);
                 for e in &entregas {
                     if e.energia > 0 {
                         s.skill_progress.energia = s.skill_progress.energia.saturating_add(e.energia);
                         energia += e.energia;
                     }
-                    if e.item_id != 0 && e.qtd > 0 {
+                    if e.ouro > 0 {
+                        s.gold = s.gold.saturating_add(e.ouro);
+                        ouro += e.ouro;
+                    }
+                    if e.item_id != 0 && e.ilvl > 0 {
+                        // Bonus-pack gear: the bag first (equip it now), the
+                        // mail when the bag is full.
+                        let inst = crate::ofertas::instancia_da_peca(e.item_id, e.ilvl);
+                        if add_to_inventory(&mut s.inventory, e.item_id, 1, inst) {
+                            s.inventory_dirty = true;
+                            na_bolsa += 1;
+                        } else {
+                            s.dungeon.postar(e.item_id, 1, inst, shared::loja::MOTIVO_CORREIO_LOJA, quando);
+                            itens += 1;
+                        }
+                    } else if e.item_id != 0 && e.qtd > 0 {
                         s.dungeon.postar(e.item_id, e.qtd, None, shared::loja::MOTIVO_CORREIO_LOJA, quando);
                         itens += 1;
                     }
+                }
+                if ouro > 0 {
+                    crate::telemetria::conta_de(&s.name, "loja_moeda", shared::item_id::GOLD.to_string(), ouro as i64);
                 }
                 if energia > 0 {
                     s.skills_dirty = true;
@@ -525,7 +581,7 @@ impl GameWorld {
                         progresso: s.skill_progress.clone(),
                     });
                 }
-                tracing::info!("ofertas: {} entregou {itens} itens + {energia} energia no correio", s.name);
+                tracing::info!("ofertas: {} entregou {itens} itens no correio, {na_bolsa} pecas na bolsa, {energia} energia, {ouro} ouro", s.name);
                 self.save_pending = true;
                 self.dg_enviar_correio(sid);
                 if let Some(s) = self.sessions.get(&sid) {

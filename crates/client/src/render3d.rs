@@ -1935,6 +1935,8 @@ pub fn draw_entities_com_sombras(
     // Lascas e faiscas da coleta: um pool so', avancado uma vez por quadro.
     crate::lascas::avanca_e_desenha(get_frame_time());
     crate::auras::desenha();
+    // The rebirth body auras (`renascimento_vfx`), after the gear ones.
+    crate::renascimento_vfx::desenha(vista.cam.position);
 }
 
 /// Sombras de contato baratas: um disco suave por corpo, em uma malha por lote.
@@ -2365,6 +2367,17 @@ fn desenha_personagem(
         crate::auras::personagem(e.meta.auras, &mats, &armas, vox,
             if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0 as u32,
             pose.ferramenta.is_some(), e.combo.is_some() || e.skill.is_some());
+        // The rebirth aura: ground to just over the head.
+        if e.meta.renascimentos > 0 {
+            let cabeca = mats[1].transform_point3(Vec3::ZERO);
+            crate::renascimento_vfx::personagem(
+                e.meta.renascimentos,
+                p,
+                cabeca.y - p.y + 0.35,
+                if eu { 0.0 } else { p.distance(vista.cam.target) },
+                e.meta.id.0 as u32,
+            );
+        }
     }
     e.emissores = crate::rig::palmas(&mats, VOXEL);
     // Coleta: a rajada de lascas no quadro em que a cabeca da ferramenta bate.

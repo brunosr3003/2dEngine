@@ -132,6 +132,8 @@ pub struct CharacterRow {
     /// Today's counters (`shared::prime::Diario`): free XP potions of the
     /// dailies and Prime Merchant purchases. `characters.diario_json`.
     pub diario_json: String,
+    /// Rebirths (`shared::renascimento`). `characters.renascimentos`.
+    pub renascimentos: u32,
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -583,6 +585,12 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     // Daily counters: free XP potions and Prime Merchant purchases.
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS diario_json TEXT NOT NULL DEFAULT ''",
+    )
+    .execute(pool)
+    .await?;
+    // Rebirths (`shared::renascimento`, docs/RESET.md).
+    sqlx::query(
+        "ALTER TABLE characters ADD COLUMN IF NOT EXISTS renascimentos INTEGER NOT NULL DEFAULT 0",
     )
     .execute(pool)
     .await?;
@@ -2663,6 +2671,26 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             dex: (0, 0),
             wis: (0, 0),
         },
+        // REBIRTH ESSENCE (`shared::renascimento`): paid by every rebirth,
+        // bound, the currency of the later Essence shop. No NPC price.
+        S {
+            id: item_id::ESSENCIA_RENASCIMENTO as i32,
+            name: "Rebirth Essence",
+            sell: 0,
+            buy: None,
+            ord: None,
+            stack: 999999,
+            slot: None,
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         S {
             id: item_id::MOEDA_MAGICA as i32,
             name: "Magic Coin",
@@ -3228,7 +3256,11 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
     // entrega item negociavel (docs/CALENDARIO.md): ele nasce VINCULADO. O
     // que sai dele — o pet — e' negociavel normalmente, que e' o ponto.
     sqlx::query("UPDATE items SET vinculado = TRUE WHERE id = ANY($1)")
-        .bind(vec![item_id::PERGAMINHO_INVOCA_PET as i32, item_id::PERGAMINHO_INVOCA_MONTARIA as i32])
+        .bind(vec![
+            item_id::PERGAMINHO_INVOCA_PET as i32,
+            item_id::PERGAMINHO_INVOCA_MONTARIA as i32,
+            item_id::ESSENCIA_RENASCIMENTO as i32,
+        ])
         .execute(pool)
         .await?;
 
@@ -4174,6 +4206,10 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .collect();
     let diarios: HashMap<String, String> =
         busca!((String, String), "name, diario_json").into_iter().collect();
+    let renascimentos: HashMap<String, u32> = busca!((String, i32), "name, renascimentos")
+        .into_iter()
+        .map(|(n, r)| (n, r.max(0) as u32))
+        .collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
     let colonia = busca!((String, String), "name, colonia_json");
@@ -4252,6 +4288,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let conta_dungeon_json = conta_map.get(&name).cloned().unwrap_or_default();
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
         let diario_json = diarios.get(&name).cloned().unwrap_or_default();
+        let renascimentos = renascimentos.get(&name).copied().unwrap_or(0);
         out.insert(
             name.clone(),
             CharacterRow {
@@ -4304,6 +4341,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 bolsa_extra,
                 banco_extra,
                 diario_json,
+                renascimentos,
             },
         );
     }
@@ -4802,6 +4840,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         .await?;
         sqlx::query("UPDATE characters SET diario_json = $2 WHERE name = $1")
             .bind(&row.name).bind(&row.diario_json)
+            .execute(&mut *tx).await?;
+        sqlx::query("UPDATE characters SET renascimentos = $2 WHERE name = $1")
+            .bind(&row.name).bind(row.renascimentos.min(i32::MAX as u32) as i32)
             .execute(&mut *tx).await?;
         sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3, pk_modo = $4, pk_decai_s = $5 WHERE name = $1")
             .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)

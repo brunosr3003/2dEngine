@@ -32,6 +32,15 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Ward Charm protects refines up to +7.
 - Monsters no longer spawn right next to purple rock veins.
 - Skills follow the weapon's base speed: attack speed now speeds up the basic attack only. Life Drain heals from the damage that lands.
+- Story: every Porão the story sends you to (Smuggler's Cellar, Thunder Vault, Seraph Reliquary, Robot Foundry, Sunken Galleon) now comes after steps to gather its key materials and craft its key, like the Shipwreck Cellar. The material steps only ask you to HAVE the wood and Steel in your bag: if you already carry them, they pass at once, nothing is taken, and the step pays the same amount back.
+- The early wood steps no longer get stuck among monsters: the grove next to the Grove's town is kept free of monsters, and the auto quest sends tree-felling quests there first.
+- New bonus packs, for a few cents and a limited time: if the Shipwreck Cellar beats you (you fall, leave or run out of time), a Starter Pack pops up with 400 TP, 10,000 gold, 10,000 Energy and 10,000 Darksteel for 0.99. Later falls can offer your own weapon in Blue at your level (with gold), and then a full Blue set with TP, each showing how much Power you would gain.
+- New level packs at levels 20, 50, 70 and 100. Every pack gives at least the TP its price buys in the shop, plus a bonus (gold, Energy, Darksteel, summon scrolls or gear). Each pack appears once per account.
+- Gear bought in a pack goes straight to your bag (to the Mail if the bag is full); its gold goes to your purse.
+- REBIRTH: at level 100, open the Character Sheet and tap Rebirth. You go back to level 1 and your attribute points are reset (their Energy is refunded); you keep your items and gear, gold, TP, pets, mounts, proficiencies, story and skill tiers.
+- Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a bit slower after each rebirth.
+- Rebirth milestones: a body aura that changes color (green at 1, blue at 3, purple at 5, gold at 10, a black hole at 15, brighter every 5 from 20), +10 bag slots at the 2nd and +10 bank slots at the 7th. Everyone online is told when a player reaches a milestone.
+- Rebirths show as "R3" before the name, in the Character Sheet, and the Level ranking is ordered by rebirths first, then level. Each rebirth has its own celebration, bigger at every milestone.
 
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 

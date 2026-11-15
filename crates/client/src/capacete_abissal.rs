@@ -300,7 +300,7 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         skins: 0,
         auras: 0,
         pk: Default::default(),
-        poder: 0,
+        poder: 0, renascimentos: 0,
     };
     let state = shared::EntityState::quantize(id, ::glam::Vec2::ZERO, ::glam::Vec2::ZERO, 100, 0);
     world.apply(vec![meta], vec![state], &[]);

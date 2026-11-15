@@ -161,8 +161,22 @@ pub fn progresso(q: &QuestNet, tem: Tem) -> (u32, u32) {
     }
 }
 
+/// Objectives counted from the BAG: COLLECT/DELIVER and TER ("have N", the
+/// story's key resources). TER is never consumed — the server closes it by
+/// itself (`checar_posse`) — but the count shown is the same: what the bag
+/// holds now, capped.
 fn coleta(q: &QuestNet) -> bool {
-    q.obj_kind == objective_kind::COLLECT || q.obj_kind == objective_kind::DELIVER
+    matches!(
+        q.obj_kind,
+        objective_kind::COLLECT | objective_kind::DELIVER | objective_kind::TER
+    )
+}
+
+/// The tracker/menu line of a TER step: "Have 113 Wood T1 · you: 40".
+pub fn linha_de_posse(obj_target: u16, total: u32, tem: u32) -> String {
+    let item = shared::porao::nome_do_material(obj_target)
+        .map_or_else(|| format!("item {obj_target}"), str::to_string);
+    format!("Have {total} {item} · you: {tem}")
 }
 
 /// Da' pra entregar? Live-track: o servidor marcou READY. Coleta: tem na bolsa.
@@ -257,6 +271,13 @@ pub fn resumo(q: &QuestNet, tem: Tem) -> String {
             shared::progressao::texto_de_nivel(total)
         );
     }
+    // TER: the material itself, which is what the player goes after
+    // ("Wood T1 40/113"), and not the step title.
+    if q.obj_kind == objective_kind::TER {
+        if let Some(item) = shared::porao::nome_do_material(q.obj_target) {
+            return format!("{item} {feito}/{total}");
+        }
+    }
     format!("{} {feito}/{total}", curto(&q.title))
 }
 
@@ -292,6 +313,7 @@ fn verbo(q: &QuestNet) -> &'static str {
         objective_kind::VIAGEM => "Travel",
         objective_kind::DUNGEON => "Beat",
         objective_kind::TUTORIAL => "Learn",
+        objective_kind::TER => "Have",
         _ => "Objective",
     }
 }
@@ -1177,6 +1199,22 @@ mod tests {
     }
     fn nada(_: u16) -> u32 {
         0
+    }
+
+    /// TER (the story's key resources) counts the BAG, says what to have and
+    /// how much the player holds, and reads as ready once the bag is full.
+    #[test]
+    fn a_posse_conta_a_bolsa_e_diz_o_que_falta() {
+        let [_, madeira, _, _] = historia::CHAVES_DA_HISTORIA[1];
+        let p = q(madeira, quest_status::ACTIVE, 0);
+        assert_eq!(p.obj_kind, objective_kind::TER);
+        let quarenta = |_: u16| 40;
+        assert_eq!(progresso(&p, &quarenta), (40, p.obj_count));
+        assert!(!pronta(&p, &quarenta));
+        let cheia = |_: u16| 999;
+        assert!(pronta(&p, &cheia));
+        assert_eq!(linha_de_posse(p.obj_target, p.obj_count, 40), format!("Have {} Wood T1 · you: 40", p.obj_count));
+        assert!(resumo(&p, &quarenta).starts_with("Wood T1 40/"), "{}", resumo(&p, &quarenta));
     }
 
     #[test]

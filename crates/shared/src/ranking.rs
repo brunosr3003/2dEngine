@@ -36,6 +36,10 @@ pub struct LinhaRanking {
     pub skins: u64,
     #[serde(default)]
     pub auras: u64,
+    /// Rebirths (`shared::renascimento`): the level ranking sorts by them
+    /// first, then by level.
+    #[serde(default)]
+    pub renascimentos: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,13 +54,17 @@ pub struct Ranking {
     pub total: u32,
 }
 
-/// Orders and numbers rows for one list. Ties: higher level/power second,
+/// Orders and numbers rows for one list. The level list sorts by rebirths
+/// first, then level (docs/RESET.md). Ties: higher level/power second,
 /// then name, so the order is stable between refreshes.
 pub fn ordena(linhas: &mut [LinhaRanking], tipo: TipoRanking) {
     linhas.sort_by(|a, b| {
         let (pa, pb) = match tipo {
             TipoRanking::Poder => ((a.poder as i64, a.nivel as i64), (b.poder as i64, b.nivel as i64)),
-            TipoRanking::Nivel => ((a.nivel as i64, a.poder as i64), (b.nivel as i64, b.poder as i64)),
+            TipoRanking::Nivel => (
+                (a.renascimentos as i64 * 1_000_000 + a.nivel as i64, a.poder as i64),
+                (b.renascimentos as i64 * 1_000_000 + b.nivel as i64, b.poder as i64),
+            ),
         };
         pb.cmp(&pa).then_with(|| a.nome.cmp(&b.nome))
     });
@@ -70,7 +78,7 @@ mod testes {
     use super::*;
 
     fn l(nome: &str, nivel: u32, poder: i32) -> LinhaRanking {
-        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe: 0, aparencia: 0, skins: 0, auras: 0 }
+        LinhaRanking { posicao: 0, nome: nome.into(), nivel, poder, classe: 0, aparencia: 0, skins: 0, auras: 0, renascimentos: 0 }
     }
 
     #[test]
@@ -83,5 +91,11 @@ mod testes {
         ordena(&mut v, TipoRanking::Nivel);
         assert_eq!(v[0].nome, "c");
         assert_eq!(v[2].posicao, 3);
+        // A reborn level 5 outranks a level 30 that never rebirthed.
+        v.push(LinhaRanking { renascimentos: 1, ..l("r", 5, 10) });
+        ordena(&mut v, TipoRanking::Nivel);
+        assert_eq!(v[0].nome, "r");
+        ordena(&mut v, TipoRanking::Poder);
+        assert_eq!(v[3].nome, "r", "power ignores rebirths");
     }
 }
