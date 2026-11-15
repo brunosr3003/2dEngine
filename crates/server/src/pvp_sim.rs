@@ -150,7 +150,7 @@ impl Lutador {
     }
 
     fn esquiva(&self) -> f32 {
-        shared::combat::chance_de_esquiva(self.arma, self.alocados[shared::stat_idx::DES])
+        shared::combat::chance_de_esquiva(self.arma, self.alocados[shared::stat_idx::DES], self.nivel)
     }
 }
 

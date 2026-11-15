@@ -342,7 +342,12 @@ fn lutar(l: Luta, hp: &mut i32, bolsa: &mut Pocoes) -> Saida {
     // The pistol's DODGE (`combat::chance_de_esquiva`), from the DEX the
     // reference build allocates. Applied as a running count — every time it
     // passes 1 a bite misses — so the check is the expected rate, not a dice.
-    let esquiva = shared::combat::chance_de_esquiva(arma, build_do_nivel(conjunto, nivel).1[shared::stat_idx::DES]);
+    let (_, alocado, _, xp_ref) = build_do_nivel(conjunto, nivel);
+    let esquiva = shared::combat::chance_de_esquiva(
+        arma,
+        alocado[shared::stat_idx::DES],
+        shared::level_of_xp_with_mult(xp_ref, crate::economy::xp_multiplier()),
+    );
     let mut esquivas = 0.0f32;
     let a_distancia = conjunto.a_distancia();
     let alcance = if a_distancia {
@@ -1367,7 +1372,11 @@ pub(crate) fn duelar(
     let arma = arma_do(conjunto);
     // Dodge applies to the boss's COMMON hits only: the telegraphs are a
     // hand-dodge (`combat::chance_de_esquiva`).
-    let esquiva = shared::combat::chance_de_esquiva(arma, alloc[shared::stat_idx::DES]);
+    let esquiva = shared::combat::chance_de_esquiva(
+        arma,
+        alloc[shared::stat_idx::DES],
+        shared::level_of_xp_with_mult(xp, crate::economy::xp_multiplier()),
+    );
     let mut esquivas = 0.0f32;
     let a_distancia = conjunto.a_distancia();
     let alcance = if a_distancia {
@@ -3677,6 +3686,57 @@ mod tempo_de_nivel {
                 );
                 a = b;
             }
+        }
+    }
+}
+
+/// The pistol's EARLY-GAME bonus (`shared::combat::bonus_inicial_da_pistola`,
+/// 15/11/2026): a low-level pistol hits harder and dodges more than it did,
+/// a max-level one is exactly as it was, and no other weapon moves.
+#[cfg(test)]
+mod inicio_da_pistola {
+    use super::*;
+    use crate::world::stats_sem_inicio_da_pistola;
+
+    fn antes_e_depois(c: Conjunto, nivel: u32) -> ((i32, f32), (i32, f32)) {
+        let (e, a, p, x) = build_do_nivel(c, nivel);
+        let antes = stats_sem_inicio_da_pistola(&e, &a, &p, x, 0, &Default::default());
+        let depois = effective_stats(&e, &a, &p, x);
+        let arma = arma_do(c);
+        let des = a[shared::stat_idx::DES];
+        let nv = shared::level_of_xp_with_mult(x, crate::economy::xp_multiplier());
+        // "Before" dodge: the DEX dodge alone, as the old rule had it.
+        let esquiva_antes = if arma == shared::item_id::PISTOLAS {
+            (des as f32 * shared::combat::ESQUIVA_POR_DES).min(shared::combat::ESQUIVA_MAXIMA)
+        } else {
+            shared::combat::chance_de_esquiva(arma, des, shared::progressao::NIVEL_MAX)
+        };
+        let esquiva_depois = shared::combat::chance_de_esquiva(arma, des, nv);
+        ((antes.attack_damage, esquiva_antes), (depois.attack_damage, esquiva_depois))
+    }
+
+    #[test]
+    fn pistola_forte_no_inicio_e_igual_no_fim() {
+        crate::economy::init_vazia_para_testes();
+        for nivel in [1u32, 10, 20, 30, 60] {
+            let ((a0, e0), (a1, e1)) = antes_e_depois(Conjunto::Pistolas, nivel);
+            println!("pistola nv{nivel}: ataque {a0} -> {a1}, esquiva {:.1}% -> {:.1}%", e0 * 100.0, e1 * 100.0);
+            if nivel < shared::combat::PISTOLA_INICIO_ATE {
+                assert!(a1 > a0, "nv{nivel}: attack {a0} -> {a1}");
+                assert!(e1 > e0, "nv{nivel}: dodge {e0} -> {e1}");
+            } else {
+                assert_eq!((a1, e1), (a0, e0), "nv{nivel}: late game must not move");
+            }
+        }
+        // Max level: the whole stat block is identical, not just attack.
+        let (e, a, p, x) = build_do_nivel(Conjunto::Pistolas, shared::progressao::NIVEL_MAX);
+        assert_eq!(
+            format!("{:?}", effective_stats(&e, &a, &p, x)),
+            format!("{:?}", stats_sem_inicio_da_pistola(&e, &a, &p, x, 0, &Default::default())),
+        );
+        for c in [Conjunto::EspadaEscudo, Conjunto::Katana, Conjunto::AnelMagico] {
+            let (antes, depois) = antes_e_depois(c, 1);
+            assert_eq!(antes, depois, "{c:?} must not change");
         }
     }
 }

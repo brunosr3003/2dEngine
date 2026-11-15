@@ -71,12 +71,80 @@ pub fn mult_dano_do_mob(nivel_jogador: u32, nivel_mob: u32) -> f32 {
     1.0 + DANO_RECEBIDO_POR_NIVEL * degraus_acima(nivel_jogador, nivel_mob) as f32
 }
 
-/// See the dodge notes above `ESQUIVA_POR_DES`.
-pub fn chance_de_esquiva(weapon_id: u16, des_alocada: u32) -> f32 {
+/// See the dodge notes above `ESQUIVA_POR_DES`. `nivel` is the character's
+/// INTERNAL level: it only matters to the pistol's early-game bonus
+/// (`bonus_inicial_da_pistola`), which adds to the DEX dodge under the same
+/// `ESQUIVA_MAXIMA` cap.
+pub fn chance_de_esquiva(weapon_id: u16, des_alocada: u32, nivel: u32) -> f32 {
     if weapon_id == crate::constants::item_id::PISTOLAS {
-        (des_alocada as f32 * ESQUIVA_POR_DES).min(ESQUIVA_MAXIMA)
+        let (_, extra) = bonus_inicial_da_pistola(nivel);
+        (des_alocada as f32 * ESQUIVA_POR_DES + extra).min(ESQUIVA_MAXIMA)
     } else {
         (des_alocada as f32 * ESQUIVA_POR_DES_GERAL).min(ESQUIVA_MAXIMA_GERAL)
+    }
+}
+
+// ─────────────────────── the pistol's early game ───────────────────────
+
+/// The owner, 15/11/2026: "deixa pistola um pouco mais forte no early game
+/// com mais dodge e mais dano e do jeito q ta no late game". An all-DEX
+/// pistol starts with the least health and almost no DEX dodge (a handful
+/// of points at level 1), so the early levels are where it feels weakest.
+///
+/// At internal level 1 the pistol gets `+PISTOLA_INICIO_DANO` attack
+/// (multiplier on `attack_damage`, so basics AND skills) and
+/// `+PISTOLA_INICIO_ESQUIVA` flat dodge; both fall in a straight line to
+/// ZERO at internal `PISTOLA_INICIO_ATE` (shown 50, the end of the Glacier)
+/// and stay zero after. Why 30: the pistol's own late-game level bonus
+/// (`world::effective_stats`, `nivel/3` up to 12) is what the boss guards
+/// measure from internal 36 to 60 — fading before 36 leaves every boss
+/// number and the whole late game exactly as they were.
+///
+/// It applies in PvP too: it is tied to low level, and PvP already pays a
+/// level gap; two level-60 pistols duel exactly as before.
+pub const PISTOLA_INICIO_DANO: f32 = 0.20;
+pub const PISTOLA_INICIO_ESQUIVA: f32 = 0.06;
+pub const PISTOLA_INICIO_ATE: u32 = 30;
+
+/// `(extra damage fraction, extra dodge chance)` of a pistol wielder at
+/// INTERNAL level `nivel`. Never negative; zero from `PISTOLA_INICIO_ATE` on.
+pub fn bonus_inicial_da_pistola(nivel: u32) -> (f32, f32) {
+    let n = nivel.max(1);
+    if n >= PISTOLA_INICIO_ATE {
+        return (0.0, 0.0);
+    }
+    let f = (PISTOLA_INICIO_ATE - n) as f32 / (PISTOLA_INICIO_ATE - 1) as f32;
+    (PISTOLA_INICIO_DANO * f, PISTOLA_INICIO_ESQUIVA * f)
+}
+
+#[cfg(test)]
+mod testes_do_inicio_da_pistola {
+    use super::*;
+    use crate::constants::item_id;
+
+    #[test]
+    fn bonus_cheio_no_um_some_no_trinta_e_nunca_e_negativo() {
+        let (d, e) = bonus_inicial_da_pistola(1);
+        assert!((d - PISTOLA_INICIO_DANO).abs() < 1e-6 && (e - PISTOLA_INICIO_ESQUIVA).abs() < 1e-6);
+        assert_eq!(bonus_inicial_da_pistola(0), bonus_inicial_da_pistola(1));
+        let mut antes = (f32::MAX, f32::MAX);
+        for n in 0..=200 {
+            let (d, e) = bonus_inicial_da_pistola(n);
+            assert!(d >= 0.0 && e >= 0.0, "nv{n}: {d} {e}");
+            assert!(d <= antes.0 && e <= antes.1, "nv{n}: must only fall");
+            antes = (d, e);
+            if n >= PISTOLA_INICIO_ATE {
+                assert_eq!((d, e), (0.0, 0.0), "nv{n}: late game untouched");
+            }
+        }
+    }
+
+    #[test]
+    fn so_a_pistola_ganha_a_esquiva_do_inicio() {
+        assert!((chance_de_esquiva(item_id::PISTOLAS, 0, 1) - PISTOLA_INICIO_ESQUIVA).abs() < 1e-6);
+        assert_eq!(chance_de_esquiva(item_id::KATANA, 0, 1), 0.0);
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10, 60), chance_de_esquiva(item_id::PISTOLAS, 10, 30));
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000, 1), ESQUIVA_MAXIMA, "same cap");
     }
 }
 
@@ -104,17 +172,17 @@ mod testes_da_esquiva {
     #[test]
     fn todos_esquivam_e_a_pistola_mais() {
         for arma in [item_id::KATANA, item_id::ANEL_MAGICO, 0] {
-            assert_eq!(chance_de_esquiva(arma, 0), 0.0);
-            let c = chance_de_esquiva(arma, 40);
+            assert_eq!(chance_de_esquiva(arma, 0, 60), 0.0);
+            let c = chance_de_esquiva(arma, 40, 60);
             assert!((c - 0.10).abs() < 1e-6, "{arma}: {c}");
-            assert!(c < chance_de_esquiva(item_id::PISTOLAS, 40), "pistol must dodge more");
-            assert_eq!(chance_de_esquiva(arma, 10_000), ESQUIVA_MAXIMA_GERAL);
+            assert!(c < chance_de_esquiva(item_id::PISTOLAS, 40, 60), "pistol must dodge more");
+            assert_eq!(chance_de_esquiva(arma, 10_000, 60), ESQUIVA_MAXIMA_GERAL);
         }
         assert!(ESQUIVA_MAXIMA_GERAL < ESQUIVA_MAXIMA);
-        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 0), 0.0);
-        let quinze = chance_de_esquiva(item_id::PISTOLAS, 42); // all-DEX, level 15
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 0, 60), 0.0);
+        let quinze = chance_de_esquiva(item_id::PISTOLAS, 42, 15); // all-DEX, level 15
         assert!((0.15..=ESQUIVA_MAXIMA).contains(&quinze), "{quinze}");
-        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000), ESQUIVA_MAXIMA);
+        assert_eq!(chance_de_esquiva(item_id::PISTOLAS, 10_000, 60), ESQUIVA_MAXIMA);
     }
 }
 

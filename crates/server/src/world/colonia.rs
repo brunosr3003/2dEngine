@@ -18,6 +18,12 @@
 
 use super::*;
 
+/// A Minha Ilha saiu do jogo em 15/11/2026 ("eu quero tirar o myisland do
+/// jogo e as quests dele tbm"). Todo pedido da colonia e' recusado em
+/// `handle_colonia`. Uma chave, e nao o codigo apagado: o resto deste modulo
+/// continua compilando e testado, e a decisao se desfaz numa linha.
+pub(crate) const MINHA_ILHA_REMOVIDA: bool = true;
+
 impl GameWorld {
     /// A `Ilha` da colonia deste TAMANHO, gerando na primeira vez que alguem
     /// daquele tamanho entra.
@@ -412,6 +418,14 @@ impl GameWorld {
         pedido: shared::colonia::PedidoColonia,
     ) {
         use shared::colonia::PedidoColonia as P;
+        // A MINHA ILHA SAIU DO JOGO (15/11/2026). O cliente novo nao tem mais
+        // como pedir; um cliente velho que peca ouve um nao educado e nada
+        // muda — nem colheita, nem bau, nem nivel. Os dados ficam no banco
+        // (`colonia_json`), intocados: virar a chave de volta devolve tudo.
+        if MINHA_ILHA_REMOVIDA {
+            self.avisa_colonia(sid, "My Island has been removed from the game.");
+            return;
+        }
         // Sem a escritura nao ha' o que abrir, colher ou melhorar. A trava
         // fica AQUI, e nao em cada braco: braco novo nasce travado.
         if !self.sessions.get(&sid).is_some_and(|s| s.colonia.tem) {

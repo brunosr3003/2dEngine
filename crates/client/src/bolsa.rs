@@ -99,6 +99,23 @@ enum Acao {
     Organizar,
     /// +10 espacos, em ouro (`shared::armazem`).
     Expandir,
+    /// "Equip best": starts the one-piece-at-a-time upgrade run.
+    Recomendado,
+}
+
+/// The "Equip best" run in progress (owner, 15/11/2026: "pode ter um equipe
+/// recommended"). One `UseItem` at a time: each swap moves pieces around the
+/// bag, so the next pick is computed only after the server's answer arrives
+/// (the sent slot changed) or after `ESPERA_S` without one (refused: stop).
+#[derive(Debug, Clone, Copy)]
+struct Recomendando {
+    /// (bag slot, what was there, when it was sent).
+    enviado: Option<(usize, Option<(u16, u32, Option<ItemInstance>)>, f64)>,
+    feitos: u32,
+}
+
+impl Recomendando {
+    const ESPERA_S: f64 = 2.0;
 }
 
 /// O que o jogador tem, como o servidor contou, e o estado da tela.
@@ -179,6 +196,7 @@ pub struct Bolsa {
     pub extra: u8,
     /// A grade rola: com as expansoes ela passa do painel.
     rolagem: crate::rolagem::Rolagem,
+    recomendado: Option<Recomendando>,
 }
 
 impl Default for Bolsa {
@@ -211,6 +229,7 @@ impl Default for Bolsa {
             desmantelar: None,
             extra: 0,
             rolagem: Default::default(),
+            recomendado: None,
         }
     }
 }
@@ -507,6 +526,7 @@ impl Bolsa {
         self.sel = None;
         self.desmantelar = None;
         self.slot_vazio = None;
+        self.recomendado = None;
     }
 
     /// O mouse esta' em cima da bolsa aberta? Entao o clique e' dela, e nao do
@@ -580,6 +600,10 @@ impl Bolsa {
                 }
             },
             Acao::Organizar => Some(ClientMessage::InventoryAutoArrange),
+            Acao::Recomendado => {
+                self.recomendado = Some(Recomendando { enviado: None, feitos: 0 });
+                self.passo_recomendado()
+            }
             Acao::Expandir => Some(ClientMessage::ExpandirArmazem { banco: false }),
         }
     }
@@ -595,7 +619,79 @@ impl Bolsa {
         if !self.aberta {
             return None;
         }
-        crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido, receitas))
+        let pedido =
+            crate::hud_estilo::no_painel(escala(), || self.desenha_na_escala(vox, solido, receitas));
+        pedido.or_else(|| self.passo_recomendado())
+    }
+
+    fn conteudo_do_slot(&self, i: usize) -> Option<(u16, u32, Option<ItemInstance>)> {
+        self.slots.get(i).filter(|x| x.qty > 0).map(|x| (x.item_id, x.qty, x.instance))
+    }
+
+    /// The next bag piece "Equip best" puts on: the biggest power gain over
+    /// what is worn in its slot. Weapon, off-hand and armour only swap for
+    /// the SAME kind (pistols for pistols, heavy for heavy): the button
+    /// improves the build, it does not change the class or the playstyle.
+    /// Level-locked pieces are skipped.
+    fn proxima_recomendada(&self) -> Option<usize> {
+        let mut melhor: Option<(usize, i32)> = None;
+        for i in 0..self.slots.len() {
+            let Some(peca) = self.peca(Sel::Inv(i)) else { continue };
+            let Some(slot) = shared::equip_slot_of(peca.id) else { continue };
+            if peca.inst.is_some_and(|x| x.nivel_para_usar() > self.nivel.max(1)) {
+                continue;
+            }
+            let vestido = self.peca(Sel::Equip(slot));
+            let mesmo_tipo = matches!(slot, EquipSlot::Weapon | EquipSlot::Offhand | EquipSlot::Armor);
+            if mesmo_tipo && vestido.as_ref().is_some_and(|v| v.id != peca.id) {
+                continue;
+            }
+            let ganho = poder_da_peca(&peca) - vestido.map_or(0, |v| poder_da_peca(&v));
+            if ganho > 0 && melhor.is_none_or(|(_, g)| ganho > g) {
+                melhor = Some((i, ganho));
+            }
+        }
+        melhor.map(|(i, _)| i)
+    }
+
+    /// One step of the "Equip best" run.
+    fn passo_recomendado(&mut self) -> Option<ClientMessage> {
+        let mut rec = self.recomendado?;
+        let agora = get_time();
+        if let Some((i, antes, quando)) = rec.enviado {
+            if self.conteudo_do_slot(i) == antes {
+                if agora - quando < Recomendando::ESPERA_S {
+                    return None;
+                }
+                // No answer: the server refused it. Stop here.
+                self.recomendado = None;
+                self.aviso_do_recomendado(rec.feitos);
+                return None;
+            }
+            rec.enviado = None;
+            rec.feitos += 1;
+        }
+        match self.proxima_recomendada() {
+            Some(i) => {
+                rec.enviado = Some((i, self.conteudo_do_slot(i), agora));
+                self.recomendado = Some(rec);
+                Some(ClientMessage::UseItem { slot: i as u16 })
+            }
+            None => {
+                self.recomendado = None;
+                self.aviso_do_recomendado(rec.feitos);
+                None
+            }
+        }
+    }
+
+    fn aviso_do_recomendado(&mut self, feitos: u32) {
+        let txt = if feitos == 0 {
+            "Nothing better to equip.".to_string()
+        } else {
+            format!("Better pieces equipped: {}", feitos)
+        };
+        self.aviso = Some((txt, get_time()));
     }
 
     fn desenha_na_escala(
@@ -1034,8 +1130,10 @@ impl Bolsa {
             if ocupados >= tamanho { VERMELHO } else { TEXTO },
         );
         let org = Rect::new(r.x + r.w - u(130.0), pe, u(130.0), u(34.0));
+        // "Equip best" sits left of Sort.
+        let rec = Rect::new(org.x - u(10.0) - u(150.0), pe, u(150.0), u(34.0));
         let exp_x = r.x + u(86.0);
-        let exp = Rect::new(exp_x, pe, (org.x - u(10.0) - exp_x).max(u(60.0)), u(34.0));
+        let exp = Rect::new(exp_x, pe, (rec.x - u(10.0) - exp_x).max(u(60.0)), u(34.0));
         let custo = shared::armazem::custo(false, self.extra);
         let pode = custo.is_some_and(|c| self.ouro >= c);
         crate::hud_estilo::botao(
@@ -1049,6 +1147,9 @@ impl Bolsa {
         }
         if ui::botao(org, "Sort", true) {
             acao = Some(Acao::Organizar);
+        }
+        if ui::botao(rec, "Equip best", self.recomendado.is_none()) && self.recomendado.is_none() {
+            acao = Some(Acao::Recomendado);
         }
         acao
     }

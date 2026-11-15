@@ -1,5 +1,13 @@
 # A Colônia — a ilha própria
 
+> **REMOVIDA em 15/11/2026.** O dono: "eu quero tirar o myisland do jogo e as
+> quests dele tbm". A linha "My Island" saiu do Menu, o servidor recusa todo
+> pedido da colônia (`world/colonia.rs`, `MINHA_ILHA_REMOVIDA`) e os passos da
+> história 718 e 799-802 saíram (`historia::PASSOS_REMOVIDOS`, que move quem
+> estava neles pra trava 803). O código e os dados (`colonia_json`) ficaram:
+> virar a chave e devolver os passos traz tudo de volta. O resto deste
+> documento descreve a ilha como ela era.
+
 > "a mecanica da ilha propria eu ainda quero, mas ai vc vai receber de quest
 > antes de ir pra segunda ilha, e os upgrades serao feitos upgradando a ilha,
 > tamanho dela, quantidade de recursos disponiveis, banco local etc"

@@ -2061,6 +2061,15 @@ impl Jogo {
                 // Who may whisper me, as set on this device.
                 let modo = self.chat_ui.modo_sussurro();
                 self.envia(ClientMessage::ModoSussurro { modo });
+                // Mac/iOS have no real payment: they only learned the server
+                // simulates payments when the TP shop was opened, so offers
+                // never showed there. Ask at login (owner, 15/11/2026: "show
+                // the offers on Mac and iOS, just so I see it works").
+                if !ofertas_ui::PODE_PAGAR {
+                    self.envia(ClientMessage::Loja {
+                        pedido: shared::loja::PedidoLoja::Estado,
+                    });
+                }
                 if let Some(r) = self.reconexao.take() {
                     println!("[reconexao] voltou na tentativa {}", r.tentativas);
                     self.chat.push("Reconnected.".into());
@@ -3582,17 +3591,8 @@ impl Jogo {
             t::MAPA_IR => &[c::MAPA_IR, c::MINIMAPA],
             t::PONTO_ATRIBUTO => &[c::FICHA_MAIS, c::MENU_FICHA, c::MENU],
             t::EVOLUIR_SKILL => &[c::SKILL_EVOLUIR, c::MENU_SKILLS, c::MENU],
-            // A ILHA: os quatro que acontecem DENTRO do painel do mural. O
-            // caminho tem um degrau só porque o painel já está aberto quando
-            // o passo abre — quem fechou o anterior fechou nele.
-            // O passo que ENSINA A ACHAR o painel. Os quatro de dentro
-            // tinham destaque e este não: o jogador via o buraco aceso a
-            // partir do segundo passo, quando já tinha descoberto sozinho.
-            t::COLONIA_PAINEL => &[c::MENU_MINHA_ILHA, c::MENU],
-            t::COLONIA_ASSENTAMENTO => &[c::ILHA_ASSENTAMENTO],
-            t::COLONIA_CONTRATAR => &[c::ILHA_CONTRATAR],
-            t::COLONIA_COLHER => &[c::ILHA_COLHER],
-            t::COLONIA_RETIRAR => &[c::ILHA_RETIRAR],
+            // Os COLONIA_* (a Minha Ilha) sairam em 15/11/2026: nenhum passo
+            // pede mais a ilha.
             // COLETA_ENERGIA e COLONIA_MURAL se fazem no MUNDO: escurecer a
             // tela esconderia exatamente a pedra (ou o mural) que ele tem que
             // achar.
@@ -3719,7 +3719,9 @@ impl Jogo {
         let w_find = if qtd == 0 { hud_estilo::medir_forte("Find", 18) + h * 1.2 } else { 0.0 };
         let gap = if qtd == 0 { 8.0 } else { 0.0 };
         let x0 = z.faixa.center().x - (w + gap + w_find) * 0.5;
-        let y = z.faixa.y + z.faixa.h + 8.0;
+        // ABOVE the travel strip (owner, 15/11/2026): below it sit the gather
+        // strip and the chat box, and a tap on the button opened the chat.
+        let y = z.faixa.y - 8.0 * z.s - h;
         let r = Rect::new(x0, y, w, h);
         let r_find = Rect::new(x0 + w + gap, y, w_find, h);
         self.botao_teleporte = Some(Rect::new(x0, y, w + gap + w_find, h));
@@ -4267,16 +4269,6 @@ impl Jogo {
                 self.fecha_paineis();
                 let g = self.guarda_roupa_salvo.clone();
                 self.guarda_roupa.abrir(&g);
-            }
-            Item::MinhaIlha => {
-                // A PORTA DE SAIR da ilha. O mural continua sendo o jeito de
-                // administrar (e o unico, de fora daqui o servidor recusa),
-                // mas ele exige ANDAR ate' ele — e a saida mora neste painel.
-                // Quem chegou e nao conseguiu andar ficava preso na ilha, sem
-                // porto e sem porta. O dono ficou.
-                self.envia(ClientMessage::Colonia {
-                    pedido: shared::colonia::PedidoColonia::Painel,
-                });
             }
             Item::Presenca => {
                 for pedido in self.presenca.abrir() {
@@ -5459,7 +5451,6 @@ impl Jogo {
                         self.auto_missao.iniciar(id, d.title.to_string(), get_time());
                         return;
                     },
-                    t::COLONIA_PAINEL | t::COLONIA_ASSENTAMENTO | t::COLONIA_CONTRATAR | t::COLONIA_COLHER | t::COLONIA_RETIRAR=>self.envia(ClientMessage::Colonia {pedido:shared::colonia::PedidoColonia::Painel}),
                     _=>{},
                 }
                 self.foco_tutorial=Some((id,get_time()));

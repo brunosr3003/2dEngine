@@ -122,7 +122,11 @@ pub mod tutorial {
     /// Abriu Missões, escolheu o passo na lista e tocou Fazer.
     pub const MISSAO_MENU: u16 = 14;
 
-    // ── A PROPRIA ILHA (docs/COLONIA.md) ──
+    // ── A PROPRIA ILHA (docs/COLONIA.md) ── removed 15/11/2026
+    //
+    // A Minha Ilha saiu do jogo e nenhum passo pede mais estes cinco. Os
+    // numeros ficam reservados (nao reusar): um passo salvo antigo ainda pode
+    // carrega-los ate' `garantir_historia` move-lo.
     //
     // A ilha tem regra propria e nenhuma delas esta' em outro lugar do jogo:
     // o painel abre num MURAL (e nao no Menu), a colheita cai num BAU (e nao

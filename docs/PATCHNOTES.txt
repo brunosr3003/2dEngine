@@ -1,14 +1,16 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
-- The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more.
+- The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.
 - Health regeneration: 0.5 HP/s in combat and 2 HP/s out of combat, plus your Vitality bonus. Regenerating and drinking potions now show a visual effect.
+- Bag: a new "Equip best" button puts on your strongest pieces in one tap, keeping your weapon and armour type.
 - New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
 - XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
 - PK modes: Free, Party, Clan and Peaceful. Players with PK on or a red name can be attacked by anyone. PK points only come from killing a clean Peaceful player; they go down by 1 per hour online or can be forgiven for gold. Dying with PK points costs more XP.
 - On the Magic Island, outside the arrival port, PK is locked to Party mode and gives no PK points.
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
+- Twin Pistols hit harder and dodge more in the early levels; the bonus fades as you level and is gone by level 50.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
 - New level scale, 1 to 100: the Grove is levels 1-30, the Glacier 30-50, the Waste 50-70 and the Plateau 70-100; everything beyond is the "100+" band, opened by your Power. Monsters keep their strength: only the numbers changed, and your character keeps all its progress.
 - Boss and dungeon chests also give Energy, and Energy veins and rocks give more Energy and Darksteel the higher the level of the place.
@@ -21,6 +23,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - First-win dungeon rewards go straight to your bag; only what does not fit goes to the Mail, and you are told.
 - The Waste has many more monsters, and the Waste and the Plateau have new quests and contracts at the Quest Master.
 - The Magic Island steps now open by Power instead of level.
+- My Island has been removed, along with its quests. If you were on one of them, your story simply continues from the next step.
 - The level cap is now 100. Everything above 100 is the "100+" band, opened by your Power instead of your level.
 - Dungeon Power requirements now follow how strong real players are at each level: the first stage still lets in anyone of the level, the top stages ask for good gear.
 - No level requirement to craft any recipe or to travel between islands: what matters is your Power and your materials.

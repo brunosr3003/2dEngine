@@ -12530,6 +12530,7 @@ impl GameWorld {
                         let chance = shared::combat::chance_de_esquiva(
                             s.equipment.weapon.unwrap_or(0),
                             s.allocated_points[shared::stat_idx::DES],
+                            shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()),
                         );
                         let sim = chance > 0.0 && fastrand::f32() < chance;
                         if sim {
@@ -14974,31 +14975,6 @@ impl GameWorld {
         crate::telemetria::conta_de(&s.name, "cobre_fonte", fonte, qtd as i64);
     }
 
-    /// Entrega a colonia a quem a historia ja' deu — e a' base do passo que
-    /// a pede. Nao e' um item: a ilha nao cabe na bolsa e nao se vende.
-    fn escritura_por_estado(s: &mut Session) {
-        if s.colonia.tem {
-            return;
-        }
-        let atual = crate::quests::passo_atual(&s.quests)
-            .and_then(|c| shared::historia::indice(c.quest_id));
-        let alvo = shared::historia::indice(shared::historia::PASSO_DA_COLONIA);
-        let (Some(atual), Some(alvo)) = (atual, alvo) else {
-            return;
-        };
-        if atual < alvo {
-            return;
-        }
-        s.colonia.tem = true;
-        // A conta das 12 h comeca AGORA. Sem isso a ilha entregaria, na
-        // primeira visita, tudo o que "rendeu" desde 1970.
-        s.colonia.colhida_em = (now_ms() / 1000) as i64;
-        let _ = s.handle.to_client.send(ServerMessage::Chat {
-            from: "SYS".into(),
-            text: "A escritura é sua: fale com o Capitão do Porto e peça MINHA ILHA.".into(),
-        });
-    }
-
     /// A historia (`shared::historia`), a cada tick: da' o primeiro passo a
     /// quem nao tem, acompanha trava de nivel, viagem e ponto-chave, e passa
     /// pro proximo passo assim que um fica pronto — com a recompensa na hora.
@@ -15039,12 +15015,9 @@ impl GameWorld {
                 s.quests_dirty = true;
                 mudou.push((id, 0, quest_status::ACTIVE));
             }
-            // A ESCRITURA da ilha e' ESTADO, nao evento. Ela tem que existir
-            // ANTES do passo poder ser cumprido — ninguem visita uma ilha que
-            // ainda nao e' sua —, e quem ja' passou do passo (save antigo, ou
-            // a versao em que ele era um TALK com o Capitao e se cumpria
-            // sozinho na conversa da viagem) nunca veria o evento passar.
-            Self::escritura_por_estado(s);
+            // A ESCRITURA da ilha (`escritura_por_estado`) saiu em 15/11/2026
+            // com a Minha Ilha: ninguem mais recebe a colonia. Quem ja' tinha
+            // fica com `colonia.tem` e os dados no banco, intocados.
             if let Some(cq) = crate::quests::passo_atual(&s.quests).cloned() {
                 let def = shared::quests::quest_by_id(cq.quest_id);
                 if let (Some(def), quest_status::ACTIVE) = (def, cq.status) {
@@ -15460,7 +15433,8 @@ impl GameWorld {
         let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
         let _ = s.handle.to_client.send(ServerMessage::Viagem {
             destinos,
-            colonia: s.colonia.tem,
+            // removed 15/11/2026: a Minha Ilha saiu do jogo.
+            colonia: false,
         });
     }
 
@@ -21086,6 +21060,31 @@ pub(crate) fn effective_stats_r(
 /// and movement speed, dash, regen, damage reduction, poise) add to the
 /// stat. Economy passives go through `Session::bonus_economia`.
 pub(crate) fn effective_stats_rv(
+    equip: &shared::Equipment,
+    allocated: &[u32; shared::STAT_COUNT],
+    proficiencies: &[u64; shared::PROF_COUNT],
+    char_xp: u64,
+    renascimentos: u32,
+    arvore: &shared::arvore::Arvore,
+) -> shared::PlayerStats {
+    let mut s = stats_sem_inicio_da_pistola(equip, allocated, proficiencies, char_xp, renascimentos, arvore);
+    // The pistol's EARLY-GAME bonus (`shared::combat::bonus_inicial_da_pistola`,
+    // 15/11/2026): extra attack at low level — basics and skills, PvE and
+    // PvP — zero from internal 30 on, so the late game is untouched. Its
+    // dodge half is applied where the dodge is rolled (`chance_de_esquiva`).
+    if equip.weapon == Some(shared::item_id::PISTOLAS) {
+        let nivel = shared::level_of_xp_with_mult(char_xp, crate::economy::xp_multiplier());
+        let (extra, _) = shared::combat::bonus_inicial_da_pistola(nivel);
+        if extra > 0.0 {
+            s.attack_damage = ((s.attack_damage as f32 * (1.0 + extra)).round() as i32).max(1);
+        }
+    }
+    s
+}
+
+/// `effective_stats_rv` before the pistol's early-game bonus: everything
+/// else. Kept apart so the test can show the bonus is the only change.
+pub(crate) fn stats_sem_inicio_da_pistola(
     equip: &shared::Equipment,
     allocated: &[u32; shared::STAT_COUNT],
     proficiencies: &[u64; shared::PROF_COUNT],

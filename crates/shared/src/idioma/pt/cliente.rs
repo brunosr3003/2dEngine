@@ -2384,4 +2384,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("+20% drop chance for 60 s.", "+20% de chance de drop por 60 s."),
     ("+30% gold from monsters for 60 s.", "+30% de ouro dos monstros por 60 s."),
     ("For 90 s: +15% drop chance, +25% gold from monsters and +2% better loot chance.", "Por 90 s: +15% de chance de drop, +25% de ouro dos monstros e +2% de chance de saque melhor."),
+    ("Equip best", "Equipar melhor"),
+    ("Nothing better to equip.", "Nada melhor para equipar."),
+    ("Better pieces equipped: {}", "Peças melhores equipadas: {}"),
 ];

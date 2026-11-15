@@ -78,15 +78,8 @@ pub mod chave {
     /// pra abrir o que já estava aberto. O dono: "eu abro a ilha mágica e
     /// continua pedindo pra eu abrir o menu e não pra entrar na ilha mágica".
     pub const MAGICA_ENTRAR: u16 = 112;
-    /// A linha "My Island" dentro do Menu.
-    ///
-    /// O primeiro passo da linha da ilha ("A escritura da ilha") manda
-    /// "Open Menu › My Island" e caía no `_ => return` do
-    /// `foco_do_tutorial`: os quatro passos de DENTRO do painel tinham
-    /// destaque e o que ensina a ACHAR o painel, não. O dono: "a missão a
-    /// escritura da ilha tá sem tutorial destacando onde é pra clicar igual o
-    /// tutorial de combate ou coleta".
-    pub const MENU_MINHA_ILHA: u16 = 110;
+    // 110 era `MENU_MINHA_ILHA`, a linha "My Island" do Menu: saiu em
+    // 15/11/2026 com a Minha Ilha. Nao reusar.
 }
 
 /// Quantas chaves cabem num pedido. Três dá pro caminho mais fundo que existe

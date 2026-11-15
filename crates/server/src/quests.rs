@@ -292,6 +292,33 @@ pub fn garantir_historia(active: &mut Vec<CharQuest>) -> Option<u16> {
     // a tabela de passos e' codigo e o progresso e' dado, e eles se separam.
     //
     // A saida e' o MARCADOR, que guarda o INDICE e nao o id.
+    //
+    // PASSO REMOVIDO DE PROPOSITO (`historia::PASSOS_REMOVIDOS`, a Minha Ilha
+    // em 15/11/2026): antes de virar fantasma, a linha vira o passo que assume
+    // no lugar, ativo e do zero. Sem isso o marcador — que conta posicoes
+    // numa lista que encolheu — mandaria o jogador alguns passos A FRENTE,
+    // por cima do barco pra Geleira. Devolve o id novo pro chamador avisar o
+    // cliente e gravar.
+    let mut trocou = None;
+    if let Some(pos) = active.iter().position(|c| {
+        c.status != quests::quest_status::TURNED_IN
+            && historia::sucessor_do_removido(c.quest_id).is_some()
+    }) {
+        let velho = active[pos].quest_id;
+        let novo = historia::sucessor_do_removido(velho).expect("acabou de achar");
+        tracing::info!("story step {velho} was removed — moved on to {novo}");
+        if active.iter().any(|c| c.quest_id == novo) {
+            active.remove(pos);
+        } else {
+            active[pos] = CharQuest {
+                quest_id: novo,
+                status: quests::quest_status::ACTIVE,
+                progress: 0,
+                cooldown_until: 0,
+            };
+            trocou = Some(novo);
+        }
+    }
     active.retain(|c| {
         let fantasma = c.quest_id != historia::ID_MARCO
             && c.quest_id >= historia::PRIMEIRO_ID
@@ -334,9 +361,11 @@ pub fn garantir_historia(active: &mut Vec<CharQuest>) -> Option<u16> {
             0
         }
     };
-    let id = historia::id_do_passo(i)?;
+    let Some(id) = historia::id_do_passo(i) else {
+        return trocou;
+    };
     if active.iter().any(|c| c.quest_id == id) {
-        return None;
+        return trocou;
     }
     active.push(CharQuest {
         quest_id: id,
@@ -1743,6 +1772,67 @@ mod testes_do_passo_fantasma {
     /// A defesa e' o ID: o passo em andamento guarda o id, que NAO se desloca,
     /// e o marcador se realinha a ele. Isto trava esse contrato, que hoje
     /// existe so' como um comentario dentro de `garantir_historia`.
+    /// QUEM FOI SALVO NUM PASSO DA MINHA ILHA (removida em 15/11/2026)
+    /// carrega e segue: a linha vira a trava antes do barco, o marcador
+    /// aponta pra ela, e ninguem pula a viagem pra Geleira.
+    ///
+    /// O marcador salvo e' o indice VELHO, de quando os cinco passos estavam
+    /// na lista: na lista nova ele aponta alguns passos a frente — ate' o
+    /// capitulo II pra quem estava no ultimo deles.
+    #[test]
+    fn salvo_num_passo_removido_carrega_e_segue() {
+        let trava = historia::TRAVA_DO_BARCO;
+        let i_trava = historia::indice(trava).expect("a trava existe");
+        for (k, &(velho, novo)) in historia::PASSOS_REMOVIDOS.iter().enumerate() {
+            assert_eq!(novo, trava);
+            // Indice velho: os removidos ficavam logo antes da trava.
+            let marcador_velho = i_trava + k as u32;
+            let mut q = vec![
+                CharQuest {
+                    quest_id: historia::ID_MARCO,
+                    status: historia::STATUS_MARCO,
+                    progress: marcador_velho,
+                    cooldown_until: 0,
+                },
+                CharQuest {
+                    quest_id: velho,
+                    status: shared::quests::quest_status::ACTIVE,
+                    progress: 1,
+                    cooldown_until: 0,
+                },
+            ];
+            let dado = garantir_historia(&mut q);
+            assert_eq!(dado, Some(novo), "{velho}: o cliente nao soube do passo novo");
+            assert!(q.iter().all(|c| c.quest_id != velho), "{velho} ficou no log");
+            let atual = passo_atual(&q).expect("sem passo atual");
+            assert_eq!(atual.quest_id, novo, "{velho} nao foi pra trava");
+            assert_eq!(atual.status, shared::quests::quest_status::ACTIVE);
+            assert_eq!(atual.progress, 0);
+            assert_eq!(indice_da_historia(&q), Some(i_trava));
+            // Idempotente: o tick roda isto de novo e nada muda.
+            assert_eq!(garantir_historia(&mut q), None);
+            assert_eq!(passo_atual(&q).map(|c| c.quest_id), Some(novo));
+            // E a trava, cumprida, leva ao barco — nao a outro lugar.
+            q.iter_mut().find(|c| c.quest_id == novo).unwrap().status =
+                shared::quests::quest_status::READY;
+            let (_, prox) = avancar_historia(&mut q).expect("a trava nao avancou");
+            assert_eq!(prox, Some(historia::CAPITULOS[0].ultimo));
+        }
+        // PRONTO no passo removido (fechou e o servidor caiu antes de dar o
+        // proximo) tambem segue, sem travar.
+        let mut q = vec![
+            CharQuest {
+                quest_id: historia::ID_MARCO,
+                status: historia::STATUS_MARCO,
+                progress: i_trava + 2,
+                cooldown_until: 0,
+            },
+            cq(801, shared::quests::quest_status::READY),
+        ];
+        garantir_historia(&mut q);
+        assert_eq!(passo_atual(&q).map(|c| c.quest_id), Some(trava));
+    }
+
     #[test]
     fn passo_novo_no_meio_nao_rebobina_quem_passou() {
         for id in [710u16, 719, 730, 752, 769] {

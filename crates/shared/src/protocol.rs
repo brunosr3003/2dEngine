@@ -414,6 +414,8 @@ pub enum ClientMessage {
     /// muda com o servidor inteiro, nao com quem esta' olhando.
     Mundo,
     /// A COLONIA (docs/COLONIA.md): visitar, voltar, colher e melhorar.
+    // removed 15/11/2026: a Minha Ilha saiu do jogo. A variante fica pra nao
+    // deslocar o indice das outras no postcard; o servidor recusa o pedido.
     Colonia {
         pedido: crate::colonia::PedidoColonia,
     },
@@ -1348,6 +1350,8 @@ pub enum ServerMessage {
         guarda_roupa: crate::aparencia::GuardaRoupa,
     },
     /// O painel da COLONIA (docs/COLONIA.md).
+    // removed 15/11/2026: o servidor nao manda mais. A variante fica pra nao
+    // deslocar o indice das outras no postcard.
     Colonia {
         aviso: crate::colonia::AvisoColonia,
     },
@@ -1387,6 +1391,8 @@ pub enum ServerMessage {
         /// A quest da ilha propria (docs/COLONIA.md) ja' passou. Falso
         /// esconde a linha "My Island" — o menu nao oferece o que a
         /// historia ainda nao deu.
+        // removed 15/11/2026: sempre `false` (a Minha Ilha saiu do jogo). O
+        // campo fica pra nao mudar o formato da mensagem.
         colonia: bool,
     },
     /// Expansoes compradas da bolsa e do banco (`shared::armazem`). Vai no

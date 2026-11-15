@@ -47,18 +47,9 @@ pub enum Item {
     Avaliar,
     /// Bonus events active now (`eventos_ui`).
     Eventos,
-    /// A colonia (docs/COLONIA.md): colher e melhorar.
     /// O guarda-roupa (docs/PERSONAGEM.md): trocar a aparencia.
     GuardaRoupa,
-    /// SÓ aparece DENTRO da colonia (`Menu::desenha` filtra).
-    ///
-    /// Ele existia e saiu quando o painel virou mural — "pra ficar mais
-    /// imersivo". Mas o mural exige ANDAR ate' ele, e a saida da ilha
-    /// (`PedidoColonia::Voltar`) mora dentro desse painel: quem chegou e nao
-    /// conseguiu andar ficou PRESO na propria ilha, sem porto e sem porta.
-    /// O dono ficou. A porta imersiva pode exigir caminhada; a porta de SAIR
-    /// nao pode exigir nada.
-    MinhaIlha,
+    // `MinhaIlha` ("My Island") saiu em 15/11/2026 com a Minha Ilha.
     /// A ILHA MÁGICA (`shared::magica`): o evento com passe.
     IlhaMagica,
     Grupo,
@@ -133,7 +124,6 @@ pub const GRUPOS: [(&str, &[Linha]); 8] = [
             (Item::Mapa, "Map", None),
             (Item::Mobs, "Mobs", None),
             (Item::Aventuras, "Dungeons", None),
-            (Item::MinhaIlha, "My Island", None),
             (Item::Montaria, "Mount", None),
         ],
     ),
@@ -417,9 +407,6 @@ impl Menu {
                     match l.0 {
                         Item::Ficha => crate::foco::marca(crate::foco::chave::MENU_FICHA, r),
                         Item::Habilidades => crate::foco::marca(crate::foco::chave::MENU_SKILLS, r),
-                        Item::MinhaIlha => {
-                            crate::foco::marca(crate::foco::chave::MENU_MINHA_ILHA, r)
-                        }
                         Item::IlhaMagica => {
                             crate::foco::marca(crate::foco::chave::MENU_ILHA_MAGICA, r)
                         }
@@ -517,7 +504,6 @@ fn nome_do_icone(item: Item) -> &'static str {
         Item::Avaliar => "avaliar",
         Item::Eventos => "coroa",
         Item::GuardaRoupa => "guarda_roupa",
-        Item::MinhaIlha => "minha_ilha",
         Item::Grupo => "grupo",
         Item::Amigos => "amigos",
         Item::Correio => "correio",
@@ -627,7 +613,6 @@ mod tests {
             Item::Ranking,
             Item::Avaliar,
             Item::Eventos,
-            Item::MinhaIlha,
             Item::IlhaMagica,
             Item::GuardaRoupa,
             Item::LojaTp,

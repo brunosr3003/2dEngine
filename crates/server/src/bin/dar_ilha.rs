@@ -1,5 +1,9 @@
 //! Puts a character at the start of the ISLAND LINE, so it can be tested.
 //!
+//! OBSOLETE since 15/11/2026: My Island was removed from the game, and so was
+//! its story line (718, 799-802 — `historia::PASSOS_REMOVIDOS`). The tool is
+//! kept only in case the feature comes back.
+//!
 //! The colony tutorial line (798-802) only opens after the deed, which only
 //! comes after half the story. Testing the end of chapter I by playing all the
 //! way there every time is not a test, it is a marathon — and that is how the
