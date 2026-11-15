@@ -41,6 +41,8 @@ mod evolucao_skills;
 mod ficha_ui;
 /// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
 mod arvore_ui;
+/// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
+mod loja_essencia_ui;
 mod foco;
 mod forja_ui;
 mod ganhos;
@@ -280,6 +282,8 @@ struct Jogo {
     ficha_ui: ficha_ui::FichaUi,
     /// The PATH TREE (`arvore_ui.rs`), opened from the sheet's PATHS.
     arvore_ui: arvore_ui::ArvoreUi,
+    /// The ESSENCE SHOP (`loja_essencia_ui.rs`), opened from the sheet.
+    loja_essencia: loja_essencia_ui::LojaEssenciaUi,
     /// A aba Pets: o bichinho equipado, nivel, fome e skills (docs/PETS.md).
     pets_ui: pets_ui::PetsUi,
     habilidades: habilidades::Habilidades,
@@ -983,6 +987,7 @@ async fn main() {
         ficha: hud::Ficha::default(),
         ficha_ui: ficha_ui::FichaUi::default(),
         arvore_ui: arvore_ui::ArvoreUi::default(),
+        loja_essencia: loja_essencia_ui::LojaEssenciaUi::default(),
         pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
@@ -2362,6 +2367,12 @@ impl Jogo {
             ServerMessage::Arvore { estado } => {
                 self.arvore_ui.receber(estado);
             }
+            ServerMessage::AscensaoResultado { ok, estrelas, item_id, motivo } => {
+                let nome = self.bolsa.nome(item_id);
+                crate::sons::tocar(if ok { crate::sons::Som::RefinoOk } else { crate::sons::Som::RefinoFalha });
+                self.forja.resultado_ascensao(ok, estrelas, &nome, &motivo, get_time());
+                self.chat.push(forja_ui::texto_da_ascensao(ok, estrelas, &nome, &motivo).0);
+            }
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
                 self.aviso_global.receber(texto);
@@ -3657,19 +3668,35 @@ impl Jogo {
             .filter(|s| s.item_id == shared::item_id::PERGAMINHO_TELEPORTE)
             .map(|s| s.qty)
             .sum();
-        let rotulo = format!("Teleport ×{qtd}");
+        // With none, the button says so and a "Find" beside it opens the
+        // where-to-get popup (the Alchemist's shop, with "Go").
+        let rotulo = if qtd == 0 {
+            "No Teleport Scroll".to_string()
+        } else {
+            format!("Teleport ×{qtd}")
+        };
         // Bigger than the strip: a finger button, not a label.
         let h = z.faixa.h * 1.5;
         let w = hud_estilo::medir_forte(&rotulo, 18) + h * 1.4;
-        let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y + z.faixa.h + 8.0, w, h);
-        self.botao_teleporte = Some(r);
+        let w_find = if qtd == 0 { hud_estilo::medir_forte("Find", 18) + h * 1.2 } else { 0.0 };
+        let gap = if qtd == 0 { 8.0 } else { 0.0 };
+        let x0 = z.faixa.center().x - (w + gap + w_find) * 0.5;
+        let y = z.faixa.y + z.faixa.h + 8.0;
+        let r = Rect::new(x0, y, w, h);
+        let r_find = Rect::new(x0 + w + gap, y, w_find, h);
+        self.botao_teleporte = Some(Rect::new(x0, y, w + gap + w_find, h));
         hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);
-        if !(crate::foco::clique() && r.toca(Vec2::from(mouse_position()))) {
+        if qtd == 0 {
+            hud_estilo::botao(r_find, "Find", hud_estilo::estado_de(r_find, false, false), true);
+        }
+        let m = Vec2::from(mouse_position());
+        if !(crate::foco::clique() && (r.toca(m) || (qtd == 0 && r_find.toca(m)))) {
             return;
         }
         if qtd == 0 {
             self.chat
                 .push("No Teleport Scroll: the village Alchemist sells it (for copper).".into());
+            self.onde_obter.abrir(shared::item_id::PERGAMINHO_TELEPORTE);
             return;
         }
         self.envia(ClientMessage::Teleportar { x: destino.x, z: destino.y });
@@ -3684,6 +3711,7 @@ impl Jogo {
             || self.evolucao_skills.aberto
             || self.ficha_ui.aberta
             || self.arvore_ui.aberta
+            || self.loja_essencia.aberta
             || self.pets_ui.aberta
             || self.invocacao.aberta()
             || self.menu_missoes.aberto
@@ -4040,6 +4068,7 @@ impl Jogo {
         self.evolucao_skills.fechar();
         self.ficha_ui.fechar();
         self.arvore_ui.fechar();
+        self.loja_essencia.fechar();
         self.pets_ui.fechar();
         self.menu_missoes.aberto = false;
         self.mobs_ui.fechar();
@@ -4330,6 +4359,11 @@ impl Jogo {
         } else if self.arvore_ui.aberta {
             // Esc on the tree goes back to the sheet it came from.
             self.arvore_ui.fechar();
+            self.ficha_ui.abrir();
+            true
+        } else if self.loja_essencia.aberta {
+            // The Essence shop too.
+            self.loja_essencia.fechar();
             self.ficha_ui.abrir();
             true
         } else if self.ficha_ui.aberta {
@@ -5992,6 +6026,7 @@ impl Jogo {
         self.ficha = hud::Ficha::default();
         self.ficha_ui = ficha_ui::FichaUi::default();
         self.arvore_ui = arvore_ui::ArvoreUi::default();
+        self.loja_essencia = loja_essencia_ui::LojaEssenciaUi::default();
         self.pets_ui = pets_ui::PetsUi::default();
         self.invocacao = invocacao_ui::InvocacaoUi::default();
         self.teclado.limpa();
@@ -7316,9 +7351,26 @@ impl Jogo {
                 self.arvore_ui.abrir();
                 self.envia(ClientMessage::Arvore { pedido: shared::arvore::PedidoArvore::Painel });
             }
+            // ESSENCE: the sheet gives way to the Essence shop.
+            if std::mem::take(&mut self.ficha_ui.abrir_loja_essencia) {
+                self.fecha_paineis();
+                self.loja_essencia.abrir();
+            }
         }
         if self.arvore_ui.aberta && !onde {
             if let Some(pedido) = self.arvore_ui.desenha(self.bolsa.ouro) {
+                self.envia(pedido);
+            }
+        }
+        if self.loja_essencia.aberta && !onde {
+            let essencia: u32 = self
+                .bolsa
+                .slots
+                .iter()
+                .filter(|s| s.item_id == shared::item_id::ESSENCIA_RENASCIMENTO && s.instance.is_none())
+                .map(|s| s.qty)
+                .sum();
+            if let Some(pedido) = self.loja_essencia.desenha(essencia) {
                 self.envia(pedido);
             }
         }

@@ -749,4 +749,12 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Not enough gold: resetting the paths costs {} gold.", "Ouro insuficiente: redistribuir os caminhos custa {} de ouro."),
     ("Paths reset: {} points back for {} gold.", "Caminhos redistribuídos: {} pontos de volta por {} de ouro."),
     ("A new path point! Open Sheet › PATHS to spend it.", "Um ponto de caminho novo! Abra Ficha › CAMINHOS para gastar."),
+    ("Not enough Rebirth Essence: resetting the paths costs {} Essence.", "Essência do Renascimento insuficiente: redistribuir os caminhos custa {} de Essência."),
+    ("Paths reset: {} points back for {} Rebirth Essence.", "Caminhos redistribuídos: {} pontos de volta por {} de Essência do Renascimento."),
+    ("Not enough Rebirth Essence: {} costs {} Essence.", "Essência do Renascimento insuficiente: {} custa {} de Essência."),
+    ("Bought {} for {} Rebirth Essence.", "Comprou {} por {} de Essência do Renascimento."),
+    ("Bought {} for {} Rebirth Essence. Your bag is full: it went to the Mail.", "Comprou {} por {} de Essência do Renascimento. A bolsa está cheia: foi para o Correio."),
+    ("needs {} Rebirth Essence and {} Darksteel", "precisa de {} de Essência do Renascimento e {} de Darksteel"),
+    ("Only gear can be ascended (not pets or mounts).", "Só equipamento pode ascender (pets e montarias não)."),
+    ("This piece already has every star.", "Esta peça já tem todas as estrelas."),
 ];

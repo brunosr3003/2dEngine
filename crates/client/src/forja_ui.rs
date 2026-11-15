@@ -262,6 +262,17 @@ fn confirma_refino(nome: &str, i: &Info, ouve: bool) -> Option<bool> {
     None
 }
 
+/// The ascension answer's sentence.
+pub fn texto_da_ascensao(ok: bool, estrelas: u8, nome: &str, motivo: &str) -> (String, Color) {
+    if ok {
+        (format!("Ascended! {nome} now has {estrelas} stars."), VERDE)
+    } else if motivo.is_empty() {
+        ("Ascending wasn't possible.".to_string(), VERMELHO)
+    } else {
+        (format!("Not ascended: {motivo}"), VERMELHO)
+    }
+}
+
 /// A frase do resultado.
 pub fn texto_do_resultado(res: u8, nivel: u8, nome: &str, motivo: &str) -> (String, Color) {
     match res {
@@ -310,6 +321,15 @@ pub fn pecas(slots: &[InventorySlot], equip: &Equipment) -> Vec<(AlvoDaForja, u1
     v
 }
 
+use shared::essencia as forja_estrelas;
+
+/// The same piece with one more star (what the ASCEND tab previews).
+fn proxima_estrela(inst: &ItemInstance) -> ItemInstance {
+    let mut p = *inst;
+    p.estrelas = p.estrelas.saturating_add(1).min(forja_estrelas::ESTRELAS_MAX);
+    p
+}
+
 #[derive(Default)]
 pub struct Forja {
     aberto: bool,
@@ -331,6 +351,9 @@ pub struct Forja {
     /// a seleção do painel pode mudar, e confirmar tem que valer para a peça
     /// que foi perguntada.
     confirmar: Option<(AlvoDaForja, u16, ItemInstance)>,
+    /// The ASCEND tab (`shared::essencia`, rebirth phase 3) instead of the
+    /// refine: stars for Rebirth Essence, always succeeds.
+    ascender: bool,
 }
 
 impl Forja {
@@ -373,6 +396,12 @@ impl Forja {
 
     pub fn pega_mouse(&self) -> bool {
         self.aberto && Self::painel().toca(Vec2::from(mouse_position()))
+    }
+
+    /// `AscensaoResultado` from the server.
+    pub fn resultado_ascensao(&mut self, ok: bool, estrelas: u8, nome: &str, motivo: &str, agora: f64) {
+        let (txt, cor) = texto_da_ascensao(ok, estrelas, nome, motivo);
+        self.aviso = Some((if ok { resultado::SUBIU } else { resultado::INVALIDO }, txt, cor, agora));
     }
 
     /// `RefinoResultado` do servidor.
@@ -428,10 +457,25 @@ impl Forja {
         estilo::texto(
             p.x + u(92.0),
             p.y + u(31.0),
-            "até +5 é seguro · do +6 em diante falhar destrói a peça",
+            if self.ascender {
+                "always succeeds · costs Rebirth Essence and Darksteel"
+            } else {
+                "até +5 é seguro · do +6 em diante falhar destrói a peça"
+            },
             13,
             estilo::SUAVE,
         );
+        // REFINE | ASCEND tabs, left of the close X.
+        for (k, rotulo) in ["Refine", "Ascend"].into_iter().enumerate() {
+            let aba = Rect::new(p.x + p.w - u(254.0) + k as f32 * u(102.0), p.y + u(10.0), u(96.0), u(28.0));
+            let nesta = self.ascender == (k == 1);
+            if crate::ui::botao(aba, rotulo, !nesta) && self.confirmar.is_none() {
+                self.ascender = k == 1;
+            }
+            if nesta {
+                draw_rectangle_lines(aba.x, aba.y, aba.w, aba.h, u(2.0), estilo::OURO);
+            }
+        }
         if crate::ui::botao(
             Rect::new(p.x + p.w - u(44.0), p.y + u(10.0), u(32.0), u(28.0)),
             "x",
@@ -446,7 +490,10 @@ impl Forja {
                 .cloned()
                 .unwrap_or_else(|| format!("item {id}"))
         };
-        let lista = pecas(slots, equip);
+        let mut lista = pecas(slots, equip);
+        if self.ascender {
+            lista.retain(|(_, id, _)| forja_estrelas::ascendivel(*id));
+        }
         if let Some(sel) = self.sel {
             if !lista.iter().any(|(a, _, _)| *a == sel) {
                 self.sel = None;
@@ -463,7 +510,7 @@ impl Forja {
             estilo::texto(
                 grade.x + u(4.0),
                 grade.y + u(24.0),
-                "No refinable piece.",
+                if self.ascender { "No piece to ascend." } else { "No refinable piece." },
                 15,
                 estilo::SUAVE,
             );
@@ -500,6 +547,10 @@ impl Forja {
                     estilo::OURO,
                 );
             }
+            if inst.estrelas > 0 {
+                crate::bolsa::desenha_estrelas(r.x + u(3.0), r.y + r.h - u(9.0), u(5.0), 1, 1);
+                estilo::texto(r.x + u(15.0), r.y + r.h - u(3.0), &inst.estrelas.to_string(), 12, estilo::OURO);
+            }
             if matches!(alvo, AlvoDaForja::Equipado(_)) {
                 estilo::texto(
                     r.x + r.w - u(12.0),
@@ -522,7 +573,12 @@ impl Forja {
         );
         let mut pedido = None;
         let mut abriu_agora = false;
-        if let Some((alvo, id, inst)) = lista.iter().find(|(a, _, _)| Some(*a) == self.sel) {
+        let selecionada = lista.iter().find(|(a, _, _)| Some(*a) == self.sel);
+        if self.ascender {
+            if let Some((alvo, id, inst)) = selecionada {
+                pedido = self.detalhe_da_ascensao(d, *alvo, *id, inst, slots, &nome(*id), palco);
+            }
+        } else if let Some((alvo, id, inst)) = selecionada {
             let i = info(inst);
             crate::bolsa::icone_do_item_com(Rect::new(d.x, d.y, u(64.0), u(64.0)), *id, 1.0, palco);
             estilo::texto_ajustado(
@@ -707,6 +763,83 @@ impl Forja {
             }
         }
         pedido
+    }
+}
+
+impl Forja {
+    /// The ASCEND tab's detail: the stars now and next, the cost, what the
+    /// next star adds and the button. No question: it never fails.
+    #[allow(clippy::too_many_arguments)]
+    fn detalhe_da_ascensao(
+        &mut self,
+        d: Rect,
+        alvo: AlvoDaForja,
+        id: u16,
+        inst: &ItemInstance,
+        slots: &[InventorySlot],
+        nome: &str,
+        palco: Option<(&VoxCache, &Material)>,
+    ) -> Option<ClientMessage> {
+        crate::bolsa::icone_do_item_com(Rect::new(d.x, d.y, u(64.0), u(64.0)), id, 1.0, palco);
+        estilo::texto_ajustado(nome, d.x + u(74.0), d.y + u(24.0), d.w - u(80.0), 18, estilo::TEXTO);
+        let grau = Grau::de_u8(inst.rarity.clamp(1, 5)).unwrap_or(Grau::Comum);
+        let onde = if matches!(alvo, AlvoDaForja::Equipado(_)) { "vestida" } else { "in your bag" };
+        estilo::texto(d.x + u(74.0), d.y + u(46.0), &format!("{} · {onde}", grau.nome()), 14, estilo::SUAVE);
+        let y = d.y + u(100.0);
+        let max = forja_estrelas::ESTRELAS_MAX;
+        crate::bolsa::desenha_estrelas(d.x, y - u(9.0), u(11.0), inst.estrelas, max);
+        let Some((essencia, ds)) = forja_estrelas::custo_da_estrela(inst.estrelas) else {
+            estilo::texto(d.x, y + u(34.0), "Every star reached: +40% to the piece.", 16, VERDE);
+            return None;
+        };
+        let prox = proxima_estrela(inst);
+        let (a, b) = (poder_do_item(id, inst), poder_do_item(id, &prox));
+        let t = format!("Power {a} › {b}  (+{})", b - a);
+        estilo::texto(d.x + d.w - estilo::medir(&t, 15), y - u(2.0), &t, 15, VERDE);
+        estilo::texto(
+            d.x,
+            y + u(34.0),
+            &format!("Star {} of {max}: +8% of the piece's base stats", inst.estrelas + 1),
+            15,
+            estilo::OURO,
+        );
+        let (tem_e, tem_ds) = (tem(slots, item_id::ESSENCIA_RENASCIMENTO), tem(slots, item_id::DARKSTEEL));
+        estilo::texto(
+            d.x,
+            y + u(62.0),
+            &format!("Rebirth Essence {tem_e}/{essencia}"),
+            15,
+            if tem_e >= essencia { VERDE } else { VERMELHO },
+        );
+        estilo::texto(
+            d.x,
+            y + u(84.0),
+            &format!("Darksteel {tem_ds}/{ds}"),
+            15,
+            if tem_ds >= ds { VERDE } else { VERMELHO },
+        );
+        if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(44.0), u(34.0), u(22.0))) {
+            self.onde_obter = Some(item_id::ESSENCIA_RENASCIMENTO);
+        }
+        if crate::onde_obter::botao(Rect::new(d.x + d.w - u(36.0), y + u(68.0), u(34.0), u(22.0))) {
+            self.onde_obter = Some(item_id::DARKSTEEL);
+        }
+        estilo::texto(d.x, y + u(116.0), "Ascending never fails; the stars stay with the piece.", 14, estilo::SUAVE);
+        let atual = atributos_do_refino(id, inst);
+        let proximo = atributos_do_refino(id, &prox);
+        estilo::texto_forte(d.x, y + u(142.0), "WITH THE NEXT STAR", 13, estilo::OURO);
+        for (n, (rotulo, depois)) in proximo.iter().take(7).enumerate() {
+            let antes = atual.iter().find(|(nm, _)| nm == rotulo).map_or("0", |(_, v)| v.as_str());
+            let texto = format!("{antes} › {depois}  ({})", ganho_formatado(antes, depois));
+            let yy = y + u(162.0 + n as f32 * 18.0);
+            estilo::texto(d.x, yy, rotulo, 12, estilo::TEXTO);
+            estilo::texto(d.x + d.w - estilo::medir(&texto, 12), yy, &texto, 12, VERDE);
+        }
+        let b = Rect::new(d.x, d.y + d.h - u(50.0), d.w, u(40.0));
+        if crate::ui::botao(b, "Ascend", tem_e >= essencia && tem_ds >= ds) {
+            return Some(ClientMessage::Ascender { alvo });
+        }
+        None
     }
 }
 

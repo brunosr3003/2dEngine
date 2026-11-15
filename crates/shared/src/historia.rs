@@ -571,7 +571,14 @@ pub const PASSOS: &[QuestDef] = &[
     // contratos sao testes: `capitulo_um_carrega_o_nivel_das_dungeons` e
     // `o_inicio_entrega_a_primeira_armadura`.
     falar(700, "Wake in the square", "Você acordou na praia na noite em que o farol do Bosque apagou. Procure o Mestre de Missões, perto do poço da praça.", Papel::Missoes, 20, 500, item_id::HEALTH_POTION, 5),
-    falar(701, "A sip of courage", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5),
+    // 15/11/2026: the story hands out the first TELEPORT SCROLLS (3 here,
+    // 3 at the lookout, 3 on the port road), and the Alchemist is the one who
+    // sells more, so the first gift comes from them.
+    QuestDef {
+        reward_item2: item_id::PERGAMINHO_TELEPORTE,
+        reward_item2_qty: 3,
+        ..falar(701, "A sip of courage", "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um. Ele também te dá Pergaminhos de Teleporte: numa viagem longa pela ilha, o botão Teleportar leva você direto ao destino — e é ele quem vende mais.", Papel::Alquimista, 20, 1_000, item_id::HEALTH_POTION, 5)
+    },
     // Tutoriais (790+): cada um ensina UMA coisa da interface, na hora em que
     // ela passa a fazer falta. Ids fora da sequencia de proposito.
     tutorial(790, "A potion at the right moment", "O Alquimista insiste: poção boa é a que se bebe sozinha. Abra Menu › Sistema › Barra, escolha a Poção de Vida e ajuste com − e + a % de vida em que ela é bebida.", tut::POCAO_LIMIAR, 20, 300, item_id::HEALTH_POTION, 5),
@@ -600,7 +607,11 @@ pub const PASSOS: &[QuestDef] = &[
     },
     cacar(708, "Bears on the slope", "The bears came down from the slopes chasing the smell of thunder. Defeat 4 bears.", alvo_de_mob(mob_kind::URSO), 4, 120, 6_500, item_id::HEALTH_POTION),
     tutorial(794, "The map shows the way", "Toque no minimapa para abrir o mapa da ilha e toque num lugar: o personagem vai sozinho até lá. Ao concluir, abra o Pergaminho de Invocação: Montaria na bolsa, equipe a montaria e use o botão Montar para viajar mais rápido.", tut::MAPA_IR, 60, 1_500, item_id::PERGAMINHO_INVOCA_MONTARIA, 1),
-    ir(709, "The lookout of the Grove", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500),
+    QuestDef {
+        reward_item: item_id::PERGAMINHO_TELEPORTE,
+        reward_item_qty: 3,
+        ..ir(709, "The lookout of the Grove", "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.", ponto::MIRANTE, 150, 8_500)
+    },
     // THE CELLAR KEY. Since 29/09/2026 a Porão is a door that only opens with
     // a crafted key (`shared::porao`), and the story sent the player to the
     // door with no word about it. The owner: "this mission need to have a
@@ -624,7 +635,11 @@ pub const PASSOS: &[QuestDef] = &[
     dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
     refinar(711, "Fire in the forge", "A weak piece won't survive the storm. Try refining a piece at the Forge.", 1, 150, 20_000),
     cacar(712, "Morgan's gunmen", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
-    ir(713, "The port road", "The Peacemain guard the port. Follow the road to the quay yard.", ponto::PORTO, 150, 37_500),
+    QuestDef {
+        reward_item: item_id::PERGAMINHO_TELEPORTE,
+        reward_item_qty: 3,
+        ..ir(713, "The port road", "The Peacemain guard the port. Follow the road to the quay yard.", ponto::PORTO, 150, 37_500)
+    },
     falar(714, "The Harbour Captain", "The Captain knows why the lighthouses go dark. Talk to him at the port.", Papel::Estaleiro, 200, 57_500, item_id::GREATER_HEAL, 3),
     cacar(715, "Claws on the road to the quay", "Tigres cercam a estrada dos carregadores e ninguém passa com carga. Derrote 5 — deles se tira a Quintessência, que toda armadura pede e a pedra dá a conta-gotas.", alvo_de_mob(mob_kind::TIGRE), 5, 250, 90_000, item_id::GREATER_HEAL),
     ir(716, "The quay at dawn", "Go to the end of the quay: the Captain promised to show the island route.", ponto::CAIS, 200, 120_000),

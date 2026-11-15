@@ -1,6 +1,7 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
+- The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more.
 - New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
 - XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
@@ -44,7 +45,9 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Rebirths show as "R3" before the name, in the Character Sheet, and the Level ranking is ordered by rebirths first, then level. Each rebirth has its own celebration, bigger at every milestone.
 - PATH TREE: from your first rebirth on, every 10 levels give a path point (10 per climb, and they stay across rebirths). Open Character Sheet > PATHS to learn nodes in four paths of 15: Assassin (crit, attack speed, dexterity, movement), Mage (wisdom, mana, attack, mana regen), Guardian (defense, health, damage reduction, regen, poise) and Corsair (drops, gold, ore, Energy, Darksteel, better loot). Mix paths freely; each path's nodes are learned in order.
 - Nodes 5, 10 and 15 of each path are active nodes: for now they give their passive, and their active skills come in a later update.
-- Reset all your path points at any time for 1,000 gold per point spent.
+- Reset all your path points at any time for 1,000 gold per point spent, or for 20 Rebirth Essence.
+- GEAR ASCENSION: at the Forge, the new Ascend tab adds stars to a gear piece (weapon, offhand, armor and accessories; not pets or mounts), up to 5. Each star gives +8% of the piece's base stats (+40% at 5 stars), on top of the refine. Ascending never fails and costs Rebirth Essence (10, 20, 40, 80, 160) plus Darksteel (2,000 doubling up to 32,000). Stars stay with the piece in trades, the market, the bank and the mail, and upgrading two pieces keeps the higher star count.
+- ESSENCE SHOP: open Character Sheet > ESSENCE (from your first rebirth on) to spend Rebirth Essence on a path reset, legendary craft keys (Scale, Claw, Horn, Leather), Ward Charms and cosmetics (Crown, Knight outfit, Void Ring skin, Spectral Coat mount skin). Purchases go to your bag, or to the Mail if it is full.
 
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 

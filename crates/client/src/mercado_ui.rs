@@ -1082,7 +1082,7 @@ impl Mercado {
                 && an.tipo == regras::TIPO_ITEM
                 && (!peca
                     || match (an.instancia.as_ref(), slot.instance.as_ref()) {
-                        (Some(a), Some(b)) => (a.rarity, a.tier, a.refinement) == (b.rarity, b.tier, b.refinement),
+                        (Some(a), Some(b)) => (a.rarity, a.tier, a.refinement, a.estrelas) == (b.rarity, b.tier, b.refinement, b.estrelas),
                         _ => false,
                     })
         };

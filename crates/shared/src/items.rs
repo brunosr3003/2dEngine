@@ -294,6 +294,12 @@ pub struct ItemInstance {
     /// rolar a primeira vez.
     #[serde(default)]
     pub afinidade: Option<[u8; 2]>,
+    /// ASCENSION stars, 0..=`essencia::ESTRELAS_MAX` (docs/RESET.md, rebirth
+    /// phase 3): each adds `essencia::BONUS_POR_ESTRELA` of the base stats
+    /// (`effective_bonus`). Bought with Rebirth Essence at the Forge and kept
+    /// by trade, market, bank and mail. LAST field; old JSON reads 0.
+    #[serde(default)]
+    pub estrelas: u8,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e
@@ -329,6 +335,7 @@ impl ItemInstance {
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
             afinidade: None,
+            estrelas: 0,
             sockets: 0,
             socketed_gems: [0; 3],
             vinculado: false,
@@ -741,6 +748,7 @@ impl ItemInstance {
             affixes: [AffixSlot::default(); MAX_AFFIXES],
             pet: None,
             afinidade: None,
+            estrelas: 0,
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,
@@ -793,7 +801,9 @@ impl ItemInstance {
 
     /// Bônus completo dos atributos fixos × refino. Afixos legados não contam.
     pub fn effective_bonus(&self) -> crate::constants::EquipBonus {
-        let m = self.refine_mult();
+        // Refine and ascension stars both add a share of the BASE (they sum,
+        // not compound): +4% a refine, +8% a star.
+        let m = self.refine_mult() + crate::essencia::bonus_das_estrelas(self.estrelas);
         // Percentual sobre o valor da peca: refinar nao cria atributo.
         let com = |v: i32| (v as f32 * m).round() as i32;
         crate::constants::EquipBonus {
@@ -1040,5 +1050,31 @@ mod testes_do_refino {
         let azul = ItemInstance::roll_em(item_template(ARMADURA_MEDIA), 18, 3, 1, || 0.5).unwrap();
         let r = azul.defense as f32 / verde.defense as f32;
         assert!((r - 1.2 / 0.9).abs() < 0.08, "azul no nivel de verde: {r:.2}x");
+    }
+}
+
+#[cfg(test)]
+mod testes_das_estrelas {
+    use super::*;
+
+    /// A piece saved before the ascension (no `estrelas` in the JSON) still
+    /// loads, with 0 stars; one with stars round-trips.
+    #[test]
+    fn json_antigo_sem_estrelas_carrega() {
+        let i = ItemInstance::roll_for(crate::item_id::KATANA, 30, || 0.5).unwrap();
+        let mut v = serde_json::to_value(i).unwrap();
+        v.as_object_mut().unwrap().remove("estrelas");
+        let lida: ItemInstance = serde_json::from_value(v).unwrap();
+        assert_eq!(lida.estrelas, 0);
+        assert_eq!(lida, i);
+        // A slot as the bag saved it before the field existed.
+        let antigo = r#"{"rarity":3,"refinement":2,"item_level":20,"hp_max":10,"mp_max":0,
+            "attack_damage":40,"dex":0,"wis":0,"defense":0}"#;
+        let a: ItemInstance = serde_json::from_str(antigo).unwrap();
+        assert_eq!((a.estrelas, a.refinement, a.tier), (0, 2, 1));
+        let mut com = i;
+        com.estrelas = 4;
+        let volta: ItemInstance = serde_json::from_str(&serde_json::to_string(&com).unwrap()).unwrap();
+        assert_eq!(volta.estrelas, 4);
     }
 }

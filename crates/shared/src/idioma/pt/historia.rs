@@ -317,8 +317,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "The chest belongs to the island. Tap WITHDRAW to move what's in it into your bag — whatever doesn't fit stays stored.",
     ),
     (
-        "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um.",
-        "The Master wants you on your feet. Talk to the Alchemist, at the green-awning shop: without potions, the woods swallow anyone.",
+        "O Mestre quer você de pé. Fale com o Alquimista, na loja de toldo verde: sem poção, a mata engole qualquer um. Ele também te dá Pergaminhos de Teleporte: numa viagem longa pela ilha, o botão Teleportar leva você direto ao destino — e é ele quem vende mais.",
+        "The Master wants you on your feet. Talk to the Alchemist, at the green-awning shop: without potions, the woods swallow anyone. They also give you Teleport Scrolls: on a long trip across the island, the Teleport button takes you straight to the destination, and the Alchemist sells more.",
     ),
     (
         "Suba ao ponto mais alto da ilha. De lá se vê o olho da tempestade — e, lá embaixo, o casco do naufrágio encalhado.",

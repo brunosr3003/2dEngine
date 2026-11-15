@@ -16,8 +16,8 @@
 //! economy ones (drop, ore, Energy, Darksteel, gold, better loot) add to the
 //! accessories' `acessorios::Bonus` (`Passivas::somar_economia`).
 //!
-//! Respec (`custo_de_redistribuir`) refunds every point for gold; phase 3
-//! adds the Essence option (`PedidoArvore` gets a variant at the END).
+//! Respec (`custo_de_redistribuir`) refunds every point for gold, or for
+//! Rebirth Essence (`PedidoArvore::RedistribuirComEssencia`, phase 3).
 
 use serde::{Deserialize, Serialize};
 
@@ -467,8 +467,11 @@ pub enum PedidoArvore {
     /// Buy node `no` (0-based, must be the path's next) of path `caminho`.
     Gastar { caminho: u8, no: u8 },
     /// Reset every point for gold (`custo_de_redistribuir`).
-    /// Phase 3 appends `RedistribuirComEssencia` AFTER this variant.
     Redistribuir,
+    /// Reset every point for Rebirth Essence instead
+    /// (`essencia::ESSENCIA_REDISTRIBUIR`, rebirth phase 3; also the Essence
+    /// shop's first offer).
+    RedistribuirComEssencia,
 }
 
 /// The tree's state for the client (`ServerMessage::Arvore`).

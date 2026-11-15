@@ -1120,6 +1120,11 @@ impl Bolsa {
             _ => "Material".into(),
         };
         ui::texto(tx, r.y + u(62.0), &classe, 16, TEXTO);
+        // ASCENSION stars (`shared::essencia`): ★★★☆☆ after the class.
+        if let Some(i) = peca.inst.filter(|i| i.estrelas > 0) {
+            let x = tx + crate::hud_estilo::medir(&classe, 16) + u(12.0);
+            desenha_estrelas(x, r.y + u(56.0), u(7.0), i.estrelas, shared::essencia::ESTRELAS_MAX);
+        }
         if let Some(i) = peca.inst {
             ui::texto(
                 tx,
@@ -1607,6 +1612,12 @@ fn celula(
             }
             if crate::icones::vinculado(p.id, p.inst.as_ref()) {
                 crate::icones::selo_vinculado(r);
+            }
+            // Ascended piece: one small star and the count, bottom-left.
+            if let Some(n) = p.inst.map(|i| i.estrelas).filter(|n| *n > 0) {
+                let raio = (r.w * 0.09).max(u(4.0));
+                desenha_estrelas(r.x + u(3.0) + raio, r.y + r.h - u(3.0) - raio, raio, 1, 1);
+                ui::texto(r.x + u(5.0) + raio * 2.0, r.y + r.h - u(4.0), &n.to_string(), fonte, ui::OURO_CLARO);
             }
             if p.qty > 1 {
                 let t = curta(p.qty);
@@ -2257,6 +2268,28 @@ mod testes {
     fn todo_slot_de_equipamento_aparece_na_tela() {
         for s in EquipSlot::TODOS {
             assert_ne!(nome_do_slot(s), "?", "{s:?} nao tem lugar na bolsa");
+        }
+    }
+}
+
+/// `total` stars in a row centred at (`x` + radius, `y`), the first `cheias`
+/// filled gold and the rest dim — the ASCENSION stars (`shared::essencia`).
+/// Drawn, not typed: the UI font has no ★ glyph.
+pub fn desenha_estrelas(x: f32, y: f32, raio: f32, cheias: u8, total: u8) {
+    for k in 0..total {
+        let c = Vec2::new(x + raio + k as f32 * raio * 2.3, y);
+        let cor = if k < cheias {
+            Color::new(1.0, 0.82, 0.25, 1.0)
+        } else {
+            Color::new(1.0, 1.0, 1.0, 0.18)
+        };
+        let ponta = |i: usize| {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            let rr = if i % 2 == 0 { raio } else { raio * 0.45 };
+            c + Vec2::new(a.cos(), a.sin()) * rr
+        };
+        for i in 0..10 {
+            draw_triangle(c, ponta(i), ponta((i + 1) % 10), cor);
         }
     }
 }

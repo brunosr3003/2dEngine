@@ -107,6 +107,72 @@ combate; a tabela usa só efeitos que já têm porta (trocar um `Efeito` depois
 (nome por caminho), pronto pra virar skill dos slots 4–6. Ficaram pras
 próximas fases: loja da Essência, ascensão, slots 4–6 e as ativas.
 
+**Renascimento, fase 3 — ascensão de equipamento e loja da Essência — feita
+(15/11/2026, versão de teste):** regras em `shared::essencia`.
+**Ascensão:** campo novo `ItemInstance::estrelas: u8` (0..=`ESTRELAS_MAX` 5,
+`#[serde(default)]`, ÚLTIMO campo — o fio postcard muda junto com a 199, e o
+JSON antigo do banco lê 0; teste `json_antigo_sem_estrelas_carrega`). Cada
+estrela = `BONUS_POR_ESTRELA` 8% dos atributos BASE da peça, SOMANDO com o
+refino em `ItemInstance::effective_bonus` (base × (1 + 4%·refino + 8%·estrelas);
+5 estrelas = +40%, o mesmo que 10 refinos) — é por ali que entra no
+`effective_stats`, no poder da bolsa/Forja e no ranking; crítico da peça
+(`crit_da_peca`) não muda. Sempre dá certo. Só equipamento
+(`essencia::ascendivel`: tem slot e não é pet nem montaria — bicho tira força
+do nível/afinidade dele, não dos atributos da peça). Custo
+(`custo_da_estrela`), tirado da BOLSA:
+
+| Estrela | Essência | Darksteel |
+|---|---|---|
+| 0 → 1 | 10 | 2.000 |
+| 1 → 2 | 20 | 4.000 |
+| 2 → 3 | 40 | 8.000 |
+| 3 → 4 | 80 | 16.000 |
+| 4 → 5 | 160 | 32.000 |
+| total | 310 | 62.000 |
+
+(310 de Essência ≈ a Essência dos 7 primeiros renascimentos; 7 peças cheias
+≈ 20 renascimentos: a progressão longa.) As estrelas viajam com a instância
+(troca, mercado, banco, correio); o Aprimorar (`craft::aprimorar`) fica com o
+MAIOR número das duas peças; peça destruída no refino leva as estrelas.
+Protocolo: `ClientMessage::Ascender { alvo: AlvoDaForja }` →
+`world/essencia.rs` `handle_ascender` (confere peça ascendível, estrela < 5,
+Essência e Darksteel; consome; recalcula stats e a vida máxima se vestida) →
+`ServerMessage::AscensaoResultado { ok, estrelas, item_id, motivo }`. Tela: aba
+**Ascend** na Forja (`forja_ui`, abas Refine | Ascend no topo; só peças
+ascendíveis; estrelas, custo, poder e atributos antes › depois; sem
+confirmação porque não falha). Cartão da bolsa mostra as estrelas desenhadas
+(a fonte não tem ★: `bolsa::desenha_estrelas`) e a célula um selo "★n"; o
+preço de referência do mercado só compara peças com o mesmo número de
+estrelas.
+**Loja da Essência** (`essencia::OFERTAS`, ids fixos no fio), aberta pelo
+botão ESSENCE da Ficha (ao lado de CAMINHOS, a partir do 1º renascimento),
+`client/loja_essencia_ui.rs`, com confirmação:
+
+| id | Oferta | Essência |
+|---|---|---|
+| 1 | Redistribuir a árvore (sem ouro) | 20 |
+| 2–5 | Chave lendária: Escama, Garra, Chifre, Couro (`chave_na_cor(base, 5)`) | 60 cada |
+| 6 | 3 Amuletos de Proteção | 15 |
+| 7 | Coroa (chapéu) | 40 |
+| 8 | Cavaleiro (roupa) | 40 |
+| 9 | Anel do Vazio (skin de anel) | 50 |
+| 10 | Pelagem Espectral (skin de montaria) | 50 |
+
+Visuais = skins que já existem (pagas na loja de TP), sem arte nova; chegam
+como item de bolsa e destravam ao usar, como as da loja de TP. Expansão de
+bolsa/banco ficou de fora (já se compra com ouro). `ClientMessage::LojaEssencia
+{ oferta }` → `handle_loja_essencia`: confere a Essência, consome e entrega
+tudo-ou-nada na bolsa (`dungeon::bolsa_tudo_ou_nada`), senão Correio (motivo 6,
+`essencia::MOTIVO_CORREIO_LOJA_ESSENCIA`, "Loja da Essência"); resposta no
+chat. A redistribuição é `PedidoArvore::RedistribuirComEssencia` (variante
+nova no FIM; a loja chama o mesmo `handle_arvore`). Itens comprados não são
+vinculados (item empilhável não tem o campo), como a chave do baú.
+**Ganchos pra fase 4:** `essencia::OFERTAS` é append-only (skins exclusivas
+dos marcos ou ativas extras entram como oferta nova com `Entrega` nova);
+`ESTRELAS_MAX`/`custo_da_estrela` são o único lugar dos números, se o teto
+subir; `Entrega` é o ponto pra ofertas que não são item. Os números (preços,
+8%/estrela, custos) estão sem calibrar.
+
 ## A ideia
 
 O jogo vira um laço curto e animado: subir do 1 ao 100 rápido, resetar,

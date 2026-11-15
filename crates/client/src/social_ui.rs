@@ -958,6 +958,7 @@ impl Social {
                 shared::presenca::MOTIVO_CORREIO => "Attendance calendar",
                 shared::loja::MOTIVO_CORREIO_LOJA => "Shop purchase",
                 shared::renascimento::MOTIVO_CORREIO_RENASCIMENTO => "Rebirth chest",
+                shared::essencia::MOTIVO_CORREIO_LOJA_ESSENCIA => "Essence shop",
                 _ => "Bag full",
             };
             e::texto_ajustado(

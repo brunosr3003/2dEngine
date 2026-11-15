@@ -64,7 +64,30 @@ impl GameWorld {
                     Err(m) => aviso = Some(m.into()),
                 }
             }
-            // Phase 3 adds the Essence reset as a new variant after this one.
+            // The same reset paid in Rebirth Essence from the bag (phase 3;
+            // also the Essence shop's "Path reset").
+            PedidoArvore::RedistribuirComEssencia => {
+                let gastos = s.arvore.gastos();
+                let custo = shared::essencia::ESSENCIA_REDISTRIBUIR;
+                let tem = crate::craft::tem(&s.inventory, shared::item_id::ESSENCIA_RENASCIMENTO);
+                if gastos == 0 {
+                    aviso = Some("No path points to reset.".into());
+                } else if s.downed {
+                    aviso = Some("You cannot reset the paths while downed.".into());
+                } else if tem < custo {
+                    aviso = Some(format!(
+                        "Not enough Rebirth Essence: resetting the paths costs {custo} Essence."
+                    ));
+                } else {
+                    crate::craft::consumir(&mut s.inventory, shared::item_id::ESSENCIA_RENASCIMENTO, custo);
+                    s.inventory_dirty = true;
+                    s.arvore = av::Arvore::default();
+                    mudou = true;
+                    aviso = Some(format!("Paths reset: {gastos} points back for {custo} Rebirth Essence."));
+                    tracing::info!("[arvore] {} redistribuiu {gastos} pontos por {custo} de Essência", s.name);
+                    crate::telemetria::conta_de(&s.name, "arvore_redistribuir_essencia", gastos, 1);
+                }
+            }
             PedidoArvore::Redistribuir => {
                 let gastos = s.arvore.gastos();
                 let custo = av::custo_de_redistribuir(gastos);

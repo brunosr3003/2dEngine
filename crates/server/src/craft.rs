@@ -330,6 +330,9 @@ pub fn aprimorar(
     // Peca de bau vinculada contamina a fusao: senao era so' fundir uma
     // vinculada com uma qualquer pra poder vender.
     nova.vinculado = ia.vinculado || ib.vinculado;
+    // ASCENSION stars (`shared::essencia`) are bought with Essence: the
+    // upgrade keeps the higher count of the two, never throws them away.
+    nova.estrelas = ia.estrelas.max(ib.estrelas);
     consumir(inv, item_id::COPPER, cobre);
     inv[b] = InventorySlot::default();
     inv[a] = InventorySlot {

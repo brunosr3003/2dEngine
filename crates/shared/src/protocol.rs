@@ -573,6 +573,17 @@ pub enum ClientMessage {
     Arvore {
         pedido: crate::arvore::PedidoArvore,
     },
+    /// GEAR ASCENSION (`shared::essencia`, rebirth phase 3): one more star on
+    /// the piece, for Rebirth Essence and Darksteel from the bag. Always
+    /// succeeds. Answered with `ServerMessage::AscensaoResultado`.
+    Ascender {
+        alvo: AlvoDaForja,
+    },
+    /// THE ESSENCE SHOP (`shared::essencia::OFERTAS`): buy offer `oferta`
+    /// for Rebirth Essence. Answered in the chat (and the bag/tree updates).
+    LojaEssencia {
+        oferta: u8,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1484,6 +1495,14 @@ pub enum ServerMessage {
     /// request, after a rebirth and when a climb earns a point.
     Arvore {
         estado: crate::arvore::EstadoArvore,
+    },
+    /// The answer to `ClientMessage::Ascender`: `ok` = the piece now has
+    /// `estrelas` stars; otherwise `motivo` (English) says why not.
+    AscensaoResultado {
+        ok: bool,
+        estrelas: u8,
+        item_id: u16,
+        motivo: String,
     },
 }
 

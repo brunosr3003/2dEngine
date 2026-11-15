@@ -41,6 +41,9 @@ pub struct FichaUi {
     /// The PATHS button was tapped: `main` closes the sheet and opens the
     /// tree (`arvore_ui`).
     pub abrir_caminhos: bool,
+    /// The ESSENCE button was tapped: `main` closes the sheet and opens the
+    /// Essence shop (`loja_essencia_ui`, rebirth phase 3).
+    pub abrir_loja_essencia: bool,
 }
 
 impl FichaUi {
@@ -265,6 +268,13 @@ impl FichaUi {
             }
             if clique && b.toca(mouse) {
                 self.abrir_caminhos = true;
+                return None;
+            }
+            // THE ESSENCE SHOP (`shared::essencia`), left of PATHS.
+            let e = Rect::new(b.x - 170.0 * f, b.y, 160.0 * f, b.h);
+            estilo::botao(e, "ESSENCE", estilo::estado_de(e, false, false), false);
+            if clique && e.toca(mouse) {
+                self.abrir_loja_essencia = true;
                 return None;
             }
         }

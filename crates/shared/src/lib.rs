@@ -21,6 +21,7 @@ pub mod celeste;
 pub mod ajuda;
 pub mod combinar;
 pub mod escassez;
+pub mod essencia;
 pub mod components;
 pub mod constants;
 pub mod construcao;

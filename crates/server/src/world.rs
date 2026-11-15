@@ -119,6 +119,7 @@ mod presenca;
 mod prime;
 pub(crate) mod ranking;
 mod arvore;
+mod essencia;
 mod renascimento;
 mod social;
 mod troca;
@@ -8574,6 +8575,8 @@ impl GameWorld {
             ClientMessage::PerdoarPk => self.perdoar_pk(id),
             ClientMessage::Renascer => self.handle_renascer(id),
             ClientMessage::Arvore { pedido } => self.handle_arvore(id, pedido),
+            ClientMessage::Ascender { alvo } => self.handle_ascender(id, alvo),
+            ClientMessage::LojaEssencia { oferta } => self.handle_loja_essencia(id, oferta),
             ClientMessage::TogglePkMode { on } => {
                 // Older on/off switch: on = Free (what "Hostile" always was).
                 self.definir_modo_pk(id, if on { shared::pk::LIVRE } else { shared::pk::PACIFICO });
