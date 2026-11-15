@@ -81,7 +81,7 @@ pub const fn base_player_stats() -> PlayerStats {
         defense: 0,
         speed_mult: 1.0,
         crit_chance: 0.0,
-        hp_regen: 0.5, // regen base de fora-de-combate
+        hp_regen: crate::constants::HP_REGEN_BASE_EM_COMBATE, // in combat; the server adds the out-of-combat rest
         mp_regen: crate::constants::MP_REGEN_PER_SEC,
         attack_speed_mult: 1.0,
         stamina_max: 100,

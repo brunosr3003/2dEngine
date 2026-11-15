@@ -19,7 +19,7 @@
 //!   ceiling of what a real fight can be;
 //! * the INTERLEAVED duel (`duelo_intercalado`): both act on one 30 Hz clock
 //!   with Bulwark, the Leap shield, Life Drain, Aura, the katana's Thirst,
-//!   HP/MP regen (resting rule included), the hit-stun and, optionally, AUTO
+//!   HP/MP regen (in-combat base), the hit-stun and, optionally, AUTO
 //!   potions, through the helpers the live loop calls (`golpe_na_muralha`,
 //!   `cura_do_dreno`, `cura_evoluida`, `cura_da_sede`, `regen_de_hp`...).
 //!   An expected-value run plus a seeded Monte Carlo (win %, TTK quantiles).
@@ -411,7 +411,7 @@ pub struct Ficha {
     pub hp: i32,
     pub mp: i32,
     pub mp_regen: f32,
-    /// Health per second (VIT, gear, pets), before the resting x4.
+    /// Health per second (VIT, gear, pets) with the in-combat base.
     pub hp_regen: f32,
     /// Basic hit before defence (attack + allocated INT on the ring).
     pub basic_damage: i32,
@@ -855,8 +855,8 @@ pub fn avaliar_com(a: &Lutador, b: &Lutador, propostas: Regras, op: OpcoesDoDuel
 //   * the katana's Thirst, opened by Dance (5) for `KATANA_THIRST_S`:
 //     `world::cura_da_sede` of every basic strike (even a dodged one — the
 //     live loop pushes the heal before the dodge roll);
-//   * HP regen (`stats.hp_regen`, x4 after 2 s not casting nor hurt — the
-//     live "resting" rule, both stand still) through `world::regen_de_hp`,
+//   * HP regen (`stats.hp_regen`, the in-combat base, no resting boost)
+//     through `world::regen_de_hp`,
 //     the beginner breath through `world::folego_de_iniciante`; MP regen;
 //   * the hit-stun: a player's hit puts the target in `HURT_STAGGER_DURATION`,
 //     and a hurt player neither swings nor casts (`in_hurt` / `ocupado`);
@@ -886,7 +886,7 @@ pub const MC_MAX: u32 = 2000;
 pub const NOTAS_DO_DUELO: [&str; 9] = [
     "Both act on one clock (30 Hz ticks, like the server); the verdict is who empties the other's health AND 100-point downed bar first. Both stand in range; no movement, line of sight or travel time.",
     "Expected run: crits as average damage per hit; DEX dodge as an exact-rate pattern (every 1/p-th basic misses), so hit-stun and Thirst follow the same hits. Monte Carlo: real rolls, seeded, N runs.",
-    "Modeled exactly from live code: Bulwark (-50..60% for 5/6/8 s by tier) and the Leap's tier VIII 2 s shield; Life Drain heal (30/35/40% by tier of the damage the bolt dealt — after defence, the PvP multipliers and Bulwark; nothing on the downed bar); Aura self-heal; katana Thirst 25% lifesteal on basics for 3 s after Dance (dodged strikes heal too); HP/MP regen with the x4 resting rule; hit-stun 0.25 s after every landed player hit (no swing, no cast).",
+    "Modeled exactly from live code: Bulwark (-50..60% for 5/6/8 s by tier) and the Leap's tier VIII 2 s shield; Life Drain heal (30/35/40% by tier of the damage the bolt dealt — after defence, the PvP multipliers and Bulwark; nothing on the downed bar); Aura self-heal; katana Thirst 25% lifesteal on basics for 3 s after Dance (dodged strikes heal too); HP/MP regen (in-combat base, no resting boost); hit-stun 0.25 s after every landed player hit (no swing, no cast).",
     "Removed from the live game (12/11/2026), so not modeled: Hunter's Mark, Sword Dance, Bloodthirst, Master's Counter, block and parry. Leap's stun only reaches mobs.",
     "Rotation: Bulwark when off cooldown and health under 90%; Aura under 70% health if the heal fits; then the damage skill with the highest expected damage (Life Drain counts its heal while hurt), but only if it beats the basics its lock displaces; basics in between. Never casts over its own melee swing in wind-up. Mana respected.",
     "AUTO potions (optional): Greater Heal under 60% health, Greater Mana under 40% mana, whenever the group is off cooldown (8 s); no body lock.",
@@ -1477,10 +1477,10 @@ impl<'a> Luta<'a> {
                 c.parado_desde = None;
             }
             if c.l.stats.hp_regen > 0.0 && c.hp < c.hp_max && c.hp > 0.0 {
-                let descansa = c.parado_desde.is_some_and(|p| t - p > 2.0);
-                let mult = if descansa { 4.0 } else { 1.0 };
+                // A duel is always in combat: the plain in-combat base (the
+                // x4 resting boost was removed on 15/11/2026).
                 let folego = folego_de_iniciante(c.l.nivel, c.hp_max as i32, t - c.ultimo_combate);
-                let pontos = regen_de_hp(0, i32::MAX, &mut c.resto_regen, (c.l.stats.hp_regen * mult + folego) * dt);
+                let pontos = regen_de_hp(0, i32::MAX, &mut c.resto_regen, (c.l.stats.hp_regen + folego) * dt);
                 let g = c.curar(pontos as f32);
                 c.curas.regen += g;
             }

@@ -41,6 +41,9 @@ mod evolucao_skills;
 mod ficha_ui;
 /// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
 mod arvore_ui;
+// Rebirth phase 4: the tree's actives in skill slots 4–6, and invisibility.
+mod ativas;
+mod invisibilidade;
 /// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
 mod loja_essencia_ui;
 mod foco;
@@ -133,6 +136,7 @@ mod morte;
 mod mundo_ui;
 mod net;
 mod nivel_vfx;
+mod cura_vfx;
 mod renascimento_vfx;
 mod onde_obter;
 mod parado;
@@ -282,6 +286,8 @@ struct Jogo {
     ficha_ui: ficha_ui::FichaUi,
     /// The PATH TREE (`arvore_ui.rs`), opened from the sheet's PATHS.
     arvore_ui: arvore_ui::ArvoreUi,
+    /// Skill slots 4–6: the tree's actives on the HUD (`ativas.rs`).
+    ativas: ativas::Ativas,
     /// The ESSENCE SHOP (`loja_essencia_ui.rs`), opened from the sheet.
     loja_essencia: loja_essencia_ui::LojaEssenciaUi,
     /// A aba Pets: o bichinho equipado, nivel, fome e skills (docs/PETS.md).
@@ -504,6 +510,8 @@ struct Jogo {
     mundo: mundo_ui::Mundo,
     guarda_roupa: guarda_roupa_ui::GuardaRoupaUi,
     subiu_de_nivel: nivel_vfx::SubiuDeNivel,
+    /// Regen glow and potion effects (`cura_vfx`).
+    cura: cura_vfx::Cura,
     /// The rebirth celebration (`renascimento_vfx`).
     renasceu: renascimento_vfx::Renasceu,
     /// O banco (Banqueiro da vila).
@@ -987,6 +995,7 @@ async fn main() {
         ficha: hud::Ficha::default(),
         ficha_ui: ficha_ui::FichaUi::default(),
         arvore_ui: arvore_ui::ArvoreUi::default(),
+        ativas: ativas::Ativas::default(),
         loja_essencia: loja_essencia_ui::LojaEssenciaUi::default(),
         pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
@@ -1103,6 +1112,7 @@ async fn main() {
         mundo: mundo_ui::Mundo::default(),
         guarda_roupa: guarda_roupa_ui::GuardaRoupaUi::default(),
         subiu_de_nivel: nivel_vfx::SubiuDeNivel::default(),
+        cura: cura_vfx::Cura::default(),
         renasceu: renascimento_vfx::Renasceu::default(),
         banco: banco_ui::Banco::default(),
         banco_pendente: None,
@@ -1545,6 +1555,14 @@ impl Jogo {
                 });
             }
             self.subiu_de_nivel.passo(get_frame_time());
+            if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+                self.cura.observa(
+                    e.state.hp,
+                    e.meta.hp_max,
+                    shared::components::acao::em_combate(e.state.acao),
+                    get_time(),
+                );
+            }
             self.renasceu.passo(get_frame_time());
             self.seguir_altura();
             // Nenhum painel abre por tecla (docs/HUD.md 2.5): so' os icones do
@@ -2365,7 +2383,23 @@ impl Jogo {
                 }
             }
             ServerMessage::Arvore { estado } => {
+                self.ativas.receber(&estado);
                 self.arvore_ui.receber(estado);
+            }
+            // Rebirth phase 4: a path-tree active went off (anyone's).
+            ServerMessage::AtivaFx { ativa, caster_eid, de, alvo, duracao_s, suprema: _ } => {
+                let meu = self.world.self_id == Some(caster_eid);
+                if meu {
+                    self.ativas.confirmada(ativa, duracao_s);
+                }
+                if let Some(fx) = ativas::fx_da_ativa(ativa) {
+                    let (de, alvo) = (vec2(de.x, de.y), vec2(alvo.x, alvo.y));
+                    sons::skill(fx, true, alvo, self.world.self_pos(), meu);
+                    self.habilidades.efeito(fx, caster_eid, de, alvo, None, true, 1);
+                }
+            }
+            ServerMessage::Invisibilidade { eid, segundos } => {
+                invisibilidade::marcar(eid, segundos);
             }
             ServerMessage::AscensaoResultado { ok, estrelas, item_id, motivo } => {
                 let nome = self.bolsa.nome(item_id);
@@ -2724,6 +2758,9 @@ impl Jogo {
             }
             ServerMessage::SkillRejected { skill_id, motivo } => {
                 sons::tocar(sons::Som::Recusa);
+                if skill_id >= shared::arvore::ID_SKILL_BASE {
+                    self.ativas.rejeitada(skill_id);
+                }
                 self.habilidades.rejeitada(skill_id, motivo)
             }
             ServerMessage::MobAttackFx {
@@ -3134,6 +3171,7 @@ impl Jogo {
                 cura_s,
             } => {
                 self.barra.pocao_grupo(grupo, recarga_s, cura_s, get_time());
+                self.cura.pocao(grupo, cura_s, get_time());
             }
             // As demais ainda nao tem UI;
             // ignorar e' seguro porque nada aqui e' autoritativo.
@@ -5560,6 +5598,12 @@ impl Jogo {
             vida_baixa: eu.state.hp as f32 / (eu.meta.hp_max.max(1) as f32) < 0.85,
             distancia_alvo,
         };
+        // Skill slots 4–6 (the path tree's actives) go first: they are
+        // instant and do not hold the weapon skills (`ativas.rs`).
+        if let Some(slot) = self.ativas.pedido(&mut self.habilidades, contexto, entrada_bloqueada) {
+            self.envia(ClientMessage::UsarAtiva { slot });
+            return;
+        }
         let pedido = if entrada_bloqueada {
             self.habilidades
                 .pedido_automatico(contexto, macroquad::prelude::get_time())
@@ -6026,6 +6070,9 @@ impl Jogo {
         self.ficha = hud::Ficha::default();
         self.ficha_ui = ficha_ui::FichaUi::default();
         self.arvore_ui = arvore_ui::ArvoreUi::default();
+        self.ativas = ativas::Ativas::default();
+        self.ativas.receber(&Default::default());
+        invisibilidade::limpar();
         self.loja_essencia = loja_essencia_ui::LojaEssenciaUi::default();
         self.pets_ui = pets_ui::PetsUi::default();
         self.invocacao = invocacao_ui::InvocacaoUi::default();
@@ -6579,6 +6626,13 @@ impl Jogo {
                         self.subiu_de_nivel.desenha(vec3(eu.x, y, eu.y), &vista.cam);
                     }
                 }
+                // Healing: the out-of-combat regen glow and the potion effects.
+                if self.cura.ativo(get_time()) {
+                    if let Some(eu) = self.world.self_pos() {
+                        let y = t.altura(eu.x, eu.y);
+                        self.cura.desenha(vec3(eu.x, y, eu.y), vista.cam.position, get_time());
+                    }
+                }
                 // Reborn: the rebirth's bigger burst, by tier.
                 if self.renasceu.ativo() {
                     if let Some(eu) = self.world.self_pos() {
@@ -6861,6 +6915,7 @@ impl Jogo {
                     self.ficha.mp.unwrap_or(0),
                     &self.evolucao_skills.progresso,
                 );
+                self.ativas.desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
                 self.auto_combate.desenha();
                 self.auto_coleta.desenha();
                 // Alvos de tutorial que moram no HUD.

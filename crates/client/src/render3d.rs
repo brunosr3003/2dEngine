@@ -1789,6 +1789,11 @@ pub fn draw_entities_com_sombras(
         let Some(e) = world.ents.get_mut(&id) else {
             continue;
         };
+        // INVISIBILITY (path-tree active): the others do not draw the body,
+        // the owner draws a ghost (`invisibilidade::pular_corpo`).
+        if crate::invisibilidade::pular_corpo(id, self_id) {
+            continue;
+        }
         let p = vista.pos_de(e);
 
         // Marca do alvo: anel no chao, que e' como MMO de target sinaliza.
@@ -1956,6 +1961,7 @@ fn desenha_sombras(
             continue;
         };
         if e.morte.is_some()
+            || crate::invisibilidade::oculto(*id, world.self_id)
             || !matches!(
                 e.meta.tag,
                 shared::EntityTag::Player
@@ -3835,7 +3841,7 @@ pub fn pick(world: &World, vista: &Vista, mouse: Vec2, raio_px: f32) -> Option<s
     let mut melhor: Option<(f32, shared::EntityId)> = None;
     for (id, e) in &world.ents {
         // morto nao se seleciona: o corpo fica, o alvo nao
-        if e.is_self() || e.morte.is_some() {
+        if e.is_self() || e.morte.is_some() || crate::invisibilidade::oculto(*id, world.self_id) {
             continue;
         }
         let Some(sp) = vista.na_tela(vista.mira_de(e)) else {

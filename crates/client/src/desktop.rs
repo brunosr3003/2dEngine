@@ -12,6 +12,10 @@ pub fn skill_pressionada(slot: usize) -> bool {
         [KeyCode::Key1, KeyCode::Kp1],
         [KeyCode::Key2, KeyCode::Kp2],
         [KeyCode::Key3, KeyCode::Kp3],
+        // 4–6: the path tree's actives (`ativas.rs`, rebirth phase 4).
+        [KeyCode::Key4, KeyCode::Kp4],
+        [KeyCode::Key5, KeyCode::Kp5],
+        [KeyCode::Key6, KeyCode::Kp6],
     ];
     teclas
         .get(slot)

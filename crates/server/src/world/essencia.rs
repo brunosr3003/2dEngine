@@ -254,7 +254,7 @@ mod testes {
             let s = w.sessions.get_mut(&sid).unwrap();
             s.xp = shared::progressao::xp_do_nivel_exibido(100, mult);
             s.last_level = shared::level_of_xp_with_mult(s.xp, mult);
-            s.arvore = Arvore { nos: [3, 0, 2, 0] };
+            s.arvore = Arvore::com_nos([3, 0, 2, 0]);
             s.gold = 0;
         }
         // Without Essence: refused, even by the tree's own request.

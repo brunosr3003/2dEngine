@@ -20,10 +20,17 @@ impl Session {
     }
 
     /// The per-character economy bonus: the companions' accessories
-    /// (`acessorios::bonus`) plus the tree's Corsair share.
+    /// (`acessorios::bonus`) plus the tree's Corsair share, plus the Corsair
+    /// actives running now (`buffs_da_arvore`, phase 4).
     pub(crate) fn bonus_economia(&self) -> shared::acessorios::Bonus {
         let mut b = shared::acessorios::bonus(&self.equipment);
         self.arvore.passivas().somar_economia(&mut b);
+        for &(ativa, _) in &self.buffs_da_arvore {
+            let x = av::bonus_de_saque(ativa, self.renascimentos);
+            b.drop += x.drop;
+            b.ouro += x.ouro;
+            b.loot_melhor += x.loot_melhor;
+        }
         b
     }
 
@@ -32,7 +39,7 @@ impl Session {
         let ganhos = self.pontos_da_arvore();
         self.arvore_ganhos_visto = ganhos;
         let _ = self.handle.to_client.send(ServerMessage::Arvore {
-            estado: av::EstadoArvore::de(self.arvore, ganhos),
+            estado: av::EstadoArvore::de(self.arvore, ganhos).com_renascimentos(self.renascimentos),
         });
     }
 }
@@ -60,7 +67,26 @@ impl GameWorld {
                             n.valor
                         );
                         crate::telemetria::conta_de(&s.name, "arvore_no", format!("{caminho}:{}", no + 1), 1);
+                        // An ACTIVE node (phase 4): the active takes the next
+                        // open empty slot (4, 5, 6).
+                        if let Some(ativa) = n.ativa {
+                            let r = s.renascimentos;
+                            let nome = av::nome_da_ativa(ativa);
+                            aviso = Some(match s.arvore.encaixar_nova(ativa, r) {
+                                Some(i) => format!("New active: {nome}, in skill slot {}.", i + 4),
+                                None => format!("New active: {nome}. Equip it in a skill slot from the path tree."),
+                            });
+                        }
                     }
+                    Err(m) => aviso = Some(m.into()),
+                }
+            }
+            // Phase 4: an owned active into an open extra slot.
+            PedidoArvore::Equipar { slot, ativa } => {
+                let r = s.renascimentos;
+                match s.arvore.equipar(slot, ativa, r) {
+                    // Saves like a bought node (the stats recompute is a no-op).
+                    Ok(()) => mudou = true,
                     Err(m) => aviso = Some(m.into()),
                 }
             }

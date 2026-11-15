@@ -162,7 +162,8 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
     let minha_pos = eu.map(|e| e.render_pos);
     let minha_faccao = eu.and_then(|e| e.meta.faction);
     for (id, e) in &world.ents {
-        if e.meta.tag != shared::EntityTag::Player {
+        // An invisible player (path-tree active) has no plate for the others.
+        if e.meta.tag != shared::EntityTag::Player || crate::invisibilidade::oculto(*id, world.self_id) {
             continue;
         }
         let eu_mesmo = world.self_id == Some(*id);

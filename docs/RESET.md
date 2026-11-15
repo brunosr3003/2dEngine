@@ -87,7 +87,7 @@ marcadas com losango dourado e "Nó ativo: … — em breve". O Menu › PERSONA
 não ganhou entrada própria: o grupo já tem os 5 de `POR_LINHA` e cada entrada
 exige arte no atlas; a árvore abre pela Ficha, que está nesse grupo.
 
-Tabela (casas 5, 10 e 15 = ativas da fase 4, que por enquanto dão a passiva):
+Tabela (casas 5, 10 e 15 = dão a passiva E a ativa da fase 4, abaixo):
 
 | Caminho | Casas 1–15 | Total do caminho cheio |
 |---|---|---|
@@ -172,6 +172,88 @@ dos marcos ou ativas extras entram como oferta nova com `Entrega` nova);
 `ESTRELAS_MAX`/`custo_da_estrela` são o único lugar dos números, se o teto
 subir; `Entrega` é o ponto pra ofertas que não são item. Os números (preços,
 8%/estrela, custos) estão sem calibrar.
+
+**Renascimento, fase 4 — ativas da árvore nos slots 4–6 — feita (15/11/2026,
+versão de teste):** regras e números em `shared::arvore` (`SLOTS_EXTRAS`,
+`ABRE_SLOT_EM` = [1, 3, 5] → `slots_abertos(r)`, `TipoAtiva`, `DefAtiva`,
+`DEFS`, `fator`, `bonus_de_saque`, `e_suprema`, `id_de_skill` /
+`ativa_do_id`). **Slots:** `Arvore::slots: [Option<u8>; 3]` (id em `ATIVAS`),
+`#[serde(skip)]` — o fio do `Arvore` não mudou; os slots vão no FIM do
+`EstadoArvore` (`slots`, `slots_abertos`, `renascimentos`, via
+`com_renascimentos`). **Guardado** no mesmo `characters.arvore_json`:
+`"[a,b,c,d]"` enquanto nenhum slot está cheio (formato da fase 2), senão
+`{"nos":[…],"slots":[x,null,y]}`; `de_json` lê os dois (teste
+`json_antigo_da_arvore_carrega`), sem coluna nova, sem mexer no UPSERT nem no
+`ProgressoDeSkills`. `validada` / `limpar_slots` esvaziam slot de ativa que
+deixou de ser possuída (redistribuir, corte de orçamento). **Equipar:** a
+casa ativa comprada entra sozinha no próximo slot aberto vazio
+(`encaixar_nova`, aviso no chat); um renascimento que abre slot o enche
+(`preencher_slots`, em `handle_renascer`); na árvore, casa ativa aprendida
+troca o "Aprender" por três botões 4 / 5 / 6 (fechado mostra "R3"/"R5";
+tocar no slot que já a tem tira) → `PedidoArvore::Equipar { slot, ativa }`
+(variante nova no FIM), que só aceita ativa aprendida em slot aberto e MOVE
+se ela já estava em outro. **Usar:** `ClientMessage::UsarAtiva { slot }` (FIM
+do enum) → `world/ativas.rs` `handle_usar_ativa`: instantânea (sem
+conjuração nem trava do corpo), confere slot aberto, ativa aprendida, ocupado
+(cast de arma, salto), recarga em `skill_cds[200 + id]` (o cliente lê do
+`SkillsState` de sempre; recusa vem como `SkillRejected` com o mesmo id),
+mana e, nos golpes, o alvo pelas MESMAS regras das skills da arma
+(`posicao_alvo_skill`, `alvos_da_habilidade`: PvP, zona segura, visada).
+Recarga passa pelo `espera_efetiva` (SAB encurta, piso 4 s). Dano em
+`pending_skill_hits` (o pipeline de dano revalida o PvP), cura em
+`pending_heals`, escudo = janela do Baluarte (`muralha_ate`, ~50%), Provocar =
+`forced_aggro_target` dos mobs, saque = `Session::buffs_da_arvore` somado em
+`bonus_economia`. Resposta `ServerMessage::AtivaFx` (FIM) pra todos.
+**Invisibilidade:** `Session::invisivel_ate` + o `Untargetable` que o caído já
+usa (a IA dos mobs já pula: perdem o alvo no mesmo tick, e o
+`forced_aggro`/`ai_target` de quem mirava nele é limpo na hora);
+`can_damage_player` recusa alvo invisível; quebra ao atacar (`wants_attack`
+no step), em qualquer skill da arma (`conjurar_skill`) e nas ativas
+ofensivas; acaba sozinha em `avancar_ativas` (que também reaplica o
+`Untargetable` se um reviver tirou, e não tira de quem está caído).
+`ServerMessage::Invisibilidade { eid, segundos }` (FIM): o dono se vê
+"fantasma" (corpo em quadros alternados, o material do mundo não tem alfa por
+corpo), os outros não desenham corpo, sombra nem placa e não conseguem
+clicar (`client/invisibilidade.rs`). **Suprema (r10):** as ativas da casa 15
+de cada caminho ficam 50% mais fortes (`MULT_SUPREMA`) a partir do 10º
+renascimento — anel dourado no botão e "(Suprema)" na árvore. **HUD:**
+`client/ativas.rs`, segundo arco acima das skills da arma (ancorado na caixa
+da skill 3: acompanha o HUD movido; não entrou no editor de HUD), cor do
+caminho, ícone emprestado de uma skill da arma (sem arte própria), recarga,
+anel do buff, dica ao passar o mouse; mesmo gesto (toque usa, arrastar pra
+cima liga AUTO, pra baixo desliga; Passo Sombrio e Invisibilidade são só
+manuais) e teclas 4/5/6 no desktop. O AUTO fica no mesmo
+`Habilidades::automaticas` (ids 200+), então persiste com as preferências.
+VFX: reaproveita os de skills da arma (`ativas::fx_da_ativa`).
+
+| Ativa | Caminho (casa) | Efeito | Recarga | Mana |
+|---|---|---|---|---|
+| Passo Sombrio | Assassino (5) | teleporta até 6 m rumo ao alvo (para 1 m antes) ou pra onde anda; colisão do andar; não quebra invisibilidade | 12 s | 20 |
+| Invisibilidade | Assassino (10) | 6 s: mobs perdem o aggro, jogador não mira; atacar/skill quebra | 30 s | 30 |
+| Marca da Morte | Assassino (15) | golpe crítico garantido no alvo (até 8 m): 200% do ataque (suprema 300%) | 20 s | 35 |
+| Nova Arcana | Mago (5) | 130% do ataque em todo inimigo a 4 m | 10 s | 30 |
+| Meteoro | Mago (10) | 180% do ataque em raio 3 no alvo (até 10 m), atordoa mob 1 s (chefe não) | 18 s | 45 |
+| Distorção do Tempo | Mago (15) | corta 50% da recarga restante das skills da arma (suprema 75%) | 45 s | 40 |
+| Provocar | Guardião (5) | mobs a 6 m atacam só você por 4 s + 2 s de Baluarte | 15 s | 20 |
+| Escudo Baluarte | Guardião (10) | Baluarte 5 s + cura 8% da vida máx. | 25 s | 30 |
+| Inquebrável | Guardião (15) | Baluarte 6 s + cura 20% (suprema 30%) + enche a firmeza | 60 s | 40 |
+| Faro de Tesouro | Corsário (5) | +20% drop por 60 s | 120 s | 25 |
+| Pilhagem | Corsário (10) | +30% ouro dos monstros por 60 s | 120 s | 25 |
+| Frota Dourada | Corsário (15) | 90 s: +15% drop, +25% ouro, +2% saque melhor (suprema ×1,5) | 300 s | 50 |
+
+Escala: dano sobre o `attack_damage` da sessão (que já tem nível,
+equipamento, renascimento e árvore) com a mesma chance de crítico das skills;
+cura sobre a vida máxima. Números modestos e sem calibrar. **Testes:**
+`shared::arvore` (`slots_abrem_nos_renascimentos_1_3_e_5`,
+`so_equipa_ativa_aprendida`, `comprar_ativa_ocupa_o_proximo_slot_aberto`,
+`json_antigo_da_arvore_carrega`, `tabela_das_ativas`), `world/ativas.rs`
+(mana/recarga, slot fechado, alvo, equipar, invisibilidade tira aggro e
+quebra ao atacar, PvP, escudo/tempo/saque, passo), `client/ativas.rs` e
+`client/invisibilidade.rs`. **Não testado no jogo:** a posição do segundo
+arco em telas pequenas, o "fantasma" a 30 fps, a correção de posição do
+cliente depois do Passo Sombrio, e o PvP real contra invisível (o teste só
+confere `can_damage_player`). Muda o fio (variantes e campos novos no fim):
+sobe junto com o `PROTOCOL_VERSION` da release.
 
 ## A ideia
 

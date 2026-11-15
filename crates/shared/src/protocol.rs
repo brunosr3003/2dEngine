@@ -584,6 +584,14 @@ pub enum ClientMessage {
     LojaEssencia {
         oferta: u8,
     },
+    /// Use the path-tree active in extra skill slot `slot` (0 = skill 4;
+    /// `shared::arvore`, rebirth phase 4). The server checks the slot is open,
+    /// the active learned, the mana, the cooldown and the target. Refusals
+    /// come as `SkillRejected` with `arvore::id_de_skill`, cooldowns in
+    /// `SkillsState` under the same id; success broadcasts `AtivaFx`.
+    UsarAtiva {
+        slot: u8,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1503,6 +1511,27 @@ pub enum ServerMessage {
         estrelas: u8,
         item_id: u16,
         motivo: String,
+    },
+    /// A path-tree active went off (`ClientMessage::UsarAtiva`, rebirth
+    /// phase 4), to everyone: the effect to draw. `de` is where the caster
+    /// was (for Shadowstep, where it left from), `alvo` where it lands;
+    /// `duracao_s` > 0 for the buffs (the slot shows the ring).
+    AtivaFx {
+        ativa: u8,
+        caster_eid: EntityId,
+        #[serde(with = "crate::vec2_arr")]
+        de: glam::Vec2,
+        #[serde(with = "crate::vec2_arr")]
+        alvo: glam::Vec2,
+        duracao_s: f32,
+        suprema: bool,
+    },
+    /// INVISIBILITY (the Assassin's active) started (`segundos` > 0) or
+    /// ended (0) on player `eid`. The owner draws itself faded, the others
+    /// do not draw it at all.
+    Invisibilidade {
+        eid: EntityId,
+        segundos: f32,
     },
 }
 

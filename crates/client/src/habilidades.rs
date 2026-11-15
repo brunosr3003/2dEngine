@@ -202,15 +202,24 @@ impl Habilidades {
     /// Does point `p` land on a skill button (or the jump one)? Without looking
     /// at a drag in progress — it is what the joystick asks about the OTHER finger.
     pub fn botao_em(&self, p: Vec2) -> bool {
-        (0..4).any(|i| retangulo(i).toca(p))
+        (0..4).any(|i| retangulo(i).toca(p)) || crate::ativas::botao_em(p)
     }
 
     pub fn pega_mouse(&self) -> bool {
         let (x, y) = mouse_position();
         // 0..4: the fourth is the JUMP button, and touching it must not become a
-        // click in the world either.
-        self.arrasto.inicio.is_some() || (0..4).any(|i| retangulo(i).toca(vec2(x, y)))
+        // click in the world either. The path-tree slots 4–6 too (`ativas`).
+        self.arrasto.inicio.is_some()
+            || (0..4).any(|i| retangulo(i).toca(vec2(x, y)))
+            || crate::ativas::pega_mouse()
     }
+
+    /// `get_time()` when skill `id`'s cooldown ends (0 = ready). The
+    /// path-tree actives read theirs here too (`arvore::id_de_skill`).
+    pub fn recarga_ate(&self, id: u32) -> f64 {
+        self.recargas.get(&id).copied().unwrap_or(0.0)
+    }
+
 
     pub fn pedido(&mut self, contexto: Contexto) -> Option<u32> {
         let mouse = Vec2::from(mouse_position());

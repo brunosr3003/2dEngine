@@ -1273,6 +1273,12 @@ pub const STAMINA_MAX_PER_SPD: i32 = 2;
 /// Regen de stamina/seg adicional por ponto em SPD (somado ao base 25).
 pub const STAMINA_REGEN_PER_SPD: f32 = 1.25; // regen escala forte c/ SPD → dash não fica gateado por stamina em builds de SPD
 
+/// Base HP regen per second while in combat (the `PlayerStats` default).
+pub const HP_REGEN_BASE_EM_COMBATE: f32 = 0.5;
+/// Base HP regen per second out of combat (8 s without hitting, casting or
+/// being hit, `acao::EM_COMBATE_S`). VIT and gear add on top of both.
+pub const HP_REGEN_BASE_FORA_DE_COMBATE: f32 = 2.0;
+
 /// HP regenerado/seg adicionado por ponto em VIT.
 pub const HP_REGEN_PER_VIT: f32 = 0.2;
 

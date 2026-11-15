@@ -136,7 +136,7 @@ impl GameWorld {
         }
     }
 
-    fn rejeita_skill(&self, sid: SessionId, id: u32, motivo: &str) {
+    pub(super) fn rejeita_skill(&self, sid: SessionId, id: u32, motivo: &str) {
         crate::telemetria::conta("skill_recusada", motivo, 1);
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::SkillRejected {
@@ -158,7 +158,7 @@ impl GameWorld {
     }
 
     /// A selecao fica presa ao cast, mesmo que o jogador troque de alvo depois.
-    fn posicao_alvo_skill(
+    pub(super) fn posicao_alvo_skill(
         &self,
         dono: EntityId,
         alvo: EntityId,
@@ -257,6 +257,8 @@ impl GameWorld {
         };
         // A desmontagem e o cast sao atomicos no servidor, antes de qualquer dano.
         self.desmontar(sid);
+        // Any weapon skill ends INVISIBILITY (`world/ativas.rs`).
+        self.quebrar_invisibilidade(sid);
         let s = self.sessions.get_mut(&sid).unwrap();
         s.mp_current -= skill.custo_mp as f32;
         // INT shortens it a little, with a floor (`skills::espera_efetiva`).
@@ -533,7 +535,7 @@ impl GameWorld {
         }
     }
 
-    fn alvos_da_habilidade(
+    pub(super) fn alvos_da_habilidade(
         &self,
         dono: EntityId,
         de: Vec2,

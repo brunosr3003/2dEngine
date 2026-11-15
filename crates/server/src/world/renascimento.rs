@@ -141,7 +141,10 @@ impl GameWorld {
             renascimentos: n,
             festa: true,
         });
-        // The path tree opens on the first rebirth; its allocation stays.
+        // The path tree opens on the first rebirth; its allocation stays. A
+        // rebirth that opens a skill slot (1, 3, 5) fills it with a learned
+        // active not equipped yet (phase 4).
+        s.arvore.preencher_slots(n);
         s.enviar_arvore();
         let chat = |s: &Session, t: String| {
             let _ = s.handle.to_client.send(ServerMessage::Chat { from: "System".into(), text: t });

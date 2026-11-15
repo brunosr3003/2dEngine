@@ -46,7 +46,10 @@ impl ArvoreUi {
         self.confirmar_redistribuir = false;
     }
 
-    pub fn receber(&mut self, estado: EstadoArvore) {
+    pub fn receber(&mut self, mut estado: EstadoArvore) {
+        // The slots travel beside the allocation (`Arvore::slots` is not on
+        // the wire): keep both views the same.
+        estado.arvore.slots = estado.slots;
         self.estado = Some(estado);
     }
 
@@ -193,19 +196,27 @@ impl ArvoreUi {
         );
         estilo::texto_ajustado(&linha_do_no(no), x, info.y + 42.0 * f, larg, 17, estilo::TEXTO);
         if let Some(id) = no.ativa {
-            let nome = av::ATIVAS.get(id as usize).map_or("", |a| a.1);
-            estilo::texto_ajustado(
-                &format!("Active node: {} — coming soon", shared::idioma::tr(nome)),
-                x,
-                info.y + 64.0 * f,
-                larg,
-                13,
-                estilo::OURO,
-            );
+            let nome = shared::idioma::tr(av::nome_da_ativa(id)).into_owned();
+            let d = av::def(id).expect("a known active");
+            let linha = if av::e_suprema(id, estado.renascimentos) {
+                format!("Active: {} (Supreme) · {} MP · {}s cooldown", nome, d.custo_mp, d.espera_s as u32)
+            } else {
+                format!("Active: {} · {} MP · {}s cooldown", nome, d.custo_mp, d.espera_s as u32)
+            };
+            estilo::texto_ajustado(&linha, x, info.y + 64.0 * f, larg, 13, estilo::OURO);
         }
         let tem = estado.arvore.tem(c, sk);
         let feitos = estado.arvore.nos[sc as usize];
-        let (situacao, cor_sit) = if tem {
+        let ativa_aprendida = no.ativa.filter(|_| tem);
+        let (situacao, cor_sit) = if let Some(id) = ativa_aprendida {
+            match estado.slots.iter().position(|s| *s == Some(id)) {
+                Some(i) => (format!("Learned · in skill slot {}", i + 4), estilo::VERDE),
+                None if estado.slots_abertos == 0 => {
+                    ("Learned · skill slot 4 opens at the first rebirth".to_string(), estilo::SUAVE)
+                }
+                None => ("Learned · equip it in a skill slot: 4, 5 or 6".to_string(), estilo::ACENTO),
+            }
+        } else if tem {
             ("Learned".to_string(), estilo::VERDE)
         } else if feitos == sk && livres > 0 {
             ("Ready to learn: 1 point".to_string(), estilo::ACENTO)
@@ -217,7 +228,10 @@ impl ArvoreUi {
         estilo::texto_ajustado(&situacao, x, info.y + 86.0 * f, larg, 13, cor_sit);
         let total: Vec<String> =
             linhas_do_caminho(c, feitos).iter().map(|l| shared::idioma::tr(l).into_owned()).collect();
-        if !total.is_empty() {
+        // An active node shows what the active does instead of the path sum.
+        if let Some(d) = no.ativa.and_then(av::def) {
+            estilo::texto_ajustado(d.descricao, x, info.y + 106.0 * f, larg, 11, estilo::SUAVE);
+        } else if !total.is_empty() {
             estilo::texto_ajustado(
                 &format!("This path so far: {}", total.join(" · ")),
                 x,
@@ -232,8 +246,32 @@ impl ArvoreUi {
         let bh = 42.0 * f;
         let aprender = Rect::new(info.x + info.w - 230.0 * f, info.y + 6.0 * f, 230.0 * f, bh);
         let pode = self.pode_aprender(sc, sk);
-        estilo::botao(aprender, "Learn", estilo::estado_de(aprender, !pode, false), pode);
-        if clique && aprender.toca(m) && pode {
+        if let Some(id) = ativa_aprendida {
+            // A learned active: three slot buttons in the Learn button's place.
+            // Tap a free one to equip, the one holding it to take it off.
+            let gap = 8.0 * f;
+            let bw = (aprender.w - 2.0 * gap) / 3.0;
+            for i in 0..av::SLOTS_EXTRAS {
+                let r = Rect::new(aprender.x + i as f32 * (bw + gap), aprender.y, bw, bh);
+                let aberto = i < estado.slots_abertos as usize;
+                let aqui = estado.slots[i] == Some(id);
+                let rotulo = if aberto {
+                    (i + 4).to_string()
+                } else {
+                    format!("R{}", av::ABRE_SLOT_EM[i])
+                };
+                estilo::botao(r, &rotulo, estilo::estado_de(r, !aberto, aqui), aqui);
+                if clique && aberto && r.toca(m) {
+                    let ativa = if aqui { None } else { Some(id) };
+                    pedido = Some(ClientMessage::Arvore {
+                        pedido: PedidoArvore::Equipar { slot: i as u8, ativa },
+                    });
+                }
+            }
+        } else {
+            estilo::botao(aprender, "Learn", estilo::estado_de(aprender, !pode, false), pode);
+        }
+        if clique && aprender.toca(m) && pode && ativa_aprendida.is_none() {
             pedido = Some(ClientMessage::Arvore { pedido: PedidoArvore::Gastar { caminho: sc, no: sk } });
             // Walk to the next node, so a second tap learns the next one.
             if sk + 1 < NOS_POR_CAMINHO {
@@ -352,7 +390,7 @@ mod tests {
 
     fn com(nos: [u8; 4], ganhos: u32) -> ArvoreUi {
         let mut ui = ArvoreUi::default();
-        ui.receber(EstadoArvore::de(av::Arvore { nos }, ganhos));
+        ui.receber(EstadoArvore::de(av::Arvore::com_nos(nos), ganhos));
         ui
     }
 
@@ -419,6 +457,6 @@ pub async fn previa() {
 #[cfg(debug_assertions)]
 fn com_previa() -> ArvoreUi {
     let mut ui = ArvoreUi::default();
-    ui.receber(EstadoArvore::de(av::Arvore { nos: [6, 0, 10, 3] }, 23));
+    ui.receber(EstadoArvore::de(av::Arvore::com_nos([6, 0, 10, 3]), 23));
     ui
 }

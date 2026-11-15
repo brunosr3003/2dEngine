@@ -119,6 +119,7 @@ mod presenca;
 mod prime;
 pub(crate) mod ranking;
 mod arvore;
+mod ativas;
 mod essencia;
 mod renascimento;
 mod social;
@@ -2012,6 +2013,11 @@ impl GameWorld {
             Some(s) => s,
             None => return false,
         };
+        // INVISIBLE (the Assassin's active): no player can hit it until it
+        // attacks or the time runs out (`world/ativas.rs`).
+        if tgt.invisivel_ate > self.sim_time_s {
+            return false;
+        }
         // Safe zone protege todos — atacante OU alvo dentro = sem dano.
         for sess in [att, tgt] {
             if let Some(e) = sess.entity {
@@ -2184,7 +2190,7 @@ pub struct Session {
     /// sim_time absoluto até o qual o player fica em stagger (sem mover/atacar).
     pub hurt_until: f32,
     /// sim_time em que o player comecou a ficar idle (sem mover/cast/hit).
-    /// Apos 2s de idle continuo, regen de HP eh boostado 4x ("descansando").
+    /// Idle tracking (the x4 resting regen it fed was removed 15/11/2026).
     /// 0 = nao idle.
     pub idle_since: f32,
     /// Fracao de HP de regen ainda nao aplicada (ver `regen_de_hp`).
@@ -2373,6 +2379,12 @@ pub struct Session {
     /// The points earned last sent (`ServerMessage::Arvore`): a climb that
     /// earns one sends the state again.
     arvore_ganhos_visto: u32,
+    /// INVISIBILITY (the Assassin's active, `world/ativas.rs`): sim time it
+    /// ends; 0 = visible. While on, the body carries `Untargetable`.
+    pub invisivel_ate: f32,
+    /// The Corsair actives' economy buffs: (active, sim time it ends).
+    /// Summed in `bonus_economia`; `avancar_ativas` drops the expired.
+    pub buffs_da_arvore: Vec<(u8, f32)>,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
     pub faction: shared::Faction,
@@ -8034,6 +8046,8 @@ impl GameWorld {
                 renascimentos_visto: 0,
                 arvore: Default::default(),
                 arvore_ganhos_visto: 0,
+                invisivel_ate: 0.0,
+                buffs_da_arvore: Vec::new(),
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -8577,6 +8591,7 @@ impl GameWorld {
             ClientMessage::Arvore { pedido } => self.handle_arvore(id, pedido),
             ClientMessage::Ascender { alvo } => self.handle_ascender(id, alvo),
             ClientMessage::LojaEssencia { oferta } => self.handle_loja_essencia(id, oferta),
+            ClientMessage::UsarAtiva { slot } => self.handle_usar_ativa(id, slot),
             ClientMessage::TogglePkMode { on } => {
                 // Older on/off switch: on = Free (what "Hostile" always was).
                 self.definir_modo_pk(id, if on { shared::pk::LIVRE } else { shared::pk::PACIFICO });
@@ -9943,28 +9958,26 @@ impl GameWorld {
             // Regen de HP (escalado por VIT via stats.hp_regen). Roda no
             // tick em vez de em UseItem pra dar regen passivo continuo.
             // Skipado se downed (player caido nao se cura sozinho).
-            // Resting boost: se player tah parado (sem mover/cast/hit recente)
-            // por 2s, multiplica regen por 4x = "sentou pra recuperar".
+            // The old x4 "resting" boost (standing still for 2s) is gone
+            // (owner, 15/11/2026): out of combat is a flat 2/s base, moving
+            // or not.
             if !session.downed && session.stats.hp_regen > 0.0 {
                 let now_s = self.sim_time_s;
-                let move_sq = session
-                    .pending_input
-                    .as_ref()
-                    .map(|f| f.move_dir.length_squared())
-                    .unwrap_or(0.0);
-                let is_idle = move_sq < 0.01
-                    && session.casting_until <= now_s
-                    && session.hurt_until <= now_s
-                    && session.leap_until <= now_s;
-                if is_idle {
-                    if session.idle_since == 0.0 {
-                        session.idle_since = now_s;
-                    }
+                // Base regen by combat state (owner, 15/11/2026): 0.5/s in
+                // combat, 2/s out of it. `stats.hp_regen` already carries the
+                // 0.5 base plus VIT and gear; out of combat adds the rest.
+                let ultimo = session
+                    .last_combat_at_s
+                    .max(session.combo_last_attack)
+                    .max(session.gesto_skill_em);
+                let em_combate =
+                    ultimo > 0.0 && now_s - ultimo < shared::components::acao::EM_COMBATE_S;
+                let base_extra = if em_combate {
+                    0.0
                 } else {
-                    session.idle_since = 0.0;
-                }
-                let resting = session.idle_since > 0.0 && (now_s - session.idle_since) > 2.0;
-                let regen_mult = if resting { 4.0 } else { 1.0 };
+                    shared::constants::HP_REGEN_BASE_FORA_DE_COMBATE
+                        - shared::constants::HP_REGEN_BASE_EM_COMBATE
+                };
                 if let Some(e) = session.entity {
                     if let Ok(mut h) = self.ecs.get::<&mut shared::Health>(e) {
                         if h.current < h.max && h.current > 0 {
@@ -9977,7 +9990,7 @@ impl GameWorld {
                                 h.current,
                                 h.max,
                                 &mut session.hp_regen_resto,
-                                (session.stats.hp_regen * regen_mult + folego) * dt,
+                                (session.stats.hp_regen + base_extra + folego) * dt,
                             );
                         }
                     }
@@ -11308,6 +11321,8 @@ impl GameWorld {
                     );
                     continue;
                 }
+                // Attacking ends INVISIBILITY (`world/ativas.rs`).
+                self.quebrar_invisibilidade_da_entidade(ir.entity);
                 // Marca o tag pra que send_snapshots replique o trigger de
                 // animacao pros outros clientes neste tick.
                 if let Ok(mut tag) = self.ecs.get::<&mut PlayerTag>(ir.entity) {
@@ -11362,6 +11377,7 @@ impl GameWorld {
         }
 
         self.avancar_habilidades(dt);
+        self.avancar_ativas();
         self.avancar_montarias();
 
         // ── E: spawnar projeteis ──────────────────────────────────────────────

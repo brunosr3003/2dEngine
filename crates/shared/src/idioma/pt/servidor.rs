@@ -757,4 +757,11 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("needs {} Rebirth Essence and {} Darksteel", "precisa de {} de Essência do Renascimento e {} de Darksteel"),
     ("Only gear can be ascended (not pets or mounts).", "Só equipamento pode ascender (pets e montarias não)."),
     ("This piece already has every star.", "Esta peça já tem todas as estrelas."),
+    // ── rebirth phase 4: the path tree's actives in skill slots 4–6 ──
+    ("This skill slot is still locked.", "Este espaço de skill ainda está bloqueado."),
+    ("Learn this active in the path tree first.", "Aprenda antes esta ativa na árvore de caminhos."),
+    ("No active in this skill slot: equip one from the path tree.", "Nenhuma ativa neste espaço de skill: equipe uma pela árvore de caminhos."),
+    ("Select a target or move to choose where to step.", "Selecione um alvo ou ande para escolher para onde ir."),
+    ("New active: {}, in skill slot {}.", "Nova ativa: {}, no espaço de skill {}."),
+    ("New active: {}. Equip it in a skill slot from the path tree.", "Nova ativa: {}. Equipe-a num espaço de skill pela árvore de caminhos."),
 ];
