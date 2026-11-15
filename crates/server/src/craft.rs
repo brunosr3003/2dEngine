@@ -57,9 +57,10 @@ pub fn conferir(
     stack_max: u32,
     nome: &dyn Fn(u16) -> String,
 ) -> Result<usize, String> {
-    if nivel < r.nivel_min as u32 {
-        return Err(format!("requires level {}", r.nivel_min));
-    }
+    // NO LEVEL LOCK ON CRAFT (stage A, docs/RESET.md, owner 14/11/2026):
+    // what limits a recipe now is its materials and key. `nivel_min` still
+    // sets the item level that comes out and the list order.
+    let _ = nivel;
     let faltas: Vec<String> = r
         .inputs
         .iter()
@@ -553,9 +554,9 @@ mod testes {
             .into_iter()
             .max_by_key(|x| x.nivel_min)
             .unwrap();
-        let n = epico.nivel_min;
-        let e = conferir(&com_tudo(&epico), &epico, n as u32 - 1, 1, &nome).unwrap_err();
-        assert_eq!(e, format!("requires level {n}"));
+        // Stage A: a level-1 character with everything crafts the top
+        // recipe (no level lock any more).
+        assert!(conferir(&com_tudo(&epico), &epico, 1, 1, &nome).is_ok());
     }
 
     #[test]

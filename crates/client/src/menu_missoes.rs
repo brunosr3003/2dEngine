@@ -161,8 +161,8 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
     if zona_da_missao(d.id).is_none() {
         motivos.push("Unavailable in this version".to_string());
     }
-    if d.min_level > c.nivel {
-        motivos.push(format!("Requires level {}", d.min_level));
+    if shared::quests::nivel_pedido(d) > c.nivel {
+        motivos.push(format!("Requires level {}", shared::quests::nivel_pedido(d)));
     }
     if d.requires != 0 && !c.entregues.contains_key(&d.requires) {
         let t = shared::quests::quest_by_id(d.requires).map_or("?", |r| r.title);

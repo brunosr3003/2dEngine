@@ -552,7 +552,7 @@ impl DungeonUi {
             );
             let ilha = shared::terreno::def_da_zona(def.zona).map_or("New island", |d| d.nome);
             let sub = if def.disponivel {
-                format!("{} · level {} · {}", def.tipo.nome(), def.nivel_min, ilha)
+                format!("{} · level {} · {}", def.tipo.nome(), shared::progressao::texto_de_nivel(def.nivel_min), ilha)
             } else {
                 format!("{} · Coming soon", def.tipo.nome())
             };

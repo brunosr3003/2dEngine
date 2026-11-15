@@ -115,10 +115,9 @@ pub fn o_que_da(
     if emp > 0 {
         atributos.push(format!("Strength +{emp}"));
     }
-    let mut extra = Vec::new();
-    if r.output_item_level > 5 {
-        extra.push(format!("usable from Lv {}", r.output_item_level / 2));
-    }
+    // (It said "usable from Lv N": gear has had no level to equip since
+    // the 198, and craft none since stage A.)
+    let extra: Vec<String> = Vec::new();
     (
         format!("Gives: {}", atributos.join(" · ")),
         (!extra.is_empty()).then(|| extra.join(" · ")),
@@ -127,9 +126,9 @@ pub fn o_que_da(
 
 /// Por que nao da' pra criar agora (`None` = da').
 pub fn motivo(r: &CraftRecipeNet, slots: &[InventorySlot], nivel: u32) -> Option<String> {
-    if nivel < r.nivel_min as u32 {
-        return Some(format!("Requires level {}", r.nivel_min));
-    }
+    // No level lock on craft since stage A (docs/RESET.md): only what is
+    // missing stops a recipe.
+    let _ = nivel;
     let faltam = ingredientes(r, slots)
         .iter()
         .filter(|(_, t, p)| t < p)
@@ -947,11 +946,10 @@ mod tests {
             .into_iter()
             .max_by_key(|r| r.nivel_min)
             .unwrap();
-        let n = epico.nivel_min;
-        assert_eq!(
-            motivo(&epico, &tudo, n as u32 - 1).as_deref(),
-            Some(format!("Requires level {n}").as_str())
-        );
+        // Stage A: no level lock — a level-1 character is only ever told
+        // what is missing, never a level.
+        let m = motivo(&epico, &tudo, 1).unwrap_or_default();
+        assert!(!m.to_lowercase().contains("level"), "{m}");
         let ing = ingredientes(&r, &falta);
         assert_eq!(ing[0], (r.inputs[0][0] as u16, 0, 1));
     }

@@ -154,7 +154,7 @@ impl ViagemUi {
 
 /// Each island's second line: level and what is missing to go.
 pub fn subtitulo(d: &Destino) -> String {
-    let nivel = format!("Level {}–{}", d.nivel_min, d.nivel_max);
+    let nivel = format!("Level {}", shared::progressao::texto_de_faixa(d.nivel_min as u32, d.nivel_max as u32));
     match d.estado {
         estado::AQUI => format!("{nivel} · you are here"),
         estado::LIBERADA => nivel,

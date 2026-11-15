@@ -51,6 +51,9 @@ pub fn posso_atacar(eu: &shared::EntityMeta, ele: &shared::EntityMeta, mesmo_gru
         pontos: m.pk.pontos,
         grupo: mesmo_grupo.then_some(1),
         cla,
+        // Others' power is not on the wire: unknown here, the server applies
+        // the power protection (`pk::protegido_por_poder`).
+        poder: 0,
     };
     pk::pode_atacar(&lado(eu, 1), &lado(ele, if mesmo_cla { 1 } else { 2 }), false)
 }

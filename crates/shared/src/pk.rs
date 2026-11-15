@@ -66,6 +66,10 @@ pub struct Lado {
     pub grupo: Option<u32>,
     /// Clan id; 0 = no clan.
     pub cla: i64,
+    /// The sheet's power (`dungeon::poder_de_stats`); 0 = unknown (no
+    /// power protection). Stage A of the reset plan (docs/RESET.md): PvP is
+    /// protected by POWER, not level.
+    pub poder: i32,
 }
 
 impl Lado {
@@ -89,6 +93,12 @@ impl Lado {
 pub fn pode_atacar(att: &Lado, alvo: &Lado, revide: bool) -> bool {
     if revide {
         return true;
+    }
+    // A much stronger player does not start a fight with a much weaker one
+    // (a reset character in level-100 gear on a starter island), unless the
+    // target chose PK or has a red name (`protegido_por_poder`).
+    if protegido_por_poder(att, alvo) {
+        return false;
     }
     let mesmo_grupo = att.grupo.is_some() && att.grupo == alvo.grupo;
     let mesmo_cla = att.cla != 0 && att.cla == alvo.cla;
@@ -160,6 +170,40 @@ pub fn custo_perdao(nivel: u32) -> u64 {
     PERDAO_OURO_POR_NIVEL * nivel.max(1) as u64
 }
 
+// ─────────────────────────────── PvP by power ───────────────────────────────
+
+/// A target with less than this share of the attacker's power cannot be
+/// attacked first (owner, 14/11/2026: protect by power and "não deixar").
+pub const PVP_PROTEGE_ABAIXO: f32 = 0.50;
+/// The target may have up to this many times the attacker's power with no
+/// damage penalty (the old "5 levels free").
+pub const PVP_PODER_LIVRE: f32 = 1.25;
+/// Damage lost per each 10% of extra power past `PVP_PODER_LIVRE`.
+pub const PVP_PODER_PENALIDADE: f32 = 0.08;
+
+/// Is `alvo` off-limits for `att` because it is far weaker? Not when the
+/// target is in a PK mode or red, and not when either power is unknown.
+pub fn protegido_por_poder(att: &Lado, alvo: &Lado) -> bool {
+    att.poder > 0
+        && alvo.poder > 0
+        && !alvo.alvo_livre()
+        && (alvo.poder as f32) < att.poder as f32 * PVP_PROTEGE_ABAIXO
+}
+
+/// Power-gap multiplier: only when the attacker is the WEAKER side, past
+/// `PVP_PODER_LIVRE`; floor `PVP_NIVEL_PISO`. Unknown power (0) = no penalty.
+pub fn pvp_mult_poder(atacante: i32, alvo: i32) -> f32 {
+    if atacante <= 0 || alvo <= 0 {
+        return 1.0;
+    }
+    let razao = alvo as f32 / atacante as f32;
+    if razao <= PVP_PODER_LIVRE {
+        return 1.0;
+    }
+    let passos = (razao - PVP_PODER_LIVRE) / 0.10;
+    (1.0 - PVP_PODER_PENALIDADE * passos).clamp(PVP_NIVEL_PISO, 1.0)
+}
+
 // ─────────────────────────────── PvP damage ───────────────────────────────
 
 /// Multiplier on a mitigated SKILL hit (skills, skill areas, skill bombs) between players.
@@ -186,10 +230,10 @@ pub fn pvp_mult_nivel(atacante: u32, alvo: u32, livre: u32, por_nivel: f32, piso
     (1.0 - por_nivel * (gap - livre) as f32).max(piso).min(1.0)
 }
 
-/// A mitigated player-vs-player hit, with the live rules.
-pub fn pvp_dano(mitigado: i32, skill: bool, atacante: u32, alvo: u32) -> i32 {
-    let m = if skill { PVP_MULT_SKILL } else { PVP_MULT_BASICO }
-        * pvp_mult_nivel(atacante, alvo, PVP_NIVEL_LIVRE, PVP_NIVEL_PENALIDADE, PVP_NIVEL_PISO);
+/// A mitigated player-vs-player hit, with the live rules. `atacante` and
+/// `alvo` are POWERS (since 14/11/2026; it was levels).
+pub fn pvp_dano(mitigado: i32, skill: bool, atacante: i32, alvo: i32) -> i32 {
+    let m = if skill { PVP_MULT_SKILL } else { PVP_MULT_BASICO } * pvp_mult_poder(atacante, alvo);
     if m == 1.0 {
         mitigado
     } else {
@@ -202,7 +246,7 @@ mod testes {
     use super::*;
 
     fn lado(modo: u8, grupo: Option<u32>, cla: i64) -> Lado {
-        Lado { modo, pontos: 0, grupo, cla }
+        Lado { modo, pontos: 0, grupo, cla, poder: 0 }
     }
 
     /// Attacker mode × (same party, same clan, both, none), target Peaceful.
@@ -294,15 +338,33 @@ mod testes {
     }
 
     #[test]
-    fn dano_pvp_multiplica_e_pena_por_nivel() {
-        assert_eq!(pvp_dano(1000, true, 30, 30), 100);
-        assert_eq!(pvp_dano(1000, false, 30, 30), 150);
-        assert_eq!(pvp_dano(3, true, 30, 30), 1, "floor of 1");
-        // 10 levels below: 5 free, 5 x 8% = 60%.
-        assert_eq!(pvp_dano(1000, true, 20, 30), 60);
-        // 30 below sits on the floor.
-        assert_eq!(pvp_dano(1000, true, 10, 40), 20);
-        // Above the target: no bonus, no penalty.
-        assert_eq!(pvp_dano(1000, true, 40, 10), 100);
+    fn dano_pvp_multiplica_e_pena_por_poder() {
+        assert_eq!(pvp_dano(1000, true, 5_000, 5_000), 100);
+        assert_eq!(pvp_dano(1000, false, 5_000, 5_000), 150);
+        assert_eq!(pvp_dano(3, true, 5_000, 5_000), 1, "floor of 1");
+        // Target up to 1.25x: free.
+        assert_eq!(pvp_dano(1000, true, 4_000, 5_000), 100);
+        // 1.75x: 5 steps of 10% past the free share, 5 x 8% = 60%.
+        assert_eq!(pvp_dano(1000, true, 4_000, 7_000), 60);
+        // Far stronger target sits on the floor.
+        assert_eq!(pvp_dano(1000, true, 2_000, 12_000), 20);
+        // Stronger attacker: no bonus, no penalty; unknown power: none.
+        assert_eq!(pvp_dano(1000, true, 12_000, 2_000), 100);
+        assert_eq!(pvp_dano(1000, true, 0, 9_000), 100);
+    }
+
+    /// A much stronger player cannot start on one under half his power,
+    /// unless the target chose PK or is red; hitting back always works.
+    #[test]
+    fn forte_nao_caca_quem_tem_menos_da_metade_do_poder() {
+        let forte = Lado { poder: 12_000, ..lado(LIVRE, None, 0) };
+        let fraco = Lado { poder: 5_000, ..lado(PACIFICO, None, 0) };
+        let parelho = Lado { poder: 7_000, ..lado(PACIFICO, None, 0) };
+        assert!(!pode_atacar(&forte, &fraco, false), "under half: protected");
+        assert!(pode_atacar(&forte, &parelho, false));
+        assert!(pode_atacar(&forte, &fraco, true), "hitting back");
+        assert!(pode_atacar(&forte, &Lado { modo: LIVRE, ..fraco }, false), "the weak one chose PK");
+        assert!(pode_atacar(&forte, &Lado { pontos: 1, ..fraco }, false), "red name");
+        assert!(pode_atacar(&fraco, &forte, false) == pode_atacar(&lado(PACIFICO, None, 0), &lado(LIVRE, None, 0), false));
     }
 }

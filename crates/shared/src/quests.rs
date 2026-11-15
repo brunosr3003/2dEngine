@@ -222,6 +222,13 @@ pub fn proxima_meia_noite(agora: i64) -> i64 {
 pub const POCOES_XP_GRATIS_POR_DIA: u32 = 3;
 
 /// Does `d` pay a free Experience Potion (subject to the daily cap)?
+/// The level a quest asks, capped at `progressao::NIVEL_MAX` (stage A,
+/// docs/RESET.md): the Abyssia chain was written for 100-117, and past the
+/// cap every character is "100+". Use this, never `min_level` raw, to gate.
+pub fn nivel_pedido(d: &QuestDef) -> u32 {
+    d.min_level.min(crate::progressao::NIVEL_MAX)
+}
+
 pub fn paga_pocao_xp(d: &QuestDef) -> bool {
     d.daily
         && ((d.reward_item2 == item_id::XP_POTION && d.reward_item2_qty > 0)

@@ -1,8 +1,15 @@
 # Reset de nível e árvore de caminhos
 
-Desenho fechado com o dono em 14/11/2026. **Nada disto está implementado
-ainda.** Substitui o desenho de 12/11 (reset com subclasse escolhida de cara e
-skills 4–6 por arma).
+Desenho fechado com o dono em 14/11/2026. Substitui o desenho de 12/11
+(reset com subclasse escolhida de cara e skills 4–6 por arma).
+
+**Estado:** etapa A feita no branch da 199 (15/11/2026): teto 100
+(`progressao::NIVEL_MAX`, `somar_xp`), "100+" na tela (`texto_de_nivel` /
+`texto_de_faixa`), dungeon e missão pedem no máximo nível 100
+(`dungeon::cadeado`, `quests::nivel_pedido`) e passam disso só por poder,
+sem trava de nível em craft (`craft::conferir`, `craft_ui::motivo`) nem em
+viagem (Geleira), PvP por poder (`pk::pvp_mult_poder`,
+`pk::protegido_por_poder`). Etapas B e C: não começadas.
 
 ## A ideia
 

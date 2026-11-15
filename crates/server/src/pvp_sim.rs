@@ -1932,9 +1932,13 @@ mod testes {
             shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, 30, 30)
         );
         let baixo = com_stats("C", 20, shared::item_id::ESPADA_E_ESCUDO, 1000, 300, 50, 0.0);
+        // The live game moved the gap to POWER (14/11/2026, `pvp_mult_poder`);
+        // the sim still models the old level gap with its own knobs.
+        let m = shared::pk::PVP_MULT_BASICO
+            * shared::pk::pvp_mult_nivel(20, 30, shared::pk::PVP_NIVEL_LIVRE, shared::pk::PVP_NIVEL_PENALIDADE, shared::pk::PVP_NIVEL_PISO);
         assert_eq!(
             golpe(&baixo, &b, Acao::Basico, false, false, &r),
-            shared::pk::pvp_dano(dano_mitigado(300, 50, 0.0), false, 20, 30)
+            ((dano_mitigado(300, 50, 0.0) as f32) * m).round().max(1.0) as i32
         );
         assert_eq!(Regras::propostas_padrao().skill_mult, shared::pk::PVP_MULT_SKILL);
     }

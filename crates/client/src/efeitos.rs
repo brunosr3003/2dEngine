@@ -87,7 +87,7 @@ fn placas(world: &World, vista: &Vista) {
         let nome = e.meta.name.as_deref().unwrap_or("?");
         let rotulo = shared::social::com_tag(&e.meta.cla, nome);
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {rotulo}", e.meta.nivel)
+            format!("Lv {} {rotulo}", shared::progressao::texto_de_nivel(e.meta.nivel as u32))
         } else {
             rotulo
         };
@@ -217,7 +217,7 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
         // the speech bubble below is keyed by the plain name.
         let rotulo = shared::social::com_tag(&e.meta.cla, nome);
         let txt = if e.meta.nivel > 0 {
-            format!("Lv {} {rotulo}", e.meta.nivel)
+            format!("Lv {} {rotulo}", shared::progressao::texto_de_nivel(e.meta.nivel as u32))
         } else {
             rotulo
         };

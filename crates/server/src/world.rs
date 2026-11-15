@@ -1748,7 +1748,13 @@ impl GameWorld {
 
     /// The player's PvP side for `shared::pk::pode_atacar`.
     pub(crate) fn lado_pk(&self, s: &Session) -> shared::pk::Lado {
-        shared::pk::Lado { modo: s.pk_modo, pontos: s.pk_points, grupo: s.party_id, cla: s.cla_id }
+        shared::pk::Lado {
+            modo: s.pk_modo,
+            pontos: s.pk_points,
+            grupo: s.party_id,
+            cla: s.cla_id,
+            poder: shared::dungeon::poder_de_stats(&s.stats),
+        }
     }
 
     /// Is this player standing in an open-PvP area (`shared::pk::zona_pvp_aberto`)?
@@ -2572,7 +2578,13 @@ impl Session {
                 text: aviso,
             });
         }
-        self.xp = self.xp.saturating_add(amount);
+        // LEVEL CAP 100 (stage A, docs/RESET.md): XP stops at exactly level
+        // 100; the pet above still got its share. A character that somehow
+        // holds more (admin) is not cut here — only gains are capped.
+        let teto = shared::progressao::xp_maximo(crate::economy::xp_multiplier());
+        if self.xp < teto {
+            self.xp = self.xp.saturating_add(amount).min(teto);
+        }
         let new_level = shared::level_of_xp_with_mult(self.xp, crate::economy::xp_multiplier());
         if new_level > self.last_level {
             let gained = new_level - self.last_level;
@@ -12212,11 +12224,17 @@ impl GameWorld {
                 if mult != 1.0 {
                     dmg = ((dmg as f32) * mult).round().max(1.0) as i32;
                 }
-                // PvP BALANCE (`shared::pk::pvp_dano`, the same rules the
-                // Panopticon's PvP sim shows as "current"): player skills x0.10,
-                // basics x0.15, and the lower side loses damage past 5 levels.
+                // PvP BALANCE (`shared::pk::pvp_dano`): player skills x0.10,
+                // basics x0.15, and the WEAKER side loses damage past 1.25x
+                // of power (stage A, docs/RESET.md: PvP by power, not level).
                 if attacker_is_player && self.ecs.get::<&PlayerTag>(entity).is_ok() {
-                    if let (Some(eu), Some(alvo)) = (nivel_de(attacker_id, self), nivel_de(target_id, self)) {
+                    let poder_de = |id: EntityId, w: &GameWorld| {
+                        w.sessions
+                            .values()
+                            .find(|s| s.entity_id == id)
+                            .map(|s| shared::dungeon::poder_de_stats(&s.stats))
+                    };
+                    if let (Some(eu), Some(alvo)) = (poder_de(attacker_id, self), poder_de(target_id, self)) {
                         let skill = matches!(attack_info, AttackInfo::Skill { .. });
                         dmg = shared::pk::pvp_dano(dmg, skill, eu, alvo);
                     }
@@ -12912,6 +12930,7 @@ impl GameWorld {
                             pontos: session.pk_points,
                             grupo: session.party_id,
                             cla: session.cla_id,
+                            poder: shared::dungeon::poder_de_stats(&session.stats),
                         }));
                     }
                     session.downed = true;
@@ -14911,16 +14930,8 @@ impl GameWorld {
     /// la' e manda o cliente reconectar no canal dela. `false` = nao
     /// embarcou (mesma ilha, ou ilha sem canal no ar — o jogador e' avisado).
     fn embarcar(&mut self, sid: SessionId, ilha: usize) -> bool {
-        if self.zona == "ilha_inicial" && ilha == 1 {
-            let nivel = self
-                .sessions
-                .get(&sid)
-                .map(|s| shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()));
-            if nivel.is_some_and(|n| n < 20) {
-                self.avisa_missao(sid, "Reach level 20 before sailing for the Glacier. Do the side quests in the Grove.".into());
-                return false;
-            }
-        }
+        // The level-20 Glacier lock lived here and in `abrir_menu_viagem`;
+        // both left with stage A (the story step keeps new players in order).
         let Some(dest) = shared::terreno::ARQUIPELAGO.get(ilha) else {
             return false;
         };
@@ -15174,14 +15185,11 @@ impl GameWorld {
                     .as_ref()
                     .is_some_and(|d| d.melhor(z).is_some())
         };
-        let mut destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
-        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
-        if self.zona == "ilha_inicial" && nivel < 20 {
-            if let Some(geleira) = destinos.iter_mut().find(|d| d.ilha == 1) {
-                geleira.estado = shared::viagem::estado::BLOQUEADA;
-                geleira.requisito = "Reach level 20".into();
-            }
-        }
+        // NO LEVEL LOCK ON TRAVEL (stage A, docs/RESET.md): islands open by
+        // the story only. A new player still reaches the Glacier at 20 —
+        // the story's own "Reach level 20" step (`historia::TRAVA_DO_BARCO`)
+        // comes first — and a reset character, story done, sails anywhere.
+        let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
         let _ = s.handle.to_client.send(ServerMessage::Viagem {
             destinos,
             colonia: s.colonia.tem,
@@ -22416,7 +22424,8 @@ mod pk_tests {
         assert!(entrou > 0 && entrou < 200, "defence should cut the bolt: {entrou}");
         // The PvP balance applies before the heal: the drain heals off the
         // x0.10 hit, not the mitigated bolt.
-        assert_eq!(entrou, shared::pk::pvp_dano(dano_mitigado(200, 60, 0.0), true, 1, 1));
+        let poder = |w: &GameWorld, i: usize| shared::dungeon::poder_de_stats(&w.sessions[&ids[i]].stats);
+        assert_eq!(entrou, shared::pk::pvp_dano(dano_mitigado(200, 60, 0.0), true, poder(w, 0), poder(w, 1)));
         let cura = w.ecs.get::<&Health>(e0).unwrap().current - antes;
         let esperado = habilidades::cura_do_dreno(entrou, 9);
         assert!(cura >= esperado && cura <= esperado + 1, "healed {cura}, expected {esperado} of {entrou}");
@@ -22552,15 +22561,18 @@ mod pk_tests {
         let sim = ((dano_mitigado(900, 0, 0.0) as f32) * r.skill_mult * r.mult_de_nivel(1, 1)).round() as i32;
         assert_eq!(tirou, sim);
         assert_eq!(tirou, 90);
-        // 10 levels below the target: 5 free, then -8% a level.
-        let mult = crate::economy::xp_multiplier();
-        w.sessions.get_mut(&ids[1]).unwrap().xp = shared::xp_for_level_with_mult(11, mult);
-        let alvo = shared::level_of_xp_with_mult(w.sessions[&ids[1]].xp, mult);
+        // A FAR STRONGER target (stage A: the gap is POWER, not level):
+        // past 1.25x the attacker's power, -8% per extra 10%.
+        let poder = |w: &GameWorld, i: usize| shared::dungeon::poder_de_stats(&w.sessions[&ids[i]].stats);
+        let pa = poder(&w, 0);
+        w.sessions.get_mut(&ids[1]).unwrap().stats.hp_max += pa;
+        let pt = poder(&w, 1);
+        assert!(pt as f32 > pa as f32 * shared::pk::PVP_PODER_LIVRE, "{pt} vs {pa}");
         *w.ecs.get::<&mut Health>(e1).unwrap() = Health { current: 1000, max: 1000 };
         golpe(&mut w, 900);
         let tirou = 1000 - w.ecs.get::<&Health>(e1).unwrap().current;
-        let sim = ((dano_mitigado(900, 0, 0.0) as f32) * r.skill_mult * r.mult_de_nivel(1, alvo)).round() as i32;
-        assert_eq!(tirou, sim, "level {alvo}");
+        let esperado = ((dano_mitigado(900, 0, 0.0) as f32) * r.skill_mult * shared::pk::pvp_mult_poder(pa, pt)).round() as i32;
+        assert_eq!(tirou, esperado, "power {pa} vs {pt}");
         assert!(tirou < 90);
     }
 

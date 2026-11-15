@@ -118,7 +118,7 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     estilo::texto_ajustado(&caca, x, y, w, 13, estilo::TEXTO);
     y += u(18.0);
     let dg = match ajuda::dungeon_para(nivel, poder) {
-        Some(c) => format!("Dungeon: {} (Lv {})", c.nome, c.nivel_min),
+        Some(c) => format!("Dungeon: {} (Lv {})", c.nome, shared::progressao::texto_de_nivel(c.nivel_min)),
         None => "Dungeon: none yet — get stronger first".into(),
     };
     estilo::texto_ajustado(&dg, x, y, w, 13, estilo::TEXTO);

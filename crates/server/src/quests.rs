@@ -197,8 +197,8 @@ pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQ
     if d.em_breve {
         return "coming soon.".into();
     }
-    if level < d.min_level {
-        return format!("requires level {}.", d.min_level);
+    if level < quests::nivel_pedido(d) {
+        return format!("requires level {}.", quests::nivel_pedido(d));
     }
     if d.faction != 0 && d.faction != faction {
         return "not for your faction.".into();
@@ -219,7 +219,7 @@ pub fn pode_aceitar(d: &QuestDef, level: u32, faction: u8, active: &[CharQuest],
     if d.source == quests::quest_source::HISTORIA {
         return false;
     }
-    if level < d.min_level {
+    if level < quests::nivel_pedido(d) {
         return false;
     }
     if d.faction != quests::faction_id::NONE && d.faction != faction {

@@ -89,6 +89,39 @@ use crate::quests::{objective_kind as ok, QuestDef, ALVO_QUALQUER_CHEFE, QUESTS}
 /// The level cap the targets are written for.
 pub const TETO: u32 = 120;
 
+/// THE LEVEL CAP (stage A of the reset plan, docs/RESET.md, 14/11/2026):
+/// characters stop at 100. Everything that used to be "level 101-120" is the
+/// "100+" band, gated by POWER. `TETO` stays as the length of the
+/// calibration tables (mob kill factor, best-case targets), which still
+/// describe mobs above 100.
+pub const NIVEL_MAX: u32 = 100;
+
+/// The XP of exactly level `NIVEL_MAX` under multiplier `mult`: a character
+/// never holds more.
+pub fn xp_maximo(mult: u64) -> u64 {
+    xp_for_level_with_mult(NIVEL_MAX, mult)
+}
+
+/// How a level reads on screen: "100+" past the cap (content and mobs keep
+/// their real level inside, for the maths).
+pub fn texto_de_nivel(nivel: u32) -> String {
+    if nivel > NIVEL_MAX {
+        format!("{NIVEL_MAX}+")
+    } else {
+        nivel.to_string()
+    }
+}
+
+/// A level band on screen: "40–60", "95–100+", or just "100+" when the
+/// whole band is past the cap.
+pub fn texto_de_faixa(lo: u32, hi: u32) -> String {
+    if lo > NIVEL_MAX {
+        format!("{NIVEL_MAX}+")
+    } else {
+        format!("{}–{}", lo, texto_de_nivel(hi))
+    }
+}
+
 /// Side missions split into three parts. One-off missions share this much
 /// of their band's XP between them.
 pub const PARCELA_DAS_UNICAS: f32 = 0.05;

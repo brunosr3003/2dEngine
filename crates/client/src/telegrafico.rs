@@ -723,7 +723,10 @@ pub fn desenha_barra_de_chefe(slot: Rect, nome: &str, nivel: u16, hp: u32, hp_ma
     estilo::texto(
         slot.x + 40.0,
         slot.y + 36.0,
-        &format!("{nome} · Lv {nivel}"),
+        &{
+            let nivel = shared::progressao::texto_de_nivel(nivel as u32);
+            format!("{nome} · Lv {nivel}")
+        },
         15,
         estilo::TEXTO,
     );

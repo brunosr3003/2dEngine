@@ -558,7 +558,9 @@ pub fn cadeado(
     if !no_jogo(c) || e == 0 || e > estagios(c) {
         return Some(Cadeado::EmBreve);
     }
-    let precisa = nivel_do_estagio(c, e);
+    // "100+" (stage A, docs/RESET.md): the level asked never passes the cap;
+    // past it, the content is gated by POWER only (the check below).
+    let precisa = nivel_do_estagio(c, e).min(crate::progressao::NIVEL_MAX);
     if nivel < precisa {
         return Some(Cadeado::Nivel(precisa));
     }

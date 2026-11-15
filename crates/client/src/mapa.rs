@@ -1748,10 +1748,9 @@ impl Mapa {
                 let Some(z) = info.zonas.get(i) else { return };
                 linhas.push((
                     format!(
-                        "{} · Nv {}–{}",
+                        "{} · Nv {}",
                         if z.forte { "STRONGHOLD" } else { "Hunting zone" },
-                        z.lv_min,
-                        z.lv_max
+                        shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32)
                     ),
                     estilo::OURO,
                 ));
@@ -2017,6 +2016,7 @@ impl Mapa {
             }
             ly += u(LINHA_IR);
             for (nome, nivel_c, p, detalhe_vivo) in &chefes {
+                let nivel_c = shared::progressao::texto_de_nivel(*nivel_c as u32);
                 let alvo = Alvo { objetivo: Objetivo::Combate, pos: *p, raio: 8.0, rotulo: nome.clone() };
                 linha(
                     nome,
@@ -2081,7 +2081,10 @@ impl Mapa {
             let z = zona_mais_perto(&info.zonas, *k, eu, nivel);
             let faixa = info
                 .faixa(*k)
-                .map_or(String::new(), |(a, b)| format!("Lv {a}–{b} · "));
+                .map_or(String::new(), |(a, b)| {
+                    let f = shared::progressao::texto_de_faixa(a as u32, b as u32);
+                    format!("Lv {f} · ")
+                });
             let detalhe = z.map_or("no zone".to_string(), |z| {
                 format!("{faixa}{:.0} m", centro_da_zona(z).distance(eu))
             });
@@ -3236,7 +3239,7 @@ impl Mapa {
                 if !crate::icones_ui::mapa("chefe", q, u(26.0), ouro, 0.0) {
                     crate::telegrafico::desenha_coroa(q, u(8.0));
                 }
-                let t = format!("{} · Nv {}{}", ch.nome, ch.nivel, volta_em(ch));
+                let t = format!("{} · Nv {}{}", ch.nome, shared::progressao::texto_de_nivel(ch.nivel as u32), volta_em(ch));
                 estilo::texto_centro(
                     q.x + 1.0,
                     q.y + u(23.0),
@@ -3280,9 +3283,9 @@ impl Mapa {
                 if rp >= u(14.0) {
                     if let Some(b) = z.bichos.first() {
                         let t = if z.forte {
-                            format!("Stronghold · {} · Lv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
+                            format!("Stronghold · {} · Lv {}", info.nome(b.0), shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32))
                         } else {
-                            format!("{} · Nv {}–{}", info.nome(b.0), z.lv_min, z.lv_max)
+                            format!("{} · Nv {}", info.nome(b.0), shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32))
                         };
                         estilo::texto_centro(
                             q.x + 1.0,

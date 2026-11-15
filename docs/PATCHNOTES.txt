@@ -7,6 +7,10 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - On the Magic Island, outside the arrival port, PK is locked to Party mode and gives no PK points.
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.
+- The level cap is now 100. Everything above 100 is the "100+" band, opened by your Power instead of your level.
+- No level requirement to craft any recipe or to travel between islands: what matters is your Power and your materials.
+- PvP is balanced by Power instead of level: a much stronger player cannot start a fight with one under half their Power (unless that player chose a PK mode or has a red name), and the weaker side loses damage against a far stronger one.
+- Chests of field bosses, Grutas and Porões give Darksteel again and better gear: green pieces at 50%, blue from level 38 content, purple (very rare) from level 64; a better chest gives a lot more Darksteel and materials.
 - Leveling is faster from level 20 on: the XP slowdown added on Nov 12 was eased (from level 50 a level now takes over a third less time than before this update).
 - Weekend event every week: XP x1.5 and drops x1.5 from Saturday 00:00 to Sunday 23:59 (Brasília time, UTC-3).
 - Market lots: sell an amount for a total price, so cheap items can cost less than 1 gold each (1,000 Copper for 3 gold). Buyers take the whole lot or part of it, always paying whole gold; the screen shows how much the same gold buys. Buy orders work the same way.

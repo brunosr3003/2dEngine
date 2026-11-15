@@ -251,15 +251,14 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                 Some(z) => {
                     let pos = vec2(z.centro[0], z.centro[1]);
                     o.detalhe = format!(
-                        "Lv {}–{} · {} per kill · {}",
-                        z.lv_min,
-                        z.lv_max,
+                        "Lv {} · {} per kill · {}",
+                        shared::progressao::texto_de_faixa(z.lv_min as u32, z.lv_max as u32),
                         pct(*chance),
                         qtd(*qty_min, *qty_max)
                     );
                     let alto = z.lv_min as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
-                        o.aviso = Some(format!("Level {}+ zone: above your level", z.lv_min));
+                        o.aviso = Some(format!("Level {}+ zone: above your level", z.lv_min.min(shared::progressao::NIVEL_MAX as u16)));
                     }
                     o.ordem = (if alto { 3 } else { 0 }, distancia(c.eu, pos));
                     o.ir = Some(Ir::Alvo(Alvo {
@@ -283,7 +282,10 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             ilha,
         } => {
             o.titulo = format!("Boss: {nome}");
-            o.detalhe = format!("Boss Lv {nivel} · {}", pct(*chance));
+            o.detalhe = {
+                let nivel = shared::progressao::texto_de_nivel(*nivel as u32);
+                format!("Boss Lv {nivel} · {}", pct(*chance))
+            };
             match c
                 .info
                 .and_then(|i| i.chefes.iter().find(|ch| ch.kind == *kind))

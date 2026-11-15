@@ -199,7 +199,7 @@ pub fn desenha(
         let titulo = if aqui {
             format!("{} · you are here", d.nome)
         } else if a == 1.0 {
-            format!("{} · Lv {}–{}", d.nome, d.nivel.0, d.nivel.1)
+            format!("{} · Lv {}", d.nome, shared::progressao::texto_de_faixa(d.nivel.0 as u32, d.nivel.1 as u32))
         } else {
             format!("{} · offline", d.nome)
         };
@@ -268,7 +268,7 @@ pub fn linhas_de_chefe(mundo: &Mundo, agora_unix: i64) -> Vec<(String, String, b
                 Some(s) => (conta_regressiva(s), false, s),
             };
             v.push((
-                format!("{} · Nv {}", ch.nome, ch.nivel),
+                format!("{} · Nv {}", ch.nome, shared::progressao::texto_de_nivel(ch.nivel as u32)),
                 format!("{} · {texto}", d.nome),
                 vivo,
                 ordem,
