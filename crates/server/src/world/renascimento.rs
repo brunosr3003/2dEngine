@@ -125,7 +125,7 @@ impl GameWorld {
         s.inventory_dirty = true;
 
         // ── The new character: stats with the new bonus, full health.
-        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
         s.mp_current = s.stats.mp_max as f32;
         s.stamina_current = s.stats.stamina_max as f32;
         s.poise_current = s.stats.poise_max as f32;
@@ -141,6 +141,8 @@ impl GameWorld {
             renascimentos: n,
             festa: true,
         });
+        // The path tree opens on the first rebirth; its allocation stays.
+        s.enviar_arvore();
         let chat = |s: &Session, t: String| {
             let _ = s.handle.to_client.send(ServerMessage::Chat { from: "System".into(), text: t });
         };

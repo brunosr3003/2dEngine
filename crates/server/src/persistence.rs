@@ -134,6 +134,25 @@ pub struct CharacterRow {
     pub diario_json: String,
     /// Rebirths (`shared::renascimento`). `characters.renascimentos`.
     pub renascimentos: u32,
+    /// The PATH TREE allocation (`shared::arvore`) as stored.
+    /// `characters.arvore_json`; read it through `arvore_valida`.
+    pub arvore: shared::arvore::Arvore,
+}
+
+impl CharacterRow {
+    /// Path points this character has earned (`shared::arvore::pontos_ganhos`).
+    pub fn pontos_da_arvore(&self) -> u32 {
+        shared::arvore::pontos_ganhos(
+            self.renascimentos,
+            shared::progressao::nivel_exibido(self.xp, crate::economy::xp_multiplier()),
+        )
+    }
+
+    /// The stored tree made valid for the points earned: a broken or
+    /// over-budget allocation loses its excess (`Arvore::validada`).
+    pub fn arvore_valida(&self) -> shared::arvore::Arvore {
+        self.arvore.validada(self.pontos_da_arvore())
+    }
 }
 
 /// Abre o pool Postgres, garante schema criado.
@@ -594,6 +613,10 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
+    // The path tree (`shared::arvore`, rebirth phase 2).
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS arvore_json TEXT NOT NULL DEFAULT ''")
+        .execute(pool)
+        .await?;
     // Pocoes de Fortuna e de Sorte, e a barra de itens configurada.
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortuna_ate BIGINT NOT NULL DEFAULT 0",
@@ -1075,7 +1098,31 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
 
     seed_economy_if_needed(pool).await?;
     migrar_viagem_montada(pool).await?;
+    migrar_pergaminho_volta(pool).await?;
 
+    Ok(())
+}
+
+/// THE TELEPORT SCROLL IS BACK (owner, 15/11/2026: "vamos voltar o item de
+/// teleporte rápido dentro da ilha; para outras ilhas tem que ir lá"): the
+/// item is active again, the village Alchemist sells it for copper
+/// (`viagem::PRECO_PERGAMINHO`), and it still only jumps WITHIN the island
+/// (`handle_teleportar`); other islands are the Harbour Captain's boat.
+async fn migrar_pergaminho_volta(pool: &PgPool) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('pergaminho_volta_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected() > 0;
+    if nova {
+        sqlx::query("UPDATE items SET active = TRUE, buy_price = $1 WHERE id = 359")
+            .bind(shared::viagem::PRECO_PERGAMINHO as i32)
+            .execute(&mut *tx).await?;
+        sqlx::query(
+            "INSERT INTO vendor_shop_items (shop_id, item_id, sort_order) VALUES ($1, 359, 99) ON CONFLICT DO NOTHING",
+        )
+        .bind(shared::vila::LOJA_DE_POCOES as i32)
+        .execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -1084,9 +1131,11 @@ async fn migrar_viagem_montada(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await?;
     let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('viagem_montada_v1') ON CONFLICT DO NOTHING")
         .execute(&mut *tx).await?.rows_affected() > 0;
-    sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = 359").execute(&mut *tx).await?;
-    sqlx::query("UPDATE items SET active = FALSE, buy_price = NULL WHERE id = 359").execute(&mut *tx).await?;
+    // The retirement ran ONCE (it used to run on every boot); the scroll came
+    // back on 15/11/2026 (`migrar_pergaminho_volta`).
     if nova {
+        sqlx::query("DELETE FROM vendor_shop_items WHERE item_id = 359").execute(&mut *tx).await?;
+        sqlx::query("UPDATE items SET active = FALSE, buy_price = NULL WHERE id = 359").execute(&mut *tx).await?;
         for tabela in ["inventory", "vault"] {
             sqlx::query(&format!("UPDATE {tabela} SET item_id = $1, qty = qty * 100, instance_data = NULL WHERE item_id = 359"))
                 .bind(shared::item_id::COPPER as i32).execute(&mut *tx).await?;
@@ -2714,7 +2763,7 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
             id: item_id::PERGAMINHO_TELEPORTE as i32,
             name: "Teleport Scroll",
             sell: 25,
-            buy: None,
+            buy: Some(shared::viagem::PRECO_PERGAMINHO as i32),
             ord: None,
             stack: 999,
             slot: None,
@@ -4210,6 +4259,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .into_iter()
         .map(|(n, r)| (n, r.max(0) as u32))
         .collect();
+    let arvores: HashMap<String, String> =
+        busca!((String, String), "name, arvore_json").into_iter().collect();
     let prefs = busca!((String, String), "name, preferencias_json");
     let prefs_map: HashMap<String, String> = prefs.into_iter().collect();
     let colonia = busca!((String, String), "name, colonia_json");
@@ -4289,6 +4340,10 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
         let diario_json = diarios.get(&name).cloned().unwrap_or_default();
         let renascimentos = renascimentos.get(&name).copied().unwrap_or(0);
+        // As stored; `CharacterRow::arvore_valida` checks it against the
+        // budget when it is used (the boot load runs before the XP
+        // multiplier is read, so the shown level is not known here yet).
+        let arvore = shared::arvore::Arvore::de_json(arvores.get(&name).map_or("", |s| s.as_str()));
         out.insert(
             name.clone(),
             CharacterRow {
@@ -4342,6 +4397,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 banco_extra,
                 diario_json,
                 renascimentos,
+                arvore,
             },
         );
     }
@@ -4843,6 +4899,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
             .execute(&mut *tx).await?;
         sqlx::query("UPDATE characters SET renascimentos = $2 WHERE name = $1")
             .bind(&row.name).bind(row.renascimentos.min(i32::MAX as u32) as i32)
+            .execute(&mut *tx).await?;
+        sqlx::query("UPDATE characters SET arvore_json = $2 WHERE name = $1")
+            .bind(&row.name).bind(row.arvore.para_json())
             .execute(&mut *tx).await?;
         sqlx::query("UPDATE characters SET pk_hostil = $2, pk_points = $3, pk_modo = $4, pk_decai_s = $5 WHERE name = $1")
             .bind(&row.name).bind(row.pk.hostil).bind(row.pk.pontos as i64)

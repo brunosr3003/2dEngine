@@ -39,6 +39,8 @@ mod atualizacao;
 mod desktop;
 mod evolucao_skills;
 mod ficha_ui;
+/// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
+mod arvore_ui;
 mod foco;
 mod forja_ui;
 mod ganhos;
@@ -276,6 +278,8 @@ struct Jogo {
     ficha: hud::Ficha,
     /// Ficha completa e distribuição dos seis atributos.
     ficha_ui: ficha_ui::FichaUi,
+    /// The PATH TREE (`arvore_ui.rs`), opened from the sheet's PATHS.
+    arvore_ui: arvore_ui::ArvoreUi,
     /// A aba Pets: o bichinho equipado, nivel, fome e skills (docs/PETS.md).
     pets_ui: pets_ui::PetsUi,
     habilidades: habilidades::Habilidades,
@@ -748,6 +752,11 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ARVORE").is_ok() {
+        arvore_ui::previa().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_OASIS").is_ok() {
         terreno::previa_do_oasis().await;
         return;
@@ -973,6 +982,7 @@ async fn main() {
         bolsa: bolsa::Bolsa::default(),
         ficha: hud::Ficha::default(),
         ficha_ui: ficha_ui::FichaUi::default(),
+        arvore_ui: arvore_ui::ArvoreUi::default(),
         pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
@@ -2349,6 +2359,9 @@ impl Jogo {
                     }
                 }
             }
+            ServerMessage::Arvore { estado } => {
+                self.arvore_ui.receber(estado);
+            }
             ServerMessage::AvisoGlobal { texto } => {
                 self.chat.push(format!("[Announcement] {texto}"));
                 self.aviso_global.receber(texto);
@@ -3621,6 +3634,47 @@ impl Jogo {
             || self.economia.bloqueia_entrada(get_time())
     }
 
+    /// THE TELEPORT SCROLL is back (15/11/2026): on a long trip (map tap, a
+    /// quest's "Go", an NPC) a "Teleport ×N" button sits under the travel
+    /// strip and jumps to that destination ON THIS ISLAND. With no scroll it
+    /// stays, and the tap says where to buy one. Other islands are still the
+    /// Harbour Captain's boat. Restored from before commit b2c593b.
+    fn botao_de_teleporte(&mut self, z: &hud_layout::Zonas) {
+        self.botao_teleporte = None;
+        let (Some(eu), Some(destino)) = (self.world.self_pos(), self.mapa.viagem.destino()) else {
+            return;
+        };
+        if eu.distance(destino) < shared::viagem::TELEPORTE_MIN
+            || self.dungeon.na_instancia()
+            || self.painel_grande()
+        {
+            return;
+        }
+        let qtd: u32 = self
+            .bolsa
+            .slots
+            .iter()
+            .filter(|s| s.item_id == shared::item_id::PERGAMINHO_TELEPORTE)
+            .map(|s| s.qty)
+            .sum();
+        let rotulo = format!("Teleport ×{qtd}");
+        // Bigger than the strip: a finger button, not a label.
+        let h = z.faixa.h * 1.5;
+        let w = hud_estilo::medir_forte(&rotulo, 18) + h * 1.4;
+        let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y + z.faixa.h + 8.0, w, h);
+        self.botao_teleporte = Some(r);
+        hud_estilo::botao(r, &rotulo, hud_estilo::estado_de(r, qtd == 0, false), qtd > 0);
+        if !(crate::foco::clique() && r.toca(Vec2::from(mouse_position()))) {
+            return;
+        }
+        if qtd == 0 {
+            self.chat
+                .push("No Teleport Scroll: the village Alchemist sells it (for copper).".into());
+            return;
+        }
+        self.envia(ClientMessage::Teleportar { x: destino.x, z: destino.y });
+    }
+
     fn painel_grande(&self) -> bool {
         self.menu.aberto
             || self.bolsa.aberta
@@ -3629,6 +3683,7 @@ impl Jogo {
             || self.forja.aberto()
             || self.evolucao_skills.aberto
             || self.ficha_ui.aberta
+            || self.arvore_ui.aberta
             || self.pets_ui.aberta
             || self.invocacao.aberta()
             || self.menu_missoes.aberto
@@ -3984,6 +4039,7 @@ impl Jogo {
         self.forja.fechar();
         self.evolucao_skills.fechar();
         self.ficha_ui.fechar();
+        self.arvore_ui.fechar();
         self.pets_ui.fechar();
         self.menu_missoes.aberto = false;
         self.mobs_ui.fechar();
@@ -4271,6 +4327,11 @@ impl Jogo {
         } else if self.evolucao_skills.aberto {
             self.evolucao_skills.fechar();
             true
+        } else if self.arvore_ui.aberta {
+            // Esc on the tree goes back to the sheet it came from.
+            self.arvore_ui.fechar();
+            self.ficha_ui.abrir();
+            true
         } else if self.ficha_ui.aberta {
             self.ficha_ui.fechar();
             true
@@ -4350,7 +4411,7 @@ impl Jogo {
     /// Ponto de atributo sobrando pra distribuir: ponto vermelho na Ficha e no
     /// MENU. Some sozinho quando o servidor confirma que gastou tudo.
     fn selo_ficha(&self) -> bool {
-        self.ficha_ui.tem_ponto_sobrando()
+        self.ficha_ui.tem_ponto_sobrando() || self.arvore_ui.tem_ponto_livre()
     }
 
     /// Da' pra evoluir alguma habilidade AGORA (nivel, Energia, cobre e tomo
@@ -5930,6 +5991,7 @@ impl Jogo {
         self.bolsa = bolsa::Bolsa::default();
         self.ficha = hud::Ficha::default();
         self.ficha_ui = ficha_ui::FichaUi::default();
+        self.arvore_ui = arvore_ui::ArvoreUi::default();
         self.pets_ui = pets_ui::PetsUi::default();
         self.invocacao = invocacao_ui::InvocacaoUi::default();
         self.teclado.limpa();
@@ -7031,6 +7093,7 @@ impl Jogo {
         if let Some((texto, cor)) = self.texto_da_faixa() {
             hud_layout::desenha_faixa(&z, &texto, cor);
         }
+        self.botao_de_teleporte(&z);
 
         // Joystick virtual: so' aparece com o dedo na tela.
         if !self.editor_hud.aberto {
@@ -7234,6 +7297,7 @@ impl Jogo {
             }
         }
         if self.ficha_ui.aberta && !onde {
+            self.ficha_ui.caminhos_livres = self.arvore_ui.tem_ponto_livre();
             let pedido = self.ficha_ui.desenha(
                 self.personagem_atual.as_deref().unwrap_or("Character"),
                 self.ficha.nivel.max(1),
@@ -7244,6 +7308,17 @@ impl Jogo {
                 self.bolsa.equip.weapon,
             );
             if let Some(pedido) = pedido {
+                self.envia(pedido);
+            }
+            // PATHS: the sheet gives way to the tree, which asks for a fresh state.
+            if std::mem::take(&mut self.ficha_ui.abrir_caminhos) {
+                self.fecha_paineis();
+                self.arvore_ui.abrir();
+                self.envia(ClientMessage::Arvore { pedido: shared::arvore::PedidoArvore::Painel });
+            }
+        }
+        if self.arvore_ui.aberta && !onde {
+            if let Some(pedido) = self.arvore_ui.desenha(self.bolsa.ouro) {
                 self.envia(pedido);
             }
         }

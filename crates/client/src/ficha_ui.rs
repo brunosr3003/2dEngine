@@ -36,6 +36,11 @@ pub struct FichaUi {
     pub renascimentos: u32,
     /// The rebirth confirmation window is open.
     confirmar_renascer: bool,
+    /// The PATH TREE has free points (`arvore_ui`): the red dot on PATHS.
+    pub caminhos_livres: bool,
+    /// The PATHS button was tapped: `main` closes the sheet and opens the
+    /// tree (`arvore_ui`).
+    pub abrir_caminhos: bool,
 }
 
 impl FichaUi {
@@ -149,7 +154,7 @@ impl FichaUi {
         use shared::renascimento as rn;
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
-        let (w, h) = ((680.0 * f).min(seguro.w - 24.0), (360.0 * f).min(seguro.h - 24.0));
+        let (w, h) = ((680.0 * f).min(seguro.w - 24.0), (400.0 * f).min(seguro.h - 24.0));
         let r = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
         crate::hud_layout::escurece(0.5);
         estilo::painel(r);
@@ -163,6 +168,15 @@ impl FichaUi {
             (format!("Gains: +5% to every attribute for good (+{}% in total).", rn::bonus_em_pct(n)), estilo::VERDE),
             (format!("Plus {} Rebirth Essence and the rebirth chest: Darksteel, a crafting key, materials.", rn::essencia_do_renascimento(n)), estilo::VERDE),
             (format!("Leveling gets slower after each rebirth: XP ÷{:.2}.", rn::divisor_de_renascimento(n)), estilo::SUAVE),
+            // The PATH TREE (`shared::arvore`): opens on the first rebirth.
+            (
+                if n == 1 {
+                    "Opens the path tree: from now on, 1 path point every 10 levels.".to_string()
+                } else {
+                    "Your path points stay; the next climb earns 10 more.".to_string()
+                },
+                estilo::VERDE,
+            ),
         ];
         if let Some(m) = rn::marco_de(n) {
             linhas.push((format!("This rebirth: {}", shared::idioma::tr(m)), estilo::OURO));
@@ -241,6 +255,18 @@ impl FichaUi {
         if clique && fechar.toca(mouse) {
             self.fechar();
             return None;
+        }
+        // THE PATH TREE (`arvore_ui`), from the first rebirth on.
+        if self.renascimentos > 0 {
+            let b = Rect::new(p.x + p.w - 262.0 * f, p.y + 12.0 * f, 200.0 * f, 32.0 * f);
+            estilo::botao(b, "PATHS", estilo::estado_de(b, false, false), self.caminhos_livres);
+            if self.caminhos_livres {
+                crate::hud::selo(b);
+            }
+            if clique && b.toca(mouse) {
+                self.abrir_caminhos = true;
+                return None;
+            }
         }
 
         estilo::texto_ajustado(

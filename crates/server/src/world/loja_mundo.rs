@@ -974,10 +974,15 @@ mod testes_combate_montado {
     }
 
     #[test]
-    fn entrega_antiga_de_teleporte_converte_em_cobre() {
+    /// The Teleport Scroll is a real item again (15/11/2026): it lands in
+    /// the bag as itself, no longer turned into copper.
+    fn teleporte_entra_na_bolsa_como_pergaminho() {
         let mut bolsa = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS + 2];
         assert!(add_to_inventory(&mut bolsa, shared::item_id::PERGAMINHO_TELEPORTE, 3, None));
-        assert!(!bolsa.iter().any(|i| i.item_id == shared::item_id::PERGAMINHO_TELEPORTE));
-        assert_eq!(bolsa.iter().filter(|i| i.item_id == shared::item_id::COPPER).map(|i| i.qty).sum::<u32>(), 300);
+        assert_eq!(
+            bolsa.iter().filter(|i| i.item_id == shared::item_id::PERGAMINHO_TELEPORTE).map(|i| i.qty).sum::<u32>(),
+            3
+        );
+        assert!(!bolsa.iter().any(|i| i.item_id == shared::item_id::COPPER));
     }
 }

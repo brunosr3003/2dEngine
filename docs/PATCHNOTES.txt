@@ -1,5 +1,6 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
+- The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
 - New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
 - XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
@@ -41,6 +42,9 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a bit slower after each rebirth.
 - Rebirth milestones: a body aura that changes color (green at 1, blue at 3, purple at 5, gold at 10, a black hole at 15, brighter every 5 from 20), +10 bag slots at the 2nd and +10 bank slots at the 7th. Everyone online is told when a player reaches a milestone.
 - Rebirths show as "R3" before the name, in the Character Sheet, and the Level ranking is ordered by rebirths first, then level. Each rebirth has its own celebration, bigger at every milestone.
+- PATH TREE: from your first rebirth on, every 10 levels give a path point (10 per climb, and they stay across rebirths). Open Character Sheet > PATHS to learn nodes in four paths of 15: Assassin (crit, attack speed, dexterity, movement), Mage (wisdom, mana, attack, mana regen), Guardian (defense, health, damage reduction, regen, poise) and Corsair (drops, gold, ore, Energy, Darksteel, better loot). Mix paths freely; each path's nodes are learned in order.
+- Nodes 5, 10 and 15 of each path are active nodes: for now they give their passive, and their active skills come in a later update.
+- Reset all your path points at any time for 1,000 gold per point spent.
 
 Nov 12, 2026 — Big economy update: buy orders, rarer resources and keys
 

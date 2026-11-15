@@ -545,9 +545,8 @@ async fn carta(
     gold: u64,
     motivo: &str,
 ) -> Result<()> {
-    let (item_id, qtd) = if item_id == shared::item_id::PERGAMINHO_TELEPORTE {
-        (shared::item_id::COPPER, qtd.saturating_mul(100))
-    } else { (item_id, qtd) };
+    // (A Teleport Scroll used to turn into copper here while it was retired;
+    // it is a real item again since 15/11/2026.)
     sqlx::query(
         "INSERT INTO mercado_cartas (id, realm, personagem, item_id, qtd, instancia, gold, motivo)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING",

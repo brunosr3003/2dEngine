@@ -47,8 +47,65 @@ o tier e mais forte nos marcos), botão e confirmação na ficha
 (`ficha_ui`). Ficaram pras próximas fases: árvore de caminhos, loja da
 Essência, ascensão de equipamento, slots 4–6, títulos, cor de nome e skins
 dos marcos (o número de renascimentos basta pra conceder retroativo via
-`marcos_ate`). O divisor e o +5% estão sem calibrar. Etapas B e C (árvore e
-ativas): não começadas.
+`marcos_ate`). O divisor e o +5% estão sem calibrar.
+
+**Renascimento, fase 2 — árvore de caminhos com passivas — feita (15/11/2026,
+versão de teste):** tabela e regras em `shared::arvore` (`NOS` 4×15,
+`Caminho`, `Efeito`, `No { efeito, valor, ativa }`, `ATIVAS`,
+`pontos_ganhos`, `custo_de_redistribuir`, `Arvore { nos: [u8; 4] }` com
+`gastar` / `validada` / `passivas` / `para_json` / `de_json`, `Passivas` com
+`somar_economia`, `PedidoArvore`, `EstadoArvore`). **Pontos** derivados,
+nunca guardados: `pontos_ganhos(r, nível exibido)` = 0 sem renascer, senão
+10·(r−1) + ⌊nível/10⌋ (seis subidas completas enchem as 60 casas). Guardado
+só o quanto foi comprado de cada caminho, em `characters.arvore_json`
+(`"[a,b,c,d]"`, ALTER no boot, `busca!` próprio no load, UPDATE próprio no
+`write_batch`); no login vira `validada(pontos)` (caminho > 15 corta, e o
+excesso sai das últimas casas do caminho mais cheio). Caminho linear: a casa
+k só depois da k−1 (o pedido manda o índice da próxima casa, então toque
+duplo não compra duas). **Redistribuir:** tudo de volta por 1.000 de ouro ×
+pontos gastos (`OURO_POR_PONTO_REDISTRIBUIR`); a opção com Essência (fase 3)
+entra como variante NOVA no FIM de `PedidoArvore`. **Efeitos:** combate em
+`world::effective_stats_rv(.., renascimentos, &arvore)` (o `_r` antigo =
+`_rv` com árvore vazia; sessão, `ranking::monta`/`server --poder` e
+`pvp_sim::do_personagem` passam a árvore): as % de vida, mana, ataque,
+defesa, destreza e sabedoria SOMAM ao multiplicador do renascimento
+(`1 + 5%·r + árvore%`, não compõem); crítico, velocidade de ataque,
+movimento, esquiva (`dash_cd_mult`), regen, redução de dano e firmeza somam
+direto. Economia em `Session::bonus_economia()` = `acessorios::bonus` +
+`Passivas::somar_economia` (drop, ouro dos monstros — campo novo
+`Bonus::ouro`, multiplica o ouro do abate —, minério, Energia, Darksteel,
+saque melhor); todos os lugares que liam `acessorios::bonus(&equipamento)`
+pra economia agora leem `bonus_economia()`. **Protocolo:**
+`ClientMessage::Arvore { pedido }` e `ServerMessage::Arvore { estado }` no
+fim dos enums; o estado vai no login, depois de cada pedido, no
+renascimento e quando a subida ganha um ponto (com aviso no chat).
+`world/arvore.rs` `handle_arvore`. **Tela:** `client/arvore_ui.rs`, aberta
+pelo botão CAMINHOS da ficha (só com renascimento ≥ 1; ponto vermelho nele e
+na Ficha/Menu quando há ponto livre); quatro colunas × 15 casas (grade 3×5),
+descrição da casa, "Aprender", redistribuir com confirmação, casas ativas
+marcadas com losango dourado e "Nó ativo: … — em breve". O Menu › PERSONAGEM
+não ganhou entrada própria: o grupo já tem os 5 de `POR_LINHA` e cada entrada
+exige arte no atlas; a árvore abre pela Ficha, que está nesse grupo.
+
+Tabela (casas 5, 10 e 15 = ativas da fase 4, que por enquanto dão a passiva):
+
+| Caminho | Casas 1–15 | Total do caminho cheio |
+|---|---|---|
+| Assassino | crít 1 · vel.atq 2 · DES 4 · crít 1 · **mov 2 (Passo Sombrio)** · vel 2 · crít 1 · DES 4 · esquiva 5 · **crít 1 (Invisibilidade)** · vel 2 · DES 4 · crít 1 · vel 2 · **mov 2 (Marca da Morte)** | crítico +5 pp, vel. de ataque +8%, destreza +12%, movimento +4%, recarga da esquiva −5% |
+| Mago | SAB 4 · mana 5 · atq 2 · regen mana 0,5 · **SAB 4 (Nova Arcana)** · mana 5 · atq 2 · regen 0,5 · SAB 4 · **atq 2 (Meteoro)** · mana 5 · regen 0,5 · SAB 4 · mana 5 · **atq 2 (Distorção do Tempo)** | sabedoria +16%, mana +20%, ataque +8%, regen de mana +1,5/s |
+| Guardião | def 4 · vida 4 · regen 1 · def 4 · **red 1 (Provocar)** · vida 4 · def 4 · firmeza 25 · vida 4 · **red 1 (Escudo Baluarte)** · def 4 · regen 1 · vida 4 · def 4 · **red 2 (Inquebrável)** | defesa +20%, vida +16%, dano recebido −4%, regen de vida +2/s, firmeza +25 |
+| Corsário | drop 4 · ouro 6 · minério 8 · Energia 8 · **drop 4 (Faro de Tesouro)** · Darksteel 8 · ouro 7 · saque melhor 1 · minério 7 · **drop 4 (Pilhagem)** · Energia 7 · Darksteel 7 · ouro 7 · saque melhor 1 · **drop 4 (Frota Dourada)** | drop +16%, ouro +20%, minério/Energia/Darksteel +15%, saque melhor +2% |
+
+(% salvo indicação; regen em pontos/s.) Desvio do esboço: dano crítico, dano
+contra chefe/jogador, dano de skill, área, recarga de skill, bloqueio,
+espinhos, velocidade de montaria e bônus de baú ficaram de fora porque não
+existe hoje o campo no `PlayerStats`/`Bonus` pra eles entrarem sem mexer no
+combate; a tabela usa só efeitos que já têm porta (trocar um `Efeito` depois
+é mexer só em `NOS` e em `Passivas`). **Ganchos:** fase 3 — variante
+`RedistribuirComEssencia` no fim de `PedidoArvore` (o `match` em
+`handle_arvore` está marcado); fase 4 — `No::ativa` = índice em `ATIVAS`
+(nome por caminho), pronto pra virar skill dos slots 4–6. Ficaram pras
+próximas fases: loja da Essência, ascensão, slots 4–6 e as ativas.
 
 ## A ideia
 

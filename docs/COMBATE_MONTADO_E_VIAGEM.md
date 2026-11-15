@@ -141,3 +141,18 @@ manual prevalece sobre a corrida automática das rotas; desligar não é
 anulado pelo próximo quadro de auto missão. Antes da primeira escolha,
 a corrida automática mantém seu comportamento anterior. O servidor segue
 validando stamina e impedimentos de movimento. Funciona a pé e montado.
+
+## O pergaminho voltou (15/11/2026)
+
+O dono: "vamos voltar o item de teleporte rápido dentro da ilha; para outras
+ilhas tem que ir lá". O Pergaminho de Teleporte (359) está ativo de novo:
+
+- O Alquimista da vila vende por `viagem::PRECO_PERGAMINHO` (100 de cobre) —
+  `persistence::migrar_pergaminho_volta` reativa o item e o devolve à loja.
+  A retirada de `migrar_viagem_montada` passou a rodar uma vez só (rodava em
+  todo boot).
+- O botão "Teleport ×N" voltou embaixo da faixa de viagem (viagem longa:
+  mapa, "Ir" de missão, NPC) e `handle_teleportar` salta pro destino NESTA
+  ilha, gastando um pergaminho. Nunca cruza o mar: pra outra ilha continua
+  sendo o barco do Capitão do Porto.
+- A bolsa e as cartas do mercado não convertem mais o pergaminho em cobre.

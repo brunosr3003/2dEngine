@@ -739,4 +739,14 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Your attribute points were reset: {} Energy refunded.", "Seus pontos de atributo foram zerados: {} de Energia devolvida."),
     ("Your bag was full: part of the rebirth chest went to the Mail.", "Sua bolsa estava cheia: parte do baú do renascimento foi para o Correio."),
     ("{} reached Rebirth {}!", "{} chegou ao Renascimento {}!"),
+    // ─────────────────────────── path tree (rebirth phase 2, 15/11/2026) ───────────────────────────
+    ("No free path points.", "Sem pontos de caminho livres."),
+    ("This path is complete.", "Este caminho está completo."),
+    ("Buy the path's previous node first.", "Compre antes o nó anterior do caminho."),
+    ("Unknown path.", "Caminho desconhecido."),
+    ("No path points to reset.", "Não há pontos de caminho para redistribuir."),
+    ("You cannot reset the paths while downed.", "Você não pode redistribuir os caminhos caído."),
+    ("Not enough gold: resetting the paths costs {} gold.", "Ouro insuficiente: redistribuir os caminhos custa {} de ouro."),
+    ("Paths reset: {} points back for {} gold.", "Caminhos redistribuídos: {} pontos de volta por {} de ouro."),
+    ("A new path point! Open Sheet › PATHS to spend it.", "Um ponto de caminho novo! Abra Ficha › CAMINHOS para gastar."),
 ];

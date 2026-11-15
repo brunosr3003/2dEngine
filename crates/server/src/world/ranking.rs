@@ -39,7 +39,7 @@ pub(crate) async fn monta(pool: &sqlx::PgPool) -> anyhow::Result<Vec<LinhaRankin
         .into_values()
         .filter(|c| !c.account_id.is_some_and(|a| staff.contains(&a)))
         .map(|c| {
-            let stats = effective_stats_r(&c.equipment, &c.allocated_points, &c.proficiencies, c.xp, c.renascimentos);
+            let stats = effective_stats_rv(&c.equipment, &c.allocated_points, &c.proficiencies, c.xp, c.renascimentos, &c.arvore_valida());
             LinhaRanking {
                 posicao: 0,
                 nivel: shared::level_of_xp_with_mult(c.xp, mult),

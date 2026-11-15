@@ -80,12 +80,13 @@ impl Lutador {
     /// A character as it loads from the realm: the same `effective_stats`
     /// a session computes on login, the skills its weapon and level unlock.
     pub fn do_personagem(row: &CharacterRow, catalogo: &[Skill]) -> Lutador {
-        let stats = crate::world::effective_stats_r(
+        let stats = crate::world::effective_stats_rv(
             &row.equipment,
             &row.allocated_points,
             &row.proficiencies,
             row.xp,
             row.renascimentos,
+            &row.arvore_valida(),
         );
         let nivel = shared::level_of_xp_with_mult(row.xp, crate::economy::xp_multiplier());
         let arma = row.equipment.weapon.unwrap_or(0);

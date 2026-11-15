@@ -118,6 +118,7 @@ mod pets;
 mod presenca;
 mod prime;
 pub(crate) mod ranking;
+mod arvore;
 mod renascimento;
 mod social;
 mod troca;
@@ -2365,6 +2366,12 @@ pub struct Session {
     pub renascimentos: u32,
     /// The rebirth count last sent in this player's meta.
     renascimentos_visto: u32,
+    /// The PATH TREE allocation (`shared::arvore`, `characters.arvore_json`),
+    /// validated against the points earned at login.
+    pub arvore: shared::arvore::Arvore,
+    /// The points earned last sent (`ServerMessage::Arvore`): a climb that
+    /// earns one sends the state again.
+    arvore_ganhos_visto: u32,
     /// Facção do char ativo. Carregada do CharacterRow ao spawnar. Define
     /// quests e identidade do personagem.
     pub faction: shared::Faction,
@@ -2554,7 +2561,7 @@ impl Session {
         // Pocao de Experiencia: o bonus vale pra TODO XP de personagem, e e'
         // aqui que todo XP passa.
         let amount = shared::xp_com_bonus(amount, (now_ms() / 1000) as i64, self.xp_bonus_ate);
-        let amount = ((amount as f64) * (1.0 + shared::acessorios::bonus(&self.equipment).xp as f64)).round() as u64;
+        let amount = ((amount as f64) * (1.0 + self.bonus_economia().xp as f64)).round() as u64;
         self.somar_xp(amount);
     }
 
@@ -2597,7 +2604,7 @@ impl Session {
             return;
         }
         self.proficiencies_dirty = true;
-        self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
+        self.stats = effective_stats_rv(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos, &self.arvore);
         self.stats_dirty = true;
         let _ = self.handle.to_client.send(ServerMessage::Chat {
             from: "System".to_string(),
@@ -2664,7 +2671,7 @@ impl Session {
             }
         }
         if subiu.is_some() {
-            self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
+            self.stats = effective_stats_rv(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos, &self.arvore);
             self.stats_dirty = true;
         }
         subiu
@@ -2684,7 +2691,7 @@ impl Session {
         inst.pet = Some(d);
         self.equipment
             .set(shared::EquipSlot::Pet, Some(pet), Some(inst));
-        self.stats = effective_stats_r(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos);
+        self.stats = effective_stats_rv(&self.equipment, &self.allocated_points, &self.proficiencies, self.xp, self.renascimentos, &self.arvore);
         self.stats_dirty = true;
     }
 
@@ -2740,6 +2747,16 @@ impl Session {
             xp: self.xp,
             level: new_level,
         });
+        // A path point every 10 shown levels (after the first rebirth).
+        if self.renascimentos > 0 && self.pontos_da_arvore() != self.arvore_ganhos_visto {
+            if self.pontos_da_arvore() > self.arvore_ganhos_visto {
+                let _ = self.handle.to_client.send(ServerMessage::Chat {
+                    from: "System".to_string(),
+                    text: "A new path point! Open Sheet › PATHS to spend it.".to_string(),
+                });
+            }
+            self.enviar_arvore();
+        }
     }
 }
 
@@ -5220,7 +5237,7 @@ impl GameWorld {
                 session
                     .equipment
                     .set(slot, Some(ltag.item_id), ltag.instance);
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.stats_dirty = true;
                 let hp = session.entity.map(|pe| (pe, session.stats.hp_max));
                 return Some(hp);
@@ -5285,7 +5302,7 @@ impl GameWorld {
         s.allocated_points[idx] = s.allocated_points[idx].saturating_add(1);
         s.stat_points_dirty = true;
         // Recalcula stats. max_hp pode ter subido — HP nao sobe automatico.
-        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
         s.stats_dirty = true;
         self.save_pending = true;
         // O passo do tutorial fecha AQUI, e nao no toque do "+": so' aqui se
@@ -5320,7 +5337,7 @@ impl GameWorld {
         s.unspent_points = s.unspent_points.saturating_add(total);
         s.allocated_points = [0u32; shared::STAT_COUNT];
         s.stat_points_dirty = true;
-        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
         s.stats_dirty = true;
         tracing::info!("{} resetou atributos (refund {})", s.name, total);
     }
@@ -6575,7 +6592,12 @@ impl GameWorld {
             saved_sp_earned = saved_sp_earned.max(nivel_salvo.saturating_sub(1).saturating_mul(shared::SP_PER_LEVEL));
         }
         // Stats efetivos considerando equipamento salvo + pontos + profs.
-        let stats = effective_stats_r(&saved_equip, &saved_alloc, &saved_profs, saved_xp, row.renascimentos);
+        // The path tree, validated against the points this XP has earned.
+        let arvore_salva = row.arvore.validada(shared::arvore::pontos_ganhos(
+            row.renascimentos,
+            shared::progressao::nivel_exibido(saved_xp, crate::economy::xp_multiplier()),
+        ));
+        let stats = effective_stats_rv(&saved_equip, &saved_alloc, &saved_profs, saved_xp, row.renascimentos, &arvore_salva);
         // Re-sincroniza o max_hp (classe pode ter sido rebalanceada entre sessoes).
         health.max = stats.hp_max;
         if health.current > health.max {
@@ -6719,6 +6741,7 @@ impl GameWorld {
             s.stats = stats;
             // Before anything below recomputes the stats (`reembolsa_spd`).
             s.renascimentos = row.renascimentos;
+            s.arvore = arvore_salva;
             s.equipment = saved_equip;
             s.xp = saved_xp;
             s.gold = saved_gold;
@@ -6796,6 +6819,7 @@ impl GameWorld {
                 renascimentos: s.renascimentos,
                 festa: false,
             });
+            s.enviar_arvore();
             Self::envia_pocoes_xp_do_dia(s, true);
             let _ = s.handle.to_client.send(ServerMessage::BuffXp {
                 ate: row.xp_bonus_ate,
@@ -8007,6 +8031,8 @@ impl GameWorld {
                 poder_visto: 0,
                 renascimentos: 0,
                 renascimentos_visto: 0,
+                arvore: Default::default(),
+                arvore_ganhos_visto: 0,
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
                 casting_mp_paid: 0.0,
@@ -8547,6 +8573,7 @@ impl GameWorld {
             ClientMessage::DefinirModoPk { modo } => self.definir_modo_pk(id, modo),
             ClientMessage::PerdoarPk => self.perdoar_pk(id),
             ClientMessage::Renascer => self.handle_renascer(id),
+            ClientMessage::Arvore { pedido } => self.handle_arvore(id, pedido),
             ClientMessage::TogglePkMode { on } => {
                 // Older on/off switch: on = Free (what "Hostile" always was).
                 self.definir_modo_pk(id, if on { shared::pk::LIVRE } else { shared::pk::PACIFICO });
@@ -8709,7 +8736,9 @@ impl GameWorld {
             shared::protocol::AdminAction::SpawnTestBoss { .. } => unreachable!(),
             shared::protocol::AdminAction::SetXp { xp } => {
                 session.xp = xp;
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                // Less XP can mean fewer path points: drop the excess.
+                session.arvore = session.arvore.validada(session.pontos_da_arvore());
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.poise_current = session.stats.poise_max as f32;
             }
             shared::protocol::AdminAction::SetGold { gold } => {
@@ -8762,7 +8791,7 @@ impl GameWorld {
                 session.skill_points_spent = 0;
                 session.allocated_points = [0; shared::STAT_COUNT];
                 session.last_level = lvl;
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.poise_current = session.stats.poise_max as f32;
                 session.stat_points_dirty = true;
                 session.skills_dirty = true;
@@ -12720,7 +12749,7 @@ impl GameWorld {
                         attacker.proficiencies[idx] = attacker.proficiencies[idx].saturating_add(1);
                         attacker.proficiencies_dirty = true;
                         if shared::proficiency_level(attacker.proficiencies[idx]) != anterior {
-                            attacker.stats = effective_stats_r(&attacker.equipment, &attacker.allocated_points, &attacker.proficiencies, attacker.xp, attacker.renascimentos);
+                            attacker.stats = effective_stats_rv(&attacker.equipment, &attacker.allocated_points, &attacker.proficiencies, attacker.xp, attacker.renascimentos, &attacker.arvore);
                             attacker.stats_dirty = true;
                         }
                     }
@@ -12855,10 +12884,14 @@ impl GameWorld {
             // Pocoes de quem MATOU: Sorte mexe na chance de cada linha,
             // Fortuna na quantidade de ouro e cobre.
             let agora_unix = (now_ms() / 1000) as i64;
-            let (fortuna_ate, sorte_ate, bonus_drop) = kill_credits
+            // Drop and gold bonus: accessories + the path tree's Corsair.
+            let (fortuna_ate, sorte_ate, bonus_drop, bonus_ouro) = kill_credits
                 .get(&eid)
                 .and_then(|a| self.sessions.values().find(|s| s.entity_id == *a))
-                .map_or((0, 0, 0.0), |s| (s.fortuna_ate, s.sorte_ate, shared::acessorios::bonus(&s.equipment).drop));
+                .map_or((0, 0, 0.0, 0.0), |s| {
+                    let b = s.bonus_economia();
+                    (s.fortuna_ate, s.sorte_ate, b.drop, b.ouro)
+                });
             // ILHA MAGICA: a ilhota em que o matador esta' paga o abate.
             //
             // O bonus de drop entra pela MESMA porta da pocao de Sorte, que e'
@@ -12873,7 +12906,8 @@ impl GameWorld {
             // Bonus events from the Panopticon (`shared::eventos`), on top.
             let (ev_xp, ev_ouro, ev_drop) =
                 self.mults_de_evento(kill_credits.get(&eid).copied(), kind_id, e_chefe_aqui);
-            let (mag_xp, mag_ouro, mag_drop) = (mag_xp * ev_xp, mag_ouro * ev_ouro, mag_drop * ev_drop);
+            let (mag_xp, mag_ouro, mag_drop) =
+                (mag_xp * ev_xp, mag_ouro * ev_ouro * (1.0 + bonus_ouro), mag_drop * ev_drop);
             let drops: Vec<(u16, u32)> = crate::economy::enemy_loot_drops_com_sorte(
                 kind_id,
                 seed,
@@ -13022,7 +13056,7 @@ impl GameWorld {
                                     session.proficiencies[idx].saturating_add(10);
                                 session.proficiencies_dirty = true;
                                 if shared::proficiency_level(session.proficiencies[idx]) != anterior {
-                                    session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                                    session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                                     session.stats_dirty = true;
                                 }
                             }
@@ -14283,6 +14317,7 @@ impl GameWorld {
             banco_extra: u8,
             diario_json: String,
             renascimentos: u32,
+            arvore: shared::arvore::Arvore,
             skill_progress: shared::skills::ProgressoDeSkills,
             colonia: shared::colonia::DadosColonia,
             guarda_roupa: shared::aparencia::GuardaRoupa,
@@ -14352,6 +14387,7 @@ impl GameWorld {
                 banco_extra: session.banco_extra,
                 diario_json: session.diario.para_json(),
                 renascimentos: session.renascimentos,
+                arvore: session.arvore,
                 skill_progress: session.skill_progress.clone(),
                 colonia: session.colonia.clone(),
                 guarda_roupa: session.guarda_roupa.clone(),
@@ -14415,6 +14451,7 @@ impl GameWorld {
                 banco_extra: e.banco_extra,
                 diario_json: e.diario_json,
                 renascimentos: e.renascimentos,
+                arvore: e.arvore,
             };
             self.salvo_aqui_em.insert(e.name.clone(), self.sim_time_s);
             self.characters.insert(e.name, row.clone());
@@ -14562,7 +14599,7 @@ impl GameWorld {
                 let new_inst = if ia.qty > 0 { ia.instance } else { None };
                 set_equip(session, bs, new_id, new_inst);
                 session.inventory[ai as usize] = new_inv_slot;
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -14595,7 +14632,7 @@ impl GameWorld {
                 let new_inst = if ib.qty > 0 { ib.instance } else { None };
                 set_equip(session, as_, new_id, new_inst);
                 session.inventory[bi as usize] = new_inv_slot;
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 let new_hp_max = session.stats.hp_max;
@@ -15464,9 +15501,69 @@ impl GameWorld {
 
     /// Pergaminho de Teleporte: gasta 1 e salta pro chao firme mais perto de
     /// `alvo`, dentro desta ilha. Qualquer recusa nao gasta nada.
+    /// THE TELEPORT SCROLL (back on 15/11/2026): one scroll jumps to the
+    /// marked destination ON THIS ISLAND (map tap, a quest's "Go", an NPC).
+    /// It never crosses the sea — each island is its own process and the
+    /// destination is a point of this one; other islands are the Harbour
+    /// Captain's boat. Restored from before its retirement (commit b2c593b).
     fn handle_teleportar(&mut self, sid: SessionId, alvo: Vec2) {
-        let _ = alvo;
-        self.avisa_missao(sid, "O Pergaminho de Teleporte foi retirado. Use a montaria e as rotas do mapa.".into());
+        use shared::item_id::PERGAMINHO_TELEPORTE;
+        let recusa = |w: &Self, t: &str| w.avisa_missao(sid, t.to_string());
+        if self.tutorial_mode || self.dungeon_mode {
+            recusa(self, "The scroll does not work here.");
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if !s.logged_in {
+            return;
+        }
+        if s.instancia != 0 {
+            recusa(self, "The scroll does not work inside a dungeon.");
+            return;
+        }
+        if s.downed || s.carrying.is_some() || s.carried_by.is_some() {
+            recusa(self, "You can't use the scroll right now.");
+            return;
+        }
+        let tem = s
+            .inventory
+            .iter()
+            .any(|i| i.item_id == PERGAMINHO_TELEPORTE && i.qty > 0);
+        if !tem {
+            recusa(self, "No Teleport Scroll: the village Alchemist sells it.");
+            return;
+        }
+        let Some(entidade) = s.entity else {
+            return;
+        };
+        let (Some(ilha), true) = (self.ilha.as_ref(), alvo.is_finite()) else {
+            return;
+        };
+        let destino = ilha.terra_mais_proxima(alvo.x, alvo.y, shared::viagem::TELEPORTE_BUSCA);
+        if ilha.agua(destino.x, destino.y)
+            || !ilha.sem_estorvo(destino, shared::constants::ENTITY_RADIUS)
+        {
+            recusa(self, "There is no solid ground at that destination.");
+            return;
+        }
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        dungeon::tirar_item(&mut s.inventory, PERGAMINHO_TELEPORTE, 1);
+        s.inventory_dirty = true;
+        s.rota.limpa();
+        let nome = s.name.clone();
+        if let Ok(mut pos) = self.ecs.get::<&mut Position>(entidade) {
+            pos.0 = destino;
+        }
+        if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(entidade) {
+            vel.0 = Vec2::ZERO;
+        }
+        self.save_pending = true;
+        crate::telemetria::conta("pergaminho_teleporte", self.zona.clone(), 1);
+        tracing::info!("{nome}: teleport scroll -> ({:.0},{:.0})", destino.x, destino.y);
     }
 
     /// Virada do dia UTC: diarias aceitas e nao entregues saem do log.
@@ -15580,7 +15677,7 @@ impl GameWorld {
                     }
                     // Refino muda o bonus da peca vestida; destruir tira ela.
                     s.stats =
-                        effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+                        effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
                     s.stats_dirty = true;
                 }
             }
@@ -15760,7 +15857,7 @@ impl GameWorld {
             let template = crate::economy::item_template_of(*item_id);
             let melhor = self.dono_do_saque
                 .and_then(|d| self.sessions.values().find(|s| s.entity_id == d))
-                .map_or(0.0, |s| shared::acessorios::bonus(&s.equipment).loot_melhor);
+                .map_or(0.0, |s| s.bonus_economia().loot_melhor);
             let instance = if fastrand::f32() < melhor {
                 shared::items::ItemInstance::roll_em(template, item_lvl,
                     (shared::items::tier_from_ilvl(item_lvl) + 1).min(5), 1, || fastrand::f32())
@@ -18587,7 +18684,7 @@ impl GameWorld {
                 let allowed = can_equip_in_slot(&session.equipment, es, item_id);
                 if empty && allowed {
                     session.equipment.set(es, Some(item_id), None);
-                    session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                    session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                     session.stats_dirty = true;
                     new_max = Some(session.stats.hp_max);
                     true
@@ -19166,7 +19263,7 @@ impl GameWorld {
         let nova = shared::pets::rolar_afinidade(fastrand::f32(), fastrand::f32());
         inst.afinidade = Some(nova);
         s.equipment.set(alvo, Some(id), Some(inst));
-        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
         s.stats_dirty = true;
         s.inventory[slot_idx].qty = s.inventory[slot_idx].qty.saturating_sub(1);
         if s.inventory[slot_idx].qty == 0 {
@@ -19258,7 +19355,7 @@ impl GameWorld {
             s.inventory[item_slot] = shared::InventorySlot::default();
         }
         s.inventory_dirty = true;
-        s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+        s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
         s.stats_dirty = true;
         self.save_pending = true;
         self.send_chat_to(
@@ -19373,7 +19470,7 @@ impl GameWorld {
             });
             item.pet = Some(d);
             s.equipment.set(principal, Some(pet), Some(item));
-            s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+            s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
             s.stats_dirty = true;
         }
         self.save_pending = true;
@@ -19564,7 +19661,7 @@ impl GameWorld {
                     },
                     None => shared::InventorySlot::default(),
                 };
-                session.stats = effective_stats_r(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos);
+                session.stats = effective_stats_rv(&session.equipment, &session.allocated_points, &session.proficiencies, session.xp, session.renascimentos, &session.arvore);
                 session.stats_dirty = true;
                 session.inventory_dirty = true;
                 (
@@ -20187,7 +20284,7 @@ impl GameWorld {
             let _ = ilha;
             let qtd = shared::skills::energia_do_nivel(self.nivel_do_lugar(c.centro));
             // ILHA MAGICA: a Ilhota da Energia dobra o que o veio entrega.
-            let bonus = self.sessions.get(&sid).map_or(0.0, |s| shared::acessorios::bonus(&s.equipment).energia);
+            let bonus = self.sessions.get(&sid).map_or(0.0, |s| s.bonus_economia().energia);
             let qtd = (qtd as f32 * self.mult_magico(sid, shared::magica::Bonus::Coleta(5)) * (1.0 + bonus) * if tempestade { 1.5 } else { 1.0 }).round()
                 as u64;
             if let Some(s) = self.sessions.get_mut(&sid) {
@@ -20267,7 +20364,7 @@ impl GameWorld {
                     *qtd = ((*qtd as f32) * fator).round().max(1.0) as u32;
                 }
             }
-            let bonus = self.sessions.get(&sid).map_or(shared::acessorios::Bonus::default(), |s| shared::acessorios::bonus(&s.equipment));
+            let bonus = self.sessions.get(&sid).map_or(shared::acessorios::Bonus::default(), |s| s.bonus_economia());
             for (id, qtd) in &mut drops {
                 let taxa = if *id == shared::item_id::DARKSTEEL { bonus.darksteel }
                     else if *id == shared::item_id::GLITTERING_POWDER || *id == shared::item_id::GOLD { 0.0 }
@@ -20410,7 +20507,7 @@ impl GameWorld {
             }
         }
         if node_kind == "Rock" {
-            let bonus = self.sessions.get(&sid).map_or(shared::acessorios::Bonus::default(), |s| shared::acessorios::bonus(&s.equipment));
+            let bonus = self.sessions.get(&sid).map_or(shared::acessorios::Bonus::default(), |s| s.bonus_economia());
             for (id, qtd) in &mut drops {
                 let taxa = if *id == shared::item_id::DARKSTEEL { bonus.darksteel }
                     else if *id == shared::item_id::GLITTERING_POWDER || *id == shared::item_id::GOLD { 0.0 }
@@ -20622,6 +20719,7 @@ impl GameWorld {
             banco_extra: session.banco_extra,
             diario_json: session.diario.para_json(),
             renascimentos: session.renascimentos,
+            arvore: session.arvore,
         };
         self.salvo_aqui_em
             .insert(session.name.clone(), self.sim_time_s);
@@ -20958,6 +21056,24 @@ pub(crate) fn effective_stats_r(
     char_xp: u64,
     renascimentos: u32,
 ) -> shared::PlayerStats {
+    effective_stats_rv(equip, allocated, proficiencies, char_xp, renascimentos, &Default::default())
+}
+
+/// `effective_stats_r` with the PATH TREE (`shared::arvore`, rebirth phase
+/// 2): the live session, the ranking, `server --poder` and the PvP
+/// simulator pass the character's allocation. The tree's percentages of the
+/// six attribute numbers ADD to the rebirth multiplier (one pool:
+/// `1 + 5%·r + tree%`, so they never compound); its flat parts (crit, attack
+/// and movement speed, dash, regen, damage reduction, poise) add to the
+/// stat. Economy passives go through `Session::bonus_economia`.
+pub(crate) fn effective_stats_rv(
+    equip: &shared::Equipment,
+    allocated: &[u32; shared::STAT_COUNT],
+    proficiencies: &[u64; shared::PROF_COUNT],
+    char_xp: u64,
+    renascimentos: u32,
+    arvore: &shared::arvore::Arvore,
+) -> shared::PlayerStats {
     let mut s = shared::base_player_stats();
     let acessorio = shared::acessorios::bonus(equip);
     s.hp_regen += acessorio.vida;
@@ -21189,15 +21305,24 @@ pub(crate) fn effective_stats_r(
 
     // Passiva nao existe mais: skill que nao aparece na tela nao e' skill.
 
-    if renascimentos > 0 {
+    let p = arvore.passivas();
+    if renascimentos > 0 || *arvore != shared::arvore::Arvore::default() {
         let k = shared::renascimento::mult_de_atributos(renascimentos);
-        let m = |v: i32| (v as f32 * k).round() as i32;
-        s.hp_max = m(s.hp_max);
-        s.mp_max = m(s.mp_max);
-        s.attack_damage = m(s.attack_damage);
-        s.defense = m(s.defense);
-        s.dex = m(s.dex);
-        s.wis = m(s.wis);
+        let m = |v: i32, extra: f32| (v as f32 * (k + extra)).round() as i32;
+        s.hp_max = m(s.hp_max, p.vida_pct);
+        s.mp_max = m(s.mp_max, p.mana_pct);
+        s.attack_damage = m(s.attack_damage, p.ataque_pct);
+        s.defense = m(s.defense, p.defesa_pct);
+        s.dex = m(s.dex, p.destreza_pct);
+        s.wis = m(s.wis, p.sabedoria_pct);
+        s.crit_chance += p.critico;
+        s.attack_speed_mult += p.velocidade_de_ataque;
+        s.speed_mult += p.movimento;
+        s.dash_cd_mult += p.esquiva;
+        s.mp_regen += p.regen_mana;
+        s.hp_regen += p.regen_vida;
+        s.damage_reduction_pct += p.reducao;
+        s.poise_max += p.firmeza.round() as i32;
     }
 
     // Garantir minimos / clamps
@@ -21236,10 +21361,6 @@ pub(crate) fn add_to_inventory(
     mut qty: u32,
     instance: Option<shared::items::ItemInstance>,
 ) -> bool {
-    if item_id == shared::item_id::PERGAMINHO_TELEPORTE {
-        return add_to_inventory(inv, shared::item_id::COPPER,
-            qty.saturating_mul(shared::viagem::PRECO_PERGAMINHO), None);
-    }
     // Cobre e darksteel vao pra CARTEIRA (os dois ultimos espacos), sem teto
     // de pilha e sem ocupar a grade.
     if instance.is_none() && shared::armazem::e_moeda(item_id) {
@@ -23600,7 +23721,7 @@ fn reembolsa_spd(s: &mut Session) {
     let _ = s.handle.to_client.send(ServerMessage::ProgressoDeSkills {
         progresso: s.skill_progress.clone(),
     });
-    s.stats = effective_stats_r(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos);
+    s.stats = effective_stats_rv(&s.equipment, &s.allocated_points, &s.proficiencies, s.xp, s.renascimentos, &s.arvore);
     tracing::info!("{}: SPD retired, refunded {n} points and {energia} Energy", s.name);
 }
 

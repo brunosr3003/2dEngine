@@ -4,6 +4,7 @@
 //! target (native + wasm + headless) to keep the protocol canonical.
 
 pub mod armazem;
+pub mod arvore;
 pub mod auras;
 pub mod bestiary;
 pub mod bosses;

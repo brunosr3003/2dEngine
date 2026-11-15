@@ -48,6 +48,9 @@ pub struct Bonus {
     pub darksteel: f32,
     pub vida: f32,
     pub mana: f32,
+    /// Gold from monsters (no accessory gives it: the path tree's Corsair
+    /// does, `arvore::Passivas::somar_economia`).
+    pub ouro: f32,
 }
 
 impl Bonus {

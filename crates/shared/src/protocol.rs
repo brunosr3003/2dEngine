@@ -568,6 +568,11 @@ pub enum ClientMessage {
     /// for the permanent bonuses. Refused below the cap, in a dungeon, the
     /// tutorial or an instance, and while downed.
     Renascer,
+    /// The PATH TREE (`shared::arvore`, rebirth phase 2): the state, buy a
+    /// node, reset for gold. Answered with `ServerMessage::Arvore`.
+    Arvore {
+        pedido: crate::arvore::PedidoArvore,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1474,6 +1479,11 @@ pub enum ServerMessage {
     Renascimento {
         renascimentos: u32,
         festa: bool,
+    },
+    /// The PATH TREE's state (`shared::arvore`): at login, after every
+    /// request, after a rebirth and when a climb earns a point.
+    Arvore {
+        estado: crate::arvore::EstadoArvore,
     },
 }
 
