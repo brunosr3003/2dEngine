@@ -88,6 +88,43 @@ produção, 08–14/11: casuais 3–5× mais lentos que o melhor caso no 30–60
 - **Cortado.** Com o 100+ por poder e sem trava de nível/viagem, o desafio do
   resetado é o conteúdo 100+ que já existe (e estágios de poder maiores nele).
 
+## Recompensas do renascimento (decidido 15/11/2026)
+
+Substitui os "bônus por reset" de cima (+3% atributos, +15% coleta): com um
+renascimento por semana no tryhard, ganho pequeno some. Cada renascimento
+precisa de um ganho que se sente na hora, uma meta visível e um motivo pra
+seguir depois do 10º. Quatro camadas:
+
+1. **Ganho fixo por renascimento:** +5% em todos os atributos, somando sem
+   teto (+50% no 10º) — o 100+ é por poder, então cada renascimento abre uma
+   faixa nova dele. Mais os 10 pontos da árvore (1 a cada 10 níveis da nova
+   subida) e um **baú do renascimento** na entrada (Darksteel, chave e
+   material na cor do renascimento).
+2. **Marcos:**
+
+   | Renascimento | Marco |
+   |---|---|
+   | 1 | Aura verde + abre a árvore + slot de skill 4 |
+   | 2 | +5 espaços na bolsa |
+   | 3 | Aura azul + slot de skill 5 + título "Renascido" |
+   | 5 | Aura roxa + slot de skill 6 + skin de montaria exclusiva |
+   | 7 | +5 espaços no banco + cor de nome |
+   | 10 | Aura dourada + ativa suprema de cada caminho + skin de arma |
+   | 15 | Aura buraco negro + título "Imortal" |
+   | 20+ | Aura ganha intensidade a cada 5 + título com o número |
+
+3. **Essência do renascimento:** cada renascimento dá Essência (mais nos
+   renascimentos altos). Loja da Essência: redistribuir a árvore, visuais,
+   chave lendária e **ascensão de equipamento** (estrelas que sobem os stats
+   da peça — o equipamento segue sendo a progressão longa, alimentado pelo
+   renascimento).
+4. **Status:** ranking por renascimentos, "R7" ao lado do nome, aviso global
+   ao passar de um marco.
+
+**Equilíbrio:** a subida fica mais pesada a cada renascimento (divisor
+sugerido 1,5^renascimentos), mas o +5% e a árvore matam mais rápido; a
+calibrar no teste pra cada subida ficar parecida com a primeira.
+
 ## Mundo novo: 1 ao 100 em uma semana (decidido 15/11/2026)
 
 O dono: "colocar realmente a progressão bem rápida, tipo 1 semana no
