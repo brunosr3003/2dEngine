@@ -314,8 +314,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "Market unavailable right now. Try again in a moment.",
     ),
     (
-        "Precisa do nível {NIVEL_PARA_VENDER} para vender no mercado.",
-        "You need level {NIVEL_PARA_VENDER} to sell on the market.",
+        "Precisa do nível {nivel} para vender no mercado.",
+        "You need level {nivel} to sell on the market.",
     ),
     (
         "Não dá para comprar o próprio anúncio; o gold volta em Entregas.",

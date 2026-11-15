@@ -248,6 +248,15 @@ pub fn resumo(q: &QuestNet, tem: Tem) -> String {
     if total <= 1 {
         return curto(&q.title);
     }
+    // A trava de nivel conta niveis internos: na tela, a escala exibida.
+    if q.obj_kind == objective_kind::NIVEL {
+        return format!(
+            "{} {}/{}",
+            curto(&q.title),
+            shared::progressao::texto_de_nivel(feito),
+            shared::progressao::texto_de_nivel(total)
+        );
+    }
     format!("{} {feito}/{total}", curto(&q.title))
 }
 
@@ -323,7 +332,13 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
         return "Turning in…".into();
     }
     match q.obj_kind {
-        objective_kind::NIVEL => format!("Reach level {} · you: {nivel}", q.obj_count),
+        objective_kind::NIVEL => {
+            let nivel = shared::progressao::texto_de_nivel(nivel);
+            format!(
+                "Reach level {} · you: {nivel}",
+                shared::progressao::texto_de_nivel(q.obj_count)
+            )
+        }
         objective_kind::LUGAR => format!("Go to {}", historia::ponto::nome(q.obj_target)),
         objective_kind::VIAGEM => "Talk to the Harbour Captain".into(),
         // O Capitao leva; o botao e' MINHA ILHA, e nao Embarcar.

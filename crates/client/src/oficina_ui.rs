@@ -164,7 +164,7 @@ pub fn motivo_aprimorar(g: &Grupo, slots: &[InventorySlot], nivel: u32) -> Optio
     if grau > g.grau && nivel < forja::nivel_da_cor(grau) {
         return Some(format!(
             "Requires level {} for {}",
-            forja::nivel_da_cor(grau),
+            shared::progressao::texto_de_nivel(forja::nivel_da_cor(grau)),
             nome_da_cor(grau)
         ));
     }
@@ -883,7 +883,7 @@ mod tests {
         assert_eq!(resultado(&g), (2, 1));
         assert!(motivo_aprimorar(&g, &slots, 19)
             .unwrap()
-            .contains("level 20"));
+            .contains(&format!("level {}", shared::progressao::texto_de_nivel(20))));
         assert_eq!(motivo_aprimorar(&g, &slots, 20), None);
     }
 

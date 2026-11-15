@@ -67,8 +67,11 @@ impl AutoResumo {
         let compacto = r.h < 150.0 * s;
         estilo::texto_ajustado(&format!("AUTO QUEST  ·  {} completed", self.concluidas.len()),
             x, r.y + 21.0 * s, w, 14, estilo::OURO);
-        let agora = atual.map(|(_, nome, feito, total)|
-            format!("Doing: {nome}  {feito}/{total}"))
+        let agora = atual.map(|(_, nome, feito, total)| if total == 0 {
+                format!("Doing: {nome}")
+            } else {
+                format!("Doing: {nome}  {feito}/{total}")
+            })
             .unwrap_or_else(|| "Picking the next quest...".into());
         estilo::texto_ajustado(&agora, x, r.y + 43.0 * s, w, 13, estilo::TEXTO);
         if compacto {

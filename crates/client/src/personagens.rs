@@ -606,7 +606,7 @@ impl Personagens {
             ui::texto(
                 card.x + 54.0,
                 card.y + 53.0,
-                &format!("Lv {}  ·  {}", c.level, conjunto.nome()),
+                &format!("Lv {}  ·  {}", shared::progressao::texto_de_nivel(c.level), conjunto.nome()),
                 12,
                 ui::SUAVE,
             );
@@ -661,7 +661,7 @@ impl Personagens {
             ui::texto_centro(
                 cx,
                 hero.y + hero.h - 29.0,
-                &format!("Level {}  ·  {}", c.level, conjunto.nome()),
+                &format!("Level {}  ·  {}", shared::progressao::texto_de_nivel(c.level), conjunto.nome()),
                 16,
                 ui::OURO,
             );

@@ -115,7 +115,7 @@ impl MobsUi {
             let area = Rect::new(lista.x + 7.0, lista.y + 8.0 + linha as f32 * 42.0,
                 lista.w - 14.0, 37.0);
             estilo::cartao(area, area.toca(m), self.selecionado == Some(i));
-            estilo::texto_ajustado(&format!("{}  Nv. {}", r.nome, r.nivel),
+            estilo::texto_ajustado(&format!("{}  Nv. {}", r.nome, shared::progressao::texto_de_nivel(r.nivel as u32)),
                 area.x + 8.0, area.y + 24.0, area.w - 16.0, 14,
                 if r.chefe { estilo::OURO } else { estilo::TEXTO });
             if clique && area.toca(m) { self.selecionado = Some(i); }
@@ -135,7 +135,7 @@ impl MobsUi {
             return None;
         };
         let d = r.desafio;
-        estilo::texto_ajustado(&format!("{}  ·  Nv. {}", r.nome, r.nivel),
+        estilo::texto_ajustado(&format!("{}  ·  Nv. {}", r.nome, shared::progressao::texto_de_nivel(r.nivel as u32)),
             detalhe.x + 14.0, detalhe.y + 31.0, detalhe.w - 28.0, 19, estilo::OURO);
         let palco = Rect::new(detalhe.x + detalhe.w * 0.50, detalhe.y + 38.0,
             detalhe.w * 0.46, (detalhe.h * 0.27).clamp(75.0, 150.0));

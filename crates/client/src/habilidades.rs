@@ -280,7 +280,7 @@ impl Habilidades {
         if let Some(id) = manual {
             let s = self.catalogo.iter().find(|s| s.id == id)?;
             let erro = if !s.destravada(contexto.nivel) {
-                Some(format!("Unlocks at level {}", s.nivel_necessario()))
+                Some(format!("Unlocks at level {}", shared::progressao::texto_de_nivel(s.nivel_necessario())))
             } else if !contexto.vivo {
                 Some("Character incapacitated".into())
             } else if self.ocupada() {
@@ -508,7 +508,7 @@ impl Habilidades {
                 estilo::texto_centro(
                     c.x,
                     c.y + 7.0,
-                    &format!("Lv {}", s.nivel_necessario()),
+                    &format!("Lv {}", shared::progressao::texto_de_nivel(s.nivel_necessario())),
                     18,
                     estilo::TEXTO,
                 );
@@ -580,7 +580,7 @@ impl Habilidades {
                     r.y - 53.0,
                     &format!(
                         "Lv {}  ·  {} MP  ·  {:.0}s  ·  {}  ·  pra cima: AUTO · pra baixo: manual",
-                        s.nivel_necessario(),
+                        shared::progressao::texto_de_nivel(s.nivel_necessario()),
                         s.custo_mp,
                         shared::skills::espera_efetiva(s.espera_s, self.wis),
                         if auto { "AUTO" } else { "MANUAL" }

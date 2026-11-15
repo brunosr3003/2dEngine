@@ -107,7 +107,9 @@ impl GameWorld {
         // O DEGRAU SAI DAQUI, e não do cliente. A trava é do servidor; uma
         // tela que decidisse sozinha mostraria botão que o servidor recusa.
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
-        let grau_maximo = shared::magica::maior_liberado(nivel).map_or(0, |n| n.grau);
+        // The gate is POWER since 15/11/2026 (`NivelMagico::poder_exigido`).
+        let poder = shared::dungeon::poder_de_stats(&s.stats);
+        let grau_maximo = shared::magica::maior_liberado(poder).map_or(0, |n| n.grau);
         let grau_atual = shared::magica::nivel_da_zona(&self.zona).map_or(0, |n| n.grau);
         let _ = s.handle.to_client.send(ServerMessage::Magica {
             aviso: shared::magica::AvisoMagica::Estado {
@@ -143,25 +145,27 @@ impl GameWorld {
         // deixaria o jogador sem passe e sem ilha. `grau == 0` significa "o
         // maior que eu posso" — é o que o "+" da tarja manda, onde não há
         // onde escolher.
-        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let poder = shared::dungeon::poder_de_stats(&s.stats);
         let Some(alvo) = (if grau == 0 {
-            shared::magica::maior_liberado(nivel)
+            shared::magica::maior_liberado(poder)
         } else {
             shared::magica::NIVEIS.iter().find(|n| n.grau == grau)
         }) else {
             self.avisa_magica(
                 sid,
                 &format!(
-                    "The Magic Island opens at level {}.",
-                    shared::magica::NIVEIS[0].exige_nivel
+                    "The Magic Island opens at {} power.",
+                    shared::idioma::milhar(shared::magica::NIVEIS[0].poder_exigido() as u64)
                 ),
             );
             return;
         };
-        if nivel < alvo.exige_nivel {
+        if poder < alvo.poder_exigido() {
             let msg = format!(
-                "{} opens at level {} (you: {nivel}).",
-                alvo.nome, alvo.exige_nivel
+                "{} opens at {} power (you: {}).",
+                alvo.nome,
+                shared::idioma::milhar(alvo.poder_exigido() as u64),
+                shared::idioma::milhar(poder.max(0) as u64)
             );
             self.avisa_magica(sid, &msg);
             return;
@@ -293,15 +297,19 @@ impl GameWorld {
             self.avisa_magica(sid, "Your time on the Magic Island is over.");
             return;
         }
-        let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
+        let poder = shared::dungeon::poder_de_stats(&s.stats);
         let Some(alvo) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) else {
             self.avisa_magica(sid, "Unknown step.");
             return;
         };
-        if nivel < alvo.exige_nivel {
+        if poder < alvo.poder_exigido() {
             self.avisa_magica(
                 sid,
-                &format!("{} opens at level {}.", alvo.nome, alvo.exige_nivel),
+                &format!(
+                    "{} opens at {} power.",
+                    alvo.nome,
+                    shared::idioma::milhar(alvo.poder_exigido() as u64)
+                ),
             );
             return;
         }
@@ -579,6 +587,8 @@ mod testes {
         let agora = (now_ms() / 1000) as i64;
         let s = w.sessions.get_mut(&sid).unwrap();
         s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        // The gate is POWER since 15/11/2026: give the step's power too.
+        s.stats.hp_max += 20_000;
         s.magica_ate = agora + 600;
         let gratis = s.magica_gratis;
         w.handle_magica(
@@ -604,6 +614,8 @@ mod testes {
         let agora = (now_ms() / 1000) as i64;
         let s = w.sessions.get_mut(&sid).unwrap();
         s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        // The gate is POWER since 15/11/2026: give the step's power too.
+        s.stats.hp_max += 20_000;
         s.magica_ate = agora + 600;
         s.magica_volta = "ilha_deserto".into();
         w.handle_magica(sid, shared::magica::PedidoMagica::Trocar { grau: 2 });
@@ -620,6 +632,8 @@ mod testes {
         let agora = (now_ms() / 1000) as i64;
         let s = w.sessions.get_mut(&sid).unwrap();
         s.xp = shared::xp_for_level_with_mult(30, crate::economy::xp_multiplier());
+        // The gate is POWER since 15/11/2026: give the step's power too.
+        s.stats.hp_max += 20_000;
         s.magica_ate = agora + 600;
         s.magica_volta = "ilha_deserto".into();
         w.handle_magica(

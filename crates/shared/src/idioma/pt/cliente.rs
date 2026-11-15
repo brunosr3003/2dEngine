@@ -93,6 +93,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Picking the next quest...", "Escolhendo próxima missão..."),
     ("AUTO QUEST  ·  {} completed", "AUTO MISSÃO  ·  {} concluída(s)"),
     ("Doing: {nome}  {feito}/{total}", "Fazendo: {nome}  {feito}/{total}"),
+    ("Doing: {nome}", "Fazendo: {nome}"),
     ("Rewards: waiting for completion", "Recompensas: aguardando conclusão"),
     // ──────────────────────────────── cliente: banco ────────────────────────────────
     ("Bank", "Banco"),
@@ -650,8 +651,8 @@ pub const VERBETES: &[(&str, &str)] = &[
         "FINDING A PARTY · {} · st. {} · {} · {} in the queue",
     ),
     (
-        "Inimigos nível {nivel} · poder mínimo {} · peça até {}",
-        "Enemies level {nivel} · minimum power {} · piece up to {}",
+        "Inimigos nível {nivel_tela} · poder mínimo {} · peça até {}",
+        "Enemies level {nivel_tela} · minimum power {} · piece up to {}",
     ),
     (
         "Sem entrada você vai como Ajudante: sem peça nem chave.",
@@ -1065,6 +1066,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Switch island without spending a pass", "Trocar de ilha sem gastar passe"),
 
     ("Mobs lv {}-{} · power {} · you {}", "Mobs nv {}-{} · poder {} · você {}"),
+    ("Mobs lv {} · power {} · you {}", "Mobs nv {} · poder {} · você {}"),
+    ("Opens at {} power", "Abre com {} de poder"),
     ("Switching and leaving do not pause the clock.", "Trocar e sair não pausam o relógio."),
     ("Enter — {de_graca} free + {} pass", "Entrar — {de_graca} grátis + {} passe"),
     (

@@ -1190,7 +1190,7 @@ impl Social {
             // Level and class.
             let x2 = x + nome_w + 10.0 * k;
             let classe = shared::skills::Conjunto::de_u8(mb.conjunto).map_or("", |c| c.nome());
-            let nivel = if mb.nivel > 0 { format!("Lv {}", mb.nivel) } else { "Lv ?".to_string() };
+            let nivel = if mb.nivel > 0 { format!("Lv {}", shared::progressao::texto_de_nivel(mb.nivel as u32)) } else { "Lv ?".to_string() };
             e::texto(x2, cy - 3.0 * k, &nivel, 15, e::TEXTO);
             e::texto_ajustado(classe, x2, cy + 15.0 * k, 130.0 * k, 12, e::SUAVE);
             // Where / last seen.

@@ -163,7 +163,7 @@ impl RankingUi {
             estilo::texto_forte(c0, y, &l.posicao.to_string(), 15, cor_pos);
             estilo::texto(c1, y, &l.nome, 15, if destaque { estilo::OURO } else { estilo::TEXTO });
             estilo::texto(c2, y, nome_da_classe(l.classe), 13, estilo::SUAVE);
-            estilo::texto(c3, y, &l.nivel.to_string(), 15, estilo::TEXTO);
+            estilo::texto(c3, y, &shared::progressao::texto_de_nivel(l.nivel), 15, estilo::TEXTO);
             let pv = shared::idioma::milhar(l.poder.max(0) as u64);
             estilo::texto(c4 - estilo::medir(&pv, 15), y, &pv, 15, estilo::TEXTO);
         };
@@ -195,7 +195,7 @@ impl RankingUi {
             estilo::texto_centro_forte(
                 cx,
                 y + u(30.0),
-                &format!("Level {}  ·  Power {}", l.nivel, shared::idioma::milhar(l.poder.max(0) as u64)),
+                &format!("Level {}  ·  Power {}", shared::progressao::texto_de_nivel(l.nivel), shared::idioma::milhar(l.poder.max(0) as u64)),
                 17,
                 estilo::TEXTO,
             );

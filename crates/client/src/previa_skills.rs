@@ -212,7 +212,7 @@ pub async fn abrir(vox: &VoxCache) {
                 Some(12750),
             );
             crate::hud::draw_alvo(&z, "Training Guardian", 20, 38450, 50000, true);
-            crate::hud::draw_exp(&z, &ficha, 20);
+            crate::hud::draw_exp(&z, &ficha);
             if !automatico {
                 let _ = habilidades.pedido(crate::habilidades::Contexto {
                     conjunto: skill.conjunto,

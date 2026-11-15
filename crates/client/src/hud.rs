@@ -775,6 +775,34 @@ pub struct Ficha {
     hp_rastro: f32,
 }
 
+impl Ficha {
+    /// O multiplicador da curva, com o padrao enquanto o `HandshakeAck` nao
+    /// chegou.
+    pub fn mult(&self) -> u64 {
+        if self.mult_xp > 0 {
+            self.mult_xp
+        } else {
+            shared::DEFAULT_XP_MULTIPLIER
+        }
+    }
+
+    /// O nivel NA TELA (escala exibida, 15/11/2026): pelo XP quando o
+    /// servidor ja' mandou; antes disso, o nivel interno da entidade
+    /// (`reserva`) convertido.
+    pub fn nivel_na_tela(&self, reserva: u32) -> u32 {
+        if self.nivel == 0 {
+            shared::progressao::nivel_exibido_de(reserva.max(1))
+        } else {
+            shared::progressao::nivel_exibido(self.xp, self.mult())
+        }
+    }
+
+    /// Quanto da barra de EXP do nivel exibido esta' cheio, 0..1.
+    pub fn fracao_exp(&self) -> f32 {
+        shared::progressao::fracao_do_nivel_exibido(self.xp, self.mult())
+    }
+}
+
 fn texto_contornado(s: &str, x: f32, y: f32, tam: u16, cor: Color) {
     estilo::texto_sombra(x, y, s, tam, cor, true);
 }
@@ -975,19 +1003,10 @@ pub fn draw_buffs(
 
 /// A experiencia: uma faixa fina na tela inteira, no pe', com a
 /// porcentagem — o numero que o jogador de MMO olha a cada bicho.
-pub fn draw_exp(z: &Zonas, ficha: &Ficha, nivel: u32) {
-    let mult = if ficha.mult_xp > 0 {
-        ficha.mult_xp
-    } else {
-        shared::DEFAULT_XP_MULTIPLIER
-    };
-    let base = shared::xp_for_level_with_mult(nivel, mult);
-    let prox = shared::xp_for_level_with_mult(nivel + 1, mult);
-    let f = if prox > base {
-        (ficha.xp.saturating_sub(base)) as f32 / (prox - base) as f32
-    } else {
-        0.0
-    };
+pub fn draw_exp(z: &Zonas, ficha: &Ficha) {
+    // A barra do nivel EXIBIDO (15/11/2026): enche e zera a cada nivel que
+    // o jogador le, nao a cada nivel interno.
+    let f = ficha.fracao_exp();
     let (w, h, y) = (z.exp.w, z.exp.h, z.exp.y);
     draw_rectangle(0.0, y, w, h, estilo::FUNDO_BAIXO);
     let fw = w * f.clamp(0.0, 1.0);
@@ -1051,7 +1070,7 @@ pub fn draw_alvo(z: &Zonas, nome: &str, nivel: u16, hp: u32, hp_max: u32, chefe:
     estilo::texto(
         r.x + r.w - 88.0,
         r.y + 35.0 * k,
-        &format!("Lv {nivel}"),
+        &format!("Lv {}", shared::progressao::texto_de_nivel(nivel as u32)),
         fonte(13.0, k),
         cor,
     );

@@ -674,17 +674,19 @@ impl MagicaUi {
             // A LINHA DE DETALHE do degrau escolhido — uma só, centrada.
             if let Some(nv) = shared::magica::NIVEIS.iter().find(|n| n.grau == grau) {
                 let (txt, cor) = if e.grau_maximo < nv.grau {
-                    (format!("Opens at level {}", nv.exige_nivel), estilo::SUAVE)
+                    (
+                        format!("Opens at {} power", crate::bolsa::milhar(nv.poder_exigido() as u64)),
+                        estilo::SUAVE,
+                    )
                 } else if nv.acima_do_nivel(e.meu_nivel) {
                     // O aviso de que você está abaixo: é o que torna entrar no
                     // 15 numa ilha de 20-23 uma escolha, e não uma surpresa.
                     (
                         format!(
-                            "Mobs lv {}-{} · power {} · you {}",
-                            nv.mob.0,
-                            nv.mob.1,
+                            "Mobs lv {} · power {} · you {}",
+                            shared::progressao::texto_de_faixa(nv.mob.0, nv.mob.1),
                             crate::bolsa::milhar(nv.poder() as u64),
-                            e.meu_nivel
+                            shared::progressao::texto_de_nivel(e.meu_nivel)
                         ),
                         estilo::VERMELHO,
                     )

@@ -174,7 +174,7 @@ impl EvolucaoSkills {
                 estilo::TEXTO,
             );
             let estado = if nivel < skill.nivel_necessario() {
-                format!("Unlocks at level {}", skill.nivel_necessario())
+                format!("Unlocks at level {}", shared::progressao::texto_de_nivel(skill.nivel_necessario()))
             } else {
                 format!(
                     "Tier {}  ·  +{:.0}%",
@@ -289,7 +289,7 @@ impl EvolucaoSkills {
                     .map_or(0, |g| self.progresso.tomos(skill.id, g) as u64);
                 let linhas: [(String, bool); 4] = [
                     (
-                        format!("Level {} · you: {nivel}", c.nivel),
+                        format!("Level {} · you: {}", shared::progressao::texto_de_nivel(c.nivel as u32), shared::progressao::texto_de_nivel(nivel)),
                         nivel >= c.nivel,
                     ),
                     (

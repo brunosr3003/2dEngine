@@ -36,7 +36,7 @@ impl GameWorld {
         let nivel = shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier());
         let precisa = shared::skills::DESTRAVA_EM[(skill.ordem.saturating_sub(1) as usize).min(2)];
         if nivel < precisa {
-            return Err(format!("that skill unlocks at level {precisa}"));
+            return Err(format!("that skill unlocks at level {}", shared::progressao::texto_de_nivel(precisa)));
         }
         Ok(skill)
     }
@@ -122,7 +122,7 @@ impl GameWorld {
                 Err(format!(
                     "Tier {} requires level {}",
                     skills::tier_romano(custo.destino),
-                    custo.nivel
+                    shared::progressao::texto_de_nivel(custo.nivel)
                 ))
             } else if s.skill_progress.energia < custo.energia {
                 Err(format!(

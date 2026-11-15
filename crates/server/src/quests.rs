@@ -198,7 +198,7 @@ pub fn por_que_nao_aceita(d: &QuestDef, level: u32, faction: u8, active: &[CharQ
         return "coming soon.".into();
     }
     if level < quests::nivel_pedido(d) {
-        return format!("requires level {}.", quests::nivel_pedido(d));
+        return format!("requires level {}.", shared::progressao::texto_de_nivel(quests::nivel_pedido(d)));
     }
     if d.faction != 0 && d.faction != faction {
         return "not for your faction.".into();

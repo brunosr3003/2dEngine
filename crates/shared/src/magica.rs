@@ -187,6 +187,14 @@ impl NivelMagico {
         crate::dungeon::poder_referencia(self.mob.1)
     }
 
+    /// THE GATE, BY POWER (owner, 15/11/2026: the Magic Island "segue como
+    /// está, por power, só muda a faixa de nível pra power"): the reference
+    /// power (`dungeon::poder_referencia`, calibrated on real players) of
+    /// the level that used to open the step. The step I asks ~2k, VI ~11.8k.
+    pub fn poder_exigido(&self) -> i32 {
+        crate::dungeon::poder_referencia(self.exige_nivel)
+    }
+
     /// O jogador entra abaixo do que a ilha pede?
     pub fn acima_do_nivel(&self, nivel: u32) -> bool {
         nivel < self.mob.0
@@ -213,10 +221,11 @@ pub fn nivel_da_zona(z: &str) -> Option<&'static NivelMagico> {
     NIVEIS.iter().find(|n| n.zona == z)
 }
 
-/// O maior degrau que um personagem de `nivel` pode entrar — `None` se ele
-/// ainda não alcançou o primeiro.
-pub fn maior_liberado(nivel: u32) -> Option<&'static NivelMagico> {
-    NIVEIS.iter().rev().find(|n| nivel >= n.exige_nivel)
+/// O maior degrau que um personagem de PODER `poder` pode entrar — `None` se
+/// ele ainda não alcançou o primeiro (`NivelMagico::poder_exigido`; it was the
+/// level until 15/11/2026).
+pub fn maior_liberado(poder: i32) -> Option<&'static NivelMagico> {
+    NIVEIS.iter().rev().find(|n| poder >= n.poder_exigido())
 }
 
 // ─────────────────────────── o passe e o relógio ───────────────────────────
@@ -1169,7 +1178,7 @@ mod testes {
     /// O portão de nível libera na ordem certa.
     #[test]
     fn o_portao_libera_por_nivel() {
-        let primeiro = NIVEIS[0].exige_nivel;
+        let primeiro = NIVEIS[0].poder_exigido();
         assert_eq!(
             maior_liberado(primeiro - 1),
             None,
@@ -1178,7 +1187,7 @@ mod testes {
         assert_eq!(maior_liberado(primeiro).map(|n| n.grau), Some(1));
         let ultimo = NIVEIS.last().unwrap();
         assert_eq!(
-            maior_liberado(ultimo.exige_nivel + 50).map(|n| n.grau),
+            maior_liberado(ultimo.poder_exigido() + 50_000).map(|n| n.grau),
             Some(ultimo.grau),
             "acima de tudo, o último degrau"
         );

@@ -62,7 +62,13 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     let x = r.x + u(8.0);
     let w = r.w - u(16.0);
     let mut y = r.y + u(20.0);
-    estilo::texto_forte(x, y, &format!("Your strength at level {nivel}"), 16, estilo::OURO);
+    estilo::texto_forte(
+        x,
+        y,
+        &format!("Your strength at level {}", shared::progressao::texto_de_nivel(nivel)),
+        16,
+        estilo::OURO,
+    );
     y += u(10.0);
     let poder = stats.map_or(0, shared::dungeon::poder_de_stats);
     if let Some(s) = stats {
@@ -112,8 +118,15 @@ pub fn desenha(r: Rect, nivel: u32, stats: Option<&shared::PlayerStats>, equip: 
     let (baixo, alto) = ajuda::faixa_de_caca(nivel, poder);
     y += u(20.0);
     let caca = match mob_daqui(baixo, alto) {
-        Some((mob, lo, hi)) => format!("Hunt: {mob} (Lv {lo}-{hi}) on this island"),
-        None => format!("Hunt: Lv {baixo}-{alto} monsters on {}", ajuda::ilha_para(alto).nome),
+        Some((mob, lo, hi)) => format!(
+            "Hunt: {mob} (Lv {}) on this island",
+            shared::progressao::texto_de_faixa(lo as u32, hi as u32)
+        ),
+        None => format!(
+            "Hunt: Lv {} monsters on {}",
+            shared::progressao::texto_de_faixa(baixo as u32, alto as u32),
+            ajuda::ilha_para(alto).nome
+        ),
     };
     estilo::texto_ajustado(&caca, x, y, w, 13, estilo::TEXTO);
     y += u(18.0);

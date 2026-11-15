@@ -567,7 +567,7 @@ pub const PASSOS: &[QuestDef] = &[
     tutorial(800, "O primeiro morador", "Casa vazia não rende. Na casa que abriu, escolha um ofício — o Lenhador traz madeira, o Minerador traz aço, o Mercenário traz cobre.", tut::COLONIA_CONTRATAR, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(801, "O que a ilha rendeu", "Seu morador já trabalhou. Toque em COLHER: o que ele produziu vai pro BAÚ DA ILHA, e não pra sua bolsa.", tut::COLONIA_COLHER, 0, 12_000, item_id::GREATER_HEAL, 2),
     tutorial(802, "Buscar no baú", "O baú é da ilha. Toque em RETIRAR para passar o que há nele pra sua bolsa — o que não couber fica guardado.", tut::COLONIA_RETIRAR, 0, 14_000, 0, 0),
-    nivel(TRAVA_DO_BARCO, "Reach level 20", 20),
+    nivel(TRAVA_DO_BARCO, "Reach level 36", 20),
     viajar(719, "Bound for the Glacier", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
     falar(720, "Bone-cracking cold", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
@@ -577,16 +577,16 @@ pub const PASSOS: &[QuestDef] = &[
     coletar(723, "Ice that holds thunder", "The Glacier's stone traps lightning. Break 20 rocks.", 20, 300, 2_000, VERDE, 4),
     falar(724, "The shard of ice", "Show the Appraiser what you found in the stones.", Papel::Identificador, 250, 2_000, item_id::GREATER_MANA, 2),
     ir(725, "The frozen lighthouse", "The Glacier's lighthouse stands high up. Climb to the island's lookout.", ponto::MIRANTE, 350, 2_600),
-    nivel(726, "Reach level 22", 22),
+    nivel(726, "Reach level 39", 22),
     cacar(727, "Archers of the blizzard", "Morganeer archers are watching the lighthouse. Defeat 8.", alvo_de_mob(mob_kind::ARQUEIRO), 8, 400, 3_200, item_id::GREATER_HEAL),
     criar(728, "A shell against the cold", "Create a new piece in Craft for the cold that's coming.", 350, 3_000),
     refinar(729, "Steel that will not break", "Try refining twice at the Forge.", 2, 400, 3_400),
     falar(730, "Cloak of stormwool", "The Tailor sews with thread that holds the wind. Talk to him.", Papel::Alfaiate, 350, 3_200, item_id::GREATER_HEAL, 3),
-    nivel(731, "Reach level 25", 25),
+    nivel(731, "Reach level 43", 25),
     cacar(732, "Morgan's patrol", "The Morganeers are closing in on the island. Defeat 30 enemies of any kind.", 0, 30, 600, 4_500, item_id::GREATER_HEAL),
     ir(733, "The distant coast", "A Morganeer boat ran aground on the far coast. Go there.", ponto::COSTA, 500, 4_200),
     falar(734, "The map of the Waste", "The Cartographer at the port drew the route to the Waste. Fetch the map from him.", Papel::Cartografo, 450, 4_000, item_id::GREATER_MANA, 3),
-    nivel(735, "Reach level 30", 30),
+    nivel(735, "Reach level 50", 30),
     ir(736, "Back to the quay", "With the map in hand, return to the port yard.", ponto::PORTO, 400, 4_000),
     viajar(737, "Bound for the Waste", "The Harbour Captain will take you to the Waste, where the third lighthouse was buried.", 2, 800, 6_000),
     // ═════════════ III · Areias que Gritam (Ermo, 28–42) ═════════════
@@ -596,12 +596,12 @@ pub const PASSOS: &[QuestDef] = &[
     coletar(741, "Lightning glass", "Where lightning strikes, sand turns to stone. Break 25 rocks.", 25, 700, 8_000, VERDE, 6),
     falar(742, "Blades of glass", "Take the glass to the Blacksmith. They say it cuts through storms.", Papel::Ferreiro, 600, 7_500, item_id::COPPER, 800),
     criar(743, "Weapon of the desert", "Create a new piece in Craft with what the Waste gave you.", 700, 8_500),
-    nivel(744, "Reach level 35", 35),
+    nivel(744, "Reach level 58", 35),
     ir(745, "The buried lighthouse", "The Waste's lighthouse sits atop the dunes. Climb to the lookout.", ponto::MIRANTE, 900, 10_000),
     cacar(746, "The siege of the dunes", "The Morganeers want the lighthouse. Defeat 40 enemies.", 0, 40, 1_100, 12_000, item_id::GREATER_HEAL),
     refinar(747, "Tempered in the heat", "Try refining twice at the Forge.", 2, 900, 11_000),
     falar(748, "The dance of the storm", "The Trainer knows the footwork of those who fight inside the wind. Learn it from him.", Papel::Treinador, 900, 11_000, item_id::GREATER_HEAL, 3),
-    nivel(749, "Reach level 40", 40),
+    nivel(749, "Reach level 66", 40),
     ir(750, "Morgan's shipwreck", "Morgan's flagship lies on the far coast. Go there.", ponto::COSTA, 1_100, 13_000),
     falar(751, "The Captain of the Waste", "At the port, the Captain says the last lighthouse is on the Plateau.", Papel::Estaleiro, 1_000, 12_000, item_id::GREATER_MANA, 3),
     viajar(752, "Bound for the Plateau", "Set sail with the Captain for the Plateau, close to the eye of the storm.", 3, 1_500, 18_000),
@@ -612,12 +612,12 @@ pub const PASSOS: &[QuestDef] = &[
     coletar(755, "Skystone", "The Plateau's stones hold the strongest thunder. Break 30.", 30, 1_400, 19_000, AZUL, 4),
     falar(756, "The last rune", "The Appraiser reads the rune carved into the skystone.", Papel::Identificador, 1_200, 18_000, item_id::GREATER_MANA, 4),
     dungeon(856, "O sino dos ventos", "Recupere a runa do Mosteiro dos Ventos. Abra Dungeons e vença o Mosteiro; reúna um grupo se precisar.", 13, 2_000, 240_000, item_id::GREATER_HEAL, 8),
-    nivel(757, "Reach level 45", 45),
+    nivel(757, "Reach level 75", 45),
     ir(758, "O vale carregado", "Explore o Vale do Trovão. A tempestade carrega seus cristais por dez minutos a cada meia hora, alternando com a Forja Partida. O mapa marca o campo ativo.", crate::planalto::PONTO_BASE + 2, 1_800, 24_000),
     cacar(759, "Morgan's fleet", "The Morganeers' entire fleet has landed. Defeat 50 enemies.", 0, 50, 2_200, 30_000, item_id::GREATER_HEAL),
     criar(760, "Armour for the eye", "Create a new piece in Craft to face the eye of the storm.", 1_800, 26_000),
     refinar(761, "Thunder steel", "Try refining three times at the Forge.", 3, 2_000, 28_000),
-    nivel(762, "Reach level 50", 50),
+    nivel(762, "Reach level 83", 50),
     ir(857, "A Forja Partida", "Siga a estrada até as ruínas da Forja Partida.", crate::planalto::PONTO_BASE + 3, 2_000, 150_000),
     dungeon(858, "O fogo do titã", "Vença a Forja do Titã pelo painel de Dungeons para recuperar o metal do farol.", 14, 3_000, 350_000, item_id::GREATER_HEAL, 10),
     // The 50-60 half (02/10/2026): its own id block (890-899), like 855-859.
@@ -625,13 +625,13 @@ pub const PASSOS: &[QuestDef] = &[
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
     cacar_com(891, "The Primeval Owlbear", "The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(17), 1, 3_000, 260_000, item_id::GREATER_HEAL, 6, 0, 0),
-    nivel(765, "Reach level 55", 55),
+    nivel(765, "Reach level 91", 55),
     cacar_com(892, "The Thunderhide Behemoth", "A behemoth wrapped in lightning roams the ruins of the Broken Forge. Defeat it — the map marks where.", alvo_de_mob(22), 1, 3_400, 300_000, item_id::GREATER_HEAL, 6, 0, 0),
     cacar(766, "The beasts of the wind", "The beasts from the eye of the storm come down to the Plateau. Defeat 15 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 15, 2_600, 36_000, item_id::GREATER_HEAL),
     dungeon(893, "The Tempest Spire", "The storm has a voice: its Herald calls the lightning from a spire above the eye. Clear the Tempest Spire from the Dungeons panel.", 18, 4_000, 420_000, item_id::GREATER_HEAL, 10),
     ir(859, "O último farol", "Chegue ao Olho da Tempestade. O Arquimago guarda o campo ao lado do farol; a estrada permite explorar antes de enfrentá-lo.", crate::planalto::PONTO_BASE + 4, 3_000, 250_000),
     falar(767, "What lies beyond", "The Cartographer wants to draw what lies beyond the storm.", Papel::Cartografo, 2_400, 34_000, item_id::GREATER_MANA, 4),
-    nivel(768, "Reach level 60", 60),
+    nivel(768, "Reach level 100", 60),
     cacar_com(894, "The Archmage of the Tempest", "The Archmage still holds the field beside the last lighthouse. Defeat him and the storm breaks.", alvo_de_mob(18), 1, 4_500, 450_000, item_id::GREATER_HEAL, 8, 0, 0),
     falar(769, "The Guardian's oath", "All four lighthouses shine. The Quest Master has an oath for you.", Papel::Missoes, 4_000, 50_000, item_id::GREATER_HEAL, 5),
     // ── The way up: Skyreach (levels 60-80, 02/10/2026) ──
@@ -641,19 +641,19 @@ pub const PASSOS: &[QuestDef] = &[
     falar(871, "Above the storm", "Islands on the clouds, and a town of marble. The Quest Master of Cloudharbor wants to see you.", Papel::Missoes, 4_000, 140_000, item_id::GREATER_HEAL, 5),
     ir(872, "The first cloud path", "Walk the cloud path to Lantern Isle. Don't look down.", crate::celeste::PONTO_BASE + 1, 4_000, 150_000),
     cacar(873, "Wolves with wings", "Seraph wolves hunt along the cloud paths. Defeat 20 wolves.", alvo_de_mob(mob_kind::LOBO), 20, 4_500, 180_000, item_id::GREATER_HEAL),
-    nivel(874, "Reach level 63", 63),
+    nivel(874, "Reach level 100+", 63),
     dungeon(875, "The Seraph Reliquary", "The seraphs locked their relics under a temple. Clear the Seraph Reliquary from the Dungeons panel.", 6, 6_000, 700_000, item_id::GREATER_HEAL, 10),
     ir(876, "The cloud road", "Follow the cloud road to the Storm Gardens, where lightning feeds the flowers.", crate::celeste::PONTO_BASE + 8, 5_000, 220_000),
     cacar(877, "Wings of the storm", "Seraph archers guard the gardens and shoot whoever walks the clouds. Defeat 20 archers.", alvo_de_mob(mob_kind::ARQUEIRO), 20, 5_000, 240_000, item_id::GREATER_HEAL),
     falar(878, "Fighting on clouds", "The Trainer knows how to keep your footing where the ground is a cloud. Talk to him.", Papel::Treinador, 5_000, 220_000, item_id::GREATER_MANA, 5),
-    nivel(879, "Reach level 70", 70),
+    nivel(879, "Reach level 100+", 70),
     dungeon(880, "The Cathedral of Clouds", "A seraph turned on the city and holds its cathedral. Clear the Cathedral of Clouds from the Dungeons panel.", 16, 8_000, 1_100_000, item_id::GREATER_HEAL, 12),
     cacar(881, "The beasts of the wind", "Winged owlbears nest on the high islands. Defeat 20 owlbears.", alvo_de_mob(mob_kind::OWLBEAR), 20, 6_000, 320_000, item_id::GREATER_HEAL),
-    nivel(882, "Reach level 75", 75),
+    nivel(882, "Reach level 100+", 75),
     dungeon(883, "The Pegasus Aerie", "The storm-born pegasus leads its herd from the aerie. Clear the Pegasus Aerie from the Dungeons panel.", 17, 10_000, 1_500_000, item_id::GREATER_HEAL, 15),
     ir(884, "The Throne of the Sky", "Reach the Throne of the Sky, the highest island. Its keeper waits by the ruined temple.", crate::celeste::PONTO_BASE + 11, 8_000, 420_000),
     falar(885, "The runes of the throne", "The Appraiser wants to read the runes of the sky temple before anyone else.", Papel::Identificador, 8_000, 420_000, item_id::GREATER_MANA, 6),
-    nivel(886, "Reach level 80", 80),
+    nivel(886, "Reach level 100+", 80),
     falar(887, "The keeper's oath", "The city above the storm has a keeper again. The Quest Master has an oath for you.", Papel::Missoes, 12_000, 600_000, item_id::GREATER_HEAL, 10),
     // ── Kōgen-tō (levels 80-100, 03/10/2026) ──
     // The travel step closes chapter V; chapter VI has its own block (950-973).
@@ -662,23 +662,23 @@ pub const PASSOS: &[QuestDef] = &[
     ir(951, "The scramble", "Walk north into Shibuya, to the crossing where every street meets.", crate::kogen::PONTO_BASE + 1, 12_000, 950_000),
     cacar(952, "Hounds of steel", "Mech Hounds patrol the streets in packs. Defeat 25 hounds.", alvo_de_mob(mob_kind::LOBO), 25, 13_000, 1_100_000, item_id::GREATER_HEAL),
     dungeon(953, "The Robot Foundry", "The machines are built under Shibuya. Take the Foundry's portal by the station and shut the line down.", 7, 18_000, 2_200_000, item_id::GREATER_HEAL, 15),
-    nivel(954, "Reach level 85", 85),
+    nivel(954, "Reach level 100+", 85),
     cacar_com(955, "Titan Mk-I", "A construction titan has gone feral in a Shibuya plaza. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(63), 1, 20_000, 2_600_000, item_id::GREATER_HEAL, 10, 0, 0),
     ir(956, "The shrine forest", "Past Harajuku the Meiji Shrine forest is dark and full of nests. Go there.", crate::kogen::PONTO_BASE + 2, 14_000, 1_300_000),
     cacar(957, "Volt Panthers", "Panthers of copper and lightning hunt between the trees. Defeat 25 panthers.", alvo_de_mob(mob_kind::TIGRE), 25, 15_000, 1_500_000, item_id::GREATER_HEAL),
     falar(958, "Fighting machines", "Robots don't flinch. The Trainer knows where to hit them. Talk to him.", Papel::Treinador, 15_000, 1_400_000, item_id::GREATER_MANA, 10),
-    nivel(959, "Reach level 88", 88),
+    nivel(959, "Reach level 100+", 88),
     dungeon(960, "The Undercity Line", "Something lives in the old subway under the city. Clear the Undercity Line from the Dungeons panel.", 8, 22_000, 3_000_000, item_id::GREATER_HEAL, 15),
     ir(961, "Kabukicho", "North, into the neon alleys of Kabukicho, where every sign is lit and nobody sleeps.", crate::kogen::PONTO_BASE + 3, 16_000, 1_700_000),
     cacar(962, "Laser Sentries", "Sentries guard the alleys and shoot whoever walks them. Defeat 25 sentries.", alvo_de_mob(mob_kind::ARQUEIRO), 25, 17_000, 1_900_000, item_id::GREATER_HEAL),
-    nivel(963, "Reach level 92", 92),
+    nivel(963, "Reach level 100+", 92),
     cacar_com(964, "The Neon Kaiju", "Under the neon the kaiju the signs advertised has woken. Defeat it in its plaza — the map marks where.", alvo_de_mob(64), 1, 24_000, 3_400_000, item_id::GREATER_HEAL, 12, 0, 0),
     ir(965, "The towers", "West of the station the Nishi-Shinjuku towers rise into the clouds. Walk to the Cocoon Tower.", crate::kogen::PONTO_BASE + 4, 18_000, 2_100_000),
     cacar(966, "Tesla Units", "The towers' guards throw lightning. Defeat 25 Tesla Units.", alvo_de_mob(mob_kind::MAGO), 25, 19_000, 2_300_000, item_id::GREATER_HEAL),
-    nivel(967, "Reach level 95", 95),
+    nivel(967, "Reach level 100+", 95),
     dungeon(968, "The Kōgen Tower", "Six floors of machines between you and the roof. Climb the Kōgen Tower from the Dungeons panel; the sovereign waits on top.", 9, 30_000, 4_200_000, item_id::GREATER_HEAL, 20),
     ir(969, "The Tocho", "Every robot answers to something in the Tocho plaza. Go there.", crate::kogen::PONTO_BASE + 5, 20_000, 2_600_000),
-    nivel(970, "Reach level 98", 98),
+    nivel(970, "Reach level 100+", 98),
     // The Neon Spire (`kogen::paradas_da_espiral`): the map's own dungeon.
     ir(974, "The Neon Spire", "On the north-west shore a spire winds up into the clouds, its ramp crawling with machines. Walk to its foot.", crate::kogen::PONTO_BASE + 8, 22_000, 2_700_000),
     cacar_com(975, "The Sky Dragon Mech", "Climb the Neon Spire past the guard on every lap — or drop a lap if it goes wrong — and defeat the dragon on its roof. It drops chests where it falls.", alvo_de_mob(crate::bosses::DRAGAO_DA_ESPIRAL), 1, 36_000, 5_000_000, item_id::GREATER_HEAL, 15, 0, 0),
@@ -690,21 +690,21 @@ pub const PASSOS: &[QuestDef] = &[
     falar(981, "The kingdom below", "Speak to Abyssia's Quest Master in the kingdom square.", Papel::Missoes, 25_000, 3_200_000, item_id::GREATER_HEAL, 12),
     ir(982, "The kelp forest", "Leave the bubble and follow the seafloor path into the Kelp Forest.", crate::abissal::PONTO_BASE + 1, 26_000, 3_400_000),
     cacar(983, "Reef predators", "Defeat 25 Reef Sharks in the Kelp Forest.", alvo_de_mob(70), 25, 28_000, 3_600_000, item_id::GREATER_HEAL),
-    nivel(984, "Reach level 105", 105),
+    nivel(984, "Reach level 100+", 105),
     cacar_com(985, "The Sea King", "Find and defeat the Sea King at the edge of the kelp.", alvo_de_mob(crate::bosses::REI_DO_MAR), 1, 35_000, 4_200_000, item_id::GREATER_HEAL, 15, 0, 0),
     dungeon(986, "The Sunken Galleon", "Enter the wreck's portal and clear the Sunken Galleon.", 19, 38_000, 4_500_000, item_id::GREATER_HEAL, 15),
     ir(987, "The shipwreck graveyard", "Follow the path to the Shipwreck Graveyard.", crate::abissal::PONTO_BASE + 2, 30_000, 3_800_000),
     cacar(988, "The drowned crew", "Defeat 30 Triton Guards among the wrecks.", alvo_de_mob(71), 30, 32_000, 4_000_000, item_id::GREATER_HEAL),
-    nivel(989, "Reach level 110", 110),
+    nivel(989, "Reach level 100+", 110),
     dungeon(990, "Coral Palace Vaults", "Return to the kingdom and clear the Coral Palace Vaults.", 21, 45_000, 5_000_000, item_id::GREATER_HEAL, 18),
     ir(991, "The lantern trench", "Walk out to the Lantern Trench, where the seafloor falls away.", crate::abissal::PONTO_BASE + 3, 36_000, 4_300_000),
     cacar(992, "Light in the dark", "Defeat 30 Merfolk Mages in the trench.", alvo_de_mob(75), 30, 40_000, 4_700_000, item_id::GREATER_HEAL),
     cacar_com(993, "The Kraken", "Defeat the Kraken in its trench arena.", alvo_de_mob(crate::bosses::CARANGUEJO_TITA), 1, 52_000, 6_000_000, item_id::GREATER_HEAL, 20, 0, 0),
-    nivel(994, "Reach level 115", 115),
+    nivel(994, "Reach level 100+", 115),
     ir(995, "The abyss rim", "Reach the Abyss Rim beyond the trench.", crate::abissal::PONTO_BASE + 4, 42_000, 5_100_000),
     cacar_com(996, "The ghost captain", "Defeat the Ghost Pirate Captain at the great wreck.", alvo_de_mob(79), 1, 58_000, 6_500_000, item_id::GREATER_HEAL, 20, 0, 0),
     dungeon(997, "The Abyss", "Descend through every floor of The Abyss dungeon.", 22, 65_000, 7_000_000, item_id::GREATER_HEAL, 20),
-    nivel(998, "Reach level 120", 120),
+    nivel(998, "Reach level 100+", 120),
     cacar_com(999, "The Abyssal Leviathan", "Defeat the Leviathan at the outer rim and return to the kingdom.", alvo_de_mob(crate::bosses::LEVIATA), 1, 80_000, 10_000_000, item_id::GREATER_HEAL, 25, 0, 0),
 ];
 
@@ -901,8 +901,9 @@ fn cronica(k: u32) -> Option<QuestDef> {
         }
         _ => {
             if trava <= u32::MAX as u64 {
+                let na_tela = crate::progressao::texto_de_nivel(trava as u32);
                 QuestDef {
-                    title: leak(format!("Chronicle {n} · Reach level {trava}")),
+                    title: leak(format!("Chronicle {n} · Reach level {na_tela}")),
                     ..nivel(id, "", trava as u32)
                 }
             } else {
@@ -1194,6 +1195,20 @@ pub fn ponto_da_historia(
 mod testes {
     use super::*;
     use crate::terreno::{Gerador, ARQUIPELAGO, BLOCO, ESCALA_ALTURA};
+
+    /// The story's level steps are titled on the SHOWN scale (15/11/2026),
+    /// while `obj_count` keeps the internal level the server checks.
+    #[test]
+    fn titulo_da_trava_fala_o_nivel_da_tela() {
+        for d in PASSOS.iter().filter(|d| d.obj_kind == objective_kind::NIVEL) {
+            assert_eq!(
+                d.title,
+                format!("Reach level {}", crate::progressao::texto_de_nivel(d.obj_count)),
+                "{}",
+                d.id
+            );
+        }
+    }
 
     #[test]
     fn ids_seguidos_e_capitulos_cobrem_tudo() {

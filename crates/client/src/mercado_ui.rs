@@ -972,7 +972,7 @@ impl Mercado {
             estilo::texto_ajustado(
                 &format!(
                     "Vender no mercado libera no nível {}.",
-                    regras::NIVEL_PARA_VENDER
+                    shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)
                 ),
                 x,
                 y + 10.0 * f,
@@ -1329,7 +1329,7 @@ impl Mercado {
         let nivel_ok = c.nivel >= regras::NIVEL_PARA_VENDER;
         if !nivel_ok {
             estilo::texto_ajustado(
-                &format!("Selling on the market unlocks at level {}.", regras::NIVEL_PARA_VENDER),
+                &format!("Selling on the market unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
                 x,
                 y,
                 w,
@@ -1842,7 +1842,7 @@ impl Mercado {
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
             estilo::texto_ajustado(
-                &format!("Selling TP unlocks at level {}.", regras::NIVEL_PARA_VENDER),
+                &format!("Selling TP unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
                 x,
                 y,
                 w,
@@ -1970,7 +1970,7 @@ impl Mercado {
         let mut y = dir.y + 92.0 * f;
         if c.nivel < regras::NIVEL_PARA_VENDER {
             estilo::texto_ajustado(
-                &format!("Selling Energy unlocks at level {}.", regras::NIVEL_PARA_VENDER),
+                &format!("Selling Energy unlocks at level {}.", shared::progressao::texto_de_nivel(regras::NIVEL_PARA_VENDER)),
                 x,
                 y,
                 w,

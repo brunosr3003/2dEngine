@@ -1154,11 +1154,29 @@ impl TerraAcessivel {
     }
 }
 
+/// THE DESERT IS DENSER (owner, 15/11/2026: "a terceira ilha tem muito pouco
+/// mob hoje, podia ter muito mais", now the 50-70 band of the new scale). It
+/// is a 400 u island with a 90 u horde spacing; these two knobs roughly
+/// double and a half its mobs (1.65x hordes, 1.44x per horde). Every other
+/// island keeps the world's numbers.
+pub(crate) const ERMO_ESPACO_UN: f32 = 70.0;
+pub(crate) const ERMO_POR_ZONA: u32 = 26;
+
+/// (horde spacing, mobs per horde) of an island.
+pub(crate) fn densidade_da_ilha(zona: &str) -> (f32, u32) {
+    if zona == "ilha_deserto" {
+        (ERMO_ESPACO_UN, ERMO_POR_ZONA)
+    } else {
+        (MOB_ZONA_ESPACO_UN, MOB_POR_ZONA)
+    }
+}
+
 pub(crate) fn zonas_comuns_da_ilha(
     ilha: &shared::terreno::Ilha,
     def: &shared::terreno::DefIlha,
     centro_jogador: Vec2,
 ) -> ZonasComuns {
+    let (espaco_entre_hordas, por_horda) = densidade_da_ilha(def.zona);
     // A ARENA NAO TEM BICHO SOLTO.
     //
     // Tudo o que se luta la' e' de INSTANCIA: nasce dentro do andar, com
@@ -1299,7 +1317,7 @@ pub(crate) fn zonas_comuns_da_ilha(
             }
             if r.centros
                 .iter()
-                .all(|c| c.distance(*s) >= MOB_ZONA_ESPACO_UN)
+                .all(|c| c.distance(*s) >= espaco_entre_hordas)
             {
                 r.centros.push(*s);
             }
@@ -1355,7 +1373,7 @@ pub(crate) fn zonas_comuns_da_ilha(
             // contrario do "na do colosso pode ter menos mobs" do dono.
             (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, ILHOTA_CENTRO_POR_HORDA)
         } else {
-            (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, MOB_POR_ZONA)
+            (MOB_ZONA_RAIO_UN, MOB_ESPACO_UN, por_horda)
         };
         // Nivel pela distancia do desembarque: perto e' o minimo da ilha,
         // a ponta mais longe e' o maximo. E' a progressao inteira, e ela
@@ -14340,6 +14358,7 @@ impl GameWorld {
                     // que. O nivel e' o unico motivo que ele pode resolver.
                     if let Some(req) = ia.instance.map(|i| i.nivel_para_usar()).filter(|r| *r > 0) {
                         if char_level_now < req {
+                            let req = shared::progressao::texto_de_nivel(req as u32);
                             let _ = session.handle.to_client.send(ServerMessage::Chat {
                                 from: "SYS".into(),
                                 text: format!("This piece asks for level {req}."),

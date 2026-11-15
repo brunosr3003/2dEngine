@@ -281,7 +281,9 @@ impl Recusa {
     pub fn texto(&self) -> String {
         match self {
             Recusa::NivelBaixo => {
-                format!("Precisa do nível {NIVEL_PARA_VENDER} para vender no mercado.")
+                // Na escala exibida (15/11/2026).
+                let nivel = crate::progressao::texto_de_nivel(NIVEL_PARA_VENDER);
+                format!("Precisa do nível {nivel} para vender no mercado.")
             }
             Recusa::Vinculado => "Bound item: it cannot be sold.".into(),
             Recusa::Quantidade => "Invalid quantity.".into(),

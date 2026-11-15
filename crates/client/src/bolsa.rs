@@ -144,6 +144,9 @@ pub struct Bolsa {
     /// Energia de habilidades: saldo próprio, fora da grade e da carteira.
     pub energia: u64,
     pub nivel: u32,
+    /// O nivel NA TELA (escala exibida, 15/11/2026), pelo XP; 0 = usa o
+    /// `nivel` interno convertido.
+    pub nivel_tela: u32,
     aba: Aba,
     sel: Option<Sel>,
     /// Ultimo clique: pra reconhecer o duplo.
@@ -191,6 +194,7 @@ impl Default for Bolsa {
             ouro: 0,
             energia: 0,
             nivel: 0,
+            nivel_tela: 0,
             aba: Aba::Tudo,
             sel: None,
             clique: (0.0, None),
@@ -771,6 +775,7 @@ impl Bolsa {
             );
             if !liberado {
                 let req = item.instance.map_or(0, |inst| inst.nivel_para_usar());
+                let req = shared::progressao::texto_de_nivel(req as u32);
                 ui::texto(
                     linha.x + linha.w - u(82.0),
                     linha.y + u(30.0),
@@ -794,6 +799,15 @@ impl Bolsa {
 
     // ── a metade do personagem ──
 
+    /// O nivel do personagem como o jogador le' (escala exibida).
+    pub fn nivel_na_tela(&self) -> u32 {
+        if self.nivel_tela > 0 {
+            self.nivel_tela
+        } else {
+            shared::progressao::nivel_exibido_de(self.nivel.max(1))
+        }
+    }
+
     fn desenha_equipamento(
         &mut self,
         r: Rect,
@@ -804,7 +818,7 @@ impl Bolsa {
         crate::hud_estilo::cartao(r, false, false);
         ui::texto(r.x + u(14.0), r.y + u(24.0), "Gear", 20, ui::OURO);
         if self.nivel > 0 {
-            let n = format!("Level {}", self.nivel);
+            let n = format!("Level {}", self.nivel_na_tela());
             let d = crate::hud_estilo::medir_dim(&n, 17);
             ui::texto(r.x + r.w - u(14.0) - d.width, r.y + u(24.0), &n, 17, TEXTO);
         }
@@ -1260,6 +1274,7 @@ impl Bolsa {
             }
             if let Some(req) = Some(i.nivel_para_usar() as u16).filter(|r| *r > 0) {
                 let falta = (self.nivel as u16) < req && self.nivel > 0;
+                let req = shared::progressao::texto_de_nivel(req as u32);
                 ui::texto(
                     r.x + u(20.0),
                     y + u(8.0),

@@ -595,7 +595,7 @@ impl Craft {
             estilo::texto(
                 linha.x + u(42.0),
                 linha.y + u(33.0),
-                &format!("Nv {}", r.nivel_min.max(1)),
+                &format!("Nv {}", shared::progressao::texto_de_nivel(r.nivel_min.max(1) as u32)),
                 12,
                 estilo::SUAVE,
             );
@@ -637,7 +637,7 @@ impl Craft {
                 &format!(
                     "{} · minimum level {}",
                     nome_da_categoria(r.category),
-                    r.nivel_min.max(1)
+                    shared::progressao::texto_de_nivel(r.nivel_min.max(1) as u32)
                 ),
                 14,
                 estilo::SUAVE,

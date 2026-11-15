@@ -178,7 +178,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                     None,
                     &|_| String::new(),
                 );
-                hud::draw_exp(&z, &ficha, 70);
+                hud::draw_exp(&z, &ficha);
                 if cena == "bolsa" || cena == "ajuda" {
                     bolsa.previa_ajuda(cena == "ajuda");
                     bolsa.desenha(vox, &solido, &[]);

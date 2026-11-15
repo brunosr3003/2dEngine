@@ -131,6 +131,14 @@ impl FichaUi {
         arma_equipada: Option<u16>,
     ) -> Option<ClientMessage> {
         let f = estilo::fator_texto();
+        // O nivel na tela (escala exibida, 15/11/2026): pelo XP; sem XP
+        // ainda, o interno convertido.
+        let mult = if mult_xp > 0 { mult_xp } else { shared::DEFAULT_XP_MULTIPLIER };
+        let nivel_tela = if xp > 0 {
+            shared::progressao::nivel_exibido(xp, mult)
+        } else {
+            shared::progressao::nivel_exibido_de(nivel.max(1))
+        };
         let seguro = crate::hud_layout::tela_segura();
         let w = (860.0 * f).min(seguro.w - 16.0);
         let h = (540.0 * f).min(seguro.h - 16.0);
@@ -170,7 +178,7 @@ impl FichaUi {
         estilo::texto(
             p.x + 22.0 * f,
             p.y + 97.0 * f,
-            &format!("Level {}", nivel.max(1)),
+            &format!("Level {}", nivel_tela),
             15,
             estilo::SUAVE,
         );
@@ -186,8 +194,9 @@ impl FichaUi {
             estilo::OURO,
         );
 
-        let base = shared::xp_for_level_with_mult(nivel.max(1), mult_xp.max(1));
-        let prox = shared::xp_for_level_with_mult(nivel.max(1).saturating_add(1), mult_xp.max(1));
+        // A barra do nivel EXIBIDO (15/11/2026).
+        let base = shared::progressao::xp_do_nivel_exibido(nivel_tela, mult);
+        let prox = shared::progressao::xp_do_nivel_exibido(nivel_tela + 1, mult);
         let falta = prox.saturating_sub(xp);
         let frac = if prox > base {
             (xp.saturating_sub(base) as f32 / (prox - base) as f32).clamp(0.0, 1.0)

@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn subtitulo_diz_o_que_falta() {
-        assert_eq!(subtitulo(&d(estado::LIBERADA)), "Level 15–30");
+        assert_eq!(subtitulo(&d(estado::LIBERADA)), "Level 30–50"); // internal 15–30, shown
         assert!(subtitulo(&d(estado::AQUI)).ends_with("you are here"));
         assert!(subtitulo(&d(estado::BLOQUEADA)).contains("Bound for the Glacier"));
         assert!(subtitulo(&d(estado::FORA_DO_AR)).contains("fora do ar"));

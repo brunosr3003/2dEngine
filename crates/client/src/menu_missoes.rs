@@ -162,7 +162,7 @@ pub fn estado(d: &QuestDef, c: &Contexto) -> Estado {
         motivos.push("Unavailable in this version".to_string());
     }
     if shared::quests::nivel_pedido(d) > c.nivel {
-        motivos.push(format!("Requires level {}", shared::quests::nivel_pedido(d)));
+        motivos.push(motivo_de_nivel(shared::quests::nivel_pedido(d)));
     }
     if d.requires != 0 && !c.entregues.contains_key(&d.requires) {
         let t = shared::quests::quest_by_id(d.requires).map_or("?", |r| r.title);
@@ -200,8 +200,20 @@ pub fn clique_de(d: &QuestDef, e: &Estado) -> Clique {
     }
 }
 
+/// The lock line for an INTERNAL level: the number on the shown scale
+/// (15/11/2026).
+pub fn motivo_de_nivel(interno: u32) -> String {
+    format!("Requires level {}", shared::progressao::texto_de_nivel(interno))
+}
+
+/// The internal level behind a `motivo_de_nivel` line. The shown number goes
+/// back to the first internal level that prints it (each internal level up to
+/// the cap prints its own number; "100+" comes back as the first past it).
 fn nivel_bloqueado(motivos: &[String]) -> Option<u32> {
-    motivos.iter().find_map(|s| s.strip_prefix("Requires level ")?.parse().ok())
+    motivos.iter().find_map(|s| {
+        s.strip_prefix("Requires level ")?;
+        (1..=shared::progressao::NIVEL_MAX + 1).find(|&n| motivo_de_nivel(n) == *s)
+    })
 }
 
 /// Só objetivos que a máquina e o servidor conseguem executar sem gesto do jogador.
@@ -307,7 +319,7 @@ pub fn estado_da_historia(d: &QuestDef, c: &Contexto) -> Estado {
             break;
         };
         if p.obj_kind == shared::quests::objective_kind::NIVEL && p.obj_count > c.nivel {
-            motivos.push(format!("Requires level {}", p.obj_count));
+            motivos.push(motivo_de_nivel(p.obj_count));
             break;
         }
     }
@@ -607,6 +619,9 @@ pub fn frase(d: &QuestDef, e: &Estado) -> String {
         Estado::EmAndamento { feito, total }
             if d.obj_kind == shared::quests::objective_kind::NIVEL =>
         {
+            // Na escala exibida (15/11/2026): feito e total sao internos.
+            let feito = shared::progressao::texto_de_nivel(*feito);
+            let total = shared::progressao::texto_de_nivel(*total);
             format!(
                 "Level {feito}/{total} · pick: Magic Island, side quests or hunting in dense areas"
             )
@@ -641,7 +656,7 @@ fn caminho_manual(d: &QuestDef) -> String {
         obj::TREASURE => "Map: find and open the chest named".into(),
         obj::PVP_KILL => format!("PvP combat: defeat {} rival(s)", d.obj_count),
         obj::TUTORIAL => shared::quests::tutorial::instrucao(d.obj_target).to_string(),
-        obj::NIVEL => format!("Reach level {}", d.obj_count),
+        obj::NIVEL => format!("Reach level {}", shared::progressao::texto_de_nivel(d.obj_count)),
         obj::RAID => "Complete the raid named".into(),
         obj::ENCHANT => "Enchant the gear named".into(),
         _ => "Follow the quest description".into(),
@@ -1502,7 +1517,7 @@ mod tests {
         // 504: nivel 3 e a 503 antes.
         match estado(d504, &c) {
             Estado::Bloqueada(m) => {
-                assert!(m.contains(&"Requires level 3".to_string()), "{m:?}");
+                assert!(m.contains(&motivo_de_nivel(3)), "{m:?}");
                 assert!(m.iter().any(|s| s.starts_with("Complete: ")), "{m:?}");
             }
             outro => panic!("{outro:?}"),
@@ -1541,7 +1556,7 @@ mod tests {
             clique_de(d501, &Estado::EmAndamento { feito: 0, total: 1 }),
             Clique::AutoMissao(501)
         );
-        match clique_de(d501, &Estado::Bloqueada(vec!["Requires level 3".into()])) {
+        match clique_de(d501, &Estado::Bloqueada(vec![motivo_de_nivel(3)])) {
             Clique::OpcoesDeNivel(3) => {},
             outro => panic!("bloqueada andou: {outro:?}"),
         }
@@ -2114,7 +2129,7 @@ mod testes_da_trava {
 
         // E a frase diz o que fazer, não só o quanto falta.
         let f = frase(d, &andando);
-        assert!(f.contains("17/20"), "{f}");
+        assert!(f.contains("32/36"), "{f}"); // 17/20 internal, on the shown scale
         assert!(f.contains("Magic Island"), "{f}");
         assert!(f.contains("side quests"), "{f}");
 

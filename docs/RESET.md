@@ -88,6 +88,57 @@ produção, 08–14/11: casuais 3–5× mais lentos que o melhor caso no 30–60
 - **Cortado.** Com o 100+ por poder e sem trava de nível/viagem, o desafio do
   resetado é o conteúdo 100+ que já existe (e estágios de poder maiores nele).
 
+## Mundo novo: 1 ao 100 em uma semana (decidido 15/11/2026)
+
+O dono: "colocar realmente a progressão bem rápida, tipo 1 semana no
+tryhard pro lvl 100", com o mundo encurtado e mais denso.
+
+- **Faixas por ilha (níveis NOVOS):** Bosque 1–30, Geleira 30–50, Ermo
+  50–70 (precisa de muito mais mob), Planalto 70–100. Celeste, Kōgen e
+  Abissal: "100+" por poder.
+- **Dentro da ilha o nível sobe do porto (norte) pro sul.**
+- **A força não muda (opção b):** o 100 novo tem a força do 60 de hoje (fim
+  do Planalto). Uma conversão única nível novo → antigo, por faixas
+  (1–30 → 1–15, 30–50 → 15–30, 50–70 → 30–42, 70–100 → 42–60), alimenta tudo
+  que é força (ladder, mob, item, chave, drop, poder de referência), pra
+  balança calibrada ilha por ilha continuar valendo.
+- **Ilha Mágica:** continua como está; só a trava dela muda de nível pra
+  poder.
+- **Curva de XP:** melhor caso 1→100 ≈ 75–80 h (tryhard ≈ 100 h reais ≈ 1
+  semana).
+- **Missões:** história e missões de ilha vão pros níveis novos; Ermo e
+  Planalto ganham missões pros níveis que ganharam; linha de missões do
+  reset (até o NPC no 100, e a de volta apresentando a árvore).
+- **Personagens existentes:** ficam com o nível/XP que têm, e **todo mundo
+  volta pra ilha inicial**; cada um descobre onde aguenta upar.
+- **Lançamento:** nada vai pra produção agora. Tudo é planejado e testado na
+  versão de teste; o dono decide depois quando lançar.
+
+### Como foi feito (15/11/2026, versão de teste)
+
+- **As faixas novas são as de hoje renumeradas**, então o jogo continua com
+  os níveis INTERNOS (mob, chefe, dungeon, missão, item, chave, curva de XP)
+  e só a TELA converte: `progressao::ANCORAS_DA_ESCALA` (1→1, 15→30, 30→50,
+  42→70, 60→100), `nivel_exibido(xp)`, `xp_do_nivel_exibido(n)` (barra de
+  XP), `texto_de_nivel` / `texto_de_faixa` ("100+" acima do 60 interno).
+  Personagens existentes ficam coerentes sozinhos.
+- **Teto:** `NIVEL_MAX` = 60 interno (aparece 100); `NIVEL_MAX_EXIBIDO` = 100.
+- **Ritmo:** o 1,25 atual já dá ~57 h no melhor caso até o 60 interno (~5
+  dias de tryhard a 15 h/dia): a curva não precisou mudar.
+- **Ilha Mágica por poder:** `NivelMagico::poder_exigido` (poder de
+  referência do nível que abria o andar: I ≈ 2 mil, VI ≈ 11,8 mil);
+  `maior_liberado(poder)`.
+- **Ermo mais denso:** `world::densidade_da_ilha` — hordas a 70 u (eram 90)
+  e 26 mobs por horda (eram 18): ~2,4× mais mob.
+- **Degradê dentro da ilha:** já existe — o nível das zonas sobe com a
+  distância da cidade (a mais fraca perto do porto/cidade).
+- **Missões novas:** Ermo 1100–1109 (8 em cadeia + 2 contratos), Planalto
+  1110–1129 (14 em cadeia + 3 contratos), no Mestre de Missões, com
+  tradução.
+- **Voltar todo mundo pra ilha inicial:** `scripts/voltar-ilha-inicial.sh`
+  (com o jogo PARADO; `--sim` pra ver antes). Não roda na produção até o
+  dono decidir lançar.
+
 ## Etapas
 
 1. **Release A — base (ajuda já quem está abandonando):** teto 100, "100+" por

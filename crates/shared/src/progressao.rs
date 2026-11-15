@@ -89,12 +89,19 @@ use crate::quests::{objective_kind as ok, QuestDef, ALVO_QUALQUER_CHEFE, QUESTS}
 /// The level cap the targets are written for.
 pub const TETO: u32 = 120;
 
-/// THE LEVEL CAP (stage A of the reset plan, docs/RESET.md, 14/11/2026):
-/// characters stop at 100. Everything that used to be "level 101-120" is the
-/// "100+" band, gated by POWER. `TETO` stays as the length of the
-/// calibration tables (mob kill factor, best-case targets), which still
-/// describe mobs above 100.
-pub const NIVEL_MAX: u32 = 100;
+/// THE LEVEL CAP, on the INTERNAL scale (docs/RESET.md, "Mundo novo",
+/// 15/11/2026): characters stop at internal level 60 — the end of the
+/// Plateau — which the screen shows as level 100 (`escala`). Everything past
+/// it (Celeste, Kōgen, Abissal, Magic Island IV-VI) is the "100+" band,
+/// gated by POWER. `TETO` stays as the length of the calibration tables
+/// (mob kill factor, best-case targets), which still describe mobs above.
+///
+/// It was 100 on the internal scale for one day (stage A, 14/11) before the
+/// world remap moved the shown 100 to internal 60.
+pub const NIVEL_MAX: u32 = 60;
+
+/// The level the screen shows at the cap.
+pub const NIVEL_MAX_EXIBIDO: u32 = 100;
 
 /// XP of a BOSS kill (field boss or a dungeon's boss) over the species'
 /// own XP. Was 5 until 15/11/2026; the owner: "dungeon e boss darem mais
@@ -111,23 +118,125 @@ pub fn xp_maximo(mult: u64) -> u64 {
     xp_for_level_with_mult(NIVEL_MAX, mult)
 }
 
-/// How a level reads on screen: "100+" past the cap (content and mobs keep
-/// their real level inside, for the maths).
-pub fn texto_de_nivel(nivel: u32) -> String {
-    if nivel > NIVEL_MAX {
-        format!("{NIVEL_MAX}+")
+// ─────────────────────── the shown scale (15/11/2026) ───────────────────────
+//
+// The owner: 1 to 100 fast, with Bosque 1-30, Glacier 30-50, Desert 50-70 and
+// Plateau 70-100, and everything past that "100+" by power — with the same
+// strength as today (option b). Those bands are exactly today's island bands
+// renumbered, so the game keeps its INTERNAL levels (mobs, bosses, dungeons,
+// quests, items, keys, the XP curve: all calibrated) and only the number on
+// SCREEN changes. Every level a player reads goes through `nivel_exibido` /
+// `texto_de_nivel` / `texto_de_faixa`; nothing else converts.
+
+/// (internal level, shown level) at each island's edge; straight lines
+/// between them. Past internal 60 every level shows as "100+".
+pub const ANCORAS_DA_ESCALA: [(f32, f32); 5] =
+    [(1.0, 1.0), (15.0, 30.0), (30.0, 50.0), (42.0, 70.0), (60.0, 100.0)];
+
+/// The shown level of a (possibly fractional) internal level, unclamped
+/// (past internal 60 it keeps one shown level per internal level).
+pub fn exibido_f(interno: f32) -> f32 {
+    let a = &ANCORAS_DA_ESCALA;
+    if interno <= a[0].0 {
+        return a[0].1;
+    }
+    for w in a.windows(2) {
+        let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+        if interno <= x1 {
+            return y0 + (y1 - y0) * (interno - x0) / (x1 - x0);
+        }
+    }
+    let (x, y) = a[a.len() - 1];
+    y + (interno - x)
+}
+
+/// The internal level (fractional) of a shown level: the inverse.
+pub fn interno_f(exibido: f32) -> f32 {
+    let a = &ANCORAS_DA_ESCALA;
+    if exibido <= a[0].1 {
+        return a[0].0;
+    }
+    for w in a.windows(2) {
+        let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+        if exibido <= y1 {
+            return x0 + (x1 - x0) * (exibido - y0) / (y1 - y0);
+        }
+    }
+    let (x, y) = a[a.len() - 1];
+    x + (exibido - y)
+}
+
+/// The shown number of an internal level (whole levels: content, mobs,
+/// requirements). "100+" territory still returns a number: use
+/// `texto_de_nivel` to print.
+pub fn nivel_exibido_de(interno: u32) -> u32 {
+    exibido_f(interno as f32).floor().max(1.0) as u32
+}
+
+/// Cumulative XP at a fractional INTERNAL level: the curve's own value at the
+/// whole levels, straight in between.
+fn xp_no_interno(interno: f32, mult: u64) -> u64 {
+    let base = interno.floor().max(1.0) as u32;
+    let a = xp_for_level_with_mult(base, mult);
+    let b = xp_for_level_with_mult(base + 1, mult);
+    a + ((b - a) as f64 * (interno - base as f32).clamp(0.0, 1.0) as f64) as u64
+}
+
+/// A CHARACTER's shown level from its XP: the internal level plus its
+/// progress, converted, capped at `NIVEL_MAX_EXIBIDO`. A shown level-up
+/// happens every time this number changes (twice per internal level in the
+/// Bosque, where 15 internal levels show as 30).
+pub fn nivel_exibido(xp: u64, mult: u64) -> u32 {
+    // The largest shown level whose start (`xp_do_nivel_exibido`) is within
+    // the XP: defined by the bar's own bounds, so the two never disagree on a
+    // rounding.
+    let (mut lo, mut hi) = (1u32, NIVEL_MAX_EXIBIDO);
+    while lo < hi {
+        let mid = (lo + hi + 1) / 2;
+        if xp_do_nivel_exibido(mid, mult) <= xp {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    lo
+}
+
+/// XP at the START of shown level `n` (for the XP bar: from
+/// `xp_do_nivel_exibido(n)` to `xp_do_nivel_exibido(n + 1)`).
+pub fn xp_do_nivel_exibido(n: u32, mult: u64) -> u64 {
+    xp_no_interno(interno_f(n.max(1) as f32), mult)
+}
+
+/// How full the XP bar of the character's SHOWN level is, 0..1 (the bar
+/// runs from `xp_do_nivel_exibido(n)` to `xp_do_nivel_exibido(n + 1)`).
+pub fn fracao_do_nivel_exibido(xp: u64, mult: u64) -> f32 {
+    let n = nivel_exibido(xp, mult);
+    let (a, b) = (xp_do_nivel_exibido(n, mult), xp_do_nivel_exibido(n + 1, mult));
+    if b > a {
+        (xp.saturating_sub(a) as f32 / (b - a) as f32).clamp(0.0, 1.0)
     } else {
-        nivel.to_string()
+        0.0
     }
 }
 
-/// A level band on screen: "40–60", "95–100+", or just "100+" when the
-/// whole band is past the cap.
+/// How an INTERNAL level reads on screen: the shown number, or "100+" past
+/// the cap (content and mobs keep their internal level for the maths).
+pub fn texto_de_nivel(nivel: u32) -> String {
+    if nivel > NIVEL_MAX {
+        format!("{NIVEL_MAX_EXIBIDO}+")
+    } else {
+        nivel_exibido_de(nivel).to_string()
+    }
+}
+
+/// An INTERNAL level band on screen: "70–100", "95–100+", or just "100+"
+/// when the whole band is past the cap.
 pub fn texto_de_faixa(lo: u32, hi: u32) -> String {
     if lo > NIVEL_MAX {
-        format!("{NIVEL_MAX}+")
+        format!("{NIVEL_MAX_EXIBIDO}+")
     } else {
-        format!("{}–{}", lo, texto_de_nivel(hi))
+        format!("{}–{}", nivel_exibido_de(lo), texto_de_nivel(hi))
     }
 }
 
@@ -327,6 +436,48 @@ mod testes {
             let abates = q.obj_count as u64 * xp_do_abate(BASE_TIPICA, q.min_level.max(1));
             assert!(xp_da_quest(q) * 5 < abates, "{} '{}' pays {} for kills worth {abates}", q.id, q.title, xp_da_quest(q));
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_da_escala {
+    use super::*;
+
+    /// The owner's bands (15/11/2026) are today's island edges renumbered.
+    #[test]
+    fn ilhas_nas_faixas_novas_e_100_mais() {
+        assert_eq!(nivel_exibido_de(1), 1);
+        assert_eq!(nivel_exibido_de(15), 30, "Bosque ends at 30");
+        assert_eq!(nivel_exibido_de(30), 50, "Glacier ends at 50");
+        assert_eq!(nivel_exibido_de(42), 70, "Desert ends at 70");
+        assert_eq!(nivel_exibido_de(60), 100, "Plateau ends at 100");
+        assert_eq!(texto_de_nivel(60), "100");
+        assert_eq!(texto_de_nivel(61), "100+");
+        assert_eq!(texto_de_nivel(118), "100+");
+        assert_eq!(texto_de_faixa(40, 60), "66–100");
+        assert_eq!(texto_de_faixa(55, 70), "91–100+");
+        assert_eq!(texto_de_faixa(65, 80), "100+");
+        for n in 1..=100u32 {
+            let i = interno_f(n as f32);
+            assert!((exibido_f(i) - n as f32).abs() < 1e-3, "{n}");
+        }
+    }
+
+    /// The shown level climbs with the XP, one step at a time, never past 100,
+    /// and the XP bar's bounds bracket the character's XP.
+    #[test]
+    fn nivel_exibido_sobe_com_o_xp_e_para_no_100() {
+        let m = DEFAULT_XP_MULTIPLIER;
+        assert_eq!(nivel_exibido(0, m), 1);
+        let fim = crate::constants::xp_for_level_with_mult(NIVEL_MAX, m);
+        for n in 2..NIVEL_MAX_EXIBIDO {
+            let ini = xp_do_nivel_exibido(n, m);
+            assert!(ini > xp_do_nivel_exibido(n - 1, m), "{n}: the bar has length");
+            assert_eq!(nivel_exibido(ini + 1, m), n, "start of {n}");
+            assert_eq!(nivel_exibido(ini.saturating_sub(1), m), n - 1, "just before {n}");
+        }
+        assert_eq!(nivel_exibido(fim, m), NIVEL_MAX_EXIBIDO);
+        assert_eq!(nivel_exibido(fim * 4, m), NIVEL_MAX_EXIBIDO);
     }
 }
 

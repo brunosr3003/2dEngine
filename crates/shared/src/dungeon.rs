@@ -526,7 +526,10 @@ impl Cadeado {
     pub fn texto(&self) -> String {
         match self {
             Cadeado::EmBreve => "Coming soon".into(),
-            Cadeado::Nivel(n) => format!("Requires level {n}"),
+            Cadeado::Nivel(n) => {
+                let n = crate::progressao::texto_de_nivel(*n);
+                format!("Requires level {n}")
+            }
             Cadeado::Poder { tem, precisa } => format!("Power {tem}/{precisa}"),
             Cadeado::Estagio(e) => format!("Beat stage {e}"),
             Cadeado::Selo => "Requires a Storm Seal".into(),

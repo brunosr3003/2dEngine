@@ -258,7 +258,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     );
                     let alto = z.lv_min as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
-                        o.aviso = Some(format!("Level {}+ zone: above your level", z.lv_min.min(shared::progressao::NIVEL_MAX as u16)));
+                        o.aviso = Some(format!("Level {}+ zone: above your level", shared::progressao::texto_de_nivel(z.lv_min.min(shared::progressao::NIVEL_MAX as u16) as u32)));
                     }
                     o.ordem = (if alto { 3 } else { 0 }, distancia(c.eu, pos));
                     o.ir = Some(Ir::Alvo(Alvo {
@@ -294,6 +294,7 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
                     let pos = vec2(ch.centro[0], ch.centro[1]);
                     let alto = *nivel as u32 > c.nivel + ACIMA_DO_NIVEL;
                     if alto {
+                        let nivel = shared::progressao::texto_de_nivel(*nivel as u32);
                         o.aviso = Some(format!(
                             "Nível {nivel}: bem acima do seu — o combate não liga sozinho"
                         ));
@@ -353,9 +354,9 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             nivel_min,
         } => {
             o.titulo = format!("Craft: {nome}");
-            o.detalhe = format!("Craft · minimum level {}", (*nivel_min).max(1));
+            o.detalhe = format!("Craft · minimum level {}", shared::progressao::texto_de_nivel((*nivel_min).max(1) as u32));
             if c.nivel < *nivel_min as u32 {
-                o.aviso = Some(format!("Requires level {nivel_min}"));
+                o.aviso = Some(format!("Requires level {}", shared::progressao::texto_de_nivel(*nivel_min as u32)));
             }
             o.ordem = (2, *nivel_min as u32);
             o.ir = Some(Ir::AbrirCraft(*receita));

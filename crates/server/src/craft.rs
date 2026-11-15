@@ -290,7 +290,7 @@ pub fn aprimorar(
     if grau > ia.grau() && nivel < forja::nivel_da_cor(grau) {
         return Err(format!(
             "requires level {} for that colour",
-            forja::nivel_da_cor(grau)
+            shared::progressao::texto_de_nivel(forja::nivel_da_cor(grau))
         ));
     }
     let cobre = forja::custo_de_aprimorar(ia.grau(), ia.tier());
@@ -695,7 +695,7 @@ mod testes {
         inv[7] = peca(1, 4, 9);
         // Verde pede nivel 20.
         let e = aprimorar(&mut inv, 3, 7, 19, &mut rolar_katana).unwrap_err();
-        assert!(e.contains("level 20"), "{e}");
+        assert!(e.contains(&format!("level {}", shared::progressao::texto_de_nivel(20))), "{e}");
         assert_eq!(
             aprimorar(&mut inv, 3, 7, 20, &mut rolar_katana),
             Ok((item_id::KATANA, 2, 1))

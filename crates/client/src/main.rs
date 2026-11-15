@@ -2610,10 +2610,21 @@ impl Jogo {
                 // SUBIU: o cliente ja' sabia o nivel de antes, entao a
                 // comemoracao nao custa um byte de rede. `> 0` exclui o
                 // primeiro `ProgressUpdate` do login, que nao e' subida.
-                if level > self.ficha.nivel && self.ficha.nivel > 0 {
-                    self.subiu_de_nivel.dispara();
+                //
+                // A comemoracao segue o nivel EXIBIDO (15/11/2026): no Bosque
+                // um nivel interno sao dois na tela, e cada um que o jogador
+                // le' sobe com festa.
+                if self.ficha.nivel > 0 {
+                    let mult = self.ficha.mult();
+                    let antes = shared::progressao::nivel_exibido(self.ficha.xp, mult);
+                    let depois = shared::progressao::nivel_exibido(xp, mult);
+                    if depois > antes || level > self.ficha.nivel {
+                        self.subiu_de_nivel.dispara();
+                    }
                 }
                 self.bolsa.nivel = level;
+                self.bolsa.nivel_tela =
+                    shared::progressao::nivel_exibido(xp, self.ficha.mult());
                 self.ficha.xp = xp;
                 self.ficha.nivel = level;
             }
@@ -3627,10 +3638,14 @@ impl Jogo {
     /// pergunta so', no lugar da condicao de onze termos que crescia a cada
     /// painel novo.
     fn entrar_economia(&mut self) {
-        let nivel = match self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
-            Some(e) if self.ficha.nivel == 0 => e.meta.nivel as u32,
-            _ => self.ficha.nivel,
-        };
+        // Na escala exibida, como o `Resumo` (conta os niveis que o jogador
+        // le' no "desde que voce comecou").
+        let nivel_ent = self
+            .world
+            .self_id
+            .and_then(|id| self.world.ents.get(&id))
+            .map_or(1, |e| e.meta.nivel as u32);
+        let nivel = self.ficha.nivel_na_tela(nivel_ent);
         self.economia
             .entrar(get_time(), self.ficha.xp, nivel, self.bolsa.ouro);
     }
@@ -3668,31 +3683,32 @@ impl Jogo {
                 )
             })
             .unwrap_or_default();
-        let nivel = if self.ficha.nivel == 0 {
-            nivel_ent
-        } else {
-            self.ficha.nivel
-        };
+        // Nivel e barra na escala EXIBIDA (15/11/2026).
+        let nivel = self.ficha.nivel_na_tela(nivel_ent);
         let hp_max = self.bolsa.stats.as_ref().map_or(hp_max, |s| s.hp_max);
-        let mult = if self.ficha.mult_xp > 0 {
-            self.ficha.mult_xp
-        } else {
-            shared::DEFAULT_XP_MULTIPLIER
-        };
-        let (base, prox) = (
-            shared::xp_for_level_with_mult(nivel, mult),
-            shared::xp_for_level_with_mult(nivel + 1, mult),
-        );
-        let exp = if prox > base {
-            self.ficha.xp.saturating_sub(base) as f32 / (prox - base) as f32
-        } else {
-            0.0
-        };
+        let exp = self.ficha.fracao_exp();
         let estado = self.estado_da_economia();
         let bolsa = &self.bolsa;
         let nome_item = |id: u16| bolsa.nome(id);
         let missao_atual = self.auto_missao.quest.and_then(|id| self.missoes.log.iter()
-            .find(|q| q.id == id).map(|q| (id, q.title.as_str(), q.progress, q.obj_count)));
+            .find(|q| q.id == id).map(|q| {
+                // A trava de nivel conta niveis: na escala exibida; past the
+                // cap ("100+") the count says nothing, so it is left out.
+                if q.obj_kind == shared::quests::objective_kind::NIVEL {
+                    if q.obj_count > shared::progressao::NIVEL_MAX {
+                        (id, q.title.as_str(), 0, 0)
+                    } else {
+                        (
+                            id,
+                            q.title.as_str(),
+                            shared::progressao::nivel_exibido_de(q.progress),
+                            shared::progressao::nivel_exibido_de(q.obj_count),
+                        )
+                    }
+                } else {
+                    (id, q.title.as_str(), q.progress, q.obj_count)
+                }
+            }));
         let resumo = economia::Resumo {
             nome: &nome,
             nivel,
@@ -6578,6 +6594,9 @@ impl Jogo {
             Some((_, _, n, _)) if self.ficha.nivel == 0 => *n,
             _ => self.ficha.nivel,
         };
+        // O numero do circulo da ficha, na escala exibida (15/11/2026);
+        // `nivel` (interno) segue pras contas (skills liberadas etc.).
+        let nivel_tela = self.ficha.nivel_na_tela(nivel);
         // A ILHA MÁGICA, ANTES DE TODO O RESTO DO HUD.
         //
         // O dono: "o hud onde fica o contador da ilha mágica e o adicionar
@@ -6667,7 +6686,7 @@ impl Jogo {
                     &mut self.ficha,
                     get_frame_time(),
                     &nome,
-                    nivel,
+                    nivel_tela,
                     hp,
                     hp_max,
                     mp_max,
@@ -6974,7 +6993,7 @@ impl Jogo {
             self.coleta_hud.desenha(&z, get_time());
         }
         if eu.is_some() {
-            hud::draw_exp(&z, &self.ficha, nivel);
+            hud::draw_exp(&z, &self.ficha);
         }
         // DUNGEONS: O PRIMEIRO DOS PAINEIS A DESENHAR, LOGO O DE BAIXO.
         //
@@ -7580,7 +7599,7 @@ impl Jogo {
             }
             let ctx = menu::Contexto {
                 nome: &nome,
-                nivel,
+                nivel: nivel_tela,
                 poder: self.bolsa.stats.as_ref().map(crate::bolsa::poder),
                 arma: &arma,
                 saldos: &saldos,
@@ -7675,7 +7694,7 @@ impl Jogo {
         if let Some(msg) = self.guarda_roupa.desenha(&self.vox, &self.solido, self.bolsa.equip.weapon.unwrap_or(0), auras, self.bolsa.equip.montaria) {
             self.envia(msg);
         }
-        nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel);
+        nivel_vfx::desenha_faixa(&self.subiu_de_nivel, self.ficha.nivel_na_tela(self.ficha.nivel));
         if let Some(pedido) = self.escolha_npc.desenha() {
             self.envia(pedido);
         }

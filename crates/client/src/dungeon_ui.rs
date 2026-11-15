@@ -672,11 +672,12 @@ impl DungeonUi {
         let nivel = dg::nivel_do_estagio(def, estagio);
         let cadeado = ce.cadeados.get((estagio - 1) as usize).cloned().flatten();
         let teto = dg::teto_de_grau(nivel);
+        let nivel_tela = shared::progressao::texto_de_nivel(nivel as u32);
         estilo::texto(
             dir.x,
             y,
             &format!(
-                "Inimigos nível {nivel} · poder mínimo {} · peça até {}",
+                "Inimigos nível {nivel_tela} · poder mínimo {} · peça até {}",
                 dg::poder_minimo(def, estagio),
                 teto.nome()
             ),
