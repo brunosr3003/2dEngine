@@ -298,6 +298,8 @@ struct Jogo {
     /// A aba Pets: o bichinho equipado, nivel, fome e skills (docs/PETS.md).
     pets_ui: pets_ui::PetsUi,
     habilidades: habilidades::Habilidades,
+    /// THE SHIP'S BAR: skill slots 1-4 at sea (docs/NAVEGACAO.md, phase 2).
+    barra_navio: mar_ui::BarraDoNavio,
     evolucao_skills: evolucao_skills::EvolucaoSkills,
     invocacao: invocacao_ui::InvocacaoUi,
     auto_combate: auto_combate::AutoCombate,
@@ -1014,6 +1016,7 @@ async fn main() {
         loja_essencia: loja_essencia_ui::LojaEssenciaUi::default(),
         pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
+        barra_navio: mar_ui::BarraDoNavio::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
         invocacao: invocacao_ui::InvocacaoUi::default(),
         auto_combate: auto_combate::AutoCombate::default(),
@@ -2862,15 +2865,18 @@ impl Jogo {
                 if skill_id == 5 && self.world.self_id == Some(caster_eid) {
                     self.habilidades.open_thirst();
                 }
-                self.habilidades.efeito(
-                    skill_id,
-                    caster_eid,
-                    vec2(caster_pos.x, caster_pos.y),
-                    vec2(target_pos.x, target_pos.y),
-                    None,
-                    true,
-                    tier,
-                );
+                // A ship skill (phase 2) has its own cannon FX.
+                if !mar_ui::efeito(skill_id, vec2(caster_pos.x, caster_pos.y), vec2(target_pos.x, target_pos.y)) {
+                    self.habilidades.efeito(
+                        skill_id,
+                        caster_eid,
+                        vec2(caster_pos.x, caster_pos.y),
+                        vec2(target_pos.x, target_pos.y),
+                        None,
+                        true,
+                        tier,
+                    );
+                }
             }
             ServerMessage::SkillCastCancel {
                 caster_eid,
@@ -5641,6 +5647,26 @@ impl Jogo {
         if entrada_bloqueada {
             self.habilidades.cancela_arrasto();
         }
+        // AT SEA the bar is the SHIP's (phase 2): Broadside, Bow Cannon,
+        // Emergency Repair, Smoke. The weapon skills and the path tree's
+        // actives wait ashore.
+        if mar_ui::no_mar() {
+            let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
+                return;
+            };
+            let vivo = eu.state.hp > 0 && eu.state.flags & shared::ent_flags::DOWNED == 0;
+            let distancia_alvo = self
+                .alvo
+                .and_then(|id| self.world.ents.get(&id))
+                .filter(|e| e.state.hp > 0 && e.morte.is_none())
+                .map(|e| eu.render_pos.distance(e.render_pos));
+            let sao = mar_ui::casco_de(&self.bolsa.equip).is_some_and(|(c, _, avariado)| c > 0 && !avariado);
+            let contexto = mar_ui::ContextoNavio { pronto: vivo && sao, distancia_alvo };
+            if let Some(id) = self.barra_navio.pedido(contexto, &mut self.habilidades, !entrada_bloqueada) {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Habilidade { id } });
+            }
+            return;
+        }
         let conjunto = shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
         self.habilidades.wis = self.bolsa.stats.as_ref().map_or(0, |s| s.wis);
         let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
@@ -6812,6 +6838,7 @@ impl Jogo {
         gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
         gl_use_default_material();
         self.habilidades.desenha_efeitos(&self.world, &vista);
+        mar_ui::desenha_efeitos(&vista);
         set_default_camera();
         // Numero de dano, faisca e a borda vermelha, por cima do mundo.
         efeitos::desenha(&self.world, &vista);
@@ -6985,13 +7012,17 @@ impl Jogo {
                 }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
-                self.habilidades.barra(
-                    conjunto,
-                    nivel,
-                    self.ficha.mp.unwrap_or(0),
-                    &self.evolucao_skills.progresso,
-                );
-                self.ativas.desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
+                if mar_ui::no_mar() {
+                    self.barra_navio.desenha(&self.habilidades);
+                } else {
+                    self.habilidades.barra(
+                        conjunto,
+                        nivel,
+                        self.ficha.mp.unwrap_or(0),
+                        &self.evolucao_skills.progresso,
+                    );
+                    self.ativas.desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
+                }
                 self.auto_combate.desenha();
                 self.auto_coleta.desenha();
                 // Alvos de tutorial que moram no HUD.
@@ -7242,9 +7273,12 @@ impl Jogo {
                 .self_id
                 .and_then(|id| self.world.ents.get(&id))
                 .is_some_and(|e| e.pulo_local > 0.0 || e.voando);
-            let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
-            self.pulo_toque |= tocou;
-            self.pulo_segurando = segurando;
+            // At sea the jump's slot is the ship's fourth skill.
+            if !mar_ui::no_mar() {
+                let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
+                self.pulo_toque |= tocou;
+                self.pulo_segurando = segurando;
+            }
         } else {
             // Painel aberto: soltar o pulo segurado, pra nao ficar preso.
             self.pulo_segurando = false;
@@ -8025,8 +8059,21 @@ impl Jogo {
         // O Capitao nao leva mais pra propria ilha: ela virou painel, e abre
         // pelo Menu de qualquer lugar. `false` tira a linha "My Island" da
         // lista de destinos.
-        match self.viagem.desenha(false) {
+        let escolha_viagem = {
+            let bolsa = &self.bolsa;
+            let conta = |id: u16| bolsa.moeda(id);
+            let nome = |id: u16| bolsa.nome(id);
+            let ctx = viagem_ui::Contexto { equip: &bolsa.equip, conta: &conta, nome: &nome, nivel: self.ficha.nivel };
+            self.viagem.desenha(false, &ctx)
+        };
+        match escolha_viagem {
             Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
+            Some(viagem_ui::Escolha::Construir) => {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Construir })
+            }
+            Some(viagem_ui::Escolha::Melhorar(eixo)) => {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Melhorar { eixo } })
+            }
             Some(viagem_ui::Escolha::MinhaIlha) => {}
             Some(viagem_ui::Escolha::Zarpar) => {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Zarpar })

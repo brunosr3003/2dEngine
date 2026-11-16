@@ -1,7 +1,7 @@
 # NAVEGAÇÃO — o mar como sistema (plano, 15/11/2026)
 
-> Status: **FASE 1 FEITA (15/11/2026, versão de TESTE, protocolo 199 ainda
-> não lançado).** Fases 2 e 4 seguem como plano. O dono escolheu a "opção
+> Status: **FASES 1 E 2 FEITAS (15-16/11/2026, versão de TESTE, protocolo
+> 199 ainda não lançado).** A fase 4 segue como plano. O dono escolheu a "opção
 > C": navio próprio, mar navegável entre as ilhas, upgrades e PvP do
 > Corsário. O que a fase 1 virou de verdade está em "Fase 1 — como ficou",
 > logo abaixo das fases.
@@ -152,8 +152,8 @@ campo, `#[serde(default)]`. Não refina nem ascende.
   (60 + 6 × nível), Darksteel (10 + 2 × nível), Aço e madeira da cor do
   trecho; voltam em 180 s.
 
-**Gancho da fase 2:** `navio::CASCOS` (a tabela que o Estaleiro vai
-estender) e `navio::proximo_casco` (hoje `None`).
+**Gancho da fase 2:** `navio::CASCOS` e `navio::proximo_casco` — usados na
+fase 2 (ver "Fase 2 — como ficou").
 
 **Cortado da fase 1:** cardumes/pesca no barco, recifes em volta das
 silhuetas (a costa do domo já é parede), arte de casco em arquivo `.vox` (o
@@ -198,6 +198,130 @@ trocado por um com esta fase.
 - **Cosméticos:** velas, figura de proa e rastro, à venda na loja de TP e na
   de Essência. Sem arte nova pesada: cor da vela e um punhado de
   figuras-de-proa em voxel.
+
+### Fase 2 — como ficou (FEITA, 16/11/2026, versão de TESTE, protocolo 199)
+
+Tudo em `shared::navio` (números puros, cliente e servidor leem a mesma
+tabela), `server/world/navio.rs` e `client/mar_ui.rs` + `client/viagem_ui.rs`.
+Protocolo: `PedidoNavio::{Construir, Melhorar{eixo}, Habilidade{id}}` no FIM
+do enum; `NavioData` ganhou `estrelas: [u8; 3]`, `vela`, `figura` no FIM, com
+`#[serde(default)]` (navio da fase 1 carrega com zero estrela — teste
+`navio_antigo_carrega_e_estrelas_persistem`). `PROTOCOL_VERSION` segue 199.
+
+**Cascos por classe** (`navio::CASCOS`, itens 471-473, que eram linhas mortas
+de montaria antiga no banco: nome, slot `navio` e nível forçados no boot).
+O nível é o de CONSTRUIR no Estaleiro (interno; a tela mostra pela escala nova).
+
+| Classe | Item | Casco | Vel. (u/s) | Nível (interno → tela) | Canhão | Mastros |
+|---|---|---|---|---|---|---|
+| Chalupa (Sloop) | 470 | 2.400 | 10,0 | 1 → 1 | ×1,00 | 1 |
+| Escuna (Schooner) | 471 | 3.600 | 11,2 | 15 → 30 | ×1,15 | 2 |
+| Galeão (Galleon) | 472 | 5.200 | 12,4 | 30 → 50 | ×1,30 | 3 |
+| Nau (Man-o'-War) | 473 | 7.200 | 13,4 | 42 → 70 | ×1,50 | 3 + portinholas |
+
+Velocidade com 5 estrelas de vela: 11,5 / 12,9 / 14,3 / 15,4 u/s. Teto
+`navio::VELOCIDADE_MAX` 15,5 (a Fumaça também é cortada nele), abaixo do
+`TETO_DO_FIO` 15,875 — teste `nenhum_casco_passa_do_teto_do_fio`. Uma
+travessia de 600 u fica entre 60 s (Chalupa) e ~39 s (o mais rápido possível).
+O raio de colisão é o mesmo 1,4 u pra todas: a classe só muda o desenho
+(escala 1,0 → 1,38).
+
+**O Estaleiro** é uma seção do painel do Capitão do Porto (botão "Shipwright"
+na linha "My ship"): mesma janela, sem NPC novo, sem receita no Craft. Ele
+age no navio do espaço Navio. Construir CONSOME o casco anterior e devolve o
+novo com casco cheio, levando as estrelas e os cosméticos (nada investido se
+perde). Receitas (`navio::RECEITAS`):
+
+| Para | Consome | Madeira | Aço | Prancha de Naufrágio |
+|---|---|---|---|---|
+| Escuna | Chalupa | T1 ×60 + T2 ×40 | verde ×40 | ×20 |
+| Galeão | Escuna | T2 ×80 + T3 ×50 | azul ×80 | ×50 |
+| Nau | Galeão | T3 ×100 + T4 ×60 | roxo ×120 | ×100 |
+
+**Estrelas do navio** (`custo_da_estrela`, `NavioData::estrelas`): três eixos,
+0 a 5 cada, sempre dão certo, no Estaleiro. NUNCA custam Essência do
+Renascimento (regra do dono: Essência é só da estrela de item). Ficam na
+instância do item, então troca, mercado, banco e Correio levam junto.
+
+| Estrela | Cobre | Darksteel | Pranchas |
+|---|---|---|---|
+| 0 → 1 | 1.000 | 500 | 5 |
+| 1 → 2 | 2.000 | 1.000 | 10 |
+| 2 → 3 | 4.000 | 2.000 | 15 |
+| 3 → 4 | 8.000 | 4.000 | 20 |
+| 4 → 5 | 16.000 | 8.000 | 25 |
+| eixo cheio | 31.000 | 15.500 | 75 |
+
+| Eixo | Por estrela | 5 estrelas |
+|---|---|---|
+| Casco (Hull) | +8% do casco | +40% |
+| Vela (Sails) | +3% de velocidade | +15% |
+| Canhão (Cannon) | +8% do dano das skills | +40% |
+
+A estrela de casco sobe o casco atual pelo que ela acrescenta (casco
+avariado continua avariado). O conserto do Capitão cobra pelo casco com
+estrelas (0,1 cobre/ponto). Sem Porão: o comércio foi cortado.
+
+**Prancha de Naufrágio** (item 478, `item_id::PRANCHA_DE_NAUFRAGIO`, só do
+mar, só pra navio): 1 por destroço coletado (madeira ou caixote de Aço; o de
+Energia não), 4 + nível/15 por baú à deriva, 25% de chance de 1 por bicho do
+mar morto e 6 garantidas pelo elite.
+
+**Skills do navio** (`navio::HABILIDADES`): no mar, os slots 1-4 da barra
+viram do navio (o 4º ocupa o lugar do pulo; as skills da arma e as ativas da
+árvore esperam em terra). Instantâneas, sem mana, recarga própria em
+`skill_cds` com ids 300-303 (o cliente lê no `SkillsState` de sempre). O
+dano é `ladder::attack(nível do capitão) × mult da skill × canhão da classe
+× estrelas de canhão`; contra bicho vira `pending_skill_hits` (defesa,
+diferença de nível e crédito da morte como qualquer golpe); contra jogador
+vai direto no CASCO (casco contra casco, `PVP_CANHAO` 1,0), só se
+`can_damage_player` deixar (modos de PK de hoje) e fora do corredor da
+Capitania.
+
+| Slot | Skill | Efeito | Recarga | Alcance | Dano | AUTO |
+|---|---|---|---|---|---|---|
+| 1 | Bordada (Broadside) | todo inimigo a até 12 m nos costados (proa e popa cegas, \|cos\| ≤ 0,8; parado atira em volta) | 6 s | 12 m | ×1,4 | sim |
+| 2 | Canhão de Proa (Bow Cannon) | um tiro no alvo selecionado | 4 s | 22 m | ×2,2 | sim |
+| 3 | Reparo de Emergência | +30% do casco cheio | 60 s | — | — | não |
+| 4 | Fumaça (Smoke) | invisível/intocável 3 s (a invisibilidade das ativas) + 30% de velocidade por 4 s | 30 s | — | — | não |
+
+AUTO: arrastar pra cima liga (só os canhões), o mesmo gesto da barra da
+arma; dispara quando o alvo selecionado está no alcance. Teste de sentido
+`os_bichos_do_mar_aguentam_alguns_tiros`: o Tubarão (perfil do lobo) e a
+Enguia (do tigre) no nível do capitão levam 2-6 Bordadas de uma Chalupa
+crua, menos de uma Nau com 5 estrelas de canhão, e o elite 8-30.
+
+**Elite do mar:** um por rota — o primeiro lugar do ninho a 2/3 de cada rota
+(`e_ninho_de_elite`: zona ímpar) nasce "[ELITE] Dread …", ×5 de vida, ×1,4
+de mordida, ×4 de XP, 6 Pranchas pra quem afunda, e volta em 180 s.
+
+**Cosméticos** (itens da loja de TP, aba Skins › Ship, `loja::ITENS_DA_LOJA`
+ids 2-9; nunca por Essência). Usar da bolsa ("Apply to ship") aplica no navio
+do espaço Navio e gasta o item. Os outros jogadores veem: no mar o visual
+(classe, estrelas, vela, figura) vai nos bytes livres 5-7 de
+`EntityMeta::skins` (`navio::Visual::no_fio`).
+
+| Item | Nome | TP |
+|---|---|---|
+| 580 | Crimson Sails (Velas Carmesim) | 150 |
+| 581 | Black Sails (Velas Negras) | 200 |
+| 582 | Royal Blue Sails (Velas Azul-Real) | 150 |
+| 583 | Emerald Sails (Velas Esmeralda) | 150 |
+| 584 | Golden Sails (Velas Douradas) | 300 |
+| 586 | Mermaid Figurehead (Sereia) | 250 |
+| 587 | Dragon Figurehead (Dragão) | 300 |
+| 588 | Eagle Figurehead (Águia) | 250 |
+
+Arte: sem arquivo novo. O casco de cubos ganhou classe (tamanho, 1-3
+mastros, convés de popa e portinholas a partir do Galeão, flâmula), a vela
+recolorida, amurada que vira latão com as estrelas e três figuras de proa
+de cubos e esferas. Prévia `MMO_PREVIA_MAR=1` grava também `mar-classes.png`
+e `mar-vestidos.png`.
+
+**Cortado da fase 2:** Porão (comércio cortado), rastro como cosmético,
+venda por Essência, recolorir de volta pra vela de lona sem item, exigência
+de mirar a proa no Canhão de Proa (ele atira em qualquer direção), arte
+`.vox` própria e VFX de som pros canhões (usam o som genérico de skill).
 
 ### Fase 3 — Carga e comércio entre ilhas (CORTADA pelo dono, 15/11/2026: "não precisa ter a parte do comércio, faz só a navegação e PvP")
 

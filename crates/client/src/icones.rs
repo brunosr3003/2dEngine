@@ -102,6 +102,10 @@ pub fn desenha(item_id: u16, r: Rect, alfa: f32) -> bool {
         crate::hud_estilo::icone_energia(r.center(), r.w.min(r.h) * 0.8);
         return true;
     }
+    // The sea's items (hulls, Wreck Plank, sails, figureheads) are drawn.
+    if crate::mar_ui::icone_do_item(item_id, r, alfa) {
+        return true;
+    }
     let Some(fonte) = celula(item_id) else {
         return false;
     };

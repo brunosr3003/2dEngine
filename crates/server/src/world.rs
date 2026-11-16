@@ -2387,6 +2387,9 @@ pub struct Session {
     /// INVISIBILITY (the Assassin's active, `world/ativas.rs`): sim time it
     /// ends; 0 = visible. While on, the body carries `Untargetable`.
     pub invisivel_ate: f32,
+    /// SMOKE (ship skill, `navio::FUMACA_VELOCIDADE_S`): sim time the
+    /// ship's speed burst ends; 0 = none.
+    pub fumaca_ate: f32,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
     /// `MULT_SUPREMA` when supreme). See `chance_de_crit`.
     pub furia_ate: f32,
@@ -4283,6 +4286,8 @@ impl GameWorld {
                     let eid = self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind, forte);
                     if ps.slot_idx == 0 && self.e_elite_da_espiral(ps.zone_id) {
                         self.tornar_elite_da_espiral(eid);
+                    } else if ps.slot_idx == 0 && self.no_mar() && navio::e_ninho_de_elite(ps.zone_id) {
+                        self.tornar_elite_do_mar(eid);
                     }
                     eid
                 }
@@ -8128,6 +8133,7 @@ impl GameWorld {
                 arvore: Default::default(),
                 arvore_ganhos_visto: 0,
                 invisivel_ate: 0.0,
+                fumaca_ate: 0.0,
                 furia_ate: 0.0,
                 furia_fator: 0.0,
                 buffs_da_arvore: Vec::new(),
@@ -10013,6 +10019,7 @@ impl GameWorld {
         let mut refazer_rota: Vec<(SessionId, Vec2)> = Vec::new();
         let na_colonia = shared::colonia::e_colonia(&self.zona);
         let no_mar = self.no_mar();
+        let sim_agora_mar = self.sim_time_s;
         let jogadores: std::collections::HashSet<EntityId> = self.ecs
             .query::<(&NetId, &EntityKind)>().iter()
             .filter(|(_, (_, kind))| matches!(kind, EntityKind::Player))
@@ -10567,7 +10574,8 @@ impl GameWorld {
             } else if no_mar {
                 // AT SEA THE HULL MOVES (docs/NAVEGACAO.md): one speed, the
                 // ship's, no mount and no sprint — no legs on the water.
-                shared::navio::velocidade(session.equipment.navio.unwrap_or(shared::item_id::NAVIO_CHALUPA))
+                // Class x sail stars, and the Smoke's burst (phase 2).
+                GameWorld::velocidade_no_mar(session, sim_agora_mar)
             } else {
                 // Montado: a mobilidade da montaria E o sprint, que agora
                 // multiplicam (docs/MONTARIAS.md). Esporear gasta o mesmo
@@ -12997,6 +13005,18 @@ impl GameWorld {
                 if self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.elite_da_espiral) {
                     self.elite_da_espiral_caiu(pos, zid, slot_idx);
                 }
+                // A sunk sea elite takes a while to come back.
+                if self.ecs.get::<&navio::EliteDoMarTag>(e).is_ok() {
+                    let volta = self.sim_time_s + navio::ELITE_DO_MAR_VOLTA_S;
+                    if let Some(slot) = self
+                        .spawn_zones
+                        .iter_mut()
+                        .find(|z| z.id == zid)
+                        .and_then(|z| z.slots.get_mut(slot_idx as usize))
+                    {
+                        slot.respawn_at = volta;
+                    }
+                }
             }
             // Marca cadáver — entidade segue na cena pra cliente exibir pose
             // de morto. Real despawn no loop H.2.
@@ -13072,6 +13092,13 @@ impl GameWorld {
             } else {
                 3.0
             };
+            // AT SEA a kill may pay a Wreck Plank (the elite always does).
+            if self.no_mar() {
+                if let Some(matador) = kill_credits.get(&eid).copied() {
+                    let elite = self.ecs.get::<&navio::EliteDoMarTag>(e).is_ok();
+                    self.prancha_do_bicho(matador, elite, fastrand::f32());
+                }
+            }
             self.dono_do_saque = kill_credits.get(&eid).copied();
             self.spawn_loot_drops(pos, &drops, seed, spread, kind_id);
             if e_chefe_aqui {
@@ -13822,6 +13849,9 @@ impl GameWorld {
                 (s.entity_id, (a.empacota(), a.empacota_skins()))
             })
             .collect();
+        // At sea, the look of each player's SHIP rides on the free bytes of
+        // `skins` (naval phase 2, `navio::Visual`).
+        let navio_de = self.visuais_dos_navios();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
             .values()
@@ -14015,7 +14045,8 @@ impl GameWorld {
                         // client colours it with the ring skin.
                         skins: aparencia_de
                             .get(&projtag.filter(|p| p.from_player).map_or(net.0, |p| p.owner))
-                            .map_or(0, |a| a.1),
+                            .map_or(0, |a| a.1)
+                            | navio_de.get(&net.0).copied().unwrap_or(0),
                         cla: if ptag.is_some() { cla_de.get(&net.0).cloned().unwrap_or_default() } else { String::new() },
                         poder: if ptag.is_some() { poder_de.get(&net.0).copied().unwrap_or(0) } else { 0 },
                         renascimentos: if ptag.is_some() { renascimentos_de.get(&net.0).copied().unwrap_or(0) } else { 0 },
@@ -19705,6 +19736,17 @@ impl GameWorld {
             self.handle_abrir_pergaminhos(sid, slot_idx, 1);
             return;
         }
+        // SHIP COSMETIC (naval phase 2): it dresses the ship in the Ship slot.
+        let cosmetico = self
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.inventory.get(slot_idx))
+            .filter(|s| s.qty > 0)
+            .and_then(|s| shared::navio::cosmetico(s.item_id));
+        if let Some(c) = cosmetico {
+            self.aplicar_cosmetico(sid, slot_idx, c);
+            return;
+        }
         // SKIN: o item some e o direito fica no guarda-roupa. Mesmo caminho do
         // tomo — e e' o que impede vestir, revender e continuar vestido.
         let skin = self
@@ -20557,6 +20599,11 @@ impl GameWorld {
         if self.na_magica() {
             premio.push((shared::item_id::MOEDA_MAGICA, 1));
         }
+        // THE SEA'S OWN MATERIAL (naval phase 2): every piece of wreckage
+        // gives a Wreck Plank with its wood or Steel.
+        if self.no_mar() {
+            premio.push((shared::item_id::PRANCHA_DE_NAUFRAGIO, shared::navio::PRANCHAS_DO_DESTROCO));
+        }
         let cabe = self.sessions.get(&sid).is_some_and(|s| {
             crate::coleta::cabe_tudo(&s.inventory, &premio, &crate::economy::item_stack_max)
         });
@@ -20699,6 +20746,11 @@ impl GameWorld {
         let mut premio = drops.clone();
         if self.na_magica() {
             premio.push((shared::item_id::MOEDA_MAGICA, 1));
+        }
+        // THE SEA'S OWN MATERIAL (naval phase 2): every piece of wreckage
+        // gives a Wreck Plank with its wood or Steel.
+        if self.no_mar() {
+            premio.push((shared::item_id::PRANCHA_DE_NAUFRAGIO, shared::navio::PRANCHAS_DO_DESTROCO));
         }
         if !self.sessions.get(&sid).is_some_and(|s| {
             crate::coleta::cabe_tudo(&s.inventory, &premio, &crate::economy::item_stack_max)

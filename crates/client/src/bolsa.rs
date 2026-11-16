@@ -276,6 +276,9 @@ enum Tipo {
     /// (`aparencia::skin_do_item`). There was no way to use one before
     /// 01/10/2026 — a bought Storm Captain could only sit in the bag.
     Skin,
+    /// A SHIP COSMETIC (sail colour or figurehead, `navio::cosmetico`):
+    /// using it dresses the ship in the Ship slot.
+    Cosmetico,
     /// Ração de Pet.
     RacaoPet,
     /// Skill de pet, ou o Removedor.
@@ -311,6 +314,7 @@ fn tipo(id: u16) -> Tipo {
         {
             Tipo::Pergaminho
         }
+        x if shared::navio::cosmetico(x).is_some() => Tipo::Cosmetico,
         x if shared::aparencia::skin_do_item(x).is_some() => Tipo::Skin,
         x if x == item_id::RACAO_DE_PET => Tipo::RacaoPet,
         x if x == item_id::REMOVEDOR_DE_SKILL_PET || item_id::e_skill_de_pet(x) => Tipo::SkillPet,
@@ -321,7 +325,7 @@ fn tipo(id: u16) -> Tipo {
 fn aba_de(t: Tipo) -> Aba {
     match t {
         Tipo::Arma(_) | Tipo::Slot(_) => Aba::Equip,
-        Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::RacaoPet | Tipo::SkillPet => Aba::Consumivel,
+        Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::RacaoPet | Tipo::SkillPet | Tipo::Cosmetico => Aba::Consumivel,
         _ => Aba::Material,
     }
 }
@@ -563,7 +567,7 @@ impl Bolsa {
             Sel::Equip(slot) => Some(Acao::Desequipar(slot)),
             Sel::Inv(i) => match tipo(self.peca(s)?.id) {
                 Tipo::Arma(_) | Tipo::Slot(_) => Some(Acao::Equipar(i)),
-                Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::Skin => Some(Acao::Usar(i)),
+                Tipo::Pocao(_) | Tipo::Pergaminho | Tipo::Skin | Tipo::Cosmetico => Some(Acao::Usar(i)),
                 _ => None,
             },
         }
@@ -1218,6 +1222,7 @@ impl Bolsa {
             Tipo::Slot(s) => nome_do_slot(s).to_string(),
             Tipo::Pocao(_) => "Consumable".into(),
             Tipo::Pergaminho => "Summoning Scroll".into(),
+            Tipo::Cosmetico => "Ship cosmetic".into(),
             Tipo::Ouro => "Currency".into(),
             _ => "Material".into(),
         };
@@ -1348,6 +1353,55 @@ impl Bolsa {
                 ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
                 y += u(22.0);
             }
+        } else if item_id::e_navio(peca.id) {
+            // THE SHIP (docs/NAVEGACAO.md): its hull, speed and cannon, the
+            // stars on each axis and what it wears. The stars travel with
+            // the item, like a piece's ascension.
+            let nv = shared::navio::dados(peca.inst.as_ref(), peca.id);
+            let linhas = [
+                ("Hull", format!("{} / {}", nv.casco, shared::navio::casco_total(peca.id, &nv))),
+                ("Speed", format!("{:.1}", shared::navio::velocidade_do_navio(peca.id, &nv))),
+                ("Cannon", format!("×{:.2}", shared::navio::mult_do_canhao(peca.id, &nv))),
+            ];
+            for (rot, val) in linhas {
+                ui::texto(r.x + u(20.0), y + u(4.0), rot, 17, TEXTO);
+                let d = crate::hud_estilo::medir_dim(&val, 17);
+                ui::texto(r.x + r.w - u(20.0) - d.width, y + u(4.0), &val, 17, VERDE);
+                y += u(22.0);
+            }
+            for eixo in shared::navio::Eixo::TODOS {
+                ui::texto(r.x + u(20.0), y + u(4.0), eixo.rotulo_das_estrelas(), 15, APAGADO);
+                let raio = u(6.0);
+                let largura = raio * 2.3 * shared::navio::ESTRELAS_MAX as f32;
+                desenha_estrelas(
+                    r.x + r.w - u(20.0) - largura,
+                    y - u(1.0),
+                    raio,
+                    shared::navio::estrelas(&nv, eixo),
+                    shared::navio::ESTRELAS_MAX,
+                );
+                y += u(20.0);
+            }
+            let veste = match (nv.vela, nv.figura) {
+                (0, 0) => None,
+                (v, f) => Some(
+                    [
+                        v.checked_sub(1).and_then(|i| shared::navio::VELAS.get(i as usize)).map(|x| x.nome),
+                        f.checked_sub(1).and_then(|i| shared::navio::FIGURAS.get(i as usize)).map(|x| x.1),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+                ),
+            };
+            if let Some(v) = veste {
+                ui::texto(r.x + u(20.0), y + u(6.0), &v, 15, APAGADO);
+                y += u(22.0);
+            }
+            if nv.avariado {
+                ui::texto(r.x + u(20.0), y + u(6.0), "Damaged: the Harbour Captain repairs it.", 15, VERMELHO);
+            }
         } else if let Some((pet, efeito)) = shared::acessorios::tipo(peca.id) {
             ui::texto(r.x + u(20.0), y + u(4.0), efeito.nome(), 17, VERDE);
             y += u(28.0);
@@ -1416,6 +1470,10 @@ impl Bolsa {
                 // Stamina is gone (09/11/2026): the old potion only sells.
                 Tipo::Pocao(_) => "No longer used. Sell it to a merchant.",
                 Tipo::Pergaminho => "Abra para revelar um prêmio aleatório decidido pelo servidor.",
+                Tipo::Cosmetico => "Cosmetic only: use it to dress the ship in your Ship slot.",
+                Tipo::Material if peca.id == item_id::PRANCHA_DE_NAUFRAGIO => {
+                    "From the sea only: the Shipwright builds hulls and ship stars with it."
+                }
                 Tipo::Arma(_) | Tipo::Slot(_) => "Peça básica, sem instância de atributos.",
                 _ => "Crafting material.",
             };
@@ -1432,13 +1490,15 @@ impl Bolsa {
                 Tipo::Arma(_) | Tipo::Slot(_) => opcoes.push(("Equip", 0)),
                 Tipo::Pocao(_) | Tipo::Pergaminho => opcoes.push(("Use", 0)),
                 Tipo::Skin => opcoes.push(("Unlock", 0)),
+                Tipo::Cosmetico => opcoes.push(("Apply to ship", 0)),
                 _ => {}
             },
         }
         if matches!(sel, Sel::Inv(_)) && matches!(t, Tipo::Pergaminho) && peca.qty >= 10 {
             opcoes.push(("Open 10+1", 1));
         }
-        if let Some(inst) = peca.inst {
+        // A ship is not refined nor upgraded: the Shipwright owns it.
+        if let Some(inst) = peca.inst.filter(|_| !item_id::e_navio(peca.id)) {
             if inst.refinement < shared::forja::REFINO_MAX {
                 opcoes.push(("Refine", 2));
             }
@@ -2103,7 +2163,7 @@ fn icone(r: Rect, t: Tipo, id: u16, a: f32) {
             draw_circle(c.x + s * 0.8, c.y, s * 0.35, k(0.78, 0.6, 0.38));
             draw_circle_lines(c.x + s * 0.8, c.y, s * 0.2, s * 0.05, k(0.52, 0.34, 0.2));
         }
-        Tipo::Material | Tipo::Skin => {
+        Tipo::Material | Tipo::Skin | Tipo::Cosmetico => {
             // pedra lapidada, na cor do material (sai do id: estavel entre
             // sessoes, e materiais vizinhos na tabela ficam diferentes)
             const TONS: [(f32, f32, f32); 8] = [

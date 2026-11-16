@@ -1806,7 +1806,8 @@ pub fn draw_entities_com_sombras(
         // only what is drawn. The body gives way to the hull, on the same
         // heading.
         if crate::mar_ui::no_mar() && e.meta.tag == shared::EntityTag::Player {
-            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64);
+            // Its class, sail and figurehead ride on `skins` (phase 2).
+            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
             continue;
         }
 

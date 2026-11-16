@@ -319,6 +319,18 @@ pub struct NavioData {
     /// repairs it.
     #[serde(default)]
     pub avariado: bool,
+    /// SHIP STARS (naval phase 2), 0..=`navio::ESTRELAS_MAX` per axis:
+    /// `[hull, sail, cannon]` (`navio::Eixo`). Bought at the Shipwright with
+    /// copper, Darksteel and Wreck Planks, never Essence. Appended; old
+    /// ships read zero.
+    #[serde(default)]
+    pub estrelas: [u8; 3],
+    /// Sail colour applied (`navio::VELAS` index + 1; 0 = plain canvas).
+    #[serde(default)]
+    pub vela: u8,
+    /// Figurehead applied (`navio::FIGURAS` index + 1; 0 = none).
+    #[serde(default)]
+    pub figura: u8,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e

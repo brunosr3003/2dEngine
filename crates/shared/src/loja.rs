@@ -175,13 +175,52 @@ pub struct ItemDaLoja {
     pub preco_tp: u64,
 }
 
-pub const ITENS_DA_LOJA: [ItemDaLoja; 1] = [ItemDaLoja {
-    id: 1,
-    item_id: crate::item_id::AMULETO_DE_PROTECAO,
-    nome: "Ward Charm",
-    descricao: "Refining to +6 or +7, a failure spends the charm and the piece survives.",
-    preco_tp: 150,
-}];
+pub const ITENS_DA_LOJA: [ItemDaLoja; 9] = [
+    ItemDaLoja {
+        id: 1,
+        item_id: crate::item_id::AMULETO_DE_PROTECAO,
+        nome: "Ward Charm",
+        descricao: "Refining to +6 or +7, a failure spends the charm and the piece survives.",
+        preco_tp: 150,
+    },
+    // SHIP COSMETICS (docs/NAVEGACAO.md, naval phase 2): used from the bag,
+    // they dress the ship in the Ship slot. Cosmetic only, TP only.
+    navio_cosmetico(2, 0),
+    navio_cosmetico(3, 1),
+    navio_cosmetico(4, 2),
+    navio_cosmetico(5, 3),
+    navio_cosmetico(6, 4),
+    figura_de_proa(7, 0),
+    figura_de_proa(8, 1),
+    figura_de_proa(9, 2),
+];
+
+const fn navio_cosmetico(id: u16, i: usize) -> ItemDaLoja {
+    let v = crate::navio::VELAS[i];
+    ItemDaLoja {
+        id,
+        item_id: v.item,
+        nome: v.nome,
+        descricao: "Sail colour for your ship. Use it from the bag on the ship in the Ship slot.",
+        preco_tp: v.preco_tp,
+    }
+}
+
+const fn figura_de_proa(id: u16, i: usize) -> ItemDaLoja {
+    let f = crate::navio::FIGURAS[i];
+    ItemDaLoja {
+        id,
+        item_id: f.0,
+        nome: f.1,
+        descricao: "A figurehead for your ship's bow. Use it from the bag on the ship in the Ship slot.",
+        preco_tp: f.2,
+    }
+}
+
+/// The TP shop's ship cosmetics (sails and figureheads).
+pub fn cosmeticos_de_navio() -> impl Iterator<Item = &'static ItemDaLoja> {
+    ITENS_DA_LOJA.iter().filter(|x| crate::navio::cosmetico(x.item_id).is_some())
+}
 
 pub fn item_da_loja(id: u16) -> Option<&'static ItemDaLoja> {
     ITENS_DA_LOJA.iter().find(|x| x.id == id)

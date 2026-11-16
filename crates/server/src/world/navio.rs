@@ -156,6 +156,9 @@ impl GameWorld {
             PedidoNavio::Zarpar => self.zarpar(sid),
             PedidoNavio::Atracar { ilha } => self.atracar(sid, ilha as usize),
             PedidoNavio::Reparar => self.reparar_navio(sid),
+            PedidoNavio::Construir => self.construir_casco(sid),
+            PedidoNavio::Melhorar { eixo } => self.melhorar_navio(sid, eixo),
+            PedidoNavio::Habilidade { id } => self.habilidade_do_navio(sid, id),
         }
     }
 
@@ -280,7 +283,7 @@ impl GameWorld {
             s.inventory_dirty = true;
             crate::telemetria::conta_de(&s.name, "cobre_reparo_navio", id, custo as i64);
         }
-        d.casco = nv::casco_max(id);
+        d.casco = nv::casco_total(id, &d);
         d.avariado = false;
         self.guarda_navio(sid, d);
         self.envia_estado_navio(sid);
@@ -303,7 +306,7 @@ impl GameWorld {
         let dmg = dmg.max(0) as u16;
         let antes = d.casco;
         d.casco = d.casco.saturating_sub(dmg);
-        let limiar = (nv::casco_max(id) as f32 * nv::CRITICO) as u16;
+        let limiar = (nv::casco_total(id, &d) as f32 * nv::CRITICO) as u16;
         if antes > limiar && d.casco <= limiar && d.casco > 0 {
             self.avisa_missao(sid, "Hull critical: head back to a dock.".into());
         }
@@ -470,10 +473,13 @@ impl GameWorld {
         let cor = (1 + nivel / 15).min(4) as u8;
         let cobre = 60 + 6 * nivel;
         let darksteel = 10 + 2 * nivel;
+        let pranchas = nv::pranchas_do_bau(nivel);
         let premios = [
             (item_id::DARKSTEEL, darksteel),
             (item_id::na_cor(item_id::STEEL, cor), 2 + nivel / 15),
             (madeira_da_cor(cor), 3 + nivel / 10),
+            // The sea's own material (phase 2): the Shipwright's.
+            (item_id::PRANCHA_DE_NAUFRAGIO, pranchas),
         ];
         let agora = (now_ms() / 1000) as i64;
         let Some(s) = self.sessions.get_mut(&sid) else {
@@ -488,7 +494,7 @@ impl GameWorld {
         s.inventory_dirty = true;
         let _ = s.handle.to_client.send(ServerMessage::Chat {
             from: "SYS".into(),
-            text: format!("Drifting chest: {cobre} copper, {darksteel} Darksteel and materials."),
+            text: format!("Drifting chest: {cobre} copper, {darksteel} Darksteel, {pranchas} Wreck Planks and materials."),
         });
         let eid = self.ecs.get::<&NetId>(entidade).map(|n| n.0).ok();
         let _ = self.ecs.despawn(entidade);
@@ -497,6 +503,398 @@ impl GameWorld {
         }
         self.baus_do_mar.push((pos, self.sim_time_s + RESPAWN_DO_BAU_S));
         self.save_pending = true;
+    }
+
+    // ───────────────────── phase 2: the Shipwright ─────────────────────
+
+    /// The level of the character behind `sid`.
+    fn nivel_de_sid(&self, sid: SessionId) -> u32 {
+        self.sessions
+            .get(&sid)
+            .map_or(1, |s| shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()))
+    }
+
+    /// BUILD THE NEXT HULL at the Shipwright (the Harbour Captain): the
+    /// ship in the Ship slot is consumed with the recipe's materials, and
+    /// the new class takes its place — hull full, stars and cosmetics
+    /// carried over.
+    fn construir_casco(&mut self, sid: SessionId) {
+        if !self.perto_do_capitao_do_porto(sid) {
+            self.avisa_missao(sid, "The Shipwright works at the dock: talk to the Harbour Captain.".into());
+            return;
+        }
+        let Some((id, d)) = self.navio_equipado(sid) else {
+            self.avisa_missao(sid, "You have no ship. Put one in the Ship slot of your equipment.".into());
+            return;
+        };
+        let Some(r) = nv::receita_depois_de(id) else {
+            self.avisa_missao(sid, "Your ship is already the finest hull the Shipwright builds.".into());
+            return;
+        };
+        let Some(classe) = nv::casco(r.para) else {
+            return;
+        };
+        let nivel = self.nivel_de_sid(sid);
+        if nivel < classe.nivel {
+            self.avisa_missao(
+                sid,
+                format!("The next hull needs level {}.", shared::progressao::texto_de_nivel(classe.nivel)),
+            );
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if r.materiais.iter().any(|(item, q)| crate::craft::tem(&s.inventory, *item) < *q) {
+            self.avisa_missao(sid, "Not enough materials for the next hull.".into());
+            return;
+        }
+        let novo = nv::reconstruido(r.para, &d);
+        let s = self.sessions.get_mut(&sid).unwrap();
+        for (item, q) in r.materiais {
+            crate::craft::consumir(&mut s.inventory, item, q);
+        }
+        s.inventory_dirty = true;
+        let mut inst = nv::instancia_nova(r.para);
+        inst.navio = Some(novo);
+        s.equipment.set(EquipSlot::Navio, Some(r.para), Some(inst));
+        s.stats_dirty = true;
+        crate::telemetria::conta_de(&s.name, "navio_construido", r.para, 1);
+        self.save_pending = true;
+        self.envia_estado_navio(sid);
+        self.send_chat_to(sid, "The Shipwright launches your new hull.");
+    }
+
+    /// ONE STAR on an axis at the Shipwright: copper, Darksteel and Wreck
+    /// Planks, always succeeds. The hull star raises the hull you have by
+    /// what it adds (a damaged hull stays as damaged as it was).
+    fn melhorar_navio(&mut self, sid: SessionId, eixo: u8) {
+        if !self.perto_do_capitao_do_porto(sid) {
+            self.avisa_missao(sid, "The Shipwright works at the dock: talk to the Harbour Captain.".into());
+            return;
+        }
+        let Some(eixo) = nv::Eixo::de_u8(eixo) else {
+            return;
+        };
+        let Some((id, mut d)) = self.navio_equipado(sid) else {
+            self.avisa_missao(sid, "You have no ship. Put one in the Ship slot of your equipment.".into());
+            return;
+        };
+        let atual = nv::estrelas(&d, eixo);
+        let Some(custo) = nv::custo_da_estrela(atual) else {
+            self.avisa_missao(sid, "That axis already has five stars.".into());
+            return;
+        };
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let falta = crate::craft::tem(&s.inventory, item_id::COPPER) < custo.cobre
+            || crate::craft::tem(&s.inventory, item_id::DARKSTEEL) < custo.darksteel
+            || crate::craft::tem(&s.inventory, item_id::PRANCHA_DE_NAUFRAGIO) < custo.pranchas;
+        if falta {
+            self.avisa_missao(
+                sid,
+                format!(
+                    "The star costs {} copper, {} Darksteel and {} Wreck Planks.",
+                    custo.cobre, custo.darksteel, custo.pranchas
+                ),
+            );
+            return;
+        }
+        let s = self.sessions.get_mut(&sid).unwrap();
+        crate::craft::consumir(&mut s.inventory, item_id::COPPER, custo.cobre);
+        crate::craft::consumir(&mut s.inventory, item_id::DARKSTEEL, custo.darksteel);
+        crate::craft::consumir(&mut s.inventory, item_id::PRANCHA_DE_NAUFRAGIO, custo.pranchas);
+        s.inventory_dirty = true;
+        crate::telemetria::conta_de(&s.name, "estrela_do_navio", eixo.nome(), 1);
+        let antes = nv::casco_total(id, &d);
+        d.estrelas[eixo as usize] = atual + 1;
+        if eixo == nv::Eixo::Casco && !d.avariado {
+            d.casco = d.casco.saturating_add(nv::casco_total(id, &d).saturating_sub(antes));
+        }
+        self.guarda_navio(sid, d);
+        self.envia_estado_navio(sid);
+        let texto = match eixo {
+            nv::Eixo::Casco => format!("Hull star {} of {}.", atual + 1, nv::ESTRELAS_MAX),
+            nv::Eixo::Vela => format!("Sail star {} of {}.", atual + 1, nv::ESTRELAS_MAX),
+            nv::Eixo::Canhao => format!("Cannon star {} of {}.", atual + 1, nv::ESTRELAS_MAX),
+        };
+        self.send_chat_to(sid, &texto);
+    }
+
+    /// A SHIP COSMETIC used from the bag: the sail colour or figurehead
+    /// goes on the ship in the Ship slot, and the item is spent.
+    pub(crate) fn aplicar_cosmetico(&mut self, sid: SessionId, slot: usize, c: nv::Cosmetico) {
+        let Some((_, mut d)) = self.navio_equipado(sid) else {
+            self.avisa_missao(sid, "Put a ship in the Ship slot to dress it.".into());
+            return;
+        };
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let Some(sl) = s.inventory.get_mut(slot).filter(|sl| sl.qty > 0) else {
+            return;
+        };
+        sl.qty -= 1;
+        if sl.qty == 0 {
+            *sl = shared::InventorySlot::default();
+        }
+        s.inventory_dirty = true;
+        nv::aplicar(&mut d, c);
+        self.guarda_navio(sid, d);
+        self.send_chat_to(sid, "Your ship has a new look.");
+    }
+
+    /// The look of every player's ship, for `EntityMeta::skins` at sea.
+    pub(crate) fn visuais_dos_navios(&self) -> HashMap<EntityId, u64> {
+        if !self.no_mar() {
+            return HashMap::new();
+        }
+        self.sessions
+            .values()
+            .filter(|s| s.logged_in)
+            .filter_map(|s| {
+                let id = s.equipment.navio.filter(|i| item_id::e_navio(*i))?;
+                let d = nv::dados(s.equipment.navio_inst.as_ref(), id);
+                Some((s.entity_id, nv::Visual::de(id, &d).no_fio()))
+            })
+            .collect()
+    }
+
+    /// The ship's speed at sea for this session: class × sail stars, and the
+    /// Smoke's burst on top, clamped under the wire.
+    pub(crate) fn velocidade_no_mar(s: &Session, agora: f32) -> f32 {
+        let id = s.equipment.navio.filter(|i| item_id::e_navio(*i)).unwrap_or(NAVIO_CHALUPA);
+        let d = nv::dados(s.equipment.navio_inst.as_ref(), id);
+        let v = nv::velocidade_do_navio(id, &d);
+        if agora < s.fumaca_ate {
+            (v * nv::FUMACA_MULT).min(nv::VELOCIDADE_MAX)
+        } else {
+            v
+        }
+    }
+
+    // ───────────────────── phase 2: ship skills ─────────────────────
+
+    /// A SHIP SKILL (`navio::HABILIDADES`), at sea only: instant, mana-free,
+    /// on its own cooldown (`skill_cds` under `navio::id_de_skill`, so the
+    /// client reads it from the usual `SkillsState`). The cannons go
+    /// through the same target rules as the weapon skills (PK modes, the
+    /// harbour corridor, line of sight); a mob takes the hit through
+    /// `pending_skill_hits`, another player's HULL takes it directly.
+    pub(crate) fn habilidade_do_navio(&mut self, sid: SessionId, h: u8) {
+        let Some(hab) = nv::habilidade(h) else {
+            return;
+        };
+        let id = nv::id_de_skill(h);
+        if !self.no_mar() {
+            self.rejeita_skill(sid, id, "Ship skills work only at sea.");
+            return;
+        }
+        let agora = self.sim_time_s;
+        let Some(s) = self.sessions.get(&sid).filter(|s| s.logged_in) else {
+            return;
+        };
+        if s.downed || s.entity.is_none() {
+            self.rejeita_skill(sid, id, "Wait for the current action to finish.");
+            return;
+        }
+        if s.skill_cds.get(&id).is_some_and(|&fim| fim > agora) {
+            self.rejeita_skill(sid, id, "Skill on cooldown.");
+            return;
+        }
+        let (dono, entity, selecionado) = (s.entity_id, s.entity.unwrap(), s.target);
+        let Some((navio, mut d)) = self.navio_equipado(sid) else {
+            self.rejeita_skill(sid, id, "You have no ship. Put one in the Ship slot of your equipment.");
+            return;
+        };
+        if !nv::pode_zarpar(&d) {
+            self.rejeita_skill(sid, id, "Your ship is damaged. The Harbour Captain can repair it.");
+            return;
+        }
+        let Some(de) = self.ecs.get::<&Position>(entity).ok().map(|p| p.0) else {
+            return;
+        };
+        let rumo = self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO);
+        let nivel = self.nivel_de_sid(sid);
+        let mut alvo_fx = de;
+        match hab.efeito {
+            nv::Efeito::Bordada | nv::Efeito::Canhonaco => {
+                if self.in_safe_zone(de) {
+                    self.rejeita_skill(sid, id, "You cannot attack in the safe zone.");
+                    return;
+                }
+                let forma = forma_do_canhao(hab.alcance);
+                let alvos: Vec<(EntityId, Vec2)> = if hab.efeito == nv::Efeito::Bordada {
+                    self.alvos_da_habilidade(dono, de, Vec2::Y, de, &forma)
+                        .into_iter()
+                        .filter(|(_, p)| nv::no_costado(de, rumo, *p))
+                        .collect()
+                } else {
+                    let Some(alvo) = selecionado else {
+                        self.rejeita_skill(sid, id, "Select an enemy to use this skill.");
+                        return;
+                    };
+                    match self.posicao_alvo_skill(dono, alvo, de, &forma) {
+                        Ok(p) => vec![(alvo, p)],
+                        Err(m) => {
+                            self.rejeita_skill(sid, id, m);
+                            return;
+                        }
+                    }
+                };
+                self.quebrar_invisibilidade(sid);
+                let dano = nv::dano_do_canhao(hab, nivel, navio, &d);
+                if let Some((_, p)) = alvos.first() {
+                    alvo_fx = *p;
+                }
+                for (alvo, p) in alvos {
+                    self.tiro_de_canhao(dono, alvo, de, p, dano);
+                }
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.last_combat_at_s = agora;
+                }
+            }
+            nv::Efeito::Reparo => {
+                let cheio = nv::casco_total(navio, &d);
+                if d.casco >= cheio {
+                    self.rejeita_skill(sid, id, "Your hull is already sound.");
+                    return;
+                }
+                d.casco = d.casco.saturating_add(nv::cura_do_reparo(navio, &d)).min(cheio);
+                self.guarda_navio(sid, d);
+            }
+            nv::Efeito::Fumaca => {
+                self.comecar_invisibilidade(sid, nv::FUMACA_S);
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.fumaca_ate = agora + nv::FUMACA_VELOCIDADE_S;
+                }
+            }
+        }
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.skill_cds.insert(id, agora + hab.espera_s);
+        }
+        crate::telemetria::conta("skill_do_navio", hab.nome, 1);
+        self.estado_skills(sid);
+        for s in self.sessions.values().filter(|s| s.logged_in) {
+            let _ = s.handle.to_client.send(ServerMessage::SkillImpactFx {
+                skill_id: id,
+                caster_eid: dono,
+                caster_pos: de,
+                target_pos: alvo_fx,
+                tier: 0,
+            });
+        }
+    }
+
+    /// One cannonball from `dono` at `alvo`. A mob takes it as a skill hit
+    /// (defence, the level gap and the kill credit as usual); a player's
+    /// HULL takes it directly — hull against hull — when the PK modes allow.
+    fn tiro_de_canhao(&mut self, dono: EntityId, alvo: EntityId, de: Vec2, p: Vec2, dano: i32) {
+        let vitima = self.sessions.values().find(|s| s.entity_id == alvo).map(|s| s.handle.id);
+        match vitima {
+            Some(vsid) => {
+                if !self.can_damage_player(dono, alvo) || self.in_safe_zone(p) {
+                    return;
+                }
+                self.registrar_agressao(dono, alvo);
+                self.dano_no_casco(vsid, (dano as f32 * nv::PVP_CANHAO).round() as i32);
+            }
+            None => self.pending_skill_hits.push(PendingSkillHit {
+                target_net: alvo,
+                damage: dano,
+                attacker_net: dono,
+                hurt_dir: (de - p).normalize_or_zero(),
+                is_crit: false,
+                from_player: true,
+                knockback: 0.0,
+                drain_tier: 0,
+            }),
+        }
+    }
+
+    // ───────────────────── phase 2: sea elites and planks ─────────────────────
+
+    /// Turns the freshly spawned `eid` into its route's SEA ELITE: five times
+    /// the life, a harder bite, more XP, and Wreck Planks for whoever sinks
+    /// it.
+    pub(crate) fn tornar_elite_do_mar(&mut self, eid: EntityId) {
+        let mut alvo = None;
+        for (e, (n, tag, hp, kind)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag, &mut Health, &EntityKind)>() {
+            if n.0 != eid {
+                continue;
+            }
+            let vida = ((hp.max as f32) * ELITE_DO_MAR_VIDA).round() as i32;
+            hp.max = vida;
+            hp.current = vida;
+            tag.stats.hp_max = vida;
+            tag.stats.attack_damage = ((tag.stats.attack_damage as f32) * ELITE_DO_MAR_DANO).round().max(1.0) as i32;
+            tag.xp_reward = (tag.xp_reward as f32 * ELITE_DO_MAR_XP).round() as u64;
+            let k = if let EntityKind::Enemy(k) = kind { *k } else { 0 };
+            tag.boss_name = Some(format!("[ELITE] Dread {}", crate::economy::enemy_def(k).name));
+            alvo = Some(e);
+            break;
+        }
+        if let Some(e) = alvo {
+            let _ = self.ecs.insert_one(e, EliteDoMarTag);
+        }
+    }
+
+    /// A sea mob fell to `matador`: one Wreck Plank at
+    /// `CHANCE_PRANCHA_DO_BICHO`, the elite's `PRANCHAS_DO_ELITE` always.
+    pub(crate) fn prancha_do_bicho(&mut self, matador: EntityId, elite: bool, sorte: f32) {
+        let qtd = if elite {
+            nv::PRANCHAS_DO_ELITE
+        } else if sorte < nv::CHANCE_PRANCHA_DO_BICHO {
+            1
+        } else {
+            return;
+        };
+        let agora = (now_ms() / 1000) as i64;
+        let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == matador) else {
+            return;
+        };
+        if !add_to_inventory(&mut s.inventory, item_id::PRANCHA_DE_NAUFRAGIO, qtd, None) {
+            s.dungeon.postar(item_id::PRANCHA_DE_NAUFRAGIO, qtd, None, 0, agora);
+        }
+        s.inventory_dirty = true;
+        self.save_pending = true;
+    }
+}
+
+/// The sea elite (`tornar_elite_do_mar`).
+pub struct EliteDoMarTag;
+
+/// The sea elite: life, bite and XP multipliers, and how long it takes to
+/// come back once sunk.
+pub const ELITE_DO_MAR_VIDA: f32 = 5.0;
+pub const ELITE_DO_MAR_DANO: f32 = 1.4;
+pub const ELITE_DO_MAR_XP: f32 = 4.0;
+pub const ELITE_DO_MAR_VOLTA_S: f32 = 180.0;
+
+/// Is nest zone `zone_id` an ELITE nest? Every route has two nests (a
+/// third and two thirds of the way, `mar::ninhos`); the second holds the
+/// route's elite in its first slot.
+pub(crate) fn e_ninho_de_elite(zone_id: u32) -> bool {
+    zone_id >= ZONA_DO_MAR_ID && (zone_id - ZONA_DO_MAR_ID) % 2 == 1
+}
+
+/// A cannon's reach dressed as a `Skill`, so the targets come from the same
+/// functions the weapon skills use.
+fn forma_do_canhao(alcance: f32) -> shared::skills::Skill {
+    shared::skills::Skill {
+        id: 0,
+        nome: String::new(),
+        conjunto: shared::skills::Conjunto::EspadaEscudo,
+        ordem: 0,
+        forma: shared::skills::Forma::Circulo,
+        custo_mp: 0,
+        espera_s: 0.0,
+        conjuracao_s: 0.0,
+        dano: 1,
+        cura: 0,
+        alcance,
+        raio: alcance,
     }
 }
 
@@ -748,7 +1146,7 @@ mod testes {
         let (mut w, sid, mut rx) = mundo("ilha_inicial", &["ilha_inicial", shared::mar::ZONA]);
         com_capitao(&mut w);
         dar_chalupa(w.sessions.get_mut(&sid).unwrap());
-        w.guarda_navio(sid, shared::items::NavioData { casco: 0, avariado: true });
+        w.guarda_navio(sid, shared::items::NavioData { casco: 0, avariado: true, ..Default::default() });
         w.handle_navio(sid, PedidoNavio::Zarpar);
         assert_eq!(trocou_para(&mut rx), None, "a damaged ship sailed");
         cobre(&mut w, sid, 100);
@@ -837,5 +1235,325 @@ mod testes {
         assert!(tem_cobre(&w, sid) > 0);
         assert!(w.ecs.get::<&BauDoMarTag>(e).is_err());
         assert_eq!(w.baus_do_mar.len(), 1);
+        // The chest pays Wreck Planks (phase 2).
+        assert_eq!(
+            crate::craft::tem(&w.sessions[&sid].inventory, item_id::PRANCHA_DE_NAUFRAGIO),
+            nv::pranchas_do_bau(shared::mar::nivel_em(p))
+        );
+        // One elite nest per route.
+        let elites = w.spawn_zones.iter().filter(|z| e_ninho_de_elite(z.id)).count();
+        assert!(elites >= 5 && elites <= shared::mar::rotas().len(), "{elites} elite nests");
+    }
+
+    // ───────────────────── phase 2 ─────────────────────
+
+    fn da(w: &mut GameWorld, sid: SessionId, item: u16, qtd: u32) {
+        // Straight into a slot of its own: the test economy has no stack
+        // sizes, and what is counted is the total (`craft::tem`).
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.inventory.push(shared::InventorySlot { item_id: item, qty: qtd, instance: None });
+    }
+
+    fn tem(w: &GameWorld, sid: SessionId, item: u16) -> u32 {
+        crate::craft::tem(&w.sessions[&sid].inventory, item)
+    }
+
+    fn no_nivel(w: &mut GameWorld, sid: SessionId, nivel: u32) {
+        w.sessions.get_mut(&sid).unwrap().xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
+    }
+
+    fn tem_navio_fora_do_slot(w: &GameWorld, sid: SessionId) -> bool {
+        let s = &w.sessions[&sid];
+        s.inventory.iter().chain(s.vault.iter()).any(|x| x.qty > 0 && item_id::e_navio(x.item_id))
+            || s.dungeon.correio.iter().any(|c| item_id::e_navio(c.item_id))
+    }
+
+    /// THE SHIPWRIGHT BUILDS THE NEXT HULL: it refuses without the level or
+    /// the materials (taking nothing), then consumes the Sloop and exactly
+    /// the recipe, and the Schooner keeps the stars and the sail.
+    #[test]
+    fn o_estaleiro_consome_o_casco_anterior_e_os_materiais() {
+        let (mut w, sid, _rx) = mundo("ilha_inicial", &[]);
+        com_capitao(&mut w);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        let d = shared::items::NavioData { estrelas: [1, 2, 3], vela: 2, ..nv::novo(NAVIO_CHALUPA) };
+        w.guarda_navio(sid, d);
+        let r = *nv::receita_depois_de(NAVIO_CHALUPA).unwrap();
+        // No materials: refused.
+        no_nivel(&mut w, sid, 40);
+        w.handle_navio(sid, PedidoNavio::Construir);
+        assert_eq!(w.sessions[&sid].equipment.navio, Some(NAVIO_CHALUPA));
+        for (item, q) in r.materiais {
+            da(&mut w, sid, item, q + 3);
+        }
+        // Below the Schooner's level: refused, nothing taken.
+        no_nivel(&mut w, sid, nv::casco(r.para).unwrap().nivel - 1);
+        w.handle_navio(sid, PedidoNavio::Construir);
+        assert_eq!(w.sessions[&sid].equipment.navio, Some(NAVIO_CHALUPA));
+        assert!(r.materiais.iter().all(|(item, q)| tem(&w, sid, *item) == q + 3));
+        no_nivel(&mut w, sid, 40);
+        w.handle_navio(sid, PedidoNavio::Construir);
+        let (id, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(id, item_id::NAVIO_ESCUNA, "the Sloop became a Schooner");
+        assert_eq!(d.estrelas, [1, 2, 3]);
+        assert_eq!(d.vela, 2);
+        assert_eq!(d.casco, nv::casco_total(id, &d));
+        assert!(r.materiais.iter().all(|(item, _)| tem(&w, sid, *item) == 3), "the recipe was not consumed exactly");
+        assert!(!tem_navio_fora_do_slot(&w, sid), "the Sloop is gone");
+        // Far from the Captain: refused.
+        poe_em(&mut w, sid, Vec2::new(500.0, 500.0));
+        for (item, q) in nv::receita_depois_de(item_id::NAVIO_ESCUNA).unwrap().materiais {
+            da(&mut w, sid, item, q);
+        }
+        w.handle_navio(sid, PedidoNavio::Construir);
+        assert_eq!(w.navio_equipado(sid).unwrap().0, item_id::NAVIO_ESCUNA);
+    }
+
+    /// SHIP STARS: copper, Darksteel and Wreck Planks by `custo_da_estrela`,
+    /// five at most, never Rebirth Essence; the hull star raises the hull.
+    #[test]
+    fn estrelas_do_navio_custam_e_param_em_cinco_sem_essencia() {
+        let (mut w, sid, _rx) = mundo("ilha_inicial", &[]);
+        com_capitao(&mut w);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        da(&mut w, sid, item_id::COPPER, 100_000);
+        da(&mut w, sid, item_id::DARKSTEEL, 50_000);
+        da(&mut w, sid, item_id::PRANCHA_DE_NAUFRAGIO, 500);
+        da(&mut w, sid, item_id::ESSENCIA_RENASCIMENTO, 77);
+        let mut gasto = (0u32, 0u32, 0u32);
+        for e in 0..nv::ESTRELAS_MAX {
+            let c = nv::custo_da_estrela(e).unwrap();
+            gasto = (gasto.0 + c.cobre, gasto.1 + c.darksteel, gasto.2 + c.pranchas);
+            w.handle_navio(sid, PedidoNavio::Melhorar { eixo: nv::Eixo::Canhao as u8 });
+        }
+        let (_, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(d.estrelas, [0, 0, 5]);
+        assert_eq!(tem(&w, sid, item_id::COPPER), 100_000 - gasto.0);
+        assert_eq!(tem(&w, sid, item_id::DARKSTEEL), 50_000 - gasto.1);
+        assert_eq!(tem(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), 500 - gasto.2);
+        // A sixth: refused, nothing taken.
+        w.handle_navio(sid, PedidoNavio::Melhorar { eixo: nv::Eixo::Canhao as u8 });
+        assert_eq!(w.navio_equipado(sid).unwrap().1.estrelas, [0, 0, 5]);
+        assert_eq!(tem(&w, sid, item_id::COPPER), 100_000 - gasto.0);
+        assert_eq!(tem(&w, sid, item_id::ESSENCIA_RENASCIMENTO), 77, "ship stars never cost Essence");
+        // The hull star raises the hull by what it adds.
+        w.handle_navio(sid, PedidoNavio::Melhorar { eixo: nv::Eixo::Casco as u8 });
+        let (id, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(d.casco, nv::casco_total(id, &d));
+        assert!(d.casco > nv::casco_max(id));
+        // Without copper: refused.
+        let s = w.sessions.get_mut(&sid).unwrap();
+        let todo = crate::craft::tem(&s.inventory, item_id::COPPER);
+        crate::craft::consumir(&mut s.inventory, item_id::COPPER, todo);
+        w.handle_navio(sid, PedidoNavio::Melhorar { eixo: nv::Eixo::Vela as u8 });
+        assert_eq!(w.navio_equipado(sid).unwrap().1.estrelas[1], 0);
+    }
+
+    /// A world at sea with the sea's relief, the player on open water with a
+    /// Sloop at level 30, and one sea mob at `alvo` from the player.
+    fn no_mar_com_bicho(alvo: Vec2) -> (GameWorld, SessionId, mpsc::UnboundedReceiver<ServerMessage>, Vec2) {
+        let (mut w, sid, rx) = mundo(shared::mar::ZONA, &[]);
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::mar::DEF));
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        no_nivel(&mut w, sid, 30);
+        let aqui = shared::mar::ninhos()[0];
+        poe_em(&mut w, sid, aqui);
+        w.ecs.spawn((
+            NetId(EntityId(9_900)),
+            Position(aqui + alvo),
+            Velocity(Vec2::ZERO),
+            EntityKind::Enemy(TUBARAO),
+            Health { current: 800, max: 800 },
+        ));
+        (w, sid, rx, aqui)
+    }
+
+    fn golpes_em(w: &GameWorld, alvo: EntityId) -> Vec<i32> {
+        w.pending_skill_hits.iter().filter(|h| h.target_net == alvo).map(|h| h.damage).collect()
+    }
+
+    /// BROADSIDE: the cannon damage of the class and stars to a mob off the
+    /// beam, nothing to one dead ahead, and a cooldown. Mana-free.
+    #[test]
+    fn bordada_acerta_o_costado_e_tem_recarga() {
+        let bicho = EntityId(9_900);
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(6.0, 0.0));
+        w.sessions.get_mut(&sid).unwrap().mp_current = 0.0;
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        let (id, d) = w.navio_equipado(sid).unwrap();
+        let esperado = nv::dano_do_canhao(&nv::HABILIDADES[0], 30, id, &d);
+        assert_eq!(golpes_em(&w, bicho), vec![esperado], "no mana needed");
+        let cd = w.sessions[&sid].skill_cds[&nv::id_de_skill(0)];
+        assert!((cd - w.sim_time_s - nv::HABILIDADES[0].espera_s).abs() < 1e-3);
+        // On cooldown: nothing.
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        assert_eq!(golpes_em(&w, bicho).len(), 1);
+        // Sailing north with the mob dead ahead: the bow is blind.
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 6.0));
+        let e = w.sessions[&sid].entity.unwrap();
+        w.ecs.get::<&mut Velocity>(e).unwrap().0 = Vec2::new(0.0, 8.0);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        assert!(golpes_em(&w, bicho).is_empty(), "a broadside hit the bow");
+        // More stars on the cannon, more damage.
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(6.0, 0.0));
+        let d = shared::items::NavioData { estrelas: [0, 0, 5], ..nv::novo(NAVIO_CHALUPA) };
+        w.guarda_navio(sid, d);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        assert!(golpes_em(&w, bicho)[0] > esperado);
+        // Ashore the ship's bar does nothing.
+        let (mut w, sid, _rx) = mundo("ilha_inicial", &[]);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        assert!(w.sessions[&sid].skill_cds.is_empty());
+    }
+
+    /// BOW CANNON: the selected target in range, or nothing.
+    #[test]
+    fn canhonaco_precisa_de_alvo_no_alcance() {
+        let bicho = EntityId(9_900);
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 15.0));
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        assert!(golpes_em(&w, bicho).is_empty(), "fired with no target");
+        assert!(w.sessions[&sid].skill_cds.get(&nv::id_de_skill(1)).is_none(), "a refusal costs no cooldown");
+        w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        let (id, d) = w.navio_equipado(sid).unwrap();
+        assert_eq!(golpes_em(&w, bicho), vec![nv::dano_do_canhao(&nv::HABILIDADES[1], 30, id, &d)]);
+        // Out of range.
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 30.0));
+        w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        assert!(golpes_em(&w, bicho).is_empty());
+    }
+
+    /// EMERGENCY REPAIR heals 30% of the full hull, has a long cooldown,
+    /// and is refused on a sound hull.
+    #[test]
+    fn reparo_de_emergencia_cura_o_casco_com_recarga_longa() {
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(30.0, 30.0));
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 2 });
+        assert!(w.sessions[&sid].skill_cds.get(&nv::id_de_skill(2)).is_none(), "repaired a sound hull");
+        w.guarda_navio(sid, shared::items::NavioData { casco: 1_000, ..nv::novo(NAVIO_CHALUPA) });
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 2 });
+        assert_eq!(w.navio_equipado(sid).unwrap().1.casco, 1_000 + 720);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 2 });
+        assert_eq!(w.navio_equipado(sid).unwrap().1.casco, 1_720, "the cooldown let it heal twice");
+        w.sim_time_s += nv::HABILIDADES[2].espera_s + 0.1;
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 2 });
+        assert_eq!(w.navio_equipado(sid).unwrap().1.casco, 2_400, "capped at the full hull");
+    }
+
+    /// SMOKE: untargetable at once, faster for a moment, never past the
+    /// wire.
+    #[test]
+    fn fumaca_some_e_acelera_sem_passar_do_fio() {
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(30.0, 30.0));
+        let base = GameWorld::velocidade_no_mar(&w.sessions[&sid], w.sim_time_s);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 3 });
+        let s = &w.sessions[&sid];
+        assert!(s.invisivel_ate > w.sim_time_s);
+        assert!(w.ecs.get::<&Untargetable>(s.entity.unwrap()).is_ok());
+        let rapida = GameWorld::velocidade_no_mar(s, w.sim_time_s);
+        assert!(rapida > base && rapida <= nv::VELOCIDADE_MAX);
+        let depois = GameWorld::velocidade_no_mar(s, w.sim_time_s + nv::FUMACA_VELOCIDADE_S + 0.1);
+        assert_eq!(depois, base);
+        // A five-star sail Man-o'-War in smoke: clamped under the wire.
+        let s = w.sessions.get_mut(&sid).unwrap();
+        let mut inst = nv::instancia_nova(item_id::NAVIO_NAU);
+        inst.navio.as_mut().unwrap().estrelas = [0, 5, 0];
+        s.equipment.set(EquipSlot::Navio, Some(item_id::NAVIO_NAU), Some(inst));
+        let v = GameWorld::velocidade_no_mar(s, s.fumaca_ate - 0.1);
+        assert!(v <= nv::VELOCIDADE_MAX && v < nv::TETO_DO_FIO);
+    }
+
+    /// CANNONS AND PK: hull against hull. A peaceful target is never hit; in
+    /// free PK the cannon takes the target's HULL, not its HP; the harbour
+    /// corridor protects.
+    #[test]
+    fn canhao_contra_jogador_segue_o_pk_e_bate_no_casco() {
+        let (mut w, a, _rx, aqui) = no_mar_com_bicho(Vec2::new(300.0, 300.0));
+        let b = SessionId(([127, 0, 0, 1], 47_472).into());
+        let (tx, rx2) = mpsc::unbounded_channel();
+        std::mem::forget(rx2);
+        w.on_connect(SessionHandle { id: b, to_client: tx });
+        let eb = EntityId(4_702);
+        let e = w.ecs.spawn((
+            NetId(eb),
+            Position(aqui + Vec2::new(6.0, 0.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+            PlayerTag { name: "Pirata".into(), player_id: PlayerId(49), attack_anim_pending: None, combo_step_pending: None },
+        ));
+        {
+            let s = w.sessions.get_mut(&b).unwrap();
+            s.logged_in = true;
+            s.entity = Some(e);
+            s.entity_id = eb;
+            s.name = "Pirata".into();
+            s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+            dar_chalupa(s);
+        }
+        let modo = |w: &mut GameWorld, sid: SessionId, m: u8| {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.pk_modo = m;
+            s.pk_escolhido = m;
+        };
+        modo(&mut w, a, shared::pk::PACIFICO);
+        modo(&mut w, b, shared::pk::PACIFICO);
+        w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        assert_eq!(w.navio_equipado(b).unwrap().1.casco, 2_400, "a peaceful ship was shot");
+        modo(&mut w, a, shared::pk::LIVRE);
+        w.sim_time_s += 10.0;
+        w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        let casco = w.navio_equipado(b).unwrap().1.casco;
+        assert!(casco < 2_400, "free PK does not reach the hull");
+        assert_eq!(w.ecs.get::<&Health>(e).unwrap().current, 100, "the cannon hit the body, not the hull");
+        // In the harbour corridor: nothing.
+        poe_em(&mut w, a, fundeadouro_padrao());
+        poe_em(&mut w, b, fundeadouro_padrao() + Vec2::new(5.0, 0.0));
+        w.sim_time_s += 10.0;
+        w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        assert_eq!(w.navio_equipado(b).unwrap().1.casco, casco);
+    }
+
+    /// WRECK PLANKS at sea: the elite always pays them, a common mob now
+    /// and then (the chest's are in `o_mar_tem_ninhos_e_baus`).
+    #[test]
+    fn pranchas_de_naufragio_caem_no_mar() {
+        let (mut w, sid, _rx) = mundo(shared::mar::ZONA, &[]);
+        let eu = w.sessions[&sid].entity_id;
+        w.prancha_do_bicho(eu, true, 0.99);
+        assert_eq!(tem(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), nv::PRANCHAS_DO_ELITE);
+        w.prancha_do_bicho(eu, false, 0.99);
+        assert_eq!(tem(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), nv::PRANCHAS_DO_ELITE);
+        w.prancha_do_bicho(eu, false, nv::CHANCE_PRANCHA_DO_BICHO * 0.5);
+        assert_eq!(tem(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), nv::PRANCHAS_DO_ELITE + 1);
+        assert!(e_ninho_de_elite(ZONA_DO_MAR_ID + 1) && !e_ninho_de_elite(ZONA_DO_MAR_ID));
+    }
+
+    /// A SHIP COSMETIC from the bag dresses the ship and is spent; with no
+    /// ship it stays in the bag. At sea the look rides on the meta.
+    #[test]
+    fn cosmetico_veste_o_navio() {
+        let (mut w, sid, _rx) = mundo("ilha_inicial", &[]);
+        let vela = shared::navio::VELAS[1].item;
+        w.sessions.get_mut(&sid).unwrap().inventory[3] = shared::InventorySlot { item_id: vela, qty: 2, instance: None };
+        w.handle_use_item(sid, 3);
+        assert_eq!(w.sessions[&sid].inventory[3].qty, 2, "spent with no ship");
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        w.handle_use_item(sid, 3);
+        assert_eq!(w.navio_equipado(sid).unwrap().1.vela, 2);
+        assert_eq!(w.sessions[&sid].inventory[3].qty, 1);
+        let figura = shared::navio::FIGURAS[2].0;
+        w.sessions.get_mut(&sid).unwrap().inventory[4] = shared::InventorySlot { item_id: figura, qty: 1, instance: None };
+        w.handle_use_item(sid, 4);
+        let d = w.navio_equipado(sid).unwrap().1;
+        assert_eq!((d.vela, d.figura), (2, 3));
+        assert_eq!(w.sessions[&sid].inventory[4].qty, 0);
+        w.zona = shared::mar::ZONA.into();
+        let eid = w.sessions[&sid].entity_id;
+        let v = shared::navio::Visual::do_fio(w.visuais_dos_navios()[&eid]);
+        assert_eq!((v.classe, v.vela, v.figura), (0, 2, 3));
     }
 }

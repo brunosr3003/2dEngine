@@ -1059,7 +1059,7 @@ impl LojaTp {
     fn aba_skins(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool, vox: &VoxCache, solido: &Material) {
         use shared::aparencia as ap;
         // Categories: 25 skins in one grid made cards too small to read.
-        const CATEGORIAS: [&str; 4] = ["Outfits", "Hats", "Weapons", "Mount coats"];
+        const CATEGORIAS: [&str; 5] = ["Outfits", "Hats", "Weapons", "Mount coats", "Ship"];
         let categoria = |id: u16| {
             if ap::skin_de_arma(id).is_some() {
                 2
@@ -1071,7 +1071,7 @@ impl LojaTp {
                 0
             }
         };
-        let aw = ((area.w - 18.0 * k) / 4.0).min(160.0 * k.max(1.0));
+        let aw = ((area.w - 24.0 * k) / CATEGORIAS.len() as f32).min(160.0 * k.max(1.0));
         let ah = 34.0 * k;
         for (i, rotulo) in CATEGORIAS.iter().enumerate() {
             let r = Rect::new(area.x + i as f32 * (aw + 6.0 * k), area.y, aw, ah);
@@ -1082,6 +1082,10 @@ impl LojaTp {
             }
         }
         let area = Rect::new(area.x, area.y + ah + 8.0 * k, area.w, area.h - ah - 8.0 * k);
+        if self.filtro_skin == 4 {
+            self.cosmeticos_de_navio(area, k, m, livre, modal);
+            return;
+        }
         let venda: Vec<u16> = ap::a_venda().into_iter().filter(|id| categoria(*id) == self.filtro_skin).collect();
         if venda.is_empty() {
             estilo::texto_centro(
@@ -1157,6 +1161,54 @@ impl LojaTp {
             }
             if !self.em_voo && livre && sobre {
                 self.confirma = Some(Confirma::Item(Produto::Skin(*id)));
+                self.lote = 1;
+            }
+        }
+    }
+
+    /// SHIP COSMETICS (docs/NAVEGACAO.md, naval phase 2): sail colours and
+    /// figureheads, items for the bag; used there, they dress the ship in
+    /// the Ship slot. Cosmetic only.
+    fn cosmeticos_de_navio(&mut self, area: Rect, k: f32, m: Vec2, livre: bool, modal: bool) {
+        let venda: Vec<&cat::ItemDaLoja> = cat::cosmeticos_de_navio().collect();
+        let colunas = 4usize;
+        let linhas = venda.len().div_ceil(colunas).max(1);
+        let vao = 12.0 * k;
+        let w = ((area.w - vao * (colunas as f32 - 1.0)) / colunas as f32).min(300.0 * k);
+        let h = ((area.h - 16.0 * k - vao * (linhas as f32 - 1.0)) / linhas as f32).min(220.0 * k);
+        let total = w * colunas as f32 + vao * (colunas as f32 - 1.0);
+        let x0 = area.center().x - total * 0.5;
+        for (n, it) in venda.iter().enumerate() {
+            let r = Rect::new(
+                x0 + (n % colunas) as f32 * (w + vao),
+                area.y + 8.0 * k + (n / colunas) as f32 * (h + vao),
+                w,
+                h,
+            );
+            let sobre = !modal && r.toca(m);
+            estilo::sombra(r, 18.0 * k, 1.0);
+            estilo::ret_gradiente(r, 18.0 * k, Color::new(0.10, 0.20, 0.30, 0.98), Color::new(0.03, 0.06, 0.12, 0.98));
+            estilo::borda_arredondada(r, 18.0 * k, 1.5 * k.max(0.8), estilo::alfa(if sobre { OURO_CLARO } else { LILAS }, 0.5));
+            let l = (r.h * 0.42).min(r.w * 0.5);
+            crate::icones::desenha(it.item_id, Rect::new(r.center().x - l * 0.5, r.y + 10.0 * k, l, l), 1.0);
+            let tw = r.w - 16.0 * k;
+            let nw = estilo::medir(it.nome, ts(15.0, k)).min(tw);
+            estilo::texto_ajustado(it.nome, r.center().x - nw * 0.5, r.y + l + 30.0 * k, tw, ts(15.0, k), estilo::TEXTO);
+            let rotulo = match shared::navio::cosmetico(it.item_id) {
+                Some(shared::navio::Cosmetico::Vela(_)) => "Sail colour",
+                _ => "Figurehead",
+            };
+            let rw = estilo::medir(rotulo, ts(12.0, k)).min(tw);
+            estilo::texto_ajustado(rotulo, r.center().x - rw * 0.5, r.y + l + 50.0 * k, tw, ts(12.0, k), estilo::alfa(LILAS, 0.95));
+            estilo::valor_tp(
+                r.center().x - estilo::largura_tp_texto(&milhar(it.preco_tp), ts(17.0, k), true) * 0.5,
+                r.y + r.h - 14.0 * k,
+                it.preco_tp,
+                ts(17.0, k),
+                OURO_CLARO,
+            );
+            if !self.em_voo && livre && sobre {
+                self.confirma = Some(Confirma::Item(Produto::Item(it.id)));
                 self.lote = 1;
             }
         }

@@ -21,6 +21,19 @@ pub enum Escolha {
     Zarpar,
     /// Repair my ship's hull, for copper.
     Reparar,
+    /// Shipwright: build the next hull class (naval phase 2).
+    Construir,
+    /// Shipwright: one star on axis `navio::Eixo` as u8.
+    Melhorar(u8),
+}
+
+/// What the Shipwright section reads from the client: the equipped ship,
+/// how many of an item the bag holds, item names and the level.
+pub struct Contexto<'a> {
+    pub equip: &'a shared::Equipment,
+    pub conta: &'a dyn Fn(u16) -> u64,
+    pub nome: &'a dyn Fn(u16) -> String,
+    pub nivel: u32,
 }
 
 #[derive(Debug, Default)]
@@ -29,6 +42,8 @@ pub struct ViagemUi {
     /// The ship's state (`ServerMessage::Navio`), sent with the Harbour
     /// Captain's menu. `None` for the bus and the submarine.
     navio: Option<shared::navio::EstadoNavio>,
+    /// The SHIPWRIGHT section is open instead of the destinations.
+    estaleiro: bool,
 }
 
 impl ViagemUi {
@@ -38,6 +53,7 @@ impl ViagemUi {
 
     pub fn fechar(&mut self) {
         self.destinos = None;
+        self.estaleiro = false;
     }
 
     pub fn define_navio(&mut self, estado: shared::navio::EstadoNavio) {
@@ -57,7 +73,10 @@ impl ViagemUi {
     /// `colonia` is whether the story has already handed over the player's own
     /// island: without it the row does not appear, because the menu cannot offer
     /// what the server is going to refuse.
-    pub fn desenha(&mut self, colonia: bool) -> Option<Escolha> {
+    pub fn desenha(&mut self, colonia: bool, ctx: &Contexto) -> Option<Escolha> {
+        if self.estaleiro && self.destinos.is_some() {
+            return estilo::no_painel(estilo::escala_do_painel(600.0, 560.0), || self.desenha_estaleiro(ctx));
+        }
         estilo::no_painel(estilo::escala_do_painel(560.0, 420.0), || {
             self.desenha_na_escala(colonia)
         })
@@ -123,6 +142,7 @@ impl ViagemUi {
                     escolha = Some(Escolha::Zarpar);
                 }
             }
+            let mut esquerda = b.x;
             if n.tem && n.reparo > 0 {
                 let rotulo = format!("Repair · {} copper", n.reparo);
                 let rw = estilo::medir_forte(&rotulo, 15) + 28.0 * f;
@@ -130,6 +150,18 @@ impl ViagemUi {
                 estilo::botao(rb, &rotulo, estilo::estado_de(rb, false, false), n.avariado);
                 if clicou && rb.toca(m) {
                     escolha = Some(Escolha::Reparar);
+                }
+                esquerda = rb.x;
+            }
+            // THE SHIPWRIGHT (naval phase 2): hulls and stars.
+            if n.tem {
+                let rotulo = "Shipwright";
+                let ew = estilo::medir_forte(rotulo, 15) + 28.0 * f;
+                let eb = Rect::new(esquerda - ew - 8.0 * f, b.y, ew, b.h);
+                estilo::botao(eb, rotulo, estilo::estado_de(eb, false, false), false);
+                if clicou && eb.toca(m) {
+                    self.estaleiro = true;
+                    return None;
                 }
             }
             y += linha_h;
@@ -202,6 +234,153 @@ impl ViagemUi {
         }
         escolha
     }
+
+    /// THE SHIPWRIGHT (docs/NAVEGACAO.md, naval phase 2): the equipped
+    /// ship's class and numbers, a star row per axis (copper, Darksteel and
+    /// Wreck Planks; always succeeds) and the next hull with its recipe.
+    /// The panel stays open after a purchase, so several stars go in a row.
+    fn desenha_estaleiro(&mut self, ctx: &Contexto) -> Option<Escolha> {
+        use shared::navio as nv;
+        let f = estilo::fator_texto();
+        let seguro = crate::hud_layout::tela_segura();
+        let w = (600.0 * f).min(seguro.w - 16.0);
+        let h = (560.0 * f).min(seguro.h - 16.0);
+        let p = Rect::new(seguro.center().x - w * 0.5, seguro.center().y - h * 0.5, w, h);
+        crate::hud_layout::escurece(0.45);
+        estilo::painel_destaque(p, estilo::ACENTO);
+        let m = Vec2::from(mouse_position());
+        let clicou = crate::foco::clique();
+        let x0 = p.x + 20.0 * f;
+        estilo::texto_forte(x0, p.y + 36.0 * f, "Shipwright", 20, estilo::OURO);
+        estilo::texto(x0, p.y + 60.0 * f, "Hulls and ship stars. Stars always succeed and stay with the ship.", 13, estilo::SUAVE);
+        let voltar = Rect::new(p.x + p.w - 120.0 * f, p.y + 12.0 * f, 104.0 * f, 36.0 * f);
+        estilo::botao(voltar, "Back", estilo::estado_de(voltar, false, false), false);
+        if clicou && voltar.toca(m) {
+            self.estaleiro = false;
+            return None;
+        }
+        let Some(id) = ctx.equip.navio.filter(|i| shared::item_id::e_navio(*i)) else {
+            estilo::texto(x0, p.y + 100.0 * f, "No ship in the Ship slot.", 15, estilo::TEXTO);
+            if clicou && !p.toca(m) {
+                self.fechar();
+            }
+            return None;
+        };
+        let d = nv::dados(ctx.equip.navio_inst.as_ref(), id);
+        let mut escolha = None;
+        // The ship.
+        let mut y = p.y + 78.0 * f;
+        let r = Rect::new(x0, y, p.w - 40.0 * f, 64.0 * f);
+        estilo::cartao(r, false, true);
+        estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, &(ctx.nome)(id), 17, estilo::OURO);
+        estilo::texto(
+            r.x + 14.0 * f,
+            r.y + 50.0 * f,
+            &linha_do_navio(id, &d),
+            13,
+            estilo::SUAVE,
+        );
+        y += 72.0 * f;
+        // A row per axis.
+        for eixo in nv::Eixo::TODOS {
+            let r = Rect::new(x0, y, p.w - 40.0 * f, 70.0 * f);
+            estilo::cartao(r, false, false);
+            let n = nv::estrelas(&d, eixo);
+            estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, eixo.nome(), 16, estilo::TEXTO);
+            crate::bolsa::desenha_estrelas(r.x + 90.0 * f, r.y + 20.0 * f, 7.0 * f, n, nv::ESTRELAS_MAX);
+            let ganho = format!("+{:.0}%", n as f32 * eixo.bonus_por_estrela() * 100.0);
+            estilo::texto(r.x + 200.0 * f, r.y + 26.0 * f, &ganho, 14, estilo::VERDE);
+            match nv::custo_da_estrela(n) {
+                Some(c) => {
+                    let falta = |item: u16, q: u32| (ctx.conta)(item) < q as u64;
+                    let pode = !(falta(shared::item_id::COPPER, c.cobre)
+                        || falta(shared::item_id::DARKSTEEL, c.darksteel)
+                        || falta(shared::item_id::PRANCHA_DE_NAUFRAGIO, c.pranchas));
+                    estilo::texto(
+                        r.x + 14.0 * f,
+                        r.y + 52.0 * f,
+                        &format!("Next star: {} copper · {} Darksteel · {} Wreck Planks", c.cobre, c.darksteel, c.pranchas),
+                        13,
+                        if pode { estilo::SUAVE } else { estilo::VERMELHO },
+                    );
+                    let bw = 118.0 * f;
+                    let b = Rect::new(r.x + r.w - bw - 12.0 * f, r.y + (r.h - 38.0 * f) * 0.5, bw, 38.0 * f);
+                    estilo::botao(b, "Add star", estilo::estado_de(b, false, false), pode);
+                    if clicou && b.toca(m) {
+                        escolha = Some(Escolha::Melhorar(eixo as u8));
+                    }
+                }
+                None => estilo::texto(r.x + 14.0 * f, r.y + 52.0 * f, "Five stars: the top.", 13, estilo::OURO),
+            }
+            y += 78.0 * f;
+        }
+        // The next hull.
+        let r = Rect::new(x0, y, p.w - 40.0 * f, (p.y + p.h - 16.0 * f - y).max(60.0 * f));
+        estilo::cartao(r, false, false);
+        match nv::receita_depois_de(id) {
+            None => {
+                estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, "The finest hull there is.", 16, estilo::OURO);
+            }
+            Some(rec) => {
+                let classe = nv::casco(rec.para).expect("every recipe builds a hull");
+                estilo::texto_forte(
+                    r.x + 14.0 * f,
+                    r.y + 26.0 * f,
+                    &format!("Next hull: {}", (ctx.nome)(rec.para)),
+                    16,
+                    estilo::TEXTO,
+                );
+                let nivel_ok = ctx.nivel >= classe.nivel;
+                estilo::texto(
+                    r.x + 14.0 * f,
+                    r.y + 48.0 * f,
+                    &format!(
+                        "Level {} · Hull {} · Speed {:.1} · the old hull is consumed, stars kept",
+                        shared::progressao::texto_de_nivel(classe.nivel),
+                        classe.casco,
+                        classe.velocidade,
+                    ),
+                    13,
+                    if nivel_ok { estilo::SUAVE } else { estilo::VERMELHO },
+                );
+                let mut tudo = nivel_ok;
+                for (k, (item, q)) in rec.materiais.iter().enumerate() {
+                    let tem = (ctx.conta)(*item);
+                    tudo &= tem >= *q as u64;
+                    let lx = r.x + 14.0 * f + (k % 2) as f32 * (r.w * 0.5 - 30.0 * f);
+                    let ly = r.y + 72.0 * f + (k / 2) as f32 * 20.0 * f;
+                    // Name and count apart: the name is translated whole.
+                    let cor = if tem >= *q as u64 { estilo::VERDE } else { estilo::VERMELHO };
+                    let nome = (ctx.nome)(*item);
+                    estilo::texto(lx, ly, &nome, 13, cor);
+                    let nw = estilo::medir(&nome, 13);
+                    estilo::texto(lx + nw + 6.0 * f, ly, &format!("{}/{}", tem.min(*q as u64), q), 13, cor);
+                }
+                let bw = 118.0 * f;
+                let b = Rect::new(r.x + r.w - bw - 12.0 * f, r.y + 12.0 * f, bw, 38.0 * f);
+                estilo::botao(b, "Build", estilo::estado_de(b, false, false), tudo);
+                if clicou && b.toca(m) {
+                    escolha = Some(Escolha::Construir);
+                }
+            }
+        }
+        if escolha.is_none() && clicou && !p.toca(m) {
+            self.fechar();
+        }
+        escolha
+    }
+}
+
+/// The ship's numbers in one line: hull, speed, cannon.
+pub fn linha_do_navio(id: u16, d: &shared::items::NavioData) -> String {
+    use shared::navio as nv;
+    format!(
+        "Hull {} / {} · Speed {:.1} · Cannon ×{:.2}",
+        d.casco,
+        nv::casco_total(id, d),
+        nv::velocidade_do_navio(id, d),
+        nv::mult_do_canhao(id, d)
+    )
 }
 
 /// The "Board" button, with the trip's copper price when it has one.
@@ -239,6 +418,15 @@ mod tests {
             requisito: "Bound for the Glacier".into(),
             preco: 100,
         }
+    }
+
+    #[test]
+    fn a_linha_do_navio_conta_as_estrelas() {
+        let id = shared::item_id::NAVIO_CHALUPA;
+        let mut d = shared::navio::novo(id);
+        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 2400 · Speed 10.0 · Cannon ×1.00");
+        d.estrelas = [5, 5, 5];
+        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 3360 · Speed 11.5 · Cannon ×1.40");
     }
 
     #[test]

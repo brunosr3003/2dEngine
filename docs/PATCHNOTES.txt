@@ -9,6 +9,11 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Your first ship, the Sloop, comes from the story quest that first takes you to the Glacier. Players already past it find a Sloop in their Mail.
 - At sea: gather floating wreckage (wood, Steel, Darksteel and Energy), open drifting chests, and keep clear of the sharks and eels that gnaw at your hull. If the hull breaks you wash up at the dock, and the Captain repairs the ship for copper. PK modes apply at sea, except close to the docks.
 - The Harbour Captain's trips between islands now cost copper, shown on the button. The story's own trips stay free.
+- New: the Shipwright. At the Harbour Captain, build bigger ships from your current one: the Schooner, the Galleon and the Man-o'-War, each with a tougher hull and a little more speed.
+- Ship upgrades: put up to 5 stars each on your ship's Hull, Sails and Cannons. Upgrades always succeed and stay with the ship when you trade or sell it.
+- New sea material: Wreck Planks, found in wreckage, drifting chests and sea monsters. Each sea route now has a dangerous elite monster.
+- New ship skills: at sea your skill bar becomes your ship's, with Broadside, Bow Cannon, Emergency Repair and Smoke. The cannons can go on AUTO.
+- New in the TP shop: sail colours and figureheads to dress up your ship.
 - Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
 - The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.

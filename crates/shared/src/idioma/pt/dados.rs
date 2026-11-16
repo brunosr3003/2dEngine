@@ -617,4 +617,17 @@ pub const VERBETES: &[(&str, &str)] = &[
     // ── the open sea ──
     ("Sloop", "Chalupa"),
     ("Open Sea", "Mar Aberto"),
+    // ── naval phase 2: the Shipwright, ship skills, sea cosmetics ──
+    ("Schooner", "Escuna"),
+    ("Galleon", "Galeão"),
+    ("Man-o'-War", "Nau"),
+    ("Wreck Plank", "Prancha de Naufrágio"),
+    ("Crimson Sails", "Velas Carmesim"),
+    ("Black Sails", "Velas Negras"),
+    ("Royal Blue Sails", "Velas Azul-Real"),
+    ("Emerald Sails", "Velas Esmeralda"),
+    ("Golden Sails", "Velas Douradas"),
+    ("Mermaid Figurehead", "Figura de Proa: Sereia"),
+    ("Dragon Figurehead", "Figura de Proa: Dragão"),
+    ("Eagle Figurehead", "Figura de Proa: Águia"),
 ];

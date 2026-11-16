@@ -776,11 +776,23 @@ pub mod item_id {
     pub const ESSENCIA_RENASCIMENTO: u16 = 477;
     /// THE SHIPS (docs/NAVEGACAO.md). The id is the HULL CLASS; the hull
     /// points live in the instance (`ItemInstance::navio`). 470 is the
-    /// Sloop (Chalupa); 471..473 are kept for the Shipwright's hulls of
-    /// phase 2 (`navio::CASCOS`). The ids were the old boats' (removed
-    /// 21/09/2026) and nothing else took them.
+    /// Sloop (Chalupa); 471..473 are the Shipwright's hulls of phase 2
+    /// (`navio::CASCOS`). The ids were the old boats' (removed 21/09/2026)
+    /// and nothing else took them.
     pub const NAVIO_CHALUPA: u16 = 470;
-    pub const NAVIO_ULTIMO: u16 = NAVIO_CHALUPA;
+    pub const NAVIO_ESCUNA: u16 = 471;
+    pub const NAVIO_GALEAO: u16 = 472;
+    pub const NAVIO_NAU: u16 = 473;
+    pub const NAVIO_ULTIMO: u16 = NAVIO_NAU;
+    /// WRECK PLANK (Prancha de Naufrágio): the sea-only material of the
+    /// Shipwright (naval phase 2). Drops from wreckage, drifting chests and
+    /// sea mobs; spent only on hulls and ship stars ("the sea is optional").
+    pub const PRANCHA_DE_NAUFRAGIO: u16 = 478;
+    /// SHIP COSMETICS (`navio::VELAS`, `navio::FIGURAS`): sail colours
+    /// 580..=584 and figureheads 586..=588, sold for TP. Using one applies
+    /// it to the ship in the Ship slot.
+    pub const VELA_BASE: u16 = 580;
+    pub const FIGURA_BASE: u16 = 586;
     /// Is the item a ship?
     pub const fn e_navio(id: u16) -> bool {
         id >= NAVIO_CHALUPA && id <= NAVIO_ULTIMO
