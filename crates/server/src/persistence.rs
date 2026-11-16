@@ -599,7 +599,16 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
+    // The column may already exist NULLABLE from the old open sea
+    // (September 2026): then the ADD below is a no-op and NULLs crash the
+    // load ("unexpected null", 16/11/2026 on the test box). Normalise it.
     sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NOT NULL DEFAULT ''")
+        .execute(pool)
+        .await?;
+    sqlx::query("UPDATE characters SET zona_volta = '' WHERE zona_volta IS NULL")
+        .execute(pool)
+        .await?;
+    sqlx::query("ALTER TABLE characters ALTER COLUMN zona_volta SET DEFAULT '', ALTER COLUMN zona_volta SET NOT NULL")
         .execute(pool)
         .await?;
     sqlx::query(
@@ -4418,7 +4427,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
     let diarios: HashMap<String, String> =
         busca!((String, String), "name, diario_json").into_iter().collect();
     let voltas: HashMap<String, String> =
-        busca!((String, String), "name, zona_volta").into_iter().collect();
+        busca!((String, String), "name, COALESCE(zona_volta, '')").into_iter().collect();
     let renascimentos: HashMap<String, u32> = busca!((String, i32), "name, renascimentos")
         .into_iter()
         .map(|(n, r)| (n, r.max(0) as u32))
