@@ -660,6 +660,11 @@ pub enum AvisoColonia {
 
 // ─────────────────────────── persistencia ───────────────────────────
 
+/// Mail reason for what was left in the island chest when My Island was
+/// removed (15/11/2026): the items went to the Mail
+/// (`persistence::migrar_bau_da_ilha`).
+pub const MOTIVO_CORREIO_BAU_DA_ILHA: u8 = 7;
+
 /// O que a colonia guarda entre sessoes. Uma coluna JSON so' — a colonia vai
 /// ganhar campos (nome dado pelo jogador, decoracao), e cada um deles nao pode
 /// custar uma coluna nova e as quatro edicoes de UPSERT que ela exige.

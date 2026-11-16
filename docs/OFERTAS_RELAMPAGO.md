@@ -72,34 +72,43 @@ Usa a mesma máquina das ofertas relâmpago (mesmas tabelas, mesmos produtos
 
 ### A regra
 
-`pacotes_bonus::tp_do_pacote(preço, tp_bonus) = tp_do_preco(preço) + tp_bonus`.
+Vale para TODA oferta relâmpago (nível, campanha, pacote bônus), 15/11/2026,
+pedido do dono: "toda flash offer tem q dar o mesmo tanto de tp q aquela
+compra daria normalmente 400 sendo o min ++ o bonus da oferta".
+
+`pacotes_bonus::tp_base_da_oferta(preço) = max(400, tp_do_preco(preço))`.
 `tp_do_preco` é o TP que o dinheiro compra na loja (`loja::PACOTES`): na taxa
 do maior pacote que o preço alcança (bônus incluso), ou do menor pacote
-abaixo do preço dele. Hoje: R$ 0,99 → 20 TP, 1,99 → 40, 4,99 → 101,
-9,99 → 203, 15,00 → 306. Todo pacote dá pelo menos isso de TP **mais** um
-bônus (TP extra, ouro, Energia, itens ou equipamento) — o teste
-`todo_pacote_e_o_tp_do_preco_mais_um_bonus` trava. A regra vale para o
-catálogo inicial; quem editar o banco na mão é responsável por mantê-la.
+abaixo do preço dele (0,99 → 20, 15,00 → 306). Com os preços atuais
+(0,99 a 15,00) toda oferta dá **400 TP**; o bônus (ouro, Energia, itens,
+equipamento, TP extra `tp_bonus`) vem por cima.
 
-O pacote inicial do dono (400 TP por 0,99) fica dentro da regra como
-20 TP do preço + 380 TP de bônus.
+O servidor garante a regra em três pontos: no boot sobe toda linha de
+`ofertas_relampago` com `tp` abaixo do piso; `listar` e `creditar` usam
+`tp_da_oferta(preço, tp_da_linha)` (o maior dos dois), então o que o cartão
+mostra é o que entra, mesmo com edição manual depois. O Panopticon já grava a
+campanha com o piso. TP acima do piso digitado no banco é respeitado.
+
+O cartão mostra "Vale R$ X" riscado e "×N VALOR": `valor_em_centavos` soma
+TP + ouro + Energia + itens pelo preço em TP da loja (`precos::custos_em_tp`)
+e converte a TP pela melhor taxa da loja. Equipamento e item que a loja não
+vende contam zero. `valor_de_centavos` não aparece mais no cliente.
 
 ### Os pacotes
 
 | id | gatilho | nível mín. (exibido → interno) | preço / produto | conteúdo |
 |---|---|---|---|---|
 | `bonus_porao_inicial` | `porao_inicial` | 1 → 1 | 0,99 `oferta_099` | 400 TP + 10.000 ouro + 10.000 Energia + 10.000 Darksteel |
-| `bonus_morte_arma` | `morte` | 10 → 6 | 1,99 `oferta_199` (**novo**) | 40 TP + 20.000 ouro + a ARMA ATUAL dele em AZUL no nível dele |
-| `bonus_morte_conjunto` | `morte` | 20 → 11 | 4,99 `oferta_499` | 101 TP + 30.000 ouro + conjunto AZUL (arma, secundária, armadura, brinco, amuleto, bracelete, cinto) |
-| `bonus_nivel_20` | nível | 20 → 11 (aparece no 21) | 1,99 `oferta_199` (**novo**) | 40 TP + 15.000 ouro + 1 pergaminho de montaria |
-| `bonus_nivel_50` | nível | 50 → 30 | 4,99 `oferta_499` | 101 TP + 20.000 Energia + 1 pergaminho de pet + 2 de chave + 5.000 Darksteel |
-| `bonus_nivel_70` | nível | 70 → 42 | 9,99 `oferta_999` (**novo**) | 203 TP + 50.000 Energia + 2 pergaminhos de montaria + 3 de chave + 20.000 Darksteel |
-| `bonus_nivel_100` | nível | 100 → 60 | 15,00 `oferta_1500` | 306 TP + 100.000 ouro + 2 pet + 2 montaria + 5 chave + 50.000 Darksteel |
+| `bonus_morte_arma` | `morte` | 10 → 6 | 1,99 `oferta_199` (**novo**) | 400 TP + 20.000 ouro + a ARMA ATUAL dele em AZUL no nível dele |
+| `bonus_morte_conjunto` | `morte` | 20 → 11 | 4,99 `oferta_499` | 400 TP + 30.000 ouro + conjunto AZUL (arma, secundária, armadura, brinco, amuleto, bracelete, cinto) |
+| `bonus_nivel_20` | nível | 20 → 11 (aparece no 21) | 1,99 `oferta_199` (**novo**) | 400 TP + 15.000 ouro + 1 pergaminho de montaria |
+| `bonus_nivel_50` | nível | 50 → 30 | 4,99 `oferta_499` | 400 TP + 20.000 Energia + 1 pergaminho de pet + 2 de chave + 5.000 Darksteel |
+| `bonus_nivel_70` | nível | 70 → 42 | 9,99 `oferta_999` (**novo**) | 400 TP + 50.000 Energia + 2 pergaminhos de montaria + 3 de chave + 20.000 Darksteel |
+| `bonus_nivel_100` | nível | 100 → 60 | 15,00 `oferta_1500` | 400 TP + 100.000 ouro + 2 pet + 2 montaria + 5 chave + 50.000 Darksteel |
 
 As antigas `nivel_5`/`nivel_15`/`nivel_25` (interno = exibido ~9/30/~43)
-continuam como estão (não seguem a regra: a 15 e a 25 não dão TP). Para
-alinhar: `UPDATE ofertas_relampago SET tp = 101 WHERE id = 'nivel_15';`
-`UPDATE ofertas_relampago SET tp = 306 WHERE id = 'nivel_25';`
+continuam, e desde 15/11 também dão os 400 TP da regra (o boot sobe as
+linhas).
 
 Os pacotes de nível são linhas comuns de nível (`gatilho` NULL): abrem pelo
 mesmo caminho das ofertas de nível (o cliente pergunta quando o nível muda).

@@ -1564,9 +1564,10 @@ pub mod auto_alvo {
     /// Outro jogador. Só entra se `auto_pvp` permitir.
     pub const JOGADOR: u8 = 2;
 
-    /// A ordem de fábrica: primeiro quem te acerta de longe, depois o mais
-    /// perto. Jogador fica de fora até alguém pedir.
-    pub const PADRAO: [u8; 2] = [RANGED_EM_MIM, MAIS_PERTO];
+    /// The factory order: NEAREST first (owner, 15/11/2026: "in combat
+    /// setting put nearest in standard"), then whoever shoots you from afar.
+    /// Players stay out until someone asks.
+    pub const PADRAO: [u8; 2] = [MAIS_PERTO, RANGED_EM_MIM];
 
     pub fn valido(v: u8) -> bool {
         matches!(v, RANGED_EM_MIM | MAIS_PERTO | JOGADOR)
@@ -1961,6 +1962,9 @@ pub enum FonteDeItem {
     /// 15/11/2026: "no find de DS, energia etc. tem que mostrar que são
     /// coletáveis em boss e porão").
     Bau,
+    /// The Prime Merchant of the town square sells it for gold
+    /// (`shared::prime::catalogo`). Appended last: postcard.
+    Prime,
 }
 
 /// Todas as fontes de um item. Vai no `ResourceSources`.

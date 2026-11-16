@@ -2059,6 +2059,26 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("You fell. Get back up stronger, for a few cents!", "Você caiu. Levante mais forte, por poucos centavos!"),
     ("A reward for your progress!", "Uma recompensa pelo seu progresso!"),
     ("Power {} → {} (+{})", "Poder {} → {} (+{})"),
+    // ofertas_ui.rs — the offer cards (15/11/2026)
+    ("Limited-time deals. Every offer includes at least {} TP.", "Promoções por tempo limitado. Toda oferta inclui pelo menos {} TP."),
+    ("NEW", "NOVA"),
+    ("BONUS PACK", "PACOTE BÔNUS"),
+    ("FLASH OFFER", "OFERTA RELÂMPAGO"),
+    ("×{} VALUE", "VALE ×{}"),
+    ("PLUS", "E AINDA"),
+    ("Worth", "Vale"),
+    ("PURCHASED", "COMPRADO"),
+    ("{} blue pieces", "{} peças azuis"),
+    ("Rate us & get a gift!", "Avalie e ganhe um presente!"),
+    (
+        "Rate Tempest on Google Play and post a screenshot of your review on our Discord.",
+        "Avalie o Tempest na Google Play e poste um print da avaliação no nosso Discord.",
+    ),
+    (
+        "Gift by Mail: 5,000 Darksteel, 5,000 Energy and 1 Mount Summon Scroll.",
+        "Presente no Correio: 5.000 de Darksteel, 5.000 de Energia e 1 Pergaminho de Invocação de Montaria.",
+    ),
+    ("Open Discord", "Abrir o Discord"),
     ("{} Gold", "{} de Ouro"),
     ("{} unlocked! +{} TP. The items are on their way.", "{} liberado! +{} TP. Os itens já estão a caminho."),
     ("{} unlocked! The items are on their way.", "{} liberado! Os itens já estão a caminho."),
@@ -2387,4 +2407,6 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Equip best", "Equipar melhor"),
     ("Nothing better to equip.", "Nada melhor para equipar."),
     ("Better pieces equipped: {}", "Peças melhores equipadas: {}"),
+    ("Buy: Prime Merchant", "Comprar: Mercador Prime"),
+    ("Gold, market price + 15% · daily limit", "Ouro, preço de mercado + 15% · limite diário"),
 ];

@@ -1593,6 +1593,17 @@ impl Mapa {
             .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
     }
 
+    /// The village NPC with this role: (name, position). The "Find" uses it
+    /// for the Prime Merchant.
+    pub fn npc_do_papel(&self, papel: shared::construcao::Papel) -> Option<(String, Vec2)> {
+        let g = self.ger.as_ref()?;
+        g.vila()
+            .npcs
+            .iter()
+            .find(|n| n.papel == papel)
+            .map(|n| (n.nome.to_string(), vec2(n.pos.x, n.pos.y)))
+    }
+
     /// Os vendedores com o id da loja: (loja, nome, posicao). E' como o "Onde
     /// obter" acha o NPC de um `FonteDeItem::Vendedor`.
     pub fn lojas_com_id(&self) -> Vec<(u32, String, Vec2)> {

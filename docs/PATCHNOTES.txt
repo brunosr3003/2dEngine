@@ -1,9 +1,14 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
+- Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
 - The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.
 - Health regeneration: 0.5 HP/s in combat and 2 HP/s out of combat, plus your Vitality bonus. Regenerating and drinking potions now show a visual effect.
 - Bag: a new "Equip best" button puts on your strongest pieces in one tap, keeping your weapon and armour type.
+- Tougher monsters give more XP: wolves, bears, owlbears and other high-health beasts now pay for their extra health. Auto combat targets the nearest enemy by default.
+- Items left in the My Island chest were sent to your Mail.
+- The Prime Merchant now sells dungeon keys for gold (3 of each a day), and "Find" shows the Prime Merchant for everything it sells.
+- Story dungeon quests on each island now also give 3 free Key Summon scrolls.
 - New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
 - XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.

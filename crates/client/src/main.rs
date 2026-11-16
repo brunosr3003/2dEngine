@@ -4754,7 +4754,12 @@ impl Jogo {
         // AUTO COMBATE: o que o jogador escolheu volta no login. Sem isto a
         // tela salvaria e nada mudaria na sessão seguinte.
         if let Some(o) = p.auto_alvo_ordem.clone() {
-            if !o.is_empty() {
+            // The old factory order (ranged first, then nearest) was saved
+            // for everyone who never touched it: that is the old default,
+            // not a choice, so it becomes the new default (Nearest).
+            if o == [shared::protocol::auto_alvo::RANGED_EM_MIM, shared::protocol::auto_alvo::MAIS_PERTO] {
+                self.auto_combate.ordem = shared::protocol::auto_alvo::PADRAO.to_vec();
+            } else if !o.is_empty() {
                 self.auto_combate.ordem = o;
             }
         }
@@ -7729,6 +7734,7 @@ impl Jogo {
                     nivel,
                     vinculado: self.mercado.vinculados.contains(&item),
                     ilha_atual: onde_obter::ilha_da_zona(&self.info.zona),
+                    prime: self.mapa.npc_do_papel(shared::construcao::Papel::Prime),
                 };
                 onde_obter::opcoes(item, self.onde_obter.fontes_de(item), &c)
             };

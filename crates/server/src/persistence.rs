@@ -1099,6 +1099,7 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     seed_economy_if_needed(pool).await?;
     migrar_viagem_montada(pool).await?;
     migrar_pergaminho_volta(pool).await?;
+    migrar_bau_da_ilha(pool).await?;
 
     Ok(())
 }
@@ -1108,6 +1109,56 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
 /// item is active again, the village Alchemist sells it for copper
 /// (`viagem::PRECO_PERGAMINHO`), and it still only jumps WITHIN the island
 /// (`handle_teleportar`); other islands are the Harbour Captain's boat.
+/// My Island was removed (15/11/2026, owner: "ok" to giving the chest back).
+/// Once, at boot: every item left in a character's island chest goes to that
+/// character's Mail (reason `MOTIVO_CORREIO_BAU_DA_ILHA`) and the chest is
+/// emptied in the same transaction, so nothing is paid twice. The rest of
+/// `colonia_json` (levels, residents) is kept as it was.
+async fn migrar_bau_da_ilha(pool: &PgPool) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('bau_da_ilha_correio_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected() > 0;
+    if !nova {
+        tx.commit().await?;
+        return Ok(());
+    }
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT name, colonia_json, dungeon_json FROM characters WHERE colonia_json <> '' FOR UPDATE",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    let (mut personagens, mut itens) = (0u32, 0u32);
+    for (nome, cj, dj) in rows {
+        let Ok(mut col) = serde_json::from_str::<shared::colonia::DadosColonia>(&cj) else {
+            tracing::warn!("bau da ilha: colonia_json ilegivel de {nome}, ficou como estava");
+            continue;
+        };
+        let bau: Vec<_> = col.bau.drain(..).filter(|s| s.qty > 0 && s.item_id != 0).collect();
+        if bau.is_empty() {
+            continue;
+        }
+        let mut dados: shared::dungeon::DadosDungeon =
+            if dj.is_empty() { Default::default() } else { serde_json::from_str(&dj)? };
+        for s in &bau {
+            dados.postar(s.item_id, s.qty, s.instance, shared::colonia::MOTIVO_CORREIO_BAU_DA_ILHA, agora);
+        }
+        sqlx::query("UPDATE characters SET colonia_json = $1, dungeon_json = $2 WHERE name = $3")
+            .bind(serde_json::to_string(&col)?)
+            .bind(serde_json::to_string(&dados)?)
+            .bind(&nome)
+            .execute(&mut *tx)
+            .await?;
+        personagens += 1;
+        itens += bau.len() as u32;
+    }
+    tx.commit().await?;
+    tracing::info!("bau da ilha: {itens} pilha(s) de {personagens} personagem(ns) foram pro correio");
+    Ok(())
+}
+
 async fn migrar_pergaminho_volta(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await?;
     let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('pergaminho_volta_v1') ON CONFLICT DO NOTHING")

@@ -36,13 +36,13 @@ const ABAS: [(&str, &str); 5] = [
 
 // Paleta premium, so' da loja: roxo profundo com dourado.
 const ROXO_TOPO: Color = Color::new(0.115, 0.066, 0.215, 0.985);
-const NOITE: Color = Color::new(0.028, 0.030, 0.075, 0.985);
-const OURO_CLARO: Color = Color::new(1.0, 0.90, 0.58, 1.0);
+pub(crate) const NOITE: Color = Color::new(0.028, 0.030, 0.075, 0.985);
+pub(crate) const OURO_CLARO: Color = Color::new(1.0, 0.90, 0.58, 1.0);
 const OURO_ESCURO: Color = Color::new(0.83, 0.54, 0.15, 1.0);
-const LILAS: Color = Color::new(0.72, 0.62, 1.0, 1.0);
-const CIANO: Color = Color::new(0.55, 0.86, 1.0, 1.0);
+pub(crate) const LILAS: Color = Color::new(0.72, 0.62, 1.0, 1.0);
+pub(crate) const CIANO: Color = Color::new(0.55, 0.86, 1.0, 1.0);
 const TINTA_BOTAO: Color = Color::new(0.17, 0.09, 0.02, 1.0);
-const VERDE_POSSE: Color = Color::new(0.46, 0.92, 0.66, 1.0);
+pub(crate) const VERDE_POSSE: Color = Color::new(0.46, 0.92, 0.66, 1.0);
 const AMBAR: Color = Color::new(1.0, 0.72, 0.30, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -159,7 +159,7 @@ fn ts(n: f32, k: f32) -> u16 {
 }
 
 /// Brilho redondo e suave: aneis concentricos translucidos.
-fn brilho_radial(c: Vec2, r: f32, cor: Color, forca: f32) {
+pub(crate) fn brilho_radial(c: Vec2, r: f32, cor: Color, forca: f32) {
     const N: usize = 12;
     for i in 0..N {
         let rr = r * (1.0 - i as f32 / N as f32);
@@ -168,7 +168,7 @@ fn brilho_radial(c: Vec2, r: f32, cor: Color, forca: f32) {
 }
 
 /// Faiscas subindo devagar dentro de `r`.
-fn faiscas(r: Rect, agora: f64, n: u32, k: f32, semente: u32) {
+pub(crate) fn faiscas(r: Rect, agora: f64, n: u32, k: f32, semente: u32) {
     let t = agora as f32;
     for i in 0..n {
         let a = sorteio(i * 7 + semente);
@@ -192,7 +192,7 @@ fn faiscas(r: Rect, agora: f64, n: u32, k: f32, semente: u32) {
 }
 
 /// Pilula de selo ("POPULAR"). `canto` = topo-esquerdo. Devolve a largura.
-fn selo(canto: Vec2, texto: &str, k: f32, forte: bool) -> f32 {
+pub(crate) fn selo(canto: Vec2, texto: &str, k: f32, forte: bool) -> f32 {
     let tam = ts(11.0, k);
     let w = estilo::medir_forte(texto, tam) + 20.0 * k;
     let r = Rect::new(canto.x, canto.y, w, 22.0 * k);
@@ -217,7 +217,7 @@ fn selo(canto: Vec2, texto: &str, k: f32, forte: bool) -> f32 {
 }
 
 /// Botao dourado grande. So' desenha; quem chamou decide o clique.
-fn botao_ouro(r: Rect, rotulo: &str, ativo: bool, sobre: bool, k: f32, agora: f64) {
+pub(crate) fn botao_ouro(r: Rect, rotulo: &str, ativo: bool, sobre: bool, k: f32, agora: f64) {
     estilo::sombra(r, r.h * 0.5, 0.8);
     if ativo {
         let (a, b) = if sobre {
@@ -291,7 +291,7 @@ fn botao_contorno(r: Rect, rotulo: &str, sobre: bool, k: f32) {
 }
 
 /// Estado sem compra: "POSSUÍDA", "INCLUSA", "REQUER A MONTARIA".
-fn etiqueta_estado(r: Rect, rotulo: &str, cor: Color, k: f32) {
+pub(crate) fn etiqueta_estado(r: Rect, rotulo: &str, cor: Color, k: f32) {
     estilo::ret_arredondado(r, r.h * 0.5, estilo::alfa(cor, 0.12));
     estilo::borda_arredondada(r, r.h * 0.5, 1.5 * k.max(0.7), estilo::alfa(cor, 0.6));
     estilo::texto_centro_forte(

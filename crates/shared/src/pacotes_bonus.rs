@@ -35,9 +35,68 @@ pub fn tp_do_preco(centavos: u32) -> u64 {
     (centavos as u64 * base.total()) / base.centavos.max(1) as u64
 }
 
-/// THE RULE: a bonus pack's TP is the TP its price buys plus the bonus TP.
+/// The least TP any flash offer gives (owner, 15/11/2026: "every flash offer
+/// has to give the same TP that purchase would normally give, 400 being the
+/// minimum, plus the offer's bonus").
+pub const TP_MINIMO_OFERTA: u64 = 400;
+
+/// THE RULE for EVERY flash offer (level, campaign, bonus pack): the TP its
+/// price buys in the TP shop, never under `TP_MINIMO_OFERTA`. The offer's
+/// bonus (gold, Energy, items, gear, bonus TP) comes on top.
+pub fn tp_base_da_oferta(centavos: u32) -> u64 {
+    tp_do_preco(centavos).max(TP_MINIMO_OFERTA)
+}
+
+/// The TP an `ofertas_relampago` row really gives: what is written there,
+/// never under the rule. The server shows and credits THIS, so a row edited
+/// by hand (or a Panopticon campaign) can't go under it.
+pub fn tp_da_oferta(centavos: u32, tp_escrita: u64) -> u64 {
+    tp_escrita.max(tp_base_da_oferta(centavos))
+}
+
+/// A bonus pack's TP: the rule plus the pack's bonus TP.
 pub fn tp_do_pacote(centavos: u32, tp_bonus: u64) -> u64 {
-    tp_do_preco(centavos) + tp_bonus
+    tp_base_da_oferta(centavos) + tp_bonus
+}
+
+/// What `tp` TP costs in money at the TP shop's BEST rate (the pack with the
+/// fewest cents per TP), in cents, rounded down: the lowest honest price of
+/// that TP.
+pub fn centavos_do_tp(tp: u64) -> u64 {
+    let Some(melhor) = crate::loja::PACOTES
+        .iter()
+        .filter(|p| p.total() > 0)
+        .min_by(|a, b| (a.centavos as u64 * b.total()).cmp(&(b.centavos as u64 * a.total())))
+    else {
+        return 0;
+    };
+    tp * melhor.centavos as u64 / melhor.total()
+}
+
+/// What an offer's contents cost at the TP shop, in TP, the cheapest way
+/// (`precos::custos_em_tp`, gold by the Sack of Gold): the TP itself, gold,
+/// Energy and every item the shop sells. Items the shop doesn't sell and
+/// built gear count ZERO, so the number can only be low.
+pub fn valor_em_tp(tp: u64, ouro: u64, energia: u64, itens: &[(u16, u32)]) -> u64 {
+    let custos = crate::precos::custos_em_tp();
+    let custo = |id: u16| custos.iter().find(|(i, _)| *i == id).map_or(0.0, |(_, c)| *c);
+    let mut v = tp as f64;
+    let ouro_por_tp = crate::precos::ouro_por_tp_da_loja();
+    if ouro_por_tp > 0.0 {
+        v += ouro as f64 / ouro_por_tp;
+    }
+    v += energia as f64 / crate::mercado::ENERGIA_POR_LOTE as f64 * custo(item_id::ENERGIA_MIL);
+    for (id, q) in itens {
+        v += custo(*id) * *q as f64;
+    }
+    v.max(0.0).floor() as u64
+}
+
+/// The "worth" of an offer in cents: its contents' TP-shop value
+/// (`valor_em_tp`) at the TP shop's best rate (`centavos_do_tp`). What the
+/// Offers tab crosses out and turns into "×N VALUE".
+pub fn valor_em_centavos(tp: u64, ouro: u64, energia: u64, itens: &[(u16, u32)]) -> u64 {
+    centavos_do_tp(valor_em_tp(tp, ouro, energia, itens))
 }
 
 /// What fires a triggered pack. Stored as text in `ofertas_relampago.gatilho`
@@ -226,7 +285,7 @@ pub const PACOTES_BONUS: &[PacoteBonus] = &[
         produto_play: "oferta_099",
         preco_centavos: 99,
         valor_de_centavos: 1990,
-        tp_bonus: 380,
+        tp_bonus: 0,
         ouro: 10_000,
         energia: 10_000,
         itens: &[(DARKSTEEL, 10_000)],
@@ -348,6 +407,42 @@ mod testes {
             assert!(t >= antes, "{c} centavos compra {t} < {antes}");
             antes = t;
         }
+    }
+
+    #[test]
+    fn toda_oferta_da_ao_menos_400_tp_e_o_tp_do_preco() {
+        // Every Play product an offer can use, and some prices beyond.
+        for c in [99, 199, 499, 999, 1500, 2490, 4990, 9990, 19_990] {
+            let t = tp_base_da_oferta(c);
+            assert!(t >= TP_MINIMO_OFERTA, "{c}: {t}");
+            assert!(t >= tp_do_preco(c), "{c}: {t} < {}", tp_do_preco(c));
+            // A row written lower is lifted; a row written higher stays.
+            assert_eq!(tp_da_oferta(c, 0), t);
+            assert_eq!(tp_da_oferta(c, t + 77), t + 77);
+        }
+        assert_eq!(tp_base_da_oferta(99), 400, "0.99 gives the minimum");
+        assert_eq!(tp_base_da_oferta(19_990), 5202, "big money buys what the shop sells");
+        for p in PACOTES_BONUS {
+            assert!(p.tp() >= TP_MINIMO_OFERTA, "{}", p.id);
+            assert!(p.tp() >= tp_do_preco(p.preco_centavos), "{}", p.id);
+            assert_eq!(p.tp(), tp_da_oferta(p.preco_centavos, p.tp()), "{}", p.id);
+        }
+    }
+
+    #[test]
+    fn o_valor_e_o_da_loja_de_tp_e_nunca_inventado() {
+        // TP alone at the best pack's rate (2,600 TP for 99.90).
+        assert_eq!(centavos_do_tp(2600), 9990);
+        assert_eq!(centavos_do_tp(400), 1536);
+        assert_eq!(valor_em_tp(400, 0, 0, &[]), 400);
+        // Gold by the Sack of Gold (10,000 for 50 TP).
+        assert_eq!(valor_em_tp(0, 10_000, 0, &[]), 50);
+        // An item the shop doesn't sell is worth nothing here.
+        assert_eq!(valor_em_tp(0, 0, 0, &[(item_id::GOLD, 5)]), 0);
+        let p = &PACOTES_BONUS[0];
+        let v = valor_em_tp(p.tp(), p.ouro, p.energia, p.itens);
+        assert!(v > p.tp() && v < 2 * p.tp() + 1000, "starter pack worth {v} TP");
+        assert!(valor_em_centavos(p.tp(), p.ouro, p.energia, p.itens) > p.preco_centavos as u64 * 10);
     }
 
     #[test]

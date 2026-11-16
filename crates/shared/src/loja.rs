@@ -767,8 +767,9 @@ pub struct OfertaRelampago {
     pub preco_centavos: u32,
     /// "Worth" price shown crossed out, if any.
     pub valor_de_centavos: Option<u32>,
-    /// TP credited. Owner: only the first, cheap offer gives a real amount;
-    /// the bigger ones are ITEMS (craft, darksteel, energy, summons).
+    /// TP credited: at least what the price buys in the TP shop, never under
+    /// 400 (`pacotes_bonus::tp_da_oferta`, owner 15/11/2026), on top of the
+    /// bonus below. The server already applied the rule.
     pub tp: u32,
     /// Energy added to the skill-progress balance.
     pub energia: u64,

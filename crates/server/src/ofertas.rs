@@ -121,52 +121,14 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
         .bind(p.gatilho.map(|g| g.chave()))
         .bind(p.ouro as i64)
         .bind(p.pecas.chave())
-        .bind(format!("pacote bonus: {} TP do preco + {} TP de bonus", shared::pacotes_bonus::tp_do_preco(p.preco_centavos), p.tp_bonus))
+        .bind(format!("pacote bonus: {} TP do preco (min 400) + {} TP de bonus", shared::pacotes_bonus::tp_base_da_oferta(p.preco_centavos), p.tp_bonus))
         .execute(central)
         .await?;
     }
     // Starting catalogue. ON CONFLICT DO NOTHING: once the row exists the
     // database is the truth — a deploy never overwrites what the owner edited.
-    // Item ids: 363 pet summon scroll, 361 mount summon scroll, 360 craft key
-    // summon scroll, 345 darksteel.
-    for (id, titulo, titulo_pt, nivel, produto, preco, valor_de, tp, energia, itens) in [
-        (
-            "nivel_5",
-            "Beginner's Flash Offer",
-            "Oferta Relâmpago de Iniciante",
-            5,
-            "oferta_099",
-            99,
-            Some(990),
-            400,
-            0i64,
-            r#"[{"item_id":363,"qtd":1},{"item_id":361,"qtd":1}]"#,
-        ),
-        (
-            "nivel_15",
-            "Adventurer's Flash Offer",
-            "Oferta Relâmpago de Aventureiro",
-            15,
-            "oferta_499",
-            499,
-            Some(2990),
-            0,
-            6_000,
-            r#"[{"item_id":363,"qtd":1},{"item_id":361,"qtd":1},{"item_id":360,"qtd":2},{"item_id":345,"qtd":2000}]"#,
-        ),
-        (
-            "nivel_25",
-            "Champion's Flash Offer",
-            "Oferta Relâmpago de Campeão",
-            25,
-            "oferta_1500",
-            1500,
-            Some(8990),
-            0,
-            24_000,
-            r#"[{"item_id":363,"qtd":2},{"item_id":361,"qtd":2},{"item_id":360,"qtd":5},{"item_id":345,"qtd":6000}]"#,
-        ),
-    ] {
+    for &(id, titulo, titulo_pt, nivel, produto, preco, valor_de, energia, itens) in OFERTAS_DE_NIVEL {
+        let tp = shared::pacotes_bonus::tp_base_da_oferta(preco as u32) as i32;
         sqlx::query(
             "INSERT INTO ofertas_relampago
                (id, titulo, titulo_pt, nivel, produto_play, preco_centavos, valor_de_centavos, tp, energia, itens)
@@ -186,7 +148,73 @@ pub async fn criar_tabelas(central: &PgPool) -> Result<()> {
         .execute(central)
         .await?;
     }
+    // EVERY offer gives at least the TP its price buys, never under 400
+    // (`pacotes_bonus::tp_base_da_oferta`, owner 15/11/2026). Rows seeded
+    // before the rule (or edited by hand) are lifted to it; a row above it
+    // keeps its own number. Listing and crediting apply the same floor.
+    let linhas: Vec<(String, i32, i32)> = sqlx::query_as("SELECT id, preco_centavos, tp FROM ofertas_relampago")
+        .fetch_all(central)
+        .await?;
+    for (id, preco, tp) in linhas {
+        let piso = shared::pacotes_bonus::tp_base_da_oferta(preco.max(0) as u32).min(i32::MAX as u64) as i32;
+        if tp < piso {
+            sqlx::query("UPDATE ofertas_relampago SET tp = $2 WHERE id = $1 AND tp < $2")
+                .bind(&id)
+                .bind(piso)
+                .execute(central)
+                .await?;
+            tracing::info!("ofertas: {id} sobe de {tp} pra {piso} TP (regra: TP do preco, minimo 400)");
+        }
+    }
     Ok(())
+}
+
+/// The starting LEVEL offers: (id, title, title pt, level, Play product,
+/// price, crossed-out price, Energy, items). Their TP is THE RULE
+/// (`pacotes_bonus::tp_base_da_oferta`), not a column here. Item ids: 363 pet
+/// summon scroll, 361 mount summon scroll, 360 craft key summon scroll, 345
+/// darksteel.
+#[allow(clippy::type_complexity)]
+const OFERTAS_DE_NIVEL: &[(&str, &str, &str, i32, &str, i32, Option<i32>, i64, &str)] = &[
+    (
+        "nivel_5",
+        "Beginner's Flash Offer",
+        "Oferta Relâmpago de Iniciante",
+        5,
+        "oferta_099",
+        99,
+        Some(990),
+        0,
+        r#"[{"item_id":363,"qtd":1},{"item_id":361,"qtd":1}]"#,
+    ),
+    (
+        "nivel_15",
+        "Adventurer's Flash Offer",
+        "Oferta Relâmpago de Aventureiro",
+        15,
+        "oferta_499",
+        499,
+        Some(2990),
+        6_000,
+        r#"[{"item_id":363,"qtd":1},{"item_id":361,"qtd":1},{"item_id":360,"qtd":2},{"item_id":345,"qtd":2000}]"#,
+    ),
+    (
+        "nivel_25",
+        "Champion's Flash Offer",
+        "Oferta Relâmpago de Campeão",
+        25,
+        "oferta_1500",
+        1500,
+        Some(8990),
+        24_000,
+        r#"[{"item_id":363,"qtd":2},{"item_id":361,"qtd":2},{"item_id":360,"qtd":5},{"item_id":345,"qtd":6000}]"#,
+    ),
+];
+
+/// The TP a row gives, as shown and as credited: the rule's floor applies
+/// even to a row edited below it after startup.
+fn tp_da_linha(preco: i32, tp: i32) -> u64 {
+    shared::pacotes_bonus::tp_da_oferta(preco.max(0) as u32, tp.max(0) as u64)
 }
 
 #[derive(Deserialize)]
@@ -300,7 +328,7 @@ pub async fn listar(central: &PgPool, conta: &str, nova: Option<&str>) -> Result
                 produto_play: r.get(3),
                 preco_centavos: r.get::<i32, _>(4).max(0) as u32,
                 valor_de_centavos: r.get::<Option<i32>, _>(5).map(|v| v.max(0) as u32),
-                tp: r.get::<i32, _>(6).max(0) as u32,
+                tp: tp_da_linha(r.get::<i32, _>(4), r.get::<i32, _>(6)).min(u32::MAX as u64) as u32,
                 energia: r.get::<i64, _>(7).max(0) as u64,
                 segundos: r.get::<i64, _>(9).clamp(0, u32::MAX as i64) as u32,
                 ouro: r.get::<i64, _>(10).max(0) as u64,
@@ -587,7 +615,8 @@ async fn creditar(
         return Ok(Compra::Recusada("This offer is not available.".into()));
     };
     let preco: i32 = o.get(0);
-    let tp = o.get::<i32, _>(1).max(0) as u64;
+    // The same TP the card showed: the row's, never under the rule.
+    let tp = tp_da_linha(preco, o.get::<i32, _>(1));
     let energia = o.get::<i64, _>(2).max(0) as u64;
     let itens = itens_de(&o.get::<String, _>(3), oferta);
     let titulo: String = o.get(4);
@@ -665,6 +694,9 @@ async fn creditar(
             .execute(&mut *tx)
             .await?;
     }
+    // The TP goes in exactly like a TP-pack purchase (`loja::confirmar_pagamento`):
+    // `razao::mover` with the order's key `loja:<pedido>`, so a re-sent
+    // order can never credit twice. Same path for Google Play and simulated.
     let saldo = if tp > 0 {
         match razao::mover(&mut tx, conta, tp as i64, "loja:oferta", Some(&format!("loja:{pedido}"))).await? {
             razao::Movimento::Feito { saldo }
@@ -744,6 +776,28 @@ mod testes {
             vec![(345, 2000)]
         );
         assert!(itens_de("not json", "x").is_empty());
+    }
+
+    /// Every offer the server seeds — level offers and bonus packs — gives
+    /// at least 400 TP and at least what its price buys in the TP shop, and
+    /// a row written under the rule is lifted when listed or credited.
+    #[test]
+    fn toda_oferta_semeada_da_o_tp_da_regra() {
+        use shared::pacotes_bonus as pb;
+        for &(id, _, _, _, produto, preco, _, _, itens) in OFERTAS_DE_NIVEL {
+            let tp = pb::tp_base_da_oferta(preco as u32);
+            assert!(tp >= pb::TP_MINIMO_OFERTA, "{id}");
+            assert!(tp >= pb::tp_do_preco(preco as u32), "{id}");
+            assert_eq!(produto, format!("oferta_{preco:03}"), "{id}");
+            assert!(!itens_de(itens, id).is_empty(), "{id}: bonus on top of the TP");
+        }
+        for p in pb::PACOTES_BONUS {
+            assert!(p.tp() >= pb::TP_MINIMO_OFERTA && p.tp() >= pb::tp_do_preco(p.preco_centavos), "{}", p.id);
+        }
+        assert_eq!(tp_da_linha(499, 0), 400, "a 0 TP row is lifted");
+        assert_eq!(tp_da_linha(99, 101), 400);
+        assert_eq!(tp_da_linha(99, 900), 900, "a row above the rule keeps its TP");
+        assert_eq!(tp_da_linha(-5, -5), 400);
     }
 
     #[test]

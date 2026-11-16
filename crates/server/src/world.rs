@@ -4436,7 +4436,12 @@ impl GameWorld {
             tag.level = nivel as u32;
             // XP acompanha o nivel: caçar zona mais dura tem que render mais
             // que ficar no quintal da cidade.
-            tag.xp_reward = xp_do_mob(tag.xp_reward, nivel as u32);
+            // ...and with the species' HEALTH: a tank pays for the extra
+            // hits (`progressao::fator_de_vida`).
+            tag.xp_reward = xp_do_mob(
+                shared::progressao::xp_pela_vida(health.max, tag.xp_reward),
+                nivel as u32,
+            );
             tag.nivel_da_faixa = nivel as u32;
             tag.detect_range = deteccao_do_nivel(tag.detect_range, nivel as u32);
             let (hp, dano) = vida_e_dano_do_mob(health.max, tag.stats.attack_damage, nivel as u32);

@@ -266,6 +266,33 @@ pub fn fator_do_mob(nivel: u32) -> f32 {
     FATOR_DO_MOB[(nivel as usize).min(FATOR_DO_MOB.len() - 1)]
 }
 
+/// XP per point of table health of the "fair" species: the fragile ones
+/// (archers 60/105, tigers 55/95, gunmen 50/85) pay about this.
+pub const XP_POR_VIDA_JUSTO: f32 = 0.58;
+/// The HP top-up never pays more than this times the table XP.
+pub const TETO_DO_FATOR_DE_VIDA: f32 = 3.0;
+
+/// TANKY SPECIES PAY FOR THEIR HEALTH (owner, 15/11/2026: "a xp do mob tem q
+/// aumentar conforme o hp dele tbm, tem bicho no mesmo lvl que tem muito hp
+/// e e' dificil de matar"). The table paid the tanks less than half per point
+/// of health (wolf 30/120, bear 75/280, owlbear 110/460, scarab 55/260 =
+/// 0.21-0.27) than the fragile ones (~0.58). This factor lifts a species'
+/// XP until it pays `XP_POR_VIDA_JUSTO` per table HP, capped at
+/// `TETO_DO_FATOR_DE_VIDA`; a species already paying that keeps 1.0. It
+/// never lowers anyone.
+pub fn fator_de_vida(hp_tabela: i32, xp_tabela: u64) -> f32 {
+    if hp_tabela <= 0 {
+        return 1.0;
+    }
+    let paga = xp_tabela.max(1) as f32 / hp_tabela as f32;
+    (XP_POR_VIDA_JUSTO / paga).clamp(1.0, TETO_DO_FATOR_DE_VIDA)
+}
+
+/// Table XP with the health top-up (`fator_de_vida`), before the level.
+pub fn xp_pela_vida(hp_tabela: i32, xp_tabela: u64) -> u64 {
+    (xp_tabela as f32 * fator_de_vida(hp_tabela, xp_tabela)).round() as u64
+}
+
 /// XP of a kill of a species whose table XP is `base`, at `nivel`.
 pub fn xp_do_abate(base: u64, nivel: u32) -> u64 {
     ((base as f32 * fator_do_mob(nivel)).round() as u64).max(1)
@@ -393,6 +420,26 @@ fn da_historia() -> &'static HashMap<u16, u64> {
         fecha(&mut trecho, desde, TETO, &mut m);
         m
     })
+}
+
+#[cfg(test)]
+mod testes_do_fator_de_vida {
+    use super::*;
+
+    #[test]
+    fn tanque_paga_a_vida_fragil_fica_igual_e_nunca_cai() {
+        // Archer 60 XP / 105 HP already pays the fair rate: unchanged.
+        assert_eq!(xp_pela_vida(105, 60), 61);
+        // Wolf 30/120 -> 70 (0.58 x 120); bear 75/280 -> 162; owlbear 110/460 -> 267.
+        assert_eq!(xp_pela_vida(120, 30), 70);
+        assert_eq!(xp_pela_vida(280, 75), 162);
+        assert_eq!(xp_pela_vida(460, 110), 267);
+        // The cap: a 1 XP brute with huge HP gets at most 3x.
+        assert_eq!(xp_pela_vida(10_000, 10), 30);
+        // A generous species is never lowered.
+        assert_eq!(xp_pela_vida(50, 100), 100);
+        assert_eq!(fator_de_vida(0, 10), 1.0);
+    }
 }
 
 #[cfg(test)]

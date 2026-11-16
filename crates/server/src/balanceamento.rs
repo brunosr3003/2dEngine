@@ -3285,7 +3285,10 @@ mod tempo_de_nivel {
         // Average XP of the zone's slots at their own level (the server's
         // `xp_do_mob`): the kills cycle through the slots.
         for m in &mobs {
-            xp_total += crate::world::xp_do_mob(m.def.xp as u64, m.nivel) as f64;
+            xp_total += crate::world::xp_do_mob(
+                shared::progressao::xp_pela_vida(m.def.hp, m.def.xp as u64),
+                m.nivel,
+            ) as f64;
         }
         let xp_medio = (xp_total / mobs.len() as f64) as f32;
         // AUTO switched on at the zone's edge, as the ladder guard arrives.

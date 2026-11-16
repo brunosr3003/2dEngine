@@ -60,6 +60,17 @@ pub const LINHAS: &[Linha] = &[
     Linha { bases: &crate::combinar::MATERIAIS, cores: Some((1, 3)), limite_dia: 500 },
 ];
 
+/// Units of each DUNGEON (Porão) key one character may buy per game day
+/// (owner, 15/11/2026: "tem que vender chave de dungeon por gold no NPC prime
+/// também"). The key is the dungeon's toll, so the limit stays low: the
+/// chest a key opens is still earned inside.
+pub const LIMITE_CHAVE_DE_PORAO: u32 = 3;
+
+/// Every Porão key, in the catalogue's order of contents.
+pub fn chaves_de_porao() -> Vec<u16> {
+    crate::dungeon::CONTEUDOS.iter().filter_map(crate::porao::chave_de).collect()
+}
+
 /// One sellable item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ItemPrime {
@@ -89,6 +100,9 @@ pub fn catalogo() -> Vec<ItemPrime> {
                 }
             }
         }
+    }
+    for id in chaves_de_porao() {
+        v.push(ItemPrime { item_id: id, limite_dia: LIMITE_CHAVE_DE_PORAO });
     }
     v
 }
@@ -317,6 +331,22 @@ pub enum AvisoPrime {
 }
 
 #[cfg(test)]
+mod testes_das_chaves_de_porao {
+    use super::*;
+
+    #[test]
+    fn o_prime_vende_toda_chave_de_porao_com_limite() {
+        let chaves = chaves_de_porao();
+        assert!(!chaves.is_empty());
+        for id in chaves {
+            let it = item(id).expect("Porão key missing from the Prime");
+            assert_eq!(it.limite_dia, LIMITE_CHAVE_DE_PORAO);
+            assert!(crate::porao::porao_da_chave(id).is_some());
+        }
+    }
+}
+
+#[cfg(test)]
 mod testes {
     use super::*;
 
@@ -342,7 +372,7 @@ mod testes {
         assert!(ids.contains(&item_id::XP_POTION));
         assert!(ids.contains(&item_id::DARKSTEEL));
         assert!(ids.contains(&item_id::ENERGIA_MIL));
-        assert_eq!(c.len(), 3 + 4 * 4 + 8 * 3);
+        assert_eq!(c.len(), 3 + 4 * 4 + 8 * 3 + chaves_de_porao().len());
         for &k in &item_id::CHAVES {
             for cor in 1..=4 {
                 assert_eq!(item(item_id::chave_na_cor(k, cor)).unwrap().limite_dia, 3);

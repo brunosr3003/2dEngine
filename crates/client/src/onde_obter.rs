@@ -73,6 +73,8 @@ pub struct Onde<'a> {
     pub vinculado: bool,
     /// Indice da ilha atual em `terreno::ARQUIPELAGO` (`None` fora de ilha).
     pub ilha_atual: Option<u8>,
+    /// The town square's Prime Merchant: (name, position).
+    pub prime: Option<(String, Vec2)>,
 }
 
 /// Indice da ilha de `zona` em `ARQUIPELAGO`.
@@ -382,6 +384,22 @@ fn opcao(f: &FonteDeItem, c: &Onde) -> Opcao {
             o.detalhe = "More with the content's level and the chest's color".into();
             o.ordem = (2, 0);
             o.ir = Some(Ir::AbrirDungeons);
+        }
+        FonteDeItem::Prime => {
+            o.titulo = "Buy: Prime Merchant".into();
+            o.detalhe = "Gold, market price + 15% · daily limit".into();
+            match &c.prime {
+                Some((n, pos)) => {
+                    o.ordem = (1, distancia(c.eu, *pos));
+                    o.ir = Some(Ir::Alvo(Alvo {
+                        objetivo: Objetivo::Npc,
+                        pos: *pos,
+                        raio: 0.0,
+                        rotulo: n.clone(),
+                    }));
+                }
+                None => o.sem_ir = Some("None on this island".into()),
+            }
         }
         FonteDeItem::Calendario { dias } => {
             o.titulo = "Attendance calendar".into();
@@ -699,7 +717,18 @@ mod tests {
             nivel: 5,
             vinculado,
             ilha_atual: Some(0),
+            prime: Some(("Prime Merchant".into(), Vec2::new(3.0, 4.0))),
         }
+    }
+
+    /// The Prime source walks to the Prime Merchant of the square.
+    #[test]
+    fn prime_vai_ao_mercador() {
+        let i = InfoDaIlha::default();
+        let c = onde(&i, &[], false);
+        let v = opcoes(1, &[FonteDeItem::Prime], &c);
+        assert_eq!(v[0].titulo, "Buy: Prime Merchant");
+        assert_eq!(alvo(&v[0]).pos, Vec2::new(3.0, 4.0));
     }
 
     fn alvo(o: &Opcao) -> &Alvo {
@@ -886,6 +915,7 @@ mod tests {
             nivel: 1,
             vinculado: true,
             ilha_atual: None,
+            prime: None,
         };
         let v = opcoes(1, &[mob(0, "Wolf", 0.1, vec![0])], &c);
         assert_eq!(

@@ -191,6 +191,22 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
             .and_modify(|v| *v = v.min(custo))
             .or_insert(custo);
     }
+    // THE PORÃO KEYS (15/11/2026, so the Prime can sell them): at most what
+    // the Craft recipe costs, its wood and its material at their prices.
+    // Few keys exist at once (each run eats one), so the stock price is
+    // usually missing; the recipe fills it.
+    for c in crate::dungeon::CONTEUDOS {
+        let (Some(chave), Some(r)) = (crate::porao::chave_de(c), crate::porao::receita_de(c)) else {
+            continue;
+        };
+        let (Some(&madeira), Some(&material)) = (p.get(&r.madeira), p.get(&r.material)) else {
+            continue;
+        };
+        let custo = madeira * r.madeira_qtd as f64 + material * r.material_qtd as f64;
+        if custo > 0.0 {
+            p.entry(chave).and_modify(|v| *v = v.min(custo)).or_insert(custo);
+        }
+    }
     // GEAR: the value is the Common I piece; the instance adds the ladder.
     if let Some(&cobre) = p.get(&item_id::COPPER) {
         for (&id, &em_cobre) in &e.base_em_cobre {
@@ -347,6 +363,20 @@ mod testes {
     }
 
     /// A pet is worth its kind plus the books it learned.
+    /// A Porão key nobody holds still gets a price: its Craft recipe.
+    #[test]
+    fn chave_de_porao_custa_a_receita() {
+        let c = crate::dungeon::CONTEUDOS
+            .iter()
+            .find(|c| crate::porao::chave_de(c).is_some())
+            .unwrap();
+        let r = crate::porao::receita_de(c).unwrap();
+        let t = calcular(&estoque(1_000_000, &[(r.madeira, 1_000), (r.material, 10_000)])).mapa();
+        let esperado = 1_000.0 * r.madeira_qtd as f64 + 100.0 * r.material_qtd as f64;
+        let chave = crate::porao::chave_de(c).unwrap();
+        assert!((t[&chave] - esperado).abs() < 1e-6, "{} vs {esperado}", t[&chave]);
+    }
+
     #[test]
     fn pet_leva_as_skills() {
         let pet = item_id::pet_no_grau(item_id::PETS[0], 1);

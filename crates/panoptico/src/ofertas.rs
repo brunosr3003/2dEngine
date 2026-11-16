@@ -299,7 +299,10 @@ pub fn validar(p: &Pedido) -> Result<Campanha, String> {
         produto: produto.to_string(),
         preco_centavos: preco as i32,
         valor_de_centavos: valor_de,
-        tp: p.tp as i32,
+        // Every flash offer gives at least the TP its price buys, never under
+        // 400 (the game server applies the same floor when it lists and
+        // credits); a higher TP typed here stays.
+        tp: shared::pacotes_bonus::tp_da_oferta(preco, p.tp as u64).min(TP_MAX as u64) as i32,
         energia: p.energia,
         itens,
         horas: p.horas as i32,
@@ -445,6 +448,7 @@ mod testes {
         assert_eq!(c.valor_de_centavos, Some(2990));
         assert_eq!(c.itens, vec![(363, 2), (345, 2000)], "repetido soma numa linha");
         assert_eq!(c.horas, 24);
+        assert_eq!(c.tp, 400, "0 TP typed: the rule's 400");
     }
 
     /// The JSON written is read back by the game server's own shape.

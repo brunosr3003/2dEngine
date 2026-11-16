@@ -824,6 +824,10 @@ pub fn fontes_de_itens(
     for id in shared::dungeon::itens_do_bau() {
         junta(&mut por_item, cfg, id, FonteDeItem::Bau);
     }
+    // The Prime Merchant (every town square): what it sells, for gold.
+    for i in shared::prime::catalogo() {
+        junta(&mut por_item, cfg, i.item_id, FonteDeItem::Prime);
+    }
     // Calendario de presenca (docs/CALENDARIO.md): os dias em que o item sai.
     for (id, dias) in shared::presenca::itens_com_dias(shared::presenca::EVENTOS) {
         junta(&mut por_item, cfg, id, FonteDeItem::Calendario { dias });

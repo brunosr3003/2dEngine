@@ -640,7 +640,13 @@ pub const PASSOS: &[QuestDef] = &[
     ter(834, "Wood for the cellar key", "The cellar hatch is barred with a Morganeer lock, and only a key cut for it will turn. The key is made in Craft from wood and grey Steel. Have 78 Wood T1 in your bag: fell the trees at the edge of town, where no beast roams. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T1, 78, 80, 2_000),
     ter(835, "Steel for the cellar key", "Now the metal: have 42 grey Steel in your bag. Break stones in any vein — Steel comes out of the stone. If you already carry it, the step passes at once. The step pays it back when it closes.", CINZA, 42, 80, 2_000),
     criar_chave(PASSO_DA_CHAVE_DO_PORAO, "The Shipwreck Cellar Key", "You have the wood and the Steel. Open Menu › Craft and create the Shipwreck Cellar Key. It opens the hatch of the wreck, and the door keeps it: one key, one run.", CHAVE_DO_NAUFRAGIO, 100, 3_000),
-    dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5),
+    // 15/11/2026 (owner: "tem que dar uns summons de key de graça na
+    // quest de história"): 3 Key Summon scrolls per island's dungeon step.
+    QuestDef {
+        reward_item2: item_id::PERGAMINHO_INVOCA_CHAVE,
+        reward_item2_qty: 3,
+        ..dungeon(710, "The shipwreck cellar", "Do mirante você viu o casco. Os Morganeers fizeram do porão um esconderijo, e quem manda lá dentro carrega chave no bolso — chefe de dungeon larga chave bem mais que chefe de campo. Com a chave do porão na bolsa, toque no passo (ou em Dungeons, no Menu), use \"Ir para o portal\" e limpe o Porão do Naufrágio. Sozinho dá.", 1, 300, 19_000, item_id::GREATER_HEAL, 5)
+    },
     refinar(711, "Fire in the forge", "A weak piece won't survive the storm. Try refining a piece at the Forge.", 1, 150, 20_000),
     cacar(712, "Morgan's gunmen", "Pistoleiros dos Morganeers rondam a mata atrás das pedras do farol. Derrote 6 deles.", alvo_de_mob(mob_kind::PISTOLEIRO), 6, 200, 30_000, item_id::GREATER_HEAL),
     QuestDef {
@@ -658,7 +664,13 @@ pub const PASSOS: &[QuestDef] = &[
     // 8_500 de cobre e 205_500 de XP desde 15/11/2026: os 8_000 de cobre e
     // os 108_000 de XP dos passos da ilha (718, 799-802) vieram pra ca', e as
     // 4 pocoes tambem (5 + 4 = 9).
-    dungeon(717, "The smuggler's cellar", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 8_500, 205_500, item_id::GREATER_HEAL, 9),
+    // 15/11/2026 (owner: "tem que dar uns summons de key de graça na
+    // quest de história"): 3 Key Summon scrolls per island's dungeon step.
+    QuestDef {
+        reward_item2: item_id::PERGAMINHO_INVOCA_CHAVE,
+        reward_item2_qty: 3,
+        ..dungeon(717, "The smuggler's cellar", "Antes de zarpar, o Capitão quer o porto limpo: os contrabandistas de Morgan guardam pedra do farol numa adega sob o cais. Toque no passo (ou em Dungeons, no Menu) e limpe a Adega do Contrabandista.", 2, 8_500, 205_500, item_id::GREATER_HEAL, 9)
+    },
     // 15/11/2026: aqui ficavam a escritura da ilha (718) e o tutorial da
     // propria ilha (799-802). A Minha Ilha saiu do jogo e os cinco passos
     // sairam junto (`PASSOS_REMOVIDOS`, que move quem estava neles pra trava
@@ -709,7 +721,13 @@ pub const PASSOS: &[QuestDef] = &[
     cacar(754, "Sentinels of the Plateau", "Archers watch the cliffs. Defeat 12.", alvo_de_mob(mob_kind::ARQUEIRO), 12, 1_400, 18_000, item_id::GREATER_HEAL),
     coletar(755, "Skystone", "The Plateau's stones hold the strongest thunder. Break 30.", 30, 1_400, 19_000, AZUL, 4),
     falar(756, "The last rune", "The Appraiser reads the rune carved into the skystone.", Papel::Identificador, 1_200, 18_000, item_id::GREATER_MANA, 4),
-    dungeon(856, "O sino dos ventos", "Recupere a runa do Mosteiro dos Ventos. Abra Dungeons e vença o Mosteiro; reúna um grupo se precisar.", 13, 2_000, 240_000, item_id::GREATER_HEAL, 8),
+    // 15/11/2026 (owner: "tem que dar uns summons de key de graça na
+    // quest de história"): 3 Key Summon scrolls per island's dungeon step.
+    QuestDef {
+        reward_item2: item_id::PERGAMINHO_INVOCA_CHAVE,
+        reward_item2_qty: 3,
+        ..dungeon(856, "O sino dos ventos", "Recupere a runa do Mosteiro dos Ventos. Abra Dungeons e vença o Mosteiro; reúna um grupo se precisar.", 13, 2_000, 240_000, item_id::GREATER_HEAL, 8)
+    },
     nivel(757, "Reach level 75", 45),
     ir(758, "O vale carregado", "Explore o Vale do Trovão. A tempestade carrega seus cristais por dez minutos a cada meia hora, alternando com a Forja Partida. O mapa marca o campo ativo.", crate::planalto::PONTO_BASE + 2, 1_800, 24_000),
     cacar(759, "Morgan's fleet", "The Morganeers' entire fleet has landed. Defeat 50 enemies.", 0, 50, 2_200, 30_000, item_id::GREATER_HEAL),
@@ -723,7 +741,13 @@ pub const PASSOS: &[QuestDef] = &[
     ter(923, "Wood for the vault key", "The Thunder Vault is a locked door, like every Porão. Its key asks for 402 Wood T3: fell trees along the first stretch of the Plateau's road. If you already carry it, the step passes at once. The step pays it back when it closes.", item_id::WOOD_T3, 402, 1_000, 30_000),
     ter(924, "Steel for the vault key", "Now the metal: have 311 blue Steel in your bag. Blue comes out of blue and purple stones. If you already carry it, the step passes at once. The step pays it back when it closes.", AZUL, 311, 1_000, 30_000),
     criar_chave(925, "The Thunder Vault Key", "Open Menu › Craft and create the Thunder Vault Key. The vault keeps it: one key, one run.", CHAVE_DO_COFRE, 1_200, 40_000),
-    dungeon(890, "The sealed vault", "Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", 5, 3_000, 300_000, item_id::GREATER_HEAL, 8),
+    // 15/11/2026 (owner: "tem que dar uns summons de key de graça na
+    // quest de história"): 3 Key Summon scrolls per island's dungeon step.
+    QuestDef {
+        reward_item2: item_id::PERGAMINHO_INVOCA_CHAVE,
+        reward_item2_qty: 3,
+        ..dungeon(890, "The sealed vault", "Lightning sealed a vault under the Plateau. Clear the Thunder Vault from the Dungeons panel.", 5, 3_000, 300_000, item_id::GREATER_HEAL, 8)
+    },
     falar(763, "A toast to the lighthouses", "Three lighthouses shine again. The Innkeeper is pouring.", Papel::Taberna, 1_800, 26_000, item_id::GREATER_HEAL, 4),
     ir(764, "The eye on the horizon", "From the end of the quay you can see the eye of the storm turning. Go there.", ponto::CAIS, 2_000, 30_000),
     cacar_com(891, "The Primeval Owlbear", "The oldest owlbear of the Plateau nests in the Vale of Thunder. Defeat it — the map marks where. Bosses are fought in a party, and everyone nearby counts.", alvo_de_mob(17), 1, 3_000, 260_000, item_id::GREATER_HEAL, 6, 0, 0),
