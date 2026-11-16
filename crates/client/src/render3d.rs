@@ -1801,6 +1801,15 @@ pub fn draw_entities_com_sombras(
             draw_ring(p, 0.55, Color::from_rgba(241, 200, 112, 255));
         }
 
+        // AT SEA EVERY PLAYER IS A HULL (docs/NAVEGACAO.md): there is no
+        // boat entity — navigating is walking on water — so what changes is
+        // only what is drawn. The body gives way to the hull, on the same
+        // heading.
+        if crate::mar_ui::no_mar() && e.meta.tag == shared::EntityTag::Player {
+            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64);
+            continue;
+        }
+
         let boss = e.state.flags & shared::ent_flags::BOSS != 0;
         // Chefe vivo: sombra larga e aura na cor do elemento.
         if boss && e.meta.tag == shared::EntityTag::Enemy && e.morte.is_none() {

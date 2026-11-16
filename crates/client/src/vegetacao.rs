@@ -904,6 +904,51 @@ pub fn minerio(tier: u8, variante: u32) -> Modelo {
     malha(&v)
 }
 
+/// FLOATING WRECKAGE of the open sea (`shared::mar::destroco_da_coluna`):
+/// a raft of planks, and on it a crate with crystals of the Steel colour
+/// (`tier` 1..4), or a heap of logs (`tier` 0). Built at the waterline: the
+/// caller puts its foot on the sea level.
+pub fn destroco(tier: u8, variante: u32) -> Modelo {
+    let mut r = Rng::nova(variante ^ (tier as u32) * 7919 ^ 0x5EA5);
+    let raio = 3;
+    let mut v = caixa_vazia(raio, 9);
+    // The raft: planks along x, a gap here and there.
+    for ix in -raio..=raio {
+        for iz in -raio..=raio {
+            if iz % 2 != 0 && r.proximo() % 5 == 0 {
+                continue;
+            }
+            v.poe(ix, 0, iz, if iz % 2 == 0 { Material::Tronco } else { Material::Terra });
+        }
+    }
+    if tier == 0 {
+        // Logs: two stacked across the raft.
+        for (iy, iz) in [(1, -1), (1, 1), (2, 0)] {
+            for ix in -raio + 1..raio {
+                v.poe(ix, iy, iz, Material::Tronco);
+            }
+        }
+    } else {
+        // The crate, and the colour of what is inside showing at the lid.
+        for ix in -1..=1 {
+            for iz in -1..=1 {
+                for iy in 1..=3 {
+                    v.poe(ix, iy, iz, if (ix + iz + iy) % 2 == 0 { Material::Tronco } else { Material::Terra });
+                }
+            }
+        }
+        let cristal = shared::terreno::cristal_do_tier(tier);
+        for k in 0..(1 + tier as i32) {
+            let (ix, iz) = ([-1, 1, 0, -1, 1][k as usize % 5], [0, 1, -1, 1, -1][k as usize % 5]);
+            v.poe(ix, 4, iz, cristal);
+            if k % 2 == 0 {
+                v.poe(ix, 5, iz, cristal);
+            }
+        }
+    }
+    malha(&v)
+}
+
 fn toco(r: &mut Rng) -> Volume {
     let raio = r.i(2, 3);
     let h = r.i(2, 4);

@@ -47,13 +47,14 @@ const VERMELHO: Color = crate::hud_estilo::VERMELHO;
 
 /// Os slots em volta do retrato, como no MIR4: o que se empunha e se veste
 /// de um lado, os acessorios do outro (docs/COMBATE.md).
-const ESQUERDA: [(EquipSlot, &str); 6] = [
+const ESQUERDA: [(EquipSlot, &str); 7] = [
     (EquipSlot::Weapon, "Weapon"),
     (EquipSlot::Offhand, "Off-hand"),
     (EquipSlot::Armor, "Armour"),
     (EquipSlot::Pet, "Pet"),
     (EquipSlot::Montaria, "Mount"),
     (EquipSlot::AcessorioMontaria, "Mount acc."),
+    (EquipSlot::Navio, "Ship"),
 ];
 const DIREITA: [(EquipSlot, &str); 7] = [
     (EquipSlot::Earring, "Earring"),

@@ -469,6 +469,7 @@ mod tests {
             nivel_max: 10,
             estado,
             requisito: String::new(),
+            preco: 0,
         }
     }
 

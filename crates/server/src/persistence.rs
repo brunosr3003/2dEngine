@@ -91,6 +91,9 @@ pub struct CharacterRow {
     /// processo, entao a memoria de quem embarcou nao atravessa junto com
     /// ele. Vazio = volta pro Bosque.
     pub magica_volta: String,
+    /// THE SEA (docs/NAVEGACAO.md): the island this character sailed from;
+    /// the login falls back here if the sea is down. Empty = not at sea.
+    pub zona_volta: String,
     /// ILHA MAGICA (`shared::magica`): ate' quando a sessao dela vale (unix
     /// secs; 0 = nao esta' valendo).
     ///
@@ -596,6 +599,9 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     )
     .execute(pool)
     .await?;
+    sqlx::query("ALTER TABLE characters ADD COLUMN IF NOT EXISTS zona_volta TEXT NOT NULL DEFAULT ''")
+        .execute(pool)
+        .await?;
     sqlx::query(
         "ALTER TABLE characters ADD COLUMN IF NOT EXISTS magica_gratis BIGINT NOT NULL DEFAULT 0",
     )
@@ -1100,7 +1106,81 @@ async fn init_schema_travado(pool: &PgPool) -> Result<()> {
     migrar_viagem_montada(pool).await?;
     migrar_pergaminho_volta(pool).await?;
     migrar_bau_da_ilha(pool).await?;
+    migrar_chalupa_dos_antigos(pool).await?;
 
+    Ok(())
+}
+
+/// Should an existing character get the free Sloop? Past the story step
+/// that gives it (`historia::PASSO_DA_CHALUPA`) and with no ship anywhere.
+fn merece_chalupa(indice_da_historia: Option<u32>, tem_navio: bool) -> bool {
+    let Some(passo) = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA) else {
+        return false;
+    };
+    !tem_navio && indice_da_historia.is_some_and(|i| i > passo)
+}
+
+/// Posts the Sloop to the Mail unless a ship is already there. `true` =
+/// posted.
+fn postar_chalupa(dados: &mut shared::dungeon::DadosDungeon, agora: i64) -> bool {
+    if dados.correio.iter().any(|c| shared::item_id::e_navio(c.item_id)) {
+        return false;
+    }
+    let id = shared::item_id::NAVIO_CHALUPA;
+    dados.postar(id, 1, Some(shared::navio::instancia_nova(id)), shared::navio::MOTIVO_CORREIO_NAVIO, agora);
+    true
+}
+
+/// THE FREE SLOOP FOR OLD PLAYERS (docs/NAVEGACAO.md, owner 15/11/2026):
+/// the story step that leaves the first island now gives the first ship;
+/// whoever is already past it gets one in the Mail, ONCE (keyed in
+/// `migracoes_de_dados`), and only if they have no ship equipped, in the
+/// bag, in the bank or in the Mail.
+async fn migrar_chalupa_dos_antigos(pool: &PgPool) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let nova = sqlx::query("INSERT INTO migracoes_de_dados(nome) VALUES ('chalupa_dos_antigos_v1') ON CONFLICT DO NOTHING")
+        .execute(&mut *tx).await?.rows_affected() > 0;
+    if !nova {
+        tx.commit().await?;
+        return Ok(());
+    }
+    // A brand-new database has no quest table yet, and no old players.
+    let tem_quests: bool = sqlx::query_scalar("SELECT to_regclass('character_quests') IS NOT NULL")
+        .fetch_one(&mut *tx).await?;
+    if !tem_quests {
+        tx.commit().await?;
+        return Ok(());
+    }
+    let navios: Vec<i32> = (shared::item_id::NAVIO_CHALUPA..=shared::item_id::NAVIO_ULTIMO).map(|i| i as i32).collect();
+    let rows: Vec<(String, String, i32, bool)> = sqlx::query_as(
+        "SELECT c.name, c.dungeon_json, q.progress,                 EXISTS (SELECT 1 FROM equipment e WHERE e.character_name = c.name AND e.item_id = ANY($2))              OR EXISTS (SELECT 1 FROM inventory i WHERE i.character_name = c.name AND i.item_id = ANY($2))              OR EXISTS (SELECT 1 FROM vault v WHERE v.character_name = c.name AND v.item_id = ANY($2))          FROM characters c JOIN character_quests q ON q.char_name = c.name AND q.quest_id = $1          FOR UPDATE OF c",
+    )
+    .bind(shared::historia::ID_MARCO as i32)
+    .bind(&navios)
+    .fetch_all(&mut *tx)
+    .await?;
+    let agora = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let mut dados_ok = 0u32;
+    for (nome, dj, progresso, tem_navio) in rows {
+        if !merece_chalupa(Some(progresso.max(0) as u32), tem_navio) {
+            continue;
+        }
+        let mut dados: shared::dungeon::DadosDungeon =
+            if dj.is_empty() { Default::default() } else { serde_json::from_str(&dj)? };
+        if !postar_chalupa(&mut dados, agora) {
+            continue;
+        }
+        sqlx::query("UPDATE characters SET dungeon_json = $1 WHERE name = $2")
+            .bind(serde_json::to_string(&dados)?)
+            .bind(&nome)
+            .execute(&mut *tx)
+            .await?;
+        dados_ok += 1;
+    }
+    tx.commit().await?;
+    tracing::info!("chalupa dos antigos: {dados_ok} personagem(ns) receberam a Chalupa no correio");
     Ok(())
 }
 
@@ -2773,6 +2853,26 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
         },
         // REBIRTH ESSENCE (`shared::renascimento`): paid by every rebirth,
         // bound, the currency of the later Essence shop. No NPC price.
+        // THE SLOOP (docs/NAVEGACAO.md): the first ship, from the story.
+        // One per stack: the hull lives in the instance. Tradeable.
+        S {
+            id: item_id::NAVIO_CHALUPA as i32,
+            name: "Sloop",
+            sell: 200,
+            buy: None,
+            ord: None,
+            stack: 1,
+            slot: Some("navio"),
+            lvl: 1,
+            ic: -1,
+            ir: -1,
+            hp: (0, 0),
+            mp: (0, 0),
+            atk: (0, 0),
+            def: (0, 0),
+            dex: (0, 0),
+            wis: (0, 0),
+        },
         S {
             id: item_id::ESSENCIA_RENASCIMENTO as i32,
             name: "Rebirth Essence",
@@ -3349,6 +3449,17 @@ async fn seed_economy_if_needed(pool: &PgPool) -> Result<()> {
          WHERE id = $1",
     )
     .bind(item_id::MOEDA_MAGICA as i32)
+    .execute(pool)
+    .await?;
+
+    // 470 was the old boat (removed 21/09/2026) and may still sit in old
+    // databases, inactive, under its old name: the Sloop takes it over.
+    sqlx::query(
+        "UPDATE items SET name = 'Sloop', stack_max = 1, equip_slot = 'navio', active = TRUE, \
+                          buy_price = NULL, shop_order = NULL, item_level = 1 \
+         WHERE id = $1",
+    )
+    .bind(item_id::NAVIO_CHALUPA as i32)
     .execute(pool)
     .await?;
 
@@ -4306,6 +4417,8 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         .collect();
     let diarios: HashMap<String, String> =
         busca!((String, String), "name, diario_json").into_iter().collect();
+    let voltas: HashMap<String, String> =
+        busca!((String, String), "name, zona_volta").into_iter().collect();
     let renascimentos: HashMap<String, u32> = busca!((String, i32), "name, renascimentos")
         .into_iter()
         .map(|(n, r)| (n, r.max(0) as u32))
@@ -4391,6 +4504,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
         let (bolsa_extra, banco_extra) = armazem_map.get(&name).copied().unwrap_or_default();
         let diario_json = diarios.get(&name).cloned().unwrap_or_default();
         let renascimentos = renascimentos.get(&name).copied().unwrap_or(0);
+        let zona_volta = voltas.get(&name).cloned().unwrap_or_default();
         // As stored; `CharacterRow::arvore_valida` checks it against the
         // budget when it is used (the boot load runs before the XP
         // multiplier is read, so the shown level is not known here yet).
@@ -4430,6 +4544,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
                 xp_bonus_ate,
                 magica_ate,
                 magica_volta,
+                zona_volta,
                 magica_gratis,
                 fortuna_ate,
                 sorte_ate,
@@ -4948,6 +5063,9 @@ async fn write_batch(pool: &PgPool, batch: &SaveBatch) -> Result<()> {
         sqlx::query("UPDATE characters SET diario_json = $2 WHERE name = $1")
             .bind(&row.name).bind(&row.diario_json)
             .execute(&mut *tx).await?;
+        sqlx::query("UPDATE characters SET zona_volta = $2 WHERE name = $1")
+            .bind(&row.name).bind(&row.zona_volta)
+            .execute(&mut *tx).await?;
         sqlx::query("UPDATE characters SET renascimentos = $2 WHERE name = $1")
             .bind(&row.name).bind(row.renascimentos.min(i32::MAX as u32) as i32)
             .execute(&mut *tx).await?;
@@ -5118,6 +5236,80 @@ mod testes_da_faxina_de_slots {
                 "'{morto}' nao e' slot do jogo e nao devia estar na lista"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod testes_chalupa_dos_antigos {
+    use super::*;
+
+    /// Only past the step, only without a ship.
+    #[test]
+    fn so_quem_passou_do_passo_e_nao_tem_navio() {
+        let p = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA).unwrap();
+        assert!(!merece_chalupa(None, false));
+        assert!(!merece_chalupa(Some(p), false), "on the step: the step itself gives it");
+        assert!(merece_chalupa(Some(p + 1), false));
+        assert!(!merece_chalupa(Some(p + 1), true), "already has one");
+    }
+
+    /// The Mail gets exactly one, and a second run gives none.
+    #[test]
+    fn o_correio_recebe_uma_so() {
+        let mut d = shared::dungeon::DadosDungeon::default();
+        assert!(postar_chalupa(&mut d, 1));
+        assert!(!postar_chalupa(&mut d, 2));
+        let navios: Vec<_> = d.correio.iter().filter(|c| shared::item_id::e_navio(c.item_id)).collect();
+        assert_eq!(navios.len(), 1);
+        assert_eq!(navios[0].motivo, shared::navio::MOTIVO_CORREIO_NAVIO);
+        assert!(navios[0].instance.is_some_and(|i| i.navio.is_some()));
+    }
+
+    /// The whole migration on a real database: once, and not to whoever
+    /// has a ship. `MMO_MIGRACAO_TEST_URL`, isolated schema.
+    #[tokio::test]
+    #[ignore = "requer MMO_MIGRACAO_TEST_URL; usa schema isolado"]
+    async fn a_migracao_da_uma_chalupa_uma_vez() {
+        use sqlx::postgres::PgConnectOptions;
+        use std::str::FromStr;
+        let url = std::env::var("MMO_MIGRACAO_TEST_URL").unwrap();
+        let schema = format!("teste_chalupa_{}", std::process::id());
+        let admin = PgPool::connect(&url).await.unwrap();
+        sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin).await.unwrap();
+        let opts = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
+        let pool = sqlx::postgres::PgPoolOptions::new().max_connections(1).connect_with(opts).await.unwrap();
+        let passo = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA).unwrap() as i32;
+        for sql in [
+            "CREATE TABLE migracoes_de_dados(nome TEXT PRIMARY KEY)".to_string(),
+            "CREATE TABLE characters(name TEXT PRIMARY KEY, dungeon_json TEXT NOT NULL DEFAULT '')".into(),
+            "CREATE TABLE character_quests(char_name TEXT, quest_id INT, progress INT)".into(),
+            "CREATE TABLE equipment(character_name TEXT, slot TEXT, item_id INT)".into(),
+            "CREATE TABLE inventory(character_name TEXT, item_id INT)".into(),
+            "CREATE TABLE vault(character_name TEXT, item_id INT)".into(),
+            "INSERT INTO characters(name) VALUES('antigo'), ('novato'), ('marujo')".into(),
+            format!("INSERT INTO character_quests VALUES('antigo', 699, {}), ('novato', 699, 3), ('marujo', 699, {})", passo + 5, passo + 5),
+            "INSERT INTO vault VALUES('marujo', 470)".into(),
+        ] {
+            sqlx::query(&sql).execute(&pool).await.unwrap();
+        }
+        migrar_chalupa_dos_antigos(&pool).await.unwrap();
+        migrar_chalupa_dos_antigos(&pool).await.unwrap();
+        let correio = |nome: &'static str| {
+            let pool = pool.clone();
+            async move {
+                let j: String = sqlx::query_scalar("SELECT dungeon_json FROM characters WHERE name = $1")
+                    .bind(nome).fetch_one(&pool).await.unwrap();
+                if j.is_empty() { 0 } else {
+                    let d: shared::dungeon::DadosDungeon = serde_json::from_str(&j).unwrap();
+                    d.correio.iter().filter(|c| shared::item_id::e_navio(c.item_id)).count()
+                }
+            }
+        };
+        assert_eq!(correio("antigo").await, 1);
+        assert_eq!(correio("novato").await, 0);
+        assert_eq!(correio("marujo").await, 0);
+        pool.close().await;
+        sqlx::query(&format!("DROP SCHEMA {schema} CASCADE")).execute(&admin).await.unwrap();
     }
 }
 

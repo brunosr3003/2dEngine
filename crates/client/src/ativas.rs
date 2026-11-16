@@ -60,7 +60,7 @@ pub fn pega_mouse() -> bool {
 pub fn fx_da_ativa(ativa: u8) -> Option<u32> {
     match av::def(ativa)?.tipo {
         TipoAtiva::Passo | TipoAtiva::Invisibilidade => None,
-        TipoAtiva::Golpe => Some(7),
+        TipoAtiva::Furia => Some(11),
         TipoAtiva::Nova => Some(9),
         TipoAtiva::Meteoro => Some(12),
         TipoAtiva::Tempo | TipoAtiva::Saque => Some(11),
@@ -69,7 +69,7 @@ pub fn fx_da_ativa(ativa: u8) -> Option<u32> {
 }
 
 /// The weapon skill whose icon the slot borrows (no art of their own yet).
-fn icone_da_ativa(ativa: u8) -> u32 {
+pub(crate) fn icone_da_ativa(ativa: u8) -> u32 {
     match ativa {
         0 => 1,
         1 => 5,
@@ -144,7 +144,7 @@ impl Ativas {
             Some("Skill on cooldown")
         } else if c.mp < d.custo_mp {
             Some("Not enough mana")
-        } else if matches!(d.tipo, TipoAtiva::Golpe | TipoAtiva::Meteoro) && c.distancia_alvo.is_none() {
+        } else if matches!(d.tipo, TipoAtiva::Meteoro) && c.distancia_alvo.is_none() {
             Some("Select an enemy to use this skill")
         } else {
             None
@@ -331,7 +331,9 @@ fn auto_agora(a: u8, c: Contexto) -> bool {
     let Some(d) = av::def(a) else { return false };
     match d.tipo {
         TipoAtiva::Passo | TipoAtiva::Invisibilidade => false,
-        TipoAtiva::Golpe | TipoAtiva::Meteoro => c.distancia_alvo.is_some_and(|x| x <= d.alcance),
+        TipoAtiva::Meteoro => c.distancia_alvo.is_some_and(|x| x <= d.alcance),
+        // Lethal Fury: in a fight (a target in reach of the basic attack).
+        TipoAtiva::Furia => c.distancia_alvo.is_some_and(|x| x <= 8.0),
         TipoAtiva::Nova | TipoAtiva::Provocar => c.distancia_alvo.is_some_and(|x| x <= d.raio),
         TipoAtiva::Escudo | TipoAtiva::Inquebravel => c.vida_baixa,
         TipoAtiva::Tempo | TipoAtiva::Saque => c.distancia_alvo.is_some(),
@@ -390,7 +392,9 @@ mod tests {
         assert_eq!(a.impedimento(3, &h, c, 10.0), Some("Not enough mana"));
         c.mp = 100;
         c.distancia_alvo = None;
-        assert_eq!(a.impedimento(2, &h, c, 10.0), Some("Select an enemy to use this skill"));
+        // Meteor (4) needs a target; Lethal Fury (2) is a buff and does not.
+        assert_eq!(a.impedimento(4, &h, c, 10.0), Some("Select an enemy to use this skill"));
+        assert_eq!(a.impedimento(2, &h, c, 10.0), None);
         assert_eq!(a.impedimento(7, &h, c, 10.0), None, "a buff needs no target");
         c.vivo = false;
         assert!(a.impedimento(7, &h, c, 10.0).is_some());

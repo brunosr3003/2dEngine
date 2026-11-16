@@ -238,6 +238,19 @@ pub const POCOES_XP_GRATIS_POR_DIA: u32 = 3;
 /// The level a quest asks, capped at `progressao::NIVEL_MAX` (stage A,
 /// docs/RESET.md): the Abyssia chain was written for 100-117, and past the
 /// cap every character is "100+". Use this, never `min_level` raw, to gate.
+/// The level a character counts as for QUEST level locks (owner,
+/// 15/11/2026: "as quests tão pedindo reach lvl 100+, mas se a pessoa já
+/// tiver R1 não precisa ter essa trava"). After a rebirth the level is back
+/// at 1; it already climbed to the cap once, so every level lock (story level
+/// gates, `min_level`) counts as met.
+pub fn nivel_de_missao(nivel: u32, renascimentos: u32) -> u32 {
+    if renascimentos > 0 {
+        u32::MAX
+    } else {
+        nivel
+    }
+}
+
 pub fn nivel_pedido(d: &QuestDef) -> u32 {
     d.min_level.min(crate::progressao::NIVEL_MAX)
 }
@@ -1783,6 +1796,18 @@ pub fn tutorial_next(id: u16) -> Option<u16> {
 /// `id` faz parte da cadeia de tutorial?
 pub fn is_tutorial_quest(id: u16) -> bool {
     TUTORIAL_CHAIN.contains(&id)
+}
+
+#[cfg(test)]
+mod testes_nivel_de_missao {
+    use super::*;
+
+    #[test]
+    fn renascido_passa_toda_trava_de_nivel() {
+        assert_eq!(nivel_de_missao(7, 0), 7);
+        assert!(nivel_de_missao(1, 1) >= 10_000);
+        assert!(QUESTS.iter().all(|q| nivel_pedido(q) <= nivel_de_missao(1, 1)));
+    }
 }
 
 #[cfg(test)]

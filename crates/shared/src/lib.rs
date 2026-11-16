@@ -40,6 +40,8 @@ pub mod items;
 pub mod loja;
 pub mod pacotes_bonus;
 pub mod magica;
+pub mod mar;
+pub mod navio;
 pub mod mapfile;
 pub mod mercado;
 pub mod physics;

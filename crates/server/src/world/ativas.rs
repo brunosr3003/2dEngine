@@ -44,7 +44,7 @@ fn forma_de_area(raio: f32, alcance: f32) -> Skill {
 
 /// Does this active end invisibility when used (it hits or pulls)?
 fn e_ofensiva(t: TipoAtiva) -> bool {
-    matches!(t, TipoAtiva::Golpe | TipoAtiva::Nova | TipoAtiva::Meteoro | TipoAtiva::Provocar)
+    matches!(t, TipoAtiva::Nova | TipoAtiva::Meteoro | TipoAtiva::Provocar)
 }
 
 /// How far a Shadowstep goes and where it stops: toward `alvo` (one body
@@ -107,11 +107,12 @@ impl GameWorld {
             self.rejeita_skill(sid, id, "You cannot attack in the safe zone.");
             return;
         }
-        let (atk, crit_chance, hp_max) = (s.stats.attack_damage, s.stats.crit_chance, s.stats.hp_max);
+        let (atk, crit_chance, extra_crit, hp_max) =
+            (s.stats.attack_damage, s.chance_de_crit(agora), s.extra_de_dano_crit(agora), s.stats.hp_max);
         let selecionado = s.target;
 
         // The strikes need a valid enemy in reach, checked BEFORE paying.
-        let alvo_do_golpe = if matches!(def.tipo, TipoAtiva::Golpe | TipoAtiva::Meteoro) {
+        let alvo_do_golpe = if matches!(def.tipo, TipoAtiva::Meteoro) {
             let Some(alvo) = selecionado else {
                 self.rejeita_skill(sid, id, "Select an enemy to use this skill.");
                 return;
@@ -198,20 +199,12 @@ impl GameWorld {
                 duracao_fx = def.duracao_s;
                 self.comecar_invisibilidade(sid, def.duracao_s);
             }
-            TipoAtiva::Golpe => {
-                let (alvo, p) = alvo_do_golpe.expect("checked above");
-                let dano = super::golpe_critico(((atk as f32) * fator).round().max(1.0) as i32);
-                self.pending_skill_hits.push(PendingSkillHit {
-                    target_net: alvo,
-                    damage: dano,
-                    attacker_net: dono,
-                    hurt_dir: (de - p).normalize_or_zero(),
-                    is_crit: true,
-                    from_player: true,
-                    knockback: 0.0,
-                    drain_tier: 0,
-                });
-                alvo_fx = p;
+            TipoAtiva::Furia => {
+                duracao_fx = def.duracao_s;
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.furia_ate = agora + def.duracao_s;
+                    s.furia_fator = fator;
+                }
             }
             TipoAtiva::Nova | TipoAtiva::Meteoro => {
                 let centro = alvo_do_golpe.map_or(de, |(_, p)| p);
@@ -220,7 +213,7 @@ impl GameWorld {
                 let alvos = self.alvos_da_habilidade(dono, de, dir, centro, &area);
                 let crit = crit_chance > 0.0 && fastrand::f32() < crit_chance;
                 let base = ((atk as f32) * fator).round().max(1.0) as i32;
-                let dano = if crit { super::golpe_critico(base) } else { base };
+                let dano = if crit { super::golpe_critico_com(base, extra_crit) } else { base };
                 for &(net, p) in &alvos {
                     self.pending_skill_hits.push(PendingSkillHit {
                         target_net: net,
@@ -396,7 +389,8 @@ mod testes {
     use super::*;
     use shared::arvore::PedidoArvore;
 
-    /// One player at (10, 10) with `r` rebirths, the tree `nos` and the
+    /// One player at (10, 10) with `r` rebirths, the tree `nos` (that many
+    /// nodes down each path's central line, `Arvore::com_nos`) and the
     /// actives `slots`, 100 mana, attack 60; a dummy enemy (999) at (12, 10).
     fn mundo(r: u32, nos: [u8; 4], slots: [Option<u8>; 3]) -> (GameWorld, SessionId, EntityId) {
         crate::economy::init_vazia_para_testes();
@@ -411,7 +405,7 @@ mod testes {
         s.name = "Ativo".into();
         s.renascimentos = r;
         s.xp = shared::progressao::xp_do_nivel_exibido(100, crate::economy::xp_multiplier());
-        s.arvore = av::Arvore { nos, slots };
+        s.arvore = av::Arvore { slots, ..av::Arvore::com_nos(nos) };
         s.equipment.weapon = Some(shared::item_id::ESPADA_E_ESCUDO);
         s.mp_current = 100.0;
         s.stats.mp_max = 100;
@@ -489,25 +483,32 @@ mod testes {
     }
 
     #[test]
-    fn golpe_precisa_de_alvo_e_nao_cobra_sem_ele() {
-        // Death Mark (Assassin node 15).
-        let (mut w, sid, _) = mundo(1, [15, 0, 0, 0], [Some(2), None, None]);
+    fn furia_letal_da_crit_e_dano_critico_por_oito_segundos() {
+        // Lethal Fury (the Assassin capstone): no target needed, a buff on the caster.
+        let (mut w, sid, _) = mundo(1, [12, 0, 0, 0], [Some(2), None, None]);
         w.sessions.get_mut(&sid).unwrap().target = None;
+        let antes = w.sessions[&sid].chance_de_crit(w.sim_time_s);
         usar(&mut w, sid, 0);
-        assert_eq!(w.sessions[&sid].mp_current, 100.0);
-        assert!(w.sessions[&sid].skill_cds.is_empty());
-        w.sessions.get_mut(&sid).unwrap().target = Some(EntityId(999));
-        usar(&mut w, sid, 0);
-        let h = w.pending_skill_hits.iter().find(|h| h.target_net == EntityId(999)).expect("a hit");
-        assert!(h.is_crit);
-        assert_eq!(h.damage, super::super::golpe_critico(120));
+        let agora = w.sim_time_s;
+        let s = &w.sessions[&sid];
+        assert!(s.mp_current < 100.0, "it was paid");
+        assert!((s.chance_de_crit(agora) - antes - shared::arvore::FURIA_CRIT).abs() < 1e-6);
+        // The capstone node's own permanent crit damage stays under the buff.
+        let base = s.arvore.passivas().dano_critico;
+        assert!((s.extra_de_dano_crit(agora) - base - shared::arvore::FURIA_DANO_CRIT).abs() < 1e-6);
+        assert_eq!(super::super::golpe_critico_com(100, s.extra_de_dano_crit(agora)),
+            ((100.0 * (shared::CRIT_DAMAGE_MULT + base + 0.15)) as f32).round() as i32);
+        // Gone after 8 s.
+        assert!((s.extra_de_dano_crit(agora + 8.1) - base).abs() < 1e-6);
+        assert!((s.chance_de_crit(agora + 8.1) - antes).abs() < 1e-6);
     }
 
     #[test]
     fn comprar_no_ativo_encaixa_e_so_equipa_o_aprendido() {
         let (mut w, sid, _) = mundo(1, [0, 0, 0, 0], [None; 3]);
-        for k in 0..5 {
-            w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Gastar { caminho: 0, no: k } });
+        // Start → three Assassin spine nodes → Shadowstep (5 of the 10 points).
+        for no in av::Arvore::com_nos([4, 0, 0, 0]).ids() {
+            w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::Aprender { no } });
         }
         assert_eq!(w.sessions[&sid].arvore.slots, [Some(0), None, None], "Shadowstep went to slot 4");
         // Arcane Nova is not learned: refused.

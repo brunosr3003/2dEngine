@@ -1,5 +1,14 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
+- The Path tree is now a huge star-map web: 173 nodes across four arms, with notables, keystones that trade a big bonus for a cost, and bridges between paths for hybrid builds. It takes about 460 points to complete.
+- New Path tree screen: drag and pinch to explore, every node has its own icon, and learned nodes light up the constellation.
+- The Path tree was reset for free: all your path points are back to spend again.
+- Resetting the Path tree is paid in gold only.
+- Rebirth auras were redesigned: each tier has its own look (leaves, frost, runes, a golden halo and a black hole), and the rebirth celebration matches it.
+- New: the open sea. At the dock of the Grove, the Glacier, the Waste or the Plateau, ask the Harbour Captain to "Sail" and take your own ship out between the islands. Sail up to an island's dock to go ashore.
+- Your first ship, the Sloop, comes from the story quest that first takes you to the Glacier. Players already past it find a Sloop in their Mail.
+- At sea: gather floating wreckage (wood, Steel, Darksteel and Energy), open drifting chests, and keep clear of the sharks and eels that gnaw at your hull. If the hull breaks you wash up at the dock, and the Captain repairs the ship for copper. PK modes apply at sea, except close to the docks.
+- The Harbour Captain's trips between islands now cost copper, shown on the button. The story's own trips stay free.
 - Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
 - The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.
@@ -9,6 +18,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Items left in the My Island chest were sent to your Mail.
 - The Prime Merchant now sells dungeon keys for gold (3 of each a day), and "Find" shows the Prime Merchant for everything it sells.
 - Story dungeon quests on each island now also give 3 free Key Summon scrolls.
+- At the level cap, a "Rebirth available" badge stays on screen (even in dungeons and boss fights); tap it to open your character sheet.
 - New in every town square: the Prime Merchant. Buy XP Potions, Energy, Darksteel, craft keys (up to purple) and craft materials (up to blue) for gold, at the market price plus 15%, with a daily limit per item. The board shows the price trend.
 - XP Potions now come from daily quests (up to 3 a day) and the Prime Merchant, no longer from story, side or one-off quests.
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
@@ -49,11 +59,11 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New level packs at levels 20, 50, 70 and 100. Every pack gives at least the TP its price buys in the shop, plus a bonus (gold, Energy, Darksteel, summon scrolls or gear). Each pack appears once per account.
 - Gear bought in a pack goes straight to your bag (to the Mail if the bag is full); its gold goes to your purse.
 - REBIRTH: at level 100, open the Character Sheet and tap Rebirth. You go back to level 1 and your attribute points are reset (their Energy is refunded); you keep your items and gear, gold, TP, pets, mounts, proficiencies, story and skill tiers.
-- Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a bit slower after each rebirth.
+- Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a little slower with each rebirth up to the 15th, then much slower with every rebirth after that, with no cap. After your first rebirth, quests no longer ask for a level: every level lock counts as met.
 - Rebirth milestones: a body aura that changes color (green at 1, blue at 3, purple at 5, gold at 10, a black hole at 15, brighter every 5 from 20), +10 bag slots at the 2nd and +10 bank slots at the 7th. Everyone online is told when a player reaches a milestone.
 - Rebirths show as "R3" before the name, in the Character Sheet, and the Level ranking is ordered by rebirths first, then level. Each rebirth has its own celebration, bigger at every milestone.
 - PATH TREE: from your first rebirth on, every 10 levels give a path point (10 per climb, and they stay across rebirths). Open Character Sheet > PATHS to learn nodes in four paths of 15: Assassin (crit, attack speed, dexterity, movement), Mage (wisdom, mana, attack, mana regen), Guardian (defense, health, damage reduction, regen, poise) and Corsair (drops, gold, ore, Energy, Darksteel, better loot). Mix paths freely; each path's nodes are learned in order.
-- PATH ACTIVES: nodes 5, 10 and 15 of each path also teach an active skill, used from new skill slots 4, 5 and 6 (opened at rebirths 1, 3 and 5; keys 4-6 on PC). Assassin: Shadowstep, Invisibility and Death Mark. Mage: Arcane Nova, Meteor and Time Warp. Guardian: Taunt, Bulwark Shield and Unbreakable. Corsair: Treasure Sense, Plunder and Golden Fleet.
+- PATH ACTIVES: nodes 5, 10 and 15 of each path also teach an active skill, used from new skill slots 4, 5 and 6 (opened at rebirths 1, 3 and 5; keys 4-6 on PC). Assassin: Shadowstep, Invisibility and Lethal Fury (more critical chance and critical damage for a few seconds). Mage: Arcane Nova, Meteor and Time Warp. Guardian: Taunt, Bulwark Shield and Unbreakable. Corsair: Treasure Sense, Plunder and Golden Fleet.
 - A newly learned active goes to the next free slot; choose which active sits in each slot from the path tree. Tap to use, drag up for AUTO, like your weapon skills.
 - Invisibility: monsters lose track of you and players cannot target you for a few seconds, until you attack.
 - From rebirth 10, each path's final active becomes Supreme and is 50% stronger.

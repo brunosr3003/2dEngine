@@ -753,7 +753,7 @@ mod testes {
     #[test]
     fn embarca_pra_ilha_liberada_de_maior_faixa_que_aceita() {
         use shared::viagem::{estado, Destino};
-        let d = |ilha, min, e| Destino { ilha, nome: format!("{ilha}"), nivel_min: min, nivel_max: min + 15, estado: e, requisito: String::new() };
+        let d = |ilha, min, e| Destino { ilha, nome: format!("{ilha}"), nivel_min: min, nivel_max: min + 15, estado: e, requisito: String::new(), preco: 0 };
         let ds = [d(0, 1, estado::AQUI), d(1, 15, estado::LIBERADA), d(2, 28, estado::LIBERADA), d(3, 40, estado::BLOQUEADA)];
         assert_eq!(destino_pro_nivel(&ds, 20), Some(1));
         assert_eq!(destino_pro_nivel(&ds, 30), Some(2));

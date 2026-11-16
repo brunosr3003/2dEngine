@@ -270,13 +270,10 @@ impl FichaUi {
                 self.abrir_caminhos = true;
                 return None;
             }
-            // THE ESSENCE SHOP (`shared::essencia`), left of PATHS.
-            let e = Rect::new(b.x - 170.0 * f, b.y, 160.0 * f, b.h);
-            estilo::botao(e, "ESSENCE", estilo::estado_de(e, false, false), false);
-            if clique && e.toca(mouse) {
-                self.abrir_loja_essencia = true;
-                return None;
-            }
+            // The ESSENCE SHOP button is gone (owner, 15/11/2026: "o essence
+            // shop é inútil e feio; essência serve só pra dar upgrade em
+            // item"). Rebirth Essence is spent only on item stars, at the
+            // Forge. `loja_essencia_ui` stays unreachable.
         }
 
         estilo::texto_ajustado(

@@ -19,10 +19,21 @@
 
 use crate::constants::item_id;
 
-/// Base of the XP divisor: each rebirth makes the next climb 1.5x heavier
-/// (2nd climb 1.5x, 3rd 2.25x, 4th 3.4x...). The owner's suggestion over
-/// `2^r`, which doubled too fast for "many rebirths".
-pub const DIVISOR_BASE: f64 = 1.5;
+/// THE XP DIVISOR CURVE (owner, 15/11/2026, after R55 froze the climb:
+/// "coloca sem um teto mas ficando exponencialmente mais difícil a partir do
+/// 15"). It was `1.5^r`: 58x at R10, 438x at R15 and 4.6 billion x at R55,
+/// so a high rebirth could not level at all. Now:
+///
+///   * up to `DIVISOR_JOELHO` (15): linear, +`DIVISOR_LINEAR` per rebirth
+///     (R5 2x, R10 3x, R15 4x);
+///   * after it: x`DIVISOR_BASE` per rebirth, with no cap (R20 5.9x, R30
+///     12.7x, R40 27x, R55 87x). It was x1.15 for an hour (R55 ~1,070x, ~22
+///     years a climb for a 12 h/day player); the owner picked 1.08.
+pub const DIVISOR_JOELHO: u32 = 15;
+/// Linear step up to the knee.
+pub const DIVISOR_LINEAR: f64 = 0.2;
+/// Exponential base past the knee.
+pub const DIVISOR_BASE: f64 = 1.08;
 
 /// Attribute bonus per rebirth: +5%, stacking, no cap (+50% at the 10th).
 pub const BONUS_POR_RENASCIMENTO: f32 = 0.05;
@@ -47,7 +58,9 @@ pub fn pode_renascer(nivel: u32) -> bool {
 
 /// The XP divisor of a character with `r` rebirths (1 with none).
 pub fn divisor_de_renascimento(r: u32) -> f64 {
-    DIVISOR_BASE.powi(r.min(200) as i32)
+    let linear = 1.0 + DIVISOR_LINEAR * r.min(DIVISOR_JOELHO) as f64;
+    let acima = r.saturating_sub(DIVISOR_JOELHO).min(2_000) as i32;
+    linear * DIVISOR_BASE.powi(acima)
 }
 
 /// `xp` after the rebirth divisor (never rounds a gain away to 0).
@@ -187,12 +200,21 @@ mod testes {
     use super::*;
 
     #[test]
-    fn divisor_cresce_1_5_por_renascimento() {
+    fn divisor_linear_ate_15_e_exponencial_sem_teto_depois() {
         assert_eq!(divisor_de_renascimento(0), 1.0);
-        assert_eq!(divisor_de_renascimento(1), 1.5);
-        assert!((divisor_de_renascimento(3) - 3.375).abs() < 1e-9);
+        assert!((divisor_de_renascimento(5) - 2.0).abs() < 1e-9);
+        assert!((divisor_de_renascimento(10) - 3.0).abs() < 1e-9);
+        assert!((divisor_de_renascimento(15) - 4.0).abs() < 1e-9);
+        assert!((divisor_de_renascimento(20) - 4.0 * 1.08f64.powi(5)).abs() < 1e-9);
+        // R55 is hard but climbable (it was 1.5^55 = 4.6 billion x).
+        let r55 = divisor_de_renascimento(55);
+        assert!(r55 > 80.0 && r55 < 95.0, "{r55}");
+        // No cap: every rebirth is heavier than the one before.
+        for r in 0..300 {
+            assert!(divisor_de_renascimento(r + 1) > divisor_de_renascimento(r));
+        }
         assert_eq!(xp_depois_do_divisor(300, 0), 300);
-        assert_eq!(xp_depois_do_divisor(300, 1), 200);
+        assert_eq!(xp_depois_do_divisor(300, 5), 150);
         assert_eq!(xp_depois_do_divisor(1, 5), 1, "never rounds a gain away");
         assert_eq!(xp_depois_do_divisor(0, 5), 0);
         assert!(divisor_de_renascimento(10_000).is_finite());

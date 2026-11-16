@@ -1358,7 +1358,8 @@ pub fn arvore_da_coluna(
     agua: bool,
 ) -> Option<ArvorePlantada> {
     // NADA NA PONTE da Ilha Magica: ela e' estreita e um tronco a fecha.
-    if ger.na_ponte_magica(bx, bz) {
+    // Nothing grows on the sea's silhouettes either.
+    if ger.e_mar() || ger.na_ponte_magica(bx, bz) {
         return None;
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
@@ -1473,7 +1474,7 @@ pub fn planta_da_coluna(
     agua: bool,
 ) -> Option<PlantaPlantada> {
     // NADA NA PONTE: pedra de forracao tambem barra passagem.
-    if ger.na_ponte_magica(bx, bz) {
+    if ger.e_mar() || ger.na_ponte_magica(bx, bz) {
         return None;
     }
     // Kōgen-tō: only in the parks (`kogen::so_no_parque`).
@@ -1650,6 +1651,9 @@ pub fn minerio_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
+    if ger.e_mar() {
+        return None;
+    }
     recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, false)
 }
 
@@ -1716,6 +1720,9 @@ pub fn energia_da_coluna(
     ger: &Gerador,
     agua: bool,
 ) -> Option<Minerio> {
+    if ger.e_mar() {
+        return None;
+    }
     recurso_montanha_da_coluna(bioma, bx, bz, topo, ger, agua, true)
 }
 
@@ -1950,6 +1957,24 @@ pub fn estorvos_da_coluna(
     saida: &mut Vec<Estorvo>,
 ) {
     let coluna = chave_de_coluna(bx + ger.raio_blocos, bz + ger.raio_blocos);
+    // THE OPEN SEA plants nothing but its floating wreckage (`mar`): wood
+    // is a "trunk", Steel crates are "ore", Energy is Energy — so the whole
+    // gather pipeline (cycles, depletion, payout) works unchanged.
+    if ger.e_mar() {
+        if let Some(d) = crate::mar::destroco_da_coluna(bx, bz) {
+            saida.push(Estorvo {
+                centro: d.centro,
+                raio: 0.6,
+                tipo: match d.tier {
+                    0 => TipoDeEstorvo::Tronco,
+                    5 => TipoDeEstorvo::Energia,
+                    t => TipoDeEstorvo::Minerio(t),
+                },
+                coluna,
+            });
+        }
+        return;
+    }
     // A ARENA NÃO TEM MAIS EXCEÇÃO AQUI, e a que havia era um defeito.
     //
     // Eu tinha zerado os estorvos dela pra livrar o A*. Só que o CLIENTE
@@ -2076,6 +2101,9 @@ enum RelevoDesenhado {
     /// relevo sorteado nao faz planicie por encomenda — com ele a ilhota
     /// comportava dois sitios de instancia em vez dos quatro do rodizio.
     Arena,
+    /// The OPEN SEA (`mar::bloco_da_coluna`): a dome and a dock per island,
+    /// no town, no port, no vegetation; only floating wreckage.
+    Mar,
 }
 
 /// Move um CASCO: a regra da terra, ao contrario.
@@ -2493,6 +2521,38 @@ impl Gerador {
         g
     }
 
+    /// Is this relief the OPEN SEA (`mar`)?
+    pub fn e_mar(&self) -> bool {
+        matches!(self.desenhado, Some(RelevoDesenhado::Mar))
+    }
+
+    /// THE OPEN SEA: the analytic domes and docks (`mar`). Built straight,
+    /// without `achar_cidade`/`achar_porto`: there is no town to look for,
+    /// and the search would walk a Perlin island nobody draws.
+    pub fn do_mar() -> Self {
+        let bioma = crate::mar::DEF.bioma;
+        let p = bioma.perfil();
+        Self {
+            p: Perlin::novo(crate::mar::SEMENTE),
+            pw: Perlin::novo(crate::mar::SEMENTE ^ 0x5f37_59df),
+            pctrl: Perlin::novo(crate::mar::SEMENTE ^ 0x1b87_3593),
+            forma: Forma::de(crate::mar::SEMENTE, crate::mar::RAIO_BLOCOS),
+            perfil: bioma.perfil(),
+            raio_blocos: crate::mar::RAIO_BLOCOS,
+            escala_altura: ESCALA_ALTURA,
+            terraco_blocos: p.terraco_blocos,
+            terraco_forca: p.terraco_forca,
+            semente: crate::mar::SEMENTE,
+            cidade: None,
+            porto: None,
+            rumo_do_mar: None,
+            vila: std::sync::OnceLock::new(),
+            planalto: std::sync::OnceLock::new(),
+            desenhado: Some(RelevoDesenhado::Mar),
+            oasis: None,
+        }
+    }
+
     /// KŌGEN-TŌ: the drawn city grid, the town in the Docks, no port
     /// (`kogen`). One constructor for client and server.
     pub fn da_ilha_kogen() -> Self {
@@ -2655,6 +2715,9 @@ impl Gerador {
         if crate::abissal::e_abissal(def.zona) {
             return Self::da_ilha_abissal();
         }
+        if crate::mar::e_mar(def.zona) {
+            return Self::do_mar();
+        }
         let p = def.bioma.perfil();
         let (tb, tf) = (p.terraco_blocos, p.terraco_forca);
         let mut g = Self {
@@ -2802,6 +2865,10 @@ impl Gerador {
         // fbm por coluna pra jogar fora o resultado.
         if self.desenhado == Some(RelevoDesenhado::Arena) {
             return crate::arena::bloco_da_coluna(bx, bz);
+        }
+        // The open sea: analytic and final, nothing is flattened on top.
+        if self.desenhado == Some(RelevoDesenhado::Mar) {
+            return crate::mar::bloco_da_coluna(bx, bz);
         }
         let cru = match self.desenhado {
             // A colonia e' desenhada, mas a PRACA continua sendo aplainada
@@ -3590,6 +3657,8 @@ impl Ilha {
             format!("-kogen{}", crate::kogen::REVISAO)
         } else if crate::abissal::e_abissal(def.zona) {
             format!("-abissal{}", crate::abissal::REVISAO)
+        } else if crate::mar::e_mar(def.zona) {
+            format!("-mar{}", crate::mar::REVISAO)
         } else {
             String::new()
         };
@@ -5998,6 +6067,12 @@ pub fn def_da_zona(zona: &str) -> Option<&'static DefIlha> {
     }
     if crate::celeste::e_celeste(zona) {
         return Some(&crate::celeste::DEF);
+    }
+    // The OPEN SEA (docs/NAVEGACAO.md): not in the `ARQUIPELAGO` (its
+    // indices are API), but a zone with relief, read through here by the
+    // server's tick, the client's terrain, the minimap and the buildings.
+    if crate::mar::e_mar(zona) {
+        return Some(&crate::mar::DEF);
     }
     // A ILHA MAGICA entra aqui, e nao no `ARQUIPELAGO`.
     //

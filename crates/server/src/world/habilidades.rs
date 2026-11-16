@@ -461,15 +461,17 @@ impl GameWorld {
         }
         // O dano sai do ataque de quem conjurou, pela mesma `session.stats` que
         // alimenta o golpe basico — ver `Skill::dano_efetivo` pro porque.
-        let (atk, cd, chance_crit) = self.sessions.values().find(|s| s.entity_id == dono).map_or(
-            (shared::base_player_stats().attack_damage, 0.65, 0.0),
+        let agora_crit = self.sim_time_s;
+        let (atk, cd, chance_crit, extra_crit) = self.sessions.values().find(|s| s.entity_id == dono).map_or(
+            (shared::base_player_stats().attack_damage, 0.65, 0.0, 0.0),
             |s| {
                 (
                     s.stats.attack_damage,
                     // The weapon's BASE interval: attack speed speeds up the
                     // basic attack, not the skills (`cadencia_base_da_arma`).
                     super::cadencia_base_da_arma(s.equipment.weapon.unwrap_or(0)),
-                    s.stats.crit_chance,
+                    s.chance_de_crit(agora_crit),
+                    s.extra_de_dano_crit(agora_crit),
                 )
             },
         );
@@ -479,7 +481,11 @@ impl GameWorld {
         // como o basico faz por golpe (todos os alvos levam o mesmo).
         let crit = sempre_crita(skill.id, tier)
             || (chance_crit > 0.0 && fastrand::f32() < chance_crit);
-        let dano = dano_da_skill(skill, tier, atk, cd, crit);
+        let mut dano = dano_da_skill(skill, tier, atk, cd, crit);
+        if crit && extra_crit > 0.0 {
+            // Lethal Fury: the crit hits harder by the same share as the basic's.
+            dano = (dano as f32 * (shared::CRIT_DAMAGE_MULT + extra_crit) / shared::CRIT_DAMAGE_MULT).round() as i32;
+        }
         if skill.forma == Forma::Projetil {
             // Disparo target: outro mob cruzando a linha nao troca o destinatario.
             self.pending_skill_hits.push(PendingSkillHit {

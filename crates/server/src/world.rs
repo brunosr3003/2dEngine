@@ -124,6 +124,7 @@ mod essencia;
 mod renascimento;
 mod social;
 mod troca;
+pub(crate) mod navio;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -2251,6 +2252,10 @@ pub struct Session {
     pub magica_ate: i64,
     /// A zona de onde ele entrou na Ilha Magica. Vazio = Bosque.
     pub magica_volta: String,
+    /// THE SEA (docs/NAVEGACAO.md): the island this character sailed from.
+    /// If the sea process is down at login, the login falls back here.
+    /// Empty = not at sea. Persisted in `characters.zona_volta`.
+    pub zona_volta: String,
     /// Cota DIARIA de entradas de graca, empacotada
     /// (`magica::empacota_gratis`). Persistida em `characters.magica_gratis`.
     pub magica_gratis: i64,
@@ -2382,6 +2387,10 @@ pub struct Session {
     /// INVISIBILITY (the Assassin's active, `world/ativas.rs`): sim time it
     /// ends; 0 = visible. While on, the body carries `Untargetable`.
     pub invisivel_ate: f32,
+    /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
+    /// `MULT_SUPREMA` when supreme). See `chance_de_crit`.
+    pub furia_ate: f32,
+    pub furia_fator: f32,
     /// The Corsair actives' economy buffs: (active, sim time it ends).
     /// Summed in `bonus_economia`; `avancar_ativas` drops the expired.
     pub buffs_da_arvore: Vec<(u8, f32)>,
@@ -2830,6 +2839,11 @@ pub struct GameWorld {
     /// A copia em `characters` so' vale se foi este processo que a escreveu
     /// ha' pouco — senao outro canal pode ter salvo algo mais novo no banco.
     pub salvo_aqui_em: HashMap<String, f32>,
+    /// THE SEA (`world/navio.rs`): sea-mob bites on players' hulls this tick
+    /// (victim, damage), applied after the combat loop.
+    pub mordidas_no_casco: Vec<(EntityId, i32)>,
+    /// THE SEA: drifting chests waiting to come back (where, when).
+    pub baus_do_mar: Vec<(Vec2, f32)>,
     /// Zona pra onde o personagem saiu por portal: o save grava ELA, e nao a
     /// zona deste processo.
     pub zona_de_saida: HashMap<String, String>,
@@ -3368,6 +3382,8 @@ impl GameWorld {
             mundo_de_chefes: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
+            mordidas_no_casco: Vec::new(),
+            baus_do_mar: Vec::new(),
             zona_de_saida: HashMap::new(),
             vagas_de_chefe: Vec::new(),
             pontos_historia: HashMap::new(),
@@ -3565,6 +3581,8 @@ impl GameWorld {
             mundo_de_chefes: None,
             diretorio: None,
             salvo_aqui_em: HashMap::new(),
+            mordidas_no_casco: Vec::new(),
+            baus_do_mar: Vec::new(),
             zona_de_saida: HashMap::new(),
             vagas_de_chefe: Vec::new(),
             pontos_historia: HashMap::new(),
@@ -3658,7 +3676,9 @@ impl GameWorld {
         // velho de tiles, e as entidades dele caem em coordenadas que nao
         // querem dizer nada na ilha do jogador — 231 bichos boiando, que foi
         // exatamente o que aconteceu com a zona do mar.
-        if !shared::colonia::e_colonia(&crate::canais::zona()) {
+        // Nor does the OPEN SEA: tile-map NPCs and chests would float in it.
+        let zona = crate::canais::zona();
+        if !shared::colonia::e_colonia(&zona) && !shared::mar::e_mar(&zona) {
             w.spawn_mapfile_entities(&mf);
         }
         if w.tutorial_mode {
@@ -3921,6 +3941,11 @@ impl GameWorld {
         if self.na_magica() && shared::magica::e_porto_seguro(pos) {
             return true;
         }
+        // THE HARBOUR CORRIDOR (docs/NAVEGACAO.md): near a dock's anchorage
+        // at sea nobody is hurt. The chase is the game; the door is not.
+        if self.no_mar() && shared::mar::no_corredor(pos) {
+            return true;
+        }
         for (origin, size) in &self.safe_zones {
             if pos.x >= origin.x
                 && pos.x < origin.x + size.x
@@ -4151,7 +4176,9 @@ impl GameWorld {
                     // skills); mob agora e' so' o que a tabela diz.
                     // Zona de praia tem bicho proprio (caranguejos).
                     let bioma = self.bioma_da_zona();
-                    let escolhido = if zone_id >= ZONA_DE_PRAIA_ID {
+                    let escolhido = if self.no_mar() {
+                        navio::kind_do_mar(lvl, lcg(s_lvl))
+                    } else if zone_id >= ZONA_DE_PRAIA_ID {
                         crate::economy::kind_de_praia(bioma, lcg(s_lvl))
                     } else if self.na_magica() {
                         // SÓ MELEE NA ILHA MÁGICA. O dono: "no caso das ilhas
@@ -5655,6 +5682,11 @@ impl GameWorld {
     /// nivel. Mob novo entra sem tocar em codigo de mundo.
     pub fn povoar_ilha(&mut self, centro_jogador: Vec2) {
         self.porto_da_ilha = centro_jogador;
+        // THE OPEN SEA is peopled from its routes, not from its relief.
+        if self.no_mar() {
+            self.povoar_mar();
+            return;
+        }
         let (Some(ilha), Some(def)) =
             (self.ilha.as_ref(), shared::terreno::def_da_zona(&self.zona))
         else {
@@ -6255,6 +6287,11 @@ impl GameWorld {
     }
 
     pub fn pousar(&self, p: Vec2) -> Vec2 {
+        // At sea "solid ground" is WATER: a body is put on the nearest
+        // navigable spot, or at an anchorage.
+        if self.no_mar() {
+            return self.agua_no_mar(p);
+        }
         match &self.ilha {
             Some(i) => i.terra_mais_proxima(p.x, p.y, 400.0),
             None => p,
@@ -6271,6 +6308,9 @@ impl GameWorld {
         if let Some(n) = shared::magica::nivel_da_zona(&self.zona) {
             return n.mob.0;
         }
+        if self.no_mar() {
+            return shared::mar::nivel_em(p);
+        }
         let Some(def) = shared::terreno::ARQUIPELAGO.iter().find(|d| d.zona == self.zona) else {
             return 1;
         };
@@ -6280,6 +6320,9 @@ impl GameWorld {
     }
 
     pub fn porto(&self) -> Vec2 {
+        if self.no_mar() {
+            return crate::world::navio::fundeadouro_padrao();
+        }
         match self.ilha.as_ref().and_then(|i| i.cidade()) {
             Some(c) => self.pousar(c.centro()),
             None => self.pousar(Vec2::ZERO),
@@ -6430,6 +6473,7 @@ impl GameWorld {
         success: crate::auth::AuthSuccess,
         row: crate::persistence::CharacterRow,
     ) {
+        let self_no_mar = self.no_mar();
         let handle = match self.sessions.get(&sid) {
             Some(s) => s.handle.clone(),
             None => return,
@@ -6462,6 +6506,26 @@ impl GameWorld {
                         .to_client
                         .send(ServerMessage::TrocarZona { zona: z, host });
                     return;
+                }
+                // THE SEA IS DOWN (docs/NAVEGACAO.md): at sea the saved zone
+                // is `mar_aberto`, and with that process down nobody at sea
+                // could log in anywhere sensible. `zona_volta` is the island
+                // they sailed from: back there, at its port (that island's
+                // own login lands them at its port, its saved zone still
+                // being the sea that is down).
+                if let Some(volta) = self.volta_do_mar(&row.zona_volta, &z) {
+                    if let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(&volta)) {
+                        tracing::warn!(
+                            "login '{}': zona salva '{}' fora do ar — volta pra '{}'",
+                            row.name,
+                            z,
+                            volta
+                        );
+                        let _ = handle
+                            .to_client
+                            .send(ServerMessage::TrocarZona { zona: volta, host });
+                        return;
+                    }
                 }
                 tracing::warn!(
                     "login '{}': zona salva '{}' sem canal no ar — entra no porto de '{}'",
@@ -6760,6 +6824,11 @@ impl GameWorld {
             // Before anything below recomputes the stats (`reembolsa_spd`).
             s.renascimentos = row.renascimentos;
             s.arvore = arvore_salva;
+            // Open slots never sit empty while a learned active is left out
+            // (owner, 15/11/2026: "it did not link to slot 5 by itself, I had
+            // to pick"): a character reborn before this, or whose slot opened
+            // while the actives were already learned, gets them placed here.
+            s.arvore.preencher_slots(row.renascimentos);
             s.equipment = saved_equip;
             s.xp = saved_xp;
             s.gold = saved_gold;
@@ -6831,6 +6900,12 @@ impl GameWorld {
             s.xp_bonus_ate = row.xp_bonus_ate;
             s.magica_ate = row.magica_ate;
             s.magica_volta = row.magica_volta.clone();
+            // Only meaningful at sea: landing anywhere else means ashore.
+            s.zona_volta = if self_no_mar {
+                row.zona_volta.clone()
+            } else {
+                String::new()
+            };
             s.magica_gratis = row.magica_gratis;
             s.diario = shared::prime::Diario::de_json(&row.diario_json);
             let _ = s.handle.to_client.send(ServerMessage::Renascimento {
@@ -7997,6 +8072,7 @@ impl GameWorld {
                 xp_bonus_ate: 0,
                 magica_ate: 0,
                 magica_volta: String::new(),
+                zona_volta: String::new(),
                 magica_gratis: 0,
                 magica_avisado: i64::MAX,
                 diario: Default::default(),
@@ -8052,6 +8128,8 @@ impl GameWorld {
                 arvore: Default::default(),
                 arvore_ganhos_visto: 0,
                 invisivel_ate: 0.0,
+                furia_ate: 0.0,
+                furia_fator: 0.0,
                 buffs_da_arvore: Vec::new(),
                 faction: shared::Faction::default(),
                 casting_skill_id: 0,
@@ -8502,6 +8580,7 @@ impl GameWorld {
                 self.handle_shop_comprar(id, slot_idx as usize, qtd as u32);
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
+            ClientMessage::Navio { pedido } => self.handle_navio(id, pedido),
             ClientMessage::Colonia { pedido } => self.handle_colonia(id, pedido),
             ClientMessage::Magica { pedido } => self.handle_magica(id, pedido),
             ClientMessage::Prime { pedido } => self.handle_prime(id, pedido),
@@ -9933,6 +10012,7 @@ impl GameWorld {
         // `self` esta' emprestado pelas sessoes.
         let mut refazer_rota: Vec<(SessionId, Vec2)> = Vec::new();
         let na_colonia = shared::colonia::e_colonia(&self.zona);
+        let no_mar = self.no_mar();
         let jogadores: std::collections::HashSet<EntityId> = self.ecs
             .query::<(&NetId, &EntityKind)>().iter()
             .filter(|(_, (_, kind))| matches!(kind, EntityKind::Player))
@@ -10484,6 +10564,10 @@ impl GameWorld {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
                 PLAYER_SPEED * 0.5 * spd_scale
+            } else if no_mar {
+                // AT SEA THE HULL MOVES (docs/NAVEGACAO.md): one speed, the
+                // ship's, no mount and no sprint — no legs on the water.
+                shared::navio::velocidade(session.equipment.navio.unwrap_or(shared::item_id::NAVIO_CHALUPA))
             } else {
                 // Montado: a mobilidade da montaria E o sprint, que agora
                 // multiplicam (docs/MONTARIAS.md). Esporear gasta o mesmo
@@ -10561,11 +10645,11 @@ impl GameWorld {
             // damage. Roll feito no SOURCE pra gerar exatamente 1 valor de
             // dano por swing — todos os alvos no cone recebem o mesmo
             // (consistente com regras tipo Diablo/RoTMG).
-            let crit =
-                session.stats.crit_chance > 0.0 && fastrand::f32() < session.stats.crit_chance;
+            let chance = session.chance_de_crit(self.sim_time_s);
+            let crit = chance > 0.0 && fastrand::f32() < chance;
             // A passiva de saque rapido morreu com as passivas.
             let dmg_final = if crit {
-                golpe_critico(basic_damage)
+                golpe_critico_com(basic_damage, session.extra_de_dano_crit(self.sim_time_s))
             } else {
                 basic_damage
             };
@@ -11711,6 +11795,16 @@ impl GameWorld {
                 .or(self.ilha.as_ref());
             let jogador = mobilidade == 0.0;
             let movido = match terreno {
+                // AT SEA EVERY BODY IS A HULL (docs/NAVEGACAO.md): navigating
+                // is walking, only on water. Land (the islands' domes, the
+                // docks) and the chart's edge are the walls.
+                Some(_) if no_mar => shared::terreno::mover_casco(
+                    &|x, z| shared::mar::navegavel(x, z),
+                    pos.0,
+                    vel.0,
+                    dt,
+                    shared::navio::RAIO_DO_CASCO,
+                ),
                 // Players walk both floors; mobs stay on the street (the
                 // ramps' feet are walls to them, like to anyone below).
                 Some(i) if jogador && i.tem_deck() => {
@@ -12614,7 +12708,17 @@ impl GameWorld {
             // esconderia justamente o que se quer ver enquanto se constroi
             // mundo: se o mob ACERTA, e quanto.
             let protegido = self.imortal && self.ecs.get::<&PlayerTag>(entity).is_ok();
-            if !protegido {
+            // AT SEA THE HULL TAKES IT (docs/NAVEGACAO.md): a sea mob's bite
+            // goes to the ship, not the player; the answer is to steer away.
+            // Collected here and applied after the loop (`tick_mar`).
+            let no_casco = self.no_mar()
+                && !attacker_is_player
+                && self.ecs.get::<&PlayerTag>(entity).is_ok();
+            if no_casco {
+                if !protegido {
+                    self.mordidas_no_casco.push((target_id, dmg));
+                }
+            } else if !protegido {
                 if let Ok(mut hp) = self.ecs.get::<&mut Health>(entity) {
                     hp.current = (hp.current - dmg).max(0);
                     if hp.current == 0 && attacker_is_player {
@@ -13316,6 +13420,7 @@ impl GameWorld {
         // passar por cima.
         self.sincroniza_pets();
         self.tick_pets(dt);
+        self.tick_mar();
         // A montaria VISTA sai do equipamento, e equipar acontece por muitos
         // caminhos (bolsa, saque que auto-equipa, correio, mercado). Conferir
         // no tick cobre todos: sem isto, equipar nao avisava ninguem e o
@@ -14326,6 +14431,7 @@ impl GameWorld {
             xp_bonus_ate: i64,
             magica_ate: i64,
             magica_volta: String,
+            zona_volta: String,
             magica_gratis: i64,
             mortes_json: String,
             recuperacoes_dia: i64,
@@ -14395,6 +14501,7 @@ impl GameWorld {
                 xp_bonus_ate: session.xp_bonus_ate,
                 magica_ate: session.magica_ate,
                 magica_volta: session.magica_volta.clone(),
+                zona_volta: session.zona_volta.clone(),
                 magica_gratis: session.magica_gratis,
                 mortes_json: crate::morte::para_json(&session.mortes),
                 recuperacoes_dia: session.recuperacoes_dia,
@@ -14460,6 +14567,7 @@ impl GameWorld {
                 xp_bonus_ate: e.xp_bonus_ate,
                 magica_ate: e.magica_ate,
                 magica_volta: e.magica_volta,
+                zona_volta: e.zona_volta,
                 magica_gratis: e.magica_gratis,
                 mortes_json: e.mortes_json,
                 recuperacoes_dia: e.recuperacoes_dia,
@@ -15028,7 +15136,10 @@ impl GameWorld {
                 if let (Some(def), quest_status::ACTIVE) = (def, cq.status) {
                     match def.obj_kind {
                         objective_kind::NIVEL => {
-                            let nivel = shared::level_of_xp_with_mult(s.xp, xpmult);
+                            let nivel = shared::quests::nivel_de_missao(
+                                shared::level_of_xp_with_mult(s.xp, xpmult),
+                                s.renascimentos,
+                            );
                             mudou.extend(crate::quests::checar_trava(&mut s.quests, nivel));
                         }
                         // TER (the key's resources): STATE, like the level
@@ -15111,6 +15222,14 @@ impl GameWorld {
                     add_to_inventory(&mut s.inventory, item, qtd as u32, None);
                     s.inventory_dirty = true;
                 }
+            }
+            // THE SLOOP (docs/NAVEGACAO.md): leaving the first island gives
+            // the first ship — once, and never to someone who has one.
+            if feito.id == shared::historia::PASSO_DA_CHALUPA && navio::dar_chalupa(s) {
+                let _ = s.handle.to_client.send(ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: "The Harbour Captain hands you a Sloop: your own ship. Talk to him at any dock to sail the open sea.".into(),
+                });
             }
             if shared::progressao::xp_da_quest(feito) > 0 {
                 // A XP da historia e' escrita na curva padrao (e' ela que leva o
@@ -15435,12 +15554,28 @@ impl GameWorld {
         // the story only. A new player still reaches the Glacier at 20 —
         // the story's own "Reach level 20" step (`historia::TRAVA_DO_BARCO`)
         // comes first — and a reset character, story done, sails anywhere.
-        let destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
+        let mut destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
+        // The story's own trip is free (`handle_viajar`): the button says so.
+        if let Some(alvo) = crate::quests::passo_atual(&s.quests)
+            .filter(|c| c.status == shared::quests::quest_status::ACTIVE)
+            .and_then(|c| shared::quests::quest_by_id(c.quest_id))
+            .filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM)
+            .map(|d| d.obj_target as u8)
+        {
+            for d in destinos.iter_mut().filter(|d| d.ilha == alvo) {
+                d.preco = 0;
+            }
+        }
         let _ = s.handle.to_client.send(ServerMessage::Viagem {
             destinos,
             // removed 15/11/2026: a Minha Ilha saiu do jogo.
             colonia: false,
         });
+        // THE SHIP comes with the Captain's menu (docs/NAVEGACAO.md): "Sail
+        // with my ship" and "Repair" are on the same panel.
+        if meio == shared::viagem::Meio::Capitao {
+            self.envia_estado_navio(sid);
+        }
     }
 
     /// "Board" no menu do Capitao: perto dele, ilha liberada pela
@@ -15493,6 +15628,43 @@ impl GameWorld {
                 format!("A história ainda não chegou a {}{passo}.", dest.nome),
             );
             return;
+        }
+        // THE CAPTAIN'S TRIP COSTS COPPER (owner, 15/11/2026). Checked and
+        // taken only once the trip can happen: refused with the price, and
+        // never charged for a trip that did not leave.
+        // The story's own trip (the active "Bound for…" step to this very
+        // island) stays free: the auto quest boards through this menu, and
+        // a new player without copper must never be stuck on the story.
+        let da_historia = self.sessions.get(&sid).is_some_and(|s| {
+            crate::quests::passo_atual(&s.quests)
+                .filter(|c| c.status == shared::quests::quest_status::ACTIVE)
+                .and_then(|c| shared::quests::quest_by_id(c.quest_id))
+                .is_some_and(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM && d.obj_target as usize == i)
+        });
+        let preco = if da_historia { 0 } else { shared::viagem::preco(i, meio) };
+        if preco > 0 && dest.zona != self.zona {
+            let tem = self
+                .sessions
+                .get(&sid)
+                .map_or(0, |s| crate::craft::tem(&s.inventory, shared::item_id::COPPER));
+            if tem < preco {
+                self.avisa_missao(
+                    sid,
+                    format!("The trip to {} costs {preco} copper: {} copper short.", dest.nome, preco - tem),
+                );
+                return;
+            }
+            if !self.diretorio.as_ref().is_some_and(|d| d.melhor(dest.zona).is_some()) {
+                // `embarcar` says why; nothing is charged.
+                self.embarcar(sid, i);
+                return;
+            }
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                crate::craft::consumir(&mut s.inventory, shared::item_id::COPPER, preco);
+                s.inventory_dirty = true;
+                crate::telemetria::conta_de(&s.name, "cobre_viagem", dest.zona, preco as i64);
+            }
+            self.save_pending = true;
         }
         self.embarcar(sid, i);
     }
@@ -15616,7 +15788,8 @@ impl GameWorld {
                 s.equipment.get_inst(slot),
             ),
         };
-        let Some(mut inst) = inst else {
+        // A ship is not refined: its hull is repaired at the Captain.
+        let Some(mut inst) = inst.filter(|_| !shared::item_id::e_navio(item_id)) else {
             let _ = s.handle.to_client.send(ServerMessage::RefinoResultado {
                 resultado: resultado::INVALIDO,
                 nivel: 0,
@@ -17382,7 +17555,8 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
-        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        // Quest level locks: met by anyone already reborn (`nivel_de_missao`).
+        let level = shared::quests::nivel_de_missao(shared::level_of_xp_with_mult(s.xp, xpmult), s.renascimentos);
         let fac = Self::faction_qid(s.faction);
         let available = crate::quests::available_givers(level, fac, &s.quests, now, &self.zona);
         let _ = s
@@ -17404,7 +17578,8 @@ impl GameWorld {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
-        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        // Quest level locks: met by anyone already reborn (`nivel_de_missao`).
+        let level = shared::quests::nivel_de_missao(shared::level_of_xp_with_mult(s.xp, xpmult), s.renascimentos);
         let fac = Self::faction_qid(s.faction);
         let mut offer: Vec<shared::quests::QuestNet> = crate::quests::offerable(
             giver_source,
@@ -17465,7 +17640,8 @@ impl GameWorld {
         if !s.logged_in {
             return;
         }
-        let level = shared::level_of_xp_with_mult(s.xp, xpmult);
+        // Quest level locks: met by anyone already reborn (`nivel_de_missao`).
+        let level = shared::quests::nivel_de_missao(shared::level_of_xp_with_mult(s.xp, xpmult), s.renascimentos);
         let fac = Self::faction_qid(s.faction);
         let active_count = s
             .quests
@@ -18316,6 +18492,9 @@ impl GameWorld {
                 // Sempre abre o diálogo: arauto (giver != 0) traz quests; morador
                 // comum (giver 0) traz oferta vazia → diálogo com saudação.
                 self.send_quest_offer(sid, shared::quests::quest_source::NPC, giver, gname);
+            }
+            Some((entity, 7, _, _)) if self.ecs.get::<&navio::BauDoMarTag>(entity).is_ok() => {
+                self.saquear_bau_do_mar(sid, entity);
             }
             Some((entity, 7, _, _)) => {
                 // Baú de tesouro: abrir conclui a quest TREASURE + dá a relíquia.
@@ -20319,7 +20498,10 @@ impl GameWorld {
             .wrapping_add(c.coluna as u64);
         // O tier do MATERIAL nao e' o tier da pedra: a pedra roxa entrega
         // sobretudo cinza, e nao entrega roxo nenhum. Ver `RENDIMENTO_DA_PEDRA`.
-        let tier_material = if c.tier == 0 {
+        let tier_material = if c.tier == 0 && self.no_mar() {
+            // Driftwood of the stretch's level (`mar::nivel_em`).
+            (1 + shared::mar::nivel_em(c.centro) / 15).min(4) as u8
+        } else if c.tier == 0 {
             // A madeira do NÍVEL do lugar (`porao::tier_da_arvore`): Bosque T1,
             // Geleira T2, Ermo T3, Planalto T3→T4 pela trilha. Era 1 fixo.
             shared::terreno::def_da_zona(&self.zona).map_or(1, |def| {
@@ -20701,6 +20883,7 @@ impl GameWorld {
             xp_bonus_ate: session.xp_bonus_ate,
             magica_ate: session.magica_ate,
             magica_volta: session.magica_volta.clone(),
+            zona_volta: session.zona_volta.clone(),
             magica_gratis: session.magica_gratis,
             mortes_json: crate::morte::para_json(&session.mortes),
             recuperacoes_dia: session.recuperacoes_dia,
@@ -20910,7 +21093,36 @@ pub(crate) fn dano_mitigado(dmg: i32, defesa: i32, reducao: f32) -> i32 {
 /// A critical hit: the same multiplier for the basic swing and the skills.
 /// Shared with `crate::pvp_sim`, so the simulator crits like the game does.
 pub(crate) fn golpe_critico(dmg: i32) -> i32 {
-    (dmg as f32 * shared::CRIT_DAMAGE_MULT).round() as i32
+    golpe_critico_com(dmg, 0.0)
+}
+
+/// A critical hit with `extra` more critical damage (Lethal Fury).
+pub(crate) fn golpe_critico_com(dmg: i32, extra: f32) -> i32 {
+    (dmg as f32 * (shared::CRIT_DAMAGE_MULT + extra)).round() as i32
+}
+
+impl Session {
+    /// Critical chance right now: the stats plus Lethal Fury while it lasts.
+    pub(crate) fn chance_de_crit(&self, agora: f32) -> f32 {
+        let furia = if self.furia_ate > agora {
+            shared::arvore::FURIA_CRIT * self.furia_fator
+        } else {
+            0.0
+        };
+        self.stats.crit_chance + furia
+    }
+
+    /// Extra critical damage right now, over `CRIT_DAMAGE_MULT`: the path
+    /// tree's permanent crit damage (`Passivas::dano_critico`, keystones may
+    /// make it negative) plus Lethal Fury while it lasts.
+    pub(crate) fn extra_de_dano_crit(&self, agora: f32) -> f32 {
+        let furia = if self.furia_ate > agora {
+            shared::arvore::FURIA_DANO_CRIT * self.furia_fator
+        } else {
+            0.0
+        };
+        self.arvore.passivas().dano_critico + furia
+    }
 }
 
 /// Share of every hit Bulwark (3) cuts while it is up (`muralha_ate`), by

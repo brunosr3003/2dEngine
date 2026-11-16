@@ -594,6 +594,12 @@ pub enum ClientMessage {
     UsarAtiva {
         slot: u8,
     },
+    /// THE SHIP (`shared::navio`, naval phase 1): sail out, dock, repair,
+    /// or ask for the state. Answered with `ServerMessage::Navio` (and the
+    /// zone change, when sailing or docking).
+    Navio {
+        pedido: crate::navio::PedidoNavio,
+    },
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1538,6 +1544,11 @@ pub enum ServerMessage {
     Invisibilidade {
         eid: EntityId,
         segundos: f32,
+    },
+    /// THE SHIP's state (`shared::navio`): at login, with the Harbour
+    /// Captain's menu, after a repair and whenever the hull changes at sea.
+    Navio {
+        estado: crate::navio::EstadoNavio,
     },
 }
 

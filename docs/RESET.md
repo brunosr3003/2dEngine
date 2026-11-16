@@ -18,7 +18,7 @@ proteção.
 
 **Renascimento, fase 1 — feito (15/11/2026, versão de teste):** regras e
 números em `shared::renascimento` (`pode_renascer`, `divisor_de_renascimento`
-/ `xp_depois_do_divisor` = 1,5^r em `Session::grant_xp` depois do ritmo e antes
+/ `xp_depois_do_divisor` em `Session::grant_xp` (era 1,5^r; desde 15/11 é linear até o R15, 1 + 0,2·r, e ×1,08 por renascimento depois, sem teto: R10 3×, R15 4×, R20 5,9×, R30 12,7×, R40 27×, R55 87×) depois do ritmo e antes
 dos bônus, `mult_de_atributos` = 1 + 0,05·r, `essencia_do_renascimento` =
 10·n, `bau_do_renascimento`, `e_marco` / `marcos_ate` / `marco_de` /
 `proximo_marco`, `tier_da_aura` / `intensidade_da_aura`). Coluna
@@ -87,11 +87,11 @@ marcadas com losango dourado e "Nó ativo: … — em breve". O Menu › PERSONA
 não ganhou entrada própria: o grupo já tem os 5 de `POR_LINHA` e cada entrada
 exige arte no atlas; a árvore abre pela Ficha, que está nesse grupo.
 
-Tabela (casas 5, 10 e 15 = dão a passiva E a ativa da fase 4, abaixo):
+**Substituída em 15/11/2026 pela árvore em teia (seção "Árvore em teia", abaixo da fase 4).** Tabela antiga, só como histórico (casas 5, 10 e 15 = dão a passiva E a ativa da fase 4, abaixo):
 
 | Caminho | Casas 1–15 | Total do caminho cheio |
 |---|---|---|
-| Assassino | crít 1 · vel.atq 2 · DES 4 · crít 1 · **mov 2 (Passo Sombrio)** · vel 2 · crít 1 · DES 4 · esquiva 5 · **crít 1 (Invisibilidade)** · vel 2 · DES 4 · crít 1 · vel 2 · **mov 2 (Marca da Morte)** | crítico +5 pp, vel. de ataque +8%, destreza +12%, movimento +4%, recarga da esquiva −5% |
+| Assassino | crít 1 · vel.atq 2 · DES 4 · crít 1 · **mov 2 (Passo Sombrio)** · vel 2 · crít 1 · DES 4 · esquiva 5 · **crít 1 (Invisibilidade)** · vel 2 · DES 4 · crít 1 · vel 2 · **mov 2 (Fúria Letal)** | crítico +5 pp, vel. de ataque +8%, destreza +12%, movimento +4%, recarga da esquiva −5% |
 | Mago | SAB 4 · mana 5 · atq 2 · regen mana 0,5 · **SAB 4 (Nova Arcana)** · mana 5 · atq 2 · regen 0,5 · SAB 4 · **atq 2 (Meteoro)** · mana 5 · regen 0,5 · SAB 4 · mana 5 · **atq 2 (Distorção do Tempo)** | sabedoria +16%, mana +20%, ataque +8%, regen de mana +1,5/s |
 | Guardião | def 4 · vida 4 · regen 1 · def 4 · **red 1 (Provocar)** · vida 4 · def 4 · firmeza 25 · vida 4 · **red 1 (Escudo Baluarte)** · def 4 · regen 1 · vida 4 · def 4 · **red 2 (Inquebrável)** | defesa +20%, vida +16%, dano recebido −4%, regen de vida +2/s, firmeza +25 |
 | Corsário | drop 4 · ouro 6 · minério 8 · Energia 8 · **drop 4 (Faro de Tesouro)** · Darksteel 8 · ouro 7 · saque melhor 1 · minério 7 · **drop 4 (Pilhagem)** · Energia 7 · Darksteel 7 · ouro 7 · saque melhor 1 · **drop 4 (Frota Dourada)** | drop +16%, ouro +20%, minério/Energia/Darksteel +15%, saque melhor +2% |
@@ -228,18 +228,18 @@ VFX: reaproveita os de skills da arma (`ativas::fx_da_ativa`).
 
 | Ativa | Caminho (casa) | Efeito | Recarga | Mana |
 |---|---|---|---|---|
-| Passo Sombrio | Assassino (5) | teleporta até 6 m rumo ao alvo (para 1 m antes) ou pra onde anda; colisão do andar; não quebra invisibilidade | 12 s | 20 |
-| Invisibilidade | Assassino (10) | 6 s: mobs perdem o aggro, jogador não mira; atacar/skill quebra | 30 s | 30 |
-| Marca da Morte | Assassino (15) | golpe crítico garantido no alvo (até 8 m): 200% do ataque (suprema 300%) | 20 s | 35 |
-| Nova Arcana | Mago (5) | 130% do ataque em todo inimigo a 4 m | 10 s | 30 |
-| Meteoro | Mago (10) | 180% do ataque em raio 3 no alvo (até 10 m), atordoa mob 1 s (chefe não) | 18 s | 45 |
-| Distorção do Tempo | Mago (15) | corta 50% da recarga restante das skills da arma (suprema 75%) | 45 s | 40 |
-| Provocar | Guardião (5) | mobs a 6 m atacam só você por 4 s + 2 s de Baluarte | 15 s | 20 |
-| Escudo Baluarte | Guardião (10) | Baluarte 5 s + cura 8% da vida máx. | 25 s | 30 |
-| Inquebrável | Guardião (15) | Baluarte 6 s + cura 20% (suprema 30%) + enche a firmeza | 60 s | 40 |
-| Faro de Tesouro | Corsário (5) | +20% drop por 60 s | 120 s | 25 |
-| Pilhagem | Corsário (10) | +30% ouro dos monstros por 60 s | 120 s | 25 |
-| Frota Dourada | Corsário (15) | 90 s: +15% drop, +25% ouro, +2% saque melhor (suprema ×1,5) | 300 s | 50 |
+| Passo Sombrio | Assassino (anel 1, 4ª casa da espinha) | teleporta até 6 m rumo ao alvo (para 1 m antes) ou pra onde anda; colisão do andar; não quebra invisibilidade | 12 s | 20 |
+| Invisibilidade | Assassino (anel 2, 8ª da espinha) | 6 s: mobs perdem o aggro, jogador não mira; atacar/skill quebra | 30 s | 30 |
+| Fúria Letal (era Marca da Morte, trocada 15/11) | Assassino (anel 3, capstone, 12ª da espinha) | buff por 8 s: +25 pp de crítico e +15% de dano crítico em todo golpe (suprema ×1,5: +37,5 pp e +22,5%) | 25 s | 35 |
+| Nova Arcana | Mago (anel 1) | 130% do ataque em todo inimigo a 4 m | 10 s | 30 |
+| Meteoro | Mago (anel 2) | 180% do ataque em raio 3 no alvo (até 10 m), atordoa mob 1 s (chefe não) | 18 s | 45 |
+| Distorção do Tempo | Mago (anel 3, capstone) | corta 50% da recarga restante das skills da arma (suprema 75%) | 45 s | 40 |
+| Provocar | Guardião (anel 1) | mobs a 6 m atacam só você por 4 s + 2 s de Baluarte | 15 s | 20 |
+| Escudo Baluarte | Guardião (anel 2) | Baluarte 5 s + cura 8% da vida máx. | 25 s | 30 |
+| Inquebrável | Guardião (anel 3, capstone) | Baluarte 6 s + cura 20% (suprema 30%) + enche a firmeza | 60 s | 40 |
+| Faro de Tesouro | Corsário (anel 1) | +20% drop por 60 s | 120 s | 25 |
+| Pilhagem | Corsário (anel 2) | +30% ouro dos monstros por 60 s | 120 s | 25 |
+| Frota Dourada | Corsário (anel 3, capstone) | 90 s: +15% drop, +25% ouro, +2% saque melhor (suprema ×1,5) | 300 s | 50 |
 
 Escala: dano sobre o `attack_damage` da sessão (que já tem nível,
 equipamento, renascimento e árvore) com a mesma chance de crítico das skills;
@@ -254,6 +254,136 @@ arco em telas pequenas, o "fantasma" a 30 fps, a correção de posição do
 cliente depois do Passo Sombrio, e o PvP real contra invisível (o teste só
 confere `can_damage_player`). Muda o fio (variantes e campos novos no fim):
 sobe junto com o `PROTOCOL_VERSION` da release.
+
+**Árvore em teia, estilo Path of Exile — feita (15/11/2026, versão de teste).**
+Pedido do dono: "a hud dos paths tá um lixo, tem que ser uma vibe Path of
+Exile bem bonita com ícones etc; também tá muito pequeno, no R7 eu já tinha
+maximizado tudo basicamente, a árvore de passiva pode ser mais extensa". As 4 ×
+15 casas lineares viraram uma TEIA radial de **173 nós** em `shared::arvore`:
+
+- **Forma.** Um nó INICIAL grátis no centro (`INICIO`, id 0, sempre possuído).
+  Cada caminho tem um BRAÇO diagonal (`ANGULO_DO_CAMINHO`: Assassino em cima à
+  esquerda, Mago em cima à direita, Guardião embaixo à esquerda, Corsário embaixo
+  à direita), todos do mesmo molde de 41 casas (`MOLDE`): a ESPINHA central
+  (start → 3 menores → ativa 1 → 3 menores → ativa 2 → 3 menores → capstone →
+  pedra-chave central), duas rodinhas laterais no anel 1 que levam a notáveis,
+  cadeias laterais no anel 2 e 3 até uma pedra-chave em cada ponta, laços (ML/MR
+  ligam espinha↔lado no anel 2, IL/IR no anel 3) e nós de borda. **Pontes**
+  (`PONTES`) ligam braços vizinhos pela borda: uma menor perto do centro (raio
+  4,2) e uma notável na ponta (raio 9,6) em cada fronteira
+  (Assassino|Mago, Mago|Corsário, Corsário|Guardião, Guardião|Assassino), para
+  builds híbridas.
+- **Tipos:** 1 início, **112 menores** (um atributo pequeno), **36 notáveis**
+  (nome + 2 efeitos; 32 nos braços e 4 pontes), **12 pedras-chave** (3 por
+  caminho, bônus grande com custo real, valor negativo) e as **12 ativas**.
+- **Regra:** só se compra nó LIGADO a um já comprado (ou ao início); a alocação
+  é um CONJUNTO de ids (`Arvore::bits: [u64; 3]`). Toque duplo no mesmo nó é
+  recusado ("You already know this node.").
+- **Custo** pelo anel: menor 1/2/3, notável e ativa anel+1, pedra-chave 6
+  (`CUSTO_DA_CHAVE`). **Teia inteira: 460 pontos** (`custo_total`), ≈ R46 no
+  nível 100; a fórmula de pontos não mudou (`10·(r−1) + ⌊nível/10⌋`), então o
+  `kuna` (R55, ~550 pontos) compra tudo e sobra. R7 (70 pontos) é ~15%.
+- **Ativas:** os mesmos 12 ids de `ATIVAS` (persistidos nos slots), na espinha
+  de cada braço: ativa 1 no anel 1 (4ª casa, 5 pontos do início), ativa 2 no
+  anel 2 (8ª casa, 14 pontos), capstone no anel 3 (12ª casa, 27 pontos). A
+  ativa é aprendida quando o nó é comprado (`possui_ativa`). Suprema: só as
+  capstones (`e_capstone`, ativa % 3 == 2) a partir do R10, como antes. Slots
+  4–6 nos R1/R3/R5, como antes.
+- **Ids persistidos:** a tabela é construída por código (`tabela()`, OnceLock);
+  NUNCA reordenar `MOLDE`, `CONTEUDO` ou `PONTES`, só acrescentar no fim. Ids:
+  0 início, `1 + caminho·41 + casa` nos braços, 165–172 as pontes.
+
+Conteúdo por braço (menores alternam as duas entradas do papel):
+
+| Caminho | Espinha | Lado esquerdo | Lado direito | Ligações | Notáveis (L2, R2, L5, R5, L8, R8, IL, IR) |
+|---|---|---|---|---|---|
+| Assassino | crít 0,5 pp | vel. atq 1,5% | DES 3% | mov 1% / esquiva 3% | Mãos Rápidas, Olho Afiado, Rajada, Precisão, Dançarino das Sombras, Assassinar, Degolador, Presas Gêmeas |
+| Mago | atq 1,2% | SAB 3% | mana 4% | regen mana 0,3 | Mente Arcana, Reservas Profundas, Discernimento, Fonte de Mana, Arquimago, Linhas de Ley, Lâmina Arcana, Foco |
+| Guardião | def 2% | vida 2% | regen vida 0,5 | firmeza 8 | Pele Grossa, Segundo Fôlego, Corpo de Ferro, Inabalável, Colosso, Bastião, Rolo Compressor, Sangue de Troll |
+| Corsário | drop 2% | ouro 3% / minério 4% | Energia 4% / Darksteel 4% | XP 1% / ouro 2% | Batedor de Carteira, Garimpeiro, Caçador de Tesouros, Farejador de Veios, Toque de Ouro, Minerador das Profundezas, Estrela da Sorte, Marujo Experiente |
+
+Pedras-chave (centro, esquerda, direita):
+
+| Caminho | Pedras-chave |
+|---|---|
+| Assassino | **Fio da Morte** +30% dano crítico, −15% vida · **Redemoinho** +12% vel. de ataque, −15% defesa · **Oportunista** +6 pp crítico, −10% dano crítico |
+| Mago | **Sobrecarga** +15% ataque, −20% mana · **Mente Sobre a Matéria** +15% SAB, −10% vida · **Bateria Arcana** +30% mana, +2 regen de mana/s, −5% ataque |
+| Guardião | **Imóvel** −4% dano recebido, −8% movimento · **Titã** +18% vida, −8% vel. de ataque · **Fortaleza** +25% defesa, −8% ataque |
+| Corsário | **Rei Pirata** +15% drop, +2% saque melhor, −10% vida · **Ganância** +40% ouro, −10% defesa · **Mestre Coletor** +25% minério, +25% Darksteel, −5% ataque |
+
+Pontes: Assassino|Mago (crít 0,5 pp + SAB 2%; **Lâmina Mística** +5% dano
+crítico, +2% ataque), Mago|Corsário (mana 3% + drop 2%; **Alquimista** +3% XP,
++6% Energia), Corsário|Guardião (ouro 3% + vida 2%; **Pernas de Marinheiro**
++20 firmeza, +4% drop), Guardião|Assassino (def 2% + vel. atq 1,5%;
+**Duelista** −0,5% dano recebido, +1 pp crítico).
+
+**Teia inteira comprada** (teste `passivas_somam_certo`): crítico +17 pp, dano
+crítico +48%, vel. de ataque +26%, DES +27%, esquiva −19%, SAB +59%, mana +59%,
+regen de mana +5,8/s, ataque +27,8%, defesa +34%, vida +20%, dano recebido −8%,
+regen de vida +7,5/s, firmeza +117, drop +51%, ouro +77%, minério +52%,
+Energia +30%, Darksteel +49%, saque melhor +5,5%, XP +8% (movimento zera: as
+pedras-chave cobram). As % de vida/mana/ataque/defesa/DES/SAB continuam
+SOMANDO no multiplicador do renascimento (`1 + 5%·r + árvore%`): no R50 (×3,5)
++28% de ataque vira +8% efetivo. É a fantasia do R50, não um tier novo.
+
+**Efeitos novos** (só no servidor, fora do fio): `Efeito::DanoCritico` →
+`Passivas::dano_critico`, somado em `Session::extra_de_dano_crit` (o mesmo
+`extra` de `golpe_critico_com` que a Fúria Letal usa; pode ficar negativo com
+Oportunista), e `Efeito::Xp` → `Bonus::xp` via `somar_economia`. Valor negativo
+= custo de pedra-chave (`Efeito::modelo_negativo`). O `pvp_sim` não lê o dano
+crítico da árvore.
+
+**Migração:** `arvore_json` novo = `{"ids":[…],"slots":[…]}`. Os formatos
+antigos (`"[a,b,c,d]"` e `{"nos":[…],"slots":…}`) não têm como virar teia e
+carregam como NADA comprado: **redistribuição grátis**, slots vazios
+(`preencher_slots` os enche de novo conforme as ativas voltam a ser
+aprendidas). `Arvore::e_formato_antigo` reconhece. `validada` corta o excesso
+pelo nó MAIS FUNDO (por passos a partir do início), o que nunca desconecta o
+resto, e solta nó desligado do início. `Arvore::com_nos([a,b,c,d])` sobrou como
+ajudante de teste (as primeiras casas da espinha de cada braço).
+
+**Redistribuir:** só em OURO (1.000 × pontos gastos). Decisão do dono em
+15/11: a Essência do Renascimento é só para ascensão; a loja da Essência saiu.
+`PedidoArvore::RedistribuirComEssencia` ficou no enum (índice do postcard) e o
+servidor recusa com aviso. O botão "Reset paths · N gold" fica no cabeçalho da
+árvore, com confirmação mostrando o custo e os pontos devolvidos.
+
+**Protocolo:** `PedidoArvore::Aprender { no: u16 }` NO FIM do enum; `Gastar
+{ caminho, no }` ficou (inofensivo: o servidor só reenvia o estado). O
+`Arvore` do fio agora é o bitset (a 199 não saiu, então trocar o campo é
+seguro); `EstadoArvore` mantém o formato. `PROTOCOL_VERSION` continua 199.
+
+**Tela** (`client/arvore_ui.rs`, `client/arvore_icones.rs`): o painel inteiro é
+um céu noturno (degradê, quatro nebulosas na cor dos caminhos, 260 estrelas com
+paralaxe e brilho, vinheta), com os anéis 1/2/3 em círculos tracejados. Menor =
+círculo; notável = maior com anel dourado; pedra-chave = grande, anel duplo
+dourado e oito pontas; ativa = hexágono na cor do caminho com o ícone da skill
+(`icones_ui::skill`), selo do slot 4/5/6 e coroa quando suprema. Cada atributo
+tem um glifo vetorial (25 glifos: espada, escudo, olho, estrela de crítico,
+bota, coração, moeda, gota, chama, relógio, caveira, âncora, baú, picareta,
+cristal, lingote, trevo…). Ligações brilham na cor do caminho com as duas
+pontas compradas (com uma faísca correndo), pulsam quando dá para comprar a
+próxima, apagadas no resto. Arrastar (dedo/mouse) move, pinça/roda/± dão zoom
+(limitado), "Center" volta ao início; câmera com easing. Toque seleciona e abre
+o cartão (nome, efeitos em verde/vermelho com glifo, custo, situação — "Ainda
+sem ligação: a N nós e M pontos" via `Arvore::rota_ate` —, "Learn (N pts)",
+e nas ativas aprendidas os botões 4/5/6); segundo toque no mesmo nó aprende.
+Mouse mostra dica flutuante. Cabeçalho: disponíveis, gastos, total, reset em
+ouro, fechar. Cartão encaixado à direita na tela deitada e embaixo em pé;
+no celular um nó menor tem ≥ 36 px no zoom padrão (alvo do dedo,
+`ui::alvo_minimo`). Comprar um nó dá uma explosão de faíscas e som
+(`Som::Progresso`, ou `Som::Recompensa` em notável/pedra-chave/ativa).
+Prévia: `MMO_PREVIA_ARVORE=1` (+ `MMO_WIN`, `MMO_CELULAR=1`), capturas em
+`target/arvore_shots/`.
+
+**Testes:** `shared::arvore` (contagem e custo 460, teia conexa, nós sem
+sobreposição, tipos, adjacência, aprender/redistribuir, `validada` pela ponta,
+JSON novo, JSON antigo = redistribuição grátis, ativa pela casa, soma das
+passivas e limites, custo das pedras-chave, slots), `world/arvore.rs`
+(orçamento, adjacência, toque duplo, Corsário na economia, dano crítico no
+crítico, ouro, Essência recusada, renascer mantém), `world/ativas.rs`,
+`client/arvore_ui.rs` (regra de compra, explosão, layout em 5 telas e 3
+escalas, zoom no dedo) e `client/arvore_icones.rs`.
 
 ## A ideia
 

@@ -774,6 +774,17 @@ pub mod item_id {
     /// (`essencia_do_renascimento`). Bound, stackable, bag-only; the currency
     /// of the Essence shop of a later phase (docs/RESET.md).
     pub const ESSENCIA_RENASCIMENTO: u16 = 477;
+    /// THE SHIPS (docs/NAVEGACAO.md). The id is the HULL CLASS; the hull
+    /// points live in the instance (`ItemInstance::navio`). 470 is the
+    /// Sloop (Chalupa); 471..473 are kept for the Shipwright's hulls of
+    /// phase 2 (`navio::CASCOS`). The ids were the old boats' (removed
+    /// 21/09/2026) and nothing else took them.
+    pub const NAVIO_CHALUPA: u16 = 470;
+    pub const NAVIO_ULTIMO: u16 = NAVIO_CHALUPA;
+    /// Is the item a ship?
+    pub const fn e_navio(id: u16) -> bool {
+        id >= NAVIO_CHALUPA && id <= NAVIO_ULTIMO
+    }
     pub const ACESSORIO_PET_INICIO: u16 = 520;
     pub const ACESSORIO_MONTARIA_INICIO: u16 = 528;
 
@@ -958,6 +969,7 @@ pub fn equip_slot_of(item_id: u16) -> Option<EquipSlot> {
         id if montaria_de_id(id).is_some() => Some(EquipSlot::Montaria),
         520..=527 => Some(EquipSlot::AcessorioPet),
         528..=535 => Some(EquipSlot::AcessorioMontaria),
+        id if e_navio(id) => Some(EquipSlot::Navio),
         _ => None,
     }
 }
@@ -1035,10 +1047,13 @@ pub enum EquipSlot {
     Montaria,
     AcessorioPet,
     AcessorioMontaria,
+    /// THE SHIP (docs/NAVEGACAO.md): exactly one active ship, the one that
+    /// sails when the Harbour Captain is asked to. No stats.
+    Navio,
 }
 
 impl EquipSlot {
-    pub const TODOS: [EquipSlot; 13] = [
+    pub const TODOS: [EquipSlot; 14] = [
         EquipSlot::Weapon,
         EquipSlot::Offhand,
         EquipSlot::Armor,
@@ -1052,6 +1067,7 @@ impl EquipSlot {
         EquipSlot::Pet3,
         EquipSlot::AcessorioPet,
         EquipSlot::AcessorioMontaria,
+        EquipSlot::Navio,
     ];
 
     /// String do slot pra ser persistido no DB (coluna `slot`).
@@ -1070,6 +1086,7 @@ impl EquipSlot {
             EquipSlot::Montaria => "montaria",
             EquipSlot::AcessorioPet => "acessorio_pet",
             EquipSlot::AcessorioMontaria => "acessorio_montaria",
+            EquipSlot::Navio => "navio",
         }
     }
 

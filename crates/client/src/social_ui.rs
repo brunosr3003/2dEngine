@@ -960,6 +960,7 @@ impl Social {
                 shared::renascimento::MOTIVO_CORREIO_RENASCIMENTO => "Rebirth chest",
                 shared::essencia::MOTIVO_CORREIO_LOJA_ESSENCIA => "Essence shop",
                 shared::colonia::MOTIVO_CORREIO_BAU_DA_ILHA => "My Island chest",
+                shared::navio::MOTIVO_CORREIO_NAVIO => "Your first ship",
                 _ => "Bag full",
             };
             e::texto_ajustado(

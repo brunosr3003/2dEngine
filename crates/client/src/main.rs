@@ -41,9 +41,12 @@ mod evolucao_skills;
 mod ficha_ui;
 /// The PATH TREE screen (rebirth phase 2, `shared::arvore`).
 mod arvore_ui;
+/// The path tree's vector glyphs (one per stat).
+mod arvore_icones;
 // Rebirth phase 4: the tree's actives in skill slots 4–6, and invisibility.
 mod ativas;
 mod invisibilidade;
+mod mar_ui;
 /// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
 mod loja_essencia_ui;
 mod foco;
@@ -64,6 +67,8 @@ mod porao_ui;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_porta;
 mod previa_bestiary;
+#[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+mod renascimento_previa;
 mod porao_planta;
 #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
 mod previa_hud;
@@ -743,6 +748,11 @@ async fn main() {
         previa_bestiary::previa(&mut vox, &render3d::material_solido()).await;
         return;
     }
+    #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+    if std::env::var("MMO_PREVIA_AURA").is_ok() {
+        renascimento_previa::previa(&mut vox).await;
+        return;
+    }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PETS").is_ok() {
         pets_ui::previa(&vox, &render3d::material_solido()).await;
@@ -896,6 +906,11 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_MENU_MISSOES").is_ok() {
         menu_missoes::previa_menu().await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_MAR").is_ok() {
+        mar_ui::previa().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -2155,6 +2170,7 @@ impl Jogo {
                 // Ilha do arquipelago: o terreno nasce da SEMENTE, e nem o
                 // arquivo de tiles nem um byte de rede entram nisso.
                 self.zona_atual = map_name.clone();
+                mar_ui::define_no_mar(shared::mar::e_mar(&map_name));
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
                 render3d::define_noite(shared::kogen::e_kogen(&map_name) || shared::abissal::e_abissal(&map_name));
                 render3d::define_abismo(shared::abissal::e_abissal(&map_name));
@@ -2590,8 +2606,12 @@ impl Jogo {
                     self.escolha_npc.abrir(npc_eid, nome, funcao);
                 }
             }
+            ServerMessage::Navio { estado } => self.viagem.define_navio(estado),
             ServerMessage::Viagem { destinos, colonia } => {
                 self.tem_colonia = colonia;
+                // The ship's state follows the Captain's menu; any other
+                // traveller (bus, submarine) leaves it empty.
+                self.viagem.limpar_navio();
                 // O Capitao pode abrir com uma oferta de missao na frente: o
                 // menu espera o dialogo fechar.
                 if self.dialogo.aberto {
@@ -3742,6 +3762,52 @@ impl Jogo {
         self.envia(ClientMessage::Teleportar { x: destino.x, z: destino.y });
     }
 
+    /// "REBIRTH AVAILABLE" (owner, 15/11/2026: "quando atingir o nível 100
+    /// tem que deixar claro a opção do rebirth na hora, destacado; não
+    /// precisa abrir nada porque às vezes tá no meio de um boss ou dungeon,
+    /// mas tem que ser algo que fica na tela"). A gold pill under the target
+    /// frame, pulsing, for as long as the character is at the cap. It only
+    /// TELLS: a tap opens the character sheet, where REBIRTH is, and nothing
+    /// else changes. Hidden while a big panel covers the HUD.
+    fn aviso_de_renascer(&mut self, z: &hud_layout::Zonas) {
+        if self.editor_hud.aberto || self.painel_grande() {
+            return;
+        }
+        if !shared::renascimento::pode_renascer(self.ficha.nivel.max(self.bolsa.nivel)) {
+            return;
+        }
+        let rotulo = "REBIRTH AVAILABLE";
+        let h = 40.0 * z.s;
+        let w = hud_estilo::medir_forte(rotulo, 20) + 64.0 * z.s;
+        let r = Rect::new(z.alvo.center().x - w * 0.5, z.alvo.y + z.alvo.h + 8.0 * z.s, w, h);
+        let t = get_time() as f32;
+        let pulso = (t * 3.0).sin() * 0.5 + 0.5;
+        // Glow: three widening outlines, fading with the pulse.
+        for k in 1..=3 {
+            let g = k as f32 * 3.0 * z.s;
+            draw_rectangle_lines(
+                r.x - g,
+                r.y - g,
+                r.w + 2.0 * g,
+                r.h + 2.0 * g,
+                2.0,
+                Color::new(1.0, 0.78, 0.30, (0.35 - k as f32 * 0.09) * (0.5 + 0.5 * pulso)),
+            );
+        }
+        draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.20, 0.12, 0.02, 0.88));
+        draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, Color::new(1.0, 0.82, 0.40, 0.9));
+        hud_estilo::texto_centro_forte(
+            r.center().x,
+            r.center().y + 7.0 * z.s,
+            rotulo,
+            20,
+            Color::new(1.0, 0.86 + 0.1 * pulso, 0.45 + 0.2 * pulso, 1.0),
+        );
+        if crate::foco::clique() && r.toca(Vec2::from(mouse_position())) {
+            self.ficha_ui.abrir();
+        }
+    }
+
     fn painel_grande(&self) -> bool {
         self.menu.aberto
             || self.bolsa.aberta
@@ -4519,7 +4585,7 @@ impl Jogo {
         let c = menu_missoes::Contexto {
             log: &self.missoes.log,
             entregues: &self.quest_entregues,
-            nivel: self.ficha.nivel,
+            nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
             faccao: self.faccao_qid,
             zona: self.mapa.zona(),
             agora_unix,
@@ -6622,6 +6688,20 @@ impl Jogo {
                         self.subiu_de_nivel.desenha(vec3(eu.x, y, eu.y), &vista.cam);
                     }
                 }
+                // Invisible (Assassin active): my shadow silhouette instead
+                // of the body (`invisibilidade::desenha_fantasma`).
+                if let Some(eu_id) = self.world.self_id {
+                    if crate::invisibilidade::ativa(eu_id) {
+                        if let Some(eu) = self.world.self_pos() {
+                            let y = t.altura(eu.x, eu.y);
+                            crate::invisibilidade::desenha_fantasma(
+                                vec3(eu.x, y, eu.y),
+                                vista.cam.position,
+                                get_time() as f32,
+                            );
+                        }
+                    }
+                }
                 // Healing: the out-of-combat regen glow and the potion effects.
                 if self.cura.ativo(get_time()) {
                     if let Some(eu) = self.world.self_pos() {
@@ -7180,6 +7260,16 @@ impl Jogo {
             hud_layout::desenha_faixa(&z, &texto, cor);
         }
         self.botao_de_teleporte(&z);
+        self.aviso_de_renascer(&z);
+        // THE OPEN SEA (docs/NAVEGACAO.md): the hull bar and, at a dock's
+        // anchorage, "Dock at <island>".
+        if !self.editor_hud.aberto && !self.painel_grande() {
+            mar_ui::barra_do_casco(&z, &self.bolsa.equip);
+            let eu = self.world.self_pos().map(|p| (p.x, p.y));
+            if let Some(ilha) = mar_ui::botao_atracar(&z, eu) {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+            }
+        }
 
         // Joystick virtual: so' aparece com o dedo na tela.
         if !self.editor_hud.aberto {
@@ -7467,7 +7557,7 @@ impl Jogo {
                 let c = menu_missoes::Contexto {
                     log: &self.missoes.log,
                     entregues: &self.quest_entregues,
-                    nivel: self.ficha.nivel,
+                    nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
                     faccao: self.faccao_qid,
                     zona: self.mapa.zona(),
                     agora_unix,
@@ -7511,7 +7601,7 @@ impl Jogo {
                 let c = menu_missoes::Contexto {
                     log: &self.missoes.log,
                     entregues: &self.quest_entregues,
-                    nivel: self.ficha.nivel,
+                    nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
                     faccao: self.faccao_qid,
                     zona: self.mapa.zona(),
                     agora_unix,
@@ -7938,6 +8028,12 @@ impl Jogo {
         match self.viagem.desenha(false) {
             Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
             Some(viagem_ui::Escolha::MinhaIlha) => {}
+            Some(viagem_ui::Escolha::Zarpar) => {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Zarpar })
+            }
+            Some(viagem_ui::Escolha::Reparar) => {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Reparar })
+            }
             None => {}
         }
         {

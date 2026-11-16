@@ -310,11 +310,18 @@ pub fn pecas(slots: &[InventorySlot], equip: &Equipment) -> Vec<(AlvoDaForja, u1
     let mut v = Vec::new();
     for s in EquipSlot::TODOS {
         if let (Some(id), Some(inst)) = (equip.get(s), equip.get_inst(s)) {
+            // A ship is repaired at the Captain, not refined.
+            if shared::item_id::e_navio(id) {
+                continue;
+            }
             v.push((AlvoDaForja::Equipado(s), id, inst));
         }
     }
     for (i, s) in slots.iter().enumerate() {
         if let (true, Some(inst)) = (s.qty > 0, s.instance) {
+            if shared::item_id::e_navio(s.item_id) {
+                continue;
+            }
             v.push((AlvoDaForja::Bolsa(i as u16), s.item_id, inst));
         }
     }

@@ -149,6 +149,9 @@ pub struct Terreno {
     /// Um modelo por tier e variante. A pedra roxa nao e' a cinza pintada:
     /// ela tem mais cristal, e o modelo carrega isso.
     minerios: Vec<crate::vegetacao::Modelo>,
+    /// The open sea's floating wreckage (`vegetacao::destroco`), by tier
+    /// 0..4. Empty on every island.
+    destrocos: Vec<crate::vegetacao::Modelo>,
     /// Cristais altos de Energia, separados visualmente do minério.
     /// Colunas cujas pedras ja' foram esgotadas. Quem esta' aqui NAO e'
     /// desenhado — sem isso o jogador nao teria como distinguir o veio cheio
@@ -222,6 +225,7 @@ impl Terreno {
             arvores: Vec::new(),
             plantas: Vec::new(),
             minerios: Vec::new(),
+            destrocos: Vec::new(),
             esgotadas: std::collections::HashSet::new(),
             pedacos: HashMap::new(),
             gerados: 0,
@@ -273,6 +277,13 @@ impl Terreno {
             }
         }
         for k in 0..VARIANTES {}
+        if t.ger.e_mar() {
+            for tier in 0..=4u8 {
+                for k in 0..VARIANTES {
+                    t.destrocos.push(crate::vegetacao::destroco(tier, k as u32 * 29 + tier as u32 * 97));
+                }
+            }
+        }
         t
     }
 
@@ -1141,6 +1152,39 @@ impl Terreno {
                             (topo + 1) as f32 * BLOCO,
                             &|x, z| self.altura(x, z),
                         );
+                    }
+                }
+            }
+
+            // ── the open sea's wreckage ──────────────────────────────────────
+            // Floats on the waterline. The same columns the server plants
+            // (`estorvos_da_coluna` → `mar::destroco_da_coluna`), so what is
+            // drawn is what is gathered; depleted ones disappear like rocks.
+            if self.ger.e_mar() {
+                for iz in 0..n as i32 {
+                    for ix in 0..n as i32 {
+                        let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                        let Some(d) = shared::mar::destroco_da_coluna(bx, bz) else {
+                            continue;
+                        };
+                        let chave = shared::terreno::chave_de_coluna(
+                            bx + self.ger.raio_blocos,
+                            bz + self.ger.raio_blocos,
+                        );
+                        if self.esgotadas.contains(&chave) {
+                            continue;
+                        }
+                        let base = vec3(d.centro.x, NIVEL_DO_MAR + 0.2, d.centro.y);
+                        if d.tier == 5 {
+                            energias.push(base);
+                            continue;
+                        }
+                        let k = (d.tier as usize) * VARIANTES + (d.variante as usize % VARIANTES);
+                        if let Some(m) = self.destrocos.get(k) {
+                            // Twice the rock's size: read from the deck of a ship,
+                            // not from the ground beside it.
+                            crate::vegetacao::instancia(m, base, 2.0, &mut verts, &mut idx, &mut malhas, MAX_QUADS);
+                        }
                     }
                 }
             }

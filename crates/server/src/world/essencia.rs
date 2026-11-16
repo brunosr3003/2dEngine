@@ -11,6 +11,9 @@ use shared::essencia as es;
 use shared::item_id::{DARKSTEEL, ESSENCIA_RENASCIMENTO};
 use shared::protocol::AlvoDaForja;
 
+/// The Essence shop is off (15/11/2026): Essence only buys item stars.
+const ESSENCIA_SO_PRA_ESTRELAS: bool = true;
+
 impl GameWorld {
     pub(super) fn handle_ascender(&mut self, sid: SessionId, alvo: AlvoDaForja) {
         let Some(s) = self.sessions.get_mut(&sid).filter(|s| s.logged_in) else {
@@ -73,6 +76,17 @@ impl GameWorld {
     }
 
     pub(super) fn handle_loja_essencia(&mut self, sid: SessionId, oferta: u8) {
+        // The Essence shop was removed (owner, 15/11/2026): Essence is only
+        // for item stars. An old client asking gets a polite refusal.
+        if ESSENCIA_SO_PRA_ESTRELAS {
+            if let Some(s) = self.sessions.get(&sid) {
+                let _ = s.handle.to_client.send(shared::protocol::ServerMessage::Chat {
+                    from: "SYS".into(),
+                    text: "The Essence shop was removed: Rebirth Essence is used to add stars to items at the Forge.".into(),
+                });
+            }
+            return;
+        }
         let Some(o) = es::oferta(oferta) else {
             return;
         };
@@ -231,45 +245,18 @@ mod testes {
         assert_eq!(w.sessions[&sid].inventory[0].instance.unwrap().estrelas, 1);
     }
 
+    /// The Essence shop was removed (15/11/2026): a request from an old
+    /// client buys nothing and spends nothing.
     #[test]
-    fn loja_vende_chave_lendaria_e_recusa_sem_essencia() {
+    fn a_loja_de_essencia_saiu_e_nada_e_cobrado() {
         let (mut w, sid) = mundo_com_um();
         let chave = shared::item_id::chave_na_cor(shared::item_id::CLAW, 5);
-        w.on_message(sid, ClientMessage::LojaEssencia { oferta: 3 });
-        assert_eq!(tem(&w, sid, chave), 0, "no Essence, no key");
         dar(&mut w, sid, ESSENCIA_RENASCIMENTO, 70);
-        w.on_message(sid, ClientMessage::LojaEssencia { oferta: 3 });
-        assert_eq!(tem(&w, sid, chave), 1);
-        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 10);
-        // An unknown offer does nothing.
-        w.on_message(sid, ClientMessage::LojaEssencia { oferta: 200 });
-        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 10);
-    }
-
-    #[test]
-    fn loja_redistribui_a_arvore_por_essencia() {
-        let (mut w, sid) = mundo_com_um();
-        let mult = crate::economy::xp_multiplier();
-        {
-            let s = w.sessions.get_mut(&sid).unwrap();
-            s.xp = shared::progressao::xp_do_nivel_exibido(100, mult);
-            s.last_level = shared::level_of_xp_with_mult(s.xp, mult);
-            s.arvore = Arvore::com_nos([3, 0, 2, 0]);
-            s.gold = 0;
+        for oferta in [1, 3, 200] {
+            w.on_message(sid, ClientMessage::LojaEssencia { oferta });
         }
-        // Without Essence: refused, even by the tree's own request.
-        w.on_message(sid, ClientMessage::LojaEssencia { oferta: 1 });
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::RedistribuirComEssencia });
-        assert_eq!(w.sessions[&sid].arvore.gastos(), 5);
-        dar(&mut w, sid, ESSENCIA_RENASCIMENTO, 25);
-        w.on_message(sid, ClientMessage::LojaEssencia { oferta: 1 });
-        let s = &w.sessions[&sid];
-        assert_eq!(s.arvore, Arvore::default());
-        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 5);
-        assert_eq!(s.gold, 0, "no gold involved");
-        // Nothing spent: the reset is refused and costs nothing.
-        w.on_message(sid, ClientMessage::Arvore { pedido: PedidoArvore::RedistribuirComEssencia });
-        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 5);
+        assert_eq!(tem(&w, sid, chave), 0, "the shop sold a key");
+        assert_eq!(tem(&w, sid, ESSENCIA_RENASCIMENTO), 70, "Essence was spent");
     }
 
     /// Upgrading two pieces into one keeps the higher star count.

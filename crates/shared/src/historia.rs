@@ -80,6 +80,11 @@ pub const ULTIMO_ID_TUTORIAL: u16 = 809;
 /// seguida e usa um id livre da faixa de tutorial: renumerar a historia
 /// moveria o progresso salvo de quem ja' joga.
 pub const TRAVA_DO_BARCO: u16 = 803;
+/// THE SLOOP (docs/NAVEGACAO.md, owner 15/11/2026): the step that takes the
+/// player off the first island ("Bound for the Glacier") also gives the
+/// first ship. The server grants it on completion (`dar_chalupa`), not as
+/// `reward_item`, so a character that already has a ship gets none.
+pub const PASSO_DA_CHALUPA: u16 = 719;
 /// Primeiro id das cronicas. Ate' `u16::MAX` sao 55.536 passos de epilogo —
 /// mais de nove mil capitulos.
 pub const PRIMEIRO_ID_DO_EPILOGO: u16 = 10_000;

@@ -57,6 +57,7 @@ pub fn ascendivel(id: u16) -> bool {
     crate::equip_slot_of(id).is_some()
         && crate::pets::de_item(id).is_none()
         && crate::montarias::de_item(id).is_none()
+        && !crate::item_id::e_navio(id)
 }
 
 /// "★★★☆☆" for the item card. Empty with no star, so pieces never

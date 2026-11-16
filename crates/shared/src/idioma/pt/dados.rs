@@ -614,4 +614,7 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Training Guardian", "Guardião de Treino"),
     ("Valley of Winds", "Vale dos Ventos"),
     ("Rebirth Essence", "Essência do Renascimento"),
+    // ── the open sea ──
+    ("Sloop", "Chalupa"),
+    ("Open Sea", "Mar Aberto"),
 ];

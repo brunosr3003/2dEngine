@@ -248,6 +248,11 @@ pub struct Equipment {
     pub pet3: Option<u16>,
     #[serde(default)]
     pub pet3_inst: Option<crate::items::ItemInstance>,
+    /// The active ship (docs/NAVEGACAO.md). Appended last.
+    #[serde(default)]
+    pub navio: Option<u16>,
+    #[serde(default)]
+    pub navio_inst: Option<crate::items::ItemInstance>,
 }
 
 impl Equipment {
@@ -270,6 +275,7 @@ impl Equipment {
             Montaria => (&mut self.montaria, &mut self.montaria_inst),
             AcessorioPet => (&mut self.acessorio_pet, &mut self.acessorio_pet_inst),
             AcessorioMontaria => (&mut self.acessorio_montaria, &mut self.acessorio_montaria_inst),
+            Navio => (&mut self.navio, &mut self.navio_inst),
         }
     }
 

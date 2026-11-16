@@ -300,6 +300,25 @@ pub struct ItemInstance {
     /// by trade, market, bank and mail. LAST field; old JSON reads 0.
     #[serde(default)]
     pub estrelas: u8,
+    /// THE SHIP (docs/NAVEGACAO.md, naval phase 1): hull points and whether
+    /// it is damaged. Lives in the instance like the pet, so a ship sold on
+    /// the market carries its hull. `None` = a ship read as a fresh hull
+    /// (`navio::dados`), and on every other item. Appended LAST.
+    #[serde(default)]
+    pub navio: Option<NavioData>,
+}
+
+/// What a ship keeps (`shared::navio`). The hull class is the item id; the
+/// rest travels with the item.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct NavioData {
+    /// Hull points left. 0 = sunk (`avariado`).
+    #[serde(default)]
+    pub casco: u16,
+    /// Hull hit zero at sea: the ship cannot sail until the Harbour Captain
+    /// repairs it.
+    #[serde(default)]
+    pub avariado: bool,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e
@@ -336,6 +355,7 @@ impl ItemInstance {
             pet: None,
             afinidade: None,
             estrelas: 0,
+            navio: None,
             sockets: 0,
             socketed_gems: [0; 3],
             vinculado: false,
@@ -749,6 +769,7 @@ impl ItemInstance {
             pet: None,
             afinidade: None,
             estrelas: 0,
+            navio: None,
             sockets: sockets_for_tier(tier),
             socketed_gems: [0; 3],
             vinculado: false,

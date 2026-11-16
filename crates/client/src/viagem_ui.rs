@@ -17,11 +17,18 @@ pub enum Escolha {
     /// The colony (docs/COLONIA.md). It is not an island of the `ARQUIPELAGO`
     /// and has no index: that is why the choice is an enum and not a `u8`.
     MinhaIlha,
+    /// Sail out to the open sea with my own ship (docs/NAVEGACAO.md).
+    Zarpar,
+    /// Repair my ship's hull, for copper.
+    Reparar,
 }
 
 #[derive(Debug, Default)]
 pub struct ViagemUi {
     destinos: Option<Vec<Destino>>,
+    /// The ship's state (`ServerMessage::Navio`), sent with the Harbour
+    /// Captain's menu. `None` for the bus and the submarine.
+    navio: Option<shared::navio::EstadoNavio>,
 }
 
 impl ViagemUi {
@@ -31,6 +38,14 @@ impl ViagemUi {
 
     pub fn fechar(&mut self) {
         self.destinos = None;
+    }
+
+    pub fn define_navio(&mut self, estado: shared::navio::EstadoNavio) {
+        self.navio = Some(estado);
+    }
+
+    pub fn limpar_navio(&mut self) {
+        self.navio = None;
     }
 
     pub fn aberto(&self) -> bool {
@@ -50,11 +65,12 @@ impl ViagemUi {
 
     fn desenha_na_escala(&mut self, colonia: bool) -> Option<Escolha> {
         let destinos = self.destinos.as_ref()?;
+        let navio = self.navio.filter(|n| n.zarpar);
         let f = estilo::fator_texto();
         let seguro = crate::hud_layout::tela_segura();
         let linha_h = 74.0 * f;
         let w = (560.0 * f).min(seguro.w - 16.0);
-        let linhas = destinos.len() + usize::from(colonia);
+        let linhas = destinos.len() + usize::from(colonia) + usize::from(navio.is_some());
         let h = (96.0 * f + linha_h * linhas as f32 + 16.0 * f).min(seguro.h - 16.0);
         let p = Rect::new(
             seguro.center().x - w * 0.5,
@@ -71,7 +87,7 @@ impl ViagemUi {
         estilo::texto(
             x0,
             p.y + 62.0 * f,
-            "O Capitão leva a qualquer ilha que a história já abriu.",
+            "The Captain sails to any island the story has opened, for copper.",
             14,
             estilo::SUAVE,
         );
@@ -85,6 +101,39 @@ impl ViagemUi {
         );
         let mut escolha = None;
         let mut y = p.y + 80.0 * f;
+        // MY SHIP first (docs/NAVEGACAO.md): sail the open sea from this
+        // dock, or repair the hull.
+        if let Some(n) = navio {
+            let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 8.0 * f);
+            estilo::cartao(r, false, true);
+            let (titulo, linha) = if !n.tem {
+                ("My ship".to_string(), "No ship: the story gives you one when you first sail to the Glacier.".to_string())
+            } else if n.avariado {
+                ("My ship · damaged".to_string(), format!("Damaged hull {} / {}: repair it to sail", n.casco, n.casco_max))
+            } else {
+                ("My ship".to_string(), format!("Hull {} / {}", n.casco, n.casco_max))
+            };
+            estilo::texto_forte(r.x + 14.0 * f, r.y + 26.0 * f, &titulo, 17, estilo::OURO);
+            estilo::texto(r.x + 14.0 * f, r.y + 50.0 * f, &linha, 13, estilo::SUAVE);
+            let bw = 124.0 * f;
+            let b = Rect::new(r.x + r.w - bw - 12.0 * f, r.y + (r.h - 40.0 * f) * 0.5, bw, 40.0 * f);
+            if n.tem && !n.avariado {
+                estilo::botao(b, "Sail", estilo::estado_de(b, false, false), true);
+                if clicou && b.toca(m) {
+                    escolha = Some(Escolha::Zarpar);
+                }
+            }
+            if n.tem && n.reparo > 0 {
+                let rotulo = format!("Repair · {} copper", n.reparo);
+                let rw = estilo::medir_forte(&rotulo, 15) + 28.0 * f;
+                let rb = Rect::new(b.x - rw - 8.0 * f, b.y, rw, b.h);
+                estilo::botao(rb, &rotulo, estilo::estado_de(rb, false, false), n.avariado);
+                if clicou && rb.toca(m) {
+                    escolha = Some(Escolha::Reparar);
+                }
+            }
+            y += linha_h;
+        }
         for d in destinos {
             let r = Rect::new(x0, y, p.w - 40.0 * f, linha_h - 8.0 * f);
             estilo::cartao(r, false, d.estado == estado::AQUI);
@@ -102,13 +151,16 @@ impl ViagemUi {
                 estilo::SUAVE,
             );
             if d.estado == estado::LIBERADA {
+                // The price is ON the button (owner, 15/11/2026).
+                let rotulo = rotulo_de_embarque(d);
+                let bw = (estilo::medir_forte(&rotulo, 15) + 28.0 * f).max(124.0 * f);
                 let b = Rect::new(
-                    r.x + r.w - 136.0 * f,
+                    r.x + r.w - bw - 12.0 * f,
                     r.y + (r.h - 40.0 * f) * 0.5,
-                    124.0 * f,
+                    bw,
                     40.0 * f,
                 );
-                estilo::botao(b, "Board", estilo::estado_de(b, false, false), true);
+                estilo::botao(b, &rotulo, estilo::estado_de(b, false, false), true);
                 if clicou && b.toca(m) {
                     escolha = Some(Escolha::Ilha(d.ilha));
                 }
@@ -152,6 +204,15 @@ impl ViagemUi {
     }
 }
 
+/// The "Board" button, with the trip's copper price when it has one.
+pub fn rotulo_de_embarque(d: &Destino) -> String {
+    if d.preco > 0 {
+        format!("Board · {} copper", d.preco)
+    } else {
+        "Board".to_string()
+    }
+}
+
 /// Each island's second line: level and what is missing to go.
 pub fn subtitulo(d: &Destino) -> String {
     let nivel = format!("Level {}", shared::progressao::texto_de_faixa(d.nivel_min as u32, d.nivel_max as u32));
@@ -176,7 +237,15 @@ mod tests {
             nivel_max: 30,
             estado: e,
             requisito: "Bound for the Glacier".into(),
+            preco: 100,
         }
+    }
+
+    #[test]
+    fn o_botao_mostra_o_preco() {
+        assert_eq!(rotulo_de_embarque(&d(estado::LIBERADA)), "Board · 100 copper");
+        let gratis = Destino { preco: 0, ..d(estado::LIBERADA) };
+        assert_eq!(rotulo_de_embarque(&gratis), "Board");
     }
 
     #[test]

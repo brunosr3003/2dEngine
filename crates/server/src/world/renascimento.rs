@@ -337,6 +337,6 @@ mod testes {
         assert_eq!(s.bolsa_extra, bolsa + 1);
         s.xp_bonus_ate = 0;
         s.grant_xp(900);
-        assert_eq!(s.xp, 400, "900 / 1.5^2");
+        assert_eq!(s.xp, 643, "900 / 1.4 (R2 on the linear part of the divisor)");
     }
 }

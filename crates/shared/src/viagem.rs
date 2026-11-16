@@ -50,6 +50,10 @@ pub struct Destino {
     pub estado: u8,
     /// Bloqueada: o passo da historia que libera ("Bound for the Glacier").
     pub requisito: String,
+    /// The trip's price in COPPER (`navio::preco_da_viagem`); 0 = free (the
+    /// Sky Bus and the submarine). Appended last.
+    #[serde(default)]
+    pub preco: u32,
 }
 
 /// O passo da historia que leva a `ilha` pela primeira vez: (indice, titulo).
@@ -137,6 +141,16 @@ pub fn meio_para(zona_atual: &str, destino: usize) -> Option<Meio> {
     [Meio::Submarino, Meio::Onibus, Meio::Capitao].into_iter().find(|m| rota_permitida(zona_atual, destino, *m))
 }
 
+/// What the trip to `destino` costs, in copper, with `meio`. Only the
+/// Harbour Captain charges (owner, 15/11/2026); the Sky Bus and the
+/// submarine stay free.
+pub fn preco(destino: usize, meio: Meio) -> u32 {
+    match meio {
+        Meio::Capitao => crate::navio::preco_da_viagem(destino),
+        _ => 0,
+    }
+}
+
 /// O menu inteiro: uma linha por ilha do arquipelago. `no_ar(zona)` diz se ha'
 /// canal daquela ilha rodando. `meio`: who opened it (`rota_permitida`
 /// decides which lines show).
@@ -169,6 +183,7 @@ pub fn destinos(
                 requisito: passo_que_libera(i)
                     .map(|(_, t)| t.to_string())
                     .unwrap_or_default(),
+                preco: preco(i, meio),
             }
         })
         .collect()
