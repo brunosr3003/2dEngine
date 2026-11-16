@@ -190,8 +190,8 @@ pub struct ContextoNavio {
     pub pronto: bool,
     /// Distance to the selected enemy, if there is one.
     pub distancia_alvo: Option<f32>,
-    /// AUTO COMBAT is on: the cannons fire on their own, as if on AUTO
-    /// (gameplay remake).
+    /// AUTO COMBAT is on: the server's pilot steers and fires the cannons
+    /// (`world/piloto_do_mar.rs`); the bar's own AUTO stands down.
     pub auto_combate: bool,
     /// The target is off the beam (or the ship stands still): a Broadside
     /// would reach it (`navio::no_costado`).
@@ -322,12 +322,15 @@ impl BarraDoNavio {
     /// AUTO: the attack skills switched on, whenever the selected enemy is
     /// in reach and the cooldown is over.
     fn automatico(&mut self, c: ContextoNavio, hab: &crate::habilidades::Habilidades, agora: f64) -> Option<u8> {
-        if !c.pronto || agora < self.pendente_ate {
+        // AUTO COMBAT at sea: the SERVER's pilot fires (`PedidoNavio::Piloto`,
+        // `world/piloto_do_mar.rs`), on the beam and on time; a request from
+        // here too would only be refused on the cooldown.
+        if !c.pronto || agora < self.pendente_ate || c.auto_combate {
             return None;
         }
         let h = nv::HABILIDADES.iter().find(|h| {
             h.auto
-                && (self.automaticas.contains(&h.id) || c.auto_combate)
+                && self.automaticas.contains(&h.id)
                 && espera(h, hab, agora) == 0.0
                 && self.tentar_apos[h.id as usize] <= agora
                 && alcanca(h, c.distancia_alvo)

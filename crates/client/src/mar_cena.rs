@@ -35,6 +35,7 @@ use std::cell::RefCell;
 
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use shared::mar::{self, Feitio, IlhaVista};
 use shared::terreno::{Material, BLOCO};
 
@@ -64,7 +65,16 @@ pub fn neblina() -> (f32, f32) {
         1 => 850.0,
         _ => 1100.0,
     };
+    let previa = NEBLINA_DA_PREVIA.with(|n| n.get());
+    if previa > 0.0 {
+        return (inicio.max(110.0), previa);
+    }
     (inicio.max(110.0), fim)
+}
+
+thread_local! {
+    /// The preview's whole-sea shot pushes the fog out (0 = the game's).
+    static NEBLINA_DA_PREVIA: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
 
 // ───────────────────────────── sky and sun ─────────────────────────────
@@ -269,6 +279,12 @@ const P_PEDRA_ESCURA: usize = 13; // 2 dark rocks
 const P_CACTO: usize = 15; // 2 cacti
 const P_MONTE_DE_NEVE: usize = 17;
 const P_SECA: usize = 18;
+// The new sea docks (16/11/2026, `mar_temas`).
+const P_ARVORE_CELESTE: usize = 19; // 2 white-and-gold sky trees
+const P_CRISTAL: usize = 21; // 3 crystal clusters: violet, blue, sky
+const P_CORAL: usize = 24; // 2 coral fans
+const P_ALGA: usize = 26; // kelp
+const N_PROPS: usize = 27;
 
 fn caixa_em(v: &mut Volume, a: [i32; 3], b: [i32; 3], m: Material) {
     for y in a[1]..b[1] {
@@ -351,6 +367,45 @@ pub fn props() -> Vec<Modelo> {
     bloco_c(&mut v, -1, 0, 0, 0, 3, 1, Material::Tronco);
     bloco_c(&mut v, -2, 0, 0, 0, 4, 2, Material::Tronco);
     out.push(malha(&v));
+    // Skyreach's sky trees: a white trunk and gold or sky-blue crowns.
+    for (k, (a, b)) in [(Material::FolhaDourada, Material::PetalaAmarela), (Material::FolhaCeleste, Material::GramaCeleste)].into_iter().enumerate() {
+        let mut v = novo();
+        bloco_c(&mut v, 0, 0, 0, 0, 0, 5 + k as i32, Material::TroncoBranco);
+        bloco_c(&mut v, 0, 0, 2, 2, 4 + k as i32, 2, a);
+        bloco_c(&mut v, 0, 0, 1, 1, 6 + k as i32, 2, b);
+        bloco_c(&mut v, 2, 1, 1, 1, 3 + k as i32, 1, a);
+        out.push(malha(&v));
+    }
+    // Crystal clusters: a tall shard and two short ones.
+    for (m, ponta) in [(Material::CristalRoxo, Material::PetalaRoxa), (Material::CristalAzul, Material::CristalCeu), (Material::CristalCeu, Material::Nuvem)] {
+        let mut v = novo();
+        bloco_c(&mut v, 0, 0, 1, 1, 0, 6, m);
+        bloco_c(&mut v, 0, 0, 0, 0, 6, 2, ponta);
+        bloco_c(&mut v, 2, 1, 0, 0, 0, 3, m);
+        bloco_c(&mut v, 2, 1, 0, 0, 3, 1, ponta);
+        bloco_c(&mut v, -2, -1, 0, 0, 0, 4, m);
+        out.push(malha(&v));
+    }
+    // Coral fans: a stem and branches, with glowing tips on the second.
+    for (k, ponta) in [Material::Coral, Material::CristalAzul].into_iter().enumerate() {
+        let mut v = novo();
+        bloco_c(&mut v, 0, 0, 0, 0, 0, 4 + k as i32, Material::Coral);
+        bloco_c(&mut v, 1, 0, 0, 0, 2, 3, Material::Coral);
+        bloco_c(&mut v, -1, 0, 0, 0, 3, 3, Material::Coral);
+        bloco_c(&mut v, 0, 1, 0, 0, 1, 2, Material::Coral);
+        for (x, z, y) in [(0, 0, 4 + k as i32), (1, 0, 5), (-1, 0, 6), (0, 1, 3)] {
+            bloco_c(&mut v, x, z, 0, 0, y, 1, ponta);
+        }
+        out.push(malha(&v));
+    }
+    // Kelp.
+    let mut v = novo();
+    for k in 0..7 {
+        bloco_c(&mut v, (k / 3) % 2, 0, 0, 0, k, 1, Material::Alga);
+        bloco_c(&mut v, 2 - (k / 2) % 2, 1, 0, 0, k, 1, Material::Alga);
+    }
+    out.push(malha(&v));
+    debug_assert_eq!(out.len(), N_PROPS);
     out
 }
 
@@ -423,6 +478,38 @@ pub fn prop_da_coluna(bx: i32, bz: i32, forracao: u8) -> Option<(usize, f32, u8)
                 (P_PINHO_ESCURO + escolha % 2, 0.3)
             }
         }
+        Feitio::Celeste => {
+            if t.dentro < 5.0 {
+                return None;
+            }
+            if escolha % 5 < 4 {
+                (P_ARVORE_CELESTE + escolha % 2, 0.22)
+            } else {
+                (P_CRISTAL + 2, 0.08)
+            }
+        }
+        // Kōgen-tō is concrete: its skyline is `mar_temas`'.
+        Feitio::Neon => return None,
+        Feitio::Abissal => {
+            if t.dentro < 2.0 {
+                return None;
+            }
+            if escolha % 3 == 0 {
+                (P_ALGA, 0.16)
+            } else {
+                (P_CORAL + escolha % 2, 0.22)
+            }
+        }
+        Feitio::Magica => {
+            if t.dentro < 6.0 {
+                return None;
+            }
+            if escolha % 3 == 0 {
+                (P_CRISTAL + escolha % 2, 0.22)
+            } else {
+                (P_COPA + escolha % 3, 0.36)
+            }
+        }
     };
     if sorte >= chance {
         return None;
@@ -480,6 +567,10 @@ pub fn cor_da_ilha(f: Feitio) -> Color {
         Feitio::Geleira => Color::from_rgba(150, 214, 255, 255),
         Feitio::Ermo => Color::from_rgba(246, 176, 72, 255),
         Feitio::Planalto => Color::from_rgba(186, 116, 246, 255),
+        Feitio::Celeste => Color::from_rgba(255, 214, 92, 255),
+        Feitio::Neon => Color::from_rgba(255, 64, 150, 255),
+        Feitio::Abissal => Color::from_rgba(64, 236, 220, 255),
+        Feitio::Magica => Color::from_rgba(226, 120, 255, 255),
     }
 }
 
@@ -495,6 +586,11 @@ struct Lod {
     ladrilhos: Vec<(MalhaEstatica, Vec2, Vec2)>,
     caixa: (Vec2, Vec2),
     vertices: usize,
+    /// The new docks' LANDMARKS (`mar_temas::malha_de_longe`: floating
+    /// isles, skyline, cranes, coral spires, crystals): they stand where no
+    /// chunk covers them, so they are drawn whole whenever in reach.
+    marcos: Vec<MalhaEstatica>,
+    vertices_marcos: usize,
 }
 
 /// Side of a far-island tile, units.
@@ -630,7 +726,16 @@ fn prepara(perto: Vec2) {
             let i = &ilhas[k];
             let r = Vec2::splat(i.raio + 18.0);
             let c = mq(i.centro);
-            l[k] = Some(Lod { malhas: ms.into_iter().map(MalhaEstatica::nova).collect(), ladrilhos, caixa: (c - r, c + r), vertices: n });
+            let marcos = crate::mar_temas::malha_de_longe(i, &crate::mar_temas::tema(i));
+            let vertices_marcos = marcos.iter().map(|m| m.vertices.len()).sum();
+            l[k] = Some(Lod {
+                malhas: ms.into_iter().map(MalhaEstatica::nova).collect(),
+                ladrilhos,
+                caixa: (c - r, c + r),
+                vertices: n,
+                marcos: marcos.into_iter().map(MalhaEstatica::nova).collect(),
+                vertices_marcos,
+            });
             return true;
         }
         false
@@ -695,6 +800,9 @@ pub fn desenha_ilhas_de_longe(t: &crate::terreno::Terreno, cam: &Camera3D) {
             if !visivel(cam, mq(i.centro), i.raio + 18.0, fim) {
                 continue;
             }
+            if !lod.marcos.is_empty() {
+                crate::gpu_estatica::desenha(solido, lod.marcos.iter());
+            }
             let (a, b) = lod.caixa;
             let toca = t.pedaco_pronto_em(a.x, a.y) || t.pedaco_pronto_em(b.x, b.y) || t.pedaco_pronto_em(a.x, b.y) || t.pedaco_pronto_em(b.x, a.y) || {
                 let alvo = vec2(cam.target.x, cam.target.z);
@@ -731,7 +839,7 @@ pub fn desenha_ilhas(cam: &Camera3D) {
 /// How much static sea geometry is built, for the report and the HUD:
 /// (island-mesh vertices, dock vertices).
 pub fn orcamento() -> (usize, usize) {
-    let a = LODS.with(|l| l.borrow().iter().flatten().map(|l| l.vertices).sum());
+    let a = LODS.with(|l| l.borrow().iter().flatten().map(|l| l.vertices + l.vertices_marcos).sum());
     let b = DOCAS.with(|d| d.borrow().iter().flatten().map(|d| d.vertices).sum());
     (a, b)
 }
@@ -750,12 +858,25 @@ struct Doca {
     bandeiras: Vec<Vec3>,
     /// The moored boats: where and their heading.
     barcos: [(Vec3, f32); 2],
+    /// The new docks' lights and moving water (`mar_temas::Tema`): extra
+    /// halos (a negative phase blinks), the waterfall, the whirlpool.
+    luzes: Vec<(Vec3, Vec3, f32)>,
+    cachoeira: Option<(Vec3, Vec3)>,
+    redemoinho: Option<(Vec3, f32)>,
+}
+
+/// The dock's pieces in the pier frame: the port islands' planks,
+/// lighthouse and quay, or a new dock's theme (`mar_temas::pecas`).
+fn pecas_da_doca(i: &IlhaVista) -> Vec<(Modelo, Vec3)> {
+    crate::mar_temas::pecas(i.feitio).unwrap_or_else(|| {
+        vec![(pier(), Vec3::ZERO), (farol(), vec3(-10.5, 0.0, -12.0)), (cais_de_terra(), Vec3::ZERO)]
+    })
 }
 
 /// Pier frame → world. Local x is across the pier (+x = −`lado`, so the
 /// frame is a rotation, not a mirror: the faces keep their winding), z is
 /// along it from the root, y is up from the sea.
-fn no_mundo(i: &IlhaVista, p: Vec3) -> Vec3 {
+pub(crate) fn no_mundo(i: &IlhaVista, p: Vec3) -> Vec3 {
     let e = i.eixo();
     let r = i.raiz + e * p.z + ::glam::Vec2::new(e.y, -e.x) * p.x;
     vec3(r.x, p.y, r.y)
@@ -766,12 +887,11 @@ const V: f32 = VOX;
 
 impl Doca {
     fn nova(i: &IlhaVista) -> Doca {
-        let mut pecas: Vec<(Modelo, Vec3)> = Vec::new();
-        pecas.push((pier(), Vec3::ZERO));
-        // The lighthouse at `IlhaVista::farol` (local x −10.5, z −12).
+        // The lighthouse (or the theme's beacon) at `IlhaVista::farol`
+        // (local x −10.5, z −12).
         let farol_local = vec3(-10.5, 0.0, -12.0);
-        pecas.push((farol(), farol_local));
-        pecas.push((cais_de_terra(), Vec3::ZERO));
+        let pecas = pecas_da_doca(i);
+        let tema = crate::mar_temas::e_tema(i.feitio);
         let mut verts: Vec<Vertex> = Vec::new();
         let mut idx: Vec<u16> = Vec::new();
         let mut malhas = Vec::new();
@@ -793,25 +913,37 @@ impl Doca {
         }
         total += verts.len();
         malhas.push(Mesh { vertices: verts, indices: idx, texture: None });
-        let lampada = no_mundo(i, farol_local + vec3(0.0, LAMPADA_Y, 0.0));
-        let lanternas = [-1.0f32, 1.0].map(|s| no_mundo(i, vec3(s * 5.25, 3.6, 25.3)));
-        let bandeiras = vec![
-            no_mundo(i, vec3(3.1, 8.0, -1.1)),
-            no_mundo(i, vec3(-2.9, 8.0, -1.1)),
-            no_mundo(i, farol_local + vec3(0.0, 19.9, 0.0)),
-        ];
+        let lampada = no_mundo(i, farol_local + vec3(0.0, crate::mar_temas::altura_da_lampada(i.feitio), 0.0));
+        let lanternas = [-1.0f32, 1.0].map(|s| no_mundo(i, vec3(s * 5.25, if tema { 4.0 } else { 3.6 }, 25.3)));
+        let mut bandeiras = vec![no_mundo(i, vec3(3.1, 8.0, -1.1)), no_mundo(i, vec3(-2.9, 8.0, -1.1))];
+        if !tema {
+            bandeiras.push(no_mundo(i, farol_local + vec3(0.0, 19.9, 0.0)));
+        }
+        let t = crate::mar_temas::tema(i);
+        let redemoinho = t.redemoinho.map(|c| (c, mar::raio_da_lagoa(i, i.centro) * 0.85));
         let rumo = i.eixo();
         let yaw = rumo.x.atan2(rumo.y);
         let barcos = [
             (no_mundo(i, vec3(4.6, 0.0, 9.0)), yaw),
             (no_mundo(i, vec3(-4.4, 0.0, 16.0)), yaw + std::f32::consts::PI),
         ];
-        Doca { malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(), vertices: total, lampada, lanternas, bandeiras, barcos }
+        Doca {
+            malhas: malhas.into_iter().map(MalhaEstatica::nova).collect(),
+            vertices: total,
+            lampada,
+            lanternas,
+            bandeiras,
+            barcos,
+            luzes: t.luzes,
+            cachoeira: t.cachoeira,
+            redemoinho,
+        }
     }
 }
 
-/// Height of the lighthouse lamp over the sea, units.
-const LAMPADA_Y: f32 = 17.1;
+/// Height of the lighthouse lamp over the sea, units (the port islands';
+/// the new docks' beacons: `mar_temas::altura_da_lampada`).
+pub(crate) const LAMPADA_Y: f32 = 17.1;
 
 fn vx(u: f32) -> i32 {
     (u / V).round() as i32
@@ -1044,7 +1176,7 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
                 continue;
             };
             let dist = olho.distance(doca.lampada);
-            let cor = vec3(1.0, 0.86, 0.5);
+            let cor = crate::mar_temas::cor_da_luz(i.feitio);
             // The lamp's halo: never smaller than a few pixels, so it is a
             // star on the horizon from across the sea.
             let tam = (dist * 0.03).max(2.2) * (0.9 + 0.1 * (tempo * 3.0).sin());
@@ -1059,8 +1191,32 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
                 }
             }
             if dist < 120.0 {
+                let cor_l = if crate::mar_temas::e_tema(i.feitio) { cor } else { vec3(1.0, 0.8, 0.45) };
                 for l in doca.lanternas {
-                    halo(&mut verts, &mut idx, olho, l, 0.9 + 0.1 * (tempo * 5.0 + l.x).sin(), vec3(1.0, 0.8, 0.45), 0.7);
+                    halo(&mut verts, &mut idx, olho, l, 0.9 + 0.1 * (tempo * 5.0 + l.x).sin(), cor_l, 0.7);
+                }
+            }
+            // THE NEW DOCKS' LIGHTS (`mar_temas`): roof lights that blink,
+            // glowing crystal and coral tips that breathe — stars over the
+            // island from across the sea — and the moving water.
+            if dist < fim {
+                for (p, c, fase) in &doca.luzes {
+                    let d = olho.distance(*p);
+                    let (a, tam) = if *fase < 0.0 {
+                        let liga = ((tempo * 0.8 - fase).fract() < 0.45) as u8 as f32;
+                        (0.9 * liga, (d * 0.012).max(0.9))
+                    } else {
+                        (0.6 + 0.25 * (tempo * 1.6 + fase).sin(), (d * 0.016).max(1.4))
+                    };
+                    if a > 0.01 {
+                        halo(&mut verts, &mut idx, olho, *p, tam, *c, a);
+                    }
+                }
+                if let Some((topo, fundo)) = doca.cachoeira {
+                    crate::mar_temas::cachoeira(&mut verts, &mut idx, olho, topo, fundo, tempo);
+                }
+                if let Some((c, r)) = doca.redemoinho {
+                    crate::mar_temas::redemoinho(&mut verts, &mut idx, olho, c, tempo, r);
                 }
             }
             // THE DOCKING RING at the anchorage, bright and pulsing; and a
@@ -1197,7 +1353,7 @@ pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2) {
         let cor = cor_da_ilha(i.feitio);
         let f = mq(i.fundeadouro());
         let dist = de.distance(f);
-        let topo = no_mundo(i, vec3(-10.5, LAMPADA_Y + 4.5, -12.0));
+        let topo = no_mundo(i, vec3(-10.5, crate::mar_temas::altura_da_lampada(i.feitio) + 4.5, -12.0));
         let nome = format!("{} · Dock", i.nome);
         let metros = format!("{:.0} m", dist);
         let alfa = ((dist - 10.0) / 22.0).clamp(0.3, 1.0);
@@ -1443,7 +1599,7 @@ pub async fn previa() {
     let v3 = |p: Vec2, y: f32| vec3(p.x, y, p.y);
     let yaw_de = |d: Vec2| d.x.atan2(d.y);
     // Every island mesh and dock first (they build one a frame).
-    for _ in 0..12 {
+    for _ in 0..2 * mar::ilhas().len() + 4 {
         prepara(mq(bosque.raiz));
     }
     let fb = mq(bosque.fundeadouro());
@@ -1503,6 +1659,38 @@ pub async fn previa() {
             0.0,
         ));
     }
+    // 2c. THE NEW DOCKS (16/11/2026, `mar_temas`): each one close, and the
+    //     approach from the open sea with the island's landmarks.
+    for (nome, zona) in [
+        ("celeste", shared::celeste::ZONA),
+        ("kogen", shared::kogen::ZONA),
+        ("abissal", shared::abissal::ZONA),
+        ("magica", shared::magica::ZONA),
+    ] {
+        let i = v(zona);
+        let (f, e, l, raiz, c) = (mq(i.fundeadouro()), mq(i.eixo()), mq(i.lado()), mq(i.raiz), mq(i.centro));
+        let alto = crate::mar_temas::altura_da_lampada(i.feitio);
+        cenas.push((
+            format!("cais-{nome}"),
+            camera(v3(f + e * 36.0 - l * 30.0, 16.0 + alto * 0.35), v3(raiz - e * 8.0 + l * 4.0, 4.0 + alto * 0.3), 0.95),
+            vec![(f + e * 5.0 + l * 4.0, yaw_de(e), Visual { classe: 2, vela: 3, figura: 3, estrelas: 9 })],
+            raiz,
+            0.0,
+        ));
+        cenas.push((
+            format!("chegada-{nome}"),
+            camera(v3(f + e * 150.0 + l * 70.0, 34.0), v3(c.lerp(raiz, 0.45), alto * 0.45), 1.0),
+            vec![
+                (f + e * 40.0 + l * 6.0, yaw_de(-e), Visual { classe: 1, vela: 2, ..Default::default() }),
+                (f + e * 90.0 - l * 10.0, yaw_de(-e) + 0.2, Visual { classe: 3, vela: 4, figura: 2, estrelas: 12 }),
+            ],
+            f + e * 40.0,
+            0.0,
+        ));
+    }
+    // 2d. THE WHOLE SEA, every island and dock, from high above (the fog
+    //     pushed out for this one shot).
+    cenas.push(("todo".into(), camera(vec3(0.0, 2350.0, 520.0), vec3(0.0, 0.0, 10.0), 0.95), vec![], Vec2::ZERO, 0.0));
     // 3. Each hull class, three-quarter view, on open water.
     let aberto = fb + eb * 120.0;
     for c in 0..4u8 {
@@ -1550,6 +1738,7 @@ pub async fn previa() {
             continue;
         }
         define_entardecer(tarde);
+        NEBLINA_DA_PREVIA.with(|n| n.set(if nome == "todo" { 4200.0 } else { 0.0 }));
         for _ in 0..80 {
             terreno.atualiza(vec2(cam.target.x, cam.target.z), crate::config_graficos::RAIO_PADRAO + 1, 400);
         }
@@ -1565,6 +1754,7 @@ pub async fn previa() {
         rt.texture.get_texture_data().export_png(&format!("{saida}/mar-{nome}.png"));
         println!("mar-{nome}.png");
     }
+    NEBLINA_DA_PREVIA.with(|n| n.set(0.0));
     // 7. A ship UNDER WAY: under three seconds of sailing in an arc, so the
     //    wake is real, then the shot from astern and above.
     if so.as_deref().is_none_or(|s| "navegando".contains(s)) {
@@ -1612,7 +1802,8 @@ mod testes {
     #[test]
     fn os_props_do_mar_sao_baratos() {
         let p = props();
-        assert_eq!(p.len(), P_SECA + 1);
+        assert_eq!(p.len(), N_PROPS);
+        assert_eq!(P_ALGA + 1, N_PROPS);
         for (k, m) in p.iter().enumerate() {
             let quads = m.idx.len() / 6;
             assert!(quads > 0 && quads <= 120, "prop {k} has {quads} quads");
@@ -1657,7 +1848,10 @@ mod testes {
             let verts: usize = ms.iter().map(|m| m.vertices.len()).sum();
             let alto = ms.iter().flat_map(|m| m.vertices.iter()).map(|v| v.position.y).fold(f32::MIN, f32::max);
             println!("{}: {verts} vertices, {} triangles, top {alto}", i.nome, idx / 3);
-            assert!(idx / 3 > 1000 && alto > 10.0, "{}: the far mesh is empty", i.nome);
+            // Kōgen-tō's harbour is flat concrete (its skyline is the
+            // landmarks' mesh) and the atoll is low coral.
+            let teto = if crate::mar_temas::e_tema(i.feitio) { 2.0 } else { 10.0 };
+            assert!(idx / 3 > 1000 && alto > teto, "{}: the far mesh is empty", i.nome);
             assert!(verts < 20_000, "{}: {verts} vertices", i.nome);
             assert!(idx / 3 < 30_000, "{}: {} triangles", i.nome, idx / 3);
             // Inside every triangle, not only at the vertices: a slope between

@@ -33,6 +33,7 @@
 use macroquad::material::{gl_use_default_material, gl_use_material, load_material, Material, MaterialParams};
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams};
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use std::cell::RefCell;
 use std::f32::consts::{PI, TAU};
 

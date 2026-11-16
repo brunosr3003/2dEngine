@@ -31,6 +31,7 @@
 
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
+use crate::relogio::{get_frame_time, get_time};
 
 use crate::hud_estilo as estilo;
 use crate::world::World;

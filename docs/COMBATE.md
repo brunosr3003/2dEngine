@@ -437,3 +437,81 @@ que aplica as penalidades de morte; acertar golpes não dá pontos. Matar quem
 já tem PK points não dá pontos. Nos três graus da Ilha Mágica, mortes não dão
 pontos. Modo e pontos persistem ao sair e trocar de zona; não há redução
 automática de pontos nesta versão. Protocolo 147.
+
+## Sair com PK, carta de morte e lista negra (16/11/2026)
+
+Pedido do dono: "personagem com PK, ao deslogar tem que ter o aviso inclusive,
+tem que ficar pelo menos 2 min logado ainda parado mesmo a pessoa já tendo saído
+do jogo [...] quando alguém te matar tem que vir um email [...] e ter como
+adicionar à blacklist; na blacklist, enquanto aquela pessoa tiver PK e online,
+você consegue ver onde ela tá". Código: `shared::pk` (constantes e textos),
+`server/src/world/permanencia.rs` (regras), `server/src/social.rs` (banco).
+
+**Quem fica no mundo ao sair** (`pk::permanece_ao_sair`): quem tem PK points
+(nome vermelho) OU está em combate PK — deu ou levou golpe de jogador nos últimos
+`pk::COMBATE_PK_S` = 30 s (`Session::pk_combate_ate`, marcado em
+`registrar_agressao` para os dois lados, revide incluso; vai na meta como
+`PkState::combate`). Só modo PK ligado, sem pontos e sem luta recente, sai na
+hora. Quem não tem PK sai na hora como sempre (queda de conexão no celular não
+pune ninguém).
+
+**Como fica**: a conexão caiu, o jogo foi fechado/morto, ou o "Leave" do menu:
+a SESSÃO continua (`Session::permanece_ate`) com o corpo no mundo por
+`pk::PERMANENCIA_S` = 120 s, parado (sem input, alvo, rota, coleta nem piloto do
+mar) e atacável pelas regras normais. O save periódico continua gravando. O
+cliente avisa antes do "Leave" ("You have PK: your character stays in the world
+for 2 minutes after you leave and can still be attacked.", `pk_ui::aviso_de_saida`).
+
+**Fim**: (a) acabaram os 120 s → salva e sai como desconexão normal
+(`tick_permanencia` + `tick.rs::sair_de_vez`); (b) caiu (HP 0) → as regras de
+morte já rodaram (perda de XP com o extra dos pontos, ponto de PK e carta pro
+matador); ninguém está lá pra levantar, então acorda na cidade como um respawn,
+salva e sai; (c) algo mandou pra outra zona (navio afundado vai pro cais) → salva
+com a zona nova e sai.
+
+**Voltar**: logar o mesmo personagem (mesma conta) retoma o corpo. No mesmo canal,
+`religar_permanencia` vira a cópia fresca do login (mesmo lugar, mesma vida). Em
+outro canal, o login consulta `pk_permanencia` (nome, zona, canal, host, até) e
+manda o cliente (`TrocarZona`) pro canal onde o corpo está, que devolve o corpo.
+Registro com o canal morto (sem heartbeat há 30 s) é ignorado.
+
+**Brechas fechadas**: "Leave"/`RequestDisconnect` fica como queda; o "novo login
+vence" (`on_auth_result`) não chuta corpo que está ficando; socket novo no mesmo
+endereço encerra o corpo direito em vez de sobrescrever a sessão; o fechamento do
+socket de uma TROCA DE ZONA (`zona_de_saida`) não é saída e não fica; viagem pra
+outra zona (Capitão, navio, Ilha Mágica, Arena, Porão — tudo que passa por
+`mandar_para_zona`) é recusada em combate PK ("You are in PK combat: you cannot
+travel for N more seconds."). Movimento forçado passa: caído, sem corpo, navio
+avariado, tempo da Ilha Mágica acabou, corpo que está ficando. Nome vermelho sem
+luta nos últimos 30 s pode viajar: chega online e atacável na outra ilha, e sair
+de lá também fica.
+
+**Carta de morte**: toda morte por jogador (terra, ou navio afundado por canhão de
+jogador — os dois passam por `registrar_morte_pk`) manda UMA carta oficial de
+sistema à vítima ("Tempest · System", `social_campanhas.cargo = 'system'`,
+`account_id` 0, sem anexo, coluna `matador`). Assunto "You were killed by <nome>";
+texto "<nome> [R# · Lv N] killed you at <ilha ou 'the open sea near X'> (x, y)
+on AAAA-MM-DD HH:MM (Brasília time).", + parágrafo se o matador está com PK
+depois da morte, + parágrafo se foi em área de PvP aberto (Ilha Mágica, águas sem
+lei), + o convite pra lista negra. Morte por bicho/mar não manda nada. Ficam as
+20 cartas de morte mais novas (`pk::MAX_CARTAS_DE_ABATE`). A carta tem o botão
+"Add to blacklist" (`Estado::matadores` liga o id da carta ao matador). A vítima
+também recebe uma linha no chat.
+
+**Lista negra**: tabela `social_blacklist (dono, alvo, quando)`, máx. 50 nomes
+(`pk::MAX_LISTA_NEGRA`), adicionar pela carta, pelo menu de ações do jogador
+selecionado ("Add to blacklist") ou digitando na aba nova "Blacklist" do Social;
+remover na mesma aba. A presença do realm (`social_presenca`) ganhou `pk`, `x`,
+`y`, gravados pelo heartbeat (20 s; nomes vermelhos a cada 10 s,
+`bater_presenca_pk`), então a busca vale entre zonas e canais sem processo
+nenhum falar com outro. O servidor só manda zona/canal/posição quando o alvo está
+ONLINE e com PK points (`Inimigo::visivel`); sem PK aparece "No PK", offline
+"Offline". Quem está no mesmo canal sai com a posição ao vivo. "Show on map" põe
+um marcador vermelho no mapa grande e no minimapa (quando o alvo está na mesma
+ilha); com o marcador ligado ou o mapa aberto o painel social se atualiza a cada
+10 s (aberto, 5 s).
+
+Protocolo: só campos/variantes no FIM (`PkState::combate`,
+`Pedido::AdicionarListaNegra`/`RemoverListaNegra`, `Estado::lista_negra`/
+`matadores`, `IncomingMessage::PermanenciaRemota` é interno). `PROTOCOL_VERSION`
+segue 199.

@@ -473,6 +473,11 @@ pub struct PkState {
     /// skull flag and a red name. Appended.
     #[serde(default)]
     pub marcado: bool,
+    /// In PK combat (a PvP hit given or taken in the last
+    /// `shared::pk::COMBATE_PK_S`): leaving lingers and travel is refused.
+    /// Appended.
+    #[serde(default)]
+    pub combate: bool,
 }
 
 /// Precisao da posicao no wire: 1/8 de tile.

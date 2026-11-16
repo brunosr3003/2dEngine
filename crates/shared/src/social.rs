@@ -83,6 +83,15 @@ pub enum Pedido {
         nome: String,
         oficial: bool,
     },
+    /// Puts a character on MY blacklist (`shared::pk::MAX_LISTA_NEGRA`).
+    /// Appended.
+    AdicionarListaNegra {
+        nome: String,
+    },
+    /// Takes a character off my blacklist. Appended.
+    RemoverListaNegra {
+        nome: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -101,6 +110,44 @@ pub struct Estado {
     pub oficiais: Vec<Carta>,
     /// Presence, level, class and tag of every friend and clan member.
     pub contatos: Vec<Contato>,
+    /// My blacklist, with where each one is when they are online WITH PK.
+    /// Appended.
+    pub lista_negra: Vec<Inimigo>,
+    /// Kill letters (official ids, negative) and who killed me in each: the
+    /// letter's "Add to blacklist" button. Appended.
+    pub matadores: Vec<(i64, String)>,
+}
+
+/// One name on the blacklist. The location is filled by the server ONLY
+/// while the person is online and has PK (points / red name); otherwise it
+/// stays empty, whatever the client asks.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Inimigo {
+    pub nome: String,
+    pub online: bool,
+    /// Online with PK points (a red name) right now.
+    pub pk: bool,
+    /// Zone id and channel, "" unless `online && pk`.
+    pub zona: String,
+    pub canal: String,
+    /// Position in that zone (as of the last presence beat).
+    pub x: f32,
+    pub y: f32,
+}
+
+impl Inimigo {
+    /// The row as the server sends it: the place only with PK, online.
+    pub fn visivel(nome: String, online: bool, pk: bool, zona: String, canal: String, x: f32, y: f32) -> Self {
+        if online && pk {
+            Inimigo { nome, online, pk, zona, canal, x, y }
+        } else {
+            Inimigo { nome, online, pk: false, ..Default::default() }
+        }
+    }
+    /// Has a place to show on the map.
+    pub fn localizado(&self) -> bool {
+        self.online && self.pk && !self.zona.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,6 +463,16 @@ mod tests {
         assert_eq!(visto_ha(0 + 1, 1 + 600), "10m ago");
         assert_eq!(visto_ha(1, 1 + 7200), "2h ago");
         assert_eq!(visto_ha(1, 1 + 3 * 86_400), "3d ago");
+    }
+
+    #[test]
+    fn lista_negra_so_mostra_o_lugar_com_pk_online() {
+        let com = Inimigo::visivel("A".into(), true, true, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        assert!(com.localizado() && com.zona == "ilha_gelo" && com.x == 1.0);
+        let sem_pk = Inimigo::visivel("B".into(), true, false, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        assert!(!sem_pk.localizado() && sem_pk.online && sem_pk.zona.is_empty() && sem_pk.x == 0.0);
+        let off = Inimigo::visivel("C".into(), false, true, "ilha_gelo".into(), "2".into(), 1.0, 2.0);
+        assert!(!off.localizado() && !off.pk && off.zona.is_empty());
     }
 
     #[test]

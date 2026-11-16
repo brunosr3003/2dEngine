@@ -11,6 +11,7 @@
 //! 15/11/2026: "invisibilidade tá muito estranho o efeito").
 
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use shared::EntityId;
 use std::cell::RefCell;
 use std::collections::HashMap;

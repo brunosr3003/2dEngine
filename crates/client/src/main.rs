@@ -48,6 +48,7 @@ mod ativas;
 mod invisibilidade;
 mod mar_casco;
 mod mar_cena;
+mod mar_temas;
 mod mar_ui;
 mod mar_combate_ui;
 mod mar_rota;
@@ -118,6 +119,8 @@ mod config_coleta;
 mod config_combate;
 mod config_graficos;
 mod benchmark;
+mod filme;
+mod relogio;
 mod benchmark_ui;
 mod config_interface;
 mod confirmar;
@@ -922,6 +925,13 @@ async fn main() {
         menu_missoes::previa_menu().await;
         return;
     }
+    // THE AD CAPTURE (docs/FILME.md): debug desktop builds only, and only
+    // with `MMO_FILME` naming a scene.
+    #[cfg(all(debug_assertions, not(any(target_os = "ios", target_os = "android"))))]
+    if let Some(cenas) = filme::pedido(std::env::var("MMO_FILME").ok().as_deref()) {
+        filme::rodar(&mut vox, cenas).await;
+        return;
+    }
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_BENCHMARK").is_ok() {
         benchmark_ui::previa(&mut vox).await;
@@ -1259,7 +1269,7 @@ fn window_conf() -> Conf {
     // A captura precisa continuar quando a janela fica coberta: o Wayland
     // pode suspender os callbacks de quadro. Só a prévia usa X11.
     #[cfg(all(debug_assertions, target_os = "linux"))]
-    if std::env::var("MMO_PREVIA_APARENCIA").is_ok() {
+    if std::env::var("MMO_PREVIA_APARENCIA").is_ok() || std::env::var("MMO_FILME").is_ok() {
         conf.platform.linux_backend = miniquad::conf::LinuxBackend::X11Only;
     }
     // O default do miniquad desenha decoracao do lado do cliente via libdecor;
@@ -4435,7 +4445,14 @@ impl Jogo {
             Item::Graficos => self.config_graficos.abrir(),
             Item::Sair => {
                 self.voltar_ao_menu = false;
-                self.sair();
+                // With PK the body stays in the world: say so first.
+                let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
+                    .map(|e| e.meta.pk).unwrap_or_default();
+                if pk_ui::saida_fica(pk) {
+                    self.pk_ui.confirmar_saida = true;
+                } else {
+                    self.sair();
+                }
             }
             _ => self.voltar_ao_menu = false,
         }
@@ -5935,6 +5952,13 @@ impl Jogo {
     }
 
     fn atualizar_auto_combate(&mut self) {
+        // AUTO COMBAT AT SEA is the SERVER's pilot (`PedidoNavio::Piloto`): it
+        // steers the hull around the target and fires; the switch follows
+        // the AUTO button and is resent while on.
+        let piloto_quer = mar_ui::no_mar() && self.auto_combate.ativo();
+        if let Some(ligado) = self.mar_rota.piloto.pedido(piloto_quer, get_time()) {
+            self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Piloto { ligado } });
+        }
         let movimento = self.andando_na_mao();
         let clique_mundo = self.clique_no_mundo() && !self.ui_pega_mouse();
         // TOQUE LONGO (ou botão direito) ABRE A CONFIGURAÇÃO, como no auto
@@ -6024,6 +6048,22 @@ impl Jogo {
         let no_mar = mar_ui::no_mar();
         if no_mar && !self.mar_rota.pode_varrer(agora) {
             return;
+        }
+        // Low hull at sea: the server's pilot is sailing home to patch it
+        // (`navio::piloto_recua`, the same rule). No hunting meanwhile.
+        if no_mar {
+            if let Some((casco, total, _)) = mar_ui::casco_de(&self.bolsa.equip) {
+                let reparo = self.habilidades.recarga_ate(shared::navio::id_de_skill(2)) <= agora;
+                if self.mar_rota.piloto.casco(casco as f32 / total.max(1) as f32, reparo) {
+                    if self.mar_rota.ativa() && self.mar_rota.atracar.is_none() {
+                        self.mar_rota.parar();
+                    }
+                    self.chat.push("AUTO: hull low, heading for the harbour to patch it.".into());
+                }
+                if self.mar_rota.piloto.recuando {
+                    return;
+                }
+            }
         }
         let novo = self
             .auto_combate
@@ -6138,6 +6178,7 @@ impl Jogo {
                         self.envia(ClientMessage::PararRota);
                     }
                     Acao::Amigo => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::Amizade { nome } }),
+                    Acao::ListaNegra => self.envia(ClientMessage::Social { pedido: shared::social::Pedido::AdicionarListaNegra { nome } }),
                     Acao::Grupo => self.envia(ClientMessage::PartyInvite { target_name: nome }),
                     Acao::Trocar => self.envia(troca_ui::TrocaUi::convidar(nome)),
                     Acao::Seguir => {
@@ -6173,6 +6214,11 @@ impl Jogo {
             return;
         }
         let Some(alvo) = self.alvo else { return };
+        // AUTO COMBAT at sea: the server's pilot keeps the distance.
+        if mar_ui::no_mar() && self.auto_combate.ativo() {
+            self.aproximando_alvo = None;
+            return;
+        }
         if self.andando_na_mao() || self.auto_combate.dirigindo() {
             self.aproximando_alvo = None;
             return;
@@ -7202,6 +7248,14 @@ impl Jogo {
                 self.fecha_paineis();
                 self.mapa.abrir();
             }
+            // The blacklist's "Show on map": a red marker, here and on the big map.
+            self.social.mapa_aberto = self.mapa.aberto;
+            self.mapa.inimigos = self
+                .social
+                .marcador()
+                .filter(|(_, zona, _)| self.mapa.zona() == Some(zona.as_str()))
+                .map(|(nome, _, p)| vec![(nome, vec2(p.x, p.y))])
+                .unwrap_or_default();
             self.mapa.desenha_mini(&self.world);
             if let Some((hp, hp_max, _, nome)) = eu.clone() {
                 let st = self.bolsa.stats.as_ref();
@@ -8413,6 +8467,12 @@ impl Jogo {
                 .desenha_resumo(&|id| bolsa.nome(id), &self.vox, &self.solido);
         }
         // Dentro da dungeon a derrota e' o "Reviver em N s" dela, sem cidade.
+        // Leaving with PK: the warning, and leave only on "Leave anyway".
+        if let Some(sair) = self.pk_ui.aviso_de_saida() {
+            if sair {
+                self.sair();
+            }
+        }
         // The PK panel, over the HUD (opened from the PK card).
         if self.pk_ui.aberto {
             let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))

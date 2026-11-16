@@ -15,11 +15,17 @@ pub enum Aba {
     Amigos,
     Correio,
     Cla,
+    /// The blacklist (`shared::social::Inimigo`).
+    ListaNegra,
 }
 
 #[derive(Default)]
 pub struct Social {
     pub aberto: bool,
+    /// The big map is open (`main`): the blacklist refreshes every 10 s.
+    pub mapa_aberto: bool,
+    /// The blacklisted name shown on the map ("Show on map").
+    pub no_mapa: Option<String>,
     pub estado: Estado,
     pub grupo: Vec<String>,
     /// Clan tag of each `grupo` member, same order.
@@ -171,11 +177,24 @@ impl Social {
         }
         // Updates notifications even with the window closed, without interrupting typing.
         if agora >= self.atualizar_em && agora >= self.ocupado_ate {
-            self.atualizar_em = agora + if self.aberto { 5.0 } else { 20.0 };
+            // A red name on the map follows every 10 s (the blacklist).
+            let seguindo = self.mapa_aberto || self.marcador().is_some();
+            self.atualizar_em = agora + if self.aberto { 5.0 } else if seguindo { 10.0 } else { 20.0 };
             return Some(msg(Pedido::Estado));
         }
         None
     }
+    /// The blacklisted name shown on the map, while the server still gives
+    /// its place (online with PK): (name, zone, position).
+    pub fn marcador(&self) -> Option<(String, String, Vec2)> {
+        let nome = self.no_mapa.as_ref()?;
+        self.estado
+            .lista_negra
+            .iter()
+            .find(|i| &i.nome == nome && i.localizado())
+            .map(|i| (i.nome.clone(), i.zona.clone(), vec2(i.x, i.y)))
+    }
+
     pub fn desenha(
         &mut self,
         eu: &str,
@@ -217,8 +236,9 @@ impl Social {
             (Aba::Amigos, "Friends"),
             (Aba::Correio, "Mail"),
             (Aba::Cla, "Clan"),
+            (Aba::ListaNegra, "Blacklist"),
         ];
-        let tw = (p.w - 40.0) / 4.0;
+        let tw = (p.w - 40.0) / abas.len() as f32;
         for (i, (aba, nome)) in abas.iter().enumerate() {
             let r = Rect::new(p.x + 20.0 + i as f32 * tw, p.y + 50.0, tw - 5.0, 40.0);
             e::aba(
@@ -232,6 +252,7 @@ impl Social {
                 Aba::Amigos => !self.estado.recebidos.is_empty(),
                 Aba::Correio => self.correio_pendente(),
                 Aba::Cla => !self.estado.convites_cla.is_empty(),
+                Aba::ListaNegra => false,
             };
             if alerta {
                 e::badge(r);
@@ -248,6 +269,7 @@ impl Social {
             Aba::Amigos => self.amigos_ui(a, digitado, &mut saida),
             Aba::Correio => self.correio_ui(a, digitado, &mut saida, vox, solido),
             Aba::Cla => self.cla_ui(a, eu, digitado, &mut saida),
+            Aba::ListaNegra => self.lista_negra_ui(a, digitado, &mut saida),
         }
         let aviso = if !self.carregado && self.aviso.is_empty() {
             "Loading…"
@@ -547,6 +569,103 @@ impl Social {
             }
         }
     }
+    /// The BLACKLIST tab: names I keep an eye on. Where they are shows only
+    /// while they are online with PK (the server leaves it empty otherwise).
+    fn lista_negra_ui(&mut self, a: Rect, d: &[char], s: &mut Vec<ClientMessage>) {
+        let max = shared::pk::MAX_LISTA_NEGRA;
+        campo(
+            Rect::new(a.x, a.y + 20.0, a.w - 190.0, 40.0),
+            "Character name",
+            &mut self.nome,
+            0,
+            &mut self.foco,
+            d,
+            32,
+        );
+        if crate::ui::botao(
+            Rect::new(a.x + a.w - 178.0, a.y + 20.0, 178.0, 40.0),
+            "Add to blacklist",
+            !self.nome.trim().is_empty() && self.estado.lista_negra.len() < max,
+        ) {
+            self.enviar(
+                Pedido::AdicionarListaNegra {
+                    nome: self.nome.trim().into(),
+                },
+                s,
+            );
+        }
+        e::texto_ajustado(
+            &format!(
+                "{} / {} names · their location shows only while they are online with PK",
+                self.estado.lista_negra.len(),
+                max
+            ),
+            a.x,
+            a.y + 91.0,
+            a.w,
+            14,
+            e::SUAVE,
+        );
+        let lista = self.estado.lista_negra.clone();
+        let area = Rect::new(a.x, a.y + 108.0, a.w, a.h - 108.0);
+        let range = paginacao(area, lista.len(), &mut self.pagina);
+        if lista.is_empty() {
+            e::texto_ajustado(
+                "Add whoever killed you (from the kill letter or here) to see where they are while they have PK.",
+                a.x,
+                area.y + 25.0,
+                a.w,
+                16,
+                e::SUAVE,
+            );
+        }
+        for (i, inimigo) in lista[range].iter().enumerate() {
+            let y = area.y + i as f32 * 50.0;
+            let (status, cor) = if inimigo.localizado() {
+                (
+                    format!(
+                        "PK · {} · Ch {} · {:.0}, {:.0}",
+                        crate::hud::nome_da_zona(&inimigo.zona),
+                        inimigo.canal,
+                        inimigo.x,
+                        inimigo.y
+                    ),
+                    crate::pk_ui::VERMELHO_PK,
+                )
+            } else if inimigo.online {
+                ("No PK".to_string(), e::VERDE)
+            } else {
+                ("Offline".to_string(), e::alfa(e::SUAVE, 0.5))
+            };
+            draw_circle(a.x + 6.0, y + 18.0, 5.0, cor);
+            e::texto_ajustado(
+                &format!("{} · {}", inimigo.nome, shared::idioma::tr(&status)),
+                a.x + 18.0,
+                y + 24.0,
+                a.w - 250.0,
+                16,
+                e::TEXTO,
+            );
+            let mostrando = self.no_mapa.as_deref() == Some(inimigo.nome.as_str());
+            if inimigo.localizado()
+                && botao_fim(a, y, 2, if mostrando { "Hide on map" } else { "Show on map" })
+            {
+                self.no_mapa = if mostrando { None } else { Some(inimigo.nome.clone()) };
+            }
+            if botao_fim(a, y, 1, "Remove") {
+                if mostrando {
+                    self.no_mapa = None;
+                }
+                self.confirmar(
+                    format!("Remove {} from your blacklist?", inimigo.nome),
+                    Pedido::RemoverListaNegra {
+                        nome: inimigo.nome.clone(),
+                    },
+                );
+            }
+        }
+    }
+
     fn correio_ui(
         &mut self,
         a: Rect,
@@ -836,7 +955,16 @@ impl Social {
                 })
                 .collect::<Vec<_>>()
                 .join("; ");
-            let conteudo = if anexos.is_empty() {
+            // A kill letter is the server's English, one sentence per
+            // paragraph: each one is translated on its own before wrapping.
+            let matador = self.estado.matadores.iter().find(|(id, _)| *id == c.id).map(|(_, m)| m.clone());
+            let conteudo = if matador.is_some() {
+                c.texto
+                    .split('\n')
+                    .map(|l| shared::idioma::tr(l).into_owned())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else if anexos.is_empty() {
                 c.texto.clone()
             } else {
                 format!(
@@ -912,6 +1040,16 @@ impl Social {
                     "Delete this letter?".into(),
                     Pedido::ApagarCarta { id: c.id },
                 );
+            }
+            if let Some(m) = matador {
+                let ja = self.estado.lista_negra.iter().any(|i| i.nome == m);
+                if crate::ui::botao(
+                    Rect::new(right.x + 280.0, right.y + right.h - 40.0, 170.0, 40.0),
+                    if ja { "On your blacklist" } else { "Add to blacklist" },
+                    !ja,
+                ) {
+                    self.enviar(Pedido::AdicionarListaNegra { nome: m }, s);
+                }
             }
         } else {
             e::texto(
@@ -1729,6 +1867,11 @@ pub async fn previa() {
         cla:Some(social::Cla{id:1,nome:"Tide Corsairs".into(),lider:"brunji".into(),aviso:"Meet at the village for the next expedition.".into(),membros:vec!["brunji".into(),"MaréAlta".into(),"Navegante".into(),"Captain".into()],tag:"TIDE".into(),oficiais:vec!["MaréAlta".into()]}),
         convites_cla:vec![], cargo:Some("admin".into()),destinatarios:42,oficiais:vec![],
         contatos: previa_contatos(),
+        lista_negra: vec![
+            social::Inimigo::visivel("Corsair".into(), true, true, "ilha_gelo".into(), "1".into(), 120.0, -40.0),
+            social::Inimigo::visivel("Captain".into(), true, false, String::new(), String::new(), 0.0, 0.0),
+        ],
+        matadores: vec![],
     }));
     ui.grupo = vec!["brunji".into(), "MaréAlta".into()];
     ui.grupo_tags = vec!["TIDE".into(), "TIDE".into()];
@@ -1738,6 +1881,7 @@ pub async fn previa() {
         (Aba::Amigos, "amigos"),
         (Aba::Correio, "correio"),
         (Aba::Cla, "cla"),
+        (Aba::ListaNegra, "lista_negra"),
     ] {
         ui.abrir(aba);
         if aba == Aba::Cla {
@@ -1884,6 +2028,21 @@ mod testes {
         assert_eq!(onde_esta(&v[2], 0), "Offline");
         let visto = social::Contato { visto: 100, ..Default::default() };
         assert_eq!(onde_esta(&visto, 100 + 7200), "Last seen 2h ago");
+    }
+
+    #[test]
+    fn marcador_so_com_lugar() {
+        let mut ui = Social::default();
+        ui.estado.lista_negra = vec![
+            social::Inimigo::visivel("Rubro".into(), true, true, "ilha_gelo".into(), "1".into(), 3.0, 4.0),
+            social::Inimigo::visivel("Limpo".into(), true, false, "ilha_gelo".into(), "1".into(), 3.0, 4.0),
+        ];
+        ui.no_mapa = Some("Limpo".into());
+        assert!(ui.marcador().is_none(), "no PK: no marker");
+        ui.no_mapa = Some("Rubro".into());
+        assert_eq!(ui.marcador(), Some(("Rubro".into(), "ilha_gelo".into(), vec2(3.0, 4.0))));
+        ui.estado.lista_negra[0] = social::Inimigo::visivel("Rubro".into(), false, true, String::new(), String::new(), 0.0, 0.0);
+        assert!(ui.marcador().is_none(), "offline: the marker goes");
     }
 
     #[test]

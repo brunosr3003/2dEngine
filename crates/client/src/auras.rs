@@ -1,5 +1,6 @@
 //! Local per-piece auras, drawn in a batch after the opaque bodies.
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use macroquad::material::{Material, gl_use_material, gl_use_default_material};
 use std::{cell::RefCell, collections::HashMap, f32::consts::TAU};
 #[derive(Clone, Copy)]

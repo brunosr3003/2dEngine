@@ -581,6 +581,32 @@ pub const VIDA_DO_BICHO_DO_MAR: f32 = 1.6;
 /// Broadside's 12 m and the Bow Cannon's 22 m, outside a bite.
 pub const DISTANCIA_DE_COMBATE: f32 = 8.5;
 
+// ─────────── the sea's AUTO COMBAT pilot (16/11/2026, "kite and broadside") ───────────
+
+/// AUTO COMBAT AT SEA is steered by the SERVER (`world/piloto_do_mar.rs`):
+/// the client switches it on with `PedidoNavio::Piloto` and keeps choosing
+/// the target; the hull circles it at this radius with its side to it
+/// (inside the Broadside's 12 m, far outside a bite).
+pub const PILOTO_RAIO: f32 = 7.5;
+/// Under this share of the hull the pilot patches it (Emergency Repair).
+pub const PILOTO_REPARA: f32 = 0.35;
+/// Under this share, with no repair ready, it pops Smoke and runs for the
+/// nearest harbour corridor...
+pub const PILOTO_RECUA: f32 = 0.20;
+/// ...and only comes back above this one.
+pub const PILOTO_VOLTA: f32 = 0.50;
+
+/// Is the sea's AUTO COMBAT retreating? Hull share `fracao`, Emergency
+/// Repair ready or not, and whether it was already retreating (the client
+/// reads the same rule to stop hunting while the server sails home).
+pub fn piloto_recua(fracao: f32, reparo_pronto: bool, recuando: bool) -> bool {
+    if recuando {
+        fracao < PILOTO_VOLTA
+    } else {
+        fracao < PILOTO_RECUA && !reparo_pronto
+    }
+}
+
 /// Raw damage of attack skill `h` from a captain of level `nivel` on ship
 /// `id`/`d`: the level's expected attack × the skill × the class × the
 /// cannon stars. Mitigation and the level gap apply on top, as on any hit.
@@ -672,10 +698,13 @@ pub fn mult_do_tesouro(t: &crate::items::Tesouro, bonus: f32) -> f32 {
 /// The island counts only after a real CROSSING: docking back where you
 /// cast off from counts nothing. Returns whether it counted now.
 pub fn conta_atracacao(t: &mut crate::items::Tesouro, ilha: usize, de: &str) -> bool {
-    let Some(def) = crate::terreno::ARQUIPELAGO.get(ilha) else {
+    // The Magic Island counts too (`mar::ILHA_MAGICA`, bit 7), and any of its
+    // tiers is the same island.
+    let Some(zona) = crate::mar::zona_do_indice(ilha) else {
         return false;
     };
-    if ilha >= 8 || def.zona == de {
+    let mesma = zona == de || (crate::magica::e_magica(zona) && crate::magica::e_magica(de));
+    if ilha >= 8 || mesma {
         return false;
     }
     let bit = 1u8 << ilha;
@@ -763,6 +792,10 @@ pub enum PedidoNavio {
     /// On land: open the Colossus Chest on deck (naval phase 4), paying its
     /// multiplier (`mult_do_tesouro`). Appended.
     AbrirTesouro,
+    /// At sea: AUTO COMBAT on/off. On, the server steers the hull around the
+    /// selected target and fires the cannons (`world/piloto_do_mar.rs`).
+    /// Appended (protocol stays 199).
+    Piloto { ligado: bool },
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

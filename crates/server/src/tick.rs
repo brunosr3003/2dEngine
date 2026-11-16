@@ -129,15 +129,20 @@ pub async fn run_world_loop(
         // Drena mensagens da rede.
         loop {
             match rx.try_recv() {
-                Ok(IncomingMessage::Connected(h)) => world.on_connect(h),
-                Ok(IncomingMessage::Disconnected(id)) => {
-                    // Persiste o personagem antes de descartar a sessao.
-                    if let Some(row) = world.take_character_for_disconnect(&id) {
-                        let rows = vec![row];
-                        let mercado = world.tomar_registros_mercado(&rows);
-                        let _ = save_tx.send(SaveBatch { rows, mercado });
+                Ok(IncomingMessage::Connected(h)) => {
+                    // A new socket on the address of a body still lingering
+                    // (PK logout): that one ends properly, never overwritten.
+                    if world.esta_permanecendo(&h.id) {
+                        sair_de_vez(&mut world, &save_tx, h.id);
                     }
-                    world.on_disconnect(id);
+                    world.on_connect(h)
+                }
+                Ok(IncomingMessage::Disconnected(id)) => {
+                    // Leaving with PK: the body stays in the world for a while
+                    // (`world/permanencia.rs`); `tick_permanencia` ends it.
+                    if !world.comecar_permanencia(id) {
+                        sair_de_vez(&mut world, &save_tx, id);
+                    }
                 }
                 Ok(IncomingMessage::Message(id, m)) => world.on_message(id, m),
                 Ok(IncomingMessage::Mercado(ev)) => world.on_mercado(ev),
@@ -150,6 +155,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::CorreioEntrega(e)) => world.on_correio_entrega(e),
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
+                }
+                Ok(IncomingMessage::PermanenciaRemota { sid, nome, destino }) => {
+                    world.on_permanencia_remota(sid, nome, destino)
                 }
                 Ok(IncomingMessage::AuthResult(id, r)) => world.on_auth_result(id, r),
                 Ok(IncomingMessage::CharCreated(id, row, success)) => {
@@ -193,6 +201,9 @@ pub async fn run_world_loop(
                 Ok(IncomingMessage::CorreioFim { sid, nome, texto }) => {
                     world.on_correio_fim(sid, nome, texto)
                 }
+                Ok(IncomingMessage::PermanenciaRemota { sid, nome, destino }) => {
+                    world.on_permanencia_remota(sid, nome, destino)
+                }
                 Ok(_) => {} // outros variantes nao devem chegar aqui
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,
@@ -225,6 +236,11 @@ pub async fn run_world_loop(
             world.tick_magica();
             // PK: open-PvP areas force/restore the mode; points fade online.
             world.tick_pk(1);
+            // PK logout: the bodies whose 2 minutes are over (or that fell)
+            // are saved and leave now; kill letters are written.
+            for id in world.tick_permanencia() {
+                sair_de_vez(&mut world, &save_tx, id);
+            }
             // The market's recommended prices were recounted: everyone gets
             // the new table.
             if let Some(t) = crate::precos::novidade() {
@@ -238,6 +254,9 @@ pub async fn run_world_loop(
         // Realm-wide presence (friends / clan "online in any channel").
         if save_counter % (shared::social::PRESENCA_BATIDA_S as u32 * 30) == 0 {
             world.bater_presenca(None);
+        } else if save_counter % 300 == 0 {
+            // Red names every 10 s: the blacklist follows them on the map.
+            world.bater_presenca_pk();
         }
         // Medidas pro panoptico (o valor de agora): a cada 30 s.
         if save_counter % 900 == 0 {
@@ -294,4 +313,19 @@ pub async fn run_world_loop(
         }
         next += step;
     }
+}
+
+/// Saves the character and removes the session: an ordinary disconnect.
+fn sair_de_vez(
+    world: &mut GameWorld,
+    save_tx: &mpsc::UnboundedSender<SaveBatch>,
+    id: crate::world::SessionId,
+) {
+    // Persiste o personagem antes de descartar a sessao.
+    if let Some(row) = world.take_character_for_disconnect(&id) {
+        let rows = vec![row];
+        let mercado = world.tomar_registros_mercado(&rows);
+        let _ = save_tx.send(SaveBatch { rows, mercado });
+    }
+    world.on_disconnect(id);
 }

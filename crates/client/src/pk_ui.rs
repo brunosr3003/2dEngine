@@ -15,6 +15,13 @@ use crate::hud_estilo as estilo;
 pub struct PkUi {
     pub aberto: bool,
     confirmar_perdao: bool,
+    /// "Leave" was pressed with PK: the warning is up (`aviso_de_saida`).
+    pub confirmar_saida: bool,
+}
+
+/// Does leaving now leave my body in the world (`shared::pk::permanece_ao_sair`)?
+pub fn saida_fica(pk_estado: shared::PkState) -> bool {
+    pk::permanece_ao_sair(pk_estado.pontos, pk_estado.combate)
 }
 
 /// Colour of a PK state, the same on the card and on nameplates: red name
@@ -174,6 +181,39 @@ impl PkUi {
     }
 }
 
+impl PkUi {
+    /// The warning before leaving with PK. `Some(true)` = leave anyway,
+    /// `Some(false)` = stay; `None` = still up (or not asked).
+    pub fn aviso_de_saida(&mut self) -> Option<bool> {
+        if !self.confirmar_saida {
+            return None;
+        }
+        let r = estilo::no_painel(estilo::escala_do_painel(520.0, 260.0), || {
+            crate::hud_layout::escurece(0.55);
+            let f = estilo::fator_texto();
+            let t = crate::hud_layout::tela_segura();
+            let (w, h) = ((520.0 * f).min(t.w - 16.0), (260.0 * f).min(t.h - 16.0));
+            let p = Rect::new(t.center().x - w * 0.5, t.center().y - h * 0.5, w, h);
+            estilo::painel(p);
+            estilo::texto_forte(p.x + 22.0 * f, p.y + 38.0 * f, "Leave the game?", 21, VERMELHO_PK);
+            estilo::texto_ajustado(pk::AVISO_DE_SAIDA, p.x + 22.0 * f, p.y + 76.0 * f, p.w - 44.0 * f, 16, estilo::TEXTO);
+            let bw = 170.0 * f;
+            let by = p.y + p.h - 64.0 * f;
+            if crate::ui::botao(Rect::new(p.center().x - bw - 8.0, by, bw, 44.0 * f), "Stay", true) {
+                return Some(false);
+            }
+            if crate::ui::botao(Rect::new(p.center().x + 8.0, by, bw, 44.0 * f), "Leave anyway", true) {
+                return Some(true);
+            }
+            None
+        });
+        if r.is_some() {
+            self.confirmar_saida = false;
+        }
+        r
+    }
+}
+
 fn milhar(n: u64) -> String {
     shared::idioma::milhar(n)
 }
@@ -184,7 +224,7 @@ mod testes {
 
     #[test]
     fn cor_e_modo_do_cartao() {
-        let pk = |modo, pontos, hostil| shared::PkState { hostil, pontos, modo, travado: false, marcado: false };
+        let pk = |modo, pontos, hostil| shared::PkState { hostil, pontos, modo, travado: false, marcado: false, combate: false };
         assert_eq!(cor(pk(pk::PACIFICO, 0, false)), estilo::AUTO);
         assert_eq!(cor(pk(pk::GRUPO, 0, true)), ROXO_PK);
         assert_eq!(cor(pk(pk::PACIFICO, 2, false)), VERMELHO_PK, "red name wins, even with PK off");
@@ -193,5 +233,8 @@ mod testes {
         assert_eq!(texto_da_perda(0), "");
         assert_eq!(texto_da_perda(3), "+15% XP lost on death (not recoverable)");
         assert_eq!(texto_da_perda(20), "+40% XP lost on death (not recoverable)");
+        assert!(!saida_fica(pk(pk::LIVRE, 0, true)), "a PK mode alone leaves at once");
+        assert!(saida_fica(pk(pk::PACIFICO, 1, false)), "red name");
+        assert!(saida_fica(shared::PkState { combate: true, ..pk(pk::PACIFICO, 0, false) }), "PK combat");
     }
 }

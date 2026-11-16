@@ -19,11 +19,17 @@ pub async fn listar(db: &mut PgConnection, eu: &str) -> Result<Vec<Carta>> {
         .map(|r| {
             Ok(Carta {
                 id: -r.get::<i64, _>("id"),
-                de: format!(
-                    "Staff · {} ({})",
-                    r.get::<String, _>("autor"),
-                    r.get::<String, _>("cargo")
-                ),
+                // A SYSTEM letter (the kill letter, `social::carta_de_abate`)
+                // has no staff member behind it.
+                de: if r.get::<String, _>("cargo") == "system" {
+                    "Tempest · System".to_string()
+                } else {
+                    format!(
+                        "Staff · {} ({})",
+                        r.get::<String, _>("autor"),
+                        r.get::<String, _>("cargo")
+                    )
+                },
                 assunto: r.get("assunto"),
                 texto: r.get("texto"),
                 quando: r.get("quando"),

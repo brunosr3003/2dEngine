@@ -11,6 +11,7 @@
 //!   against depth so a wall in front hides it.
 
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use macroquad::miniquad::{BlendFactor, BlendState, BlendValue, Comparison, Equation, PipelineParams};
 use shared::kogen::{LuzDaCidade, TipoDeLuz};
 

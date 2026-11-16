@@ -22,6 +22,8 @@ pub struct SocialHud {
 pub enum Acao {
     Inspecionar,
     Amigo,
+    /// Puts the selected player on my blacklist.
+    ListaNegra,
     Seguir,
     Grupo,
     /// Direct trade (`troca_ui.rs`).
@@ -180,7 +182,7 @@ fn menu_rect(z: &Zonas) -> Rect {
         z.alvo.x,
         z.alvo.y + z.alvo.h + 4.0 * z.s,
         z.alvo.w,
-        168.0 * z.s,
+        210.0 * z.s,
     )
 }
 impl SocialHud {
@@ -232,6 +234,7 @@ impl SocialHud {
             ),
             ("Invite to party", Acao::Grupo),
             ("Trade items", Acao::Trocar),
+            ("Add to blacklist", Acao::ListaNegra),
         ]
         .into_iter()
         .enumerate()

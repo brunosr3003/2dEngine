@@ -9,6 +9,7 @@ use macroquad::material::{load_material, Material, MaterialParams};
 use macroquad::miniquad::graphics::{PipelineParams, UniformDesc, UniformType};
 use macroquad::models::{Mesh, Vertex};
 use macroquad::prelude::*;
+use crate::relogio::{get_frame_time, get_time};
 use shared::constants::tile_id;
 
 use crate::map::Map;
@@ -3808,9 +3809,28 @@ pub fn alvo() -> Option<RenderTarget> {
 /// Todo layout que se ancora em canto passa por aqui.
 pub fn tela() -> (f32, f32) {
     match alvo() {
-        Some(rt) => (rt.texture.width(), rt.texture.height()),
+        Some(rt) => {
+            let s = escala_do_alvo();
+            (rt.texture.width() / s, rt.texture.height() / s)
+        }
         None => (screen_width(), screen_height()),
     }
+}
+
+thread_local! {
+    static ESCALA_DO_ALVO: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+}
+
+/// Pixels of the capture target per logical pixel of the 2D drawn over the
+/// world (damage numbers, health bars). 1 everywhere but the ad capture
+/// (`filme`), which renders a 2732-pixel iPad shot with the overlay at the
+/// size a 1080p one has. With no target it changes nothing.
+pub fn define_escala_do_alvo(s: f32) {
+    ESCALA_DO_ALVO.with(|c| c.set(s.max(0.1)));
+}
+
+fn escala_do_alvo() -> f32 {
+    ESCALA_DO_ALVO.with(|c| c.get())
 }
 
 /// O `set_default_camera` que respeita o alvo: volta pro 2D da tela ou do
@@ -3819,7 +3839,7 @@ pub fn tela() -> (f32, f32) {
 pub fn camera_padrao() {
     match alvo() {
         Some(rt) => {
-            let (w, h) = (rt.texture.width(), rt.texture.height());
+            let (w, h) = tela();
             let mut c = Camera2D::from_display_rect(Rect::new(0.0, 0.0, w, h));
             c.render_target = Some(rt);
             set_camera(&c);
@@ -3852,9 +3872,12 @@ pub fn world_to_screen(cam: &Camera3D, p: Vec3) -> Option<Vec2> {
         return None; // atras da camera
     }
     let ndc = clip.truncate() / clip.w;
+    // The screen in play; the capture target (in its logical pixels) when
+    // a preview or the ad capture draws into one.
+    let (w, h) = tela();
     Some(vec2(
-        (ndc.x * 0.5 + 0.5) * screen_width(),
-        (1.0 - (ndc.y * 0.5 + 0.5)) * screen_height(),
+        (ndc.x * 0.5 + 0.5) * w,
+        (1.0 - (ndc.y * 0.5 + 0.5)) * h,
     ))
 }
 

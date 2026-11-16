@@ -93,6 +93,8 @@ impl GameWorld {
                                 Pedido::EnviarCarta { .. } => "Letter sent.",
                                 Pedido::Amizade { .. } => "Friend request sent.",
                                 Pedido::ConvidarCla { .. } => "Clan invite sent.",
+                                Pedido::AdicionarListaNegra { .. } => "Added to your blacklist.",
+                                Pedido::RemoverListaNegra { .. } => "Removed from your blacklist.",
                                 _ => "Updated.",
                             }
                             .to_string()
@@ -182,17 +184,35 @@ impl GameWorld {
     /// Writes the presence rows of everyone here (or just `so`) and learns
     /// their clan id/tag back. No SQL on the tick: a task does it.
     pub fn bater_presenca(&self, so: Option<SessionId>) {
+        self.bater_presenca_de(|id, _| so.is_none_or(|x| x == id));
+    }
+
+    /// Red names beat twice as often: the blacklist follows them on the map.
+    pub fn bater_presenca_pk(&self) {
+        self.bater_presenca_de(|_, s| s.pk_points > 0);
+    }
+
+    fn bater_presenca_de(&self, quem: impl Fn(SessionId, &Session) -> bool) {
         let Some(ctx) = &self.auth_ctx else { return };
         let presentes: Vec<crate::social::Presente> = self
             .sessions
             .iter()
-            .filter(|(id, s)| s.logged_in && !s.name.is_empty() && so.is_none_or(|x| x == **id))
-            .map(|(_, s)| crate::social::Presente {
-                nome: s.name.clone(),
-                nivel: shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()) as u16,
-                conjunto: s.equipment.weapon.map_or(shared::social::SEM_CONJUNTO, |w| {
-                    shared::skills::Conjunto::da_arma(w) as u8
-                }),
+            .filter(|(id, s)| s.logged_in && !s.name.is_empty() && quem(**id, s))
+            .map(|(_, s)| {
+                let p = s
+                    .entity
+                    .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+                    .unwrap_or(Vec2::ZERO);
+                crate::social::Presente {
+                    nome: s.name.clone(),
+                    nivel: shared::level_of_xp_with_mult(s.xp, crate::economy::xp_multiplier()) as u16,
+                    conjunto: s.equipment.weapon.map_or(shared::social::SEM_CONJUNTO, |w| {
+                        shared::skills::Conjunto::da_arma(w) as u8
+                    }),
+                    pk: s.pk_points,
+                    x: p.x,
+                    y: p.y,
+                }
             })
             .collect();
         if presentes.is_empty() {
@@ -257,6 +277,25 @@ impl GameWorld {
                         c.zona = self.zona.clone();
                         c.canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
                         c.nivel = shared::level_of_xp_with_mult(o.xp, crate::economy::xp_multiplier()) as u16;
+                    }
+                }
+                // The blacklist, for whoever is HERE: live PK and position.
+                let canal = std::env::var("MMO_CANAL").unwrap_or_else(|_| "1".into());
+                for i in &mut e.lista_negra {
+                    if let Some(o) = self.sessions.values().find(|o| o.logged_in && o.name == i.nome) {
+                        let p = o
+                            .entity
+                            .and_then(|e| self.ecs.get::<&Position>(e).ok().map(|p| p.0))
+                            .unwrap_or(Vec2::ZERO);
+                        *i = shared::social::Inimigo::visivel(
+                            i.nome.clone(),
+                            true,
+                            o.pk_points > 0,
+                            self.zona.clone(),
+                            canal.clone(),
+                            p.x,
+                            p.y,
+                        );
                     }
                 }
                 e.neste_canal = e

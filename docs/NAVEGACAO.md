@@ -592,6 +592,56 @@ própria pro cais (a do remake visual já existe), barra de casco de navio
 inimigo (o casco dos outros não vai no fio; o alvo mostra a vida),
 cosmético de bala.
 
+### Auto combate no mar, refeito (16/11/2026, versão de TESTE, protocolo 199)
+
+O dono: *"o auto combat no barco tá muito ruim"*. Medido sem tela
+(`server/world/piloto_do_mar.rs`, testes): o auto antigo (no cliente) ia até
+8,5 m do alvo, **parava** e ficava ali atirando enquanto os tubarões
+nadavam até o casco e mordiam a cada 2 s — 24,5 s parado, 22 mordidas,
+26% do casco num ninho de três (44 s). E o achado de fundo: no mar quem
+**foge** da mordida (o que a telegrafia pede) fazia o bicho desistir em 5 s
+sem morder e voltar pra casa com a vida cheia (o casco anda ao dobro do
+tubarão provocado): um ninho de três curou quatro vezes e passou de 120 s.
+
+- **Piloto no servidor.** O cliente liga o AUTO (`PedidoNavio::Piloto`,
+  variante no fim; reenviada a cada 3 s enquanto ligado) e segue escolhendo
+  o alvo; o servidor conduz o casco direto no `frame.move_dir` (joystick
+  parado, sem rota), 10 decisões/s, sem ida e volta de `MoverPara`.
+- **Bordejar e dar a bordada:** rumo tangente em volta do alvo a
+  `navio::PILOTO_RAIO` 7,5 m (dentro da visão do bicho, que continua
+  perseguindo; longe da mordida), o costado virado pra ele. Bordada só com o
+  alvo (ou dois bichos) no costado; com bicho ao alcance na proa/popa e
+  nenhuma mordida vindo, **para uma decisão** (parado atira em volta) e
+  pega o bando todo. Canhão de Proa sempre que o alvo está nos 22 m.
+- **Lê a telegrafia:** mordida vindo nele = rumo direto pra longe do bicho
+  até ela fechar; bicho a menos de 6 m empurra o casco.
+- **Casco:** Reparo de Emergência abaixo de 35%; abaixo de 20% sem reparo,
+  Fumaça e rota de água até o corredor do cais mais perto, volta acima de
+  50% (`navio::piloto_recua`, a mesma regra no cliente, que para de caçar).
+- Terra e corredor viram parede (sondagem a 2 e 4 m, gira até livrar, curva
+  forte troca o sentido); parado 1,5 s troca o sentido. Rota de caça que
+  termina no alvo o piloto assume; toque do jogador em outro lugar é dele.
+- PK: escolha própria só bicho; jogador só se o cliente escolheu (o
+  `auto_pvp` dele) e `can_damage_player` deixa. Nada no corredor.
+- **Bicho do mar desiste em 15 s** (`navio::DESISTE_NO_MAR_S`; em terra 5)
+  sem morder; levar tiro continua zerando a conta.
+
+| Mesmo ninho (nível, 3 bichos) | Antes | Piloto |
+|---|---|---|
+| Tempo | 44,2 s | 44,5 s (ninhos 2 e 4: 30,8 e 26,0 s) |
+| Casco perdido | 26% | 0% |
+| Tiros / acertos | 18 / 18 | 19 / 19 |
+| Mordidas (anunciadas) | 22 (24) | 0 (0) |
+| Maior tempo parado | 24,5 s | 1,0 s |
+
+Ninho do elite (elite + 2): antes **afundava** (32 mordidas, 23,7 s parado,
+14/16 acertos); piloto 112 s, 0% de casco, 56/60 acertos, 0 de 20 mordidas
+anunciadas. Testes: `o_piloto_vence_o_auto_antigo_no_mesmo_ninho`,
+`o_piloto_afunda_o_ninho_do_nivel_sem_perder_metade_do_casco` (20-60 s,
+< 50% casco, > 60% acerto, nunca parado 3 s), `o_piloto_aguenta_o_ninho_do_elite`,
+`com_o_casco_baixo_o_piloto_repara_e_recua`, `o_piloto_respeita_o_corredor_e_o_pk`;
+cliente `o_piloto_segue_o_auto_e_recua_com_o_casco`.
+
 ### Remake visual (16/11/2026, versão de TESTE, protocolo 199)
 
 O dono, no primeiro mar: *"o mar aberto está um lixo inacreditável ... as
@@ -712,6 +762,117 @@ Medição de FPS no aparelho fica com o benchmark do primeiro login
 login (`benchmark::cena_mar`) desenha o mar por `mar_cena::desenha_mundo`, o
 mesmo passe da prévia.
 
+### Toda ilha no mar (16/11/2026, versão de TESTE, protocolo 199)
+
+O dono: *"pode fazer qualquer npc de teleporte entre ilhas ter a opção de
+sail porque eu quero poder navegar para qualquer ilha do jogo"*.
+
+**Carta nova** (`shared::mar`). As 4 ilhas com porto continuam em `ESCALA`
+0,36 do mapa-mundi e com o cais virado pro mesmo lado (`rumo_do_porto`); as
+4 sem porto em terra entram por `mar::NOVAS`, postas à mão no mesmo
+referencial, ao norte (onde o mapa-mundi as tem), com o cais virado pro
+centróide das ilhas com que têm rota. A caixa toda é recentrada: as 4
+antigas se deslocam juntas (≈ +87 u em x, +565 u em z), sem mudar distância
+entre elas. `RAIO_BLOCOS` 1.800 → **2.300** (±1.150 u, campo de altura de
+~42 MB no servidor), `BORDA` 880 → **1.130**, cache `-mar3` (`REVISAO` 3).
+Fio: ±1.150 contra ±4.095 u (teste `o_mar_inteiro_cabe_no_orcamento_do_fio`).
+
+| Ilha (perfil) | Centro no mar (x, z) | Raio | Faixa do mar | Zona do cais |
+|---|---|---|---|---|
+| Bosque | (735, 565) | 160 | 1-15 | `ilha_inicial` |
+| Geleira | (87, 169) | 105 | 15-30 | `ilha_gelo` |
+| Ermo | (87, 961) | 105 | 28-42 | `ilha_deserto` |
+| Planalto | (-561, 565) | 160 | 40-60 | `ilha_planalto` |
+| Ilha Mágica (`Magica`) | (135, -416) | 105 | 20-80 (os degraus) | `ilha_magica` (degrau pelo poder) |
+| Skyreach (`Celeste`) | (-565, -316) | 120 | 60-80 | `ilha_celeste` |
+| Kōgen-tō (`Neon`) | (-765, -936) | 130 | 80-100 | `ilha_kogen` |
+| Abyssia (`Abissal`) | (535, -886) | 110 | 100-120 | `ilha_abissal` |
+
+**Rotas** (`mar::pares_das_rotas`, 12): os 6 pares entre portos, como antes,
+mais Geleira–Mágica, Mágica–Skyreach, Planalto–Skyreach, Skyreach–Kōgen,
+Kōgen–Abyssia e Mágica–Abyssia (`ROTAS_NOVAS`). Ninhos (1/3 e 2/3, elite no
+de 2/3), baú à deriva e destroços seguem as rotas e o `nivel_em` da ilha
+mais perto; `povoar_mar` agora deixa a faixa subir até 120. Águas sem lei:
+as 3 entre portos longe do Bosque e **uma nova longe, Kōgen–Abyssia**
+(`SEM_LEI_NOVA`). Travessias (ancoradouro a ancoradouro, Chalupa 10 u/s,
+teste `as_travessias_levam_de_meio_a_um_minuto_e_meio`: 30-100 s entre
+portos, 45-120 s nas rotas novas): Geleira–Mágica 649 u (65 s), Mágica–Skyreach
+472 u (47 s), Planalto–Skyreach 841 u (84 s), Skyreach–Kōgen 629 u (63 s),
+Mágica–Abyssia 638 u (64 s) e a longa Kōgen–Abyssia 1.045 u (105 s); as 6
+entre portos não mudaram (54-95 s).
+
+**Silhuetas novas** (`Feitio`, `terra_da`, `material_do_topo/parede`):
+Skyreach = costa de mármore e bancos de nuvem; Kōgen-tō = muralha de
+concreto e porto plano com a grade de ruas (asfalto, faixa tracejada);
+Abyssia = **atol** de coral em anel em volta de uma lagoa
+(`FRACAO_DA_LAGOA` 0,46) funda no meio, onde gira o redemoinho — o anel é
+fechado (teste) e a lagoa não é água livre; Ilha Mágica = praias claras,
+morros verdes e coroa de cristal violeta. O cais, o molhe plano e os 60 u
+de entrada livre valem pra todas (testes de sempre).
+
+**Atracar** (`server/world/navio.rs`): cada cais novo leva à zona certa
+(`mar::zona_do_indice`; a Mágica é o índice `mar::ILHA_MAGICA` = 7, o
+primeiro depois do `ARQUIPELAGO`, que cabe no bit 7 do `Tesouro::ilhas`).
+Skyreach, Kōgen-tō e Abyssia: a MESMA chegada das viagens de Capitão,
+ônibus e submarino (`porto_da_ilha`: o porto, ou a cidade, onde ficam os
+NPCs de viagem). Ilha Mágica: `magica::CHEGADA`, no maior degrau que o
+poder abre, pelo mesmo `entrar_na_magica` do Guia (retoma o tempo ativo ou
+gasta uma entrada: as grátis do dia, depois passe); sair da ilha
+(`sair_da_magica`) com `magica_volta` = mar devolve o navio ao cais da
+Mágica (sem navio que navegue, ou mar fora do ar: o Bosque). **Destino
+fechado recusa atracar com o motivo** ("You haven't unlocked Kōgen-tō yet:
+reach the story step "…""; a Mágica: "it opens at N power (you: M)");
+navegar até lá pra olhar é livre.
+
+**Zarpar de todo NPC de viagem.** O Capitão do Porto, o Professor do Ônibus
+Voador e o Capitão do Submarino (onde estiverem) mandam o estado do navio
+junto com o menu, e a linha "My ship" (Sail / Repair · N copper /
+Shipwright) aparece pros três (`abrir_menu_viagem`,
+`perto_do_capitao_do_porto` = qualquer `Meio`). Zarpar de uma ilha sem
+porto em terra põe o navio no cais NOVO dela; atracar lá devolve à chegada
+da ilha. As viagens de ônibus, submarino e Capitão seguem iguais.
+
+**Visual** (`client/mar_temas.rs`, chamado por `mar_cena`): cada ilha nova
+é a malha de altura de longe (`constroi_lod`) + UMA malha low-poly dos
+marcos (`malha_de_longe`, sempre desenhada no alcance da névoa porque fica
+onde nenhum pedaço cobre) + a doca em voxel (`pecas`) até 360 u.
+
+| Ilha | Marcos de longe | Doca (perto) | Farol equivalente |
+|---|---|---|---|
+| Skyreach | 5 ilhas flutuantes (domo de grama, aro de mármore, cone de rocha), árvores douradas | píer de mármore, **elevador do céu** até a ilha flutuante sobre o cais, coreto de cúpula dourada, nuvens | luz dourada no topo da ilha do elevador (43,5 u); **cachoeira** caindo da ilha no mar, com espuma |
+| Kōgen-tō | skyline de torres com faixas neon e luz de topo piscando, 2 guindastes | píer de concreto com placas neon, **guindaste pórtico** e pilhas de contêineres | mastro de sinal com anéis neon e placa (23,6 u) |
+| Abyssia | pilares de coral com ponta brilhante | píer de grade e latão, pilares de coral, lanternas de concha | **sino de mergulho** no guindaste (16,4 u) e **redemoinho** brilhante na lagoa com coluna de luz |
+| Ilha Mágica | cristais gigantes (até ~46 u) com lascas | píer encantado sob **arco de runas**, pedras rúnicas, cristais | **espigão de cristal** violeta (22 u) |
+
+Cor de cada ilha (bandeira, anel, rótulo, âncora no mapa): Skyreach
+dourado, Kōgen-tō rosa-neon, Abyssia água, Mágica lilás. Props novos
+assados no terreno (`mar_cena::props`, 27 modelos ≤ 120 quads): árvores do
+céu, cristais, corais e alga, ralos com a Forração. Rótulo "<ilha> · Dock",
+marcador de borda, minimapa e mapa do mar saem de `mar::ilhas()` e já
+mostram as 8. Vértices medidos (testes `mar_temas::as_docas_novas_sao_baratas` e
+`a_ilha_de_longe_fica_por_baixo_e_e_barata`, célula 3 u): Skyreach
+relevo 8.649 + marcos 1.820 + doca 16.028; Kōgen-tō 10.000 + 5.024 + 18.440
+(18 luzes de topo); Abyssia 7.569 + 952 + 14.828; Mágica 6.889 + 1.008 +
+14.840. Na prévia (alta): ilhas de longe 218 mil índices nas 8, docas
+124.920 vértices nas 8 (cada doca 1 chamada, só até 360 u; os marcos, 1
+chamada por ilha). Por quadro: halos, a fita da cachoeira (~70 vértices) e
+o redemoinho (~230).
+
+**Prévia:** `MMO_PREVIA_MAR=1` grava também `mar-cais-celeste/kogen/abissal/magica`,
+`mar-chegada-celeste/kogen/abissal/magica` e `mar-todo` (o mar inteiro do
+alto, névoa afastada só nessa foto).
+
+**Testes:** `mar::toda_ilha_do_jogo_esta_no_mar`,
+`cada_doca_nova_leva_a_ilha_certa`, `as_docas_novas_tem_o_seu_tema`,
+`a_ilha_e_parede_e_o_cais_e_a_porta` (anel do atol fechado), travessias e
+águas sem lei (4); servidor `a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais`
+(todo cais a partir de todo cais, 56 rotas), `todo_npc_de_viagem_oferece_zarpar_e_zarpa_da_doca_da_ilha`,
+`toda_doca_nova_atraca_na_ilha_certa`, `destino_bloqueado_recusa_atracar_com_o_motivo`;
+cliente `mar_temas::as_docas_novas_sao_baratas`, `cada_tema_tem_os_seus_marcos`.
+
+**Produção (NÃO feito):** nada novo além do que a fase 1 lista; o cache de
+altura `-mar3` (~42 MB) é gerado no primeiro boot do processo do mar.
+
 ### Fase 5 — Conteúdo do mar
 
 - **Mapas do tesouro** (drop raro) que apontam ilhotas secretas só
@@ -729,8 +890,9 @@ mesmo passe da prévia.
 - **Fio:** posição `i16` com `POS_SCALE` 8 (±4096 u) e velocidade `i8`
   (±15,9 u/s). O casco mais rápido fica abaixo disso, com teste.
 - **Celular:** silhuetas analíticas, nada de relevo Perlin das ilhas no mar.
-- **Skyreach, Kōgen-tō e Abyssia não têm porto** (`tem_porto`): ficam fora do
-  mar, como hoje.
+- **Skyreach, Kōgen-tō e Abyssia não têm porto em terra** (`tem_porto`),
+  mas desde 16/11/2026 têm **cais no mar** (`mar::NOVAS`), como a Ilha
+  Mágica — ver "Toda ilha no mar".
 - **Dados:** o navio vive na instância do item (como pet e montaria),
   então trocar e vender no mercado leva o que foi investido.
 

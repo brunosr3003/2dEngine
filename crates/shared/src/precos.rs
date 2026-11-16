@@ -207,6 +207,14 @@ pub fn calcular(e: &Estoque) -> TabelaDePrecos {
             p.entry(chave).and_modify(|v| *v = v.min(custo)).or_insert(custo);
         }
     }
+    // WRECK PLANKS (sea-only, few in the world): with no stock price they
+    // cost what a pile of their siblings costs, 5 Wood T2 and 20 Darksteel,
+    // so the Prime can list them from day one.
+    if !p.contains_key(&item_id::PRANCHA_DE_NAUFRAGIO) {
+        if let (Some(&m), Some(&ds)) = (p.get(&item_id::WOOD_T2), p.get(&item_id::DARKSTEEL)) {
+            p.insert(item_id::PRANCHA_DE_NAUFRAGIO, 5.0 * m + 20.0 * ds);
+        }
+    }
     // GEAR: the value is the Common I piece; the instance adds the ladder.
     if let Some(&cobre) = p.get(&item_id::COPPER) {
         for (&id, &em_cobre) in &e.base_em_cobre {

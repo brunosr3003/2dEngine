@@ -1554,7 +1554,9 @@ mod tests {
                     || (p.file_name().is_some_and(|n| n == "previa_porta.rs")
                         && fonte.contains("MMO_PREVIA_PORTA"))
                     || (p.file_name().is_some_and(|n| n == "previa_bestiary.rs")
-                        && fonte.contains("MMO_PREVIA_BESTIARY"));
+                        && fonte.contains("MMO_PREVIA_BESTIARY"))
+                    || (p.file_name().is_some_and(|n| n == "filme.rs")
+                        && fonte.contains("#![cfg(all(debug_assertions, not(any(target_os = \"ios\", target_os = \"android\"))))]"));
                 for (n, l) in fonte.lines().enumerate() {
                     let codigo = l.split("//").next().unwrap_or("");
                     assert!(

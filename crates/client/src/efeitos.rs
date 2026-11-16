@@ -7,6 +7,7 @@
 //! sumir atras de uma arvore.
 
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 
 use crate::render3d::{world_to_screen, Vista};
 use crate::ui;

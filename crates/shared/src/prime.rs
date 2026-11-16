@@ -58,6 +58,18 @@ pub const LINHAS: &[Linha] = &[
     Linha { bases: &[item_id::DARKSTEEL], cores: None, limite_dia: 50_000 },
     Linha { bases: &item_id::CHAVES, cores: Some((1, 4)), limite_dia: 3 },
     Linha { bases: &crate::combinar::MATERIAIS, cores: Some((1, 3)), limite_dia: 500 },
+    // SHIP UPGRADES (owner, 16/11/2026: "o NPC prime tem que ter como
+    // comprar as coisas para evoluir barco também"): the Shipwright's wood,
+    // the purple Steel only the Man-o'-War asks for (the other purples stay
+    // out, see above), and Wreck Planks, capped low so the sea stays the
+    // cheaper source. Darksteel and Steel up to blue are already above.
+    Linha {
+        bases: &[item_id::WOOD_T1, item_id::WOOD_T2, item_id::WOOD_T3, item_id::WOOD_T4],
+        cores: None,
+        limite_dia: 500,
+    },
+    Linha { bases: &[item_id::STEEL], cores: Some((4, 4)), limite_dia: 150 },
+    Linha { bases: &[item_id::PRANCHA_DE_NAUFRAGIO], cores: None, limite_dia: 30 },
 ];
 
 /// Units of each DUNGEON (Porão) key one character may buy per game day
@@ -372,7 +384,8 @@ mod testes {
         assert!(ids.contains(&item_id::XP_POTION));
         assert!(ids.contains(&item_id::DARKSTEEL));
         assert!(ids.contains(&item_id::ENERGIA_MIL));
-        assert_eq!(c.len(), 3 + 4 * 4 + 8 * 3 + chaves_de_porao().len());
+        assert_eq!(c.len(), 3 + 4 * 4 + 8 * 3 + 4 + 1 + 1 + chaves_de_porao().len());
+        assert!(ids.contains(&item_id::PRANCHA_DE_NAUFRAGIO) && ids.contains(&item_id::WOOD_T4));
         for &k in &item_id::CHAVES {
             for cor in 1..=4 {
                 assert_eq!(item(item_id::chave_na_cor(k, cor)).unwrap().limite_dia, 3);
@@ -381,7 +394,10 @@ mod testes {
         }
         for &m in &crate::combinar::MATERIAIS {
             assert_eq!(item(item_id::na_cor(m, 3)).unwrap().limite_dia, 500);
-            assert!(item(item_id::na_cor(m, 4)).is_none(), "purple material on sale");
+            // Purple Steel is the one exception: the Man-o'-War needs it.
+            if m != item_id::STEEL {
+                assert!(item(item_id::na_cor(m, 4)).is_none(), "purple material on sale");
+            }
         }
         assert!(item(item_id::GLITTERING_POWDER).is_none());
         let mut dup = ids.clone();

@@ -455,7 +455,7 @@ fn ilha_pesada() -> &'static shared::terreno::DefIlha {
     &shared::terreno::ARQUIPELAGO[3]
 }
 
-const KINDS_DO_PLANALTO: [u16; 6] = [36, 37, 38, 39, 40, 15];
+pub(crate) const KINDS_DO_PLANALTO: [u16; 6] = [36, 37, 38, 39, 40, 15];
 const INIMIGOS: u32 = 32;
 const OUTROS_JOGADORES: u32 = 6;
 

@@ -324,6 +324,38 @@ pub(crate) fn init_vazia_para_testes() {
     let _ = ECONOMY.set(Arc::new(RwLock::new(EconomyConfig::default())));
 }
 
+/// Seeds the test cache with the `enemy_kinds` rows of `kinds`, exactly as
+/// the database is seeded (`todos_os_kinds`): a fight simulated against the
+/// real mob (the sea's AUTO COMBAT, `piloto_do_mar`).
+#[cfg(test)]
+pub(crate) fn por_kinds_do_seed_para_testes(kinds: &[u16]) {
+    init_vazia_para_testes();
+    let mut c = cell().write();
+    for &k in kinds {
+        let Some(e) = kind_inicial(k) else { continue };
+        c.enemy_kinds.insert(
+            k,
+            EnemyKindDef {
+                kind: k,
+                name: e.name.into(),
+                hp_max: e.hp,
+                speed: e.sp,
+                attack_damage: e.dmg,
+                attack_cooldown: e.cd,
+                detect_range: e.det,
+                attack_range: e.rng,
+                kite_dist: e.kite,
+                proj_count: e.proj.max(1) as u32,
+                xp_reward: e.xp.max(0) as u64,
+                defense: e.def,
+                size_scale: e.sz,
+                tint_rgba: e.t,
+                loot_item_level: None,
+            },
+        );
+    }
+}
+
 /// Seeds the test cache with the drop tables the database is seeded with:
 /// every mob table in `loot_mobs` and the Rock rows of `linhas_da_pedra`.
 #[cfg(test)]
@@ -1006,8 +1038,10 @@ mod testes_onde_obter {
                 ..
             }
         )));
+        // Wood is also sold by the Prime Merchant since 16/11/2026 (ships).
+        assert!(de(&f, WOOD_T1).contains(&FonteDeItem::Prime));
         assert_eq!(
-            de(&f, WOOD_T1),
+            de(&f, WOOD_T1).into_iter().filter(|x| *x != FonteDeItem::Prime).collect::<Vec<_>>(),
             vec![FonteDeItem::Coleta {
                 tipo: 0,
                 chance: 1.0,

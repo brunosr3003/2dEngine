@@ -1171,6 +1171,15 @@ fn de_tela(t: Vec2, r: Rect, raio: f32) -> Vec2 {
 const COR_MOB: Color = Color::new(0.95, 0.30, 0.25, 1.0);
 const COR_NPC: Color = Color::new(1.0, 0.85, 0.25, 1.0);
 const COR_GENTE: Color = Color::new(0.45, 0.75, 1.0, 1.0);
+/// A blacklisted red name (`Mapa::inimigos`).
+const COR_INIMIGO: Color = Color::new(1.0, 0.25, 0.22, 1.0);
+
+/// The blacklist marker: a red ring with a dot, readable over any ground.
+fn marca_inimigo(q: Vec2, r: f32) {
+    draw_circle(q.x, q.y, r + 1.5, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_circle_lines(q.x, q.y, r, 2.0, COR_INIMIGO);
+    draw_circle(q.x, q.y, r * 0.45, COR_INIMIGO);
+}
 const COR_AGUA: Color = Color::new(0.07, 0.20, 0.36, 1.0);
 
 pub struct Mapa {
@@ -1218,6 +1227,9 @@ pub struct Mapa {
     pub destaque: Option<(u16, String, bool)>,
     /// A aba aberta: a ilha onde se esta', ou o arquipelago inteiro.
     pub no_mundo: bool,
+    /// BLACKLIST "Show on map" (`social_ui`): (name, where) of a red name
+    /// on this island, set by `main` every frame. A red marker on both maps.
+    pub inimigos: Vec<(String, Vec2)>,
     rolagem_lateral: crate::rolagem::Rolagem,
     /// Zoom do mapa GRANDE. 1 = a ilha inteira; acima disso, aproxima em
     /// volta do jogador.
@@ -1288,6 +1300,7 @@ impl Default for Mapa {
             filtros: Filtros::default(),
             destaque: None,
             no_mundo: false,
+            inimigos: Vec::new(),
             rolagem_lateral: Default::default(),
             zoom_grande: 1.0,
             centro: None,
@@ -2851,6 +2864,13 @@ impl Mapa {
                 draw_circle(q.x, q.y, 2.5, cor);
             }
         }
+        // The blacklist's red name: pinned to the rim when out of range.
+        for (_, p) in &self.inimigos {
+            let q = ponto(*p);
+            let fora = q - c;
+            let q = if fora.length() > rad - 6.0 { c + fora.normalize_or_zero() * (rad - 6.0) } else { q };
+            marca_inimigo(q, 5.0);
+        }
         // No minimapa também: é o mapa que fica na tela o tempo todo, e
         // trocar de ilhota é decisão que se toma andando. Fonte menor, e o
         // corte por tamanho de `nomes_das_ilhotas` cuida de calar quando o
@@ -3457,6 +3477,11 @@ impl Mapa {
             }
             let q = ponto(e.render_pos);
             draw_circle(q.x, q.y, u(3.0), COR_GENTE);
+        }
+        for (nome, p) in &self.inimigos {
+            let q = ponto(*p);
+            marca_inimigo(q, u(7.0));
+            estilo::texto_centro(q.x, q.y - u(12.0), nome, 13, COR_INIMIGO);
         }
         // Os nomes das ilhotas por ÚLTIMO entre os rótulos: texto por baixo de
         // mancha some, e este é o rótulo que o jogador veio buscar.

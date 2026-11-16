@@ -23,11 +23,99 @@ pub async fn init(pool: &PgPool) -> Result<()> {
         // Realm-wide presence: one row per character, refreshed by the channel
         // that has them (`bater_presenca`), so "online" means ANY channel.
         "CREATE TABLE IF NOT EXISTS social_presenca (nome TEXT PRIMARY KEY, zona TEXT NOT NULL, canal TEXT NOT NULL, nivel INTEGER NOT NULL DEFAULT 0, conjunto SMALLINT NOT NULL DEFAULT 255, online BOOLEAN NOT NULL DEFAULT FALSE, visto BIGINT NOT NULL DEFAULT 0)",
+        // PK points and position at the last beat (16/11/2026): the blacklist
+        // shows where a red name is, on any channel (`lista_negra`).
+        "ALTER TABLE social_presenca ADD COLUMN IF NOT EXISTS pk INTEGER NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS x REAL NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS y REAL NOT NULL DEFAULT 0",
+        // The blacklist: names a character keeps an eye on (`shared::pk::MAX_LISTA_NEGRA`).
+        "CREATE TABLE IF NOT EXISTS social_blacklist (dono TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE ON UPDATE CASCADE, alvo TEXT NOT NULL REFERENCES characters(name) ON DELETE CASCADE ON UPDATE CASCADE, quando BIGINT NOT NULL, PRIMARY KEY(dono,alvo), CHECK(dono <> alvo))",
+        // A body left in the world by a character with PK (`shared::pk::PERMANENCIA_S`):
+        // logging in on another channel is sent to this one, to take it back.
+        "CREATE TABLE IF NOT EXISTS pk_permanencia (nome TEXT PRIMARY KEY, zona TEXT NOT NULL, canal TEXT NOT NULL, host TEXT NOT NULL, ate BIGINT NOT NULL)",
     ] {
         sqlx::query(sql).execute(pool).await?;
     }
     crate::correio_admin::init(pool).await?;
+    // Kill letters (`carta_de_abate`) are system campaigns; this says who killed.
+    sqlx::query("ALTER TABLE social_campanhas ADD COLUMN IF NOT EXISTS matador TEXT")
+        .execute(pool)
+        .await?;
     Ok(())
+}
+
+/// The kill letter: a SYSTEM official letter (no staff behind it, no
+/// attachments) to `para`, remembering `matador` for its "Add to blacklist".
+/// Only the newest `shared::pk::MAX_CARTAS_DE_ABATE` are kept.
+pub async fn carta_de_abate(pool: &PgPool, para: &str, matador: &str, assunto: &str, texto: &str) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let envio = format!("pk-{}-{:016x}", crate::presenca::agora(), fastrand::u64(..));
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO social_campanhas(envio,autor,account_id,cargo,destino,assunto,texto,anexos,quando,destinatarios,matador)
+         VALUES($1,'Tempest',0,'system',$2,$3,$4,'[]',extract(epoch FROM now())::bigint,1,$5) RETURNING id",
+    )
+    .bind(&envio)
+    .bind(para)
+    .bind(assunto)
+    .bind(texto)
+    .bind(matador)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO social_oficiais(campanha,para) SELECT $1,name FROM characters WHERE name=$2")
+        .bind(id)
+        .bind(para)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE social_oficiais SET apagada=TRUE WHERE id IN (
+            SELECT o.id FROM social_oficiais o JOIN social_campanhas c ON c.id=o.campanha
+             WHERE o.para=$1 AND c.matador IS NOT NULL AND NOT o.apagada ORDER BY o.id DESC OFFSET $2)",
+    )
+    .bind(para)
+    .bind(shared::pk::MAX_CARTAS_DE_ABATE as i64)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// This channel keeps `nome`'s body for `segundos` (a PK logout).
+pub async fn permanencia_comeca(pool: &PgPool, nome: &str, zona: &str, canal: &str, host: &str, segundos: i64) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO pk_permanencia(nome,zona,canal,host,ate) VALUES($1,$2,$3,$4,extract(epoch FROM now())::bigint + $5)
+         ON CONFLICT(nome) DO UPDATE SET zona=EXCLUDED.zona, canal=EXCLUDED.canal, host=EXCLUDED.host, ate=EXCLUDED.ate",
+    )
+    .bind(nome)
+    .bind(zona)
+    .bind(canal)
+    .bind(host)
+    .bind(segundos)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The body left this channel (time up, died, taken back).
+pub async fn permanencia_fim(pool: &PgPool, nome: &str, zona: &str, canal: &str) -> Result<()> {
+    sqlx::query("DELETE FROM pk_permanencia WHERE nome=$1 AND zona=$2 AND canal=$3")
+        .bind(nome)
+        .bind(zona)
+        .bind(canal)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Is `nome`'s body still lingering on ANOTHER live channel? (zone, host).
+pub async fn permanencia_remota(pool: &PgPool, nome: &str, zona: &str, canal: &str) -> Result<Option<(String, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT p.zona, p.host FROM pk_permanencia p
+          WHERE p.nome=$1 AND p.ate > extract(epoch FROM now())::bigint AND NOT (p.zona=$2 AND p.canal=$3)
+            AND EXISTS(SELECT 1 FROM channels c WHERE c.host=p.host AND c.updated > now() - interval '30 seconds')",
+    )
+    .bind(nome)
+    .bind(zona)
+    .bind(canal)
+    .fetch_optional(pool)
+    .await?)
 }
 
 async fn alvo(db: &mut PgConnection, eu: &str, nome: &str) -> Result<String> {
@@ -393,6 +481,36 @@ pub async fn executar(pool: &PgPool, eu: &str, pedido: &Pedido) -> Result<()> {
                 .execute(&mut *tx)
                 .await?;
         }
+        Pedido::AdicionarListaNegra { nome } => {
+            let outro = alvo(&mut tx, eu, nome).await?;
+            let existe: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM social_blacklist WHERE dono=$1 AND alvo=$2)")
+                .bind(eu).bind(&outro).fetch_one(&mut *tx).await?;
+            if existe {
+                bail!("That character is already on your blacklist.");
+            }
+            let n: i64 = sqlx::query_scalar("SELECT count(*) FROM social_blacklist WHERE dono=$1")
+                .bind(eu).fetch_one(&mut *tx).await?;
+            if n >= shared::pk::MAX_LISTA_NEGRA as i64 {
+                bail!("Your blacklist is full (50 names).");
+            }
+            sqlx::query("INSERT INTO social_blacklist(dono,alvo,quando) VALUES($1,$2,extract(epoch FROM now())::bigint)")
+                .bind(eu)
+                .bind(outro)
+                .execute(&mut *tx)
+                .await?;
+        }
+        Pedido::RemoverListaNegra { nome } => {
+            if sqlx::query("DELETE FROM social_blacklist WHERE dono=$1 AND alvo=$2")
+                .bind(eu)
+                .bind(nome)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected()
+                == 0
+            {
+                bail!("That name is not on your blacklist.");
+            }
+        }
         Pedido::TagCla { tag } => {
             let id = permitido(&mut tx, eu, AcaoCla::Tag, 0).await?;
             let tag = validar_tag(&mut tx, tag, id).await?;
@@ -469,12 +587,58 @@ pub async fn estado(pool: &PgPool, eu: &str) -> Result<Estado> {
         });
     }
     e.contatos = contatos(&mut tx, &e).await?;
+    e.lista_negra = lista_negra(&mut tx, eu).await?;
+    e.matadores = sqlx::query_as::<_, (i64, String)>(
+        "SELECT o.id, c.matador FROM social_oficiais o JOIN social_campanhas c ON c.id=o.campanha
+          WHERE o.para=$1 AND NOT o.apagada AND c.matador IS NOT NULL ORDER BY o.id DESC LIMIT 100",
+    )
+    .bind(eu)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .map(|(id, m)| (-id, m))
+    .collect();
     for r in sqlx::query("SELECT c.id,c.nome,i.de FROM social_convites i JOIN social_clas c ON c.id=i.cla WHERE i.nome=$1 ORDER BY c.nome")
         .bind(eu).fetch_all(&mut *tx).await? {
         e.convites_cla.push(ConviteCla { id:r.get("id"), nome:r.get("nome"), de:r.get("de") });
     }
     tx.commit().await?;
     Ok(e)
+}
+
+/// My blacklist, with presence and PK from the realm-wide presence table.
+/// The place goes out only for a name online WITH PK (`Inimigo::visivel`).
+async fn lista_negra(db: &mut PgConnection, eu: &str) -> Result<Vec<Inimigo>> {
+    let agora: i64 = sqlx::query_scalar("SELECT extract(epoch FROM now())::bigint")
+        .fetch_one(&mut *db)
+        .await?;
+    let linhas = sqlx::query(
+        "SELECT b.alvo, p.zona, p.canal, p.online, p.visto, p.pk, p.x, p.y
+           FROM social_blacklist b LEFT JOIN social_presenca p ON p.nome=b.alvo
+          WHERE b.dono=$1 ORDER BY b.quando, b.alvo",
+    )
+    .bind(eu)
+    .fetch_all(&mut *db)
+    .await?;
+    Ok(linhas
+        .into_iter()
+        .map(|r| {
+            let online = esta_online(
+                r.get::<Option<bool>, _>("online").unwrap_or(false),
+                r.get::<Option<i64>, _>("visto").unwrap_or(0),
+                agora,
+            );
+            Inimigo::visivel(
+                r.get("alvo"),
+                online,
+                r.get::<Option<i32>, _>("pk").unwrap_or(0) > 0,
+                r.get::<Option<String>, _>("zona").unwrap_or_default(),
+                r.get::<Option<String>, _>("canal").unwrap_or_default(),
+                r.get::<Option<f32>, _>("x").unwrap_or(0.0),
+                r.get::<Option<f32>, _>("y").unwrap_or(0.0),
+            )
+        })
+        .collect())
 }
 
 /// Presence + tag + rank of every friend and clan member of `e`.
@@ -537,6 +701,10 @@ pub struct Presente {
     pub nome: String,
     pub nivel: u16,
     pub conjunto: u8,
+    /// PK points and where they stand (the blacklist's location).
+    pub pk: u32,
+    pub x: f32,
+    pub y: f32,
 }
 
 /// Marks `presentes` online HERE and returns each one's (clan id, tag) — 0 / ""
@@ -554,18 +722,24 @@ pub async fn bater_presenca(
     let nomes: Vec<&str> = presentes.iter().map(|p| p.nome.as_str()).collect();
     let niveis: Vec<i32> = presentes.iter().map(|p| p.nivel as i32).collect();
     let conjuntos: Vec<i16> = presentes.iter().map(|p| p.conjunto as i16).collect();
+    let pks: Vec<i32> = presentes.iter().map(|p| p.pk.min(i32::MAX as u32) as i32).collect();
+    let xs: Vec<f32> = presentes.iter().map(|p| p.x).collect();
+    let ys: Vec<f32> = presentes.iter().map(|p| p.y).collect();
     sqlx::query(
-        "INSERT INTO social_presenca (nome,zona,canal,nivel,conjunto,online,visto)
-         SELECT n, $4, $5, l, c, TRUE, extract(epoch FROM now())::bigint
-           FROM unnest($1::text[], $2::int[], $3::smallint[]) AS t(n,l,c)
+        "INSERT INTO social_presenca (nome,zona,canal,nivel,conjunto,online,visto,pk,x,y)
+         SELECT n, $4, $5, l, c, TRUE, extract(epoch FROM now())::bigint, k, px, py
+           FROM unnest($1::text[], $2::int[], $3::smallint[], $6::int[], $7::real[], $8::real[]) AS t(n,l,c,k,px,py)
          ON CONFLICT (nome) DO UPDATE SET zona=EXCLUDED.zona, canal=EXCLUDED.canal, nivel=EXCLUDED.nivel,
-             conjunto=EXCLUDED.conjunto, online=TRUE, visto=EXCLUDED.visto",
+             conjunto=EXCLUDED.conjunto, online=TRUE, visto=EXCLUDED.visto, pk=EXCLUDED.pk, x=EXCLUDED.x, y=EXCLUDED.y",
     )
     .bind(&nomes)
     .bind(&niveis)
     .bind(&conjuntos)
     .bind(zona)
     .bind(canal)
+    .bind(&pks)
+    .bind(&xs)
+    .bind(&ys)
     .execute(pool)
     .await?;
     let r: Vec<(String, i64, String)> = sqlx::query_as(
@@ -746,7 +920,38 @@ mod tests {
         );
         // Presence across channels: Ana's row written by "another channel";
         // a stale channel's logout does not knock her offline.
-        bater_presenca(p, "ilha_gelo", "2", &[Presente { nome: "Ana".into(), nivel: 30, conjunto: 1 }]).await?;
+        bater_presenca(p, "ilha_gelo", "2", &[Presente { nome: "Ana".into(), nivel: 30, conjunto: 1, pk: 2, x: 5.0, y: 6.0 }]).await?;
+        // The blacklist: add, duplicate, place only online with PK, remove, cap.
+        executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "ana".into() }).await?;
+        assert!(executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "Ana".into() }).await.is_err(), "twice");
+        assert!(executar(p, "Dani", &Pedido::AdicionarListaNegra { nome: "Dani".into() }).await.is_err(), "myself");
+        let ln = estado(p, "Dani").await?.lista_negra;
+        assert_eq!(ln.len(), 1);
+        assert!(ln[0].localizado() && ln[0].zona == "ilha_gelo" && ln[0].x == 5.0, "online with PK: {ln:?}");
+        bater_presenca(p, "ilha_gelo", "2", &[Presente { nome: "Ana".into(), nivel: 30, conjunto: 1, pk: 0, x: 5.0, y: 6.0 }]).await?;
+        let ln = estado(p, "Dani").await?.lista_negra;
+        assert!(ln[0].online && !ln[0].pk && ln[0].zona.is_empty(), "no PK: no place");
+        executar(p, "Dani", &Pedido::RemoverListaNegra { nome: "Ana".into() }).await?;
+        assert!(estado(p, "Dani").await?.lista_negra.is_empty());
+        for i in 0..=shared::pk::MAX_LISTA_NEGRA {
+            sqlx::query("INSERT INTO characters VALUES($1,1)").bind(format!("Lista{i}")).execute(p).await?;
+        }
+        for i in 0..shared::pk::MAX_LISTA_NEGRA {
+            executar(p, "Caio", &Pedido::AdicionarListaNegra { nome: format!("Lista{i}") }).await?;
+        }
+        let cheia = executar(p, "Caio", &Pedido::AdicionarListaNegra { nome: format!("Lista{}", shared::pk::MAX_LISTA_NEGRA) }).await;
+        assert!(cheia.is_err(), "the cap");
+        assert_eq!(estado(p, "Caio").await?.lista_negra.len(), shared::pk::MAX_LISTA_NEGRA);
+        assert!(executar(p, "Dani", &Pedido::RemoverListaNegra { nome: "Ana".into() }).await.is_err());
+        // The kill letter: a system letter that names the killer.
+        carta_de_abate(p, "Bia", "Ana", "You were killed by Ana", "Ana killed you.").await?;
+        let e = estado(p, "Bia").await?;
+        assert_eq!(e.matadores.len(), 1);
+        assert!(e.oficiais.iter().any(|c| c.id == e.matadores[0].0 && c.de == "Tempest · System"));
+        // The linger record: seen from another channel only while that one is alive.
+        permanencia_comeca(p, "Ana", "ilha_gelo", "2", "h:1", 120).await?;
+        assert!(permanencia_remota(p, "Ana", "ilha_gelo", "2").await.is_err() || permanencia_remota(p, "Ana", "ilha_gelo", "2").await?.is_none(), "own channel");
+        permanencia_fim(p, "Ana", "ilha_gelo", "2").await?;
         sair_presenca(p, "Ana", "overworld", "1").await?;
         executar(p, "Ana", &Pedido::ConvidarCla { nome: "Dani".into() }).await?;
         executar(p, "Dani", &Pedido::ResponderCla { id, aceitar: true }).await?;

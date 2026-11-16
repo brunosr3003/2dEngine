@@ -82,6 +82,13 @@ pub enum IncomingMessage {
         nome: String,
         texto: String,
     },
+    /// The realm's answer to "does this character's body linger on another
+    /// channel?" (`world/permanencia.rs`): (zone, host) of that channel.
+    PermanenciaRemota {
+        sid: SessionId,
+        nome: String,
+        destino: Option<(String, String)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,6 +132,8 @@ mod renascimento;
 mod social;
 mod troca;
 pub(crate) mod navio;
+pub(crate) mod piloto_do_mar;
+mod permanencia;
 use habilidades::HabilidadePendente;
 
 /// Ataque basico: anuncia a animacao agora e resolve o dano no impacto.
@@ -1878,11 +1887,15 @@ impl GameWorld {
     /// `marcado`: the victim was MARKED at sea (naval phase 4) when it fell.
     pub(crate) fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, vitima_lado: shared::pk::Lado, marcado: bool) {
         let revide = self.pode_revidar(killer, vitima);
-        let pontos = shared::pk::pontos_por_abate_no_mar(&vitima_lado, revide, self.em_pvp_aberto(vitima), marcado);
-        if pontos == 0 { return; }
-        if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
-            s.pk_points = s.pk_points.saturating_add(pontos);
+        let aberta = self.em_pvp_aberto(vitima);
+        let pontos = shared::pk::pontos_por_abate_no_mar(&vitima_lado, revide, aberta, marcado);
+        if pontos > 0 {
+            if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
+                s.pk_points = s.pk_points.saturating_add(pontos);
+            }
         }
+        // The victim's letter: who, where, when (`world/permanencia.rs`).
+        self.carta_de_abate(killer, vitima, aberta);
     }
 
     /// The player's PvP side for `shared::pk::pode_atacar`.
@@ -2003,6 +2016,8 @@ impl GameWorld {
     }
 
     fn registrar_agressao(&mut self, agressor: EntityId, vitima: EntityId) {
+        // Any PvP hit, first or back: both are in PK combat (`permanencia`).
+        self.marcar_combate_pk(agressor, vitima);
         // Revidar não transforma a vítima no agressor nem isenta quem iniciou.
         if self.pode_revidar(agressor, vitima) { return; }
         let agora = self.sim_time_s;
@@ -2389,6 +2404,16 @@ pub struct Session {
     /// Direito temporário de revidar, por agressor; nunca persistido.
     agressores: HashMap<EntityId, f32>,
     pk_visto: shared::PkState,
+    /// sim_time until which this player is in PK combat (a PvP hit given or
+    /// taken, `shared::pk::COMBATE_PK_S`): leaving lingers, travel is refused.
+    pub pk_combate_ate: f32,
+    /// The connection is gone but the body stays in the world until this
+    /// sim_time (a PK logout, `world/permanencia.rs`).
+    pub permanece_ate: Option<f32>,
+    /// The realm was already asked whether this name lingers elsewhere.
+    pub permanencia_checada: Option<String>,
+    /// Kill letters waiting to be written: (subject, text, killer).
+    pub cartas_de_abate: Vec<(String, String, String)>,
     /// Clan id (0 = none) and tag, refreshed by the presence heartbeat and
     /// by this player's own social state (`social::bater_presenca`).
     pub cla_id: i64,
@@ -2413,6 +2438,8 @@ pub struct Session {
     /// SMOKE (ship skill, `navio::FUMACA_VELOCIDADE_S`): sim time the
     /// ship's speed burst ends; 0 = none.
     pub fumaca_ate: f32,
+    /// AUTO COMBAT AT SEA: the server's pilot (`world/piloto_do_mar.rs`).
+    pub piloto: piloto_do_mar::PilotoDoMar,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
     /// `MULT_SUPREMA` when supreme). See `chance_de_crit`.
     pub furia_ate: f32,
@@ -2586,6 +2613,7 @@ impl Session {
             modo: self.pk_escolhido,
             travado: false,
             marcado: false,
+            combate: false,
         }
     }
 
@@ -5528,7 +5556,13 @@ impl GameWorld {
             .sessions
             .iter()
             .filter_map(|(k, s)| {
-                if *k != sid && s.logged_in && s.account_id == Some(success.account_id) {
+                // A body lingering after a PK logout is NOT kicked: logging in
+                // again must not be the way to end the 2 minutes.
+                if *k != sid
+                    && s.logged_in
+                    && s.account_id == Some(success.account_id)
+                    && s.permanece_ate.is_none()
+                {
                     Some(*k)
                 } else {
                     None
@@ -8156,6 +8190,10 @@ impl GameWorld {
                 pk_decai_s: 0,
                 agressores: HashMap::new(),
                 pk_visto: Default::default(),
+                pk_combate_ate: 0.0,
+                permanece_ate: None,
+                permanencia_checada: None,
+                cartas_de_abate: Vec::new(),
                 cla_id: 0,
                 cla_tag: String::new(),
                 cla_tag_visto: String::new(),
@@ -8166,6 +8204,7 @@ impl GameWorld {
                 arvore_ganhos_visto: 0,
                 invisivel_ate: 0.0,
                 fumaca_ate: 0.0,
+                piloto: Default::default(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,
                 buffs_da_arvore: Vec::new(),
@@ -8725,9 +8764,12 @@ impl GameWorld {
                 self.handle_drop_item(id, slot);
             }
             ClientMessage::RequestDisconnect => {
-                // Asked to leave: no reconnect window in a dungeon run.
-                self.dg_largar_de_vez(id);
-                self.on_disconnect(id)
+                // Leaving with PK: the body stays, as for a dropped connection.
+                if !self.comecar_permanencia(id) {
+                    // Asked to leave: no reconnect window in a dungeon run.
+                    self.dg_largar_de_vez(id);
+                    self.on_disconnect(id)
+                }
             }
             ClientMessage::SkillCast { skill_id } => self.handle_skill_cast(id, skill_id),
             ClientMessage::CreateCharacter {
@@ -9252,6 +9294,11 @@ impl GameWorld {
                 return;
             }
         };
+        // PK LOGOUT (`world/permanencia.rs`): a body still lingering HERE is
+        // taken back; one lingering on another channel sends the login there.
+        if !self.religar_permanencia(&name, account_id) && self.checar_permanencia_remota(sid, &name) {
+            return;
+        }
         // A copia em memoria so' vale se foi ESTE processo que a gravou ha'
         // pouco. Ela e' carregada uma vez, quando o processo sobe: quem jogou
         // noutro canal ou zona depois disso entrava aqui com posicao e
@@ -10267,6 +10314,13 @@ impl GameWorld {
                 .copied()
                 .unwrap_or(Vec2::ZERO);
             let mut veio_da_rota = false;
+            // AUTO COMBAT AT SEA: with the stick idle and no route, the
+            // server's pilot steers the hull (`piloto_do_mar`).
+            if no_mar && frame.move_dir.length_squared() <= 0.01 && session.rota.vazia() {
+                if let Some(leme) = session.piloto.leme() {
+                    frame.move_dir = leme;
+                }
+            }
             if frame.move_dir.length_squared() <= 0.01 && !session.rota.vazia() {
                 // Mid-jump or in the jump cooldown is the climb working, not
                 // the route failing (`SeguidorDeRota::aguenta`).
@@ -10847,6 +10901,8 @@ impl GameWorld {
         let now_sim = self.sim_time_s;
         // At sea the bite is telegraphed (`navio::impacto_da_mordida`).
         let impacto_mob = navio::impacto_da_mordida(self.no_mar());
+        // ...and a sea mob gives up later: a ship is twice a shark's speed.
+        let desiste_mob = navio::desistencia_do_bicho(self.no_mar());
 
         let mobs_preparando: HashMap<_, _> = self
             .pending_melee
@@ -11027,7 +11083,7 @@ impl GameWorld {
                     // Bosses precisam tolerar janelas longas sem contato:
                     // desviar de uma área/telegráfico não pode curar o chefe.
                     // Mobs comuns mantêm o leash curto de 5s.
-                    let aggro_drop_time = if enemy.is_boss { CHEFE_DESISTE_S } else { 5.0 };
+                    let aggro_drop_time = if enemy.is_boss { CHEFE_DESISTE_S } else { desiste_mob };
                     if enemy.aggro_timer > aggro_drop_time && enemy.leash_max > 0.0 {
                         // Desistiu — volta pra casa.
                         enemy.returning_home = true;
@@ -13854,6 +13910,7 @@ impl GameWorld {
         let mut renascimentos_de: HashMap<EntityId, u8> = HashMap::new();
         // Marked ships at sea (naval phase 4): the skull flag, the red name.
         let marcados = self.marcados();
+        let agora_pk = self.sim_time_s;
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState {
                 hostil: shared::pk::hostil(s.pk_modo),
@@ -13861,6 +13918,7 @@ impl GameWorld {
                 modo: s.pk_modo,
                 travado: s.pk_travado,
                 marcado: marcados.contains(&s.entity_id),
+                combate: s.pk_combate_ate > agora_pk,
             };
             pk_de.insert(s.entity_id, pk);
             if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
@@ -15438,6 +15496,10 @@ impl GameWorld {
         if zona == self.zona {
             return false;
         }
+        // No travelling out of a PvP fight (`world/permanencia.rs`).
+        if self.recusa_viagem_em_combate_pk(sid) {
+            return false;
+        }
         let Some(host) = self.diretorio.as_ref().and_then(|d| d.melhor(zona)) else {
             // Recusar aqui e' o que impede a viagem so' de ida pra um
             // processo morto. Quem esta' no mar continua boiando, com barco:
@@ -15673,11 +15735,11 @@ impl GameWorld {
             // removed 15/11/2026: a Minha Ilha saiu do jogo.
             colonia: false,
         });
-        // THE SHIP comes with the Captain's menu (docs/NAVEGACAO.md): "Sail
-        // with my ship" and "Repair" are on the same panel.
-        if meio == shared::viagem::Meio::Capitao {
-            self.envia_estado_navio(sid);
-        }
+        // THE SHIP comes with EVERY travel NPC's menu (docs/NAVEGACAO.md;
+        // the bus and the submarine too since 16/11/2026): "Sail", "Repair"
+        // and the Shipwright are on the same panel.
+        let _ = meio;
+        self.envia_estado_navio(sid);
     }
 
     /// "Board" no menu do Capitao: perto dele, ilha liberada pela
@@ -23454,7 +23516,7 @@ mod pk_tests {
         w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         w.sessions.get_mut(&ids[0]).unwrap().pk_points = 7;
         w.sessions.get_mut(&ids[0]).unwrap().pk_escolhido = shared::pk::LIVRE;
-        let esperado = shared::PkState { hostil: true, pontos: 7, modo: shared::pk::LIVRE, travado: false, marcado: false };
+        let esperado = shared::PkState { hostil: true, pontos: 7, modo: shared::pk::LIVRE, travado: false, marcado: false, combate: false };
         let rows = w.collect_character_rows();
         assert_eq!(rows.iter().find(|r|r.name == "pk0").unwrap().pk, esperado);
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });

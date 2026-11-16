@@ -24,11 +24,16 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Attacking an innocent Peaceful ship still earns PK points, just like on land.
 - The open sea got a new look: each island now looks like itself from the water (the Grove's forests and beaches, the Glacier's snow cliffs and ice floes, the Waste's dunes and mesas, the Plateau's dark cliffs), and the islands are bigger and visible from afar.
 - Every dock is now easy to find: a wooden pier with boats moored, a lighthouse whose light shows across the sea, flags in the island's colour, a glowing ring where you dock, a floating name, markers at the edge of the screen and dock icons on the map.
+- You can now sail to every island: Skyreach, Kōgen-tō, Abyssia and the Magic Island have their own docks on the open sea. Look for floating sky islands with a waterfall and a sky-lift, a neon harbour with cranes and a city skyline, a coral atoll with a glowing whirlpool, and an isle crowned with giant crystals.
+- Every travel NPC now offers Sail, Repair and the Shipwright: the Harbour Captain, the Sky Bus Professor and the Submarine Captain. Sailing from an island puts your ship at that island's own dock, and tapping any island on the map sails you to it.
+- You can sail to an island you haven't unlocked yet to take a look, but you can only go ashore once the story opens it (the Magic Island opens with your power, as before).
+- New sea routes to the new docks, with stronger sea monsters, elites, wreckage and drifting chests at their islands' levels, and a new stretch of lawless waters between Kōgen-tō and Abyssia.
 - New ships: every class has its own hull, with masts, billowing sails, rigging, gun ports and a lantern. Ships ride the waves, lean into turns and leave a foam wake.
 - Better water at sea: deep blue to turquoise shallows, sunlight on the waves, whitecaps and surf on every shore, and a sky that matches. Wreckage and drifting chests now float on the waves.
 - Sailing is now hands-free: tap a spot on the map or the minimap and your ship sails there by itself, around the islands, with the route drawn on the water and the time to arrive. Tap an island to sail to its dock and go ashore.
 - New "Sail to…" list under the ship panel with every port, its distance and travel time. A quest's Go at sea now sails to the right island and docks for you.
 - Auto combat and auto gather work at sea: your ship hunts the nearest sea monster or wreckage, keeps its distance and fires its cannons on its own.
+- Much better auto combat at sea: your ship now circles its target with its side guns facing it, steers clear of bites, fires the Broadside only when it will hit, patches the hull when it runs low and heads for a safe harbour if it has to. Sea monsters also no longer give up and heal the moment you sail out of reach.
 - Clearer sea combat: a target ring and life bar, the Broadside's firing arcs on the water (green when it will hit), an aim line and range ring for the Bow Cannon, cannonballs you can watch fly, splashes on a miss, splinters on a hit, and new cannon sounds.
 - Sharks and eels now show above the waves, and a red ring warns you before they bite: sail out of it to dodge. Sea elites are bigger and marked.
 - New ship panel: hull, speed, whether you are in safe, open or lawless waters, treasure on deck and the nearest dock, with a warning when the hull runs low.
@@ -41,6 +46,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Bag: a new "Equip best" button puts on your strongest pieces in one tap, keeping your weapon and armour type.
 - Tougher monsters give more XP: wolves, bears, owlbears and other high-health beasts now pay for their extra health. Auto combat targets the nearest enemy by default.
 - Items left in the My Island chest were sent to your Mail.
+- The Prime Merchant also sells what ships need: Wood T1-T4, purple Steel and Wreck Planks (with daily limits).
 - The Prime Merchant now sells dungeon keys for gold (3 of each a day), and "Find" shows the Prime Merchant for everything it sells.
 - Story dungeon quests on each island now also give 3 free Key Summon scrolls.
 - At the level cap, a "Rebirth available" badge stays on screen (even in dungeons and boss fights); tap it to open your character sheet.
@@ -49,6 +55,10 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Clans: set a [TAG] of 2 to 5 letters, shown on names, in chat and in your party. See which members are online on any channel and island, and when the others were last seen. New Officer rank: invites, removes members and edits the clan notice. The clan window was redone.
 - PK modes: Free, Party, Clan and Peaceful. Players with PK on or a red name can be attacked by anyone. PK points only come from killing a clean Peaceful player; they go down by 1 per hour online or can be forgiven for gold. Dying with PK points costs more XP.
 - On the Magic Island, outside the arrival port, PK is locked to Party mode and gives no PK points.
+- Leaving with PK: if you have a red name or fought another player in the last 30 seconds, your character stays in the world for 2 minutes after you leave, standing still and open to attack. The game warns you before you leave, and logging back in takes your character back.
+- No running from a fight: travel to another island is blocked for 30 seconds after fighting another player.
+- When another player kills you, you get a letter in your Mail saying who it was, where and when, with a button to add them to your blacklist.
+- New Blacklist tab in Social: keep up to 50 names. While someone on it is online with a red name, you see their island and position, and "Show on map" marks them in red on the map and minimap.
 - PvP balance: skills and basic attacks deal much less damage to players, and fighting far below your level is penalised.
 - Twin Pistols hit harder and dodge more in the early levels; the bonus fades as you level and is gone by level 50.
 - Market: type the amount in every number field, gear tier shown in item names, scroll the lists with your finger. Listings far from the market value are marked in red, with Adjust price / Adjust all.

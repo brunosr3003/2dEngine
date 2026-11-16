@@ -267,9 +267,136 @@ pub fn pvp_dano(mitigado: i32, skill: bool, atacante: i32, alvo: i32) -> i32 {
     }
 }
 
+// ─────────────────────────────── leaving with PK ───────────────────────────────
+//
+// Owner, 16/11/2026: "a character with PK has to stay logged in for at least
+// 2 minutes, standing still, even after the person left — otherwise it is
+// too easy to kill everyone, log out and that's it".
+
+/// Seconds the body stays in the world, standing still and attackable,
+/// after a character WITH PK leaves (closed the game, dropped, logged out).
+pub const PERMANENCIA_S: f32 = 120.0;
+
+/// Seconds a PvP hit (given or taken) keeps a player "in PK combat": logging
+/// out lingers, and voluntary travel to another zone is refused.
+pub const COMBATE_PK_S: f32 = 30.0;
+
+/// Does leaving now leave the body behind for `PERMANENCIA_S`? A red name
+/// (PK points) or a PvP fight in the last `COMBATE_PK_S`.
+pub fn permanece_ao_sair(pontos: u32, em_combate: bool) -> bool {
+    pontos > 0 || em_combate
+}
+
+/// The warning shown before leaving the game with PK.
+pub const AVISO_DE_SAIDA: &str =
+    "You have PK: your character stays in the world for 2 minutes after you leave and can still be attacked.";
+
+/// Most names on a character's blacklist.
+pub const MAX_LISTA_NEGRA: usize = 50;
+
+/// Most kill letters kept per character (older ones are deleted first).
+pub const MAX_CARTAS_DE_ABATE: usize = 20;
+
+/// Brasília is UTC−3 all year (no daylight saving since 2019).
+const BRASILIA_S: i64 = -3 * 3600;
+
+/// "2026-11-16 21:04", Brasília time, for a unix timestamp.
+pub fn data_brasilia(unix: i64) -> String {
+    let t = unix + BRASILIA_S;
+    let dias = t.div_euclid(86_400);
+    let s = t.rem_euclid(86_400);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = dias + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}", s / 3600, s / 60 % 60)
+}
+
+/// Where a kill happened, in words: the island (or "the open sea near X")
+/// and the spot's coordinates, as the minimap shows them.
+pub fn lugar(zona: &str, pos: Vec2) -> String {
+    let onde = if crate::mar::e_mar(zona) {
+        match crate::mar::ilhas()
+            .iter()
+            .min_by(|a, b| a.centro.distance(pos).total_cmp(&b.centro.distance(pos)))
+        {
+            Some(v) => format!("the open sea near {}", v.nome),
+            None => "the open sea".to_string(),
+        }
+    } else {
+        crate::terreno::def_da_zona(zona).map_or_else(|| zona.to_string(), |d| d.nome.to_string())
+    };
+    format!("{onde} ({:.0}, {:.0})", pos.x, pos.y)
+}
+
+/// The kill letter: (subject, text). `quem` is the killer's name, `renasc`
+/// their rebirths, `nivel` the shown level; `matador_pk` = the killer has a
+/// red name after the kill; `area_aberta` = it happened in an open-PvP area
+/// (Magic Island combat islets, lawless waters).
+///
+/// One sentence per paragraph, so each one is a dictionary entry of its own.
+pub fn carta_de_abate(
+    quem: &str,
+    renasc: u32,
+    nivel: u32,
+    onde: &str,
+    quando_unix: i64,
+    matador_pk: bool,
+    area_aberta: bool,
+) -> (String, String) {
+    let assunto = format!("You were killed by {quem}");
+    let ficha = format!("R{renasc} · Lv {}", crate::progressao::texto_de_nivel(nivel));
+    let mut texto = format!(
+        "{quem} [{ficha}] killed you at {onde} on {} (Brasília time).",
+        data_brasilia(quando_unix)
+    );
+    if matador_pk {
+        texto.push_str("\n\nThe killer has PK (red name): anyone can attack them without penalty.");
+    }
+    if area_aberta {
+        texto.push_str("\n\nIt happened in an open PvP area, where kills give no PK points.");
+    }
+    texto.push_str(
+        "\n\nAdd them to your blacklist to see where they are while they are online with PK.",
+    );
+    (assunto, texto)
+}
+
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    #[test]
+    fn sair_com_pk_e_a_carta_de_abate() {
+        assert!(!permanece_ao_sair(0, false), "no PK: leaves at once");
+        assert!(permanece_ao_sair(1, false), "red name");
+        assert!(permanece_ao_sair(0, true), "PK combat");
+        assert!(PERMANENCIA_S >= 120.0);
+        // 2026-11-17 00:04 UTC = 2026-11-16 21:04 in Brasília.
+        assert_eq!(data_brasilia(1_794_873_840), "2026-11-16 21:04");
+        assert_eq!(data_brasilia(0), "1969-12-31 21:00");
+        assert_eq!(data_brasilia(951_782_400 + 3 * 3600), "2000-02-29 00:00", "leap day");
+        let (a, t) = carta_de_abate("Brunji", 1, 40, "Sunny Grove (10, 20)", 1_794_873_840, true, false);
+        assert_eq!(a, "You were killed by Brunji");
+        let esperado = format!(
+            "Brunji [R1 · Lv {}] killed you at Sunny Grove (10, 20) on 2026-11-16 21:04 (Brasília time).",
+            crate::progressao::texto_de_nivel(40)
+        );
+        assert!(t.starts_with(&esperado), "{t}");
+        assert!(t.contains("The killer has PK") && !t.contains("open PvP area"));
+        let (_, t) = carta_de_abate("X", 0, 3, "here", 0, false, true);
+        assert!(!t.contains("The killer has PK") && t.contains("open PvP area"));
+        assert!(crate::social::corpo_de_carta_valido(&t, 1, 1000));
+        let l = lugar("ilha_inicial", Vec2::new(10.4, -20.6));
+        assert!(l.ends_with("(10, -21)") && !l.starts_with("ilha_inicial"), "{l}");
+        assert!(lugar(crate::mar::ZONA, Vec2::ZERO).starts_with("the open sea"));
+    }
 
     fn lado(modo: u8, grupo: Option<u32>, cla: i64) -> Lado {
         Lado { modo, pontos: 0, grupo, cla, poder: 0 }

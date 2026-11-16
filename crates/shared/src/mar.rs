@@ -12,8 +12,19 @@
 //! floes, the Waste's dunes and mesas, the Plateau's dark cliffs and sea
 //! stacks — out of a few octaves of value noise, with a quay and a pier of
 //! planks marking the way in (visual remake, 16/11/2026; it was a dome).
-//! Cheap on a phone and honest — whoever wants the island docks. Only the four islands with a port (`terreno::tem_porto`) are here;
-//! Skyreach, Kōgen-tō and Abyssia stay off the sea.
+//! Cheap on a phone and honest — whoever wants the island docks.
+//!
+//! # Every island is on the sea (16/11/2026)
+//!
+//! The owner: "I want to be able to sail to any island in the game". The
+//! four islands with a land port (`terreno::tem_porto`) keep their places
+//! and docks; the four without one get a SEA DOCK of their own theme, placed
+//! by hand north of them (`NOVAS`), where the world map has them too:
+//! Skyreach's floating isles and sky-lift, Kōgen-tō's neon harbour, the
+//! coral atoll over Abyssia with its whirlpool and diving bell, and the
+//! Magic Island's crystals. Docking at one hands off to that island's own
+//! arrival (`chegada_da_ilha` on the server); the story and the Magic
+//! Island's power gate still decide who may go ashore.
 //!
 //! # A CHART, not the world map
 //!
@@ -36,15 +47,16 @@ use crate::terreno::{suave, Bioma, DefIlha, Material, ARQUIPELAGO, BLOCO, NIVEL_
 
 pub const ZONA: &str = "mar_aberto";
 /// Bump when the relief changes: it names the height caches.
-pub const REVISAO: u32 = 2;
+pub const REVISAO: u32 = 3;
 pub const SEMENTE: i32 = 0x0005_EA01;
-/// The square the height field covers: ±900 u (visual remake, 16/11/2026:
-/// was ±700 with domes of 60-120 u; the islands grew and so did the chart).
-pub const RAIO_BLOCOS: i32 = 1800;
+/// The square the height field covers: ±1,150 u (16/11/2026, every island
+/// on the sea; it was ±900 with four islands, ±700 with domes). ~42 MB of
+/// height field on the server, still a fraction of the wire's ±4,095 u.
+pub const RAIO_BLOCOS: i32 = 2300;
 /// The world-map positions are scaled by this into the sea.
 pub const ESCALA: f32 = 0.36;
 /// Ships stay inside ±this (units): the edge of the chart.
-pub const BORDA: f32 = 880.0;
+pub const BORDA: f32 = 1130.0;
 /// Open-sea floor, in blocks. Deep enough to read as deep water.
 pub const FUNDO: i32 = -30;
 /// Close to a dock's anchorage this much: "Dock" is offered.
@@ -82,7 +94,53 @@ pub enum Feitio {
     Ermo,
     /// Tall dark cliffs, sea stacks, a stormy crown.
     Planalto,
+    /// SKYREACH's sea dock: marble shores and cloud banks at the water,
+    /// floating isles overhead (drawn by the client), a waterfall and a
+    /// sky-lift at the quay.
+    Celeste,
+    /// KŌGEN-TŌ's harbour: a sea wall and flat concrete, the skyline and the
+    /// container cranes drawn by the client, neon on the pier.
+    Neon,
+    /// The coral ATOLL over Abyssia: a ring of coral rock round a lagoon
+    /// where the whirlpool glows; a diving bell at the quay.
+    Abissal,
+    /// The MAGIC ISLAND: a lush isle crowned with glowing crystals, an
+    /// enchanted pier.
+    Magica,
 }
+
+/// The Magic Island's index on the sea. It is not in the `ARQUIPELAGO` (its
+/// indices are API), so it takes the first index past it; the Colossus
+/// Chest's island bits (`Tesouro::ilhas`, a `u8`) still have room for it.
+pub const ILHA_MAGICA: usize = ARQUIPELAGO.len();
+
+/// THE NEW SEA DOCKS (16/11/2026): the islands without a land port, placed
+/// by hand in the same frame as the scaled world map (`ESCALA`, before the
+/// chart is centred), north of the four, the way the world map has them.
+/// (zone, name, centre, radius, level band, profile.)
+const NOVAS: [(&str, &str, [f32; 2], f32, (u32, u32), Feitio); 4] = [
+    (crate::magica::ZONA, "Magic Island", [-600.0, -980.0], 105.0, (20, 80), Feitio::Magica),
+    (crate::celeste::ZONA, "Skyreach", [-1300.0, -880.0], 120.0, (60, 80), Feitio::Celeste),
+    (crate::kogen::ZONA, "Kōgen-tō", [-1500.0, -1500.0], 130.0, (80, 100), Feitio::Neon),
+    (crate::abissal::ZONA, "Abyssia", [-200.0, -1450.0], 110.0, (100, 120), Feitio::Abissal),
+];
+
+/// THE ROUTES of the new docks: who sails to whom. The four port islands
+/// still route to each other (every pair, as before); the new docks hang off
+/// their neighbours only, so the sea keeps a dozen routes — each one with
+/// its nests, its chest and its elite — and not twenty-eight.
+const ROTAS_NOVAS: [(&str, &str); 6] = [
+    ("ilha_gelo", crate::magica::ZONA),
+    (crate::magica::ZONA, crate::celeste::ZONA),
+    ("ilha_planalto", crate::celeste::ZONA),
+    (crate::celeste::ZONA, crate::kogen::ZONA),
+    (crate::kogen::ZONA, crate::abissal::ZONA),
+    (crate::magica::ZONA, crate::abissal::ZONA),
+];
+
+/// The far route that is also LAWLESS (phase 4): the long open-water run
+/// from Kōgen-tō to Abyssia.
+const SEM_LEI_NOVA: (&str, &str) = (crate::kogen::ZONA, crate::abissal::ZONA);
 
 /// An island as the sea sees it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -178,33 +236,61 @@ pub fn ilhas() -> &'static [IlhaVista] {
         // complaint: "miniature islands"): 160 u for the two big islands,
         // 105 for the two small ones.
         let raio_de = |d: &DefIlha| (d.raio_m() * 0.2).clamp(105.0, 160.0);
-        // The box of the scaled islands, so the sea is centred on itself.
+        // (index, zone, name, centre before centring, radius, levels,
+        // profile, which way the dock faces).
+        type Bruta = (usize, &'static str, &'static str, Vec2, f32, (u32, u32), Feitio, Vec2);
+        let mut brutas: Vec<Bruta> = defs
+            .iter()
+            .map(|(i, d)| {
+                // The same way the real port faces: towards the others.
+                let rumo = d.rumo_do_porto().unwrap_or(Vec2::X);
+                (*i, d.zona, d.nome, Vec2::from(d.centro) * ESCALA, raio_de(d), d.nivel, feitio_de(d.bioma), rumo)
+            })
+            .collect();
+        for (zona, nome, c, raio, nivel, feitio) in NOVAS {
+            let ilha = ARQUIPELAGO.iter().position(|d| d.zona == zona).unwrap_or(ILHA_MAGICA);
+            brutas.push((ilha, zona, nome, Vec2::from(c), raio, nivel, feitio, Vec2::X));
+        }
+        // A new dock faces the centroid of the islands it has routes to.
+        let centro_de = |z: &str, b: &[Bruta]| b.iter().find(|x| x.1 == z).map(|x| x.3);
+        for k in 0..brutas.len() {
+            if !NOVAS.iter().any(|n| n.0 == brutas[k].1) {
+                continue;
+            }
+            let z = brutas[k].1;
+            let vizinhos: Vec<Vec2> = ROTAS_NOVAS
+                .iter()
+                .filter_map(|(a, b)| if *a == z { Some(*b) } else if *b == z { Some(*a) } else { None })
+                .filter_map(|o| centro_de(o, &brutas))
+                .collect();
+            if !vizinhos.is_empty() {
+                let alvo = vizinhos.iter().copied().sum::<Vec2>() / vizinhos.len() as f32;
+                brutas[k].7 = (alvo - brutas[k].3).try_normalize().unwrap_or(Vec2::X);
+            }
+        }
+        // The box of every island, so the sea is centred on itself.
         let (mut x0, mut x1, mut z0, mut z1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
-        for (_, d) in &defs {
-            let c = Vec2::from(d.centro) * ESCALA;
-            let r = raio_de(d);
+        for b in &brutas {
+            let (c, r) = (b.3, b.4);
             x0 = x0.min(c.x - r);
             x1 = x1.max(c.x + r);
             z0 = z0.min(c.y - r);
             z1 = z1.max(c.y + r);
         }
         let origem = Vec2::new((x0 + x1) * 0.5, (z0 + z1) * 0.5);
-        defs.into_iter()
-            .map(|(i, d)| {
-                let centro = Vec2::from(d.centro) * ESCALA - origem;
-                let raio = raio_de(d);
-                // The same way the real port faces: towards the others.
-                let rumo = d.rumo_do_porto().unwrap_or(Vec2::X);
-                let feitio = feitio_de(d.bioma);
+        brutas
+            .into_iter()
+            .map(|(i, zona, nome, c, raio, nivel, feitio, rumo)| {
+                let centro = c - origem;
                 let mut v = IlhaVista {
                     ilha: i,
-                    zona: d.zona,
-                    nome: d.nome,
+                    zona,
+                    nome,
                     centro,
                     raio,
                     raiz: centro,
                     ponta: centro,
-                    nivel: d.nivel,
+                    nivel,
                     feitio,
                     fase: i as f32 * 2.399 + 0.7,
                     mesas: [(Vec2::ZERO, 0.0, 0.0); 3],
@@ -230,9 +316,52 @@ pub fn ilhas() -> &'static [IlhaVista] {
     })
 }
 
-/// The island of `zona` on the sea, if it has a dock.
+/// The island of `zona` on the sea, if it has a dock. Every tier of the
+/// Magic Island (`ilha_magica_2`…) is the same island: one dock.
 pub fn vista_da_zona(zona: &str) -> Option<&'static IlhaVista> {
+    if crate::magica::e_magica(zona) {
+        return vista_da_ilha(ILHA_MAGICA);
+    }
     ilhas().iter().find(|v| v.zona == zona)
+}
+
+/// Is this one of the islands WITHOUT a land port, docked by its own sea
+/// dock (Skyreach, Kōgen-tō, Abyssia, the Magic Island; `NOVAS`)?
+pub fn e_doca_nova(zona: &str) -> bool {
+    crate::magica::e_magica(zona) || NOVAS.iter().any(|n| n.0 == zona)
+}
+
+/// The zone a sea index (`IlhaVista::ilha`, `PedidoNavio::Atracar`) docks
+/// into: the `ARQUIPELAGO` island, or the Magic Island's first tier.
+pub fn zona_do_indice(ilha: usize) -> Option<&'static str> {
+    if ilha == ILHA_MAGICA {
+        return Some(crate::magica::ZONA);
+    }
+    ARQUIPELAGO.get(ilha).map(|d| d.zona)
+}
+
+/// The sea's routes, as pairs of indices into `ilhas()`: every pair of the
+/// four port islands, and the new docks' own (`ROTAS_NOVAS`).
+pub fn pares_das_rotas() -> &'static [(usize, usize)] {
+    static P: std::sync::OnceLock<Vec<(usize, usize)>> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        let v = ilhas();
+        let pos = |z: &str| v.iter().position(|i| i.zona == z);
+        let mut p = Vec::new();
+        for a in 0..v.len() {
+            for b in a + 1..v.len() {
+                if !e_doca_nova(v[a].zona) && !e_doca_nova(v[b].zona) {
+                    p.push((a, b));
+                }
+            }
+        }
+        for (a, b) in ROTAS_NOVAS {
+            if let (Some(a), Some(b)) = (pos(a), pos(b)) {
+                p.push((a, b));
+            }
+        }
+        p
+    })
 }
 
 /// The island of `ARQUIPELAGO` index `ilha` on the sea.
@@ -323,7 +452,7 @@ fn feicao_no_mar(i: &IlhaVista, p: Vec2, fora: f32, d: f32, s: u32) -> Option<f3
         Feitio::Geleira => (8.0, 3u32, 5.0, 1.5, 3.2),
         Feitio::Planalto => (15.0, 4, 4.0, 1.6, 3.4),
         Feitio::Bosque => (14.0, 7, 3.0, 0.9, 1.8),
-        Feitio::Ermo => return None,
+        Feitio::Ermo | Feitio::Celeste | Feitio::Neon | Feitio::Abissal | Feitio::Magica => return None,
     };
     if fora < folga {
         return None;
@@ -370,9 +499,25 @@ pub fn terra_em(p: Vec2) -> Option<Terra> {
     None
 }
 
+/// The atoll's LAGOON (Abyssia's dock): inside this fraction of the coast
+/// it is water again, ringed by the coral — the whirlpool's pool.
+pub const FRACAO_DA_LAGOA: f32 = 0.46;
+
+/// Abyssia's lagoon radius at `p` (0 for any other island).
+pub fn raio_da_lagoa(i: &IlhaVista, p: Vec2) -> f32 {
+    if i.feitio == Feitio::Abissal {
+        i.costa_em(p) * FRACAO_DA_LAGOA
+    } else {
+        0.0
+    }
+}
+
 fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra> {
     let s = semente_da(i);
     let e = costa - d;
+    if i.feitio == Feitio::Abissal && d < costa * FRACAO_DA_LAGOA {
+        return None;
+    }
     let (ao_longo, lado) = i.no_cais(p);
     let de_lado = lado.abs();
     // THE PIER: a tongue of planks, and the T of its head.
@@ -424,6 +569,32 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
             let pico = suave((e - 10.0) / 50.0) * (6.0 + 22.0 * fbm(p * 0.05, s ^ 9).powi(2));
             0.5 + e.min(1.5) * 0.3 + falesia + pico
         }
+        Feitio::Celeste => {
+            // Marble shore, then cloud banks rolling up to white stone.
+            let praia = (0.5 + e * 0.12).min(1.6);
+            let t = suave((e - 6.0) / 30.0);
+            let nuvem = fbm(p * 0.05, s ^ 7);
+            praia + t * (2.0 + 8.0 * n + 7.0 * nuvem * nuvem)
+        }
+        Feitio::Neon => {
+            // The sea wall straight out of the water, flat concrete on top,
+            // the city's raised block in the middle.
+            let muro = suave((e - 0.3) / 0.8) * 2.0;
+            0.5 + muro + suave((e - 40.0) / 6.0) * 1.5
+        }
+        Feitio::Abissal => {
+            // Jagged coral rising from both rims of the ring.
+            let borda = e.min(d - costa * FRACAO_DA_LAGOA);
+            let k = suave(borda / 7.0);
+            let pico = ruido(p * 0.14, s ^ 0xC0A1);
+            0.5 + k * (2.0 + 5.0 * n * n + 5.0 * pico * pico)
+        }
+        Feitio::Magica => {
+            // Pale beaches, soft green hills, a crystal crown.
+            let praia = (0.5 + e * 0.08).min(1.2);
+            let t = suave((e - 8.0) / 40.0);
+            praia + t * (3.0 + 10.0 * n + 12.0 * suave((e - 30.0) / 45.0))
+        }
     };
     // THE QUAY: carved flat out of whatever the island is, at the pier's root.
     let mut molhe = 0.0;
@@ -442,6 +613,7 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
     let p = Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO);
     let mut alto = f32::MIN;
     let mut fundo = FUNDO as f32 * BLOCO;
+    let mut lagoa: Option<f32> = None;
     for i in ilhas() {
         let r = p - i.centro;
         let d = r.length();
@@ -449,6 +621,12 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
             continue;
         }
         let costa = i.costa(r.y.atan2(r.x));
+        // THE ATOLL'S LAGOON: shallow at the coral, a deep eye in the middle
+        // where the whirlpool turns.
+        if i.feitio == Feitio::Abissal && d < costa * FRACAO_DA_LAGOA {
+            let t = d / (costa * FRACAO_DA_LAGOA);
+            lagoa = Some(-(1.0 + 10.0 * (1.0 - t) * (1.0 - t)));
+        }
         // THE SHELF: the floor rises towards the coast, so the shore reads
         // as shallow water and not as a wall standing in the deep.
         let t_raso = ((costa + PLATAFORMA - d) / PLATAFORMA).clamp(0.0, 1.0);
@@ -458,6 +636,9 @@ pub fn bloco_da_coluna(bx: i32, bz: i32) -> i32 {
         }
     }
     if alto == f32::MIN {
+        if let Some(f) = lagoa {
+            return (f / BLOCO).round() as i32 - 1;
+        }
         return (fundo / BLOCO).round() as i32 - 1;
     }
     // Land is land: never rounded down into the water.
@@ -527,6 +708,66 @@ pub fn material_do_topo(bx: i32, bz: i32) -> Option<Material> {
                 Material::Rocha
             } else {
                 Material::RochaEscura
+            }
+        }
+        Feitio::Celeste => {
+            if t.dentro < 4.0 || n > 0.72 {
+                Material::Marmore
+            } else if n < 0.3 {
+                Material::Nuvem
+            } else {
+                Material::GramaCeleste
+            }
+        }
+        Feitio::Neon => {
+            if t.dentro < 2.5 {
+                Material::Concreto
+            } else {
+                // The city's street grid: asphalt with dashed lines, blocks of
+                // concrete between.
+                let (gx, gz) = (p.x.rem_euclid(30.0), p.y.rem_euclid(30.0));
+                if gx < 7.0 || gz < 7.0 {
+                    let faixa_x = gx < 7.0 && (gx - 3.5).abs() < 0.4 && p.y.rem_euclid(4.0) < 2.0;
+                    let faixa_z = gz < 7.0 && (gz - 3.5).abs() < 0.4 && p.x.rem_euclid(4.0) < 2.0;
+                    if faixa_x || faixa_z {
+                        Material::FaixaDePista
+                    } else {
+                        Material::Asfalto
+                    }
+                } else if t.h > 2.8 {
+                    Material::ConcretoEscuro
+                } else {
+                    Material::Concreto
+                }
+            }
+        }
+        Feitio::Abissal => {
+            let ate_a_lagoa = p.distance(t.ilha.centro) - raio_da_lagoa(t.ilha, p);
+            if t.dentro < 1.2 || ate_a_lagoa < 1.2 {
+                Material::AreiaFunda
+            } else if n > 0.64 {
+                Material::Coral
+            } else if n < 0.3 {
+                Material::Alga
+            } else {
+                Material::RochaAbissal
+            }
+        }
+        Feitio::Magica => {
+            if t.dentro < 6.0 {
+                if t.h < 0.8 {
+                    Material::AreiaMolhada
+                } else {
+                    Material::Areia
+                }
+            } else if t.h > 12.0 && n > 0.55 {
+                Material::CristalRoxo
+            } else if n > 0.8 {
+                Material::PetalaRoxa
+            } else if n < 0.3 {
+                Material::GramaCeleste
+            } else {
+                Material::GramaClara
             }
         }
     })
@@ -601,6 +842,27 @@ pub fn material_da_parede(bx: i32, bz: i32, topo: i32, prof: i32) -> Material {
                 }
             }
         }
+        Feitio::Celeste => match prof {
+            0 => material_do_topo(bx, bz).unwrap_or(Material::Marmore),
+            _ if (y + onda / 2).rem_euclid(4) == 0 => Material::MarmoreSombra,
+            _ => Material::Marmore,
+        },
+        Feitio::Neon => match prof {
+            0 => material_do_topo(bx, bz).unwrap_or(Material::Concreto),
+            _ if y.rem_euclid(3) == 0 => Material::ConcretoEscuro,
+            _ => Material::Concreto,
+        },
+        Feitio::Abissal => match prof {
+            0 => material_do_topo(bx, bz).unwrap_or(Material::RochaAbissal),
+            _ if (y + onda / 2).rem_euclid(4) == 0 => Material::Coral,
+            _ => Material::RochaAbissal,
+        },
+        Feitio::Magica => match prof {
+            0 => material_do_topo(bx, bz).unwrap_or(Material::GramaClara),
+            1..=2 => Material::Terra,
+            _ if (y + onda / 2).rem_euclid(5) == 0 => Material::CristalAzul,
+            _ => Material::Rocha,
+        },
     }
 }
 
@@ -643,18 +905,13 @@ pub fn nivel_em(p: Vec2) -> u32 {
     i.nivel.0 + (t * (i.nivel.1 - i.nivel.0) as f32) as u32
 }
 
-/// The routes: every pair of anchorages. Mobs and chests sit on them,
-/// because the routes are the map — a mob in the middle of nowhere would
-/// never be met.
+/// The routes between anchorages. Mobs and chests sit on them, because the
+/// routes are the map — a mob in the middle of nowhere would never be met.
+/// Every pair of the four port islands, and the new docks' routes to their
+/// neighbours (`pares_das_rotas`).
 pub fn rotas() -> Vec<(Vec2, Vec2)> {
     let v = ilhas();
-    let mut r = Vec::new();
-    for a in 0..v.len() {
-        for b in a + 1..v.len() {
-            r.push((v[a].fundeadouro(), v[b].fundeadouro()));
-        }
-    }
-    r
+    pares_das_rotas().iter().map(|&(a, b)| (v[a].fundeadouro(), v[b].fundeadouro())).collect()
 }
 
 /// Open water fit for something to float or swim in: navigable, off the
@@ -699,26 +956,28 @@ pub const RAIO_SEM_LEI: f32 = 45.0;
 /// `pk::zona_pvp_aberto`. Only on the routes that do NOT touch the Bosque:
 /// the starter island's routes are where new captains learn to sail, and
 /// turning them into no man's land would tax being new. With four ports
-/// that is three zones: Glacier–Waste, Glacier–Plateau, Waste–Plateau.
+/// that is three zones: Glacier–Waste, Glacier–Plateau, Waste–Plateau. The
+/// new docks (16/11/2026) add ONE, far out: Kōgen-tō–Abyssia, the longest
+/// run of open water, between the two highest islands.
 /// Never in a harbour corridor (test).
 pub fn zonas_sem_lei() -> &'static [Vec2] {
     static Z: std::sync::OnceLock<Vec<Vec2>> = std::sync::OnceLock::new();
     Z.get_or_init(|| {
         let v = ilhas();
-        let bosque = v.iter().position(|i| i.zona == "ilha_inicial");
         let mut z = Vec::new();
-        for a in 0..v.len() {
-            for b in a + 1..v.len() {
-                if Some(a) == bosque || Some(b) == bosque {
-                    continue;
-                }
-                let (pa, pb) = (v[a].fundeadouro(), v[b].fundeadouro());
-                let mut p = pa.lerp(pb, 0.67);
-                if !agua_livre(p) {
-                    p = pa.lerp(pb, 0.5);
-                }
-                z.push(p);
+        for &(a, b) in pares_das_rotas() {
+            let (za, zb) = (v[a].zona, v[b].zona);
+            let entre_portos = !e_doca_nova(za) && !e_doca_nova(zb) && za != "ilha_inicial" && zb != "ilha_inicial";
+            let nova = (za, zb) == SEM_LEI_NOVA || (zb, za) == SEM_LEI_NOVA;
+            if !entre_portos && !nova {
+                continue;
             }
+            let (pa, pb) = (v[a].fundeadouro(), v[b].fundeadouro());
+            let mut p = pa.lerp(pb, 0.67);
+            if !agua_livre(p) {
+                p = pa.lerp(pb, 0.5);
+            }
+            z.push(p);
         }
         z
     })
@@ -787,7 +1046,7 @@ pub const DEF: DefIlha = DefIlha {
     raio_blocos: RAIO_BLOCOS,
     bioma: Bioma::Floresta,
     centro: [-1800.0, 0.0],
-    nivel: (1, 60),
+    nivel: (1, 120),
 };
 
 #[cfg(test)]
@@ -814,13 +1073,54 @@ mod testes {
         assert!((mn + mx).abs() < 1.0, "not centred: {mn}..{mx}");
     }
 
+    /// EVERY ISLAND OF THE GAME is on the sea (owner, 16/11/2026): the four
+    /// ports, Skyreach, Kōgen-tō, Abyssia and the Magic Island (every tier
+    /// of it is the same dock).
     #[test]
-    fn as_quatro_ilhas_com_porto_estao_no_mar() {
-        assert_eq!(ilhas().len(), 4);
-        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto", "ilha_planalto"] {
-            assert!(vista_da_zona(z).is_some(), "{z} missing");
+    fn toda_ilha_do_jogo_esta_no_mar() {
+        assert_eq!(ilhas().len(), ARQUIPELAGO.len() + 1);
+        for d in ARQUIPELAGO.iter() {
+            assert!(vista_da_zona(d.zona).is_some(), "{} missing", d.zona);
         }
-        assert!(vista_da_zona(crate::celeste::ZONA).is_none());
+        for n in crate::magica::NIVEIS {
+            assert_eq!(vista_da_zona(n.zona).map(|v| v.ilha), Some(ILHA_MAGICA), "{}", n.zona);
+        }
+        // One index per island, and the Magic Island's bit still fits the
+        // Colossus Chest's `u8`.
+        assert!(ILHA_MAGICA < 8);
+        for (k, a) in ilhas().iter().enumerate() {
+            assert!(ilhas()[k + 1..].iter().all(|b| b.ilha != a.ilha && b.zona != a.zona));
+        }
+    }
+
+    /// EVERY NEW DOCK HANDS OFF TO THE RIGHT ZONE, with its own profile.
+    #[test]
+    fn cada_doca_nova_leva_a_ilha_certa() {
+        let casos = [
+            (crate::celeste::ZONA, Feitio::Celeste),
+            (crate::kogen::ZONA, Feitio::Neon),
+            (crate::abissal::ZONA, Feitio::Abissal),
+            (crate::magica::ZONA, Feitio::Magica),
+        ];
+        for (zona, feitio) in casos {
+            let v = vista_da_zona(zona).unwrap_or_else(|| panic!("{zona} has no sea dock"));
+            assert_eq!(v.feitio, feitio, "{zona}");
+            assert_eq!(zona_do_indice(v.ilha), Some(zona), "{zona}: docks into the wrong zone");
+            assert!(e_doca_nova(zona));
+            let (lo, hi) = v.nivel;
+            let n = nivel_em(v.fundeadouro());
+            assert!(n >= lo && n <= hi, "{zona}: the sea at its dock is level {n}, not {lo}-{hi}");
+        }
+        for z in ["ilha_inicial", "ilha_gelo", "ilha_deserto", "ilha_planalto"] {
+            let v = vista_da_zona(z).unwrap();
+            assert_eq!(zona_do_indice(v.ilha), Some(z));
+            assert!(!e_doca_nova(z));
+        }
+        // The Magic Island sits within its floors' range; Abyssia at 100-120.
+        assert!(vista_da_zona(crate::abissal::ZONA).unwrap().nivel.0 >= 100);
+        let m = vista_da_zona(crate::magica::ZONA).unwrap();
+        let (lo, hi) = (crate::magica::NIVEIS[0].mob.0, crate::magica::NIVEIS.last().unwrap().mob.1);
+        assert_eq!(m.nivel, (lo, hi), "the Magic Island's sea follows its floors");
     }
 
     /// The island is a WALL and the dock is the DOOR: the centre is land,
@@ -828,7 +1128,23 @@ mod testes {
     #[test]
     fn a_ilha_e_parede_e_o_cais_e_a_porta() {
         for i in ilhas() {
-            assert!(!navegavel(i.centro.x, i.centro.y), "{}: centre is water", i.nome);
+            if i.feitio == Feitio::Abissal {
+                // The atoll: the centre is the lagoon, but the coral ring is
+                // CLOSED — no hull gets in.
+                assert!(navegavel(i.centro.x, i.centro.y), "the whirlpool's lagoon is dry");
+                for k in 0..720 {
+                    let a = k as f32 / 720.0 * std::f32::consts::TAU;
+                    let c = i.costa(a);
+                    for f in [0.5f32, 0.7, 0.9] {
+                        let r = c * (FRACAO_DA_LAGOA + (1.0 - FRACAO_DA_LAGOA) * f);
+                        let q = i.centro + Vec2::from_angle(a) * r;
+                        assert!(!navegavel(q.x, q.y), "the coral ring is open at {q:?}");
+                    }
+                }
+                assert!(!agua_livre(i.centro), "the lagoon is not open water");
+            } else {
+                assert!(!navegavel(i.centro.x, i.centro.y), "{}: centre is water", i.nome);
+            }
             let meio = (i.raiz + i.ponta) * 0.5;
             assert!(!navegavel(meio.x, meio.y), "{}: dock not solid", i.nome);
             let f = i.fundeadouro();
@@ -889,12 +1205,13 @@ mod testes {
         }
     }
 
-    /// LAWLESS WATERS: three, mid-route, on open water, never touching a
-    /// harbour corridor, and none on a Bosque route.
+    /// LAWLESS WATERS: the three between the ports and the far Kōgen-tō–
+    /// Abyssia run, mid-route, on open water, never touching a harbour
+    /// corridor, and none on a Bosque route.
     #[test]
     fn as_aguas_sem_lei_ficam_no_meio_das_rotas() {
         let z = zonas_sem_lei();
-        assert_eq!(z.len(), 3, "{z:?}");
+        assert_eq!(z.len(), 4, "{z:?}");
         for c in z {
             assert!(navegavel(c.x, c.y), "lawless zone on land at {c:?}");
             assert!(sem_lei(*c));
@@ -909,10 +1226,10 @@ mod testes {
         for i in ilhas() {
             assert!(!sem_lei(i.fundeadouro()), "{}: the anchorage is lawless", i.nome);
         }
-        let bosque = vista_da_zona("ilha_inicial").unwrap().fundeadouro();
-        for v in ilhas().iter().filter(|v| v.zona != "ilha_inicial") {
-            let meio = bosque.lerp(v.fundeadouro(), 0.67);
-            assert!(!sem_lei(meio), "the Bosque route to {} is lawless", v.nome);
+        let v = ilhas();
+        for &(a, b) in pares_das_rotas().iter().filter(|(a, b)| v[*a].zona == "ilha_inicial" || v[*b].zona == "ilha_inicial") {
+            let meio = v[a].fundeadouro().lerp(v[b].fundeadouro(), 0.67);
+            assert!(!sem_lei(meio), "the Bosque route {}–{} is lawless", v[a].nome, v[b].nome);
         }
     }
 
@@ -993,21 +1310,53 @@ mod testes {
         }
     }
 
-    /// THE CROSSINGS stay a crossing, not a voyage: anchorage to anchorage
-    /// between 30 and 100 s for the Sloop (10 u/s), never more than ~95 s.
+    /// THE CROSSINGS stay a crossing, not a voyage: anchorage to anchorage,
+    /// on every ROUTE, between 30 and 100 s for the Sloop (10 u/s) among the
+    /// four ports, and 45-120 s for the new docks' routes.
     #[test]
     fn as_travessias_levam_de_meio_a_um_minuto_e_meio() {
         let v = ilhas();
-        let mut tempos = Vec::new();
-        for a in 0..v.len() {
-            for b in a + 1..v.len() {
-                let d = v[a].fundeadouro().distance(v[b].fundeadouro());
-                tempos.push((v[a].nome, v[b].nome, d / 10.0));
+        for &(a, b) in pares_das_rotas() {
+            let t = v[a].fundeadouro().distance(v[b].fundeadouro()) / 10.0;
+            println!("{}–{}: {:.0} u, {t:.0} s", v[a].nome, v[b].nome, t * 10.0);
+            let faixa = if e_doca_nova(v[a].zona) || e_doca_nova(v[b].zona) { 45.0..=120.0 } else { 30.0..=100.0 };
+            assert!(faixa.contains(&t), "{}–{}: {t:.0} s", v[a].nome, v[b].nome);
+        }
+        assert_eq!(pares_das_rotas().len(), 12);
+    }
+
+    /// The new docks read as their islands: Kōgen-tō's concrete is flat and
+    /// walled, the atoll is coral round a deep lagoon, Skyreach is marble and
+    /// cloud, the Magic Island has a crystal crown.
+    #[test]
+    fn as_docas_novas_tem_o_seu_tema() {
+        let v = |z: &str| vista_da_zona(z).unwrap();
+        let b = |p: Vec2| ((p.x / BLOCO).round() as i32, (p.y / BLOCO).round() as i32);
+        let atras = |i: &IlhaVista, dentro: f32| {
+            let a = (i.raiz - i.centro).to_angle() + std::f32::consts::PI;
+            i.centro + Vec2::from_angle(a) * (i.costa(a) - dentro)
+        };
+        let kogen = v(crate::kogen::ZONA);
+        let p = atras(kogen, 20.0);
+        assert!((altura(p.x, p.y) - 2.5).abs() < 0.6, "Kōgen-tō's harbour is not flat: {}", altura(p.x, p.y));
+        let (bx, bz) = b(atras(kogen, 1.0));
+        assert_eq!(material_do_topo(bx, bz), Some(Material::Concreto));
+        let atol = v(crate::abissal::ZONA);
+        assert!(altura(atol.centro.x, atol.centro.y) < -4.0, "the whirlpool's eye is shallow");
+        let (bx, bz) = b(atras(atol, 15.0));
+        assert!(matches!(material_do_topo(bx, bz), Some(Material::Coral | Material::Alga | Material::RochaAbissal | Material::AreiaFunda)));
+        let ceu = v(crate::celeste::ZONA);
+        let (bx, bz) = b(atras(ceu, 2.0));
+        assert_eq!(material_do_topo(bx, bz), Some(Material::Marmore));
+        let magica = v(crate::magica::ZONA);
+        let mut cristal = 0;
+        let r = (magica.raio / BLOCO) as i32;
+        let (cx, cz) = ((magica.centro.x / BLOCO) as i32, (magica.centro.y / BLOCO) as i32);
+        for bz in (cz - r..cz + r).step_by(2) {
+            for bx in (cx - r..cx + r).step_by(2) {
+                cristal += usize::from(material_do_topo(bx, bz) == Some(Material::CristalRoxo));
             }
         }
-        for (a, b, t) in &tempos {
-            println!("{a}–{b}: {:.0} u, {t:.0} s", t * 10.0);
-            assert!((30.0..=100.0).contains(t), "{a}–{b}: {t:.0} s");
-        }
+        assert!(cristal > 50, "the Magic Island has {cristal} crystal columns");
     }
 }

@@ -78,6 +78,55 @@ pub struct RotaDoMar {
     ninhos_vazios: [(usize, f64); 4],
     /// Where the "Sail to" button was last drawn (for `pega_mouse`).
     ancora: Option<(Rect, f32)>,
+    /// AUTO COMBAT at sea is the server's pilot: the switch as last sent.
+    pub piloto: PilotoCliente,
+}
+
+/// Resend the pilot's "on" this often while it is on: a new sea process
+/// (a reconnect, another channel) starts with it off.
+const PILOTO_REENVIO_S: f64 = 3.0;
+
+/// The client's half of the sea's AUTO COMBAT (`PedidoNavio::Piloto`): the
+/// server steers and fires; the client keeps the switch in step and
+/// stops hunting while the server sails home to patch the hull.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PilotoCliente {
+    ligado: bool,
+    enviado_em: f64,
+    /// Retreating (`navio::piloto_recua`, the same rule as the server's).
+    pub recuando: bool,
+}
+
+impl PilotoCliente {
+    /// The switch to send this frame, if any. `quer` = at sea with AUTO
+    /// COMBAT on.
+    pub fn pedido(&mut self, quer: bool, agora: f64) -> Option<bool> {
+        if quer != self.ligado {
+            self.ligado = quer;
+            self.enviado_em = agora;
+            if !quer {
+                self.recuando = false;
+            }
+            return Some(quer);
+        }
+        if quer && agora - self.enviado_em >= PILOTO_REENVIO_S {
+            self.enviado_em = agora;
+            return Some(true);
+        }
+        None
+    }
+
+    pub fn ligado(&self) -> bool {
+        self.ligado
+    }
+
+    /// The hull at `fracao` (repair ready or not): `true` the moment the
+    /// retreat STARTS (the caller drops its hunting route then).
+    pub fn casco(&mut self, fracao: f32, reparo_pronto: bool) -> bool {
+        let antes = self.recuando;
+        self.recuando = shared::navio::piloto_recua(fracao, reparo_pronto, antes);
+        self.recuando && !antes
+    }
 }
 
 /// The dock of island `ilha` (`ARQUIPELAGO` index) on the sea: the anchorage.
@@ -92,7 +141,9 @@ pub fn destino_do_toque(p: Vec2) -> (Vec2, Option<u8>) {
     if let Some(c) = shared::mar::cais_perto(q) {
         return (mq(c.fundeadouro()), Some(c.ilha as u8));
     }
-    if !shared::mar::navegavel(q.x, q.y) {
+    // Land, or Abyssia's closed lagoon (water no hull reaches): the island.
+    let na_lagoa = shared::mar::ilhas().iter().any(|i| q.distance(i.centro) < shared::mar::raio_da_lagoa(i, q));
+    if !shared::mar::navegavel(q.x, q.y) || na_lagoa {
         let perto = shared::mar::ilhas()
             .iter()
             .filter(|i| q.distance(i.centro) <= i.raio + TOQUE_NA_ILHA)
@@ -177,6 +228,7 @@ impl RotaDoMar {
         let vazios = self.ninhos_vazios;
         let ancora = self.ancora;
         let varredura_em = self.varredura_em;
+        let piloto = self.piloto;
         *self = Self {
             destino: Some(destino),
             atracar,
@@ -187,6 +239,7 @@ impl RotaDoMar {
             ninhos_vazios: vazios,
             ancora,
             varredura_em,
+            piloto,
             ..Default::default()
         };
     }
@@ -484,6 +537,26 @@ mod testes {
         let mut r = RotaDoMar::default();
         let ninho = r.proximo_ninho(eu, 1.0).expect("no nest to hunt");
         assert!(ninho.distance(eu) > 14.0, "hunts the nest it already cleared");
+    }
+
+    /// THE PILOT'S SWITCH follows AUTO COMBAT at sea, is resent while on
+    /// (a new sea process starts off), survives a new crossing, and the
+    /// retreat starts and ends on the server's own rule.
+    #[test]
+    fn o_piloto_segue_o_auto_e_recua_com_o_casco() {
+        let mut r = RotaDoMar::default();
+        assert_eq!(r.piloto.pedido(false, 0.0), None, "sent an off it never turned on");
+        assert_eq!(r.piloto.pedido(true, 0.0), Some(true));
+        assert_eq!(r.piloto.pedido(true, 1.0), None, "resent every frame");
+        assert_eq!(r.piloto.pedido(true, 1.0 + PILOTO_REENVIO_S), Some(true), "never resent");
+        r.iniciar(vec2(50.0, 0.0), None, 2.0);
+        assert!(r.piloto.ligado(), "a new crossing switched the pilot off");
+        assert!(!r.piloto.casco(0.5, false));
+        assert!(!r.piloto.casco(0.15, true), "retreated with the repair ready");
+        assert!(r.piloto.casco(0.15, false), "no retreat at 15% with no repair");
+        assert!(!r.piloto.casco(0.4, false) && r.piloto.recuando, "came back under half");
+        assert!(!r.piloto.casco(0.6, false) && !r.piloto.recuando);
+        assert_eq!(r.piloto.pedido(false, 9.0), Some(false));
     }
 
     /// AUTO COMBAT's hunt at sea: the nearest nest, skipping one just found

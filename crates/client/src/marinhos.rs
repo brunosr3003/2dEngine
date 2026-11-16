@@ -2,6 +2,7 @@
 use crate::gpu_estatica::{MalhaEstatica, Programa};
 use macroquad::models::Mesh;
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 use std::cell::RefCell;
 
 // Coral ornaments also use discrete cubes, matching the creature assets.

@@ -160,15 +160,21 @@ impl GameWorld {
             PedidoNavio::Melhorar { eixo } => self.melhorar_navio(sid, eixo),
             PedidoNavio::Habilidade { id } => self.habilidade_do_navio(sid, id),
             PedidoNavio::AbrirTesouro => self.abrir_tesouro(sid),
+            PedidoNavio::Piloto { ligado } => self.ligar_piloto(sid, ligado),
         }
     }
 
+    /// Near ANY inter-island travel NPC — the Harbour Captain, the Sky Bus
+    /// Professor or the Submarine Captain (owner, 16/11/2026: "any travel
+    /// NPC between islands should have the Sail option"). Each of them
+    /// offers the same "My ship" row: Sail, Repair and the Shipwright.
     fn perto_do_capitao_do_porto(&self, sid: SessionId) -> bool {
-        self.quem_viaja_perto(sid) == Some(shared::viagem::Meio::Capitao)
+        self.quem_viaja_perto(sid).is_some()
     }
 
-    /// SAIL: from the Captain's dock to the anchorage off this island on
-    /// the open sea.
+    /// SAIL: from a travel NPC to the anchorage off this island on the open
+    /// sea — the land port's dock, or, on an island without one (Skyreach,
+    /// Kōgen-tō, Abyssia), its own sea dock (`mar::NOVAS`).
     fn zarpar(&mut self, sid: SessionId) {
         if self.tutorial_mode || self.dungeon_mode || self.no_mar() {
             return;
@@ -180,7 +186,7 @@ impl GameWorld {
             return;
         }
         if !self.perto_do_capitao_do_porto(sid) {
-            self.avisa_missao(sid, "Talk to the Harbour Captain at the dock to set sail.".into());
+            self.avisa_missao(sid, "Talk to the Harbour Captain, the Sky Bus Professor or the Submarine Captain to set sail.".into());
             return;
         }
         let Some(vista) = shared::mar::vista_da_zona(&self.zona) else {
@@ -211,9 +217,12 @@ impl GameWorld {
         }
     }
 
-    /// The port of island `ilha`, in that island's coordinates: where a
-    /// ship that docks puts its captain ashore.
-    fn porto_da_ilha(ilha: usize) -> Option<(&'static shared::terreno::DefIlha, Vec2)> {
+    /// The port of island `ilha` (`ARQUIPELAGO` index), in that island's
+    /// coordinates: where a ship that docks puts its captain ashore. The
+    /// SAME spot the Captain's, the bus's and the submarine's trips land on
+    /// (`embarcar`): the port, or the town for the islands without one
+    /// (Skyreach, Kōgen-tō, Abyssia), where their travel NPCs stand.
+    pub(crate) fn porto_da_ilha(ilha: usize) -> Option<(&'static shared::terreno::DefIlha, Vec2)> {
         let dest = shared::terreno::ARQUIPELAGO.get(ilha)?;
         let ger = shared::terreno::Gerador::da_ilha(dest);
         let chegada = ger
@@ -222,6 +231,16 @@ impl GameWorld {
             .or_else(|| ger.cidade().map(|c| c.centro()))
             .unwrap_or(Vec2::ZERO);
         Some((dest, chegada))
+    }
+
+    /// Where docking at sea index `ilha` lands: (zone, name, arrival). The
+    /// Magic Island lands at its harbour (`magica::CHEGADA`), on the tier
+    /// the player's power opens (decided when docking).
+    pub(crate) fn chegada_da_ilha(ilha: usize) -> Option<(&'static str, &'static str, Vec2)> {
+        if ilha == shared::mar::ILHA_MAGICA {
+            return Some((shared::magica::ZONA, shared::magica::DEF.nome, shared::magica::CHEGADA));
+        }
+        Self::porto_da_ilha(ilha).map(|(d, c)| (d.zona, d.nome, c))
     }
 
     /// DOCK: at sea, at island `ilha`'s anchorage, go ashore at its port.
@@ -236,6 +255,10 @@ impl GameWorld {
             self.avisa_missao(sid, "Sail closer to the dock to come ashore.".into());
             return;
         }
+        if ilha == shared::mar::ILHA_MAGICA {
+            self.atracar_na_magica(sid);
+            return;
+        }
         let indice = self
             .sessions
             .get(&sid)
@@ -243,15 +266,62 @@ impl GameWorld {
         let Some((dest, chegada)) = Self::porto_da_ilha(ilha) else {
             return;
         };
-        // The story still opens the islands, by sea as by the Captain.
+        // The story still opens the islands, by sea as by the Captain:
+        // sailing there to look is free, going ashore is not.
         if !shared::viagem::liberada(ilha, indice) {
-            self.avisa_missao(sid, format!("The story has not taken you to {} yet.", dest.nome));
+            let como = shared::viagem::passo_que_libera(ilha)
+                .map(|(_, t)| format!("reach the story step \"{t}\""))
+                .unwrap_or_else(|| "follow the story".into());
+            self.avisa_missao(sid, format!("You haven't unlocked {} yet: {como}.", dest.nome));
             return;
         }
         // A Colossus Chest on deck counts this island (phase 4).
         self.contar_atracacao(sid, ilha);
         let aviso = format!("You dock at {}.", dest.nome);
         if self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
+            if let Some(s) = self.sessions.get_mut(&sid) {
+                s.zona_volta.clear();
+            }
+        }
+    }
+
+    /// DOCKING AT THE MAGIC ISLAND: the same gate and the same clock as its
+    /// Guide's panel (`magica::entrar_na_magica`) — the power gate
+    /// (`NivelMagico::poder_exigido`), then the time: an active session
+    /// resumes, otherwise one entry is spent (the daily free ones first,
+    /// then a pass). It lands on the highest tier the power opens, at its
+    /// harbour. Leaving the island puts the ship back at this dock
+    /// (`sair_da_magica`, with `magica_volta` = the sea).
+    fn atracar_na_magica(&mut self, sid: SessionId) {
+        let agora = (now_ms() / 1000) as i64;
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let poder = shared::dungeon::poder_de_stats(&s.stats);
+        if shared::magica::maior_liberado(poder).is_none() {
+            let exige = shared::magica::NIVEIS[0].poder_exigido();
+            let como = format!(
+                "it opens at {} power (you: {})",
+                shared::idioma::milhar(exige as u64),
+                shared::idioma::milhar(poder.max(0) as u64)
+            );
+            self.avisa_missao(sid, format!("You haven't unlocked {} yet: {como}.", shared::magica::DEF.nome));
+            return;
+        }
+        let entradas = if shared::magica::resta(s.magica_ate, agora) > 0 {
+            0
+        } else {
+            let passes: u32 = s.inventory.iter().filter(|i| i.item_id == shared::item_id::PASSE_MAGICO).map(|i| i.qty).sum();
+            let gratis = shared::magica::gratis_restantes(s.magica_gratis, agora);
+            if let Err(motivo) = shared::magica::pode_entrar(s.magica_ate, agora, passes.saturating_add(gratis as u32), 1) {
+                self.avisa_missao(sid, motivo);
+                return;
+            }
+            1
+        };
+        // A Colossus Chest on deck counts this island (phase 4).
+        self.contar_atracacao(sid, shared::mar::ILHA_MAGICA);
+        if self.entrar_na_magica(sid, entradas, 0) {
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.zona_volta.clear();
             }
@@ -413,6 +483,8 @@ impl GameWorld {
         self.tick_tesouros();
         // Gameplay remake: the cannonballs in the air.
         self.pousar_balas();
+        // AUTO COMBAT AT SEA: the server's pilot (`piloto_do_mar`).
+        self.tick_piloto();
         let agora = self.sim_time_s;
         let (prontos, esperando): (Vec<_>, Vec<_>) =
             std::mem::take(&mut self.baus_do_mar).into_iter().partition(|(_, t)| *t <= agora);
@@ -461,7 +533,7 @@ impl GameWorld {
                 live: Vec::new(),
                 respawn_queue: Vec::new(),
                 polygon: None,
-                level_range: Some((nivel, (nivel + 2).min(60), n)),
+                level_range: Some((nivel, (nivel + 2).min(120), n)),
                 level_range_live: 0,
                 level_range_queue: (0..n).map(|_| 0.0_f32).collect(),
                 slots,
@@ -1320,6 +1392,23 @@ pub(crate) fn impacto_da_mordida(no_mar: bool) -> f32 {
     }
 }
 
+/// Seconds a common mob chases without landing a swing before it gives up
+/// and swims home AT FULL HEALTH. Ashore 5 s; at sea the hull sails at
+/// twice a provoked shark's speed, so a ship that kites (sails out of the
+/// bite, as the telegraph asks) reset every mob it was not hitting that
+/// very second — measured with the sea's AUTO COMBAT (`piloto_do_mar`): a
+/// nest of three healed back to full four times and took 120 s+. Being hit
+/// still restarts the count, as ashore.
+pub(crate) const DESISTE_NO_MAR_S: f32 = 15.0;
+
+pub(crate) fn desistencia_do_bicho(no_mar: bool) -> f32 {
+    if no_mar {
+        DESISTE_NO_MAR_S
+    } else {
+        5.0
+    }
+}
+
 // ───────────────────── gameplay remake: the water A* ─────────────────────
 
 /// Cell of the sea's route grid, units. Coarse on purpose: the hull's own
@@ -1328,9 +1417,10 @@ pub const CELULA_DA_ROTA: f32 = 4.0;
 /// Clearance a planned route keeps from land: the hull radius and a margin,
 /// so the bow never scrapes a coast it was routed past.
 pub const FOLGA_DA_ROTA: f32 = nv::RAIO_DO_CASCO + 0.8;
-/// Most cells one request expands. The whole chart is ~190k cells; a
-/// crossing around one island expands a few thousand.
-const ORCAMENTO_NO_MAR: usize = 150_000;
+/// Most cells one request expands. The whole chart is ~320k cells since
+/// every island is on the sea (16/11/2026); a crossing around one island
+/// expands a few thousand, and the cap covers the whole grid.
+const ORCAMENTO_NO_MAR: usize = 400_000;
 
 /// THE SEA'S ROUTE GRID: which `CELULA_DA_ROTA` cells a hull can stand in
 /// with `FOLGA_DA_ROTA` of water all round. Built ONCE per process from
@@ -1724,6 +1814,139 @@ mod testes {
         w.handle_navio(sid, PedidoNavio::Atracar { ilha: gelo.ilha as u8 });
         assert_eq!(trocou_para(&mut rx).as_deref(), Some("ilha_gelo"));
         assert!(w.sessions[&sid].zona_volta.is_empty());
+    }
+
+    // ───────────── every island on the sea (16/11/2026) ─────────────
+
+    /// A travel NPC of role `papel` right where the player stands.
+    fn com_npc(w: &mut GameWorld, papel: shared::construcao::Papel) {
+        w.ecs.spawn((
+            NetId(EntityId(7_100 + papel as u32)),
+            Position(Vec2::new(10.0, 12.0)),
+            EntityKind::Npc(9),
+            NpcDaVilaTag { nome: papel.nome().into(), rumo: shared::npc_kind(None, papel as u8), giver: None },
+        ));
+    }
+
+    /// Drains the client's inbox: (the zone it was told to switch to, the
+    /// chat lines).
+    fn drena(rx: &mut mpsc::UnboundedReceiver<ServerMessage>) -> (Option<String>, Vec<String>) {
+        let (mut z, mut chat) = (None, Vec::new());
+        while let Ok(m) = rx.try_recv() {
+            match m {
+                ServerMessage::TrocarZona { zona, .. } => z = Some(zona),
+                ServerMessage::Chat { text, .. } => chat.push(text),
+                _ => {}
+            }
+        }
+        (z, chat)
+    }
+
+    fn toda_a_historia(w: &mut GameWorld, sid: SessionId) {
+        historia_em(w, sid, shared::historia::PASSOS.len() as u32);
+    }
+
+    /// SAIL AT EVERY TRAVEL NPC (owner, 16/11/2026): the Harbour Captain,
+    /// the Sky Bus Professor and the Submarine Captain all bring the "My
+    /// ship" row with their menu, and Sail puts the ship at THAT island's
+    /// sea dock — the land port's, or the new sea dock of an island without
+    /// one — with `zona_volta` written.
+    #[test]
+    fn todo_npc_de_viagem_oferece_zarpar_e_zarpa_da_doca_da_ilha() {
+        use shared::construcao::Papel;
+        use shared::viagem::Meio;
+        for (zona, papel) in [
+            ("ilha_gelo", Papel::Estaleiro),
+            (shared::celeste::ZONA, Papel::Estaleiro),
+            (shared::celeste::ZONA, Papel::Motorista),
+            (shared::kogen::ZONA, Papel::Motorista),
+            (shared::kogen::ZONA, Papel::Submarino),
+            (shared::abissal::ZONA, Papel::Submarino),
+        ] {
+            let (mut w, sid, mut rx) = mundo(zona, &[zona, shared::mar::ZONA]);
+            com_npc(&mut w, papel);
+            let meio = Meio::do_papel(papel as u8).unwrap();
+            assert_eq!(w.quem_viaja_perto(sid), Some(meio));
+            assert!(dar_chalupa(w.sessions.get_mut(&sid).unwrap()));
+            w.abrir_menu_viagem(sid, meio);
+            let mut vela = None;
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Navio { estado } = m {
+                    vela = Some(estado.tem && estado.zarpar && !estado.avariado);
+                }
+            }
+            assert_eq!(vela, Some(true), "{zona}/{papel:?}: no Sail in the menu");
+            w.handle_navio(sid, PedidoNavio::Zarpar);
+            assert_eq!(trocou_para(&mut rx).as_deref(), Some(shared::mar::ZONA), "{zona}/{papel:?}");
+            let v = shared::mar::vista_da_zona(zona).unwrap();
+            assert!(w.pos_do_jogador(sid).unwrap().distance(v.fundeadouro()) < 0.01, "{zona}: not at its sea dock");
+            assert_eq!(w.sessions[&sid].zona_volta, zona);
+        }
+        // Far from any of them: refused.
+        let (mut w, sid, mut rx) = mundo(shared::kogen::ZONA, &[shared::kogen::ZONA, shared::mar::ZONA]);
+        assert!(dar_chalupa(w.sessions.get_mut(&sid).unwrap()));
+        w.handle_navio(sid, PedidoNavio::Zarpar);
+        assert_eq!(trocou_para(&mut rx), None);
+    }
+
+    /// EVERY NEW DOCK HANDS OFF TO THE RIGHT ZONE, at the same arrival the
+    /// Captain's, the bus's and the submarine's trips use.
+    #[test]
+    fn toda_doca_nova_atraca_na_ilha_certa() {
+        for zona in [shared::celeste::ZONA, shared::kogen::ZONA, shared::abissal::ZONA] {
+            let (mut w, sid, mut rx) = mundo(shared::mar::ZONA, &[shared::mar::ZONA, zona]);
+            toda_a_historia(&mut w, sid);
+            let v = shared::mar::vista_da_zona(zona).unwrap();
+            poe_em(&mut w, sid, v.fundeadouro());
+            w.handle_navio(sid, PedidoNavio::Atracar { ilha: v.ilha as u8 });
+            assert_eq!(trocou_para(&mut rx).as_deref(), Some(zona));
+            let (_, _, chegada) = GameWorld::chegada_da_ilha(v.ilha).unwrap();
+            let (dest, porto) = GameWorld::porto_da_ilha(v.ilha).unwrap();
+            assert_eq!(dest.zona, zona);
+            assert!(w.pos_do_jogador(sid).unwrap().distance(porto) < 0.01 && chegada == porto, "{zona}: lands off its arrival");
+            assert!(w.sessions[&sid].zona_volta.is_empty());
+        }
+    }
+
+    /// LOCKED DESTINATIONS refuse docking WITH THE REASON (sailing there to
+    /// look is free): the story for Kōgen-tō, the power for the Magic
+    /// Island — which, once open, docks at its harbour on the tier the
+    /// power opens, and leaving it puts the ship back at its dock.
+    #[test]
+    fn destino_bloqueado_recusa_atracar_com_o_motivo() {
+        let kogen = shared::mar::vista_da_zona(shared::kogen::ZONA).unwrap();
+        let (mut w, sid, mut rx) = mundo(shared::mar::ZONA, &[shared::mar::ZONA, shared::kogen::ZONA]);
+        historia_em(&mut w, sid, 0);
+        poe_em(&mut w, sid, kogen.fundeadouro());
+        w.handle_navio(sid, PedidoNavio::Atracar { ilha: kogen.ilha as u8 });
+        let (z, chat) = drena(&mut rx);
+        assert_eq!(z, None);
+        assert!(chat.iter().any(|t| t.starts_with("You haven't unlocked Kōgen-tō yet: reach the story step")), "{chat:?}");
+
+        let mut no_ar = vec![shared::mar::ZONA];
+        no_ar.extend(shared::magica::NIVEIS.iter().map(|n| n.zona));
+        let (mut w, sid, mut rx) = mundo(shared::mar::ZONA, &no_ar);
+        let m = shared::mar::vista_da_ilha(shared::mar::ILHA_MAGICA).unwrap();
+        poe_em(&mut w, sid, m.fundeadouro());
+        w.handle_navio(sid, PedidoNavio::Atracar { ilha: m.ilha as u8 });
+        let (z, chat) = drena(&mut rx);
+        assert_eq!(z, None);
+        assert!(chat.iter().any(|t| t.starts_with("You haven't unlocked Magic Island yet: it opens at")), "{chat:?}");
+        // With the power (and the daily free entries), it docks.
+        w.sessions.get_mut(&sid).unwrap().stats.hp_max = 5_000_000;
+        assert!(dar_chalupa(w.sessions.get_mut(&sid).unwrap()));
+        w.handle_navio(sid, PedidoNavio::Atracar { ilha: m.ilha as u8 });
+        let (z, _) = drena(&mut rx);
+        let z = z.expect("docked at the Magic Island");
+        assert!(shared::magica::e_magica(&z), "{z}");
+        assert!(w.pos_do_jogador(sid).unwrap().distance(shared::magica::CHEGADA) < 0.01);
+        assert_eq!(w.sessions[&sid].magica_volta, shared::mar::ZONA);
+        // On the island: leaving sails back out from its dock.
+        w.zona = z;
+        w.handle_magica(sid, shared::magica::PedidoMagica::Sair);
+        assert_eq!(trocou_para(&mut rx).as_deref(), Some(shared::mar::ZONA));
+        assert!(w.pos_do_jogador(sid).unwrap().distance(m.fundeadouro()) < 0.01);
+        assert_eq!(w.sessions[&sid].zona_volta, shared::magica::ZONA);
     }
 
     /// THE CAPTAIN CHARGES COPPER, and refuses without it (nothing taken).

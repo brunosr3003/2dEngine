@@ -1,6 +1,7 @@
 //! Zone14 voxel clouds, with soft lighting and wind displacement.
 use crate::gpu_estatica::{MalhaEstatica, Programa};
 use macroquad::prelude::*;
+use crate::relogio::get_time;
 
 pub struct IlhasAereas {
     modelos: Vec<Vec<MalhaEstatica>>,
