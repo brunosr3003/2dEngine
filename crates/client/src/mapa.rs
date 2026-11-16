@@ -991,7 +991,18 @@ fn gerar_terreno_em(ger: &Gerador, raio_blocos: i32, bioma: shared::terreno::Bio
                 // aparecia).
                 let viz = hs[j.saturating_sub(1) * lado + i.saturating_sub(1)];
                 let luz = (1.0 + (h - viz) * 0.42).clamp(0.55, 1.45);
-                let cor = cor_de_terra(bioma, h, pico).map(|v| v * luz);
+                // The open sea's islands carry their own palettes
+                // (`mar::material_do_topo`): one Gerador, four islands.
+                let cor = if ger.e_mar() {
+                    let (bx, bz) = (
+                        ((-raio + (i as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round() as i32,
+                        ((-raio + (j as f32 + 0.5) / lado as f32 * 2.0 * raio) / BLOCO).round() as i32,
+                    );
+                    let (r, g, b) = shared::mar::material_do_topo(bx, bz).map_or((180, 170, 140), |m| m.rgb());
+                    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0].map(|v| v * luz)
+                } else {
+                    cor_de_terra(bioma, h, pico).map(|v| v * luz)
+                };
                 // Contorno de costa: a primeira faixa acima do mar escurece, pra
                 // a ilha ter silhueta em vez de desbotar na agua.
                 let costa = ((h - NIVEL_DO_MAR) / 0.6).clamp(0.0, 1.0);
@@ -1083,6 +1094,20 @@ fn nomes_das_ilhotas(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f
 fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16) {
     if !zona.is_some_and(shared::mar::e_mar) {
         return;
+    }
+    // THE DOCKS (visual remake): an anchor at every anchorage, in the
+    // island's colour, with "<island> · Dock" when it fits.
+    for i in shared::mar::ilhas() {
+        let f = i.fundeadouro();
+        let q = ponto(vec2(f.x, f.y));
+        let cor = crate::mar_cena::cor_da_ilha(i.feitio);
+        let r = u(9.0).max(6.0);
+        draw_circle(q.x, q.y, r * 1.35, Color::new(0.0, 0.0, 0.0, 0.55));
+        crate::mar_cena::ancora(q, r, cor);
+        let rotulo = format!("{} · Dock", i.nome);
+        let (dx, dy) = (q.x + r * 1.6, q.y + r * 0.45);
+        estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+        estilo::texto(dx, dy, &rotulo, tamanho, cor);
     }
     let raio = shared::mar::RAIO_SEM_LEI * escala;
     for c in shared::mar::zonas_sem_lei() {

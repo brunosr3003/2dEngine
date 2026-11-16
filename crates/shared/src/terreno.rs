@@ -2101,8 +2101,9 @@ enum RelevoDesenhado {
     /// relevo sorteado nao faz planicie por encomenda — com ele a ilhota
     /// comportava dois sitios de instancia em vez dos quatro do rodizio.
     Arena,
-    /// The OPEN SEA (`mar::bloco_da_coluna`): a dome and a dock per island,
-    /// no town, no port, no vegetation; only floating wreckage.
+    /// The OPEN SEA (`mar::bloco_da_coluna`): an island silhouette of its
+    /// own and a pier per island, no town, no port, no gatherable plant (the
+    /// client dresses the islands with props); only floating wreckage.
     Mar,
 }
 
@@ -2476,6 +2477,11 @@ impl Gerador {
     /// A material fixed by a DRAWN map at this column, over whatever height
     /// and biome would give: Skyreach's cloud paths are cloud.
     pub fn material_desenhado(&self, bx: i32, bz: i32) -> Option<Material> {
+        // The open sea's islands paint themselves (`mar::material_do_topo`):
+        // one Gerador, four palettes.
+        if self.e_mar() {
+            return crate::mar::material_do_topo(bx, bz);
+        }
         (self.e_celeste() && crate::celeste::na_ponte(glam::Vec2::new(bx as f32 * BLOCO, bz as f32 * BLOCO)))
             .then_some(Material::Nuvem)
     }
@@ -3867,7 +3873,11 @@ impl Ilha {
         for iz in 0..l {
             for ix in 0..l {
                 let topo = self.bloco(ix, iz);
-                if (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR {
+                // AT SEA what is planted FLOATS: the wreckage sits on water
+                // columns (`estorvos_da_coluna`'s sea branch). Skipping water
+                // here left the server with no wreckage at all, so nothing at
+                // sea could be gathered (gameplay remake, 16/11/2026).
+                if (topo + 1) as f32 * BLOCO <= NIVEL_DO_MAR && !self.ger.e_mar() {
                     continue;
                 }
                 // Coordenada de BLOCO DE MUNDO, com o centro da ilha em zero:

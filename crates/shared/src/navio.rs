@@ -461,17 +461,22 @@ pub const HABILIDADES: [HabilidadeDoNavio; 4] = [
         efeito: Efeito::Bordada,
         espera_s: 6.0,
         alcance: 12.0,
-        mult: 1.4,
+        // Gameplay remake (16/11/2026): 1.5 with the sea mobs' tougher hide
+        // (`VIDA_DO_BICHO_DO_MAR`): a same-level mob takes 3-5 Broadsides.
+        mult: 1.5,
         auto: true,
     },
     HabilidadeDoNavio {
         id: 1,
         nome: "Bow Cannon",
-        descricao: "One heavy shot at your target, up to 22 m away.",
+        descricao: "A long-range shot at your target, up to 22 m away.",
         efeito: Efeito::Canhonaco,
-        espera_s: 4.0,
+        // Gameplay remake: the opener and the chaser, not the main gun. At
+        // 2.2 every 4 s it out-damaged the Broadside three to one and a
+        // fight lasted four seconds (`a_luta_no_mar_dura_dez_a_vinte_e_cinco_s`).
+        espera_s: 5.0,
         alcance: 22.0,
-        mult: 2.2,
+        mult: 0.6,
         auto: true,
     },
     HabilidadeDoNavio {
@@ -525,6 +530,56 @@ pub const BORDADA_COS_MAX: f32 = 0.8;
 /// Cannon fire against another player's HULL takes this share (hull vs
 /// hull; the PK modes decide whether it may happen at all).
 pub const PVP_CANHAO: f32 = 1.0;
+
+// ─────────────────────── gameplay remake (16/11/2026) ───────────────────────
+
+/// CANNONBALLS FLY (docs/NAVEGACAO.md, "gameplay remake"): the hit lands
+/// when the ball does, not when the button is pressed. Units per second.
+pub const VELOCIDADE_DA_BALA: f32 = 30.0;
+/// Shortest and longest flight (a ball point-blank still arcs; a long shot
+/// never hangs in the air).
+pub const VOO_MIN_S: f32 = 0.3;
+pub const VOO_MAX_S: f32 = 1.1;
+/// A ball hits whoever is within this of where it lands (a ship adds its
+/// hull radius). Further than that it is a splash: the target sailed out of
+/// it, and that is what dodging a cannon looks like.
+pub const RAIO_DO_ACERTO: f32 = 2.4;
+
+/// Seconds a cannonball takes to cross `dist` units. Client and server read
+/// the same number: the ball on screen lands when the hit does.
+pub fn tempo_de_voo(dist: f32) -> f32 {
+    (VOO_MIN_S + dist.max(0.0) / VELOCIDADE_DA_BALA).min(VOO_MAX_S)
+}
+
+/// Where to aim at a target at `alvo` moving at `vel`: where it will be when
+/// the ball lands (one step of lead, enough for a mob or a ship holding its
+/// course; turning still dodges).
+pub fn mira_com_avanco(de: glam::Vec2, alvo: glam::Vec2, vel: glam::Vec2) -> glam::Vec2 {
+    let t = tempo_de_voo(de.distance(alvo));
+    alvo + vel * t
+}
+
+/// Did a ball landing at `onde` hit a body at `corpo` of radius `raio`?
+pub fn acertou(onde: glam::Vec2, corpo: glam::Vec2, raio: f32) -> bool {
+    onde.distance(corpo) <= RAIO_DO_ACERTO + raio.max(0.0)
+}
+
+/// THE BITE IS TELEGRAPHED: a sea mob stops and winds up this long before
+/// its jaws land (the land mobs' `MOB_ATTACK_IMPACT_S` is 0.46 s, too quick
+/// to read on a ship). The client draws the red ring over the same time;
+/// sailing out of reach before it closes dodges the bite.
+pub const MORDIDA_PREPARO_S: f32 = 0.9;
+/// Radius of the bite telegraph ring on the water (units).
+pub const RAIO_DA_MORDIDA: f32 = 2.6;
+
+/// The sea mobs' tougher hide: their life at sea is the land profile's
+/// times this. With the Broadside at x1.5 a same-level shark or eel takes
+/// 3-5 Broadsides (`os_bichos_do_mar_aguentam_alguns_tiros`).
+pub const VIDA_DO_BICHO_DO_MAR: f32 = 1.6;
+
+/// AUTO COMBAT AT SEA stops this far from its target: inside the
+/// Broadside's 12 m and the Bow Cannon's 22 m, outside a bite.
+pub const DISTANCIA_DE_COMBATE: f32 = 8.5;
 
 /// Raw damage of attack skill `h` from a captain of level `nivel` on ship
 /// `id`/`d`: the level's expected attack × the skill × the class × the
@@ -923,18 +978,72 @@ mod testes {
         use crate::ladder::{damage, mob, Profile};
         let bordada = &HABILIDADES[0];
         let tiros = |vida: i32, dano: i32, defesa: i32| (vida as f32 / damage(dano, defesa) as f32).ceil() as u32;
-        for nivel in [5u32, 15, 30, 45, 60] {
+        for nivel in [1u32, 5, 15, 30, 45, 60] {
             for perfil in [Profile::relativo_ao_lobo(120, 10, 0), Profile::relativo_ao_lobo(95, 15, 2)] {
-                let m = mob(&perfil, nivel);
+                let mut m = mob(&perfil, nivel);
+                m.health = (m.health as f32 * VIDA_DO_BICHO_DO_MAR).round() as i32;
                 let sloop = dano_do_canhao(bordada, nivel, item_id::NAVIO_CHALUPA, &novo(item_id::NAVIO_CHALUPA));
                 let n = tiros(m.health, sloop, m.defense);
-                assert!((2..=6).contains(&n), "level {nivel}: {n} broadsides from a Sloop for {} life", m.health);
+                assert!((3..=5).contains(&n), "level {nivel}: {n} broadsides from a Sloop for {} life", m.health);
                 let nau = dano_do_canhao(bordada, nivel, item_id::NAVIO_NAU, &com_estrelas(item_id::NAVIO_NAU, [0, 0, 5]));
                 assert!(tiros(m.health, nau, m.defense) < n, "level {nivel}: the Man-o'-War is no better");
                 let elite = tiros(m.health * 5, sloop, m.defense);
                 assert!((8..=30).contains(&elite), "level {nivel}: elite in {elite}");
             }
         }
+    }
+
+    /// THE FIGHT AT SEA LASTS 10-25 s (gameplay remake): a bare Sloop firing
+    /// both cannons the moment they come off cooldown sinks a same-level
+    /// shark or eel in that window — long enough to read, short enough to
+    /// keep sailing.
+    #[test]
+    fn a_luta_no_mar_dura_dez_a_vinte_e_cinco_s() {
+        use crate::ladder::{damage, mob, Profile};
+        let id = item_id::NAVIO_CHALUPA;
+        for nivel in [1u32, 5, 15, 30, 45, 60] {
+            for perfil in [Profile::relativo_ao_lobo(120, 10, 0), Profile::relativo_ao_lobo(95, 15, 2)] {
+                let m = mob(&perfil, nivel);
+                let mut vida = (m.health as f32 * VIDA_DO_BICHO_DO_MAR).round() as i32;
+                let b = damage(dano_do_canhao(&HABILIDADES[0], nivel, id, &novo(id)), m.defense);
+                let c = damage(dano_do_canhao(&HABILIDADES[1], nivel, id, &novo(id)), m.defense);
+                let (mut pronta_b, mut pronta_c, mut t) = (0.0f32, 0.0f32, 0.0f32);
+                loop {
+                    if t >= pronta_b - 1e-4 {
+                        vida -= b;
+                        pronta_b = t + HABILIDADES[0].espera_s;
+                    }
+                    if vida > 0 && t >= pronta_c - 1e-4 {
+                        vida -= c;
+                        pronta_c = t + HABILIDADES[1].espera_s;
+                    }
+                    if vida <= 0 {
+                        break;
+                    }
+                    t += 0.5;
+                }
+                assert!((10.0..=25.0).contains(&t), "level {nivel}: the fight took {t:.1} s");
+            }
+        }
+    }
+
+    /// Cannonballs fly: longer shots take longer, within the bounds, and the
+    /// lead puts the aim where a moving target will be.
+    #[test]
+    fn a_bala_voa_e_a_mira_adianta() {
+        assert!((tempo_de_voo(0.0) - VOO_MIN_S).abs() < 1e-6);
+        assert!(tempo_de_voo(12.0) > tempo_de_voo(4.0));
+        assert!(tempo_de_voo(500.0) <= VOO_MAX_S);
+        let de = glam::Vec2::ZERO;
+        let alvo = glam::Vec2::new(10.0, 0.0);
+        let vel = glam::Vec2::new(0.0, 5.0);
+        let mira = mira_com_avanco(de, alvo, vel);
+        assert!((mira.y - 5.0 * tempo_de_voo(10.0)).abs() < 1e-4);
+        assert!(acertou(mira, mira + glam::Vec2::X * 2.0, 0.0));
+        assert!(!acertou(mira, mira + glam::Vec2::X * 5.0, 0.0), "a dodge is a splash");
+        assert!(acertou(mira, mira + glam::Vec2::X * 3.5, RAIO_DO_CASCO), "a hull is a bigger target");
+        assert!(MORDIDA_PREPARO_S > crate::constants::MOB_ATTACK_IMPACT_S, "the bite telegraph is readable");
+        assert!(DISTANCIA_DE_COMBATE < HABILIDADES[0].alcance && DISTANCIA_DE_COMBATE > RAIO_DA_MORDIDA);
     }
 
     // ───────────────────── phase 4 ─────────────────────

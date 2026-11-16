@@ -1,7 +1,7 @@
 # NAVEGAÇÃO — o mar como sistema (plano, 15/11/2026)
 
 > Status: **FASES 1, 2 E 4 FEITAS (15-16/11/2026, versão de TESTE, protocolo
-> 199 ainda não lançado).** A fase 3 (comércio) foi cortada; a 5 fica para
+> 199 ainda não lançado), e o visual do mar REFEITO (ver "Remake visual").** A fase 3 (comércio) foi cortada; a 5 fica para
 > depois. A fase 4 está em "Fase 4 — como ficou". O dono escolheu a "opção
 > C": navio próprio, mar navegável entre as ilhas, upgrades e PvP do
 > Corsário. O que a fase 1 virou de verdade está em "Fase 1 — como ficou",
@@ -453,6 +453,264 @@ esperando 60 s no chão pra quem não tem navio (abre na hora), contribuição
 por dano (vai pra quem matou), rastro da marca entre processos (vive no
 processo do mar), punição de quem desloga no mar com tesouro, arte `.vox` da
 bandeira.
+
+### Refazendo a jogabilidade do mar (16/11/2026, versão de TESTE, protocolo 199)
+
+O veredito do dono: *"o mar aberto está um lixo ... tá sem auto path ... não
+mostra a doca, não dá nem pra entender ... o combate tá péssimo"*. Refeito o
+JOGO do mar (o visual — ilhas, docas, água, cascos, céu — é o remake visual,
+em `mar_cena`/`mar_casco`/`agua`). Exigência do dono no meio do caminho: *"o
+mar precisa ser o mais otimizado possível pra rodar no celular"*. Protocolo
+sem variante nova; `PROTOCOL_VERSION` segue 199.
+
+**1. Auto path no mar, igual à terra.**
+
+- O servidor tem um **A\* de água** (`server/world/navio.rs`,
+  `caminho_no_mar`): grade grossa de 4 u (`CELULA_DA_ROTA`) sobre
+  `mar::navegavel`, uma célula é livre se há água no centro e num anel de
+  `FOLGA_DA_ROTA` = raio do casco + 0,8 u em volta (o casco nunca raspa a
+  costa por onde foi roteado). Construída UMA vez por processo (`OnceLock`,
+  aquecida no `povoar_mar`), ~190 mil células, ~190 KB de `bool`. Lê o relevo
+  em tempo de execução: mudar escala ou posição das ilhas não pede código
+  aqui. Busca 8-vizinhos com custo octile, sem cortar quina, buffers
+  reutilizados (carimbo de geração, nada se zera por pedido), orçamento de
+  150 mil células; a reta livre (o caso comum) nem busca. Depois a rota é
+  esticada (só os pontos onde ela vira): uma travessia sai com poucos pontos.
+- `handle_mover_para` no mar chama `rota_no_mar` (sem o teto de 1.200 u da
+  terra): o MESMO `SeguidorDeRota` conduz o casco, o MESMO
+  `ServerMessage::Rota` desenha o tracejado — agora em cima da água
+  (`mar_combate_ui::altura_do_tracejado`). Destino em terra (toque numa
+  ilha) termina na água mais perto dele.
+- Cliente `mar_rota.rs`: no mar todo "ir pra lá" vira UM `MoverPara` com o
+  destino (o toque no mapa e no minimapa, o "Ir" do mapa, o auto coleta, o
+  auto missão); reenvia só parado 2 s sem rota viva, desiste depois de 6
+  pedidos sem progresso. **Toque numa ilha (ou ao lado do cais) = ir pro
+  cais dela e atracar**; chegando ao alcance do cais que era o destino,
+  `Atracar` sai sozinho (`Passo::Atracar`). Faixa "Sailing to Glacier · 320
+  m · 32 s" (distância pela rota que falta, ETA pela velocidade do navio).
+- **"Sail to…"** embaixo do painel do navio: uma linha por cais (nome,
+  distância, ETA, botão "Sail"). O "Ir" de missão no mar (`PedirDestino`
+  do auto missão) navega pro cais da ilha da missão (`mar_rota::ilha_da_missao`:
+  o passo de VIAGEM ou a zona da missão; qualquer ilha → o cais mais perto),
+  atraca e o auto missão retoma em terra (`retomar_auto_missao`). A ilha do
+  mapa-múndi (`Objetivo::Embarcar`) no mar também vira "navegar até o cais".
+- **Auto combate no mar:** varredura a 4 Hz (`mar_rota::VARREDURA_S`, em
+  terra é todo quadro); escolhe o bicho mais perto (a mesma regra de
+  prioridade); aproxima até `navio::DISTANCIA_DE_COMBATE` 8,5 m (dentro da
+  Bordada de 12, fora da mordida); com o AUTO COMBATE ligado os canhões
+  disparam sozinhos (a Bordada só com o alvo no costado ou parado, pra não
+  gastar a recarga na água); sem bicho à vista navega pro ninho mais perto
+  (`mar::ninhos`, a mesma função de onde o servidor povoa), pulando por 40 s
+  o ninho que achou vazio.
+- **Auto coleta no mar:** o servidor oferece o destroço com um ponto de
+  aproximação NA ÁGUA e alcance pelo A\* de água (`no_de_coleta_em`; o A\* de
+  terra via o mar inteiro como parede e não oferecia nada).
+- No mar a arma descansa: o ataque básico de jogador não sai
+  (`if ir.wants_attack && !self.no_mar()`); quem luta são os canhões.
+
+**2. Combate que dá pra ler** (`client/mar_combate_ui.rs`).
+
+- **Balas voam:** a skill não acerta ao apertar; o servidor lança uma
+  `BalaDeCanhao` (entidade do ECS SEM `NetId`, nenhum snapshot a carrega)
+  mirada onde o alvo vai estar (`navio::mira_com_avanco`, um passo de
+  avanço pela velocidade) e resolve ao pousar (`pousar_balas`, no
+  `tick_mar`): acerta quem ainda está a `RAIO_DO_ACERTO` 2,4 u (+ o raio do
+  casco se for navio) do ponto; senão é espirro — quem virou o leme
+  esquivou. Tempo de voo `navio::tempo_de_voo` = 0,3 s + dist/30, teto 1,1 s;
+  cliente e servidor leem o mesmo número. Um `SkillImpactFx` por bala
+  (`tier` = índice na rajada); dano em navio entra no `damage_this_tick`
+  (número de dano de terra).
+- **Na tela:** anel de alvo na água (com marcas de "travado") e barra de
+  vida; os DOIS cones da Bordada na água quando o alvo está perto — verde no
+  lado que acertaria, cinza no outro (parado: o anel de alcance em volta);
+  linha de mira e anel de alcance de 22 m do Canhão de Proa; clarão nas
+  portinholas, fumaça, a bala no arco pelo tempo real de voo, espirro no
+  erro e lascas de madeira no acerto; tremor de câmera pra quem atira;
+  clarão vermelho no casco atingido; aviso "Low hull — head to a dock!" a
+  30%.
+- **Bichos do mar:** barbatana cortando a água e esteira (tubarão), corcovas
+  rolando (enguia); a mordida é ANUNCIADA: `navio::MORDIDA_PREPARO_S` 0,9 s
+  (em terra 0,46) de anel vermelho que fecha, com a cunha apontando a presa
+  (lido do `MobAttackFx` que já existia, `impact_s` exato); sair do alcance
+  antes de fechar esquiva (teste). Lascas e espirro no casco ao morder. O
+  elite ("[ELITE] Dread …") sai 1,6× maior, com anel vermelho e plaqueta
+  ELITE.
+- **Sons** (`assets/audio/mar/`, `scripts/gera-sons-mar.sh`, sox, mono 22
+  kHz, Vorbis q3): `canhao` 5,5 KB, `agua` 6,7 KB, `impacto` 4,8 KB;
+  `Som::CanhaoDisparo`, `CanhaoAgua`, `CanhaoImpacto` no fim do enum.
+- **Balanceamento** (`shared::navio`): Bordada ×1,4 → ×1,5; Canhão de Proa
+  ×2,2 / 4 s → ×0,6 / 5 s ("A long-range shot", o abridor e o caçador, não a
+  arma principal: a 2,2 ele dava três vezes o dano da Bordada e a luta
+  durava 4 s); bicho do mar nasce com ×1,6 de vida (`VIDA_DO_BICHO_DO_MAR`,
+  `preparar_bicho_do_mar`; o elite multiplica por cima). Resultado: um bicho
+  do nível leva 3-5 Bordadas e a luta com os dois canhões dura 10-18 s, do
+  nível 1 ao 60 (`os_bichos_do_mar_aguentam_alguns_tiros`,
+  `a_luta_no_mar_dura_dez_a_vinte_e_cinco_s`); elite 15-25 Bordadas; uma
+  Chalupa crua afunda outra em ~8 Bordadas.
+
+**3. HUD do mar.** Painel do navio no topo (`painel_do_navio`): barra do
+casco com números (pisca a 30%), velocidade, zona — "Safe harbour" (verde,
+corredor), "Open waters", "Lawless waters" (vermelho) —, tesouro no convés,
+"Nearest dock: Glacier · 230 m"; embaixo a linha de perigo da fase 4 e o
+"Sail to…". O nome e a seta de borda de cada cais são do remake visual
+(`mar_cena::rotulos`). A barra de skills do navio ganhou ícones vetoriais
+claros (`mar_ui::icone_da_habilidade`: casco disparando dos dois costados,
+canhão com bala, tábua + martelo + cruz verde, navio sumindo na nuvem), com
+a varredura de recarga de sempre.
+
+**Custo (celular).**
+
+| O quê | Custo |
+|---|---|
+| Efeitos de combate | piscinas FIXAS: 24 balas, 192 partículas; efeito novo sobrescreve o mais velho; nenhuma alocação por quadro |
+| Desenho | todos os decalques de água (anéis, cones, linha, telegrafia, barbatanas) numa malha reutilizada + partículas/balas em quads virados pra câmera numa segunda: 2 draw calls; nada de `draw_sphere` (o FX antigo montava uma esfera por chamada) |
+| Gráficos leves | `config_graficos` com forração < 65% ou distância "Near": metade das partículas |
+| A\* de água | só no servidor, só quando um destino é pedido (toque limitado a 0,2 s; aproximação de combate a 0,6 s); grade montada uma vez no boot; o cliente nunca roda A\* |
+| Auto modos | varredura de alvo a 4 Hz no mar |
+| HUD | linhas de texto em cache, refeitas só quando o valor muda; o cais mais perto sem montar lista |
+| Sons | 3 arquivos, 17 KB no total, ≤ 0,6 s |
+
+**Testes:** shared `a_luta_no_mar_dura_dez_a_vinte_e_cinco_s`,
+`a_bala_voa_e_a_mira_adianta`, `os_bichos_do_mar_aguentam_alguns_tiros`
+(agora 3-5); servidor `a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais`
+(de todo cais a todo cais, cada trecho na água, e o casco navegando com o
+seguidor e o `mover_casco` reais chega ao alcance de atracar; dos ninhos a
+todo cais; toque numa ilha termina na água), `o_toque_no_mar_vira_rota_e_tracejado`,
+`a_bala_voa_e_acerta_o_alvo_certo` (nada antes de pousar, só o alvo,
+esquiva = espirro, avanço no alvo que anda), `a_mordida_e_anunciada_e_da_pra_fugir`,
+`o_bicho_do_mar_tem_couro_grosso`, `a_coleta_no_mar_acha_destroco_alcancavel`;
+cliente `chegar_ao_cais_atraca_sozinho`, `tocar_na_ilha_vai_pro_cais_dela`,
+`parado_pede_de_novo_e_desiste`, `eta_e_faixa`,
+`o_auto_combate_no_mar_pega_o_bicho_mais_perto`, `a_caca_no_mar_vai_ao_ninho_mais_perto`,
+`os_efeitos_vivem_em_piscinas_fixas`, `a_linha_do_hud_so_refaz_quando_muda`,
+`os_sons_do_mar_existem_e_sao_pequenos`. Prévia: `MMO_PREVIA_MAR=1` grava
+também `mar-combate-bordada.png`, `-proa`, `-tubarao` e `-rota`
+(`MMO_PREVIA_SO=combate` só elas).
+
+**Cortado:** A\* no cliente (o servidor já tem o relevo), seta de borda
+própria pro cais (a do remake visual já existe), barra de casco de navio
+inimigo (o casco dos outros não vai no fio; o alvo mostra a vida),
+cosmético de bala.
+
+### Remake visual (16/11/2026, versão de TESTE, protocolo 199)
+
+O dono, no primeiro mar: *"o mar aberto está um lixo inacreditável ... as
+ilhas em miniatura estão uma merda, não mostra a doca nem nada, não dá nem
+pra entender, o barco tá horrível ... o mar em si tá muito muito feio"*. Foi
+refeito o visual inteiro, sem mexer no protocolo (`PROTOCOL_VERSION` 199) e
+com o servidor lendo o MESMO relevo do cliente (`shared::mar`).
+
+**Escala nova.** `ESCALA` 0,25 → **0,36**, `RAIO_BLOCOS` 1.400 → **1.800**
+(o mar é ±900 u, campo de altura de ~26 MB no servidor), `BORDA` 680 → 880;
+raio das ilhas `(raio_m × 0,2).clamp(105, 160)` (Bosque e Planalto 160,
+Geleira e Ermo 105). O fio aguenta ±4.095 u (teste
+`o_mar_inteiro_cabe_no_orcamento_do_fio`). Travessias de ancoradouro a
+ancoradouro, Chalupa a 10 u/s (teste `as_travessias_levam_de_meio_a_um_minuto_e_meio`):
+Bosque–Geleira 552 u (55 s), Bosque–Ermo 555 u (55 s), Geleira–Ermo 543 u
+(54 s), Geleira–Planalto 541 u (54 s), Ermo–Planalto 544 u (54 s) e a longa
+Bosque–Planalto 952 u (95 s); com o casco mais rápido (15,4 u/s), 35-62 s.
+Era 30-60 s com ilhas-domo de 60-120 u. Cache de altura `-mar2`.
+
+**As ilhas parecem as ilhas** (`mar::Feitio`, `terra_em`, `bloco_da_coluna`):
+perfil desenhado por ilha com três oitavas de value noise (hash por ponto da
+grade, smoothstep entre eles: barato e igual nos dois lados), costa com cabos
+e baías (`IlhaVista::costa`, 84-100% do raio):
+
+| Ilha | Silhueta | Paleta |
+|---|---|---|
+| Bosque | praia larga, morros ondulados até ~25 u, mata | areia, três verdes |
+| Geleira | faixa de gelo, falésia branca de ~15-20 u a 3-7 u da costa, campo de neve até ~30 u, **blocos de gelo** boiando na plataforma | neve, gelo azulado, rocha escura no pé |
+| Ermo | praia, dunas em cristas paralelas, **três mesetas** de 15-24 u | areia, arenito em estratos |
+| Planalto | sem praia: falésia escura direto da água (~25-30 u), topo serrilhado até ~45 u, **pilares de rocha** no mar | rocha abissal, rocha escura, musgo |
+
+Paredes em estratos por altura absoluta (`mar::material_da_parede`); topo por
+`mar::material_do_topo` (via `Gerador::material_desenhado`). Gelo e pilares
+ficam na plataforma (nunca além de `raio + 14`, onde começa a `agua_livre`) e
+nunca na frente do cais (teste `o_cais_e_de_tabua_e_o_caminho_esta_livre`:
+60 u de água livre saindo do ancoradouro). Árvores e pedras são SÓ do
+cliente (navio não chega em terra): modelos low-poly de 20-60 quads
+(`mar_cena::props`), um candidato a cada 3,5 u (`prop_da_coluna`), assados
+no pedaço do terreno (custo zero por quadro), ralos com Gráficos → Forração.
+
+**A doca é impossível de não ver** (`mar_cena::Doca`, construída uma vez por
+ilha): píer de tábuas sobre estacas (26 u + cabeça em T de 11 u), lampiões,
+caixotes e barris, cais de pedra plano na raiz (`ALTURA_DO_MOLHE`, cavado no
+que a ilha for), galpão de telhado vermelho, **farol** listrado de vermelho e
+branco de ~20 u com lanterna, halo que nunca fica menor que uns pixels (vira
+estrela no horizonte) e facho girando, bandeiras na cor da ilha, dois barcos
+atracados balançando, **anel brilhante** no ancoradouro (e o tracejado dos
+14 u do "Dock"), rótulo flutuante "Bosque · Dock · N m" sobre o farol e
+**marcador na borda da tela** apontando cada doca fora de vista
+(`mar_cena::rotulos`), e âncora + nome no minimapa e no mapa (`mapa::aguas_sem_lei`).
+O mapa do mar pinta cada ilha com a paleta dela.
+
+**De longe** (`mar_cena::Lod`): uma malha de altura por ilha, 3-5 u por
+célula, com cada vértice no chão MAIS BAIXO em volta (fica sempre embaixo do
+voxel: perto, os pedaços cobrem; além deles, é a silhueta na névoa). No mar a
+névoa vai bem mais longe (`mar_cena::neblina`: 380/520/640 u por qualidade).
+Céu em domo com gradiente e sol (`desenha_ceu`), a mesma cor que a água
+reflete e que a névoa usa.
+
+**O navio parece navio** (`client/mar_casco.rs`): modelo de voxel por visual
+(classe, vela, figura, latão), montado UMA vez pelo malhador da vegetação
+(`vegetacao::malha_com`, com paleta por "slot"), voxel de 0,125 u: proa
+afilada, tosado subindo nas pontas, quilha, fundo pintado, faixa por classe,
+convés de tábuas, amurada (latão com as estrelas), tombadilho com janelas de
+popa acesas e castelo a partir do Galeão, portinholas com canhão (Escuna 2,
+Galeão 4, Nau 2×5 por bordo), gurupés, mastros, vergas e cesto da gávea,
+lanterna de popa, figura de proa de voxel. Velas numa malha por mastro
+(latinas na Chalupa e Escuna, redondas no Galeão e na Nau, mais a bujarrona)
+que **enfunam** por uma escala na matriz (zero trabalho de vértice), cordame
+em linhas, flâmula. Anda NAS ondas (`agua::onda_em`, as mesmas três de
+Gerstner do shader: sobe, arfa, balança), aderna na curva e deixa **esteira**
+de espuma que alarga e some em 3,2 s.
+
+**A água** (`agua.rs`, `Estilo` > 0 só no mar; as ilhas seguem com a água de
+antes): normal da própria onda de Gerstner (as derivadas saem dos mesmos três
+senos), fresnel com o céu, rastro de brilho do sol, luz atravessando as
+cristas (turquesa), carneirinhos no alto das cristas, arrebentação em faixas
+em TODA costa (no mar a espuma é "tem terra do lado", porque a plataforma cai
+um bloco na costa), fundo opaco e névoa na cor do céu. Prévia ao meio-dia e
+ao entardecer (`mar_cena::define_entardecer`; o mar não tem ciclo de dia).
+
+**Destroços e baús** boiam nas ondas (`mar_cena::boia`, `jangada`): destroço
+com toco de mastro e pano rasgado, baú numa jangada com boia e bandeirinha.
+
+**Orçamento do celular** (medido na prévia e nos testes):
+
+Qualidade = Gráficos → Forração (Esparsa = baixa, Média, Cheia = alta;
+`mar_cena::qualidade`). Ondas desligadas em Gráficos = mar parado, como antes.
+
+| | Baixa | Média | Alta |
+|---|---|---|---|
+| Névoa no mar (fim) | 620 u | 850 u | 1.100 u |
+| Ilhas de longe (4 malhas, célula) | 5 u, ~15 mil vértices | 4 u, ~24 mil | 3 u, ~43 mil (~41 mil triângulos) |
+| Árvores/pedras nas ilhas (assadas no pedaço) | 30% | 65% | 100% (Bosque: >1.000 árvores na ilha inteira, 30-120 quads cada) |
+| Ondas no vértice | 2 | 3 | 3 |
+| Fragmento da água | fresnel + sol + arrebentação | + 1 seno de marola + carneirinhos | + 3 senos de marola |
+| Destroços desenhados até | 70 u | 110 u | 110 u |
+
+Fixos em qualquer qualidade: doca ~15 mil vértices cada (60.784 nas quatro),
+desenhada até 360 u, 1 chamada por doca; ilha de longe 1 chamada inteira, ou
+ladrilhos de 48 u (só os que os pedaços carregados não cobrem) quando o
+jogador está perto dela. Navio: Chalupa ~6,7 mil vértices, Escuna ~9,2 mil,
+Galeão ~17 mil, Nau ~21 mil (teste `os_cascos_saem_bonitos_e_baratos`, teto
+24 mil); perto são casco + uma vela por mastro + bujarrona (3-5 chamadas),
+longe de 55 u casco + velas juntas (2 chamadas), sem cordame. Por quadro, o
+que é refeito na CPU é pouco: céu ~210 vértices, anel do cais ~300, halos e
+fachos, bandeiras de 14 vértices, esteira ≤ ~200 vértices por navio; nada
+estático é refeito. Malha nova só na primeira vez que um visual de navio
+aparece (alguns ms) e uma ilha/doca por quadro ao entrar no mar.
+
+Medição de FPS no aparelho fica com o benchmark do primeiro login
+(`benchmark::cena_mar`, que agora desenha este mar).
+
+**Prévia:** `MMO_PREVIA_MAR=1` (`MMO_PREVIA_SO=<parte>` filtra) grava
+`mar-largo`, `mar-largo-bosque`, `mar-cais`, `mar-cais-geleira/ermo/planalto`, `mar-classe-0..3`,
+`mar-jogo`, `mar-jogo-longe`, `mar-navegando`, `mar-meio-dia`,
+`mar-entardecer` e `mar-alto` em `MMO_PREVIA_SAIDA`. O benchmark do primeiro
+login (`benchmark::cena_mar`) desenha o mar por `mar_cena::desenha_mundo`, o
+mesmo passe da prévia.
 
 ### Fase 5 — Conteúdo do mar
 

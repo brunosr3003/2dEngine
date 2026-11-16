@@ -819,4 +819,5 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Lawless waters: anyone can attack you here — PK: {}", "Águas sem lei: aqui qualquer um pode te atacar — PK: {}"),
     ("You left the lawless waters — PK: {}", "Você saiu das águas sem lei — PK: {}"),
     ("Treasure on deck: open the Colossus Chest before changing ships.", "Tesouro no convés: abra o Baú do Colosso antes de trocar de navio."),
+    ("There is no water route there.", "Não há rota pela água até lá."),
 ];

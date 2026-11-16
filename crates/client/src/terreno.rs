@@ -84,6 +84,10 @@ struct Pedaco {
     /// The Graphics ground-cover percent this chunk was baked with. When the
     /// setting changes, `atualiza` rebuilds the chunks that disagree.
     forracao: u8,
+    /// The open sea's FLOATING WRECKAGE in this chunk: (foot on the
+    /// waterline, model index into `destrocos`). Not baked: it bobs on the
+    /// swell, so it is drawn per frame (`mar_cena::desenha_destrocos`).
+    boiando: Vec<(Vec3, usize)>,
 }
 
 /// Whether the ground plant on column `(bx, bz)` survives a `pct` percent
@@ -152,6 +156,9 @@ pub struct Terreno {
     /// The open sea's floating wreckage (`vegetacao::destroco`), by tier
     /// 0..4. Empty on every island.
     destrocos: Vec<crate::vegetacao::Modelo>,
+    /// The open sea's island props (`mar_cena::props`): low-poly voxel trees
+    /// and rocks per island palette, baked into the chunks. Empty elsewhere.
+    props_do_mar: Vec<crate::vegetacao::Modelo>,
     /// Cristais altos de Energia, separados visualmente do minério.
     /// Colunas cujas pedras ja' foram esgotadas. Quem esta' aqui NAO e'
     /// desenhado — sem isso o jogador nao teria como distinguir o veio cheio
@@ -226,6 +233,7 @@ impl Terreno {
             plantas: Vec::new(),
             minerios: Vec::new(),
             destrocos: Vec::new(),
+            props_do_mar: Vec::new(),
             esgotadas: std::collections::HashSet::new(),
             pedacos: HashMap::new(),
             gerados: 0,
@@ -283,6 +291,7 @@ impl Terreno {
                     t.destrocos.push(crate::vegetacao::destroco(tier, k as u32 * 29 + tier as u32 * 97));
                 }
             }
+            t.props_do_mar = crate::mar_cena::props();
         }
         t
     }
@@ -563,6 +572,27 @@ impl Terreno {
 
     /// O pe' dos veios de Energia a` vista. Eles sao desenhados quadro a
     /// quadro (`energia_vfx`) e nao entram na malha assada do pedaco.
+    /// The open sea's floating wreckage in view: (foot, model index). Drawn
+    /// per frame because it bobs (`mar_cena::desenha_destrocos`).
+    pub fn destrocos_visiveis(&self, cam: &Camera3D) -> Vec<(Vec3, usize)> {
+        self.pedacos
+            .iter()
+            .filter(|((cx, cz), p)| !p.boiando.is_empty() && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
+            .flat_map(|(_, p)| p.boiando.iter().copied())
+            .collect()
+    }
+
+    /// Is the chunk under world `(x, z)` built (the sea's far island tiles
+    /// hide where the real chunks already are: `mar_cena`)?
+    pub fn pedaco_pronto_em(&self, x: f32, z: f32) -> bool {
+        self.pedacos.contains_key(&self.pedaco_de(vec2(x, z)))
+    }
+
+    /// The wreckage model `k` (`destrocos_visiveis`).
+    pub fn modelo_de_destroco(&self, k: usize) -> Option<&crate::vegetacao::Modelo> {
+        self.destrocos.get(k)
+    }
+
     pub fn energias_visiveis(&self, cam: &Camera3D) -> Vec<Vec3> {
         self.pedacos
             .iter()
@@ -687,6 +717,7 @@ impl Terreno {
         let mut verts: Vec<Vertex> = Vec::new();
         let mut idx: Vec<u16> = Vec::new();
         let mut energias: Vec<Vec3> = Vec::new();
+        let mut boiando: Vec<(Vec3, usize)> = Vec::new();
         let mut sombras: Vec<Mesh> = Vec::new();
         let mut sombra_verts: Vec<Vertex> = Vec::new();
         let mut sombra_idx: Vec<u16> = Vec::new();
@@ -956,7 +987,10 @@ impl Terreno {
                         && matches!(shared::kogen::chao_em(q_kogen), shared::kogen::Chao::Predio { .. });
                     // Abyssia's Coral Palace and its pillar.
                     let palacio = self.ger.e_abissal() && shared::abissal::e_palacio(q_kogen);
+                    let mar = self.ger.e_mar();
                     let faixa = |prof: i32| match porao {
+                        // The sea's islands: strata of their own palette.
+                        _ if mar => shared::mar::material_da_parede(gx, gz, h, prof),
                         _ if predio => shared::kogen::fachada(q_kogen, gx, gz, prof, h - shared::kogen::NIVEL_CHAO),
                         _ if palacio => shared::abissal::fachada(q_kogen, gx, gz, h - prof - shared::abissal::NIVEL_CHAO),
                         // A cloud path's edge: white on top, shaded below.
@@ -1161,6 +1195,22 @@ impl Terreno {
             // (`estorvos_da_coluna` → `mar::destroco_da_coluna`), so what is
             // drawn is what is gathered; depleted ones disappear like rocks.
             if self.ger.e_mar() {
+                // The islands' trees and rocks: decoration only (no ship
+                // reaches land), so the client alone plants them, by hash.
+                for iz in 0..n as i32 {
+                    for ix in 0..n as i32 {
+                        if eh_agua(ix, iz) {
+                            continue;
+                        }
+                        let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
+                        if let Some((k, escala, giro)) = crate::mar_cena::prop_da_coluna(bx, bz, forracao) {
+                            let topo = (em(ix, iz) + 1) as f32 * BLOCO;
+                            if let Some(m) = self.props_do_mar.get(k) {
+                                crate::mar_cena::instancia_girada(m, vec3(bx as f32 * BLOCO, topo, bz as f32 * BLOCO), escala, giro, &mut verts, &mut idx, &mut malhas, MAX_QUADS);
+                            }
+                        }
+                    }
+                }
                 for iz in 0..n as i32 {
                     for ix in 0..n as i32 {
                         let (bx, bz) = (cx * CHUNK + ix, cz * CHUNK + iz);
@@ -1180,10 +1230,8 @@ impl Terreno {
                             continue;
                         }
                         let k = (d.tier as usize) * VARIANTES + (d.variante as usize % VARIANTES);
-                        if let Some(m) = self.destrocos.get(k) {
-                            // Twice the rock's size: read from the deck of a ship,
-                            // not from the ground beside it.
-                            crate::vegetacao::instancia(m, base, 2.0, &mut verts, &mut idx, &mut malhas, MAX_QUADS);
+                        if k < self.destrocos.len() {
+                            boiando.push((base, k));
                         }
                     }
                 }
@@ -1420,6 +1468,7 @@ impl Terreno {
                 .collect(),
             energias,
             forracao,
+            boiando,
         }
     }
 

@@ -4310,8 +4310,9 @@ impl GameWorld {
                     let eid = self.place_enemy_in_zone_with_build(ps.pos, b, ps.zone_id, ps.kind, forte);
                     if ps.slot_idx == 0 && self.e_elite_da_espiral(ps.zone_id) {
                         self.tornar_elite_da_espiral(eid);
-                    } else if ps.slot_idx == 0 && self.no_mar() && navio::e_ninho_de_elite(ps.zone_id) {
-                        self.tornar_elite_do_mar(eid);
+                    } else if self.no_mar() {
+                        // The sea's hide on every sea mob; the route's elite on top.
+                        self.preparar_bicho_do_mar(eid, ps.slot_idx == 0 && navio::e_ninho_de_elite(ps.zone_id));
                     }
                     eid
                 }
@@ -6228,6 +6229,11 @@ impl GameWorld {
             }
             s.rota_pedida_em = agora;
             s.rota.limpa();
+        }
+        // AT SEA: the water A* over the whole chart (`navio::caminho_no_mar`).
+        if self.no_mar() && destino.is_finite() {
+            self.rota_no_mar(sid, pos_atual, destino);
+            return;
         }
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
             self.avisa_missao(sid, "Too far to walk from here.".into());
@@ -10839,6 +10845,8 @@ impl GameWorld {
         // Tuple: (enemy_eid, enemy_pos, target_pos).
         let mut enemy_cast_intents: Vec<(EntityId, Vec2, Vec2)> = Vec::new();
         let now_sim = self.sim_time_s;
+        // At sea the bite is telegraphed (`navio::impacto_da_mordida`).
+        let impacto_mob = navio::impacto_da_mordida(self.no_mar());
 
         let mobs_preparando: HashMap<_, _> = self
             .pending_melee
@@ -11191,7 +11199,7 @@ impl GameWorld {
                                 knockback: 0.0,
                                 target: nearest.map(|(id, _)| id),
                                 max_range: enemy.attack_range,
-                                impact_at: now_sim + shared::MOB_ATTACK_IMPACT_S,
+                                impact_at: now_sim + impacto_mob,
                             });
                         } else {
                             // proj_kind e proj_count cacheados a partir do EnemyBuild.
@@ -11428,7 +11436,9 @@ impl GameWorld {
                     tag.attack_anim_pending = Some(shared::attack_anim::DASH);
                 }
             }
-            if ir.wants_attack {
+            // AT SEA THE CANNONS ARE THE WEAPONS (gameplay remake): no sword
+            // swing or arrow out of a hull — the ship's bar does the fighting.
+            if ir.wants_attack && !self.no_mar() {
                 let pos = self
                     .ecs
                     .get::<&Position>(ir.entity)
@@ -20392,21 +20402,29 @@ impl GameWorld {
                 .total_cmp(&b.centro.distance_squared(eu))
         });
         let mut rotas_restantes = 8;
+        // AT SEA the wreckage floats: the hull goes up to it on water, and
+        // the reach is the water A*'s (`navio::caminho_no_mar`), not the
+        // land's, which sees the whole sea as a wall (gameplay remake).
+        let no_mar = self.no_mar();
         for c in achados.into_iter().take(8) {
             let raio_no = ilha.estorvo_em(c.centro, 0.01).map_or(0.4, |e| e.raio);
             if crate::coleta::ao_alcance(eu, c.centro, raio_no) {
                 return Some((c.coluna, eu, c.centro, c.tier));
             }
             for ponto in crate::coleta::pontos_de_coleta(c.centro, raio_no, eu) {
-                let onde = ilha.ponto_livre_perto(ponto, ENTITY_RADIUS);
+                let onde = if no_mar { ponto } else { ilha.ponto_livre_perto(ponto, ENTITY_RADIUS) };
                 if !crate::coleta::aproximacao_ao_alcance(onde, c.centro, raio_no) {
+                    continue;
+                }
+                if no_mar && !shared::mar::navegavel(onde.x, onde.y) {
                     continue;
                 }
                 if rotas_restantes == 0 { return None; }
                 rotas_restantes -= 1;
-                let chega = ilha.caminho(eu, onde, 8_000)
+                let rota = if no_mar { navio::caminho_no_mar(eu, onde) } else { ilha.caminho(eu, onde, 8_000) };
+                let chega = rota
                         .and_then(|r| r.last().copied())
-                        .is_some_and(|fim| fim.distance(onde) <= 0.5
+                        .is_some_and(|fim| (no_mar || fim.distance(onde) <= 0.5)
                             && crate::coleta::ao_alcance(fim, c.centro, raio_no));
                 if chega {
                     return Some((c.coluna, onde, c.centro, c.tier));

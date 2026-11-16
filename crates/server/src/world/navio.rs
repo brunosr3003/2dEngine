@@ -411,6 +411,8 @@ impl GameWorld {
             self.dano_no_casco(sid, dmg, None);
         }
         self.tick_tesouros();
+        // Gameplay remake: the cannonballs in the air.
+        self.pousar_balas();
         let agora = self.sim_time_s;
         let (prontos, esperando): (Vec<_>, Vec<_>) =
             std::mem::take(&mut self.baus_do_mar).into_iter().partition(|(_, t)| *t <= agora);
@@ -470,6 +472,10 @@ impl GameWorld {
         }
         let baus = shared::mar::baus();
         tracing::info!("mar aberto: {} ninhos, {} baus a deriva", zonas.len(), baus.len());
+        // The water A*'s grid, built at boot rather than on the first tap.
+        let t0 = std::time::Instant::now();
+        let livres = grade_do_mar().livre.iter().filter(|l| **l).count();
+        tracing::info!("mar aberto: grade de rota {} celulas livres em {:?}", livres, t0.elapsed());
         self.spawn_zones = zonas;
         self.boss_areas.clear();
         self.vagas_de_chefe.clear();
@@ -697,6 +703,43 @@ impl GameWorld {
         }
     }
 
+    // ───────────────────── gameplay remake: auto path and mobs ─────────────────────
+
+    /// A TAP AT SEA (`handle_mover_para`): the water A* plans the whole
+    /// crossing, the same `SeguidorDeRota` steers the hull and the same
+    /// `ServerMessage::Rota` draws the dashed line — the land's auto path,
+    /// on water. No distance cap: the chart is one crossing.
+    pub(crate) fn rota_no_mar(&mut self, sid: SessionId, de: Vec2, para: Vec2) {
+        let Some(rota) = caminho_no_mar(de, para) else {
+            self.avisa_missao(sid, "There is no water route there.".into());
+            return;
+        };
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            s.rota = shared::terreno::SeguidorDeRota::nova(rota, para);
+            s.rota_geracao = s.rota_geracao.wrapping_add(1);
+            s.travado_desde = None;
+        }
+    }
+
+    /// A SEA MOB JUST SPAWNED: the sea's tougher hide on its life
+    /// (`navio::VIDA_DO_BICHO_DO_MAR`), and the elite on top when it is the
+    /// route's elite slot.
+    pub(crate) fn preparar_bicho_do_mar(&mut self, eid: EntityId, elite: bool) {
+        for (_, (n, tag, hp)) in self.ecs.query_mut::<(&NetId, &mut EnemyTag, &mut Health)>() {
+            if n.0 != eid {
+                continue;
+            }
+            let vida = ((hp.max as f32) * nv::VIDA_DO_BICHO_DO_MAR).round() as i32;
+            hp.max = vida;
+            hp.current = vida;
+            tag.stats.hp_max = vida;
+            break;
+        }
+        if elite {
+            self.tornar_elite_do_mar(eid);
+        }
+    }
+
     // ───────────────────── phase 2: ship skills ─────────────────────
 
     /// A SHIP SKILL (`navio::HABILIDADES`), at sea only: instant, mana-free,
@@ -740,7 +783,7 @@ impl GameWorld {
         };
         let rumo = self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO);
         let nivel = self.nivel_de_sid(sid);
-        let mut alvo_fx = de;
+        let mut miras: Vec<Vec2> = Vec::new();
         match hab.efeito {
             nv::Efeito::Bordada | nv::Efeito::Canhonaco => {
                 if self.in_safe_zone(de) {
@@ -770,11 +813,14 @@ impl GameWorld {
                 // The Corsair's cannon passive (phase 4).
                 let canhao = self.sessions.get(&sid).map_or(0.0, |s| s.arvore.passivas().canhao_pct);
                 let dano = (nv::dano_do_canhao(hab, nivel, navio, &d) as f32 * (1.0 + canhao.max(0.0))).round() as i32;
-                if let Some((_, p)) = alvos.first() {
-                    alvo_fx = *p;
-                }
+                // THE BALLS FLY (gameplay remake): one per target, aimed where
+                // the target will be when it lands, resolved on landing
+                // (`pousar_balas`). The FX goes out per ball, so the screen
+                // shows every shot the server is going to resolve.
                 for (alvo, p) in alvos {
-                    self.tiro_de_canhao(dono, alvo, de, p, dano);
+                    let mira = nv::mira_com_avanco(de, p, self.velocidade_da_entidade(alvo));
+                    miras.push(mira);
+                    self.disparar_bala(dono, alvo, de, mira, dano);
                 }
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.last_combat_at_s = agora;
@@ -801,18 +847,78 @@ impl GameWorld {
         }
         crate::telemetria::conta("skill_do_navio", hab.nome, 1);
         self.estado_skills(sid);
+        // No target (a Broadside into open water, a repair, the smoke): one
+        // FX at the ship itself, and the client fires its volley at nothing.
+        if miras.is_empty() {
+            miras.push(de);
+        }
         for s in self.sessions.values().filter(|s| s.logged_in) {
-            let _ = s.handle.to_client.send(ServerMessage::SkillImpactFx {
-                skill_id: id,
-                caster_eid: dono,
-                caster_pos: de,
-                target_pos: alvo_fx,
-                tier: 0,
-            });
+            for (k, mira) in miras.iter().enumerate() {
+                let _ = s.handle.to_client.send(ServerMessage::SkillImpactFx {
+                    skill_id: id,
+                    caster_eid: dono,
+                    caster_pos: de,
+                    target_pos: *mira,
+                    tier: k.min(255) as u8,
+                });
+            }
         }
     }
 
-    /// One cannonball from `dono` at `alvo`. A mob takes it as a skill hit
+    /// The velocity of entity `eid` (zero when it is not found). Only for the
+    /// few targets of a shot, so a scan is fine.
+    fn velocidade_da_entidade(&self, eid: EntityId) -> Vec2 {
+        self.ecs
+            .query::<(&NetId, &Velocity)>()
+            .iter()
+            .find(|(_, (n, _))| n.0 == eid)
+            .map_or(Vec2::ZERO, |(_, (_, v))| v.0)
+    }
+
+    /// A cannonball leaves `de` for `mira`, meant for `alvo`. It is an ECS
+    /// entity WITHOUT `NetId`, so no snapshot ever carries it: the clients
+    /// draw it from the `SkillImpactFx`, with the same flight time.
+    pub(crate) fn disparar_bala(&mut self, dono: EntityId, alvo: EntityId, de: Vec2, mira: Vec2, dano: i32) {
+        let chega_em = self.sim_time_s + nv::tempo_de_voo(de.distance(mira));
+        self.ecs.spawn((BalaDeCanhao { dono, alvo, de, mira, dano, chega_em },));
+    }
+
+    /// THE BALLS THAT LANDED THIS TICK. A ball hits its target when the
+    /// target is still within `navio::RAIO_DO_ACERTO` of where it lands (a
+    /// ship adds its hull radius); otherwise it is a splash and nothing
+    /// happens — the target sailed out of it.
+    pub(crate) fn pousar_balas(&mut self) {
+        let agora = self.sim_time_s;
+        let mut prontas: Vec<(hecs::Entity, BalaDeCanhao)> = Vec::new();
+        for (e, b) in self.ecs.query::<&BalaDeCanhao>().iter() {
+            if b.chega_em <= agora {
+                prontas.push((e, *b));
+            }
+        }
+        if prontas.is_empty() {
+            return;
+        }
+        for (e, _) in &prontas {
+            let _ = self.ecs.despawn(*e);
+        }
+        for (_, b) in prontas {
+            let corpo = self
+                .ecs
+                .query::<(&NetId, &Position, &EntityKind)>()
+                .iter()
+                .find(|(_, (n, _, _))| n.0 == b.alvo)
+                .map(|(_, (_, p, k))| (p.0, matches!(k, EntityKind::Player)));
+            let Some((onde, navio)) = corpo else {
+                continue;
+            };
+            let raio = if navio { nv::RAIO_DO_CASCO } else { 0.6 };
+            if nv::acertou(b.mira, onde, raio) {
+                self.tiro_de_canhao(b.dono, b.alvo, b.de, onde, b.dano);
+            }
+        }
+    }
+
+    /// One cannonball from `dono` at `alvo`, LANDED. A mob takes it as a skill hit
     /// (defence, the level gap and the kill credit as usual); a player's
     /// HULL takes it directly — hull against hull — when the PK modes allow.
     fn tiro_de_canhao(&mut self, dono: EntityId, alvo: EntityId, de: Vec2, p: Vec2, dano: i32) {
@@ -822,6 +928,12 @@ impl GameWorld {
                 if !self.can_damage_player(dono, alvo) || self.in_safe_zone(p) {
                     return;
                 }
+                // The number over the hull: the land damage-number system
+                // reads `damage_this_tick` (a mob's hit goes through
+                // `pending_skill_hits`, which already does this).
+                *self.damage_this_tick.entry(alvo).or_insert(0) += dano;
+                self.hit_this_tick.insert(alvo, (de - p).normalize_or_zero());
+                self.attacker_this_tick.insert(alvo, dono);
                 self.registrar_agressao(dono, alvo);
                 // The Pirate's Code: more against a marked ship.
                 let contra_marcado = if self.marcado_eid(alvo) {
@@ -1183,6 +1295,267 @@ impl GameWorld {
 
 /// The sea elite (`tornar_elite_do_mar`).
 pub struct EliteDoMarTag;
+
+/// A CANNONBALL IN THE AIR (gameplay remake): an ECS entity with only this
+/// component, so no snapshot carries it. `pousar_balas` resolves it at
+/// `chega_em`.
+#[derive(Debug, Clone, Copy)]
+pub struct BalaDeCanhao {
+    pub dono: EntityId,
+    pub alvo: EntityId,
+    pub de: Vec2,
+    pub mira: Vec2,
+    pub dano: i32,
+    pub chega_em: f32,
+}
+
+/// How long after the swing starts a mob's melee hit lands: at sea the
+/// bite is telegraphed (`navio::MORDIDA_PREPARO_S`), ashore it is the land
+/// animation's.
+pub(crate) fn impacto_da_mordida(no_mar: bool) -> f32 {
+    if no_mar {
+        nv::MORDIDA_PREPARO_S
+    } else {
+        shared::MOB_ATTACK_IMPACT_S
+    }
+}
+
+// ───────────────────── gameplay remake: the water A* ─────────────────────
+
+/// Cell of the sea's route grid, units. Coarse on purpose: the hull's own
+/// `mover_casco` does the fine movement; the route only says which way.
+pub const CELULA_DA_ROTA: f32 = 4.0;
+/// Clearance a planned route keeps from land: the hull radius and a margin,
+/// so the bow never scrapes a coast it was routed past.
+pub const FOLGA_DA_ROTA: f32 = nv::RAIO_DO_CASCO + 0.8;
+/// Most cells one request expands. The whole chart is ~190k cells; a
+/// crossing around one island expands a few thousand.
+const ORCAMENTO_NO_MAR: usize = 150_000;
+
+/// THE SEA'S ROUTE GRID: which `CELULA_DA_ROTA` cells a hull can stand in
+/// with `FOLGA_DA_ROTA` of water all round. Built ONCE per process from
+/// `mar::navegavel` (read at runtime, so a new chart scale or island
+/// position needs no change here), ~190 KB.
+pub struct GradeDoMar {
+    lado: i32,
+    origem: f32,
+    livre: Vec<bool>,
+}
+
+impl GradeDoMar {
+    fn nova() -> Self {
+        let borda = shared::mar::BORDA - FOLGA_DA_ROTA;
+        let lado = ((2.0 * borda) / CELULA_DA_ROTA).floor().max(1.0) as i32;
+        let origem = -borda + CELULA_DA_ROTA * 0.5;
+        let mut livre = vec![false; (lado * lado) as usize];
+        for z in 0..lado {
+            for x in 0..lado {
+                let p = Vec2::new(origem + x as f32 * CELULA_DA_ROTA, origem + z as f32 * CELULA_DA_ROTA);
+                livre[(z * lado + x) as usize] = agua_com_folga(p);
+            }
+        }
+        Self { lado, origem, livre }
+    }
+
+    fn celula(&self, p: Vec2) -> (i32, i32) {
+        (
+            ((p.x - self.origem) / CELULA_DA_ROTA).round() as i32,
+            ((p.y - self.origem) / CELULA_DA_ROTA).round() as i32,
+        )
+    }
+
+    fn centro(&self, c: (i32, i32)) -> Vec2 {
+        Vec2::new(self.origem + c.0 as f32 * CELULA_DA_ROTA, self.origem + c.1 as f32 * CELULA_DA_ROTA)
+    }
+
+    fn indice(&self, c: (i32, i32)) -> Option<usize> {
+        (c.0 >= 0 && c.1 >= 0 && c.0 < self.lado && c.1 < self.lado).then(|| (c.1 * self.lado + c.0) as usize)
+    }
+
+    /// Can a hull stand in cell `c` with clearance?
+    pub fn livre(&self, c: (i32, i32)) -> bool {
+        self.indice(c).is_some_and(|i| self.livre[i])
+    }
+
+    /// The free cell nearest `p`, searching rings out to `raio` cells.
+    fn livre_perto(&self, p: Vec2, raio: i32) -> Option<(i32, i32)> {
+        let c = self.celula(p);
+        if self.livre(c) {
+            return Some(c);
+        }
+        for r in 1..=raio {
+            let mut melhor: Option<((i32, i32), f32)> = None;
+            for i in -r..=r {
+                for q in [(c.0 + i, c.1 - r), (c.0 + i, c.1 + r), (c.0 - r, c.1 + i), (c.0 + r, c.1 + i)] {
+                    if self.livre(q) {
+                        let d = self.centro(q).distance_squared(p);
+                        if melhor.is_none_or(|(_, m)| d < m) {
+                            melhor = Some((q, d));
+                        }
+                    }
+                }
+            }
+            if let Some((q, _)) = melhor {
+                return Some(q);
+            }
+        }
+        None
+    }
+
+    /// Straight from `a` to `b` through free cells only (sampled every half
+    /// cell).
+    fn reta_livre(&self, a: Vec2, b: Vec2) -> bool {
+        let n = ((a.distance(b) / (CELULA_DA_ROTA * 0.5)).ceil() as i32).max(1);
+        (0..=n).all(|k| self.livre(self.celula(a.lerp(b, k as f32 / n as f32))))
+    }
+}
+
+/// Water under the point and all round it at `FOLGA_DA_ROTA`.
+fn agua_com_folga(p: Vec2) -> bool {
+    if !shared::mar::navegavel(p.x, p.y) {
+        return false;
+    }
+    (0..8).all(|k| {
+        let a = k as f32 * std::f32::consts::FRAC_PI_4;
+        let q = p + Vec2::new(a.cos(), a.sin()) * FOLGA_DA_ROTA;
+        shared::mar::navegavel(q.x, q.y)
+    })
+}
+
+/// The process's grid (built on first use; `povoar_mar` warms it at boot).
+pub fn grade_do_mar() -> &'static GradeDoMar {
+    static G: std::sync::OnceLock<GradeDoMar> = std::sync::OnceLock::new();
+    G.get_or_init(GradeDoMar::nova)
+}
+
+/// The A*'s work buffers, reused between requests (a generation stamp
+/// instead of clearing ~190k entries).
+struct BuscaDoMar {
+    custo: Vec<i64>,
+    pai: Vec<u32>,
+    geracao: Vec<u32>,
+    atual: u32,
+}
+
+thread_local! {
+    static BUSCA: std::cell::RefCell<BuscaDoMar> =
+        const { std::cell::RefCell::new(BuscaDoMar { custo: Vec::new(), pai: Vec::new(), geracao: Vec::new(), atual: 0 }) };
+}
+
+/// THE WATER ROUTE from `de` to `para`: A* over `grade_do_mar` (8
+/// neighbours, octile costs), then pulled taut — the waypoints are where it
+/// turns, a handful for a crossing. A destination on land (a tap on an
+/// island) ends at the nearest water to it. `None` = no water route.
+///
+/// Runs on the SERVER, once per request (taps are throttled to 0.2 s by
+/// `handle_mover_para`), never per frame.
+pub fn caminho_no_mar(de: Vec2, para: Vec2) -> Option<Vec<Vec2>> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    let g = grade_do_mar();
+    let inicio = g.livre_perto(de, 6)?;
+    let fim = g.livre_perto(para, 60)?;
+    let alvo_exato = agua_com_folga(para) && g.celula(para) == fim;
+    let ultimo = if alvo_exato { para } else { g.centro(fim) };
+    // Most taps at sea are in plain sight: no search.
+    if g.reta_livre(g.centro(inicio), ultimo) {
+        return Some(vec![ultimo]);
+    }
+    let n = g.livre.len();
+    let h = |c: (i32, i32)| -> i64 {
+        let (dx, dz) = ((c.0 - fim.0).abs() as i64, (c.1 - fim.1).abs() as i64);
+        let (mi, ma) = (dx.min(dz), dx.max(dz));
+        mi * 1414 + (ma - mi) * 1000
+    };
+    let celulas = BUSCA.with(|b| {
+        let mut b = b.borrow_mut();
+        if b.custo.len() != n {
+            b.custo = vec![0; n];
+            b.pai = vec![u32::MAX; n];
+            b.geracao = vec![0; n];
+            b.atual = 0;
+        }
+        b.atual = b.atual.wrapping_add(1);
+        if b.atual == 0 {
+            b.geracao.iter_mut().for_each(|x| *x = 0);
+            b.atual = 1;
+        }
+        let ger = b.atual;
+        let i0 = g.indice(inicio)?;
+        let i1 = g.indice(fim)?;
+        b.custo[i0] = 0;
+        b.pai[i0] = u32::MAX;
+        b.geracao[i0] = ger;
+        let mut aberto = BinaryHeap::new();
+        aberto.push(Reverse((h(inicio), i0 as u32)));
+        let mut expandidos = 0usize;
+        let mut achou = false;
+        while let Some(Reverse((_, i))) = aberto.pop() {
+            let i = i as usize;
+            if i == i1 {
+                achou = true;
+                break;
+            }
+            expandidos += 1;
+            if expandidos > ORCAMENTO_NO_MAR {
+                break;
+            }
+            let c = ((i as i32) % g.lado, (i as i32) / g.lado);
+            let gi = b.custo[i];
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                let v = (c.0 + dx, c.1 + dz);
+                let Some(j) = g.indice(v) else { continue };
+                if !g.livre[j] {
+                    continue;
+                }
+                // No corner cutting: a diagonal needs both sides free.
+                if dx != 0 && dz != 0 && !(g.livre((c.0 + dx, c.1)) && g.livre((c.0, c.1 + dz))) {
+                    continue;
+                }
+                let novo = gi + if dx != 0 && dz != 0 { 1414 } else { 1000 };
+                if b.geracao[j] == ger && b.custo[j] <= novo {
+                    continue;
+                }
+                b.geracao[j] = ger;
+                b.custo[j] = novo;
+                b.pai[j] = i as u32;
+                aberto.push(Reverse((novo + h(v), j as u32)));
+            }
+        }
+        if !achou {
+            return None;
+        }
+        let mut rota = vec![i1];
+        let mut k = i1;
+        while b.pai[k] != u32::MAX && rota.len() <= n {
+            k = b.pai[k] as usize;
+            rota.push(k);
+        }
+        rota.reverse();
+        Some(rota.into_iter().map(|i| ((i as i32) % g.lado, (i as i32) / g.lado)).collect::<Vec<_>>())
+    })?;
+    // PULLED TAUT: from each anchor, the farthest cell still in a straight
+    // line through free water.
+    let pontos: Vec<Vec2> = celulas.iter().map(|c| g.centro(*c)).collect();
+    let mut saida = Vec::new();
+    let mut ancora = pontos[0];
+    let mut k = 0usize;
+    while k + 1 < pontos.len() {
+        let mut j = k + 1;
+        while j + 1 < pontos.len() && g.reta_livre(ancora, pontos[j + 1]) {
+            j += 1;
+        }
+        saida.push(pontos[j]);
+        ancora = pontos[j];
+        k = j;
+    }
+    if let Some(u) = saida.last_mut() {
+        *u = ultimo;
+    } else {
+        saida.push(ultimo);
+    }
+    Some(saida)
+}
 
 /// A COLOSSUS CHEST FLOATING at a wreck (phase 4): a sunk carrier's.
 /// `some_em` = sim time it drifts off to a drifting-chest spot (then
@@ -1695,7 +2068,17 @@ mod testes {
         (w, sid, rx, aqui)
     }
 
-    fn golpes_em(w: &GameWorld, alvo: EntityId) -> Vec<i32> {
+    /// Lands every cannonball in the air (the clock is put back: the tests
+    /// read cooldowns against it).
+    fn pousa(w: &mut GameWorld) {
+        let antes = w.sim_time_s;
+        w.sim_time_s += nv::VOO_MAX_S + 0.05;
+        w.pousar_balas();
+        w.sim_time_s = antes;
+    }
+
+    fn golpes_em(w: &mut GameWorld, alvo: EntityId) -> Vec<i32> {
+        pousa(w);
         w.pending_skill_hits.iter().filter(|h| h.target_net == alvo).map(|h| h.damage).collect()
     }
 
@@ -1709,24 +2092,24 @@ mod testes {
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
         let (id, d) = w.navio_equipado(sid).unwrap();
         let esperado = nv::dano_do_canhao(&nv::HABILIDADES[0], 30, id, &d);
-        assert_eq!(golpes_em(&w, bicho), vec![esperado], "no mana needed");
+        assert_eq!(golpes_em(&mut w, bicho), vec![esperado], "no mana needed");
         let cd = w.sessions[&sid].skill_cds[&nv::id_de_skill(0)];
         assert!((cd - w.sim_time_s - nv::HABILIDADES[0].espera_s).abs() < 1e-3);
         // On cooldown: nothing.
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
-        assert_eq!(golpes_em(&w, bicho).len(), 1);
+        assert_eq!(golpes_em(&mut w, bicho).len(), 1);
         // Sailing north with the mob dead ahead: the bow is blind.
         let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 6.0));
         let e = w.sessions[&sid].entity.unwrap();
         w.ecs.get::<&mut Velocity>(e).unwrap().0 = Vec2::new(0.0, 8.0);
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
-        assert!(golpes_em(&w, bicho).is_empty(), "a broadside hit the bow");
+        assert!(golpes_em(&mut w, bicho).is_empty(), "a broadside hit the bow");
         // More stars on the cannon, more damage.
         let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(6.0, 0.0));
         let d = shared::items::NavioData { estrelas: [0, 0, 5], ..nv::novo(NAVIO_CHALUPA) };
         w.guarda_navio(sid, d);
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
-        assert!(golpes_em(&w, bicho)[0] > esperado);
+        assert!(golpes_em(&mut w, bicho)[0] > esperado);
         // Ashore the ship's bar does nothing.
         let (mut w, sid, _rx) = mundo("ilha_inicial", &[]);
         dar_chalupa(w.sessions.get_mut(&sid).unwrap());
@@ -1740,17 +2123,17 @@ mod testes {
         let bicho = EntityId(9_900);
         let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 15.0));
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
-        assert!(golpes_em(&w, bicho).is_empty(), "fired with no target");
+        assert!(golpes_em(&mut w, bicho).is_empty(), "fired with no target");
         assert!(w.sessions[&sid].skill_cds.get(&nv::id_de_skill(1)).is_none(), "a refusal costs no cooldown");
         w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
         let (id, d) = w.navio_equipado(sid).unwrap();
-        assert_eq!(golpes_em(&w, bicho), vec![nv::dano_do_canhao(&nv::HABILIDADES[1], 30, id, &d)]);
+        assert_eq!(golpes_em(&mut w, bicho), vec![nv::dano_do_canhao(&nv::HABILIDADES[1], 30, id, &d)]);
         // Out of range.
         let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 30.0));
         w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
-        assert!(golpes_em(&w, bicho).is_empty());
+        assert!(golpes_em(&mut w, bicho).is_empty());
     }
 
     /// EMERGENCY REPAIR heals 30% of the full hull, has a long cooldown,
@@ -1829,10 +2212,13 @@ mod testes {
         modo(&mut w, a, shared::pk::PACIFICO);
         modo(&mut w, b, shared::pk::PACIFICO);
         w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        pousa(&mut w);
         assert_eq!(w.navio_equipado(b).unwrap().1.casco, 2_400, "a peaceful ship was shot");
         modo(&mut w, a, shared::pk::LIVRE);
         w.sim_time_s += 10.0;
         w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        assert_eq!(w.navio_equipado(b).unwrap().1.casco, 2_400, "the ball landed before it flew");
+        pousa(&mut w);
         let casco = w.navio_equipado(b).unwrap().1.casco;
         assert!(casco < 2_400, "free PK does not reach the hull");
         assert_eq!(w.ecs.get::<&Health>(e).unwrap().current, 100, "the cannon hit the body, not the hull");
@@ -1841,6 +2227,7 @@ mod testes {
         poe_em(&mut w, b, fundeadouro_padrao() + Vec2::new(5.0, 0.0));
         w.sim_time_s += 10.0;
         w.handle_navio(a, PedidoNavio::Habilidade { id: 0 });
+        pousa(&mut w);
         assert_eq!(w.navio_equipado(b).unwrap().1.casco, casco);
     }
 
@@ -2155,7 +2542,7 @@ mod testes {
         assert!(p.codigo_pirata() && p.canhao_pct > 0.0 && p.casco_pct > 0.0);
         w.sessions.get_mut(&sid).unwrap().arvore = arv;
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
-        let golpe = golpes_em(&w, bicho)[0];
+        let golpe = golpes_em(&mut w, bicho)[0];
         assert_eq!(golpe, (cru as f32 * (1.0 + p.canhao_pct)).round() as i32);
         // Always marked at sea.
         let eu = w.sessions[&sid].entity_id;
@@ -2166,5 +2553,225 @@ mod testes {
         assert_eq!(tirou, (1_000.0 / (1.0 + p.casco_pct)).round() as u16);
         // Faster hauling.
         assert!(nv::tempo_de_pegar(p.pegar_tesouro) < nv::PEGAR_S);
+    }
+
+    // ───────────────────── gameplay remake ─────────────────────
+
+    /// Every sample of the route from `de` is water (with the hull's three
+    /// probe points of `mover_casco` along each leg).
+    fn rota_so_na_agua(de: Vec2, rota: &[Vec2]) {
+        let mut a = de;
+        for &b in rota {
+            let n = ((a.distance(b) / 0.5).ceil() as i32).max(1);
+            for k in 1..=n {
+                let p = a.lerp(b, k as f32 / n as f32);
+                assert!(shared::mar::navegavel(p.x, p.y), "the route crosses land at {p:?} ({a:?} -> {b:?})");
+            }
+            a = b;
+        }
+    }
+
+    /// Sails the route with the server's own follower and hull mover.
+    fn navega(de: Vec2, rota: Vec<Vec2>, para: Vec2) -> Vec2 {
+        let mut seg = shared::terreno::SeguidorDeRota::nova(rota, para);
+        let agua = |x: f32, z: f32| shared::mar::navegavel(x, z);
+        let mut p = de;
+        for _ in 0..30 * 240 {
+            let Some(dir) = seg.direcao(p) else { break };
+            p = shared::terreno::mover_casco(&agua, p, dir * nv::CASCOS[0].velocidade, shared::TICK_DT, nv::RAIO_DO_CASCO);
+        }
+        p
+    }
+
+    /// THE WATER A*: from every dock to every other, the route never touches
+    /// land, and the hull sailing it with the real follower and
+    /// `mover_casco` arrives close enough to DOCK.
+    #[test]
+    fn a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais() {
+        let ilhas = shared::mar::ilhas();
+        for a in ilhas {
+            for b in ilhas {
+                if a.ilha == b.ilha {
+                    continue;
+                }
+                let (de, para) = (a.fundeadouro(), b.fundeadouro());
+                let rota = caminho_no_mar(de, para).unwrap_or_else(|| panic!("no route {} -> {}", a.nome, b.nome));
+                assert!(rota.len() < 64, "{} -> {}: {} waypoints, not pulled taut", a.nome, b.nome, rota.len());
+                rota_so_na_agua(de, &rota);
+                let fim = navega(de, rota, para);
+                assert_eq!(
+                    shared::mar::cais_perto(fim).map(|v| v.ilha),
+                    Some(b.ilha),
+                    "{} -> {}: the hull stopped at {fim:?}, {:.1} u from the anchorage",
+                    a.nome,
+                    b.nome,
+                    fim.distance(para)
+                );
+            }
+        }
+        // From the mob nests (open sea) to every dock, too.
+        for n in shared::mar::ninhos() {
+            for b in ilhas {
+                let rota = caminho_no_mar(n, b.fundeadouro()).expect("route from a nest");
+                rota_so_na_agua(n, &rota);
+            }
+        }
+        // A tap on an island's middle ends on the water beside it.
+        let i = &ilhas[0];
+        let de = i.fundeadouro();
+        let rota = caminho_no_mar(de, i.centro).expect("a tap on land still sails");
+        rota_so_na_agua(de, &rota);
+        let fim = *rota.last().unwrap();
+        assert!(fim.distance(i.centro) < i.raio + 4.0 * CELULA_DA_ROTA + 30.0, "ended far from the island: {fim:?}");
+    }
+
+    /// A tap at sea plans the route on the server and sends it for the
+    /// dashed line, with no distance cap.
+    #[test]
+    fn o_toque_no_mar_vira_rota_e_tracejado() {
+        let (mut w, sid, _rx) = mundo(shared::mar::ZONA, &[]);
+        let ilhas = shared::mar::ilhas();
+        poe_em(&mut w, sid, ilhas[0].fundeadouro());
+        let longe = ilhas[ilhas.len() - 1].fundeadouro();
+        w.handle_mover_para(sid, longe);
+        let s = &w.sessions[&sid];
+        assert!(!s.rota.vazia(), "no route at sea");
+        assert!(s.rota.destino().distance(longe) < 0.01);
+        assert!(s.rota.pontos().last().unwrap().distance(longe) < CELULA_DA_ROTA * 2.0);
+    }
+
+    /// CANNONBALLS FLY: nothing lands when fired, the hit lands with the
+    /// ball, and a target that sailed away is a splash (no hit).
+    #[test]
+    fn a_bala_voa_e_acerta_o_alvo_certo() {
+        let bicho = EntityId(9_900);
+        let (mut w, sid, _rx, aqui) = no_mar_com_bicho(Vec2::new(8.0, 0.0));
+        // A second mob nearby that is NOT the target of the Bow Cannon.
+        w.ecs.spawn((NetId(EntityId(9_901)), Position(aqui + Vec2::new(0.0, 9.0)), Velocity(Vec2::ZERO),
+            EntityKind::Enemy(ENGUIA), Health { current: 800, max: 800 }));
+        w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        assert!(w.pending_skill_hits.is_empty(), "the hit landed before the ball flew");
+        let voo = nv::tempo_de_voo(8.0);
+        w.sim_time_s += voo * 0.5;
+        w.pousar_balas();
+        assert!(w.pending_skill_hits.is_empty(), "landed at half flight");
+        w.sim_time_s += voo * 0.5 + 0.01;
+        w.pousar_balas();
+        let alvos: Vec<EntityId> = w.pending_skill_hits.iter().map(|h| h.target_net).collect();
+        assert_eq!(alvos, vec![bicho], "the ball hit the wrong body");
+        assert_eq!(w.ecs.query::<&BalaDeCanhao>().iter().count(), 0, "the ball stayed in the air");
+        // Dodged: the target moves far away during the flight.
+        let (mut w, sid, _rx, aqui) = no_mar_com_bicho(Vec2::new(8.0, 0.0));
+        w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        for (_, (n, p)) in w.ecs.query_mut::<(&NetId, &mut Position)>() {
+            if n.0 == bicho {
+                p.0 = aqui + Vec2::new(8.0, 12.0);
+            }
+        }
+        pousa(&mut w);
+        assert!(w.pending_skill_hits.is_empty(), "a dodged ball still hit");
+        // The lead: a target sailing across is hit where it will be.
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(8.0, 0.0));
+        for (_, (n, v)) in w.ecs.query_mut::<(&NetId, &mut Velocity)>() {
+            if n.0 == bicho {
+                v.0 = Vec2::new(0.0, 3.0);
+            }
+        }
+        w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        let mira = w.ecs.query::<&BalaDeCanhao>().iter().next().map(|(_, b)| b.mira).unwrap();
+        assert!(mira.y > aqui.y + 1.0, "no lead on a moving target: {mira:?}");
+    }
+
+    /// THE BITE IS TELEGRAPHED at sea: the shark winds up for
+    /// `MORDIDA_PREPARO_S` before the jaws land (ashore, the land swing), and
+    /// a ship that sails out of reach during the wind-up is not bitten.
+    #[test]
+    fn a_mordida_e_anunciada_e_da_pra_fugir() {
+        assert_eq!(impacto_da_mordida(true), nv::MORDIDA_PREPARO_S);
+        assert_eq!(impacto_da_mordida(false), shared::MOB_ATTACK_IMPACT_S);
+        for fugir in [false, true] {
+            let (mut w, sid, _rx) = mundo(shared::mar::ZONA, &[]);
+            w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::mar::DEF));
+            w.safe_zones.clear();
+            dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+            let aqui = shared::mar::ninhos()[0];
+            poe_em(&mut w, sid, aqui);
+            w.place_enemy(aqui + Vec2::new(1.5, 0.0), TUBARAO, 0.0);
+            for (_, (mob, hp)) in w.ecs.query_mut::<(&mut EnemyTag, &mut Health)>() {
+                *hp = Health { current: 500, max: 500 };
+                mob.dead = false;
+                mob.is_melee = true;
+                mob.stats.attack_damage = 50;
+                mob.attack_range = 2.5;
+                mob.detect_range = 15.0;
+                mob.attack_cooldown_base = 30.0;
+                mob.spawn_grace_until = 0.0;
+            }
+            let mut inicio = None;
+            for _ in 0..90 {
+                w.step(shared::TICK_DT);
+                if inicio.is_none() {
+                    if let Some(g) = w.pending_melee.iter().find(|g| !g.from_player) {
+                        let falta = g.impact_at - w.sim_time_s;
+                        assert!(
+                            (falta - nv::MORDIDA_PREPARO_S).abs() <= shared::TICK_DT * 1.5,
+                            "the bite lands {falta:.2} s after the wind-up"
+                        );
+                        inicio = Some(w.sim_time_s);
+                        if fugir {
+                            poe_em(&mut w, sid, aqui + Vec2::new(-12.0, 0.0));
+                        }
+                    }
+                }
+                if let Some(t0) = inicio {
+                    if w.sim_time_s - t0 < nv::MORDIDA_PREPARO_S - shared::TICK_DT * 2.0 {
+                        let casco = w.navio_equipado(sid).unwrap().1.casco;
+                        assert_eq!(casco, nv::casco_max(NAVIO_CHALUPA), "bitten during the wind-up");
+                    }
+                }
+            }
+            assert!(inicio.is_some(), "the shark never bit");
+            let casco = w.navio_equipado(sid).unwrap().1.casco;
+            if fugir {
+                assert_eq!(casco, nv::casco_max(NAVIO_CHALUPA), "the bite reached a ship that sailed away");
+            } else {
+                assert!(casco < nv::casco_max(NAVIO_CHALUPA), "the bite never landed");
+            }
+        }
+    }
+
+    /// AUTO GATHER AT SEA: the nearest wreckage is offered with an approach
+    /// point ON THE WATER the hull can sail to (the land's A* sees the sea as
+    /// a wall and offered nothing).
+    #[test]
+    fn a_coleta_no_mar_acha_destroco_alcancavel() {
+        let (mut w, _sid, _rx) = mundo(shared::mar::ZONA, &[]);
+        w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::mar::DEF));
+        let eu = shared::mar::ninhos()[0];
+        // The wreckage is planted on the server at all (it used to skip
+        // water columns, and the sea is all water).
+        let mut achados = Vec::new();
+        w.ilha.as_ref().unwrap().coletaveis_em(eu, 200.0, &mut achados);
+        assert!(!achados.is_empty(), "no wreckage planted on the server's sea");
+        let (_, onde, centro, _) = w.no_de_coleta_em(eu, eu, 200.0, &[], &|_| true).expect("no wreckage offered at sea");
+        assert!(shared::mar::navegavel(onde.x, onde.y), "approach point on land: {onde:?}");
+        assert!(caminho_no_mar(eu, onde).is_some());
+        assert!(onde.distance(centro) < 6.0);
+    }
+
+    /// The sea's hide: a sea mob spawns with `VIDA_DO_BICHO_DO_MAR` of its
+    /// life, and the elite with five times that.
+    #[test]
+    fn o_bicho_do_mar_tem_couro_grosso() {
+        let (mut w, _sid, _rx) = mundo(shared::mar::ZONA, &[]);
+        w.place_enemy(Vec2::ZERO, TUBARAO, 0.0);
+        let (eid, base) = w.ecs.query::<(&NetId, &Health)>().iter().find(|(_, (n, _))| n.0 != EntityId(4_700)).map(|(_, (n, h))| (n.0, h.max)).unwrap();
+        w.preparar_bicho_do_mar(eid, false);
+        let (max, atual) = w.ecs.query::<(&NetId, &Health)>().iter().find(|(_, (n, _))| n.0 == eid).map(|(_, (_, h))| (h.max, h.current)).unwrap();
+        assert_eq!(max, (base as f32 * nv::VIDA_DO_BICHO_DO_MAR).round() as i32);
+        assert_eq!(atual, max);
     }
 }

@@ -65,8 +65,13 @@ pub enum Som {
     RefinoFalha,
     Correio,
     Craft,
+    // The open sea's combat (gameplay remake, 16/11/2026,
+    // `assets/audio/mar`, made by `scripts/gera-sons-mar.sh`).
+    CanhaoDisparo,
+    CanhaoAgua,
+    CanhaoImpacto,
 }
-const SOM_COUNT: usize = Som::Craft as usize + 1;
+const SOM_COUNT: usize = Som::CanhaoImpacto as usize + 1;
 struct Audio {
     sons: Vec<Option<Sound>>,
     ultimo: [f64; SOM_COUNT],
@@ -137,6 +142,9 @@ pub async fn carregar() {
         som!("eventos/refino_falha"),
         som!("eventos/correio"),
         som!("eventos/craft"),
+        som!("mar/canhao"),
+        som!("mar/agua"),
+        som!("mar/impacto"),
     ];
     debug_assert_eq!(arquivos.len(), SOM_COUNT);
     let mut sons = Vec::new();
@@ -333,6 +341,19 @@ mod tests {
         assert_eq!(usados.len(), shared::skills::SKILL_COUNT * 2);
         assert!(par_skill(0).is_none());
         assert!(par_skill(999).is_none());
+    }
+    /// THE SEA'S SOUNDS EXIST, are short and small (mobile), and sit at the
+    /// end of the list in the order of `Som`.
+    #[test]
+    fn os_sons_do_mar_existem_e_sao_pequenos() {
+        let raiz = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/audio/mar/");
+        for n in ["canhao", "agua", "impacto"] {
+            let bytes = std::fs::read(format!("{raiz}{n}.ogg")).unwrap_or_else(|_| panic!("missing {n}.ogg"));
+            assert!(bytes.starts_with(b"OggS"), "{n}.ogg is not Ogg");
+            assert!(bytes.len() < 16 * 1024, "{n}.ogg has {} bytes", bytes.len());
+        }
+        assert_eq!(Som::CanhaoImpacto as usize + 1, SOM_COUNT);
+        assert_eq!(Som::CanhaoDisparo as usize, Som::Craft as usize + 1, "append only");
     }
     #[test]
     fn mobs_usam_canais_separados_do_jogador() {

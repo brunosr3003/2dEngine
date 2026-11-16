@@ -198,6 +198,20 @@ struct UniformesAgua {
     tempo: f32,
     ondas: f32,
     neblina: [f32; 4],
+    olho: Vec3,
+    estilo: f32,
+    ceu: [f32; 4],
+    sol: [f32; 4],
+}
+
+/// The open sea's water look (`agua::desenha`): (eye, style, sky, sun).
+type Agua = (Vec3, f32, [f32; 4], [f32; 4]);
+
+/// Set before every water draw by `agua::desenha`: where the eye is, the
+/// style (0 = the islands' classic water, 1..3 = the open sea by quality),
+/// the sky at the horizon (w = dusk) and the sun (direction, strength).
+pub fn define_agua(olho: Vec3, estilo: f32, ceu: [f32; 4], sol: [f32; 4]) {
+    AGUA.with(|a| a.set((olho, estilo, ceu, sol)));
 }
 
 struct Programas {
@@ -213,6 +227,7 @@ thread_local! {
     /// The distance fog for what is drawn now (`define_neblina`).
     static NEBLINA: Cell<[f32; 4]> = const { Cell::new([0.0; 4]) };
     static LUZES: Cell<Luzes> = const { Cell::new(([[0.0; 4]; MAX_LUZES], [[0.0; 4]; MAX_LUZES])) };
+    static AGUA: Cell<Agua> = const { Cell::new((Vec3::ZERO, 0.0, [0.588, 0.729, 0.839, 0.0], [0.0, 1.0, 0.0, 0.0])) };
     /// Buffers das malhas de voxel (`VoxCache`), pela posicao dos vertices na
     /// memoria. O cache de vox carrega uma vez e nunca solta nem troca malha,
     /// entao o endereco e' estavel durante o jogo inteiro.
@@ -293,6 +308,10 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Tempo", UniformType::Float1),
                 ("Ondas", UniformType::Float1),
                 ("Neblina", UniformType::Float4),
+                ("Olho", UniformType::Float3),
+                ("Estilo", UniformType::Float1),
+                ("CeuAgua", UniformType::Float4),
+                ("SolAgua", UniformType::Float4),
             ]),
         )
         .expect("water shader (gpu)");
@@ -384,12 +403,17 @@ pub fn desenha_com_modelo<'a>(
             }
             Programa::Agua { tempo, ondas } => {
                 ctx.apply_pipeline(&p.agua);
+                let (olho, estilo, ceu, sol) = AGUA.with(|a| a.get());
                 ctx.apply_uniforms(UniformsSource::table(&UniformesAgua {
                     projection,
                     model: modelo,
                     tempo,
                     ondas,
                     neblina: neblina(),
+                    olho,
+                    estilo,
+                    ceu,
+                    sol,
                 }));
             }
         }

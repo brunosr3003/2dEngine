@@ -162,6 +162,8 @@ pub fn desenha_ent(e: &crate::world::Ent, p: Vec3) -> bool {
     else {
         return false;
     };
+    // The sea's elites ("[ELITE] Dread …") are drawn bigger (gameplay remake).
+    let scale = if crate::mar_combate_ui::e_elite(e) { scale * 1.6 } else { scale };
     desenha_pose(
         kind,
         p,

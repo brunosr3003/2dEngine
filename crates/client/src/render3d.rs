@@ -1224,6 +1224,11 @@ pub fn clear() {
         clear_background(Color::from_rgba(8, 10, 24, 255));
         return;
     }
+    // The open sea: its horizon (`mar_cena`; the dome paints the rest).
+    if crate::mar_ui::no_mar() {
+        clear_background(crate::mar_cena::cor_de_fundo());
+        return;
+    }
     clear_background(Color::from_rgba(150, 186, 214, 255));
 }
 
@@ -1810,7 +1815,7 @@ pub fn draw_entities_com_sombras(
             crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
             // Phase 4: a marked ship (treasure on deck) flies the skull.
             if e.meta.pk.marcado {
-                crate::mar_ui::desenha_marca(p, e.yaw, shared::navio::Visual::do_fio(e.meta.skins));
+                crate::mar_ui::desenha_marca(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
             }
             continue;
         }
@@ -1843,6 +1848,11 @@ pub fn draw_entities_com_sombras(
         if e.meta.tag == shared::EntityTag::Npc {
             // Bau de conclusao da dungeon: caixa com tampa e fecho, pulsando.
             if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU {
+                // At sea the chest DRIFTS: on a raft riding the swell.
+                if crate::mar_ui::no_mar() {
+                    desenha_bau(crate::mar_cena::jangada(p, e.meta.id.0 as u64, get_time() as f32));
+                    continue;
+                }
                 desenha_bau(p);
                 continue;
             }

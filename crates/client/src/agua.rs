@@ -64,6 +64,29 @@ fn suave(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
+/// THE SWELL ON THE CPU: the vertical part of the same three Gerstner waves
+/// as `VERTICE`, at `(x, z)` and time `t` — (rise over `ALTURA_DA_AGUA`,
+/// slope). What a hull, a crate or a buoy rides on, so it bobs WITH the
+/// water drawn under it. Zero when the waves are switched off.
+pub fn onda_em(x: f32, z: f32, t: f32) -> (f32, Vec2) {
+    if !(ONDAS && crate::config_graficos::ondas()) {
+        return (0.0, Vec2::ZERO);
+    }
+    const ONDAS_DO_MAR: [([f32; 2], f32, f32, f32, f32); 3] = [
+        ([0.5646, 0.8253], 0.1208, 1.089, 0.341, 0.0),
+        ([0.7470, 0.6648], 0.2027, 1.410, 0.198, 1.7),
+        ([0.1977, 0.9803], 0.3491, 1.851, 0.110, 4.1),
+    ];
+    let mut h = 0.0;
+    let mut g = Vec2::ZERO;
+    for (d, k, w, a, f) in ONDAS_DO_MAR {
+        let th = k * (d[0] * x + d[1] * z) - w * t + f;
+        h += a * (th.sin() * 0.5 + 0.5);
+        g += Vec2::from(d) * (a * 0.5 * k * th.cos());
+    }
+    (h, g)
+}
+
 /// Water depth over column `(bx, bz)`, in units. Negative on land.
 pub fn profundidade(ger: &Gerador, bx: i32, bz: i32) -> f32 {
     NIVEL_DO_MAR - (ger.bloco_em(bx, bz) + 1) as f32 * BLOCO
@@ -199,14 +222,28 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
     // wave has the depth of the shallowest water it REACHES". The grid step
     // (>= 1 u) already covers the reach (0.65 u), so the minimum of the
     // neighbours is enough and costs no extra query to the generator.
-    let onda_alcancavel = |ix: i32, iz: i32| {
+    let vizinho_mais_raso = |ix: i32, iz: i32| {
         let mut m = f32::MAX;
         for dz in -1..=1 {
             for dx in -1..=1 {
                 m = m.min(prof(ix + dx, iz + dz));
             }
         }
-        onda_de(m)
+        m
+    };
+    let onda_alcancavel = |ix: i32, iz: i32| onda_de(vizinho_mais_raso(ix, iz));
+    // THE OPEN SEA'S SURF: its shelves drop a block at the coast, so the
+    // depth alone never gives a foam line (the shallowest water is 0.5 u).
+    // There the foam is "a land column is next to me", which rings every
+    // beach, cliff foot, floe and pier post.
+    let mar = ger.e_mar();
+    let espuma_em = |ix: i32, iz: i32, p: f32| {
+        let e = espuma_de(p);
+        if mar && p > -0.25 && vizinho_mais_raso(ix, iz) < 0.0 {
+            e.max(0.9)
+        } else {
+            e
+        }
     };
     let (mut malhas, mut verts, mut idx) = (Vec::new(), Vec::new(), Vec::new());
     for iz in 0..n {
@@ -231,7 +268,7 @@ pub fn malhas_do_pedaco(ger: &Gerador, cx: i32, cz: i32) -> Vec<Mesh> {
                 let (x, z) = cantos[k];
                 (
                     onda_alcancavel(x, z),
-                    espuma_de(profs[k]),
+                    espuma_em(x, z, profs[k]),
                     cor_da_agua(profs[k]),
                 )
             });
@@ -252,16 +289,22 @@ fn inicio_do_horizonte(raio: i32) -> f32 {
 const CHUNK_U: f32 = CHUNK as f32 * BLOCO;
 
 /// A ring of ocean from the end of the chunks to the horizon, fading into the sky.
-fn horizonte(centro: Vec2, raio: i32) -> Vec<Mesh> {
+fn horizonte(centro: Vec2, raio: i32, mar: bool) -> Vec<Mesh> {
     const FORA: [f32; 7] = [110.0, 150.0, 210.0, 300.0, 430.0, 600.0, 800.0];
+    // At sea the haze reaches farther than the islands' ring did.
+    const FORA_DO_MAR: [f32; 2] = [1150.0, 1600.0];
     const LADOS: usize = 48;
     let inicio = inicio_do_horizonte(raio);
     let raios: Vec<f32> = std::iter::once(inicio)
         .chain(FORA.into_iter().filter(|&r| r > inicio + 16.0))
+        .chain(FORA_DO_MAR.into_iter().filter(|_| mar))
         .collect();
     let fundo = cor_da_agua(PROFUNDO * 2.0);
     let cor_em = |r: f32| {
-        let t = suave((r - raios[0]) / (raios[raios.len() - 1] - raios[0]));
+        // At sea the distance fog does the fading (it reaches much farther
+        // there, `mar_cena::neblina`): a ring already fading to sky would
+        // paint a pale band where the islands' silhouettes stand.
+        let t = if mar { 0.0 } else { suave((r - raios[0]) / (raios[raios.len() - 1] - raios[0])) };
         let mut c = [0u8; 4];
         for i in 0..3 {
             c[i] = (fundo[i] as f32 + (CEU[i] - fundo[i] as f32) * t).round() as u8;
@@ -282,11 +325,14 @@ fn horizonte(centro: Vec2, raio: i32) -> Vec<Mesh> {
             let y = ALTURA_DA_AGUA - 0.05;
             let pt = |r: f32, a: f32| vec3(centro.x + r * a.cos(), y, centro.y + r * a.sin());
             let p = [pt(r0, a0), pt(r1, a0), pt(r1, a1), pt(r0, a1)];
+            // At sea the ring lies flat: a swell on quads hundreds of units
+            // wide only paints a hard-edged mirror in the distance.
+            let onda = if mar { 0.0 } else { 0.5 };
             let e = [
-                (0.5, 0.0, cor_em(r0)),
-                (0.5, 0.0, cor_em(r1)),
-                (0.5, 0.0, cor_em(r1)),
-                (0.5, 0.0, cor_em(r0)),
+                (onda, 0.0, cor_em(r0)),
+                (onda, 0.0, cor_em(r1)),
+                (onda, 0.0, cor_em(r1)),
+                (onda, 0.0, cor_em(r0)),
             ];
             quad(&mut verts, &mut idx, p, e);
         }
@@ -310,11 +356,18 @@ varying lowp vec4 cor;
 varying AGUA_PRECISAO vec3 mundo;
 varying lowp float espuma;
 varying lowp float onda;
+// THE OPEN SEA'S LOOK (`Estilo` > 0): the surface normal of the swell and
+// how high on its crest this vertex rides (0 trough .. 1 crest).
+varying mediump vec3 nrm;
+varying lowp float crista;
 
 uniform mat4 Model;
 uniform mat4 Projection;
 uniform AGUA_PRECISAO float Tempo;
 uniform highp float Ondas;
+// 0 = the islands' classic water (unchanged); 1/2/3 = the open sea at
+// low/medium/high quality (`agua::estilo`).
+uniform AGUA_PRECISAO float Estilo;
 
 // ── O MAR DE GERSTNER ────────────────────────────────────────────────
 //
@@ -350,11 +403,16 @@ uniform highp float Ondas;
 // any case.
 // GLSL ES 1.00 does not accept line continuation in macros on all drivers.
 // A function avoids the compile error when opening the characters.
+// `inc` gathers the slope of the vertical part (xy) and the height (z): the
+// sea's normal and crest come out of the same three sines, no extra waves.
 highp vec3 deslocamento_onda(highp vec2 direcao, highp float k,
-    highp float velocidade, highp float amplitude, highp float fase) {
+    highp float velocidade, highp float amplitude, highp float fase,
+    inout highp vec3 inc) {
     highp float theta = k * dot(direcao, position.xz) - velocidade * Tempo + fase;
     highp float sn = sin(theta);
     highp float cs = cos(theta);
+    inc.xy += (amplitude * 0.5 * k * cs) * direcao;
+    inc.z += amplitude * (sn * 0.5 + 0.5);
     return amplitude * vec3(-direcao.x * cs, sn * 0.5 + 0.5, -direcao.y * cs);
 }
 
@@ -363,9 +421,18 @@ void main() {
     // `normal.y` is how much of the wave THIS vertex takes: zero at the shore
     // (the edge stays glued to the sand) and full in deep water.
     highp float a = normal.y * Ondas;
-    p += a * deslocamento_onda(vec2(0.5646, 0.8253), 0.1208, 1.089, 0.341, 0.0);
-    p += a * deslocamento_onda(vec2(0.7470, 0.6648), 0.2027, 1.410, 0.198, 1.7);
-    p += a * deslocamento_onda(vec2(0.1977, 0.9803), 0.3491, 1.851, 0.110, 4.1);
+    highp vec3 inc = vec3(0.0);
+    p += a * deslocamento_onda(vec2(0.5646, 0.8253), 0.1208, 1.089, 0.341, 0.0, inc);
+    p += a * deslocamento_onda(vec2(0.7470, 0.6648), 0.2027, 1.410, 0.198, 1.7, inc);
+    // Low quality at sea drops the short wave (the fragment's ripples are
+    // off there too, so nothing reads it).
+    if (Estilo < 0.5 || Estilo > 1.5) {
+        p += a * deslocamento_onda(vec2(0.1977, 0.9803), 0.3491, 1.851, 0.110, 4.1, inc);
+    }
+    nrm = normalize(vec3(-inc.x * a, 1.0, -inc.y * a));
+    // Where the wave is damped (the shore, the far ring) the crest reads as
+    // the swell's mean, so calm water is not darker than the open sea.
+    crista = mix(0.5, clamp(inc.z / 0.649, 0.0, 1.0), clamp(a, 0.0, 1.0));
     gl_Position = Projection * Model * vec4(p, 1.0);
     cor = color0 / 255.0;
     mundo = p;
@@ -390,21 +457,100 @@ varying lowp vec4 cor;
 varying AGUA_PRECISAO vec3 mundo;
 varying lowp float espuma;
 varying lowp float onda;
+varying mediump vec3 nrm;
+varying lowp float crista;
 
 uniform sampler2D Texture;
 uniform AGUA_PRECISAO float Tempo;
 // The world's distance fog (see `render3d::SOLIDO_FRAGMENTO`).
 uniform highp vec4 Neblina;
+uniform AGUA_PRECISAO float Estilo;
+// THE OPEN SEA (`Estilo` > 0): where the eye is, the sky at the horizon
+// (rgb; w = dusk 0..1) and the sun (direction towards it; w = strength).
+uniform AGUA_PRECISAO vec3 Olho;
+uniform lowp vec4 CeuAgua;
+uniform mediump vec4 SolAgua;
 
 void main() {
     vec3 c = cor.rgb;
-    // Espuma pulsando e deslizando na linha da costa.
-    float n = sin(mundo.x * 1.7 + Tempo * 1.3) * sin(mundo.z * 1.3 - Tempo * 1.1);
-    float f = clamp(espuma * (0.62 + 0.38 * n), 0.0, 1.0);
-    c = mix(c, vec3(0.93, 0.97, 1.0), f);
-    // No fake glint: the moving bright patches read as white blobs in playtest.
-    // Color by depth and foam at the shore are enough.
-    float a = max(cor.a, f * 0.9);
+    float a = cor.a;
+    vec3 horizonte = vec3(0.588, 0.729, 0.839);
+    if (Estilo < 0.5) {
+        // Espuma pulsando e deslizando na linha da costa.
+        float n = sin(mundo.x * 1.7 + Tempo * 1.3) * sin(mundo.z * 1.3 - Tempo * 1.1);
+        float f = clamp(espuma * (0.62 + 0.38 * n), 0.0, 1.0);
+        c = mix(c, vec3(0.93, 0.97, 1.0), f);
+        // No fake glint: the moving bright patches read as white blobs in playtest.
+        // Color by depth and foam at the shore are enough.
+        a = max(cor.a, f * 0.9);
+    } else {
+        // THE OPEN SEA: the swell's own normal, the sky in it (fresnel), the
+        // sun's glitter path, light through the crests, foam on the crests
+        // and surf rolling onto every shore. One branch on a uniform: the
+        // whole surface takes the same path, which a phone GPU likes.
+        horizonte = CeuAgua.rgb;
+        vec3 n = normalize(nrm);
+        // Detail fades with distance: past ~140 u the ripples and whitecaps
+        // only alias into moire, and the far ring of water is flat anyway.
+        float dist = distance(Olho, mundo);
+        float perto = 1.0 - smoothstep(25.0, 90.0, dist);
+        // Towards the edge of the loaded water (round the player, the fog's
+        // centre) the swell's shading fades to the flat far ring's, so the
+        // seam between them never shows as a lighter square.
+        float borda = smoothstep(50.0, 92.0, distance(mundo.xz, Neblina.xy));
+        float longe = max(smoothstep(120.0, 480.0, dist), borda);
+        if (Estilo > 2.5 && perto > 0.0) {
+            // Ripples on the swell (high quality): three sines, no texture.
+            float r1 = sin(mundo.x * 0.93 + mundo.z * 0.61 + Tempo * 1.7);
+            float r2 = sin(mundo.z * 1.27 - mundo.x * 0.52 + Tempo * 1.3);
+            float r3 = sin(mundo.x * 2.3 - mundo.z * 1.9 + Tempo * 2.9);
+            n = normalize(n + vec3(r1 * 0.07 + r3 * 0.035, 0.0, r2 * 0.07 - r3 * 0.03) * perto);
+        } else if (Estilo > 1.5 && perto > 0.0) {
+            float r1 = sin(mundo.x * 0.93 + mundo.z * 0.61 + Tempo * 1.7);
+            n = normalize(n + vec3(r1 * 0.06, 0.0, r1 * 0.04) * perto);
+        }
+        n = normalize(mix(vec3(0.0, 1.0, 0.0), n, 1.0 - 0.6 * longe));
+        vec3 v = normalize(Olho - mundo);
+        float ndv = max(dot(n, v), 0.0);
+        float k = 1.0 - ndv;
+        float fres = 0.03 + 0.97 * k * k * k * k * k;
+        // Light through the crests: the swell's tops turn turquoise.
+        float cr = mix(crista, 0.5, borda);
+        // Zero-mean: calm far water (crest 0.5) is the same tone as the swell's average.
+        c = c * (0.89 + 0.22 * cr) + vec3(0.0, 0.16, 0.14) * (cr - 0.5) * onda;
+        vec3 r = reflect(-v, n);
+        vec3 zenite = mix(vec3(0.24, 0.45, 0.74), vec3(0.26, 0.24, 0.45), CeuAgua.w);
+        vec3 ceu = mix(horizonte, zenite, clamp(r.y * 1.4, 0.0, 1.0));
+        c = mix(c, ceu, min(fres, 0.75));
+        vec3 h = normalize(SolAgua.xyz + v);
+        float nh = max(dot(n, h), 0.0);
+        vec3 sol = mix(vec3(1.0, 0.97, 0.88), vec3(1.0, 0.62, 0.30), CeuAgua.w);
+        float nh2 = nh * nh;
+        float nh8 = nh2 * nh2 * nh2 * nh2;
+        float nh32 = nh8 * nh8 * nh8 * nh8;
+        // A sharp glitter near, a broad sheen far (a sharp one on the flat far
+        // water is a hard-edged mirror ellipse).
+        float nh16 = nh8 * nh8;
+        float spec = nh32 * nh32 * nh32 * nh16 * 1.6 * (1.0 - longe) + nh16 * 0.22 * longe;
+        if (Estilo > 1.5) {
+            spec += nh32 * 0.06 * (1.0 - longe);
+        }
+        c += sol * spec * SolAgua.w;
+        float f = 0.0;
+        if (Estilo > 1.5) {
+            // Whitecaps: the very top of the swell, broken by a slow pattern.
+            float m = sin(mundo.x * 0.71 + mundo.z * 0.37 + Tempo * 0.6) * sin(mundo.z * 0.83 - mundo.x * 0.29 - Tempo * 0.5);
+            float m2 = sin(mundo.x * 2.9 - mundo.z * 2.3 + Tempo * 1.4);
+            f = smoothstep(0.88, 1.0, crista + m * 0.07 + m2 * 0.03) * onda * 0.4 * perto;
+        }
+        // Surf: bands rolling in onto the shore, not a still white rim.
+        float n2 = sin(mundo.x * 1.7 + Tempo * 1.3) * sin(mundo.z * 1.3 - Tempo * 1.1);
+        float bandas = 0.5 + 0.5 * sin(espuma * 11.0 - Tempo * 2.4 + n2 * 1.5);
+        f = max(f, clamp(espuma * (0.35 + 0.65 * bandas) + espuma * espuma * 0.35, 0.0, 1.0));
+        c = mix(c, vec3(0.95, 0.98, 1.0), f);
+        // Deep water is opaque: the flattened bed must not tint it brown.
+        a = max(cor.a > 0.9 ? 1.0 : cor.a, f * 0.92);
+    }
     // A negative fog start means night (`render3d::SOLIDO_FRAGMENTO`).
     bool noite = Neblina.z < 0.0;
     if (noite) {
@@ -413,9 +559,9 @@ void main() {
     if (Neblina.w > 0.0) {
         // Fogged water turns opaque sky: past the fog the horizon ring is
         // just sky, and the edge of the loaded sea never shows.
-        float k = smoothstep(abs(Neblina.z), Neblina.w, distance(mundo.xz, Neblina.xy));
-        c = mix(c, noite ? vec3(0.031, 0.039, 0.094) : vec3(0.588, 0.729, 0.839), k);
-        a = mix(a, 1.0, k);
+        float kf = smoothstep(abs(Neblina.z), Neblina.w, distance(mundo.xz, Neblina.xy));
+        c = mix(c, noite ? vec3(0.031, 0.039, 0.094) : horizonte, kf);
+        a = mix(a, 1.0, kf);
     }
     gl_FragColor = vec4(c, a);
 }"#;
@@ -445,17 +591,31 @@ pub(crate) fn params_agua() -> PipelineParams {
 
 /// Draws the sea (the horizon and the surface of visible chunks). It swaps
 /// the material: the caller restores its own afterwards.
+/// The water's look for what is drawn now: 0 = the islands' classic water,
+/// 1..3 = the open sea at low/medium/high quality (`mar_cena::qualidade`).
+pub fn estilo() -> f32 {
+    if crate::mar_ui::no_mar() {
+        1.0 + crate::mar_cena::qualidade() as f32
+    } else {
+        0.0
+    }
+}
+
 pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     if t.sem_oceano() { return; }
     use crate::gpu_estatica::{desenha as desenha_na_gpu, MalhaEstatica, Programa};
     let ondas = if ONDAS && crate::config_graficos::ondas() { 1.0f32 } else { 0.0 };
+    let estilo = estilo();
+    let (ceu, sol) = crate::mar_cena::ceu_e_sol();
+    crate::gpu_estatica::define_agua(cam.position, estilo, ceu, sol);
+    crate::mar_cena::define_olho(cam.position);
     // The ring follows the camera's target, rebuilt only when it moves 32 u
     // or the view distance changes.
     let raio = crate::config_graficos::raio_terreno();
     let chave = (
         (cam.target.x / 32.0).round() as i32,
         (cam.target.z / 32.0).round() as i32,
-        raio,
+        raio + if estilo > 0.0 { 1000 } else { 0 },
     );
     HORIZONTE.with(|h| {
         let mut h = h.borrow_mut();
@@ -463,7 +623,7 @@ pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
             let centro = vec2(chave.0 as f32 * 32.0, chave.1 as f32 * 32.0);
             *h = Some((
                 chave,
-                horizonte(centro, raio)
+                horizonte(centro, raio, estilo > 0.0)
                     .into_iter()
                     .map(MalhaEstatica::nova)
                     .collect(),
@@ -584,7 +744,7 @@ mod testes {
             }
         }
         let tempo = t0.elapsed();
-        let anel = horizonte(vec2(0.0, 0.0), crate::config_graficos::RAIO_PADRAO);
+        let anel = horizonte(vec2(0.0, 0.0), crate::config_graficos::RAIO_PADRAO, false);
         let anel_idx: usize = anel.iter().map(|m| m.indices.len()).sum();
         assert!(anel.iter().all(|m| m.indices.len() <= MAX_QUADS * 6));
         println!(

@@ -60,7 +60,7 @@ pub struct Volume {
 }
 
 impl Volume {
-    fn novo(min: [i32; 3], dim: [i32; 3]) -> Self {
+    pub(crate) fn novo(min: [i32; 3], dim: [i32; 3]) -> Self {
         Self {
             min,
             dim,
@@ -76,7 +76,7 @@ impl Volume {
         Some(((b * self.dim[2] + c) * self.dim[0] + a) as usize)
     }
 
-    fn poe(&mut self, x: i32, y: i32, z: i32, m: Material) {
+    pub(crate) fn poe(&mut self, x: i32, y: i32, z: i32, m: Material) {
         if let Some(i) = self.idx(x, y, z) {
             self.dados[i] = m as u8 + 1;
         }
@@ -95,7 +95,7 @@ impl Volume {
         }
     }
 
-    fn solido(&self, x: i32, y: i32, z: i32) -> bool {
+    pub(crate) fn solido(&self, x: i32, y: i32, z: i32) -> bool {
         self.idx(x, y, z).is_some_and(|i| self.dados[i] != 0)
     }
 }
@@ -928,6 +928,10 @@ pub fn destroco(tier: u8, variante: u32) -> Modelo {
                 v.poe(ix, iy, iz, Material::Tronco);
             }
         }
+        // A barrel lashed at the corner.
+        for iy in 1..4 {
+            v.poe(raio - 1, iy, -raio + 1, if iy == 2 { Material::RochaEscura } else { Material::Terra });
+        }
     } else {
         // The crate, and the colour of what is inside showing at the lid.
         for ix in -1..=1 {
@@ -935,6 +939,17 @@ pub fn destroco(tier: u8, variante: u32) -> Modelo {
                 for iy in 1..=3 {
                     v.poe(ix, iy, iz, if (ix + iz + iy) % 2 == 0 { Material::Tronco } else { Material::Terra });
                 }
+            }
+        }
+        // A broken mast stub with a scrap of torn sail: it reads as a
+        // WRECK, not a crate someone left on a raft (visual remake).
+        for iy in 1..7 {
+            v.poe(-raio, iy, raio, Material::Tronco);
+        }
+        v.poe(-raio + 1, 6, raio, Material::Tronco);
+        for iy in 3..6 {
+            for ix in (-raio + 1)..(-raio + 3 + (iy % 2)) {
+                v.poe(ix, iy, raio, Material::PetalaBranca);
             }
         }
         let cristal = shared::terreno::cristal_do_tier(tier);
@@ -995,7 +1010,13 @@ fn talo(r: &mut Rng) -> Volume {
 /// quads e o pedaco virava doze malhas — medido: **19 fps**. Faces so' se
 /// juntam quando tem o MESMO material e a MESMA oclusao nos quatro cantos,
 /// entao a sombra nao e' perdida no caminho.
-fn malha(v: &Volume) -> Modelo {
+pub(crate) fn malha(v: &Volume) -> Modelo {
+    malha_com(v, &|m: Material| m.rgb())
+}
+
+/// `malha` with the colours from `cor` instead of `Material::rgb`: the
+/// sea's hulls use materials as palette SLOTS (sail, trim) and paint them.
+pub(crate) fn malha_com(v: &Volume, cor: &dyn Fn(Material) -> (u8, u8, u8)) -> Modelo {
     let mut m = Modelo::default();
     // (normal, luz, eixo u, eixo v) — u e v sao os do plano da face.
     const FACES: [([i32; 3], f32, usize, usize); 6] = [
@@ -1068,7 +1089,7 @@ fn malha(v: &Volume) -> Modelo {
                     p[eu] = lo[eu] + iu as i32;
                     p[ev] = lo[ev] + iv as i32;
                     emite(
-                        &mut m, p, n, eu, ev, w as i32, h as i32, celula.0, celula.1, luz,
+                        &mut m, p, n, eu, ev, w as i32, h as i32, celula.0, celula.1, luz, cor,
                     );
                     iu += w;
                 }
@@ -1092,6 +1113,7 @@ fn emite(
     mat: Material,
     ao: [u8; 4],
     luz: f32,
+    cor: &dyn Fn(Material) -> (u8, u8, u8),
 ) {
     let mut base = vec3(p[0] as f32, p[1] as f32, p[2] as f32) + vec3(0.5, 0.5, 0.5);
     base += vec3(n[0] as f32, n[1] as f32, n[2] as f32) * 0.5;
@@ -1099,7 +1121,7 @@ fn emite(
     au[eu] = 1.0;
     let mut av = Vec3::ZERO;
     av[ev] = 1.0;
-    let (r, g, b) = mat.rgb();
+    let (r, g, b) = cor(mat);
     let canto = |su: f32, sv: f32| base + au * (su - 0.5) + av * (sv - 0.5);
     let pontos = [
         (canto(0.0, 0.0), ao[0]),

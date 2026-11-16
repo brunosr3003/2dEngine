@@ -135,22 +135,60 @@ pub fn segurar_quadro() {
 
 // ── presets ──────────────────────────────────────────────────────────────
 
+/// One full set of choices. `pub(crate)` for the first-login performance test
+/// (`benchmark`), which measures each preset before picking one.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Escolha {
-    sombras: Sombras,
-    antialias: i32,
-    raio: i32,
-    forracao: u8,
-    fps: u16,
-    ondas: bool,
-    efeitos_dos_outros: bool,
+pub(crate) struct Escolha {
+    pub(crate) sombras: Sombras,
+    pub(crate) antialias: i32,
+    pub(crate) raio: i32,
+    pub(crate) forracao: u8,
+    pub(crate) fps: u16,
+    pub(crate) ondas: bool,
+    pub(crate) efeitos_dos_outros: bool,
 }
 
-const PRESETS: &[&str] = &["Low", "Medium", "High", "Ultra"];
+/// From lightest to heaviest: the index is the "level" the benchmark sweeps.
+pub(crate) const PRESETS: &[&str] = &["Low", "Medium", "High", "Ultra"];
+
+/// The frame-rate cap in use (0 = none beyond vsync).
+pub fn limite_fps() -> u16 {
+    FPS.load(Ordering::Relaxed)
+}
+
+/// For the performance test: hands a preset to the renderer WITHOUT saving
+/// it. `ConfigGraficos::republica` puts the player's own choice back.
+pub(crate) fn publica_para_teste(e: &Escolha) {
+    RAIO.store(e.raio, Ordering::Relaxed);
+    FORRACAO.store(e.forracao, Ordering::Relaxed);
+    ONDAS.store(e.ondas, Ordering::Relaxed);
+    EFEITOS_DOS_OUTROS.store(e.efeitos_dos_outros, Ordering::Relaxed);
+}
+
+/// How heavy a choice is, per setting the benchmark varies (frame-rate cap
+/// and anti-aliasing left out).
+fn peso(e: &Escolha) -> [i32; 5] {
+    [e.raio, e.forracao as i32, e.sombras as i32, e.ondas as i32, e.efeitos_dos_outros as i32]
+}
+
+/// The highest preset `e` is at least as heavy as, in every setting.
+pub(crate) fn nivel_de(e: &Escolha) -> usize {
+    let a = peso(e);
+    (0..PRESETS.len())
+        .rev()
+        .find(|&i| a.iter().zip(peso(&preset(i))).all(|(x, y)| *x >= y))
+        .unwrap_or(0)
+}
+
+/// Is there anything lighter than `e` to step down to? `false` exactly when
+/// every setting is already at the Low preset's value (or lower).
+pub(crate) fn ha_nivel_abaixo(e: &Escolha) -> bool {
+    peso(e).iter().zip(peso(&preset(0))).any(|(x, y)| *x > y)
+}
 
 /// High is what the game shipped with before this panel existed (on desktop),
 /// so a player who never opens it sees no change.
-fn preset(i: usize) -> Escolha {
+pub(crate) fn preset(i: usize) -> Escolha {
     let maior = DISTANCIAS[DISTANCIAS.len() - 1].0;
     match i {
         0 => Escolha {
@@ -238,6 +276,8 @@ fn escreve(e: &Escolha) -> String {
 
 pub struct ConfigGraficos {
     pub aberto: bool,
+    /// "Run performance test again" was tapped; `main` starts the test.
+    pub pedir_teste: bool,
     pub sombras: Sombras,
     pub antialias: i32,
     /// What the window was opened with; differs from `antialias` until restart.
@@ -268,6 +308,7 @@ impl Default for ConfigGraficos {
         }
         let c = Self {
             aberto: false,
+            pedir_teste: false,
             sombras,
             antialias,
             antialias_no_inicio: antialias,
@@ -337,6 +378,46 @@ impl ConfigGraficos {
             let _ = std::fs::write(p.with_file_name("antialias.prefs"), e.antialias.to_string());
         }
         let _ = std::fs::write(p.with_file_name("graficos.prefs"), escreve(&e));
+    }
+
+    /// The preset the benchmark picked (`nivel` into `PRESETS`), with the
+    /// frame-rate cap of the player's target. Anti-aliasing is never raised:
+    /// it is fixed when the window opens, so the test measured the current one.
+    pub(crate) fn aplica_nivel(&mut self, nivel: usize, fps: u16) {
+        let mut e = preset(nivel.min(PRESETS.len() - 1));
+        e.fps = fps;
+        e.antialias = e.antialias.min(self.antialias_no_inicio);
+        self.aplica(e);
+    }
+
+    /// The preset the current choice is closest to (see `nivel_de`).
+    pub(crate) fn nivel(&self) -> usize {
+        nivel_de(&self.escolha())
+    }
+
+    /// Whether a lighter setting exists (the runtime guard only offers to
+    /// step down when it does).
+    pub(crate) fn pode_baixar(&self) -> bool {
+        ha_nivel_abaixo(&self.escolha())
+    }
+
+    /// One preset lighter, keeping the frame-rate cap (the runtime guard's
+    /// "Lower graphics"). `false` when already on the lightest.
+    pub(crate) fn baixar_um_nivel(&mut self) -> bool {
+        if !self.pode_baixar() {
+            return false;
+        }
+        let n = self.nivel();
+        let fps = self.fps;
+        // Already a mix lighter than the preset it maps to: that preset's
+        // lower neighbour, or Low itself.
+        self.aplica_nivel(n.saturating_sub(1), fps);
+        true
+    }
+
+    /// Puts the player's own choice back in the renderer after the test.
+    pub(crate) fn republica(&self) {
+        self.publica();
     }
 
     /// Hands the choice to the renderer.
@@ -451,7 +532,10 @@ impl ConfigGraficos {
             .map(|c| c.iter().map(|l| l.altura()).sum::<f32>())
             .collect();
         let topo = 52.0;
-        let conteudo_h = (topo + alturas.iter().cloned().fold(0.0, f32::max) + 14.0) * f;
+        let mais_alta = alturas.iter().cloned().fold(0.0, f32::max);
+        // The "Run performance test again" button under the rows.
+        let teste_h = 62.0;
+        let conteudo_h = (topo + mais_alta + teste_h + 14.0) * f;
         let largura_coluna = 420.0 * f;
         let w = (largura_coluna * colunas as f32).min(seguro.w - 16.0);
         let h = conteudo_h.min(seguro.h - 16.0);
@@ -505,8 +589,20 @@ impl ConfigGraficos {
                 y += l.altura() * f;
             }
         }
+        let teste = Rect::new(
+            r.x + 18.0 * f,
+            area.y - self.rolagem.pos + (18.0 + mais_alta + 6.0) * f,
+            r.w - 36.0 * f,
+            44.0 * f,
+        );
+        estilo::cartao(teste, teste.toca(m), false);
+        estilo::texto_centro(teste.center().x, teste.center().y + 6.0 * f, "Run performance test again", 14, estilo::TEXTO);
+        let pediu_teste = em(teste);
         crate::rolagem::recortar(None);
         self.rolagem.desenha(area, total);
+        if pediu_teste {
+            self.pedir_teste = true;
+        }
         if let Some((l, o)) = clicado {
             self.escolhe(l, o);
         }
@@ -548,6 +644,23 @@ mod tests {
         le(&escreve(&e), &mut lido);
         assert_eq!((lido.raio, lido.forracao, lido.fps, lido.ondas, lido.efeitos_dos_outros),
                    (e.raio, e.forracao, e.fps, e.ondas, e.efeitos_dos_outros));
+    }
+
+    /// The benchmark's level of a choice: each preset is its own level, a
+    /// mix counts as the highest preset it fully covers, and only Low has
+    /// nothing below it.
+    #[test]
+    fn nivel_de_cada_escolha() {
+        for i in 0..PRESETS.len() {
+            assert_eq!(nivel_de(&preset(i)), i);
+        }
+        let mut mistura = preset(2);
+        mistura.forracao = 30;
+        assert_eq!(nivel_de(&mistura), 0);
+        assert!(ha_nivel_abaixo(&mistura));
+        let mut baixo_60 = preset(0);
+        baixo_60.fps = 60;
+        assert!(!ha_nivel_abaixo(&baixo_60));
     }
 
     /// A value the build does not offer (Very far saved on desktop, file

@@ -11,7 +11,6 @@ use crate::ui::Toque as _;
 use macroquad::prelude::*;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 
 use crate::habilidades_input::{Arrasto, Gesto};
 use crate::hud_estilo as estilo;
@@ -32,126 +31,11 @@ fn rgb(c: [u8; 3]) -> Color {
     Color::from_rgba(c[0], c[1], c[2], 255)
 }
 
-/// THE HULL, in cubes (a simple voxel hull): three blocks narrowing to the
-/// bow so it has a FRONT, a gunwale, masts and sails. The game's models face
-/// +Z and the yaw is `x.atan2(z)`: the front is (sin, cos).
-///
-/// Phase 2: the CLASS sets the size and the masts (Sloop 1, Schooner 2,
-/// Galleon and Man-o'-War 3, gun ports from the Galleon), the SAIL item
-/// recolours the canvas, the FIGUREHEAD sits on the bow, and the stars turn
-/// the gunwale to brass.
+/// THE SHIP of a player at sea: the voxel hull of its class, sail colour,
+/// figurehead and brass, riding the swell, with its wake (`mar_casco`,
+/// visual remake). The game's models face +Z and the yaw is `x.atan2(z)`.
 pub fn desenha_casco(p: Vec3, yaw: f32, semente: u64, v: Visual) {
-    let t = get_time() as f32 + (semente % 97) as f32 * 0.37;
-    let classe = nv::CASCOS[(v.classe as usize).min(nv::CASCOS.len() - 1)];
-    let k = classe.escala;
-    // Riding ON the swell: the Gerstner surface rises a few tenths above
-    // the sea level, and a hull at the level sank into it.
-    let p = p + vec3(0.0, crate::agua::ALTURA_DA_AGUA + crate::agua::AMPLITUDE_MAX * 0.6 + (t * 1.7).sin() * 0.06, 0.0);
-    let madeira = if v.classe >= 3 { Color::from_rgba(92, 58, 34, 255) } else { Color::from_rgba(112, 72, 38, 255) };
-    let escura = Color::from_rgba(78, 48, 24, 255);
-    let latao = Color::from_rgba(196, 156, 72, 255);
-    // Brass creeps into the gunwale with the stars (0..15).
-    let f = (v.estrelas as f32 / 15.0).clamp(0.0, 1.0);
-    let amurada = Color::new(
-        escura.r + (latao.r - escura.r) * f,
-        escura.g + (latao.g - escura.g) * f,
-        escura.b + (latao.b - escura.b) * f,
-        1.0,
-    );
-    let pano = rgb(nv::cor_da_vela(v.vela));
-    let (fx, fz) = (yaw.sin(), yaw.cos());
-    let em = |ao_longo: f32, ao_lado: f32, y: f32| {
-        p + vec3(ao_longo * k * fx + ao_lado * k * fz, y * k, ao_longo * k * fz - ao_lado * k * fx)
-    };
-    // The hull, three pieces narrowing to the bow, along the heading.
-    for (ao_longo, comp, larg) in [(-1.1f32, 1.6f32, 2.0f32), (0.5, 1.4, 1.6), (1.5, 0.9, 0.9)] {
-        caixa(em(ao_longo, 0.0, 0.25), comp * k, 0.6 * k, larg * k, fx, fz, madeira);
-    }
-    // A raised stern deck from the Galleon on.
-    if v.classe >= 2 {
-        caixa(em(-1.5, 0.0, 0.75), 0.8 * k, 0.4 * k, 1.8 * k, fx, fz, madeira);
-    }
-    for lado in [-1.0f32, 1.0] {
-        caixa(em(-0.3, lado * 0.92, 0.62), 2.8 * k, 0.22 * k, 0.14 * k, fx, fz, amurada);
-        // Gun ports.
-        if v.classe >= 2 {
-            for i in 0..(v.classe as i32 + 1) {
-                let x = -1.2 + i as f32 * 0.6;
-                draw_cube(em(x, lado * 1.0, 0.42), vec3(0.18, 0.14, 0.18) * k, None, Color::from_rgba(24, 20, 18, 255));
-            }
-        }
-    }
-    let inflar = 0.08 * (t * 0.9).sin();
-    let mastros: &[(f32, f32)] = match classe.mastros {
-        1 => &[(-0.2, 1.0)],
-        2 => &[(0.45, 0.85), (-0.85, 1.0)],
-        _ => &[(0.8, 0.8), (-0.2, 1.05), (-1.15, 0.85)],
-    };
-    for (x, alto) in mastros {
-        caixa(em(*x, 0.0, 1.5 * alto), 0.16 * k, 2.2 * k * alto, 0.16 * k, fx, fz, escura);
-        caixa(em(*x + inflar, 0.0, 1.85 * alto), 0.1 * k, 1.3 * k * alto, 1.7 * k, fx, fz, pano);
-    }
-    // A pennant on the main mast of the big hulls.
-    if v.classe >= 2 {
-        let (x, alto) = mastros[1];
-        let topo = em(x, 0.0, 1.5 * alto + 1.15 * alto);
-        draw_cube(topo + vec3(0.0, 0.0, 0.0), vec3(0.08, 0.3, 0.08) * k, None, escura);
-        draw_cube(em(x - 0.25 + inflar, 0.0, 1.5 * alto + 1.2 * alto), vec3(0.3, 0.14, 0.05) * k, None, pano);
-    }
-    figura_de_proa(v.figura, &em, k, t);
-}
-
-/// The FIGUREHEAD on the bow's tip: a few cubes and spheres each.
-fn figura_de_proa(figura: u8, em: &dyn Fn(f32, f32, f32) -> Vec3, k: f32, t: f32) {
-    match figura {
-        // Mermaid: a pale body leaning out, sea-green tail and copper hair.
-        1 => {
-            let pele = Color::from_rgba(228, 196, 170, 255);
-            draw_cube(em(2.0, 0.0, 0.55), vec3(0.22, 0.42, 0.22) * k, None, Color::from_rgba(40, 150, 140, 255));
-            draw_cube(em(2.08, 0.0, 0.85), vec3(0.2, 0.3, 0.2) * k, None, pele);
-            draw_sphere(em(2.14, 0.0, 1.08), 0.13 * k, None, pele);
-            draw_sphere(em(2.08, 0.0, 1.14), 0.12 * k, None, Color::from_rgba(196, 92, 44, 255));
-        }
-        // Dragon: a green neck reaching forward, a snout and red eyes.
-        2 => {
-            let verde = Color::from_rgba(52, 128, 62, 255);
-            draw_cube(em(2.0, 0.0, 0.7), vec3(0.26, 0.5, 0.26) * k, None, verde);
-            draw_cube(em(2.2, 0.0, 1.0), vec3(0.42, 0.24, 0.26) * k, None, verde);
-            draw_cube(em(2.42, 0.0, 0.96), vec3(0.2, 0.14, 0.18) * k, None, Color::from_rgba(40, 96, 48, 255));
-            for lado in [-1.0f32, 1.0] {
-                draw_cube(em(2.24, lado * 0.1, 1.1), vec3(0.06, 0.06, 0.06) * k, None, Color::from_rgba(230, 40, 30, 255));
-                draw_cube(em(2.06, lado * 0.09, 1.2), vec3(0.06, 0.16, 0.06) * k, None, Color::from_rgba(220, 210, 180, 255));
-            }
-        }
-        // Eagle: a golden body with the wings spread, flapping a little.
-        3 => {
-            let ouro = Color::from_rgba(214, 170, 58, 255);
-            draw_cube(em(2.05, 0.0, 0.8), vec3(0.24, 0.36, 0.24) * k, None, ouro);
-            draw_sphere(em(2.18, 0.0, 1.05), 0.12 * k, None, Color::from_rgba(240, 232, 214, 255));
-            let asa = 0.06 * (t * 2.0).sin();
-            for lado in [-1.0f32, 1.0] {
-                draw_cube(em(2.0, lado * 0.34, 0.92 + asa), vec3(0.2, 0.06, 0.44) * k, None, ouro);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// A box of `comp` along the heading, `larg` across it. macroquad's cubes
-/// are axis-aligned, so a turned box is drawn as a row of small cubes along
-/// the heading — enough for a ship that is a few units long.
-fn caixa(c: Vec3, comp: f32, alto: f32, larg: f32, fx: f32, fz: f32, cor: Color) {
-    let passo = 0.22f32;
-    let n = (comp / passo).ceil().max(1.0) as i32;
-    let lado = (larg / passo).ceil().max(1.0) as i32;
-    for i in 0..n {
-        let a = -comp * 0.5 + (i as f32 + 0.5) * comp / n as f32;
-        for j in 0..lado {
-            let b = -larg * 0.5 + (j as f32 + 0.5) * larg / lado as f32;
-            let q = c + vec3(a * fx + b * fz, 0.0, a * fz - b * fx);
-            draw_cube(q, vec3(passo * 1.05, alto, passo * 1.05), None, cor);
-        }
-    }
+    crate::mar_casco::desenha(p, yaw, semente, v);
 }
 
 /// The ship's hull from the equipped instance: (points, full, damaged). The
@@ -162,35 +46,8 @@ pub fn casco_de(eq: &shared::Equipment) -> Option<(u16, u16, bool)> {
     Some((d.casco, nv::casco_total(id, &d), d.avariado))
 }
 
-/// The HULL BAR, top centre, only at sea.
-pub fn barra_do_casco(z: &crate::hud_layout::Zonas, eq: &shared::Equipment) {
-    if !no_mar() {
-        return;
-    }
-    let Some((casco, max, _)) = casco_de(eq) else {
-        return;
-    };
-    let w = 260.0 * z.s;
-    let h = 22.0 * z.s;
-    let x = screen_width() * 0.5 - w * 0.5;
-    let y = z.alvo.y + z.alvo.h + 10.0 * z.s;
-    let frac = if max == 0 { 0.0 } else { casco as f32 / max as f32 };
-    draw_rectangle(x, y, w, h, Color::new(0.05, 0.08, 0.12, 0.85));
-    let cor = if frac <= nv::CRITICO {
-        Color::new(0.85, 0.25, 0.2, 1.0)
-    } else {
-        Color::new(0.75, 0.55, 0.28, 1.0)
-    };
-    draw_rectangle(x + 2.0, y + 2.0, (w - 4.0) * frac, h - 4.0, cor);
-    draw_rectangle_lines(x, y, w, h, 2.0, Color::new(0.9, 0.78, 0.5, 0.9));
-    estilo::texto_centro(
-        x + w * 0.5,
-        y + h * 0.5 + 6.0 * z.s,
-        &format!("Hull {casco} / {max}"),
-        14,
-        estilo::TEXTO,
-    );
-}
+// The hull bar is the ship panel's now (`mar_combate_ui::painel_do_navio`,
+// gameplay remake): hull, speed, zone, treasure and the nearest dock.
 
 /// THE DOCK PROMPT: at an anchorage, a "Dock at <island>" button. Returns
 /// the island (`ARQUIPELAGO` index) when tapped.
@@ -231,21 +88,6 @@ pub fn linha_de_perigo(tesouro: bool, marcado: bool, sem_lei: bool) -> Option<&'
     }
 }
 
-/// Draws `linha_de_perigo` in red under the hull bar.
-pub fn aviso_de_perigo(z: &crate::hud_layout::Zonas, eq: &shared::Equipment, marcado: bool, eu: Option<(f32, f32)>) {
-    if !no_mar() {
-        return;
-    }
-    let sem_lei = eu.is_some_and(|(x, y)| shared::mar::sem_lei(::glam::Vec2::new(x, y)));
-    let Some(texto) = linha_de_perigo(tesouro_no_conves(eq).is_some(), marcado, sem_lei) else {
-        return;
-    };
-    let y = z.alvo.y + z.alvo.h + 10.0 * z.s + 22.0 * z.s + 18.0 * z.s;
-    let pisca = 0.75 + 0.25 * (get_time() as f32 * 4.0).sin();
-    estilo::texto_centro_forte(screen_width() * 0.5 + 1.0, y + 1.0, texto, 15, Color::new(0.0, 0.0, 0.0, 0.85));
-    estilo::texto_centro_forte(screen_width() * 0.5, y, texto, 15, Color::new(1.0, 0.32, 0.28, pisca));
-}
-
 /// On land with a Colossus Chest on deck: "Open the Colossus Chest · ×N".
 /// `bonus` = the Corsair's treasure passive. `true` when tapped.
 pub fn botao_abrir_tesouro(z: &crate::hud_layout::Zonas, eq: &shared::Equipment, bonus: f32) -> bool {
@@ -265,13 +107,11 @@ pub fn botao_abrir_tesouro(z: &crate::hud_layout::Zonas, eq: &shared::Equipment,
 
 /// THE SKULL FLAG of a marked ship: a black flag on a pole over the main
 /// mast with a white skull of cubes, so the hunter sees the prize from afar.
-pub fn desenha_marca(p: Vec3, yaw: f32, v: Visual) {
-    let classe = nv::CASCOS[(v.classe as usize).min(nv::CASCOS.len() - 1)];
-    let k = classe.escala;
+pub fn desenha_marca(p: Vec3, yaw: f32, semente: u64, v: Visual) {
     let t = get_time() as f32;
-    let base = p + vec3(0.0, crate::agua::ALTURA_DA_AGUA + crate::agua::AMPLITUDE_MAX * 0.6, 0.0);
+    let k = 1.0;
     let (fx, fz) = (yaw.sin(), yaw.cos());
-    let topo = base + vec3(-0.2 * k * fx, 4.2 * k, -0.2 * k * fz);
+    let topo = crate::mar_casco::topo_do_mastro(p, yaw, semente, v) + vec3(0.0, 0.5, 0.0);
     draw_cube(topo, vec3(0.08, 1.0, 0.08) * k, None, Color::from_rgba(40, 30, 22, 255));
     let ondula = 0.06 * (t * 3.0).sin();
     let bandeira = topo + vec3(0.0, 0.25 * k + ondula, 0.0) + vec3(fz, 0.0, -fx) * 0.45 * k;
@@ -350,6 +190,12 @@ pub struct ContextoNavio {
     pub pronto: bool,
     /// Distance to the selected enemy, if there is one.
     pub distancia_alvo: Option<f32>,
+    /// AUTO COMBAT is on: the cannons fire on their own, as if on AUTO
+    /// (gameplay remake).
+    pub auto_combate: bool,
+    /// The target is off the beam (or the ship stands still): a Broadside
+    /// would reach it (`navio::no_costado`).
+    pub no_costado: bool,
 }
 
 /// THE SHIP'S BAR (docs/NAVEGACAO.md, phase 2): at sea, skill slots 1-4
@@ -481,10 +327,13 @@ impl BarraDoNavio {
         }
         let h = nv::HABILIDADES.iter().find(|h| {
             h.auto
-                && self.automaticas.contains(&h.id)
+                && (self.automaticas.contains(&h.id) || c.auto_combate)
                 && espera(h, hab, agora) == 0.0
                 && self.tentar_apos[h.id as usize] <= agora
                 && alcanca(h, c.distancia_alvo)
+                // A Broadside with the target dead ahead or astern would
+                // spend its cooldown on the water.
+                && (h.efeito != nv::Efeito::Bordada || c.no_costado)
         })?;
         self.pendente_ate = agora + 0.4;
         self.tentar_apos[h.id as usize] = agora + 1.5;
@@ -552,184 +401,66 @@ fn cor_da_habilidade(e: nv::Efeito) -> Color {
     }
 }
 
-/// A flat icon per ship skill (no atlas art for them).
-fn icone_da_habilidade(e: nv::Efeito, c: Vec2, r: f32, alfa: f32) {
-    let ferro = Color::new(0.12, 0.12, 0.14, alfa);
-    let claro = Color::new(0.95, 0.9, 0.8, alfa);
+/// A VECTOR ICON per ship skill (no atlas art for them), drawn in strokes
+/// like `arvore_icones` so it reads at thumb size (gameplay remake).
+pub fn icone_da_habilidade(e: nv::Efeito, c: Vec2, r: f32, alfa: f32) {
+    let ferro = Color::new(0.1, 0.1, 0.12, alfa);
+    let claro = Color::new(0.97, 0.93, 0.84, alfa);
+    let madeira = Color::new(0.55, 0.34, 0.17, alfa);
+    let fogo = Color::new(1.0, 0.72, 0.25, alfa);
     match e {
         nv::Efeito::Bordada => {
-            // A hull from above with a ball out of each side.
-            draw_rectangle(c.x - r * 0.25, c.y - r * 0.8, r * 0.5, r * 1.6, Color::new(0.45, 0.28, 0.15, alfa));
+            // A hull from above, bow up, firing out of BOTH sides.
+            draw_rectangle(c.x - r * 0.24, c.y - r * 0.35, r * 0.48, r * 1.1, madeira);
+            draw_triangle(vec2(c.x - r * 0.24, c.y - r * 0.35), vec2(c.x + r * 0.24, c.y - r * 0.35), vec2(c.x, c.y - r * 0.85), madeira);
+            draw_line(c.x, c.y - r * 0.7, c.x, c.y + r * 0.7, r * 0.06, ferro);
             for lado in [-1.0f32, 1.0] {
-                for k in [-0.4f32, 0.0, 0.4] {
-                    draw_circle(c.x + lado * r * 0.7, c.y + k * r, r * 0.16, ferro);
+                for k in [-0.15f32, 0.2, 0.55] {
+                    let y = c.y + k * r;
+                    let x0 = c.x + lado * r * 0.26;
+                    draw_triangle(vec2(x0, y - r * 0.1), vec2(x0, y + r * 0.1), vec2(x0 + lado * r * 0.36, y), fogo);
+                    draw_circle(x0 + lado * r * 0.6, y, r * 0.1, ferro);
                 }
             }
         }
         nv::Efeito::Canhonaco => {
-            draw_rectangle(c.x - r * 0.75, c.y - r * 0.2, r * 1.1, r * 0.4, ferro);
-            draw_circle(c.x - r * 0.75, c.y, r * 0.3, ferro);
-            draw_circle(c.x + r * 0.65, c.y, r * 0.2, claro);
+            // A cannon on its carriage, a ball leaving with speed lines.
+            let base = c + vec2(-r * 0.2, r * 0.3);
+            let ponta = c + vec2(r * 0.45, -r * 0.25);
+            draw_line(base.x, base.y, ponta.x, ponta.y, r * 0.34, ferro);
+            draw_circle(base.x, base.y, r * 0.2, ferro);
+            draw_circle(c.x - r * 0.35, c.y + r * 0.58, r * 0.2, madeira);
+            draw_circle(c.x + r * 0.05, c.y + r * 0.58, r * 0.2, madeira);
+            draw_circle(ponta.x + r * 0.32, ponta.y - r * 0.22, r * 0.15, claro);
+            for k in 0..3 {
+                let o = k as f32 * r * 0.12;
+                draw_line(ponta.x - r * 0.05 + o, ponta.y - r * 0.42 + o * 0.6, ponta.x + r * 0.15 + o, ponta.y - r * 0.55 + o * 0.6, r * 0.05, fogo);
+            }
         }
         nv::Efeito::Reparo => {
-            draw_rectangle(c.x - r * 0.2, c.y - r * 0.7, r * 0.4, r * 1.4, claro);
-            draw_rectangle(c.x - r * 0.7, c.y - r * 0.2, r * 1.4, r * 0.4, claro);
+            // A plank and a hammer, and the green cross of a heal.
+            draw_rectangle(c.x - r * 0.75, c.y + r * 0.2, r * 1.5, r * 0.32, madeira);
+            draw_line(c.x - r * 0.55, c.y + r * 0.1, c.x + r * 0.35, c.y - r * 0.6, r * 0.12, Color::new(0.62, 0.45, 0.26, alfa));
+            draw_rectangle(c.x + r * 0.2, c.y - r * 0.8, r * 0.38, r * 0.24, ferro);
+            let verde = Color::new(0.45, 0.95, 0.5, alfa);
+            draw_rectangle(c.x - r * 0.7, c.y - r * 0.62, r * 0.14, r * 0.46, verde);
+            draw_rectangle(c.x - r * 0.86, c.y - r * 0.46, r * 0.46, r * 0.14, verde);
         }
         nv::Efeito::Fumaca => {
-            for (dx, dy, rr) in [(-0.35f32, 0.15f32, 0.42f32), (0.3, 0.2, 0.36), (0.0, -0.3, 0.4)] {
-                draw_circle(c.x + dx * r, c.y + dy * r, rr * r, Color::new(0.85, 0.85, 0.88, alfa * 0.9));
+            // A ship vanishing into the cloud.
+            draw_triangle(vec2(c.x - r * 0.55, c.y + r * 0.35), vec2(c.x + r * 0.55, c.y + r * 0.35), vec2(c.x + r * 0.35, c.y + r * 0.6), Color::new(0.35, 0.24, 0.14, alfa * 0.6));
+            for (dx, dy, rr) in [(-0.4f32, 0.05f32, 0.36f32), (0.32, 0.1, 0.32), (0.0, -0.3, 0.4), (0.45, -0.35, 0.22)] {
+                draw_circle(c.x + dx * r, c.y + dy * r, rr * r, Color::new(0.86, 0.86, 0.9, alfa * 0.92));
             }
         }
     }
 }
 
-// ─────────────────────────── cannon FX ───────────────────────────
-
-struct Tiro {
-    efeito: nv::Efeito,
-    de: Vec2,
-    alvo: Vec2,
-    inicio: f64,
-}
-
-static TIROS: Mutex<Vec<Tiro>> = Mutex::new(Vec::new());
-
-/// A ship skill landed (`SkillImpactFx` with a ship id): queue its effect.
-pub fn efeito(id: u32, de: Vec2, alvo: Vec2) -> bool {
-    let Some(h) = nv::habilidade_do_id(id) else {
-        return false;
-    };
-    if let Ok(mut v) = TIROS.lock() {
-        v.push(Tiro { efeito: h.efeito, de, alvo, inicio: get_time() });
-    }
-    true
-}
-
-/// Cannonballs, splashes, sparkles and smoke, in the 3D pass.
-pub fn desenha_efeitos(vista: &crate::render3d::Vista) {
-    let agora = get_time();
-    let Ok(mut v) = TIROS.lock() else {
-        return;
-    };
-    v.retain(|t| agora - t.inicio < 3.2);
-    let y = crate::agua::ALTURA_DA_AGUA;
-    for t in v.iter() {
-        let dt = (agora - t.inicio) as f32;
-        let p0 = vec3(t.de.x, vista.chao_em(t.de.x, t.de.y).max(y) + 0.8, t.de.y);
-        let p1 = vec3(t.alvo.x, y + 0.3, t.alvo.y);
-        match t.efeito {
-            nv::Efeito::Bordada | nv::Efeito::Canhonaco => {
-                let voo = 0.45f32;
-                if dt < voo {
-                    let f = dt / voo;
-                    let q = p0.lerp(p1, f) + vec3(0.0, (f * std::f32::consts::PI).sin() * 1.6, 0.0);
-                    draw_sphere(q, 0.18, None, Color::from_rgba(28, 26, 24, 255));
-                    // Muzzle smoke at the ship.
-                    draw_sphere(p0, 0.35 + f * 0.4, None, Color::new(0.85, 0.85, 0.85, 0.5 * (1.0 - f)));
-                } else if dt < voo + 0.6 {
-                    let f = (dt - voo) / 0.6;
-                    draw_sphere(p1, 0.3 + f * 1.1, None, Color::new(0.9, 0.95, 1.0, 0.6 * (1.0 - f)));
-                }
-            }
-            nv::Efeito::Reparo => {
-                if dt < 1.2 {
-                    for k in 0..6 {
-                        let a = k as f32 * 1.05 + dt * 3.0;
-                        let q = p0 + vec3(a.cos() * 1.2, dt * 1.5, a.sin() * 1.2);
-                        draw_sphere(q, 0.1, None, Color::new(0.5, 0.95, 0.55, 1.0 - dt / 1.2));
-                    }
-                }
-            }
-            nv::Efeito::Fumaca => {
-                if dt < nv::FUMACA_S {
-                    for k in 0..7 {
-                        let a = k as f32 * 0.9;
-                        let r = 1.0 + dt * 0.8;
-                        let q = p0 + vec3(a.cos() * r, 0.2 + (k % 3) as f32 * 0.4, a.sin() * r);
-                        draw_sphere(q, 0.7 + dt * 0.3, None, Color::new(0.78, 0.78, 0.8, 0.55 * (1.0 - dt / nv::FUMACA_S)));
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// PREVIEW (`MMO_PREVIA_MAR=1`): renders the open sea off the Bosque's dock
-/// and from high above, with a few hulls, to PNGs in `MMO_PREVIA_SAIDA`;
-/// then the four hull classes side by side, plain and dressed (phase 2).
+/// PREVIEW (`MMO_PREVIA_MAR=1`): the sea's scenes to PNGs in
+/// `MMO_PREVIA_SAIDA` (`mar_cena::previa`, visual remake).
 #[cfg(debug_assertions)]
 pub async fn previa() {
-    let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-mar".into());
-    std::fs::create_dir_all(&saida).unwrap();
-    define_no_mar(true);
-    let rt = render_target_ex(1280, 800, RenderTargetParams { depth: true, sample_count: 1 });
-    crate::render3d::define_alvo(Some(rt.clone()));
-    crate::gpu_estatica::define_neblina(Vec2::ZERO, 0., 0.);
-    let solido = crate::render3d::material_solido();
-    let mut terreno = crate::terreno::Terreno::novo(&shared::mar::DEF);
-    let bosque = shared::mar::vista_da_zona("ilha_inicial").unwrap();
-    let f = bosque.fundeadouro();
-    let rumo = (bosque.ponta - bosque.raiz).normalize_or_zero();
-    let ancora = vec2(f.x, f.y);
-    // Phase 2: the four classes, then the same with stars, sails and
-    // figureheads.
-    let classes: Vec<Visual> = (0..4).map(|c| Visual { classe: c, ..Default::default() }).collect();
-    let vestidos: Vec<Visual> = (0..4)
-        .map(|c| Visual { classe: c, vela: c + 1, figura: (c % 3) + 1, estrelas: 5 + c * 3 })
-        .collect();
-    let frota = [Visual::default(), Visual { classe: 1, vela: 2, ..Default::default() }, Visual { classe: 3, vela: 5, figura: 2, estrelas: 15 }];
-    for (nome, alvo, recuo, alto, raio, navios) in [
-        ("cais", ancora, 30.0f32, 16.0f32, 12, frota.to_vec()),
-        ("rota", ancora + vec2(rumo.x, rumo.y) * 90.0, 40.0, 22.0, 16, frota.to_vec()),
-        ("ilha", ancora + vec2(rumo.x, rumo.y) * 60.0, 70.0, 45.0, 24, frota.to_vec()),
-        ("alto", vec2(0.0, 0.0), 420.0, 520.0, 40, frota.to_vec()),
-        ("classes", ancora + vec2(rumo.x, rumo.y) * 90.0, 22.0, 9.0, 16, classes.clone()),
-        ("vestidos", ancora + vec2(rumo.x, rumo.y) * 90.0, 22.0, 9.0, 16, vestidos.clone()),
-    ] {
-        for _ in 0..60 {
-            terreno.atualiza(alvo, raio, 200_000);
-        }
-        let costas = if nome == "ilha" { vec2(rumo.x, rumo.y) } else { vec2(-rumo.x, -rumo.y) };
-        let cam = Camera3D {
-            position: vec3(alvo.x + costas.x * recuo * 0.6 + 6.0, alto, alvo.y + costas.y * recuo * 0.6 + recuo * 0.4),
-            target: vec3(alvo.x, 0.0, alvo.y),
-            up: Vec3::Y,
-            fovy: 0.9,
-            aspect: Some(1.6),
-            render_target: Some(rt.clone()),
-            ..Default::default()
-        };
-        // Side by side across the view for the class shots.
-        let lado = vec2(-costas.y, costas.x);
-        for _ in 0..3 {
-            crate::render3d::camera_padrao();
-            clear_background(Color::new(0.55, 0.72, 0.86, 1.0));
-            set_camera(&cam);
-            macroquad::material::gl_use_material(&solido);
-            terreno.desenha(&cam, Vec3::ZERO, 0.);
-            let fila = nome == "classes" || nome == "vestidos";
-            for (k, v) in navios.iter().enumerate() {
-                let d = if fila {
-                    lado * ((k as f32 - 1.5) * 6.0)
-                } else {
-                    [vec2(0.0, 0.0), vec2(8.0, 5.0), vec2(-6.0, 9.0)][k % 3]
-                };
-                let p = vec3(alvo.x + d.x, 0.0, alvo.y + d.y);
-                // Broadside on to the camera in the class shots.
-                let yaw = if fila { lado.x.atan2(lado.y) + 0.5 } else { rumo.x.atan2(rumo.y) + k as f32 * 0.6 };
-                desenha_casco(p, yaw, k as u64, *v);
-            }
-            macroquad::material::gl_use_default_material();
-            crate::agua::desenha(&terreno, &cam, get_time() as f32);
-            macroquad::material::gl_use_default_material();
-            crate::render3d::camera_padrao();
-            unsafe {
-                get_internal_gl().flush();
-            }
-            rt.texture.get_texture_data().export_png(&format!("{saida}/mar-{nome}.png"));
-            next_frame().await;
-        }
-    }
+    crate::mar_cena::previa().await;
 }
 
 #[cfg(test)]

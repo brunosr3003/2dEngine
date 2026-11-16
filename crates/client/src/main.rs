@@ -46,7 +46,11 @@ mod arvore_icones;
 // Rebirth phase 4: the tree's actives in skill slots 4–6, and invisibility.
 mod ativas;
 mod invisibilidade;
+mod mar_casco;
+mod mar_cena;
 mod mar_ui;
+mod mar_combate_ui;
+mod mar_rota;
 /// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
 mod loja_essencia_ui;
 mod foco;
@@ -113,6 +117,8 @@ mod config_barra;
 mod config_coleta;
 mod config_combate;
 mod config_graficos;
+mod benchmark;
+mod benchmark_ui;
 mod config_interface;
 mod confirmar;
 mod construcoes;
@@ -300,6 +306,10 @@ struct Jogo {
     habilidades: habilidades::Habilidades,
     /// THE SHIP'S BAR: skill slots 1-4 at sea (docs/NAVEGACAO.md, phase 2).
     barra_navio: mar_ui::BarraDoNavio,
+    /// Gameplay remake of the sea: auto path (`mar_rota`) and the readable
+    /// fight (`mar_combate_ui`).
+    mar_rota: mar_rota::RotaDoMar,
+    mar_vfx: mar_combate_ui::MarCombate,
     evolucao_skills: evolucao_skills::EvolucaoSkills,
     invocacao: invocacao_ui::InvocacaoUi,
     auto_combate: auto_combate::AutoCombate,
@@ -330,6 +340,8 @@ struct Jogo {
     config_interface: config_interface::ConfigInterface,
     editor_hud: hud_editor::EditorHud,
     config_graficos: config_graficos::ConfigGraficos,
+    /// The first-login performance test and the in-game slow-frame guard.
+    benchmark: benchmark::Benchmark,
     /// A barrinha "Coletando · tipo · N s".
     coleta_hud: coleta_hud::BarraDeColeta,
     /// Clique numa pedra/tronco: (coluna, centro, raio) — anda e coleta ao chegar.
@@ -911,8 +923,15 @@ async fn main() {
         return;
     }
     #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_BENCHMARK").is_ok() {
+        benchmark_ui::previa(&mut vox).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_MAR").is_ok() {
         mar_ui::previa().await;
+        // Gameplay remake: the fight's scenes (`mar-combate-*.png`).
+        mar_combate_ui::previa().await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1017,6 +1036,8 @@ async fn main() {
         pets_ui: pets_ui::PetsUi::default(),
         habilidades: habilidades::Habilidades::default(),
         barra_navio: mar_ui::BarraDoNavio::default(),
+        mar_rota: mar_rota::RotaDoMar::default(),
+        mar_vfx: mar_combate_ui::MarCombate::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
         invocacao: invocacao_ui::InvocacaoUi::default(),
         auto_combate: auto_combate::AutoCombate::default(),
@@ -1037,6 +1058,7 @@ async fn main() {
         config_interface: Default::default(),
         editor_hud: Default::default(),
         config_graficos: Default::default(),
+        benchmark: Default::default(),
         coleta_hud: Default::default(),
         coleta_pendente: None,
         coleta_auto_estava: false,
@@ -1209,11 +1231,14 @@ async fn main() {
         // A 60 fps isto resolve uma praca cheia de skins distintas em pouco
         // mais de um segundo, mostrando o corpo padrao enquanto isso.
         jogo.vox.atende_um_pendente(render3d::VOXEL).await;
-        // Modo economia: o quadro cai pra `economia::FPS`.
-        jogo.economia.segurar_quadro();
+        // Modo economia: o quadro cai pra `economia::FPS`. The performance
+        // test measures with no cap at all.
+        if !jogo.benchmark.medindo() {
+            jogo.economia.segurar_quadro();
+        }
         // The Graphics frame-rate cap. Battery saver's own, lower one wins
         // while it is on.
-        if !jogo.economia.ativa {
+        if !jogo.economia.ativa && !jogo.benchmark.medindo() {
             config_graficos::segurar_quadro();
         }
         next_frame().await;
@@ -1684,7 +1709,7 @@ impl Jogo {
                 self.mapa.rota = self.rastro.caminho(eu);
             }
             // Indo sozinho e nada segurando: depois de 1,5 s andando, corre.
-            let indo_sozinho = self.mapa.viagem.ativa()
+            let indo_sozinho = self.mapa.viagem.ativa() || self.mar_rota.ativa()
                 || self.ir_para.ativo()
                 || self.rastro.ativo()
                 || self.auto_missao.etapa() == Some(auto_missao::Etapa::Indo);
@@ -2174,6 +2199,7 @@ impl Jogo {
                 // arquivo de tiles nem um byte de rede entram nisso.
                 self.zona_atual = map_name.clone();
                 mar_ui::define_no_mar(shared::mar::e_mar(&map_name));
+                self.mar_rota.parar();
                 self.terreno = shared::terreno::def_da_zona(&map_name).map(terreno::Terreno::novo);
                 render3d::define_noite(shared::kogen::e_kogen(&map_name) || shared::abissal::e_abissal(&map_name));
                 render3d::define_abismo(shared::abissal::e_abissal(&map_name));
@@ -2284,6 +2310,10 @@ impl Jogo {
                 self.world
                     .apply(snapshot.entered, snapshot.states, &snapshot.removed);
                 if novo_tick { self.world.acertos(&snapshot.acertos, get_time()); }
+                // At sea: the hull's hit flash and a bite's splinters.
+                if novo_tick && mar_ui::no_mar() {
+                    self.mar_vfx.acertos(&self.world, &snapshot.acertos);
+                }
                 // Quem me bateu (bicho): a defesa da auto coleta revida.
                 let eu = self.world.self_id;
                 if let Some(a) = snapshot.acertos.iter().rev().find(|a| {
@@ -2866,7 +2896,7 @@ impl Jogo {
                     self.habilidades.open_thirst();
                 }
                 // A ship skill (phase 2) has its own cannon FX.
-                if !mar_ui::efeito(skill_id, vec2(caster_pos.x, caster_pos.y), vec2(target_pos.x, target_pos.y)) {
+                if !self.mar_vfx.tiro(&self.world, skill_id, caster_eid, vec2(caster_pos.x, caster_pos.y), vec2(target_pos.x, target_pos.y), tier) {
                     self.habilidades.efeito(
                         skill_id,
                         caster_eid,
@@ -3989,6 +4019,7 @@ impl Jogo {
         self.social_hud.captura(&hud_layout::atual(), p, self.alvo_jogador().is_some(), self.social.grupo.len())
             || hud_layout::atual().contem(p)
             || self.botao_teleporte.is_some_and(|r| r.toca(p))
+            || self.benchmark.pega(p)
             || self.habilidades.botao_em(p)
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
@@ -4089,7 +4120,9 @@ impl Jogo {
         let z = hud_layout::atual();
         self.social_hud.captura(&z, m, self.alvo_jogador().is_some(), self.social.grupo.len())
             || z.contem(m)
+            || self.mar_rota.pega_em(m)
             || self.botao_teleporte.is_some_and(|r| r.toca(m))
+            || self.benchmark.pega(m)
             || self.mapa.pega_mouse()
             || self.loja.pega_mouse()
             || self.missoes.pega_mouse()
@@ -4619,6 +4652,17 @@ impl Jogo {
             };
             return Some((t.to_string(), hud_estilo::OURO));
         }
+        // AT SEA: where the ship is sailing, how far by the route, the ETA.
+        if mar_ui::no_mar() {
+            let restante = eu.and_then(|p| rastro::restante(&self.rastro, p, self.mar_rota.destino()));
+            let id = self.bolsa.equip.navio.filter(|i| shared::item_id::e_navio(*i));
+            let vel = id.map_or(shared::navio::CASCOS[0].velocidade, |id| {
+                shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
+            });
+            if let Some(t) = self.mar_rota.faixa(eu, restante, vel) {
+                return Some((t, hud_estilo::AUTO));
+            }
+        }
         if let Some(t) = self.ir_para.faixa(eu) {
             return Some((t, hud_estilo::AUTO));
         }
@@ -4987,7 +5031,7 @@ impl Jogo {
             auto_missao::Ctx {
                 eu,
                 agora,
-                viajando: self.mapa.viagem.ativa(),
+                viajando: self.mapa.viagem.ativa() || self.mar_rota.ativa(),
                 pronta: q.is_some_and(|q| missoes::pronta(q, &|i| missoes::na_bolsa(slots, i))),
                 na_log: q.is_some(),
                 dialogo_aberto: self.dialogo.aberto,
@@ -5008,6 +5052,22 @@ impl Jogo {
         };
         for acao in self.auto_missao.passo(ctx) {
             match acao {
+                // AT SEA a quest's "Go" sails to its island's dock (or the
+                // nearest when any island will do), docks, and the auto
+                // quest picks up ashore (`retomar_auto_missao`).
+                auto_missao::Acao::PedirDestino(q) if mar_ui::no_mar() => {
+                    let ilha = mar_rota::ilha_da_missao(q)
+                        .or_else(|| mar_rota::porto_mais_perto(eu).map(|p| p.0));
+                    if let Some(ilha) = ilha {
+                        if self.mar_rota.atracar != Some(ilha) || !self.mar_rota.ativa() {
+                            if let Some(v) = shared::mar::vista_da_ilha(ilha as usize) {
+                                self.chat.push(format!("Auto quest: sailing to {}.", v.nome));
+                            }
+                        }
+                        self.retomar_auto_missao = Some(q);
+                        self.mar_rota.para_ilha(ilha, agora);
+                    }
+                }
                 auto_missao::Acao::PedirDestino(q) => {
                     self.envia(ClientMessage::QuestDestino { quest_id: q })
                 }
@@ -5217,7 +5277,7 @@ impl Jogo {
                 return;
             }
         }
-        match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa()) {
+        match self.auto_coleta.passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa()) {
             auto_coleta::Acao::PedirNo {
                 tipos,
                 energia,
@@ -5342,6 +5402,14 @@ impl Jogo {
 
     fn iniciar_viagem(&mut self, destino: Vec2) {
         self.parar_seguir();
+        // AT SEA a tap on the map SAILS there (gameplay remake): a tap on an
+        // island is its dock, and arriving there docks.
+        if mar_ui::no_mar() {
+            let (para, atracar) = mar_rota::destino_do_toque(destino);
+            self.parar_autos_para_navegar();
+            self.mar_rota.iniciar(para, atracar, get_time());
+            return;
+        }
         if !self.mapa.terra(destino) {
             self.chat.push("map: that is water".into());
             return;
@@ -5361,9 +5429,66 @@ impl Jogo {
         self.mapa.viagem.iniciar(destino, get_time());
     }
 
+    /// Everything that would fight the sea's auto path for the route.
+    fn parar_autos_para_navegar(&mut self) {
+        self.auto_combate.parar();
+        self.aproximando_alvo = None;
+        self.ir_para.parar();
+        self.auto_coleta.parar();
+        self.auto_missao.parar();
+        self.mapa.viagem.cancelar();
+        self.dialogo.fechar();
+        if self.alvo.take().is_some() {
+            self.envia(ClientMessage::SetTarget { target: None });
+        }
+    }
+
+    /// "Sail to <island>": the dock, and ashore on arrival.
+    fn navegar_para_ilha(&mut self, ilha: u8) {
+        self.parar_autos_para_navegar();
+        if self.mar_rota.para_ilha(ilha, get_time()) {
+            if let Some(v) = shared::mar::vista_da_ilha(ilha as usize) {
+                self.chat.push(format!("Sailing to {}.", v.nome));
+            }
+        }
+    }
+
+    /// THE SEA'S AUTO PATH, every frame: (re)sends the destination, docks
+    /// on arrival at a dock that was the destination.
+    fn conduzir_mar_rota(&mut self) {
+        if !self.mar_rota.ativa() {
+            return;
+        }
+        // Closing on a target is the fight's route, not the crossing's.
+        if self.andando_na_mao() || self.aproximando_alvo.is_some() {
+            self.mar_rota.parar();
+            return;
+        }
+        let Some(eu) = self.world.self_pos() else {
+            return;
+        };
+        match self.mar_rota.passo(eu, get_time(), self.rastro.ativo()) {
+            mar_rota::Passo::Enviar(p) => self.envia(ClientMessage::MoverPara { x: p.x, z: p.y }),
+            mar_rota::Passo::Atracar(ilha) => {
+                if let Some(v) = shared::mar::vista_da_ilha(ilha as usize) {
+                    self.chat.push(format!("Docking at {}.", v.nome));
+                }
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+            }
+            mar_rota::Passo::Desistiu => self.chat.push("No water route: stopped.".into()),
+            mar_rota::Passo::Chegou | mar_rota::Passo::Nada => {}
+        }
+    }
+
     /// "Ir" do mapa (zona de bicho, regiao de recurso) ou do menu de missoes
     /// (ir ao Mestre). Encerra o que brigaria pela rota.
     fn iniciar_ir_para(&mut self, alvo: ir_para::Alvo) {
+        // At sea, "board for island i" (the world map's island) is sailing
+        // to its dock.
+        if let (true, ir_para::Objetivo::Embarcar(ilha)) = (mar_ui::no_mar(), alvo.objetivo) {
+            self.navegar_para_ilha(ilha);
+            return;
+        }
         self.parar_seguir();
         self.mapa.viagem.cancelar();
         self.auto_combate.parar();
@@ -5445,7 +5570,7 @@ impl Jogo {
             return;
         };
         let agora = get_time();
-        let Some(acao) = self.ir_para.passo(eu, agora, self.mapa.viagem.ativa()) else {
+        let Some(acao) = self.ir_para.passo(eu, agora, self.mapa.viagem.ativa() || self.mar_rota.ativa()) else {
             return;
         };
         match acao {
@@ -5597,6 +5722,16 @@ impl Jogo {
 
     /// A cada quadro: pede a proxima etapa. Teclado ou morte encerram.
     fn conduzir_viagem(&mut self) {
+        // AT SEA every "go there" (the map's "Go", auto gather, auto quest)
+        // becomes the sea's auto path: one request, the server's water A*.
+        if mar_ui::no_mar() {
+            if let Some(d) = self.mapa.viagem.destino() {
+                self.mapa.viagem.cancelar();
+                self.mar_rota.iniciar(d, None, get_time());
+            }
+            self.conduzir_mar_rota();
+            return;
+        }
         if !self.mapa.viagem.ativa() {
             return;
         }
@@ -5661,7 +5796,16 @@ impl Jogo {
                 .filter(|e| e.state.hp > 0 && e.morte.is_none())
                 .map(|e| eu.render_pos.distance(e.render_pos));
             let sao = mar_ui::casco_de(&self.bolsa.equip).is_some_and(|(c, _, avariado)| c > 0 && !avariado);
-            let contexto = mar_ui::ContextoNavio { pronto: vivo && sao, distancia_alvo };
+            let no_costado = self.alvo.and_then(|id| self.world.ents.get(&id)).is_some_and(|e| {
+                let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
+                shared::navio::no_costado(g(eu.render_pos), eu.state.vel_f32(), g(e.render_pos))
+            });
+            let contexto = mar_ui::ContextoNavio {
+                pronto: vivo && sao,
+                distancia_alvo,
+                auto_combate: self.auto_combate.ativo(),
+                no_costado,
+            };
             if let Some(id) = self.barra_navio.pedido(contexto, &mut self.habilidades, !entrada_bloqueada) {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Habilidade { id } });
             }
@@ -5875,6 +6019,12 @@ impl Jogo {
                 (q.obj_target != 0 && q.obj_target != shared::quests::ALVO_QUALQUER_CHEFE)
                     .then(|| q.obj_target - 1)
             });
+        // AT SEA the scan runs a few times a second, not every frame
+        // (mobile budget, `mar_rota::VARREDURA_S`).
+        let no_mar = mar_ui::no_mar();
+        if no_mar && !self.mar_rota.pode_varrer(agora) {
+            return;
+        }
         let novo = self
             .auto_combate
             .escolher(&self.world, self.alvo, agora, missao_kind);
@@ -5887,10 +6037,25 @@ impl Jogo {
                 }
             }
         }
+        // A target at sea: the fight's approach takes over the route.
+        if no_mar && novo.is_some() {
+            self.mar_rota.parar();
+        }
         // Limpou a area: vai atras do proximo em vez de ficar parado.
         if novo.is_none() && !dirigindo {
             if let Some(p) = self.auto_combate.caca(&self.world, eu, agora, missao_kind) {
+                self.mar_rota.parar();
                 self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
+            } else if no_mar
+                && !self.mar_rota.ativa()
+                && !self.world.ents.values().any(|e| {
+                    e.meta.tag == shared::EntityTag::Enemy && e.state.hp > 0 && e.morte.is_none() && e.render_pos.distance(eu) < 110.0
+                })
+            {
+                // Nothing in sight at sea: sail to the nearest mob nest.
+                if let Some(n) = self.mar_rota.proximo_ninho(eu, agora) {
+                    self.mar_rota.iniciar(n, None, agora);
+                }
             }
         }
     }
@@ -6032,11 +6197,17 @@ impl Jogo {
         let conjunto =
             shared::skills::Conjunto::de_u8(shared::components::acao::conjunto(eu.state.acao))
                 .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
-        let alcance = if conjunto.a_distancia() {
+        // At sea the cannons fight: close to the Broadside's reach, never to
+        // a bite (`navio::DISTANCIA_DE_COMBATE`), and the A* is the water's.
+        let no_mar = mar_ui::no_mar();
+        let alcance = if no_mar {
+            shared::navio::DISTANCIA_DE_COMBATE / 0.9
+        } else if conjunto.a_distancia() {
             shared::RANGED_ATTACK_RANGE
         } else {
             shared::MELEE_RANGE
         };
+        let conjunto_dist = conjunto.a_distancia() || no_mar;
         let (a, b) = (eu.render_pos, ele.render_pos);
         let agora = get_time();
         // O servidor disse que o relevo barra o tiro: chega perto pelo
@@ -6048,7 +6219,7 @@ impl Jogo {
         // A rota do ultimo pedido pode continuar andando mesmo depois de
         // entrar no alcance. Para-la impede o melee de atravessar o mob e
         // refazer A* a cada golpe; a mira e o ataque seguem ativos.
-        let parar_em = if conjunto.a_distancia() {
+        let parar_em = if conjunto_dist {
             alcance * 0.9
         } else {
             alcance * 0.72
@@ -6060,12 +6231,19 @@ impl Jogo {
             }
             return;
         }
-        let intervalo = if conjunto.a_distancia() { 0.35 } else { 0.25 };
+        // At sea each request is a water A* on the server: fewer of them.
+        let intervalo = if no_mar { 0.6 } else if conjunto_dist { 0.35 } else { 0.25 };
         if agora - self.ultima_aproximacao < intervalo {
             return;
         }
         self.ultima_aproximacao = agora;
-        let perto = if sem_visada { 2.0 } else { alcance * 0.55 };
+        let perto = if no_mar {
+            shared::navio::DISTANCIA_DE_COMBATE * 0.85
+        } else if sem_visada {
+            2.0
+        } else {
+            alcance * 0.55
+        };
         let destino = b + (a - b).normalize_or_zero() * perto;
         self.envia(ClientMessage::MoverPara {
             x: destino.x,
@@ -6507,18 +6685,32 @@ impl Jogo {
         if !self.auto_missao.ativo() && self.fila_de_missoes.is_empty() {
             self.auto_resumo.parar();
         }
+        // Settings › Graphics › "Run performance test again".
+        if std::mem::take(&mut self.config_graficos.pedir_teste) {
+            self.benchmark.iniciar();
+        }
         match &self.tela {
+            // The performance test (docs/BENCHMARK.md) draws in place of the
+            // character screen or, re-run from Graphics, of the world.
+            Tela::Jogando | Tela::Personagens if self.benchmark.ativo() => {
+                self.benchmark.quadro(&self.vox, &self.solido, &mut self.config_graficos)
+            }
             Tela::Jogando if self.economia.ativa => self.desenhar_economia(),
             Tela::Jogando => {
                 self.desenhar_mundo();
                 if self.carregando_desde.is_some() {
                     self.desenhar_carregando();
                 }
+                let observar = self.carregando_desde.is_none();
+                self.benchmark.guarda_quadro(&mut self.config_graficos, observar);
             }
             Tela::Servidores => self.tela_servidores(),
             Tela::Login => self.tela_login(),
             Tela::Cadastro => self.tela_cadastro(),
             Tela::EsqueciSenha => self.tela_esqueci(),
+            Tela::Personagens if self.benchmark.quer_rodar() => {
+                self.benchmark.quadro(&self.vox, &self.solido, &mut self.config_graficos)
+            }
             Tela::Personagens => self.tela_personagens(),
             Tela::Conectando => {
                 ui::fundo();
@@ -6633,7 +6825,8 @@ impl Jogo {
         // Distance fog: centred where the terrain is loaded around (the
         // player), solid sky before the edge of what is loaded. A negative
         // start is night's fog (the night sky).
-        let (inicio, fim) = config_graficos::neblina();
+        // At sea the haze reaches much farther (`mar_cena::neblina`).
+        let (inicio, fim) = if mar_ui::no_mar() { mar_cena::neblina() } else { config_graficos::neblina() };
         let inicio = if noite { -inicio.max(0.01) } else { inicio };
         let em_volta = self.world.self_pos().unwrap_or(Vec2::ZERO);
         gpu_estatica::define_neblina(em_volta, inicio, fim);
@@ -6676,6 +6869,11 @@ impl Jogo {
         match &self.terreno {
             Some(t) => {
                 self.pedacos_desenhados = t.desenha(&vista.cam, recorte, corte_z);
+                // The open sea: the docks (`mar_cena`; the far islands go
+                // after the water).
+                if mar_ui::no_mar() {
+                    mar_cena::desenha_ilhas(&vista.cam);
+                }
                 // Casas no mesmo passe: descarte de face e recorte da camera
                 // valem pra elas como valem pra arvore.
                 let jogador = self
@@ -6688,7 +6886,8 @@ impl Jogo {
                     t.desenha_sombras(&vista.cam);
                 }
                 // Pra onde esta' indo: tracejado rente ao chao, no mesmo passe.
-                if let Some(eu) = self.world.self_pos() {
+                // At sea it goes on the water, after it (`mar_vfx` below).
+                if let Some(eu) = self.world.self_pos().filter(|_| !mar_ui::no_mar()) {
                     let altura = |x: f32, z: f32| t.altura(x, z);
                     rastro::desenha(
                         &self.rastro,
@@ -6751,7 +6950,18 @@ impl Jogo {
                 // O mar por cima do leito, com material proprio (onda no
                 // shader); depois o solido volta pro resto do mundo.
                 agua::desenha(t, &vista.cam, get_time() as f32);
+                if mar_ui::no_mar() {
+                    mar_cena::desenha_ilhas_de_longe(t, &vista.cam);
+                }
                 gl_use_material(&self.solido);
+                // The sea's wreckage, moored boats, flags, lights, the docking
+                // ring and the sky, after the water (`mar_cena`).
+                if mar_ui::no_mar() {
+                    mar_cena::desenha_destrocos(t, &vista.cam, get_time() as f32);
+                    mar_cena::desenha_docas(&vista.cam, get_time() as f32, self.world.self_pos());
+                    mar_cena::desenha_ceu(&vista.cam);
+                    gl_use_material(&self.solido);
+                }
             }
             None => {
                 if let Some(m) = &self.map {
@@ -6838,17 +7048,36 @@ impl Jogo {
         gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
         gl_use_default_material();
         self.habilidades.desenha_efeitos(&self.world, &vista);
-        mar_ui::desenha_efeitos(&vista);
+        // THE SEA FIGHT (gameplay remake): rings, cannon arcs, balls, fins,
+        // bite telegraphs — two batched draw calls, pooled effects.
+        if mar_ui::no_mar() {
+            // The auto path's dashed line, ON the water.
+            if let Some(eu) = self.world.self_pos() {
+                let y = mar_combate_ui::altura_do_tracejado();
+                rastro::desenha(&self.rastro, eu, self.mar_rota.destino(), &|_, _| y, get_time() as f32);
+            }
+            self.mar_vfx.atualiza(&self.world);
+            self.mar_vfx.desenha_3d(&self.world, &vista.cam, self.alvo);
+            if let Some(f) = self.mar_vfx.tremor() {
+                self.tremor = (f, get_time() + 0.22);
+            }
+        }
         set_default_camera();
+        if mar_ui::no_mar() {
+            mar_cena::rotulos(&vista.cam, self.world.self_pos(), vec2(screen_width(), screen_height()));
+            self.mar_vfx.desenha_2d(&self.world, &vista.cam, self.alvo);
+        }
         // Numero de dano, faisca e a borda vermelha, por cima do mundo.
         efeitos::desenha(&self.world, &vista);
         // Quanto falta andar, sobre o destino.
         if let (Some(t), Some(eu)) = (&self.terreno, self.world.self_pos()) {
-            let altura = |x: f32, z: f32| t.altura(x, z);
+            let mar = mar_ui::no_mar();
+            let y = mar_combate_ui::altura_do_tracejado();
+            let altura = |x: f32, z: f32| if mar { y } else { t.altura(x, z) };
             rastro::desenha_distancia(
                 &self.rastro,
                 eu,
-                self.mapa.viagem.destino(),
+                if mar { self.mar_rota.destino() } else { self.mapa.viagem.destino() },
                 &altura,
                 &vista.cam,
             );
@@ -7298,15 +7527,30 @@ impl Jogo {
         // THE OPEN SEA (docs/NAVEGACAO.md): the hull bar and, at a dock's
         // anchorage, "Dock at <island>".
         if !self.editor_hud.aberto && !self.painel_grande() {
-            mar_ui::barra_do_casco(&z, &self.bolsa.equip);
             let eu = self.world.self_pos().map(|p| (p.x, p.y));
             // Phase 4: why you are a target, and the Colossus Chest's button.
-            let marcado = self
+            let (marcado, velocidade) = self
                 .world
                 .self_id
                 .and_then(|id| self.world.ents.get(&id))
-                .is_some_and(|e| e.meta.pk.marcado);
-            mar_ui::aviso_de_perigo(&z, &self.bolsa.equip, marcado, eu);
+                .map_or((false, 0.0), |e| (e.meta.pk.marcado, e.state.vel_f32().length()));
+            // Gameplay remake: the ship panel (hull, speed, zone, treasure,
+            // nearest dock) and, under it, "Sail to…" with every port.
+            if mar_ui::no_mar() {
+                let eu_v = self.world.self_pos();
+                if let Some(r) = self.mar_vfx.painel_do_navio(&z, &self.bolsa.equip, eu_v, velocidade, marcado) {
+                    let vel_max = shared::item_id::e_navio(self.bolsa.equip.navio.unwrap_or(0))
+                        .then(|| {
+                            let id = self.bolsa.equip.navio.unwrap_or(0);
+                            shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
+                        })
+                        .unwrap_or(shared::navio::CASCOS[0].velocidade);
+                    let ancora = Rect::new(screen_width() * 0.5 - r.w * 0.5, r.y, r.w, r.h);
+                    if let Some(ilha) = self.mar_rota.desenha_portos(ancora, z.s, eu_v, vel_max) {
+                        self.navegar_para_ilha(ilha);
+                    }
+                }
+            }
             if let Some(ilha) = mar_ui::botao_atracar(&z, eu) {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
             }
