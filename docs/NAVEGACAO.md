@@ -82,7 +82,7 @@ O que funcionou e volta:
   de Essência. Sem arte nova pesada: cor da vela e um punhado de
   figuras-de-proa em voxel.
 
-### Fase 3 — Carga e comércio entre ilhas
+### Fase 3 — Carga e comércio entre ilhas (CORTADA pelo dono, 15/11/2026: "não precisa ter a parte do comércio, faz só a navegação e PvP")
 
 - Cada porto compra e vende **mercadorias** (madeira de lei, peles, gelo,
   especiarias…) com preço próprio. Comprar barato numa ilha e vender caro em
@@ -134,17 +134,21 @@ O que funcionou e volta:
 - **Dados:** o navio vive na instância do item (como pet e montaria),
   então trocar e vender no mercado leva o que foi investido.
 
-## Decisões do dono antes de começar
+## Decisões do dono (15/11/2026)
 
-1. **Capitão grátis:** a viagem rápida continua grátis, ou passa a custar
-   ouro pra dar mais motivo pro mar? *Sugestão: grátis.*
-2. **PvP no mar:** só quem carrega carga ou tesouro é atacável (fora das
-   zonas sem lei), ou o mar inteiro segue os modos de PK de hoje?
-   *Sugestão: só quem carrega.*
-3. **Primeiro navio:** a Chalupa vem de uma missão secundária do Bosque
-   (grátis) ou é craftada? *Sugestão: missão.*
-4. **Ordem das fases:** 1 → 2 → 4 → 3 → 5 (PvP do Corsário antes do
-   comércio, porque o comércio sem risco é só ouro grátis)? Ou na ordem
-   escrita?
-5. **Material exclusivo do mar:** só pra navio e cosmético, ou também pode
-   ser atalho barato pra coisa de terra (ex.: darksteel mais rápido)?
+1. **Capitão:** a viagem rápida entre ilhas **passa a custar cobre**. Ela
+   continua existindo, mas o mar ganha motivo.
+2. **PvP no mar:** o **mar inteiro segue os modos de PK** de hoje
+   (`shared::pk`: Pacífico, Grupo, Clã, Livre). A "marca" de quem carrega
+   carga ou tesouro da fase 4 é por cima disso.
+3. **Primeiro navio:** a **missão da história** que tira o jogador da
+   primeira ilha entrega a Chalupa. **Jogadores antigos** (que já passaram
+   desse passo) recebem um barco de graça por migração. O **Estaleiro** faz
+   o craft e os upgrades dos cascos seguintes.
+4. **Ordem das fases:** **1 → 2 → 4**. A fase 3 (comércio) foi cortada; a 5 (conteúdo do mar) fica para depois. Sem comércio, a "carga" da fase 4 é só o tesouro (Baú do Colosso e baús do mar).
+5. Material exclusivo do mar: por padrão, só pra navio e cosmético (não foi
+   perguntado; vale a regra "o mar é opcional").
+
+Com a Chalupa vindo da história, a regra "o mar é opcional" continua de pé
+porque o Capitão segue levando (agora por cobre): ninguém é obrigado a
+navegar pra avançar.
