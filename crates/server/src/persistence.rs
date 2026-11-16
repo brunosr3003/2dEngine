@@ -4721,6 +4721,7 @@ async fn load(pool: &PgPool, so: Option<&str>) -> Result<HashMap<String, Charact
             pontos: pontos.clamp(0, u32::MAX as i64) as u32,
             modo,
             travado: false,
+            marcado: false,
         };
         let pk_decai_s = pk_decai_s.clamp(0, u32::MAX as i64) as u32;
         let inv = load_inventory(pool, &name).await?;

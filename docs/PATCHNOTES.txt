@@ -1,6 +1,6 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
-- The Path tree is now a huge star-map web: 173 nodes across four arms, with notables, keystones that trade a big bonus for a cost, and bridges between paths for hybrid builds. It takes about 460 points to complete.
+- The Path tree is now a huge star-map web: 180 nodes across four arms, with notables, keystones that trade a big bonus for a cost, and bridges between paths for hybrid builds. It takes about 490 points to complete.
 - New Path tree screen: drag and pinch to explore, every node has its own icon, and learned nodes light up the constellation.
 - The Path tree was reset for free: all your path points are back to spend again.
 - Resetting the Path tree is paid in gold only.
@@ -14,6 +14,12 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New sea material: Wreck Planks, found in wreckage, drifting chests and sea monsters. Each sea route now has a dangerous elite monster.
 - New ship skills: at sea your skill bar becomes your ship's, with Broadside, Bow Cannon, Emergency Repair and Smoke. The cannons can go on AUTO.
 - New in the TP shop: sail colours and figureheads to dress up your ship.
+- New: the Colossus Chest. Every world boss now drops one for the player who lands the killing blow, and it rides on your ship's deck. Open it on land for a boss-sized prize, or sail it to other islands first: each new island you dock at raises the payout, up to x3.
+- Treasure at sea comes with a risk: while you carry a Colossus Chest your ship flies a skull flag and anyone can attack you at sea, even in Peaceful mode. The waters right by the docks stay safe.
+- Sink a treasure ship and its chest floats at the wreck for anyone to haul aboard; defeat its captain yourself and the chest goes straight to your deck. Ships are never lost, and treasure is never destroyed.
+- New: lawless waters on three routes away from the Grove, marked in red on the map. Anyone can attack anyone there, and no one gets PK points for it.
+- Attacking an innocent Peaceful ship still earns PK points, just like on land.
+- The Corsair path has new sea nodes: more cannon damage, a tougher hull, faster treasure hauling, a bigger Colossus Chest payout, and the Pirate's Code keystone (more cannon damage against treasure ships, but you are always a target at sea).
 - Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
 - The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.

@@ -94,13 +94,19 @@ pub fn do_efeito(e: Efeito) -> Glifo {
         Efeito::LootMelhor => Glifo::Trevo,
         Efeito::DanoCritico => Glifo::Chama,
         Efeito::Xp => Glifo::Seta,
+        Efeito::CanhaoPct => Glifo::Chama,
+        Efeito::CascoPct => Glifo::Ancora,
+        Efeito::PegarTesouro => Glifo::Asa,
+        Efeito::MultTesouro => Glifo::Bau,
+        Efeito::CanhaoContraMarcado => Glifo::Mira,
+        Efeito::SempreMarcado => Glifo::Caveira,
     }
 }
 
 /// A keystone's glyph: a skull for the ones that cost health, else its
 /// main stat's.
 pub fn da_chave(efeitos: &[(Efeito, f32)]) -> Glifo {
-    if efeitos.iter().any(|&(e, v)| e == Efeito::VidaPct && v < 0.0) {
+    if efeitos.iter().any(|&(e, v)| (e == Efeito::VidaPct || e == Efeito::SempreMarcado) && v < 0.0) {
         return Glifo::Caveira;
     }
     efeitos.first().map_or(Glifo::Estrela, |&(e, _)| do_efeito(e))

@@ -276,6 +276,45 @@ pub fn baus() -> Vec<Vec2> {
         .collect()
 }
 
+/// LAWLESS WATERS (naval phase 4): radius of each zone, units.
+pub const RAIO_SEM_LEI: f32 = 45.0;
+
+/// THE LAWLESS WATERS: a few stretches in the middle of the routes, around
+/// the route's ELITE NEST (two thirds of the way, where the wrecks and the
+/// Dread elites are), where PK is open for everyone at sea — the sea's
+/// `pk::zona_pvp_aberto`. Only on the routes that do NOT touch the Bosque:
+/// the starter island's routes are where new captains learn to sail, and
+/// turning them into no man's land would tax being new. With four ports
+/// that is three zones: Glacier–Waste, Glacier–Plateau, Waste–Plateau.
+/// Never in a harbour corridor (test).
+pub fn zonas_sem_lei() -> &'static [Vec2] {
+    static Z: std::sync::OnceLock<Vec<Vec2>> = std::sync::OnceLock::new();
+    Z.get_or_init(|| {
+        let v = ilhas();
+        let bosque = v.iter().position(|i| i.zona == "ilha_inicial");
+        let mut z = Vec::new();
+        for a in 0..v.len() {
+            for b in a + 1..v.len() {
+                if Some(a) == bosque || Some(b) == bosque {
+                    continue;
+                }
+                let (pa, pb) = (v[a].fundeadouro(), v[b].fundeadouro());
+                let mut p = pa.lerp(pb, 0.67);
+                if !agua_livre(p) {
+                    p = pa.lerp(pb, 0.5);
+                }
+                z.push(p);
+            }
+        }
+        z
+    })
+}
+
+/// In lawless waters (and never inside a harbour corridor)?
+pub fn sem_lei(p: Vec2) -> bool {
+    !no_corredor(p) && zonas_sem_lei().iter().any(|c| c.distance(p) <= RAIO_SEM_LEI)
+}
+
 /// A piece of FLOATING WRECKAGE to gather. `tier`: 0 timber (wood), 1..4
 /// a crate of Steel of that colour (the rock's yield: Steel and Darksteel),
 /// 5 Energy.
@@ -433,6 +472,33 @@ mod testes {
         assert!(ninhos().len() >= 8, "nests: {}", ninhos().len());
         for p in baus().into_iter().chain(ninhos()) {
             assert!(!no_corredor(p), "something in a harbour corridor at {p:?}");
+        }
+    }
+
+    /// LAWLESS WATERS: three, mid-route, on open water, never touching a
+    /// harbour corridor, and none on a Bosque route.
+    #[test]
+    fn as_aguas_sem_lei_ficam_no_meio_das_rotas() {
+        let z = zonas_sem_lei();
+        assert_eq!(z.len(), 3, "{z:?}");
+        for c in z {
+            assert!(navegavel(c.x, c.y), "lawless zone on land at {c:?}");
+            assert!(sem_lei(*c));
+            for i in ilhas() {
+                assert!(
+                    i.fundeadouro().distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR,
+                    "lawless zone {c:?} touches the {} corridor",
+                    i.nome
+                );
+            }
+        }
+        for i in ilhas() {
+            assert!(!sem_lei(i.fundeadouro()), "{}: the anchorage is lawless", i.nome);
+        }
+        let bosque = vista_da_zona("ilha_inicial").unwrap().fundeadouro();
+        for v in ilhas().iter().filter(|v| v.zona != "ilha_inicial") {
+            let meio = bosque.lerp(v.fundeadouro(), 0.67);
+            assert!(!sem_lei(meio), "the Bosque route to {} is lawless", v.nome);
         }
     }
 

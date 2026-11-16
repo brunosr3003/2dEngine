@@ -232,7 +232,9 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
         let largura = crate::hud_estilo::medir_forte(&txt, tam as u16);
         // Red name (PK points) first, then the hostile purple: the same
         // colours as the PK card (`pk_ui::cor`).
-        let cor = if e.meta.pk.pontos > 0 {
+        // A MARKED ship at sea (treasure on deck, naval phase 4) reads red
+        // like a red name: anyone may attack it.
+        let cor = if e.meta.pk.pontos > 0 || e.meta.pk.marcado {
             crate::pk_ui::VERMELHO_PK
         } else if e.meta.pk.hostil || shared::pk::hostil(e.meta.pk.modo) {
             crate::pk_ui::ROXO_PK

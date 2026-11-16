@@ -630,4 +630,6 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Mermaid Figurehead", "Figura de Proa: Sereia"),
     ("Dragon Figurehead", "Figura de Proa: Dragão"),
     ("Eagle Figurehead", "Figura de Proa: Águia"),
+    // ── naval phase 4 ──
+    ("Colossus Chest", "Baú do Colosso"),
 ];

@@ -1,7 +1,8 @@
 # NAVEGAÇÃO — o mar como sistema (plano, 15/11/2026)
 
-> Status: **FASES 1 E 2 FEITAS (15-16/11/2026, versão de TESTE, protocolo
-> 199 ainda não lançado).** A fase 4 segue como plano. O dono escolheu a "opção
+> Status: **FASES 1, 2 E 4 FEITAS (15-16/11/2026, versão de TESTE, protocolo
+> 199 ainda não lançado).** A fase 3 (comércio) foi cortada; a 5 fica para
+> depois. A fase 4 está em "Fase 4 — como ficou". O dono escolheu a "opção
 > C": navio próprio, mar navegável entre as ilhas, upgrades e PvP do
 > Corsário. O que a fase 1 virou de verdade está em "Fase 1 — como ficou",
 > logo abaixo das fases.
@@ -335,7 +336,7 @@ de mirar a proa no Canhão de Proa (ele atira em qualquer direção), arte
   seja taxa do porto (sumidouro). Há teste de "ouro por hora no comércio ≤ X
   do farm de terra".
 
-### Fase 4 — Corsário e PvP naval
+### Fase 4 — Corsário e PvP naval (FEITA, ver "Fase 4 — como ficou")
 
 - **Quem carrega, arrisca:** navio com carga ou tesouro fica **marcado**
   (atacável por qualquer um, mesmo PK Pacífico). Sem carga, o mar segue os
@@ -352,6 +353,106 @@ de mirar a proa no Canhão de Proa (ele atira em qualquer direção), arte
   Hoje o Corsário é só loot e coleta; o mar dá o tema que faltava.
 - **Karma** pra quem mata inocente sem carga: reaproveitar os pontos de PK
   atuais em vez de criar um sistema novo.
+
+### Fase 4 — como ficou (FEITA, 16/11/2026, versão de TESTE, protocolo 199)
+
+Sem comércio (fase 3 cortada), a única carga é o TESOURO. Tudo em
+`shared::navio` (números puros), `shared::mar` (zonas sem lei), `shared::pk`
+(marca por cima dos modos), `shared::arvore` (nós do mar),
+`server/world/navio.rs` e `client/mar_ui.rs` + `client/mapa.rs`.
+Protocolo: `PedidoNavio::AbrirTesouro` no FIM; `NavioData::conves:
+Option<Tesouro>` e `PkState::marcado` no FIM, com `#[serde(default)]`.
+`PROTOCOL_VERSION` segue 199.
+
+**Baú do Colosso** (`items::Tesouro { chefe, nivel, origem, ilhas }`, vive
+SÓ em `NavioData::conves`, um por convés).
+
+- Todo chefe de CAMPO (`bosses::CHEFES` fora de dungeon) larga um, garantido,
+  para QUEM MATOU (o crédito do abate, o mesmo jogador do `BossRewards`) —
+  escolha: o maior contribuidor exigiria contabilidade de dano por chefe que
+  o servidor não tem. Vai direto pro convés do navio do espaço Navio, em
+  qualquer ilha (`dar_bau_do_colosso`). Os baús de chão do chefe continuam.
+- **Sem navio, ou convés já ocupado:** abre na hora a ×1,0 (prêmio justo de
+  chefe pra quem não quer PvP; nada se perde).
+- **Recusas:** navio com tesouro (`navio::preso_ao_conves`) não sai do
+  espaço Navio (`handle_inventory_swap` recusa tirar ou trocar), e bolsa
+  (`add_to_inventory`), banco (`handle_vault_deposit`), mercado
+  (`mercado_anunciar`, lê como vinculado), troca (`troca::negociavel`) e
+  Correio (`DadosDungeon::postar`) recusam. O Estaleiro leva o baú pro
+  casco novo (`reconstruido`).
+- **Multiplicador** (`mult_do_tesouro`): ×1,0 onde caiu; +0,6 por ilha
+  DISTINTA em que se atracou pelo mar com ele no convés — ×1,6 / ×2,2 /
+  ×2,8 —, teto ×3,0; a passiva do Corsário soma por cima do teto (até
+  +0,2). Uma ilha só conta depois de uma TRAVESSIA de verdade
+  (`conta_atracacao`): atracar de volta na ilha de onde zarpou
+  (`zona_volta`) não conta; voltar à ilha de origem vindo de outra conta.
+  Viagem do Capitão e pergaminho não contam.
+- **Abrir:** botão "Open the Colossus Chest · ×N" na HUD, em terra (no mar
+  recusa: "leve pra terra"). Conteúdo (`conteudo_do_colosso`): a tabela do
+  baú do chefe (`forte::conteudo_do_chefe`, estágio verde) com todo
+  empilhável ESCALADO pelo multiplicador (ouro, cobre, Darksteel, Energia,
+  material, Marcas), a peça que a tabela rolar (uma, sem escala), chave de
+  craft a 50% (a do baú roxo; segunda rolagem a partir de ×2,0) e 10 ×
+  mult Pranchas de Naufrágio.
+
+**A marca** (`navio::marcado`, DERIVADA, nada guardado no item): no mar, com
+tesouro no convés, OU nos 60 s de rastro depois que o convés esvaziou no mar
+(`Session::marca_ate`, relógio do processo do mar; `TRILHA_DA_MARCA_S`), OU
+com a pedra-chave Código Pirata. Marcado = atacável por QUALQUER um no mar
+(`pk::pode_atacar_no_mar`: lê o alvo como em modo PK, então Pacífico ataca e
+a proteção por poder não vale), menos o próprio grupo/clã; o corredor da
+Capitania (40 u) protege sempre. Na tela: bandeira preta com caveira de
+cubos no mastro (`mar_ui::desenha_marca`, via `PkState::marcado`), nome em
+vermelho e a linha vermelha "You carry treasure — anyone can attack you"
+(ou "Marked — …" no rastro/Código, "Lawless waters — …" nas zonas) abaixo
+da barra do casco.
+
+**As duas mortes** (`dano_no_casco(…, atacante)`, `tesouro_perdido`):
+
+| | navio | tesouro |
+|---|---|---|
+| casco a zero pelo mar (bicho) | avariado, volta ao cais | BOIA nos destroços (`TesouroBoiandoTag`, `Npc(7)`): quem chegar primeiro iça (4 s parado a até 6 u, barra "Hauling") |
+| afundado por canhão de jogador / morto em PvP | avariado | vai DIRETO pro convés do matador se livre; senão boia |
+
+Boia 120 s nos destroços (`BOIA_S`); ninguém pegou, ela deriva pro baú à
+deriva mais perto e espera lá sem prazo. O navio nunca se perde, o tesouro
+nunca é destruído (só some se o processo do mar reiniciar com ele boiando).
+
+**Zonas sem lei** (`mar::zonas_sem_lei`, `RAIO_SEM_LEI` 45 u): 3, nos ninhos
+de elite (2/3 do caminho) das rotas que NÃO tocam o Bosque — Geleira–Ermo,
+Geleira–Planalto, Ermo–Planalto. Entram em `pk::zona_pvp_aberto`, então
+funcionam como as ilhotas da Ilha Mágica: modo travado em Grupo, PvP aberto,
+sem ponto de PK, aviso "Lawless waters: …" ao entrar/sair. Desenhadas em
+vermelho no mapa e no minimapa (`mapa::aguas_sem_lei`). Nunca tocam um
+corredor (teste).
+
+**Pontos de PK** (`pk::pontos_por_abate_no_mar`): os de hoje. Afundar (ou
+matar) um Pacífico NÃO marcado no mar dá ponto como em terra; marcado, ou em
+zona sem lei, não dá. Sem karma novo.
+
+**Corsário no mar** (`arvore::MAR`, ids 173-179 no FIM, anel 3, lado do
+Guardião do braço Corsário):
+
+| Id | Nó | Tipo | Custo | Efeito | Liga em |
+|---|---|---|---|---|---|
+| 173 | — | menor | 3 | canhão +4% | Deep Miner (R8) |
+| 174 | — | menor | 3 | casco +5% | 173 |
+| 175 | Boarding Party | notável | 4 | içar +30%, prêmio +×0,1 | 174 |
+| 176 | — | menor | 3 | casco +5% | Sea Legs (ponte Corsário│Guardião) |
+| 177 | — | menor | 3 | içar +15% | 176 |
+| 178 | Plunderer | notável | 4 | prêmio +×0,1, canhão +5% | 177 |
+| 179 | Pirate's Code | pedra-chave | 6 | +25% de canhão contra navio marcado; SEMPRE marcado no mar | 175 e 178 |
+
+"Casco +X%" = o casco toma X% menos dano (o mesmo que X% a mais de casco,
+sem mexer no número da barra). Teia: 180 nós (13 pedras-chave, 38 notáveis,
+116 menores), custo total **486** (era 460).
+
+**Cortado da fase 4:** carga de comércio (fase 3), o "+carga" e o "+saque de
+destroço" do Corsário (sem Porão; o saque virou o prêmio do Baú), baú
+esperando 60 s no chão pra quem não tem navio (abre na hora), contribuição
+por dano (vai pra quem matou), rastro da marca entre processos (vive no
+processo do mar), punição de quem desloga no mar com tesouro, arte `.vox` da
+bandeira.
 
 ### Fase 5 — Conteúdo do mar
 

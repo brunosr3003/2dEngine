@@ -55,7 +55,8 @@ pub fn posso_atacar(eu: &shared::EntityMeta, ele: &shared::EntityMeta, mesmo_gru
         // from the power each player's meta carries.
         poder: m.poder,
     };
-    pk::pode_atacar(&lado(eu, 1), &lado(ele, if mesmo_cla { 1 } else { 2 }), false)
+    // At sea a MARKED ship (treasure on deck, naval phase 4) is fair game.
+    pk::pode_atacar_no_mar(&lado(eu, 1), &lado(ele, if mesmo_cla { 1 } else { 2 }), false, ele.pk.marcado)
 }
 
 /// "+15% XP lost on death" for `pontos` points (empty with none).
@@ -183,7 +184,7 @@ mod testes {
 
     #[test]
     fn cor_e_modo_do_cartao() {
-        let pk = |modo, pontos, hostil| shared::PkState { hostil, pontos, modo, travado: false };
+        let pk = |modo, pontos, hostil| shared::PkState { hostil, pontos, modo, travado: false, marcado: false };
         assert_eq!(cor(pk(pk::PACIFICO, 0, false)), estilo::AUTO);
         assert_eq!(cor(pk(pk::GRUPO, 0, true)), ROXO_PK);
         assert_eq!(cor(pk(pk::PACIFICO, 2, false)), VERMELHO_PK, "red name wins, even with PK off");

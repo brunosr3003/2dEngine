@@ -908,6 +908,13 @@ impl DadosDungeon {
         motivo: u8,
         quando: i64,
     ) {
+        // THE MAIL REFUSES THE TREASURE (naval phase 4): a ship with a
+        // Colossus Chest on deck never leaves the Ship slot, so nothing
+        // should post one; if something does, it is refused rather than
+        // carried around the sea's risk.
+        if crate::navio::preso_ao_conves(item_id, instance.as_ref()) {
+            return;
+        }
         self.proxima_carta += 1;
         self.correio.push(CartaDeCorreio {
             id: self.proxima_carta,

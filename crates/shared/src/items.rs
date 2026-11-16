@@ -331,6 +331,27 @@ pub struct NavioData {
     /// Figurehead applied (`navio::FIGURAS` index + 1; 0 = none).
     #[serde(default)]
     pub figura: u8,
+    /// THE DECK (naval phase 4): the Colossus Chest being carried, if any.
+    /// The chest lives ONLY here — the bag, the bank, the market and the
+    /// Mail refuse it (`navio::preso_ao_conves`). Appended; old ships read
+    /// an empty deck.
+    #[serde(default)]
+    pub conves: Option<Tesouro>,
+}
+
+/// A COLOSSUS CHEST on a ship's deck (naval phase 4, `shared::navio`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct Tesouro {
+    /// The world boss that dropped it (`bosses::CHEFES` kind): its chest
+    /// table (`forte::conteudo_do_chefe`).
+    pub chefe: u16,
+    /// The boss's level (internal).
+    pub nivel: u16,
+    /// `ARQUIPELAGO` index of the island where it dropped (255 = none).
+    pub origem: u8,
+    /// Bit `i` = island `i` (`ARQUIPELAGO`) docked at by sea while carrying
+    /// it, having sailed from a DIFFERENT island (`navio::conta_atracacao`).
+    pub ilhas: u8,
 }
 
 /// O que o pet acumula. Fica na instancia porque o pet e' item: assim nivel e

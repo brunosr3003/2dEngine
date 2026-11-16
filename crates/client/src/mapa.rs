@@ -1077,6 +1077,25 @@ fn nomes_das_ilhotas(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f
     }
 }
 
+/// THE LAWLESS WATERS of the open sea (naval phase 4, `mar::zonas_sem_lei`),
+/// in red on the sea map and the minimap: a translucent disc, its rim and
+/// the label when it fits.
+fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16) {
+    if !zona.is_some_and(shared::mar::e_mar) {
+        return;
+    }
+    let raio = shared::mar::RAIO_SEM_LEI * escala;
+    for c in shared::mar::zonas_sem_lei() {
+        let q = ponto(vec2(c.x, c.y));
+        draw_circle(q.x, q.y, raio, Color::new(0.85, 0.12, 0.10, 0.22));
+        draw_circle_lines(q.x, q.y, raio, 2.0, Color::new(1.0, 0.25, 0.2, 0.9));
+        if raio >= u(14.0) {
+            estilo::texto_centro(q.x + 1.0, q.y + 1.0, "Lawless waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(q.x, q.y, "Lawless waters", tamanho, Color::new(1.0, 0.4, 0.35, 1.0));
+        }
+    }
+}
+
 fn pintar_casas(rgba: &mut [u8], ger: &Gerador, raio: f32) {
     // Telhado e parede: duas cores, senao um quarteirao inteiro vira uma
     // mancha so' e o mapa fica pior do que sem casa nenhuma.
@@ -2812,6 +2831,7 @@ impl Mapa {
         // corte por tamanho de `nomes_das_ilhotas` cuida de calar quando o
         // disco está afastado demais pra caber sete rótulos.
         nomes_das_ilhotas(self.zona(), ponto, escala, 12);
+        aguas_sem_lei(self.zona(), ponto, escala, 11);
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, 4.0, 3.0, 2.0, estilo::AUTO, Some(dentro));
         if let Some(d) = self.viagem.destino() {
@@ -3416,6 +3436,7 @@ impl Mapa {
         // Os nomes das ilhotas por ÚLTIMO entre os rótulos: texto por baixo de
         // mancha some, e este é o rótulo que o jogador veio buscar.
         nomes_das_ilhotas(self.zona(), ponto, escala, 14);
+        aguas_sem_lei(self.zona(), ponto, escala, 14);
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, u(5.0), u(3.0), u(2.5), estilo::AUTO, None);
         let eu = world.self_pos();

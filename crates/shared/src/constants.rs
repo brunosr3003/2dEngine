@@ -1748,6 +1748,7 @@ pub fn nome_do_no(tier: u8) -> &'static str {
         3 => "Blue stone",
         4 => "Purple stone",
         5 => "Energy",
+        crate::navio::TIPO_COLETA_TESOURO => crate::navio::NOME_DO_COLOSSO,
         t if t > crate::forte::TIPO_COLETA => crate::forte::nome_da_cor(t - crate::forte::TIPO_COLETA),
         _ => "Node",
     }

@@ -97,7 +97,13 @@ impl BarraDeColeta {
             );
             return;
         }
-        let verbo = if tipo > shared::forte::TIPO_COLETA { "Opening" } else { "Gathering" };
+        let verbo = if tipo == shared::navio::TIPO_COLETA_TESOURO {
+            "Hauling"
+        } else if tipo > shared::forte::TIPO_COLETA {
+            "Opening"
+        } else {
+            "Gathering"
+        };
         let texto = format!(
             "{verbo} · {} · {:.1} s",
             shared::nome_do_no(tipo),

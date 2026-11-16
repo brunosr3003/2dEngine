@@ -91,6 +91,8 @@ pub fn negociavel(slot: &InventorySlot, tipo_vinculado: bool) -> bool {
         && slot.item_id != item_id::PASSE_MAGICO
         && !tipo_vinculado
         && !slot.instance.as_ref().is_some_and(|i| i.vinculado)
+        // A ship with a Colossus Chest on deck never leaves its slot.
+        && !crate::navio::preso_ao_conves(slot.item_id, slot.instance.as_ref())
 }
 
 /// How much of a slot holding `tem` can be on the table when `pedida` is

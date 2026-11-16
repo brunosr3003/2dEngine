@@ -19,6 +19,14 @@
 //! becomes the SHIP's (`HABILIDADES`: Broadside, Bow Cannon, Emergency
 //! Repair, Smoke). Sail colours and figureheads (`VELAS`, `FIGURAS`) are
 //! cosmetic items from the TP shop.
+//!
+//! PHASE 4, the Corsair and naval PvP: every world boss drops a COLOSSUS
+//! CHEST that fits only on the ship's DECK (`NavioData::conves`). Opening it
+//! where it dropped pays x1.0; docking at other islands with it on deck pays
+//! more (`mult_do_tesouro`, x1.6 for one island up to x3.0). A ship with
+//! treasure is MARKED (`marcado`): anyone may attack it at sea, outside the
+//! harbour corridors. Sunk, the treasure floats; killed in PvP, it goes to
+//! the killer. Never destroyed.
 
 use serde::{Deserialize, Serialize};
 
@@ -292,7 +300,14 @@ pub fn proximo_casco(id: u16) -> Option<u16> {
 /// The ship a rebuilt hull becomes (class `para`): hull full, the stars and
 /// the cosmetics carried over — nothing invested in the old hull is lost.
 pub fn reconstruido(para: u16, antigo: &NavioData) -> NavioData {
-    let mut d = NavioData { estrelas: antigo.estrelas, vela: antigo.vela, figura: antigo.figura, ..Default::default() };
+    let mut d = NavioData {
+        estrelas: antigo.estrelas,
+        vela: antigo.vela,
+        figura: antigo.figura,
+        // The treasure on deck moves to the new hull (never destroyed).
+        conves: antigo.conves,
+        ..Default::default()
+    };
     d.casco = casco_total(para, &d);
     d
 }
@@ -547,6 +562,131 @@ pub const PRANCHAS_DO_ELITE: u32 = 6;
 /// Chance a common sea mob drops one Wreck Plank to its killer.
 pub const CHANCE_PRANCHA_DO_BICHO: f32 = 0.25;
 
+// ─────────────────────────── phase 4: the treasure ───────────────────────────
+
+/// The payout of a Colossus Chest opened where it dropped.
+pub const MULT_NA_ORIGEM: f32 = 1.0;
+/// Each distinct island docked at by sea with it on deck adds this...
+pub const MULT_POR_ILHA: f32 = 0.6;
+/// ...up to this (the Corsair's treasure passives add on top).
+pub const MULT_MAX: f32 = 3.0;
+/// After the deck empties at sea (sunk, killed, given away) the ship stays
+/// marked this long: dropping the treasure a second before the hit is not
+/// a dodge.
+pub const TRILHA_DA_MARCA_S: f32 = 60.0;
+/// A sunk carrier's treasure floats at the wreck this long; unclaimed, it
+/// drifts to the nearest drifting-chest spot and waits there (never
+/// destroyed).
+pub const BOIA_S: f32 = 120.0;
+/// Seconds to haul a floating treasure aboard (the Corsair shortens it).
+pub const PEGAR_S: f32 = 4.0;
+/// How close to the floating treasure the ship has to stay while hauling.
+pub const ALCANCE_DO_TESOURO: f32 = 6.0;
+/// `ColetaEstado.tipo` while hauling a treasure aboard.
+pub const TIPO_COLETA_TESOURO: u8 = crate::forte::TIPO_COLETA + 10;
+/// Wreck Planks in a Colossus Chest at x1.0.
+pub const PRANCHAS_DO_COLOSSO: u32 = 10;
+/// English name of the chest.
+pub const NOME_DO_COLOSSO: &str = "Colossus Chest";
+
+/// A new Colossus Chest from world boss `chefe` (level `nivel`) on island
+/// `origem` (`ARQUIPELAGO` index; `None` = not an island of the map).
+pub fn tesouro_novo(chefe: u16, nivel: u32, origem: Option<usize>) -> crate::items::Tesouro {
+    crate::items::Tesouro {
+        chefe,
+        nivel: nivel.min(u16::MAX as u32) as u16,
+        origem: origem.filter(|i| *i < 255).map_or(255, |i| i as u8),
+        ilhas: 0,
+    }
+}
+
+/// Distinct islands counted on the chest.
+pub fn ilhas_cruzadas(t: &crate::items::Tesouro) -> u32 {
+    t.ilhas.count_ones()
+}
+
+/// THE PAYOUT MULTIPLIER: x1.0 where it dropped, +0.6 per distinct island
+/// docked at by sea with it on deck (x1.6, x2.2, x2.8), capped at x3.0;
+/// `bonus` (the Corsair's `Passivas::mult_tesouro`) on top of the cap.
+pub fn mult_do_tesouro(t: &crate::items::Tesouro, bonus: f32) -> f32 {
+    (MULT_NA_ORIGEM + MULT_POR_ILHA * ilhas_cruzadas(t) as f32).min(MULT_MAX) + bonus.max(0.0)
+}
+
+/// DOCKING with the chest on deck at island `ilha`, having sailed from
+/// zone `de` (the zone the ship cast off from: `characters.zona_volta`).
+/// The island counts only after a real CROSSING: docking back where you
+/// cast off from counts nothing. Returns whether it counted now.
+pub fn conta_atracacao(t: &mut crate::items::Tesouro, ilha: usize, de: &str) -> bool {
+    let Some(def) = crate::terreno::ARQUIPELAGO.get(ilha) else {
+        return false;
+    };
+    if ilha >= 8 || def.zona == de {
+        return false;
+    }
+    let bit = 1u8 << ilha;
+    let novo = t.ilhas & bit == 0;
+    t.ilhas |= bit;
+    novo
+}
+
+/// IS THE SHIP MARKED? Derived, never stored: treasure on deck, or the
+/// trail of `TRILHA_DA_MARCA_S` after the deck emptied (`marca_ate`, in the
+/// sea process's clock), or the Corsair's Pirate's Code. Only at sea.
+pub fn marcado(no_mar: bool, conves: bool, agora: f32, marca_ate: f32, codigo_pirata: bool) -> bool {
+    no_mar && (conves || agora < marca_ate || codigo_pirata)
+}
+
+/// Is this item a ship with TREASURE ON DECK? Such a ship never leaves the
+/// Ship slot: the bag, the bank, the market, a trade and the Mail all refuse
+/// it. That is what makes "take it to another island" mean sailing.
+pub fn preso_ao_conves(item_id: u16, inst: Option<&ItemInstance>) -> bool {
+    item_id::e_navio(item_id) && inst.and_then(|i| i.navio).is_some_and(|d| d.conves.is_some())
+}
+
+/// Seconds to haul a floating treasure aboard with the Corsair's
+/// `Passivas::pegar_tesouro` speed bonus.
+pub fn tempo_de_pegar(bonus: f32) -> f32 {
+    PEGAR_S / (1.0 + bonus.max(0.0))
+}
+
+/// WHAT A COLOSSUS CHEST HOLDS at multiplier `mult`: the boss's chest table
+/// (`forte::conteudo_do_chefe`, the green stage, like the field boss's own
+/// chests) with every stackable SCALED by `mult` (gold, copper, Darksteel,
+/// Energy, materials, Storm Marks), the gear piece the table may roll (one,
+/// unscaled), a craft key at the purple chest's 50% (a second roll from
+/// x2.0), and `PRANCHAS_DO_COLOSSO` x mult Wreck Planks.
+pub fn conteudo_do_colosso(
+    t: &crate::items::Tesouro,
+    mult: f32,
+    rng: &mut dyn FnMut() -> f32,
+) -> Vec<crate::dungeon::Premio> {
+    use crate::dungeon::Premio;
+    let escala = |q: u32| ((q as f32 * mult).round() as u32).max(q.min(1));
+    let pranchas = Premio { item_id: item_id::PRANCHA_DE_NAUFRAGIO, qtd: escala(PRANCHAS_DO_COLOSSO), peca: None };
+    let Some(c) = crate::dungeon::conteudo(crate::forte::conteudo_do_chefe(t.chefe)) else {
+        return vec![pranchas];
+    };
+    let bau = crate::dungeon::rolar_bau(c, 1, false, false, rng);
+    let chaves = item_id::todas_as_chaves();
+    let mut v: Vec<Premio> = bau
+        .itens
+        .into_iter()
+        .filter(|p| !chaves.contains(&p.item_id))
+        .map(|p| if p.peca.is_some() { p } else { Premio { qtd: escala(p.qtd), ..p } })
+        .collect();
+    if bau.marcas > 0 {
+        v.push(Premio { item_id: item_id::MARCAS_TEMPESTADE, qtd: escala(bau.marcas), peca: None });
+    }
+    let rolagens = if mult >= 2.0 { 2 } else { 1 };
+    for _ in 0..rolagens {
+        if let Some(k) = crate::forte::chave_do_bau(4, c.nivel_min, rng(), rng()) {
+            v.push(Premio { item_id: k, qtd: 1, peca: None });
+        }
+    }
+    v.push(pranchas);
+    v
+}
+
 /// What the player asks of the ship (`ClientMessage::Navio`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PedidoNavio {
@@ -565,6 +705,9 @@ pub enum PedidoNavio {
     Melhorar { eixo: u8 },
     /// At sea: ship skill `id` (`HABILIDADES`).
     Habilidade { id: u8 },
+    /// On land: open the Colossus Chest on deck (naval phase 4), paying its
+    /// multiplier (`mult_do_tesouro`). Appended.
+    AbrirTesouro,
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.
@@ -694,9 +837,11 @@ mod testes {
 
     #[test]
     fn reconstruir_leva_estrelas_e_cosmeticos_com_o_casco_cheio() {
-        let velho = NavioData { casco: 10, avariado: true, estrelas: [2, 3, 4], vela: 1, figura: 2 };
+        let carga = tesouro_novo(10, 12, Some(0));
+        let velho = NavioData { casco: 10, avariado: true, estrelas: [2, 3, 4], vela: 1, figura: 2, conves: Some(carga) };
         let d = reconstruido(item_id::NAVIO_ESCUNA, &velho);
         assert_eq!(d.estrelas, [2, 3, 4]);
+        assert_eq!(d.conves, Some(carga), "the treasure moves to the new hull");
         assert_eq!((d.vela, d.figura), (1, 2));
         assert!(!d.avariado);
         assert_eq!(d.casco, casco_total(item_id::NAVIO_ESCUNA, &d));
@@ -790,5 +935,85 @@ mod testes {
                 assert!((8..=30).contains(&elite), "level {nivel}: elite in {elite}");
             }
         }
+    }
+
+    // ───────────────────── phase 4 ─────────────────────
+
+    /// THE PAYOUT grows with each DISTINCT island docked at after a real
+    /// crossing, and is capped; the Corsair bonus goes on top.
+    #[test]
+    fn o_multiplicador_cresce_com_as_ilhas_e_tem_teto() {
+        let mut t = tesouro_novo(10, 12, Some(1));
+        assert_eq!(mult_do_tesouro(&t, 0.0), 1.0, "opened where it dropped");
+        // Docking back where you cast off counts nothing.
+        assert!(!conta_atracacao(&mut t, 0, "ilha_inicial"));
+        assert_eq!(mult_do_tesouro(&t, 0.0), 1.0);
+        assert!(conta_atracacao(&mut t, 0, "ilha_gelo"));
+        assert!((mult_do_tesouro(&t, 0.0) - 1.6).abs() < 1e-5);
+        // The same island twice is one island.
+        assert!(!conta_atracacao(&mut t, 0, "ilha_deserto"));
+        assert!((mult_do_tesouro(&t, 0.0) - 1.6).abs() < 1e-5);
+        assert!(conta_atracacao(&mut t, 2, "ilha_inicial"));
+        assert!((mult_do_tesouro(&t, 0.0) - 2.2).abs() < 1e-5);
+        assert!(conta_atracacao(&mut t, 3, "ilha_deserto"));
+        assert!(conta_atracacao(&mut t, 1, "ilha_planalto"), "back at the origin after a crossing counts");
+        assert_eq!(ilhas_cruzadas(&t), 4);
+        assert_eq!(mult_do_tesouro(&t, 0.0), MULT_MAX, "capped");
+        assert!((mult_do_tesouro(&t, 0.2) - 3.2).abs() < 1e-5, "the Corsair adds on top");
+        assert!(!conta_atracacao(&mut t, 99, "x"));
+    }
+
+    /// THE MARK is derived: treasure on deck, the 60 s trail, or the
+    /// Pirate's Code, and only at sea.
+    #[test]
+    fn a_marca_e_derivada_e_o_rastro_dura_60_s() {
+        assert!(marcado(true, true, 0.0, 0.0, false));
+        assert!(!marcado(false, true, 0.0, 0.0, false), "never on land");
+        assert!(!marcado(true, false, 10.0, 0.0, false));
+        let ate = 10.0 + TRILHA_DA_MARCA_S;
+        assert!(marcado(true, false, 10.0 + 59.9, ate, false));
+        assert!(!marcado(true, false, 10.0 + 60.1, ate, false));
+        assert!(marcado(true, false, 1e6, 0.0, true), "the Pirate's Code");
+        assert_eq!(TRILHA_DA_MARCA_S, 60.0);
+        assert!(tempo_de_pegar(0.45) < PEGAR_S && tempo_de_pegar(-1.0) == PEGAR_S);
+    }
+
+    /// Only a ship WITH treasure is stuck on deck; the chest survives the
+    /// wire and the database.
+    #[test]
+    fn so_navio_com_tesouro_fica_preso() {
+        let id = item_id::NAVIO_CHALUPA;
+        let mut inst = instancia_nova(id);
+        assert!(!preso_ao_conves(id, Some(&inst)));
+        inst.navio.as_mut().unwrap().conves = Some(tesouro_novo(12, 20, Some(1)));
+        assert!(preso_ao_conves(id, Some(&inst)));
+        assert!(!preso_ao_conves(item_id::COPPER, Some(&inst)));
+        let volta: ItemInstance = postcard::from_bytes(&postcard::to_allocvec(&inst).unwrap()).unwrap();
+        assert_eq!(volta.navio.unwrap().conves, inst.navio.unwrap().conves);
+        let volta: ItemInstance = serde_json::from_str(&serde_json::to_string(&inst).unwrap()).unwrap();
+        assert_eq!(volta.navio.unwrap().conves.unwrap().chefe, 12);
+    }
+
+    /// THE CONTENTS scale with the multiplier: more gold and planks at x3
+    /// than at x1 for the same roll.
+    #[test]
+    fn o_conteudo_escala_com_o_multiplicador() {
+        let c = &crate::bosses::CHEFES[0];
+        let t = tesouro_novo(c.kind, c.nivel, Some(0));
+        let rolar = |mult: f32| {
+            let mut k = 0u32;
+            let mut rng = move || {
+                k += 1;
+                ((k * 37) % 100) as f32 / 100.0
+            };
+            conteudo_do_colosso(&t, mult, &mut rng)
+        };
+        let soma = |v: &[crate::dungeon::Premio], id: u16| v.iter().filter(|p| p.item_id == id).map(|p| p.qtd).sum::<u32>();
+        let (um, tres) = (rolar(1.0), rolar(3.0));
+        assert!(soma(&um, item_id::GOLD) > 0, "{um:?}");
+        assert!(soma(&tres, item_id::GOLD) >= soma(&um, item_id::GOLD) * 2);
+        assert_eq!(soma(&um, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO);
+        assert_eq!(soma(&tres, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO * 3);
+        assert!(soma(&tres, item_id::DARKSTEEL) > soma(&um, item_id::DARKSTEEL));
     }
 }

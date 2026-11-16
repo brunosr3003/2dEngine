@@ -132,6 +132,20 @@ pub enum Efeito {
     DanoCritico,
     /// XP from monsters (`Bonus::xp`).
     Xp,
+    // ── naval phase 4: the Corsair at sea (appended) ──
+    /// Ship cannon damage (`habilidade_do_navio`).
+    CanhaoPct,
+    /// Ship hull: the hull takes this much less damage (the same as that
+    /// much more hull).
+    CascoPct,
+    /// Speed hauling a floating treasure aboard (`navio::tempo_de_pegar`).
+    PegarTesouro,
+    /// Added to the Colossus Chest's payout multiplier (0.1 = +x0.1).
+    MultTesouro,
+    /// Cannon damage against MARKED ships.
+    CanhaoContraMarcado,
+    /// The Pirate's Code's cost: always marked at sea (any value < 0).
+    SempreMarcado,
 }
 
 impl Efeito {
@@ -161,6 +175,12 @@ impl Efeito {
             Efeito::LootMelhor => "Better loot chance +{}%",
             Efeito::DanoCritico => "Crit damage +{}%",
             Efeito::Xp => "XP from monsters +{}%",
+            Efeito::CanhaoPct => "Cannon damage +{}%",
+            Efeito::CascoPct => "Ship hull +{}%",
+            Efeito::PegarTesouro => "Treasure hauling speed +{}%",
+            Efeito::MultTesouro => "Colossus Chest payout +x{}",
+            Efeito::CanhaoContraMarcado => "Cannon damage vs marked ships +{}%",
+            Efeito::SempreMarcado => "Always marked at sea{}",
         }
     }
 
@@ -190,16 +210,26 @@ impl Efeito {
             Efeito::LootMelhor => "Better loot chance -{}%",
             Efeito::DanoCritico => "Crit damage -{}%",
             Efeito::Xp => "XP from monsters -{}%",
+            Efeito::CanhaoPct => "Cannon damage -{}%",
+            Efeito::CascoPct => "Ship hull -{}%",
+            Efeito::PegarTesouro => "Treasure hauling speed -{}%",
+            Efeito::MultTesouro => "Colossus Chest payout -x{}",
+            Efeito::CanhaoContraMarcado => "Cannon damage vs marked ships -{}%",
+            Efeito::SempreMarcado => "Always marked at sea{}",
         }
     }
 
     /// Is the value shown ×100 (a fraction) or as is (per second, points)?
     fn em_pct(self) -> bool {
-        !matches!(self, Efeito::RegenMana | Efeito::RegenVida | Efeito::Firmeza)
+        !matches!(self, Efeito::RegenMana | Efeito::RegenVida | Efeito::Firmeza | Efeito::MultTesouro)
     }
 
     /// The number for `modelo`'s hole ("2", "0.5", "7.5"), always positive.
     pub fn numero(self, valor: f32) -> String {
+        // A flag, not a number: its line reads whole ("Always marked at sea").
+        if self == Efeito::SempreMarcado {
+            return String::new();
+        }
         let v = if self.em_pct() { valor.abs() * 100.0 } else { valor.abs() };
         let r = (v * 10.0).round() / 10.0;
         if (r - r.round()).abs() < 1e-4 {
@@ -554,12 +584,81 @@ const RAIO_DAS_PONTES: [f32; 2] = [4.2, 9.6];
 /// of `RODA[b + 1]`), inner then outer.
 const LADOS_DAS_PONTES: [(usize, usize); 2] = [(8, 5), (23, 22)];
 
+/// THE CORSAIR AT SEA (naval phase 4): nodes appended after the bridges,
+/// all on the Corsair's side, in the gap between its right side and the
+/// Guardian (the Corsair|Guardian bridge, "Sea Legs", is the other door).
+/// Local coordinates in the Corsair arm's frame (`girar` by its angle),
+/// ring 3. Parents: `PaiDoMar`. Append only (ids are persisted).
+struct NoDoMar {
+    x: f32,
+    y: f32,
+    pais: [PaiDoMar; 2],
+    tipo: TipoNo,
+    nome: &'static str,
+    efeitos: &'static [(Efeito, f32)],
+}
+
+#[derive(Clone, Copy)]
+enum PaiDoMar {
+    /// Template slot of the Corsair arm.
+    Braco(u8),
+    /// The outer node of bridge `b` (`PONTES`).
+    PonteExterna(u8),
+    /// An earlier `MAR` node.
+    Mar(u8),
+    Nenhum,
+}
+
+use PaiDoMar as PM;
+
+const MAR: [NoDoMar; 7] = [
+    // From Deep Miner (R8): cannon, hull, then Boarding Party.
+    NoDoMar { x: 9.06, y: 5.88, pais: [PM::Braco(36), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CanhaoPct, 0.04)] },
+    NoDoMar { x: 10.06, y: 6.54, pais: [PM::Mar(0), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CascoPct, 0.05)] },
+    NoDoMar {
+        x: 11.07,
+        y: 7.19,
+        pais: [PM::Mar(1), PM::Nenhum],
+        tipo: TipoNo::Notavel,
+        nome: "Boarding Party",
+        efeitos: &[(E::PegarTesouro, 0.30), (E::MultTesouro, 0.1)],
+    },
+    // From Sea Legs (the Corsair|Guardian bridge): hull, hauling, Plunderer.
+    NoDoMar { x: 7.07, y: 8.43, pais: [PM::PonteExterna(2), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::CascoPct, 0.05)] },
+    NoDoMar { x: 7.85, y: 9.45, pais: [PM::Mar(3), PM::Nenhum], tipo: TipoNo::Menor, nome: "", efeitos: &[(E::PegarTesouro, 0.15)] },
+    NoDoMar {
+        x: 8.55,
+        y: 10.45,
+        pais: [PM::Mar(4), PM::Nenhum],
+        tipo: TipoNo::Notavel,
+        nome: "Plunderer",
+        efeitos: &[(E::MultTesouro, 0.1), (E::CanhaoPct, 0.05)],
+    },
+    // The keystone where both lines meet.
+    NoDoMar {
+        x: 10.05,
+        y: 9.15,
+        pais: [PM::Mar(2), PM::Mar(5)],
+        tipo: TipoNo::Chave,
+        nome: "Pirate's Code",
+        efeitos: &[(E::CanhaoContraMarcado, 0.25), (E::SempreMarcado, -1.0)],
+    },
+];
+
+/// First id of the sea nodes (after the bridges).
+pub const PRIMEIRO_DO_MAR: u16 = PRIMEIRA_PONTE + 2 * CAMINHOS as u16;
+/// How many sea nodes.
+pub const NOS_DO_MAR: usize = MAR.len();
+/// The Pirate's Code (the sea keystone).
+pub const CODIGO_PIRATA: u16 = PRIMEIRO_DO_MAR + 6;
+
 /// The start node's id.
 pub const INICIO: u16 = 0;
 /// First id of the bridges.
 const PRIMEIRA_PONTE: u16 = 1 + (CAMINHOS * NOS_POR_BRACO) as u16;
-/// Every node: the start, the four arms, the eight bridge nodes.
-pub const NOS_TOTAL: usize = 1 + CAMINHOS * NOS_POR_BRACO + 2 * CAMINHOS;
+/// Every node: the start, the four arms, the eight bridge nodes and the
+/// Corsair's sea nodes.
+pub const NOS_TOTAL: usize = 1 + CAMINHOS * NOS_POR_BRACO + 2 * CAMINHOS + MAR.len();
 /// 64-bit words of the allocation's bitset.
 pub const PALAVRAS: usize = 3;
 const _: () = assert!(NOS_TOTAL <= PALAVRAS * 64);
@@ -702,6 +801,34 @@ fn construir() -> Tabela {
             let (la, ld) = LADOS_DAS_PONTES[k];
             ligacoes.push((id_no_braco(a, la), id));
             ligacoes.push((id_no_braco(d, ld), id));
+        }
+    }
+    // THE CORSAIR AT SEA (naval phase 4), after the bridges.
+    for (k, m) in MAR.iter().enumerate() {
+        let id = PRIMEIRO_DO_MAR + k as u16;
+        let (x, y) = girar(m.x, m.y, ANGULO_DO_CAMINHO[Caminho::Corsario as usize]);
+        let (efeitos, n_efeitos) = efeitos_de(m.efeitos);
+        nos.push(No {
+            id,
+            tipo: m.tipo,
+            caminho: Some(Caminho::Corsario),
+            ponte: None,
+            x,
+            y,
+            anel: 3,
+            custo: custo_de(m.tipo, 3),
+            nome: m.nome,
+            efeitos,
+            n_efeitos,
+            ativa: None,
+        });
+        for p in m.pais {
+            match p {
+                PM::Nenhum => {}
+                PM::Braco(l) => ligacoes.push((id_no_braco(Caminho::Corsario, l as usize), id)),
+                PM::PonteExterna(b) => ligacoes.push((PRIMEIRA_PONTE + 2 * b as u16 + 1, id)),
+                PM::Mar(j) => ligacoes.push((PRIMEIRO_DO_MAR + j as u16, id)),
+            }
         }
     }
     let mut vizinhos = vec![Vec::new(); nos.len()];
@@ -1357,6 +1484,14 @@ pub struct Passivas {
     /// Extra critical damage (server: `Session::extra_de_dano_crit`).
     pub dano_critico: f32,
     pub xp: f32,
+    // ── naval phase 4 (the Corsair at sea) ──
+    pub canhao_pct: f32,
+    pub casco_pct: f32,
+    pub pegar_tesouro: f32,
+    pub mult_tesouro: f32,
+    pub canhao_vs_marcado: f32,
+    /// Negative = the Pirate's Code is owned (`codigo_pirata`).
+    pub sempre_marcado: f32,
 }
 
 impl Passivas {
@@ -1389,7 +1524,18 @@ impl Passivas {
             E::LootMelhor => &mut self.loot_melhor,
             E::DanoCritico => &mut self.dano_critico,
             E::Xp => &mut self.xp,
+            E::CanhaoPct => &mut self.canhao_pct,
+            E::CascoPct => &mut self.casco_pct,
+            E::PegarTesouro => &mut self.pegar_tesouro,
+            E::MultTesouro => &mut self.mult_tesouro,
+            E::CanhaoContraMarcado => &mut self.canhao_vs_marcado,
+            E::SempreMarcado => &mut self.sempre_marcado,
         }
+    }
+
+    /// The Pirate's Code: always marked at sea (`navio::marcado`).
+    pub fn codigo_pirata(&self) -> bool {
+        self.sempre_marcado < 0.0
     }
 
     /// The economy share on top of the accessories' bonus.
@@ -1506,19 +1652,22 @@ mod testes {
     fn contagem_e_custo_da_teia() {
         let t = tabela();
         assert_eq!(t.nos.len(), NOS_TOTAL);
-        assert!((150..=180).contains(&NOS_TOTAL), "{NOS_TOTAL}");
+        assert!((150..=190).contains(&NOS_TOTAL), "{NOS_TOTAL}");
+        assert_eq!(NOS_TOTAL, 180, "173 + the Corsair's 7 sea nodes");
         for (i, n) in t.nos.iter().enumerate() {
             assert_eq!(n.id as usize, i, "ids are the table's order");
         }
         let conta = |k: TipoNo| t.nos.iter().filter(|n| n.tipo == k).count();
         assert_eq!(conta(TipoNo::Inicio), 1);
         assert_eq!(conta(TipoNo::Ativa), 12);
-        assert_eq!(conta(TipoNo::Chave), 12, "three keystones a path");
-        assert_eq!(conta(TipoNo::Notavel), 36);
-        assert_eq!(conta(TipoNo::Menor), 112);
+        assert_eq!(conta(TipoNo::Chave), 13, "three keystones a path + the Pirate's Code");
+        assert_eq!(conta(TipoNo::Notavel), 38);
+        assert_eq!(conta(TipoNo::Menor), 116);
         // The whole web: about rebirth 40–50 (10 points a climb).
         let total = custo_total();
-        assert_eq!(total, 460);
+        // 460 for the web of 15/11 + 26 for the Corsair's sea nodes (four
+        // minors at 3, two notables at 4, the keystone at 6).
+        assert_eq!(total, 486);
         assert!((400..=500).contains(&total));
         assert!(pontos_ganhos(55, 100) >= total, "the owner's R55 test character buys it all");
         assert!(pontos_ganhos(7, 100) < total / 5, "rebirth 7 is far from done");
@@ -1774,6 +1923,40 @@ mod testes {
             p.somar(e, v);
         }
         assert!(p.vida_pct > 0.0 && p.velocidade_de_ataque < 0.0);
+    }
+
+    /// THE CORSAIR AT SEA: the sea nodes hang off the Corsair arm (Deep
+    /// Miner) and the Corsair|Guardian bridge, all Corsair, and their
+    /// passives sum; the Pirate's Code is a keystone that marks you.
+    #[test]
+    fn os_nos_do_mar_do_corsario() {
+        let ids: Vec<u16> = (PRIMEIRO_DO_MAR..PRIMEIRO_DO_MAR + NOS_DO_MAR as u16).collect();
+        assert_eq!(*ids.last().unwrap() as usize, NOS_TOTAL - 1, "appended last");
+        for &id in &ids {
+            assert_eq!(no(id).unwrap().caminho, Some(Caminho::Corsario));
+        }
+        assert!(vizinhos(PRIMEIRO_DO_MAR).contains(&id(Caminho::Corsario, 36)));
+        assert!(vizinhos(PRIMEIRO_DO_MAR + 3).contains(&(PRIMEIRA_PONTE + 5)));
+        let k = no(CODIGO_PIRATA).unwrap();
+        assert_eq!((k.tipo, k.nome), (TipoNo::Chave, "Pirate's Code"));
+        assert_eq!(k.linhas(), vec!["Cannon damage vs marked ships +25%".to_string(), "Always marked at sea".to_string()]);
+        // Buying the route from the start reaches the keystone.
+        let mut a = Arvore::default();
+        let rota = a.rota_ate(CODIGO_PIRATA);
+        assert!(rota.contains(&CODIGO_PIRATA));
+        for n in rota {
+            a.aprender(n, 999).unwrap();
+        }
+        let p = a.passivas();
+        assert!(p.codigo_pirata());
+        assert!(p.canhao_vs_marcado > 0.2);
+        assert!(p.mult_tesouro >= 0.1 - 1e-6, "{p:?}");
+        // Everything at sea, summed: small numbers.
+        let t = cheia().passivas();
+        assert!((t.mult_tesouro - 0.2).abs() < 1e-5);
+        assert!((t.canhao_pct - 0.09).abs() < 1e-5 && (t.casco_pct - 0.10).abs() < 1e-5);
+        assert!((t.pegar_tesouro - 0.45).abs() < 1e-5);
+        assert!(!Arvore::default().passivas().codigo_pirata());
     }
 
     #[test]

@@ -159,6 +159,7 @@ impl GameWorld {
             PedidoNavio::Construir => self.construir_casco(sid),
             PedidoNavio::Melhorar { eixo } => self.melhorar_navio(sid, eixo),
             PedidoNavio::Habilidade { id } => self.habilidade_do_navio(sid, id),
+            PedidoNavio::AbrirTesouro => self.abrir_tesouro(sid),
         }
     }
 
@@ -247,6 +248,8 @@ impl GameWorld {
             self.avisa_missao(sid, format!("The story has not taken you to {} yet.", dest.nome));
             return;
         }
+        // A Colossus Chest on deck counts this island (phase 4).
+        self.contar_atracacao(sid, ilha);
         let aviso = format!("You dock at {}.", dest.nome);
         if self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
             if let Some(s) = self.sessions.get_mut(&sid) {
@@ -292,7 +295,13 @@ impl GameWorld {
 
     /// The hull takes a bite. At zero the ship is damaged and the player is
     /// put back at the dock they sailed from (`naufragio`).
-    pub(crate) fn dano_no_casco(&mut self, sid: SessionId, dmg: i32) {
+    ///
+    /// Phase 4: `atacante` = the PLAYER whose cannon sank it (a PvP kill:
+    /// PK points as on land, none for a marked carrier or in lawless
+    /// waters, and the treasure goes to the killer); `None` = the sea (a
+    /// mob): the treasure floats at the wreck. The Corsair's hull passive
+    /// takes its share off the damage.
+    pub(crate) fn dano_no_casco(&mut self, sid: SessionId, dmg: i32, atacante: Option<EntityId>) {
         let Some((id, mut d)) = self.navio_equipado(sid) else {
             // At sea without a ship (unequipped out there): nothing holds
             // them up, so the sea washes them ashore.
@@ -303,7 +312,11 @@ impl GameWorld {
             self.naufragio(sid);
             return;
         }
-        let dmg = dmg.max(0) as u16;
+        let (marcado_antes, lado, vitima, casco_pct) = match self.sessions.get(&sid) {
+            Some(s) => (self.marcado_de(s), self.lado_pk(s), s.entity_id, s.arvore.passivas().casco_pct),
+            None => return,
+        };
+        let dmg = ((dmg.max(0) as f32) / (1.0 + casco_pct.max(0.0))).round().min(u16::MAX as f32) as u16;
         let antes = d.casco;
         d.casco = d.casco.saturating_sub(dmg);
         let limiar = (nv::casco_total(id, &d) as f32 * nv::CRITICO) as u16;
@@ -311,11 +324,20 @@ impl GameWorld {
             self.avisa_missao(sid, "Hull critical: head back to a dock.".into());
         }
         let afundou = d.casco == 0;
+        let mut tesouro = None;
         if afundou {
             d.avariado = true;
+            tesouro = d.conves.take();
         }
         self.guarda_navio(sid, d);
         if afundou {
+            if let Some(a) = atacante {
+                self.registrar_morte_pk(a, vitima, lado, marcado_antes);
+            }
+            if let Some(t) = tesouro {
+                let onde = self.pos_do_jogador(sid).unwrap_or_else(fundeadouro_padrao);
+                self.tesouro_perdido(sid, t, atacante, onde);
+            }
             self.naufragio(sid);
         }
     }
@@ -386,8 +408,9 @@ impl GameWorld {
             if self.pos_do_jogador(sid).is_some_and(shared::mar::no_corredor) {
                 continue;
             }
-            self.dano_no_casco(sid, dmg);
+            self.dano_no_casco(sid, dmg, None);
         }
+        self.tick_tesouros();
         let agora = self.sim_time_s;
         let (prontos, esperando): (Vec<_>, Vec<_>) =
             std::mem::take(&mut self.baus_do_mar).into_iter().partition(|(_, t)| *t <= agora);
@@ -744,7 +767,9 @@ impl GameWorld {
                     }
                 };
                 self.quebrar_invisibilidade(sid);
-                let dano = nv::dano_do_canhao(hab, nivel, navio, &d);
+                // The Corsair's cannon passive (phase 4).
+                let canhao = self.sessions.get(&sid).map_or(0.0, |s| s.arvore.passivas().canhao_pct);
+                let dano = (nv::dano_do_canhao(hab, nivel, navio, &d) as f32 * (1.0 + canhao.max(0.0))).round() as i32;
                 if let Some((_, p)) = alvos.first() {
                     alvo_fx = *p;
                 }
@@ -798,7 +823,14 @@ impl GameWorld {
                     return;
                 }
                 self.registrar_agressao(dono, alvo);
-                self.dano_no_casco(vsid, (dano as f32 * nv::PVP_CANHAO).round() as i32);
+                // The Pirate's Code: more against a marked ship.
+                let contra_marcado = if self.marcado_eid(alvo) {
+                    self.sessions.values().find(|s| s.entity_id == dono).map_or(0.0, |s| s.arvore.passivas().canhao_vs_marcado)
+                } else {
+                    0.0
+                };
+                let dano = dano as f32 * nv::PVP_CANHAO * (1.0 + contra_marcado.max(0.0));
+                self.dano_no_casco(vsid, dano.round() as i32, Some(dono));
             }
             None => self.pending_skill_hits.push(PendingSkillHit {
                 target_net: alvo,
@@ -860,10 +892,305 @@ impl GameWorld {
         s.inventory_dirty = true;
         self.save_pending = true;
     }
+
+    // ───────────────────── phase 4: the treasure and the mark ─────────────────────
+
+    /// Is this session MARKED (`navio::marcado`)? Treasure on deck, the
+    /// trail after losing it, or the Pirate's Code — at sea only.
+    pub(crate) fn marcado_de(&self, s: &Session) -> bool {
+        let conves = s
+            .equipment
+            .navio
+            .filter(|i| item_id::e_navio(*i))
+            .is_some_and(|id| nv::dados(s.equipment.navio_inst.as_ref(), id).conves.is_some());
+        nv::marcado(self.no_mar(), conves, self.sim_time_s, s.marca_ate, s.arvore.passivas().codigo_pirata())
+    }
+
+    /// `marcado_de` by entity.
+    pub(crate) fn marcado_eid(&self, eid: EntityId) -> bool {
+        self.sessions.values().find(|s| s.entity_id == eid).is_some_and(|s| self.marcado_de(s))
+    }
+
+    /// Every marked player at sea (for the nameplates and the skull flag).
+    pub(crate) fn marcados(&self) -> std::collections::HashSet<EntityId> {
+        if !self.no_mar() {
+            return Default::default();
+        }
+        self.sessions.values().filter(|s| s.logged_in && self.marcado_de(s)).map(|s| s.entity_id).collect()
+    }
+
+    /// The `ARQUIPELAGO` index of this process's island, if it is one.
+    fn ilha_daqui(&self) -> Option<usize> {
+        shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == self.zona)
+    }
+
+    /// A WORLD BOSS FELL (`bosses::CHEFES`, field boss): one Colossus Chest,
+    /// guaranteed, for THE KILLER — the kill credit, the same player who
+    /// gets the boss's rewards. It goes on the deck of the ship in their
+    /// Ship slot. No ship, or a deck already loaded: it opens on the spot
+    /// at ×1.0 (a fair boss prize for whoever wants no PvP; nothing lost).
+    pub(crate) fn dar_bau_do_colosso(&mut self, matador: EntityId, chefe: u16) {
+        let Some(c) = shared::bosses::chefe(chefe) else {
+            return;
+        };
+        let Some(sid) = self.sessions.values().find(|s| s.entity_id == matador && s.logged_in).map(|s| s.handle.id) else {
+            return;
+        };
+        let t = nv::tesouro_novo(chefe, c.nivel, self.ilha_daqui());
+        crate::telemetria::conta("bau_do_colosso", chefe, 1);
+        match self.navio_equipado(sid) {
+            Some((_, mut d)) if d.conves.is_none() => {
+                d.conves = Some(t);
+                self.guarda_navio(sid, d);
+                self.envia_estado_navio(sid);
+                self.avisa_missao(
+                    sid,
+                    "A Colossus Chest is on your deck. Open it here for ×1.0, or sail it to other islands for up to ×3.0 — while it is aboard, anyone can attack you at sea.".into(),
+                );
+            }
+            _ => {
+                self.avisa_missao(sid, "No free ship deck: the Colossus Chest opens on the spot (×1.0).".into());
+                self.pagar_colosso(sid, t, nv::MULT_NA_ORIGEM);
+            }
+        }
+    }
+
+    /// Rolls and hands over a Colossus Chest at `mult`. What does not fit
+    /// the bag goes to the Mail.
+    fn pagar_colosso(&mut self, sid: SessionId, t: shared::items::Tesouro, mult: f32) {
+        let mut rng = || fastrand::f32();
+        let premios = nv::conteudo_do_colosso(&t, mult, &mut rng);
+        let quando = (now_ms() / 1000) as i64;
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let soma = |id: u16| premios.iter().filter(|p| p.item_id == id).map(|p| p.qtd).sum::<u32>();
+        let (ouro, ds, pranchas) = (soma(item_id::GOLD), soma(item_id::DARKSTEEL), soma(item_id::PRANCHA_DE_NAUFRAGIO));
+        for p in &premios {
+            let inst = GameWorld::dg_rolar_peca(p);
+            crate::telemetria::conta_de(&s.name, "colosso_item", p.item_id, p.qtd as i64);
+            if !super::dungeon::entregar_premio(s, p.item_id, p.qtd, inst) {
+                s.dungeon.postar(p.item_id, p.qtd, inst, 0, quando);
+            }
+        }
+        s.inventory_dirty = true;
+        self.save_pending = true;
+        self.send_chat_to(
+            sid,
+            &format!("Colossus Chest opened at ×{mult:.1}: {ouro} gold, {ds} Darksteel, {pranchas} Wreck Planks and more."),
+        );
+    }
+
+    /// OPEN THE CHEST ON DECK, on land: its multiplier (the islands crossed)
+    /// plus the Corsair's treasure passives.
+    fn abrir_tesouro(&mut self, sid: SessionId) {
+        if self.no_mar() {
+            self.avisa_missao(sid, "Bring the Colossus Chest ashore to open it: dock at an island.".into());
+            return;
+        }
+        if self.sessions.get(&sid).is_some_and(|s| s.instancia != 0 || s.downed) {
+            return;
+        }
+        let Some((_, mut d)) = self.navio_equipado(sid) else {
+            self.avisa_missao(sid, "No treasure on your deck.".into());
+            return;
+        };
+        let Some(t) = d.conves.take() else {
+            self.avisa_missao(sid, "No treasure on your deck.".into());
+            return;
+        };
+        let bonus = self.sessions.get(&sid).map_or(0.0, |s| s.arvore.passivas().mult_tesouro);
+        let mult = nv::mult_do_tesouro(&t, bonus);
+        self.guarda_navio(sid, d);
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            crate::telemetria::conta_de(&s.name, "colosso_aberto", nv::ilhas_cruzadas(&t), 1);
+        }
+        self.pagar_colosso(sid, t, mult);
+        self.envia_estado_navio(sid);
+    }
+
+    /// Docking with the chest on deck at island `ilha`: the island counts
+    /// if the ship crossed from another one (`navio::conta_atracacao`).
+    fn contar_atracacao(&mut self, sid: SessionId, ilha: usize) {
+        let Some((_, mut d)) = self.navio_equipado(sid) else {
+            return;
+        };
+        let Some(mut t) = d.conves else {
+            return;
+        };
+        let de = self.sessions.get(&sid).map(|s| s.zona_volta.clone()).unwrap_or_default();
+        if !nv::conta_atracacao(&mut t, ilha, &de) {
+            return;
+        }
+        d.conves = Some(t);
+        self.guarda_navio(sid, d);
+        let bonus = self.sessions.get(&sid).map_or(0.0, |s| s.arvore.passivas().mult_tesouro);
+        let mult = nv::mult_do_tesouro(&t, bonus);
+        self.send_chat_to(sid, &format!("The Colossus Chest made the crossing: it now pays ×{mult:.1}."));
+    }
+
+    /// THE TREASURE IS LOST by `vitima` (its deck already emptied): the
+    /// trail of the mark starts; killed by a PLAYER (`atacante`), it goes
+    /// straight to the killer's deck if free, else it FLOATS at `onde`.
+    /// Never destroyed.
+    pub(crate) fn tesouro_perdido(&mut self, vitima: SessionId, t: shared::items::Tesouro, atacante: Option<EntityId>, onde: Vec2) {
+        let agora = self.sim_time_s;
+        if let Some(s) = self.sessions.get_mut(&vitima) {
+            s.marca_ate = agora + nv::TRILHA_DA_MARCA_S;
+        }
+        let matador = atacante.and_then(|a| self.sessions.values().find(|s| s.entity_id == a && s.logged_in).map(|s| s.handle.id));
+        if let Some(ksid) = matador.filter(|k| *k != vitima) {
+            if let Some((_, mut kd)) = self.navio_equipado(ksid).filter(|(_, d)| d.conves.is_none()) {
+                kd.conves = Some(t);
+                self.guarda_navio(ksid, kd);
+                self.envia_estado_navio(ksid);
+                self.avisa_missao(ksid, "You took their Colossus Chest: it is on your deck now.".into());
+                self.avisa_missao(vitima, "Your Colossus Chest was taken.".into());
+                return;
+            }
+        }
+        self.boiar_tesouro(onde, t);
+        self.avisa_missao(vitima, "Your Colossus Chest floats at the wreck: anyone can haul it aboard.".into());
+    }
+
+    /// A Colossus Chest FLOATING at `p` (`EntityKind::Npc(7)`, drawn as a
+    /// chest), first come first served.
+    fn boiar_tesouro(&mut self, p: Vec2, t: shared::items::Tesouro) {
+        let p = self.agua_no_mar(p);
+        let eid = self.alloc_entity_id();
+        self.ecs.spawn((
+            NetId(eid),
+            Position(p),
+            Velocity(Vec2::ZERO),
+            EntityKind::Npc(7),
+            TesouroBoiandoTag { tesouro: t, some_em: self.sim_time_s + nv::BOIA_S },
+        ));
+        crate::telemetria::conta("colosso_boiando", "", 1);
+    }
+
+    /// A touch on a floating Colossus Chest: start hauling it aboard.
+    pub(crate) fn tocar_tesouro(&mut self, sid: SessionId, entidade: hecs::Entity) {
+        let Some(p) = self.ecs.get::<&Position>(entidade).ok().map(|p| p.0) else {
+            return;
+        };
+        let Some(bau) = self.ecs.get::<&NetId>(entidade).ok().map(|n| n.0) else {
+            return;
+        };
+        let Some(eu) = self.pos_do_jogador(sid) else {
+            return;
+        };
+        let Some((_, d)) = self.navio_equipado(sid) else {
+            self.avisa_missao(sid, "You have no ship. Put one in the Ship slot of your equipment.".into());
+            return;
+        };
+        if d.conves.is_some() {
+            self.avisa_missao(sid, "Your deck already carries a Colossus Chest.".into());
+            return;
+        }
+        if eu.distance(p) > nv::ALCANCE_DO_TESOURO {
+            self.avisa_missao(sid, "Sail closer to the chest.".into());
+            return;
+        }
+        let agora = self.sim_time_s;
+        let Some(s) = self.sessions.get_mut(&sid) else {
+            return;
+        };
+        let tempo = nv::tempo_de_pegar(s.arvore.passivas().pegar_tesouro);
+        s.pegando_tesouro = Some(forte::AberturaDeBau { bau, desde: agora, de: eu });
+        let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+            tipo: nv::TIPO_COLETA_TESOURO,
+            intervalo_s: tempo,
+            progresso: 0.0,
+            centro: Some([p.x, p.y]),
+            pausado: false,
+        });
+    }
+
+    fn parar_de_pegar(&mut self, sid: SessionId) {
+        if let Some(s) = self.sessions.get_mut(&sid) {
+            if s.pegando_tesouro.take().is_some() {
+                let _ = s.handle.to_client.send(ServerMessage::ColetaEstado {
+                    tipo: shared::protocol::COLETA_PARADA,
+                    intervalo_s: 0.0,
+                    progresso: 0.0,
+                    centro: None,
+                    pausado: false,
+                });
+            }
+        }
+    }
+
+    /// The floating chests: hauls that finish or break, and chests whose
+    /// time at the wreck ran out drift to the nearest drifting-chest spot.
+    pub(crate) fn tick_tesouros(&mut self) {
+        let agora = self.sim_time_s;
+        let vencidos: Vec<(hecs::Entity, Vec2)> = self
+            .ecs
+            .query::<(&Position, &TesouroBoiandoTag)>()
+            .iter()
+            .filter(|(_, (_, t))| agora >= t.some_em)
+            .map(|(e, (p, _))| (e, p.0))
+            .collect();
+        for (e, p) in vencidos {
+            let destino = shared::mar::baus()
+                .into_iter()
+                .min_by(|a, b| a.distance(p).total_cmp(&b.distance(p)))
+                .unwrap_or(p);
+            if let Ok(mut pos) = self.ecs.get::<&mut Position>(e) {
+                pos.0 = destino;
+            }
+            if let Ok(mut t) = self.ecs.get::<&mut TesouroBoiandoTag>(e) {
+                t.some_em = f32::INFINITY;
+            }
+        }
+        let pegando: Vec<(SessionId, forte::AberturaDeBau, f32)> = self
+            .sessions
+            .iter()
+            .filter_map(|(sid, s)| s.pegando_tesouro.map(|a| (*sid, a, nv::tempo_de_pegar(s.arvore.passivas().pegar_tesouro))))
+            .collect();
+        for (sid, a, tempo) in pegando {
+            let bau = self
+                .ecs
+                .query::<(&NetId, &Position, &TesouroBoiandoTag)>()
+                .iter()
+                .find(|(_, (n, _, _))| n.0 == a.bau)
+                .map(|(e, (_, p, t))| (e, p.0, t.tesouro));
+            let Some((e, p, t)) = bau else {
+                self.parar_de_pegar(sid);
+                continue;
+            };
+            let eu = self.pos_do_jogador(sid);
+            if eu.is_none_or(|eu| eu.distance(a.de) > 1.0 || eu.distance(p) > nv::ALCANCE_DO_TESOURO) {
+                self.parar_de_pegar(sid);
+                continue;
+            }
+            if agora - a.desde < tempo {
+                continue;
+            }
+            self.parar_de_pegar(sid);
+            let Some((_, mut d)) = self.navio_equipado(sid).filter(|(_, d)| d.conves.is_none()) else {
+                continue;
+            };
+            d.conves = Some(t);
+            self.guarda_navio(sid, d);
+            self.removed_this_tick.push(a.bau);
+            let _ = self.ecs.despawn(e);
+            self.envia_estado_navio(sid);
+            self.avisa_missao(sid, "The Colossus Chest is on your deck. Anyone can attack you at sea now.".into());
+        }
+    }
 }
 
 /// The sea elite (`tornar_elite_do_mar`).
 pub struct EliteDoMarTag;
+
+/// A COLOSSUS CHEST FLOATING at a wreck (phase 4): a sunk carrier's.
+/// `some_em` = sim time it drifts off to a drifting-chest spot (then
+/// `INFINITY`: it waits there for anyone, never destroyed).
+pub struct TesouroBoiandoTag {
+    pub tesouro: shared::items::Tesouro,
+    pub some_em: f32,
+}
 
 /// The sea elite: life, bite and XP multipliers, and how long it takes to
 /// come back once sunk.
@@ -1555,5 +1882,289 @@ mod testes {
         let eid = w.sessions[&sid].entity_id;
         let v = shared::navio::Visual::do_fio(w.visuais_dos_navios()[&eid]);
         assert_eq!((v.classe, v.vela, v.figura), (0, 2, 3));
+    }
+
+    // ───────────────────── phase 4 ─────────────────────
+
+    /// A second player at `p` with a Sloop, in `modo`.
+    fn outro(w: &mut GameWorld, porta: u16, eid: u32, nome: &str, p: Vec2) -> SessionId {
+        let b = SessionId(([127, 0, 0, 1], porta).into());
+        let (tx, rx2) = mpsc::unbounded_channel();
+        std::mem::forget(rx2);
+        w.on_connect(SessionHandle { id: b, to_client: tx });
+        let eb = EntityId(eid);
+        let e = w.ecs.spawn((
+            NetId(eb),
+            Position(p),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+            PlayerTag { name: nome.into(), player_id: PlayerId(eid as u64), attack_anim_pending: None, combo_step_pending: None },
+        ));
+        let s = w.sessions.get_mut(&b).unwrap();
+        s.logged_in = true;
+        s.entity = Some(e);
+        s.entity_id = eb;
+        s.name = nome.into();
+        s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+        dar_chalupa(s);
+        b
+    }
+
+    fn modo_pk(w: &mut GameWorld, sid: SessionId, m: u8) {
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.pk_modo = m;
+        s.pk_escolhido = m;
+    }
+
+    fn com_tesouro(w: &mut GameWorld, sid: SessionId) -> shared::items::Tesouro {
+        let c = &shared::bosses::CHEFES[0];
+        let t = nv::tesouro_novo(c.kind, c.nivel, Some(1));
+        let (_, mut d) = w.navio_equipado(sid).unwrap();
+        d.conves = Some(t);
+        w.guarda_navio(sid, d);
+        t
+    }
+
+    /// `item` in the bag and the Mail (a big chest overflows to the Mail).
+    fn tem_tudo(w: &GameWorld, sid: SessionId, item: u16) -> u32 {
+        let s = &w.sessions[&sid];
+        tem(w, sid, item) + s.dungeon.correio.iter().filter(|c| c.item_id == item).map(|c| c.qtd).sum::<u32>()
+    }
+
+    fn conves(w: &GameWorld, sid: SessionId) -> Option<shared::items::Tesouro> {
+        w.navio_equipado(sid).and_then(|(_, d)| d.conves)
+    }
+
+    /// THE COLOSSUS CHEST drops from a world boss onto the killer's deck,
+    /// and the bag, the bank, a trade and the Mail all refuse the loaded
+    /// ship; it cannot even leave the Ship slot. With no ship it opens on
+    /// the spot.
+    #[test]
+    fn o_bau_do_colosso_cai_do_chefe_e_so_cabe_no_conves() {
+        let (mut w, sid, _rx) = mundo("ilha_gelo", &[]);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        let eid = w.sessions[&sid].entity_id;
+        let chefe = shared::bosses::CHEFES[0].kind;
+        w.dar_bau_do_colosso(eid, chefe);
+        let t = conves(&w, sid).expect("the chest is on deck");
+        assert_eq!((t.chefe, t.origem, t.ilhas), (chefe, 1, 0), "dropped on the Glacier");
+        assert_eq!(nv::mult_do_tesouro(&t, 0.0), 1.0);
+        let s = w.sessions.get_mut(&sid).unwrap();
+        let (id, inst) = (s.equipment.navio.unwrap(), s.equipment.navio_inst);
+        // The bag.
+        let mut bolsa = vec![shared::InventorySlot::default(); 4];
+        assert!(!add_to_inventory(&mut bolsa, id, 1, inst), "the bag took the treasure");
+        // The Mail.
+        let cartas = s.dungeon.correio.len();
+        s.dungeon.postar(id, 1, inst, 0, 0);
+        assert_eq!(s.dungeon.correio.len(), cartas, "the Mail took the treasure");
+        // A trade.
+        let slot = shared::InventorySlot { item_id: id, qty: 1, instance: inst };
+        assert!(!shared::troca::negociavel(&slot, false), "a trade took the treasure");
+        // It cannot leave the Ship slot.
+        w.handle_inventory_swap(sid, InvSpot::Equip(EquipSlot::Navio), InvSpot::Inv(5));
+        assert_eq!(w.sessions[&sid].equipment.navio, Some(id), "the loaded ship left its slot");
+        assert!(conves(&w, sid).is_some());
+        // The bank, at a banker, even if the ship were in the bag.
+        w.ecs.spawn((NetId(EntityId(7_002)), Position(Vec2::new(10.0, 11.0)), EntityKind::Npc(2)));
+        let s = w.sessions.get_mut(&sid).unwrap();
+        s.vault = vec![shared::InventorySlot::default(); 4];
+        s.inventory[6] = slot;
+        w.handle_vault_deposit(sid, 6);
+        assert!(w.sessions[&sid].vault.iter().all(|v| v.qty == 0), "the bank took the treasure");
+        // A deck already loaded: the second chest opens on the spot.
+        w.sessions.get_mut(&sid).unwrap().inventory[6] = shared::InventorySlot::default();
+        w.dar_bau_do_colosso(eid, chefe);
+        assert_eq!(conves(&w, sid), Some(t), "the deck holds one chest");
+        assert!(tem_tudo(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO) >= nv::PRANCHAS_DO_COLOSSO, "opened on the spot");
+        // An unloaded ship comes off as before (into an empty bag: the
+        // prize above filled it).
+        w.sessions.get_mut(&sid).unwrap().inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+        let (_, mut d) = w.navio_equipado(sid).unwrap();
+        d.conves = None;
+        w.guarda_navio(sid, d);
+        w.handle_inventory_swap(sid, InvSpot::Equip(EquipSlot::Navio), InvSpot::Inv(5));
+        assert_eq!(w.sessions[&sid].equipment.navio, None);
+    }
+
+    /// DOCKING ELSEWHERE raises the payout; opening on land pays it and
+    /// empties the deck; at sea it cannot be opened.
+    #[test]
+    fn atracar_em_outra_ilha_sobe_o_premio_e_abrir_paga() {
+        let (mut w, sid, _rx) = mundo(shared::mar::ZONA, &[shared::mar::ZONA, "ilha_inicial", "ilha_deserto"]);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        historia_em(&mut w, sid, 10_000);
+        com_tesouro(&mut w, sid);
+        w.handle_navio(sid, PedidoNavio::AbrirTesouro);
+        assert!(conves(&w, sid).is_some(), "opened at sea");
+        // Sailed from the Glacier, docks at the Bosque: one island.
+        w.sessions.get_mut(&sid).unwrap().zona_volta = "ilha_gelo".into();
+        let bosque = shared::mar::vista_da_zona("ilha_inicial").unwrap();
+        poe_em(&mut w, sid, bosque.fundeadouro());
+        w.handle_navio(sid, PedidoNavio::Atracar { ilha: bosque.ilha as u8 });
+        let t = conves(&w, sid).unwrap();
+        assert!((nv::mult_do_tesouro(&t, 0.0) - 1.6).abs() < 1e-5);
+        // On land it opens and pays planks at ×1.6.
+        w.zona = "ilha_inicial".into();
+        w.handle_navio(sid, PedidoNavio::AbrirTesouro);
+        assert!(conves(&w, sid).is_none());
+        assert_eq!(tem_tudo(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), 16);
+        // Nothing left to open.
+        w.handle_navio(sid, PedidoNavio::AbrirTesouro);
+        assert_eq!(tem_tudo(&w, sid, item_id::PRANCHA_DE_NAUFRAGIO), 16);
+    }
+
+    /// THE MARK: derived from the deck, a 60 s trail after losing it; a
+    /// marked ship is fair game for a Peaceful player at sea, never in the
+    /// harbour corridor.
+    #[test]
+    fn a_marca_abre_o_navio_para_o_pacifico_mas_nao_no_corredor() {
+        let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
+        dar_chalupa(w.sessions.get_mut(&a).unwrap());
+        let longe = shared::mar::ninhos()[0];
+        poe_em(&mut w, a, longe);
+        let b = outro(&mut w, 47_480, 4_780, "Corsario", longe + Vec2::new(4.0, 0.0));
+        modo_pk(&mut w, a, shared::pk::PACIFICO);
+        modo_pk(&mut w, b, shared::pk::PACIFICO);
+        let (ea, eb) = (w.sessions[&a].entity_id, w.sessions[&b].entity_id);
+        assert!(!w.marcado_eid(ea));
+        assert!(!w.can_damage_player(eb, ea), "peaceful vs peaceful");
+        com_tesouro(&mut w, a);
+        assert!(w.marcado_eid(ea), "treasure on deck marks");
+        assert!(w.can_damage_player(eb, ea), "a Peaceful player may attack the carrier");
+        assert!(!w.can_damage_player(ea, eb), "the mark opens the carrier, not the hunter");
+        assert!(w.marcados().contains(&ea));
+        // Not on land.
+        w.zona = "ilha_gelo".into();
+        assert!(!w.marcado_eid(ea));
+        w.zona = shared::mar::ZONA.into();
+        // The corridor protects even the marked.
+        poe_em(&mut w, a, fundeadouro_padrao());
+        poe_em(&mut w, b, fundeadouro_padrao() + Vec2::new(3.0, 0.0));
+        assert!(!w.can_damage_player(eb, ea), "the corridor let a marked ship be hit");
+        // The trail: the deck empties, the mark lasts 60 s.
+        let (_, mut d) = w.navio_equipado(a).unwrap();
+        let t = d.conves.take().unwrap();
+        w.guarda_navio(a, d);
+        w.tesouro_perdido(a, t, None, longe);
+        assert!(w.marcado_eid(ea), "the trail");
+        w.sim_time_s += nv::TRILHA_DA_MARCA_S - 1.0;
+        assert!(w.marcado_eid(ea));
+        w.sim_time_s += 2.0;
+        assert!(!w.marcado_eid(ea), "the trail outlived 60 s");
+    }
+
+    /// THE TWO DEATHS: sunk by the sea, the treasure FLOATS (and can be
+    /// hauled aboard by anyone); sunk by a player's cannon, it goes to the
+    /// killer's deck. The ship is only damaged; PK points as specified.
+    #[test]
+    fn afundar_faz_boiar_e_matar_em_pvp_entrega_ao_matador() {
+        let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
+        dar_chalupa(w.sessions.get_mut(&a).unwrap());
+        let longe = shared::mar::ninhos()[0];
+        poe_em(&mut w, a, longe);
+        com_tesouro(&mut w, a);
+        let ea = w.sessions[&a].entity_id;
+        // Sunk by the sea (a bite): floats.
+        w.mordidas_no_casco.push((ea, 50_000));
+        w.tick_mar();
+        assert!(conves(&w, a).is_none());
+        assert!(w.navio_equipado(a).unwrap().1.avariado, "the ship is damaged, not lost");
+        let boias: Vec<(hecs::Entity, Vec2)> =
+            w.ecs.query::<(&Position, &TesouroBoiandoTag)>().iter().map(|(e, (p, _))| (e, p.0)).collect();
+        assert_eq!(boias.len(), 1, "the treasure did not float");
+        let (boia, onde) = boias[0];
+        // Someone else hauls it aboard: it takes time, then it is theirs.
+        let b = outro(&mut w, 47_481, 4_781, "Catador", onde + Vec2::new(2.0, 0.0));
+        w.tocar_tesouro(b, boia);
+        assert!(w.sessions[&b].pegando_tesouro.is_some());
+        w.tick_mar();
+        assert!(conves(&w, b).is_none(), "hauled in no time");
+        w.sim_time_s += nv::PEGAR_S + 0.1;
+        w.tick_mar();
+        assert!(conves(&w, b).is_some(), "the haul did not finish");
+        assert!(w.ecs.get::<&TesouroBoiandoTag>(boia).is_err());
+
+        // Killed in PvP: B (now marked) is sunk by C's cannon; C gets it and
+        // no PK points (B was marked).
+        let c = outro(&mut w, 47_482, 4_782, "Pirata", onde + Vec2::new(6.0, 0.0));
+        poe_em(&mut w, b, onde + Vec2::new(2.0, 0.0));
+        modo_pk(&mut w, b, shared::pk::PACIFICO);
+        modo_pk(&mut w, c, shared::pk::PACIFICO);
+        let (eb, ec) = (w.sessions[&b].entity_id, w.sessions[&c].entity_id);
+        assert!(w.can_damage_player(ec, eb));
+        w.guarda_navio(b, shared::items::NavioData { casco: 1, conves: conves(&w, b), ..nv::novo(NAVIO_CHALUPA) });
+        w.tiro_de_canhao(ec, eb, onde, onde, 500);
+        assert!(conves(&w, b).is_none());
+        assert!(conves(&w, c).is_some(), "the killer did not get the treasure");
+        assert_eq!(w.sessions[&c].pk_points, 0, "PK points for sinking a marked carrier");
+    }
+
+    /// PK POINTS at sea: sinking an UNMARKED Peaceful player gives them as on
+    /// land; in lawless waters none.
+    #[test]
+    fn pontos_de_pk_no_mar() {
+        let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
+        dar_chalupa(w.sessions.get_mut(&a).unwrap());
+        let longe = shared::mar::ninhos()[0];
+        assert!(!shared::mar::sem_lei(longe), "the test spot must not be lawless");
+        poe_em(&mut w, a, longe);
+        let b = outro(&mut w, 47_483, 4_783, "Vilao", longe + Vec2::new(4.0, 0.0));
+        modo_pk(&mut w, a, shared::pk::PACIFICO);
+        modo_pk(&mut w, b, shared::pk::LIVRE);
+        let (ea, eb) = (w.sessions[&a].entity_id, w.sessions[&b].entity_id);
+        assert!(w.can_damage_player(eb, ea));
+        w.guarda_navio(a, shared::items::NavioData { casco: 1, ..nv::novo(NAVIO_CHALUPA) });
+        w.tiro_de_canhao(eb, ea, longe, longe, 500);
+        assert!(w.navio_equipado(a).unwrap().1.avariado);
+        assert_eq!(w.sessions[&b].pk_points, 1, "sinking an innocent costs a PK point");
+        // Lawless waters: both inside, the mode is forced, no points.
+        let z = shared::mar::zonas_sem_lei()[0];
+        let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
+        dar_chalupa(w.sessions.get_mut(&a).unwrap());
+        poe_em(&mut w, a, z);
+        let b = outro(&mut w, 47_484, 4_784, "Vilao", z + Vec2::new(4.0, 0.0));
+        modo_pk(&mut w, a, shared::pk::PACIFICO);
+        modo_pk(&mut w, b, shared::pk::PACIFICO);
+        let (ea, eb) = (w.sessions[&a].entity_id, w.sessions[&b].entity_id);
+        assert!(!w.can_damage_player(eb, ea));
+        w.tick_pk(1);
+        assert!(w.sessions[&a].pk_travado && w.sessions[&b].pk_travado, "lawless waters lock the mode");
+        assert!(w.can_damage_player(eb, ea), "lawless waters are open PvP");
+        w.guarda_navio(a, shared::items::NavioData { casco: 1, ..nv::novo(NAVIO_CHALUPA) });
+        w.tiro_de_canhao(eb, ea, z, z, 500);
+        assert!(w.navio_equipado(a).unwrap().1.avariado);
+        assert_eq!(w.sessions[&b].pk_points, 0, "PK points in lawless waters");
+    }
+
+    /// THE CORSAIR AT SEA: the cannon node hits harder, the hull node takes
+    /// less, the hauling node is faster, and the Pirate's Code marks you and
+    /// hits marked ships harder.
+    #[test]
+    fn os_nos_do_mar_do_corsario_valem() {
+        let bicho = EntityId(9_900);
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(6.0, 0.0));
+        let (id, d) = w.navio_equipado(sid).unwrap();
+        let cru = nv::dano_do_canhao(&nv::HABILIDADES[0], 30, id, &d);
+        let mut arv = shared::arvore::Arvore::default();
+        for n in arv.rota_ate(shared::arvore::CODIGO_PIRATA) {
+            arv.aprender(n, 999).unwrap();
+        }
+        let p = arv.passivas();
+        assert!(p.codigo_pirata() && p.canhao_pct > 0.0 && p.casco_pct > 0.0);
+        w.sessions.get_mut(&sid).unwrap().arvore = arv;
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 0 });
+        let golpe = golpes_em(&w, bicho)[0];
+        assert_eq!(golpe, (cru as f32 * (1.0 + p.canhao_pct)).round() as i32);
+        // Always marked at sea.
+        let eu = w.sessions[&sid].entity_id;
+        assert!(w.marcado_eid(eu), "the Pirate's Code");
+        // Hull: a bite of 1,000 takes less.
+        w.dano_no_casco(sid, 1_000, None);
+        let tirou = nv::casco_max(NAVIO_CHALUPA) - w.navio_equipado(sid).unwrap().1.casco;
+        assert_eq!(tirou, (1_000.0 / (1.0 + p.casco_pct)).round() as u16);
+        // Faster hauling.
+        assert!(nv::tempo_de_pegar(p.pegar_tesouro) < nv::PEGAR_S);
     }
 }

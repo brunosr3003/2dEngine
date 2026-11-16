@@ -468,6 +468,11 @@ pub struct PkState {
     /// cannot change it until they leave.
     #[serde(default)]
     pub travado: bool,
+    /// MARKED at sea (naval phase 4, `navio::marcado`): carrying treasure
+    /// (or its trail, or the Pirate's Code). Anyone may attack; drawn as a
+    /// skull flag and a red name. Appended.
+    #[serde(default)]
+    pub marcado: bool,
 }
 
 /// Precisao da posicao no wire: 1/8 de tile.

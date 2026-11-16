@@ -385,8 +385,11 @@ impl GameWorld {
             return;
         };
         // Peca de bau de dungeon vem vinculada na propria instancia.
+        // The market refuses the treasure too (a ship with a Colossus Chest
+        // on deck, naval phase 4): it reads as bound.
         let vinculado = crate::economy::item_vinculado(slot.item_id)
-            || slot.instance.is_some_and(|i| i.vinculado);
+            || slot.instance.is_some_and(|i| i.vinculado)
+            || shared::navio::preso_ao_conves(slot.item_id, slot.instance.as_ref());
         if let Err(r) = regras::pode_anunciar(quem.nivel, vinculado, slot.qty, qtd, preco_total) {
             responde(&quem.to_client, false, r.texto());
             return;
@@ -777,6 +780,29 @@ mod testes_energia {
             realm: "SA01".into(),
             nivel,
         }
+    }
+
+    /// THE MARKET REFUSES THE TREASURE (naval phase 4): a ship with a
+    /// Colossus Chest on deck is not listed (and nothing leaves the bag);
+    /// the same ship with an empty deck is.
+    #[test]
+    fn o_mercado_recusa_o_navio_com_tesouro() {
+        let (mut w, sid) = mundo("Bia", 0);
+        let id = shared::item_id::NAVIO_CHALUPA;
+        crate::economy::por_item_para_testes(id, 1, shared::items::item_template(id));
+        let mut inst = shared::navio::instancia_nova(id);
+        inst.navio.as_mut().unwrap().conves = Some(shared::navio::tesouro_novo(10, 12, Some(0)));
+        w.sessions.get_mut(&sid).unwrap().inventory[0] = shared::InventorySlot { item_id: id, qty: 1, instance: Some(inst) };
+        let n = w.mercado_registros.len();
+        let q = quem(&w, sid, 30);
+        w.mercado_anunciar(sid, q, 0, 1, 1_000);
+        assert_eq!(w.sessions[&sid].inventory[0].qty, 1, "the market took the treasure");
+        assert_eq!(w.mercado_registros.len(), n);
+        inst.navio.as_mut().unwrap().conves = None;
+        w.sessions.get_mut(&sid).unwrap().inventory[0].instance = Some(inst);
+        let q = quem(&w, sid, 30);
+        w.mercado_anunciar(sid, q, 0, 1, 1_000);
+        assert_eq!(w.sessions[&sid].inventory[0].qty, 0, "an empty-deck ship lists as before");
     }
 
     /// Listing takes the Energy now and queues a lot listing; too little

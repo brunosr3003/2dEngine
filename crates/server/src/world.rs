@@ -1875,9 +1875,10 @@ pub struct PortalTag {
 /// Zonas seguras protegem os dois lados.
 impl GameWorld {
     /// `vitima_lado` is the victim's PvP side as it was when the blow landed.
-    fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, vitima_lado: shared::pk::Lado) {
+    /// `marcado`: the victim was MARKED at sea (naval phase 4) when it fell.
+    pub(crate) fn registrar_morte_pk(&mut self, killer: EntityId, vitima: EntityId, vitima_lado: shared::pk::Lado, marcado: bool) {
         let revide = self.pode_revidar(killer, vitima);
-        let pontos = shared::pk::pontos_por_abate(&vitima_lado, revide, self.em_pvp_aberto(vitima));
+        let pontos = shared::pk::pontos_por_abate_no_mar(&vitima_lado, revide, self.em_pvp_aberto(vitima), marcado);
         if pontos == 0 { return; }
         if let Some(s) = self.sessions.values_mut().find(|s| s.entity_id == killer) {
             s.pk_points = s.pk_points.saturating_add(pontos);
@@ -1935,14 +1936,23 @@ impl GameWorld {
             .collect();
         for (sid, dentro) in dentro {
             let Some(s) = self.sessions.get_mut(&sid) else { continue };
+            let mar = shared::mar::e_mar(&zona);
             let aviso = if dentro && !s.pk_travado {
                 s.pk_travado = true;
                 s.pk_modo = shared::pk::MODO_NA_AREA_ABERTA;
-                Some(format!("Open PvP area — PK: {}", shared::pk::nome(s.pk_modo)))
+                Some(if mar {
+                    format!("Lawless waters: anyone can attack you here — PK: {}", shared::pk::nome(s.pk_modo))
+                } else {
+                    format!("Open PvP area — PK: {}", shared::pk::nome(s.pk_modo))
+                })
             } else if !dentro && s.pk_travado {
                 s.pk_travado = false;
                 s.pk_modo = s.pk_escolhido;
-                Some(format!("You left the PvP area — PK: {}", shared::pk::nome(s.pk_modo)))
+                Some(if mar {
+                    format!("You left the lawless waters — PK: {}", shared::pk::nome(s.pk_modo))
+                } else {
+                    format!("You left the PvP area — PK: {}", shared::pk::nome(s.pk_modo))
+                })
             } else {
                 None
             };
@@ -2029,7 +2039,14 @@ impl GameWorld {
                 }
             }
         }
-        shared::pk::pode_atacar(&self.lado_pk(att), &self.lado_pk(tgt), self.pode_revidar(attacker_eid, target_eid))
+        // AT SEA the treasure's MARK opens the target to everyone (naval
+        // phase 4); the harbour corridor already returned above.
+        shared::pk::pode_atacar_no_mar(
+            &self.lado_pk(att),
+            &self.lado_pk(tgt),
+            self.pode_revidar(attacker_eid, target_eid),
+            self.marcado_de(tgt),
+        )
     }
 }
 
@@ -2174,6 +2191,12 @@ pub struct Session {
     pub coleta_no: Option<ColetaDeNo>,
     /// Opening one of Stormkeep's chests (`forte`).
     pub abrindo_bau: Option<forte::AberturaDeBau>,
+    /// Hauling a floating Colossus Chest aboard (naval phase 4).
+    pub pegando_tesouro: Option<forte::AberturaDeBau>,
+    /// THE MARK'S TRAIL (naval phase 4, `navio::TRILHA_DA_MARCA_S`): sim
+    /// time until which this ship stays marked after its deck emptied at
+    /// sea. 0 = none. Not saved: the trail lives in the sea process.
+    pub marca_ate: f32,
     /// Recargas e curas das pocoes de recurso, por grupo (`shared::pocoes`).
     pub pocoes: shared::pocoes::EstadoDePocoes,
     /// Resto fracionario da cura de vida da pocao (HP e' inteiro).
@@ -2562,6 +2585,7 @@ impl Session {
             pontos: self.pk_points,
             modo: self.pk_escolhido,
             travado: false,
+            marcado: false,
         }
     }
 
@@ -8035,6 +8059,8 @@ impl GameWorld {
                 coleta_progresso: 0.0,
                 coleta_no: None,
                 abrindo_bau: None,
+                pegando_tesouro: None,
+                marca_ate: 0.0,
                 pocoes: Default::default(),
                 pocao_hp_resto: 0.0,
                 auth_in_flight: false,
@@ -12965,6 +12991,11 @@ impl GameWorld {
                 && self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss)
             {
                 self.forte_largar_baus(pos, shared::forte::conteudo_do_chefe(kind_id));
+                // THE COLOSSUS CHEST (naval phase 4): one, guaranteed, to the
+                // killer's ship deck (`navio::dar_bau_do_colosso`).
+                if let Some(matador) = kill_credits.get(&eid).copied() {
+                    self.dar_bau_do_colosso(matador, kind_id);
+                }
             }
             // Rastrear se era o boss
             if self.boss_entity == Some(e) {
@@ -13331,7 +13362,21 @@ impl GameWorld {
             }
         }
         for (killer, vitima, lado) in mortes_pk {
-            self.registrar_morte_pk(killer, vitima, lado);
+            let marcado = self.marcado_eid(vitima);
+            self.registrar_morte_pk(killer, vitima, lado, marcado);
+            // KILLED IN PVP AT SEA (naval phase 4): the treasure on deck
+            // goes to the killer (or floats when the killer's deck is full).
+            if self.no_mar() {
+                if let Some(vsid) = self.sessions.values().find(|s| s.entity_id == vitima).map(|s| s.handle.id) {
+                    if let Some((_, mut d)) = self.navio_equipado(vsid) {
+                        if let Some(t) = d.conves.take() {
+                            self.guarda_navio(vsid, d);
+                            let onde = self.pos_do_jogador(vsid).unwrap_or(Vec2::ZERO);
+                            self.tesouro_perdido(vsid, t, Some(killer), onde);
+                        }
+                    }
+                }
+            }
         }
         for (inst, nome) in mortes_na_dungeon {
             self.dg_morreu(inst, &nome);
@@ -13797,12 +13842,15 @@ impl GameWorld {
         let mut cla_de: HashMap<EntityId, String> = HashMap::new();
         let mut poder_de: HashMap<EntityId, i32> = HashMap::new();
         let mut renascimentos_de: HashMap<EntityId, u8> = HashMap::new();
+        // Marked ships at sea (naval phase 4): the skull flag, the red name.
+        let marcados = self.marcados();
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState {
                 hostil: shared::pk::hostil(s.pk_modo),
                 pontos: s.pk_points,
                 modo: s.pk_modo,
                 travado: s.pk_travado,
+                marcado: marcados.contains(&s.entity_id),
             };
             pk_de.insert(s.entity_id, pk);
             if pk != s.pk_visto { s.pk_visto = pk; alterados.push(s.entity_id); }
@@ -14691,6 +14739,19 @@ impl GameWorld {
             can_equip_in_slot(&equip_now, slot, item.item_id)
         };
 
+        // THE SHIP WITH TREASURE ON DECK STAYS PUT (naval phase 4): no
+        // taking it off, no swapping another ship in over it.
+        let navio_preso = shared::navio::preso_ao_conves(
+            session.equipment.navio.unwrap_or(0),
+            session.equipment.navio_inst.as_ref(),
+        );
+        if navio_preso && (a == InvSpot::Equip(shared::EquipSlot::Navio) || b == InvSpot::Equip(shared::EquipSlot::Navio)) {
+            let _ = session.handle.to_client.send(ServerMessage::Chat {
+                from: "SYS".into(),
+                text: "Treasure on deck: open the Colossus Chest before changing ships.".into(),
+            });
+            return;
+        }
         match (a, b) {
             // inv <-> inv: swap direto
             (InvSpot::Inv(ai), InvSpot::Inv(bi)) => {
@@ -15914,6 +15975,10 @@ impl GameWorld {
         }
         let src = session.inventory[inv_slot];
         if src.qty == 0 {
+            return;
+        }
+        // THE BANK REFUSES THE TREASURE (naval phase 4).
+        if shared::navio::preso_ao_conves(src.item_id, src.instance.as_ref()) {
             return;
         }
         // Tenta stackar em slot existente do vault com mesmo item_id
@@ -18526,6 +18591,9 @@ impl GameWorld {
             }
             Some((entity, 7, _, _)) if self.ecs.get::<&navio::BauDoMarTag>(entity).is_ok() => {
                 self.saquear_bau_do_mar(sid, entity);
+            }
+            Some((entity, 7, _, _)) if self.ecs.get::<&navio::TesouroBoiandoTag>(entity).is_ok() => {
+                self.tocar_tesouro(sid, entity);
             }
             Some((entity, 7, _, _)) => {
                 // Baú de tesouro: abrir conclui a quest TREASURE + dá a relíquia.
@@ -21648,6 +21716,11 @@ pub(crate) fn add_to_inventory(
     mut qty: u32,
     instance: Option<shared::items::ItemInstance>,
 ) -> bool {
+    // THE BAG REFUSES THE TREASURE (naval phase 4): a ship with a Colossus
+    // Chest on deck stays in the Ship slot.
+    if shared::navio::preso_ao_conves(item_id, instance.as_ref()) {
+        return false;
+    }
     // Cobre e darksteel vao pra CARTEIRA (os dois ultimos espacos), sem teto
     // de pilha e sem ocupar a grade.
     if instance.is_none() && shared::armazem::e_moeda(item_id) {
@@ -23363,7 +23436,7 @@ mod pk_tests {
         w.sessions.get_mut(&ids[0]).unwrap().pk_modo = shared::pk::LIVRE;
         w.sessions.get_mut(&ids[0]).unwrap().pk_points = 7;
         w.sessions.get_mut(&ids[0]).unwrap().pk_escolhido = shared::pk::LIVRE;
-        let esperado = shared::PkState { hostil: true, pontos: 7, modo: shared::pk::LIVRE, travado: false };
+        let esperado = shared::PkState { hostil: true, pontos: 7, modo: shared::pk::LIVRE, travado: false, marcado: false };
         let rows = w.collect_character_rows();
         assert_eq!(rows.iter().find(|r|r.name == "pk0").unwrap().pk, esperado);
         w.on_message(ids[0], ClientMessage::TogglePkMode { on: false });

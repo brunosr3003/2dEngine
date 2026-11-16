@@ -208,6 +208,83 @@ pub fn botao_atracar(z: &crate::hud_layout::Zonas, eu: Option<(f32, f32)>) -> Op
     (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(cais.ilha as u8)
 }
 
+// ───────────────────── phase 4: the treasure and the mark ─────────────────────
+
+/// The Colossus Chest on the equipped ship's deck, if any.
+pub fn tesouro_no_conves(eq: &shared::Equipment) -> Option<shared::items::Tesouro> {
+    let id = eq.navio.filter(|i| shared::item_id::e_navio(*i))?;
+    nv::dados(eq.navio_inst.as_ref(), id).conves
+}
+
+/// The HUD line under the hull bar, at sea: what makes you a target. The
+/// carrier reads "You carry treasure — anyone can attack you"; the trail
+/// and the Pirate's Code read "Marked"; inside lawless waters, the warning.
+pub fn linha_de_perigo(tesouro: bool, marcado: bool, sem_lei: bool) -> Option<&'static str> {
+    if tesouro {
+        Some("You carry treasure — anyone can attack you")
+    } else if marcado {
+        Some("Marked — anyone can attack you")
+    } else if sem_lei {
+        Some("Lawless waters — anyone can attack you here")
+    } else {
+        None
+    }
+}
+
+/// Draws `linha_de_perigo` in red under the hull bar.
+pub fn aviso_de_perigo(z: &crate::hud_layout::Zonas, eq: &shared::Equipment, marcado: bool, eu: Option<(f32, f32)>) {
+    if !no_mar() {
+        return;
+    }
+    let sem_lei = eu.is_some_and(|(x, y)| shared::mar::sem_lei(::glam::Vec2::new(x, y)));
+    let Some(texto) = linha_de_perigo(tesouro_no_conves(eq).is_some(), marcado, sem_lei) else {
+        return;
+    };
+    let y = z.alvo.y + z.alvo.h + 10.0 * z.s + 22.0 * z.s + 18.0 * z.s;
+    let pisca = 0.75 + 0.25 * (get_time() as f32 * 4.0).sin();
+    estilo::texto_centro_forte(screen_width() * 0.5 + 1.0, y + 1.0, texto, 15, Color::new(0.0, 0.0, 0.0, 0.85));
+    estilo::texto_centro_forte(screen_width() * 0.5, y, texto, 15, Color::new(1.0, 0.32, 0.28, pisca));
+}
+
+/// On land with a Colossus Chest on deck: "Open the Colossus Chest · ×N".
+/// `bonus` = the Corsair's treasure passive. `true` when tapped.
+pub fn botao_abrir_tesouro(z: &crate::hud_layout::Zonas, eq: &shared::Equipment, bonus: f32) -> bool {
+    if no_mar() {
+        return false;
+    }
+    let Some(t) = tesouro_no_conves(eq) else {
+        return false;
+    };
+    let rotulo = format!("Open the Colossus Chest · ×{:.1}", nv::mult_do_tesouro(&t, bonus));
+    let h = z.faixa.h * 1.5;
+    let w = estilo::medir_forte(&rotulo, 18) + h * 1.4;
+    let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y - 8.0 * z.s - h * 2.3, w, h);
+    estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
+    crate::foco::clique() && r.contains(Vec2::from(mouse_position()))
+}
+
+/// THE SKULL FLAG of a marked ship: a black flag on a pole over the main
+/// mast with a white skull of cubes, so the hunter sees the prize from afar.
+pub fn desenha_marca(p: Vec3, yaw: f32, v: Visual) {
+    let classe = nv::CASCOS[(v.classe as usize).min(nv::CASCOS.len() - 1)];
+    let k = classe.escala;
+    let t = get_time() as f32;
+    let base = p + vec3(0.0, crate::agua::ALTURA_DA_AGUA + crate::agua::AMPLITUDE_MAX * 0.6, 0.0);
+    let (fx, fz) = (yaw.sin(), yaw.cos());
+    let topo = base + vec3(-0.2 * k * fx, 4.2 * k, -0.2 * k * fz);
+    draw_cube(topo, vec3(0.08, 1.0, 0.08) * k, None, Color::from_rgba(40, 30, 22, 255));
+    let ondula = 0.06 * (t * 3.0).sin();
+    let bandeira = topo + vec3(0.0, 0.25 * k + ondula, 0.0) + vec3(fz, 0.0, -fx) * 0.45 * k;
+    draw_cube(bandeira, vec3(0.9, 0.6, 0.06) * k, None, Color::from_rgba(18, 16, 20, 255));
+    let osso = Color::from_rgba(236, 232, 220, 255);
+    draw_cube(bandeira + vec3(0.0, 0.06 * k, 0.0), vec3(0.3, 0.26, 0.1) * k, None, osso);
+    draw_cube(bandeira + vec3(0.0, -0.14 * k, 0.0), vec3(0.18, 0.1, 0.1) * k, None, osso);
+    let olho = Color::from_rgba(18, 16, 20, 255);
+    for lado in [-1.0f32, 1.0] {
+        draw_cube(bandeira + vec3(fz, 0.0, -fx) * 0.07 * k * lado + vec3(0.0, 0.08 * k, 0.0), vec3(0.08, 0.08, 0.12) * k, None, olho);
+    }
+}
+
 /// FLAT ICONS for the sea's items (no atlas art for them): the four hull
 /// classes, the Wreck Plank, the sails in their colour and the figureheads.
 /// `false` = not a sea item.
@@ -671,6 +748,24 @@ mod testes {
         inst.navio.as_mut().unwrap().estrelas = [5, 0, 0];
         eq.set(shared::EquipSlot::Navio, Some(id), Some(inst));
         assert_eq!(casco_de(&eq).map(|c| c.1), Some(3360));
+    }
+
+    /// The treasure on deck comes out of the equipment, and the HUD's
+    /// danger line says why you are a target.
+    #[test]
+    fn o_tesouro_e_o_aviso_de_perigo() {
+        let mut eq = shared::Equipment::default();
+        let id = shared::item_id::NAVIO_CHALUPA;
+        let mut inst = nv::instancia_nova(id);
+        eq.set(shared::EquipSlot::Navio, Some(id), Some(inst));
+        assert!(tesouro_no_conves(&eq).is_none());
+        inst.navio.as_mut().unwrap().conves = Some(nv::tesouro_novo(10, 12, Some(0)));
+        eq.set(shared::EquipSlot::Navio, Some(id), Some(inst));
+        assert!(tesouro_no_conves(&eq).is_some());
+        assert_eq!(linha_de_perigo(true, true, true), Some("You carry treasure — anyone can attack you"));
+        assert!(linha_de_perigo(false, true, false).unwrap().starts_with("Marked"));
+        assert!(linha_de_perigo(false, false, true).unwrap().starts_with("Lawless"));
+        assert_eq!(linha_de_perigo(false, false, false), None);
     }
 
     #[test]

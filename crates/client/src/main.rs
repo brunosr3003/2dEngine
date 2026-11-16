@@ -7300,8 +7300,19 @@ impl Jogo {
         if !self.editor_hud.aberto && !self.painel_grande() {
             mar_ui::barra_do_casco(&z, &self.bolsa.equip);
             let eu = self.world.self_pos().map(|p| (p.x, p.y));
+            // Phase 4: why you are a target, and the Colossus Chest's button.
+            let marcado = self
+                .world
+                .self_id
+                .and_then(|id| self.world.ents.get(&id))
+                .is_some_and(|e| e.meta.pk.marcado);
+            mar_ui::aviso_de_perigo(&z, &self.bolsa.equip, marcado, eu);
             if let Some(ilha) = mar_ui::botao_atracar(&z, eu) {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+            }
+            let bonus = self.arvore_ui.estado.map_or(0.0, |e| e.arvore.passivas().mult_tesouro);
+            if mar_ui::botao_abrir_tesouro(&z, &self.bolsa.equip, bonus) {
+                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::AbrirTesouro });
             }
         }
 

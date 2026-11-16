@@ -1808,6 +1808,10 @@ pub fn draw_entities_com_sombras(
         if crate::mar_ui::no_mar() && e.meta.tag == shared::EntityTag::Player {
             // Its class, sail and figurehead ride on `skins` (phase 2).
             crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
+            // Phase 4: a marked ship (treasure on deck) flies the skull.
+            if e.meta.pk.marcado {
+                crate::mar_ui::desenha_marca(p, e.yaw, shared::navio::Visual::do_fio(e.meta.skins));
+            }
             continue;
         }
 

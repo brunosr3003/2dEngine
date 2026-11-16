@@ -110,6 +110,28 @@ pub fn pode_atacar(att: &Lado, alvo: &Lado, revide: bool) -> bool {
     }
 }
 
+/// May `att` hit `alvo` AT SEA (naval phase 4)? The PK modes as on land,
+/// plus THE MARK: a ship carrying treasure (`navio::marcado`) can be attacked
+/// by anyone — a Peaceful attacker included, and past the power protection
+/// — except by its own party and clan. The harbour corridor is checked by
+/// the caller, as every safe zone.
+pub fn pode_atacar_no_mar(att: &Lado, alvo: &Lado, revide: bool, alvo_marcado: bool) -> bool {
+    if !alvo_marcado {
+        return pode_atacar(att, alvo, revide);
+    }
+    // A marked target reads as one in a PK mode: free for everyone, and
+    // not protected by power (`protegido_por_poder` spares PK targets).
+    let modo = if hostil(alvo.modo) { alvo.modo } else { GRUPO };
+    pode_atacar(att, &Lado { modo, ..*alvo }, revide)
+}
+
+/// PK points for sinking or killing someone AT SEA: as on land, and none
+/// for a MARKED carrier (carrying treasure is consenting to the fight) nor
+/// in lawless waters (`area_aberta`).
+pub fn pontos_por_abate_no_mar(vitima: &Lado, revide: bool, area_aberta: bool, marcado: bool) -> u32 {
+    pontos_por_abate(vitima, revide, area_aberta || marcado)
+}
+
 /// PK points the killer gets. Only killing a Peaceful player with a clean
 /// name, outside open PvP, when not hitting back, costs a point.
 pub fn pontos_por_abate(vitima: &Lado, revide: bool, area_aberta: bool) -> u32 {
@@ -125,8 +147,12 @@ pub fn pontos_por_abate(vitima: &Lado, revide: bool, area_aberta: bool) -> u32 {
 /// Open-PvP area: the Magic Island's combat islets (every grade), not its
 /// arrival harbour. Inside, the PK mode is forced to `MODO_NA_AREA_ABERTA`
 /// and kills give no PK points.
+///
+/// At sea (naval phase 4) the LAWLESS WATERS (`mar::sem_lei`) are the same
+/// kind of area: forced mode, no PK points.
 pub fn zona_pvp_aberto(zona: &str, pos: Vec2) -> bool {
-    crate::magica::e_magica(zona) && !crate::magica::e_porto_seguro(pos)
+    (crate::magica::e_magica(zona) && !crate::magica::e_porto_seguro(pos))
+        || (crate::mar::e_mar(zona) && crate::mar::sem_lei(pos))
 }
 
 /// The conservative mode: never hits own party or clan.
@@ -247,6 +273,33 @@ mod testes {
 
     fn lado(modo: u8, grupo: Option<u32>, cla: i64) -> Lado {
         Lado { modo, pontos: 0, grupo, cla, poder: 0 }
+    }
+
+    /// THE MARK at sea: a Peaceful carrier is fair game for a Peaceful
+    /// attacker, even a much stronger one, but not for its own party or
+    /// clan; unmarked, nothing changes. Sinking a marked carrier or anyone
+    /// in lawless waters gives no PK points; an unmarked Peaceful one does.
+    #[test]
+    fn a_marca_do_mar() {
+        let paz = lado(PACIFICO, None, 0);
+        assert!(!pode_atacar_no_mar(&paz, &paz, false, false));
+        assert!(pode_atacar_no_mar(&paz, &paz, false, true));
+        let forte = Lado { poder: 10_000, ..paz };
+        let fraco = Lado { poder: 1_000, ..paz };
+        assert!(!pode_atacar_no_mar(&forte, &fraco, false, false), "power protection off the mark");
+        assert!(pode_atacar_no_mar(&forte, &fraco, false, true), "the mark beats power protection");
+        let amigo = lado(PACIFICO, Some(3), 9);
+        assert!(!pode_atacar_no_mar(&amigo, &lado(PACIFICO, Some(3), 0), false, true), "own party");
+        assert!(!pode_atacar_no_mar(&amigo, &lado(PACIFICO, None, 9), false, true), "own clan");
+        assert_eq!(pontos_por_abate_no_mar(&paz, false, false, false), 1);
+        assert_eq!(pontos_por_abate_no_mar(&paz, false, false, true), 0);
+        assert_eq!(pontos_por_abate_no_mar(&paz, false, true, false), 0);
+        // The lawless waters are an open-PvP area; the corridor never is.
+        let z = crate::mar::zonas_sem_lei()[0];
+        assert!(zona_pvp_aberto(crate::mar::ZONA, z));
+        assert!(!zona_pvp_aberto("ilha_gelo", z));
+        let cais = crate::mar::ilhas()[0].fundeadouro();
+        assert!(!zona_pvp_aberto(crate::mar::ZONA, cais));
     }
 
     /// Attacker mode × (same party, same clan, both, none), target Peaceful.
