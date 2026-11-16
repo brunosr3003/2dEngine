@@ -4,6 +4,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New Path tree screen: drag and pinch to explore, every node has its own icon, and learned nodes light up the constellation.
 - The Path tree was reset for free: all your path points are back to spend again.
 - Resetting the Path tree is paid in gold only.
+- With a rebirth aura, gear auras no longer cover your body: the armour and accessory glows give way to it, and your weapon keeps a lighter glow.
 - Rebirth auras were redesigned: each tier has its own look (leaves, frost, runes, a golden halo and a black hole), and the rebirth celebration matches it.
 - New: the open sea. At the dock of the Grove, the Glacier, the Waste or the Plateau, ask the Harbour Captain to "Sail" and take your own ship out between the islands. Sail up to an island's dock to go ashore.
 - Your first ship, the Sloop, comes from the story quest that first takes you to the Glacier. Players already past it find a Sloop in their Mail.

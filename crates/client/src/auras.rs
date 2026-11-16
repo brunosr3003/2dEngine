@@ -22,11 +22,17 @@ fn por(bits: u64, slot: usize, mat: Mat4, centro: Vec3, raio: Vec3, fase: f32, p
     let Some((grau, tier, refino)) = shared::auras::peca(bits, slot) else { return };
     FILA.with(|f| f.borrow_mut().push(Efeito { mat, centro, raio, grau, tier, refino, fase, perto, distancia: 0.0 }));
 }
+/// `renascido`: the character shows a REBIRTH aura (owner, 16/11/2026: "a
+/// aura da espada / armadura fica conflitando com a aura do lvl"). Then the
+/// body pieces (armour and accessories) give their glow up to it, and the
+/// weapon and shield keep only the light version (no particles), so the
+/// two never pile on the same body.
 pub fn personagem(bits: u64, mats: &[Mat4; crate::rig::N], armas: &[(&str, Mat4)],
-    vox: &crate::vox::VoxCache, distancia: f32, id: u32, ferramenta: bool, atacando: bool) {
+    vox: &crate::vox::VoxCache, distancia: f32, id: u32, ferramenta: bool, atacando: bool,
+    renascido: bool) {
     if bits == 0 || distancia > 38.0 { return }
     let inicio = FILA.with(|f| f.borrow().len());
-    let perto = distancia < 18.0;
+    let perto = distancia < 18.0 && !renascido;
     let fase = id as f32 * 0.618;
     for (indice, (nome, mat)) in armas.iter().enumerate() {
         if ferramenta || matches!(*nome, "bainha" | "coldre") { continue }
@@ -71,6 +77,10 @@ pub fn personagem(bits: u64, mats: &[Mat4; crate::rig::N], armas: &[(&str, Mat4)
     if !armas.iter().any(|(nome, _)| *nome == "escudo") {
         por(bits, 1, crate::rig::pulsos(mats, crate::render3d::VOXEL)[1], Vec3::ZERO,
             Vec3::splat(0.10), fase+0.5, perto);
+    }
+    if renascido {
+        FILA.with(|f| { for e in &mut f.borrow_mut()[inicio..] { e.distancia = distancia; } });
+        return;
     }
     por(bits, 2, mats[0], vec3(0.0, 0.19, 0.0), vec3(0.30, 0.36, 0.19), fase+1.0, perto);
     for x in [-0.19, 0.19] {

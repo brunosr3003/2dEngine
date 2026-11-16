@@ -2386,7 +2386,8 @@ fn desenha_personagem(
     if e.meta.tag == shared::EntityTag::Player && e.morte.is_none() {
         crate::auras::personagem(e.meta.auras, &mats, &armas, vox,
             if eu { 0.0 } else { p.distance(vista.cam.target) }, e.meta.id.0 as u32,
-            pose.ferramenta.is_some(), e.combo.is_some() || e.skill.is_some());
+            pose.ferramenta.is_some(), e.combo.is_some() || e.skill.is_some(),
+            e.meta.renascimentos > 0);
         // The rebirth aura: ground to just over the head.
         if e.meta.renascimentos > 0 {
             let cabeca = mats[1].transform_point3(Vec3::ZERO);
@@ -3307,7 +3308,7 @@ pub fn desenha_rig_com_auras(
 ) {
     let (mats, armas) = desenha_rig(base, pose, veste, vox, None);
     if auras != 0 {
-        crate::auras::personagem(auras, &mats, &armas, vox, 0.0, 0, pose.ferramenta.is_some(), false);
+        crate::auras::personagem(auras, &mats, &armas, vox, 0.0, 0, pose.ferramenta.is_some(), false, false);
         crate::auras::desenha();
     }
 }
