@@ -8,7 +8,9 @@ desktop** (`#![cfg(all(debug_assertions, not(ios/android)))]`) e só roda com
 
 As cenas são as do teste de desempenho (`docs/BENCHMARK.md`) estendidas: mesmo
 mundo local sem servidor, mesma câmera do jogo, luz, neblina, corpos, auras,
-efeitos de habilidade e números de dano, em várias zonas. Sem HUD, sem painel.
+efeitos de habilidade e números de dano (`efeitos::numeros`, sem as placas de
+nível/vida), em várias zonas. Sem HUD, sem painel. Os prints de loja saem
+limpos, sem números (`MMO_FILME_LIMPO`).
 
 ## Como funciona
 
@@ -41,6 +43,7 @@ efeitos de habilidade e números de dano, em várias zonas. Sem HUD, sem painel.
 | `MMO_FILME_PRINTS` | N prints espalhados por cena |
 | `MMO_FILME_PRINTS_EM` | tempos em segundos, ex. `3.5,8,12.2` |
 | `MMO_FILME_SO_PRINTS` | `1` = não grava vídeo, para depois do último print |
+| `MMO_FILME_LIMPO` | `1` = sem números de dano (prints de loja). Ligado por padrão com `MMO_FILME_SO_PRINTS`; `0` desliga |
 | `MMO_FILME_MSAA` | amostras do MSAA (padrão 8) |
 
 Presets de `MMO_FILME_TAM` (retrato, salvo os deitados por natureza):
@@ -93,7 +96,7 @@ X11 (`window_conf`) pra o Wayland não suspender os quadros com a janela coberta
 | kogen | Kōgen-tō | cruzamento de Shibuya à noite, neon, robôs |
 | abissal | Abyssia | reino da bolha, luta |
 | magica | Ilha Mágica I | chegada, luta |
-| mar | mar aberto | frota com esteira; bordada contra tubarões e elite; chegada ao cais do farol do Bosque |
+| mar | mar aberto | frota com esteira; bordada contra tubarões e elite; chegada ao cais do farol do Bosque; chegada ao porto neon de Kōgen-tō |
 | auras | Bosque | fila com os 6 tiers de aura de renascimento (R1, 3, 5, 10, 15, 55), dolly |
 | chefe | Planalto | Thunderhide Behemoth (kind 22) contra 7 jogadores |
 

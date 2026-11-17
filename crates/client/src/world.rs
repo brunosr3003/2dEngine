@@ -24,6 +24,10 @@ fn mq(v: ::glam::Vec2) -> Vec2 {
 /// tranco; menor = mais macio e mais atrasado. 18 da ~90% do caminho em 130ms,
 /// que cobre o intervalo de 33ms entre snapshots com folga.
 const SMOOTH_K: f32 = 18.0;
+/// The same for a ship's HEADING at sea: ~90% of a turn's step in 0.33 s.
+const YAW_DO_CASCO_K: f32 = 7.0;
+/// Under this speed a ship's velocity no longer turns its bow.
+const VEL_DO_CASCO_PARADO: f32 = 1.0;
 /// Acima disto, entre dois ticks, a posicao nova e' teleporte e nao passo.
 /// Montado a toda (7,5 u/s) com um segundo de engasgo de rede da' 7,5.
 pub const SALTO_DE_TELEPORTE: f32 = 15.0;
@@ -689,15 +693,25 @@ impl World {
                 ent.mira = None;
             }
             let vel = mq(ent.state.vel_f32());
-            let olhar = match ent.mira {
+            // AT SEA a hull faces where it SAILS, never its aim (owner,
+            // 16/11/2026: the ship snapped to the mob on every shot and back).
+            let mira = if crate::mar_ui::no_mar() { None } else { ent.mira };
+            // A hull coasting to a stop keeps its heading: under ~1 u/s the
+            // wire's velocity steps (1/8 u/s a component) point anywhere.
+            let parado = if crate::mar_ui::no_mar() && ent.meta.tag == shared::EntityTag::Player {
+                VEL_DO_CASCO_PARADO
+            } else {
+                MOVING_EPS
+            };
+            let olhar = match mira {
                 Some((p, _)) => Some(p - ent.render_pos),
-                None if vel.length_squared() > MOVING_EPS * MOVING_EPS => Some(vel),
+                None if vel.length_squared() > parado * parado => Some(vel),
                 None => None,
             };
             // Os OUTROS olham pra onde o servidor diz (`EntityState::rumo`):
             // parado coletando, mirando ou mordendo, a velocidade nao sabe. O
             // proprio personagem continua na previsao local, sem atraso.
-            let rede = if ent.is_self() {
+            let rede = if ent.is_self() || crate::mar_ui::no_mar() {
                 None
             } else {
                 shared::yaw_de_rumo(ent.state.rumo)
@@ -718,7 +732,16 @@ impl World {
                 while d < -std::f32::consts::PI {
                     d += std::f32::consts::TAU;
                 }
-                ent.yaw += d * a;
+                // A HULL turns with weight (turning inertia, 16/11/2026): the
+                // server already turns its velocity at the class's rate, and
+                // a softer follow here hides the wire's 1/8 u/s steps of a
+                // slow ship's velocity, so the bow never twitches.
+                let k = if crate::mar_ui::no_mar() && ent.meta.tag == shared::EntityTag::Player {
+                    1.0 - (-YAW_DO_CASCO_K * dt).exp()
+                } else {
+                    a
+                };
+                ent.yaw += d * k;
             }
         }
     }

@@ -775,6 +775,24 @@ impl GameWorld {
         }
     }
 
+    /// The helm's numbers for this session's ship (turning inertia): top
+    /// speed without the Smoke, the most it turns (rad/s) and the seconds
+    /// to full speed.
+    pub(crate) fn manobra_no_mar(s: &Session) -> (f32, f32, f32) {
+        let id = s.equipment.navio.filter(|i| item_id::e_navio(*i)).unwrap_or(NAVIO_CHALUPA);
+        let d = nv::dados(s.equipment.navio_inst.as_ref(), id);
+        (nv::velocidade_do_navio(id, &d), nv::giro_max(id, &d), nv::arranque_s(id))
+    }
+
+    /// Where this session's hull points: its helm's heading once it has
+    /// sailed, else its velocity (zero = no heading, fires all round).
+    pub(crate) fn rumo_do_casco(&self, sid: SessionId, entity: hecs::Entity) -> Vec2 {
+        self.sessions
+            .get(&sid)
+            .and_then(|s| s.leme_do_mar.rumo())
+            .unwrap_or_else(|| self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO))
+    }
+
     // ───────────────────── gameplay remake: auto path and mobs ─────────────────────
 
     /// A TAP AT SEA (`handle_mover_para`): the water A* plans the whole
@@ -787,7 +805,7 @@ impl GameWorld {
             return;
         };
         if let Some(s) = self.sessions.get_mut(&sid) {
-            s.rota = shared::terreno::SeguidorDeRota::nova(rota, para);
+            s.rota = shared::terreno::SeguidorDeRota::nova(rota, para).com_folga(nv::FOLGA_DA_ROTA);
             s.rota_geracao = s.rota_geracao.wrapping_add(1);
             s.travado_desde = None;
         }
@@ -853,7 +871,7 @@ impl GameWorld {
         let Some(de) = self.ecs.get::<&Position>(entity).ok().map(|p| p.0) else {
             return;
         };
-        let rumo = self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO);
+        let rumo = self.rumo_do_casco(sid, entity);
         let nivel = self.nivel_de_sid(sid);
         let mut miras: Vec<Vec2> = Vec::new();
         match hab.efeito {
@@ -874,6 +892,11 @@ impl GameWorld {
                         return;
                     };
                     match self.posicao_alvo_skill(dono, alvo, de, &forma) {
+                        // Every ship gun is on the sides (16/11/2026).
+                        Ok(p) if !nv::no_costado(de, rumo, p) => {
+                            self.rejeita_skill(sid, id, "Turn your side to the target to fire.");
+                            return;
+                        }
                         Ok(p) => vec![(alvo, p)],
                         Err(m) => {
                             self.rejeita_skill(sid, id, m);
@@ -2340,7 +2363,7 @@ mod testes {
         assert!(w.sessions[&sid].skill_cds.is_empty());
     }
 
-    /// BOW CANNON: the selected target in range, or nothing.
+    /// LONG GUN: the selected target in range and off a side, or nothing.
     #[test]
     fn canhonaco_precisa_de_alvo_no_alcance() {
         let bicho = EntityId(9_900);
@@ -2357,6 +2380,21 @@ mod testes {
         w.sessions.get_mut(&sid).unwrap().target = Some(bicho);
         w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
         assert!(golpes_em(&mut w, bicho).is_empty());
+        // No bow gun (16/11/2026): the target dead ahead is refused, even
+        // with the ship lying still — its helm still points at it.
+        let (mut w, sid, _rx, _) = no_mar_com_bicho(Vec2::new(0.0, 15.0));
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.target = Some(bicho);
+            s.leme_do_mar = nv::Leme { proa: std::f32::consts::FRAC_PI_2, vel: 0.0, pronto: true };
+        }
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        assert!(golpes_em(&mut w, bicho).is_empty(), "the long gun fired off the bow");
+        assert!(w.sessions[&sid].skill_cds.get(&nv::id_de_skill(1)).is_none());
+        // Turned beam-on (heading east), the same target is off the side.
+        w.sessions.get_mut(&sid).unwrap().leme_do_mar.proa = 0.0;
+        w.handle_navio(sid, PedidoNavio::Habilidade { id: 1 });
+        assert_eq!(golpes_em(&mut w, bicho).len(), 1, "the long gun did not fire off the side");
     }
 
     /// EMERGENCY REPAIR heals 30% of the full hull, has a long cooldown,
@@ -2794,21 +2832,57 @@ mod testes {
         }
     }
 
-    /// Sails the route with the server's own follower and hull mover.
-    fn navega(de: Vec2, rota: Vec<Vec2>, para: Vec2) -> Vec2 {
-        let mut seg = shared::terreno::SeguidorDeRota::nova(rota, para);
+    /// Sails the route with the server's own follower, helm (turning
+    /// inertia of hull class `casco`) and hull mover. The ship leaves the
+    /// dock pointing at `rumo0`, which may be the wrong way.
+    fn navega(de: Vec2, rota: Vec<Vec2>, para: Vec2, casco: u16, rumo0: Vec2) -> (Vec2, String) {
+        let mut seg = shared::terreno::SeguidorDeRota::nova(rota, para).com_folga(nv::FOLGA_DA_ROTA);
         let agua = |x: f32, z: f32| shared::mar::navegavel(x, z);
+        let d = nv::novo(casco);
+        let (v, giro, arranque) = (nv::velocidade_do_navio(casco, &d), nv::giro_max(casco, &d), nv::arranque_s(casco));
+        let mut leme = nv::Leme { proa: rumo0.y.atan2(rumo0.x), vel: 0.0, pronto: true };
         let mut p = de;
+        let (mut ticks, mut travado, mut parado, mut refeita) = (0u32, 0u32, 0u32, 0u32);
         for _ in 0..30 * 240 {
-            let Some(dir) = seg.direcao(p) else { break };
-            p = shared::terreno::mover_casco(&agua, p, dir * nv::CASCOS[0].velocidade, shared::TICK_DT, nv::RAIO_DO_CASCO);
+            let Some(dir) = nv::direcao_na_rota(&mut seg, &leme, p, v, giro, arranque) else { break };
+            ticks += 1;
+            // Stuck: the server plans again from here (`refazer_rota` ->
+            // `handle_mover_para`, at most every 0.2 s).
+            if seg.travado() {
+                travado += 1;
+                if travado % 6 == 1 {
+                    if let Some(r) = caminho_no_mar(p, para) {
+                        seg = shared::terreno::SeguidorDeRota::nova(r, para).com_folga(nv::FOLGA_DA_ROTA);
+                        refeita += 1;
+                    }
+                }
+            }
+            let vel = leme.governa(dir, dir.length().min(1.0) * v, v, giro, arranque, shared::TICK_DT);
+            let q = nv::mover_raspando(&agua, p, vel, shared::TICK_DT, nv::RAIO_DO_CASCO);
+            // Grazing the coast (the body stops, the helm's order stays).
+            if q.distance(p) < vel.length() * shared::TICK_DT * 0.5 {
+                parado += 1;
+            }
+            p = q;
         }
-        p
+        let diag = format!(
+            "{:.0} s, {} points left (next {:?}), {travado} ticks stuck, {refeita} new routes, {parado} on the coast",
+            ticks as f32 * shared::TICK_DT,
+            seg.restantes(),
+            seg.pontos().next()
+        );
+        // Coasting to a stop after the last point.
+        while leme.vel > 0.0 {
+            let vel = leme.governa(Vec2::ZERO, 0.0, v, giro, arranque, shared::TICK_DT);
+            p = nv::mover_raspando(&agua, p, vel, shared::TICK_DT, nv::RAIO_DO_CASCO);
+        }
+        (p, diag)
     }
 
     /// THE WATER A*: from every dock to every other, the route never touches
-    /// land, and the hull sailing it with the real follower and
-    /// `mover_casco` arrives close enough to DOCK.
+    /// land, and the hull sailing it with the real follower, the helm's
+    /// turning circle of EVERY hull class (leaving the dock pointing back
+    /// at the island) and `mover_casco` arrives close enough to DOCK.
     #[test]
     fn a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais() {
         let ilhas = shared::mar::ilhas();
@@ -2821,15 +2895,18 @@ mod testes {
                 let rota = caminho_no_mar(de, para).unwrap_or_else(|| panic!("no route {} -> {}", a.nome, b.nome));
                 assert!(rota.len() < 64, "{} -> {}: {} waypoints, not pulled taut", a.nome, b.nome, rota.len());
                 rota_so_na_agua(de, &rota);
-                let fim = navega(de, rota, para);
-                assert_eq!(
-                    shared::mar::cais_perto(fim).map(|v| v.ilha),
-                    Some(b.ilha),
-                    "{} -> {}: the hull stopped at {fim:?}, {:.1} u from the anchorage",
-                    a.nome,
-                    b.nome,
-                    fim.distance(para)
-                );
+                for c in nv::CASCOS {
+                    let (fim, diag) = navega(de, rota.clone(), para, c.item, -a.eixo());
+                    assert_eq!(
+                        shared::mar::cais_perto(fim).map(|v| v.ilha),
+                        Some(b.ilha),
+                        "{} -> {} on a {}: the hull stopped at {fim:?}, {:.1} u from the anchorage ({diag})",
+                        a.nome,
+                        b.nome,
+                        c.nome,
+                        fim.distance(para)
+                    );
+                }
             }
         }
         // From the mob nests (open sea) to every dock, too.
@@ -2869,7 +2946,7 @@ mod testes {
     fn a_bala_voa_e_acerta_o_alvo_certo() {
         let bicho = EntityId(9_900);
         let (mut w, sid, _rx, aqui) = no_mar_com_bicho(Vec2::new(8.0, 0.0));
-        // A second mob nearby that is NOT the target of the Bow Cannon.
+        // A second mob nearby that is NOT the target of the Long Gun.
         w.ecs.spawn((NetId(EntityId(9_901)), Position(aqui + Vec2::new(0.0, 9.0)), Velocity(Vec2::ZERO),
             EntityKind::Enemy(ENGUIA), Health { current: 800, max: 800 }));
         w.sessions.get_mut(&sid).unwrap().target = Some(bicho);

@@ -609,10 +609,14 @@ fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32) -> (Mat4, Vec<(Vec
         }
         let e = m.entry(semente).or_insert(Movimento { yaw, giro: 0.0, adernar: 0.0, t: agora, rastro: VecDeque::new() });
         let dt = ((agora - e.t) as f32).clamp(1e-3, 0.25);
+        // The heel follows the TURN (turning inertia, 16/11/2026): the
+        // server turns a hull at most `navio::giro_max` (1.5 rad/s for a
+        // Sloop, 0.7 for a Man-o'-War), so a nimble Sloop leans ~9° in a
+        // hard turn and a Man-o'-War ~4°, both easing in and out slowly.
         let giro = ang_dif(yaw, e.yaw) / dt;
-        e.giro += (giro.clamp(-3.0, 3.0) - e.giro) * (dt * 4.0).min(1.0);
-        let alvo = (-e.giro * 0.09).clamp(-0.2, 0.2);
-        e.adernar += (alvo - e.adernar) * (dt * 2.5).min(1.0);
+        e.giro += (giro.clamp(-2.0, 2.0) - e.giro) * (dt * 3.0).min(1.0);
+        let alvo = (-e.giro * 0.105).clamp(-0.2, 0.2);
+        e.adernar += (alvo - e.adernar) * (dt * 2.0).min(1.0);
         e.yaw = yaw;
         e.t = agora;
         let popa = q - frente * meio_comp * 0.9;

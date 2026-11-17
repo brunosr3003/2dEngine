@@ -7,7 +7,7 @@
 //! - **the target**: a big ring on the water and its life bar;
 //! - **the Broadside's arcs**: the two side cones on the water while a
 //!   target is near — green when it would hit, grey when not;
-//! - **the Bow Cannon**: an aim line to the target and the range ring;
+//! - **the Long Gun**: an aim line to the target and the range ring;
 //! - **the shot**: muzzle flashes along the side, smoke, the cannonball on
 //!   its arc for its REAL flight time (`navio::tempo_de_voo`, the same the
 //!   server lands it with), a splash on a miss and a burst of splinters on
@@ -371,9 +371,13 @@ impl MarCombate {
                 }
             }
             Efeito::Canhonaco => {
-                let proa = de + frente * 2.2;
+                // The long gun fires from the SIDE facing the target (no bow
+                // gun since 16/11/2026).
+                let lado = Vec2::new(-frente.y, frente.x);
+                let sinal = if lado.dot(mira - de) >= 0.0 { 1.0 } else { -1.0 };
+                let proa = de + lado * sinal * 1.3;
                 self.clarao(p3(proa));
-                self.fumaca(p3(proa), vec3(frente.x, 0.0, frente.y), 4);
+                self.fumaca(p3(proa), vec3(lado.x * sinal, 0.0, lado.y * sinal), 4);
                 if mira.distance(de) > 0.01 {
                     self.bala(Bala { ativa: true, de: p3(proa), para: mira, inicio: agora, voo: nv::tempo_de_voo(de.distance(mira)), meu, dono });
                 }
@@ -533,7 +537,7 @@ impl MarCombate {
                 }
             }
         }
-        // ── the target, the Broadside's arcs and the Bow Cannon's line ──
+        // ── the target, the Broadside's arcs and the Long Gun's line ──
         if let Some(a) = alvo_e {
             let r = if a.meta.tag == EntityTag::Player { 3.4 } else if e_elite(a) { 3.2 } else { 2.2 };
             let pulsa = 0.75 + 0.25 * (t * 4.0).sin();
@@ -550,39 +554,27 @@ impl MarCombate {
                 let d = eu.render_pos.distance(a.render_pos);
                 let bordada = &nv::HABILIDADES[0];
                 let proa = &nv::HABILIDADES[1];
-                // The Bow Cannon: a line to the target, the range ring.
+                // The Long Gun: a line to the target, the range ring.
                 let no_alcance = d <= proa.alcance;
                 let cor_linha = if no_alcance { [1.0, 0.62, 0.22, 0.55] } else { [0.6, 0.6, 0.62, 0.35] };
                 faixa(&mut self.decais, eu.render_pos, a.render_pos, 0.12, cor_linha);
                 anel(&mut self.decais, eu.render_pos, proa.alcance, 0.1, [1.0, 0.62, 0.22, 0.16], 64);
-                // The Broadside's two cones, while the target is near.
+                // The Broadside's two cones, while the target is near. Every
+                // gun is a side gun (16/11/2026): a ship lying still keeps
+                // its heading and its cones (`mar_ui::rumo_do_casco`).
                 if d <= bordada.alcance + 8.0 {
-                    let rumo = eu.state.vel_f32();
-                    let parado = rumo.length_squared() < 0.25;
-                    let costado = nv::no_costado(g(eu.render_pos), if parado { ::glam::Vec2::ZERO } else { rumo }, g(a.render_pos));
+                    let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
+                    let costado = nv::no_costado(g(eu.render_pos), rumo, g(a.render_pos));
                     let acerta = d <= bordada.alcance && costado;
                     let verde = [0.35, 0.95, 0.45, 0.22];
                     let cinza = [0.75, 0.75, 0.78, 0.1];
-                    if parado {
-                        // Standing still it fires all round: the reach as a
-                        // ring with a whisper of fill (a full disc buried the
-                        // fight under it).
-                        let (borda, miolo) = if acerta {
-                            ([0.35, 0.95, 0.45, 0.55], [0.35, 0.95, 0.45, 0.07])
-                        } else {
-                            ([0.75, 0.75, 0.78, 0.35], [0.75, 0.75, 0.78, 0.03])
-                        };
-                        anel(&mut self.decais, eu.render_pos, bordada.alcance, 0.14, borda, 48);
-                        setor(&mut self.decais, eu.render_pos, 0.0, bordada.alcance, 0.0, std::f32::consts::TAU, miolo, 24);
-                    } else {
-                        let ang = rumo.y.atan2(rumo.x);
-                        let meia = nv::BORDADA_COS_MAX.acos();
-                        let lado_alvo = (a.render_pos - eu.render_pos).perp_dot(vec2(rumo.x, rumo.y)) < 0.0;
-                        for (s, este) in [(1.0f32, lado_alvo), (-1.0, !lado_alvo)] {
-                            let centro = ang + s * std::f32::consts::FRAC_PI_2;
-                            let cor = if acerta && este { verde } else { cinza };
-                            setor(&mut self.decais, eu.render_pos, 2.0, bordada.alcance, centro - (std::f32::consts::FRAC_PI_2 - meia), centro + (std::f32::consts::FRAC_PI_2 - meia), cor, 12);
-                        }
+                    let ang = rumo.y.atan2(rumo.x);
+                    let meia = nv::BORDADA_COS_MAX.acos();
+                    let lado_alvo = (a.render_pos - eu.render_pos).perp_dot(vec2(rumo.x, rumo.y)) < 0.0;
+                    for (s, este) in [(1.0f32, lado_alvo), (-1.0, !lado_alvo)] {
+                        let centro = ang + s * std::f32::consts::FRAC_PI_2;
+                        let cor = if acerta && este { verde } else { cinza };
+                        setor(&mut self.decais, eu.render_pos, 2.0, bordada.alcance, centro - (std::f32::consts::FRAC_PI_2 - meia), centro + (std::f32::consts::FRAC_PI_2 - meia), cor, 12);
                     }
                 }
             }
@@ -780,7 +772,7 @@ fn mundo_da_previa(eu: Vec2, yaw: f32, vel: Vec2, outros: &[CorpoDaPrevia]) -> W
 }
 
 /// PREVIEW of the sea fight (`MMO_PREVIA_MAR=1`, after the scene's own):
-/// a Broadside in flight, a Bow Cannon shot, a shark winding up its bite
+/// a Broadside in flight, a Long Gun shot, a shark winding up its bite
 /// with an elite beside it, and the auto path's route on the water with
 /// the ship panel and the "Sail to" ports — to `MMO_PREVIA_SAIDA`
 /// (`mar-combate-*.png`).
@@ -825,9 +817,10 @@ pub async fn previa() {
             "proa",
             aberto,
             Vec2::ZERO,
-            vec![(2, EntityTag::Enemy, TUBARAO, aberto + rumo * 17.0 + lado * 3.0, None)],
+            // The Long Gun is a side gun: the target off the beam, far out.
+            vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 17.0 + rumo * 3.0, None)],
             Some(2),
-            vec![(nv::id_de_skill(1), aberto, aberto + rumo * 17.0 + lado * 3.0, 0)],
+            vec![(nv::id_de_skill(1), aberto, aberto + lado * 17.0 + rumo * 3.0, 0)],
             0.35,
         ),
         (
@@ -870,7 +863,7 @@ pub async fn previa() {
         for _ in 0..80 {
             terreno.atualiza(eu, crate::config_graficos::RAIO_PADRAO + 1, 400);
         }
-        // From astern for the bow shot (the target ahead in view).
+        // From astern for the long gun's shot (the target in view).
         let cam_yaw = yaw_eu
             + match nome {
                 "rota" => 0.3,

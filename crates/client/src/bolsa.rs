@@ -1361,6 +1361,8 @@ impl Bolsa {
             let linhas = [
                 ("Hull", format!("{} / {}", nv.casco, shared::navio::casco_total(peca.id, &nv))),
                 ("Speed", format!("{:.1}", shared::navio::velocidade_do_navio(peca.id, &nv))),
+                // Turning inertia: the bigger the hull, the slower it turns.
+                ("Turning", shared::navio::rotulo_do_giro(peca.id, &nv).to_string()),
                 ("Cannon", format!("×{:.2}", shared::navio::mult_do_canhao(peca.id, &nv))),
             ];
             for (rot, val) in linhas {

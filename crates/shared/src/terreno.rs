@@ -5680,6 +5680,9 @@ pub struct SeguidorDeRota {
     sem_avanco: u32,
     melhor: f32,
     travado: bool,
+    /// A point that is NOT the last counts as reached this close (0 = only
+    /// `CHEGOU`). At sea a hull turns in a circle (`navio::FOLGA_DA_ROTA`).
+    folga: f32,
 }
 
 impl SeguidorDeRota {
@@ -5697,7 +5700,14 @@ impl SeguidorDeRota {
             sem_avanco: 0,
             melhor: f32::MAX,
             travado: false,
+            folga: 0.0,
         }
+    }
+
+    /// The same route, with waypoints before the last reached `folga` away.
+    pub fn com_folga(mut self, folga: f32) -> Self {
+        self.folga = folga.max(0.0);
+        self
     }
 
     pub fn vazia(&self) -> bool {
@@ -5756,7 +5766,8 @@ impl SeguidorDeRota {
         loop {
             let alvo = *self.pontos.front()?;
             let d = pos.distance(alvo);
-            if d <= Self::CHEGOU {
+            let chegou = if self.pontos.len() > 1 { Self::CHEGOU.max(self.folga) } else { Self::CHEGOU };
+            if d <= chegou {
                 self.avanca();
                 continue;
             }

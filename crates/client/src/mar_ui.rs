@@ -27,6 +27,18 @@ pub fn no_mar() -> bool {
     NO_MAR.load(Ordering::Relaxed)
 }
 
+/// Where a hull points (turning inertia, 16/11/2026): its velocity while
+/// it sails, else its drawn heading (`yaw` is `x.atan2(z)`). The server's
+/// helm keeps a heading when the ship lies still, so a stopped ship fires
+/// off its sides too — never all round.
+pub fn rumo_do_casco(vel: ::glam::Vec2, yaw: f32) -> ::glam::Vec2 {
+    if vel.length_squared() > 1.0 {
+        vel
+    } else {
+        ::glam::Vec2::new(yaw.sin(), yaw.cos())
+    }
+}
+
 fn rgb(c: [u8; 3]) -> Color {
     Color::from_rgba(c[0], c[1], c[2], 255)
 }
@@ -193,13 +205,13 @@ pub struct ContextoNavio {
     /// AUTO COMBAT is on: the server's pilot steers and fires the cannons
     /// (`world/piloto_do_mar.rs`); the bar's own AUTO stands down.
     pub auto_combate: bool,
-    /// The target is off the beam (or the ship stands still): a Broadside
-    /// would reach it (`navio::no_costado`).
+    /// The target is off the beam: a Broadside or the Long Gun would reach
+    /// it (`navio::no_costado` on `rumo_do_casco`).
     pub no_costado: bool,
 }
 
 /// THE SHIP'S BAR (docs/NAVEGACAO.md, phase 2): at sea, skill slots 1-4
-/// are the ship's — Broadside, Bow Cannon, Emergency Repair, Smoke. Same
+/// are the ship's — Broadside, Long Gun, Emergency Repair, Smoke. Same
 /// gestures as the weapon bar: tap to fire, drag up for AUTO (the attacks
 /// only), drag down for manual. Cooldowns come in the usual `SkillsState`.
 #[derive(Default)]
@@ -302,7 +314,9 @@ impl BarraDoNavio {
             } else if espera(h, hab, agora) > 0.0 {
                 Some("Skill on cooldown")
             } else if h.efeito == nv::Efeito::Canhonaco && !alcanca(h, c.distancia_alvo) {
-                Some("Select an enemy in range of the bow cannon")
+                Some("Select an enemy in range of the long gun")
+            } else if h.efeito == nv::Efeito::Canhonaco && !c.no_costado {
+                Some("Turn your side to the target to fire")
             } else {
                 None
             };

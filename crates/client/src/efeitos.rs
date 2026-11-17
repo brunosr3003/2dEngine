@@ -304,6 +304,12 @@ pub fn desenha(world: &World, vista: &Vista) {
     // Depois das dos inimigos: numa mistura, o nome do jogador é o que se
     // procura primeiro, então ele fica por cima.
     placas_de_jogador(world, vista);
+    numeros(world, vista);
+}
+
+/// Only the sparks, damage numbers and the red edge, without the plates
+/// (the ad capture, `filme`).
+pub fn numeros(world: &World, vista: &Vista) {
     for ef in &world.efeitos {
         let Some(e) = world.ents.get(&ef.alvo) else {
             continue;

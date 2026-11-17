@@ -281,8 +281,8 @@ Capitania.
 
 | Slot | Skill | Efeito | Recarga | Alcance | Dano | AUTO |
 |---|---|---|---|---|---|---|
-| 1 | Bordada (Broadside) | todo inimigo a até 12 m nos costados (proa e popa cegas, \|cos\| ≤ 0,8; parado atira em volta) | 6 s | 12 m | ×1,4 | sim |
-| 2 | Canhão de Proa (Bow Cannon) | um tiro no alvo selecionado | 4 s | 22 m | ×2,2 | sim |
+| 1 | Bordada (Broadside) | todo inimigo a até 12 m nos costados (proa e popa cegas, \|cos\| ≤ 0,8; parado continua atirando só dos costados, pelo rumo do leme) | 6 s | 12 m | ×1,5 | sim |
+| 2 | Canhão Longo (Long Gun; era o Canhão de Proa até 16/11) | um tiro no alvo selecionado, **só com ele num costado** | 5 s | 22 m | ×0,6 | sim |
 | 3 | Reparo de Emergência | +30% do casco cheio | 60 s | — | — | não |
 | 4 | Fumaça (Smoke) | invisível/intocável 3 s (a invisibilidade das ativas) + 30% de velocidade por 4 s | 30 s | — | — | não |
 
@@ -613,6 +613,8 @@ tubarão provocado): um ninho de três curou quatro vezes e passou de 120 s.
   alvo (ou dois bichos) no costado; com bicho ao alcance na proa/popa e
   nenhuma mordida vindo, **para uma decisão** (parado atira em volta) e
   pega o bando todo. Canhão de Proa sempre que o alvo está nos 22 m.
+  *(Mudou no mesmo dia: sem parar, sem canhão de proa — ver "Inércia de
+  giro e tudo de lado".)*
 - **Lê a telegrafia:** mordida vindo nele = rumo direto pra longe do bicho
   até ela fechar; bicho a menos de 6 m empurra o casco.
 - **Casco:** Reparo de Emergência abaixo de 35%; abaixo de 20% sem reparo,
@@ -641,6 +643,72 @@ anunciadas. Testes: `o_piloto_vence_o_auto_antigo_no_mesmo_ninho`,
 < 50% casco, > 60% acerto, nunca parado 3 s), `o_piloto_aguenta_o_ninho_do_elite`,
 `com_o_casco_baixo_o_piloto_repara_e_recua`, `o_piloto_respeita_o_corredor_e_o_pk`;
 cliente `o_piloto_segue_o_auto_e_recua_com_o_casco`.
+
+### Inércia de giro e tudo de lado (16/11/2026, versão de TESTE, protocolo 199)
+
+O dono: *"do nada ele vira pro mob e volta… tem algum ataque que sai da
+frente do barco? se sim tira, tudo tem que sair de lado"* e *"a rotação do
+barco tem que ser um pouco mais blocada pra dar sensação de barco… quanto
+maior mais demora a virar"*.
+
+- **Tudo sai de lado.** O Canhão de Proa virou **Canhão Longo** (Long Gun):
+  mesmo alcance (22 m), só com o alvo num costado (`navio::no_costado`); o
+  servidor recusa com "Turn your side to the target to fire.", a barra do
+  cliente também. O piloto não "para pra atirar em volta" mais. O casco no
+  mar nunca vira pra mira (`ent.mira` ignorado, `rumo` dos outros ignorado).
+- **Leme com peso** (`shared::navio::Leme`, um por sessão no mar,
+  `Session::leme_do_mar`): o joystick, a rota ou o piloto dizem pra onde; o
+  rumo gira no máximo `giro_max` rad/s, a velocidade vai ao alvo numa rampa
+  de `arranque_s` (subindo e descendo) e cai em curva fechada:
+  `v × (1 − 0,6·|ângulo que falta|/π)` (meia-volta a 40%). A velocidade
+  enviada é sempre `rumo × vel` (nunca passa de `VELOCIDADE_MAX`, abaixo do
+  fio). Parado, o navio guarda o rumo: Bordada e Canhão Longo continuam só
+  dos costados (`rumo_do_casco` no servidor, `mar_ui::rumo_do_casco` pelo
+  yaw no cliente). Só um casco que nunca navegou atira em volta (e isso é
+  no corredor do cais, onde não se atira).
+
+| Casco | Giro (rad/s) | Arranque | Rótulo | Órbita do piloto | Vel. na órbita |
+|---|---|---|---|---|---|
+| Chalupa | 1,5 | 0,6 s | Agile | 7,5 m | 10,0 |
+| Escuna | 1,2 | 0,75 s | Steady | 9,3 m | 10,3 |
+| Galeão | 0,9 | 0,9 s | Heavy | 10 m | 8,3 |
+| Nau | 0,7 | 1,05 s | Heavy | 10 m | 6,4 |
+
+  Estrela de vela: +3% no giro (como na velocidade). O cartão do navio
+  (bolsa) e o Estaleiro mostram "Turning: Agile/Steady/Heavy".
+- **Rota com raio de giro** (`navio::direcao_na_rota`): ponto a `d`, `θ`
+  fora da proa só é alcançável se `d ≥ 2·r·sen θ` (`r = v/giro`): o
+  acelerador cai até caber. Curva da rota de `φ` é feita a `giro·4/sen(φ/2)`
+  freando a tempo; ponto intermediário conta como alcançado a 2,5 m
+  (`FOLGA_DA_ROTA`); virando (> ~30°), o seguidor não se dá por travado.
+  Casco que raspa a costa desliza ±20°/±40° a meia força
+  (`navio::mover_raspando`) em vez de empacar (a Nau empacava num pontal na
+  rota Geleira → Ilha Mágica).
+- **Piloto:** órbita `raio_do_piloto` (raio de giro a toda, entre 7,5 e
+  10 m) na velocidade `velocidade_do_piloto` (92% de `giro·r`); aproxima e
+  foge de mordida a toda. Sem alvo atirável (bicho na carência ou voltando
+  pra casa) segue o mais perto em vez de ficar parado; com o alvo a mais de
+  8 m do ninho, a órbita puxa pro ninho (a coleira: o Galeão arrastava o
+  bicho, ele desistia, voltava e curava). Fora da área de 24 m, pega o mais
+  perto até 40 m.
+- **Cliente:** yaw do casco segue a velocidade com suavização própria
+  (`YAW_DO_CASCO_K` 7) e abaixo de 1 u/s guarda o rumo (o degrau de 1/8 u/s
+  do fio apontava pra qualquer lado); adernar segue o giro (~9° Chalupa,
+  ~4° Nau). Sem previsão local (o cliente não prevê movimento).
+
+| Piloto, ninho do nível (3 bichos) | ninho 0 | ninho 2 | ninho 4 |
+|---|---|---|---|
+| Chalupa | 32,4 s | 30,8 s | 27,0 s |
+| Escuna | 26,4 s | 25,8 s | 26,4 s |
+| Galeão | 26,7 s | 26,0 s | 26,6 s |
+| Nau | 32,7 s | 46,5 s | 21,0 s |
+
+Todos: 0% de casco, 100% de acerto, 0 mordidas, nunca parado mais de 1 s.
+Testes: shared `o_navio_vira_com_peso`, `a_rota_nao_fica_orbitando_o_ponto`;
+servidor `o_piloto_afunda_o_ninho_do_nivel_sem_perder_metade_do_casco`
+(agora as quatro classes), `a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais`
+(as quatro classes saindo do cais de proa pra ilha), `canhonaco_precisa_de_alvo_no_alcance`
+(alvo na proa recusado mesmo parado).
 
 ### Remake visual (16/11/2026, versão de TESTE, protocolo 199)
 

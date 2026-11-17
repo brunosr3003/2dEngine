@@ -335,10 +335,11 @@ impl ViagemUi {
                     r.x + 14.0 * f,
                     r.y + 48.0 * f,
                     &format!(
-                        "Level {} · Hull {} · Speed {:.1} · the old hull is consumed, stars kept",
+                        "Level {} · Hull {} · Speed {:.1} · Turning {} · the old hull is consumed, stars kept",
                         shared::progressao::texto_de_nivel(classe.nivel),
                         classe.casco,
                         classe.velocidade,
+                        nv::rotulo_do_giro(rec.para, &nv::novo(rec.para)),
                     ),
                     13,
                     if nivel_ok { estilo::SUAVE } else { estilo::VERMELHO },
@@ -371,14 +372,16 @@ impl ViagemUi {
     }
 }
 
-/// The ship's numbers in one line: hull, speed, cannon.
+/// The ship's numbers in one line: hull, speed, how it turns (turning
+/// inertia: Agile, Steady, Heavy), cannon.
 pub fn linha_do_navio(id: u16, d: &shared::items::NavioData) -> String {
     use shared::navio as nv;
     format!(
-        "Hull {} / {} · Speed {:.1} · Cannon ×{:.2}",
+        "Hull {} / {} · Speed {:.1} · Turning {} · Cannon ×{:.2}",
         d.casco,
         nv::casco_total(id, d),
         nv::velocidade_do_navio(id, d),
+        nv::rotulo_do_giro(id, d),
         nv::mult_do_canhao(id, d)
     )
 }
@@ -424,9 +427,11 @@ mod tests {
     fn a_linha_do_navio_conta_as_estrelas() {
         let id = shared::item_id::NAVIO_CHALUPA;
         let mut d = shared::navio::novo(id);
-        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 2400 · Speed 10.0 · Cannon ×1.00");
+        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 2400 · Speed 10.0 · Turning Agile · Cannon ×1.00");
         d.estrelas = [5, 5, 5];
-        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 3360 · Speed 11.5 · Cannon ×1.40");
+        assert_eq!(linha_do_navio(id, &d), "Hull 2400 / 3360 · Speed 11.5 · Turning Agile · Cannon ×1.40");
+        let nau = shared::item_id::NAVIO_NAU;
+        assert!(linha_do_navio(nau, &shared::navio::novo(nau)).contains("Turning Heavy"));
     }
 
     #[test]

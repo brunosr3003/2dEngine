@@ -10,10 +10,15 @@
 //! the target as on land; the SERVER steers the hull, ten decisions a second,
 //! straight into `frame.move_dir` (no `MoverPara` round trips, no stutter):
 //!
-//! - **kite and broadside:** a tangential course around the target at
-//!   `PILOTO_RAIO` (inside the Broadside's 12 m, far outside a bite), so the
+//! - **kite and broadside:** a tangential course around the target, so the
 //!   target sits off the beam; the Broadside fires only with the target (or
-//!   two mobs) on a side, the Bow Cannon whenever the target is in its 22 m;
+//!   two mobs) on a side, the Long Gun with the target on a side inside its
+//!   22 m. Every gun is a side gun (16/11/2026): no bow gun, no heaving to;
+//! - **the helm has weight** (turning inertia, `navio::Leme`): the orbit is
+//!   the hull's own (`navio::raio_do_piloto`, 7.5 m for a Sloop up to
+//!   9.5 m for the big hulls) at the speed the helm can hold round it
+//!   (`navio::velocidade_do_piloto`): a Man-o'-War slows down to keep its
+//!   side to the target instead of sailing off in a wide arc;
 //! - **the bite telegraph is read:** a swing at us steers straight away from
 //!   the biter until it lands; any mob closer than `PERTO_DEMAIS` pushes the
 //!   hull off;
@@ -37,15 +42,12 @@ const LARGA: f32 = 40.0;
 /// The Broadside fires with the target inside this (a margin under 12 m:
 /// the ball lands where the target WILL be).
 const BORDADA_ALCANCE: f32 = 11.6;
-/// The Bow Cannon's, under 22 m.
-const PROA_ALCANCE: f32 = 21.5;
+/// The Long Gun's, under 22 m.
+const LONGO_ALCANCE: f32 = 21.5;
 /// A mob closer than this pushes the hull away (a bite reaches ~2 m).
 const PERTO_DEMAIS: f32 = 6.0;
-/// The pilot only heaves to (stops to fire all round) with every mob
-/// further than this: a bite reaches ~2 m and needs a wind-up.
-const PARA_SO_ALEM: f32 = 4.5;
-/// Further than this from the target: sail straight at it.
-const APROXIMA: f32 = nv::PILOTO_RAIO + 7.0;
+/// Further than this beyond the orbit: sail straight at the target.
+const APROXIMA: f32 = 7.0;
 /// Moved less than `PRESO_M` in `PRESO_S`: stuck, circle the other way.
 const PRESO_S: f32 = 1.5;
 const PRESO_M: f32 = 1.5;
@@ -94,6 +96,8 @@ struct Bicho {
     p: Vec2,
     /// Can be shot (alive, not going home, not in grace).
     alvejavel: bool,
+    /// Where it spawned (its leash is measured from here).
+    casa: Vec2,
 }
 
 /// Water the hull fits in at `q`, around it too.
@@ -160,10 +164,16 @@ impl GameWorld {
         let Some(p) = self.ecs.get::<&Position>(entity).ok().map(|x| x.0) else {
             return;
         };
-        let rumo = self.ecs.get::<&Velocity>(entity).map(|v| v.0).unwrap_or(Vec2::ZERO);
+        // The HELM's heading (turning inertia): a ship lying still still
+        // has its sides where they were.
+        let rumo = self.rumo_do_casco(sid, entity);
         let Some((navio, d)) = self.navio_equipado(sid) else {
             return;
         };
+        let (raio, acelerador) = (
+            nv::raio_do_piloto(navio, &d),
+            nv::velocidade_do_piloto(navio, &d) / nv::velocidade_do_navio(navio, &d).max(0.1),
+        );
         if !nv::pode_zarpar(&d) {
             return;
         }
@@ -218,7 +228,7 @@ impl GameWorld {
                 && tag.spawn_grace_until <= agora
                 && self.ecs.get::<&Untargetable>(e).is_err()
                 && !self.in_safe_zone(pos.0);
-            perto.push(Bicho { id: n.0, p: pos.0, alvejavel });
+            perto.push(Bicho { id: n.0, p: pos.0, alvejavel, casa: tag.spawn_anchor });
         }
         let do_cliente = selecionado.and_then(|id| {
             if let Some(b) = perto.iter().find(|b| b.id == id) {
@@ -244,19 +254,35 @@ impl GameWorld {
         let alvo = do_cliente
             .or_else(|| fixo.and_then(|id| perto.iter().find(|b| b.id == id && b.alvejavel).map(|b| (b.id, b.p))))
             .or_else(|| {
-                perto
-                    .iter()
-                    .filter(|b| b.alvejavel && b.p.distance(p) <= BUSCA)
-                    .min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p)).then(a.id.0.cmp(&b.id.0)))
-                    .map(|b| (b.id, b.p))
+                // The nearest in the AUTO area; failing that, the nearest the
+                // pilot still sees (a heavy hull's wide orbit can leave the
+                // nest's last mob just outside 24 m: never sit idle by it).
+                let mais_perto = |raio: f32| {
+                    perto
+                        .iter()
+                        .filter(|b| b.alvejavel && b.p.distance(p) <= raio)
+                        .min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p)).then(a.id.0.cmp(&b.id.0)))
+                        .map(|b| (b.id, b.p))
+                };
+                mais_perto(BUSCA).or_else(|| mais_perto(LARGA))
             });
-        let Some((alvo, t)) = alvo else {
-            if let Some(s) = self.sessions.get_mut(&sid) {
-                s.piloto.alvo = None;
+        // Nothing to shoot (the mobs in their spawn grace, or going home
+        // after their leash): keep sailing near the nearest one instead of
+        // lying idle — it is shot the moment it turns (`so_seguir`).
+        let (alvo, t, so_seguir) = match alvo {
+            Some((a, t)) => (a, t, false),
+            None => {
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    s.piloto.alvo = None;
+                }
+                let Some(b) = perto.iter().min_by(|a, b| a.p.distance_squared(p).total_cmp(&b.p.distance_squared(p))) else {
+                    return;
+                };
+                (b.id, b.p, true)
             }
-            return;
         };
-        if let Some(s) = self.sessions.get_mut(&sid) {
+        let casa_do_alvo = perto.iter().find(|b| b.id == alvo).map(|b| b.casa);
+        if let Some(s) = self.sessions.get_mut(&sid).filter(|_| !so_seguir) {
             s.piloto.alvo = Some(alvo);
             s.target = Some(alvo);
             // The client's hunting route to this very fight: the pilot takes it
@@ -267,35 +293,22 @@ impl GameWorld {
         }
         let dist = p.distance(t);
 
-        // ── 3. FIRE ──
-        // A bite on its way, or a mob right at the hull: no stopping.
-        let ameacado = self
-            .pending_melee
-            .iter()
-            .any(|g| !g.from_player && g.target == Some(eu) && g.impact_at >= agora)
-            || perto.iter().any(|b| b.p.distance(p) < PARA_SO_ALEM);
-        let mut parar_para_bordada = false;
-        if !self.in_safe_zone(p) {
+        // ── 3. FIRE ── (from the sides only: `navio::no_costado` on the heading)
+        if !self.in_safe_zone(p) && !so_seguir {
             if self.skill_pronta(sid, 0, agora) {
                 let no_alcance = |b: &&Bicho| b.alvejavel && b.p.distance(p) <= BORDADA_ALCANCE;
                 let no_costado: Vec<EntityId> =
                     perto.iter().filter(no_alcance).filter(|b| nv::no_costado(p, rumo, b.p)).map(|b| b.id).collect();
-                let ao_redor = perto.iter().filter(no_alcance).count();
                 let alvo_no_costado =
                     no_costado.contains(&alvo) || (dist <= BORDADA_ALCANCE && nv::no_costado(p, rumo, t));
-                // HEAVE TO AND FIRE ALL ROUND: a ship standing still fires
-                // both sides at everything in reach (`navio::no_costado`).
-                // With mobs in reach off the bow or the stern, stop for one
-                // decision and let the whole pack have it — never with a bite
-                // coming.
-                if ao_redor > no_costado.len() && !ameacado && self.sessions[&sid].rota.vazia() {
-                    parar_para_bordada = true;
-                } else if alvo_no_costado || no_costado.len() >= 2 {
+                if alvo_no_costado || no_costado.len() >= 2 {
                     self.habilidade_do_navio(sid, 0);
                 }
             }
+            // The long gun is a SIDE gun too (no bow gun since 16/11/2026).
             if self.skill_pronta(sid, 1, agora)
-                && dist <= PROA_ALCANCE
+                && dist <= LONGO_ALCANCE
+                && nv::no_costado(p, rumo, t)
                 && visada_de_tiro(self.ilha.as_ref(), &self.map, p, t)
             {
                 self.habilidade_do_navio(sid, 1);
@@ -303,22 +316,38 @@ impl GameWorld {
         }
 
         // ── 4. STEER ── (a route alive is a tap of the player's: hands off)
-        if !self.sessions[&sid].rota.vazia() || parar_para_bordada {
+        if !self.sessions[&sid].rota.vazia() {
             return;
         }
         let u = (t - p).try_normalize().unwrap_or(Vec2::X);
         let sentido = self.sessions[&sid].piloto.sentido;
         let tangente = Vec2::new(-u.y, u.x) * sentido;
-        let mut dir = if dist > APROXIMA {
+        // The throttle: the orbit's speed (what the helm holds round it),
+        // full ahead to close in or to get away from a bite.
+        let mut acelera = acelerador;
+        let mut dir = if dist > raio + APROXIMA {
+            acelera = 1.0;
             u + tangente * 0.35
         } else {
-            let k = ((dist - nv::PILOTO_RAIO) / 3.0).clamp(-1.0, 1.0);
+            let k = ((dist - raio) / 3.0).clamp(-1.0, 1.0);
             tangente + u * k * 1.2
         };
+        // THE LEASH: the target chases the hull, so the orbit drifts with the
+        // fight; a heavy hull's wide, slow orbit dragged it off its nest
+        // until it gave up and swam home to heal (measured: a Galleon stood
+        // 6 s by a mob going home). Past 8 m from its spawn, lean the orbit
+        // toward the nest: the mob follows us back.
+        if let Some(casa) = casa_do_alvo {
+            let longe = t.distance(casa);
+            if longe > 8.0 {
+                dir += (casa - p).normalize_or_zero() * ((longe - 8.0) / 6.0).clamp(0.0, 1.0);
+            }
+        }
         // The bite telegraph: a swing at us — sail straight off the biter.
         for g in self.pending_melee.iter().filter(|g| !g.from_player && g.target == Some(eu) && g.impact_at >= agora) {
             let fora = (p - g.pos).try_normalize().unwrap_or(-u);
             dir = fora * 1.6 + tangente * 0.4;
+            acelera = 1.0;
         }
         // Nobody gets close: every mob inside `PERTO_DEMAIS` pushes the hull.
         for b in &perto {
@@ -358,7 +387,7 @@ impl GameWorld {
             s.piloto.marca = p;
             s.piloto.marca_em = agora;
         }
-        s.piloto.leme = dir;
+        s.piloto.leme = dir * acelera.clamp(0.2, 1.0);
     }
 }
 
@@ -372,6 +401,11 @@ mod testes {
     /// real sea mobs' table rows, and the player on a Sloop at the level of
     /// nest `ninho`, 24 m off it.
     fn no_ninho(ninho: usize) -> (GameWorld, SessionId, Vec2) {
+        no_ninho_de(ninho, shared::item_id::NAVIO_CHALUPA)
+    }
+
+    /// The same, on hull class `casco` (new, no stars).
+    fn no_ninho_de(ninho: usize, casco: u16) -> (GameWorld, SessionId, Vec2) {
         crate::economy::por_kinds_do_seed_para_testes(&[navio::TUBARAO, navio::ENGUIA]);
         let mut w = GameWorld::new(HashMap::new());
         w.zona = shared::mar::ZONA.into();
@@ -406,6 +440,7 @@ mod testes {
         s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
         s.xp = shared::xp_for_level_with_mult(nivel, crate::economy::xp_multiplier());
         navio::dar_chalupa(s);
+        s.equipment.set(shared::EquipSlot::Navio, Some(casco), Some(nv::instancia_nova(casco)));
         (w, sid, centro)
     }
 
@@ -463,7 +498,12 @@ mod testes {
     /// THE FIGHT: nest `ninho` (`povoar_mar`'s own mobs, real stats), the
     /// player 24 m off with AUTO COMBAT on in `modo`, for up to `teto_s`.
     fn luta(ninho: usize, modo: Modo, teto_s: f32, log: bool) -> Placar {
-        let (mut w, sid, centro) = no_ninho(ninho);
+        luta_de(ninho, shared::item_id::NAVIO_CHALUPA, modo, teto_s, log)
+    }
+
+    /// THE FIGHT on hull class `casco`.
+    fn luta_de(ninho: usize, casco: u16, modo: Modo, teto_s: f32, log: bool) -> Placar {
+        let (mut w, sid, centro) = no_ninho_de(ninho, casco);
         let eu = w.sessions[&sid].entity_id;
         let zona = navio::ZONA_DO_MAR_ID + ninho as u32;
         // The nest fills (the player is near), the spawn grace passes.
@@ -702,24 +742,28 @@ mod testes {
         assert!(depois.casco_perdido < antes.casco_perdido);
     }
 
-    /// THE PILOT'S BAR, guarded: a same-level nest of three sunk in 35-60 s,
-    /// under half the hull lost, more than 60% of the balls on target, never
-    /// sunk, never standing still with a mob alive, never dragged off the
-    /// nest.
+    /// THE PILOT'S BAR, guarded for EVERY HULL CLASS (turning inertia,
+    /// 16/11/2026: a Man-o'-War cannot circle like a Sloop): a same-level
+    /// nest of three sunk in 20-60 s, under half the hull lost, more than
+    /// 60% of the balls on target, never sunk, never standing still with a
+    /// mob alive, never dragged off the nest.
     #[test]
     fn o_piloto_afunda_o_ninho_do_nivel_sem_perder_metade_do_casco() {
         // Every route's first nest (the common one): several levels, sharks
         // and eels.
         let comuns: Vec<usize> = (0..shared::mar::ninhos().len()).step_by(2).take(3).collect();
-        for k in comuns {
-            let p = luta(k, Modo::Piloto, 120.0, std::env::var("MMO_PILOTO_LOG").is_ok());
-            eprintln!("{}", resumo(&format!("ninho {k}"), &p));
-            let t = p.tempo.unwrap_or_else(|| panic!("nest {k} not sunk in 120 s: {}", resumo("", &p)));
-            assert!((20.0..=60.0).contains(&t), "nest {k}: {t:.1} s ({})", resumo("", &p));
-            assert!(!p.afundou && p.casco_perdido < 0.5, "nest {k}: {}", resumo("", &p));
-            assert!(p.acertos as f32 > p.tiros as f32 * 0.6, "nest {k}: {}", resumo("", &p));
-            assert!(p.parado_max < 3.0, "nest {k} stood still: {}", resumo("", &p));
-            assert!(p.longe_max < 60.0, "nest {k} wandered off: {}", resumo("", &p));
+        for c in nv::CASCOS {
+            for &k in &comuns {
+                let p = luta_de(k, c.item, Modo::Piloto, 120.0, std::env::var("MMO_PILOTO_LOG").is_ok());
+                let nome = format!("{} ninho {k}", c.nome);
+                eprintln!("{}", resumo(&nome, &p));
+                let t = p.tempo.unwrap_or_else(|| panic!("{nome} not sunk in 120 s: {}", resumo("", &p)));
+                assert!((20.0..=60.0).contains(&t), "{nome}: {t:.1} s ({})", resumo("", &p));
+                assert!(!p.afundou && p.casco_perdido < 0.5, "{nome}: {}", resumo("", &p));
+                assert!(p.acertos as f32 > p.tiros as f32 * 0.6, "{nome}: {}", resumo("", &p));
+                assert!(p.parado_max < 3.0, "{nome} stood still: {}", resumo("", &p));
+                assert!(p.longe_max < 60.0, "{nome} wandered off: {}", resumo("", &p));
+            }
         }
     }
 

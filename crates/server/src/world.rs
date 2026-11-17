@@ -2440,6 +2440,10 @@ pub struct Session {
     pub fumaca_ate: f32,
     /// AUTO COMBAT AT SEA: the server's pilot (`world/piloto_do_mar.rs`).
     pub piloto: piloto_do_mar::PilotoDoMar,
+    /// THE HELM AT SEA (turning inertia, `shared::navio::Leme`): the hull's
+    /// heading and the speed it carries. The velocity at sea always comes
+    /// out of it, so a ship turns at its class's rate instead of snapping.
+    pub leme_do_mar: shared::navio::Leme,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
     /// `MULT_SUPREMA` when supreme). See `chance_de_crit`.
     pub furia_ate: f32,
@@ -8205,6 +8209,7 @@ impl GameWorld {
                 invisivel_ate: 0.0,
                 fumaca_ate: 0.0,
                 piloto: Default::default(),
+                leme_do_mar: Default::default(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,
                 buffs_da_arvore: Vec::new(),
@@ -10327,7 +10332,16 @@ impl GameWorld {
                 if self.sim_time_s < session.pulo_pronto_em {
                     session.rota.aguenta();
                 }
-                if let Some(dir) = session.rota.direcao(aqui) {
+                // At sea the hull has a turning circle: the follower slows it
+                // into a sharp corner instead of orbiting the waypoint
+                // (`navio::direcao_na_rota`).
+                let rumo_da_rota = if no_mar {
+                    let (v, giro, arranque) = GameWorld::manobra_no_mar(session);
+                    shared::navio::direcao_na_rota(&mut session.rota, &session.leme_do_mar, aqui, v, giro, arranque)
+                } else {
+                    session.rota.direcao(aqui)
+                };
+                if let Some(dir) = rumo_da_rota {
                     frame.move_dir = dir;
                     veio_da_rota = true;
                 }
@@ -10777,6 +10791,14 @@ impl GameWorld {
                 Vec2::ZERO
             } else if session.knockback_until > self.sim_time_s {
                 session.knockback_vel
+            } else if no_mar {
+                // TURNING INERTIA (16/11/2026, owner: "a rotação do barco tem
+                // que ser um pouco mais blocada"): the stick, the route or
+                // the pilot say where to go; the helm turns the heading
+                // there at the class's rate, slows in a hard turn and ramps
+                // the speed (`navio::Leme::governa`).
+                let (v_navio, giro, arranque) = GameWorld::manobra_no_mar(session);
+                session.leme_do_mar.governa(dir, dir.length().min(1.0) * speed, v_navio, giro, arranque, dt)
             } else {
                 dir * speed
             };
@@ -11898,7 +11920,8 @@ impl GameWorld {
                 // AT SEA EVERY BODY IS A HULL (docs/NAVEGACAO.md): navigating
                 // is walking, only on water. Land (the islands' domes, the
                 // docks) and the chart's edge are the walls.
-                Some(_) if no_mar => shared::terreno::mover_casco(
+                // A hull grazing the coast scrapes along it (`mover_raspando`).
+                Some(_) if no_mar => shared::navio::mover_raspando(
                     &|x, z| shared::mar::navegavel(x, z),
                     pos.0,
                     vel.0,
@@ -14028,6 +14051,8 @@ impl GameWorld {
         };
         // Pra onde cada jogador OLHA quando nao e' a velocidade que diz: o no'
         // que coleta, ou o alvo enquanto golpeia/conjura.
+        // At sea every hull faces its heading, never its aim (16/11/2026).
+        let no_mar = self.no_mar();
         let mira_de: HashMap<EntityId, Vec2> = {
             let agora = self.sim_time_s;
             let pos_de: HashMap<EntityId, Vec2> = self
@@ -14178,7 +14203,7 @@ impl GameWorld {
                     state.camada = camada.map_or(0, |c| c.0);
                     state.rumo = crate::rumo::escolhe(
                         pos.0,
-                        mira_de.get(&net.0).copied(),
+                        if no_mar { None } else { mira_de.get(&net.0).copied() },
                         etag.filter(|_| flags & shared::ent_flags::ATACANDO != 0)
                             .map(|t| t.attack_dir),
                         vel.0,

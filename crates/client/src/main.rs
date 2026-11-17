@@ -5799,7 +5799,7 @@ impl Jogo {
         if entrada_bloqueada {
             self.habilidades.cancela_arrasto();
         }
-        // AT SEA the bar is the SHIP's (phase 2): Broadside, Bow Cannon,
+        // AT SEA the bar is the SHIP's (phase 2): Broadside, Long Gun,
         // Emergency Repair, Smoke. The weapon skills and the path tree's
         // actives wait ashore.
         if mar_ui::no_mar() {
@@ -5815,7 +5815,7 @@ impl Jogo {
             let sao = mar_ui::casco_de(&self.bolsa.equip).is_some_and(|(c, _, avariado)| c > 0 && !avariado);
             let no_costado = self.alvo.and_then(|id| self.world.ents.get(&id)).is_some_and(|e| {
                 let g = |v: Vec2| ::glam::Vec2::new(v.x, v.y);
-                shared::navio::no_costado(g(eu.render_pos), eu.state.vel_f32(), g(e.render_pos))
+                shared::navio::no_costado(g(eu.render_pos), mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw), g(e.render_pos))
             });
             let contexto = mar_ui::ContextoNavio {
                 pronto: vivo && sao,

@@ -16,8 +16,8 @@
 //! "Shipwright" section) builds the next hull class from the previous one
 //! (`RECEITAS`, `proximo_casco`) and puts STARS on three axes — hull, sail,
 //! cannon (`custo_da_estrela`, never Rebirth Essence). At sea the skill bar
-//! becomes the SHIP's (`HABILIDADES`: Broadside, Bow Cannon, Emergency
-//! Repair, Smoke). Sail colours and figureheads (`VELAS`, `FIGURAS`) are
+//! becomes the SHIP's (`HABILIDADES`: Broadside, Long Gun, Emergency
+//! Repair, Smoke). Every gun fires from the sides. Sail colours and figureheads (`VELAS`, `FIGURAS`) are
 //! cosmetic items from the TP shop.
 //!
 //! PHASE 4, the Corsair and naval PvP: every world boss drops a COLOSSUS
@@ -52,6 +52,13 @@ pub struct Casco {
     pub escala: f32,
     /// Masts drawn.
     pub mastros: u8,
+    /// TURNING INERTIA (16/11/2026): the most the heading turns, radians per
+    /// second, before sail stars (`giro_max`). The bigger the hull, the
+    /// slower it comes round.
+    pub giro: f32,
+    /// Seconds from standing still to full speed, and from full speed to a
+    /// stop (`Leme::governa`).
+    pub arranque_s: f32,
 }
 
 /// The hulls, in order: each one is built from the one before it.
@@ -64,10 +71,10 @@ pub struct Casco {
 /// (`nenhum_casco_passa_do_teto_do_fio`), and the levels are the islands'
 /// bands: the Glacier's, the Waste's, the Plateau's.
 pub const CASCOS: [Casco; 4] = [
-    Casco { item: item_id::NAVIO_CHALUPA, nome: "Sloop", casco: 2400, velocidade: 10.0, nivel: 1, canhao: 1.0, escala: 1.0, mastros: 1 },
-    Casco { item: item_id::NAVIO_ESCUNA, nome: "Schooner", casco: 3600, velocidade: 11.2, nivel: 15, canhao: 1.15, escala: 1.12, mastros: 2 },
-    Casco { item: item_id::NAVIO_GALEAO, nome: "Galleon", casco: 5200, velocidade: 12.4, nivel: 30, canhao: 1.3, escala: 1.25, mastros: 3 },
-    Casco { item: item_id::NAVIO_NAU, nome: "Man-o'-War", casco: 7200, velocidade: 13.4, nivel: 42, canhao: 1.5, escala: 1.38, mastros: 3 },
+    Casco { item: item_id::NAVIO_CHALUPA, nome: "Sloop", casco: 2400, velocidade: 10.0, nivel: 1, canhao: 1.0, escala: 1.0, mastros: 1, giro: 1.5, arranque_s: 0.6 },
+    Casco { item: item_id::NAVIO_ESCUNA, nome: "Schooner", casco: 3600, velocidade: 11.2, nivel: 15, canhao: 1.15, escala: 1.12, mastros: 2, giro: 1.2, arranque_s: 0.75 },
+    Casco { item: item_id::NAVIO_GALEAO, nome: "Galleon", casco: 5200, velocidade: 12.4, nivel: 30, canhao: 1.3, escala: 1.25, mastros: 3, giro: 0.9, arranque_s: 0.9 },
+    Casco { item: item_id::NAVIO_NAU, nome: "Man-o'-War", casco: 7200, velocidade: 13.4, nivel: 42, canhao: 1.5, escala: 1.38, mastros: 3, giro: 0.7, arranque_s: 1.05 },
 ];
 
 /// What the Shipwright asks to build hull `para`: the hull before it (taken
@@ -264,6 +271,191 @@ pub fn casco_total(id: u16, d: &NavioData) -> u16 {
 /// The ship's speed at sea: the class, times the sail stars.
 pub fn velocidade_do_navio(id: u16, d: &NavioData) -> f32 {
     (velocidade(id) * mult_das_estrelas(d, Eixo::Vela)).min(VELOCIDADE_MAX)
+}
+
+// ─────────────── turning inertia (16/11/2026, "sensação de barco") ───────────────
+
+/// While turning hard the ship slows: the target speed is multiplied by
+/// `1 - FREIO_NA_CURVA * |angle to the wanted heading| / π` (a full
+/// about-turn sails at 40%). At speed the ship carves a wide arc; slowed
+/// down it turns tighter.
+pub const FREIO_NA_CURVA: f32 = 0.6;
+/// A route waypoint (not the last) counts as reached this close: a hull
+/// with a turning circle cannot thread a 0.6 m needle at speed.
+pub const FOLGA_DA_ROTA: f32 = 2.5;
+/// A bend of the route is taken on an arc of about this radius times
+/// `1/sin(φ/2)` (`direcao_na_rota`): ~5.7 m for a right angle.
+pub const CURVA_DA_ROTA: f32 = 4.0;
+
+/// The most the heading of ship `id`/`d` turns, rad/s: the class, plus 3%
+/// per sail star (the same bonus as the speed's).
+pub fn giro_max(id: u16, d: &NavioData) -> f32 {
+    casco(id).map_or(CASCOS[0].giro, |c| c.giro) * mult_das_estrelas(d, Eixo::Vela)
+}
+
+/// Seconds from standing still to full speed (and back down) of class `id`.
+pub fn arranque_s(id: u16) -> f32 {
+    casco(id).map_or(CASCOS[0].arranque_s, |c| c.arranque_s)
+}
+
+/// The ship card's word for how ship `id`/`d` turns (English; the client
+/// translates): agile, steady or heavy.
+pub fn rotulo_do_giro(id: u16, d: &NavioData) -> &'static str {
+    let g = giro_max(id, d);
+    if g >= 1.35 {
+        "Agile"
+    } else if g >= 1.0 {
+        "Steady"
+    } else {
+        "Heavy"
+    }
+}
+
+/// THE HELM of one hull at sea: the heading it points (`proa`, radians,
+/// `atan2(y, x)` of the world plane) and the speed it carries. The SERVER
+/// owns one per sea session (`Session::leme_do_mar`); the velocity it sends
+/// is always `proa` times `vel`, so the hull on screen never snaps round.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Leme {
+    pub proa: f32,
+    pub vel: f32,
+    /// False until the first order: a ship that never sailed has no heading
+    /// yet (`no_costado` then fires all round).
+    pub pronto: bool,
+}
+
+fn ang_dif(a: f32, b: f32) -> f32 {
+    let mut d = (a - b) % std::f32::consts::TAU;
+    if d > std::f32::consts::PI {
+        d -= std::f32::consts::TAU;
+    } else if d < -std::f32::consts::PI {
+        d += std::f32::consts::TAU;
+    }
+    d
+}
+
+impl Leme {
+    /// Where the bow points, if the ship has a heading.
+    pub fn rumo(&self) -> Option<glam::Vec2> {
+        self.pronto.then(|| glam::Vec2::new(self.proa.cos(), self.proa.sin()))
+    }
+
+    /// The hull's velocity now.
+    pub fn velocidade(&self) -> glam::Vec2 {
+        self.rumo().unwrap_or(glam::Vec2::ZERO) * self.vel
+    }
+
+    /// Angle (0..π) between the bow and direction `dir`; 0 with no heading.
+    pub fn angulo_para(&self, dir: glam::Vec2) -> f32 {
+        match (self.pronto, dir.try_normalize()) {
+            (true, Some(d)) => ang_dif(d.y.atan2(d.x), self.proa).abs(),
+            _ => 0.0,
+        }
+    }
+
+    /// One tick at the helm: turn toward `dir` (any length; zero = no
+    /// steering) at most `giro` rad/s, and bring the speed toward `quer`
+    /// (slowed by the turn still to make, `FREIO_NA_CURVA`) over
+    /// `arranque_s` seconds for a ship of top speed `v_navio`. Returns the
+    /// velocity, never above `VELOCIDADE_MAX` (the wire).
+    pub fn governa(&mut self, dir: glam::Vec2, quer: f32, v_navio: f32, giro: f32, arranque_s: f32, dt: f32) -> glam::Vec2 {
+        let mut alvo_v = 0.0;
+        if let Some(d) = dir.try_normalize() {
+            let alvo = d.y.atan2(d.x);
+            if !self.pronto {
+                // The very first order: the ship was lying that way.
+                self.proa = alvo;
+                self.pronto = true;
+            }
+            let passo = giro.max(0.0) * dt;
+            self.proa = ang_dif(self.proa + ang_dif(alvo, self.proa).clamp(-passo, passo), 0.0);
+            let falta = ang_dif(alvo, self.proa).abs();
+            alvo_v = quer.max(0.0) * (1.0 - FREIO_NA_CURVA * falta / std::f32::consts::PI);
+        }
+        let taxa = v_navio.max(1.0) / arranque_s.max(0.05) * dt;
+        self.vel = (self.vel + (alvo_v - self.vel).clamp(-taxa, taxa)).clamp(0.0, VELOCIDADE_MAX);
+        self.velocidade()
+    }
+}
+
+/// THE ROUTE AT SEA with a turning circle: the stick for this tick (its
+/// length is the throttle, 0.02..1) toward the follower's next point, for a
+/// hull of top speed `v`, turning `giro` rad/s, `arranque_s` to stop.
+///
+/// - A point at distance `d`, `θ` off the bow is reachable only if
+///   `d ≥ 2·r·sin θ` with the turning radius `r = v / giro`: the throttle
+///   drops until that holds, so the ship slows into a sharp corner instead
+///   of orbiting the waypoint forever.
+/// - The CORNER ahead (the route bends by `φ` at the next point) is taken
+///   at the speed whose arc stays within `CURVA_DA_ROTA` of it, braking in
+///   time (`v² = v_c² + 2·a·d`): a Man-o'-War shortens sail before a bend
+///   instead of carving into the coast after it.
+/// - While it is still coming round (`θ` > ~30°) the follower is told it is
+///   not stuck (`SeguidorDeRota::aguenta`): getting further from the point
+///   for a few seconds is the turn, not a wall.
+pub fn direcao_na_rota(
+    seg: &mut crate::terreno::SeguidorDeRota,
+    leme: &Leme,
+    p: glam::Vec2,
+    v: f32,
+    giro: f32,
+    arranque_s: f32,
+) -> Option<glam::Vec2> {
+    let virando = seg.pontos().next().is_some_and(|q| leme.angulo_para(q - p) > 0.5);
+    if virando {
+        seg.aguenta();
+    }
+    let dir = seg.direcao(p)?;
+    let mut pontos = seg.pontos();
+    let Some(q) = pontos.next() else {
+        return Some(dir);
+    };
+    let giro = giro.max(0.01);
+    let v = v.max(0.1);
+    let theta = leme.angulo_para(q - p).min(std::f32::consts::FRAC_PI_2);
+    let d = p.distance(q);
+    let mut pode = giro * d * 0.85 / (2.0 * theta.sin()).max(1e-3);
+    if let Some(q2) = pontos.next() {
+        let phi = match ((q - p).try_normalize(), (q2 - q).try_normalize()) {
+            (Some(a), Some(b)) => a.dot(b).clamp(-1.0, 1.0).acos(),
+            _ => 0.0,
+        };
+        if phi > 0.2 {
+            let na_curva = giro * CURVA_DA_ROTA / (phi * 0.5).sin().max(0.15);
+            let freio = v / arranque_s.max(0.05);
+            let ate = (d - FOLGA_DA_ROTA).max(0.0);
+            pode = pode.min((na_curva * na_curva + 2.0 * freio * ate).sqrt());
+        }
+    }
+    Some(dir * (pode / v).clamp(0.02, 1.0))
+}
+
+/// A HULL GRAZING THE COAST scrapes along it instead of sticking dead
+/// (turning inertia, 16/11/2026): a ship that comes out of a bend a metre
+/// off the line can meet a spit of land head-on, and its heading only turns
+/// at `giro_max` — before, it pressed into the rock forever. When
+/// `terreno::mover_casco` refuses the step, the same step turned ±20° and
+/// ±40° is tried at half speed; still nothing, it stays.
+pub fn mover_raspando(
+    agua: &dyn Fn(f32, f32) -> bool,
+    pos: glam::Vec2,
+    vel: glam::Vec2,
+    dt: f32,
+    raio: f32,
+) -> glam::Vec2 {
+    let q = crate::terreno::mover_casco(agua, pos, vel, dt, raio);
+    if q != pos || vel == glam::Vec2::ZERO {
+        return q;
+    }
+    for a in [0.35f32, -0.35, 0.7, -0.7] {
+        let (s, c) = a.sin_cos();
+        let v = glam::Vec2::new(vel.x * c - vel.y * s, vel.x * s + vel.y * c) * 0.5;
+        let q = crate::terreno::mover_casco(agua, pos, v, dt, raio);
+        if q != pos {
+            return q;
+        }
+    }
+    pos
 }
 
 /// The cannon multiplier: the class, times the cannon stars.
@@ -468,8 +660,11 @@ pub const HABILIDADES: [HabilidadeDoNavio; 4] = [
     },
     HabilidadeDoNavio {
         id: 1,
-        nome: "Bow Cannon",
-        descricao: "A long-range shot at your target, up to 22 m away.",
+        // 16/11/2026 (owner: "tem algum ataque que sai da frente do barco?
+        // se sim tira, tudo tem que sair de lado"): no more bow gun. This is
+        // a long SIDE shot: it needs the target off one of the ship's sides.
+        nome: "Long Gun",
+        descricao: "A long-range side shot at your target, up to 22 m away, when it is off one of your sides.",
         efeito: Efeito::Canhonaco,
         // Gameplay remake: the opener and the chaser, not the main gun. At
         // 2.2 every 4 s it out-damaged the Broadside three to one and a
@@ -578,7 +773,7 @@ pub const RAIO_DA_MORDIDA: f32 = 2.6;
 pub const VIDA_DO_BICHO_DO_MAR: f32 = 1.6;
 
 /// AUTO COMBAT AT SEA stops this far from its target: inside the
-/// Broadside's 12 m and the Bow Cannon's 22 m, outside a bite.
+/// Broadside's 12 m and the Long Gun's 22 m, outside a bite.
 pub const DISTANCIA_DE_COMBATE: f32 = 8.5;
 
 // ─────────── the sea's AUTO COMBAT pilot (16/11/2026, "kite and broadside") ───────────
@@ -588,6 +783,24 @@ pub const DISTANCIA_DE_COMBATE: f32 = 8.5;
 /// the target; the hull circles it at this radius with its side to it
 /// (inside the Broadside's 12 m, far outside a bite).
 pub const PILOTO_RAIO: f32 = 7.5;
+/// The widest orbit the pilot sails (`raio_do_piloto`): a heavy hull that
+/// cannot come round at `PILOTO_RAIO` widens up to here, still inside the
+/// Broadside's 12 m with the ball's lead.
+pub const PILOTO_RAIO_MAX: f32 = 10.0;
+
+/// The pilot's ORBIT for ship `id`/`d`: its turning radius at full speed
+/// (`v / giro`), kept between `PILOTO_RAIO` and `PILOTO_RAIO_MAX`. Sloop
+/// 7.5 m, Schooner 9.3 m, Galleon and Man-o'-War 10 m.
+pub fn raio_do_piloto(id: u16, d: &NavioData) -> f32 {
+    (velocidade_do_navio(id, d) / giro_max(id, d).max(0.01)).clamp(PILOTO_RAIO, PILOTO_RAIO_MAX)
+}
+
+/// The pilot's speed on that orbit: what the helm can hold round it with a
+/// margin (92% of `giro · r`), never above the ship's own. A Man-o'-War
+/// slows to ~6.4 u/s to keep its side to the target; a Sloop sails 10.
+pub fn velocidade_do_piloto(id: u16, d: &NavioData) -> f32 {
+    velocidade_do_navio(id, d).min(giro_max(id, d) * raio_do_piloto(id, d) * 0.92)
+}
 /// Under this share of the hull the pilot patches it (Emergency Repair).
 pub const PILOTO_REPARA: f32 = 0.35;
 /// Under this share, with no repair ready, it pops Smoke and runs for the
@@ -620,8 +833,10 @@ pub fn cura_do_reparo(id: u16, d: &NavioData) -> u16 {
     (casco_total(id, d) as f32 * REPARO_FRACAO).round() as u16
 }
 
-/// Is `alvo` off the beam of a ship at `de` heading `rumo`? A ship standing
-/// still (no heading) fires all round.
+/// Is `alvo` off the beam of a ship at `de` heading `rumo`? Only a ship
+/// with no heading at all (`rumo` zero: it never sailed) fires all round;
+/// the server passes the hull's own heading (`Leme::rumo`), so a ship lying
+/// still fires off its sides too.
 pub fn no_costado(de: glam::Vec2, rumo: glam::Vec2, alvo: glam::Vec2) -> bool {
     let Some(r) = rumo.try_normalize() else {
         return true;
@@ -1157,5 +1372,92 @@ mod testes {
         assert_eq!(soma(&um, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO);
         assert_eq!(soma(&tres, item_id::PRANCHA_DE_NAUFRAGIO), PRANCHAS_DO_COLOSSO * 3);
         assert!(soma(&tres, item_id::DARKSTEEL) > soma(&um, item_id::DARKSTEEL));
+    }
+
+    /// TURNING INERTIA: each bigger hull turns slower and takes longer to
+    /// reach speed; the sail stars help a little; the helm never turns
+    /// faster than the class allows, slows in a hard turn, ramps its speed
+    /// and stays under the wire.
+    #[test]
+    fn o_navio_vira_com_peso() {
+        let dt = crate::TICK_DT;
+        for par in CASCOS.windows(2) {
+            assert!(par[1].giro < par[0].giro, "{} turns as fast as {}", par[1].nome, par[0].nome);
+            assert!(par[1].arranque_s > par[0].arranque_s);
+        }
+        for c in CASCOS {
+            let d = novo(c.item);
+            let g = giro_max(c.item, &d);
+            assert!(giro_max(c.item, &com_estrelas(c.item, [0, 5, 0])) > g);
+            let v = velocidade_do_navio(c.item, &d);
+            // Sailing east at full speed, ordered north: the heading turns
+            // at most `g` a tick, and the speed drops while it turns.
+            let mut l = Leme { proa: 0.0, vel: v, pronto: true };
+            let mut antes = l.proa;
+            let mut min_v = v;
+            for _ in 0..(3.0 / dt) as usize {
+                let vel = l.governa(glam::Vec2::Y, v, v, g, c.arranque_s, dt);
+                assert!(ang_dif(l.proa, antes).abs() <= g * dt + 1e-4, "{} snapped", c.nome);
+                assert!(vel.length() <= VELOCIDADE_MAX + 1e-4);
+                antes = l.proa;
+                min_v = min_v.min(l.vel);
+            }
+            assert!((l.proa - std::f32::consts::FRAC_PI_2).abs() < 1e-3, "{} never came round", c.nome);
+            assert!(min_v < v * 0.95, "{} did not slow in the turn", c.nome);
+            // From a standstill: full speed in about `arranque_s`, not one tick.
+            let mut l = Leme::default();
+            l.governa(glam::Vec2::X, v, v, g, c.arranque_s, dt);
+            assert!(l.vel < v * 0.2, "{} jumped to speed", c.nome);
+            for _ in 0..((c.arranque_s + 0.1) / dt) as usize {
+                l.governa(glam::Vec2::X, v, v, g, c.arranque_s, dt);
+            }
+            assert!((l.vel - v).abs() < 0.05, "{}: {} after the ramp", c.nome, l.vel);
+            // Let go: it coasts to a stop over the same ramp, keeping its heading.
+            for _ in 0..((c.arranque_s + 0.1) / dt) as usize {
+                l.governa(glam::Vec2::ZERO, 0.0, v, g, c.arranque_s, dt);
+            }
+            assert_eq!(l.vel, 0.0);
+            assert!(l.rumo().is_some_and(|r| r.x > 0.99));
+            // The pilot's orbit fits the helm, inside the Broadside's reach.
+            let r = raio_do_piloto(c.item, &d);
+            assert!((PILOTO_RAIO..=PILOTO_RAIO_MAX).contains(&r));
+            assert!(velocidade_do_piloto(c.item, &d) / r <= g, "{}: the orbit is tighter than the helm", c.nome);
+            assert!(PILOTO_RAIO_MAX + 1.0 < HABILIDADES[0].alcance);
+        }
+        assert_eq!(rotulo_do_giro(CASCOS[0].item, &novo(CASCOS[0].item)), "Agile");
+        assert_eq!(rotulo_do_giro(CASCOS[3].item, &novo(CASCOS[3].item)), "Heavy");
+    }
+
+    /// THE ROUTE with a turning circle: a point right beside the hull is not
+    /// orbited forever — the throttle drops until the turn fits, and the
+    /// heaviest hull still reaches every point of a zig-zag.
+    #[test]
+    fn a_rota_nao_fica_orbitando_o_ponto() {
+        let dt = crate::TICK_DT;
+        for c in CASCOS {
+            let d = novo(c.item);
+            let (v, g) = (velocidade_do_navio(c.item, &d), giro_max(c.item, &d));
+            let pontos = vec![
+                glam::Vec2::new(0.0, 4.0),
+                glam::Vec2::new(20.0, 4.0),
+                glam::Vec2::new(20.0, -10.0),
+                glam::Vec2::new(-5.0, -10.0),
+            ];
+            let fim = *pontos.last().unwrap();
+            let mut seg = crate::terreno::SeguidorDeRota::nova(pontos, fim).com_folga(FOLGA_DA_ROTA);
+            // Full speed, east, with the first point 4 m off the beam.
+            let mut l = Leme { proa: 0.0, vel: v, pronto: true };
+            let mut p = glam::Vec2::ZERO;
+            let mut t = 0.0;
+            while !seg.vazia() && t < 60.0 {
+                let Some(m) = direcao_na_rota(&mut seg, &l, p, v, g, c.arranque_s) else { break };
+                assert!(!seg.travado(), "{}: the turn read as stuck at {p:?}", c.nome);
+                p += l.governa(m, m.length() * v, v, g, c.arranque_s, dt) * dt;
+                t += dt;
+            }
+            assert!(seg.vazia(), "{}: still orbiting after {t:.0} s at {p:?}", c.nome);
+            assert!(p.distance(fim) < 1.0, "{}: ended at {p:?}", c.nome);
+            assert!(t < 25.0, "{}: {t:.1} s for a 60 m zig-zag", c.nome);
+        }
     }
 }

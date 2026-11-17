@@ -15,7 +15,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New: the Shipwright. At the Harbour Captain, build bigger ships from your current one: the Schooner, the Galleon and the Man-o'-War, each with a tougher hull and a little more speed.
 - Ship upgrades: put up to 5 stars each on your ship's Hull, Sails and Cannons. Upgrades always succeed and stay with the ship when you trade or sell it.
 - New sea material: Wreck Planks, found in wreckage, drifting chests and sea monsters. Each sea route now has a dangerous elite monster.
-- New ship skills: at sea your skill bar becomes your ship's, with Broadside, Bow Cannon, Emergency Repair and Smoke. The cannons can go on AUTO.
+- New ship skills: at sea your skill bar becomes your ship's, with Broadside, Long Gun, Emergency Repair and Smoke. The cannons can go on AUTO.
 - New in the TP shop: sail colours and figureheads to dress up your ship.
 - New: the Colossus Chest. Every world boss now drops one for the player who lands the killing blow, and it rides on your ship's deck. Open it on land for a boss-sized prize, or sail it to other islands first: each new island you dock at raises the payout, up to x3.
 - Treasure at sea comes with a risk: while you carry a Colossus Chest your ship flies a skull flag and anyone can attack you at sea, even in Peaceful mode. The waters right by the docks stay safe.
@@ -34,10 +34,11 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New "Sail to…" list under the ship panel with every port, its distance and travel time. A quest's Go at sea now sails to the right island and docks for you.
 - Auto combat and auto gather work at sea: your ship hunts the nearest sea monster or wreckage, keeps its distance and fires its cannons on its own.
 - Much better auto combat at sea: your ship now circles its target with its side guns facing it, steers clear of bites, fires the Broadside only when it will hit, patches the hull when it runs low and heads for a safe harbour if it has to. Sea monsters also no longer give up and heal the moment you sail out of reach.
-- Clearer sea combat: a target ring and life bar, the Broadside's firing arcs on the water (green when it will hit), an aim line and range ring for the Bow Cannon, cannonballs you can watch fly, splashes on a miss, splinters on a hit, and new cannon sounds.
+- Clearer sea combat: a target ring and life bar, the Broadside's firing arcs on the water (green when it will hit), an aim line and range ring for the Long Gun, cannonballs you can watch fly, splashes on a miss, splinters on a hit, and new cannon sounds.
 - Sharks and eels now show above the waves, and a red ring warns you before they bite: sail out of it to dodge. Sea elites are bigger and marked.
 - New ship panel: hull, speed, whether you are in safe, open or lawless waters, treasure on deck and the nearest dock, with a warning when the hull runs low.
-- Sea balance: the Broadside hits harder, the Bow Cannon is now a long-range opener, sea monsters are tougher, and a fight at sea lasts about 10 to 25 seconds. At sea the cannons do the fighting: weapons rest until you are ashore.
+- Sea balance: the Broadside hits harder, the Long Gun is now a long-range opener, sea monsters are tougher, and a fight at sea lasts about 10 to 25 seconds. At sea the cannons do the fighting: weapons rest until you are ashore.
+- Ships now turn with weight: bigger hulls turn slower, and every ship gun fires from the sides.
 - The Corsair path has new sea nodes: more cannon damage, a tougher hull, faster treasure hauling, a bigger Colossus Chest payout, and the Pirate's Code keystone (more cannon damage against treasure ships, but you are always a target at sea).
 - Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
 - The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
