@@ -92,12 +92,65 @@ pub fn botao_atracar(z: &crate::hud_layout::Zonas, eu: Option<(f32, f32)>) -> Op
     (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(cais.ilha as u8)
 }
 
-/// THE WALKABLE DECK'S BUTTON (17/11/2026), a row over the "Dock" prompt:
-/// "Leave the helm" at the wheel; "Take the helm" near it (the captain);
-/// "Board <name>'s ship" beside a party member's ship; "Back to my ship"
-/// for the crew. `grupo` = my party's names; `tem_navio` = a ship of my own
-/// in the Ship slot. Returns the request when tapped.
-pub fn botao_do_conves(
+/// What the HELM TOGGLE does now (`botao_do_leme`): ("tooltip", "label",
+/// request). At the wheel: leave it; the captain near the wheel: take it;
+/// crew with a ship of their own: back to it. `None` = nothing to do here
+/// (the button is not drawn).
+pub fn acao_do_leme(w: &crate::world::World, tem_navio: bool) -> Option<(&'static str, &'static str, nv::PedidoNavio)> {
+    let eu_id = w.self_id?;
+    let (n, navio) = (w.meu_conves()?, w.navio_do_eu()?);
+    if w.eu_capitao() {
+        if n.leme {
+            return Some(("Leave the helm", "LEAVE", nv::PedidoNavio::Leme { pegar: false }));
+        }
+        let classe = nv::classe(navio.meta.kind);
+        if n.local_f32().distance(shared::conves::roda(classe)) <= shared::conves::ALCANCE_DO_LEME {
+            return Some(("Take the helm", "HELM", nv::PedidoNavio::Leme { pegar: true }));
+        }
+        return None;
+    }
+    tem_navio.then_some(("Back to my ship", "MY SHIP", nv::PedidoNavio::Embarcar { capitao: eu_id }))
+}
+
+/// "Board <name>'s ship": only beside a party member's ship, only for the
+/// captain of my own (or with no deck yet).
+pub fn pedido_de_embarque(w: &crate::world::World, grupo: &[String]) -> Option<(String, nv::PedidoNavio)> {
+    let eu = w.ents.get(&w.self_id?)?;
+    if !w.eu_capitao() {
+        return None;
+    }
+    let aqui = w.casco_do_eu().map_or(eu.render_pos, |c| c.render_pos);
+    let meu_navio = w.meu_conves().map(|n| n.navio);
+    w.ents
+        .values()
+        .filter(|e| e.meta.tag == shared::EntityTag::Navio && Some(e.meta.id) != meu_navio)
+        .filter(|e| e.render_pos.distance(aqui) <= shared::conves::ALCANCE_DO_EMBARQUE)
+        .filter_map(|e| Some((e, e.meta.name.as_ref().filter(|n| grupo.iter().any(|g| g.eq_ignore_ascii_case(n)))?)))
+        .min_by(|a, b| a.0.render_pos.distance(aqui).total_cmp(&b.0.render_pos.distance(aqui)))
+        .map(|(e, nome)| (format!("Board {nome}'s ship"), nv::PedidoNavio::Embarcar { capitao: e.meta.id }))
+}
+
+/// A ship's wheel: a rim, eight spokes with handles, the hub.
+pub fn icone_do_leme(c: Vec2, r: f32, cor: Color) {
+    let esp = (r * 0.16).max(1.5);
+    draw_circle_lines(c.x, c.y, r * 0.62, esp, cor);
+    for k in 0..8 {
+        let a = k as f32 / 8.0 * std::f32::consts::TAU;
+        let d = vec2(a.cos(), a.sin());
+        draw_line(c.x + d.x * r * 0.18, c.y + d.y * r * 0.18, c.x + d.x * r, c.y + d.y * r, esp * 0.8, cor);
+        draw_circle(c.x + d.x * r, c.y + d.y * r, esp * 0.75, cor);
+    }
+    draw_circle(c.x, c.y, r * 0.2, cor);
+}
+
+/// THE HELM TOGGLE (owner, 17/11/2026: the "Leave the helm" banner was "in
+/// an awful place"): ONE round button in the mount's slot (`Zonas::montaria`,
+/// free at sea — there is no mount on a deck), the same spot whether it
+/// takes or leaves the helm, never over the chat, the minimap or a skill
+/// bar (the layout's slot). Drawn only when it does something. Over it, a
+/// compact "Board <name>'s ship" pill appears only beside a party member's
+/// ship. Returns the request tapped.
+pub fn botao_do_leme(
     z: &crate::hud_layout::Zonas,
     w: &crate::world::World,
     grupo: &[String],
@@ -106,46 +159,33 @@ pub fn botao_do_conves(
     if !no_mar() {
         return None;
     }
-    let (rotulo, pedido) = pedido_do_conves(w, grupo, tem_navio)?;
-    let h = z.faixa.h * 1.5;
-    let largura = estilo::medir_forte(&rotulo, 18) + h * 1.4;
-    let r = Rect::new(z.faixa.center().x - largura * 0.5, z.faixa.y - 8.0 * z.s - h * 3.6, largura, h);
-    estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
-    (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(pedido)
-}
-
-/// What the deck button offers now, and what it asks (`botao_do_conves`).
-pub fn pedido_do_conves(w: &crate::world::World, grupo: &[String], tem_navio: bool) -> Option<(String, nv::PedidoNavio)> {
-    let eu_id = w.self_id?;
-    let eu = w.ents.get(&eu_id)?;
-    let meu = w.meu_conves();
-    let capitao = w.eu_capitao();
-    if let (Some(n), Some(navio)) = (meu, w.navio_do_eu()) {
-        if capitao {
-            if n.leme {
-                return Some(("Leave the helm".into(), nv::PedidoNavio::Leme { pegar: false }));
-            }
-            let classe = nv::classe(navio.meta.kind);
-            if n.local_f32().distance(shared::conves::roda(classe)) <= shared::conves::ALCANCE_DO_LEME {
-                return Some(("Take the helm".into(), nv::PedidoNavio::Leme { pegar: true }));
-            }
-        } else if tem_navio {
-            return Some(("Back to my ship".into(), nv::PedidoNavio::Embarcar { capitao: eu_id }));
+    let mut pedido = None;
+    let r = z.montaria;
+    if let Some((dica, rotulo, p)) = acao_do_leme(w, tem_navio) {
+        let sobre = r.contains(Vec2::from(mouse_position()));
+        let no_leme = matches!(p, nv::PedidoNavio::Leme { pegar: false });
+        estilo::cartao(r, sobre, no_leme);
+        let cor = if no_leme || sobre { estilo::OURO } else { estilo::TEXTO };
+        icone_do_leme(r.center() - vec2(0.0, r.h * 0.08), r.w * 0.27, cor);
+        estilo::texto(r.x + r.w * 0.5 - estilo::medir(rotulo, (r.w * 0.17) as u16) * 0.5, r.y + r.h * 0.93, rotulo, (r.w * 0.17) as u16, cor);
+        if sobre {
+            crate::hud::dica(r, dica);
+        }
+        if sobre && crate::foco::clique() {
+            pedido = Some(p);
         }
     }
-    if !capitao {
-        return None;
+    if let Some((rotulo, p)) = pedido_de_embarque(w, grupo) {
+        let h = r.h * 0.62;
+        let largura = estilo::medir_forte(&rotulo, (h * 0.5) as u16) + h * 0.9;
+        let x = (r.center().x - largura * 0.5).max(4.0).min(screen_width() - largura - 4.0);
+        let pill = Rect::new(x, r.y - h - 6.0 * z.s, largura, h);
+        estilo::botao(pill, &rotulo, estilo::estado_de(pill, false, false), true);
+        if crate::foco::clique() && pill.contains(Vec2::from(mouse_position())) {
+            pedido = Some(p);
+        }
     }
-    // A party member's ship close by.
-    let aqui = w.casco_do_eu().map_or(eu.render_pos, |c| c.render_pos);
-    let meu_navio = meu.map(|n| n.navio);
-    w.ents
-        .values()
-        .filter(|e| e.meta.tag == shared::EntityTag::Navio && Some(e.meta.id) != meu_navio)
-        .filter(|e| e.render_pos.distance(aqui) <= shared::conves::ALCANCE_DO_EMBARQUE)
-        .filter_map(|e| Some((e, e.meta.name.as_ref().filter(|n| grupo.iter().any(|g| g.eq_ignore_ascii_case(n)))?)))
-        .min_by(|a, b| a.0.render_pos.distance(aqui).total_cmp(&b.0.render_pos.distance(aqui)))
-        .map(|(e, nome)| (format!("Board {nome}'s ship"), nv::PedidoNavio::Embarcar { capitao: e.meta.id }))
+    pedido
 }
 
 // ───────────────────── phase 4: the treasure and the mark ─────────────────────

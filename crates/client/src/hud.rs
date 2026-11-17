@@ -417,7 +417,7 @@ pub fn pictograma(i: usize, c: Vec2, s: f32, cor: Color) {
     }
 }
 
-fn dica(r: Rect, texto: &str) {
+pub(crate) fn dica(r: Rect, texto: &str) {
     estilo::tooltip(r, texto, false);
 }
 

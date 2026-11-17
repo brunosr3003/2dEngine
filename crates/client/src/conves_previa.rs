@@ -236,6 +236,12 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
         grava("conves-leme");
     }
 
+    // ── 2b. THE HUD, at the helm and on deck, on three screens ──
+    if quer("conves-hud") {
+        hud_previa(vox, &terreno, &solido, aberto, frente, &saida).await;
+        crate::render3d::define_alvo(Some(rt.clone()));
+    }
+
     // ── 3. A party of three at the rail against a surfaced shark ──
     if quer("conves-grupo-tubarao") {
         let classe = 1;
@@ -346,4 +352,130 @@ pub async fn previa(vox: &crate::vox::VoxCache) {
             next_frame().await;
         }
     }
+}
+
+/// The sea HUD as `main` draws it since the HUD clean-up of the walkable
+/// deck (17/11/2026): at the helm (hull, ship bar, minimap with "Sail
+/// to…", the helm toggle, chat, AUTO) and on deck (the land HUD, the helm
+/// toggle near the wheel and the route strip), in landscape, a phone in
+/// landscape and in portrait: `conves-hud-<leme|conves>-<screen>.png`.
+async fn hud_previa(vox: &crate::vox::VoxCache, terreno: &crate::terreno::Terreno, solido: &Material, aberto: Vec2, frente: Vec2, saida: &str) {
+    crate::hud_layout::define_escala_ui(crate::hud_layout::escala_ui_padrao());
+    let mut mapa = crate::mapa::Mapa::para(Some(&shared::mar::DEF));
+    for _ in 0..900 {
+        mapa.acompanhar();
+        if mapa.tem_textura() {
+            break;
+        }
+        next_frame().await;
+    }
+    let telas: [(&str, u32, u32, [f32; 4]); 3] = [
+        ("paisagem", 1280, 800, [0.0; 4]),
+        ("celular", 926, 428, [0.0, 47.0, 21.0, 47.0]),
+        ("retrato", 428, 926, [47.0, 0.0, 34.0, 0.0]),
+    ];
+    let yaw = frente.x.atan2(frente.y);
+    let classe = 2usize;
+    let item = nv::CASCOS[classe].item;
+    let visual = Visual { classe: 2, vela: 3, figura: 3, estrelas: 9 };
+    for (tela, wd, ht, margens) in telas {
+        let rt = render_target_ex(wd, ht, RenderTargetParams { depth: true, sample_count: 1 });
+        crate::render3d::define_alvo(Some(rt.clone()));
+        crate::hud_layout::define_margens(margens);
+        for leme in [true, false] {
+            let local = if leme { shared::conves::leme(classe) } else { shared::conves::roda(classe) - ::glam::Vec2::new(0.9, 0.8) };
+            let corpos = [Corpo { id: 1, local: vec2(local.x, local.y), leme, conjunto: 1, golpe: false }];
+            let mut w = mundo(item, visual, aberto, &corpos);
+            // I am the captain (the ship carries my name).
+            if let Some(e) = w.ents.get_mut(&EntityId(1)) {
+                e.meta.name = Some("Brunji".into());
+            }
+            // A party member's ship alongside: the compact board prompt.
+            if leme {
+                let lado = vec2(frente.y, -frente.x);
+                let q = aberto + lado * 11.0 + frente * (40.0 * 8.0 / 60.0);
+                w.apply(
+                    vec![meta(700, EntityTag::Navio, nv::CASCOS[1].item, Some("Mate"), Visual { classe: 1, vela: 2, ..Default::default() }.no_fio(), 3600)],
+                    vec![EntityState::quantize(EntityId(700), g(q), ::glam::Vec2::ZERO, 3600, 0)],
+                    &[],
+                );
+            }
+            let mut p = aberto;
+            for _ in 0..40 {
+                p += frente * 8.0 / 60.0;
+                passo(&mut w, p, yaw, 8.0, 1.0 / 60.0);
+            }
+            crate::mar_ui::define_no_leme(leme);
+            let mut cam = if leme {
+                let q = crate::mar_camera::enquadramento(p, frente, None, classe, ht > wd, 1.0, 0.0);
+                crate::render3d::camera_no_mar(q.centro, 0.0, crate::mar_camera::yaw_atras(frente) + 0.3, q.fator, q.pitch)
+            } else {
+                let e = &w.ents[&EntityId(1)];
+                let alvo3 = vec3(e.render_pos.x, e.render_y + 1.0, e.render_pos.y);
+                let atras = crate::mar_camera::yaw_atras(frente) + 0.5;
+                let de = alvo3 + vec3(-atras.sin(), 0.0, atras.cos()) * 9.0 + vec3(0.0, 8.0, 0.0);
+                Camera3D { position: de, target: alvo3, up: Vec3::Y, fovy: 0.9, ..Default::default() }
+            };
+            cam.render_target = Some(rt.clone());
+            cam.aspect = Some(wd as f32 / ht as f32);
+            let mut hab = crate::habilidades::Habilidades::default();
+            hab.estado(vec![(nv::id_de_skill(3), 9.0)], 0.0);
+            let barra = crate::mar_ui::BarraDoNavio::default();
+            let mut ficha = crate::hud::Ficha::default();
+            let mut eq = shared::Equipment::default();
+            eq.set(shared::EquipSlot::Navio, Some(item), Some(nv::instancia_nova(item)));
+            let mut vfx = crate::mar_combate_ui::MarCombate::default();
+            let mut rota = crate::mar_rota::RotaDoMar::default();
+            for _ in 0..6 {
+                crate::mar_casco::sem_surgir(|| desenha(&mut w, vox, terreno, solido, &cam, p, None));
+                crate::render3d::camera_padrao();
+                let z = crate::hud_layout::atual();
+                crate::chat_ui::ChatUi::default().caixa(z.chat, "");
+                crate::hud::draw_hud(
+                    &z,
+                    &crate::hud::Info { realm: "Tempest".into(), canal: "Canal 1".into(), zona: shared::mar::DEF.zona.into(), jogadores: 42, capacidade: 200 },
+                    &crate::hud::Rede { ms: 32.0, ..Default::default() },
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Vec2::ZERO,
+                    &[],
+                );
+                mapa.desenha_mini(&w);
+                let casco = if leme { crate::mar_ui::casco_de(&eq).map(|(c, m, _)| (c, m)) } else { None };
+                crate::hud::draw_ficha(&z, &mut ficha, 0.016, "Navegante", 70, 1840, 2400, 1000, 240, Some(24850), casco);
+                crate::hud::draw_modo_pk(&z, Default::default());
+                if leme {
+                    barra.desenha(&hab);
+                } else {
+                    hab.barra(shared::skills::Conjunto::Katana, 70, 240, &Default::default());
+                    crate::hud::draw_atacar(&z, false);
+                    crate::hud::draw_rapidos(&z, [0; 4], [0; 4], [false; 4], [None; 4], [false; 4], None, &|_| String::new());
+                    crate::hud::draw_sprint(&z, false);
+                    crate::hud::draw_pulo(&z, false);
+                    crate::hud_layout::desenha_faixa(&z, "Sailing to Glacier · 320 m · 32 s", crate::hud_estilo::AUTO);
+                }
+                crate::auto_combate::AutoCombate::default().desenha();
+                crate::hud::draw_topo(&z, false, false, false, false, false);
+                crate::hud::draw_botao_economia(&z);
+                if leme {
+                    vfx.hud_do_mar(&z, &eq, Some(p), false, crate::mapa::Mapa::mini_rect());
+                    rota.desenha_portos(crate::mapa::Mapa::disco_do_minimapa(), z.s, Some(p), nv::CASCOS[classe].velocidade);
+                }
+                crate::mar_ui::botao_do_leme(&z, &w, &["Mate".to_string()], true);
+                crate::hud::draw_exp(&z, &ficha);
+                unsafe {
+                    get_internal_gl().flush();
+                }
+                next_frame().await;
+            }
+            let nome = format!("conves-hud-{}-{tela}", if leme { "leme" } else { "conves" });
+            rt.texture.get_texture_data().export_png(&format!("{saida}/{nome}.png"));
+            println!("{nome}");
+        }
+    }
+    crate::mar_ui::define_no_leme(true);
+    crate::hud_layout::define_margens([0.0; 4]);
 }

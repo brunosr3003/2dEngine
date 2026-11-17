@@ -5566,8 +5566,9 @@ impl Jogo {
         if !self.mar_rota.ativa() {
             return;
         }
-        // Closing on a target is the fight's route, not the crossing's.
-        if self.andando_na_mao() || self.aproximando_alvo.is_some() {
+        // Closing on a target is the fight's route, not the crossing's. Off
+        // the helm the stick walks the deck: the ship keeps its course.
+        if (self.andando_na_mao() && mar_ui::navegando()) || self.aproximando_alvo.is_some() {
             self.mar_rota.parar();
             return;
         }
@@ -6162,11 +6163,20 @@ impl Jogo {
         if novo != self.alvo {
             self.alvo = novo;
             self.envia(ClientMessage::SetTarget { target: novo });
-            if novo.is_none() {
+            // (On a deck off the helm the route is the ship's: the land's
+            // "stop here" would stop it.)
+            if novo.is_none() && !(mar_ui::no_mar() && !mar_ui::navegando()) {
                 if let Some(p) = self.world.self_pos() {
                     self.envia(ClientMessage::MoverPara { x: p.x, z: p.y });
                 }
             }
+        }
+        if mar_ui::no_mar() && !mar_ui::navegando() {
+            // On deck the land's auto only picks the target and swings: no
+            // walking routes (they would steer the ship).
+            return;
+        }
+        {
         }
         // A target at sea: the fight's approach takes over the route.
         if no_mar && novo.is_some() {
@@ -6297,6 +6307,12 @@ impl Jogo {
     /// Com um inimigo selecionado e fora do alcance, anda ate ele.
     fn ir_ate_o_alvo(&mut self) {
         if self.seguir.alvo.is_some() { return; }
+        // On a deck off the helm a walking route would steer the SHIP: the
+        // body fights from where it stands (the rail, a gun's reach).
+        if mar_ui::no_mar() && !mar_ui::navegando() {
+            self.aproximando_alvo = None;
+            return;
+        }
         if self.aproximando_alvo.is_some() && self.aproximando_alvo != self.alvo {
             self.envia(ClientMessage::PararRota);
             self.aproximando_alvo = None;
@@ -7448,15 +7464,19 @@ impl Jogo {
                 if hud::draw_modo_pk(&z, pk) {
                     self.pk_ui.abrir();
                 }
-                hud::draw_buffs(
+                // AT THE HELM the sea HUD stays clean (NAVEGACAO.md "HUD do
+                // mar limpo", 17/11/2026): hull, ship bar, minimap with
+                // "Sail to…", the helm toggle, chat, AUTO.
+                let leme = mar_ui::navegando();
+                if !leme { hud::draw_buffs(
                     self.bonus_xp_ate,
                     self.bonus_fortuna_ate,
                     self.bonus_sorte_ate,
                     agora_unix,
                     z.buffs,
                     self.barra.curas(get_time()),
-                );
-                if self.eventos.selo(z.buffs) {
+                ); }
+                if !leme && self.eventos.selo(z.buffs) {
                     self.eventos.aberto = true;
                 }
                 let conjunto =
@@ -7484,10 +7504,10 @@ impl Jogo {
                 foco::marca(foco::chave::AUTO_COLETA, auto_coleta::retangulo());
                 foco::marca(foco::chave::SKILL_AUTO, z.skills[0]);
                 foco::marca(foco::chave::MINIMAPA, z.minimapa);
-                if hud::draw_atacar(&z, self.alvo.is_some()) {
+                if !leme && hud::draw_atacar(&z, self.alvo.is_some()) {
                     self.atacar();
                 }
-                {
+                if !leme {
                     let bolsa = &self.bolsa;
                     let itens = self.barra.espacos.map(|e| e.item_id);
                     let auto = self.barra.espacos.map(|e| e.auto);
@@ -7507,7 +7527,8 @@ impl Jogo {
                 }
                 // Barra de itens: clique usa, arrastar ↑/↓ liga/desliga o AUTO
                 // do espaco, botao direito abre o configurador.
-                let rects = hud::rects_rapidos(&z);
+                // (At the helm the bar is not drawn: nothing to tap.)
+                let rects = hud::rects_rapidos(&z).map(|r| if leme { Rect::new(-9999.0, -9999.0, 0.0, 0.0) } else { r });
                 let mouse = Vec2::from(mouse_position());
                 if is_mouse_button_pressed(MouseButton::Right) {
                     if let Some(i) = rects.iter().position(|r| r.toca(mouse)) {
@@ -7560,7 +7581,7 @@ impl Jogo {
                 // Dentro da dungeon o rastreador e' da DUNGEON (a linha de
                 // missao dela ocupa este mesmo lugar): as missoes normais nao
                 // aparecem.
-                let rastreador_no_mar = !mar_ui::no_mar() || self.auto_missao.quest.is_some();
+                let rastreador_no_mar = !mar_ui::no_mar() || (self.auto_missao.quest.is_some() && !mar_ui::navegando());
                 if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() && rastreador_no_mar {
                     // Quem mede a caixa precisa saber o tamanho do grupo.
                     self.missoes.membros_grupo = self.social.grupo.len();
@@ -7765,7 +7786,9 @@ impl Jogo {
             // THE SEA HUD (sea HUD clean-up, 16/11/2026): the zone toast and
             // the badges by the minimap; the hull is the character frame's,
             // and "Sail to…" is the pill at the minimap's foot.
-            if mar_ui::no_mar() {
+            // The sea's badges and "Sail to…" only at the helm; on deck the
+            // land HUD (and the route strip) does.
+            if mar_ui::navegando() {
                 let _ = velocidade;
                 let eu_v = self.world.self_pos();
                 self.mar_vfx.hud_do_mar(&z, &self.bolsa.equip, eu_v, marcado, mapa::Mapa::mini_rect());
@@ -7781,12 +7804,14 @@ impl Jogo {
                     }
                 }
             }
-            if let Some(ilha) = mar_ui::botao_atracar(&z, eu) {
+            // Docking is the captain's (the crew comes ashore with it).
+            if let Some(ilha) = mar_ui::botao_atracar(&z, eu).filter(|_| self.world.eu_capitao()) {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
             }
-            // THE WALKABLE DECK: the helm, boarding a party member's ship.
+            // THE WALKABLE DECK: the one helm toggle (and, beside a party
+            // member's ship, the compact board prompt).
             let tem_navio = self.bolsa.equip.navio.is_some_and(shared::item_id::e_navio);
-            if let Some(pedido) = mar_ui::botao_do_conves(&z, &self.world, &self.social.grupo, tem_navio) {
+            if let Some(pedido) = mar_ui::botao_do_leme(&z, &self.world, &self.social.grupo, tem_navio) {
                 self.envia(ClientMessage::Navio { pedido });
             }
             let bonus = self.arvore_ui.estado.map_or(0.0, |e| e.arvore.passivas().mult_tesouro);

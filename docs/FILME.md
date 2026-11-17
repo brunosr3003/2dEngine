@@ -64,7 +64,11 @@ limpos, sem números (`MMO_FILME_LIMPO`).
   não grava vídeo (rode pequeno, `MMO_FILME_TAM=640x360 MMO_FILME_MSAA=1`).
 - Retrato: a câmera recua `sqrt((16/9)/aspecto)` (o FOV vertical é fixo, então
   o quadro estreito precisa de mais distância pra caber a ação). iPad 3:4 recua
-  menos que 9:16.
+  menos que 9:16. A fila de heróis (`auras`) recua só a raiz disso (1,33× em
+  9:16): com o recuo cheio eram seis bonecos pequenos numa faixa e o olho
+  entrava na casa atrás no fim do dolly.
+- Retrato v2 (17/11/2026): mesmo comando do anúncio com `MMO_FILME_TAM=2160x3840
+  MMO_FILME_ESCALA=1080:1920` e a montagem com `2160x3840`.
 
 ## Variáveis
 

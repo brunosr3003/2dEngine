@@ -776,6 +776,66 @@ mod testes {
         assert!(!conves(&w, sid).leme);
     }
 
+    /// REGRESSION (owner, 17/11/2026: "leaving the helm stops the ship"):
+    /// with a course set, letting go of the wheel and WALKING the deck with
+    /// the stick (input through the network handler, which used to clear the
+    /// route on any stick) — and a `PararRota` from the land's auto — leave
+    /// the ship sailing its route; it stops only at the end.
+    #[test]
+    fn sair_do_leme_e_andar_nao_para_o_navio() {
+        let (mut w, sid, _rx) = mundo();
+        w.step(shared::TICK_DT);
+        let de = w.pos_do_casco(sid).unwrap();
+        let para = (0..32)
+            .map(|k| {
+                let a = k as f32 / 32.0 * std::f32::consts::TAU;
+                de + Vec2::new(a.cos(), a.sin()) * 60.0
+            })
+            .find(|p| super::super::navio::caminho_no_mar(de, *p).is_some_and(|r| r.len() <= 2))
+            .expect("open water around the nest");
+        w.handle_mover_para(sid, para);
+        // Under way at the helm first.
+        for k in 0..30u32 {
+            w.on_message(sid, ClientMessage::Input { input: InputFrame { seq: k, tick: k, move_dir: Vec2::ZERO, aim: Vec2::ZERO, buttons: 0 } });
+            w.step(shared::TICK_DT);
+        }
+        w.handle_navio(sid, PedidoNavio::Leme { pegar: false });
+        w.on_message(sid, ClientMessage::PararRota);
+        let mut parado_no_meio = 0;
+        let mut fim = de;
+        for k in 30..(30 + 14 * 30u32) {
+            // Walking about on deck the whole way.
+            let a = k as f32 * 0.05;
+            w.on_message(sid, ClientMessage::Input { input: InputFrame { seq: k, tick: k, move_dir: Vec2::new(a.cos(), a.sin()), aim: Vec2::ZERO, buttons: 0 } });
+            w.step(shared::TICK_DT);
+            fim = w.pos_do_casco(sid).unwrap();
+            if fim.distance(para) > 6.0 && w.vel_do_casco(sid).length() < 0.5 && k > 60 {
+                parado_no_meio += 1;
+            }
+        }
+        assert!(!conves(&w, sid).leme);
+        assert_eq!(parado_no_meio, 0, "the ship stopped before the end of its route");
+        assert!(fim.distance(para) < 4.0, "the ship ended {} from its destination", fim.distance(para));
+        assert!(w.vel_do_casco(sid).length() < 0.2, "it did not stop at the end");
+    }
+
+    /// PETS STAY HOME: at sea no pet body exists for a player with one.
+    #[test]
+    fn no_mar_o_pet_fica_guardado() {
+        let (mut w, sid, _rx) = mundo();
+        let id = shared::item_id::pet_no_grau(shared::item_id::PET_BASE, 2);
+        w.sessions.get_mut(&sid).unwrap().equipment.pet = Some(id);
+        for _ in 0..5 {
+            w.step(shared::TICK_DT);
+        }
+        assert!(conves(&w, sid).capitao == sid);
+        assert_eq!(w.ecs.query::<&super::super::pets::PetTag>().iter().count(), 0, "a pet walks on the water");
+        // Ashore (another zone), it comes back.
+        w.zona = "ilha_inicial".into();
+        w.step(shared::TICK_DT);
+        assert_eq!(w.ecs.query::<&super::super::pets::PetTag>().iter().count(), 1, "the pet did not come back on land");
+    }
+
     /// MELEE FROM THE RAIL HITS A SURFACED MOB.
     #[test]
     fn o_golpe_da_amurada_acerta_o_bicho() {

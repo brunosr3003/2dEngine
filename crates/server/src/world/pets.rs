@@ -45,13 +45,18 @@ impl GameWorld {
     /// equipar, desequipar, trocar, morrer e deslogar passam por aqui sem
     /// precisar de gancho em cada um desses caminhos.
     pub(super) fn sincroniza_pets(&mut self) {
+        // AT SEA THE PETS ARE STOWED (owner, 17/11/2026: they walked on the
+        // water and glitched): no body in the sea zone; docking brings them
+        // back. Their bonuses keep applying (they come from the equipment,
+        // not the body).
+        let no_mar = self.no_mar();
         // (sid, item_id desejado) de quem deveria ter pet.
         let desejado: Vec<(SessionId, shared::EquipSlot, Option<u16>, u32)> = self
             .sessions
             .values()
             .flat_map(|s| {
                 s.equipment.pets().into_iter().map(move |(slot, id, _)| {
-                    let quer = if s.logged_in && s.entity.is_some() {
+                    let quer = if s.logged_in && s.entity.is_some() && !no_mar {
                         id
                     } else {
                         None

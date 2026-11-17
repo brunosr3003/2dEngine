@@ -1609,6 +1609,45 @@ tarja, o mapa e o menu) e `MMO_PREVIA_ESTALEIRO=1` (cada aba e as animações;
 `MMO_PREVIA_TAMANHO=WxH`, `MMO_PREVIA_SUFIXO`, `MMO_CELULAR=1`). Cópias em
 `target/portal_ilhas/` e `target/estaleiro/`.
 
+### Convés andável — correções do primeiro teste (17/11/2026, versão de TESTE)
+
+O dono testou (`ffcd023`): o "Leave the helm" *"tá num lugar péssimo"*, a HUD
+navegando *"não precisa ser tão poluída"*, sair do leme PARAVA o navio, e os
+pets andavam na água.
+
+- **Sair do leme parava o navio — a causa.** O `ClientMessage::Input` limpa a
+  rota com o direcional mexido ("comando manual ganha do automático"), e a rota
+  do navio mora na sessão do capitão: andar no convés com o direcional apagava
+  o rumo do NAVIO. Além disso o `PararRota` do auto de terra e o "pare aqui"
+  (`MoverPara` na própria posição) do auto combate e do `ir_ate_o_alvo`
+  também paravam ou desviavam o navio, e o cliente largava o `mar_rota` (o
+  reenvio e o atracar sozinho) ao andar. Agora, a bordo e fora do leme, o
+  direcional e o `PararRota` não tocam na rota (só um rumo novo ou o leme
+  mudam); no cliente, fora do leme o auto de terra só escolhe alvo e golpeia
+  (sem rota de andar), e andar não para o `mar_rota`. Teste de regressão
+  `sair_do_leme_e_andar_nao_para_o_navio` (rumo a 60 u, solta o leme, manda
+  `PararRota`, anda no convés a viagem inteira pela rede: o navio nunca para
+  no meio e para no fim).
+- **Um botão só pro leme** (`mar_ui::botao_do_leme`): redondo, com uma roda de
+  leme, no lugar do botão da montaria (`Zonas::montaria`, livre no mar), ao
+  lado da bateria: "LEAVE" no leme, "HELM" perto da roda, "MY SHIP" pra
+  tripulação; só aparece quando faz alguma coisa. O "Board <nome>'s ship" é
+  uma pílula compacta em cima dele, só perto do navio de alguém do grupo. Sai
+  a faixa larga sobre o "Dock". Nunca em cima de chat, minimapa ou barra:
+  é a vaga do layout. Atracar é só do capitão.
+- **HUD limpa.** No leme: casco na ficha, barra do navio, minimapa com
+  "Sail to…" e os selos do mar, o botão do leme, chat, AUTO (sem buffs, poções,
+  ATTACK/TARGET, rastreador). No convés: a HUD de terra (vida, skills, poções,
+  pulo, corrida, ATTACK), o botão do leme e a faixa "Sailing to … · m · s" se
+  o navio está navegando; os selos do mar e o "Sail to…" ficam pro leme.
+- **Pets guardados no mar** (`pets::sincroniza_pets`): nenhum corpo de pet no
+  mar (atracar traz de volta). Os bônus continuam valendo (vêm do
+  equipamento, não do corpo). A montaria já não existe no convés. Teste
+  `no_mar_o_pet_fica_guardado`.
+- **Prévia:** `MMO_PREVIA_CONVES=1 MMO_PREVIA_SO=conves-hud` grava
+  `conves-hud-<leme|conves>-<paisagem|celular|retrato>.png`. O retrato da HUD
+  de terra continua com a sobreposição antiga (poções × corrida), anterior.
+
 ### Fase 5 — Conteúdo do mar
 
 - **Mapas do tesouro** (drop raro) que apontam ilhotas secretas só

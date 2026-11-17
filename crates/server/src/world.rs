@@ -8548,7 +8548,12 @@ impl GameWorld {
                     // Mexeu no joystick? A rota morre. Comando manual sempre
                     // ganha do automatico — nada irrita mais que o boneco
                     // insistir em ir pra onde o jogador desistiu de ir.
-                    if frame.move_dir.length_squared() > 0.01 {
+                    //
+                    // On a walkable deck, off the helm, the route is the
+                    // SHIP's: the stick walks the body and leaves it alone
+                    // (owner, 17/11/2026: leaving the helm stopped the ship).
+                    let rota_do_navio = s.conves.is_some_and(|c| !c.leme);
+                    if frame.move_dir.length_squared() > 0.01 && !rota_do_navio {
                         s.rota.limpa();
                     }
                     s.pending_input = Some(frame);
@@ -8570,7 +8575,9 @@ impl GameWorld {
                 self.handle_mover_para(id, Vec2::new(x, z));
             }
             ClientMessage::PararRota => {
-                if let Some(s) = self.sessions.get_mut(&id) {
+                // Off the helm the route is the ship's: only a new course
+                // (or the helm) changes it.
+                if let Some(s) = self.sessions.get_mut(&id).filter(|s| s.conves.is_none_or(|c| c.leme)) {
                     s.rota.limpa();
                     s.rota_pedida_em = f32::NEG_INFINITY;
                     s.desvios.clear();
