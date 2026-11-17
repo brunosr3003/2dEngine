@@ -1900,18 +1900,6 @@ pub fn draw_entities_com_sombras(
     // Get my position to filter nearby ghosts
     let my_pos = self_id.and_then(|sid| world.ents.get(&sid).map(|e| e.render_pos));
 
-    // DEBUG: Print ALL player entities with distance
-    println!("\n=== PLAYERS ===");
-    for (eid, ent) in &world.ents {
-        if ent.meta.tag == shared::EntityTag::Player {
-            let is_me = Some(*eid) == self_id;
-            let dist = my_pos.map(|p| p.distance(ent.render_pos)).unwrap_or(999.0);
-            println!("Player id={:?} pos=({:.1},{:.1}) is_me={} dist={:.1}",
-                eid, ent.render_pos.x, ent.render_pos.y, is_me, dist);
-        }
-    }
-    println!("===============\n");
-
     for id in order {
         let Some(e) = world.ents.get_mut(&id) else {
             continue;
@@ -1926,9 +1914,7 @@ pub fn draw_entities_com_sombras(
         // Player entity is within 10u of me and it's not me, it's a ghost.
         if e.meta.tag == shared::EntityTag::Player && Some(id) != self_id {
             if let Some(mpos) = my_pos {
-                let dist = e.render_pos.distance(mpos);
-                if dist < 10.0 {
-                    println!(">>> FILTERED Player id={:?} at dist {:.1}", id, dist);
+                if e.render_pos.distance(mpos) < 10.0 {
                     continue;
                 }
             }
