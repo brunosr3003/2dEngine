@@ -582,6 +582,15 @@ impl Terreno {
             .collect()
     }
 
+    /// Any floating wreckage within `raio` of `p`? (The sea HUD shows GATHER
+    /// only then.) A few wrecks per loaded chunk: a cheap scan.
+    pub fn destroco_perto(&self, p: Vec2, raio: f32) -> bool {
+        self.pedacos
+            .values()
+            .flat_map(|q| q.boiando.iter())
+            .any(|(b, _)| vec2(b.x, b.z).distance(p) <= raio)
+    }
+
     /// Is the chunk under world `(x, z)` built (the sea's far island tiles
     /// hide where the real chunks already are: `mar_cena`)?
     pub fn pedaco_pronto_em(&self, x: f32, z: f32) -> bool {

@@ -773,6 +773,8 @@ pub struct Ficha {
     /// A vida que acabou de ser perdida: um pedaco claro que desce devagar
     /// atras da barra, pra o golpe ser lido e nao so' visto.
     hp_rastro: f32,
+    /// The same trail for the HULL at sea (`draw_ficha`'s `casco`).
+    casco_rastro: f32,
 }
 
 impl Ficha {
@@ -832,7 +834,12 @@ pub fn draw_ficha(
     mp_max: i32,
     vigor_max: i32,
     poder: Option<i32>,
+    casco: Option<(u16, u16)>,
 ) {
+    // AT SEA (`casco` = the ship's hull, points and full): the hull IS the
+    // life, so it takes the HP bar's place, with a ship icon, and the mana
+    // bar steps out — the ship's skills cost none (sea HUD clean-up,
+    // 16/11/2026: no floating ship panel any more).
     // These font sizes already include the layout scale; avoid scaling twice.
     estilo::no_painel(1.0, || {
         let r = z.ficha;
@@ -862,6 +869,19 @@ pub fn draw_ficha(
         let bx = r.x + 80.0 * k;
         let bw = r.w - 94.0 * k;
         estilo::texto_ajustado(nome, bx, r.y + 24.0 * k, bw, fonte(19.0, k), estilo::TEXTO);
+        if let Some((pontos, cheio)) = casco {
+            let f = (pontos as f32 / cheio.max(1) as f32).clamp(0.0, 1.0);
+            ficha.casco_rastro = if f >= ficha.casco_rastro { f } else { (ficha.casco_rastro - dt * 0.35).max(f) };
+            let baixo = f <= shared::navio::CRITICO;
+            let pulsa = if baixo { 0.8 + 0.2 * (get_time() as f32 * 6.0).sin() } else { 1.0 };
+            let icone = Rect::new(bx - 2.0 * k, r.y + 30.0 * k, 28.0 * k, 28.0 * k);
+            crate::mar_ui::icone_do_item(shared::item_id::NAVIO_CHALUPA, icone, 1.0);
+            let barra = Rect::new(bx + 28.0 * k, r.y + 35.0 * k, bw - 28.0 * k, 17.0 * k);
+            let cor = if baixo { Color::new(0.78 * pulsa, 0.2, 0.18, 1.0) } else { Color::new(0.74, 0.52, 0.26, 1.0) };
+            barra_de_recurso(barra, f, ficha.casco_rastro, cor, Color::new(1.0, 0.85, 0.55, 0.28), Some(&format!("{pontos} / {cheio}")));
+            let _ = (hp, hp_max, mp_max, vigor_max);
+            return;
+        }
         let f_hp = (hp as f32 / hp_max.max(1) as f32).clamp(0.0, 1.0);
         ficha.hp_rastro = if f_hp >= ficha.hp_rastro {
             f_hp

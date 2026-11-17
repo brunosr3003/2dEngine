@@ -125,6 +125,7 @@ pub async fn abrir(vox: &mut crate::vox::VoxCache) {
                     1000,
                     240,
                     Some(24850),
+                    None,
                 );
                 hud::draw_topo(&z, true, false, true, true, false);
                 hud::draw_hud(

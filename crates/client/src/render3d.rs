@@ -190,6 +190,21 @@ pub fn camera(target: Vec2, chao: f32, yaw: f32, zoom: f32, pitch: f32) -> Camer
     }
 }
 
+/// THE SAILING CAMERA's eye (`mar_camera`): the same orbit as `camera`, but
+/// with the distance as a free factor over the zoom-1 distance and the pitch
+/// unclamped by the land's band — at sea there is no loaded-world edge to
+/// hide, only the far haze (`mar_cena::neblina`).
+pub fn camera_no_mar(target: Vec2, chao: f32, yaw: f32, fator: f32, pitch: f32) -> Camera3D {
+    let d = cam_dist() * fator.max(0.2);
+    let (recuo, altura) = (d * pitch.cos(), d * pitch.sin());
+    Camera3D {
+        position: vec3(target.x - yaw.sin() * recuo, chao + altura, target.y + yaw.cos() * recuo),
+        target: vec3(target.x, chao, target.y),
+        up: vec3(0.0, 1.0, 0.0),
+        ..Default::default()
+    }
+}
+
 /// Quantos pixels o botao direito precisa andar pra deixar de ser defesa e
 /// virar camera.
 ///

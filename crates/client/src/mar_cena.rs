@@ -1335,75 +1335,66 @@ fn na_tela(cam: &Camera3D, p: Vec3, tela: Vec2) -> (Vec2, bool) {
     (vec2((ndc.x * 0.5 + 0.5) * tela.x, (0.5 - ndc.y * 0.5) * tela.y), w > 0.0)
 }
 
-/// THE DOCK LABELS, screen space: "Bosque · Dock" and the distance over each
-/// lighthouse in view, and a marker on the screen's edge pointing to every
-/// dock out of view — so the way to land is always on screen. `tela` = the
-/// size of what is drawn on (the screen, or the preview's target).
-pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2) {
+/// THE DOCKS' LABELS (sea HUD clean-up, 16/11/2026: one name per island at
+/// the screen's edge was clutter). A dock ON SCREEN carries its own small
+/// "<Island> · Dock" over its lamp, fading in as you near it; OFF SCREEN
+/// only the dock that matters now (`foco`: the crossing's destination,
+/// else the nearest) keeps a small chevron on a ring round the ship,
+/// pointing at it, with its name and distance. Max one such marker.
+pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2, foco: Option<u8>) {
     use crate::hud_estilo as estilo;
-    let s = (tela.y / 800.0).clamp(0.7, 1.6);
-    let tamanho = (17.0 * s) as u16;
-    let pequeno = (13.0 * s) as u16;
-    let margem = 46.0 * s;
+    let s = (tela.y.min(tela.x) / 800.0).clamp(0.7, 1.6);
+    let tamanho = (15.0 * s) as u16;
+    let pequeno = (12.0 * s) as u16;
+    let margem = 40.0 * s;
     let de = eu.unwrap_or(vec2(cam.target.x, cam.target.z));
-    // Markers already placed on the edge: a new one that would overlap
-    // slides along the edge instead.
-    let mut postos: Vec<Rect> = Vec::new();
     for i in mar::ilhas() {
         let cor = cor_da_ilha(i.feitio);
         let f = mq(i.fundeadouro());
         let dist = de.distance(f);
         let topo = no_mundo(i, vec3(-10.5, crate::mar_temas::altura_da_lampada(i.feitio) + 4.5, -12.0));
-        let nome = format!("{} · Dock", i.nome);
-        let metros = format!("{:.0} m", dist);
-        let alfa = ((dist - 10.0) / 22.0).clamp(0.3, 1.0);
         let (q, na_frente) = na_tela(cam, topo, tela);
         let dentro = na_frente && q.x > margem && q.x < tela.x - margem && q.y > margem && q.y < tela.y - margem;
         if dentro {
+            // Far docks barely show; the near one reads plainly.
+            let alfa = (1.0 - (dist - 60.0) / 240.0).clamp(0.35, 0.95);
+            let nome = format!("{} · Dock", i.nome);
             let c = Color::new(cor.r, cor.g, cor.b, alfa);
-            estilo::texto_centro_forte(q.x + 1.5, q.y + 1.5, &nome, tamanho, Color::new(0.0, 0.0, 0.0, 0.75 * alfa));
+            estilo::texto_centro_forte(q.x + 1.0, q.y + 1.0, &nome, tamanho, Color::new(0.0, 0.0, 0.0, 0.7 * alfa));
             estilo::texto_centro_forte(q.x, q.y, &nome, tamanho, c);
-            estilo::texto_centro(q.x + 1.0, q.y + 17.0 * s + 1.0, &metros, pequeno, Color::new(0.0, 0.0, 0.0, 0.7 * alfa));
-            estilo::texto_centro(q.x, q.y + 17.0 * s, &metros, pequeno, Color::new(1.0, 1.0, 1.0, 0.9 * alfa));
-            // An anchor mark under the name.
-            ancora(vec2(q.x, q.y - 22.0 * s), 9.0 * s, c);
+            ancora(vec2(q.x, q.y - 18.0 * s), 7.0 * s, c);
             continue;
         }
-        // Off screen: a chevron on the edge, towards the dock, with its name.
-        let centro = tela * 0.5;
+        if foco != Some(i.ilha as u8) {
+            continue;
+        }
+        // Off screen: a small chevron on a ring ROUND THE SHIP, pointing at
+        // the dock, with its name past it — a compass on the water, clear
+        // of the HUD in the screen's corners.
+        let (navio, _) = na_tela(cam, vec3(de.x, crate::agua::ALTURA_DA_AGUA, de.y), tela);
         // The dock's own spot on the water, projected (flipped when behind).
         let (q, _) = na_tela(cam, vec3(f.x, 0.0, f.y), tela);
-        let dir = (q - centro).normalize_or_zero();
+        let dir = (q - navio).normalize_or_zero();
         if dir == Vec2::ZERO {
             continue;
         }
-        let meia = centro - Vec2::splat(margem);
-        let k = (meia.x / dir.x.abs().max(1e-3)).min(meia.y / dir.y.abs().max(1e-3));
-        let mut p = centro + dir * k;
-        let rotulo = format!("{} · {:.0} m", i.nome, dist);
-        let larg = estilo::medir_forte(&rotulo, pequeno) + 40.0 * s;
-        let alto = 44.0 * s;
-        let na_lateral = (p.x - margem).abs() < 1.0 || (p.x - (tela.x - margem)).abs() < 1.0;
-        for _ in 0..6 {
-            let r = Rect::new(p.x - larg * 0.5, p.y - alto * 0.5, larg, alto);
-            if !postos.iter().any(|o| o.overlaps(&r)) {
-                break;
-            }
-            if na_lateral {
-                p.y = (p.y + alto).min(tela.y - margem);
-            } else {
-                p.x = (p.x - larg).max(margem);
-            }
-        }
-        postos.push(Rect::new(p.x - larg * 0.5, p.y - alto * 0.5, larg, alto));
-        let c = Color::new(cor.r, cor.g, cor.b, 0.95);
+        // Kept in the open middle of the screen, away from the HUD's edges.
+        let p = navio + dir * tela.x.min(tela.y) * 0.24;
+        let p = vec2(p.x.clamp(tela.x * 0.2, tela.x * 0.8), p.y.clamp(tela.y * 0.24, tela.y * 0.68));
+        let c = Color::new(cor.r, cor.g, cor.b, 0.92);
         let lado = vec2(-dir.y, dir.x);
-        let ponta = p + dir * 12.0 * s;
-        draw_triangle(ponta, p - dir * 4.0 * s + lado * 9.0 * s, p - dir * 4.0 * s - lado * 9.0 * s, Color::new(0.0, 0.0, 0.0, 0.5));
-        draw_triangle(ponta, p - dir * 2.0 * s + lado * 8.0 * s, p - dir * 2.0 * s - lado * 8.0 * s, c);
-        let t = p - dir * 26.0 * s;
-        estilo::texto_centro_forte(t.x + 1.0, t.y + 5.0 * s + 1.0, &rotulo, pequeno, Color::new(0.0, 0.0, 0.0, 0.8));
-        estilo::texto_centro_forte(t.x, t.y + 5.0 * s, &rotulo, pequeno, c);
+        let ponta = p + dir * 9.0 * s;
+        let sombra = vec2(1.0, 1.0);
+        draw_triangle(ponta + sombra, p - dir * 3.0 * s + lado * 7.0 * s + sombra, p - dir * 3.0 * s - lado * 7.0 * s + sombra, Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_triangle(ponta, p - dir * 3.0 * s + lado * 6.5 * s, p - dir * 3.0 * s - lado * 6.5 * s, c);
+        let rotulo = format!("{} · {:.0} m", i.nome, dist);
+        let w = estilo::medir_forte(&rotulo, pequeno);
+        // The name just past the chevron, outward, kept on screen.
+        let t = p + dir * (16.0 * s + w * 0.5 * dir.x.abs() + 6.0 * s * dir.y.abs());
+        let tx = t.x.clamp(margem * 0.5 + w * 0.5, tela.x - margem * 0.5 - w * 0.5);
+        let ty = t.y.clamp(margem * 0.5 + pequeno as f32, tela.y - margem * 0.5);
+        estilo::texto_centro_forte(tx + 1.0, ty + 4.0 * s + 1.0, &rotulo, pequeno, Color::new(0.0, 0.0, 0.0, 0.75));
+        estilo::texto_centro_forte(tx, ty + 4.0 * s, &rotulo, pequeno, c);
     }
 }
 
@@ -1562,7 +1553,8 @@ fn cena(
     clear_background(cor_de_fundo());
     desenha_mundo(terreno, solido, cam, navios, eu);
     crate::render3d::camera_padrao();
-    rotulos(cam, eu, tela);
+    let foco = eu.and_then(crate::mar_rota::porto_mais_perto).map(|p| p.0);
+    rotulos(cam, eu, tela, foco);
 }
 
 /// PREVIEW (`MMO_PREVIA_MAR=1`): the open sea's scenes to PNGs in

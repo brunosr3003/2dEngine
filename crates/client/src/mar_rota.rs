@@ -76,8 +76,8 @@ pub struct RotaDoMar {
     varredura_em: f64,
     /// Nests the hunt found empty: (nest index, until).
     ninhos_vazios: [(usize, f64); 4],
-    /// Where the "Sail to" button was last drawn (for `pega_mouse`).
-    ancora: Option<(Rect, f32)>,
+    /// Where the "Sail to" pill and its panel were last drawn (`pega_em`).
+    ancora: Option<(Rect, Rect)>,
     /// AUTO COMBAT at sea is the server's pilot: the switch as last sent.
     pub piloto: PilotoCliente,
 }
@@ -217,6 +217,12 @@ impl RotaDoMar {
         self.destino
     }
 
+    /// The island that matters NOW (the only one with an edge marker,
+    /// `mar_cena::rotulos`): the crossing's dock, else the nearest.
+    pub fn ilha_em_foco(&self, eu: Vec2) -> Option<u8> {
+        self.atracar.filter(|_| self.ativa()).or_else(|| porto_mais_perto(eu).map(|p| p.0))
+    }
+
     /// Sail to `destino`; `atracar` = dock at that island on arrival. The
     /// same destination twice keeps the crossing (the auto modes ask again
     /// every second; resetting would resend and stutter).
@@ -347,17 +353,27 @@ impl RotaDoMar {
             .min_by(|a, b| a.distance_squared(eu).total_cmp(&b.distance_squared(eu)))
     }
 
-    /// THE "SAIL TO" PANEL: a ⚓ button under the ship panel that opens one
-    /// row per port — name, distance, ETA and "Sail". Returns the island
-    /// chosen. Rows are text built only while the panel is open.
-    pub fn desenha_portos(&mut self, ancora: Rect, s: f32, eu: Option<Vec2>, velocidade: f32) -> Option<u8> {
-        self.ancora = Some((ancora, s));
-        let botao = Rect::new(ancora.x, ancora.y + ancora.h + 6.0 * s, 132.0 * s, 30.0 * s);
+    /// THE "SAIL TO" PILL ON THE MINIMAP (sea HUD clean-up, 16/11/2026: no
+    /// floating button over the ship). It sits where the land's coordinates
+    /// sit, at the foot of the disc (`disco` = its centre and radius), and
+    /// opens one row per port under the minimap — name, distance, ETA and
+    /// "Sail". Returns the island chosen. Rows are text built only while the
+    /// panel is open.
+    pub fn desenha_portos(&mut self, disco: (Vec2, f32), s: f32, eu: Option<Vec2>, velocidade: f32) -> Option<u8> {
+        let (botao, painel) = retangulos_dos_portos(disco, s);
+        self.ancora = Some((botao, painel));
         let m = Vec2::from(mouse_position());
-        let rotulo = if self.portos_abertos { "Close ports" } else { "Sail to…" };
-        estilo::botao(botao, rotulo, estilo::estado_de(botao, false, self.portos_abertos), true);
+        let sobre = botao.toca(m);
+        let ativo = self.portos_abertos;
+        estilo::ret_arredondado(botao, botao.h * 0.5, estilo::alfa(estilo::FUNDO, 0.92));
+        estilo::borda_arredondada(botao, botao.h * 0.5, 1.0, estilo::alfa(estilo::OURO, if sobre || ativo { 0.9 } else { 0.45 }));
+        let cor = if sobre || ativo { estilo::OURO } else { estilo::TEXTO };
+        let e = botao.h / 2.3;
+        crate::mar_cena::ancora(vec2(botao.x + e * 1.4, botao.center().y), e * 0.75, cor);
+        let rotulo = if ativo { "Close" } else { "Sail to…" };
+        estilo::texto_forte(botao.x + e * 2.6, botao.center().y + e * 0.48, rotulo, 12, cor);
         let clique = crate::foco::clique();
-        if clique && botao.toca(m) {
+        if clique && sobre {
             self.portos_abertos = !self.portos_abertos;
             return None;
         }
@@ -366,24 +382,24 @@ impl RotaDoMar {
         }
         let eu = eu?;
         let lista = portos(eu);
-        let linha = 34.0 * s;
-        let w = 430.0 * s;
-        let painel = Rect::new(botao.x, botao.y + botao.h + 4.0 * s, w, linha * lista.len() as f32 + 8.0 * s);
+        let linha = painel.h / lista.len().max(1) as f32;
         estilo::painel(painel);
         let mut escolha = None;
         for (k, (ilha, nome, _, d)) in lista.iter().enumerate() {
-            let y = painel.y + 4.0 * s + k as f32 * linha;
+            let y = painel.y + k as f32 * linha;
             let destino = self.atracar == Some(*ilha) && self.ativa();
             let cor = if destino { estilo::AUTO } else { estilo::TEXTO };
             let info = format!("{:.0} m · {}", d, formata_eta(eta_s(*d, velocidade)));
-            let b = Rect::new(painel.x + w - 76.0 * s, y + 3.0 * s, 68.0 * s, linha - 6.0 * s);
-            let x_info = b.x - 10.0 * s - estilo::medir(&info, 13);
+            let e = linha / 2.4;
+            let bw = largura_do_botao(e);
+            let b = Rect::new(painel.x + painel.w - bw - e * 0.8, y + e * 0.35, bw, linha - e * 0.7);
+            let x_info = b.x - e * 1.2 - estilo::medir(&info, 12);
             // A long island name steps down a size rather than run into
-            // the distance.
-            let cabe = x_info - painel.x - 18.0 * s;
-            let tam = if estilo::medir(nome, 15) <= cabe { 15 } else { 12 };
-            estilo::texto(painel.x + 10.0 * s, y + linha * 0.62, nome, tam, cor);
-            estilo::texto(x_info, y + linha * 0.62, &info, 13, estilo::SUAVE);
+            // the distance (only on a screen too narrow for the panel).
+            let cabe = x_info - painel.x - e * 2.2;
+            let tam = if estilo::medir(nome, 14) <= cabe { 14 } else { 11 };
+            estilo::texto(painel.x + e * 1.2, y + linha * 0.66, nome, tam, cor);
+            estilo::texto(x_info, y + linha * 0.66, &info, 12, estilo::SUAVE);
             estilo::botao(b, "Sail", estilo::estado_de(b, false, destino), true);
             if clique && b.toca(m) {
                 escolha = Some(*ilha);
@@ -395,17 +411,54 @@ impl RotaDoMar {
         escolha
     }
 
-    /// Does the open panel (or its button) take this click? (At sea only:
-    /// the panel is drawn only there.)
+    /// Does the pill (or the open panel) take this click? (At sea only: they
+    /// are drawn only there.)
     pub fn pega_em(&self, m: Vec2) -> bool {
-        let Some((ancora, s)) = self.ancora.filter(|_| crate::mar_ui::no_mar()) else {
+        let Some((botao, painel)) = self.ancora.filter(|_| crate::mar_ui::no_mar()) else {
             return false;
         };
-        let botao = Rect::new(ancora.x, ancora.y + ancora.h + 6.0 * s, 132.0 * s, 30.0 * s);
-        let n = shared::mar::ilhas().len() as f32;
-        let painel = Rect::new(botao.x, botao.y + botao.h + 4.0 * s, 430.0 * s, 34.0 * s * n + 8.0 * s);
         botao.toca(m) || (self.portos_abertos && painel.toca(m))
     }
+}
+
+/// Where the "Sail to" pill and its panel go, from the minimap's disc: the
+/// pill at the disc's foot, the panel under it, kept on screen.
+///
+/// Sized by the TEXT (the HUD's fonts follow the UI scale, not the layout's
+/// `s`): on a phone the rows grow with the letters instead of crushing them.
+pub fn retangulos_dos_portos(disco: (Vec2, f32), _s: f32) -> (Rect, Rect) {
+    let (c, raio) = disco;
+    let e = estilo::medir_dim("M", 13).height.max(6.0);
+    let (w, h) = (estilo::medir_forte("Sail to…", 12) + e * 3.6, e * 2.3);
+    let tela_w = crate::render3d::tela().0;
+    let bx = (c.x - w * 0.5).min(tela_w - w - 6.0);
+    let botao = Rect::new(bx, c.y + raio - h * 0.3, w, h);
+    let ilhas = shared::mar::ilhas();
+    let nome = ilhas.iter().map(|i| estilo::medir(i.nome, 14)).fold(0.0, f32::max);
+    let info = estilo::medir("9999 m · 9:99", 12);
+    let largura = e * 1.2 + nome + e * 1.4 + info + e * 1.0 + largura_do_botao(e) + e * 0.8;
+    let tela = crate::render3d::tela().0;
+    let largura = largura.min(tela - 16.0);
+    let tela_h = crate::render3d::tela().1;
+    // Rows tighten (never below ~2 letters tall) before the panel would run
+    // under the EXP strip at the foot of the screen.
+    let n = ilhas.len() as f32;
+    let alto = (e * 2.4 * n).min((tela_h - 56.0).max(e * 1.9 * n));
+    let mut x = (c.x + raio - largura).clamp(8.0, (tela - largura - 8.0).max(8.0));
+    let mut y = botao.y + botao.h + e * 0.6;
+    // A short screen (a phone on its side): beside the minimap instead,
+    // as high as it needs.
+    if y + alto > tela_h - 40.0 {
+        y = (tela_h - alto - 40.0).clamp(8.0, y);
+        x = (c.x - raio - e * 2.0 - largura).max(8.0);
+    }
+    let painel = Rect::new(x, y, largura, alto);
+    (botao, painel)
+}
+
+/// The "Sail" button of a port row, from the text's unit `e`.
+fn largura_do_botao(e: f32) -> f32 {
+    estilo::medir_forte("Sail", 13) + e * 2.0
 }
 
 #[cfg(test)]

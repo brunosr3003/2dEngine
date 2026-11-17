@@ -52,6 +52,8 @@ mod mar_temas;
 mod mar_ui;
 mod mar_combate_ui;
 mod mar_rota;
+/// The sailing camera (sea HUD clean-up): lower, behind the heading.
+mod mar_camera;
 /// The ESSENCE SHOP screen (rebirth phase 3, `shared::essencia`).
 mod loja_essencia_ui;
 mod foco;
@@ -313,6 +315,8 @@ struct Jogo {
     /// fight (`mar_combate_ui`).
     mar_rota: mar_rota::RotaDoMar,
     mar_vfx: mar_combate_ui::MarCombate,
+    /// The SAILING CAMERA's smoothing (`mar_camera`).
+    mar_camera: mar_camera::CameraDoMar,
     evolucao_skills: evolucao_skills::EvolucaoSkills,
     invocacao: invocacao_ui::InvocacaoUi,
     auto_combate: auto_combate::AutoCombate,
@@ -1048,6 +1052,7 @@ async fn main() {
         barra_navio: mar_ui::BarraDoNavio::default(),
         mar_rota: mar_rota::RotaDoMar::default(),
         mar_vfx: mar_combate_ui::MarCombate::default(),
+        mar_camera: mar_camera::CameraDoMar::default(),
         evolucao_skills: evolucao_skills::EvolucaoSkills::default(),
         invocacao: invocacao_ui::InvocacaoUi::default(),
         auto_combate: auto_combate::AutoCombate::default(),
@@ -1717,6 +1722,7 @@ impl Jogo {
             if let Some(eu) = self.world.self_pos() {
                 self.rastro.acompanha(eu);
                 self.mapa.rota = self.rastro.caminho(eu);
+                self.mapa.destino_mar = self.mar_rota.destino().filter(|_| mar_ui::no_mar());
             }
             // Indo sozinho e nada segurando: depois de 1,5 s andando, corre.
             let indo_sozinho = self.mapa.viagem.ativa() || self.mar_rota.ativa()
@@ -3278,7 +3284,7 @@ impl Jogo {
             let escolhido = {
                 let terreno = self.terreno.as_ref();
                 let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
-                let vista = render3d::Vista::nova(
+                let mut vista = render3d::Vista::nova(
                     centro,
                     self.cam_yaw,
                     self.cam_zoom,
@@ -3286,6 +3292,10 @@ impl Jogo {
                     self.cam_altura,
                     &f,
                 );
+                // At sea the tap goes through the sailing camera drawn last.
+                if let Some(q) = self.mar_camera.ultimo().filter(|_| mar_ui::no_mar()) {
+                    vista.cam = render3d::camera_no_mar(q.centro, self.cam_altura, self.cam_yaw, q.fator, q.pitch);
+                }
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
                 // Clicou no vazio? Entao foi no CHAO.
                 let destino = if alvo.is_none() {
@@ -4772,6 +4782,20 @@ impl Jogo {
 
     /// F ou o botao ATACAR: com alvo vivo, vai ate' ele (o golpe e' automatico
     /// no alcance); sem alvo, escolhe o inimigo mais perto.
+    /// The ship's guns this frame, for the bearing hints (`mar_combate_ui`):
+    /// which are off cooldown, and the hull's drawn scale.
+    fn prontos_do_mar(&self) -> mar_combate_ui::Prontos {
+        let agora = get_time();
+        let pronto = |h: u8| self.habilidades.recarga_ate(shared::navio::id_de_skill(h)) <= agora;
+        let escala = self
+            .bolsa
+            .equip
+            .navio
+            .filter(|i| shared::item_id::e_navio(*i))
+            .map_or(1.0, |i| shared::navio::CASCOS[shared::navio::classe(i)].escala);
+        mar_combate_ui::Prontos { bordada: pronto(0), canhonaco: pronto(1), escala }
+    }
+
     fn atacar(&mut self) {
         let valido = self
             .alvo
@@ -6616,8 +6640,23 @@ impl Jogo {
             dzoom -= roda.clamp(-4.0, 4.0) * 0.12;
         }
 
+        // AT SEA the camera swings behind the heading by itself once the
+        // hand rests (`mar_camera::segue`); dragging still orbits.
+        let segue_rumo = if mar_ui::no_mar() {
+            self.world.self_id.and_then(|id| self.world.ents.get(&id)).map(|e| {
+                let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
+                (vec2(r.x, r.y), e.state.vel_f32().length())
+            })
+        } else {
+            self.mar_camera.zera();
+            None
+        };
         // ── alvos ──
         let cs = &mut self.camera_suave;
+        if let Some((rumo, vel)) = segue_rumo {
+            let mexeu_mao = dyaw != 0.0 || mexeu != 0.0 || segurando || self.girando_toque;
+            cs.yaw = self.mar_camera.segue(cs.yaw, rumo, mexeu_mao, vel, dt);
+        }
         cs.yaw += dyaw;
         if cs.yaw > std::f32::consts::PI {
             cs.yaw -= std::f32::consts::TAU;
@@ -6852,7 +6891,7 @@ impl Jogo {
         // morro assim que o terreno passou a ter 34 unidades de altura.
         let terreno = self.terreno.as_ref();
         let f = |x: f32, z: f32| terreno.map_or(0.0, |t| t.altura(x, z));
-        let vista = render3d::Vista::nova(
+        let mut vista = render3d::Vista::nova(
             centro,
             self.cam_yaw,
             self.cam_zoom,
@@ -6860,6 +6899,20 @@ impl Jogo {
             self.cam_altura,
             &f,
         );
+        // AT SEA, THE SAILING CAMERA (`mar_camera`): lower, further back,
+        // ahead of the bow, wider in a fight; the yaw is the one the hand
+        // and the heading follow agreed on (`camera_controles`).
+        if mar_ui::no_mar() {
+            if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+                let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
+                let alvo = self.alvo.and_then(|id| self.world.ents.get(&id)).filter(|a| a.state.hp > 0 && a.morte.is_none()).map(|a| a.render_pos);
+                let classe = self.bolsa.equip.navio.filter(|i| shared::item_id::e_navio(*i)).map_or(0, shared::navio::classe);
+                let retrato = screen_height() > screen_width();
+                let quer = mar_camera::enquadramento(centro, vec2(r.x, r.y), alvo, classe, retrato, self.cam_zoom, self.cam_pitch_ajuste);
+                let q = self.mar_camera.quadro(quer, get_frame_time().min(0.1));
+                vista.cam = render3d::camera_no_mar(q.centro, self.cam_altura, self.cam_yaw, q.fator, q.pitch);
+            }
+        }
         set_camera(&vista.cam);
         let modo_sombras = self.config_graficos.sombras;
         // Kōgen-tō is always night: -1 in the late-sun slot tells the world
@@ -7103,15 +7156,18 @@ impl Jogo {
                 rastro::desenha(&self.rastro, eu, self.mar_rota.destino(), &|_, _| y, get_time() as f32);
             }
             self.mar_vfx.atualiza(&self.world);
-            self.mar_vfx.desenha_3d(&self.world, &vista.cam, self.alvo);
+            let prontos = self.prontos_do_mar();
+            self.mar_vfx.desenha_3d(&self.world, &vista.cam, self.alvo, prontos);
             if let Some(f) = self.mar_vfx.tremor() {
                 self.tremor = (f, get_time() + 0.22);
             }
         }
         set_default_camera();
         if mar_ui::no_mar() {
-            mar_cena::rotulos(&vista.cam, self.world.self_pos(), vec2(screen_width(), screen_height()));
-            self.mar_vfx.desenha_2d(&self.world, &vista.cam, self.alvo);
+            let foco = self.world.self_pos().and_then(|p| self.mar_rota.ilha_em_foco(p));
+            mar_cena::rotulos(&vista.cam, self.world.self_pos(), vec2(screen_width(), screen_height()), foco);
+            let prontos = self.prontos_do_mar();
+            self.mar_vfx.desenha_2d(&self.world, &vista.cam, self.alvo, prontos);
         }
         // Numero de dano, faisca e a borda vermelha, por cima do mundo.
         efeitos::desenha(&self.world, &vista);
@@ -7276,6 +7332,7 @@ impl Jogo {
                     mp_max,
                     vigor_max,
                     poder,
+                    mar_ui::casco_de(&self.bolsa.equip).filter(|_| mar_ui::no_mar()).map(|(c, m, _)| (c, m)),
                 );
                 let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
                     .map(|e| e.meta.pk).unwrap_or_default();
@@ -7307,7 +7364,12 @@ impl Jogo {
                     self.ativas.desenha(&self.habilidades, self.ficha.mp.unwrap_or(0));
                 }
                 self.auto_combate.desenha();
-                self.auto_coleta.desenha();
+                // At sea GATHER is only for wreckage: shown near some (or
+                // while it runs), else it is clutter.
+                let destroco_perto = self.world.self_pos().zip(self.terreno.as_ref()).is_some_and(|(p, t)| t.destroco_perto(p, 30.0));
+                if !mar_ui::no_mar() || self.auto_coleta.ativo() || destroco_perto {
+                    self.auto_coleta.desenha();
+                }
                 // Alvos de tutorial que moram no HUD.
                 foco::marca(foco::chave::AUTO_COMBATE, auto_combate::retangulo());
                 foco::marca(foco::chave::AUTO_COLETA, auto_coleta::retangulo());
@@ -7389,7 +7451,8 @@ impl Jogo {
                 // Dentro da dungeon o rastreador e' da DUNGEON (a linha de
                 // missao dela ocupa este mesmo lugar): as missoes normais nao
                 // aparecem.
-                if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() {
+                let rastreador_no_mar = !mar_ui::no_mar() || self.auto_missao.quest.is_some();
+                if !self.missoes.aberta && !self.loja.aberta() && !self.dungeon.na_instancia() && rastreador_no_mar {
                     // Quem mede a caixa precisa saber o tamanho do grupo.
                     self.missoes.membros_grupo = self.social.grupo.len();
                     let clique = {
@@ -7543,11 +7606,14 @@ impl Jogo {
                 self.montarias.montou();
             }
             let progresso = self.montarias.progresso(get_time());
-            if hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
-                self.alternar_montaria();
-            }
-            if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
-                self.corrida.alternar(self.correndo_auto);
+            // At sea there is no mount and no sprint: the hull sails.
+            if !mar_ui::no_mar() {
+                if hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
+                    self.alternar_montaria();
+                }
+                if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
+                    self.corrida.alternar(self.correndo_auto);
+                }
             }
             // No dash any more (09/11/2026): the jump took its slot.
             // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
@@ -7588,19 +7654,21 @@ impl Jogo {
                 .self_id
                 .and_then(|id| self.world.ents.get(&id))
                 .map_or((false, 0.0), |e| (e.meta.pk.marcado, e.state.vel_f32().length()));
-            // Gameplay remake: the ship panel (hull, speed, zone, treasure,
-            // nearest dock) and, under it, "Sail to…" with every port.
+            // THE SEA HUD (sea HUD clean-up, 16/11/2026): the zone toast and
+            // the badges by the minimap; the hull is the character frame's,
+            // and "Sail to…" is the pill at the minimap's foot.
             if mar_ui::no_mar() {
+                let _ = velocidade;
                 let eu_v = self.world.self_pos();
-                if let Some(r) = self.mar_vfx.painel_do_navio(&z, &self.bolsa.equip, eu_v, velocidade, marcado) {
-                    let vel_max = shared::item_id::e_navio(self.bolsa.equip.navio.unwrap_or(0))
-                        .then(|| {
-                            let id = self.bolsa.equip.navio.unwrap_or(0);
-                            shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
-                        })
-                        .unwrap_or(shared::navio::CASCOS[0].velocidade);
-                    let ancora = Rect::new(screen_width() * 0.5 - r.w * 0.5, r.y, r.w, r.h);
-                    if let Some(ilha) = self.mar_rota.desenha_portos(ancora, z.s, eu_v, vel_max) {
+                self.mar_vfx.hud_do_mar(&z, &self.bolsa.equip, eu_v, marcado, mapa::Mapa::mini_rect());
+                let vel_max = shared::item_id::e_navio(self.bolsa.equip.navio.unwrap_or(0))
+                    .then(|| {
+                        let id = self.bolsa.equip.navio.unwrap_or(0);
+                        shared::navio::velocidade_do_navio(id, &shared::navio::dados(self.bolsa.equip.navio_inst.as_ref(), id))
+                    })
+                    .unwrap_or(shared::navio::CASCOS[0].velocidade);
+                if !hud_layout::minimapa_oculto() {
+                    if let Some(ilha) = self.mar_rota.desenha_portos(mapa::Mapa::disco_do_minimapa(), z.s, eu_v, vel_max) {
                         self.navegar_para_ilha(ilha);
                     }
                 }

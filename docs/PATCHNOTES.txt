@@ -31,12 +31,13 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New ships: every class has its own hull, with masts, billowing sails, rigging, gun ports and a lantern. Ships ride the waves, lean into turns and leave a foam wake.
 - Better water at sea: deep blue to turquoise shallows, sunlight on the waves, whitecaps and surf on every shore, and a sky that matches. Wreckage and drifting chests now float on the waves.
 - Sailing is now hands-free: tap a spot on the map or the minimap and your ship sails there by itself, around the islands, with the route drawn on the water and the time to arrive. Tap an island to sail to its dock and go ashore.
-- New "Sail to…" list under the ship panel with every port, its distance and travel time. A quest's Go at sea now sails to the right island and docks for you.
+- New "Sail to…" list on the minimap with every port, its distance and travel time. A quest's Go at sea now sails to the right island and docks for you.
 - Auto combat and auto gather work at sea: your ship hunts the nearest sea monster or wreckage, keeps its distance and fires its cannons on its own.
 - Much better auto combat at sea: your ship now circles its target with its side guns facing it, steers clear of bites, fires the Broadside only when it will hit, patches the hull when it runs low and heads for a safe harbour if it has to. Sea monsters also no longer give up and heal the moment you sail out of reach.
-- Clearer sea combat: a target ring and life bar, the Broadside's firing arcs on the water (green when it will hit), an aim line and range ring for the Long Gun, cannonballs you can watch fly, splashes on a miss, splinters on a hit, and new cannon sounds.
+- Clearer sea combat: a target ring, your ship's side glows when the Broadside will hit and a small sight marks a target in Long Gun range, cannonballs you can watch fly, splashes on a miss, splinters on a hit, and new cannon sounds.
 - Sharks and eels now show above the waves, and a red ring warns you before they bite: sail out of it to dodge. Sea elites are bigger and marked.
-- New ship panel: hull, speed, whether you are in safe, open or lawless waters, treasure on deck and the nearest dock, with a warning when the hull runs low.
+- The sea HUD was cleaned up: hull in your status frame, no aiming overlays, only the islands that matter. Entering lawless waters or running low on hull shows a short notice, and lawless waters or treasure on deck get a small badge by the minimap.
+- New sailing camera: lower and behind your ship, it follows your heading and widens in a fight. Clearer sea icons on the minimap and map, and new ship skill icons.
 - Sea balance: the Broadside hits harder, the Long Gun is now a long-range opener, sea monsters are tougher, and a fight at sea lasts about 10 to 25 seconds. At sea the cannons do the fighting: weapons rest until you are ashore.
 - Ships now turn with weight: bigger hulls turn slower, and every ship gun fires from the sides.
 - The Corsair path has new sea nodes: more cannon damage, a tougher hull, faster treasure hauling, a bigger Colossus Chest payout, and the Pirate's Code keystone (more cannon damage against treasure ships, but you are always a target at sea).

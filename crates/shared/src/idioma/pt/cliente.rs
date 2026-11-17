@@ -2615,6 +2615,9 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("No water route: stopped.", "Sem rota pela água: parei."),
     ("Auto quest: sailing to {}.", "Auto missão: navegando até {}."),
     ("Safe harbour", "Porto seguro"),
+    // O aviso de zona do HUD do mar (limpeza do HUD, 16/11/2026).
+    ("Entering lawless waters", "Entrando em águas sem lei"),
+    ("Leaving lawless waters", "Saindo das águas sem lei"),
     ("Open waters", "Águas abertas"),
     ("Treasure", "Tesouro"),
     ("Nearest dock: {} · {:.0} m", "Cais mais perto: {} · {:.0} m"),

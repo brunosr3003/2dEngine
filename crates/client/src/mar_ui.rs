@@ -58,8 +58,9 @@ pub fn casco_de(eq: &shared::Equipment) -> Option<(u16, u16, bool)> {
     Some((d.casco, nv::casco_total(id, &d), d.avariado))
 }
 
-// The hull bar is the ship panel's now (`mar_combate_ui::painel_do_navio`,
-// gameplay remake): hull, speed, zone, treasure and the nearest dock.
+// The hull bar is the CHARACTER FRAME's at sea (`hud::draw_ficha`, sea HUD
+// clean-up 16/11/2026); the zone, treasure and mark are the sea HUD's toast
+// and badges (`mar_combate_ui::hud_do_mar`).
 
 /// THE DOCK PROMPT: at an anchorage, a "Dock at <island>" button. Returns
 /// the island (`ARQUIPELAGO` index) when tapped.
@@ -85,7 +86,7 @@ pub fn tesouro_no_conves(eq: &shared::Equipment) -> Option<shared::items::Tesour
     nv::dados(eq.navio_inst.as_ref(), id).conves
 }
 
-/// The HUD line under the hull bar, at sea: what makes you a target. The
+/// What makes you a target at sea (the sea HUD's badge tooltips). The
 /// carrier reads "You carry treasure — anyone can attack you"; the trail
 /// and the Pirate's Code read "Marked"; inside lawless waters, the warning.
 pub fn linha_de_perigo(tesouro: bool, marcado: bool, sem_lei: bool) -> Option<&'static str> {
@@ -371,7 +372,12 @@ impl BarraDoNavio {
             let cor = cor_da_habilidade(h.efeito);
             let e = estilo::estado(r.toca(m), is_mouse_button_down(MouseButton::Left), false, false);
             estilo::botao_redondo(c, raio, if auto { estilo::AUTO } else { cor }, e, cd == 0.0 && auto);
-            icone_da_habilidade(h.efeito, c, raio * 0.55, if cd > 0.0 { 0.45 } else { 1.0 });
+            // The atlas art, like the land skills (`gerar_icones_ui.py`,
+            // ids 300..303); the stroke icon only if it is missing.
+            let alfa = if cd > 0.0 { 0.4 } else { 1.0 };
+            if !crate::icones_ui::skill(nv::id_de_skill(h.id), c, raio * 1.5, alfa) {
+                icone_da_habilidade(h.efeito, c, raio * 0.55, alfa);
+            }
             if cd > 0.0 {
                 let f = (cd as f32 / h.espera_s.max(0.01)).min(1.0);
                 estilo::setor(c, raio - 3.0, f, Color::new(0.0, 0.0, 0.0, 0.62));

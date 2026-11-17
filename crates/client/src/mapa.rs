@@ -1088,36 +1088,176 @@ fn nomes_das_ilhotas(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f
     }
 }
 
-/// THE LAWLESS WATERS of the open sea (naval phase 4, `mar::zonas_sem_lei`),
-/// in red on the sea map and the minimap: a translucent disc, its rim and
-/// the label when it fits.
-fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16) {
+/// THE OPEN SEA'S CHART MARKS (sea HUD clean-up, 16/11/2026: "os ícones do
+/// minimapa no mar estão péssimos"), on the sea map and the minimap: the
+/// lawless waters as a red HATCHED disc with its rim, the mob nests as
+/// faint red rings, and every dock as an anchor in its island's colour on
+/// a dark coin. The minimap (`mini`) shows no labels — the disc is for
+/// finding your way; the big map names the docks and the lawless waters.
+fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, tamanho: u16, recorte: Option<(Vec2, f32)>) {
     if !zona.is_some_and(shared::mar::e_mar) {
         return;
     }
-    // THE DOCKS (visual remake): an anchor at every anchorage, in the
-    // island's colour, with "<island> · Dock" when it fits.
+    let mini = recorte.is_some();
+    let dentro = |q: Vec2, folga: f32| recorte.is_none_or(|(c, r)| q.distance(c) <= r - folga);
+    let k = if mini { 1.0 } else { u(1.0) };
+    let raio = shared::mar::RAIO_SEM_LEI * escala;
+    let vermelho = Color::new(1.0, 0.27, 0.22, 1.0);
+    for c in shared::mar::zonas_sem_lei() {
+        let q = ponto(vec2(c.x, c.y));
+        // Off the minimap's disc altogether: nothing to draw.
+        if recorte.is_some_and(|(c, r)| q.distance(c) > r + raio) {
+            continue;
+        }
+        if !mini {
+            draw_circle(q.x, q.y, raio, Color::new(0.75, 0.08, 0.06, 0.16));
+        }
+        // At least three strokes however small the disc is drawn.
+        hachura(q, raio, (7.0 * k).max(5.0).min(raio / 3.0).max(2.0), Color::new(1.0, 0.3, 0.24, 0.45), recorte);
+        // The rim in short strokes, each cut to the minimap's disc.
+        let n = 48;
+        for s in 0..n {
+            let a0 = s as f32 / n as f32 * std::f32::consts::TAU;
+            let a1 = (s + 1) as f32 / n as f32 * std::f32::consts::TAU;
+            let (a, b) = (q + vec2(a0.cos(), a0.sin()) * raio, q + vec2(a1.cos(), a1.sin()) * raio);
+            if let Some((a, b)) = corta_no_disco(a, b, recorte) {
+                draw_line(a.x, a.y, b.x, b.y, 1.6 * k, estilo::alfa(vermelho, 0.85));
+            }
+        }
+        if !mini && raio >= u(14.0) {
+            crate::mar_combate_ui::caveira(q - vec2(0.0, u(16.0)), u(7.0), vermelho);
+            estilo::texto_centro(q.x + 1.0, q.y + u(8.0) + 1.0, "Lawless waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(q.x, q.y + u(8.0), "Lawless waters", tamanho, vermelho);
+        }
+    }
+    for n in shared::mar::ninhos() {
+        let q = ponto(vec2(n.x, n.y));
+        // A nest: a faint red dot (the live mobs are the solid fins).
+        if dentro(q, 4.0) {
+            draw_circle(q.x, q.y, 2.2 * k, Color::new(1.0, 0.36, 0.3, 0.45));
+        }
+    }
     for i in shared::mar::ilhas() {
         let f = i.fundeadouro();
         let q = ponto(vec2(f.x, f.y));
-        let cor = crate::mar_cena::cor_da_ilha(i.feitio);
-        let r = u(9.0).max(6.0);
-        draw_circle(q.x, q.y, r * 1.35, Color::new(0.0, 0.0, 0.0, 0.55));
-        crate::mar_cena::ancora(q, r, cor);
-        let rotulo = format!("{} · Dock", i.nome);
-        let (dx, dy) = (q.x + r * 1.6, q.y + r * 0.45);
-        estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
-        estilo::texto(dx, dy, &rotulo, tamanho, cor);
-    }
-    let raio = shared::mar::RAIO_SEM_LEI * escala;
-    for c in shared::mar::zonas_sem_lei() {
-        let q = ponto(vec2(c.x, c.y));
-        draw_circle(q.x, q.y, raio, Color::new(0.85, 0.12, 0.10, 0.22));
-        draw_circle_lines(q.x, q.y, raio, 2.0, Color::new(1.0, 0.25, 0.2, 0.9));
-        if raio >= u(14.0) {
-            estilo::texto_centro(q.x + 1.0, q.y + 1.0, "Lawless waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
-            estilo::texto_centro(q.x, q.y, "Lawless waters", tamanho, Color::new(1.0, 0.4, 0.35, 1.0));
+        let r = 8.0 * k;
+        if !dentro(q, r) {
+            continue;
         }
+        let cor = crate::mar_cena::cor_da_ilha(i.feitio);
+        draw_circle(q.x, q.y, r * 1.25, Color::new(0.03, 0.05, 0.08, 0.88));
+        draw_circle_lines(q.x, q.y, r * 1.25, 1.4 * k, estilo::alfa(cor, 0.9));
+        crate::mar_cena::ancora(q + vec2(0.0, r * 0.05), r * 0.78, cor);
+        if !mini {
+            let rotulo = format!("{} · Dock", i.nome);
+            let (dx, dy) = (q.x + r * 1.7, q.y + r * 0.45);
+            estilo::texto(dx + 1.0, dy + 1.0, &rotulo, tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto(dx, dy, &rotulo, tamanho, cor);
+        }
+    }
+}
+
+/// The piece of segment `a`-`b` inside the disc `recorte` (all of it when
+/// there is none; `None` when it misses).
+fn corta_no_disco(a: Vec2, b: Vec2, recorte: Option<(Vec2, f32)>) -> Option<(Vec2, Vec2)> {
+    let Some((c, r)) = recorte else {
+        return Some((a, b));
+    };
+    let d = b - a;
+    let f = a - c;
+    let (qa, qb, qc) = (d.dot(d), 2.0 * f.dot(d), f.dot(f) - r * r);
+    if qa < 1e-6 {
+        return (qc <= 0.0).then_some((a, b));
+    }
+    let disc = qb * qb - 4.0 * qa * qc;
+    if disc < 0.0 {
+        return None;
+    }
+    let raiz = disc.sqrt();
+    let (t0, t1) = (((-qb - raiz) / (2.0 * qa)).max(0.0), ((-qb + raiz) / (2.0 * qa)).min(1.0));
+    (t1 > t0).then(|| (a + d * t0, a + d * t1))
+}
+
+/// Diagonal hatching inside a disc: each stroke is the disc's chord, so
+/// nothing spills (no stencil needed), cut again to `recorte`.
+fn hachura(c: Vec2, r: f32, passo: f32, cor: Color, recorte: Option<(Vec2, f32)>) {
+    let n = (r / passo).floor() as i32;
+    let (d, p) = (vec2(1.0, -1.0).normalize(), vec2(1.0, 1.0).normalize());
+    for k in -n..=n {
+        let o = k as f32 * passo;
+        let meia = (r * r - o * o).max(0.0).sqrt();
+        if meia < 1.0 {
+            continue;
+        }
+        if let Some((a, b)) = corta_no_disco(c + p * o - d * meia, c + p * o + d * meia, recorte) {
+            draw_line(a.x, a.y, b.x, b.y, 1.2, cor);
+        }
+    }
+}
+
+/// A small fin over a wave line: a sea mob (or its nest, faint).
+fn barbatana(q: Vec2, s: f32, cor: Color) {
+    draw_triangle(vec2(q.x - s, q.y + s * 0.45), vec2(q.x + s * 0.9, q.y + s * 0.45), vec2(q.x - s * 0.15, q.y - s * 1.1), cor);
+    draw_line(q.x - s * 1.4, q.y + s * 0.6, q.x + s * 1.4, q.y + s * 0.6, (s * 0.3).max(1.0), cor);
+}
+
+/// A hull from above pointing along `yaw` (the game's `x.atan2(z)`): the
+/// ships on the sea's maps — mine bigger, gold and outlined.
+fn casco_no_mapa(c: Vec2, yaw: f32, s: f32, cor: Color) {
+    let f = vec2(yaw.sin(), yaw.cos());
+    let l = vec2(-f.y, f.x);
+    let proa = c + f * s * 1.25;
+    let (ae, ad) = (c + f * s * 0.25 + l * s * 0.55, c + f * s * 0.25 - l * s * 0.55);
+    let (pe, pd) = (c - f * s * 0.95 + l * s * 0.45, c - f * s * 0.95 - l * s * 0.45);
+    let sombra = Color::new(0.0, 0.0, 0.0, 0.7);
+    let o = vec2(0.0, 1.2);
+    for (cor, d) in [(sombra, o), (cor, Vec2::ZERO)] {
+        draw_triangle(proa + d, ae + d, ad + d, cor);
+        draw_triangle(ae + d, pe + d, pd + d, cor);
+        draw_triangle(ae + d, pd + d, ad + d, cor);
+    }
+    for (a, b) in [(proa, ae), (ae, pe), (pe, pd), (pd, ad), (ad, proa)] {
+        draw_line(a.x, a.y, b.x, b.y, 1.0, Color::new(0.0, 0.0, 0.0, 0.6));
+    }
+}
+
+/// THE BODIES AT SEA on a map: other ships as pale hulls, mobs as red fins
+/// (an elite as a skull), the drifting treasure chests in gold, and my
+/// own ship last, a gold hull along its heading. `visivel` culls to the
+/// disc; `k` is the map's icon scale.
+fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(Vec2) -> bool, k: f32) {
+    for (id, e) in &world.ents {
+        if Some(*id) == world.self_id || e.morte.is_some() {
+            continue;
+        }
+        let q = ponto(e.render_pos);
+        if !visivel(q) {
+            continue;
+        }
+        match e.meta.tag {
+            EntityTag::Enemy if e.state.hp > 0 => {
+                if crate::mar_combate_ui::e_elite(e) {
+                    draw_circle(q.x, q.y, 6.5 * k, Color::new(0.03, 0.04, 0.06, 0.85));
+                    crate::mar_combate_ui::caveira(q, 4.6 * k, Color::new(1.0, 0.36, 0.3, 1.0));
+                } else {
+                    barbatana(q, 5.2 * k, Color::new(1.0, 0.3, 0.26, 1.0));
+                }
+            }
+            EntityTag::Player => {
+                let hostil = e.meta.pk.hostil || e.meta.pk.marcado;
+                let cor = if hostil { Color::new(1.0, 0.45, 0.4, 1.0) } else { Color::new(0.82, 0.9, 1.0, 1.0) };
+                casco_no_mapa(q, e.yaw, 6.5 * k, cor);
+            }
+            EntityTag::Npc if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU => {
+                draw_circle(q.x, q.y, 6.5 * k, Color::new(0.03, 0.04, 0.06, 0.85));
+                crate::mar_combate_ui::bau_icone(q, 4.2 * k, estilo::OURO);
+            }
+            _ => {}
+        }
+    }
+    if let Some(e) = world.self_id.and_then(|id| world.ents.get(&id)) {
+        let rumo = crate::mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
+        casco_no_mapa(ponto(e.render_pos), rumo.x.atan2(rumo.y), 9.0 * k, estilo::OURO);
     }
 }
 
@@ -1202,6 +1342,9 @@ pub struct Mapa {
     /// A rota em andamento (personagem + pontos que faltam), posta pelo
     /// `main` a cada quadro. Tracejada no minimapa e no mapa grande.
     pub rota: Vec<Vec2>,
+    /// At sea: the crossing's destination (`mar_rota`), set by `main` every
+    /// frame; marked like the land's travel destination.
+    pub destino_mar: Option<Vec2>,
     /// Onde fica o Mestre de Missoes nesta ilha.
     pub mestre: Option<Vec2>,
     /// NPCs da vila (da thread do mapa): o marcador e o "Go to".
@@ -1278,6 +1421,7 @@ struct GestoDoMapa {
 impl Default for Mapa {
     fn default() -> Self {
         Self {
+            destino_mar: None,
             def: None,
             ger: None,
             cidade: None,
@@ -1615,6 +1759,12 @@ impl Mapa {
             self.tex = Some(t);
             self.rx = None;
         }
+    }
+
+    /// The painted map arrived (previews wait for it).
+    #[cfg(debug_assertions)]
+    pub fn tem_textura(&self) -> bool {
+        self.tex.is_some()
     }
 
     pub fn tem_ilha(&self) -> bool {
@@ -2849,7 +2999,8 @@ impl Mapa {
                 porta_no_mapa(q, (6.0f32).max(escala * 3.0), nome, 13, i % 2 == 0);
             }
         }
-        for (id, e) in &world.ents {
+        let no_mar = self.zona().is_some_and(shared::mar::e_mar);
+        for (id, e) in world.ents.iter().filter(|_| !no_mar) {
             if Some(*id) == world.self_id {
                 continue;
             }
@@ -2876,10 +3027,15 @@ impl Mapa {
         // corte por tamanho de `nomes_das_ilhotas` cuida de calar quando o
         // disco está afastado demais pra caber sete rótulos.
         nomes_das_ilhotas(self.zona(), ponto, escala, 12);
-        aguas_sem_lei(self.zona(), ponto, escala, 11);
+        aguas_sem_lei(self.zona(), ponto, escala, 11, Some((c, rad)));
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, 4.0, 3.0, 2.0, estilo::AUTO, Some(dentro));
-        if let Some(d) = self.viagem.destino() {
+        if no_mar {
+            // The sea's bodies and MY SHIP along its heading (no atlas
+            // arrow: a hull reads as a hull).
+            corpos_no_mar(world, &ponto, &visivel, 1.0);
+        }
+        if let Some(d) = self.viagem.destino().or(self.destino_mar.filter(|_| no_mar)) {
             let q = ponto(d);
             // Fora do disco, o destino fica preso na BORDA REDONDA, na direcao
             // dele. Preso no quadrado, ele parava nos cantos — que agora sao
@@ -2896,9 +3052,20 @@ impl Mapa {
             .self_id
             .and_then(|id| world.ents.get(&id))
             .map_or(0.0, |e| e.yaw);
-        seta(c, yaw, 7.0, estilo::TEXTO);
+        if !no_mar {
+            seta(c, yaw, 7.0, estilo::TEXTO);
+        }
         crate::rolagem::recortar(None);
-        self.moldura(dentro, Some(eu));
+        // At sea the coordinates step out: the "Sail to…" pill takes their
+        // place (`mar_rota::desenha_portos`).
+        self.moldura(dentro, Some(eu).filter(|_| !no_mar));
+    }
+
+    /// The minimap's DISC on screen: centre and radius (what `desenha_mini`
+    /// draws in, and where the sea's "Sail to…" pill hangs).
+    pub fn disco_do_minimapa() -> (Vec2, f32) {
+        let r = Self::mini_rect();
+        (r.center(), r.w * 0.5 - MARGEM_DO_DISCO)
     }
 
     /// Tudo que vai POR CIMA do disco: a mascara que come os cantos, o anel, a
@@ -3471,7 +3638,8 @@ impl Mapa {
                 }
             }
         }
-        for (id, e) in &world.ents {
+        let no_mar = self.zona().is_some_and(shared::mar::e_mar);
+        for (id, e) in world.ents.iter().filter(|_| !no_mar) {
             if Some(*id) == world.self_id || e.meta.tag != EntityTag::Player {
                 continue;
             }
@@ -3486,11 +3654,14 @@ impl Mapa {
         // Os nomes das ilhotas por ÚLTIMO entre os rótulos: texto por baixo de
         // mancha some, e este é o rótulo que o jogador veio buscar.
         nomes_das_ilhotas(self.zona(), ponto, escala, 14);
-        aguas_sem_lei(self.zona(), ponto, escala, 14);
+        aguas_sem_lei(self.zona(), ponto, escala, 14, None);
         let rota: Vec<Vec2> = self.rota.iter().map(|p| ponto(*p)).collect();
         tracejado(&rota, u(5.0), u(3.0), u(2.5), estilo::AUTO, None);
         let eu = world.self_pos();
-        if let Some(d) = self.viagem.destino() {
+        if no_mar {
+            corpos_no_mar(world, &ponto, &|_| true, u(1.3));
+        }
+        if let Some(d) = self.viagem.destino().or(self.destino_mar.filter(|_| no_mar)) {
             let q = ponto(d);
             if let Some(eu) = eu {
                 let p = ponto(eu);
@@ -3517,7 +3688,9 @@ impl Mapa {
                 .self_id
                 .and_then(|id| world.ents.get(&id))
                 .map_or(0.0, |e| e.yaw);
-            seta(ponto(eu), yaw, u(9.0), estilo::TEXTO);
+            if !no_mar {
+                seta(ponto(eu), yaw, u(9.0), estilo::TEXTO);
+            }
         }
         crate::rolagem::recortar(None);
         // Os BOTOES DE ZOOM, por cima de tudo.

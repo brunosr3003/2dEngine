@@ -256,6 +256,11 @@ mod tests {
         for id in 1..=12 {
             assert!(celula_skill(id).is_some(), "skill {id} sem icone");
         }
+        // The ship's four (`navio::id_de_skill`).
+        for h in 0..4u8 {
+            let id = shared::navio::id_de_skill(h);
+            assert!(celula_skill(id).is_some(), "ship skill {id} sem icone");
+        }
         for n in USADOS_LOJA {
             assert!(
                 celula_loja(n).is_some(),

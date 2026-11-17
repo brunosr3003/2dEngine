@@ -14,7 +14,7 @@ pub const ALTURA_MAPA: u32 = 96;
 pub const LADO_SKILLS: u32 = 96;
 pub const COLUNAS_SKILLS: u32 = 6;
 pub const LARGURA_SKILLS: u32 = 576;
-pub const ALTURA_SKILLS: u32 = 192;
+pub const ALTURA_SKILLS: u32 = 288;
 
 pub const LADO_LOJA: u32 = 128;
 pub const COLUNAS_LOJA: u32 = 4;
@@ -114,6 +114,10 @@ pub const SKILLS: &[(u32, u16)] = &[
     (10, 9),
     (11, 10),
     (12, 11),
+    (300, 12),
+    (301, 13),
+    (302, 14),
+    (303, 15),
 ];
 
 /// (name, cell), ordered by name. Colored shop art (TP, bundles, gold).

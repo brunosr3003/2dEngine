@@ -210,6 +210,7 @@ pub async fn abrir(vox: &VoxCache) {
                 180,
                 100,
                 Some(12750),
+                None,
             );
             crate::hud::draw_alvo(&z, "Training Guardian", 20, 38450, 50000, true);
             crate::hud::draw_exp(&z, &ficha);

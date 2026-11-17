@@ -941,6 +941,92 @@ cliente `mar_temas::as_docas_novas_sao_baratas`, `cada_tema_tem_os_seus_marcos`.
 **Produção (NÃO feito):** nada novo além do que a fase 1 lista; o cache de
 altura `-mar3` (~42 MB) é gerado no primeiro boot do processo do mar.
 
+### HUD do mar limpo, câmera de navegação, ícones (16/11/2026, versão de TESTE)
+
+O dono: "a HUD na navegação tá muito ruim, ela tem que ser mais clean, ali
+tudo que não precisa ter ali não tem que ter, e também o modo de debug do
+tiro tá muito ruim". Depois: a câmera de cima não mostra o mar, os ícones do
+minimapa no mar e os das skills do navio estavam péssimos.
+
+**Saiu:** os dois cones achatados da Bordada na água, a linha reta da mira e
+o anel de alcance do Canhão Longo, os tiques do anel do alvo, a barra de vida
+flutuante em cima do bicho, as placas "ELITE", o painel do navio boiando em
+cima do casco (casco · velocidade · zona · cais mais perto) e o botão
+"Sail to…" debaixo dele, e um rótulo de borda pra CADA ilha.
+
+**Onde foi parar:**
+- **Casco** = a barra de vida da ficha (canto de cima à esquerda), com o
+  ícone do navio; no mar a barra de mana sai (skill de navio não gasta).
+  Pisca em vermelho abaixo de `navio::CRITICO` (`hud::draw_ficha`, parâmetro
+  `casco`).
+- **Velocidade:** saiu de vez.
+- **Zona:** aviso curto ao MUDAR ("Entering lawless waters" em vermelho,
+  "Safe harbour", "Leaving lawless waters"), mais um selo de caveira ao lado
+  do minimapa enquanto se está em águas sem lei. Tesouro no convés e marcado
+  ganham selo (baú, bandeira) só enquanto valem; o toque/hover explica
+  (`mar_ui::linha_de_perigo`). "Low hull — head to a dock!" vira aviso, uma
+  vez por mergulho (`mar_combate_ui::hud_do_mar`, `aviso_de_zona`).
+- **Alvo:** a vida no quadro de alvo do topo, como em terra; no mar fica só o
+  anel dourado fino de terra, na água.
+- **"Sail to…":** uma pílula no pé do disco do minimapa, no lugar das
+  coordenadas (que no mar não servem); a lista abre embaixo, ou ao lado num
+  celular deitado, medida pelo TEXTO (`mar_rota::retangulos_dos_portos`).
+- **Ilhas:** a doca NA TELA leva o próprio "<Ilha> · Dock", menor e
+  esmaecendo de longe; FORA da tela só a que importa agora — o destino da
+  travessia, senão a mais perto — com uma setinha num anel em volta do navio
+  (e não na borda, onde batia no HUD) (`mar_cena::rotulos`, `foco`).
+- **HUD de terra no mar:** montaria e sprint somem; o pulo já cedia a vaga à
+  4ª skill; COLETA só perto de destroço (`Terreno::destroco_perto`, 30 u) ou
+  ligada; o rastreador de missão só com uma missão automática guiando a
+  travessia. Ficam minimapa, ícones do menu, poções, chat, AUTO combate,
+  ATTACK/TARGET e as skills do navio.
+
+**Mira, agora diegética** (`mar_combate_ui::Prontos`): com a Bordada pronta e
+o alvo ao alcance de um costado, um brilho fino corre na amurada DAQUELE lado
+e as três portinholas cintilam; com o Canhão Longo pronto e o alvo ao alcance
+de um costado, uma retícula pequena de quatro arcos fica no alvo. Fora disso,
+nada. Menos desenho que antes (nada de 2 setores × 12 quads + linha + anel de
+64 por quadro).
+
+**Câmera de navegação** (`mar_camera.rs`, `render3d::camera_no_mar`): mais
+baixa (`PITCH_MAR` 0,56 rad, ~32°, contra ~54° em terra) e 1,7× mais longe,
+olhando um pouco à frente da proa. Segue o rumo com atraso (`segue`, k 1,1/s)
+só depois de 1,2 s sem a mão na câmera e com o casco andando; arrastar ainda
+gira, roda/pinça ainda dá zoom, o ajuste de inclinação da mão vale. Casco
+maior afasta +12% por classe; celular em pé afasta ×1,45; em luta abre até
++35% e puxa o centro pro alvo, os dois no quadro. A névoa do mar
+(`mar_cena::neblina`, 110 → 620/850/1100) cobre o que a câmera baixa alcança.
+
+**Minimapa e mapa do mar** (`mapa.rs`): meu navio é um casco dourado no rumo
+(não a seta de terra), outros navios cascos claros (vermelhos se hostis ou
+marcados), bicho é barbatana vermelha, elite caveira, baú à deriva baú
+dourado, ninho um ponto vermelho fraco, doca âncora na cor da ilha numa
+moeda escura, águas sem lei disco HACHURADO em vermelho com borda — tudo
+recortado no disco do minimapa (`corta_no_disco`). Rótulos só no mapa grande.
+
+**Ícones das skills do navio:** arte de verdade no atlas `skills.png`, como
+as de terra (`tools/icones/gerar_icones_ui.py`, ids 300–303, paletas `mar` e
+`nevoa`; o Reparo usa a verde de cura). `--so-skills` refaz só esse atlas; as
+células 1–12 foram mantidas byte a byte.
+
+**Prévia:** `MMO_PREVIA_MAR=1 MMO_PREVIA_SO=combate` agora desenha o HUD DE
+VERDADE por cima da cena (ficha com casco, alvo, minimapa do mar, barra do
+navio, avisos e selos, "Sail to…") em 6 cenas — `navegando`, `combate`
+(Bordada e Canhão prontos), `combate-tiro`, `rota` (lista aberta), `mapa`
+(mapa grande do mar aberto) e `sem-lei` — em paisagem 1280×800, celular
+deitado 926×428 e em pé 428×926: `mar-hud-<cena>-<tela>.png`. O retrato
+mostra que o HUD de TERRA não foi feito pra tela em pé (ficha, alvo e ícones
+se cruzam); isso é anterior e fica de fora.
+
+**Testes:** `mar_camera::a_camera_fica_atras_do_rumo`,
+`o_enquadramento_do_mar`, `segue_o_rumo_devagar_e_respeita_a_mao`;
+`mar_combate_ui::o_aviso_de_zona_so_fala_quando_muda`;
+`icones_ui::todo_nome_usado_existe_no_atlas` (as 4 do navio).
+
+**Fica pra ver:** com a câmera mais baixa, o caminho do sol na água
+(`agua.rs`, brilho do mar aberto) ocupa mais tela quando se navega contra o
+sol.
+
 ### Fase 5 — Conteúdo do mar
 
 - **Mapas do tesouro** (drop raro) que apontam ilhotas secretas só

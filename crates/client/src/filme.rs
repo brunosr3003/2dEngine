@@ -713,7 +713,7 @@ impl Mar {
             }
             gl_use_default_material();
             self.vfx.atualiza(&self.mundo);
-            self.vfx.desenha_3d(&self.mundo, &cam, None);
+            self.vfx.desenha_3d(&self.mundo, &cam, None, Default::default());
         }
         apaga_luz_e_neblina(solido);
         crate::render3d::camera_padrao();

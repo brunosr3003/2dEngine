@@ -4,10 +4,14 @@
 //! Everything the sea fight shows, beside the hull itself (that is
 //! `mar_ui`):
 //!
-//! - **the target**: a big ring on the water and its life bar;
-//! - **the Broadside's arcs**: the two side cones on the water while a
-//!   target is near — green when it would hit, grey when not;
-//! - **the Long Gun**: an aim line to the target and the range ring;
+//! - **the target**: the land's thin gold ring, on the water (its life is
+//!   the top-centre target frame's, like on land);
+//! - **the guns bearing** (sea HUD clean-up, 16/11/2026: "o modo de debug
+//!   do tiro tá muito ruim"): no cones, no aim line. With the Broadside
+//!   ready and the target in reach off a side, a soft glow runs along THAT
+//!   gunwale and its ports glint; with the Long Gun ready and the target in
+//!   its reach off a side, a small reticle sits on the target. Nothing
+//!   otherwise;
 //! - **the shot**: muzzle flashes along the side, smoke, the cannonball on
 //!   its arc for its REAL flight time (`navio::tempo_de_voo`, the same the
 //!   server lands it with), a splash on a miss and a burst of splinters on
@@ -16,9 +20,12 @@
 //!   swim under the waves), the RED RING of a bite winding up
 //!   (`navio::MORDIDA_PREPARO_S`), the bite's splinters on your hull;
 //!   elites bigger and with a name plate;
-//! - **the ship panel**: hull, speed, the zone (safe, open, lawless in
-//!   red), the treasure, and the nearest dock (the docks' own labels and
-//!   off-screen chevrons are the scene's, `mar_cena::rotulos`).
+//! - **the sea HUD** (`hud_do_mar`): no floating box over the ship any more.
+//!   The hull is the character frame's bar (`hud::draw_ficha`); the zone is
+//!   a brief toast when it changes plus a red skull badge by the minimap
+//!   while in lawless waters; the treasure and the mark are badges there
+//!   only while they hold. "Sail to…" lives on the minimap
+//!   (`mar_rota::desenha_portos`).
 //!
 //! MOBILE FIRST (the owner: "o mar precisa ser o mais otimizado possível").
 //! Every effect lives in a FIXED POOL (`MAX_BALAS`, `MAX_PARTICULAS`): a
@@ -34,6 +41,8 @@ use macroquad::prelude::*;
 use crate::relogio::{get_frame_time, get_time};
 
 use crate::hud_estilo as estilo;
+#[allow(unused_imports)]
+use crate::ui::Toque as _;
 use crate::world::World;
 use shared::navio::{self as nv, Efeito};
 use shared::{EntityId, EntityTag};
@@ -116,22 +125,45 @@ struct Particula {
     peso: f32,
 }
 
-/// One cached HUD line: rebuilt only when its key changes.
-#[derive(Default)]
-struct Linha {
-    chave: u64,
-    texto: String,
+/// What the guns can do this frame (cooldowns, the hull's size): the
+/// bearing hints only show for a gun that is READY.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Prontos {
+    /// The Broadside is off cooldown.
+    pub bordada: bool,
+    /// The Long Gun is off cooldown.
+    pub canhonaco: bool,
+    /// The hull class's drawn scale (`navio::CASCOS[..].escala`).
+    pub escala: f32,
 }
 
-impl Linha {
-    fn com(&mut self, chave: u64, f: impl FnOnce() -> String) -> &str {
-        if self.chave != chave || self.texto.is_empty() {
-            self.chave = chave;
-            self.texto = f();
-        }
-        &self.texto
+/// The waters a hull is in: 0 = the safe corridor, 1 = open, 2 = lawless.
+pub fn zona_do_mar(p: Vec2) -> u8 {
+    if shared::mar::no_corredor(g(p)) {
+        0
+    } else if shared::mar::sem_lei(g(p)) {
+        2
+    } else {
+        1
     }
 }
+
+/// THE ZONE TOAST: what to say when the waters change (`None` = nothing,
+/// e.g. the very first frame in open water).
+pub fn aviso_de_zona(antes: Option<u8>, agora: u8) -> Option<(&'static str, Color)> {
+    if antes == Some(agora) {
+        return None;
+    }
+    match (antes, agora) {
+        (_, 2) => Some(("Entering lawless waters", estilo::VERMELHO)),
+        (Some(_), 0) | (None, 0) => Some(("Safe harbour", estilo::VERDE)),
+        (Some(2), 1) => Some(("Leaving lawless waters", estilo::TEXTO)),
+        _ => None,
+    }
+}
+
+/// How long a sea toast stays (it fades in and out inside this).
+const AVISO_S: f64 = 2.6;
 
 /// The sea fight's on-screen state. Lives in `main` as one field.
 pub struct MarCombate {
@@ -145,10 +177,12 @@ pub struct MarCombate {
     clarao_ate: f64,
     /// A shake for the local shooter, taken by `main` (`tremor`).
     tremor: Option<f32>,
-    linha_casco: Linha,
-    linha_info: Linha,
-    linha_cais: Linha,
-    linha_alvo: Linha,
+    /// The waters last frame (`zona_do_mar`), for the toast.
+    zona: Option<u8>,
+    /// The hull was low last frame (the warning toasts once per dip).
+    baixo: bool,
+    /// The toast on screen: text, colour, since.
+    aviso: Option<(&'static str, Color, f64)>,
 }
 
 impl Default for MarCombate {
@@ -163,10 +197,9 @@ impl Default for MarCombate {
             quads: malha(),
             clarao_ate: 0.0,
             tremor: None,
-            linha_casco: Linha::default(),
-            linha_info: Linha::default(),
-            linha_cais: Linha::default(),
-            linha_alvo: Linha::default(),
+            zona: None,
+            baixo: false,
+            aviso: None,
         }
     }
 }
@@ -463,11 +496,14 @@ impl MarCombate {
 
     // ─────────────────────────── the 3D pass ───────────────────────────
 
-    /// The water decals (target ring, cannon arcs, aim line, bite
-    /// telegraphs, fins) and the particles and balls, in two draw calls.
-    pub fn desenha_3d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>) {
+    /// The water decals (target ring, the bearing gunwale's glow, bite
+    /// telegraphs, fins) and the particles, balls and port glints, in two
+    /// draw calls.
+    pub fn desenha_3d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>, prontos: Prontos) {
         let agora = get_time();
         let t = agora as f32;
+        // The Broadside's ports glinting, when it bears (drawn as quads).
+        let mut portas: [Option<(Vec3, f32)>; 3] = [None; 3];
         self.decais.vertices.clear();
         self.decais.indices.clear();
         self.quads.vertices.clear();
@@ -537,44 +573,31 @@ impl MarCombate {
                 }
             }
         }
-        // ── the target, the Broadside's arcs and the Long Gun's line ──
+        // ── the target: the land's ring, on the water ──
         if let Some(a) = alvo_e {
-            let r = if a.meta.tag == EntityTag::Player { 3.4 } else if e_elite(a) { 3.2 } else { 2.2 };
-            let pulsa = 0.75 + 0.25 * (t * 4.0).sin();
-            let hostil = a.meta.tag == EntityTag::Enemy || a.meta.pk.hostil;
-            let cor = if hostil { [1.0, 0.42, 0.25, 0.9 * pulsa] } else { [0.95, 0.8, 0.45, 0.9 * pulsa] };
-            anel(&mut self.decais, a.render_pos, r, 0.22, cor, 40);
-            // Corner ticks: the "locked" read.
-            for q in 0..4 {
-                let ang = q as f32 * std::f32::consts::FRAC_PI_2 + t * 0.8;
-                let d = vec2(ang.cos(), ang.sin());
-                faixa(&mut self.decais, a.render_pos + d * (r + 0.25), a.render_pos + d * (r + 0.95), 0.2, cor);
-            }
-            if let Some(eu) = eu {
-                let d = eu.render_pos.distance(a.render_pos);
+            let r = if a.meta.tag == EntityTag::Player { 3.0 } else if e_elite(a) { 2.6 } else { 1.8 };
+            anel(&mut self.decais, a.render_pos, r, 0.14, [0.945, 0.784, 0.44, 0.92], 40);
+            // THE BROADSIDE BEARS: a soft glow along the gunwale facing the
+            // target and a glint at its three ports — only with the gun
+            // ready and the target in its reach off that side.
+            if let Some(eu) = eu.filter(|_| prontos.bordada) {
                 let bordada = &nv::HABILIDADES[0];
-                let proa = &nv::HABILIDADES[1];
-                // The Long Gun: a line to the target, the range ring.
-                let no_alcance = d <= proa.alcance;
-                let cor_linha = if no_alcance { [1.0, 0.62, 0.22, 0.55] } else { [0.6, 0.6, 0.62, 0.35] };
-                faixa(&mut self.decais, eu.render_pos, a.render_pos, 0.12, cor_linha);
-                anel(&mut self.decais, eu.render_pos, proa.alcance, 0.1, [1.0, 0.62, 0.22, 0.16], 64);
-                // The Broadside's two cones, while the target is near. Every
-                // gun is a side gun (16/11/2026): a ship lying still keeps
-                // its heading and its cones (`mar_ui::rumo_do_casco`).
-                if d <= bordada.alcance + 8.0 {
-                    let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
-                    let costado = nv::no_costado(g(eu.render_pos), rumo, g(a.render_pos));
-                    let acerta = d <= bordada.alcance && costado;
-                    let verde = [0.35, 0.95, 0.45, 0.22];
-                    let cinza = [0.75, 0.75, 0.78, 0.1];
-                    let ang = rumo.y.atan2(rumo.x);
-                    let meia = nv::BORDADA_COS_MAX.acos();
-                    let lado_alvo = (a.render_pos - eu.render_pos).perp_dot(vec2(rumo.x, rumo.y)) < 0.0;
-                    for (s, este) in [(1.0f32, lado_alvo), (-1.0, !lado_alvo)] {
-                        let centro = ang + s * std::f32::consts::FRAC_PI_2;
-                        let cor = if acerta && este { verde } else { cinza };
-                        setor(&mut self.decais, eu.render_pos, 2.0, bordada.alcance, centro - (std::f32::consts::FRAC_PI_2 - meia), centro + (std::f32::consts::FRAC_PI_2 - meia), cor, 12);
+                let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
+                let rumo = vec2(rumo.x, rumo.y);
+                let d = eu.render_pos.distance(a.render_pos);
+                if d <= bordada.alcance && nv::no_costado(g(eu.render_pos), g(rumo), g(a.render_pos)) {
+                    let frente = rumo.normalize_or_zero();
+                    let lado = vec2(frente.y, -frente.x);
+                    let s = if (a.render_pos - eu.render_pos).dot(lado) >= 0.0 { 1.0 } else { -1.0 };
+                    let k = prontos.escala.max(0.6);
+                    let pulso = 0.75 + 0.25 * (t * 3.2).sin();
+                    let borda = eu.render_pos + lado * s * 1.2 * k;
+                    let (popa, proa) = (borda - frente * 1.5 * k, borda + frente * 1.5 * k);
+                    faixa(&mut self.decais, popa, proa, 0.5 * k, [1.0, 0.72, 0.32, 0.14 * pulso]);
+                    faixa(&mut self.decais, popa, proa, 0.12 * k, [1.0, 0.82, 0.45, 0.6 * pulso]);
+                    for (i, q) in [-0.9f32, 0.0, 0.9].into_iter().enumerate() {
+                        let porta = eu.render_pos + frente * q * k + lado * s * 1.2 * k;
+                        portas[i] = Some((vec3(porta.x, y_agua() + 0.8, porta.y), pulso));
                     }
                 }
             }
@@ -594,6 +617,10 @@ impl MarCombate {
             let f = 1.0 - p.idade / p.vida;
             let cor = [p.cor[0], p.cor[1], p.cor[2], p.cor[3] * f];
             disco(&mut self.quads, p.pos, p.tam, dir, cima, cor);
+        }
+        for (p, pulso) in portas.into_iter().flatten() {
+            disco(&mut self.quads, p, 0.32 * pulso, dir, cima, [1.0, 0.7, 0.28, 0.32]);
+            disco(&mut self.quads, p, 0.13, dir, cima, [1.0, 0.93, 0.72, 0.95 * pulso]);
         }
         for b in self.balas.iter().filter(|b| b.ativa) {
             let f = (((agora - b.inicio) as f32) / b.voo.max(0.01)).clamp(0.0, 1.0);
@@ -615,119 +642,153 @@ impl MarCombate {
 
     // ─────────────────────────── the 2D overlay ───────────────────────────
 
-    /// Over the world: the target's life bar, the elites' plates and the
-    /// nearest dock (on screen, or an arrow at the edge).
-    pub fn desenha_2d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>) {
-        let eu = world.self_id.and_then(|i| world.ents.get(&i)).map(|e| e.render_pos);
-        // Elite plates (only the near ones).
-        for e in world.ents.values() {
-            if e.meta.tag != EntityTag::Enemy || e.state.hp == 0 || e.morte.is_some() || !e_elite(e) {
-                continue;
-            }
-            if eu.is_some_and(|p| p.distance(e.render_pos) > 45.0) {
-                continue;
-            }
-            let Some(s) = world_to_screen(cam, vec3(e.render_pos.x, y_agua() + 3.2, e.render_pos.y)) else {
-                continue;
-            };
-            let w = 74.0;
-            let r = Rect::new(s.x - w * 0.5, s.y - 30.0, w, 18.0);
-            estilo::ret_arredondado(r, 4.0, Color::new(0.45, 0.06, 0.05, 0.9));
-            estilo::borda_arredondada(r, 4.0, 1.0, Color::new(1.0, 0.55, 0.35, 0.9));
-            estilo::texto_centro_forte(s.x, r.y + 13.5, "ELITE", 12, Color::new(1.0, 0.86, 0.62, 1.0));
+    /// Over the world: only THE LONG GUN'S RETICLE — a small ring of four
+    /// arcs on the target, while the gun is ready and the target is in its
+    /// reach off a side. The target's life is the top-centre frame's
+    /// (`hud::draw_alvo`), like on land; no plates, no bars over the water.
+    pub fn desenha_2d(&mut self, world: &World, cam: &Camera3D, alvo: Option<EntityId>, prontos: Prontos) {
+        if !prontos.canhonaco {
+            return;
         }
-        // The target's bar.
-        if let Some(a) = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none()) {
-            if let Some(s) = world_to_screen(cam, vec3(a.render_pos.x, y_agua() + 2.6, a.render_pos.y)) {
-                let max = a.meta.hp_max.max(1);
-                let f = (a.state.hp as f32 / max as f32).clamp(0.0, 1.0);
-                let (w, h) = (120.0, 10.0);
-                let r = Rect::new(s.x - w * 0.5, s.y, w, h);
-                draw_rectangle(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0, Color::new(0.0, 0.0, 0.0, 0.75));
-                let cor = if a.meta.tag == EntityTag::Player { Color::new(0.82, 0.62, 0.3, 1.0) } else { Color::new(0.9, 0.24, 0.2, 1.0) };
-                draw_rectangle(r.x, r.y, r.w * f, r.h, cor);
-                let d = eu.map_or(0.0, |p| p.distance(a.render_pos));
-                let txt = self.linha_alvo.com(((a.state.hp as u64) << 20) | (d.round() as u64 & 0xFFFFF), || format!("{} · {:.0} m", a.state.hp, d));
-                estilo::texto_centro_forte(s.x, r.y + h + 13.0, txt, 12, estilo::TEXTO);
-            }
+        let Some(eu) = world.self_id.and_then(|i| world.ents.get(&i)) else {
+            return;
+        };
+        let Some(a) = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none()) else {
+            return;
+        };
+        let proa = &nv::HABILIDADES[1];
+        let rumo = crate::mar_ui::rumo_do_casco(eu.state.vel_f32(), eu.yaw);
+        if eu.render_pos.distance(a.render_pos) > proa.alcance || !nv::no_costado(g(eu.render_pos), rumo, g(a.render_pos)) {
+            return;
         }
-        // The docks' names, distances and off-screen chevrons are the sea
-        // scene's (`mar_cena::rotulos`); the panel names the nearest.
+        let Some(c) = world_to_screen(cam, vec3(a.render_pos.x, y_agua() + 0.5, a.render_pos.y)) else {
+            return;
+        };
+        let s = crate::hud_layout::atual().s;
+        let t = get_time() as f32;
+        let r = (17.0 + 1.5 * (t * 3.0).sin()) * s.max(0.7);
+        let cor = Color::new(1.0, 0.66, 0.3, 0.95);
+        let sombra = Color::new(0.0, 0.0, 0.0, 0.45);
+        for q in 0..4 {
+            let a0 = q as f32 * std::f32::consts::FRAC_PI_2 + 0.35;
+            estilo::arco(c + vec2(1.0, 1.0), r, a0, 0.155, 3.0, sombra);
+            estilo::arco(c, r, a0, 0.155, 2.0, cor);
+        }
+        draw_circle(c.x, c.y, 2.2 * s.max(0.7), cor);
     }
 
-    /// THE SHIP PANEL, top centre, at sea: the hull bar with its numbers,
-    /// then speed · zone (safe / open / LAWLESS in red) · treasure, and a
-    /// pulsing "low hull" warning. Returns its rectangle (the "Sail to"
-    /// button hangs under it).
-    pub fn painel_do_navio(&mut self, z: &crate::hud_layout::Zonas, eq: &shared::Equipment, eu: Option<Vec2>, velocidade: f32, marcado: bool) -> Option<Rect> {
-        let (casco, max, avariado) = crate::mar_ui::casco_de(eq)?;
+    /// THE SEA HUD, over the land's (sea HUD clean-up, 16/11/2026): the zone
+    /// toast when the waters change, the low-hull toast once per dip, and
+    /// the badges by the minimap — a red skull in lawless waters, the chest
+    /// while carrying treasure, the black flag while marked. Nothing else:
+    /// the hull is the character frame's (`hud::draw_ficha`), and "Sail to…"
+    /// is the minimap's (`mar_rota::desenha_portos`).
+    pub fn hud_do_mar(&mut self, z: &crate::hud_layout::Zonas, eq: &shared::Equipment, eu: Option<Vec2>, marcado: bool, mini: Rect) {
+        let agora = get_time();
         let s = z.s;
-        let w = 280.0 * s;
-        let x = crate::render3d::tela().0 * 0.5 - w * 0.5;
-        let y = z.alvo.y + z.alvo.h + 8.0 * s;
-        let painel = Rect::new(x, y, w, 68.0 * s);
-        estilo::ret_arredondado(painel, 6.0, Color::new(0.04, 0.07, 0.1, 0.82));
-        estilo::borda_arredondada(painel, 6.0, 1.0, Color::new(0.9, 0.78, 0.5, 0.6));
-        let frac = if max == 0 { 0.0 } else { casco as f32 / max as f32 };
-        let barra = Rect::new(x + 8.0 * s, y + 6.0 * s, w - 16.0 * s, 16.0 * s);
-        draw_rectangle(barra.x, barra.y, barra.w, barra.h, Color::new(0.0, 0.0, 0.0, 0.6));
-        let baixo = frac <= nv::CRITICO;
-        let pisca = 0.7 + 0.3 * (get_time() as f32 * 6.0).sin();
-        let cor = if baixo { Color::new(0.92, 0.25, 0.2, pisca) } else { Color::new(0.78, 0.56, 0.28, 1.0) };
-        draw_rectangle(barra.x, barra.y, barra.w * frac, barra.h, cor);
-        let t = self.linha_casco.com(((casco as u64) << 16) | max as u64, || format!("Hull {casco} / {max}"));
-        estilo::texto_centro_forte(barra.center().x, barra.y + barra.h - 3.0 * s, t, 13, estilo::TEXTO);
-        // Speed · zone · treasure.
-        let q = eu.map(g);
-        let zona = match q {
-            Some(p) if shared::mar::no_corredor(p) => 0u8,
-            Some(p) if shared::mar::sem_lei(p) => 2,
-            _ => 1,
+        let Some(eu) = eu else {
+            return;
         };
-        let tesouro = crate::mar_ui::tesouro_no_conves(eq);
-        let (zona_txt, zona_cor) = match zona {
-            0 => ("Safe harbour", estilo::VERDE),
-            2 => ("Lawless waters", estilo::VERMELHO),
-            _ => ("Open waters", estilo::SUAVE),
-        };
-        let vel = velocidade.round() as u64;
-        let info = self.linha_info.com((vel << 8) | (tesouro.is_some() as u64) << 4 | (avariado as u64), || format!("{vel} m/s"));
-        let ly = y + 40.0 * s;
-        estilo::texto(x + 10.0 * s, ly, info, 13, estilo::TEXTO);
-        estilo::texto_forte(x + 10.0 * s + estilo::medir(info, 13) + 14.0, ly, zona_txt, 13, zona_cor);
-        if tesouro.is_some() {
-            estilo::texto_forte(x + w - 10.0 * s - estilo::medir_forte("Treasure", 13), ly, "Treasure", 13, estilo::OURO);
+        let zona = zona_do_mar(eu);
+        if let Some((texto, cor)) = aviso_de_zona(self.zona, zona) {
+            self.aviso = Some((texto, cor, agora));
         }
-        // The nearest dock: name and distance (its chevron is the scene's).
-        if let Some((ilha, nome, _, d)) = eu.and_then(crate::mar_rota::porto_mais_perto) {
-            let txt = self.linha_cais.com(((ilha as u64) << 32) | (d / 5.0).round() as u64, || format!("Nearest dock: {} · {:.0} m", nome, (d / 5.0).round() * 5.0));
-            ancora_icone(vec2(x + 16.0 * s, y + 57.0 * s), 6.0 * s, estilo::OURO);
-            estilo::texto(x + 28.0 * s, y + 61.0 * s, txt, 13, estilo::OURO);
+        self.zona = Some(zona);
+        let baixo = crate::mar_ui::casco_de(eq).is_some_and(|(c, m, _)| m > 0 && (c as f32 / m as f32) <= nv::CRITICO);
+        if baixo && !self.baixo {
+            self.aviso = Some(("Low hull — head to a dock!", estilo::VERMELHO, agora));
         }
-        // Why you are a target, or the low-hull warning, under the panel.
-        let sem_lei = zona == 2;
-        let aviso = if baixo { Some("Low hull — head to a dock!") } else { crate::mar_ui::linha_de_perigo(tesouro.is_some(), marcado, sem_lei) };
-        if let Some(texto) = aviso {
-            let ty = painel.y + painel.h + 16.0 * s;
-            estilo::texto_centro_forte(x + w * 0.5 + 1.0, ty + 1.0, texto, 14, Color::new(0.0, 0.0, 0.0, 0.85));
-            estilo::texto_centro_forte(x + w * 0.5, ty, texto, 14, Color::new(1.0, 0.32, 0.28, pisca));
+        self.baixo = baixo;
+        // The toast: under the target frame, fading in and out.
+        if let Some((texto, cor, desde)) = self.aviso {
+            let idade = agora - desde;
+            if idade > AVISO_S {
+                self.aviso = None;
+            } else {
+                let f = ((idade / 0.25).min(1.0) * ((AVISO_S - idade) / 0.5).min(1.0)) as f32;
+                let tam = 19;
+                let cx = z.alvo.center().x;
+                let w = estilo::medir_forte(texto, tam);
+                // Under the target frame; lower still if it would cross the
+                // character frame (a phone's narrow top).
+                let mut y = z.alvo.y + z.alvo.h + 34.0 * s;
+                let caixa = Rect::new(cx - w * 0.5 - 50.0 * s, y - tam as f32 * 1.6, w + 100.0 * s, tam as f32 * 2.0);
+                if caixa.overlaps(&z.ficha) {
+                    y = z.ficha.y + z.ficha.h + 34.0 * s;
+                }
+                let fio = Color::new(cor.r, cor.g, cor.b, 0.55 * f);
+                draw_line(cx - w * 0.5 - 46.0 * s, y - tam as f32 * 0.32, cx - w * 0.5 - 12.0 * s, y - tam as f32 * 0.32, 1.5, fio);
+                draw_line(cx + w * 0.5 + 12.0 * s, y - tam as f32 * 0.32, cx + w * 0.5 + 46.0 * s, y - tam as f32 * 0.32, 1.5, fio);
+                estilo::texto_centro_forte(cx + 1.5, y + 1.5, texto, tam, Color::new(0.0, 0.0, 0.0, 0.75 * f));
+                estilo::texto_centro_forte(cx, y, texto, tam, Color::new(cor.r, cor.g, cor.b, f));
+            }
         }
-        Some(Rect::new(painel.x, painel.y, painel.w, painel.h + if aviso.is_some() { 22.0 * s } else { 0.0 }))
+        // The badges: a column down the minimap disc's left, outside it.
+        let tesouro = crate::mar_ui::tesouro_no_conves(eq).is_some();
+        let lado = (estilo::medir_dim("M", 13).height * 2.6).max(22.0);
+        let (c, raio) = (mini.center(), mini.w * 0.5 - 20.0);
+        let _ = raio;
+        let mut y = c.y - lado - 3.0 * s;
+        let x = mini.x - lado - 4.0 * s;
+        let m = Vec2::from(mouse_position());
+        let mut dica = None;
+        for (ativo, qual) in [(zona == 2, 0u8), (tesouro, 1), (marcado, 2)] {
+            if !ativo {
+                continue;
+            }
+            let r = Rect::new(x, y, lado, lado);
+            let c = r.center();
+            let (cor, texto) = match qual {
+                // Why you are a target: the same line the land's warning used.
+                0 => (estilo::VERMELHO, crate::mar_ui::linha_de_perigo(false, false, true).unwrap_or_default()),
+                1 => (estilo::OURO, crate::mar_ui::linha_de_perigo(true, false, false).unwrap_or_default()),
+                _ => (Color::new(0.9, 0.9, 0.92, 1.0), crate::mar_ui::linha_de_perigo(false, true, false).unwrap_or_default()),
+            };
+            draw_circle(c.x, c.y, lado * 0.5, Color::new(0.04, 0.05, 0.08, 0.82));
+            draw_circle_lines(c.x, c.y, lado * 0.5, 1.5, estilo::alfa(cor, 0.85));
+            match qual {
+                0 => caveira(c, lado * 0.3, cor),
+                1 => bau_icone(c, lado * 0.3, cor),
+                _ => bandeira_icone(c, lado * 0.3, cor),
+            }
+            if r.toca(m) {
+                dica = Some((r, texto));
+            }
+            y += lado + 6.0 * s;
+        }
+        if let Some((r, t)) = dica {
+            estilo::tooltip(r, t, false);
+        }
     }
 }
 
-/// A little anchor in vector strokes (no icon art for it).
-pub fn ancora_icone(c: Vec2, r: f32, cor: Color) {
-    let esp = (r * 0.18).max(1.5);
-    draw_circle_lines(c.x, c.y - r * 0.75, r * 0.22, esp, cor);
-    draw_line(c.x, c.y - r * 0.55, c.x, c.y + r * 0.8, esp, cor);
-    draw_line(c.x - r * 0.45, c.y - r * 0.25, c.x + r * 0.45, c.y - r * 0.25, esp, cor);
-    let n = 8;
-    for k in 0..n {
-        let a0 = std::f32::consts::PI * (0.15 + 0.7 * k as f32 / n as f32);
-        let a1 = std::f32::consts::PI * (0.15 + 0.7 * (k + 1) as f32 / n as f32);
-        draw_line(c.x + a0.cos() * r * 0.75, c.y + a0.sin() * r * 0.75 - r * 0.05, c.x + a1.cos() * r * 0.75, c.y + a1.sin() * r * 0.75 - r * 0.05, esp, cor);
+/// A small skull: the lawless waters' badge (vector, no atlas art).
+pub fn caveira(c: Vec2, r: f32, cor: Color) {
+    let osso = cor;
+    let fundo = Color::new(0.04, 0.05, 0.08, 1.0);
+    draw_circle(c.x, c.y - r * 0.15, r * 0.82, osso);
+    draw_rectangle(c.x - r * 0.48, c.y + r * 0.3, r * 0.96, r * 0.5, osso);
+    draw_circle(c.x - r * 0.32, c.y - r * 0.12, r * 0.24, fundo);
+    draw_circle(c.x + r * 0.32, c.y - r * 0.12, r * 0.24, fundo);
+    draw_triangle(vec2(c.x, c.y + r * 0.12), vec2(c.x - r * 0.1, c.y + r * 0.3), vec2(c.x + r * 0.1, c.y + r * 0.3), fundo);
+    for k in [-0.22f32, 0.0, 0.22] {
+        draw_line(c.x + k * r, c.y + r * 0.5, c.x + k * r, c.y + r * 0.8, (r * 0.09).max(1.0), fundo);
     }
+}
+
+/// A small treasure chest (vector).
+pub fn bau_icone(c: Vec2, r: f32, cor: Color) {
+    let fundo = Color::new(0.04, 0.05, 0.08, 1.0);
+    draw_rectangle(c.x - r * 0.9, c.y - r * 0.15, r * 1.8, r * 0.9, cor);
+    draw_triangle(vec2(c.x - r * 0.9, c.y - r * 0.2), vec2(c.x + r * 0.9, c.y - r * 0.2), vec2(c.x, c.y - r * 0.8), cor);
+    draw_rectangle(c.x - r * 0.9, c.y - r * 0.2, r * 1.8, r * 0.12, fundo);
+    draw_rectangle(c.x - r * 0.14, c.y - r * 0.05, r * 0.28, r * 0.36, fundo);
+}
+
+/// A small black flag on a pole, the mark (vector).
+pub fn bandeira_icone(c: Vec2, r: f32, cor: Color) {
+    draw_line(c.x - r * 0.6, c.y - r * 0.9, c.x - r * 0.6, c.y + r * 0.9, (r * 0.14).max(1.2), cor);
+    draw_triangle(vec2(c.x - r * 0.55, c.y - r * 0.85), vec2(c.x + r * 0.85, c.y - r * 0.45), vec2(c.x - r * 0.55, c.y - r * 0.05), cor);
 }
 
 // ─────────────────────────── preview ───────────────────────────
@@ -771,21 +832,20 @@ fn mundo_da_previa(eu: Vec2, yaw: f32, vel: Vec2, outros: &[CorpoDaPrevia]) -> W
     w
 }
 
-/// PREVIEW of the sea fight (`MMO_PREVIA_MAR=1`, after the scene's own):
-/// a Broadside in flight, a Long Gun shot, a shark winding up its bite
-/// with an elite beside it, and the auto path's route on the water with
-/// the ship panel and the "Sail to" ports — to `MMO_PREVIA_SAIDA`
-/// (`mar-combate-*.png`).
+/// PREVIEW of the sea with THE REAL HUD (`MMO_PREVIA_MAR=1`, after the
+/// scene's own; `MMO_PREVIA_SO=combate` renders only these): idle sailing,
+/// a fight with both guns bearing, the Broadside just fired, a crossing to
+/// an island with "Sail to…" open, and lawless waters with treasure on
+/// deck — each in landscape, a phone in landscape and a phone in portrait,
+/// through the sailing camera (`mar_camera`). To `MMO_PREVIA_SAIDA`
+/// (`mar-hud-<scene>-<screen>.png`).
 #[cfg(debug_assertions)]
 pub async fn previa() {
     use shared::navio::Visual;
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-mar".into());
     std::fs::create_dir_all(&saida).unwrap();
     crate::mar_ui::define_no_mar(true);
-    let (w, h) = (1280u32, 800u32);
-    let tela = vec2(w as f32, h as f32);
-    let rt = render_target_ex(w, h, RenderTargetParams { depth: true, sample_count: 1 });
-    crate::render3d::define_alvo(Some(rt.clone()));
+    crate::hud_layout::define_escala_ui(crate::hud_layout::escala_ui_padrao());
     let solido = crate::render3d::material_solido();
     let mut terreno = crate::terreno::Terreno::novo(&shared::mar::DEF);
     let ilhas = shared::mar::ilhas();
@@ -795,143 +855,215 @@ pub async fn previa() {
     let aberto = fb + eb * 90.0;
     let yaw_de = |d: Vec2| d.x.atan2(d.y);
     let rumo = lb;
-    let yaw = yaw_de(rumo);
     let lado = vec2(rumo.y, -rumo.x);
     let so = std::env::var("MMO_PREVIA_SO").ok();
-    // (name, my position, my velocity, the others, target, shots, seconds after the shots)
+    // The sea's minimap, as the game builds it.
+    let mut mapa = crate::mapa::Mapa::para(Some(&shared::mar::DEF));
+    for _ in 0..900 {
+        mapa.acompanhar();
+        if mapa.tem_textura() {
+            break;
+        }
+        next_frame().await;
+    }
+    let sem_lei = mq(shared::mar::zonas_sem_lei()[0]);
+    let gf = mq(ilhas[1].fundeadouro());
+    // (name, me, my velocity, the others, target, shots, seconds after)
     type Tiro = (u32, Vec2, Vec2, u8);
+    let alvo_perto = aberto + lado * 8.0 + rumo * 1.0;
     let cenas: Vec<(&str, Vec2, Vec2, Vec<CorpoDaPrevia>, Option<u32>, Vec<Tiro>, f64)> = vec![
+        ("navegando", aberto, rumo * 6.0, vec![], None, vec![], 0.0),
         (
-            "bordada",
+            "combate",
             aberto,
-            rumo * 6.0,
-            vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 8.0, None), (3, EntityTag::Enemy, ENGUIA, aberto - lado * 9.0 + rumo * 2.0, None)],
-            Some(2),
-            vec![
-                (nv::id_de_skill(0), aberto, aberto + lado * 8.0, 0),
-                (nv::id_de_skill(0), aberto, aberto - lado * 9.0 + rumo * 2.0, 1),
-            ],
-            0.28,
-        ),
-        (
-            "proa",
-            aberto,
-            Vec2::ZERO,
-            // The Long Gun is a side gun: the target off the beam, far out.
-            vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 17.0 + rumo * 3.0, None)],
-            Some(2),
-            vec![(nv::id_de_skill(1), aberto, aberto + lado * 17.0 + rumo * 3.0, 0)],
-            0.35,
-        ),
-        (
-            "tubarao",
-            aberto,
-            Vec2::ZERO,
-            vec![
-                (2, EntityTag::Enemy, TUBARAO, aberto + lado * 2.4 + rumo * 1.0, None),
-                (3, EntityTag::Enemy, TUBARAO, aberto - lado * 7.0 + rumo * 4.0, Some("[ELITE] Dread Reef Shark")),
-                (4, EntityTag::Enemy, ENGUIA, aberto + rumo * 9.0 - lado * 2.0, None),
-            ],
+            rumo * 4.0,
+            vec![(2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")), (3, EntityTag::Enemy, ENGUIA, aberto - lado * 9.0 + rumo * 4.0, None)],
             Some(2),
             vec![],
             0.0,
         ),
+        (
+            "combate-tiro",
+            aberto,
+            rumo * 4.0,
+            vec![(2, EntityTag::Enemy, TUBARAO, alvo_perto, Some("Reef Shark")), (3, EntityTag::Enemy, TUBARAO, aberto - lado * 7.0 + rumo * 6.0, Some("[ELITE] Dread Reef Shark"))],
+            Some(2),
+            vec![(nv::id_de_skill(0), aberto, alvo_perto, 0)],
+            0.3,
+        ),
         ("rota", fb + eb * 30.0, eb * 10.0, vec![], None, vec![], 0.0),
+        (
+            "mapa",
+            aberto,
+            rumo * 6.0,
+            vec![
+                (2, EntityTag::Enemy, TUBARAO, aberto + lado * 14.0 + rumo * 8.0, None),
+                (3, EntityTag::Enemy, TUBARAO, aberto - lado * 18.0 + rumo * 14.0, Some("[ELITE] Dread Reef Shark")),
+                (4, EntityTag::Player, 0, aberto + rumo * 30.0 - lado * 6.0, Some("Corsair")),
+                (5, EntityTag::Npc, shared::npc_kind(None, shared::dungeon::PAPEL_BAU), aberto - lado * 8.0 - rumo * 20.0, None),
+            ],
+            None,
+            vec![],
+            0.0,
+        ),
+        ("sem-lei", sem_lei, rumo * 6.0, vec![(2, EntityTag::Player, 0, sem_lei + lado * 14.0 + rumo * 10.0, Some("Corsair"))], None, vec![], 0.6),
     ];
-    let gf = mq(ilhas[1].fundeadouro());
-    for (nome, eu, vel, outros, alvo, tiros, depois) in cenas {
-        if so.as_deref().is_some_and(|s| !nome.contains(s) && !"combate".contains(s)) {
-            continue;
-        }
-        let yaw_eu = if vel.length_squared() > 0.01 { yaw_de(vel) } else { yaw };
-        let mut world = mundo_da_previa(eu, yaw_eu, vel, &outros);
-        if nome == "tubarao" {
-            if let Some(e) = world.ents.get_mut(&EntityId(2)) {
-                e.ataque_mob = Some((Some(EntityId(1)), nv::MORDIDA_PREPARO_S * 0.55, nv::MORDIDA_PREPARO_S));
-                e.yaw = yaw_de(eu - e.render_pos);
+    // (name, width, height, safe-area margins: top, left, bottom, right)
+    let telas: [(&str, u32, u32, [f32; 4]); 3] = [
+        ("paisagem", 1280, 800, [0.0; 4]),
+        ("celular", 926, 428, [0.0, 47.0, 21.0, 47.0]),
+        ("retrato", 428, 926, [47.0, 0.0, 34.0, 0.0]),
+    ];
+    for (tela_nome, w, h, margens) in telas {
+        let rt = render_target_ex(w, h, RenderTargetParams { depth: true, sample_count: 1 });
+        crate::render3d::define_alvo(Some(rt.clone()));
+        crate::hud_layout::define_margens(margens);
+        let tela = vec2(w as f32, h as f32);
+        for (nome, eu, vel, outros, alvo, tiros, depois) in &cenas {
+            let (nome, eu, vel, alvo, depois) = (*nome, *eu, *vel, *alvo, *depois);
+            if so.as_deref().is_some_and(|s| !nome.contains(s) && !"combate".contains(s)) {
+                continue;
             }
-        }
-        let mut vfx = MarCombate::default();
-        let mut rastro = crate::rastro::Rastro::default();
-        let mut rota = crate::mar_rota::RotaDoMar::default();
-        if nome == "rota" {
-            let meio = eu + eb * 120.0 + lb * 60.0;
-            rastro.define(vec![eu + eb * 40.0 + lb * 10.0, meio, gf + mq(ilhas[1].eixo()) * 30.0, gf], gf);
-            rota.para_ilha(ilhas[1].ilha as u8, get_time());
-            rota.portos_abertos = true;
-        }
-        for _ in 0..80 {
-            terreno.atualiza(eu, crate::config_graficos::RAIO_PADRAO + 1, 400);
-        }
-        // From astern for the long gun's shot (the target in view).
-        let cam_yaw = yaw_eu
-            + match nome {
-                "rota" => 0.3,
-                "proa" => std::f32::consts::PI + 0.35,
-                _ => 0.5,
+            let yaw_eu = if vel.length_squared() > 0.01 { yaw_de(vel) } else { yaw_de(rumo) };
+            let mut world = mundo_da_previa(eu, yaw_eu, vel, outros);
+            for (id, e) in world.ents.iter_mut() {
+                if e.meta.tag == EntityTag::Player && id.0 != 1 {
+                    e.yaw = yaw_eu + 0.6;
+                }
+            }
+            let mut vfx = MarCombate::default();
+            let mut rastro = crate::rastro::Rastro::default();
+            let mut rota = crate::mar_rota::RotaDoMar::default();
+            if nome == "rota" || nome == "mapa" {
+                let eu = if nome == "mapa" { aberto } else { eu };
+                let meio = eu + eb * 120.0 + lb * 60.0;
+                rastro.define(vec![eu + eb * 40.0 + lb * 10.0, meio, gf + mq(ilhas[1].eixo()) * 30.0, gf], gf);
+                rota.para_ilha(ilhas[1].ilha as u8, get_time());
+                rota.portos_abertos = nome == "rota";
+            }
+            mapa.rota = rastro.caminho(eu);
+            mapa.destino_mar = rota.destino();
+            for _ in 0..80 {
+                terreno.atualiza(eu, crate::config_graficos::RAIO_PADRAO + 1, 400);
+            }
+            // THE SAILING CAMERA, settled, a touch off the stern.
+            let alvo_p = alvo.and_then(|a| world.ents.get(&EntityId(a))).map(|e| e.render_pos);
+            let q = crate::mar_camera::enquadramento(eu, vec2(yaw_eu.sin(), yaw_eu.cos()), alvo_p, 0, h > w, 1.0, 0.0);
+            let cam_yaw = crate::mar_camera::yaw_atras(vec2(yaw_eu.sin(), yaw_eu.cos())) + 0.35;
+            let mut cam = crate::render3d::camera_no_mar(q.centro, 0.0, cam_yaw, q.fator, q.pitch);
+            cam.render_target = Some(rt.clone());
+            cam.aspect = Some(w as f32 / h as f32);
+            let mut hab = crate::habilidades::Habilidades::default();
+            // The Smoke on cooldown (the sweep); the Broadside too once fired.
+            let mut recargas = vec![(nv::id_de_skill(3), 9.0)];
+            if !tiros.is_empty() {
+                recargas.push((nv::id_de_skill(0), 6.5));
+            }
+            hab.estado(recargas, 0.0);
+            let disparo = get_time();
+            for (id, de, mira, tier) in tiros {
+                vfx.tiro(&world, *id, EntityId(1), *de, *mira, *tier);
+            }
+            let mut eq = shared::Equipment::default();
+            let navio = shared::item_id::NAVIO_CHALUPA;
+            let mut inst = nv::instancia_nova(navio);
+            inst.navio.as_mut().unwrap().casco = 1_840;
+            if nome == "sem-lei" {
+                inst.navio.as_mut().unwrap().conves = Some(nv::tesouro_novo(10, 12, Some(0)));
+            }
+            eq.set(shared::EquipSlot::Navio, Some(navio), Some(inst));
+            let prontos = |hab: &crate::habilidades::Habilidades| {
+                let agora = get_time();
+                Prontos {
+                    bordada: hab.recarga_ate(nv::id_de_skill(0)) <= agora,
+                    canhonaco: hab.recarga_ate(nv::id_de_skill(1)) <= agora,
+                    escala: nv::CASCOS[0].escala,
+                }
             };
-        let z = crate::render3d::ZOOM_MAX;
-        let mut cam = crate::render3d::camera(eu, 0.0, cam_yaw, z, crate::render3d::pitch_padrao());
-        cam.render_target = Some(rt.clone());
-        cam.aspect = Some(w as f32 / h as f32);
-        let disparo = get_time();
-        for (id, de, mira, tier) in &tiros {
-            vfx.tiro(&world, *id, EntityId(1), *de, *mira, *tier);
-        }
-        let mut eq = shared::Equipment::default();
-        let navio = shared::item_id::NAVIO_CHALUPA;
-        let mut inst = nv::instancia_nova(navio);
-        inst.navio.as_mut().unwrap().casco = if nome == "tubarao" { 620 } else { 1_840 };
-        eq.set(shared::EquipSlot::Navio, Some(navio), Some(inst));
-        let mut quadros = 0;
-        while quadros < 4 || get_time() - disparo < depois {
-            quadros += 1;
-            crate::render3d::camera_padrao();
-            clear_background(crate::mar_cena::cor_de_fundo());
-            let navios = [(eu, yaw_eu, Visual::default(), 1u64)];
-            crate::mar_cena::desenha_mundo(&terreno, &solido, &cam, &navios, Some(eu));
-            set_camera(&cam);
-            macroquad::material::gl_use_material(&solido);
-            for (id, tag, kind, p, _) in &outros {
-                if *tag == EntityTag::Enemy {
-                    let e = &world.ents[&EntityId(*id)];
-                    let escala = if e_elite(e) { 1.6 } else { 1.0 };
-                    crate::marinhos::desenha(*kind, vec3(p.x, 0.0, p.y), e.yaw, *id as u64, escala);
+            let barra = crate::mar_ui::BarraDoNavio::default();
+            let mut ficha = crate::hud::Ficha::default();
+            let mut quadros = 0;
+            while quadros < 4 || get_time() - disparo < depois {
+                quadros += 1;
+                crate::render3d::camera_padrao();
+                clear_background(crate::mar_cena::cor_de_fundo());
+                let mut navios = vec![(eu, yaw_eu, Visual::default(), 1u64)];
+                for (id, tag, _, p, _) in outros.iter() {
+                    if *tag == EntityTag::Player {
+                        navios.push((*p, yaw_eu + 0.6, Visual::default(), *id as u64));
+                    }
                 }
-            }
-            macroquad::material::gl_use_default_material();
-            let y = altura_do_tracejado();
-            crate::rastro::desenha(&rastro, eu, rota.destino(), &|_, _| y, get_time() as f32);
-            vfx.atualiza(&world);
-            vfx.desenha_3d(&world, &cam, alvo.map(EntityId));
-            crate::render3d::camera_padrao();
-            crate::mar_cena::rotulos(&cam, Some(eu), tela);
-            vfx.desenha_2d(&world, &cam, alvo.map(EntityId));
-            // The HUD's sea half: the ship panel, the ports, the bar.
-            let z = crate::hud_layout::atual();
-            if let Some(r) = vfx.painel_do_navio(&z, &eq, Some(eu), vel.length(), false) {
-                rota.desenha_portos(r, z.s, Some(eu), nv::CASCOS[0].velocidade);
-            }
-            if let Some(t) = rota.faixa(Some(eu), Some(rastro.caminho(eu).windows(2).map(|p| p[0].distance(p[1])).sum::<f32>() + 30.0), nv::CASCOS[0].velocidade) {
-                crate::hud_layout::desenha_faixa(&z, &t, estilo::AUTO);
-            }
-            for (i, hab) in nv::HABILIDADES.iter().enumerate() {
-                let r = crate::mar_ui::retangulo(i);
-                let c = r.center();
-                estilo::botao_redondo(c, r.w * 0.5, estilo::OURO, estilo::estado(false, false, false, false), false);
-                crate::mar_ui::icone_da_habilidade(hab.efeito, c, r.w * 0.5 * 0.55, 1.0);
-                if i == 0 && !tiros.is_empty() {
-                    estilo::setor(c, r.w * 0.5 - 3.0, 0.8, Color::new(0.0, 0.0, 0.0, 0.62));
+                crate::mar_cena::desenha_mundo(&terreno, &solido, &cam, &navios, Some(eu));
+                set_camera(&cam);
+                macroquad::material::gl_use_material(&solido);
+                for (id, tag, kind, p, _) in outros.iter() {
+                    if *tag == EntityTag::Enemy {
+                        let e = &world.ents[&EntityId(*id)];
+                        let escala = if e_elite(e) { 1.6 } else { 1.0 };
+                        crate::marinhos::desenha(*kind, vec3(p.x, 0.0, p.y), e.yaw, *id as u64, escala);
+                    }
                 }
+                macroquad::material::gl_use_default_material();
+                let y = altura_do_tracejado();
+                crate::rastro::desenha(&rastro, eu, rota.destino(), &|_, _| y, get_time() as f32);
+                vfx.atualiza(&world);
+                vfx.desenha_3d(&world, &cam, alvo.map(EntityId), prontos(&hab));
+                crate::render3d::camera_padrao();
+                let foco = rota.ilha_em_foco(eu);
+                crate::mar_cena::rotulos(&cam, Some(eu), tela, foco);
+                vfx.desenha_2d(&world, &cam, alvo.map(EntityId), prontos(&hab));
+                // ── THE REAL HUD, as `main` draws it at sea ──
+                let z = crate::hud_layout::atual();
+                crate::chat_ui::ChatUi::default().caixa(z.chat, "");
+                crate::hud::draw_hud(
+                    &z,
+                    &crate::hud::Info { realm: "Tempest".into(), canal: "Canal 1".into(), zona: shared::mar::DEF.zona.into(), jogadores: 42, capacidade: 200 },
+                    &crate::hud::Rede { ms: 32.0, ..Default::default() },
+                    None,
+                    0,
+                    0,
+                    0,
+                    0,
+                    Vec2::ZERO,
+                    &[],
+                );
+                mapa.desenha_mini(&world);
+                let casco = crate::mar_ui::casco_de(&eq).map(|(c, m, _)| (c, m));
+                crate::hud::draw_ficha(&z, &mut ficha, 0.016, "Navegante", 70, 1840, 2400, 1000, 240, Some(24850), casco);
+                crate::hud::draw_modo_pk(&z, Default::default());
+                barra.desenha(&hab);
+                crate::auto_combate::AutoCombate::default().desenha();
+                crate::hud::draw_atacar(&z, alvo.is_some());
+                crate::hud::draw_rapidos(&z, [0; 4], [0; 4], [false; 4], [None; 4], [false; 4], None, &|_| String::new());
+                if let Some(a) = alvo.and_then(|a| world.ents.get(&EntityId(a))) {
+                    crate::hud::draw_alvo(&z, a.meta.name.as_deref().unwrap_or("?"), 12, a.state.hp, a.meta.hp_max, false);
+                }
+                crate::hud::draw_topo(&z, false, false, false, false, false);
+                crate::hud::draw_botao_economia(&z);
+                // The order `main` draws them in: the strip, then the sea HUD.
+                if let Some(t) = rota.faixa(Some(eu), Some(rastro.caminho(eu).windows(2).map(|p| p[0].distance(p[1])).sum::<f32>()), nv::CASCOS[0].velocidade) {
+                    crate::hud_layout::desenha_faixa(&z, &t, estilo::AUTO);
+                }
+                vfx.hud_do_mar(&z, &eq, Some(eu), false, crate::mapa::Mapa::mini_rect());
+                rota.desenha_portos(crate::mapa::Mapa::disco_do_minimapa(), z.s, Some(eu), nv::CASCOS[0].velocidade);
+                crate::hud::draw_exp(&z, &ficha);
+                // The world map at sea, open over it all.
+                if nome == "mapa" {
+                    mapa.aberto = true;
+                    mapa.desenha_grande(&world, 70, &crate::mundo_ui::Mundo::default(), 0);
+                    mapa.aberto = false;
+                }
+                unsafe {
+                    get_internal_gl().flush();
+                }
+                next_frame().await;
             }
-            unsafe {
-                get_internal_gl().flush();
-            }
-            next_frame().await;
+            rt.texture.get_texture_data().export_png(&format!("{saida}/mar-hud-{nome}-{tela_nome}.png"));
+            println!("mar-hud-{nome}-{tela_nome}.png");
         }
-        rt.texture.get_texture_data().export_png(&format!("{saida}/mar-combate-{nome}.png"));
-        println!("mar-combate-{nome}.png");
     }
+    crate::hud_layout::define_margens([0.0; 4]);
+    crate::render3d::define_alvo(None);
     println!("mar combate: {MAX_BALAS} balas, {MAX_PARTICULAS} particulas (piscinas fixas)");
 }
 
@@ -956,19 +1088,22 @@ mod testes {
         assert!(!m.parts.iter().any(|p| p.tam == 0.0));
     }
 
-    /// The cached HUD line is rebuilt only when its key changes.
+    /// THE ZONE TOAST speaks only when the waters CHANGE: into lawless
+    /// waters (red), into the safe corridor, out of lawless waters — never
+    /// twice for the same water, never for plain open water on arrival.
     #[test]
-    fn a_linha_do_hud_so_refaz_quando_muda() {
-        let mut l = Linha::default();
-        let mut feitas = 0;
-        for _ in 0..10 {
-            l.com(7, || {
-                feitas += 1;
-                "x".into()
-            });
-        }
-        assert_eq!(feitas, 1);
-        l.com(8, || "y".into());
-        assert_eq!(l.texto, "y");
+    fn o_aviso_de_zona_so_fala_quando_muda() {
+        assert_eq!(aviso_de_zona(Some(1), 1), None);
+        assert_eq!(aviso_de_zona(None, 1), None, "toasted plain open water on arrival");
+        assert_eq!(aviso_de_zona(Some(1), 2).map(|a| a.0), Some("Entering lawless waters"));
+        assert_eq!(aviso_de_zona(None, 2).map(|a| a.0), Some("Entering lawless waters"));
+        assert_eq!(aviso_de_zona(Some(1), 0).map(|a| a.0), Some("Safe harbour"));
+        assert_eq!(aviso_de_zona(Some(2), 1).map(|a| a.0), Some("Leaving lawless waters"));
+        assert_eq!(aviso_de_zona(Some(0), 1), None);
+        // The real chart: a lawless centre is lawless, a dock is safe.
+        let c = shared::mar::zonas_sem_lei()[0];
+        assert_eq!(zona_do_mar(vec2(c.x, c.y)), 2);
+        let f = shared::mar::ilhas()[0].fundeadouro();
+        assert_eq!(zona_do_mar(vec2(f.x, f.y)), 0);
     }
 }
