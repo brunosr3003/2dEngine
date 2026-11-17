@@ -1090,10 +1090,13 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     // half side. A fragment closer than that along both axes is dropped:
     // the sea's far island meshes never show inside the chunks drawn whole
     // round the player (they could poke through a voxel slope there).
-    // z = 0: off.
+    // z = 0: off. z < 0: THE WATERLINE instead (`gpu_estatica::
+    // define_linha_dagua`): everything under world y = Oco.x is dropped (a
+    // sea mob rising to bite shows only what breaks the surface).
     uniform vec3 Oco;
 
     void main() {
+        if (Oco.z < 0.0 && mundo.y < Oco.x) discard;
         if (Oco.z > 0.0) {
             vec2 qo = abs(mundo.xz - Oco.xy);
             if (max(qo.x, qo.y) < Oco.z) discard;

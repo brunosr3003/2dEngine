@@ -233,13 +233,9 @@ impl GameWorld {
         Some((dest, chegada))
     }
 
-    /// Where docking at sea index `ilha` lands: (zone, name, arrival). The
-    /// Magic Island lands at its harbour (`magica::CHEGADA`), on the tier
-    /// the player's power opens (decided when docking).
+    /// Where docking at sea index `ilha` lands: (zone, name, arrival). (The
+    /// Magic Island has no dock since 17/11/2026: menu only.)
     pub(crate) fn chegada_da_ilha(ilha: usize) -> Option<(&'static str, &'static str, Vec2)> {
-        if ilha == shared::mar::ILHA_MAGICA {
-            return Some((shared::magica::ZONA, shared::magica::DEF.nome, shared::magica::CHEGADA));
-        }
         Self::porto_da_ilha(ilha).map(|(d, c)| (d.zona, d.nome, c))
     }
 
@@ -253,10 +249,6 @@ impl GameWorld {
         };
         if shared::mar::cais_perto(eu).map(|v| v.ilha) != Some(ilha) {
             self.avisa_missao(sid, "Sail closer to the dock to come ashore.".into());
-            return;
-        }
-        if ilha == shared::mar::ILHA_MAGICA {
-            self.atracar_na_magica(sid);
             return;
         }
         let indice = self
@@ -279,49 +271,6 @@ impl GameWorld {
         self.contar_atracacao(sid, ilha);
         let aviso = format!("You dock at {}.", dest.nome);
         if self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
-            if let Some(s) = self.sessions.get_mut(&sid) {
-                s.zona_volta.clear();
-            }
-        }
-    }
-
-    /// DOCKING AT THE MAGIC ISLAND: the same gate and the same clock as its
-    /// Guide's panel (`magica::entrar_na_magica`) — the power gate
-    /// (`NivelMagico::poder_exigido`), then the time: an active session
-    /// resumes, otherwise one entry is spent (the daily free ones first,
-    /// then a pass). It lands on the highest tier the power opens, at its
-    /// harbour. Leaving the island puts the ship back at this dock
-    /// (`sair_da_magica`, with `magica_volta` = the sea).
-    fn atracar_na_magica(&mut self, sid: SessionId) {
-        let agora = (now_ms() / 1000) as i64;
-        let Some(s) = self.sessions.get(&sid) else {
-            return;
-        };
-        let poder = shared::dungeon::poder_de_stats(&s.stats);
-        if shared::magica::maior_liberado(poder).is_none() {
-            let exige = shared::magica::NIVEIS[0].poder_exigido();
-            let como = format!(
-                "it opens at {} power (you: {})",
-                shared::idioma::milhar(exige as u64),
-                shared::idioma::milhar(poder.max(0) as u64)
-            );
-            self.avisa_missao(sid, format!("You haven't unlocked {} yet: {como}.", shared::magica::DEF.nome));
-            return;
-        }
-        let entradas = if shared::magica::resta(s.magica_ate, agora) > 0 {
-            0
-        } else {
-            let passes: u32 = s.inventory.iter().filter(|i| i.item_id == shared::item_id::PASSE_MAGICO).map(|i| i.qty).sum();
-            let gratis = shared::magica::gratis_restantes(s.magica_gratis, agora);
-            if let Err(motivo) = shared::magica::pode_entrar(s.magica_ate, agora, passes.saturating_add(gratis as u32), 1) {
-                self.avisa_missao(sid, motivo);
-                return;
-            }
-            1
-        };
-        // A Colossus Chest on deck counts this island (phase 4).
-        self.contar_atracacao(sid, shared::mar::ILHA_MAGICA);
-        if self.entrar_na_magica(sid, entradas, 0) {
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.zona_volta.clear();
             }
@@ -800,7 +749,13 @@ impl GameWorld {
     /// `ServerMessage::Rota` draws the dashed line — the land's auto path,
     /// on water. No distance cap: the chart is one crossing.
     pub(crate) fn rota_no_mar(&mut self, sid: SessionId, de: Vec2, para: Vec2) {
-        let Some(rota) = caminho_no_mar(de, para) else {
+        // A PK captain: the peaceful waters are closed (`aguas_pacificas.rs`).
+        let barrado = self.sessions.get(&sid).is_some_and(|s| self.pk_barrado(s));
+        if barrado && shared::mar::aguas_pacificas(para) {
+            self.avisa_missao(sid, super::aguas_pacificas::ROTA_RECUSADA.into());
+            return;
+        }
+        let Some(rota) = caminho_no_mar_com(de, para, barrado) else {
             self.avisa_missao(sid, "There is no water route there.".into());
             return;
         };
@@ -891,6 +846,11 @@ impl GameWorld {
                         self.rejeita_skill(sid, id, "Select an enemy to use this skill.");
                         return;
                     };
+                    let alvo_navio = self.sessions.values().any(|s| s.entity_id == alvo);
+                    if alvo_navio && self.pvp_em_aguas_pacificas(dono, alvo) {
+                        self.rejeita_skill(sid, id, super::aguas_pacificas::SEM_PVP);
+                        return;
+                    }
                     match self.posicao_alvo_skill(dono, alvo, de, &forma) {
                         // Every ship gun is on the sides (16/11/2026).
                         Ok(p) if !nv::no_costado(de, rumo, p) => {
@@ -1424,6 +1384,81 @@ pub(crate) fn impacto_da_mordida(no_mar: bool) -> f32 {
 /// still restarts the count, as ashore.
 pub(crate) const DESISTE_NO_MAR_S: f32 = 15.0;
 
+/// THE SEA MOBS HUNT FROM THE SIDES (owner, 17/11/2026: "os bichos ficam
+/// quase sempre atrás do barco e fica meio difícil de acertar"). A chase
+/// straight at the hull leaves the mob trailing in the wake, behind the
+/// stern, where no gun bears. Instead it holds this far off the ship's
+/// nearer BEAM, like a shark circling its prey, and closes to bite from the
+/// side when its jaws are ready.
+pub(crate) const COSTADO_DO_BICHO: f32 = 3.6;
+/// ...with this much lead along the ship's heading per unit of its speed
+/// (seconds), so a ship under way does not leave it behind...
+pub(crate) const AVANCO_DO_BICHO_S: f32 = 1.2;
+/// ...capped here (units).
+pub(crate) const AVANCO_DO_BICHO_MAX: f32 = 3.0;
+/// How hard it steers onto its point (per second of the gap).
+const GANHO_DO_BICHO: f32 = 2.5;
+/// Its jaws ready within this (seconds): it closes in to bite.
+pub(crate) const MORDE_EM_S: f32 = 0.35;
+/// Every this many seconds it may CROSS to the ship's other side
+/// (`CHANCE_DE_CRUZAR`), committed for `CRUZANDO_S`.
+pub(crate) const DECIDE_LADO_S: f32 = 1.0;
+pub(crate) const CHANCE_DE_CRUZAR: f32 = 0.03;
+pub(crate) const CRUZANDO_S: f32 = 3.0;
+
+/// The point a sea mob at `bicho` swims for, off the beam of a ship at
+/// `navio` heading `rumo` (unit) at velocity `vel_navio`, on side `lado`
+/// (+1 starboard, -1 port), close in when it `morde` (to `alcance`, its
+/// bite's reach). Never THROUGH the hull: a mob in the wake first swims out
+/// abeam of where it is, and one crossing to the other side goes round the
+/// nearer end (measured: straight at the beam point, the wake's mobs sat
+/// against the stern, out of reach and out of the arc).
+pub(crate) fn ponto_no_costado(navio: Vec2, rumo: Vec2, vel_navio: Vec2, bicho: Vec2, lado: f32, morde: bool, alcance: f32) -> Vec2 {
+    let r = rumo.try_normalize().unwrap_or(Vec2::Y);
+    let travessa = Vec2::new(r.y, -r.x);
+    let afasta = if morde { (alcance - 0.25).max(0.8) } else { COSTADO_DO_BICHO };
+    // Biting, no lead: the jaws close on the side, not the bow.
+    let avanco = if morde { 0.0 } else { (vel_navio.length() * AVANCO_DO_BICHO_S).min(AVANCO_DO_BICHO_MAX) };
+    let alvo = navio + travessa * lado * afasta + r * avanco;
+    let livre = nv::RAIO_DO_CASCO + 0.1;
+    if dist_ao_segmento(navio, bicho, alvo) >= livre {
+        return alvo;
+    }
+    let q = bicho - navio;
+    let ao_longo = q.dot(r);
+    let fora = navio + travessa * lado * COSTADO_DO_BICHO + r * ao_longo;
+    if q.dot(travessa) * lado > 0.0 || dist_ao_segmento(navio, bicho, fora) >= livre {
+        return fora;
+    }
+    navio + r * (livre + 1.5) * if ao_longo >= 0.0 { 1.0 } else { -1.0 } + travessa * lado * livre
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+fn dist_ao_segmento(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
+}
+
+/// Which beam `bicho` is on (+1 starboard, -1 port; `antes` when it is
+/// right on the keel line).
+pub(crate) fn lado_do_costado(navio: Vec2, rumo: Vec2, bicho: Vec2, antes: f32) -> f32 {
+    let r = rumo.try_normalize().unwrap_or(Vec2::Y);
+    let d = (bicho - navio).dot(Vec2::new(r.y, -r.x));
+    if d.abs() < 0.5 {
+        if antes == 0.0 { 1.0 } else { antes.signum() }
+    } else {
+        d.signum()
+    }
+}
+
+/// The velocity that brings the mob onto `ponto` while it moves with the
+/// ship (`vel_navio`): the ship's own velocity plus a pull onto the point,
+/// no faster than `max`.
+pub(crate) fn velocidade_ao_costado(bicho: Vec2, ponto: Vec2, vel_navio: Vec2, max: f32) -> Vec2 {
+    (vel_navio + (ponto - bicho) * GANHO_DO_BICHO).clamp_length_max(max)
+}
+
 pub(crate) fn desistencia_do_bicho(no_mar: bool) -> f32 {
     if no_mar {
         DESISTE_NO_MAR_S
@@ -1453,6 +1488,9 @@ pub struct GradeDoMar {
     lado: i32,
     origem: f32,
     livre: Vec<bool>,
+    /// The cell is in PEACEFUL WATERS (`mar::aguas_pacificas`): a route for
+    /// a PK captain goes round them (17/11/2026).
+    pacifica: Vec<bool>,
 }
 
 impl GradeDoMar {
@@ -1461,13 +1499,16 @@ impl GradeDoMar {
         let lado = ((2.0 * borda) / CELULA_DA_ROTA).floor().max(1.0) as i32;
         let origem = -borda + CELULA_DA_ROTA * 0.5;
         let mut livre = vec![false; (lado * lado) as usize];
+        let mut pacifica = vec![false; (lado * lado) as usize];
         for z in 0..lado {
             for x in 0..lado {
                 let p = Vec2::new(origem + x as f32 * CELULA_DA_ROTA, origem + z as f32 * CELULA_DA_ROTA);
-                livre[(z * lado + x) as usize] = agua_com_folga(p);
+                let k = (z * lado + x) as usize;
+                livre[k] = agua_com_folga(p);
+                pacifica[k] = livre[k] && shared::mar::aguas_pacificas(p);
             }
         }
-        Self { lado, origem, livre }
+        Self { lado, origem, livre, pacifica }
     }
 
     fn celula(&self, p: Vec2) -> (i32, i32) {
@@ -1490,17 +1531,22 @@ impl GradeDoMar {
         self.indice(c).is_some_and(|i| self.livre[i])
     }
 
+    /// ...and may this route pass it (`evita` = keep out of peaceful waters)?
+    fn passa(&self, c: (i32, i32), evita: bool) -> bool {
+        self.indice(c).is_some_and(|i| self.livre[i] && !(evita && self.pacifica[i]))
+    }
+
     /// The free cell nearest `p`, searching rings out to `raio` cells.
-    fn livre_perto(&self, p: Vec2, raio: i32) -> Option<(i32, i32)> {
+    fn livre_perto(&self, p: Vec2, raio: i32, evita: bool) -> Option<(i32, i32)> {
         let c = self.celula(p);
-        if self.livre(c) {
+        if self.passa(c, evita) {
             return Some(c);
         }
         for r in 1..=raio {
             let mut melhor: Option<((i32, i32), f32)> = None;
             for i in -r..=r {
                 for q in [(c.0 + i, c.1 - r), (c.0 + i, c.1 + r), (c.0 - r, c.1 + i), (c.0 + r, c.1 + i)] {
-                    if self.livre(q) {
+                    if self.passa(q, evita) {
                         let d = self.centro(q).distance_squared(p);
                         if melhor.is_none_or(|(_, m)| d < m) {
                             melhor = Some((q, d));
@@ -1517,9 +1563,9 @@ impl GradeDoMar {
 
     /// Straight from `a` to `b` through free cells only (sampled every half
     /// cell).
-    fn reta_livre(&self, a: Vec2, b: Vec2) -> bool {
+    fn reta_livre(&self, a: Vec2, b: Vec2, evita: bool) -> bool {
         let n = ((a.distance(b) / (CELULA_DA_ROTA * 0.5)).ceil() as i32).max(1);
-        (0..=n).all(|k| self.livre(self.celula(a.lerp(b, k as f32 / n as f32))))
+        (0..=n).all(|k| self.passa(self.celula(a.lerp(b, k as f32 / n as f32)), evita))
     }
 }
 
@@ -1563,15 +1609,23 @@ thread_local! {
 /// Runs on the SERVER, once per request (taps are throttled to 0.2 s by
 /// `handle_mover_para`), never per frame.
 pub fn caminho_no_mar(de: Vec2, para: Vec2) -> Option<Vec<Vec2>> {
+    caminho_no_mar_com(de, para, false)
+}
+
+/// The same for a PK captain (`evita_pacificas`): round the PEACEFUL
+/// WATERS, which are closed to them (17/11/2026). A start inside them (the
+/// grace to leave, `aguas_pacificas.rs`) may sail out through them.
+pub fn caminho_no_mar_com(de: Vec2, para: Vec2, evita_pacificas: bool) -> Option<Vec<Vec2>> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     let g = grade_do_mar();
-    let inicio = g.livre_perto(de, 6)?;
-    let fim = g.livre_perto(para, 60)?;
+    let evita = evita_pacificas && !shared::mar::aguas_pacificas(de);
+    let inicio = g.livre_perto(de, 6, false)?;
+    let fim = g.livre_perto(para, 60, evita)?;
     let alvo_exato = agua_com_folga(para) && g.celula(para) == fim;
     let ultimo = if alvo_exato { para } else { g.centro(fim) };
     // Most taps at sea are in plain sight: no search.
-    if g.reta_livre(g.centro(inicio), ultimo) {
+    if g.reta_livre(g.centro(inicio), ultimo, evita) {
         return Some(vec![ultimo]);
     }
     let n = g.livre.len();
@@ -1618,11 +1672,11 @@ pub fn caminho_no_mar(de: Vec2, para: Vec2) -> Option<Vec<Vec2>> {
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
                 let v = (c.0 + dx, c.1 + dz);
                 let Some(j) = g.indice(v) else { continue };
-                if !g.livre[j] {
+                if !g.livre[j] || (evita && g.pacifica[j]) {
                     continue;
                 }
                 // No corner cutting: a diagonal needs both sides free.
-                if dx != 0 && dz != 0 && !(g.livre((c.0 + dx, c.1)) && g.livre((c.0, c.1 + dz))) {
+                if dx != 0 && dz != 0 && !(g.passa((c.0 + dx, c.1), evita) && g.passa((c.0, c.1 + dz), evita)) {
                     continue;
                 }
                 let novo = gi + if dx != 0 && dz != 0 { 1414 } else { 1000 };
@@ -1655,7 +1709,7 @@ pub fn caminho_no_mar(de: Vec2, para: Vec2) -> Option<Vec<Vec2>> {
     let mut k = 0usize;
     while k + 1 < pontos.len() {
         let mut j = k + 1;
-        while j + 1 < pontos.len() && g.reta_livre(ancora, pontos[j + 1]) {
+        while j + 1 < pontos.len() && g.reta_livre(ancora, pontos[j + 1], evita) {
             j += 1;
         }
         saida.push(pontos[j]);
@@ -1766,6 +1820,12 @@ mod testes {
                 giver: None,
             },
         ));
+    }
+
+    /// A nest out in PvP waters (the PvP tests: the first three islands'
+    /// waters are peaceful since 17/11/2026).
+    fn ninho_pvp() -> Vec2 {
+        *shared::mar::ninhos().iter().find(|n| !shared::mar::aguas_pacificas(**n) && !shared::mar::sem_lei(**n)).expect("a nest in PvP waters")
     }
 
     fn poe_em(w: &mut GameWorld, sid: SessionId, p: Vec2) {
@@ -1932,9 +1992,8 @@ mod testes {
     }
 
     /// LOCKED DESTINATIONS refuse docking WITH THE REASON (sailing there to
-    /// look is free): the story for Kōgen-tō, the power for the Magic
-    /// Island — which, once open, docks at its harbour on the tier the
-    /// power opens, and leaving it puts the ship back at its dock.
+    /// look is free): the story for Kōgen-tō. The Magic Island has no dock
+    /// at all (menu only, 17/11/2026): leaving it never puts a ship at sea.
     #[test]
     fn destino_bloqueado_recusa_atracar_com_o_motivo() {
         let kogen = shared::mar::vista_da_zona(shared::kogen::ZONA).unwrap();
@@ -1946,33 +2005,31 @@ mod testes {
         assert_eq!(z, None);
         assert!(chat.iter().any(|t| t.starts_with("You haven't unlocked Kōgen-tō yet: reach the story step")), "{chat:?}");
 
-        let mut no_ar = vec![shared::mar::ZONA];
+        assert!(shared::magica::NIVEIS.iter().all(|n| shared::mar::vista_da_zona(n.zona).is_none()));
+        // Saved on the Magic Island with the sea as its way back (before the
+        // dock was removed): leaving lands in the Bosque, not at sea.
+        let mut no_ar = vec![shared::mar::ZONA, shared::terreno::ARQUIPELAGO[0].zona];
         no_ar.extend(shared::magica::NIVEIS.iter().map(|n| n.zona));
-        let (mut w, sid, mut rx) = mundo(shared::mar::ZONA, &no_ar);
-        let m = shared::mar::vista_da_ilha(shared::mar::ILHA_MAGICA).unwrap();
-        poe_em(&mut w, sid, m.fundeadouro());
-        w.handle_navio(sid, PedidoNavio::Atracar { ilha: m.ilha as u8 });
-        let (z, chat) = drena(&mut rx);
-        assert_eq!(z, None);
-        assert!(chat.iter().any(|t| t.starts_with("You haven't unlocked Magic Island yet: it opens at")), "{chat:?}");
-        // With the power (and the daily free entries), it docks.
-        w.sessions.get_mut(&sid).unwrap().stats.hp_max = 5_000_000;
+        let (mut w, sid, mut rx) = mundo(shared::magica::ZONA, &no_ar);
         assert!(dar_chalupa(w.sessions.get_mut(&sid).unwrap()));
-        w.handle_navio(sid, PedidoNavio::Atracar { ilha: m.ilha as u8 });
-        let (z, _) = drena(&mut rx);
-        let z = z.expect("docked at the Magic Island");
-        assert!(shared::magica::e_magica(&z), "{z}");
-        assert!(w.pos_do_jogador(sid).unwrap().distance(shared::magica::CHEGADA) < 0.01);
-        assert_eq!(w.sessions[&sid].magica_volta, shared::mar::ZONA);
-        // On the island: leaving sails back out from its dock.
-        w.zona = z;
+        w.sessions.get_mut(&sid).unwrap().magica_volta = shared::mar::ZONA.into();
         w.handle_magica(sid, shared::magica::PedidoMagica::Sair);
-        assert_eq!(trocou_para(&mut rx).as_deref(), Some(shared::mar::ZONA));
-        assert!(w.pos_do_jogador(sid).unwrap().distance(m.fundeadouro()) < 0.01);
-        assert_eq!(w.sessions[&sid].zona_volta, shared::magica::ZONA);
+        assert_eq!(trocou_para(&mut rx).as_deref(), Some(shared::terreno::ARQUIPELAGO[0].zona));
     }
 
     /// THE CAPTAIN CHARGES COPPER, and refuses without it (nothing taken).
+    #[test]
+    fn o_pk_volta_pra_casa_pelo_capitao() {
+        // A red-named captain on the Plateau (PvP waters) takes the Captain
+        // home to the Bosque, whose waters are closed to its ship.
+        let (mut w, sid, mut rx) = mundo("ilha_planalto", &["ilha_planalto", "ilha_inicial"]);
+        com_capitao(&mut w);
+        w.sessions.get_mut(&sid).unwrap().pk_points = 3;
+        cobre(&mut w, sid, 10_000);
+        w.handle_viajar(sid, 0);
+        assert_eq!(trocou_para(&mut rx).as_deref(), Some("ilha_inicial"), "a PK captain could not take the Captain home");
+    }
+
     #[test]
     fn o_capitao_cobra_cobre_e_recusa_sem() {
         let (mut w, sid, mut rx) = mundo("ilha_gelo", &["ilha_gelo", "ilha_inicial"]);
@@ -2142,7 +2199,7 @@ mod testes {
             s.name = "Pirata".into();
         }
         let ea = w.sessions[&a].entity_id;
-        let longe = shared::mar::ninhos()[0];
+        let longe = ninho_pvp();
         poe_em(&mut w, a, longe);
         poe_em(&mut w, b, longe + Vec2::new(2.0, 0.0));
         let modo = |w: &mut GameWorld, sid: SessionId, m: u8| {
@@ -2302,7 +2359,8 @@ mod testes {
         w.ilha = Some(shared::terreno::Ilha::da_ilha(&shared::mar::DEF));
         dar_chalupa(w.sessions.get_mut(&sid).unwrap());
         no_nivel(&mut w, sid, 30);
-        let aqui = shared::mar::ninhos()[0];
+        // PvP waters: some of these fights are ship against ship.
+        let aqui = ninho_pvp();
         poe_em(&mut w, sid, aqui);
         w.ecs.spawn((
             NetId(EntityId(9_900)),
@@ -2670,7 +2728,7 @@ mod testes {
     fn a_marca_abre_o_navio_para_o_pacifico_mas_nao_no_corredor() {
         let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
         dar_chalupa(w.sessions.get_mut(&a).unwrap());
-        let longe = shared::mar::ninhos()[0];
+        let longe = ninho_pvp();
         poe_em(&mut w, a, longe);
         let b = outro(&mut w, 47_480, 4_780, "Corsario", longe + Vec2::new(4.0, 0.0));
         modo_pk(&mut w, a, shared::pk::PACIFICO);
@@ -2710,7 +2768,7 @@ mod testes {
     fn afundar_faz_boiar_e_matar_em_pvp_entrega_ao_matador() {
         let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
         dar_chalupa(w.sessions.get_mut(&a).unwrap());
-        let longe = shared::mar::ninhos()[0];
+        let longe = ninho_pvp();
         poe_em(&mut w, a, longe);
         com_tesouro(&mut w, a);
         let ea = w.sessions[&a].entity_id;
@@ -2755,7 +2813,7 @@ mod testes {
     fn pontos_de_pk_no_mar() {
         let (mut w, a, _rx) = mundo(shared::mar::ZONA, &[]);
         dar_chalupa(w.sessions.get_mut(&a).unwrap());
-        let longe = shared::mar::ninhos()[0];
+        let longe = ninho_pvp();
         assert!(!shared::mar::sem_lei(longe), "the test spot must not be lawless");
         poe_em(&mut w, a, longe);
         let b = outro(&mut w, 47_483, 4_783, "Vilao", longe + Vec2::new(4.0, 0.0));

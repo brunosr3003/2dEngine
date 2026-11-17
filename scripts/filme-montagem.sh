@@ -6,6 +6,10 @@
 #
 # <dir> holds the scene films tempest-<scene>-<size>.mp4 (MMO_FILME output);
 # the montage goes to <dir>/tempest-montagem-<size>.mp4 unless given.
+#
+# FILME_CORTES="mar:0.5:8 celeste:1.5:6 ..." replaces the cut list (the ad,
+# docs/FILME.md); FILME_FADE the crossfade in seconds; FILME_ESCALA=1920:1080
+# downscales (a capture rendered larger comes out crisper).
 set -euo pipefail
 dir=${1:?dir}
 tam=${2:?size, e.g. 16x9}
@@ -22,7 +26,12 @@ cortes=(
   auras:4.0:5.5
   bosque:12.0:5.0
 )
-fade=0.4
+if [ -n "${FILME_CORTES:-}" ]; then
+  read -r -a cortes <<<"$FILME_CORTES"
+fi
+fade=${FILME_FADE:-0.4}
+escala=""
+[ -n "${FILME_ESCALA:-}" ] && escala=",scale=${FILME_ESCALA}:flags=lanczos"
 args=()
 filtros=""
 n=0
@@ -33,7 +42,7 @@ for c in "${cortes[@]}"; do
   f="$dir/tempest-$cena-$tam.mp4"
   [ -f "$f" ] || { echo "skip $cena (no $f)"; continue; }
   args+=(-ss "$ini" -t "$dur" -i "$f")
-  filtros+="[$n:v]settb=AVTB,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v$n];"
+  filtros+="[$n:v]settb=AVTB,setpts=PTS-STARTPTS,fps=60${escala},format=yuv420p[v$n];"
   if [ -z "$anterior" ]; then
     anterior="v$n"
     offset=$(awk "BEGIN{print $dur - $fade}")

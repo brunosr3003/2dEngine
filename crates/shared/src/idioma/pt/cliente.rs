@@ -2618,6 +2618,11 @@ pub const VERBETES: &[(&str, &str)] = &[
     // O aviso de zona do HUD do mar (limpeza do HUD, 16/11/2026).
     ("Entering lawless waters", "Entrando em águas sem lei"),
     ("Leaving lawless waters", "Saindo das águas sem lei"),
+    // Águas pacíficas (17/11/2026): as três primeiras ilhas sem PvP.
+    ("Peaceful waters: no PvP", "Águas pacíficas: sem PvP"),
+    ("Leaving peaceful waters: PvP is on", "Saindo das águas pacíficas: PvP ligado"),
+    ("You have PK: peaceful waters are closed to you", "Você está PK: as águas pacíficas estão fechadas pra você"),
+    ("Peaceful waters", "Águas pacíficas"),
     ("Open waters", "Águas abertas"),
     ("Treasure", "Tesouro"),
     ("Nearest dock: {} · {:.0} m", "Cais mais perto: {} · {:.0} m"),

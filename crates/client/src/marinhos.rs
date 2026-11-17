@@ -141,6 +141,11 @@ pub fn altura_ent(e: &crate::world::Ent) -> Option<f32> {
         return None;
     }
     let (kind, scale) = corpo(e.meta.kind, e.state.flags & shared::ent_flags::BOSS != 0)?;
+    // At sea the sharks and eels swim UNDER the surface: what stands over
+    // the water is the fin or the head, about this high.
+    if e_do_mar(kind, e) {
+        return Some(1.1 * scale);
+    }
     if kind == 93 {
         return Some(crate::hidra::HEIGHT * scale);
     }
@@ -164,7 +169,12 @@ pub fn desenha_ent(e: &crate::world::Ent, p: Vec3) -> bool {
         return false;
     };
     // The sea's elites ("[ELITE] Dread …") are drawn bigger (gameplay remake).
-    let scale = if crate::mar_combate_ui::e_elite(e) { scale * 1.6 } else { scale };
+    let elite = crate::mar_combate_ui::e_elite(e);
+    let scale = if elite { scale * 1.6 } else { scale };
+    if e_do_mar(kind, e) {
+        desenha_submerso(e, kind, p, scale, elite);
+        return true;
+    }
     desenha_pose(
         kind,
         p,
@@ -174,6 +184,138 @@ pub fn desenha_ent(e: &crate::world::Ent, p: Vec3) -> bool {
         crate::hidra::pose(e, get_time()),
     )
 }
+// ───────────────────── at sea: submerged (17/11/2026) ─────────────────────
+//
+// The owner: "os bichos aquáticos têm que ficar submersos ... e só emergirem
+// para atacar, e emergir não é ficar flutuando acima da água, é tipo aparecer
+// só a cabeça". At sea the Reef Shark and the Tiger Eel swim UNDER the
+// surface: the model is not drawn at all while they cruise (the water shows
+// their shadow, the shark's fin and the eel's humps: `mar_combate_ui`). For
+// the bite (the 0.9 s wind-up, `navio::MORDIDA_PREPARO_S`, and the strike)
+// the model rises nose-up so only the HEAD and jaws break the surface; the
+// sea's shallows are see-through, so whatever is
+// below the waves is dropped by the waterline clip
+// (`gpu_estatica::define_linha_dagua`, one `discard` in the world shader),
+// so the result is the same however clear the water is there. After
+// the bite it sinks back. Dead, it rolls belly-up at the surface, then sinks.
+
+/// A shark or an eel of the open sea (not the Abyssia's, which swim in air).
+fn e_do_mar(kind: u16, e: &crate::world::Ent) -> bool {
+    matches!(kind, 70 | 72) && e.state.flags & shared::ent_flags::BOSS == 0 && crate::mar_ui::no_mar()
+}
+
+thread_local! {
+    /// How far each sea mob has risen, 0 (under) .. 1 (head out), and when
+    /// that was last advanced (so two reads in one frame do not double it).
+    static EMERSAO: RefCell<std::collections::HashMap<shared::EntityId, (f32, f64)>> = RefCell::new(std::collections::HashMap::new());
+}
+/// Rising takes this long (well inside the 0.9 s wind-up)...
+const SOBE_S: f32 = 0.35;
+/// ...sinking back this long.
+const DESCE_S: f32 = 0.6;
+
+/// How far the sea mob `id` has risen now (0..1), for the water's decals.
+pub fn emersao(id: shared::EntityId) -> f32 {
+    EMERSAO.with(|m| m.borrow().get(&id).map_or(0.0, |v| v.0))
+}
+
+/// Advances `id`'s rise toward `ativo` (biting) by the time since last.
+fn avanca_emersao(id: shared::EntityId, ativo: bool) -> f32 {
+    let agora = get_time();
+    EMERSAO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() > 96 {
+            m.retain(|_, v| agora - v.1 < 5.0);
+        }
+        let v = m.entry(id).or_insert((0.0, agora));
+        let dt = ((agora - v.1) as f32).clamp(0.0, 0.25);
+        v.0 = if ativo { (v.0 + dt / SOBE_S).min(1.0) } else { (v.0 - dt / DESCE_S).max(0.0) };
+        v.1 = agora;
+        v.0
+    })
+}
+
+/// For the previews: put `id` at rise `v` now.
+#[cfg(debug_assertions)]
+pub fn define_emersao(id: shared::EntityId, v: f32) {
+    EMERSAO.with(|m| {
+        m.borrow_mut().insert(id, (v.clamp(0.0, 1.0), get_time()));
+    });
+}
+
+fn suave(x: f32) -> f32 {
+    let x = x.clamp(0., 1.);
+    x * x * (3. - 2. * x)
+}
+
+fn desenha_submerso(e: &crate::world::Ent, kind: u16, p: Vec3, scale: f32, elite: bool) {
+    let agora = get_time();
+    let t = agora as f32;
+    let (onda, _) = crate::agua::onda_em(p.x, p.z, t);
+    let agua = crate::agua::ALTURA_DA_AGUA + onda;
+    let yaw = e.yaw;
+    let forward = Quat::from_rotation_y(yaw) * Vec3::Z;
+    let phase = t * 3.5 + (e.meta.id.0 % 113) as f32;
+    // Only what is over the water is drawn (the waterline clip): the rest of
+    // the body is the water's dark shadow decal.
+    let corpo = |transform: Mat4, swing: f32| {
+        crate::gpu_estatica::define_linha_dagua(Some(agua - 0.03));
+        MODELS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let m = cache.entry(kind).or_insert_with(|| model(kind));
+            let program = Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0. };
+            crate::gpu_estatica::desenha_com_modelo(program, m.body.iter(), transform);
+            crate::gpu_estatica::desenha_com_modelo(
+                program,
+                m.tail.iter(),
+                transform * Mat4::from_translation(m.pivot) * Mat4::from_quat(Quat::from_rotation_y(swing)),
+            );
+        });
+        crate::gpu_estatica::define_linha_dagua(None);
+    };
+    // DEAD: belly-up at the surface, then down.
+    if let Some(morte) = e.morte {
+        if morte > 3.2 {
+            return;
+        }
+        let rola = suave(morte / 0.6);
+        let afunda = suave((morte - 1.4) / 1.8);
+        let y = agua - 0.12 * scale - afunda * 2.4 * scale;
+        let transform = Mat4::from_scale_rotation_translation(
+            Vec3::splat(scale),
+            Quat::from_rotation_y(yaw) * Quat::from_rotation_z(std::f32::consts::PI * rola) * Quat::from_rotation_x(afunda * 0.5),
+            vec3(p.x, y, p.z),
+        );
+        corpo(transform, 0.0);
+        return;
+    }
+    let ativo = e.ataque_mob.is_some_and(|(_, dt, impacto)| dt < impacto + 0.3);
+    let sobe = avanca_emersao(e.meta.id, ativo);
+    if sobe < 0.02 {
+        // Cruising: all of it under the water; the decals tell where.
+        return;
+    }
+    let s = suave(sobe);
+    let pose = crate::hidra::pose(e, agora);
+    // Nose up, the origin under the water: only the head breaks it. An
+    // eel rears steeper; an elite shows a little more of head and shoulders.
+    let (inclina, fundo) = match (kind, elite) {
+        (72, false) => (0.8, 0.82),
+        (72, true) => (0.92, 0.7),
+        (_, false) => (0.6, 0.55),
+        (_, true) => (0.72, 0.45),
+    };
+    let escondido = 1.6;
+    let y = agua - scale * (escondido + (fundo - escondido) * s);
+    let position = vec3(p.x, y, p.z) + forward * (scale * (0.35 * s + pose.strike * 0.3));
+    let transform = Mat4::from_scale_rotation_translation(
+        Vec3::splat(scale),
+        Quat::from_rotation_y(yaw) * Quat::from_rotation_x(-inclina * s + pose.strike * 0.22 - pose.wind * 0.06),
+        position,
+    );
+    corpo(transform, phase.sin() * (0.22 + pose.strike * 0.3));
+}
+
 pub fn desenha(kind: u16, p: Vec3, yaw: f32, seed: u64, scale: f32) -> bool {
     desenha_pose(kind, p, yaw, seed, scale, Default::default())
 }

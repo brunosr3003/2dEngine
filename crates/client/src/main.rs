@@ -122,6 +122,7 @@ mod config_combate;
 mod config_graficos;
 mod benchmark;
 mod filme;
+mod filme_luta;
 mod relogio;
 mod benchmark_ui;
 mod config_interface;

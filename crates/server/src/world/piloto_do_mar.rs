@@ -44,8 +44,11 @@ const LARGA: f32 = 40.0;
 const BORDADA_ALCANCE: f32 = 11.6;
 /// The Long Gun's, under 22 m.
 const LONGO_ALCANCE: f32 = 21.5;
-/// A mob closer than this pushes the hull away (a bite reaches ~2 m).
-const PERTO_DEMAIS: f32 = 6.0;
+/// A mob closer than this pushes the hull away (a bite reaches ~2 m). It was
+/// 6 m until the sea mobs came to hold off the beam
+/// (`navio::COSTADO_DO_BICHO`, 17/11/2026): pushing off every mob there kept
+/// the hull dodging instead of fighting.
+const PERTO_DEMAIS: f32 = 3.0;
 /// Further than this beyond the orbit: sail straight at the target.
 const APROXIMA: f32 = 7.0;
 /// Moved less than `PRESO_M` in `PRESO_S`: stuck, circle the other way.
@@ -201,9 +204,13 @@ impl GameWorld {
                 s.piloto.alvo = None;
             }
             if !no_corredor && sem_rota && agora >= volta_em {
+                // A PK captain cannot sail into peaceful waters: the
+                // nearest dock it may reach.
+                let barrado = self.sessions.get(&sid).is_some_and(|s| self.pk_barrado(s));
                 let cais = shared::mar::ilhas()
                     .iter()
                     .map(|i| i.fundeadouro())
+                    .filter(|c| !barrado || !shared::mar::aguas_pacificas(*c))
                     .min_by(|a, b| a.distance(p).total_cmp(&b.distance(p)));
                 if let Some(cais) = cais {
                     self.rota_no_mar(sid, p, cais);
@@ -343,10 +350,14 @@ impl GameWorld {
                 dir += (casa - p).normalize_or_zero() * ((longe - 8.0) / 6.0).clamp(0.0, 1.0);
             }
         }
-        // The bite telegraph: a swing at us — sail straight off the biter.
+        // The bite telegraph: a swing at us — full ahead, leaning off the
+        // biter. The mob holds still for its wind-up, so a hull under way is
+        // out of reach before the jaws close; running STRAIGHT off it (as
+        // before 17/11/2026) dragged the fight off the nest once the mobs
+        // came at the sides and bit more often, and the leash healed them.
         for g in self.pending_melee.iter().filter(|g| !g.from_player && g.target == Some(eu) && g.impact_at >= agora) {
             let fora = (p - g.pos).try_normalize().unwrap_or(-u);
-            dir = fora * 1.6 + tangente * 0.4;
+            dir = dir.normalize_or_zero() + fora * 0.7;
             acelera = 1.0;
         }
         // Nobody gets close: every mob inside `PERTO_DEMAIS` pushes the hull.
@@ -765,6 +776,85 @@ mod testes {
                 assert!(p.longe_max < 60.0, "{nome} wandered off: {}", resumo("", &p));
             }
         }
+    }
+
+    /// THE MOBS COME AT THE SIDES (owner, 17/11/2026: "eles ficam quase
+    /// sempre atrás do barco e fica meio difícil de acertar"): a ship
+    /// sailing STRAIGHT through a nest, at a pace the mobs can match, has
+    /// the mobs chasing it inside the Broadside's arc (`navio::no_costado`)
+    /// most of the time they are in its reach — not trailing in the wake.
+    #[test]
+    fn o_bicho_persegue_pelo_costado_e_nao_pela_popa() {
+        let (mut w, sid, centro) = no_ninho(0);
+        let mut n = 0u32;
+        for _ in 0..(shared::TICK_RATE_HZ * 4) {
+            n += 1;
+            input(&mut w, sid, n);
+            w.step(shared::TICK_DT);
+        }
+        // The bodies only (no leash: the test is the chase, not the way home).
+        let mut rapido = 0.0f32;
+        for (_, t) in w.ecs.query_mut::<&mut EnemyTag>() {
+            t.leash_max = 0.0;
+            t.spawn_grace_until = 0.0;
+            rapido = rapido.max(t.locomotor_speed);
+        }
+        // A straight line of open water that runs past the nest.
+        let rumo = (0..32)
+            .map(|i| gira(Vec2::X, i as f32 * std::f32::consts::TAU / 32.0))
+            .find(|d| {
+                let lado = Vec2::new(-d.y, d.x);
+                let inicio = centro + lado * 6.0 - *d * 14.0;
+                (0..=40).all(|k| {
+                    let q = inicio + *d * (k as f32 * 3.0);
+                    agua(q) && !shared::mar::no_corredor(q)
+                })
+            })
+            .expect("no straight water past the nest");
+        let lado = Vec2::new(-rumo.y, rumo.x);
+        let e = w.sessions[&sid].entity.unwrap();
+        w.ecs.get::<&mut Position>(e).unwrap().0 = centro + lado * 6.0 - rumo * 14.0;
+        let (navio_id, d) = w.navio_equipado(sid).unwrap();
+        // At 80% of the mobs' own pace.
+        let forca = (rapido * 0.8 / nv::velocidade_do_navio(navio_id, &d)).clamp(0.1, 1.0);
+        let (mut dentro, mut total) = (0u32, 0u32);
+        let t0 = w.sim_time_s;
+        while w.sim_time_s - t0 < 22.0 {
+            n += 1;
+            w.sessions.get_mut(&sid).unwrap().pending_input = Some(shared::protocol::InputFrame {
+                seq: n,
+                tick: n,
+                move_dir: rumo * forca,
+                aim: Vec2::ZERO,
+                buttons: 0,
+            });
+            w.step(shared::TICK_DT);
+            if w.sim_time_s - t0 < 2.0 {
+                continue;
+            }
+            let p = w.pos_do_jogador(sid).unwrap();
+            let rumo_agora = w.rumo_do_casco(sid, e);
+            let log = std::env::var("MMO_COSTADO_LOG").is_ok() && n % 10 == 0;
+            for (_, (pos, t, h)) in w.ecs.query::<(&Position, &EnemyTag, &Health)>().iter() {
+                if log {
+                    let r = rumo_agora.normalize_or_zero();
+                    let q = pos.0 - p;
+                    eprintln!("t={:.1} ao_longo={:.1} de_lado={:.1} cd={:.1} V={} {}", w.sim_time_s - t0, q.dot(r), q.dot(Vec2::new(r.y, -r.x)), t.attack_cooldown, t.returning_home, nv::no_costado(p, rumo_agora, pos.0));
+                }
+                if t.dead || h.current <= 0 || t.returning_home || pos.0.distance(p) > BORDADA_ALCANCE {
+                    continue;
+                }
+                total += 1;
+                if nv::no_costado(p, rumo_agora, pos.0) {
+                    dentro += 1;
+                }
+            }
+        }
+        let parte = dentro as f32 / total.max(1) as f32;
+        let alcance = w.ecs.query::<&EnemyTag>().iter().map(|(_, t)| t.attack_range).fold(0.0f32, f32::max);
+        eprintln!("NO COSTADO: {:.0}% de {} amostras (navio a {:.1} u/s, bicho {:.1} u/s, mordida {alcance:.1} m)", parte * 100.0, total, forca * nv::velocidade_do_navio(navio_id, &d), rapido);
+        assert!(total > shared::TICK_RATE_HZ as u32 * 10, "the mobs hardly chased: {total} samples");
+        assert!(parte > 0.6, "only {:.0}% of the chase inside the Broadside's arc", parte * 100.0);
     }
 
     /// THE ELITE NEST (the route's second: the Dread elite and two more):

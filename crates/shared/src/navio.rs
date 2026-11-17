@@ -614,6 +614,10 @@ impl Visual {
 
 // ─────────────────────────── ship skills ───────────────────────────
 
+/// World bosses drop a Colossus Chest for the ship's deck? OFF since
+/// 17/11/2026: bosses drop only their normal loot again.
+pub const BAU_DO_COLOSSO_LIGADO: bool = false;
+
 /// What a ship skill does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Efeito {
@@ -721,7 +725,11 @@ pub const FUMACA_VELOCIDADE_S: f32 = 4.0;
 pub const FUMACA_MULT: f32 = 1.3;
 /// Broadside: an enemy is "off the beam" when the angle between the heading
 /// and it has |cos| at most this (the bow and the stern are blind).
-pub const BORDADA_COS_MAX: f32 = 0.8;
+///
+/// 0.85 = ±58° round the beam, the front and rear QUARTERS included; the
+/// blind cones at the bow and the stern are ±32° (17/11/2026, with the sea
+/// mobs coming at the sides; it was 0.8, ±53°).
+pub const BORDADA_COS_MAX: f32 = 0.85;
 /// Cannon fire against another player's HULL takes this share (hull vs
 /// hull; the PK modes decide whether it may happen at all).
 pub const PVP_CANHAO: f32 = 1.0;
@@ -913,13 +921,10 @@ pub fn mult_do_tesouro(t: &crate::items::Tesouro, bonus: f32) -> f32 {
 /// The island counts only after a real CROSSING: docking back where you
 /// cast off from counts nothing. Returns whether it counted now.
 pub fn conta_atracacao(t: &mut crate::items::Tesouro, ilha: usize, de: &str) -> bool {
-    // The Magic Island counts too (`mar::ILHA_MAGICA`, bit 7), and any of its
-    // tiers is the same island.
     let Some(zona) = crate::mar::zona_do_indice(ilha) else {
         return false;
     };
-    let mesma = zona == de || (crate::magica::e_magica(zona) && crate::magica::e_magica(de));
-    if ilha >= 8 || mesma {
+    if ilha >= 8 || zona == de {
         return false;
     }
     let bit = 1u8 << ilha;
@@ -1213,6 +1218,16 @@ mod testes {
         assert!(HABILIDADES[2].espera_s >= 45.0, "Emergency Repair has a long cooldown");
         assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::Y, glam::Vec2::X * 5.0));
         assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, glam::Vec2::Y * 5.0), "the bow is blind");
+        assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, -glam::Vec2::Y * 5.0), "the stern is blind");
+        // The arc: ±58° round the beam, so the quarters count (35° off the
+        // bow or the stern bears, 28° does not).
+        let a = |graus: f32| glam::Vec2::from_angle(std::f32::consts::FRAC_PI_2 - graus.to_radians()) * 6.0;
+        for graus in [35.0f32, 60.0, 90.0, 120.0, 145.0, -35.0, -145.0] {
+            assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)), "{graus}° off the bow should bear");
+        }
+        for graus in [0.0f32, 28.0, 152.0, 180.0, -28.0, -152.0] {
+            assert!(!no_costado(glam::Vec2::ZERO, glam::Vec2::Y, a(graus)), "{graus}° off the bow should be blind");
+        }
         assert!(no_costado(glam::Vec2::ZERO, glam::Vec2::ZERO, glam::Vec2::Y * 5.0), "standing still fires all round");
     }
 

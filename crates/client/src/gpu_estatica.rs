@@ -286,6 +286,14 @@ pub fn define_oco(centro: macroquad::math::Vec2, meio_lado: f32) {
     OCO.with(|o| o.set([centro.x, centro.y, meio_lado.max(0.0)]));
 }
 
+/// THE WATERLINE: everything drawn after this skips what is under world
+/// `y` (a sea mob's head breaking the surface, `marinhos`). Shares the
+/// hole's uniform (z < 0 = waterline). `None` turns it off; always turn it
+/// off after.
+pub fn define_linha_dagua(y: Option<f32>) {
+    OCO.with(|o| o.set(y.map_or([0.0; 3], |y| [y, 0.0, -1.0])));
+}
+
 fn oco() -> [f32; 3] {
     OCO.with(|o| o.get())
 }

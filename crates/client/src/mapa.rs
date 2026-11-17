@@ -1103,6 +1103,24 @@ fn aguas_sem_lei(zona: Option<&str>, ponto: impl Fn(Vec2) -> Vec2, escala: f32, 
     let k = if mini { 1.0 } else { u(1.0) };
     let raio = shared::mar::RAIO_SEM_LEI * escala;
     let vermelho = Color::new(1.0, 0.27, 0.22, 1.0);
+    // THE PEACEFUL WATERS' EDGE (17/11/2026: no PvP in the waters of the
+    // first three islands): a dashed pale line, each 12 u piece of the
+    // boundary drawn at its middle 55% so it reads dashed at any zoom.
+    let paz = Color::new(0.62, 0.92, 1.0, 0.8);
+    for (a, b) in shared::mar::fronteira_pacifica() {
+        let (a, b) = (ponto(vec2(a.x, a.y)), ponto(vec2(b.x, b.y)));
+        let (a, b) = (a.lerp(b, 0.225), a.lerp(b, 0.775));
+        if let Some((a, b)) = corta_no_disco(a, b, recorte) {
+            draw_line(a.x, a.y, b.x, b.y, 1.4 * k, paz);
+        }
+    }
+    if !mini {
+        if let Some(b) = shared::mar::vista_da_zona("ilha_inicial") {
+            let q = ponto(vec2(b.centro.x, b.centro.y + b.raio + 26.0));
+            estilo::texto_centro(q.x + 1.0, q.y + 1.0, "Peaceful waters", tamanho, Color::new(0.0, 0.0, 0.0, 0.85));
+            estilo::texto_centro(q.x, q.y, "Peaceful waters", tamanho, paz);
+        }
+    }
     for c in shared::mar::zonas_sem_lei() {
         let q = ponto(vec2(c.x, c.y));
         // Off the minimap's disc altogether: nothing to draw.

@@ -21,7 +21,7 @@ use macroquad::material::{gl_use_default_material, gl_use_material, Material};
 use macroquad::prelude::*;
 
 use crate::config_graficos as cg;
-use shared::{EntityId, EntityMeta, EntityState, EntityTag};
+use shared::{EntityId, EntityState, EntityTag};
 
 /// Frames per second of the film, and the fixed step.
 pub const QPS: u32 = 60;
@@ -182,39 +182,27 @@ struct Elenco {
     chefe: Option<u16>,
     /// The aura lineup: everyone in a row, facing the camera, no mobs.
     fila: bool,
-    /// Ring radius of the players.
+    /// Ring radius of the players (only the boss's reach since the fights).
     roda: f32,
+    /// The fights: how many clearings, how far from the focus, how far
+    /// apart, players and mobs per clearing (`filme_luta`).
+    plano: Plano,
 }
 
-fn meta(id: u32, tag: EntityTag, kind: u16, auras: u64, renascimentos: u8, aparencia: u32, hp: u32) -> EntityMeta {
-    EntityMeta {
-        skins: 0,
-        cla: String::new(),
-        pk: Default::default(),
-        auras,
-        id: EntityId(id),
-        tag,
-        name: None,
-        hp_max: hp,
-        faction: None,
-        kind,
-        nivel: 80,
-        desafio: None,
-        aparencia,
-        poder: 0,
-        renascimentos,
-    }
+#[derive(Clone)]
+struct Plano {
+    clareiras: usize,
+    perto: f32,
+    longe: f32,
+    entre: f32,
+    jogadores: Vec<usize>,
+    mobs: Vec<usize>,
 }
 
-fn aparencia_de(k: u32) -> u32 {
-    shared::aparencia::Aparencia {
-        rosto: (k % 6) as u8 + 1,
-        cabelo: (k * 3 % 9) as u8 + 1,
-        cor_cabelo: (k * 5 % 7) as u8,
-        pele: (k % 4) as u8 + 1,
-        ..Default::default()
+impl Default for Plano {
+    fn default() -> Self {
+        Self { clareiras: 4, perto: 4.0, longe: 30.0, entre: 13.0, jogadores: vec![3, 3, 2, 3], mobs: vec![4, 5, 3, 4] }
     }
-    .empacota()
 }
 
 // ── the frame context ────────────────────────────────────────────────────
@@ -240,15 +228,16 @@ struct Ilha {
     terreno: crate::terreno::Terreno,
     casas: crate::construcoes::Construcoes,
     mundo: crate::world::World,
-    luz: Option<Material>,
     foco: Vec2,
     elenco: Elenco,
     tomadas: Vec<Tomada>,
     noite: bool,
     abismo: bool,
     relogio: f32,
-    proximo_passo: f32,
-    proxima_dano: f32,
+    /// The fights (none in the aura lineup).
+    luta: Option<crate::filme_luta::Luta>,
+    /// The clearings the fights happen in.
+    clareiras: Vec<Vec2>,
 }
 
 impl Ilha {
@@ -259,90 +248,85 @@ impl Ilha {
             terreno: crate::terreno::Terreno::novo(def),
             casas: crate::construcoes::Construcoes::para(Some(def)),
             mundo: crate::world::World::default(),
-            luz: None,
             foco,
             elenco,
             tomadas,
             noite,
             abismo,
             relogio: 0.0,
-            proximo_passo: 0.0,
-            proxima_dano: 0.0,
+            luta: None,
+            clareiras: Vec::new(),
         };
         s.povoa();
         s
     }
 
-    fn centro_da_roda(&self) -> Vec2 {
-        self.foco
+    /// The camera paths, once the clearings are known.
+    fn com_tomadas(mut self, f: impl Fn(Vec2, &[Vec2]) -> Vec<Tomada>) -> Self {
+        let t = f(self.foco, &self.clareiras);
+        if !t.is_empty() {
+            self.tomadas = t;
+        }
+        self
     }
 
     fn povoa(&mut self) {
         let el = self.elenco.clone();
-        let combate = shared::components::acao::monta(0, true, 0, 0);
-        let mut metas = vec![meta(EU, EntityTag::Player, 0, 0, el.renascimentos, aparencia_de(0), 1000)];
-        for (k, r) in el.jogadores.iter().enumerate() {
-            let tier = (k % 4) as u64;
-            let bits = if el.fila { 0 } else { (0..shared::auras::SLOTS).fold(0u64, |b, s| b | ((3 | (tier << 3)) << (s * 8))) };
-            metas.push(meta(10 + k as u32, EntityTag::Player, 0, bits, *r, aparencia_de(k as u32 + 1), 1000));
-        }
-        if let Some(kind) = el.chefe {
-            metas.push(meta(CHEFE, EntityTag::Enemy, kind, 0, 0, 0, 100_000));
-        }
-        for k in 0..el.inimigos {
-            metas.push(meta(100 + k, EntityTag::Enemy, el.kinds[k as usize % el.kinds.len()], 0, 0, 0, 1000));
-        }
-        let mut estados = self.posicoes(0.0);
-        for s in &mut estados {
-            s.acao = combate;
-        }
-        self.mundo.apply(metas, estados, &[]);
-    }
-
-    /// Everyone on slowly turning rings (the benchmark's crowd), or in a row.
-    fn posicoes(&self, t: f32) -> Vec<EntityState> {
-        let el = &self.elenco;
-        let combate = shared::components::acao::monta(0, !el.fila, 0, 0);
-        let c = self.centro_da_roda();
-        let g = |p: Vec2| ::glam::Vec2::new(p.x, p.y);
-        let mut v = Vec::new();
-        let est = |id: u32, p: Vec2, d: Vec2, hp: i32, flags: u8| {
-            let mut s = EntityState::quantize(EntityId(id), g(p), g(d), hp, flags);
-            s.acao = combate;
-            s
-        };
         if el.fila {
-            let n = el.jogadores.len() as f32 + 1.0;
-            let x0 = -(n - 1.0) * 0.5 * 2.6;
-            v.push(est(EU, c + vec2(x0, 0.0), Vec2::ZERO, 1000, shared::ent_flags::SELF));
-            for k in 0..el.jogadores.len() as u32 {
-                v.push(est(10 + k, c + vec2(x0 + (k as f32 + 1.0) * 2.6, 0.0), Vec2::ZERO, 1000, 0));
+            // The showcase: cash outfits, weapon skins, gear and rebirth
+            // auras, weapons in hand, in a row.
+            let herois = &crate::filme_luta::HEROIS;
+            let n = herois.len() as f32;
+            let x0 = -(n - 1.0) * 0.5 * 2.7;
+            let g = |p: Vec2| ::glam::Vec2::new(p.x, p.y);
+            let mut metas = Vec::new();
+            let mut estados = Vec::new();
+            for (k, h) in herois.iter().enumerate() {
+                let id = if k == 0 { EU } else { 10 + k as u32 - 1 };
+                metas.push(h.meta(id, k as u32));
+                let mut st = EntityState::quantize(EntityId(id), g(self.foco + vec2(x0 + k as f32 * 2.7, 0.0)), g(Vec2::ZERO), 1000, 0);
+                st.acao = shared::components::acao::monta(h.conjunto(), true, 0, 0);
+                estados.push(st);
             }
-            return v;
+            self.mundo.apply(metas, estados, &[]);
+            return;
         }
-        let no_anel = |raio: f32, a: f32, vel: f32| (c + vec2(a.cos(), a.sin()) * raio, vec2(-a.sin(), a.cos()) * vel);
-        // With a boss, it takes the middle and I join the ring.
-        if el.chefe.is_some() {
-            let (p, d) = no_anel(el.roda, 1.2 + t * 0.15, 0.4);
-            v.push(est(EU, p, d, 1000, shared::ent_flags::SELF));
-            let hp = (1000.0 - (t * 9.0) % 700.0) as i32;
-            v.push(est(CHEFE, c, Vec2::ZERO, hp, shared::ent_flags::BOSS | shared::ent_flags::ATACANDO));
+        // The fights: clearings spread round the focus (`filme_luta`).
+        let ilha = std::rc::Rc::new(shared::terreno::Ilha::da_ilha(self.def));
+        let ger = std::rc::Rc::new(shared::terreno::Gerador::da_ilha(self.def));
+        let livre = {
+            let (ilha, ger) = (ilha.clone(), ger.clone());
+            move |p: Vec2| {
+                let q = ::glam::Vec2::new(p.x, p.y);
+                if ilha.ocupado(q, 0.38) || ilha.agua(p.x, p.y) {
+                    return false;
+                }
+                // No cliffs: one block of step at most round the body.
+                let h = ger.altura(p.x, p.y);
+                [(0.5f32, 0.0f32), (-0.5, 0.0), (0.0, 0.5), (0.0, -0.5)]
+                    .iter()
+                    .all(|(dx, dz)| (ger.altura(p.x + dx, p.y + dz) - h).abs() <= 0.55)
+            }
+        };
+        let p = &el.plano;
+        let clareiras = if el.chefe.is_some() {
+            vec![self.foco]
         } else {
-            v.push(est(EU, c, Vec2::ZERO, 1000, shared::ent_flags::SELF));
-        }
-        let n = el.jogadores.len().max(1) as f32;
-        for k in 0..el.jogadores.len() as u32 {
-            let a = k as f32 / n * std::f32::consts::TAU + t * 0.15;
-            let (p, d) = no_anel(el.roda, a, 0.4);
-            v.push(est(10 + k, p, d, 1000, 0));
-        }
-        for k in 0..el.inimigos {
-            let anel = el.roda + 1.9 + (k % 3) as f32 * 1.8;
-            let a = k as f32 * 2.399 + t * 0.25;
-            let (p, d) = no_anel(anel, a, 1.2);
-            v.push(est(100 + k, p, d, 800, shared::ent_flags::ATACANDO));
-        }
-        v
+            let altura = |x: f32, z: f32| ger.altura(x, z);
+            crate::filme_luta::clareiras(self.foco, p.clareiras, p.perto, p.longe, p.entre, &livre, &altura)
+        };
+        println!(
+            "[filme] {} clearings: {:?}",
+            clareiras.len(),
+            clareiras.iter().map(|c| ((c.x - self.foco.x) as i32, (c.y - self.foco.y) as i32)).collect::<Vec<_>>()
+        );
+        let (jogadores, mobs) =
+            if el.chefe.is_some() { (vec![el.jogadores.len() + 1], vec![0]) } else { (p.jogadores.clone(), p.mobs.clone()) };
+        let semente = self.def.semente as u64 ^ 0x51_7cc1;
+        let mut luta = crate::filme_luta::Luta::nova(&clareiras, &jogadores, &mobs, &el.kinds, el.chefe, semente, Box::new(livre));
+        luta.passo(&mut self.mundo, 0.0);
+        self.luta = Some(luta);
+        self.clareiras = clareiras;
     }
 
     fn duracoes(&self) -> Vec<f32> {
@@ -356,17 +340,16 @@ impl Ilha {
 
     /// Bakes toward the shot's start; `true` once all of it is in.
     fn prepara(&mut self, i: usize, ctx: &Contexto) -> bool {
+        // Round the shot's start only: the loaded square is far wider than
+        // the frame (`RAIO_DA_CAPTURA`), and the rest of the path streams
+        // in under the haze as the camera moves. Baking three centres made
+        // each evict the others' far chunks.
         let raio = ctx.escolha.raio;
         self.casas.acompanhar();
-        let mut pronto = self.casas.prontas();
-        // The whole path: the start, the middle and the end.
-        for u in [0.0, 0.5, 1.0] {
-            let a = self.alvo(i, u);
-            self.terreno.atualiza(a, raio, 64);
-            let (feitos, total) = self.terreno.prontos_em(a, raio);
-            pronto &= feitos >= total;
-        }
-        pronto
+        let a = self.alvo(i, 0.0);
+        self.terreno.atualiza(a, raio, 96);
+        let (feitos, total) = self.terreno.prontos_em(a, raio);
+        self.casas.prontas() && feitos >= total
     }
 
     fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) {
@@ -376,41 +359,19 @@ impl Ilha {
         let alvo = self.foco + vec2(c.dx, c.dz);
         let e = &ctx.escolha;
         self.casas.acompanhar();
-        self.terreno.atualiza(alvo, e.raio, 24);
-        if self.relogio >= self.proximo_passo {
-            self.proximo_passo = self.relogio + 0.25;
-            let estados = self.posicoes(self.relogio);
-            self.mundo.apply(Vec::new(), estados, &[]);
+        self.terreno.atualiza(alvo, e.raio, 32);
+        if let Some(l) = &mut self.luta {
+            l.passo(&mut self.mundo, DT);
         }
         let t_ = &self.terreno;
         self.mundo.tick(DT, &|x, z, _| t_.altura(x, z));
         let fila = self.elenco.fila;
-        for (id, ent) in self.mundo.ents.iter_mut() {
-            ent.sacada = 1.0;
-            if ent.meta.tag == EntityTag::Enemy && ent.golpe > 0.9 + (id.0 % 5) as f32 * 0.2 {
-                ent.golpe = 0.0;
-            }
-            if fila {
-                // Facing the camera.
+        if fila {
+            for ent in self.mundo.ents.values_mut() {
+                // Weapons in hand, facing the camera.
+                ent.sacada = 1.0;
                 ent.yaw = c.yaw;
             }
-        }
-        let alvos: Vec<u32> = if self.elenco.chefe.is_some() {
-            vec![CHEFE]
-        } else {
-            (0..self.elenco.inimigos).map(|k| 100 + k).collect()
-        };
-        if !fila && !alvos.is_empty() && self.relogio >= self.proxima_dano {
-            self.proxima_dano = self.relogio + if self.elenco.chefe.is_some() { 0.11 } else { 0.07 };
-            let k = (self.relogio * 1000.0) as u32;
-            self.mundo.efeitos.push(crate::world::Efeito {
-                alvo: EntityId(alvos[k as usize % alvos.len()]),
-                dano: if self.elenco.chefe.is_some() { 4000 + (k * 37 % 9000) as i32 } else { 900 + (k * 37 % 4000) as i32 },
-                critico: k % 4 == 0,
-                eu: false,
-                t: 0.0,
-                semente: (k % 1000) as f32 / 1000.0,
-            });
         }
         let t = &self.terreno;
         let chao = |x: f32, z: f32| t.altura(x, z);
@@ -422,10 +383,11 @@ impl Ilha {
         let luz = crate::render3d::luz_dia(if e.sombras == cg::Sombras::Bonitas { 1.0 } else { 0.0 });
         solido.set_uniform("LuzDia", luz);
         crate::gpu_estatica::define_luz_dia(luz);
-        let (inicio, fim) = cg::neblina();
-        // A pulled-back camera sees farther: the haze goes with it.
-        let longe = (vista.cam.position - vista.cam.target).length();
-        let (inicio, fim) = (inicio + longe * 0.5, fim + longe * 0.5);
+        // The haze is solid a chunk INSIDE the loaded square, never past
+        // it: pushed out with a pulled-back camera (as it was) it showed the
+        // square's edge, trees cut along a line (the owner, 17/11/2026).
+        // The square is wide (`RAIO_DA_CAPTURA`), so the haze starts far.
+        let (inicio, fim) = neblina_da_captura();
         let inicio = if self.noite { -inicio.max(0.01) } else { inicio };
         crate::gpu_estatica::define_neblina(alvo, inicio, fim);
         solido.set_uniform("Neblina", vec4(alvo.x, alvo.y, inicio, fim));
@@ -451,38 +413,11 @@ impl Ilha {
         crate::luzes::preparar(false, Vec2::ZERO, &|_, _| 0.0);
         apaga_luz_e_neblina(solido);
         gl_use_default_material();
-        if !fila && !alvos.is_empty() {
-            let luz = self.luz.get_or_insert_with(crate::habilidades_vfx::material);
-            // On a boss, three casters in turn: seven at once bury it in light.
-            let lancadores = if self.elenco.chefe.is_some() { 3 } else { 1 + self.elenco.jogadores.len() as u32 };
-            for k in 0..lancadores {
-                let id = if k == 0 { EU } else { 10 + k - 1 };
-                let Some(de) = self.mundo.ents.get(&EntityId(id)).map(|x| x.render_pos) else { continue };
-                let Some(a) = self.mundo.ents.get(&EntityId(alvos[(k as usize * 5) % alvos.len()])).map(|x| x.render_pos) else { continue };
-                let de3 = vec3(de.x, t.altura(de.x, de.y), de.y);
-                let alvo3 = vec3(a.x, t.altura(a.x, a.y), a.y);
-                let skill = 1 + (k % 12);
-                let ciclo = crate::habilidades_vfx::duracao(skill) + 0.4;
-                let passo = if self.elenco.chefe.is_some() { ciclo / 3.0 } else { 0.37 };
-                let fase = (self.relogio + k as f32 * passo) % ciclo;
-                let frente = vec3(alvo3.x - de3.x, 0.0, alvo3.z - de3.z).normalize_or_zero();
-                let cena = |impacto: bool, tt: f32| crate::habilidades_vfx::Cena {
-                    id: skill,
-                    de: de3,
-                    alvo: alvo3,
-                    maos: [de3 + Vec3::Y * 1.2; 2],
-                    t: tt,
-                    impacto,
-                    atraso: 0.4,
-                    raio: 3.0,
-                    frente,
-                    tier: 10,
-                };
-                crate::habilidades_vfx::desenha(&cena(false, fase.min(0.9)), luz);
-                if fase > 0.4 {
-                    crate::habilidades_vfx::desenha(&cena(true, fase - 0.4), luz);
-                }
-            }
+        if let Some(l) = &mut self.luta {
+            // The boss's slams on the ground, then the skills as the game
+            // draws them (`habilidades`, on the fixed clock).
+            l.telegrafos.desenha(&chao, crate::relogio::get_time());
+            l.habilidades.desenha_efeitos(&self.mundo, &vista);
             gl_use_default_material();
         }
         crate::render3d::camera_padrao();
@@ -490,6 +425,23 @@ impl Ilha {
             crate::efeitos::numeros(&self.mundo, &vista);
         }
     }
+}
+
+/// The capture's view distance, in chunks of 16 u (`MMO_FILME_RAIO`): far
+/// past Ultra's 12, since the capture is not bound by a phone's memory. At
+/// 20 the haze starts ~150 u out and is solid at ~300 u, so trees and
+/// houses never end in a line inside the frame.
+pub const RAIO_DA_CAPTURA: i32 = 20;
+/// At sea the game's own draw band (`mar_cena::faixa_de_desenho`) follows
+/// the radius: pushed out, its dither fade sits far past the frame too.
+pub const RAIO_DA_CAPTURA_NO_MAR: i32 = 18;
+
+/// The haze for the capture's loaded square (`neblina` of the game, which
+/// ends where the square ends, minus a chunk of margin: the square is
+/// centred on the target's chunk, not on the target).
+fn neblina_da_captura() -> (f32, f32) {
+    let fim = (cg::raio_terreno() as f32 - 1.0) * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
+    (fim * 0.5, fim)
 }
 
 fn apaga_luz_e_neblina(solido: &Material) {
@@ -581,7 +533,7 @@ impl Mar {
         let metas = corpos
             .iter()
             .map(|(id, tag, kind, _, _, nome)| {
-                let mut m = meta(*id, *tag, *kind, 0, 0, 0, 100);
+                let mut m = crate::filme_luta::meta(*id, *tag, *kind, 100);
                 m.name = nome.map(String::from);
                 m.nivel = 12;
                 m
@@ -606,8 +558,8 @@ impl Mar {
         }
     }
 
-    fn prepara(&mut self, i: usize, ctx: &Contexto) -> bool {
-        let raio = ctx.escolha.raio.max(cg::RAIO_PADRAO + 1);
+    fn prepara(&mut self, i: usize, _ctx: &Contexto) -> bool {
+        let raio = crate::mar_cena::raio_no_mar().max(cg::RAIO_PADRAO + 1);
         let mut pronto = true;
         for u in [0.0, 0.5, 1.0] {
             let a = self.alvo(i, u);
@@ -622,7 +574,7 @@ impl Mar {
         use shared::navio::Visual;
         let u = t / MAR_TOMADAS[i];
         let yaw_de = |d: Vec2| d.x.atan2(d.y);
-        let raio = ctx.escolha.raio.max(cg::RAIO_PADRAO + 1);
+        let raio = crate::mar_cena::raio_no_mar().max(cg::RAIO_PADRAO + 1);
         let alvo = self.alvo(i, u);
         self.terreno.atualiza(alvo, raio, 24);
         crate::mar_ui::define_no_mar(true);
@@ -766,11 +718,74 @@ fn cidade(def: &'static shared::terreno::DefIlha) -> Vec2 {
 }
 
 fn elenco(renascimentos: u8, jogadores: &[u8], kinds: &[u16], inimigos: u32) -> Elenco {
-    Elenco { renascimentos, jogadores: jogadores.to_vec(), kinds: kinds.to_vec(), inimigos, chefe: None, fila: false, roda: 2.6 }
+    Elenco {
+        renascimentos,
+        jogadores: jogadores.to_vec(),
+        kinds: kinds.to_vec(),
+        inimigos,
+        chefe: None,
+        fila: false,
+        roda: 2.6,
+        plano: Plano::default(),
+    }
 }
 
 fn tomada(segundos: f32, chaves: &[Chave]) -> Tomada {
     Tomada { segundos, chaves: chaves.to_vec() }
+}
+
+/// The Plateau's camera over its clearings: a low glide past the three
+/// nearest in a sweep round the focus, then the pull-up reveal over the
+/// middle of all of them.
+fn tomadas_da_batalha(foco: Vec2, clareiras: &[Vec2]) -> Vec<Tomada> {
+    if clareiras.len() < 3 {
+        return Vec::new();
+    }
+    let mut c: Vec<Vec2> = clareiras.iter().map(|p| *p - foco).collect();
+    c.sort_by(|a, b| a.y.atan2(a.x).total_cmp(&b.y.atan2(b.x)));
+    // The three in a row round the focus that are nearest one another.
+    let n = c.len();
+    let k = (0..n)
+        .min_by(|&i, &j| {
+            let l = |i: usize| c[i].distance(c[(i + 1) % n]) + c[(i + 1) % n].distance(c[(i + 2) % n]);
+            l(i).total_cmp(&l(j))
+        })
+        .unwrap_or(0);
+    let (a, b, d) = (c[k], c[(k + 1) % n], c[(k + 2) % n]);
+    // The camera looks along the sweep: yaw from the travel's direction.
+    // The eye BEHIND each clearing along the sweep, looking ahead along the
+    // ring of fights and a little outward: looking in, the town walls filled
+    // the frame; looking straight out, the rim's cliffs did.
+    // (`render3d::camera` puts the eye at target + (-sin yaw, cos yaw).)
+    let fora = |v: Vec2| v.y.atan2(v.x) + std::f32::consts::PI - 0.35;
+    let (ya, yb, yd) = (fora(a), fora(b), fora(d));
+    // Unwrapped so the path turns the short way.
+    let perto = |de: f32, para: f32| de + (para - de + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+    let yb = perto(ya, yb);
+    let yd = perto(yb, yd);
+    let (y0, y1) = (ya, yd);
+    let meio = c.iter().fold(Vec2::ZERO, |s, p| s + *p) / n as f32;
+    let raio = c.iter().map(|p| p.distance(meio)).fold(0.0f32, f32::max);
+    // Far enough out at the end to hold every clearing.
+    let longe = (raio / 14.0).clamp(2.6, 4.2);
+    vec![
+        tomada(
+            13.0,
+            &[
+                ch(y0, 1.15, 0.62, a.x, a.y),
+                ch(yb, 1.05, 0.58, b.x, b.y),
+                ch(y1, 1.15, 0.62, d.x, d.y),
+            ],
+        ),
+        tomada(
+            10.0,
+            &[
+                ch(y1, 1.15, 0.62, d.x, d.y),
+                ch(y1 + 0.35, 1.8, 0.74, d.x * 0.6 + meio.x * 0.4, d.y * 0.6 + meio.y * 0.4),
+                ch(y1 + 0.7, longe, 0.95, meio.x, meio.y),
+            ],
+        ),
+    ]
 }
 
 /// Scene by name. `None`: this zone cannot be built here.
@@ -821,20 +836,22 @@ fn monta(nome: &str) -> Option<Cena> {
                 false,
             )
         }
-        // The benchmark's big fight, as it was.
+        // The Plateau: fights spread over the map, a low glide past three of
+        // them, then the camera pulls up and back over all of them (the
+        // owner liked that reveal, 17/11/2026).
         "planalto" => {
             let def = &A[3];
-            ilha(
-                def,
-                cidade(def),
-                elenco(15, &[0, 0, 0, 0, 0, 0], &crate::benchmark::KINDS_DO_PLANALTO, 32),
-                vec![
-                    tomada(10.0, &[ch(0.6, 1.0, crate::render3d::pitch_do_zoom(1.0), 0.0, 0.0), ch(1.6, 0.85, crate::render3d::pitch_do_zoom(0.85), 0.0, 0.0)]),
-                    tomada(10.0, &[ch(1.8, 1.0, 0.55, 0.0, 0.0), ch(2.4, 1.5, 0.72, 0.0, 0.0), ch(2.9, 2.6, 0.95, 0.0, 0.0)]),
-                ],
-                false,
-                false,
-            )
+            let mut el = elenco(15, &[], &crate::benchmark::KINDS_DO_PLANALTO, 0);
+            el.plano = Plano {
+                clareiras: 6,
+                perto: 14.0,
+                longe: 58.0,
+                entre: 17.0,
+                jogadores: vec![3, 2, 4, 3, 2, 3],
+                mobs: vec![4, 3, 5, 4, 3, 4],
+            };
+            let s = Ilha::nova(def, cidade(def), el, vec![tomada(1.0, &[ch(0.0, 1.0, 0.6, 0.0, 0.0)])], false, false);
+            Some(Cena::Ilha(Box::new(s.com_tomadas(tomadas_da_batalha))))
         }
         // Skyreach: over the clouds, from island to island.
         "celeste" => {
@@ -902,14 +919,21 @@ fn monta(nome: &str) -> Option<Cena> {
         "mar" => Some(Cena::Mar(Box::new(Mar::novo()))),
         // The six rebirth tiers in a row, the camera dollying past.
         "auras" => {
+            use std::f32::consts::PI;
+            // The eye on the far side of the row (the house was the backdrop),
+            // the target behind the row so the bodies sit low in the frame.
             let def = &A[0];
             let mut el = elenco(1, &[3, 5, 10, 15, 55], &[0], 0);
             el.fila = true;
             ilha(
                 def,
-                cidade(def) + vec2(-28.0, 18.0),
+                // A little off the old spot: a tree hid R15 at the end of the dolly.
+                cidade(def) + vec2(-31.0, 18.0),
                 el,
-                vec![tomada(16.0, &[ch(-0.3, 0.5, 0.3, -7.8, 0.0), ch(0.0, 0.42, 0.26, 0.0, 0.0), ch(0.3, 0.5, 0.3, 7.8, 0.0)])],
+                vec![tomada(
+                    14.0,
+                    &[ch(PI - 0.3, 0.54, 0.3, -4.6, 2.1), ch(PI, 0.5, 0.27, 0.0, 2.0), ch(PI + 0.3, 0.54, 0.3, 4.6, 2.1)],
+                )],
                 false,
                 false,
             )
@@ -919,6 +943,7 @@ fn monta(nome: &str) -> Option<Cena> {
             let def = &A[3];
             let mut el = elenco(15, &[10, 5, 3, 1, 0, 0], &[0], 0);
             el.chefe = Some(22);
+            // Seven players round it: the Luta's boss mode.
             el.roda = 5.0;
             let foco = shared::terreno::Gerador::da_ilha(def).planalto().map_or(cidade(def), |p| v2(p.regioes[0].centro));
             ilha(
@@ -998,7 +1023,9 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
     }
     let solido = crate::render3d::material_solido();
     // Ultra, as the benchmark publishes a preset: only the renderer's statics.
-    let escolha = cg::preset(cg::PRESETS.len() - 1);
+    let mut escolha = cg::preset(cg::PRESETS.len() - 1);
+    let raio_da_captura = std::env::var("MMO_FILME_RAIO").ok().and_then(|s| s.parse().ok()).unwrap_or(RAIO_DA_CAPTURA).clamp(3, 40);
+    escolha.raio = raio_da_captura;
     cg::publica_para_teste(&escolha);
     let rt = render_target_ex(c.w, c.h, RenderTargetParams { depth: true, sample_count: c.amostras });
     rt.texture.set_filter(FilterMode::Linear);
@@ -1006,9 +1033,14 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
     // The 2D over the world (numbers, bars) at the size it has at 1080p.
     crate::render3d::define_escala_do_alvo(c.w.min(c.h) as f32 / 1080.0);
     let aspecto = c.w as f32 / c.h as f32;
-    let ctx = Contexto { rt: rt.clone(), aspecto, recuo: recuo_do_aspecto(aspecto), escolha, limpo: c.limpo };
+    let mut ctx = Contexto { rt: rt.clone(), aspecto, recuo: recuo_do_aspecto(aspecto), escolha, limpo: c.limpo };
     let mut relogio = 100.0f64;
     for nome in cenas {
+        // Beyond Ultra for the capture; the sea's own band follows its radius.
+        ctx.escolha.raio = if nome == "mar" { RAIO_DA_CAPTURA_NO_MAR.min(raio_da_captura.max(12)) } else { raio_da_captura };
+        cg::publica_para_teste(&ctx.escolha);
+        let r = ctx.escolha.raio as f32 * crate::terreno::CHUNK as f32 * shared::terreno::BLOCO;
+        crate::construcoes::define_alcance_da_captura(r - 16.0);
         let Some(mut cena) = monta(nome) else {
             println!("[filme] {nome}: this zone cannot be built locally, skipped");
             continue;
@@ -1026,6 +1058,10 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
             // shader variants, the crowd settling) that is not recorded.
             crate::relogio::fixa(Some((relogio, DT)));
             for k in 0..3000 {
+                // The outfits, hats and weapon skins the bodies asked for
+                // while drawing (`rig_ou_pede`): served only before the first
+                // scene, every cash outfit stayed the default shirt.
+                while vox.atende_um_pendente(crate::render3d::VOXEL).await {}
                 if cena.prepara(i, &ctx) && k > 2 {
                     break;
                 }
@@ -1034,6 +1070,7 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
                 next_frame().await;
             }
             for _ in 0..QPS {
+                while vox.atende_um_pendente(crate::render3d::VOXEL).await {}
                 relogio += DT as f64;
                 crate::relogio::fixa(Some((relogio, DT)));
                 cena.quadro(i, 0.0, vox, &solido, &ctx);
@@ -1041,6 +1078,7 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
             }
             let n = (dur * QPS as f32).round() as u32;
             for q in 0..n {
+                while vox.atende_um_pendente(crate::render3d::VOXEL).await {}
                 if enc.is_none() && ultimo_print.is_none_or(|u| quadro_global > u) {
                     break 'tomadas;
                 }

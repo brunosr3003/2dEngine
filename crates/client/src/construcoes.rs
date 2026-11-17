@@ -29,6 +29,20 @@ const MAX_QUADS: usize = 800;
 /// volta dela le' como buraco.
 const ALCANCE: f32 = 110.0;
 
+/// The ad capture's longer view (`filme`): buildings drawn this far too.
+/// 0 = the game's `ALCANCE`.
+static ALCANCE_DA_CAPTURA: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[cfg(debug_assertions)]
+#[allow(dead_code)]
+pub fn define_alcance_da_captura(u: f32) {
+    ALCANCE_DA_CAPTURA.store(u.max(0.0) as u32, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn alcance() -> f32 {
+    ALCANCE.max(ALCANCE_DA_CAPTURA.load(std::sync::atomic::Ordering::Relaxed) as f32)
+}
+
 /// Acima disto (a partir do piso) a construcao e' TETO: o alto das paredes,
 /// oitao, beiral, toldo e telhado. Quem esta' dentro nao ve' nada disso — de
 /// cima, com a camera alta, o telhado esconderia o personagem e o que ha' la'
@@ -225,7 +239,7 @@ impl Construcoes {
             p.teto_sumido.set(sumido);
             let centro = (p.min + p.max) * 0.5;
             let raio = (p.max - p.min).length() * 0.5;
-            if vec2(centro.x - cam.target.x, centro.z - cam.target.z).length() > ALCANCE + raio {
+            if vec2(centro.x - cam.target.x, centro.z - cam.target.z).length() > alcance() + raio {
                 continue;
             }
             let d = centro - olho;

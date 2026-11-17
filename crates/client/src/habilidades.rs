@@ -8,6 +8,8 @@ use crate::{
     world::World,
 };
 use macroquad::prelude::*;
+// The drawing clock: the ad capture pins it (`relogio`); in play it is macroquad's.
+use crate::relogio::get_time;
 use shared::skills::{Conjunto, Skill};
 use shared::EntityId;
 use std::collections::{HashMap, HashSet};

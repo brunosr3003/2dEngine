@@ -133,6 +133,7 @@ mod social;
 mod troca;
 pub(crate) mod navio;
 pub(crate) mod piloto_do_mar;
+pub(crate) mod aguas_pacificas;
 mod permanencia;
 use habilidades::HabilidadePendente;
 
@@ -2054,6 +2055,11 @@ impl GameWorld {
                 }
             }
         }
+        // PEACEFUL WATERS (17/11/2026): no PvP with either ship in the
+        // waters of the first three islands, mark or no mark.
+        if self.pvp_em_aguas_pacificas(attacker_eid, target_eid) {
+            return false;
+        }
         // AT SEA the treasure's MARK opens the target to everyone (naval
         // phase 4); the harbour corridor already returned above.
         shared::pk::pode_atacar_no_mar(
@@ -2407,6 +2413,11 @@ pub struct Session {
     /// sim_time until which this player is in PK combat (a PvP hit given or
     /// taken, `shared::pk::COMBATE_PK_S`): leaving lingers, travel is refused.
     pub pk_combate_ate: f32,
+    /// sim_time this PK ship was first seen inside PEACEFUL WATERS (its
+    /// grace to leave, `aguas_pacificas::GRACA_S`); `None` = not there.
+    pub pk_nas_pacificas_desde: Option<f32>,
+    /// sim_time of the last "peaceful waters are closed to you" warning.
+    pub aviso_da_barreira_em: f32,
     /// The connection is gone but the body stays in the world until this
     /// sim_time (a PK logout, `world/permanencia.rs`).
     pub permanece_ate: Option<f32>,
@@ -8195,6 +8206,8 @@ impl GameWorld {
                 agressores: HashMap::new(),
                 pk_visto: Default::default(),
                 pk_combate_ate: 0.0,
+                pk_nas_pacificas_desde: None,
+                aviso_da_barreira_em: f32::MIN,
                 permanece_ate: None,
                 permanencia_checada: None,
                 cartas_de_abate: Vec::new(),
@@ -10925,6 +10938,18 @@ impl GameWorld {
         let impacto_mob = navio::impacto_da_mordida(self.no_mar());
         // ...and a sea mob gives up later: a ship is twice a shark's speed.
         let desiste_mob = navio::desistencia_do_bicho(self.no_mar());
+        // ...and it hunts from the ship's SIDES (`navio::ponto_no_costado`):
+        // each hull's heading and velocity, by its captain's entity.
+        let no_mar_ia = self.no_mar();
+        let navios_da_ia: HashMap<EntityId, (Vec2, Vec2)> = if no_mar_ia {
+            self.sessions
+                .values()
+                .filter(|s| s.logged_in)
+                .filter_map(|s| s.leme_do_mar.rumo().map(|r| (s.entity_id, (r, s.leme_do_mar.velocidade()))))
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         let mobs_preparando: HashMap<_, _> = self
             .pending_melee
@@ -11174,7 +11199,35 @@ impl GameWorld {
                             .direcao(ilha, pos.0, *ppos, passo, now_sim),
                         None => to_player,
                     };
-                    let move_dir = if enemy.kite_dist.is_some() {
+                    // AT SEA, FROM THE SIDE (owner, 17/11/2026): a biting sea
+                    // mob holds off the ship's nearer beam and closes from
+                    // there to bite, instead of trailing in its wake.
+                    let costado = if no_mar_ia && enemy.is_melee && !enemy.is_boss && enemy.kite_dist.is_none() {
+                        nearest.and_then(|(id, _)| navios_da_ia.get(&id)).copied()
+                    } else {
+                        None
+                    };
+                    if let Some((rumo_navio, vel_navio)) = costado {
+                        let agora_lado = navio::lado_do_costado(*ppos, rumo_navio, pos.0, enemy.ai_strafe_sign);
+                        if now_sim >= enemy.ai_strafe_flip_at {
+                            // Now and then it crosses to the other side.
+                            let sorte = lcg_f32(lcg(self.tick as u64 ^ (net.0 .0 as u64).wrapping_mul(0x9E37_79B9)));
+                            if sorte < navio::CHANCE_DE_CRUZAR {
+                                enemy.ai_strafe_sign = -agora_lado;
+                                enemy.ai_strafe_flip_at = now_sim + navio::CRUZANDO_S;
+                            } else {
+                                enemy.ai_strafe_sign = agora_lado;
+                                enemy.ai_strafe_flip_at = now_sim + navio::DECIDE_LADO_S;
+                            }
+                        }
+                        let morde = enemy.attack_cooldown <= navio::MORDE_EM_S;
+                        let ponto = navio::ponto_no_costado(*ppos, rumo_navio, vel_navio, pos.0, enemy.ai_strafe_sign, morde, enemy.attack_range);
+                        let carga = if provocado { carga_do_nivel(enemy.nivel_da_faixa) } else { 1.0 };
+                        vel.0 = navio::velocidade_ao_costado(pos.0, ponto, vel_navio, enemy.locomotor_speed * carga);
+                    }
+                    let move_dir = if costado.is_some() {
+                        vel.0 / (enemy.locomotor_speed * if provocado { carga_do_nivel(enemy.nivel_da_faixa) } else { 1.0 }).max(0.01)
+                    } else if enemy.kite_dist.is_some() {
                         // Atirador NAO foge (docs/COMBATE.md): chega ate' o
                         // alcance dele e atira dali. Recuar fazia o bicho andar
                         // de re' pelo mapa enquanto quem persegue nunca
@@ -11872,6 +11925,10 @@ impl GameWorld {
                 .iter()
                 .filter_map(|i| Some((i.id, (i.planta?, i.andar))))
                 .collect();
+        // PEACEFUL WATERS at sea: which hulls are barred, which are pushed
+        // out (`aguas_pacificas::barreira_pacifica`).
+        let barreira = self.barreira_pacifica();
+        let mut bateu_na_barreira: Vec<Entity> = Vec::new();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
         // diferentes nao se empurram nem se bloqueiam.
@@ -11921,13 +11978,24 @@ impl GameWorld {
                 // is walking, only on water. Land (the islands' domes, the
                 // docks) and the chart's edge are the walls.
                 // A hull grazing the coast scrapes along it (`mover_raspando`).
-                Some(_) if no_mar => shared::navio::mover_raspando(
-                    &|x, z| shared::mar::navegavel(x, z),
-                    pos.0,
-                    vel.0,
-                    dt,
-                    shared::navio::RAIO_DO_CASCO,
-                ),
+                // A PK hull: the peaceful waters are land to it; one past
+                // its grace inside is pushed out.
+                Some(_) if no_mar => {
+                    let (barrado, empurra) = barreira.get(&e).copied().unwrap_or((false, None));
+                    let v = empurra.unwrap_or(vel.0);
+                    let livre = |x: f32, z: f32| shared::mar::navegavel(x, z);
+                    let fechada = |x: f32, z: f32| shared::mar::navegavel(x, z) && !shared::mar::aguas_pacificas(Vec2::new(x, z));
+                    if barrado {
+                        let p = shared::navio::mover_raspando(&fechada, pos.0, v, dt, shared::navio::RAIO_DO_CASCO);
+                        let sem = shared::navio::mover_raspando(&livre, pos.0, v, dt, shared::navio::RAIO_DO_CASCO);
+                        if sem.distance(p) > 1e-3 && shared::mar::aguas_pacificas(sem) {
+                            bateu_na_barreira.push(e);
+                        }
+                        p
+                    } else {
+                        shared::navio::mover_raspando(&livre, pos.0, v, dt, shared::navio::RAIO_DO_CASCO)
+                    }
+                }
                 // Players walk both floors; mobs stay on the street (the
                 // ramps' feet are walls to them, like to anyone below).
                 Some(i) if jogador && i.tem_deck() => {
@@ -11945,6 +12013,9 @@ impl GameWorld {
                 None => movido,
             };
             corpos.push((e, movido, mobilidade));
+        }
+        for e in bateu_na_barreira {
+            self.avisa_barreira(e);
         }
         let mut circulos: Vec<(Vec2, f32, f32)> = corpos
             .iter()
@@ -13080,10 +13151,14 @@ impl GameWorld {
                 && self.ecs.get::<&EnemyTag>(e).is_ok_and(|t| t.is_boss)
             {
                 self.forte_largar_baus(pos, shared::forte::conteudo_do_chefe(kind_id));
-                // THE COLOSSUS CHEST (naval phase 4): one, guaranteed, to the
-                // killer's ship deck (`navio::dar_bau_do_colosso`).
+                // THE COLOSSUS CHEST (naval phase 4) is OFF (owner, 17/11/2026:
+                // "não quero isso, mantém o drop de chefe normal; se tiver baú
+                // vai ser outras coisas"). The treasure machinery stays, with
+                // no source, for whatever chest comes later.
+                if shared::navio::BAU_DO_COLOSSO_LIGADO {
                 if let Some(matador) = kill_credits.get(&eid).copied() {
                     self.dar_bau_do_colosso(matador, kind_id);
+                }
                 }
             }
             // Rastrear se era o boss

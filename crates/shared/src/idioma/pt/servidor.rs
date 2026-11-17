@@ -784,6 +784,11 @@ pub const VERBETES: &[(&str, &str)] = &[
     // ── every island on the sea (16/11/2026) ──
     ("Talk to the Harbour Captain, the Sky Bus Professor or the Submarine Captain to set sail.", "Fale com o Capitão do Porto, o Professor do Ônibus Voador ou o Capitão do Submarino para zarpar."),
     ("You haven't unlocked {} yet: {}.", "Você ainda não desbloqueou {}: {}."),
+    // Águas pacíficas no mar (17/11/2026).
+    ("You have PK: peaceful waters are closed to you.", "Você está PK: as águas pacíficas estão fechadas pra você."),
+    ("You have PK: you can't enter peaceful waters until it clears (forgive PK points or wait).", "Você está PK: não pode entrar em águas pacíficas até limpar (perdoe os pontos de PK ou espere)."),
+    ("Peaceful waters: no PvP here.", "Águas pacíficas: sem PvP aqui."),
+    ("You have PK: leave the peaceful waters within {} s.", "Você está PK: saia das águas pacíficas em {} s."),
     ("reach the story step \"{}\"", "chegue ao passo \"{}\" da história"),
     ("follow the story", "siga a história"),
     ("it opens at {} power (you: {})", "abre com {} de poder (você: {})"),

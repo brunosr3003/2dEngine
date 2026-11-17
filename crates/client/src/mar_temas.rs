@@ -1,7 +1,8 @@
 //! THE NEW SEA DOCKS' THEMES (16/11/2026; docs/NAVEGACAO.md, "Toda ilha no
 //! mar"). The owner: "I want to be able to sail to any island in the game".
-//! Skyreach, Kōgen-tō, Abyssia and the Magic Island have no land port, so
-//! each got a sea dock of its own look (`shared::mar::Feitio`):
+//! Skyreach, Kōgen-tō and Abyssia have no land port, so each got a sea dock
+//! of its own look (`shared::mar::Feitio`). (The Magic Island's crystal dock
+//! went with it off the sea on 17/11/2026: menu only.)
 //!
 //! * **Skyreach** (`Celeste`): marble shores and cloud banks at the water,
 //!   FLOATING ISLES overhead, a waterfall pouring off one of them into the
@@ -11,10 +12,7 @@
 //!   stacks on the quay, a concrete pier with neon signs and a signal mast;
 //! * **Abyssia** (`Abissal`): a coral atoll ringing a lagoon where a glowing
 //!   WHIRLPOOL turns, coral spires with glowing tips, a diving bell on its
-//!   crane at the quay, a pier of brass and grating;
-//! * **the Magic Island** (`Magica`): a lush isle with a crown of giant
-//!   glowing crystals, an enchanted pier under a rune arch, and a crystal
-//!   spire for a lighthouse.
+//!   crane at the quay, a pier of brass and grating.
 //!
 //! # The phone budget
 //!
@@ -38,7 +36,7 @@ use crate::vegetacao::{malha, Modelo, Volume, VOX};
 
 /// Is this one of the new themes (the islands without a land port)?
 pub fn e_tema(f: Feitio) -> bool {
-    matches!(f, Feitio::Celeste | Feitio::Neon | Feitio::Abissal | Feitio::Magica)
+    matches!(f, Feitio::Celeste | Feitio::Neon | Feitio::Abissal)
 }
 
 /// Height of the dock's BEACON (the lighthouse's equivalent) over the sea:
@@ -49,7 +47,6 @@ pub fn altura_da_lampada(f: Feitio) -> f32 {
         Feitio::Celeste => 43.5,
         Feitio::Neon => 23.6,
         Feitio::Abissal => 16.4,
-        Feitio::Magica => 22.0,
         _ => crate::mar_cena::LAMPADA_Y,
     }
 }
@@ -60,7 +57,6 @@ pub fn cor_da_luz(f: Feitio) -> Vec3 {
         Feitio::Celeste => vec3(1.0, 0.88, 0.45),
         Feitio::Neon => vec3(1.0, 0.32, 0.72),
         Feitio::Abissal => vec3(0.35, 1.0, 0.95),
-        Feitio::Magica => vec3(0.86, 0.5, 1.0),
         _ => vec3(1.0, 0.86, 0.5),
     }
 }
@@ -84,7 +80,7 @@ pub struct Torre {
     pub neon: usize,
 }
 
-/// A crystal (Magic Island) or a coral spire (Abyssia): centre, radius,
+/// A coral spire (Abyssia): centre, radius,
 /// height over its ground.
 #[derive(Debug, Clone, Copy)]
 pub struct Pico {
@@ -198,25 +194,6 @@ pub fn tema(i: &IlhaVista) -> Tema {
                 }
                 let pico = Pico { c: p, r: 2.0 + 1.6 * h01(k, 2, s), h: 9.0 + 13.0 * h01(k, 3, s), chao: chao(p) };
                 t.luzes.push((vec3(p.x, pico.chao + pico.h + 0.6, p.y), vec3(0.35, 1.0, 0.95), k as f32 * 0.9));
-                t.picos.push(pico);
-            }
-        }
-        Feitio::Magica => {
-            let mut cands = vec![(c, 6.5, 46.0)];
-            for k in 0..14 {
-                let a = h01(k, 7, s) * std::f32::consts::TAU;
-                let d = r * (0.16 + 0.42 * h01(k, 8, s));
-                cands.push((c + vec2(a.cos(), a.sin()) * d, 2.6 + 3.2 * h01(k, 9, s), 16.0 + 24.0 * h01(k, 10, s)));
-            }
-            for (p, raio, h) in cands {
-                if t.picos.len() >= 8 || !em_terra(p, 22.0) || !longe_do_cais(i, p, 34.0) {
-                    continue;
-                }
-                if t.picos.iter().any(|q| q.c.distance(p) < q.r + raio + 6.0) {
-                    continue;
-                }
-                let pico = Pico { c: p, r: raio, h, chao: chao(p) };
-                t.luzes.push((vec3(p.x, pico.chao + h * 0.86, p.y), vec3(0.82, 0.45, 1.0), t.picos.len() as f32 * 1.1));
                 t.picos.push(pico);
             }
         }
@@ -415,18 +392,6 @@ pub fn malha_de_longe(i: &IlhaVista, t: &Tema) -> Vec<Mesh> {
                 o.prisma(pc.c + d, pc.chao - 0.5, pc.chao + pc.h * 0.45, pc.r * 0.5, 5, Material::Coral, Material::CristalAzul, pc.r * 0.6);
             }
         }
-        Feitio::Magica => {
-            for (k, pc) in t.picos.iter().enumerate() {
-                let (corpo, ponta) = if k % 3 == 1 { (Material::CristalAzul, Material::CristalCeu) } else { (Material::CristalRoxo, Material::PetalaRoxa) };
-                o.prisma(pc.c, pc.chao - 1.0, pc.chao + pc.h * 0.78, pc.r, 6, corpo, ponta, pc.h * 0.22);
-                // Two smaller shards leaning against it.
-                for j in 0..2 {
-                    let a = k as f32 * 1.3 + j as f32 * 2.6;
-                    let d = vec2(a.cos(), a.sin()) * pc.r * 1.25;
-                    o.prisma(pc.c + d, pc.chao - 1.0, pc.chao + pc.h * 0.35, pc.r * 0.45, 6, corpo, ponta, pc.h * 0.12);
-                }
-            }
-        }
         _ => {}
     }
     o.fim()
@@ -494,22 +459,13 @@ fn paleta(f: Feitio) -> Paleta {
             carga: [Material::PetalaVermelha, Material::CristalAzul],
             placa: Some(Material::NeonCiano),
         },
-        Feitio::Abissal => Paleta {
+        _ => Paleta {
             tabuas: [Material::ConcretoEscuro, Material::RochaAbissal, Material::ConcretoEscuro],
             borda: Material::Arenito,
             estaca: Material::RochaAbissal,
             poste: Material::Arenito,
             luz: Material::NeonCiano,
             carga: [Material::Coral, Material::Arenito],
-            placa: None,
-        },
-        _ => Paleta {
-            tabuas: [Material::Marmore, Material::Marmore, Material::CristalAzul],
-            borda: Material::CristalRoxo,
-            estaca: Material::TroncoBranco,
-            poste: Material::Marmore,
-            luz: Material::CristalRoxo,
-            carga: [Material::CristalCeu, Material::PetalaRoxa],
             placa: None,
         },
     }
@@ -761,61 +717,6 @@ fn cais_abissal() -> Modelo {
     malha(&v)
 }
 
-/// The MAGIC ISLAND's lighthouse: a rune circle and a great violet crystal
-/// with blue shards round it, glowing at the tip.
-fn espigao_de_cristal() -> Modelo {
-    let mut v = Volume::novo([-12, 0, -12], [25, 96, 25]);
-    let b = vx(mar::ALTURA_DO_MOLHE);
-    disco(&mut v, 0, 0, 9.5, b, 2, Material::Marmore);
-    for k in 0..8 {
-        let a = k as f32 / 8.0 * std::f32::consts::TAU;
-        let (x, z) = ((a.cos() * 8.0) as i32, (a.sin() * 8.0) as i32);
-        bx(&mut v, [x, b + 2, z], [x + 1, b + 3, z + 1], Material::CristalAzul);
-    }
-    let alto = 84;
-    for y in 0..alto {
-        let t = y as f32 / alto as f32;
-        let r = if t < 0.7 { 5.2 - t * 1.5 } else { (1.0 - t) / 0.3 * 4.15 };
-        let m = if y > alto - 10 { Material::JanelaAcesa } else if (y / 4) % 5 == 0 { Material::PetalaRoxa } else { Material::CristalRoxo };
-        disco(&mut v, 0, 0, r.max(0.6), b + 2 + y, 1, m);
-    }
-    for (x, z, h) in [(7, 3, 30), (-6, 5, 22), (2, -7, 36), (-5, -5, 18)] {
-        for y in 0..h {
-            let r = 2.2 * (1.0 - y as f32 / h as f32) + 0.6;
-            disco(&mut v, x, z, r, b + 2 + y, 1, if y > h - 4 { Material::CristalCeu } else { Material::CristalAzul });
-        }
-    }
-    malha(&v)
-}
-
-/// The Magic Island's quay: a rune arch over the pier's root, rune stones,
-/// crystal clusters, the flag poles.
-fn cais_magico() -> Modelo {
-    let mut v = Volume::novo([-30, 0, -90], [80, 48, 92]);
-    let b = vx(mar::ALTURA_DO_MOLHE);
-    let meia = vx(mar::CAIS_LARG * 0.5) + 3;
-    for x in [-meia - 3, meia] {
-        bx(&mut v, [x, b, -4], [x + 3, b + 36, -1], Material::Marmore);
-        bx(&mut v, [x, b + 10, -4], [x + 3, b + 12, -1], Material::CristalAzul);
-    }
-    bx(&mut v, [-meia - 4, b + 36, -5], [meia + 4, b + 40, 0], Material::Marmore);
-    bx(&mut v, [-2, b + 40, -4], [2, b + 44, -1], Material::CristalRoxo);
-    for (x, z) in [(20, -24), (30, -50), (-20, -34), (-24, -64), (8, -74)] {
-        bx(&mut v, [x, b, z], [x + 4, b + 8, z + 3], Material::Marmore);
-        bx(&mut v, [x + 1, b + 8, z], [x + 3, b + 10, z + 3], Material::CristalAzul);
-    }
-    for (x, z) in [(40, -30), (-26, -50), (18, -84)] {
-        for (dx, dz, h) in [(0, 0, 14), (2, 1, 9), (-1, 2, 7)] {
-            for y in 0..h {
-                let r = 1.6 * (1.0 - y as f32 / h as f32) + 0.4;
-                disco(&mut v, x + dx, z + dz, r, b + y, 1, if h > 10 { Material::CristalRoxo } else { Material::CristalCeu });
-            }
-        }
-    }
-    mastros(&mut v, b, Material::Marmore, Material::Marmore);
-    malha(&v)
-}
-
 /// The themed dock's pieces in the pier frame: (model, offset). `None` for
 /// the four port islands (`mar_cena::Doca` keeps theirs).
 pub fn pecas(f: Feitio) -> Option<Vec<(Modelo, Vec3)>> {
@@ -827,8 +728,7 @@ pub fn pecas(f: Feitio) -> Option<Vec<(Modelo, Vec3)>> {
     let (marco, cais) = match f {
         Feitio::Celeste => (elevador(), cais_celeste()),
         Feitio::Neon => (mastro_neon(), cais_neon()),
-        Feitio::Abissal => (sino(), cais_abissal()),
-        _ => (espigao_de_cristal(), cais_magico()),
+        _ => (sino(), cais_abissal()),
     };
     Some(vec![(pier(&p), Vec3::ZERO), (marco, farol), (cais, Vec3::ZERO)])
 }
@@ -961,8 +861,7 @@ mod testes {
 
     /// Every theme has its landmarks where they belong: Skyreach's isles over
     /// the island (and the waterfall over the WATER), Kōgen-tō's skyline on
-    /// the concrete, the atoll's whirlpool in its lagoon, the Magic Island's
-    /// crystals on land — and none of them in the way in.
+    /// the concrete, the atoll's whirlpool in its lagoon — and none of them in the way in.
     #[test]
     fn cada_tema_tem_os_seus_marcos() {
         let v = |z: &str| mar::vista_da_zona(z).unwrap();
@@ -978,9 +877,7 @@ mod testes {
         let olho = a.redemoinho.expect("the whirlpool");
         assert!(vec2(olho.x, olho.z).distance(mq(atol.centro)) < 0.01);
         assert!(a.picos.len() >= 5);
-        let magica = tema(v(shared::magica::ZONA));
-        assert!(magica.picos.len() >= 4, "{} crystals", magica.picos.len());
-        for (z, t) in [(shared::kogen::ZONA, &kogen), (shared::magica::ZONA, &magica)] {
+        for (z, t) in [(shared::kogen::ZONA, &kogen), (shared::abissal::ZONA, &a)] {
             let i = v(z);
             for p in t.torres.iter().map(|t| t.c).chain(t.picos.iter().map(|p| p.c)) {
                 assert!(!mar::navegavel(p.x, p.y), "{z}: a landmark in the water at {p:?}");

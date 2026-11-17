@@ -1129,6 +1129,133 @@ qualidade, `MMO_PREVIA_SEM_FIX=1` desenha do jeito antigo pra comparar.
 `mar_cena::os_destrocos_tem_o_voxel_do_navio_e_ficam_rentes`,
 `a_faixa_de_desenho_cabe_no_que_esta_carregado`, `as_arvores_de_longe_sao_baratas`.
 
+### Bichos submersos, ataque pelo costado, águas pacíficas e a Ilha Mágica fora do mar (17/11/2026, versão de TESTE, protocolo 199)
+
+O dono: *"os bichos aquáticos têm que ficar submersos ... e só emergirem para
+atacar, e emergir não é ficar flutuando acima da água, é tipo aparecer só a
+cabeça"*; *"os bichos no geral tendem a perseguir ... o barco ... daí eles
+ficam quase sempre atrás do barco e fica meio difícil de acertar"*; *"magic
+island não precisa estar no mapa múndi navegável não, ela pode ser só pelo
+menu mesmo"*; *"coloca a zona da ilha 1 e 2 safe zone no mar, até a 3 na
+verdade, aí começa a PK da zona 4 pra cima"* e *"caso alguém esteja PK já,
+ele tem que ser barrado de entrar nessas zonas"*. Protocolo sem variante nova
+(`PROTOCOL_VERSION` 199).
+
+**1. Submersos (cliente, `marinhos::desenha_submerso`).** No mar o Tubarão
+(70) e a Enguia (72) não são desenhados enquanto nadam: a água (opaca no
+fundo, grava profundidade) esconderia o corpo de qualquer jeito, então nem se
+gasta o desenho. Na superfície (`mar_combate_ui`, na mesma malha de decalques):
+uma **sombra escura** do comprimento do bicho em alfa baixo (a da enguia é uma
+corrente de manchas que balança), a **barbatana** do tubarão com o V de espuma
+e a **corcova** da enguia em arcos listrados que sobem e afundam, com espuma
+onde quebram. **Para morder** (o preparo de 0,9 s e o golpe, lidos do
+`ataque_mob`) o modelo sobe em 0,35 s de nariz pra cima (tubarão 34°, enguia
+46°) com a origem abaixo da água: só a **cabeça e a mandíbula** passam da
+superfície (a onda local `agua::onda_em`); a água corta o resto, sem shader
+de recorte. Anel de espuma em volta da cabeça e um borrifo quando ela rompe a
+água (0,2 s do preparo); a barbatana/corcovas afundam enquanto isso; depois
+da mordida afunda em 0,6 s. O elite sobe um pouco mais (cabeça e ombros). Morto,
+rola de barriga pra cima na superfície e afunda em ~3 s. O anel vermelho que
+fecha e o anel de alvo seguem na superfície. `marinhos::altura_ent` no mar =
+1,1 × escala (a plaqueta fica sobre a água).
+
+**2. Pelo costado (servidor, `world.rs` IA + `navio::ponto_no_costado`).**
+Bicho de mordida no mar (não chefe) não persegue reto: vai pra um ponto a
+`COSTADO_DO_BICHO` 3,6 m do **través mais perto** do navio, adiantado
+`AVANCO_DO_BICHO_S` 1,2 s × velocidade do navio (teto 3 m), e com a mandíbula
+pronta (`MORDE_EM_S` 0,35 s de recarga) fecha pro lado (alcance − 0,25, sem
+avanço) e morde de lado — alcance e preparo iguais. A velocidade é a do
+navio mais um puxão pro ponto (`velocidade_ao_costado`), no teto do bicho.
+Nunca atravessa o casco: da esteira primeiro nada pro través de onde está;
+cruzando de lado, contorna a ponta mais perto (medido: reto pro ponto, os da
+esteira ficavam colados na popa, sem alcance e fora do arco). A cada 1 s, 3%
+de chance de **cruzar** pro outro costado por 3 s (`ai_strafe_sign` /
+`ai_strafe_flip_at`, que só o chefe usava). O recuo depois de morder é a volta
+aos 3,6 m. Piloto: `PERTO_DEMAIS` 6 → 3 m (empurrar todo bicho a 6 m deixava o
+casco desviando em vez de atirar) e a fuga da telegrafia virou "a toda, de
+leve pra longe" (fugir reto arrastava a luta pra fora do ninho e a coleira
+curava o elite).
+
+**Arco da Bordada:** `BORDADA_COS_MAX` 0,8 → **0,85** = ±58° em volta do
+través (as alhetas e as bochechas contam), proa e popa cegas a ±32°. O
+brilho da amurada no cliente usa o mesmo `no_costado`.
+
+| Piloto, ninho do nível (3 bichos) | antes | depois |
+|---|---|---|
+| Chalupa ninhos 0/2/4 | 32,4 / 30,8 / 27,0 s | 28,0 / 26,0 / 26,4 s |
+| Escuna | 26,4 / 25,8 / 26,4 s | 26,5 / 26,0 / 26,4 s |
+| Galeão | 26,7 / 26,0 / 26,6 s | 26,7 / 36,0 / 21,7 s |
+| Nau | 32,7 / 46,5 / 21,0 s | 27,9 / 35,5 / 26,4 s |
+| Ninho do elite | 106,6 s, 52/53 acertos | 97,6 s, 51/54 acertos, 0 de 11 mordidas |
+
+Todos os ninhos comuns: 100% de acerto, 0% de casco, nunca parado > 1 s; a
+luta segue na faixa de 20-60 s (sem retoque de vida). Teste novo
+`o_bicho_persegue_pelo_costado_e_nao_pela_popa`: navio reto a 80% do passo do
+bicho passando por um ninho — **16% → 77%** do tempo de perseguição dentro do
+arco da Bordada.
+
+**3. A Ilha Mágica saiu do mar.** `shared::mar`: fora de `NOVAS`, das rotas
+(Geleira–Mágica, Mágica–Céu, Mágica–Abissal; sobram 9 rotas), de
+`ILHA_MAGICA`, `Feitio::Magica` e do seu relevo; ninhos, elites, baús e
+destroços das rotas saem junto (derivados das rotas). `REVISAO` 3 → 4 (cache
+de altura). Abyssia continua ligada por Kōgen-tō; todo cais alcança todo cais
+(`a_rota_na_agua_nunca_passa_por_terra_e_chega_a_todo_cais`). Cliente: cais,
+tema (`mar_temas`: espigão de cristal, cais rúnico), prévia `cais-magica` e
+rótulo saem; "Sail to…", toque-pra-atracar e o mapa leem `ilhas()`. Servidor:
+sem `atracar_na_magica` nem `chegada_da_ilha` da Mágica; sair da Mágica volta
+ao comportamento normal (um `magica_volta` antigo = mar cai no Bosque). Entrar
+pelo menu (Guia, `entrar_na_magica`) não mudou. O bit 7 do baú do colosso não
+importa mais (`conta_atracacao` sem o caso da Mágica).
+
+**4. Águas pacíficas** (`shared::mar::aguas_pacificas`, `ilha_das_aguas`,
+`fronteira_pacifica`; servidor `world/aguas_pacificas.rs`). Todo ponto do mar
+pertence à ilha de **costa mais perto** (distância ao centro − raio, um
+Voronoi pesado pelo tamanho). As águas das ilhas 0-2 do `ARQUIPELAGO`
+(Bosque, Geleira, Ermo; `ILHAS_PACIFICAS` 3) são **sem PvP**: o
+`can_damage_player` recusa com qualquer dos dois navios lá dentro, valha o
+modo de PK ou a marca do tesouro; o Canhão Longo num navio lá é recusado com
+"Peaceful waters: no PvP here."; o piloto nunca pega jogador lá (passa pelo
+`can_damage_player`). Bichos continuam mordendo e apanhando (não é o
+corredor). **Águas sem lei só em águas de PvP**: a Geleira–Ermo saiu (as duas
+pontas pacíficas); Geleira–Planalto e Ermo–Planalto deslizam pela rota até o
+círculo inteiro estar nas águas do Planalto; Kōgen-tō–Abyssia fica (3 zonas),
+e `sem_lei` exige água de PvP.
+
+**PK barrado.** Capitão com pontos de PK ou em combate de PK (`pk_barrado`)
+não entra: o casco trata as águas pacíficas como costa e desliza nela
+(`mover_raspando`), com "You have PK: peaceful waters are closed to you." a
+cada 4 s de encostão; a rota de água dele contorna (`caminho_no_mar_com`,
+camada `pacifica` na grade) e destino lá dentro é recusado com "You have PK:
+you can't enter peaceful waters until it clears (forgive PK points or wait)."
+Quem fica PK **lá dentro** (revidou, ou zarpou de um cais pacífico com pontos)
+tem `GRACA_S` 30 s pra sair, navegando livre, e depois o mar empurra a 5 u/s
+pro pedaço de fronteira mais perto. **Nunca preso:** zarpar de qualquer cais
+continua (o pacífico dá a carência), o Capitão do Porto leva pra qualquer ilha
+(ida de PK pra casa: atracar no Planalto/Céu/Kōgen/Abyssia e pegar o Capitão,
+ou esperar/perdoar os pontos), e o renascer em terra é o de sempre. O piloto
+recuando de casco baixo escolhe o cais mais perto que ele pode alcançar.
+
+**Cliente.** Aviso ao entrar ("Peaceful waters: no PvP", também ao sair do
+corredor de um cais pacífico) e ao sair ("Leaving peaceful waters: PvP is
+on"); anel azul e ouro em volta do casco enquanto está protegido; a fronteira
+é uma **cortina de luz** baixa na água (decalques, só os pedaços a 75 m, some
+de 40 a 75 m), clara pra quem pode entrar e **vermelha sólida** pra quem tem
+PK; no mapa e no minimapa, linha tracejada clara e o rótulo "Peaceful
+waters". Traduções pt de todas as linhas.
+
+**Testes:** shared `as_aguas_das_tres_primeiras_ilhas_sao_pacificas`,
+`as_aguas_sem_lei_ficam_no_meio_das_rotas` (3 zonas, só em PvP),
+`toda_ilha_do_jogo_esta_no_mar` (sem a Mágica), `cada_doca_nova_leva_a_ilha_certa`,
+`o_navio_vira_com_peso`… e o arco em `habilidades_do_navio`; servidor
+`o_navio_pk_nao_entra_nas_aguas_pacificas`, `a_rota_do_pk_contorna_e_recusa_as_aguas_pacificas`,
+`o_pk_dentro_tem_trinta_segundos_e_depois_e_empurrado`,
+`nas_aguas_pacificas_o_canhao_nao_atira_em_navio`, `o_pk_volta_pra_casa_pelo_capitao`
+(dois), `o_bicho_persegue_pelo_costado_e_nao_pela_popa`, os do piloto, e
+`destino_bloqueado_recusa_atracar_com_o_motivo` (agora: sair da Mágica com
+volta = mar cai no Bosque); cliente `o_aviso_das_aguas_pacificas`. Prévia
+`MMO_PREVIA_MAR=1 MMO_PREVIA_SO=combate`: `mar-hud-combate-barbatana`,
+`-enguia`, `-mordida`, `-elite` (cópias em `target/mar_bichos/`).
+
 ### Fase 5 — Conteúdo do mar
 
 - **Mapas do tesouro** (drop raro) que apontam ilhotas secretas só
@@ -1170,3 +1297,8 @@ qualidade, `MMO_PREVIA_SEM_FIX=1` desenha do jeito antigo pra comparar.
 Com a Chalupa vindo da história, a regra "o mar é opcional" continua de pé
 porque o Capitão segue levando (agora por cobre): ninguém é obrigado a
 navegar pra avançar.
+
+
+## Baú do Colosso desligado (17/11/2026)
+
+O dono: "não quero isso, mantém como tava antes o drop de chefe normal; se tiver baú vai ser outras coisas que não cabem agora". `navio::BAU_DO_COLOSSO_LIGADO = false`: o chefe do mundo volta a largar só o saque normal. A maquinaria do tesouro (convés, marca, boiar, captura no PvP, multiplicador por ilha) continua no código, sem fonte, para um baú futuro. Os nós do Corsário de saque/multiplicador ficam sem efeito até lá; a keystone Pirate's Code continua valendo (marcado o tempo todo).

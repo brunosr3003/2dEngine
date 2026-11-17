@@ -21,10 +21,13 @@
 //! and docks; the four without one get a SEA DOCK of their own theme, placed
 //! by hand north of them (`NOVAS`), where the world map has them too:
 //! Skyreach's floating isles and sky-lift, Kōgen-tō's neon harbour, the
-//! coral atoll over Abyssia with its whirlpool and diving bell, and the
-//! Magic Island's crystals. Docking at one hands off to that island's own
-//! arrival (`chegada_da_ilha` on the server); the story and the Magic
-//! Island's power gate still decide who may go ashore.
+//! coral atoll over Abyssia with its whirlpool and diving bell. Docking at
+//! one hands off to that island's own arrival (`chegada_da_ilha` on the
+//! server); the story still decides who may go ashore.
+//!
+//! The MAGIC ISLAND is NOT on the sea (owner, 17/11/2026: "magic island não
+//! precisa estar no mapa múndi navegável não, ela pode ser só pelo menu
+//! mesmo"): it is reached from the menu only, as before the sea.
 //!
 //! # A CHART, not the world map
 //!
@@ -47,7 +50,7 @@ use crate::terreno::{suave, Bioma, DefIlha, Material, ARQUIPELAGO, BLOCO, NIVEL_
 
 pub const ZONA: &str = "mar_aberto";
 /// Bump when the relief changes: it names the height caches.
-pub const REVISAO: u32 = 3;
+pub const REVISAO: u32 = 4;
 pub const SEMENTE: i32 = 0x0005_EA01;
 /// The square the height field covers: ±1,150 u (16/11/2026, every island
 /// on the sea; it was ±900 with four islands, ±700 with domes). ~42 MB of
@@ -104,22 +107,14 @@ pub enum Feitio {
     /// The coral ATOLL over Abyssia: a ring of coral rock round a lagoon
     /// where the whirlpool glows; a diving bell at the quay.
     Abissal,
-    /// The MAGIC ISLAND: a lush isle crowned with glowing crystals, an
-    /// enchanted pier.
-    Magica,
 }
-
-/// The Magic Island's index on the sea. It is not in the `ARQUIPELAGO` (its
-/// indices are API), so it takes the first index past it; the Colossus
-/// Chest's island bits (`Tesouro::ilhas`, a `u8`) still have room for it.
-pub const ILHA_MAGICA: usize = ARQUIPELAGO.len();
 
 /// THE NEW SEA DOCKS (16/11/2026): the islands without a land port, placed
 /// by hand in the same frame as the scaled world map (`ESCALA`, before the
 /// chart is centred), north of the four, the way the world map has them.
 /// (zone, name, centre, radius, level band, profile.)
-const NOVAS: [(&str, &str, [f32; 2], f32, (u32, u32), Feitio); 4] = [
-    (crate::magica::ZONA, "Magic Island", [-600.0, -980.0], 105.0, (20, 80), Feitio::Magica),
+/// (The Magic Island was here until 17/11/2026: menu only now.)
+const NOVAS: [(&str, &str, [f32; 2], f32, (u32, u32), Feitio); 3] = [
     (crate::celeste::ZONA, "Skyreach", [-1300.0, -880.0], 120.0, (60, 80), Feitio::Celeste),
     (crate::kogen::ZONA, "Kōgen-tō", [-1500.0, -1500.0], 130.0, (80, 100), Feitio::Neon),
     (crate::abissal::ZONA, "Abyssia", [-200.0, -1450.0], 110.0, (100, 120), Feitio::Abissal),
@@ -129,13 +124,10 @@ const NOVAS: [(&str, &str, [f32; 2], f32, (u32, u32), Feitio); 4] = [
 /// still route to each other (every pair, as before); the new docks hang off
 /// their neighbours only, so the sea keeps a dozen routes — each one with
 /// its nests, its chest and its elite — and not twenty-eight.
-const ROTAS_NOVAS: [(&str, &str); 6] = [
-    ("ilha_gelo", crate::magica::ZONA),
-    (crate::magica::ZONA, crate::celeste::ZONA),
+const ROTAS_NOVAS: [(&str, &str); 3] = [
     ("ilha_planalto", crate::celeste::ZONA),
     (crate::celeste::ZONA, crate::kogen::ZONA),
     (crate::kogen::ZONA, crate::abissal::ZONA),
-    (crate::magica::ZONA, crate::abissal::ZONA),
 ];
 
 /// The far route that is also LAWLESS (phase 4): the long open-water run
@@ -248,7 +240,7 @@ pub fn ilhas() -> &'static [IlhaVista] {
             })
             .collect();
         for (zona, nome, c, raio, nivel, feitio) in NOVAS {
-            let ilha = ARQUIPELAGO.iter().position(|d| d.zona == zona).unwrap_or(ILHA_MAGICA);
+            let ilha = ARQUIPELAGO.iter().position(|d| d.zona == zona).expect("a sea dock is an ARQUIPELAGO island");
             brutas.push((ilha, zona, nome, Vec2::from(c), raio, nivel, feitio, Vec2::X));
         }
         // A new dock faces the centroid of the islands it has routes to.
@@ -316,27 +308,21 @@ pub fn ilhas() -> &'static [IlhaVista] {
     })
 }
 
-/// The island of `zona` on the sea, if it has a dock. Every tier of the
-/// Magic Island (`ilha_magica_2`…) is the same island: one dock.
+/// The island of `zona` on the sea, if it has a dock (the Magic Island has
+/// none: menu only).
 pub fn vista_da_zona(zona: &str) -> Option<&'static IlhaVista> {
-    if crate::magica::e_magica(zona) {
-        return vista_da_ilha(ILHA_MAGICA);
-    }
     ilhas().iter().find(|v| v.zona == zona)
 }
 
 /// Is this one of the islands WITHOUT a land port, docked by its own sea
-/// dock (Skyreach, Kōgen-tō, Abyssia, the Magic Island; `NOVAS`)?
+/// dock (Skyreach, Kōgen-tō, Abyssia; `NOVAS`)?
 pub fn e_doca_nova(zona: &str) -> bool {
-    crate::magica::e_magica(zona) || NOVAS.iter().any(|n| n.0 == zona)
+    NOVAS.iter().any(|n| n.0 == zona)
 }
 
 /// The zone a sea index (`IlhaVista::ilha`, `PedidoNavio::Atracar`) docks
-/// into: the `ARQUIPELAGO` island, or the Magic Island's first tier.
+/// into: the `ARQUIPELAGO` island.
 pub fn zona_do_indice(ilha: usize) -> Option<&'static str> {
-    if ilha == ILHA_MAGICA {
-        return Some(crate::magica::ZONA);
-    }
     ARQUIPELAGO.get(ilha).map(|d| d.zona)
 }
 
@@ -452,7 +438,7 @@ fn feicao_no_mar(i: &IlhaVista, p: Vec2, fora: f32, d: f32, s: u32) -> Option<f3
         Feitio::Geleira => (8.0, 3u32, 5.0, 1.5, 3.2),
         Feitio::Planalto => (15.0, 4, 4.0, 1.6, 3.4),
         Feitio::Bosque => (14.0, 7, 3.0, 0.9, 1.8),
-        Feitio::Ermo | Feitio::Celeste | Feitio::Neon | Feitio::Abissal | Feitio::Magica => return None,
+        Feitio::Ermo | Feitio::Celeste | Feitio::Neon | Feitio::Abissal => return None,
     };
     if fora < folga {
         return None;
@@ -588,12 +574,6 @@ fn terra_da(i: &'static IlhaVista, p: Vec2, d: f32, costa: f32) -> Option<Terra>
             let k = suave(borda / 7.0);
             let pico = ruido(p * 0.14, s ^ 0xC0A1);
             0.5 + k * (2.0 + 5.0 * n * n + 5.0 * pico * pico)
-        }
-        Feitio::Magica => {
-            // Pale beaches, soft green hills, a crystal crown.
-            let praia = (0.5 + e * 0.08).min(1.2);
-            let t = suave((e - 8.0) / 40.0);
-            praia + t * (3.0 + 10.0 * n + 12.0 * suave((e - 30.0) / 45.0))
         }
     };
     // THE QUAY: carved flat out of whatever the island is, at the pier's root.
@@ -753,23 +733,6 @@ pub fn material_do_topo(bx: i32, bz: i32) -> Option<Material> {
                 Material::RochaAbissal
             }
         }
-        Feitio::Magica => {
-            if t.dentro < 6.0 {
-                if t.h < 0.8 {
-                    Material::AreiaMolhada
-                } else {
-                    Material::Areia
-                }
-            } else if t.h > 12.0 && n > 0.55 {
-                Material::CristalRoxo
-            } else if n > 0.8 {
-                Material::PetalaRoxa
-            } else if n < 0.3 {
-                Material::GramaCeleste
-            } else {
-                Material::GramaClara
-            }
-        }
     })
 }
 
@@ -856,12 +819,6 @@ pub fn material_da_parede(bx: i32, bz: i32, topo: i32, prof: i32) -> Material {
             0 => material_do_topo(bx, bz).unwrap_or(Material::RochaAbissal),
             _ if (y + onda / 2).rem_euclid(4) == 0 => Material::Coral,
             _ => Material::RochaAbissal,
-        },
-        Feitio::Magica => match prof {
-            0 => material_do_topo(bx, bz).unwrap_or(Material::GramaClara),
-            1..=2 => Material::Terra,
-            _ if (y + onda / 2).rem_euclid(5) == 0 => Material::CristalAzul,
-            _ => Material::Rocha,
         },
     }
 }
@@ -950,6 +907,66 @@ pub fn baus() -> Vec<Vec2> {
 /// LAWLESS WATERS (naval phase 4): radius of each zone, units.
 pub const RAIO_SEM_LEI: f32 = 45.0;
 
+// ───────────────────── peaceful waters (17/11/2026) ─────────────────────
+
+/// THE PEACEFUL WATERS (owner, 17/11/2026: "coloca a zona da ilha 1 e 2
+/// safe zone no mar, até a 3 na verdade, aí começa a PK da zona 4 pra
+/// cima"). Every point of the sea BELONGS to the island whose coast is
+/// nearest (`ilha_das_aguas`: distance to the centre minus the radius, a
+/// Voronoi split weighted by size). The waters of the first
+/// `ILHAS_PACIFICAS` islands of the `ARQUIPELAGO` — the Bosque, the Glacier
+/// and the Waste — are PvP-safe: no player hits another there, whatever the
+/// PK modes or a treasure mark say. Sea mobs still bite and are fought:
+/// this is not the harbour corridor. From the Plateau out, PK as before.
+pub const ILHAS_PACIFICAS: usize = 3;
+
+/// The `ARQUIPELAGO` index of the island these waters belong to.
+pub fn ilha_das_aguas(p: Vec2) -> usize {
+    ilhas()
+        .iter()
+        .min_by(|a, b| (p.distance(a.centro) - a.raio).total_cmp(&(p.distance(b.centro) - b.raio)))
+        .map_or(0, |i| i.ilha)
+}
+
+/// Are these PEACEFUL WATERS (no PvP)?
+pub fn aguas_pacificas(p: Vec2) -> bool {
+    ilha_das_aguas(p) < ILHAS_PACIFICAS
+}
+
+/// THE BOUNDARY of the peaceful waters, as segments (sea coordinates),
+/// computed once: the edges of a 12 u grid where one cell is peaceful and
+/// its neighbour is not, over the water. What the client draws as the
+/// curtain of light and the map as a line; the server only needs
+/// `aguas_pacificas`.
+pub fn fronteira_pacifica() -> &'static [(Vec2, Vec2)] {
+    static F: std::sync::OnceLock<Vec<(Vec2, Vec2)>> = std::sync::OnceLock::new();
+    F.get_or_init(|| {
+        const PASSO: f32 = 12.0;
+        let n = (BORDA / PASSO).ceil() as i32;
+        let centro = |i: i32, j: i32| Vec2::new((i as f32 + 0.5) * PASSO, (j as f32 + 0.5) * PASSO);
+        let mut v = Vec::new();
+        for j in -n..n {
+            for i in -n..n {
+                let c = centro(i, j);
+                let a = aguas_pacificas(c);
+                for (di, dj) in [(1, 0), (0, 1)] {
+                    let o = centro(i + di, j + dj);
+                    if !dentro(o) || aguas_pacificas(o) == a {
+                        continue;
+                    }
+                    let meio = (c + o) * 0.5;
+                    if !navegavel(meio.x, meio.y) {
+                        continue;
+                    }
+                    let d = Vec2::new(dj as f32, di as f32) * (PASSO * 0.5);
+                    v.push((meio - d, meio + d));
+                }
+            }
+        }
+        v
+    })
+}
+
 /// THE LAWLESS WATERS: a few stretches in the middle of the routes, around
 /// the route's ELITE NEST (two thirds of the way, where the wrecks and the
 /// Dread elites are), where PK is open for everyone at sea — the sea's
@@ -959,7 +976,10 @@ pub const RAIO_SEM_LEI: f32 = 45.0;
 /// that is three zones: Glacier–Waste, Glacier–Plateau, Waste–Plateau. The
 /// new docks (16/11/2026) add ONE, far out: Kōgen-tō–Abyssia, the longest
 /// run of open water, between the two highest islands.
-/// Never in a harbour corridor (test).
+/// Never in a harbour corridor (test), and only in PvP waters (peaceful
+/// waters, 17/11/2026): the Glacier–Waste zone is gone (both ends are
+/// peaceful) and the Plateau's two slide along their route until the whole
+/// zone sits in the Plateau's waters.
 pub fn zonas_sem_lei() -> &'static [Vec2] {
     static Z: std::sync::OnceLock<Vec<Vec2>> = std::sync::OnceLock::new();
     Z.get_or_init(|| {
@@ -973,11 +993,25 @@ pub fn zonas_sem_lei() -> &'static [Vec2] {
                 continue;
             }
             let (pa, pb) = (v[a].fundeadouro(), v[b].fundeadouro());
-            let mut p = pa.lerp(pb, 0.67);
-            if !agua_livre(p) {
-                p = pa.lerp(pb, 0.5);
+            // From two thirds of the way on, towards whichever end is in
+            // PvP waters, the first spot of open water whose whole circle is.
+            let inteira = |c: Vec2| {
+                agua_livre(c)
+                    && (0..16).all(|k| {
+                        let q = c + Vec2::from_angle(k as f32 / 16.0 * std::f32::consts::TAU) * RAIO_SEM_LEI;
+                        !aguas_pacificas(q)
+                    })
+                    && !aguas_pacificas(c)
+            };
+            let (pa, pb) = if aguas_pacificas(pb) && !aguas_pacificas(pa) { (pb, pa) } else { (pa, pb) };
+            let achado = [0.67f32, 0.5]
+                .into_iter()
+                .chain((0..14).map(|k| 0.7 + k as f32 * 0.02))
+                .map(|t| pa.lerp(pb, t))
+                .find(|c| inteira(*c) && pb.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR && pa.distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR);
+            if let Some(p) = achado {
+                z.push(p);
             }
-            z.push(p);
         }
         z
     })
@@ -985,7 +1019,7 @@ pub fn zonas_sem_lei() -> &'static [Vec2] {
 
 /// In lawless waters (and never inside a harbour corridor)?
 pub fn sem_lei(p: Vec2) -> bool {
-    !no_corredor(p) && zonas_sem_lei().iter().any(|c| c.distance(p) <= RAIO_SEM_LEI)
+    !no_corredor(p) && !aguas_pacificas(p) && zonas_sem_lei().iter().any(|c| c.distance(p) <= RAIO_SEM_LEI)
 }
 
 /// A piece of FLOATING WRECKAGE to gather. `tier`: 0 timber (wood), 1..4
@@ -1074,20 +1108,18 @@ mod testes {
     }
 
     /// EVERY ISLAND OF THE GAME is on the sea (owner, 16/11/2026): the four
-    /// ports, Skyreach, Kōgen-tō, Abyssia and the Magic Island (every tier
-    /// of it is the same dock).
+    /// ports, Skyreach, Kōgen-tō and Abyssia — but NOT the Magic Island,
+    /// which is menu only (owner, 17/11/2026).
     #[test]
     fn toda_ilha_do_jogo_esta_no_mar() {
-        assert_eq!(ilhas().len(), ARQUIPELAGO.len() + 1);
+        assert_eq!(ilhas().len(), ARQUIPELAGO.len());
         for d in ARQUIPELAGO.iter() {
             assert!(vista_da_zona(d.zona).is_some(), "{} missing", d.zona);
         }
         for n in crate::magica::NIVEIS {
-            assert_eq!(vista_da_zona(n.zona).map(|v| v.ilha), Some(ILHA_MAGICA), "{}", n.zona);
+            assert!(vista_da_zona(n.zona).is_none(), "{} is on the sea", n.zona);
         }
-        // One index per island, and the Magic Island's bit still fits the
-        // Colossus Chest's `u8`.
-        assert!(ILHA_MAGICA < 8);
+        // One index per island.
         for (k, a) in ilhas().iter().enumerate() {
             assert!(ilhas()[k + 1..].iter().all(|b| b.ilha != a.ilha && b.zona != a.zona));
         }
@@ -1100,7 +1132,6 @@ mod testes {
             (crate::celeste::ZONA, Feitio::Celeste),
             (crate::kogen::ZONA, Feitio::Neon),
             (crate::abissal::ZONA, Feitio::Abissal),
-            (crate::magica::ZONA, Feitio::Magica),
         ];
         for (zona, feitio) in casos {
             let v = vista_da_zona(zona).unwrap_or_else(|| panic!("{zona} has no sea dock"));
@@ -1116,11 +1147,14 @@ mod testes {
             assert_eq!(zona_do_indice(v.ilha), Some(z));
             assert!(!e_doca_nova(z));
         }
-        // The Magic Island sits within its floors' range; Abyssia at 100-120.
+        // Abyssia at 100-120.
         assert!(vista_da_zona(crate::abissal::ZONA).unwrap().nivel.0 >= 100);
-        let m = vista_da_zona(crate::magica::ZONA).unwrap();
-        let (lo, hi) = (crate::magica::NIVEIS[0].mob.0, crate::magica::NIVEIS.last().unwrap().mob.1);
-        assert_eq!(m.nivel, (lo, hi), "the Magic Island's sea follows its floors");
+        // THE MAGIC ISLAND IS MENU ONLY (17/11/2026): no dock, no tier of it.
+        for n in crate::magica::NIVEIS {
+            assert!(vista_da_zona(n.zona).is_none(), "{} has a sea dock", n.zona);
+            assert!(!e_doca_nova(n.zona));
+        }
+        assert!(ilhas().iter().all(|i| !crate::magica::e_magica(i.zona)));
     }
 
     /// The island is a WALL and the dock is the DOOR: the centre is land,
@@ -1205,16 +1239,22 @@ mod testes {
         }
     }
 
-    /// LAWLESS WATERS: the three between the ports and the far Kōgen-tō–
-    /// Abyssia run, mid-route, on open water, never touching a harbour
-    /// corridor, and none on a Bosque route.
+    /// LAWLESS WATERS: the Plateau's two routes to the Glacier and the
+    /// Waste and the far Kōgen-tō–Abyssia run, on open water, never touching
+    /// a harbour corridor, none on a Bosque route — and ONLY IN PvP WATERS
+    /// (peaceful waters, 17/11/2026: the Glacier–Waste one is gone).
     #[test]
     fn as_aguas_sem_lei_ficam_no_meio_das_rotas() {
         let z = zonas_sem_lei();
-        assert_eq!(z.len(), 4, "{z:?}");
+        assert_eq!(z.len(), 3, "{z:?}");
         for c in z {
             assert!(navegavel(c.x, c.y), "lawless zone on land at {c:?}");
             assert!(sem_lei(*c));
+            assert!(ilha_das_aguas(*c) >= ILHAS_PACIFICAS, "lawless zone {c:?} in peaceful waters");
+            for k in 0..32 {
+                let q = *c + Vec2::from_angle(k as f32 / 32.0 * std::f32::consts::TAU) * RAIO_SEM_LEI;
+                assert!(!aguas_pacificas(q), "lawless zone {c:?} reaches peaceful waters at {q:?}");
+            }
             for i in ilhas() {
                 assert!(
                     i.fundeadouro().distance(*c) > RAIO_SEM_LEI + RAIO_DO_CORREDOR,
@@ -1230,6 +1270,39 @@ mod testes {
         for &(a, b) in pares_das_rotas().iter().filter(|(a, b)| v[*a].zona == "ilha_inicial" || v[*b].zona == "ilha_inicial") {
             let meio = v[a].fundeadouro().lerp(v[b].fundeadouro(), 0.67);
             assert!(!sem_lei(meio), "the Bosque route {}–{} is lawless", v[a].nome, v[b].nome);
+        }
+    }
+
+    /// PEACEFUL WATERS (owner, 17/11/2026): every point near the Bosque,
+    /// the Glacier and the Waste is PvP-safe; near the Plateau, Skyreach,
+    /// Kōgen-tō and Abyssia it is not, and nothing there is lawless unless
+    /// it is PvP water. The boundary exists and lies on the water.
+    #[test]
+    fn as_aguas_das_tres_primeiras_ilhas_sao_pacificas() {
+        for i in ilhas() {
+            let pacifica = i.ilha < ILHAS_PACIFICAS;
+            for k in 0..24 {
+                for d in [5.0f32, 25.0, 50.0] {
+                    let q = i.centro + Vec2::from_angle(k as f32 / 24.0 * std::f32::consts::TAU) * (i.raio + d);
+                    if !dentro(q) {
+                        continue;
+                    }
+                    assert_eq!(ilha_das_aguas(q), i.ilha, "{}: {q:?} belongs to another island", i.nome);
+                    assert_eq!(aguas_pacificas(q), pacifica, "{} at {q:?}", i.nome);
+                    if pacifica {
+                        assert!(!sem_lei(q), "{}: lawless in peaceful waters at {q:?}", i.nome);
+                    }
+                }
+            }
+            assert_eq!(aguas_pacificas(i.fundeadouro()), pacifica, "{}'s dock", i.nome);
+        }
+        assert!(["ilha_inicial", "ilha_gelo", "ilha_deserto"].iter().all(|z| vista_da_zona(z).unwrap().ilha < ILHAS_PACIFICAS));
+        assert!(vista_da_zona("ilha_planalto").unwrap().ilha >= ILHAS_PACIFICAS);
+        let f = fronteira_pacifica();
+        assert!(f.len() > 20, "{} boundary segments", f.len());
+        for (a, b) in f {
+            let m = (*a + *b) * 0.5;
+            assert!(navegavel(m.x, m.y));
         }
     }
 
@@ -1322,12 +1395,12 @@ mod testes {
             let faixa = if e_doca_nova(v[a].zona) || e_doca_nova(v[b].zona) { 45.0..=120.0 } else { 30.0..=100.0 };
             assert!(faixa.contains(&t), "{}–{}: {t:.0} s", v[a].nome, v[b].nome);
         }
-        assert_eq!(pares_das_rotas().len(), 12);
+        assert_eq!(pares_das_rotas().len(), 9);
     }
 
     /// The new docks read as their islands: Kōgen-tō's concrete is flat and
     /// walled, the atoll is coral round a deep lagoon, Skyreach is marble and
-    /// cloud, the Magic Island has a crystal crown.
+    /// cloud.
     #[test]
     fn as_docas_novas_tem_o_seu_tema() {
         let v = |z: &str| vista_da_zona(z).unwrap();
@@ -1348,15 +1421,5 @@ mod testes {
         let ceu = v(crate::celeste::ZONA);
         let (bx, bz) = b(atras(ceu, 2.0));
         assert_eq!(material_do_topo(bx, bz), Some(Material::Marmore));
-        let magica = v(crate::magica::ZONA);
-        let mut cristal = 0;
-        let r = (magica.raio / BLOCO) as i32;
-        let (cx, cz) = ((magica.centro.x / BLOCO) as i32, (magica.centro.y / BLOCO) as i32);
-        for bz in (cz - r..cz + r).step_by(2) {
-            for bx in (cx - r..cx + r).step_by(2) {
-                cristal += usize::from(material_do_topo(bx, bz) == Some(Material::CristalRoxo));
-            }
-        }
-        assert!(cristal > 50, "the Magic Island has {cristal} crystal columns");
     }
 }

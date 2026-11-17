@@ -179,6 +179,8 @@ pub struct MarCombate {
     tremor: Option<f32>,
     /// The waters last frame (`zona_do_mar`), for the toast.
     zona: Option<u8>,
+    /// In peaceful waters last frame (`mar::aguas_pacificas`), for its toast.
+    pacifica: Option<bool>,
     /// The hull was low last frame (the warning toasts once per dip).
     baixo: bool,
     /// The toast on screen: text, colour, since.
@@ -201,6 +203,7 @@ impl Default for MarCombate {
             clarao_ate: 0.0,
             tremor: None,
             zona: None,
+            pacifica: None,
             baixo: false,
             aviso: None,
             ultima_luta: f64::NEG_INFINITY,
@@ -284,6 +287,96 @@ fn disco(m: &mut Mesh, c: Vec3, r: f32, dir: Vec3, cima: Vec3, cor: [f32; 4]) {
     for k in 0..6 {
         tri(m, c, p(k), p(k + 1), cor);
     }
+}
+
+/// THE BODY UNDER THE WATER: a dark, soft-edged shadow of the mob's length
+/// (`comprido`) and width, on the surface at low alpha (the sea's shader is
+/// opaque in deep water, so this is what tells where the body is). An eel's
+/// is a chain of blobs swaying along its length.
+#[allow(clippy::too_many_arguments)]
+fn sombra_submersa(m: &mut Mesh, c: Vec2, frente: Vec2, lado: Vec2, comprido: f32, largura: f32, fase: f32, enguia: bool) {
+    let y = y_agua() + 0.005;
+    // A soft blob: dark in the middle, nothing at the rim (one fan).
+    let mancha = |m: &mut Mesh, c: Vec2, l: f32, w: f32, alfa: f32| {
+        let n = 10;
+        if m.vertices.len() + n + 1 > MAX_VERTICES {
+            return;
+        }
+        let i0 = m.vertices.len() as u16;
+        m.vertices.push(vtx(vec3(c.x, y, c.y), cor8([0.01, 0.05, 0.09, alfa])));
+        for k in 0..n {
+            let a = k as f32 / n as f32 * std::f32::consts::TAU;
+            let q = c + frente * a.cos() * l * 0.5 + lado * a.sin() * w * 0.5;
+            m.vertices.push(vtx(vec3(q.x, y, q.y), cor8([0.01, 0.05, 0.09, 0.0])));
+        }
+        for k in 0..n as u16 {
+            m.indices.extend([i0, i0 + 1 + k, i0 + 1 + (k + 1) % n as u16]);
+        }
+    };
+    if enguia {
+        for s in 0..4 {
+            let u = s as f32 / 3.0 - 0.5;
+            let q = c + frente * u * comprido * 0.85 + lado * (fase + s as f32 * 1.4).sin() * 0.3 * largura;
+            mancha(m, q, comprido * 0.4, largura, 0.4);
+        }
+    } else {
+        mancha(m, c, comprido, largura * 1.1, 0.42);
+    }
+}
+
+/// An eel's HUMP breaking the surface: an arched ribbon from `c - frente *
+/// meio` to `c + frente * meio`, `alto` at its top, `w` wide (both faces).
+fn corcova(m: &mut Mesh, c: Vec2, frente: Vec2, lado: Vec2, meio: f32, alto: f32, w: f32) {
+    let y = y_agua();
+    let n = 6;
+    let ponto = |u: f32, s: f32| {
+        let q = c + frente * (u * 2.0 - 1.0) * meio + lado * s * w;
+        vec3(q.x, y - 0.05 + alto * (u * std::f32::consts::PI).sin(), q.y)
+    };
+    for j in 0..n {
+        let (u0, u1) = (j as f32 / n as f32, (j + 1) as f32 / n as f32);
+        let listra = if j % 2 == 0 { [0.86, 0.55, 0.16, 1.0] } else { [0.3, 0.2, 0.1, 1.0] };
+        let (a, b, c2, d) = (ponto(u0, -1.0), ponto(u1, -1.0), ponto(u1, 1.0), ponto(u0, 1.0));
+        quad(m, a, b, c2, d, listra);
+        quad(m, d, c2, b, a, [listra[0] * 0.7, listra[1] * 0.7, listra[2] * 0.7, 1.0]);
+    }
+}
+
+/// A vertical CURTAIN of light from `a` to `b` on the water (both faces):
+/// `cor0` at the water, fading to `cor1` at `alto`.
+fn cortina(m: &mut Mesh, a: Vec2, b: Vec2, alto: f32, cor0: [f32; 4], cor1: [f32; 4]) {
+    if m.vertices.len() + 8 > MAX_VERTICES {
+        return;
+    }
+    let y = y_agua();
+    let (k0, k1) = (cor8(cor0), cor8(cor1));
+    let i = m.vertices.len() as u16;
+    m.vertices.extend([
+        vtx(vec3(a.x, y, a.y), k0),
+        vtx(vec3(b.x, y, b.y), k0),
+        vtx(vec3(b.x, y + alto, b.y), k1),
+        vtx(vec3(a.x, y + alto, a.y), k1),
+    ]);
+    m.indices.extend([i, i + 1, i + 2, i, i + 2, i + 3, i + 2, i + 1, i, i + 3, i + 2, i]);
+}
+
+/// THE PEACEFUL WATERS' toast (17/11/2026): entering them (also out of a
+/// harbour corridor into them) and leaving them. `None` on arrival.
+pub fn aviso_de_aguas(antes: Option<bool>, agora: bool, saiu_do_corredor: bool) -> Option<(&'static str, Color)> {
+    match (antes, agora) {
+        (Some(false), true) => Some(("Peaceful waters: no PvP", COR_PAZ)),
+        (Some(true), false) => Some(("Leaving peaceful waters: PvP is on", estilo::VERMELHO)),
+        (Some(true), true) if saiu_do_corredor => Some(("Peaceful waters: no PvP", COR_PAZ)),
+        _ => None,
+    }
+}
+
+/// The peaceful waters' colour (the protective ring, the curtain, the toast).
+pub const COR_PAZ: Color = Color::new(0.62, 0.92, 1.0, 1.0);
+
+/// Is my captain BARRED from peaceful waters (PK points or PK combat)?
+pub fn pk_barrado(e: &crate::world::Ent) -> bool {
+    e.meta.pk.pontos > 0 || e.meta.pk.combate
 }
 
 // ─────────────────────────── events ───────────────────────────
@@ -540,30 +633,62 @@ impl MarCombate {
             let p = e.render_pos;
             let y = y_agua();
             let fase = t * 2.4 + (id.0 % 17) as f32;
+            // SUBMERGED (owner, 17/11/2026: "os bichos aquáticos têm que
+            // ficar submersos ... e só emergirem para atacar"): the body is
+            // under the water (`marinhos::desenha_ent` draws it only when it
+            // rises), so the water shows a dark shadow of it, and the fin or
+            // the humps cutting the surface. Rising to bite they sink away.
+            let sobe = crate::marinhos::emersao(*id);
+            let some = 1.0 - sobe;
+            let comprido = if e.meta.kind == ENGUIA { 4.6 } else { 4.2 } * k;
+            let largo = if e.meta.kind == ENGUIA { 0.55 } else { 1.0 } * k;
+            sombra_submersa(&mut self.decais, p - frente * 0.4 * k, frente, lado, comprido, largo, fase, e.meta.kind == ENGUIA);
             match e.meta.kind {
                 ENGUIA => {
-                    // Three humps breaking the surface, rolling along the body.
+                    // A few humps of the back breaking the surface in arcs
+                    // that rise and sink, rolling along the body.
                     for s in 0..3 {
-                        let c = p - frente * (s as f32 * 0.9 * k) + lado * (fase + s as f32 * 1.4).sin() * 0.35 * k;
-                        let alto = (0.32 + 0.12 * (fase + s as f32).sin()) * k;
-                        let a = vec3(c.x - frente.x * 0.45 * k, y, c.y - frente.y * 0.45 * k);
-                        let b = vec3(c.x + frente.x * 0.45 * k, y, c.y + frente.y * 0.45 * k);
-                        tri(&mut self.decais, a, vec3(c.x, y + alto, c.y), b, [0.86, 0.55, 0.16, 1.0]);
-                        tri(&mut self.decais, b, vec3(c.x, y + alto, c.y), a, [0.30, 0.20, 0.10, 1.0]);
+                        let h = (fase * 0.9 - s as f32 * 1.9).sin();
+                        if h < 0.08 || some < 0.05 {
+                            continue;
+                        }
+                        let c = p - frente * (s as f32 * 1.25 * k) + lado * (fase + s as f32 * 1.4).sin() * 0.3 * k;
+                        corcova(&mut self.decais, c, frente, lado, 0.55 * k, 0.42 * k * h * some, 0.17 * k);
+                        // Foam where it breaks the water.
+                        faixa(&mut self.decais, c - frente * 0.62 * k, c - frente * 0.45 * k, 0.3 * k, [0.95, 0.98, 1.0, 0.5 * h]);
+                        faixa(&mut self.decais, c + frente * 0.45 * k, c + frente * 0.62 * k, 0.3 * k, [0.95, 0.98, 1.0, 0.5 * h]);
                     }
                 }
                 _ => {
-                    // THE FIN: a dark blade cutting the water, a little wake.
-                    let base = p + frente * 0.25 * k;
-                    let a = vec3(base.x + frente.x * 0.5 * k, y, base.y + frente.y * 0.5 * k);
-                    let b = vec3(base.x - frente.x * 0.55 * k, y, base.y - frente.y * 0.55 * k);
-                    let topo = vec3(base.x - frente.x * 0.35 * k, y + (0.95 + 0.06 * fase.sin()) * k, base.y - frente.y * 0.35 * k);
-                    let cor = if elite { [0.42, 0.12, 0.12, 1.0] } else { [0.2, 0.24, 0.28, 1.0] };
-                    tri(&mut self.decais, a, topo, b, cor);
-                    tri(&mut self.decais, b, topo, a, [cor[0] * 0.7, cor[1] * 0.7, cor[2] * 0.7, 1.0]);
-                    let rabo = p - frente * 1.6 * k;
-                    faixa(&mut self.decais, p + lado * 0.25 * k, rabo + lado * 0.7 * k, 0.16, [0.95, 0.98, 1.0, 0.45]);
-                    faixa(&mut self.decais, p - lado * 0.25 * k, rabo - lado * 0.7 * k, 0.16, [0.95, 0.98, 1.0, 0.45]);
+                    // THE FIN: a dark blade cutting the water, a small V of
+                    // foam behind it. It sinks as the head rises to bite.
+                    if some > 0.05 {
+                        let base = p + frente * 0.25 * k;
+                        let a = vec3(base.x + frente.x * 0.5 * k, y, base.y + frente.y * 0.5 * k);
+                        let b = vec3(base.x - frente.x * 0.55 * k, y, base.y - frente.y * 0.55 * k);
+                        let topo = vec3(base.x - frente.x * 0.35 * k, y + (0.95 + 0.06 * fase.sin()) * k * some, base.y - frente.y * 0.35 * k);
+                        let cor = if elite { [0.42, 0.12, 0.12, 1.0] } else { [0.2, 0.24, 0.28, 1.0] };
+                        tri(&mut self.decais, a, topo, b, cor);
+                        tri(&mut self.decais, b, topo, a, [cor[0] * 0.7, cor[1] * 0.7, cor[2] * 0.7, 1.0]);
+                        let proa = base + frente * 0.55 * k;
+                        let rabo = p - frente * 1.6 * k;
+                        faixa(&mut self.decais, proa, rabo + lado * 0.7 * k, 0.14, [0.95, 0.98, 1.0, 0.5 * some]);
+                        faixa(&mut self.decais, proa, rabo - lado * 0.7 * k, 0.14, [0.95, 0.98, 1.0, 0.5 * some]);
+                        faixa(&mut self.decais, proa - lado * 0.12 * k, proa + lado * 0.12 * k, 0.22 * k, [1.0, 1.0, 1.0, 0.6 * some]);
+                    }
+                }
+            }
+            // RISING TO BITE: a ring of foam spreading round the head, and a
+            // burst of spray as it breaks the surface (once per bite: the
+            // frame the wind-up crosses 0.2 s).
+            if sobe > 0.05 {
+                let cabeca = p + frente * 1.4 * k;
+                anel(&mut self.decais, cabeca, (0.7 + 0.9 * sobe) * k, 0.22 * k, [0.95, 0.98, 1.0, 0.55 * sobe], 20);
+                anel(&mut self.decais, cabeca, (1.3 + 1.2 * sobe) * k, 0.1 * k, [0.95, 0.98, 1.0, 0.25 * sobe], 20);
+            }
+            if let Some((_, dt, _)) = e.ataque_mob {
+                if dt >= 0.2 && dt - get_frame_time() < 0.2 {
+                    self.respingo(p + frente * 1.4 * k);
                 }
             }
             if elite {
@@ -620,6 +745,36 @@ impl MarCombate {
             if agora < self.clarao_ate {
                 let f = ((self.clarao_ate - agora) / 0.25) as f32;
                 setor(&mut self.decais, eu.render_pos, 0.0, 3.2, 0.0, std::f32::consts::TAU, [1.0, 0.15, 0.1, 0.4 * f], 16);
+            }
+        }
+        // ── THE PEACEFUL WATERS (17/11/2026) ──
+        if let Some(eu) = eu {
+            let aqui = g(eu.render_pos);
+            let barrado = pk_barrado(eu);
+            // A soft protective ring round the hull while in them.
+            if shared::mar::aguas_pacificas(aqui) {
+                let r = 3.4 * prontos.escala.max(0.6);
+                let pulso = 0.8 + 0.2 * (t * 1.6).sin();
+                anel(&mut self.decais, eu.render_pos, r, 0.16, [0.62, 0.92, 1.0, 0.3 * pulso], 40);
+                anel(&mut self.decais, eu.render_pos, r + 0.32, 0.06, [1.0, 0.86, 0.5, 0.28 * pulso], 40);
+            }
+            // The boundary: a faint curtain of light (solid red when closed
+            // to me), fading with distance like the sea's other props.
+            for (a, b) in shared::mar::fronteira_pacifica() {
+                let (a, b) = (vec2(a.x, a.y), vec2(b.x, b.y));
+                let d = ((a + b) * 0.5).distance(eu.render_pos);
+                if d > 75.0 {
+                    continue;
+                }
+                let f = 1.0 - ((d - 40.0) / 35.0).clamp(0.0, 1.0);
+                let onda = 0.85 + 0.15 * (t * 1.3 + a.x * 0.2 + a.y * 0.13).sin();
+                if barrado {
+                    cortina(&mut self.decais, a, b, 2.6, [1.0, 0.16, 0.1, 0.6 * f * onda], [1.0, 0.2, 0.1, 0.0]);
+                    faixa(&mut self.decais, a, b, 0.3, [1.0, 0.25, 0.15, 0.8 * f]);
+                } else {
+                    cortina(&mut self.decais, a, b, 1.4, [0.62, 0.92, 1.0, 0.2 * f * onda], [0.62, 0.92, 1.0, 0.0]);
+                    faixa(&mut self.decais, a, b, 0.12, [0.8, 0.96, 1.0, 0.35 * f]);
+                }
             }
         }
         // ── particles and balls: camera-facing quads ──
@@ -706,6 +861,11 @@ impl MarCombate {
         if let Some((texto, cor)) = aviso_de_zona(self.zona, zona) {
             self.aviso = Some((texto, cor, agora));
         }
+        let pacifica = shared::mar::aguas_pacificas(g(eu));
+        if let Some((texto, cor)) = aviso_de_aguas(self.pacifica, pacifica, self.zona == Some(0) && zona == 1) {
+            self.aviso = Some((texto, cor, agora));
+        }
+        self.pacifica = Some(pacifica);
         self.zona = Some(zona);
         let baixo = crate::mar_ui::casco_de(eq).is_some_and(|(c, m, _)| m > 0 && (c as f32 / m as f32) <= nv::CRITICO);
         if baixo && !self.baixo {
@@ -904,6 +1064,12 @@ pub async fn previa() {
             vec![(nv::id_de_skill(0), aberto, alvo_perto, 0)],
             0.3,
         ),
+        // THE SUBMERGED SEA MOBS (17/11/2026): a fin cruising, an eel's
+        // humps, a shark rising to bite at the ship's side, an elite rising.
+        ("combate-barbatana", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 5.0 + rumo * 2.0, Some("Reef Shark"))], Some(2), vec![], 0.0),
+        ("combate-enguia", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, ENGUIA, aberto + lado * 5.5 + rumo * 1.0, Some("Tiger Eel"))], Some(2), vec![], 0.0),
+        ("combate-mordida", aberto, rumo * 4.0, vec![(2, EntityTag::Enemy, TUBARAO, aberto + lado * 2.6 + rumo * 0.3, Some("Reef Shark"))], Some(2), vec![], 0.0),
+        ("combate-elite", aberto, rumo * 4.0, vec![(3, EntityTag::Enemy, TUBARAO, aberto - lado * 3.2 + rumo * 0.5, Some("[ELITE] Dread Reef Shark"))], Some(3), vec![], 0.0),
         ("rota", fb + eb * 30.0, eb * 10.0, vec![], None, vec![], 0.0),
         (
             "mapa",
@@ -944,6 +1110,18 @@ pub async fn previa() {
                     e.yaw = yaw_eu + 0.6;
                 }
             }
+            // The bites: the mob turned to the ship, its wind-up under way.
+            let mordendo = matches!(nome, "combate-mordida" | "combate-elite");
+            if mordendo || nome == "combate-barbatana" || nome == "combate-enguia" {
+                for (id, e) in world.ents.iter_mut().filter(|(id, _)| id.0 != 1) {
+                    let d = if mordendo { eu - e.render_pos } else { rumo };
+                    e.yaw = yaw_de(d);
+                    if mordendo {
+                        e.ataque_mob = Some((Some(EntityId(1)), 0.6, nv::MORDIDA_PREPARO_S));
+                        crate::marinhos::define_emersao(*id, 1.0);
+                    }
+                }
+            }
             let mut vfx = MarCombate::default();
             let mut rastro = crate::rastro::Rastro::default();
             let mut rota = crate::mar_rota::RotaDoMar::default();
@@ -963,7 +1141,18 @@ pub async fn previa() {
             let alvo_p = alvo.and_then(|a| world.ents.get(&EntityId(a))).map(|e| e.render_pos);
             let q = crate::mar_camera::enquadramento(eu, vec2(yaw_eu.sin(), yaw_eu.cos()), alvo_p, 0, h > w, 1.0, 0.0);
             let cam_yaw = crate::mar_camera::yaw_atras(vec2(yaw_eu.sin(), yaw_eu.cos())) + 0.35;
-            let mut cam = crate::render3d::camera_no_mar(q.centro, 0.0, cam_yaw, q.fator, q.pitch);
+            // The submerged mobs' shots: closer and lower, on the mob.
+            let perto = matches!(nome, "combate-barbatana" | "combate-enguia" | "combate-mordida" | "combate-elite");
+            let mut cam = match (perto, alvo_p) {
+                (true, Some(b)) => {
+                    let foco = if nome == "combate-enguia" { b - rumo.normalize_or_zero() * 1.4 } else { eu.lerp(b, 0.6) };
+                    // The bites from the mob's outer side, looking at the hull.
+                    let fora = (b - eu).normalize_or_zero().rotate(vec2(0.88, 0.48));
+                    let yaw = if nome.ends_with("mordida") || nome.ends_with("elite") { (-fora.x).atan2(fora.y) } else { cam_yaw + 0.9 };
+                    crate::render3d::camera_no_mar(foco, 0.0, yaw, 0.38, 0.42)
+                }
+                _ => crate::render3d::camera_no_mar(q.centro, 0.0, cam_yaw, q.fator, q.pitch),
+            };
             cam.render_target = Some(rt.clone());
             cam.aspect = Some(w as f32 / h as f32);
             let mut hab = crate::habilidades::Habilidades::default();
@@ -1009,11 +1198,15 @@ pub async fn previa() {
                 crate::mar_cena::desenha_mundo(&terreno, &solido, &cam, &navios, Some(eu));
                 set_camera(&cam);
                 macroquad::material::gl_use_material(&solido);
-                for (id, tag, kind, p, _) in outros.iter() {
+                for (id, tag, _, p, _) in outros.iter() {
                     if *tag == EntityTag::Enemy {
                         let e = &world.ents[&EntityId(*id)];
-                        let escala = if e_elite(e) { 1.6 } else { 1.0 };
-                        crate::marinhos::desenha(*kind, vec3(p.x, 0.0, p.y), e.yaw, *id as u64, escala);
+                        if mordendo {
+                            crate::marinhos::define_emersao(EntityId(*id), 1.0);
+                        }
+                        // As the game draws it: under the water, the head
+                        // out only to bite (`marinhos::desenha_ent`).
+                        crate::marinhos::desenha_ent(e, vec3(p.x, 0.0, p.y));
                     }
                 }
                 macroquad::material::gl_use_default_material();
@@ -1099,6 +1292,23 @@ mod testes {
         // The newest is in, the very first was overwritten.
         assert!(m.parts.iter().any(|p| p.tam == 999.0));
         assert!(!m.parts.iter().any(|p| p.tam == 0.0));
+    }
+
+    /// THE PEACEFUL WATERS' TOAST: entering them, leaving them (red), out of
+    /// a peaceful harbour into them — never on arrival, never twice.
+    #[test]
+    fn o_aviso_das_aguas_pacificas() {
+        assert_eq!(aviso_de_aguas(None, true, false), None);
+        assert_eq!(aviso_de_aguas(Some(true), true, false), None);
+        assert_eq!(aviso_de_aguas(Some(false), false, false), None);
+        assert_eq!(aviso_de_aguas(Some(false), true, false).map(|a| a.0), Some("Peaceful waters: no PvP"));
+        assert_eq!(aviso_de_aguas(Some(true), false, false).map(|a| a.0), Some("Leaving peaceful waters: PvP is on"));
+        assert_eq!(aviso_de_aguas(Some(true), true, true).map(|a| a.0), Some("Peaceful waters: no PvP"));
+        // The Bosque's dock is in them, the Plateau's is not.
+        let b = shared::mar::vista_da_zona("ilha_inicial").unwrap().fundeadouro();
+        assert!(shared::mar::aguas_pacificas(b));
+        let p = shared::mar::vista_da_zona("ilha_planalto").unwrap().fundeadouro();
+        assert!(!shared::mar::aguas_pacificas(p));
     }
 
     /// THE ZONE TOAST speaks only when the waters CHANGE: into lawless

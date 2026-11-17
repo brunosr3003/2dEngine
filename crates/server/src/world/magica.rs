@@ -355,19 +355,10 @@ impl GameWorld {
         } else {
             s.magica_volta.clone()
         };
-        // CAME BY SEA (docked at the Magic Island's sea dock): back on the
-        // ship, at that dock. Without a seaworthy ship, or with the sea
-        // down, the Bosque — never a hull-less captain adrift.
+        // The Magic Island has no sea dock (17/11/2026, menu only): a return
+        // to the sea (saved before that, or the menu opened at sea) lands in
+        // the Bosque — never a hull-less captain adrift.
         if shared::mar::e_mar(&volta) {
-            let navega = self.navio_equipado(sid).is_some_and(|(_, d)| shared::navio::pode_zarpar(&d));
-            if let Some(v) = shared::mar::vista_da_ilha(shared::mar::ILHA_MAGICA).filter(|_| navega) {
-                if self.mandar_para_zona(sid, shared::mar::ZONA, v.fundeadouro(), Some(aviso), Some("the Open Sea")) {
-                    if let Some(s) = self.sessions.get_mut(&sid) {
-                        s.zona_volta = shared::magica::ZONA.to_string();
-                    }
-                    return;
-                }
-            }
             volta = shared::terreno::ARQUIPELAGO[0].zona.to_string();
         }
         let Some(def) = shared::terreno::def_da_zona(&volta) else {

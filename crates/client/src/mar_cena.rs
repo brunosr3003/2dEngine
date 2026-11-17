@@ -573,16 +573,6 @@ pub fn prop_da_coluna(bx: i32, bz: i32, forracao: u8) -> Option<(usize, f32, u8)
                 (P_CORAL + escolha % 2, 0.22)
             }
         }
-        Feitio::Magica => {
-            if t.dentro < 6.0 {
-                return None;
-            }
-            if escolha % 3 == 0 {
-                (P_CRISTAL + escolha % 2, 0.22)
-            } else {
-                (P_COPA + escolha % 3, 0.36)
-            }
-        }
     };
     if sorte >= chance {
         return None;
@@ -643,7 +633,6 @@ pub fn cor_da_ilha(f: Feitio) -> Color {
         Feitio::Celeste => Color::from_rgba(255, 214, 92, 255),
         Feitio::Neon => Color::from_rgba(255, 64, 150, 255),
         Feitio::Abissal => Color::from_rgba(64, 236, 220, 255),
-        Feitio::Magica => Color::from_rgba(226, 120, 255, 255),
     }
 }
 
@@ -2041,7 +2030,6 @@ pub async fn previa() {
         ("celeste", shared::celeste::ZONA),
         ("kogen", shared::kogen::ZONA),
         ("abissal", shared::abissal::ZONA),
-        ("magica", shared::magica::ZONA),
     ] {
         let i = v(zona);
         let (f, e, l, raiz, c) = (mq(i.fundeadouro()), mq(i.eixo()), mq(i.lado()), mq(i.raiz), mq(i.centro));
