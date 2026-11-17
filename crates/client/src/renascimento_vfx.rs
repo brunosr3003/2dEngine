@@ -642,7 +642,7 @@ fn sol_atras(m: &mut Malha, peito: Vec3, olho: Vec3, s: f32, luz: f32, giro: f32
 /// the ground, and three dark arms sweeping into it.
 fn vortice_escuro(m: &mut Malha, pe: Vec3, raio: f32, k: f32, giro: f32, detalhe: bool) {
     let escuro = Color::new(0.02, 0.0, 0.05, 1.0);
-    let c = pe + Vec3::Y * 0.03;
+    let c = pe + Vec3::Y * 0.10;
     let rh = raio * 0.62;
     let rd = raio * 1.20;
     m.anel(
@@ -681,7 +681,7 @@ fn braco(m: &mut Malha, c: Vec3, r0: f32, r1: f32, giro: f32, cor: Color, a: f32
 #[allow(clippy::too_many_arguments)]
 fn buraco_negro(m: &mut Malha, c: &Corpo, olho: Vec3, t: f32, raio: f32, k: f32, luz: f32, detalhe: bool) {
     let (cor, claro) = (cor_do_tier(5), claro_do_tier(5));
-    let centro = c.pe + Vec3::Y * 0.04;
+    let centro = c.pe + Vec3::Y * 0.10;
     let rh = raio * 0.62;
     let rd = raio * 1.20;
     let giro = t * 0.6 + c.fase;
