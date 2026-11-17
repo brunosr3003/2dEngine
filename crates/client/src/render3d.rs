@@ -1905,14 +1905,15 @@ pub fn draw_entities_com_sombras(
         if crate::invisibilidade::pular_corpo(id, self_id) {
             continue;
         }
-        let p = vista.pos_de(e);
 
-        // Skip stale copies of the player's own body: only draw the one with
-        // the SELF flag. When sailing back to the same dock, old snapshots
-        // may still have the previous position.
-        if Some(id) == self_id && (e.state.flags & shared::ent_flags::SELF) == 0 {
+        // Skip stale copies of the player's own body: only draw entities
+        // with the SELF flag set. Without this check, old snapshots from
+        // zone changes can leave duplicate bodies standing around.
+        if e.meta.tag == shared::EntityTag::Player && (e.state.flags & shared::ent_flags::SELF) == 0 {
             continue;
         }
+
+        let p = vista.pos_de(e);
 
         // Marca do alvo: anel no chao, que e' como MMO de target sinaliza.
         if Some(id) == target {
