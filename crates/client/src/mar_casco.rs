@@ -810,7 +810,8 @@ pub fn desenha_navio(p: Vec3, yaw: f32, semente: u64, v: Visual, vel_fio: Option
     if perto <= 0.0 {
         // Far: all sails in one mesh, when set.
         if vela > 0.5 {
-            crate::gpu_estatica::desenha_voxel(&n.velas_juntas, modelo_m, [0.0; 4], Default::default());
+            let offset = Mat4::from_translation(vec3(0.0, 0.015, 0.0));
+            crate::gpu_estatica::desenha_voxel(&n.velas_juntas, modelo_m * offset, [0.0; 4], Default::default());
         }
     } else {
         // Faster = more wind in the cloth.
@@ -826,13 +827,15 @@ pub fn desenha_navio(p: Vec3, yaw: f32, semente: u64, v: Visual, vel_fio: Option
             let s = 1.0 + 0.18 * perto * vela * (tempo * 1.1 + k as f32 * 0.9).sin();
             let esc = if *quadrada { vec3(1.0, 1.0, s) } else { vec3(s, 1.0, 1.0) };
             let infla = Mat4::from_translation(*pivo) * Mat4::from_scale(esc) * Mat4::from_translation(-*pivo);
+            // A tiny offset to separate sails from the hull and avoid z-fighting.
+            let offset = Mat4::from_translation(vec3(0.0, 0.015, 0.0));
             // THE CLOTH (owner: "the sail needs a movement animation, like
             // wind in it"): ripples running across it, luffing at the free
             // edges, stronger fast; and the furl, per sail on its yard.
             let amp = (0.05 + 0.10 * vento) * perto * vela;
             let a = [if pano.quadrada { 1.0 } else { 2.0 }, recolhida, amp, tempo + k as f32 * 1.7];
             crate::gpu_estatica::com_vela(a, pano.b, || {
-                crate::gpu_estatica::desenha_voxel(m, modelo_m * infla, [0.0; 4], Default::default());
+                crate::gpu_estatica::desenha_voxel(m, modelo_m * offset * infla, [0.0; 4], Default::default());
             });
         }
         let corda = [52u8, 40, 30, (255.0 * perto * surge) as u8];
