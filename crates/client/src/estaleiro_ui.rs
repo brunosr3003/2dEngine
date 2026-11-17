@@ -806,17 +806,7 @@ fn fundo_do_palco(r: Rect, f: f32, t: f32) {
         );
         draw_rectangle(r.x + 3.0, r.y + 3.0 + r.h * 0.62 * a, r.w - 6.0, r.h * 0.62 / faixas as f32 + 1.0, c);
     }
-    // The water of the dock.
-    let agua = r.y + r.h * 0.62;
-    draw_rectangle(r.x + 3.0, agua, r.w - 6.0, r.y + r.h - agua - 3.0, Color::new(0.07, 0.20, 0.30, 1.0));
-    for k in 0..6 {
-        let y = agua + 8.0 * f + k as f32 * 10.0 * f;
-        if y > r.y + r.h - 6.0 {
-            break;
-        }
-        let dx = (t * 0.6 + k as f32).sin() * 12.0 * f;
-        draw_line(r.x + 20.0 * f + dx, y, r.x + r.w - 20.0 * f + dx, y, 1.0, Color::new(0.5, 0.75, 0.9, 0.08));
-    }
+    // Water and dock removed: clean stage for the 3D ship only.
     // The studio light.
     let c = vec2(r.center().x, r.y + r.h * 0.45);
     for k in 0..8 {
@@ -869,29 +859,7 @@ fn desenha_navio(r: Rect, v: Visual, orbita: f32, zoom: f32, fantasma: bool, sol
     set_camera(&cam);
     crate::render3d::limpa_so_profundidade();
     macroquad::material::gl_use_material(solido);
-    let agua = crate::agua::ALTURA_DA_AGUA;
-    let boca = comprido * 0.34 + 0.4;
-    // The dock floor and the keel blocks under the hull.
-    draw_cube(vec3(p.x, agua - 1.6, p.z), vec3(boca * 2.0 + 6.0, 0.3, comprido * 2.6 + 3.0), None, Color::from_rgba(58, 62, 70, 255));
-    let mut z = -comprido * 0.85;
-    while z <= comprido * 0.85 {
-        draw_cube(vec3(p.x, agua - 1.0, p.z + z), vec3(boca * 0.9, 0.9, 0.42), None, Color::from_rgba(104, 74, 44, 255));
-        for lado in [-1.0f32, 1.0] {
-            draw_cube(vec3(p.x + lado * boca * 0.95, agua - 0.4, p.z + z), vec3(0.22, 2.0, 0.22), None, Color::from_rgba(92, 64, 38, 255));
-        }
-        z += comprido * 0.42;
-    }
-    // The two piers either side.
-    for lado in [-1.0f32, 1.0] {
-        let x = p.x + lado * (boca + 2.2);
-        draw_cube(vec3(x, agua + 0.28, p.z), vec3(1.8, 0.24, comprido * 2.6 + 3.0), None, Color::from_rgba(120, 86, 52, 255));
-        let mut zz = -comprido * 1.2;
-        while zz <= comprido * 1.2 {
-            draw_cube(vec3(x + lado * 0.8, agua - 0.5, p.z + zz), vec3(0.3, 1.8, 0.3), None, Color::from_rgba(86, 60, 36, 255));
-            draw_cube(vec3(x + lado * 0.8, agua + 0.75, p.z + zz), vec3(0.18, 0.8, 0.18), None, Color::from_rgba(200, 160, 80, 255));
-            zz += comprido * 0.6;
-        }
-    }
+    // Dock floor, keel blocks and piers removed: clean stage for the ship only.
     let antes = crate::gpu_estatica::some_atual();
     // No fog on the stage: the world's is centred on the player, far away.
     let neblina = crate::gpu_estatica::neblina();
@@ -903,9 +871,6 @@ fn desenha_navio(r: Rect, v: Visual, orbita: f32, zoom: f32, fantasma: bool, sol
     crate::mar_casco::sem_surgir(|| crate::mar_casco::desenha(p, yaw, semente, v));
     crate::gpu_estatica::define_some(antes);
     crate::gpu_estatica::define_neblina(vec2(neblina[0], neblina[1]), neblina[2], neblina[3]);
-    macroquad::material::gl_use_material(solido);
-    // The water line, translucent over the hull's foot.
-    draw_cube(vec3(p.x, agua + 0.02, p.z), vec3(boca * 2.0 + 2.6, 0.03, comprido * 2.6 + 3.0), None, Color::new(0.16, 0.42, 0.58, 0.55));
     macroquad::material::gl_use_default_material();
     crate::render3d::camera_padrao();
 }
