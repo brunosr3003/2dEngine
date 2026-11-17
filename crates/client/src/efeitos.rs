@@ -168,6 +168,15 @@ fn placas_de_jogador(world: &World, vista: &Vista) {
             continue;
         }
         let eu_mesmo = world.self_id == Some(*id);
+        // Skip duplicate players near me (zone change ghosts): if another
+        // Player entity is within 10u of me and it's not me, it's a ghost.
+        if !eu_mesmo {
+            if let Some(mpos) = minha_pos {
+                if e.render_pos.distance(mpos) < 10.0 {
+                    continue;
+                }
+            }
+        }
         // Longe demais não recebe placa: a tela não pode virar um mural. O
         // próprio jogador é sempre visível (distância zero).
         if !eu_mesmo && minha_pos.is_some_and(|p| p.distance(e.render_pos) > 34.0) {
