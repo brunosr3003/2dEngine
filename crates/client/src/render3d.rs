@@ -1896,6 +1896,10 @@ pub fn draw_entities_com_sombras(
     let mut rastros = Vec::new();
     let mut brilhos: Vec<Brilho> = Vec::new();
     let self_id = world.self_id;
+
+    // Get my position to filter nearby ghosts
+    let my_pos = self_id.and_then(|sid| world.ents.get(&sid).map(|e| e.render_pos));
+
     for id in order {
         let Some(e) = world.ents.get_mut(&id) else {
             continue;
@@ -1906,11 +1910,14 @@ pub fn draw_entities_com_sombras(
             continue;
         }
 
-        // Skip stale copies of the player's own body: only draw entities
-        // with the SELF flag set. Without this check, old snapshots from
-        // zone changes can leave duplicate bodies standing around.
-        if e.meta.tag == shared::EntityTag::Player && (e.state.flags & shared::ent_flags::SELF) == 0 {
-            continue;
+        // Skip duplicate players near me (zone change ghosts): if another
+        // Player entity is within 10u of me and it's not me, it's a ghost.
+        if e.meta.tag == shared::EntityTag::Player && Some(id) != self_id {
+            if let Some(mpos) = my_pos {
+                if e.render_pos.distance(mpos) < 10.0 {
+                    continue;
+                }
+            }
         }
 
         let p = vista.pos_de(e);
