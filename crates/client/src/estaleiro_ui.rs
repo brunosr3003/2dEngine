@@ -884,7 +884,7 @@ fn desenha_navio(r: Rect, v: Visual, orbita: f32, zoom: f32, fantasma: bool, sol
     // The two piers either side.
     for lado in [-1.0f32, 1.0] {
         let x = p.x + lado * (boca + 2.2);
-        draw_cube(vec3(x, agua + 0.25, p.z), vec3(1.8, 0.24, comprido * 2.6 + 3.0), None, Color::from_rgba(120, 86, 52, 255));
+        draw_cube(vec3(x, agua + 0.28, p.z), vec3(1.8, 0.24, comprido * 2.6 + 3.0), None, Color::from_rgba(120, 86, 52, 255));
         let mut zz = -comprido * 1.2;
         while zz <= comprido * 1.2 {
             draw_cube(vec3(x + lado * 0.8, agua - 0.5, p.z + zz), vec3(0.3, 1.8, 0.3), None, Color::from_rgba(86, 60, 36, 255));
@@ -905,7 +905,7 @@ fn desenha_navio(r: Rect, v: Visual, orbita: f32, zoom: f32, fantasma: bool, sol
     crate::gpu_estatica::define_neblina(vec2(neblina[0], neblina[1]), neblina[2], neblina[3]);
     macroquad::material::gl_use_material(solido);
     // The water line, translucent over the hull's foot.
-    draw_cube(vec3(p.x, agua, p.z), vec3(boca * 2.0 + 2.6, 0.03, comprido * 2.6 + 3.0), None, Color::new(0.16, 0.42, 0.58, 0.55));
+    draw_cube(vec3(p.x, agua + 0.02, p.z), vec3(boca * 2.0 + 2.6, 0.03, comprido * 2.6 + 3.0), None, Color::new(0.16, 0.42, 0.58, 0.55));
     macroquad::material::gl_use_default_material();
     crate::render3d::camera_padrao();
 }
