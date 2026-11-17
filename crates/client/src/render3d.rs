@@ -1081,8 +1081,30 @@ pub(crate) const SOLIDO_FRAGMENTO: &str = r#"#version 100
     // Distance fog: xy = centre (world x, z), z = where it starts, w = where
     // it is solid sky. w <= 0 turns it off (panels, previews).
     uniform vec4 Neblina;
+    // THE FADE (`gpu_estatica::define_some`): how much of this draw is
+    // gone, 0..1, as an ordered 4x4 dither. Things at the edge of their draw
+    // distance (the sea's wreckage, chunks, moored boats) and across a
+    // level-of-detail switch fade instead of popping. 0 = every pixel.
+    uniform float Some;
+    // THE HOLE (`gpu_estatica::define_oco`): xy = centre (world x, z), z =
+    // half side. A fragment closer than that along both axes is dropped:
+    // the sea's far island meshes never show inside the chunks drawn whole
+    // round the player (they could poke through a voxel slope there).
+    // z = 0: off.
+    uniform vec3 Oco;
 
     void main() {
+        if (Oco.z > 0.0) {
+            vec2 qo = abs(mundo.xz - Oco.xy);
+            if (max(qo.x, qo.y) < Oco.z) discard;
+        }
+        if (Some > 0.0) {
+            vec2 q = mod(floor(gl_FragCoord.xy), 4.0);
+            vec2 qa = mod(q, 2.0);
+            vec2 qb = floor(q * 0.5);
+            float limiar = (4.0 * mod(2.0 * qa.x + 3.0 * qa.y, 4.0) + mod(2.0 * qb.x + 3.0 * qb.y, 4.0) + 0.5) / 16.0;
+            if (limiar < Some) discard;
+        }
         if (recortavel > 0.5 && Recorte.z > 0.0 && gl_FragCoord.z < RecorteZ) {
             float d = distance(gl_FragCoord.xy, Recorte.xy) / Recorte.z;
             if (d < 1.0) {
@@ -1179,6 +1201,8 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("PeleClaro", UniformType::Float4),
                 UniformDesc::new("PeleEsc", UniformType::Float4),
                 UniformDesc::new("Neblina", UniformType::Float4),
+                UniformDesc::new("Some", UniformType::Float1),
+                UniformDesc::new("Oco", UniformType::Float3),
                 UniformDesc::new("LuzPos", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
                 UniformDesc::new("LuzCor", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
             ],
@@ -1644,6 +1668,12 @@ fn desenha_bau(p: Vec3) {
     desenha_bau_de_cor(p, None);
 }
 
+/// A chest DRIFTING at sea: on its raft, riding the swell, all one voxel
+/// model at the hulls' grid (`mar_cena::jangada`).
+pub(crate) fn desenha_bau_a_deriva(p: Vec3, semente: u64, tempo: f32) {
+    crate::mar_cena::jangada(p, semente, tempo);
+}
+
 /// The chest, with its bands and glow in the color of a Stormkeep chest
 /// (`shared::forte`, 2 green .. 4 purple); `None` = the dungeon's gold one.
 fn desenha_bau_de_cor(p: Vec3, cor: Option<u8>) {
@@ -1866,7 +1896,7 @@ pub fn draw_entities_com_sombras(
             if shared::npc_papel_de_kind(e.meta.kind) == shared::dungeon::PAPEL_BAU {
                 // At sea the chest DRIFTS: on a raft riding the swell.
                 if crate::mar_ui::no_mar() {
-                    desenha_bau(crate::mar_cena::jangada(p, e.meta.id.0 as u64, get_time() as f32));
+                    desenha_bau_a_deriva(p, e.meta.id.0 as u64, get_time() as f32);
                     continue;
                 }
                 desenha_bau(p);

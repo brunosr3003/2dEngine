@@ -128,6 +128,12 @@ struct UniformesSolido {
     luz_dia: f32,
     faixas: Faixas,
     neblina: [f32; 4],
+    /// How much of what is drawn is GONE, 0..1 (`define_some`): an ordered
+    /// dither in the world shader, so a thing at the edge of its draw
+    /// distance fades instead of popping.
+    some: f32,
+    /// The hole round the player the far meshes skip (`define_oco`).
+    oco: [f32; 3],
     luz_pos: [[f32; 4]; MAX_LUZES],
     luz_cor: [[f32; 4]; MAX_LUZES],
 }
@@ -202,6 +208,7 @@ struct UniformesAgua {
     estilo: f32,
     ceu: [f32; 4],
     sol: [f32; 4],
+    borda: [f32; 2],
 }
 
 /// The open sea's water look (`agua::desenha`): (eye, style, sky, sun).
@@ -226,6 +233,14 @@ thread_local! {
     static LUZ_DIA: Cell<f32> = const { Cell::new(0.0) };
     /// The distance fog for what is drawn now (`define_neblina`).
     static NEBLINA: Cell<[f32; 4]> = const { Cell::new([0.0; 4]) };
+    /// The dither fade for what is drawn now (`define_some`).
+    static SOME: Cell<f32> = const { Cell::new(0.0) };
+    /// The hole the far meshes skip (`define_oco`).
+    static OCO: Cell<[f32; 3]> = const { Cell::new([0.0; 3]) };
+    /// Draw calls and indices sent through here since `zera_contagem`.
+    static CONTAGEM: Cell<(usize, usize)> = const { Cell::new((0, 0)) };
+    /// The open sea's water fade band (`define_borda`).
+    static BORDA: Cell<[f32; 2]> = const { Cell::new([0.0; 2]) };
     static LUZES: Cell<Luzes> = const { Cell::new(([[0.0; 4]; MAX_LUZES], [[0.0; 4]; MAX_LUZES])) };
     static AGUA: Cell<Agua> = const { Cell::new((Vec3::ZERO, 0.0, [0.588, 0.729, 0.839, 0.0], [0.0, 1.0, 0.0, 0.0])) };
     /// Buffers das malhas de voxel (`VoxCache`), pela posicao dos vertices na
@@ -247,6 +262,73 @@ pub fn define_neblina(centro: macroquad::math::Vec2, inicio: f32, fim: f32) {
 
 pub fn neblina() -> [f32; 4] {
     NEBLINA.with(|n| n.get())
+}
+
+/// THE FADE (sea fix, 17/11/2026): how much of everything drawn after this
+/// is gone, 0 (all there) .. 1 (none), as an ordered 4×4 dither in the world
+/// shader — an opaque pipeline cannot blend, but it can skip pixels. What
+/// reaches the end of its draw distance, or crosses a level-of-detail
+/// switch, fades over a band instead of popping. Always set it back to 0
+/// (`com_some` does).
+pub fn define_some(f: f32) {
+    SOME.with(|s| s.set(f.clamp(0.0, 1.0)));
+}
+
+fn some() -> f32 {
+    SOME.with(|s| s.get())
+}
+
+/// THE HOLE: everything drawn after this skips the square of half side
+/// `meio_lado` round `centro` (world x, z) — the sea's far island meshes,
+/// inside the chunks drawn whole (`mar_cena::desenha_ilhas_de_longe`).
+/// `meio_lado` 0 turns it off; always turn it off after.
+pub fn define_oco(centro: macroquad::math::Vec2, meio_lado: f32) {
+    OCO.with(|o| o.set([centro.x, centro.y, meio_lado.max(0.0)]));
+}
+
+fn oco() -> [f32; 3] {
+    OCO.with(|o| o.get())
+}
+
+/// Starts counting the static and voxel draws (the previews' report).
+pub fn zera_contagem() {
+    CONTAGEM.with(|c| c.set((0, 0)));
+}
+
+/// (draw calls, indices) through `desenha*` since `zera_contagem`.
+pub fn contagem() -> (usize, usize) {
+    CONTAGEM.with(|c| c.get())
+}
+
+fn conta(n: i32) {
+    CONTAGEM.with(|c| {
+        let (a, b) = c.get();
+        c.set((a + 1, b + n.max(0) as usize));
+    });
+}
+
+/// The fade in force now (`define_some`), to nest one inside another.
+pub fn some_atual() -> f32 {
+    some()
+}
+
+/// Runs `f` with the fade `quanto` (see `define_some`), then clears it.
+pub fn com_some<R>(quanto: f32, f: impl FnOnce() -> R) -> R {
+    define_some(quanto);
+    let r = f();
+    define_some(0.0);
+    r
+}
+
+/// The open sea's loaded-water edge, from the fog's centre (`agua`): where
+/// the swell and the shallows' colour start fading into the flat open
+/// water the far fill draws, and where they are gone. `[0, 0]` = off.
+pub fn define_borda(inicio: f32, fim: f32) {
+    BORDA.with(|b| b.set([inicio, fim]));
+}
+
+fn borda() -> [f32; 2] {
+    BORDA.with(|b| b.get())
 }
 
 fn atributos() -> [VertexAttribute; 4] {
@@ -293,6 +375,8 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("PeleClaro", UniformType::Float4),
                 ("PeleEsc", UniformType::Float4),
                 ("Neblina", UniformType::Float4),
+                ("Some", UniformType::Float1),
+                ("Oco", UniformType::Float3),
                 ("LuzPos[]", UniformType::Float4),
                 ("LuzCor[]", UniformType::Float4),
             ]),
@@ -312,6 +396,7 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Estilo", UniformType::Float1),
                 ("CeuAgua", UniformType::Float4),
                 ("SolAgua", UniformType::Float4),
+                ("Borda", UniformType::Float2),
             ]),
         )
         .expect("water shader (gpu)");
@@ -382,6 +467,8 @@ pub fn desenha_com_modelo<'a>(
                     // tinge por faixa: ela e' do personagem.
                     faixas: Faixas::default(),
                     neblina: neblina(),
+                    some: some(),
+                    oco: oco(),
                     luz_pos: luzes().0,
                     luz_cor: luzes().1,
                 }));
@@ -397,6 +484,8 @@ pub fn desenha_com_modelo<'a>(
                     luz_dia: 0.0,
                     faixas: Faixas::default(),
                     neblina: neblina(),
+                    some: some(),
+                    oco: oco(),
                     luz_pos: [[0.0; 4]; MAX_LUZES],
                     luz_cor: [[0.0; 4]; MAX_LUZES],
                 }));
@@ -414,6 +503,7 @@ pub fn desenha_com_modelo<'a>(
                     estilo,
                     ceu,
                     sol,
+                    borda: borda(),
                 }));
             }
         }
@@ -424,6 +514,7 @@ pub fn desenha_com_modelo<'a>(
                 images: vec![p.branco],
             });
             ctx.draw(0, n, 1);
+            conta(n);
         }
         ctx.end_render_pass();
         prontas.len()
@@ -512,6 +603,8 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             luz_dia: LUZ_DIA.with(|l| l.get()),
             faixas,
             neblina: neblina(),
+            some: some(),
+            oco: oco(),
             luz_pos: luzes().0,
             luz_cor: luzes().1,
         }));
@@ -521,6 +614,7 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             images: vec![p.branco],
         });
         ctx.draw(0, n, 1);
+        conta(n);
         ctx.end_render_pass();
     });
 }

@@ -978,7 +978,9 @@ fn ffmpeg(c: &Config, caminho: &str) -> std::process::Child {
     std::process::Command::new("ffmpeg")
         .args(["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
         .arg(format!("{}x{}", c.w, c.h))
-        .args(["-r", &QPS.to_string(), "-i", "-", "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "18"])
+        // The GL readback is bottom-up: flip it (the PNG stills already
+        // were; the films came out upside down, 17/11/2026).
+        .args(["-r", &QPS.to_string(), "-i", "-", "-vf", "vflip", "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "18"])
         .args(["-pix_fmt", "yuv420p", "-movflags", "+faststart"])
         .arg(caminho)
         .stdin(std::process::Stdio::piped())

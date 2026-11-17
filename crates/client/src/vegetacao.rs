@@ -905,65 +905,159 @@ pub fn minerio(tier: u8, variante: u32) -> Modelo {
 }
 
 /// FLOATING WRECKAGE of the open sea (`shared::mar::destroco_da_coluna`):
-/// a raft of planks, and on it a crate with crystals of the Steel colour
-/// (`tier` 1..4), or a heap of logs (`tier` 0). Built at the waterline: the
-/// caller puts its foot on the sea level.
+/// what is left of a ship — a broken piece of deck (loose planks on a cross
+/// beam, some missing, ragged ends), barrels, a fallen spar, the stump of
+/// a snapped mast, a torn sail lying flat on the planks; on the richer
+/// ones (`tier` 1..4) a burst crate with crystals of the Steel colour
+/// showing. Built at the waterline: the caller puts its foot on the sea
+/// level.
+///
+/// THE SHIPS' VOXEL (sea fix, 17/11/2026): the owner saw "things in the
+/// middle of the sea that look like boats and are not, very strange,
+/// completely off the game's look and pixel density". They were these: a
+/// raft with a post and a white sail scrap standing up, drawn TWICE the
+/// vegetation voxel — 0.5 u a voxel, four times the hull's 0.125 — so a
+/// half-ship of coarse blocks floated beside the finely built ships. Now it
+/// is built at the hull's own grid: `VOX` a voxel here, drawn at half
+/// (`DESTROCO_ESCALA`), the deck the ships' deck planks, the barrels the
+/// ships' barrels, and nothing stands up like a sail.
 pub fn destroco(tier: u8, variante: u32) -> Modelo {
     let mut r = Rng::nova(variante ^ (tier as u32) * 7919 ^ 0x5EA5);
-    let raio = 3;
-    let mut v = caixa_vazia(raio, 9);
-    // The raft: planks along x, a gap here and there.
-    for ix in -raio..=raio {
-        for iz in -raio..=raio {
-            if iz % 2 != 0 && r.proximo() % 5 == 0 {
-                continue;
-            }
-            v.poe(ix, 0, iz, if iz % 2 == 0 { Material::Tronco } else { Material::Terra });
+    // Hull voxels (0.125 u): ~2.6 × 1.9 u of deck.
+    let (mx, mz) = (8, 11);
+    let mut v = Volume::novo([-mx - 6, -1, -mz - 6], [2 * mx + 13, 14, 2 * mz + 13]);
+    let tabua = |k: i32| match k.rem_euclid(3) {
+        0 => Material::Caminho,
+        1 => Material::Terra,
+        _ => Material::Tronco,
+    };
+    // The cross beams under the planks (a dark rib showing at the ends).
+    for z in [-mz + 3, mz - 4] {
+        for x in -mx - 1..=mx + 1 {
+            v.poe(x, -1, z, Material::Tronco);
+            v.poe(x, -1, z + 1, Material::Tronco);
         }
     }
-    if tier == 0 {
-        // Logs: two stacked across the raft.
-        for (iy, iz) in [(1, -1), (1, 1), (2, 0)] {
-            for ix in -raio + 1..raio {
-                v.poe(ix, iy, iz, Material::Tronco);
-            }
-        }
-        // A barrel lashed at the corner.
-        for iy in 1..4 {
-            v.poe(raio - 1, iy, -raio + 1, if iy == 2 { Material::RochaEscura } else { Material::Terra });
-        }
-    } else {
-        // The crate, and the colour of what is inside showing at the lid.
-        for ix in -1..=1 {
-            for iz in -1..=1 {
-                for iy in 1..=3 {
-                    v.poe(ix, iy, iz, if (ix + iz + iy) % 2 == 0 { Material::Tronco } else { Material::Terra });
+    // The planks: two voxels wide along z, ragged ends, one or two gone.
+    let mut x = -mx;
+    let mut k = 0;
+    while x <= mx - 1 {
+        let falta = k != 0 && r.proximo() % 6 == 0;
+        if !falta {
+            let z0 = -mz + r.i(0, 3);
+            let z1 = mz - r.i(0, 3);
+            for xx in x..(x + 2).min(mx + 1) {
+                for z in z0..=z1 {
+                    // A splintered end: the outer voxel row is shorter.
+                    if (z == z0 || z == z1) && xx == x + 1 && r.proximo() % 2 == 0 {
+                        continue;
+                    }
+                    v.poe(xx, 0, z, tabua(k));
                 }
             }
         }
-        // A broken mast stub with a scrap of torn sail: it reads as a
-        // WRECK, not a crate someone left on a raft (visual remake).
-        for iy in 1..7 {
-            v.poe(-raio, iy, raio, Material::Tronco);
-        }
-        v.poe(-raio + 1, 6, raio, Material::Tronco);
-        for iy in 3..6 {
-            for ix in (-raio + 1)..(-raio + 3 + (iy % 2)) {
-                v.poe(ix, iy, raio, Material::PetalaBranca);
+        x += 2;
+        k += 1;
+    }
+    // One plank adrift beside the deck, crosswise.
+    let zs = mz + 3;
+    for x in -mx + 2..mx - 3 {
+        v.poe(x, 0, zs, Material::Terra);
+        v.poe(x, 0, zs + 1, Material::Terra);
+    }
+    // A barrel: round 4 × 4, hooped.
+    let barril_em_pe = |v: &mut Volume, cx: i32, cz: i32, alto: i32| {
+        for y in 1..=alto {
+            let m = if y == 2 || y == alto - 1 { Material::RochaEscura } else { Material::Terra };
+            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1), (-1, 0), (-1, 1), (2, 0), (2, 1), (0, -1), (1, -1), (0, 2), (1, 2)] {
+                v.poe(cx + dx, y, cz + dz, m);
             }
+        }
+    };
+    // The snapped mast: a 2 × 2 stump with a jagged top.
+    let toco = |v: &mut Volume, cx: i32, cz: i32, alto: i32| {
+        for y in 1..=alto {
+            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                // The break: two corners stop short.
+                if y == alto && (dx + dz) % 2 == 1 {
+                    continue;
+                }
+                if y == alto - 1 && dx == 1 && dz == 1 {
+                    continue;
+                }
+                v.poe(cx + dx, y, cz + dz, Material::Tronco);
+            }
+        }
+    };
+    // The fallen spar: 2 × 2 lying across the planks, sticking out over the
+    // water, a broken end.
+    let verga = |v: &mut Volume, z: i32, x0: i32, x1: i32| {
+        for x in x0..=x1 {
+            for (dy, dz) in [(1, 0), (1, 1), (2, 0), (2, 1)] {
+                if x == x1 && dy == 2 && dz == 1 {
+                    continue;
+                }
+                v.poe(x, dy, z + dz, Material::Tronco);
+            }
+        }
+    };
+    if tier == 0 {
+        // Timber: the spar, a second log, two barrels.
+        verga(&mut v, -2, -mx - 3, mx - 1);
+        for x in -mx + 1..mx - 2 {
+            v.poe(x, 1, 4, Material::Tronco);
+            v.poe(x, 1, 5, Material::Terra);
+        }
+        barril_em_pe(&mut v, mx - 4, -mz + 3, 5);
+        barril_em_pe(&mut v, -mx + 2, mz - 5, 4);
+    } else {
+        // The mast stump, the spar it dropped, a torn sail LYING on the
+        // deck, a barrel and the crate.
+        toco(&mut v, -mx + 2, -mz + 2, 7 + r.i(0, 2));
+        verga(&mut v, mz - 4, -mx + 1, mx + 4);
+        for z in -2..5 {
+            for x in -mx + 1..-mx + 6 + (z % 2) {
+                if r.proximo() % 7 != 0 {
+                    v.poe(x, 1, z, Material::PetalaBranca);
+                }
+            }
+        }
+        barril_em_pe(&mut v, mx - 3, mz - 8, 5);
+        // The crate: 5 × 5 × 4, a dark frame, its lid burst open and the
+        // crystals inside catching the light.
+        let (cx, cz) = (1, -mz + 3);
+        for y in 1..=4 {
+            for dz in 0..5 {
+                for dx in 0..5 {
+                    let aresta = (dx == 0 || dx == 4) as i32 + (dz == 0 || dz == 4) as i32 + (y == 1 || y == 4) as i32 >= 2;
+                    let topo = y == 4 && (1..4).contains(&dx) && (1..4).contains(&dz);
+                    if topo {
+                        continue;
+                    }
+                    v.poe(cx + dx, y, cz + dz, if aresta { Material::Tronco } else { Material::Caminho });
+                }
+            }
+        }
+        // The lid, knocked askew against the crate's side.
+        for dz in 0..5 {
+            v.poe(cx + 5, 2, cz + dz, Material::Caminho);
+            v.poe(cx + 5, 3, cz + dz, Material::Tronco);
         }
         let cristal = shared::terreno::cristal_do_tier(tier);
         for k in 0..(1 + tier as i32) {
-            let (ix, iz) = ([-1, 1, 0, -1, 1][k as usize % 5], [0, 1, -1, 1, -1][k as usize % 5]);
-            v.poe(ix, 4, iz, cristal);
+            let (dx, dz) = [(1, 1), (3, 2), (2, 3), (1, 3), (3, 1)][k as usize % 5];
+            v.poe(cx + dx, 4, cz + dz, cristal);
             if k % 2 == 0 {
-                v.poe(ix, 5, iz, cristal);
+                v.poe(cx + dx, 5, cz + dz, cristal);
             }
         }
     }
     malha(&v)
 }
 
+/// The floating wreckage is modelled at `VOX` a voxel and drawn at this,
+/// so its voxel is the hull's (`mar_casco::VOX_CASCO`, 0.125 u).
+pub const DESTROCO_ESCALA: f32 = 0.5;
 fn toco(r: &mut Rng) -> Volume {
     let raio = r.i(2, 3);
     let h = r.i(2, 4);

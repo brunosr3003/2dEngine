@@ -1790,7 +1790,8 @@ impl Jogo {
                 // de carregando ninguem ve' a trava: gera muito mais.
                 t.atualiza(
                     centro,
-                    config_graficos::raio_terreno(),
+                    // At sea one chunk more, to fade out over (`mar_cena::raio_no_mar`).
+                    if mar_ui::no_mar() { mar_cena::raio_no_mar() } else { config_graficos::raio_terreno() },
                     if carregando { 40 } else { 4 },
                 );
             }
@@ -6645,7 +6646,18 @@ impl Jogo {
         let segue_rumo = if mar_ui::no_mar() {
             self.world.self_id.and_then(|id| self.world.ents.get(&id)).map(|e| {
                 let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
-                (vec2(r.x, r.y), e.state.vel_f32().length())
+                // A FIGHT holds the yaw (`mar_camera::em_luta`, sea fix): a
+                // live target within the guns' reach and a margin, AUTO
+                // COMBAT on with a target, or a shot or hit of mine in the
+                // last 3 s.
+                let alvo = self
+                    .alvo
+                    .and_then(|id| self.world.ents.get(&id))
+                    .filter(|a| a.state.hp > 0 && a.morte.is_none() && a.meta.tag != shared::EntityTag::Npc)
+                    .map(|a| a.render_pos);
+                let alcance = shared::navio::HABILIDADES.iter().map(|h| h.alcance).fold(0.0f32, f32::max) + 10.0;
+                let luta = mar_camera::em_luta(e.render_pos, alvo, alcance, self.auto_combate.ativo(), self.mar_vfx.desde_a_luta(), 3.0);
+                (vec2(r.x, r.y), e.state.vel_f32().length(), luta)
             })
         } else {
             self.mar_camera.zera();
@@ -6653,9 +6665,9 @@ impl Jogo {
         };
         // ── alvos ──
         let cs = &mut self.camera_suave;
-        if let Some((rumo, vel)) = segue_rumo {
+        if let Some((rumo, vel, luta)) = segue_rumo {
             let mexeu_mao = dyaw != 0.0 || mexeu != 0.0 || segurando || self.girando_toque;
-            cs.yaw = self.mar_camera.segue(cs.yaw, rumo, mexeu_mao, vel, dt);
+            cs.yaw = self.mar_camera.segue(cs.yaw, rumo, mexeu_mao, vel, dt, luta);
         }
         cs.yaw += dyaw;
         if cs.yaw > std::f32::consts::PI {

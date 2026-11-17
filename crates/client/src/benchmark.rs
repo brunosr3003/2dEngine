@@ -617,8 +617,10 @@ impl Teste {
                     self.mar = None;
                     (self.centro, self.ilha.get_or_insert_with(|| crate::terreno::Terreno::novo(ilha_pesada())))
                 };
-                t.atualiza(alvo, e.raio, ORCAMENTO);
-                let (feitos, total) = t.prontos_em(alvo, e.raio);
+                // At sea the game loads one ring more (`mar_cena::raio_no_mar`).
+                let raio = e.raio + no_mar as i32;
+                t.atualiza(alvo, raio, ORCAMENTO);
+                let (feitos, total) = t.prontos_em(alvo, raio);
                 crate::ui::fundo();
                 if feitos >= total && self.casas.prontas() {
                     self.etapa = Etapa::Aquecendo(0);

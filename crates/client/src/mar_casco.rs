@@ -22,7 +22,12 @@
 //!   heels into its turns, and leaves a WAKE of foam that widens and fades.
 //!
 //! LOD: past `LONGE` a ship is its hull and one sail mesh, no rigging; the
-//! wake thins with distance.
+//! wake thins with distance. The switch never shows (sea fix, 17/11/2026):
+//! the far sails ARE the near ones at rest, and over the last stretch
+//! before `LONGE` the billow settles, the rigging and pennant fade and the
+//! wake's side arms thin out, so at the switch the two draws are the same
+//! pixels. A ship that comes into view (the server's area of interest)
+//! fades in over `SURGE_S` instead of popping.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
@@ -37,11 +42,15 @@ use crate::vegetacao::{malha_com, Volume, VOX};
 
 /// One hull voxel, units. The meshes come out at `VOX` (0.25) a voxel and
 /// the matrix halves them.
-const VOX_CASCO: f32 = 0.125;
+pub(crate) const VOX_CASCO: f32 = 0.125;
 const ESCALA: f32 = VOX_CASCO / VOX;
 
 /// Past this (from the eye) a ship is hull + one sail mesh, no rigging.
 const LONGE: f32 = 55.0;
+/// Where the near detail starts settling towards the far draw.
+const ASSENTA: f32 = 38.0;
+/// A ship that comes into view fades in over this, seconds.
+const SURGE_S: f64 = 0.6;
 
 // Palette SLOTS: materials the hull never uses for themselves, painted per
 // look by `cor_do_slot`.
@@ -167,8 +176,20 @@ pub struct Navio3d {
 type Chave = (u8, u8, u8, u8);
 
 thread_local! {
+    /// Whether a ship coming into view fades in (`sem_surgir`).
+    static SURGE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     static MODELOS: RefCell<HashMap<Chave, &'static Navio3d>> = RefCell::new(HashMap::new());
     static MOVIMENTO: RefCell<HashMap<u64, Movimento>> = RefCell::new(HashMap::new());
+}
+
+/// Draws `f` with ships appearing at once, no fade-in: the scene builders
+/// (previews, the benchmark, the ad capture), whose ships are all there
+/// from the first frame.
+pub fn sem_surgir<R>(f: impl FnOnce() -> R) -> R {
+    let antes = SURGE.with(|s| s.replace(false));
+    let r = f();
+    SURGE.with(|s| s.set(antes));
+    r
 }
 
 /// The model of a look, building it the first time.
@@ -567,6 +588,8 @@ struct Movimento {
     giro: f32,
     adernar: f32,
     t: f64,
+    /// When it came into view (the fade-in, `SURGE_S`).
+    nasceu: f64,
     rastro: VecDeque<(Vec2, f64)>,
 }
 
@@ -607,7 +630,12 @@ fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32) -> (Mat4, Vec<(Vec
         if m.len() > 64 {
             m.retain(|_, e| agora - e.t < 5.0);
         }
-        let e = m.entry(semente).or_insert(Movimento { yaw, giro: 0.0, adernar: 0.0, t: agora, rastro: VecDeque::new() });
+        let e = m.entry(semente).or_insert(Movimento { yaw, giro: 0.0, adernar: 0.0, t: agora, nasceu: agora, rastro: VecDeque::new() });
+        // Out of view for a while (left the area of interest and came
+        // back): it fades in again.
+        if agora - e.t > 0.5 {
+            e.nasceu = agora;
+        }
         let dt = ((agora - e.t) as f32).clamp(1e-3, 0.25);
         // The heel follows the TURN (turning inertia, 16/11/2026): the
         // server turns a hull at most `navio::giro_max` (1.5 rad/s for a
@@ -653,29 +681,39 @@ pub fn desenha(p: Vec3, yaw: f32, semente: u64, v: Visual) {
     let tempo = get_time() as f32 + (semente % 97) as f32 * 0.37;
     let olho = crate::mar_cena::olho();
     let dist = olho.map_or(0.0, |o| o.distance(p));
+    // Just came into view: fade in (an ordered dither, `gpu_estatica`).
+    let idade = MOVIMENTO.with(|m| m.borrow().get(&semente).map_or(SURGE_S, |e| get_time() - e.nasceu));
+    let surge = if SURGE.with(|s| s.get()) { (idade / SURGE_S).clamp(0.0, 1.0) as f32 } else { 1.0 };
+    let antes = crate::gpu_estatica::some_atual();
+    crate::gpu_estatica::define_some(1.0 - (1.0 - antes) * surge);
     crate::gpu_estatica::desenha_voxel(&n.casco, modelo_m, [0.0; 4], Default::default());
-    if dist > LONGE {
+    // 1 = the near ship's full detail, 0 = settled into the far draw.
+    let perto = crate::mar_cena::presenca(dist, ASSENTA, LONGE);
+    if perto <= 0.0 {
         crate::gpu_estatica::desenha_voxel(&n.velas_juntas, modelo_m, [0.0; 4], Default::default());
     } else {
         for (k, (m, pivo, quadrada)) in n.velas.iter().enumerate() {
             // THE BILLOW: the sail's belly breathes along the wind, about its
-            // mast. One scale in the matrix, no vertex touched.
-            let s = 1.0 + 0.18 * (tempo * 1.1 + k as f32 * 0.9).sin();
+            // mast. One scale in the matrix, no vertex touched. It settles
+            // towards the far draw's sails at rest.
+            let s = 1.0 + 0.18 * perto * (tempo * 1.1 + k as f32 * 0.9).sin();
             let esc = if *quadrada { vec3(1.0, 1.0, s) } else { vec3(s, 1.0, 1.0) };
             let infla = Mat4::from_translation(*pivo) * Mat4::from_scale(esc) * Mat4::from_translation(-*pivo);
             crate::gpu_estatica::desenha_voxel(m, modelo_m * infla, [0.0; 4], Default::default());
         }
-        let corda = Color::from_rgba(52, 40, 30, 255);
+        let corda = Color::from_rgba(52, 40, 30, (255.0 * perto * surge) as u8);
         for (a, b) in &n.cordas {
             draw_line_3d(modelo_m.transform_point3(*a), modelo_m.transform_point3(*b), corda);
         }
-        // The pennant at the main mast's top, streaming ahead with the wind.
+        // The pennant at the main mast's top, streaming ahead with the wind;
+        // it shortens away as the ship settles into the far draw.
         let topo = modelo_m.transform_point3(n.topo);
         let frente = vec3(yaw.sin(), 0.0, yaw.cos());
         let pano = nv::cor_da_vela(v.vela);
-        flamula(topo, frente, Color::from_rgba(pano[0], pano[1], pano[2], 255), tempo);
+        flamula(topo, frente * (perto * surge), Color::from_rgba(pano[0], pano[1], pano[2], 255), tempo);
     }
-    esteira(&rastro, dist);
+    crate::gpu_estatica::define_some(antes);
+    esteira(&rastro, dist, surge);
 }
 
 /// A boat MOORED at a dock: a small Sloop with its sails furled, bobbing
@@ -708,7 +746,10 @@ pub fn topo_do_mastro(p: Vec3, yaw: f32, semente: u64, v: Visual) -> Vec3 {
 
 /// A pennant: a long thin strip waving from `topo` along `dir`. Two-sided.
 pub fn flamula(topo: Vec3, dir: Vec3, cor: Color, t: f32) {
-    let lado = vec3(-dir.z, 0.0, dir.x);
+    if dir.length_squared() < 1e-4 {
+        return;
+    }
+    let lado = vec3(-dir.z, 0.0, dir.x).normalize_or_zero();
     let (comp, n) = (1.6f32, 6);
     let mut verts = Vec::with_capacity(2 * (n + 1));
     let mut idx: Vec<u16> = Vec::new();
@@ -731,13 +772,17 @@ pub fn flamula(topo: Vec3, dir: Vec3, cor: Color, t: f32) {
 /// THE WAKE: a broken trail of foam behind the stern and the two arms of a
 /// V spreading out from it, widening and fading as they age, riding the
 /// swell. A few dozen vertices; the arms drop far away.
-fn esteira(rastro: &[(Vec2, f64)], dist: f32) {
-    if rastro.len() < 2 || dist > 160.0 {
+fn esteira(rastro: &[(Vec2, f64)], dist: f32, surge: f32) {
+    // The whole wake fades out from 120 u, its side arms as the ship
+    // settles into the far draw.
+    let toda = crate::mar_cena::presenca(dist, 120.0, 160.0) * surge;
+    let bracos = crate::mar_cena::presenca(dist, ASSENTA, LONGE);
+    if rastro.len() < 2 || toda <= 0.0 {
         return;
     }
     let agora = get_time();
     let tempo = agora as f32;
-    let passo = if dist > LONGE { 2 } else { 1 };
+    let passo = if dist > 120.0 { 2 } else { 1 };
     let pontos: Vec<(Vec2, f64)> = rastro.iter().copied().step_by(passo).collect();
     if pontos.len() < 2 {
         return;
@@ -746,10 +791,10 @@ fn esteira(rastro: &[(Vec2, f64)], dist: f32) {
     let mut idx: Vec<u16> = Vec::new();
     // (distance out from the trail at birth, spread per second of age,
     //  half width, strength)
-    let mut faixas = vec![(0.0f32, 0.0f32, 0.45f32, 0.55f32)];
-    if dist <= LONGE {
-        faixas.push((0.7, 1.5, 0.22, 0.5));
-        faixas.push((-0.7, -1.5, 0.22, 0.5));
+    let mut faixas = vec![(0.0f32, 0.0f32, 0.45f32, 0.55f32 * toda)];
+    if bracos > 0.0 {
+        faixas.push((0.7, 1.5, 0.22, 0.5 * bracos * toda));
+        faixas.push((-0.7, -1.5, 0.22, 0.5 * bracos * toda));
     }
     for (desvio, abre, meia, forca) in faixas {
         let base = verts.len() as u16;

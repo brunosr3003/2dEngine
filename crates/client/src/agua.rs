@@ -368,6 +368,12 @@ uniform highp float Ondas;
 // 0 = the islands' classic water (unchanged); 1/2/3 = the open sea at
 // low/medium/high quality (`agua::estilo`).
 uniform AGUA_PRECISAO float Estilo;
+// THE OPEN SEA'S LOADED-WATER EDGE (sea fix, 17/11/2026): from the fog's
+// centre, where the chunks' swell starts lying down (x) and is flat (y), so
+// their water meets the far fill (`agua::preenchimento`) with no step. The
+// fog's centre is the player's position (`Neblina.xy`). y = 0: off.
+uniform highp vec4 Neblina;
+uniform AGUA_PRECISAO vec2 Borda;
 
 // ── O MAR DE GERSTNER ────────────────────────────────────────────────
 //
@@ -421,6 +427,11 @@ void main() {
     // `normal.y` is how much of the wave THIS vertex takes: zero at the shore
     // (the edge stays glued to the sand) and full in deep water.
     highp float a = normal.y * Ondas;
+    if (Estilo > 0.5 && Borda.y > 0.0) {
+        // Along the larger axis: the chunks are loaded in a square.
+        highp vec2 dq = abs(position.xz - Neblina.xy);
+        a *= 1.0 - smoothstep(Borda.x, Borda.y, max(dq.x, dq.y));
+    }
     highp vec3 inc = vec3(0.0);
     p += a * deslocamento_onda(vec2(0.5646, 0.8253), 0.1208, 1.089, 0.341, 0.0, inc);
     p += a * deslocamento_onda(vec2(0.7470, 0.6648), 0.2027, 1.410, 0.198, 1.7, inc);
@@ -470,6 +481,7 @@ uniform AGUA_PRECISAO float Estilo;
 uniform AGUA_PRECISAO vec3 Olho;
 uniform lowp vec4 CeuAgua;
 uniform mediump vec4 SolAgua;
+uniform AGUA_PRECISAO vec2 Borda;
 
 void main() {
     vec3 c = cor.rgb;
@@ -497,7 +509,13 @@ void main() {
         // Towards the edge of the loaded water (round the player, the fog's
         // centre) the swell's shading fades to the flat far ring's, so the
         // seam between them never shows as a lighter square.
-        float borda = smoothstep(50.0, 92.0, distance(mundo.xz, Neblina.xy));
+        vec2 faixa = Borda.y > 0.0 ? Borda : vec2(50.0, 92.0);
+        vec2 dq = abs(mundo.xz - Neblina.xy);
+        float borda = Borda.y > 0.0 ? smoothstep(faixa.x, faixa.y, max(dq.x, dq.y)) : smoothstep(faixa.x, faixa.y, distance(mundo.xz, Neblina.xy));
+        // ...and its colour turns the open water's: past the band the far
+        // fill is all deep water, so a shallow chunk loading or unloading
+        // there never flips the colour of a patch of sea.
+        c = mix(c, vec3(0.0549, 0.2118, 0.4), borda);
         float longe = max(smoothstep(120.0, 480.0, dist), borda);
         if (Estilo > 2.5 && perto > 0.0) {
             // Ripples on the swell (high quality): three sines, no texture.
@@ -546,10 +564,10 @@ void main() {
         // Surf: bands rolling in onto the shore, not a still white rim.
         float n2 = sin(mundo.x * 1.7 + Tempo * 1.3) * sin(mundo.z * 1.3 - Tempo * 1.1);
         float bandas = 0.5 + 0.5 * sin(espuma * 11.0 - Tempo * 2.4 + n2 * 1.5);
-        f = max(f, clamp(espuma * (0.35 + 0.65 * bandas) + espuma * espuma * 0.35, 0.0, 1.0));
+        f = max(f, clamp(espuma * (0.35 + 0.65 * bandas) + espuma * espuma * 0.35, 0.0, 1.0) * (1.0 - borda));
         c = mix(c, vec3(0.95, 0.98, 1.0), f);
         // Deep water is opaque: the flattened bed must not tint it brown.
-        a = max(cor.a > 0.9 ? 1.0 : cor.a, f * 0.92);
+        a = max(mix(cor.a > 0.9 ? 1.0 : cor.a, 1.0, borda), f * 0.92);
     }
     // A negative fog start means night (`render3d::SOLIDO_FRAGMENTO`).
     bool noite = Neblina.z < 0.0;
@@ -568,6 +586,106 @@ void main() {
 
 thread_local! {
     static HORIZONTE: RefCell<Option<((i32, i32, i32), Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
+    /// The open sea's far fill, keyed by what it was built for
+    /// (`preenchimento`).
+    static PREENCHE: RefCell<Option<(ChavePreenche, Vec<crate::gpu_estatica::MalhaEstatica>)>> = const { RefCell::new(None) };
+}
+
+/// What the far fill was built for: the player's chunk, the box's half side
+/// and which chunks of the box were loaded (a bit each).
+type ChavePreenche = ((i32, i32), i32, Vec<u64>);
+
+/// How far out the far fill reaches, units: well past the farthest fog
+/// (1,100 u) and inside the sky dome (3,000 u).
+const ALCANCE_DO_PREENCHE: f32 = 1700.0;
+
+/// How far each far-fill quad reaches over its neighbours, units.
+const SOBRA: f32 = 0.6;
+
+/// Where chunk `(cx, cz)`'s water starts and ends, world x/z: the same
+/// half-block phase as `malhas_do_pedaco`'s quads, so the fill's cells and
+/// the chunks' water share their edges exactly.
+fn borda_do_pedaco(cx: i32, cz: i32) -> (Vec2, Vec2) {
+    let a = vec2((cx * CHUNK) as f32 * BLOCO - BLOCO * 0.5, (cz * CHUNK) as f32 * BLOCO - BLOCO * 0.5);
+    (a, a + Vec2::splat(CHUNK_U))
+}
+
+/// THE OPEN SEA'S FAR FILL (sea fix, 17/11/2026). The owner: "you can
+/// clearly see things disappearing and appearing, the sea itself
+/// included". The old ring of ocean started at a fixed radius round the
+/// camera, the chunks' water is a square round the player, and the ring
+/// re-centred every 32 u: between them the sea opened and closed at the
+/// edge of the view. Now the sea is ONE surface to the horizon: the loaded
+/// chunks' water near the ship, and this fill EXACTLY everywhere else —
+/// a cell for every chunk of the box round the player that is not loaded,
+/// and four wide slabs from the box out to `ALCANCE_DO_PREENCHE`. Flat,
+/// deep-water colour; the chunks' own water lies flat and takes the same
+/// colour towards its edge (`Borda`), so the seam has nothing to show, and
+/// the fog fades it into the sky. Rebuilt only when the set of loaded
+/// chunks changes (a few hundred vertices).
+fn preenchimento(chave: &ChavePreenche) -> Vec<Mesh> {
+    let ((pcx, pcz), meia, bits) = chave;
+    let lado = 2 * meia + 1;
+    let carregado = |dx: i32, dz: i32| {
+        let k = ((dz + meia) * lado + dx + meia) as usize;
+        bits[k / 64] & (1u64 << (k % 64)) != 0
+    };
+    let cor = cor_da_agua(PROFUNDO * 2.0);
+    let cor = [cor[0], cor[1], cor[2], 255];
+    let y = ALTURA_DA_AGUA - 0.02;
+    let (mut malhas, mut verts, mut idx) = (Vec::new(), Vec::new(), Vec::new());
+    let mut retangulo = |a: Vec2, b: Vec2, verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, malhas: &mut Vec<Mesh>| {
+        if idx.len() + 6 > MAX_QUADS * 6 {
+            empilha(malhas, verts, idx);
+        }
+        // A little over every edge: a long edge meeting a run of shorter
+        // ones (the chunks' water, the next cell) leaves pixel cracks; the
+        // overlap is the same flat deep water, so it never shows.
+        let (a, b) = (a - Vec2::splat(SOBRA), b + Vec2::splat(SOBRA));
+        let p = [vec3(a.x, y, a.y), vec3(b.x, y, a.y), vec3(b.x, y, b.y), vec3(a.x, y, b.y)];
+        quad(verts, idx, p, [(0.0, 0.0, cor); 4]);
+    };
+    for dz in -meia..=*meia {
+        // Runs of unloaded chunks along x: one quad each.
+        let mut dx = -meia;
+        while dx <= *meia {
+            if carregado(dx, dz) {
+                dx += 1;
+                continue;
+            }
+            let inicio = dx;
+            while dx <= *meia && !carregado(dx, dz) {
+                dx += 1;
+            }
+            let (a, _) = borda_do_pedaco(pcx + inicio, pcz + dz);
+            let (_, b) = borda_do_pedaco(pcx + dx - 1, pcz + dz);
+            retangulo(a, b, &mut verts, &mut idx, &mut malhas);
+        }
+    }
+    let (a, _) = borda_do_pedaco(pcx - meia, pcz - meia);
+    let (_, b) = borda_do_pedaco(pcx + meia, pcz + meia);
+    let meio = (a + b) * 0.5;
+    let (lo, hi) = (meio - Vec2::splat(ALCANCE_DO_PREENCHE), meio + Vec2::splat(ALCANCE_DO_PREENCHE));
+    // The four slabs round the box: north and south full width, east and
+    // west between them.
+    retangulo(vec2(lo.x, lo.y), vec2(hi.x, a.y), &mut verts, &mut idx, &mut malhas);
+    retangulo(vec2(lo.x, b.y), vec2(hi.x, hi.y), &mut verts, &mut idx, &mut malhas);
+    retangulo(vec2(lo.x, a.y), vec2(a.x, b.y), &mut verts, &mut idx, &mut malhas);
+    retangulo(vec2(b.x, a.y), vec2(hi.x, b.y), &mut verts, &mut idx, &mut malhas);
+    empilha(&mut malhas, &mut verts, &mut idx);
+    malhas
+}
+
+/// The loaded-water edge at sea for a terrain radius of `raio` chunks: from
+/// the player, where the chunks' swell and shallows start fading into the
+/// fill (`Borda`), and where they are gone — inside the square that is
+/// always loaded (`raio` chunks each way), a little before the chunks' own
+/// ground fades (`mar_cena::faixa_de_desenho`).
+pub fn borda_do_mar(raio: i32) -> (f32, f32) {
+    // Flat by `r - 16`: the chunks' water is drawn out to `raio - 1` chunks
+    // from the player's, which always reaches that far.
+    let r = raio as f32 * CHUNK_U;
+    ((r - 36.0).max(4.0), (r - 16.0).max(12.0))
 }
 
 /// The sea's pipeline state (no face culling: the wave turns the quad).
@@ -609,9 +727,45 @@ pub fn desenha(t: &Terreno, cam: &Camera3D, tempo: f32) {
     let (ceu, sol) = crate::mar_cena::ceu_e_sol();
     crate::gpu_estatica::define_agua(cam.position, estilo, ceu, sol);
     crate::mar_cena::define_olho(cam.position);
+    let raio = crate::config_graficos::raio_terreno();
+    if estilo > 0.0 && !crate::mar_cena::sem_fix() {
+        // AT SEA: the chunks' water and the far fill, one surface.
+        let n = crate::gpu_estatica::neblina();
+        let centro = if n[3] > 0.0 { vec2(n[0], n[1]) } else { vec2(cam.target.x, cam.target.z) };
+        let raio = crate::mar_cena::raio_no_mar();
+        let (b0, b1) = borda_do_mar(raio);
+        crate::gpu_estatica::define_borda(b0, b1);
+        let p = t.pedaco_em(centro.x, centro.y);
+        let meia = raio + 2;
+        let lado = 2 * meia + 1;
+        let mut bits = vec![0u64; ((lado * lado) as usize).div_ceil(64)];
+        for dz in -meia..=meia {
+            for dx in -meia..=meia {
+                // The outermost loaded ring's water is flat deep water by
+                // then (`Borda`): the fill draws it instead, in a few quads.
+                if dx.abs().max(dz.abs()) < raio && t.pedaco_carregado(p.0 + dx, p.1 + dz) {
+                    let k = ((dz + meia) * lado + dx + meia) as usize;
+                    bits[k / 64] |= 1u64 << (k % 64);
+                }
+            }
+        }
+        let chave = (p, meia, bits);
+        PREENCHE.with(|h| {
+            let mut h = h.borrow_mut();
+            if h.as_ref().is_none_or(|(k, _)| *k != chave) {
+                let malhas = preenchimento(&chave).into_iter().map(MalhaEstatica::nova).collect();
+                *h = Some((chave, malhas));
+            }
+            if let Some((_, malhas)) = h.as_ref() {
+                desenha_na_gpu(Programa::Agua { tempo, ondas }, malhas);
+            }
+        });
+        t.desenha_agua_ate(cam, tempo, ondas, p, raio - 1);
+        crate::gpu_estatica::define_borda(0.0, 0.0);
+        return;
+    }
     // The ring follows the camera's target, rebuilt only when it moves 32 u
     // or the view distance changes.
-    let raio = crate::config_graficos::raio_terreno();
     let chave = (
         (cam.target.x / 32.0).round() as i32,
         (cam.target.z / 32.0).round() as i32,
@@ -702,6 +856,66 @@ mod testes {
             "quad todo em terra nao vira agua"
         );
         assert!(quad_de_agua([-0.5, 0.2, -3.0, -0.3]));
+    }
+
+    /// THE SEA NEVER OPENS (sea fix): the far fill and the loaded chunks'
+    /// water together cover every point out to the fill's reach, whatever
+    /// chunks happen to be loaded (here a ragged set, as while sailing),
+    /// and the fill stays a few hundred vertices.
+    #[test]
+    fn o_mar_nao_abre_buraco() {
+        let p = (37, -12);
+        let meia = 7;
+        let lado = 2 * meia + 1;
+        let carregado = |dx: i32, dz: i32| dx.abs() <= 5 && dz.abs() <= 5 && (dx * 7 + dz * 3).rem_euclid(5) != 0;
+        let mut bits = vec![0u64; ((lado * lado) as usize).div_ceil(64)];
+        for dz in -meia..=meia {
+            for dx in -meia..=meia {
+                if carregado(dx, dz) {
+                    let k = ((dz + meia) * lado + dx + meia) as usize;
+                    bits[k / 64] |= 1u64 << (k % 64);
+                }
+            }
+        }
+        let malhas = preenchimento(&(p, meia, bits));
+        let verts: usize = malhas.iter().map(|m| m.vertices.len()).sum();
+        assert!(verts < 1200, "the far fill is {verts} vertices");
+        let dentro = |q: Vec2| {
+            malhas.iter().any(|m| {
+                m.indices.chunks(6).any(|f| {
+                    let (a, b) = f.iter().map(|k| m.vertices[*k as usize].position).fold((Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)), |(a, b), v| (a.min(vec2(v.x, v.z)), b.max(vec2(v.x, v.z))));
+                    q.x >= a.x && q.x <= b.x && q.y >= a.y && q.y <= b.y
+                })
+            })
+        };
+        let (c, _) = borda_do_pedaco(p.0, p.1);
+        let mut buracos = 0;
+        for j in -60..=60 {
+            for i in -60..=60 {
+                let q = c + vec2(i as f32, j as f32) * 13.7 + vec2(0.31, 0.17);
+                let bx = ((q.x + BLOCO * 0.5) / BLOCO).floor() as i32;
+                let bz = ((q.y + BLOCO * 0.5) / BLOCO).floor() as i32;
+                let (cx, cz) = (bx.div_euclid(CHUNK), bz.div_euclid(CHUNK));
+                let no_pedaco = carregado(cx - p.0, cz - p.1) && (cx - p.0).abs() <= meia && (cz - p.1).abs() <= meia;
+                if !no_pedaco && !dentro(q) {
+                    buracos += 1;
+                }
+            }
+        }
+        assert_eq!(buracos, 0, "{buracos} points of sea with no water");
+        // Every fill quad is the open water's flat deep colour, opaque.
+        for m in &malhas {
+            for v in &m.vertices {
+                assert_eq!(v.normal.y, 0.0, "the far fill has a swell");
+                assert_eq!(v.color[3], 255);
+            }
+        }
+        // The swell's and the colour's fade ends inside the always-loaded
+        // square, at every view distance.
+        for raio in 3..=12 {
+            let (a, b) = borda_do_mar(raio);
+            assert!(a < b && b <= (raio - 1) as f32 * CHUNK_U, "radius {raio}: band {a}..{b}");
+        }
     }
 
     #[test]

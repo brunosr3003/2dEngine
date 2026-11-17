@@ -183,6 +183,9 @@ pub struct MarCombate {
     baixo: bool,
     /// The toast on screen: text, colour, since.
     aviso: Option<(&'static str, Color, f64)>,
+    /// When I last fired a ship gun or was hit (the sailing camera holds
+    /// its yaw for a moment after: `mar_camera::em_luta`).
+    ultima_luta: f64,
 }
 
 impl Default for MarCombate {
@@ -200,6 +203,7 @@ impl Default for MarCombate {
             zona: None,
             baixo: false,
             aviso: None,
+            ultima_luta: f64::NEG_INFINITY,
         }
     }
 }
@@ -295,6 +299,11 @@ impl MarCombate {
         self.prox_bala = (self.prox_bala + 1) % MAX_BALAS;
     }
 
+    /// Seconds since I last fired a gun or took a hit at sea.
+    pub fn desde_a_luta(&self) -> f32 {
+        (get_time() - self.ultima_luta).min(1e6) as f32
+    }
+
     /// The shake for the local shooter, once.
     pub fn tremor(&mut self) -> Option<f32> {
         self.tremor.take()
@@ -369,6 +378,9 @@ impl MarCombate {
         };
         let agora = get_time();
         let meu = world.self_id == Some(dono);
+        if meu && !matches!(h.efeito, Efeito::Reparo) {
+            self.ultima_luta = agora;
+        }
         let yaw = world.ents.get(&dono).map_or(0.0, |e| e.yaw);
         let frente = vec2(yaw.sin(), yaw.cos());
         let lado = vec2(frente.y, -frente.x);
@@ -443,6 +455,7 @@ impl MarCombate {
         };
         for a in lista.iter().filter(|a| a.alvo == eu && a.dano > 0) {
             self.clarao_ate = get_time() + 0.25;
+            self.ultima_luta = get_time();
             let mordida = world.ents.get(&a.atacante).is_some_and(|e| e.meta.tag == EntityTag::Enemy);
             if let (true, Some(p)) = (mordida, world.ents.get(&eu).map(|e| e.render_pos)) {
                 let de = vec2(a.de[0] as f32, a.de[1] as f32) / 127.0;

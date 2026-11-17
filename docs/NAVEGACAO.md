@@ -793,6 +793,7 @@ ao entardecer (`mar_cena::define_entardecer`; o mar não tem ciclo de dia).
 
 **Destroços e baús** boiam nas ondas (`mar_cena::boia`, `jangada`): destroço
 com toco de mastro e pano rasgado, baú numa jangada com boia e bandeirinha.
+(17/11: refeitos na grade do casco — ver "Correção do mar".)
 
 **Orçamento do celular** (medido na prévia e nos testes):
 
@@ -806,10 +807,10 @@ Qualidade = Gráficos → Forração (Esparsa = baixa, Média, Cheia = alta;
 | Árvores/pedras nas ilhas (assadas no pedaço) | 30% | 65% | 100% (Bosque: >1.000 árvores na ilha inteira, 30-120 quads cada) |
 | Ondas no vértice | 2 | 3 | 3 |
 | Fragmento da água | fresnel + sol + arrebentação | + 1 seno de marola + carneirinhos | + 3 senos de marola |
-| Destroços desenhados até | 70 u | 110 u | 110 u |
+| Destroços desenhados até | 70 u | 110 u | 110 u (17/11: somem com os pedaços, 40-58 / 68-88 / 68-88 u do jogador) |
 
 Fixos em qualquer qualidade: doca ~15 mil vértices cada (60.784 nas quatro),
-desenhada até 360 u, 1 chamada por doca; ilha de longe 1 chamada inteira, ou
+desenhada até 360 u (17/11: 380/450/520 u por qualidade, sumindo), 1 chamada por doca; ilha de longe 1 chamada inteira, ou
 ladrilhos de 48 u (só os que os pedaços carregados não cobrem) quando o
 jogador está perto dela. Navio: Chalupa ~6,7 mil vértices, Escuna ~9,2 mil,
 Galeão ~17 mil, Nau ~21 mil (teste `os_cascos_saem_bonitos_e_baratos`, teto
@@ -994,7 +995,8 @@ olhando um pouco à frente da proa. Segue o rumo com atraso (`segue`, k 1,1/s)
 só depois de 1,2 s sem a mão na câmera e com o casco andando; arrastar ainda
 gira, roda/pinça ainda dá zoom, o ajuste de inclinação da mão vale. Casco
 maior afasta +12% por classe; celular em pé afasta ×1,45; em luta abre até
-+35% e puxa o centro pro alvo, os dois no quadro. A névoa do mar
++35% e puxa o centro pro alvo, os dois no quadro (17/11: na luta o yaw para
+e o centro é o ponto médio — ver "Correção do mar"). A névoa do mar
 (`mar_cena::neblina`, 110 → 620/850/1100) cobre o que a câmera baixa alcança.
 
 **Minimapa e mapa do mar** (`mapa.rs`): meu navio é um casco dourado no rumo
@@ -1026,6 +1028,106 @@ se cruzam); isso é anterior e fica de fora.
 **Fica pra ver:** com a câmera mais baixa, o caminho do sol na água
 (`agua.rs`, brilho do mar aberto) ocupa mais tela quando se navega contra o
 sol.
+
+### Correção do mar: câmera na luta, "barcos estranhos" e pop-in (17/11/2026, versão de TESTE)
+
+O dono: "a câmera seguindo o barco ficou boa realmente, mas no combate ela
+fica andando rápido e dá até tontura porque fica rodando; outra coisa, eu não
+sei exatamente o que é, mas tem umas coisas no meio do mar que parecem
+barcos, não são, muito estranhas, foge completamente do padrão estético e da
+densidade de pixel do jogo; e também como dá pra ver de longe, dá pra ver
+claramente coisas sumindo e aparecendo, o próprio mar inclusive".
+
+**1. Câmera na luta** (`mar_camera.rs`). O piloto do servidor circula o alvo
+(`piloto_do_mar`), então o rumo gira o tempo todo e o `segue` girava o mar
+inteiro junto (~335° em 10 s no teste). Agora, em LUTA (`mar_camera::em_luta`:
+alvo vivo até o alcance dos canhões + 10 u, AUTO COMBAT ligado com alvo, ou
+tiro/dano meu nos últimos 3 s — `MarCombate::desde_a_luta`), o yaw PARA: o
+quadro olha o PONTO MÉDIO entre o navio e o alvo (era 0,4 do caminho) e abre
+até +35%, então os dois ficam na tela pra qualquer lado que o círculo vá; o
+centro do quadro anda mais devagar na luta (`K_QUADRO_LUTA` 1,4/s). Só se o
+alvo passar pro lado da câmera (>125° da direção de visão) o yaw deriva, no
+máximo `DERIVA_MAX` 8°/s com rampa de 0,8/s. Fim da luta: espera
+`DEPOIS_DA_LUTA_S` (2 s) e volta ao rumo com força crescente em 2 s. A mão
+continua mandando a qualquer hora. Teste `na_luta_a_camera_nao_roda`:
+circulando a 9/14/20 u por 10 s a câmera gira 12,7° / 13,5° / 17,1° no total
+(teto do teste 20°, passo máximo 0,105° por quadro = 6,3°/s); o seguidor
+antigo no mesmo círculo: 335°. `depois_da_luta_volta_ao_rumo_devagar`.
+
+**2. As "coisas que parecem barcos"** eram os DESTROÇOS (`vegetacao::destroco`):
+uma jangada com um poste e um pano branco EM PÉ, desenhada a `VOX` × 2 =
+0,5 u por voxel — o quádruplo do voxel do casco (`mar_casco::VOX_CASCO`,
+0,125 u) —, um meio-barco de blocos grossos do lado dos navios finos. E o
+**baú à deriva** (`mar_cena::jangada`) era de `draw_cube` lisos: tábuas,
+um mastro e uma bandeirinha, um barquinho de brinquedo. Os outros suspeitos
+foram conferidos lado a lado com o navio (`mar-fix-props-perto/meio.png`):
+o elite do mar (vox 1,6×), os barcos atracados (o casco da Chalupa) e os
+props das docas já estavam na grade; o LOD de longe do navio é o MESMO
+modelo (ver 3). Agora:
+- **destroço** na grade do casco (modelado a `VOX`, desenhado a
+  `DESTROCO_ESCALA` 0,5): pedaço de convés quebrado (tábuas de 2 voxels com
+  pontas lascadas e falhas, travessas por baixo, uma tábua solta), barris
+  com aro, verga caída, toco de mastro partido e — nos tiers 1-4 — pano
+  rasgado DEITADO no convés e caixote arrebentado com a tampa caída e os
+  cristais do tier aparecendo. Nada fica em pé como vela: ≤ 1,4 u de altura,
+  2,6 × 1,9 u de convés (teste `os_destrocos_tem_o_voxel_do_navio_e_ficam_rentes`).
+- **baú à deriva**: um modelo de voxel só (`modelo_da_jangada`): quatro
+  toras amarradas, o baú em madeira escura com duas cintas douradas e o
+  fecho, e uma boia vermelha e branca com lâmpada no lugar do mastro.
+
+**3. Pop-in.** Tudo que tinha corte duro de distância:
+
+| O quê | Antes | Agora |
+|---|---|---|
+| Água | anel de oceano a partir de 84 u do ALVO da câmera, refeito a cada 32 u, + quadrado de pedaços em volta do JOGADOR: buraco e costura no meio da tela | uma superfície só: a água dos pedaços até `raio-1` pedaços do jogador + o **preenchimento** (`agua::preenchimento`) exatamente no resto — uma célula por pedaço não carregado da caixa ±(raio+2) e quatro placas até 1.700 u (sobra de 0,6 u em cada borda contra rachadura de T). A onda deita e a cor vira a do mar fundo (`Borda`, uniforme novo) entre 60 e 80 u (raio padrão), ao longo do MAIOR eixo (o carregado é um quadrado); refeito só quando o conjunto de pedaços muda. Teste `o_mar_nao_abre_buraco` |
+| Pedaços (chão e árvores das ilhas) | corte duro na borda do quadrado carregado (80-96 u) | no mar carrega UM anel a mais (`mar_cena::raio_no_mar`) e desenha inteiro até 68 u, sumindo em **pontilhado ordenado** (`Some`, uniforme novo do shader do mundo, `gpu_estatica::define_some/com_some`) até 88 u (`faixa_de_desenho`, eixo maior). O anel de fora quase só tem mar e não é desenhado |
+| Ilhas de longe | carecas (sem árvore) e às vezes furando o voxel | ganharam as árvores (`arvores_de_longe`: uma caixa da copa por prop, 8 vértices, dentro do voxel, metade das árvores — um terço na baixa —, na malha da própria ilha: mesmas chamadas). Ladrilho fica enquanto um pedaço em cima ainda some (`pedaco_opaco_em`) e o shader descarta a malha de longe dentro do quadrado inteiro (`Oco`, uniforme novo): sem furar encosta |
+| Destroços | 70/110 u do alvo da câmera, corte duro | somem com os pedaços (mesma faixa; baixa até 40-58 u) |
+| Navio, LOD de 55 u | vela inflando, cordame e flâmula sumiam de uma vez | entre 38 e 55 u a vela assenta, cordame e flâmula somem e os braços da esteira afinam: na troca os dois desenhos são os mesmos pixels. Esteira some de 120 a 160 u. Navio que entra na área de interesse do servidor aparece em 0,6 s (`SURGE_S`) |
+| Doca (píer, farol, cais) | 360 u, corte | 380/450/520 u por qualidade, sumindo no último quinto (`alcance_da_doca`), já na névoa |
+| Barcos atracados | com a doca | some em pontilhado antes da doca (≤ 420 u) |
+| Bandeiras | 160 u, corte | recolhem (escala) de 190 a 260 u |
+| Facho, lanternas, anel do cais, luzes das docas novas | 150 / 120 / 260 u / fim da névoa, corte | todos em rampa de alfa |
+| Rótulo "<Ilha> · Dock" | corte na margem da tela; nunca sumia com a distância | some com a distância (50-80% da névoa) e desliza na margem da tela em 40 px, trocando com a setinha de fora da tela |
+
+**Custo** (prévia `MMO_PREVIA_SO=fix`, média de 240 quadros pela câmera do
+jogo, `gpu_estatica::contagem` — chamadas e índices de malha estática/voxel;
+o céu, halos e bandeiras são lote da macroquad e não entram; "antes" =
+`MMO_PREVIA_SEM_FIX=1`, a mesma cena do jeito antigo):
+
+| Cena | Qualidade | Chamadas antes → agora | Índices antes → agora |
+|---|---|---|---|
+| Saindo do Bosque rumo à Geleira | Baixa | 312 → 297 | 633 k → 603 k (−5%) |
+| | Média | 318 → 302 | 659 k → 652 k (−1%) |
+| | Alta | 319 → 306 | 750 k → 814 k (+9%: as árvores de longe do Bosque e a 2ª doca na névoa) |
+| Contornando o Bosque a 45 u | Baixa | 337 → 300 | 755 k → 653 k (−14%) |
+| | Média | 342 → 304 | 787 k → 697 k (−11%) |
+| | Alta | 347 → 307 | 830 k → 748 k (−10%) |
+
+Estático novo: árvores de longe 5,4 k / 17,4 k / 26,7 k vértices (baixa /
+média / alta, as 8 ilhas); preenchimento < 1.200 vértices. A névoa do mar não
+mudou. Pop medido nos quadros (`target/mar_fix/tools/pop.py`, blocos de 5×5
+que mudam muito entre quadros seguidos na metade de cima da tela): pior par
+na travessia 421 → 152 blocos (agora os piores são os primeiros quadros, a
+câmera assentando), contornando a ilha 635 → 231 (o que sobra é parallax das
+árvores e o brilho do sol, não pop).
+
+**Fica de fora:** o servidor só manda entidades a 24 u (`AOI_RADIUS`): navio
+e bicho que ENTRAM agora aparecem em 0,6 s, mas os que SAEM ainda somem de
+uma vez (o cliente teria que manter um fantasma). Os bichos do mar (barbatanas)
+só são desenhados até 70 u, dentro disso.
+
+**Prévia:** `MMO_PREVIA_MAR=1 MMO_PREVIA_SO=fix` grava `mar-fix-props-perto`,
+`mar-fix-props-meio` (cada prop do mar do lado de uma Escuna), `mar-fix-lod-*`
+(o navio de 40 a 75 u, lente fechando com a distância), `mar-fix-seq-*` e
+`mar-fix-ilha-*` (8 s a 10 u/s, câmera do jogo, pedaços carregados no
+orçamento do jogo, relógio da água parado); `MMO_PREVIA_FORRACAO` escolhe a
+qualidade, `MMO_PREVIA_SEM_FIX=1` desenha do jeito antigo pra comparar.
+
+**Testes:** `mar_camera::na_luta_a_camera_nao_roda`,
+`depois_da_luta_volta_ao_rumo_devagar`; `agua::o_mar_nao_abre_buraco`;
+`mar_cena::os_destrocos_tem_o_voxel_do_navio_e_ficam_rentes`,
+`a_faixa_de_desenho_cabe_no_que_esta_carregado`, `as_arvores_de_longe_sao_baratas`.
 
 ### Fase 5 — Conteúdo do mar
 

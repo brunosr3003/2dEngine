@@ -38,6 +38,9 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Sharks and eels now show above the waves, and a red ring warns you before they bite: sail out of it to dodge. Sea elites are bigger and marked.
 - The sea HUD was cleaned up: hull in your status frame, no aiming overlays, only the islands that matter. Entering lawless waters or running low on hull shows a short notice, and lawless waters or treasure on deck get a small badge by the minimap.
 - New sailing camera: lower and behind your ship, it follows your heading and widens in a fight. Clearer sea icons on the minimap and map, and new ship skill icons.
+- The sailing camera now holds steady in a fight instead of spinning as your ship circles its target, and eases back behind your ship a moment after the fight ends.
+- Floating wreckage and drifting chests were remade in the same style as the ships: broken planks, barrels, crates and a snapped mast, no more odd raft-boats.
+- Fewer things popping in and out at sea: the water now reaches the horizon in one piece, islands keep their forests from afar, and wreckage, docks, ships and dock names fade in and out smoothly.
 - Sea balance: the Broadside hits harder, the Long Gun is now a long-range opener, sea monsters are tougher, and a fight at sea lasts about 10 to 25 seconds. At sea the cannons do the fighting: weapons rest until you are ashore.
 - Ships now turn with weight: bigger hulls turn slower, and every ship gun fires from the sides.
 - The Corsair path has new sea nodes: more cannon damage, a tougher hull, faster treasure hauling, a bigger Colossus Chest payout, and the Pirate's Code keystone (more cannon damage against treasure ships, but you are always a target at sea).

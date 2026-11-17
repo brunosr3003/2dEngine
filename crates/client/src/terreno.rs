@@ -48,7 +48,7 @@ const MERGE_MAX: i32 = 1;
 
 /// Variantes assadas por especie. Uma so' faz a mata inteira ler como papel
 /// de parede — o mesmo defeito de ter uma especie so'.
-const VARIANTES: usize = 6;
+pub(crate) const VARIANTES: usize = 6;
 
 /// Teto de QUADS por malha.
 ///
@@ -529,16 +529,21 @@ impl Terreno {
                 self.pedacos.contains_key(&(b(x).div_euclid(CHUNK), b(z).div_euclid(CHUNK)))
             });
         }
-        let visiveis: Vec<&Pedaco> = self
+        let visiveis: Vec<(&Pedaco, f32)> = self
             .pedacos
             .iter()
             .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
-            .map(|(_, p)| p)
+            .map(|((cx, cz), p)| (p, self.presenca_no_mar(*cx, *cz)))
+            .filter(|(_, f)| *f > 0.0)
             .collect();
-        crate::gpu_estatica::desenha(
-            crate::gpu_estatica::Programa::Solido { recorte, recorte_z },
-            visiveis.iter().flat_map(|p| p.malhas.iter()),
-        );
+        let programa = crate::gpu_estatica::Programa::Solido { recorte, recorte_z };
+        crate::gpu_estatica::desenha(programa, visiveis.iter().filter(|(_, f)| *f >= 1.0).flat_map(|(p, _)| p.malhas.iter()));
+        // THE OPEN SEA'S DRAW BAND (`mar_cena::faixa_de_desenho`): the
+        // chunks near the edge of what is loaded fade out over the far
+        // island meshes under them, never a hard edge.
+        for (p, f) in visiveis.iter().filter(|(_, f)| *f < 1.0) {
+            crate::gpu_estatica::com_some(1.0 - f, || crate::gpu_estatica::desenha(programa, p.malhas.iter()));
+        }
         if let Some(t) = &self.transito {
             let perto = vec2(cam.target.x, cam.target.z);
             t.borrow_mut().desenha(perto, get_frame_time().min(0.1), &|x, z| self.altura(x, z));
@@ -565,9 +570,42 @@ impl Terreno {
             crate::gpu_estatica::Programa::Sombra,
             self.pedacos
                 .iter()
-                .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)))
+                .filter(|((cx, cz), _)| pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz)) && self.presenca_no_mar(*cx, *cz) >= 1.0)
                 .flat_map(|(_, p)| p.sombras.iter()),
         );
+    }
+
+    /// How much of chunk `(cx, cz)` is drawn, 0..1: 1 everywhere but the
+    /// open sea, where it fades with its distance from the player over the
+    /// draw band (`mar_cena::faixa_de_desenho`).
+    pub fn presenca_no_mar(&self, cx: i32, cz: i32) -> f32 {
+        if !self.ger.e_mar() {
+            return 1.0;
+        }
+        match crate::mar_cena::faixa_de_desenho() {
+            Some((c, a, b)) => {
+                let m = self.centro_do_pedaco(cx, cz);
+                crate::mar_cena::presenca(crate::mar_cena::dist_quadrada(vec2(m.x, m.z), c), a, b)
+            }
+            None => 1.0,
+        }
+    }
+
+    /// Is the chunk under world `(x, z)` built AND drawn whole (the sea's
+    /// far island tiles stay under a chunk that is still fading)?
+    pub fn pedaco_opaco_em(&self, x: f32, z: f32) -> bool {
+        let (cx, cz) = self.pedaco_de(vec2(x, z));
+        self.pedacos.contains_key(&(cx, cz)) && self.presenca_no_mar(cx, cz) >= 1.0
+    }
+
+    /// The chunk under world `(x, z)` (the sea's far water fill).
+    pub fn pedaco_em(&self, x: f32, z: f32) -> (i32, i32) {
+        self.pedaco_de(vec2(x, z))
+    }
+
+    /// Is chunk `(cx, cz)` built?
+    pub fn pedaco_carregado(&self, cx: i32, cz: i32) -> bool {
+        self.pedacos.contains_key(&(cx, cz))
     }
 
     /// O pe' dos veios de Energia a` vista. Eles sao desenhados quadro a
@@ -613,6 +651,22 @@ impl Terreno {
     /// A superficie do mar dos pedacos visiveis. Quem chama ja' pos o
     /// material da agua (ver `agua::desenha`).
     pub fn sem_oceano(&self) -> bool { self.sem_mar }
+
+    /// The water of the chunks at most `ate` chunks (along either axis) from
+    /// chunk `centro` (the open sea: the far fill covers the rest).
+    pub fn desenha_agua_ate(&self, cam: &Camera3D, tempo: f32, ondas: f32, centro: (i32, i32), ate: i32) {
+        crate::gpu_estatica::desenha(
+            crate::gpu_estatica::Programa::Agua { tempo, ondas },
+            self.pedacos
+                .iter()
+                .filter(|((cx, cz), p)| {
+                    (cx - centro.0).abs().max((cz - centro.1).abs()) <= ate
+                        && !p.agua.is_empty()
+                        && pedaco_visivel(cam, self.centro_do_pedaco(*cx, *cz))
+                })
+                .flat_map(|(_, p)| p.agua.iter()),
+        );
+    }
 
     pub fn desenha_agua(&self, cam: &Camera3D, tempo: f32, ondas: f32) {
         crate::gpu_estatica::desenha(

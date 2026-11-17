@@ -36,11 +36,11 @@ for c in "${cortes[@]}"; do
   filtros+="[$n:v]settb=AVTB,setpts=PTS-STARTPTS,fps=60,format=yuv420p[v$n];"
   if [ -z "$anterior" ]; then
     anterior="v$n"
-    offset=$(echo "$dur - $fade" | bc -l)
+    offset=$(awk "BEGIN{print $dur - $fade}")
   else
     filtros+="[$anterior][v$n]xfade=transition=fade:duration=$fade:offset=$offset[x$n];"
     anterior="x$n"
-    offset=$(echo "$offset + $dur - $fade" | bc -l)
+    offset=$(awk "BEGIN{print $offset + $dur - $fade}")
   fi
   n=$((n + 1))
 done

@@ -81,14 +81,24 @@ struct Pedido {
 }
 
 /// BRL per one unit of `moeda` (ECB rates, cached per run).
-async fn cotacao(cache: &mut HashMap<String, f64>, moeda: &str) -> f64 {
+/// The rate on the PURCHASE DAY (`dia` = YYYY-MM-DD), as the panel says it
+/// is (17/11/2026: it used `/latest`, so every 6-hour refresh rewrote old
+/// orders at today's rate, and a failed fetch wrote 0 over a good value: two
+/// EUR 18.99 orders and the IDR one showed R$ 0 and the gross "fell" from
+/// R$ 629 to R$ 387). 0 = unknown; the caller then keeps what was stored.
+async fn cotacao(cache: &mut HashMap<String, f64>, moeda: &str, dia: &str) -> f64 {
     if moeda.is_empty() || moeda == "BRL" {
         return 1.0;
     }
-    if let Some(c) = cache.get(moeda) {
+    let chave = format!("{moeda}@{dia}");
+    if let Some(c) = cache.get(&chave) {
         return *c;
     }
-    let url = format!("https://api.frankfurter.app/latest?from={moeda}&to=BRL");
+    let url = if dia.is_empty() {
+        format!("https://api.frankfurter.dev/v1/latest?from={moeda}&to=BRL")
+    } else {
+        format!("https://api.frankfurter.dev/v1/{dia}?from={moeda}&to=BRL")
+    };
     let v = async {
         let r: serde_json::Value = reqwest::Client::new()
             .get(&url)
@@ -104,7 +114,7 @@ async fn cotacao(cache: &mut HashMap<String, f64>, moeda: &str) -> f64 {
     .await
     .unwrap_or(0.0);
     if v > 0.0 {
-        cache.insert(moeda.to_string(), v);
+        cache.insert(chave, v);
     } else {
         tracing::warn!("financeiro: sem cotacao {moeda}->BRL");
     }
@@ -119,12 +129,13 @@ async fn uma_rodada(central: &PgPool) -> Result<()> {
     if !crate::loja_google_play::configurado() {
         return Ok(());
     }
-    let pendentes: Vec<(String, String)> = sqlx::query_as(
-        "SELECT p.externo, p.id FROM loja_pedidos p
+    let pendentes: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT p.externo, p.id, to_char(p.criado_em AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM loja_pedidos p
            LEFT JOIN loja_financeiro f ON f.externo = p.externo
           WHERE p.provedor = 'google_play' AND p.status = 'creditado'
             AND (p.externo LIKE 'GPA.%' OR p.externo LIKE 'TESTE:GPA.%')
             AND (f.externo IS NULL
+                 OR f.cotacao_brl <= 0
                  OR (f.atualizado_em < NOW() - INTERVAL '6 hours' AND p.criado_em > NOW() - INTERVAL '30 days'))
           ORDER BY p.criado_em DESC LIMIT 200",
     )
@@ -134,7 +145,7 @@ async fn uma_rodada(central: &PgPool) -> Result<()> {
         return Ok(());
     }
     let mut cache = HashMap::new();
-    for (externo, pedido) in pendentes {
+    for (externo, pedido, dia) in pendentes {
         let order_id = externo.trim_start_matches(crate::loja_google_play::PREFIXO_TESTE);
         let corpo = match crate::loja_google_play::pedido_bruto(order_id).await {
             Ok(c) => c,
@@ -147,14 +158,19 @@ async fn uma_rodada(central: &PgPool) -> Result<()> {
             tracing::warn!("financeiro: resposta inesperada para {order_id}: {corpo}");
             continue;
         };
-        let cot = cotacao(&mut cache, &p.total.moeda).await;
+        let cot = cotacao(&mut cache, &p.total.moeda, &dia).await;
         sqlx::query(
             "INSERT INTO loja_financeiro (externo, pedido, pais, moeda, total_micros, imposto_micros, receita_micros,
                  estado, teste, cotacao_brl, total_brl_centavos, imposto_brl_centavos, receita_brl_centavos, atualizado_em)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
              ON CONFLICT (externo) DO UPDATE SET pais = $3, moeda = $4, total_micros = $5, imposto_micros = $6,
-                 receita_micros = $7, estado = $8, teste = $9, cotacao_brl = $10, total_brl_centavos = $11,
-                 imposto_brl_centavos = $12, receita_brl_centavos = $13, atualizado_em = NOW()",
+                 receita_micros = $7, estado = $8, teste = $9,
+                 -- A failed rate fetch (0) never overwrites a good stored value.
+                 cotacao_brl = CASE WHEN $10 > 0 THEN $10 ELSE loja_financeiro.cotacao_brl END,
+                 total_brl_centavos = CASE WHEN $10 > 0 THEN $11 ELSE loja_financeiro.total_brl_centavos END,
+                 imposto_brl_centavos = CASE WHEN $10 > 0 THEN $12 ELSE loja_financeiro.imposto_brl_centavos END,
+                 receita_brl_centavos = CASE WHEN $10 > 0 THEN $13 ELSE loja_financeiro.receita_brl_centavos END,
+                 atualizado_em = NOW()",
         )
         .bind(&externo)
         .bind(&pedido)

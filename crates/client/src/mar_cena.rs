@@ -72,7 +72,80 @@ pub fn neblina() -> (f32, f32) {
     (inicio.max(110.0), fim)
 }
 
+/// The previews' "before" switch (`MMO_PREVIA_SEM_FIX`, debug builds): the
+/// sea drawn the way it was before the sea fix — the ring of ocean round
+/// the camera, hard draw distances, bald far islands — to measure the two
+/// side by side. Always off in a release.
+pub fn sem_fix() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        thread_local! {
+            static SEM: bool = std::env::var("MMO_PREVIA_SEM_FIX").is_ok();
+        }
+        SEM.with(|s| *s)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
+}
+
+/// `smoothstep`: 0 at `a`, 1 at `b`, eased.
+pub fn suave(a: f32, b: f32, x: f32) -> f32 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// HOW MANY CHUNKS ARE LOADED AT SEA: one ring more than the Graphics view
+/// distance. The outer ring is what the draw band fades over
+/// (`faixa_de_desenho`), so the islands keep their voxel ground and trees
+/// as far out as before the band existed; the ring is mostly open water
+/// (a flat bed and the water's coarse grid), and the band skips drawing it.
+pub fn raio_no_mar() -> i32 {
+    crate::config_graficos::raio_terreno() + if sem_fix() { 0 } else { 1 }
+}
+
+/// The distance the loaded chunks go by: the larger of the two axes (they
+/// are loaded in a SQUARE round the player, so the draw band follows the
+/// square and keeps its corners, not a circle inside it).
+pub fn dist_quadrada(a: Vec2, b: Vec2) -> f32 {
+    (a - b).abs().max_element()
+}
+
+/// How much of a thing `d` from the eye or the player is drawn over a fade
+/// band `a`..`b`: 1 inside `a`, 0 past `b`.
+pub fn presenca(d: f32, a: f32, b: f32) -> f32 {
+    1.0 - suave(a, b, d)
+}
+
+/// THE SEA'S DRAW BAND (sea fix, 17/11/2026): (the player, start, end),
+/// measured along the larger axis (`dist_quadrada`).
+/// What lives in the loaded chunks — the islands' voxel ground and trees,
+/// the floating wreckage — is drawn whole up to `start` from the player and
+/// fades out (an ordered dither, `gpu_estatica::define_some`) by `end`,
+/// inside the square that is always loaded (`raio` chunks each way); past
+/// it the far island meshes, their trees and the far water carry on. So
+/// nothing pops at the edge of the chunks. `None` off the sea, or with no
+/// fog to say where the player is.
+pub fn faixa_de_desenho() -> Option<(Vec2, f32, f32)> {
+    if !crate::mar_ui::no_mar() || sem_fix() {
+        return None;
+    }
+    let n = crate::gpu_estatica::neblina();
+    if n[3] <= 0.0 {
+        return None;
+    }
+    let r = raio_no_mar() as f32 * crate::terreno::CHUNK as f32 * BLOCO;
+    Some((vec2(n[0], n[1]), (r - 28.0).max(6.0), (r - 8.0).max(14.0)))
+}
+
 thread_local! {
+    /// What each stage of `desenha_mundo` drew last frame: terrain, docks,
+    /// water, far islands, the rest (draws, indices; from `zera_contagem`).
+    static ETAPAS: RefCell<Vec<(usize, usize)>> = const { RefCell::new(Vec::new()) };
+    /// The preview's sailing sequence holds the water's clock still, so two
+    /// frames differ only by what moved or popped (0 = the real clock).
+    static TEMPO_FIXO: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
     /// The preview's whole-sea shot pushes the fog out (0 = the game's).
     static NEBLINA_DA_PREVIA: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
@@ -586,6 +659,8 @@ struct Lod {
     ladrilhos: Vec<(MalhaEstatica, Vec2, Vec2)>,
     caixa: (Vec2, Vec2),
     vertices: usize,
+    /// The far trees' vertices (`arvores_de_longe`).
+    vertices_arvores: usize,
     /// The new docks' LANDMARKS (`mar_temas::malha_de_longe`: floating
     /// isles, skyline, cranes, coral spires, crystals): they stand where no
     /// chunk covers them, so they are drawn whole whenever in reach.
@@ -705,6 +780,123 @@ fn constroi_lod(i: &IlhaVista, passo: f32) -> (Vec<Mesh>, usize) {
     (vec![Mesh { vertices: verts, indices: idx, texture: None }], usados)
 }
 
+/// The far shape of a prop (`arvores_de_longe`): its crown's box in model
+/// units and its colour, the voxel faces' light baked in.
+#[derive(Clone, Copy)]
+struct Silhueta {
+    min: Vec3,
+    max: Vec3,
+    cor: [u8; 3],
+}
+
+thread_local! {
+    static SILHUETAS: RefCell<Vec<Silhueta>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Each prop's far shape: the box of its crown (the top 60% of a tree, all
+/// of a rock), drawn a little INSIDE the voxel model — narrower and lower —
+/// so where both draw (the fade band) the voxel one covers it, and the
+/// colour of its top.
+fn silhuetas() -> Vec<Silhueta> {
+    SILHUETAS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.is_empty() {
+            for (k, m) in props().iter().enumerate() {
+                let topo = m.verts.iter().map(|v| v.position.y).fold(f32::MIN, f32::max);
+                let arvore = !(P_PEDRA..P_PEDRA_ESCURA + 2).contains(&k) && k != P_MONTE_DE_NEVE;
+                let corte = if arvore { topo * 0.4 } else { f32::MIN };
+                let (mut a, mut b) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+                for v in m.verts.iter().filter(|v| v.position.y >= corte) {
+                    a = a.min(v.position);
+                    b = b.max(v.position);
+                }
+                let meio = (a + b) * 0.5;
+                let meia = (b - a) * 0.5 * vec3(0.78, 1.0, 0.78);
+                let (a, b) = (vec3(meio.x - meia.x, a.y.max(0.0), meio.z - meia.z), vec3(meio.x + meia.x, topo * 0.9, meio.z + meia.z));
+                let alto = m.verts.iter().max_by(|p, q| p.position.y.total_cmp(&q.position.y)).map_or([90, 140, 70, 255], |v| v.color);
+                c.push(Silhueta { min: a, max: b, cor: [alto[0], alto[1], alto[2]] });
+            }
+        }
+        c.clone()
+    })
+}
+
+/// THE FAR ISLANDS' TREES (sea fix, 17/11/2026): every prop the chunks
+/// plant on island `i` (`prop_da_coluna`, the same hash and ground cover),
+/// as ONE box of its crown's colour — 8 shared vertices a tree, the sides
+/// darkening towards the foot like the voxel AO. Under the loaded chunks
+/// the far tiles are skipped, and in the draw band the voxel tree fades out
+/// over its own box: past the chunks an island keeps its forest instead of
+/// going bald, and nothing pops where they meet. Low quality keeps one in
+/// two (the forest thins with distance there, it does not vanish).
+fn arvores_de_longe(i: &IlhaVista) -> (Vec<Mesh>, usize) {
+    let forma = silhuetas();
+    let forracao = crate::config_graficos::forracao();
+    // One tree in `passo` (a little wider for it): the far forest thins, it
+    // never goes bald, and the phone keeps its budget.
+    let passo: u32 = if qualidade() == 0 { 3 } else { 2 };
+    let meia = i.raio + 18.0;
+    let (b0x, b1x) = (((i.centro.x - meia) / BLOCO).floor() as i32, ((i.centro.x + meia) / BLOCO).ceil() as i32);
+    let (b0z, b1z) = (((i.centro.y - meia) / BLOCO).floor() as i32, ((i.centro.y + meia) / BLOCO).ceil() as i32);
+    let (mut malhas, mut verts, mut idx): (Vec<Mesh>, Vec<Vertex>, Vec<u16>) = (Vec::new(), Vec::new(), Vec::new());
+    let mut total = 0;
+    for bz in b0z..=b1z {
+        for bx in b0x..=b1x {
+            let Some((k, escala, giro)) = prop_da_coluna(bx, bz, forracao) else {
+                continue;
+            };
+            if mistura(bx, bz, 0x7EE) % passo != 0 {
+                continue;
+            }
+            let Some(f) = forma.get(k) else {
+                continue;
+            };
+            if verts.len() + 8 > 60_000 {
+                total += verts.len();
+                malhas.push(Mesh { vertices: std::mem::take(&mut verts), indices: std::mem::take(&mut idx), texture: None });
+            }
+            let (x, z) = (bx as f32 * BLOCO, bz as f32 * BLOCO);
+            // The voxel column's top, as the chunk plants it.
+            let chao = (mar::altura(x, z) / BLOCO).ceil() * BLOCO;
+            let gira = |p: Vec3| match giro % 4 {
+                0 => p,
+                1 => vec3(p.z, p.y, -p.x),
+                2 => vec3(-p.x, p.y, -p.z),
+                _ => vec3(-p.z, p.y, p.x),
+            };
+            let (p, q) = (gira(f.min), gira(f.max));
+            let largo = vec3(1.2, 1.0, 1.2) * escala;
+            let a = vec3(x, chao, z) + p.min(q) * largo;
+            let b = vec3(x, chao, z) + p.max(q) * largo;
+            caixa_de_longe(&mut verts, &mut idx, a, b, f.cor);
+        }
+    }
+    total += verts.len();
+    if !idx.is_empty() {
+        malhas.push(Mesh { vertices: verts, indices: idx, texture: None });
+    }
+    (malhas, total)
+}
+
+/// A box's five visible faces (no bottom) on 8 shared vertices: the top
+/// ring in the crown's colour, the foot ring darker (the voxel AO's read),
+/// wound to face out.
+fn caixa_de_longe(verts: &mut Vec<Vertex>, idx: &mut Vec<u16>, a: Vec3, b: Vec3, cor: [u8; 3]) {
+    let tom = |l: f32| [(cor[0] as f32 * l) as u8, (cor[1] as f32 * l) as u8, (cor[2] as f32 * l) as u8, 255];
+    let base = verts.len() as u16;
+    // 0..3 the foot (y = a.y), 4..7 the top (y = b.y): (x0,z0) (x0,z1) (x1,z1) (x1,z0).
+    for (y, l) in [(a.y, 0.55), (b.y, 0.95)] {
+        for (x, z) in [(a.x, a.z), (a.x, b.z), (b.x, b.z), (b.x, a.z)] {
+            verts.push(vert(vec3(x, y, z), tom(l)));
+        }
+    }
+    let q = |i: [u16; 4]| [base + i[0], base + i[1], base + i[2], base + i[0], base + i[2], base + i[3]];
+    // Top, +z, -z, +x, -x (the same winding as the far ground: out).
+    for f in [[4, 5, 6, 7], [1, 2, 6, 5], [3, 0, 4, 7], [2, 3, 7, 6], [0, 1, 5, 4]] {
+        idx.extend_from_slice(&q(f));
+    }
+}
+
 /// Builds at most ONE missing island mesh or dock per frame (each costs a
 /// few to a few tens of milliseconds): entering the sea never hitches.
 fn prepara(perto: Vec2) {
@@ -721,7 +913,20 @@ fn prepara(perto: Vec2) {
             l.resize_with(ilhas.len(), || None);
         }
         if let Some(k) = (0..ilhas.len()).find(|k| l[*k].is_none()) {
-            let (ms, n) = constroi_lod(&ilhas[k], passo);
+            let (mut ms, n) = constroi_lod(&ilhas[k], passo);
+            let (arvores, n_arvores) = if sem_fix() { (Vec::new(), 0) } else { arvores_de_longe(&ilhas[k]) };
+            // The trees go in the ground's own mesh where they fit (the same
+            // draw calls, whole or by tile).
+            for a in arvores {
+                match ms.iter_mut().find(|m| m.vertices.len() + a.vertices.len() < 65_000) {
+                    Some(m) => {
+                        let base = m.vertices.len() as u16;
+                        m.vertices.extend(a.vertices);
+                        m.indices.extend(a.indices.iter().map(|i| i + base));
+                    }
+                    None => ms.push(a),
+                }
+            }
             let ladrilhos = ms.iter().flat_map(fatia).map(|(m, a, b)| (MalhaEstatica::nova(m), a, b)).collect();
             let i = &ilhas[k];
             let r = Vec2::splat(i.raio + 18.0);
@@ -733,6 +938,7 @@ fn prepara(perto: Vec2) {
                 ladrilhos,
                 caixa: (c - r, c + r),
                 vertices: n,
+                vertices_arvores: n_arvores,
                 marcos: marcos.into_iter().map(MalhaEstatica::nova).collect(),
                 vertices_marcos,
             });
@@ -758,8 +964,25 @@ fn prepara(perto: Vec2) {
     });
 }
 
-/// How far a dock's geometry is drawn (its light and label go farther).
-const ALCANCE_DA_DOCA: f32 = 360.0;
+/// How far a dock's pier, lighthouse and quay are drawn (sea fix): past the
+/// old hard 360 u, deep into the fog, fading out over the last fifth — the
+/// phone's budget sets it by quality (a dock is ~15 k vertices; the fog is
+/// already thick there: about 40% at 520 u on High).
+pub fn alcance_da_doca() -> f32 {
+    let (_, fim) = neblina();
+    let teto: f32 = match qualidade() {
+        0 => 380.0,
+        1 => 450.0,
+        _ => 520.0,
+    };
+    teto.min(fim)
+}
+
+/// How far a dock's MOVING parts are drawn — the moored boats, fading out
+/// over the last stretch (sea fix: the pier, lighthouse and quay now draw
+/// to the fog's end, like the island they stand on: they popped at 360 u
+/// in clear air). Static, one mesh a dock: a few draw calls.
+const ALCANCE_DOS_BARCOS: f32 = 420.0;
 
 fn visivel(cam: &Camera3D, c: Vec2, r: f32, alcance: f32) -> bool {
     let olho = vec2(cam.position.x, cam.position.z);
@@ -787,11 +1010,17 @@ pub fn desenha_ilhas_de_longe(t: &crate::terreno::Terreno, cam: &Camera3D) {
         (0..=nz).all(|j| {
             (0..=nx).all(|i| {
                 let p = vec2((a.x + i as f32 * passo).min(b.x), (a.y + j as f32 * passo).min(b.y));
-                t.pedaco_pronto_em(p.x, p.y)
+                t.pedaco_opaco_em(p.x, p.y)
             })
         })
     };
     let solido = Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 };
+    // Never inside the chunks drawn whole round the player: there the far
+    // mesh could only poke through a voxel slope (it fills the draw band's
+    // dithered holes past that, and the open sea beyond).
+    if let Some((c, a, _)) = faixa_de_desenho() {
+        crate::gpu_estatica::define_oco(c, a);
+    }
     LODS.with(|l| {
         for (k, lod) in l.borrow().iter().enumerate() {
             let (Some(lod), Some(i)) = (lod, mar::ilhas().get(k)) else {
@@ -816,6 +1045,7 @@ pub fn desenha_ilhas_de_longe(t: &crate::terreno::Terreno, cam: &Camera3D) {
             }
         }
     });
+    crate::gpu_estatica::define_oco(Vec2::ZERO, 0.0);
 }
 
 /// The docks (pier, lighthouse, quay), with the world shader. Call after the
@@ -829,8 +1059,20 @@ pub fn desenha_ilhas(cam: &Camera3D) {
             let (Some(doca), Some(i)) = (doca, mar::ilhas().get(k)) else {
                 continue;
             };
-            if visivel(cam, mq(i.raiz), 40.0, ALCANCE_DA_DOCA.min(fim)) {
-                crate::gpu_estatica::desenha(Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 }, doca.malhas.iter());
+            if sem_fix() {
+                if visivel(cam, mq(i.raiz), 40.0, fim.min(360.0)) {
+                    crate::gpu_estatica::desenha(Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 }, doca.malhas.iter());
+                }
+                continue;
+            }
+            // Fading out over the last fifth of its reach, deep in the fog.
+            let alcance = alcance_da_doca();
+            let olho = vec2(cam.position.x, cam.position.z);
+            let f = presenca(olho.distance(mq(i.raiz)) - 40.0, alcance * 0.8, alcance);
+            if f > 0.0 && visivel(cam, mq(i.raiz), 40.0, alcance) {
+                crate::gpu_estatica::com_some(1.0 - f, || {
+                    crate::gpu_estatica::desenha(Programa::Solido { recorte: Vec3::ZERO, recorte_z: 0.0 }, doca.malhas.iter());
+                });
             }
         }
     });
@@ -842,6 +1084,11 @@ pub fn orcamento() -> (usize, usize) {
     let a = LODS.with(|l| l.borrow().iter().flatten().map(|l| l.vertices + l.vertices_marcos).sum());
     let b = DOCAS.with(|d| d.borrow().iter().flatten().map(|d| d.vertices).sum());
     (a, b)
+}
+
+/// The far islands' trees, vertices (`arvores_de_longe`).
+pub fn orcamento_arvores() -> usize {
+    LODS.with(|l| l.borrow().iter().flatten().map(|l| l.vertices_arvores).sum())
 }
 
 // ───────────────────────────── the dock ─────────────────────────────
@@ -1154,15 +1401,21 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
                 continue;
             };
             let dist = vec2(olho.x, olho.z).distance(mq(i.raiz));
-            if dist > ALCANCE_DA_DOCA.min(fim) {
-                continue;
+            let alcance = ALCANCE_DOS_BARCOS.min(alcance_da_doca() * 0.8);
+            let barcos = presenca(dist, alcance * 0.8, alcance);
+            if barcos > 0.0 {
+                crate::gpu_estatica::com_some(1.0 - barcos, || {
+                    for (n, (p, yaw)) in doca.barcos.iter().enumerate() {
+                        crate::mar_casco::desenha_atracado(*p, *yaw, tempo + n as f32 * 1.3);
+                    }
+                });
             }
-            for (n, (p, yaw)) in doca.barcos.iter().enumerate() {
-                crate::mar_casco::desenha_atracado(*p, *yaw, tempo + n as f32 * 1.3);
-            }
-            if dist < 160.0 {
+            // The flags furl away over the last stretch (they are cloth
+            // strips: a dither would only shimmer on them).
+            let pano = presenca(dist, 190.0, 260.0);
+            if pano > 0.0 {
                 for (n, topo) in doca.bandeiras.iter().enumerate() {
-                    bandeira(*topo, cor_da_ilha(i.feitio), tempo + n as f32 * 0.7 + k as f32);
+                    bandeira(*topo, cor_da_ilha(i.feitio), tempo + n as f32 * 0.7 + k as f32, pano);
                 }
             }
         }
@@ -1184,16 +1437,19 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
             halo(&mut verts, &mut idx, olho, doca.lampada, tam * 2.6, cor, 0.25);
             // The beam: two blades turning round the lamp, seen from AFAR (up
             // close they would only sweep a white band over the screen).
-            if dist > 150.0 && dist < fim {
+            // The beam fades in from 120 u and out before the fog's end.
+            let facho_a = suave(120.0, 175.0, dist) * presenca(dist, fim * 0.8, fim);
+            if facho_a > 0.0 {
                 let a = tempo * 0.9 + k as f32;
                 for s in [0.0f32, std::f32::consts::PI] {
-                    facho(&mut verts, &mut idx, olho, doca.lampada, a + s, 55.0, cor);
+                    facho(&mut verts, &mut idx, olho, doca.lampada, a + s, 55.0, cor * facho_a);
                 }
             }
-            if dist < 120.0 {
+            let lanterna = presenca(dist, 95.0, 125.0);
+            if lanterna > 0.0 {
                 let cor_l = if crate::mar_temas::e_tema(i.feitio) { cor } else { vec3(1.0, 0.8, 0.45) };
                 for l in doca.lanternas {
-                    halo(&mut verts, &mut idx, olho, l, 0.9 + 0.1 * (tempo * 5.0 + l.x).sin(), cor_l, 0.7);
+                    halo(&mut verts, &mut idx, olho, l, 0.9 + 0.1 * (tempo * 5.0 + l.x).sin(), cor_l, 0.7 * lanterna);
                 }
             }
             // THE NEW DOCKS' LIGHTS (`mar_temas`): roof lights that blink,
@@ -1208,6 +1464,7 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
                     } else {
                         (0.6 + 0.25 * (tempo * 1.6 + fase).sin(), (d * 0.016).max(1.4))
                     };
+                    let a = a * presenca(d, fim * 0.8, fim);
                     if a > 0.01 {
                         halo(&mut verts, &mut idx, olho, *p, tam, *c, a);
                     }
@@ -1222,8 +1479,9 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
             // THE DOCKING RING at the anchorage, bright and pulsing; and a
             // faint wide one where "Dock" is offered.
             let f = mq(i.fundeadouro());
-            if vec2(olho.x, olho.z).distance(f) < 260.0 {
-                let perto = eu.map_or(1.0, |e| 1.0 - ((e.distance(f) - mar::PERTO_DO_CAIS) / 60.0).clamp(0.0, 1.0) * 0.5);
+            let ve = presenca(vec2(olho.x, olho.z).distance(f), 200.0, 260.0);
+            if ve > 0.0 {
+                let perto = ve * eu.map_or(1.0, |e| 1.0 - ((e.distance(f) - mar::PERTO_DO_CAIS) / 60.0).clamp(0.0, 1.0) * 0.5);
                 let y = crate::agua::ALTURA_DA_AGUA + crate::agua::AMPLITUDE_MAX * 0.75 + 0.06;
                 let c = cor_da_ilha(i.feitio);
                 let c = vec3(c.r, c.g, c.b);
@@ -1242,11 +1500,11 @@ pub fn desenha_docas(cam: &Camera3D, tempo: f32, eu: Option<Vec2>) {
 
 /// A flag in the island's colour on top of a pole: a strip of quads waving
 /// (two-sided: the world shader culls back faces).
-fn bandeira(topo: Vec3, cor: Color, t: f32) {
+fn bandeira(topo: Vec3, cor: Color, t: f32, quanto: f32) {
     let mut verts = Vec::new();
     let mut idx: Vec<u16> = Vec::new();
     let vento = vec3(0.8, 0.0, 0.6).normalize();
-    let (comp, alto, n) = (2.4f32, 1.4f32, 6);
+    let (comp, alto, n) = (2.4f32 * quanto, 1.4f32 * quanto, 6);
     for k in 0..=n {
         let f = k as f32 / n as f32;
         let onda = (t * 4.0 - f * 5.0).sin() * 0.25 * f;
@@ -1343,6 +1601,7 @@ fn na_tela(cam: &Camera3D, p: Vec3, tela: Vec2) -> (Vec2, bool) {
 /// pointing at it, with its name and distance. Max one such marker.
 pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2, foco: Option<u8>) {
     use crate::hud_estilo as estilo;
+    let (_, fim) = neblina();
     let s = (tela.y.min(tela.x) / 800.0).clamp(0.7, 1.6);
     let tamanho = (15.0 * s) as u16;
     let pequeno = (12.0 * s) as u16;
@@ -1354,18 +1613,27 @@ pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2, foco: Option<u8>) {
         let dist = de.distance(f);
         let topo = no_mundo(i, vec3(-10.5, crate::mar_temas::altura_da_lampada(i.feitio) + 4.5, -12.0));
         let (q, na_frente) = na_tela(cam, topo, tela);
-        let dentro = na_frente && q.x > margem && q.x < tela.x - margem && q.y > margem && q.y < tela.y - margem;
-        if dentro {
+        // THE FADES (sea fix): a dock's label goes with its dock into the
+        // fog, and slides out at the screen's edge over 40 px, handing over
+        // to the off-screen chevron — never a name blinking on or off.
+        let borda = if na_frente {
+            let d = (q.x - margem).min(tela.x - margem - q.x).min(q.y - margem).min(tela.y - margem - q.y);
+            (d / (40.0 * s)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let longe = presenca(dist, fim * 0.5, fim * 0.8);
+        if borda > 0.0 && longe > 0.0 {
             // Far docks barely show; the near one reads plainly.
-            let alfa = (1.0 - (dist - 60.0) / 240.0).clamp(0.35, 0.95);
+            let alfa = (1.0 - (dist - 60.0) / 240.0).clamp(0.35, 0.95) * borda * longe;
             let nome = format!("{} · Dock", i.nome);
             let c = Color::new(cor.r, cor.g, cor.b, alfa);
             estilo::texto_centro_forte(q.x + 1.0, q.y + 1.0, &nome, tamanho, Color::new(0.0, 0.0, 0.0, 0.7 * alfa));
             estilo::texto_centro_forte(q.x, q.y, &nome, tamanho, c);
             ancora(vec2(q.x, q.y - 18.0 * s), 7.0 * s, c);
-            continue;
         }
-        if foco != Some(i.ilha as u8) {
+        let fora = if borda > 0.0 && longe > 0.0 { 1.0 - borda } else { 1.0 };
+        if foco != Some(i.ilha as u8) || fora <= 0.0 {
             continue;
         }
         // Off screen: a small chevron on a ring ROUND THE SHIP, pointing at
@@ -1381,11 +1649,11 @@ pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2, foco: Option<u8>) {
         // Kept in the open middle of the screen, away from the HUD's edges.
         let p = navio + dir * tela.x.min(tela.y) * 0.24;
         let p = vec2(p.x.clamp(tela.x * 0.2, tela.x * 0.8), p.y.clamp(tela.y * 0.24, tela.y * 0.68));
-        let c = Color::new(cor.r, cor.g, cor.b, 0.92);
+        let c = Color::new(cor.r, cor.g, cor.b, 0.92 * fora);
         let lado = vec2(-dir.y, dir.x);
         let ponta = p + dir * 9.0 * s;
         let sombra = vec2(1.0, 1.0);
-        draw_triangle(ponta + sombra, p - dir * 3.0 * s + lado * 7.0 * s + sombra, p - dir * 3.0 * s - lado * 7.0 * s + sombra, Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_triangle(ponta + sombra, p - dir * 3.0 * s + lado * 7.0 * s + sombra, p - dir * 3.0 * s - lado * 7.0 * s + sombra, Color::new(0.0, 0.0, 0.0, 0.45 * fora));
         draw_triangle(ponta, p - dir * 3.0 * s + lado * 6.5 * s, p - dir * 3.0 * s - lado * 6.5 * s, c);
         let rotulo = format!("{} · {:.0} m", i.nome, dist);
         let w = estilo::medir_forte(&rotulo, pequeno);
@@ -1393,7 +1661,7 @@ pub fn rotulos(cam: &Camera3D, eu: Option<Vec2>, tela: Vec2, foco: Option<u8>) {
         let t = p + dir * (16.0 * s + w * 0.5 * dir.x.abs() + 6.0 * s * dir.y.abs());
         let tx = t.x.clamp(margem * 0.5 + w * 0.5, tela.x - margem * 0.5 - w * 0.5);
         let ty = t.y.clamp(margem * 0.5 + pequeno as f32, tela.y - margem * 0.5);
-        estilo::texto_centro_forte(tx + 1.0, ty + 4.0 * s + 1.0, &rotulo, pequeno, Color::new(0.0, 0.0, 0.0, 0.75));
+        estilo::texto_centro_forte(tx + 1.0, ty + 4.0 * s + 1.0, &rotulo, pequeno, Color::new(0.0, 0.0, 0.0, 0.75 * fora));
         estilo::texto_centro_forte(tx, ty + 4.0 * s, &rotulo, pequeno, c);
     }
 }
@@ -1418,34 +1686,56 @@ thread_local! {
 }
 
 /// THE FLOATING WRECKAGE in view, each riding the swell: rise, tilt with the
-/// slope, a slow turn. One draw each, culled at 110 u.
+/// slope, a slow turn. One draw each. It lives in the chunks, so it fades
+/// out with them over the sea's draw band (`faixa_de_desenho`: whole to
+/// ~52 u from the player, gone by ~72 u at the default view distance),
+/// never popping at the edge of what is loaded; Low quality ends it sooner.
 pub fn desenha_destrocos(t: &crate::terreno::Terreno, cam: &Camera3D, tempo: f32) {
-    let alvo = vec2(cam.target.x, cam.target.z);
-    let alcance = match qualidade() {
-        0 => 70.0,
-        _ => 110.0,
+    if sem_fix() {
+        let alvo = vec2(cam.target.x, cam.target.z);
+        let alcance = if qualidade() == 0 { 70.0 } else { 110.0 };
+        for (base, k) in t.destrocos_visiveis(cam) {
+            if vec2(base.x, base.z).distance(alvo) <= alcance {
+                desenha_destroco_em(t, k, vec2(base.x, base.z), tempo);
+            }
+        }
+        return;
+    }
+    let (centro, a, b) = faixa_de_desenho().unwrap_or((vec2(cam.target.x, cam.target.z), 52.0, 72.0));
+    let (a, b) = match qualidade() {
+        0 => (a.min(40.0), b.min(58.0)),
+        _ => (a, b),
     };
+    for (base, k) in t.destrocos_visiveis(cam) {
+        let f = presenca(dist_quadrada(vec2(base.x, base.z), centro), a, b);
+        if f <= 0.0 {
+            continue;
+        }
+        crate::gpu_estatica::com_some(1.0 - f, || desenha_destroco_em(t, k, vec2(base.x, base.z), tempo));
+    }
+}
+
+/// One floating wreck, model `k`, at `p` on the swell.
+pub fn desenha_destroco_em(t: &crate::terreno::Terreno, k: usize, p: Vec2, tempo: f32) {
     MALHAS_DESTROCO.with(|c| {
         let mut c = c.borrow_mut();
-        for (base, k) in t.destrocos_visiveis(cam) {
-            if vec2(base.x, base.z).distance(alvo) > alcance {
-                continue;
-            }
-            if c.len() <= k {
-                c.resize_with(k + 1, || None);
-            }
-            if c[k].is_none() {
-                let Some(m) = t.modelo_de_destroco(k) else {
-                    continue;
-                };
-                c[k] = Some(Mesh { vertices: m.verts.clone(), indices: m.idx.clone(), texture: None });
-            }
-            let Some(m) = c[k].as_ref() else {
-                continue;
-            };
-            let modelo = boia(vec2(base.x, base.z), tempo, (k as f32 * 1.7 + base.x * 0.13).sin() * 3.0) * Mat4::from_scale(Vec3::splat(2.0));
-            crate::gpu_estatica::desenha_voxel(m, modelo, [0.0; 4], Default::default());
+        if c.len() <= k {
+            c.resize_with(k + 1, || None);
         }
+        if c[k].is_none() {
+            let Some(m) = t.modelo_de_destroco(k) else {
+                return;
+            };
+            c[k] = Some(Mesh { vertices: m.verts.clone(), indices: m.idx.clone(), texture: None });
+        }
+        let Some(m) = c[k].as_ref() else {
+            return;
+        };
+        // The deck's top a touch over the swell, its beams under it.
+        let modelo = boia(p, tempo, (k as f32 * 1.7 + p.x * 0.13).sin() * 3.0)
+            * Mat4::from_translation(vec3(0.0, 0.12, 0.0))
+            * Mat4::from_scale(Vec3::splat(crate::vegetacao::DESTROCO_ESCALA));
+        crate::gpu_estatica::desenha_voxel(m, modelo, [0.0; 4], Default::default());
     });
 }
 
@@ -1460,26 +1750,93 @@ pub fn boia(p: Vec2, tempo: f32, giro: f32) -> Mat4 {
         * Mat4::from_rotation_y(giro + (tempo * 0.2 + giro).sin() * 0.15)
 }
 
-/// A drifting CHEST at sea: a little raft riding the swell, a buoy flag
-/// over it; returns where the chest itself sits (the caller draws it).
+thread_local! {
+    /// The drifting chest's raft model (`jangada`), built once.
+    static MALHA_JANGADA: RefCell<Option<Mesh>> = const { RefCell::new(None) };
+}
+
+/// THE DRIFTING CHEST's model, at the hulls' voxel (0.125 u: built at `VOX`
+/// and drawn at half, like the wreckage): a raft of four lashed logs, the
+/// chest on it in dark wood with gold bands and lock, and a little red and
+/// white buoy with a lamp so the prize reads from afar. It was loose
+/// `draw_cube` slabs — smooth boards, a pole and a flag that, from the
+/// deck, read as a toy boat with a sail (sea fix, 17/11/2026).
+fn modelo_da_jangada() -> Modelo {
+    let mut v = Volume::novo([-12, -1, -12], [25, 16, 25]);
+    // The logs, along z: 3 voxels wide with rounded ends, alternating tones.
+    for (k, x0) in [-8, -4, 0, 4].into_iter().enumerate() {
+        let m = if k % 2 == 0 { Material::Tronco } else { Material::Terra };
+        for z in -8..=8 {
+            for x in x0..x0 + 3 {
+                let ponta = (z as i32).abs() == 8 && x != x0 + 1;
+                if !ponta {
+                    v.poe(x, 0, z, m);
+                }
+            }
+            v.poe(x0 + 1, -1, z, m);
+        }
+    }
+    // The lashings across them.
+    for z in [-6, 6] {
+        for x in -8..7 {
+            v.poe(x, 1, z, Material::Caminho);
+        }
+    }
+    // The chest: 9 × 6 × 5, a lid one darker, two gold bands and a lock.
+    let (x0, z0) = (-5, -3);
+    for y in 1..=6 {
+        for dz in 0..6 {
+            for dx in 0..9 {
+                let tampa = y >= 5;
+                let banda = dx == 1 || dx == 7;
+                let fecho = dz == 5 && (3..=5).contains(&dx) && (4..=5).contains(&y);
+                let borda = y == 4 || y == 5;
+                let m = if fecho {
+                    Material::JanelaAcesa
+                } else if banda {
+                    Material::FolhaDourada
+                } else if tampa {
+                    Material::Terra
+                } else if borda {
+                    Material::Tronco
+                } else {
+                    Material::Caminho
+                };
+                // The lid's crown: one voxel in all round.
+                if y == 6 && (dx == 0 || dx == 8 || dz == 0 || dz == 5) {
+                    continue;
+                }
+                v.poe(x0 + dx, y, z0 + dz, m);
+            }
+        }
+    }
+    // The buoy: red and white bands, a lamp on top.
+    for y in 1..=5 {
+        let m = if y % 2 == 1 { Material::PetalaVermelha } else { Material::PetalaBranca };
+        for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            v.poe(5 + dx, y, 5 + dz, m);
+        }
+    }
+    v.poe(5, 6, 5, Material::JanelaAcesa);
+    malha(&v)
+}
+
+/// A drifting CHEST at sea: its raft and the chest riding the swell, drawn
+/// at the hulls' voxel (`modelo_da_jangada`). Draws with the world shader
+/// (whatever is bound); returns where the chest sits.
 pub fn jangada(p: Vec3, semente: u64, tempo: f32) -> Vec3 {
     let q = vec2(p.x, p.z);
-    let (h, _) = crate::agua::onda_em(q.x, q.y, tempo);
-    let y = crate::agua::ALTURA_DA_AGUA + h;
-    let fase = (semente % 31) as f32;
-    let madeira = Color::from_rgba(122, 86, 50, 255);
-    let escura = Color::from_rgba(84, 58, 34, 255);
-    for k in -2..=2 {
-        draw_cube(vec3(q.x + k as f32 * 0.42, y + 0.02, q.y), vec3(0.38, 0.16, 2.0), None, if k % 2 == 0 { madeira } else { escura });
-    }
-    draw_cube(vec3(q.x, y + 0.14, q.y - 0.8), vec3(2.2, 0.1, 0.22), None, escura);
-    draw_cube(vec3(q.x, y + 0.14, q.y + 0.8), vec3(2.2, 0.1, 0.22), None, escura);
-    // The buoy pole and its flag, so the prize reads from afar.
-    let topo = vec3(q.x + 0.9, y + 2.4, q.y + 0.8);
-    draw_cube(vec3(q.x + 0.9, y + 1.2, q.y + 0.8), vec3(0.08, 2.4, 0.08), None, escura);
-    let ondula = (tempo * 4.0 + fase).sin() * 0.06;
-    draw_cube(topo + vec3(0.35, -0.2 + ondula, 0.0), vec3(0.7, 0.4, 0.04), None, Color::from_rgba(236, 190, 84, 255));
-    vec3(q.x - 0.1, y + 0.1, q.y)
+    let giro = (semente % 31) as f32 * 0.7;
+    let modelo = boia(q, tempo, giro) * Mat4::from_translation(vec3(0.0, 0.12, 0.0)) * Mat4::from_scale(Vec3::splat(crate::vegetacao::DESTROCO_ESCALA));
+    MALHA_JANGADA.with(|m| {
+        let mut m = m.borrow_mut();
+        let m = m.get_or_insert_with(|| {
+            let j = modelo_da_jangada();
+            Mesh { vertices: j.verts, indices: j.idx, texture: None }
+        });
+        crate::gpu_estatica::desenha_voxel(m, modelo, [0.0; 4], Default::default());
+    });
+    modelo.transform_point3(vec3(0.0, 0.25, 0.0))
 }
 
 // ───────────────────────────── preview ─────────────────────────────
@@ -1502,9 +1859,12 @@ pub fn desenha_mundo(
 ) {
     let no_mar = crate::mar_ui::no_mar();
     crate::mar_ui::define_no_mar(true);
-    let t = get_time() as f32;
+    let fixo = TEMPO_FIXO.with(|f| f.get());
+    let t = if fixo > 0.0 { fixo } else { get_time() as f32 };
     set_camera(cam);
-    let alvo = vec2(cam.target.x, cam.target.z);
+    // The fog's centre is the player, where the chunks are loaded round
+    // (`main::desenhar_mundo`); the camera's target only without one.
+    let alvo = eu.unwrap_or(vec2(cam.target.x, cam.target.z));
     let (inicio, fim) = neblina();
     crate::gpu_estatica::define_neblina(alvo, inicio, fim);
     solido.set_uniform("Neblina", vec4(alvo.x, alvo.y, inicio, fim));
@@ -1517,20 +1877,43 @@ pub fn desenha_mundo(
     let so_lod = std::env::var("MMO_SO_LOD").is_ok();
     #[cfg(not(debug_assertions))]
     let so_lod = false;
+    // Per stage, for the previews' report (`etapas`): (draws, indices).
+    let marca = |k: usize| {
+        let c = crate::gpu_estatica::contagem();
+        ETAPAS.with(|e| {
+            let mut e = e.borrow_mut();
+            let antes: (usize, usize) = e.iter().take(k).fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1));
+            let (d, n) = (c.0.saturating_sub(antes.0), c.1.saturating_sub(antes.1));
+            if e.len() <= k {
+                e.resize(k + 1, (0, 0));
+            }
+            e[k] = (d, n);
+        });
+    };
+    ETAPAS.with(|e| e.borrow_mut().clear());
+    let zero = crate::gpu_estatica::contagem();
     if !so_lod {
         terreno.desenha(cam, Vec3::ZERO, 0.0);
     }
+    let _ = zero;
+    marca(0);
     desenha_ilhas(cam);
+    marca(1);
     crate::agua::desenha(terreno, cam, t);
+    marca(2);
     desenha_ilhas_de_longe(terreno, cam);
+    marca(3);
     gl_use_material(solido);
     desenha_destrocos(terreno, cam, t);
     desenha_docas(cam, t, eu);
     desenha_ceu(cam);
     gl_use_material(solido);
-    for (q, yaw, v, id) in navios {
-        crate::mar_casco::desenha(vec3(q.x, 0.0, q.y), *yaw, *id, *v);
-    }
+    crate::mar_casco::sem_surgir(|| {
+        for (q, yaw, v, id) in navios {
+            crate::mar_casco::desenha(vec3(q.x, 0.0, q.y), *yaw, *id, *v);
+        }
+    });
+    marca(4);
     gl_use_default_material();
     crate::gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
     solido.set_uniform("Neblina", Vec4::ZERO);
@@ -1569,7 +1952,8 @@ pub async fn previa() {
     let saida = std::env::var("MMO_PREVIA_SAIDA").unwrap_or_else(|_| "/tmp/tempest-mar".into());
     std::fs::create_dir_all(&saida).unwrap();
     crate::mar_ui::define_no_mar(true);
-    crate::config_graficos::define_para_previa(crate::config_graficos::RAIO_PADRAO, 100);
+    let forracao = std::env::var("MMO_PREVIA_FORRACAO").ok().and_then(|f| f.parse().ok()).unwrap_or(100);
+    crate::config_graficos::define_para_previa(crate::config_graficos::RAIO_PADRAO, forracao);
     let (w, h) = (1280u32, 800u32);
     let tela = vec2(w as f32, h as f32);
     let rt = render_target_ex(w, h, RenderTargetParams { depth: true, sample_count: 1 });
@@ -1777,11 +2161,244 @@ pub async fn previa() {
         rt.texture.get_texture_data().export_png(&format!("{saida}/mar-navegando.png"));
         println!("mar-navegando.png");
     }
+    // 8. THE SEA FIX (17/11/2026): every floating prop beside a ship, close
+    //    and at mid distance; a ship across its level-of-detail switch; and
+    //    a SAILING SEQUENCE through the game's own camera and chunk
+    //    streaming, frame by frame, to catch anything popping at distance
+    //    (`MMO_PREVIA_SO=fix`; `mar-fix-*.png`).
+    if so.as_deref().is_none_or(|s| s.contains("fix")) {
+        previa_fix(&mut terreno, &solido, &rt, tela, &saida).await;
+    }
     let (ilhas, docas) = orcamento();
-    println!("orcamento: ilhas {ilhas} indices, docas {docas} vertices");
+    println!("orcamento: ilhas {ilhas} indices, docas {docas} vertices, arvores de longe {} vertices", orcamento_arvores());
     for c in 0..4u8 {
         let n = crate::mar_casco::modelo(Visual { classe: c, ..Default::default() });
         println!("casco {c}: {} vertices", n.vertices);
+    }
+}
+
+/// The sea fix's preview scenes (`previa`, step 8).
+#[cfg(debug_assertions)]
+async fn previa_fix(terreno: &mut crate::terreno::Terreno, solido: &Material2, rt: &RenderTarget, tela: Vec2, saida: &str) {
+    use shared::navio::Visual;
+    define_entardecer(0.0);
+    let (w, h) = (tela.x, tela.y);
+    let bosque = mar::vista_da_zona("ilha_inicial").unwrap();
+    let gelo = mar::vista_da_zona("ilha_gelo").unwrap();
+    let (fb, eb, lb) = (mq(bosque.fundeadouro()), mq(bosque.eixo()), mq(bosque.lado()));
+    let yaw_de = |d: Vec2| d.x.atan2(d.y);
+    let camera = |de: Vec3, para: Vec3, fovy: f32| Camera3D {
+        position: de,
+        target: para,
+        up: Vec3::Y,
+        fovy,
+        aspect: Some(w / h),
+        render_target: Some(rt.clone()),
+        ..Default::default()
+    };
+    let grava = |nome: &str| {
+        rt.texture.get_texture_data().export_png(&format!("{saida}/mar-fix-{nome}.png"));
+        println!("mar-fix-{nome}.png");
+    };
+    let so = std::env::var("MMO_PREVIA_SO").unwrap_or_default();
+    // ── every floating prop beside a Schooner ──
+    let c = fb + eb * 120.0;
+    for _ in 0..80 {
+        terreno.atualiza(c, crate::config_graficos::RAIO_PADRAO + 1, 400);
+    }
+    let v = crate::terreno::VARIANTES;
+    // (model, where): a tier-0 log raft, a tier-2 and a tier-4 wreck.
+    let destrocos = [(0usize, c + lb * 7.0 - eb * 1.0), (2 * v + 1, c + lb * 12.0 + eb * 2.0), (4 * v + 2, c + lb * 16.5 - eb * 0.5)];
+    let bau = c - lb * 6.0;
+    let tubarao = c - lb * 10.5 + eb * 1.0;
+    let navios = [(c, yaw_de(eb), Visual { classe: 1, vela: 2, ..Default::default() }, 501u64)];
+    let alvo3 = vec3(c.x + lb.x * 3.0, 0.6, c.y + lb.y * 3.0);
+    let tomadas = [
+        ("props-perto", vec3(c.x - eb.x * 15.0 + lb.x * 3.0, 6.5, c.y - eb.y * 15.0 + lb.y * 3.0)),
+        ("props-meio", vec3(c.x - eb.x * 44.0 + lb.x * 3.0, 21.0, c.y - eb.y * 44.0 + lb.y * 3.0)),
+    ];
+    if so.is_empty() || "fix-props".contains(so.as_str()) || so.contains("props") {
+        for (nome, de) in tomadas {
+            let cam = camera(de, alvo3, 0.9);
+            for _ in 0..3 {
+                crate::render3d::camera_padrao();
+                clear_background(cor_de_fundo());
+                desenha_mundo(terreno, solido, &cam, &navios, Some(c));
+                set_camera(&cam);
+                gl_use_material(solido);
+                let t = get_time() as f32;
+                let (n0, n1) = neblina();
+                crate::gpu_estatica::define_neblina(c, n0, n1);
+                for (k, p) in destrocos {
+                    desenha_destroco_em(terreno, k, p, t);
+                }
+                crate::render3d::desenha_bau_a_deriva(vec3(bau.x, 0.0, bau.y), 7, t);
+                crate::marinhos::desenha(70, vec3(tubarao.x, 0.0, tubarao.y), yaw_de(eb) + 0.4, 9, 1.6);
+                gl_use_default_material();
+                crate::gpu_estatica::define_neblina(Vec2::ZERO, 0.0, 0.0);
+                unsafe {
+                    get_internal_gl().flush();
+                }
+                next_frame().await;
+            }
+            grava(nome);
+        }
+    }
+    // ── a ship across its level-of-detail switch, 40 → 75 u, the lens
+    //    narrowed with the distance so it stays the same size ──
+    if so.is_empty() || "fix-lod".contains(so.as_str()) || so.contains("lod") {
+        for (n, d) in [40.0f32, 50.0, 54.0, 56.0, 60.0, 75.0].into_iter().enumerate() {
+            let dir = (-eb + lb * 0.6).normalize();
+            let de = c + dir * d;
+            let cam = camera(vec3(de.x, d * 0.32, de.y), vec3(c.x, 1.8, c.y), 0.9 * 14.0 / d);
+            for _ in 0..3 {
+                crate::render3d::camera_padrao();
+                clear_background(cor_de_fundo());
+                desenha_mundo(terreno, solido, &cam, &navios, Some(c));
+                unsafe {
+                    get_internal_gl().flush();
+                }
+                next_frame().await;
+            }
+            grava(&format!("lod-{n}-{d:.0}u"));
+        }
+    }
+    // ── THE SAILING SEQUENCE: out of the Bosque towards the Glacier at
+    //    10 u/s for 8 s, the game's sea camera zoomed out, the chunks
+    //    streamed round the ship at the game's own budget ──
+    if so.is_empty() || "fix-seq".contains(so.as_str()) || so.contains("seq") {
+        let gf = mq(gelo.fundeadouro());
+        let mut eu = fb + eb * 26.0;
+        let rumo = (gf - eu).normalize();
+        for _ in 0..80 {
+            terreno.atualiza(eu, raio_no_mar(), 400);
+        }
+        let mut cam_mar = crate::mar_camera::CameraDoMar::default();
+        let mut medida = (0usize, 0usize, 0usize, 0usize);
+        let mut etapas: Vec<(usize, usize)> = Vec::new();
+        let dt = 1.0 / 30.0;
+        // `MMO_PREVIA_FIX_COMO_ANTES`: the first take's settings (the water's
+        // clock running, the default tilt), to set beside it.
+        let como_antes = std::env::var("MMO_PREVIA_FIX_COMO_ANTES").is_ok();
+        TEMPO_FIXO.with(|f| f.set(if como_antes { 0.0 } else { 12.5 }));
+        let inclina = if como_antes { 0.0 } else { -0.2 };
+        let yaw_cam = crate::mar_camera::yaw_atras(rumo) + 0.9;
+        for i in 0..240 {
+            eu += rumo * 10.0 * dt;
+            terreno.atualiza(eu, raio_no_mar(), 4);
+            let quer = crate::mar_camera::enquadramento(eu, rumo, None, 1, false, crate::render3d::ZOOM_MAX, inclina);
+            let q = cam_mar.quadro(quer, dt);
+            let mut cam = crate::render3d::camera_no_mar(q.centro, 0.0, yaw_cam, q.fator, q.pitch);
+            cam.render_target = Some(rt.clone());
+            cam.aspect = Some(w / h);
+            crate::render3d::camera_padrao();
+            clear_background(cor_de_fundo());
+            crate::gpu_estatica::zera_contagem();
+            desenha_mundo(terreno, solido, &cam, &[(eu, yaw_de(rumo), Visual { classe: 1, vela: 2, ..Default::default() }, 502)], Some(eu));
+            let (d, n) = crate::gpu_estatica::contagem();
+            ETAPAS.with(|e| {
+                for (k, (a, b)) in e.borrow().iter().enumerate() {
+                    if etapas.len() <= k {
+                        etapas.resize(k + 1, (0, 0));
+                    }
+                    etapas[k].0 += a;
+                    etapas[k].1 += b;
+                }
+            });
+            medida.0 += d;
+            medida.1 += n;
+            medida.2 = medida.2.max(d);
+            medida.3 = medida.3.max(n);
+            crate::render3d::camera_padrao();
+            rotulos(&cam, Some(eu), tela, None);
+            unsafe {
+                get_internal_gl().flush();
+            }
+            next_frame().await;
+            if i % 3 == 0 {
+                grava(&format!("seq-{i:03}"));
+            }
+        }
+        println!(
+            "medida seq: {:.1} draws/frame (max {}), {:.0} indices/frame (max {})",
+            medida.0 as f32 / 240.0,
+            medida.2,
+            medida.1 as f32 / 240.0,
+            medida.3
+        );
+        let nomes = ["terrain", "docks", "water", "far islands", "wreckage+docks' parts+ships"];
+        for (k, (a, b)) in etapas.iter().enumerate() {
+            println!("  {}: {:.1} draws, {:.0} indices", nomes.get(k).unwrap_or(&"?"), *a as f32 / 240.0, *b as f32 / 240.0);
+        }
+        TEMPO_FIXO.with(|f| f.set(0.0));
+    }
+    // ── ROUND AN ISLAND: 45 u off the Bosque's shore, the camera on the
+    //    island, so its chunks, trees, dock and label come and go at the
+    //    edge of what is loaded ──
+    if so.is_empty() || so.contains("ilha") || "fix-ilha".contains(so.as_str()) {
+        let ci = mq(bosque.centro);
+        let r = bosque.raio + 45.0;
+        let a0 = (fb - ci).to_angle() + 0.6;
+        let em = |a: f32| ci + vec2(a.cos(), a.sin()) * r;
+        for _ in 0..80 {
+            terreno.atualiza(em(a0), raio_no_mar(), 400);
+        }
+        let mut cam_mar = crate::mar_camera::CameraDoMar::default();
+        let mut medida = (0usize, 0usize, 0usize, 0usize);
+        let mut etapas: Vec<(usize, usize)> = Vec::new();
+        let dt = 1.0 / 30.0;
+        TEMPO_FIXO.with(|f| f.set(12.5));
+        for i in 0..240 {
+            let a = a0 - 10.0 * dt * i as f32 / r;
+            let eu = em(a);
+            let rumo = vec2(a.sin(), -a.cos());
+            terreno.atualiza(eu, raio_no_mar(), 4);
+            let quer = crate::mar_camera::enquadramento(eu, rumo, None, 1, false, crate::render3d::ZOOM_MAX, -0.2);
+            let q = cam_mar.quadro(quer, dt);
+            let yaw_cam = crate::mar_camera::yaw_atras(ci - eu) - 0.25;
+            let mut cam = crate::render3d::camera_no_mar(q.centro, 0.0, yaw_cam, q.fator, q.pitch);
+            cam.render_target = Some(rt.clone());
+            cam.aspect = Some(w / h);
+            crate::render3d::camera_padrao();
+            clear_background(cor_de_fundo());
+            crate::gpu_estatica::zera_contagem();
+            desenha_mundo(terreno, solido, &cam, &[(eu, yaw_de(rumo), Visual { classe: 1, vela: 2, ..Default::default() }, 503)], Some(eu));
+            let (d, n) = crate::gpu_estatica::contagem();
+            ETAPAS.with(|e| {
+                for (k, (a, b)) in e.borrow().iter().enumerate() {
+                    if etapas.len() <= k {
+                        etapas.resize(k + 1, (0, 0));
+                    }
+                    etapas[k].0 += a;
+                    etapas[k].1 += b;
+                }
+            });
+            medida.0 += d;
+            medida.1 += n;
+            medida.2 = medida.2.max(d);
+            medida.3 = medida.3.max(n);
+            crate::render3d::camera_padrao();
+            rotulos(&cam, Some(eu), tela, None);
+            unsafe {
+                get_internal_gl().flush();
+            }
+            next_frame().await;
+            if i % 3 == 0 {
+                grava(&format!("ilha-{i:03}"));
+            }
+        }
+        println!(
+            "medida ilha: {:.1} draws/frame (max {}), {:.0} indices/frame (max {})",
+            medida.0 as f32 / 240.0,
+            medida.2,
+            medida.1 as f32 / 240.0,
+            medida.3
+        );
+        let nomes = ["terrain", "docks", "water", "far islands", "wreckage+docks' parts+ships"];
+        for (k, (a, b)) in etapas.iter().enumerate() {
+            println!("  {}: {:.1} draws, {:.0} indices", nomes.get(k).unwrap_or(&"?"), *a as f32 / 240.0, *b as f32 / 240.0);
+        }
+        TEMPO_FIXO.with(|f| f.set(0.0));
     }
 }
 
@@ -1861,6 +2478,69 @@ mod testes {
             }
             assert!(pior <= 0.05, "{}: the far mesh stands {pior} u over the voxel ground", i.nome);
         }
+    }
+
+    /// THE WRECKAGE IS AT THE SHIPS' VOXEL AND READS AS WRECKAGE (sea fix):
+    /// drawn at the hulls' grid, low on the water (nothing stands up like a
+    /// mast with a sail: the "weird half-boats"), and cheap.
+    #[test]
+    fn os_destrocos_tem_o_voxel_do_navio_e_ficam_rentes() {
+        assert!((crate::vegetacao::VOX * crate::vegetacao::DESTROCO_ESCALA - crate::mar_casco::VOX_CASCO).abs() < 1e-6);
+        for tier in 0..=4u8 {
+            for k in 0..3 {
+                let m = crate::vegetacao::destroco(tier, k * 29 + tier as u32 * 97);
+                let (a, b) = m.verts.iter().fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(a, b), v| (a.min(v.position), b.max(v.position)));
+                let (a, b) = (a * crate::vegetacao::DESTROCO_ESCALA, b * crate::vegetacao::DESTROCO_ESCALA);
+                let quads = m.idx.len() / 6;
+                assert!(b.y - a.y < 1.4, "tier {tier}: {:.2} u tall", b.y - a.y);
+                assert!((b.x - a.x).max(b.z - a.z) < 4.0, "tier {tier}: {:?} wide", b - a);
+                assert!((b.x - a.x).min(b.z - a.z) > 1.5, "tier {tier}: too small to gather");
+                assert!(quads <= 700, "tier {tier}: {quads} quads");
+            }
+        }
+        let j = modelo_da_jangada();
+        let alto = j.verts.iter().map(|v| v.position.y).fold(f32::MIN, f32::max) * crate::vegetacao::DESTROCO_ESCALA;
+        assert!(alto < 1.0, "the chest's raft stands {alto} u");
+    }
+
+    /// THE DRAW BAND sits inside the square that is always loaded, at
+    /// every view distance, and fades (no step).
+    #[test]
+    fn a_faixa_de_desenho_cabe_no_que_esta_carregado() {
+        for raio in 3..=12 {
+            let r = raio as f32 * crate::terreno::CHUNK as f32 * BLOCO;
+            let (a, b) = ((r - 28.0).max(6.0), (r - 8.0).max(14.0));
+            assert!(a < b && b <= r - 8.0 + 1e-3);
+            // A chunk whose centre is inside `b` along both axes is loaded.
+            assert!(b + crate::terreno::CHUNK as f32 * BLOCO * 0.5 <= r + crate::terreno::CHUNK as f32 * BLOCO * 0.5);
+        }
+        let mut antes = 1.0;
+        for k in 0..=100 {
+            let d = 40.0 + k as f32 * 0.4;
+            let f = presenca(d, 52.0, 72.0);
+            assert!(f <= antes && antes - f < 0.04, "a step at {d}");
+            antes = f;
+        }
+        assert_eq!(presenca(52.0, 52.0, 72.0), 1.0);
+        assert_eq!(presenca(72.0, 52.0, 72.0), 0.0);
+        assert_eq!(dist_quadrada(vec2(3.0, -9.0), Vec2::ZERO), 9.0);
+    }
+
+    /// THE FAR TREES: one box per prop the chunks plant, inside the phone's
+    /// budget (vertices per island at full ground cover).
+    #[test]
+    fn as_arvores_de_longe_sao_baratas() {
+        crate::config_graficos::define_para_previa(crate::config_graficos::RAIO_PADRAO, 100);
+        let mut total = 0;
+        for i in mar::ilhas() {
+            let (ms, n) = arvores_de_longe(i);
+            assert!(ms.iter().all(|m| m.vertices.len() <= 60_000));
+            assert_eq!(n % 8, 0);
+            println!("{}: {} far trees, {n} vertices", i.nome, n / 8);
+            assert!(n < 24_000, "{}: {n} vertices of far trees", i.nome);
+            total += n;
+        }
+        assert!(total < 64_000, "{total} vertices of far trees");
     }
 
     /// The dock frame is a rotation: local +z runs out along the pier and the
