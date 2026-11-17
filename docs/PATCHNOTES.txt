@@ -9,7 +9,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Take the ship's wheel at the stern to steer it as before. Step away from the helm and your ship keeps sailing your chosen route and stops when it arrives; go back to the wheel to steer again. The cannons fire from the helm, and Auto combat keeps sailing and firing while you hold it.
 - Sail together: party members can board each other's ships at sea and fight side by side on deck. Everyone aboard comes ashore together when the captain docks.
 - Sails now furl when your ship stops and unfurl as it gets under way, and they ripple in the wind as you sail.
-- A single helm button by the battery takes or leaves the wheel, and the sailing HUD is cleaner: at the wheel you see only what sailing needs, on deck your usual HUD.
+- A single helm button next to Auto combat and Auto gather takes or leaves the wheel, and the sailing HUD is cleaner: at the wheel you see only what sailing needs, on deck your usual HUD.
 - Fixed: leaving the helm no longer stops your ship; it keeps sailing its route while you walk the deck.
 - Pets now stay ashore while you are at sea and come back when you dock; their bonuses still apply.
 - New: a quick performance check the first time you log in on a device. It plays a big fight, a busy town and the open sea for about 25 seconds, then you choose Performance, Balanced or Quality and a 30 or 60 fps target, and the graphics are tuned to the best your device can run. You can skip it, and run it again from Menu › System › Graphics.

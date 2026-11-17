@@ -150,6 +150,12 @@ pub fn icone_do_leme(c: Vec2, r: f32, cor: Color) {
 /// bar (the layout's slot). Drawn only when it does something. Over it, a
 /// compact "Board <name>'s ship" pill appears only beside a party member's
 /// ship. Returns the request tapped.
+/// Where the helm toggle sits: left of GATHER, the AUTO buttons' size.
+pub fn retangulo_do_leme(z: &crate::hud_layout::Zonas) -> Rect {
+    let c = z.auto_coleta;
+    Rect::new(c.x - 10.0 * z.s - c.w, c.y, c.w, c.h)
+}
+
 pub fn botao_do_leme(
     z: &crate::hud_layout::Zonas,
     w: &crate::world::World,
@@ -160,7 +166,10 @@ pub fn botao_do_leme(
         return None;
     }
     let mut pedido = None;
-    let r = z.montaria;
+    // Next to the AUTO COMBAT / GATHER buttons, the same size (owner,
+    // 17/11/2026: "coloca ele junto ao lado do botão de combate / coleta do
+    // mesmo tamanho"): the slot left of GATHER, which is free at sea.
+    let r = retangulo_do_leme(z);
     if let Some((dica, rotulo, p)) = acao_do_leme(w, tem_navio) {
         let sobre = r.contains(Vec2::from(mouse_position()));
         let no_leme = matches!(p, nv::PedidoNavio::Leme { pegar: false });
