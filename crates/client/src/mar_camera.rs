@@ -44,8 +44,14 @@ pub const PITCH_MIN_MAR: f32 = 0.42;
 /// The camera is this much further back at sea than the land's at the same
 /// zoom.
 const RECUO_MAR: f32 = 1.7;
-/// Each hull class past the Sloop adds this to the pull-back.
-const POR_CLASSE: f32 = 0.12;
+/// How a bigger hull pulls the camera back: (its length over the Sloop's)
+/// to this power — since the walkable deck the classes are 7 to 20 u long.
+const POR_CLASSE: f32 = 0.6;
+
+/// The pull-back of hull class `classe` (1 for the Sloop).
+pub fn recuo_da_classe(classe: usize) -> f32 {
+    (shared::conves::meio_comp(classe) / shared::conves::meio_comp(0)).powf(POR_CLASSE)
+}
 /// Phone portrait: the narrow screen pulls back this much more.
 const RETRATO: f32 = 1.45;
 /// The most a fight widens the view.
@@ -91,7 +97,7 @@ pub struct Enquadramento {
 /// own (wheel/pinch and the hand's tilt), `classe` the hull class (0 = the
 /// Sloop), `alvo` the selected target.
 pub fn enquadramento(eu: Vec2, rumo: Vec2, alvo: Option<Vec2>, classe: usize, retrato: bool, zoom: f32, ajuste: f32) -> Enquadramento {
-    let mut fator = zoom * RECUO_MAR * (1.0 + POR_CLASSE * classe as f32);
+    let mut fator = zoom * RECUO_MAR * recuo_da_classe(classe);
     if retrato {
         fator *= RETRATO;
     }

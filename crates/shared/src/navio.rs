@@ -1016,6 +1016,12 @@ pub enum PedidoNavio {
     /// selected target and fires the cannons (`world/piloto_do_mar.rs`).
     /// Appended (protocol stays 199).
     Piloto { ligado: bool },
+    /// At sea, on my own deck: take (`pegar`) or leave the HELM ("Convés
+    /// andável"). Only the captain, near the wheel. Appended.
+    Leme { pegar: bool },
+    /// At sea: board the ship of party member `capitao` (their ship's
+    /// entity), close by. My own ship is stowed. Appended.
+    Embarcar { capitao: crate::components::EntityId },
 }
 
 /// The ship's state, for the Captain's buttons and the hull bar.

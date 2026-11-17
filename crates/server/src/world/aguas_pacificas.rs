@@ -87,7 +87,16 @@ impl GameWorld {
         let sids: Vec<SessionId> = self.sessions.iter().filter(|(_, s)| s.logged_in).map(|(id, _)| *id).collect();
         for sid in sids {
             let s = &self.sessions[&sid];
-            let Some(e) = s.entity else { continue };
+            // The HULL is what the waters bar (the walkable deck): the
+            // captain's ship entity; crew are carried by theirs.
+            let e = match s.conves {
+                Some(c) if c.capitao == sid => c.navio,
+                Some(_) => continue,
+                None => match s.entity {
+                    Some(e) => e,
+                    None => continue,
+                },
+            };
             let Some(p) = self.ecs.get::<&Position>(e).ok().map(|p| p.0) else { continue };
             let barrado = self.pk_barrado(s);
             let dentro = shared::mar::aguas_pacificas(p);
@@ -113,7 +122,12 @@ impl GameWorld {
     /// A barred hull just hit the boundary: say why (rate-limited).
     pub(crate) fn avisa_barreira(&mut self, e: hecs::Entity) {
         let agora = self.sim_time_s;
-        let Some(sid) = self.sessions.iter().find(|(_, s)| s.entity == Some(e)).map(|(id, _)| *id) else {
+        let Some(sid) = self
+            .sessions
+            .iter()
+            .find(|(id, s)| s.entity == Some(e) || s.conves.is_some_and(|c| c.navio == e && c.capitao == **id))
+            .map(|(id, _)| *id)
+        else {
             return;
         };
         let s = self.sessions.get_mut(&sid).unwrap();
@@ -198,7 +212,7 @@ mod testes {
             w.ecs.get::<&mut Position>(e).unwrap().0 = fora;
             w.sessions.get_mut(&sid).unwrap().pk_points = u32::from(pk);
             navega(&mut w, sid, dentro, 6.0);
-            let p = w.pos_do_jogador(sid).unwrap();
+            let p = w.pos_do_casco(sid).unwrap();
             if pk {
                 assert!(!shared::mar::aguas_pacificas(p), "a PK ship got into peaceful waters at {p:?}");
                 assert!(p.distance(fora) > 6.0, "it did not even reach the boundary: {p:?}");
@@ -211,7 +225,7 @@ mod testes {
         w.ecs.get::<&mut Position>(e).unwrap().0 = fora;
         w.sessions.get_mut(&sid).unwrap().pk_combate_ate = 1e9;
         navega(&mut w, sid, dentro, 6.0);
-        assert!(!shared::mar::aguas_pacificas(w.pos_do_jogador(sid).unwrap()));
+        assert!(!shared::mar::aguas_pacificas(w.pos_do_casco(sid).unwrap()));
     }
 
     /// BY ROUTE: a PK captain's route to a peaceful dock is refused with the
@@ -254,12 +268,12 @@ mod testes {
         w.ecs.get::<&mut Position>(e).unwrap().0 = la;
         w.sessions.get_mut(&sid).unwrap().pk_points = 1;
         navega(&mut w, sid, Vec2::ZERO, GRACA_S - 1.0);
-        let p = w.pos_do_jogador(sid).unwrap();
+        let p = w.pos_do_casco(sid).unwrap();
         assert!(p.distance(la) < 0.5, "pushed during the grace: {p:?}");
         // It may still sail about inside during the grace.
         assert!(w.sessions[&sid].pk_nas_pacificas_desde.is_some());
         navega(&mut w, sid, Vec2::ZERO, 12.0);
-        let p = w.pos_do_jogador(sid).unwrap();
+        let p = w.pos_do_casco(sid).unwrap();
         assert!(!shared::mar::aguas_pacificas(p), "still inside after the grace: {p:?}");
         assert!(w.sessions[&sid].pk_nas_pacificas_desde.is_none());
     }

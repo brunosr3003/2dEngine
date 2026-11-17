@@ -47,6 +47,8 @@ mod arvore_icones;
 mod ativas;
 mod invisibilidade;
 mod mar_casco;
+#[cfg(debug_assertions)]
+mod conves_previa;
 mod mar_cena;
 mod mar_temas;
 mod mar_ui;
@@ -179,6 +181,8 @@ mod toque;
 mod ui;
 mod vegetacao;
 mod viagem_ui;
+mod estaleiro_ui;
+mod portal_ilhas_ui;
 mod vox;
 mod world;
 
@@ -529,8 +533,13 @@ struct Jogo {
     chat_ui: chat_ui::ChatUi,
     /// Owned-but-unconsumed Google Play purchases re-reported (once).
     billing_recuperado: bool,
-    /// Menu "Travel" do Capitao do Porto.
+    /// The Island Portal's "Travel" menu.
     viagem: viagem_ui::ViagemUi,
+    /// The Shipyard of the dock NPCs (ships only, 17/11/2026).
+    estaleiro: estaleiro_ui::EstaleiroUi,
+    estaleiro_pendente: Option<shared::navio::EstadoNavio>,
+    /// The town's Island Portal: walk-in, banner, label.
+    portal: portal_ilhas_ui::PortalUi,
     colonia: colonia_ui::ColoniaUi,
     magica: magica_ui::MagicaUi,
     prime: prime_ui::PrimeUi,
@@ -761,6 +770,12 @@ async fn main() {
         auras::previa(&vox).await;
         return;
     }
+    // THE WALKABLE DECK (docs/NAVEGACAO.md, "Convés andável").
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_CONVES").is_ok() {
+        conves_previa::previa(&vox).await;
+        return;
+    }
     if std::env::var("MMO_PREVIA_SKILLS").is_ok() {
         previa_skills::abrir(&vox).await;
         return;
@@ -833,6 +848,16 @@ async fn main() {
     #[cfg(debug_assertions)]
     if std::env::var("MMO_PREVIA_PLANTA").is_ok() {
         previa_porta::plantas(&render3d::material_solido()).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_PORTAL_ILHAS").is_ok() {
+        previa_porta::portal_das_ilhas(&render3d::material_solido()).await;
+        return;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("MMO_PREVIA_ESTALEIRO").is_ok() {
+        previa_porta::estaleiro(&render3d::material_solido()).await;
         return;
     }
     #[cfg(debug_assertions)]
@@ -1162,6 +1187,9 @@ async fn main() {
         chat_ui: Default::default(),
         billing_recuperado: false,
         viagem: viagem_ui::ViagemUi::default(),
+        estaleiro: estaleiro_ui::EstaleiroUi::default(),
+        estaleiro_pendente: None,
+        portal: portal_ilhas_ui::PortalUi::default(),
         colonia: colonia_ui::ColoniaUi::default(),
         magica: magica_ui::MagicaUi::default(),
         prime: prime_ui::PrimeUi::default(),
@@ -1607,6 +1635,9 @@ impl Jogo {
         }
         if matches!(self.tela, Tela::Jogando) {
             self.habilidades.acompanhar_alvos(&mut self.world);
+            // THE WALKABLE DECK: at the helm = sailing (camera, ship bar,
+            // pilot); off it, on deck, the land's rules.
+            mar_ui::define_no_leme(self.world.eu_no_leme());
             {
                 let terreno = self.terreno.as_ref();
                 self.world.tick(get_frame_time(), &|x, z, camada| {
@@ -2657,12 +2688,20 @@ impl Jogo {
                     self.escolha_npc.abrir(npc_eid, nome, funcao);
                 }
             }
-            ServerMessage::Navio { estado } => self.viagem.define_navio(estado),
+            ServerMessage::Navio { estado } => self.estaleiro.define_navio(estado),
+            ServerMessage::Conves { lista } => self.world.aplica_conves(&lista),
+            ServerMessage::AbrirEstaleiro { estado } => {
+                // The Captain may open with a quest offer in front: the
+                // Shipyard waits for the dialogue to close.
+                if self.dialogo.aberto {
+                    self.estaleiro_pendente = Some(estado);
+                } else {
+                    self.fecha_paineis();
+                    self.estaleiro.abrir(estado);
+                }
+            }
             ServerMessage::Viagem { destinos, colonia } => {
                 self.tem_colonia = colonia;
-                // The ship's state follows the Captain's menu; any other
-                // traveller (bus, submarine) leaves it empty.
-                self.viagem.limpar_navio();
                 // O Capitao pode abrir com uma oferta de missao na frente: o
                 // menu espera o dialogo fechar.
                 if self.dialogo.aberto {
@@ -3295,7 +3334,7 @@ impl Jogo {
                     &f,
                 );
                 // At sea the tap goes through the sailing camera drawn last.
-                if let Some(q) = self.mar_camera.ultimo().filter(|_| mar_ui::no_mar()) {
+                if let Some(q) = self.mar_camera.ultimo().filter(|_| mar_ui::navegando()) {
                     vista.cam = render3d::camera_no_mar(q.centro, self.cam_altura, self.cam_yaw, q.fator, q.pitch);
                 }
                 let alvo = render3d::pick(&self.world, &vista, vec2(mx, my), 48.0);
@@ -3463,12 +3502,10 @@ impl Jogo {
             return None;
         }
         let papel = shared::npc_papel_de_kind(e.meta.kind) as u16;
-        // Viagem da historia tambem e' conversa: com o Capitao do Porto.
-        let capitao = shared::construcao::Papel::Estaleiro as u16;
+        // The story's trips are the Island Portal's since 17/11/2026: the
+        // Captain no longer starts them with a conversation.
         let q = self.missoes.log.iter().find(|q| {
-            q.status == quest_status::ACTIVE
-                && ((q.obj_kind == objective_kind::TALK && q.obj_target == papel)
-                    || (q.obj_kind == objective_kind::VIAGEM && papel == capitao))
+            q.status == quest_status::ACTIVE && q.obj_kind == objective_kind::TALK && q.obj_target == papel
         })?;
         Some((
             q.id,
@@ -3902,6 +3939,7 @@ impl Jogo {
             || self.troca.aberto()
             || self.avaliacao.aberta
             || self.viagem.aberto()
+            || self.estaleiro.aberto()
             || self.colonia.aberto()
             || self.guarda_roupa.aberto
             || self.banco.aberto()
@@ -4049,6 +4087,8 @@ impl Jogo {
             || self.dialogo.pega_mouse()
             || self.dungeon.pega_mouse()
             || self.porao.pega_mouse(p)
+            || self.portal.pega_mouse(p)
+            || self.estaleiro.pega_mouse(p)
     }
 
     fn ui_pega_mouse(&self) -> bool {
@@ -4152,6 +4192,8 @@ impl Jogo {
             || self.dialogo.pega_mouse()
             || self.dungeon.pega_mouse()
             || self.porao.pega_mouse(m)
+            || self.portal.pega_mouse(m)
+            || self.estaleiro.pega_mouse(m)
     }
 
     /// The player's packed look as the server last sent it: what the world
@@ -4249,6 +4291,7 @@ impl Jogo {
         self.ofertas.fechar();
         self.ranking.fechar();
         self.viagem.fechar();
+        self.estaleiro.fechar();
         self.colonia.fechar();
         self.magica.fechar();
         self.guarda_roupa.fechar();
@@ -4794,7 +4837,9 @@ impl Jogo {
             .equip
             .navio
             .filter(|i| shared::item_id::e_navio(*i))
-            .map_or(1.0, |i| shared::navio::CASCOS[shared::navio::classe(i)].escala);
+            // The rail's glow sits at the hull's side (the walkable deck's
+            // sizes, `shared::conves`).
+            .map_or(1.0, |i| shared::conves::meia_boca(shared::navio::classe(i)) / 1.2);
         mar_combate_ui::Prontos { bordada: pronto(0), canhonaco: pronto(1), escala }
     }
 
@@ -5427,14 +5472,29 @@ impl Jogo {
     /// a missao de novo no log (o log chega depois do mundo) e ja' ter posicao
     /// — `iniciar_auto_missao` precisa de onde o personagem esta'.
     fn retomar_auto_apos_viagem(&mut self) {
-        let Some(quest) = self.retomar_auto_missao else {
+        let Some(mut quest) = self.retomar_auto_missao else {
             return;
         };
-        let chegou = shared::quests::zona_da_missao(quest)
+        // A story "Bound for…" step lands on ITS island and is done there:
+        // the auto quest carries on with the story's next step.
+        let viagem = shared::quests::quest_by_id(quest)
+            .filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM)
+            .and_then(|d| shared::terreno::ARQUIPELAGO.get(d.obj_target as usize))
+            .map(|d| d.zona);
+        let chegou = viagem
+            .or_else(|| shared::quests::zona_da_missao(quest))
             .zip(self.mapa.zona())
             .is_some_and(|(alvo, aqui)| alvo == aqui);
         if !chegou || self.world.self_pos().is_none() {
             return;
+        }
+        if viagem.is_some() {
+            match self.missoes.log.iter().find(|q| {
+                shared::historia::e_da_historia(q.id) && q.id != quest && q.status == shared::quests::quest_status::ACTIVE
+            }) {
+                Some(q) => quest = q.id,
+                None => return,
+            }
         }
         if self.missoes.log.iter().any(|q| q.id == quest) {
             self.retomar_auto_missao = None;
@@ -5448,6 +5508,10 @@ impl Jogo {
         // AT SEA a tap on the map SAILS there (gameplay remake): a tap on an
         // island is its dock, and arriving there docks.
         if mar_ui::no_mar() {
+            // Only the captain sets the course (the walkable deck).
+            if !self.world.eu_capitao() {
+                return;
+            }
             let (para, atracar) = mar_rota::destino_do_toque(destino);
             self.parar_autos_para_navegar();
             self.mar_rota.iniciar(para, atracar, get_time());
@@ -5828,7 +5892,8 @@ impl Jogo {
         // AT SEA the bar is the SHIP's (phase 2): Broadside, Long Gun,
         // Emergency Repair, Smoke. The weapon skills and the path tree's
         // actives wait ashore.
-        if mar_ui::no_mar() {
+        // (At the HELM: on deck, the weapon's skills — the walkable deck.)
+        if mar_ui::navegando() {
             let Some(eu) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) else {
                 return;
             };
@@ -5981,7 +6046,7 @@ impl Jogo {
         // AUTO COMBAT AT SEA is the SERVER's pilot (`PedidoNavio::Piloto`): it
         // steers the hull around the target and fires; the switch follows
         // the AUTO button and is resent while on.
-        let piloto_quer = mar_ui::no_mar() && self.auto_combate.ativo();
+        let piloto_quer = mar_ui::navegando() && self.auto_combate.ativo();
         if let Some(ligado) = self.mar_rota.piloto.pedido(piloto_quer, get_time()) {
             self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Piloto { ligado } });
         }
@@ -6071,7 +6136,7 @@ impl Jogo {
             });
         // AT SEA the scan runs a few times a second, not every frame
         // (mobile budget, `mar_rota::VARREDURA_S`).
-        let no_mar = mar_ui::no_mar();
+        let no_mar = mar_ui::navegando();
         if no_mar && !self.mar_rota.pode_varrer(agora) {
             return;
         }
@@ -6241,7 +6306,7 @@ impl Jogo {
         }
         let Some(alvo) = self.alvo else { return };
         // AUTO COMBAT at sea: the server's pilot keeps the distance.
-        if mar_ui::no_mar() && self.auto_combate.ativo() {
+        if mar_ui::navegando() && self.auto_combate.ativo() {
             self.aproximando_alvo = None;
             return;
         }
@@ -6271,7 +6336,7 @@ impl Jogo {
                 .unwrap_or(shared::skills::Conjunto::EspadaEscudo);
         // At sea the cannons fight: close to the Broadside's reach, never to
         // a bite (`navio::DISTANCIA_DE_COMBATE`), and the A* is the water's.
-        let no_mar = mar_ui::no_mar();
+        let no_mar = mar_ui::navegando();
         let alcance = if no_mar {
             shared::navio::DISTANCIA_DE_COMBATE / 0.9
         } else if conjunto.a_distancia() {
@@ -6644,8 +6709,8 @@ impl Jogo {
 
         // AT SEA the camera swings behind the heading by itself once the
         // hand rests (`mar_camera::segue`); dragging still orbits.
-        let segue_rumo = if mar_ui::no_mar() {
-            self.world.self_id.and_then(|id| self.world.ents.get(&id)).map(|e| {
+        let segue_rumo = if mar_ui::navegando() {
+            self.world.casco_do_eu().map(|e| {
                 let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
                 // A FIGHT holds the yaw (`mar_camera::em_luta`, sea fix): a
                 // live target within the guns' reach and a margin, AUTO
@@ -6915,8 +6980,8 @@ impl Jogo {
         // AT SEA, THE SAILING CAMERA (`mar_camera`): lower, further back,
         // ahead of the bow, wider in a fight; the yaw is the one the hand
         // and the heading follow agreed on (`camera_controles`).
-        if mar_ui::no_mar() {
-            if let Some(e) = self.world.self_id.and_then(|id| self.world.ents.get(&id)) {
+        if mar_ui::navegando() {
+            if let Some(e) = self.world.casco_do_eu() {
                 let r = mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
                 let alvo = self.alvo.and_then(|id| self.world.ents.get(&id)).filter(|a| a.state.hp > 0 && a.morte.is_none()).map(|a| a.render_pos);
                 let classe = self.bolsa.equip.navio.filter(|i| shared::item_id::e_navio(*i)).map_or(0, shared::navio::classe);
@@ -7116,6 +7181,16 @@ impl Jogo {
                     let y = terreno.altura(pos.x, pos.y);
                     render3d::desenha_porta_do_porao(vec3(pos.x, y, pos.y), conteudo, perto);
                 }
+                // THE ISLAND PORTAL of this town (`shared::portal_ilhas`).
+                if let Some((pos, chegada)) = portal_ilhas_ui::sitio(&self.zona_atual) {
+                    // Whole, never dithered by a fade left on the material.
+                    self.solido.set_uniform("Some", 0.0f32);
+                    self.solido.set_uniform("Oco", Vec3::ZERO);
+                    let perto = eu.is_some_and(|e| e.distance(pos) <= shared::portal_ilhas::ALCANCE + 1.5);
+                    let y = terreno.altura(pos.x, pos.y);
+                    let girado = portal_ilhas_ui::girado(pos, chegada);
+                    portal_ilhas_ui::desenha_virado(vec3(pos.x, y, pos.y), girado, perto, get_time() as f32);
+                }
                 // Stepping in: the light wraps the character before the trip.
                 if let (Some((conteudo, progresso)), Some(e)) = (self.porao.entrando(), eu) {
                     let y = terreno.altura(e.x, e.y);
@@ -7204,6 +7279,10 @@ impl Jogo {
         }
         // O oficio de cada NPC em cima da cabeca; o "!" de missao vai acima.
         icone_npc::desenha(&self.world, &vista, self.world.self_pos());
+        if let Some(t) = &self.terreno {
+            let altura = |x: f32, z: f32| t.altura(x, z);
+            self.portal.desenha_rotulo(&self.zona_atual, &vista.cam, &altura, self.world.self_pos());
+        }
         {
             let slots = &self.bolsa.slots;
             self.missoes
@@ -7299,6 +7378,23 @@ impl Jogo {
             if let Some(pedido) = self.magica.desenha_hud(agora_unix) {
                 self.envia(ClientMessage::Magica { pedido });
             }
+            // THE ISLAND PORTAL's banner ("Travel").
+            let eu = self.world.self_pos();
+            let zona = self.zona_atual.clone();
+            if !self.viagem.aberto() {
+                if let Some(msg) = self.portal.desenha_tarja(&zona, eu, get_time()) {
+                    self.envia(msg);
+                }
+            }
+        }
+        // ...and walking into it opens the travel menu.
+        {
+            let eu = self.world.self_pos();
+            let zona = self.zona_atual.clone();
+            let menu = self.viagem.aberto() || self.viagem_pendente.is_some();
+            if let Some(msg) = self.portal.passo(&zona, eu, menu || mar_ui::no_mar(), get_time()) {
+                self.envia(msg);
+            }
         }
         // Painel grande aberto: o HUD some, como no MIR4 — fica a EXP e a faixa.
         if !painel {
@@ -7345,7 +7441,7 @@ impl Jogo {
                     mp_max,
                     vigor_max,
                     poder,
-                    mar_ui::casco_de(&self.bolsa.equip).filter(|_| mar_ui::no_mar()).map(|(c, m, _)| (c, m)),
+                    mar_ui::casco_de(&self.bolsa.equip).filter(|_| mar_ui::navegando()).map(|(c, m, _)| (c, m)),
                 );
                 let pk = self.world.self_id.and_then(|id| self.world.ents.get(&id))
                     .map(|e| e.meta.pk).unwrap_or_default();
@@ -7365,7 +7461,7 @@ impl Jogo {
                 }
                 let conjunto =
                     shared::skills::Conjunto::da_arma(self.bolsa.equip.weapon.unwrap_or(0));
-                if mar_ui::no_mar() {
+                if mar_ui::navegando() {
                     self.barra_navio.desenha(&self.habilidades);
                 } else {
                     self.habilidades.barra(
@@ -7619,14 +7715,13 @@ impl Jogo {
                 self.montarias.montou();
             }
             let progresso = self.montarias.progresso(get_time());
-            // At sea there is no mount and no sprint: the hull sails.
-            if !mar_ui::no_mar() {
-                if hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
-                    self.alternar_montaria();
-                }
-                if hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
-                    self.corrida.alternar(self.correndo_auto);
-                }
+            // At sea there is no mount; at the helm no sprint either (on deck
+            // the legs run, as on land).
+            if !mar_ui::no_mar() && hud::draw_botao_montaria(&z, montado, progresso, self.tem_montaria()) {
+                self.alternar_montaria();
+            }
+            if !mar_ui::navegando() && hud::draw_sprint(&z, self.corrida.ativa(self.correndo_auto)) {
+                self.corrida.alternar(self.correndo_auto);
             }
             // No dash any more (09/11/2026): the jump took its slot.
             // Pulo: sem tecla no celular, o botao e' o unico jeito de pular.
@@ -7636,7 +7731,7 @@ impl Jogo {
                 .and_then(|id| self.world.ents.get(&id))
                 .is_some_and(|e| e.pulo_local > 0.0 || e.voando);
             // At sea the jump's slot is the ship's fourth skill.
-            if !mar_ui::no_mar() {
+            if !mar_ui::navegando() {
                 let (tocou, segurando) = hud::draw_pulo(&z, no_ar);
                 self.pulo_toque |= tocou;
                 self.pulo_segurando = segurando;
@@ -7688,6 +7783,11 @@ impl Jogo {
             }
             if let Some(ilha) = mar_ui::botao_atracar(&z, eu) {
                 self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Atracar { ilha } });
+            }
+            // THE WALKABLE DECK: the helm, boarding a party member's ship.
+            let tem_navio = self.bolsa.equip.navio.is_some_and(shared::item_id::e_navio);
+            if let Some(pedido) = mar_ui::botao_do_conves(&z, &self.world, &self.social.grupo, tem_navio) {
+                self.envia(ClientMessage::Navio { pedido });
             }
             let bonus = self.arvore_ui.estado.map_or(0.0, |e| e.arvore.passivas().mult_tesouro);
             if mar_ui::botao_abrir_tesouro(&z, &self.bolsa.equip, bonus) {
@@ -8424,6 +8524,11 @@ impl Jogo {
                 self.missoes.fecha();
                 self.abrir_viagem(d);
             }
+            if let Some(e) = self.estaleiro_pendente.take() {
+                self.fecha_paineis();
+                self.missoes.fecha();
+                self.estaleiro.abrir(e);
+            }
             if let Some(cofre) = self.banco_pendente.take() {
                 self.fecha_paineis();
                 self.missoes.fecha();
@@ -8449,29 +8554,45 @@ impl Jogo {
         // O Capitao nao leva mais pra propria ilha: ela virou painel, e abre
         // pelo Menu de qualquer lugar. `false` tira a linha "My Island" da
         // lista de destinos.
-        let escolha_viagem = {
+        match self.viagem.desenha(false) {
+            Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
+            Some(viagem_ui::Escolha::MinhaIlha) | None => {}
+        }
+        // THE SHIPYARD (dock NPCs, 17/11/2026).
+        let escolha_estaleiro = {
             let bolsa = &self.bolsa;
             let conta = |id: u16| bolsa.moeda(id);
             let nome = |id: u16| bolsa.nome(id);
-            let ctx = viagem_ui::Contexto { equip: &bolsa.equip, conta: &conta, nome: &nome, nivel: self.ficha.nivel };
-            self.viagem.desenha(false, &ctx)
+            let ctx = estaleiro_ui::Contexto {
+                equip: &bolsa.equip,
+                slots: &bolsa.slots,
+                conta: &conta,
+                nome: &nome,
+                nivel: shared::quests::nivel_de_missao(self.ficha.nivel, self.ficha_ui.renascimentos),
+                solido: &self.solido,
+            };
+            self.estaleiro.desenha(&ctx)
         };
-        match escolha_viagem {
-            Some(viagem_ui::Escolha::Ilha(ilha)) => self.envia(ClientMessage::Viajar { ilha }),
-            Some(viagem_ui::Escolha::Construir) => {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Construir })
+        {
+            use shared::navio::PedidoNavio as P;
+            match escolha_estaleiro {
+                Some(estaleiro_ui::Escolha::Zarpar) => self.envia(ClientMessage::Navio { pedido: P::Zarpar }),
+                Some(estaleiro_ui::Escolha::Reparar) => self.envia(ClientMessage::Navio { pedido: P::Reparar }),
+                Some(estaleiro_ui::Escolha::Construir) => self.envia(ClientMessage::Navio { pedido: P::Construir }),
+                Some(estaleiro_ui::Escolha::Melhorar(eixo)) => self.envia(ClientMessage::Navio { pedido: P::Melhorar { eixo } }),
+                Some(estaleiro_ui::Escolha::Vestir(slot)) => {
+                    self.envia(ClientMessage::UseItem { slot });
+                    // The panel shows the ship's new state on the next one.
+                    self.envia(ClientMessage::Navio { pedido: P::Estado });
+                }
+                Some(estaleiro_ui::Escolha::LojaDoNavio) => {
+                    for pedido in self.loja_tp.abrir_no_navio() {
+                        self.envia(pedido);
+                    }
+                }
+                Some(estaleiro_ui::Escolha::OndeObter(item)) => self.onde_obter.abrir(item),
+                None => {}
             }
-            Some(viagem_ui::Escolha::Melhorar(eixo)) => {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Melhorar { eixo } })
-            }
-            Some(viagem_ui::Escolha::MinhaIlha) => {}
-            Some(viagem_ui::Escolha::Zarpar) => {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Zarpar })
-            }
-            Some(viagem_ui::Escolha::Reparar) => {
-                self.envia(ClientMessage::Navio { pedido: shared::navio::PedidoNavio::Reparar })
-            }
-            None => {}
         }
         {
             let nome_item = |id: u16| self.bolsa.nome(id);

@@ -138,6 +138,8 @@ impl GameWorld {
             .sessions
             .iter()
             .filter(|(_, s)| s.piloto.ligado && s.logged_in && agora >= s.piloto.decide_em)
+            // The pilot flies the ship from the HELM only (the walkable deck).
+            .filter(|(k, s)| s.conves.is_none_or(|c| c.leme && c.capitao == **k))
             .map(|(k, _)| *k)
             .collect();
         for sid in prontos {
@@ -164,7 +166,7 @@ impl GameWorld {
         let Some(entity) = entity.filter(|_| !downed) else {
             return;
         };
-        let Some(p) = self.ecs.get::<&Position>(entity).ok().map(|x| x.0) else {
+        let Some(p) = self.pos_do_casco(sid) else {
             return;
         };
         // The HELM's heading (turning inertia): a ship lying still still
@@ -546,14 +548,14 @@ mod testes {
         let mut swings: HashSet<(u32, u32)> = HashSet::new();
         let mut bordada_cd = 0.0f32;
         let mut parado_desde = t0;
-        let mut marca = (w.pos_do_jogador(sid).unwrap(), t0);
+        let mut marca = (w.pos_do_casco(sid).unwrap(), t0);
         // The old client's state.
         let (mut alvo, mut varre_em, mut aprox_em, mut aproximando, mut pendente, mut tentar) =
             (None::<EntityId>, f32::MIN, f32::MIN, false, 0.0f32, [0.0f32; 2]);
         let mut log_em = t0;
         while w.sim_time_s - t0 < teto_s {
             let agora = w.sim_time_s;
-            let p = w.pos_do_jogador(sid).unwrap();
+            let p = w.pos_do_casco(sid).unwrap();
             let cd = w.sessions[&sid].skill_cds.get(&nv::id_de_skill(0)).copied().unwrap_or(0.0);
             let tiros_antes = placar.tiros;
             if modo == Modo::Antes {
@@ -597,7 +599,7 @@ mod testes {
                         aproximando = true;
                     }
                     let e = w.sessions[&sid].entity.unwrap();
-                    let rumo = w.ecs.get::<&Velocity>(e).map(|v| v.0).unwrap_or(Vec2::ZERO);
+                    let rumo = w.vel_do_casco(sid);
                     if agora >= pendente {
                         for h in [0u8, 1] {
                             let hab = &nv::HABILIDADES[h as usize];
@@ -663,7 +665,7 @@ mod testes {
                 placar.afundou = true;
                 break;
             }
-            let p2 = w.pos_do_jogador(sid).unwrap();
+            let p2 = w.pos_do_casco(sid).unwrap();
             placar.longe_max = placar.longe_max.max(p2.distance(centro));
             if w.sim_time_s - marca.1 >= 1.0 {
                 if p2.distance(marca.0) >= 0.5 {
@@ -675,7 +677,7 @@ mod testes {
             if log && w.sim_time_s - log_em >= 1.0 {
                 log_em = w.sim_time_s;
                 let e = w.sessions[&sid].entity.unwrap();
-                let v = w.ecs.get::<&Velocity>(e).map(|v| v.0).unwrap_or(Vec2::ZERO);
+                let v = w.vel_do_casco(sid);
                 let mobs: Vec<String> = ninhada
                     .iter()
                     .filter(|id| vivo(&w, **id))
@@ -813,7 +815,7 @@ mod testes {
             .expect("no straight water past the nest");
         let lado = Vec2::new(-rumo.y, rumo.x);
         let e = w.sessions[&sid].entity.unwrap();
-        w.ecs.get::<&mut Position>(e).unwrap().0 = centro + lado * 6.0 - rumo * 14.0;
+        w.por_navio_em(sid, centro + lado * 6.0 - rumo * 14.0);
         let (navio_id, d) = w.navio_equipado(sid).unwrap();
         // At 80% of the mobs' own pace.
         let forca = (rapido * 0.8 / nv::velocidade_do_navio(navio_id, &d)).clamp(0.1, 1.0);
@@ -832,7 +834,7 @@ mod testes {
             if w.sim_time_s - t0 < 2.0 {
                 continue;
             }
-            let p = w.pos_do_jogador(sid).unwrap();
+            let p = w.pos_do_casco(sid).unwrap();
             let rumo_agora = w.rumo_do_casco(sid, e);
             let log = std::env::var("MMO_COSTADO_LOG").is_ok() && n % 10 == 0;
             for (_, (pos, t, h)) in w.ecs.query::<(&Position, &EnemyTag, &Health)>().iter() {
@@ -908,7 +910,7 @@ mod testes {
         let (tx, rx) = mpsc::unbounded_channel();
         std::mem::forget(rx);
         w.on_connect(SessionHandle { id: b, to_client: tx });
-        let p = w.pos_do_jogador(sid).unwrap();
+        let p = w.pos_do_casco(sid).unwrap();
         let eb = EntityId(4_801);
         let e = w.ecs.spawn((
             NetId(eb),
@@ -943,8 +945,7 @@ mod testes {
         assert!(w.can_damage_player(eu, eb) == false);
         // In the harbour corridor with a mob right there: no shot.
         let cais = navio::fundeadouro_padrao();
-        let e_eu = w.sessions[&sid].entity.unwrap();
-        w.ecs.get::<&mut Position>(e_eu).unwrap().0 = cais;
+        w.por_navio_em(sid, cais);
         w.place_enemy(cais + Vec2::new(6.0, 0.0), navio::TUBARAO, 0.0);
         for (_, t) in w.ecs.query_mut::<&mut EnemyTag>() {
             t.spawn_grace_until = 0.0;

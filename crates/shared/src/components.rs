@@ -51,6 +51,8 @@ pub enum EntityKind {
     /// Pet coletor de um jogador (docs/PETS.md). u16 = item_id do pet, que ja'
     /// carrega especie e grau — o cliente tira dele o modelo e a cor.
     Pet(u16),
+    /// A ship at sea (`conves`): u16 = the hull's item id.
+    Navio(u16),
 }
 
 /// Slot de inventario. None = vazio. Quando `qty == 0`, o slot esta vazio.
@@ -333,7 +335,10 @@ pub enum EntityTag {
     Other,
     /// Pet coletor. O `EntityMeta::kind` carrega o item_id do pet, de onde o
     /// cliente tira o modelo e a cor do grau.
-    Pet,
+    Pet,    /// A SHIP at sea (docs/NAVEGACAO.md, "Convés andável"): its own entity,
+    /// with the players walking on its deck. `kind` = the hull's item,
+    /// `skins` = its `navio::Visual`, `name` = the captain, `hp` = the hull.
+    Navio,
 }
 
 /// O que o corpo esta' fazendo, num byte do `EntityState`.

@@ -683,9 +683,9 @@ pub const PASSOS: &[QuestDef] = &[
     // antes da trava: e' esse XP que leva o jogador ate' o nivel dela. A
     // madeira (80) nao foi: era o material da primeira obra da ilha.
     nivel(TRAVA_DO_BARCO, "Reach level 36", 20),
-    viajar(719, "Bound for the Glacier", "O farol da Geleira ainda brilha, mas por pouco. Peça ao Capitão do Porto um lugar no barco.", 1, 400, 1_500),
+    viajar(719, "Bound for the Glacier", "The Glacier's lighthouse still shines, but only just. Step into the Island Portal in the town square to travel to the Glacier.", 1, 400, 1_500),
     // ═════════════ II · O Farol Congelado (Geleira, 15–30) ═════════════
-    falar(720, "Bone-cracking cold", "Você desembarcou no porto da Geleira. Fale com o Capitão antes de seguir pela estrada até a cidade.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
+    falar(720, "Bone-cracking cold", "You've arrived on the Glacier through the Island Portal. Go down to the port and talk to the Harbour Captain.", Papel::Estaleiro, 200, 1_200, item_id::GREATER_HEAL, 2),
     tutorial(797, "The first waking", "A Energia que você juntou no Bosque não é só brilho: ela desperta o que você já sabe. Abra Menu › Personagem › Habilidades, escolha uma das suas e suba um tier.", tut::EVOLUIR_SKILL, 200, 3_000, 0, 0),
     falar(721, "Tavern tales", "The one who knows about the Morganeers in the snow is the Innkeeper. Buy his ear.", Papel::Taberna, 200, 1_300, item_id::GREATER_MANA, 2),
     cacar(722, "Owlbear cubs in the snow", "Starving owlbears are attacking the ice trails. Defeat 6.", alvo_de_mob(mob_kind::OWLBEAR), 6, 300, 1_800, item_id::GREATER_HEAL),
@@ -703,7 +703,7 @@ pub const PASSOS: &[QuestDef] = &[
     falar(734, "The map of the Waste", "The Cartographer at the port drew the route to the Waste. Fetch the map from him.", Papel::Cartografo, 450, 4_000, item_id::GREATER_MANA, 3),
     nivel(735, "Reach level 50", 30),
     ir(736, "Back to the quay", "With the map in hand, return to the port yard.", ponto::PORTO, 400, 4_000),
-    viajar(737, "Bound for the Waste", "The Harbour Captain will take you to the Waste, where the third lighthouse was buried.", 2, 800, 6_000),
+    viajar(737, "Bound for the Waste", "Use the Island Portal in town to travel to the Waste, where the third lighthouse was buried.", 2, 800, 6_000),
     // ═════════════ III · Areias que Gritam (Ermo, 28–42) ═════════════
     falar(738, "The heat of the Waste", "Sand as far as the eye can see. Look for the Quest Master in the square.", Papel::Missoes, 500, 5_500, item_id::GREATER_HEAL, 3),
     falar(739, "Water and remedy", "Nobody crosses the dunes without water. Talk to the Alchemist.", Papel::Alquimista, 500, 5_500, item_id::GREATER_MANA, 3),
@@ -719,7 +719,7 @@ pub const PASSOS: &[QuestDef] = &[
     nivel(749, "Reach level 66", 40),
     ir(750, "Morgan's shipwreck", "Morgan's flagship lies on the far coast. Go there.", ponto::COSTA, 1_100, 13_000),
     falar(751, "The Captain of the Waste", "At the port, the Captain says the last lighthouse is on the Plateau.", Papel::Estaleiro, 1_000, 12_000, item_id::GREATER_MANA, 3),
-    viajar(752, "Bound for the Plateau", "Set sail with the Captain for the Plateau, close to the eye of the storm.", 3, 1_500, 18_000),
+    viajar(752, "Bound for the Plateau", "Use the Island Portal in town to travel to the Plateau, close to the eye of the storm.", 3, 1_500, 18_000),
     // ═════════════ IV · O Coração da Tempestade (Planalto, 40–60) ═════════════
     falar(753, "Porto do Último Abrigo", "Bem-vindo ao Planalto da Tormenta. O Mestre de Missões do Último Abrigo prepara a expedição ao farol.", Papel::Missoes, 1_000, 14_000, item_id::GREATER_HEAL, 4),
     ir(855, "A estrada dos sentinelas", "Siga a estrada até as Encostas dos Sentinelas. Os campos de caça ficam ao lado do caminho.", crate::planalto::PONTO_BASE, 1_200, 90_000),
@@ -768,7 +768,7 @@ pub const PASSOS: &[QuestDef] = &[
     // ── The way up: Skyreach (levels 60-80, 02/10/2026) ──
     // A travel step closes its chapter, so it ends chapter IV. Chapter V has
     // its own id block (870-889): the regular ids must stay consecutive.
-    viajar(870, "Bound for Skyreach", "Above the storm, islands float on the clouds. Set sail with the Harbour Captain for Skyreach.", 4, 4_000, 120_000),
+    viajar(870, "Bound for Skyreach", "Above the storm, islands float on the clouds. Use the Island Portal in town to travel to Skyreach.", 4, 4_000, 120_000),
     falar(871, "Above the storm", "Islands on the clouds, and a town of marble. The Quest Master of Cloudharbor wants to see you.", Papel::Missoes, 4_000, 140_000, item_id::GREATER_HEAL, 5),
     ir(872, "The first cloud path", "Walk the cloud path to Lantern Isle. Don't look down.", crate::celeste::PONTO_BASE + 1, 4_000, 150_000),
     cacar(873, "Wolves with wings", "Seraph wolves hunt along the cloud paths. Defeat 20 wolves.", alvo_de_mob(mob_kind::LOBO), 20, 4_500, 180_000, item_id::GREATER_HEAL),
@@ -791,7 +791,7 @@ pub const PASSOS: &[QuestDef] = &[
     falar(887, "The keeper's oath", "The city above the storm has a keeper again. The Quest Master has an oath for you.", Papel::Missoes, 12_000, 600_000, item_id::GREATER_HEAL, 10),
     // ── Kōgen-tō (levels 80-100, 03/10/2026) ──
     // The travel step closes chapter V; chapter VI has its own block (950-973).
-    viajar(888, "Bound for Kōgen-tō", "Past the storm's edge a city glows all night over the sea. Only the Sky Bus flies there: talk to the Sky Bus Professor in Cloudharbor's square.", 5, 12_000, 700_000),
+    viajar(888, "Bound for Kōgen-tō", "Past the storm's edge a city glows all night over the sea. Use the Island Portal in Cloudharbor to travel to Kōgen-tō.", 5, 12_000, 700_000),
     falar(950, "The city that never sleeps", "Neon, rain and machines. Kōgen-tō's Quest Master waits in the Docks square.", Papel::Missoes, 12_000, 900_000, item_id::GREATER_HEAL, 10),
     ir(951, "The scramble", "Walk north into Shibuya, to the crossing where every street meets.", crate::kogen::PONTO_BASE + 1, 12_000, 950_000),
     cacar(952, "Hounds of steel", "Mech Hounds patrol the streets in packs. Defeat 25 hounds.", alvo_de_mob(mob_kind::LOBO), 25, 13_000, 1_100_000, item_id::GREATER_HEAL),
@@ -823,7 +823,7 @@ pub const PASSOS: &[QuestDef] = &[
     cacar_com(972, "The Overseer Unit", "The city's own overseer stands before the Tocho. Defeat it, and Kōgen-tō sleeps for the first time.", alvo_de_mob(65), 1, 40_000, 6_000_000, item_id::GREATER_HEAL, 20, 0, 0),
     falar(973, "The last oath", "The city that never sleeps is quiet. The Quest Master has one last oath for you.", Papel::Missoes, 50_000, 8_000_000, item_id::GREATER_HEAL, 20),
     // Abyssia: the submarine departs from Kōgen-tō's docks.
-    viajar(980, "Dive to Abyssia", "Speak to the Submarine Captain at Kōgen-tō's docks and descend to the bubble kingdom.", 6, 24_000, 3_000_000),
+    viajar(980, "Dive to Abyssia", "Use the Island Portal in Kōgen-tō to descend to Abyssia, the bubble kingdom.", 6, 24_000, 3_000_000),
     falar(981, "The kingdom below", "Speak to Abyssia's Quest Master in the kingdom square.", Papel::Missoes, 25_000, 3_200_000, item_id::GREATER_HEAL, 12),
     ir(982, "The kelp forest", "Leave the bubble and follow the seafloor path into the Kelp Forest.", crate::abissal::PONTO_BASE + 1, 26_000, 3_400_000),
     cacar(983, "Reef predators", "Defeat 25 Reef Sharks in the Kelp Forest.", alvo_de_mob(70), 25, 28_000, 3_600_000, item_id::GREATER_HEAL),
@@ -1102,8 +1102,8 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
             "Come to the end of the quay with me at dawn. I'll show you the route.",
         ],
         719 | 737 | 752 => &[
-            "The boat is ready and the tide is with us.",
-            "Come aboard. On the other side, report to the Harbour Captain.",
+            "The portal is awake and the way is open.",
+            "Step through. On the other side, report to the Harbour Captain at the port.",
             "May the lighthouses guide you.",
         ],
         720 => &[
@@ -1202,7 +1202,7 @@ pub fn falas(id: u16, m: u8) -> Option<Vec<&'static str>> {
             "Climb aboard. Hold on to something. Not the steering wheel.",
         ],
         950 => &[
-            "You came on the Professor's bus? Then you're braver than you look.",
+            "You came through the Island Portal? Then you're braver than you look.",
             "This city never sleeps. The machines that built it never stopped building — and now they hunt.",
             "Start in Shibuya. Every street meets at the crossing, and so does every patrol.",
         ],

@@ -136,6 +136,22 @@ struct UniformesSolido {
     oco: [f32; 3],
     luz_pos: [[f32; 4]; MAX_LUZES],
     luz_cor: [[f32; 4]; MAX_LUZES],
+    /// A sail's cloth (`com_vela`); zero = not a sail.
+    vela_a: [f32; 4],
+    vela_b: [f32; 4],
+}
+
+thread_local! {
+    static VELA: std::cell::Cell<([f32; 4], [f32; 4])> = const { std::cell::Cell::new(([0.0; 4], [0.0; 4])) };
+}
+
+/// Draws `f` with the SAIL CLOTH uniforms on (`render3d::SOLIDO_VERTICE`:
+/// `VelaA`, `VelaB`; `mar_casco::desenha`), then off again.
+pub fn com_vela<R>(a: [f32; 4], b: [f32; 4], f: impl FnOnce() -> R) -> R {
+    let antes = VELA.with(|v| v.replace((a, b)));
+    let r = f();
+    VELA.with(|v| v.set(antes));
+    r
 }
 
 /// How many point lights the world shader takes (`render3d::SOLIDO_FRAGMENTO`
@@ -387,6 +403,8 @@ fn cria(ctx: &mut dyn RenderingBackend) -> Programas {
                 ("Oco", UniformType::Float3),
                 ("LuzPos[]", UniformType::Float4),
                 ("LuzCor[]", UniformType::Float4),
+                ("VelaA", UniformType::Float4),
+                ("VelaB", UniformType::Float4),
             ]),
         )
         .expect("world shader (gpu)");
@@ -479,6 +497,8 @@ pub fn desenha_com_modelo<'a>(
                     oco: oco(),
                     luz_pos: luzes().0,
                     luz_cor: luzes().1,
+                    vela_a: [0.0; 4],
+                    vela_b: [0.0; 4],
                 }));
             }
             Programa::Sombra => {
@@ -496,6 +516,8 @@ pub fn desenha_com_modelo<'a>(
                     oco: oco(),
                     luz_pos: [[0.0; 4]; MAX_LUZES],
                     luz_cor: [[0.0; 4]; MAX_LUZES],
+                    vela_a: [0.0; 4],
+                    vela_b: [0.0; 4],
                 }));
             }
             Programa::Agua { tempo, ondas } => {
@@ -615,6 +637,8 @@ pub fn desenha_voxel(m: &Mesh, modelo: Mat4, tinta: [f32; 4], faixas: Faixas) {
             oco: oco(),
             luz_pos: luzes().0,
             luz_cor: luzes().1,
+            vela_a: VELA.with(|v| v.get().0),
+            vela_b: VELA.with(|v| v.get().1),
         }));
         ctx.apply_bindings(&Bindings {
             vertex_buffers: vec![vb],

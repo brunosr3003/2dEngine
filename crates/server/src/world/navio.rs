@@ -161,6 +161,8 @@ impl GameWorld {
             PedidoNavio::Habilidade { id } => self.habilidade_do_navio(sid, id),
             PedidoNavio::AbrirTesouro => self.abrir_tesouro(sid),
             PedidoNavio::Piloto { ligado } => self.ligar_piloto(sid, ligado),
+            PedidoNavio::Leme { pegar } => self.pegar_leme(sid, pegar),
+            PedidoNavio::Embarcar { capitao } => self.embarcar_no_navio(sid, capitao),
         }
     }
 
@@ -244,7 +246,7 @@ impl GameWorld {
         if !self.no_mar() {
             return;
         }
-        let Some(eu) = self.pos_do_jogador(sid) else {
+        let Some(eu) = self.pos_do_casco(sid) else {
             return;
         };
         if shared::mar::cais_perto(eu).map(|v| v.ilha) != Some(ilha) {
@@ -270,9 +272,24 @@ impl GameWorld {
         // A Colossus Chest on deck counts this island (phase 4).
         self.contar_atracacao(sid, ilha);
         let aviso = format!("You dock at {}.", dest.nome);
+        // The crew comes ashore with the captain (the walkable deck).
+        let tripulacao = if self.capitao_de(sid) == sid { self.tripulacao_de(sid) } else { Vec::new() };
         if self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
             if let Some(s) = self.sessions.get_mut(&sid) {
                 s.zona_volta.clear();
+                s.conves = None;
+            }
+            for t in tripulacao {
+                let pode = shared::viagem::liberada(ilha, self.sessions.get(&t).and_then(|s| crate::quests::indice_da_historia(&s.quests)));
+                let aviso = format!("You come ashore at {} with your captain.", dest.nome);
+                if pode && self.mandar_para_zona(t, dest.zona, chegada, Some(&aviso), Some(dest.nome)) {
+                    if let Some(s) = self.sessions.get_mut(&t) {
+                        s.zona_volta.clear();
+                        s.conves = None;
+                    }
+                } else {
+                    self.levar_ao_cais(t, "Your captain docked where you can't land: you are put ashore at the nearest dock.");
+                }
             }
         }
     }
@@ -354,7 +371,7 @@ impl GameWorld {
                 self.registrar_morte_pk(a, vitima, lado, marcado_antes);
             }
             if let Some(t) = tesouro {
-                let onde = self.pos_do_jogador(sid).unwrap_or_else(fundeadouro_padrao);
+                let onde = self.pos_do_casco(sid).unwrap_or_else(fundeadouro_padrao);
                 self.tesouro_perdido(sid, t, atacante, onde);
             }
             self.naufragio(sid);
@@ -366,55 +383,19 @@ impl GameWorld {
     /// sea, at the nearest anchorage — a `TrocarZona` to a dead host is the
     /// one outcome that cannot happen.
     pub(crate) fn naufragio(&mut self, sid: SessionId) {
-        let Some(eu) = self.pos_do_jogador(sid) else {
-            return;
-        };
-        let volta = self.sessions.get(&sid).map(|s| s.zona_volta.clone()).unwrap_or_default();
-        let mut ordem: Vec<usize> = shared::mar::ilhas().iter().map(|v| v.ilha).collect();
-        ordem.sort_by(|a, b| {
-            let chave = |i: &usize| {
-                let v = shared::mar::vista_da_ilha(*i).expect("island of the sea");
-                (v.zona != volta, v.fundeadouro().distance(eu))
-            };
-            let (ka, kb) = (chave(a), chave(b));
-            ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
-        });
-        let indice = self
-            .sessions
-            .get(&sid)
-            .and_then(|s| crate::quests::indice_da_historia(&s.quests));
-        for i in ordem {
-            if !shared::viagem::liberada(i, indice) {
-                continue;
-            }
-            let Some((dest, chegada)) = Self::porto_da_ilha(i) else {
-                continue;
-            };
-            if self.mandar_para_zona(
-                sid,
-                dest.zona,
-                chegada,
-                Some("Your hull gave way. You wash up at the dock: the Harbour Captain can repair the ship."),
-                Some(dest.nome),
-            ) {
-                if let Some(s) = self.sessions.get_mut(&sid) {
-                    s.zona_volta.clear();
-                }
-                return;
-            }
+        // Everyone aboard goes to the dock (the walkable deck).
+        let tripulacao = if self.capitao_de(sid) == sid { self.tripulacao_de(sid) } else { Vec::new() };
+        self.levar_ao_cais(sid, "Your hull gave way. You wash up at the dock: the Harbour Captain can repair the ship.");
+        for t in tripulacao {
+            self.levar_ao_cais(t, "Your ship went down. You wash up at the dock.");
         }
-        let porto = self.agua_no_mar(fundeadouro_padrao());
-        if let Some(e) = self.sessions.get(&sid).and_then(|s| s.entity) {
-            if let Ok(mut p) = self.ecs.get::<&mut Position>(e) {
-                p.0 = porto;
-            }
-        }
-        self.avisa_missao(sid, "Your hull gave way, and no port is open: you drift to an anchorage.".into());
     }
 
     /// The sea's tick: the bites of this tick on the hulls, and the chests
     /// that come back.
     pub(crate) fn tick_mar(&mut self) {
+        // The walkable deck: ships, crews, launches (`world/conves.rs`).
+        self.tick_conves();
         if !self.no_mar() {
             self.mordidas_no_casco.clear();
             return;
@@ -424,7 +405,9 @@ impl GameWorld {
             let Some(sid) = self.sessions.values().find(|s| s.entity_id == eid).map(|s| s.handle.id) else {
                 continue;
             };
-            if self.pos_do_jogador(sid).is_some_and(shared::mar::no_corredor) {
+            // A bite on anyone aboard is a bite on THEIR ship's hull.
+            let sid = self.capitao_de(sid);
+            if self.pos_do_casco(sid).is_some_and(shared::mar::no_corredor) {
                 continue;
             }
             self.dano_no_casco(sid, dmg, None);
@@ -441,6 +424,7 @@ impl GameWorld {
         for (p, _) in prontos {
             self.poe_bau_do_mar(p);
         }
+        self.enviar_conves();
     }
 
     fn poe_bau_do_mar(&mut self, p: Vec2) {
@@ -512,7 +496,7 @@ impl GameWorld {
         let Some(pos) = self.ecs.get::<&Position>(entidade).ok().map(|p| p.0) else {
             return;
         };
-        let Some(eu) = self.pos_do_jogador(sid) else {
+        let Some(eu) = self.pos_do_casco(sid) else {
             return;
         };
         if eu.distance(pos) > 6.0 {
@@ -584,7 +568,10 @@ impl GameWorld {
         let Some(classe) = nv::casco(r.para) else {
             return;
         };
-        let nivel = self.nivel_de_sid(sid);
+        // Reborn characters pass every level lock (owner, 17/11/2026: "kuna
+        // is R55 so it needs to be counted"), like quests (`nivel_de_missao`).
+        let renasc = self.sessions.get(&sid).map_or(0, |s| s.renascimentos);
+        let nivel = shared::quests::nivel_de_missao(self.nivel_de_sid(sid), renasc);
         if nivel < classe.nivel {
             self.avisa_missao(
                 sid,
@@ -700,13 +687,16 @@ impl GameWorld {
         if !self.no_mar() {
             return HashMap::new();
         }
+        // Keyed by the SHIP's entity (the walkable deck): the bodies aboard
+        // are drawn as themselves.
         self.sessions
             .values()
             .filter(|s| s.logged_in)
             .filter_map(|s| {
+                let c = s.conves.filter(|c| c.capitao == s.handle.id)?;
                 let id = s.equipment.navio.filter(|i| item_id::e_navio(*i))?;
                 let d = nv::dados(s.equipment.navio_inst.as_ref(), id);
-                Some((s.entity_id, nv::Visual::de(id, &d).no_fio()))
+                Some((c.navio_eid, nv::Visual::de(id, &d).no_fio()))
             })
             .collect()
     }
@@ -736,6 +726,9 @@ impl GameWorld {
     /// Where this session's hull points: its helm's heading once it has
     /// sailed, else its velocity (zero = no heading, fires all round).
     pub(crate) fn rumo_do_casco(&self, sid: SessionId, entity: hecs::Entity) -> Vec2 {
+        // Aboard: the heading of the ship under this session (its captain's
+        // helm).
+        let sid = self.capitao_de(sid);
         self.sessions
             .get(&sid)
             .and_then(|s| s.leme_do_mar.rumo())
@@ -814,7 +807,20 @@ impl GameWorld {
             self.rejeita_skill(sid, id, "Skill on cooldown.");
             return;
         }
-        let (dono, entity, selecionado) = (s.entity_id, s.entity.unwrap(), s.target);
+        let (dono, entity, selecionado, conves) = (s.entity_id, s.entity.unwrap(), s.target, s.conves);
+        // The guns fire from the HELM (the walkable deck): the captain at
+        // the wheel, or the AUTO pilot flying from it.
+        match conves {
+            Some(c) if c.capitao != sid => {
+                self.rejeita_skill(sid, id, "Only the captain fires the ship's guns.");
+                return;
+            }
+            Some(c) if !c.leme => {
+                self.rejeita_skill(sid, id, "Take the helm to fire the ship's guns.");
+                return;
+            }
+            _ => {}
+        }
         let Some((navio, mut d)) = self.navio_equipado(sid) else {
             self.rejeita_skill(sid, id, "You have no ship. Put one in the Ship slot of your equipment.");
             return;
@@ -823,7 +829,7 @@ impl GameWorld {
             self.rejeita_skill(sid, id, "Your ship is damaged. The Harbour Captain can repair it.");
             return;
         }
-        let Some(de) = self.ecs.get::<&Position>(entity).ok().map(|p| p.0) else {
+        let Some(de) = self.pos_do_casco(sid) else {
             return;
         };
         let rumo = self.rumo_do_casco(sid, entity);
@@ -923,6 +929,10 @@ impl GameWorld {
     /// The velocity of entity `eid` (zero when it is not found). Only for the
     /// few targets of a shot, so a scan is fine.
     fn velocidade_da_entidade(&self, eid: EntityId) -> Vec2 {
+        // Someone aboard moves with their ship.
+        if let Some(sid) = self.sessions.values().find(|s| s.entity_id == eid && s.conves.is_some()).map(|s| s.handle.id) {
+            return self.vel_do_casco(sid);
+        }
         self.ecs
             .query::<(&NetId, &Velocity)>()
             .iter()
@@ -956,7 +966,17 @@ impl GameWorld {
         for (e, _) in &prontas {
             let _ = self.ecs.despawn(*e);
         }
+        let a_bordo = self.alvos_no_mar();
         for (_, b) in prontas {
+            // Someone aboard: the ball hits if it lands on (or by) their
+            // ship's hull.
+            if let Some(a) = a_bordo.get(&b.alvo) {
+                let casco = super::conves::casco_mais_perto(a, b.mira);
+                if nv::acertou(b.mira, casco, 0.0) {
+                    self.tiro_de_canhao(b.dono, b.alvo, b.de, casco, b.dano);
+                }
+                continue;
+            }
             let corpo = self
                 .ecs
                 .query::<(&NetId, &Position, &EntityKind)>()
@@ -997,6 +1017,8 @@ impl GameWorld {
                     0.0
                 };
                 let dano = dano as f32 * nv::PVP_CANHAO * (1.0 + contra_marcado.max(0.0));
+                // Whoever was aimed at, the HULL under them takes it.
+                let vsid = self.capitao_de(vsid);
                 self.dano_no_casco(vsid, dano.round() as i32, Some(dono));
             }
             None => self.pending_skill_hits.push(PendingSkillHit {
@@ -1243,7 +1265,7 @@ impl GameWorld {
         let Some(bau) = self.ecs.get::<&NetId>(entidade).ok().map(|n| n.0) else {
             return;
         };
-        let Some(eu) = self.pos_do_jogador(sid) else {
+        let Some(eu) = self.pos_do_casco(sid) else {
             return;
         };
         let Some((_, d)) = self.navio_equipado(sid) else {
@@ -1326,7 +1348,7 @@ impl GameWorld {
                 self.parar_de_pegar(sid);
                 continue;
             };
-            let eu = self.pos_do_jogador(sid);
+            let eu = self.pos_do_casco(sid);
             if eu.is_none_or(|eu| eu.distance(a.de) > 1.0 || eu.distance(p) > nv::ALCANCE_DO_TESOURO) {
                 self.parar_de_pegar(sid);
                 continue;
@@ -1413,24 +1435,51 @@ pub(crate) const CRUZANDO_S: f32 = 3.0;
 /// abeam of where it is, and one crossing to the other side goes round the
 /// nearer end (measured: straight at the beam point, the wake's mobs sat
 /// against the stern, out of reach and out of the arc).
+#[allow(dead_code)]
 pub(crate) fn ponto_no_costado(navio: Vec2, rumo: Vec2, vel_navio: Vec2, bicho: Vec2, lado: f32, morde: bool, alcance: f32) -> Vec2 {
+    ponto_no_costado_do_casco(navio, rumo, vel_navio, bicho, lado, morde, alcance, nv::RAIO_DO_CASCO, nv::RAIO_DO_CASCO)
+}
+
+/// The same for a hull `meia` across (half beam) and `meio` long (half
+/// length) — the walkable deck's bigger ships (17/11/2026). The distances
+/// are kept off the hull's SIDE: holding `COSTADO_DO_BICHO − RAIO_DO_CASCO`
+/// out, biting from `alcance − 0.25 − RAIO_DO_CASCO` (at least 0.3), so the
+/// Sloop's numbers are the old ones and a Man-o'-War's shark still surfaces
+/// within a sword's reach of the rail.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ponto_no_costado_do_casco(
+    navio: Vec2,
+    rumo: Vec2,
+    vel_navio: Vec2,
+    bicho: Vec2,
+    lado: f32,
+    morde: bool,
+    alcance: f32,
+    meia: f32,
+    meio: f32,
+) -> Vec2 {
     let r = rumo.try_normalize().unwrap_or(Vec2::Y);
     let travessa = Vec2::new(r.y, -r.x);
-    let afasta = if morde { (alcance - 0.25).max(0.8) } else { COSTADO_DO_BICHO };
+    let fora_do_casco = meia - nv::RAIO_DO_CASCO;
+    let afasta = if morde {
+        meia + (alcance - 0.25 - nv::RAIO_DO_CASCO).max(0.3).max(0.8 - nv::RAIO_DO_CASCO)
+    } else {
+        COSTADO_DO_BICHO + fora_do_casco
+    };
     // Biting, no lead: the jaws close on the side, not the bow.
     let avanco = if morde { 0.0 } else { (vel_navio.length() * AVANCO_DO_BICHO_S).min(AVANCO_DO_BICHO_MAX) };
     let alvo = navio + travessa * lado * afasta + r * avanco;
-    let livre = nv::RAIO_DO_CASCO + 0.1;
+    let livre = meia + 0.1;
     if dist_ao_segmento(navio, bicho, alvo) >= livre {
         return alvo;
     }
     let q = bicho - navio;
-    let ao_longo = q.dot(r);
-    let fora = navio + travessa * lado * COSTADO_DO_BICHO + r * ao_longo;
+    let ao_longo = q.dot(r).clamp(-meio, meio);
+    let fora = navio + travessa * lado * (COSTADO_DO_BICHO + fora_do_casco) + r * ao_longo;
     if q.dot(travessa) * lado > 0.0 || dist_ao_segmento(navio, bicho, fora) >= livre {
         return fora;
     }
-    navio + r * (livre + 1.5) * if ao_longo >= 0.0 { 1.0 } else { -1.0 } + travessa * lado * livre
+    navio + r * (meio.max(livre) + 1.5) * if q.dot(r) >= 0.0 { 1.0 } else { -1.0 } + travessa * lado * livre
 }
 
 /// Distance from `p` to the segment `a`–`b`.
@@ -1829,8 +1878,8 @@ mod testes {
     }
 
     fn poe_em(w: &mut GameWorld, sid: SessionId, p: Vec2) {
-        let e = w.sessions[&sid].entity.unwrap();
-        w.ecs.get::<&mut Position>(e).unwrap().0 = p;
+        // Aboard, the SHIP is put there (and the deck rides along).
+        w.por_navio_em(sid, p);
     }
 
     fn cobre(w: &mut GameWorld, sid: SessionId, n: u32) {
@@ -1951,14 +2000,14 @@ mod testes {
             let meio = Meio::do_papel(papel as u8).unwrap();
             assert_eq!(w.quem_viaja_perto(sid), Some(meio));
             assert!(dar_chalupa(w.sessions.get_mut(&sid).unwrap()));
-            w.abrir_menu_viagem(sid, meio);
+            w.abrir_estaleiro(sid);
             let mut vela = None;
             while let Ok(m) = rx.try_recv() {
-                if let ServerMessage::Navio { estado } = m {
+                if let ServerMessage::AbrirEstaleiro { estado } = m {
                     vela = Some(estado.tem && estado.zarpar && !estado.avariado);
                 }
             }
-            assert_eq!(vela, Some(true), "{zona}/{papel:?}: no Sail in the menu");
+            assert_eq!(vela, Some(true), "{zona}/{papel:?}: no Sail in the Shipyard");
             w.handle_navio(sid, PedidoNavio::Zarpar);
             assert_eq!(trocou_para(&mut rx).as_deref(), Some(shared::mar::ZONA), "{zona}/{papel:?}");
             let v = shared::mar::vista_da_zona(zona).unwrap();
@@ -2023,7 +2072,7 @@ mod testes {
         // A red-named captain on the Plateau (PvP waters) takes the Captain
         // home to the Bosque, whose waters are closed to its ship.
         let (mut w, sid, mut rx) = mundo("ilha_planalto", &["ilha_planalto", "ilha_inicial"]);
-        com_capitao(&mut w);
+        no_portal(&mut w, sid);
         w.sessions.get_mut(&sid).unwrap().pk_points = 3;
         cobre(&mut w, sid, 10_000);
         w.handle_viajar(sid, 0);
@@ -2033,7 +2082,7 @@ mod testes {
     #[test]
     fn o_capitao_cobra_cobre_e_recusa_sem() {
         let (mut w, sid, mut rx) = mundo("ilha_gelo", &["ilha_gelo", "ilha_inicial"]);
-        com_capitao(&mut w);
+        no_portal(&mut w, sid);
         let preco = shared::navio::preco_da_viagem(0);
         cobre(&mut w, sid, preco - 1);
         w.handle_viajar(sid, 0);
@@ -2045,7 +2094,7 @@ mod testes {
         assert_eq!(tem_cobre(&w, sid), 7);
         // The story's own trip is free.
         let (mut w2, sid2, mut rx2) = mundo("ilha_inicial", &["ilha_inicial", "ilha_gelo"]);
-        com_capitao(&mut w2);
+        no_portal(&mut w2, sid2);
         let i = shared::historia::indice(shared::historia::PASSO_DA_CHALUPA).unwrap();
         historia_em(&mut w2, sid2, i);
         w2.sessions.get_mut(&sid2).unwrap().quests.push(crate::quests::CharQuest {
@@ -2058,11 +2107,117 @@ mod testes {
         assert_eq!(trocou_para(&mut rx2).as_deref(), Some("ilha_gelo"), "the story trip charged copper");
         // A destination that is down charges nothing.
         let (mut w, sid, mut rx) = mundo("ilha_gelo", &["ilha_gelo"]);
-        com_capitao(&mut w);
+        no_portal(&mut w, sid);
         cobre(&mut w, sid, 1_000);
         w.handle_viajar(sid, 0);
         assert_eq!(trocou_para(&mut rx), None);
         assert_eq!(tem_cobre(&w, sid), 1_000);
+    }
+
+    /// Stands the player in this town's Island Portal.
+    fn no_portal(w: &mut GameWorld, sid: SessionId) {
+        let (p, _) = shared::portal_ilhas::da_zona(&w.zona.clone()).expect("a portal");
+        poe_em(w, sid, p);
+    }
+
+    /// THE DOCK NPCS NO LONGER CARRY ANYONE (17/11/2026): clicking one opens
+    /// the Shipyard, never the travel list, and "Board" next to them (away
+    /// from the portal) is refused. At the portal the same trip leaves, and
+    /// lands at the destination's portal.
+    #[test]
+    fn os_npcs_do_cais_nao_levam_mais_ninguem() {
+        use shared::construcao::Papel;
+        for (zona, papel, destino) in [
+            ("ilha_gelo", Papel::Estaleiro, 0usize),
+            (shared::celeste::ZONA, Papel::Motorista, 5),
+            (shared::kogen::ZONA, Papel::Submarino, 6),
+        ] {
+            let alvo = shared::terreno::ARQUIPELAGO[destino].zona;
+            let (mut w, sid, mut rx) = mundo(zona, &[zona, alvo]);
+            toda_a_historia(&mut w, sid);
+            cobre(&mut w, sid, 10_000);
+            com_npc(&mut w, papel);
+            let npc = w.ecs.query::<(&NetId, &NpcDaVilaTag)>().iter().map(|(e, _)| e).next().unwrap();
+            assert!(w.e_capitao(npc));
+            assert_eq!(w.funcao_do_npc(npc), Some("Shipyard"), "{zona}/{papel:?}");
+            w.abrir_estaleiro(sid);
+            let mut viagem = false;
+            let mut estaleiro = false;
+            while let Ok(m) = rx.try_recv() {
+                viagem |= matches!(m, ServerMessage::Viagem { .. });
+                estaleiro |= matches!(m, ServerMessage::AbrirEstaleiro { .. });
+            }
+            assert!(estaleiro && !viagem, "{zona}/{papel:?}: the dock NPC still offers trips");
+            w.handle_viajar(sid, destino as u8);
+            let (z, chat) = drena(&mut rx);
+            assert_eq!(z, None, "{zona}/{papel:?}: boarded at the dock");
+            assert!(chat.iter().any(|t| t.contains("Island Portal")), "{chat:?}");
+            no_portal(&mut w, sid);
+            w.handle_abrir_portal(sid);
+            let mut lista = None;
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Viagem { destinos, .. } = m {
+                    lista = Some(destinos);
+                }
+            }
+            let lista = lista.expect("the portal opens the travel menu");
+            assert_eq!(lista.len(), shared::terreno::ARQUIPELAGO.len());
+            w.handle_viajar(sid, destino as u8);
+            assert_eq!(trocou_para(&mut rx).as_deref(), Some(alvo), "{zona}: the portal did not carry");
+            let (_, chegada) = shared::portal_ilhas::da_zona(alvo).unwrap();
+            assert!(w.pos_do_jogador(sid).unwrap().distance(chegada) < 0.01, "{zona}: lands off the destination portal");
+        }
+        // Far from the portal the menu does not open either.
+        let (mut w, sid, mut rx) = mundo("ilha_inicial", &["ilha_inicial"]);
+        w.handle_abrir_portal(sid);
+        assert!(!std::iter::from_fn(|| rx.try_recv().ok()).any(|m| matches!(m, ServerMessage::Viagem { .. })));
+    }
+
+    /// THE STORY'S TRIPS GO THROUGH THE PORTAL: every "Bound for…" step can
+    /// be done from the portal of the island where it is given — free, even
+    /// with no copper, and the auto quest is sent to the portal.
+    #[test]
+    fn os_passos_de_viagem_da_historia_saem_pelo_portal() {
+        use shared::quests::objective_kind;
+        for (i, d) in shared::historia::PASSOS.iter().enumerate().filter(|(_, d)| d.obj_kind == objective_kind::VIAGEM) {
+            let zona = shared::historia::zona_do_passo(d.id).expect("a story step has an island");
+            let alvo = shared::terreno::ARQUIPELAGO[d.obj_target as usize].zona;
+            let (mut w, sid, mut rx) = mundo(zona, &[zona, alvo]);
+            historia_em(&mut w, sid, i as u32);
+            w.sessions.get_mut(&sid).unwrap().quests.push(crate::quests::CharQuest {
+                quest_id: d.id,
+                status: shared::quests::quest_status::ACTIVE,
+                progress: 0,
+                cooldown_until: 0,
+            });
+            assert_eq!(w.ilha_da_viagem_da_historia(sid), Some(d.obj_target as usize), "{}", d.id);
+            // The auto quest walks to the portal.
+            w.handle_quest_destino(sid, d.id);
+            let (portal, _) = shared::portal_ilhas::da_zona(zona).unwrap();
+            let mut destino = None;
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::QuestDestino { tipo, pos, .. } = m {
+                    destino = Some((tipo, Vec2::from(pos)));
+                }
+            }
+            let (tipo, pos) = destino.unwrap_or_else(|| panic!("{}: no destination", d.id));
+            assert_eq!(tipo, shared::quests::destino_tipo::LUGAR, "{}", d.id);
+            assert!(pos.distance(portal) < 0.01, "{}: the auto quest is not sent to the portal", d.id);
+            // The portal lists the step's island, free and open.
+            no_portal(&mut w, sid);
+            w.handle_abrir_portal(sid);
+            let mut lista = Vec::new();
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Viagem { destinos, .. } = m {
+                    lista = destinos;
+                }
+            }
+            let linha = lista.iter().find(|x| x.ilha == d.obj_target as u8).unwrap_or_else(|| panic!("{}: not listed", d.id));
+            assert_eq!((linha.estado, linha.preco), (shared::viagem::estado::LIBERADA, 0), "{}", d.id);
+            // No copper at all, and it still leaves.
+            w.handle_viajar(sid, d.obj_target as u8);
+            assert_eq!(trocou_para(&mut rx).as_deref(), Some(alvo), "{}: the story trip is blocked", d.id);
+        }
     }
 
     /// The story step and the gift give EXACTLY ONE Sloop, and none to
@@ -2585,9 +2740,79 @@ mod testes {
         assert_eq!((d.vela, d.figura), (2, 3));
         assert_eq!(w.sessions[&sid].inventory[4].qty, 0);
         w.zona = shared::mar::ZONA.into();
-        let eid = w.sessions[&sid].entity_id;
+        // The look rides on the SHIP's entity (the walkable deck).
+        w.tick_conves();
+        let eid = w.sessions[&sid].conves.expect("aboard").navio_eid;
         let v = shared::navio::Visual::do_fio(w.visuais_dos_navios()[&eid]);
         assert_eq!((v.classe, v.vela, v.figura), (0, 2, 3));
+    }
+
+    /// THE SHIP'S LOOK RE-SENDS ON CHANGE (17/11/2026): building the next
+    /// hull or applying a sail at sea reaches the owner AND whoever already
+    /// had the ship in view — the meta used to go out only on entering view.
+    #[test]
+    fn o_visual_do_navio_reenvia_ao_construir_e_ao_vestir() {
+        let (mut w, sid, mut rx) = mundo(shared::mar::ZONA, &[]);
+        dar_chalupa(w.sessions.get_mut(&sid).unwrap());
+        // A second player in view, with an inbox we read.
+        let b = SessionId(([127, 0, 0, 1], 47_471).into());
+        let (tx, mut rx_b) = mpsc::unbounded_channel();
+        w.on_connect(SessionHandle { id: b, to_client: tx });
+        let eb = w.ecs.spawn((
+            NetId(EntityId(4_701)),
+            Position(Vec2::new(14.0, 10.0)),
+            Velocity(Vec2::ZERO),
+            EntityKind::Player,
+            Health { current: 100, max: 100 },
+            PlayerTag { name: "Vigia".into(), player_id: PlayerId(48), attack_anim_pending: None, combo_step_pending: None },
+        ));
+        {
+            let s = w.sessions.get_mut(&b).unwrap();
+            s.logged_in = true;
+            s.entity = Some(eb);
+            s.entity_id = EntityId(4_701);
+            s.name = "Vigia".into();
+            s.inventory = vec![shared::InventorySlot::default(); shared::INVENTORY_SLOTS];
+        }
+        // The look rides on the SHIP's entity (the walkable deck).
+        w.tick_conves();
+        let eu = w.sessions[&sid].conves.expect("aboard").navio_eid;
+        let visto = |rx: &mut mpsc::UnboundedReceiver<ServerMessage>| -> Option<shared::navio::Visual> {
+            let mut v = None;
+            while let Ok(m) = rx.try_recv() {
+                if let ServerMessage::Snapshot { snapshot } = m {
+                    for meta in snapshot.entered.into_iter().filter(|m| m.id == eu) {
+                        v = Some(shared::navio::Visual::do_fio(meta.skins));
+                    }
+                }
+            }
+            v
+        };
+        w.send_snapshots();
+        assert_eq!(visto(&mut rx).map(|v| v.classe), Some(0), "the owner sees its Sloop");
+        assert_eq!(visto(&mut rx_b).map(|v| v.classe), Some(0), "the other sees the Sloop");
+        w.send_snapshots();
+        assert_eq!(visto(&mut rx_b), None, "nothing changed, nothing re-sent");
+        // A sail applied at sea, from the bag.
+        let vela = shared::navio::VELAS[1].item;
+        w.sessions.get_mut(&sid).unwrap().inventory[3] = shared::InventorySlot { item_id: vela, qty: 1, instance: None };
+        w.handle_use_item(sid, 3);
+        w.send_snapshots();
+        assert_eq!(visto(&mut rx).map(|v| v.vela), Some(2), "the owner's own ship took the sail");
+        assert_eq!(visto(&mut rx_b).map(|v| v.vela), Some(2), "the other player saw the new sail");
+        // A new hull (the Shipwright's build, as it lands in the Ship slot).
+        let (_, d) = w.navio_equipado(sid).unwrap();
+        let rec = nv::receita_depois_de(NAVIO_CHALUPA).unwrap();
+        {
+            let s = w.sessions.get_mut(&sid).unwrap();
+            s.equipment.navio = Some(rec.para);
+            s.equipment.navio_inst = None;
+        }
+        w.guarda_navio(sid, nv::reconstruido(rec.para, &d));
+        w.send_snapshots();
+        let classe = nv::Visual::de(rec.para, &nv::novo(rec.para)).classe;
+        assert_eq!(visto(&mut rx_b).map(|v| (v.classe, v.vela)), Some((classe, 2)), "the new hull, the sail kept");
+        assert_eq!(visto(&mut rx).map(|v| v.classe), Some(classe));
     }
 
     // ───────────────────── phase 4 ─────────────────────

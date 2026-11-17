@@ -362,7 +362,7 @@ fn estado_da_historia(q: &QuestNet, nivel: u32) -> String {
             )
         }
         objective_kind::LUGAR => format!("Go to {}", historia::ponto::nome(q.obj_target)),
-        objective_kind::VIAGEM => "Talk to the Harbour Captain".into(),
+        objective_kind::VIAGEM => "Use the Island Portal".into(),
         // O Capitao leva; o botao e' MINHA ILHA, e nao Embarcar.
         // Tutorial de GESTO nao tem contagem (obj_count 1): "1/1" nao diz
         // nada. O da Energia pede uma quantia, e ai' o quanto falta e' a

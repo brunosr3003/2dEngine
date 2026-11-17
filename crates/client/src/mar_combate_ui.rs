@@ -550,7 +550,7 @@ impl MarCombate {
             self.clarao_ate = get_time() + 0.25;
             self.ultima_luta = get_time();
             let mordida = world.ents.get(&a.atacante).is_some_and(|e| e.meta.tag == EntityTag::Enemy);
-            if let (true, Some(p)) = (mordida, world.ents.get(&eu).map(|e| e.render_pos)) {
+            if let (true, Some(p)) = (mordida, world.casco_do_eu().map(|e| e.render_pos)) {
                 let de = vec2(a.de[0] as f32, a.de[1] as f32) / 127.0;
                 let onde = p + de * 1.2;
                 self.lascas(vec3(onde.x, y_agua() + 0.6, onde.y));
@@ -614,7 +614,9 @@ impl MarCombate {
         self.decais.indices.clear();
         self.quads.vertices.clear();
         self.quads.indices.clear();
-        let eu = world.self_id.and_then(|i| world.ents.get(&i));
+        // My HULL (the ship I stand on, the walkable deck) and my body.
+        let eu = world.casco_do_eu();
+        let corpo = world.self_id.and_then(|i| world.ents.get(&i));
         let alvo_e = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none());
         // ── the sea mobs: fins, humps, the bite telegraph ──
         for (id, e) in &world.ents {
@@ -750,7 +752,7 @@ impl MarCombate {
         // ── THE PEACEFUL WATERS (17/11/2026) ──
         if let Some(eu) = eu {
             let aqui = g(eu.render_pos);
-            let barrado = pk_barrado(eu);
+            let barrado = pk_barrado(corpo.unwrap_or(eu));
             // A soft protective ring round the hull while in them.
             if shared::mar::aguas_pacificas(aqui) {
                 let r = 3.4 * prontos.escala.max(0.6);
@@ -818,7 +820,7 @@ impl MarCombate {
         if !prontos.canhonaco {
             return;
         }
-        let Some(eu) = world.self_id.and_then(|i| world.ents.get(&i)) else {
+        let Some(eu) = world.casco_do_eu() else {
             return;
         };
         let Some(a) = alvo.and_then(|i| world.ents.get(&i)).filter(|e| e.state.hp > 0 && e.morte.is_none()) else {

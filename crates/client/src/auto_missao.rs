@@ -408,6 +408,12 @@ impl AutoMissao {
 /// the quest id and the index the Harbour Captain understands, and it breaks
 /// silently if someone reorders the `ARQUIPELAGO`.
 pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
+    // A story "Bound for…" step: the island it sends you to (the step lives on
+    // the island you leave from). The Island Portal's menu boards there.
+    if let Some(d) = shared::quests::quest_by_id(quest).filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM) {
+        let alvo = shared::terreno::ARQUIPELAGO.get(d.obj_target as usize)?;
+        return (alvo.zona != aqui).then_some(d.obj_target as u8);
+    }
     let alvo = shared::quests::zona_da_missao(quest)?;
     if alvo == aqui {
         return None;
@@ -418,7 +424,7 @@ pub fn ilha_da_missao(quest: u16, aqui: &str) -> Option<u8> {
         .map(|i| i as u8)
 }
 
-/// What AUTO does with the Harbour Captain's menu.
+/// What AUTO does with the Island Portal's menu.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Rumo {
     /// Boards on its own: the quest is on another island and that island is unlocked.
@@ -460,6 +466,23 @@ pub fn rumo(destinos: &[shared::viagem::Destino], ilha: Option<u8>) -> Rumo {
 mod tests {
     use super::*;
     use crate::parado::TRAVADO_S;
+
+    /// THE STORY'S TRIPS BOARD FROM THE PORTAL: every "Bound for…" step
+    /// names its island, and the portal's menu (every island) boards it.
+    #[test]
+    fn todo_passo_de_viagem_embarca_pelo_portal() {
+        use shared::quests::objective_kind;
+        let no_ar = |_: &str| true;
+        for (i, d) in shared::historia::PASSOS.iter().enumerate().filter(|(_, d)| d.obj_kind == objective_kind::VIAGEM) {
+            let aqui = shared::historia::zona_do_passo(d.id).unwrap();
+            assert_eq!(ilha_da_missao(d.id, aqui), Some(d.obj_target as u8), "{}", d.id);
+            let menu = shared::viagem::destinos_do_portal(aqui, Some(i as u32), &no_ar);
+            assert_eq!(rumo(&menu, ilha_da_missao(d.id, aqui)), Rumo::Embarcar(d.obj_target as u8), "{}: the auto quest does not board", d.id);
+            // Already there: nothing to board.
+            let la = shared::terreno::ARQUIPELAGO[d.obj_target as usize].zona;
+            assert_eq!(ilha_da_missao(d.id, la), None);
+        }
+    }
 
     fn destino(ilha: u8, estado: u8) -> shared::viagem::Destino {
         shared::viagem::Destino {

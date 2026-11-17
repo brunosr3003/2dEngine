@@ -77,6 +77,14 @@ impl TextureFormat {
             TextureFormat::RGB8 => GL_RGB8,
             TextureFormat::RGBA8 => GL_RGBA8,
             TextureFormat::RGBA16F => GL_RGBA16F,
+            // Tempest: 24-bit depth for render targets on desktop. The
+            // window already gets 24 bits (GLX asks for it, EGL since the
+            // Android fix), but every render target with depth got 16, and
+            // the ad capture draws into one: z-fighting and geometry cutting
+            // at distance (17/11/2026). Mobile and web keep upstream's 16.
+            #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+            TextureFormat::Depth => GL_DEPTH_COMPONENT24,
+            #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
             TextureFormat::Depth => GL_DEPTH_COMPONENT16,
             TextureFormat::Depth32 => GL_DEPTH_COMPONENT32,
             #[cfg(target_arch = "wasm32")]
@@ -94,6 +102,10 @@ impl From<TextureFormat> for (GLenum, GLenum, GLenum) {
             TextureFormat::RGB8 => (GL_RGB, GL_RGB, GL_UNSIGNED_BYTE),
             TextureFormat::RGBA8 => (GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE),
             TextureFormat::RGBA16F => (GL_RGBA16F, GL_RGBA, GL_FLOAT),
+            // Tempest: sized 24-bit on desktop, as in `sized_internal_format`.
+            #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+            TextureFormat::Depth => (GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT),
+            #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
             TextureFormat::Depth => (GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT),
             TextureFormat::Depth32 => (GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT, GL_FLOAT),
             #[cfg(target_arch = "wasm32")]

@@ -38,6 +38,30 @@ limpos, sem números (`MMO_FILME_LIMPO`).
   e toda roupa saía a camisa padrão.
 - Antes de cada tomada o terreno é assado inteiro e há 1 s de aquecimento não
   gravado.
+- **Profundidade (17/11/2026)**: o render target da captura tinha depth de
+  16 bits (`TextureFormat::Depth` do miniquad = `GL_DEPTH_COMPONENT16`) e a
+  câmera o near plane de 0,01 do macroquad, com a neblina a ~300 u: z-fighting
+  e geometria "cortando" outra (nuvem furada, borda da ponte serrilhada,
+  degraus de terreno vazando por cima da grama). Agora o depth de render
+  target é 24 bits no desktop (`vendor/miniquad/src/graphics/gl.rs`; Android,
+  iOS e web seguem 16) e o near da captura é 15% da distância olho→alvo
+  (0,5–3 u, `planos_da_captura`). O jogo continua com o near de sempre.
+  Com o depth exato, as camadas coplanares do telegráfico do chefe (fundo,
+  preenchimento, borda, setas) brigavam e a área vermelha saía em pedaços; na
+  captura cada vértice sobe um fio sobre o anterior (`chao_em_camadas`). No
+  jogo (janela já com 24 bits) o mesmo deve acontecer: ver `telegrafico.rs`.
+- **Câmera sem colisão (17/11/2026)**: a câmera da captura não é mais
+  empurrada pra fora do chão e não segue a altura crua do bloco sob o alvo
+  (função degrau: pulava 0,5 u a cada borda de bloco, 6 u na revelação do
+  Planalto e 15 u na Skyreach, ao passar do vazio pra ilha). A altura é a
+  média do chão num disco de 6 u (`chao_suave`) numa mola de 0,5 s no relógio
+  fixo (`mola`). No mar o navio e os bichos ficam exatamente no caminho
+  (antes os snapshots a cada 0,25 s davam 43 trancos na bordada).
+- **Conferir a câmera**: `MMO_FILME_CAMERA=cam.csv` grava olho/alvo de todo
+  quadro (com o olho do código antigo, pra comparar) e
+  `scripts/filme-camera.py cam.csv` mostra por tomada a folga mínima sobre o
+  chão e os "trancos" (segunda diferença da posição). `MMO_FILME_SO_CAMERA=1`
+  não grava vídeo (rode pequeno, `MMO_FILME_TAM=640x360 MMO_FILME_MSAA=1`).
 - Retrato: a câmera recua `sqrt((16/9)/aspecto)` (o FOV vertical é fixo, então
   o quadro estreito precisa de mais distância pra caber a ação). iPad 3:4 recua
   menos que 9:16.
@@ -53,7 +77,12 @@ limpos, sem números (`MMO_FILME_LIMPO`).
 | `MMO_FILME_PRINTS_EM` | tempos em segundos, ex. `3.5,8,12.2` |
 | `MMO_FILME_SO_PRINTS` | `1` = não grava vídeo, para depois do último print |
 | `MMO_FILME_LIMPO` | `1` = sem números de dano (prints de loja). Ligado por padrão com `MMO_FILME_SO_PRINTS`; `0` desliga |
-| `MMO_FILME_MSAA` | amostras do MSAA (padrão 8) |
+| `MMO_FILME_MSAA` | amostras do MSAA (padrão 8; a RTX 3060 aceita 16) |
+| `MMO_FILME_RAIO` | raio de terreno em pedaços (padrão 20) |
+| `MMO_FILME_ESCALA` | `W:H`: reduz (lanczos) ao gravar cada cena; renderizar em 2x e guardar 1080p |
+| `MMO_FILME_CRF` / `MMO_FILME_PRESET` | x264 das cenas (18 / slow) |
+| `MMO_FILME_CAMERA` | CSV com a câmera de cada quadro |
+| `MMO_FILME_SO_CAMERA` | `1` = só o CSV, sem vídeo |
 
 Presets de `MMO_FILME_TAM` (retrato, salvo os deitados por natureza):
 
@@ -124,8 +153,21 @@ skins de arma, aura de equipamento azul/roxo T4 +12 e verde +5, R1..R15).
 
 Montagem: `scripts/filme-montagem.sh` (trechos fixos por cena, crossfade 0,4 s).
 `FILME_CORTES="cena:início:segundos ..."` troca os trechos, `FILME_FADE` o
-crossfade e `FILME_ESCALA=1920:1080` reduz (captura em 2560×1440 sai mais
-nítida). O anúncio de 17/11/2026:
+crossfade, `FILME_ESCALA=1920:1080` reduz (captura em 2560×1440 sai mais
+nítida) e `FILME_CRF`/`FILME_PRESET` a qualidade (20 / slow). O anúncio v2 de
+17/11/2026 (4K, MSAA 16, raio 24, lanczos pra 1080p ao gravar, CRF 8; montagem
+veryslow CRF 15):
+
+```sh
+DISPLAY=:1 MMO_WIN=320x240 MMO_FILME=mar,celeste,planalto,chefe,auras MMO_FILME_TAM=3840x2160 \
+  MMO_FILME_MSAA=16 MMO_FILME_RAIO=24 MMO_FILME_ESCALA=1920:1080 MMO_FILME_CRF=8 \
+  MMO_FILME_SAIDA=~/filme-ad/final $CARGO_TARGET_DIR/debug/client
+FILME_CORTES="mar:0.3:8.5 celeste:0.5:7 planalto:4.5:8 planalto:13.2:9.5 chefe:1:8 auras:1:9 mar:20.5:6.5 mar:27.5:5.5" \
+  FILME_FADE=0.5 FILME_CRF=15 FILME_PRESET=veryslow \
+  scripts/filme-montagem.sh ~/filme-ad/final 3840x2160 ~/filme-ad/tempest-ad-16x9.mp4
+```
+
+O v1 (mesmo dia, antes das correções):
 
 ```sh
 FILME_CORTES="mar:0.3:8.5 celeste:0.5:7 planalto:4.5:8 planalto:13.2:9.5 chefe:1:8 auras:1:9 mar:20.5:6.5 mar:27.5:5.5" \

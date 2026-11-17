@@ -600,6 +600,11 @@ pub enum ClientMessage {
     Navio {
         pedido: crate::navio::PedidoNavio,
     },
+    /// THE ISLAND PORTAL (`shared::portal_ilhas`, 17/11/2026): the player
+    /// walked into (or tapped) this town's portal. Answered with
+    /// `ServerMessage::Viagem` (every island, prices and locks); boarding is
+    /// `Viajar`, checked against the portal again. Appended.
+    AbrirPortal,
 }
 
 /// One device's HUD layout, as `hud_custom` keeps it.
@@ -1548,6 +1553,19 @@ pub enum ServerMessage {
     /// THE SHIP's state (`shared::navio`): at login, with the Harbour
     /// Captain's menu, after a repair and whenever the hull changes at sea.
     Navio {
+        estado: crate::navio::EstadoNavio,
+    },
+    /// THE WALKABLE DECK (`shared::conves`): who walks on which ship, in
+    /// deck space, only what CHANGED since the last one this session got
+    /// (`navio` 0 = left the deck). The client draws them at `ship × local`.
+    Conves {
+        lista: Vec<crate::conves::NoConves>,
+    },
+    /// THE SHIPYARD (17/11/2026): a dock NPC (the Harbour Captain, the Sky
+    /// Bus Professor, the Submarine Captain) was clicked. They only manage and
+    /// sail ships now — travel moved to the Island Portal. Opens the Shipyard
+    /// panel with the ship's state. Appended.
+    AbrirEstaleiro {
         estado: crate::navio::EstadoNavio,
     },
 }

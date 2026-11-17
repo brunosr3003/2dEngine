@@ -134,6 +134,7 @@ mod troca;
 pub(crate) mod navio;
 pub(crate) mod piloto_do_mar;
 pub(crate) mod aguas_pacificas;
+pub(crate) mod conves;
 mod permanencia;
 use habilidades::HabilidadePendente;
 
@@ -2455,6 +2456,11 @@ pub struct Session {
     /// heading and the speed it carries. The velocity at sea always comes
     /// out of it, so a ship turns at its class's rate instead of snapping.
     pub leme_do_mar: shared::navio::Leme,
+    /// THE WALKABLE DECK (`world/conves.rs`): aboard a ship at sea — whose,
+    /// where on its deck, at the helm or not. `None` on land.
+    pub conves: Option<conves::ABordo>,
+    /// The deck rows this session's client already has (`Conves` deltas).
+    pub conves_enviado: HashMap<EntityId, shared::conves::NoConves>,
     /// LETHAL FURY (Assassin active): until when, and its factor (1.0, or
     /// `MULT_SUPREMA` when supreme). See `chance_de_crit`.
     pub furia_ate: f32,
@@ -2617,6 +2623,11 @@ pub struct Session {
     /// item_id: ele ja' diz especie e cor.
     pub montaria_vista: Option<u16>,
     pub auras_vistas: u64,
+    /// The ship look last broadcast for this player (`navio::Visual::no_fio`,
+    /// 0 = no ship drawn). A new hull, a star or a sail/figurehead changes it,
+    /// and the change forces the `EntityMeta` out again (`last_sent`), to
+    /// everyone in view and to the owner.
+    pub navio_visto: u64,
 }
 
 impl Session {
@@ -6281,7 +6292,13 @@ impl GameWorld {
         }
         // AT SEA: the water A* over the whole chart (`navio::caminho_no_mar`).
         if self.no_mar() && destino.is_finite() {
-            self.rota_no_mar(sid, pos_atual, destino);
+            // Only the captain sets the course; the ship sails from where IT
+            // is (the walkable deck).
+            if self.capitao_de(sid) != sid {
+                return;
+            }
+            let de = self.pos_do_casco(sid).unwrap_or(pos_atual);
+            self.rota_no_mar(sid, de, destino);
             return;
         }
         if !destino.is_finite() || pos_atual.distance(destino) > ROTA_ALCANCE {
@@ -8223,6 +8240,8 @@ impl GameWorld {
                 fumaca_ate: 0.0,
                 piloto: Default::default(),
                 leme_do_mar: Default::default(),
+                conves: None,
+                conves_enviado: HashMap::new(),
                 furia_ate: 0.0,
                 furia_fator: 0.0,
                 buffs_da_arvore: Vec::new(),
@@ -8279,6 +8298,7 @@ impl GameWorld {
                 montado_em: 0.0,
                 montaria_vista: None,
                 auras_vistas: 0,
+                navio_visto: 0,
             },
         );
     }
@@ -8676,6 +8696,7 @@ impl GameWorld {
             }
             ClientMessage::Viajar { ilha } => self.handle_viajar(id, ilha),
             ClientMessage::Navio { pedido } => self.handle_navio(id, pedido),
+            ClientMessage::AbrirPortal => self.handle_abrir_portal(id),
             ClientMessage::Colonia { pedido } => self.handle_colonia(id, pedido),
             ClientMessage::Magica { pedido } => self.handle_magica(id, pedido),
             ClientMessage::Prime { pedido } => self.handle_prime(id, pedido),
@@ -10114,6 +10135,9 @@ impl GameWorld {
         // Quem travou seguindo rota: o A* roda DEPOIS do laco, que aqui
         // `self` esta' emprestado pelas sessoes.
         let mut refazer_rota: Vec<(SessionId, Vec2)> = Vec::new();
+        // THE WALKABLE DECK: the velocity each ship's captain gave it this
+        // tick (at the helm, or its route off it). Applied with the bodies'.
+        let mut governo_dos_navios: Vec<(Entity, Vec2)> = Vec::new();
         let na_colonia = shared::colonia::e_colonia(&self.zona);
         let no_mar = self.no_mar();
         let sim_agora_mar = self.sim_time_s;
@@ -10331,15 +10355,43 @@ impl GameWorld {
                 .get(&session.entity_id)
                 .copied()
                 .unwrap_or(Vec2::ZERO);
+            // THE WALKABLE DECK (`world/conves.rs`): at the helm the stick,
+            // the route and the pilot steer the SHIP, as sailing always did;
+            // off it the stick walks the body on deck, and the ship follows
+            // its route alone and stops at its end (owner, 17/11/2026).
+            let a_bordo = if no_mar { session.conves } else { None };
+            let capitao = a_bordo.is_some_and(|c| c.capitao == sid_da_sessao);
+            let no_leme = capitao && a_bordo.is_some_and(|c| c.leme);
+            let no_conves = a_bordo.is_some() && !no_leme;
+            if a_bordo.is_some() {
+                // No mount on a deck.
+                session.montado = false;
+            }
+            let aqui = match a_bordo.filter(|_| capitao) {
+                Some(c) => self.ecs.get::<&Position>(c.navio).map_or(aqui, |p| p.0),
+                None => aqui,
+            };
+            if let Some(c) = a_bordo.filter(|_| no_conves && capitao) {
+                let (v, giro, arranque) = GameWorld::manobra_no_mar(session);
+                let rumo = if session.rota.vazia() {
+                    None
+                } else {
+                    shared::navio::direcao_na_rota(&mut session.rota, &session.leme_do_mar, aqui, v, giro, arranque)
+                };
+                let rumo = rumo.unwrap_or(Vec2::ZERO);
+                let quer = rumo.length().min(1.0) * GameWorld::velocidade_no_mar(session, sim_agora_mar);
+                let vel = session.leme_do_mar.governa(rumo, quer, v, giro, arranque, dt);
+                governo_dos_navios.push((c.navio, vel));
+            }
             let mut veio_da_rota = false;
             // AUTO COMBAT AT SEA: with the stick idle and no route, the
-            // server's pilot steers the hull (`piloto_do_mar`).
-            if no_mar && frame.move_dir.length_squared() <= 0.01 && session.rota.vazia() {
+            // server's pilot steers the hull (`piloto_do_mar`) — from the helm.
+            if no_leme && frame.move_dir.length_squared() <= 0.01 && session.rota.vazia() {
                 if let Some(leme) = session.piloto.leme() {
                     frame.move_dir = leme;
                 }
             }
-            if frame.move_dir.length_squared() <= 0.01 && !session.rota.vazia() {
+            if frame.move_dir.length_squared() <= 0.01 && !session.rota.vazia() && !no_conves {
                 // Mid-jump or in the jump cooldown is the climb working, not
                 // the route failing (`SeguidorDeRota::aguenta`).
                 if self.sim_time_s < session.pulo_pronto_em {
@@ -10348,7 +10400,7 @@ impl GameWorld {
                 // At sea the hull has a turning circle: the follower slows it
                 // into a sharp corner instead of orbiting the waypoint
                 // (`navio::direcao_na_rota`).
-                let rumo_da_rota = if no_mar {
+                let rumo_da_rota = if no_leme {
                     let (v, giro, arranque) = GameWorld::manobra_no_mar(session);
                     shared::navio::direcao_na_rota(&mut session.rota, &session.leme_do_mar, aqui, v, giro, arranque)
                 } else {
@@ -10609,6 +10661,9 @@ impl GameWorld {
                 || in_hurt
                 || was_dashing
                 || casting
+                // At the wheel the hands are on it: the guns fire, not the
+                // sword (the walkable deck).
+                || no_leme
             {
                 false
             } else {
@@ -10684,9 +10739,10 @@ impl GameWorld {
                 PLAYER_SPEED * shared::DOWNED_SPEED_MULT * spd_scale
             } else if session.carrying.is_some() {
                 PLAYER_SPEED * 0.5 * spd_scale
-            } else if no_mar {
-                // AT SEA THE HULL MOVES (docs/NAVEGACAO.md): one speed, the
-                // ship's, no mount and no sprint — no legs on the water.
+            } else if no_leme {
+                // AT THE HELM THE HULL MOVES (docs/NAVEGACAO.md): one speed,
+                // the ship's, no mount and no sprint. Off the helm the body
+                // walks the deck at the land's speed.
                 // Class x sail stars, and the Smoke's burst (phase 2).
                 GameWorld::velocidade_no_mar(session, sim_agora_mar)
             } else {
@@ -10804,14 +10860,19 @@ impl GameWorld {
                 Vec2::ZERO
             } else if session.knockback_until > self.sim_time_s {
                 session.knockback_vel
-            } else if no_mar {
+            } else if no_leme {
                 // TURNING INERTIA (16/11/2026, owner: "a rotação do barco tem
                 // que ser um pouco mais blocada"): the stick, the route or
                 // the pilot say where to go; the helm turns the heading
                 // there at the class's rate, slows in a hard turn and ramps
-                // the speed (`navio::Leme::governa`).
+                // the speed (`navio::Leme::governa`). It is the SHIP's
+                // velocity; the helmsman stands at the wheel.
                 let (v_navio, giro, arranque) = GameWorld::manobra_no_mar(session);
-                session.leme_do_mar.governa(dir, dir.length().min(1.0) * speed, v_navio, giro, arranque, dt)
+                let v = session.leme_do_mar.governa(dir, dir.length().min(1.0) * speed, v_navio, giro, arranque, dt);
+                if let Some(c) = a_bordo {
+                    governo_dos_navios.push((c.navio, v));
+                }
+                Vec2::ZERO
             } else {
                 dir * speed
             };
@@ -10941,15 +11002,9 @@ impl GameWorld {
         // ...and it hunts from the ship's SIDES (`navio::ponto_no_costado`):
         // each hull's heading and velocity, by its captain's entity.
         let no_mar_ia = self.no_mar();
-        let navios_da_ia: HashMap<EntityId, (Vec2, Vec2)> = if no_mar_ia {
-            self.sessions
-                .values()
-                .filter(|s| s.logged_in)
-                .filter_map(|s| s.leme_do_mar.rumo().map(|r| (s.entity_id, (r, s.leme_do_mar.velocidade()))))
-                .collect()
-        } else {
-            HashMap::new()
-        };
+        // The walkable deck: a player aboard is hunted as the SHIP under
+        // them (its centre, heading, velocity and size).
+        let navios_da_ia = self.alvos_no_mar();
 
         let mobs_preparando: HashMap<_, _> = self
             .pending_melee
@@ -11071,6 +11126,12 @@ impl GameWorld {
             if nearest.is_none() {
                 enemy.ai_target = None;
             }
+            // Aboard, the prey is the HULL: its nearest point to this mob
+            // (the bite reaches the ship whoever it picked on deck).
+            let nearest = nearest.map(|(id, p)| match navios_da_ia.get(&id) {
+                Some(a) => (id, conves::casco_mais_perto(a, pos.0)),
+                None => (id, p),
+            });
 
             // Leash + state machine:
             //  1. Inside leash_max → wander/chase livre.
@@ -11207,8 +11268,9 @@ impl GameWorld {
                     } else {
                         None
                     };
-                    if let Some((rumo_navio, vel_navio)) = costado {
-                        let agora_lado = navio::lado_do_costado(*ppos, rumo_navio, pos.0, enemy.ai_strafe_sign);
+                    if let Some(alvo_mar) = costado {
+                        let (centro, rumo_navio, vel_navio) = (alvo_mar.centro, alvo_mar.rumo, alvo_mar.vel);
+                        let agora_lado = navio::lado_do_costado(centro, rumo_navio, pos.0, enemy.ai_strafe_sign);
                         if now_sim >= enemy.ai_strafe_flip_at {
                             // Now and then it crosses to the other side.
                             let sorte = lcg_f32(lcg(self.tick as u64 ^ (net.0 .0 as u64).wrapping_mul(0x9E37_79B9)));
@@ -11221,7 +11283,17 @@ impl GameWorld {
                             }
                         }
                         let morde = enemy.attack_cooldown <= navio::MORDE_EM_S;
-                        let ponto = navio::ponto_no_costado(*ppos, rumo_navio, vel_navio, pos.0, enemy.ai_strafe_sign, morde, enemy.attack_range);
+                        let ponto = navio::ponto_no_costado_do_casco(
+                            centro,
+                            rumo_navio,
+                            vel_navio,
+                            pos.0,
+                            enemy.ai_strafe_sign,
+                            morde,
+                            enemy.attack_range,
+                            shared::conves::meia_boca(alvo_mar.classe),
+                            shared::conves::meio_comp(alvo_mar.classe),
+                        );
                         let carga = if provocado { carga_do_nivel(enemy.nivel_da_faixa) } else { 1.0 };
                         vel.0 = navio::velocidade_ao_costado(pos.0, ponto, vel_navio, enemy.locomotor_speed * carga);
                     }
@@ -11556,6 +11628,11 @@ impl GameWorld {
                 vel.0 = Vec2::ZERO;
             }
         }
+        for (navio, v) in governo_dos_navios {
+            if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(navio) {
+                vel.0 = v;
+            }
+        }
         for ir in input_results {
             if let Ok(mut vel) = self.ecs.get::<&mut Velocity>(ir.entity) {
                 vel.0 = ir.new_vel;
@@ -11567,9 +11644,9 @@ impl GameWorld {
                     tag.attack_anim_pending = Some(shared::attack_anim::DASH);
                 }
             }
-            // AT SEA THE CANNONS ARE THE WEAPONS (gameplay remake): no sword
-            // swing or arrow out of a hull — the ship's bar does the fighting.
-            if ir.wants_attack && !self.no_mar() {
+            // On a walkable deck the weapons work as on land (17/11/2026);
+            // at the helm `wants_attack` is already off.
+            if ir.wants_attack {
                 let pos = self
                     .ecs
                     .get::<&Position>(ir.entity)
@@ -11928,6 +12005,9 @@ impl GameWorld {
         // PEACEFUL WATERS at sea: which hulls are barred, which are pushed
         // out (`aguas_pacificas::barreira_pacifica`).
         let barreira = self.barreira_pacifica();
+        // Everyone aboard walks in deck space (`mover_navios_e_conves`).
+        let corpos_a_bordo: std::collections::HashSet<Entity> =
+            self.sessions.values().filter(|s| s.conves.is_some()).filter_map(|s| s.entity).collect();
         let mut bateu_na_barreira: Vec<Entity> = Vec::new();
         let mut corpos: Vec<(Entity, Vec2, f32)> = Vec::new();
         // Instancia de dungeon de cada corpo (0 = mundo): corpos de fases
@@ -11948,6 +12028,9 @@ impl GameWorld {
             )>()
             .iter()
         {
+            if corpos_a_bordo.contains(&e) {
+                continue;
+            }
             let camada = camada.map_or(shared::terreno::CAMADA_CHAO, |c| c.0);
             camada_do_corpo.push(camada);
             // Bodies on different floors neither push nor block each other:
@@ -12096,6 +12179,8 @@ impl GameWorld {
             .map(|(_, (p, _))| p.0)
             .collect();
         CORPOS_NO_DECK.with(|v| *v.borrow_mut() = no_deck);
+        // THE SHIPS SAIL, AND THE DECKS RIDE ALONG (`world/conves.rs`).
+        self.mover_navios_e_conves(dt, &barreira);
 
         // Projéteis não têm Solido: precisam de integração própria, sem o
         // deslizamento/empurrão dos corpos. Sem isso ficavam na origem até
@@ -12168,6 +12253,8 @@ impl GameWorld {
         // Hitbox base (~0.6 raio centrado no peito), escalado por size_scale
         // do alvo dentro dos loops abaixo — boss 2.2× tem hitbox 2.2× maior.
         let hit_target_radius = shared::HIT_TARGET_RADIUS;
+        // A sea mob's bite on someone aboard lands on their ship's hull.
+        let cascos_dos_alvos = self.alvos_no_mar();
         let mut hit_projs: Vec<(Entity, EntityId)> = Vec::new();
         // Tipo de ataque: melee (katana, Thirst, stagger), projectile (esquiva)
         // ou skill (Life Drain, telegraficos).
@@ -12245,7 +12332,10 @@ impl GameWorld {
                     let range_sq = melee_max * melee_max;
                     // Hit-point do alvo: peito (Y+offset), não os pés.
                     // O mundo usa X/Z: altura do peito nao desloca o alvo no chao.
-                    let target_hit = *tpos;
+                    let target_hit = match cascos_dos_alvos.get(tnet).filter(|_| !sw.from_player && *is_player) {
+                        Some(a) => conves::casco_mais_perto(a, sw.pos),
+                        None => *tpos,
+                    };
                     let delta = target_hit - sw.pos;
                     let d2 = delta.length_squared();
                     if d2 > range_sq {
@@ -14008,6 +14098,12 @@ impl GameWorld {
         let mut renascimentos_de: HashMap<EntityId, u8> = HashMap::new();
         // Marked ships at sea (naval phase 4): the skull flag, the red name.
         let marcados = self.marcados();
+        // At sea, the look of each player's SHIP rides on the free bytes of
+        // `skins` (naval phase 2, `navio::Visual`). Read before the loop: a
+        // changed look re-sends the meta like a changed aura does.
+        let navio_de = self.visuais_dos_navios();
+        let nome_do_capitao: HashMap<SessionId, String> =
+            self.sessions.iter().map(|(id, s)| (*id, s.name.clone())).collect();
         let agora_pk = self.sim_time_s;
         for s in self.sessions.values_mut().filter(|s| s.logged_in) {
             let pk = shared::PkState {
@@ -14046,6 +14142,19 @@ impl GameWorld {
                 s.auras_vistas = auras;
                 alterados.push(s.entity_id);
             }
+            // THE SHIP'S LOOK (17/11/2026): a new hull, a star (brass trim) or
+            // a sail/figurehead applied at sea used to show only to whoever
+            // came into view afterwards — the meta goes out on entering view.
+            // Since the walkable deck the look rides on the SHIP's entity.
+            let (navio_eid, navio) = s
+                .conves
+                .filter(|c| c.capitao == s.handle.id)
+                .map(|c| (c.navio_eid, navio_de.get(&c.navio_eid).copied().unwrap_or(0)))
+                .unwrap_or((s.entity_id, 0));
+            if navio != s.navio_visto {
+                s.navio_visto = navio;
+                alterados.push(navio_eid);
+            }
         }
         for s in self.sessions.values_mut() {
             for id in &alterados { s.last_sent.remove(id); }
@@ -14063,9 +14172,6 @@ impl GameWorld {
                 (s.entity_id, (a.empacota(), a.empacota_skins()))
             })
             .collect();
-        // At sea, the look of each player's SHIP rides on the free bytes of
-        // `skins` (naval phase 2, `navio::Visual`).
-        let navio_de = self.visuais_dos_navios();
         let nivel_de: HashMap<EntityId, u16> = self
             .sessions
             .values()
@@ -14167,14 +14273,16 @@ impl GameWorld {
                 Option<&ProjTag>,
                 Option<&NpcDaVilaTag>,
                 Option<&shared::Camada>,
+                Option<&conves::NavioEnt>,
             )>()
             .iter()
             .map(
                 |(
                     _,
-                    (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag, projtag, vila_tag, camada),
+                    (net, pos, vel, kind, hp, ptag, vtag, wtag, etag, ltag, projtag, vila_tag, camada, navio_ent),
                 )| {
                     let tag = match kind {
+                        EntityKind::Navio(_) => shared::EntityTag::Navio,
                         EntityKind::Player => shared::EntityTag::Player,
                         EntityKind::Enemy(_) => shared::EntityTag::Enemy,
                         EntityKind::Projectile => shared::EntityTag::Projectile,
@@ -14189,6 +14297,8 @@ impl GameWorld {
                         .or_else(|| vtag.map(|v| v.name.clone()))
                         .or_else(|| wtag.map(|w| w.name.clone()))
                         .or_else(|| vila_tag.map(|t| t.nome.clone()))
+                        // A ship carries its captain's name ("Board X's ship").
+                        .or_else(|| navio_ent.and_then(|n| nome_do_capitao.get(&n.dono).cloned()))
                         // O nome do bicho e' o da TABELA. Havia um gerador de
                         // nome por "tema de tier" aqui; mob nao tem tier nem tema.
                         .or_else(|| {
@@ -14252,6 +14362,8 @@ impl GameWorld {
                             EntityKind::Player => montaria_de.get(&net.0).map_or(0, |m| m.1),
                             // Pet: o item_id, que ja' diz especie e grau.
                             EntityKind::Pet(id) => *id,
+                            // Ship: the hull's item (the class).
+                            EntityKind::Navio(id) => *id,
                             _ => 0,
                         },
                         // So' jogador tem aparencia; o resto manda zero, que
@@ -14278,12 +14390,16 @@ impl GameWorld {
                     state.camada = camada.map_or(0, |c| c.0);
                     state.rumo = crate::rumo::escolhe(
                         pos.0,
-                        if no_mar { None } else { mira_de.get(&net.0).copied() },
+                        mira_de.get(&net.0).copied(),
                         etag.filter(|_| flags & shared::ent_flags::ATACANDO != 0)
                             .map(|t| t.attack_dir),
                         vel.0,
                         vila_tag.and_then(|t| shared::npc_yaw_de_kind(t.rumo)),
                     );
+                    // A ship's bow is its helm's heading, moving or not.
+                    if let Some(n) = navio_ent {
+                        state.rumo = shared::components::rumo_de_dir(n.rumo);
+                    }
                     (meta, state)
                 },
             )
@@ -15527,30 +15643,6 @@ impl GameWorld {
         }
     }
 
-    /// Terminou a conversa com o Capitao do Porto num passo de VIAGEM: embarca
-    /// pra ilha do passo, se houver canal dela no ar.
-    fn viagem_da_historia(&mut self, sid: SessionId, meio: shared::viagem::Meio) {
-        use shared::quests::{objective_kind, quest_status};
-        let Some(s) = self.sessions.get(&sid) else {
-            return;
-        };
-        let Some(cq) = crate::quests::passo_atual(&s.quests) else {
-            return;
-        };
-        if cq.status != quest_status::ACTIVE {
-            return;
-        }
-        let Some(def) = shared::quests::quest_by_id(cq.quest_id)
-            .filter(|d| d.obj_kind == objective_kind::VIAGEM)
-        else {
-            return;
-        };
-        if !shared::viagem::rota_permitida(&self.zona, def.obj_target as usize, meio) {
-            return;
-        }
-        self.embarcar(sid, def.obj_target as usize);
-    }
-
     /// Embarca pra ilha `ilha` do `ARQUIPELAGO`: grava a chegada no porto de
     /// la' e manda o cliente reconectar no canal dela. `false` = nao
     /// embarcou (mesma ilha, ou ilha sem canal no ar — o jogador e' avisado).
@@ -15560,14 +15652,16 @@ impl GameWorld {
         let Some(dest) = shared::terreno::ARQUIPELAGO.get(ilha) else {
             return false;
         };
-        // Desembarque sempre no porto da ilha de destino.
-        let ger = shared::terreno::Gerador::da_ilha(dest);
-        let chegada = ger
-            .porto()
-            .map(|p| p.centro)
-            .or_else(|| ger.cidade().map(|c| c.centro()))
-            .unwrap_or(Vec2::ZERO);
-        let aviso = format!("You set sail for {}.", dest.nome);
+        // THE ISLAND PORTAL (17/11/2026): the trip arrives at the destination
+        // town's portal, on the open ground in front of it — not at the dock.
+        let chegada = shared::portal_ilhas::da_zona(dest.zona).map(|(_, c)| c).unwrap_or_else(|| {
+            let ger = shared::terreno::Gerador::da_ilha(dest);
+            ger.porto()
+                .map(|p| p.centro)
+                .or_else(|| ger.cidade().map(|c| c.centro()))
+                .unwrap_or(Vec2::ZERO)
+        });
+        let aviso = format!("The Island Portal carries you to {}.", dest.nome);
         self.mandar_para_zona(sid, dest.zona, chegada, Some(&aviso), Some(dest.nome))
     }
 
@@ -15791,18 +15885,36 @@ impl GameWorld {
             .unwrap_or(false)
     }
 
-    /// How the entity takes you (captain, bus, submarine), if it does.
-    fn meio_do_npc(&self, e: hecs::Entity) -> shared::viagem::Meio {
-        self.ecs
-            .get::<&NpcDaVilaTag>(e)
-            .ok()
-            .and_then(|t| shared::viagem::Meio::do_papel(shared::npc_papel_de_kind(t.rumo)))
-            .unwrap_or(shared::viagem::Meio::Capitao)
+    /// Near this town's ISLAND PORTAL (`shared::portal_ilhas`)? The door of
+    /// every trip between islands since 17/11/2026.
+    pub(crate) fn perto_do_portal(&self, sid: SessionId) -> bool {
+        let (Some(eu), Some((portal, _))) = (self.pos_do_jogador(sid), shared::portal_ilhas::da_zona(&self.zona)) else {
+            return false;
+        };
+        eu.distance(portal) <= shared::portal_ilhas::PERTO
     }
 
-    /// Clique no Capitao do Porto sem passo de viagem da historia: o menu
-    /// "Travel", com toda ilha e se da' pra ir.
-    fn abrir_menu_viagem(&self, sid: SessionId, meio: shared::viagem::Meio) {
+    /// `AbrirPortal`: the player walked into (or tapped) the portal.
+    pub(crate) fn handle_abrir_portal(&mut self, sid: SessionId) {
+        if self.tutorial_mode || self.dungeon_mode {
+            return;
+        }
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        if !s.logged_in || s.instancia != 0 || s.downed {
+            return;
+        }
+        if !self.perto_do_portal(sid) {
+            self.avisa_missao(sid, "Step into the Island Portal in town to travel.".into());
+            return;
+        }
+        self.abrir_menu_viagem(sid);
+    }
+
+    /// The ISLAND PORTAL's "Travel" menu: every island, with its price and
+    /// whether the story has opened it.
+    pub(crate) fn abrir_menu_viagem(&self, sid: SessionId) {
         let Some(s) = self.sessions.get(&sid) else {
             return;
         };
@@ -15817,16 +15929,11 @@ impl GameWorld {
         // NO LEVEL LOCK ON TRAVEL (stage A, docs/RESET.md): islands open by
         // the story only. A new player still reaches the Glacier at 20 —
         // the story's own "Reach level 20" step (`historia::TRAVA_DO_BARCO`)
-        // comes first — and a reset character, story done, sails anywhere.
-        let mut destinos = shared::viagem::destinos(&self.zona, indice, &no_ar, meio);
+        // comes first — and a reset character, story done, travels anywhere.
+        let mut destinos = shared::viagem::destinos_do_portal(&self.zona, indice, &no_ar);
         // The story's own trip is free (`handle_viajar`): the button says so.
-        if let Some(alvo) = crate::quests::passo_atual(&s.quests)
-            .filter(|c| c.status == shared::quests::quest_status::ACTIVE)
-            .and_then(|c| shared::quests::quest_by_id(c.quest_id))
-            .filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM)
-            .map(|d| d.obj_target as u8)
-        {
-            for d in destinos.iter_mut().filter(|d| d.ilha == alvo) {
+        if let Some(alvo) = self.ilha_da_viagem_da_historia(sid) {
+            for d in destinos.iter_mut().filter(|d| d.ilha as usize == alvo) {
                 d.preco = 0;
             }
         }
@@ -15835,11 +15942,28 @@ impl GameWorld {
             // removed 15/11/2026: a Minha Ilha saiu do jogo.
             colonia: false,
         });
-        // THE SHIP comes with EVERY travel NPC's menu (docs/NAVEGACAO.md;
-        // the bus and the submarine too since 16/11/2026): "Sail", "Repair"
-        // and the Shipwright are on the same panel.
-        let _ = meio;
-        self.envia_estado_navio(sid);
+    }
+
+    /// The island of the active story "Bound for…" step, if that is the step.
+    fn ilha_da_viagem_da_historia(&self, sid: SessionId) -> Option<usize> {
+        let s = self.sessions.get(&sid)?;
+        crate::quests::passo_atual(&s.quests)
+            .filter(|c| c.status == shared::quests::quest_status::ACTIVE)
+            .and_then(|c| shared::quests::quest_by_id(c.quest_id))
+            .filter(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM)
+            .map(|d| d.obj_target as usize)
+    }
+
+    /// THE SHIPYARD: a dock NPC was clicked. Ships only (17/11/2026): the
+    /// state of the ship in the Ship slot, for Sail / Repair / Upgrade /
+    /// Build / Cosmetics.
+    pub(crate) fn abrir_estaleiro(&self, sid: SessionId) {
+        let Some(s) = self.sessions.get(&sid) else {
+            return;
+        };
+        let zarpar = shared::mar::vista_da_zona(&self.zona).is_some();
+        let estado = shared::navio::EstadoNavio::de(s.equipment.navio, s.equipment.navio_inst.as_ref(), zarpar);
+        let _ = s.handle.to_client.send(ServerMessage::AbrirEstaleiro { estado });
     }
 
     /// "Board" no menu do Capitao: perto dele, ilha liberada pela
@@ -15859,30 +15983,16 @@ impl GameWorld {
             return;
         };
         let _ = eu;
-        let Some(meio) = self.quem_viaja_perto(sid) else {
-            self.avisa_missao(
-                sid,
-                "Fale com o Capitão do Porto, no cais, para embarcar.".into(),
-            );
+        // THE ISLAND PORTAL is the only door (17/11/2026): the dock NPCs
+        // manage and sail ships, they no longer carry anyone.
+        if !self.perto_do_portal(sid) {
+            self.avisa_missao(sid, "Step into the Island Portal in town to travel.".into());
             return;
-        };
+        }
         let i = ilha as usize;
         let Some(dest) = shared::terreno::ARQUIPELAGO.get(i) else {
             return;
         };
-        if !shared::viagem::rota_permitida(&self.zona, i, meio) {
-            let aviso = if shared::abissal::e_abissal(dest.zona) {
-                "Only the Submarine Captain on Kōgen-tō's docks dives to Abyssia."
-            } else if shared::kogen::e_kogen(dest.zona) {
-                "Only the Sky Bus Professor in Skyreach flies to Kōgen-tō."
-            } else if meio == shared::viagem::Meio::Submarino {
-                "From here the submarine only dives to Abyssia."
-            } else {
-                "The Sky Bus only flies to Kōgen-tō from here."
-            };
-            self.avisa_missao(sid, aviso.into());
-            return;
-        }
         if !shared::viagem::liberada(i, indice) {
             let passo = shared::viagem::passo_que_libera(i)
                 .map(|(_, t)| format!(" (unlocks at \"{t}\")"))
@@ -15899,13 +16009,8 @@ impl GameWorld {
         // The story's own trip (the active "Bound for…" step to this very
         // island) stays free: the auto quest boards through this menu, and
         // a new player without copper must never be stuck on the story.
-        let da_historia = self.sessions.get(&sid).is_some_and(|s| {
-            crate::quests::passo_atual(&s.quests)
-                .filter(|c| c.status == shared::quests::quest_status::ACTIVE)
-                .and_then(|c| shared::quests::quest_by_id(c.quest_id))
-                .is_some_and(|d| d.obj_kind == shared::quests::objective_kind::VIAGEM && d.obj_target as usize == i)
-        });
-        let preco = if da_historia { 0 } else { shared::viagem::preco(i, meio) };
+        let da_historia = self.ilha_da_viagem_da_historia(sid) == Some(i);
+        let preco = if da_historia { 0 } else { shared::viagem::preco_do_portal(&self.zona, i) };
         if preco > 0 && dest.zona != self.zona {
             let tem = self
                 .sessions
@@ -16795,102 +16900,39 @@ impl GameWorld {
             self.avisa_missao(sid, "Get closer to talk.".into());
             return;
         }
-        // The flying-bus driver and the submarine captain: the story's trips
-        // to Kōgen-tō and to Abyssia leave here.
-        if nome == shared::construcao::Papel::Motorista.nome() {
-            self.viagem_da_historia(sid, shared::viagem::Meio::Onibus);
-            self.send_quest_givers(sid);
-            return;
-        }
-        if nome == shared::construcao::Papel::Submarino.nome() {
-            self.viagem_da_historia(sid, shared::viagem::Meio::Submarino);
-            self.send_quest_givers(sid);
-            return;
-        }
         let Some(papel) = shared::quests::papel_de_conversa(&nome) else {
             return;
         };
         self.quest_on_talk(sid, papel);
-        if papel == shared::construcao::Papel::Estaleiro as u16 {
-            self.viagem_da_historia(sid, shared::viagem::Meio::Capitao);
-        }
         self.send_quest_givers(sid);
     }
 
-    /// Manda o auto caminho da missao `quest_id` ate' o Capitao do Porto desta
-    /// ilha (passo de viagem, ou passo que acontece noutra ilha). `false` =
-    /// ilha sem Capitao.
+    /// Sends the auto quest of `quest_id` to this town's ISLAND PORTAL (a
+    /// travel step, or a step that happens on another island). It is a
+    /// PLACE (`destino_tipo::LUGAR`) at the portal's centre: the auto quest
+    /// walks into it, the walk-in opens the travel menu, and the auto quest
+    /// boards (`auto_missao::rumo`). `false` = no portal here.
     fn destino_no_capitao(&self, sid: SessionId, quest_id: u16) -> bool {
-        // Who takes the player there: the Sky Bus Professor for Kōgen-tō
-        // from Skyreach (captains never fly there) and for anywhere from
-        // Kōgen-tō; the Harbour Captain otherwise. The auto quest walked to
-        // the Captain, who refused, and the step went round in circles.
-        // Abyssia: the Submarine Captain (from Kōgen-tō, and back from it).
-        let destino = shared::quests::quest_by_id(quest_id).and_then(|d| {
-            if d.obj_kind == shared::quests::objective_kind::VIAGEM {
-                Some(d.obj_target as usize)
-            } else {
-                let z = shared::quests::zona_da_missao(quest_id)?;
-                shared::terreno::ARQUIPELAGO.iter().position(|a| a.zona == z)
-            }
-        });
-        let papel = destino
-            .and_then(|i| shared::viagem::meio_para(&self.zona, i))
-            .map(|m| m.papel())
-            .unwrap_or(if shared::kogen::e_kogen(&self.zona) {
-                shared::construcao::Papel::Motorista
-            } else {
-                shared::construcao::Papel::Estaleiro
-            });
-        let Some(p) = self.ilha.as_ref().and_then(|ilha| {
-            ilha.vila()
-                .npcs
-                .iter()
-                .find(|n| n.papel == papel)
-                .map(|n| n.pos)
-        }) else {
+        let Some((p, _)) = shared::portal_ilhas::da_zona(&self.zona) else {
             return false;
         };
-        let eid = self
-            .ecs
-            .query::<(&NetId, &Position, &EntityKind)>()
-            .iter()
-            .filter(|(_, (_, _, k))| matches!(k, EntityKind::Npc(_)))
-            .filter(|(_, (_, pos, _))| pos.0.distance_squared(p) < 4.0)
-            .min_by(|a, b| {
-                a.1 .1
-                     .0
-                    .distance_squared(p)
-                    .total_cmp(&b.1 .1 .0.distance_squared(p))
-            })
-            .map(|(_, (n, _, _))| n.0 .0 as u64);
         if let Some(s) = self.sessions.get(&sid) {
             let _ = s.handle.to_client.send(ServerMessage::QuestDestino {
                 quest_id,
-                tipo: shared::quests::destino_tipo::NPC,
+                tipo: shared::quests::destino_tipo::LUGAR,
                 pos: [p.x, p.y],
-                raio: shared::INTERACT_RADIUS,
-                npc_eid: eid,
+                raio: 0.0,
+                npc_eid: None,
             });
         }
         true
     }
 
     /// How to reach island `z` from here, for a quest that happens there:
-    /// "<o que> happens on <island>. <who takes you>".
+    /// "<o que> happens on <island>. Use the Island Portal in town."
     fn como_chegar(&self, z: &str, o_que: &str) -> String {
         let ilha = shared::terreno::def_da_zona(z).map_or(z, |d| d.nome);
-        if shared::abissal::e_abissal(z) && shared::kogen::e_kogen(&self.zona) {
-            format!("{o_que} happens in {ilha}. The Submarine Captain dives there from the Docks.")
-        } else if shared::abissal::e_abissal(z) {
-            format!("{o_que} happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.")
-        } else if shared::kogen::e_kogen(z) && shared::celeste::e_celeste(&self.zona) {
-            format!("{o_que} happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.")
-        } else if shared::kogen::e_kogen(z) {
-            format!("{o_que} happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.")
-        } else {
-            format!("{o_que} happens on {ilha}. Set sail with the Harbour Captain.")
-        }
+        format!("{o_que} happens on {ilha}. Use the Island Portal in town.")
     }
 
     /// Onde fica o objetivo da missao `quest_id` do jogador (auto missao).
@@ -18572,7 +18614,7 @@ impl GameWorld {
             return None;
         }
         if self.e_capitao(e) {
-            return Some("Travel");
+            return Some("Shipyard");
         }
         if self.e_estivador(e) {
             return Some("Bank");
@@ -18838,8 +18880,10 @@ impl GameWorld {
                 }
                 // O Capitao do Porto leva a qualquer ilha que a historia ja'
                 // liberou — ir e voltar (`shared::viagem`).
+                // THE DOCK NPCs open the SHIPYARD (17/11/2026): ships only.
+                // Trips between islands are the Island Portal's.
                 if self.e_capitao(entity) && !self.tutorial_mode && !self.dungeon_mode {
-                    self.abrir_menu_viagem(sid, self.meio_do_npc(entity));
+                    self.abrir_estaleiro(sid);
                 }
                 // O Banqueiro guarda o banco (docs/BANCO.md).
                 if self.e_estivador(entity) {

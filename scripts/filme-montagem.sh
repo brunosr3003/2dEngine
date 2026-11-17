@@ -9,7 +9,8 @@
 #
 # FILME_CORTES="mar:0.5:8 celeste:1.5:6 ..." replaces the cut list (the ad,
 # docs/FILME.md); FILME_FADE the crossfade in seconds; FILME_ESCALA=1920:1080
-# downscales (a capture rendered larger comes out crisper).
+# downscales (a capture rendered larger comes out crisper); FILME_CRF and
+# FILME_PRESET the x264 quality (20, slow).
 set -euo pipefail
 dir=${1:?dir}
 tam=${2:?size, e.g. 16x9}
@@ -54,6 +55,6 @@ for c in "${cortes[@]}"; do
   n=$((n + 1))
 done
 [ "$n" -gt 0 ] || { echo "no films in $dir"; exit 1; }
-ffmpeg -y -loglevel error "${args[@]}" -filter_complex "${filtros%;}" -map "[$anterior]" -an \
-  -c:v libx264 -preset slow -crf 20 -pix_fmt yuv420p -r 60 -movflags +faststart "$out"
+ffmpeg -y -nostdin -loglevel error "${args[@]}" -filter_complex "${filtros%;}" -map "[$anterior]" -an \
+  -c:v libx264 -preset "${FILME_PRESET:-slow}" -crf "${FILME_CRF:-20}" -pix_fmt yuv420p -r 60 -movflags +faststart "$out"
 echo "$out"

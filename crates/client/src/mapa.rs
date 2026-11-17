@@ -863,6 +863,9 @@ fn gerar_dados(def: &'static DefIlha) -> Dados {
         .into_iter()
         .filter_map(|(id, p)| shared::dungeon::conteudo(id).map(|c| (c.nome, p)))
         .collect();
+    // THE ISLAND PORTAL: found here, off the frame (the search reads the
+    // village and the relief); the map, the 3D and the walk-in read the cache.
+    let _ = crate::portal_ilhas_ui::aquecer(def.zona);
     Dados {
         rgba,
         pegadas,
@@ -1244,8 +1247,11 @@ fn casco_no_mapa(c: Vec2, yaw: f32, s: f32, cor: Color) {
 /// own ship last, a gold hull along its heading. `visivel` culls to the
 /// disc; `k` is the map's icon scale.
 fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(Vec2) -> bool, k: f32) {
+    // The walkable deck: the SHIPS are the entities drawn as hulls; mine is
+    // the one I stand on.
+    let meu = world.casco_do_eu().map(|e| e.meta.id);
     for (id, e) in &world.ents {
-        if Some(*id) == world.self_id || e.morte.is_some() {
+        if Some(*id) == world.self_id || Some(*id) == meu || e.morte.is_some() {
             continue;
         }
         let q = ponto(e.render_pos);
@@ -1261,7 +1267,7 @@ fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(V
                     barbatana(q, 5.2 * k, Color::new(1.0, 0.3, 0.26, 1.0));
                 }
             }
-            EntityTag::Player => {
+            EntityTag::Navio => {
                 let hostil = e.meta.pk.hostil || e.meta.pk.marcado;
                 let cor = if hostil { Color::new(1.0, 0.45, 0.4, 1.0) } else { Color::new(0.82, 0.9, 1.0, 1.0) };
                 casco_no_mapa(q, e.yaw, 6.5 * k, cor);
@@ -1273,7 +1279,7 @@ fn corpos_no_mar(world: &World, ponto: &dyn Fn(Vec2) -> Vec2, visivel: &dyn Fn(V
             _ => {}
         }
     }
-    if let Some(e) = world.self_id.and_then(|id| world.ents.get(&id)) {
+    if let Some(e) = world.casco_do_eu() {
         let rumo = crate::mar_ui::rumo_do_casco(e.state.vel_f32(), e.yaw);
         casco_no_mapa(ponto(e.render_pos), rumo.x.atan2(rumo.y), 9.0 * k, estilo::OURO);
     }
@@ -1565,6 +1571,21 @@ pub enum IconePorta {
 }
 
 pub const ICONE_PORTA: IconePorta = IconePorta::Caverna;
+
+/// The Island Portal on the map: a sea-blue ring in a gold rim, a small
+/// island in it, and its name under it.
+fn portal_no_mapa(q: Vec2, lado: f32, fonte: u16) {
+    let azul = crate::portal_ilhas_ui::AZUL;
+    let ouro = crate::portal_ilhas_ui::OURO;
+    draw_circle(q.x, q.y, lado * 1.35, Color::new(0.0, 0.0, 0.0, 0.7));
+    draw_circle(q.x, q.y, lado * 1.15, ouro);
+    draw_circle(q.x, q.y, lado * 0.85, azul);
+    draw_circle(q.x, q.y + lado * 0.15, lado * 0.38, Color::new(0.38, 0.72, 0.36, 1.0));
+    draw_rectangle(q.x - lado * 0.38, q.y + lado * 0.15, lado * 0.76, lado * 0.2, Color::new(0.88, 0.8, 0.57, 1.0));
+    let nome = crate::portal_ilhas_ui::NOME;
+    let w = estilo::medir(nome, fonte);
+    estilo::texto(q.x - w * 0.5, q.y + lado * 1.35 + fonte as f32 * 0.95, nome, fonte, ouro);
+}
 
 fn porta_no_mapa(q: Vec2, lado: f32, nome: &str, fonte: u16, direita: bool) {
     icone_da_porta(ICONE_PORTA, q, lado);
@@ -2218,6 +2239,24 @@ impl Mapa {
             estilo::texto(area.x + u(6.0), ly + u(18.0), "Villages", 13, estilo::SUAVE);
         }
         ly += u(LINHA_IR);
+        if let Some(p) = self.portal_das_ilhas() {
+            let alvo = Alvo {
+                objetivo: Objetivo::Lugar,
+                pos: p,
+                raio: 0.0,
+                rotulo: crate::portal_ilhas_ui::NOME.to_string(),
+            };
+            linha(
+                crate::portal_ilhas_ui::NOME,
+                format!("{:.0} m", p.distance(eu)),
+                crate::portal_ilhas_ui::AZUL,
+                Ico::Atlas("porto"),
+                Some(alvo),
+                ly,
+                &mut saida,
+            );
+            ly += u(LINHA_IR);
+        }
         for (nome, p, raio) in &vilas {
             let alvo = Alvo {
                 objetivo: Objetivo::Lugar,
@@ -3017,6 +3056,13 @@ impl Mapa {
                 porta_no_mapa(q, (6.0f32).max(escala * 3.0), nome, 13, i % 2 == 0);
             }
         }
+        // The Island Portal, no filter either: it is how you leave.
+        if let Some(p) = self.portal_das_ilhas() {
+            let q = ponto(p);
+            if visivel(q) {
+                portal_no_mapa(q, (6.0f32).max(escala * 3.0), 12);
+            }
+        }
         let no_mar = self.zona().is_some_and(shared::mar::e_mar);
         for (id, e) in world.ents.iter().filter(|_| !no_mar) {
             if Some(*id) == world.self_id {
@@ -3249,29 +3295,23 @@ impl Mapa {
         }
     }
 
-    /// Who takes you from this island to `destino`, as a "Go to": whoever
-    /// has a route there (`viagem::meio_para`) — the Port Captain, the Sky
-    /// Bus Professor or the Submarine Captain.
+    /// The way from this island to `destino`, as a "Go to": the town's
+    /// ISLAND PORTAL, which goes to every island (17/11/2026). On arrival
+    /// the trip is asked for (`Objetivo::Embarcar`).
     fn quem_leva_para(&self, destino: &'static DefIlha) -> Option<Alvo> {
-        use shared::construcao::Papel;
-        use shared::viagem::Meio;
-        let aqui = self.zona()?;
         let idx = shared::terreno::ARQUIPELAGO.iter().position(|d| d.zona == destino.zona)?;
-        let direto = shared::viagem::meio_para(aqui, idx);
-        // No direct route (Kōgen-tō or Abyssia from far away): the first
-        // leg's NPC, whose menu shows where they do go.
-        let meio = direto.unwrap_or(if shared::kogen::e_kogen(aqui) { Meio::Onibus } else { Meio::Capitao });
-        let papel = meio.papel();
-        let npc = self.ger.as_ref()?.vila().npcs.iter().find(|n| n.papel == papel).map(|n| vec2(n.pos.x, n.pos.y))?;
-        let quem = Papel::nome(papel);
-        let (objetivo, rotulo) = match direto {
-            Some(_) => (Objetivo::Embarcar(idx as u8), format!("{quem} · to {}", destino.nome)),
-            None if shared::abissal::e_abissal(destino.zona) => {
-                (Objetivo::Npc, format!("{quem} · {} is reached from Kōgen-tō", destino.nome))
-            }
-            None => (Objetivo::Npc, format!("{quem} · {} is reached from Skyreach", destino.nome)),
-        };
-        Some(Alvo { objetivo, pos: npc, raio: 0.0, rotulo })
+        let p = self.portal_das_ilhas()?;
+        Some(Alvo {
+            objetivo: Objetivo::Embarcar(idx as u8),
+            pos: p,
+            raio: 0.0,
+            rotulo: format!("{} · to {}", crate::portal_ilhas_ui::NOME, destino.nome),
+        })
+    }
+
+    /// This island's Island Portal, once found.
+    pub fn portal_das_ilhas(&self) -> Option<Vec2> {
+        crate::portal_ilhas_ui::sitio(self.zona()?).map(|(p, _)| p)
     }
 
     /// O MAPA-MUNDI no lugar do mapa da ilha (`mundo_ui`).
@@ -3637,6 +3677,12 @@ impl Mapa {
         if self.camadas.portais {
             for (i, (nome, p)) in self.portas.iter().enumerate() {
                 porta_no_mapa(ponto(*p), u(7.0), nome, 14, i % 2 == 0);
+            }
+        }
+        // The Island Portal (the Travel layer).
+        if self.camadas.viagem {
+            if let Some(p) = self.portal_das_ilhas() {
+                portal_no_mapa(ponto(p), u(8.0), 14);
             }
         }
         // NPCs da vila (o `world` so' tem os de perto), with the NPCs layer.

@@ -1,4 +1,6 @@
-//! Ir e voltar entre as ilhas (menu "Travel" do Capitao do Porto) e o
+//! Ir e voltar entre as ilhas (the "Travel" menu — the ISLAND PORTAL of each
+//! town since 17/11/2026, `portal_ilhas`; until then the Harbour Captain, the
+//! Sky Bus Professor and the Submarine Captain) e o
 //! Pergaminho de Teleporte (salto pra um destino marcado DENTRO da ilha).
 //!
 //! Antes daqui a unica viagem era o passo de historia "Rumo a …": quem ia pra
@@ -152,18 +154,61 @@ pub fn preco(destino: usize, meio: Meio) -> u32 {
 }
 
 /// O menu inteiro: uma linha por ilha do arquipelago. `no_ar(zona)` diz se ha'
-/// canal daquela ilha rodando. `meio`: who opened it (`rota_permitida`
-/// decides which lines show).
+/// canal daquela ilha rodando. `meio`: who used to open it (the old NPC
+/// routes, `rota_permitida`). Kept for the record and the tests that pin the
+/// Island Portal to the same lists: since 17/11/2026 no NPC opens it.
 pub fn destinos(
     zona_atual: &str,
     indice_da_historia: Option<u32>,
     no_ar: &dyn Fn(&str) -> bool,
     meio: Meio,
 ) -> Vec<Destino> {
+    linhas(
+        zona_atual,
+        indice_da_historia,
+        no_ar,
+        &|i| rota_permitida(zona_atual, i, meio),
+        &|i| preco(i, meio),
+    )
+}
+
+/// THE ISLAND PORTAL's menu (`portal_ilhas`, 17/11/2026): EVERY island of the
+/// archipelago, from every town — the Captain's, the Sky Bus's and the
+/// submarine's trips in one list. Same story locks (`liberada`), same
+/// prices: what an old route charged (`preco_do_portal`).
+pub fn destinos_do_portal(
+    zona_atual: &str,
+    indice_da_historia: Option<u32>,
+    no_ar: &dyn Fn(&str) -> bool,
+) -> Vec<Destino> {
+    linhas(zona_atual, indice_da_historia, no_ar, &|_| true, &|i| preco_do_portal(zona_atual, i))
+}
+
+/// The portal's price to `destino` from `zona_atual`, in copper: the cheapest
+/// way the old travel NPCs went there (the Sky Bus and the submarine were
+/// free, the Captain charged `navio::preco_da_viagem`); a trip no NPC made
+/// (the Bosque straight to Kōgen-tō) follows the Captain's copper rule. The
+/// story's own trip is made free by the server (`handle_viajar`).
+pub fn preco_do_portal(zona_atual: &str, destino: usize) -> u32 {
+    [Meio::Submarino, Meio::Onibus, Meio::Capitao]
+        .into_iter()
+        .filter(|m| rota_permitida(zona_atual, destino, *m))
+        .map(|m| preco(destino, m))
+        .min()
+        .unwrap_or_else(|| crate::navio::preco_da_viagem(destino))
+}
+
+fn linhas(
+    zona_atual: &str,
+    indice_da_historia: Option<u32>,
+    no_ar: &dyn Fn(&str) -> bool,
+    vai: &dyn Fn(usize) -> bool,
+    custa: &dyn Fn(usize) -> u32,
+) -> Vec<Destino> {
     ARQUIPELAGO
         .iter()
         .enumerate()
-        .filter(|(i, d)| d.zona == zona_atual || rota_permitida(zona_atual, *i, meio))
+        .filter(|(i, d)| d.zona == zona_atual || vai(*i))
         .map(|(i, d)| {
             let estado = if d.zona == zona_atual {
                 estado::AQUI
@@ -183,7 +228,7 @@ pub fn destinos(
                 requisito: passo_que_libera(i)
                     .map(|(_, t)| t.to_string())
                     .unwrap_or_default(),
-                preco: preco(i, meio),
+                preco: custa(i),
             }
         })
         .collect()
@@ -261,5 +306,45 @@ mod testes {
         assert_eq!(meio_para(crate::kogen::ZONA, abissal), Some(Meio::Submarino));
         assert_eq!(meio_para(crate::abissal::ZONA, kogen), Some(Meio::Submarino));
         assert_eq!(meio_para("ilha_inicial", abissal), None);
+    }
+
+    /// THE PORTAL LISTS EVERY DESTINATION THE OLD NPCS DID, with the same
+    /// prices and the same locks — and every other island besides.
+    #[test]
+    fn o_portal_lista_tudo_que_os_npcs_levavam_com_o_mesmo_preco() {
+        let no_ar = |_: &str| true;
+        for d in ARQUIPELAGO.iter() {
+            for indice in [None, Some(0), Some(passo_que_libera(3).unwrap().0), Some(10_000)] {
+                let portal = destinos_do_portal(d.zona, indice, &no_ar);
+                assert_eq!(portal.len(), ARQUIPELAGO.len(), "{}: the portal lists every island", d.zona);
+                for meio in [Meio::Capitao, Meio::Onibus, Meio::Submarino] {
+                    for velho in destinos(d.zona, indice, &no_ar, meio) {
+                        let novo = portal.iter().find(|x| x.ilha == velho.ilha).expect("listed");
+                        assert_eq!(novo.estado, velho.estado, "{} -> {}: lock", d.zona, velho.nome);
+                        assert_eq!(novo.requisito, velho.requisito);
+                        // (The "you are here" row has no trip to price.)
+                        assert!(velho.estado == estado::AQUI || novo.preco <= velho.preco, "{} -> {}: dearer than {meio:?}", d.zona, velho.nome);
+                    }
+                }
+                for x in &portal {
+                    let i = x.ilha as usize;
+                    let velho = [Meio::Submarino, Meio::Onibus, Meio::Capitao]
+                        .into_iter()
+                        .filter(|m| rota_permitida(d.zona, i, *m))
+                        .map(|m| preco(i, m))
+                        .min();
+                    assert_eq!(x.preco, velho.unwrap_or(crate::navio::preco_da_viagem(i)), "{} -> {}", d.zona, x.nome);
+                }
+            }
+        }
+        // The Captain's copper rule where he sailed; the bus and the
+        // submarine stay free where they went.
+        let kogen = ARQUIPELAGO.iter().position(|d| crate::kogen::e_kogen(d.zona)).unwrap();
+        let abissal = ARQUIPELAGO.iter().position(|d| crate::abissal::e_abissal(d.zona)).unwrap();
+        assert_eq!(preco_do_portal("ilha_gelo", 0), 50);
+        assert_eq!(preco_do_portal(crate::celeste::ZONA, kogen), 0);
+        assert_eq!(preco_do_portal(crate::kogen::ZONA, abissal), 0);
+        assert_eq!(preco_do_portal("ilha_inicial", kogen), crate::navio::preco_da_viagem(kogen));
+        assert!(!ARQUIPELAGO.iter().any(|d| crate::magica::NIVEIS.iter().any(|n| n.zona == d.zona)), "the Magic Island stays off the portal");
     }
 }

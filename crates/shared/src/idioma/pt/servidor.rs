@@ -140,6 +140,8 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("Keep at it, sailor.", "Continua firme, marujo."),
     ("There is no path there.", "Não há caminho até ali."),
     ("You set sail for {}.", "Você embarca rumo a {}."),
+    ("The Island Portal carries you to {}.", "O Portal das Ilhas leva você a {}."),
+    ("Step into the Island Portal in town to travel.", "Entre no Portal das Ilhas da cidade para viajar."),
     ("[Pet] {nome} already has {}.", "[Pet] {nome} já tem {}."),
     ("too far from the vendor", "longe demais do vendedor"),
     ("The party invite expired.", "Convite de grupo expirou."),
@@ -360,44 +362,12 @@ pub const VERBETES: &[(&str, &str)] = &[
         "quem a deu",
     ),
     (
-        "Story: this step happens on {ilha}. Set sail with the Harbour Captain.",
-        "História: este passo acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
+        "Story: this step happens on {ilha}. Use the Island Portal in town.",
+        "História: este passo acontece em {ilha}. Use o Portal das Ilhas da cidade.",
     ),
     (
-        "Story: this step happens in {ilha}. The Submarine Captain dives there from the Docks.",
-        "História: este passo acontece em {ilha}. O Capitão do Submarino mergulha até lá a partir das Docas.",
-    ),
-    (
-        "\"{titulo}\" happens in {ilha}. The Submarine Captain dives there from the Docks.",
-        "\"{titulo}\" acontece em {ilha}. O Capitão do Submarino mergulha até lá a partir das Docas.",
-    ),
-    (
-        "Story: this step happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.",
-        "História: este passo acontece em {ilha}. Vá a Kōgen-tō e pegue o submarino nas Docas.",
-    ),
-    (
-        "\"{titulo}\" happens in {ilha}. Go to Kōgen-tō and take the submarine from its Docks.",
-        "\"{titulo}\" acontece em {ilha}. Vá a Kōgen-tō e pegue o submarino nas Docas.",
-    ),
-    (
-        "Story: this step happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.",
-        "História: este passo acontece em {ilha}. O Professor do Ônibus Celeste voa até lá a partir do Trono do Céu.",
-    ),
-    (
-        "\"{titulo}\" happens on {ilha}. The Sky Bus Professor flies there from the Throne of the Sky.",
-        "\"{titulo}\" acontece em {ilha}. O Professor do Ônibus Celeste voa até lá a partir do Trono do Céu.",
-    ),
-    (
-        "Story: this step happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.",
-        "História: este passo acontece em {ilha}. Navegue até Skyreach e pegue o Ônibus Celeste no Trono do Céu.",
-    ),
-    (
-        "\"{titulo}\" happens on {ilha}. Sail to Skyreach and take the Sky Bus from the Throne of the Sky.",
-        "\"{titulo}\" acontece em {ilha}. Navegue até Skyreach e pegue o Ônibus Celeste no Trono do Céu.",
-    ),
-    (
-        "\"{titulo}\" happens on {ilha}. Set sail with the Harbour Captain.",
-        "\"{titulo}\" acontece na ilha {ilha}. Embarque com o Capitão do Porto.",
+        "\"{titulo}\" happens on {ilha}. Use the Island Portal in town.",
+        "\"{titulo}\" acontece em {ilha}. Use o Portal das Ilhas da cidade.",
     ),
     (
         "Reach level 20 before sailing for the Glacier. Do the side quests in the Grove.",
@@ -845,4 +815,22 @@ pub const VERBETES: &[(&str, &str)] = &[
     ("That name is not on your blacklist.", "Esse nome não está na sua lista negra."),
     ("Added to your blacklist.", "Adicionado à sua lista negra."),
     ("Removed from your blacklist.", "Removido da sua lista negra."),
+    // The walkable deck (17/11/2026).
+    ("Only the captain takes the helm.", "Só o capitão pega o leme."),
+    ("Walk to the ship's wheel to take the helm.", "Vá até o timão para pegar o leme."),
+    ("That ship has no captain aboard.", "Esse navio está sem capitão a bordo."),
+    ("Only your party can board each other's ships.", "Só quem é do mesmo grupo embarca no navio do outro."),
+    ("Your own crew is aboard: you can't leave them.", "A sua tripulação está a bordo: você não pode deixá-la."),
+    ("Sail alongside your party's ship to board it.", "Navegue ao lado do navio do seu grupo para embarcar."),
+    ("You board {}'s ship.", "Você embarca no navio de {}."),
+    ("{} came aboard.", "{} subiu a bordo."),
+    ("Your own ship can't sail: it needs a repair at a dock.", "O seu navio não pode navegar: precisa de conserto num cais."),
+    ("Your captain left the sea. You are put ashore at the nearest dock.", "O seu capitão saiu do mar. Você desembarca no cais mais perto."),
+    ("Without a ship that floats, the sea washes you ashore at the nearest dock.", "Sem um navio que flutue, o mar leva você ao cais mais perto."),
+    ("No port is open: you drift to an anchorage.", "Nenhum porto está aberto: você deriva até um ancoradouro."),
+    ("Your captain docked where you can't land: you are put ashore at the nearest dock.", "O seu capitão atracou onde você não pode desembarcar: você desce no cais mais perto."),
+    ("You come ashore at {} with your captain.", "Você desembarca em {} com o seu capitão."),
+    ("Your ship went down. You wash up at the dock.", "O seu navio afundou. Você chega ao cais."),
+    ("Only the captain fires the ship's guns.", "Só o capitão dispara os canhões do navio."),
+    ("Take the helm to fire the ship's guns.", "Pegue o leme para disparar os canhões do navio."),
 ];

@@ -40,10 +40,11 @@ use shared::terreno::Material;
 
 use crate::vegetacao::{malha_com, Volume, VOX};
 
-/// One hull voxel, units. The meshes come out at `VOX` (0.25) a voxel and
-/// the matrix halves them.
+/// The hull GRID the sea's props are modelled on (wreckage, the drifting
+/// chest: `vegetacao::DESTROCO_ESCALA`). Since the walkable deck each class
+/// has its own voxel (`shared::conves::Medida::vox`, 0.15-0.25 u, `escala`);
+/// the meshes come out at `VOX` (0.25) a voxel and the matrix scales them.
 pub(crate) const VOX_CASCO: f32 = 0.125;
-const ESCALA: f32 = VOX_CASCO / VOX;
 
 /// Past this (from the eye) a ship is hull + one sail mesh, no rigging.
 const LONGE: f32 = 55.0;
@@ -69,7 +70,11 @@ const MADEIRA: Material = Material::Tronco;
 const FERRO: Material = Material::Asfalto;
 const LUZ: Material = Material::JanelaAcesa;
 
-/// The measures of a class, in hull voxels (0.125 u).
+/// The measures of a class, in hull voxels. Length, beam, draught,
+/// freeboard, masts and the raised decks come from `shared::conves::MEDIDAS`
+/// (the walkable deck, 17/11/2026): the deck the server walks bodies on is
+/// this mesh's deck. Each class has its own voxel size (`escala`), so the
+/// big hulls stay a phone's mesh.
 struct Medidas {
     comp: i32,
     larg: i32,
@@ -87,60 +92,31 @@ struct Medidas {
 }
 
 fn medidas(classe: u8) -> Medidas {
-    match classe {
-        0 => Medidas {
-            comp: 40,
-            larg: 13,
-            calado: 4,
-            borda: 5,
-            mastros: &[(0.12, 1.0)],
-            redondo: false,
-            tombadilho: false,
-            castelo: false,
-            canhoes: (0, 0),
-            casco: (120, 80, 46),
-            faixa: (226, 208, 160),
-        },
-        1 => Medidas {
-            comp: 50,
-            larg: 15,
-            calado: 5,
-            borda: 6,
-            mastros: &[(0.32, 0.92), (-0.14, 1.02)],
-            redondo: false,
-            tombadilho: false,
-            castelo: false,
-            canhoes: (1, 2),
-            casco: (104, 66, 38),
-            faixa: (236, 236, 228),
-        },
-        2 => Medidas {
-            comp: 60,
-            larg: 19,
-            calado: 6,
-            borda: 7,
-            mastros: &[(0.36, 0.86), (0.02, 1.0), (-0.34, 0.78)],
-            redondo: true,
-            tombadilho: true,
-            castelo: true,
-            canhoes: (1, 4),
-            casco: (92, 54, 32),
-            faixa: (176, 52, 44),
-        },
-        _ => Medidas {
-            comp: 68,
-            larg: 21,
-            calado: 6,
-            borda: 9,
-            mastros: &[(0.38, 0.86), (0.02, 1.0), (-0.34, 0.8)],
-            redondo: true,
-            tombadilho: true,
-            castelo: true,
-            canhoes: (2, 5),
-            casco: (40, 36, 34),
-            faixa: (222, 178, 64),
-        },
+    let m = shared::conves::medida(classe as usize);
+    let (redondo, canhoes, casco, faixa) = match classe {
+        0 => (false, (0, 0), (120, 80, 46), (226, 208, 160)),
+        1 => (false, (1, 3), (104, 66, 38), (236, 236, 228)),
+        2 => (true, (1, 5), (92, 54, 32), (176, 52, 44)),
+        _ => (true, (2, 6), (40, 36, 34), (222, 178, 64)),
+    };
+    Medidas {
+        comp: m.comp,
+        larg: m.larg,
+        calado: m.calado,
+        borda: m.borda,
+        mastros: m.mastros,
+        redondo,
+        tombadilho: m.tombadilho,
+        castelo: m.castelo,
+        canhoes,
+        casco,
+        faixa,
     }
+}
+
+/// Mesh units → world units for a class: its voxel over the mesher's.
+pub fn escala(classe: u8) -> f32 {
+    shared::conves::medida(classe as usize).vox / VOX
 }
 
 /// Brass level of the trim, 0..3, from the stars (0..15).
@@ -158,8 +134,10 @@ fn mistura(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
 pub struct Navio3d {
     casco: Mesh,
     /// One per mast (and the jib): the mesh, the pivot it billows about (mesh
-    /// units) and whether it billows along z (square sail) or x (gaff, jib).
-    velas: Vec<(Mesh, Vec3, bool)>,
+    /// units), whether it billows along z (square sail) or x (gaff, jib), and
+    /// the cloth's shader data (`Pano`).
+    velas: Vec<(Mesh, Vec3, bool, Pano)>,
+    pub classe: u8,
     /// All sails in one mesh: the far LOD.
     velas_juntas: Mesh,
     /// Rigging lines, mesh units.
@@ -174,6 +152,17 @@ pub struct Navio3d {
 }
 
 type Chave = (u8, u8, u8, u8);
+
+/// What the world shader needs to make a sail's CLOTH move (`VelaA`/`VelaB`,
+/// `render3d::SOLIDO_VERTICE`): square sails hang from their yards (the
+/// heights of the yards each sail hangs from, mesh units, bottom to top;
+/// unused = far above); fore-and-aft sails and the jib are bent on a mast or
+/// stay (boom/foot height, the mast's z, the sail's length).
+#[derive(Clone, Copy)]
+struct Pano {
+    quadrada: bool,
+    b: [f32; 4],
+}
 
 thread_local! {
     /// Whether a ship coming into view fades in (`sem_surgir`).
@@ -256,22 +245,16 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
 
     // ── the hull ──
     // Half-width and deck height along the hull (t = -1 stern .. 1 bow).
-    let meia_larg = |z: i32| -> f32 {
-        let t = z as f32 / l2 as f32;
-        let proa = t.max(0.0);
-        let popa = (-t).max(0.0);
-        w2 as f32 * (1.0 - proa.powf(2.2) * 0.94) * (1.0 - popa.powi(4) * 0.32) + 0.5
-    };
-    let conves = |z: i32| -> i32 {
-        let t = z as f32 / l2 as f32;
-        m.borda + (t * t * (m.borda as f32 * 0.35)).round() as i32 + if t > 0.75 { 1 } else { 0 }
-    };
+    // The SAME curves the server walks bodies on (`shared::conves`).
+    let sm = shared::conves::medida(classe as usize);
+    let meia_larg = |z: i32| -> f32 { shared::conves::meia_larg_vox(sm, z as f32) };
+    let conves = |z: i32| -> i32 { shared::conves::conves_vox(sm, z) };
     let quilha = |z: i32| -> i32 {
         let t = (z as f32 / l2 as f32).abs();
         -m.calado + ((t - 0.55).max(0.0) / 0.45 * m.calado as f32 * 0.8).round() as i32
     };
-    let tombadilho_z = -l2 + (m.comp as f32 * 0.24) as i32;
-    let castelo_z = l2 - (m.comp as f32 * 0.18) as i32;
+    let tombadilho_z = shared::conves::tombadilho_z(sm);
+    let castelo_z = shared::conves::castelo_z(sm);
     for z in -l2..=l2 {
         let hw = meia_larg(z);
         let topo = conves(z);
@@ -378,7 +361,7 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
     figura_de_proa(&mut v, figura, z_proa, conves(z_proa));
 
     // ── masts, yards, a crow's nest ──
-    let mut velas: Vec<(Mesh, Vec3, bool)> = Vec::new();
+    let mut velas: Vec<(Mesh, Vec3, bool, Pano)> = Vec::new();
     let mut juntas = Volume::novo([-w2 - 16, 0, -l2 - 3], [2 * w2 + 33, topo_y + 4, m.comp + gurupes + 10]);
     let mut cordas: Vec<(Vec3, Vec3)> = Vec::new();
     let mut topo_principal = Vec3::ZERO;
@@ -426,6 +409,7 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
                     caixa(&mut v, [x, y + 1, zm - 2], [x + 1, y + 2, zm + 4], FRISO);
                 }
             }
+            let mut vergas = [1.0e5f32; 4];
             for k in 0..nivel {
                 let y0 = base + (h as f32 * alturas[k]) as i32 + 1;
                 let y1 = base + (h as f32 * alturas[k + 1]) as i32;
@@ -433,8 +417,15 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
                 let meia1 = w2 as f32 * largs[k + 1] * 0.95;
                 vela_quadrada(&mut vol, y0, y1, meia0, meia1, zm + 2);
                 vela_quadrada(&mut juntas, y0, y1, meia0, meia1, zm + 2);
+                // Each sail hangs from the yard over it.
+                vergas[k.min(3)] = y1 as f32 * VOX;
             }
-            velas.push((para_mesh(malha_com(&vol, &cor)), em_malha(0.0, (base + h / 2) as f32, (zm + 1) as f32), true));
+            velas.push((
+                para_mesh(malha_com(&vol, &cor)),
+                em_malha(0.0, (base + h / 2) as f32, (zm + 1) as f32),
+                true,
+                Pano { quadrada: true, b: vergas },
+            ));
         } else {
             let comp_v = (m.comp as f32 * if m.mastros.len() == 1 { 0.5 } else { 0.32 }) as i32;
             let mut vol = Volume::novo([-3, base, zm - comp_v - 2], [7, h + comp_v / 4 + 4, comp_v + 4]);
@@ -448,7 +439,12 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
             }
             vela_latina(&mut vol, zm - 1, comp, y_retranca + 1, y_carangueja, h);
             vela_latina(&mut juntas, zm - 1, comp, y_retranca + 1, y_carangueja, h);
-            velas.push((para_mesh(malha_com(&vol, &cor)), em_malha(0.0, (base + h / 2) as f32, zm as f32), false));
+            velas.push((
+                para_mesh(malha_com(&vol, &cor)),
+                em_malha(0.0, (base + h / 2) as f32, zm as f32),
+                false,
+                Pano { quadrada: false, b: [(y_retranca + 1) as f32 * VOX, zm as f32 * VOX, comp as f32 * VOX, 0.0] },
+            ));
         }
     }
     // The jib: from the foremast's top to the bowsprit's tip.
@@ -458,7 +454,12 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
         let mut vol = Volume::novo([-3, pe - 1, zm - 1], [7, alto - pe + 4, ponta_gurupes.2 - zm + 4]);
         bujarrona(&mut vol, (alto, zm + 1), (ponta_gurupes.1, ponta_gurupes.2), pe);
         bujarrona(&mut juntas, (alto, zm + 1), (ponta_gurupes.1, ponta_gurupes.2), pe);
-        velas.push((para_mesh(malha_com(&vol, &cor)), em_malha(0.0, alto as f32, zm as f32), false));
+        velas.push((
+            para_mesh(malha_com(&vol, &cor)),
+            em_malha(0.0, alto as f32, zm as f32),
+            false,
+            Pano { quadrada: false, b: [pe as f32 * VOX, (zm + 1) as f32 * VOX, (ponta_gurupes.2 - zm).max(1) as f32 * VOX, 1.0] },
+        ));
         cordas.push((em_malha(0.0, topo_m as f32, zm as f32), em_malha(0.0, ponta_gurupes.1 as f32, ponta_gurupes.2 as f32)));
     }
     // The backstay: the aftmost mast's top to the stern.
@@ -475,17 +476,33 @@ fn constroi((classe, vela, figura, nivel_latao): Chave) -> Navio3d {
         let yb = conves(zb) + (m.comp as f32 * 0.95 * b.1 * 0.7) as i32;
         cordas.push((em_malha(0.0, ya as f32, za as f32), em_malha(0.0, yb as f32, zb as f32)));
     }
+    // THE SHIP'S WHEEL (the walkable deck's helm): a post and a spoked
+    // wheel facing aft, where `shared::conves::roda` says.
+    {
+        let zr = (shared::conves::roda(classe as usize).y / sm.vox).round() as i32;
+        let piso = shared::conves::piso_vox(sm, zr);
+        caixa(&mut v, [0, piso, zr], [1, piso + 4, zr + 1], MADEIRA);
+        let (cy, cz) = (piso + 5, zr - 1);
+        for (dx, dy) in [(-2, 0), (2, 0), (0, -2), (0, 2), (-1, -1), (1, -1), (-1, 1), (1, 1), (-2, 1), (2, -1), (-2, -1), (2, 1), (-1, 2), (1, -2), (-1, -2), (1, 2)] {
+            v.poe(dx, cy + dy, cz, MADEIRA);
+        }
+        v.poe(0, cy, cz, FRISO);
+        for (dx, dy) in [(-3, 0), (3, 0), (0, 3), (0, -3)] {
+            v.poe(dx, cy + dy, cz, FRISO);
+        }
+    }
     let casco = para_mesh(malha_com(&v, &cor));
     let velas_juntas = para_mesh(malha_com(&juntas, &cor));
-    let vertices = casco.vertices.len() + velas.iter().map(|(m, _, _)| m.vertices.len()).sum::<usize>();
+    let vertices = casco.vertices.len() + velas.iter().map(|(m, _, _, _)| m.vertices.len()).sum::<usize>();
     Navio3d {
+        classe,
         casco,
         velas,
         velas_juntas,
         cordas,
         topo: topo_principal,
         lanterna,
-        meio_comp: l2 as f32 * VOX_CASCO,
+        meio_comp: l2 as f32 * shared::conves::medida(classe as usize).vox,
         vertices,
     }
 }
@@ -582,7 +599,7 @@ fn figura_de_proa(v: &mut Volume, figura: u8, z: i32, topo: i32) {
 // ───────────────────────────── motion and drawing ─────────────────────────────
 
 /// What one ship has been doing: its heading a moment ago (for the heel),
-/// and the trail of its stern (the wake).
+/// its speed (the sails), and the trail of its stern (the wake).
 struct Movimento {
     yaw: f32,
     giro: f32,
@@ -591,6 +608,31 @@ struct Movimento {
     /// When it came into view (the fade-in, `SURGE_S`).
     nasceu: f64,
     rastro: VecDeque<(Vec2, f64)>,
+    /// Where it was last frame and its smoothed speed (u/s): the sails read
+    /// the ship's VELOCITY, so everyone sees the same (`vela`).
+    q: Vec2,
+    vel: f32,
+    /// 0 = sails furled on the yards, 1 = set and drawing.
+    vela: f32,
+}
+
+/// Under this speed (u/s) a ship's sails are furled; over `VELA_CHEIA` they
+/// are set. In between, partly.
+pub const VELA_RECOLHIDA: f32 = 0.6;
+pub const VELA_CHEIA: f32 = 2.5;
+/// Seconds for the sails to go from furled to set (and back).
+pub const VELA_S: f32 = 1.4;
+
+/// How set the sails should be at `vel` u/s (0 furled .. 1 set).
+pub fn vela_alvo(vel: f32) -> f32 {
+    let t = ((vel - VELA_RECOLHIDA) / (VELA_CHEIA - VELA_RECOLHIDA)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// One step of the sails toward `alvo`, eased over `VELA_S`.
+pub fn passo_da_vela(atual: f32, alvo: f32, dt: f32) -> f32 {
+    let passo = dt / VELA_S;
+    atual + (alvo - atual).clamp(-passo, passo)
 }
 
 fn ang_dif(a: f32, b: f32) -> f32 {
@@ -615,26 +657,83 @@ fn fator_de_onda(p: Vec2) -> f32 {
     crate::agua::onda_de(raso)
 }
 
-/// The ship's matrix on the water now: on the swell, pitched and rolled by
-/// it, heeled by the turn; and the wake's bookkeeping.
-fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32) -> (Mat4, Vec<(Vec2, f64)>, f32) {
-    let agora = get_time();
-    let tempo = agora as f32;
+/// The hull's matrix for a heel `adernar`, at time `tempo`: on the swell,
+/// pitched and rolled by it. The same for the draw and for the bodies on
+/// its deck (`matriz_do_casco`), so they stand ON the planks.
+fn compoe(p: Vec3, yaw: f32, adernar: f32, semente: u64, classe: u8, tempo: f32) -> Mat4 {
     let q = vec2(p.x, p.z);
     let (h, g) = crate::agua::onda_em(q.x, q.y, tempo);
     let fator = fator_de_onda(q);
     let frente = vec2(yaw.sin(), yaw.cos());
     let lado = vec2(frente.y, -frente.x);
-    let (adernar, rastro) = MOVIMENTO.with(|m| {
+    // A long hull rides the swell steadier.
+    let calma = (shared::conves::meio_comp(0) / shared::conves::meio_comp(classe as usize)).sqrt();
+    let arfagem = (g.dot(frente) * fator * 0.9 * calma).clamp(-0.12, 0.12);
+    let balanco = (g.dot(lado) * fator * 0.9 * calma).clamp(-0.12, 0.12) + adernar + (tempo * 0.8 + semente as f32).sin() * 0.015;
+    let y = crate::agua::ALTURA_DA_AGUA + h * fator + 0.02;
+    Mat4::from_translation(vec3(p.x, y, p.z))
+        * Mat4::from_rotation_y(yaw)
+        * Mat4::from_rotation_x(-arfagem)
+        * Mat4::from_rotation_z(balanco)
+        * Mat4::from_scale(Vec3::splat(escala(classe)))
+}
+
+/// The matrix of the ship `semente` (class `classe`) at `p` heading `yaw`,
+/// NOW, without touching its motion's bookkeeping: what places the bodies
+/// walking on its deck (`world::World::tick`).
+pub fn matriz_do_casco(p: Vec3, yaw: f32, semente: u64, classe: u8) -> Mat4 {
+    let adernar = MOVIMENTO.with(|m| m.borrow().get(&semente).map_or(0.0, |e| e.adernar));
+    compoe(p, yaw, adernar, semente, classe, get_time() as f32)
+}
+
+/// A deck place (`shared::conves`, units: `x` across, `y` along) on the
+/// hull of class `classe` drawn with matrix `m`: the world point of the
+/// planks there (the quarterdeck and forecastle included).
+pub fn ponto_do_conves(m: Mat4, classe: u8, local: Vec2) -> Vec3 {
+    let sm = shared::conves::medida(classe as usize);
+    let alto = shared::conves::altura(classe as usize, ::glam::Vec2::new(local.x, local.y)) / sm.vox;
+    // The mesher writes voxel `x` over [x, x+1] (`em_malha`): the keel line
+    // is half a voxel off the mesh's origin.
+    m.transform_point3(vec3((local.x / sm.vox + 0.5) * VOX, alto * VOX, (local.y / sm.vox + 0.5) * VOX))
+}
+
+/// How set the sails of ship `semente` are now (0 furled .. 1 set).
+pub fn vela_de(semente: u64) -> f32 {
+    MOVIMENTO.with(|m| m.borrow().get(&semente).map_or(0.0, |e| e.vela))
+}
+
+/// The ship's matrix on the water now, and the bookkeeping: the heel, the
+/// speed and the sails, the wake. `vel_fio` = the entity's speed on the
+/// wire (u/s), what the sails follow; `None` = a ship shown under sail (the
+/// Shipyard's model, a preview's fleet).
+fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32, classe: u8, vel_fio: Option<f32>) -> (Mat4, Vec<(Vec2, f64)>, f32, f32) {
+    let agora = get_time();
+    let tempo = agora as f32;
+    let q = vec2(p.x, p.z);
+    let frente = vec2(yaw.sin(), yaw.cos());
+    let (adernar, rastro, vel, vela) = MOVIMENTO.with(|m| {
         let mut m = m.borrow_mut();
         if m.len() > 64 {
             m.retain(|_, e| agora - e.t < 5.0);
         }
-        let e = m.entry(semente).or_insert(Movimento { yaw, giro: 0.0, adernar: 0.0, t: agora, nasceu: agora, rastro: VecDeque::new() });
+        let e = m.entry(semente).or_insert(Movimento {
+            yaw,
+            giro: 0.0,
+            adernar: 0.0,
+            t: agora,
+            nasceu: agora,
+            rastro: VecDeque::new(),
+            q,
+            vel: vel_fio.unwrap_or(VELA_CHEIA),
+            vela: vela_alvo(vel_fio.unwrap_or(VELA_CHEIA)),
+        });
         // Out of view for a while (left the area of interest and came
-        // back): it fades in again.
+        // back): it fades in again, its sails as its speed says.
         if agora - e.t > 0.5 {
             e.nasceu = agora;
+            e.q = q;
+            e.vel = vel_fio.unwrap_or(VELA_CHEIA);
+            e.vela = vela_alvo(e.vel);
         }
         let dt = ((agora - e.t) as f32).clamp(1e-3, 0.25);
         // The heel follows the TURN (turning inertia, 16/11/2026): the
@@ -646,6 +745,17 @@ fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32) -> (Mat4, Vec<(Vec
         let alvo = (-e.giro * 0.105).clamp(-0.2, 0.2);
         e.adernar += (alvo - e.adernar) * (dt * 2.0).min(1.0);
         e.yaw = yaw;
+        // THE SAILS follow the speed (owner, 17/11/2026: "open and close the
+        // sail when the ship walks / stops"): a jump (docking, a reconnect)
+        // is not speed.
+        let passo = q.distance(e.q);
+        let v = match vel_fio {
+            Some(v) => v,
+            None => VELA_CHEIA.max(if passo > 8.0 { e.vel } else { passo / dt }),
+        };
+        e.vel += (v - e.vel) * (dt * 4.0).min(1.0);
+        e.q = q;
+        e.vela = passo_da_vela(e.vela, vela_alvo(e.vel), dt);
         e.t = agora;
         let popa = q - frente * meio_comp * 0.9;
         // A jump (docking, sailing out, a reconnect) is not sailing: the old
@@ -659,25 +769,33 @@ fn movimento(p: Vec3, yaw: f32, semente: u64, meio_comp: f32) -> (Mat4, Vec<(Vec
         while e.rastro.front().is_some_and(|(_, t)| agora - t > 3.2) {
             e.rastro.pop_front();
         }
-        (e.adernar, e.rastro.iter().copied().collect::<Vec<_>>())
+        (e.adernar, e.rastro.iter().copied().collect::<Vec<_>>(), e.vel, e.vela)
     });
-    let arfagem = (g.dot(frente) * fator * 0.9).clamp(-0.12, 0.12);
-    let balanco = (g.dot(lado) * fator * 0.9).clamp(-0.12, 0.12) + adernar + (tempo * 0.8 + semente as f32).sin() * 0.015;
-    let y = crate::agua::ALTURA_DA_AGUA + h * fator + 0.02;
-    let modelo = Mat4::from_translation(vec3(p.x, y, p.z))
-        * Mat4::from_rotation_y(yaw)
-        * Mat4::from_rotation_x(-arfagem)
-        * Mat4::from_rotation_z(balanco)
-        * Mat4::from_scale(Vec3::splat(ESCALA));
-    (modelo, rastro, fator)
+    (compoe(p, yaw, adernar, semente, classe, tempo), rastro, vel, vela)
 }
 
-/// THE SHIP at `p` heading `yaw` (`x.atan2(z)`): hull, sails billowing,
-/// rigging, a pennant, and its wake. `semente` = the entity's id (its own
-/// motion and wake).
+/// The FURL of one sail on the matrix: a square sail rolls up toward its
+/// yards (the shader rolls each onto its own), a fore-and-aft sail and the
+/// jib come down onto the boom / the foot. Zero vertex work on the CPU.
+fn recolhe(pano: &Pano, vela: f32) -> f32 {
+    let _ = pano;
+    (1.0 - vela).clamp(0.0, 1.0)
+}
+
+/// THE SHIP at `p` heading `yaw` (`x.atan2(z)`): hull, sails, rigging, a
+/// pennant, and its wake. `semente` = the entity's id (its own motion and
+/// wake). The sails are furled lying still and set under way, and their
+/// cloth ripples in the wind (`render3d::SOLIDO_VERTICE`, `VelaA`/`VelaB`).
 pub fn desenha(p: Vec3, yaw: f32, semente: u64, v: Visual) {
+    desenha_navio(p, yaw, semente, v, None);
+}
+
+/// The same with the ship's speed on the wire (u/s): the sails furl lying
+/// still and unfurl under way (owner, 17/11/2026: "open and close the sail
+/// when the ship walks / stops"), the same for everyone watching.
+pub fn desenha_navio(p: Vec3, yaw: f32, semente: u64, v: Visual, vel_fio: Option<f32>) {
     let n = modelo(v);
-    let (modelo_m, rastro, _) = movimento(p, yaw, semente, n.meio_comp);
+    let (modelo_m, rastro, vel, vela) = movimento(p, yaw, semente, n.meio_comp, n.classe, vel_fio);
     let tempo = get_time() as f32 + (semente % 97) as f32 * 0.37;
     let olho = crate::mar_cena::olho();
     let dist = olho.map_or(0.0, |o| o.distance(p));
@@ -690,21 +808,35 @@ pub fn desenha(p: Vec3, yaw: f32, semente: u64, v: Visual) {
     // 1 = the near ship's full detail, 0 = settled into the far draw.
     let perto = crate::mar_cena::presenca(dist, ASSENTA, LONGE);
     if perto <= 0.0 {
-        crate::gpu_estatica::desenha_voxel(&n.velas_juntas, modelo_m, [0.0; 4], Default::default());
+        // Far: all sails in one mesh, when set.
+        if vela > 0.5 {
+            crate::gpu_estatica::desenha_voxel(&n.velas_juntas, modelo_m, [0.0; 4], Default::default());
+        }
     } else {
-        for (k, (m, pivo, quadrada)) in n.velas.iter().enumerate() {
-            // THE BILLOW: the sail's belly breathes along the wind, about its
-            // mast. One scale in the matrix, no vertex touched. It settles
-            // towards the far draw's sails at rest.
-            let s = 1.0 + 0.18 * perto * (tempo * 1.1 + k as f32 * 0.9).sin();
+        // Faster = more wind in the cloth.
+        let vento = (vel / nv::VELOCIDADE_MAX).clamp(0.0, 1.0);
+        for (k, (m, pivo, quadrada, pano)) in n.velas.iter().enumerate() {
+            let recolhida = recolhe(pano, vela);
+            if recolhida > 0.995 && !pano.quadrada {
+                // A fore-and-aft sail all the way down is a roll on the boom:
+                // the furl scale draws it, nothing to skip.
+            }
+            // THE BILLOW: the sail's belly breathes along the wind, about
+            // its mast, only while it draws. One scale in the matrix.
+            let s = 1.0 + 0.18 * perto * vela * (tempo * 1.1 + k as f32 * 0.9).sin();
             let esc = if *quadrada { vec3(1.0, 1.0, s) } else { vec3(s, 1.0, 1.0) };
             let infla = Mat4::from_translation(*pivo) * Mat4::from_scale(esc) * Mat4::from_translation(-*pivo);
-            crate::gpu_estatica::desenha_voxel(m, modelo_m * infla, [0.0; 4], Default::default());
+            // THE CLOTH (owner: "the sail needs a movement animation, like
+            // wind in it"): ripples running across it, luffing at the free
+            // edges, stronger fast; and the furl, per sail on its yard.
+            let amp = (0.05 + 0.10 * vento) * perto * vela;
+            let a = [if pano.quadrada { 1.0 } else { 2.0 }, recolhida, amp, tempo + k as f32 * 1.7];
+            crate::gpu_estatica::com_vela(a, pano.b, || {
+                crate::gpu_estatica::desenha_voxel(m, modelo_m * infla, [0.0; 4], Default::default());
+            });
         }
-        let corda = Color::from_rgba(52, 40, 30, (255.0 * perto * surge) as u8);
-        for (a, b) in &n.cordas {
-            draw_line_3d(modelo_m.transform_point3(*a), modelo_m.transform_point3(*b), corda);
-        }
+        let corda = [52u8, 40, 30, (255.0 * perto * surge) as u8];
+        cordame(&n.cordas, modelo_m, corda, olho.unwrap_or(p + vec3(0.0, 20.0, 0.0)));
         // The pennant at the main mast's top, streaming ahead with the wind;
         // it shortens away as the ship settles into the far draw.
         let topo = modelo_m.transform_point3(n.topo);
@@ -727,21 +859,37 @@ pub fn desenha_atracado(p: Vec3, yaw: f32, tempo: f32) {
         * Mat4::from_rotation_y(yaw + (tempo * 0.3).sin() * 0.05)
         * Mat4::from_rotation_x(g.y * fator)
         * Mat4::from_rotation_z((tempo * 0.9).sin() * 0.03 + g.x * fator)
-        * Mat4::from_scale(Vec3::splat(ESCALA));
+        * Mat4::from_scale(Vec3::splat(escala(0)));
     crate::gpu_estatica::desenha_voxel(&n.casco, modelo_m, [0.0; 4], Default::default());
 }
 
 /// The mast top of the ship at `p` now (the skull flag of a marked ship).
 pub fn topo_do_mastro(p: Vec3, yaw: f32, semente: u64, v: Visual) -> Vec3 {
     let n = modelo(v);
-    let q = vec2(p.x, p.z);
-    let (h, _) = crate::agua::onda_em(q.x, q.y, get_time() as f32);
-    let adernar = MOVIMENTO.with(|m| m.borrow().get(&semente).map_or(0.0, |e| e.adernar));
-    let m = Mat4::from_translation(vec3(p.x, crate::agua::ALTURA_DA_AGUA + h * fator_de_onda(q), p.z))
-        * Mat4::from_rotation_y(yaw)
-        * Mat4::from_rotation_z(adernar)
-        * Mat4::from_scale(Vec3::splat(ESCALA));
-    m.transform_point3(n.topo)
+    matriz_do_casco(p, yaw, semente, n.classe).transform_point3(n.topo)
+}
+
+/// THE RIGGING: each rope a thin ribbon turned to the eye, all in one
+/// mesh. (They were `draw_line_3d`, which under the world's material drew
+/// as TRIANGLES between consecutive ropes: the big dark sheets between the
+/// masts and the bowsprit — visible since the hulls grew, 17/11/2026.)
+fn cordame(cordas: &[(Vec3, Vec3)], m: Mat4, cor: [u8; 4], olho: Vec3) {
+    if cordas.is_empty() || cor[3] == 0 {
+        return;
+    }
+    let mut verts = Vec::with_capacity(cordas.len() * 4);
+    let mut idx: Vec<u16> = Vec::with_capacity(cordas.len() * 12);
+    for (a, b) in cordas {
+        let (a, b) = (m.transform_point3(*a), m.transform_point3(*b));
+        let meio = (a + b) * 0.5;
+        let lado = (b - a).cross(olho - meio).normalize_or_zero() * 0.035;
+        let k = verts.len() as u16;
+        for p in [a - lado, a + lado, b + lado, b - lado] {
+            verts.push(Vertex { position: p, uv: Vec2::ZERO, color: cor, normal: Vec4::ZERO });
+        }
+        idx.extend_from_slice(&[k, k + 1, k + 2, k, k + 2, k + 3, k, k + 2, k + 1, k, k + 3, k + 2]);
+    }
+    draw_mesh(&Mesh { vertices: verts, indices: idx, texture: None });
 }
 
 /// A pennant: a long thin strip waving from `topo` along `dir`. Two-sided.
@@ -844,10 +992,53 @@ mod testes {
             let m = medidas(classe);
             assert_eq!(n.velas.len(), m.mastros.len() + 1, "class {classe}: a sail mesh per mast and a jib");
             assert!(n.vertices < 24_000, "class {classe}: {} vertices", n.vertices);
-            assert!(n.casco.vertices.len() > anterior, "class {classe} is not bigger than the one before");
-            anterior = n.casco.vertices.len();
+            // Bigger hulls use a coarser voxel (the walkable deck): it is the
+            // SHIP that grows class by class, not the mesh.
+            let comp = (n.meio_comp * 100.0) as usize;
+            assert!(comp > anterior, "class {classe} is not bigger than the one before");
+            anterior = comp;
             assert!(n.topo.y > 3.0, "class {classe}: mast top at {}", n.topo.y);
             println!("class {classe}: hull {} v, sails {} v, rigging {} lines", n.casco.vertices.len(), n.vertices - n.casco.vertices.len(), n.cordas.len());
+        }
+    }
+
+    /// THE SAILS FOLLOW THE SPEED (17/11/2026): furled lying still, set
+    /// under way, partly in between, and the change eases over `VELA_S`.
+    #[test]
+    fn as_velas_recolhem_parado_e_soltam_andando() {
+        assert_eq!(vela_alvo(0.0), 0.0);
+        assert_eq!(vela_alvo(VELA_RECOLHIDA), 0.0);
+        assert_eq!(vela_alvo(nv::VELOCIDADE_MAX), 1.0);
+        let meio = vela_alvo((VELA_RECOLHIDA + VELA_CHEIA) * 0.5);
+        assert!(meio > 0.3 && meio < 0.7);
+        // From furled to set takes VELA_S, smoothly.
+        let mut v = 0.0;
+        let mut t = 0.0;
+        while v < 1.0 {
+            let antes = v;
+            v = passo_da_vela(v, 1.0, 1.0 / 60.0);
+            assert!(v - antes <= 1.0 / 60.0 / VELA_S + 1e-6);
+            t += 1.0 / 60.0;
+        }
+        assert!((t - VELA_S).abs() < 0.05, "unfurling took {t} s");
+        // A ship shown with no speed (the Shipyard) sails set.
+        assert_eq!(vela_alvo(VELA_CHEIA), 1.0);
+    }
+
+    /// The deck the bodies walk on is the hull's deck: a deck point lands
+    /// on the planks' height of the class (the quarterdeck higher).
+    #[test]
+    fn o_conves_do_modelo_e_o_do_servidor() {
+        for classe in 0..4u8 {
+            let m = compoe(Vec3::ZERO, 0.0, 0.0, 0, classe, 0.0);
+            let meio = ponto_do_conves(m, classe, vec2(0.0, 0.0));
+            let popa = ponto_do_conves(m, classe, vec2(0.0, shared::conves::leme(classe as usize).y));
+            let alto = shared::conves::altura(classe as usize, ::glam::Vec2::ZERO);
+            assert!((meio.y - (crate::agua::ALTURA_DA_AGUA + alto)).abs() < 0.6, "class {classe}: deck at {}", meio.y);
+            assert!(popa.y >= meio.y - 0.05, "class {classe}: the helm below the deck");
+            // Forward on deck is +Z of the model (yaw 0).
+            let proa = ponto_do_conves(m, classe, vec2(0.0, 2.0));
+            assert!(proa.z > meio.z + 1.5);
         }
     }
 

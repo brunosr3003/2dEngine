@@ -27,6 +27,20 @@ pub fn no_mar() -> bool {
     NO_MAR.load(Ordering::Relaxed)
 }
 
+/// THE WALKABLE DECK: am I at my ship's helm? Set each frame from the deck
+/// rows (`world::World::eu_no_leme`).
+static NO_LEME: AtomicBool = AtomicBool::new(true);
+
+pub fn define_no_leme(sim: bool) {
+    NO_LEME.store(sim, Ordering::Relaxed);
+}
+
+/// SAILING: at sea AND at the helm — the ship's camera, its skill bar, the
+/// pilot, the sea's auto modes. Off the helm, on deck, the land's rules.
+pub fn navegando() -> bool {
+    no_mar() && NO_LEME.load(Ordering::Relaxed)
+}
+
 /// Where a hull points (turning inertia, 16/11/2026): its velocity while
 /// it sails, else its drawn heading (`yaw` is `x.atan2(z)`). The server's
 /// helm keeps a heading when the ship lies still, so a stopped ship fires
@@ -46,8 +60,8 @@ fn rgb(c: [u8; 3]) -> Color {
 /// THE SHIP of a player at sea: the voxel hull of its class, sail colour,
 /// figurehead and brass, riding the swell, with its wake (`mar_casco`,
 /// visual remake). The game's models face +Z and the yaw is `x.atan2(z)`.
-pub fn desenha_casco(p: Vec3, yaw: f32, semente: u64, v: Visual) {
-    crate::mar_casco::desenha(p, yaw, semente, v);
+pub fn desenha_casco(p: Vec3, yaw: f32, semente: u64, v: Visual, vel: f32) {
+    crate::mar_casco::desenha_navio(p, yaw, semente, v, Some(vel));
 }
 
 /// The ship's hull from the equipped instance: (points, full, damaged). The
@@ -76,6 +90,62 @@ pub fn botao_atracar(z: &crate::hud_layout::Zonas, eu: Option<(f32, f32)>) -> Op
     let r = Rect::new(z.faixa.center().x - w * 0.5, z.faixa.y - 8.0 * z.s - h * 2.3, w, h);
     estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
     (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(cais.ilha as u8)
+}
+
+/// THE WALKABLE DECK'S BUTTON (17/11/2026), a row over the "Dock" prompt:
+/// "Leave the helm" at the wheel; "Take the helm" near it (the captain);
+/// "Board <name>'s ship" beside a party member's ship; "Back to my ship"
+/// for the crew. `grupo` = my party's names; `tem_navio` = a ship of my own
+/// in the Ship slot. Returns the request when tapped.
+pub fn botao_do_conves(
+    z: &crate::hud_layout::Zonas,
+    w: &crate::world::World,
+    grupo: &[String],
+    tem_navio: bool,
+) -> Option<nv::PedidoNavio> {
+    if !no_mar() {
+        return None;
+    }
+    let (rotulo, pedido) = pedido_do_conves(w, grupo, tem_navio)?;
+    let h = z.faixa.h * 1.5;
+    let largura = estilo::medir_forte(&rotulo, 18) + h * 1.4;
+    let r = Rect::new(z.faixa.center().x - largura * 0.5, z.faixa.y - 8.0 * z.s - h * 3.6, largura, h);
+    estilo::botao(r, &rotulo, estilo::estado_de(r, false, false), true);
+    (crate::foco::clique() && r.contains(Vec2::from(mouse_position()))).then_some(pedido)
+}
+
+/// What the deck button offers now, and what it asks (`botao_do_conves`).
+pub fn pedido_do_conves(w: &crate::world::World, grupo: &[String], tem_navio: bool) -> Option<(String, nv::PedidoNavio)> {
+    let eu_id = w.self_id?;
+    let eu = w.ents.get(&eu_id)?;
+    let meu = w.meu_conves();
+    let capitao = w.eu_capitao();
+    if let (Some(n), Some(navio)) = (meu, w.navio_do_eu()) {
+        if capitao {
+            if n.leme {
+                return Some(("Leave the helm".into(), nv::PedidoNavio::Leme { pegar: false }));
+            }
+            let classe = nv::classe(navio.meta.kind);
+            if n.local_f32().distance(shared::conves::roda(classe)) <= shared::conves::ALCANCE_DO_LEME {
+                return Some(("Take the helm".into(), nv::PedidoNavio::Leme { pegar: true }));
+            }
+        } else if tem_navio {
+            return Some(("Back to my ship".into(), nv::PedidoNavio::Embarcar { capitao: eu_id }));
+        }
+    }
+    if !capitao {
+        return None;
+    }
+    // A party member's ship close by.
+    let aqui = w.casco_do_eu().map_or(eu.render_pos, |c| c.render_pos);
+    let meu_navio = meu.map(|n| n.navio);
+    w.ents
+        .values()
+        .filter(|e| e.meta.tag == shared::EntityTag::Navio && Some(e.meta.id) != meu_navio)
+        .filter(|e| e.render_pos.distance(aqui) <= shared::conves::ALCANCE_DO_EMBARQUE)
+        .filter_map(|e| Some((e, e.meta.name.as_ref().filter(|n| grupo.iter().any(|g| g.eq_ignore_ascii_case(n)))?)))
+        .min_by(|a, b| a.0.render_pos.distance(aqui).total_cmp(&b.0.render_pos.distance(aqui)))
+        .map(|(e, nome)| (format!("Board {nome}'s ship"), nv::PedidoNavio::Embarcar { capitao: e.meta.id }))
 }
 
 // ───────────────────── phase 4: the treasure and the mark ─────────────────────

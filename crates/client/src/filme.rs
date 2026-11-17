@@ -150,18 +150,80 @@ fn caminho(chaves: &[Chave], u: f32) -> Chave {
 }
 
 /// The game camera (`render3d::camera`) at `c`, pulled back by `recuo`,
-/// never inside the ground, into the capture target.
-fn camera_de(alvo: Vec2, chao_alvo: f32, c: &Chave, recuo: f32, chao: &dyn Fn(f32, f32) -> f32, ctx: &Contexto) -> Camera3D {
+/// into the capture target.
+///
+/// No ground collision: the paths are scripted, and pushing the eye up to
+/// the block under it (a step function, half a unit per block) made it jump
+/// whenever a low shot crossed a block edge (the owner saw the camera
+/// flicker, 17/11/2026). `camera_mede` checks every path stays clear.
+fn camera_de(alvo: Vec2, chao_alvo: f32, c: &Chave, recuo: f32, ctx: &Contexto) -> Camera3D {
     let mut cam = crate::render3d::camera(alvo, chao_alvo, c.yaw, 1.0, c.pitch);
     cam.position = cam.target + (cam.position - cam.target) * c.zoom * recuo;
-    let minimo = chao(cam.position.x, cam.position.z) + 1.2;
-    if cam.position.y < minimo {
-        cam.position.y = minimo;
-    }
     cam.aspect = Some(ctx.aspecto);
     cam.render_target = Some(ctx.rt.clone());
-    cam.z_far = 4000.0;
+    let (perto, longe) = planos_da_captura(cam.position.distance(cam.target));
+    cam.z_near = perto;
+    cam.z_far = longe;
     cam
+}
+
+/// Near and far planes for an eye `d` from what it looks at.
+///
+/// The game's camera keeps macroquad's 0.01 near plane; with the capture's
+/// eye 10-120 u out and the haze at ~300 u that wasted the depth buffer on
+/// the first centimetres: depth error grows as distance² / near, so at
+/// 0.01 even 24 bits leave ~0.5 u of error 300 u out (roofs, trees and the
+/// ground behind them took turns, and distant geometry cut through other
+/// geometry). Nothing is ever nearer than a fifth of the way to the target,
+/// so the near plane goes there (1-3 u: ~100-300x finer depth). The far
+/// plane matters little once the near one is sane; it stays well past the
+/// haze so the sky and the clouds are never cut.
+fn planos_da_captura(d: f32) -> (f32, f32) {
+    ((d * 0.15).clamp(0.5, 3.0), 4000.0)
+}
+
+/// A critically damped spring (the `SmoothDamp` of `render3d::altura_da_camera`)
+/// with a slower time: the capture's eye height follows the ground gently.
+fn mola(atual: f32, vel: f32, alvo: f32, dt: f32, tempo: f32) -> (f32, f32) {
+    if atual == f32::MIN {
+        return (alvo, 0.0);
+    }
+    let w = 2.0 / tempo;
+    let x = w * dt;
+    let decai = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
+    let erro = atual - alvo;
+    let temp = (vel + w * erro) * dt;
+    (alvo + (erro + temp) * decai, (vel - w * temp) * decai)
+}
+
+/// The ground under the camera's target, smooth: the terrain is a step
+/// function (blocks), so its height at one point jumps half a unit at every
+/// block edge, and the camera rode those jumps (target AND eye). Averaged
+/// over a disk 6 u wide, each block edge moves it ~1/17 of a step.
+fn chao_suave(alvo: Vec2, chao: &dyn Fn(f32, f32) -> f32) -> f32 {
+    let mut soma = chao(alvo.x, alvo.y);
+    let mut n = 1.0;
+    for r in [3.0f32, 6.0] {
+        for k in 0..8 {
+            let a = k as f32 * std::f32::consts::FRAC_PI_4 + r * 0.1;
+            soma += chao(alvo.x + a.cos() * r, alvo.y + a.sin() * r);
+            n += 1.0;
+        }
+    }
+    soma / n
+}
+
+/// One frame's camera, for `MMO_FILME_CAMERA` (the frame-to-frame check):
+/// the eye and target as drawn, the eye the old code drew (raw block height
+/// under the target, pushed out of the ground), and the eye's clearance over
+/// the ground under it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Medida {
+    pub olho: Vec3,
+    pub alvo: Vec3,
+    pub olho_antigo: Vec3,
+    pub folga: f32,
+    pub yaw: f32,
 }
 
 // ── the cast ─────────────────────────────────────────────────────────────
@@ -238,6 +300,8 @@ struct Ilha {
     luta: Option<crate::filme_luta::Luta>,
     /// The clearings the fights happen in.
     clareiras: Vec<Vec2>,
+    /// The camera's ground height and its speed (`mola`), reset per shot.
+    altura_cam: (f32, f32),
 }
 
 impl Ilha {
@@ -256,6 +320,7 @@ impl Ilha {
             relogio: 0.0,
             luta: None,
             clareiras: Vec::new(),
+            altura_cam: (f32::MIN, 0.0),
         };
         s.povoa();
         s
@@ -346,13 +411,14 @@ impl Ilha {
         // each evict the others' far chunks.
         let raio = ctx.escolha.raio;
         self.casas.acompanhar();
+        self.altura_cam = (f32::MIN, 0.0);
         let a = self.alvo(i, 0.0);
         self.terreno.atualiza(a, raio, 96);
         let (feitos, total) = self.terreno.prontos_em(a, raio);
         self.casas.prontas() && feitos >= total
     }
 
-    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) {
+    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) -> Medida {
         self.relogio += DT;
         let u = t / self.tomadas[i].segundos;
         let c = caminho(&self.tomadas[i].chaves, u);
@@ -375,9 +441,24 @@ impl Ilha {
         }
         let t = &self.terreno;
         let chao = |x: f32, z: f32| t.altura(x, z);
-        let apoio = t.altura(alvo.x, alvo.y);
+        // The ground the camera rides: smooth, on the fixed clock.
+        let (h, v) = self.altura_cam;
+        self.altura_cam = mola(h, v, chao_suave(alvo, &chao), DT, 0.5);
+        let apoio = self.altura_cam.0;
         let mut vista = crate::render3d::Vista::nova(alvo, c.yaw, 1.0, c.pitch, apoio, &chao);
-        vista.cam = camera_de(alvo, apoio, &c, ctx.recuo, &chao, ctx);
+        // The lineup in portrait: the full pull-back (1.78x at 9:16) left six
+        // small bodies in a band across the middle, and at the end of the
+        // dolly put the eye inside the house behind the camera. Pulled back
+        // only a little, two or three heroes fill the tall frame as the
+        // dolly passes them (17/11/2026).
+        let recuo = if fila { ctx.recuo.powf(0.5) } else { ctx.recuo };
+        vista.cam = camera_de(alvo, apoio, &c, recuo, ctx);
+        let medida = {
+            let mut antiga = camera_de(alvo, t.altura(alvo.x, alvo.y), &c, recuo, ctx).position;
+            antiga.y = antiga.y.max(chao(antiga.x, antiga.z) + 1.2);
+            let o = vista.cam.position;
+            Medida { olho: o, alvo: vista.cam.target, olho_antigo: antiga, folga: o.y - chao(o.x, o.z), yaw: c.yaw }
+        };
         set_camera(&vista.cam);
         crate::render3d::clear();
         let luz = crate::render3d::luz_dia(if e.sombras == cg::Sombras::Bonitas { 1.0 } else { 0.0 });
@@ -416,7 +497,19 @@ impl Ilha {
         if let Some(l) = &mut self.luta {
             // The boss's slams on the ground, then the skills as the game
             // draws them (`habilidades`, on the fixed clock).
-            l.telegrafos.desenha(&chao, crate::relogio::get_time());
+            // The slam's layers (background, fill, front, rim, arrows) are
+            // coplanar quads of different sizes, drawn one over the other.
+            // The old 16-bit depth rounded them all to the same value and
+            // each new layer passed; with exact depth they fight and the
+            // red area came out in stepped pieces (17/11/2026). Each vertex
+            // a hair above the one drawn before it: a later layer always
+            // wins, by ~0.002 u per layer.
+            let lift = std::cell::Cell::new(0.0f32);
+            let chao_em_camadas = |x: f32, z: f32| {
+                lift.set(lift.get() + 2e-5);
+                chao(x, z) + lift.get()
+            };
+            l.telegrafos.desenha(&chao_em_camadas, crate::relogio::get_time());
             l.habilidades.desenha_efeitos(&self.mundo, &vista);
             gl_use_default_material();
         }
@@ -424,6 +517,7 @@ impl Ilha {
         if !fila && !ctx.limpo {
             crate::efeitos::numeros(&self.mundo, &vista);
         }
+        medida
     }
 }
 
@@ -570,7 +664,7 @@ impl Mar {
         pronto
     }
 
-    fn quadro(&mut self, i: usize, t: f32, solido: &Material, ctx: &Contexto) {
+    fn quadro(&mut self, i: usize, t: f32, solido: &Material, ctx: &Contexto) -> Medida {
         use shared::navio::Visual;
         let u = t / MAR_TOMADAS[i];
         let yaw_de = |d: Vec2| d.x.atan2(d.y);
@@ -578,7 +672,6 @@ impl Mar {
         let alvo = self.alvo(i, u);
         self.terreno.atualiza(alvo, raio, 24);
         crate::mar_ui::define_no_mar(true);
-        let sem_chao = |_: f32, _: f32| 0.0f32;
         let (cam, navios, combate) = match i {
             // Ships sailing in formation, wakes behind them.
             0 => {
@@ -595,7 +688,7 @@ impl Mar {
                 let c = caminho(&[ch(1.9, 2.6, 0.62, 0.0, 0.0), ch(1.2, 2.1, 0.5, 0.0, 0.0), ch(0.6, 1.9, 0.42, 0.0, 0.0)], u);
                 let foco = lider - self.rumo * 8.0;
                 let c = Chave { yaw: yaw_de(self.rumo) + c.yaw, ..c };
-                (camera_de(foco, 0.0, &c, ctx.recuo, &sem_chao, ctx), frota, false)
+                (camera_de(foco, 0.0, &c, ctx.recuo, ctx), frota, false)
             }
             // The broadside fight.
             1 => {
@@ -605,7 +698,16 @@ impl Mar {
                     self.povoa(t);
                 }
                 self.mundo.tick(DT, &|_, _, _| 0.0);
-                let eu = self.mundo.ents.get(&EntityId(EU)).map_or(self.aberto, |e| e.render_pos);
+                // The bodies exactly on their paths: the snapshots above are
+                // re-sent every 0.25 s, and the world's catch-up between them
+                // made my ship (and the camera following it) jerk 43 times in
+                // the shot (`scripts/filme-camera.py`, 17/11/2026).
+                for (id, _, _, p, _, _) in self.corpos(t) {
+                    if let Some(e) = self.mundo.ents.get_mut(&EntityId(id)) {
+                        e.render_pos = p;
+                    }
+                }
+                let eu =self.mundo.ents.get(&EntityId(EU)).map_or(self.aberto, |e| e.render_pos);
                 if let Some(e) = self.mundo.ents.get_mut(&EntityId(EU)) {
                     e.yaw = yaw_de(self.rumo);
                 }
@@ -633,7 +735,7 @@ impl Mar {
                 let c = caminho(&[ch(0.5, 1.6, 0.6, 0.0, 0.0), ch(1.4, 1.35, 0.5, 0.0, 0.0), ch(2.3, 1.5, 0.55, 0.0, 0.0)], u);
                 let c = Chave { yaw: yaw_de(self.rumo) + c.yaw, ..c };
                 let navios = vec![(eu, yaw_de(self.rumo), Visual { classe: 2, vela: 3, ..Default::default() }, 1u64)];
-                (camera_de(eu, 0.0, &c, ctx.recuo, &sem_chao, ctx), navios, true)
+                (camera_de(eu, 0.0, &c, ctx.recuo, ctx), navios, true)
             }
             // Into a dock: the Grove's with its lighthouse, then the themed one.
             _ => {
@@ -648,7 +750,7 @@ impl Mar {
                 let c = caminho(&[ch(0.7, 2.6, 0.42, 0.0, 0.0), ch(0.3, 2.1, 0.3, 0.0, 0.0)], u);
                 // The eye out at sea, looking in at the dock.
                 let c = Chave { yaw: (-eixo.x).atan2(eixo.y) + c.yaw, ..c };
-                (camera_de(foco, 0.0, &c, ctx.recuo, &sem_chao, ctx), navios, false)
+                (camera_de(foco, 0.0, &c, ctx.recuo, ctx), navios, false)
             }
         };
         set_camera(&cam);
@@ -670,6 +772,8 @@ impl Mar {
         apaga_luz_e_neblina(solido);
         crate::render3d::camera_padrao();
         crate::mar_ui::define_no_mar(false);
+        // The sea is flat: the eye over the water at y 0.
+        Medida { olho: cam.position, alvo: cam.target, olho_antigo: cam.position, folga: cam.position.y, yaw: 0.0 }
     }
 }
 
@@ -695,7 +799,7 @@ impl Cena {
         }
     }
 
-    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) {
+    fn quadro(&mut self, i: usize, t: f32, vox: &crate::vox::VoxCache, solido: &Material, ctx: &Contexto) -> Medida {
         match self {
             Cena::Ilha(s) => s.quadro(i, t, vox, solido, ctx),
             Cena::Mar(s) => s.quadro(i, t, solido, ctx),
@@ -974,6 +1078,18 @@ struct Config {
     so_prints: bool,
     limpo: bool,
     amostras: i32,
+    /// `MMO_FILME_ESCALA=W:H`: the films downscaled (lanczos) as they are
+    /// encoded — render at 2x, keep the supersampled 1080p.
+    escala: Option<String>,
+    /// `MMO_FILME_CRF` / `MMO_FILME_PRESET` for the scene films (18, slow).
+    crf: String,
+    preset: String,
+    /// `MMO_FILME_CAMERA=file.csv`: every frame's camera, for the
+    /// frame-to-frame check (`scripts/filme-camera.py`).
+    camera: Option<String>,
+    /// `MMO_FILME_SO_CAMERA=1`: no video, only the camera file (every frame
+    /// is still drawn, so run it small).
+    so_camera: bool,
 }
 
 fn config() -> Config {
@@ -995,17 +1111,26 @@ fn config() -> Config {
         // Stills for the stores are clean unless asked otherwise.
         limpo: std::env::var("MMO_FILME_LIMPO").map_or(std::env::var("MMO_FILME_SO_PRINTS").is_ok_and(|s| !s.is_empty() && s != "0"), |s| !s.is_empty() && s != "0"),
         amostras: std::env::var("MMO_FILME_MSAA").ok().and_then(|s| s.parse().ok()).unwrap_or(8),
+        escala: std::env::var("MMO_FILME_ESCALA").ok().filter(|s| !s.is_empty()),
+        crf: std::env::var("MMO_FILME_CRF").unwrap_or_else(|_| "18".into()),
+        preset: std::env::var("MMO_FILME_PRESET").unwrap_or_else(|_| "slow".into()),
+        camera: std::env::var("MMO_FILME_CAMERA").ok().filter(|s| !s.is_empty()),
+        so_camera: std::env::var("MMO_FILME_SO_CAMERA").is_ok_and(|s| !s.is_empty() && s != "0"),
     }
 }
 
 /// ffmpeg reading raw RGBA from stdin.
 fn ffmpeg(c: &Config, caminho: &str) -> std::process::Child {
+    // The GL readback is bottom-up: flip it (the PNG stills already were;
+    // the films came out upside down, 17/11/2026).
+    let filtro = match &c.escala {
+        Some(e) => format!("vflip,scale={e}:flags=lanczos"),
+        None => "vflip".into(),
+    };
     std::process::Command::new("ffmpeg")
-        .args(["-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
+        .args(["-y", "-nostdin", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s"])
         .arg(format!("{}x{}", c.w, c.h))
-        // The GL readback is bottom-up: flip it (the PNG stills already
-        // were; the films came out upside down, 17/11/2026).
-        .args(["-r", &QPS.to_string(), "-i", "-", "-vf", "vflip", "-an", "-c:v", "libx264", "-preset", "slow", "-crf", "18"])
+        .args(["-r", &QPS.to_string(), "-i", "-", "-vf", &filtro, "-an", "-c:v", "libx264", "-preset", &c.preset, "-crf", &c.crf])
         .args(["-pix_fmt", "yuv420p", "-movflags", "+faststart"])
         .arg(caminho)
         .stdin(std::process::Stdio::piped())
@@ -1035,6 +1160,11 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
     let aspecto = c.w as f32 / c.h as f32;
     let mut ctx = Contexto { rt: rt.clone(), aspecto, recuo: recuo_do_aspecto(aspecto), escolha, limpo: c.limpo };
     let mut relogio = 100.0f64;
+    let mut log = c.camera.as_ref().map(|p| {
+        let mut f = std::io::BufWriter::new(std::fs::File::create(p).expect("MMO_FILME_CAMERA"));
+        writeln!(f, "cena,tomada,quadro,ox,oy,oz,ax,ay,az,vx,vy,vz,folga").unwrap();
+        f
+    });
     for nome in cenas {
         // Beyond Ultra for the capture; the sea's own band follows its radius.
         ctx.escolha.raio = if nome == "mar" { RAIO_DA_CAPTURA_NO_MAR.min(raio_da_captura.max(12)) } else { raio_da_captura };
@@ -1050,7 +1180,7 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
         let prints = quadros_dos_prints(c.prints, &c.prints_em, total);
         let ultimo_print = prints.last().copied();
         let base = format!("{}/tempest-{nome}-{}", c.saida, c.nome_tam);
-        let mut enc = (!c.so_prints).then(|| ffmpeg(&c, &format!("{base}.mp4")));
+        let mut enc = (!c.so_prints && !c.so_camera).then(|| ffmpeg(&c, &format!("{base}.mp4")));
         let inicio = get_time();
         let mut quadro_global = 0u32;
         'tomadas: for (i, dur) in duracoes.iter().enumerate() {
@@ -1073,18 +1203,22 @@ pub async fn rodar(vox: &mut crate::vox::VoxCache, cenas: Vec<&'static str>) {
                 while vox.atende_um_pendente(crate::render3d::VOXEL).await {}
                 relogio += DT as f64;
                 crate::relogio::fixa(Some((relogio, DT)));
-                cena.quadro(i, 0.0, vox, &solido, &ctx);
+                let _ = cena.quadro(i, 0.0, vox, &solido, &ctx);
                 next_frame().await;
             }
             let n = (dur * QPS as f32).round() as u32;
             for q in 0..n {
                 while vox.atende_um_pendente(crate::render3d::VOXEL).await {}
-                if enc.is_none() && ultimo_print.is_none_or(|u| quadro_global > u) {
+                if enc.is_none() && !c.so_camera && ultimo_print.is_none_or(|u| quadro_global > u) {
                     break 'tomadas;
                 }
                 relogio += DT as f64;
                 crate::relogio::fixa(Some((relogio, DT)));
-                cena.quadro(i, q as f32 * DT, vox, &solido, &ctx);
+                let m = cena.quadro(i, q as f32 * DT, vox, &solido, &ctx);
+                if let Some(f) = &mut log {
+                    let (o, a, v) = (m.olho, m.alvo, m.olho_antigo);
+                    writeln!(f, "{nome},{i},{q},{},{},{},{},{},{},{},{},{},{}", o.x, o.y, o.z, a.x, a.y, a.z, v.x, v.y, v.z, m.folga).unwrap();
+                }
                 unsafe { get_internal_gl().flush() };
                 let precisa_print = prints.binary_search(&quadro_global).is_ok();
                 if enc.is_some() || precisa_print {
@@ -1157,6 +1291,30 @@ mod testes {
         assert_eq!(v, vec![120, 210, 360, 600, 840, 1080]);
         assert!(quadros_dos_prints(0, &[], 20.0).is_empty());
         assert_eq!(quadros_dos_prints(1, &[10.0], 20.0), vec![600]);
+    }
+
+    /// The camera's ground over block steps: the raw height jumps half a
+    /// unit at each block edge; the camera's (`chao_suave` + `mola`) never
+    /// moves more than a couple of centimetres a frame, and no faster in
+    /// one frame than its neighbours by much (no kink).
+    #[test]
+    fn a_camera_nao_pula_nos_degraus() {
+        let degrau = |x: f32, _z: f32| (x / 0.5).floor() * 0.25;
+        let (mut h, mut v) = (f32::MIN, 0.0);
+        let mut ys = Vec::new();
+        for q in 0..600 {
+            // 4 u/s across the steps, as the Plateau glide does.
+            let alvo = vec2(q as f32 * DT * 4.0, 0.0);
+            (h, v) = mola(h, v, chao_suave(alvo, &degrau), DT, 0.5);
+            ys.push(h);
+        }
+        let d: Vec<f32> = ys.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(d.iter().all(|x| x.abs() < 0.04), "{:?}", d.iter().fold(0.0f32, |a, b| a.max(b.abs())));
+        let kink = d.windows(2).skip(60).map(|w| (w[1] - w[0]).abs()).fold(0.0f32, f32::max);
+        assert!(kink < 0.002, "kink {kink}");
+        // And the near plane is never the game's 0.01, nor in front of the target.
+        let (perto, longe) = planos_da_captura(8.0);
+        assert!(perto >= 0.5 && perto < 8.0 * 0.5 && longe > 1000.0);
     }
 
     #[test]

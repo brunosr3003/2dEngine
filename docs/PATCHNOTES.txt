@@ -1,5 +1,14 @@
 Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 
+- New: every city now has an Island Portal for travel between islands; the dock is for your ship. Step into the portal to see every island the story has opened, with the price on the button. The story's own trips stay free, and you arrive at the other city's portal.
+- New Shipyard at the docks: the Harbour Captain, the Sky Bus Professor and the Submarine Captain now show your ship in 3D, with tabs to repair it, upgrade its stars, build a bigger hull and try on sails and figureheads, plus a big Set Sail button.
+- Story quests that send you to a new island now point to the Island Portal, and Auto quest walks you into it. The portal is on the minimap, the map and the map's Go to list.
+- Fixed: a new hull, a star upgrade or a new sail or figurehead now shows on your ship at sea right away, for you and for everyone around you.
+- Fixed: dungeon portals no longer look broken when seen from behind.
+- New: walk on your ship! Ships are much bigger, with a deck you can walk, run and jump on, and everything you do on land works there too: attack, use skills and potions, and fight sea monsters from the rail as they rise to bite.
+- Take the ship's wheel at the stern to steer it as before. Step away from the helm and your ship keeps sailing your chosen route and stops when it arrives; go back to the wheel to steer again. The cannons fire from the helm, and Auto combat keeps sailing and firing while you hold it.
+- Sail together: party members can board each other's ships at sea and fight side by side on deck. Everyone aboard comes ashore together when the captain docks.
+- Sails now furl when your ship stops and unfurl as it gets under way, and they ripple in the wind as you sail.
 - New: a quick performance check the first time you log in on a device. It plays a big fight, a busy town and the open sea for about 25 seconds, then you choose Performance, Balanced or Quality and a 30 or 60 fps target, and the graphics are tuned to the best your device can run. You can skip it, and run it again from Menu › System › Graphics.
 - If the game keeps running far below your target, it now offers to lower the graphics one step.
 - The Path tree is now a huge star-map web: 180 nodes across four arms, with notables, keystones that trade a big bonus for a cost, and bridges between paths for hybrid builds. It takes about 490 points to complete.
@@ -11,7 +20,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New: the open sea. At the dock of the Grove, the Glacier, the Waste or the Plateau, ask the Harbour Captain to "Sail" and take your own ship out between the islands. Sail up to an island's dock to go ashore.
 - Your first ship, the Sloop, comes from the story quest that first takes you to the Glacier. Players already past it find a Sloop in their Mail.
 - At sea: gather floating wreckage (wood, Steel, Darksteel and Energy), open drifting chests, and keep clear of the sharks and eels that gnaw at your hull. If the hull breaks you wash up at the dock, and the Captain repairs the ship for copper. PK modes apply at sea, except close to the docks.
-- The Harbour Captain's trips between islands now cost copper, shown on the button. The story's own trips stay free.
+- Trips between islands now cost copper, shown on the button. The story's own trips stay free.
 - New: the Shipwright. At the Harbour Captain, build bigger ships from your current one: the Schooner, the Galleon and the Man-o'-War, each with a tougher hull and a little more speed.
 - Ship upgrades: put up to 5 stars each on your ship's Hull, Sails and Cannons. Upgrades always succeed and stay with the ship when you trade or sell it.
 - New sea material: Wreck Planks, found in wreckage, drifting chests and sea monsters. Each sea route now has a dangerous elite monster.
@@ -22,7 +31,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - The open sea got a new look: each island now looks like itself from the water (the Grove's forests and beaches, the Glacier's snow cliffs and ice floes, the Waste's dunes and mesas, the Plateau's dark cliffs), and the islands are bigger and visible from afar.
 - Every dock is now easy to find: a wooden pier with boats moored, a lighthouse whose light shows across the sea, flags in the island's colour, a glowing ring where you dock, a floating name, markers at the edge of the screen and dock icons on the map.
 - You can now sail to Skyreach, Kōgen-tō and Abyssia: each has its own dock on the open sea. Look for floating sky islands with a waterfall and a sky-lift, a neon harbour with cranes and a city skyline, and a coral atoll with a glowing whirlpool. The Magic Island is still reached from the menu.
-- Every travel NPC now offers Sail, Repair and the Shipwright: the Harbour Captain, the Sky Bus Professor and the Submarine Captain. Sailing from an island puts your ship at that island's own dock, and tapping any island on the map sails you to it.
+- The Harbour Captain, the Sky Bus Professor and the Submarine Captain all let you set sail. Sailing from an island puts your ship at that island's own dock, and tapping any island on the map sails you to it.
 - You can sail to an island you haven't unlocked yet to take a look, but you can only go ashore once the story opens it.
 - New sea routes to the new docks, with stronger sea monsters, elites, wreckage and drifting chests at their islands' levels, and a new stretch of lawless waters between Kōgen-tō and Abyssia.
 - New ships: every class has its own hull, with masts, billowing sails, rigging, gun ports and a lantern. Ships ride the waves, lean into turns and leave a foam wake.
@@ -35,7 +44,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Sea creatures now hunt below the surface and rise to bite, and attack from the ship's sides. A red ring warns you before they bite: sail out of it to dodge. Sea elites are bigger and marked.
 - The Broadside now also hits targets off the front and rear quarters of your ship.
 - At sea, the waters of the first three islands are peaceful: no PvP there; PvP starts around the Plateau and beyond. A soft blue ring around your ship shows you are protected, and a line of light marks where the peaceful waters end.
-- Ships with PK can't enter the peaceful waters until it clears. A ship that gets PK inside has 30 seconds to leave. The Harbour Captain still takes you anywhere.
+- Ships with PK can't enter the peaceful waters until it clears. A ship that gets PK inside has 30 seconds to leave. The Island Portal still takes you anywhere.
 - The sea HUD was cleaned up: hull in your status frame, no aiming overlays, only the islands that matter. Entering lawless waters or running low on hull shows a short notice, and lawless waters get a small badge by the minimap.
 - New sailing camera: lower and behind your ship, it follows your heading and widens in a fight. Clearer sea icons on the minimap and map, and new ship skill icons.
 - The sailing camera now holds steady in a fight instead of spinning as your ship circles its target, and eases back behind your ship a moment after the fight ends.
@@ -45,7 +54,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - Ships now turn with weight: bigger hulls turn slower, and every ship gun fires from the sides.
 - The Corsair path has new sea nodes: more cannon damage, a tougher hull, and the Pirate's Code keystone (more cannon damage against marked ships, but you are always a target at sea).
 - Flash offers now include TP (at least 400, never less than the same money buys in the TP shop) on top of their bonus, and the Offers tab got a new look.
-- The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are still reached by boat from the Harbour Captain.
+- The Teleport Scroll is back: the village Alchemist sells it for copper, and on a long trip (map, a quest's Go, an NPC) the "Teleport" button jumps you to that spot on the same island. Other islands are reached through the Island Portal or by ship.
 - The first story quests give Teleport Scrolls, and when you run out the button says so, with a "Find" that shows where to buy more. The button sits above the travel strip, clear of the chat.
 - Health regeneration: 0.5 HP/s in combat and 2 HP/s out of combat, plus your Vitality bonus. Regenerating and drinking potions now show a visual effect.
 - Bag: a new "Equip best" button puts on your strongest pieces in one tap, keeping your weapon and armour type.
@@ -99,7 +108,7 @@ Nov 13, 2026 — Clans, PK modes and the Prime Merchant
 - New level packs at levels 20, 50, 70 and 100. Every pack gives at least the TP its price buys in the shop, plus a bonus (gold, Energy, Darksteel, summon scrolls or gear). Each pack appears once per account.
 - Gear bought in a pack goes straight to your bag (to the Mail if the bag is full); its gold goes to your purse.
 - REBIRTH: at level 100, open the Character Sheet and tap Rebirth. You go back to level 1 and your attribute points are reset (their Energy is refunded); you keep your items and gear, gold, TP, pets, mounts, proficiencies, story and skill tiers.
-- Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a little slower with each rebirth up to the 15th, then much slower with every rebirth after that, with no cap. After your first rebirth, quests no longer ask for a level: every level lock counts as met.
+- Every rebirth gives +5% to every attribute for good (stacking, no cap), Rebirth Essence (more on higher rebirths) and a rebirth chest with Darksteel, a crafting key and crafting materials in the rebirth's color. Leveling gets a little slower with each rebirth up to the 15th, then much slower with every rebirth after that, with no cap. After your first rebirth, quests and the Shipwright no longer ask for a level: every level lock counts as met.
 - Rebirth milestones: a body aura that changes color (green at 1, blue at 3, purple at 5, gold at 10, a black hole at 15, brighter every 5 from 20), +10 bag slots at the 2nd and +10 bank slots at the 7th. Everyone online is told when a player reaches a milestone.
 - Rebirths show as "R3" before the name, in the Character Sheet, and the Level ranking is ordered by rebirths first, then level. Each rebirth has its own celebration, bigger at every milestone.
 - PATH TREE: from your first rebirth on, every 10 levels give a path point (10 per climb, and they stay across rebirths). Open Character Sheet > PATHS to learn nodes in four paths of 15: Assassin (crit, attack speed, dexterity, movement), Mage (wisdom, mana, attack, mana regen), Guardian (defense, health, damage reduction, regen, poise) and Corsair (drops, gold, ore, Energy, Darksteel, better loot). Mix paths freely; each path's nodes are learned in order.

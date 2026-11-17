@@ -148,6 +148,11 @@ pub struct Ent {
     pub coleta_u_ant: f32,
     /// Chefe: o golpe telegrafado carregando/batendo agora (`chefe_anim`).
     pub carga_chefe: Option<crate::chefe_anim::Carga>,
+    /// THE WALKABLE DECK: the drawn deck place (`shared::conves` units),
+    /// chasing the server's; `None` = not aboard.
+    pub local: Option<Vec2>,
+    /// Height of a jump over the deck (aboard, the arc is the deck's).
+    pub salto: f32,
 }
 
 impl Ent {
@@ -176,6 +181,9 @@ pub struct World {
     /// O proprio jogador foi TELEPORTADO neste tick (renascer, dungeon, troca
     /// de area): o `main` mostra o carregando. Quem le' zera.
     pub salto_do_eu: bool,
+    /// THE WALKABLE DECK (`ServerMessage::Conves`): who stands on which ship,
+    /// in deck space. Drawn at `ship × local` (`tick`).
+    pub conves: HashMap<EntityId, shared::conves::NoConves>,
 }
 
 /// Distancia, em unidades, de um ciclo inteiro de passo (dois passos).
@@ -394,6 +402,8 @@ impl World {
                 coleta_t: 0.0,
                 coleta_u_ant: 0.0,
                 carga_chefe: None,
+                local: None,
+                salto: 0.0,
             });
         }
         let ouvinte = self.self_pos();
@@ -510,11 +520,32 @@ impl World {
         // Peso da suavizacao independente do frame rate.
         let a = 1.0 - (-SMOOTH_K * dt).exp();
 
+        // Ships in view: a body aboard one is drawn on its deck.
+        let navios: HashMap<EntityId, (Vec2, f32, u16)> = self
+            .ents
+            .iter()
+            .filter(|(_, e)| e.meta.tag == shared::EntityTag::Navio)
+            .map(|(id, e)| (*id, (e.render_pos, e.yaw, e.meta.kind)))
+            .collect();
+        let conves = &self.conves;
         for ent in self.ents.values_mut() {
-            let target = mq(ent.state.pos_f32());
-            let antes = ent.render_pos;
-            ent.render_pos += (target - ent.render_pos) * a;
-            anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
+            let no_conves = conves.get(&ent.meta.id).filter(|n| navios.contains_key(&n.navio)).copied();
+            if let Some(n) = no_conves {
+                // The deck place chases the server's; the legs walk the deck
+                // step, never the ship's motion.
+                let alvo = mq(n.local_f32());
+                let antes = ent.local.unwrap_or(alvo);
+                let novo = if antes.distance(alvo) > 4.0 { alvo } else { antes + (alvo - antes) * a };
+                ent.local = Some(novo);
+                anda_a_fase(ent, (novo - antes).length(), dt);
+            } else {
+                ent.local = None;
+                ent.salto = 0.0;
+                let target = mq(ent.state.pos_f32());
+                let antes = ent.render_pos;
+                ent.render_pos += (target - ent.render_pos) * a;
+                anda_a_fase(ent, (ent.render_pos - antes).length(), dt);
+            }
             ent.golpe = (ent.golpe + dt).min(99.0);
             if let Some((alvo, t, impacto)) = ent.ataque_mob.as_mut() {
                 *t += dt;
@@ -580,7 +611,28 @@ impl World {
             // Agora e' uma so': no ar, integra a gravidade; no chao, segue o
             // apoio. A gravidade e o impulso vem de `shared`, os mesmos que o
             // servidor usa pra decidir que degrau o pulo vence.
-            let apoio = chao(ent.render_pos.x, ent.render_pos.y, ent.state.camada);
+            if no_conves.is_some() {
+                // On deck the floor is the planks (placed after the loop):
+                // only the jump's arc is kept here, over the deck.
+                ent.pulo_local = (ent.pulo_local - dt).max(0.0);
+                let no_ar_agora = ent.state.flags & ent_flags::PULANDO != 0 || ent.pulo_local > 0.0;
+                if no_ar_agora && !ent.no_ar_antes {
+                    ent.vel_y = 4.0 * shared::PULO_ALTURA / shared::PULO_DURACAO;
+                    ent.voando = true;
+                }
+                ent.no_ar_antes = no_ar_agora;
+                if ent.voando {
+                    let v = ent.vel_y - shared::gravidade() * dt;
+                    ent.salto += (ent.vel_y + v) * 0.5 * dt;
+                    ent.vel_y = v;
+                    if ent.salto <= 0.0 {
+                        ent.salto = 0.0;
+                        ent.vel_y = 0.0;
+                        ent.voando = false;
+                    }
+                }
+            }
+            let apoio = if no_conves.is_some() { ent.render_y } else { chao(ent.render_pos.x, ent.render_pos.y, ent.state.camada) };
             // ── DEGRAU ANTECIPADO ──
             //
             // Quem decide a posicao e' o servidor, e ele poe o corpo em cima
@@ -620,6 +672,9 @@ impl World {
                 ent.voando = false;
             }
 
+            if no_conves.is_some() {
+                // (the rest of the vertical is the land's)
+            } else {
             ent.pulo_local = (ent.pulo_local - dt).max(0.0);
             let no_ar_agora = ent.state.flags & ent_flags::PULANDO != 0 || ent.pulo_local > 0.0;
             if no_ar_agora && !ent.no_ar_antes {
@@ -678,6 +733,7 @@ impl World {
                 let piso = apoio - DEGRAU_VISIVEL * ANTECIPACAO * 1.05;
                 ent.render_y = (ent.render_y + SUBIDA * dt).min(alvo_alto).max(piso);
             }
+            }
 
             // Quem esta' golpeando olha pra quem golpeia, mesmo andando de
             // lado; fora disso, pra onde anda.
@@ -695,10 +751,11 @@ impl World {
             let vel = mq(ent.state.vel_f32());
             // AT SEA a hull faces where it SAILS, never its aim (owner,
             // 16/11/2026: the ship snapped to the mob on every shot and back).
-            let mira = if crate::mar_ui::no_mar() { None } else { ent.mira };
+            let casco = ent.meta.tag == shared::EntityTag::Navio;
+            let mira = if casco { None } else { ent.mira };
             // A hull coasting to a stop keeps its heading: under ~1 u/s the
             // wire's velocity steps (1/8 u/s a component) point anywhere.
-            let parado = if crate::mar_ui::no_mar() && ent.meta.tag == shared::EntityTag::Player {
+            let parado = if casco {
                 VEL_DO_CASCO_PARADO
             } else {
                 MOVING_EPS
@@ -711,7 +768,8 @@ impl World {
             // Os OUTROS olham pra onde o servidor diz (`EntityState::rumo`):
             // parado coletando, mirando ou mordendo, a velocidade nao sabe. O
             // proprio personagem continua na previsao local, sem atraso.
-            let rede = if ent.is_self() || crate::mar_ui::no_mar() {
+            // A ship's `rumo` is its helm's heading, exact, moving or not.
+            let rede = if ent.is_self() && !casco {
                 None
             } else {
                 shared::yaw_de_rumo(ent.state.rumo)
@@ -736,13 +794,86 @@ impl World {
                 // server already turns its velocity at the class's rate, and
                 // a softer follow here hides the wire's 1/8 u/s steps of a
                 // slow ship's velocity, so the bow never twitches.
-                let k = if crate::mar_ui::no_mar() && ent.meta.tag == shared::EntityTag::Player {
+                let k = if casco {
                     1.0 - (-YAW_DO_CASCO_K * dt).exp()
                 } else {
                     a
                 };
                 ent.yaw += d * k;
             }
+        }
+        self.poe_nos_conveses();
+    }
+
+    /// THE WALKABLE DECK: the bodies aboard stand on the planks of their
+    /// ship as it is DRAWN this frame (`mar_casco::matriz_do_casco`: the
+    /// swell, pitch, roll and heel), so the camera riding the body rides the
+    /// deck without jitter. Called at the end of `tick`.
+    fn poe_nos_conveses(&mut self) {
+        let navios: HashMap<EntityId, (Vec2, f32, u16)> = self
+            .ents
+            .iter()
+            .filter(|(_, e)| e.meta.tag == shared::EntityTag::Navio)
+            .map(|(id, e)| (*id, (e.render_pos, e.yaw, e.meta.kind)))
+            .collect();
+        for ent in self.ents.values_mut() {
+            let (Some(local), Some(n)) = (ent.local, self.conves.get(&ent.meta.id)) else {
+                continue;
+            };
+            let Some((p, yaw, kind)) = navios.get(&n.navio).copied() else {
+                continue;
+            };
+            let classe = shared::navio::classe(kind) as u8;
+            let m = crate::mar_casco::matriz_do_casco(vec3(p.x, 0.0, p.y), yaw, n.navio.0 as u64, classe);
+            let q = crate::mar_casco::ponto_do_conves(m, classe, local);
+            ent.render_pos = vec2(q.x, q.z);
+            ent.render_y = q.y + ent.salto;
+            // At the wheel: facing the bow, hands on it.
+            if n.leme {
+                ent.yaw = yaw;
+            }
+        }
+    }
+
+    /// Applies a `ServerMessage::Conves` (only what changed; `navio` 0 = off
+    /// the deck).
+    pub fn aplica_conves(&mut self, lista: &[shared::conves::NoConves]) {
+        for n in lista {
+            if n.navio.0 == 0 {
+                self.conves.remove(&n.id);
+            } else {
+                self.conves.insert(n.id, *n);
+            }
+        }
+    }
+
+    /// My deck row, when aboard.
+    pub fn meu_conves(&self) -> Option<shared::conves::NoConves> {
+        self.self_id.and_then(|id| self.conves.get(&id)).copied()
+    }
+
+    /// The SHIP I stand on.
+    pub fn navio_do_eu(&self) -> Option<&Ent> {
+        self.meu_conves().and_then(|n| self.ents.get(&n.navio))
+    }
+
+    /// What is my HULL at sea: the ship I stand on, else my body.
+    pub fn casco_do_eu(&self) -> Option<&Ent> {
+        self.navio_do_eu().or_else(|| self.self_id.and_then(|id| self.ents.get(&id)))
+    }
+
+    /// At the helm of my ship (at sea with no deck row yet = at the helm: the
+    /// server launches the captain at the wheel).
+    pub fn eu_no_leme(&self) -> bool {
+        self.meu_conves().is_none_or(|n| n.leme)
+    }
+
+    /// I am the captain of the ship I stand on (its name is the captain's).
+    pub fn eu_capitao(&self) -> bool {
+        let eu = self.self_id.and_then(|id| self.ents.get(&id)).and_then(|e| e.meta.name.clone());
+        match self.navio_do_eu() {
+            Some(n) => n.meta.name == eu,
+            None => true,
         }
     }
 
@@ -781,6 +912,54 @@ impl World {
 mod testes {
     use super::*;
     use shared::{EntityTag, PULO_DURACAO, PULO_ESPERA};
+
+    /// THE WALKABLE DECK: a body aboard is drawn at `ship × local`, rides
+    /// along as the ship sails, and its legs walk only its deck step.
+    #[test]
+    fn quem_esta_a_bordo_e_desenhado_no_conves() {
+        // The deck rides the drawn swell, on the game's clock.
+        crate::relogio::fixa(Some((1.0, 1.0 / 60.0)));
+        let mut w = World::default();
+        let meta = |id: u32, tag: EntityTag, kind: u16| EntityMeta {
+            skins: 0, cla: String::new(), pk: Default::default(), auras: 0, id: EntityId(id), tag, name: None,
+            hp_max: 100, faction: None, kind, nivel: 1, desafio: None, aparencia: 0, poder: 0, renascimentos: 0,
+        };
+        let navio = shared::item_id::NAVIO_GALEAO;
+        w.apply(
+            vec![meta(9, EntityTag::Navio, navio), meta(1, EntityTag::Player, 0)],
+            vec![
+                EntityState::quantize(EntityId(9), ::glam::Vec2::new(100.0, 50.0), ::glam::Vec2::ZERO, 100, 0),
+                EntityState::quantize(EntityId(1), ::glam::Vec2::new(100.0, 50.0), ::glam::Vec2::ZERO, 100, ent_flags::SELF),
+            ],
+            &[],
+        );
+        let local = ::glam::Vec2::new(1.0, 2.0);
+        w.aplica_conves(&[shared::conves::NoConves::novo(EntityId(1), EntityId(9), local, false)]);
+        for _ in 0..30 {
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
+        }
+        let navio_p = w.ents[&EntityId(9)].render_pos;
+        let yaw = w.ents[&EntityId(9)].yaw;
+        let rumo = ::glam::Vec2::new(yaw.sin(), yaw.cos());
+        let esperado = shared::conves::do_mundo(::glam::Vec2::new(navio_p.x, navio_p.y), rumo, local);
+        let eu = &w.ents[&EntityId(1)];
+        assert!(eu.render_pos.distance(vec2(esperado.x, esperado.y)) < 0.4, "{} vs {esperado}", eu.render_pos);
+        assert!(eu.render_y > 0.5, "on the planks, not in the water: {}", eu.render_y);
+        let fase = eu.fase;
+        // The ship sails 5 u: the body rides along, its legs still.
+        w.apply(vec![], vec![EntityState::quantize(EntityId(9), ::glam::Vec2::new(105.0, 50.0), ::glam::Vec2::ZERO, 100, 0)], &[]);
+        for _ in 0..60 {
+            w.tick(1.0 / 60.0, &|_, _, _| 0.0);
+        }
+        let eu = &w.ents[&EntityId(1)];
+        assert!(eu.render_pos.x > esperado.x + 4.5, "the body stayed behind: {}", eu.render_pos);
+        assert!((eu.fase - fase).abs() < 1e-3, "the legs walked the ship's motion");
+        assert_eq!(w.navio_do_eu().map(|n| n.meta.id), Some(EntityId(9)));
+        assert!(!w.eu_no_leme());
+        // Off the deck: back to the server's position.
+        w.aplica_conves(&[shared::conves::NoConves { id: EntityId(1), navio: EntityId(0), local: [0, 0], leme: false }]);
+        assert!(w.meu_conves().is_none() && w.eu_no_leme());
+    }
 
     #[test]
     fn login_restaura_auras_e_skin_sem_reequipar_e_fechar_cancela_previa() {

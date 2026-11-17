@@ -1004,9 +1004,54 @@ pub(crate) const SOLIDO_VERTICE: &str = r#"#version 100
     uniform vec4 CabeloClaro; uniform vec4 CabeloEsc;
     uniform vec4 PeleClaro;   uniform vec4 PeleEsc;
 
+    // A SAIL'S CLOTH (the walkable deck, 17/11/2026; `mar_casco::desenha`):
+    // zero on every other draw. `VelaA` = (kind: 1 square, 2 fore-and-aft or
+    // jib; furl 0 set .. 1 furled; ripple amplitude, mesh units; time).
+    // `VelaB` = square: the heights of the yards the sails hang from, bottom
+    // to top; fore-and-aft: (boom/foot height, the mast's z, the sail's
+    // length, 1 for a jib running forward of its stay).
+    uniform vec4 VelaA;
+    uniform vec4 VelaB;
+
     void main() {
-        mundo = (Model * vec4(position, 1)).xyz;
-        gl_Position = Projection * Model * vec4(position, 1);
+        vec3 p = position;
+        if (VelaA.x > 0.5) {
+            float recolhe = VelaA.y;
+            float tempo = VelaA.w;
+            if (VelaA.x < 1.5) {
+                // Square: each sail hangs from the yard over it.
+                float verga = VelaB.w;
+                if (p.y <= VelaB.x) { verga = VelaB.x; }
+                else if (p.y <= VelaB.y) { verga = VelaB.y; }
+                else if (p.y <= VelaB.z) { verga = VelaB.z; }
+                float cai = max(verga - p.y, 0.0);
+                float w = clamp(cai * 0.45, 0.0, 1.0);
+                // Ripples running across and down the cloth, a quicker luff
+                // at the free foot and edges.
+                float onda = sin(p.x * 0.8 - tempo * 3.4 + p.y * 0.5) * 0.75
+                           + sin(p.x * 1.7 + tempo * 5.3 - p.y * 0.9) * 0.25;
+                float borda = sin(tempo * 11.0 + p.x * 2.5) * w * w * 0.3;
+                p.z += (onda * w + borda) * VelaA.z * (1.0 - recolhe);
+                // Furled: rolled up onto its yard.
+                p.y = verga - cai * (1.0 - recolhe * 0.94);
+                p.z += recolhe * 0.06;
+            } else {
+                // Fore-and-aft (and the jib): bent on the mast or stay.
+                float ao_longo = abs(p.z - VelaB.y);
+                float w = clamp(ao_longo / max(VelaB.z, 0.1), 0.0, 1.0);
+                float alto = max(p.y - VelaB.x, 0.0);
+                float onda = sin(p.z * 0.9 - tempo * 3.8 + p.y * 0.45) * 0.75
+                           + sin(p.z * 1.9 + tempo * 5.9 + p.y * 0.8) * 0.25;
+                float borda = sin(tempo * 11.0 + p.y * 2.2) * w * w * 0.3;
+                p.x += (onda * w + borda) * VelaA.z * (1.0 - recolhe) * clamp(alto * 0.5, 0.0, 1.0);
+                // Furled: lowered onto the boom (the jib onto its foot) and
+                // gathered toward the mast.
+                p.y = VelaB.x + alto * (1.0 - recolhe * 0.9);
+                p.z = VelaB.y + (p.z - VelaB.y) * (1.0 - recolhe * 0.55);
+            }
+        }
+        mundo = (Model * vec4(p, 1)).xyz;
+        gl_Position = Projection * Model * vec4(p, 1);
         color = color0 / 255.0;
 
         // Sem array indexado dinamicamente: GLSL ES 1.00 nao garante isso.
@@ -1208,6 +1253,8 @@ pub fn material_solido() -> Material {
                 UniformDesc::new("Oco", UniformType::Float3),
                 UniformDesc::new("LuzPos", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
                 UniformDesc::new("LuzCor", UniformType::Float4).array(crate::gpu_estatica::MAX_LUZES),
+                UniformDesc::new("VelaA", UniformType::Float4),
+                UniformDesc::new("VelaB", UniformType::Float4),
             ],
             pipeline_params: params_solido(),
             ..Default::default()
@@ -1562,6 +1609,17 @@ pub fn cor_do_portal(conteudo: u16) -> Color {
 
 /// A stone platform, a standing ring of stone with runes lighting up in turn,
 /// a swirling core of light, and sparks rising around it.
+/// `draw_cube` seen from any side. Its back (-z) face is wound the wrong
+/// way and the world material culls back faces: a cube drawn plain loses the
+/// face looking at a camera behind it (the Porão portals, seen from behind,
+/// were floating slivers). Mirrored in z and in x, every face has a copy
+/// wound towards the camera.
+pub(crate) fn cubo_dos_lados(c: Vec3, s: Vec3, cor: Color) {
+    draw_cube(c, s, None, cor);
+    draw_cube(c, vec3(s.x, s.y, -s.z), None, cor);
+    draw_cube(c, vec3(-s.x, s.y, s.z), None, cor);
+}
+
 pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
     use std::f32::consts::TAU;
     let pedra = Color::from_rgba(92, 94, 106, 255);
@@ -1569,15 +1627,15 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
     let (vel, brilho) = if perto { (2.4, 1.0) } else { (1.0, 0.7) };
     let com = |a: f32| Color::new(cor.r, cor.g, cor.b, a);
     // The platform: a ring of flagstones and a step.
-    draw_cube(p + vec3(0.0, 0.1, 0.0), vec3(3.6, 0.2, 1.6), None, pedra_escura);
+    cubo_dos_lados(p + vec3(0.0, 0.1, 0.0), vec3(3.6, 0.2, 1.6), pedra_escura);
     for k in 0..14 {
         let a = k as f32 / 14.0 * TAU;
         let q = p + vec3(a.cos() * 1.9, 0.14, a.sin() * 0.95);
-        draw_cube(q, vec3(0.62, 0.28, 0.5), None, if k % 2 == 0 { pedra } else { pedra_escura });
+        cubo_dos_lados(q, vec3(0.62, 0.28, 0.5), if k % 2 == 0 { pedra } else { pedra_escura });
     }
     // The glow pooled on the platform.
     let pulso = 0.5 + 0.5 * (t * 2.0 * vel).sin();
-    draw_cube(p + vec3(0.0, 0.25, 0.0), vec3(2.6, 0.03, 1.0), None, com(0.25 + 0.2 * pulso * brilho));
+    cubo_dos_lados(p + vec3(0.0, 0.25, 0.0), vec3(2.6, 0.03, 1.0), com(0.25 + 0.2 * pulso * brilho));
     // The standing ring, facing the camera (in the XY plane): stone blocks,
     // every third a rune that lights up as the light runs round.
     let centro = p + vec3(0.0, 1.85, 0.0);
@@ -1594,13 +1652,13 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
         } else {
             pedra
         };
-        draw_cube(q, vec3(0.44, 0.44, 0.5), None, c);
+        cubo_dos_lados(q, vec3(0.44, 0.44, 0.5), c);
     }
     // The core: layers of light, and a spiral of motes turning inward.
     for k in 0..4 {
         let r = 1.15 - k as f32 * 0.26;
         let a = (0.10 + 0.07 * k as f32) * brilho * (0.8 + 0.2 * pulso);
-        draw_cube(centro, vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02), None, com(a));
+        cubo_dos_lados(centro, vec3(r * 2.0, r * 2.0, 0.04 + k as f32 * 0.02), com(a));
     }
     let motes = if perto { 36 } else { 24 };
     for k in 0..motes {
@@ -1611,10 +1669,9 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
         let q = centro + vec3(a.cos() * raio, a.sin() * raio, 0.06);
         let lado = 0.07 + 0.1 * (1.0 - fase);
         let branco = fase * 0.6;
-        draw_cube(
+        cubo_dos_lados(
             q,
             vec3(lado, lado, lado),
-            None,
             Color::new(
                 cor.r + (1.0 - cor.r) * branco,
                 cor.g + (1.0 - cor.g) * branco,
@@ -1631,7 +1688,7 @@ pub fn desenha_portal(p: Vec3, cor: Color, perto: bool, t: f32) {
         let a = f * TAU + t * 0.5;
         let q = p + vec3(a.cos() * 1.8, 0.3 + subida * 3.4, a.sin() * 0.8);
         let lado = 0.09 * (1.0 - subida) + 0.03;
-        draw_cube(q, vec3(lado, lado, lado), None, com((1.0 - subida) * brilho));
+        cubo_dos_lados(q, vec3(lado, lado, lado), com((1.0 - subida) * brilho));
     }
 }
 
@@ -1855,13 +1912,14 @@ pub fn draw_entities_com_sombras(
             draw_ring(p, 0.55, Color::from_rgba(241, 200, 112, 255));
         }
 
-        // AT SEA EVERY PLAYER IS A HULL (docs/NAVEGACAO.md): there is no
-        // boat entity — navigating is walking on water — so what changes is
-        // only what is drawn. The body gives way to the hull, on the same
-        // heading.
-        if crate::mar_ui::no_mar() && e.meta.tag == shared::EntityTag::Player {
+        // THE SHIP is its own entity since the walkable deck (17/11/2026):
+        // the players aboard are drawn as themselves, on its deck
+        // (`world::World::poe_nos_conveses`).
+        if e.meta.tag == shared::EntityTag::Navio {
             // Its class, sail and figurehead ride on `skins` (phase 2).
-            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
+            // The sails follow its speed on the wire.
+            let vel = e.state.vel_f32().length();
+            crate::mar_ui::desenha_casco(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins), vel);
             // Phase 4: a marked ship (treasure on deck) flies the skull.
             if e.meta.pk.marcado {
                 crate::mar_ui::desenha_marca(p, e.yaw, e.meta.id.0 as u64, shared::navio::Visual::do_fio(e.meta.skins));
@@ -3938,6 +3996,10 @@ pub fn pick(world: &World, vista: &Vista, mouse: Vec2, raio_px: f32) -> Option<s
     for (id, e) in &world.ents {
         // morto nao se seleciona: o corpo fica, o alvo nao
         if e.is_self() || e.morte.is_some() || crate::invisibilidade::oculto(*id, world.self_id) {
+            continue;
+        }
+        // A ship is not a target: who is aboard is (the walkable deck).
+        if e.meta.tag == shared::EntityTag::Navio {
             continue;
         }
         let Some(sp) = vista.na_tela(vista.mira_de(e)) else {

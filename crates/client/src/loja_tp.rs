@@ -361,6 +361,14 @@ impl LojaTp {
         self.arrasto = None;
     }
 
+    /// Opens on the Skins tab's SHIP category (the Shipyard's Cosmetics
+    /// link: sails and figureheads for sale).
+    pub fn abrir_no_navio(&mut self) -> Vec<ClientMessage> {
+        self.aba = 2;
+        self.filtro_skin = 4;
+        self.abrir()
+    }
+
     pub fn estado(&self) -> Option<&EstadoLoja> {
         self.estado.as_ref()
     }

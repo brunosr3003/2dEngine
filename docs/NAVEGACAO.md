@@ -1256,6 +1256,359 @@ volta = mar cai no Bosque); cliente `o_aviso_das_aguas_pacificas`. Prévia
 `MMO_PREVIA_MAR=1 MMO_PREVIA_SO=combate`: `mar-hud-combate-barbatana`,
 `-enguia`, `-mordida`, `-elite` (cópias em `target/mar_bichos/`).
 
+### Convés andável (17/11/2026, versão de TESTE, protocolo 199) — FEITO
+
+O dono: *"quero que o navio seja maior e o meu player possa andar dentro do
+navio: andar, atacar etc. Tudo que acontece em terra precisa acontecer no
+navio também"*; *"quando você está no leme você controla o navio livremente.
+Se sair, o navio segue o caminho que você escolheu e para quando chegar; pra
+continuar precisa voltar pro leme"*; velas *"com animação de vento"*, e
+*"abrir e fechar a vela quando o navio anda / para"*.
+
+A resposta à lição de setembro (o barco com estações "perdia o referencial de
+frente e trás") é o LEME: no leme o direcional governa o NAVIO com o mesmo
+`Leme::governa` e a mesma câmera de navegação de hoje; fora do leme o
+direcional anda o JOGADOR no convés, com a câmera de terra.
+
+**1. Entidades.**
+
+- O **navio é uma entidade própria** do servidor (`world/conves.rs`):
+  `NetId`, `Position`, `Velocity`, `Health` (= o casco, que vai no
+  `EntityState::hp` sem byte novo), `EntityKind::Navio(item)` e
+  `NavioEnt { dono, classe }`. Sem `Solido`: não empurra nem é empurrado; o
+  `mover_raspando` da costa (e a barreira das águas pacíficas do dono) o
+  move num passe próprio logo depois do passe dos corpos. No fio sai com o
+  `EntityTag::Navio` (novo, no fim), nome = o capitão, `kind` = o item,
+  `skins` = o `Visual`, `rumo` = a proa.
+- **Quem está a bordo é jogador normal** (`Session::conves: Option<ABordo>`:
+  o navio, o capitão, a posição LOCAL no convés e se está no leme). A
+  posição do mundo é `navio × local`, refeita a cada tick
+  (`shared::conves::do_mundo`): todo o combate de terra (cone, projétil,
+  AoE, alvo, AOI) continua lendo a `Position` do mundo sem saber de navio.
+  O passe dos corpos pula quem está a bordo; o andar é no espaço do convés.
+- A velocidade do corpo no fio é só a do PASSO (girada pro mundo), nunca a
+  do navio somada: o teto do `i8` continua valendo.
+- **Convés** (`shared::conves`): por classe, a meia-boca ao longo do casco
+  é a MESMA curva do modelo (`meia_larg` do `mar_casco`, que agora lê dali),
+  menos a amurada e o raio do corpo; os mastros são círculos que barram. Um
+  passo que sai do convés desliza no eixo que ainda cabe (a amurada é parede).
+
+| Classe | Casco (comp × boca) | Convés andável (medido) | Voxel | Vértices (casco + velas) |
+|---|---|---|---|---|
+| Chalupa | 7,2 × 3,0 u | 6,3 × 2,8 u | 0,15 u | 9.240 |
+| Escuna | 10,8 × 4,0 u | 9,7 × 3,7 u | 0,18 u | 13.064 |
+| Galeão | 15,5 × 5,5 u | 14,6 × 5,1 u | 0,21 u | 22.120 |
+| Nau | 20,2 × 6,2 u | 19,0 × 5,7 u | 0,28 u | 22.172 |
+
+  (`shared::conves::MEDIDAS`; teste `os_conveses_tem_o_tamanho_pedido`. O
+  voxel cresce com a classe pra malha caber no celular: o teto de 24 mil
+  vértices do `os_cascos_saem_bonitos_e_baratos` continua; antes era 6,7 /
+  9,2 / 17 / 21 mil.)
+
+  Velocidade, giro e arranque por classe não mudam. O raio de colisão com a
+  costa continua `RAIO_DO_CASCO` no centro (a rota de água e os testes de
+  travessia não mudam); o desenho maior pode encostar a popa numa pedra.
+
+**2. Leme.** Uma roda na popa (`conves::leme`). Só o CAPITÃO pega o leme
+(decisão: a tripulação não governa). "Take the helm" aparece a 1,6 u da
+roda; no leme o corpo fica preso na pose de governar e o direcional, a rota
+e o piloto do AUTO governam o navio exatamente como hoje. "Leave the helm"
+(botão, ou a mesma tecla de interagir) solta. Fora do leme o navio segue a
+rota viva (toque no mapa, "Sail to…") e PARA ao chegar (o `Leme::governa`
+com direção zero freia na rampa do arranque); sem rota, vai parando. Toque
+no mapa da tripulação não sai do cliente e o servidor ignora `MoverPara` de
+quem não é capitão (sem aviso: o auto do cliente reenviaria em laço). No leme
+o corpo fica na roda olhando a proa (sem pose própria de governar: cortado).
+
+**3. No convés, tudo de terra.** Andar, correr, pular, golpe, skills,
+poções e interagir são os de terra (o `!no_mar()` que travava o golpe sai
+pra quem está fora do leme). No leme não se golpeia (as mãos estão na roda).
+Bicho de mordida no mar persegue o NAVIO (o centro e a proa dele, não o
+jogador): segura a `meia_boca + 1,8` do través e fecha a `meia_boca + 0,9`
+pra morder — ao alcance de um golpe de quem está na amurada. A mordida vai
+pro casco do navio de quem foi mordido (tripulação inclusive).
+
+**Canhões:** Bordada e Canhão Longo continuam habilidades do navio e saem
+**do leme** (a barra do navio só aparece no leme; fora dele a barra é a de
+terra). Decisão: é o mais simples que lê bem — o leme é o posto de comando,
+uma barra por vez no HUD, e o piloto do AUTO no leme continua atirando. A
+tripulação luta com as armas dela.
+
+**4. Tripulação.** O grupo é por processo, então o embarque é NO MAR: um
+membro do grupo a até 14 u do navio do capitão vê "Board <nome>'s ship"; o
+navio dele é guardado (sai do mar, nada se perde) e ele aparece no convés.
+Ao atracar o capitão, todos a bordo descem no mesmo porto; ao afundar, todos
+vão pro cais (as regras de hoje); capitão que sai (desconecta) larga a
+tripulação no cais mais perto. PK como hoje: nas águas pacíficas o
+`can_damage_player` já recusa, valha a arma ou o canhão. Corpo de PK fica
+2 min no convés (o mesmo `linger`), andando com o navio.
+
+**5. Câmera.** No leme: a de navegação de hoje (`mar_camera`, no navio).
+Fora do leme: a de terra seguindo o jogador; como a posição desenhada do
+corpo é `navio desenhado × local suavizado`, ela anda com o convés sem
+tremer. Em luta no convés: a de luta de terra.
+
+**6. Velas.** Recolhidas parado (no cais, ou a < ~1 u/s), soltas andando,
+numa rampa de ~1,5 s lida da VELOCIDADE do navio no cliente (todo mundo vê o
+mesmo, qualquer classe e cor de vela): recolher é uma escala na matriz em
+volta da verga (zero vértice). O pano ondula no shader do mundo (uniforme
+novo `Vela`, ligado só no desenho da vela): ondas correndo pelo pano, mais
+forte longe da verga/mastro e na borda solta, e mais forte com o navio rápido.
+Flâmula e bandeira já ondulam.
+
+**7. Persistência.** Sair a bordo salva como hoje no mar (`zona_volta`); a
+posição salva é a do CORPO (no convés, a poucos metros do centro). Ao voltar,
+o navio nasce na água mais perto dela (`agua_no_mar`) com o capitão no leme.
+Tripulação que reconecta sem o capitão sai no próprio navio (sem navio que
+flutue: o cais mais perto).
+
+**8. Protocolo** (199 sem lançar; só no fim dos enums):
+`EntityTag::Navio`, `EntityKind::Navio(item)`, `ServerMessage::Conves { lista:
+Vec<NoConves> }` (por sessão, só o que MUDOU: id, navio, local em 1/32 u, no
+leme; navio 0 = saiu), `PedidoNavio::Leme { pegar }`, `PedidoNavio::Embarcar
+{ capitao }` (o corpo do capitão OU a entidade do navio; o próprio id = voltar
+ao meu navio).
+
+**Como ficou — o que mudou de lugar.**
+
+- Servidor (`world/conves.rs`, novo): `NavioEnt`, `ABordo`, `tick_conves`
+  (navio sem capitão some, tripulação órfã vai ao cais, quem está no mar sem
+  convés zarpa no próprio navio, o casco vai no `Health`, troca de classe no
+  mar atualiza a entidade), `mover_navios_e_conves` (logo após o passe dos
+  corpos, que pula quem está a bordo), `enviar_conves`, `pegar_leme`,
+  `embarcar_no_navio`, `levar_ao_cais` (o antigo corpo do `naufragio`).
+  `world.rs`: o laço de input separa leme/convés (`governo_dos_navios`), o
+  golpe de terra sai no mar, a IA do mar caça o NAVIO (`alvos_no_mar`:
+  centro, rumo, velocidade, classe; a presa é o ponto do casco mais perto,
+  `casco_mais_perto`), a mordida resolve contra o casco, o snapshot manda o
+  navio com tag, nome do capitão, item, visual e proa exata no `rumo`, e os
+  corpos no mar olham pra mira como em terra. `navio.rs`: atracar, naufragar,
+  habilidades (só do leme, do centro do navio), balas (acertam o casco de
+  quem está a bordo), visual pela entidade do navio, `ponto_no_costado_do_casco`
+  (segura a `meia_boca + 2,2`, morde a `meia_boca + 0,3..`; a Chalupa fica
+  com os números de antes). `piloto_do_mar`: só voa do leme, do centro do
+  navio. `aguas_pacificas`: a barreira é do navio do capitão PK.
+- Cliente: `world.rs` (`conves`, `poe_nos_conveses`: o corpo vai pro ponto
+  do convés do navio DESENHADO no quadro — onda, arfagem, balanço, adernar —,
+  `navio_do_eu`, `casco_do_eu`, `eu_no_leme`, `eu_capitao`), `mar_casco.rs`
+  (medidas do `shared::conves`, roda do leme, `matriz_do_casco`,
+  `ponto_do_conves`, velas por velocidade, pano no shader, cordame em fitas),
+  `render3d.rs` (o navio é a entidade `Navio`; jogador no mar é gente; pano
+  `VelaA`/`VelaB` no shader do mundo; navio não é alvo do toque), `gpu_estatica`
+  (`com_vela`), `mar_ui` (`navegando()` = no mar E no leme; botão do convés),
+  `main.rs` (câmera do mar, barra do navio, piloto, varredura e aproximação do
+  mar só no leme; fora dele HUD, skills, pulo e corrida de terra; a ficha mostra
+  o casco só no leme), `mar_camera` (recuo por classe = (comprimento /
+  Chalupa)^0,6), `mar_combate_ui` e `mapa` (o casco é o navio em que estou).
+- **Achado no caminho:** o cordame era `draw_line_3d`, que debaixo do
+  material do mundo virava TRIÂNGULOS entre cordas seguidas: as "velas
+  marrons" enormes entre os mastros e o gurupés (já no remake: `mar_novo/
+  mar-classe-2.png`). Agora é uma fita virada pro olho, uma malha por navio.
+
+**Velas, números.** Recolhida abaixo de 0,6 u/s, cheia acima de 2,5 u/s
+(`mar_casco::vela_alvo`), rampa de 1,4 s (`VELA_S`), velocidade do FIO da
+entidade (`EntityState::vel`; o Estaleiro e as prévias, sem velocidade,
+mostram a vela solta). Redonda: cada pano enrola na própria verga (as alturas
+das vergas vão no `VelaB`), 94%; latina e bujarrona: descem pra retranca/pé
+(90%) e juntam no mastro (55%). Ondulação: duas ondas correndo no pano
+(comprimento ~8 unidades de malha) mais a panejada da borda solta, amplitude
+0,05-0,15 unidade de malha (mais forte rápido), só com a vela solta; o
+"enfunar" pela escala da matriz continua. Custo: um `if` e ~20 operações no
+vértice só nos desenhos de vela (o resto do mundo passa `VelaA.x = 0`); zero
+CPU por vértice; nenhuma chamada nova. Longe (LOD) a vela única só aparece
+solta.
+
+**Custo (prévia, `gpu_estatica::contagem` do passe das entidades: navio +
+corpos a bordo, perto, com cordame e flâmula):** Chalupa 44 chamadas / 22,5 k
+índices (3 corpos), Escuna 45 / 28,2 k (3), Galeão 70 / 46,8 k (5), Nau 70 /
+46,9 k (5). O navio sozinho perto continua casco + uma malha por mastro +
+bujarrona (3-5 chamadas) + 1 de cordame; cada corpo é o boneco de terra de
+sempre. Fio: uma linha do convés = ~12 bytes, só quando muda; 8 corpos
+andando = 92 bytes por tick (`a_linha_do_conves_cabe_no_fio`); parado, zero.
+
+**Cortado:** embarcar no CAIS em terra (o grupo é por processo: o embarque é
+no mar, lado a lado — dois do grupo que zarpam do mesmo cais saem juntos no
+ancoradouro); quem não tem navio não chega ao mar; tripulação ao leme (só o
+capitão); estações de canhão no convés (os canhões saem do leme); pose de
+governar; a caveira do navio marcado (o tesouro está desligado:
+`BAU_DO_COLOSSO_LIGADO`); tocar no convés pra andar até ali (toque é rota do
+navio); PK da tripulação contra a barreira das águas pacíficas (vale a do
+capitão).
+
+**Testes:** shared `os_conveses_tem_o_tamanho_pedido`,
+`a_amurada_e_parede_e_o_mastro_barra`, `local_e_mundo_vao_e_voltam`,
+`a_linha_do_conves_cabe_no_fio`; servidor (`world/conves.rs`)
+`ao_chegar_o_navio_nasce_com_o_capitao_no_leme`,
+`quem_esta_no_conves_anda_com_o_navio`, `ninguem_sai_do_conves_andando`
+(as quatro classes), `o_leme_pega_e_solta`,
+`fora_do_leme_o_navio_segue_a_rota_e_para`, `o_golpe_da_amurada_acerta_o_bicho`,
+`a_tripulacao_embarca_e_desce_no_cais`, `afundar_leva_todo_mundo_ao_cais`,
+`sem_o_capitao_a_tripulacao_vai_ao_cais`, `ao_reconectar_volta_ao_conves`,
+`o_orcamento_do_fio_aguenta`; e os do mar (piloto, rotas, balas, mordida,
+costado, águas pacíficas, visual reenviado) no modelo novo. Cliente
+`quem_esta_a_bordo_e_desenhado_no_conves`,
+`as_velas_recolhem_parado_e_soltam_andando`, `o_conves_do_modelo_e_o_do_servidor`.
+
+**Prévia:** `MMO_PREVIA_CONVES=1` (`MMO_PREVIA_SO` filtra) grava em
+`MMO_PREVIA_SAIDA` (padrão `target/convés`): `conves-andando-0..3`,
+`conves-leme`, `conves-grupo-tubarao`, `conves-vela-0..7` (o pano, 0,12 s entre
+quadros) e `conves-desfralda-<classe>-0..7` (Escuna e Galeão saindo do
+repouso).
+
+### Portal das Ilhas, Estaleiro e o visual do navio (17/11/2026, versão de TESTE, protocolo 199)
+
+O dono: *"the dock npc and the teleport npc should not be the same. I want
+you to create a portal, similar to the porão ones, but a few different
+because it will be an island teleport portal. Every city will have one and
+you can use it to teleport. The dock will only be to manage and sail with
+ships."* E depois: *"in the dock NPC remake all the HUD, the HUD is terrible.
+I need a 3D preview of the ship there and a more beautiful HUD, like if you
+were crafting / repairing a ship indeed."*
+
+**1. O Portal das Ilhas** (`shared::portal_ilhas`). Um por cidade das 7 ilhas
+do `ARQUIPELAGO`. Não é entidade: como as portas de Porão, o lugar é função
+pura do `Gerador` (`sitio(ger)` → centro e ponto de chegada; `da_zona(zona)`
+com cache por zona; `ja_calculado` só lê o cache — o cliente acha o portal
+na thread do mapa, `mapa::gerar_dados` chama `portal_ilhas_ui::aquecer`, e o
+quadro nunca paga a busca). A busca: anel de 9 a 40 u em volta da praça,
+preferindo o rumo do cais (porto em terra; nas ilhas sem porto, o NPC de
+cais mais perto) e depois o mais perto da praça; exige chão no nível da
+praça num raio de `PEGADA` 2,4 + `FOLGA` 1,2 u (seco, |Δh| ≤ 0,3), nenhuma
+caixa da vila (paredes E enfeites), nenhum NPC a menos de 5,6 u, nenhum
+caminho calcado nem frente de porta, nenhuma árvore/pedra/toco
+(`terreno::estorvos_da_coluna`, o mesmo plantio da colisão) e porta de Porão
+a ≥ 14 u. A chegada fica a 5,5 u em chão livre, e o anel olha pra ela: de
+preferência do lado da praça, senão o primeiro rumo (de 45 em 45°) com
+vista livre (nenhuma caixa a 8,5 e 12 u na frente). Mais perto da praça não
+cabe: entre o poço e o anel de lojas os caminhos das portas e os enfeites
+deixam vãos menores que os 9 u do portal; ele fica logo depois das lojas,
+no plano da cidade, perto do caminho do cais.
+
+| Ilha | Portal (x, z) | Da praça | Chegada |
+|---|---|---|---|
+| Bosque | (-58,4, -470,4) | 25 u | (-56,5, -465,3) |
+| Geleira | (-200,4, 1,6) | 30 u | (-195,3, -0,4) |
+| Ermo | (140,1, 157,2) | 28 u | (137,2, 152,5) |
+| Planalto | (399,5, -14,6) | 27 u | (394,0, -15,0) |
+| Skyreach | (-27,5, -5,2) | 28 u | (-26,5, -10,6) |
+| Kōgen-tō | (-6,7, 551,1) | 22 u | (-8,4, 545,8) |
+| Abyssia | (-17,4, 45,5) | 24 u | (-22,9, 45,6) |
+
+**Visual** (`client/portal_ilhas_ui::desenha`, cubos com o material sólido,
+como o do Porão): mesma família — plataforma, anel de pedra em pé, núcleo de
+luz —, mas pedra **azul-mar com friso de ouro**, rosa dos ventos de ouro
+incrustada na plataforma, dois pilares com capitel dourado, pontas de bússola
+N/L/S/O no anel, **runas de onda** que acendem numa maré lenta, redemoinho
+lento (o do Porão gira rápido) com ondas que rolam em volta, e uma **ilhota
+flutuante** (grama, areia, rocha, palmeira e bandeirinha de ouro) girando
+devagar sobre o anel. O anel fica de frente pra chegada (um quarto de volta
+quando ela corre em x, `portal_ilhas_ui::girado`). Todo cubo vai por
+`render3d::cubo_dos_lados` (o `draw_cube` da macroquad enrola a face −z ao
+contrário e o material do mundo descarta face de costas: visto por trás,
+o portal virava lâminas soltas — o do Porão tinha o mesmo defeito e foi
+corrigido junto). Placa "Island Portal" em cima (2D, some até 60 u),
+tarja "Island Portal · Travel to the other islands" com o botão **Travel** a
+≤ 9 u (`AVISO`). Mapa e minimapa: anel azul com aro de ouro e a ilhota
+(`mapa::portal_no_mapa`), na camada Travel do mapa grande; "Go to" › Villages
+tem a linha "Island Portal"; o mapa-múndi ("toque numa ilha") anda até o
+portal e pede a viagem (`Objetivo::Embarcar`).
+
+**Entrar.** Pisar a ≤ `ALCANCE` 3,2 u do centro manda `ClientMessage::AbrirPortal`
+(uma vez por entrada: arma ao sair a > 4,7 u; não dispara no login nem na
+chegada, que fica fora do anel). Tocar no chão do portal anda até lá e o
+mesmo gatilho abre. O servidor (`handle_abrir_portal`, `perto_do_portal` ≤
+`PERTO` 8 u) responde `Viagem` com `viagem::destinos_do_portal`: **todas** as
+ilhas, com a mesma trava da história (`liberada`) e o preço
+`preco_do_portal` = o mais barato dos meios antigos que já iam lá (ônibus e
+submarino de graça, Capitão `navio::preco_da_viagem` = 50 × (índice + 1)); o
+que nenhum NPC fazia (Bosque → Kōgen-tō direto) segue a regra do cobre. O
+passo VIAGEM ativo da história é de graça (menu mostra 0, `handle_viajar`
+não cobra). `handle_viajar` só aceita perto do portal; `embarcar` chega no
+**ponto de chegada do portal de destino** (não mais no cais). A Ilha Mágica
+continua só pelo menu/Guia (não está no `ARQUIPELAGO`, não tem portal).
+
+**2. Os NPCs de cais viraram só navio.** Capitão do Porto, Professor do
+Ônibus Voador e Capitão do Submarino abrem o **Estaleiro**
+(`ServerMessage::AbrirEstaleiro { estado }`, `funcao_do_npc` = "Shipyard").
+Os três ficam com a linha do navio porque zarpar vale de todos eles (cada um
+põe o navio na doca da sua ilha, inclusive as sem porto em terra); nenhum
+leva mais pra outra ilha. `viagem_da_historia` e o embarque ao fim da
+conversa saíram; `quem_viaja_perto` segue valendo só pro navio
+(`perto_do_capitao_do_porto`).
+
+**3. O Estaleiro** (`client/estaleiro_ui.rs`). Painel de madeira com aro de
+latão e rebites, faixa marinho. **Palco**: o navio equipado com o modelo de
+verdade (`mar_casco::desenha` com o `Visual`: classe, latão das estrelas,
+vela, carranca), boiando numa doca molhada sobre calços de quilha, com
+píeres dos dois lados, linha d'água translúcida, céu marinho em degradê, luz
+de estúdio e lampiões. Desenhado num viewport no passe principal
+(`render3d::viewport_na_tela`, sem render target com profundidade), sem a
+neblina do mundo. A câmera orbita (girar o navio o faria adernar,
+`mar_casco::movimento`): giro lento sozinho, arrastar gira, roda/pinça
+aproxima; o enquadramento sai do `meio_comp` e do topo do mastro do modelo
+(cresce junto se o casco crescer). **Abas**: Overview (classe, barra do
+casco, velocidade, giro Agile/Steady/Heavy, poder do canhão, estrelas por
+eixo), Repair (silhueta do casco com rachaduras pela avaria, barra, custo em
+cobre com o que se tem, botão grande; martelo e tábuas voando + som; "Repaired!"
+quando o casco volta cheio do servidor), Upgrade (3 cartões Casco/Velas/Canhão
+lado a lado ou empilhados: estrelas, ganho "X → Y", cobre/Darksteel/Pranchas
+com tem/precisa verde/vermelho e a lupa "Onde obter"; faíscas e "Upgraded!"),
+Build (próximo casco: nível, comparação de casco/velocidade/giro/canhão,
+receita com o casco atual consumido, tem/precisa e lupa; com o ponteiro na
+aba o navio vira o **fantasma** do casco seguinte; andaimes e "Launched!"),
+Cosmetics (velas e carrancas da bolsa em cartões; passar o ponteiro **veste
+no navio 3D**; Apply usa o item; "More in the Shop · Ship" abre a loja de TP
+em Skins › Ship, `LojaTp::abrir_no_navio`). **Set Sail** grande embaixo do
+palco, apagado com o motivo (sem navio, avariado, ilha sem doca no mar).
+Retrato: palco em cima, abas embaixo; paisagem: lado a lado. O menu "Travel"
+(`viagem_ui`) perdeu a linha "My ship" e a seção Shipwright e virou o menu
+do portal (azul e ouro).
+
+**4. História e auto missão.** Os passos 719, 737, 752, 870, 888 e 980
+dizem "use the Island Portal…", o 720 ("You've arrived on the Glacier
+through the Island Portal…") manda descer ao porto e falar com o Capitão, e
+as falas de embarque e a do 950 citam o portal (pares pt atualizados nos dois
+lados; os pares invertidos do 719/720 viraram en → pt). A linha do
+objetivo VIAGEM no rastreador é "Use the Island Portal". O destino da auto
+missão num passo VIAGEM (e num passo de outra ilha) é `LUGAR` no centro do
+portal (`destino_no_capitao`): a auto missão para a ≤ 3 u, dentro do anel, o
+gatilho abre o menu, e `auto_missao::ilha_da_missao` dá a ilha do passo
+VIAGEM, então `rumo` embarca sozinho; ao chegar, `retomar_auto_apos_viagem`
+segue com o próximo passo da história. O objetivo VIAGEM conclui na
+chegada, como antes. `como_chegar` diz "… Use the Island Portal in town.".
+
+**5. O visual do navio no mar atualiza** (bug). O `EntityMeta` (com `skins`,
+onde vai o `navio::Visual`) só saía ao entrar na visão (`last_sent`): casco
+novo, estrela ou vela/carranca aplicada no mar não apareciam pra quem já
+via — nem pro dono. Agora `send_snapshots` lê `visuais_dos_navios` antes do
+laço, guarda `Session::navio_visto` e, mudando, põe o jogador em `alterados`
+(o mesmo caminho de `auras_vistas`/`renascimentos_visto`), e o
+`last_sent.remove` reenvia a meta a todos, o dono incluído.
+
+**Protocolo:** só no FIM — `ClientMessage::AbrirPortal`,
+`ServerMessage::AbrirEstaleiro { estado }`; `PROTOCOL_VERSION` 199.
+
+**Testes:** shared `portal_ilhas::toda_ilha_tem_um_portal_em_chao_livre_e_se_chega_andando`
+(um por ilha, sem estorvo, fora de NPC/caminho/porta de Porão, rota do
+servidor da praça à chegada e da chegada pra dentro do anel; Mágica e mar
+sem portal), `viagem::o_portal_lista_tudo_que_os_npcs_levavam_com_o_mesmo_preco`;
+servidor `os_npcs_do_cais_nao_levam_mais_ninguem` (Estaleiro/Ônibus/Submarino:
+Shipyard e nunca Viagem, "Board" longe do portal recusado, no portal sai e
+chega no portal de destino), `os_passos_de_viagem_da_historia_saem_pelo_portal`
+(todo passo VIAGEM: auto missão mandada ao portal, linha de graça e aberta,
+embarca sem cobre), `o_visual_do_navio_reenvia_ao_construir_e_ao_vestir`, e os
+antigos de cobre/PK/zarpar adaptados ao portal; cliente
+`portal_ilhas_ui::entrar_no_portal_abre_uma_vez_e_chegar_nao_abre`,
+`toda_ilha_da_viagem_tem_portal_no_cliente`,
+`auto_missao::todo_passo_de_viagem_embarca_pelo_portal`,
+`estaleiro_ui::zarpar_diz_por_que_nao`, `avariado_abre_no_reparo_e_o_reparo_comemora`.
+
+**Prévias:** `MMO_PREVIA_PORTAL_ILHAS=1` (portal de perto ao lado de um de
+Porão, nas cidades do Bosque, Skyreach e Kōgen-tō de perto e do alto, a
+tarja, o mapa e o menu) e `MMO_PREVIA_ESTALEIRO=1` (cada aba e as animações;
+`MMO_PREVIA_TAMANHO=WxH`, `MMO_PREVIA_SUFIXO`, `MMO_CELULAR=1`). Cópias em
+`target/portal_ilhas/` e `target/estaleiro/`.
+
 ### Fase 5 — Conteúdo do mar
 
 - **Mapas do tesouro** (drop raro) que apontam ilhotas secretas só
@@ -1295,8 +1648,8 @@ volta = mar cai no Bosque); cliente `o_aviso_das_aguas_pacificas`. Prévia
    perguntado; vale a regra "o mar é opcional").
 
 Com a Chalupa vindo da história, a regra "o mar é opcional" continua de pé
-porque o Capitão segue levando (agora por cobre): ninguém é obrigado a
-navegar pra avançar.
+porque a viagem rápida segue existindo (agora por cobre; desde 17/11/2026 pelo
+Portal das Ilhas de cada cidade): ninguém é obrigado a navegar pra avançar.
 
 
 ## Baú do Colosso desligado (17/11/2026)
