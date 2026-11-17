@@ -1896,7 +1896,6 @@ pub fn draw_entities_com_sombras(
     let mut rastros = Vec::new();
     let mut brilhos: Vec<Brilho> = Vec::new();
     let self_id = world.self_id;
-    let navio_pos = world.navio_do_eu().map(|n| n.render_pos);
     for id in order {
         let Some(e) = world.ents.get_mut(&id) else {
             continue;
@@ -1908,15 +1907,11 @@ pub fn draw_entities_com_sombras(
         }
         let p = vista.pos_de(e);
 
-        // Skip the player's own body if aboard a ship: when sailing back to
-        // the same dock, the old position may still be in the snapshot.
-        if Some(id) == self_id {
-            if let Some(npos) = navio_pos {
-                let dist = npos.distance(e.render_pos);
-                if dist > 20.0 {
-                    continue;
-                }
-            }
+        // Skip stale copies of the player's own body: only draw the one with
+        // the SELF flag. When sailing back to the same dock, old snapshots
+        // may still have the previous position.
+        if Some(id) == self_id && (e.state.flags & shared::ent_flags::SELF) == 0 {
+            continue;
         }
 
         // Marca do alvo: anel no chao, que e' como MMO de target sinaliza.
