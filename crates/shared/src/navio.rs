@@ -33,6 +33,172 @@ use serde::{Deserialize, Serialize};
 use crate::constants::item_id;
 use crate::items::{ItemInstance, NavioData};
 
+// ═══════════════════════════════════════════════════════════════════════════
+// NOVO SISTEMA DE BARCOS (18/11/2026) - docs/BARCOS.md
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Tamanho do barco (determina capacidade de passageiros).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Tamanho {
+    Pequeno = 0,  // 1-2 passageiros
+    Medio = 1,    // 3-4 passageiros
+    Grande = 2,   // 6-8 passageiros
+}
+
+/// Variante do barco (determina afinidade de stats base).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Variante {
+    Veloz = 0,   // Afinidade: velocidade + virada
+    Ataque = 1,  // Afinidade: dano
+    Tanque = 2,  // Afinidade: HP
+}
+
+/// Tipo de barco (3 tamanhos × 3 variantes = 9 tipos).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TipoBarco {
+    pub tamanho: Tamanho,
+    pub variante: Variante,
+}
+
+impl TipoBarco {
+    /// ID único do tipo (0-8).
+    pub fn id(self) -> u8 {
+        (self.tamanho as u8) * 3 + (self.variante as u8)
+    }
+
+    /// Tipo a partir do ID.
+    pub fn de_id(id: u8) -> Option<Self> {
+        if id >= 9 {
+            return None;
+        }
+        let tamanho = match id / 3 {
+            0 => Tamanho::Pequeno,
+            1 => Tamanho::Medio,
+            2 => Tamanho::Grande,
+            _ => return None,
+        };
+        let variante = match id % 3 {
+            0 => Variante::Veloz,
+            1 => Variante::Ataque,
+            2 => Variante::Tanque,
+            _ => return None,
+        };
+        Some(TipoBarco { tamanho, variante })
+    }
+
+    /// Nome em inglês do tipo.
+    pub fn nome(self) -> &'static str {
+        match (self.tamanho, self.variante) {
+            (Tamanho::Pequeno, Variante::Veloz) => "Swift Sloop",
+            (Tamanho::Pequeno, Variante::Ataque) => "Corsair Sloop",
+            (Tamanho::Pequeno, Variante::Tanque) => "Ironclad Sloop",
+            (Tamanho::Medio, Variante::Veloz) => "Swift Brigantine",
+            (Tamanho::Medio, Variante::Ataque) => "Corsair Brigantine",
+            (Tamanho::Medio, Variante::Tanque) => "Ironclad Brigantine",
+            (Tamanho::Grande, Variante::Veloz) => "Swift Galleon",
+            (Tamanho::Grande, Variante::Ataque) => "Corsair Galleon",
+            (Tamanho::Grande, Variante::Tanque) => "Ironclad Galleon",
+        }
+    }
+
+    /// Capacidade de passageiros (fixo por tamanho).
+    pub fn capacidade(self) -> u8 {
+        match self.tamanho {
+            Tamanho::Pequeno => 2,
+            Tamanho::Medio => 4,
+            Tamanho::Grande => 8,
+        }
+    }
+}
+
+/// Stats base de um tipo de barco (antes de pontos alocados e tier mult).
+#[derive(Debug, Clone, Copy)]
+pub struct StatsBase {
+    pub velocidade: u16,
+    pub hp: u16,
+    pub dano: u16,
+    pub virada: u16,  // turning rate (rad/s × 100 para ser inteiro)
+}
+
+/// Pontos de stat alocados pelo player (máximo por tier).
+pub const PONTOS_POR_TIER: [u8; 5] = [
+    0,  // tier 0 (inválido)
+    10, // T1
+    18, // T2
+    26, // T3
+    34, // T4
+];
+
+/// Stats base por tipo de barco.
+pub fn stats_base(tipo: TipoBarco) -> StatsBase {
+    // Valores base balanceados (serão ajustados no balanço)
+    match (tipo.tamanho, tipo.variante) {
+        // Pequenos: rápidos, frágeis
+        (Tamanho::Pequeno, Variante::Veloz) => StatsBase {
+            velocidade: 120,  // muito rápido
+            hp: 2000,         // frágil
+            dano: 80,         // dano baixo
+            virada: 180,      // ágil
+        },
+        (Tamanho::Pequeno, Variante::Ataque) => StatsBase {
+            velocidade: 100,
+            hp: 2200,
+            dano: 110,        // dano médio
+            virada: 160,
+        },
+        (Tamanho::Pequeno, Variante::Tanque) => StatsBase {
+            velocidade: 90,
+            hp: 2800,         // mais HP
+            dano: 90,
+            virada: 150,
+        },
+
+        // Médios: balanceados
+        (Tamanho::Medio, Variante::Veloz) => StatsBase {
+            velocidade: 100,
+            hp: 3500,
+            dano: 100,
+            virada: 140,
+        },
+        (Tamanho::Medio, Variante::Ataque) => StatsBase {
+            velocidade: 90,
+            hp: 3800,
+            dano: 130,        // bom dano
+            virada: 120,
+        },
+        (Tamanho::Medio, Variante::Tanque) => StatsBase {
+            velocidade: 80,
+            hp: 4500,         // tanky
+            dano: 110,
+            virada: 110,
+        },
+
+        // Grandes: lentos, resistentes
+        (Tamanho::Grande, Variante::Veloz) => StatsBase {
+            velocidade: 80,   // "rápido" pra grande
+            hp: 5500,
+            dano: 120,
+            virada: 100,
+        },
+        (Tamanho::Grande, Variante::Ataque) => StatsBase {
+            velocidade: 70,
+            hp: 6000,
+            dano: 160,        // alto dano
+            virada: 90,
+        },
+        (Tamanho::Grande, Variante::Tanque) => StatsBase {
+            velocidade: 60,   // muito lento
+            hp: 7500,         // muito tanky
+            dano: 140,
+            virada: 80,       // vira mal
+        },
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SISTEMA ANTIGO (mantido para compatibilidade)
+// ═══════════════════════════════════════════════════════════════════════════
+
 /// One hull class.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Casco {

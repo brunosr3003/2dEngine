@@ -337,6 +337,18 @@ pub struct NavioData {
     /// an empty deck.
     #[serde(default)]
     pub conves: Option<Tesouro>,
+
+    // ───────────────── NOVO SISTEMA (18/11/2026, docs/BARCOS.md) ─────────────────
+
+    /// Tipo do barco novo (0-8 = TipoBarco::id, None = barco antigo).
+    /// Appended; barcos antigos leem None.
+    #[serde(default)]
+    pub tipo_novo: Option<u8>,
+
+    /// Pontos de stat alocados: [velocidade, hp, dano, virada].
+    /// Somados aos stats base do tipo. Appended; barcos antigos leem [0,0,0,0].
+    #[serde(default)]
+    pub pontos: [u8; 4],
 }
 
 /// A COLOSSUS CHEST on a ship's deck (naval phase 4, `shared::navio`).
