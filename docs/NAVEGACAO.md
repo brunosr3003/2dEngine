@@ -1694,3 +1694,27 @@ Portal das Ilhas de cada cidade): ninguém é obrigado a navegar pra avançar.
 ## Baú do Colosso desligado (17/11/2026)
 
 O dono: "não quero isso, mantém como tava antes o drop de chefe normal; se tiver baú vai ser outras coisas que não cabem agora". `navio::BAU_DO_COLOSSO_LIGADO = false`: o chefe do mundo volta a largar só o saque normal. A maquinaria do tesouro (convés, marca, boiar, captura no PvP, multiplicador por ilha) continua no código, sem fonte, para um baú futuro. Os nós do Corsário de saque/multiplicador ficam sem efeito até lá; a keystone Pirate's Code continua valendo (marcado o tempo todo).
+
+---
+
+## Próxima Evolução: Redesign Completo (18/11/2026)
+
+**Status:** Proposta documentada, aguardando implementação
+
+Este documento descreve o sistema naval **atual** (fases 1, 2 e 4 implementadas). Uma **evolução completa** do sistema está especificada em:
+
+- **`docs/BARCOS.md`** — Redesign do sistema de barcos
+  - 9 barcos base (3 tamanhos × 3 variantes)
+  - Sistema de tiers T1-T4 como items normais
+  - Alocação de pontos com trade-offs (vel/hp/dano/virada)
+  - Builds especializados vs balanceados
+  - Sistema de skins cosméticas expandido
+
+- **`docs/PVP-NAVAL.md`** — Combate naval multi-fase
+  - Projéteis desvíáveis (skill-based)
+  - Boarding (abordar barcos inimigos)
+  - PvP no convés com respawn
+  - Sistema de saque e loot especial
+  - Mecânicas casual-friendly (sem perda de items pessoais)
+
+**Filosofia:** Manter o mar opcional, mas torná-lo mais profundo e recompensador para quem escolhe navegar. Sistema casual-friendly adequado para público geral/infantil.
