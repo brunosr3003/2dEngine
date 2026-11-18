@@ -8,7 +8,7 @@
 
 Sistema completo de **combate naval multi-fase** com pirataria real: projéteis desvíáveis, abordagem de navios, PvP no convés e saque de espólios.
 
-**Filosofia:** Skill-based, high risk/high reward, interação real entre tripulações.
+**Filosofia:** Skill-based, **casual-friendly**, interação real entre tripulações. Foco em diversão sem punição pesada (jogo para público geral/kids).
 
 ---
 
@@ -474,43 +474,196 @@ Quando barco afunda:
 
 ---
 
-## Questões em Aberto
+## Decisões Finais (Casual/Kids-Friendly)
 
-### 1. Sistema de Loot
-- **O que sai do barco derrotado?**
-  - Gold fixo?
-  - Itens do inventário da tripulação?
-  - Materiais especiais de PvP?
-  - Tesouro aleatório?
+**Filosofia de Design:** Jogo para público geral/infantil — sem perda de items pessoais, penalidades leves, sempre há recuperação possível.
 
-### 2. Loot Flutuante
-- **Como funciona exatamente?**
-  - Barril visível flutuando?
-  - Precisa abordar ou só passar perto?
-  - Quanto tempo fica disponível?
-  - Desaparece ou fica pra sempre?
+### 1. Sistema de Loot ✓ DECIDIDO
 
-### 3. Divisão de Loot em Aliança
-- **Como dividir loot entre aliados?**
-  - Automático (split igual)?
-  - Manual (negociar)?
-  - Quem acertar killing blow leva tudo?
+**Loot Especial de PvP Naval** (sem perda de items pessoais):
 
-### 4. Penalidade de Morte Real
-- **Quanto perde ao morrer de verdade (barco afundou)?**
-  - % de XP?
-  - Proficiência específica (naval)?
-  - Drop de items equipados?
-  - Durability dos items?
+```
+Drops ao derrotar barco inimigo:
+├─ 500-2000 gold (fixo, gerado pelo sistema)
+├─ 1-3 Naval Tokens (moeda especial de PvP)
+├─ Chance de material raro:
+│   ├─ Prancha Dourada (craft de velas épicas)
+│   ├─ Âncora Antiga (decoração de barco)
+│   ├─ Mapa do Tesouro (quest especial naval)
+│   └─ Fragmento de Upgrade Naval
+└─ NUNCA dropa items do inventário do player
 
-### 5. IA de Barco
-- **O que acontece com barco sem ninguém no leme?**
-  - Para completamente?
-  - Deriva aleatória?
-  - IA básica (segue último input)?
+Naval Tokens podem ser trocados por:
+├─ Skins de barco exclusivas
+├─ Velas coloridas raras
+├─ Figuras de proa épicas
+├─ Pets navais (papagaio, gaivota, etc)
+└─ Upgrade cosmético de convés
+```
+
+**Resultado:** Ninguém perde items pessoais = zero frustração, só ganhos.
+
+---
+
+### 2. Loot Flutuante ✓ DECIDIDO
+
+**Sistema generoso de recuperação:**
+
+```
+Visual:
+├─ BARRIL de madeira flutuando
+├─ Partículas douradas brilhantes
+├─ Brilho na água (visível de longe)
+└─ Som ambiente (madeira rangendo)
+
+Coleta:
+├─ Aproximar barco a 5-10u
+├─ CHANNEL de apenas 5 segundos
+│   └─ Reduzido de 10s para ser mais casual
+├─ Vulnerável mas rápido
+└─ Se completar: pega loot automaticamente
+
+Timer Generoso:
+├─ Flutua por 15 MINUTOS
+├─ Primeiros 5min: só quem viu sabe
+├─ Após 5min: aparece marcador no MAPA
+│   └─ Todos podem ver e tentar pegar
+├─ Últimos 2min: barril afunda lentamente (aviso visual)
+└─ Após 15min: despawna completamente
+
+Recuperação do Próprio Loot:
+├─ PODE recuperar seu próprio loot
+├─ Respawna no dock → pega barco reserva → volta
+├─ 15min é tempo suficiente pra recuperar
+└─ Se outro pegar primeiro: você perde
+```
+
+**Resultado:** Sempre há chance de recuperar, muito tempo disponível.
+
+---
+
+### 3. Divisão de Loot em Aliança ✓ DECIDIDO
+
+**Split automático** (sem drama/traição):
+
+```
+Sistema Simples:
+├─ Todos aliados a 100u recebem loot
+├─ Divide IGUAL automaticamente
+├─ Popup: "Você recebeu X gold + Y tokens!"
+├─ Sem possibilidade de traição
+└─ Foco em cooperação
+
+Configuração Opcional (líder):
+├─ Líder pode ajustar % por membro
+├─ Default sempre igual (25% cada se 4 players)
+├─ UI simples de sliders
+└─ Mas maioria vai deixar igual
+```
+
+**Resultado:** Cooperação incentivada, sem griefing entre aliados.
+
+---
+
+### 4. Penalidade de Morte Real ✓ DECIDIDO
+
+**MUITO leve** (praticamente sem punição):
+
+```
+Perde APENAS:
+├─ 2% XP do nível atual
+│   └─ Nunca desnivela (cap no começo do nível)
+├─ 50 pontos de proficiência naval
+│   └─ Cap mínimo 0 (não fica negativo)
+└─ ZERO gold
+└─ ZERO items (nada dropa)
+└─ ZERO durability perdida
+
+Respawn Rápido:
+├─ Dock da última ilha visitada
+├─ Barco reserva T1 GRÁTIS disponível
+│   └─ Sempre tem um de backup
+├─ Pode resgatar barco principal no dock
+│   └─ Paga reparo (cobre, barato)
+└─ Zero downtime, volta rápido
+
+Primeira Vez (Tutorial):
+├─ Morte naval não dá penalidade
+├─ Popup explica mecânica
+└─ "Morrer faz parte da aventura!"
+```
+
+**Resultado:** Morrer = pequeno inconveniente, não desastre. Kids podem experimentar sem medo.
+
+---
+
+### 5. IA de Barco ✓ DECIDIDO
+
+**Máxima proteção** quando tripulação ausente:
+
+```
+Caso 1: Todos embarcaram no inimigo
+├─ Barco entra em modo "Auto-Defend"
+├─ IA básica: vira pra dificultar acertos
+├─ NÃO navega, só defende
+├─ Aviso na tela: "Seu barco está em perigo!"
+└─ Se levar muito dano: alerta sonoro
+
+Caso 2: Tripulação toda morreu/desconectou
+├─ Barco entra em modo "Auto-Return"
+├─ Navega SOZINHO de volta pro dock
+├─ Rota: linha reta, velocidade lenta
+├─ Pode ser atacado no caminho
+├─ Timer: 10 minutos para chegar
+├─ Se chegar no dock: SALVO automaticamente
+└─ Se for destruído: loot flutua normalmente
+
+Caso 3: Desconectou durante combate
+├─ Personagem fica AFK no convés (2min)
+├─ Depois: auto-eject pro dock (safe)
+├─ Barco também volta pro dock
+├─ Reconnect: está no dock, sem perda
+└─ Proteção contra crash/internet cair
+```
+
+**Resultado:** Sempre tem safety net, difícil perder barco definitivamente.
+
+---
+
+## Sistema de Progressão Naval (Novo)
+
+**Incentiva PvP mas não força:**
+
+```
+Naval Tokens ganhos por:
+├─ Vencer combate naval: 3 tokens
+├─ Defender aliado sob ataque: 2 tokens
+├─ Reparar barco sob fogo inimigo: 1 token
+├─ Explorar ilha nova de barco: 1 token
+├─ Completar entrega de tesouro: 5 tokens
+├─ Participar de batalha (mesmo perdendo): 1 token
+└─ Daily quest naval: 2 tokens
+
+Loja Naval (NPC no Dock):
+├─ Skin Vela Pirata: 50 tokens
+├─ Figura de Proa Dragão: 100 tokens
+├─ Casco Pintado Especial: 150 tokens
+├─ Pet Papagaio: 200 tokens
+├─ Convés Decorado: 250 tokens
+└─ Barco Lendário (cosmético): 500 tokens
+
+Progressão PvE Alternativa:
+├─ Pode ganhar tokens sem PvP
+├─ Entregar cargas entre ilhas
+├─ Pescar em alto mar
+└─ Explorar rotas comerciais
+```
+
+**Resultado:** PvP é uma opção, não obrigação. Casual players podem progredir também.
 
 ---
 
 **Documento criado:** 18/11/2026  
+**Atualizado:** 18/11/2026 (decisões finalizadas)  
 **Autor:** Bruno + Claude  
-**Status:** Proposta em revisão
+**Status:** Especificação finalizada — pronto para implementação
