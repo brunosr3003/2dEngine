@@ -129,6 +129,38 @@ pub const PONTOS_POR_TIER: [u8; 5] = [
     34, // T4
 ];
 
+/// Multiplicador de stats por tier (igual sistema de items).
+pub fn tier_mult(tier: u8) -> f32 {
+    match tier {
+        1 => 0.6,   // 60%
+        2 => 0.9,   // 90%
+        3 => 1.2,   // 120%
+        4 => 1.5,   // 150%
+        _ => 1.0,
+    }
+}
+
+/// Valida se pontos alocados estão dentro do limite do tier.
+pub fn valida_pontos(tier: u8, pontos: [u8; 4]) -> bool {
+    let tier_idx = (tier as usize).min(PONTOS_POR_TIER.len() - 1);
+    let max = PONTOS_POR_TIER[tier_idx];
+    let total: u16 = pontos.iter().map(|&p| p as u16).sum();
+    total <= max as u16
+}
+
+/// Calcula stats finais de um barco novo.
+pub fn stats_finais_novo(tipo: TipoBarco, tier: u8, pontos: [u8; 4]) -> (u16, u16, u16, u16) {
+    let base = stats_base(tipo);
+    let mult = tier_mult(tier);
+
+    let velocidade = ((base.velocidade + pontos[0] as u16) as f32 * mult) as u16;
+    let hp = ((base.hp + pontos[1] as u16) as f32 * mult) as u16;
+    let dano = ((base.dano + pontos[2] as u16) as f32 * mult) as u16;
+    let virada = ((base.virada + pontos[3] as u16) as f32 * mult) as u16;
+
+    (velocidade, hp, dano, virada)
+}
+
 /// Stats base por tipo de barco.
 pub fn stats_base(tipo: TipoBarco) -> StatsBase {
     // Valores base balanceados (serão ajustados no balanço)
